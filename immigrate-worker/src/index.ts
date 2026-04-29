@@ -5016,13 +5016,8 @@ function renderAdminLoginPage(request: Request, env: Env): Response {
     <script>
       (() => {
         const KEY = ${JSON.stringify(ADMIN_GATE_SESSION_KEY)};
-        const BASE_URL_KEY = KEY + ":baseUrl";
-        const BUTTON_TEXT = "Unlock Admin · เข้าสู่ Admin Console";
-        const VERIFYING_TEXT = "Verifying... · กำลังตรวจสิทธิ์...";
         const next = ${JSON.stringify(next)};
         const form = document.getElementById("admin-login-form");
-        const baseUrl = document.getElementById("baseUrl");
-        const rememberBaseUrl = document.getElementById("rememberBaseUrl");
         const error = document.getElementById("error");
         const submit = document.getElementById("submit");
 
@@ -5034,37 +5029,14 @@ function renderAdminLoginPage(request: Request, env: Env): Response {
           sessionStorage.setItem(KEY, JSON.stringify(session));
         }
 
-        function loadRememberedBaseUrl() {
-          try {
-            const saved = localStorage.getItem(BASE_URL_KEY);
-            if (saved) baseUrl.value = saved;
-          } catch (err) {
-            // Ignore storage restrictions; verification still uses the visible field.
-          }
-        }
-
-        function storeRememberedBaseUrl() {
-          try {
-            if (rememberBaseUrl.checked) {
-              localStorage.setItem(BASE_URL_KEY, baseUrl.value);
-            } else {
-              localStorage.removeItem(BASE_URL_KEY);
-            }
-          } catch (err) {
-            // Keep auth flow independent from optional local device storage.
-          }
-        }
-
-        loadRememberedBaseUrl();
-
         form.addEventListener("submit", async (event) => {
           event.preventDefault();
           setError("");
           submit.disabled = true;
-          submit.textContent = VERIFYING_TEXT;
+          submit.textContent = "Verifying... · กำลังตรวจสิทธิ์...";
 
           const payload = {
-            baseUrl: baseUrl.value,
+            baseUrl: document.getElementById("baseUrl").value,
             accessCode: document.getElementById("accessCode").value,
             bearer: document.getElementById("bearer").value,
             confirmKey: document.getElementById("confirmKey").value,
@@ -5086,13 +5058,12 @@ function renderAdminLoginPage(request: Request, env: Env): Response {
             if (data.data && data.data.session) {
               storeSession(data.data.session);
             }
-            storeRememberedBaseUrl();
             location.replace(data.data && data.data.redirect_to ? data.data.redirect_to : next);
           } catch (err) {
             setError("Unable to verify admin access right now.");
           } finally {
             submit.disabled = false;
-            submit.textContent = BUTTON_TEXT;
+            submit.textContent = "Unlock Admin · เข้าสู่ Admin Console";
           }
         });
       })();
