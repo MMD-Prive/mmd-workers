@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SIGIL Session</title>
+<style>
+body{margin:0;background:#050608;color:#fff;font-family:Inter,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh}
+.card{background:#0b0d12;padding:24px;border-radius:16px;max-width:380px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+h1{font-size:22px;margin:0 0 10px}
+p{opacity:.8}
+.status{font-size:18px;margin:12px 0;color:#f3d18d}
+.small{font-size:13px;opacity:.7}
+</style>
+</head>
+<body>
+<div class="card">
+<h1>Session Status</h1>
+<div class="status" id="status">Loading...</div>
+<p id="eta"></p>
+<p id="map"></p>
+<p class="small" id="updated"></p>
+</div>
+<script>
+(async function(){
+ const qs=new URLSearchParams(location.search);
+ const t=qs.get("t");
+ const res=await fetch("/v1/client/session/status?t="+t);
+ const data=await res.json();
+ document.getElementById("status").textContent=data.status||"-";
+ if(data.eta) document.getElementById("eta").textContent="ETA: "+data.eta;
+ if(data.map) document.getElementById("map").innerHTML='<a href="'+data.map+'" target="_blank">Open Map</a>';
+ if(data.last_update_at) document.getElementById("updated").textContent="Updated: "+data.last_update_at;
+})();
+</script>
+</body>
+</html>
