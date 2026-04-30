@@ -3,6 +3,9 @@ main = "src/index.ts"
 compatibility_date = "2026-03-25"
 workers_dev = true
 
+[assets]
+directory = "./public"
+
 [vars]
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_TABLE_LINE_INBOX = "Line Inbox"
@@ -13,7 +16,7 @@ JOBS_WORKER_BASE_URL = ""
 CREATE_LINKS_URL = "https://payments-worker.malemodel-bkk.workers.dev/v1/confirm/link"
 REALTIME_SESSIONS_URL = ""
 PUBLIC_WEB_BASE_URL = "https://www.mmdbkk.com"
-PUBLIC_ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
+PUBLIC_ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
 ADMIN_WORKER_BASE_URL = "https://admin-worker.malemodel-bkk.workers.dev"
 
 # Set via secrets:
@@ -27,6 +30,10 @@ ADMIN_WORKER_BASE_URL = "https://admin-worker.malemodel-bkk.workers.dev"
 # - set ADMIN_WORKER_BASE_URL to your admin-worker origin for canonical member promotion
 
 # Example route bindings for a domain you control:
+[[routes]]
+pattern = "sigil.mmdbkk.com/a/*"
+zone_name = "mmdbkk.com"
+
 [[routes]]
 pattern = "mmdbkk.com/internal/jobs*"
 zone_name = "mmdbkk.com"
@@ -55,7 +62,7 @@ zone_name = "mmdbkk.com"
 pattern = "mmdbkk.com/member/api/renewal*"
 zone_name = "mmdbkk.com"
 
-    [[routes]]
+[[routes]]
 pattern = "www.mmdbkk.com/member/api/renewal*"
 zone_name = "mmdbkk.com"
 
