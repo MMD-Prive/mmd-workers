@@ -4,12 +4,16 @@
   const API = {
     status: "/member/api/renewal/status",
     intake: "/member/api/renewal/intake",
+    topup: "/member/api/points/topup",
+    activate: "/member/api/renewal/activate-vip",
   };
 
   const VIP_POINTS_REQUIRED = 1200;
+  const POINT_THB_RATE = 100;
   const byId = (id) => document.getElementById(id);
   const clean = (value) => String(value || "").trim();
   const formatPoints = (value) => Number(value || 0).toLocaleString("th-TH");
+  const formatTHB = (value) => Number(value || 0).toLocaleString("th-TH");
 
   const state = {
     action: "VIP_RENEWAL",
@@ -17,6 +21,7 @@
     lastStatus: null,
     pointsBalance: null,
     pointsShortfall: null,
+    topupAmountTHB: null,
     route: "unknown",
   };
 
@@ -75,24 +80,8 @@
     return true;
   }
 
-  function statusPayload() {
+  function identityPayload() {
     return {
-      nickname: value("nick"),
-      display_name: value("nick"),
-      email_primary: value("emailNow"),
-      email_secondary: value("emailOld"),
-      phone: value("phone"),
-      telegram_username: value("telegram"),
-      search_priority: state.action === "PER_REVIEW" ? "per_review" : "vip_renewal",
-      source_page: "sigil_inme_renewal",
-      include_context: false,
-    };
-  }
-
-  function intakePayload() {
-    return {
-      flow: state.route === "per_review" ? "review" : "renewal",
-      source_page: "sigil_inme_renewal",
       display_name: value("nick"),
       nickname: value("nick"),
       email: email(),
@@ -100,10 +89,27 @@
       email_secondary: value("emailOld"),
       phone: value("phone"),
       telegram_username: value("telegram"),
+    };
+  }
+
+  function statusPayload() {
+    return {
+      ...identityPayload(),
+      search_priority: state.action === "PER_REVIEW" ? "per_review" : "vip_renewal",
+      source_page: "sigil_inme_renewal",
+      include_context: false,
+    };
+  }
+
+  function baseFlowPayload(extra = {}) {
+    return {
+      ...identityPayload(),
+      source_page: "sigil_inme_renewal",
       target_tier: "vip",
       points_required: VIP_POINTS_REQUIRED,
       points_balance: state.pointsBalance,
       points_shortfall: state.pointsShortfall,
+      topup_amount_thb: state.topupAmountTHB,
       points_action: state.route,
       payment_method: state.paymentMethod,
       service_history_note: [
@@ -112,9 +118,34 @@
         `points_required:${VIP_POINTS_REQUIRED}`,
         `points_balance:${state.pointsBalance ?? "unknown"}`,
         `points_shortfall:${state.pointsShortfall ?? "unknown"}`,
+        `topup_amount_thb:${state.topupAmountTHB ?? "none"}`,
       ].join("; "),
       notify_telegram: true,
+      ...extra,
     };
+  }
+
+  function intakePayload() {
+    return baseFlowPayload({
+      flow: state.route === "per_review" ? "review" : "renewal",
+    });
+  }
+
+  function topupPayload() {
+    return baseFlowPayload({
+      flow: "points_topup",
+      amount_thb: state.topupAmountTHB,
+      points_to_add: state.pointsShortfall,
+      payment_type: "points_topup",
+    });
+  }
+
+  function activatePayload() {
+    return baseFlowPayload({
+      flow: "vip_auto_activate",
+      points_to_deduct: VIP_POINTS_REQUIRED,
+      activation_type: "vip_renewal",
+    });
   }
 
   async function postJson(url, payload) {
@@ -133,6 +164,7 @@
     if (!Number.isFinite(balance)) {
       state.pointsBalance = null;
       state.pointsShortfall = null;
+      state.topupAmountTHB = null;
       state.route = "per_review";
       state.paymentMethod = "Points / Per Review";
       return "ยังอ่าน points balance อัตโนมัติไม่ได้ครับ ผมจะรับไว้เป็น Per review ก่อน";
@@ -140,6 +172,7 @@
 
     state.pointsBalance = balance;
     state.pointsShortfall = Math.max(0, VIP_POINTS_REQUIRED - balance);
+    state.topupAmountTHB = state.pointsShortfall > 0 ? state.pointsShortfall * POINT_THB_RATE : 0;
 
     if (state.action === "PER_REVIEW") {
       state.route = "per_review";
@@ -150,12 +183,12 @@
     if (balance >= VIP_POINTS_REQUIRED) {
       state.route = "vip_auto";
       state.paymentMethod = "Points";
-      return `มี ${formatPoints(balance)} points · พร้อมเปิด / ต่อสิทธิ์ VIP 1,200 points`;
+      return `มี ${formatPoints(balance)} points · พร้อมหัก 1,200 points เพื่อเปิด / ต่อสิทธิ์ VIP`;
     }
 
     state.route = "points_topup_required";
-    state.paymentMethod = "Top up / Per Review";
-    return `มี ${formatPoints(balance)} points · ขาดอีก ${formatPoints(state.pointsShortfall)} points เพื่อเปิด / ต่อสิทธิ์ VIP`;
+    state.paymentMethod = "Top up Points";
+    return `มี ${formatPoints(balance)} points · ขาดอีก ${formatPoints(state.pointsShortfall)} points · Top up ประมาณ ${formatTHB(state.topupAmountTHB)} บาท`;
   }
 
   function renderStatus(data) {
@@ -165,6 +198,33 @@
     const routeText = decideRoute(result || {});
     setText("sumStatus", `${found} · ${routeText}`);
     syncSummary();
+  }
+
+  async function runFinalFlow() {
+    if (state.route === "vip_auto") {
+      try {
+        await postJson(API.activate, activatePayload());
+        return "หัก points และส่งคำขอเปิด / ต่อสิทธิ์ VIP แล้วครับ";
+      } catch (error) {
+        await postJson(API.intake, intakePayload());
+        return "ส่งเข้า Per review แล้วครับ เพราะระบบหัก points อัตโนมัติยังไม่สำเร็จ";
+      }
+    }
+
+    if (state.route === "points_topup_required") {
+      try {
+        const response = await postJson(API.topup, topupPayload());
+        const payUrl = response?.data?.payment_url || response?.payment_url || response?.data?.url || response?.url;
+        if (payUrl) window.location.href = payUrl;
+        return payUrl ? "กำลังพาไปหน้า Top up points ครับ" : "สร้างคำขอ Top up points แล้วครับ";
+      } catch (error) {
+        await postJson(API.intake, intakePayload());
+        return "ส่งเข้า Per review แล้วครับ เพราะระบบ Top up อัตโนมัติยังไม่สำเร็จ";
+      }
+    }
+
+    await postJson(API.intake, intakePayload());
+    return "ส่งเข้า Per review แล้วครับ";
   }
 
   function setActive(selector, active) {
@@ -234,10 +294,13 @@
           alert("กรุณาติ๊กยินยอมก่อนส่งตรวจสิทธิ์ครับ");
           return;
         }
-        setBusy(submit, true, "กำลังส่งข้อมูล...");
+        if (state.route === "unknown") {
+          alert("ขอเช็ก points ก่อนส่งต่อครับ");
+          return;
+        }
+        setBusy(submit, true, "กำลังดำเนินการ...");
         try {
-          await postJson(API.intake, intakePayload());
-          const done = state.route === "vip_auto" ? "ส่งคำขอเปิด / ต่อสิทธิ์ VIP ด้วย points แล้วครับ" : "ส่งเข้า Per review แล้วครับ";
+          const done = await runFinalFlow();
           setText("sumStatus", done);
           alert(done);
         } catch (error) {
