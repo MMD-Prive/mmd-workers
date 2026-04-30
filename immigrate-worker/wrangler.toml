@@ -22,17 +22,33 @@ ADMIN_WORKER_BASE_URL = "https://admin-worker.malemodel-bkk.workers.dev"
 # Set via secrets:
 # wrangler secret put INTERNAL_TOKEN
 # wrangler secret put AIRTABLE_API_KEY
-#
-# For production:
-# - set ENABLE_AIRTABLE_SYNC = "true"
-# - set REALTIME_SESSIONS_URL to a real session feed
-# - set JOBS_WORKER_BASE_URL to your jobs-worker origin
-# - set ADMIN_WORKER_BASE_URL to your admin-worker origin for canonical member promotion
 
-# SIGIL subdomain is Worker-owned. Route the whole host to avoid Cloudflare 522
-# fallback to a proxied CNAME origin when a path is not covered by a narrow route.
 [[routes]]
 pattern = "sigil.mmdbkk.com/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/control-room*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/control-room*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/create-session*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/create-session*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/jobs/create-session*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/jobs/create-session*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
@@ -44,11 +60,11 @@ pattern = "www.mmdbkk.com/internal/jobs*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
-pattern = "mmdbkk.com/internal/admin/jobs*"
+pattern = "mmdbkk.com/v1/admin/*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
-pattern = "www.mmdbkk.com/internal/admin/jobs*"
+pattern = "www.mmdbkk.com/v1/admin/*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
@@ -74,7 +90,3 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/member/api/jobs*"
 zone_name = "mmdbkk.com"
-#
-# Note:
-# You generally cannot bind Cloudflare Worker routes directly onto a `*.webflow.io` host you do not control.
-# For production, use a domain/zone you control and point Control Room traffic there.
