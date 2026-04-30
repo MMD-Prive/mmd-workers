@@ -8,8 +8,7 @@
     chatBase: cleanBase(root.getAttribute("data-chat-base")),
     paymentsBase: cleanBase(root.getAttribute("data-payments-base")),
     eventsBase: cleanBase(root.getAttribute("data-events-base")),
-    telegramBase: cleanBase(root.getAttribute("data-telegram-base")),
-    realtimeBase: cleanBase(root.getAttribute("data-realtime-base"))
+    telegramBase: cleanBase(root.getAttribute("data-telegram-base"))
   };
 
   const els = {
@@ -22,46 +21,24 @@
 
   const workerCards = {
     admin: root.querySelector('[data-worker-card="admin"]'),
-    ai: root.querySelector('[data-worker-card="ai"]'),
     chat: root.querySelector('[data-worker-card="chat"]'),
+    ai: root.querySelector('[data-worker-card="ai"]'),
     payments: root.querySelector('[data-worker-card="payments"]'),
     events: root.querySelector('[data-worker-card="events"]'),
-    telegram: root.querySelector('[data-worker-card="telegram"]'),
-    realtime: root.querySelector('[data-worker-card="realtime"]')
+    telegram: root.querySelector('[data-worker-card="telegram"]')
   };
 
   const workerLabels = {
     admin: root.querySelector('[data-worker-label="admin"]'),
-    ai: root.querySelector('[data-worker-label="ai"]'),
     chat: root.querySelector('[data-worker-label="chat"]'),
+    ai: root.querySelector('[data-worker-label="ai"]'),
     payments: root.querySelector('[data-worker-label="payments"]'),
     events: root.querySelector('[data-worker-label="events"]'),
-    telegram: root.querySelector('[data-worker-label="telegram"]'),
-    realtime: root.querySelector('[data-worker-label="realtime"]')
+    telegram: root.querySelector('[data-worker-label="telegram"]')
   };
-
-  const ADMIN_GATE_SESSION_KEY = "mmd_admin_gate_v1";
 
   function cleanBase(value) {
     return String(value || "").trim().replace(/\/+$/, "");
-  }
-
-  function readAdminGate() {
-    try {
-      const raw = sessionStorage.getItem(ADMIN_GATE_SESSION_KEY);
-      const gate = raw ? JSON.parse(raw) : null;
-      return gate && gate.ok ? gate : {};
-    } catch (err) {
-      return {};
-    }
-  }
-
-  function adminHeaders() {
-    const gate = readAdminGate();
-    const headers = { "Accept": "application/json" };
-    if (gate.bearer) headers.Authorization = "Bearer " + gate.bearer;
-    if (gate.confirmKey) headers["X-Confirm-Key"] = gate.confirmKey;
-    return headers;
   }
 
   function nowTime() {
@@ -70,6 +47,17 @@
       minute: "2-digit",
       second: "2-digit"
     });
+  }
+
+  function friendlyName(name) {
+    return {
+      admin: "Admin",
+      chat: "Per AI",
+      ai: "AI Route",
+      payments: "Payment",
+      events: "Reminder",
+      telegram: "Telegram"
+    }[name] || name;
   }
 
   function addLog(message, kind) {
@@ -104,9 +92,7 @@
       if (type) card.classList.add("is-" + type);
     }
 
-    if (labelNode) {
-      labelNode.textContent = label || "Unknown";
-    }
+    if (labelNode) labelNode.textContent = label || "Unknown";
   }
 
   function setAdminMessage(message) {
@@ -115,17 +101,11 @@
 
   async function readEndpoint(url, options) {
     const opts = options || {};
-    const headers = {
-      "Accept": "application/json",
-      ...(opts.headers || {})
-    };
-
     const res = await fetch(url, {
       method: "GET",
       credentials: opts.credentials || "omit",
       cache: "no-store",
-      ...opts,
-      headers
+      headers: { "Accept": "application/json" }
     });
 
     const text = await res.text();
@@ -137,63 +117,51 @@
       data = { raw: text };
     }
 
-    return {
-      ok: res.ok,
-      status: res.status,
-      data
-    };
+    return { ok: res.ok, status: res.status, data };
   }
 
   async function checkWithFallback(name, base, paths, options) {
+    const label = friendlyName(name);
+
     if (!base) {
       setWorker(name, "bad", "Missing URL");
-      addLog(name + ": missing base URL", "bad");
+      addLog(label + ": ยังไม่ได้ตั้งค่า URL", "bad");
       return { name, ok: false, status: 0, label: "Missing URL" };
     }
 
     setWorker(name, "", "Checking");
 
     for (const path of paths) {
-      const url = base + path;
-
       try {
-        const result = await readEndpoint(url, options);
+        const result = await readEndpoint(base + path, options);
 
         if (result.ok) {
-          setWorker(name, "ok", "Connected");
-          addLog(name + ": OK via " + path, "ok");
-          return { name, ok: true, status: result.status, path, data: result.data, label: "Connected" };
+          setWorker(name, "ok", "Ready");
+          addLog(label + ": พร้อมใช้งาน", "ok");
+          return { name, ok: true, status: result.status, path, data: result.data, label: "Ready" };
         }
 
         if (name === "admin" && (result.status === 401 || result.status === 403)) {
-          setWorker(name, "warn", "Login required");
-          addLog(name + ": reachable but login required (" + result.status + ")", "warn");
-          return {
-            name,
-            ok: true,
-            authRequired: true,
-            status: result.status,
-            path,
-            data: result.data,
-            label: "Login required"
-          };
+          setWorker(name, "warn", "Login needed");
+          addLog(label + ": ต้อง Login ก่อน", "warn");
+          return { name, ok: true, authRequired: true, status: result.status, path, data: result.data, label: "Login needed" };
         }
 
         if (result.status !== 404) {
-          setWorker(name, "warn", "HTTP " + result.status);
-          addLog(name + ": HTTP " + result.status + " via " + path, "warn");
-          return { name, ok: false, status: result.status, path, data: result.data, label: "HTTP " + result.status };
+          setWorker(name, "warn", "Check needed");
+          addLog(label + ": ต้องให้ dev เช็ก", "warn");
+          return { name, ok: false, status: result.status, path, data: result.data, label: "Check needed" };
         }
       } catch (err) {
-        setWorker(name, "bad", "No connection");
-        addLog(name + ": fetch failed / CORS / network", "bad");
-        return { name, ok: false, status: 0, error: err, label: "No connection" };
+        setWorker(name, "bad", "Offline");
+        addLog(label + ": ติดต่อไม่ได้", "bad");
+        return { name, ok: false, status: 0, error: err, label: "Offline" };
       }
     }
 
-    setWorker(name, "bad", "Not found");
-    addLog(name + ": no health endpoint matched", "bad");
-    return { name, ok: false, status: 404, label: "Not found" };
+    setWorker(name, "bad", "Not ready");
+    addLog(label + ": ยังไม่พร้อม", "bad");
+    return { name, ok: false, status: 404, label: "Not ready" };
   }
 
   async function checkAdmin() {
@@ -202,56 +170,52 @@
       "/v1/admin/ping",
       "/health",
       "/"
-    ], {
-      credentials: "include",
-      headers: adminHeaders()
-    });
+    ], { credentials: "include" });
 
     if (result.ok && result.authRequired) {
-      setAdminMessage("เชื่อมต่อ admin-worker ได้แล้ว แต่ session นี้ยังไม่ได้รับสิทธิ์ กรุณาเข้า Login Gate ก่อน.");
+      setAdminMessage("ระบบหลักติดต่อได้แล้ว แต่ต้อง Login ก่อนสร้างงานค่ะ");
       return result;
     }
 
     if (result.ok) {
-      setAdminMessage("เชื่อมต่อ admin-worker สำเร็จ พร้อมเข้า Create Job / Session.");
+      setAdminMessage("ระบบหลักพร้อมใช้งาน เริ่ม Create Job ได้ค่ะ");
       return result;
     }
 
-    setAdminMessage("เรียก admin-worker ไม่สำเร็จ อาจเป็น CORS, network, domain ผิด หรือ endpoint ยังไม่เปิด.");
+    setAdminMessage("ระบบหลักยังไม่พร้อม แจ้ง Per หรือ dev ให้เช็ก connection ค่ะ");
     return result;
   }
 
   async function checkAll() {
     setGlobal("", "Checking");
-    addLog("Starting full system check...", "");
+    addLog("เริ่มตรวจระบบ...", "");
 
     const checks = await Promise.all([
       checkAdmin(),
-      checkWithFallback("ai", config.aiBase, ["/health", "/"]),
       checkWithFallback("chat", config.chatBase, ["/health", "/"]),
+      checkWithFallback("ai", config.aiBase, ["/health", "/"]),
       checkWithFallback("payments", config.paymentsBase, ["/health", "/v1/pay/health", "/"]),
       checkWithFallback("events", config.eventsBase, ["/health", "/v1/events/health", "/"]),
-      checkWithFallback("telegram", config.telegramBase, ["/health", "/telegram/health", "/"]),
-      checkWithFallback("realtime", config.realtimeBase, ["/health", "/"])
+      checkWithFallback("telegram", config.telegramBase, ["/health", "/telegram/health", "/"])
     ]);
 
     const hardFailures = checks.filter(item => !item.ok && item.name !== "events");
     const warnings = checks.filter(item => item.authRequired || (item.ok && item.status >= 300));
 
     if (hardFailures.length === 0 && warnings.length === 0) {
-      setGlobal("ok", "System ready");
-      addLog("All required systems are ready.", "ok");
+      setGlobal("ok", "Ready");
+      addLog("ระบบพร้อมใช้งาน", "ok");
       return;
     }
 
     if (hardFailures.length === 0 && warnings.length > 0) {
-      setGlobal("warn", "Action needed");
-      addLog("System reachable, but admin login or review is required.", "warn");
+      setGlobal("warn", "Login needed");
+      addLog("ระบบติดต่อได้ แต่ต้อง Login หรือให้ Per ตรวจอีกครั้ง", "warn");
       return;
     }
 
-    setGlobal("bad", "Check failed");
-    addLog("Some required systems are not reachable. Check CORS, domains, routes, and health endpoints.", "bad");
+    setGlobal("bad", "Need check");
+    addLog("มีบางระบบยังไม่พร้อม แจ้ง Per หรือ dev ให้เช็กค่ะ", "bad");
   }
 
   function bind() {
@@ -268,13 +232,12 @@
 
   function init() {
     Object.keys(workerCards).forEach(function (name) {
-      setWorker(name, "", "Checking");
+      if (workerCards[name]) setWorker(name, "", "Checking");
     });
 
     setGlobal("", "Checking");
-    setAdminMessage("กำลังตรวจสอบ admin-worker...");
+    setAdminMessage("กำลังตรวจสอบระบบ...");
     bind();
-
     window.setTimeout(checkAll, 500);
   }
 
