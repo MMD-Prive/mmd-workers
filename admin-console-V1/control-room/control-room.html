@@ -30,9 +30,9 @@
         </span>
 
         <span class="mmdops__brandText">
-          <small>MMD SIGIL · INTERNAL SYSTEM</small>
-          <strong>Operating Control Room</strong>
-          <em>ห้องควบคุมระบบ · พร้อมเชื่อม worker หลัก</em>
+          <small>MMD SIGIL · INTERNAL</small>
+          <strong>Control Room</strong>
+          <em>หน้าหลักสำหรับดูระบบและเริ่มสร้างงาน</em>
         </span>
       </a>
 
@@ -40,13 +40,13 @@
         <div class="mmdops__globalStatus" data-global-status>
           <i></i>
           <span>
-            <small>SYSTEM STATUS</small>
+            <small>SYSTEM</small>
             <strong>Checking</strong>
           </span>
         </div>
 
         <button class="mmdops__topBtn" type="button" data-run-checks>
-          Check All
+          Check System
         </button>
       </div>
     </header>
@@ -54,42 +54,40 @@
     <section class="mmdops__priority">
       <article class="mmdops__primary">
         <div class="mmdops__tagRow">
-          <span class="mmdops__tag"><i></i> PRIMARY OPERATION</span>
-          <span class="mmdops__tag mmdops__tag--muted">NO FRONTEND SECRETS</span>
+          <span class="mmdops__tag"><i></i> MAIN ACTION</span>
+          <span class="mmdops__tag mmdops__tag--muted">FOR OPERATOR ONLY</span>
         </div>
 
         <div class="mmdops__primaryGrid">
           <div class="mmdops__primaryCopy">
-            <h1>Create Job Command</h1>
+            <h1>Create Job</h1>
             <p>
-              จุดเริ่มงานจริงของ operator: เลือก LINE record, เลือก model จาก Airtable,
-              resolve แฟ้ม R2 อย่างปลอดภัย, ตรวจ Telegram readiness, แยก Public / Private Job,
-              สร้าง session ผ่าน admin-worker และรับลิงก์ปลอดภัยด้วย <code>?t=</code>.
+              ใช้ปุ่มนี้เพื่อเริ่มสร้างงานใหม่ เลือกลูกค้า เลือกนายแบบ เลือกแพ็กเกจ ตรวจความพร้อม แล้วส่งลิงก์ให้ลูกค้าหรือ model ต่อได้
             </p>
 
             <div class="mmdops__miniTrace">
-              <span>LINE Inbox</span>
+              <span>ลูกค้า</span>
               <b></b>
-              <span>Model Resolver</span>
+              <span>นายแบบ</span>
               <b></b>
-              <span>Telegram Gate</span>
+              <span>เวลา</span>
               <b></b>
-              <span>Backend Links</span>
+              <span>ส่งลิงก์</span>
             </div>
           </div>
 
           <div class="mmdops__primaryActions">
             <a class="mmdops__goldBtn" href="/internal/admin/jobs/create-session">
-              Open Create Session
+              Create Job
               <strong>→</strong>
             </a>
 
             <button class="mmdops__darkBtn" type="button" data-run-checks>
-              Recheck System
+              Check Again
             </button>
 
             <a class="mmdops__darkBtn" href="/internal/admin/login">
-              Login Gate
+              Login
             </a>
           </div>
         </div>
@@ -97,42 +95,33 @@
 
       <aside class="mmdops__gate">
         <div class="mmdops__gateHead">
-          <small>CURRENT ACCESS</small>
-          <h2>Admin Gate</h2>
+          <small>LOGIN STATUS</small>
+          <h2>Access</h2>
         </div>
 
         <div class="mmdops__accessCard">
-          <small>SESSION CHECK</small>
-          <p data-admin-message>กำลังตรวจสอบ admin-worker...</p>
+          <small>STATUS</small>
+          <p data-admin-message>กำลังตรวจสอบระบบ...</p>
         </div>
 
         <div class="mmdops__accessCard">
-          <small>NEXT ACTION</small>
-          <a href="/internal/admin/jobs/create-session">/internal/admin/jobs/create-session</a>
+          <small>NEXT</small>
+          <a href="/internal/admin/jobs/create-session">ไปหน้า Create Job</a>
         </div>
 
         <div class="mmdops__safe">
           <i>✓</i>
-          <span>Frontend shows readiness only. Backend remains source of truth.</span>
+          <span>หน้านี้ใช้ดูสถานะและเริ่มงานเท่านั้น ข้อมูลสำคัญอยู่หลังระบบ</span>
         </div>
       </aside>
     </section>
 
-    <section class="mmdops__readiness" aria-label="Worker readiness">
+    <section class="mmdops__readiness" aria-label="System readiness">
       <article class="mmdops__systemCard" data-worker-card="admin">
         <div>
-          <small>ADMIN WORKER</small>
+          <small>ADMIN</small>
           <strong data-worker-label="admin">Checking</strong>
-          <p>auth/me · create job · Airtable</p>
-        </div>
-        <i></i>
-      </article>
-
-      <article class="mmdops__systemCard" data-worker-card="ai">
-        <div>
-          <small>AI WORKER</small>
-          <strong data-worker-label="ai">Checking</strong>
-          <p>intent · persona · next action</p>
+          <p>สร้างงาน / ดูข้อมูลหลัก</p>
         </div>
         <i></i>
       </article>
@@ -141,25 +130,34 @@
         <div>
           <small>PER AI</small>
           <strong data-worker-label="chat">Checking</strong>
-          <p>chat-worker-ai-integration</p>
+          <p>แชทกับลูกค้า</p>
+        </div>
+        <i></i>
+      </article>
+
+      <article class="mmdops__systemCard" data-worker-card="ai">
+        <div>
+          <small>AI ROUTE</small>
+          <strong data-worker-label="ai">Checking</strong>
+          <p>ช่วยแยกประเภทคำขอ</p>
         </div>
         <i></i>
       </article>
 
       <article class="mmdops__systemCard" data-worker-card="payments">
         <div>
-          <small>PAYMENTS</small>
+          <small>PAYMENT</small>
           <strong data-worker-label="payments">Checking</strong>
-          <p>payment verification</p>
+          <p>ตรวจชำระเงิน</p>
         </div>
         <i></i>
       </article>
 
       <article class="mmdops__systemCard" data-worker-card="events">
         <div>
-          <small>EVENTS</small>
+          <small>REMINDER</small>
           <strong data-worker-label="events">Checking</strong>
-          <p>reminders · state automation</p>
+          <p>แจ้งเตือนงาน</p>
         </div>
         <i></i>
       </article>
@@ -168,16 +166,7 @@
         <div>
           <small>TELEGRAM</small>
           <strong data-worker-label="telegram">Checking</strong>
-          <p>internal notify only</p>
-        </div>
-        <i></i>
-      </article>
-
-      <article class="mmdops__systemCard" data-worker-card="realtime">
-        <div>
-          <small>REALTIME</small>
-          <strong data-worker-label="realtime">Checking</strong>
-          <p>live rooms · operator updates</p>
+          <p>แจ้งเตือนภายใน</p>
         </div>
         <i></i>
       </article>
@@ -186,93 +175,99 @@
     <section class="mmdops__board">
       <div class="mmdops__sectionHead">
         <div>
-          <small>OPERATION FLOW</small>
-          <h3>Create Session Pipeline</h3>
+          <small>WORK FLOW</small>
+          <h3>ลำดับการสร้างงาน</h3>
         </div>
 
-        <a href="/internal/admin/jobs/create-session">Open Create Session</a>
+        <a href="/internal/admin/jobs/create-session">Create Job</a>
       </div>
 
       <div class="mmdops__pipeline">
         <article>
           <b>01</b>
-          <strong>LINE Inbox</strong>
-          <p>Select <span>line_record_id</span> and prefill client data.</p>
+          <strong>เลือกลูกค้า</strong>
+          <p>ค้นหาจาก LINE / ชื่อ / contact</p>
         </article>
 
         <article>
           <b>02</b>
-          <strong>Model Resolver</strong>
-          <p>Select model from Airtable, then resolve R2 folder safely.</p>
+          <strong>เลือกนายแบบ</strong>
+          <p>เลือกคนที่ลูกค้าสนใจ</p>
         </article>
 
         <article>
           <b>03</b>
-          <strong>Telegram Gate</strong>
-          <p>Check client/model readiness before activation.</p>
+          <strong>เช็กวันเวลา</strong>
+          <p>ดูว่าว่างหรือควรเสนอเวลาอื่น</p>
         </article>
 
         <article>
           <b>04</b>
-          <strong>Job Lane</strong>
-          <p>Choose Public Job or Private SIGIL job.</p>
+          <strong>เลือกแพ็กเกจ</strong>
+          <p>Standard / Premium / VIP+</p>
         </article>
 
         <article>
           <b>05</b>
-          <strong>Backend Links</strong>
-          <p>Create session and return URLs with <span>?t=</span>.</p>
+          <strong>ส่งลิงก์</strong>
+          <p>ส่งลิงก์ให้ลูกค้าหรือ model</p>
         </article>
       </div>
     </section>
 
     <section class="mmdops__connect">
       <article class="mmdops__connectCard">
-        <small>ADMIN-WORKER REQUIRED ENDPOINTS</small>
-        <h4>Connection Contract</h4>
-
-        <div class="mmdops__endpointList">
-          <div><span>GET</span><code>/v1/admin/auth/me</code></div>
-          <div><span>GET</span><code>/v1/admin/ping</code></div>
-          <div><span>POST</span><code>/v1/admin/clients/lineage-lookup</code></div>
-          <div><span>GET</span><code>/v1/admin/clients/recent</code></div>
-          <div><span>GET</span><code>/v1/admin/models/search?q=</code></div>
-          <div><span>GET</span><code>/v1/admin/models/:id/folder</code></div>
-          <div><span>POST</span><code>/v1/admin/job/create</code></div>
-          <div><span>POST</span><code>/v1/admin/line/push</code></div>
-        </div>
-      </article>
-
-      <article class="mmdops__connectCard">
-        <small>MODEL ASSET RULE</small>
-        <h4>Airtable → R2</h4>
+        <small>PACKAGE</small>
+        <h4>สิทธิ์ดูแฟ้ม</h4>
 
         <div class="mmdops__ruleStack">
           <div>
-            <strong>Airtable first</strong>
-            <p>เลือก model จาก Airtable ก่อน เพราะ Airtable คือ identity truth.</p>
+            <strong>Standard</strong>
+            <p>ดูแฟ้ม Standard</p>
           </div>
 
           <div>
-            <strong>R2 second</strong>
-            <p>admin-worker ค่อย resolve ไปหา R2 folder / preview URL ที่ปลอดภัย.</p>
+            <strong>Premium</strong>
+            <p>ดู Premium และ Standard</p>
+          </div>
+
+          <div>
+            <strong>VIP / SVIP / Blackcard</strong>
+            <p>ดู VIP+ และดู Premium / Standard ได้อยู่แล้ว</p>
           </div>
         </div>
       </article>
 
       <article class="mmdops__connectCard">
-        <small>SECURITY</small>
-        <h4>Frontend Boundary</h4>
+        <small>GOOGLE DRIVE</small>
+        <h4>แฟ้มนายแบบ</h4>
 
         <div class="mmdops__ruleStack">
           <div>
-            <strong>No secrets</strong>
-            <p>No API key, LINE token, Telegram token, Airtable key, or R2 credentials in frontend.</p>
+            <strong>ใช้งานตอนนี้</strong>
+            <p>ใช้ Google Drive เป็นแหล่งแฟ้มชั่วคราวก่อน</p>
           </div>
 
           <div>
-            <strong>Cookie session</strong>
-            <p>Use HttpOnly Secure cookie. Frontend calls auth/me only.</p>
+            <strong>ระบบหลัก</strong>
+            <p>ข้อมูลลูกค้าและสถานะสมาชิกให้ยึดจากระบบหลังบ้าน</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="mmdops__connectCard">
+        <small>RULE</small>
+        <h4>จำง่าย ๆ</h4>
+
+        <div class="mmdops__ruleStack">
+          <div>
+            <strong>ไม่ต้องจำโค้ด</strong>
+            <p>ถ้าระบบเขียว ให้เริ่ม Create Job ได้</p>
+          </div>
+
+          <div>
+            <strong>ถ้าระบบแดง</strong>
+            <p>แจ้ง Per หรือ dev ให้เช็ก worker / login / connection</p>
           </div>
         </div>
       </article>
@@ -281,8 +276,8 @@
     <section class="mmdops__logPanel">
       <div class="mmdops__sectionHead mmdops__sectionHead--compact">
         <div>
-          <small>READINESS LOG</small>
-          <h3>Last Check</h3>
+          <small>SYSTEM LOG</small>
+          <h3>ผลตรวจระบบ</h3>
         </div>
 
         <button type="button" data-clear-log>Clear</button>
@@ -295,16 +290,15 @@
 
     <footer class="mmdops__footer">
       <div>
-        <small>LOCKED RULE</small>
-        <strong>Operator surface only.</strong>
+        <small>NOTE</small>
+        <strong>หน้านี้สำหรับ Per / Ewvon เท่านั้น</strong>
         <p>
-          Control Room ไม่ถือ secret, ไม่โชว์ข้อมูลลูกค้า, ไม่เขียน truth เอง.
-          ทุก action สำคัญต้องผ่าน backend workers และ audit log.
+          ใช้ดูว่าระบบพร้อมไหม และกดไปสร้างงาน ไม่ต้องแก้ข้อมูลสำคัญจากหน้านี้
         </p>
       </div>
 
       <div class="mmdops__footerActions">
-        <a href="/internal/admin/login">Login Gate</a>
+        <a href="/internal/admin/login">Login</a>
         <a href="/internal/admin/console">Console</a>
         <a href="/sigil/inme">SIGIL Gate</a>
       </div>
