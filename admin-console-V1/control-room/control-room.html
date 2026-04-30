@@ -1,0 +1,302 @@
+<!-- MMD SIGIL Control Room Webflow HTML snippet -->
+<!-- CSS: /admin-console-V1/control-room/control-room.css -->
+<!-- JS: /admin-console-V1/control-room/control-room.js -->
+<section
+  class="mmdops"
+  data-mmd-ops-room
+  data-admin-base="https://admin-worker.malemodel-bkk.workers.dev"
+  data-ai-base="https://ai-worker.malemodel-bkk.workers.dev"
+  data-chat-base="https://chat-worker-ai-integration.malemodel-bkk.workers.dev"
+  data-payments-base="https://payments-worker.malemodel-bkk.workers.dev"
+  data-events-base="https://events-worker.malemodel-bkk.workers.dev"
+  data-telegram-base="https://telegram-worker.malemodel-bkk.workers.dev"
+  data-realtime-base="https://realtime-worker.malemodel-bkk.workers.dev"
+  data-create-route="/internal/admin/jobs/create-session"
+  data-login-route="/internal/admin/login"
+  data-console-route="/internal/admin/console"
+>
+  <div class="mmdops__bg" aria-hidden="true"></div>
+  <div class="mmdops__grid" aria-hidden="true"></div>
+  <div class="mmdops__veil" aria-hidden="true"></div>
+
+  <main class="mmdops__shell">
+    <header class="mmdops__top">
+      <a class="mmdops__brand" href="/internal/admin/control-room" aria-label="MMD SIGIL Control Room">
+        <span class="mmdops__logo">
+          <img
+            src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e9d25e264799b7c277e309_MMD%20SIGIL%20Trans%20no%20SIGIL.png"
+            alt="MMD SIGIL"
+          />
+        </span>
+
+        <span class="mmdops__brandText">
+          <small>MMD SIGIL · INTERNAL SYSTEM</small>
+          <strong>Operating Control Room</strong>
+          <em>ห้องควบคุมระบบ · พร้อมเชื่อม worker หลัก</em>
+        </span>
+      </a>
+
+      <div class="mmdops__topControls">
+        <div class="mmdops__globalStatus" data-global-status>
+          <i></i>
+          <span>
+            <small>SYSTEM STATUS</small>
+            <strong>Checking</strong>
+          </span>
+        </div>
+
+        <button class="mmdops__topBtn" type="button" data-run-checks>
+          Check All
+        </button>
+      </div>
+    </header>
+
+    <section class="mmdops__priority">
+      <article class="mmdops__primary">
+        <div class="mmdops__tagRow">
+          <span class="mmdops__tag"><i></i> PRIMARY OPERATION</span>
+          <span class="mmdops__tag mmdops__tag--muted">NO FRONTEND SECRETS</span>
+        </div>
+
+        <div class="mmdops__primaryGrid">
+          <div class="mmdops__primaryCopy">
+            <h1>Create Job Command</h1>
+            <p>
+              จุดเริ่มงานจริงของ operator: เลือก LINE record, เลือก model จาก Airtable,
+              resolve แฟ้ม R2 อย่างปลอดภัย, ตรวจ Telegram readiness, แยก Public / Private Job,
+              สร้าง session ผ่าน admin-worker และรับลิงก์ปลอดภัยด้วย <code>?t=</code>.
+            </p>
+
+            <div class="mmdops__miniTrace">
+              <span>LINE Inbox</span>
+              <b></b>
+              <span>Model Resolver</span>
+              <b></b>
+              <span>Telegram Gate</span>
+              <b></b>
+              <span>Backend Links</span>
+            </div>
+          </div>
+
+          <div class="mmdops__primaryActions">
+            <a class="mmdops__goldBtn" href="/internal/admin/jobs/create-session">
+              Open Create Session
+              <strong>→</strong>
+            </a>
+
+            <button class="mmdops__darkBtn" type="button" data-run-checks>
+              Recheck System
+            </button>
+
+            <a class="mmdops__darkBtn" href="/internal/admin/login">
+              Login Gate
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <aside class="mmdops__gate">
+        <div class="mmdops__gateHead">
+          <small>CURRENT ACCESS</small>
+          <h2>Admin Gate</h2>
+        </div>
+
+        <div class="mmdops__accessCard">
+          <small>SESSION CHECK</small>
+          <p data-admin-message>กำลังตรวจสอบ admin-worker...</p>
+        </div>
+
+        <div class="mmdops__accessCard">
+          <small>NEXT ACTION</small>
+          <a href="/internal/admin/jobs/create-session">/internal/admin/jobs/create-session</a>
+        </div>
+
+        <div class="mmdops__safe">
+          <i>✓</i>
+          <span>Frontend shows readiness only. Backend remains source of truth.</span>
+        </div>
+      </aside>
+    </section>
+
+    <section class="mmdops__readiness" aria-label="Worker readiness">
+      <article class="mmdops__systemCard" data-worker-card="admin">
+        <div>
+          <small>ADMIN WORKER</small>
+          <strong data-worker-label="admin">Checking</strong>
+          <p>auth/me · create job · Airtable</p>
+        </div>
+        <i></i>
+      </article>
+
+      <article class="mmdops__systemCard" data-worker-card="ai">
+        <div>
+          <small>AI WORKER</small>
+          <strong data-worker-label="ai">Checking</strong>
+          <p>intent · persona · next action</p>
+        </div>
+        <i></i>
+      </article>
+
+      <article class="mmdops__systemCard" data-worker-card="chat">
+        <div>
+          <small>PER AI</small>
+          <strong data-worker-label="chat">Checking</strong>
+          <p>chat-worker-ai-integration</p>
+        </div>
+        <i></i>
+      </article>
+
+      <article class="mmdops__systemCard" data-worker-card="payments">
+        <div>
+          <small>PAYMENTS</small>
+          <strong data-worker-label="payments">Checking</strong>
+          <p>payment verification</p>
+        </div>
+        <i></i>
+      </article>
+
+      <article class="mmdops__systemCard" data-worker-card="events">
+        <div>
+          <small>EVENTS</small>
+          <strong data-worker-label="events">Checking</strong>
+          <p>reminders · state automation</p>
+        </div>
+        <i></i>
+      </article>
+
+      <article class="mmdops__systemCard" data-worker-card="telegram">
+        <div>
+          <small>TELEGRAM</small>
+          <strong data-worker-label="telegram">Checking</strong>
+          <p>internal notify only</p>
+        </div>
+        <i></i>
+      </article>
+    </section>
+
+    <section class="mmdops__board">
+      <div class="mmdops__sectionHead">
+        <div>
+          <small>OPERATION FLOW</small>
+          <h3>Create Session Pipeline</h3>
+        </div>
+
+        <a href="/internal/admin/jobs/create-session">Open Create Session</a>
+      </div>
+
+      <div class="mmdops__pipeline">
+        <article>
+          <b>01</b>
+          <strong>LINE Inbox</strong>
+          <p>Select <span>line_record_id</span> and prefill client data.</p>
+        </article>
+
+        <article>
+          <b>02</b>
+          <strong>Model Resolver</strong>
+          <p>Select model from Airtable, then resolve R2 folder safely.</p>
+        </article>
+
+        <article>
+          <b>03</b>
+          <strong>Telegram Gate</strong>
+          <p>Check client/model readiness before activation.</p>
+        </article>
+
+        <article>
+          <b>04</b>
+          <strong>Job Lane</strong>
+          <p>Choose Public Job or Private SIGIL job.</p>
+        </article>
+
+        <article>
+          <b>05</b>
+          <strong>Backend Links</strong>
+          <p>Create session and return URLs with <span>?t=</span>.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="mmdops__connect">
+      <article class="mmdops__connectCard">
+        <small>ADMIN-WORKER REQUIRED ENDPOINTS</small>
+        <h4>Connection Contract</h4>
+
+        <div class="mmdops__endpointList">
+          <div><span>GET</span><code>/v1/admin/auth/me</code></div>
+          <div><span>GET</span><code>/v1/admin/ping</code></div>
+          <div><span>GET</span><code>/v1/admin/line/inbox</code></div>
+          <div><span>GET</span><code>/v1/admin/models/search?q=</code></div>
+          <div><span>GET</span><code>/v1/admin/models/:id/folder</code></div>
+          <div><span>POST</span><code>/v1/admin/job/create</code></div>
+        </div>
+      </article>
+
+      <article class="mmdops__connectCard">
+        <small>MODEL ASSET RULE</small>
+        <h4>Airtable → R2</h4>
+
+        <div class="mmdops__ruleStack">
+          <div>
+            <strong>Airtable first</strong>
+            <p>เลือก model จาก Airtable ก่อน เพราะ Airtable คือ identity truth.</p>
+          </div>
+
+          <div>
+            <strong>R2 second</strong>
+            <p>admin-worker ค่อย resolve ไปหา R2 folder / preview URL ที่ปลอดภัย.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="mmdops__connectCard">
+        <small>SECURITY</small>
+        <h4>Frontend Boundary</h4>
+
+        <div class="mmdops__ruleStack">
+          <div>
+            <strong>No secrets</strong>
+            <p>No API key, LINE token, Telegram token, Airtable key, or R2 credentials in frontend.</p>
+          </div>
+
+          <div>
+            <strong>Cookie session</strong>
+            <p>Use HttpOnly Secure cookie. Frontend calls auth/me only.</p>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="mmdops__logPanel">
+      <div class="mmdops__sectionHead mmdops__sectionHead--compact">
+        <div>
+          <small>READINESS LOG</small>
+          <h3>Last Check</h3>
+        </div>
+
+        <button type="button" data-clear-log>Clear</button>
+      </div>
+
+      <div class="mmdops__log" data-check-log>
+        <p>Waiting for system check.</p>
+      </div>
+    </section>
+
+    <footer class="mmdops__footer">
+      <div>
+        <small>LOCKED RULE</small>
+        <strong>Operator surface only.</strong>
+        <p>
+          Control Room ไม่ถือ secret, ไม่โชว์ข้อมูลลูกค้า, ไม่เขียน truth เอง.
+          ทุก action สำคัญต้องผ่าน backend workers และ audit log.
+        </p>
+      </div>
+
+      <div class="mmdops__footerActions">
+        <a href="/internal/admin/login">Login Gate</a>
+        <a href="/internal/admin/console">Console</a>
+        <a href="/sigil/inme">SIGIL Gate</a>
+      </div>
+    </footer>
+  </main>
+</section>
