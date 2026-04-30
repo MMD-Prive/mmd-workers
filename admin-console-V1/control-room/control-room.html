@@ -62,7 +62,7 @@
           <div class="mmdops__primaryCopy">
             <h1>Create Job</h1>
             <p>
-              ใช้ปุ่มนี้เพื่อเริ่มสร้างงานใหม่ เลือกลูกค้า เลือกนายแบบ เลือกแพ็กเกจ ตรวจความพร้อม แล้วส่งลิงก์ให้ลูกค้าหรือ model ต่อได้
+              เริ่มสร้างงานใหม่ เลือกลูกค้า เลือกนายแบบ เช็กเวลา แล้วส่งลิงก์ต่อได้จากหน้านี้
             </p>
 
             <div class="mmdops__miniTrace">
@@ -78,7 +78,7 @@
 
           <div class="mmdops__primaryActions">
             <a class="mmdops__goldBtn" href="/internal/admin/jobs/create-session">
-              Create Job
+              <span>Create Job</span>
               <strong>→</strong>
             </a>
 
@@ -215,12 +215,17 @@
       </div>
     </section>
 
-    <section class="mmdops__connect">
+    <section class="mmdops__connect mmdops__connect--cards">
       <article class="mmdops__connectCard">
-        <small>PACKAGE</small>
-        <h4>สิทธิ์ดูแฟ้ม</h4>
+        <div class="mmdops__cardTop">
+          <span class="mmdops__cardIcon">01</span>
+          <div>
+            <small>PACKAGE</small>
+            <h4>สิทธิ์ดูแฟ้ม</h4>
+          </div>
+        </div>
 
-        <div class="mmdops__ruleStack">
+        <div class="mmdops__ruleStack mmdops__ruleStack--tiles">
           <div>
             <strong>Standard</strong>
             <p>ดูแฟ้ม Standard</p>
@@ -228,46 +233,56 @@
 
           <div>
             <strong>Premium</strong>
-            <p>ดู Premium และ Standard</p>
+            <p>ดู Premium + Standard</p>
           </div>
 
           <div>
-            <strong>VIP / SVIP / Blackcard</strong>
-            <p>ดู VIP+ และดู Premium / Standard ได้อยู่แล้ว</p>
-          </div>
-        </div>
-      </article>
-
-      <article class="mmdops__connectCard">
-        <small>GOOGLE DRIVE</small>
-        <h4>แฟ้มนายแบบ</h4>
-
-        <div class="mmdops__ruleStack">
-          <div>
-            <strong>ใช้งานตอนนี้</strong>
-            <p>ใช้ Google Drive เป็นแหล่งแฟ้มชั่วคราวก่อน</p>
-          </div>
-
-          <div>
-            <strong>ระบบหลัก</strong>
-            <p>ข้อมูลลูกค้าและสถานะสมาชิกให้ยึดจากระบบหลังบ้าน</p>
+            <strong>VIP+</strong>
+            <p>VIP / SVIP / Blackcard ดูได้ครบ</p>
           </div>
         </div>
       </article>
 
       <article class="mmdops__connectCard">
-        <small>RULE</small>
-        <h4>จำง่าย ๆ</h4>
-
-        <div class="mmdops__ruleStack">
+        <div class="mmdops__cardTop">
+          <span class="mmdops__cardIcon">02</span>
           <div>
-            <strong>ไม่ต้องจำโค้ด</strong>
-            <p>ถ้าระบบเขียว ให้เริ่ม Create Job ได้</p>
+            <small>GOOGLE DRIVE</small>
+            <h4>แฟ้มนายแบบ</h4>
+          </div>
+        </div>
+
+        <div class="mmdops__ruleStack mmdops__ruleStack--tiles">
+          <div>
+            <strong>ใช้ตอนนี้</strong>
+            <p>เปิดแฟ้มจาก Google Drive</p>
           </div>
 
           <div>
-            <strong>ถ้าระบบแดง</strong>
-            <p>แจ้ง Per หรือ dev ให้เช็ก worker / login / connection</p>
+            <strong>ข้อมูลลูกค้า</strong>
+            <p>ให้ยึดจากระบบหลังบ้าน</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="mmdops__connectCard">
+        <div class="mmdops__cardTop">
+          <span class="mmdops__cardIcon">03</span>
+          <div>
+            <small>RULE</small>
+            <h4>จำง่าย ๆ</h4>
+          </div>
+        </div>
+
+        <div class="mmdops__ruleStack mmdops__ruleStack--tiles">
+          <div>
+            <strong>ระบบเขียว</strong>
+            <p>เริ่ม Create Job ได้</p>
+          </div>
+
+          <div>
+            <strong>ระบบแดง</strong>
+            <p>แจ้ง Per หรือ dev</p>
           </div>
         </div>
       </article>
