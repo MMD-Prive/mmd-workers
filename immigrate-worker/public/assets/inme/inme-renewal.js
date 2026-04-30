@@ -10,6 +10,8 @@
 
   const VIP_POINTS_REQUIRED = 1200;
   const POINT_THB_RATE = 100;
+  const TRUST_INME_URL = "/trust/inme";
+  const GAP_DAYS_LIMIT = 365;
   const byId = (id) => document.getElementById(id);
   const clean = (value) => String(value || "").trim();
   const formatPoints = (value) => Number(value || 0).toLocaleString("th-TH");
@@ -23,6 +25,8 @@
     pointsShortfall: null,
     topupAmountTHB: null,
     route: "unknown",
+    requiresNewSignup: false,
+    reason: "",
   };
 
   function setText(id, value) {
@@ -112,9 +116,14 @@
       topup_amount_thb: state.topupAmountTHB,
       points_action: state.route,
       payment_method: state.paymentMethod,
+      requires_new_signup: state.requiresNewSignup,
+      reason: state.reason,
+      fallback_url: state.requiresNewSignup ? TRUST_INME_URL : "",
       service_history_note: [
         `proof:${fileName("oldProof")}`,
         `route:${state.route}`,
+        `reason:${state.reason || "none"}`,
+        `requires_new_signup:${state.requiresNewSignup}`,
         `points_required:${VIP_POINTS_REQUIRED}`,
         `points_balance:${state.pointsBalance ?? "unknown"}`,
         `points_shortfall:${state.pointsShortfall ?? "unknown"}`,
@@ -127,7 +136,7 @@
 
   function intakePayload() {
     return baseFlowPayload({
-      flow: state.route === "per_review" ? "review" : "renewal",
+      flow: state.route === "per_review" ? "review" : state.route === "trust_inme_resignup_required" ? "resignup_required" : "renewal",
     });
   }
 
@@ -159,7 +168,39 @@
     return data;
   }
 
+  function daysSince(dateLike) {
+    const raw = clean(dateLike);
+    if (!raw) return null;
+    const time = new Date(raw).getTime();
+    if (!Number.isFinite(time)) return null;
+    return Math.floor((Date.now() - time) / 86400000);
+  }
+
+  function getLastServiceDate(result) {
+    return result?.last_service_at || result?.last_session_at || result?.last_used_at || result?.context?.current_status?.latest_session_at || result?.context?.membership?.last_service_at || "";
+  }
+
+  function isFormerMemberGapOver365(result) {
+    const found = Boolean(result?.found || result?.member_id || result?.memberstack_id || result?.current_tier || result?.membership_status);
+    const gapDays = daysSince(getLastServiceDate(result));
+    return found && gapDays !== null && gapDays > GAP_DAYS_LIMIT;
+  }
+
   function decideRoute(result) {
+    state.requiresNewSignup = false;
+    state.reason = "";
+
+    if (isFormerMemberGapOver365(result)) {
+      state.route = "trust_inme_resignup_required";
+      state.paymentMethod = "Trust / inme";
+      state.requiresNewSignup = true;
+      state.reason = "former_member_gap_over_365";
+      state.pointsShortfall = null;
+      state.topupAmountTHB = null;
+      const gapDays = daysSince(getLastServiceDate(result));
+      return `เจอประวัติสมาชิกเดิม แต่ไม่ได้ใช้บริการเกิน 1 ปี (${gapDays} วัน) · ขอพากลับไป Trust / inme เพื่อสมัครใหม่ก่อนครับ`;
+    }
+
     const balance = Number(result?.points_balance ?? result?.context?.points?.balance ?? NaN);
     if (!Number.isFinite(balance)) {
       state.pointsBalance = null;
@@ -201,6 +242,12 @@
   }
 
   async function runFinalFlow() {
+    if (state.route === "trust_inme_resignup_required") {
+      await postJson(API.intake, intakePayload()).catch(() => null);
+      window.location.href = TRUST_INME_URL;
+      return "กำลังพากลับไป Trust / inme เพื่อเริ่มสมัครใหม่ให้ถูกต้องครับ";
+    }
+
     if (state.route === "vip_auto") {
       try {
         await postJson(API.activate, activatePayload());
