@@ -15,7 +15,6 @@
   const byId = (id) => document.getElementById(id);
   const clean = (value) => String(value || "").trim();
   const formatPoints = (value) => Number(value || 0).toLocaleString("th-TH");
-  const formatTHB = (value) => Number(value || 0).toLocaleString("th-TH");
 
   const COPY = {
     defaultStatus: "รอให้ผมอ่านข้อมูลให้ก่อนครับ",
@@ -47,6 +46,7 @@
 
   function setStatus(value, kind = "waiting") {
     setText("sumStatus", value);
+    setText("heroStatus", value);
     const statusEl = byId("sumStatus");
     if (statusEl) {
       statusEl.dataset.statusKind = kind;
@@ -71,11 +71,17 @@
   }
 
   function syncSummary() {
-    setText("sumNick", value("nick") || "—");
-    setText("sumEmail", email() || "—");
-    setText("sumContact", [value("phone"), value("telegram")].filter(Boolean).join(" / ") || "—");
+    const nick = value("nick") || "—";
+    const mail = email() || "—";
+    const contact = [value("phone"), value("telegram")].filter(Boolean).join(" / ") || "—";
+    setText("sumNick", nick);
+    setText("sumEmail", mail);
+    setText("sumContact", contact);
     setText("sumProof", fileName("oldProof"));
     setText("sumPay", state.paymentMethod);
+    setText("heroIdentity", nick !== "—" ? nick : mail !== "—" ? mail : "รอข้อมูลจากคุณ");
+    setText("heroPath", state.route === "unknown" ? "รอเช็กสถานะก่อน" : state.route === "per_review" ? "Per review" : state.paymentMethod);
+    runBehaviorNudge();
   }
 
   function setBusy(button, busy, label) {
@@ -210,7 +216,6 @@
   function decideRoute(result) {
     state.requiresNewSignup = false;
     state.reason = "";
-
     if (isFormerMemberGapOver365(result)) {
       state.route = "trust_inme_resignup_required";
       state.paymentMethod = "สมัครสมาชิกใหม่ก่อน";
@@ -220,7 +225,6 @@
       state.topupAmountTHB = null;
       return "ผมเจอประวัติเดิมของคุณแล้วครับ · แต่ห่างจากการใช้งานไปนาน ผมขอพาไปสมัครสมาชิกใหม่ก่อน แล้วค่อยดูข้อมูลเดิมให้ต่อ";
     }
-
     const balance = Number(result?.points_balance ?? result?.context?.points?.balance ?? NaN);
     if (!Number.isFinite(balance)) {
       state.pointsBalance = null;
@@ -230,23 +234,19 @@
       state.paymentMethod = "Points / Per Review";
       return COPY.review;
     }
-
     state.pointsBalance = balance;
     state.pointsShortfall = Math.max(0, VIP_POINTS_REQUIRED - balance);
     state.topupAmountTHB = state.pointsShortfall > 0 ? state.pointsShortfall * POINT_THB_RATE : 0;
-
     if (state.action === "PER_REVIEW") {
       state.route = "per_review";
       state.paymentMethod = "Points / Per Review";
       return `เคสนี้ผมขอดูให้เองก่อนครับ · ตอนนี้มี ${formatPoints(balance)} points ผมจะอ่านประวัติประกอบให้อีกที`;
     }
-
     if (balance >= VIP_POINTS_REQUIRED) {
       state.route = "vip_auto";
       state.paymentMethod = "Points";
       return `พร้อมแล้วครับ · คุณมี ${formatPoints(balance)} points ผมสามารถเปิด / ต่อสิทธิ์ VIP ให้ได้เลย`;
     }
-
     state.route = "points_topup_required";
     state.paymentMethod = "Top up Points";
     return `เกือบพร้อมแล้วครับ · ตอนนี้มี ${formatPoints(balance)} points ขาดอีก ${formatPoints(state.pointsShortfall)} points เดี๋ยวผมพาเติมเฉพาะส่วนที่ขาด`;
@@ -259,6 +259,7 @@
     const kind = state.route === "vip_auto" ? "success" : state.route === "points_topup_required" ? "warning" : state.route === "per_review" ? "review" : "waiting";
     setStatus(routeText, kind);
     syncSummary();
+    pushTimeline("ตรวจสถานะเบื้องต้นแล้ว");
   }
 
   async function runFinalFlow() {
@@ -267,7 +268,6 @@
       window.location.href = TRUST_INME_URL;
       return "ผมกำลังพาไปสมัครสมาชิกใหม่ก่อนนะครับ ข้อมูลเดิมที่ควรดูต่อผมจะไม่ตัดทิ้งครับ";
     }
-
     if (state.route === "vip_auto") {
       try {
         await postJson(API.activate, activatePayload());
@@ -277,7 +277,6 @@
         return "ระบบหัก points อัตโนมัติยังไม่สำเร็จครับ · ไม่เป็นไร ผมรับไว้ดูต่อให้ก่อน";
       }
     }
-
     if (state.route === "points_topup_required") {
       try {
         const response = await postJson(API.topup, topupPayload());
@@ -289,7 +288,6 @@
         return "ระบบเติม points อัตโนมัติยังไม่สำเร็จครับ · ผมรับไว้ดูต่อให้ก่อน";
       }
     }
-
     await postJson(API.intake, intakePayload());
     return "รับเรื่องแล้วครับ เดี๋ยวผมตรวจสิทธิ์ให้ต่อเอง";
   }
@@ -307,6 +305,7 @@
         state.route = state.action === "PER_REVIEW" ? "per_review" : "unknown";
         state.lastStatus = null;
         setStatus(state.action === "PER_REVIEW" ? "เคสนี้ผมจะดูให้เองก่อนครับ" : "คุณไม่ต้องรู้สถานะตัวเองก่อนครับ · กรอกเท่าที่จำได้ เดี๋ยวผมพาไปทางที่เหมาะที่สุดเอง", "waiting");
+        pushTimeline(state.action === "PER_REVIEW" ? "เลือกให้ Per review" : "เลือกแนวทาง renewal");
       });
     });
   }
@@ -317,6 +316,7 @@
         setActive(".mmd-pay[data-pay]", button);
         state.paymentMethod = button.dataset.pay || "Points / Per Review";
         syncSummary();
+        pushTimeline(`เลือกช่องทาง ${state.paymentMethod}`);
       });
     });
   }
@@ -327,6 +327,7 @@
       if (!el) return;
       el.addEventListener("input", syncSummary);
       el.addEventListener("change", syncSummary);
+      el.addEventListener("focus", () => runBehaviorNudge(id));
     });
   }
 
@@ -338,6 +339,7 @@
         if (!validate()) return;
         setBusy(check, true, "ขอผมเช็กสักครู่นะครับ...");
         setStatus(COPY.checking, "waiting");
+        pushTimeline("เริ่มตรวจข้อมูลเบื้องต้น");
         try {
           renderStatus(await postJson(API.status, statusPayload()));
         } catch (error) {
@@ -345,12 +347,12 @@
           state.paymentMethod = "Points / Per Review";
           setStatus(COPY.apiFail, "review");
           syncSummary();
+          pushTimeline("ส่งเข้า Per review แทน");
         } finally {
           setBusy(check, false);
         }
       });
     }
-
     const submit = byId("submitBtn");
     if (submit) {
       submit.addEventListener("click", async () => {
@@ -366,12 +368,15 @@
           return;
         }
         setBusy(submit, true, COPY.submitBusy);
+        pushTimeline("กำลังส่งเข้าชั้นตรวจ");
         try {
           const done = await runFinalFlow();
           setStatus(done, state.route === "vip_auto" ? "success" : "review");
+          pushTimeline("ส่งสำเร็จ");
           alert(done);
         } catch (error) {
           setStatus("ส่งอัตโนมัติไม่สำเร็จครับ · กรุณาทัก Per โดยตรงพร้อมข้อมูลที่กรอกไว้", "review");
+          pushTimeline("ต้องตรวจด้วยมือ");
         } finally {
           setBusy(submit, false);
         }
@@ -379,11 +384,61 @@
     }
   }
 
+  function pushTimeline(text) {
+    const box = byId("mmdLv12Timeline");
+    if (!box) return;
+    const row = document.createElement("div");
+    row.className = "mmd-lv12-line";
+    row.textContent = text;
+    box.prepend(row);
+    [...box.querySelectorAll(".mmd-lv12-line")].slice(4).forEach((el) => el.remove());
+  }
+
+  function runBehaviorNudge(focusedId = "") {
+    const note = byId("mmdLv12Nudge");
+    if (!note) return;
+    let text = "กรอกเท่าที่จำได้ก่อนครับ เดี๋ยวผมช่วยอ่านทางต่อให้";
+    if (focusedId === "emailNow" || focusedId === "emailOld") text = "ถ้าไม่แน่ใจ email เดิม กรอก email ที่ติดต่อได้ไว้ก่อนครับ";
+    else if (focusedId === "oldProof") text = "ถ้ามีหลักฐานเก่า แนบไว้ได้เลยครับ จะช่วยให้ผมจับคู่ประวัติเร็วขึ้น";
+    else if (value("nick") && email()) text = "ข้อมูลเริ่มพออ่านเคสได้แล้วครับ กดเช็กสถานะเบื้องต้นได้เลย";
+    note.textContent = text;
+    note.classList.add("is-show");
+  }
+
+  function initLv12() {
+    const root = document.querySelector(".mmd-renewal-lv10");
+    if (!root) return;
+    const summary = document.querySelector(".mmd-hero-summary");
+    if (summary && !byId("mmdLv12Timeline")) {
+      const live = document.createElement("div");
+      live.className = "mmd-lv12-panel";
+      live.innerHTML = `<div class="mmd-lv12-title">PRIVATE CHECK LAYER</div><div id="mmdLv12Timeline" class="mmd-lv12-timeline"><div class="mmd-lv12-line">รอข้อมูลจากคุณ</div></div><div id="mmdLv12Nudge" class="mmd-lv12-nudge">กรอกเท่าที่จำได้ก่อนครับ เดี๋ยวผมช่วยอ่านทางต่อให้</div>`;
+      summary.appendChild(live);
+    }
+    const sticky = document.createElement("div");
+    sticky.className = "mmd-lv12-sticky";
+    sticky.innerHTML = `<span>พร้อมให้ผมอ่านเคสหรือยังครับ</span><button type="button" class="mmd-btn" id="mmdLv12StickyBtn">เริ่มเช็กเลย</button>`;
+    root.appendChild(sticky);
+    byId("mmdLv12StickyBtn")?.addEventListener("click", () => byId("checkBtn")?.scrollIntoView({ behavior: "smooth", block: "center" }));
+    window.addEventListener("scroll", () => {
+      sticky.classList.toggle("is-show", window.scrollY > 420);
+    }, { passive: true });
+    const reveal = document.querySelectorAll(".mmd-card,.mmd-hero-summary,.mmd-rule,.mmd-pay");
+    reveal.forEach((el) => el.classList.add("mmd-reveal"));
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) entry.target.classList.add("is-visible");
+      });
+    }, { threshold: 0.12 });
+    reveal.forEach((el) => io.observe(el));
+  }
+
   function init() {
     bindInputs();
     bindActions();
     bindPayments();
     bindPrimary();
+    initLv12();
     syncSummary();
     setStatus(COPY.defaultStatus, "waiting");
   }
