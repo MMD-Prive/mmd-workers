@@ -1,0 +1,1 @@
+(()=>{const links=document.querySelectorAll("[href*='/trust/inme']");links.forEach((l)=>{l.addEventListener("click",()=>{try{sessionStorage.setItem("mmd_preinme_entry",l.getAttribute("href")||"/trust/inme");sessionStorage.setItem("mmd_preinme_ts",new Date().toISOString())}catch(e){}})})})();
