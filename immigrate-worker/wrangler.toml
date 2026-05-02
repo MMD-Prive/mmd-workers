@@ -23,8 +23,10 @@ ADMIN_WORKER_BASE_URL = "https://admin-worker.malemodel-bkk.workers.dev"
 # wrangler secret put INTERNAL_TOKEN
 # wrangler secret put AIRTABLE_API_KEY
 
+# SIGIL root is owned by admin-worker. This Worker only owns static admin assets.
+# Do not use sigil.mmdbkk.com/* here, or Cloudflare will reject deploy with route conflict 10020.
 [[routes]]
-pattern = "sigil.mmdbkk.com/*"
+pattern = "sigil.mmdbkk.com/a/*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
