@@ -1,7 +1,7 @@
 /*
-  MMD SIGIL Access - LV12 Event Layer
-  Load after sigil-access-os.js
-  Adds event-state attributes for LV12 CSS and localized LV12 text hydration.
+  MMD SIGIL Access - LV12 Integrated Event Layer
+  Load after sigil-access-os.js.
+  Supports sigil-lv12-immersion HTML and keeps TH+EN copy aligned with SIGIL access rules.
 */
 
 (function () {
@@ -25,24 +25,24 @@
         member: ["ชั้นสมาชิก", "ปลดล็อก / UNLOCKED"],
         private: ["Private Access", "ใช้งานได้ / ACTIVE"],
         review: ["Access Claim", "รอตรวจสอบ / REVIEW"],
-        inner: ["Inner Circle", "ยังไม่เปิดเผย / HIDDEN"]
+        inner: ["Private Model Layer", "เห็นบางส่วน / PARTIAL"]
       },
       signals: {
         read: ["CURRENT READ", "ตรวจเสร็จสิ้น / COMPLETED"],
         visibility: ["VISIBILITY", "ควบคุมการมองเห็น / CONTROLLED"],
-        session: ["SESSION LAYER", "เตรียมได้ / PREPARABLE"],
+        session: ["PRIVATE MODEL", "แสดงตามสิทธิ์ / ACCESS-BASED"],
         payment: ["PAYMENT TRUST", "ยืนยันแล้ว / VERIFIED"],
         route: ["NEXT ROUTE", "เตรียมไว้แล้ว / PREPARED"]
       },
       protocolLabel: "PROTOCOL ที่แนะนำ / RECOMMENDED PROTOCOL",
-      protocol: "เตรียม Private Session ก่อนเปิดเส้นทางถัดไป",
+      protocol: "ตรวจสิทธิ์ก่อนเปิด private model layer ถัดไป",
       chain: ["ตัวตน", "สมาชิก", "Private", "Review"],
       eventDefault: "STATE: CONTROLLED VISIBILITY",
       events: {
-        analysis: "EVENT: ACCESS ANALYSIS COMPLETE",
-        session: "EVENT: PRIVATE SESSION PREPARED",
-        payment: "EVENT: PAYMENT READINESS QUEUED",
-        route: "EVENT: CONTROLLED ROUTE REGISTERED"
+        analysis: "EVENT: วิเคราะห์สิทธิ์เสร็จสิ้น / ACCESS ANALYSIS COMPLETE",
+        session: "EVENT: เตรียม Private Session แล้ว / PRIVATE SESSION PREPARED",
+        payment: "EVENT: ส่งคิวตรวจ Payment แล้ว / PAYMENT READINESS QUEUED",
+        route: "EVENT: ลงทะเบียน Controlled Route แล้ว / ROUTE REGISTERED"
       }
     },
     en: {
@@ -55,17 +55,17 @@
         member: ["Member", "Unlocked"],
         private: ["Private Access", "Active"],
         review: ["Access Claim", "Review"],
-        inner: ["Inner Circle", "Hidden"]
+        inner: ["Private Model Layer", "Partial"]
       },
       signals: {
         read: ["CURRENT READ", "COMPLETED"],
         visibility: ["VISIBILITY", "CONTROLLED"],
-        session: ["SESSION LAYER", "PREPARABLE"],
+        session: ["PRIVATE MODEL", "ACCESS-BASED"],
         payment: ["PAYMENT TRUST", "VERIFIED"],
         route: ["NEXT ROUTE", "PREPARED"]
       },
       protocolLabel: "RECOMMENDED PROTOCOL",
-      protocol: "Prepare private session before opening the next route.",
+      protocol: "Verify access before opening the next private model layer.",
       chain: ["IDENTITY", "MEMBER", "PRIVATE", "REVIEW"],
       eventDefault: "STATE: CONTROLLED VISIBILITY",
       events: {
@@ -77,6 +77,13 @@
     }
   };
 
+  function setChip(text) {
+    const chip = root.querySelector("[data-lv12='event-chip']");
+    if (!chip) return;
+    const span = chip.querySelector("span");
+    if (span) span.textContent = text;
+  }
+
   function hydrateLv12() {
     const lang = getLang();
     const dict = copy[lang] || copy.en;
@@ -87,7 +94,6 @@
     const route = root.querySelector("[data-lv12='route-prepared']");
     const protocolLabel = root.querySelector("[data-lv12='protocol-label']");
     const protocol = root.querySelector("[data-lv12='protocol']");
-    const chip = root.querySelector("[data-lv12='event-chip']");
 
     if (mapTitle) mapTitle.textContent = dict.accessLayerMap;
     if (recTitle) recTitle.textContent = dict.kenjiRecommendation;
@@ -95,7 +101,6 @@
     if (route) route.textContent = dict.routePrepared;
     if (protocolLabel) protocolLabel.textContent = dict.protocolLabel;
     if (protocol) protocol.textContent = dict.protocol;
-    if (chip && !root.dataset.lv12Event) chip.lastChild.textContent = dict.eventDefault;
 
     Object.keys(dict.layers).forEach((key) => {
       const layer = root.querySelector(`[data-layer="${key}"]`);
@@ -119,15 +124,20 @@
     chainItems.forEach((node, index) => {
       if (dict.chain[index]) node.textContent = dict.chain[index];
     });
+
+    const event = root.dataset.lv12Event;
+    if (event && dict.events[event]) {
+      setChip(dict.events[event]);
+    } else {
+      setChip(dict.eventDefault);
+    }
   }
 
   function setEvent(type) {
     const lang = getLang();
     const dict = copy[lang] || copy.en;
-    const chip = root.querySelector("[data-lv12='event-chip']");
-
     root.dataset.lv12Event = type;
-    if (chip && dict.events[type]) chip.lastChild.textContent = dict.events[type];
+    setChip(dict.events[type] || dict.eventDefault);
   }
 
   document.querySelectorAll("[data-event]").forEach((button) => {
@@ -140,7 +150,7 @@
   const langButton = root.querySelector("[data-sigil-lang]");
   if (langButton) {
     langButton.addEventListener("click", function () {
-      window.setTimeout(hydrateLv12, 60);
+      window.setTimeout(hydrateLv12, 70);
     });
   }
 
