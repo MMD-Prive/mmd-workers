@@ -1,0 +1,262 @@
+/*
+  MMD SIGIL Access - LV11 Immersion Layer
+  Load after v2 + v10 polish.
+  Adds Access Layer Map, Kenji recommendation state, event-chain depth.
+*/
+
+.sigil-lv11 {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr) !important;
+  gap: 14px !important;
+  margin: 10px 18px 0 !important;
+}
+
+.sigil-layer-map,
+.sigil-recommendation {
+  position: relative !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(201,155,67,0.20) !important;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.042), rgba(255,255,255,0.01)),
+    radial-gradient(circle at 92% 12%, rgba(244,211,123,0.08), transparent 26%),
+    rgba(4,4,3,0.72) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.04),
+    0 18px 64px rgba(0,0,0,0.45) !important;
+}
+
+.sigil-layer-map::before,
+.sigil-recommendation::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(201,155,67,0.06), transparent 18%, transparent 82%, rgba(201,155,67,0.04));
+}
+
+.sigil-lv11-head {
+  position: relative !important;
+  z-index: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+  padding: 18px 22px 14px !important;
+  border-bottom: 1px solid rgba(255,255,255,0.09) !important;
+}
+
+.sigil-lv11-head h3 {
+  margin: 0 !important;
+  color: rgba(244,211,123,0.82) !important;
+  font: 700 12px/1.25 var(--mmd-font) !important;
+  letter-spacing: 0.32em !important;
+  text-transform: uppercase !important;
+}
+
+.sigil-lv11-signal {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 9px !important;
+  color: rgba(244,211,123,0.62) !important;
+  font: 700 10px/1 var(--mmd-mono) !important;
+  letter-spacing: 0.16em !important;
+  text-transform: uppercase !important;
+  white-space: nowrap !important;
+}
+
+.sigil-lv11-signal i {
+  width: 7px !important;
+  height: 7px !important;
+  display: inline-block !important;
+  border-radius: 999px !important;
+  background: var(--mmd-gold-2) !important;
+  box-shadow: 0 0 16px rgba(244,211,123,0.78) !important;
+}
+
+.sigil-layers {
+  position: relative !important;
+  z-index: 1 !important;
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 0 !important;
+  padding: 20px 18px 18px !important;
+}
+
+.sigil-layer {
+  position: relative !important;
+  min-height: 112px !important;
+  padding: 16px 16px 14px !important;
+  border-right: 1px solid rgba(255,255,255,0.075) !important;
+}
+
+.sigil-layer:last-child { border-right: 0 !important; }
+
+.sigil-layer::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid rgba(201,155,67,0.34);
+  background:
+    radial-gradient(circle, rgba(244,211,123,0.18), transparent 44%),
+    repeating-conic-gradient(from 0deg, rgba(201,155,67,0.42) 0deg 6deg, transparent 6deg 18deg);
+  -webkit-mask-image: radial-gradient(circle, transparent 0 28%, #000 29%);
+  mask-image: radial-gradient(circle, transparent 0 28%, #000 29%);
+}
+
+.sigil-layer strong {
+  display: block !important;
+  margin: 2px 0 0 48px !important;
+  color: rgba(239,232,220,0.42) !important;
+  font: 500 18px/1 var(--mmd-font) !important;
+  letter-spacing: 0.08em !important;
+}
+
+.sigil-layer h4 {
+  margin: 26px 0 0 !important;
+  color: rgba(239,232,220,0.82) !important;
+  font: 700 12px/1.35 var(--mmd-font) !important;
+  letter-spacing: 0.18em !important;
+  text-transform: uppercase !important;
+}
+
+.sigil-layer p {
+  margin: 9px 0 0 !important;
+  color: rgba(239,232,220,0.38) !important;
+  font: 700 10px/1.4 var(--mmd-mono) !important;
+  letter-spacing: 0.14em !important;
+  text-transform: uppercase !important;
+}
+
+.sigil-layer.is-unlocked p,
+.sigil-layer.is-active p {
+  color: rgba(244,211,123,0.78) !important;
+}
+
+.sigil-layer.is-active::before {
+  border-color: rgba(244,211,123,0.88);
+  box-shadow: 0 0 24px rgba(244,211,123,0.26);
+  animation: lv11Pulse 2.4s ease-in-out infinite;
+}
+
+.sigil-layer.is-review {
+  background: linear-gradient(180deg, rgba(244,211,123,0.055), transparent) !important;
+}
+
+.sigil-layer.is-hidden {
+  opacity: 0.58;
+}
+
+.sigil-layer.is-hidden h4 {
+  color: rgba(239,232,220,0.48) !important;
+}
+
+.sigil-recommendation {
+  padding: 0 !important;
+}
+
+.sigil-rec-body {
+  position: relative !important;
+  z-index: 1 !important;
+  padding: 20px 22px 22px !important;
+}
+
+.sigil-rec-body p {
+  margin: 0 !important;
+  color: rgba(239,232,220,0.74) !important;
+  font: 15px/1.68 var(--mmd-font) !important;
+}
+
+.sigil-rec-protocol {
+  display: grid !important;
+  gap: 9px !important;
+  margin-top: 18px !important;
+  padding-top: 15px !important;
+  border-top: 1px solid rgba(244,211,123,0.13) !important;
+}
+
+.sigil-rec-protocol span {
+  color: rgba(244,211,123,0.66) !important;
+  font: 700 10px/1.2 var(--mmd-mono) !important;
+  letter-spacing: 0.18em !important;
+  text-transform: uppercase !important;
+}
+
+.sigil-rec-protocol strong {
+  color: rgba(239,232,220,0.86) !important;
+  font: 650 14px/1.5 var(--mmd-font) !important;
+  letter-spacing: 0.10em !important;
+  text-transform: uppercase !important;
+}
+
+.sigil-chain-state {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  margin-top: 16px !important;
+  color: rgba(239,232,220,0.32) !important;
+  font: 700 10px/1 var(--mmd-mono) !important;
+  letter-spacing: 0.16em !important;
+  text-transform: uppercase !important;
+}
+
+.sigil-chain-state i {
+  width: 22px !important;
+  height: 2px !important;
+  background: rgba(244,211,123,0.45) !important;
+  box-shadow: 0 0 12px rgba(244,211,123,0.3) !important;
+}
+
+.sigil-os[data-lv11-event="analysis"] .sigil-layer[data-layer="review"] p,
+.sigil-os[data-lv11-event="session"] .sigil-layer[data-layer="review"] p,
+.sigil-os[data-lv11-event="payment"] .sigil-layer[data-layer="review"] p,
+.sigil-os[data-lv11-event="route"] .sigil-layer[data-layer="review"] p {
+  color: rgba(244,211,123,0.9) !important;
+}
+
+.sigil-os[data-lv11-event="analysis"] .sigil-layer[data-layer="review"]::before,
+.sigil-os[data-lv11-event="session"] .sigil-layer[data-layer="review"]::before,
+.sigil-os[data-lv11-event="payment"] .sigil-layer[data-layer="review"]::before,
+.sigil-os[data-lv11-event="route"] .sigil-layer[data-layer="review"]::before {
+  border-color: rgba(244,211,123,0.78) !important;
+  box-shadow: 0 0 20px rgba(244,211,123,0.2) !important;
+}
+
+@keyframes lv11Pulse {
+  0%, 100% { transform: scale(1); opacity: 0.82; }
+  50% { transform: scale(1.08); opacity: 1; }
+}
+
+@media (min-width: 1321px) and (max-height: 930px) {
+  .sigil-lv11 {
+    grid-template-columns: 1fr 0.75fr !important;
+    margin-top: 8px !important;
+  }
+  .sigil-lv11-head { padding: 14px 18px 12px !important; }
+  .sigil-layers { padding: 15px 14px 14px !important; }
+  .sigil-layer { min-height: 94px !important; padding: 13px 12px 12px !important; }
+  .sigil-layer h4 { margin-top: 20px !important; font-size: 11px !important; }
+  .sigil-rec-body { padding: 16px 18px 18px !important; }
+  .sigil-rec-body p { font-size: 14px !important; line-height: 1.55 !important; }
+}
+
+@media (max-width: 1320px) {
+  .sigil-lv11 {
+    grid-template-columns: 1fr !important;
+  }
+  .sigil-layers {
+    grid-template-columns: repeat(5, minmax(150px, 1fr)) !important;
+    overflow-x: auto !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .sigil-lv11 { margin-inline: 6px !important; }
+  .sigil-lv11-head { align-items: flex-start !important; flex-direction: column !important; }
+  .sigil-layers { grid-template-columns: 1fr !important; overflow: visible !important; }
+  .sigil-layer { border-right: 0 !important; border-bottom: 1px solid rgba(255,255,255,0.075) !important; }
+  .sigil-layer:last-child { border-bottom: 0 !important; }
+}
