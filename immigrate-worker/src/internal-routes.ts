@@ -107,8 +107,11 @@ export async function handleInternalRoutes(request: Request, env: InternalRoutes
   const apiRes = await proxyAdminApi(request, env);
   if (apiRes) return apiRes;
 
-  if (pathname === "/internal/admin/jobs/create-session") {
-    return redirect(withQuery("/internal/admin/create-session", url), 308);
+  // Canonical create-session route is the jobs-scoped route. Keep the older
+  // route as a durable redirect only, so bookmarks and login next links do not
+  // resurrect the legacy operator surface.
+  if (pathname === "/internal/admin/create-session") {
+    return redirect(withQuery("/internal/admin/jobs/create-session", url), 308);
   }
 
   if (pathname === "/internal/admin/control-room") {
@@ -117,7 +120,7 @@ export async function handleInternalRoutes(request: Request, env: InternalRoutes
     return renderControlRoomPage();
   }
 
-  if (pathname === "/internal/admin/create-session") {
+  if (pathname === "/internal/admin/jobs/create-session") {
     const gate = await requireAdminGate(request, env);
     if (gate) return gate;
     return renderCreateSessionPage(env);
