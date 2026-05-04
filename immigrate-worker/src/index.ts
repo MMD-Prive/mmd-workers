@@ -2429,6 +2429,10 @@ function defaultPublicBaseUrl(env: Env): string {
   return toStr(env.PUBLIC_WEB_BASE_URL) || "https://www.mmdbkk.com";
 }
 
+function defaultCustomerDashboardBaseUrl(env: Env): string {
+  return toStr(env.WEB_BASE_URL) || "https://mmdbkk.com";
+}
+
 function buildModelHistoryArtifact(payload: CreateJobRequest): {
   status: "missing" | "pending_import" | "attached" | "imported";
   source: string;
@@ -3523,9 +3527,9 @@ async function buildLinksBundle(
   });
 
   const customerDashboardUrl = `${buildAbsoluteUrl(
-    baseUrl,
-    toStr(payload.customer_dashboard_path) || "/member/dashboard",
-    "/member/dashboard",
+    defaultCustomerDashboardBaseUrl(env),
+    "/member/first-db",
+    "/member/first-db",
   )}?t=${encodeURIComponent(customerInvite.customer_invite_t)}`;
 
   const modelDashboardUrl = `${buildAbsoluteUrl(
