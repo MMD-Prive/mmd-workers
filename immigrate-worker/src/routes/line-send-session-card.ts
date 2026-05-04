@@ -108,7 +108,17 @@ function normalizePayload(payload: SessionCardPayload): LineSessionCardInput {
 }
 
 function webBaseUrl(env: Env): string {
-  return toStr(env.WEB_BASE_URL) || "https://mmdbkk.com";
+  return (toStr(env.WEB_BASE_URL) || "https://mmdbkk.com").replace(/\/+$/, "");
+}
+
+function memberDashboardUrl(env: Env, token: string): string {
+  return `${webBaseUrl(env)}/member/first-db?t=${encodeURIComponent(token)}`;
+}
+
+function normalizeMemberDashboardUrl(env: Env, value: string): string {
+  const url = new URL(value);
+  const token = url.searchParams.get("t");
+  return token ? memberDashboardUrl(env, token) : value;
 }
 
 function sanitizeLineError(value: string): string {
@@ -151,6 +161,10 @@ export async function handleSendLineSessionCard(request: Request, env: Env): Pro
   let input: LineSessionCardInput;
   try {
     input = normalizePayload(payload);
+    input = {
+      ...input,
+      dashboard_url: normalizeMemberDashboardUrl(env, input.dashboard_url),
+    };
   } catch (error) {
     return errorResponse(
       meta,
