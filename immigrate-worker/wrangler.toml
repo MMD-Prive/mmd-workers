@@ -18,9 +18,12 @@ ENABLE_AIRTABLE_SYNC = "true"
 JOBS_WORKER_BASE_URL = ""
 CREATE_LINKS_URL = "https://payments-worker.malemodel-bkk.workers.dev/v1/confirm/link"
 REALTIME_SESSIONS_URL = ""
+WEB_BASE_URL = "https://mmdbkk.com"
+SIGIL_BASE_URL = "https://sigil.mmdbkk.com"
 PUBLIC_WEB_BASE_URL = "https://sigil.mmdbkk.com"
 PUBLIC_ALLOWED_ORIGINS = "https://sigil.mmdbkk.com,https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
 ADMIN_WORKER_BASE_URL = "https://admin-worker.malemodel-bkk.workers.dev"
+PROMPTPAY_ID = "0829528889"
 
 [[services]]
 binding = "ADMIN_WORKER"

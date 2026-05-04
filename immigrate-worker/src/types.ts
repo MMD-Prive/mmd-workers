@@ -5,6 +5,7 @@ export interface Env {
   BROWSER_GATE_PASSWORD?: string;
   BROWSER_GATE_USERNAME?: string;
   CONFIRM_KEY?: string;
+  LINK_SIGNING_SECRET?: string;
   AIRTABLE_API_KEY?: string;
   AIRTABLE_BASE_ID: string;
   AIRTABLE_TABLE_LINE_INBOX: string;
@@ -15,12 +16,18 @@ export interface Env {
   AIRTABLE_TABLE_MODELS?: string;
   AIRTABLE_TABLE_POINTS_LEDGER?: string;
   AIRTABLE_TABLE_IMPORT_LOGS?: string;
+  AIRTABLE_TABLE_ACTIVITY_LOGS?: string;
+  AIRTABLE_TABLE_MODEL_HISTORY_IMPORTS?: string;
   ENABLE_AIRTABLE_SYNC?: string;
   JOBS_WORKER_BASE_URL?: string;
   CREATE_LINKS_URL?: string;
   REALTIME_SESSIONS_URL?: string;
+  WEB_BASE_URL?: string;
+  SIGIL_BASE_URL?: string;
   PUBLIC_WEB_BASE_URL?: string;
   PUBLIC_ALLOWED_ORIGINS?: string;
+  PROMPTPAY_ID?: string;
+  LINE_CHANNEL_ACCESS_TOKEN?: string;
   AI_WORKER_BASE_URL?: string;
   ADMIN_WORKER_BASE_URL?: string;
   AIRTABLE_CLIENT_FIELD_CLIENT_NAME?: string;

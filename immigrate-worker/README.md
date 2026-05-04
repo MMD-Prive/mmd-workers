@@ -115,6 +115,8 @@ Simplified booking payload for `POST /internal/jobs/create-links`:
 - required: `client_name`, `model_name`, `job_type`, `job_date`, `start_time`, `end_time`, `location_name`, `amount_thb`
 - optional: `google_map_url`, `payment_type` (defaults to `deposit`), `payment_method` (defaults to `promptpay`), `note`, `confirm_page`, `model_confirm_page`
 - recommended `job_type` for this flow: `private_vip`
+- the route returns customer onboarding/dashboard/payment links and a model console link with `t` parameters
+- when Airtable sync is configured, it writes migration-layer records for clients, sessions, payments, internal notes, activity logs, and model-history imports when model notes are present
 
 Canonical create-job payload for `POST /v1/admin/create-job` or `POST /internal/jobs/create-job`:
 - required: `manual_note_raw`
@@ -144,6 +146,50 @@ Deployment:
 Smoke test:
 - from `mmd-workers`, run `INTERNAL_TOKEN=... ./scripts/smoke-test-immigrate.sh`
 - the smoke script now exercises `health -> intake -> promote -> get`
+
+Manual migration-layer link tests:
+- dry-run build: `cd immigrate-worker && npm run deploy -- --dry-run`
+- deploy: `cd immigrate-worker && npm run deploy`
+- create links:
+```bash
+curl -sS "$IMMIGRATE_BASE_URL/internal/jobs/create-links" \
+  -H "Authorization: Bearer $INTERNAL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "line_user_id": "Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "session_id": "sess_manual_001",
+    "payment_ref": "pay_manual_001",
+    "client_name": "Manual Test Client",
+    "model_name": "Manual Test Model",
+    "job_type": "private_vip",
+    "job_date": "2026-05-10",
+    "start_time": "20:00",
+    "end_time": "22:00",
+    "location_name": "Bangkok",
+    "amount_thb": 12000,
+    "deposit_amount_thb": 3000,
+    "payment_stage": "deposit",
+    "payment_method": "promptpay",
+    "model_history_note": "Manual smoke-test note"
+  }'
+```
+- send LINE session card:
+```bash
+curl -sS "$IMMIGRATE_BASE_URL/internal/line/send-session-card" \
+  -H "Authorization: Bearer $INTERNAL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "line_user_id": "Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "session_id": "sess_manual_001",
+    "client_name": "Manual Test Client",
+    "amount_thb": 12000,
+    "deposit_amount_thb": 3000,
+    "expire_at": "2026-05-10T13:00:00.000Z",
+    "points_balance": 120,
+    "dashboard_url": "https://mmdbkk.com/member/dashboard?t=example",
+    "payment_url": "https://sigil.mmdbkk.com/sigil/pay/session?t=example"
+  }'
+```
 
 Netlify LINE webhook:
 - scaffolded function: `netlify/functions/webhook.js`
