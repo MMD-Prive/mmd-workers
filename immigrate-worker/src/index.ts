@@ -1,5 +1,7 @@
 import { isAuthorized, readInternalToken } from "./lib/auth";
 import { handleInternalRoutes } from "./internal-routes";
+import { handleCreateLinks } from "./routes/create-links";
+import { handleSendLineSessionCard } from "./routes/line-send-session-card";
 import {
   buildImmigrationLinkContext,
   canReadAirtable,
@@ -3659,7 +3661,7 @@ async function handleSessions(request: Request, env: Env): Promise<Response> {
   return json(body);
 }
 
-async function handleCreateLinks(request: Request, env: Env): Promise<Response> {
+async function handleCreateLinksLegacy(request: Request, env: Env): Promise<Response> {
   const meta = makeMeta(request);
   const payload = (await request.json().catch(() => null)) as InvitePayload | null;
 
@@ -6930,6 +6932,10 @@ export default {
         return await handleCustomerConfirm(request, env);
       }
 
+      if (url.pathname === "/internal/line/send-session-card") {
+        return handleSendLineSessionCard(request, env);
+      }
+
       if (
         (request.method === "GET" || request.method === "HEAD") &&
         (url.pathname === CONTROL_ROOM.login || url.pathname === SIGIL.login)
@@ -7125,9 +7131,7 @@ export default {
         return await handleSessions(request, env);
       }
 
-      if (request.method === "POST" && url.pathname === JOBS.createLinks) {
-        return await handleCreateLinks(request, env);
-      }
+      if (url.pathname === "/internal/jobs/create-links") return handleCreateLinks(request, env);
 
       if (request.method === "POST" && url.pathname === JOBS.createInvite) {
         return await handleCreateInvite(request, env);
