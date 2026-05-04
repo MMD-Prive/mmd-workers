@@ -4417,605 +4417,176 @@ async function withInjectedAdminBootstrap(
 
 function renderAdminLoginPage(request: Request, env: Env): Response {
   const url = new URL(request.url);
-  const fallbackNext = selectAdminDefaultNext(url.pathname);
-  const next = normalizeAdminNextPath(url.searchParams.get("next"), fallbackNext);
+  const isSigilLogin = url.pathname === SIGIL.login;
+  const fallbackNext = isSigilLogin ? SIGIL.createSession : selectAdminDefaultNext(url.pathname);
+  const next = isSigilLogin
+    ? SIGIL.createSession
+    : normalizeAdminNextPath(url.searchParams.get("next"), fallbackNext);
   const defaultBaseUrl = defaultAdminGateBaseUrl(env);
-  const loginSessionPath = url.pathname === SIGIL.login ? SIGIL.loginSession : CONTROL_ROOM.loginSession;
+  const loginSessionPath = isSigilLogin ? SIGIL.loginSession : CONTROL_ROOM.loginSession;
 
   const html = `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MMD Admin Login</title>
+    <title>MMD SĪGIL Admin Console</title>
     <style>
       :root {
         color-scheme: dark;
-        --bg: #050506;
-        --panel: rgba(14,13,15,.88);
-        --panel-strong: rgba(6,6,7,.74);
-        --line: rgba(247,240,232,.14);
-        --line-strong: rgba(197,151,44,.34);
+        --bg: #050505;
+        --panel: rgba(12,12,12,.88);
+        --line: rgba(231,203,139,.22);
         --text: #f7f0e8;
-        --muted: rgba(216,205,194,.74);
+        --muted: rgba(216,205,194,.72);
         --gold: #c5972c;
-        --gold-soft: rgba(197,151,44,.16);
+        --gold-soft: rgba(197,151,44,.12);
         --danger: #f2b0b0;
       }
       * { box-sizing: border-box; }
+      html {
+        min-height: 100%;
+      }
       body {
         margin: 0;
         min-height: 100vh;
         display: grid;
         place-items: center;
-        padding: 24px;
+        padding: 22px;
         color: var(--text);
         background:
-          radial-gradient(circle at 14% 18%, rgba(197,151,44,.13), transparent 24%),
-          radial-gradient(circle at 88% 10%, rgba(116,124,120,.10), transparent 25%),
-          linear-gradient(180deg, #0d0c0d 0%, #050506 56%, #020202 100%);
+          linear-gradient(180deg, rgba(197,151,44,.10) 0%, rgba(197,151,44,0) 34%),
+          linear-gradient(135deg, #0c0b0a 0%, #050505 52%, #010101 100%);
         font-family: Inter, "Avenir Next", "Segoe UI", "Noto Sans Thai", Arial, sans-serif;
       }
       .mmd-login {
         position: relative;
-        width: min(100%, 1180px);
-        min-height: min(820px, calc(100vh - 48px));
+        width: min(100%, 420px);
         overflow: hidden;
         border: 1px solid var(--line);
-        border-radius: 22px;
-        background: #070707;
-        box-shadow: 0 28px 90px rgba(0,0,0,.48);
-        isolation: isolate;
-      }
-      .mmd-login__bg,
-      .mmd-login__overlay {
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-      }
-      .mmd-login__bg {
-        inset: -48px;
+        border-radius: 8px;
         background:
-          radial-gradient(ellipse at 52% 24%, rgba(232,210,171,.24) 0 5%, transparent 5.6%),
-          radial-gradient(ellipse at 52% 38%, rgba(34,32,34,.88) 0 16%, transparent 16.8%),
-          radial-gradient(ellipse at 51% 54%, rgba(12,12,13,.84) 0 26%, transparent 27%),
-          linear-gradient(120deg, rgba(0,0,0,.86) 0%, rgba(12,12,13,.58) 48%, rgba(0,0,0,.94) 100%),
-          linear-gradient(180deg, #171513 0%, #070707 100%);
-        background-size: cover;
-        background-position: center 58%;
-        opacity: .88;
-        filter: saturate(.84) contrast(1.08);
-      }
-      .mmd-login__overlay {
-        z-index: 1;
-        background:
-          linear-gradient(90deg, rgba(0,0,0,.70) 0%, rgba(0,0,0,.50) 46%, rgba(0,0,0,.76) 100%),
-          linear-gradient(180deg, rgba(0,0,0,.34) 0%, rgba(0,0,0,.70) 100%);
+          linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,0)),
+          var(--panel);
+        box-shadow: 0 30px 80px rgba(0,0,0,.42);
+        backdrop-filter: blur(18px);
       }
       .mmd-login__shell {
         position: relative;
-        z-index: 2;
-        min-height: inherit;
         display: grid;
-        grid-template-columns: minmax(0, 1.1fr) minmax(360px, .76fr);
-        gap: 34px;
-        align-items: center;
-        padding: clamp(28px, 5vw, 56px);
+        gap: 24px;
+        padding: 34px;
       }
-      .mmd-login__hero,
-      .mmd-login__heroInner {
-        min-width: 0;
-      }
-      .mmd-login__heroInner {
-        display: flex;
-        flex-direction: column;
-        gap: 18px;
-      }
-      .mmd-login__pill {
-        display: inline-flex;
-        flex-direction: column;
-        gap: 4px;
-        width: fit-content;
-        max-width: 100%;
-        padding: 10px 14px;
-        border: 1px solid var(--line-strong);
-        border-radius: 999px;
-        background: rgba(7,7,8,.58);
-        color: var(--gold);
-        font-size: .72rem;
-        font-weight: 700;
-        letter-spacing: .12em;
-        line-height: 1.35;
-        text-transform: uppercase;
-      }
-      .mmd-login__pill span:last-child {
-        color: rgba(247,240,232,.78);
-        font-size: .7rem;
-        letter-spacing: .06em;
-        text-transform: none;
+      .mmd-login__header {
+        display: grid;
+        gap: 8px;
+        text-align: center;
       }
       .mmd-login__title {
         margin: 0;
         font-family: Baskerville, "Iowan Old Style", Palatino, Georgia, "Noto Serif Thai", serif;
-        font-size: clamp(54px, 8vw, 104px);
-        line-height: .9;
+        font-size: 2.35rem;
+        line-height: 1;
         font-weight: 600;
-      }
-      .mmd-login__titleTop {
-        font-size: .72em;
-      }
-      .mmd-login__copy {
-        margin: 0;
-        color: rgba(247,240,232,.92);
-        font-size: clamp(18px, 2.2vw, 28px);
-        line-height: 1.28;
-        font-weight: 650;
-      }
-      .mmd-login__copy span,
-      .mmd-login__subcopy span,
-      .mmd-login__foot span,
-      .mmd-login__panelSub span,
-      .mmd-label span,
-      .mmd-hint span,
-      .mmd-login__note span,
-      .mmd-login__remember span span {
-        display: block;
-      }
-      .mmd-login__copy span:last-child,
-      .mmd-login__subcopy span:last-child,
-      .mmd-login__foot span:last-child,
-      .mmd-login__panelSub span:last-child,
-      .mmd-label span,
-      .mmd-hint span:last-child,
-      .mmd-login__note span:last-child,
-      .mmd-login__remember span span {
-        color: var(--muted);
-      }
-      .mmd-login__subcopy,
-      .mmd-login__foot {
-        margin: 0;
-        color: var(--muted);
-        font-size: .94rem;
-        line-height: 1.7;
-      }
-      .mmd-login__meta {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
-        width: min(100%, 720px);
-        margin-top: 8px;
-      }
-      .mmd-login__metaCard {
-        min-height: 84px;
-        padding: 14px;
-        border: 1px solid rgba(247,240,232,.12);
-        border-radius: 8px;
-        background: rgba(0,0,0,.34);
-      }
-      .mmd-login__metaCard span {
-        display: block;
-        color: var(--muted);
-        font-size: .72rem;
-        line-height: 1.45;
-      }
-      .mmd-login__metaCard strong {
-        display: block;
-        margin-top: 8px;
         color: var(--text);
-        font-size: .94rem;
-        line-height: 1.25;
+      }
+      .mmd-login__subtitle {
+        margin: 0;
+        color: var(--gold);
+        font-size: 1rem;
+        line-height: 1.45;
+        font-weight: 600;
       }
       .mmd-login__panel {
         display: grid;
-        gap: 16px;
-        min-width: 0;
+        gap: 14px;
         margin: 0;
-        padding: clamp(22px, 3vw, 30px);
-        border: 1px solid rgba(247,240,232,.15);
-        border-radius: 14px;
-        background:
-          linear-gradient(180deg, rgba(18,17,18,.92), rgba(8,8,9,.88)),
-          var(--panel);
-        box-shadow: 0 24px 70px rgba(0,0,0,.42);
-        backdrop-filter: blur(20px);
       }
-      .mmd-login__panelTop {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        padding-bottom: 4px;
+      .mmd-login__label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
       }
-      .mmd-login__panelTitle {
-        margin: 0;
-        font-size: clamp(1.55rem, 2vw, 2.05rem);
-        line-height: 1.08;
-        font-weight: 750;
-      }
-      .mmd-login__panelTitle span {
-        display: block;
-        color: var(--gold);
-        font-size: .76em;
-        margin-top: 4px;
-      }
-      .mmd-login__panelSub {
-        margin: 0;
-        color: var(--muted);
-        line-height: 1.55;
-      }
-      .mmd-field {
-        display: grid;
-        gap: 8px;
-      }
-      .mmd-label {
-        display: block;
-        color: var(--gold);
-        font-size: .78rem;
-        font-weight: 750;
-        letter-spacing: .08em;
-        line-height: 1.35;
-        text-transform: uppercase;
-      }
-      .mmd-label span {
-        margin-top: 2px;
-        font-size: .74rem;
-        letter-spacing: 0;
-        text-transform: none;
-      }
-      .mmd-field input[type="text"],
-      .mmd-field input[type="password"] {
+      .mmd-login__input {
         width: 100%;
-        min-height: 48px;
-        padding: 0 14px;
-        border: 1px solid rgba(247,240,232,.16);
+        min-height: 50px;
+        padding: 0 15px;
+        border: 1px solid rgba(247,240,232,.18);
         border-radius: 8px;
         outline: none;
-        background: rgba(0,0,0,.42);
+        background: rgba(0,0,0,.36);
         color: var(--text);
         font: inherit;
       }
-      .mmd-field input:focus {
+      .mmd-login__input::placeholder {
+        color: rgba(216,205,194,.58);
+      }
+      .mmd-login__input:focus {
         border-color: rgba(197,151,44,.64);
         box-shadow: 0 0 0 3px rgba(197,151,44,.12);
       }
-      .mmd-hint {
-        margin: 0;
-        color: rgba(216,205,194,.70);
-        font-size: .82rem;
-        line-height: 1.5;
-      }
-      .mmd-login__routePreview {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        padding: 12px 14px;
-        border: 1px solid rgba(247,240,232,.12);
-        border-radius: 8px;
-        background: rgba(255,255,255,.035);
-      }
-      .mmd-login__routeLabel {
-        color: var(--gold);
-        font-size: .76rem;
-        font-weight: 750;
-        letter-spacing: .08em;
-        line-height: 1.35;
-        text-transform: uppercase;
-      }
-      .mmd-login__routeLabel span {
-        display: block;
-        color: var(--muted);
-        font-size: .72rem;
-        font-weight: 650;
-        letter-spacing: 0;
-        text-transform: none;
-      }
-      .mmd-login__routeValue {
-        color: var(--text);
-        font-family: SFMono-Regular, Consolas, Menlo, monospace;
-        font-size: .82rem;
-        line-height: 1.45;
-        overflow-wrap: anywhere;
-      }
-      .mmd-login__note {
-        margin: 0;
-        color: var(--muted);
-        font-size: .86rem;
-        line-height: 1.55;
-      }
-      .mmd-login__remember {
-        display: grid;
-        grid-template-columns: 18px minmax(0, 1fr);
-        gap: 10px;
-        align-items: start;
-        color: var(--text);
-        font-size: .88rem;
-        line-height: 1.45;
-      }
-      .mmd-login__remember input {
-        width: 18px;
-        height: 18px;
-        margin: 1px 0 0;
-        accent-color: var(--gold);
-      }
-      .mmd-login__error {
-        min-height: 1.2em;
-        margin: 0;
-        color: var(--danger);
-        font-size: .9rem;
-        line-height: 1.45;
-      }
       .mmd-login__button {
-        justify-self: center;
-        min-height: 48px;
-        min-width: min(100%, 230px);
-        padding: 0 20px;
+        min-height: 50px;
+        width: 100%;
+        padding: 0 18px;
         border: 1px solid rgba(197,151,44,.58);
-        border-radius: 999px;
+        border-radius: 8px;
         background:
-          linear-gradient(135deg, rgba(197,151,44,.30), rgba(247,240,232,.09)),
-          rgba(0,0,0,.42);
+          linear-gradient(180deg, rgba(197,151,44,.24), rgba(197,151,44,.14)),
+          rgba(0,0,0,.48);
         color: var(--text);
-        font: 800 .82rem/1 "Avenir Next", "Segoe UI", sans-serif;
-        letter-spacing: .08em;
-        text-transform: uppercase;
+        font: 700 1rem/1 Inter, "Avenir Next", "Segoe UI", Arial, sans-serif;
         cursor: pointer;
+      }
+      .mmd-login__button:hover:not(:disabled) {
+        border-color: rgba(231,203,139,.78);
+        background:
+          linear-gradient(180deg, rgba(197,151,44,.30), rgba(197,151,44,.18)),
+          rgba(0,0,0,.48);
       }
       .mmd-login__button:disabled {
         cursor: wait;
         opacity: .68;
       }
-
-      /* MMD Admin Login — TH+EN left alignment refinement */
-      .mmd-login,
-      .mmd-login * {
-        text-wrap: pretty;
+      .mmd-login__error {
+        min-height: 20px;
+        margin: 0;
+        color: var(--danger);
+        font-size: .88rem;
+        line-height: 1.45;
+        text-align: center;
       }
-
-      .mmd-login__hero,
-      .mmd-login__heroInner,
-      .mmd-login__title,
-      .mmd-login__copy,
-      .mmd-login__subcopy,
-      .mmd-login__foot,
-      .mmd-login__panel,
-      .mmd-login__panelTop,
-      .mmd-field,
-      .mmd-label,
-      .mmd-hint,
-      .mmd-login__note,
-      .mmd-login__routePreview {
-        text-align: left !important;
-      }
-
-      .mmd-login__heroInner {
-        align-items: flex-start !important;
-        justify-content: center;
-        max-width: 820px;
-        margin-left: 0 !important;
-        margin-right: auto !important;
-      }
-
-      .mmd-login__title {
-        max-width: 820px;
-        margin-left: 0 !important;
-        margin-right: auto !important;
-      }
-
-      .mmd-login__titleTop,
-      .mmd-login__titleMain {
-        display: block;
-        text-align: left !important;
-      }
-
-      .mmd-login__titleTop {
-        color: rgba(197, 151, 44, .86);
-      }
-
-      .mmd-login__copy,
-      .mmd-login__subcopy {
-        max-width: 720px;
-        margin-left: 0 !important;
-        margin-right: auto !important;
-      }
-
-      .mmd-login__meta {
-        justify-items: stretch;
-      }
-
-      .mmd-login__metaCard {
-        text-align: left !important;
-      }
-
-      .mmd-login__panelTop {
-        align-items: flex-start;
-      }
-
-      .mmd-login__panelTitle,
-      .mmd-login__panelSub {
-        text-align: left !important;
-      }
-
-      .mmd-login__routePreview {
-        align-items: flex-start;
-      }
-
-      .mmd-login__routeLabel,
-      .mmd-login__routeValue {
-        text-align: left !important;
-      }
-
-      /* Lower the hero background portrait */
-      .mmd-login__bg {
-        background-position: center 64% !important;
-        transform: translateY(34px) scale(1.035);
-        transform-origin: center center;
-      }
-
-      /* Keep overlay dark enough after lowering background */
-      .mmd-login__overlay {
-        background:
-          linear-gradient(90deg, rgba(0,0,0,.72) 0%, rgba(0,0,0,.54) 46%, rgba(0,0,0,.78) 100%),
-          linear-gradient(180deg, rgba(0,0,0,.36) 0%, rgba(0,0,0,.72) 100%) !important;
-      }
-
-      /* Mobile: reduce over-sized hero and keep left alignment */
       @media (max-width: 767px) {
         body {
-          padding: 14px;
+          padding: 16px;
         }
-
-        .mmd-login {
-          min-height: calc(100vh - 28px);
-          border-radius: 16px;
-        }
-
         .mmd-login__shell {
-          grid-template-columns: 1fr !important;
-          gap: 24px;
-          padding: 20px;
+          padding: 26px 20px;
         }
-
-        .mmd-login__heroInner {
-          padding-top: 24px;
-        }
-
         .mmd-login__title {
-          font-size: clamp(42px, 13vw, 72px) !important;
-          line-height: .94;
-        }
-
-        .mmd-login__copy {
-          font-size: 14px;
-          line-height: 1.65;
-        }
-
-        .mmd-login__meta {
-          grid-template-columns: 1fr;
-        }
-
-        .mmd-login__panel {
-          padding: 18px;
-        }
-
-        .mmd-login__bg {
-          background-position: center 70% !important;
-          transform: translateY(46px) scale(1.05);
+          font-size: 2rem;
         }
       }
     </style>
   </head>
   <body>
     <main class="mmd-login">
-      <div class="mmd-login__bg" aria-hidden="true"></div>
-      <div class="mmd-login__overlay" aria-hidden="true"></div>
       <div class="mmd-login__shell">
-        <section class="mmd-login__hero" aria-label="MMD admin login">
-          <div class="mmd-login__heroInner">
-            <div class="mmd-login__pill">
-              <span>ADMIN CONSOLE · OPERATOR SURFACE</span>
-              <span>คอนโซลภายใน · สำหรับผู้ปฏิบัติงาน</span>
-            </div>
-            <h1 class="mmd-login__title">
-              <span class="mmd-login__titleTop">Unlock Control Room</span>
-              <span class="mmd-login__titleMain">เข้าสู่ห้องควบคุม</span>
-            </h1>
-            <p class="mmd-login__copy">
-              <span>Authority Black · Secure Access</span>
-              <span>สิทธิ์ภายใน · เข้าถึงแบบปลอดภัย</span>
-            </p>
-            <p class="mmd-login__subcopy">
-              <span>Verify the admin environment, then authorize this browser session before entering the console.</span>
-              <span>ตรวจสอบระบบปลายทางก่อน แล้วจึงยืนยันสิทธิ์ของ browser session นี้เพื่อเข้าสู่ Admin Console</span>
-            </p>
-            <p class="mmd-login__subcopy">
-              <span>Session-first login · Low-noise operator UI · Backend-verified access</span>
-              <span>เข้าสู่ระบบแบบ session-first · ลดข้อมูลรบกวน · ตรวจสิทธิ์ผ่าน backend</span>
-            </p>
-            <div class="mmd-login__meta" aria-label="Admin login metadata">
-              <div class="mmd-login__metaCard">
-                <span>Surface / พื้นที่ใช้งาน</span>
-                <strong>Admin Console</strong>
-              </div>
-              <div class="mmd-login__metaCard">
-                <span>Theme / ธีม</span>
-                <strong>Authority Black</strong>
-              </div>
-              <div class="mmd-login__metaCard">
-                <span>Primary Auth / วิธีตรวจสิทธิ์</span>
-                <strong>Confirm Key / Bearer</strong>
-              </div>
-              <div class="mmd-login__metaCard">
-                <span>Mode / โหมด</span>
-                <strong>Secure Browser Session</strong>
-              </div>
-            </div>
-            <p class="mmd-login__foot">
-              <span>Access is checked against /v1/admin/ping before redirect.</span>
-              <span>ระบบจะตรวจสิทธิ์ผ่าน /v1/admin/ping ก่อนพาไปหน้าถัดไป</span>
-            </p>
-          </div>
-        </section>
+        <header class="mmd-login__header">
+          <h1 class="mmd-login__title">MMD SĪGIL Admin Console</h1>
+          <p class="mmd-login__subtitle">Secure operator access</p>
+        </header>
 
         <form id="admin-login-form" class="mmd-login__panel">
-          <div class="mmd-login__panelTop">
-            <h2 class="mmd-login__panelTitle">
-              Operator Access
-              <span>ยืนยันสิทธิ์ผู้ปฏิบัติงาน</span>
-            </h2>
-            <p class="mmd-login__panelSub">
-              <span>Authorize current browser session</span>
-              <span>อนุญาต browser session ปัจจุบันก่อนเข้าสู่ระบบ</span>
-            </p>
-          </div>
-
-          <label class="mmd-field" for="baseUrl">
-            <span class="mmd-label">Base URL<span>โดเมนระบบ</span></span>
-            <input id="baseUrl" name="baseUrl" type="text" value="${escapeHtml(defaultBaseUrl)}" autocomplete="url" />
-            <span class="mmd-hint">
-              <span>Browser will call this domain for /v1/admin/* requests.</span>
-              <span>browser จะเรียกโดเมนนี้สำหรับ /v1/admin/*</span>
-            </span>
-          </label>
-
-          <input id="accessCode" name="accessCode" type="hidden" value="" autocomplete="off" />
-
-          <label class="mmd-field" for="confirmKey">
-            <span class="mmd-label">Access Code<span>รหัสยืนยันภายใน</span></span>
-            <input id="confirmKey" name="confirmKey" type="password" autocomplete="current-password" />
-            <span class="mmd-hint">
-              <span>Sent as X-Confirm-Key header.</span>
-              <span>ส่งเป็น header X-Confirm-Key</span>
-            </span>
-          </label>
-
-          <label class="mmd-field" for="bearer">
-            <span class="mmd-label">Admin Bearer Token<span>โทเคนผู้ดูแลระบบ</span></span>
-            <input id="bearer" name="bearer" type="password" autocomplete="off" />
-            <span class="mmd-hint">
-              <span>Sent as Authorization: Bearer ... header.</span>
-              <span>ส่งเป็น header Authorization: Bearer ...</span>
-            </span>
-          </label>
-
-          <div class="mmd-login__routePreview">
-            <span class="mmd-login__routeLabel">Next Route<span>เส้นทางถัดไป</span></span>
-            <span id="nextValue" class="mmd-login__routeValue">${escapeHtml(next)}</span>
-          </div>
-
-          <p class="mmd-login__note">
-            <span>Session context is stored only after verification succeeds.</span>
-            <span>ระบบจะบันทึก session context หลังตรวจสิทธิ์สำเร็จเท่านั้น</span>
-          </p>
-
-          <label class="mmd-login__remember" for="rememberBaseUrl">
-            <input id="rememberBaseUrl" name="rememberBaseUrl" type="checkbox" checked />
-            <span>
-              Remember base URL on this device
-              <span>จำ Base URL บนอุปกรณ์นี้</span>
-            </span>
-          </label>
-
+          <label class="mmd-login__label" for="accessCode">Password or access code</label>
+          <input id="accessCode" class="mmd-login__input" name="accessCode" type="password" placeholder="Password or access code" autocomplete="current-password" autofocus />
+          <button id="submit" class="mmd-login__button" type="submit">Enter Console</button>
           <p id="error" class="mmd-login__error" role="alert"></p>
-          <button id="submit" class="mmd-login__button" type="submit">Unlock Admin · เข้าสู่ Admin Console</button>
         </form>
       </div>
     </main>
@@ -5024,7 +4595,9 @@ function renderAdminLoginPage(request: Request, env: Env): Response {
       (() => {
         const KEY = ${JSON.stringify(ADMIN_GATE_SESSION_KEY)};
         const next = ${JSON.stringify(next)};
+        const baseUrl = ${JSON.stringify(defaultBaseUrl)};
         const form = document.getElementById("admin-login-form");
+        const accessCode = document.getElementById("accessCode");
         const error = document.getElementById("error");
         const submit = document.getElementById("submit");
 
@@ -5039,14 +4612,18 @@ function renderAdminLoginPage(request: Request, env: Env): Response {
         form.addEventListener("submit", async (event) => {
           event.preventDefault();
           setError("");
+          const code = accessCode.value.trim();
+          if (!code) {
+            setError("Enter the access code.");
+            accessCode.focus();
+            return;
+          }
           submit.disabled = true;
-          submit.textContent = "Verifying... · กำลังตรวจสิทธิ์...";
+          submit.textContent = "Checking...";
 
           const payload = {
-            baseUrl: document.getElementById("baseUrl").value,
-            accessCode: document.getElementById("accessCode").value,
-            bearer: document.getElementById("bearer").value,
-            confirmKey: document.getElementById("confirmKey").value,
+            baseUrl,
+            accessCode: code,
             next,
           };
 
@@ -5058,7 +4635,7 @@ function renderAdminLoginPage(request: Request, env: Env): Response {
             });
             const data = await response.json().catch(() => null);
             if (!response.ok || !data || !data.ok) {
-              setError(data && data.error && data.error.message ? data.error.message : "Unable to unlock admin.");
+              setError("Access denied.");
               return;
             }
 
@@ -5067,10 +4644,10 @@ function renderAdminLoginPage(request: Request, env: Env): Response {
             }
             location.replace(data.data && data.data.redirect_to ? data.data.redirect_to : next);
           } catch (err) {
-            setError("Unable to verify admin access right now.");
+            setError("Unable to sign in right now.");
           } finally {
             submit.disabled = false;
-            submit.textContent = "Unlock Admin · เข้าสู่ Admin Console";
+            submit.textContent = "Enter Console";
           }
         });
       })();
@@ -6810,9 +6387,11 @@ async function handleAdminLoginSession(request: Request, env: Env): Promise<Resp
     next?: string;
   } | null;
   const accessCode = toStr(body?.accessCode);
-  const bearer = toStr(body?.bearer) || accessCode;
-  const confirmKey = toStr(body?.confirmKey);
-  const next = normalizeAdminNextPath(body?.next, selectAdminDefaultNext(new URL(request.url).pathname));
+  const explicitBearer = toStr(body?.bearer);
+  const explicitConfirmKey = toStr(body?.confirmKey);
+  const requestPath = new URL(request.url).pathname;
+  const defaultNext = requestPath === SIGIL.loginSession ? SIGIL.createSession : selectAdminDefaultNext(requestPath);
+  const next = normalizeAdminNextPath(body?.next, defaultNext);
   let baseUrl = "";
 
   try {
@@ -6822,40 +6401,80 @@ async function handleAdminLoginSession(request: Request, env: Env): Promise<Resp
     return badRequest(message, meta, { field: "baseUrl" });
   }
 
-  if (!bearer && !confirmKey) {
+  if (!accessCode && !explicitBearer && !explicitConfirmKey) {
     return badRequest("accessCode, bearer, or confirmKey is required", meta, {
       field: "accessCode",
     });
   }
 
-  const headers = new Headers();
-  if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
-  if (confirmKey) headers.set("X-Confirm-Key", confirmKey);
+  const candidates: {
+    bearer?: string;
+    confirmKey?: string;
+    sessionBearer?: string;
+    sessionConfirmKey?: string;
+  }[] = [];
 
-  const verified = await verifyAdminAuthority(baseUrl, request, env, headers);
+  if (explicitBearer || explicitConfirmKey) {
+    const bearer = explicitBearer || accessCode;
+    candidates.push({
+      ...(bearer ? { bearer, sessionBearer: bearer } : {}),
+      ...(explicitConfirmKey ? { confirmKey: explicitConfirmKey, sessionConfirmKey: explicitConfirmKey } : {}),
+    });
+  } else if (accessCode) {
+    candidates.push({ bearer: accessCode, sessionBearer: accessCode });
+    candidates.push({ confirmKey: accessCode, sessionConfirmKey: accessCode });
 
-  if (!verified) {
+    const expectedGatePassword = String(env.BROWSER_GATE_PASSWORD || env.INTERNAL_TOKEN || "").trim();
+    const envBearer = toStr(env.INTERNAL_TOKEN);
+    const envConfirmKey = toStr(env.CONFIRM_KEY);
+    if (expectedGatePassword && accessCode === expectedGatePassword && (envBearer || envConfirmKey)) {
+      candidates.push({
+        ...(envBearer ? { bearer: envBearer, sessionBearer: envBearer } : {}),
+        ...(envConfirmKey ? { confirmKey: envConfirmKey, sessionConfirmKey: envConfirmKey } : {}),
+      });
+    }
+  }
+
+  const seenCandidates = new Set<string>();
+  let verifiedSession: AdminGateSession | null = null;
+  for (const candidate of candidates) {
+    if (!candidate.bearer && !candidate.confirmKey) continue;
+
+    const candidateKey = JSON.stringify([candidate.bearer || "", candidate.confirmKey || ""]);
+    if (seenCandidates.has(candidateKey)) continue;
+    seenCandidates.add(candidateKey);
+
+    const headers = new Headers();
+    if (candidate.bearer) headers.set("Authorization", `Bearer ${candidate.bearer}`);
+    if (candidate.confirmKey) headers.set("X-Confirm-Key", candidate.confirmKey);
+
+    const verified = await verifyAdminAuthority(baseUrl, request, env, headers);
+    if (!verified) continue;
+
+    verifiedSession = {
+      ok: true,
+      at: Date.now(),
+      baseUrl,
+      ...(candidate.sessionBearer ? { bearer: candidate.sessionBearer } : {}),
+      ...(candidate.sessionConfirmKey ? { confirmKey: candidate.sessionConfirmKey } : {}),
+    };
+    break;
+  }
+
+  if (!verifiedSession) {
     return json(
       {
         ok: false,
-        error: { code: "ADMIN_VERIFY_FAILED", message: "Admin verification failed" },
+        error: { code: "ADMIN_VERIFY_FAILED", message: "Access denied." },
         meta,
       },
       { status: 401 },
     );
   }
 
-  const session: AdminGateSession = {
-    ok: true,
-    at: Date.now(),
-    baseUrl,
-    ...(bearer ? { bearer } : {}),
-    ...(confirmKey ? { confirmKey } : {}),
-  };
-
   return json(
-    { ok: true, data: { unlocked: true, redirect_to: next, session }, meta },
-    { headers: { "set-cookie": makeGateSessionCookie(request, session) } },
+    { ok: true, data: { unlocked: true, redirect_to: next, session: verifiedSession }, meta },
+    { headers: { "set-cookie": makeGateSessionCookie(request, verifiedSession) } },
   );
 }
 
