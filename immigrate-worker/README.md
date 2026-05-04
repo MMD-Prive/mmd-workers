@@ -186,7 +186,7 @@ curl -sS "$IMMIGRATE_BASE_URL/internal/line/send-session-card" \
     "deposit_amount_thb": 3000,
     "expire_at": "2026-05-10T13:00:00.000Z",
     "points_balance": 120,
-    "dashboard_url": "https://mmdbkk.com/member/dashboard?t=example",
+    "dashboard_url": "https://mmdbkk.com/member/first-db?t=example",
     "payment_url": "https://sigil.mmdbkk.com/sigil/pay/session?t=example"
   }'
 ```

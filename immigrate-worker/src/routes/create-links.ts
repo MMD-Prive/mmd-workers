@@ -201,6 +201,10 @@ function defaultPublicBaseUrl(env: Env): string {
   return toStr(env.SIGIL_BASE_URL || env.PUBLIC_WEB_BASE_URL) || "https://sigil.mmdbkk.com";
 }
 
+function defaultCustomerDashboardBaseUrl(env: Env): string {
+  return toStr(env.WEB_BASE_URL) || "https://mmdbkk.com";
+}
+
 function buildRulesUrl(baseUrl: string, directUrl: string, pathOverride: string | undefined, fallbackPath: string): string {
   if (toStr(directUrl)) {
     return buildAbsoluteUrl(baseUrl, directUrl, fallbackPath);
@@ -308,9 +312,9 @@ async function buildLinksBundle(
   });
 
   const customerDashboardUrl = `${buildAbsoluteUrl(
-    baseUrl,
-    toStr(payload.customer_dashboard_path) || "/member/dashboard",
-    "/member/dashboard",
+    defaultCustomerDashboardBaseUrl(env),
+    "/member/first-db",
+    "/member/first-db",
   )}?t=${encodeURIComponent(customerInvite.customer_invite_t)}`;
 
   const modelDashboardUrl = `${buildAbsoluteUrl(
@@ -481,7 +485,7 @@ export async function handleCreateLinks(request: Request, env: Env): Promise<Res
           customer_payment_url: sessionLinks.customer_payment_url,
           customer_rules_url: linkBundle.customer_rules_url,
           model_rules_url: linkBundle.model_rules_url,
-          customer_dashboard_url: linkBundle.customer_dashboard_url,
+          customer_dashboard_url: sessionLinks.customer_dashboard_url,
           model_dashboard_url: linkBundle.model_dashboard_url,
           model_console_url: sessionLinks.model_console_url,
           next_booking_url: sessionLinks.next_booking_url,
@@ -525,7 +529,7 @@ export async function handleCreateLinks(request: Request, env: Env): Promise<Res
       customer_payment_url: baseSessionLinks.customer_payment_url,
       customer_rules_url: linkBundle.customer_rules_url,
       model_rules_url: linkBundle.model_rules_url,
-      customer_dashboard_url: linkBundle.customer_dashboard_url,
+      customer_dashboard_url: baseSessionLinks.customer_dashboard_url,
       model_dashboard_url: linkBundle.model_dashboard_url,
       model_console_url: baseSessionLinks.model_console_url,
       next_booking_url: baseSessionLinks.next_booking_url,

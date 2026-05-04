@@ -79,6 +79,10 @@ function baseUrl(value: unknown, fallback: string): string {
   return (toStr(value) || fallback).replace(/\/+$/, "");
 }
 
+function customerDashboardUrl(webBaseUrl: string, customerToken: string): string {
+  return `${webBaseUrl}/member/first-db?t=${encodeURIComponent(customerToken)}`;
+}
+
 export function buildSessionLinkArtifacts(
   env: Env,
   payload: CreateLinksPayload,
@@ -99,10 +103,7 @@ export function buildSessionLinkArtifacts(
   return {
     customer_token: customerToken,
     model_token: modelToken,
-    customer_dashboard_url:
-      toStr(upstream?.customer_dashboard_url) ||
-      toStr(linkBundle.customer_dashboard_url) ||
-      `${webBaseUrl}/member/dashboard?t=${encodeURIComponent(customerToken)}`,
+    customer_dashboard_url: customerDashboardUrl(webBaseUrl, customerToken),
     customer_payment_url: paymentUrl,
     model_console_url:
       toStr(upstream?.model_console_url) ||
