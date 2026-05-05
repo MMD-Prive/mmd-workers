@@ -118,6 +118,7 @@ const SIGIL = {
   inviteResolve: "/sigil/api/invite/resolve",
   renewalStatus: "/sigil/api/renewal/status",
   renewalIntake: "/sigil/api/renewal/intake",
+  recoveryAck: "/sigil/api/recovery/ack",
   customerConfirm: "/sigil/api/jobs/customer-confirm",
   sendLineSessionCard: "/sigil/admin/jobs/send-line-session-card",
 } as const;
@@ -1112,6 +1113,230 @@ async function handlePublicRenewalIntake(request: Request, env: Env): Promise<Re
       promotion: promotion || null,
       links: links || null,
       telegram: telegram || null,
+    },
+    meta,
+  });
+}
+
+type PublicRecoveryAckBody = {
+  case_id?: string;
+  caseId?: string;
+  client_name?: string;
+  clientName?: string;
+  model_name?: string;
+  modelName?: string;
+  incident?: string;
+  context_note?: string;
+  contextNote?: string;
+  work_type?: string;
+  workType?: string;
+  status?: string;
+  action?: string;
+  source_page?: string;
+  sourcePage?: string;
+  page_url?: string;
+  pageUrl?: string;
+  details?: Record<string, unknown>;
+};
+
+type RecoveryAckRecordResult = {
+  mode: "airtable" | "mock";
+  action: "created" | "updated" | "mock";
+  inbox_id: string;
+  airtable_record_id?: string;
+};
+
+function recoveryString(value: unknown, maxLength = 240): string {
+  return toStr(value).replace(/\s+/g, " ").slice(0, maxLength);
+}
+
+function buildRecoveryCaseId(body: PublicRecoveryAckBody, clientName: string, modelName: string): string {
+  const explicit = recoveryString(body.case_id || body.caseId, 96);
+  if (explicit) return explicit;
+
+  const source = [clientName, modelName, new Date().toISOString().slice(0, 10)]
+    .filter(Boolean)
+    .join("_");
+  return `recovery_${slugifyValue(source, "case")}`;
+}
+
+function isAllowedRecoveryOrigin(request: Request, env: Env): boolean {
+  const origin = request.headers.get("origin");
+  if (!origin) return true;
+  return getPublicAllowedOrigins(env).includes(origin);
+}
+
+function recoveryInboxTable(): string {
+  return "MMD — Console Inbox";
+}
+
+async function findRecoveryInboxRecord(env: Env, inboxId: string): Promise<{ id?: string } | null> {
+  const data = await airtableImportRequest(env, recoveryInboxTable(), {
+    query: {
+      maxRecords: "1",
+      filterByFormula: `{inbox_id}="${encodeFormulaValue(inboxId)}"`,
+    },
+  });
+  const records = Array.isArray(data.records) ? data.records : [];
+  const record = records[0] && typeof records[0] === "object" ? records[0] as { id?: string } : null;
+  return record?.id ? record : null;
+}
+
+async function writeRecoveryAckRecord(
+  env: Env,
+  input: {
+    caseId: string;
+    clientName: string;
+    modelName: string;
+    incident: string;
+    contextNote: string;
+    workType: string;
+    status: string;
+    action: string;
+    sourcePage: string;
+    pageUrl: string;
+    receivedAt: string;
+    userAgent: string;
+    country: string;
+    details?: Record<string, unknown>;
+  },
+): Promise<RecoveryAckRecordResult> {
+  const inboxId = `recovery_${slugifyValue(input.caseId, "case")}`.slice(0, 120);
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) {
+    return { mode: "mock", action: "mock", inbox_id: inboxId };
+  }
+
+  const adminNote = [
+    "SIGIL Recovery ACK",
+    `Client: ${input.clientName}`,
+    `Model: ${input.modelName}`,
+    input.incident ? `Incident: ${input.incident}` : "",
+    input.contextNote ? `Context: ${input.contextNote}` : "",
+    input.workType ? `Work: ${input.workType}` : "",
+  ].filter(Boolean).join(" | ");
+
+  const fields = compactFields({
+    inbox_id: inboxId,
+    created_by: "sigil-recovery-page",
+    source: "line",
+    intent: "upsert_member",
+    member_name: input.clientName,
+    legacy_tags: "recovery_ack, sigil_care_layer, service_recovery",
+    admin_note: adminNote,
+    payload_json: JSON.stringify({
+      case_id: input.caseId,
+      care_layer: "sigil_care_layer",
+      recovery_status: input.status,
+      recovery_action: input.action,
+      client_name: input.clientName,
+      model_name: input.modelName,
+      incident: input.incident,
+      context_note: input.contextNote,
+      work_type: input.workType,
+      source_page: input.sourcePage,
+      page_url: input.pageUrl,
+      acknowledged_at: input.receivedAt,
+      request_context: {
+        user_agent: input.userAgent,
+        country: input.country,
+      },
+      details: input.details || {},
+    }),
+    status: "new",
+  });
+
+  const existing = await findRecoveryInboxRecord(env, inboxId);
+  if (existing?.id) {
+    const updated = await patchAirtableImportRecordWithFallbacks(
+      env,
+      recoveryInboxTable(),
+      existing.id,
+      fields,
+    );
+    return {
+      mode: "airtable",
+      action: "updated",
+      inbox_id: inboxId,
+      airtable_record_id: toStr(updated.id) || existing.id,
+    };
+  }
+
+  const created = await createAirtableImportRecordWithFallbacks(env, recoveryInboxTable(), fields);
+  return {
+    mode: "airtable",
+    action: "created",
+    inbox_id: inboxId,
+    airtable_record_id: toStr(created.id),
+  };
+}
+
+async function handlePublicRecoveryAck(request: Request, env: Env): Promise<Response> {
+  const meta = makeMeta(request);
+
+  if (!isAllowedRecoveryOrigin(request, env)) {
+    return json(
+      {
+        ok: false,
+        error: { code: "ORIGIN_NOT_ALLOWED", message: "Origin is not allowed" },
+        meta,
+      },
+      { status: 403 },
+    );
+  }
+
+  const body = (await request.json().catch(() => null)) as PublicRecoveryAckBody | null;
+  if (!body || typeof body !== "object") {
+    return publicJson(
+      request,
+      env,
+      { ok: false, error: { code: "INVALID_INPUT", message: "valid recovery payload is required" }, meta },
+      { status: 400 },
+    );
+  }
+
+  const clientName = recoveryString(body.client_name || body.clientName, 120);
+  const modelName = recoveryString(body.model_name || body.modelName, 120);
+  const validationErrors: string[] = [];
+  if (!clientName) validationErrors.push("client_name is required");
+  if (!modelName) validationErrors.push("model_name is required");
+
+  if (validationErrors.length) {
+    return publicJson(
+      request,
+      env,
+      { ok: false, error: { code: "INVALID_INPUT", message: validationErrors.join("; ") }, meta },
+      { status: 400 },
+    );
+  }
+
+  const receivedAt = new Date().toISOString();
+  const caseId = buildRecoveryCaseId(body, clientName, modelName);
+  const record = await writeRecoveryAckRecord(env, {
+    caseId,
+    clientName,
+    modelName,
+    incident: recoveryString(body.incident, 180),
+    contextNote: recoveryString(body.context_note || body.contextNote, 300),
+    workType: recoveryString(body.work_type || body.workType, 180),
+    status: recoveryString(body.status, 80) || "acknowledged",
+    action: recoveryString(body.action, 80) || "enter_sigil_care",
+    sourcePage: recoveryString(body.source_page || body.sourcePage, 160) || "sigil_recovery_page",
+    pageUrl: recoveryString(body.page_url || body.pageUrl, 300),
+    receivedAt,
+    userAgent: recoveryString(request.headers.get("user-agent"), 300),
+    country: recoveryString(request.headers.get("cf-ipcountry"), 12),
+    details: body.details && typeof body.details === "object" ? body.details : undefined,
+  });
+
+  return publicJson(request, env, {
+    ok: true,
+    data: {
+      case_id: caseId,
+      inbox_id: record.inbox_id,
+      care_layer: "SIGIL Care Layer",
+      recovery_status: "acknowledged",
+      acknowledged_at: receivedAt,
+      record,
     },
     meta,
   });
@@ -4070,6 +4295,10 @@ function isPublicRenewalStatusRoute(pathname: string): boolean {
   return pathname === PUBLIC.renewalStatus || pathname === SIGIL.renewalStatus;
 }
 
+function isPublicRecoveryAckRoute(pathname: string): boolean {
+  return pathname === SIGIL.recoveryAck;
+}
+
 function isPublicCustomerConfirmRoute(pathname: string): boolean {
   return pathname === PUBLIC.customerConfirm || pathname === JOBS.customerConfirm || pathname === SIGIL.customerConfirm;
 }
@@ -4752,7 +4981,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
     : adminGateBootstrapScript(session as AdminGateSession, next, selectAdminLoginPath(requestUrl.pathname));
   const submitPath = isSigilAdmin ? SIGIL.createSession : ADMIN_JOBS.createSession;
   const html = `<!doctype html>
-<html lang="en">
+<html lang="th">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -4761,9 +4990,10 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
       :root {
         color-scheme: dark;
         --bg: #050403;
-        --panel: rgba(16,14,12,.82);
-        --panel-strong: rgba(22,18,14,.94);
-        --panel-soft: rgba(255,255,255,.035);
+        --panel: rgba(13,12,11,.74);
+        --panel-strong: rgba(19,17,14,.82);
+        --panel-soft: rgba(255,255,255,.04);
+        --field: rgba(0,0,0,.38);
         --line: rgba(226,190,112,.2);
         --line-strong: rgba(239,202,119,.45);
         --text: #f8efe2;
@@ -4780,19 +5010,19 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
       body {
         margin: 0;
         min-height: 100vh;
-        padding: 24px;
+        padding: 28px;
         color: var(--text);
         background:
-          linear-gradient(180deg, rgba(216,170,77,.16), transparent 30%),
-          linear-gradient(135deg, #11100e 0%, #050403 56%, #010101 100%);
+          linear-gradient(158deg, rgba(216,170,77,.17), transparent 34%),
+          linear-gradient(135deg, #11100e 0%, #050403 54%, #010101 100%);
         font-family: Inter, "Avenir Next", "Segoe UI", "Noto Sans Thai", Arial, sans-serif;
       }
       .shell {
-        width: min(100%, 1160px);
+        width: min(100%, 1240px);
         margin: 0 auto;
-        padding: 26px;
+        padding: 28px;
         border: 1px solid var(--line);
-        border-radius: 18px;
+        border-radius: 8px;
         background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.018)), var(--panel);
         box-shadow: 0 30px 90px rgba(0,0,0,.46);
         backdrop-filter: blur(18px);
@@ -4800,38 +5030,38 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
       .brandbar {
         display: flex;
         justify-content: space-between;
-        gap: 16px;
-        align-items: flex-start;
+        gap: 18px;
+        align-items: center;
         padding-bottom: 18px;
         border-bottom: 1px solid var(--line);
       }
       .brand {
         margin: 0;
         color: var(--cream);
-        font: 800 1rem/1.2 Inter, "Avenir Next", sans-serif;
-        letter-spacing: .18em;
+        font: 900 1.05rem/1.2 Inter, "Avenir Next", sans-serif;
+        letter-spacing: .14em;
         text-transform: uppercase;
       }
       .surface {
-        margin: 7px 0 0;
-        color: var(--gold);
-        font-size: .9rem;
+        margin: 8px 0 0;
+        color: var(--gold-strong);
+        font-size: .88rem;
         font-weight: 700;
       }
       h1 {
-        margin: 24px 0 0;
+        margin: 26px 0 0;
         color: var(--cream);
-        font-family: Baskerville, "Iowan Old Style", Palatino, Georgia, "Noto Serif Thai", serif;
-        font-size: clamp(2.4rem, 6vw, 4.8rem);
-        line-height: .95;
+        font-family: "Antonio", Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
+        font-size: clamp(2.4rem, 5vw, 4.3rem);
+        line-height: 1;
         letter-spacing: 0;
       }
       .subtitle {
-        max-width: 56ch;
-        margin: 10px 0 0;
+        max-width: 68ch;
+        margin: 12px 0 0;
         color: var(--muted);
-        font-size: 1rem;
-        line-height: 1.55;
+        font-size: 1.02rem;
+        line-height: 1.65;
       }
       form {
         display: grid;
@@ -4841,23 +5071,33 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
       .form-grid {
         display: grid;
         gap: 18px;
-        grid-template-columns: minmax(0, 1.12fr) minmax(340px, .88fr);
+        grid-template-columns: minmax(0, 1.08fr) minmax(370px, .92fr);
         align-items: start;
       }
       .form-section {
         display: grid;
-        gap: 16px;
+        gap: 18px;
         min-width: 0;
-        padding: 18px;
+        padding: 22px;
         border: 1px solid var(--line);
-        border-radius: 12px;
+        border-radius: 8px;
         background: var(--panel-strong);
       }
       .section-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
         margin: 0;
         color: var(--gold-strong);
-        font: 800 1rem/1.2 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
-        letter-spacing: .02em;
+        font: 900 1.16rem/1.2 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
+        letter-spacing: 0;
+      }
+      .section-title::before {
+        content: "";
+        width: 5px;
+        height: 26px;
+        border-radius: 999px;
+        background: linear-gradient(180deg, #f3cb72, #9b6a20);
       }
       .fields {
         display: grid;
@@ -4868,19 +5108,19 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
       .field {
         display: grid;
         gap: 7px;
-        color: var(--gold);
-        font: 800 .9rem/1.35 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
+        color: var(--gold-strong);
+        font: 900 .98rem/1.35 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
       }
       .span-2 { grid-column: 1 / -1; }
       input,
       select,
       textarea {
         width: 100%;
-        min-height: 48px;
-        padding: 12px 13px;
+        min-height: 50px;
+        padding: 13px 14px;
         border: 1px solid var(--line);
-        border-radius: 10px;
-        background: rgba(0,0,0,.34);
+        border-radius: 8px;
+        background: var(--field);
         color: var(--text);
         font: 600 1rem/1.35 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
         outline: none;
@@ -4900,6 +5140,41 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
       textarea {
         min-height: 84px;
         resize: vertical;
+      }
+      .deposit-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .deposit-option {
+        position: relative;
+        display: grid;
+        min-height: 42px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(0,0,0,.25);
+        color: var(--muted);
+        font-size: .88rem;
+        font-weight: 900;
+        cursor: pointer;
+      }
+      .deposit-option input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        min-height: 1px;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .deposit-option:has(input:checked) {
+        border-color: rgba(243,203,114,.82);
+        background: linear-gradient(180deg, rgba(243,203,114,.25), rgba(195,145,53,.14));
+        color: var(--cream);
+        box-shadow: 0 0 0 3px rgba(216,170,77,.1);
       }
       .money-grid {
         display: grid;
@@ -4925,7 +5200,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
       button {
         min-height: 42px;
         padding: 0 14px;
-        border-radius: 9px;
+        border-radius: 8px;
         border: 1px solid rgba(216,170,77,.36);
         background: rgba(255,255,255,.04);
         color: var(--text);
@@ -4982,7 +5257,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
         gap: 10px;
         min-width: 0;
         padding: 14px;
-        border-radius: 10px;
+        border-radius: 8px;
         border: 1px solid var(--line);
         background: var(--panel-soft);
       }
@@ -5089,7 +5364,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
               </label>
               <label>
                 ระยะเวลา
-                <input id="duration_hours" name="duration_hours" type="number" min="0.5" step="0.5" value="2" required />
+                <input id="duration_hours" name="duration_hours" type="number" min="0.5" step="0.5" value="2" inputmode="decimal" required />
               </label>
               <label>
                 สถานที่
@@ -5119,55 +5394,59 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             <div class="money-grid">
               <label>
                 ราคาพื้นฐาน
-                <input id="base_price_thb" name="base_price_thb" type="number" min="0" step="1" required />
+                <input id="base_price_thb" name="base_price_thb" type="number" min="0" step="1" inputmode="numeric" required />
               </label>
-              <label>
+              <div class="field">
                 มัดจำ (%)
-                <select id="deposit_percent" name="deposit_percent">
-                  <option value="10">10%</option>
-                  <option value="30" selected>30%</option>
-                  <option value="50">50%</option>
-                  <option value="70">70%</option>
-                  <option value="100">100%</option>
-                </select>
-              </label>
-            </div>
-            <label>
-              รายการเพิ่มเติม
-              <textarea id="addons_note" name="addons_note"></textarea>
-            </label>
-            <div class="addons">
+                <div class="deposit-grid" role="radiogroup" aria-label="มัดจำ (%)">
+                  <label class="deposit-option"><input name="deposit_percent" type="radio" value="10" />10%</label>
+                  <label class="deposit-option"><input name="deposit_percent" type="radio" value="30" checked />30%</label>
+                  <label class="deposit-option"><input name="deposit_percent" type="radio" value="50" />50%</label>
+                  <label class="deposit-option"><input name="deposit_percent" type="radio" value="70" />70%</label>
+                  <label class="deposit-option"><input name="deposit_percent" type="radio" value="100" />100%</label>
+                </div>
+              </div>
               <label>
-                รายการเพิ่มเติม 1
-                <input id="addon_1_thb" name="addon_1_thb" type="number" min="0" step="1" />
+                รายการเพิ่มเติม
+                <input id="addons_total_thb" name="addons_total_thb" type="text" readonly />
               </label>
-              <label>
-                รายการเพิ่มเติม 2
-                <input id="addon_2_thb" name="addon_2_thb" type="number" min="0" step="1" />
-              </label>
-              <label>
-                รายการเพิ่มเติม 3
-                <input id="addon_3_thb" name="addon_3_thb" type="number" min="0" step="1" />
-              </label>
-              <label>
-                รายการเพิ่มเติม 4
-                <input id="addon_4_thb" name="addon_4_thb" type="number" min="0" step="1" />
-              </label>
-              <label>
-                รายการเพิ่มเติม 5
-                <input id="addon_5_thb" name="addon_5_thb" type="number" min="0" step="1" />
-              </label>
-            </div>
-            <div class="money-grid">
               <label>
                 ราคารวมทั้งสิ้น
                 <input id="total_amount_thb" name="total_amount_thb" type="text" readonly />
               </label>
+            </div>
+            <label>
+              รายละเอียดรายการเพิ่มเติม
+              <textarea id="addons_note" name="addons_note" placeholder="เช่น ค่ารถ, overtime, special request"></textarea>
+            </label>
+            <div class="addons">
+              <label>
+                รายการเพิ่มเติม 1
+                <input id="addon_1_thb" name="addon_1_thb" type="number" min="0" step="1" inputmode="numeric" />
+              </label>
+              <label>
+                รายการเพิ่มเติม 2
+                <input id="addon_2_thb" name="addon_2_thb" type="number" min="0" step="1" inputmode="numeric" />
+              </label>
+              <label>
+                รายการเพิ่มเติม 3
+                <input id="addon_3_thb" name="addon_3_thb" type="number" min="0" step="1" inputmode="numeric" />
+              </label>
+              <label>
+                รายการเพิ่มเติม 4
+                <input id="addon_4_thb" name="addon_4_thb" type="number" min="0" step="1" inputmode="numeric" />
+              </label>
+              <label>
+                รายการเพิ่มเติม 5
+                <input id="addon_5_thb" name="addon_5_thb" type="number" min="0" step="1" inputmode="numeric" />
+              </label>
+            </div>
+            <div class="money-grid">
               <label>
                 ยอดมัดจำ
                 <input id="deposit_amount_thb" name="deposit_amount_thb" type="text" readonly />
               </label>
-              <label class="span-2">
+              <label>
                 ยอดค้างชำระ
                 <input id="final_amount_thb" name="final_amount_thb" type="text" readonly />
               </label>
@@ -5229,11 +5508,17 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
           }
         }
 
+        function readDepositPercent() {
+          const selected = document.querySelector('input[name="deposit_percent"]:checked');
+          return selected && "value" in selected ? Number(selected.value) || 30 : 30;
+        }
+
         function calculatePricing() {
           const basePrice = readAmount("base_price_thb", 0);
           const addons = addonIds.map((id) => readAmount(id, 0));
-          const depositPercent = Number(read("deposit_percent")) || 30;
+          const depositPercent = readDepositPercent();
           if ([basePrice, depositPercent, ...addons].some(Number.isNaN)) {
+            writeAmount("addons_total_thb", NaN);
             writeAmount("total_amount_thb", NaN);
             writeAmount("deposit_amount_thb", NaN);
             writeAmount("final_amount_thb", NaN);
@@ -5252,6 +5537,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
           const totalAmount = basePrice + addonsTotal;
           const depositAmount = Math.round(totalAmount * (depositPercent / 100));
           const finalAmount = Math.max(0, totalAmount - depositAmount);
+          writeAmount("addons_total_thb", addonsTotal);
           writeAmount("total_amount_thb", totalAmount);
           writeAmount("deposit_amount_thb", depositAmount);
           writeAmount("final_amount_thb", finalAmount);
@@ -5429,9 +5715,9 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
           result.innerHTML = [
             "<h2>Links ready</h2>",
             '<div class="result-grid">',
-            linkCard("Client Dashboard", "Client first dashboard and session details.", customerFirstDb),
-            linkCard("Payment Confirmation", "Payment proof and confirmation page.", paymentLink),
-            linkCard("Model Console", "Model-side session console.", modelConsole),
+            linkCard("Client Dashboard:", "Client first dashboard and session details.", customerFirstDb),
+            linkCard("Payment Confirmation:", "Payment proof and confirmation page.", paymentLink),
+            linkCard("Model Console:", "Model-side session console.", modelConsole),
             '</div>',
             lineActionRow(lineUserId)
           ].join("");
@@ -5443,10 +5729,13 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
           }
         });
 
-        ["base_price_thb", "deposit_percent", ...addonIds].forEach((id) => {
+        ["base_price_thb", ...addonIds].forEach((id) => {
           const element = document.getElementById(id);
           if (!element) return;
           element.addEventListener("input", calculatePricing);
+          element.addEventListener("change", calculatePricing);
+        });
+        document.querySelectorAll('input[name="deposit_percent"]').forEach((element) => {
           element.addEventListener("change", calculatePricing);
         });
         calculatePricing();
@@ -5558,6 +5847,11 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             current_coordinates: currentCoordinates,
             duration_hours: durationHours,
             base_price_thb: pricing.basePrice,
+            addon_1_thb: pricing.addonAmounts[0] || 0,
+            addon_2_thb: pricing.addonAmounts[1] || 0,
+            addon_3_thb: pricing.addonAmounts[2] || 0,
+            addon_4_thb: pricing.addonAmounts[3] || 0,
+            addon_5_thb: pricing.addonAmounts[4] || 0,
             addon_amounts_thb: pricing.addonAmounts,
             addons_total_thb: pricing.addonsTotal,
             addons_note: addonsNote,
@@ -5591,10 +5885,20 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             job_date: jobDate,
             start_time: startTime,
             end_time: endTime,
+            duration_hours: durationHours,
             location_name: locationName,
+            room_address: roomAddress,
+            venue_search_name: venueSearchName,
             google_map_url: googleMapUrl,
+            current_coordinates: currentCoordinates,
             amount_thb: pricing.totalAmount,
             base_price_thb: pricing.basePrice,
+            addon_1_thb: pricing.addonAmounts[0] || 0,
+            addon_2_thb: pricing.addonAmounts[1] || 0,
+            addon_3_thb: pricing.addonAmounts[2] || 0,
+            addon_4_thb: pricing.addonAmounts[3] || 0,
+            addon_5_thb: pricing.addonAmounts[4] || 0,
+            addons_note: addonsNote,
             addons_total_thb: pricing.addonsTotal,
             deposit_percent: pricing.depositPercent,
             deposit_amount_thb: pricing.depositAmount,
@@ -7536,6 +7840,7 @@ export default {
         (
           isPublicRenewalStatusRoute(url.pathname)
           || isPublicRenewalIntakeRoute(url.pathname)
+          || isPublicRecoveryAckRoute(url.pathname)
           || isPublicCustomerConfirmRoute(url.pathname)
           || url.pathname === MODEL_SESSION_DASHBOARD_PATH
           || url.pathname === MODEL_SESSION_STATUS_PATH
@@ -7581,6 +7886,10 @@ export default {
 
       if (request.method === "POST" && isPublicRenewalIntakeRoute(url.pathname)) {
         return await handlePublicRenewalIntake(request, env);
+      }
+
+      if (request.method === "POST" && isPublicRecoveryAckRoute(url.pathname)) {
+        return await handlePublicRecoveryAck(request, env);
       }
 
       if (request.method === "POST" && isPublicCustomerConfirmRoute(url.pathname)) {
