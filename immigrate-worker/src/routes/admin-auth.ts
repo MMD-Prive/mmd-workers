@@ -302,22 +302,176 @@ function renderShell(title: string, body: string): Response {
 }
 
 function renderLoginPage(error = false, status = 200): Response {
-  return responseWithStatus(renderShell(
-    "SIGIL Admin Login",
-    `<h1>SIGIL Admin</h1>
-    ${error ? `<p class="error">Invalid username or password.</p>` : ""}
-    <form method="post" action="${SIGIL_ADMIN_LOGIN_PATH}">
-      <label>
-        Username or email
-        <input name="identity" type="text" autocomplete="username" required autofocus />
-      </label>
-      <label>
-        Password
-        <input name="password" type="password" autocomplete="current-password" required />
-      </label>
-      <button type="submit">Log in</button>
-    </form>`,
-  ), status);
+  return responseWithStatus(htmlResponse(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MMD SĪGIL Admin Console</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #050403;
+        --panel: rgba(12,10,8,.84);
+        --line: rgba(229,195,120,.26);
+        --line-strong: rgba(242,205,121,.58);
+        --text: #f8efe2;
+        --cream: #fff4df;
+        --muted: rgba(232,220,203,.72);
+        --gold: #d7aa4f;
+        --gold-strong: #f1ca72;
+        --danger: #f4b3b3;
+      }
+      * { box-sizing: border-box; }
+      html { min-height: 100%; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        background:
+          linear-gradient(90deg, rgba(5,4,3,.98) 0%, rgba(5,4,3,.88) 39%, rgba(5,4,3,.18) 72%),
+          url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69f9a0baa5daddee0378d009_Boss%20Ewvon%20Login.webp") right center / cover no-repeat,
+          var(--bg);
+        font-family: Inter, "Avenir Next", "Segoe UI", Arial, sans-serif;
+      }
+      .login-page {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: minmax(320px, 460px) minmax(0, 1fr);
+        align-items: center;
+        gap: 28px;
+        padding: clamp(22px, 5vw, 72px);
+      }
+      .login-card {
+        display: grid;
+        gap: 26px;
+        width: 100%;
+        padding: clamp(28px, 4vw, 42px);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background:
+          linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.012)),
+          var(--panel);
+        box-shadow: 0 30px 90px rgba(0,0,0,.48);
+        backdrop-filter: blur(18px);
+      }
+      .brand {
+        display: grid;
+        gap: 8px;
+      }
+      .brand-mark {
+        margin: 0;
+        color: var(--gold-strong);
+        font-size: .86rem;
+        font-weight: 800;
+        letter-spacing: .2em;
+        text-transform: uppercase;
+      }
+      h1 {
+        margin: 0;
+        color: var(--cream);
+        font-family: Baskerville, "Iowan Old Style", Palatino, Georgia, serif;
+        font-size: clamp(2.6rem, 6vw, 4.7rem);
+        font-weight: 600;
+        line-height: .9;
+        letter-spacing: 0;
+      }
+      .subtitle {
+        margin: 0;
+        color: var(--muted);
+        font-size: 1rem;
+        line-height: 1.5;
+      }
+      form {
+        display: grid;
+        gap: 16px;
+      }
+      label {
+        display: grid;
+        gap: 8px;
+        color: var(--gold);
+        font-size: .88rem;
+        font-weight: 800;
+      }
+      input {
+        width: 100%;
+        min-height: 52px;
+        padding: 0 15px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: rgba(0,0,0,.42);
+        color: var(--text);
+        font: 600 1rem/1.3 Inter, "Avenir Next", "Segoe UI", Arial, sans-serif;
+        outline: none;
+      }
+      input:focus {
+        border-color: var(--line-strong);
+        box-shadow: 0 0 0 3px rgba(215,170,79,.14);
+      }
+      button {
+        min-height: 52px;
+        border: 1px solid rgba(241,202,114,.78);
+        border-radius: 9px;
+        background: linear-gradient(180deg, #f1ca72 0%, #c49336 100%);
+        color: #171006;
+        font: 800 1rem/1 Inter, "Avenir Next", "Segoe UI", Arial, sans-serif;
+        cursor: pointer;
+        box-shadow: 0 14px 34px rgba(196,147,54,.25);
+      }
+      .error {
+        min-height: 20px;
+        margin: 0;
+        color: var(--danger);
+        font-size: .9rem;
+        line-height: 1.45;
+      }
+      .art-space {
+        min-height: 72vh;
+      }
+      @media (max-width: 820px) {
+        body {
+          background:
+            linear-gradient(180deg, rgba(5,4,3,.92), rgba(5,4,3,.72)),
+            url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69f9a0baa5daddee0378d009_Boss%20Ewvon%20Login.webp") center top / cover no-repeat,
+            var(--bg);
+        }
+        .login-page {
+          grid-template-columns: 1fr;
+          align-items: end;
+          padding: 18px;
+        }
+        .login-card {
+          margin-top: 30vh;
+        }
+        .art-space { display: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="login-page">
+      <section class="login-card" aria-label="MMD SĪGIL Admin Console login">
+        <div class="brand">
+          <p class="brand-mark">MMD SĪGIL</p>
+          <h1>Admin Console</h1>
+          <p class="subtitle">Secure operator access</p>
+        </div>
+        ${error ? `<p class="error">Invalid username or password.</p>` : `<p class="error" aria-hidden="true"></p>`}
+        <form method="post" action="${SIGIL_ADMIN_LOGIN_PATH}">
+          <label>
+            Username or email
+            <input name="identity" type="text" autocomplete="username" required autofocus />
+          </label>
+          <label>
+            Password
+            <input name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <button type="submit">Enter Console</button>
+        </form>
+      </section>
+      <div class="art-space" aria-hidden="true"></div>
+    </main>
+  </body>
+</html>`), status);
 }
 
 function renderSetupPage(error = ""): Response {
