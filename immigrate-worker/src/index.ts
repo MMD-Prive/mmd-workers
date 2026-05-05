@@ -122,6 +122,20 @@ const SIGIL = {
   sendLineSessionCard: "/sigil/admin/jobs/send-line-session-card",
 } as const;
 
+const SIGIL_ADMIN_CANONICAL_HOST = "sigil.mmdbkk.com";
+const SIGIL_ADMIN_LEGACY_HOSTS = new Set(["mmdbkk.com", "www.mmdbkk.com"]);
+
+function canonicalSigilAdminRedirect(url: URL): Response | null {
+  if (!url.pathname.startsWith(SIGIL.adminRoot)) return null;
+  if (!SIGIL_ADMIN_LEGACY_HOSTS.has(url.hostname.toLowerCase())) return null;
+
+  const canonicalUrl = new URL(url.toString());
+  canonicalUrl.protocol = "https:";
+  canonicalUrl.hostname = SIGIL_ADMIN_CANONICAL_HOST;
+  canonicalUrl.port = "";
+  return redirect(canonicalUrl.toString(), 302);
+}
+
 const ADMIN_JOBS = {
   createSession: "/internal/admin/create-session",
   createSessionLegacy: "/internal/admin/jobs/create-session",
@@ -4492,7 +4506,7 @@ function renderAdminLoginPage(request: Request, env: Env): Response {
   const loginSessionPath = isSigilLogin ? SIGIL.loginSession : CONTROL_ROOM.loginSession;
 
   const html = `<!doctype html>
-<html lang="en">
+<html lang="th">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -4747,16 +4761,17 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
       :root {
         color-scheme: dark;
         --bg: #050403;
-        --panel: rgba(14,12,11,.86);
+        --panel: rgba(16,14,12,.82);
+        --panel-strong: rgba(22,18,14,.94);
         --panel-soft: rgba(255,255,255,.035);
-        --line: rgba(231,203,139,.18);
-        --line-strong: rgba(231,203,139,.34);
-        --text: #f7f0e8;
-        --cream: #fff6e7;
-        --muted: rgba(216,205,194,.72);
-        --gold: #d7ad55;
-        --gold-strong: #f0c86d;
-        --gold-dark: #8d6520;
+        --line: rgba(226,190,112,.2);
+        --line-strong: rgba(239,202,119,.45);
+        --text: #f8efe2;
+        --cream: #fff4df;
+        --muted: rgba(232,220,203,.7);
+        --gold: #d8aa4d;
+        --gold-strong: #f3cb72;
+        --gold-dark: #7b551b;
         --success: #9ad7b2;
         --danger: #f2b0b0;
       }
@@ -4765,21 +4780,21 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
       body {
         margin: 0;
         min-height: 100vh;
-        padding: 20px;
+        padding: 24px;
         color: var(--text);
         background:
-          linear-gradient(180deg, rgba(215,173,85,.12), transparent 34%),
-          linear-gradient(135deg, #11100e 0%, #050403 52%, #010101 100%);
+          linear-gradient(180deg, rgba(216,170,77,.16), transparent 30%),
+          linear-gradient(135deg, #11100e 0%, #050403 56%, #010101 100%);
         font-family: Inter, "Avenir Next", "Segoe UI", "Noto Sans Thai", Arial, sans-serif;
       }
       .shell {
-        width: min(100%, 920px);
+        width: min(100%, 1160px);
         margin: 0 auto;
-        padding: 24px;
+        padding: 26px;
         border: 1px solid var(--line);
-        border-radius: 14px;
-        background: var(--panel);
-        box-shadow: 0 28px 90px rgba(0,0,0,.42);
+        border-radius: 18px;
+        background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.018)), var(--panel);
+        box-shadow: 0 30px 90px rgba(0,0,0,.46);
         backdrop-filter: blur(18px);
       }
       .brandbar {
@@ -4793,26 +4808,26 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
       .brand {
         margin: 0;
         color: var(--cream);
-        font: 700 .95rem/1.2 Inter, "Avenir Next", sans-serif;
-        letter-spacing: .16em;
+        font: 800 1rem/1.2 Inter, "Avenir Next", sans-serif;
+        letter-spacing: .18em;
         text-transform: uppercase;
       }
       .surface {
-        margin: 6px 0 0;
+        margin: 7px 0 0;
         color: var(--gold);
-        font-size: .88rem;
-        font-weight: 600;
+        font-size: .9rem;
+        font-weight: 700;
       }
       h1 {
-        margin: 22px 0 0;
+        margin: 24px 0 0;
         color: var(--cream);
         font-family: Baskerville, "Iowan Old Style", Palatino, Georgia, "Noto Serif Thai", serif;
-        font-size: clamp(2.25rem, 7vw, 4.2rem);
-        line-height: 1;
+        font-size: clamp(2.4rem, 6vw, 4.8rem);
+        line-height: .95;
         letter-spacing: 0;
       }
       .subtitle {
-        max-width: 52ch;
+        max-width: 56ch;
         margin: 10px 0 0;
         color: var(--muted);
         font-size: 1rem;
@@ -4820,108 +4835,124 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
       }
       form {
         display: grid;
-        gap: 16px;
-        margin-top: 22px;
+        gap: 18px;
+        margin-top: 24px;
+      }
+      .form-grid {
+        display: grid;
+        gap: 18px;
+        grid-template-columns: minmax(0, 1.12fr) minmax(340px, .88fr);
+        align-items: start;
       }
       .form-section {
         display: grid;
-        gap: 12px;
-        padding-top: 14px;
-        border-top: 1px solid rgba(231,203,139,.12);
-      }
-      .form-section:first-child {
-        border-top: 0;
-        padding-top: 0;
+        gap: 16px;
+        min-width: 0;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel-strong);
       }
       .section-title {
         margin: 0;
         color: var(--gold-strong);
-        font: 700 .72rem/1.2 Inter, "Avenir Next", sans-serif;
-        letter-spacing: .18em;
-        text-transform: uppercase;
+        font: 800 1rem/1.2 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
+        letter-spacing: .02em;
       }
       .fields {
         display: grid;
-        gap: 12px;
+        gap: 13px;
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
-      label {
+      label,
+      .field {
         display: grid;
         gap: 7px;
         color: var(--gold);
-        font: 700 .72rem/1.2 Inter, "Avenir Next", sans-serif;
-        letter-spacing: .09em;
-        text-transform: uppercase;
+        font: 800 .9rem/1.35 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
       }
       .span-2 { grid-column: 1 / -1; }
       input,
       select,
       textarea {
         width: 100%;
-        min-height: 46px;
-        padding: 11px 12px;
+        min-height: 48px;
+        padding: 12px 13px;
         border: 1px solid var(--line);
-        border-radius: 8px;
-        background: rgba(0,0,0,.32);
+        border-radius: 10px;
+        background: rgba(0,0,0,.34);
         color: var(--text);
-        font: 500 .96rem/1.35 Inter, "Avenir Next", sans-serif;
+        font: 600 1rem/1.35 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
         outline: none;
       }
       input:focus,
       select:focus,
       textarea:focus {
         border-color: var(--line-strong);
-        box-shadow: 0 0 0 3px rgba(215,173,85,.12);
+        box-shadow: 0 0 0 3px rgba(216,170,77,.13);
+      }
+      input[readonly] {
+        color: var(--cream);
+        border-color: rgba(243,203,114,.34);
+        background: rgba(216,170,77,.09);
       }
       select { appearance: none; }
       textarea {
-        min-height: 78px;
+        min-height: 84px;
         resize: vertical;
+      }
+      .money-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .addons {
+        display: grid;
+        gap: 10px;
       }
       .helper {
         margin: 0;
         color: var(--muted);
-        font-size: .9rem;
-        line-height: 1.45;
+        font-size: .92rem;
+        line-height: 1.5;
       }
       .actions {
         display: flex;
         gap: 12px;
         align-items: center;
         flex-wrap: wrap;
-        margin-top: 2px;
       }
       button {
         min-height: 42px;
         padding: 0 14px;
-        border-radius: 8px;
-        border: 1px solid rgba(209,166,106,.36);
+        border-radius: 9px;
+        border: 1px solid rgba(216,170,77,.36);
         background: rgba(255,255,255,.04);
         color: var(--text);
-        font: 700 .78rem/1 Inter, "Avenir Next", sans-serif;
-        letter-spacing: .09em;
-        text-transform: uppercase;
+        font: 800 .8rem/1 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
+        letter-spacing: .05em;
         cursor: pointer;
       }
       button.primary {
-        min-width: 154px;
-        border-color: rgba(240,200,109,.72);
-        background: linear-gradient(180deg, #f0c86d 0%, #c49336 100%);
-        color: #161007;
-        box-shadow: 0 12px 32px rgba(196,147,54,.22);
+        min-width: 220px;
+        min-height: 50px;
+        border-color: rgba(243,203,114,.8);
+        background: linear-gradient(180deg, #f3cb72 0%, #c39135 100%);
+        color: #160f06;
+        box-shadow: 0 14px 34px rgba(195,145,53,.25);
       }
       .ghost {
         min-height: 34px;
         padding: 0 11px;
         background: transparent;
         color: var(--muted);
-        font-size: .7rem;
+        font-size: .72rem;
       }
       .status {
         min-height: 1.2em;
         margin: 0;
         color: var(--muted);
-        font-size: .92rem;
+        font-size: .94rem;
       }
       .status.error { color: var(--danger); }
       .status.success { color: var(--success); }
@@ -4929,8 +4960,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
         display: none;
         margin-top: 18px;
         padding-top: 18px;
-        border: 1px solid var(--line);
-        border-width: 1px 0 0;
+        border-top: 1px solid var(--line);
       }
       .result.visible {
         display: grid;
@@ -4939,8 +4969,8 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
       .result h2 {
         margin: 0;
         color: var(--cream);
-        font-family: Baskerville, "Iowan Old Style", Palatino, Georgia, serif;
-        font-size: 1.45rem;
+        font-family: Baskerville, "Iowan Old Style", Palatino, Georgia, "Noto Serif Thai", serif;
+        font-size: 1.5rem;
       }
       .result-grid {
         display: grid;
@@ -4952,20 +4982,20 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
         gap: 10px;
         min-width: 0;
         padding: 14px;
-        border-radius: 8px;
+        border-radius: 10px;
         border: 1px solid var(--line);
         background: var(--panel-soft);
       }
       .result-label {
         color: var(--gold-strong);
-        font: 700 .75rem/1.2 Inter, "Avenir Next", sans-serif;
-        letter-spacing: .1em;
+        font: 800 .78rem/1.2 Inter, "Avenir Next", sans-serif;
+        letter-spacing: .08em;
         text-transform: uppercase;
       }
       .result-desc {
         margin: 0;
         color: var(--muted);
-        font-size: .88rem;
+        font-size: .9rem;
         line-height: 1.45;
       }
       .result-url {
@@ -4974,7 +5004,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
         color: var(--text);
         font-size: .86rem;
         line-height: 1.45;
-        text-decoration-color: rgba(215,173,85,.55);
+        text-decoration-color: rgba(216,170,77,.55);
       }
       .result-actions {
         display: flex;
@@ -4992,11 +5022,11 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
       .open {
         display: inline-flex;
         align-items: center;
-        border: 1px solid rgba(209,166,106,.36);
+        border: 1px solid rgba(216,170,77,.36);
         color: var(--text);
         background: rgba(255,255,255,.04);
-        font: 700 .72rem/1 Inter, "Avenir Next", sans-serif;
-        letter-spacing: .09em;
+        font: 800 .72rem/1 Inter, "Avenir Next", sans-serif;
+        letter-spacing: .08em;
         text-transform: uppercase;
         text-decoration: none;
       }
@@ -5005,12 +5035,16 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
         justify-content: flex-start;
       }
       .empty { color: var(--muted); }
+      @media (max-width: 900px) {
+        .form-grid,
+        .result-grid { grid-template-columns: 1fr; }
+      }
       @media (max-width: 720px) {
         body { padding: 12px; }
         .shell { padding: 18px; }
         .brandbar { align-items: stretch; flex-direction: column; }
         .fields,
-        .result-grid { grid-template-columns: 1fr; }
+        .money-grid { grid-template-columns: 1fr; }
         .span-2 { grid-column: auto; }
         button.primary { width: 100%; }
       }
@@ -5021,100 +5055,129 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
     <main class="shell">
       <div class="brandbar">
         <div>
-          <p class="brand">MMD SĪGIL Admin</p>
-          <p class="surface">Operator Surface</p>
+          <p class="brand">MMD SĪGIL</p>
+          <p class="surface">Create Session</p>
         </div>
         <button id="logout" class="ghost" type="button">Logout</button>
       </div>
 
       <header>
         <h1>Create Session</h1>
-        <p class="subtitle">สร้างลิงก์ลูกค้า / ชำระเงิน / Model Console ในครั้งเดียว</p>
+        <p class="subtitle">กรอกรายละเอียดงานและราคา ระบบจะคำนวณยอดมัดจำ ยอดค้างชำระ และสร้างลิงก์ลูกค้า / ชำระเงิน / Model Console ให้ในครั้งเดียว</p>
       </header>
 
       <form id="create-session-form">
-        <section class="form-section" aria-labelledby="client-section">
-          <h2 id="client-section" class="section-title">Client</h2>
-          <div class="fields">
-            <label>
-              Client name
-              <input id="customer_name" name="customer_name" type="text" autocomplete="name" required />
-            </label>
-            <label>
-              LINE user ID / display name
-              <input id="customer_line" name="customer_line" type="text" />
-            </label>
-          </div>
-        </section>
+        <div class="form-grid">
+          <section class="form-section" aria-labelledby="service-section">
+            <h2 id="service-section" class="section-title">รายละเอียดบริการ</h2>
+            <div class="fields">
+              <label>
+                ชื่อนายแบบ
+                <input id="model_name" name="model_name" type="text" autocomplete="off" required />
+              </label>
+              <label>
+                ชื่อลูกค้า
+                <input id="customer_name" name="customer_name" type="text" autocomplete="name" required />
+              </label>
+              <label>
+                รูปแบบงาน
+                <input id="job_type" name="job_type" type="text" required />
+              </label>
+              <label>
+                วันและเวลา
+                <input id="job_datetime" name="job_datetime" type="datetime-local" required />
+              </label>
+              <label>
+                ระยะเวลา
+                <input id="duration_hours" name="duration_hours" type="number" min="0.5" step="0.5" value="2" required />
+              </label>
+              <label>
+                สถานที่
+                <input id="service_location" name="service_location" type="text" required />
+              </label>
+              <label>
+                เลขที่บ้าน / ห้อง
+                <input id="room_address" name="room_address" type="text" />
+              </label>
+              <label>
+                ชื่อสถานที่ (ค้นหา)
+                <input id="venue_search_name" name="venue_search_name" type="text" />
+              </label>
+              <label class="span-2">
+                ลิงก์แผนที่ (URL)
+                <input id="google_map_url" name="google_map_url" type="url" />
+              </label>
+              <label class="span-2">
+                พิกัดปัจจุบัน
+                <input id="current_coordinates" name="current_coordinates" type="text" placeholder="13.7563, 100.5018" />
+              </label>
+            </div>
+          </section>
 
-        <section class="form-section" aria-labelledby="session-section">
-          <h2 id="session-section" class="section-title">Session</h2>
-          <div class="fields">
+          <section class="form-section" aria-labelledby="pricing-section">
+            <h2 id="pricing-section" class="section-title">สรุปราคาค่าบริการ</h2>
+            <div class="money-grid">
+              <label>
+                ราคาพื้นฐาน
+                <input id="base_price_thb" name="base_price_thb" type="number" min="0" step="1" required />
+              </label>
+              <label>
+                มัดจำ (%)
+                <select id="deposit_percent" name="deposit_percent">
+                  <option value="10">10%</option>
+                  <option value="30" selected>30%</option>
+                  <option value="50">50%</option>
+                  <option value="70">70%</option>
+                  <option value="100">100%</option>
+                </select>
+              </label>
+            </div>
             <label>
-              Package / job type
-              <input id="job_type" name="job_type" type="text" required />
+              รายการเพิ่มเติม
+              <textarea id="addons_note" name="addons_note"></textarea>
             </label>
-            <label>
-              Model name
-              <input id="model_name" name="model_name" type="text" required />
-            </label>
-            <label>
-              Date
-              <input id="job_date" name="job_date" type="date" required />
-            </label>
-            <label>
-              Start time
-              <input id="start_time" name="start_time" type="time" required />
-            </label>
-            <label>
-              End time
-              <input id="end_time" name="end_time" type="time" required />
-            </label>
-            <label>
-              Location name
-              <input id="location_name" name="location_name" type="text" required />
-            </label>
-            <label class="span-2">
-              Google Maps URL
-              <input id="google_map_url" name="google_map_url" type="url" />
-            </label>
-            <label class="span-2">
-              Short note
-              <textarea id="customer_note" name="customer_note"></textarea>
-            </label>
-          </div>
-        </section>
-
-        <section class="form-section" aria-labelledby="payment-section">
-          <h2 id="payment-section" class="section-title">Payment</h2>
-          <div class="fields">
-            <label>
-              Total THB
-              <input id="total_amount_thb" name="total_amount_thb" type="number" min="1" step="1" required />
-            </label>
-            <label>
-              Payment type
-              <select id="payment_type" name="payment_type">
-                <option value="deposit">deposit</option>
-                <option value="full">full</option>
-                <option value="final">final</option>
-                <option value="tips">tips</option>
-              </select>
-            </label>
-            <label>
-              Deposit THB optional
-              <input id="deposit_amount_thb" name="deposit_amount_thb" type="number" min="0" step="1" />
-            </label>
-            <label>
-              Final THB optional
-              <input id="final_amount_thb" name="final_amount_thb" type="number" min="0" step="1" />
-            </label>
-          </div>
-        </section>
+            <div class="addons">
+              <label>
+                รายการเพิ่มเติม 1
+                <input id="addon_1_thb" name="addon_1_thb" type="number" min="0" step="1" />
+              </label>
+              <label>
+                รายการเพิ่มเติม 2
+                <input id="addon_2_thb" name="addon_2_thb" type="number" min="0" step="1" />
+              </label>
+              <label>
+                รายการเพิ่มเติม 3
+                <input id="addon_3_thb" name="addon_3_thb" type="number" min="0" step="1" />
+              </label>
+              <label>
+                รายการเพิ่มเติม 4
+                <input id="addon_4_thb" name="addon_4_thb" type="number" min="0" step="1" />
+              </label>
+              <label>
+                รายการเพิ่มเติม 5
+                <input id="addon_5_thb" name="addon_5_thb" type="number" min="0" step="1" />
+              </label>
+            </div>
+            <div class="money-grid">
+              <label>
+                ราคารวมทั้งสิ้น
+                <input id="total_amount_thb" name="total_amount_thb" type="text" readonly />
+              </label>
+              <label>
+                ยอดมัดจำ
+                <input id="deposit_amount_thb" name="deposit_amount_thb" type="text" readonly />
+              </label>
+              <label class="span-2">
+                ยอดค้างชำระ
+                <input id="final_amount_thb" name="final_amount_thb" type="text" readonly />
+              </label>
+            </div>
+          </section>
+        </div>
 
         <p class="helper">ระบบจะสร้าง session id, payment ref และ token ให้อัตโนมัติ</p>
         <div class="actions">
-          <button id="submit" class="primary" type="submit">Create Links</button>
+          <button id="submit" class="primary" type="submit">สร้างลิงก์ชำระเงิน</button>
           <p id="status" class="status" role="status"></p>
         </div>
       </form>
@@ -5147,10 +5210,75 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
         }
 
         function readAmount(id, fallback) {
-          const raw = read(id);
+          const raw = read(id).replace(/,/g, "");
           if (!raw) return fallback;
           const num = Number(raw);
           return Number.isFinite(num) ? num : NaN;
+        }
+
+        const addonIds = ["addon_1_thb", "addon_2_thb", "addon_3_thb", "addon_4_thb", "addon_5_thb"];
+
+        function formatAmount(value) {
+          return Math.round(value).toLocaleString("en-US");
+        }
+
+        function writeAmount(id, value) {
+          const element = document.getElementById(id);
+          if (element && "value" in element) {
+            element.value = Number.isFinite(value) ? formatAmount(value) : "";
+          }
+        }
+
+        function calculatePricing() {
+          const basePrice = readAmount("base_price_thb", 0);
+          const addons = addonIds.map((id) => readAmount(id, 0));
+          const depositPercent = Number(read("deposit_percent")) || 30;
+          if ([basePrice, depositPercent, ...addons].some(Number.isNaN)) {
+            writeAmount("total_amount_thb", NaN);
+            writeAmount("deposit_amount_thb", NaN);
+            writeAmount("final_amount_thb", NaN);
+            return {
+              basePrice: NaN,
+              addonAmounts: addons,
+              addonsTotal: NaN,
+              totalAmount: NaN,
+              depositPercent,
+              depositAmount: NaN,
+              finalAmount: NaN
+            };
+          }
+
+          const addonsTotal = addons.reduce((sum, amount) => sum + amount, 0);
+          const totalAmount = basePrice + addonsTotal;
+          const depositAmount = Math.round(totalAmount * (depositPercent / 100));
+          const finalAmount = Math.max(0, totalAmount - depositAmount);
+          writeAmount("total_amount_thb", totalAmount);
+          writeAmount("deposit_amount_thb", depositAmount);
+          writeAmount("final_amount_thb", finalAmount);
+          return {
+            basePrice,
+            addonAmounts: addons,
+            addonsTotal,
+            totalAmount,
+            depositPercent,
+            depositAmount,
+            finalAmount
+          };
+        }
+
+        function splitDateTime(value) {
+          const parts = String(value || "").split("T");
+          return {
+            date: parts[0] || "",
+            time: (parts[1] || "").slice(0, 5)
+          };
+        }
+
+        function addHoursToDateTime(value, hours) {
+          const start = new Date(value);
+          if (!Number.isFinite(start.getTime()) || !Number.isFinite(hours)) return "";
+          const end = new Date(start.getTime() + hours * 60 * 60 * 1000);
+          return String(end.getHours()).padStart(2, "0") + ":" + String(end.getMinutes()).padStart(2, "0");
         }
 
         function slug(value, fallback) {
@@ -5315,6 +5443,14 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
           }
         });
 
+        ["base_price_thb", "deposit_percent", ...addonIds].forEach((id) => {
+          const element = document.getElementById(id);
+          if (!element) return;
+          element.addEventListener("input", calculatePricing);
+          element.addEventListener("change", calculatePricing);
+        });
+        calculatePricing();
+
         result.addEventListener("click", async (event) => {
           const button = event.target instanceof Element ? event.target.closest("[data-copy]") : null;
           if (button) {
@@ -5361,39 +5497,54 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
           setStatus("");
           clearResult();
 
-          const totalAmount = readAmount("total_amount_thb", NaN);
-          const depositAmount = readAmount("deposit_amount_thb", 0);
-          const finalAmount = readAmount("final_amount_thb", 0);
-          if ([totalAmount, depositAmount, finalAmount].some(Number.isNaN)) {
-            setStatus("Check the THB amounts and try again.", "error");
+          const pricing = calculatePricing();
+          if ([pricing.basePrice, pricing.totalAmount, pricing.depositAmount, pricing.finalAmount].some(Number.isNaN) || pricing.totalAmount <= 0) {
+            setStatus("ตรวจสอบราคาค่าบริการอีกครั้ง", "error");
             return;
           }
 
           const customerName = read("customer_name");
-          const customerLine = read("customer_line");
-          const customerUsername = slug(customerLine || customerName, "client");
+          const customerUsername = slug(customerName, "client");
           const customerPhone = "";
           const jobType = read("job_type");
           const modelName = read("model_name");
           const modelUsername = "";
-          const jobDate = read("job_date");
-          const startTime = read("start_time");
-          const endTime = read("end_time");
-          const locationName = read("location_name");
-          const customerNote = read("customer_note");
-          const paymentType = read("payment_type") || "deposit";
-          const amountForPayment =
-            paymentType === "deposit" ? (depositAmount || totalAmount) :
-            paymentType === "final" ? (finalAmount || totalAmount) :
-            paymentType === "tips" ? (finalAmount || depositAmount || totalAmount) :
-            totalAmount;
-          const identitySeed = customerUsername || customerLine || customerName;
+          const jobDateTime = read("job_datetime");
+          const durationHours = readAmount("duration_hours", NaN);
+          const dateTimeParts = splitDateTime(jobDateTime);
+          const jobDate = dateTimeParts.date;
+          const startTime = dateTimeParts.time;
+          const endTime = addHoursToDateTime(jobDateTime, durationHours);
+          const serviceLocation = read("service_location");
+          const roomAddress = read("room_address");
+          const venueSearchName = read("venue_search_name");
+          const locationName = serviceLocation || venueSearchName || roomAddress;
+          const googleMapUrl = read("google_map_url");
+          const currentCoordinates = read("current_coordinates");
+          const addonsNote = read("addons_note");
+          if (!customerName || !modelName || !jobType || !jobDate || !startTime || !endTime || !locationName || Number.isNaN(durationHours) || durationHours <= 0) {
+            setStatus("กรอกข้อมูลบริการที่จำเป็นให้ครบถ้วน", "error");
+            return;
+          }
+
+          const paymentType = pricing.depositPercent >= 100 ? "full" : "deposit";
+          const identitySeed = customerUsername || customerName;
           const modelSeed = modelUsername || modelName;
-          const lineUserId = isLineUserId(customerLine) ? customerLine : "";
-          const lineDisplayName = lineUserId ? "" : customerLine;
+          const lineUserId = "";
+          const lineDisplayName = "";
           const sessionId = makeId("sess", customerName + " " + modelName);
           const paymentRef = makeId("pay", customerName + " " + jobDate);
           const generatedModelId = makeId("model", modelSeed);
+          const customerNote = [
+            "รูปแบบงาน: " + jobType,
+            "วันและเวลา: " + jobDate + " " + startTime,
+            "ระยะเวลา: " + durationHours + " ชั่วโมง",
+            "สถานที่: " + locationName,
+            roomAddress ? "เลขที่บ้าน / ห้อง: " + roomAddress : "",
+            venueSearchName ? "ชื่อสถานที่ (ค้นหา): " + venueSearchName : "",
+            currentCoordinates ? "พิกัดปัจจุบัน: " + currentCoordinates : "",
+            addonsNote ? "รายการเพิ่มเติม: " + addonsNote : ""
+          ].filter(Boolean).join(" | ");
           const metadataJson = {
             source: "sigil_admin_create_session_links",
             customer_username: customerUsername,
@@ -5401,9 +5552,19 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             customer_line_display_name: lineDisplayName,
             customer_phone: customerPhone,
             model_username: modelUsername,
-            total_amount_thb: totalAmount,
-            deposit_amount_thb: depositAmount,
-            final_amount_thb: finalAmount,
+            service_location: serviceLocation,
+            room_address: roomAddress,
+            venue_search_name: venueSearchName,
+            current_coordinates: currentCoordinates,
+            duration_hours: durationHours,
+            base_price_thb: pricing.basePrice,
+            addon_amounts_thb: pricing.addonAmounts,
+            addons_total_thb: pricing.addonsTotal,
+            addons_note: addonsNote,
+            total_amount_thb: pricing.totalAmount,
+            deposit_percent: pricing.depositPercent,
+            deposit_amount_thb: pricing.depositAmount,
+            final_amount_thb: pricing.finalAmount,
             payment_type: paymentType,
             customer_note: customerNote,
             model_brief_note: ""
@@ -5426,13 +5587,18 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             session_id: sessionId,
             payment_ref: paymentRef,
             job_type: jobType,
+            package_code: slug(jobType, "package"),
             job_date: jobDate,
             start_time: startTime,
             end_time: endTime,
             location_name: locationName,
-            google_map_url: read("google_map_url"),
-            amount_thb: amountForPayment,
-            deposit_amount_thb: depositAmount,
+            google_map_url: googleMapUrl,
+            amount_thb: pricing.totalAmount,
+            base_price_thb: pricing.basePrice,
+            addons_total_thb: pricing.addonsTotal,
+            deposit_percent: pricing.depositPercent,
+            deposit_amount_thb: pricing.depositAmount,
+            final_amount_thb: pricing.finalAmount,
             pay_model_thb: 0,
             currency: "THB",
             payment_type: paymentType,
@@ -5453,8 +5619,8 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
           };
 
           submit.disabled = true;
-          submit.textContent = "Creating links...";
-          setStatus("Creating session links...");
+          submit.textContent = "กำลังสร้างลิงก์...";
+          setStatus("กำลังสร้างลิงก์ชำระเงิน...");
 
           try {
             const response = await fetch(${JSON.stringify(submitPath)}, {
@@ -5464,17 +5630,17 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             });
             const data = await response.json().catch(() => null);
             if (!response.ok || !data) {
-              setStatus(response.status === 401 ? "Session expired. Please log in again." : "Could not create links.", "error");
+              setStatus(response.status === 401 ? "Session expired. Please log in again." : "สร้างลิงก์ไม่สำเร็จ", "error");
               return;
             }
 
-            setStatus("Session links ready.", "success");
+            setStatus("สร้างลิงก์เรียบร้อย", "success");
             renderLinks(data, payload, lineUserId);
           } catch {
-            setStatus("Unable to create links right now.", "error");
+            setStatus("ไม่สามารถสร้างลิงก์ได้ในตอนนี้", "error");
           } finally {
             submit.disabled = false;
-            submit.textContent = "Create Links";
+            submit.textContent = "สร้างลิงก์ชำระเงิน";
           }
         });
       })();
@@ -7352,6 +7518,10 @@ export default {
 
     try {
       const url = new URL(request.url);
+      const sigilAdminCanonicalRedirect = canonicalSigilAdminRedirect(url);
+      if (sigilAdminCanonicalRedirect) {
+        return sigilAdminCanonicalRedirect;
+      }
 
       const internalRouteRes = await handleInternalRoutes(request, env);
       if (internalRouteRes) return internalRouteRes;
