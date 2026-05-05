@@ -118,6 +118,23 @@ function bytesToBinary(bytes: Uint8Array): string {
   return result;
 }
 
+function bytesToHex(bytes: ArrayBuffer | Uint8Array): string {
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  return Array.from(view)
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function hexToBytes(value: string): Uint8Array | null {
+  const normalized = toStr(value).toLowerCase();
+  if (!/^[0-9a-f]+$/.test(normalized) || normalized.length % 2 !== 0) return null;
+  const bytes = new Uint8Array(normalized.length / 2);
+  for (let index = 0; index < normalized.length; index += 2) {
+    bytes[index / 2] = Number.parseInt(normalized.slice(index, index + 2), 16);
+  }
+  return bytes;
+}
+
 function binaryToBytes(binary: string): Uint8Array {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
@@ -150,9 +167,27 @@ async function signValue(value: string, secret: string): Promise<string> {
   );
 
   const signature = await crypto.subtle.sign("HMAC", key, toArrayBuffer(utf8Bytes(value)));
-  return Array.from(new Uint8Array(signature))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+  return bytesToHex(signature);
+}
+
+async function verifyValue(value: string, signatureHex: string, secret: string): Promise<boolean> {
+  const signature = hexToBytes(signatureHex);
+  if (!signature) return false;
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    toArrayBuffer(utf8Bytes(secret)),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["verify"],
+  );
+
+  return crypto.subtle.verify(
+    "HMAC",
+    key,
+    toArrayBuffer(signature),
+    toArrayBuffer(utf8Bytes(value)),
+  );
 }
 
 export function getConfirmSecret(env: { CONFIRM_KEY?: string; INTERNAL_TOKEN?: string }): string {
@@ -235,8 +270,7 @@ export async function verifyInviteToken(token: string, secret: string): Promise<
   if (parts.length !== 2) throw new Error("invalid_token_format");
 
   const [encodedPayload, signature] = parts;
-  const expected = await signValue(encodedPayload, secret);
-  if (signature !== expected) throw new Error("invalid_token_signature");
+  if (!await verifyValue(encodedPayload, signature, secret)) throw new Error("invalid_token_signature");
 
   const payload = JSON.parse(base64UrlDecodeUtf8(encodedPayload)) as InviteTokenPayload;
   const now = Math.floor(Date.now() / 1000);
