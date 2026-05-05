@@ -4742,147 +4742,195 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Create Session Links</title>
+    <title>Create Session</title>
     <style>
       :root {
         color-scheme: dark;
-        --panel: rgba(19,15,24,.86);
-        --line: rgba(247,240,232,.14);
+        --bg: #050403;
+        --panel: rgba(14,12,11,.86);
+        --panel-soft: rgba(255,255,255,.035);
+        --line: rgba(231,203,139,.18);
+        --line-strong: rgba(231,203,139,.34);
         --text: #f7f0e8;
-        --muted: #c4b3a7;
-        --gold: #d1a66a;
-        --rose: #a45b5b;
+        --cream: #fff6e7;
+        --muted: rgba(216,205,194,.72);
+        --gold: #d7ad55;
+        --gold-strong: #f0c86d;
+        --gold-dark: #8d6520;
         --success: #9ad7b2;
         --danger: #f2b0b0;
       }
       * { box-sizing: border-box; }
+      html { min-height: 100%; }
       body {
         margin: 0;
         min-height: 100vh;
-        padding: 24px;
+        padding: 20px;
         color: var(--text);
         background:
-          radial-gradient(circle at top, rgba(164,91,91,.18), transparent 28%),
-          radial-gradient(circle at bottom right, rgba(95,127,132,.12), transparent 30%),
-          linear-gradient(180deg, #110d14 0%, #09080d 52%, #060507 100%);
-        font-family: Baskerville, "Iowan Old Style", Palatino, Georgia, serif;
+          linear-gradient(180deg, rgba(215,173,85,.12), transparent 34%),
+          linear-gradient(135deg, #11100e 0%, #050403 52%, #010101 100%);
+        font-family: Inter, "Avenir Next", "Segoe UI", "Noto Sans Thai", Arial, sans-serif;
       }
       .shell {
-        width: min(100%, 980px);
+        width: min(100%, 920px);
         margin: 0 auto;
-        padding: 32px;
+        padding: 24px;
         border: 1px solid var(--line);
-        border-radius: 18px;
+        border-radius: 14px;
         background: var(--panel);
-        box-shadow: 0 24px 80px rgba(0,0,0,.35);
+        box-shadow: 0 28px 90px rgba(0,0,0,.42);
         backdrop-filter: blur(18px);
       }
-      .topbar {
+      .brandbar {
         display: flex;
         justify-content: space-between;
         gap: 16px;
-        align-items: center;
-        margin-bottom: 24px;
+        align-items: flex-start;
+        padding-bottom: 18px;
+        border-bottom: 1px solid var(--line);
       }
-      .kicker {
-        margin: 0 0 10px;
-        color: var(--gold);
-        font: 600 .8rem/1.2 "Avenir Next Condensed", "Gill Sans", sans-serif;
-        letter-spacing: .24em;
-        text-transform: uppercase;
-      }
-      h1 {
+      .brand {
         margin: 0;
-        font-size: clamp(2rem, 6vw, 3.7rem);
-        line-height: 1;
-        letter-spacing: 0;
-      }
-      form {
-        display: grid;
-        gap: 18px;
-        margin-top: 28px;
-      }
-      .grid {
-        display: grid;
-        gap: 16px;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-      .grid-full,
-      .section-title {
-        grid-column: 1 / -1;
-      }
-      .section-title {
-        margin: 12px 0 0;
-        color: rgba(247,240,232,.72);
-        font: 600 .82rem/1.2 "Avenir Next Condensed", "Gill Sans", sans-serif;
-        letter-spacing: .18em;
-        text-transform: uppercase;
-      }
-      label {
-        display: grid;
-        gap: 8px;
-        color: var(--gold);
-        font: 600 .78rem/1.2 "Avenir Next Condensed", "Gill Sans", sans-serif;
+        color: var(--cream);
+        font: 700 .95rem/1.2 Inter, "Avenir Next", sans-serif;
         letter-spacing: .16em;
         text-transform: uppercase;
       }
+      .surface {
+        margin: 6px 0 0;
+        color: var(--gold);
+        font-size: .88rem;
+        font-weight: 600;
+      }
+      h1 {
+        margin: 22px 0 0;
+        color: var(--cream);
+        font-family: Baskerville, "Iowan Old Style", Palatino, Georgia, "Noto Serif Thai", serif;
+        font-size: clamp(2.25rem, 7vw, 4.2rem);
+        line-height: 1;
+        letter-spacing: 0;
+      }
+      .subtitle {
+        max-width: 52ch;
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 1rem;
+        line-height: 1.55;
+      }
+      form {
+        display: grid;
+        gap: 16px;
+        margin-top: 22px;
+      }
+      .form-section {
+        display: grid;
+        gap: 12px;
+        padding-top: 14px;
+        border-top: 1px solid rgba(231,203,139,.12);
+      }
+      .form-section:first-child {
+        border-top: 0;
+        padding-top: 0;
+      }
+      .section-title {
+        margin: 0;
+        color: var(--gold-strong);
+        font: 700 .72rem/1.2 Inter, "Avenir Next", sans-serif;
+        letter-spacing: .18em;
+        text-transform: uppercase;
+      }
+      .fields {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      label {
+        display: grid;
+        gap: 7px;
+        color: var(--gold);
+        font: 700 .72rem/1.2 Inter, "Avenir Next", sans-serif;
+        letter-spacing: .09em;
+        text-transform: uppercase;
+      }
+      .span-2 { grid-column: 1 / -1; }
       input,
       select,
       textarea {
         width: 100%;
-        min-height: 52px;
-        padding: 14px 16px;
+        min-height: 46px;
+        padding: 11px 12px;
         border: 1px solid var(--line);
         border-radius: 8px;
-        background: rgba(7,6,10,.72);
+        background: rgba(0,0,0,.32);
         color: var(--text);
-        font: inherit;
+        font: 500 .96rem/1.35 Inter, "Avenir Next", sans-serif;
+        outline: none;
       }
-      select {
-        appearance: none;
+      input:focus,
+      select:focus,
+      textarea:focus {
+        border-color: var(--line-strong);
+        box-shadow: 0 0 0 3px rgba(215,173,85,.12);
       }
+      select { appearance: none; }
       textarea {
-        min-height: 124px;
+        min-height: 78px;
         resize: vertical;
+      }
+      .helper {
+        margin: 0;
+        color: var(--muted);
+        font-size: .9rem;
+        line-height: 1.45;
       }
       .actions {
         display: flex;
         gap: 12px;
         align-items: center;
         flex-wrap: wrap;
+        margin-top: 2px;
       }
       button {
-        min-height: 48px;
-        padding: 0 18px;
+        min-height: 42px;
+        padding: 0 14px;
         border-radius: 8px;
         border: 1px solid rgba(209,166,106,.36);
-        background: linear-gradient(135deg, rgba(209,166,106,.24), rgba(164,91,91,.28));
+        background: rgba(255,255,255,.04);
         color: var(--text);
-        font: 600 .92rem/1 "Avenir Next Condensed", "Gill Sans", sans-serif;
-        letter-spacing: .12em;
+        font: 700 .78rem/1 Inter, "Avenir Next", sans-serif;
+        letter-spacing: .09em;
         text-transform: uppercase;
         cursor: pointer;
       }
       button.primary {
-        border-color: rgba(209,166,106,.62);
-        background: linear-gradient(135deg, rgba(209,166,106,.86), rgba(164,91,91,.56));
-        color: #130d09;
+        min-width: 154px;
+        border-color: rgba(240,200,109,.72);
+        background: linear-gradient(180deg, #f0c86d 0%, #c49336 100%);
+        color: #161007;
+        box-shadow: 0 12px 32px rgba(196,147,54,.22);
       }
-      .ghost { background: transparent; }
+      .ghost {
+        min-height: 34px;
+        padding: 0 11px;
+        background: transparent;
+        color: var(--muted);
+        font-size: .7rem;
+      }
       .status {
         min-height: 1.2em;
         margin: 0;
         color: var(--muted);
+        font-size: .92rem;
       }
       .status.error { color: var(--danger); }
       .status.success { color: var(--success); }
       .result {
         display: none;
-        margin-top: 22px;
-        padding: 20px;
-        border-radius: 12px;
+        margin-top: 18px;
+        padding-top: 18px;
         border: 1px solid var(--line);
-        background: rgba(7,6,10,.72);
+        border-width: 1px 0 0;
       }
       .result.visible {
         display: grid;
@@ -4890,148 +4938,183 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
       }
       .result h2 {
         margin: 0;
-        color: var(--success);
-        font-size: 1.2rem;
+        color: var(--cream);
+        font-family: Baskerville, "Iowan Old Style", Palatino, Georgia, serif;
+        font-size: 1.45rem;
       }
-      .link-row {
+      .result-grid {
         display: grid;
-        gap: 8px;
+        gap: 12px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .result-card {
+        display: grid;
+        gap: 10px;
+        min-width: 0;
         padding: 14px;
         border-radius: 8px;
-        background: rgba(247,240,232,.04);
+        border: 1px solid var(--line);
+        background: var(--panel-soft);
       }
-      .link-row strong {
-        color: var(--gold);
-        font: 600 .76rem/1.2 "Avenir Next Condensed", "Gill Sans", sans-serif;
-        letter-spacing: .15em;
+      .result-label {
+        color: var(--gold-strong);
+        font: 700 .75rem/1.2 Inter, "Avenir Next", sans-serif;
+        letter-spacing: .1em;
         text-transform: uppercase;
       }
-      .link-line {
-        display: flex;
-        gap: 10px;
-        align-items: center;
+      .result-desc {
+        margin: 0;
+        color: var(--muted);
+        font-size: .88rem;
+        line-height: 1.45;
       }
-      .link-line a {
+      .result-url {
         min-width: 0;
         overflow-wrap: anywhere;
         color: var(--text);
-        text-decoration-color: rgba(209,166,106,.5);
+        font-size: .86rem;
+        line-height: 1.45;
+        text-decoration-color: rgba(215,173,85,.55);
       }
-      .copy {
-        min-height: 36px;
-        padding: 0 12px;
-        font-size: .76rem;
-        flex: 0 0 auto;
+      .result-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .copy,
+      .open {
+        min-height: 34px;
+        padding: 0 11px;
+        border-radius: 8px;
+        font-size: .72rem;
+      }
+      .open {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid rgba(209,166,106,.36);
+        color: var(--text);
+        background: rgba(255,255,255,.04);
+        font: 700 .72rem/1 Inter, "Avenir Next", sans-serif;
+        letter-spacing: .09em;
+        text-transform: uppercase;
+        text-decoration: none;
+      }
+      .line-action {
+        display: flex;
+        justify-content: flex-start;
       }
       .empty { color: var(--muted); }
       @media (max-width: 720px) {
-        .grid { grid-template-columns: 1fr; }
-        .topbar { align-items: flex-start; flex-direction: column; }
-        .link-line { align-items: flex-start; flex-direction: column; }
+        body { padding: 12px; }
+        .shell { padding: 18px; }
+        .brandbar { align-items: stretch; flex-direction: column; }
+        .fields,
+        .result-grid { grid-template-columns: 1fr; }
+        .span-2 { grid-column: auto; }
+        button.primary { width: 100%; }
       }
     </style>
     ${bootstrap}
   </head>
   <body>
     <main class="shell">
-      <div class="topbar">
+      <div class="brandbar">
         <div>
-          <p class="kicker">SIGIL Admin</p>
-          <h1>Create Session Links</h1>
+          <p class="brand">MMD SĪGIL Admin</p>
+          <p class="surface">Operator Surface</p>
         </div>
         <button id="logout" class="ghost" type="button">Logout</button>
       </div>
 
+      <header>
+        <h1>Create Session</h1>
+        <p class="subtitle">สร้างลิงก์ลูกค้า / ชำระเงิน / Model Console ในครั้งเดียว</p>
+      </header>
+
       <form id="create-session-form">
-        <div class="grid">
-          <p class="section-title">Customer</p>
-          <label>
-            Customer name
-            <input id="customer_name" name="customer_name" type="text" autocomplete="name" required />
-          </label>
-          <label>
-            Customer username
-            <input id="customer_username" name="customer_username" type="text" />
-          </label>
-          <label>
-            Customer LINE user id or LINE display name
-            <input id="customer_line" name="customer_line" type="text" />
-          </label>
-          <label>
-            Phone optional
-            <input id="phone" name="phone" type="tel" autocomplete="tel" />
-          </label>
-          <label>
-            Package / job type
-            <input id="job_type" name="job_type" type="text" required />
-          </label>
+        <section class="form-section" aria-labelledby="client-section">
+          <h2 id="client-section" class="section-title">Client</h2>
+          <div class="fields">
+            <label>
+              Client name
+              <input id="customer_name" name="customer_name" type="text" autocomplete="name" required />
+            </label>
+            <label>
+              LINE user ID / display name
+              <input id="customer_line" name="customer_line" type="text" />
+            </label>
+          </div>
+        </section>
 
-          <p class="section-title">Model</p>
-          <label>
-            Model name
-            <input id="model_name" name="model_name" type="text" required />
-          </label>
-          <label>
-            Model username / Telegram username
-            <input id="model_username" name="model_username" type="text" />
-          </label>
-          <label class="grid-full">
-            Model brief note
-            <textarea id="model_brief_note" name="model_brief_note"></textarea>
-          </label>
+        <section class="form-section" aria-labelledby="session-section">
+          <h2 id="session-section" class="section-title">Session</h2>
+          <div class="fields">
+            <label>
+              Package / job type
+              <input id="job_type" name="job_type" type="text" required />
+            </label>
+            <label>
+              Model name
+              <input id="model_name" name="model_name" type="text" required />
+            </label>
+            <label>
+              Date
+              <input id="job_date" name="job_date" type="date" required />
+            </label>
+            <label>
+              Start time
+              <input id="start_time" name="start_time" type="time" required />
+            </label>
+            <label>
+              End time
+              <input id="end_time" name="end_time" type="time" required />
+            </label>
+            <label>
+              Location name
+              <input id="location_name" name="location_name" type="text" required />
+            </label>
+            <label class="span-2">
+              Google Maps URL
+              <input id="google_map_url" name="google_map_url" type="url" />
+            </label>
+            <label class="span-2">
+              Short note
+              <textarea id="customer_note" name="customer_note"></textarea>
+            </label>
+          </div>
+        </section>
 
-          <p class="section-title">Session</p>
-          <label>
-            Job date
-            <input id="job_date" name="job_date" type="date" required />
-          </label>
-          <label>
-            Start time
-            <input id="start_time" name="start_time" type="time" required />
-          </label>
-          <label>
-            End time
-            <input id="end_time" name="end_time" type="time" required />
-          </label>
-          <label>
-            Location name
-            <input id="location_name" name="location_name" type="text" required />
-          </label>
-          <label class="grid-full">
-            Google Maps URL
-            <input id="google_map_url" name="google_map_url" type="url" />
-          </label>
-          <label class="grid-full">
-            Customer note
-            <textarea id="customer_note" name="customer_note"></textarea>
-          </label>
+        <section class="form-section" aria-labelledby="payment-section">
+          <h2 id="payment-section" class="section-title">Payment</h2>
+          <div class="fields">
+            <label>
+              Total THB
+              <input id="total_amount_thb" name="total_amount_thb" type="number" min="1" step="1" required />
+            </label>
+            <label>
+              Payment type
+              <select id="payment_type" name="payment_type">
+                <option value="deposit">deposit</option>
+                <option value="full">full</option>
+                <option value="final">final</option>
+                <option value="tips">tips</option>
+              </select>
+            </label>
+            <label>
+              Deposit THB optional
+              <input id="deposit_amount_thb" name="deposit_amount_thb" type="number" min="0" step="1" />
+            </label>
+            <label>
+              Final THB optional
+              <input id="final_amount_thb" name="final_amount_thb" type="number" min="0" step="1" />
+            </label>
+          </div>
+        </section>
 
-          <p class="section-title">Payment</p>
-          <label>
-            Total amount THB
-            <input id="total_amount_thb" name="total_amount_thb" type="number" min="1" step="1" required />
-          </label>
-          <label>
-            Deposit amount THB
-            <input id="deposit_amount_thb" name="deposit_amount_thb" type="number" min="0" step="1" />
-          </label>
-          <label>
-            Final amount THB
-            <input id="final_amount_thb" name="final_amount_thb" type="number" min="0" step="1" required />
-          </label>
-          <label>
-            Payment type
-            <select id="payment_type" name="payment_type">
-              <option value="deposit">Deposit</option>
-              <option value="full">Full</option>
-              <option value="final">Final</option>
-              <option value="tips">Tips</option>
-            </select>
-          </label>
-        </div>
-
+        <p class="helper">ระบบจะสร้าง session id, payment ref และ token ให้อัตโนมัติ</p>
         <div class="actions">
-          <button id="submit" class="primary" type="submit">Create Session Links</button>
+          <button id="submit" class="primary" type="submit">Create Links</button>
           <p id="status" class="status" role="status"></p>
         </div>
       </form>
@@ -5139,31 +5222,36 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
           return url.toString();
         }
 
-        function linkRow(label, href) {
+        function linkCard(label, description, href) {
           if (!href) {
-            return '<div class="link-row"><strong>' + label + '</strong><span class="empty">No link returned</span></div>';
+            return [
+              '<article class="result-card">',
+              '<div class="result-label">' + label + '</div>',
+              '<p class="result-desc">' + description + '</p>',
+              '<span class="empty">No link returned</span>',
+              '</article>'
+            ].join("");
           }
           const safeHref = escapeAttr(href);
           return [
-            '<div class="link-row">',
-            '<strong>' + label + '</strong>',
-            '<div class="link-line">',
-            '<a href="' + safeHref + '" target="_blank" rel="noopener noreferrer">' + safeHref + '</a>',
+            '<article class="result-card">',
+            '<div class="result-label">' + label + '</div>',
+            '<p class="result-desc">' + description + '</p>',
+            '<a class="result-url" href="' + safeHref + '" target="_blank" rel="noopener noreferrer">' + safeHref + '</a>',
+            '<div class="result-actions">',
             '<button class="copy" type="button" data-copy="' + safeHref + '">Copy</button>',
+            '<a class="open" href="' + safeHref + '" target="_blank" rel="noopener noreferrer">Open</a>',
             '</div>',
-            '</div>'
+            '</article>'
           ].join("");
         }
 
         function lineActionRow(lineUserId) {
           if (!isLineUserId(lineUserId)) return "";
           return [
-            '<div class="link-row">',
-            '<strong>LINE</strong>',
-            '<div class="link-line">',
+            '<div class="line-action">',
             '<button class="copy" type="button" data-send-line-card="true">Send LINE Card</button>',
             '</div>',
-            '</div>'
           ].join("");
         }
 
@@ -5211,10 +5299,12 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
 
           result.className = "result visible";
           result.innerHTML = [
-            "<h2>Session links created</h2>",
-            linkRow("Customer first dashboard link", customerFirstDb),
-            linkRow("Payment confirmation link", paymentLink),
-            linkRow("Model console link", modelConsole),
+            "<h2>Links ready</h2>",
+            '<div class="result-grid">',
+            linkCard("Client Dashboard", "Client first dashboard and session details.", customerFirstDb),
+            linkCard("Payment Confirmation", "Payment proof and confirmation page.", paymentLink),
+            linkCard("Model Console", "Model-side session console.", modelConsole),
+            '</div>',
             lineActionRow(lineUserId)
           ].join("");
         }
@@ -5273,7 +5363,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
 
           const totalAmount = readAmount("total_amount_thb", NaN);
           const depositAmount = readAmount("deposit_amount_thb", 0);
-          const finalAmount = readAmount("final_amount_thb", NaN);
+          const finalAmount = readAmount("final_amount_thb", 0);
           if ([totalAmount, depositAmount, finalAmount].some(Number.isNaN)) {
             setStatus("Check the THB amounts and try again.", "error");
             return;
@@ -5281,15 +5371,16 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
 
           const customerName = read("customer_name");
           const customerLine = read("customer_line");
-          const customerUsername = read("customer_username");
-          const customerPhone = read("phone");
+          const customerUsername = slug(customerLine || customerName, "client");
+          const customerPhone = "";
           const jobType = read("job_type");
           const modelName = read("model_name");
-          const modelUsername = read("model_username");
+          const modelUsername = "";
           const jobDate = read("job_date");
           const startTime = read("start_time");
           const endTime = read("end_time");
           const locationName = read("location_name");
+          const customerNote = read("customer_note");
           const paymentType = read("payment_type") || "deposit";
           const amountForPayment =
             paymentType === "deposit" ? (depositAmount || totalAmount) :
@@ -5314,8 +5405,8 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             deposit_amount_thb: depositAmount,
             final_amount_thb: finalAmount,
             payment_type: paymentType,
-            customer_note: read("customer_note"),
-            model_brief_note: read("model_brief_note")
+            customer_note: customerNote,
+            model_brief_note: ""
           };
 
           const payload = {
@@ -5351,11 +5442,11 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             cancel_url: "/sigil/admin/jobs/create-session",
             confirm_page: "/confirmation/payment-confirmation",
             model_confirm_page: "/model/console-sigil",
-            note: read("customer_note"),
-            notes: read("customer_note"),
-            model_brief_note: read("model_brief_note"),
-            model_history_note: read("model_brief_note"),
-            model_note: read("model_brief_note"),
+            note: customerNote,
+            notes: customerNote,
+            model_brief_note: "",
+            model_history_note: "",
+            model_note: "",
             model_history_source: "sigil_admin_create_session_links",
             metadata_json: metadataJson,
             payload_json: metadataJson
@@ -5383,7 +5474,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             setStatus("Unable to create links right now.", "error");
           } finally {
             submit.disabled = false;
-            submit.textContent = "Create Session Links";
+            submit.textContent = "Create Links";
           }
         });
       })();
