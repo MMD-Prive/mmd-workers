@@ -12,8 +12,14 @@ AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_TABLE_LINE_INBOX = "Line Inbox"
 AIRTABLE_TABLE_CLIENTS = "Clients"
 AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
+AIRTABLE_TABLE_JOBS = "tbl0jxIjN8QYwGABX"
 AIRTABLE_TABLE_PRIVATE_PROFILE_NOTES = "tbl1Tt1IXDc9k0zxK"
 AIRTABLE_TABLE_MODELS = "tblI4B0bI446vp9GX"
+AIRTABLE_TABLE_ADMIN_USERS = "tblPmgkvhiZaR4Jrj"
+AIRTABLE_TABLE_ADMIN_INVITES = "tblJx8MTpPNNNuUWD"
+AIRTABLE_TABLE_ADMIN_OTP_CHALLENGES = "tbln2YbJrIZyieVk3"
+AIRTABLE_TABLE_ADMIN_SESSIONS = "tblkXiqTteE3jgyzV"
+AIRTABLE_TABLE_ACTIVITY_LOGS = "tblbUWRoFL6OI6QMJ"
 ENABLE_AIRTABLE_SYNC = "true"
 JOBS_WORKER_BASE_URL = ""
 CREATE_LINKS_URL = "https://payments-worker.malemodel-bkk.workers.dev/v1/confirm/link"
@@ -89,6 +95,10 @@ pattern = "www.mmdbkk.com/sigil/api*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
+pattern = "sigil.mmdbkk.com/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
 pattern = "sigil.mmdbkk.com/a/*"
 zone_name = "mmdbkk.com"
 
@@ -114,6 +124,14 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/member/api/jobs*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/model/session*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/session*"
 zone_name = "mmdbkk.com"
 #
 # Note:

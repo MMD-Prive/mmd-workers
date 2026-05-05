@@ -3,6 +3,20 @@ import { handleInternalRoutes } from "./internal-routes";
 import { handleCreateLinks } from "./routes/create-links";
 import { handleSendLineSessionCard } from "./routes/line-send-session-card";
 import {
+  handleModelSessionDashboard,
+  handleModelSessionStatus,
+  MODEL_SESSION_DASHBOARD_PATH,
+  MODEL_SESSION_STATUS_PATH,
+} from "./routes/model-session";
+import {
+  getValidSigilAdminSession,
+  handleInternalAdminInviteCreateRoute,
+  handleSigilAdminAuthRoute,
+  isSigilAdminPath,
+  makeSigilAdminLoginRedirect,
+  sigilAdminBrowserBootstrapScript,
+} from "./routes/admin-auth";
+import {
   buildImmigrationLinkContext,
   canReadAirtable,
   confirmCustomerBookingToAirtable,
@@ -105,6 +119,7 @@ const SIGIL = {
   renewalStatus: "/sigil/api/renewal/status",
   renewalIntake: "/sigil/api/renewal/intake",
   customerConfirm: "/sigil/api/jobs/customer-confirm",
+  sendLineSessionCard: "/sigil/admin/jobs/send-line-session-card",
 } as const;
 
 const ADMIN_JOBS = {
@@ -525,7 +540,7 @@ function buildCorsHeaders(request: Request, env: Env): Headers {
     headers.set("vary", "origin");
   }
 
-  headers.set("access-control-allow-methods", "POST,OPTIONS");
+  headers.set("access-control-allow-methods", "GET,POST,OPTIONS");
   headers.set("access-control-allow-headers", "content-type, authorization, x-internal-token");
   headers.set("access-control-max-age", "86400");
   return headers;
@@ -1664,7 +1679,10 @@ async function handleAdminCreateSessionProxy(
   }
 
   const gateSession = getValidatedGateSession(request);
-  if (!gateSession && !isAuthorized(request, env)) {
+  const sigilAdminSession = isSigilAdminPath(new URL(request.url).pathname)
+    ? await getValidSigilAdminSession(request, env)
+    : null;
+  if (!gateSession && !sigilAdminSession && !isAuthorized(request, env)) {
     return unauthorized(meta);
   }
 
@@ -1701,6 +1719,34 @@ async function handleAdminCreateSessionProxy(
     status: upstreamResponse.status,
     headers: upstreamResponse.headers,
   });
+}
+
+async function handleSigilSendLineSessionCard(
+  request: Request,
+  env: Env,
+  meta: Meta,
+): Promise<Response> {
+  const sigilAdminSession = await getValidSigilAdminSession(request, env);
+  if (!sigilAdminSession && !isAuthorized(request, env)) {
+    return unauthorized(meta);
+  }
+
+  const bodyText = await request.text();
+  const headers = new Headers({
+    "content-type": request.headers.get("content-type") || "application/json",
+  });
+  if (env.INTERNAL_TOKEN) {
+    headers.set("authorization", `Bearer ${env.INTERNAL_TOKEN}`);
+  }
+
+  return handleSendLineSessionCard(
+    new Request(new URL("/internal/line/send-session-card", request.url).toString(), {
+      method: "POST",
+      headers,
+      body: bodyText,
+    }),
+    env,
+  );
 }
 
 async function handleCreateJob(request: Request, env: Env): Promise<Response> {
@@ -4415,6 +4461,26 @@ async function withInjectedAdminBootstrap(
   });
 }
 
+async function withInjectedSigilAdminBootstrap(response: Response): Promise<Response> {
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.toLowerCase().includes("text/html")) {
+    return response;
+  }
+
+  const html = await response.text();
+  const injected = html.includes("</head>")
+    ? html.replace("</head>", `${sigilAdminBrowserBootstrapScript()}</head>`)
+    : `${sigilAdminBrowserBootstrapScript()}${html}`;
+
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  return new Response(injected, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 function renderAdminLoginPage(request: Request, env: Env): Response {
   const url = new URL(request.url);
   const isSigilLogin = url.pathname === SIGIL.login;
@@ -4663,8 +4729,684 @@ function renderAdminLoginPage(request: Request, env: Env): Response {
   });
 }
 
-function renderCreateSessionPage(request: Request, session: AdminGateSession): Response {
-  const next = normalizeAdminNextPath(new URL(request.url).pathname + new URL(request.url).search);
+function renderCreateSessionLinksPage(request: Request, session: AdminGateSession | null): Response {
+  const requestUrl = new URL(request.url);
+  const next = normalizeAdminNextPath(requestUrl.pathname + requestUrl.search);
+  const isSigilAdmin = isSigilAdminPath(requestUrl.pathname);
+  const bootstrap = isSigilAdmin
+    ? sigilAdminBrowserBootstrapScript()
+    : adminGateBootstrapScript(session as AdminGateSession, next, selectAdminLoginPath(requestUrl.pathname));
+  const submitPath = isSigilAdmin ? SIGIL.createSession : ADMIN_JOBS.createSession;
+  const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Create Session Links</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --panel: rgba(19,15,24,.86);
+        --line: rgba(247,240,232,.14);
+        --text: #f7f0e8;
+        --muted: #c4b3a7;
+        --gold: #d1a66a;
+        --rose: #a45b5b;
+        --success: #9ad7b2;
+        --danger: #f2b0b0;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        padding: 24px;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top, rgba(164,91,91,.18), transparent 28%),
+          radial-gradient(circle at bottom right, rgba(95,127,132,.12), transparent 30%),
+          linear-gradient(180deg, #110d14 0%, #09080d 52%, #060507 100%);
+        font-family: Baskerville, "Iowan Old Style", Palatino, Georgia, serif;
+      }
+      .shell {
+        width: min(100%, 980px);
+        margin: 0 auto;
+        padding: 32px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--panel);
+        box-shadow: 0 24px 80px rgba(0,0,0,.35);
+        backdrop-filter: blur(18px);
+      }
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: center;
+        margin-bottom: 24px;
+      }
+      .kicker {
+        margin: 0 0 10px;
+        color: var(--gold);
+        font: 600 .8rem/1.2 "Avenir Next Condensed", "Gill Sans", sans-serif;
+        letter-spacing: .24em;
+        text-transform: uppercase;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(2rem, 6vw, 3.7rem);
+        line-height: 1;
+        letter-spacing: 0;
+      }
+      form {
+        display: grid;
+        gap: 18px;
+        margin-top: 28px;
+      }
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .grid-full,
+      .section-title {
+        grid-column: 1 / -1;
+      }
+      .section-title {
+        margin: 12px 0 0;
+        color: rgba(247,240,232,.72);
+        font: 600 .82rem/1.2 "Avenir Next Condensed", "Gill Sans", sans-serif;
+        letter-spacing: .18em;
+        text-transform: uppercase;
+      }
+      label {
+        display: grid;
+        gap: 8px;
+        color: var(--gold);
+        font: 600 .78rem/1.2 "Avenir Next Condensed", "Gill Sans", sans-serif;
+        letter-spacing: .16em;
+        text-transform: uppercase;
+      }
+      input,
+      select,
+      textarea {
+        width: 100%;
+        min-height: 52px;
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(7,6,10,.72);
+        color: var(--text);
+        font: inherit;
+      }
+      select {
+        appearance: none;
+      }
+      textarea {
+        min-height: 124px;
+        resize: vertical;
+      }
+      .actions {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      button {
+        min-height: 48px;
+        padding: 0 18px;
+        border-radius: 8px;
+        border: 1px solid rgba(209,166,106,.36);
+        background: linear-gradient(135deg, rgba(209,166,106,.24), rgba(164,91,91,.28));
+        color: var(--text);
+        font: 600 .92rem/1 "Avenir Next Condensed", "Gill Sans", sans-serif;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      button.primary {
+        border-color: rgba(209,166,106,.62);
+        background: linear-gradient(135deg, rgba(209,166,106,.86), rgba(164,91,91,.56));
+        color: #130d09;
+      }
+      .ghost { background: transparent; }
+      .status {
+        min-height: 1.2em;
+        margin: 0;
+        color: var(--muted);
+      }
+      .status.error { color: var(--danger); }
+      .status.success { color: var(--success); }
+      .result {
+        display: none;
+        margin-top: 22px;
+        padding: 20px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: rgba(7,6,10,.72);
+      }
+      .result.visible {
+        display: grid;
+        gap: 14px;
+      }
+      .result h2 {
+        margin: 0;
+        color: var(--success);
+        font-size: 1.2rem;
+      }
+      .link-row {
+        display: grid;
+        gap: 8px;
+        padding: 14px;
+        border-radius: 8px;
+        background: rgba(247,240,232,.04);
+      }
+      .link-row strong {
+        color: var(--gold);
+        font: 600 .76rem/1.2 "Avenir Next Condensed", "Gill Sans", sans-serif;
+        letter-spacing: .15em;
+        text-transform: uppercase;
+      }
+      .link-line {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .link-line a {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        color: var(--text);
+        text-decoration-color: rgba(209,166,106,.5);
+      }
+      .copy {
+        min-height: 36px;
+        padding: 0 12px;
+        font-size: .76rem;
+        flex: 0 0 auto;
+      }
+      .empty { color: var(--muted); }
+      @media (max-width: 720px) {
+        .grid { grid-template-columns: 1fr; }
+        .topbar { align-items: flex-start; flex-direction: column; }
+        .link-line { align-items: flex-start; flex-direction: column; }
+      }
+    </style>
+    ${bootstrap}
+  </head>
+  <body>
+    <main class="shell">
+      <div class="topbar">
+        <div>
+          <p class="kicker">SIGIL Admin</p>
+          <h1>Create Session Links</h1>
+        </div>
+        <button id="logout" class="ghost" type="button">Logout</button>
+      </div>
+
+      <form id="create-session-form">
+        <div class="grid">
+          <p class="section-title">Customer</p>
+          <label>
+            Customer name
+            <input id="customer_name" name="customer_name" type="text" autocomplete="name" required />
+          </label>
+          <label>
+            Customer username
+            <input id="customer_username" name="customer_username" type="text" />
+          </label>
+          <label>
+            Customer LINE user id or LINE display name
+            <input id="customer_line" name="customer_line" type="text" />
+          </label>
+          <label>
+            Phone optional
+            <input id="phone" name="phone" type="tel" autocomplete="tel" />
+          </label>
+          <label>
+            Package / job type
+            <input id="job_type" name="job_type" type="text" required />
+          </label>
+
+          <p class="section-title">Model</p>
+          <label>
+            Model name
+            <input id="model_name" name="model_name" type="text" required />
+          </label>
+          <label>
+            Model username / Telegram username
+            <input id="model_username" name="model_username" type="text" />
+          </label>
+          <label class="grid-full">
+            Model brief note
+            <textarea id="model_brief_note" name="model_brief_note"></textarea>
+          </label>
+
+          <p class="section-title">Session</p>
+          <label>
+            Job date
+            <input id="job_date" name="job_date" type="date" required />
+          </label>
+          <label>
+            Start time
+            <input id="start_time" name="start_time" type="time" required />
+          </label>
+          <label>
+            End time
+            <input id="end_time" name="end_time" type="time" required />
+          </label>
+          <label>
+            Location name
+            <input id="location_name" name="location_name" type="text" required />
+          </label>
+          <label class="grid-full">
+            Google Maps URL
+            <input id="google_map_url" name="google_map_url" type="url" />
+          </label>
+          <label class="grid-full">
+            Customer note
+            <textarea id="customer_note" name="customer_note"></textarea>
+          </label>
+
+          <p class="section-title">Payment</p>
+          <label>
+            Total amount THB
+            <input id="total_amount_thb" name="total_amount_thb" type="number" min="1" step="1" required />
+          </label>
+          <label>
+            Deposit amount THB
+            <input id="deposit_amount_thb" name="deposit_amount_thb" type="number" min="0" step="1" />
+          </label>
+          <label>
+            Final amount THB
+            <input id="final_amount_thb" name="final_amount_thb" type="number" min="0" step="1" required />
+          </label>
+          <label>
+            Payment type
+            <select id="payment_type" name="payment_type">
+              <option value="deposit">Deposit</option>
+              <option value="full">Full</option>
+              <option value="final">Final</option>
+              <option value="tips">Tips</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="submit" class="primary" type="submit">Create Session Links</button>
+          <p id="status" class="status" role="status"></p>
+        </div>
+      </form>
+
+      <section id="result" class="result" aria-live="polite"></section>
+    </main>
+
+    <script>
+      (() => {
+        const form = document.getElementById("create-session-form");
+        const submit = document.getElementById("submit");
+        const status = document.getElementById("status");
+        const result = document.getElementById("result");
+        const logout = document.getElementById("logout");
+        let lastLineCardPayload = null;
+
+        function read(id) {
+          const element = document.getElementById(id);
+          return element && "value" in element ? element.value.trim() : "";
+        }
+
+        function setStatus(message, kind) {
+          status.textContent = message || "";
+          status.className = "status" + (kind ? " " + kind : "");
+        }
+
+        function clearResult() {
+          result.className = "result";
+          result.innerHTML = "";
+        }
+
+        function readAmount(id, fallback) {
+          const raw = read(id);
+          if (!raw) return fallback;
+          const num = Number(raw);
+          return Number.isFinite(num) ? num : NaN;
+        }
+
+        function slug(value, fallback) {
+          const normalized = String(value || "")
+            .toLowerCase()
+            .normalize("NFKD")
+            .replace(/[\\u0300-\\u036f]/g, "")
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^_+|_+$/g, "");
+          return normalized || fallback;
+        }
+
+        function tokenPart() {
+          const browserCrypto = globalThis.crypto;
+          if (browserCrypto && browserCrypto.getRandomValues) {
+            const bytes = new Uint8Array(4);
+            browserCrypto.getRandomValues(bytes);
+            return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+          }
+          return Date.now().toString(36);
+        }
+
+        function makeId(prefix, seed) {
+          return prefix + "_" + slug(seed, "manual") + "_" + Date.now().toString(36) + "_" + tokenPart();
+        }
+
+        function firstString() {
+          for (const value of arguments) {
+            if (typeof value === "string" && value.trim()) return value.trim();
+          }
+          return "";
+        }
+
+        function escapeAttr(value) {
+          return String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/"/g, "&quot;")
+            .replace(/</g, "&lt;");
+        }
+
+        function isLineUserId(value) {
+          return /^U[a-zA-Z0-9_-]{20,}$/.test(String(value || "").trim());
+        }
+
+        function readTokenFromUrl(value) {
+          if (!value) return "";
+          try {
+            return new URL(value, location.origin).searchParams.get("t") || "";
+          } catch {
+            return "";
+          }
+        }
+
+        function linkFor(path, token) {
+          if (!token) return "";
+          const url = new URL(path, location.origin);
+          url.searchParams.set("t", token);
+          return url.toString();
+        }
+
+        function linkNear(source, path, token) {
+          if (!token) return "";
+          let origin = location.origin;
+          try {
+            if (source) origin = new URL(source, location.origin).origin;
+          } catch {}
+          const url = new URL(path, origin);
+          url.searchParams.set("t", token);
+          return url.toString();
+        }
+
+        function linkRow(label, href) {
+          if (!href) {
+            return '<div class="link-row"><strong>' + label + '</strong><span class="empty">No link returned</span></div>';
+          }
+          const safeHref = escapeAttr(href);
+          return [
+            '<div class="link-row">',
+            '<strong>' + label + '</strong>',
+            '<div class="link-line">',
+            '<a href="' + safeHref + '" target="_blank" rel="noopener noreferrer">' + safeHref + '</a>',
+            '<button class="copy" type="button" data-copy="' + safeHref + '">Copy</button>',
+            '</div>',
+            '</div>'
+          ].join("");
+        }
+
+        function lineActionRow(lineUserId) {
+          if (!isLineUserId(lineUserId)) return "";
+          return [
+            '<div class="link-row">',
+            '<strong>LINE</strong>',
+            '<div class="link-line">',
+            '<button class="copy" type="button" data-send-line-card="true">Send LINE Card</button>',
+            '</div>',
+            '</div>'
+          ].join("");
+        }
+
+        function renderLinks(data, payload, lineUserId) {
+          const payments = data && typeof data.payments_response === "object" ? data.payments_response : {};
+          const customerDashboardSource = firstString(data && data.customer_dashboard_url, payments && payments.dashboard_url);
+          const paymentSource = firstString(data && data.customer_payment_url, data && data.payment_url, payments && payments.payment_url);
+          const modelConsoleSource = firstString(data && data.model_console_url, payments && payments.model_console_url);
+          const customerSource = firstString(
+            customerDashboardSource,
+            paymentSource,
+            data && data.customer_confirmation_url,
+            data && data.confirmation_url,
+            data && data.confirm_url,
+            payments && payments.customer_confirmation_url,
+            payments && payments.confirmation_url,
+            payments && payments.confirm_url
+          );
+          const modelSource = firstString(
+            modelConsoleSource,
+            data && data.model_confirmation_url,
+            payments && payments.model_confirmation_url
+          );
+          const customerToken = firstString(data && data.customer_token, data && data.customer_t, payments && payments.customer_t) || readTokenFromUrl(customerSource);
+          const modelToken = firstString(data && data.model_token, data && data.model_t, payments && payments.model_t) || readTokenFromUrl(modelSource);
+          const customerFirstDb = customerDashboardSource || linkFor("/member/first-db", customerToken);
+          const paymentLink = paymentSource.includes("/confirmation/payment-confirmation")
+            ? paymentSource
+            : linkNear(customerFirstDb || paymentSource, "/confirmation/payment-confirmation", customerToken) || paymentSource;
+          const modelConsole = modelConsoleSource || linkNear(customerFirstDb || modelSource, "/model/console-sigil", modelToken);
+
+          lastLineCardPayload = isLineUserId(lineUserId) && customerFirstDb && paymentLink
+            ? {
+                line_user_id: lineUserId,
+                session_id: payload.session_id,
+                client_name: payload.client_name,
+                amount_thb: payload.amount_thb,
+                deposit_amount_thb: payload.deposit_amount_thb,
+                expire_at: firstString(data && data.customer_invite_expires_at, data && data.expires_at, payments && payments.expires_at) || new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(),
+                points_balance: 0,
+                dashboard_url: customerFirstDb,
+                payment_url: paymentLink
+              }
+            : null;
+
+          result.className = "result visible";
+          result.innerHTML = [
+            "<h2>Session links created</h2>",
+            linkRow("Customer first dashboard link", customerFirstDb),
+            linkRow("Payment confirmation link", paymentLink),
+            linkRow("Model console link", modelConsole),
+            lineActionRow(lineUserId)
+          ].join("");
+        }
+
+        logout.addEventListener("click", () => {
+          if (window.__MMD_ADMIN_GATE__) {
+            window.__MMD_ADMIN_GATE__.logout();
+          }
+        });
+
+        result.addEventListener("click", async (event) => {
+          const button = event.target instanceof Element ? event.target.closest("[data-copy]") : null;
+          if (button) {
+            const value = button.getAttribute("data-copy") || "";
+            try {
+              await navigator.clipboard.writeText(value);
+              button.textContent = "Copied";
+              setTimeout(() => { button.textContent = "Copy"; }, 1200);
+            } catch {
+              setStatus("Copy failed.", "error");
+            }
+            return;
+          }
+
+          const lineButton = event.target instanceof Element ? event.target.closest("[data-send-line-card]") : null;
+          if (!lineButton || !lastLineCardPayload) return;
+          lineButton.disabled = true;
+          lineButton.textContent = "Sending...";
+          setStatus("");
+          try {
+            const response = await fetch(${JSON.stringify(SIGIL.sendLineSessionCard)}, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(lastLineCardPayload),
+            });
+            if (!response.ok) {
+              setStatus("Could not send LINE card.", "error");
+              return;
+            }
+            setStatus("LINE card sent.", "success");
+            lineButton.textContent = "Sent";
+          } catch {
+            setStatus("Could not send LINE card.", "error");
+          } finally {
+            if (lineButton.textContent !== "Sent") {
+              lineButton.disabled = false;
+              lineButton.textContent = "Send LINE Card";
+            }
+          }
+        });
+
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          setStatus("");
+          clearResult();
+
+          const totalAmount = readAmount("total_amount_thb", NaN);
+          const depositAmount = readAmount("deposit_amount_thb", 0);
+          const finalAmount = readAmount("final_amount_thb", NaN);
+          if ([totalAmount, depositAmount, finalAmount].some(Number.isNaN)) {
+            setStatus("Check the THB amounts and try again.", "error");
+            return;
+          }
+
+          const customerName = read("customer_name");
+          const customerLine = read("customer_line");
+          const customerUsername = read("customer_username");
+          const customerPhone = read("phone");
+          const jobType = read("job_type");
+          const modelName = read("model_name");
+          const modelUsername = read("model_username");
+          const jobDate = read("job_date");
+          const startTime = read("start_time");
+          const endTime = read("end_time");
+          const locationName = read("location_name");
+          const paymentType = read("payment_type") || "deposit";
+          const amountForPayment =
+            paymentType === "deposit" ? (depositAmount || totalAmount) :
+            paymentType === "final" ? (finalAmount || totalAmount) :
+            paymentType === "tips" ? (finalAmount || depositAmount || totalAmount) :
+            totalAmount;
+          const identitySeed = customerUsername || customerLine || customerName;
+          const modelSeed = modelUsername || modelName;
+          const lineUserId = isLineUserId(customerLine) ? customerLine : "";
+          const lineDisplayName = lineUserId ? "" : customerLine;
+          const sessionId = makeId("sess", customerName + " " + modelName);
+          const paymentRef = makeId("pay", customerName + " " + jobDate);
+          const generatedModelId = makeId("model", modelSeed);
+          const metadataJson = {
+            source: "sigil_admin_create_session_links",
+            customer_username: customerUsername,
+            customer_line_user_id: lineUserId,
+            customer_line_display_name: lineDisplayName,
+            customer_phone: customerPhone,
+            model_username: modelUsername,
+            total_amount_thb: totalAmount,
+            deposit_amount_thb: depositAmount,
+            final_amount_thb: finalAmount,
+            payment_type: paymentType,
+            customer_note: read("customer_note"),
+            model_brief_note: read("model_brief_note")
+          };
+
+          const payload = {
+            username: customerUsername,
+            nickname: customerName,
+            mmd_client_name: customerName,
+            client_name: customerName,
+            customer_name: customerName,
+            memberstack_id: makeId("customer", identitySeed),
+            line_user_id: lineUserId,
+            line_display_name: lineDisplayName,
+            phone: customerPhone,
+            model_name: modelName,
+            model_record_id: generatedModelId,
+            model_id: generatedModelId,
+            model_lookup_key: slug(modelSeed, "manual_model"),
+            session_id: sessionId,
+            payment_ref: paymentRef,
+            job_type: jobType,
+            job_date: jobDate,
+            start_time: startTime,
+            end_time: endTime,
+            location_name: locationName,
+            google_map_url: read("google_map_url"),
+            amount_thb: amountForPayment,
+            deposit_amount_thb: depositAmount,
+            pay_model_thb: 0,
+            currency: "THB",
+            payment_type: paymentType,
+            payment_stage: paymentType,
+            payment_method: "promptpay",
+            return_url: "/member/first-db",
+            cancel_url: "/sigil/admin/jobs/create-session",
+            confirm_page: "/confirmation/payment-confirmation",
+            model_confirm_page: "/model/console-sigil",
+            note: read("customer_note"),
+            notes: read("customer_note"),
+            model_brief_note: read("model_brief_note"),
+            model_history_note: read("model_brief_note"),
+            model_note: read("model_brief_note"),
+            model_history_source: "sigil_admin_create_session_links",
+            metadata_json: metadataJson,
+            payload_json: metadataJson
+          };
+
+          submit.disabled = true;
+          submit.textContent = "Creating links...";
+          setStatus("Creating session links...");
+
+          try {
+            const response = await fetch(${JSON.stringify(submitPath)}, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+            const data = await response.json().catch(() => null);
+            if (!response.ok || !data) {
+              setStatus(response.status === 401 ? "Session expired. Please log in again." : "Could not create links.", "error");
+              return;
+            }
+
+            setStatus("Session links ready.", "success");
+            renderLinks(data, payload, lineUserId);
+          } catch {
+            setStatus("Unable to create links right now.", "error");
+          } finally {
+            submit.disabled = false;
+            submit.textContent = "Create Session Links";
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>`;
+
+  return new Response(html, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+    },
+  });
+}
+
+function renderCreateSessionPage(request: Request, session: AdminGateSession | null): Response {
+  const requestUrl = new URL(request.url);
+  const next = normalizeAdminNextPath(requestUrl.pathname + requestUrl.search);
+  const isSigilAdmin = isSigilAdminPath(requestUrl.pathname);
+  const bootstrap = isSigilAdmin
+    ? sigilAdminBrowserBootstrapScript()
+    : adminGateBootstrapScript(session as AdminGateSession, next, selectAdminLoginPath(requestUrl.pathname));
+  const submitPath = isSigilAdmin ? SIGIL.createSession : ADMIN_JOBS.createSession;
   const html = `<!doctype html>
 <html lang="en">
   <head>
@@ -4813,7 +5555,7 @@ function renderCreateSessionPage(request: Request, session: AdminGateSession): R
         .topbar { align-items: flex-start; flex-direction: column; }
       }
     </style>
-    ${adminGateBootstrapScript(session, next, selectAdminLoginPath(new URL(request.url).pathname))}
+    ${bootstrap}
   </head>
   <body>
     <main class="shell">
@@ -4952,7 +5694,7 @@ function renderCreateSessionPage(request: Request, session: AdminGateSession): R
           setResult("Working…");
 
           try {
-            const response = await fetch(${JSON.stringify(ADMIN_JOBS.createSession)}, {
+            const response = await fetch(${JSON.stringify(submitPath)}, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(payload),
@@ -4987,8 +5729,14 @@ function renderCreateSessionPage(request: Request, session: AdminGateSession): R
   });
 }
 
-function renderCreateJobPage(request: Request, session: AdminGateSession): Response {
-  const next = normalizeAdminNextPath(new URL(request.url).pathname + new URL(request.url).search);
+function renderCreateJobPage(request: Request, session: AdminGateSession | null): Response {
+  const requestUrl = new URL(request.url);
+  const next = normalizeAdminNextPath(requestUrl.pathname + requestUrl.search);
+  const isSigilAdmin = isSigilAdminPath(requestUrl.pathname);
+  const bootstrap = isSigilAdmin
+    ? sigilAdminBrowserBootstrapScript()
+    : adminGateBootstrapScript(session as AdminGateSession, next, selectAdminLoginPath(requestUrl.pathname));
+  const submitPath = isSigilAdmin ? SIGIL.createJob : JOBS.createJob;
   const lineTemplate = `ส่งบรีฟตามนี้ได้เลยค่ะ
 
 1. ชื่อเล่น:
@@ -5329,7 +6077,7 @@ function renderCreateJobPage(request: Request, session: AdminGateSession): Respo
         .topbar { align-items: flex-start; flex-direction: column; }
       }
     </style>
-    ${adminGateBootstrapScript(session, next, selectAdminLoginPath(new URL(request.url).pathname))}
+    ${bootstrap}
   </head>
   <body>
     <main class="shell">
@@ -6316,7 +7064,7 @@ function renderCreateJobPage(request: Request, session: AdminGateSession): Respo
             const headers = window.__MMD_ADMIN_GATE__
               ? window.__MMD_ADMIN_GATE__.buildHeaders({ "Content-Type": "application/json" })
               : new Headers({ "Content-Type": "application/json" });
-            const response = await fetch(${JSON.stringify(JOBS.createJob)}, {
+            const response = await fetch(${JSON.stringify(submitPath)}, {
               method: "POST",
               headers,
               body: JSON.stringify(payload),
@@ -6517,15 +7265,34 @@ export default {
       const internalRouteRes = await handleInternalRoutes(request, env);
       if (internalRouteRes) return internalRouteRes;
 
+      const internalAdminInviteCreateResponse = await handleInternalAdminInviteCreateRoute(request, env);
+      if (internalAdminInviteCreateResponse) {
+        return internalAdminInviteCreateResponse;
+      }
+
       if (
         request.method === "OPTIONS" &&
         (
           isPublicRenewalStatusRoute(url.pathname)
           || isPublicRenewalIntakeRoute(url.pathname)
           || isPublicCustomerConfirmRoute(url.pathname)
+          || url.pathname === MODEL_SESSION_DASHBOARD_PATH
+          || url.pathname === MODEL_SESSION_STATUS_PATH
         )
       ) {
         return withCors(request, env, new Response(null, { status: 204 }));
+      }
+
+      const sigilAdminAuthResponse = await handleSigilAdminAuthRoute(request, env);
+      if (sigilAdminAuthResponse) {
+        return sigilAdminAuthResponse;
+      }
+
+      if (isSigilAdminPath(url.pathname)) {
+        const sigilAdminSession = await getValidSigilAdminSession(request, env);
+        if (!sigilAdminSession) {
+          return makeSigilAdminLoginRedirect(request);
+        }
       }
 
       if (request.method === "GET" && isHealthRoute(url.pathname)) {
@@ -6543,6 +7310,10 @@ export default {
         return await handleResolveInvite(request, env);
       }
 
+      if (request.method === "GET" && url.pathname === MODEL_SESSION_DASHBOARD_PATH) {
+        return withCors(request, env, await handleModelSessionDashboard(request, env));
+      }
+
       if (request.method === "POST" && isPublicRenewalStatusRoute(url.pathname)) {
         return await handlePublicRenewalStatus(request, env);
       }
@@ -6553,6 +7324,10 @@ export default {
 
       if (request.method === "POST" && isPublicCustomerConfirmRoute(url.pathname)) {
         return await handleCustomerConfirm(request, env);
+      }
+
+      if (request.method === "POST" && url.pathname === MODEL_SESSION_STATUS_PATH) {
+        return withCors(request, env, await handleModelSessionStatus(request, env));
       }
 
       if (url.pathname === "/internal/line/send-session-card") {
@@ -6597,11 +7372,15 @@ export default {
         }
 
         const gateSession = getValidatedGateSession(request);
-        if (!gateSession && !isAuthorized(request, env)) {
+        const sigilAdminSession = isSigilAdminPath(url.pathname)
+          ? await getValidSigilAdminSession(request, env)
+          : null;
+        if (!gateSession && !sigilAdminSession && !isAuthorized(request, env)) {
           return makeLoginRedirect(request, url.pathname);
         }
 
         const session =
+          sigilAdminSession ? null :
           gateSession ||
           ({
             ok: true,
@@ -6610,14 +7389,29 @@ export default {
             bearer: readInternalToken(request) || env.INTERNAL_TOKEN,
           } satisfies AdminGateSession);
 
-        return renderCreateSessionPage(request, session);
+        return url.pathname === SIGIL.createSession
+          ? renderCreateSessionLinksPage(request, session)
+          : renderCreateSessionPage(request, session);
+      }
+
+      if (
+        request.method === "POST" &&
+        url.pathname === SIGIL.sendLineSessionCard
+      ) {
+        return await handleSigilSendLineSessionCard(request, env, meta);
+      }
+
+      if (
+        request.method === "POST" &&
+        url.pathname === SIGIL.createSession
+      ) {
+        return await handleCreateLinks(request, env);
       }
 
       if (
         request.method === "POST" &&
         (url.pathname === ADMIN_JOBS.createSession ||
-          url.pathname === ADMIN_JOBS.createSessionLegacy ||
-          url.pathname === SIGIL.createSession)
+          url.pathname === ADMIN_JOBS.createSessionLegacy)
       ) {
         return await handleAdminCreateSessionProxy(request, env, meta);
       }
@@ -6634,11 +7428,15 @@ export default {
         }
 
         const gateSession = getValidatedGateSession(request);
-        if (!gateSession && !isAuthorized(request, env)) {
+        const sigilAdminSession = isSigilAdminPath(url.pathname)
+          ? await getValidSigilAdminSession(request, env)
+          : null;
+        if (!gateSession && !sigilAdminSession && !isAuthorized(request, env)) {
           return makeLoginRedirect(request, url.pathname);
         }
 
         const session =
+          sigilAdminSession ? null :
           gateSession ||
           ({
             ok: true,
@@ -6661,7 +7459,10 @@ export default {
         }
 
         const gateSession = getValidatedGateSession(request);
-        if (!gateSession) {
+        const sigilAdminSession = isSigilAdminPath(url.pathname)
+          ? await getValidSigilAdminSession(request, env)
+          : null;
+        if (!gateSession && !sigilAdminSession) {
           return makeLoginRedirect(request, url.pathname);
         }
 
@@ -6670,11 +7471,18 @@ export default {
           return upstream;
         }
 
-        return await withInjectedAdminBootstrap(request, upstream, gateSession);
+        if (sigilAdminSession) {
+          return await withInjectedSigilAdminBootstrap(upstream);
+        }
+
+        return await withInjectedAdminBootstrap(request, upstream, gateSession as AdminGateSession);
       }
 
       if (!isAuthorized(request, env)) {
-        return unauthorized(meta);
+        const sigilAdminSession = isSigilAdminPath(url.pathname)
+          ? await getValidSigilAdminSession(request, env)
+          : null;
+        if (!sigilAdminSession) return unauthorized(meta);
       }
 
       if (request.method === "POST" && isLinePreviewRoute(url.pathname)) {
