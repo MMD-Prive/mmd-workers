@@ -5,6 +5,7 @@ export type AirtableFieldValue =
   | number
   | boolean
   | string[]
+  | Array<Record<string, unknown>>
   | null
   | undefined;
 
@@ -37,6 +38,7 @@ export function airtableTable(env: Env, key: string): string {
   const tables: Record<string, string> = {
     clients: env.AIRTABLE_TABLE_CLIENTS || "Clients",
     sessions: env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX",
+    jobs: env.AIRTABLE_TABLE_JOBS || "tbl0jxIjN8QYwGABX",
     payments: env.AIRTABLE_TABLE_PAYMENTS || "tblWGGJJOx5eBvBZJ",
     internal_notes: env.AIRTABLE_TABLE_PRIVATE_PROFILE_NOTES || "Internal Notes",
     activity_logs: env.AIRTABLE_TABLE_ACTIVITY_LOGS || "Activity Logs",
