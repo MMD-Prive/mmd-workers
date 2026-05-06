@@ -1,10 +1,11 @@
-import { verifyLinkPayload } from "../lib/crypto";
+import { linkSigningSecret, verifyLinkPayload } from "../lib/crypto";
 import { getConfirmSecret } from "../lib/invite";
 import { redirect } from "../lib/response";
 import {
   airtableTable,
   airtableWritesEnabled,
-  upsertRecordWithFallbacks,
+  createRecordWithFallbacks,
+  patchRecordWithFallbacks,
   type AirtableWriteResult,
 } from "../lib/airtable-schema";
 import type { Env } from "../types";
@@ -26,6 +27,7 @@ type AirtableRecord = {
 type PaymentPageContext = {
   token: string;
   token_kind: string;
+  payment_record_id: string;
   session_id: string;
   payment_ref: string;
   payment_type: string;
@@ -49,6 +51,8 @@ type PaymentPageContext = {
 
 type SubmissionResult = {
   ok: boolean;
+  code?: string;
+  status?: string;
   message: string;
   payment_ref?: string;
   session_id?: string;
@@ -65,7 +69,7 @@ type SubmissionReceipt = {
 
 type SubmissionReceiptResult =
   | { ok: true; receipt: SubmissionReceipt }
-  | { ok: false; message: string };
+  | { ok: false; code: string; message: string };
 
 function toStr(value: unknown): string {
   return String(value ?? "").trim();
@@ -91,7 +95,7 @@ function escapeAttr(value: unknown): string {
 
 function readPaymentType(value: unknown): string {
   const raw = toStr(value).toLowerCase();
-  if (["deposit", "final", "tips", "full", "membership"].includes(raw)) return raw;
+  if (["deposit", "final", "tips", "full"].includes(raw)) return raw;
   return "";
 }
 
@@ -106,7 +110,6 @@ function paymentTypeLabel(value: unknown): string {
   if (raw === "full") return "Full payment";
   if (raw === "final") return "Final balance";
   if (raw === "tips") return "Tips";
-  if (raw === "membership") return "Membership";
   return "Deposit";
 }
 
@@ -134,7 +137,7 @@ function normalizeProofUrl(value: unknown): string {
 
   try {
     const url = new URL(raw);
-    if (url.protocol === "https:" || url.protocol === "http:") return url.toString();
+    if (url.protocol === "https:") return url.toString();
   } catch {}
 
   return "";
@@ -154,22 +157,6 @@ function getPaypalCardUrl(env: Env): string {
       env.CREDIT_CARD_PAYMENT_URL ||
       env.PAYPAL_URL,
   );
-}
-
-function getPaymentsBaseUrl(env: Env): string {
-  const direct = toStr(env.PAYMENTS_WORKER_BASE_URL || env.PAYMENTS_BASE_URL);
-  if (direct) return direct.replace(/\/+$/, "");
-
-  const createLinksUrl = toStr(env.CREATE_LINKS_URL);
-  if (createLinksUrl) {
-    try {
-      return new URL(createLinksUrl).origin.replace(/\/+$/, "");
-    } catch {
-      return "";
-    }
-  }
-
-  return "";
 }
 
 function htmlResponse(body: string, status = 200): Response {
@@ -198,33 +185,62 @@ function encodeFormulaValue(value: string): string {
   return toStr(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
-async function findAirtableRecord(
+async function listAirtableRecords(
+  env: Env,
+  tableName: string,
+  formula: string,
+  maxRecords = 3,
+): Promise<AirtableRecord[]> {
+  if (!airtableConfigured(env) || !tableName || !formula) return [];
+
+  const url = new URL(
+    `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}`,
+  );
+  url.searchParams.set("maxRecords", String(maxRecords));
+  url.searchParams.set("filterByFormula", formula);
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    headers: airtableHeaders(env),
+  });
+
+  if (!response.ok) return [];
+
+  const data = (await response.json().catch(() => null)) as { records?: AirtableRecord[] } | null;
+  return Array.isArray(data?.records) ? data.records.filter((record) => Boolean(record?.id)) : [];
+}
+
+async function findAirtableRecords(
   env: Env,
   tableName: string,
   formulas: string[],
-): Promise<AirtableRecord | null> {
-  if (!airtableConfigured(env) || !tableName) return null;
-
+  maxRecords = 3,
+): Promise<AirtableRecord[]> {
+  const records = new Map<string, AirtableRecord>();
   for (const formula of formulas.filter(Boolean)) {
-    const url = new URL(
-      `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}`,
-    );
-    url.searchParams.set("maxRecords", "1");
-    url.searchParams.set("filterByFormula", formula);
-
-    const response = await fetch(url.toString(), {
-      method: "GET",
-      headers: airtableHeaders(env),
-    });
-
-    if (!response.ok) continue;
-
-    const data = (await response.json().catch(() => null)) as { records?: AirtableRecord[] } | null;
-    const record = data?.records?.[0];
-    if (record?.id) return record;
+    for (const record of await listAirtableRecords(env, tableName, formula, maxRecords)) {
+      if (record.id) records.set(record.id, record);
+    }
+    if (records.size > 1) break;
   }
 
-  return null;
+  return Array.from(records.values());
+}
+
+async function getAirtableRecordById(env: Env, tableName: string, recordId: string): Promise<AirtableRecord | null> {
+  if (!airtableConfigured(env) || !tableName || !recordId) return null;
+
+  const response = await fetch(
+    `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}/${encodeURIComponent(recordId)}`,
+    {
+      method: "GET",
+      headers: airtableHeaders(env),
+    },
+  );
+
+  if (!response.ok) return null;
+  const record = (await response.json().catch(() => null)) as AirtableRecord | null;
+  return record?.id ? record : null;
 }
 
 function pickString(fields: Record<string, unknown> | undefined, keys: string[]): string {
@@ -244,6 +260,14 @@ function pickNumber(fields: Record<string, unknown> | undefined, keys: string[])
   return null;
 }
 
+function fieldEquals(field: string, value: string): string {
+  return `{${field}}="${encodeFormulaValue(value)}"`;
+}
+
+function fieldLowerEquals(field: string, value: string): string {
+  return `LOWER({${field}})="${encodeFormulaValue(value.toLowerCase())}"`;
+}
+
 function sessionLookupFormulas(sessionId: string, paymentRef: string): string[] {
   const sid = encodeFormulaValue(sessionId);
   const ref = encodeFormulaValue(paymentRef);
@@ -253,34 +277,24 @@ function sessionLookupFormulas(sessionId: string, paymentRef: string): string[] 
     formulas.push(`AND({session_id}="${sid}",{payment_ref}="${ref}")`);
     formulas.push(`AND({fldLTq2kZbyRv22IA}="${sid}",{fldojgjSQLaO0uQLX}="${ref}")`);
   }
-  if (sessionId) {
-    formulas.push(`{session_id}="${sid}"`);
-    formulas.push(`{fldLTq2kZbyRv22IA}="${sid}"`);
-    formulas.push(`{Session ID}="${sid}"`);
-  }
-  if (paymentRef) {
-    formulas.push(`{payment_ref}="${ref}"`);
-    formulas.push(`{Payment Ref}="${ref}"`);
-    formulas.push(`{Payment Reference}="${ref}"`);
-    formulas.push(`{fldojgjSQLaO0uQLX}="${ref}"`);
-  }
 
   return formulas;
 }
 
-function paymentLookupFormulas(paymentRef: string, sessionId: string): string[] {
-  const ref = encodeFormulaValue(paymentRef);
-  const sid = encodeFormulaValue(sessionId);
+function paymentLookupFormulas(paymentRef: string, sessionId: string, paymentType: string): string[] {
+  if (!paymentRef || !sessionId || !paymentType) return [];
+
+  const paymentRefFields = ["payment_ref", "Payment Reference", "Payment Ref"];
+  const sessionIdFields = ["session_id", "Session ID"];
+  const paymentTypeFields = ["payment_type", "payment_stage", "Payment Type", "Payment Stage"];
   const formulas: string[] = [];
 
-  if (paymentRef) {
-    formulas.push(`{payment_ref}="${ref}"`);
-    formulas.push(`{Payment Reference}="${ref}"`);
-    formulas.push(`{Payment Ref}="${ref}"`);
-  }
-  if (sessionId) {
-    formulas.push(`{session_id}="${sid}"`);
-    formulas.push(`{Session ID}="${sid}"`);
+  for (const refField of paymentRefFields) {
+    for (const sessionField of sessionIdFields) {
+      for (const typeField of paymentTypeFields) {
+        formulas.push(`AND(${fieldEquals(refField, paymentRef)},${fieldEquals(sessionField, sessionId)},${fieldLowerEquals(typeField, paymentType)})`);
+      }
+    }
   }
 
   return formulas;
@@ -290,19 +304,30 @@ async function readAirtablePaymentContext(
   env: Env,
   sessionId: string,
   paymentRef: string,
+  paymentType: string,
 ): Promise<{ session: AirtableRecord | null; payment: AirtableRecord | null }> {
-  const session = await findAirtableRecord(
+  if (!airtableConfigured(env)) throw new Error("PAYMENT_LOOKUP_UNAVAILABLE");
+  if (!sessionId) throw new Error("MISSING_SESSION_ID");
+  if (!paymentRef) throw new Error("MISSING_PAYMENT_REF");
+  if (!paymentType) throw new Error("MISSING_PAYMENT_TYPE");
+
+  const payments = await findAirtableRecords(
     env,
-    toStr(env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX"),
-    sessionLookupFormulas(sessionId, paymentRef),
-  );
-  const payment = await findAirtableRecord(
-    env,
-    toStr(env.AIRTABLE_TABLE_PAYMENTS || "payments"),
-    paymentLookupFormulas(paymentRef, sessionId),
+    airtableTable(env, "payments"),
+    paymentLookupFormulas(paymentRef, sessionId, paymentType),
   );
 
-  return { session, payment };
+  if (payments.length > 1) throw new Error("AMBIGUOUS_PAYMENT_LOOKUP");
+  if (payments.length < 1) throw new Error("PAYMENT_NOT_FOUND");
+
+  const sessions = await findAirtableRecords(
+    env,
+    airtableTable(env, "sessions"),
+    sessionLookupFormulas(sessionId, paymentRef),
+    1,
+  );
+
+  return { session: sessions[0] || null, payment: payments[0] };
 }
 
 function amountForType(input: {
@@ -360,23 +385,42 @@ function readTokenAmount(payload: SignedPaymentPayload): number | null {
   );
 }
 
-async function verifyPaymentToken(token: string, env: Env): Promise<SignedPaymentPayload> {
-  const secret = getConfirmSecret(env);
-  const payload = await verifyLinkPayload<SignedPaymentPayload>(token, secret);
+function validatePaymentTokenPayload(payload: SignedPaymentPayload): SignedPaymentPayload {
   const kind = toStr(payload.kind);
   const role = toStr(payload.role);
+  const paymentRef = toStr(payload.payment_ref || payload.transaction_ref || payload.ref);
 
   if (kind === "customer_confirm") {
     if (role && role !== "customer") throw new Error("invalid_payment_role");
+    if (!paymentRef) throw new Error("MISSING_PAYMENT_REF");
     return payload;
   }
 
   if (kind === "customer_invite") {
     if (role && role !== "customer") throw new Error("invalid_invite_role");
+    if (!paymentRef) throw new Error("MISSING_PAYMENT_REF");
     return payload;
   }
 
   throw new Error("invalid_payment_token_kind");
+}
+
+async function verifyPaymentToken(token: string, env: Env): Promise<SignedPaymentPayload> {
+  const confirmSecret = getConfirmSecret(env);
+  const alternateSecret = linkSigningSecret(env);
+
+  try {
+    return validatePaymentTokenPayload(
+      await verifyLinkPayload<SignedPaymentPayload>(token, confirmSecret),
+    );
+  } catch (error) {
+    if (alternateSecret && alternateSecret !== confirmSecret) {
+      return validatePaymentTokenPayload(
+        await verifyLinkPayload<SignedPaymentPayload>(token, alternateSecret),
+      );
+    }
+    throw error;
+  }
 }
 
 async function resolvePaymentPageContext(token: string, env: Env): Promise<PaymentPageContext> {
@@ -386,7 +430,11 @@ async function resolvePaymentPageContext(token: string, env: Env): Promise<Payme
   const tokenAmount = readTokenAmount(payload);
   const tokenSessionId = toStr(payload.session_id || payload.immigration_id);
   const tokenPaymentRef = toStr(payload.payment_ref || payload.transaction_ref || payload.ref);
-  const records = await readAirtablePaymentContext(env, tokenSessionId, tokenPaymentRef);
+  if (!tokenSessionId) throw new Error("MISSING_SESSION_ID");
+  if (!tokenPaymentRef) throw new Error("MISSING_PAYMENT_REF");
+  if (!tokenPaymentType) throw new Error("MISSING_PAYMENT_TYPE");
+
+  const records = await readAirtablePaymentContext(env, tokenSessionId, tokenPaymentRef, tokenPaymentType);
   const sessionFields = records.session?.fields;
   const paymentFields = records.payment?.fields;
 
@@ -427,6 +475,7 @@ async function resolvePaymentPageContext(token: string, env: Env): Promise<Payme
   return {
     token,
     token_kind: tokenKind,
+    payment_record_id: records.payment?.id || "",
     session_id: sessionId,
     payment_ref: paymentRef,
     payment_type: resolvedPaymentType,
@@ -463,20 +512,39 @@ async function resolvePaymentPageContext(token: string, env: Env): Promise<Payme
 function submissionReceiptFromForm(form: FormData): SubmissionReceiptResult {
   const slipUrlRaw = toStr(form.get("slip_url"));
   const slipUrl = normalizeProofUrl(slipUrlRaw);
+  const slipFile = firstSubmittedFile(form, ["slip_file", "receipt_file", "attachment", "file"]);
   const providerTxnId = toStr(form.get("provider_txn_id"));
   const payerName = toStr(form.get("payer_name"));
   const note = toStr(form.get("note"));
 
+  if (slipFile) {
+    if (slipFile.size <= 0) {
+      return {
+        ok: false,
+        code: "EMPTY_PROOF_FILE",
+        message: "Uploaded slip proof is empty. Please provide a real https slip proof URL.",
+      };
+    }
+
+    return {
+      ok: false,
+      code: "FILE_UPLOAD_NOT_CONFIGURED",
+      message: "Slip file upload is not configured. TODO: configure R2 or Airtable attachment upload before accepting uploaded files; provide a real https slip proof URL instead.",
+    };
+  }
+
   if (slipUrlRaw && !slipUrl) {
     return {
       ok: false,
-      message: "Slip proof must be a real http(s) URL.",
+      code: "INVALID_PROOF_URL",
+      message: "Slip proof must be a real https URL.",
     };
   }
 
   if (!slipUrl) {
     return {
       ok: false,
+      code: "MISSING_PROOF_URL",
       message: "Please provide a real slip proof URL before submitting.",
     };
   }
@@ -492,40 +560,127 @@ function submissionReceiptFromForm(form: FormData): SubmissionReceiptResult {
   };
 }
 
+function firstSubmittedFile(form: FormData, names: string[]): File | null {
+  for (const name of names) {
+    const value = form.get(name);
+    if (value instanceof File && (value.name || value.size > 0)) return value;
+  }
+  return null;
+}
+
+const FINAL_PAYMENT_STATUSES = new Set(["paid", "verified", "approved", "completed", "settled"]);
+const FINAL_VERIFICATION_STATUSES = new Set(["verified", "approved"]);
+const FINAL_INTENT_STATUSES = new Set(["verified", "approved", "completed", "settled"]);
+
+function normalizedState(value: unknown): string {
+  return toStr(value).toLowerCase().replace(/[\s_-]+/g, "_");
+}
+
+function isFinalPaymentRecord(fields: Record<string, unknown> | undefined): boolean {
+  const paymentStatus = normalizedState(pickString(fields, ["payment_status", "Payment Status", "status", "Status"]));
+  const verificationStatus = normalizedState(pickString(fields, ["verification_status", "Verification Status"]));
+  const intentStatus = normalizedState(pickString(fields, [
+    "payment_intent_status",
+    "Payment Intent Status",
+    "intent_status",
+    "Intent Status",
+  ]));
+
+  return (
+    FINAL_PAYMENT_STATUSES.has(paymentStatus) ||
+    FINAL_VERIFICATION_STATUSES.has(verificationStatus) ||
+    FINAL_INTENT_STATUSES.has(intentStatus)
+  );
+}
+
+function proofFieldContainsUrl(value: unknown, proofUrl: string): boolean {
+  if (!value) return false;
+  if (typeof value === "string") return value.includes(proofUrl);
+  if (Array.isArray(value)) {
+    return value.some((item) => {
+      if (typeof item === "string") return item.includes(proofUrl);
+      if (item && typeof item === "object") {
+        const record = item as Record<string, unknown>;
+        return proofFieldContainsUrl(record.url || record.filename || record.name, proofUrl);
+      }
+      return false;
+    });
+  }
+  if (typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).some((nested) => proofFieldContainsUrl(nested, proofUrl));
+  }
+  return false;
+}
+
+function proofUrlPersisted(fields: Record<string, unknown> | undefined, proofUrl: string): boolean {
+  const acceptedFields = [
+    "Receipt Photo",
+    "receipt_photo",
+    "slip_url",
+    "proof_url",
+    "receipt_url",
+    "payment_evidence_url",
+    "notes",
+    "Notes",
+    "details",
+    "Details",
+    "payload_json",
+  ];
+
+  return acceptedFields.some((field) => proofFieldContainsUrl(fields?.[field], proofUrl));
+}
+
+async function writePaymentProofActivity(
+  env: Env,
+  action: string,
+  context: PaymentPageContext,
+  receipt: SubmissionReceipt,
+): Promise<void> {
+  if (!airtableWritesEnabled(env)) return;
+
+  await createRecordWithFallbacks(env, airtableTable(env, "activity_logs"), {
+    action,
+    source: "immigrate_worker_public_pay",
+    session_id: context.session_id,
+    payment_ref: context.payment_ref,
+    payment_type: context.payment_type,
+    proof_url: receipt.receipt_url,
+    created_at: new Date().toISOString(),
+    notes: `public_payment_page_${action}`,
+  }).catch(() => {
+    // Activity logging must never block proof submission or leak secrets.
+  });
+}
+
 async function recordManualReviewSubmission(
   env: Env,
   context: PaymentPageContext,
   receipt: SubmissionReceipt,
 ): Promise<AirtableWriteResult | null> {
   if (!airtableWritesEnabled(env)) return null;
+  if (!context.payment_record_id) {
+    return {
+      table: airtableTable(env, "payments"),
+      action: "error",
+      error: "PAYMENT_NOT_FOUND",
+    };
+  }
 
   const now = new Date().toISOString();
-  return upsertRecordWithFallbacks(
+  return patchRecordWithFallbacks(
     env,
     airtableTable(env, "payments"),
-    `{Payment Reference}="${encodeFormulaValue(context.payment_ref)}"`,
+    context.payment_record_id,
     {
-      "Payment Reference": context.payment_ref,
-      payment_ref: context.payment_ref,
-      session_id: context.session_id,
-      amount_thb: context.amount_thb ?? undefined,
-      amount: context.amount_thb ?? undefined,
-      total_amount_thb: context.total_amount_thb ?? undefined,
-      deposit_amount_thb: context.deposit_amount_thb ?? undefined,
-      final_amount_thb: context.final_amount_thb ?? undefined,
-      payment_stage: context.payment_type,
-      payment_type: context.payment_type,
-      payment_method: "promptpay",
-      payment_status: "pending",
-      "Payment Status": "pending",
-      status: "pending",
-      verification_status: "manual_review",
-      "Verification Status": "manual_review",
-      intent_status: "manual_review",
+      review_status: "manual_review",
+      proof_review_status: "manual_review",
+      manual_review_status: "manual_review",
       receipt_url: receipt.receipt_url,
       slip_url: receipt.receipt_url,
-      receipt_photo: receipt.receipt_url,
+      "Receipt Photo": [{ url: receipt.receipt_url }],
+      receipt_photo: [{ url: receipt.receipt_url }],
       proof_url: receipt.receipt_url,
+      payment_evidence_url: receipt.receipt_url,
       provider_txn_id: receipt.provider_txn_id,
       payer_name: receipt.payer_name,
       submitted_at: now,
@@ -540,8 +695,6 @@ async function recordManualReviewSubmission(
       payload_json: JSON.stringify({
         source: "immigrate_worker_public_pay",
         review_status: "manual_review",
-        payment_status: "pending",
-        verification_status: "manual_review",
         session_id: context.session_id,
         payment_ref: context.payment_ref,
         amount_thb: context.amount_thb,
@@ -565,27 +718,15 @@ function manualReviewNotes(receipt: SubmissionReceipt): string {
   ].filter(Boolean).join(" | ");
 }
 
-async function submitPaymentToPaymentsWorker(
+async function submitManualReviewPaymentProof(
   env: Env,
   context: PaymentPageContext,
   receipt: SubmissionReceipt,
 ): Promise<SubmissionResult> {
-  const base = getPaymentsBaseUrl(env);
-  if (!base) {
-    return {
-      ok: false,
-      message: "Payments worker URL is not configured.",
-      payment_ref: context.payment_ref,
-      session_id: context.session_id,
-      upstream: {
-        todo: "TODO: configure PAYMENTS_WORKER_BASE_URL or CREATE_LINKS_URL before enabling public payment confirmation.",
-      },
-    };
-  }
-
   if (!context.payment_ref || !context.session_id || !context.amount_thb || context.amount_thb <= 0) {
     return {
       ok: false,
+      code: "MISSING_PAYMENT_CONTEXT",
       message: "This payment link is missing a session ID, payment reference, or amount.",
       payment_ref: context.payment_ref,
       session_id: context.session_id,
@@ -593,10 +734,60 @@ async function submitPaymentToPaymentsWorker(
     };
   }
 
+  if (!airtableWritesEnabled(env)) {
+    return {
+      ok: false,
+      code: "PROOF_STORAGE_NOT_CONFIGURED",
+      message: "Payment proof storage is not configured. TODO: enable Airtable writes or add R2/Airtable attachment upload before accepting public slip submissions.",
+      payment_ref: context.payment_ref,
+      session_id: context.session_id,
+      upstream: {
+        skipped: true,
+        reason: "manual_review_storage_unavailable",
+      },
+    };
+  }
+
+  const existingRecord = context.payment_record_id
+    ? await getAirtableRecordById(env, airtableTable(env, "payments"), context.payment_record_id)
+    : null;
+  if (!existingRecord?.id) {
+    return {
+      ok: false,
+      code: "PAYMENT_NOT_FOUND",
+      message: "Payment record was not found for this session, reference, and payment type.",
+      payment_ref: context.payment_ref,
+      session_id: context.session_id,
+      upstream: null,
+    };
+  }
+
+  if (isFinalPaymentRecord(existingRecord.fields)) {
+    await writePaymentProofActivity(env, "already_verified_public_proof_seen", context, receipt);
+    return {
+      ok: true,
+      code: "ALREADY_VERIFIED",
+      status: "already_verified",
+      message: "Payment is already reviewed or verified. Your proof was not used to change payment status.",
+      payment_ref: context.payment_ref,
+      session_id: context.session_id,
+      proof_write: {
+        table: airtableTable(env, "payments"),
+        action: "skipped",
+        record_id: existingRecord.id,
+      },
+      upstream: {
+        skipped: true,
+        reason: "payment_already_final",
+      },
+    };
+  }
+
   const proofWrite = await recordManualReviewSubmission(env, context, receipt);
   if (proofWrite && proofWrite.action === "error") {
     return {
       ok: false,
+      code: toStr(proofWrite.error) || "PROOF_WRITE_FAILED",
       message: "Payment proof could not be stored for manual review. Please try again or contact an operator.",
       payment_ref: context.payment_ref,
       session_id: context.session_id,
@@ -605,73 +796,36 @@ async function submitPaymentToPaymentsWorker(
     };
   }
 
-  const reviewNotes = manualReviewNotes(receipt);
-  const payload = {
-    payment_ref: context.payment_ref,
-    transaction_ref: context.payment_ref,
-    session_id: context.session_id,
-    payment_stage: context.payment_type,
-    payment_type: context.payment_type,
-    amount: context.amount_thb,
-    amount_thb: context.amount_thb,
-    member_email: context.member_email,
-    package_code: context.package_code,
-    payment_method: "promptpay",
-    provider: "promptpay",
-    provider_txn_id: receipt.provider_txn_id,
-    receipt_url: receipt.receipt_url,
-    slip_url: receipt.receipt_url,
-    submitted_at: new Date().toISOString(),
-    status: "pending",
-    payment_status: "pending",
-    verification_status: "manual_review",
-    intent_status: "manual_review",
-    source: "immigrate_worker_public_pay",
-    message_thread_id: 61,
-    telegram_message_thread_id: 61,
-    notes: reviewNotes,
-    note: reviewNotes,
-    admin_reason: [reviewNotes, "telegram_confirm_thread=61"].filter(Boolean).join(" | "),
-  };
-
-  const response = await fetch(`${base}/v1/pay/verify`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(env.INTERNAL_TOKEN ? { authorization: `Bearer ${env.INTERNAL_TOKEN}` } : {}),
-      ...(env.CONFIRM_KEY ? { "x-confirm-key": env.CONFIRM_KEY } : {}),
-    },
-    body: JSON.stringify(payload),
-  });
-  const text = await response.text();
-  const data = (() => {
-    try {
-      return JSON.parse(text) as Record<string, unknown>;
-    } catch {
-      return text ? { raw: text } : null;
-    }
-  })();
-
-  if (!response.ok || !data || data.ok === false) {
+  const recordId = proofWrite?.record_id || context.payment_record_id;
+  const readback = recordId
+    ? await getAirtableRecordById(env, airtableTable(env, "payments"), recordId)
+    : null;
+  if (!proofUrlPersisted(readback?.fields, receipt.receipt_url)) {
+    await writePaymentProofActivity(env, "proof_not_persisted", context, receipt);
     return {
       ok: false,
-      message: toStr((data as Record<string, unknown> | null)?.error) || `payments_worker_http_${response.status}`,
+      code: "PROOF_NOT_PERSISTED",
+      message: "Payment proof could not be verified after storage. Please contact an operator.",
       payment_ref: context.payment_ref,
       session_id: context.session_id,
-      upstream: data,
+      upstream: null,
+      proof_write: proofWrite,
     };
   }
 
+  await writePaymentProofActivity(env, "manual_review_proof_submitted", context, receipt);
+
   return {
     ok: true,
+    code: "MANUAL_REVIEW_PENDING",
+    status: "manual_review",
     message: "Payment proof submitted. Status remains pending until manual review.",
     payment_ref: context.payment_ref,
     session_id: context.session_id,
     proof_write: proofWrite,
     upstream: {
-      ...data,
-      telegram_thread: "61",
-      telegram_source: "payments-worker notifier",
+      skipped: true,
+      reason: "public_payment_page_manual_review_only",
     },
   };
 }
@@ -692,6 +846,8 @@ function renderSubmission(result: SubmissionResult | null): string {
     <div class="notice ${kind}">
       <strong>${result.ok ? "Submission received" : "Submission failed"}</strong>
       <p>${escapeHtml(result.message)}</p>
+      ${result.code ? `<p>Code: <code>${escapeHtml(result.code)}</code></p>` : ""}
+      ${result.status ? `<p>Status: <code>${escapeHtml(result.status)}</code></p>` : ""}
       ${result.payment_ref ? `<p>Payment ref: <code>${escapeHtml(result.payment_ref)}</code></p>` : ""}
     </div>
   `;
@@ -1029,6 +1185,9 @@ export async function handlePaymentPage(request: Request, env: Env): Promise<Res
   }
 
   const url = new URL(request.url);
+  const onlyT = Array.from(url.searchParams.keys()).every((key) => key === "t");
+  if (!onlyT) return renderPaymentErrorPage("Payment link must use canonical /pay?t=... format.", 400);
+
   const token = toStr(url.searchParams.get("t"));
   if (!token) return renderPaymentErrorPage("Missing payment token. Use /pay?t=...", 400);
 
@@ -1057,13 +1216,14 @@ export async function handlePaymentPage(request: Request, env: Env): Promise<Res
     if (!receiptResult.ok) {
       return renderPaymentPage(context, {
         ok: false,
+        code: receiptResult.code,
         message: receiptResult.message,
         payment_ref: context.payment_ref,
         session_id: context.session_id,
       });
     }
 
-    const result = await submitPaymentToPaymentsWorker(env, context, receiptResult.receipt);
+    const result = await submitManualReviewPaymentProof(env, context, receiptResult.receipt);
     return renderPaymentPage(context, result);
   }
 
