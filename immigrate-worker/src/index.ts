@@ -9,6 +9,11 @@ import {
   MODEL_SESSION_STATUS_PATH,
 } from "./routes/model-session";
 import {
+  canonicalPaymentRedirect,
+  handlePaymentPage,
+  isPaymentPageRoute,
+} from "./routes/payment-page";
+import {
   getValidSigilAdminSession,
   handleInternalAdminInviteCreateRoute,
   handleSigilAdminAuthRoute,
@@ -509,6 +514,8 @@ function normalizeCreateLinksPayload(
   normalized.amount_thb = amountThb;
   normalized.payment_type = toStr(payload.payment_type || payload.payment_stage || "deposit");
   normalized.payment_method = toStr(payload.payment_method || "promptpay");
+  normalized.confirm_page = toStr(payload.confirm_page || "/pay");
+  normalized.model_confirm_page = toStr(payload.model_confirm_page || "/model/console-sigil");
   normalized.google_map_url = toStr(payload.google_map_url);
   normalized.note = toStr(payload.note || payload.notes) || buildDefaultBookingNote(payload);
 
@@ -1684,6 +1691,8 @@ async function createConfirmLinksAfterCreateJob(
     pay_model_thb: toNum(payload.pay_model_thb ?? payload.payload_json?.pay_model_thb) ?? undefined,
     payment_type: toStr(payload.payment_type || payload.payload_json?.payment_type || "deposit"),
     payment_method: toStr(payload.payment_method || payload.payload_json?.payment_method || "promptpay"),
+    confirm_page: "/pay",
+    model_confirm_page: "/model/console-sigil",
     note:
       toStr(payload.booking_note) ||
       toStr(payload.payload_json?.booking_note) ||
@@ -4989,89 +4998,100 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
     <style>
       :root {
         color-scheme: dark;
-        --bg: #050403;
-        --panel: rgba(13,12,11,.74);
-        --panel-strong: rgba(19,17,14,.82);
-        --panel-soft: rgba(255,255,255,.04);
-        --field: rgba(0,0,0,.38);
-        --line: rgba(226,190,112,.2);
-        --line-strong: rgba(239,202,119,.45);
+        --bg: #050505;
+        --ink: #0b0906;
+        --panel: rgba(17,15,12,.76);
+        --panel-strong: rgba(24,21,16,.84);
+        --panel-soft: rgba(255,255,255,.045);
+        --field: rgba(3,3,3,.54);
+        --line: rgba(218,174,82,.24);
+        --line-strong: rgba(246,207,126,.68);
         --text: #f8efe2;
-        --cream: #fff4df;
-        --muted: rgba(232,220,203,.7);
+        --cream: #fff5df;
+        --muted: rgba(235,222,201,.72);
         --gold: #d8aa4d;
-        --gold-strong: #f3cb72;
-        --gold-dark: #7b551b;
+        --gold-strong: #f4ce78;
+        --gold-deep: #9a6b24;
         --success: #9ad7b2;
         --danger: #f2b0b0;
       }
-      * { box-sizing: border-box; }
+      * { box-sizing: border-box; letter-spacing: 0; }
       html { min-height: 100%; }
       body {
         margin: 0;
         min-height: 100vh;
-        padding: 28px;
+        padding: 30px;
         color: var(--text);
         background:
-          linear-gradient(158deg, rgba(216,170,77,.17), transparent 34%),
-          linear-gradient(135deg, #11100e 0%, #050403 54%, #010101 100%);
+          linear-gradient(160deg, rgba(219,176,84,.18) 0%, rgba(219,176,84,0) 30%),
+          linear-gradient(90deg, rgba(255,255,255,.035), rgba(255,255,255,0) 38%),
+          linear-gradient(135deg, #13110d 0%, #050505 52%, #010101 100%);
         font-family: Inter, "Avenir Next", "Segoe UI", "Noto Sans Thai", Arial, sans-serif;
       }
       .shell {
-        width: min(100%, 1240px);
+        display: grid;
+        gap: 24px;
+        width: min(100%, 1280px);
         margin: 0 auto;
-        padding: 28px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.018)), var(--panel);
-        box-shadow: 0 30px 90px rgba(0,0,0,.46);
-        backdrop-filter: blur(18px);
       }
       .brandbar {
         display: flex;
         justify-content: space-between;
         gap: 18px;
         align-items: center;
-        padding-bottom: 18px;
-        border-bottom: 1px solid var(--line);
+        padding: 14px 16px;
+        border: 1px solid rgba(218,174,82,.2);
+        border-radius: 8px;
+        background: rgba(8,7,6,.54);
+        box-shadow: 0 20px 70px rgba(0,0,0,.32);
+        backdrop-filter: blur(18px);
       }
       .brand {
         margin: 0;
         color: var(--cream);
-        font: 900 1.05rem/1.2 Inter, "Avenir Next", sans-serif;
-        letter-spacing: .14em;
-        text-transform: uppercase;
+        font: 900 1.08rem/1.2 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
       }
       .surface {
-        margin: 8px 0 0;
+        margin: 6px 0 0;
         color: var(--gold-strong);
-        font-size: .88rem;
-        font-weight: 700;
+        font-size: .94rem;
+        font-weight: 800;
+      }
+      .masthead {
+        display: flex;
+        justify-content: space-between;
+        gap: 22px;
+        align-items: end;
+        padding: 10px 2px 0;
       }
       h1 {
-        margin: 26px 0 0;
+        margin: 0;
         color: var(--cream);
         font-family: "Antonio", Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
-        font-size: clamp(2.4rem, 5vw, 4.3rem);
-        line-height: 1;
-        letter-spacing: 0;
+        font-size: 4rem;
+        line-height: .98;
       }
-      .subtitle {
-        max-width: 68ch;
-        margin: 12px 0 0;
-        color: var(--muted);
-        font-size: 1.02rem;
-        line-height: 1.65;
+      .admin-chip {
+        display: inline-flex;
+        min-height: 36px;
+        align-items: center;
+        justify-content: center;
+        padding: 0 14px;
+        border: 1px solid rgba(244,206,120,.42);
+        border-radius: 8px;
+        color: var(--gold-strong);
+        background: rgba(216,170,77,.08);
+        font-size: .86rem;
+        font-weight: 900;
       }
       form {
         display: grid;
         gap: 18px;
-        margin-top: 24px;
       }
       .form-grid {
         display: grid;
         gap: 18px;
-        grid-template-columns: minmax(0, 1.08fr) minmax(370px, .92fr);
+        grid-template-columns: minmax(0, 1.06fr) minmax(360px, .94fr);
         align-items: start;
       }
       .form-section {
@@ -5081,66 +5101,87 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
         padding: 22px;
         border: 1px solid var(--line);
         border-radius: 8px;
-        background: var(--panel-strong);
+        background:
+          linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.018)),
+          var(--panel);
+        box-shadow: 0 26px 80px rgba(0,0,0,.38);
+        backdrop-filter: blur(18px);
       }
-      .section-title {
+      .form-section--pricing {
+        background:
+          linear-gradient(180deg, rgba(244,206,120,.095), rgba(255,255,255,.02)),
+          var(--panel-strong);
+      }
+      .section-heading {
         display: flex;
         align-items: center;
-        gap: 10px;
-        margin: 0;
-        color: var(--gold-strong);
-        font: 900 1.16rem/1.2 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
-        letter-spacing: 0;
+        gap: 12px;
+        min-width: 0;
       }
-      .section-title::before {
-        content: "";
-        width: 5px;
-        height: 26px;
-        border-radius: 999px;
-        background: linear-gradient(180deg, #f3cb72, #9b6a20);
+      .section-index {
+        display: inline-flex;
+        width: 34px;
+        height: 34px;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        border: 1px solid rgba(244,206,120,.52);
+        border-radius: 8px;
+        color: #170f05;
+        background: linear-gradient(180deg, #f6d385, #b9822e);
+        font-size: .82rem;
+        font-weight: 1000;
+      }
+      .section-title {
+        margin: 0;
+        color: var(--cream);
+        font: 900 1.28rem/1.22 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
       }
       .fields {
         display: grid;
-        gap: 13px;
+        gap: 14px;
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
       label,
       .field {
         display: grid;
-        gap: 7px;
+        gap: 8px;
+        min-width: 0;
         color: var(--gold-strong);
-        font: 900 .98rem/1.35 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
+        font: 900 1.02rem/1.38 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
       }
       .span-2 { grid-column: 1 / -1; }
       input,
       select,
       textarea {
         width: 100%;
-        min-height: 50px;
-        padding: 13px 14px;
-        border: 1px solid var(--line);
+        min-height: 54px;
+        padding: 14px 15px;
+        border: 1px solid rgba(218,174,82,.28);
         border-radius: 8px;
         background: var(--field);
         color: var(--text);
-        font: 600 1rem/1.35 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
+        font: 700 1rem/1.36 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
         outline: none;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+      }
+      input::placeholder,
+      textarea::placeholder {
+        color: rgba(235,222,201,.45);
       }
       input:focus,
       select:focus,
       textarea:focus {
         border-color: var(--line-strong);
-        box-shadow: 0 0 0 3px rgba(216,170,77,.13);
+        box-shadow: 0 0 0 3px rgba(216,170,77,.13), inset 0 1px 0 rgba(255,255,255,.05);
       }
       input[readonly] {
         color: var(--cream);
-        border-color: rgba(243,203,114,.34);
-        background: rgba(216,170,77,.09);
+        border-color: rgba(244,206,120,.48);
+        background: rgba(216,170,77,.12);
       }
+      input[type="hidden"] { display: none; }
       select { appearance: none; }
-      textarea {
-        min-height: 84px;
-        resize: vertical;
-      }
       .deposit-grid {
         display: grid;
         grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -5149,14 +5190,14 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
       .deposit-option {
         position: relative;
         display: grid;
-        min-height: 42px;
+        min-height: 44px;
         place-items: center;
-        border: 1px solid var(--line);
+        border: 1px solid rgba(218,174,82,.28);
         border-radius: 8px;
-        background: rgba(0,0,0,.25);
+        background: rgba(0,0,0,.28);
         color: var(--muted);
-        font-size: .88rem;
-        font-weight: 900;
+        font-size: .9rem;
+        font-weight: 1000;
         cursor: pointer;
       }
       .deposit-option input {
@@ -5171,8 +5212,8 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
         pointer-events: none;
       }
       .deposit-option:has(input:checked) {
-        border-color: rgba(243,203,114,.82);
-        background: linear-gradient(180deg, rgba(243,203,114,.25), rgba(195,145,53,.14));
+        border-color: rgba(244,206,120,.9);
+        background: linear-gradient(180deg, rgba(244,206,120,.28), rgba(185,130,46,.18));
         color: var(--cream);
         box-shadow: 0 0 0 3px rgba(216,170,77,.1);
       }
@@ -5184,68 +5225,80 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
       .addons {
         display: grid;
         gap: 10px;
-      }
-      .helper {
-        margin: 0;
-        color: var(--muted);
-        font-size: .92rem;
-        line-height: 1.5;
+        padding-top: 2px;
       }
       .actions {
         display: flex;
         gap: 12px;
         align-items: center;
         flex-wrap: wrap;
+        padding: 16px;
+        border: 1px solid rgba(218,174,82,.18);
+        border-radius: 8px;
+        background: rgba(8,7,6,.46);
+        backdrop-filter: blur(16px);
       }
       button {
         min-height: 42px;
         padding: 0 14px;
         border-radius: 8px;
         border: 1px solid rgba(216,170,77,.36);
-        background: rgba(255,255,255,.04);
+        background: rgba(255,255,255,.045);
         color: var(--text);
-        font: 800 .8rem/1 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
-        letter-spacing: .05em;
+        font: 900 .86rem/1 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
         cursor: pointer;
       }
+      button:hover,
+      .open:hover {
+        border-color: rgba(244,206,120,.72);
+      }
       button.primary {
-        min-width: 220px;
-        min-height: 50px;
-        border-color: rgba(243,203,114,.8);
-        background: linear-gradient(180deg, #f3cb72 0%, #c39135 100%);
+        min-width: 230px;
+        min-height: 52px;
+        border-color: rgba(244,206,120,.9);
+        background: linear-gradient(180deg, #f6d385 0%, #c69238 100%);
         color: #160f06;
-        box-shadow: 0 14px 34px rgba(195,145,53,.25);
+        box-shadow: 0 16px 36px rgba(195,145,53,.27);
+      }
+      button:disabled {
+        cursor: wait;
+        opacity: .68;
       }
       .ghost {
-        min-height: 34px;
-        padding: 0 11px;
+        min-height: 36px;
+        padding: 0 12px;
         background: transparent;
         color: var(--muted);
-        font-size: .72rem;
+        font-size: .82rem;
       }
       .status {
         min-height: 1.2em;
         margin: 0;
         color: var(--muted);
-        font-size: .94rem;
+        font-size: .96rem;
+        line-height: 1.45;
       }
       .status.error { color: var(--danger); }
       .status.success { color: var(--success); }
       .result {
         display: none;
-        margin-top: 18px;
-        padding-top: 18px;
-        border-top: 1px solid var(--line);
       }
       .result.visible {
         display: grid;
-        gap: 14px;
+        gap: 16px;
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background:
+          linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.018)),
+          rgba(15,13,10,.78);
+        box-shadow: 0 24px 76px rgba(0,0,0,.36);
+        backdrop-filter: blur(18px);
       }
       .result h2 {
         margin: 0;
         color: var(--cream);
-        font-family: Baskerville, "Iowan Old Style", Palatino, Georgia, "Noto Serif Thai", serif;
-        font-size: 1.5rem;
+        font: 900 1.34rem/1.2 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
       }
       .result-grid {
         display: grid;
@@ -5258,14 +5311,12 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
         min-width: 0;
         padding: 14px;
         border-radius: 8px;
-        border: 1px solid var(--line);
+        border: 1px solid rgba(218,174,82,.22);
         background: var(--panel-soft);
       }
       .result-label {
         color: var(--gold-strong);
-        font: 800 .78rem/1.2 Inter, "Avenir Next", sans-serif;
-        letter-spacing: .08em;
-        text-transform: uppercase;
+        font: 900 .92rem/1.2 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
       }
       .result-desc {
         margin: 0;
@@ -5277,7 +5328,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
         min-width: 0;
         overflow-wrap: anywhere;
         color: var(--text);
-        font-size: .86rem;
+        font-size: .92rem;
         line-height: 1.45;
         text-decoration-color: rgba(216,170,77,.55);
       }
@@ -5289,20 +5340,18 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
       }
       .copy,
       .open {
-        min-height: 34px;
-        padding: 0 11px;
+        min-height: 36px;
+        padding: 0 12px;
         border-radius: 8px;
-        font-size: .72rem;
+        font-size: .8rem;
       }
       .open {
         display: inline-flex;
         align-items: center;
         border: 1px solid rgba(216,170,77,.36);
         color: var(--text);
-        background: rgba(255,255,255,.04);
-        font: 800 .72rem/1 Inter, "Avenir Next", sans-serif;
-        letter-spacing: .08em;
-        text-transform: uppercase;
+        background: rgba(255,255,255,.045);
+        font: 900 .8rem/1 Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
         text-decoration: none;
       }
       .line-action {
@@ -5310,16 +5359,25 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
         justify-content: flex-start;
       }
       .empty { color: var(--muted); }
-      @media (max-width: 900px) {
+      @media (max-width: 960px) {
         .form-grid,
         .result-grid { grid-template-columns: 1fr; }
+        h1 { font-size: 3rem; }
       }
       @media (max-width: 720px) {
-        body { padding: 12px; }
-        .shell { padding: 18px; }
-        .brandbar { align-items: stretch; flex-direction: column; }
+        body { padding: 14px; }
+        .shell { gap: 18px; }
+        .brandbar,
+        .masthead,
+        .actions {
+          align-items: stretch;
+          flex-direction: column;
+        }
         .fields,
-        .money-grid { grid-template-columns: 1fr; }
+        .money-grid,
+        .deposit-grid { grid-template-columns: 1fr; }
+        .form-section,
+        .result.visible { padding: 18px; }
         .span-2 { grid-column: auto; }
         button.primary { width: 100%; }
       }
@@ -5336,15 +5394,18 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
         <button id="logout" class="ghost" type="button">Logout</button>
       </div>
 
-      <header>
+      <header class="masthead">
         <h1>Create Session</h1>
-        <p class="subtitle">กรอกรายละเอียดงานและราคา ระบบจะคำนวณยอดมัดจำ ยอดค้างชำระ และสร้างลิงก์ลูกค้า / ชำระเงิน / Model Console ให้ในครั้งเดียว</p>
+        <span class="admin-chip">Admin</span>
       </header>
 
       <form id="create-session-form">
         <div class="form-grid">
           <section class="form-section" aria-labelledby="service-section">
-            <h2 id="service-section" class="section-title">รายละเอียดบริการ</h2>
+            <div class="section-heading">
+              <span class="section-index">01</span>
+              <h2 id="service-section" class="section-title">รายละเอียดบริการ</h2>
+            </div>
             <div class="fields">
               <label>
                 ชื่อนายแบบ
@@ -5389,8 +5450,11 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             </div>
           </section>
 
-          <section class="form-section" aria-labelledby="pricing-section">
-            <h2 id="pricing-section" class="section-title">สรุปราคาค่าบริการ</h2>
+          <section class="form-section form-section--pricing" aria-labelledby="pricing-section">
+            <div class="section-heading">
+              <span class="section-index">02</span>
+              <h2 id="pricing-section" class="section-title">สรุปราคาค่าบริการ</h2>
+            </div>
             <div class="money-grid">
               <label>
                 ราคาพื้นฐาน
@@ -5415,10 +5479,6 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
                 <input id="total_amount_thb" name="total_amount_thb" type="text" readonly />
               </label>
             </div>
-            <label>
-              รายละเอียดรายการเพิ่มเติม
-              <textarea id="addons_note" name="addons_note" placeholder="เช่น ค่ารถ, overtime, special request"></textarea>
-            </label>
             <div class="addons">
               <label>
                 รายการเพิ่มเติม 1
@@ -5441,6 +5501,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
                 <input id="addon_5_thb" name="addon_5_thb" type="number" min="0" step="1" inputmode="numeric" />
               </label>
             </div>
+            <input id="addons_note" name="addons_note" type="hidden" />
             <div class="money-grid">
               <label>
                 ยอดมัดจำ
@@ -5454,7 +5515,6 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
           </section>
         </div>
 
-        <p class="helper">ระบบจะสร้าง session id, payment ref และ token ให้อัตโนมัติ</p>
         <div class="actions">
           <button id="submit" class="primary" type="submit">สร้างลิงก์ชำระเงิน</button>
           <p id="status" class="status" role="status"></p>
@@ -5602,7 +5662,17 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
           return String(value || "")
             .replace(/&/g, "&amp;")
             .replace(/"/g, "&quot;")
-            .replace(/</g, "&lt;");
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+        }
+
+        function displayLink(value) {
+          try {
+            const url = new URL(value, location.origin);
+            return url.pathname + url.search + url.hash;
+          } catch {
+            return String(value || "");
+          }
         }
 
         function isLineUserId(value) {
@@ -5647,11 +5717,12 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             ].join("");
           }
           const safeHref = escapeAttr(href);
+          const safeDisplay = escapeAttr(displayLink(href));
           return [
             '<article class="result-card">',
             '<div class="result-label">' + label + '</div>',
             '<p class="result-desc">' + description + '</p>',
-            '<a class="result-url" href="' + safeHref + '" target="_blank" rel="noopener noreferrer">' + safeHref + '</a>',
+            '<a class="result-url" href="' + safeHref + '" target="_blank" rel="noopener noreferrer">' + safeDisplay + '</a>',
             '<div class="result-actions">',
             '<button class="copy" type="button" data-copy="' + safeHref + '">Copy</button>',
             '<a class="open" href="' + safeHref + '" target="_blank" rel="noopener noreferrer">Open</a>',
@@ -5692,9 +5763,9 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
           const customerToken = firstString(data && data.customer_token, data && data.customer_t, payments && payments.customer_t) || readTokenFromUrl(customerSource);
           const modelToken = firstString(data && data.model_token, data && data.model_t, payments && payments.model_t) || readTokenFromUrl(modelSource);
           const customerFirstDb = customerDashboardSource || linkFor("/member/first-db", customerToken);
-          const paymentLink = paymentSource.includes("/confirmation/payment-confirmation")
+          const paymentLink = paymentSource.includes("/pay")
             ? paymentSource
-            : linkNear(customerFirstDb || paymentSource, "/confirmation/payment-confirmation", customerToken) || paymentSource;
+            : linkNear(customerFirstDb || paymentSource, "/pay", customerToken) || paymentSource;
           const modelConsole = modelConsoleSource || linkNear(customerFirstDb || modelSource, "/model/console-sigil", modelToken);
 
           lastLineCardPayload = isLineUserId(lineUserId) && customerFirstDb && paymentLink
@@ -5817,6 +5888,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
           }
 
           const paymentType = pricing.depositPercent >= 100 ? "full" : "deposit";
+          const paymentAmountThb = paymentType === "deposit" ? pricing.depositAmount : pricing.totalAmount;
           const identitySeed = customerUsername || customerName;
           const modelSeed = modelUsername || modelName;
           const lineUserId = "";
@@ -5856,6 +5928,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             addons_total_thb: pricing.addonsTotal,
             addons_note: addonsNote,
             total_amount_thb: pricing.totalAmount,
+            payment_amount_thb: paymentAmountThb,
             deposit_percent: pricing.depositPercent,
             deposit_amount_thb: pricing.depositAmount,
             final_amount_thb: pricing.finalAmount,
@@ -5891,7 +5964,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             venue_search_name: venueSearchName,
             google_map_url: googleMapUrl,
             current_coordinates: currentCoordinates,
-            amount_thb: pricing.totalAmount,
+            amount_thb: paymentAmountThb,
             base_price_thb: pricing.basePrice,
             addon_1_thb: pricing.addonAmounts[0] || 0,
             addon_2_thb: pricing.addonAmounts[1] || 0,
@@ -5910,7 +5983,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             payment_method: "promptpay",
             return_url: "/member/first-db",
             cancel_url: "/sigil/admin/jobs/create-session",
-            confirm_page: "/confirmation/payment-confirmation",
+            confirm_page: "/pay",
             model_confirm_page: "/model/console-sigil",
             note: customerNote,
             notes: customerNote,
@@ -7826,6 +7899,10 @@ export default {
       if (sigilAdminCanonicalRedirect) {
         return sigilAdminCanonicalRedirect;
       }
+      const paymentCanonicalRedirect = canonicalPaymentRedirect(request);
+      if (paymentCanonicalRedirect) {
+        return paymentCanonicalRedirect;
+      }
 
       const internalRouteRes = await handleInternalRoutes(request, env);
       if (internalRouteRes) return internalRouteRes;
@@ -7842,6 +7919,7 @@ export default {
           || isPublicRenewalIntakeRoute(url.pathname)
           || isPublicRecoveryAckRoute(url.pathname)
           || isPublicCustomerConfirmRoute(url.pathname)
+          || isPaymentPageRoute(url.pathname)
           || url.pathname === MODEL_SESSION_DASHBOARD_PATH
           || url.pathname === MODEL_SESSION_STATUS_PATH
         )
@@ -7870,6 +7948,10 @@ export default {
           meta,
         };
         return json(body);
+      }
+
+      if (isPaymentPageRoute(url.pathname)) {
+        return await handlePaymentPage(request, env);
       }
 
       if (request.method === "GET" && (url.pathname === PUBLIC.onboardingResolve || url.pathname === SIGIL.inviteResolve)) {
