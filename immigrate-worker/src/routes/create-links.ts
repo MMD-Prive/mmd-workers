@@ -41,13 +41,23 @@ type InvitePayload = {
   google_map_url?: string;
   amount_thb?: number | string;
   amount?: number | string;
+  payment_amount_thb?: number | string;
+  selected_amount_thb?: number | string;
+  total_amount_thb?: number | string;
+  amount_total_thb?: number | string;
+  totalAmount?: number | string;
   payment_type?: string;
   payment_stage?: string;
   payment_method?: string;
+  package_code?: string;
+  package?: string;
   note?: string;
   notes?: string;
   phone?: string;
   deposit_amount_thb?: number | string;
+  depositAmount?: number | string;
+  final_amount_thb?: number | string;
+  finalAmount?: number | string;
   model_history_note?: string;
   model_note?: string;
   private_profile_note?: string;
@@ -86,6 +96,33 @@ function toNum(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function isLikelyGeneratedId(value: string, prefix: string): boolean {
+  return new RegExp(`^${prefix}_[a-z0-9_]+_[a-z0-9]+_[a-f0-9]{8}$`, "i").test(value);
+}
+
+function realLineUserId(value: unknown): string {
+  const candidate = toStr(value);
+  return /^U[a-zA-Z0-9_-]{20,}$/.test(candidate) ? candidate : "";
+}
+
+function realMemberstackId(value: unknown): string {
+  const candidate = toStr(value);
+  if (!candidate || isLikelyGeneratedId(candidate, "customer")) return "";
+  return candidate;
+}
+
+function realModelRecordId(value: unknown): string {
+  const candidate = toStr(value);
+  if (!candidate || isLikelyGeneratedId(candidate, "model")) return "";
+  return candidate;
+}
+
+function compactRecord(input: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== "" && value !== null && value !== undefined),
+  );
+}
+
 function requiredString(value: unknown, field: string): string {
   const s = toStr(value);
   if (!s) throw new Error(`missing_${field}`);
@@ -104,9 +141,9 @@ function toInviteIdentityPayload(payload: InvitePayload) {
     mmd_client_name: payload.mmd_client_name,
     client_name: payload.client_name,
     folder_name: payload.folder_name || payload.model_name,
-    line_user_id: payload.line_user_id,
+    line_user_id: realLineUserId(payload.line_user_id),
     telegram_username: payload.telegram_username || payload.customer_telegram_username,
-    memberstack_id: payload.memberstack_id,
+    memberstack_id: realMemberstackId(payload.memberstack_id),
     email: payload.email,
     gmail: payload.gmail,
   };
@@ -153,11 +190,60 @@ function buildDefaultBookingNote(payload: InvitePayload): string {
     .join(" | ");
 }
 
+function readPaymentType(payload: InvitePayload): string {
+  const raw = toStr(payload.payment_type || payload.payment_stage || "deposit").toLowerCase();
+  if (["deposit", "final", "tips", "full"].includes(raw)) return raw;
+  return "deposit";
+}
+
+function readPaymentAmounts(payload: InvitePayload): {
+  amount: number | null;
+  total: number | null;
+  deposit: number | null;
+  final: number | null;
+} {
+  const paymentType = readPaymentType(payload);
+  const total = toNum(payload.total_amount_thb ?? payload.amount_total_thb ?? payload.totalAmount);
+  const deposit = toNum(payload.deposit_amount_thb ?? payload.depositAmount);
+  const final = toNum(payload.final_amount_thb ?? payload.finalAmount);
+  const direct = toNum(
+    payload.amount_thb ??
+      payload.payment_amount_thb ??
+      payload.selected_amount_thb ??
+      payload.amount,
+  );
+
+  if (paymentType === "deposit") {
+    return { amount: deposit ?? direct ?? total, total, deposit, final };
+  }
+  if (paymentType === "final") {
+    return { amount: final ?? direct ?? total, total, deposit, final };
+  }
+
+  return { amount: direct ?? total ?? deposit, total, deposit, final };
+}
+
+function stripUntrustedIds(input: Record<string, unknown>): Record<string, unknown> {
+  const normalized = { ...input };
+  const lineUserId = realLineUserId(normalized.line_user_id);
+  const memberstackId = realMemberstackId(normalized.memberstack_id);
+  const modelRecordId = realModelRecordId(normalized.model_record_id);
+
+  if (lineUserId) normalized.line_user_id = lineUserId;
+  else delete normalized.line_user_id;
+  if (memberstackId) normalized.memberstack_id = memberstackId;
+  else delete normalized.memberstack_id;
+  if (modelRecordId) normalized.model_record_id = modelRecordId;
+  else delete normalized.model_record_id;
+
+  return compactRecord(normalized);
+}
+
 function normalizeCreateLinksPayload(payload: InvitePayload, env: Env): Record<string, unknown> {
   const normalized: Record<string, unknown> = { ...payload };
 
   if (!isPaymentsConfirmLinkMode(env)) {
-    return normalized;
+    return stripUntrustedIds(normalized);
   }
 
   const requiredFields = [
@@ -175,19 +261,25 @@ function normalizeCreateLinksPayload(payload: InvitePayload, env: Env): Record<s
     normalized[field] = toStr(payload[field]);
   }
 
-  const amountThb = toNum(payload.amount_thb ?? payload.amount);
+  const amounts = readPaymentAmounts(payload);
+  const amountThb = amounts.amount;
   if (!amountThb || amountThb <= 0) {
     throw new Error("missing_amount_thb");
   }
 
   normalized.amount_thb = amountThb;
-  normalized.payment_type = toStr(payload.payment_type || payload.payment_stage || "deposit");
+  normalized.total_amount_thb = amounts.total ?? undefined;
+  normalized.deposit_amount_thb = amounts.deposit ?? undefined;
+  normalized.final_amount_thb = amounts.final ?? undefined;
+  normalized.payment_type = readPaymentType(payload);
   normalized.payment_method = toStr(payload.payment_method || "promptpay");
   normalized.promptpay_id = toStr(env.PROMPTPAY_ID);
+  normalized.confirm_page = toStr(payload.confirm_page || "/pay");
+  normalized.model_confirm_page = toStr(payload.model_confirm_page || "/model/console-sigil");
   normalized.google_map_url = toStr(payload.google_map_url);
   normalized.note = toStr(payload.note || payload.notes) || buildDefaultBookingNote(payload);
 
-  return normalized;
+  return stripUntrustedIds(normalized);
 }
 
 function clampExpiryHours(value: unknown): number {
@@ -248,8 +340,8 @@ async function buildLinksBundle(
     client_name: displayName,
     nickname: displayName,
     email: toStr(payload.email).toLowerCase(),
-    line_user_id: toStr(payload.line_user_id),
-    memberstack_id: toStr(payload.memberstack_id),
+    line_user_id: realLineUserId(payload.line_user_id),
+    memberstack_id: realMemberstackId(payload.memberstack_id),
   });
 
   const modelIdentity = parseInviteIdentity({
@@ -278,14 +370,14 @@ async function buildLinksBundle(
     suffix_code: customerIdentity.suffix_code,
     mmd_client_name: customerIdentity.mmd_client_name,
     email: toStr(payload.email).toLowerCase(),
-    line_user_id: toStr(payload.line_user_id),
-    memberstack_id: toStr(payload.memberstack_id),
+    line_user_id: realLineUserId(payload.line_user_id),
+    memberstack_id: realMemberstackId(payload.memberstack_id),
     invite_page: toStr(payload.customer_onboarding_path) || "/sigil/onboarding",
     expires_in_hours: expiresInHours,
     role: "customer",
     lane: "customer_onboarding",
     model_name: modelName,
-    model_record_id: toStr(payload.model_record_id),
+    model_record_id: realModelRecordId(payload.model_record_id),
     rules_url: customerRulesUrl,
     console_url: toStr(payload.console_url),
     requires_rules_ack: boolFromUnknown(payload.requires_rules_ack, false),
@@ -304,7 +396,7 @@ async function buildLinksBundle(
     role: "model",
     lane: "model_console",
     model_name: modelName,
-    model_record_id: toStr(payload.model_record_id),
+    model_record_id: realModelRecordId(payload.model_record_id),
     rules_url: modelRulesUrl,
     console_url: toStr(payload.console_url),
     requires_rules_ack: boolFromUnknown(payload.requires_rules_ack, true),
@@ -325,8 +417,8 @@ async function buildLinksBundle(
 
   const context = await buildImmigrationLinkContext(env, {
     immigration_id: immigrationId,
-    line_user_id: toStr(payload.line_user_id),
-    memberstack_id: toStr(payload.memberstack_id),
+    line_user_id: realLineUserId(payload.line_user_id),
+    memberstack_id: realMemberstackId(payload.memberstack_id),
     email: toStr(payload.email).toLowerCase(),
     display_name: displayName,
     membership_status: toStr(payload.membership_status),
@@ -354,8 +446,8 @@ function auditLinkBundle(env: Env, invitePayload: InvitePayload, linkBundle: Lin
   writeLinkAuditRecord(env, {
     immigration_id: linkBundle.immigration_id,
     display_name: toStr(invitePayload.client_name || invitePayload.mmd_client_name),
-    line_user_id: toStr(invitePayload.line_user_id),
-    memberstack_id: toStr(invitePayload.memberstack_id),
+    line_user_id: realLineUserId(invitePayload.line_user_id),
+    memberstack_id: realMemberstackId(invitePayload.memberstack_id),
     customer_url: linkBundle.customer_url,
     model_url: linkBundle.model_url,
     customer_rules_url: linkBundle.customer_rules_url,
@@ -366,6 +458,20 @@ function auditLinkBundle(env: Env, invitePayload: InvitePayload, linkBundle: Lin
   }).catch((error) => {
     console.warn("immigrate-worker internal create-links audit failed", error);
   });
+}
+
+function createLinksInputError(code: string, message: string, meta: ReturnType<typeof makeMeta>): Response {
+  return json(
+    {
+      ok: false,
+      error: {
+        code,
+        message,
+      },
+      meta,
+    },
+    { status: 400 },
+  );
 }
 
 export async function handleCreateLinks(request: Request, env: Env): Promise<Response> {
@@ -430,28 +536,46 @@ export async function handleCreateLinks(request: Request, env: Env): Promise<Res
     return badRequest(message, meta);
   }
 
+  const sessionId = toStr(upstreamPayload.session_id || invitePayload.session_id);
+  if (!sessionId) {
+    return createLinksInputError("MISSING_SESSION_ID", "session_id is required for create-links.", meta);
+  }
+
+  const paymentRef = toStr(upstreamPayload.payment_ref || invitePayload.payment_ref);
+  if (!paymentRef) {
+    return createLinksInputError("MISSING_PAYMENT_REF", "payment_ref is required for create-links.", meta);
+  }
+
+  upstreamPayload = compactRecord({
+    ...upstreamPayload,
+    session_id: sessionId,
+    payment_ref: paymentRef,
+    payment_stage: readPaymentType(upstreamPayload as InvitePayload),
+  });
+  const linkPayload = stripUntrustedIds({ ...invitePayload, ...upstreamPayload }) as InvitePayload;
+
   const linkBundle = await buildLinksBundle(env, {
-    immigration_id: toStr(invitePayload.session_id || invitePayload.payment_ref || `job_${Date.now().toString(36)}`),
-    display_name: toStr(invitePayload.client_name || invitePayload.mmd_client_name),
-    email: toStr(invitePayload.email || invitePayload.gmail).toLowerCase(),
-    line_user_id: toStr(invitePayload.line_user_id),
-    memberstack_id: toStr(invitePayload.memberstack_id),
-    model_name: toStr(invitePayload.model_name),
-    model_record_id: toStr(invitePayload.model_record_id),
-    rules_url: toStr(invitePayload.rules_url),
+    immigration_id: sessionId,
+    display_name: toStr(linkPayload.client_name || linkPayload.mmd_client_name),
+    email: toStr(linkPayload.email || linkPayload.gmail).toLowerCase(),
+    line_user_id: realLineUserId(linkPayload.line_user_id),
+    memberstack_id: realMemberstackId(linkPayload.memberstack_id),
+    model_name: toStr(linkPayload.model_name),
+    model_record_id: realModelRecordId(linkPayload.model_record_id),
+    rules_url: toStr(linkPayload.rules_url),
     customer_rules_path: undefined,
     model_rules_path: undefined,
-    console_url: toStr(invitePayload.console_url),
-    membership_status: toStr(invitePayload.membership_status),
-    current_tier: toStr(invitePayload.current_tier),
-    target_tier: toStr(invitePayload.target_tier),
-    requires_rules_ack: boolFromUnknown(invitePayload.requires_rules_ack, role === "model"),
-    requires_model_binding: boolFromUnknown(invitePayload.requires_model_binding, role === "model"),
-    customer_onboarding_path: role === "customer" ? toStr(invitePayload.invite_page) : undefined,
-    model_onboarding_path: role === "model" ? toStr(invitePayload.invite_page) : undefined,
-    expires_in_hours: Number(invitePayload.expires_in_hours || 24 * 7),
+    console_url: toStr(linkPayload.console_url),
+    membership_status: toStr(linkPayload.membership_status),
+    current_tier: toStr(linkPayload.current_tier),
+    target_tier: toStr(linkPayload.target_tier),
+    requires_rules_ack: boolFromUnknown(linkPayload.requires_rules_ack, role === "model"),
+    requires_model_binding: boolFromUnknown(linkPayload.requires_model_binding, role === "model"),
+    customer_onboarding_path: role === "customer" ? toStr(linkPayload.invite_page) : undefined,
+    model_onboarding_path: role === "model" ? toStr(linkPayload.invite_page) : undefined,
+    expires_in_hours: Number(linkPayload.expires_in_hours || 24 * 7),
   });
-  const baseSessionLinks = buildSessionLinkArtifacts(env, invitePayload, linkBundle);
+  const baseSessionLinks = await buildSessionLinkArtifacts(env, linkPayload, linkBundle);
   upstreamPayload = {
     ...upstreamPayload,
     promptpay_id: baseSessionLinks.promptpay_id,
@@ -475,14 +599,15 @@ export async function handleCreateLinks(request: Request, env: Env): Promise<Res
     if (contentType.includes("application/json")) {
       try {
         const payloadJson = JSON.parse(text) as Record<string, unknown>;
-        const sessionLinks = buildSessionLinkArtifacts(env, invitePayload, linkBundle, payloadJson);
-        const airtable = await writeCreateLinksMigrationRecords(env, invitePayload, sessionLinks, payloadJson);
+        const sessionLinks = await buildSessionLinkArtifacts(env, linkPayload, linkBundle, payloadJson);
+        const airtable = await writeCreateLinksMigrationRecords(env, linkPayload, sessionLinks, payloadJson);
         const merged = {
           ...payloadJson,
           onboarding_url: role === "model" ? linkBundle.model_url : linkBundle.customer_url,
           customer_onboarding_url: linkBundle.customer_url,
           model_onboarding_url: linkBundle.model_url,
           customer_payment_url: sessionLinks.customer_payment_url,
+          customer_payment_token: sessionLinks.customer_payment_token,
           customer_rules_url: linkBundle.customer_rules_url,
           model_rules_url: linkBundle.model_rules_url,
           customer_dashboard_url: sessionLinks.customer_dashboard_url,
@@ -498,7 +623,7 @@ export async function handleCreateLinks(request: Request, env: Env): Promise<Res
           invite_lane: lane,
         };
 
-        auditLinkBundle(env, invitePayload, linkBundle);
+        auditLinkBundle(env, linkPayload, linkBundle);
 
         return json(merged);
       } catch (error) {
@@ -506,7 +631,7 @@ export async function handleCreateLinks(request: Request, env: Env): Promise<Res
       }
     }
 
-    await writeCreateLinksMigrationRecords(env, invitePayload, baseSessionLinks, null);
+    await writeCreateLinksMigrationRecords(env, linkPayload, baseSessionLinks, null);
 
     return new Response(text, {
       status: upstream.status,
@@ -516,7 +641,7 @@ export async function handleCreateLinks(request: Request, env: Env): Promise<Res
     });
   }
 
-  const airtable = await writeCreateLinksMigrationRecords(env, invitePayload, baseSessionLinks, null);
+  const airtable = await writeCreateLinksMigrationRecords(env, linkPayload, baseSessionLinks, null);
 
   return json(
     {
@@ -527,6 +652,7 @@ export async function handleCreateLinks(request: Request, env: Env): Promise<Res
       customer_onboarding_url: linkBundle.customer_url,
       model_onboarding_url: linkBundle.model_url,
       customer_payment_url: baseSessionLinks.customer_payment_url,
+      customer_payment_token: baseSessionLinks.customer_payment_token,
       customer_rules_url: linkBundle.customer_rules_url,
       model_rules_url: linkBundle.model_rules_url,
       customer_dashboard_url: baseSessionLinks.customer_dashboard_url,

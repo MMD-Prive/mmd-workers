@@ -5658,6 +5658,12 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
           return "";
         }
 
+        function compactObject(input) {
+          return Object.fromEntries(
+            Object.entries(input).filter(([, value]) => value !== "" && value !== null && value !== undefined)
+          );
+        }
+
         function escapeAttr(value) {
           return String(value || "")
             .replace(/&/g, "&amp;")
@@ -5888,14 +5894,9 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
           }
 
           const paymentType = pricing.depositPercent >= 100 ? "full" : "deposit";
-          const paymentAmountThb = paymentType === "deposit" ? pricing.depositAmount : pricing.totalAmount;
-          const identitySeed = customerUsername || customerName;
-          const modelSeed = modelUsername || modelName;
-          const lineUserId = "";
-          const lineDisplayName = "";
+          const paymentAmountThb = pricing.depositAmount;
           const sessionId = makeId("sess", customerName + " " + modelName);
           const paymentRef = makeId("pay", customerName + " " + jobDate);
-          const generatedModelId = makeId("model", modelSeed);
           const customerNote = [
             "รูปแบบงาน: " + jobType,
             "วันและเวลา: " + jobDate + " " + startTime,
@@ -5906,11 +5907,9 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             currentCoordinates ? "พิกัดปัจจุบัน: " + currentCoordinates : "",
             addonsNote ? "รายการเพิ่มเติม: " + addonsNote : ""
           ].filter(Boolean).join(" | ");
-          const metadataJson = {
+          const metadataJson = compactObject({
             source: "sigil_admin_create_session_links",
             customer_username: customerUsername,
-            customer_line_user_id: lineUserId,
-            customer_line_display_name: lineDisplayName,
             customer_phone: customerPhone,
             model_username: modelUsername,
             service_location: serviceLocation,
@@ -5928,29 +5927,27 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             addons_total_thb: pricing.addonsTotal,
             addons_note: addonsNote,
             total_amount_thb: pricing.totalAmount,
+            totalAmount: pricing.totalAmount,
             payment_amount_thb: paymentAmountThb,
             deposit_percent: pricing.depositPercent,
             deposit_amount_thb: pricing.depositAmount,
+            depositAmount: pricing.depositAmount,
             final_amount_thb: pricing.finalAmount,
+            finalAmount: pricing.finalAmount,
             payment_type: paymentType,
             customer_note: customerNote,
             model_brief_note: ""
-          };
+          });
 
-          const payload = {
+          const payload = compactObject({
             username: customerUsername,
             nickname: customerName,
             mmd_client_name: customerName,
             client_name: customerName,
             customer_name: customerName,
-            memberstack_id: makeId("customer", identitySeed),
-            line_user_id: lineUserId,
-            line_display_name: lineDisplayName,
             phone: customerPhone,
             model_name: modelName,
-            model_record_id: generatedModelId,
-            model_id: generatedModelId,
-            model_lookup_key: slug(modelSeed, "manual_model"),
+            model_lookup_key: slug(modelName, "manual_model"),
             session_id: sessionId,
             payment_ref: paymentRef,
             job_type: jobType,
@@ -5965,6 +5962,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             google_map_url: googleMapUrl,
             current_coordinates: currentCoordinates,
             amount_thb: paymentAmountThb,
+            payment_amount_thb: paymentAmountThb,
             base_price_thb: pricing.basePrice,
             addon_1_thb: pricing.addonAmounts[0] || 0,
             addon_2_thb: pricing.addonAmounts[1] || 0,
@@ -5973,9 +5971,13 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             addon_5_thb: pricing.addonAmounts[4] || 0,
             addons_note: addonsNote,
             addons_total_thb: pricing.addonsTotal,
+            total_amount_thb: pricing.totalAmount,
+            totalAmount: pricing.totalAmount,
             deposit_percent: pricing.depositPercent,
             deposit_amount_thb: pricing.depositAmount,
+            depositAmount: pricing.depositAmount,
             final_amount_thb: pricing.finalAmount,
+            finalAmount: pricing.finalAmount,
             pay_model_thb: 0,
             currency: "THB",
             payment_type: paymentType,
@@ -5993,7 +5995,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             model_history_source: "sigil_admin_create_session_links",
             metadata_json: metadataJson,
             payload_json: metadataJson
-          };
+          });
 
           submit.disabled = true;
           submit.textContent = "กำลังสร้างลิงก์...";
@@ -6012,7 +6014,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             }
 
             setStatus("สร้างลิงก์เรียบร้อย", "success");
-            renderLinks(data, payload, lineUserId);
+            renderLinks(data, payload, firstString(payload.line_user_id, data && data.line_user_id));
           } catch {
             setStatus("ไม่สามารถสร้างลิงก์ได้ในตอนนี้", "error");
           } finally {
@@ -8057,6 +8059,10 @@ export default {
         request.method === "POST" &&
         url.pathname === SIGIL.createSession
       ) {
+        const sigilAdminSession = await getValidSigilAdminSession(request, env);
+        if (!sigilAdminSession) {
+          return makeSigilAdminLoginRedirect(request);
+        }
         return await handleCreateLinks(request, env);
       }
 
@@ -8214,7 +8220,10 @@ export default {
         return await handleSessions(request, env);
       }
 
-      if (url.pathname === "/internal/jobs/create-links") return handleCreateLinks(request, env);
+      if (url.pathname === "/internal/jobs/create-links") {
+        if (!isAuthorized(request, env)) return unauthorized(meta);
+        return handleCreateLinks(request, env);
+      }
 
       if (request.method === "POST" && url.pathname === JOBS.createInvite) {
         return await handleCreateInvite(request, env);
