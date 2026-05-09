@@ -4,8 +4,6 @@ import { handleCreateLinks } from "./routes/create-links";
 import { handleSendLineSessionCard } from "./routes/line-send-session-card";
 import { handleModelPromoteImmigration } from "./lib/model-promote-immigration";
 import {
-  handleModelSessionDashboard,
-  handleModelSessionStatus,
   MODEL_SESSION_DASHBOARD_PATH,
   MODEL_SESSION_STATUS_PATH,
 } from "./routes/model-session";
@@ -14,6 +12,10 @@ import {
   handlePaymentPage,
   isPaymentPageRoute,
 } from "./routes/payment-page";
+import {
+  handlePublicActivateVip,
+  handlePublicPointsTopup,
+} from "./public-renewal-bridge";
 import {
   getValidSigilAdminSession,
   handleInternalAdminInviteCreateRoute,
@@ -125,7 +127,10 @@ const SIGIL = {
   inviteResolve: "/sigil/api/invite/resolve",
   renewalStatus: "/sigil/api/renewal/status",
   renewalIntake: "/sigil/api/renewal/intake",
+  pointsTopup: "/sigil/api/points/topup",
+  renewalActivateVip: "/sigil/api/renewal/activate-vip",
   recoveryAck: "/sigil/api/recovery/ack",
+  recoveryComplaintEvidence: "/sigil/api/recovery/complaint-evidence",
   customerConfirm: "/sigil/api/jobs/customer-confirm",
   sendLineSessionCard: "/sigil/admin/jobs/send-line-session-card",
 } as const;
@@ -167,6 +172,9 @@ const PUBLIC = {
   onboardingResolve: "/member/api/invite/resolve",
   renewalStatus: "/member/api/renewal/status",
   renewalIntake: "/member/api/renewal/intake",
+  pointsTopup: "/member/api/points/topup",
+  renewalActivateVip: "/member/api/renewal/activate-vip",
+  recoveryComplaintEvidence: "/member/api/recovery/complaint-evidence",
   customerConfirm: "/member/api/jobs/customer-confirm",
 } as const;
 
@@ -517,7 +525,7 @@ function normalizeCreateLinksPayload(
   normalized.payment_type = toStr(payload.payment_type || payload.payment_stage || "deposit");
   normalized.payment_method = toStr(payload.payment_method || "promptpay");
   normalized.confirm_page = toStr(payload.confirm_page || "/pay");
-  normalized.model_confirm_page = toStr(payload.model_confirm_page || "/model/console-sigil");
+  normalized.model_confirm_page = toStr(payload.model_confirm_page || "/model/console");
   normalized.google_map_url = toStr(payload.google_map_url);
   normalized.note = toStr(payload.note || payload.notes) || buildDefaultBookingNote(payload);
 
@@ -578,6 +586,39 @@ function withCors(request: Request, env: Env, response: Response): Response {
     status: response.status,
     headers,
   });
+}
+
+async function forwardModelSessionToAdminWorker(request: Request, env: Env): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const targetPath = `${requestUrl.pathname}${requestUrl.search}`;
+  const headers = new Headers(request.headers);
+  headers.delete("host");
+
+  const init: RequestInit = {
+    method: request.method,
+    headers,
+    body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
+    redirect: "manual",
+  };
+
+  if (env.ADMIN_WORKER) {
+    return env.ADMIN_WORKER.fetch(new Request(`https://admin-worker.internal${targetPath}`, init));
+  }
+
+  const base = toStr(env.ADMIN_WORKER_BASE_URL).replace(/\/+$/, "");
+  if (!base) {
+    return json({ ok: false, error: "admin_worker_not_configured" }, { status: 503 });
+  }
+
+  return fetch(`${base}${targetPath}`, init);
+}
+
+function isModelSessionAdminPath(pathname: string): boolean {
+  return pathname === MODEL_SESSION_DASHBOARD_PATH ||
+    pathname === MODEL_SESSION_STATUS_PATH ||
+    pathname === "/v1/model/session/gps" ||
+    pathname === "/v1/model/session/update" ||
+    pathname === "/v1/model/session/emergency";
 }
 
 function publicJson(request: Request, env: Env, data: unknown, init?: ResponseInit): Response {
@@ -852,15 +893,67 @@ type PublicRenewalBody = {
   telegram_chat_id?: string;
   telegram_message_thread_id?: string | number;
   notify_telegram?: boolean | string;
+  proof_attached?: boolean | string;
+  proof_filename?: string;
+  proof_mime_type?: string;
+  proof_size?: number | string;
+  proof_image_base64?: string;
+  proof_source?: string;
   [key: string]: unknown;
 };
+
+function toBool(value: unknown): boolean {
+  if (value === true) return true;
+  const raw = toStr(value).toLowerCase();
+  return raw === "true" || raw === "1" || raw === "yes";
+}
+
+function renewalProofFields(body: PublicRenewalBody): {
+  proof_attached: boolean;
+  proof_filename: string;
+  proof_mime_type: string;
+  proof_size: number;
+  proof_image_base64_present: boolean;
+  proof_source: string;
+} {
+  const proofImageBase64 = toStr(body.proof_image_base64);
+  const proofFilename = toStr(body.proof_filename);
+  const proofAttached = toBool(body.proof_attached) || Boolean(proofFilename || proofImageBase64);
+  return {
+    proof_attached: proofAttached,
+    proof_filename: proofFilename,
+    proof_mime_type: toStr(body.proof_mime_type),
+    proof_size: toNum(body.proof_size) || 0,
+    proof_image_base64_present: Boolean(proofImageBase64),
+    proof_source: toStr(body.proof_source) || "oldProof",
+  };
+}
+
+function renewalProofNote(fields: ReturnType<typeof renewalProofFields>): string {
+  return [
+    `proof:${fields.proof_attached ? "attached" : "none"}`,
+    `proof_attached:${fields.proof_attached}`,
+    fields.proof_filename ? `proof_filename:${fields.proof_filename}` : "",
+    fields.proof_mime_type ? `proof_mime_type:${fields.proof_mime_type}` : "",
+    fields.proof_size ? `proof_size:${fields.proof_size}` : "",
+    fields.proof_image_base64_present ? "proof_image_base64:present" : "",
+    `proof_source:${fields.proof_source}`,
+  ]
+    .filter(Boolean)
+    .join("; ");
+}
 
 function buildPublicRenewalPayload(body: PublicRenewalBody): ImmigrationIntakeRequest {
   const displayName = toStr(body.display_name || body.name);
   const currentTier = toStr(body.current_tier_hint);
   const targetTier = toStr(body.target_tier || body.package_label || body.package_code || body.package);
   const paymentMethod = toStr(body.payment_method || "bank_transfer");
-  const historyNote = toStr(body.service_history_note || body.manual_note || body.note);
+  const baseHistoryNote = toStr(body.service_history_note || body.manual_note || body.note);
+  const proof = renewalProofFields(body);
+  const proofNote = proof.proof_attached || baseHistoryNote ? renewalProofNote(proof) : "";
+  const historyNote = baseHistoryNote.includes("proof_attached:")
+    ? baseHistoryNote
+    : [baseHistoryNote, proofNote].filter(Boolean).join("; ");
   const amount = toNum(body.total);
   const lineUserId = toStr(body.line_user_id);
   const lineId = toStr(body.line_id);
@@ -872,6 +965,7 @@ function buildPublicRenewalPayload(body: PublicRenewalBody): ImmigrationIntakeRe
     targetTier ? `target:${targetTier}` : "",
     currentTier ? `current:${currentTier}` : "",
     paymentMethod ? `payment:${paymentMethod}` : "",
+    proof.proof_attached ? "proof:attached" : "proof:none",
     Number.isFinite(amount) ? `amount:${amount}` : "",
   ]
     .filter(Boolean)
@@ -906,6 +1000,7 @@ function buildPublicRenewalPayload(body: PublicRenewalBody): ImmigrationIntakeRe
       source_page: toStr(body.source_page),
       admin_context: toStr(body.admin_context),
       raw_json: toStr(body.raw_json),
+      ...proof,
     },
   };
 }
@@ -926,6 +1021,7 @@ function buildRenewalLineIntakePayload(
   const telegramUsername = toStr(body.telegram_username || body.telegram);
   const nickname = toStr(body.nickname || body.display_name || body.name);
   const messageThreadId = toStr(body.telegram_message_thread_id) || "61";
+  const proof = renewalProofFields(body);
 
   return {
     immigration_id: immigrationId,
@@ -962,6 +1058,7 @@ function buildRenewalLineIntakePayload(
       legacy_membership_proof_name: toStr(body.legacy_membership_proof_name),
       legacy_membership_proof_present: Boolean(body.legacy_membership_proof_present),
       confirmation_mode: toStr(body.confirmation_mode),
+      ...proof,
     },
     original_payload: Object.fromEntries(Object.entries(body)),
   };
@@ -1069,12 +1166,10 @@ async function handlePublicRenewalIntake(request: Request, env: Env): Promise<Re
         error?: string;
       }
     | null = null;
+  const warnings: string[] = [];
 
   try {
     intakeResult = await intakeLineClientUpsert(env, renewalLinePayload);
-    promotion = await promoteLineClientAfterIntake(env, renewalLinePayload, intakeResult);
-    links = await createLineLinksAfterPromotion(env, renewalLinePayload, intakeResult, promotion);
-    telegram = await notifyTelegramForLineIntake(env, renewalLinePayload, promotion, links);
   } catch (error) {
     return publicJson(
       request,
@@ -1089,6 +1184,44 @@ async function handlePublicRenewalIntake(request: Request, env: Env): Promise<Re
       },
       { status: 502 },
     );
+  }
+
+  try {
+    promotion = await promoteLineClientAfterIntake(env, renewalLinePayload, intakeResult);
+    if (promotion && !promotion.ok && promotion.error) warnings.push(`promotion:${promotion.error}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "promotion_failed";
+    warnings.push(`promotion:${message}`);
+    promotion = {
+      attempted: true,
+      ok: false,
+      member_id: "",
+      promotion_status: "promotion_failed",
+      created_new_member: false,
+      error: message,
+    };
+  }
+
+  try {
+    links = await createLineLinksAfterPromotion(env, renewalLinePayload, intakeResult, promotion);
+    if (promotion?.ok && !links) warnings.push("links:missing_links");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "links_failed";
+    warnings.push(`links:${message}`);
+    links = null;
+  }
+
+  try {
+    telegram = await notifyTelegramForLineIntake(env, renewalLinePayload, promotion, links);
+    if (telegram && !telegram.ok && telegram.error) warnings.push(`telegram:${telegram.error}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "telegram_failed";
+    warnings.push(`telegram:${message}`);
+    telegram = {
+      attempted: true,
+      ok: false,
+      error: message,
+    };
   }
 
   return publicJson(request, env, {
@@ -1122,6 +1255,7 @@ async function handlePublicRenewalIntake(request: Request, env: Env): Promise<Re
       promotion: promotion || null,
       links: links || null,
       telegram: telegram || null,
+      warnings,
     },
     meta,
   });
@@ -1279,6 +1413,336 @@ async function writeRecoveryAckRecord(
   };
 }
 
+type RecoveryEvidenceSide = "client" | "model";
+
+type RecoveryEvidenceMetadata = {
+  name: string;
+  type: string;
+  size: number;
+  key: string;
+  url: string;
+};
+
+type RecoveryComplaintEvidenceInput = {
+  type: string;
+  lane: string;
+  brand: string;
+  voice: string;
+  token: string;
+  sessionId: string;
+  clientName: string;
+  modelName: string;
+  caseDate: string;
+  caseTime: string;
+  caseLocation: string;
+  laneStatement: string;
+  statement: string;
+  submittedWorkflowStatus: string;
+  submittedNextStep: string;
+  submittedFinalApprover: string;
+  submittedTimestamp: string;
+};
+
+type RecoveryEvidenceRecordResult = {
+  mode: "airtable" | "mock";
+  action: "created" | "updated" | "mock";
+  inbox_id: string;
+  airtable_record_id?: string;
+};
+
+const RECOVERY_EVIDENCE_MAX_FILES_PER_SIDE = 12;
+const RECOVERY_EVIDENCE_MAX_FILE_BYTES = 15 * 1024 * 1024;
+const RECOVERY_EVIDENCE_WORKFLOW_STATUS = "received_with_evidence";
+const RECOVERY_EVIDENCE_NEXT_STEP = "mmd_assistant_review";
+const RECOVERY_EVIDENCE_FINAL_APPROVER = "Boss Per";
+const RECOVERY_EVIDENCE_EMPTY_TYPE_ALLOWED_EXTENSIONS = new Set([".heic", ".heif", ".pdf"]);
+const RECOVERY_EVIDENCE_ALLOWED_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/heic",
+  "image/heif",
+  "application/pdf",
+]);
+
+function recoveryText(value: unknown, maxLength = 1000): string {
+  return toStr(value)
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .slice(0, maxLength)
+    .trim();
+}
+
+function recoveryFormString(form: FormData, field: string, maxLength = 240): string {
+  return recoveryString(form.get(field), maxLength);
+}
+
+function recoveryComplaintEvidenceInputFromForm(form: FormData): RecoveryComplaintEvidenceInput {
+  return {
+    type: recoveryFormString(form, "type", 80),
+    lane: recoveryFormString(form, "lane", 80),
+    brand: recoveryFormString(form, "brand", 120),
+    voice: recoveryFormString(form, "voice", 120),
+    token: recoveryFormString(form, "token", 2048),
+    sessionId: recoveryFormString(form, "session_id", 160),
+    clientName: recoveryFormString(form, "client_name", 160),
+    modelName: recoveryFormString(form, "model_name", 160),
+    caseDate: recoveryFormString(form, "case_date", 40),
+    caseTime: recoveryFormString(form, "case_time", 40),
+    caseLocation: recoveryFormString(form, "case_location", 240),
+    laneStatement: recoveryText(form.get("lane_statement"), 3000),
+    statement: recoveryText(form.get("statement"), 6000),
+    submittedWorkflowStatus: recoveryFormString(form, "workflow_status", 120),
+    submittedNextStep: recoveryFormString(form, "next_step", 120),
+    submittedFinalApprover: recoveryFormString(form, "final_approver", 120),
+    submittedTimestamp: recoveryFormString(form, "timestamp", 120),
+  };
+}
+
+function recoveryEvidenceFiles(form: FormData, field: string): File[] {
+  const alternateField = field.endsWith("[]") ? field.slice(0, -2) : `${field}[]`;
+  const values = [
+    ...form.getAll(field),
+    ...(alternateField === field ? [] : form.getAll(alternateField)),
+  ];
+  return values.filter((value): value is File => value instanceof File && (Boolean(value.name) || value.size > 0));
+}
+
+function evidenceContentType(file: File): string {
+  return recoveryString(file.type, 120).toLowerCase();
+}
+
+function recoveryEvidenceExtension(file: File): string {
+  const match = recoveryString(file.name, 160).toLowerCase().match(/\.[a-z0-9]+$/);
+  return match ? match[0] : "";
+}
+
+function isRecoveryEvidenceFileTypeAllowed(file: File): boolean {
+  const contentType = evidenceContentType(file);
+  if (contentType) return RECOVERY_EVIDENCE_ALLOWED_TYPES.has(contentType);
+  return RECOVERY_EVIDENCE_EMPTY_TYPE_ALLOWED_EXTENSIONS.has(recoveryEvidenceExtension(file));
+}
+
+function validateRecoveryEvidenceFiles(files: File[], side: RecoveryEvidenceSide): string[] {
+  const errors: string[] = [];
+  if (files.length > RECOVERY_EVIDENCE_MAX_FILES_PER_SIDE) {
+    errors.push(`${side}_evidence[] supports at most ${RECOVERY_EVIDENCE_MAX_FILES_PER_SIDE} files`);
+  }
+
+  for (const file of files) {
+    const name = recoveryString(file.name, 160) || "unnamed";
+    const contentType = evidenceContentType(file);
+    if (file.size <= 0) {
+      errors.push(`${side}_evidence[] file is empty: ${name}`);
+    }
+    if (file.size > RECOVERY_EVIDENCE_MAX_FILE_BYTES) {
+      errors.push(`${side}_evidence[] file exceeds 15MB: ${name}`);
+    }
+    if (!isRecoveryEvidenceFileTypeAllowed(file)) {
+      errors.push(`${side}_evidence[] unsupported file type for ${name}: ${contentType || recoveryEvidenceExtension(file) || "unknown"}`);
+    }
+  }
+
+  return errors;
+}
+
+function safeEvidenceFilename(filename: string): string {
+  const leaf = (toStr(filename).split(/[\\/]/).pop() || "evidence")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9._-]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^[-_.]+|[-_.]+$/g, "")
+    .slice(0, 120);
+  return leaf || "evidence";
+}
+
+function evidenceTimestampSegment(value: string): string {
+  const raw = recoveryString(value, 120) || new Date().toISOString();
+  const parsed = Date.parse(raw);
+  const source = Number.isFinite(parsed) ? new Date(parsed).toISOString() : raw;
+  return source
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || Date.now().toString(36);
+}
+
+function urlEncodeEvidenceKey(key: string): string {
+  return key.split("/").map((part) => encodeURIComponent(part)).join("/");
+}
+
+function buildEvidencePublicUrl(env: Env, key: string): string {
+  const base = recoveryString(env.EVIDENCE_PUBLIC_BASE_URL || env.R2_PUBLIC_BASE_URL, 300).replace(/\/+$/, "");
+  return base ? `${base}/${urlEncodeEvidenceKey(key)}` : "";
+}
+
+function hexFromBytes(bytes: ArrayBuffer): string {
+  return Array.from(new Uint8Array(bytes))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function shortSha256(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  return hexFromBytes(await crypto.subtle.digest("SHA-256", bytes)).slice(0, 16);
+}
+
+async function buildRecoveryComplaintCaseId(
+  form: FormData,
+  input: RecoveryComplaintEvidenceInput,
+): Promise<string> {
+  void form;
+  const clientSlug = slugifyValue(input.clientName || "client", "client");
+  const modelSlug = slugifyValue(input.modelName || "model", "model");
+  return `complaint_${clientSlug}_${modelSlug}_${Date.now().toString(36)}`.slice(0, 140);
+}
+
+async function uploadRecoveryEvidenceFiles(
+  env: Env,
+  caseId: string,
+  side: RecoveryEvidenceSide,
+  files: File[],
+  timestamp: string,
+): Promise<RecoveryEvidenceMetadata[]> {
+  if (!files.length) return [];
+  if (!env.EVIDENCE_BUCKET || typeof env.EVIDENCE_BUCKET.put !== "function") {
+    throw new Error("missing_evidence_bucket");
+  }
+
+  const uploaded: RecoveryEvidenceMetadata[] = [];
+  for (const file of files) {
+    const originalName = recoveryString(file.name, 160) || "evidence";
+    const key = `sigil/recovery/evidence/${caseId}/${side}/${timestamp}-${safeEvidenceFilename(originalName)}`;
+    const contentType = recoveryString(file.type, 120) || "application/octet-stream";
+
+    await env.EVIDENCE_BUCKET.put(key, file.stream(), {
+      httpMetadata: {
+        contentType,
+      },
+      customMetadata: {
+        case_id: caseId,
+        side,
+        original_name: originalName.slice(0, 512),
+      },
+    });
+
+    uploaded.push({
+      name: originalName,
+      type: contentType,
+      size: file.size,
+      key,
+      url: buildEvidencePublicUrl(env, key),
+    });
+  }
+
+  return uploaded;
+}
+
+async function writeRecoveryComplaintEvidenceCaseRecord(
+  env: Env,
+  input: RecoveryComplaintEvidenceInput & {
+    caseId: string;
+    evidence: Record<RecoveryEvidenceSide, RecoveryEvidenceMetadata[]>;
+    createdAt: string;
+    userAgent: string;
+    country: string;
+  },
+): Promise<RecoveryEvidenceRecordResult> {
+  const inboxId = `recovery_complaint_${slugifyValue(input.caseId, "case")}`.slice(0, 120);
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) {
+    return { mode: "mock", action: "mock", inbox_id: inboxId };
+  }
+
+  const evidenceJson = JSON.stringify(input.evidence);
+  const adminNote = [
+    "SIGIL Recovery Complaint Evidence",
+    `Case: ${input.caseId}`,
+    input.clientName ? `Client: ${input.clientName}` : "",
+    input.modelName ? `Model: ${input.modelName}` : "",
+    input.caseDate || input.caseTime ? `When: ${[input.caseDate, input.caseTime].filter(Boolean).join(" ")}` : "",
+    input.caseLocation ? `Location: ${input.caseLocation}` : "",
+    `Evidence: client=${input.evidence.client.length}, model=${input.evidence.model.length}`,
+  ].filter(Boolean).join(" | ");
+
+  const fields = compactFields({
+    inbox_id: inboxId,
+    created_by: "sigil-recovery-complaint-page",
+    source: "line",
+    intent: "upsert_member",
+    member_name: input.clientName,
+    legacy_tags: "recovery_complaint, sigil_care_layer, evidence_upload",
+    admin_note: adminNote,
+    case_id: input.caseId,
+    token: input.token,
+    session_id: input.sessionId,
+    lane: input.lane,
+    client_name: input.clientName,
+    model_name: input.modelName,
+    case_date: input.caseDate,
+    case_time: input.caseTime,
+    case_location: input.caseLocation,
+    lane_statement: input.laneStatement,
+    statement: input.statement,
+    workflow_status: RECOVERY_EVIDENCE_WORKFLOW_STATUS,
+    next_step: RECOVERY_EVIDENCE_NEXT_STEP,
+    final_approver: RECOVERY_EVIDENCE_FINAL_APPROVER,
+    evidence_metadata_json: evidenceJson,
+    created_at: input.createdAt,
+    payload_json: JSON.stringify({
+      case_id: input.caseId,
+      type: input.type,
+      lane: input.lane,
+      brand: input.brand,
+      voice: input.voice,
+      token: input.token,
+      session_id: input.sessionId,
+      client_name: input.clientName,
+      model_name: input.modelName,
+      case_date: input.caseDate,
+      case_time: input.caseTime,
+      case_location: input.caseLocation,
+      lane_statement: input.laneStatement,
+      statement: input.statement,
+      workflow_status: RECOVERY_EVIDENCE_WORKFLOW_STATUS,
+      next_step: RECOVERY_EVIDENCE_NEXT_STEP,
+      final_approver: RECOVERY_EVIDENCE_FINAL_APPROVER,
+      submitted_workflow_status: input.submittedWorkflowStatus,
+      submitted_next_step: input.submittedNextStep,
+      submitted_final_approver: input.submittedFinalApprover,
+      submitted_timestamp: input.submittedTimestamp,
+      evidence: input.evidence,
+      created_at: input.createdAt,
+      request_context: {
+        user_agent: input.userAgent,
+        country: input.country,
+      },
+    }),
+    status: "new",
+  });
+
+  const existing = await findRecoveryInboxRecord(env, inboxId);
+  if (existing?.id) {
+    const updated = await patchAirtableImportRecordWithFallbacks(env, recoveryInboxTable(), existing.id, fields);
+    return {
+      mode: "airtable",
+      action: "updated",
+      inbox_id: inboxId,
+      airtable_record_id: toStr(updated.id) || existing.id,
+    };
+  }
+
+  const created = await createAirtableImportRecordWithFallbacks(env, recoveryInboxTable(), fields);
+  return {
+    mode: "airtable",
+    action: "created",
+    inbox_id: inboxId,
+    airtable_record_id: toStr(created.id),
+  };
+}
+
 async function handlePublicRecoveryAck(request: Request, env: Env): Promise<Response> {
   const meta = makeMeta(request);
 
@@ -1347,6 +1811,132 @@ async function handlePublicRecoveryAck(request: Request, env: Env): Promise<Resp
       acknowledged_at: receivedAt,
       record,
     },
+    meta,
+  });
+}
+
+async function handlePublicRecoveryComplaintEvidence(request: Request, env: Env): Promise<Response> {
+  const meta = makeMeta(request);
+
+  if (!isAllowedRecoveryOrigin(request, env)) {
+    return publicJson(
+      request,
+      env,
+      {
+        ok: false,
+        error: { code: "ORIGIN_NOT_ALLOWED", message: "Origin is not allowed" },
+        meta,
+      },
+      { status: 403 },
+    );
+  }
+
+  const contentType = request.headers.get("content-type") || "";
+  if (!contentType.toLowerCase().includes("multipart/form-data")) {
+    return publicJson(
+      request,
+      env,
+      { ok: false, error: { code: "INVALID_INPUT", message: "multipart/form-data is required" }, meta },
+      { status: 400 },
+    );
+  }
+
+  const form = await request.formData().catch(() => null);
+  if (!form) {
+    return publicJson(
+      request,
+      env,
+      { ok: false, error: { code: "INVALID_INPUT", message: "valid multipart form data is required" }, meta },
+      { status: 400 },
+    );
+  }
+
+  const input = recoveryComplaintEvidenceInputFromForm(form);
+  const clientFiles = recoveryEvidenceFiles(form, "client_evidence[]");
+  const modelFiles = recoveryEvidenceFiles(form, "model_evidence[]");
+  const validationErrors = [
+    ...validateRecoveryEvidenceFiles(clientFiles, "client"),
+    ...validateRecoveryEvidenceFiles(modelFiles, "model"),
+  ];
+
+  if (validationErrors.length) {
+    return publicJson(
+      request,
+      env,
+      {
+        ok: false,
+        error: {
+          code: "INVALID_INPUT",
+          message: validationErrors.join("; "),
+          details: { validation_errors: validationErrors },
+        },
+        meta,
+      },
+      { status: 400 },
+    );
+  }
+
+  if (!env.EVIDENCE_BUCKET || typeof env.EVIDENCE_BUCKET.put !== "function") {
+    return publicJson(
+      request,
+      env,
+      {
+        ok: false,
+        error: {
+          code: "EVIDENCE_STORAGE_NOT_CONFIGURED",
+          message: "EVIDENCE_BUCKET R2 binding is not configured",
+        },
+        meta,
+      },
+      { status: 500 },
+    );
+  }
+
+  const createdAt = new Date().toISOString();
+  const caseId = await buildRecoveryComplaintCaseId(form, input);
+  const timestamp = evidenceTimestampSegment(input.submittedTimestamp || createdAt);
+
+  let evidence: Record<RecoveryEvidenceSide, RecoveryEvidenceMetadata[]>;
+  try {
+    evidence = {
+      client: await uploadRecoveryEvidenceFiles(env, caseId, "client", clientFiles, timestamp),
+      model: await uploadRecoveryEvidenceFiles(env, caseId, "model", modelFiles, timestamp),
+    };
+  } catch (error) {
+    const message = error instanceof Error && error.message ? error.message : "Evidence upload failed";
+    return publicJson(
+      request,
+      env,
+      { ok: false, error: { code: "EVIDENCE_UPLOAD_FAILED", message }, meta },
+      { status: 500 },
+    );
+  }
+
+  let record: RecoveryEvidenceRecordResult;
+  try {
+    record = await writeRecoveryComplaintEvidenceCaseRecord(env, {
+      ...input,
+      caseId,
+      evidence,
+      createdAt,
+      userAgent: recoveryString(request.headers.get("user-agent"), 300),
+      country: recoveryString(request.headers.get("cf-ipcountry"), 12),
+    });
+  } catch {
+    return publicJson(
+      request,
+      env,
+      { ok: false, error: { code: "CASE_RECORD_WRITE_FAILED", message: "Recovery case record write failed" }, meta },
+      { status: 500 },
+    );
+  }
+
+  return publicJson(request, env, {
+    ok: true,
+    case_id: caseId,
+    evidence,
+    next_step: RECOVERY_EVIDENCE_NEXT_STEP,
+    record,
     meta,
   });
 }
@@ -1694,7 +2284,7 @@ async function createConfirmLinksAfterCreateJob(
     payment_type: toStr(payload.payment_type || payload.payload_json?.payment_type || "deposit"),
     payment_method: toStr(payload.payment_method || payload.payload_json?.payment_method || "promptpay"),
     confirm_page: "/pay",
-    model_confirm_page: "/model/console-sigil",
+    model_confirm_page: "/model/console",
     note:
       toStr(payload.booking_note) ||
       toStr(payload.payload_json?.booking_note) ||
@@ -1796,6 +2386,12 @@ async function notifyTelegramForLineIntake(
   const intakeSource = toStr(payload.payload_json?.source_channel || payload.payload_json?.intake_source).toLowerCase();
   const isRenewalIntake = intakeSource === "renewal" || intakeSource === "renewal_web"
     || Boolean(toStr(payload.payload_json?.renewal_source_page));
+  const proofAttached = toBool(payload.payload_json?.proof_attached) || Boolean(toStr(payload.payload_json?.proof_filename));
+  const proofFilename = toStr(payload.payload_json?.proof_filename);
+  const proofMimeType = toStr(payload.payload_json?.proof_mime_type);
+  const proofSize = toNum(payload.payload_json?.proof_size) || 0;
+  const proofBase64Present = toBool(payload.payload_json?.proof_image_base64_present);
+  const proofSource = toStr(payload.payload_json?.proof_source) || "oldProof";
   const lines = [
     isRenewalIntake ? "<b>RENEWAL INTAKE PROMOTED</b>" : "<b>LINE INTAKE PROMOTED</b>",
     `Client: <b>${escapeHtml(displayName)}</b>`,
@@ -1803,6 +2399,16 @@ async function notifyTelegramForLineIntake(
     `Member ID: <code>${escapeHtml(toStr(promotion.member_id))}</code>`,
     !isRenewalIntake && lineUserId ? `LINE User ID: <code>${escapeHtml(lineUserId)}</code>` : "",
     `Immigration ID: <code>${escapeHtml(links.immigration_id)}</code>`,
+    isRenewalIntake && proofAttached
+      ? `Proof: proof_attached=<b>true</b>`
+      : "",
+    isRenewalIntake && proofAttached && proofFilename ? `Proof Filename: ${escapeHtml(proofFilename)}` : "",
+    isRenewalIntake && proofAttached && proofMimeType ? `Proof MIME: ${escapeHtml(proofMimeType)}` : "",
+    isRenewalIntake && proofAttached && proofSize ? `Proof Size: ${proofSize} bytes` : "",
+    isRenewalIntake && proofAttached && proofSource ? `Proof Source: ${escapeHtml(proofSource)}` : "",
+    isRenewalIntake && proofAttached && proofBase64Present
+      ? "Proof Base64: [base64 omitted]"
+      : "",
     "",
     `Member Link: ${escapeHtml(links.customer_url)}`,
     `Model Link: ${escapeHtml(links.model_url)}`,
@@ -4306,8 +4912,20 @@ function isPublicRenewalStatusRoute(pathname: string): boolean {
   return pathname === PUBLIC.renewalStatus || pathname === SIGIL.renewalStatus;
 }
 
+function isPublicPointsTopupRoute(pathname: string): boolean {
+  return pathname === PUBLIC.pointsTopup || pathname === SIGIL.pointsTopup;
+}
+
+function isPublicRenewalActivateVipRoute(pathname: string): boolean {
+  return pathname === PUBLIC.renewalActivateVip || pathname === SIGIL.renewalActivateVip;
+}
+
 function isPublicRecoveryAckRoute(pathname: string): boolean {
   return pathname === SIGIL.recoveryAck;
+}
+
+function isPublicRecoveryComplaintEvidenceRoute(pathname: string): boolean {
+  return pathname === PUBLIC.recoveryComplaintEvidence || pathname === SIGIL.recoveryComplaintEvidence;
 }
 
 function isPublicCustomerConfirmRoute(pathname: string): boolean {
@@ -4420,6 +5038,10 @@ function getLegacyAdminPath(pathname: string): string {
       return PUBLIC.renewalStatus;
     case SIGIL.renewalIntake:
       return PUBLIC.renewalIntake;
+    case SIGIL.pointsTopup:
+      return PUBLIC.pointsTopup;
+    case SIGIL.renewalActivateVip:
+      return PUBLIC.renewalActivateVip;
     case SIGIL.customerConfirm:
       return PUBLIC.customerConfirm;
     default:
@@ -5751,6 +6373,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
         function renderLinks(data, payload, lineUserId) {
           const payments = data && typeof data.payments_response === "object" ? data.payments_response : {};
           const customerDashboardSource = firstString(data && data.customer_dashboard_url, payments && payments.dashboard_url);
+          const modelDashboardSource = firstString(data && data.model_dashboard_url, payments && payments.model_dashboard_url);
           const paymentSource = firstString(data && data.customer_payment_url, data && data.payment_url, payments && payments.payment_url);
           const modelConsoleSource = firstString(data && data.model_console_url, payments && payments.model_console_url);
           const customerSource = firstString(
@@ -5774,7 +6397,8 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
           const paymentLink = paymentSource.includes("/pay")
             ? paymentSource
             : linkNear(customerFirstDb || paymentSource, "/pay", customerToken) || paymentSource;
-          const modelConsole = modelConsoleSource || linkNear(customerFirstDb || modelSource, "/model/console-sigil", modelToken);
+          const modelDashboard = modelDashboardSource || linkNear(customerFirstDb || modelSource, "/model/dashboard", modelToken);
+          const modelConsole = modelConsoleSource || linkNear(customerFirstDb || modelSource, "/model/console", modelToken);
 
           lastLineCardPayload = isLineUserId(lineUserId) && customerFirstDb && paymentLink
             ? {
@@ -5796,6 +6420,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             '<div class="result-grid">',
             linkCard("Client Dashboard:", "Client first dashboard and session details.", customerFirstDb),
             linkCard("Payment Confirmation:", "Payment proof and confirmation page.", paymentLink),
+            linkCard("Model Dashboard:", "Model dashboard and session overview.", modelDashboard),
             linkCard("Model Console:", "Model-side session console.", modelConsole),
             '</div>',
             lineActionRow(lineUserId)
@@ -5988,7 +6613,7 @@ function renderCreateSessionLinksPage(request: Request, session: AdminGateSessio
             return_url: "/member/first-db",
             cancel_url: "/sigil/admin/jobs/create-session",
             confirm_page: "/pay",
-            model_confirm_page: "/model/console-sigil",
+            model_confirm_page: "/model/console",
             note: customerNote,
             notes: customerNote,
             model_brief_note: "",
@@ -7921,11 +8546,13 @@ export default {
         (
           isPublicRenewalStatusRoute(url.pathname)
           || isPublicRenewalIntakeRoute(url.pathname)
+          || isPublicPointsTopupRoute(url.pathname)
+          || isPublicRenewalActivateVipRoute(url.pathname)
           || isPublicRecoveryAckRoute(url.pathname)
+          || isPublicRecoveryComplaintEvidenceRoute(url.pathname)
           || isPublicCustomerConfirmRoute(url.pathname)
           || isPaymentPageRoute(url.pathname)
-          || url.pathname === MODEL_SESSION_DASHBOARD_PATH
-          || url.pathname === MODEL_SESSION_STATUS_PATH
+          || isModelSessionAdminPath(url.pathname)
         )
       ) {
         return withCors(request, env, new Response(null, { status: 204 }));
@@ -7967,7 +8594,19 @@ export default {
       }
 
       if (request.method === "GET" && url.pathname === MODEL_SESSION_DASHBOARD_PATH) {
-        return withCors(request, env, await handleModelSessionDashboard(request, env));
+        return withCors(request, env, await forwardModelSessionToAdminWorker(request, env));
+      }
+
+      if (
+        request.method === "POST" &&
+        (
+          url.pathname === MODEL_SESSION_STATUS_PATH ||
+          url.pathname === "/v1/model/session/gps" ||
+          url.pathname === "/v1/model/session/update" ||
+          url.pathname === "/v1/model/session/emergency"
+        )
+      ) {
+        return withCors(request, env, await forwardModelSessionToAdminWorker(request, env));
       }
 
       if (request.method === "POST" && isPublicRenewalStatusRoute(url.pathname)) {
@@ -7978,16 +8617,24 @@ export default {
         return await handlePublicRenewalIntake(request, env);
       }
 
+      if (request.method === "POST" && isPublicPointsTopupRoute(url.pathname)) {
+        return await handlePublicPointsTopup(request, env);
+      }
+
+      if (request.method === "POST" && isPublicRenewalActivateVipRoute(url.pathname)) {
+        return await handlePublicActivateVip(request, env);
+      }
+
       if (request.method === "POST" && isPublicRecoveryAckRoute(url.pathname)) {
         return await handlePublicRecoveryAck(request, env);
       }
 
-      if (request.method === "POST" && isPublicCustomerConfirmRoute(url.pathname)) {
-        return await handleCustomerConfirm(request, env);
+      if (request.method === "POST" && isPublicRecoveryComplaintEvidenceRoute(url.pathname)) {
+        return await handlePublicRecoveryComplaintEvidence(request, env);
       }
 
-      if (request.method === "POST" && url.pathname === MODEL_SESSION_STATUS_PATH) {
-        return withCors(request, env, await handleModelSessionStatus(request, env));
+      if (request.method === "POST" && isPublicCustomerConfirmRoute(url.pathname)) {
+        return await handleCustomerConfirm(request, env);
       }
 
       if (url.pathname === "/internal/line/send-session-card") {
