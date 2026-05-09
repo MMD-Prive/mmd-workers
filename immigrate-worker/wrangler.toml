@@ -7,6 +7,10 @@ workers_dev = true
 directory = "./public"
 binding = "ASSETS"
 
+[[r2_buckets]]
+binding = "EVIDENCE_BUCKET"
+bucket_name = "mmd-sigil-evidence"
+
 [vars]
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_TABLE_LINE_INBOX = "Line Inbox"
@@ -28,8 +32,15 @@ WEB_BASE_URL = "https://mmdbkk.com"
 SIGIL_BASE_URL = "https://sigil.mmdbkk.com"
 PUBLIC_WEB_BASE_URL = "https://sigil.mmdbkk.com"
 PUBLIC_ALLOWED_ORIGINS = "https://sigil.mmdbkk.com,https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
+EVIDENCE_PUBLIC_BASE_URL = ""
+R2_PUBLIC_BASE_URL = ""
 ADMIN_WORKER_BASE_URL = "https://admin-worker.malemodel-bkk.workers.dev"
 PROMPTPAY_ID = "0829528889"
+PAYMENTS_WORKER_BASE_URL = "https://payments-worker.malemodel-bkk.workers.dev"
+PAYMENT_BANK_NAME = "PromptPay / Thai bank transfer"
+PAYMENT_BANK_ACCOUNT_NAME = "MMD SIGIL"
+PAYMENT_BANK_ACCOUNT_NUMBER = "0829528889"
+PAYPAL_CREDIT_CARD_URL = ""
 
 [[services]]
 binding = "ADMIN_WORKER"
@@ -95,6 +106,14 @@ pattern = "www.mmdbkk.com/sigil/api*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
+pattern = "mmdbkk.com/sigil/recovery-lv8*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/recovery-lv8*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
 pattern = "sigil.mmdbkk.com/*"
 zone_name = "mmdbkk.com"
 
@@ -114,8 +133,24 @@ zone_name = "mmdbkk.com"
 pattern = "mmdbkk.com/member/api/renewal*"
 zone_name = "mmdbkk.com"
 
-    [[routes]]
+[[routes]]
 pattern = "www.mmdbkk.com/member/api/renewal*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/member/api/points*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/api/points*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/member/api/recovery*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/api/recovery*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
@@ -126,14 +161,6 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/member/api/jobs*"
 zone_name = "mmdbkk.com"
 
-[[routes]]
-pattern = "mmdbkk.com/v1/model/session*"
-zone_name = "mmdbkk.com"
-
-[[routes]]
-pattern = "www.mmdbkk.com/v1/model/session*"
-zone_name = "mmdbkk.com"
-#
 # Note:
 # You generally cannot bind Cloudflare Worker routes directly onto a `*.webflow.io` host you do not control.
 # For production, use a domain/zone you control and point Control Room traffic there.
