@@ -2,6 +2,7 @@ import { isAuthorized, readInternalToken } from "./lib/auth";
 import { handleInternalRoutes } from "./internal-routes";
 import { handleCreateLinks } from "./routes/create-links";
 import { handleSendLineSessionCard } from "./routes/line-send-session-card";
+import { handleModelPromoteImmigration } from "./lib/model-promote-immigration";
 import {
   handleModelSessionDashboard,
   handleModelSessionStatus,
@@ -120,6 +121,7 @@ const SIGIL = {
   controlRoomSessionRefresh: "/sigil/admin/control-room/sessions/refresh",
   createSession: "/sigil/admin/jobs/create-session",
   createJob: "/sigil/admin/jobs/create-job",
+  modelPromoteImmigration: "/sigil/admin/models/promote-immigration",
   inviteResolve: "/sigil/api/invite/resolve",
   renewalStatus: "/sigil/api/renewal/status",
   renewalIntake: "/sigil/api/renewal/intake",
@@ -7932,6 +7934,10 @@ export default {
       const sigilAdminAuthResponse = await handleSigilAdminAuthRoute(request, env);
       if (sigilAdminAuthResponse) {
         return sigilAdminAuthResponse;
+      }
+
+      if (url.pathname === SIGIL.modelPromoteImmigration) {
+        return await handleModelPromoteImmigration(request, env);
       }
 
       if (isSigilAdminPath(url.pathname)) {
