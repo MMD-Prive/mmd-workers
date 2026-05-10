@@ -669,16 +669,37 @@ async function airtablePatch(env, table, recordId, fields) {
 async function createActivityLogBestEffort(env, fields) {
   const table = getActivityLogsTable(env);
   if (!table) return { ok: true, skipped: true, reason: "missing_activity_logs_table" };
-  try {
-    const record = await airtableCreate(env, table, compact({
-      created_at: nowIso(),
-      source: "payments-worker",
-      ...fields,
-    }));
-    return { ok: true, record_id: record?.id || null };
-  } catch (err) {
-    return { ok: false, skipped: true, reason: "activity_log_write_failed", error: String(err?.message || err) };
+  const action = toStr(fields?.action) || "payments_worker_activity";
+  const target = JSON.stringify({
+    source: "payments-worker",
+    ...fields,
+  });
+  const targetText = target.length > 90000 ? `${target.slice(0, 90000)}...` : target;
+  const attempts = [
+    { action, target: targetText },
+    { Action: action, Target: targetText },
+    { Name: action, Notes: targetText },
+    { event: action, payload_json: targetText },
+    {},
+  ];
+  const errors = [];
+
+  for (let i = 0; i < attempts.length; i += 1) {
+    try {
+      const record = await airtableCreate(env, table, compact(attempts[i]));
+      return {
+        ok: true,
+        record_id: record?.id || null,
+        field_shape: Object.keys(attempts[i]).join(",") || "empty_record",
+        fallback_attempt: i,
+        warning: i === attempts.length - 1 ? "activity_log_schema_fields_unknown_empty_record_created" : undefined,
+      };
+    } catch (err) {
+      errors.push(String(err?.message || err));
+    }
   }
+
+  return { ok: false, skipped: true, reason: "activity_log_write_failed", error: errors[errors.length - 1], errors };
 }
 
 async function findPaymentByPaymentRef(env, paymentRef) {
