@@ -592,6 +592,10 @@ function getMemberEntitlementsTable(env) {
   return toStr(env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || env.AIRTABLE_TABLE_MEMBER_PACKAGES || "");
 }
 
+function getConfiguredMemberEntitlementsTable(env) {
+  return toStr(env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS);
+}
+
 function hasConfirmedEntitlementSource(env) {
   return Boolean(toStr(env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS));
 }
@@ -707,6 +711,80 @@ async function findPointLedgerByPaymentRef(env, paymentRef) {
   const table = getPointsLedgerTable(env);
   const formula = `{payment_ref}='${encodeFormulaValue(paymentRef)}'`;
   return airtableFindFirstByFormula(env, table, formula);
+}
+
+function memberEntitlementLookup(body) {
+  const lookups = [
+    ["entitlement_id", body.entitlement_id],
+    ["member_email", body.member_email],
+    ["memberstack_id", body.memberstack_id],
+    ["telegram_user_id", body.telegram_user_id],
+    ["payment_ref", body.payment_ref],
+    ["session_id", body.session_id],
+  ];
+  for (const [field, value] of lookups) {
+    const normalized = toStr(value);
+    if (normalized) return { field, value: normalized };
+  }
+  return null;
+}
+
+async function findMemberEntitlementForAccessSync(env, body) {
+  const table = getConfiguredMemberEntitlementsTable(env);
+  if (!table) return { ok: true, skipped: true, reason: "missing_member_entitlements_table" };
+  const lookup = memberEntitlementLookup(body);
+  if (!lookup) return { ok: true, skipped: true, reason: "missing_entitlement_lookup_key", table };
+
+  try {
+    const record = await airtableFindFirstByFormula(
+      env,
+      table,
+      `{${lookup.field}}='${encodeFormulaValue(lookup.value)}'`
+    );
+    if (!record?.id) {
+      return { ok: true, found: false, table, lookup, reason: "entitlement_record_not_found" };
+    }
+    return { ok: true, found: true, table, lookup, record_id: record.id, fields: record.fields || {} };
+  } catch (err) {
+    return {
+      ok: false,
+      table,
+      lookup,
+      reason: "entitlement_lookup_failed",
+      error: String(err?.message || err),
+    };
+  }
+}
+
+function mergeAccessSyncEntitlementPayload(body, entitlementRecord) {
+  const fields = entitlementRecord?.fields || {};
+  return {
+    ...body,
+    entitlement_id: body.entitlement_id || fields.entitlement_id,
+    member_email: body.member_email || fields.member_email,
+    memberstack_id: body.memberstack_id || fields.memberstack_id,
+    telegram_user_id: body.telegram_user_id || fields.telegram_user_id,
+    telegram_username: body.telegram_username || fields.telegram_username,
+    line_user_id: body.line_user_id || fields.line_user_id,
+    member_status: body.member_status || fields.member_status,
+    access_status: body.access_status || fields.access_status,
+    entitlement_level: body.entitlement_level || fields.entitlement_level,
+    target_package: body.target_package || body.package_code || fields.package_code,
+    package_code: body.package_code || fields.package_code,
+    expires_at: body.expires_at || body.expire_at || fields.expire_at,
+    entitlement_expires_at: body.entitlement_expires_at || body.expire_at || fields.expire_at,
+    grace_until: body.grace_until || fields.grace_until,
+    membership_expiry_rule: body.membership_expiry_rule || fields.membership_expiry_rule,
+    points_can_extend_expiry: body.points_can_extend_expiry ?? fields.points_can_extend_expiry,
+    relationship_tier: body.relationship_tier || fields.relationship_tier,
+    handler_mode: body.handler_mode || fields.handler_mode,
+    telegram_access_status: body.telegram_access_status || fields.telegram_access_status,
+    telegram_group_key: body.telegram_group_key || fields.telegram_group_key,
+    telegram_chat_id: body.telegram_chat_id || fields.telegram_chat_id,
+    payment_ref: body.payment_ref || fields.payment_ref,
+    session_id: body.session_id || fields.session_id,
+    payload_json: body.payload_json || fields.payload_json,
+  };
 }
 
 /* -------------------------------------------------- */
@@ -959,9 +1037,11 @@ async function handleMembershipAccessSync(req, env) {
     return withCors(req, env, jsonResponse({ ok: false, error: "unauthorized" }, 401));
   }
 
-  const body = await readJson(req);
+  const requestBody = await readJson(req);
   const accessSyncMode = membershipAccessSyncMode(env);
   const entitlementSourceConfirmed = hasConfirmedEntitlementSource(env);
+  const entitlementRecord = await findMemberEntitlementForAccessSync(env, requestBody);
+  const body = mergeAccessSyncEntitlementPayload(requestBody, entitlementRecord);
   const relationshipTier = normalizeRelationshipTier(body.relationship_tier);
   const handlerMode = handlerModeForRelationshipTier(relationshipTier, body.handler_mode);
   const entitlement = relationshipTier === "svip"
@@ -973,6 +1053,7 @@ async function handleMembershipAccessSync(req, env) {
   const removalCandidate = Boolean(
     accessSyncMode === "enforce" &&
     entitlementSourceConfirmed &&
+    entitlementRecord.found &&
     telegramUserId &&
     group.chat_id &&
     removeDecision.ok
@@ -988,6 +1069,8 @@ async function handleMembershipAccessSync(req, env) {
       reason: "enforce_requires_member_entitlements_source",
       note:
         "enforce mode requires AIRTABLE_TABLE_MEMBER_ENTITLEMENTS or confirmed entitlement source of truth; activity logs are audit/fallback only.",
+      entitlement_source: entitlementRecord.found ? "airtable_member_entitlements" : "not_confirmed",
+      entitlement_record_id: entitlementRecord.record_id || "",
     });
     return withCors(req, env, jsonResponse({
       ok: false,
@@ -998,6 +1081,8 @@ async function handleMembershipAccessSync(req, env) {
         "enforce mode requires AIRTABLE_TABLE_MEMBER_ENTITLEMENTS or confirmed entitlement source of truth",
       entitlement_source_confirmed: false,
       activity_logs_authoritative: false,
+      entitlement_source: entitlementRecord.found ? "airtable_member_entitlements" : "not_confirmed",
+      entitlement_record: entitlementRecord,
       entitlement_level: entitlement,
       removeDecision,
       activity,
@@ -1035,6 +1120,8 @@ async function handleMembershipAccessSync(req, env) {
       mode: accessSyncMode,
       would_remove: Boolean(telegramUserId && group.chat_id && removeDecision.ok),
       reason: removeDecision.reason,
+      entitlement_source: entitlementRecord.found ? "airtable_member_entitlements" : "request_payload",
+      entitlement_record_id: entitlementRecord.record_id || "",
       note:
         accessSyncMode === "notify_only"
           ? "notify_only calculated the access removal candidate and notified Per/admin without Telegram removal."
@@ -1061,6 +1148,8 @@ async function handleMembershipAccessSync(req, env) {
       mode: accessSyncMode,
       destructive_removal_enabled: false,
       entitlement_source_confirmed: entitlementSourceConfirmed,
+      entitlement_source: entitlementRecord.found ? "airtable_member_entitlements" : "request_payload",
+      entitlement_record: entitlementRecord,
       activity_logs_authoritative: false,
       would_remove: Boolean(telegramUserId && group.chat_id && removeDecision.ok),
       entitlement_level: entitlement,
@@ -1127,6 +1216,8 @@ async function handleMembershipAccessSync(req, env) {
     telegram_removal_error: ban.ok ? "" : JSON.stringify(ban.data || ban),
     telegram_unban_ok: unban.ok,
     telegram_unban_status: unban.status || "",
+    entitlement_source: entitlementRecord.found ? "airtable_member_entitlements" : "request_payload",
+    entitlement_record_id: entitlementRecord.record_id || "",
   });
 
   return withCors(req, env, jsonResponse({
@@ -1135,6 +1226,8 @@ async function handleMembershipAccessSync(req, env) {
     entitlement_level: entitlement,
     removed_from_chat_id: group.chat_id,
     downgraded_to: body.downgrade_to || "standard_basic",
+    entitlement_source: entitlementRecord.found ? "airtable_member_entitlements" : "request_payload",
+    entitlement_record,
     notice,
     ban,
     unban,

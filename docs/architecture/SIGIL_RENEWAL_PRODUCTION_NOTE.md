@@ -54,10 +54,15 @@
 - `dry_run` calculates would-remove/would-downgrade results and writes audit logs only. It must not call Telegram removal APIs.
 - `notify_only` calculates would-remove/would-downgrade results, notifies Per/admin, and writes audit logs only. It must not call Telegram removal APIs.
 - `enforce` is the only mode allowed to call Telegram removal APIs.
-- `enforce` is blocked unless `AIRTABLE_TABLE_MEMBER_ENTITLEMENTS` or another explicit entitlement source of truth is confirmed.
-- `AIRTABLE_TABLE_MEMBER_ENTITLEMENTS` is currently missing/not configured in `payments-worker/wrangler 2.toml`.
+- `AIRTABLE_TABLE_MEMBER_ENTITLEMENTS=tblNImdF9PKAxhXGi` is configured in `payments-worker/wrangler 2.toml`.
+- The configured source-of-truth table is `MMD — Member Entitlements` in Airtable base `appsV1ILPRfIjkaYg`.
+- `MEMBERSHIP_ACCESS_SYNC_MODE` must stay `dry_run` for the first production rollout.
+- After deploy, call `/v1/membership/access/sync` in dry-run only with an entitlement lookup key such as `entitlement_id`, `member_email`, `memberstack_id`, `telegram_user_id`, `payment_ref`, or `session_id`; confirm the response reports `entitlement_source=airtable_member_entitlements` and the expected Airtable record ID/table ID before any mode escalation.
+- Only after Per reviews dry-run results should the mode move to `notify_only`; `enforce` remains a later/manual approval step.
+- `enforce` is blocked unless `AIRTABLE_TABLE_MEMBER_ENTITLEMENTS` or another explicit entitlement source of truth is confirmed, and destructive removal additionally requires a matched entitlement record.
 - Activity logs may receive membership decisions as fallback/audit records, but activity logs are not a reliable authoritative entitlement source of truth.
-- Automated Telegram removals at scale must remain `dry_run` or `notify_only` until a dedicated entitlement table/source of truth is ready.
+- Automated Telegram removals at scale must remain `dry_run` until the first production dry-run has been reviewed by Per; then `notify_only` may be considered before any later `enforce`.
+- Key entitlement fields include `entitlement_id`, `member`, `client`, `memberstack_id`, `member_email`, `telegram_user_id`, `telegram_username`, `line_user_id`, `member_status`, `access_status`, `entitlement_level`, `package_code`, `start_at`, `expire_at`, `grace_until`, `renewal_status`, `membership_expiry_rule`, `points_can_extend_expiry`, `relationship_tier`, `handler_mode`, `telegram_access_status`, `telegram_group_key`, `telegram_chat_id`, `telegram_removed_at`, `telegram_removal_reason`, `source`, `payment_ref`, `session_id`, and `payload_json`.
 - Telegram private group access follows entitlement after expiry plus grace/review, not instantly at expiry.
 - Known groups: `TG_CHAT_VIP_LOUNGE=-1003578473671`, `TG_CHAT_BLACK_ROOM=-1003348473234`, `TG_CHAT_PREVIEW_TH=-1002393788585`, `TG_CHAT_MMD_PREMIUM=-1001668261779`.
 - The bot must be admin in the target group/channel and the member must have a linked `telegram_user_id`.
