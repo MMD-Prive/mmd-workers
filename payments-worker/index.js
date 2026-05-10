@@ -71,6 +71,7 @@ function buildCorsHeaders(req, env) {
 
   if (origin && allow.includes(origin)) {
     headers.set("Access-Control-Allow-Origin", origin);
+    headers.set("Access-Control-Allow-Credentials", "true");
     headers.set("Vary", "Origin");
   }
 
@@ -167,7 +168,7 @@ function compact(obj) {
 
 function paymentMethodLabel(value) {
   const method = toStr(value).toLowerCase();
-  if (method === "promptpay") return "PromptPay";
+  if (method === "promptpay" || method === "promptpay_qr") return "QR PromptPay";
   if (method === "credit_card") return "Credit Card";
   if (method === "bank_transfer") return "Bank Transfer";
   if (method === "paypal") return "PayPal";
@@ -183,6 +184,208 @@ function selectLabel(value) {
   if (raw === "manual_review") return "Manual Review";
   if (raw === "manual_slip_submitted") return "Manual Slip Submitted";
   return value || "";
+}
+
+function parseJsonObject(value, fallback = {}) {
+  if (!value) return fallback;
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function parseIsoDate(value) {
+  const raw = toStr(value);
+  if (!raw) return null;
+  const date = new Date(raw);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function addDays(date, days) {
+  const next = new Date(date.getTime());
+  next.setUTCDate(next.getUTCDate() + Number(days || 0));
+  return next;
+}
+
+function addMonths(date, months) {
+  const next = new Date(date.getTime());
+  next.setUTCMonth(next.getUTCMonth() + Number(months || 0));
+  return next;
+}
+
+function normalizeRenewalPackage(value) {
+  const raw = toStr(value).toLowerCase().replace(/[\s-]+/g, "_");
+  if (raw.includes("black") || raw.includes("svip")) return "black_card";
+  if (raw === "vip" || raw.includes("_vip") || raw.includes("vip_")) return "vip";
+  if (raw.includes("standard") || raw.includes("lite")) return "standard";
+  if (raw.includes("premium")) return "premium";
+  return raw || "premium";
+}
+
+function renewalPackageLabel(value) {
+  const code = normalizeRenewalPackage(value);
+  if (code === "black_card") return "Black Card";
+  if (code === "vip") return "VIP";
+  if (code === "standard") return "Standard Package";
+  return "Premium Package";
+}
+
+function normalizeRelationshipTier(value) {
+  const raw = toStr(value).toLowerCase().replace(/[\s-]+/g, "_");
+  if (raw === "svip") return "svip";
+  if (raw === "per_private" || raw === "per_private_first") return "per_private";
+  if (raw === "priority") return "priority";
+  return "normal";
+}
+
+function handlerModeForRelationshipTier(tier, value) {
+  const raw = toStr(value).toLowerCase().replace(/[\s-]+/g, "_");
+  if (raw === "per_private_first" || tier === "svip" || tier === "per_private") return "per_private_first";
+  if (raw === "per_review" || tier === "priority") return "per_review";
+  return "system";
+}
+
+function entitlementLevelForPackage(packageCode) {
+  const code = normalizeRenewalPackage(packageCode);
+  if (code === "black_card") return "black_card";
+  if (code === "vip") return "vip";
+  if (code === "standard") return "standard_basic";
+  return "premium";
+}
+
+function extensionReason(value) {
+  const raw = toStr(value).toLowerCase();
+  const allowed = [
+    "paid_renewal",
+    "points_threshold_reached",
+    "spending_threshold_reached",
+    "manual_review",
+    "upgrade_review",
+  ];
+  return allowed.includes(raw) ? raw : "";
+}
+
+function getRenewalPolicy(env) {
+  const days = parseJsonObject(env.RENEWAL_EXTENSION_DAYS_JSON, {});
+  const months = parseJsonObject(env.RENEWAL_EXTENSION_MONTHS_JSON, {});
+  return {
+    extensionDays: days,
+    extensionMonths: months,
+    blackCardDefaultValidityMonths: toNum(env.BLACK_CARD_DEFAULT_VALIDITY_MONTHS) || 36,
+    blackCardReviewCycleMonths: toNum(env.BLACK_CARD_REVIEW_CYCLE_MONTHS) || 12,
+  };
+}
+
+function policyExtensionFor(env, packageCode, reason) {
+  const code = normalizeRenewalPackage(packageCode);
+  const policy = getRenewalPolicy(env);
+  const monthKey = `${code}:${reason}`;
+  const dayKey = `${code}:${reason}`;
+  const months =
+    toNum(policy.extensionMonths[monthKey]) ??
+    toNum(policy.extensionMonths[code]) ??
+    (code === "black_card" && reason === "paid_renewal" ? policy.blackCardDefaultValidityMonths : null);
+  const days =
+    toNum(policy.extensionDays[dayKey]) ??
+    toNum(policy.extensionDays[code]) ??
+    null;
+
+  if (Number.isFinite(months) && months > 0) return { unit: "months", value: months };
+  if (Number.isFinite(days) && days > 0) return { unit: "days", value: days };
+  return null;
+}
+
+function applyExtension(baseDate, extension) {
+  if (!extension) return null;
+  if (extension.unit === "months") return addMonths(baseDate, extension.value);
+  return addDays(baseDate, extension.value);
+}
+
+function resolveMembershipExpiryDecision(env, payload, pointsLedger = null) {
+  const now = new Date();
+  const policy = getRenewalPolicy(env);
+  const targetPackage = normalizeRenewalPackage(payload.target_package || payload.package_code || payload.package);
+  const targetPackageLabel = toStr(payload.target_package_label) || renewalPackageLabel(targetPackage);
+  const currentExpiry = parseIsoDate(
+    payload.current_expiry || payload.membership_expiry || payload.membership_expire_at || payload.expires_at
+  );
+  const baseDate = currentExpiry && currentExpiry > now ? currentExpiry : now;
+  const pointsBalance = toNum(payload.points_balance);
+  const pointsRequired = toNum(payload.points_required);
+  const spendingTotal = toNum(payload.total_spend_thb || payload.spending_total_thb || payload.eligible_spending_thb);
+  const spendingRequired = toNum(payload.spending_required || payload.spending_required_thb);
+  const pointsThresholdReached =
+    truthy(payload.points_threshold_reached) ||
+    (pointsBalance != null && pointsRequired != null && pointsRequired > 0 && pointsBalance >= pointsRequired);
+  const spendingThresholdReached =
+    truthy(payload.spending_threshold_reached) ||
+    (spendingTotal != null && spendingRequired != null && spendingRequired > 0 && spendingTotal >= spendingRequired);
+  const paidRenewalConfirmed = payload.stage === "membership" || truthy(payload.paid_renewal_confirmed);
+  const incomingReason = extensionReason(payload.expiry_extension_reason);
+  let reason = incomingReason;
+  if (!reason && pointsThresholdReached) reason = "points_threshold_reached";
+  if (!reason && spendingThresholdReached) reason = "spending_threshold_reached";
+  if (!reason && paidRenewalConfirmed) reason = "paid_renewal";
+  if (!reason && (targetPackage === "vip" || targetPackage === "black_card")) reason = "upgrade_review";
+  if (!reason) reason = "manual_review";
+
+  const relationshipTier = normalizeRelationshipTier(payload.relationship_tier);
+  const handlerMode = handlerModeForRelationshipTier(relationshipTier, payload.handler_mode);
+  const entitlementLevel = targetPackage === "black_card" || relationshipTier === "svip"
+    ? "black_card"
+    : entitlementLevelForPackage(targetPackage);
+  const extension = policyExtensionFor(env, targetPackage, reason);
+  const canSystemExtend =
+    !!extension &&
+    ["paid_renewal", "points_threshold_reached", "spending_threshold_reached"].includes(reason);
+  const provisionalExpiry = canSystemExtend ? applyExtension(baseDate, extension) : null;
+  const keptExistingActiveExpiry =
+    !!(currentExpiry && currentExpiry > now && provisionalExpiry && provisionalExpiry < currentExpiry);
+  const finalExpiry = keptExistingActiveExpiry ? currentExpiry : provisionalExpiry || currentExpiry || null;
+  const accessStatus = canSystemExtend ? "active" : "pending_review";
+
+  return {
+    ok: true,
+    target_package: targetPackage,
+    target_package_label: targetPackageLabel,
+    member_status: entitlementLevel === "standard_basic" ? "standard" : entitlementLevel,
+    entitlement_level: entitlementLevel,
+    relationship_tier: relationshipTier,
+    handler_mode: handlerMode,
+    handled_by: handlerMode === "per_private_first" ? "per" : "",
+    pre_release_review_required: handlerMode === "per_private_first",
+    private_first_contact: handlerMode === "per_private_first",
+    access_status: accessStatus,
+    membership_expiry_rule:
+      targetPackage === "black_card"
+        ? "long_term_dynamic_points_extension"
+        : "dynamic_points_extension",
+    renewal_days_fixed: false,
+    points_can_extend_expiry: true,
+    black_card_default_validity_months: targetPackage === "black_card" ? policy.blackCardDefaultValidityMonths : undefined,
+    black_card_review_cycle_months: targetPackage === "black_card" ? policy.blackCardReviewCycleMonths : undefined,
+    black_card_expiry_rule:
+      targetPackage === "black_card" ? "long_term_dynamic_points_extension" : undefined,
+    black_card_lifetime: targetPackage === "black_card" ? false : undefined,
+    current_expiry: currentExpiry ? currentExpiry.toISOString() : "",
+    base_date: baseDate.toISOString(),
+    new_expiry: finalExpiry ? finalExpiry.toISOString() : "",
+    expiry_extension_reason: reason,
+    extension_policy: extension ? `${extension.value}_${extension.unit}` : "manual_review_required",
+    pending_review: accessStatus === "pending_review",
+    kept_existing_active_expiry,
+    points_balance: pointsBalance,
+    points_required: pointsRequired,
+    points_shortfall: toNum(payload.points_shortfall),
+    points_awarded: pointsLedger?.awarded ? Number(pointsLedger.points || 0) : 0,
+    customer_note_th:
+      targetPackage === "black_card"
+        ? "สถานะ Black Card เป็นสิทธิ์สมาชิกระยะยาวระดับสูง โดยวันหมดอายุสามารถขยายเพิ่มเติมได้ตามยอดใช้งาน points และการอนุมัติจาก MMD Privé สถานะสุดท้ายจะได้รับการตรวจสอบและยืนยันเป็นรายกรณี"
+        : "วันหมดอายุสมาชิกอาจขยายเพิ่มเติมได้ตามยอดใช้งานที่เข้าเกณฑ์ points และสถานะแพ็กเกจ โดย Per จะตรวจสอบและยืนยันวันหมดอายุสุดท้ายอีกครั้ง",
+  };
 }
 
 /* -------------------------------------------------- */
@@ -385,6 +588,24 @@ function getPointsLedgerTable(env) {
   return toStr(env.AIRTABLE_TABLE_POINTS_LEDGER || "points_ledger");
 }
 
+function getMemberEntitlementsTable(env) {
+  return toStr(env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || env.AIRTABLE_TABLE_MEMBER_PACKAGES || "");
+}
+
+function hasConfirmedEntitlementSource(env) {
+  return Boolean(toStr(env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS));
+}
+
+function membershipAccessSyncMode(env) {
+  const mode = toStr(env.MEMBERSHIP_ACCESS_SYNC_MODE).toLowerCase();
+  if (mode === "dry_run" || mode === "notify_only" || mode === "enforce") return mode;
+  return "dry_run";
+}
+
+function getActivityLogsTable(env) {
+  return toStr(env.AIRTABLE_TABLE_ACTIVITY_LOGS || "");
+}
+
 function sessionField(env, envKey, fallback) {
   return toStr(env?.[envKey] || fallback);
 }
@@ -439,6 +660,21 @@ async function airtablePatch(env, table, recordId, fields) {
     body: JSON.stringify({ fields }),
   });
   return data || null;
+}
+
+async function createActivityLogBestEffort(env, fields) {
+  const table = getActivityLogsTable(env);
+  if (!table) return { ok: true, skipped: true, reason: "missing_activity_logs_table" };
+  try {
+    const record = await airtableCreate(env, table, compact({
+      created_at: nowIso(),
+      source: "payments-worker",
+      ...fields,
+    }));
+    return { ok: true, record_id: record?.id || null };
+  } catch (err) {
+    return { ok: false, skipped: true, reason: "activity_log_write_failed", error: String(err?.message || err) };
+  }
 }
 
 async function findPaymentByPaymentRef(env, paymentRef) {
@@ -571,6 +807,339 @@ async function awardPointsIfEligible(env, payload) {
     record_id: record?.id || null,
     points,
   };
+}
+
+async function recordMembershipEntitlementIfApplicable(env, payload, pointsLedger = null) {
+  if (payload.stage !== "membership" && !truthy(payload.membership_renewal)) {
+    return { ok: true, skipped: true, reason: "not_membership_payload" };
+  }
+
+  const decision = resolveMembershipExpiryDecision(env, payload, pointsLedger);
+  const table = getMemberEntitlementsTable(env);
+  if (!table) {
+    await createActivityLogBestEffort(env, {
+      action: "membership_entitlement_decision_no_table",
+      member_email: payload.member_email || "",
+      payment_ref: payload.payment_ref || "",
+      target_package: decision.target_package,
+      entitlement_level: decision.entitlement_level,
+      access_status: decision.access_status,
+      expiry_extension_reason: decision.expiry_extension_reason,
+      new_expiry: decision.new_expiry,
+    });
+    return { ok: true, skipped: true, reason: "missing_member_entitlements_table", decision };
+  }
+
+  try {
+    const record = await airtableCreate(env, table, compact({
+      member_email: payload.member_email || "",
+      payment_ref: payload.payment_ref || "",
+      session_id: payload.session_id || "",
+      target_package: decision.target_package,
+      target_package_label: decision.target_package_label,
+      member_status: decision.member_status,
+      entitlement_level: decision.entitlement_level,
+      relationship_tier: decision.relationship_tier,
+      handler_mode: decision.handler_mode,
+      handled_by: decision.handled_by,
+      pre_release_review_required: decision.pre_release_review_required,
+      private_first_contact: decision.private_first_contact,
+      access_status: decision.access_status,
+      current_expiry: decision.current_expiry,
+      new_expiry: decision.new_expiry,
+      membership_expiry_rule: decision.membership_expiry_rule,
+      renewal_days_fixed: decision.renewal_days_fixed,
+      points_can_extend_expiry: decision.points_can_extend_expiry,
+      expiry_extension_reason: decision.expiry_extension_reason,
+      extension_policy: decision.extension_policy,
+      black_card_default_validity_months: decision.black_card_default_validity_months,
+      black_card_review_cycle_months: decision.black_card_review_cycle_months,
+      black_card_expiry_rule: decision.black_card_expiry_rule,
+      black_card_lifetime: decision.black_card_lifetime,
+      amount_thb: payload.amount_thb,
+      payment_method: payload.payment_method || "",
+      payment_method_label: paymentMethodLabel(payload.payment_method),
+      payment_reference_url: payload.payment_reference_url || "",
+      points_balance: decision.points_balance,
+      points_required: decision.points_required,
+      points_shortfall: decision.points_shortfall,
+      points_awarded: decision.points_awarded,
+      audit_note: decision.pending_review
+        ? "Dynamic membership expiry needs Per/manual review; no fixed 365-day assumption was applied."
+        : "Dynamic membership expiry decision recorded by payments-worker.",
+      customer_note_th: decision.customer_note_th,
+      created_at: nowIso(),
+    }));
+
+    await createActivityLogBestEffort(env, {
+      action: "membership_entitlement_decision_recorded",
+      member_email: payload.member_email || "",
+      payment_ref: payload.payment_ref || "",
+      target_package: decision.target_package,
+      entitlement_level: decision.entitlement_level,
+      access_status: decision.access_status,
+      expiry_extension_reason: decision.expiry_extension_reason,
+      relationship_tier: decision.relationship_tier,
+      handler_mode: decision.handler_mode,
+      new_expiry: decision.new_expiry,
+    });
+
+    return { ok: true, record_id: record?.id || null, decision };
+  } catch (err) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: "member_entitlement_write_failed",
+      error: String(err?.message || err),
+      decision,
+    };
+  }
+}
+
+async function telegramApi(env, method, body) {
+  const token = toStr(env.TELEGRAM_BOT_TOKEN);
+  if (!token) return { ok: false, skipped: true, reason: "missing_telegram_bot_token" };
+  const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, data };
+}
+
+function privateTelegramGroupForEntitlement(env, entitlement) {
+  const level = toStr(entitlement).toLowerCase();
+  if (level === "black_card") {
+    return { chat_id: toStr(env.TG_CHAT_BLACK_ROOM || "-1003348473234"), reason: "black_card_expired_removed_from_group" };
+  }
+  if (level === "vip") {
+    return { chat_id: toStr(env.TG_CHAT_VIP_LOUNGE || "-1003578473671"), reason: "vip_expired_removed_from_group" };
+  }
+  if (level === "premium") {
+    return { chat_id: toStr(env.TG_CHAT_MMD_PREMIUM || "-1001668261779"), reason: "premium_expired_removed_from_group" };
+  }
+  if (level === "guest_pass" || level === "guest_limited") {
+    return { chat_id: toStr(env.TG_CHAT_PREVIEW_TH || "-1002393788585"), reason: "guest_pass_expired_removed_from_group" };
+  }
+  return { chat_id: "", reason: "" };
+}
+
+function shouldRemovePrivateTelegramAccess(payload) {
+  const accessStatus = toStr(payload.access_status).toLowerCase();
+  const now = new Date();
+  const expiresAt = parseIsoDate(payload.expires_at || payload.membership_expiry || payload.entitlement_expires_at);
+  const graceUntil = parseIsoDate(payload.grace_until || payload.review_until);
+  const pendingReview =
+    accessStatus === "pending_review" ||
+    accessStatus === "pending_payment" ||
+    accessStatus === "grace" ||
+    truthy(payload.pending_review) ||
+    truthy(payload.pending_payment) ||
+    truthy(payload.review_extension_pending) ||
+    truthy(payload.payment_review_pending) ||
+    truthy(payload.manual_review_required) ||
+    truthy(payload.active_extension_review);
+  const expiredByStatus = accessStatus === "expired" || accessStatus === "revoked";
+  const expiredByDate = Boolean(expiresAt && expiresAt <= now);
+
+  if (accessStatus === "pending_review" || accessStatus === "pending_payment" || accessStatus === "grace") {
+    return { ok: false, reason: `status_${accessStatus}` };
+  }
+  if (pendingReview) return { ok: false, reason: "pending_payment_or_review_extension" };
+  if (!expiredByDate && !expiredByStatus) return { ok: false, reason: "entitlement_not_expired" };
+  if (graceUntil && graceUntil > now) return { ok: false, reason: "grace_or_review_active" };
+  if (expiredByStatus) return { ok: true, reason: accessStatus };
+  if (expiredByDate) return { ok: true, reason: graceUntil ? "expiry_and_grace_elapsed" : "expiry_elapsed" };
+  return { ok: false, reason: "not_expired_or_still_reviewable" };
+}
+
+async function handleMembershipAccessSync(req, env) {
+  if (!isInternalAuthed(req, env) && !hasConfirmKey(req, env)) {
+    return withCors(req, env, jsonResponse({ ok: false, error: "unauthorized" }, 401));
+  }
+
+  const body = await readJson(req);
+  const accessSyncMode = membershipAccessSyncMode(env);
+  const entitlementSourceConfirmed = hasConfirmedEntitlementSource(env);
+  const relationshipTier = normalizeRelationshipTier(body.relationship_tier);
+  const handlerMode = handlerModeForRelationshipTier(relationshipTier, body.handler_mode);
+  const entitlement = relationshipTier === "svip"
+    ? "black_card"
+    : toStr(body.entitlement_level || entitlementLevelForPackage(body.member_status || body.target_package));
+  const telegramUserId = toStr(body.telegram_user_id);
+  const group = privateTelegramGroupForEntitlement(env, entitlement);
+  const removeDecision = shouldRemovePrivateTelegramAccess(body);
+  const removalCandidate = Boolean(
+    accessSyncMode === "enforce" &&
+    entitlementSourceConfirmed &&
+    telegramUserId &&
+    group.chat_id &&
+    removeDecision.ok
+  );
+
+  if (accessSyncMode === "enforce" && !entitlementSourceConfirmed) {
+    const activity = await createActivityLogBestEffort(env, {
+      action: "membership_access_sync_enforce_blocked",
+      member_email: body.member_email || "",
+      telegram_user_id: telegramUserId,
+      entitlement_level: entitlement,
+      access_status: body.access_status || "",
+      reason: "enforce_requires_member_entitlements_source",
+      note:
+        "enforce mode requires AIRTABLE_TABLE_MEMBER_ENTITLEMENTS or confirmed entitlement source of truth; activity logs are audit/fallback only.",
+    });
+    return withCors(req, env, jsonResponse({
+      ok: false,
+      blocked: true,
+      mode: accessSyncMode,
+      error: "enforce_requires_entitlement_source_of_truth",
+      message:
+        "enforce mode requires AIRTABLE_TABLE_MEMBER_ENTITLEMENTS or confirmed entitlement source of truth",
+      entitlement_source_confirmed: false,
+      activity_logs_authoritative: false,
+      entitlement_level: entitlement,
+      removeDecision,
+      activity,
+    }, 409));
+  }
+
+  if (handlerMode === "per_private_first" && truthy(body.sensitive_release_request)) {
+    const activity = await createActivityLogBestEffort(env, {
+      action: "svip_per_private_first_release_routed",
+      member_email: body.member_email || "",
+      telegram_user_id: telegramUserId,
+      entitlement_level: "black_card",
+      relationship_tier: relationshipTier,
+      handler_mode: handlerMode,
+      note: "SVIP is Black Card entitlement with Per-private-first handling before sensitive release.",
+    });
+    return withCors(req, env, jsonResponse({
+      ok: true,
+      action: "per_private_first_required",
+      entitlement_level: "black_card",
+      relationship_tier: relationshipTier,
+      handler_mode: handlerMode,
+      activity,
+    }));
+  }
+
+  if (accessSyncMode === "dry_run" || accessSyncMode === "notify_only") {
+    const activity = await createActivityLogBestEffort(env, {
+      action: "membership_access_sync_safe_mode",
+      member_email: body.member_email || "",
+      telegram_user_id: telegramUserId,
+      telegram_chat_id: group.chat_id || "",
+      entitlement_level: entitlement,
+      access_status: body.access_status || "",
+      mode: accessSyncMode,
+      would_remove: Boolean(telegramUserId && group.chat_id && removeDecision.ok),
+      reason: removeDecision.reason,
+      note:
+        accessSyncMode === "notify_only"
+          ? "notify_only calculated the access removal candidate and notified Per/admin without Telegram removal."
+          : "dry_run calculated the access removal candidate without Telegram removal.",
+    });
+    const adminNotice = accessSyncMode === "notify_only"
+      ? await telegramSend(
+          env,
+          [
+            "<b>Membership access sync notify-only</b>",
+            `Member: <code>${esc(body.member_email || body.member_id || "unknown")}</code>`,
+            `Entitlement: <code>${esc(entitlement)}</code>`,
+            `Telegram user: <code>${esc(telegramUserId || "missing")}</code>`,
+            `Target group: <code>${esc(group.chat_id || "missing")}</code>`,
+            `Decision: <code>${esc(removeDecision.ok ? "would_remove" : "skip")}</code>`,
+            `Reason: <code>${esc(removeDecision.reason)}</code>`,
+          ].join("\n"),
+          env.TG_THREAD_CONFIRM || "61"
+        )
+      : { ok: true, skipped: true, reason: "mode_dry_run" };
+
+    return withCors(req, env, jsonResponse({
+      ok: true,
+      mode: accessSyncMode,
+      destructive_removal_enabled: false,
+      entitlement_source_confirmed: entitlementSourceConfirmed,
+      activity_logs_authoritative: false,
+      would_remove: Boolean(telegramUserId && group.chat_id && removeDecision.ok),
+      entitlement_level: entitlement,
+      telegram_user_id: telegramUserId,
+      target_chat_id: group.chat_id || "",
+      removal_action: group.reason || "",
+      removeDecision,
+      admin_notice: adminNotice,
+      activity,
+    }));
+  }
+
+  if (!telegramUserId) {
+    return withCors(req, env, jsonResponse({ ok: true, mode: accessSyncMode, skipped: true, reason: "missing_telegram_user_id", removeDecision }));
+  }
+  if (!group.chat_id) {
+    return withCors(req, env, jsonResponse({ ok: true, mode: accessSyncMode, skipped: true, reason: "no_private_group_for_entitlement", entitlement }));
+  }
+  if (!removeDecision.ok) {
+    return withCors(req, env, jsonResponse({ ok: true, mode: accessSyncMode, skipped: true, reason: removeDecision.reason, entitlement }));
+  }
+  if (!removalCandidate) {
+    return withCors(req, env, jsonResponse({
+      ok: false,
+      mode: accessSyncMode,
+      skipped: true,
+      reason: "destructive_removal_conditions_not_met",
+      entitlement_source_confirmed: entitlementSourceConfirmed,
+      entitlement,
+      removeDecision,
+    }, 409));
+  }
+
+  const notify = truthy(body.notify_customer);
+  const notice = notify
+    ? await telegramApi(env, "sendMessage", {
+        chat_id: telegramUserId,
+        text:
+          "สิทธิ์ส่วนตัวของคุณหมดอายุหรืออยู่ระหว่างการตรวจสอบครับ หากต้องการต่ออายุหรือให้ Per ตรวจสอบสิทธิ์อีกครั้ง กรุณาติดต่อทีม MMD Privé ครับ",
+      })
+    : { ok: true, skipped: true, reason: "notify_customer_false" };
+  const ban = await telegramApi(env, "banChatMember", {
+    chat_id: group.chat_id,
+    user_id: telegramUserId,
+  });
+  const unban = ban.ok
+    ? await telegramApi(env, "unbanChatMember", {
+        chat_id: group.chat_id,
+        user_id: telegramUserId,
+        only_if_banned: true,
+      })
+    : { ok: false, skipped: true, reason: "ban_failed" };
+  const activity = await createActivityLogBestEffort(env, {
+    action: group.reason,
+    member_email: body.member_email || "",
+    telegram_user_id: telegramUserId,
+    telegram_chat_id: group.chat_id,
+    entitlement_level: entitlement,
+    access_status: body.access_status || "",
+    expiry: body.expires_at || body.membership_expiry || body.entitlement_expires_at || "",
+    downgrade_to: body.downgrade_to || "standard_basic",
+    telegram_removal_ok: ban.ok,
+    telegram_removal_status: ban.status || "",
+    telegram_removal_error: ban.ok ? "" : JSON.stringify(ban.data || ban),
+    telegram_unban_ok: unban.ok,
+    telegram_unban_status: unban.status || "",
+  });
+
+  return withCors(req, env, jsonResponse({
+    ok: ban.ok,
+    action: group.reason,
+    entitlement_level: entitlement,
+    removed_from_chat_id: group.chat_id,
+    downgraded_to: body.downgrade_to || "standard_basic",
+    notice,
+    ban,
+    unban,
+    activity,
+  }, ban.ok ? 200 : 502));
 }
 
 /* -------------------------------------------------- */
@@ -720,6 +1289,7 @@ async function handleNotify(req, env) {
     const member_email = toStr(body.member_email || body.email);
     const package_code = toStr(body.package_code || body.package);
     const payment_method = toStr(body.payment_method || "promptpay");
+    const payment_reference_url = toStr(body.payment_reference_url);
     const receipt_url = toStr(body.receipt_url || body.slip_url);
     const paid_at = toStr(body.paid_at || nowIso());
     const commissionSplits = normalizeCommissionSplits(
@@ -771,6 +1341,32 @@ async function handleNotify(req, env) {
       member_email,
       package_code,
     });
+
+    const membership_entitlement = await recordMembershipEntitlementIfApplicable(env, {
+      payment_ref,
+      stage,
+      session_id,
+      amount_thb,
+      member_email,
+      package_code,
+      target_package: body.target_package || body.target_tier || package_code,
+      target_package_label: body.target_package_label || body.package_label,
+      payment_method,
+      payment_reference_url,
+      current_expiry: body.current_expiry || body.membership_expiry || body.membership_expire_at || body.expires_at,
+      points_balance: body.points_balance,
+      points_required: body.points_required,
+      points_shortfall: body.points_shortfall,
+      points_threshold_reached: body.points_threshold_reached,
+      total_spend_thb: body.total_spend_thb || body.spending_total_thb || body.eligible_spending_thb,
+      spending_required: body.spending_required || body.spending_required_thb,
+      spending_threshold_reached: body.spending_threshold_reached,
+      expiry_extension_reason: body.expiry_extension_reason,
+      relationship_tier: body.relationship_tier,
+      handler_mode: body.handler_mode,
+      paid_renewal_confirmed: true,
+      membership_renewal: stage === "membership",
+    }, points_ledger);
 
     const eligibilityStatus =
       stage === "final" || stage === "full" || stage === "membership"
@@ -825,6 +1421,15 @@ async function handleNotify(req, env) {
           stage ? `Stage: <b>${esc(stage)}</b>` : "",
           session_id ? `Session: <code>${esc(session_id)}</code>` : "",
           package_code ? `Package: <b>${esc(package_code)}</b>` : "",
+          membership_entitlement?.decision?.target_package
+            ? `Target: <b>${esc(membership_entitlement.decision.target_package_label)}</b>`
+            : "",
+          membership_entitlement?.decision?.membership_expiry_rule
+            ? `Expiry rule: <code>${esc(membership_entitlement.decision.membership_expiry_rule)}</code>`
+            : "",
+          membership_entitlement?.decision?.access_status
+            ? `Access: <b>${esc(membership_entitlement.decision.access_status)}</b>`
+            : "",
           amount_thb ? `Amount: <b>${Number(amount_thb)} THB</b>` : "",
           member_email ? `Member: ${esc(member_email)}` : "",
           session_updated?.ok ? "Session updated: <b>yes</b>" : "Session updated: <b>no</b>",
@@ -861,6 +1466,7 @@ async function handleNotify(req, env) {
         payment_write: paymentWrite,
         session_updated,
         points_ledger,
+        membership_entitlement,
         commission_rows,
         commission_snapshots,
         commission_eligibility,
@@ -1217,6 +1823,10 @@ export default {
 
     if (method === "POST" && (path === "/v1/payments/notify" || path === "/v1/pay/notify")) {
       return handleNotify(req, env);
+    }
+
+    if (method === "POST" && path === "/v1/membership/access/sync") {
+      return handleMembershipAccessSync(req, env);
     }
 
     return withCors(req, env, jsonResponse({ ok: false, error: "not_found" }, 404));

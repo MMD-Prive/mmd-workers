@@ -874,12 +874,23 @@ type PublicRenewalBody = {
   member_id?: string;
   memberstack_id?: string;
   current_tier_hint?: string;
+  target_package?: string;
+  target_package_label?: string;
   target_tier?: string;
   package?: string;
   package_code?: string;
   package_label?: string;
   total?: number | string;
   payment_method?: string;
+  payment_method_label?: string;
+  payment_reference_url?: string;
+  membership_expiry_rule?: string;
+  renewal_days_fixed?: boolean | string;
+  points_can_extend_expiry?: boolean | string;
+  points_balance?: number | string | null;
+  points_required?: number | string | null;
+  points_shortfall?: number | string | null;
+  expiry_extension_reason?: string;
   flow?: string;
   page?: string;
   source_page?: string;
@@ -901,6 +912,98 @@ type PublicRenewalBody = {
   proof_source?: string;
   [key: string]: unknown;
 };
+
+type RenewalPackage = "premium" | "standard" | "vip" | "black_card";
+type RenewalPaymentMethod = "bank_transfer" | "promptpay_qr" | "credit_card";
+type RenewalExtensionReason =
+  | "paid_renewal"
+  | "points_threshold_reached"
+  | "spending_threshold_reached"
+  | "manual_review"
+  | "upgrade_review";
+
+const RENEWAL_PACKAGE_LABELS: Record<RenewalPackage, string> = {
+  premium: "Premium Package",
+  standard: "Standard Package",
+  vip: "VIP",
+  black_card: "Black Card",
+};
+
+const RENEWAL_PAYMENT_LABELS: Record<RenewalPaymentMethod, string> = {
+  bank_transfer: "Bank Transfer",
+  promptpay_qr: "QR PromptPay",
+  credit_card: "Credit Card",
+};
+
+function normalizeRenewalPackage(value: unknown): RenewalPackage {
+  const raw = toStr(value).toLowerCase().replace(/[\s-]+/g, "_");
+  if (raw.includes("black") || raw.includes("svip")) return "black_card";
+  if (raw.includes("vip")) return "vip";
+  if (raw.includes("standard") || raw.includes("lite")) return "standard";
+  return "premium";
+}
+
+function normalizeRenewalPaymentMethod(value: unknown): RenewalPaymentMethod {
+  const raw = toStr(value).toLowerCase().replace(/[\s-]+/g, "_");
+  if (raw.includes("credit") || raw.includes("card") || raw.includes("paypal")) return "credit_card";
+  if (raw.includes("promptpay") || raw.includes("qr")) return "promptpay_qr";
+  return "bank_transfer";
+}
+
+function renewalPaymentReferenceUrl(method: RenewalPaymentMethod, amount: number | null): string {
+  if (method === "credit_card") return "https://www.paypal.com/ncp/payment/M697T7AW2QZZJ";
+  if (method === "promptpay_qr") {
+    const amountPart = amount && Number.isFinite(amount) && amount > 0 ? `/${amount}` : "";
+    return `https://promptpay.io/0829528889${amountPart}`;
+  }
+  return "bank_transfer:ktb:1420335898";
+}
+
+function nullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined || toStr(value) === "") return null;
+  return toNum(value);
+}
+
+function normalizeExtensionReason(value: unknown, fallback: RenewalExtensionReason): RenewalExtensionReason {
+  const raw = toStr(value).toLowerCase();
+  if (
+    raw === "paid_renewal" ||
+    raw === "points_threshold_reached" ||
+    raw === "spending_threshold_reached" ||
+    raw === "manual_review" ||
+    raw === "upgrade_review"
+  ) {
+    return raw;
+  }
+  return fallback;
+}
+
+function inferRenewalExtensionReason(input: {
+  targetPackage: RenewalPackage;
+  pointsBalance: number | null;
+  pointsRequired: number | null;
+  proofAttached: boolean;
+}): RenewalExtensionReason {
+  if (
+    input.pointsBalance !== null &&
+    input.pointsRequired !== null &&
+    input.pointsRequired > 0 &&
+    input.pointsBalance >= input.pointsRequired
+  ) {
+    return "points_threshold_reached";
+  }
+  if (input.targetPackage === "vip" || input.targetPackage === "black_card") return "upgrade_review";
+  if (input.proofAttached) return "paid_renewal";
+  return "manual_review";
+}
+
+function renewalDynamicPolicyNote(): string {
+  return "วันหมดอายุสมาชิกอาจขยายเพิ่มเติมได้ตามยอดใช้งานที่เข้าเกณฑ์ points และสถานะแพ็กเกจ โดย Per จะตรวจสอบและยืนยันวันหมดอายุสุดท้ายอีกครั้ง";
+}
+
+function blackCardPolicyNote(): string {
+  return "สถานะ Black Card เป็นสิทธิ์สมาชิกระยะยาวระดับสูง โดยวันหมดอายุสามารถขยายเพิ่มเติมได้ตามยอดใช้งาน points และการอนุมัติจาก MMD Privé สถานะสุดท้ายจะได้รับการตรวจสอบและยืนยันเป็นรายกรณี";
+}
 
 function toBool(value: unknown): boolean {
   if (value === true) return true;
@@ -946,15 +1049,44 @@ function renewalProofNote(fields: ReturnType<typeof renewalProofFields>): string
 function buildPublicRenewalPayload(body: PublicRenewalBody): ImmigrationIntakeRequest {
   const displayName = toStr(body.display_name || body.name);
   const currentTier = toStr(body.current_tier_hint);
-  const targetTier = toStr(body.target_tier || body.package_label || body.package_code || body.package);
-  const paymentMethod = toStr(body.payment_method || "bank_transfer");
-  const baseHistoryNote = toStr(body.service_history_note || body.manual_note || body.note);
+  const amount = toNum(body.total);
   const proof = renewalProofFields(body);
+  const targetPackage = normalizeRenewalPackage(
+    body.target_package || body.target_tier || body.package_code || body.package_label || body.package,
+  );
+  const targetPackageLabel = RENEWAL_PACKAGE_LABELS[targetPackage];
+  const targetTier = targetPackage;
+  const membershipExpiryRule =
+    targetPackage === "black_card" ? "long_term_dynamic_points_extension" : "dynamic_points_extension";
+  const paymentMethod = normalizeRenewalPaymentMethod(body.payment_method);
+  const paymentMethodLabel = RENEWAL_PAYMENT_LABELS[paymentMethod];
+  const paymentReferenceUrl = toStr(body.payment_reference_url) || renewalPaymentReferenceUrl(paymentMethod, amount);
+  const pointsBalance = nullableNumber(body.points_balance);
+  const pointsRequired = nullableNumber(body.points_required);
+  const pointsShortfall = nullableNumber(body.points_shortfall);
+  const inferredReason = inferRenewalExtensionReason({
+    targetPackage,
+    pointsBalance,
+    pointsRequired,
+    proofAttached: proof.proof_attached,
+  });
+  const expiryExtensionReason = normalizeExtensionReason(body.expiry_extension_reason, inferredReason);
+  const baseHistoryNote = toStr(body.service_history_note || body.manual_note || body.note);
   const proofNote = proof.proof_attached || baseHistoryNote ? renewalProofNote(proof) : "";
+  const dynamicPolicyNote = [
+    `membership_expiry_rule:${membershipExpiryRule}`,
+    "renewal_days_fixed:false",
+    "points_can_extend_expiry:true",
+    `target_package:${targetPackage}`,
+    `target_package_label:${targetPackageLabel}`,
+    `expiry_extension_reason:${expiryExtensionReason}`,
+    pointsBalance !== null ? `points_balance:${pointsBalance}` : "",
+    pointsRequired !== null ? `points_required:${pointsRequired}` : "",
+    pointsShortfall !== null ? `points_shortfall:${pointsShortfall}` : "",
+  ].filter(Boolean).join("; ");
   const historyNote = baseHistoryNote.includes("proof_attached:")
     ? baseHistoryNote
-    : [baseHistoryNote, proofNote].filter(Boolean).join("; ");
-  const amount = toNum(body.total);
+    : [baseHistoryNote, proofNote, dynamicPolicyNote].filter(Boolean).join("; ");
   const lineUserId = toStr(body.line_user_id);
   const lineId = toStr(body.line_id);
 
@@ -965,6 +1097,8 @@ function buildPublicRenewalPayload(body: PublicRenewalBody): ImmigrationIntakeRe
     targetTier ? `target:${targetTier}` : "",
     currentTier ? `current:${currentTier}` : "",
     paymentMethod ? `payment:${paymentMethod}` : "",
+    `expiry_rule:${membershipExpiryRule}`,
+    `expiry_reason:${expiryExtensionReason}`,
     proof.proof_attached ? "proof:attached" : "proof:none",
     Number.isFinite(amount) ? `amount:${amount}` : "",
   ]
@@ -984,6 +1118,16 @@ function buildPublicRenewalPayload(body: PublicRenewalBody): ImmigrationIntakeRe
     membership: {
       current_tier: currentTier || undefined,
       target_tier: targetTier || undefined,
+      target_package: targetPackage,
+      target_package_label: targetPackageLabel,
+      membership_expiry_rule: membershipExpiryRule,
+      renewal_days_fixed: false,
+      points_can_extend_expiry: true,
+      expiry_extension_reason: expiryExtensionReason,
+      black_card_default_validity_months: targetPackage === "black_card" ? 36 : undefined,
+      black_card_review_cycle_months: targetPackage === "black_card" ? 12 : undefined,
+      black_card_expiry_rule: targetPackage === "black_card" ? "long_term_dynamic_points_extension" : undefined,
+      black_card_lifetime: targetPackage === "black_card" ? false : undefined,
     },
     notes: {
       manual_note_raw: historyNote || "",
@@ -992,10 +1136,28 @@ function buildPublicRenewalPayload(body: PublicRenewalBody): ImmigrationIntakeRe
     payload_json: {
       email: toStr(body.email),
       package: toStr(body.package),
-      package_code: toStr(body.package_code),
-      package_label: toStr(body.package_label),
+      package_code: targetPackage,
+      package_label: targetPackageLabel,
+      target_package: targetPackage,
+      target_package_label: targetPackageLabel,
       amount_thb: amount ?? undefined,
       payment_method: paymentMethod,
+      payment_method_label: paymentMethodLabel,
+      payment_reference_url: paymentReferenceUrl,
+      membership_expiry_rule: membershipExpiryRule,
+      renewal_days_fixed: false,
+      points_can_extend_expiry: true,
+      black_card_default_validity_months: targetPackage === "black_card" ? 36 : undefined,
+      black_card_review_cycle_months: targetPackage === "black_card" ? 12 : undefined,
+      black_card_expiry_rule: targetPackage === "black_card" ? "long_term_dynamic_points_extension" : undefined,
+      black_card_lifetime: targetPackage === "black_card" ? false : undefined,
+      points_balance: pointsBalance,
+      points_required: pointsRequired,
+      points_shortfall: pointsShortfall,
+      expiry_extension_reason: expiryExtensionReason,
+      customer_expiry_policy_note_th: targetPackage === "black_card" ? blackCardPolicyNote() : renewalDynamicPolicyNote(),
+      customer_expiry_policy_note_en:
+        "Membership validity may be extended based on eligible spending, points activity, and package status. Final expiry will be confirmed after review.",
       page: toStr(body.page),
       source_page: toStr(body.source_page),
       admin_context: toStr(body.admin_context),
@@ -1022,6 +1184,14 @@ function buildRenewalLineIntakePayload(
   const nickname = toStr(body.nickname || body.display_name || body.name);
   const messageThreadId = toStr(body.telegram_message_thread_id) || "61";
   const proof = renewalProofFields(body);
+  const targetPackage = normalizeRenewalPackage(
+    payload.payload_json?.target_package || body.target_package || body.target_tier || body.package_code || body.package_label || body.package,
+  );
+  const targetPackageLabel = RENEWAL_PACKAGE_LABELS[targetPackage];
+  const membershipExpiryRule =
+    targetPackage === "black_card" ? "long_term_dynamic_points_extension" : "dynamic_points_extension";
+  const paymentMethod = normalizeRenewalPaymentMethod(payload.payload_json?.payment_method || body.payment_method);
+  const paymentMethodLabel = RENEWAL_PAYMENT_LABELS[paymentMethod];
 
   return {
     immigration_id: immigrationId,
@@ -1054,7 +1224,26 @@ function buildRenewalLineIntakePayload(
       renewal_flow: toStr(body.flow),
       renewal_source_page: toStr(body.source_page || body.page),
       requested_goal: toStr(body.desired_goal),
-      payment_method_label: toStr(body.payment_method_label),
+      target_package: targetPackage,
+      target_package_label: targetPackageLabel,
+      payment_method: paymentMethod,
+      payment_method_label: paymentMethodLabel,
+      payment_reference_url: toStr(payload.payload_json?.payment_reference_url || body.payment_reference_url),
+      membership_expiry_rule: membershipExpiryRule,
+      renewal_days_fixed: false,
+      points_can_extend_expiry: true,
+      black_card_default_validity_months: targetPackage === "black_card" ? 36 : undefined,
+      black_card_review_cycle_months: targetPackage === "black_card" ? 12 : undefined,
+      black_card_expiry_rule: targetPackage === "black_card" ? "long_term_dynamic_points_extension" : undefined,
+      black_card_lifetime: targetPackage === "black_card" ? false : undefined,
+      points_balance: nullableNumber(payload.payload_json?.points_balance ?? body.points_balance),
+      points_required: nullableNumber(payload.payload_json?.points_required ?? body.points_required),
+      points_shortfall: nullableNumber(payload.payload_json?.points_shortfall ?? body.points_shortfall),
+      expiry_extension_reason: normalizeExtensionReason(
+        payload.payload_json?.expiry_extension_reason || body.expiry_extension_reason,
+        "manual_review",
+      ),
+      customer_expiry_policy_note_th: targetPackage === "black_card" ? blackCardPolicyNote() : renewalDynamicPolicyNote(),
       legacy_membership_proof_name: toStr(body.legacy_membership_proof_name),
       legacy_membership_proof_present: Boolean(body.legacy_membership_proof_present),
       confirmation_mode: toStr(body.confirmation_mode),
@@ -2392,6 +2581,14 @@ async function notifyTelegramForLineIntake(
   const proofSize = toNum(payload.payload_json?.proof_size) || 0;
   const proofBase64Present = toBool(payload.payload_json?.proof_image_base64_present);
   const proofSource = toStr(payload.payload_json?.proof_source) || "oldProof";
+  const targetPackageLabel = toStr(payload.payload_json?.target_package_label);
+  const targetPackage = toStr(payload.payload_json?.target_package);
+  const paymentMethodLabel = toStr(payload.payload_json?.payment_method_label);
+  const expiryRule = toStr(payload.payload_json?.membership_expiry_rule);
+  const expiryReason = toStr(payload.payload_json?.expiry_extension_reason);
+  const pointsBalance = payload.payload_json?.points_balance;
+  const pointsRequired = payload.payload_json?.points_required;
+  const pointsShortfall = payload.payload_json?.points_shortfall;
   const lines = [
     isRenewalIntake ? "<b>RENEWAL INTAKE PROMOTED</b>" : "<b>LINE INTAKE PROMOTED</b>",
     `Client: <b>${escapeHtml(displayName)}</b>`,
@@ -2399,6 +2596,14 @@ async function notifyTelegramForLineIntake(
     `Member ID: <code>${escapeHtml(toStr(promotion.member_id))}</code>`,
     !isRenewalIntake && lineUserId ? `LINE User ID: <code>${escapeHtml(lineUserId)}</code>` : "",
     `Immigration ID: <code>${escapeHtml(links.immigration_id)}</code>`,
+    isRenewalIntake && targetPackageLabel ? `Target Package: <b>${escapeHtml(targetPackageLabel)}</b>` : "",
+    isRenewalIntake && targetPackage ? `Target Package Code: <code>${escapeHtml(targetPackage)}</code>` : "",
+    isRenewalIntake && paymentMethodLabel ? `Payment Method: <b>${escapeHtml(paymentMethodLabel)}</b>` : "",
+    isRenewalIntake && expiryRule ? `Expiry Rule: <code>${escapeHtml(expiryRule)}</code>` : "",
+    isRenewalIntake && expiryReason ? `Expiry Reason: <code>${escapeHtml(expiryReason)}</code>` : "",
+    isRenewalIntake && pointsBalance !== null && pointsBalance !== undefined ? `Points Balance: ${escapeHtml(toStr(pointsBalance))}` : "",
+    isRenewalIntake && pointsRequired !== null && pointsRequired !== undefined ? `Points Required: ${escapeHtml(toStr(pointsRequired))}` : "",
+    isRenewalIntake && pointsShortfall !== null && pointsShortfall !== undefined ? `Points Shortfall: ${escapeHtml(toStr(pointsShortfall))}` : "",
     isRenewalIntake && proofAttached
       ? `Proof: proof_attached=<b>true</b>`
       : "",
