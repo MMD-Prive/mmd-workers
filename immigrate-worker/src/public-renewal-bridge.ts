@@ -3,6 +3,17 @@ import { json, makeMeta } from "./lib/response";
 
 const VIP_POINTS_REQUIRED = 1200;
 const POINT_THB_RATE = 100;
+const RENEWAL_PACKAGE_LABELS = {
+  premium: "Premium Package",
+  standard: "Standard Package",
+  vip: "VIP",
+  black_card: "Black Card",
+} as const;
+const RENEWAL_PAYMENT_LABELS = {
+  bank_transfer: "Bank Transfer",
+  promptpay_qr: "QR PromptPay",
+  credit_card: "Credit Card",
+} as const;
 
 type UpstreamResponseJson = {
   ok?: boolean;
@@ -31,6 +42,71 @@ function toBool(value: unknown): boolean {
   return raw === "true" || raw === "1" || raw === "yes";
 }
 
+function nullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined || toStr(value) === "") return null;
+  return toNum(value);
+}
+
+function normalizeRenewalPackage(value: unknown): keyof typeof RENEWAL_PACKAGE_LABELS {
+  const raw = toStr(value).toLowerCase().replace(/[\s-]+/g, "_");
+  if (raw.includes("black") || raw.includes("svip")) return "black_card";
+  if (raw.includes("vip")) return "vip";
+  if (raw.includes("standard") || raw.includes("lite")) return "standard";
+  return "premium";
+}
+
+function normalizeRenewalPaymentMethod(value: unknown): keyof typeof RENEWAL_PAYMENT_LABELS {
+  const raw = toStr(value).toLowerCase().replace(/[\s-]+/g, "_");
+  if (raw.includes("credit") || raw.includes("card") || raw.includes("paypal")) return "credit_card";
+  if (raw.includes("promptpay") || raw.includes("qr")) return "promptpay_qr";
+  return "bank_transfer";
+}
+
+function renewalPaymentReferenceUrl(method: keyof typeof RENEWAL_PAYMENT_LABELS, amount: number | null): string {
+  if (method === "credit_card") return "https://www.paypal.com/ncp/payment/M697T7AW2QZZJ";
+  if (method === "promptpay_qr") {
+    const amountPart = amount && Number.isFinite(amount) && amount > 0 ? `/${amount}` : "";
+    return `https://promptpay.io/0829528889${amountPart}`;
+  }
+  return "bank_transfer:ktb:1420335898";
+}
+
+function withDynamicRenewalFields(payload: Record<string, unknown>): Record<string, unknown> {
+  const amount = toNum(payload.amount_thb ?? payload.total);
+  const targetPackage = normalizeRenewalPackage(
+    payload.target_package || payload.target_tier || payload.package_code || payload.package_label || payload.package,
+  );
+  const membershipExpiryRule =
+    targetPackage === "black_card" ? "long_term_dynamic_points_extension" : "dynamic_points_extension";
+  const paymentMethod = normalizeRenewalPaymentMethod(payload.payment_method);
+  const pointsBalance = nullableNumber(payload.points_balance);
+  const pointsRequired = nullableNumber(payload.points_required);
+  const pointsShortfall = nullableNumber(payload.points_shortfall);
+  const thresholdReached = pointsBalance !== null && pointsRequired !== null && pointsRequired > 0 && pointsBalance >= pointsRequired;
+  const reason = toStr(payload.expiry_extension_reason) ||
+    (thresholdReached ? "points_threshold_reached" : targetPackage === "vip" || targetPackage === "black_card" ? "upgrade_review" : "manual_review");
+
+  return {
+    ...payload,
+    target_package: targetPackage,
+    target_package_label: RENEWAL_PACKAGE_LABELS[targetPackage],
+    membership_expiry_rule: membershipExpiryRule,
+    renewal_days_fixed: false,
+    points_can_extend_expiry: true,
+    black_card_default_validity_months: targetPackage === "black_card" ? 36 : undefined,
+    black_card_review_cycle_months: targetPackage === "black_card" ? 12 : undefined,
+    black_card_expiry_rule: targetPackage === "black_card" ? "long_term_dynamic_points_extension" : undefined,
+    black_card_lifetime: targetPackage === "black_card" ? false : undefined,
+    points_balance: pointsBalance,
+    points_required: pointsRequired,
+    points_shortfall: pointsShortfall,
+    expiry_extension_reason: reason,
+    payment_method: paymentMethod,
+    payment_method_label: RENEWAL_PAYMENT_LABELS[paymentMethod],
+    payment_reference_url: toStr(payload.payment_reference_url) || renewalPaymentReferenceUrl(paymentMethod, amount),
+  };
+}
+
 function withProofReviewFields(payload: Record<string, unknown>): Record<string, unknown> {
   const proofImageBase64 = toStr(payload.proof_image_base64);
   const proofFilename = toStr(payload.proof_filename);
@@ -52,7 +128,7 @@ function withProofReviewFields(payload: Record<string, unknown>): Record<string,
     .join("; ");
 
   return {
-    ...payload,
+    ...withDynamicRenewalFields(payload),
     proof_attached: proofAttached,
     proof_filename: proofFilename,
     proof_mime_type: proofMimeType,

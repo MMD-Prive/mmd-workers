@@ -2,6 +2,7 @@ export interface Env {
   INTERNAL_TOKEN: string;
   ADMIN_WORKER?: Fetcher;
   ASSETS?: Fetcher;
+  EVIDENCE_BUCKET?: R2Bucket;
   BROWSER_GATE_PASSWORD?: string;
   BROWSER_GATE_USERNAME?: string;
   CONFIRM_KEY?: string;
@@ -13,6 +14,7 @@ export interface Env {
   AIRTABLE_TABLE_SESSIONS?: string;
   AIRTABLE_TABLE_JOBS?: string;
   AIRTABLE_TABLE_PAYMENTS?: string;
+  AIRTABLE_TABLE_MEMBER_ENTITLEMENTS?: string;
   AIRTABLE_TABLE_PRIVATE_PROFILE_NOTES?: string;
   AIRTABLE_TABLE_MODELS?: string;
   AIRTABLE_TABLE_POINTS_LEDGER?: string;
@@ -31,7 +33,20 @@ export interface Env {
   SIGIL_BASE_URL?: string;
   PUBLIC_WEB_BASE_URL?: string;
   PUBLIC_ALLOWED_ORIGINS?: string;
+  EVIDENCE_PUBLIC_BASE_URL?: string;
+  R2_PUBLIC_BASE_URL?: string;
   PROMPTPAY_ID?: string;
+  PAYMENT_BANK_NAME?: string;
+  PAYMENT_BANK_ACCOUNT_NAME?: string;
+  PAYMENT_BANK_ACCOUNT_NUMBER?: string;
+  PAYMENT_BANK_BRANCH?: string;
+  PAYMENTS_WORKER_BASE_URL?: string;
+  PAYMENTS_BASE_URL?: string;
+  MEMBERSHIP_ACCESS_SYNC_MODE?: "dry_run" | "notify_only" | "enforce" | string;
+  PAYPAL_CREDIT_CARD_URL?: string;
+  PAYPAL_CARD_URL?: string;
+  CREDIT_CARD_PAYMENT_URL?: string;
+  PAYPAL_URL?: string;
   LINE_CHANNEL_ACCESS_TOKEN?: string;
   AI_WORKER_BASE_URL?: string;
   ADMIN_WORKER_BASE_URL?: string;
@@ -160,6 +175,16 @@ export interface ImmigrationIdentity {
 export interface ImmigrationMembership {
   current_tier?: string;
   target_tier?: string;
+  target_package?: string;
+  target_package_label?: string;
+  membership_expiry_rule?: string;
+  renewal_days_fixed?: boolean;
+  points_can_extend_expiry?: boolean;
+  expiry_extension_reason?: string;
+  black_card_default_validity_months?: number;
+  black_card_review_cycle_months?: number;
+  black_card_expiry_rule?: string;
+  black_card_lifetime?: boolean;
 }
 
 export interface ImmigrationNotes {
