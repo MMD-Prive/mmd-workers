@@ -51,7 +51,13 @@
   }
 
   function value(id) {
-    const el = byId(id);
+    const aliases = {
+      nick: "clientName",
+      emailNow: "email",
+      telegram: "username",
+      targetPackage: "targetTier",
+    };
+    const el = byId(id) || byId(aliases[id]);
     return el && "value" in el ? clean(el.value) : "";
   }
 
@@ -63,7 +69,7 @@
   }
 
   function email() {
-    return value("emailNow") || value("emailOld");
+    return value("emailNow") || value("emailOld") || value("email");
   }
 
   function proofFile() {
@@ -228,22 +234,49 @@
 
   function renderPackageOptions() {
     const container = byId("renewalPackageOptions") || document.querySelector("[data-renewal-packages]");
-    if (!container) return;
-    container.innerHTML = Object.entries(RENEWAL_PACKAGES)
+    const buttons = Object.entries(RENEWAL_PACKAGES)
       .map(([code, label], index) => (
         `<button type="button" class="r6-package${index === 0 ? " active" : ""}" data-package="${code}">${label}</button>`
       ))
       .join("");
+    if (container) container.innerHTML = buttons;
+
+    const legacySelect = byId("targetTier");
+    if (legacySelect) {
+      legacySelect.innerHTML = Object.entries(RENEWAL_PACKAGES)
+        .map(([code, label], index) => `<option value="${code}"${index === 0 ? " selected" : ""}>${label}</option>`)
+        .join("");
+      legacySelect.dataset.publicPackagesOnly = "true";
+      legacySelect.addEventListener("change", () => {
+        document.querySelectorAll(".r6-package.active").forEach((el) => el.classList.remove("active"));
+        const match = document.querySelector(`.r6-package[data-package="${legacySelect.value}"]`);
+        if (match) match.classList.add("active");
+        const selected = activePackage();
+        setText("sumPackage", selected.label);
+      });
+    }
   }
 
   function renderPaymentOptions() {
     const container = byId("renewalPaymentOptions") || document.querySelector("[data-renewal-payments]");
-    if (!container) return;
-    container.innerHTML = Object.entries(PAYMENT_METHODS)
+    const buttons = Object.entries(PAYMENT_METHODS)
       .map(([code, item], index) => (
         `<button type="button" class="r6-pay${index === 0 ? " active" : ""}" data-pay="${code}">${item.label}</button>`
       ))
       .join("");
+    if (container) container.innerHTML = buttons;
+
+    const legacyPaymentBox = document.querySelector(".mmd-renewal-payment-box");
+    if (legacyPaymentBox && !container) {
+      legacyPaymentBox.innerHTML = [
+        "<div>",
+        '<p class="mmd-renewal-mini-title">Payment Method</p>',
+        "<h3>Bank Transfer / QR PromptPay / Credit Card</h3>",
+        "<p>หลังชำระเงิน กรุณาอัปโหลดรูปหลักฐานด้านล่าง ระบบจะส่งให้ Per ตรวจสอบอัตโนมัติครับ</p>",
+        "</div>",
+        `<div class="mmd-renewal-payment-detail" data-renewal-payments>${buttons}</div>`,
+      ].join("");
+    }
   }
 
   function syncStaticNotes() {
@@ -275,7 +308,7 @@
       return;
     }
 
-    if (!byId("consent")?.checked) {
+    if (byId("consent") && !byId("consent")?.checked) {
       alert("กรุณาติ๊กยินยอมก่อนส่งเข้า SĪGIL review ครับ");
       return;
     }
@@ -307,7 +340,7 @@
         email_primary: value("emailNow"),
         email_secondary: value("emailOld"),
         phone: value("phone"),
-        telegram_username: value("telegram"),
+        telegram_username: value("telegram") || value("contactHandle"),
         action,
         target_package: targetPackage.code,
         target_package_label: targetPackage.label,
@@ -391,7 +424,7 @@
       return;
     }
 
-    const button = target.closest("#submitBtn");
+    const button = target.closest("#submitBtn, #submitRenewalBtn");
     if (!button) return;
 
     event.preventDefault();

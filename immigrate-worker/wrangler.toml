@@ -7,10 +7,6 @@ workers_dev = true
 directory = "./public"
 binding = "ASSETS"
 
-[[r2_buckets]]
-binding = "EVIDENCE_BUCKET"
-bucket_name = "mmd-sigil-evidence"
-
 [vars]
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_TABLE_LINE_INBOX = "Line Inbox"
