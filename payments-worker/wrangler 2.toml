@@ -9,8 +9,9 @@ AIRTABLE_TABLE_PAYMENTS = "tblWGGJJOx5eBvBZJ"
 AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
 AIRTABLE_TABLE_POINTS_LEDGER = "points_ledger"
 AIRTABLE_TABLE_ACTIVITY_LOGS = "tblbUWRoFL6OI6QMJ"
-# AIRTABLE_TABLE_MEMBER_ENTITLEMENTS is intentionally not configured yet.
-# Activity logs are audit/fallback only and are not an authoritative entitlement source.
+AIRTABLE_TABLE_MEMBER_ENTITLEMENTS = "tblNImdF9PKAxhXGi"
+# MMD — Member Entitlements is the entitlement source of truth.
+# Keep dry_run for first production rollout until Per reviews access sync results.
 MEMBERSHIP_ACCESS_SYNC_MODE = "dry_run"
 TELEGRAM_CHAT_ID = "-1003546439681"
 TG_CHAT_VIP_LOUNGE = "-1003578473671"
