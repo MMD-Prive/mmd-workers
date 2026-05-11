@@ -28,6 +28,36 @@ import { demoLinksCreate, demoLinksGet } from "./src/routes/demo-links.js";
 
 const LOCK = "admin-worker-v2026-03-11-full";
 const AIRTABLE_API = "https://api.airtable.com/v0";
+const MODEL_SAFE_SEARCH_FIELDS = ["name", "nickname", "telegram_username", "telegram_id", "unique_key"];
+const MODEL_SEARCH_FIELDS = [
+  "name",
+  "Name",
+  "nickname",
+  "Nickname",
+  "model_name",
+  "Model Name",
+  "working_name",
+  "Working Name",
+  "display_name",
+  "Display Name",
+  "model_code",
+  "model_lookup_key",
+  "unique_key",
+  "line_id",
+  "LINE ID",
+  "line_user_id",
+  "LINE User ID",
+  "telegram_username",
+  "telegram_id",
+  "aliases",
+  "alias",
+  "legacy_tags",
+  "notes",
+  "Notes",
+  "notes_raw",
+  "admin_note",
+  "payload_json",
+];
 
 export default {
   async fetch(req, env) {
@@ -421,7 +451,8 @@ export default {
         const items = await airtableList(env, tableName, {
           q,
           limit,
-          matchFields: ["name", "nickname", "telegram_username", "telegram_id", "unique_key"],
+          matchFields: getModelSearchFields(env),
+          fallbackMatchFields: MODEL_SAFE_SEARCH_FIELDS,
         });
 
         return withCors(
@@ -676,15 +707,40 @@ function getAllowedModelFields(env) {
     env.ALLOWED_MODEL_FIELDS ||
       [
         "name",
+        "Name",
         "nickname",
+        "Nickname",
+        "model_name",
+        "Model Name",
+        "working_name",
+        "Working Name",
+        "display_name",
+        "Display Name",
+        "model_code",
+        "model_lookup_key",
         "telegram_username",
         "telegram_id",
         "unique_key",
         "status",
         "notes",
+        "Notes",
+        "notes_raw",
+        "admin_note",
+        "payload_json",
         "line_id",
+        "LINE ID",
+        "line_user_id",
+        "LINE User ID",
+        "aliases",
+        "alias",
+        "legacy_tags",
       ].join(",")
   );
+}
+
+function getModelSearchFields(env) {
+  const configured = parseCsv(env.MODEL_SEARCH_FIELDS || "");
+  return configured.length ? configured : MODEL_SEARCH_FIELDS;
 }
 
 function summarizeList(value) {
@@ -752,7 +808,7 @@ async function airtableFetch(env, path, init) {
   return { ok: true, data };
 }
 
-async function airtableList(env, tableName, { q = "", limit = 50, matchFields = [] } = {}) {
+async function airtableList(env, tableName, { q = "", limit = 50, matchFields = [], fallbackMatchFields = [] } = {}) {
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return [];
 
   const params = new URLSearchParams();
@@ -765,6 +821,13 @@ async function airtableList(env, tableName, { q = "", limit = 50, matchFields = 
   }
 
   const r = await airtableFetch(env, `/${encodeURIComponent(tableName)}?${params.toString()}`);
+  if (!r.ok && q && fallbackMatchFields.length) {
+    return airtableListFieldByField(env, tableName, {
+      q,
+      limit,
+      matchFields: Array.from(new Set([...matchFields, ...fallbackMatchFields])),
+    });
+  }
   if (!r.ok) return [];
 
   const records = r.data?.records || [];
@@ -773,6 +836,25 @@ async function airtableList(env, tableName, { q = "", limit = 50, matchFields = 
     fields: rec.fields || {},
     createdTime: rec.createdTime,
   }));
+}
+
+async function airtableListFieldByField(env, tableName, { q = "", limit = 50, matchFields = [] } = {}) {
+  const byId = new Map();
+
+  for (const field of matchFields) {
+    const records = await airtableList(env, tableName, {
+      q,
+      limit,
+      matchFields: [field],
+    });
+
+    for (const record of records) {
+      if (record?.id && !byId.has(record.id)) byId.set(record.id, record);
+      if (byId.size >= limit) return Array.from(byId.values());
+    }
+  }
+
+  return Array.from(byId.values());
 }
 
 async function airtableFindOne(env, tableName, filterByFormula) {
