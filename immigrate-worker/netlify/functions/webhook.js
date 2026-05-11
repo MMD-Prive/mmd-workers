@@ -173,36 +173,67 @@ function looksLikeSpecificModelRequest(text) {
   return hasCandidate && (BOOKING_SIGNAL_RE.test(text) || TIMING_SIGNAL_RE.test(text) || LOCATION_SIGNAL_RE.test(text));
 }
 
-function modelMatchesText(model, text) {
-  const haystack = normalizeLookup(text);
-  const names = [
-    model?.working_name,
-    model?.display_name,
-    model?.model_name,
-    model?.nickname,
-    ...(Array.isArray(model?.aliases) ? model.aliases : []),
+function modelField(model, keys) {
+  const fields = model?.fields && typeof model.fields === "object" ? model.fields : model || {};
+  for (const key of keys) {
+    const value = fields?.[key];
+    if (value !== undefined && value !== null && String(value).trim()) return value;
+  }
+  return "";
+}
+
+function modelNames(model) {
+  const aliases = modelField(model, ["aliases", "alias", "legacy_tags"]);
+  const aliasList = Array.isArray(aliases)
+    ? aliases
+    : String(aliases || "")
+        .split(/[,|\n]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+  return [
+    modelField(model, ["working_name", "Working Name"]),
+    modelField(model, ["display_name", "Display Name"]),
+    modelField(model, ["model_name", "Model Name"]),
+    modelField(model, ["name", "Name"]),
+    modelField(model, ["nickname", "Nickname"]),
+    modelField(model, ["unique_key", "Unique Key"]),
+    modelField(model, ["line_id", "LINE ID", "Line ID"]),
+    modelField(model, ["line_user_id", "LINE User ID", "Line User ID"]),
+    ...aliasList,
   ]
     .map(normalizeLookup)
     .filter(Boolean);
-
-  return names.some((name) => haystack === name || haystack.includes(name));
 }
 
-async function fetchModelsListLite({ adminWorkerBaseUrl, internalToken }) {
+function modelMatchesText(model, text) {
+  const haystack = normalizeLookup(text);
+  const names = modelNames(model);
+  const notes = normalizeLookup(modelField(model, ["notes_raw", "notes", "Notes", "admin_note", "payload_json"]));
+  return names.some((name) => haystack === name || haystack.includes(name)) || (notes && notes.includes(haystack));
+}
+
+async function fetchModelsListLite({ adminWorkerBaseUrl, internalToken, confirmKey }, query = "") {
   const base = String(adminWorkerBaseUrl || "").replace(/\/$/, "");
-  if (!base || !internalToken) return [];
+  const q = String(query || "").trim();
+  if (!base || (!internalToken && !confirmKey) || !q) return [];
 
   try {
-    const response = await fetch(`${base}/v1/admin/models/list-lite`, {
+    const headers = { "Content-Type": "application/json" };
+    if (internalToken) headers.Authorization = `Bearer ${internalToken}`;
+    if (confirmKey) headers["X-Confirm-Key"] = confirmKey;
+
+    const endpoint = `${base}/v1/admin/models/list?q=${encodeURIComponent(q)}&limit=20`;
+    const response = await fetch(endpoint, {
       method: "GET",
-      headers: {
-        Authorization: `Bearer ${internalToken}`,
-      },
+      headers,
     });
 
     if (!response.ok) return [];
     const payload = await response.json();
-    return Array.isArray(payload?.models) ? payload.models : [];
+    if (Array.isArray(payload?.models)) return payload.models;
+    if (Array.isArray(payload?.items)) return payload.items;
+    return [];
   } catch {
     return [];
   }
@@ -216,15 +247,7 @@ function findRequestedModel(text, models) {
   if (!candidate || !Array.isArray(models)) return null;
   return (
     models.find((model) => {
-      const names = [
-        model?.working_name,
-        model?.display_name,
-        model?.model_name,
-        model?.nickname,
-        ...(Array.isArray(model?.aliases) ? model.aliases : []),
-      ]
-        .map(normalizeLookup)
-        .filter(Boolean);
+      const names = modelNames(model);
       return names.some((name) => name === candidate || name.includes(candidate) || candidate.includes(name));
     }) || null
   );
@@ -398,14 +421,19 @@ async function sendLineReply(accessToken, replyToken, text) {
 }
 
 function buildModelAvailabilityReply({ prefix, booking, matchedModel }) {
-  const requestedName = matchedModel?.working_name || booking.model_name || "นายแบบที่สนใจ";
+  const requestedName =
+    modelField(matchedModel, ["working_name", "Working Name", "model_name", "Model Name", "name", "Name", "nickname", "Nickname"]) ||
+    booking.model_name ||
+    "นายแบบที่สนใจ";
   const parts = [];
   if (booking.location_area) parts.push(`โซน${booking.location_area}`);
   if (booking.date_label) parts.push(booking.date_label);
   if (booking.time_label) parts.push(`เวลา ${booking.time_label}`);
   const detail = parts.length ? ` ${parts.join(" ")}` : "";
+  const availableNow = modelField(matchedModel, ["available_now", "Available Now"]);
+  const requiresApproval = modelField(matchedModel, ["requires_per_approval", "Requires Per Approval"]);
 
-  if (matchedModel?.available_now === true && matchedModel?.requires_per_approval !== true) {
+  if (availableNow === true && requiresApproval !== true) {
     return `รับทราบครับ ${prefix}ผมพบชื่อ ${requestedName}${detail} แล้วครับ เดี๋ยวส่งคำขอให้ Per ตรวจสอบคิวจริงและยืนยันก่อนล็อกงานนะครับ`;
   }
 
@@ -432,9 +460,10 @@ async function buildAutoReplyMessage(event, profile, options = {}) {
   }
 
   if (intent === "model_availability") {
-    const models = await fetchModelsListLite(options);
+    const bookingSeed = extractBookingLite(text);
+    const models = await fetchModelsListLite(options, bookingSeed.model_name || text);
     const matchedModel = findRequestedModel(text, models);
-    const booking = extractBookingLite(text, matchedModel?.working_name || "");
+    const booking = extractBookingLite(text, modelField(matchedModel, ["working_name", "Working Name", "model_name", "Model Name", "name", "Name"]));
     return buildModelAvailabilityReply({ prefix, booking, matchedModel });
   }
 
@@ -507,7 +536,8 @@ export async function handler(event) {
   const airtableBaseId = process.env.AIRTABLE_BASE_ID || "";
   const airtableTableName = process.env.AIRTABLE_SYNC_TABLE || DEFAULT_SYNC_TABLE;
   const adminWorkerBaseUrl = process.env.ADMIN_WORKER_BASE_URL || "";
-  const internalToken = process.env.INTERNAL_TOKEN || "";
+  const internalToken = process.env.INTERNAL_TOKEN || process.env.ADMIN_BEARER || "";
+  const confirmKey = process.env.CONFIRM_KEY || "";
   const autoReplyEnabled = String(process.env.LINE_AUTO_REPLY_ENABLED || "false").toLowerCase() === "true";
 
   if (!lineChannelSecret || !airtableApiKey || !airtableBaseId) {
@@ -555,6 +585,7 @@ export async function handler(event) {
     const replyText = await buildAutoReplyMessage(item, profile, {
       adminWorkerBaseUrl,
       internalToken,
+      confirmKey,
     });
     const replied =
       !record?.deduped && autoReplyEnabled && replyText
