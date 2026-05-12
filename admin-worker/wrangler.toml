@@ -26,6 +26,7 @@ AIRTABLE_TABLE_MEMBERS = "members"
 AIRTABLE_TABLE_MODELS = "models"
 MODEL_SOURCE_OWNER_DEFAULT = "lonelysomething"
 MODEL_R2_LOOKUP_ENABLED = "true"
+MODEL_R2_USE_SOURCE_OWNER_AS_PREFIX = "false"
 MODEL_R2_ROOT_PREFIX = ""
 MODEL_R2_CATEGORY_PATHS = "MMD Public Models/MMD Travel Compcard,MMD Public Models/MMD Travel Models,MMD Public Models/MMD Travel Models/Straight,MMD Public Models/MMD Travel Models/Gay,MMD Public Models/MMD Travel Models/Both,MMD Public Models/MMD Extreme Models,MMD Public Models/MMD Extreme Models/Straight,MMD Public Models/MMD Extreme Models/Gay,MMD Public Models/MMD Extreme Models/Both,MMD Private Models/Standard Package,MMD Private Models/Premium Package,MMD Exclusive/MMD Exclusive Models,Public Models/Extreme Models/Straight"
 

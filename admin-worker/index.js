@@ -69,6 +69,7 @@ const DEFAULT_MODEL_R2_CATEGORY_PATHS = [
   "MMD Public Models/MMD Extreme Models/Straight",
   "MMD Public Models/MMD Extreme Models/Gay",
   "MMD Public Models/MMD Extreme Models/Both",
+  "Public Models/Extreme Models",
   "MMD Private Models/Standard Package",
   "MMD Private Models/Premium Package",
   "MMD Exclusive/MMD Exclusive Models",
@@ -885,15 +886,68 @@ function getModelR2RootPrefix(env) {
 
 function getModelR2CategoryPaths(env, categoryPath = "") {
   const explicit = normalizeCategoryPath(categoryPath);
-  if (explicit) return [explicit];
+  if (explicit) return expandR2CategoryPathVariants(explicit);
   return uniqueStrings([
     ...splitConfiguredPaths(env.MODEL_R2_CATEGORY_PATHS),
     ...DEFAULT_MODEL_R2_CATEGORY_PATHS,
-  ]);
+  ].flatMap((path) => expandR2CategoryPathVariants(path)));
 }
 
 function sourceLookupEnabled(env) {
   return str(env.MODEL_R2_LOOKUP_ENABLED || "true").toLowerCase() !== "false";
+}
+
+function useSourceOwnerAsR2Prefix(env) {
+  return str(env.MODEL_R2_USE_SOURCE_OWNER_AS_PREFIX || "false").toLowerCase() === "true";
+}
+
+function isOrientationPathPart(value) {
+  return ["straight", "gay", "both"].includes(normalizeLooseToken(value));
+}
+
+function addMmdCategoryPrefix(value) {
+  const parts = normalizeCategoryPath(value).split("/").filter(Boolean);
+  return parts
+    .map((part) => {
+      const token = normalizeLooseToken(part);
+      if (token === "publicmodels") return "MMD Public Models";
+      if (token === "extrememodels") return "MMD Extreme Models";
+      if (token === "travelmodels") return "MMD Travel Models";
+      if (token === "travelcompcard") return "MMD Travel Compcard";
+      if (token === "privatemodels") return "MMD Private Models";
+      if (token === "exclusive" || token === "mmdexclusive") return "MMD Exclusive";
+      return part;
+    })
+    .join("/");
+}
+
+function removeMmdCategoryPrefix(value) {
+  return normalizeCategoryPath(value)
+    .split("/")
+    .filter(Boolean)
+    .map((part) => part.replace(/^MMD\s+/i, ""))
+    .join("/");
+}
+
+function expandR2CategoryPathVariants(value) {
+  const normalized = normalizeCategoryPath(value);
+  if (!normalized) return [];
+  const parts = normalized.split("/").filter(Boolean);
+  const withoutOrientation = parts.length > 1 && isOrientationPathPart(parts[parts.length - 1])
+    ? parts.slice(0, -1).join("/")
+    : "";
+  const candidates = [normalized, withoutOrientation].filter(Boolean);
+  return uniqueStrings(
+    candidates.flatMap((candidate) => [
+      candidate,
+      addMmdCategoryPrefix(candidate),
+      removeMmdCategoryPrefix(candidate),
+    ]),
+  );
+}
+
+function displayCategoryPath(value) {
+  return normalizeCategoryPath(value).split("/").filter(Boolean).join(" > ");
 }
 
 function redactedPrefix(prefix) {
@@ -917,6 +971,7 @@ function buildR2ExactPrefixCandidates({ q, sourceOwner, categoryPath, env }) {
   const querySlug = slugPathPart(query);
   const rootPrefix = getModelR2RootPrefix(env);
   const owner = getModelSourceOwner(env, sourceOwner);
+  const includeOwnerPrefix = useSourceOwnerAsR2Prefix(env);
   const categories = getModelR2CategoryPaths(env, categoryPath);
   const names = uniqueStrings([query, querySlug, slugToken(query), normalizeLooseToken(query)]).filter(Boolean);
   const prefixes = [];
@@ -924,21 +979,25 @@ function buildR2ExactPrefixCandidates({ q, sourceOwner, categoryPath, env }) {
   for (const category of categories) {
     const categorySlug = category.split("/").map(slugPathPart).filter(Boolean).join("/");
     for (const name of names) {
-      prefixes.push(joinR2Path(rootPrefix, owner, category, name));
-      prefixes.push(joinR2Path(rootPrefix, owner, categorySlug, name));
       prefixes.push(joinR2Path(rootPrefix, category, name));
       prefixes.push(joinR2Path(rootPrefix, categorySlug, name));
-      prefixes.push(joinR2Path(owner, category, name));
-      prefixes.push(joinR2Path(owner, categorySlug, name));
       prefixes.push(joinR2Path(category, name));
       prefixes.push(joinR2Path(categorySlug, name));
+      if (includeOwnerPrefix) {
+        prefixes.push(joinR2Path(rootPrefix, owner, category, name));
+        prefixes.push(joinR2Path(rootPrefix, owner, categorySlug, name));
+        prefixes.push(joinR2Path(owner, category, name));
+        prefixes.push(joinR2Path(owner, categorySlug, name));
+      }
     }
   }
 
   for (const name of names) {
-    prefixes.push(joinR2Path(rootPrefix, owner, name));
     prefixes.push(joinR2Path(rootPrefix, name));
-    prefixes.push(joinR2Path(owner, name));
+    if (includeOwnerPrefix) {
+      prefixes.push(joinR2Path(rootPrefix, owner, name));
+      prefixes.push(joinR2Path(owner, name));
+    }
   }
 
   return uniqueStrings(prefixes);
@@ -967,18 +1026,21 @@ async function searchR2ByConfiguredCategories(env, { q, sourceOwner, categoryPat
 
   const rootPrefix = getModelR2RootPrefix(env);
   const owner = getModelSourceOwner(env, sourceOwner);
+  const includeOwnerPrefix = useSourceOwnerAsR2Prefix(env);
   const categories = getModelR2CategoryPaths(env, categoryPath);
   const bases = [];
   for (const category of categories) {
     const categorySlug = category.split("/").map(slugPathPart).filter(Boolean).join("/");
-    bases.push(joinR2Path(rootPrefix, owner, category));
-    bases.push(joinR2Path(rootPrefix, owner, categorySlug));
     bases.push(joinR2Path(rootPrefix, category));
     bases.push(joinR2Path(rootPrefix, categorySlug));
-    bases.push(joinR2Path(owner, category));
-    bases.push(joinR2Path(owner, categorySlug));
     bases.push(joinR2Path(category));
     bases.push(joinR2Path(categorySlug));
+    if (includeOwnerPrefix) {
+      bases.push(joinR2Path(rootPrefix, owner, category));
+      bases.push(joinR2Path(rootPrefix, owner, categorySlug));
+      bases.push(joinR2Path(owner, category));
+      bases.push(joinR2Path(owner, categorySlug));
+    }
   }
 
   for (const basePrefix of uniqueStrings(bases)) {
@@ -1018,22 +1080,22 @@ function inferModelFieldsFromSource({ modelName, sourceOwner, categoryPath, matc
     unique_key: slugToken(cleanName, "model"),
     storage_source_primary: "R2",
     r2_prefix: normalizeR2Prefix(matchedPrefix),
-    source_folder: sourceOwner ? `${sourceOwner}/${category}` : category,
+    source_folder: sourceOwner || category,
     source_owner: sourceOwner,
     requires_per_approval: true,
     private_review_status: "Needs Review",
     notes: `source: R2/${sourceOwner || DEFAULT_MODEL_SOURCE_OWNER} | category path: ${category || "unclassified"} | imported as pre-canonical draft`,
   };
-  if (categoryToken.includes("public")) fields.sales_layer = "public";
-  if (categoryToken.includes("private")) fields.sales_layer = "private";
-  if (categoryToken.includes("exclusive")) fields.private_tier = "black_card_review";
-  if (categoryToken.includes("premium")) fields.private_tier = "premium_review";
-  if (categoryToken.includes("standard")) fields.private_tier = "standard_review";
-  if (categoryToken.includes("extreme")) fields.service_layer = "extreme";
-  if (categoryToken.includes("travel")) fields.service_layer = "travel";
-  if (categoryToken.includes("straight")) fields.orientation_label = "straight";
-  if (categoryToken.includes("gay")) fields.orientation_label = "gay";
-  if (categoryToken.includes("both")) fields.orientation_label = "both";
+  if (categoryToken.includes("public")) fields.sales_layer = "Public Models";
+  if (categoryToken.includes("private")) fields.sales_layer = "Private Models";
+  if (categoryToken.includes("exclusive")) fields.private_tier = "Black Card Review";
+  if (categoryToken.includes("extreme")) fields.private_tier = "Extreme Models";
+  if (categoryToken.includes("premium")) fields.private_tier = "Premium Review";
+  if (categoryToken.includes("standard")) fields.private_tier = "Standard Review";
+  if (categoryToken.includes("travel")) fields.service_layer = "Travel";
+  if (categoryToken.includes("straight")) fields.orientation_label = "Straight";
+  if (categoryToken.includes("gay")) fields.orientation_label = "Gay";
+  if (categoryToken.includes("both")) fields.orientation_label = "Both";
   return compactObject(fields);
 }
 
@@ -1097,7 +1159,7 @@ async function resolveModelSource(env, { q, sourceOwner = "", categoryPath = "" 
       matched_name: r2Match.matched_name || query,
       matched_prefix: r2Match.matched_prefix,
       matched_prefix_redacted: redactedPrefix(r2Match.matched_prefix),
-      category_path: r2Match.category_path || normalizeCategoryPath(categoryPath),
+      category_path: displayCategoryPath(r2Match.category_path || categoryPath),
       object_count: r2Match.object_count,
       airtable_items_count: 0,
       suggested_model_fields: inferModelFieldsFromSource({
@@ -1118,7 +1180,7 @@ async function resolveModelSource(env, { q, sourceOwner = "", categoryPath = "" 
     matched_name: "",
     matched_prefix: "",
     matched_prefix_redacted: "",
-    category_path: normalizeCategoryPath(categoryPath),
+    category_path: displayCategoryPath(categoryPath),
     object_count: 0,
     airtable_items_count: 0,
     suggested_model_fields: {},

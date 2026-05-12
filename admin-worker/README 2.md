@@ -42,14 +42,29 @@ Set these in `wrangler.toml` or dashboard:
 Flow:
 
 1. Check Airtable `Models` first.
-2. If Airtable has no match, search the R2 model library under the configured source owner.
+2. If Airtable has no match, search the R2 model library with configured category paths.
 3. Return safe metadata only: matched name, prefix, category path, object count, and suggested draft fields.
 4. Never return signed URLs, private media URLs, raw LINE notes, album contents, or availability confirmation.
+
+`source_owner=lonelysomething` is metadata by default. It is not treated as an
+R2 folder prefix unless `MODEL_R2_USE_SOURCE_OWNER_AS_PREFIX=true` is explicitly
+configured.
+
+For a category such as `Public Models > Extreme Models > Straight`, the resolver
+searches both folder shapes with and without the orientation segment because
+`Straight` may be classification metadata rather than an R2 folder level:
+
+- `MMD Public Models/MMD Extreme Models/<name>/`
+- `MMD Public Models/MMD Extreme Models/Straight/<name>/`
+- `Public Models/Extreme Models/<name>/`
+- `Public Models/Extreme Models/Straight/<name>/`
+- slug equivalents such as `public-models/extreme-models/<slug>/`
 
 Required config:
 
 - `MODEL_SOURCE_OWNER_DEFAULT=lonelysomething`
 - `MODEL_R2_LOOKUP_ENABLED=true`
+- `MODEL_R2_USE_SOURCE_OWNER_AS_PREFIX=false`
 - `MODEL_R2_ROOT_PREFIX=<optional root path>`
 - `MODEL_R2_CATEGORY_PATHS=<comma-separated category paths>`
 - R2 binding: `MMD_MODEL_ASSETS` -> bucket `mmd-models`
