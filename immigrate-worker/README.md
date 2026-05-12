@@ -74,5 +74,9 @@ Netlify LINE webhook:
 - optional: `AIRTABLE_SYNC_TABLE` (defaults to `MMD — Console Inbox`)
 - optional: `LINE_CHANNEL_ACCESS_TOKEN` (required for auto-reply and fetching LINE profile names)
 - optional: `LINE_AUTO_REPLY_ENABLED` (`false` by default)
+- optional: `ADMIN_WORKER_BASE_URL` plus one admin auth secret (`CONFIRM_KEY`, `ADMIN_BEARER`, or `INTERNAL_TOKEN`) for model lookup
+- optional: `LINE_MODEL_LOOKUP_DEBUG=true` to log safe model lookup metadata only
 - the function verifies `x-line-signature` and writes each LINE event into Airtable as a new inbox record
 - only messages tagged with `#client` are marked as manual immigrate candidates and eligible for profile lookup / optional auto-reply
+- model availability messages first query `admin-worker /v1/admin/models/list`; if Airtable has no match, the webhook calls `admin-worker /v1/admin/models/resolve-source` with `source_owner=lonelysomething`
+- R2 fallback replies are preliminary source matches only: they do not expose URLs/media/private notes and never confirm availability

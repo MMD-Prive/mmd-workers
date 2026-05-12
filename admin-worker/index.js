@@ -58,6 +58,22 @@ const MODEL_SEARCH_FIELDS = [
   "admin_note",
   "payload_json",
 ];
+const DEFAULT_MODEL_SOURCE_OWNER = "lonelysomething";
+const DEFAULT_MODEL_R2_CATEGORY_PATHS = [
+  "MMD Public Models/MMD Travel Compcard",
+  "MMD Public Models/MMD Travel Models",
+  "MMD Public Models/MMD Travel Models/Straight",
+  "MMD Public Models/MMD Travel Models/Gay",
+  "MMD Public Models/MMD Travel Models/Both",
+  "MMD Public Models/MMD Extreme Models",
+  "MMD Public Models/MMD Extreme Models/Straight",
+  "MMD Public Models/MMD Extreme Models/Gay",
+  "MMD Public Models/MMD Extreme Models/Both",
+  "MMD Private Models/Standard Package",
+  "MMD Private Models/Premium Package",
+  "MMD Exclusive/MMD Exclusive Models",
+  "Public Models/Extreme Models/Straight",
+];
 
 export default {
   async fetch(req, env) {
@@ -466,6 +482,38 @@ export default {
       }
 
       // ----------------------------------------------------
+      // Models source resolver
+      // ----------------------------------------------------
+      if (method === "GET" && path === "/v1/admin/models/resolve-source") {
+        const q = str(url.searchParams.get("q") || "");
+        const sourceOwner = str(url.searchParams.get("source_owner") || env.MODEL_SOURCE_OWNER_DEFAULT || DEFAULT_MODEL_SOURCE_OWNER);
+        const categoryPath = str(url.searchParams.get("category_path") || "");
+
+        try {
+          return withCors(
+            json(await resolveModelSource(env, { q, sourceOwner, categoryPath })),
+            cors
+          );
+        } catch (e) {
+          return withCors(json({ ok: false, error: String(e?.message || e) }, 400), cors);
+        }
+      }
+
+      // ----------------------------------------------------
+      // Models source staging
+      // ----------------------------------------------------
+      if (method === "POST" && path === "/v1/admin/models/stage-from-source") {
+        const body = await safeJson(req);
+
+        try {
+          const payload = await stageModelFromSource(env, body || {});
+          return withCors(json(payload, payload.ok ? 200 : 400), cors);
+        } catch (e) {
+          return withCors(json({ ok: false, error: String(e?.message || e) }, 400), cors);
+        }
+      }
+
+      // ----------------------------------------------------
       // Models upsert
       // ----------------------------------------------------
       if (method === "POST" && path === "/v1/admin/models/upsert") {
@@ -572,6 +620,7 @@ function isAuthed(req, env) {
   const auth = req.headers.get("Authorization") || "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
   if (env.ADMIN_BEARER && bearer && bearer === env.ADMIN_BEARER) return true;
+  if (env.INTERNAL_TOKEN && bearer && bearer === env.INTERNAL_TOKEN) return true;
 
   const ck = str(req.headers.get("X-Confirm-Key") || "");
   if (env.CONFIRM_KEY && ck && ck === env.CONFIRM_KEY) return true;
@@ -741,6 +790,380 @@ function getAllowedModelFields(env) {
 function getModelSearchFields(env) {
   const configured = parseCsv(env.MODEL_SEARCH_FIELDS || "");
   return configured.length ? configured : MODEL_SEARCH_FIELDS;
+}
+
+function compactObject(value) {
+  return Object.fromEntries(
+    Object.entries(value || {}).filter(([, entry]) => {
+      if (entry == null) return false;
+      if (typeof entry === "string") return entry.trim().length > 0;
+      return true;
+    })
+  );
+}
+
+function normalizeLooseToken(value) {
+  return str(value)
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9ก-๙]+/g, "");
+}
+
+function slugToken(value, fallback = "model") {
+  const slug = str(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9ก-๙]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return slug || fallback;
+}
+
+function normalizeModelPathPart(value) {
+  return str(value)
+    .replace(/>/g, "/")
+    .replace(/\\/g, "/")
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/\/{2,}/g, "/");
+}
+
+function normalizeR2Prefix(value) {
+  const raw = normalizeModelPathPart(value);
+  if (!raw) return "";
+  return raw.endsWith("/") ? raw : `${raw}/`;
+}
+
+function normalizeCategoryPath(value) {
+  return normalizeModelPathPart(value).replace(/\s*\/\s*/g, "/");
+}
+
+function slugPathPart(value) {
+  return str(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9ก-๙]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function splitConfiguredPaths(value) {
+  return str(value)
+    .split(",")
+    .map((item) => normalizeCategoryPath(item))
+    .filter(Boolean);
+}
+
+function uniqueStrings(values) {
+  const out = [];
+  const seen = new Set();
+  for (const value of values) {
+    const normalized = str(value);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
+}
+
+function joinR2Path(...parts) {
+  return normalizeR2Prefix(
+    parts
+      .map((part) => normalizeModelPathPart(part))
+      .filter(Boolean)
+      .join("/")
+  );
+}
+
+function getModelSourceOwner(env, sourceOwner = "") {
+  return str(sourceOwner || env.MODEL_SOURCE_OWNER_DEFAULT || DEFAULT_MODEL_SOURCE_OWNER) || DEFAULT_MODEL_SOURCE_OWNER;
+}
+
+function getModelR2RootPrefix(env) {
+  return normalizeCategoryPath(env.MODEL_R2_ROOT_PREFIX || env.MODEL_R2_SOURCE_ROOT || "");
+}
+
+function getModelR2CategoryPaths(env, categoryPath = "") {
+  const explicit = normalizeCategoryPath(categoryPath);
+  if (explicit) return [explicit];
+  return uniqueStrings([
+    ...splitConfiguredPaths(env.MODEL_R2_CATEGORY_PATHS),
+    ...DEFAULT_MODEL_R2_CATEGORY_PATHS,
+  ]);
+}
+
+function sourceLookupEnabled(env) {
+  return str(env.MODEL_R2_LOOKUP_ENABLED || "true").toLowerCase() !== "false";
+}
+
+function redactedPrefix(prefix) {
+  const clean = normalizeR2Prefix(prefix);
+  const parts = clean.split("/").filter(Boolean);
+  if (parts.length <= 2) return clean;
+  return `${parts.slice(0, 3).join("/")}/.../`;
+}
+
+async function listR2ObjectCount(env, folderPrefix, limit = 1000) {
+  const bucket = env.MMD_MODEL_ASSETS;
+  const prefix = normalizeR2Prefix(folderPrefix);
+  if (!bucket || !prefix || typeof bucket.list !== "function") return { object_count: null, exists: false };
+  const listing = await bucket.list({ prefix, limit });
+  const objects = Array.isArray(listing?.objects) ? listing.objects : [];
+  return { object_count: objects.length, exists: objects.length > 0 };
+}
+
+function buildR2ExactPrefixCandidates({ q, sourceOwner, categoryPath, env }) {
+  const query = str(q);
+  const querySlug = slugPathPart(query);
+  const rootPrefix = getModelR2RootPrefix(env);
+  const owner = getModelSourceOwner(env, sourceOwner);
+  const categories = getModelR2CategoryPaths(env, categoryPath);
+  const names = uniqueStrings([query, querySlug, slugToken(query), normalizeLooseToken(query)]).filter(Boolean);
+  const prefixes = [];
+
+  for (const category of categories) {
+    const categorySlug = category.split("/").map(slugPathPart).filter(Boolean).join("/");
+    for (const name of names) {
+      prefixes.push(joinR2Path(rootPrefix, owner, category, name));
+      prefixes.push(joinR2Path(rootPrefix, owner, categorySlug, name));
+      prefixes.push(joinR2Path(rootPrefix, category, name));
+      prefixes.push(joinR2Path(rootPrefix, categorySlug, name));
+      prefixes.push(joinR2Path(owner, category, name));
+      prefixes.push(joinR2Path(owner, categorySlug, name));
+      prefixes.push(joinR2Path(category, name));
+      prefixes.push(joinR2Path(categorySlug, name));
+    }
+  }
+
+  for (const name of names) {
+    prefixes.push(joinR2Path(rootPrefix, owner, name));
+    prefixes.push(joinR2Path(rootPrefix, name));
+    prefixes.push(joinR2Path(owner, name));
+  }
+
+  return uniqueStrings(prefixes);
+}
+
+function inferCategoryFromPrefix(prefix, sourceOwner = "") {
+  const owner = normalizeLooseToken(sourceOwner || DEFAULT_MODEL_SOURCE_OWNER);
+  const parts = normalizeModelPathPart(prefix).split("/").filter(Boolean);
+  const filtered = parts.filter((part) => normalizeLooseToken(part) !== owner);
+  if (filtered.length <= 1) return "";
+  return filtered.slice(0, -1).join("/");
+}
+
+function segmentAfterBase(key, basePrefix) {
+  const cleanBase = normalizeR2Prefix(basePrefix);
+  const cleanKey = str(key);
+  if (!cleanBase || !cleanKey.startsWith(cleanBase)) return "";
+  return cleanKey.slice(cleanBase.length).split("/").filter(Boolean)[0] || "";
+}
+
+async function searchR2ByConfiguredCategories(env, { q, sourceOwner, categoryPath }) {
+  const bucket = env.MMD_MODEL_ASSETS;
+  if (!bucket || typeof bucket.list !== "function") return null;
+  const queryToken = normalizeLooseToken(q);
+  if (!queryToken) return null;
+
+  const rootPrefix = getModelR2RootPrefix(env);
+  const owner = getModelSourceOwner(env, sourceOwner);
+  const categories = getModelR2CategoryPaths(env, categoryPath);
+  const bases = [];
+  for (const category of categories) {
+    const categorySlug = category.split("/").map(slugPathPart).filter(Boolean).join("/");
+    bases.push(joinR2Path(rootPrefix, owner, category));
+    bases.push(joinR2Path(rootPrefix, owner, categorySlug));
+    bases.push(joinR2Path(rootPrefix, category));
+    bases.push(joinR2Path(rootPrefix, categorySlug));
+    bases.push(joinR2Path(owner, category));
+    bases.push(joinR2Path(owner, categorySlug));
+    bases.push(joinR2Path(category));
+    bases.push(joinR2Path(categorySlug));
+  }
+
+  for (const basePrefix of uniqueStrings(bases)) {
+    const listing = await bucket.list({ prefix: basePrefix, limit: 1000 });
+    const objects = Array.isArray(listing?.objects) ? listing.objects : [];
+    const folderCounts = new Map();
+    for (const object of objects) {
+      const segment = segmentAfterBase(object?.key, basePrefix);
+      if (!segment) continue;
+      folderCounts.set(segment, (folderCounts.get(segment) || 0) + 1);
+    }
+
+    for (const [folderName, objectCount] of folderCounts.entries()) {
+      const folderToken = normalizeLooseToken(folderName);
+      if (folderToken === queryToken || folderToken.includes(queryToken) || queryToken.includes(folderToken)) {
+        const matchedPrefix = joinR2Path(basePrefix, folderName);
+        return {
+          matched_name: folderName,
+          matched_prefix: matchedPrefix,
+          category_path: inferCategoryFromPrefix(matchedPrefix, owner),
+          object_count: objectCount,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function inferModelFieldsFromSource({ modelName, sourceOwner, categoryPath, matchedPrefix }) {
+  const cleanName = str(modelName);
+  const category = normalizeCategoryPath(categoryPath || inferCategoryFromPrefix(matchedPrefix, sourceOwner));
+  const categoryToken = normalizeLooseToken(category);
+  const fields = {
+    working_name: cleanName,
+    nickname: cleanName,
+    unique_key: slugToken(cleanName, "model"),
+    storage_source_primary: "R2",
+    r2_prefix: normalizeR2Prefix(matchedPrefix),
+    source_folder: sourceOwner ? `${sourceOwner}/${category}` : category,
+    source_owner: sourceOwner,
+    requires_per_approval: true,
+    private_review_status: "Needs Review",
+    notes: `source: R2/${sourceOwner || DEFAULT_MODEL_SOURCE_OWNER} | category path: ${category || "unclassified"} | imported as pre-canonical draft`,
+  };
+  if (categoryToken.includes("public")) fields.sales_layer = "public";
+  if (categoryToken.includes("private")) fields.sales_layer = "private";
+  if (categoryToken.includes("exclusive")) fields.private_tier = "black_card_review";
+  if (categoryToken.includes("premium")) fields.private_tier = "premium_review";
+  if (categoryToken.includes("standard")) fields.private_tier = "standard_review";
+  if (categoryToken.includes("extreme")) fields.service_layer = "extreme";
+  if (categoryToken.includes("travel")) fields.service_layer = "travel";
+  if (categoryToken.includes("straight")) fields.orientation_label = "straight";
+  if (categoryToken.includes("gay")) fields.orientation_label = "gay";
+  if (categoryToken.includes("both")) fields.orientation_label = "both";
+  return compactObject(fields);
+}
+
+async function searchR2ModelSource(env, { q, sourceOwner, categoryPath }) {
+  if (!sourceLookupEnabled(env)) return null;
+  if (!env.MMD_MODEL_ASSETS || typeof env.MMD_MODEL_ASSETS.list !== "function") return null;
+
+  const owner = getModelSourceOwner(env, sourceOwner);
+  const exactCandidates = buildR2ExactPrefixCandidates({ q, sourceOwner: owner, categoryPath, env });
+  for (const prefix of exactCandidates) {
+    const count = await listR2ObjectCount(env, prefix, 200);
+    if (count.exists) {
+      return {
+        matched_name: str(q),
+        matched_prefix: normalizeR2Prefix(prefix),
+        category_path: normalizeCategoryPath(categoryPath || inferCategoryFromPrefix(prefix, owner)),
+        object_count: count.object_count,
+      };
+    }
+  }
+  return searchR2ByConfiguredCategories(env, { q, sourceOwner: owner, categoryPath });
+}
+
+async function resolveModelSource(env, { q, sourceOwner = "", categoryPath = "" } = {}) {
+  const query = str(q);
+  if (!query) throw new Error("missing_q");
+  const owner = getModelSourceOwner(env, sourceOwner);
+  const airtableItems = await airtableList(env, env.AIRTABLE_TABLE_MODELS || "models", {
+    q: query,
+    limit: 12,
+    matchFields: getModelSearchFields(env),
+    fallbackMatchFields: MODEL_SAFE_SEARCH_FIELDS,
+  });
+
+  if (airtableItems.length) {
+    const fields = airtableItems[0]?.fields || {};
+    return {
+      ok: true,
+      found: true,
+      source: "airtable",
+      query,
+      source_owner: owner,
+      matched_name: str(fields.working_name || fields["Working Name"] || fields.model_name || fields["Model Name"] || fields.name || fields.nickname || query),
+      matched_prefix: "",
+      matched_prefix_redacted: "",
+      category_path: "",
+      object_count: null,
+      airtable_items_count: airtableItems.length,
+      suggested_model_fields: {},
+    };
+  }
+
+  const r2Match = await searchR2ModelSource(env, { q: query, sourceOwner: owner, categoryPath });
+  if (r2Match?.matched_prefix) {
+    return {
+      ok: true,
+      found: true,
+      source: "r2",
+      query,
+      source_owner: owner,
+      matched_name: r2Match.matched_name || query,
+      matched_prefix: r2Match.matched_prefix,
+      matched_prefix_redacted: redactedPrefix(r2Match.matched_prefix),
+      category_path: r2Match.category_path || normalizeCategoryPath(categoryPath),
+      object_count: r2Match.object_count,
+      airtable_items_count: 0,
+      suggested_model_fields: inferModelFieldsFromSource({
+        modelName: r2Match.matched_name || query,
+        sourceOwner: owner,
+        categoryPath: r2Match.category_path || categoryPath,
+        matchedPrefix: r2Match.matched_prefix,
+      }),
+    };
+  }
+
+  return {
+    ok: true,
+    found: false,
+    source: "none",
+    query,
+    source_owner: owner,
+    matched_name: "",
+    matched_prefix: "",
+    matched_prefix_redacted: "",
+    category_path: normalizeCategoryPath(categoryPath),
+    object_count: 0,
+    airtable_items_count: 0,
+    suggested_model_fields: {},
+  };
+}
+
+async function stageModelFromSource(env, body = {}) {
+  const modelName = str(body.model_name || body.name || body.q);
+  const sourceOwner = getModelSourceOwner(env, body.source_owner);
+  const categoryPath = normalizeCategoryPath(body.category_path);
+  const r2Prefix = normalizeR2Prefix(body.r2_prefix);
+  if (!modelName) throw new Error("missing_model_name");
+
+  const resolved = r2Prefix
+    ? {
+        ok: true,
+        found: (await listR2ObjectCount(env, r2Prefix, 200)).exists,
+        source: "r2",
+        query: modelName,
+        source_owner: sourceOwner,
+        matched_name: modelName,
+        matched_prefix: r2Prefix,
+        category_path: categoryPath || inferCategoryFromPrefix(r2Prefix, sourceOwner),
+      }
+    : await resolveModelSource(env, { q: modelName, sourceOwner, categoryPath });
+
+  if (resolved.source === "airtable") return { ok: true, staged: false, reason: "already_exists_in_airtable", resolved };
+  if (resolved.source !== "r2" || !resolved.found) return { ok: false, staged: false, reason: "r2_source_not_found", resolved };
+
+  const fields = inferModelFieldsFromSource({
+    modelName,
+    sourceOwner,
+    categoryPath: resolved.category_path || categoryPath,
+    matchedPrefix: resolved.matched_prefix,
+  });
+  const out = await airtableUpsertModel(env, env.AIRTABLE_TABLE_MODELS || "models", {
+    unique_key: fields.unique_key,
+    fields,
+  });
+  return {
+    ok: Boolean(out?.ok),
+    staged: Boolean(out?.ok),
+    model: out,
+    resolved: { ...resolved, matched_prefix_redacted: redactedPrefix(resolved.matched_prefix) },
+  };
 }
 
 function summarizeList(value) {

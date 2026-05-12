@@ -239,6 +239,47 @@ async function fetchModelsListLite({ adminWorkerBaseUrl, internalToken, confirmK
   }
 }
 
+async function fetchModelSourceResolution({ adminWorkerBaseUrl, internalToken, confirmKey }, query = "", categoryPath = "") {
+  const base = String(adminWorkerBaseUrl || "").replace(/\/$/, "");
+  const q = String(query || "").trim();
+  if (!base || (!internalToken && !confirmKey) || !q) return null;
+
+  try {
+    const headers = { "Content-Type": "application/json" };
+    if (internalToken) headers.Authorization = `Bearer ${internalToken}`;
+    if (confirmKey) headers["X-Confirm-Key"] = confirmKey;
+
+    const endpoint = new URL(`${base}/v1/admin/models/resolve-source`);
+    endpoint.searchParams.set("q", q);
+    endpoint.searchParams.set("source_owner", "lonelysomething");
+    if (categoryPath) endpoint.searchParams.set("category_path", categoryPath);
+
+    const response = await fetch(endpoint.toString(), {
+      method: "GET",
+      headers,
+    });
+
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+function logModelLookupDebug(options, data) {
+  if (String(options?.lineModelLookupDebug || "").toLowerCase() !== "true") return;
+  console.log(JSON.stringify({
+    event: "line_model_lookup_debug",
+    intent: data.intent || "",
+    parsed_model_name: data.parsed_model_name || "",
+    airtable_items_count: Number(data.airtable_items_count || 0),
+    r2_lookup_attempted: Boolean(data.r2_lookup_attempted),
+    r2_found: Boolean(data.r2_found),
+    matched_prefix_redacted: data.matched_prefix_redacted || "",
+    reply_sent: Boolean(data.reply_sent),
+  }));
+}
+
 function findRequestedModel(text, models) {
   const direct = Array.isArray(models) ? models.find((model) => modelMatchesText(model, text)) : null;
   if (direct) return direct;
@@ -444,6 +485,14 @@ function buildModelAvailabilityReply({ prefix, booking, matchedModel }) {
   return `รับทราบครับ ${prefix}ผมเห็นว่าต้องการเช็ก ${requestedName}${detail} เดี๋ยวส่งให้ Per ตรวจสอบสถานะรับงานและความพร้อมก่อนยืนยันนะครับ`;
 }
 
+function buildModelSourceFallbackReply({ prefix, booking, resolution }) {
+  const requestedName = booking.model_name || resolution?.query || "นายแบบที่สนใจ";
+  if (resolution?.source === "r2" && resolution?.found) {
+    return `รับทราบครับ ${prefix}ผมพบข้อมูลเบื้องต้นของ ${requestedName} ในคลังโมเดลของระบบแล้วครับ เดี๋ยวส่งให้ Per ตรวจสอบสถานะและความพร้อมก่อนยืนยันนะครับ`;
+  }
+  return `รับทราบครับ ${prefix}ผมเห็นว่าต้องการเช็ก ${requestedName} เดี๋ยวส่งให้ Per ตรวจสอบจากประวัติ model-side ก่อนยืนยันนะครับ`;
+}
+
 async function buildAutoReplyMessage(event, profile, options = {}) {
   const text = toTextMessage(event);
   const name = String(profile?.displayName || "").trim();
@@ -464,7 +513,31 @@ async function buildAutoReplyMessage(event, profile, options = {}) {
     const models = await fetchModelsListLite(options, bookingSeed.model_name || text);
     const matchedModel = findRequestedModel(text, models);
     const booking = extractBookingLite(text, modelField(matchedModel, ["working_name", "Working Name", "model_name", "Model Name", "name", "Name"]));
-    return buildModelAvailabilityReply({ prefix, booking, matchedModel });
+    if (matchedModel) {
+      const reply = buildModelAvailabilityReply({ prefix, booking, matchedModel });
+      logModelLookupDebug(options, {
+        intent,
+        parsed_model_name: booking.model_name,
+        airtable_items_count: models.length,
+        r2_lookup_attempted: false,
+        r2_found: false,
+        reply_sent: Boolean(reply),
+      });
+      return reply;
+    }
+
+    const resolution = await fetchModelSourceResolution(options, bookingSeed.model_name || text);
+    const reply = buildModelSourceFallbackReply({ prefix, booking: bookingSeed, resolution });
+    logModelLookupDebug(options, {
+      intent,
+      parsed_model_name: bookingSeed.model_name,
+      airtable_items_count: models.length,
+      r2_lookup_attempted: true,
+      r2_found: resolution?.source === "r2" && resolution?.found,
+      matched_prefix_redacted: resolution?.matched_prefix_redacted || "",
+      reply_sent: Boolean(reply),
+    });
+    return reply;
   }
 
   if (intent === "create_session") {
@@ -539,6 +612,7 @@ export async function handler(event) {
   const internalToken = process.env.INTERNAL_TOKEN || process.env.ADMIN_BEARER || "";
   const confirmKey = process.env.CONFIRM_KEY || "";
   const autoReplyEnabled = String(process.env.LINE_AUTO_REPLY_ENABLED || "false").toLowerCase() === "true";
+  const lineModelLookupDebug = process.env.LINE_MODEL_LOOKUP_DEBUG || "";
 
   if (!lineChannelSecret || !airtableApiKey || !airtableBaseId) {
     return json(500, {
@@ -586,6 +660,7 @@ export async function handler(event) {
       adminWorkerBaseUrl,
       internalToken,
       confirmKey,
+      lineModelLookupDebug,
     });
     const replied =
       !record?.deduped && autoReplyEnabled && replyText

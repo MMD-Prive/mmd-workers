@@ -35,6 +35,29 @@ Set these in `wrangler.toml` or dashboard:
 - `AIRTABLE_BASE_ID`
 - `AIRTABLE_TABLE_MODELS`
 
+## Model Source Fallback
+
+`GET /v1/admin/models/resolve-source?q=<model_name>&source_owner=lonelysomething` is the authenticated resolver for LINE OA model lookup fallback.
+
+Flow:
+
+1. Check Airtable `Models` first.
+2. If Airtable has no match, search the R2 model library under the configured source owner.
+3. Return safe metadata only: matched name, prefix, category path, object count, and suggested draft fields.
+4. Never return signed URLs, private media URLs, raw LINE notes, album contents, or availability confirmation.
+
+Required config:
+
+- `MODEL_SOURCE_OWNER_DEFAULT=lonelysomething`
+- `MODEL_R2_LOOKUP_ENABLED=true`
+- `MODEL_R2_ROOT_PREFIX=<optional root path>`
+- `MODEL_R2_CATEGORY_PATHS=<comma-separated category paths>`
+- R2 binding: `MMD_MODEL_ASSETS` -> bucket `mmd-models`
+
+Optional staging:
+
+`POST /v1/admin/models/stage-from-source` can create/upsert a draft `Models` record with `requires_per_approval=true` and `private_review_status=Needs Review`. This is a pre-canonical draft only; it does not confirm availability.
+
 ## Example
 
 ```bash
