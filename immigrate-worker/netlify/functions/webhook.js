@@ -20,6 +20,7 @@ const FAQ_REPLY_INTENTS = new Set([
   "model_photo_review_question",
   "contact_admin",
 ]);
+const PRICING_REVIEW_INTENTS = new Set(["pricing_review", "ask_where_to_get_rate", "image_rate_inquiry"]);
 const STOP_MODEL_WORDS = new Set([
   "วันที่",
   "เวลา",
