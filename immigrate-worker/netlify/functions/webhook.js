@@ -408,6 +408,7 @@ function buildAirtableRecordWithProfile(event, profile) {
   const migrationId = `line_${eventId}`;
   const flags = buildFlags(event, messageText);
   const intent = inferIntent(messageText, event);
+  const airtableIntent = PRICING_REVIEW_INTENTS.has(intent) ? "pricing" : intent;
   const messageType = getMessageType(event);
   const adminNote = buildAdminNote(event, messageText);
   const clientTagged = hasClientTag(messageText);
@@ -418,7 +419,7 @@ function buildAirtableRecordWithProfile(event, profile) {
       inbox_id: migrationId,
       created_by: "netlify-line-webhook",
       source: "line",
-      intent,
+      intent: airtableIntent,
       member_name: String(profile?.displayName || "").trim(),
       member_phone: "",
       line_user_id: lineUserId,
