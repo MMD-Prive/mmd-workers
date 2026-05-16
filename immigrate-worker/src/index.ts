@@ -121,6 +121,7 @@ const SIGIL = {
   controlRoomLogs: "/sigil/admin/control-room/logs",
   controlRoomSessions: "/sigil/admin/control-room/sessions/live",
   controlRoomSessionRefresh: "/sigil/admin/control-room/sessions/refresh",
+  booking: "/sigil/booking",
   createSession: "/sigil/admin/jobs/create-session",
   createJob: "/sigil/admin/jobs/create-job",
   modelPromoteImmigration: "/sigil/admin/models/promote-immigration",
@@ -5175,6 +5176,7 @@ function isProtectedBrowserRoute(pathname: string): boolean {
     pathname.startsWith(`${CONTROL_ROOM.root}/`) ||
     pathname === SIGIL.controlRoom ||
     pathname.startsWith(`${SIGIL.controlRoom}/`) ||
+    pathname === SIGIL.booking ||
     pathname === SIGIL.createSession ||
     pathname === SIGIL.createJob;
   const isJobsPage = pathname === JOBS.root || pathname.startsWith(`${JOBS.root}/`);
@@ -5206,7 +5208,7 @@ function selectAdminLoginPath(pathname: string): string {
 }
 
 function selectAdminDefaultNext(pathname: string): string {
-  return isSigilPath(pathname) ? SIGIL.controlRoom : ADMIN_GATE_DEFAULT_NEXT;
+  return isSigilPath(pathname) ? SIGIL.booking : ADMIN_GATE_DEFAULT_NEXT;
 }
 
 function getLegacyAdminPath(pathname: string): string {
@@ -5233,6 +5235,7 @@ function getLegacyAdminPath(pathname: string): string {
       return CONTROL_ROOM.sessions;
     case SIGIL.controlRoomSessionRefresh:
       return CONTROL_ROOM.sessionRefresh;
+    case SIGIL.booking:
     case SIGIL.createSession:
       return ADMIN_JOBS.createSessionLegacy;
     case SIGIL.createJob:
@@ -5565,9 +5568,9 @@ async function withInjectedSigilAdminBootstrap(response: Response): Promise<Resp
 function renderAdminLoginPage(request: Request, env: Env): Response {
   const url = new URL(request.url);
   const isSigilLogin = url.pathname === SIGIL.login;
-  const fallbackNext = isSigilLogin ? SIGIL.createSession : selectAdminDefaultNext(url.pathname);
+  const fallbackNext = isSigilLogin ? SIGIL.booking : selectAdminDefaultNext(url.pathname);
   const next = isSigilLogin
-    ? SIGIL.createSession
+    ? SIGIL.booking
     : normalizeAdminNextPath(url.searchParams.get("next"), fallbackNext);
   const defaultBaseUrl = defaultAdminGateBaseUrl(env);
   const loginSessionPath = isSigilLogin ? SIGIL.loginSession : CONTROL_ROOM.loginSession;
@@ -5813,11 +5816,11 @@ function renderAdminLoginPage(request: Request, env: Env): Response {
 function renderCreateSessionLinksPage(request: Request, session: AdminGateSession | null): Response {
   const requestUrl = new URL(request.url);
   const next = normalizeAdminNextPath(requestUrl.pathname + requestUrl.search);
-  const isSigilAdmin = isSigilAdminPath(requestUrl.pathname);
-  const bootstrap = isSigilAdmin
+  const isSigilBooking = requestUrl.pathname === SIGIL.booking || isSigilAdminPath(requestUrl.pathname);
+  const bootstrap = isSigilBooking
     ? sigilAdminBrowserBootstrapScript()
     : adminGateBootstrapScript(session as AdminGateSession, next, selectAdminLoginPath(requestUrl.pathname));
-  const submitPath = isSigilAdmin ? SIGIL.createSession : ADMIN_JOBS.createSession;
+  const submitPath = isSigilBooking ? SIGIL.booking : ADMIN_JOBS.createSession;
   const html = `<!doctype html>
 <html lang="th">
   <head>
@@ -8606,7 +8609,7 @@ async function handleAdminLoginSession(request: Request, env: Env): Promise<Resp
   const explicitBearer = toStr(body?.bearer);
   const explicitConfirmKey = toStr(body?.confirmKey);
   const requestPath = new URL(request.url).pathname;
-  const defaultNext = requestPath === SIGIL.loginSession ? SIGIL.createSession : selectAdminDefaultNext(requestPath);
+  const defaultNext = requestPath === SIGIL.loginSession ? SIGIL.booking : selectAdminDefaultNext(requestPath);
   const next = normalizeAdminNextPath(body?.next, defaultNext);
   let baseUrl = "";
 
@@ -8871,6 +8874,7 @@ export default {
         (request.method === "GET" || request.method === "HEAD") &&
         (url.pathname === ADMIN_JOBS.createSession ||
           url.pathname === ADMIN_JOBS.createSessionLegacy ||
+          url.pathname === SIGIL.booking ||
           url.pathname === SIGIL.createSession)
       ) {
         if (request.method === "HEAD") {
@@ -8884,7 +8888,7 @@ export default {
         }
 
         const gateSession = getValidatedGateSession(request);
-        const sigilAdminSession = isSigilAdminPath(url.pathname)
+        const sigilAdminSession = (url.pathname === SIGIL.booking || isSigilAdminPath(url.pathname))
           ? await getValidSigilAdminSession(request, env)
           : null;
         if (!gateSession && !sigilAdminSession && !isAuthorized(request, env)) {
@@ -8901,7 +8905,7 @@ export default {
             bearer: readInternalToken(request) || env.INTERNAL_TOKEN,
           } satisfies AdminGateSession);
 
-        return url.pathname === SIGIL.createSession
+        return (url.pathname === SIGIL.booking || url.pathname === SIGIL.createSession)
           ? renderCreateSessionLinksPage(request, session)
           : renderCreateSessionPage(request, session);
       }
@@ -8915,7 +8919,7 @@ export default {
 
       if (
         request.method === "POST" &&
-        url.pathname === SIGIL.createSession
+        (url.pathname === SIGIL.booking || url.pathname === SIGIL.createSession)
       ) {
         const sigilAdminSession = await getValidSigilAdminSession(request, env);
         if (!sigilAdminSession) {
