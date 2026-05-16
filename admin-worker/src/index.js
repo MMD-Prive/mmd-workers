@@ -61,6 +61,7 @@ import {
 
 const LOCK = "v2026-LOCK-01";
 const AIRTABLE_API = "https://api.airtable.com/v0";
+const ADMIN_SESSION_COOKIE = "mmd_admin_worker_session";
 
 export default {
   async fetch(req, env, ctx) {
@@ -119,7 +120,7 @@ export default {
       if (!isAllowedOrigin(req, env)) {
         return withCors(req, env, json({ ok: false, error: "origin_not_allowed" }, 403));
       }
-      if (!isAuthed(req, env)) {
+      if (!(await isAdminRouteAuthed(req, env))) {
         return withCors(req, env, json({ ok: false, error: "unauthorized" }, 401));
       }
 
@@ -140,7 +141,7 @@ export default {
       if (!isAllowedOrigin(req, env)) {
         return withCors(req, env, json({ ok: false, error: "origin_not_allowed" }, 403));
       }
-      if (!isAuthed(req, env)) {
+      if (!(await isAdminRouteAuthed(req, env))) {
         return withCors(req, env, json({ ok: false, error: "unauthorized" }, 401));
       }
 
@@ -284,7 +285,7 @@ export default {
       }
 
       // (3) General admin auth (Bearer OR confirm-key)
-      if (!isAuthed(req, env)) {
+      if (!(await isAdminRouteAuthed(req, env))) {
         return withCors(req, env, json({ ok: false, error: "unauthorized" }, 401));
       }
 
@@ -616,6 +617,60 @@ function isAuthed(req, env) {
   if (env.CONFIRM_KEY && ck && ck === env.CONFIRM_KEY) return true;
 
   return false;
+}
+
+async function isAdminRouteAuthed(req, env) {
+  if (isAuthed(req, env)) return true;
+  return Boolean(await readValidAdminSessionCookie(req, env));
+}
+
+function parseCookies(req) {
+  const cookieHeader = req.headers.get("Cookie") || "";
+  const out = new Map();
+  for (const part of cookieHeader.split(";")) {
+    const idx = part.indexOf("=");
+    if (idx <= 0) continue;
+    const key = part.slice(0, idx).trim();
+    const value = part.slice(idx + 1).trim();
+    if (key) out.set(key, value);
+  }
+  return out;
+}
+
+function getAdminSessionSecret(env) {
+  return str(env.ADMIN_SESSION_SECRET || env.CONFIRM_KEY || env.ADMIN_BEARER || "");
+}
+
+function base64UrlDecodeString(input) {
+  const normalized = String(input || "").replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "===".slice((normalized.length + 3) % 4);
+  return atob(padded);
+}
+
+function readAdminSessionCookie(req) {
+  return parseCookies(req).get(ADMIN_SESSION_COOKIE) || "";
+}
+
+async function readValidAdminSessionCookie(req, env) {
+  const token = readAdminSessionCookie(req);
+  if (!token) return null;
+  const secret = getAdminSessionSecret(env);
+  if (!secret) return null;
+
+  const [encoded, sig] = token.split(".");
+  if (!encoded || !sig) return null;
+
+  const expected = await hmacSha256Hex(encoded, secret);
+  if (expected !== sig) return null;
+
+  try {
+    const payload = JSON.parse(base64UrlDecodeString(encoded));
+    const exp = Number(payload?.exp || 0);
+    if (!exp || exp <= Math.floor(Date.now() / 1000)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
 }
 
 function isConfirmKeyAuthed(req, env) {
