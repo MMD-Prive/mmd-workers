@@ -462,6 +462,20 @@ export default {
         return withCors(req, env, json({ ok: true, items }));
       }
 
+      // GET /v1/admin/models/search
+      if (method === "GET" && path === "/v1/admin/models/search") {
+        const q = (url.searchParams.get("q") || "").trim();
+        const limit = clampInt(url.searchParams.get("limit"), 1, 50, 12);
+
+        const items = await airtableList(env, env.AIRTABLE_TABLE_MODELS || "models", {
+          q,
+          limit,
+          matchFields: ["name", "nickname", "telegram_username", "telegram_id", "unique_key"],
+        });
+
+        return withCors(req, env, json({ ok: true, items }));
+      }
+
       // GET /v1/admin/notes/context
       if (method === "GET" && path === "/v1/admin/notes/context") {
         const clientId = str(url.searchParams.get("client_id"));
