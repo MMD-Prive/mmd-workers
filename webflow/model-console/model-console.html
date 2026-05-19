@@ -290,7 +290,7 @@
               <article class="mmdmcx-profile-card">
                 <span data-i18n="work.publicJob">Public / Travel Job</span>
                 <strong data-i18n="work.publicJobValue">Package 2-5 ชั่วโมง + OT ตามจริง</strong>
-                <em data-i18n="workText">Package เริ่มได้ตั้งแต่ 2–5 ชั่วโมง ถ้าเกินเวลาที่จองไว้จะคิด OT เพิ่ม ชั่วโมงละ 750 บาท และหลังเที่ยงคืนเป็นชั่วโมงละ 1,000 บาท หากเกิน 12 ชั่วโมงจะนับเป็นอีก 1 คิวทันที</em>
+                <em data-i18n="workText">Package เริ่มได้ตั้งแต่ 2–5 ชั่วโมง ถ้าเกินเวลาที่จองไว้จะคิด OT ตามเรทที่ทีมอนุมัติให้แต่ละคน ถ้ายังไม่ได้ตั้งค่า ระบบจะใช้เรท default ของงาน public ก่อน และถ้าเกิน 12 ชั่วโมงจะนับเป็นอีก 1 คิวทันที</em>
               </article>
               <label class="mmdmcx-field">
                 <span data-i18n="fieldDuration">Package Duration</span>
@@ -302,12 +302,24 @@
                 </select>
               </label>
               <label class="mmdmcx-field">
-                <span data-i18n="work.publicMin">Public Minimum Rate</span>
-                <input class="mmdmcx-input" type="text" value="20,000 THB" data-rate-input="public_minimum_rate">
+                <span data-i18n="work.publicMin">Minimum Rate</span>
+                <input class="mmdmcx-input" type="text" value="20,000 THB" data-rate-input="public_min_rate">
               </label>
               <label class="mmdmcx-field">
-                <span data-i18n="work.publicStandard">Public Standard Rate</span>
+                <span data-i18n="work.publicStandard">Standard Rate</span>
                 <input class="mmdmcx-input" type="text" value="28,000 THB" data-rate-input="public_standard_rate">
+              </label>
+              <label class="mmdmcx-field">
+                <span data-i18n="fieldOtRate">OT Rate / hour</span>
+                <input class="mmdmcx-input" type="text" placeholder="750 / 1000 / 1500 / 2000" data-rate-input="public_ot_rate">
+              </label>
+              <label class="mmdmcx-field">
+                <span data-i18n="fieldOtAfterMidnightRate">OT After Midnight / hour</span>
+                <input class="mmdmcx-input" type="text" placeholder="1000 / 1500 / 2000" data-rate-input="public_ot_after_midnight_rate">
+              </label>
+              <label class="mmdmcx-field">
+                <span data-i18n="fieldExtraQueueAfter">Extra Queue After</span>
+                <input class="mmdmcx-input" type="number" min="1" value="12" readonly data-rate-input="extra_queue_after_hours">
               </label>
               <div class="mmdmcx-field">
                 <span data-i18n="work.publicMode">Travel Model / Extreme Model</span>
@@ -317,9 +329,9 @@
                 </div>
               </div>
               <article class="mmdmcx-profile-card">
-                <span data-i18n="noticeReady">Package / OT Rule</span>
-                <strong>OT 750 / 1,000 THB</strong>
-                <em data-i18n="work.extraQueue">เกิน 12 ชั่วโมง = เพิ่มอีก 1 คิวทันที</em>
+                <span data-i18n="noticeReady">Model-specific OT</span>
+                <strong data-i18n="work.extraQueue">เกิน 12 ชั่วโมง = เพิ่มอีก 1 คิวทันที</strong>
+                <em data-i18n="otRuleNote">OT ใช้เรทที่ทีมอนุมัติให้แต่ละคน ถ้ายังไม่ตั้งค่าให้ใช้ default public ก่อน</em>
               </article>
               <label class="mmdmcx-field">
                 <span data-i18n="work.notes">Work Notes</span>
