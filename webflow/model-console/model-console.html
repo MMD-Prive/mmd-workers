@@ -58,7 +58,7 @@
           <span class="mmdmcx-title-sub" data-i18n="hero.subtitle">พร้อมแล้วค่อยขยับ</span>
         </h1>
         <p class="mmdmcx-subtitle" data-i18n="hero.copy">
-          คอนโซลของ Public Model / Travel Model สำหรับงานมาตรฐาน 5 ชม. ดูงาน แชร์ตำแหน่ง ส่ง ETA และเช็กโปรไฟล์ในหน้าเดียว
+          คอนโซลของ Public Model / Travel Model สำหรับ Package 2-5 ชั่วโมง ดูงาน แชร์ตำแหน่ง ส่ง ETA และเช็กโปรไฟล์ในหน้าเดียว
         </p>
 
         <div class="mmdmcx-hero-meta">
@@ -289,8 +289,18 @@
             <div class="mmdmcx-profile-grid">
               <article class="mmdmcx-profile-card">
                 <span data-i18n="work.publicJob">Public / Travel Job</span>
-                <strong data-i18n="work.publicJobValue">งานมาตรฐาน 5 ชม.</strong>
+                <strong data-i18n="work.publicJobValue">Package 2-5 ชั่วโมง + OT ตามจริง</strong>
+                <em data-i18n="workText">Package เริ่มได้ตั้งแต่ 2–5 ชั่วโมง ถ้าเกินเวลาที่จองไว้จะคิด OT เพิ่ม ชั่วโมงละ 750 บาท และหลังเที่ยงคืนเป็นชั่วโมงละ 1,000 บาท หากเกิน 12 ชั่วโมงจะนับเป็นอีก 1 คิวทันที</em>
               </article>
+              <label class="mmdmcx-field">
+                <span data-i18n="fieldDuration">Package Duration</span>
+                <select class="mmdmcx-input" data-package-duration-hours>
+                  <option value="2">2 hours</option>
+                  <option value="3">3 hours</option>
+                  <option value="4">4 hours</option>
+                  <option value="5">5 hours</option>
+                </select>
+              </label>
               <label class="mmdmcx-field">
                 <span data-i18n="work.publicMin">Public Minimum Rate</span>
                 <input class="mmdmcx-input" type="text" value="20,000 THB" data-rate-input="public_minimum_rate">
@@ -306,6 +316,15 @@
                   <button class="mmdmcx-chip" type="button" data-chip-group="public_mode" data-chip-value="Extreme Model" aria-pressed="false" data-i18n="work.extremeModel">Extreme Model</button>
                 </div>
               </div>
+              <article class="mmdmcx-profile-card">
+                <span data-i18n="noticeReady">Package / OT Rule</span>
+                <strong>OT 750 / 1,000 THB</strong>
+                <em data-i18n="work.extraQueue">เกิน 12 ชั่วโมง = เพิ่มอีก 1 คิวทันที</em>
+              </article>
+              <label class="mmdmcx-field">
+                <span data-i18n="work.notes">Work Notes</span>
+                <input class="mmdmcx-input" type="text" placeholder="Area, travel note, client timing" data-work-notes>
+              </label>
             </div>
           </div>
         </div>
@@ -331,7 +350,7 @@
             <span data-i18n="label.saveState">Save state</span>
             <strong data-save-state>saved</strong>
           </div>
-          <button class="mmdmcx-button mmdmcx-button--primary" type="button" data-action-save-profile data-i18n="action.saveProfile">Save Work Profile</button>
+          <button class="mmdmcx-button mmdmcx-button--primary" type="button" data-action-save-profile data-i18n="action.saveProfile">Save Work Settings</button>
         </div>
       </section>
 

@@ -13,7 +13,7 @@
       "hero.kicker": "MMD PRIVÉ",
       "hero.title": "Public Model Console",
       "hero.subtitle": "พร้อมแล้วค่อยขยับ",
-      "hero.copy": "คอนโซลของ Public Model / Travel Model สำหรับงานมาตรฐาน 5 ชม. ดูงาน แชร์โลเคชัน ส่ง ETA และเช็กโปรไฟล์ในหน้าเดียว",
+      "hero.copy": "คอนโซลของ Public Model / Travel Model สำหรับ Package 2-5 ชั่วโมง ดูงาน แชร์โลเคชัน ส่ง ETA และเช็กโปรไฟล์ในหน้าเดียว",
       "hero.imageAlt": "Public Model Console hero",
       "hero.logoAlt": "MMD PRIVÉ logo",
       "label.session": "Session",
@@ -63,17 +63,22 @@
       "timeline.started": "Start Work",
       "timeline.finished": "Finished",
       "timeline.separated": "Separated",
+      "fieldDuration": "Package Duration",
+      "workText": "Package เริ่มได้ตั้งแต่ 2–5 ชั่วโมง ถ้าเกินเวลาที่จองไว้จะคิด OT เพิ่ม ชั่วโมงละ 750 บาท และหลังเที่ยงคืนเป็นชั่วโมงละ 1,000 บาท หากเกิน 12 ชั่วโมงจะนับเป็นอีก 1 คิวทันที",
+      "noticeReady": "Package / OT Rule",
       "work.label": "Work Profile",
       "work.title": "โปรไฟล์งาน",
       "work.tabsAria": "แท็บโปรไฟล์งาน",
       "work.public": "Public Model",
       "work.publicJob": "Public / Travel Job",
-      "work.publicJobValue": "งานมาตรฐาน 5 ชม.",
+      "work.publicJobValue": "Package 2-5 ชั่วโมง + OT ตามจริง",
       "work.publicMin": "Public Minimum Rate",
       "work.publicStandard": "Public Standard Rate",
       "work.publicMode": "Travel Model / Extreme Model",
       "work.travelModel": "Travel Model",
       "work.extremeModel": "Extreme Model",
+      "work.extraQueue": "เกิน 12 ชั่วโมง = เพิ่มอีก 1 คิวทันที",
+      "work.notes": "Work Notes",
       "budget.label": "Client Budget",
       "budget.title": "งบลูกค้า",
       "budget.level1": "Level 1 ปกติ",
@@ -96,7 +101,7 @@
       "action.delay": "Notify delay",
       "action.openMap": "Open Map",
       "action.viewBrief": "View Full Brief",
-      "action.saveProfile": "Save Work Profile",
+      "action.saveProfile": "Save Work Settings",
       "action.updateProfile": "Update Profile",
       "action.updatePayout": "Update Payout",
       "action.compcard": "Generate Compcard",
@@ -141,11 +146,11 @@
       "note.loading": "Loading dashboard from admin-worker...",
       "note.loaded": "Dashboard loaded from admin-worker.",
       "note.loadFailed": "Dashboard could not load from admin-worker.",
-      "note.dirty": "Work profile has unsaved changes. Save stays on the experience layer for now.",
+      "note.dirty": "Work settings have unsaved changes. Save stays on the experience layer for now.",
       "note.previewSaved": "Preview profile saved locally.",
-      "note.profileSending": "Sending profile update through admin-worker...",
-      "note.profileAccepted": "Profile update accepted by admin-worker facade.",
-      "note.profileRejected": "Profile update was not accepted.",
+      "note.profileSending": "Sending work settings through admin-worker...",
+      "note.profileAccepted": "Work settings accepted by admin-worker facade.",
+      "note.profileRejected": "Work settings were not accepted.",
       "note.statusSending": "Sending status to admin-worker...",
       "note.statusUpdated": "Status updated through admin-worker.",
       "note.statusRejected": "Status update was not accepted.",
@@ -181,7 +186,7 @@
     "hero.kicker": "MMD PRIVÉ",
     "hero.title": "Public Model Console",
     "hero.subtitle": "Move when it is clear",
-    "hero.copy": "Public Model / Travel Model console for standard 5-hour jobs. Check the job, send ETA, manage route status, and keep the team updated from one place.",
+    "hero.copy": "Public Model / Travel Model console for 2-5 hour packages. Check the job, send ETA, manage route status, and keep the team updated from one place.",
     "command.title": "Current Command",
     "command.copy": "Read the command here first, then tap the action that matches the real status.",
     "strip.title": "Status Snapshot",
@@ -201,7 +206,12 @@
     "work.tabsAria": "Work profile tabs",
     "work.public": "Public Model",
     "work.publicJob": "Public / Travel Job",
-    "work.publicJobValue": "Standard 5-hour job",
+    "fieldDuration": "Package Duration",
+    "workText": "Package starts from 2-5 hours. Time beyond the booked package is OT at 750 THB/hour, and after midnight it is 1,000 THB/hour. If total duration exceeds 12 hours, count one additional queue immediately.",
+    "noticeReady": "Package / OT Rule",
+    "work.publicJobValue": "2-5 hour package + actual OT",
+    "work.extraQueue": "Over 12 hours = one additional queue immediately",
+    "work.notes": "Work Notes",
     "budget.title": "Client Budget",
     "budget.level1": "Level 1 Normal",
     "budget.level2": "Level 2 Mid",
@@ -226,7 +236,7 @@
     "hero.kicker": "MMD PRIVÉ",
     "hero.title": "公开模特控制台",
     "hero.subtitle": "确认清楚再行动",
-    "hero.copy": "Public Model / Travel Model 的 5 小时标准工作控制台。查看工作、发送 ETA、管理路线并同步团队。",
+    "hero.copy": "Public Model / Travel Model 的 2-5 小时套餐控制台。查看工作、发送 ETA、管理路线并同步团队。",
     "label.session": "场次",
     "label.status": "状态",
     "label.lastUpdate": "最后更新",
@@ -264,9 +274,14 @@
     "work.tabsAria": "工作资料标签",
     "work.public": "公开模特",
     "work.publicJob": "公开 / Travel 工作",
-    "work.publicJobValue": "标准 5 小时工作",
+    "fieldDuration": "Package Duration",
+    "workText": "Package 可从 2-5 小时开始。超过已预订时间按 OT 计算，每小时 750 THB；午夜后每小时 1,000 THB。总时长超过 12 小时会立即算作额外 1 个队列。",
+    "noticeReady": "Package / OT 规则",
+    "work.publicJobValue": "2-5 小时 Package + 实际 OT",
     "work.publicMin": "公开最低价",
     "work.publicStandard": "公开标准价",
+    "work.extraQueue": "超过 12 小时 = 立即增加 1 个队列",
+    "work.notes": "工作备注",
     "budget.title": "客户预算",
     "budget.level1": "Level 1 普通",
     "budget.level2": "Level 2 中等",
@@ -282,7 +297,7 @@
     "action.delay": "通知延迟",
     "action.openMap": "打开地图",
     "action.viewBrief": "查看完整简报",
-    "action.saveProfile": "保存工作资料",
+    "action.saveProfile": "保存工作设置",
     "action.updateProfile": "更新资料",
     "action.updatePayout": "更新付款",
     "action.compcard": "生成资料卡",
@@ -305,7 +320,7 @@
     "hero.kicker": "MMD PRIVÉ",
     "hero.title": "公開モデルコンソール",
     "hero.subtitle": "確認してから動く",
-    "hero.copy": "Public Model / Travel Model 用の標準 5 時間案件コンソールです。仕事、ETA、ルート、チーム共有をここで管理します。",
+    "hero.copy": "Public Model / Travel Model 用の 2-5 時間 Package コンソールです。仕事、ETA、ルート、チーム共有をここで管理します。",
     "label.session": "セッション",
     "label.status": "状態",
     "label.lastUpdate": "最終更新",
@@ -343,9 +358,14 @@
     "work.tabsAria": "仕事プロフィールタブ",
     "work.public": "公開モデル",
     "work.publicJob": "公開 / Travel 案件",
-    "work.publicJobValue": "標準 5 時間案件",
+    "fieldDuration": "Package Duration",
+    "workText": "Package は 2-5 時間から開始できます。予約時間を超えた分は OT として 1 時間 750 THB、深夜以降は 1 時間 1,000 THB。合計 12 時間を超える場合は、すぐに追加 1 キューとして扱います。",
+    "noticeReady": "Package / OT ルール",
+    "work.publicJobValue": "2-5 時間 Package + 実際の OT",
     "work.publicMin": "公開最低料金",
     "work.publicStandard": "公開標準料金",
+    "work.extraQueue": "12 時間超 = すぐに追加 1 キュー",
+    "work.notes": "仕事メモ",
     "budget.title": "クライアント予算",
     "budget.level1": "Level 1 通常",
     "budget.level2": "Level 2 中",
@@ -361,7 +381,7 @@
     "action.delay": "遅延を通知",
     "action.openMap": "地図を開く",
     "action.viewBrief": "全概要を見る",
-    "action.saveProfile": "仕事プロフィールを保存",
+    "action.saveProfile": "仕事設定を保存",
     "action.updateProfile": "プロフィール更新",
     "action.updatePayout": "支払い更新",
     "action.compcard": "コンポジット作成",
@@ -618,6 +638,8 @@
       tabButtons: findAll(root, "[data-tab-target]"),
       tabPanels: findAll(root, "[data-tab-panel]"),
       rateInputs: findAll(root, "[data-rate-input]"),
+      packageDuration: find(root, "[data-package-duration-hours]"),
+      workNotes: find(root, "[data-work-notes]"),
       chipButtons: findAll(root, "[data-chip-group]"),
       budgetButtons: findAll(root, "[data-budget-level]"),
       startRouteButtons: findAll(root, "[data-action-start-route]"),
@@ -989,19 +1011,50 @@
     return rates;
   }
 
+  function readPackageDuration(view) {
+    var value = Number(trim(view.packageDuration && view.packageDuration.value));
+    return [2, 3, 4, 5].indexOf(value) === -1 ? 2 : value;
+  }
+
+  function readTravelStyle(view) {
+    var values = collectChipGroup(view, "public_mode");
+    return values.length ? values[0] : "Travel Model";
+  }
+
   function collectWorkProfile() {
     if (!instance) return null;
 
+    var rates = collectRates(instance.view);
+    var packageDuration = readPackageDuration(instance.view);
+    var travelStyle = readTravelStyle(instance.view);
+    var workNotes = trim(instance.view.workNotes && instance.view.workNotes.value);
+
     return {
+      t: instance.state.signedRef,
       session_id: instance.state.sessionId,
       model_id: instance.state.modelId,
       source_surface: "webflow_model_console",
+      model_work_lane: "public_model",
       work_lane: "public_model",
+      package_duration_hours: packageDuration,
+      ot_rate_thb: 750,
+      ot_after_midnight_rate_thb: 1000,
+      extra_queue_after_hours: 12,
+      budget_level: instance.state.budgetLevel,
+      public_min_rate: rates.public_minimum_rate || "",
+      public_standard_rate: rates.public_standard_rate || "",
+      preferred_area: instance.state.location || "",
+      travel_style: travelStyle,
+      work_notes: workNotes,
       public_profile: {
-        job: "งานมาตรฐาน 5 ชม.",
-        minimum_rate: collectRates(instance.view).public_minimum_rate || "",
-        standard_rate: collectRates(instance.view).public_standard_rate || "",
-        mode: collectChipGroup(instance.view, "public_mode")
+        package_duration_hours: packageDuration,
+        ot_rate_thb: 750,
+        ot_after_midnight_rate_thb: 1000,
+        extra_queue_after_hours: 12,
+        minimum_rate: rates.public_minimum_rate || "",
+        standard_rate: rates.public_standard_rate || "",
+        mode: [travelStyle],
+        notes: workNotes
       },
       client_budget: instance.state.budgetLevel
     };
@@ -1018,7 +1071,7 @@
       instance.state.saved = true;
       setNote(instance.state, copy(instance.state.lang, "note.previewSaved"));
       renderSurface(instance.view, instance.state);
-      logMock("save_work_profile", payload);
+      logMock("save_work_settings", payload);
       return payload;
     }
 
@@ -1355,6 +1408,18 @@
 
     for (index = 0; index < view.rateInputs.length; index += 1) {
       view.rateInputs[index].addEventListener("input", function () {
+        markDirty(view, state);
+      });
+    }
+
+    if (view.packageDuration) {
+      view.packageDuration.addEventListener("change", function () {
+        markDirty(view, state);
+      });
+    }
+
+    if (view.workNotes) {
+      view.workNotes.addEventListener("input", function () {
         markDirty(view, state);
       });
     }
