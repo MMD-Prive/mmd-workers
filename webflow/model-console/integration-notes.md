@@ -306,3 +306,177 @@ If you want this UI live against production workers, the safest next move is:
 4. Keep `events-worker` and `payments-worker` as truth, not as direct browser targets.
 
 That preserves the repo's current architecture and keeps Webflow in the rendering/orchestration role only.
+
+## Model History Immigration Layer
+
+Before the full MMD system, a model may already have operational history spread across LINE groups, LINE group notes, team chats, and calendar reminders.
+
+Example:
+
+- a model named Mek may already have a LINE group such as `MMD Mek`
+- the group may include Per, the model, and admins
+- job notes may live in LINE group notes
+- reminders may live in LINE Calendar or Google Calendar
+- payment evidence may live in the internal MMD team group
+
+Treat all of this as immigration-layer input only.
+It is historical evidence for review and normalization, not core production truth by default.
+
+### Source categories
+
+#### 1. Model LINE Group
+
+Example group:
+
+- `MMD Mek`
+
+Possible members:
+
+- Per
+- the model
+- admins
+
+Possible imported data:
+
+- job notes
+- session details
+- booking date/time
+- customer context
+- reminders
+- model confirmations
+- job completion notes
+- issues or special instructions
+
+#### 2. LINE Group Notes
+
+Use LINE group notes as a historical job record source.
+
+Possible extracted fields:
+
+- model name
+- date/time
+- location
+- job type
+- customer/member reference
+- rate
+- deposit/final payment note
+- status
+- admin note
+- model note
+- safety note
+
+#### 3. LINE Calendar / Google Calendar
+
+Use calendar entries as appointment reminder sources.
+
+Possible extracted fields:
+
+- event title
+- start/end time
+- model name
+- location
+- reminder time
+- acknowledgement status if available
+- linked session if matched
+
+#### 4. MMD Team Group
+
+Use the internal MMD team group as payment evidence input.
+
+Typical evidence includes:
+
+- customer payment slips
+- deposit slips
+- final payment slips
+- tips slips
+- payout slips paid to models
+- admin confirmation messages
+
+#### 5. Slip Evidence
+
+Every imported slip should be stored as payment evidence and linked to the correct entity when possible.
+
+Suggested evidence fields:
+
+- `payment_ref`
+- `session_id` if matched
+- `model_id` if payout slip
+- `client_id` or `member_id` if customer payment
+- `payment_type`: `deposit` | `final` | `tips` | `payout`
+- `source`: `line_team_group`
+- `original_message_time`
+- `uploaded_by` or sender if known
+- attachment URL or migrated file path
+- `verification_status`
+
+## Normalization target
+
+Keep the immigration layer separate from canonical Airtable records until review is complete.
+
+- Airtable becomes the source of truth only after review
+- migrated LINE history should first land in staging/import tables or views
+- do not directly overwrite canonical Sessions, Payments, Jobs, Models, or Clients from raw imported history
+- use confidence-based matching before linking imported history to existing Airtable records
+
+## Suggested staging tables or views
+
+- `Model History Imports`
+- `Imported Job Notes`
+- `Imported Calendar Events`
+- `Imported Payment Evidence`
+- `Imported Payout Evidence`
+- `Import Review Queue`
+
+## Matching logic
+
+Suggested matching rules:
+
+- match model by LINE group name, model nickname, model profile, or known `model_id`
+- match job/session by date/time plus model plus location plus amount
+- match payment by slip amount plus date/time plus customer/member plus session note
+- match payout by payout amount plus model plus transfer time
+
+All automatic matches should carry a confidence level and stay reviewable.
+
+## Model Console impact
+
+Prepare a `History` or `Imported History` area in the Model Console for review-safe historical context.
+
+Possible sections:
+
+- previous jobs
+- imported notes
+- payment evidence
+- payout history
+- calendar reminders
+- admin-reviewed notes
+
+Important model-facing restriction:
+
+- models may see payout status/history when approved
+- models should not see all customer payment evidence or slip details by default
+
+## Admin Console impact
+
+Add an import review queue for operations/admin use.
+
+Recommended queue actions and warnings:
+
+- unmatched job notes
+- unmatched slips
+- duplicate slip warnings
+- low-confidence matches
+- approve actions
+- link actions
+- reject actions
+
+## Boundaries and access control
+
+This history layer is an immigration/migration layer, not a new truth contract.
+
+- core production worker contracts remain unchanged
+- LINE group notes, calendar reminders, and slips are historical evidence until approved
+- Airtable remains canonical only after review and normalization
+- keep sensitive information restricted
+- do not expose customer slip details to models unless explicitly approved
+- preserve worker separation even if imported history is later surfaced in console summaries
