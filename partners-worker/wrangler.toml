@@ -5,10 +5,8 @@ compatibility_flags = [ "nodejs_compat" ]
 workers_dev = true
 
 routes = [
-  { pattern = "www.mmdbkk.com/terms*", zone_name = "mmdbkk.com" },
-  { pattern = "www.mmdbkk.com/legal/terms*", zone_name = "mmdbkk.com" },
-  { pattern = "mmdbkk.com/terms*", zone_name = "mmdbkk.com" },
-  { pattern = "mmdbkk.com/legal/terms*", zone_name = "mmdbkk.com" }
+  { pattern = "www.mmdbkk.com/partner/form*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/partner/terms*", zone_name = "mmdbkk.com" }
 ]
 
 [observability]
@@ -31,8 +29,3 @@ DASHBOARD_URL = "/partner/dashboard"
 RECOGNIZED_URL = "/partner/recognized"
 TELEGRAM_CHAT_ID = "-1003546439681"
 TG_THREAD_CONFIRM = "61"
-
-# Secrets:
-# wrangler secret put AIRTABLE_API_KEY
-# wrangler secret put TELEGRAM_BOT_TOKEN
-# wrangler secret put TOKEN_SECRET

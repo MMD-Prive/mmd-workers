@@ -17,21 +17,18 @@ Layer ownership:
 - `POST /v1/partner/accept-terms`
 - `POST /v1/partner/approve`
 
-## Legal terms redirect scope
+## Partner route ownership
 
-- `/terms` returns `302` to `/partner/terms`.
-- `/terms?t=...` preserves `t` when redirecting to `/partner/terms?t=...`.
-- `/legal/terms` returns `302` to `/partner/terms`.
-- `/terms-of-service` and `/terms-and-conditions` must not redirect to `/partner/terms`.
-- `302` is intentional to avoid permanent browser/CDN caching while terms routing is still being finalized.
+- `partners-worker` owns partner-specific public pages only on `www.mmdbkk.com`.
+- `/partner/form` is the partner intake page.
+- `/partner/terms` is the partner-specific terms page.
+- `/legal/terms` is the public MMD Prive Terms of Use page and is served by Webflow, not `partners-worker`.
+- `/terms` is not owned by `partners-worker`. If it is needed as a public shortcut, route it to `/legal/terms` via Webflow or `mmd-edge-router`.
+- The apex canonical redirect for `mmdbkk.com/*` is owned by `mmd-edge-router`; `partners-worker` must not own apex/root domain routes.
 
 ## Required Secrets
 
-```bash
-wrangler secret put AIRTABLE_API_KEY
-wrangler secret put TELEGRAM_BOT_TOKEN
-wrangler secret put TOKEN_SECRET
-```
+Required secret bindings are `AIRTABLE_API_KEY`, `TELEGRAM_BOT_TOKEN`, and `TOKEN_SECRET`. Manage them through Cloudflare secret management; do not commit literal secret values.
 
 `TOKEN_SECRET` is used for HMAC SHA-256 token signatures. The raw token is never stored in Airtable; only the SHA-256 hash is stored in `Model Partners`.
 
