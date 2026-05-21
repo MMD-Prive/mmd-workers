@@ -344,6 +344,14 @@ function getPointsLedgerTable(env) {
   return toStr(env.AIRTABLE_TABLE_POINTS_LEDGER || "points_ledger");
 }
 
+function getPaymentProofsTable(env) {
+  return toStr(env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || "tblfJfM4Sqag9zrLi");
+}
+
+function getActivityLogsTable(env) {
+  return toStr(env.AIRTABLE_TABLE_ACTIVITY_LOGS || "tblbUWRoFL6OI6QMJ");
+}
+
 async function airtableFetch(env, path, init = {}) {
   const apiKey = getAirtableApiKey(env);
   const baseId = getAirtableBaseId(env);
@@ -376,6 +384,12 @@ async function airtableFindFirstByFormula(env, table, formula) {
   return data?.records?.[0] || null;
 }
 
+async function airtableFindManyByFormula(env, table, formula, maxRecords = 10) {
+  const path = `${encodeURIComponent(table)}?maxRecords=${Number(maxRecords) || 10}&filterByFormula=${encodeURIComponent(formula)}`;
+  const data = await airtableFetch(env, path, { method: "GET" });
+  return Array.isArray(data?.records) ? data.records : [];
+}
+
 async function airtableCreate(env, table, fields) {
   const data = await airtableFetch(env, encodeURIComponent(table), {
     method: "POST",
@@ -390,6 +404,25 @@ async function airtablePatch(env, table, recordId, fields) {
     body: JSON.stringify({ fields }),
   });
   return data || null;
+}
+
+async function airtableTableSchema(env, tableNameOrId) {
+  if (!tableNameOrId) return null;
+  const apiKey = getAirtableApiKey(env);
+  const baseId = getAirtableBaseId(env);
+  const res = await fetch(`${AIRTABLE_API}/meta/bases/${baseId}/tables`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  }).catch(() => null);
+  if (!res?.ok) return null;
+  const data = await res.json().catch(() => null);
+  const tables = Array.isArray(data?.tables) ? data.tables : [];
+  return tables.find((table) => table.id === tableNameOrId || table.name === tableNameOrId) || null;
+}
+
+function pickSchemaFields(fields, schema) {
+  if (!schema?.fields) return {};
+  const allowed = new Set(schema.fields.map((field) => field.name));
+  return Object.fromEntries(Object.entries(compact(fields || {})).filter(([key]) => allowed.has(key)));
 }
 
 async function findPaymentByPaymentRef(env, paymentRef) {
@@ -419,6 +452,28 @@ async function findPointLedgerByPaymentRef(env, paymentRef) {
   const table = getPointsLedgerTable(env);
   const formula = `{payment_ref}='${encodeFormulaValue(paymentRef)}'`;
   return airtableFindFirstByFormula(env, table, formula);
+}
+
+async function findPaymentsForOfficialPreview(env, { payment_ref, session_id }) {
+  const table = getPaymentsTable(env);
+  const clauses = [];
+  if (payment_ref) clauses.push(`{Payment Reference}='${encodeFormulaValue(payment_ref)}'`);
+  if (session_id) clauses.push(`{session_id}='${encodeFormulaValue(session_id)}'`);
+  if (!clauses.length) return [];
+  const formula = clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`;
+  return airtableFindManyByFormula(env, table, formula, 10);
+}
+
+async function findPaymentProofsForOfficialPreview(env, { payment_ref, session_id }) {
+  const table = getPaymentProofsTable(env);
+  const clauses = [];
+  if (payment_ref) clauses.push(`{payment_ref}='${encodeFormulaValue(payment_ref)}'`);
+  if (session_id) {
+    clauses.push(`SEARCH('${encodeFormulaValue(session_id)}', {session} & '')`);
+  }
+  if (!clauses.length) return [];
+  const formula = clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`;
+  return airtableFindManyByFormula(env, table, formula, 10);
 }
 
 /* -------------------------------------------------- */
@@ -656,6 +711,401 @@ async function handleVerify(req, env) {
       req,
       env,
       jsonResponse({ ok: false, error: String(err?.message || err) }, 400)
+    );
+  }
+}
+
+function readField(fields, names) {
+  for (const name of names) {
+    const value = fields?.[name];
+    if (value !== undefined && value !== null && toStr(value) !== "") return value;
+  }
+  return "";
+}
+
+function readPayloadField(fields, names) {
+  const raw = fields?.payload_json || fields?.Payload || "";
+  if (!raw) return "";
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    for (const name of names) {
+      const value = parsed?.[name];
+      if (value !== undefined && value !== null && toStr(value) !== "") return value;
+    }
+  } catch (_) {}
+  return "";
+}
+
+function readFieldOrPayload(fields, names) {
+  return readField(fields, names) || readPayloadField(fields, names);
+}
+
+function normalizeStatusText(value) {
+  return toStr(value).toLowerCase().replace(/[\s_-]+/g, "_");
+}
+
+function isExistingVerifiedPayment(fields) {
+  const paymentStatus = normalizeStatusText(readFieldOrPayload(fields, ["payment_status", "Payment Status", "status", "Status"]));
+  const verificationStatus = normalizeStatusText(readFieldOrPayload(fields, ["verification_status", "Verification Status"]));
+  return ["paid", "success", "verified", "completed", "settled"].includes(paymentStatus) ||
+    ["verified", "approved", "success", "settled"].includes(verificationStatus);
+}
+
+function paymentAmount(fields) {
+  return toNum(readFieldOrPayload(fields, ["amount_thb", "amount", "Amount", "Amount THB"]));
+}
+
+function amountMatches(expected, actual, tolerance) {
+  if (!Number.isFinite(expected) || !Number.isFinite(actual)) return false;
+  return Math.abs(Number(expected) - Number(actual)) <= tolerance;
+}
+
+function choosePaymentCandidate(records, payment_ref, session_id) {
+  if (!records.length) return null;
+  const exactRef = payment_ref
+    ? records.find((record) => toStr(readFieldOrPayload(record.fields || {}, ["Payment Reference", "payment_ref", "Payment Ref"])) === payment_ref)
+    : null;
+  if (exactRef) return exactRef;
+  const exactSession = session_id
+    ? records.find((record) => toStr(readFieldOrPayload(record.fields || {}, ["session_id", "Session ID"])) === session_id)
+    : null;
+  return exactSession || records[0];
+}
+
+function schemaAllowsChoice(schema, fieldName, value) {
+  const field = schema?.fields?.find((item) => item.name === fieldName);
+  const choices = field?.options?.choices;
+  if (!Array.isArray(choices) || !choices.length) return true;
+  return choices.some((choice) => toStr(choice.name).toLowerCase() === toStr(value).toLowerCase());
+}
+
+function paymentStageFromBody(body) {
+  const stageInput = toStr(body.payment_stage || body.payment_type);
+  if (!stageInput) return "";
+  return normalizeStage(stageInput);
+}
+
+function verificationReason(body) {
+  return toStr(body.match_reason || body.admin_reason);
+}
+
+function commitRequirementsMissing(body) {
+  const missing = [];
+  if (!toStr(body.verified_by)) missing.push("verified_by");
+  if (!verificationReason(body)) missing.push("match_reason_or_admin_reason");
+  if (!toStr(body.session_id)) missing.push("session_id");
+  if (!toStr(body.payment_ref || body.transaction_ref)) missing.push("payment_ref");
+  if (!Number.isFinite(toNum(body.amount_thb ?? body.amount))) missing.push("amount_thb");
+  if (!toStr(body.provider || body.payment_method)) missing.push("provider_or_payment_method");
+  if (!toStr(body.official_paid_at || body.paid_at) && !toStr(body.provider_txn_id)) missing.push("official_paid_at_or_provider_txn_id");
+  return missing;
+}
+
+async function evaluateOfficialVerification(env, body) {
+  const session_id = toStr(body.session_id);
+  const payment_ref = toStr(body.payment_ref || body.transaction_ref);
+  let stage = "";
+  try {
+    stage = paymentStageFromBody(body);
+  } catch (_) {
+    return { ok: false, status: 400, error: "invalid_payment_stage", code: "INVALID_PAYMENT_STAGE" };
+  }
+
+  if (!session_id && !payment_ref) {
+    return { ok: false, status: 400, error: "missing_session_id_or_payment_ref", code: "MISSING_LOOKUP_KEY" };
+  }
+
+  const expectedAmount = toNum(body.amount_thb ?? body.amount);
+  const tolerance = toNum(env.PAYMENT_MATCH_TOLERANCE_THB) || 0;
+  const warnings = [];
+  const blockers = [];
+
+  const [paymentRecords, sessionRecord, proofRecords] = await Promise.all([
+    findPaymentsForOfficialPreview(env, { payment_ref, session_id }),
+    session_id ? findSessionBySessionId(env, session_id) : Promise.resolve(null),
+    findPaymentProofsForOfficialPreview(env, { payment_ref, session_id }).catch((err) => {
+      warnings.push(`payment_proof_lookup_skipped:${String(err?.message || err).slice(0, 80)}`);
+      return [];
+    }),
+  ]);
+
+  const paymentRecord = choosePaymentCandidate(paymentRecords, payment_ref, session_id);
+  const paymentFields = paymentRecord?.fields || {};
+  const paymentSessionId = toStr(readFieldOrPayload(paymentFields, ["session_id", "Session ID"]));
+  const paymentRef = toStr(readFieldOrPayload(paymentFields, ["Payment Reference", "payment_ref", "Payment Ref"]));
+  const paymentStage = normalizeStatusText(readFieldOrPayload(paymentFields, ["payment_type", "payment_stage", "Payment Type"]));
+  const actualAmount = paymentAmount(paymentFields);
+  const existingVerified = Boolean(paymentRecord && isExistingVerifiedPayment(paymentFields));
+  const duplicatePaymentRefCount = payment_ref
+    ? paymentRecords.filter((record) => toStr(readFieldOrPayload(record.fields || {}, ["Payment Reference", "payment_ref", "Payment Ref"])) === payment_ref).length
+    : 0;
+
+  const evidence = {
+    payment_found: Boolean(paymentRecord),
+    session_found: Boolean(sessionRecord),
+    proof_found: proofRecords.length > 0,
+    amount_match: amountMatches(expectedAmount, actualAmount, tolerance),
+    session_match: Boolean(session_id && paymentSessionId && paymentSessionId === session_id),
+    payment_ref_match: Boolean(payment_ref && paymentRef && paymentRef === payment_ref),
+    existing_verified: existingVerified,
+  };
+
+  const stageMatch = !stage || !paymentStage || paymentStage === stage;
+  if (duplicatePaymentRefCount > 1) blockers.push("duplicate_payment_ref_records");
+  if (paymentRecord && session_id && paymentSessionId && paymentSessionId !== session_id) blockers.push("session_id_mismatch");
+  if (paymentRecord && payment_ref && paymentRef && paymentRef !== payment_ref) blockers.push("payment_ref_mismatch");
+  if (paymentRecord && Number.isFinite(expectedAmount) && Number.isFinite(actualAmount) && !evidence.amount_match) blockers.push("amount_mismatch");
+  if (!stageMatch) blockers.push("payment_stage_mismatch");
+  if (evidence.proof_found) warnings.push("proof_found_but_not_payment_truth");
+  if (existingVerified) warnings.push("payment_already_verified_or_paid");
+
+  let decision = "not_found";
+  let matched = false;
+  if (!paymentRecord && !sessionRecord && !proofRecords.length) {
+    decision = "not_found";
+  } else if (blockers.includes("session_id_mismatch") || blockers.includes("payment_ref_mismatch") || blockers.includes("payment_stage_mismatch")) {
+    decision = "mismatch";
+  } else if (existingVerified) {
+    decision = "duplicate_verified";
+    matched = true;
+  } else if (blockers.length || !paymentRecord || !sessionRecord || !evidence.amount_match) {
+    decision = "review_required";
+  } else {
+    decision = "match_ready";
+    matched = true;
+  }
+
+  return {
+    ok: true,
+    session_id,
+    payment_ref,
+    stage,
+    expectedAmount,
+    paymentRecord,
+    sessionRecord,
+    proofRecords,
+    paymentFields,
+    decision,
+    matched,
+    blockers,
+    warnings,
+    evidence,
+  };
+}
+
+function dryRunPreviewResponse(evaluation) {
+  return {
+    ok: true,
+    dry_run: true,
+    decision: evaluation.decision,
+    matched: evaluation.matched,
+    proposed_mutations: {
+      payments: [],
+      sessions: [],
+      proofs: [],
+      audit: [],
+    },
+    blockers: evaluation.blockers,
+    warnings: evaluation.warnings,
+    evidence: evaluation.evidence,
+    marked_paid: false,
+    verified: false,
+  };
+}
+
+function auditSummary(body, evaluation) {
+  return [
+    "[official_payment_verification]",
+    `session_id=${evaluation.session_id}`,
+    `payment_ref=${evaluation.payment_ref}`,
+    `amount_thb=${Number(evaluation.expectedAmount || 0)}`,
+    `provider=${toStr(body.provider || body.payment_method)}`,
+    toStr(body.provider_txn_id) ? `provider_txn_id=${toStr(body.provider_txn_id)}` : "",
+    `official_paid_at=${toStr(body.official_paid_at || body.paid_at)}`,
+    `verified_by=${toStr(body.verified_by)}`,
+    `reason=${verificationReason(body)}`,
+  ].filter(Boolean).join("; ");
+}
+
+function appendAuditNote(existing, summary) {
+  return [toStr(existing), summary].filter(Boolean).join("\n");
+}
+
+async function patchLinkedPaymentProofs(env, proofRecords, body) {
+  if (!proofRecords.length) return { ok: true, skipped: true, reason: "no_linked_proofs", updated: [] };
+  const table = getPaymentProofsTable(env);
+  const schema = await airtableTableSchema(env, table);
+  if (!schema?.fields) return { ok: true, skipped: true, reason: "payment_proofs_schema_unavailable", updated: [] };
+
+  const statusValue = schemaAllowsChoice(schema, "status", "matched_to_verified_payment")
+    ? "matched_to_verified_payment"
+    : schemaAllowsChoice(schema, "status", "verified_evidence")
+      ? "verified_evidence"
+      : "";
+  const fields = pickSchemaFields({
+    status: statusValue,
+    verified_at: nowIso(),
+    verified_by: toStr(body.verified_by),
+  }, schema);
+  if (!Object.keys(fields).length) return { ok: true, skipped: true, reason: "payment_proofs_no_safe_fields", updated: [] };
+
+  const updated = [];
+  for (const proof of proofRecords.slice(0, 10)) {
+    if (!proof?.id) continue;
+    await airtablePatch(env, table, proof.id, fields);
+    updated.push(proof.id);
+  }
+  return { ok: true, updated };
+}
+
+async function writeOfficialVerificationAudit(env, body, evaluation) {
+  const table = getActivityLogsTable(env);
+  const schema = await airtableTableSchema(env, table);
+  if (!schema?.fields) return { ok: true, skipped: true, reason: "activity_logs_schema_unavailable" };
+
+  const details = JSON.stringify({
+    event: "payment_official_verified",
+    session_id: evaluation.session_id,
+    payment_ref: evaluation.payment_ref,
+    amount_thb: evaluation.expectedAmount,
+    provider: toStr(body.provider || body.payment_method),
+    provider_txn_id: toStr(body.provider_txn_id),
+    official_paid_at: toStr(body.official_paid_at || body.paid_at),
+    decision: "verified",
+    verified_by: toStr(body.verified_by),
+    reason: verificationReason(body),
+  });
+  const fields = pickSchemaFields({
+    Action: "payment_official_verified",
+    "Action Performed": "payment_official_verified",
+    "Performed By": toStr(body.verified_by),
+    Target: evaluation.payment_ref,
+    Details: details,
+    "Created At": nowIso(),
+  }, schema);
+  if (!Object.keys(fields).length) return { ok: true, skipped: true, reason: "activity_logs_no_safe_fields" };
+  const created = await airtableCreate(env, table, fields);
+  return { ok: true, record_id: created?.id || null };
+}
+
+async function commitOfficialVerification(env, body, evaluation) {
+  if (evaluation.decision === "duplicate_verified") {
+    return {
+      ok: true,
+      dry_run: false,
+      decision: "duplicate_verified",
+      matched: true,
+      idempotent: true,
+      mutations: { payments: [], sessions: [], proofs: [], audit: [] },
+      blockers: evaluation.blockers,
+      warnings: evaluation.warnings,
+      evidence: evaluation.evidence,
+      marked_paid: true,
+      verified: true,
+    };
+  }
+
+  const commitBlockers = [...evaluation.blockers];
+  if (!evaluation.paymentRecord?.id) commitBlockers.push("payment_not_found");
+  if (!evaluation.sessionRecord?.id) commitBlockers.push("session_not_found");
+  if (!evaluation.evidence.payment_ref_match) commitBlockers.push("payment_ref_not_matched");
+  if (!evaluation.evidence.session_match) commitBlockers.push("session_id_not_matched");
+  if (!evaluation.evidence.amount_match) commitBlockers.push("amount_not_matched");
+  if (evaluation.decision !== "match_ready" || commitBlockers.length) {
+    return {
+      ok: true,
+      dry_run: false,
+      decision: evaluation.decision === "not_found" ? "not_found" : "review_required",
+      matched: false,
+      mutations: { payments: [], sessions: [], proofs: [], audit: [] },
+      blockers: commitBlockers,
+      warnings: evaluation.warnings,
+      evidence: evaluation.evidence,
+      marked_paid: false,
+      verified: false,
+    };
+  }
+
+  const stage = evaluation.stage || normalizeStatusText(readFieldOrPayload(evaluation.paymentFields, ["payment_stage", "payment_type"])) || "full";
+  const paidAt = toStr(body.official_paid_at || body.paid_at || nowIso());
+  const provider = toStr(body.provider || body.payment_method);
+  const notes = appendAuditNote(readFieldOrPayload(evaluation.paymentFields, ["Notes", "notes"]), auditSummary(body, evaluation));
+  const paymentPatch = compact({
+    "Payment Status": "paid",
+    "Verification Status": "verified",
+    payment_intent_status: "paid",
+    "Payment Date": paidAt,
+    "Payment Method": provider,
+    Notes: notes,
+    payment_type: readFieldOrPayload(evaluation.paymentFields, ["payment_type"]) ? undefined : stage,
+    payment_stage: readFieldOrPayload(evaluation.paymentFields, ["payment_stage"]) ? undefined : stage,
+  });
+  await airtablePatch(env, getPaymentsTable(env), evaluation.paymentRecord.id, paymentPatch);
+
+  const sessionStatus = paymentStatusFromStage(stage);
+  const sessionPatch = compact({
+    "Payment Status": sessionStatus,
+    payment_ref: evaluation.payment_ref,
+  });
+  await airtablePatch(env, getSessionsTable(env), evaluation.sessionRecord.id, sessionPatch);
+
+  const proofWrite = await patchLinkedPaymentProofs(env, evaluation.proofRecords, body);
+  const auditWrite = await writeOfficialVerificationAudit(env, body, evaluation);
+
+  return {
+    ok: true,
+    dry_run: false,
+    decision: "verified",
+    matched: true,
+    mutations: {
+      payments: [{ record_id: evaluation.paymentRecord.id, fields: Object.keys(paymentPatch) }],
+      sessions: [{ record_id: evaluation.sessionRecord.id, fields: Object.keys(sessionPatch), status_update_skipped: true }],
+      proofs: proofWrite.updated?.map((record_id) => ({ record_id })) || [],
+      audit: auditWrite.record_id ? [{ record_id: auditWrite.record_id }] : [],
+    },
+    proof_write: proofWrite,
+    audit_write: auditWrite,
+    blockers: [],
+    warnings: evaluation.warnings,
+    evidence: evaluation.evidence,
+    marked_paid: true,
+    verified: true,
+  };
+}
+
+async function handleVerifyOfficialDryRun(req, env) {
+  if (!isInternalAuthed(req, env)) {
+    return withCors(req, env, jsonResponse({ ok: false, error: "unauthorized" }, 401));
+  }
+
+  const body = await readJson(req);
+  if (body.dry_run !== true && body.commit !== true) {
+    return withCors(req, env, jsonResponse({ ok: false, error: "DRY_RUN_REQUIRED", code: "DRY_RUN_REQUIRED" }, 400));
+  }
+  if (body.dry_run !== true && body.commit === true) {
+    if (toStr(body.official_verification_confirmed) !== "PAYMENT_VERIFY_COMMIT_APPROVED") {
+      return withCors(req, env, jsonResponse({ ok: false, error: "COMMIT_APPROVAL_REQUIRED", code: "COMMIT_APPROVAL_REQUIRED" }, 400));
+    }
+    const missing = commitRequirementsMissing(body);
+    if (missing.length) {
+      return withCors(req, env, jsonResponse({ ok: false, error: "COMMIT_REQUIREMENTS_MISSING", code: "COMMIT_REQUIREMENTS_MISSING", missing }, 400));
+    }
+  }
+
+  try {
+    const evaluation = await evaluateOfficialVerification(env, body);
+    if (!evaluation.ok) {
+      return withCors(req, env, jsonResponse({ ok: false, error: evaluation.error, code: evaluation.code }, evaluation.status || 400));
+    }
+    if (body.dry_run === true) {
+      return withCors(req, env, jsonResponse(dryRunPreviewResponse(evaluation)));
+    }
+    return withCors(req, env, jsonResponse(await commitOfficialVerification(env, body, evaluation)));
+  } catch (err) {
+    return withCors(
+      req,
+      env,
+      jsonResponse({ ok: false, error: "verify_official_preview_failed", message: String(err?.message || err) }, 500)
     );
   }
 }
@@ -1068,6 +1518,10 @@ export default {
 
     if (method === "POST" && path === "/v1/pay/verify") {
       return handleVerify(req, env);
+    }
+
+    if (method === "POST" && path === "/v1/payments/verify-official") {
+      return handleVerifyOfficialDryRun(req, env);
     }
 
     if (method === "POST" && path === "/v1/payments/notify") {
