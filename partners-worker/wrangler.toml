@@ -1,0 +1,36 @@
+name = "partners-worker"
+main = "src/index.ts"
+compatibility_date = "2026-04-27"
+compatibility_flags = [ "nodejs_compat" ]
+workers_dev = true
+
+routes = [
+  { pattern = "www.mmdbkk.com/partner/form*", zone_name = "mmdbkk.com" },
+  { pattern = "mmdbkk.com/partner/form*", zone_name = "mmdbkk.com" }
+]
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[vars]
+AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+AIRTABLE_TABLE_MODEL_PARTNERS = "tbl1ksDlsTiiGEHWe"
+AIRTABLE_TABLE_MODEL_REFERRALS = "tblrmSsCZxJSCQR9n"
+AIRTABLE_TABLE_PARTNER_COMMISSIONS = "tblbq4M1bhpwU2BGW"
+AIRTABLE_TABLE_MODELS = "tblI4B0bI446vp9GX"
+AIRTABLE_TABLE_MODEL_APPLICATIONS = "tblwUa8ySWln8OfaJ"
+AIRTABLE_TABLE_PARTNER_ASSETS = "tblJs0KDI7RYp4ZrT"
+PARTNER_ASSETS_BUCKET_NAME = "mmd-sigil-partner-assets"
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io"
+REVIEW_URL = "/partner/review"
+TERMS_URL = "/partner/terms"
+DASHBOARD_URL = "/partner/dashboard"
+RECOGNIZED_URL = "/partner/recognized"
+TELEGRAM_CHAT_ID = "-1003546439681"
+TG_THREAD_CONFIRM = "61"
+
+# Secrets:
+# wrangler secret put AIRTABLE_API_KEY
+# wrangler secret put TELEGRAM_BOT_TOKEN
+# wrangler secret put TOKEN_SECRET
