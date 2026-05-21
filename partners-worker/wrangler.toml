@@ -5,8 +5,10 @@ compatibility_flags = [ "nodejs_compat" ]
 workers_dev = true
 
 routes = [
-  { pattern = "www.mmdbkk.com/partner/form*", zone_name = "mmdbkk.com" },
-  { pattern = "mmdbkk.com/partner/form*", zone_name = "mmdbkk.com" }
+  { pattern = "www.mmdbkk.com/terms*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/legal/terms*", zone_name = "mmdbkk.com" },
+  { pattern = "mmdbkk.com/terms*", zone_name = "mmdbkk.com" },
+  { pattern = "mmdbkk.com/legal/terms*", zone_name = "mmdbkk.com" }
 ]
 
 [observability]
