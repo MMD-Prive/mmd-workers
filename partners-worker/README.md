@@ -17,14 +17,13 @@ Layer ownership:
 - `POST /v1/partner/accept-terms`
 - `POST /v1/partner/approve`
 
-## Legal terms redirect scope
+## Legal terms routing
 
-- `/terms` returns `302` to `/partner/terms`.
-- `/terms?t=...` preserves `t` when redirecting to `/partner/terms?t=...`.
-- `/legal/terms` returns `302` to `/partner/terms`.
-- `/terms-of-service` and `/terms-and-conditions` must not redirect to `/partner/terms`.
-- `302` is intentional to avoid permanent browser/CDN caching while terms routing is still being finalized.
-- Bare `mmdbkk.com` requests are still canonicalized to `www.mmdbkk.com` first with `301`; the terms redirect is handled on `www.mmdbkk.com`.
+- `partners-worker` owns partner-specific routes only.
+- `/partner/terms` is partner-specific.
+- `/terms` and `/legal/terms` are public legal routes and must be handled outside `partners-worker` by Webflow or the public routing layer.
+- The previous `302` shortcut from `/terms` and `/legal/terms` to `/partner/terms` was removed because it mixed public legal terms with partner-specific terms.
+- If `/terms` is used as a public shortcut, it should redirect to `/legal/terms`, not `/partner/terms`.
 
 ## Required Secrets
 

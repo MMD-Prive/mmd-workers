@@ -244,13 +244,6 @@ export default {
         return new Response(null, { status: 204, headers: corsHeaders(request, runtimeEnv) });
       }
 
-      if ((request.method === "GET" || request.method === "HEAD") && isLegacyTermsPage(url)) {
-        const target = new URL(request.url);
-        target.hostname = "www.mmdbkk.com";
-        target.pathname = "/partner/terms";
-        return Response.redirect(target.toString(), 302);
-      }
-
       if ((request.method === "GET" || request.method === "HEAD") && isPartnerWebflowPage(url)) {
         return await handlePartnerWebflowPage(request, url);
       }
@@ -351,11 +344,6 @@ function javascriptResponse(source: string): Response {
 function isPartnerWebflowPage(url: URL): boolean {
   if (url.hostname !== "www.mmdbkk.com") return false;
   return ["/partner/form", "/partner/form/", "/partner/terms", "/partner/terms/"].includes(url.pathname);
-}
-
-function isLegacyTermsPage(url: URL): boolean {
-  const isTargetHost = url.hostname === "www.mmdbkk.com" || url.hostname === "mmdbkk.com";
-  return isTargetHost && ["/terms", "/terms/", "/legal/terms", "/legal/terms/"].includes(url.pathname);
 }
 
 async function handlePartnerWebflowPage(request: Request, url: URL): Promise<Response> {
