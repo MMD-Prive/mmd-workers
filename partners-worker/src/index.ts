@@ -244,13 +244,6 @@ export default {
         return new Response(null, { status: 204, headers: corsHeaders(request, runtimeEnv) });
       }
 
-      if ((request.method === "GET" || request.method === "HEAD") && url.hostname === "mmdbkk.com") {
-        const target = new URL(request.url);
-        target.protocol = "https:";
-        target.hostname = "www.mmdbkk.com";
-        return Response.redirect(target.toString(), 301);
-      }
-
       if ((request.method === "GET" || request.method === "HEAD") && isLegacyTermsPage(url)) {
         const target = new URL(request.url);
         target.hostname = "www.mmdbkk.com";
