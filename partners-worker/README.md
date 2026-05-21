@@ -17,14 +17,14 @@ Layer ownership:
 - `POST /v1/partner/accept-terms`
 - `POST /v1/partner/approve`
 
-## Partner route ownership
+## Legal terms redirect scope
 
-- `partners-worker` owns partner-specific public pages only on `www.mmdbkk.com`.
-- `/partner/form` is the partner intake page.
-- `/partner/terms` is the partner-specific terms page.
-- `/legal/terms` is the public MMD Prive Terms of Use page and is served by Webflow, not `partners-worker`.
-- `/terms` is not owned by `partners-worker`. If it is needed as a public shortcut, route it to `/legal/terms` via Webflow or `mmd-edge-router`.
-- The apex canonical redirect for `mmdbkk.com/*` is owned by `mmd-edge-router`; `partners-worker` must not own apex/root domain routes.
+- `/terms` returns `302` to `/partner/terms`.
+- `/terms?t=...` preserves `t` when redirecting to `/partner/terms?t=...`.
+- `/legal/terms` returns `302` to `/partner/terms`.
+- `/terms-of-service` and `/terms-and-conditions` must not redirect to `/partner/terms`.
+- `302` is intentional to avoid permanent browser/CDN caching while terms routing is still being finalized.
+- Bare `mmdbkk.com` requests are still canonicalized to `www.mmdbkk.com` first with `301`; the terms redirect is handled on `www.mmdbkk.com`.
 
 ## Required Secrets
 
