@@ -2,46 +2,268 @@
 # LOCK v2026-LOCK-01
 
 name = "admin-worker"
-main = "index.js"
+main = "src/index.ts"
 compatibility_date = "2026-01-01"
 workers_dev = true
 
+[[services]]
+binding = "TELEGRAM_WORKER"
+service = "telegram-worker"
+
+[[services]]
+binding = "CHAT_WORKER"
+service = "chat-worker-ai-integration"
+
+[[services]]
+binding = "EVENTS_WORKER"
+service = "events-worker"
+
 # ใช้สำหรับ CORS (browser calls)
 [vars]
-ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
+ALLOWED_ORIGINS = "https://sigil.mmdbkk.com,https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
 
 # Base URLs (LOCK)
+EVENTS_WORKER_BASE_URL = "https://events-worker.malemodel-bkk.workers.dev"
 PAYMENTS_BASE_URL = "https://payments-worker.malemodel-bkk.workers.dev"
 TELEGRAM_INTERNAL_SEND_URL = "https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send"
+IMMIGRATE_WORKER_BASE_URL = "https://immigrate-worker.malemodel-bkk.workers.dev"
 
 # Airtable
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+AIRTABLE_TABLE_MEMBERSHIP_APPLICATIONS = "tbl8z2MQpIqcdylim"
+AIRTABLE_TABLE_MEMBERS = "tblgWc5VRon5o8Mhk"
+AIRTABLE_TABLE_PAYMENTS = "tblWGGJJOx5eBvBZJ"
+AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
+AIRTABLE_TABLE_ACTIVITY_LOGS = "tblbUWRoFL6OI6QMJ"
+AIRTABLE_TABLE_MEMBER_ENTITLEMENTS = "tblNImdF9PKAxhXGi"
+AIRTABLE_TABLE_POINTS_LEDGER = "points_ledger"
+AT_SESSIONS__SESSION_ID = "fldLTq2kZbyRv22IA"
+AT_SESSIONS__STATUS = "fldHAlxnRfpKucnNV"
+AT_SESSIONS__PACKAGE_CODE = "fldp6xNSvxDh5pjR9"
+AT_SESSIONS__AMOUNT_THB = "fldhwC79ndbnEXSZz"
+AT_SESSIONS__PAYMENT_STATUS = "fldTY5lE6m0kQf72n"
+AT_SESSIONS__PAYMENT_REF = "fldojgjSQLaO0uQLX"
+AT_SESSIONS__MEMBERSTACK_ID = "fldjelgJTzCHSCWZ0"
+AT_PAYMENTS__PAYMENT_REF = "fldOO6SY49iDw8VBZ"
+AT_PAYMENTS__PAYMENT_DATE = "fld3yAwxIu2dkw7fO"
+AT_PAYMENTS__AMOUNT = "fldvCSwrUW8OMAooS"
+AT_PAYMENTS__PAYMENT_STATUS = "fldEJ1hmm7KwWuI6q"
+AT_PAYMENTS__PAYMENT_METHOD = "fldsblzIn0wzan3c9"
+AT_PAYMENTS__VERIFICATION_STATUS = "fldJ7a0Ube9F0bmRy"
+AT_PAYMENTS__PACKAGE_CODE = "fldfyHYVrzbGPvMJR"
+AT_PAYMENTS__CREATED_AT = "flduxcPpowBxEZSLu"
 
 # Writer table IDs (LOCK)
 AIRTABLE_TABLE_CONSOLE_INBOX_ID = "tblFHmfpB2TTrzO2e"
 AIRTABLE_TABLE_PAYMENT_PROOFS_ID = "tblfJfM4Sqag9zrLi"
 
-# Optional table names (ถ้าคุณใช้ name-based endpoints)
-AIRTABLE_TABLE_MEMBERS = "members"
-AIRTABLE_TABLE_MODELS = "models"
+# Optional table names / IDs
+AIRTABLE_TABLE_MODELS = "tblI4B0bI446vp9GX"
+AIRTABLE_TABLE_DEALS = "Deals"
+AIRTABLE_TABLE_JOBS = "tbl0jxIjN8QYwGABX"
+AIRTABLE_TABLE_CLIENTS = "tblVv58TCbwh5j1fS"
+AIRTABLE_TABLE_INTERNAL_NOTES = "tbl1Tt1IXDc9k0zxK"
+ALLOWED_MODEL_FIELDS = "name,working_name,model_name,nickname,telegram_username,telegram_id,unique_key,status,notes,line_id,storage_source_primary,r2_prefix,source_folder,source_owner,requires_per_approval,service_layer,orientation_label,sales_layer,private_tier,private_work_format,exclusive_group,can_work_public,can_work_private,pn_ability,mk_ability,burn_ability,pn_condition_note,mk_condition_note,burn_condition_note,private_admin_note,private_review_status,immigration_source,immigration_job_id,immigration_session_id,immigrated_at,immigrated_by,approved_for_private_sales,model_ability_snapshot"
+MODEL_ASSETS_PUBLIC_BASE_URL = ""
+MODEL_ASSETS_BUCKET_NAME = "MMD_MODEL_ASSETS"
 MODEL_SOURCE_OWNER_DEFAULT = "lonelysomething"
 MODEL_R2_LOOKUP_ENABLED = "true"
-MODEL_R2_USE_SOURCE_OWNER_AS_PREFIX = "false"
 MODEL_R2_ROOT_PREFIX = ""
 MODEL_R2_CATEGORY_PATHS = "MMD Public Models/MMD Travel Compcard,MMD Public Models/MMD Travel Models,MMD Public Models/MMD Travel Models/Straight,MMD Public Models/MMD Travel Models/Gay,MMD Public Models/MMD Travel Models/Both,MMD Public Models/MMD Extreme Models,MMD Public Models/MMD Extreme Models/Straight,MMD Public Models/MMD Extreme Models/Gay,MMD Public Models/MMD Extreme Models/Both,MMD Private Models/Standard Package,MMD Private Models/Premium Package,MMD Exclusive/MMD Exclusive Models,Public Models/Extreme Models/Straight"
+
+# Pricing review flow
 PRICING_TIMEOUT_MINUTES = "10"
 PRICING_TIMEOUT_SEND_TO_CUSTOMER = "false"
 LINE_WEBHOOK_DEBUG = "false"
-PRICING_REVIEW_TELEGRAM_PER_ID = ""
+# Optional: set these to direct Telegram chat IDs if Per/Ewvon should receive DMs.
+# Otherwise pricing reviews use TELEGRAM_CHAT_ID + TG_THREAD_PRICING_REVIEW/TG_THREAD_CONFIRM.
+PRICING_REVIEW_TELEGRAM_PER_ID = "7027379851"
 PRICING_REVIEW_TELEGRAM_EWVON_ID = ""
 TG_THREAD_PRICING_REVIEW = "61"
-
-[[r2_buckets]]
-binding = "MMD_MODEL_ASSETS"
-bucket_name = "mmd-models"
 
 # ---- Secrets (set via wrangler secret) ----
 # ADMIN_BEARER
 # CONFIRM_KEY
 # AIRTABLE_API_KEY
 # INTERNAL_TOKEN
+
+# R2 bucket binding for source-owner model library fallback lookup.
+[[r2_buckets]]
+binding = "MMD_MODEL_ASSETS"
+bucket_name = "mmd-model-assets"
+
+[[routes]]
+pattern = "admin-worker.mmdbkk.com"
+custom_domain = true
+
+[[routes]]
+pattern = "api.mmdbkk.com"
+custom_domain = true
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/jobs/create-session*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/jobs/create-session*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/jobs/create-job*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/jobs/create-job*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/notes-hub*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/notes-hub*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/ping*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/ping*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/membership/request*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/membership/request*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/clients/list*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/clients/list*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/models/list*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/models/list*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/models/search*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/models/search*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/models/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/models/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/jobs/create-session*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/jobs/create-session*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/jobs/create-job*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/jobs/create-job*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/notes/context*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/notes/context*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/clients/lineage-lookup*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/clients/lineage-lookup*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/clients/recent*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/clients/recent*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/job/create*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/job/create*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/job/draft*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/job/draft*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/line/push*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/line/push*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/api/member/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/api/member/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/model/session/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/session/*"
+zone_name = "mmdbkk.com"
