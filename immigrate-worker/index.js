@@ -1,5 +1,5 @@
 // immigrate-worker/index.js
-// MMD Privé — migration layer worker for LINE legacy intake
+// MMD Prive - migration layer worker for LINE legacy intake
 //
 // Position in architecture:
 // - migration layer only
@@ -29,6 +29,9 @@ export default {
     }
 
     if (method === "POST" && path === "/v1/immigrate/line/intake") {
+      const auth = authorizeWriteRequest(req, env);
+      if (!auth.ok) return withCors(json({ ok: false, error: auth.error }, auth.status), cors);
+
       try {
         const body = await safeJson(req);
         const out = await handleLineIntake(body, env);
@@ -46,6 +49,17 @@ async function handleLineIntake(input, env) {
   const normalized = normalizeLineLegacy(input);
   const inboxPayload = buildInboxPayload(normalized, input);
   const inboxWrite = await postInboxTrace(inboxPayload, env);
+
+  if (!hasLookupIdentity(normalized.identity)) {
+    return {
+      ok: true,
+      layer: "migration",
+      action: "needs_review",
+      reason: "missing_safe_lookup_identity",
+      inbox_record_id: inboxWrite?.record_id || null,
+      inferred: normalized.inferred,
+    };
+  }
 
   const existing = await findExistingCanonicalMember(normalized.identity, env);
   if (existing) {
@@ -141,9 +155,9 @@ function buildInboxPayload(normalized, rawInput) {
     admin_note: [
       normalized.notes.manual_note || "",
       normalized.notes.operator_summary || "",
-      normalized.inferred.base_membership ? `inferred_base=${normalized.inferred.base_membership}` : "",
-      normalized.inferred.badge_tier ? `inferred_badge=${normalized.inferred.badge_tier}` : "",
-      normalized.inferred.member_since ? `inferred_member_since=${normalized.inferred.member_since}` : "",
+      normalized.inferred.base_membership ? `legacy_inferred_base=${normalized.inferred.base_membership}` : "",
+      normalized.inferred.badge_tier ? `legacy_inferred_badge=${normalized.inferred.badge_tier}` : "",
+      normalized.inferred.member_since ? `legacy_inferred_member_since=${normalized.inferred.member_since}` : "",
     ].filter(Boolean).join(" | "),
     status: "new",
     payload_json: { normalized, raw: rawInput },
@@ -182,6 +196,7 @@ async function findExistingCanonicalMember(identity, env) {
 
   if (!clauses.length) return null;
 
+  // TODO: single-identifier legacy matches require admin review before canonical overwrite or entitlement grant.
   const filterByFormula = clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`;
   const rec = await airtableFindOne(env, tableName, filterByFormula);
   if (!rec) return null;
@@ -191,6 +206,7 @@ async function findExistingCanonicalMember(identity, env) {
 async function createCanonicalMember(normalized, env) {
   const tableName = str(env.CANONICAL_MEMBER_TABLE || env.AIRTABLE_TABLE_MEMBERS || "members");
   const fields = {};
+  const migrationNotes = buildLegacyInferenceNotes(normalized);
 
   fields[str(env.CANONICAL_NAME_FIELD || "name")] = normalized.identity.display_name || normalized.identity.nickname || "";
   fields[str(env.CANONICAL_NICKNAME_FIELD || "nickname")] = normalized.identity.nickname || "";
@@ -200,26 +216,35 @@ async function createCanonicalMember(normalized, env) {
   fields[str(env.CANONICAL_EMAIL_FIELD || "email")] = normalized.identity.member_email || "";
   fields[str(env.CANONICAL_PHONE_FIELD || "phone")] = normalized.identity.member_phone || "";
   fields[str(env.CANONICAL_LEGACY_TAGS_FIELD || "legacy_tags")] = normalized.legacy.legacy_tags.join(",");
-  fields[str(env.CANONICAL_NOTES_FIELD || "notes")] = [normalized.notes.manual_note, normalized.notes.operator_summary].filter(Boolean).join("\n");
+  fields[str(env.CANONICAL_NOTES_FIELD || "notes")] = [
+    normalized.notes.manual_note,
+    normalized.notes.operator_summary,
+    migrationNotes,
+  ].filter(Boolean).join("\n");
   fields[str(env.CANONICAL_STATUS_FIELD || "status")] = str(env.CANONICAL_DEFAULT_STATUS || "active");
-
-  if (normalized.inferred.base_membership) {
-    fields[str(env.CANONICAL_BASE_MEMBERSHIP_FIELD || "base_membership")] = normalized.inferred.base_membership;
-  }
-  if (normalized.inferred.badge_tier) {
-    fields[str(env.CANONICAL_BADGE_TIER_FIELD || "badge_tier")] = normalized.inferred.badge_tier;
-  }
-  if (normalized.inferred.member_since) {
-    fields[str(env.CANONICAL_MEMBER_SINCE_FIELD || "member_since")] = normalized.inferred.member_since;
-  }
 
   const rec = await airtableCreateRecord(env, tableName, fields);
   return { id: rec?.id || null, fields: rec?.fields || {} };
 }
 
+function buildLegacyInferenceNotes(normalized) {
+  const hints = [
+    normalized.inferred.base_membership ? `base_membership=${normalized.inferred.base_membership}` : "",
+    normalized.inferred.badge_tier ? `badge_tier=${normalized.inferred.badge_tier}` : "",
+    normalized.inferred.member_since ? `member_since=${normalized.inferred.member_since}` : "",
+  ].filter(Boolean);
+
+  if (!hints.length) return "";
+  return `legacy inferred hint only; does not grant entitlement/access/tier: ${hints.join(", ")}`;
+}
+
 function parseLegacyTags(value) {
   if (Array.isArray(value)) return value.map((v) => str(v)).filter(Boolean);
   return String(value || "").split(/[,\n|]/g).map((v) => v.trim()).filter(Boolean);
+}
+
+function hasLookupIdentity(identity) {
+  return Boolean(identity.line_user_id || identity.line_id || identity.member_email || identity.member_phone);
 }
 
 function inferFlags(legacyTags, nickname) {
@@ -276,9 +301,9 @@ function inferMembershipStart(nickname, legacyTags) {
 function buildOperatorSummary({ nickname, baseMembership, badgeTier, memberSince, flags }) {
   return [
     nickname ? `nickname=${nickname}` : "",
-    baseMembership ? `base=${baseMembership}` : "",
-    badgeTier ? `badge=${badgeTier}` : "",
-    memberSince ? `member_since=${memberSince}` : "",
+    baseMembership ? `legacy_hint_base=${baseMembership}` : "",
+    badgeTier ? `legacy_hint_badge=${badgeTier}` : "",
+    memberSince ? `legacy_hint_member_since=${memberSince}` : "",
     flags.client_flag ? "flag=#client" : "",
     flags.purchased_flag ? "flag=#purchased" : "",
   ].filter(Boolean).join(" | ");
@@ -320,6 +345,25 @@ async function airtableCreateRecord(env, tableName, fields) {
   return data?.records?.[0] || null;
 }
 
+function authorizeWriteRequest(req, env) {
+  const bearer = parseBearer(req.headers.get("Authorization"));
+  const internalHeader = str(req.headers.get("X-Internal-Token"));
+  const confirmHeader = str(req.headers.get("X-Confirm-Key"));
+  const internalToken = str(env.INTERNAL_TOKEN);
+  const confirmKey = str(env.CONFIRM_KEY);
+
+  if (!internalToken && !confirmKey) return { ok: false, status: 403, error: "write_auth_not_configured" };
+  if (!bearer && !internalHeader && !confirmHeader) return { ok: false, status: 401, error: "missing_write_auth" };
+  if (internalToken && (bearer === internalToken || internalHeader === internalToken)) return { ok: true };
+  if (confirmKey && confirmHeader === confirmKey) return { ok: true };
+  return { ok: false, status: 403, error: "invalid_write_auth" };
+}
+
+function parseBearer(value) {
+  const m = String(value || "").match(/^Bearer\s+(.+)$/i);
+  return m ? str(m[1]) : "";
+}
+
 function formulaString(v) {
   return `"${String(v || "").replace(/"/g, '\\"')}"`;
 }
@@ -356,7 +400,7 @@ function corsHeaders(req, env) {
   }
 
   h.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  h.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Confirm-Key");
+  h.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Confirm-Key, X-Internal-Token");
   h.set("Access-Control-Max-Age", "86400");
   h.set("Content-Type", "application/json");
   return h;
