@@ -1,0 +1,28 @@
+name = "immigrate-worker"
+main = "src/index.ts"
+compatibility_date = "2026-03-25"
+workers_dev = true
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[vars]
+AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+AIRTABLE_TABLE_LINE_INBOX = "Line Inbox"
+AIRTABLE_TABLE_CLIENTS = "Clients"
+AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
+ENABLE_AIRTABLE_SYNC = "true"
+JOBS_WORKER_BASE_URL = ""
+CREATE_LINKS_URL = "https://payments-worker.malemodel-bkk.workers.dev/v1/confirm/link"
+REALTIME_SESSIONS_URL = ""
+PUBLIC_WEB_BASE_URL = "https://www.mmdbkk.com"
+PUBLIC_ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
+ADMIN_WORKER_BASE_URL = "https://admin-worker.malemodel-bkk.workers.dev"
+
+# Secrets:
+# wrangler secret put INTERNAL_TOKEN
+# wrangler secret put AIRTABLE_API_KEY
+
+# No custom routes here. admin-worker owns internal admin and SIGIL host routes.
+# This worker is available at workers.dev and can serve static assets there.

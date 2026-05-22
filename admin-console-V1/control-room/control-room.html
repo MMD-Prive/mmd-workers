@@ -1,0 +1,322 @@
+<!-- MMD SIGIL Control Room Webflow HTML snippet -->
+<!-- CSS: /admin-console-V1/control-room/control-room.css -->
+<!-- JS: /admin-console-V1/control-room/control-room.js -->
+<section
+  class="mmdops"
+  data-mmd-ops-room
+  data-admin-base="https://admin-worker.malemodel-bkk.workers.dev"
+  data-ai-base="https://ai-worker.malemodel-bkk.workers.dev"
+  data-chat-base="https://chat-worker-ai-integration.malemodel-bkk.workers.dev"
+  data-payments-base="https://payments-worker.malemodel-bkk.workers.dev"
+  data-events-base="https://events-worker.malemodel-bkk.workers.dev"
+  data-telegram-base="https://telegram-worker.malemodel-bkk.workers.dev"
+  data-realtime-base="https://realtime-worker.malemodel-bkk.workers.dev"
+  data-create-route="/internal/admin/jobs/create-session"
+  data-login-route="/internal/admin/login"
+  data-console-route="/internal/admin/console"
+>
+  <div class="mmdops__bg" aria-hidden="true"></div>
+  <div class="mmdops__grid" aria-hidden="true"></div>
+  <div class="mmdops__veil" aria-hidden="true"></div>
+
+  <main class="mmdops__shell">
+    <header class="mmdops__top">
+      <a class="mmdops__brand" href="/internal/admin/control-room" aria-label="MMD SIGIL Control Room">
+        <span class="mmdops__logo">
+          <img
+            src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e9d25e264799b7c277e309_MMD%20SIGIL%20Trans%20no%20SIGIL.png"
+            alt="MMD SIGIL"
+          />
+        </span>
+
+        <span class="mmdops__brandText">
+          <small>MMD SIGIL · INTERNAL</small>
+          <strong>Control Room</strong>
+          <em>หน้าหลักสำหรับดูระบบและเริ่มสร้างงาน</em>
+        </span>
+      </a>
+
+      <div class="mmdops__topControls">
+        <div class="mmdops__globalStatus" data-global-status>
+          <i></i>
+          <span>
+            <small>SYSTEM</small>
+            <strong>Checking</strong>
+          </span>
+        </div>
+
+        <button class="mmdops__topBtn" type="button" data-run-checks>
+          Check System
+        </button>
+      </div>
+    </header>
+
+    <section class="mmdops__priority">
+      <article class="mmdops__primary">
+        <div class="mmdops__tagRow">
+          <span class="mmdops__tag"><i></i> MAIN ACTION</span>
+          <span class="mmdops__tag mmdops__tag--muted">FOR OPERATOR ONLY</span>
+        </div>
+
+        <div class="mmdops__primaryGrid">
+          <div class="mmdops__primaryCopy">
+            <h1>Create Job</h1>
+            <p>
+              เริ่มสร้างงานใหม่ เลือกลูกค้า เลือกนายแบบ เช็กเวลา แล้วส่งลิงก์ต่อได้จากหน้านี้
+            </p>
+
+            <div class="mmdops__miniTrace">
+              <span>ลูกค้า</span>
+              <b></b>
+              <span>นายแบบ</span>
+              <b></b>
+              <span>เวลา</span>
+              <b></b>
+              <span>ส่งลิงก์</span>
+            </div>
+          </div>
+
+          <div class="mmdops__primaryActions">
+            <a class="mmdops__goldBtn" href="/internal/admin/jobs/create-session">
+              <span>Create Job</span>
+              <strong>→</strong>
+            </a>
+
+            <button class="mmdops__darkBtn" type="button" data-run-checks>
+              Check Again
+            </button>
+
+            <a class="mmdops__darkBtn" href="/internal/admin/login">
+              Login
+            </a>
+          </div>
+        </div>
+      </article>
+
+      <aside class="mmdops__gate">
+        <div class="mmdops__gateHead">
+          <small>LOGIN STATUS</small>
+          <h2>Access</h2>
+        </div>
+
+        <div class="mmdops__accessCard">
+          <small>STATUS</small>
+          <p data-admin-message>กำลังตรวจสอบระบบ...</p>
+        </div>
+
+        <div class="mmdops__accessCard">
+          <small>NEXT</small>
+          <a href="/internal/admin/jobs/create-session">ไปหน้า Create Job</a>
+        </div>
+
+        <div class="mmdops__safe">
+          <i>✓</i>
+          <span>หน้านี้ใช้ดูสถานะและเริ่มงานเท่านั้น ข้อมูลสำคัญอยู่หลังระบบ</span>
+        </div>
+      </aside>
+    </section>
+
+    <section class="mmdops__readiness" aria-label="System readiness">
+      <article class="mmdops__systemCard" data-worker-card="admin">
+        <div>
+          <small>ADMIN</small>
+          <strong data-worker-label="admin">Checking</strong>
+          <p>สร้างงาน / ดูข้อมูลหลัก</p>
+        </div>
+        <i></i>
+      </article>
+
+      <article class="mmdops__systemCard" data-worker-card="chat">
+        <div>
+          <small>PER AI</small>
+          <strong data-worker-label="chat">Checking</strong>
+          <p>แชทกับลูกค้า</p>
+        </div>
+        <i></i>
+      </article>
+
+      <article class="mmdops__systemCard" data-worker-card="ai">
+        <div>
+          <small>AI ROUTE</small>
+          <strong data-worker-label="ai">Checking</strong>
+          <p>ช่วยแยกประเภทคำขอ</p>
+        </div>
+        <i></i>
+      </article>
+
+      <article class="mmdops__systemCard" data-worker-card="payments">
+        <div>
+          <small>PAYMENT</small>
+          <strong data-worker-label="payments">Checking</strong>
+          <p>ตรวจชำระเงิน</p>
+        </div>
+        <i></i>
+      </article>
+
+      <article class="mmdops__systemCard" data-worker-card="events">
+        <div>
+          <small>REMINDER</small>
+          <strong data-worker-label="events">Checking</strong>
+          <p>แจ้งเตือนงาน</p>
+        </div>
+        <i></i>
+      </article>
+
+      <article class="mmdops__systemCard" data-worker-card="telegram">
+        <div>
+          <small>TELEGRAM</small>
+          <strong data-worker-label="telegram">Checking</strong>
+          <p>แจ้งเตือนภายใน</p>
+        </div>
+        <i></i>
+      </article>
+    </section>
+
+    <section class="mmdops__board">
+      <div class="mmdops__sectionHead">
+        <div>
+          <small>WORK FLOW</small>
+          <h3>ลำดับการสร้างงาน</h3>
+        </div>
+
+        <a href="/internal/admin/jobs/create-session">Create Job</a>
+      </div>
+
+      <div class="mmdops__pipeline">
+        <article>
+          <b>01</b>
+          <strong>เลือกลูกค้า</strong>
+          <p>ค้นหาจาก LINE / ชื่อ / contact</p>
+        </article>
+
+        <article>
+          <b>02</b>
+          <strong>เลือกนายแบบ</strong>
+          <p>เลือกคนที่ลูกค้าสนใจ</p>
+        </article>
+
+        <article>
+          <b>03</b>
+          <strong>เช็กวันเวลา</strong>
+          <p>ดูว่าว่างหรือควรเสนอเวลาอื่น</p>
+        </article>
+
+        <article>
+          <b>04</b>
+          <strong>เลือกแพ็กเกจ</strong>
+          <p>Standard / Premium / VIP+</p>
+        </article>
+
+        <article>
+          <b>05</b>
+          <strong>ส่งลิงก์</strong>
+          <p>ส่งลิงก์ให้ลูกค้าหรือ model</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="mmdops__connect mmdops__connect--cards">
+      <article class="mmdops__connectCard">
+        <div class="mmdops__cardTop">
+          <span class="mmdops__cardIcon">01</span>
+          <div>
+            <small>PACKAGE</small>
+            <h4>สิทธิ์ดูแฟ้ม</h4>
+          </div>
+        </div>
+
+        <div class="mmdops__ruleStack mmdops__ruleStack--tiles">
+          <div>
+            <strong>Standard</strong>
+            <p>ดูแฟ้ม Standard</p>
+          </div>
+
+          <div>
+            <strong>Premium</strong>
+            <p>ดู Premium + Standard</p>
+          </div>
+
+          <div>
+            <strong>VIP+</strong>
+            <p>VIP / SVIP / Blackcard ดูได้ครบ</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="mmdops__connectCard">
+        <div class="mmdops__cardTop">
+          <span class="mmdops__cardIcon">02</span>
+          <div>
+            <small>GOOGLE DRIVE</small>
+            <h4>แฟ้มนายแบบ</h4>
+          </div>
+        </div>
+
+        <div class="mmdops__ruleStack mmdops__ruleStack--tiles">
+          <div>
+            <strong>ใช้ตอนนี้</strong>
+            <p>เปิดแฟ้มจาก Google Drive</p>
+          </div>
+
+          <div>
+            <strong>ข้อมูลลูกค้า</strong>
+            <p>ให้ยึดจากระบบหลังบ้าน</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="mmdops__connectCard">
+        <div class="mmdops__cardTop">
+          <span class="mmdops__cardIcon">03</span>
+          <div>
+            <small>RULE</small>
+            <h4>จำง่าย ๆ</h4>
+          </div>
+        </div>
+
+        <div class="mmdops__ruleStack mmdops__ruleStack--tiles">
+          <div>
+            <strong>ระบบเขียว</strong>
+            <p>เริ่ม Create Job ได้</p>
+          </div>
+
+          <div>
+            <strong>ระบบแดง</strong>
+            <p>แจ้ง Per หรือ dev</p>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="mmdops__logPanel">
+      <div class="mmdops__sectionHead mmdops__sectionHead--compact">
+        <div>
+          <small>SYSTEM LOG</small>
+          <h3>ผลตรวจระบบ</h3>
+        </div>
+
+        <button type="button" data-clear-log>Clear</button>
+      </div>
+
+      <div class="mmdops__log" data-check-log>
+        <p>Waiting for system check.</p>
+      </div>
+    </section>
+
+    <footer class="mmdops__footer">
+      <div>
+        <small>NOTE</small>
+        <strong>หน้านี้สำหรับ Per / Ewvon เท่านั้น</strong>
+        <p>
+          ใช้ดูว่าระบบพร้อมไหม และกดไปสร้างงาน ไม่ต้องแก้ข้อมูลสำคัญจากหน้านี้
+        </p>
+      </div>
+
+      <div class="mmdops__footerActions">
+        <a href="/internal/admin/login">Login</a>
+        <a href="/internal/admin/console">Console</a>
+        <a href="/sigil/inme">SIGIL Gate</a>
+      </div>
+    </footer>
+  </main>
+</section>

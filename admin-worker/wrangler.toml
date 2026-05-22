@@ -2,7 +2,7 @@
 # LOCK v2026-LOCK-01
 
 name = "admin-worker"
-main = "src/index.js"
+main = "index.js"
 compatibility_date = "2026-01-01"
 workers_dev = true
 
@@ -24,6 +24,21 @@ AIRTABLE_TABLE_PAYMENT_PROOFS_ID = "tblfJfM4Sqag9zrLi"
 # Optional table names (ถ้าคุณใช้ name-based endpoints)
 AIRTABLE_TABLE_MEMBERS = "members"
 AIRTABLE_TABLE_MODELS = "models"
+MODEL_SOURCE_OWNER_DEFAULT = "lonelysomething"
+MODEL_R2_LOOKUP_ENABLED = "true"
+MODEL_R2_USE_SOURCE_OWNER_AS_PREFIX = "false"
+MODEL_R2_ROOT_PREFIX = ""
+MODEL_R2_CATEGORY_PATHS = "MMD Public Models/MMD Travel Compcard,MMD Public Models/MMD Travel Models,MMD Public Models/MMD Travel Models/Straight,MMD Public Models/MMD Travel Models/Gay,MMD Public Models/MMD Travel Models/Both,MMD Public Models/MMD Extreme Models,MMD Public Models/MMD Extreme Models/Straight,MMD Public Models/MMD Extreme Models/Gay,MMD Public Models/MMD Extreme Models/Both,MMD Private Models/Standard Package,MMD Private Models/Premium Package,MMD Exclusive/MMD Exclusive Models,Public Models/Extreme Models/Straight"
+PRICING_TIMEOUT_MINUTES = "10"
+PRICING_TIMEOUT_SEND_TO_CUSTOMER = "false"
+LINE_WEBHOOK_DEBUG = "false"
+PRICING_REVIEW_TELEGRAM_PER_ID = ""
+PRICING_REVIEW_TELEGRAM_EWVON_ID = ""
+TG_THREAD_PRICING_REVIEW = "61"
+
+[[r2_buckets]]
+binding = "MMD_MODEL_ASSETS"
+bucket_name = "mmd-models"
 
 # ---- Secrets (set via wrangler secret) ----
 # ADMIN_BEARER
