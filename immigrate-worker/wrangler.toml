@@ -68,5 +68,30 @@ pattern = "www.mmdbkk.com/member/api/jobs*"
 zone_name = "mmdbkk.com"
 #
 # Note:
+# Public/client routes owned here. These are not admin routes and must not use admin login guards.
+[[routes]]
+pattern = "mmdbkk.com/sigil/guide*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/guide*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/blackcard*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/blackcard*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/mmd-blackcard*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/mmd-blackcard*"
+zone_name = "mmdbkk.com"
+
 # You generally cannot bind Cloudflare Worker routes directly onto a `*.webflow.io` host you do not control.
 # For production, use a domain/zone you control and point Control Room traffic there.
