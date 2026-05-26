@@ -24,5 +24,30 @@ ADMIN_WORKER_BASE_URL = "https://admin-worker.malemodel-bkk.workers.dev"
 # wrangler secret put INTERNAL_TOKEN
 # wrangler secret put AIRTABLE_API_KEY
 
-# No custom routes here. admin-worker owns internal admin and SIGIL host routes.
-# This worker is available at workers.dev and can serve static assets there.
+# Public/client routes owned here. These are not admin routes and must not use admin login guards.
+[[routes]]
+pattern = "mmdbkk.com/sigil/guide*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/guide*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/blackcard*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/blackcard*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/mmd-blackcard*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/mmd-blackcard*"
+zone_name = "mmdbkk.com"
+
+# admin-worker owns internal admin and SIGIL host routes.
+# This worker is also available at workers.dev and can serve static assets there.

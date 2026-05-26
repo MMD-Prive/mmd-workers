@@ -102,6 +102,10 @@ const PUBLIC = {
   customerConfirm: "/member/api/jobs/customer-confirm",
 } as const;
 
+const PUBLIC_SIGIL_GUIDE_PATH = "/sigil/guide";
+const PUBLIC_BLACKCARD_ALIAS_PATH = "/blackcard";
+const PUBLIC_BLACKCARD_CANONICAL_PATH = "/mmd-blackcard";
+
 const ADMIN_GATE_SESSION_KEY = "mmd_admin_gate_v1";
 const ADMIN_GATE_TTL_MS = 8 * 60 * 60 * 1000;
 const ADMIN_GATE_DEFAULT_NEXT = CONTROL_ROOM.root;
@@ -2355,6 +2359,16 @@ function parseCookieMap(request: Request): Map<string, string> {
 }
 
 function isProtectedBrowserRoute(pathname: string): boolean {
+  // /sigil/guide, /blackcard, and /mmd-blackcard are public/client surfaces, not admin routes.
+  // Keep them out of the admin browser gate so they never redirect to internal/admin login.
+  if (
+    pathname === PUBLIC_SIGIL_GUIDE_PATH ||
+    pathname === PUBLIC_BLACKCARD_ALIAS_PATH ||
+    pathname === PUBLIC_BLACKCARD_CANONICAL_PATH
+  ) {
+    return false;
+  }
+
   // This worker only gates the immigration control-room surface, not the separate admin console.
   if (pathname === "/internal/admin/console" || pathname.startsWith("/internal/admin/console/")) {
     return false;
@@ -2534,6 +2548,99 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function publicPageHeaders(page: string): Headers {
+  return new Headers({
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "public, max-age=300",
+    "x-mmd-worker": "immigrate-worker",
+    "x-mmd-public-page": page,
+  });
+}
+
+function renderPublicSigilGuidePage(request: Request): Response {
+  const url = new URL(request.url);
+  const token = url.searchParams.get("t") || "";
+  const inmeHref = `/sigil/inme${url.search || ""}`;
+  const trustHref = `/trust/inme${url.search || ""}`;
+  const guides = [
+    ["Hito", "Calm route guidance", "Clear booking direction, practical pace, and steady private access."],
+    ["Hiro", "Warm social route", "Softer companion mood, gentle review, and human support."],
+    ["Hiei", "Sharper signal route", "Decisive route reading, timing, and confidence before request."],
+    ["Hima", "Soft continuity route", "Low-pressure care, renewal context, and member continuity."],
+  ];
+  const guideCards = guides.map(([name, label, copy]) => `
+    <article class="sg-card"><span>${escapeHtml(label)}</span><h2>${escapeHtml(name)}</h2><p>${escapeHtml(copy)}</p></article>
+  `).join("");
+  const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SIGIL Guide | MMD Privé</title>
+    <meta name="description" content="Public SIGIL client guide surface for Hito, Hiro, Hiei, Hima, with Kenji support." />
+    <style>
+      :root{color-scheme:dark;--bg:#050504;--panel:rgba(16,13,10,.78);--line:rgba(226,188,107,.24);--gold2:#ffe3a0;--text:#fff7eb;--muted:rgba(255,247,235,.70);--ink:#120d07}
+      *{box-sizing:border-box;letter-spacing:0}body{margin:0;min-height:100vh;color:var(--text);background:radial-gradient(circle at 12% 8%,rgba(226,188,107,.16),transparent 28rem),linear-gradient(135deg,#050504,#120d09 54%,#080706);font-family:Inter,"Noto Sans Thai",system-ui,sans-serif}
+      .sg{min-height:100vh;padding:clamp(22px,4vw,52px)}.sg-shell{width:min(1120px,100%);margin:0 auto;display:grid;gap:18px}.sg-hero{min-height:46vh;display:grid;align-content:end;padding:48px 0 24px}.sg-kicker{color:var(--gold2);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.14em}
+      h1{max-width:780px;margin:14px 0 0;font-size:clamp(48px,9vw,112px);line-height:.9;text-transform:uppercase}.sg-lead{max-width:720px;color:var(--muted);font-size:clamp(16px,2vw,21px);line-height:1.7}.sg-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+      .sg-card,.sg-kenji{border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.025)),var(--panel);box-shadow:0 24px 72px rgba(0,0,0,.28);backdrop-filter:blur(18px)}.sg-card{min-height:210px;padding:18px}.sg-card span{color:var(--gold2);font-size:12px;font-weight:850;text-transform:uppercase}.sg-card h2{margin:14px 0 8px;font-size:clamp(28px,4vw,44px)}.sg-card p,.sg-kenji p{color:var(--muted);line-height:1.65}
+      .sg-kenji{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;padding:20px}.sg-actions{display:flex;flex-wrap:wrap;gap:10px}.sg-btn{display:inline-flex;min-height:46px;align-items:center;justify-content:center;border:1px solid rgba(226,188,107,.34);border-radius:999px;padding:0 16px;color:var(--text);text-decoration:none;font-weight:850;background:rgba(255,255,255,.055)}.sg-btn--gold{color:var(--ink);border-color:rgba(255,227,160,.8);background:linear-gradient(180deg,#ffe3a0,#b9852f)}code{color:var(--gold2);overflow-wrap:anywhere}@media(max-width:900px){.sg-grid,.sg-kenji{grid-template-columns:1fr}}
+    </style>
+  </head>
+  <body>
+    <main class="sg" data-public-sigil-guide>
+      <div class="sg-shell">
+        <section class="sg-hero"><p class="sg-kicker">SIGIL Client Guide / Public Surface</p><h1>Choose Your Guide</h1><p class="sg-lead">Hito, Hiro, Hiei, and Hima are the main guide routes for client-facing SIGIL flow. Kenji stays beside the route as submain support, translating the system into clear human next steps.</p></section>
+        <section class="sg-grid" aria-label="SIGIL guide routes">${guideCards}</section>
+        <section class="sg-kenji" aria-label="Kenji support"><div><p class="sg-kicker">Kenji / Submain</p><h2>Member access stays careful, not administrative.</h2><p>If an access check is needed, this page should continue toward SIGIL Inme or Trust Inme. It is not an admin route and should never use the internal admin login guard.</p><p>token t: <code>${escapeHtml(token || "not provided")}</code></p></div><div class="sg-actions"><a class="sg-btn sg-btn--gold" href="${inmeHref}">Continue to SIGIL Inme</a><a class="sg-btn" href="${trustHref}">Trust Inme</a></div></section>
+      </div>
+    </main>
+  </body>
+</html>`;
+
+  return new Response(request.method === "HEAD" ? null : html, {
+    headers: publicPageHeaders("sigil-guide"),
+  });
+}
+
+function redirectBlackcardAlias(request: Request): Response {
+  const url = new URL(request.url);
+  url.pathname = PUBLIC_BLACKCARD_CANONICAL_PATH;
+  return redirect(url.toString(), 308);
+}
+
+function renderPublicBlackcardPage(request: Request): Response {
+  const url = new URL(request.url);
+  const token = url.searchParams.get("t") || "";
+  const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MMD Black Card | MMD Privé</title>
+    <meta name="description" content="Public MMD Privé Black Card landing page with Ewvon as trusted access lead and Boss Per authority note." />
+    <link rel="canonical" href="https://www.mmdbkk.com/mmd-blackcard" />
+    <style>
+      :root{color-scheme:dark;--ivory:#fff8ed;--muted:rgba(255,248,237,.72);--gold2:#fff0b9;--line:rgba(217,179,111,.24);--panel:rgba(13,10,8,.78)}
+      *{box-sizing:border-box;letter-spacing:0}body{margin:0;min-height:100vh;color:var(--ivory);background:radial-gradient(circle at 72% 10%,rgba(217,179,111,.20),transparent 26rem),radial-gradient(circle at 12% 26%,rgba(53,16,21,.48),transparent 30rem),linear-gradient(140deg,#040403,#0d0907 52%,#190b0d);font-family:Inter,"Noto Sans Thai",system-ui,sans-serif}
+      .bc{min-height:100vh;padding:clamp(22px,4vw,56px)}.bc-shell{width:min(1160px,100%);margin:0 auto;display:grid;gap:18px}.bc-hero{min-height:58vh;display:grid;align-content:end;padding:56px 0 28px}.bc-kicker{color:var(--gold2);font-size:12px;font-weight:900;letter-spacing:.16em;text-transform:uppercase}h1{margin:14px 0 0;max-width:900px;font-size:clamp(56px,10vw,132px);line-height:.86;text-transform:uppercase}.bc-lead{max-width:720px;color:var(--muted);font-size:clamp(16px,2vw,21px);line-height:1.7}.bc-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:14px;align-items:start}.bc-panel{border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.025)),var(--panel);box-shadow:0 28px 86px rgba(0,0,0,.32);backdrop-filter:blur(18px);padding:22px}.bc-panel h2{margin:8px 0 10px;font-size:clamp(28px,4vw,52px)}.bc-panel p{color:var(--muted);line-height:1.7}.bc-list{display:grid;gap:10px;margin-top:16px}.bc-item{border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;background:rgba(255,255,255,.04)}.bc-item strong{display:block;color:var(--gold2)}.bc-note{border-color:rgba(255,240,185,.34);background:linear-gradient(135deg,rgba(53,16,21,.48),rgba(217,179,111,.08))}.bc-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}.bc-btn{display:inline-flex;min-height:46px;align-items:center;justify-content:center;border:1px solid rgba(217,179,111,.34);border-radius:999px;padding:0 16px;color:var(--ivory);text-decoration:none;font-weight:850;background:rgba(255,255,255,.055)}.bc-btn--gold{color:#120d07;background:linear-gradient(180deg,#fff0b9,#b9852f);border-color:rgba(255,240,185,.82)}code{color:var(--gold2);overflow-wrap:anywhere}@media(max-width:900px){.bc-grid{grid-template-columns:1fr}}
+    </style>
+  </head>
+  <body>
+    <main class="bc" id="mmd-blackcard" data-public-blackcard>
+      <div class="bc-shell">
+        <section class="bc-hero"><p class="bc-kicker">MMD Privé / Public Black Card</p><h1>Black Card</h1><p class="bc-lead">A protected public landing page for the highest MMD Privé access lane. Ewvon leads the trusted access layer; Boss Per remains the final authority note.</p></section>
+        <section class="bc-grid"><article class="bc-panel"><p class="bc-kicker">Ewvon / Trusted Access</p><h2>Careful access, not fast access.</h2><p>Black Card is treated as responsibility first: private review, soft gatekeeping, and trusted continuity for members whose relationship with the system has already earned deeper handling.</p><div class="bc-list"><div class="bc-item"><strong>Global oversight</strong><span>Private access is reviewed with care before deeper privileges open.</span></div><div class="bc-item"><strong>Protected continuity</strong><span>Priority handling without bypassing verification, payment truth, or suitability review.</span></div><div class="bc-item"><strong>Public landing</strong><span>This route is not an admin page and must render directly for public or invite traffic.</span></div></div><div class="bc-actions"><a class="bc-btn bc-btn--gold" href="/sigil/inme">Request Consideration</a><a class="bc-btn" href="/membership-benefits">View Membership</a></div></article><aside class="bc-panel bc-note"><p class="bc-kicker">Boss Per / Founder Note</p><h2>Not everyone should hold this card.</h2><p>Black Card is not awarded because someone can pay. It is considered when the relationship, timing, and trust are right.</p><p>token t: <code>${escapeHtml(token || "not provided")}</code></p></aside></section>
+      </div>
+    </main>
+  </body>
+</html>`;
+
+  return new Response(request.method === "HEAD" ? null : html, {
+    headers: publicPageHeaders("mmd-blackcard"),
+  });
 }
 
 function adminGateBootstrapScript(session: AdminGateSession, next: string): string {
@@ -3814,6 +3921,18 @@ export default {
           meta,
         };
         return json(body);
+      }
+
+      if ((request.method === "GET" || request.method === "HEAD") && url.pathname === PUBLIC_SIGIL_GUIDE_PATH) {
+        return renderPublicSigilGuidePage(request);
+      }
+
+      if ((request.method === "GET" || request.method === "HEAD") && url.pathname === PUBLIC_BLACKCARD_ALIAS_PATH) {
+        return redirectBlackcardAlias(request);
+      }
+
+      if ((request.method === "GET" || request.method === "HEAD") && url.pathname === PUBLIC_BLACKCARD_CANONICAL_PATH) {
+        return renderPublicBlackcardPage(request);
       }
 
       if (request.method === "GET" && url.pathname === PUBLIC.onboardingResolve) {
