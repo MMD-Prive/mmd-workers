@@ -112,6 +112,48 @@
     return value("emailNow") || value("emailOld");
   }
 
+  function currentTierHint() {
+    const result = state.lastStatus?.data || {};
+    return clean(
+      result.current_tier ||
+      result.context?.membership?.current_tier ||
+      result.context?.membership?.tier ||
+      ""
+    );
+  }
+
+  function desiredGoal() {
+    return state.action === "PER_REVIEW" ? "upgrade" : "renewal";
+  }
+
+  function intakeFlow() {
+    if (state.action === "PER_REVIEW") return "upgrade";
+    return "renewal";
+  }
+
+  function canonicalNote(proof) {
+    const extras = [
+      value("context"),
+      value("note"),
+      value("message"),
+      value("detail"),
+      value("details"),
+      value("remark"),
+      value("remarks"),
+      value("manualNote"),
+      value("serviceHistoryNote"),
+    ].filter(Boolean);
+    const proofName = proof?.proof_attached ? proof.proof_filename : "none";
+    const action = desiredGoal().toUpperCase();
+    return [
+      `proof:${proofName}`,
+      `action:${action}`,
+      `payment:${state.paymentMethod || "unknown"}`,
+      "source:sigil_inme_renewal",
+      ...extras,
+    ].join("; ");
+  }
+
   function syncSummary() {
     const nick = value("nick") || "—";
     const mail = email() || "—";
@@ -154,14 +196,22 @@
   }
 
   function identityPayload() {
+    const displayName = value("nick");
+    const primaryEmail = value("emailNow");
+    const secondaryEmail = value("emailOld");
+    const phone = value("phone");
+    const telegramUsername = value("telegram");
     return {
-      display_name: value("nick"),
-      nickname: value("nick"),
-      email: email(),
-      email_primary: value("emailNow"),
-      email_secondary: value("emailOld"),
-      phone: value("phone"),
-      telegram_username: value("telegram"),
+      display_name: displayName,
+      nickname: displayName,
+      name: displayName || "",
+      email: primaryEmail || secondaryEmail,
+      email_primary: primaryEmail,
+      email_secondary: secondaryEmail,
+      phone,
+      contact: phone,
+      telegram_username: telegramUsername,
+      telegram: telegramUsername,
     };
   }
 
@@ -176,11 +226,16 @@
 
   async function baseFlowPayload(extra = {}) {
     const proof = await proofPayload();
+    const note = canonicalNote(proof);
+    const tierHint = currentTierHint();
+    const total = state.lastStatus?.data?.pricing_decision_thb;
     return {
       ...identityPayload(),
       ...proof,
       source_page: "sigil_inme_renewal",
-      target_tier: "vip",
+      flow: intakeFlow(),
+      current_tier_hint: tierHint,
+      target_tier: desiredGoal() === "upgrade" ? "premium" : (tierHint || "vip"),
       points_required: VIP_POINTS_REQUIRED,
       points_balance: state.pointsBalance,
       points_shortfall: state.pointsShortfall,
@@ -190,27 +245,29 @@
       requires_new_signup: state.requiresNewSignup,
       reason: state.reason,
       fallback_url: state.requiresNewSignup ? TRUST_INME_URL : "",
-      service_history_note: [
-        `proof:${proof.proof_attached ? "attached" : "none"}`,
-        `proof_filename:${proof.proof_attached ? proof.proof_filename : "none"}`,
-        `proof_attached:${proof.proof_attached}`,
-        `route:${state.route}`,
-        `reason:${state.reason || "none"}`,
-        `requires_new_signup:${state.requiresNewSignup}`,
-        `points_required:${VIP_POINTS_REQUIRED}`,
-        `points_balance:${state.pointsBalance ?? "unknown"}`,
-        `points_shortfall:${state.pointsShortfall ?? "unknown"}`,
-        `topup_amount_thb:${state.topupAmountTHB ?? "none"}`,
-      ].join("; "),
+      total: Number.isFinite(Number(total)) ? Number(total) : null,
+      service_history_note: note,
+      note,
+      manual_note: note,
+      desired_goal: desiredGoal(),
       notify_telegram: true,
+      create_and_promote_now: true,
       ...extra,
     };
   }
 
   async function intakePayload() {
     return await baseFlowPayload({
-      flow: state.route === "per_review" ? "review" : state.route === "trust_inme_resignup_required" ? "resignup_required" : "renewal",
+      flow: intakeFlow(),
     });
+  }
+
+  async function buildIntakePayload() {
+    const payload = await intakePayload();
+    if (!payload.display_name || !payload.email || !(payload.service_history_note || payload.note)) {
+      throw new Error("invalid_intake_payload");
+    }
+    return payload;
   }
 
   async function topupPayload() {
@@ -310,7 +367,7 @@
 
   async function runFinalFlow() {
     if (state.route === "trust_inme_resignup_required") {
-      await postJson(API.intake, await intakePayload()).catch(() => null);
+      await postJson(API.intake, await buildIntakePayload()).catch(() => null);
       window.location.href = TRUST_INME_URL;
       return "ผมกำลังพาไปสมัครสมาชิกใหม่ก่อนนะครับ ข้อมูลเดิมที่ควรดูต่อผมจะไม่ตัดทิ้งครับ";
     }
@@ -319,7 +376,7 @@
         await postJson(API.activate, await activatePayload());
         return "เรียบร้อยครับ ผมส่งคำขอเปิด / ต่อสิทธิ์ VIP ด้วย points ให้แล้ว";
       } catch (error) {
-        await postJson(API.intake, await intakePayload());
+        await postJson(API.intake, await buildIntakePayload());
         return "ระบบหัก points อัตโนมัติยังไม่สำเร็จครับ · ไม่เป็นไร ผมรับไว้ดูต่อให้ก่อน";
       }
     }
@@ -330,11 +387,11 @@
         if (payUrl) window.location.href = payUrl;
         return payUrl ? "เดี๋ยวผมพาไปเติม points เฉพาะส่วนที่ขาดครับ" : "ผมสร้างคำขอเติม points ให้แล้วครับ";
       } catch (error) {
-        await postJson(API.intake, await intakePayload());
+        await postJson(API.intake, await buildIntakePayload());
         return "ระบบเติม points อัตโนมัติยังไม่สำเร็จครับ · ผมรับไว้ดูต่อให้ก่อน";
       }
     }
-    await postJson(API.intake, await intakePayload());
+    await postJson(API.intake, await buildIntakePayload());
     return "รับเรื่องแล้วครับ เดี๋ยวผมตรวจสิทธิ์ให้ต่อเอง";
   }
 
@@ -411,6 +468,12 @@
         }
         if (state.route === "unknown") {
           alert(COPY.checkFirst);
+          return;
+        }
+        try {
+          await buildIntakePayload();
+        } catch (error) {
+          alert("กรอกชื่อเล่น, email และรายละเอียดสำหรับส่งต่อ renewal ให้ครบก่อนนะครับ");
           return;
         }
         setBusy(submit, true, COPY.submitBusy);

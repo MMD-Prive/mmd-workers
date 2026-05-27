@@ -72,6 +72,22 @@
     return value("emailNow") || value("emailOld") || value("email");
   }
 
+  function currentTierHint() {
+    return clean(
+      value("currentTier") ||
+      value("liveTier") ||
+      value("matchedTier") ||
+      value("sumTier") ||
+      ""
+    );
+  }
+
+  function desiredGoal(action) {
+    return clean(action).toUpperCase().includes("UPGRADE") || clean(action).toUpperCase().includes("PRIVATE_ACCESS")
+      ? "upgrade"
+      : "renewal";
+  }
+
   function proofFile() {
     const el = byId("oldProof");
     return el && el.files && el.files.length ? el.files[0] : null;
@@ -285,18 +301,23 @@
   }
 
   function buildHistoryNote(proof, action, paymentMethod) {
+    const extras = [
+      value("context"),
+      value("note"),
+      value("message"),
+      value("detail"),
+      value("details"),
+      value("remark"),
+      value("remarks"),
+      value("manualNote"),
+      value("serviceHistoryNote"),
+    ].filter(Boolean);
     return [
-      `proof:${proof.proof_attached ? "attached" : "none"}`,
-      `proof_filename:${proof.proof_attached ? proof.proof_filename : "none"}`,
-      `proof_attached:${proof.proof_attached}`,
-      `proof_mime_type:${proof.proof_attached ? proof.proof_mime_type : "none"}`,
-      `proof_size:${proof.proof_attached ? proof.proof_size : 0}`,
-      `proof_source:${proof.proof_source}`,
-      `action:${action}`,
-      `payment_method:${paymentMethod}`,
-      "membership_expiry_rule:dynamic_points_extension",
-      "renewal_days_fixed:false",
-      "points_can_extend_expiry:true",
+      `proof:${proof.proof_attached ? proof.proof_filename : "none"}`,
+      `action:${desiredGoal(action).toUpperCase()}`,
+      `payment:${paymentMethod}`,
+      "source:pay_renewal_sigil_r6",
+      ...extras,
     ].join("; ");
   }
 
@@ -331,17 +352,24 @@
       const membershipExpiryRule = targetPackage.code === "black_card"
         ? "long_term_dynamic_points_extension"
         : "dynamic_points_extension";
+      const note = buildHistoryNote(proof, action, paymentMethod);
       const payload = {
-        flow: "sigil_renewal_review",
+        flow: desiredGoal(action),
         source_page: "pay_renewal_sigil_r6",
         display_name: value("nick"),
         nickname: value("nick"),
+        name: value("nick"),
         email: email(),
         email_primary: value("emailNow"),
         email_secondary: value("emailOld"),
         phone: value("phone"),
+        contact: value("phone"),
         telegram_username: value("telegram") || value("contactHandle"),
+        telegram: value("telegram") || value("contactHandle"),
         action,
+        desired_goal: desiredGoal(action),
+        current_tier_hint: currentTierHint(),
+        target_tier: desiredGoal(action) === "upgrade" ? "premium" : (currentTierHint() || targetPackage.code),
         target_package: targetPackage.code,
         target_package_label: targetPackage.label,
         membership_expiry_rule: membershipExpiryRule,
@@ -358,11 +386,23 @@
         payment_method: paymentMethod,
         payment_method_label: payment.label,
         payment_reference_url: payment.referenceUrl,
+        total: activeAmount(),
         ...proof,
         private_access_review: action === "PRIVATE_ACCESS",
-        service_history_note: buildHistoryNote(proof, action, paymentMethod),
+        service_history_note: note,
+        note,
+        manual_note: note,
         notify_telegram: true,
+        create_and_promote_now: true,
       };
+
+      if (!payload.display_name || !payload.email || !payload.service_history_note) {
+        alert("กรอกชื่อเล่น, email และข้อมูลสำหรับส่งต่อ renewal ให้ครบก่อนนะครับ");
+        button.disabled = false;
+        button.textContent = originalText;
+        submitBusy = false;
+        return;
+      }
 
       const response = await fetch(API_INTAKE, {
         method: "POST",
