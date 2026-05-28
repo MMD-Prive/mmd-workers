@@ -13,6 +13,12 @@ import {
   isPaymentPageRoute,
 } from "./routes/payment-page";
 import {
+  handleSigilRenewalAssetRoute,
+  isSigilRenewalPageRoute,
+  maybeRedirectLegacySigilRenew,
+  renderSigilRenewalPage,
+} from "./routes/sigil-renewal-page";
+import {
   handlePublicActivateVip,
   handlePublicPointsTopup,
 } from "./public-renewal-bridge";
@@ -8136,7 +8142,7 @@ function renderMemberLoginPage(): Response {
 
             <nav class="sigil-member-login__links" aria-label="Member account links">
               <a href="/password-reset">Password reset</a>
-              <a href="/renewal">Renewal</a>
+              <a href="${SIGIL_RENEWAL_URL}">Renewal</a>
               <a href="/contact">Contact team</a>
             </nav>
           </main>
@@ -8145,7 +8151,7 @@ function renderMemberLoginPage(): Response {
             <p class="sigil-member-login__help-kicker">Need Help?</p>
             <p>If your access expired or your renewal is pending, continue through renewal or contact the team for a private support check.</p>
             <div class="sigil-member-login__help-actions">
-              <a href="/renewal">Renew membership</a>
+              <a href="${SIGIL_RENEWAL_URL}">Renew membership</a>
               <a href="/contact">Contact team</a>
             </div>
           </aside>
@@ -8167,6 +8173,8 @@ function renderMemberLoginPage(): Response {
 
 const SIGIL_LOGIN_PATH = "/sigil/login";
 const SIGIL_LOGIN_BUILD = "sigil-login-only-memberstack-shell-20260517a";
+const SIGIL_RENEWAL_PATH = "/sigil/renewal";
+const SIGIL_RENEWAL_URL = "https://sigil.mmdbkk.com/sigil/renewal";
 
 function renderSigilLoginOnlyPage(request: Request): Response {
   const url = new URL(request.url);
@@ -8177,7 +8185,7 @@ function renderSigilLoginOnlyPage(request: Request): Response {
       ? "renewal"
       : "login";
   const afterLogin = "/sigil/member/account";
-  const renewalUrl = "/sigil/pay?flow=renewal";
+  const renewalUrl = SIGIL_RENEWAL_URL;
   const html = `<!doctype html>
 <html lang="th">
   <head>
@@ -8357,7 +8365,7 @@ function renderSigilMemberAccountPage(request: Request): Response {
   const token = url.searchParams.get("t") || "";
   const sessionId = url.searchParams.get("session_id") || "";
   const query = url.search || "";
-  const renewalHref = `/renewal${query}`;
+  const renewalHref = `${SIGIL_RENEWAL_URL}${query}`;
   const paymentHref = `/pay${query}`;
   const startHref = `/sigil/start${query}`;
   const guideHref = `/sigil/guide${query}`;
@@ -12190,6 +12198,14 @@ export default {
       if (paymentCanonicalRedirect) {
         return paymentCanonicalRedirect;
       }
+      const legacySigilRenewRedirect = maybeRedirectLegacySigilRenew(request);
+      if (legacySigilRenewRedirect) {
+        return legacySigilRenewRedirect;
+      }
+      const sigilRenewalAssetRes = await handleSigilRenewalAssetRoute(request, env);
+      if (sigilRenewalAssetRes) {
+        return sigilRenewalAssetRes;
+      }
 
       const internalRouteRes = await handleInternalRoutes(request, env);
       if (internalRouteRes) return internalRouteRes;
@@ -12244,6 +12260,10 @@ export default {
           meta,
         };
         return json(body);
+      }
+
+      if ((request.method === "GET" || request.method === "HEAD") && isSigilRenewalPageRoute(url.pathname)) {
+        return renderSigilRenewalPage(request);
       }
 
       if (isPaymentPageRoute(url.pathname)) {
