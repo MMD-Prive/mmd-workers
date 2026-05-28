@@ -30,9 +30,13 @@ export async function telegramNotify(payload, env) {
   const body = {
     chat_id: chatId,
     text,
-    parse_mode: payload.parse_mode || "HTML",
     disable_web_page_preview: payload.disable_web_page_preview ?? true,
   };
+  if (payload.parse_mode !== undefined && payload.parse_mode !== null) {
+    body.parse_mode = payload.parse_mode;
+  } else if (payload.parse_mode === undefined) {
+    body.parse_mode = "HTML";
+  }
   if (threadId) {
     body.message_thread_id = threadId;
   }

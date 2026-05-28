@@ -1,4 +1,4 @@
-import { isAuthorized, readInternalToken } from "./lib/auth";
+import { authorizeWriteRequest, isAuthorized, readInternalToken } from "./lib/auth";
 import { handleInternalRoutes } from "./internal-routes";
 import { handleCreateLinks } from "./routes/create-links";
 import { handleSendLineSessionCard } from "./routes/line-send-session-card";
@@ -125,6 +125,8 @@ const SIGIL = {
   createSession: "/sigil/admin/jobs/create-session",
   createJob: "/sigil/admin/jobs/create-job",
   modelPromoteImmigration: "/sigil/admin/models/promote-immigration",
+  privateModelReplayAirtable: "/sigil/admin/private-model/replay-airtable",
+  privateModelAirtableCheck: "/sigil/admin/private-model/airtable-check",
   inviteResolve: "/sigil/api/invite/resolve",
   renewalStatus: "/sigil/api/renewal/status",
   renewalIntake: "/sigil/api/renewal/intake",
@@ -176,7 +178,14 @@ const PUBLIC = {
   pointsTopup: "/member/api/points/topup",
   renewalActivateVip: "/member/api/renewal/activate-vip",
   recoveryComplaintEvidence: "/member/api/recovery/complaint-evidence",
+  bookingRequest: "/v1/public/booking-request",
   customerConfirm: "/member/api/jobs/customer-confirm",
+  privateModelApply: "/v1/private-model/apply",
+  privateModelUploadUrl: "/v1/private-model/upload-url",
+  privateModelUploadFile: "/v1/private-model/upload-file",
+  publicModelApply: "/v1/public-model/apply",
+  publicModelUploadUrl: "/v1/public-model/upload-url",
+  publicModelUploadFile: "/v1/public-model/upload-file",
 } as const;
 
 const ADMIN_GATE_SESSION_KEY = "mmd_admin_gate_v1";
@@ -573,8 +582,8 @@ function buildCorsHeaders(request: Request, env: Env): Headers {
     headers.set("vary", "origin");
   }
 
-  headers.set("access-control-allow-methods", "GET,POST,OPTIONS");
-  headers.set("access-control-allow-headers", "content-type, authorization, x-internal-token");
+  headers.set("access-control-allow-methods", "GET,POST,PUT,OPTIONS");
+  headers.set("access-control-allow-headers", "content-type, authorization, x-internal-token, x-request-id");
   headers.set("access-control-max-age", "86400");
   return headers;
 }
@@ -639,6 +648,240 @@ type PublicRenewalStatusRequest = {
   source_page?: string;
   search_priority?: string;
 };
+
+type PublicBookingRequestBody = Record<string, unknown> & {
+  brief?: string;
+  booking_lane?: string;
+  request_mode?: string;
+  job_type?: string;
+  package_tier?: string;
+  duration_hours?: string | number;
+  booking_date?: string;
+  start_time?: string;
+  area?: string;
+  client_name?: string;
+  contact?: string;
+  t?: string;
+  session_id?: string;
+};
+
+const PUBLIC_BOOKING_REQUIRED_FIELDS = [
+  "brief",
+  "booking_lane",
+  "request_mode",
+  "job_type",
+  "package_tier",
+  "duration_hours",
+  "booking_date",
+  "start_time",
+  "area",
+  "client_name",
+  "contact",
+] as const;
+
+function makeBookingRequestId(): string {
+  return `bkreq_${crypto.randomUUID().slice(0, 8)}_${Date.now().toString(36)}`;
+}
+
+function sanitizePublicBookingPayload(body: PublicBookingRequestBody): Record<string, unknown> {
+  const safeKeys = [
+    "source",
+    "mode",
+    "build_marker",
+    "t",
+    "session_id",
+    "request_mode",
+    "booking_lane",
+    "request_type",
+    "matching_mode",
+    "request_status",
+    "model_acceptance_status",
+    "admin_approval_status",
+    "needs_availability_check",
+    "needs_model_matching",
+    "needs_model_acceptance",
+    "needs_admin_approval",
+    "requires_operator_review",
+    "brief",
+    "client_tier",
+    "telegram_ready",
+    "selected_model_id",
+    "selected_model_name",
+    "model_lookup_key",
+    "model_current_status",
+    "backup_model_name",
+    "job_type",
+    "package_tier",
+    "duration_hours",
+    "budget",
+    "booking_date",
+    "start_time",
+    "end_time",
+    "area",
+    "location_name",
+    "preferred_vibe",
+    "language_preference",
+    "style_preference",
+    "client_name",
+    "contact",
+    "note",
+    "page_path",
+    "created_from_url",
+    "created_at_client",
+  ];
+
+  const out: Record<string, unknown> = {};
+  for (const key of safeKeys) {
+    const value = body[key];
+    if (value !== undefined && value !== null && value !== "") {
+      out[key] = typeof value === "string" ? value.slice(0, 5000) : value;
+    }
+  }
+  return out;
+}
+
+function bookingRequestRawText(payload: Record<string, unknown>): string {
+  return [
+    "Booking request",
+    `client=${toStr(payload.client_name)}`,
+    `contact=${toStr(payload.contact)}`,
+    `lane=${toStr(payload.booking_lane)}`,
+    `mode=${toStr(payload.request_mode)}`,
+    `job_type=${toStr(payload.job_type)}`,
+    `package=${toStr(payload.package_tier)}`,
+    `duration=${toStr(payload.duration_hours)}`,
+    `date=${toStr(payload.booking_date)}`,
+    `start=${toStr(payload.start_time)}`,
+    `area=${toStr(payload.area)}`,
+    `budget=${toStr(payload.budget)}`,
+    `model=${toStr(payload.selected_model_name || payload.selected_model_id || payload.model_lookup_key)}`,
+    `brief=${toStr(payload.brief)}`,
+    `note=${toStr(payload.note)}`,
+  ]
+    .filter((part) => !part.endsWith("="))
+    .join(" | ");
+}
+
+async function handlePublicBookingRequest(request: Request, env: Env): Promise<Response> {
+  const meta = makeMeta(request);
+  const body = (await request.json().catch(() => null)) as PublicBookingRequestBody | null;
+
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return publicJson(
+      request,
+      env,
+      {
+        ok: false,
+        error: { code: "INVALID_JSON", message: "valid JSON body is required" },
+        meta,
+      },
+      { status: 400 },
+    );
+  }
+
+  const missing = PUBLIC_BOOKING_REQUIRED_FIELDS.filter((field) => !toStr(body[field]));
+  if (missing.length) {
+    return publicJson(
+      request,
+      env,
+      {
+        ok: false,
+        error: {
+          code: "VALIDATION_FAILED",
+          message: `Missing required fields: ${missing.join(", ")}`,
+          details: { missing },
+        },
+        meta,
+      },
+      { status: 400 },
+    );
+  }
+
+  const duration = toNum(body.duration_hours);
+  if (duration === null || duration <= 0) {
+    return publicJson(
+      request,
+      env,
+      {
+        ok: false,
+        error: {
+          code: "VALIDATION_FAILED",
+          message: "duration_hours must be a positive number",
+          details: { field: "duration_hours" },
+        },
+        meta,
+      },
+      { status: 400 },
+    );
+  }
+
+  const requestId = makeBookingRequestId();
+  const now = new Date().toISOString();
+  const safePayload = sanitizePublicBookingPayload(body);
+  safePayload.request_id = requestId;
+  safePayload.received_at = now;
+
+  const record: MigrationRecord = {
+    migration_id: requestId,
+    source_channel: "line",
+    source_user_id: toStr(body.contact) || requestId,
+    source_message_id: `sigil_booking_${Date.now().toString(36)}`,
+    received_at: now,
+    raw_text: bookingRequestRawText(safePayload),
+    parsed_name: toStr(body.client_name),
+    parsed_phone: toStr(body.contact),
+    parsed_intent: "booking_request",
+    parsed_budget_thb: toNum(body.budget) ?? undefined,
+    parsed_date: toStr(body.booking_date),
+    parsed_location: toStr(body.area),
+    confidence_score: 0.94,
+    dedupe_status: "unresolved",
+    linked_client_id: null,
+    flags: [
+      "sigil_booking",
+      "public_booking_request",
+      toStr(body.booking_lane) || "booking_lane_missing",
+      toStr(body.request_mode) || "request_mode_missing",
+    ],
+    migration_status: "ready_to_sync",
+  };
+
+  try {
+    const sync = await syncRecordsToAirtable(env, [
+      {
+        ...record,
+        raw_text: `${record.raw_text} | payload_json=${JSON.stringify(safePayload)}`,
+      },
+    ]);
+    const result = sync.results[0];
+
+    return publicJson(request, env, {
+      ok: true,
+      request_id: requestId,
+      record_id: result?.airtable_record_id || result?.migration_id || requestId,
+      storage: {
+        worker: "immigrate-worker",
+        mode: sync.mode,
+        target: sync.mode === "airtable" ? "Airtable MMD — Console Inbox" : "mock_draft",
+      },
+      meta,
+    });
+  } catch (error) {
+    return publicJson(
+      request,
+      env,
+      {
+        ok: false,
+        error: {
+          code: "BOOKING_REQUEST_WRITE_FAILED",
+          message: error instanceof Error ? error.message : "Booking request write failed",
+        },
+        meta,
+      },
+      { status: 502 },
+    );
+  }
+}
 
 type PublicRenewalStatusResponse = {
   ok: true;
@@ -1361,6 +1604,38 @@ async function handlePublicRenewalIntake(request: Request, env: Env): Promise<Re
   try {
     intakeResult = await intakeLineClientUpsert(env, renewalLinePayload);
   } catch (error) {
+    const fallbackInbox = await writeRenewalFallbackInbox(env, payload, record.immigration_id, {
+      reason: error instanceof Error ? error.message : "Renewal intake pipeline failed",
+      source_page: toStr(rawBody.source_page || rawBody.sourcePage) || "sigil_pay_renewal",
+    });
+    if (fallbackInbox.ok) {
+      warnings.push(`intake_fallback:${fallbackInbox.record_id}`);
+      return publicJson(request, env, {
+        ok: true,
+        data: {
+          immigration_id: record.immigration_id,
+          service_history_summary: record.service_history_summary,
+          promotion_status: "manual_review_required",
+          member_id_preview: promotePreview.promoted_member_id || "",
+          created_new_member_preview: Boolean(promotePreview.created_new_member),
+          sync: {
+            mode: "admin_worker_fallback",
+            result: {
+              migration_id: record.immigration_id,
+              airtable_record_id: fallbackInbox.record_id,
+              client_id: null,
+              migration_status: "fallback_synced_to_admin_inbox" as const,
+            },
+          },
+          airtable: null,
+          promotion: null,
+          links: null,
+          telegram: null,
+          warnings,
+        },
+        meta,
+      });
+    }
     return publicJson(
       request,
       env,
@@ -1449,6 +1724,71 @@ async function handlePublicRenewalIntake(request: Request, env: Env): Promise<Re
     },
     meta,
   });
+}
+
+async function writeRenewalFallbackInbox(
+  env: Env,
+  payload: ImmigrationIntakeRequest,
+  immigrationId: string,
+  options: { reason: string; source_page: string },
+): Promise<{ ok: true; record_id: string } | { ok: false; error: string }> {
+  if (!env.ADMIN_WORKER_BASE_URL && !env.ADMIN_WORKER) {
+    return { ok: false, error: "missing_ADMIN_WORKER_target" };
+  }
+
+  const upstreamPath = "/internal/console/inbox";
+  const upstreamUrl = env.ADMIN_WORKER_BASE_URL
+    ? `${env.ADMIN_WORKER_BASE_URL.replace(/\/+$/, "")}${upstreamPath}`
+    : upstreamPath;
+  const headers = new Headers({
+    accept: "application/json",
+    "content-type": "application/json",
+  });
+
+  if (env.INTERNAL_TOKEN) headers.set("authorization", `Bearer ${env.INTERNAL_TOKEN}`);
+  if (env.CONFIRM_KEY) headers.set("x-confirm-key", env.CONFIRM_KEY);
+
+  const adminNote = [
+    "[Renewal Fallback Inbox]",
+    `Reason: ${options.reason}`,
+    `Immigration ID: ${immigrationId}`,
+    `Name: ${toStr(payload.identity.full_name) || "-"}`,
+    `Email: ${toStr(payload.payload_json?.email) || "-"}`,
+    `Phone: ${toStr(payload.payload_json?.phone) || "-"}`,
+    `Target Package: ${toStr(payload.payload_json?.target_package || payload.payload_json?.target_tier) || "-"}`,
+    `Source Page: ${options.source_page}`,
+  ].join("\n");
+
+  const requestInit: RequestInit = {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      inbox_id: immigrationId,
+      source: "renewal_web",
+      intent: "note_only",
+      member_name: toStr(payload.identity.full_name),
+      member_email: toStr(payload.payload_json?.email),
+      member_phone: toStr(payload.payload_json?.phone),
+      telegram_username: toStr(payload.payload_json?.telegram_username),
+      legacy_tags: "renewal_web,api_connected,fallback_inbox",
+      admin_note: adminNote,
+      payload_json: payload,
+      status: "new",
+    }),
+  };
+
+  const response = env.ADMIN_WORKER
+    ? await env.ADMIN_WORKER.fetch(
+        new Request(`https://admin-worker.internal${upstreamPath}`, requestInit),
+      )
+    : await fetch(upstreamUrl, requestInit);
+
+  const data = await response.json().catch(() => null) as { ok?: boolean; record_id?: string; error?: string } | null;
+  if (!response.ok || !data?.ok || !toStr(data.record_id)) {
+    return { ok: false, error: toStr(data?.error) || `admin_worker_fallback_failed_${response.status}` };
+  }
+
+  return { ok: true, record_id: toStr(data.record_id) };
 }
 
 type PublicRecoveryAckBody = {
@@ -2131,6 +2471,1564 @@ async function handlePublicRecoveryComplaintEvidence(request: Request, env: Env)
   });
 }
 
+const PRIVATE_MODEL_ALLOWED_UPLOAD_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const PRIVATE_MODEL_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+type PrivateModelApplyBody = Record<string, unknown> & {
+  nickname?: string;
+  age?: string | number;
+  phone?: string;
+  telegram_username?: string;
+  line_id?: string;
+  instagram?: string;
+  consent?: boolean;
+  honeypot?: string;
+  cf_turnstile_response?: string;
+};
+
+type PrivateModelAirtableWarning = {
+  target: "airtable";
+  code: string;
+  message?: string;
+  configured_table?: string;
+};
+
+type PrivateModelStorageResult = {
+  r2: boolean;
+  r2_key?: string;
+  airtable: boolean;
+  airtable_record_id?: string;
+  airtable_table?: string;
+  warnings: PrivateModelAirtableWarning[];
+};
+
+function privateModelApplicationId(): string {
+  return `pm_app_${Date.now().toString(36)}_${crypto.randomUUID().slice(0, 8)}`;
+}
+
+function privateModelText(value: unknown, maxLength = 240): string {
+  return toStr(value)
+    .replace(/\s+/g, " ")
+    .slice(0, maxLength)
+    .trim();
+}
+
+function privateModelLongText(value: unknown, maxLength = 5000): string {
+  return String(value ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .slice(0, maxLength)
+    .trim();
+}
+
+function privateModelBool(value: unknown): boolean {
+  return value === true || toStr(value).toLowerCase() === "true" || toStr(value) === "1";
+}
+
+function privateModelContactChannels(body: PrivateModelApplyBody): string[] {
+  return [
+    privateModelText(body.phone, 40),
+    privateModelText(body.telegram_username, 120),
+    privateModelText(body.line_id, 120),
+    privateModelText(body.instagram, 500),
+  ].filter(Boolean);
+}
+
+function validatePrivateModelApply(body: PrivateModelApplyBody): string[] {
+  const errors: string[] = [];
+  const nickname = privateModelText(body.nickname, 100);
+  const age = Number(privateModelText(body.age, 8));
+  if (!nickname) errors.push("nickname is required");
+  if (!Number.isFinite(age) || age < 18 || age > 99) errors.push("age must be between 18 and 99");
+  if (!privateModelContactChannels(body).length) {
+    errors.push("at least one contact channel is required");
+  }
+  if (!privateModelBool(body.consent)) {
+    errors.push("consent is required");
+  }
+  return errors;
+}
+
+async function verifyPrivateModelTurnstile(request: Request, env: Env, token: string): Promise<boolean> {
+  const secret = toStr(env.TURNSTILE_SECRET_KEY);
+  if (!token) return false;
+  if (!secret) return true;
+
+  const form = new FormData();
+  form.set("secret", secret);
+  form.set("response", token);
+  const ip = request.headers.get("cf-connecting-ip");
+  if (ip) form.set("remoteip", ip);
+
+  const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    body: form,
+  });
+  const data = await response.json().catch(() => ({})) as { success?: boolean };
+  return Boolean(response.ok && data.success);
+}
+
+async function privateModelUploadSignature(secret: string, key: string, expires: number, contentType: string): Promise<string> {
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const data = `${key}\n${expires}\n${contentType}`;
+  return hexFromBytes(await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(data)));
+}
+
+async function isValidPrivateModelUploadSignature(
+  env: Env,
+  key: string,
+  expires: number,
+  contentType: string,
+  signature: string,
+): Promise<boolean> {
+  const secret = toStr(env.LINK_SIGNING_SECRET || env.INTERNAL_TOKEN);
+  if (!secret || !key || !expires || !signature) return false;
+  if (Date.now() > expires) return false;
+  const expected = await privateModelUploadSignature(secret, key, expires, contentType);
+  return expected === signature;
+}
+
+function privateModelUploadUrl(request: Request, key: string, expires: number, contentType: string, signature: string): string {
+  const url = new URL(PUBLIC.privateModelUploadFile, new URL(request.url).origin);
+  url.searchParams.set("key", key);
+  url.searchParams.set("expires", String(expires));
+  url.searchParams.set("content_type", contentType);
+  url.searchParams.set("sig", signature);
+  return url.toString();
+}
+
+function privateModelFileUrl(env: Env, key: string): string {
+  return buildEvidencePublicUrl(env, key);
+}
+
+function privateModelFileReference(env: Env, key: string): string {
+  return privateModelFileUrl(env, key) || `r2://${key}`;
+}
+
+function privateModelApplicationsTable(env: Env): string {
+  return env.AIRTABLE_TABLE_PRIVATE_MODEL_APPLICATIONS ||
+    env.AIRTABLE_TABLE_IMPORT_LOGS ||
+    "MMD Import Logs";
+}
+
+function parseAirtableError(error: unknown): { code: string; message: string } {
+  const message = error instanceof Error ? error.message : String(error);
+  const jsonMatch = message.match(/Airtable\s+\d+:\s+({.*})$/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[1]) as { error?: { type?: string; message?: string } };
+      return {
+        code: toStr(parsed.error?.type) || "AIRTABLE_ERROR",
+        message: toStr(parsed.error?.message) || message,
+      };
+    } catch {
+      // Fall through to regex parsing.
+    }
+  }
+
+  const typeMatch = message.match(/"type"\s*:\s*"([^"]+)"/);
+  return {
+    code: typeMatch?.[1] || "AIRTABLE_WRITE_FAILED",
+    message,
+  };
+}
+
+function logPrivateModelAirtableFailure(input: {
+  applicationId: string;
+  table: string;
+  error: unknown;
+  phase: string;
+}) {
+  const parsed = parseAirtableError(input.error);
+  console.warn(JSON.stringify({
+    source: "private_model_apply",
+    event: "airtable_write_failed",
+    phase: input.phase,
+    application_id: input.applicationId,
+    airtable_table: input.table,
+    airtable_error_code: parsed.code,
+    airtable_error_message: parsed.message,
+    timestamp: new Date().toISOString(),
+  }));
+  return parsed;
+}
+
+function privateModelAirtableFields(applicationId: string, payload: Record<string, unknown>) {
+  const now = new Date().toISOString();
+  const requestContext = payload.request_context && typeof payload.request_context === "object"
+    ? payload.request_context as Record<string, unknown>
+    : {};
+  const photoUrl = toStr(payload.photo_url) || toStr(payload.profile_photo_url);
+  return compactFields({
+    application_id: applicationId,
+    status: "submitted",
+    review_status: "pending_review",
+    nickname: payload.nickname,
+    age: payload.age,
+    phone: payload.phone,
+    telegram_username: payload.telegram_username,
+    line_id: payload.line_id,
+    application_type: payload.application_type,
+    source: "model_apply_private_model",
+    handler: "TarT",
+    r2_key: payload.r2_key,
+    photo_url: photoUrl,
+    payload_json: JSON.stringify(payload),
+    summary_json: JSON.stringify({
+      application_id: applicationId,
+      status: "submitted",
+      review_status: "pending_review",
+      r2_key: payload.r2_key,
+    }),
+    created_at: toStr(payload.submitted_at) || now,
+    submitted_at: payload.submitted_at,
+    occupation: payload.occupation,
+    location: payload.location,
+    height: payload.height,
+    weight: payload.weight,
+    instagram: payload.instagram,
+    intro: payload.intro,
+    experience: payload.experience,
+    strengths: payload.strengths,
+    skills: payload.skills,
+    work_type: payload.work_type,
+    lgbt_professional: payload.lgbt_professional,
+    privacy_level: payload.privacy_level,
+    boundaries: payload.boundaries,
+    goal: payload.goal,
+    consent: payload.consent,
+    page_url: payload.page_url,
+    user_agent: payload.user_agent || requestContext.user_agent,
+    timezone: payload.timezone,
+    language: payload.language,
+  });
+}
+
+async function writePrivateModelApplicationToAirtable(
+  env: Env,
+  applicationId: string,
+  payload: Record<string, unknown>,
+): Promise<{ table: string; recordId: string; action: string }> {
+  const table = privateModelApplicationsTable(env);
+  const fields = privateModelAirtableFields(applicationId, payload);
+
+  let existingId = "";
+  try {
+    const existing = await findAirtableImportRecords(env, table, "application_id", applicationId);
+    existingId = toStr((existing[0] as Record<string, unknown> | undefined)?.id);
+  } catch {
+    existingId = "";
+  }
+
+  if (existingId) {
+    const fallbackFields = [
+      fields,
+      compactFields({
+        application_id: fields.application_id,
+        status: fields.status,
+        review_status: fields.review_status,
+        source: fields.source,
+        handler: fields.handler,
+        nickname: fields.nickname,
+        age: fields.age,
+        phone: fields.phone,
+        telegram_username: fields.telegram_username,
+        line_id: fields.line_id,
+        payload_json: fields.payload_json,
+        created_at: fields.created_at,
+      }),
+      compactFields({
+        application_id: fields.application_id,
+        status: fields.status,
+        review_status: fields.review_status,
+        nickname: fields.nickname,
+        payload_json: fields.payload_json,
+      }),
+      compactFields({
+        application_id: fields.application_id,
+        status: fields.status,
+        payload_json: fields.payload_json,
+      }),
+      compactFields({
+        application_id: fields.application_id,
+        payload_json: fields.payload_json,
+      }),
+      compactFields({
+        application_id: fields.application_id,
+        status: fields.status,
+      }),
+      compactFields({
+        application_id: fields.application_id,
+      }),
+    ];
+    let lastError: unknown = null;
+    for (const candidate of fallbackFields) {
+      if (!Object.keys(candidate).length) continue;
+      try {
+        const updated = await patchAirtableImportRecordWithFallbacks(env, table, existingId, candidate);
+        return { table, recordId: toStr((updated as Record<string, unknown>).id) || existingId, action: "updated" };
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (lastError) throw lastError;
+    return { table, recordId: existingId, action: "skipped_no_fields" };
+  }
+
+  const fallbackFields = [
+    fields,
+    compactFields({
+      application_id: fields.application_id,
+      status: fields.status,
+      review_status: fields.review_status,
+      source: fields.source,
+      handler: fields.handler,
+      nickname: fields.nickname,
+      age: fields.age,
+      phone: fields.phone,
+      telegram_username: fields.telegram_username,
+      line_id: fields.line_id,
+      payload_json: fields.payload_json,
+      created_at: fields.created_at,
+    }),
+    compactFields({
+      application_id: fields.application_id,
+      status: fields.status,
+      review_status: fields.review_status,
+      nickname: fields.nickname,
+      payload_json: fields.payload_json,
+    }),
+    compactFields({
+      application_id: fields.application_id,
+      status: fields.status,
+      payload_json: fields.payload_json,
+    }),
+    compactFields({
+      application_id: fields.application_id,
+      payload_json: fields.payload_json,
+    }),
+    compactFields({
+      application_id: fields.application_id,
+      status: fields.status,
+    }),
+    compactFields({
+      application_id: fields.application_id,
+    }),
+  ];
+
+  let lastError: unknown = null;
+  for (const candidate of fallbackFields) {
+    if (!Object.keys(candidate).length) continue;
+    try {
+      const created = await createAirtableImportRecordWithFallbacks(env, table, candidate);
+      return { table, recordId: toStr((created as Record<string, unknown>).id), action: "created" };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) throw lastError;
+  const created = await createAirtableImportRecordWithFallbacks(env, table, fields);
+  return { table, recordId: toStr((created as Record<string, unknown>).id), action: "created" };
+}
+
+async function storePrivateModelApplication(
+  env: Env,
+  applicationId: string,
+  payload: Record<string, unknown>,
+): Promise<PrivateModelStorageResult> {
+  const key = `sigil/private-model/applications/${applicationId}.json`;
+  const payloadWithStorage = {
+    ...payload,
+    r2_key: key,
+    photo_url: toStr(payload.photo_url) || toStr(payload.profile_photo_url),
+  };
+  let r2Stored = false;
+  let r2Error = "";
+  let airtableRecordId = "";
+  let airtableTable = privateModelApplicationsTable(env);
+  const warnings: PrivateModelAirtableWarning[] = [];
+
+  if (env.EVIDENCE_BUCKET && typeof env.EVIDENCE_BUCKET.put === "function") {
+    try {
+      await env.EVIDENCE_BUCKET.put(key, JSON.stringify(payloadWithStorage, null, 2), {
+        httpMetadata: { contentType: "application/json; charset=utf-8" },
+        customMetadata: {
+          application_id: applicationId,
+          application_type: "private_model",
+          handler: "TarT",
+        },
+      });
+      r2Stored = true;
+    } catch (error) {
+      r2Error = error instanceof Error ? error.message : String(error);
+    }
+  } else {
+    r2Error = "EVIDENCE_BUCKET is not configured";
+  }
+
+  if (env.AIRTABLE_API_KEY && env.AIRTABLE_BASE_ID) {
+    try {
+      const record = await writePrivateModelApplicationToAirtable(env, applicationId, payloadWithStorage);
+      airtableTable = record.table;
+      airtableRecordId = record.recordId;
+    } catch (error) {
+      const parsed = logPrivateModelAirtableFailure({
+        applicationId,
+        table: airtableTable,
+        error,
+        phase: "submit",
+      });
+      warnings.push({
+        target: "airtable",
+        code: parsed.code,
+        message: parsed.message,
+        configured_table: airtableTable,
+      });
+    }
+  } else {
+    warnings.push({
+      target: "airtable",
+      code: "AIRTABLE_NOT_CONFIGURED",
+      message: "AIRTABLE_API_KEY or AIRTABLE_BASE_ID is not configured",
+      configured_table: airtableTable,
+    });
+  }
+
+  const storedPayload = {
+    ...payloadWithStorage,
+    storage: {
+      r2: r2Stored,
+      r2_key: r2Stored ? key : "",
+      r2_error: r2Error,
+      airtable: Boolean(airtableRecordId),
+      airtable_record_id: airtableRecordId,
+      airtable_table: airtableTable,
+    },
+    warnings,
+  };
+
+  if (r2Stored && env.EVIDENCE_BUCKET && typeof env.EVIDENCE_BUCKET.put === "function") {
+    await env.EVIDENCE_BUCKET.put(key, JSON.stringify(storedPayload, null, 2), {
+      httpMetadata: { contentType: "application/json; charset=utf-8" },
+      customMetadata: {
+        application_id: applicationId,
+        application_type: "private_model",
+        handler: "TarT",
+        airtable_synced: airtableRecordId ? "true" : "false",
+      },
+    });
+  }
+
+  if (!r2Stored && !airtableRecordId) {
+    throw new Error(r2Error || "private_model_application_storage_failed");
+  }
+
+  return {
+    r2: r2Stored,
+    ...(r2Stored ? { r2_key: key } : {}),
+    airtable: Boolean(airtableRecordId),
+    ...(airtableRecordId ? { airtable_record_id: airtableRecordId } : {}),
+    airtable_table: airtableTable,
+    warnings,
+  };
+}
+
+async function handlePrivateModelApply(request: Request, env: Env): Promise<Response> {
+  const meta = makeMeta(request);
+
+  if (!buildCorsHeaders(request, env).has("access-control-allow-origin")) {
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "origin_not_allowed", message: "Origin is not allowed" },
+      meta,
+    }, { status: 403 });
+  }
+
+  const body = (await request.json().catch(() => null)) as PrivateModelApplyBody | null;
+  if (!body || typeof body !== "object") {
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "validation_error", message: "valid JSON payload is required" },
+      meta,
+    }, { status: 400 });
+  }
+
+  if (privateModelText(body.honeypot, 100)) {
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "submission_rejected", message: "Submission rejected" },
+      meta,
+    }, { status: 400 });
+  }
+
+  const validationErrors = validatePrivateModelApply(body);
+  if (validationErrors.length) {
+    return publicJson(request, env, {
+      ok: false,
+      error: {
+        code: "validation_error",
+        message: validationErrors.join("; "),
+        details: { validation_errors: validationErrors },
+      },
+      meta,
+    }, { status: 400 });
+  }
+
+  const turnstileToken = privateModelText(body.cf_turnstile_response, 4096);
+  if (turnstileToken) {
+    const verified = await verifyPrivateModelTurnstile(request, env, turnstileToken);
+    if (!verified) {
+      return publicJson(request, env, {
+        ok: false,
+        error: { code: "turnstile_failed", message: "Turnstile verification failed" },
+        meta,
+      }, { status: 400 });
+    }
+  }
+
+  const applicationId = privateModelApplicationId();
+  const submittedAt = new Date().toISOString();
+  const payload = compactFields({
+    application_id: applicationId,
+    status: "submitted",
+    review_status: "pending_review",
+    submitted_at: submittedAt,
+    application_type: "private_model",
+    work_type: "private_model",
+    source: "model_apply_private_model",
+    privacy_layer: "SIGIL",
+    handler: "TarT",
+    handler_role: "SIGIL private application concierge",
+    channel: privateModelText(body.channel, 60) || "web",
+    page_url: privateModelText(body.page_url, 700),
+    form_version: privateModelText(body.form_version, 160),
+    nickname: privateModelText(body.nickname, 100),
+    age: privateModelText(body.age, 8),
+    occupation: privateModelText(body.occupation, 160),
+    location: privateModelText(body.location, 200),
+    height: privateModelText(body.height, 20),
+    weight: privateModelText(body.weight, 20),
+    phone: privateModelText(body.phone, 40),
+    telegram_username: privateModelText(body.telegram_username, 120),
+    line_id: privateModelText(body.line_id, 120),
+    instagram: privateModelText(body.instagram, 700),
+    intro: privateModelLongText(body.intro),
+    experience: privateModelLongText(body.experience),
+    strengths: privateModelLongText(body.strengths),
+    skills: privateModelLongText(body.skills),
+    taste_lifestyle_collectibles: privateModelLongText(body.taste_lifestyle_collectibles),
+    private_readiness: privateModelText(body.private_readiness, 180),
+    lgbt_professional: privateModelText(body.lgbt_professional, 180),
+    privacy_level: privateModelText(body.privacy_level, 180),
+    protection_notes: privateModelLongText(body.protection_notes),
+    boundaries: privateModelLongText(body.boundaries),
+    goal: privateModelLongText(body.goal),
+    profile_photo_url: privateModelText(body.profile_photo_url, 1000),
+    profile_photo_filename: privateModelText(body.profile_photo_filename, 180),
+    profile_photo_size: privateModelText(body.profile_photo_size, 40),
+    profile_photo_type: privateModelText(body.profile_photo_type, 120),
+    consent: true,
+    user_agent: privateModelText(body.user_agent || request.headers.get("user-agent"), 500),
+    timezone: privateModelText(body.timezone, 120),
+    language: privateModelText(body.language, 80),
+    request_context: {
+      user_agent: privateModelText(body.user_agent || request.headers.get("user-agent"), 500),
+      country: privateModelText(request.headers.get("cf-ipcountry"), 12),
+      ip_hash: await shortSha256(privateModelText(request.headers.get("cf-connecting-ip"), 80)),
+    },
+  });
+
+  let storage: PrivateModelStorageResult;
+  try {
+    storage = await storePrivateModelApplication(env, applicationId, payload);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "storage_failed", message },
+      meta,
+    }, { status: 503 });
+  }
+
+  return publicJson(request, env, {
+    ok: true,
+    application_id: applicationId,
+    status: "submitted",
+    review_status: "pending_review",
+    storage: {
+      r2: storage.r2,
+      airtable: storage.airtable,
+    },
+    ...(storage.r2_key ? { r2_key: storage.r2_key } : {}),
+    ...(storage.airtable_record_id ? { airtable_record_id: storage.airtable_record_id } : {}),
+    ...(storage.warnings.length ? { warnings: storage.warnings } : {}),
+    meta,
+  });
+}
+
+async function handlePrivateModelUploadUrl(request: Request, env: Env): Promise<Response> {
+  const meta = makeMeta(request);
+
+  if (!buildCorsHeaders(request, env).has("access-control-allow-origin")) {
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "origin_not_allowed", message: "Origin is not allowed" },
+      meta,
+    }, { status: 403 });
+  }
+
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!body || typeof body !== "object") {
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "validation_error", message: "valid JSON payload is required" },
+      meta,
+    }, { status: 400 });
+  }
+
+  const filename = privateModelText(body.filename, 180) || "private-model-photo";
+  const contentType = privateModelText(body.content_type || body.contentType, 120).toLowerCase();
+  if (!PRIVATE_MODEL_ALLOWED_UPLOAD_TYPES.has(contentType)) {
+    return publicJson(request, env, {
+      ok: false,
+      error: {
+        code: "validation_error",
+        message: "Unsupported file type. JPG, PNG, and WEBP are supported.",
+      },
+      meta,
+    }, { status: 400 });
+  }
+
+  const size = Number(privateModelText(body.size || body.file_size || body.fileSize, 40));
+  if (Number.isFinite(size) && size > PRIVATE_MODEL_MAX_UPLOAD_BYTES) {
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "validation_error", message: "File exceeds 10MB limit." },
+      meta,
+    }, { status: 400 });
+  }
+
+  if (!env.EVIDENCE_BUCKET || typeof env.EVIDENCE_BUCKET.put !== "function") {
+    return publicJson(request, env, {
+      ok: false,
+      error: {
+        code: "upload_storage_not_configured",
+        message: "ตอนนี้ระบบอัปโหลดรูปยังไม่พร้อม กรุณาส่งรูปเพิ่มเติมผ่าน Telegram",
+      },
+      meta,
+    }, { status: 503 });
+  }
+
+  const key = `sigil/private-model/uploads/${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}-${safeEvidenceFilename(filename)}`;
+  const expires = Date.now() + 10 * 60 * 1000;
+  const secret = toStr(env.LINK_SIGNING_SECRET || env.INTERNAL_TOKEN);
+  const signature = await privateModelUploadSignature(secret, key, expires, contentType);
+
+  return publicJson(request, env, {
+    ok: true,
+    upload_url: privateModelUploadUrl(request, key, expires, contentType, signature),
+    file_url: privateModelFileReference(env, key),
+    key,
+    expires_at: new Date(expires).toISOString(),
+    meta,
+  });
+}
+
+async function handlePrivateModelUploadFile(request: Request, env: Env): Promise<Response> {
+  const meta = makeMeta(request);
+  const url = new URL(request.url);
+  const key = url.searchParams.get("key") || "";
+  const expires = Number(url.searchParams.get("expires") || "0");
+  const contentType = (url.searchParams.get("content_type") || request.headers.get("content-type") || "").toLowerCase();
+  const signature = url.searchParams.get("sig") || "";
+
+  if (!PRIVATE_MODEL_ALLOWED_UPLOAD_TYPES.has(contentType)) {
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "validation_error", message: "Unsupported file type. JPG, PNG, and WEBP are supported." },
+      meta,
+    }, { status: 400 });
+  }
+
+  const valid = await isValidPrivateModelUploadSignature(env, key, expires, contentType, signature);
+  if (!valid) {
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "upload_signature_invalid", message: "Upload URL is invalid or expired." },
+      meta,
+    }, { status: 403 });
+  }
+
+  const contentLength = Number(request.headers.get("content-length") || "0");
+  if (Number.isFinite(contentLength) && contentLength > PRIVATE_MODEL_MAX_UPLOAD_BYTES) {
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "validation_error", message: "File exceeds 10MB limit." },
+      meta,
+    }, { status: 400 });
+  }
+
+  if (!env.EVIDENCE_BUCKET || typeof env.EVIDENCE_BUCKET.put !== "function") {
+    return publicJson(request, env, {
+      ok: false,
+      error: {
+        code: "upload_storage_not_configured",
+        message: "ตอนนี้ระบบอัปโหลดรูปยังไม่พร้อม กรุณาส่งรูปเพิ่มเติมผ่าน Telegram",
+      },
+      meta,
+    }, { status: 503 });
+  }
+
+  await env.EVIDENCE_BUCKET.put(key, request.body, {
+    httpMetadata: { contentType },
+    customMetadata: {
+      source: "mmd_apply_private_model",
+      handler: "TarT",
+    },
+  });
+
+  return publicJson(request, env, {
+    ok: true,
+    file_url: privateModelFileReference(env, key),
+    key,
+    meta,
+  });
+}
+
+function publicModelApplicationId(): string {
+  return `pub_app_${Date.now().toString(36)}_${crypto.randomUUID().slice(0, 8)}`;
+}
+
+function publicModelUploadUrl(request: Request, key: string, expires: number, contentType: string, signature: string): string {
+  const url = new URL(PUBLIC.publicModelUploadFile, new URL(request.url).origin);
+  url.searchParams.set("key", key);
+  url.searchParams.set("expires", String(expires));
+  url.searchParams.set("content_type", contentType);
+  url.searchParams.set("sig", signature);
+  return url.toString();
+}
+
+function publicModelAirtableFields(applicationId: string, payload: Record<string, unknown>) {
+  const now = new Date().toISOString();
+  const requestContext = payload.request_context && typeof payload.request_context === "object"
+    ? payload.request_context as Record<string, unknown>
+    : {};
+  const photoUrl = toStr(payload.photo_url) || toStr(payload.profile_photo_url);
+  return compactFields({
+    application_id: applicationId,
+    status: "submitted",
+    review_status: "pending_review",
+    nickname: payload.nickname,
+    age: payload.age,
+    phone: payload.phone,
+    telegram_username: payload.telegram_username,
+    line_id: payload.line_id,
+    application_type: "public_model",
+    source: "model_apply_public_model",
+    handler: "TarT",
+    r2_key: payload.r2_key,
+    photo_url: photoUrl,
+    payload_json: JSON.stringify(payload),
+    summary_json: JSON.stringify({
+      application_id: applicationId,
+      status: "submitted",
+      review_status: "pending_review",
+      application_type: "public_model",
+      source: "model_apply_public_model",
+      privacy_level: "public",
+      work_type: "public_model",
+      r2_key: payload.r2_key,
+    }),
+    created_at: toStr(payload.submitted_at) || now,
+    submitted_at: payload.submitted_at,
+    occupation: payload.occupation,
+    location: payload.location,
+    height: payload.height,
+    weight: payload.weight,
+    instagram: payload.instagram,
+    intro: payload.intro,
+    experience: payload.experience,
+    strengths: payload.strengths,
+    skills: payload.skills,
+    work_type: "public_model",
+    privacy_level: "public",
+    boundaries: payload.boundaries,
+    goal: payload.goal,
+    consent: payload.consent,
+    page_url: payload.page_url,
+    user_agent: payload.user_agent || requestContext.user_agent,
+    timezone: payload.timezone,
+    language: payload.language,
+  });
+}
+
+function logPublicModelAirtableFailure(input: {
+  applicationId: string;
+  table: string;
+  error: unknown;
+  phase: string;
+}) {
+  const parsed = parseAirtableError(input.error);
+  console.warn(JSON.stringify({
+    source: "public_model_apply",
+    event: "airtable_write_failed",
+    phase: input.phase,
+    application_id: input.applicationId,
+    airtable_table: input.table,
+    airtable_error_code: parsed.code,
+    airtable_error_message: parsed.message,
+    timestamp: new Date().toISOString(),
+  }));
+  return parsed;
+}
+
+async function writePublicModelApplicationToAirtable(
+  env: Env,
+  applicationId: string,
+  payload: Record<string, unknown>,
+): Promise<{ table: string; recordId: string; action: string }> {
+  const table = privateModelApplicationsTable(env);
+  const fields = publicModelAirtableFields(applicationId, payload);
+
+  let existingId = "";
+  try {
+    const existing = await findAirtableImportRecords(env, table, "application_id", applicationId);
+    existingId = toStr((existing[0] as Record<string, unknown> | undefined)?.id);
+  } catch {
+    existingId = "";
+  }
+
+  const fallbackFields = [
+    fields,
+    compactFields({
+      application_id: fields.application_id,
+      status: fields.status,
+      review_status: fields.review_status,
+      application_type: fields.application_type,
+      source: fields.source,
+      handler: fields.handler,
+      nickname: fields.nickname,
+      age: fields.age,
+      phone: fields.phone,
+      telegram_username: fields.telegram_username,
+      line_id: fields.line_id,
+      payload_json: fields.payload_json,
+      created_at: fields.created_at,
+    }),
+    compactFields({
+      application_id: fields.application_id,
+      status: fields.status,
+      review_status: fields.review_status,
+      nickname: fields.nickname,
+      payload_json: fields.payload_json,
+    }),
+    compactFields({
+      application_id: fields.application_id,
+      status: fields.status,
+      payload_json: fields.payload_json,
+    }),
+    compactFields({
+      application_id: fields.application_id,
+      payload_json: fields.payload_json,
+    }),
+    compactFields({
+      application_id: fields.application_id,
+      status: fields.status,
+    }),
+    compactFields({
+      application_id: fields.application_id,
+    }),
+  ];
+
+  let lastError: unknown = null;
+  for (const candidate of fallbackFields) {
+    if (!Object.keys(candidate).length) continue;
+    try {
+      if (existingId) {
+        const updated = await patchAirtableImportRecordWithFallbacks(env, table, existingId, candidate);
+        return { table, recordId: toStr((updated as Record<string, unknown>).id) || existingId, action: "updated" };
+      }
+      const created = await createAirtableImportRecordWithFallbacks(env, table, candidate);
+      return { table, recordId: toStr((created as Record<string, unknown>).id), action: "created" };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) throw lastError;
+  return { table, recordId: existingId, action: "skipped_no_fields" };
+}
+
+async function storePublicModelApplication(
+  env: Env,
+  applicationId: string,
+  payload: Record<string, unknown>,
+): Promise<PrivateModelStorageResult> {
+  const key = `sigil/public-model/applications/${applicationId}.json`;
+  const payloadWithStorage = {
+    ...payload,
+    r2_key: key,
+    photo_url: toStr(payload.photo_url) || toStr(payload.profile_photo_url),
+  };
+  let r2Stored = false;
+  let r2Error = "";
+  let airtableRecordId = "";
+  let airtableTable = privateModelApplicationsTable(env);
+  const warnings: PrivateModelAirtableWarning[] = [];
+
+  if (env.EVIDENCE_BUCKET && typeof env.EVIDENCE_BUCKET.put === "function") {
+    try {
+      await env.EVIDENCE_BUCKET.put(key, JSON.stringify(payloadWithStorage, null, 2), {
+        httpMetadata: { contentType: "application/json; charset=utf-8" },
+        customMetadata: {
+          application_id: applicationId,
+          application_type: "public_model",
+          handler: "TarT",
+        },
+      });
+      r2Stored = true;
+    } catch (error) {
+      r2Error = error instanceof Error ? error.message : String(error);
+    }
+  } else {
+    r2Error = "EVIDENCE_BUCKET is not configured";
+  }
+
+  if (env.AIRTABLE_API_KEY && env.AIRTABLE_BASE_ID) {
+    try {
+      const record = await writePublicModelApplicationToAirtable(env, applicationId, payloadWithStorage);
+      airtableTable = record.table;
+      airtableRecordId = record.recordId;
+    } catch (error) {
+      const parsed = logPublicModelAirtableFailure({
+        applicationId,
+        table: airtableTable,
+        error,
+        phase: "submit",
+      });
+      warnings.push({
+        target: "airtable",
+        code: parsed.code,
+        message: parsed.message,
+        configured_table: airtableTable,
+      });
+    }
+  } else {
+    warnings.push({
+      target: "airtable",
+      code: "AIRTABLE_NOT_CONFIGURED",
+      message: "AIRTABLE_API_KEY or AIRTABLE_BASE_ID is not configured",
+      configured_table: airtableTable,
+    });
+  }
+
+  const storedPayload = {
+    ...payloadWithStorage,
+    storage: {
+      r2: r2Stored,
+      r2_key: r2Stored ? key : "",
+      r2_error: r2Error,
+      airtable: Boolean(airtableRecordId),
+      airtable_record_id: airtableRecordId,
+      airtable_table: airtableTable,
+    },
+    warnings,
+  };
+
+  if (r2Stored && env.EVIDENCE_BUCKET && typeof env.EVIDENCE_BUCKET.put === "function") {
+    await env.EVIDENCE_BUCKET.put(key, JSON.stringify(storedPayload, null, 2), {
+      httpMetadata: { contentType: "application/json; charset=utf-8" },
+      customMetadata: {
+        application_id: applicationId,
+        application_type: "public_model",
+        handler: "TarT",
+        airtable_synced: airtableRecordId ? "true" : "false",
+      },
+    });
+  }
+
+  if (!r2Stored && !airtableRecordId) {
+    throw new Error(r2Error || "public_model_application_storage_failed");
+  }
+
+  return {
+    r2: r2Stored,
+    ...(r2Stored ? { r2_key: key } : {}),
+    airtable: Boolean(airtableRecordId),
+    ...(airtableRecordId ? { airtable_record_id: airtableRecordId } : {}),
+    airtable_table: airtableTable,
+    warnings,
+  };
+}
+
+async function handlePublicModelApply(request: Request, env: Env): Promise<Response> {
+  const meta = makeMeta(request);
+
+  if (!buildCorsHeaders(request, env).has("access-control-allow-origin")) {
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "origin_not_allowed", message: "Origin is not allowed" },
+      meta,
+    }, { status: 403 });
+  }
+
+  const body = (await request.json().catch(() => null)) as PrivateModelApplyBody | null;
+  if (!body || typeof body !== "object") {
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "validation_error", message: "valid JSON payload is required" },
+      meta,
+    }, { status: 400 });
+  }
+
+  if (privateModelText(body.honeypot, 100)) {
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "submission_rejected", message: "Submission rejected" },
+      meta,
+    }, { status: 400 });
+  }
+
+  const validationErrors = validatePrivateModelApply(body);
+  if (validationErrors.length) {
+    return publicJson(request, env, {
+      ok: false,
+      error: {
+        code: "validation_error",
+        message: validationErrors.join("; "),
+        details: { validation_errors: validationErrors },
+      },
+      meta,
+    }, { status: 400 });
+  }
+
+  const turnstileToken = privateModelText(body.cf_turnstile_response, 4096);
+  if (turnstileToken) {
+    const verified = await verifyPrivateModelTurnstile(request, env, turnstileToken);
+    if (!verified) {
+      return publicJson(request, env, {
+        ok: false,
+        error: { code: "turnstile_failed", message: "Turnstile verification failed" },
+        meta,
+      }, { status: 400 });
+    }
+  }
+
+  const applicationId = publicModelApplicationId();
+  const submittedAt = new Date().toISOString();
+  const payload = compactFields({
+    application_id: applicationId,
+    status: "submitted",
+    review_status: "pending_review",
+    submitted_at: submittedAt,
+    application_type: "public_model",
+    work_type: "public_model",
+    source: "model_apply_public_model",
+    privacy_layer: "SIGIL",
+    handler: "TarT",
+    handler_role: "SIGIL public application concierge",
+    channel: privateModelText(body.channel, 60) || "web",
+    page_url: privateModelText(body.page_url, 700),
+    form_version: privateModelText(body.form_version, 160),
+    nickname: privateModelText(body.nickname, 100),
+    age: privateModelText(body.age, 8),
+    occupation: privateModelText(body.occupation, 160),
+    location: privateModelText(body.location, 200),
+    height: privateModelText(body.height, 20),
+    weight: privateModelText(body.weight, 20),
+    phone: privateModelText(body.phone, 40),
+    telegram_username: privateModelText(body.telegram_username, 120),
+    line_id: privateModelText(body.line_id, 120),
+    instagram: privateModelText(body.instagram, 700),
+    intro: privateModelLongText(body.intro),
+    experience: privateModelLongText(body.experience),
+    strengths: privateModelLongText(body.strengths),
+    skills: privateModelLongText(body.skills),
+    special_awards: privateModelLongText(body.special_awards),
+    honours: privateModelLongText(body.honours),
+    service_interests: privateModelLongText(body.service_interests),
+    public_profile_note: privateModelLongText(body.public_profile_note),
+    public_profile_consent: privateModelBool(body.public_profile_consent),
+    privacy_level: "public",
+    boundaries: privateModelLongText(body.boundaries),
+    goal: privateModelLongText(body.goal),
+    profile_photo_url: privateModelText(body.profile_photo_url, 1000),
+    profile_photo_filename: privateModelText(body.profile_photo_filename, 180),
+    profile_photo_size: privateModelText(body.profile_photo_size, 40),
+    profile_photo_type: privateModelText(body.profile_photo_type, 120),
+    consent: true,
+    user_agent: privateModelText(body.user_agent || request.headers.get("user-agent"), 500),
+    timezone: privateModelText(body.timezone, 120),
+    language: privateModelText(body.language, 80),
+    request_context: {
+      user_agent: privateModelText(body.user_agent || request.headers.get("user-agent"), 500),
+      country: privateModelText(request.headers.get("cf-ipcountry"), 12),
+      ip_hash: await shortSha256(privateModelText(request.headers.get("cf-connecting-ip"), 80)),
+    },
+  });
+
+  let storage: PrivateModelStorageResult;
+  try {
+    storage = await storePublicModelApplication(env, applicationId, payload);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "storage_failed", message },
+      meta,
+    }, { status: 503 });
+  }
+
+  return publicJson(request, env, {
+    ok: true,
+    application_id: applicationId,
+    status: "submitted",
+    review_status: "pending_review",
+    storage: {
+      r2: storage.r2,
+      airtable: storage.airtable,
+    },
+    ...(storage.r2_key ? { r2_key: storage.r2_key } : {}),
+    ...(storage.airtable_record_id ? { airtable_record_id: storage.airtable_record_id } : {}),
+    ...(storage.warnings.length ? { warnings: storage.warnings } : {}),
+    meta,
+  });
+}
+
+async function handlePublicModelUploadUrl(request: Request, env: Env): Promise<Response> {
+  const meta = makeMeta(request);
+
+  if (!buildCorsHeaders(request, env).has("access-control-allow-origin")) {
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "origin_not_allowed", message: "Origin is not allowed" },
+      meta,
+    }, { status: 403 });
+  }
+
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!body || typeof body !== "object") {
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "validation_error", message: "valid JSON payload is required" },
+      meta,
+    }, { status: 400 });
+  }
+
+  const filename = privateModelText(body.filename, 180) || "public-model-photo";
+  const contentType = privateModelText(body.content_type || body.contentType, 120).toLowerCase();
+  if (!PRIVATE_MODEL_ALLOWED_UPLOAD_TYPES.has(contentType)) {
+    return publicJson(request, env, {
+      ok: false,
+      error: {
+        code: "validation_error",
+        message: "Unsupported file type. JPG, PNG, and WEBP are supported.",
+      },
+      meta,
+    }, { status: 400 });
+  }
+
+  const size = Number(privateModelText(body.size || body.file_size || body.fileSize, 40));
+  if (Number.isFinite(size) && size > PRIVATE_MODEL_MAX_UPLOAD_BYTES) {
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "validation_error", message: "File exceeds 10MB limit." },
+      meta,
+    }, { status: 400 });
+  }
+
+  if (!env.EVIDENCE_BUCKET || typeof env.EVIDENCE_BUCKET.put !== "function") {
+    return publicJson(request, env, {
+      ok: false,
+      error: {
+        code: "upload_storage_not_configured",
+        message: "ตอนนี้ระบบอัปโหลดรูปยังไม่พร้อม กรุณาส่งรูปเพิ่มเติมผ่าน Telegram",
+      },
+      meta,
+    }, { status: 503 });
+  }
+
+  const key = `sigil/public-model/uploads/${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}-${safeEvidenceFilename(filename)}`;
+  const expires = Date.now() + 10 * 60 * 1000;
+  const secret = toStr(env.LINK_SIGNING_SECRET || env.INTERNAL_TOKEN);
+  const signature = await privateModelUploadSignature(secret, key, expires, contentType);
+
+  return publicJson(request, env, {
+    ok: true,
+    upload_url: publicModelUploadUrl(request, key, expires, contentType, signature),
+    file_url: privateModelFileReference(env, key),
+    key,
+    expires_at: new Date(expires).toISOString(),
+    meta,
+  });
+}
+
+async function handlePublicModelUploadFile(request: Request, env: Env): Promise<Response> {
+  const meta = makeMeta(request);
+  const url = new URL(request.url);
+  const key = url.searchParams.get("key") || "";
+  const expires = Number(url.searchParams.get("expires") || "0");
+  const contentType = (url.searchParams.get("content_type") || request.headers.get("content-type") || "").toLowerCase();
+  const signature = url.searchParams.get("sig") || "";
+
+  if (!key.startsWith("sigil/public-model/uploads/")) {
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "upload_signature_invalid", message: "Upload URL is invalid or expired." },
+      meta,
+    }, { status: 403 });
+  }
+
+  if (!PRIVATE_MODEL_ALLOWED_UPLOAD_TYPES.has(contentType)) {
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "validation_error", message: "Unsupported file type. JPG, PNG, and WEBP are supported." },
+      meta,
+    }, { status: 400 });
+  }
+
+  const valid = await isValidPrivateModelUploadSignature(env, key, expires, contentType, signature);
+  if (!valid) {
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "upload_signature_invalid", message: "Upload URL is invalid or expired." },
+      meta,
+    }, { status: 403 });
+  }
+
+  const contentLength = Number(request.headers.get("content-length") || "0");
+  if (Number.isFinite(contentLength) && contentLength > PRIVATE_MODEL_MAX_UPLOAD_BYTES) {
+    return publicJson(request, env, {
+      ok: false,
+      error: { code: "validation_error", message: "File exceeds 10MB limit." },
+      meta,
+    }, { status: 400 });
+  }
+
+  if (!env.EVIDENCE_BUCKET || typeof env.EVIDENCE_BUCKET.put !== "function") {
+    return publicJson(request, env, {
+      ok: false,
+      error: {
+        code: "upload_storage_not_configured",
+        message: "ตอนนี้ระบบอัปโหลดรูปยังไม่พร้อม กรุณาส่งรูปเพิ่มเติมผ่าน Telegram",
+      },
+      meta,
+    }, { status: 503 });
+  }
+
+  await env.EVIDENCE_BUCKET.put(key, request.body, {
+    httpMetadata: { contentType },
+    customMetadata: {
+      source: "mmd_apply_public_model",
+      handler: "TarT",
+    },
+  });
+
+  return publicJson(request, env, {
+    ok: true,
+    file_url: privateModelFileReference(env, key),
+    key,
+    meta,
+  });
+}
+
+async function readPrivateModelApplicationFromR2(env: Env, key: string): Promise<Record<string, unknown> | null> {
+  if (!env.EVIDENCE_BUCKET || typeof env.EVIDENCE_BUCKET.get !== "function") return null;
+  const object = await env.EVIDENCE_BUCKET.get(key);
+  if (!object) return null;
+  const text = await object.text();
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function markPrivateModelApplicationReplayResult(
+  env: Env,
+  key: string,
+  payload: Record<string, unknown>,
+  result: Record<string, unknown>,
+) {
+  if (!env.EVIDENCE_BUCKET || typeof env.EVIDENCE_BUCKET.put !== "function") return;
+  const nextPayload = {
+    ...payload,
+    replay: {
+      ...((payload.replay && typeof payload.replay === "object") ? payload.replay as Record<string, unknown> : {}),
+      airtable: result,
+      replayed_at: new Date().toISOString(),
+    },
+  };
+  await env.EVIDENCE_BUCKET.put(key, JSON.stringify(nextPayload, null, 2), {
+    httpMetadata: { contentType: "application/json; charset=utf-8" },
+    customMetadata: {
+      application_id: toStr(payload.application_id),
+      application_type: "private_model",
+      handler: "TarT",
+      airtable_synced: toStr(result.airtable_record_id) ? "true" : "false",
+    },
+  });
+}
+
+async function handlePrivateModelReplayAirtable(request: Request, env: Env): Promise<Response> {
+  const meta = makeMeta(request);
+  if (!env.EVIDENCE_BUCKET || typeof env.EVIDENCE_BUCKET.list !== "function") {
+    return json({
+      ok: false,
+      error: {
+        code: "R2_NOT_CONFIGURED",
+        message: "EVIDENCE_BUCKET R2 binding is not configured",
+      },
+      meta,
+    }, { status: 503 });
+  }
+
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) {
+    return json({
+      ok: false,
+      error: {
+        code: "AIRTABLE_NOT_CONFIGURED",
+        message: "AIRTABLE_API_KEY or AIRTABLE_BASE_ID is not configured",
+      },
+      meta,
+    }, { status: 503 });
+  }
+
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const limit = Math.min(Math.max(Number(body.limit || 25), 1), 100);
+  const cursor = privateModelText(body.cursor, 300);
+  const dryRun = privateModelBool(body.dry_run);
+  const prefix = privateModelText(body.prefix, 300) || "sigil/private-model/applications/";
+  const listing = await env.EVIDENCE_BUCKET.list({
+    prefix,
+    limit,
+    ...(cursor ? { cursor } : {}),
+  });
+  const objects = Array.isArray(listing.objects) ? listing.objects : [];
+  const results: Array<Record<string, unknown>> = [];
+
+  for (const object of objects) {
+    const key = toStr(object.key);
+    if (!key.endsWith(".json")) continue;
+
+    const payload = await readPrivateModelApplicationFromR2(env, key);
+    const applicationId = toStr(payload?.application_id) || key.split("/").pop()?.replace(/\.json$/, "") || "";
+    if (!payload || !applicationId) {
+      results.push({ key, ok: false, error_code: "INVALID_R2_PAYLOAD" });
+      continue;
+    }
+
+    if (dryRun) {
+      results.push({
+        key,
+        application_id: applicationId,
+        ok: true,
+        dry_run: true,
+        airtable_table: privateModelApplicationsTable(env),
+      });
+      continue;
+    }
+
+    try {
+      const airtable = await writePrivateModelApplicationToAirtable(env, applicationId, payload);
+      const result = {
+        key,
+        application_id: applicationId,
+        ok: true,
+        airtable_record_id: airtable.recordId,
+        airtable_table: airtable.table,
+        action: airtable.action,
+      };
+      results.push(result);
+      await markPrivateModelApplicationReplayResult(env, key, payload, result);
+    } catch (error) {
+      const parsed = logPrivateModelAirtableFailure({
+        applicationId,
+        table: privateModelApplicationsTable(env),
+        error,
+        phase: "replay",
+      });
+      results.push({
+        key,
+        application_id: applicationId,
+        ok: false,
+        airtable_table: privateModelApplicationsTable(env),
+        error_code: parsed.code,
+        error_message: parsed.message,
+      });
+    }
+  }
+
+  const synced = results.filter((result) => result.ok && result.airtable_record_id).length;
+  const failed = results.filter((result) => result.ok === false).length;
+  return json({
+    ok: failed === 0,
+    dry_run: dryRun,
+    source: "private_model_apply",
+    storage_prefix: prefix,
+    airtable_table: privateModelApplicationsTable(env),
+    scanned: objects.length,
+    synced,
+    failed,
+    results,
+    cursor: listing.truncated ? listing.cursor || "" : "",
+    truncated: Boolean(listing.truncated),
+    meta,
+  }, { status: failed ? 207 : 200 });
+}
+
+async function airtableMetadataTables(env: Env): Promise<Array<Record<string, unknown>>> {
+  const response = await fetch(`https://api.airtable.com/v0/meta/bases/${env.AIRTABLE_BASE_ID}/tables`, {
+    headers: {
+      Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
+      Accept: "application/json",
+    },
+  });
+  const text = await response.text();
+  const data = (() => {
+    try {
+      return JSON.parse(text) as { tables?: Array<Record<string, unknown>> };
+    } catch {
+      return { raw: text } as Record<string, unknown>;
+    }
+  })();
+
+  if (!response.ok) {
+    throw new Error(`Airtable metadata ${response.status}: ${JSON.stringify(data)}`);
+  }
+
+  return Array.isArray(data.tables) ? data.tables : [];
+}
+
+function privateModelTableCandidate(table: Record<string, unknown>): boolean {
+  const name = privateModelText(table.name, 200).toLowerCase();
+  const id = privateModelText(table.id, 80);
+  const fields = Array.isArray(table.fields) ? table.fields as Array<Record<string, unknown>> : [];
+  const fieldNames = fields.map((field) => privateModelText(field.name, 120).toLowerCase());
+  return Boolean(
+    id &&
+    (
+      (name.includes("private") && name.includes("model") && name.includes("application")) ||
+      (fieldNames.includes("application_id") && fieldNames.includes("review_status") && fieldNames.includes("payload_json"))
+    )
+  );
+}
+
+async function handlePrivateModelAirtableCheck(request: Request, env: Env): Promise<Response> {
+  const meta = makeMeta(request);
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const configuredTable = privateModelApplicationsTable(env);
+  const explicitTable = privateModelText(body.table_id || body.table || "", 120);
+  const tableToCheck = explicitTable || configuredTable;
+  const writeTest = privateModelBool(body.write_test);
+  const result: Record<string, unknown> = {
+    ok: true,
+    source: "private_model_apply",
+    base_id: env.AIRTABLE_BASE_ID,
+    configured_table: configuredTable,
+    checked_table: tableToCheck,
+    has_private_model_binding: Boolean(env.AIRTABLE_TABLE_PRIVATE_MODEL_APPLICATIONS),
+    checks: {},
+    meta,
+  };
+
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) {
+    return json({
+      ...result,
+      ok: false,
+      error: {
+        code: "AIRTABLE_NOT_CONFIGURED",
+        message: "AIRTABLE_API_KEY or AIRTABLE_BASE_ID is not configured",
+      },
+    }, { status: 503 });
+  }
+
+  try {
+    await airtableImportRequest(env, tableToCheck, {
+      query: { maxRecords: "1" },
+    });
+    (result.checks as Record<string, unknown>).read = { ok: true };
+  } catch (error) {
+    const parsed = parseAirtableError(error);
+    (result.checks as Record<string, unknown>).read = {
+      ok: false,
+      code: parsed.code,
+      message: parsed.message,
+    };
+  }
+
+  try {
+    const tables = await airtableMetadataTables(env);
+    const candidates = tables
+      .filter(privateModelTableCandidate)
+      .map((table) => ({
+        id: table.id,
+        name: table.name,
+        fields: (Array.isArray(table.fields) ? table.fields as Array<Record<string, unknown>> : [])
+          .map((field) => field.name)
+          .filter(Boolean),
+      }));
+    (result.checks as Record<string, unknown>).metadata = {
+      ok: true,
+      table_count: tables.length,
+      private_model_application_candidates: candidates,
+    };
+  } catch (error) {
+    const parsed = parseAirtableError(error);
+    (result.checks as Record<string, unknown>).metadata = {
+      ok: false,
+      code: parsed.code,
+      message: parsed.message,
+    };
+  }
+
+  if (writeTest) {
+    const testApplicationId = `pm_app_airtable_check_${Date.now().toString(36)}`;
+    const payload = {
+      application_id: testApplicationId,
+      status: "submitted",
+      review_status: "pending_review",
+      source: "model_apply_private_model",
+      handler: "TarT",
+      submitted_at: new Date().toISOString(),
+      nickname: "Airtable Config Check",
+      age: "25",
+      payload_json: { smoke: true },
+    };
+    try {
+      const fields = privateModelAirtableFields(testApplicationId, payload);
+      const created = await createAirtableImportRecordWithFallbacks(env, tableToCheck, fields);
+      (result.checks as Record<string, unknown>).write = {
+        ok: true,
+        airtable_record_id: toStr((created as Record<string, unknown>).id),
+      };
+    } catch (error) {
+      const parsed = logPrivateModelAirtableFailure({
+        applicationId: testApplicationId,
+        table: tableToCheck,
+        error,
+        phase: "airtable_check",
+      });
+      (result.checks as Record<string, unknown>).write = {
+        ok: false,
+        code: parsed.code,
+        message: parsed.message,
+      };
+    }
+  }
+
+  return json(result);
+}
+
 async function handleList(request: Request, env: Env): Promise<Response> {
   const meta = makeMeta(request);
   const url = new URL(request.url);
@@ -2626,8 +4524,8 @@ async function notifyTelegramForLineIntake(
   const telegramPayload = {
     chat_id: toStr(payload.telegram_chat_id),
     message_thread_id: toStr(payload.telegram_message_thread_id),
-    text: lines.join("\n"),
-    parse_mode: "HTML",
+    text: isRenewalIntake ? stripTelegramHtml(lines.join("\n")) : lines.join("\n"),
+    parse_mode: isRenewalIntake ? null : "HTML",
     disable_web_page_preview: true,
   };
 
@@ -2681,6 +4579,20 @@ async function notifyTelegramForLineIntake(
   };
 }
 
+function lineIntakeSideEffectsEnabled(payload: LineClientIntakeRequest): boolean {
+  return toBool(payload.allow_side_effects || payload.payload_json?.allow_side_effects);
+}
+
+function lineIntakeLinkCreationEnabled(payload: LineClientIntakeRequest): boolean {
+  return lineIntakeSideEffectsEnabled(payload) &&
+    toBool(payload.allow_link_creation || payload.payload_json?.allow_link_creation);
+}
+
+function lineIntakeTelegramEnabled(payload: LineClientIntakeRequest): boolean {
+  return lineIntakeSideEffectsEnabled(payload) &&
+    toBool(payload.allow_telegram_notification || payload.payload_json?.allow_telegram_notification);
+}
+
 async function handleLineIntake(request: Request, env: Env): Promise<Response> {
   const meta = makeMeta(request);
   const payload = (await request.json().catch(() => null)) as LineClientIntakeRequest | null;
@@ -2691,9 +4603,29 @@ async function handleLineIntake(request: Request, env: Env): Promise<Response> {
 
   try {
     const result = await intakeLineClientUpsert(env, payload);
-    const promotion = await promoteLineClientAfterIntake(env, payload, result);
-    const links = await createLineLinksAfterPromotion(env, payload, result, promotion);
-    const telegram = await notifyTelegramForLineIntake(env, payload, promotion, links);
+    const sideEffectsEnabled = lineIntakeSideEffectsEnabled(payload) &&
+      result.mode === "airtable" &&
+      result.action !== "needs_review";
+    const promotion = sideEffectsEnabled
+      ? await promoteLineClientAfterIntake(env, payload, result)
+      : {
+          attempted: false,
+          ok: false,
+          member_id: "",
+          promotion_status: result.action === "needs_review" ? "needs_manual_review" : "side_effects_disabled",
+          created_new_member: false,
+          error: ("review_reason" in result ? result.review_reason : "") || "side_effects_disabled_by_default",
+        };
+    const links = sideEffectsEnabled && lineIntakeLinkCreationEnabled(payload)
+      ? await createLineLinksAfterPromotion(env, payload, result, promotion)
+      : null;
+    const telegram = sideEffectsEnabled && lineIntakeTelegramEnabled(payload)
+      ? await notifyTelegramForLineIntake(env, payload, promotion, links)
+      : {
+          attempted: false,
+          ok: false,
+          error: "telegram_disabled_by_default",
+        };
     const body: LineClientIntakeResponse = {
       ok: true,
       data: {
@@ -4278,7 +6210,19 @@ async function patchAirtableImportRecord(
 
 function parseUnknownFieldName(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
+  const jsonMatch = message.match(/Airtable\s+\d+:\s+({.*})$/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[1]) as { error?: { message?: string } };
+      const apiMessage = toStr(parsed.error?.message);
+      const apiMatch = apiMessage.match(/Unknown field name:\s+"([^"]+)"/);
+      if (apiMatch?.[1]) return apiMatch[1];
+    } catch {
+      // Fall through to regex parsing.
+    }
+  }
   const match =
+    message.match(/Unknown field name:\s+\\?"([^"\\]+)\\?"/) ||
     message.match(/Unknown field name:\s+\\"([^"]+)\\"/) ||
     message.match(/Unknown field name:\s+"([^"]+)"/);
   return match?.[1] || "";
@@ -5118,6 +7062,10 @@ function isPublicRenewalStatusRoute(pathname: string): boolean {
   return pathname === PUBLIC.renewalStatus || pathname === SIGIL.renewalStatus;
 }
 
+function isPublicBookingRequestRoute(pathname: string): boolean {
+  return pathname === PUBLIC.bookingRequest;
+}
+
 function isPublicPointsTopupRoute(pathname: string): boolean {
   return pathname === PUBLIC.pointsTopup || pathname === SIGIL.pointsTopup;
 }
@@ -5136,6 +7084,18 @@ function isPublicRecoveryComplaintEvidenceRoute(pathname: string): boolean {
 
 function isPublicCustomerConfirmRoute(pathname: string): boolean {
   return pathname === PUBLIC.customerConfirm || pathname === JOBS.customerConfirm || pathname === SIGIL.customerConfirm;
+}
+
+function isPublicPrivateModelRoute(pathname: string): boolean {
+  return pathname === PUBLIC.privateModelApply ||
+    pathname === PUBLIC.privateModelUploadUrl ||
+    pathname === PUBLIC.privateModelUploadFile;
+}
+
+function isPublicPublicModelRoute(pathname: string): boolean {
+  return pathname === PUBLIC.publicModelApply ||
+    pathname === PUBLIC.publicModelUploadUrl ||
+    pathname === PUBLIC.publicModelUploadFile;
 }
 
 function isLogsRoute(pathname: string): boolean {
@@ -5432,6 +7392,16 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
+function stripTelegramHtml(value: string): string {
+  return String(value || "")
+    .replace(/<\/?(?:b|code)>/g, "")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
 function adminGateBootstrapScript(session: AdminGateSession, next: string, loginPath: string): string {
   return `
 <script>
@@ -5567,92 +7537,121 @@ async function withInjectedSigilAdminBootstrap(response: Response): Promise<Resp
 
 function renderAdminLoginPage(request: Request, env: Env): Response {
   const url = new URL(request.url);
-  const isSigilLogin = url.pathname === SIGIL.login;
-  const fallbackNext = isSigilLogin ? SIGIL.booking : selectAdminDefaultNext(url.pathname);
-  const next = isSigilLogin
-    ? SIGIL.booking
-    : normalizeAdminNextPath(url.searchParams.get("next"), fallbackNext);
-  const defaultBaseUrl = defaultAdminGateBaseUrl(env);
-  const loginSessionPath = isSigilLogin ? SIGIL.loginSession : CONTROL_ROOM.loginSession;
+  const fallbackNext = ADMIN_JOBS.createSessionLegacy;
+  const normalizedNext = normalizeAdminNextPath(url.searchParams.get("next"), fallbackNext);
+  const next = normalizedNext === "/internal" || normalizedNext.startsWith("/internal/")
+    ? normalizedNext
+    : fallbackNext;
 
   const html = `<!doctype html>
 <html lang="th">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MMD SĪGIL Admin Console</title>
+    <title>MMD SIGIL Admin Authorization</title>
     <style>
       :root {
         color-scheme: dark;
-        --bg: #050505;
-        --panel: rgba(12,12,12,.88);
-        --line: rgba(231,203,139,.22);
-        --text: #f7f0e8;
-        --muted: rgba(216,205,194,.72);
-        --gold: #c5972c;
-        --gold-soft: rgba(197,151,44,.12);
-        --danger: #f2b0b0;
+        --login12-text: #fff7e8;
+        --login12-muted: rgba(255, 247, 232, 0.66);
+        --login12-line: rgba(232, 198, 126, 0.28);
+        --login12-gold: #d9b66d;
+        --login12-danger: #ffbea2;
       }
+
       * { box-sizing: border-box; }
-      html {
-        min-height: 100%;
-      }
+      html, body { min-height: 100%; }
+
       body {
         margin: 0;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        padding: 22px;
-        color: var(--text);
-        background:
-          linear-gradient(180deg, rgba(197,151,44,.10) 0%, rgba(197,151,44,0) 34%),
-          linear-gradient(135deg, #0c0b0a 0%, #050505 52%, #010101 100%);
+        color: var(--login12-text);
+        background: #050403;
         font-family: Inter, "Avenir Next", "Segoe UI", "Noto Sans Thai", Arial, sans-serif;
       }
-      .mmd-login {
+
+      .mmd-admin-login12 {
         position: relative;
-        width: min(100%, 420px);
+        min-height: 100vh;
         overflow: hidden;
-        border: 1px solid var(--line);
-        border-radius: 8px;
+        isolation: isolate;
+        background: #050403;
+      }
+
+      .mmd-admin-login12__bg {
+        position: absolute;
+        inset: 0;
+        z-index: -2;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center center;
+      }
+
+      .mmd-admin-login12__shade {
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
         background:
-          linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,0)),
-          var(--panel);
-        box-shadow: 0 30px 80px rgba(0,0,0,.42);
-        backdrop-filter: blur(18px);
+          radial-gradient(circle at 51% 49%, rgba(0, 0, 0, 0.34), transparent 21%),
+          radial-gradient(circle at 51% 49%, rgba(6, 5, 3, 0.62), transparent 40%),
+          linear-gradient(90deg, rgba(0, 0, 0, 0.38), rgba(0, 0, 0, 0.08) 44%, rgba(0, 0, 0, 0.44));
       }
-      .mmd-login__shell {
+
+      .mmd-admin-login12__stage {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: minmax(18px, 1fr) minmax(300px, 420px) minmax(18px, 1fr);
+        align-items: center;
+        padding: clamp(18px, 4vw, 56px);
+      }
+
+      .mmd-admin-login12__panel {
+        grid-column: 2;
         position: relative;
-        display: grid;
-        gap: 24px;
-        padding: 34px;
+        width: min(100%, 402px);
+        justify-self: center;
+        transform: translateY(4vh);
+        border: 1px solid var(--login12-line);
+        border-radius: 20px;
+        padding: 25px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.03)),
+          rgba(6, 5, 4, 0.72);
+        box-shadow:
+          0 30px 86px rgba(0, 0, 0, 0.54),
+          0 0 0 1px rgba(0, 0, 0, 0.22),
+          inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(24px) saturate(1.05);
       }
-      .mmd-login__header {
-        display: grid;
-        gap: 8px;
-        text-align: center;
+
+      .mmd-admin-login12__panel::before {
+        content: "";
+        position: absolute;
+        inset: -18px;
+        z-index: -1;
+        border-radius: 28px;
+        background: rgba(0, 0, 0, 0.24);
+        filter: blur(18px);
       }
-      .mmd-login__title {
-        margin: 0;
-        font-family: Baskerville, "Iowan Old Style", Palatino, Georgia, "Noto Serif Thai", serif;
-        font-size: 2.35rem;
+
+      .mmd-admin-login12__kicker {
+        margin: 0 0 14px;
+        color: var(--login12-gold);
+        font-size: 11px;
         line-height: 1;
-        font-weight: 600;
-        color: var(--text);
+        font-weight: 800;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
       }
-      .mmd-login__subtitle {
-        margin: 0;
-        color: var(--gold);
-        font-size: 1rem;
-        line-height: 1.45;
-        font-weight: 600;
-      }
-      .mmd-login__panel {
+
+      .mmd-admin-login12__form {
         display: grid;
-        gap: 14px;
+        gap: 12px;
         margin: 0;
       }
-      .mmd-login__label {
+
+      .mmd-admin-login12__label {
         position: absolute;
         width: 1px;
         height: 1px;
@@ -5662,142 +7661,1573 @@ function renderAdminLoginPage(request: Request, env: Env): Response {
         white-space: nowrap;
         border: 0;
       }
-      .mmd-login__input {
+
+      .mmd-admin-login12__input {
         width: 100%;
-        min-height: 50px;
+        min-height: 52px;
+        border: 1px solid rgba(232, 198, 126, 0.24);
+        border-radius: 14px;
         padding: 0 15px;
-        border: 1px solid rgba(247,240,232,.18);
-        border-radius: 8px;
         outline: none;
-        background: rgba(0,0,0,.36);
-        color: var(--text);
+        color: var(--login12-text);
+        background: rgba(0, 0, 0, 0.42);
         font: inherit;
       }
-      .mmd-login__input::placeholder {
-        color: rgba(216,205,194,.58);
+
+      .mmd-admin-login12__input::placeholder { color: rgba(255, 247, 232, 0.46); }
+      .mmd-admin-login12__input:focus {
+        border-color: rgba(232, 198, 126, 0.72);
+        box-shadow: 0 0 0 4px rgba(217, 182, 109, 0.10);
       }
-      .mmd-login__input:focus {
-        border-color: rgba(197,151,44,.64);
-        box-shadow: 0 0 0 3px rgba(197,151,44,.12);
-      }
-      .mmd-login__button {
-        min-height: 50px;
-        width: 100%;
-        padding: 0 18px;
-        border: 1px solid rgba(197,151,44,.58);
-        border-radius: 8px;
-        background:
-          linear-gradient(180deg, rgba(197,151,44,.24), rgba(197,151,44,.14)),
-          rgba(0,0,0,.48);
-        color: var(--text);
-        font: 700 1rem/1 Inter, "Avenir Next", "Segoe UI", Arial, sans-serif;
+
+      .mmd-admin-login12__button {
+        min-height: 52px;
+        border: 1px solid rgba(232, 198, 126, 0.58);
+        border-radius: 999px;
+        color: #140f08;
+        background: linear-gradient(180deg, #ffe4a6 0%, #d8ad59 48%, #a7742c 100%);
+        font: 850 13px/1 Inter, "Avenir Next", "Segoe UI", Arial, sans-serif;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
         cursor: pointer;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 14px 34px rgba(0, 0, 0, 0.34);
       }
-      .mmd-login__button:hover:not(:disabled) {
-        border-color: rgba(231,203,139,.78);
-        background:
-          linear-gradient(180deg, rgba(197,151,44,.30), rgba(197,151,44,.18)),
-          rgba(0,0,0,.48);
-      }
-      .mmd-login__button:disabled {
+
+      .mmd-admin-login12__button:disabled {
         cursor: wait;
-        opacity: .68;
+        opacity: 0.68;
       }
-      .mmd-login__error {
+
+      .mmd-admin-login12__status {
         min-height: 20px;
-        margin: 0;
-        color: var(--danger);
-        font-size: .88rem;
-        line-height: 1.45;
+        margin: 1px 0 0;
+        color: var(--login12-muted);
+        font-size: 12px;
+        line-height: 1.5;
         text-align: center;
       }
-      @media (max-width: 767px) {
-        body {
-          padding: 16px;
+
+      .mmd-admin-login12__status[data-tone="error"] { color: var(--login12-danger); }
+      .mmd-admin-login12__status[data-tone="ok"] { color: rgba(244, 213, 143, 0.94); }
+
+      .mmd-admin-login12__note {
+        margin: 2px 0 0;
+        color: rgba(255, 247, 232, 0.58);
+        font-size: 11px;
+        line-height: 1.5;
+        text-align: center;
+      }
+
+      @media (min-width: 980px) {
+        .mmd-admin-login12__panel { transform: translate(2vw, 4vh); }
+      }
+
+      @media (max-width: 760px) {
+        .mmd-admin-login12__bg { object-position: center top; }
+        .mmd-admin-login12__stage {
+          align-items: end;
+          padding: 18px;
         }
-        .mmd-login__shell {
-          padding: 26px 20px;
-        }
-        .mmd-login__title {
-          font-size: 2rem;
+        .mmd-admin-login12__panel {
+          transform: none;
+          margin-bottom: 9vh;
         }
       }
     </style>
   </head>
   <body>
-    <main class="mmd-login">
-      <div class="mmd-login__shell">
-        <header class="mmd-login__header">
-          <h1 class="mmd-login__title">MMD SĪGIL Admin Console</h1>
-          <p class="mmd-login__subtitle">Secure operator access</p>
-        </header>
+    <main class="mmd-admin-login12" data-mmd-admin-login12>
+      <img
+        class="mmd-admin-login12__bg"
+        src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a09e4421f8599631d51a35f_Login%20Ewvon.webp"
+        alt=""
+        aria-hidden="true"
+        loading="eager"
+      />
+      <div class="mmd-admin-login12__shade" aria-hidden="true"></div>
 
-        <form id="admin-login-form" class="mmd-login__panel">
-          <label class="mmd-login__label" for="accessCode">Password or access code</label>
-          <input id="accessCode" class="mmd-login__input" name="accessCode" type="password" placeholder="Password or access code" autocomplete="current-password" autofocus />
-          <button id="submit" class="mmd-login__button" type="submit">Enter Console</button>
-          <p id="error" class="mmd-login__error" role="alert"></p>
-        </form>
+      <div class="mmd-admin-login12__stage">
+        <section class="mmd-admin-login12__panel" aria-label="Admin authorization">
+          <p class="mmd-admin-login12__kicker">Operator Authorization</p>
+
+          <form id="admin-login-form" class="mmd-admin-login12__form">
+            <label class="mmd-admin-login12__label" for="accessCode">Admin password or access code</label>
+            <input id="accessCode" class="mmd-admin-login12__input" name="accessCode" type="password" placeholder="Admin password" autocomplete="current-password" autofocus />
+            <button id="submit" class="mmd-admin-login12__button" type="submit">Enter Console</button>
+            <p class="mmd-admin-login12__note">Authorized internal operators only.</p>
+            <p id="status" class="mmd-admin-login12__status" role="status" aria-live="polite"></p>
+          </form>
+        </section>
       </div>
     </main>
 
     <script>
       (() => {
-        const KEY = ${JSON.stringify(ADMIN_GATE_SESSION_KEY)};
         const next = ${JSON.stringify(next)};
-        const baseUrl = ${JSON.stringify(defaultBaseUrl)};
         const form = document.getElementById("admin-login-form");
         const accessCode = document.getElementById("accessCode");
-        const error = document.getElementById("error");
+        const status = document.getElementById("status");
         const submit = document.getElementById("submit");
+        const authSessionPath = "/v1/admin/auth/session";
+        const authMePath = "/v1/admin/auth/me";
 
-        function setError(message) {
-          error.textContent = message || "";
+        function setStatus(message, tone) {
+          status.textContent = message || "";
+          status.dataset.tone = tone || "";
         }
 
-        function storeSession(session) {
-          sessionStorage.setItem(KEY, JSON.stringify(session));
+        setStatus("", "");
+
+        function normalizeNext(value) {
+          try {
+            const url = new URL(value || next, location.origin);
+            if (url.origin !== location.origin) return "/internal/admin/jobs/create-session";
+            const out = url.pathname + url.search + url.hash;
+            return out === "/internal" || out.indexOf("/internal/") === 0
+              ? out
+              : "/internal/admin/jobs/create-session";
+          } catch {
+            return "/internal/admin/jobs/create-session";
+          }
         }
 
         form.addEventListener("submit", async (event) => {
           event.preventDefault();
-          setError("");
+          setStatus("", "");
           const code = accessCode.value.trim();
           if (!code) {
-            setError("Enter the access code.");
+            setStatus("Enter the access code.", "error");
             accessCode.focus();
             return;
           }
-          submit.disabled = true;
-          submit.textContent = "Checking...";
 
-          const payload = {
-            baseUrl,
-            accessCode: code,
-            next,
-          };
+          submit.disabled = true;
+          submit.textContent = "Checking";
 
           try {
-            const response = await fetch(${JSON.stringify(loginSessionPath)}, {
+            const response = await fetch(authSessionPath, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(payload),
+              credentials: "include",
+              headers: {
+                "Accept": "application/json",
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({ accessCode: code, next: normalizeNext(next) })
             });
+
             const data = await response.json().catch(() => null);
             if (!response.ok || !data || !data.ok) {
-              setError("Access denied.");
+              setStatus("Access denied.", "error");
               return;
             }
 
-            if (data.data && data.data.session) {
-              storeSession(data.data.session);
+            const me = await fetch(authMePath, {
+              method: "GET",
+              credentials: "include",
+              headers: { "Accept": "application/json" }
+            });
+
+            if (!me.ok) {
+              setStatus("Authorized, but session check failed. Try again.", "error");
+              return;
             }
-            location.replace(data.data && data.data.redirect_to ? data.data.redirect_to : next);
+
+            setStatus("Authorized.", "ok");
+            location.replace(normalizeNext(next));
           } catch (err) {
-            setError("Unable to sign in right now.");
+            setStatus("Unable to sign in right now.", "error");
           } finally {
             submit.disabled = false;
             submit.textContent = "Enter Console";
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>`;
+
+  return new Response(html, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "x-mmd-worker": "immigrate-worker",
+    },
+  });
+}
+
+function renderMemberLoginPage(): Response {
+  const html = `<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MMD SĪGIL Member Access</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans+Thai:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script
+      data-memberstack-domain="https://memberstack-client.mmdbkk.com"
+      data-memberstack-app="app_cmjajuv1600150su284ov77w1"
+      src="https://static.memberstack.com/scripts/v2/memberstack.js"
+      type="text/javascript"></script>
+    <style>
+      :root {
+        color-scheme: dark;
+        --member-login-bg: #050403;
+        --member-login-panel: rgba(10, 8, 6, 0.72);
+        --member-login-line: rgba(226, 190, 111, 0.28);
+        --member-login-gold: #d9b66d;
+        --member-login-text: #fff3dd;
+        --member-login-muted: rgba(255, 243, 221, 0.66);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+      }
+
+      body {
+        margin: 0;
+        color: var(--member-login-text);
+        background: var(--member-login-bg);
+        font-family: Inter, "Noto Sans Thai", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .sigil-member-login {
+        position: relative;
+        min-height: 100vh;
+        overflow: hidden;
+        isolation: isolate;
+        background: var(--member-login-bg);
+      }
+
+      .sigil-member-login__hero {
+        position: absolute;
+        inset: 0;
+        z-index: -2;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center center;
+      }
+
+      .sigil-member-login__veil {
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        background:
+          linear-gradient(90deg, rgba(0, 0, 0, 0.74), rgba(0, 0, 0, 0.44) 42%, rgba(0, 0, 0, 0.16)),
+          linear-gradient(180deg, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.62));
+      }
+
+      .sigil-member-login__layout {
+        min-height: 100vh;
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(300px, 420px);
+        gap: clamp(18px, 4vw, 56px);
+        align-items: center;
+        padding: clamp(24px, 6vw, 72px) 0;
+      }
+
+      .sigil-member-login__copy {
+        max-width: 520px;
+        align-self: end;
+        padding-bottom: clamp(18px, 8vh, 92px);
+      }
+
+      .sigil-member-login__eyebrow,
+      .sigil-member-login__help-kicker {
+        margin: 0 0 12px;
+        color: var(--member-login-gold);
+        font-size: 11px;
+        line-height: 1;
+        font-weight: 800;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+      }
+
+      .sigil-member-login__title {
+        margin: 0 0 16px;
+        font-size: clamp(44px, 6vw, 86px);
+        line-height: 0.94;
+        font-weight: 850;
+        letter-spacing: 0;
+      }
+
+      .sigil-member-login__text {
+        margin: 0;
+        max-width: 460px;
+        color: var(--member-login-muted);
+        font-size: 16px;
+        line-height: 1.72;
+      }
+
+      .sigil-member-login__stack {
+        display: grid;
+        gap: 14px;
+      }
+
+      .sigil-member-login__card,
+      .sigil-member-login__help {
+        border: 1px solid var(--member-login-line);
+        border-radius: 18px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.018)),
+          var(--member-login-panel);
+        box-shadow: 0 24px 76px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(18px);
+      }
+
+      .sigil-member-login__card {
+        padding: 24px;
+      }
+
+      .sigil-member-login__card h1 {
+        margin: 0 0 8px;
+        font-size: 25px;
+        line-height: 1.12;
+        letter-spacing: 0;
+      }
+
+      .sigil-member-login__card p {
+        margin: 0 0 20px;
+        color: var(--member-login-muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .sigil-member-login__form {
+        display: grid;
+        gap: 12px;
+      }
+
+      .sigil-member-login__form label {
+        display: grid;
+        gap: 7px;
+        color: rgba(255, 243, 221, 0.72);
+        font-size: 12px;
+      }
+
+      .sigil-member-login__form input {
+        width: 100%;
+        min-height: 48px;
+        border: 1px solid rgba(226, 190, 111, 0.24);
+        border-radius: 12px;
+        padding: 0 14px;
+        outline: none;
+        color: var(--member-login-text);
+        background: rgba(0, 0, 0, 0.34);
+        font: inherit;
+      }
+
+      .sigil-member-login__form input:focus {
+        border-color: rgba(226, 190, 111, 0.72);
+        box-shadow: 0 0 0 4px rgba(217, 182, 109, 0.10);
+      }
+
+      .sigil-member-login__button {
+        min-height: 48px;
+        border: 1px solid rgba(232, 198, 126, 0.62);
+        border-radius: 999px;
+        color: #140f08;
+        background: linear-gradient(180deg, #ffe4a6 0%, #d8ad59 48%, #a7742c 100%);
+        font: 850 13px/1 Inter, "Noto Sans Thai", sans-serif;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+
+      .sigil-member-login__links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 14px;
+        margin-top: 16px;
+      }
+
+      .sigil-member-login__links a,
+      .sigil-member-login__help a {
+        color: rgba(255, 232, 180, 0.92);
+        text-decoration: none;
+        font-size: 12px;
+      }
+
+      .sigil-member-login__links a:hover,
+      .sigil-member-login__help a:hover {
+        text-decoration: underline;
+      }
+
+      .sigil-member-login__help {
+        padding: 18px;
+      }
+
+      .sigil-member-login__help p {
+        margin: 0;
+        color: var(--member-login-muted);
+        font-size: 13px;
+        line-height: 1.65;
+      }
+
+      .sigil-member-login__help-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 14px;
+        margin-top: 14px;
+      }
+
+      @media (max-width: 860px) {
+        .sigil-member-login__layout {
+          grid-template-columns: 1fr;
+          align-items: end;
+        }
+
+        .sigil-member-login__copy {
+          padding-bottom: 0;
+        }
+
+        .sigil-member-login__title {
+          font-size: clamp(38px, 13vw, 58px);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <section class="sigil-member-login" data-sigil-member-login>
+      <img
+        class="sigil-member-login__hero"
+        src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e357bcd29016c25aba0b63_Kenji%20PN%20Dashboard.webp"
+        alt=""
+        aria-hidden="true"
+        loading="eager"
+      />
+      <div class="sigil-member-login__veil" aria-hidden="true"></div>
+
+      <div class="sigil-member-login__layout">
+        <div class="sigil-member-login__copy" aria-label="Member access introduction">
+          <p class="sigil-member-login__eyebrow">Member Access</p>
+          <h2 class="sigil-member-login__title">Welcome Back</h2>
+          <p class="sigil-member-login__text">
+            Continue your private member route with Kenji. Sign in to review membership, renewal, payment, and booking continuity.
+          </p>
+        </div>
+
+        <div class="sigil-member-login__stack">
+          <main class="sigil-member-login__card" aria-label="Member login">
+            <h1>Member Access</h1>
+            <p>Use the email and password connected to your MMD Privé membership.</p>
+
+            <form class="sigil-member-login__form" data-ms-form="login">
+              <label>
+                <span>Email</span>
+                <input type="email" name="email" autocomplete="email" data-ms-member="email" required />
+              </label>
+              <label>
+                <span>Password</span>
+                <input type="password" name="password" autocomplete="current-password" data-ms-member="password" required />
+              </label>
+              <button class="sigil-member-login__button" type="submit">Login</button>
+            </form>
+
+            <nav class="sigil-member-login__links" aria-label="Member account links">
+              <a href="/password-reset">Password reset</a>
+              <a href="/renewal">Renewal</a>
+              <a href="/contact">Contact team</a>
+            </nav>
+          </main>
+
+          <aside class="sigil-member-login__help" aria-label="Member support">
+            <p class="sigil-member-login__help-kicker">Need Help?</p>
+            <p>If your access expired or your renewal is pending, continue through renewal or contact the team for a private support check.</p>
+            <div class="sigil-member-login__help-actions">
+              <a href="/renewal">Renew membership</a>
+              <a href="/contact">Contact team</a>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+  </body>
+</html>`;
+
+  return new Response(html, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "x-mmd-worker": "immigrate-worker",
+      "x-mmd-page": "member-login",
+    },
+  });
+}
+
+const SIGIL_LOGIN_PATH = "/sigil/login";
+const SIGIL_LOGIN_BUILD = "sigil-login-only-memberstack-shell-20260517a";
+
+function renderSigilLoginOnlyPage(request: Request): Response {
+  const url = new URL(request.url);
+  const rawMode = (url.searchParams.get("mode") || "login").toLowerCase();
+  const mode = rawMode === "recovery" || rawMode === "recover" || rawMode === "forgot" || rawMode === "password" || rawMode === "reset"
+    ? "recovery"
+    : rawMode === "renewal" || rawMode === "renew" || rawMode === "expired"
+      ? "renewal"
+      : "login";
+  const afterLogin = "/sigil/member/account";
+  const renewalUrl = "/sigil/pay?flow=renewal";
+  const html = `<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SIGIL Member Login</title>
+    <!-- SIGIL_LOGIN_BUILD: ${SIGIL_LOGIN_BUILD} -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <script
+      data-memberstack-domain="https://memberstack-client.mmdbkk.com"
+      data-memberstack-app="app_cmjajuv1600150su284ov77w1"
+      src="https://static.memberstack.com/scripts/v2/memberstack.js"
+      type="text/javascript"></script>
+    <style>
+      :root { color-scheme: dark; --bg:#050403; --panel:rgba(12,9,6,.84); --line:rgba(184,135,61,.34); --text:rgba(243,229,203,.94); --muted:rgba(224,207,178,.72); --gold:#d9b66b; --gold2:#ead18a; --ink:#100b04; --red:#ffb0a0; --green:#91e0ac; }
+      * { box-sizing: border-box; letter-spacing: 0; }
+      body { margin:0; min-height:100vh; color:var(--text); background: radial-gradient(circle at 50% 0%, rgba(184,135,61,.14), transparent 34%), linear-gradient(180deg,#0a0704,var(--bg)); font-family:"Noto Sans Thai", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .sigil-login-only { min-height:100vh; display:grid; place-items:center; padding:22px 16px; }
+      .sigil-login-only__card { width:min(100%, 430px); border:1px solid var(--line); border-radius:24px; overflow:hidden; background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.025)), var(--panel); box-shadow:0 30px 90px rgba(0,0,0,.48); backdrop-filter:blur(18px); }
+      .sigil-login-only__head { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:22px 22px 14px; }
+      .sigil-login-only__head small { display:block; margin-bottom:5px; color:var(--gold); font-size:11px; font-weight:800; letter-spacing:.16em; text-transform:uppercase; }
+      .sigil-login-only__head strong { display:block; font-size:22px; line-height:1.1; }
+      .sigil-login-only__logo { display:grid; place-items:center; width:54px; height:54px; border:1px solid rgba(217,182,107,.34); border-radius:18px; background:rgba(0,0,0,.24); overflow:hidden; }
+      .sigil-login-only__logo img { width:72%; height:72%; object-fit:contain; }
+      .sigil-login-only__tabs { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; padding:12px; margin:0 14px; border:1px solid rgba(145,103,45,.26); border-radius:18px; background:rgba(0,0,0,.18); }
+      .sigil-login-only__tabs button { min-height:40px; border:0; border-radius:13px; color:var(--muted); background:transparent; font:800 13px/1 inherit; cursor:pointer; }
+      .sigil-login-only__tabs button.is-active { color:var(--ink); background:linear-gradient(135deg,#ead18a,#c19043 48%,#8a571f); }
+      .sigil-login-only__body { padding:18px 22px 22px; }
+      .sigil-login-only__form { display:none; gap:14px; }
+      .sigil-login-only__form.is-active { display:grid; }
+      .sigil-login-only__field { display:grid; gap:8px; color:var(--gold); font-size:12px; font-weight:800; }
+      .sigil-login-only__field input, .sigil-login-only__field textarea { width:100%; min-height:48px; border:1px solid rgba(184,135,61,.34); border-radius:14px; padding:0 14px; outline:none; color:var(--text); background:rgba(0,0,0,.30); font:inherit; }
+      .sigil-login-only__field textarea { min-height:96px; padding-top:12px; resize:vertical; }
+      .sigil-login-only__field input:focus, .sigil-login-only__field textarea:focus { border-color:rgba(234,209,138,.78); box-shadow:0 0 0 4px rgba(217,182,107,.10); }
+      .sigil-login-only__password { display:grid; grid-template-columns:1fr auto; gap:8px; }
+      .sigil-login-only__password button, .sigil-login-only__textBtn { border:1px solid rgba(184,135,61,.28); border-radius:14px; padding:0 12px; color:var(--muted); background:rgba(0,0,0,.18); cursor:pointer; }
+      .sigil-login-only__row { display:flex; justify-content:space-between; align-items:center; gap:12px; color:var(--muted); font-size:12px; }
+      .sigil-login-only__check { display:inline-flex; align-items:center; gap:8px; }
+      .sigil-login-only__submit { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; min-height:50px; border:1px solid rgba(234,209,138,.72); border-radius:999px; padding:0 18px; color:var(--ink); background:linear-gradient(135deg,#ead18a,#c19043 48%,#8a571f); font:900 14px/1 inherit; text-decoration:none; cursor:pointer; }
+      .sigil-login-only__submit--dark { color:var(--text); background:rgba(0,0,0,.24); border-color:rgba(184,135,61,.30); }
+      .sigil-login-only__renewBox { border:1px solid rgba(184,135,61,.24); border-radius:18px; padding:16px; background:rgba(0,0,0,.22); }
+      .sigil-login-only__renewBox small { color:var(--gold); font-weight:900; letter-spacing:.14em; }
+      .sigil-login-only__renewBox strong { display:block; margin-top:8px; }
+      .sigil-login-only__renewBox p, .sigil-login-only__micro { margin:8px 0 0; color:var(--muted); font-size:12px; line-height:1.55; }
+      .sigil-login-only__status { min-height:20px; margin:14px 0 0; color:var(--muted); font-size:12px; text-align:center; line-height:1.5; }
+      .sigil-login-only__status.is-ok { color:var(--green); }
+      .sigil-login-only__status.is-warn { color:var(--gold2); }
+      .sigil-login-only__status.is-bad { color:var(--red); }
+    </style>
+  </head>
+  <body>
+    <main class="sigil-login-only" data-sigil-login-only data-mode="${mode}" data-build="${SIGIL_LOGIN_BUILD}">
+      <div hidden>SIGIL_LOGIN_BUILD: ${SIGIL_LOGIN_BUILD}</div>
+      <section class="sigil-login-only__card" aria-label="SIGIL login form">
+        <header class="sigil-login-only__head">
+          <div>
+            <small>ACCESS STATE</small>
+            <strong data-login-title>Member Login</strong>
+          </div>
+          <span class="sigil-login-only__logo" aria-hidden="true">
+            <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69fecc6678e39b59002adbb5_SIGILWeb%20Logo.webp" alt="" />
+          </span>
+        </header>
+        <nav class="sigil-login-only__tabs" aria-label="Login modes">
+          <button type="button" data-login-tab="login">Login</button>
+          <button type="button" data-login-tab="recovery">Recovery</button>
+          <button type="button" data-login-tab="renewal">Renewal</button>
+        </nav>
+        <div class="sigil-login-only__body">
+          <form class="sigil-login-only__form" data-login-panel="login" data-ms-form="login" autocomplete="on">
+            <input type="hidden" name="redirect" value="${afterLogin}" />
+            <label class="sigil-login-only__field"><span>Email</span><input type="email" name="email" data-ms-member="email" autocomplete="username" placeholder="email used for membership" required /></label>
+            <label class="sigil-login-only__field"><span>Password</span><span class="sigil-login-only__password"><input type="password" name="password" data-ms-member="password" autocomplete="current-password" placeholder="password" required /><button type="button" data-password-toggle>Show</button></span></label>
+            <div class="sigil-login-only__row"><label class="sigil-login-only__check"><input type="checkbox" name="remember" checked /><span>Keep this browser trusted</span></label><button type="button" class="sigil-login-only__textBtn" data-login-jump="recovery">Forgot?</button></div>
+            <button class="sigil-login-only__submit" type="submit"><span>Enter SIGIL</span><b>→</b></button>
+            <p class="sigil-login-only__micro">Active member จะถูกพาไปยัง Member Account หลังยืนยันสำเร็จ</p>
+          </form>
+          <form class="sigil-login-only__form" data-login-panel="recovery" data-ms-form="forgot-password" autocomplete="on">
+            <label class="sigil-login-only__field"><span>Email / account contact</span><input type="email" name="email" data-ms-member="email" autocomplete="email" placeholder="email used for membership" required /></label>
+            <label class="sigil-login-only__field"><span>Optional note</span><textarea name="recovery_note" rows="3" placeholder="ชื่อเล่นเดิม / LINE display / เบอร์ที่เคยใช้ / package ที่จำได้"></textarea></label>
+            <button class="sigil-login-only__submit" type="submit"><span>Send Recovery Request</span><b>↗</b></button>
+            <p class="sigil-login-only__micro">Recovery ใช้สำหรับ reset password หรือช่วยตรวจสอบ access จากข้อมูลสมาชิกเดิม</p>
+          </form>
+          <div class="sigil-login-only__form" data-login-panel="renewal">
+            <div class="sigil-login-only__renewBox"><small>RENEWAL MEMBER</small><strong>ต่ออายุสมาชิกก่อนกลับเข้า SIGIL</strong><p>ถ้าสถานะหมดอายุหรือรอการตรวจสอบ ให้ไปหน้า renewal/payment ก่อน</p></div>
+            <a class="sigil-login-only__submit" href="${renewalUrl}"><span>Go to Renewal</span><b>→</b></a>
+            <button type="button" class="sigil-login-only__submit sigil-login-only__submit--dark" data-login-jump="login"><span>Back to Login</span><b>←</b></button>
+          </div>
+          <p class="sigil-login-only__status" data-login-status role="status" aria-live="polite"></p>
+        </div>
+      </section>
+    </main>
+    <script>
+      (function () {
+        const root = document.querySelector("[data-sigil-login-only]");
+        if (!root) return;
+        const title = root.querySelector("[data-login-title]");
+        const status = root.querySelector("[data-login-status]");
+        function setStatus(message, kind) {
+          if (!status) return;
+          status.className = "sigil-login-only__status" + (kind ? " is-" + kind : "");
+          status.textContent = message || "";
+        }
+        function setMode(mode) {
+          const next = mode === "recovery" ? "recovery" : mode === "renewal" ? "renewal" : "login";
+          root.dataset.mode = next;
+          root.querySelectorAll("[data-login-tab]").forEach((tab) => tab.classList.toggle("is-active", tab.dataset.loginTab === next));
+          root.querySelectorAll("[data-login-panel]").forEach((panel) => panel.classList.toggle("is-active", panel.dataset.loginPanel === next));
+          if (title) title.textContent = next === "recovery" ? "Access Recovery" : next === "renewal" ? "Renewal Required" : "Member Login";
+          if (next === "login") setStatus("Ready.", "");
+          if (next === "recovery") setStatus("Recovery mode ready.", "warn");
+          if (next === "renewal") setStatus("Renewal mode ready.", "warn");
+          const state = new URL(window.location.href);
+          state.searchParams.set("mode", next);
+          history.replaceState(null, "", state.toString());
+        }
+        root.querySelectorAll("[data-login-tab]").forEach((tab) => tab.addEventListener("click", () => setMode(tab.dataset.loginTab)));
+        root.querySelectorAll("[data-login-jump]").forEach((button) => button.addEventListener("click", () => setMode(button.dataset.loginJump)));
+        root.querySelectorAll("[data-password-toggle]").forEach((button) => button.addEventListener("click", () => {
+          const input = button.parentElement ? button.parentElement.querySelector("input") : null;
+          if (!input) return;
+          input.type = input.type === "password" ? "text" : "password";
+          button.textContent = input.type === "password" ? "Show" : "Hide";
+        }));
+        root.querySelectorAll("form").forEach((form) => {
+          form.addEventListener("submit", () => {
+            if (form.dataset.loginPanel === "login") setStatus("Checking member access...", "warn");
+            if (form.dataset.loginPanel === "recovery") setStatus("Sending recovery request...", "warn");
+          });
+        });
+        setMode(root.dataset.mode || "login");
+      })();
+    </script>
+  </body>
+</html>`;
+
+  return new Response(request.method === "HEAD" ? null : html, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "x-mmd-worker": "immigrate-worker",
+      "x-mmd-page": "sigil-login-only",
+    },
+  });
+}
+
+const MEMBER_ACCOUNT_PATH = "/sigil/member/account";
+const MEMBER_DASHBOARD_ALIAS_PATH = "/member/dashboard";
+const MODEL_CONSOLE_PATH = "/sigil/model/console";
+const MODEL_CONSOLE_ALIAS_PATH = "/model/console";
+const SIGIL_MEMBER_BUILD = "member-dashboard-bridge-20260517a";
+const SIGIL_MODEL_BUILD = "model-console-bridge-20260517a";
+const MMD_MODEL_BUILD = "model-console-mmd-skin-20260520a";
+
+function bridgeHeaders(page: string): Headers {
+  return new Headers({
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+    "x-mmd-worker": "immigrate-worker",
+    "x-mmd-sigil-bridge": "v1",
+    "x-mmd-page": page,
+  });
+}
+
+function bridgeRedirect(request: Request, targetPath: string): Response {
+  const current = new URL(request.url);
+  const target = new URL(current.toString());
+  target.pathname = targetPath;
+  target.search = current.search;
+  return redirect(target.toString(), 302);
+}
+
+function renderSigilMemberAccountPage(request: Request): Response {
+  const url = new URL(request.url);
+  const token = url.searchParams.get("t") || "";
+  const sessionId = url.searchParams.get("session_id") || "";
+  const query = url.search || "";
+  const renewalHref = `/renewal${query}`;
+  const paymentHref = `/pay${query}`;
+  const startHref = `/sigil/start${query}`;
+  const guideHref = `/sigil/guide${query}`;
+  const bookingHref = `/sigil/booking${query}`;
+  const supportHref = `/contact${query}`;
+  const html = `<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SIGIL Member Dashboard</title>
+    <!-- SIGIL_MEMBER_BUILD: ${SIGIL_MEMBER_BUILD} -->
+    <style>
+      :root { color-scheme: dark; --bg:#070604; --panel:rgba(18,15,11,.82); --line:rgba(223,186,103,.24); --gold:#dfba67; --gold2:#ffe39a; --text:#fff6e8; --muted:rgba(255,246,232,.68); --ink:#120d07; }
+      * { box-sizing: border-box; letter-spacing: 0; }
+      body { margin: 0; min-height: 100vh; color: var(--text); background: var(--bg); font-family: Inter, "Avenir Next", "Segoe UI", "Noto Sans Thai", Arial, sans-serif; }
+      .sigil-member-bridge { position: relative; min-height: 100vh; overflow: hidden; isolation: isolate; padding: 24px; }
+      .sigil-member-bridge::before { content: ""; position: absolute; inset: 0; z-index: -2; background: linear-gradient(90deg, rgba(4,3,2,.90), rgba(4,3,2,.58) 48%, rgba(4,3,2,.22)), url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e357bcd29016c25aba0b63_Kenji%20PN%20Dashboard.webp") center / cover; transform: scale(1.02); }
+      .sigil-member-bridge::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(7,6,4,.18), var(--bg)); }
+      .sigil-member-bridge__shell { width: min(1160px, 100%); margin: 0 auto; display: grid; gap: 18px; }
+      .sigil-member-bridge__hero { min-height: 54vh; display: grid; align-content: end; padding: clamp(28px, 5vw, 64px) 0; }
+      .sigil-member-bridge__eyebrow, .sigil-member-bridge__kicker { color: var(--gold2); font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .14em; }
+      .sigil-member-bridge h1 { max-width: 780px; margin: 14px 0 0; font-size: clamp(48px, 8vw, 104px); line-height: .9; text-transform: uppercase; }
+      .sigil-member-bridge__lead { max-width: 680px; color: var(--muted); font-size: clamp(16px, 2vw, 20px); line-height: 1.65; }
+      .sigil-member-bridge__grid { display: grid; grid-template-columns: 1fr 380px; gap: 16px; align-items: start; }
+      .sigil-member-bridge__panel, .sigil-member-bridge__card { border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.025)), var(--panel); backdrop-filter: blur(18px); box-shadow: 0 24px 72px rgba(0,0,0,.32); }
+      .sigil-member-bridge__panel { padding: 20px; }
+      .sigil-member-bridge__cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+      .sigil-member-bridge__card { padding: 16px; min-height: 126px; }
+      .sigil-member-bridge__card span { display:block; color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+      .sigil-member-bridge__card strong { display:block; font-size: 20px; }
+      .sigil-member-bridge__card em { display:block; margin-top: 8px; color: var(--muted); font-style: normal; line-height: 1.5; }
+      .sigil-member-bridge__actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+      .sigil-member-bridge__btn { display:inline-flex; align-items:center; justify-content:center; min-height: 46px; padding: 0 16px; border: 1px solid rgba(223,186,103,.38); border-radius: 999px; color: var(--text); background: rgba(255,255,255,.055); text-decoration:none; font-weight: 850; }
+      .sigil-member-bridge__btn--gold { color: var(--ink); border-color: rgba(255,227,154,.86); background: linear-gradient(180deg, #ffe39a, #bd862f); }
+      .sigil-member-bridge__side { display:grid; gap: 12px; }
+      .sigil-member-bridge__meta { display:grid; gap: 8px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+      .sigil-member-bridge__meta code { color: var(--gold2); overflow-wrap: anywhere; }
+      @media (max-width: 900px) { .sigil-member-bridge { padding: 16px; } .sigil-member-bridge__grid, .sigil-member-bridge__cards { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main class="sigil-member-bridge" data-sigil-member-bridge data-build="${SIGIL_MEMBER_BUILD}">
+      <div hidden>SIGIL_MEMBER_BUILD: ${SIGIL_MEMBER_BUILD}</div>
+      <div class="sigil-member-bridge__shell">
+        <section class="sigil-member-bridge__hero">
+          <p class="sigil-member-bridge__eyebrow">Kenji / Member Continuity</p>
+          <h1>Member Dashboard</h1>
+          <p class="sigil-member-bridge__lead">พื้นที่สะพานสำหรับสมาชิกระหว่าง immigration phase. หน้านี้แสดงสถานะเพื่อช่วยพาคุณไป action ถัดไป แต่ backend ยังเป็นแหล่งความจริงเสมอ.</p>
+        </section>
+        <section class="sigil-member-bridge__grid">
+          <div class="sigil-member-bridge__panel">
+            <p class="sigil-member-bridge__kicker">Access snapshot</p>
+            <div class="sigil-member-bridge__cards">
+              <article class="sigil-member-bridge__card"><span>Membership / Access</span><strong>Bridge Check</strong><em>ตรวจสิทธิ์จาก token/session server-side ในขั้นตอนถัดไป</em></article>
+              <article class="sigil-member-bridge__card"><span>Package / Tier</span><strong>Pending Sync</strong><em>ไม่ให้ frontend ตัดสิน package truth เอง</em></article>
+              <article class="sigil-member-bridge__card"><span>Renewal State</span><strong>Review</strong><em>ถ้าหมดอายุหรือ renewal pending ให้ไป renewal/pay flow</em></article>
+            </div>
+            <div class="sigil-member-bridge__actions">
+              <a class="sigil-member-bridge__btn sigil-member-bridge__btn--gold" href="${startHref}">Continue with Kenji</a>
+              <a class="sigil-member-bridge__btn" href="${guideHref}">Choose Guide</a>
+              <a class="sigil-member-bridge__btn" href="${bookingHref}">Book an Experience</a>
+              <a class="sigil-member-bridge__btn" href="${renewalHref}">Renew Membership</a>
+              <a class="sigil-member-bridge__btn" href="${paymentHref}">View Payment / Confirm</a>
+              <a class="sigil-member-bridge__btn" href="${supportHref}">Contact Support</a>
+            </div>
+          </div>
+          <aside class="sigil-member-bridge__panel sigil-member-bridge__side">
+            <p class="sigil-member-bridge__kicker">Next action</p>
+            <h2>Continue the member route</h2>
+            <p class="sigil-member-bridge__lead">ถ้าสถานะ active ให้ไป start, guide หรือ booking. ถ้า expired หรือ renewal pending ให้ไป renewal/pay ก่อน.</p>
+            <div class="sigil-member-bridge__meta">
+              <span>token t: <code>${escapeHtml(token || "not provided")}</code></span>
+              <span>session_id: <code>${escapeHtml(sessionId || "not provided")}</code></span>
+            </div>
+          </aside>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>`;
+
+  return new Response(request.method === "HEAD" ? null : html, {
+    headers: bridgeHeaders("member-dashboard"),
+  });
+}
+
+function renderSigilModelConsolePage(request: Request): Response {
+  const url = new URL(request.url);
+  const token = url.searchParams.get("t") || "";
+  const sessionId = url.searchParams.get("session_id") || "";
+  const query = url.search || "";
+  const profileHref = `/sigil/model/profile${query}`;
+  const telegramHref = `/sigil/model/telegram${query}`;
+  const briefHref = `/sigil/model/brief${query}`;
+  const readinessHref = `/sigil/model/readiness${query}`;
+  const supportHref = `/contact${query}`;
+  const html = `<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SIGIL Model Console</title>
+    <!-- SIGIL_MODEL_BUILD: ${SIGIL_MODEL_BUILD} -->
+    <style>
+      :root { color-scheme: dark; --bg:#060607; --panel:rgba(13,15,18,.84); --line:rgba(126,204,232,.22); --blue:#9bdcf2; --gold:#dfba67; --text:#f3fbff; --muted:rgba(243,251,255,.66); --ink:#071015; }
+      * { box-sizing: border-box; letter-spacing: 0; }
+      body { margin: 0; min-height: 100vh; color: var(--text); background: radial-gradient(circle at 82% 12%, rgba(155,220,242,.16), transparent 32%), linear-gradient(180deg, #111316, var(--bg)); font-family: Inter, "Avenir Next", "Segoe UI", "Noto Sans Thai", Arial, sans-serif; }
+      .sigil-model-bridge { min-height: 100vh; padding: 24px; }
+      .sigil-model-bridge__shell { width: min(1160px, 100%); margin: 0 auto; display:grid; gap:18px; }
+      .sigil-model-bridge__hero { min-height: 44vh; display:grid; align-content:end; padding: clamp(28px, 5vw, 62px) 0; }
+      .sigil-model-bridge__eyebrow, .sigil-model-bridge__kicker { color: var(--blue); font-size:12px; font-weight:900; letter-spacing:.14em; text-transform:uppercase; }
+      .sigil-model-bridge h1 { max-width: 780px; margin: 14px 0 0; font-size: clamp(48px, 8vw, 100px); line-height: .9; text-transform: uppercase; }
+      .sigil-model-bridge__lead { max-width: 700px; color: var(--muted); font-size: clamp(16px, 2vw, 20px); line-height: 1.65; }
+      .sigil-model-bridge__grid { display:grid; grid-template-columns: 1fr 360px; gap:16px; align-items:start; }
+      .sigil-model-bridge__panel, .sigil-model-bridge__item { border:1px solid var(--line); border-radius:14px; background:linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.02)), var(--panel); box-shadow:0 24px 72px rgba(0,0,0,.28); backdrop-filter:blur(18px); }
+      .sigil-model-bridge__panel { padding:20px; }
+      .sigil-model-bridge__items { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:12px; }
+      .sigil-model-bridge__item { padding:16px; min-height:124px; }
+      .sigil-model-bridge__item span { display:block; color:var(--muted); font-size:12px; margin-bottom:10px; }
+      .sigil-model-bridge__item strong { display:block; font-size:20px; }
+      .sigil-model-bridge__item em { display:block; margin-top:8px; color:var(--muted); font-style:normal; line-height:1.5; }
+      .sigil-model-bridge__actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
+      .sigil-model-bridge__btn { display:inline-flex; align-items:center; justify-content:center; min-height:46px; padding:0 16px; border:1px solid rgba(155,220,242,.34); border-radius:999px; color:var(--text); background:rgba(255,255,255,.055); text-decoration:none; font-weight:850; }
+      .sigil-model-bridge__btn--primary { color:var(--ink); border-color:rgba(155,220,242,.82); background:linear-gradient(180deg, #d9f7ff, #76c6dd); }
+      .sigil-model-bridge__meta { display:grid; gap:8px; color:var(--muted); font-size:13px; line-height:1.5; }
+      .sigil-model-bridge__meta code { color:var(--blue); overflow-wrap:anywhere; }
+      @media (max-width: 900px) { .sigil-model-bridge { padding:16px; } .sigil-model-bridge__grid, .sigil-model-bridge__items { grid-template-columns:1fr; } }
+    </style>
+  </head>
+  <body>
+    <main class="sigil-model-bridge" data-sigil-model-bridge data-build="${SIGIL_MODEL_BUILD}">
+      <div hidden>SIGIL_MODEL_BUILD: ${SIGIL_MODEL_BUILD}</div>
+      <div class="sigil-model-bridge__shell">
+        <section class="sigil-model-bridge__hero">
+          <p class="sigil-model-bridge__eyebrow">TarT / Model Immigration</p>
+          <h1>Model Console</h1>
+          <p class="sigil-model-bridge__lead">คอนโซลฝั่งโมเดลสำหรับ migration และ briefing เท่านั้น ไม่ใช่ client purchase flow และไม่ให้ frontend เป็นแหล่งความจริงของสถานะ.</p>
+        </section>
+        <section class="sigil-model-bridge__grid">
+          <div class="sigil-model-bridge__panel">
+            <p class="sigil-model-bridge__kicker">Readiness snapshot</p>
+            <div class="sigil-model-bridge__items">
+              <article class="sigil-model-bridge__item"><span>Profile readiness</span><strong>Pending Review</strong><em>ข้อมูลโปรไฟล์ต้องถูกยืนยันผ่าน backend/source of truth</em></article>
+              <article class="sigil-model-bridge__item"><span>Telegram gate</span><strong>Check Required</strong><em>ใช้สำหรับ notification gateway เท่านั้น</em></article>
+              <article class="sigil-model-bridge__item"><span>Onboarding / Verification</span><strong>Bridge Mode</strong><em>สถานะจริงต้องตรวจจากระบบหลังบ้าน</em></article>
+              <article class="sigil-model-bridge__item"><span>Job readiness</span><strong>Not Final</strong><em>ยังต้อง confirm readiness ก่อนรับ brief</em></article>
+            </div>
+            <div class="sigil-model-bridge__actions">
+              <a class="sigil-model-bridge__btn sigil-model-bridge__btn--primary" href="${profileHref}">Complete Profile</a>
+              <a class="sigil-model-bridge__btn" href="${telegramHref}">Verify Telegram</a>
+              <a class="sigil-model-bridge__btn" href="${briefHref}">Open Client Brief</a>
+              <a class="sigil-model-bridge__btn" href="${readinessHref}">Confirm Readiness</a>
+              <a class="sigil-model-bridge__btn" href="${supportHref}">Contact Support</a>
+            </div>
+          </div>
+          <aside class="sigil-model-bridge__panel">
+            <p class="sigil-model-bridge__kicker">Client brief entry</p>
+            <h2>Review before action</h2>
+            <p class="sigil-model-bridge__lead">TarT ช่วยพาโมเดลเข้า onboarding, verification, readiness และ client brief โดยไม่เปิดเผย secret หรือ admin credential ใน browser.</p>
+            <div class="sigil-model-bridge__meta">
+              <span>token t: <code>${escapeHtml(token || "not provided")}</code></span>
+              <span>session_id: <code>${escapeHtml(sessionId || "not provided")}</code></span>
+            </div>
+          </aside>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>`;
+
+  return new Response(request.method === "HEAD" ? null : html, {
+    headers: bridgeHeaders("model-console"),
+  });
+}
+
+function renderMmdModelConsolePage(request: Request): Response {
+  const url = new URL(request.url);
+  const token = url.searchParams.get("t") || "";
+  const sessionId = url.searchParams.get("session_id") || "";
+  const query = url.search || "";
+  const briefHref = `/model/brief${query}`;
+  const scheduleHref = `/model/schedule${query}`;
+  const payoutHref = `/model/payout${query}`;
+  const supportHref = `/contact${query}`;
+  const sigilHref = `/sigil/model/console${query}`;
+  const html = `<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MMD Model Console</title>
+    <!-- MMD_MODEL_BUILD: ${MMD_MODEL_BUILD} -->
+    <style>
+      :root { color-scheme: dark; --bg:#0b0908; --panel:rgba(25,21,17,.86); --soft:rgba(255,255,255,.055); --line:rgba(232,201,142,.22); --line-strong:rgba(244,218,166,.58); --warm:#f0c978; --amber:#d39443; --text:#fff8ee; --muted:rgba(255,248,238,.68); --ink:#17100a; }
+      * { box-sizing:border-box; letter-spacing:0; }
+      body { margin:0; min-height:100vh; color:var(--text); background:linear-gradient(180deg,#15100d,var(--bg)); font-family:Inter,"Avenir Next","Segoe UI","Noto Sans Thai",Arial,sans-serif; }
+      .mmd-model-console { position:relative; min-height:100vh; overflow:hidden; isolation:isolate; padding:24px; }
+      .mmd-model-console::before { content:""; position:absolute; inset:0; z-index:-2; background:linear-gradient(90deg,rgba(11,9,8,.92),rgba(11,9,8,.68) 46%,rgba(11,9,8,.34)),url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69f7868b147766ca087fd499_Hito%20membership.webp") 62% 18%/cover no-repeat; transform:scale(1.02); filter:saturate(.92) contrast(1.04); }
+      .mmd-model-console::after { content:""; position:absolute; inset:0; z-index:-1; background:linear-gradient(180deg,rgba(11,9,8,.04),var(--bg)); }
+      .mmd-model-console__shell { width:min(1160px,100%); margin:0 auto; display:grid; gap:18px; }
+      .mmd-model-console__hero { min-height:48vh; display:grid; align-content:end; padding:clamp(28px,5vw,62px) 0; }
+      .mmd-model-console__eyebrow, .mmd-model-console__kicker { color:var(--warm); font-size:12px; font-weight:900; letter-spacing:.12em; text-transform:uppercase; }
+      .mmd-model-console h1 { max-width:820px; margin:14px 0 0; font-size:clamp(46px,8vw,96px); line-height:.92; text-transform:uppercase; }
+      .mmd-model-console__lead { max-width:700px; color:var(--muted); font-size:clamp(16px,2vw,20px); line-height:1.65; }
+      .mmd-model-console__grid { display:grid; grid-template-columns:1fr 360px; gap:16px; align-items:start; }
+      .mmd-model-console__panel, .mmd-model-console__item { border:1px solid var(--line); border-radius:12px; background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.02)),var(--panel); box-shadow:0 24px 74px rgba(0,0,0,.34); backdrop-filter:blur(18px); }
+      .mmd-model-console__panel { padding:20px; }
+      .mmd-model-console__items { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+      .mmd-model-console__item { padding:16px; min-height:124px; }
+      .mmd-model-console__item span { display:block; color:var(--muted); font-size:12px; margin-bottom:10px; }
+      .mmd-model-console__item strong { display:block; font-size:20px; }
+      .mmd-model-console__item em { display:block; margin-top:8px; color:var(--muted); font-style:normal; line-height:1.5; }
+      .mmd-model-console__actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
+      .mmd-model-console__btn { display:inline-flex; align-items:center; justify-content:center; min-height:46px; padding:0 16px; border:1px solid var(--line-strong); border-radius:10px; color:var(--text); background:var(--soft); text-decoration:none; font-weight:850; }
+      .mmd-model-console__btn--primary { color:var(--ink); border-color:rgba(240,201,120,.88); background:linear-gradient(180deg,#ffe5a4,var(--amber)); }
+      .mmd-model-console__meta { display:grid; gap:8px; color:var(--muted); font-size:13px; line-height:1.5; }
+      .mmd-model-console__meta code { color:var(--warm); overflow-wrap:anywhere; }
+      @media (max-width:900px) { .mmd-model-console { padding:16px; } .mmd-model-console__grid, .mmd-model-console__items { grid-template-columns:1fr; } }
+    </style>
+  </head>
+  <body>
+    <main class="mmd-model-console" data-mmd-model-console data-build="${MMD_MODEL_BUILD}">
+      <div hidden>MMD_MODEL_BUILD: ${MMD_MODEL_BUILD}</div>
+      <div class="mmd-model-console__shell">
+        <section class="mmd-model-console__hero">
+          <p class="mmd-model-console__eyebrow">MMD / Model Workbench</p>
+          <h1>Model Console</h1>
+          <p class="mmd-model-console__lead">พื้นที่ทำงานของโมเดลสำหรับ brief, schedule, payout และ readiness แบบ MMD โดยตรง แยกจาก SIGIL operating layer.</p>
+        </section>
+        <section class="mmd-model-console__grid">
+          <div class="mmd-model-console__panel">
+            <p class="mmd-model-console__kicker">Today snapshot</p>
+            <div class="mmd-model-console__items">
+              <article class="mmd-model-console__item"><span>Brief</span><strong>Review Queue</strong><em>เช็ค brief และข้อมูล session ก่อนเริ่มงาน</em></article>
+              <article class="mmd-model-console__item"><span>Schedule</span><strong>Model Lane</strong><em>สถานะเวลาและการเดินทางอยู่ฝั่งงานจริง</em></article>
+              <article class="mmd-model-console__item"><span>Payout</span><strong>Separated</strong><em>ไม่ผูกกับ proof-only หรือ client payment slip</em></article>
+              <article class="mmd-model-console__item"><span>Support</span><strong>MMD Team</strong><em>ใช้สำหรับถามทีม ไม่ใช่ admin credential surface</em></article>
+            </div>
+            <div class="mmd-model-console__actions">
+              <a class="mmd-model-console__btn mmd-model-console__btn--primary" href="${briefHref}">Open Brief</a>
+              <a class="mmd-model-console__btn" href="${scheduleHref}">Schedule</a>
+              <a class="mmd-model-console__btn" href="${payoutHref}">Payout</a>
+              <a class="mmd-model-console__btn" href="${supportHref}">Contact Support</a>
+            </div>
+          </div>
+          <aside class="mmd-model-console__panel">
+            <p class="mmd-model-console__kicker">Skin boundary</p>
+            <h2>MMD surface</h2>
+            <p class="mmd-model-console__lead">หน้านี้เป็น MMD model workbench ถ้าต้องเข้าชั้น SIGIL ให้ใช้ route แยกด้านล่าง.</p>
+            <div class="mmd-model-console__actions">
+              <a class="mmd-model-console__btn" href="${sigilHref}">Open SIGIL Console</a>
+            </div>
+            <div class="mmd-model-console__meta">
+              <span>token t: <code>${escapeHtml(token || "not provided")}</code></span>
+              <span>session_id: <code>${escapeHtml(sessionId || "not provided")}</code></span>
+            </div>
+          </aside>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>`;
+
+  return new Response(request.method === "HEAD" ? null : html, {
+    headers: bridgeHeaders("mmd-model-console"),
+  });
+}
+
+function renderSigilBookingPage(request: Request): Response {
+  const bootstrap = sigilAdminBrowserBootstrapScript();
+  const submitPath = SIGIL.booking;
+  const html = `<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SIGIL Booking Request</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #070706;
+        --panel: rgba(18, 17, 15, .82);
+        --panel-soft: rgba(255, 255, 255, .055);
+        --line: rgba(219, 185, 109, .24);
+        --line-strong: rgba(237, 207, 141, .72);
+        --text: #f7efe2;
+        --muted: rgba(235, 224, 207, .72);
+        --gold: #d8aa4d;
+        --gold-bright: #f2d28a;
+        --ink: #151009;
+        --success: #a6d9b3;
+        --danger: #f1aaaa;
+      }
+      * { box-sizing: border-box; letter-spacing: 0; }
+      html { min-height: 100%; scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        background:
+          linear-gradient(135deg, rgba(216, 170, 77, .18), transparent 34%),
+          linear-gradient(180deg, #15120e 0%, #070706 48%, #020202 100%);
+        font-family: Inter, "Avenir Next", "Segoe UI", "Noto Sans Thai", Arial, sans-serif;
+      }
+      button, input, select, textarea { font: inherit; }
+      .sigil-booking {
+        min-height: 100vh;
+      }
+      .sigil-booking__hero {
+        position: relative;
+        min-height: 64vh;
+        display: grid;
+        align-items: end;
+        overflow: hidden;
+        padding: 28px;
+        isolation: isolate;
+      }
+      .sigil-booking__hero::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: -2;
+        background:
+          linear-gradient(90deg, rgba(3, 3, 3, .86) 0%, rgba(3, 3, 3, .56) 45%, rgba(3, 3, 3, .20) 100%),
+          url("https://images.unsplash.com/photo-1524758631624-e2822e304c36?auto=format&fit=crop&w=1800&q=82") center / cover;
+        transform: scale(1.02);
+      }
+      .sigil-booking__hero::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        background:
+          linear-gradient(180deg, transparent 0%, rgba(7, 7, 6, .58) 72%, var(--bg) 100%),
+          radial-gradient(circle at 18% 24%, rgba(242, 210, 138, .18), transparent 32%);
+      }
+      .sigil-booking__hero-grid {
+        width: min(100%, 1180px);
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(300px, .45fr);
+        gap: 28px;
+        align-items: end;
+      }
+      .sigil-booking__label {
+        margin: 0 0 14px;
+        color: var(--gold-bright);
+        font-size: .82rem;
+        font-weight: 1000;
+        text-transform: uppercase;
+      }
+      .sigil-booking__title {
+        max-width: 820px;
+        margin: 0;
+        color: var(--text);
+        font-family: "Antonio", Inter, "Avenir Next", "Noto Sans Thai", sans-serif;
+        font-size: clamp(3.2rem, 8vw, 7.6rem);
+        line-height: .9;
+        font-weight: 1000;
+        text-transform: uppercase;
+      }
+      .sigil-booking__copy {
+        max-width: 660px;
+        margin: 22px 0 0;
+        color: rgba(247, 239, 226, .82);
+        font-size: 1.05rem;
+        line-height: 1.62;
+      }
+      .sigil-booking__logic {
+        display: grid;
+        gap: 12px;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(7, 7, 6, .62);
+        backdrop-filter: blur(18px);
+      }
+      .sigil-booking__logic-label {
+        margin: 0;
+        color: var(--gold-bright);
+        font-weight: 1000;
+        text-transform: uppercase;
+        font-size: .78rem;
+      }
+      .sigil-booking__logic-title {
+        margin: 0;
+        color: var(--text);
+        font-size: 1.45rem;
+        line-height: 1.1;
+        font-weight: 1000;
+      }
+      .sigil-booking__logic-text {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      .sigil-booking__body {
+        width: min(100%, 1180px);
+        margin: -34px auto 0;
+        padding: 0 28px 48px;
+        position: relative;
+        z-index: 2;
+      }
+      .sigil-booking__workspace {
+        display: grid;
+        gap: 18px;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, .075), rgba(255, 255, 255, .025)),
+          var(--panel);
+        box-shadow: 0 30px 90px rgba(0, 0, 0, .38);
+        backdrop-filter: blur(20px);
+      }
+      .sigil-booking__lanes {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .sigil-booking__lane {
+        display: grid;
+        gap: 10px;
+        min-height: 132px;
+        padding: 16px;
+        border: 1px solid rgba(219, 185, 109, .22);
+        border-radius: 8px;
+        background: var(--panel-soft);
+        color: var(--text);
+        text-align: left;
+        cursor: pointer;
+      }
+      .sigil-booking__lane[aria-pressed="true"] {
+        border-color: var(--line-strong);
+        background: linear-gradient(180deg, rgba(216, 170, 77, .22), rgba(255, 255, 255, .055));
+      }
+      .sigil-booking__lane-kicker {
+        color: var(--gold-bright);
+        font-size: .78rem;
+        font-weight: 1000;
+        text-transform: uppercase;
+      }
+      .sigil-booking__lane-title {
+        font-size: 1.24rem;
+        font-weight: 1000;
+      }
+      .sigil-booking__lane-copy {
+        color: var(--muted);
+        line-height: 1.45;
+      }
+      .sigil-booking__form {
+        display: grid;
+        gap: 18px;
+      }
+      .sigil-booking__panel {
+        display: none;
+        gap: 16px;
+      }
+      .sigil-booking__panel[data-active="true"] {
+        display: grid;
+      }
+      .sigil-booking__fields {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+      .sigil-booking__field {
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+        color: var(--gold-bright);
+        font-weight: 900;
+      }
+      .sigil-booking__field--full { grid-column: 1 / -1; }
+      input, select, textarea {
+        width: 100%;
+        min-height: 52px;
+        padding: 13px 14px;
+        border: 1px solid rgba(219, 185, 109, .28);
+        border-radius: 8px;
+        outline: none;
+        background: rgba(0, 0, 0, .42);
+        color: var(--text);
+      }
+      textarea {
+        min-height: 112px;
+        resize: vertical;
+      }
+      input:focus, select:focus, textarea:focus {
+        border-color: var(--line-strong);
+        box-shadow: 0 0 0 3px rgba(216, 170, 77, .14);
+      }
+      .sigil-booking__search-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+      }
+      .sigil-booking__results {
+        min-height: 58px;
+        padding: 12px;
+        border: 1px dashed rgba(219, 185, 109, .26);
+        border-radius: 8px;
+        color: var(--muted);
+        background: rgba(0, 0, 0, .24);
+      }
+      .sigil-booking__actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .sigil-booking__button {
+        min-height: 46px;
+        padding: 0 16px;
+        border: 1px solid rgba(216, 170, 77, .52);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, .055);
+        color: var(--text);
+        font-weight: 1000;
+        cursor: pointer;
+      }
+      .sigil-booking__button--primary {
+        min-width: 210px;
+        border-color: rgba(242, 210, 138, .9);
+        background: linear-gradient(180deg, #f2d28a 0%, #b9822e 100%);
+        color: var(--ink);
+      }
+      .sigil-booking__status {
+        min-height: 1.2em;
+        margin: 0;
+        color: var(--muted);
+      }
+      .sigil-booking__status[data-kind="success"] { color: var(--success); }
+      .sigil-booking__status[data-kind="error"] { color: var(--danger); }
+      .sigil-booking__result {
+        display: none;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(0, 0, 0, .32);
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+      .sigil-booking__result[data-visible="true"] { display: block; }
+      @media (max-width: 860px) {
+        .sigil-booking__hero { padding: 18px; }
+        .sigil-booking__hero-grid,
+        .sigil-booking__lanes,
+        .sigil-booking__fields {
+          grid-template-columns: 1fr;
+        }
+        .sigil-booking__body {
+          margin-top: -16px;
+          padding: 0 14px 34px;
+        }
+        .sigil-booking__search-row {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+    ${bootstrap}
+  </head>
+  <body>
+    <main class="sigil-booking" data-build="booking-lane-standard-plus-assisted-20260516c">
+      <div hidden>SIGIL_BOOKING_BUILD: booking-lane-standard-plus-assisted-20260516c</div>
+      <section class="sigil-booking__hero" aria-labelledby="sigil-booking-title">
+        <div class="sigil-booking__hero-grid">
+          <div>
+            <p class="sigil-booking__label">PRIVATE MEMBER GATE</p>
+            <h1 id="sigil-booking-title" class="sigil-booking__title">SĪGIL / BOOKING / REQUEST</h1>
+            <p class="sigil-booking__copy">Create a private booking request through the clean member gate. Choose a standard model search when the client knows the lane, or assisted request when Per should shape the recommendation.</p>
+          </div>
+          <aside class="sigil-booking__logic" aria-label="Booking logic">
+            <p class="sigil-booking__logic-label">Booking logic</p>
+            <h2 class="sigil-booking__logic-title">Two Lanes</h2>
+            <p class="sigil-booking__logic-text">Standard Search keeps the flow direct. Assisted Request captures preference, mood, and constraints for a guided match.</p>
+          </aside>
+        </div>
+      </section>
+
+      <section class="sigil-booking__body">
+        <div class="sigil-booking__workspace">
+          <div class="sigil-booking__lanes" role="group" aria-label="Booking lanes">
+            <button class="sigil-booking__lane" type="button" data-lane="standard" aria-pressed="true">
+              <span class="sigil-booking__lane-kicker">Lane 01</span>
+              <span class="sigil-booking__lane-title">Standard Search</span>
+              <span class="sigil-booking__lane-copy">Search or name a model, then create a booking request with clear schedule and payment details.</span>
+            </button>
+            <button class="sigil-booking__lane" type="button" data-lane="assisted" aria-pressed="false">
+              <span class="sigil-booking__lane-kicker">Lane 02</span>
+              <span class="sigil-booking__lane-title">Assisted Request</span>
+              <span class="sigil-booking__lane-copy">Send a preference-led request when the best match needs operator recommendation.</span>
+            </button>
+          </div>
+
+          <form id="sigilBookingForm" class="sigil-booking__form">
+            <input id="lane" name="lane" type="hidden" value="standard" />
+            <section class="sigil-booking__panel" data-panel="standard" data-active="true" aria-label="Standard Search">
+              <div class="sigil-booking__search-row">
+                <label class="sigil-booking__field">
+                  Standard Search
+                  <input id="model_search" name="model_search" type="search" placeholder="Search model name or code" autocomplete="off" />
+                </label>
+                <button id="modelSearchButton" class="sigil-booking__button" type="button">Search</button>
+              </div>
+              <div id="modelSearchResults" class="sigil-booking__results" role="status">Ready for Standard Search.</div>
+            </section>
+
+            <section class="sigil-booking__panel" data-panel="assisted" aria-label="Assisted Request">
+              <label class="sigil-booking__field sigil-booking__field--full">
+                Assisted Request
+                <textarea id="assisted_note" name="assisted_note" placeholder="Preference, vibe, language, area, timing, and any constraints"></textarea>
+              </label>
+            </section>
+
+            <div class="sigil-booking__fields">
+              <label class="sigil-booking__field">
+                Client name
+                <input id="customer_name" name="customer_name" type="text" autocomplete="name" required />
+              </label>
+              <label class="sigil-booking__field">
+                Model name
+                <input id="model_name" name="model_name" type="text" autocomplete="off" />
+              </label>
+              <label class="sigil-booking__field">
+                Work type
+                <select id="job_type" name="job_type" required>
+                  <option value="">Select work type</option>
+                  <option value="private_booking">Private booking</option>
+                  <option value="public_booking">Public booking</option>
+                  <option value="travel_booking">Travel booking</option>
+                </select>
+              </label>
+              <label class="sigil-booking__field">
+                Date and time
+                <input id="job_datetime" name="job_datetime" type="datetime-local" required />
+              </label>
+              <label class="sigil-booking__field">
+                Duration hours
+                <input id="duration_hours" name="duration_hours" type="number" min="0.5" step="0.5" value="2" inputmode="decimal" required />
+              </label>
+              <label class="sigil-booking__field">
+                Deposit percent
+                <select id="deposit_percent" name="deposit_percent">
+                  <option value="30">30%</option>
+                  <option value="50">50%</option>
+                  <option value="100">100%</option>
+                </select>
+              </label>
+              <label class="sigil-booking__field">
+                Total amount THB
+                <input id="total_amount_thb" name="total_amount_thb" type="number" min="0" step="1" inputmode="numeric" required />
+              </label>
+              <label class="sigil-booking__field">
+                Location
+                <input id="service_location" name="service_location" type="text" required />
+              </label>
+              <label class="sigil-booking__field sigil-booking__field--full">
+                Notes
+                <textarea id="notes" name="notes" placeholder="Room, map, client instruction, or model brief"></textarea>
+              </label>
+            </div>
+
+            <div class="sigil-booking__actions">
+              <button id="submit" class="sigil-booking__button sigil-booking__button--primary" type="submit">Create booking request</button>
+              <button id="logout" class="sigil-booking__button" type="button">Logout</button>
+              <p id="status" class="sigil-booking__status" role="status" aria-live="polite"></p>
+            </div>
+            <pre id="result" class="sigil-booking__result" aria-live="polite"></pre>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      (() => {
+        const form = document.getElementById("sigilBookingForm");
+        const laneInput = document.getElementById("lane");
+        const status = document.getElementById("status");
+        const result = document.getElementById("result");
+        const submit = document.getElementById("submit");
+        const logout = document.getElementById("logout");
+        const searchInput = document.getElementById("model_search");
+        const searchButton = document.getElementById("modelSearchButton");
+        const searchResults = document.getElementById("modelSearchResults");
+
+        function read(id) {
+          const element = document.getElementById(id);
+          return element && "value" in element ? element.value.trim() : "";
+        }
+
+        function setStatus(message, kind) {
+          status.textContent = message || "";
+          status.dataset.kind = kind || "";
+        }
+
+        function setLane(nextLane) {
+          laneInput.value = nextLane;
+          document.querySelectorAll("[data-lane]").forEach((button) => {
+            button.setAttribute("aria-pressed", button.getAttribute("data-lane") === nextLane ? "true" : "false");
+          });
+          document.querySelectorAll("[data-panel]").forEach((panel) => {
+            panel.dataset.active = panel.getAttribute("data-panel") === nextLane ? "true" : "false";
+          });
+        }
+
+        function slug(value, fallback) {
+          const normalized = String(value || "")
+            .toLowerCase()
+            .normalize("NFKD")
+            .replace(/[\\u0300-\\u036f]/g, "")
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^_+|_+$/g, "");
+          return normalized || fallback;
+        }
+
+        function makeId(prefix, seed) {
+          return prefix + "_" + slug(seed, "booking") + "_" + Date.now().toString(36);
+        }
+
+        function splitDateTime(value) {
+          const parts = String(value || "").split("T");
+          return { date: parts[0] || "", time: (parts[1] || "").slice(0, 5) };
+        }
+
+        function addHoursToDateTime(value, hours) {
+          const start = new Date(value);
+          if (!Number.isFinite(start.getTime()) || !Number.isFinite(hours)) return "";
+          const end = new Date(start.getTime() + hours * 60 * 60 * 1000);
+          return String(end.getHours()).padStart(2, "0") + ":" + String(end.getMinutes()).padStart(2, "0");
+        }
+
+        function compactObject(input) {
+          return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== "" && value !== null && value !== undefined));
+        }
+
+        document.querySelectorAll("[data-lane]").forEach((button) => {
+          button.addEventListener("click", () => setLane(button.getAttribute("data-lane") || "standard"));
+        });
+
+        searchButton.addEventListener("click", () => {
+          const query = searchInput.value.trim();
+          searchResults.textContent = query
+            ? "Standard Search queued for: " + query + ". Add or confirm the model name before submitting."
+            : "Enter a model name or code for Standard Search.";
+        });
+
+        logout.addEventListener("click", () => {
+          if (window.__MMD_SIGIL_ADMIN__) {
+            window.__MMD_SIGIL_ADMIN__.logout();
+            return;
+          }
+          location.href = "/sigil/admin/login";
+        });
+
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          setStatus("");
+          result.dataset.visible = "false";
+          result.textContent = "";
+
+          const lane = read("lane") || "standard";
+          const customerName = read("customer_name");
+          const modelName = read("model_name") || read("model_search");
+          const jobType = read("job_type");
+          const jobDateTime = read("job_datetime");
+          const durationHours = Number(read("duration_hours"));
+          const totalAmount = Number(read("total_amount_thb"));
+          const depositPercent = Number(read("deposit_percent")) || 30;
+          const dateParts = splitDateTime(jobDateTime);
+          const endTime = addHoursToDateTime(jobDateTime, durationHours);
+          const locationName = read("service_location");
+          const assistedNote = read("assisted_note");
+          const notes = read("notes");
+
+          if (!customerName || !jobType || !dateParts.date || !dateParts.time || !endTime || !locationName || !Number.isFinite(durationHours) || durationHours <= 0 || !Number.isFinite(totalAmount) || totalAmount <= 0) {
+            setStatus("Complete the required booking details.", "error");
+            return;
+          }
+          if (lane === "standard" && !modelName) {
+            setStatus("Standard Search needs a selected or named model.", "error");
+            return;
+          }
+          if (lane === "assisted" && !assistedNote) {
+            setStatus("Assisted Request needs preference notes.", "error");
+            return;
+          }
+
+          const depositAmount = Math.round(totalAmount * depositPercent / 100);
+          const finalAmount = Math.max(0, totalAmount - depositAmount);
+          const sessionId = makeId("sess", customerName + " " + (modelName || lane));
+          const paymentRef = makeId("pay", customerName + " " + dateParts.date);
+          const bookingNote = [
+            "lane: " + lane,
+            modelName ? "model: " + modelName : "",
+            assistedNote ? "assisted: " + assistedNote : "",
+            notes ? "notes: " + notes : ""
+          ].filter(Boolean).join(" | ");
+
+          const metadata = compactObject({
+            source: "sigil_booking_request",
+            build: "booking-lane-standard-plus-assisted-20260516c",
+            booking_lane: lane,
+            assisted_note: assistedNote,
+            total_amount_thb: totalAmount,
+            deposit_percent: depositPercent,
+            deposit_amount_thb: depositAmount,
+            final_amount_thb: finalAmount
+          });
+
+          const payload = compactObject({
+            username: slug(customerName, "client"),
+            nickname: customerName,
+            client_name: customerName,
+            customer_name: customerName,
+            model_name: modelName || "Assisted Recommendation",
+            model_lookup_key: slug(modelName || "assisted_recommendation", "model"),
+            session_id: sessionId,
+            payment_ref: paymentRef,
+            job_type: jobType,
+            package_code: slug(jobType, "package"),
+            job_date: dateParts.date,
+            start_time: dateParts.time,
+            end_time: endTime,
+            duration_hours: durationHours,
+            location_name: locationName,
+            amount_thb: depositAmount,
+            payment_amount_thb: depositAmount,
+            total_amount_thb: totalAmount,
+            deposit_percent: depositPercent,
+            deposit_amount_thb: depositAmount,
+            final_amount_thb: finalAmount,
+            currency: "THB",
+            payment_type: depositPercent >= 100 ? "full" : "deposit",
+            payment_stage: depositPercent >= 100 ? "full" : "deposit",
+            payment_method: "promptpay",
+            return_url: "/member/first-db",
+            cancel_url: "/sigil/booking",
+            confirm_page: "/pay",
+            model_confirm_page: "/model/console",
+            note: bookingNote,
+            notes: bookingNote,
+            metadata_json: metadata,
+            payload_json: metadata
+          });
+
+          submit.disabled = true;
+          submit.textContent = "Creating...";
+          setStatus("Creating booking request...");
+
+          try {
+            const response = await fetch(${JSON.stringify(submitPath)}, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload)
+            });
+            const data = await response.json().catch(() => null);
+            if (!response.ok) {
+              setStatus((data && (data.error || data.message)) || "Could not create booking request.", "error");
+              return;
+            }
+            setStatus("Booking request created.", "success");
+            result.dataset.visible = "true";
+            result.textContent = JSON.stringify(data, null, 2);
+          } catch (error) {
+            setStatus("Network error while creating booking request.", "error");
+          } finally {
+            submit.disabled = false;
+            submit.textContent = "Create booking request";
           }
         });
       })();
@@ -5815,6 +9245,10 @@ function renderAdminLoginPage(request: Request, env: Env): Response {
 
 function renderCreateSessionLinksPage(request: Request, session: AdminGateSession | null): Response {
   const requestUrl = new URL(request.url);
+  if (requestUrl.pathname === SIGIL.booking) {
+    return renderSigilBookingPage(request);
+  }
+
   const next = normalizeAdminNextPath(requestUrl.pathname + requestUrl.search);
   const isSigilBooking = requestUrl.pathname === SIGIL.booking || isSigilAdminPath(requestUrl.pathname);
   const bootstrap = isSigilBooking
@@ -8726,6 +12160,22 @@ async function handleVerifyAccessCode(request: Request, env: Env): Promise<Respo
   return json({ ok: true, data: { verified: true }, meta });
 }
 
+function writeAuthErrorResponse(request: Request, env: Env): Response | null {
+  const auth = authorizeWriteRequest(request, env);
+  if (auth.ok) return null;
+  return json(
+    {
+      ok: false,
+      error: {
+        code: auth.code,
+        message: auth.message,
+      },
+      meta: makeMeta(request),
+    },
+    { status: auth.status },
+  );
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const meta = makeMeta(request);
@@ -8754,11 +12204,14 @@ export default {
         (
           isPublicRenewalStatusRoute(url.pathname)
           || isPublicRenewalIntakeRoute(url.pathname)
+          || isPublicBookingRequestRoute(url.pathname)
           || isPublicPointsTopupRoute(url.pathname)
           || isPublicRenewalActivateVipRoute(url.pathname)
           || isPublicRecoveryAckRoute(url.pathname)
           || isPublicRecoveryComplaintEvidenceRoute(url.pathname)
           || isPublicCustomerConfirmRoute(url.pathname)
+          || isPublicPrivateModelRoute(url.pathname)
+          || isPublicPublicModelRoute(url.pathname)
           || isPaymentPageRoute(url.pathname)
           || isModelSessionAdminPath(url.pathname)
         )
@@ -8825,6 +12278,10 @@ export default {
         return await handlePublicRenewalIntake(request, env);
       }
 
+      if (request.method === "POST" && isPublicBookingRequestRoute(url.pathname)) {
+        return await handlePublicBookingRequest(request, env);
+      }
+
       if (request.method === "POST" && isPublicPointsTopupRoute(url.pathname)) {
         return await handlePublicPointsTopup(request, env);
       }
@@ -8845,8 +12302,56 @@ export default {
         return await handleCustomerConfirm(request, env);
       }
 
+      if (request.method === "POST" && url.pathname === PUBLIC.privateModelApply) {
+        return await handlePrivateModelApply(request, env);
+      }
+
+      if (request.method === "POST" && url.pathname === PUBLIC.privateModelUploadUrl) {
+        return await handlePrivateModelUploadUrl(request, env);
+      }
+
+      if (request.method === "PUT" && url.pathname === PUBLIC.privateModelUploadFile) {
+        return await handlePrivateModelUploadFile(request, env);
+      }
+
+      if (request.method === "POST" && url.pathname === PUBLIC.publicModelApply) {
+        return await handlePublicModelApply(request, env);
+      }
+
+      if (request.method === "POST" && url.pathname === PUBLIC.publicModelUploadUrl) {
+        return await handlePublicModelUploadUrl(request, env);
+      }
+
+      if (request.method === "PUT" && url.pathname === PUBLIC.publicModelUploadFile) {
+        return await handlePublicModelUploadFile(request, env);
+      }
+
       if (url.pathname === "/internal/line/send-session-card") {
         return handleSendLineSessionCard(request, env);
+      }
+
+      if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/login") {
+        return renderMemberLoginPage();
+      }
+
+      if ((request.method === "GET" || request.method === "HEAD") && url.pathname === SIGIL_LOGIN_PATH) {
+        return renderSigilLoginOnlyPage(request);
+      }
+
+      if ((request.method === "GET" || request.method === "HEAD") && url.pathname === MEMBER_ACCOUNT_PATH) {
+        return renderSigilMemberAccountPage(request);
+      }
+
+      if ((request.method === "GET" || request.method === "HEAD") && url.pathname === MEMBER_DASHBOARD_ALIAS_PATH) {
+        return bridgeRedirect(request, MEMBER_ACCOUNT_PATH);
+      }
+
+      if ((request.method === "GET" || request.method === "HEAD") && url.pathname === MODEL_CONSOLE_PATH) {
+        return renderSigilModelConsolePage(request);
+      }
+
+      if ((request.method === "GET" || request.method === "HEAD") && url.pathname === MODEL_CONSOLE_ALIAS_PATH) {
+        return renderMmdModelConsolePage(request);
       }
 
       if (
@@ -8891,7 +12396,7 @@ export default {
         const sigilAdminSession = (url.pathname === SIGIL.booking || isSigilAdminPath(url.pathname))
           ? await getValidSigilAdminSession(request, env)
           : null;
-        if (!gateSession && !sigilAdminSession && !isAuthorized(request, env)) {
+        if (url.pathname !== SIGIL.booking && !gateSession && !sigilAdminSession && !isAuthorized(request, env)) {
           return makeLoginRedirect(request, url.pathname);
         }
 
@@ -8998,6 +12503,12 @@ export default {
         return await withInjectedAdminBootstrap(request, upstream, gateSession as AdminGateSession);
       }
 
+      if (request.method === "POST" && isLineIntakeRoute(url.pathname)) {
+        const authError = writeAuthErrorResponse(request, env);
+        if (authError) return authError;
+        return await handleLineIntake(request, env);
+      }
+
       if (!isAuthorized(request, env)) {
         const sigilAdminSession = isSigilAdminPath(url.pathname)
           ? await getValidSigilAdminSession(request, env)
@@ -9005,12 +12516,16 @@ export default {
         if (!sigilAdminSession) return unauthorized(meta);
       }
 
-      if (request.method === "POST" && isLinePreviewRoute(url.pathname)) {
-        return await handleLinePreview(request, env);
+      if (request.method === "POST" && url.pathname === SIGIL.privateModelReplayAirtable) {
+        return await handlePrivateModelReplayAirtable(request, env);
       }
 
-      if (request.method === "POST" && isLineIntakeRoute(url.pathname)) {
-        return await handleLineIntake(request, env);
+      if (request.method === "POST" && url.pathname === SIGIL.privateModelAirtableCheck) {
+        return await handlePrivateModelAirtableCheck(request, env);
+      }
+
+      if (request.method === "POST" && isLinePreviewRoute(url.pathname)) {
+        return await handleLinePreview(request, env);
       }
 
       if (request.method === "POST" && isCreateJobRoute(url.pathname)) {
