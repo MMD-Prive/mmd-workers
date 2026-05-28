@@ -44,7 +44,16 @@ export async function telegramNotify(payload, env) {
   });
 
   const data = await res.json().catch(() => null);
-  if (!res.ok || (data && data.ok === false)) return { ok: false, status: res.status, error: data || null };
+  if (!res.ok || (data && data.ok === false)) {
+    console.error("telegram_send_failed", {
+      status: res.status,
+      upstream_ok: Boolean(data && data.ok),
+      error_code: data && typeof data === "object" ? data.error_code ?? null : null,
+      description: data && typeof data === "object" ? data.description ?? null : null,
+      body,
+    });
+    return { ok: false, status: res.status, error: data || null };
+  }
   return { ok: true, thread_id: threadId };
 }
 
