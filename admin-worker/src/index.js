@@ -5,6 +5,8 @@
 // Endpoints:
 //   GET  /ping
 //   GET  /v1/admin/ping
+//   POST /api/member/kenji/chat
+//   GET  /v1/admin/ceo              -> public-safe CEO console health/summary
 //   GET  /v1/admin/stats
 //   GET  /v1/admin/members/list
 //   POST /v1/admin/members/update
@@ -51,17 +53,50 @@
 
 import { json, safeJson } from "../lib/http.js";
 import { dtCreateRecord, dtFindMember, membersTableId } from "../lib/memberstack_dt.js";
-import { handleMemberDashboardRequest, mintMemberDashboardToken } from "./memberDashboard.js";
+import {
+  handleMemberDashboardRequest,
+  handleMemberKenjiChatRequest,
+  mintMemberDashboardToken,
+} from "./memberDashboard.js";
 import { MODEL_ALIAS_CANDIDATES, MODEL_MANIFEST } from "./lib/model-manifest.generated.js";
 import { getDashboardCEO } from "./lib/airtable-stock.js";
 import {
   enforceSingleActiveReferral,
   updateCommissionState,
 } from "../../shared/src/lib/partner-commissions/index.js";
+import { handleMembershipRequest } from "./membershipRequest.js";
 
 const LOCK = "v2026-LOCK-01";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const ADMIN_SESSION_COOKIE = "mmd_admin_worker_session";
+const ADMIN_SESSION_TTL_SECONDS = 60 * 60 * 12;
+const MODEL_SESSION_DASHBOARD_PATH = "/v1/model/session/dashboard";
+const MODEL_SESSION_STATUS_PATH = "/v1/model/session/status";
+const MODEL_SESSION_GPS_PATH = "/v1/model/session/gps";
+const MODEL_SESSION_UPDATE_PATH = "/v1/model/session/update";
+const MODEL_SESSION_EMERGENCY_PATH = "/v1/model/session/emergency";
+const MODEL_SESSION_STUB_PATHS = new Set([
+  MODEL_SESSION_GPS_PATH,
+  MODEL_SESSION_UPDATE_PATH,
+  MODEL_SESSION_EMERGENCY_PATH,
+]);
+const MODEL_SESSION_ALLOWED_STATUSES = new Set([
+  "en_route",
+  "arrived",
+  "met",
+  "work_started",
+  "work_finished",
+  "separated",
+]);
+const MODEL_SESSION_STATUS_ALIASES = {
+  on_the_way: "en_route",
+  start_route: "en_route",
+  started: "work_started",
+  start_work: "work_started",
+  work_start: "work_started",
+  finished: "work_finished",
+  finish_work: "work_finished",
+};
 
 export default {
   async fetch(req, env, ctx) {
@@ -82,12 +117,150 @@ export default {
     }
 
     if (
-      method === "GET" &&
-      (path === "/api/member/dashboard" ||
-        path === "/api/member/session/next" ||
-        path === "/api/member/payments/summary")
+      ((method === "GET" &&
+        (path === "/api/member/dashboard" ||
+          path === "/api/member/dashboard/view" ||
+          path === "/api/member/session/next" ||
+          path === "/api/member/payments/summary")) ||
+        (method === "HEAD" && path === "/api/member/dashboard/view"))
     ) {
       return withCors(req, env, await handleMemberDashboardRequest(req, env));
+    }
+
+    if (method === "GET" && path === MODEL_SESSION_DASHBOARD_PATH) {
+      return withCors(req, env, await handleModelSessionDashboard(req, env));
+    }
+
+    if (method === "POST" && path === MODEL_SESSION_STATUS_PATH) {
+      return withCors(req, env, await handleModelSessionStatus(req, env));
+    }
+
+    if (method === "POST" && MODEL_SESSION_STUB_PATHS.has(path)) {
+      return withCors(req, env, await handleModelSessionStub(req, env, path));
+    }
+
+    if (method === "POST" && path === "/api/member/kenji/chat") {
+      return withCors(req, env, await handleMemberKenjiChatRequest(req, env));
+    }
+
+    if (path === "/v1/membership/request") {
+      if (!isAllowedOrigin(req, env)) {
+        return withCors(req, env, json({ ok: false, error: "origin_not_allowed" }, 403));
+      }
+      return withCors(req, env, await handleMembershipRequest(req, env));
+    }
+
+    if (path === "/v1/admin/ping" && method === "GET") {
+      const cookieSession = await readValidAdminSessionCookie(req, env);
+      const authed = isAuthed(req, env) || Boolean(cookieSession);
+      const attemptedHeaderAuth = Boolean(
+        str(req.headers.get("Authorization")) || str(req.headers.get("X-Confirm-Key"))
+      );
+      if (attemptedHeaderAuth && !authed) {
+        return withCors(req, env, json({ ok: false, error: "invalid_admin_credentials" }, 401));
+      }
+      return withCors(
+        req,
+        env,
+        json({
+          ok: true,
+          admin: true,
+          worker: "admin-worker",
+          lock: LOCK,
+          authenticated: authed,
+          ts: Date.now(),
+        })
+      );
+    }
+
+    if (path === "/v1/admin/auth/me" && method === "GET") {
+      if (!isAllowedOrigin(req, env)) {
+        return withCors(req, env, json({ ok: false, error: "origin_not_allowed" }, 403));
+      }
+
+      const headerAuthed = isAuthed(req, env);
+      const cookieSession = await readValidAdminSessionCookie(req, env);
+
+      if (!headerAuthed && !cookieSession) {
+        return withCors(
+          req,
+          env,
+          json(
+            {
+              ok: false,
+              error: {
+                code: "UNAUTHORIZED",
+                message: "Not logged in",
+                status: 401,
+              },
+            },
+            401
+          )
+        );
+      }
+
+      return withCors(
+        req,
+        env,
+        json({
+          ok: true,
+          authenticated: true,
+          session: {
+            via: cookieSession ? "cookie" : "header",
+            expires_at: cookieSession?.exp ? new Date(cookieSession.exp * 1000).toISOString() : null,
+          },
+        })
+      );
+    }
+
+    if (path === "/v1/admin/auth/session" && method === "POST") {
+      if (!isAllowedOrigin(req, env)) {
+        return withCors(req, env, json({ ok: false, error: "origin_not_allowed" }, 403));
+      }
+
+      const body = await safeJson(req);
+      const headerAuthed = isAuthed(req, env);
+      const bodyAuthed = isBodyAuthed(body, env);
+
+      if (!headerAuthed && !bodyAuthed) {
+        return withCors(
+          req,
+          env,
+          json(
+            {
+              ok: false,
+              error: {
+                code: "UNAUTHORIZED",
+                message: "Invalid admin credentials",
+                status: 401,
+              },
+            },
+            401
+          )
+        );
+      }
+
+      const cookieValue = await mintAdminSessionCookieValue(env);
+      const response = json({
+        ok: true,
+        authenticated: true,
+        cookie_name: ADMIN_SESSION_COOKIE,
+        expires_in_seconds: ADMIN_SESSION_TTL_SECONDS,
+      });
+      response.headers.append(
+        "Set-Cookie",
+        buildAdminSessionCookie(cookieValue, ADMIN_SESSION_TTL_SECONDS)
+      );
+      return withCors(req, env, response);
+    }
+
+    if (path === "/v1/admin/auth/session" && method === "DELETE") {
+      if (!isAllowedOrigin(req, env)) {
+        return withCors(req, env, json({ ok: false, error: "origin_not_allowed" }, 403));
+      }
+      const response = json({ ok: true, cleared: true });
+      response.headers.append("Set-Cookie", clearAdminSessionCookie());
+      return withCors(req, env, response);
     }
 
     // ---- Internal admin create-session page ----
@@ -99,7 +272,10 @@ export default {
       if (!isAllowedOrigin(req, env)) {
         return withCors(req, env, json({ ok: false, error: "origin_not_allowed" }, 403));
       }
-      return withCors(req, env, renderCreateSessionPage(method));
+      if (!(await isAdminRouteAuthed(req, env))) {
+        return withCors(req, env, redirectToInternalAdminLogin(req));
+      }
+      return withCors(req, env, renderCreateSessionRebuiltPage(method));
     }
 
     if (
@@ -148,7 +324,7 @@ export default {
       const body = await safeJson(req);
       try {
         const out = await createAdminJob(env, body || {}, req);
-        return withCors(req, env, json({ ok: true, ...out }));
+        return withCors(req, env, json({ ok: true, ...flattenCreateJobResponse(out) }));
       } catch (error) {
         return withCors(
           req,
@@ -165,16 +341,65 @@ export default {
         return withCors(req, env, json({ ok: false, error: "origin_not_allowed" }, 403));
       }
 
-      // (2) Writer endpoints (STRICT confirm-key only)
-      if (method === "POST" && (path === "/v1/admin/console/inbox" || path === "/v1/admin/payment/proof")) {
-        if (!isConfirmKeyAuthed(req, env)) {
+      // (1.5) Public-safe CEO console.
+      // No frontend token. This route returns a sanitized console payload only.
+      if (method === "GET" && path === "/v1/admin/ceo") {
+        const eventId = crypto.randomUUID();
+        logConsoleAudit("public_ceo_console_requested", req, {
+          event_id: eventId,
+        });
+
+        try {
+          const result = await getDashboardCEO(env);
+          const safe = buildPublicSafeCeoConsole(result, eventId);
+          logConsoleAudit("public_ceo_console_served", req, {
+            event_id: eventId,
+            status: safe.console.status,
+            trend_points: safe.console.metrics.trend_points,
+          });
+          return withCors(req, env, json(safe));
+        } catch (err) {
+          logConsoleAudit("public_ceo_console_failed", req, {
+            event_id: eventId,
+            error_name: str(err?.name || "Error"),
+          });
+          return withCors(
+            req,
+            env,
+            json({
+              ok: true,
+              public_safe: true,
+              endpoint: "/v1/admin/ceo",
+              console_log_event_id: eventId,
+              console: {
+                status: "degraded",
+                data_ready: false,
+                checked_at: new Date().toISOString(),
+                metrics: {
+                  trend_points: 0,
+                  supplier_balance_count: 0,
+                  low_stock_batches: 0,
+                  depleted_batches: 0,
+                  has_financial_data: false,
+                },
+              },
+            })
+          );
+        }
+      }
+
+      // (2) Writer endpoints
+      if (method === "POST" && (path === "/v1/admin/console/inbox" || path === "/internal/console/inbox" || path === "/v1/admin/payment/proof")) {
+        const isInternalConsoleInbox = path === "/internal/console/inbox";
+        const writerAuthed = isInternalConsoleInbox ? isAuthed(req, env) : isConfirmKeyAuthed(req, env);
+        if (!writerAuthed) {
           return withCors(req, env, json({ ok: false, error: "unauthorized" }, 401));
         }
 
         const body = await safeJson(req);
 
         // POST /v1/admin/console/inbox
-        if (path === "/v1/admin/console/inbox") {
+        if (path === "/v1/admin/console/inbox" || path === "/internal/console/inbox") {
           if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) {
             return withCors(req, env, json({ ok: false, error: "missing_airtable_env" }, 500));
           }
@@ -289,15 +514,6 @@ export default {
         return withCors(req, env, json({ ok: false, error: "unauthorized" }, 401));
       }
 
-      // GET /v1/admin/ping
-      if (method === "GET" && path === "/v1/admin/ping") {
-        return withCors(
-          req,
-          env,
-          json({ ok: true, admin: true, worker: "admin-worker", lock: LOCK, ts: Date.now() })
-        );
-      }
-
       // GET /v1/admin/stats
       if (method === "GET" && path === "/v1/admin/stats") {
         const labels = buildLastNDays(7);
@@ -347,6 +563,23 @@ export default {
         });
 
         return withCors(req, env, json({ ok: true, items }));
+      }
+
+      // POST /v1/admin/clients/lineage-lookup
+      if (method === "POST" && path === "/v1/admin/clients/lineage-lookup") {
+        const body = await safeJson(req);
+        const q = str(body?.query || body?.q || body?.search);
+        const limit = clampInt(body?.limit, 1, 50, 12);
+        const clients = await listAdminClientLineage(env, { q, limit });
+        return withCors(req, env, json({ ok: true, clients, items: clients, data: clients }));
+      }
+
+      // GET /v1/admin/clients/recent
+      if (method === "GET" && path === "/v1/admin/clients/recent") {
+        const q = str(url.searchParams.get("q"));
+        const limit = clampInt(url.searchParams.get("limit"), 1, 50, 12);
+        const clients = await listAdminClientLineage(env, { q, limit });
+        return withCors(req, env, json({ ok: true, clients, items: clients, data: clients }));
       }
 
       // POST /v1/admin/members/update
@@ -476,6 +709,83 @@ export default {
         return withCors(req, env, json({ ok: true, items }));
       }
 
+      // GET /v1/admin/models/search
+      if (method === "GET" && path === "/v1/admin/models/search") {
+        const q = (url.searchParams.get("q") || "").trim();
+        const limit = clampInt(url.searchParams.get("limit"), 1, 50, 12);
+        const items = await searchAdminModels(env, { q, limit });
+        return withCors(req, env, json({ ok: true, items }));
+      }
+
+      // GET /v1/admin/models/resolve-source
+      if (method === "GET" && path === "/v1/admin/models/resolve-source") {
+        const q = str(url.searchParams.get("q"));
+        const sourceOwner = str(url.searchParams.get("source_owner")) || str(env.MODEL_SOURCE_OWNER_DEFAULT || "lonelysomething");
+        const categoryPath = str(url.searchParams.get("category_path"));
+        try {
+          const payload = await resolveModelSource(env, { q, sourceOwner, categoryPath });
+          return withCors(req, env, json(payload));
+        } catch (error) {
+          return withCors(req, env, json({ ok: false, error: String(error?.message || error) }, 400));
+        }
+      }
+
+      // POST /v1/admin/models/stage-from-source
+      if (method === "POST" && path === "/v1/admin/models/stage-from-source") {
+        const body = await safeJson(req);
+        try {
+          const payload = await stageModelFromSource(env, body || {});
+          return withCors(req, env, json(payload, payload.ok ? 200 : 400));
+        } catch (error) {
+          return withCors(req, env, json({ ok: false, error: String(error?.message || error) }, 400));
+        }
+      }
+
+      const modelFolderMatch = path.match(/^\/v1\/admin\/models\/([^/]+)\/folder$/);
+      if (method === "GET" && modelFolderMatch) {
+        try {
+          const payload = await getAdminModelFolder(
+            env,
+            decodeURIComponent(modelFolderMatch[1]),
+            str(url.searchParams.get("package_tier"))
+          );
+          return withCors(req, env, json(payload));
+        } catch (error) {
+          return withCors(req, env, json({ ok: false, error: String(error?.message || error) }, 400));
+        }
+      }
+
+      const resolveFolderMatch = path.match(/^\/v1\/admin\/models\/([^/]+)\/resolve-folder$/);
+      if (method === "POST" && resolveFolderMatch) {
+        try {
+          const body = await safeJson(req);
+          const payload = await resolveAdminModelFolder(
+            env,
+            decodeURIComponent(resolveFolderMatch[1]),
+            str(body?.package_tier || url.searchParams.get("package_tier"))
+          );
+          return withCors(req, env, json(payload));
+        } catch (error) {
+          return withCors(req, env, json({ ok: false, error: String(error?.message || error) }, 400));
+        }
+      }
+
+      const patchFolderMatch = path.match(/^\/v1\/admin\/models\/([^/]+)\/folder$/);
+      if (method === "PATCH" && patchFolderMatch) {
+        const body = await safeJson(req);
+        try {
+          const payload = await patchAdminModelFolder(
+            env,
+            decodeURIComponent(patchFolderMatch[1]),
+            body || {},
+            req
+          );
+          return withCors(req, env, json(payload));
+        } catch (error) {
+          return withCors(req, env, json({ ok: false, error: String(error?.message || error) }, 400));
+        }
+      }
+
       // GET /v1/admin/notes/context
       if (method === "GET" && path === "/v1/admin/notes/context") {
         const clientId = str(url.searchParams.get("client_id"));
@@ -510,7 +820,7 @@ export default {
       // GET|HEAD /v1/admin/jobs/create-session
       if (method === "GET" || method === "HEAD") {
         if (path === "/v1/admin/jobs/create-session") {
-          return withCors(req, env, renderCreateSessionPage(method));
+          return withCors(req, env, renderCreateSessionRebuiltPage(method));
         }
       }
 
@@ -533,11 +843,16 @@ export default {
       }
 
       // POST /v1/admin/jobs/create-job
-      if (method === "POST" && (path === "/v1/admin/jobs/create-job" || path === "/v1/admin/create-job")) {
+      if (
+        method === "POST" &&
+        (path === "/v1/admin/jobs/create-job" ||
+          path === "/v1/admin/create-job" ||
+          path === "/v1/admin/job/create")
+      ) {
         const body = await safeJson(req);
         try {
           const out = await createAdminJob(env, body || {}, req);
-          return withCors(req, env, json({ ok: true, ...out }));
+          return withCors(req, env, json({ ok: true, ...flattenCreateJobResponse(out) }));
         } catch (error) {
           return withCors(
             req,
@@ -545,6 +860,48 @@ export default {
             json({ ok: false, error: String(error?.message || error) }, 400)
           );
         }
+      }
+
+      // POST /v1/admin/job/draft
+      if (method === "POST" && path === "/v1/admin/job/draft") {
+        const body = await safeJson(req);
+        const draftId = str(body?.draft_id || body?.id) || `draft_${crypto.randomUUID()}`;
+        return withCors(
+          req,
+          env,
+          json({ ok: true, draft_id: draftId, saved_at: nowIso(), mode: "stateless_ack" })
+        );
+      }
+
+      // POST /v1/admin/line/push
+      if (method === "POST" && path === "/v1/admin/line/push") {
+        const body = await safeJson(req);
+        const message = str(body?.message || body?.text || body?.copy_text);
+        const lineUserId = str(body?.line_user_id || body?.to);
+        if (!message) {
+          return withCors(req, env, json({ ok: false, error: "missing_message" }, 400));
+        }
+        const result = await maybePushLineJob(
+          env,
+          {
+            push_line: true,
+            line_user_id: lineUserId,
+            raw: body || {},
+          },
+          { copy_text: message }
+        );
+        return withCors(
+          req,
+          env,
+          json(
+            {
+              ok: Boolean(result.ok),
+              line_push_status: result.ok ? "sent" : result.mode || "copy_ready",
+              line: result,
+            },
+            result.ok ? 200 : result.attempted ? 502 : 400
+          )
+        );
       }
 
       // POST /v1/admin/models/upsert
@@ -597,9 +954,10 @@ function corsHeaders(req, env) {
   if (allow.size > 0 && allow.has(origin)) {
     h.set("Access-Control-Allow-Origin", origin);
     h.set("Vary", "Origin");
+    h.set("Access-Control-Allow-Credentials", "true");
   }
 
-  h.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  h.set("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS");
   h.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Confirm-Key");
   h.set("Access-Control-Max-Age", "86400");
   return h;
@@ -616,10 +974,87 @@ function withCors(req, env, res) {
   return new Response(res.body, { status: res.status, headers: h });
 }
 
+function redirectToInternalAdminLogin(req) {
+  const url = new URL(req.url);
+  const next = `${url.pathname}${url.search}`;
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: `/internal/admin/login?next=${encodeURIComponent(next)}`,
+      "Cache-Control": "no-store",
+      "x-mmd-worker": "admin-worker",
+    },
+  });
+}
+
+function logConsoleAudit(event, req, details = {}) {
+  const url = new URL(req.url);
+  const record = {
+    event,
+    worker: "admin-worker",
+    surface: "public_safe_ceo_console",
+    path: url.pathname,
+    host: url.host,
+    origin: str(req.headers.get("Origin") || ""),
+    cf_ray: str(req.headers.get("CF-Ray") || ""),
+    ts: new Date().toISOString(),
+    ...details,
+  };
+
+  try {
+    console.info(JSON.stringify(record));
+  } catch (_) {
+    console.info(event);
+  }
+}
+
+function buildPublicSafeCeoConsole(result, eventId) {
+  const summary = isPlainObject(result?.summary) ? result.summary : {};
+  const trend = Array.isArray(result?.trend) ? result.trend : [];
+  const suppliers = Array.isArray(result?.supplier_balances) ? result.supplier_balances : [];
+  const lastTrend = trend.length ? trend[trend.length - 1] : null;
+
+  return {
+    ok: true,
+    public_safe: true,
+    endpoint: "/v1/admin/ceo",
+    console_log_event_id: eventId,
+    console: {
+      status: result?.ok ? "online" : "degraded",
+      data_ready: Boolean(result?.ok),
+      checked_at: new Date().toISOString(),
+      last_trend_date: str(lastTrend?.date || ""),
+      metrics: {
+        trend_points: trend.length,
+        supplier_balance_count: suppliers.length,
+        low_stock_batches: safePublicCount(summary.low_stock_batches),
+        depleted_batches: safePublicCount(summary.depleted_batches),
+        has_financial_data: hasFiniteNumber(summary.revenue) || hasFiniteNumber(summary.margin),
+      },
+    },
+  };
+}
+
+function safePublicCount(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.floor(n);
+}
+
+function hasFiniteNumber(value) {
+  return Number.isFinite(Number(value));
+}
+
+function isPlainObject(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
 /* =========================
    Auth
 ========================= */
 function isAuthed(req, env) {
+  if (isInternalServiceRequest(req)) return true;
+
   // Bearer
   const auth = req.headers.get("Authorization") || "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
@@ -636,6 +1071,31 @@ function isAuthed(req, env) {
 async function isAdminRouteAuthed(req, env) {
   if (isAuthed(req, env)) return true;
   return Boolean(await readValidAdminSessionCookie(req, env));
+}
+
+function isInternalServiceRequest(req) {
+  try {
+    const url = new URL(req.url);
+    return url.hostname === "admin-worker.internal";
+  } catch {
+    return false;
+  }
+}
+
+function isConfirmKeyAuthed(req, env) {
+  const ck = (req.headers.get("X-Confirm-Key") || "").trim();
+  return Boolean(env.CONFIRM_KEY && ck && ck === env.CONFIRM_KEY);
+}
+
+function isBodyAuthed(body, env) {
+  const bearer = str(body?.bearer || body?.token || "").trim();
+  if (env.ADMIN_BEARER && bearer && bearer === env.ADMIN_BEARER) return true;
+  if (env.INTERNAL_TOKEN && bearer && bearer === env.INTERNAL_TOKEN) return true;
+
+  const confirmKey = str(body?.confirmKey || body?.accessCode || body?.access_code || "").trim();
+  if (env.CONFIRM_KEY && confirmKey && confirmKey === env.CONFIRM_KEY) return true;
+
+  return false;
 }
 
 function parseCookies(req) {
@@ -655,10 +1115,28 @@ function getAdminSessionSecret(env) {
   return str(env.ADMIN_SESSION_SECRET || env.CONFIRM_KEY || env.ADMIN_BEARER || "");
 }
 
+function base64UrlEncodeString(input) {
+  return btoa(input).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
 function base64UrlDecodeString(input) {
   const normalized = String(input || "").replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized + "===".slice((normalized.length + 3) % 4);
   return atob(padded);
+}
+
+async function mintAdminSessionCookieValue(env) {
+  const secret = getAdminSessionSecret(env);
+  if (!secret) throw new Error("missing_admin_session_secret");
+
+  const payload = {
+    sub: "admin",
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + ADMIN_SESSION_TTL_SECONDS,
+  };
+  const encoded = base64UrlEncodeString(JSON.stringify(payload));
+  const sig = await hmacSha256Hex(encoded, secret);
+  return `${encoded}.${sig}`;
 }
 
 function readAdminSessionCookie(req) {
@@ -687,9 +1165,706 @@ async function readValidAdminSessionCookie(req, env) {
   }
 }
 
-function isConfirmKeyAuthed(req, env) {
-  const ck = (req.headers.get("X-Confirm-Key") || "").trim();
-  return Boolean(env.CONFIRM_KEY && ck && ck === env.CONFIRM_KEY);
+function buildAdminSessionCookie(value, maxAgeSeconds) {
+  return [
+    `${ADMIN_SESSION_COOKIE}=${value}`,
+    "Path=/",
+    `Max-Age=${Math.max(0, Number(maxAgeSeconds || 0))}`,
+    "HttpOnly",
+    "Secure",
+    "SameSite=None",
+  ].join("; ");
+}
+
+function clearAdminSessionCookie() {
+  return [
+    `${ADMIN_SESSION_COOKIE}=`,
+    "Path=/",
+    "Max-Age=0",
+    "HttpOnly",
+    "Secure",
+    "SameSite=None",
+  ].join("; ");
+}
+
+/* =========================
+   Model Session facade
+========================= */
+class ModelSessionHttpError extends Error {
+  constructor(status, code, message, detail = null) {
+    super(message || code || "model_session_error");
+    this.status = status;
+    this.code = code;
+    this.detail = detail;
+  }
+}
+
+const MODEL_SESSION_FLOW = [
+  "confirmed",
+  "reminder",
+  "en_route",
+  "arrived",
+  "met",
+  "final_payment_pending",
+  "final_payment_confirmed",
+  "work_started",
+  "work_finished",
+  "separated",
+  "review",
+  "payout",
+  "closed",
+];
+const MODEL_SESSION_FLOW_INDEX = new Map(MODEL_SESSION_FLOW.map((name, index) => [name, index]));
+
+function modelSessionError(status, code, message, detail = null) {
+  return json(
+    {
+      ok: false,
+      error: {
+        code,
+        message,
+      },
+      ...(detail ? { detail } : {}),
+    },
+    status
+  );
+}
+
+function normalizeModelSessionError(error) {
+  if (error instanceof ModelSessionHttpError) return error;
+
+  const message = str(error?.message || error || "model_session_failed");
+  const table = {
+    missing_t: [400, "MISSING_T"],
+    invalid_request_body: [400, "INVALID_REQUEST_BODY"],
+    missing_status: [400, "MISSING_STATUS"],
+    invalid_status: [400, "INVALID_STATUS"],
+    missing_confirm_key: [503, "SERVICE_UNAVAILABLE"],
+    invalid_token_format: [401, "INVALID_TOKEN"],
+    invalid_token_signature: [401, "INVALID_TOKEN"],
+    invalid_invite_payload: [401, "INVALID_TOKEN"],
+    invalid_model_session_token: [401, "INVALID_TOKEN"],
+    expired_invite_token: [410, "TOKEN_EXPIRED"],
+    missing_model_session_assignment: [400, "INVALID_TOKEN"],
+    session_not_found: [404, "SESSION_NOT_FOUND"],
+    session_job_not_found: [404, "SESSION_JOB_NOT_FOUND"],
+    missing_job_id: [409, "MISSING_JOB_ID"],
+    events_worker_not_configured: [503, "EVENTS_WORKER_NOT_CONFIGURED"],
+  };
+  const [status, code] = table[message] || [500, "MODEL_SESSION_FAILED"];
+  return new ModelSessionHttpError(status, code, message);
+}
+
+function readModelSessionToken(req, body = null) {
+  const url = new URL(req.url);
+  return str(url.searchParams.get("t") || body?.t || "");
+}
+
+function normalizeModelSessionStatus(value) {
+  const raw = str(value).toLowerCase().replace(/\s+/g, "_");
+  return MODEL_SESSION_STATUS_ALIASES[raw] || raw;
+}
+
+function uniqueValues(values) {
+  return [...new Set(values.map((value) => str(value)).filter(Boolean))];
+}
+
+function exactModelFormula(field, value) {
+  return `{${field}}="${escapeFormulaValue(value)}"`;
+}
+
+function modelSessionField(env, envKey, fallback) {
+  return str(env?.[envKey] || fallback);
+}
+
+function modelSessionTable(env) {
+  return str(env.AIRTABLE_TABLE_SESSIONS || "sessions");
+}
+
+function modelPaymentsTable(env) {
+  return str(env.AIRTABLE_TABLE_PAYMENTS || "payments");
+}
+
+function modelJobsTable(env) {
+  return str(env.AIRTABLE_TABLE_JOBS || "jobs");
+}
+
+function sessionIdFromModelFields(env, fields) {
+  return str(
+    pickAny(fields, [
+      modelSessionField(env, "AT_SESSIONS__SESSION_ID", "session_id"),
+      "session_id",
+      "Session ID",
+      "SESSION_ID",
+    ])
+  );
+}
+
+function paymentRefFromModelFields(env, fields) {
+  return str(
+    pickAny(fields, [
+      modelSessionField(env, "AT_SESSIONS__PAYMENT_REF", "payment_ref"),
+      "payment_ref",
+      "Payment Reference",
+      "paymentReference",
+    ])
+  );
+}
+
+function modelNameFromSessionFields(fields) {
+  return str(pickAny(fields, ["model_name", "Model Name", "model_display_name", "Model Display Name"]));
+}
+
+function modelRecordIdFromSessionFields(fields) {
+  return str(pickAny(fields, ["model_record_id", "Model Record ID", "model_id", "Model", "model_airtable_id"]));
+}
+
+function listFieldStrings(fields, names) {
+  const out = [];
+  for (const name of names) {
+    const value = fields?.[name];
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const text = str(firstScalar(item));
+        if (text) out.push(text);
+      }
+    } else {
+      const text = str(firstScalar(value));
+      if (text) out.push(text);
+    }
+  }
+  return uniqueValues(out);
+}
+
+function isAssignedModelSession(record, invite, assignmentKey, env) {
+  const fields = record?.fields || {};
+  const sessionId = sessionIdFromModelFields(env, fields);
+  const paymentRef = paymentRefFromModelFields(env, fields);
+  if (sessionId !== assignmentKey && paymentRef !== assignmentKey) return false;
+
+  const tokenModelRecordId = str(invite.model_record_id);
+  const sessionModelIds = listFieldStrings(fields, [
+    "model_record_id",
+    "Model Record ID",
+    "model_id",
+    "Model",
+    "model_airtable_id",
+  ]);
+  if (tokenModelRecordId && sessionModelIds.length && !sessionModelIds.includes(tokenModelRecordId)) {
+    return false;
+  }
+
+  const tokenModelName = normalizeLooseToken(invite.model_name);
+  const sessionModelName = normalizeLooseToken(modelNameFromSessionFields(fields));
+  if (tokenModelName && sessionModelName && tokenModelName !== sessionModelName) {
+    return false;
+  }
+
+  return true;
+}
+
+function base64UrlDecodeUtf8(input) {
+  const normalized = String(input || "").replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new TextDecoder().decode(bytes);
+}
+
+async function verifyModelInviteToken(token, env) {
+  const secret = str(env.CONFIRM_KEY || env.INTERNAL_TOKEN);
+  if (!secret) throw new Error("missing_confirm_key");
+
+  const parts = str(token).split(".");
+  if (parts.length !== 2) throw new Error("invalid_token_format");
+
+  const [encodedPayload, signature] = parts;
+  const expected = await hmacSha256Hex(encodedPayload, secret);
+  if (signature !== expected) throw new Error("invalid_token_signature");
+
+  let payload = null;
+  try {
+    payload = JSON.parse(base64UrlDecodeUtf8(encodedPayload));
+  } catch {
+    throw new Error("invalid_invite_payload");
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (
+    payload?.kind !== "customer_invite" ||
+    payload?.role !== "model" ||
+    payload?.lane !== "model_console" ||
+    !payload?.invite_id ||
+    !payload?.exp
+  ) {
+    throw new Error("invalid_model_session_token");
+  }
+
+  if (Number(payload.exp) <= now) throw new Error("expired_invite_token");
+  return payload;
+}
+
+function modelSessionLookupFormulas(env, assignmentKey) {
+  return uniqueValues([
+    modelSessionField(env, "AT_SESSIONS__SESSION_ID", "session_id"),
+    "session_id",
+    "Session ID",
+    "SESSION_ID",
+    modelSessionField(env, "AT_SESSIONS__PAYMENT_REF", "payment_ref"),
+    "payment_ref",
+    "Payment Reference",
+  ]).map((field) => exactModelFormula(field, assignmentKey));
+}
+
+async function resolveModelSessionContext(env, token) {
+  const invite = await verifyModelInviteToken(token, env);
+  const assignmentKey = str(invite.immigration_id);
+  if (!assignmentKey) throw new Error("missing_model_session_assignment");
+
+  const table = modelSessionTable(env);
+  for (const formula of modelSessionLookupFormulas(env, assignmentKey)) {
+    const record = await airtableFindOne(env, table, formula);
+    if (record && isAssignedModelSession(record, invite, assignmentKey, env)) {
+      return { invite, assignmentKey, session: record };
+    }
+  }
+
+  throw new Error("session_not_found");
+}
+
+function jobIdFromFields(fields) {
+  return str(pickAny(fields, ["job_id", "Job ID", "jobId", "job_record_id", "Job Record ID"]));
+}
+
+function modelJobLookupFormulas(env, session) {
+  const fields = session?.fields || {};
+  const sessionId = sessionIdFromModelFields(env, fields);
+  const paymentRef = paymentRefFromModelFields(env, fields);
+  const jobId = jobIdFromFields(fields);
+  const formulas = [];
+
+  for (const field of uniqueValues(["job_id", "Job ID"])) {
+    if (jobId) formulas.push(exactModelFormula(field, jobId));
+  }
+  for (const field of uniqueValues(["session_id", "Session ID"])) {
+    if (sessionId) formulas.push(exactModelFormula(field, sessionId));
+  }
+  for (const field of uniqueValues(["payment_ref", "Payment Reference"])) {
+    if (paymentRef) formulas.push(exactModelFormula(field, paymentRef));
+  }
+
+  return uniqueValues(formulas);
+}
+
+async function findModelSessionJob(env, session) {
+  const table = modelJobsTable(env);
+  for (const formula of modelJobLookupFormulas(env, session)) {
+    const record = await airtableFindOne(env, table, formula);
+    if (record) return record;
+  }
+  return null;
+}
+
+async function airtableListRecordsByFormula(env, tableName, formula, limit = 20) {
+  const params = new URLSearchParams();
+  params.set("pageSize", String(Math.max(1, Math.min(Number(limit) || 20, 100))));
+  params.set("filterByFormula", formula);
+  const r = await airtableFetch(env, `/${encodeURIComponent(tableName)}?${params.toString()}`);
+  if (!r.ok) return [];
+  return (r.data?.records || []).map((rec) => ({
+    id: rec.id,
+    fields: rec.fields || {},
+    createdTime: rec.createdTime || "",
+  }));
+}
+
+async function findModelPaymentRecords(env, session) {
+  const fields = session?.fields || {};
+  const sessionId = sessionIdFromModelFields(env, fields);
+  const paymentRef = paymentRefFromModelFields(env, fields);
+  const table = modelPaymentsTable(env);
+  const formulas = [];
+
+  for (const field of uniqueValues(["session_id", "Session ID"])) {
+    if (sessionId) formulas.push(exactModelFormula(field, sessionId));
+  }
+  for (const field of uniqueValues([
+    modelSessionField(env, "AT_PAYMENTS__PAYMENT_REF", "payment_ref"),
+    "payment_ref",
+    "Payment Reference",
+  ])) {
+    if (paymentRef) formulas.push(exactModelFormula(field, paymentRef));
+  }
+
+  const records = [];
+  const seen = new Set();
+  for (const formula of uniqueValues(formulas)) {
+    for (const record of await airtableListRecordsByFormula(env, table, formula)) {
+      if (!record?.id || seen.has(record.id)) continue;
+      seen.add(record.id);
+      records.push(record);
+    }
+  }
+  return records;
+}
+
+function parseJobEvents(fields) {
+  try {
+    const parsed = JSON.parse(str(fields?.events_json || "[]"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function collectModelLifecycle(job) {
+  const seen = new Set();
+  let current = "";
+  let currentIndex = -1;
+  const mark = (value) => {
+    const normalized = normalizeModelSessionStatus(value);
+    if (!MODEL_SESSION_FLOW_INDEX.has(normalized)) return;
+    seen.add(normalized);
+    const index = MODEL_SESSION_FLOW_INDEX.get(normalized);
+    if (index >= currentIndex) {
+      current = normalized;
+      currentIndex = index;
+    }
+  };
+
+  for (const event of parseJobEvents(job?.fields || {})) mark(event?.event);
+  mark(job?.fields?.status);
+  return { seen, current, currentIndex };
+}
+
+function paymentValue(fields, env, envKey, aliases) {
+  return str(pickAny(fields, [modelSessionField(env, envKey, aliases[0]), ...aliases]));
+}
+
+function normalizePaymentWord(value) {
+  return str(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function isConfirmedPaymentValue(value) {
+  const raw = normalizePaymentWord(value);
+  if (!raw || raw.includes("deposit")) return false;
+  if (raw.includes("unpaid") || raw.includes("not_paid") || raw.includes("pending") || raw.includes("failed")) {
+    return false;
+  }
+  if (raw.includes("verified") || raw.includes("success") || raw.includes("succeeded") || raw.includes("cleared")) {
+    return true;
+  }
+  if (raw.includes("paid") || raw.includes("complete")) {
+    return true;
+  }
+  return [
+    "paid",
+    "success",
+    "succeeded",
+    "verified",
+    "cleared",
+    "complete",
+    "completed",
+    "final_paid",
+    "final_payment_paid",
+    "final_payment_confirmed",
+  ].includes(raw);
+}
+
+function isFinalStageValue(value) {
+  const raw = normalizePaymentWord(value);
+  return ["final", "full", "balance", "final_payment", "remaining_balance"].includes(raw);
+}
+
+function isFinalPaymentRecord(record, env) {
+  const fields = record?.fields || {};
+  const stage = paymentValue(fields, env, "AT_PAYMENTS__PAYMENT_STAGE", [
+    "payment_stage",
+    "payment_type",
+    "stage",
+    "Payment Stage",
+    "Payment Type",
+  ]);
+  const paymentStatus = paymentValue(fields, env, "AT_PAYMENTS__PAYMENT_STATUS", [
+    "payment_status",
+    "Payment Status",
+    "status",
+  ]);
+  const verificationStatus = paymentValue(fields, env, "AT_PAYMENTS__VERIFICATION_STATUS", [
+    "verification_status",
+    "Verification Status",
+  ]);
+
+  return isFinalStageValue(stage) && (isConfirmedPaymentValue(paymentStatus) || isConfirmedPaymentValue(verificationStatus));
+}
+
+function derivePaymentSummary(env, session, job, paymentRecords) {
+  const sessionFields = session?.fields || {};
+  const lifecycle = collectModelLifecycle(job);
+  const eventConfirmed = lifecycle.seen.has("final_payment_confirmed");
+  const finalRecord = (paymentRecords || []).find((record) => isFinalPaymentRecord(record, env));
+  const finalFields = finalRecord?.fields || {};
+  const sessionPaymentStatus = str(
+    pickAny(sessionFields, [
+      modelSessionField(env, "AT_SESSIONS__PAYMENT_STATUS", "payment_status"),
+      "payment_status",
+      "Payment Status",
+      "payment_stage",
+    ])
+  );
+  const sessionFinalStatus = str(
+    pickAny(sessionFields, [
+      "final_payment_status",
+      "Final Payment Status",
+      "final_payment_confirmed",
+      "Final Payment Confirmed",
+    ])
+  );
+  const recordPaymentStatus = paymentValue(finalFields, env, "AT_PAYMENTS__PAYMENT_STATUS", [
+    "payment_status",
+    "Payment Status",
+    "status",
+  ]);
+  const recordVerificationStatus = paymentValue(finalFields, env, "AT_PAYMENTS__VERIFICATION_STATUS", [
+    "verification_status",
+    "Verification Status",
+  ]);
+  const finalPaymentStatus =
+    eventConfirmed
+      ? "final_payment_confirmed"
+      : sessionFinalStatus || recordVerificationStatus || recordPaymentStatus || sessionPaymentStatus || "pending";
+
+  return {
+    payment_status: sessionPaymentStatus || recordPaymentStatus || recordVerificationStatus || "pending",
+    final_payment_status: finalPaymentStatus,
+    final_payment_confirmed:
+      eventConfirmed ||
+      isConfirmedPaymentValue(sessionFinalStatus) ||
+      Boolean(finalRecord) ||
+      isConfirmedPaymentValue(sessionPaymentStatus),
+  };
+}
+
+function buildModelDashboardSession(env, context, job, paymentSummary) {
+  const fields = context.session?.fields || {};
+  const lifecycle = collectModelLifecycle(job);
+  const status =
+    lifecycle.current ||
+    str(pickAny(fields, [modelSessionField(env, "AT_SESSIONS__STATUS", "status"), "status", "session_status", "Status"])) ||
+    "confirmed";
+  const startTime = str(pickAny(fields, ["start_time", "Start Time", "start", "schedule_start_at"]));
+  const endTime = str(pickAny(fields, ["end_time", "End Time", "end", "schedule_end_at"]));
+  const gpsStatus = str(pickAny(fields, ["gps_status", "GPS Status", "live_location_status", "realtime_status"]));
+  const consolePopup = str(pickAny(fields, ["console_popup", "Console Popup", "model_console_popup"]));
+
+  return {
+    session_id: sessionIdFromModelFields(env, fields) || context.assignmentKey,
+    status,
+    job_type: str(
+      pickAny(fields, [
+        "job_type",
+        "work_type",
+        "Job Type",
+        "Work Type",
+        modelSessionField(env, "AT_SESSIONS__PACKAGE_CODE", "package_code"),
+        "package_code",
+      ])
+    ),
+    job_date: str(pickAny(fields, ["job_date", "service_date", "Date", "Service Date"])),
+    start_time: startTime,
+    end_time: endTime,
+    location_name: str(pickAny(fields, ["location_name", "Location Name", "location", "meeting_point_text"])),
+    google_map_url: str(pickAny(fields, ["google_map_url", "Google Map URL", "google_maps_url", "map_url"])),
+    amount_thb: toNum(
+      pickAny(fields, [
+        modelSessionField(env, "AT_SESSIONS__AMOUNT_THB", "amount_thb"),
+        "amount_thb",
+        "amount_total_thb",
+        "final_price_thb",
+        "Amount THB",
+        "Final Price THB",
+      ])
+    ),
+    payment_status: paymentSummary.payment_status,
+    final_payment_status: paymentSummary.final_payment_status,
+    gps_status: gpsStatus || (status === "en_route" ? "active" : "idle"),
+    client_vibe: str(pickAny(fields, ["client_vibe", "Client Vibe", "model_client_vibe"])),
+    suggested_tone: str(pickAny(fields, ["suggested_tone", "Suggested Tone", "model_suggested_tone"])),
+    caution: str(pickAny(fields, ["model_caution", "model_console_caution", "caution", "Caution"])),
+    do_note: str(pickAny(fields, ["do_note", "Do Note", "model_do_note"])),
+    dont_note: str(pickAny(fields, ["dont_note", "Don't Note", "dont_note_model", "model_dont_note"])),
+    last_update:
+      str(pickAny(job?.fields || {}, ["last_update_at", "updated_at", "Last Update"])) ||
+      str(pickAny(fields, ["last_update", "updated_at", "Last Update", "last_modified"])),
+    console_popup:
+      consolePopup ||
+      (paymentSummary.final_payment_confirmed ? "" : "Start Work is locked until final payment is confirmed."),
+  };
+}
+
+async function handleModelSessionDashboard(req, env) {
+  const token = readModelSessionToken(req);
+  if (!token) return modelSessionError(400, "MISSING_T", "missing_t");
+
+  try {
+    const context = await resolveModelSessionContext(env, token);
+    const [job, paymentRecords] = await Promise.all([
+      findModelSessionJob(env, context.session),
+      findModelPaymentRecords(env, context.session),
+    ]);
+    const paymentSummary = derivePaymentSummary(env, context.session, job, paymentRecords);
+
+    return json({
+      ok: true,
+      session: buildModelDashboardSession(env, context, job, paymentSummary),
+    });
+  } catch (error) {
+    const err = normalizeModelSessionError(error);
+    return modelSessionError(err.status, err.code, err.message, err.detail);
+  }
+}
+
+async function callEventsWorkerModelEvent(env, payload) {
+  const confirmKey = str(env.CONFIRM_KEY);
+  if (!confirmKey) throw new ModelSessionHttpError(503, "SERVICE_UNAVAILABLE", "missing_confirm_key");
+
+  const requestInit = {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Confirm-Key": confirmKey,
+    },
+    body: JSON.stringify(payload || {}),
+  };
+  const base = str(env.EVENTS_WORKER_BASE_URL || env.EVENTS_BASE_URL || "").replace(/\/+$/, "");
+  const res = env.EVENTS_WORKER
+    ? await env.EVENTS_WORKER.fetch(new Request("https://events-worker.internal/v1/model/console/event", requestInit))
+    : base
+      ? await fetch(`${base}/v1/model/console/event`, requestInit)
+      : null;
+
+  if (!res) throw new ModelSessionHttpError(503, "EVENTS_WORKER_NOT_CONFIGURED", "events_worker_not_configured");
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const code = data?.error || data?.code || "events_worker_failed";
+    throw new ModelSessionHttpError(res.status, String(code).toUpperCase(), String(code), data);
+  }
+  return data;
+}
+
+async function ensureFinalPaymentConfirmedInEvents(env, job, eventPayload) {
+  const lifecycle = collectModelLifecycle(job);
+  const workStartedIndex = MODEL_SESSION_FLOW_INDEX.get("work_started");
+  if (lifecycle.seen.has("final_payment_confirmed") || lifecycle.currentIndex >= workStartedIndex) return [];
+
+  const writes = [];
+  if (!lifecycle.seen.has("final_payment_pending")) {
+    writes.push(await callEventsWorkerModelEvent(env, { ...eventPayload, event: "final_payment_pending" }));
+  }
+  writes.push(await callEventsWorkerModelEvent(env, { ...eventPayload, event: "final_payment_confirmed" }));
+  return writes;
+}
+
+async function handleModelSessionStatus(req, env) {
+  const body = await safeJson(req);
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return modelSessionError(400, "INVALID_REQUEST_BODY", "invalid_request_body");
+  }
+
+  const token = readModelSessionToken(req, body);
+  const status = normalizeModelSessionStatus(body.status || body.event || body.action);
+  if (!token) return modelSessionError(400, "MISSING_T", "missing_t");
+  if (!status) return modelSessionError(400, "MISSING_STATUS", "missing_status");
+  if (!MODEL_SESSION_ALLOWED_STATUSES.has(status)) {
+    return modelSessionError(400, "INVALID_STATUS", "invalid_status", {
+      allowed: [...MODEL_SESSION_ALLOWED_STATUSES],
+    });
+  }
+
+  try {
+    const context = await resolveModelSessionContext(env, token);
+    const job = await findModelSessionJob(env, context.session);
+    if (!job) throw new Error("session_job_not_found");
+
+    const jobId = jobIdFromFields(job.fields || {}) || jobIdFromFields(context.session.fields || {});
+    if (!jobId) throw new Error("missing_job_id");
+
+    const paymentRecords = await findModelPaymentRecords(env, context.session);
+    const paymentSummary = derivePaymentSummary(env, context.session, job, paymentRecords);
+    if (status === "work_started" && !paymentSummary.final_payment_confirmed) {
+      return modelSessionError(423, "FINAL_PAYMENT_REQUIRED", "final_payment_required_before_work_started");
+    }
+
+    const sessionId = sessionIdFromModelFields(env, context.session.fields || {}) || context.assignmentKey;
+    const eventPayload = {
+      job_id: jobId,
+      session_id: sessionId,
+      event: status,
+      eta_text: str(body.eta_text || body.eta || ""),
+      lat: body.lat,
+      lng: body.lng,
+      source_surface: "model_dashboard",
+      source: "admin_worker_model_session_facade",
+    };
+    const preflight_events =
+      status === "work_started"
+        ? await ensureFinalPaymentConfirmedInEvents(env, job, {
+            ...eventPayload,
+            event: "final_payment_confirmed",
+            payment_status: paymentSummary.payment_status,
+            final_payment_status: paymentSummary.final_payment_status,
+          })
+        : [];
+    const events = await callEventsWorkerModelEvent(env, eventPayload);
+
+    return json({
+      ok: true,
+      session_id: sessionId,
+      status: events?.status || status,
+      preflight_events,
+      events,
+    });
+  } catch (error) {
+    const err = normalizeModelSessionError(error);
+    return modelSessionError(err.status, err.code, err.message, err.detail);
+  }
+}
+
+async function handleModelSessionStub(req, env, path) {
+  const body = await safeJson(req);
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return modelSessionError(400, "INVALID_REQUEST_BODY", "invalid_request_body");
+  }
+
+  const token = readModelSessionToken(req, body);
+  if (!token) return modelSessionError(400, "MISSING_T", "missing_t");
+
+  try {
+    const context = await resolveModelSessionContext(env, token);
+    const sessionId = sessionIdFromModelFields(env, context.session.fields || {}) || context.assignmentKey;
+    const action = path === MODEL_SESSION_GPS_PATH
+      ? "gps"
+      : path === MODEL_SESSION_EMERGENCY_PATH
+        ? "emergency"
+        : "update";
+
+    return json(
+      {
+        ok: true,
+        stubbed: true,
+        implemented: false,
+        action,
+        session_id: sessionId,
+        message: "Accepted by admin-worker facade without writing truth state.",
+      },
+      202
+    );
+  } catch (error) {
+    const err = normalizeModelSessionError(error);
+    return modelSessionError(err.status, err.code, err.message, err.detail);
+  }
 }
 
 /* =========================
@@ -737,6 +1912,22 @@ function compactObject(value) {
       return true;
     })
   );
+}
+
+function parseCsv(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function pickAllowedFields(obj, allowed) {
+  const out = {};
+  const source = readObject(obj);
+  for (const key of allowed) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) out[key] = source[key];
+  }
+  return out;
 }
 
 function memberRecordData(record) {
@@ -982,6 +2173,2682 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function renderCreateSessionRebuiltPage(method) {
+  if (method === "HEAD") {
+    return new Response(null, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
+  const html = `<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SIGIL Internal Create Session</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+      .mmd-session-rebuilt {
+        --bg: #060504;
+        --panel: rgba(13, 11, 8, 0.88);
+        --line: rgba(218, 176, 92, 0.20);
+        --line-2: rgba(218, 176, 92, 0.45);
+        --gold: #d9b66d;
+        --gold-soft: #f4d58f;
+        --text: #f7ecd9;
+        --muted: rgba(247, 236, 217, 0.64);
+        --radius: 20px;
+
+        position: relative;
+        min-height: 100vh;
+        overflow: hidden;
+        color: var(--text);
+        background:
+          radial-gradient(circle at 14% 8%, rgba(217, 182, 109, 0.13), transparent 26%),
+          radial-gradient(circle at 88% 14%, rgba(217, 182, 109, 0.08), transparent 34%),
+          linear-gradient(135deg, #060504 0%, #100c08 50%, #050403 100%);
+        font-family: "Noto Sans Thai", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .mmd-session-rebuilt * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #060504;
+      }
+
+      .mmd-session-rebuilt__pattern {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.42;
+        background:
+          linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px),
+          linear-gradient(180deg, rgba(255,255,255,0.016) 1px, transparent 1px),
+          linear-gradient(135deg, transparent 0 48%, rgba(217,182,109,0.07) 49%, transparent 51% 100%);
+        background-size: 72px 72px, 72px 72px, 240px 240px;
+        mask-image: linear-gradient(to bottom, black 0%, transparent 100%);
+      }
+
+      .mmd-session-rebuilt__wrap {
+        position: relative;
+        z-index: 1;
+        width: min(1680px, calc(100% - 36px));
+        margin: 0 auto;
+        padding: 18px 0 64px;
+      }
+
+      .mmd-session-rebuilt__hero {
+        position: relative;
+        min-height: clamp(640px, 84vh, 900px);
+        overflow: hidden;
+        border: 1px solid rgba(218, 176, 92, 0.28);
+        border-radius: 34px;
+        background:
+          radial-gradient(circle at top left, rgba(217,182,109,0.12), transparent 34%),
+          rgba(8, 6, 4, 0.92);
+        box-shadow:
+          0 30px 90px rgba(0,0,0,0.48),
+          inset 0 1px 0 rgba(255,255,255,0.06);
+      }
+
+      .mmd-session-rebuilt__hero-bg {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center center;
+        transform: scale(1.02);
+        filter: brightness(0.9) contrast(1.04) saturate(0.98);
+      }
+
+      .mmd-session-rebuilt__hero-overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        background:
+          linear-gradient(90deg,
+            rgba(4,4,4,0.78) 0%,
+            rgba(4,4,4,0.68) 20%,
+            rgba(4,4,4,0.48) 38%,
+            rgba(4,4,4,0.22) 58%,
+            rgba(4,4,4,0.12) 100%
+          ),
+          linear-gradient(180deg,
+            rgba(8,8,8,0.08) 0%,
+            rgba(8,8,8,0.22) 100%
+          );
+      }
+
+      .mmd-session-rebuilt__hero-grid {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        pointer-events: none;
+        opacity: 0.08;
+        background-image:
+          linear-gradient(rgba(217,182,109,0.14) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(217,182,109,0.14) 1px, transparent 1px);
+        background-size: 120px 120px;
+        mask-image: linear-gradient(90deg, black 0%, black 62%, transparent 90%);
+      }
+
+      .mmd-session-rebuilt__hero-content {
+        position: relative;
+        z-index: 3;
+        min-height: clamp(640px, 84vh, 900px);
+        width: min(760px, 52%);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: flex-start;
+        padding:
+          clamp(42px, 5vw, 82px)
+          clamp(42px, 5vw, 72px)
+          clamp(42px, 5vw, 82px)
+          clamp(72px, 7vw, 120px);
+      }
+
+      .mmd-session-rebuilt__hero-eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        margin: 0 0 22px;
+        color: var(--gold);
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+      }
+
+      .mmd-session-rebuilt__hero-eyebrow::before {
+        content: "";
+        width: 42px;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(244,213,143,0.92));
+      }
+
+      .mmd-session-rebuilt__hero-title {
+        margin: 0 0 28px;
+        font-size: clamp(70px, 8.8vw, 136px);
+        line-height: 0.86;
+        font-weight: 800;
+        letter-spacing: -0.07em;
+        color: transparent;
+        background: linear-gradient(180deg, #fff1b2 0%, #e2bc68 45%, #a9772f 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        text-shadow:
+          0 16px 44px rgba(0,0,0,0.28),
+          0 0 28px rgba(217,182,109,0.08);
+      }
+
+      .mmd-session-rebuilt__per-voice {
+        max-width: 640px;
+        color: rgba(255, 248, 235, 0.88);
+        font-size: clamp(17px, 1.35vw, 22px);
+        line-height: 1.86;
+        font-weight: 400;
+      }
+
+      .mmd-session-rebuilt__per-voice p {
+        margin: 0 0 21px;
+      }
+
+      .mmd-session-rebuilt__hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-top: 18px;
+      }
+
+      .mmd-session-rebuilt__status {
+        margin: 14px 0 0;
+        min-height: 22px;
+        color: rgba(247,236,217,0.68);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .mmd-session-rebuilt__status[data-tone="ok"] {
+        color: rgba(244, 213, 143, 0.94);
+      }
+
+      .mmd-session-rebuilt__status[data-tone="error"] {
+        color: rgba(255, 190, 145, 0.94);
+      }
+
+      .mmd-session-rebuilt__status[data-tone="loading"] {
+        color: rgba(247,236,217,0.78);
+      }
+
+      .mmd-session-rebuilt__ready-item,
+      .mmd-session-rebuilt__panel,
+      .mmd-session-rebuilt__actions {
+        border: 1px solid var(--line);
+        background:
+          linear-gradient(145deg, rgba(255,255,255,0.05), transparent 34%),
+          var(--panel);
+        box-shadow: 0 24px 72px rgba(0,0,0,0.32);
+        backdrop-filter: blur(18px);
+      }
+
+      .mmd-session-rebuilt__readiness {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        gap: 9px;
+        margin-top: 16px;
+      }
+
+      .mmd-session-rebuilt__ready-item {
+        border-radius: 16px;
+        padding: 12px;
+        min-height: 92px;
+      }
+
+      .mmd-session-rebuilt__ready-item span,
+      .mmd-session-rebuilt__panel-head p,
+      .mmd-session-rebuilt__checklist p {
+        display: block;
+        margin: 0 0 9px;
+        color: var(--gold);
+        font-size: 10px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      .mmd-session-rebuilt__ready-item strong {
+        display: block;
+        margin-top: 7px;
+        font-size: 13px;
+      }
+
+      .mmd-session-rebuilt__ready-item em {
+        display: block;
+        margin-top: 6px;
+        color: var(--muted);
+        font-style: normal;
+        font-size: 12px;
+      }
+
+      .mmd-session-rebuilt__ready-item.is-ready {
+        border-color: rgba(217,182,109,0.54);
+        background:
+          linear-gradient(145deg, rgba(217,182,109,0.12), transparent 42%),
+          var(--panel);
+      }
+
+      .mmd-session-rebuilt__grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 360px;
+        gap: 18px;
+        margin-top: 18px;
+        align-items: start;
+      }
+
+      .mmd-session-rebuilt__form {
+        display: grid;
+        gap: 14px;
+      }
+
+      .mmd-session-rebuilt__form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+
+      .mmd-session-rebuilt__panel {
+        border-radius: var(--radius);
+        padding: 18px;
+      }
+
+      .mmd-session-rebuilt__panel.is-hidden {
+        display: none;
+      }
+
+      .mmd-session-rebuilt__panel-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .mmd-session-rebuilt__panel-head h2 {
+        margin: 0;
+        font-size: 18px;
+        letter-spacing: -0.03em;
+      }
+
+      .mmd-session-rebuilt__fields {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+
+      .mmd-session-rebuilt__fields--three {
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      .mmd-session-rebuilt__fields--four {
+        grid-template-columns: repeat(4, 1fr);
+      }
+
+      .mmd-session-rebuilt label {
+        display: grid;
+        gap: 7px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .mmd-session-rebuilt input,
+      .mmd-session-rebuilt select,
+      .mmd-session-rebuilt textarea {
+        width: 100%;
+        border: 1px solid rgba(217,182,109,0.22);
+        border-radius: 13px;
+        padding: 12px 13px;
+        color: var(--text);
+        background: rgba(0,0,0,0.28);
+        font: inherit;
+        font-size: 14px;
+        outline: none;
+      }
+
+      .mmd-session-rebuilt textarea {
+        resize: vertical;
+      }
+
+      .mmd-session-rebuilt input:focus,
+      .mmd-session-rebuilt select:focus,
+      .mmd-session-rebuilt textarea:focus {
+        border-color: rgba(217,182,109,0.72);
+        box-shadow: 0 0 0 4px rgba(217,182,109,0.08);
+      }
+
+      .mmd-session-rebuilt__full {
+        margin-top: 12px;
+      }
+
+      .mmd-session-rebuilt__work-explain,
+      .mmd-session-rebuilt__warning,
+      .mmd-session-rebuilt__empty {
+        margin-top: 12px;
+        border: 1px solid rgba(217,182,109,0.16);
+        border-radius: 14px;
+        padding: 12px 14px;
+        color: var(--muted);
+        background: rgba(0,0,0,0.20);
+        line-height: 1.65;
+        font-size: 13px;
+      }
+
+      .mmd-session-rebuilt__warning {
+        border-color: rgba(224,167,95,0.34);
+        color: rgba(255,233,200,0.88);
+        background: rgba(224,167,95,0.08);
+      }
+
+      .mmd-session-rebuilt__searchbar {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .mmd-session-rebuilt__model-results {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .mmd-session-rebuilt__model-card {
+        position: relative;
+        overflow: hidden;
+        width: 100%;
+        display: grid;
+        grid-template-columns: 48px 1fr auto;
+        gap: 13px;
+        align-items: center;
+        border: 1px solid rgba(217,182,109,0.18);
+        border-radius: 18px;
+        padding: 13px;
+        color: inherit;
+        background:
+          linear-gradient(145deg, rgba(255,255,255,0.035), transparent 38%),
+          rgba(0,0,0,0.22);
+        cursor: pointer;
+        text-align: left;
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,0.04),
+          0 10px 26px rgba(0,0,0,0.22);
+        transition:
+          transform 180ms ease,
+          border-color 180ms ease,
+          box-shadow 180ms ease,
+          background 180ms ease;
+      }
+
+      .mmd-session-rebuilt__model-card::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(circle at 0% 0%, rgba(217,182,109,0.16), transparent 34%),
+          linear-gradient(135deg, rgba(217,182,109,0.07), transparent 54%);
+        opacity: 0;
+        transition: opacity 180ms ease;
+      }
+
+      .mmd-session-rebuilt__model-card:hover {
+        transform: translateY(-1px);
+        border-color: rgba(217,182,109,0.48);
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,0.06),
+          0 14px 34px rgba(0,0,0,0.34);
+      }
+
+      .mmd-session-rebuilt__model-card:hover::before {
+        opacity: 0.7;
+      }
+
+      .mmd-session-rebuilt__model-card.is-selected {
+        border-color: rgba(241,210,139,0.78);
+        background:
+          linear-gradient(145deg, rgba(217,182,109,0.14), transparent 46%),
+          rgba(0,0,0,0.30);
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,0.08),
+          0 16px 40px rgba(0,0,0,0.38),
+          0 0 0 4px rgba(217,182,109,0.045);
+      }
+
+      .mmd-session-rebuilt__model-avatar {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        place-items: center;
+        width: 48px;
+        height: 48px;
+        border: 1px solid rgba(217,182,109,0.34);
+        border-radius: 16px;
+        color: #140f08;
+        background: linear-gradient(180deg, #f1d28b, #ad7d34);
+        font-weight: 900;
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,0.35),
+          0 8px 22px rgba(0,0,0,0.28);
+      }
+
+      .mmd-session-rebuilt__model-card > div {
+        position: relative;
+        z-index: 1;
+      }
+
+      .mmd-session-rebuilt__model-card strong {
+        display: block;
+        color: var(--text);
+        font-size: 15px;
+        letter-spacing: -0.01em;
+      }
+
+      .mmd-session-rebuilt__model-card span {
+        display: block;
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .mmd-session-rebuilt__model-tags {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 6px;
+        max-width: 280px;
+      }
+
+      .mmd-session-rebuilt__tag {
+        border: 1px solid rgba(217,182,109,0.18);
+        border-radius: 999px;
+        padding: 5px 8px;
+        color: var(--muted);
+        font-size: 11px;
+        font-style: normal;
+        white-space: nowrap;
+      }
+
+      .mmd-session-rebuilt__tag.is-online,
+      .mmd-session-rebuilt__tag.is-age {
+        color: #120e08;
+        border-color: transparent;
+        background: linear-gradient(135deg, #f1d28b, #b88636);
+        font-weight: 800;
+      }
+
+      .mmd-session-rebuilt__tag.is-missing {
+        color: rgba(255,233,200,0.92);
+        border-color: rgba(224,167,95,0.34);
+        background: rgba(224,167,95,0.08);
+      }
+
+      .mmd-session-rebuilt__preview {
+        display: grid;
+        gap: 8px;
+      }
+
+      .mmd-session-rebuilt__preview div,
+      .mmd-session-rebuilt__route,
+      .mmd-session-rebuilt__checklist {
+        border: 1px solid rgba(217,182,109,0.16);
+        border-radius: 14px;
+        padding: 12px;
+        background: rgba(0,0,0,0.2);
+      }
+
+      .mmd-session-rebuilt__preview span,
+      .mmd-session-rebuilt__route span {
+        display: block;
+        color: var(--muted);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .mmd-session-rebuilt__preview strong,
+      .mmd-session-rebuilt__route strong {
+        display: block;
+        margin-top: 6px;
+        font-size: 13px;
+        word-break: break-word;
+      }
+
+      .mmd-session-rebuilt__sticky {
+        position: sticky;
+        top: 18px;
+      }
+
+      .mmd-session-rebuilt__checklist {
+        display: grid;
+        gap: 9px;
+        margin-top: 12px;
+      }
+
+      .mmd-session-rebuilt__checklist label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .mmd-session-rebuilt__checklist input {
+        width: auto;
+      }
+
+      .mmd-session-rebuilt__route {
+        margin-top: 12px;
+      }
+
+      .mmd-session-rebuilt__route p {
+        margin: 9px 0 0;
+        color: var(--muted);
+        line-height: 1.65;
+        font-size: 12px;
+      }
+
+      .mmd-session-rebuilt__btn,
+      .mmd-session-rebuilt__panel-head button,
+      .mmd-session-rebuilt__searchbar button {
+        position: relative;
+        isolation: isolate;
+        border: 1px solid rgba(217, 182, 109, 0.28);
+        border-radius: 999px;
+        color: var(--text);
+        background:
+          linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.015)),
+          rgba(8, 6, 4, 0.72);
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,0.08),
+          0 10px 26px rgba(0,0,0,0.28);
+        cursor: pointer;
+        transition:
+          transform 180ms ease,
+          border-color 180ms ease,
+          background 180ms ease,
+          box-shadow 180ms ease,
+          color 180ms ease;
+      }
+
+      .mmd-session-rebuilt__btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 48px;
+        padding: 13px 20px;
+        font: inherit;
+        font-size: 14px;
+        text-decoration: none;
+      }
+
+      .mmd-session-rebuilt__btn:hover,
+      .mmd-session-rebuilt__panel-head button:hover,
+      .mmd-session-rebuilt__searchbar button:hover {
+        transform: translateY(-1px);
+        border-color: rgba(217,182,109,0.72);
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,0.12),
+          0 14px 34px rgba(0,0,0,0.38),
+          0 0 0 4px rgba(217,182,109,0.055);
+      }
+
+      .mmd-session-rebuilt__btn--primary,
+      .mmd-session-rebuilt__searchbar button {
+        border-color: rgba(241,210,139,0.74);
+        color: #130e07;
+        font-weight: 850;
+        letter-spacing: 0.025em;
+        background:
+          linear-gradient(180deg, #ffe2a0 0%, #d8ad59 46%, #a7742c 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,0.45),
+          inset 0 -1px 0 rgba(79,48,10,0.42),
+          0 16px 38px rgba(0,0,0,0.38),
+          0 0 28px rgba(217,182,109,0.12);
+      }
+
+      .mmd-session-rebuilt__btn--soft {
+        color: #f8e8c8;
+        border-color: rgba(217,182,109,0.38);
+        background:
+          linear-gradient(180deg, rgba(217,182,109,0.17), rgba(217,182,109,0.055)),
+          rgba(8,6,4,0.74);
+      }
+
+      .mmd-session-rebuilt__btn--ghost {
+        color: rgba(247,236,217,0.72);
+        border-color: rgba(247,236,217,0.14);
+        background:
+          linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.012)),
+          rgba(0,0,0,0.18);
+      }
+
+      .mmd-session-rebuilt__panel-head button {
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        color: var(--gold);
+        font-size: 14px;
+        flex: 0 0 auto;
+      }
+
+      .mmd-session-rebuilt__searchbar button {
+        border-radius: 13px;
+        padding: 0 18px;
+      }
+
+      .mmd-session-rebuilt__actions {
+        position: sticky;
+        bottom: 14px;
+        z-index: 8;
+        justify-content: flex-end;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 9px;
+        border-radius: var(--radius);
+        padding: 15px;
+        border: 1px solid rgba(217,182,109,0.24);
+        background:
+          linear-gradient(180deg, rgba(255,255,255,0.055), transparent 42%),
+          rgba(9,7,5,0.82);
+        backdrop-filter: blur(20px);
+        box-shadow:
+          0 20px 60px rgba(0,0,0,0.42),
+          inset 0 1px 0 rgba(255,255,255,0.06);
+      }
+
+      .mmd-session-rebuilt__actions::before {
+        content: "SESSION COMMAND";
+        margin-right: auto;
+        align-self: center;
+        color: var(--muted);
+        font-size: 10px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      .mmd-session-rebuilt__work-switch {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .mmd-session-rebuilt__work-switch button {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid rgba(217,182,109,0.18);
+        border-radius: 18px;
+        padding: 18px;
+        color: var(--text);
+        background:
+          linear-gradient(145deg, rgba(255,255,255,0.035), transparent 38%),
+          rgba(0,0,0,0.24);
+        text-align: left;
+        cursor: pointer;
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,0.04),
+          0 10px 26px rgba(0,0,0,0.22);
+        transition:
+          transform 180ms ease,
+          border-color 180ms ease,
+          background 180ms ease,
+          box-shadow 180ms ease;
+      }
+
+      .mmd-session-rebuilt__work-switch button::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(circle at 16% 0%, rgba(217,182,109,0.18), transparent 34%),
+          linear-gradient(135deg, rgba(217,182,109,0.08), transparent 52%);
+        opacity: 0;
+        transition: opacity 180ms ease;
+      }
+
+      .mmd-session-rebuilt__work-switch button::after {
+        content: "";
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        width: 9px;
+        height: 9px;
+        border-radius: 999px;
+        background: rgba(247,236,217,0.22);
+        transition: background 180ms ease, box-shadow 180ms ease;
+      }
+
+      .mmd-session-rebuilt__work-switch button span,
+      .mmd-session-rebuilt__work-switch button strong {
+        position: relative;
+        z-index: 1;
+      }
+
+      .mmd-session-rebuilt__work-switch button:hover {
+        transform: translateY(-1px);
+        border-color: rgba(217,182,109,0.46);
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,0.06),
+          0 14px 34px rgba(0,0,0,0.32);
+      }
+
+      .mmd-session-rebuilt__work-switch button:hover::before {
+        opacity: 0.65;
+      }
+
+      .mmd-session-rebuilt__work-switch button.is-active {
+        border-color: rgba(241,210,139,0.78);
+        background:
+          linear-gradient(145deg, rgba(217,182,109,0.16), transparent 48%),
+          rgba(0,0,0,0.30);
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,0.08),
+          0 16px 40px rgba(0,0,0,0.36),
+          0 0 0 4px rgba(217,182,109,0.045);
+      }
+
+      .mmd-session-rebuilt__work-switch button.is-active::before {
+        opacity: 1;
+      }
+
+      .mmd-session-rebuilt__work-switch button.is-active::after {
+        background: var(--gold);
+        box-shadow: 0 0 18px rgba(217,182,109,0.95);
+      }
+
+      .mmd-session-rebuilt__work-switch span {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--gold);
+        font-size: 14px;
+        font-weight: 850;
+        letter-spacing: 0.015em;
+      }
+
+      .mmd-session-rebuilt__work-switch strong {
+        display: block;
+        color: rgba(247,236,217,0.66);
+        font-size: 12px;
+        line-height: 1.58;
+        font-weight: 400;
+      }
+
+      @media (max-width: 1280px) {
+        .mmd-session-rebuilt__wrap {
+          width: min(1280px, calc(100% - 28px));
+        }
+
+        .mmd-session-rebuilt__hero {
+          min-height: 720px;
+        }
+
+        .mmd-session-rebuilt__hero-content {
+          width: min(700px, 56%);
+          min-height: 720px;
+          padding:
+            46px
+            42px
+            46px
+            clamp(52px, 6vw, 88px);
+        }
+
+        .mmd-session-rebuilt__hero-title {
+          font-size: clamp(66px, 8.3vw, 118px);
+        }
+
+        .mmd-session-rebuilt__per-voice {
+          font-size: clamp(16px, 1.35vw, 20px);
+        }
+      }
+
+      @media (max-width: 1180px) {
+        .mmd-session-rebuilt__grid {
+          grid-template-columns: 1fr;
+        }
+
+        .mmd-session-rebuilt__sticky {
+          position: static;
+        }
+
+        .mmd-session-rebuilt__readiness {
+          grid-template-columns: repeat(4, 1fr);
+        }
+      }
+
+      @media (max-width: 980px) {
+        .mmd-session-rebuilt__hero {
+          min-height: auto;
+        }
+
+        .mmd-session-rebuilt__hero-bg {
+          object-position: 62% center;
+          opacity: 0.82;
+          transform: scale(1.01);
+          filter: brightness(0.92) contrast(1.02) saturate(0.96);
+        }
+
+        .mmd-session-rebuilt__hero-overlay {
+          background:
+            linear-gradient(180deg,
+              rgba(4,4,4,0.44) 0%,
+              rgba(4,4,4,0.56) 28%,
+              rgba(4,4,4,0.74) 62%,
+              rgba(4,4,4,0.88) 100%
+            );
+        }
+
+        .mmd-session-rebuilt__hero-grid {
+          mask-image: linear-gradient(180deg, black 0%, transparent 100%);
+        }
+
+        .mmd-session-rebuilt__hero-content {
+          width: 100%;
+          max-width: none;
+          min-height: auto;
+          padding: 42px 30px 42px 30px;
+        }
+
+        .mmd-session-rebuilt__hero-title {
+          font-size: clamp(56px, 12vw, 92px);
+        }
+
+        .mmd-session-rebuilt__per-voice {
+          max-width: 100%;
+          font-size: 17px;
+          line-height: 1.76;
+        }
+      }
+
+      @media (max-width: 900px) {
+        .mmd-session-rebuilt__form-row,
+        .mmd-session-rebuilt__fields--four,
+        .mmd-session-rebuilt__fields--three {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .mmd-session-rebuilt__model-card {
+          grid-template-columns: 44px 1fr;
+        }
+
+        .mmd-session-rebuilt__model-tags {
+          grid-column: 1 / -1;
+          justify-content: flex-start;
+          max-width: none;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .mmd-session-rebuilt__wrap {
+          width: min(100% - 18px, 1280px);
+          padding-top: 10px;
+        }
+
+        .mmd-session-rebuilt__hero {
+          border-radius: 24px;
+        }
+
+        .mmd-session-rebuilt__hero-bg {
+          object-position: 66% top;
+        }
+
+        .mmd-session-rebuilt__hero-content {
+          padding: 32px 22px 34px 22px;
+        }
+
+        .mmd-session-rebuilt__hero-eyebrow {
+          font-size: 10px;
+          letter-spacing: 0.18em;
+          margin-bottom: 16px;
+        }
+
+        .mmd-session-rebuilt__hero-title {
+          font-size: clamp(48px, 16vw, 74px);
+          line-height: 0.92;
+          margin-bottom: 22px;
+        }
+
+        .mmd-session-rebuilt__per-voice {
+          font-size: 16px;
+          line-height: 1.72;
+        }
+
+        .mmd-session-rebuilt__per-voice p {
+          margin-bottom: 18px;
+        }
+
+        .mmd-session-rebuilt__hero-actions {
+          width: 100%;
+          flex-direction: column;
+        }
+
+        .mmd-session-rebuilt__fields,
+        .mmd-session-rebuilt__fields--three,
+        .mmd-session-rebuilt__fields--four,
+        .mmd-session-rebuilt__readiness,
+        .mmd-session-rebuilt__work-switch,
+        .mmd-session-rebuilt__form-row,
+        .mmd-session-rebuilt__searchbar {
+          grid-template-columns: 1fr;
+        }
+
+        .mmd-session-rebuilt__actions {
+          justify-content: stretch;
+        }
+
+        .mmd-session-rebuilt__actions::before {
+          width: 100%;
+          margin-bottom: 4px;
+        }
+
+        .mmd-session-rebuilt__btn {
+          width: 100%;
+        }
+
+        .mmd-session-rebuilt__searchbar button {
+          padding: 12px 18px;
+        }
+      }
+    </style>
+
+    <style id="mmd-session-rebuilt-emergency-css">
+      [data-mmd-session-rebuilt].mmd-session-rebuilt {
+        --mmd-session-bg: #060504;
+        --mmd-session-panel: rgba(13, 11, 8, 0.9);
+        --mmd-session-line: rgba(218, 176, 92, 0.24);
+        --mmd-session-gold: #d9b66d;
+        --mmd-session-text: #f7ecd9;
+        --mmd-session-muted: rgba(247, 236, 217, 0.66);
+        min-height: 100vh;
+        color: var(--mmd-session-text);
+        background:
+          radial-gradient(circle at 14% 8%, rgba(217, 182, 109, 0.13), transparent 26%),
+          linear-gradient(135deg, #060504 0%, #100c08 50%, #050403 100%);
+        font-family: "Noto Sans Thai", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .mmd-session-rebuilt__hero {
+        position: relative;
+        min-height: clamp(640px, 84vh, 900px);
+        overflow: hidden;
+        border: 1px solid rgba(218, 176, 92, 0.28);
+        border-radius: 34px;
+        background: rgba(8, 6, 4, 0.92);
+        box-shadow: 0 30px 90px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      }
+
+      .mmd-session-rebuilt__title,
+      .mmd-session-rebuilt__hero-title {
+        margin: 0 0 28px;
+        font-size: clamp(70px, 8.8vw, 136px);
+        line-height: 0.86;
+        font-weight: 800;
+        letter-spacing: -0.07em;
+        color: transparent;
+        background: linear-gradient(180deg, #fff1b2 0%, #e2bc68 45%, #a9772f 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        text-shadow: 0 16px 44px rgba(0, 0, 0, 0.28), 0 0 28px rgba(217, 182, 109, 0.08);
+      }
+
+      .mmd-session-rebuilt__grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 360px;
+        gap: 18px;
+        margin-top: 18px;
+        align-items: start;
+      }
+
+      .mmd-session-rebuilt__panel {
+        border: 1px solid var(--mmd-session-line);
+        border-radius: 20px;
+        padding: 18px;
+        color: var(--mmd-session-text);
+        background:
+          linear-gradient(145deg, rgba(255, 255, 255, 0.05), transparent 34%),
+          var(--mmd-session-panel);
+        box-shadow: 0 24px 72px rgba(0, 0, 0, 0.32);
+        backdrop-filter: blur(18px);
+      }
+
+      @media (max-width: 1180px) {
+        .mmd-session-rebuilt__grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .mmd-session-rebuilt__hero {
+          min-height: auto;
+          border-radius: 24px;
+        }
+
+        .mmd-session-rebuilt__title,
+        .mmd-session-rebuilt__hero-title {
+          font-size: clamp(48px, 16vw, 74px);
+          line-height: 0.92;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- MMD_SESSION_REBUILT_LV12_RENDERED -->
+    <section class="mmd-session-rebuilt" data-mmd-session-rebuilt data-dev-auth="false" aria-label="SĪGIL internal create session page">
+      <div class="mmd-session-rebuilt__pattern" aria-hidden="true"></div>
+
+      <div class="mmd-session-rebuilt__wrap">
+        <header class="mmd-session-rebuilt__hero" aria-label="Create Session hero">
+          <img
+            class="mmd-session-rebuilt__hero-bg"
+            src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a07c395c2cd7d5bc2c36f74_Studio%202.webp"
+            alt=""
+            aria-hidden="true"
+            loading="eager"
+          >
+
+          <div class="mmd-session-rebuilt__hero-overlay" aria-hidden="true"></div>
+          <div class="mmd-session-rebuilt__hero-grid" aria-hidden="true"></div>
+
+          <div class="mmd-session-rebuilt__hero-content">
+            <p class="mmd-session-rebuilt__hero-eyebrow">SĪGIL INTERNAL</p>
+
+            <h1 class="mmd-session-rebuilt__hero-title mmd-session-rebuilt__title">
+              Create<br>Session
+            </h1>
+
+            <div class="mmd-session-rebuilt__per-voice">
+              <p>
+                โอเว่น ก่อนจะสร้าง “งาน” หรือ Session<br>
+                เราต้องรู้ก่อนว่างานนี้เป็น Public หรือ Private นะครับ
+              </p>
+
+              <p>
+                ถ้าลูกค้าเลือกนายแบบมาแล้ว<br>
+                ให้ค้นชื่อนั้นก่อนด้วยตัวอักษรภาษาอังกฤษ
+              </p>
+
+              <p>
+                ถ้าลูกค้ายังไม่ได้ระบุชื่อ<br>
+                ให้ใช้ Search Engine ช่วยหาคนที่เหมาะตามสเปคลูกค้า
+              </p>
+
+              <p>
+                ถ้ามีอะไรที่ยังไม่มั่นใจ<br>
+                Save Draft ไว้ก่อนได้<br>
+                พี่จะได้เข้ามาตรวจสอบให้
+              </p>
+
+              <p>
+                อย่ากดส่ง ถ้ายังไม่ชัวร์<br>
+                หรือข้อมูลยังไม่ครบ
+              </p>
+
+              <p>
+                ค่อย ๆ ทำไป<br>
+                เดี๋ยวก็เก่งกว่าพี่แล้วนะ
+              </p>
+
+              <p>: )</p>
+            </div>
+
+            <div class="mmd-session-rebuilt__hero-actions">
+              <a class="mmd-session-rebuilt__btn mmd-session-rebuilt__btn--primary" href="#mmdSessionRebuiltForm">
+                Start Form
+              </a>
+
+              <button class="mmd-session-rebuilt__btn mmd-session-rebuilt__btn--ghost" type="button" data-help-topic="work-type">
+                Public / Private คืออะไร
+              </button>
+            </div>
+
+            <p id="mmd-session-rebuilt-status" class="mmd-session-rebuilt__status" role="status" aria-live="polite"></p>
+          </div>
+        </header>
+
+        <section class="mmd-session-rebuilt__readiness" aria-label="Session readiness">
+          <div class="mmd-session-rebuilt__ready-item is-ready" data-ready="work">
+            <span>00</span>
+            <strong>Work</strong>
+            <em id="readyWork">Public</em>
+          </div>
+
+          <div class="mmd-session-rebuilt__ready-item" data-ready="client">
+            <span>01</span>
+            <strong>Client</strong>
+            <em id="readyClient">Waiting</em>
+          </div>
+
+          <div class="mmd-session-rebuilt__ready-item" data-ready="match">
+            <span>02</span>
+            <strong>Match</strong>
+            <em id="readyMatch">Waiting</em>
+          </div>
+
+          <div class="mmd-session-rebuilt__ready-item" data-ready="model">
+            <span>03</span>
+            <strong>Model</strong>
+            <em id="readyModel">Waiting</em>
+          </div>
+
+          <div class="mmd-session-rebuilt__ready-item" data-ready="brief">
+            <span>04</span>
+            <strong>Brief</strong>
+            <em id="readyBrief">Draft</em>
+          </div>
+
+          <div class="mmd-session-rebuilt__ready-item" data-ready="place">
+            <span>05</span>
+            <strong>Place</strong>
+            <em id="readyPlace">Waiting</em>
+          </div>
+
+          <div class="mmd-session-rebuilt__ready-item" data-ready="amount">
+            <span>06</span>
+            <strong>Amount</strong>
+            <em id="readyAmount">Waiting</em>
+          </div>
+
+          <div class="mmd-session-rebuilt__ready-item" data-ready="create">
+            <span>07</span>
+            <strong>Create</strong>
+            <em id="readyCreate">Locked</em>
+          </div>
+        </section>
+
+        <main class="mmd-session-rebuilt__grid">
+          <form id="mmdSessionRebuiltForm" class="mmd-session-rebuilt__form">
+            <section class="mmd-session-rebuilt__panel">
+              <div class="mmd-session-rebuilt__panel-head">
+                <div>
+                  <p>STEP 00</p>
+                  <h2>งานนี้เป็น Public หรือ Private?</h2>
+                </div>
+                <button type="button" data-help-topic="work-type">?</button>
+              </div>
+
+              <div class="mmd-session-rebuilt__work-switch">
+                <button type="button" class="is-active" data-work-type="public">
+                  <span>Public Job</span>
+                  <strong>Travel / Extreme / รายละเอียดไม่ลึก / ใช้ข้อมูลเท่าที่จำเป็น</strong>
+                </button>
+
+                <button type="button" data-work-type="private">
+                  <span>Private Job</span>
+                  <strong>Straight / Gay + VIP / PN / ต้องเช็กบรีฟละเอียดกว่า</strong>
+                </button>
+              </div>
+
+              <div class="mmd-session-rebuilt__work-explain" data-work-explain>
+                Public Job คือ งานที่จัดการแบบมาตรฐาน ใช้ข้อมูลเท่าที่จำเป็น และไม่ใส่ private note ลึก ๆ
+              </div>
+            </section>
+
+            <div class="mmd-session-rebuilt__form-row">
+              <section class="mmd-session-rebuilt__panel">
+                <div class="mmd-session-rebuilt__panel-head">
+                  <div>
+                    <p>STEP 01</p>
+                    <h2>ลูกค้า</h2>
+                  </div>
+                  <button type="button" data-help-topic="client">?</button>
+                </div>
+
+                <div class="mmd-session-rebuilt__fields">
+                  <label>
+                    <span>ชื่อลูกค้า</span>
+                    <input type="text" name="client_name" placeholder="เช่น คุณ A / ชื่อเล่นลูกค้า" autocomplete="off">
+                  </label>
+
+                  <label>
+                    <span>ระดับสมาชิก</span>
+                    <select name="member_tier">
+                      <option value="">เลือกสถานะ</option>
+                      <option value="standard">Standard</option>
+                      <option value="vip">VIP</option>
+                      <option value="svip">SVIP</option>
+                      <option value="blackcard">Black Card</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>ช่องทางติดต่อ</span>
+                    <input type="text" name="contact_channel" placeholder="LINE / Telegram / Phone" autocomplete="off">
+                  </label>
+
+                  <label>
+                    <span>Client ID / Member ID</span>
+                    <input type="text" name="client_id" placeholder="ใส่ถ้ามี" autocomplete="off">
+                  </label>
+                </div>
+              </section>
+
+              <section class="mmd-session-rebuilt__panel">
+                <div class="mmd-session-rebuilt__panel-head">
+                  <div>
+                    <p>STEP 02</p>
+                    <h2>วิธีเลือกนายแบบ</h2>
+                  </div>
+                  <button type="button" data-help-topic="model-mode">?</button>
+                </div>
+
+                <div class="mmd-session-rebuilt__work-switch">
+                  <button type="button" class="is-active" data-model-mode="named">
+                    <span>ลูกค้าระบุชื่อมาแล้ว</span>
+                    <strong>ค้นชื่อนายแบบ แล้วเช็กว่ายังเหมาะกับงานนี้ไหม</strong>
+                  </button>
+
+                  <button type="button" data-model-mode="recommend">
+                    <span>ให้ระบบแนะนำ</span>
+                    <strong>ใช้ Search Engine หา model ที่ online และเหมาะกับงาน</strong>
+                  </button>
+                </div>
+
+                <div class="mmd-session-rebuilt__work-explain" data-model-mode-explain>
+                  ถ้าลูกค้าระบุชื่อมาแล้ว ให้ค้นชื่อนั้นก่อน ถ้ายังไม่ระบุ ให้ระบบช่วยคัดคนที่เหมาะกับงานนี้
+                </div>
+              </section>
+            </div>
+
+            <section class="mmd-session-rebuilt__panel" data-work-panel="public">
+              <div class="mmd-session-rebuilt__panel-head">
+                <div>
+                  <p>PUBLIC JOB</p>
+                  <h2>รายละเอียดงาน Public</h2>
+                </div>
+                <button type="button" data-help-topic="public-job">?</button>
+              </div>
+
+              <div class="mmd-session-rebuilt__fields mmd-session-rebuilt__fields--four">
+                <label>
+                  <span>Public Job Type</span>
+                  <select name="public_job_type">
+                    <option value="">เลือกรูปแบบงาน</option>
+                    <option value="travel">Travel</option>
+                    <option value="extreme">Extreme</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>Visibility</span>
+                  <select name="visibility">
+                    <option value="internal_only">Internal Only</option>
+                    <option value="premium_members">Premium Members</option>
+                    <option value="vip_members">VIP Members</option>
+                    <option value="public_listing">Public Listing</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>Public Rate</span>
+                  <input type="number" name="public_rate" placeholder="0" min="0">
+                </label>
+
+                <label>
+                  <span>Standard Time</span>
+                  <select name="public_duration">
+                    <option value="5h">Standard 5 hours</option>
+                    <option value="custom">Custom duration</option>
+                  </select>
+                </label>
+              </div>
+
+              <label class="mmd-session-rebuilt__full">
+                <span>Public-safe brief</span>
+                <textarea name="public_brief" rows="4" placeholder="เขียนบรีฟแบบที่ทีมอ่านเข้าใจ หลีกเลี่ยง private note ลึก ๆ หรือข้อมูลส่วนตัวเกินจำเป็น"></textarea>
+              </label>
+            </section>
+
+            <section class="mmd-session-rebuilt__panel is-hidden" data-work-panel="private">
+              <div class="mmd-session-rebuilt__panel-head">
+                <div>
+                  <p>PRIVATE JOB</p>
+                  <h2>รายละเอียดงาน Private</h2>
+                </div>
+                <button type="button" data-help-topic="private-job">?</button>
+              </div>
+
+              <div class="mmd-session-rebuilt__fields mmd-session-rebuilt__fields--four">
+                <label>
+                  <span>Role Type</span>
+                  <select name="private_role_type">
+                    <option value="">เลือก Role</option>
+                    <option value="straight">Straight</option>
+                    <option value="gay">Gay</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>Service Level</span>
+                  <select name="private_service_level">
+                    <option value="">เลือกระดับงาน</option>
+                    <option value="vip">VIP</option>
+                    <option value="pn">PN</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>Private Job Type</span>
+                  <select name="private_job_type">
+                    <option value="">เลือกรูปแบบงาน</option>
+                    <option value="private_session">Private Session</option>
+                    <option value="companion_experience">Companion Experience</option>
+                    <option value="tailored_request">Tailored Request</option>
+                    <option value="blackcard_request">Black Card Request</option>
+                    <option value="custom_private">Custom Private Brief</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>ให้บอสเช็กไหม</span>
+                  <select name="boss_review">
+                    <option value="no">ไม่ต้อง</option>
+                    <option value="yes">ต้องให้บอสเช็ก</option>
+                  </select>
+                </label>
+              </div>
+
+              <label class="mmd-session-rebuilt__full">
+                <span>Private brief</span>
+                <textarea name="private_brief" rows="5" placeholder="สรุปบรีฟส่วนตัวให้ชัด เช่น สิ่งที่ลูกค้าต้องการ ความเหมาะสมของนายแบบ ข้อควรระวัง"></textarea>
+              </label>
+
+              <label class="mmd-session-rebuilt__full">
+                <span>Admin caution note</span>
+                <textarea name="admin_caution" rows="3" placeholder="note เฉพาะทีม เช่น จุดที่ต้องระวัง หรือเหตุผลที่ควร Save Draft ก่อน"></textarea>
+              </label>
+            </section>
+
+            <section class="mmd-session-rebuilt__panel">
+              <div class="mmd-session-rebuilt__panel-head">
+                <div>
+                  <p>MODEL SEARCH ENGINE</p>
+                  <h2>ค้นหานายแบบที่เหมาะกับงานนี้</h2>
+                </div>
+                <button type="button" data-help-topic="model-search">?</button>
+              </div>
+
+              <div class="mmd-session-rebuilt__searchbar">
+                <input
+                  type="search"
+                  name="model_query"
+                  placeholder="ค้นหา เช่น Hito / สูง 180 / อายุ 25 / athletic / gay / VIP / online / Korean look"
+                  autocomplete="off"
+                >
+                <button type="button" data-model-search>Search</button>
+              </div>
+
+              <div class="mmd-session-rebuilt__fields mmd-session-rebuilt__fields--four">
+                <label>
+                  <span>Online Status</span>
+                  <select name="model_online_filter">
+                    <option value="online_first">Online first</option>
+                    <option value="online_only">Online only</option>
+                    <option value="all">All models</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>Age Range</span>
+                  <select name="model_age_range">
+                    <option value="">Any age</option>
+                    <option value="18_21">18-21</option>
+                    <option value="22_25">22-25</option>
+                    <option value="26_30">26-30</option>
+                    <option value="31_35">31-35</option>
+                    <option value="36_plus">36+</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>Height</span>
+                  <select name="model_height_range">
+                    <option value="">Any height</option>
+                    <option value="165_170">165-170</option>
+                    <option value="171_175">171-175</option>
+                    <option value="176_180">176-180</option>
+                    <option value="181_185">181-185</option>
+                    <option value="186_plus">186+</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>Body Type</span>
+                  <select name="model_body_type">
+                    <option value="">Any body</option>
+                    <option value="slim">Slim</option>
+                    <option value="lean">Lean</option>
+                    <option value="athletic">Athletic</option>
+                    <option value="muscular">Muscular</option>
+                    <option value="big_strong">Big / Strong</option>
+                    <option value="soft_cute">Soft / Cute</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="mmd-session-rebuilt__fields mmd-session-rebuilt__fields--four">
+                <label>
+                  <span>Look / Style</span>
+                  <select name="model_style">
+                    <option value="">Any style</option>
+                    <option value="cute">Cute</option>
+                    <option value="masculine">Masculine</option>
+                    <option value="sporty">Sporty</option>
+                    <option value="elegant">Elegant</option>
+                    <option value="thai">Thai</option>
+                    <option value="korean">Korean</option>
+                    <option value="international">International</option>
+                    <option value="mature">Mature</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>Role Type</span>
+                  <select name="model_role_type">
+                    <option value="">Auto from job</option>
+                    <option value="straight">Straight</option>
+                    <option value="gay">Gay</option>
+                    <option value="flexible">Flexible</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>Service Level</span>
+                  <select name="model_service_level">
+                    <option value="">Auto from job</option>
+                    <option value="travel">Travel</option>
+                    <option value="extreme">Extreme</option>
+                    <option value="vip">VIP</option>
+                    <option value="pn">PN</option>
+                    <option value="blackcard">Black Card</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>Language</span>
+                  <select name="model_language">
+                    <option value="">Any language</option>
+                    <option value="thai">Thai</option>
+                    <option value="english">English</option>
+                    <option value="chinese">Chinese</option>
+                    <option value="japanese">Japanese</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="mmd-session-rebuilt__model-results" data-model-results>
+                <div class="mmd-session-rebuilt__empty">
+                  ใส่ keyword หรือเลือก filter เพื่อค้นหานายแบบที่เหมาะกับงานนี้
+                </div>
+              </div>
+            </section>
+
+            <section class="mmd-session-rebuilt__panel">
+              <div class="mmd-session-rebuilt__panel-head">
+                <div>
+                  <p>STEP 03</p>
+                  <h2>วัน เวลา และสถานที่</h2>
+                </div>
+                <button type="button" data-help-topic="schedule">?</button>
+              </div>
+
+              <div class="mmd-session-rebuilt__fields mmd-session-rebuilt__fields--three">
+                <label>
+                  <span>วันที่</span>
+                  <input type="date" name="service_date">
+                </label>
+
+                <label>
+                  <span>เวลาเริ่ม</span>
+                  <input type="time" name="service_time">
+                </label>
+
+                <label>
+                  <span>ระยะเวลา</span>
+                  <select name="duration">
+                    <option value="">เลือกเวลา</option>
+                    <option value="2h">2 ชั่วโมง</option>
+                    <option value="3h">3 ชั่วโมง</option>
+                    <option value="5h">5 ชั่วโมง</option>
+                    <option value="overnight">Overnight</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>ชื่อสถานที่</span>
+                  <input type="text" name="place_name" placeholder="เช่น The Standard Bangkok / ร้านอาหาร / โรงแรม" autocomplete="off">
+                </label>
+
+                <label>
+                  <span>Google Map URL</span>
+                  <input type="url" name="google_map_url" placeholder="https://maps.google.com/..." autocomplete="off">
+                </label>
+
+                <label>
+                  <span>สถานะ Session</span>
+                  <select name="session_status">
+                    <option value="draft">draft</option>
+                    <option value="confirmed">confirmed</option>
+                    <option value="reminder">reminder</option>
+                    <option value="en_route">en_route</option>
+                    <option value="arrived">arrived</option>
+                    <option value="final_payment_pending">final_payment_pending</option>
+                  </select>
+                </label>
+              </div>
+            </section>
+
+            <section class="mmd-session-rebuilt__panel">
+              <div class="mmd-session-rebuilt__panel-head">
+                <div>
+                  <p>STEP 04</p>
+                  <h2>ยอดที่ต้องส่งให้ลูกค้า</h2>
+                </div>
+                <button type="button" data-help-topic="amount">?</button>
+              </div>
+
+              <div class="mmd-session-rebuilt__fields">
+                <label>
+                  <span>ยอดที่ต้องชำระ</span>
+                  <input type="number" name="amount_thb" placeholder="0" min="0">
+                </label>
+
+                <label>
+                  <span>ประเภทของยอดนี้</span>
+                  <select name="amount_purpose">
+                    <option value="session_amount">ยอด Session</option>
+                    <option value="deposit_amount">ยอดมัดจำ</option>
+                    <option value="remaining_amount">ยอดคงเหลือ</option>
+                    <option value="adjusted_amount">ยอดปรับแก้</option>
+                  </select>
+                </label>
+              </div>
+
+              <label class="mmd-session-rebuilt__full">
+                <span>ข้อความสั้น ๆ ให้ลูกค้าเห็น</span>
+                <textarea name="client_amount_note" rows="3" placeholder="เช่น ยอดนี้เป็นยอดสำหรับยืนยัน Session ตามบรีฟที่ตกลงไว้"></textarea>
+              </label>
+
+              <div class="mmd-session-rebuilt__warning">
+                หน้านี้ใช้ส่งยอดให้ลูกค้าเท่านั้น ลูกค้าจะเลือกวิธีจ่ายในขั้นตอนชำระเงินเอง
+              </div>
+            </section>
+
+            <section class="mmd-session-rebuilt__actions">
+              <button type="submit" class="mmd-session-rebuilt__btn mmd-session-rebuilt__btn--primary">
+                Create Session
+              </button>
+
+              <button type="button" class="mmd-session-rebuilt__btn mmd-session-rebuilt__btn--soft" data-save-draft>
+                Save Draft
+              </button>
+
+              <button type="reset" class="mmd-session-rebuilt__btn mmd-session-rebuilt__btn--ghost">
+                Clear
+              </button>
+            </section>
+          </form>
+
+          <aside class="mmd-session-rebuilt__side">
+            <section class="mmd-session-rebuilt__panel mmd-session-rebuilt__sticky">
+              <div class="mmd-session-rebuilt__panel-head">
+                <div>
+                  <p>LIVE DRAFT</p>
+                  <h2>Session Preview</h2>
+                </div>
+              </div>
+
+              <div class="mmd-session-rebuilt__preview" data-session-preview>
+                <div><span>session_id</span><strong data-preview="session_id">MMD-DRAFT</strong></div>
+                <div><span>work_type</span><strong data-preview="work_type">public</strong></div>
+                <div><span>model_mode</span><strong data-preview="model_mode">named</strong></div>
+                <div><span>ลูกค้า</span><strong data-preview="client">ยังไม่ระบุ</strong></div>
+                <div><span>นายแบบ</span><strong data-preview="model">ยังไม่ระบุ</strong></div>
+                <div><span>subtype</span><strong data-preview="subtype">ยังไม่ระบุ</strong></div>
+                <div><span>สถานที่</span><strong data-preview="place">ยังไม่ระบุ</strong></div>
+                <div><span>ยอด</span><strong data-preview="amount">0 THB</strong></div>
+              </div>
+
+              <div class="mmd-session-rebuilt__checklist">
+                <p>CHECKLIST</p>
+                <label><input type="checkbox" data-check="work"> เลือก Public / Private แล้ว</label>
+                <label><input type="checkbox" data-check="client"> เช็คลูกค้าแล้ว</label>
+                <label><input type="checkbox" data-check="model"> ใช้ Model Search Engine แล้ว</label>
+                <label><input type="checkbox"> เห็น Age / Height / Body ใน Model Card แล้ว</label>
+                <label><input type="checkbox" data-check="brief"> อ่านบรีฟครบแล้ว</label>
+                <label><input type="checkbox" data-check="place"> ตรวจชื่อสถานที่และ Google Map แล้ว</label>
+                <label><input type="checkbox" data-check="amount"> ตรวจยอดที่ต้องส่งให้ลูกค้าแล้ว</label>
+              </div>
+
+              <div id="mmd-session-rebuilt-result" class="mmd-session-rebuilt__route">
+                <span>SĪGIL</span>
+                <strong>Internal Create Session</strong>
+                <p>
+                  ถ้าข้อมูลยังไม่ครบ ให้เก็บเป็น Draft ก่อน อย่าเปิด Session จริงจากบรีฟที่ยังไม่นิ่ง
+                </p>
+              </div>
+            </section>
+          </aside>
+        </main>
+      </div>
+    </section>
+
+    <script>
+      (function () {
+        const root = document.querySelector('[data-mmd-session-rebuilt]');
+        if (!root) return;
+
+        const form = document.getElementById('mmdSessionRebuiltForm');
+        if (!form) return;
+
+        const statusEl = document.getElementById('mmd-session-rebuilt-status');
+        const modelResults = root.querySelector('[data-model-results]');
+        const modal = root.querySelector('[data-help-modal]');
+        const helpBody = root.querySelector('[data-help-body]');
+        const helpTitle = document.getElementById('mmdSessionHelpTitle');
+
+        let selectedWorkType = 'public';
+        let selectedModelMode = 'named';
+        let selectedModel = null;
+        let currentModels = [];
+        let lastSearchController = null;
+
+        const API = {
+          modelSearch: '/v1/admin/models/search',
+          createSession: '/v1/admin/jobs/create-session'
+        };
+
+        const fallbackModels = [
+          {
+            model_id: 'hito',
+            model_name: 'HITO',
+            age: 24,
+            height_cm: 180,
+            body_type: 'athletic',
+            style_tags: ['masculine', 'clean', 'thai'],
+            folders: ['travel', 'extreme', 'vip', 'pn'],
+            role_type: ['straight', 'gay'],
+            service_level: ['vip', 'pn'],
+            language_tags: ['thai', 'english'],
+            availability: 'online',
+            status: 'available',
+            reliability_score: 94,
+            fit_score: 96,
+            note: 'เหมาะกับงานที่ต้องการความนิ่ง สุขุม และเชื่อถือได้'
+          },
+          {
+            model_id: 'kenji',
+            model_name: 'Kenji',
+            age: 27,
+            height_cm: 178,
+            body_type: 'lean',
+            style_tags: ['elegant', 'mature', 'clean'],
+            folders: ['travel', 'vip', 'pn'],
+            role_type: ['gay', 'flexible'],
+            service_level: ['vip', 'pn'],
+            language_tags: ['thai', 'english'],
+            availability: 'online',
+            status: 'available',
+            reliability_score: 98,
+            fit_score: 91,
+            note: 'เหมาะกับลูกค้าที่ต้องการการดูแลละเอียดและต่อเนื่อง'
+          },
+          {
+            model_id: 'hiei',
+            model_name: 'Hiei',
+            age: 27,
+            height_cm: 183,
+            body_type: 'muscular',
+            style_tags: ['masculine', 'sporty', 'mature'],
+            folders: ['extreme', 'vip', 'pn'],
+            role_type: ['straight'],
+            service_level: ['vip', 'pn'],
+            language_tags: ['thai', 'english'],
+            availability: 'online',
+            status: 'available',
+            reliability_score: 89,
+            fit_score: 93,
+            note: 'เหมาะกับงานที่ต้องการ physical presence และความนิ่งแบบเข้ม'
+          },
+          {
+            model_id: 'hima',
+            model_name: 'Hima',
+            age: null,
+            height_cm: 174,
+            body_type: 'lean',
+            style_tags: ['sporty', 'cute', 'international'],
+            folders: ['travel', 'extreme'],
+            role_type: ['gay', 'flexible'],
+            service_level: ['vip'],
+            language_tags: ['thai', 'english'],
+            availability: 'online',
+            status: 'available',
+            reliability_score: 86,
+            fit_score: 88,
+            note: 'เหมาะกับงานที่ต้องการพลังสดใสและ interaction สูง'
+          }
+        ];
+
+        const helpCopy = {
+          'work-type': {
+            title: 'Public / Private คืออะไร',
+            body: 'Public คือ Travel / Extreme ที่ใช้ข้อมูลเท่าที่จำเป็น ส่วน Private คือ Straight / Gay + VIP / PN ที่ต้องเช็กบรีฟ ลูกค้า นายแบบ เวลา สถานที่ และความเหมาะสมละเอียดกว่า ถ้ายังไม่มั่นใจ ให้ Save Draft ก่อนครับ'
+          },
+          client: {
+            title: 'เช็คลูกค้า',
+            body: 'เช็คลูกค้าว่าเป็นใคร ระดับสมาชิกอะไร มีช่องทางติดต่อชัดไหม และข้อมูลพอจะเปิดงานจริงหรือยัง ถ้ายังไม่ชัด อย่าเปิด Session จริง ให้ Save Draft ไว้ก่อน'
+          },
+          'model-mode': {
+            title: 'วิธีเลือกนายแบบ',
+            body: 'ถ้าลูกค้าระบุชื่อมาแล้ว ให้ค้นชื่อนั้นก่อนด้วยตัวอักษรภาษาอังกฤษ ถ้าลูกค้ายังไม่ได้ระบุชื่อ ให้ใช้ Search Engine คัดจากสเปค เช่น อายุ ส่วนสูง รูปร่าง Role Type, Service Level และสถานะ online'
+          },
+          'public-job': {
+            title: 'รายละเอียดงาน Public',
+            body: 'งาน Public ต้องอ่านง่าย ใช้ข้อมูลเท่าที่จำเป็น และไม่ใส่ข้อมูลส่วนตัวลึก ๆ เหมาะกับ Travel / Extreme หรือบรีฟมาตรฐาน'
+          },
+          'private-job': {
+            title: 'รายละเอียดงาน Private',
+            body: 'งาน Private ต้องเลือก Role Type และ Service Level เพื่อช่วยคัดนายแบบให้ตรงขึ้น ต้องมีบรีฟที่ละเอียดพอ และควร Save Draft ถ้ายังไม่แน่ใจ'
+          },
+          'model-search': {
+            title: 'Model Search Engine',
+            body: 'ใช้ค้นจากชื่อหรือสเปคได้ เช่น Hito, สูง 180, athletic, gay, VIP, online. Age ต้องโชว์ในผลลัพธ์ แต่ไม่จำเป็นต้องกรอกเอง ถ้า Age missing ให้ถือว่า profile ยังไม่ครบ'
+          },
+          schedule: {
+            title: 'วัน เวลา และสถานที่',
+            body: 'เช็กวันที่ เวลา ระยะเวลา ชื่อสถานที่ และ Google Map URL ให้ครบก่อนสร้าง Session. ตอนนี้สถานที่ใช้ชื่อสถานที่กับ URL Google Map'
+          },
+          amount: {
+            title: 'ยอดที่ต้องส่งให้ลูกค้า',
+            body: 'ใส่แค่ยอดที่ต้องส่งให้ลูกค้า ลูกค้าจะเลือกวิธีจ่ายเองในขั้นตอนชำระเงิน หน้านี้ไม่ต้องเลือก payment method'
+          },
+          'create-blocked': {
+            title: 'ยังสร้าง Session ไม่ได้',
+            body: 'ข้อมูลยังไม่ครบหรือยังไม่ชัวร์ ให้ Save Draft ไว้ก่อน แล้วค่อยกลับมาเช็กกับพี่'
+          }
+        };
+
+        function escapeHTML(value) {
+          return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+        }
+
+        function setStatus(message, tone) {
+          if (!statusEl) return;
+          statusEl.textContent = message || '';
+          statusEl.dataset.tone = tone || '';
+        }
+
+        function fieldValue(name) {
+          const field = form.elements[name];
+          return field && field.value ? String(field.value).trim() : '';
+        }
+
+        function fieldNumber(name) {
+          const raw = fieldValue(name);
+          const num = Number(raw || 0);
+          return Number.isFinite(num) ? num : 0;
+        }
+
+        function createDraftSessionId() {
+          const date = new Date();
+          const yyyy = String(date.getFullYear());
+          const mm = String(date.getMonth() + 1).padStart(2, '0');
+          const dd = String(date.getDate()).padStart(2, '0');
+          const seed = Math.random().toString(36).slice(2, 8).toUpperCase();
+          return \`MMD-\${yyyy}\${mm}\${dd}-\${seed}\`;
+        }
+
+        const draftSessionId = createDraftSessionId();
+
+        function setPreview(key, value) {
+          const node = root.querySelector(\`[data-preview="\${key}"]\`);
+          if (node) node.textContent = value;
+        }
+
+        function setReady(key, isReady, text) {
+          const item = root.querySelector(\`[data-ready="\${key}"]\`);
+
+          if (item) {
+            item.classList.toggle('is-ready', Boolean(isReady));
+            const em = item.querySelector('em');
+            if (em) em.textContent = text;
+          }
+
+          const idMap = {
+            work: 'readyWork',
+            client: 'readyClient',
+            match: 'readyMatch',
+            model: 'readyModel',
+            brief: 'readyBrief',
+            place: 'readyPlace',
+            amount: 'readyAmount',
+            create: 'readyCreate'
+          };
+
+          const byId = document.getElementById(idMap[key]);
+          if (byId) byId.textContent = text;
+        }
+
+        function setCheck(key, checked) {
+          const box = root.querySelector(\`[data-check="\${key}"]\`);
+          if (box) box.checked = Boolean(checked);
+        }
+
+        function isLikelyMapUrl(url) {
+          const u = String(url || '').toLowerCase();
+          return (
+            u.includes('maps.google') ||
+            u.includes('google.com/maps') ||
+            u.includes('maps.app.goo.gl') ||
+            u.includes('goo.gl/maps')
+          );
+        }
+
+        function currentSubtype() {
+          if (selectedWorkType === 'public') return fieldValue('public_job_type');
+          return fieldValue('private_job_type');
+        }
+
+        function currentBrief() {
+          if (selectedWorkType === 'public') return fieldValue('public_brief');
+          return fieldValue('private_brief');
+        }
+
+        function getMatchReady() {
+          if (selectedWorkType === 'public') {
+            return Boolean(fieldValue('public_job_type'));
+          }
+
+          return Boolean(
+            fieldValue('private_role_type') &&
+            fieldValue('private_service_level') &&
+            fieldValue('private_job_type')
+          );
+        }
+
+        function updatePreview() {
+          const client = fieldValue('client_name');
+          const subtype = currentSubtype();
+          const brief = currentBrief();
+          const amount = fieldNumber('amount_thb');
+          const placeName = fieldValue('place_name');
+          const mapUrl = fieldValue('google_map_url');
+
+          const matchReady = getMatchReady();
+          const placeReady = Boolean(placeName && isLikelyMapUrl(mapUrl));
+          const amountReady = amount > 0;
+          const briefReady = brief.length >= 20;
+          const clientReady = Boolean(client);
+          const modelReady = Boolean(selectedModel);
+
+          setPreview('session_id', draftSessionId);
+          setPreview('work_type', selectedWorkType);
+          setPreview('model_mode', selectedModelMode);
+          setPreview('client', client || 'ยังไม่ระบุ');
+          setPreview('model', selectedModel ? selectedModel.model_name : 'ยังไม่ระบุ');
+          setPreview('subtype', subtype || 'ยังไม่ระบุ');
+          setPreview('place', placeName || 'ยังไม่ระบุ');
+          setPreview('amount', \`\${amount.toLocaleString('th-TH')} THB\`);
+
+          setReady('work', Boolean(selectedWorkType), selectedWorkType);
+          setReady('client', clientReady, clientReady ? 'Ready' : 'Waiting');
+          setReady('match', matchReady, matchReady ? 'Ready' : 'Waiting');
+          setReady('model', modelReady, modelReady ? 'Ready' : 'Waiting');
+          setReady('brief', briefReady, briefReady ? 'Clear' : 'Draft');
+          setReady('place', placeReady, placeReady ? 'Ready' : 'Waiting');
+          setReady('amount', amountReady, amountReady ? 'Ready' : 'Waiting');
+
+          setCheck('work', Boolean(selectedWorkType));
+          setCheck('client', clientReady);
+          setCheck('model', modelReady);
+          setCheck('brief', briefReady);
+          setCheck('place', placeReady);
+          setCheck('amount', amountReady);
+
+          const canCreate = Boolean(
+            selectedWorkType &&
+            clientReady &&
+            modelReady &&
+            subtype &&
+            matchReady &&
+            briefReady &&
+            placeReady &&
+            amountReady &&
+            fieldValue('service_date') &&
+            fieldValue('service_time') &&
+            fieldValue('duration')
+          );
+
+          setReady('create', canCreate, canCreate ? 'Ready' : 'Locked');
+
+          return {
+            canCreate,
+            clientReady,
+            modelReady,
+            matchReady,
+            briefReady,
+            placeReady,
+            amountReady
+          };
+        }
+
+        function setWorkType(type) {
+          selectedWorkType = type === 'private' ? 'private' : 'public';
+
+          root.querySelectorAll('[data-work-type]').forEach((button) => {
+            button.classList.toggle('is-active', button.dataset.workType === selectedWorkType);
+          });
+
+          root.querySelectorAll('[data-work-panel]').forEach((panel) => {
+            panel.classList.toggle('is-hidden', panel.dataset.workPanel !== selectedWorkType);
+          });
+
+          const explain = root.querySelector('[data-work-explain]');
+          if (explain) {
+            explain.textContent = selectedWorkType === 'public'
+              ? 'Public Job คือ งานมาตรฐาน เช่น Travel / Extreme ใช้ข้อมูลเท่าที่จำเป็น และไม่ใส่ private note ลึก ๆ'
+              : 'Private Job คือ งานส่วนตัว ต้องเลือก Role Type และ Service Level เพื่อช่วยคัดนายแบบให้ตรงขึ้น';
+          }
+
+          selectedModel = null;
+          renderModelCards(currentModels.length ? currentModels : fallbackModels);
+          updatePreview();
+
+          setStatus(
+            selectedWorkType === 'public'
+              ? 'เลือก Public Job แล้ว'
+              : 'เลือก Private Job แล้ว เช็ก Role Type และ Service Level ให้ครบก่อนส่ง',
+            'ok'
+          );
+        }
+
+        function setModelMode(mode) {
+          selectedModelMode = mode === 'recommend' ? 'recommend' : 'named';
+
+          root.querySelectorAll('[data-model-mode]').forEach((button) => {
+            button.classList.toggle('is-active', button.dataset.modelMode === selectedModelMode);
+          });
+
+          const explain = root.querySelector('[data-model-mode-explain]');
+          if (explain) {
+            explain.textContent = selectedModelMode === 'named'
+              ? 'ลูกค้าระบุชื่อมาแล้ว ให้ค้นชื่อนั้นก่อนด้วยตัวอักษรภาษาอังกฤษ แล้วเช็กว่ายังเหมาะกับงานนี้ไหม'
+              : 'ลูกค้ายังไม่ระบุ ให้ใช้ Search Engine ช่วยคัดจาก Age, Height, Body, Role, Level และ Online Status';
+          }
+
+          selectedModel = null;
+          renderModelCards(currentModels.length ? currentModels : fallbackModels);
+          updatePreview();
+
+          setStatus(
+            selectedModelMode === 'named'
+              ? 'ใช้โหมดค้นหาจากชื่อนายแบบ'
+              : 'ใช้โหมด Search Engine แนะนำจากสเปค',
+            'ok'
+          );
+        }
+
+        function normalizeArray(value) {
+          if (Array.isArray(value)) return value;
+
+          if (typeof value === 'string' && value.trim()) {
+            return value
+              .split(',')
+              .map((item) => item.trim())
+              .filter(Boolean);
+          }
+
+          return [];
+        }
+
+        function normalizeApiModel(item) {
+          return {
+            model_id:
+              item.model_id ||
+              item.id ||
+              item.record_id ||
+              item.unique_key ||
+              item.name ||
+              item.model_name ||
+              \`model-\${Math.random().toString(36).slice(2)}\`,
+            model_name:
+              item.model_name ||
+              item.name ||
+              item.nickname ||
+              item.display_name ||
+              'Unnamed model',
+            age:
+              item.age ||
+              item.model_age ||
+              item.age_years ||
+              null,
+            height_cm:
+              item.height_cm ||
+              item.height ||
+              item.model_height_cm ||
+              null,
+            body_type:
+              item.body_type ||
+              item.body ||
+              item.model_body_type ||
+              'n/a',
+            style_tags:
+              normalizeArray(item.style_tags || item.tags || item.look_tags),
+            folders:
+              normalizeArray(item.folders || item.service_tags || item.categories),
+            role_type:
+              normalizeArray(item.role_type || item.roles || item.role_tags),
+            service_level:
+              normalizeArray(item.service_level || item.levels || item.package_tags),
+            language_tags:
+              normalizeArray(item.language_tags || item.languages),
+            availability:
+              item.availability ||
+              item.online_status ||
+              item.status_online ||
+              item.model_console_status ||
+              'unknown',
+            status:
+              item.status ||
+              item.model_status ||
+              'available',
+            reliability_score:
+              item.reliability_score ||
+              item.reliability ||
+              0,
+            fit_score:
+              item.fit_score ||
+              item.score ||
+              item.match_score ||
+              0,
+            note:
+              item.note ||
+              item.summary ||
+              item.short_summary ||
+              'ยังไม่มี note'
+          };
+        }
+
+        function getManualFilters() {
+          return {
+            query: fieldValue('model_query').toLowerCase(),
+            online: fieldValue('model_online_filter'),
+            ageRange: fieldValue('model_age_range'),
+            heightRange: fieldValue('model_height_range'),
+            bodyType: fieldValue('model_body_type'),
+            style: fieldValue('model_style'),
+            roleType: fieldValue('model_role_type'),
+            serviceLevel: fieldValue('model_service_level'),
+            language: fieldValue('model_language')
+          };
+        }
+
+        function inAgeRange(model, range) {
+          if (!range) return true;
+
+          const age = Number(model.age || 0);
+          if (!age) return false;
+
+          if (range === '18_21') return age >= 18 && age <= 21;
+          if (range === '22_25') return age >= 22 && age <= 25;
+          if (range === '26_30') return age >= 26 && age <= 30;
+          if (range === '31_35') return age >= 31 && age <= 35;
+          if (range === '36_plus') return age >= 36;
+
+          return true;
+        }
+
+        function inHeightRange(model, range) {
+          if (!range) return true;
+
+          const height = Number(model.height_cm || 0);
+          if (!height) return false;
+
+          if (range === '165_170') return height >= 165 && height <= 170;
+          if (range === '171_175') return height >= 171 && height <= 175;
+          if (range === '176_180') return height >= 176 && height <= 180;
+          if (range === '181_185') return height >= 181 && height <= 185;
+          if (range === '186_plus') return height >= 186;
+
+          return true;
+        }
+
+        function modelMatchesFilters(model) {
+          const filters = getManualFilters();
+
+          const haystack = [
+            model.model_name,
+            model.note,
+            model.body_type,
+            model.availability,
+            model.status,
+            ...(model.style_tags || []),
+            ...(model.folders || []),
+            ...(model.role_type || []),
+            ...(model.service_level || []),
+            ...(model.language_tags || [])
+          ]
+            .join(' ')
+            .toLowerCase();
+
+          if (filters.query && !haystack.includes(filters.query)) return false;
+
+          if (filters.online === 'online_only' && model.availability !== 'online') return false;
+          if (filters.bodyType && model.body_type !== filters.bodyType) return false;
+          if (filters.style && !(model.style_tags || []).includes(filters.style)) return false;
+          if (filters.roleType && !(model.role_type || []).includes(filters.roleType)) return false;
+          if (filters.serviceLevel && !(model.service_level || []).includes(filters.serviceLevel)) return false;
+          if (filters.language && !(model.language_tags || []).includes(filters.language)) return false;
+          if (!inAgeRange(model, filters.ageRange)) return false;
+          if (!inHeightRange(model, filters.heightRange)) return false;
+
+          return true;
+        }
+
+        function sortModels(models) {
+          const filters = getManualFilters();
+
+          return models.slice().sort((a, b) => {
+            if (filters.online === 'online_first') {
+              if (a.availability === 'online' && b.availability !== 'online') return -1;
+              if (a.availability !== 'online' && b.availability === 'online') return 1;
+            }
+
+            return Number(b.fit_score || 0) - Number(a.fit_score || 0);
+          });
+        }
+
+        function localFilteredFallbackModels() {
+          return sortModels(fallbackModels.filter(modelMatchesFilters));
+        }
+
+        function renderModelCards(models) {
+          if (!modelResults) return;
+
+          currentModels = Array.isArray(models) ? models : [];
+
+          if (!currentModels.length) {
+            modelResults.innerHTML = '<div class="mmd-session-rebuilt__empty">ยังไม่พบนายแบบที่ตรง filter นี้ ลองเปลี่ยน Online Filter หรือ Save Draft แล้วถามบรีฟเพิ่ม</div>';
+            return;
+          }
+
+          modelResults.innerHTML = currentModels.map((model) => {
+            const modelId = String(model.model_id || '');
+            const isSelected = selectedModel && String(selectedModel.model_id) === modelId;
+            const onlineClass = model.availability === 'online' ? ' is-online' : '';
+            const ageTag = model.age
+              ? \`<em class="mmd-session-rebuilt__tag is-age">Age \${escapeHTML(model.age)}</em>\`
+              : '<em class="mmd-session-rebuilt__tag is-missing">Age missing</em>';
+
+            return \`
+              <button type="button" class="mmd-session-rebuilt__model-card\${isSelected ? ' is-selected' : ''}" data-select-model="\${escapeHTML(modelId)}">
+                <div class="mmd-session-rebuilt__model-avatar">\${escapeHTML(String(model.model_name || 'M').charAt(0).toUpperCase())}</div>
+
+                <div>
+                  <strong>\${escapeHTML(model.model_name)}</strong>
+                  <span>\${escapeHTML(model.note)}</span>
+                  <span>\${escapeHTML(model.height_cm || '-')}cm · \${escapeHTML(model.body_type || 'body n/a')} · Fit \${escapeHTML(model.fit_score || 0)}% · Reliability \${escapeHTML(model.reliability_score || 0)}%</span>
+                </div>
+
+                <div class="mmd-session-rebuilt__model-tags">
+                  \${ageTag}
+                  <em class="mmd-session-rebuilt__tag">\${escapeHTML(model.height_cm || '-')}cm</em>
+                  <em class="mmd-session-rebuilt__tag">\${escapeHTML(model.body_type || 'body n/a')}</em>
+                  <em class="mmd-session-rebuilt__tag\${onlineClass}">\${escapeHTML(model.availability || 'unknown')}</em>
+                  <em class="mmd-session-rebuilt__tag">\${escapeHTML(model.status || 'available')}</em>
+                </div>
+              </button>
+            \`;
+          }).join('');
+
+          modelResults.querySelectorAll('[data-select-model]').forEach((button) => {
+            button.addEventListener('click', () => {
+              selectedModel = currentModels.find((model) => {
+                return String(model.model_id) === String(button.dataset.selectModel);
+              }) || null;
+
+              renderModelCards(currentModels);
+              updatePreview();
+
+              setStatus(
+                selectedModel ? \`เลือกนายแบบ \${selectedModel.model_name} แล้ว\` : '',
+                'ok'
+              );
+            });
+          });
+        }
+
+        function buildSearchParams() {
+          const params = new URLSearchParams();
+
+          const query = fieldValue('model_query');
+          if (query) params.set('q', query);
+
+          params.set('limit', '12');
+          params.set('work_type', selectedWorkType);
+          params.set('model_mode', selectedModelMode);
+
+          const filters = {
+            online: fieldValue('model_online_filter'),
+            age_range: fieldValue('model_age_range'),
+            height_range: fieldValue('model_height_range'),
+            body_type: fieldValue('model_body_type'),
+            style: fieldValue('model_style'),
+            role_type: fieldValue('model_role_type'),
+            service_level: fieldValue('model_service_level'),
+            language: fieldValue('model_language')
+          };
+
+          Object.keys(filters).forEach((key) => {
+            if (filters[key]) params.set(key, filters[key]);
+          });
+
+          return params;
+        }
+
+        async function runModelSearch() {
+          const params = buildSearchParams();
+
+          if (lastSearchController) {
+            lastSearchController.abort();
+          }
+
+          lastSearchController = new AbortController();
+
+          setStatus('กำลังค้นหานายแบบจาก Model Console...', 'loading');
+
+          try {
+            const response = await fetch(\`\${API.modelSearch}?\${params.toString()}\`, {
+              method: 'GET',
+              credentials: 'include',
+              headers: { Accept: 'application/json' },
+              signal: lastSearchController.signal
+            });
+
+            if (response.status === 401) {
+              setStatus('ยังไม่ได้รับสิทธิ์ admin session หรือ cookie หมดอายุ กรุณา login ใหม่', 'error');
+              renderModelCards(localFilteredFallbackModels());
+              return;
+            }
+
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok || data.ok === false) {
+              setStatus(data.error || 'ค้นหาไม่สำเร็จ ใช้ fallback list ชั่วคราว', 'error');
+              renderModelCards(localFilteredFallbackModels());
+              return;
+            }
+
+            const items = Array.isArray(data.items)
+              ? data.items.map(normalizeApiModel)
+              : [];
+
+            selectedModel = null;
+            renderModelCards(items);
+            updatePreview();
+
+            setStatus(
+              items.length
+                ? \`ค้นหาสำเร็จ พบ \${items.length} รายการ\`
+                : 'ค้นหาสำเร็จ แต่ยังไม่พบ model ที่ตรงเงื่อนไข',
+              items.length ? 'ok' : 'error'
+            );
+          } catch (error) {
+            if (error.name === 'AbortError') return;
+
+            console.error('Model search failed:', error);
+            setStatus('เชื่อมต่อ model search ไม่สำเร็จ ใช้ fallback list ชั่วคราว', 'error');
+            renderModelCards(localFilteredFallbackModels());
+          }
+        }
+
+        function buildPayload(status) {
+          const amount = fieldNumber('amount_thb');
+
+          return {
+            session_id: draftSessionId,
+            status: status || fieldValue('session_status') || 'draft',
+            work_type: selectedWorkType,
+            model_selection_mode: selectedModelMode,
+            subtype: currentSubtype(),
+
+            client_name: fieldValue('client_name'),
+            member_tier: fieldValue('member_tier'),
+            contact_channel: fieldValue('contact_channel'),
+            client_id: fieldValue('client_id'),
+
+            model: selectedModel,
+
+            schedule: {
+              date: fieldValue('service_date'),
+              time: fieldValue('service_time'),
+              duration: fieldValue('duration')
+            },
+
+            location: {
+              place_name: fieldValue('place_name'),
+              google_map_url: fieldValue('google_map_url')
+            },
+
+            amount: {
+              amount_thb: amount,
+              amount_purpose: fieldValue('amount_purpose'),
+              client_amount_note: fieldValue('client_amount_note')
+            },
+
+            public: selectedWorkType === 'public'
+              ? {
+                  public_job_type: fieldValue('public_job_type'),
+                  visibility: fieldValue('visibility'),
+                  public_rate: fieldNumber('public_rate'),
+                  public_duration: fieldValue('public_duration'),
+                  public_brief: fieldValue('public_brief')
+                }
+              : null,
+
+            private: selectedWorkType === 'private'
+              ? {
+                  role_type: fieldValue('private_role_type'),
+                  service_level: fieldValue('private_service_level'),
+                  private_job_type: fieldValue('private_job_type'),
+                  boss_review: fieldValue('boss_review'),
+                  private_brief: fieldValue('private_brief'),
+                  admin_caution: fieldValue('admin_caution')
+                }
+              : null,
+
+            meta: {
+              source: 'internal_admin_create_session',
+              ui_version: 'mmd-session-rebuilt-lv12',
+              created_from_cookie_session: true
+            }
+          };
+        }
+
+        function validateCreatePayload() {
+          const missing = [];
+
+          if (!selectedWorkType) missing.push('Public / Private');
+          if (!fieldValue('client_name')) missing.push('ชื่อลูกค้า');
+          if (!selectedModel) missing.push('นายแบบ');
+          if (!currentSubtype()) missing.push('รูปแบบงาน');
+
+          if (selectedWorkType === 'private') {
+            if (!fieldValue('private_role_type')) missing.push('Role Type');
+            if (!fieldValue('private_service_level')) missing.push('Service Level');
+          }
+
+          if (currentBrief().length < 20) missing.push('Brief อย่างน้อย 20 ตัวอักษร');
+          if (!fieldValue('service_date')) missing.push('วันที่');
+          if (!fieldValue('service_time')) missing.push('เวลาเริ่ม');
+          if (!fieldValue('duration')) missing.push('ระยะเวลา');
+          if (!fieldValue('place_name')) missing.push('ชื่อสถานที่');
+          if (!isLikelyMapUrl(fieldValue('google_map_url'))) missing.push('Google Map URL');
+          if (fieldNumber('amount_thb') <= 0) missing.push('ยอดที่ต้องส่งให้ลูกค้า');
+
+          return missing;
+        }
+
+        async function postSession(payload, isDraft) {
+          const endpoint = isDraft
+            ? \`\${API.createSession}?draft=1\`
+            : API.createSession;
+
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              Accept: 'application/json',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+          });
+
+          const data = await response.json().catch(() => ({}));
+
+          if (response.status === 401) {
+            throw new Error('unauthorized');
+          }
+
+          if (!response.ok || data.ok === false) {
+            const error = new Error(data.error || 'request_failed');
+            error.data = data;
+            error.status = response.status;
+            throw error;
+          }
+
+          return data;
+        }
+
+        function openHelp(topic, override) {
+          const item = override || helpCopy[topic] || {
+            title: 'คำอธิบาย',
+            body: 'ถ้ายังไม่มั่นใจ ให้ Save Draft ก่อนครับ'
+          };
+
+          if (helpTitle) helpTitle.textContent = item.title;
+          if (helpBody) helpBody.textContent = item.body;
+          if (modal) modal.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeHelp() {
+          if (modal) modal.setAttribute('aria-hidden', 'true');
+        }
+
+        function wireEvents() {
+          root.querySelectorAll('[data-work-type]').forEach((button) => {
+            button.addEventListener('click', () => setWorkType(button.dataset.workType));
+          });
+
+          root.querySelectorAll('[data-model-mode]').forEach((button) => {
+            button.addEventListener('click', () => setModelMode(button.dataset.modelMode));
+          });
+
+          root.querySelector('[data-model-search]')?.addEventListener('click', runModelSearch);
+
+          root.querySelectorAll('[data-help-topic]').forEach((button) => {
+            button.addEventListener('click', () => openHelp(button.dataset.helpTopic));
+          });
+
+          root.querySelectorAll('[data-help-close]').forEach((button) => {
+            button.addEventListener('click', closeHelp);
+          });
+
+          document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') closeHelp();
+          });
+
+          root.querySelectorAll('[data-scroll-target]').forEach((button) => {
+            button.addEventListener('click', () => {
+              const target = document.querySelector(button.dataset.scrollTarget);
+              if (!target) return;
+
+              root.querySelectorAll('[data-scroll-target]').forEach((chip) => {
+                chip.classList.remove('is-active');
+              });
+
+              button.classList.add('is-active');
+              target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+          });
+
+          root.querySelector('[data-save-draft]')?.addEventListener('click', async () => {
+            const payload = buildPayload('draft');
+            console.log('SĪGIL Save Draft Payload:', payload);
+
+            setStatus('กำลัง Save Draft...', 'loading');
+
+            try {
+              const result = await postSession(payload, true);
+              console.log('SĪGIL Save Draft Result:', result);
+              setStatus('Save Draft แล้วครับ พี่จะเข้ามาตรวจสอบให้ทีหลัง', 'ok');
+            } catch (error) {
+              console.error(error);
+
+              setStatus(
+                error.message === 'unauthorized'
+                  ? 'admin session หมดอายุ กรุณา login ใหม่'
+                  : 'Save Draft ไม่สำเร็จ แต่ payload ถูก log ไว้ใน console แล้ว',
+                'error'
+              );
+            }
+          });
+
+          form.addEventListener('input', () => {
+            updatePreview();
+          });
+
+          form.addEventListener('change', () => {
+            updatePreview();
+
+            const activeName = document.activeElement && document.activeElement.name;
+            const modelFilterNames = [
+              'model_online_filter',
+              'model_age_range',
+              'model_height_range',
+              'model_body_type',
+              'model_style',
+              'model_role_type',
+              'model_service_level',
+              'model_language'
+            ];
+
+            if (modelFilterNames.includes(activeName)) {
+              renderModelCards(localFilteredFallbackModels());
+            }
+          });
+
+          const modelQuery = form.elements.model_query;
+
+          if (modelQuery) {
+            let typingTimer = null;
+
+            modelQuery.addEventListener('input', () => {
+              window.clearTimeout(typingTimer);
+
+              typingTimer = window.setTimeout(() => {
+                renderModelCards(localFilteredFallbackModels());
+                updatePreview();
+              }, 180);
+            });
+
+            modelQuery.addEventListener('keydown', (event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                runModelSearch();
+              }
+            });
+          }
+
+          form.addEventListener('reset', () => {
+            setTimeout(() => {
+              selectedWorkType = 'public';
+              selectedModelMode = 'named';
+              selectedModel = null;
+              currentModels = fallbackModels.slice();
+
+              setWorkType('public');
+              setModelMode('named');
+              renderModelCards(fallbackModels);
+              updatePreview();
+              setStatus('', '');
+            }, 0);
+          });
+
+          form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const missing = validateCreatePayload();
+
+            if (missing.length) {
+              const body = \`ข้อมูลที่ยังต้องเช็ก: \${missing.join(', ')}. ถ้ายังไม่ชัวร์ ให้ Save Draft ไว้ก่อนครับ\`;
+
+              setStatus(\`ยังไม่ควรสร้าง Session นี้ ขาด: \${missing.join(', ')}\`, 'error');
+              openHelp('create-blocked', {
+                title: 'ยังสร้าง Session ไม่ได้',
+                body
+              });
+
+              return;
+            }
+
+            const payload = buildPayload('draft');
+            console.log('SĪGIL Create Session Payload:', payload);
+
+            setStatus('กำลังสร้าง Session...', 'loading');
+
+            try {
+              const result = await postSession(payload, false);
+              console.log('SĪGIL Create Session Result:', result);
+              setStatus('สร้าง Session สำเร็จแล้วครับ', 'ok');
+            } catch (error) {
+              console.error(error);
+
+              setStatus(
+                error.message === 'unauthorized'
+                  ? 'admin session หมดอายุ กรุณา login ใหม่'
+                  : 'สร้าง Session ไม่สำเร็จ ตรวจ console หรือ worker response อีกครั้ง',
+                'error'
+              );
+            }
+          });
+        }
+
+        function init() {
+          currentModels = fallbackModels.slice();
+
+          wireEvents();
+          setWorkType('public');
+          setModelMode('named');
+          renderModelCards(fallbackModels);
+          updatePreview();
+          setStatus('', '');
+        }
+
+        init();
+      })();
+    </script>
+  </body>
+</html>`;
+
+  return new Response(html, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 function renderCreateSessionPage(method) {
   if (method === "HEAD") {
     return new Response(null, {
@@ -1051,6 +4918,16 @@ function renderCreateSessionPage(method) {
       .summary-card { padding:16px 18px; border:1px solid var(--line); border-radius:18px; background:rgba(255,255,255,.03); }
       .summary-label { margin:0 0 8px; color:var(--gold); font:600 .74rem/1.2 "Avenir Next Condensed", "Gill Sans", sans-serif; letter-spacing:.14em; text-transform:uppercase; }
       .summary-value { margin:0; color:var(--text); line-height:1.6; white-space:pre-wrap; word-break:break-word; }
+      .asset-stack { display:grid; gap:12px; }
+      .asset-box { padding:14px 16px; border:1px solid var(--line); border-radius:16px; background:rgba(255,255,255,.025); }
+      .asset-box-title { margin:0 0 6px; color:var(--text); font:600 .98rem/1.3 "Avenir Next", "Gill Sans", sans-serif; }
+      .asset-box-meta { margin:0; color:var(--muted); line-height:1.5; white-space:pre-wrap; }
+      .asset-links { display:grid; gap:10px; margin-top:10px; }
+      .asset-link { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:12px 14px; border:1px solid var(--line); border-radius:14px; background:rgba(7,6,10,.5); }
+      .asset-link-label { margin:0; color:var(--text); }
+      .asset-link-meta { margin:2px 0 0; color:var(--muted); font-size:.9rem; }
+      .asset-link a { color:var(--gold); text-decoration:none; font:600 .78rem/1.2 "Avenir Next Condensed", "Gill Sans", sans-serif; letter-spacing:.1em; text-transform:uppercase; }
+      .asset-empty { color:var(--muted); }
       .quick-grid { display:grid; gap:16px; grid-template-columns:minmax(0,1fr); }
       .result-block[hidden] { display:none; }
       details.advanced { margin-top:8px; border:1px solid var(--line); border-radius:20px; background:rgba(255,255,255,.02); padding:8px 16px 16px; }
@@ -1092,12 +4969,28 @@ function renderCreateSessionPage(method) {
 
         <input id="memberstack_id" type="hidden" />
         <input id="model_id" type="hidden" />
+        <input id="model_airtable_id" type="hidden" />
+        <input id="model_lookup_key" type="hidden" />
+        <input id="model_asset_source" type="hidden" />
+        <input id="model_package_tier" type="hidden" />
+        <input id="model_asset_folder_id" type="hidden" />
+        <input id="model_asset_folder_url" type="hidden" />
+        <input id="model_r2_folder_prefix" type="hidden" />
+        <input id="selected_profile_image_key" type="hidden" />
 
         <details class="advanced">
           <summary>ตัวเลือกเพิ่มเติม</summary>
           <div class="grid">
             <label>จ่ายโมเดล THB<input id="pay_model_thb" type="number" min="0" step="1" /></label>
             <label>Currency<input id="currency" type="text" value="THB" /></label>
+            <label>Package Tier
+              <select id="package_tier_override">
+                <option value="">Auto from model tier</option>
+                <option value="standard">Standard</option>
+                <option value="premium">Premium</option>
+                <option value="vip">VIP / SVIP / Blackcard</option>
+              </select>
+            </label>
             <label>Payment Ref<input id="payment_ref" type="text" /></label>
             <label>Session ID<input id="session_id" type="text" /></label>
             <label>Return URL<input id="return_url" type="url" /></label>
@@ -1117,6 +5010,22 @@ function renderCreateSessionPage(method) {
       <div class="summary-grid">
         <div class="summary-card"><p class="summary-label">Member ที่เลือก</p><p id="member_summary" class="summary-value">ยังไม่ได้เลือก member</p></div>
         <div class="summary-card"><p class="summary-label">Model ที่เลือก</p><p id="model_summary" class="summary-value">ยังไม่ได้เลือก model</p></div>
+        <div class="summary-card">
+          <p class="summary-label">Model Asset Resolver</p>
+          <p id="model_folder_summary" class="summary-value">ยังไม่ได้ resolve asset folder</p>
+          <div class="asset-stack">
+            <div class="asset-box">
+              <p class="asset-box-title">Primary Package</p>
+              <p id="primary_package_summary" class="asset-box-meta">ยังไม่ได้ resolve</p>
+              <p class="summary-value"><a id="open_drive_folder" href="#" target="_blank" rel="noopener noreferrer" hidden>Open Drive folder</a></p>
+            </div>
+            <div class="asset-box">
+              <p class="asset-box-title">Inherited Packages</p>
+              <div id="inherited_package_list" class="asset-links"><p class="asset-empty">ยังไม่มี inherited package</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="summary-card"><p class="summary-label">Model Preview</p><p id="model_preview_summary" class="summary-value">ยังไม่มี preview</p></div>
       </div>
 
       <pre id="result">${escapeHtml("รอการส่งข้อมูล...")}</pre>
@@ -1132,8 +5041,14 @@ function renderCreateSessionPage(method) {
         const copyConfirmationUrlButton = document.getElementById("copy_confirmation_url");
         const memberSummary = document.getElementById("member_summary");
         const modelSummary = document.getElementById("model_summary");
+        const modelFolderSummary = document.getElementById("model_folder_summary");
+        const modelPreviewSummary = document.getElementById("model_preview_summary");
+        const primaryPackageSummary = document.getElementById("primary_package_summary");
+        const inheritedPackageList = document.getElementById("inherited_package_list");
+        const openDriveFolder = document.getElementById("open_drive_folder");
         const bearer = document.getElementById("bearer");
         const confirmKey = document.getElementById("confirmKey");
+        const packageTierOverride = document.getElementById("package_tier_override");
         const form = document.getElementById("create-session-form");
         const memberSearch = document.getElementById("member_search");
         const modelSearch = document.getElementById("model_search");
@@ -1151,6 +5066,62 @@ function renderCreateSessionPage(method) {
         }
         function setSelectionSummary(target, lines) {
           target.textContent = Array.isArray(lines) && lines.length ? lines.filter(Boolean).join("\\n") : "-";
+        }
+        function setHiddenValue(id, value) {
+          const el = document.getElementById(id);
+          if (el) el.value = value || "";
+        }
+        function renderInheritedPackages(items) {
+          inheritedPackageList.innerHTML = "";
+          if (!Array.isArray(items) || !items.length) {
+            const empty = document.createElement("p");
+            empty.className = "asset-empty";
+            empty.textContent = "ยังไม่มี inherited package";
+            inheritedPackageList.appendChild(empty);
+            return;
+          }
+          for (const item of items) {
+            const row = document.createElement("div");
+            row.className = "asset-link";
+
+            const copy = document.createElement("div");
+            const label = document.createElement("p");
+            label.className = "asset-link-label";
+            label.textContent = item.label || item.tier || "Package";
+            const meta = document.createElement("p");
+            meta.className = "asset-link-meta";
+            meta.textContent = [item.tier ? "tier: " + item.tier : "", item.folder_id ? "folder_id: " + item.folder_id : ""].filter(Boolean).join(" | ");
+            copy.appendChild(label);
+            copy.appendChild(meta);
+
+            const linkWrap = document.createElement("div");
+            const link = document.createElement("a");
+            link.href = item.folder_url || "#";
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = item.open_label || "Open Drive folder";
+            linkWrap.appendChild(link);
+
+            row.appendChild(copy);
+            row.appendChild(linkWrap);
+            inheritedPackageList.appendChild(row);
+          }
+        }
+        function clearModelFolderState() {
+          setHiddenValue("model_airtable_id", "");
+          setHiddenValue("model_lookup_key", "");
+          setHiddenValue("model_asset_source", "");
+          setHiddenValue("model_package_tier", "");
+          setHiddenValue("model_asset_folder_id", "");
+          setHiddenValue("model_asset_folder_url", "");
+          setHiddenValue("model_r2_folder_prefix", "");
+          setHiddenValue("selected_profile_image_key", "");
+          openDriveFolder.hidden = true;
+          openDriveFolder.href = "#";
+          setSelectionSummary(modelFolderSummary, ["ยังไม่ได้ resolve asset folder"]);
+          primaryPackageSummary.textContent = "ยังไม่ได้ resolve";
+          renderInheritedPackages([]);
+          setSelectionSummary(modelPreviewSummary, ["ยังไม่มี preview"]);
         }
         function updateCopyButton(payload) {
           const confirmationUrl = payload && (payload.confirmation_url || payload.confirm_url || "");
@@ -1194,20 +5165,26 @@ function renderCreateSessionPage(method) {
           setResultsVisibility(kind, true);
           for (const item of items) {
             const fields = item && item.fields ? item.fields : {};
+            const modelRecord = kind === "model" && (!item.fields || item.airtable_record_id)
+              ? item
+              : null;
             const label = kind === "member"
               ? [fields.name || fields.Name || fields.nickname || "Member", fields.memberstack_id || "", fields.telegram_username || fields.telegram_id || ""].filter(Boolean).join(" | ")
-              : [fields.name || fields.Name || fields.nickname || "Model", fields.unique_key || "", fields.telegram_username || fields.telegram_id || ""].filter(Boolean).join(" | ");
+              : [modelRecord?.model_name || fields.name || fields.Name || fields.nickname || "Model", modelRecord?.model_lookup_key || fields.unique_key || "", modelRecord?.status || ""].filter(Boolean).join(" | ");
             const option = document.createElement("option");
-            option.value = kind === "member" ? String(fields.memberstack_id || "") : String(item.id || fields.id || "");
+            option.value = kind === "member"
+              ? String(fields.memberstack_id || "")
+              : String(modelRecord?.airtable_record_id || item.id || fields.id || "");
             option.textContent = label;
-            option.dataset.recordId = String(item.id || "");
+            option.dataset.recordId = String(modelRecord?.airtable_record_id || item.id || "");
             option.dataset.summary = JSON.stringify({
               kind,
-              recordId: String(item.id || ""),
-              name: String(fields.name || fields.Name || fields.nickname || ""),
+              recordId: String(modelRecord?.airtable_record_id || item.id || ""),
+              name: String(modelRecord?.model_name || fields.name || fields.Name || fields.nickname || ""),
               memberstackId: String(fields.memberstack_id || ""),
-              uniqueKey: String(fields.unique_key || ""),
-              telegram: String(fields.telegram_username || fields.telegram_id || ""),
+              uniqueKey: String(modelRecord?.model_lookup_key || fields.unique_key || ""),
+              telegram: String(modelRecord?.telegram_status || fields.telegram_username || fields.telegram_id || ""),
+              folderStatus: String(modelRecord?.r2_folder_status || ""),
             });
             select.appendChild(option);
           }
@@ -1224,12 +5201,150 @@ function renderCreateSessionPage(method) {
             setSelectionSummary(memberSummary, ["ยังไม่ได้เลือก member"]);
           } else {
             setSelectionSummary(modelSummary, ["ยังไม่ได้เลือก model"]);
+            clearModelFolderState();
           }
+        }
+        async function fetchModelFolder(modelId) {
+          const params = new URLSearchParams();
+          if (packageTierOverride.value) params.set("package_tier", packageTierOverride.value);
+          const response = await fetch("/v1/admin/models/" + encodeURIComponent(modelId) + "/folder" + (params.toString() ? "?" + params.toString() : ""), {
+            method: "GET",
+            headers: buildHeaders(),
+          });
+          const data = await response.json().catch(() => null);
+          if (!response.ok || !data || !data.ok) {
+            throw new Error((data && (data.error?.message || data.error)) || "model_folder_lookup_failed");
+          }
+          return data;
+        }
+        async function resolveModelFolder(modelId) {
+          const response = await fetch("/v1/admin/models/" + encodeURIComponent(modelId) + "/resolve-folder", {
+            method: "POST",
+            headers: buildHeaders(),
+            body: JSON.stringify({ package_tier: packageTierOverride.value || "" }),
+          });
+          const data = await response.json().catch(() => null);
+          if (!response.ok || !data || !data.ok) {
+            throw new Error((data && (data.error?.message || data.error)) || "model_folder_resolve_failed");
+          }
+          return data;
+        }
+        async function bindModelFolder(modelId, summaryInfo) {
+          setStatus("กำลัง resolve model asset folder...");
+          const folderData = await fetchModelFolder(modelId).catch(async () => {
+            const resolved = await resolveModelFolder(modelId);
+            if (resolved && Array.isArray(resolved.matches) && resolved.matches.length && !resolved.requires_operator_review) {
+              const best = resolved.matches[0];
+              return {
+                ok: true,
+                model: {
+                  airtable_record_id: modelId,
+                  model_name: summaryInfo?.name || "Model",
+                  model_lookup_key: summaryInfo?.uniqueKey || "",
+                  model_code: "",
+                },
+                asset_source: "google_drive",
+                package: {
+                  tier: best.package_tier || "standard",
+                  inherits: Array.isArray(best.package_inherits) ? best.package_inherits : [],
+                  drive_folder_key: best.drive_folder_key || (best.package_tier || "standard"),
+                  matched_from: best.match_reason || "resolve",
+                  requires_operator_review: false,
+                },
+                primary_package: {
+                  tier: best.package_tier || "standard",
+                  drive_folder_key: best.drive_folder_key || (best.package_tier || "standard"),
+                  folder_id: best.folder_id || "",
+                  folder_url: best.folder_url || "",
+                  label: best.package_tier || "standard",
+                  open_label: best.open_label || "Open Drive folder",
+                },
+                inherited_packages: [],
+                open_drive_links: best.folder_url ? [{
+                  tier: best.package_tier || "standard",
+                  drive_folder_key: best.drive_folder_key || (best.package_tier || "standard"),
+                  folder_id: best.folder_id || "",
+                  folder_url: best.folder_url || "",
+                  label: best.package_tier || "standard",
+                  open_label: best.open_label || "Open Drive folder",
+                }] : [],
+                google_drive: {
+                  folder_id: best.folder_id || "",
+                  folder_url: best.folder_url || "",
+                  owner_account: best.owner_account || "mmdprive@gmail.com",
+                  drive_folder_key: best.drive_folder_key || "",
+                  package_inherits: Array.isArray(best.package_inherits) ? best.package_inherits : [],
+                  includes_package_tiers: Array.isArray(best.includes_package_tiers) ? best.includes_package_tiers : [],
+                  access_note: best.access_note || "",
+                  legacy_source_status: "not_fully_reconciled",
+                  open_label: best.open_label || "Open Drive folder",
+                },
+                preview: {
+                  profile_image_url: null,
+                  gallery_preview_urls: [],
+                },
+              };
+            }
+            throw new Error(
+              resolved && resolved.matches && resolved.matches.length
+                ? "ต้องให้ operator confirm folder ก่อน"
+                : "ยังหา folder ไม่เจอ"
+            );
+          });
+
+          const model = folderData.model || {};
+          const r2 = folderData.r2 || {};
+          const pkg = folderData.package || {};
+          const primaryPackage = folderData.primary_package || {};
+          const inheritedPackages = Array.isArray(folderData.inherited_packages) ? folderData.inherited_packages : [];
+          const drive = folderData.google_drive || {};
+          const preview = folderData.preview || {};
+
+          setHiddenValue("model_airtable_id", model.airtable_record_id || modelId);
+          setHiddenValue("model_lookup_key", model.model_lookup_key || summaryInfo?.uniqueKey || "");
+          setHiddenValue("model_asset_source", folderData.asset_source || "google_drive");
+          setHiddenValue("model_package_tier", pkg.tier || packageTierOverride.value || "standard");
+          setHiddenValue("model_asset_folder_id", drive.folder_id || "");
+          setHiddenValue("model_asset_folder_url", drive.folder_url || "");
+          setHiddenValue("model_r2_folder_prefix", r2.folder_prefix || "");
+          setHiddenValue("selected_profile_image_key", r2.profile_image_key || "");
+
+          openDriveFolder.hidden = !drive.folder_url;
+          openDriveFolder.href = drive.folder_url || "#";
+          openDriveFolder.textContent = primaryPackage.open_label || drive.open_label || "Open Drive folder";
+
+          setSelectionSummary(modelFolderSummary, [
+            model.model_name || summaryInfo?.name || "Model",
+            model.model_lookup_key ? "lookup_key: " + model.model_lookup_key : "",
+            pkg.tier ? "package: " + pkg.tier : "package: standard",
+            Array.isArray(pkg.inherits) && pkg.inherits.length
+              ? "inherits: " + pkg.inherits.join(", ")
+              : "",
+            drive.folder_id ? "drive_folder_id: " + drive.folder_id : "drive folder: missing",
+            drive.owner_account ? "owner: " + drive.owner_account : "",
+            Array.isArray(drive.includes_package_tiers) && drive.includes_package_tiers.length
+              ? "includes: " + drive.includes_package_tiers.join(", ")
+              : "",
+            drive.access_note ? drive.access_note : "",
+            pkg.requires_operator_review ? "review: package fallback standard" : "",
+          ]);
+          primaryPackageSummary.textContent = [
+            primaryPackage.label || drive.folder_label || "Package",
+            primaryPackage.tier ? "tier: " + primaryPackage.tier : "",
+            primaryPackage.drive_folder_key ? "drive_key: " + primaryPackage.drive_folder_key : "",
+            primaryPackage.folder_id ? "folder_id: " + primaryPackage.folder_id : "",
+          ].filter(Boolean).join("\\n");
+          renderInheritedPackages(inheritedPackages);
+          setSelectionSummary(modelPreviewSummary, [
+            preview.profile_image_url ? "profile: ready" : "profile: none",
+            drive.folder_url ? "drive folder: ready" : "drive folder: none",
+          ]);
+          setStatus(drive.folder_url ? "เลือก model และ resolve Google Drive folder แล้ว" : "เลือก model แล้ว แต่ยัง resolve asset folder ไม่สำเร็จ", drive.folder_url ? "success" : "error");
         }
         async function runLookup(kind) {
           const query = (kind === "member" ? memberSearch.value : modelSearch.value).trim();
           const select = kind === "member" ? memberResults : modelResults;
-          const path = kind === "member" ? "/v1/admin/members/list" : "/v1/admin/models/list";
+          const path = kind === "member" ? "/v1/admin/members/list" : "/v1/admin/models/search";
           try {
             const params = new URLSearchParams();
             if (query) params.set("q", query);
@@ -1344,6 +5459,18 @@ function renderCreateSessionPage(method) {
           resetResolvedEntity("model");
           setResultsVisibility("model", false);
         });
+        packageTierOverride.addEventListener("change", async () => {
+          const modelId = document.getElementById("model_id").value.trim();
+          if (!modelId) return;
+          try {
+            const option = modelResults.options[modelResults.selectedIndex];
+            const info = option ? JSON.parse(option.dataset.summary || "{}") : {};
+            await bindModelFolder(modelId, info);
+          } catch (error) {
+            clearModelFolderState();
+            setStatus(String(error && error.message ? error.message : error) || "resolve asset folder ไม่สำเร็จ", "error");
+          }
+        });
         memberSearch.addEventListener("keydown", (event) => {
           if (event.key === "Enter") {
             event.preventDefault();
@@ -1383,15 +5510,24 @@ function renderCreateSessionPage(method) {
             setStatus("เลือก member แล้ว", "success");
           }
         });
-        modelResults.addEventListener("change", () => {
+        modelResults.addEventListener("change", async () => {
           const option = modelResults.options[modelResults.selectedIndex];
           if (option && option.value) {
-            document.getElementById("model_id").value = option.dataset.recordId || option.value;
+            const recordId = option.dataset.recordId || option.value;
+            document.getElementById("model_id").value = recordId;
             try {
               const info = JSON.parse(option.dataset.summary || "{}");
-              setSelectionSummary(modelSummary, [info.name || "Model", info.recordId ? "record_id: " + info.recordId : "", info.uniqueKey ? "unique_key: " + info.uniqueKey : "", info.telegram ? "telegram: " + info.telegram : ""]);
-            } catch {}
-            setStatus("เลือก model แล้ว", "success");
+              setSelectionSummary(modelSummary, [
+                info.name || "Model",
+                info.recordId ? "record_id: " + info.recordId : "",
+                info.uniqueKey ? "lookup_key: " + info.uniqueKey : "",
+                info.folderStatus ? "folder: " + info.folderStatus : "",
+              ]);
+              await bindModelFolder(recordId, info);
+            } catch (error) {
+              clearModelFolderState();
+              setStatus(String(error && error.message ? error.message : error) || "เลือก model แล้วแต่ resolve folder ไม่สำเร็จ", "error");
+            }
           }
         });
         form.addEventListener("submit", async (event) => {
@@ -1408,6 +5544,10 @@ function renderCreateSessionPage(method) {
           }
           if (!modelSearch.value.trim() && !document.getElementById("model_id").value.trim()) {
             setStatus("พิมพ์ชื่อโมเดลหรือ model id ก่อน", "error");
+            return;
+          }
+          if (!document.getElementById("model_asset_folder_url").value.trim()) {
+            setStatus("เลือก model แล้ว resolve Google Drive folder ให้เรียบร้อยก่อน", "error");
             return;
           }
           let metadata = {};
@@ -1435,6 +5575,14 @@ function renderCreateSessionPage(method) {
             const payload = {
               memberstack_id: document.getElementById("memberstack_id").value.trim(),
               model_id: document.getElementById("model_id").value.trim(),
+              model_airtable_id: document.getElementById("model_airtable_id").value.trim(),
+              model_lookup_key: document.getElementById("model_lookup_key").value.trim(),
+              model_asset_source: document.getElementById("model_asset_source").value.trim(),
+              model_package_tier: document.getElementById("model_package_tier").value.trim(),
+              model_asset_folder_id: document.getElementById("model_asset_folder_id").value.trim(),
+              model_asset_folder_url: document.getElementById("model_asset_folder_url").value.trim(),
+              model_r2_folder_prefix: document.getElementById("model_r2_folder_prefix").value.trim(),
+              selected_profile_image_key: document.getElementById("selected_profile_image_key").value.trim(),
               amount_thb: Number(document.getElementById("amount_thb").value),
               currency: document.getElementById("currency").value.trim() || "THB",
               payment_ref: document.getElementById("payment_ref").value.trim(),
@@ -1900,6 +6048,82 @@ async function airtableList(env, tableName, { q = "", limit = 50, matchFields = 
   return records.map((rec) => ({ id: rec.id, fields: rec.fields || {}, createdTime: rec.createdTime }));
 }
 
+async function listAdminClientLineage(env, { q = "", limit = 12 } = {}) {
+  const records = await airtableList(env, env.AIRTABLE_TABLE_CLIENTS || "tblVv58TCbwh5j1fS", {
+    q,
+    limit,
+    matchFields: [
+      "Client Name",
+      "nickname",
+      "memberstack_id",
+      "line_display_name",
+      "email",
+      "Phone Number",
+      "line_user_id",
+      "legacy_tags",
+      "purchased_history",
+      "package_code",
+    ],
+  });
+  return records.map(normalizeClientLineageRecord);
+}
+
+function pickAny(fields, names) {
+  for (const name of names) {
+    const value = firstScalar(fields?.[name]);
+    if (value !== null && value !== undefined && str(value)) return value;
+  }
+  return "";
+}
+
+function pickList(fields, names) {
+  for (const name of names) {
+    const value = fields?.[name];
+    if (Array.isArray(value)) return value.map((item) => str(firstScalar(item))).filter(Boolean);
+    if (str(value)) return str(value).split(/[,#]/).map((item) => item.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function normalizeClientLineageRecord(record) {
+  const fields = record?.fields || {};
+  const name = str(
+    pickAny(fields, ["Client Name", "client_name", "name", "nickname", "line_display_name"])
+  );
+  const lineUserId = str(pickAny(fields, ["line_user_id", "Line User ID", "line_id"]));
+  const lineDisplayName = str(pickAny(fields, ["line_display_name", "Line Display Name", "display_name"]));
+  const packageCode = str(pickAny(fields, ["package_code", "Package", "tier", "mmd_tier"]));
+  const membershipStatus = str(
+    pickAny(fields, ["membership_status", "mmd_status", "status", "Status"])
+  );
+
+  return {
+    id: record?.id || "",
+    record_id: record?.id || "",
+    client_id: record?.id || "",
+    client_name: name || lineDisplayName || lineUserId || "Unknown Client",
+    username: str(pickAny(fields, ["username", "member_username", "memberstack_id", "email"])),
+    phone: str(pickAny(fields, ["Phone Number", "phone", "member_phone"])),
+    package_code: packageCode,
+    tier: str(pickAny(fields, ["tier", "mmd_tier"])) || packageCode,
+    membership_status: membershipStatus,
+    purchased_history: str(pickAny(fields, ["purchased_history", "purchase_history", "last_purchase"])),
+    line_record_id: record?.id || "",
+    line_user_id: lineUserId,
+    line_display_name: lineDisplayName,
+    legacy_tags: pickList(fields, ["legacy_tags", "tags", "Legacy Tags"]),
+    last_line_message: str(pickAny(fields, ["last_line_message", "last_message", "Latest LINE Message"])),
+    customer_telegram_username: str(
+      pickAny(fields, ["customer_telegram_username", "telegram_username", "Telegram Username"])
+    ),
+    customer_telegram_status:
+      str(pickAny(fields, ["customer_telegram_status", "telegram_status", "Telegram Status"])) ||
+      "missing",
+    confidence: 80,
+    fields,
+  };
+}
+
 async function airtableFindOne(env, tableName, filterByFormula) {
   const params = new URLSearchParams();
   params.set("pageSize", "1");
@@ -2016,6 +6240,990 @@ async function buildNotesHubContext(env, { clientId = "", modelId = "" } = {}) {
   };
 }
 
+const MODEL_TABLE_ID = "tblI4B0bI446vp9GX";
+const DEFAULT_ALLOWED_MODEL_FIELDS = [
+  "name",
+  "working_name",
+  "model_name",
+  "nickname",
+  "telegram_username",
+  "telegram_id",
+  "unique_key",
+  "status",
+  "notes",
+  "line_id",
+  "storage_source_primary",
+  "r2_prefix",
+  "source_folder",
+  "source_owner",
+  "requires_per_approval",
+  "service_layer",
+  "orientation_label",
+  "sales_layer",
+  "private_tier",
+  "private_work_format",
+  "exclusive_group",
+  "can_work_public",
+  "can_work_private",
+  "pn_ability",
+  "mk_ability",
+  "burn_ability",
+  "pn_condition_note",
+  "mk_condition_note",
+  "burn_condition_note",
+  "private_admin_note",
+  "private_review_status",
+  "immigration_source",
+  "immigration_job_id",
+  "immigration_session_id",
+  "immigrated_at",
+  "immigrated_by",
+  "approved_for_private_sales",
+  "model_ability_snapshot",
+];
+const JOB_MODEL_SNAPSHOT_FIELDS = [
+  "model_immigration_status",
+  "immigrated_model_id",
+  "model_private_work_format_snapshot",
+  "model_private_tier_snapshot",
+  "model_ability_snapshot",
+];
+const MODEL_SEARCH_FIELDS = [
+  "Model Name",
+  "model_name",
+  "nickname",
+  "model_code",
+  "model_lookup_key",
+  "unique_key",
+  "telegram_username",
+  "telegram_id",
+];
+const GOOGLE_DRIVE_OWNER_EMAIL = "mmdprive@gmail.com";
+const GOOGLE_DRIVE_LEGACY_EMAIL = "malemodel.bkk@gmail.com";
+const GOOGLE_DRIVE_LEGACY_STATUS = "not_fully_reconciled";
+const GOOGLE_DRIVE_PACKAGE_FOLDERS = {
+  standard: {
+    folder_id: "1SHK47mydJBtj1TlmOHrhYk7GN72swjvX",
+    folder_url: "https://drive.google.com/open?id=1SHK47mydJBtj1TlmOHrhYk7GN72swjvX&usp=drive_fs",
+    label: "Standard",
+    open_label: "Open Standard folder",
+  },
+  premium: {
+    folder_id: "1ecvIZUYdjHAsZ-ujDbb1d76MXzx5BseN",
+    folder_url: "https://drive.google.com/open?id=1ecvIZUYdjHAsZ-ujDbb1d76MXzx5BseN&usp=drive_fs",
+    label: "Premium",
+    open_label: "Open Premium folder",
+    access_note: "Premium members inherit Standard access.",
+  },
+  vip: {
+    folder_id: "1P8XRSgbRhpv4ELzVZ2NjA13X6LMYShfQ",
+    folder_url: "https://drive.google.com/open?id=1P8XRSgbRhpv4ELzVZ2NjA13X6LMYShfQ&usp=drive_fs",
+    label: "VIP / SVIP / Blackcard",
+    open_label: "Open VIP folder",
+  },
+};
+const MODEL_FIELD_ALIASES = {
+  model_name: ["Model Name", "model_name", "name", "working_name"],
+  model_code: ["model_code", "Model Code", "code"],
+  model_lookup_key: ["model_lookup_key", "unique_key", "lookup_key"],
+  nickname: ["nickname", "Nickname"],
+  telegram_username: ["telegram_username", "Telegram Username", "telegram"],
+  telegram_id: ["telegram_id", "Telegram ID"],
+  status: ["status", "Status"],
+  tier: ["tier", "Tier"],
+  visibility_status: ["visibility_status", "Visibility Status", "visibility"],
+  r2_folder_prefix: ["r2_folder_prefix", "r2_folder_key", "folder_prefix"],
+  profile_image_key: ["profile_image_key", "profile_key"],
+  gallery_prefix: ["gallery_prefix", "gallery_key"],
+  preview_image_url: [
+    "preview_image_url",
+    "profile_image_url",
+    "profile_photo_attachment_url",
+    "profile_photo",
+    "main_photo",
+    "avatar_url",
+  ],
+  legacy_folder_name: ["legacy_folder_name", "folder_name"],
+  model_dashboard_url: ["model_dashboard_url", "dashboard_url"],
+  last_synced_at: ["last_synced_at", "Last Synced At", "updated_at"],
+};
+const DEFAULT_MODEL_SOURCE_OWNER = "lonelysomething";
+const DEFAULT_MODEL_R2_CATEGORY_PATHS = [
+  "MMD Public Models/MMD Travel Compcard",
+  "MMD Public Models/MMD Travel Models",
+  "MMD Public Models/MMD Travel Models/Straight",
+  "MMD Public Models/MMD Travel Models/Gay",
+  "MMD Public Models/MMD Travel Models/Both",
+  "MMD Public Models/MMD Extreme Models",
+  "MMD Public Models/MMD Extreme Models/Straight",
+  "MMD Public Models/MMD Extreme Models/Gay",
+  "MMD Public Models/MMD Extreme Models/Both",
+  "MMD Private Models/Standard Package",
+  "MMD Private Models/Premium Package",
+  "MMD Exclusive/MMD Exclusive Models",
+  "Public Models/Travel",
+  "Public Models/Extreme Models",
+  "Public Models/Extreme Models/Straight",
+  "Public Models/Extreme Models/Gay",
+  "Public Models/Extreme Models/Both",
+];
+
+function getModelsTableName(env) {
+  return str(env.AIRTABLE_MODELS_TABLE_ID || env.AIRTABLE_TABLE_MODELS || MODEL_TABLE_ID) || MODEL_TABLE_ID;
+}
+
+function firstScalar(value) {
+  if (Array.isArray(value)) return firstScalar(value[0]);
+  if (value && typeof value === "object") {
+    return value.url || value.name || value.filename || value.id || "";
+  }
+  return value;
+}
+
+function pickFieldValue(fields, aliases) {
+  for (const key of aliases) {
+    const value = firstScalar(fields?.[key]);
+    if (value !== null && value !== undefined && String(value).trim() !== "") {
+      return value;
+    }
+  }
+  return "";
+}
+
+function normalizeR2Prefix(value) {
+  const raw = str(value).replace(/^\/+/, "");
+  if (!raw) return "";
+  return raw.endsWith("/") ? raw : `${raw}/`;
+}
+
+function normalizeModelPathPart(value) {
+  return str(value)
+    .replace(/>/g, "/")
+    .replace(/\\/g, "/")
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/\/{2,}/g, "/");
+}
+
+function slugPathPart(value) {
+  return str(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9ก-๙]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function normalizeCategoryPath(value) {
+  return normalizeModelPathPart(value).replace(/\s*\/\s*/g, "/");
+}
+
+function splitConfiguredPaths(value) {
+  return str(value)
+    .split(",")
+    .map((item) => normalizeCategoryPath(item))
+    .filter(Boolean);
+}
+
+function uniqueStrings(values) {
+  const out = [];
+  const seen = new Set();
+  for (const value of values) {
+    const normalized = str(value);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
+}
+
+function joinR2Path(...parts) {
+  return normalizeR2Prefix(
+    parts
+      .map((part) => normalizeModelPathPart(part))
+      .filter(Boolean)
+      .join("/")
+  );
+}
+
+function redactedPrefix(prefix) {
+  const clean = normalizeR2Prefix(prefix);
+  if (!clean) return "";
+  const parts = clean.split("/").filter(Boolean);
+  if (parts.length <= 2) return `${parts.join("/")}/`;
+  return `${parts.slice(0, 3).join("/")}/.../`;
+}
+
+function getModelSourceOwner(env, sourceOwner = "") {
+  return str(sourceOwner || env.MODEL_SOURCE_OWNER_DEFAULT || DEFAULT_MODEL_SOURCE_OWNER) || DEFAULT_MODEL_SOURCE_OWNER;
+}
+
+function getModelR2RootPrefix(env) {
+  return normalizeCategoryPath(env.MODEL_R2_ROOT_PREFIX || env.MODEL_R2_SOURCE_ROOT || "");
+}
+
+function getModelR2CategoryPaths(env, categoryPath = "") {
+  const explicit = normalizeCategoryPath(categoryPath);
+  if (explicit) return [explicit];
+  return uniqueStrings([
+    ...splitConfiguredPaths(env.MODEL_R2_CATEGORY_PATHS),
+    ...DEFAULT_MODEL_R2_CATEGORY_PATHS,
+  ]);
+}
+
+function sourceLookupEnabled(env) {
+  return str(env.MODEL_R2_LOOKUP_ENABLED || "true").toLowerCase() !== "false";
+}
+
+function normalizePackageTier(value) {
+  const raw = str(value).trim().toLowerCase();
+  if (!raw) return "";
+  if (raw === "black card") return "blackcard";
+  if (["vip", "svip", "blackcard"].includes(raw)) return raw;
+  if (raw === "premium") return "premium";
+  if (["standard", "basic", "default"].includes(raw)) return "standard";
+  return "";
+}
+
+function resolvePackageInheritance(packageTier) {
+  if (packageTier === "premium") return ["standard"];
+  if (["vip", "svip", "blackcard"].includes(packageTier)) return ["premium", "standard"];
+  return [];
+}
+
+function resolveGoogleDrivePackage(identity, requestedTier = "") {
+  const requested = normalizePackageTier(requestedTier);
+  const modelTier = normalizePackageTier(identity?.tier);
+  const packageTier = requested || modelTier || "standard";
+  const driveFolderKey = ["vip", "svip", "blackcard"].includes(packageTier) ? "vip" : packageTier;
+  const folder = GOOGLE_DRIVE_PACKAGE_FOLDERS[driveFolderKey] || GOOGLE_DRIVE_PACKAGE_FOLDERS.standard;
+  const requiresOperatorReview = !requested && !modelTier;
+  const packageInherits = resolvePackageInheritance(packageTier);
+  return {
+    asset_source: "google_drive",
+    package_tier: packageTier,
+    drive_folder_key: driveFolderKey,
+    folder_id: folder.folder_id,
+    folder_url: folder.folder_url,
+    folder_label: folder.label,
+    owner_account: folder.owner_account || GOOGLE_DRIVE_OWNER_EMAIL,
+    package_inherits: packageInherits,
+    includes_package_tiers: [packageTier, ...packageInherits],
+    access_note: str(folder.access_note),
+    open_label: str(folder.open_label || "Open Drive folder"),
+    legacy_source_account: GOOGLE_DRIVE_LEGACY_EMAIL,
+    legacy_source_status: GOOGLE_DRIVE_LEGACY_STATUS,
+    requires_operator_review: requiresOperatorReview,
+    matched_from: requested ? "operator_override" : modelTier ? "airtable_tier" : "fallback_standard",
+  };
+}
+
+function buildInheritedDriveLinks(packageInherits) {
+  return (Array.isArray(packageInherits) ? packageInherits : [])
+    .map((tier) => {
+      const normalizedTier = normalizePackageTier(tier);
+      const folder = GOOGLE_DRIVE_PACKAGE_FOLDERS[normalizedTier];
+      if (!normalizedTier || !folder) return null;
+      return {
+        tier: normalizedTier,
+        folder_id: folder.folder_id,
+        folder_url: folder.folder_url,
+        label: folder.label,
+        open_label: str(folder.open_label || "Open Drive folder"),
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildDriveAssetContract(drivePackage) {
+  const inheritedPackages = buildInheritedDriveLinks(drivePackage.package_inherits);
+  const primaryPackage = {
+    tier: drivePackage.package_tier,
+    drive_folder_key: drivePackage.drive_folder_key,
+    folder_id: drivePackage.folder_id,
+    folder_url: drivePackage.folder_url,
+    label: drivePackage.folder_label,
+    open_label: drivePackage.open_label,
+  };
+
+  return {
+    primary_package: primaryPackage,
+    inherited_packages: inheritedPackages,
+    open_drive_links: [primaryPackage, ...inheritedPackages],
+  };
+}
+
+function normalizePublicUrl(value) {
+  const raw = str(value).trim();
+  if (!/^https?:\/\//i.test(raw)) return "";
+  return raw;
+}
+
+function buildModelIdentity(record) {
+  const fields = record?.fields || {};
+  const modelName = str(pickFieldValue(fields, MODEL_FIELD_ALIASES.model_name));
+  const modelCode = str(pickFieldValue(fields, MODEL_FIELD_ALIASES.model_code));
+  const modelLookupKey =
+    str(pickFieldValue(fields, MODEL_FIELD_ALIASES.model_lookup_key)) ||
+    slugToken(modelName || modelCode || record?.id || "model");
+  const nickname = str(pickFieldValue(fields, MODEL_FIELD_ALIASES.nickname)) || modelName;
+  const telegramUsername = str(pickFieldValue(fields, MODEL_FIELD_ALIASES.telegram_username));
+  const telegramId = str(pickFieldValue(fields, MODEL_FIELD_ALIASES.telegram_id));
+  const telegramLinked = Boolean(telegramUsername) || Boolean(telegramId);
+  const r2FolderPrefix = normalizeR2Prefix(pickFieldValue(fields, MODEL_FIELD_ALIASES.r2_folder_prefix));
+  const profileImageKey = str(pickFieldValue(fields, MODEL_FIELD_ALIASES.profile_image_key));
+  const galleryPrefix = normalizeR2Prefix(pickFieldValue(fields, MODEL_FIELD_ALIASES.gallery_prefix));
+  const previewImageUrl = normalizePublicUrl(
+    pickFieldValue(fields, MODEL_FIELD_ALIASES.preview_image_url)
+  );
+
+  return {
+    airtable_record_id: str(record?.id),
+    model_name: modelName,
+    model_code: modelCode,
+    model_lookup_key: modelLookupKey,
+    nickname,
+    telegram_username: telegramUsername,
+    telegram_id: telegramId,
+    telegram_status: telegramLinked ? "linked" : "unlinked",
+    status: str(pickFieldValue(fields, MODEL_FIELD_ALIASES.status)) || "unknown",
+    tier: str(pickFieldValue(fields, MODEL_FIELD_ALIASES.tier)) || "",
+    visibility_status: str(pickFieldValue(fields, MODEL_FIELD_ALIASES.visibility_status)) || "",
+    r2_folder_prefix: r2FolderPrefix,
+    r2_folder_status: r2FolderPrefix ? "linked" : "missing",
+    profile_image_key: profileImageKey,
+    preview_image_url: previewImageUrl,
+    gallery_prefix: galleryPrefix,
+    legacy_folder_name: str(pickFieldValue(fields, MODEL_FIELD_ALIASES.legacy_folder_name)),
+    model_dashboard_url: str(pickFieldValue(fields, MODEL_FIELD_ALIASES.model_dashboard_url)),
+    last_synced_at: str(pickFieldValue(fields, MODEL_FIELD_ALIASES.last_synced_at)) || null,
+    raw_fields: fields,
+  };
+}
+
+async function fetchModelRecordById(env, modelId) {
+  const tableName = getModelsTableName(env);
+  const record = await airtableGetById(env, tableName, modelId);
+  if (!record) throw new Error("model_not_found");
+  return record;
+}
+
+function normalizeManifestPrefix(entry) {
+  const raw = str(entry?.r2_prefix);
+  if (!raw || raw.startsWith("local://")) return "";
+  return normalizeR2Prefix(raw);
+}
+
+function buildAssetUrl(env, key) {
+  const cleanKey = str(key).replace(/^\/+/, "");
+  if (!cleanKey) return null;
+  const base = str(env.MODEL_ASSETS_PUBLIC_BASE_URL || env.R2_PUBLIC_BASE_URL || "");
+  if (!base) return null;
+  return `${base.replace(/\/+$/, "")}/${cleanKey}`;
+}
+
+async function listR2FolderPreview(env, folderPrefix) {
+  const bucket = env.MMD_MODEL_ASSETS;
+  const prefix = normalizeR2Prefix(folderPrefix);
+  if (!bucket || !prefix || typeof bucket.list !== "function") {
+    return { asset_count: null, preview_keys: [] };
+  }
+
+  const listing = await bucket.list({ prefix, limit: 200 });
+  const objects = Array.isArray(listing?.objects) ? listing.objects : [];
+  const imageKeys = objects
+    .map((object) => str(object?.key))
+    .filter((key) => /\.(avif|webp|png|jpe?g)$/i.test(key));
+
+  return {
+    asset_count: objects.length,
+    preview_keys: imageKeys.slice(0, 6),
+  };
+}
+
+async function listR2ObjectCount(env, folderPrefix, limit = 1000) {
+  const bucket = env.MMD_MODEL_ASSETS;
+  const prefix = normalizeR2Prefix(folderPrefix);
+  if (!bucket || !prefix || typeof bucket.list !== "function") {
+    return { object_count: null, exists: false };
+  }
+
+  const listing = await bucket.list({ prefix, limit });
+  const objects = Array.isArray(listing?.objects) ? listing.objects : [];
+  return { object_count: objects.length, exists: objects.length > 0 };
+}
+
+function buildR2ExactPrefixCandidates({ q, sourceOwner, categoryPath, env }) {
+  const query = str(q);
+  const querySlug = slugPathPart(query);
+  const rootPrefix = getModelR2RootPrefix(env);
+  const owner = getModelSourceOwner(env, sourceOwner);
+  const categories = getModelR2CategoryPaths(env, categoryPath);
+  const names = uniqueStrings([query, querySlug, slugToken(query), normalizeLooseToken(query)]).filter(Boolean);
+  const prefixes = [];
+
+  for (const category of categories) {
+    const categorySlug = category
+      .split("/")
+      .map((part) => slugPathPart(part))
+      .filter(Boolean)
+      .join("/");
+
+    for (const name of names) {
+      prefixes.push(joinR2Path(rootPrefix, owner, category, name));
+      prefixes.push(joinR2Path(rootPrefix, owner, categorySlug, name));
+      prefixes.push(joinR2Path(rootPrefix, category, name));
+      prefixes.push(joinR2Path(rootPrefix, categorySlug, name));
+      prefixes.push(joinR2Path(owner, category, name));
+      prefixes.push(joinR2Path(owner, categorySlug, name));
+      prefixes.push(joinR2Path(category, name));
+      prefixes.push(joinR2Path(categorySlug, name));
+    }
+  }
+
+  for (const name of names) {
+    prefixes.push(joinR2Path(rootPrefix, owner, name));
+    prefixes.push(joinR2Path(rootPrefix, name));
+    prefixes.push(joinR2Path(owner, name));
+  }
+
+  return uniqueStrings(prefixes);
+}
+
+function inferCategoryFromPrefix(prefix, sourceOwner = "") {
+  const owner = normalizeLooseToken(sourceOwner || DEFAULT_MODEL_SOURCE_OWNER);
+  const parts = normalizeModelPathPart(prefix).split("/").filter(Boolean);
+  const filtered = parts.filter((part) => normalizeLooseToken(part) !== owner);
+  if (filtered.length <= 1) return "";
+  return filtered.slice(0, -1).join("/");
+}
+
+function segmentAfterBase(key, basePrefix) {
+  const cleanBase = normalizeR2Prefix(basePrefix);
+  const cleanKey = str(key);
+  if (!cleanBase || !cleanKey.startsWith(cleanBase)) return "";
+  return cleanKey.slice(cleanBase.length).split("/").filter(Boolean)[0] || "";
+}
+
+async function searchR2ByConfiguredCategories(env, { q, sourceOwner, categoryPath }) {
+  const bucket = env.MMD_MODEL_ASSETS;
+  if (!bucket || typeof bucket.list !== "function") {
+    return null;
+  }
+
+  const queryToken = normalizeLooseToken(q);
+  if (!queryToken) return null;
+
+  const rootPrefix = getModelR2RootPrefix(env);
+  const owner = getModelSourceOwner(env, sourceOwner);
+  const categories = getModelR2CategoryPaths(env, categoryPath);
+  const bases = [];
+  for (const category of categories) {
+    const categorySlug = category
+      .split("/")
+      .map((part) => slugPathPart(part))
+      .filter(Boolean)
+      .join("/");
+    bases.push(joinR2Path(rootPrefix, owner, category));
+    bases.push(joinR2Path(rootPrefix, owner, categorySlug));
+    bases.push(joinR2Path(rootPrefix, category));
+    bases.push(joinR2Path(rootPrefix, categorySlug));
+    bases.push(joinR2Path(owner, category));
+    bases.push(joinR2Path(owner, categorySlug));
+    bases.push(joinR2Path(category));
+    bases.push(joinR2Path(categorySlug));
+  }
+
+  for (const basePrefix of uniqueStrings(bases)) {
+    const listing = await bucket.list({ prefix: basePrefix, limit: 1000 });
+    const objects = Array.isArray(listing?.objects) ? listing.objects : [];
+    const folderCounts = new Map();
+    for (const object of objects) {
+      const segment = segmentAfterBase(object?.key, basePrefix);
+      if (!segment) continue;
+      folderCounts.set(segment, (folderCounts.get(segment) || 0) + 1);
+    }
+
+    for (const [folderName, objectCount] of folderCounts.entries()) {
+      const folderToken = normalizeLooseToken(folderName);
+      if (folderToken === queryToken || folderToken.includes(queryToken) || queryToken.includes(folderToken)) {
+        const matchedPrefix = joinR2Path(basePrefix, folderName);
+        return {
+          matched_name: folderName,
+          matched_prefix: matchedPrefix,
+          category_path: inferCategoryFromPrefix(matchedPrefix, owner),
+          object_count: objectCount,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function inferModelFieldsFromSource({ modelName, sourceOwner, categoryPath, matchedPrefix }) {
+  const cleanName = str(modelName);
+  const category = normalizeCategoryPath(categoryPath || inferCategoryFromPrefix(matchedPrefix, sourceOwner));
+  const categoryToken = normalizeLooseToken(category);
+  const fields = {
+    working_name: cleanName,
+    nickname: cleanName,
+    unique_key: slugToken(cleanName, "model"),
+    storage_source_primary: "R2",
+    r2_prefix: normalizeR2Prefix(matchedPrefix),
+    source_folder: sourceOwner ? `${sourceOwner}/${category}` : category,
+    source_owner: sourceOwner,
+    requires_per_approval: true,
+    private_review_status: "Needs Review",
+    notes: `source: R2/${sourceOwner || DEFAULT_MODEL_SOURCE_OWNER} | category path: ${category || "unclassified"} | imported as pre-canonical draft`,
+  };
+
+  if (categoryToken.includes("public")) fields.sales_layer = "public";
+  if (categoryToken.includes("private")) fields.sales_layer = "private";
+  if (categoryToken.includes("exclusive")) fields.private_tier = "black_card_review";
+  if (categoryToken.includes("premium")) fields.private_tier = "premium_review";
+  if (categoryToken.includes("standard")) fields.private_tier = "standard_review";
+  if (categoryToken.includes("extreme")) fields.service_layer = "extreme";
+  if (categoryToken.includes("travel")) fields.service_layer = "travel";
+  if (categoryToken.includes("straight")) fields.orientation_label = "straight";
+  if (categoryToken.includes("gay")) fields.orientation_label = "gay";
+  if (categoryToken.includes("both")) fields.orientation_label = "both";
+
+  return compactObject(fields);
+}
+
+async function searchR2ModelSource(env, { q, sourceOwner, categoryPath }) {
+  if (!sourceLookupEnabled(env)) return null;
+  const bucket = env.MMD_MODEL_ASSETS;
+  if (!bucket || typeof bucket.list !== "function") return null;
+
+  const owner = getModelSourceOwner(env, sourceOwner);
+  const exactCandidates = buildR2ExactPrefixCandidates({ q, sourceOwner: owner, categoryPath, env });
+  for (const prefix of exactCandidates) {
+    const count = await listR2ObjectCount(env, prefix, 200);
+    if (count.exists) {
+      return {
+        matched_name: str(q),
+        matched_prefix: normalizeR2Prefix(prefix),
+        category_path: normalizeCategoryPath(categoryPath || inferCategoryFromPrefix(prefix, owner)),
+        object_count: count.object_count,
+      };
+    }
+  }
+
+  return await searchR2ByConfiguredCategories(env, { q, sourceOwner: owner, categoryPath });
+}
+
+async function resolveModelSource(env, { q, sourceOwner = "", categoryPath = "" } = {}) {
+  const query = str(q);
+  if (!query) throw new Error("missing_q");
+  const owner = getModelSourceOwner(env, sourceOwner);
+  const airtableItems = await searchAdminModels(env, { q: query, limit: 12 });
+  if (airtableItems.length) {
+    const first = airtableItems[0] || {};
+    return {
+      ok: true,
+      found: true,
+      source: "airtable",
+      query,
+      source_owner: owner,
+      matched_name: str(first.model_name || first.nickname || query),
+      matched_prefix: "",
+      matched_prefix_redacted: "",
+      category_path: "",
+      object_count: null,
+      airtable_items_count: airtableItems.length,
+      suggested_model_fields: {},
+    };
+  }
+
+  const r2Match = await searchR2ModelSource(env, { q: query, sourceOwner: owner, categoryPath });
+  if (r2Match?.matched_prefix) {
+    const suggested = inferModelFieldsFromSource({
+      modelName: r2Match.matched_name || query,
+      sourceOwner: owner,
+      categoryPath: r2Match.category_path || categoryPath,
+      matchedPrefix: r2Match.matched_prefix,
+    });
+    return {
+      ok: true,
+      found: true,
+      source: "r2",
+      query,
+      source_owner: owner,
+      matched_name: r2Match.matched_name || query,
+      matched_prefix: r2Match.matched_prefix,
+      matched_prefix_redacted: redactedPrefix(r2Match.matched_prefix),
+      category_path: r2Match.category_path || normalizeCategoryPath(categoryPath),
+      object_count: r2Match.object_count,
+      airtable_items_count: 0,
+      suggested_model_fields: suggested,
+    };
+  }
+
+  return {
+    ok: true,
+    found: false,
+    source: "none",
+    query,
+    source_owner: owner,
+    matched_name: "",
+    matched_prefix: "",
+    matched_prefix_redacted: "",
+    category_path: normalizeCategoryPath(categoryPath),
+    object_count: 0,
+    airtable_items_count: 0,
+    suggested_model_fields: {},
+  };
+}
+
+async function stageModelFromSource(env, body = {}) {
+  const modelName = str(body.model_name || body.name || body.q);
+  const sourceOwner = getModelSourceOwner(env, body.source_owner);
+  const categoryPath = normalizeCategoryPath(body.category_path);
+  const r2Prefix = normalizeR2Prefix(body.r2_prefix);
+  if (!modelName) throw new Error("missing_model_name");
+
+  let resolved = null;
+  if (r2Prefix) {
+    const count = await listR2ObjectCount(env, r2Prefix, 200);
+    resolved = {
+      ok: true,
+      found: count.exists,
+      source: count.exists ? "r2" : "none",
+      query: modelName,
+      source_owner: sourceOwner,
+      matched_name: modelName,
+      matched_prefix: r2Prefix,
+      category_path: categoryPath || inferCategoryFromPrefix(r2Prefix, sourceOwner),
+      object_count: count.object_count,
+    };
+  } else {
+    resolved = await resolveModelSource(env, { q: modelName, sourceOwner, categoryPath });
+  }
+
+  if (resolved.source === "airtable") {
+    return { ok: true, staged: false, reason: "already_exists_in_airtable", resolved };
+  }
+  if (resolved.source !== "r2" || !resolved.found) {
+    return { ok: false, staged: false, reason: "r2_source_not_found", resolved };
+  }
+
+  const fields = inferModelFieldsFromSource({
+    modelName,
+    sourceOwner,
+    categoryPath: resolved.category_path || categoryPath,
+    matchedPrefix: resolved.matched_prefix,
+  });
+  const out = await airtableUpsertModel(env, getModelsTableName(env), {
+    unique_key: fields.unique_key,
+    fields,
+  });
+
+  return {
+    ok: Boolean(out?.ok),
+    staged: Boolean(out?.ok),
+    model: out,
+    resolved: {
+      ...resolved,
+      matched_prefix_redacted: redactedPrefix(resolved.matched_prefix),
+    },
+  };
+}
+
+async function buildModelPreview(env, identity, manifestEntry = null, r2Listing = null) {
+  const profileImageKey =
+    str(identity.profile_image_key) ||
+    str(manifestEntry?.local_primary_path ? "" : "");
+  const previewImageUrl =
+    normalizePublicUrl(identity.preview_image_url) ||
+    buildAssetUrl(env, profileImageKey);
+  const galleryPrefix =
+    normalizeR2Prefix(identity.gallery_prefix) ||
+    normalizeManifestPrefix(manifestEntry);
+  const previewKeys = Array.isArray(r2Listing?.preview_keys) ? r2Listing.preview_keys : [];
+
+  return {
+    profile_image_url: previewImageUrl,
+    gallery_preview_urls: previewKeys.map((key) => buildAssetUrl(env, key)).filter(Boolean),
+    gallery_prefix,
+  };
+}
+
+async function searchAdminModels(env, { q = "", limit = 12, folder = "" } = {}) {
+  const items = await airtableList(env, getModelsTableName(env), {
+    q,
+    limit,
+    matchFields: MODEL_SEARCH_FIELDS,
+  });
+
+  return items.map((record) => {
+    const identity = normalizeModelSearchItem(record, env, folder);
+    return identity;
+  });
+}
+
+function normalizeModelSearchItem(record, env, requestedTier = "") {
+  const identity = buildModelIdentity(record);
+  const drivePackage = resolveGoogleDrivePackage(identity, requestedTier);
+  const folders = [
+    drivePackage.drive_folder_key,
+    drivePackage.package_tier,
+    ...drivePackage.package_inherits,
+  ].filter(Boolean);
+  return {
+    id: identity.airtable_record_id,
+    model_id: identity.airtable_record_id,
+    airtable_record_id: identity.airtable_record_id,
+    model_name: identity.model_name || identity.nickname || "Model",
+    model_code: identity.model_code || "",
+    model_lookup_key: identity.model_lookup_key || "",
+    lookup_key: identity.model_lookup_key || "",
+    nickname: identity.nickname || "",
+    telegram_username: identity.telegram_username || "",
+    telegram_id: identity.telegram_id || "",
+    telegram_status: identity.telegram_status,
+    status: identity.status,
+    tier: identity.tier,
+    folders: [...new Set(folders)],
+    vip_can_pn: ["vip", "svip", "blackcard"].includes(drivePackage.package_tier),
+    asset_source: "google_drive",
+    package_tier: drivePackage.package_tier,
+    r2_folder_status: identity.r2_folder_status,
+    asset_folder_status: drivePackage.folder_id ? "linked" : "missing",
+    preview_image_url:
+      normalizePublicUrl(identity.preview_image_url) ||
+      buildAssetUrl(env, identity.profile_image_key),
+  };
+}
+
+function resolveManifestCandidates(identity) {
+  const queries = [
+    identity.model_lookup_key,
+    identity.model_code,
+    identity.model_name,
+    identity.nickname,
+    identity.legacy_folder_name,
+  ].filter(Boolean);
+
+  const matches = [];
+  const seen = new Set();
+
+  for (const query of queries) {
+    const entry = resolveModelManifestEntry(query);
+    const prefix = normalizeManifestPrefix(entry);
+    if (!entry || !prefix || seen.has(prefix)) continue;
+
+    let reason = "manifest match";
+    if (normalizeLooseToken(query) === normalizeLooseToken(identity.model_lookup_key)) {
+      reason = "model_lookup_key exact match";
+    } else if (normalizeLooseToken(query) === normalizeLooseToken(identity.model_code)) {
+      reason = "model_code exact match";
+    } else if (normalizeLooseToken(query) === normalizeLooseToken(identity.model_name)) {
+      reason = "normalized model_name match";
+    } else if (normalizeLooseToken(query) === normalizeLooseToken(identity.nickname)) {
+      reason = "nickname match";
+    } else if (normalizeLooseToken(query) === normalizeLooseToken(identity.legacy_folder_name)) {
+      reason = "legacy_folder_name match";
+    }
+
+    matches.push({
+      folder_prefix: prefix,
+      match_reason: reason,
+      asset_count: Number(entry.asset_count || 0) || null,
+      manifest_entry: entry,
+    });
+    seen.add(prefix);
+  }
+
+  return matches;
+}
+
+function confidenceFromMatches(matches, linkedPrefix = "") {
+  if (linkedPrefix) return "high";
+  if (!matches.length) return "low";
+  const exact = matches.some((match) => /exact match/.test(match.match_reason));
+  if (exact) return "high";
+  if (matches.length === 1) return "medium";
+  return "low";
+}
+
+async function getAdminModelFolder(env, modelId, requestedTier = "") {
+  const record = await fetchModelRecordById(env, modelId);
+  const identity = buildModelIdentity(record);
+  const drivePackage = resolveGoogleDrivePackage(identity, requestedTier);
+  const manifestMatches = resolveManifestCandidates(identity);
+  const manifestEntry = manifestMatches[0]?.manifest_entry || null;
+  const folderPrefix = identity.r2_folder_prefix || normalizeManifestPrefix(manifestEntry);
+  const profileImageKey =
+    identity.profile_image_key ||
+    (folderPrefix ? `${folderPrefix}profile.webp` : "");
+  const galleryPrefix =
+    normalizeR2Prefix(identity.gallery_prefix) ||
+    (folderPrefix ? `${folderPrefix}gallery/` : "");
+  const r2Listing = await listR2FolderPreview(env, folderPrefix);
+  const preview = await buildModelPreview(
+    env,
+    { ...identity, profile_image_key: profileImageKey, gallery_prefix: galleryPrefix },
+    manifestEntry,
+    r2Listing
+  );
+  const driveAssets = buildDriveAssetContract(drivePackage);
+
+  return {
+    ok: true,
+    model: {
+      airtable_record_id: identity.airtable_record_id,
+      model_name: identity.model_name,
+      model_lookup_key: identity.model_lookup_key,
+      model_code: identity.model_code,
+      tier: identity.tier,
+    },
+    asset_source: "google_drive",
+    package: {
+      tier: drivePackage.package_tier,
+      inherits: drivePackage.package_inherits,
+      drive_folder_key: drivePackage.drive_folder_key,
+      matched_from: drivePackage.matched_from,
+      requires_operator_review: drivePackage.requires_operator_review,
+    },
+    primary_package: driveAssets.primary_package,
+    inherited_packages: driveAssets.inherited_packages,
+    open_drive_links: driveAssets.open_drive_links,
+    google_drive: {
+      owner_account: drivePackage.owner_account,
+      legacy_source_account: drivePackage.legacy_source_account,
+      legacy_source_status: drivePackage.legacy_source_status,
+      folder_id: drivePackage.folder_id,
+      folder_url: drivePackage.folder_url,
+      folder_label: drivePackage.folder_label,
+      open_label: drivePackage.open_label,
+      drive_folder_key: drivePackage.drive_folder_key,
+      package_inherits: drivePackage.package_inherits,
+      includes_package_tiers: drivePackage.includes_package_tiers,
+      access_note: drivePackage.access_note,
+    },
+    r2: {
+      bucket: env.MMD_MODEL_ASSETS ? "MMD_MODEL_ASSETS" : str(env.MODEL_ASSETS_BUCKET_NAME || "MMD_MODEL_ASSETS"),
+      folder_prefix: folderPrefix || null,
+      profile_image_key: profileImageKey || null,
+      gallery_prefix: galleryPrefix || null,
+      asset_count: r2Listing.asset_count,
+      last_synced_at: identity.last_synced_at,
+    },
+    preview,
+  };
+}
+
+async function resolveAdminModelFolder(env, modelId, requestedTier = "") {
+  const record = await fetchModelRecordById(env, modelId);
+  const identity = buildModelIdentity(record);
+  const drivePackage = resolveGoogleDrivePackage(identity, requestedTier);
+  const matches = resolveManifestCandidates(identity).slice(0, 6).map((match) => ({
+    folder_prefix: match.folder_prefix,
+    match_reason: match.match_reason,
+    asset_count: match.asset_count,
+  }));
+  matches.unshift({
+    package_tier: drivePackage.package_tier,
+    package_inherits: drivePackage.package_inherits,
+    drive_folder_key: drivePackage.drive_folder_key,
+    folder_id: drivePackage.folder_id,
+    folder_url: drivePackage.folder_url,
+    match_reason: drivePackage.matched_from,
+    asset_count: null,
+  });
+  const confidence = drivePackage.requires_operator_review ? "medium" : "high";
+  const driveAssets = buildDriveAssetContract(drivePackage);
+
+  return {
+    ok: true,
+    asset_source: "google_drive",
+    package_tier: drivePackage.package_tier,
+    primary_package: driveAssets.primary_package,
+    inherited_packages: driveAssets.inherited_packages,
+    open_drive_links: driveAssets.open_drive_links,
+    google_drive: {
+      folder_id: drivePackage.folder_id,
+      folder_url: drivePackage.folder_url,
+      owner_account: drivePackage.owner_account,
+      drive_folder_key: drivePackage.drive_folder_key,
+      package_inherits: drivePackage.package_inherits,
+      includes_package_tiers: drivePackage.includes_package_tiers,
+      access_note: drivePackage.access_note,
+      legacy_source_status: drivePackage.legacy_source_status,
+      open_label: drivePackage.open_label,
+    },
+    confidence,
+    matches,
+    requires_operator_review: drivePackage.requires_operator_review,
+  };
+}
+
+async function writeModelFolderAuditLog(env, payload) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return { ok: false, skipped: true };
+  try {
+    const rec = await airtableCreate({
+      baseId: env.AIRTABLE_BASE_ID,
+      tableId: env.AIRTABLE_TABLE_CONSOLE_INBOX_ID || "tblFHmfpB2TTrzO2e",
+      apiKey: env.AIRTABLE_API_KEY,
+      fields: {
+        inbox_id: crypto.randomUUID(),
+        source: "model_folder_resolver",
+        intent: "link_model_folder",
+        member_name: payload.model_name || "",
+        admin_note: payload.note || "",
+        payload_json: JSON.stringify(payload),
+        status: "logged",
+        error_message: "",
+      },
+    });
+    return { ok: true, record_id: rec?.id || "" };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error) };
+  }
+}
+
+async function patchAdminModelFolder(env, modelId, body, req) {
+  const folderPrefix = normalizeR2Prefix(body.r2_folder_prefix);
+  const profileImageKey = str(body.profile_image_key);
+  const galleryPrefix = normalizeR2Prefix(body.gallery_prefix);
+  if (!folderPrefix) throw new Error("missing_r2_folder_prefix");
+
+  const update = compactObject({
+    r2_folder_prefix: folderPrefix,
+    profile_image_key: profileImageKey,
+    gallery_prefix: galleryPrefix,
+  });
+
+  const patched = await airtablePatchById(env, getModelsTableName(env), modelId, update);
+  if (!patched.ok) {
+    throw new Error(patched.error || "model_folder_patch_failed");
+  }
+
+  const record = await fetchModelRecordById(env, modelId);
+  const identity = buildModelIdentity(record);
+  const actor =
+    str(req.headers.get("X-Admin-Actor") || "") ||
+    "admin-worker";
+  const audit = await writeModelFolderAuditLog(env, {
+    actor,
+    airtable_record_id: modelId,
+    model_name: identity.model_name,
+    model_lookup_key: identity.model_lookup_key,
+    r2_folder_prefix: folderPrefix,
+    profile_image_key: profileImageKey,
+    gallery_prefix: galleryPrefix,
+    note: `Operator linked model folder to ${folderPrefix}`,
+  });
+
+  const payload = await getAdminModelFolder(env, modelId);
+  return {
+    ok: true,
+    audit,
+    ...payload,
+  };
+}
+
 async function airtablePatchById(env, tableName, id, patch) {
   const r = await airtableFetch(env, `/${encodeURIComponent(tableName)}/${id}`, {
     method: "PATCH",
@@ -2073,24 +7281,33 @@ async function airtableUpsertModel(env, tableName, body) {
     return { ok: false, error: "missing_airtable_env" };
   }
 
-  const fields = body?.fields && typeof body.fields === "object" ? body.fields : {};
-  const id = body?.id || null;
+  const fields = normalizeModelUpsertFields(env, body);
+  const id = str(body?.id || body?.record_id);
+  const uniqueKey = str(body?.unique_key || fields.unique_key);
+  const write = async (recordId, patchFields) => {
+    const model = await airtablePatchById(env, tableName, recordId, patchFields);
+    if (!model?.ok) return model;
+    const job_snapshot = await maybeWriteModelJobSnapshot(env, fields, model);
+    return { ...model, job_snapshot };
+  };
 
-  if (id) return await airtablePatchById(env, tableName, id, fields);
+  if (id) return await write(id, fields);
 
-  if (body?.unique_key) {
-    const safe = String(body.unique_key).replace(/"/g, '\\"');
+  if (uniqueKey) {
+    const safe = escapeFormulaValue(uniqueKey);
     const found = await airtableFindOne(env, tableName, `{unique_key}="${safe}"`);
-    if (found?.id) return await airtablePatchById(env, tableName, found.id, fields);
+    if (found?.id) return await write(found.id, fields);
 
     const r = await airtableFetch(env, `/${encodeURIComponent(tableName)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ records: [{ fields: { ...fields, unique_key: body.unique_key } }] }),
+      body: JSON.stringify({ records: [{ fields: { ...fields, unique_key: uniqueKey } }] }),
     });
     if (!r.ok) return { ok: false, error: "airtable_create_failed", detail: r };
     const rec = r.data?.records?.[0];
-    return { ok: true, id: rec?.id, fields: rec?.fields || {} };
+    const model = { ok: true, id: rec?.id, fields: rec?.fields || {} };
+    const job_snapshot = await maybeWriteModelJobSnapshot(env, fields, model);
+    return { ...model, job_snapshot };
   }
 
   const r = await airtableFetch(env, `/${encodeURIComponent(tableName)}`, {
@@ -2100,7 +7317,79 @@ async function airtableUpsertModel(env, tableName, body) {
   });
   if (!r.ok) return { ok: false, error: "airtable_create_failed", detail: r };
   const rec = r.data?.records?.[0];
-  return { ok: true, id: rec?.id, fields: rec?.fields || {} };
+  const model = { ok: true, id: rec?.id, fields: rec?.fields || {} };
+  const job_snapshot = await maybeWriteModelJobSnapshot(env, fields, model);
+  return { ...model, job_snapshot };
+}
+
+function getAllowedModelFields(env) {
+  return parseCsv(env.ALLOWED_MODEL_FIELDS || DEFAULT_ALLOWED_MODEL_FIELDS.join(","));
+}
+
+function normalizeModelUpsertFields(env, body) {
+  const allowed = getAllowedModelFields(env);
+  const direct = pickAllowedFields(body, allowed);
+  const nested = pickAllowedFields(body?.fields, allowed);
+  return compactObject({ ...direct, ...nested });
+}
+
+function buildModelAbilitySnapshot(fields) {
+  const existing = str(fields.model_ability_snapshot);
+  if (existing) return existing;
+  return JSON.stringify(
+    compactObject({
+      private_tier: str(fields.private_tier),
+      private_work_format: str(fields.private_work_format),
+      pn_ability: str(fields.pn_ability),
+      mk_ability: str(fields.mk_ability),
+      burn_ability: str(fields.burn_ability),
+    })
+  );
+}
+
+function shouldWriteJobModelSnapshot(fields) {
+  const source = str(fields.immigration_source).toLowerCase();
+  return Boolean(fields.immigration_job_id || source.includes("job"));
+}
+
+async function maybeWriteModelJobSnapshot(env, fields, model) {
+  if (!shouldWriteJobModelSnapshot(fields)) return { ok: true, skipped: true };
+
+  const tableName = modelJobsTable(env);
+  const jobId = str(fields.immigration_job_id);
+  const sessionId = str(fields.immigration_session_id);
+  const snapshotFields = compactObject({
+    model_immigration_status: "model_created",
+    immigrated_model_id: str(model?.id),
+    model_private_work_format_snapshot: str(fields.private_work_format),
+    model_private_tier_snapshot: str(fields.private_tier),
+    model_ability_snapshot: buildModelAbilitySnapshot(fields),
+  });
+
+  if (!Object.keys(snapshotFields).some((key) => JOB_MODEL_SNAPSHOT_FIELDS.includes(key))) {
+    return { ok: true, skipped: true };
+  }
+
+  let recordId = /^rec[a-zA-Z0-9]{14,}$/.test(jobId) ? jobId : "";
+  if (!recordId) {
+    const formulas = [];
+    for (const field of uniqueValues(["job_id", "Job ID", "jobId", "Job Record ID"])) {
+      if (jobId) formulas.push(exactModelFormula(field, jobId));
+    }
+    for (const field of uniqueValues(["session_id", "Session ID"])) {
+      if (sessionId) formulas.push(exactModelFormula(field, sessionId));
+    }
+    for (const formula of formulas) {
+      const found = await airtableFindOne(env, tableName, formula);
+      if (found?.id) {
+        recordId = found.id;
+        break;
+      }
+    }
+  }
+
+  if (!recordId) return { ok: false, error: "job_not_found", job_id: jobId, session_id: sessionId };
+  return await airtablePatchById(env, tableName, recordId, snapshotFields);
 }
 
 async function createDraftMember(env, body) {
@@ -2178,7 +7467,68 @@ async function airtableCreate({ baseId, tableId, apiKey, fields }) {
   return t.records?.[0];
 }
 
+function collectPrivateModelImmigrationFields(body = {}, context = {}) {
+  if (body.__model_immigration_done) return {};
+  const model = readObject(body.model);
+  const source = { ...body, ...model };
+  const fields = pickAllowedFields(source, DEFAULT_ALLOWED_MODEL_FIELDS);
+  const hasPrivateSignal = [
+    "sales_layer",
+    "private_tier",
+    "private_work_format",
+    "exclusive_group",
+    "can_work_public",
+    "can_work_private",
+    "pn_ability",
+    "mk_ability",
+    "burn_ability",
+    "approved_for_private_sales",
+  ].some((key) => Object.prototype.hasOwnProperty.call(source, key));
+
+  if (!hasPrivateSignal) return {};
+
+  return compactObject({
+    working_name: str(source.working_name || source.model_name || source.name || body.talent_name),
+    nickname: str(source.nickname || source.working_name || source.model_name || body.talent_name),
+    sales_layer: str(source.sales_layer || "private"),
+    ...fields,
+    immigration_source: str(source.immigration_source || context.source),
+    immigration_job_id: str(source.immigration_job_id || context.job_id),
+    immigration_session_id: str(source.immigration_session_id || context.session_id),
+    immigrated_at: str(source.immigrated_at || new Date().toISOString()),
+    immigrated_by: str(source.immigrated_by || context.actor || "admin-worker"),
+  });
+}
+
+async function maybeUpsertPrivateModelFromAdminFlow(env, body = {}, context = {}) {
+  const fields = collectPrivateModelImmigrationFields(body, context);
+  if (!Object.keys(fields).length) return null;
+
+  const id = str(body.model_airtable_id || body.model_id || body.model_ref || body.model?.model_id);
+  const payload = {
+    ...(id.startsWith("rec") ? { id } : {}),
+    unique_key: str(body.unique_key || body.model_unique_key || body.model?.unique_key),
+    fields,
+  };
+  const model = await airtableUpsertModel(env, getModelsTableName(env), payload);
+  return { ok: Boolean(model?.ok), model };
+}
+
 async function createAdminSession(env, body) {
+  const modelImmigration = await maybeUpsertPrivateModelFromAdminFlow(env, body, {
+    source: "session_created",
+    job_id: body?.job_id || body?.metadata?.job_id,
+    session_id: body?.session_id || body?.sessionId,
+    actor: body?.actor || body?.created_by || body?.metadata?.actor,
+  });
+  if (modelImmigration?.model?.id) {
+    body = {
+      ...body,
+      model_id: body.model_id || modelImmigration.model.id,
+      model_airtable_id: body.model_airtable_id || modelImmigration.model.id,
+    };
+  }
+
   const amount = toNum(body?.amount_thb ?? body?.amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("invalid_amount_thb");
 
@@ -2205,6 +7555,14 @@ async function createAdminSession(env, body) {
     model_name: str(body.model_name || body.talent_name),
     memberstack_id: str(body.memberstack_id || body.member_id || body.member_ref),
     model_id: str(body.model_id || body.model_ref),
+    model_airtable_id: str(body.model_airtable_id || body.model_id || body.model_ref),
+    model_lookup_key: str(body.model_lookup_key || body.model_unique_key || body.unique_key),
+    model_asset_source: str(body.model_asset_source || "google_drive"),
+    model_package_tier: str(body.model_package_tier || body.package_tier || body.tier || "standard"),
+    model_asset_folder_id: str(body.model_asset_folder_id || body.folder_id),
+    model_asset_folder_url: str(body.model_asset_folder_url || body.folder_url),
+    model_r2_folder_prefix: normalizeR2Prefix(body.model_r2_folder_prefix || body.r2_folder_prefix),
+    selected_profile_image_key: str(body.selected_profile_image_key || body.profile_image_key),
     job_type: str(body.job_type || body.session_type || "session"),
     job_date: str(body.job_date || body.service_date || body.date),
     start_time: str(body.start_time || body.time_start),
@@ -2215,6 +7573,7 @@ async function createAdminSession(env, body) {
     amount_thb: amount,
     pay_model_thb: hasPayModelAmount ? payModelAmount : null,
     currency: str(body.currency || "THB"),
+    payment_mode: str(body.payment_mode || body.metadata?.payment_mode || "manual_transfer"),
     payment_type: str(body.payment_type || body.payment_stage || "full"),
     payment_method: str(body.payment_method || "promptpay"),
     confirm_page: body.confirm_page || null,
@@ -2228,7 +7587,10 @@ async function createAdminSession(env, body) {
     commission_group_key: str(body.commission_group_key || ""),
     commission_snapshot_locked:
       body.commission_snapshot_locked == null ? true : Boolean(body.commission_snapshot_locked),
-    metadata: body.metadata && typeof body.metadata === "object" ? body.metadata : {},
+    metadata: {
+      ...(body.metadata && typeof body.metadata === "object" ? body.metadata : {}),
+      payment_mode: str(body.payment_mode || body.metadata?.payment_mode || "manual_transfer"),
+    },
   };
 
   const missing = [];
@@ -2264,6 +7626,14 @@ async function createAdminSession(env, body) {
     pay_model_thb: payload.pay_model_thb,
     memberstack_id: payload.memberstack_id,
     model_id: payload.model_id,
+    model_airtable_id: payload.model_airtable_id,
+    model_lookup_key: payload.model_lookup_key,
+    model_asset_source: payload.model_asset_source,
+    model_package_tier: payload.model_package_tier,
+    model_asset_folder_id: payload.model_asset_folder_id,
+    model_asset_folder_url: payload.model_asset_folder_url,
+    model_r2_folder_prefix: payload.model_r2_folder_prefix,
+    selected_profile_image_key: payload.selected_profile_image_key,
     client_name: payload.client_name,
     model_name: payload.model_name,
     confirmation_url,
@@ -2272,11 +7642,24 @@ async function createAdminSession(env, body) {
     model_confirmation_url: confirmData.model_confirmation_url || null,
     short_url: confirmData.short_url || null,
     payments_response: confirmData,
+    model_immigration: modelImmigration,
   };
 }
 
 async function createAdminJob(env, body, req) {
   const job = normalizeCreateJobPayload(body);
+  const modelImmigration = await maybeUpsertPrivateModelFromAdminFlow(env, body, {
+    source: "job_created",
+    job_id: job.job_id,
+    session_id: job.session_payload.session_id,
+    actor: job.actor,
+  });
+  if (modelImmigration?.model?.id) {
+    job.session_payload.model_id = job.session_payload.model_id || modelImmigration.model.id;
+    job.session_payload.model_airtable_id =
+      job.session_payload.model_airtable_id || modelImmigration.model.id;
+    job.session_payload.__model_immigration_done = true;
+  }
   const session = await createAdminSession(env, job.session_payload);
   const links = buildCreateJobLinks(env, job, session);
   const line = buildLineJobDelivery(job, links);
@@ -2318,8 +7701,30 @@ async function createAdminJob(env, body, req) {
     },
     airtable: {
       line_inbox: lineInbox,
+      model_immigration: modelImmigration,
     },
     payments_response: session.payments_response,
+  };
+}
+
+function flattenCreateJobResponse(out) {
+  const session = out?.session || {};
+  const links = out?.links || {};
+  const linePush = out?.line?.push || {};
+  const telegramGate = out?.telegram_gate || {};
+
+  return {
+    ...out,
+    session_id: session.session_id || out?.session_id || "",
+    payment_ref: session.payment_ref || out?.payment_ref || "",
+    amount_thb: session.amount_thb ?? out?.amount_thb ?? null,
+    customer_confirmation_url:
+      links.customer_confirmation_url || links.confirmation_url || out?.customer_confirmation_url || "",
+    model_confirmation_url: links.model_confirmation_url || out?.model_confirmation_url || "",
+    member_return_url: links.member_return_url || links.customer_confirmation_url || "",
+    model_return_url: links.model_return_url || links.model_confirmation_url || "",
+    line_push_status: linePush.ok ? "sent" : linePush.mode || "copy_ready",
+    telegram_notify_status: telegramGate.ok ? "notified" : telegramGate.reason || "pending",
   };
 }
 
@@ -2328,22 +7733,55 @@ function normalizeCreateJobPayload(body) {
   const payloadJson = readObject(body.payload_json);
   const identity = readObject(body.identity);
   const notes = readObject(body.notes);
+  const clientLineage = readObject(body.client_lineage);
+  const lineIdentity = readObject(body.line_identity);
+  const work = readObject(body.work);
+  const model = readObject(body.model);
+  const telegramGate = readObject(body.telegram_gate);
+  const jobDetails = readObject(body.job_details);
+  const payment = readObject(body.payment);
+  const humanSupport = readObject(body.human_support);
 
   const clientName =
-    str(body.client_name || body.member_name || body.customer_name || body.display_name || body.line_display_name || identity.display_name || identity.full_name) ||
-    str(body.email || body.member_email || identity.email) ||
-    str(body.line_user_id || identity.line_user_id);
-  const modelName = str(body.model_name || body.talent_name || payloadJson.model_name);
-  const jobType = str(body.job_type || body.session_type || payloadJson.job_type || "booking");
-  const jobDate = str(body.job_date || body.service_date || body.date || payloadJson.job_date);
-  const startTime = str(body.start_time || body.time_start || payloadJson.start_time);
-  const endTime = str(body.end_time || body.time_end || payloadJson.end_time);
-  const locationName = str(body.location_name || body.location || body.venue_name || payloadJson.location_name);
-  const amount = toNum(body.amount_thb ?? body.amount ?? payloadJson.amount_thb);
-  const payModelAmount = toNum(body.pay_model_thb ?? body.pay_model ?? body.model_pay_thb ?? payloadJson.pay_model_thb);
-  const lineInboxRecordId = str(body.line_inbox_record_id || body.inbox_record_id || body.line_inbox_id || metadata.line_inbox_record_id);
-  const lineUserId = str(body.line_user_id || identity.line_user_id || metadata.line_user_id);
-  const visibility = normalizeJobVisibility(body.job_visibility || body.visibility || body.job_privacy || payloadJson.job_visibility);
+    str(
+      body.client_name ||
+        body.member_name ||
+        body.customer_name ||
+        body.display_name ||
+        body.line_display_name ||
+        clientLineage.client_name ||
+        lineIdentity.line_display_name ||
+        identity.display_name ||
+        identity.full_name
+    ) ||
+    str(body.email || body.member_email || clientLineage.email || identity.email) ||
+    str(body.line_user_id || lineIdentity.line_user_id || identity.line_user_id);
+  const modelName = str(body.model_name || body.talent_name || model.model_name || payloadJson.model_name);
+  const jobType = str(body.job_type || body.session_type || work.job_type || work.job_lane || payloadJson.job_type || "booking");
+  const jobDate = str(body.job_date || body.service_date || body.date || jobDetails.job_date || payloadJson.job_date);
+  const startTime = str(body.start_time || body.time_start || jobDetails.start_time || payloadJson.start_time);
+  const endTime = str(body.end_time || body.time_end || jobDetails.end_time || payloadJson.end_time);
+  const locationName = str(body.location_name || body.location || body.venue_name || jobDetails.location_name || payloadJson.location_name);
+  const amount = toNum(body.amount_thb ?? body.amount ?? payment.amount_thb ?? payloadJson.amount_thb);
+  const payModelAmount = toNum(
+    body.pay_model_thb ?? body.pay_model ?? body.model_pay_thb ?? payment.pay_model_thb ?? payloadJson.pay_model_thb
+  );
+  const lineInboxRecordId = str(
+    body.line_inbox_record_id ||
+      body.inbox_record_id ||
+      body.line_inbox_id ||
+      lineIdentity.line_record_id ||
+      metadata.line_inbox_record_id
+  );
+  const lineUserId = str(body.line_user_id || lineIdentity.line_user_id || identity.line_user_id || metadata.line_user_id);
+  const visibility = normalizeJobVisibility(
+    body.job_visibility ||
+      body.visibility ||
+      body.job_privacy ||
+      work.job_visibility ||
+      work.privacy_level ||
+      payloadJson.job_visibility
+  );
   const sessionId = str(body.session_id || body.sessionId || metadata.session_id);
   const paymentRef = str(body.payment_ref || body.paymentRef || metadata.payment_ref);
   const jobId = str(body.job_id || body.jobId || metadata.job_id) || sessionId || `job_${crypto.randomUUID()}`;
@@ -2354,20 +7792,51 @@ function normalizeCreateJobPayload(body) {
     payment_ref: paymentRef || undefined,
     client_name: clientName,
     model_name: modelName,
-    memberstack_id: str(body.memberstack_id || body.member_id || body.member_ref || identity.member_id),
-    model_id: str(body.model_id || body.model_ref || body.model_record_id || payloadJson.model_record_id),
+    memberstack_id: str(
+      body.memberstack_id || body.member_id || body.member_ref || clientLineage.memberstack_id || identity.member_id
+    ),
+    model_id: str(body.model_id || body.model_ref || body.model_record_id || model.model_id || payloadJson.model_record_id),
+    model_airtable_id: str(
+      body.model_airtable_id ||
+        body.model_id ||
+        body.model_record_id ||
+        model.model_id ||
+        payloadJson.model_airtable_id
+    ),
+    model_lookup_key: str(body.model_lookup_key || model.model_lookup_key || model.lookup_key || payloadJson.model_lookup_key),
+    model_asset_source: str(body.model_asset_source || model.model_asset_source || payloadJson.model_asset_source || "google_drive"),
+    model_package_tier: str(
+      body.model_package_tier ||
+        body.package_tier ||
+        work.model_folder ||
+        payloadJson.model_package_tier ||
+        payloadJson.package_tier ||
+        "standard"
+    ),
+    model_asset_folder_id: str(body.model_asset_folder_id || body.folder_id || payloadJson.model_asset_folder_id || payloadJson.folder_id),
+    model_asset_folder_url: str(body.model_asset_folder_url || body.folder_url || payloadJson.model_asset_folder_url || payloadJson.folder_url),
+    model_r2_folder_prefix: normalizeR2Prefix(body.model_r2_folder_prefix || payloadJson.model_r2_folder_prefix),
+    selected_profile_image_key: str(body.selected_profile_image_key || payloadJson.selected_profile_image_key),
     job_type: jobType,
     job_date: jobDate,
     start_time: startTime,
     end_time: endTime,
     location_name: locationName,
-    google_map_url: str(body.google_map_url || body.google_maps_url || body.maps_url || payloadJson.google_map_url),
-    note: str(body.note || body.booking_note || body.manual_note || notes.manual_note || payloadJson.booking_note),
+    google_map_url: str(body.google_map_url || body.google_maps_url || body.maps_url || jobDetails.google_map_url || payloadJson.google_map_url),
+    note: str(
+      body.note ||
+        body.booking_note ||
+        body.manual_note ||
+        notes.manual_note ||
+        notes.handling_note ||
+        notes.operation_note ||
+        payloadJson.booking_note
+    ),
     amount_thb: amount,
     pay_model_thb: payModelAmount,
     currency: str(body.currency || "THB"),
-    payment_type: str(body.payment_type || body.payment_stage || payloadJson.payment_type || "deposit"),
-    payment_method: str(body.payment_method || payloadJson.payment_method || "promptpay"),
+    payment_type: str(body.payment_type || body.payment_stage || payment.payment_type || payloadJson.payment_type || "deposit"),
+    payment_method: str(body.payment_method || payment.payment_method || payloadJson.payment_method || "promptpay"),
     metadata: {
       ...metadata,
       source: str(metadata.source || body.source || "line_inbox"),
@@ -2375,6 +7844,32 @@ function normalizeCreateJobPayload(body) {
       line_inbox_record_id: lineInboxRecordId,
       job_visibility: visibility,
       job_id: jobId,
+      flow_version: str(body.flow_version),
+      frontend_surface: str(body.frontend_surface),
+      assigned_assistant: str(humanSupport.assigned_assistant),
+      escalation_owner: str(humanSupport.escalation_owner),
+      telegram_gate,
+      client_lineage: clientLineage,
+      line_identity: lineIdentity,
+      work,
+      model,
+      payment,
+      notes,
+      model_airtable_id: str(body.model_airtable_id || body.model_id || model.model_id || payloadJson.model_airtable_id),
+      model_lookup_key: str(body.model_lookup_key || model.model_lookup_key || model.lookup_key || payloadJson.model_lookup_key),
+      model_asset_source: str(body.model_asset_source || model.model_asset_source || payloadJson.model_asset_source || "google_drive"),
+      model_package_tier: str(
+        body.model_package_tier ||
+          body.package_tier ||
+          work.model_folder ||
+          payloadJson.model_package_tier ||
+          payloadJson.package_tier ||
+          "standard"
+      ),
+      model_asset_folder_id: str(body.model_asset_folder_id || body.folder_id || payloadJson.model_asset_folder_id || payloadJson.folder_id),
+      model_asset_folder_url: str(body.model_asset_folder_url || body.folder_url || payloadJson.model_asset_folder_url || payloadJson.folder_url),
+      model_r2_folder_prefix: normalizeR2Prefix(body.model_r2_folder_prefix || payloadJson.model_r2_folder_prefix),
+      selected_profile_image_key: str(body.selected_profile_image_key || payloadJson.selected_profile_image_key),
     },
   };
 
@@ -2397,7 +7892,7 @@ function normalizeCreateJobPayload(body) {
     push_line: body.push_line === true || str(body.delivery_mode || body.line_delivery_mode).toLowerCase() === "push",
     telegram_chat_id: str(body.telegram_chat_id || metadata.telegram_chat_id),
     telegram_message_thread_id: str(body.telegram_message_thread_id || metadata.telegram_message_thread_id || body.thread_id),
-    actor: str(body.actor || body.created_by || metadata.actor || "admin-worker"),
+    actor: str(body.actor || body.created_by || metadata.actor || humanSupport.assigned_assistant || "admin-worker"),
     session_payload: sessionPayload,
   };
 }
@@ -2727,9 +8222,13 @@ async function telegramInternalSend(env, payload) {
     chat_id: payload.chat_id,
     message_thread_id: payload.message_thread_id,
     text: payload.text,
-    parse_mode: payload.parse_mode || "HTML",
     disable_web_page_preview: payload.disable_web_page_preview ?? true,
   };
+  if (payload.parse_mode !== undefined) {
+    body.parse_mode = payload.parse_mode;
+  } else {
+    body.parse_mode = "HTML";
+  }
 
   const requestInit = {
     method: "POST",
