@@ -50,7 +50,8 @@ export async function telegramNotify(payload, env) {
       upstream_ok: Boolean(data && data.ok),
       error_code: data && typeof data === "object" ? data.error_code ?? null : null,
       description: data && typeof data === "object" ? data.description ?? null : null,
-      body,
+      message_thread_id: body.message_thread_id ?? null,
+      text: body.text,
     });
     return { ok: false, status: res.status, error: data || null };
   }
