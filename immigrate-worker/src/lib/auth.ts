@@ -1,5 +1,9 @@
 import type { Env } from "../types";
 
+export type WriteAuthResult =
+  | { ok: true }
+  | { ok: false; status: 401 | 403; code: string; message: string };
+
 export function readInternalToken(request: Request): string {
   const headerToken = (request.headers.get("x-internal-token") || "").trim();
   if (headerToken) return headerToken;
@@ -8,10 +12,49 @@ export function readInternalToken(request: Request): string {
   return auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
 }
 
+export function readConfirmKey(request: Request): string {
+  return (request.headers.get("x-confirm-key") || "").trim();
+}
+
 export function isAuthorized(request: Request, env: Env): boolean {
   const expected = String(env.INTERNAL_TOKEN || "").trim();
   if (!expected) return false;
   return readInternalToken(request) === expected;
+}
+
+export function authorizeWriteRequest(request: Request, env: Env): WriteAuthResult {
+  const expectedInternalToken = String(env.INTERNAL_TOKEN || "").trim();
+  const expectedConfirmKey = String(env.CONFIRM_KEY || "").trim();
+  const internalToken = readInternalToken(request);
+  const confirmKey = readConfirmKey(request);
+
+  if (!expectedInternalToken && !expectedConfirmKey) {
+    return {
+      ok: false,
+      status: 403,
+      code: "WRITE_AUTH_NOT_CONFIGURED",
+      message: "Write authentication is not configured.",
+    };
+  }
+
+  if (!internalToken && !confirmKey) {
+    return {
+      ok: false,
+      status: 401,
+      code: "WRITE_AUTH_MISSING",
+      message: "Write authentication is required.",
+    };
+  }
+
+  if (expectedInternalToken && internalToken === expectedInternalToken) return { ok: true };
+  if (expectedConfirmKey && confirmKey === expectedConfirmKey) return { ok: true };
+
+  return {
+    ok: false,
+    status: 403,
+    code: "WRITE_AUTH_INVALID",
+    message: "Write authentication is invalid.",
+  };
 }
 
 type BasicCredentials = {
