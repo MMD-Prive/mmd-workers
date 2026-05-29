@@ -4,29 +4,20 @@ This note records the current MMD R2 model asset direction without changing Clou
 
 ## Current Discovery
 
-- Current production-ish repo binding: `MMD_MODEL_ASSETS -> mmd-model-assets` in `admin-worker`
-- Discovered private/signed legacy/export R2 endpoint: `b176eda1172b741fd2e58904cc9d77c5.r2.cloudflarestorage.com`
-- Discovered legacy/export bucket from signed URL/CSV evidence: `mmd-models`
+- Current model asset bucket: `MMD_MODEL_ASSETS -> mmd-models` in `admin-worker`
+- Public custom domain mapping: `models.mmdbkk.com -> mmd-models`
 - Evidence bucket: `EVIDENCE_BUCKET -> mmd-sigil-evidence` in `immigrate-worker`
-- Example private endpoint shape: `https://b176eda1172b741fd2e58904cc9d77c5.r2.cloudflarestorage.com/mmd-models/...`
-- This endpoint appears to be the Cloudflare R2 S3/API endpoint, not a custom public CDN domain.
-
-Do not assume `mmd-models` is the canonical production model asset bucket until Cloudflare R2 bucket/domain state is manually confirmed. It may be a legacy bucket, export batch, migration bucket, or a source from a different system era.
+- Confirmed Cloudflare/public mapping: `models.mmdbkk.com -> https://b176eda1172b741fd2e58904cc9d77c5.r2.cloudflarestorage.com/mmd-models`
 
 Signed R2 URLs and URLs containing `X-Amz-Signature` must not be committed, pasted into Webflow, embedded in frontend code, or treated as stable public media URLs.
 
 ## Public Model Assets
 
-Production public model assets should eventually use a custom R2 public domain:
+Production public model assets use the custom R2 public domain:
 
 ```text
-models.mmdbkk.com -> confirmed production public model asset bucket
+models.mmdbkk.com -> mmd-models
 ```
-
-The target bucket is not locked by this repo patch. Current candidates to confirm in Cloudflare are:
-
-- `mmd-model-assets`, because `admin-worker` currently binds `MMD_MODEL_ASSETS` to this bucket.
-- `mmd-models`, because it was discovered from legacy/export signed URL evidence.
 
 Only public-safe assets may be served through `models.mmdbkk.com`:
 
@@ -56,7 +47,8 @@ These assets must not be served from the public R2 custom domain:
 - payment slips
 - LINE Official Note screenshots
 - LINE evidence files
-- admin-only documents
+- evidence files
+- admin-only docs
 - sensitive client/model files
 
 Protected media access should go through `admin-worker` first, with admin auth, role/session checks, prefix allowlists, and safe response headers. A future `media-worker` may be proposed only if scope grows beyond admin-worker.
@@ -90,15 +82,16 @@ Repo search found:
 
 - `admin-worker/wrangler.toml` already has an R2 binding for source-owner model library fallback lookup:
   - binding: `MMD_MODEL_ASSETS`
-  - bucket: `mmd-model-assets`
+  - bucket: `mmd-models`
+- `admin-worker/README` documents the same R2 binding: `MMD_MODEL_ASSETS -> mmd-models`.
 - `admin-worker/src/index.js` uses `env.MMD_MODEL_ASSETS` for R2 source lookup, folder preview listing, and safe metadata responses.
 - `immigrate-worker/wrangler.toml` has an `EVIDENCE_BUCKET` binding to `mmd-sigil-evidence` for recovery/evidence upload work.
 - `docs/architecture/MODEL_IDENTITY_RESOLVER.md` already warns not to return R2 signed URLs or private media.
 - `docs/architecture/RECOVERY_LV8_ROUTE_READINESS.md` documents recovery evidence R2 setup for `mmd-sigil-evidence`.
-- No committed `models.mmdbkk.com` or `assets.mmdbkk.com` assumptions were found in the checked repo paths.
+- `models.mmdbkk.com` maps to the `mmd-models` bucket for public-safe model assets.
 - No committed frontend/Webflow `r2.cloudflarestorage.com`, `r2.dev`, or `X-Amz-Signature` URL was found in the checked repo paths.
 
-No `MMD_MODELS -> mmd-models` binding has been added in this patch because no worker currently reads `env.MMD_MODELS`, and Cloudflare custom-domain/bucket state has not been manually confirmed. Do not create `MMD_MODELS -> mmd-models` until Cloudflare confirms the intended bucket/domain contract. Do not add speculative R2 bindings to unrelated workers, and do not add an R2 binding to `jobs-worker` without explicit approval.
+No runtime code, Wrangler binding, DNS, R2 setting, or Cloudflare production config was changed in this documentation-only correction. Do not add speculative R2 bindings to unrelated workers, and do not add an R2 binding to `jobs-worker` without explicit approval.
 
 ## Deployment Doctrine
 
@@ -115,11 +108,9 @@ Do not deploy directly from local work. Do not silently modify DNS, R2 bucket se
 Manual Cloudflare steps that must be completed outside this repo patch and listed in the PR body:
 
 - Cloudflare Dashboard > R2 Object Storage
-- Confirm whether bucket `mmd-model-assets` exists and is the active admin-worker model asset source.
-- Confirm whether bucket `mmd-models` still exists and whether it is active production, legacy, export, or migration storage.
-- Decide which bucket should back `models.mmdbkk.com`: `mmd-model-assets`, `mmd-models`, or another explicitly approved bucket.
+- Confirm bucket `mmd-models` is bound to `MMD_MODEL_ASSETS`.
 - Settings > Custom Domains
-- Add/verify `models.mmdbkk.com`
+- Verify `models.mmdbkk.com -> mmd-models`
 - Confirm DNS record in zone `mmdbkk.com`
 - Confirm whether `r2.dev` public access is enabled or disabled, and for which bucket.
 - Confirm caching/security/WAF rules for `models.mmdbkk.com`
@@ -128,6 +119,5 @@ Manual Cloudflare steps that must be completed outside this repo patch and liste
 
 ## Implementation TODOs
 
-- After `models.mmdbkk.com` and its backing bucket are verified, set public frontend image URLs only for approved public-safe keys.
+- Set public frontend image URLs only for approved public-safe keys on `models.mmdbkk.com`.
 - If admin/private media serving is needed, add the minimal authenticated route in `admin-worker`, bind the exact bucket it reads, and enforce prefix allowlists before `bucket.get`.
-- If `mmd-models` becomes the canonical model asset bucket for admin-worker, update code/config together so the binding name and bucket name are explicit and tested.
