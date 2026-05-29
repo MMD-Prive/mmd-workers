@@ -90,7 +90,7 @@ TG_THREAD_PRICING_REVIEW = "61"
 # R2 bucket binding for source-owner model library fallback lookup.
 [[r2_buckets]]
 binding = "MMD_MODEL_ASSETS"
-bucket_name = "mmd-model-assets"
+bucket_name = "mmd-models"
 
 [[routes]]
 pattern = "admin-worker.mmdbkk.com"

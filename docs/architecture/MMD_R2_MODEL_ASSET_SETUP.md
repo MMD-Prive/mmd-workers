@@ -34,6 +34,14 @@ models/{model_id}/gallery/{image_id}.jpg
 models/{model_id}/compcard/{image_id}.jpg
 ```
 
+Admin-worker now validates model asset prefixes before R2 list/count metadata calls. Public-safe metadata lookup is limited to:
+
+```text
+models/{model_id}/profile/
+models/{model_id}/gallery/
+models/{model_id}/compcard/
+```
+
 Do not guess public object keys during migration. If the clean key is unknown, leave a TODO in the relevant implementation or handoff note instead of replacing a private/signed URL.
 
 ## Protected Assets
@@ -84,14 +92,15 @@ Repo search found:
   - binding: `MMD_MODEL_ASSETS`
   - bucket: `mmd-models`
 - `admin-worker/README` documents the same R2 binding: `MMD_MODEL_ASSETS -> mmd-models`.
-- `admin-worker/src/index.js` uses `env.MMD_MODEL_ASSETS` for R2 source lookup, folder preview listing, and safe metadata responses.
+- `admin-worker/src/index.js` uses `env.MMD_MODEL_ASSETS` for R2 source lookup, folder preview listing, and safe metadata responses, with public-safe prefix validation before R2 list/count calls.
+- `core/api-worker` also verifies model asset keys through `MMD_MODEL_ASSETS`, so its binding should also point at `mmd-models`.
 - `immigrate-worker/wrangler.toml` has an `EVIDENCE_BUCKET` binding to `mmd-sigil-evidence` for recovery/evidence upload work.
 - `docs/architecture/MODEL_IDENTITY_RESOLVER.md` already warns not to return R2 signed URLs or private media.
 - `docs/architecture/RECOVERY_LV8_ROUTE_READINESS.md` documents recovery evidence R2 setup for `mmd-sigil-evidence`.
 - `models.mmdbkk.com` maps to the `mmd-models` bucket for public-safe model assets.
 - No committed frontend/Webflow `r2.cloudflarestorage.com`, `r2.dev`, or `X-Amz-Signature` URL was found in the checked repo paths.
 
-No runtime code, Wrangler binding, DNS, R2 setting, or Cloudflare production config was changed in this documentation-only correction. Do not add speculative R2 bindings to unrelated workers, and do not add an R2 binding to `jobs-worker` without explicit approval.
+Do not add speculative R2 bindings to unrelated workers, and do not add an R2 binding to `jobs-worker` without explicit approval.
 
 ## Deployment Doctrine
 

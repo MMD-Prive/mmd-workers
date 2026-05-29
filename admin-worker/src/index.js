@@ -6615,15 +6615,77 @@ function normalizeManifestPrefix(entry) {
 
 function buildAssetUrl(env, key) {
   const cleanKey = str(key).replace(/^\/+/, "");
-  if (!cleanKey) return null;
+  if (!cleanKey || !validatePublicModelAssetKey(cleanKey).ok) return null;
   const base = str(env.MODEL_ASSETS_PUBLIC_BASE_URL || env.R2_PUBLIC_BASE_URL || "");
   if (!base) return null;
   return `${base.replace(/\/+$/, "")}/${cleanKey}`;
 }
 
+const PUBLIC_MODEL_ASSET_PREFIX_RE = /^models\/[^/]+\/(?:profile|gallery|compcard)\/$/;
+const PUBLIC_MODEL_ASSET_KEY_RE = /^models\/[^/]+\/(?:(?:profile\/main)|(?:gallery\/[^/]+)|(?:compcard\/[^/]+))\.jpg$/;
+const PROTECTED_MODEL_ASSET_PREFIXES = [
+  "private/",
+  "evidence/",
+  "line-notes/",
+  "sigil/",
+  "blackcard/",
+  "slips/",
+];
+
+function validateModelAssetPathSyntax(value) {
+  const raw = str(value);
+  if (!raw) return { ok: false, error: "missing_model_asset_path" };
+  if (/^https?:\/\//i.test(raw)) return { ok: false, error: "model_asset_path_must_not_be_url" };
+  if (raw.startsWith("/")) return { ok: false, error: "model_asset_path_must_not_start_with_slash" };
+  if (raw.includes("\\")) return { ok: false, error: "model_asset_path_must_not_contain_backslash" };
+  if (raw.includes("..")) return { ok: false, error: "model_asset_path_must_not_contain_dotdot" };
+
+  const clean = raw.replace(/\/+$/g, raw.endsWith("/") ? "/" : "");
+  const segmentPath = clean.endsWith("/") ? clean.slice(0, -1) : clean;
+  const parts = segmentPath.split("/");
+  if (parts.some((part) => part === "")) {
+    return { ok: false, error: "model_asset_path_must_not_contain_empty_segments" };
+  }
+
+  const lower = clean.toLowerCase();
+  if (PROTECTED_MODEL_ASSET_PREFIXES.some((prefix) => lower.startsWith(prefix))) {
+    return { ok: false, error: "protected_model_asset_prefix_not_allowed" };
+  }
+
+  return { ok: true, path: clean };
+}
+
+export function validatePublicModelAssetPrefix(value) {
+  const syntax = validateModelAssetPathSyntax(value);
+  if (!syntax.ok) return syntax;
+  const prefix = normalizeR2Prefix(syntax.path);
+  if (!PUBLIC_MODEL_ASSET_PREFIX_RE.test(prefix)) {
+    return { ok: false, error: "model_asset_prefix_not_public_safe", path: prefix };
+  }
+  return { ok: true, prefix };
+}
+
+export function validatePublicModelAssetKey(value) {
+  const syntax = validateModelAssetPathSyntax(value);
+  if (!syntax.ok) return syntax;
+  const key = syntax.path.replace(/\/+$/g, "");
+  if (!PUBLIC_MODEL_ASSET_KEY_RE.test(key)) {
+    return { ok: false, error: "model_asset_key_not_public_safe", path: key };
+  }
+  return { ok: true, key };
+}
+
+function assertPublicModelAssetPrefix(value) {
+  const validation = validatePublicModelAssetPrefix(value);
+  if (!validation.ok) {
+    throw new Error(validation.error || "invalid_model_asset_prefix");
+  }
+  return validation.prefix;
+}
+
 async function listR2FolderPreview(env, folderPrefix) {
   const bucket = env.MMD_MODEL_ASSETS;
-  const prefix = normalizeR2Prefix(folderPrefix);
+  const prefix = assertPublicModelAssetPrefix(folderPrefix);
   if (!bucket || !prefix || typeof bucket.list !== "function") {
     return { asset_count: null, preview_keys: [] };
   }
@@ -6642,7 +6704,7 @@ async function listR2FolderPreview(env, folderPrefix) {
 
 async function listR2ObjectCount(env, folderPrefix, limit = 1000) {
   const bucket = env.MMD_MODEL_ASSETS;
-  const prefix = normalizeR2Prefix(folderPrefix);
+  const prefix = assertPublicModelAssetPrefix(folderPrefix);
   if (!bucket || !prefix || typeof bucket.list !== "function") {
     return { object_count: null, exists: false };
   }
@@ -6734,11 +6796,14 @@ async function searchR2ByConfiguredCategories(env, { q, sourceOwner, categoryPat
   }
 
   for (const basePrefix of uniqueStrings(bases)) {
-    const listing = await bucket.list({ prefix: basePrefix, limit: 1000 });
+    const validation = validatePublicModelAssetPrefix(basePrefix);
+    if (!validation.ok) continue;
+    const safeBasePrefix = validation.prefix;
+    const listing = await bucket.list({ prefix: safeBasePrefix, limit: 1000 });
     const objects = Array.isArray(listing?.objects) ? listing.objects : [];
     const folderCounts = new Map();
     for (const object of objects) {
-      const segment = segmentAfterBase(object?.key, basePrefix);
+      const segment = segmentAfterBase(object?.key, safeBasePrefix);
       if (!segment) continue;
       folderCounts.set(segment, (folderCounts.get(segment) || 0) + 1);
     }
@@ -6746,7 +6811,7 @@ async function searchR2ByConfiguredCategories(env, { q, sourceOwner, categoryPat
     for (const [folderName, objectCount] of folderCounts.entries()) {
       const folderToken = normalizeLooseToken(folderName);
       if (folderToken === queryToken || folderToken.includes(queryToken) || queryToken.includes(folderToken)) {
-        const matchedPrefix = joinR2Path(basePrefix, folderName);
+        const matchedPrefix = joinR2Path(safeBasePrefix, folderName);
         return {
           matched_name: folderName,
           matched_prefix: matchedPrefix,
@@ -6799,11 +6864,13 @@ async function searchR2ModelSource(env, { q, sourceOwner, categoryPath }) {
   const owner = getModelSourceOwner(env, sourceOwner);
   const exactCandidates = buildR2ExactPrefixCandidates({ q, sourceOwner: owner, categoryPath, env });
   for (const prefix of exactCandidates) {
-    const count = await listR2ObjectCount(env, prefix, 200);
+    const validation = validatePublicModelAssetPrefix(prefix);
+    if (!validation.ok) continue;
+    const count = await listR2ObjectCount(env, validation.prefix, 200);
     if (count.exists) {
       return {
         matched_name: str(q),
-        matched_prefix: normalizeR2Prefix(prefix),
+        matched_prefix: validation.prefix,
         category_path: normalizeCategoryPath(categoryPath || inferCategoryFromPrefix(prefix, owner)),
         object_count: count.object_count,
       };
@@ -6880,12 +6947,15 @@ async function stageModelFromSource(env, body = {}) {
   const modelName = str(body.model_name || body.name || body.q);
   const sourceOwner = getModelSourceOwner(env, body.source_owner);
   const categoryPath = normalizeCategoryPath(body.category_path);
-  const r2Prefix = normalizeR2Prefix(body.r2_prefix);
+  const rawR2Prefix = str(body.r2_prefix);
+  const r2Prefix = normalizeR2Prefix(rawR2Prefix);
   if (!modelName) throw new Error("missing_model_name");
 
   let resolved = null;
   if (r2Prefix) {
-    const count = await listR2ObjectCount(env, r2Prefix, 200);
+    const prefixValidation = validatePublicModelAssetPrefix(rawR2Prefix);
+    if (!prefixValidation.ok) throw new Error(prefixValidation.error || "invalid_model_asset_prefix");
+    const count = await listR2ObjectCount(env, prefixValidation.prefix, 200);
     resolved = {
       ok: true,
       found: count.exists,
@@ -6893,7 +6963,7 @@ async function stageModelFromSource(env, body = {}) {
       query: modelName,
       source_owner: sourceOwner,
       matched_name: modelName,
-      matched_prefix: r2Prefix,
+      matched_prefix: prefixValidation.prefix,
       category_path: categoryPath || inferCategoryFromPrefix(r2Prefix, sourceOwner),
       object_count: count.object_count,
     };
@@ -7184,15 +7254,29 @@ async function writeModelFolderAuditLog(env, payload) {
 }
 
 async function patchAdminModelFolder(env, modelId, body, req) {
-  const folderPrefix = normalizeR2Prefix(body.r2_folder_prefix);
+  const rawFolderPrefix = str(body.r2_folder_prefix);
+  const folderPrefix = normalizeR2Prefix(rawFolderPrefix);
   const profileImageKey = str(body.profile_image_key);
-  const galleryPrefix = normalizeR2Prefix(body.gallery_prefix);
+  const rawGalleryPrefix = str(body.gallery_prefix);
+  const galleryPrefix = normalizeR2Prefix(rawGalleryPrefix);
   if (!folderPrefix) throw new Error("missing_r2_folder_prefix");
+  const folderValidation = validatePublicModelAssetPrefix(rawFolderPrefix);
+  if (!folderValidation.ok) throw new Error(folderValidation.error || "invalid_model_asset_prefix");
+  if (profileImageKey) {
+    const profileValidation = validatePublicModelAssetKey(profileImageKey);
+    if (!profileValidation.ok) throw new Error(profileValidation.error || "invalid_model_asset_key");
+  }
+  let safeGalleryPrefix = galleryPrefix;
+  if (galleryPrefix) {
+    const galleryValidation = validatePublicModelAssetPrefix(rawGalleryPrefix);
+    if (!galleryValidation.ok) throw new Error(galleryValidation.error || "invalid_model_asset_prefix");
+    safeGalleryPrefix = galleryValidation.prefix;
+  }
 
   const update = compactObject({
-    r2_folder_prefix: folderPrefix,
+    r2_folder_prefix: folderValidation.prefix,
     profile_image_key: profileImageKey,
-    gallery_prefix: galleryPrefix,
+    gallery_prefix: safeGalleryPrefix,
   });
 
   const patched = await airtablePatchById(env, getModelsTableName(env), modelId, update);
@@ -7210,10 +7294,10 @@ async function patchAdminModelFolder(env, modelId, body, req) {
     airtable_record_id: modelId,
     model_name: identity.model_name,
     model_lookup_key: identity.model_lookup_key,
-    r2_folder_prefix: folderPrefix,
+    r2_folder_prefix: folderValidation.prefix,
     profile_image_key: profileImageKey,
-    gallery_prefix: galleryPrefix,
-    note: `Operator linked model folder to ${folderPrefix}`,
+    gallery_prefix: safeGalleryPrefix,
+    note: `Operator linked model folder to ${folderValidation.prefix}`,
   });
 
   const payload = await getAdminModelFolder(env, modelId);
