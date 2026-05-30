@@ -43,6 +43,14 @@ models/{model_id}/gallery/{image_id}.jpg
 models/{model_id}/compcard/{image_id}.jpg
 ```
 
+Admin-worker now validates model asset prefixes before R2 list/count metadata calls. Public-safe metadata lookup is limited to:
+
+```text
+models/{model_id}/profile/
+models/{model_id}/gallery/
+models/{model_id}/compcard/
+```
+
 Do not guess public object keys during migration. If the clean key is unknown, leave a TODO in the relevant implementation or handoff note instead of replacing a private/signed URL.
 
 ## Protected Assets
@@ -90,15 +98,17 @@ Repo search found:
 
 - `admin-worker/wrangler.toml` already has an R2 binding for source-owner model library fallback lookup:
   - binding: `MMD_MODEL_ASSETS`
-  - bucket: `mmd-model-assets`
-- `admin-worker/src/index.js` uses `env.MMD_MODEL_ASSETS` for R2 source lookup, folder preview listing, and safe metadata responses.
+  - bucket: `mmd-models`
+- `admin-worker/README` documents the same R2 binding: `MMD_MODEL_ASSETS -> mmd-models`.
+- `admin-worker/index.js` uses `env.MMD_MODEL_ASSETS` for R2 source lookup and safe metadata responses, with public-safe prefix validation before R2 list/count calls.
+- `core/api-worker` also verifies model asset keys through `MMD_MODEL_ASSETS`, so its binding should also point at `mmd-models`.
 - `immigrate-worker/wrangler.toml` has an `EVIDENCE_BUCKET` binding to `mmd-sigil-evidence` for recovery/evidence upload work.
 - `docs/architecture/MODEL_IDENTITY_RESOLVER.md` already warns not to return R2 signed URLs or private media.
 - `docs/architecture/RECOVERY_LV8_ROUTE_READINESS.md` documents recovery evidence R2 setup for `mmd-sigil-evidence`.
 - No committed `models.mmdbkk.com` or `assets.mmdbkk.com` assumptions were found in the checked repo paths.
 - No committed frontend/Webflow `r2.cloudflarestorage.com`, `r2.dev`, or `X-Amz-Signature` URL was found in the checked repo paths.
 
-No `MMD_MODELS -> mmd-models` binding has been added in this patch because no worker currently reads `env.MMD_MODELS`, and Cloudflare custom-domain/bucket state has not been manually confirmed. Do not create `MMD_MODELS -> mmd-models` until Cloudflare confirms the intended bucket/domain contract. Do not add speculative R2 bindings to unrelated workers, and do not add an R2 binding to `jobs-worker` without explicit approval.
+Do not add speculative R2 bindings to unrelated workers, and do not add an R2 binding to `jobs-worker` without explicit approval.
 
 ## Deployment Doctrine
 
