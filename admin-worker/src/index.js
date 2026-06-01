@@ -980,7 +980,8 @@ function redirectToInternalAdminLogin(req) {
   return new Response(null, {
     status: 302,
     headers: {
-      Location: `/internal/admin/login?next=${encodeURIComponent(next)}`,
+      // /sigil/admin/login is the canonical internal admin login.
+      Location: `/sigil/admin/login?next=${encodeURIComponent(next)}`,
       "Cache-Control": "no-store",
       "x-mmd-worker": "admin-worker",
     },

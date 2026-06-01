@@ -70,6 +70,14 @@ pattern = "www.mmdbkk.com/internal/admin/login*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
+pattern = "mmdbkk.com/admin/login*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/admin/login*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
 pattern = "mmdbkk.com/internal/admin/verify-access-code*"
 zone_name = "mmdbkk.com"
 

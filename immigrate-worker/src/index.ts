@@ -144,6 +144,11 @@ const SIGIL = {
   sendLineSessionCard: "/sigil/admin/jobs/send-line-session-card",
 } as const;
 
+const LEGACY_ADMIN_LOGIN_PATHS = new Set([
+  CONTROL_ROOM.login,
+  "/admin/login",
+]);
+
 const SIGIL_ADMIN_CANONICAL_HOST = "sigil.mmdbkk.com";
 const SIGIL_ADMIN_LEGACY_HOSTS = new Set(["mmdbkk.com", "www.mmdbkk.com"]);
 
@@ -155,6 +160,17 @@ function canonicalSigilAdminRedirect(url: URL): Response | null {
   canonicalUrl.protocol = "https:";
   canonicalUrl.hostname = SIGIL_ADMIN_CANONICAL_HOST;
   canonicalUrl.port = "";
+  return redirect(canonicalUrl.toString(), 302);
+}
+
+function canonicalAdminLoginAliasRedirect(request: Request): Response | null {
+  const url = new URL(request.url);
+  if (!LEGACY_ADMIN_LOGIN_PATHS.has(url.pathname)) return null;
+
+  // /sigil/admin/login is the canonical internal admin login.
+  const canonicalUrl = new URL(SIGIL.login, url.origin);
+  const next = url.searchParams.get("next");
+  if (next) canonicalUrl.searchParams.set("next", next);
   return redirect(canonicalUrl.toString(), 302);
 }
 
@@ -7137,6 +7153,9 @@ function isProtectedBrowserRoute(pathname: string): boolean {
     return false;
   }
 
+  // /sigil/guide is a client/member route, not an admin route.
+  // /mmd-blackcard is a public Black Card landing route, not an admin route.
+  // /sigil/admin/login is the canonical internal admin login.
   const isAdminPage =
     pathname === CONTROL_ROOM.root ||
     pathname.startsWith(`${CONTROL_ROOM.root}/`) ||
@@ -7170,7 +7189,7 @@ function isSigilPath(pathname: string): boolean {
 }
 
 function selectAdminLoginPath(pathname: string): string {
-  return isSigilPath(pathname) ? SIGIL.login : CONTROL_ROOM.login;
+  return SIGIL.login;
 }
 
 function selectAdminDefaultNext(pathname: string): string {
@@ -7543,9 +7562,12 @@ async function withInjectedSigilAdminBootstrap(response: Response): Promise<Resp
 
 function renderAdminLoginPage(request: Request, env: Env): Response {
   const url = new URL(request.url);
-  const fallbackNext = ADMIN_JOBS.createSessionLegacy;
+  const fallbackNext = SIGIL.booking;
   const normalizedNext = normalizeAdminNextPath(url.searchParams.get("next"), fallbackNext);
-  const next = normalizedNext === "/internal" || normalizedNext.startsWith("/internal/")
+  const next = normalizedNext === "/internal" ||
+    normalizedNext.startsWith("/internal/") ||
+    normalizedNext === SIGIL.booking ||
+    isSigilAdminPath(normalizedNext)
     ? normalizedNext
     : fallbackNext;
 
@@ -12035,7 +12057,7 @@ async function handleAdminLoginSession(request: Request, env: Env): Promise<Resp
 
   if (request.method === "DELETE") {
     return json(
-      { ok: true, data: { cleared: true, redirect_to: CONTROL_ROOM.login }, meta },
+      { ok: true, data: { cleared: true, redirect_to: SIGIL.login }, meta },
       { headers: { "set-cookie": clearGateSessionCookie(request) } },
     );
   }
@@ -12238,6 +12260,11 @@ export default {
       const sigilAdminAuthResponse = await handleSigilAdminAuthRoute(request, env);
       if (sigilAdminAuthResponse) {
         return sigilAdminAuthResponse;
+      }
+
+      const adminLoginAliasRedirect = canonicalAdminLoginAliasRedirect(request);
+      if (adminLoginAliasRedirect) {
+        return adminLoginAliasRedirect;
       }
 
       if (url.pathname === SIGIL.modelPromoteImmigration) {
