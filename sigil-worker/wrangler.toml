@@ -1,0 +1,12 @@
+name = "sigil-worker"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+workers_dev = true
+
+[vars]
+IMMIGRATE_WORKER_BASE_URL = "https://immigrate-worker.malemodel-bkk.workers.dev"
+SIGIL_ROUTE_MIGRATION_BUILD = "SIGIL_ROUTE_MIGRATION_V1"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/sigil/*"
+zone_name = "mmdbkk.com"
