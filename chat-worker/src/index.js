@@ -14,6 +14,18 @@
 //   OPENAI_MODEL (var) e.g. "gpt-4.1-mini" (example)
 //   CHAT_SESSIONS_KV (KV namespace)  // optional: store convo context per member_id
 
+const DEFAULT_OPENAI_TEXT_MODEL = "gpt-4.1-mini";
+const OPENAI_TEXT_MODEL_CONFIG_ERROR = "OPENAI_MODEL must be a text model for chat-worker /v1/responses.";
+const INVALID_OPENAI_TEXT_MODELS = new Set(["gpt-image-1", "gpt-image-2"]);
+
+function trimStr(value) {
+  return value === null || value === undefined ? "" : String(value).trim();
+}
+
+function isInvalidOpenAITextModel(value) {
+  return INVALID_OPENAI_TEXT_MODELS.has(trimStr(value).toLowerCase());
+}
+
 function corsHeaders(origin, allowedCsv) {
   const allowed = (allowedCsv || "")
     .split(",")
@@ -58,7 +70,11 @@ async function aiReplyMock(input) {
 async function aiReplyOpenAI(env, input) {
   // Minimal OpenAI REST call (no SDK) — keep it simple
   const apiKey = env.OPENAI_API_KEY;
-  const model = env.OPENAI_MODEL || "gpt-4.1-mini";
+  const model = trimStr(env.OPENAI_MODEL) || DEFAULT_OPENAI_TEXT_MODEL;
+  if (isInvalidOpenAITextModel(model)) {
+    console.warn(OPENAI_TEXT_MODEL_CONFIG_ERROR);
+    return { text: "ai_config_error", meta: { provider: "openai", error: "invalid_model" } };
+  }
   if (!apiKey) return { text: "ai_unconfigured", meta: { provider: "openai" } };
 
   const payload = {
