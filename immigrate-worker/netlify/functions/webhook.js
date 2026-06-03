@@ -18,6 +18,7 @@ const FAQ_REPLY_INTENTS = new Set([
   "upgrade_question",
   "membership_fee_reason",
   "model_photo_review_question",
+  "talk_to_per_ai",
   "contact_admin",
 ]);
 const PRICING_REVIEW_INTENTS = new Set(["pricing_review", "ask_where_to_get_rate", "image_rate_inquiry"]);
@@ -194,6 +195,20 @@ function looksLikeSpecificModelRequest(text) {
   return hasCandidate && (BOOKING_SIGNAL_RE.test(text) || TIMING_SIGNAL_RE.test(text) || LOCATION_SIGNAL_RE.test(text));
 }
 
+function isTalkToPerAi(text = "") {
+  const normalized = normalizeLookup(text).replace(/\s+/g, "");
+  return (
+    normalized.includes("คุยกับเปอร์") ||
+    normalized.includes("คุยกับper") ||
+    normalized.includes("คุยกับperai") ||
+    normalized.includes("ขอคุยกับเปอร์") ||
+    normalized.includes("ขอคุยกับper") ||
+    normalized.includes("ติดต่อเปอร์") ||
+    normalized.includes("ติดต่อper") ||
+    normalized.includes("perai")
+  );
+}
+
 function inferFaqIntent(text) {
   const normalized = String(text || "").toLowerCase().replace(/\s+/g, " ").trim();
   if (!normalized) return "";
@@ -355,6 +370,7 @@ function inferIntent(text, event) {
     return "line_event";
   }
 
+  if (isTalkToPerAi(text)) return "talk_to_per_ai";
   const faqIntent = inferFaqIntent(text);
   if (faqIntent) {
     return hasPriorImageContext(event) && (faqIntent === "pricing_review" || faqIntent === "ask_where_to_get_rate")
@@ -621,6 +637,17 @@ Premium จะเหมาะกับคนที่ต้องการเล
     return `รูปตัวอย่างนายแบบและรีวิวสามารถแนะนำให้ดูได้เฉพาะส่วนที่นโยบายและความเป็นส่วนตัวอนุญาตครับ
 
 แจ้งแนวที่ชอบหรือแพ็กเกจที่สนใจมาได้เลยครับ เดี๋ยวผมส่งให้ Per แนะนำทางที่เหมาะสมต่อครับ`;
+  }
+  if (intent === "talk_to_per_ai") {
+    return `มายเนมอีส Per AI (หา)ใช่บอสเปอร์
+บอสไม่อยู่ หน้าจอ บอสไปไหน
+แต่ผมอยู่ คอยช่วยตอบ เรื่องคาใจ
+ว่าแต่อยาก สไตล์ไหน เล่าให้ฟังที
+
+นอกจากนี้ ผมยังช่วย ตอบคำถาม
+สถานะ แพ็กเกจ หรือว่าพี่
+จะต่ออายุ ผมก็จะ ยิ่งยินดี
+ขอพี่ๆ เปิดใจ ให้ข้อมูล (กับเปอร์น้าาา)`;
   }
   if (intent === "contact_admin") {
     return `รับทราบครับ ผมจะส่งคำถามนี้ให้ Per หรือ MMD ดูต่อครับ
