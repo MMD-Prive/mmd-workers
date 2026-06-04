@@ -62,8 +62,15 @@ interface Env {
   RECOGNIZED_URL: string;
   ALLOWED_ORIGINS: string;
   AIRTABLE_FIELD_ACCESS_TOKEN_EXPIRES_AT?: string;
+  AIRTABLE_FIELD_PARTNER_ID?: string;
   AIRTABLE_FIELD_PARTNER_EMAIL?: string;
   AIRTABLE_FIELD_PARTNER_NAME?: string;
+  AIRTABLE_FIELD_PARTNER_CONTACT_PHONE?: string;
+  AIRTABLE_FIELD_PARTNER_LINE_ID?: string;
+  AIRTABLE_FIELD_PARTNER_TELEGRAM?: string;
+  AIRTABLE_FIELD_PARTNER_TYPE?: string;
+  AIRTABLE_FIELD_PARTNER_STATUS?: string;
+  AIRTABLE_FIELD_PARTNER_SCORE?: string;
   AIRTABLE_FIELD_PARTNER_NOTES?: string;
 }
 
@@ -787,16 +794,16 @@ function buildPartnerFields(
       : "needs_follow_up",
   };
 
-  setSchemaField(fields, schema, ["Partner ID"], `ptr_${requestId}`);
-  setSchemaField(fields, schema, [cleanText(env.AIRTABLE_FIELD_PARTNER_NAME), "Partner Name"], partnerName);
-  setSchemaField(fields, schema, [cleanText(env.AIRTABLE_FIELD_PARTNER_EMAIL), "Email"], cleanText(payload.email));
-  setSchemaField(fields, schema, ["Contact Phone"], cleanText(payload.phone));
-  setSchemaField(fields, schema, ["LINE ID"], cleanText(payload.line_id));
-  setSchemaField(fields, schema, ["Telegram ID", "Telegram Username"], cleanText(payload.telegram));
-  setSchemaField(fields, schema, ["Partner Type"], partnerType(payload));
-  setSchemaField(fields, schema, ["Status"], "needs_follow_up");
-  setSchemaField(fields, schema, ["Partner Score"], score);
-  setSchemaField(fields, schema, [cleanText(env.AIRTABLE_FIELD_PARTNER_NOTES), "Notes Internal", "Notes"], partnerIntakeNotes(payload, requestId));
+  setConfiguredOrSchemaField(fields, schema, env.AIRTABLE_FIELD_PARTNER_ID, ["Partner ID"], `ptr_${requestId}`);
+  setConfiguredOrSchemaField(fields, schema, env.AIRTABLE_FIELD_PARTNER_NAME, ["Partner Name"], partnerName);
+  setConfiguredOrSchemaField(fields, schema, env.AIRTABLE_FIELD_PARTNER_EMAIL, ["Email"], cleanText(payload.email));
+  setConfiguredOrSchemaField(fields, schema, env.AIRTABLE_FIELD_PARTNER_CONTACT_PHONE, ["Contact Phone"], cleanText(payload.phone));
+  setConfiguredOrSchemaField(fields, schema, env.AIRTABLE_FIELD_PARTNER_LINE_ID, ["LINE ID"], cleanText(payload.line_id));
+  setConfiguredOrSchemaField(fields, schema, env.AIRTABLE_FIELD_PARTNER_TELEGRAM, ["Telegram ID", "Telegram Username"], cleanText(payload.telegram));
+  setConfiguredOrSchemaField(fields, schema, env.AIRTABLE_FIELD_PARTNER_TYPE, ["Partner Type"], partnerType(payload));
+  setConfiguredOrSchemaField(fields, schema, env.AIRTABLE_FIELD_PARTNER_STATUS, ["Status"], "needs_follow_up");
+  setConfiguredOrSchemaField(fields, schema, env.AIRTABLE_FIELD_PARTNER_SCORE, ["Partner Score"], score);
+  setConfiguredOrSchemaField(fields, schema, env.AIRTABLE_FIELD_PARTNER_NOTES, ["Notes Internal", "Notes"], partnerIntakeNotes(payload, requestId));
 
   return compactFields(fields);
 }
@@ -895,6 +902,20 @@ function setSchemaField(
   if (field) fields[field] = value;
 }
 
+function setConfiguredOrSchemaField(
+  fields: AirtableFields,
+  schema: AirtableSchema,
+  configured: string | undefined,
+  candidates: Array<string | undefined>,
+  value: AirtableValue | undefined,
+): void {
+  if (value === undefined || value === null || value === "") return;
+  if (Array.isArray(value) && value.length === 0) return;
+  const configuredField = cleanText(configured);
+  const field = configuredField ? schema[configuredField]?.id || configuredField : resolveSchemaField(schema, candidates);
+  if (field) fields[field] = value;
+}
+
 function resolveSchemaField(schema: AirtableSchema, candidates: Array<string | undefined>): string {
   for (const candidate of candidates) {
     const key = cleanText(candidate);
@@ -906,7 +927,10 @@ function resolveSchemaField(schema: AirtableSchema, candidates: Array<string | u
 
 async function findExistingPartner(env: Env, payload: PartnerRequestPayload): Promise<AirtableRecord | null> {
   const schema = await tableSchema(env, env.AIRTABLE_TABLE_MODEL_PARTNERS);
-  const emailField = resolveSchemaField(schema, [cleanText(env.AIRTABLE_FIELD_PARTNER_EMAIL), "Email"]);
+  const configuredEmailField = cleanText(env.AIRTABLE_FIELD_PARTNER_EMAIL);
+  const emailField = configuredEmailField
+    ? schema[configuredEmailField]?.id || configuredEmailField
+    : resolveSchemaField(schema, ["Email"]);
   const email = cleanText(payload.email);
   if (!emailField || !email) return null;
   return findFirstByFormula(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, `{${emailField}}="${formulaString(email)}"`);
