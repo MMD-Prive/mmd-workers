@@ -4,6 +4,10 @@ const TOKEN_BYTES = 32;
 const DEFAULT_TOKEN_TTL_DAYS = 30;
 const WORKER_NAME = "partners-worker";
 const AGREEMENT_VERSION = "SIGIL_PARTNER_TERMS_V2";
+const PARTNER_ASSET_DEFAULT_CATEGORY = "other";
+const REVIEW_STATUS_NEW = "new";
+const VISIBILITY_PRIVATE_INTERNAL = "private_internal";
+const SIGNED_URL_NOT_GENERATED = "not_generated";
 
 const FIELD_PARTNER_APPROVAL_STATUS = "fldwRzdtIoPbHKr7n";
 const FIELD_PARTNER_ACCESS_TOKEN_HASH = "fldoaCF4k4YqyuQ7Q";
@@ -57,6 +61,10 @@ interface Env {
   TERMS_URL: string;
   RECOGNIZED_URL: string;
   ALLOWED_ORIGINS: string;
+  AIRTABLE_FIELD_ACCESS_TOKEN_EXPIRES_AT?: string;
+  AIRTABLE_FIELD_PARTNER_EMAIL?: string;
+  AIRTABLE_FIELD_PARTNER_NAME?: string;
+  AIRTABLE_FIELD_PARTNER_NOTES?: string;
 }
 
 interface AirtableRecord {
@@ -66,6 +74,7 @@ interface AirtableRecord {
 
 interface AirtableListResponse {
   records?: AirtableRecord[];
+  offset?: string;
 }
 
 interface UploadMetadata {
@@ -93,6 +102,15 @@ interface PartnerRequestPayload {
   website?: string;
   notes?: string;
   referral_source?: string;
+  contact?: string;
+  name_alias?: string;
+  access_source?: string;
+  value_bring?: string;
+  why_consider?: string;
+  experience?: string;
+  portfolio_url?: string;
+  talent_location?: string;
+  talent_details?: string;
   talent_name?: string;
   talent_type?: string;
   model_id?: string;
@@ -186,7 +204,7 @@ async function handleUpload(request: Request, env: Env): Promise<Record<string, 
 
   const form = await request.formData();
   const requestId = cleanText(form.get("request_id"));
-  const fileCategory = cleanText(form.get("file_category")) || "partner_upload";
+  const fileCategory = cleanText(form.get("file_category")) || PARTNER_ASSET_DEFAULT_CATEGORY;
   const file = form.get("file");
 
   if (!requestId) throw new HttpError(400, "missing_request_id");
@@ -235,62 +253,23 @@ async function handlePartnerRequest(
 ): Promise<Record<string, JsonValue>> {
   const payload = await readPartnerRequestPayload(request);
   const requestId = payload.request_id || crypto.randomUUID();
-  const partnerName = payload.partner_name || payload.name || "Partner";
+  const partnerName = partnerDisplayName(payload);
   const score = computePartnerScore(payload);
   const nowIso = new Date().toISOString();
   const uploads = [...(payload.uploaded_files || []), ...(payload.files || [])].filter(hasR2Key);
-  const existingPartner = payload.email
-    ? await findFirstByFormula(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, `{Email}="${formulaString(payload.email)}"`)
-    : null;
-
-  const partnerFields = compactFields({
-    "Partner ID": existingPartner?.id || `ptr_${requestId}`,
-    "Partner Name": partnerName,
-    Name: partnerName,
-    Email: cleanText(payload.email),
-    Phone: cleanText(payload.phone),
-    "LINE ID": cleanText(payload.line_id),
-    Telegram: cleanText(payload.telegram),
-    Company: cleanText(payload.company),
-    Website: cleanText(payload.website),
-    Notes: cleanText(payload.notes),
-    "Request ID": requestId,
-    "Referral Source": cleanText(payload.referral_source),
-    "Partner Score": score,
-    [FIELD_PARTNER_APPROVAL_STATUS]: existingPartner ? fieldString(existingPartner.fields, [FIELD_PARTNER_APPROVAL_STATUS, "Approval Status"]) || "needs_follow_up" : "needs_follow_up",
-    "Created By Worker": WORKER_NAME,
-    "Payload JSON": stableJson(payload),
-  });
+  const existingPartner = await findExistingPartner(env, payload);
+  const partnerFields = buildPartnerFields(env, payload, requestId, partnerName, score, existingPartner);
 
   const partnerRecord = existingPartner
     ? await airtableUpdate(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, existingPartner.id, partnerFields)
     : await airtableCreate(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, partnerFields);
 
   const modelApplicationRecord = shouldCreateModelApplication(payload, uploads)
-    ? await airtableCreate(env, env.AIRTABLE_TABLE_MODEL_APPLICATIONS, compactFields({
-      "Application ID": `app_${requestId}`,
-      "Request ID": requestId,
-      "Partner": [partnerRecord.id],
-      "Talent Name": cleanText(payload.talent_name),
-      "Talent Type": cleanText(payload.talent_type),
-      "Model": cleanText(payload.model_id),
-      "Status": "partner_submitted",
-      "Created By Worker": WORKER_NAME,
-      "Payload JSON": stableJson(payload),
-    }))
+    ? await airtableCreate(env, env.AIRTABLE_TABLE_MODEL_APPLICATIONS, buildModelApplicationFields(payload, requestId, partnerRecord.id, uploads))
     : null;
 
   const referralRecord = shouldCreateReferral(payload)
-    ? await airtableCreate(env, env.AIRTABLE_TABLE_MODEL_REFERRALS, compactFields({
-      "Referral ID": `ref_${requestId}`,
-      "Request ID": requestId,
-      "Partner": [partnerRecord.id],
-      "Model": cleanText(payload.model_id),
-      "Talent Name": cleanText(payload.talent_name),
-      "Ownership Status": "pending_review",
-      "Created By Worker": WORKER_NAME,
-      Notes: cleanText(payload.notes),
-    }))
+    ? await airtableCreate(env, env.AIRTABLE_TABLE_MODEL_REFERRALS, buildReferralFields(payload, requestId, partnerRecord.id))
     : null;
 
   const assetRecords: AirtableRecord[] = [];
@@ -307,16 +286,16 @@ async function handlePartnerRequest(
       [FIELD_ASSET_FILE_NAME]: cleanText(upload.file_name),
       [FIELD_ASSET_FILE_TYPE]: cleanText(upload.file_type),
       [FIELD_ASSET_FILE_SIZE]: upload.file_size,
-      [FIELD_ASSET_FILE_CATEGORY]: cleanText(upload.file_category),
+      [FIELD_ASSET_FILE_CATEGORY]: cleanText(upload.file_category) || PARTNER_ASSET_DEFAULT_CATEGORY,
       [FIELD_ASSET_R2_KEY]: cleanText(upload.r2_key),
       [FIELD_ASSET_R2_BUCKET]: cleanText(upload.r2_bucket) || env.PARTNER_ASSETS_BUCKET_NAME,
       [FIELD_ASSET_STORAGE_PROVIDER]: "cloudflare_r2",
-      [FIELD_ASSET_PORTFOLIO_URL]: cleanText(upload.portfolio_url),
+      [FIELD_ASSET_PORTFOLIO_URL]: cleanText(upload.portfolio_url) || cleanText(payload.portfolio_url),
       [FIELD_ASSET_UPLOADED_AT]: nowIso,
-      [FIELD_ASSET_REVIEW_STATUS]: "pending_review",
-      [FIELD_ASSET_VISIBILITY]: "private",
-      [FIELD_ASSET_SIGNED_URL_STATUS]: "not_issued",
-      [FIELD_ASSET_NOTES]: cleanText(payload.notes),
+      [FIELD_ASSET_REVIEW_STATUS]: REVIEW_STATUS_NEW,
+      [FIELD_ASSET_VISIBILITY]: VISIBILITY_PRIVATE_INTERNAL,
+      [FIELD_ASSET_SIGNED_URL_STATUS]: SIGNED_URL_NOT_GENERATED,
+      [FIELD_ASSET_NOTES]: partnerIntakeNotes(payload, requestId),
       [FIELD_ASSET_CREATED_BY_WORKER]: WORKER_NAME,
       [FIELD_ASSET_SOURCE_PATH]: cleanText(upload.source_path) || cleanText(upload.r2_key),
       [FIELD_ASSET_PAYLOAD_JSON]: stableJson(upload),
@@ -365,11 +344,11 @@ async function handleApprove(
 
   let recognizedLink = "";
   if (action === "recognized") {
-    const token = randomToken();
+    const expiresAt = new Date(Date.now() + tokenTtlMs(body.expires_in_days)).toISOString();
+    const token = randomToken(expiresAt);
     fields[FIELD_PARTNER_ACCESS_TOKEN_HASH] = await sha256Hex(token);
-    fields["Access Token Expires At"] = new Date(Date.now() + tokenTtlMs(body.expires_in_days)).toISOString();
-    fields["Agreement Version"] = "";
-    fields["Agreement Accepted At"] = "";
+    const expiresAtField = await resolveAccessTokenExpiresAtField(env);
+    if (expiresAtField) fields[expiresAtField] = expiresAt;
     recognizedLink = withT(env.RECOGNIZED_URL, token);
   }
 
@@ -408,7 +387,6 @@ async function handleAcceptTerms(request: Request, env: Env): Promise<Record<str
   await airtableUpdate(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, partner.id, compactFields({
     "Agreement Version": cleanText(body.agreement_version) || AGREEMENT_VERSION,
     "Agreement Accepted At": new Date().toISOString(),
-    Status: "Active",
   }));
 
   return { ok: true, partner_id: partner.id, redirect: withT(env.DASHBOARD_URL, cleanText(body.t)) };
@@ -416,15 +394,15 @@ async function handleAcceptTerms(request: Request, env: Env): Promise<Record<str
 
 async function handleDashboard(url: URL, env: Env): Promise<Record<string, JsonValue>> {
   const partner = await verifyPartnerByToken(url.searchParams.get("t"), env);
-  const referrals = await listByFormula(env, env.AIRTABLE_TABLE_MODEL_REFERRALS, `FIND("${formulaString(partner.id)}", ARRAYJOIN({Partner}))`);
-  const commissions = await listByFormula(env, env.AIRTABLE_TABLE_PARTNER_COMMISSIONS, `OR({partner_id}="${formulaString(partner.id)}",{Partner ID}="${formulaString(partner.id)}")`);
+  const referrals = (await listRecords(env, env.AIRTABLE_TABLE_MODEL_REFERRALS)).filter((record) => belongsToPartner(record, partner.id));
+  const commissions = (await listRecords(env, env.AIRTABLE_TABLE_PARTNER_COMMISSIONS)).filter((record) => belongsToPartner(record, partner.id));
   const summary = summarizePartner(partner, referrals, commissions);
 
   return {
     ok: true,
     summary: summaryToJson(summary),
-    referrals: referrals.map(normalizeRecord),
-    commissions: commissions.map(normalizeRecord),
+    referrals: referrals.map(normalizeReferral),
+    commissions: commissions.map(normalizeCommission),
   };
 }
 
@@ -444,6 +422,11 @@ async function verifyPartnerByToken(rawToken: string | null, env: Env): Promise<
   const status = fieldString(partner.fields, [FIELD_PARTNER_APPROVAL_STATUS, "Approval Status"]);
   if (status !== "recognized" && status !== "Active") {
     throw new HttpError(403, "partner_not_recognized");
+  }
+
+  const tokenExpiresAt = tokenExpiry(token);
+  if (tokenExpiresAt && Date.parse(tokenExpiresAt) <= Date.now()) {
+    throw new HttpError(401, "expired_t");
   }
 
   const expiresAt = fieldString(partner.fields, ["Access Token Expires At"]);
@@ -471,18 +454,43 @@ async function airtableWrite(
 ): Promise<AirtableRecord> {
   requireAirtable(env);
   const path = recordId ? `${encodeURIComponent(table)}/${encodeURIComponent(recordId)}` : encodeURIComponent(table);
-  const response = await fetch(`${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${path}`, {
-    method,
-    headers: airtableHeaders(env),
-    body: JSON.stringify({ fields, typecast: true }),
-  });
+  const url = `${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${path}`;
+  let currentFields = compactFields(fields);
 
-  const text = await response.text();
-  if (!response.ok) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if (Object.keys(currentFields).length === 0) {
+      throw new Error(`Airtable ${method} ${table} failed: no compatible fields remain`);
+    }
+
+    const response = await fetch(url, {
+      method,
+      headers: airtableHeaders(env),
+      body: JSON.stringify({ fields: currentFields, typecast: true }),
+    });
+
+    const text = await response.text();
+    if (response.ok) {
+      return JSON.parse(text) as AirtableRecord;
+    }
+
+    const rejectedField = airtableRejectedField(text, currentFields);
+    if (rejectedField) {
+      const nextFields = { ...currentFields };
+      delete nextFields[rejectedField];
+      currentFields = nextFields;
+      console.warn(JSON.stringify({
+        worker: WORKER_NAME,
+        table,
+        dropped_airtable_field: rejectedField,
+        reason: "airtable_runtime_compatibility",
+      }));
+      continue;
+    }
+
     throw new Error(`Airtable ${method} ${table} failed: ${response.status} ${text}`);
   }
 
-  return JSON.parse(text) as AirtableRecord;
+  throw new Error(`Airtable ${method} ${table} failed after compatibility retries`);
 }
 
 async function findFirstByFormula(env: Env, table: string, formula: string): Promise<AirtableRecord | null> {
@@ -507,6 +515,30 @@ async function listByFormula(env: Env, table: string, formula: string, maxRecord
   return data.records || [];
 }
 
+async function listRecords(env: Env, table: string, maxRecords = 100): Promise<AirtableRecord[]> {
+  requireAirtable(env);
+  const records: AirtableRecord[] = [];
+  let offset = "";
+
+  do {
+    const url = new URL(`${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(table)}`);
+    url.searchParams.set("pageSize", String(Math.min(maxRecords - records.length, 100)));
+    if (offset) url.searchParams.set("offset", offset);
+
+    const response = await fetch(url.toString(), { headers: airtableHeaders(env) });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`Airtable list ${table} failed: ${response.status} ${text}`);
+    }
+
+    const data = JSON.parse(text) as AirtableListResponse;
+    records.push(...(data.records || []));
+    offset = data.offset || "";
+  } while (offset && records.length < maxRecords);
+
+  return records.slice(0, maxRecords);
+}
+
 function airtableHeaders(env: Env): HeadersInit {
   return {
     Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
@@ -518,6 +550,72 @@ function requireAirtable(env: Env): void {
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) {
     throw new HttpError(500, "missing_airtable_env");
   }
+}
+
+async function resolveAccessTokenExpiresAtField(env: Env): Promise<string> {
+  const configured = cleanText(env.AIRTABLE_FIELD_ACCESS_TOKEN_EXPIRES_AT);
+  if (configured) return configured;
+
+  try {
+    const response = await fetch(`${AIRTABLE_API}/meta/bases/${env.AIRTABLE_BASE_ID}/tables`, {
+      headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` },
+    });
+    if (!response.ok) return "";
+
+    const data = (await response.json()) as unknown;
+    if (!isRecord(data) || !Array.isArray(data.tables)) return "";
+
+    const table = data.tables.find((item: unknown) => {
+      if (!isRecord(item)) return false;
+      return cleanText(item.id) === env.AIRTABLE_TABLE_MODEL_PARTNERS
+        || cleanText(item.name) === env.AIRTABLE_TABLE_MODEL_PARTNERS;
+    });
+    if (!isRecord(table) || !Array.isArray(table.fields)) return "";
+
+    const field = table.fields.find((item: unknown) => {
+      return isRecord(item) && cleanText(item.name) === "Access Token Expires At";
+    });
+    return isRecord(field) ? cleanText(field.id) || "Access Token Expires At" : "";
+  } catch {
+    return "";
+  }
+}
+
+function airtableRejectedField(errorText: string, fields: AirtableFields): string {
+  const keys = Object.keys(fields);
+  if (!keys.length) return "";
+
+  try {
+    const parsed = JSON.parse(errorText) as unknown;
+    if (isRecord(parsed) && isRecord(parsed.error)) {
+      const message = cleanText(parsed.error.message);
+      const exact = rejectedFieldFromMessage(message, keys);
+      if (exact) return exact;
+    }
+  } catch {
+    // Fall through to text matching below.
+  }
+
+  return rejectedFieldFromMessage(errorText, keys);
+}
+
+function rejectedFieldFromMessage(message: string, keys: string[]): string {
+  const quoted = message.match(/(?:Unknown field name|Field)\s*:?\s*"([^"]+)"/i)?.[1]
+    || message.match(/field\s+["']([^"']+)["']/i)?.[1]
+    || "";
+  if (quoted && keys.includes(quoted)) return quoted;
+
+  const lower = message.toLowerCase();
+  if (
+    lower.includes("unknown field")
+    || lower.includes("cannot accept")
+    || lower.includes("computed field")
+    || lower.includes("invalid multiple choice")
+  ) {
+    return keys.find((key) => lower.includes(key.toLowerCase())) || "";
+  }
+
+  return "";
 }
 
 async function notifyTelegram(env: Env, text: string): Promise<void> {
@@ -558,29 +656,38 @@ async function requireAdmin(request: Request, env: Env): Promise<void> {
 async function readPartnerRequestPayload(request: Request): Promise<PartnerRequestPayload> {
   const contentType = request.headers.get("content-type") || "";
   if (contentType.toLowerCase().includes("application/json")) {
-    return (await readJsonObject(request)) as PartnerRequestPayload;
+    return normalizePartnerPayload((await readJsonObject(request)) as PartnerRequestPayload);
   }
 
   const form = await request.formData();
   const filesJson = cleanText(form.get("uploaded_files")) || cleanText(form.get("files"));
   const payload: PartnerRequestPayload = {
     request_id: cleanText(form.get("request_id")),
-    partner_name: cleanText(form.get("partner_name")) || cleanText(form.get("name")),
+    partner_name: cleanText(form.get("partner_name")) || cleanText(form.get("name")) || cleanText(form.get("name_alias")),
+    name_alias: cleanText(form.get("name_alias")),
     email: cleanText(form.get("email")),
     phone: cleanText(form.get("phone")),
+    contact: cleanText(form.get("contact")),
     line_id: cleanText(form.get("line_id")),
     telegram: cleanText(form.get("telegram")),
     company: cleanText(form.get("company")),
     website: cleanText(form.get("website")),
     notes: cleanText(form.get("notes")),
-    referral_source: cleanText(form.get("referral_source")),
+    referral_source: cleanText(form.get("referral_source")) || cleanText(form.get("access_source")),
+    access_source: cleanText(form.get("access_source")),
+    value_bring: cleanText(form.get("value_bring")),
+    why_consider: cleanText(form.get("why_consider")),
+    experience: cleanText(form.get("experience")),
+    portfolio_url: cleanText(form.get("portfolio_url")),
+    talent_location: cleanText(form.get("talent_location")),
+    talent_details: cleanText(form.get("talent_details")),
     talent_name: cleanText(form.get("talent_name")),
     talent_type: cleanText(form.get("talent_type")),
     model_id: cleanText(form.get("model_id")),
     uploaded_files: filesJson ? parseUploadArray(filesJson) : [],
   };
 
-  return payload;
+  return normalizePartnerPayload(payload);
 }
 
 async function readJsonObject(request: Request): Promise<Record<string, JsonValue>> {
@@ -610,6 +717,139 @@ function parseUploadArray(value: string): UploadMetadata[] {
   } catch {
     return [];
   }
+}
+
+function normalizePartnerPayload(payload: PartnerRequestPayload): PartnerRequestPayload {
+  const contact = cleanText(payload.contact);
+  const email = cleanText(payload.email) || emailFromContact(contact);
+  const phone = cleanText(payload.phone) || phoneFromContact(contact);
+  const referralSource = cleanText(payload.referral_source) || cleanText(payload.access_source);
+  const partnerName = cleanText(payload.partner_name) || cleanText(payload.name) || cleanText(payload.name_alias);
+
+  return {
+    ...payload,
+    partner_name: partnerName,
+    name: cleanText(payload.name) || partnerName,
+    name_alias: cleanText(payload.name_alias),
+    email,
+    phone,
+    contact,
+    referral_source: referralSource,
+    access_source: cleanText(payload.access_source) || referralSource,
+    notes: cleanText(payload.notes),
+    value_bring: cleanText(payload.value_bring),
+    why_consider: cleanText(payload.why_consider),
+    experience: cleanText(payload.experience),
+    portfolio_url: cleanText(payload.portfolio_url),
+    talent_location: cleanText(payload.talent_location),
+    talent_details: cleanText(payload.talent_details),
+    talent_name: cleanText(payload.talent_name),
+    talent_type: cleanText(payload.talent_type),
+    model_id: cleanText(payload.model_id),
+    uploaded_files: payload.uploaded_files || [],
+    files: payload.files || [],
+  };
+}
+
+function buildPartnerFields(
+  env: Env,
+  payload: PartnerRequestPayload,
+  requestId: string,
+  partnerName: string,
+  score: number,
+  existingPartner: AirtableRecord | null,
+): AirtableFields {
+  const fields: AirtableFields = {
+    "Partner Score": score,
+    [FIELD_PARTNER_APPROVAL_STATUS]: existingPartner
+      ? fieldString(existingPartner.fields, [FIELD_PARTNER_APPROVAL_STATUS, "Approval Status"]) || "needs_follow_up"
+      : "needs_follow_up",
+  };
+
+  const partnerNameField = cleanText(env.AIRTABLE_FIELD_PARTNER_NAME);
+  if (partnerNameField) fields[partnerNameField] = partnerName;
+
+  const partnerEmailField = cleanText(env.AIRTABLE_FIELD_PARTNER_EMAIL);
+  if (partnerEmailField) fields[partnerEmailField] = cleanText(payload.email);
+
+  const partnerNotesField = cleanText(env.AIRTABLE_FIELD_PARTNER_NOTES);
+  if (partnerNotesField) fields[partnerNotesField] = partnerIntakeNotes(payload, requestId);
+
+  return compactFields(fields);
+}
+
+function buildModelApplicationFields(
+  payload: PartnerRequestPayload,
+  requestId: string,
+  partnerRecordId: string,
+  uploads: UploadMetadata[],
+): AirtableFields {
+  return compactFields({
+    Partner: [partnerRecordId],
+    Status: "partner_submitted",
+    Notes: partnerIntakeNotes(payload, requestId),
+    "Created By Worker": WORKER_NAME,
+    "Payload JSON": stableJson({ request_id: requestId, payload, uploaded_files: uploads }),
+  });
+}
+
+function buildReferralFields(payload: PartnerRequestPayload, requestId: string, partnerRecordId: string): AirtableFields {
+  return compactFields({
+    "Referral ID": `ref_${requestId}`,
+    Partner: [partnerRecordId],
+    Model: cleanText(payload.model_id),
+    "Ownership Status": "pending_review",
+    "Created By Worker": WORKER_NAME,
+    Notes: partnerIntakeNotes(payload, requestId),
+  });
+}
+
+function partnerIntakeNotes(payload: PartnerRequestPayload, requestId: string): string {
+  const lines = [
+    ["Request ID", requestId],
+    ["Partner Name", partnerDisplayName(payload)],
+    ["Name Alias", payload.name_alias],
+    ["Email", payload.email],
+    ["Phone", payload.phone],
+    ["Contact", payload.contact],
+    ["Access Source", payload.access_source || payload.referral_source],
+    ["Value Bring", payload.value_bring],
+    ["Why Consider", payload.why_consider],
+    ["Experience", payload.experience],
+    ["Portfolio URL", payload.portfolio_url],
+    ["Talent Name", payload.talent_name],
+    ["Talent Type", payload.talent_type],
+    ["Talent Location", payload.talent_location],
+    ["Talent Details", payload.talent_details],
+    ["Model ID", payload.model_id],
+    ["Notes", payload.notes],
+  ]
+    .map(([label, value]) => {
+      const text = cleanText(value);
+      return text ? `${label}: ${text}` : "";
+    })
+    .filter(Boolean);
+
+  return lines.join("\n");
+}
+
+function partnerDisplayName(payload: PartnerRequestPayload): string {
+  return cleanText(payload.partner_name) || cleanText(payload.name) || cleanText(payload.name_alias) || "Partner";
+}
+
+async function findExistingPartner(env: Env, payload: PartnerRequestPayload): Promise<AirtableRecord | null> {
+  const emailField = cleanText(env.AIRTABLE_FIELD_PARTNER_EMAIL);
+  const email = cleanText(payload.email);
+  if (!emailField || !email) return null;
+  return findFirstByFormula(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, `{${emailField}}="${formulaString(email)}"`);
+}
+
+function emailFromContact(value: string): string {
+  return value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || "";
+}
+
+function phoneFromContact(value: string): string {
+  return value.match(/(?:\+?\d[\d\s().-]{6,}\d)/)?.[0]?.trim() || "";
 }
 
 function normalizeFileType(file: File): { extension: string; contentType: string } | null {
@@ -670,11 +910,96 @@ function summarizePartner(
   };
 }
 
+function normalizeReferral(record: AirtableRecord): Record<string, JsonValue> {
+  const status = fieldString(record.fields, ["status", "Status", "ownership_status", "Ownership Status"]) || "pending_review";
+  return {
+    id: record.id,
+    model: fieldDisplay(record.fields, ["model", "Model", "model_id", "Model ID", "model_name", "Model Name"]),
+    referralDate: fieldString(record.fields, ["referral_date", "Referral Date", "created_at", "Created At", "Approved At"]),
+    ownership: fieldString(record.fields, ["ownership_status", "Ownership Status", "ownership", "Ownership"]) || status,
+    commissionType: fieldString(record.fields, ["commission_type", "Commission Type", "basis_rule", "Basis Rule"]),
+    lastJob: fieldString(record.fields, ["last_job", "Last Job", "job_id", "Job ID", "session_id", "Session ID"]),
+    status,
+    statusLabel: statusLabel(status),
+  };
+}
+
+function normalizeCommission(record: AirtableRecord): Record<string, JsonValue> {
+  const status = fieldString(record.fields, ["payout_status", "Payout Status", "approval_status", "Approval Status", "eligibility_status", "Eligibility Status"]) || "pending";
+  return {
+    id: record.id,
+    jobId: fieldString(record.fields, ["job_id", "Job ID", "session_id", "Session ID"]),
+    model: fieldDisplay(record.fields, ["model", "Model", "model_id", "Model ID", "model_name", "Model Name"]),
+    basisAmount: fieldNumber(record.fields, ["basis_amount", "Basis Amount", "basis_amount_thb", "Basis Amount THB", "amount_thb", "Amount THB"]),
+    rate: fieldNumber(record.fields, ["rate", "Rate", "commission_rate", "Commission Rate", "split_percent", "Split Percent"]),
+    commission: fieldNumber(record.fields, ["commission", "Commission", "commission_amount", "Commission Amount", "commission_amount_thb", "Commission Amount THB", "amount_thb", "Amount THB"]),
+    status,
+    statusLabel: statusLabel(status),
+    paidAt: fieldString(record.fields, ["paid_at", "Paid At", "payout_paid_at", "Payout Paid At"]),
+  };
+}
+
 function normalizeRecord(record: AirtableRecord): Record<string, JsonValue> {
   return {
     id: record.id,
     fields: normalizeFields(record.fields || {}),
   };
+}
+
+function belongsToPartner(record: AirtableRecord, partnerId: string): boolean {
+  const fields = record.fields || {};
+  const linkedPartnerIds = linkedRecordIds(fields, ["Partner", "partner", "Partners", "partners"]);
+  if (linkedPartnerIds.includes(partnerId)) return true;
+
+  const snapshot = fieldString(fields, [
+    "partner_id",
+    "Partner ID",
+    "partner_record_id",
+    "Partner Record ID",
+    "partner_id_snapshot",
+    "Partner ID Snapshot",
+  ]);
+  return snapshot === partnerId;
+}
+
+function linkedRecordIds(fields: Record<string, AirtableValue> | undefined, keys: string[]): string[] {
+  for (const key of keys) {
+    const value = fields?.[key];
+    if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string");
+  }
+  return [];
+}
+
+function fieldDisplay(fields: Record<string, AirtableValue> | undefined, keys: string[]): string {
+  for (const key of keys) {
+    const value = fields?.[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (Array.isArray(value) && value.length) return value.join(", ");
+  }
+  return "";
+}
+
+function statusLabel(status: string): string {
+  const normalized = status.toLowerCase().replace(/\s+/g, "_");
+  const labels: Record<string, string> = {
+    active: "Active",
+    approved: "Approved",
+    eligible: "Eligible",
+    held: "Held",
+    ineligible: "Ineligible",
+    needs_follow_up: "Needs follow-up",
+    new: "New",
+    paid: "Paid",
+    pending: "Pending",
+    pending_payment: "Pending payment",
+    pending_review: "Pending review",
+    private_internal: "Private internal",
+    queued: "Queued",
+    recognized: "Recognized",
+    unpaid: "Unpaid",
+    void: "Void",
+  };
+  return labels[normalized] || status || "Pending";
 }
 
 function normalizeFields(fields: Record<string, AirtableValue>): Record<string, JsonValue> {
@@ -761,16 +1086,35 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-function randomToken(): string {
+function randomToken(expiresAt: string): string {
   const bytes = new Uint8Array(TOKEN_BYTES);
   crypto.getRandomValues(bytes);
-  return base64Url(bytes);
+  const nonce = base64Url(bytes);
+  const payload = base64Url(new TextEncoder().encode(stableJson({ exp: expiresAt, nonce })));
+  return `${payload}.${nonce}`;
 }
 
 function base64Url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function tokenExpiry(token: string): string {
+  const payload = token.split(".")[0] || "";
+  if (!payload) return "";
+
+  try {
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
+    const decoded = atob(padded);
+    const bytes = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
+    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+    if (!isRecord(parsed)) return "";
+    return cleanText(parsed.exp);
+  } catch {
+    return "";
+  }
 }
 
 async function sha256Hex(value: string): Promise<string> {
