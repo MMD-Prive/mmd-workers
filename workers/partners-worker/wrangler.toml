@@ -21,6 +21,8 @@ DASHBOARD_URL = "/partner/dashboard"
 TERMS_URL = "/partner/terms"
 RECOGNIZED_URL = "/partner/recognized"
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io"
+TELEGRAM_ADMIN_CHAT_ID = "-1003546439681"
+TELEGRAM_ADMIN_THREAD_ID = "61"
 
 [[r2_buckets]]
 binding = "PARTNER_ASSETS"
