@@ -77,6 +77,13 @@ interface AirtableListResponse {
   offset?: string;
 }
 
+interface AirtableFieldInfo {
+  id: string;
+  name: string;
+}
+
+type AirtableSchema = Record<string, AirtableFieldInfo>;
+
 interface UploadMetadata {
   asset_id?: string;
   request_id?: string;
@@ -257,19 +264,22 @@ async function handlePartnerRequest(
   const score = computePartnerScore(payload);
   const nowIso = new Date().toISOString();
   const uploads = [...(payload.uploaded_files || []), ...(payload.files || [])].filter(hasR2Key);
+  const partnerSchema = await tableSchema(env, env.AIRTABLE_TABLE_MODEL_PARTNERS);
+  const applicationSchema = await tableSchema(env, env.AIRTABLE_TABLE_MODEL_APPLICATIONS);
+  const referralSchema = await tableSchema(env, env.AIRTABLE_TABLE_MODEL_REFERRALS);
   const existingPartner = await findExistingPartner(env, payload);
-  const partnerFields = buildPartnerFields(env, payload, requestId, partnerName, score, existingPartner);
+  const partnerFields = buildPartnerFields(env, partnerSchema, payload, requestId, partnerName, score, existingPartner);
 
   const partnerRecord = existingPartner
     ? await airtableUpdate(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, existingPartner.id, partnerFields)
     : await airtableCreate(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, partnerFields);
 
   const modelApplicationRecord = shouldCreateModelApplication(payload, uploads)
-    ? await airtableCreate(env, env.AIRTABLE_TABLE_MODEL_APPLICATIONS, buildModelApplicationFields(payload, requestId, partnerRecord.id, uploads))
+    ? await airtableCreate(env, env.AIRTABLE_TABLE_MODEL_APPLICATIONS, buildModelApplicationFields(applicationSchema, payload, requestId, uploads))
     : null;
 
   const referralRecord = shouldCreateReferral(payload)
-    ? await airtableCreate(env, env.AIRTABLE_TABLE_MODEL_REFERRALS, buildReferralFields(payload, requestId, partnerRecord.id))
+    ? await airtableCreate(env, env.AIRTABLE_TABLE_MODEL_REFERRALS, buildReferralFields(referralSchema, payload, requestId, partnerRecord.id))
     : null;
 
   const assetRecords: AirtableRecord[] = [];
@@ -338,8 +348,6 @@ async function handleApprove(
 
   const fields: AirtableFields = {
     [FIELD_PARTNER_APPROVAL_STATUS]: action,
-    "Approved At": new Date().toISOString(),
-    "Approved By": "partners-worker-admin",
   };
 
   let recognizedLink = "";
@@ -383,11 +391,14 @@ async function handleVerify(url: URL, env: Env): Promise<Record<string, JsonValu
 async function handleAcceptTerms(request: Request, env: Env): Promise<Record<string, JsonValue>> {
   const body = await readJsonObject(request);
   const partner = await verifyPartnerByToken(cleanText(body.t), env);
+  const schema = await tableSchema(env, env.AIRTABLE_TABLE_MODEL_PARTNERS);
+  const fields: AirtableFields = {};
+  setSchemaField(fields, schema, ["Agreement Version"], cleanText(body.agreement_version) || AGREEMENT_VERSION);
+  setSchemaField(fields, schema, ["Agreement Accepted At"], new Date().toISOString());
 
-  await airtableUpdate(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, partner.id, compactFields({
-    "Agreement Version": cleanText(body.agreement_version) || AGREEMENT_VERSION,
-    "Agreement Accepted At": new Date().toISOString(),
-  }));
+  if (Object.keys(fields).length > 0) {
+    await airtableUpdate(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, partner.id, fields);
+  }
 
   return { ok: true, partner_id: partner.id, redirect: withT(env.DASHBOARD_URL, cleanText(body.t)) };
 }
@@ -539,6 +550,37 @@ async function listRecords(env: Env, table: string, maxRecords = 100): Promise<A
   return records.slice(0, maxRecords);
 }
 
+async function tableSchema(env: Env, tableIdOrName: string): Promise<AirtableSchema> {
+  try {
+    const response = await fetch(`${AIRTABLE_API}/meta/bases/${env.AIRTABLE_BASE_ID}/tables`, {
+      headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` },
+    });
+    if (!response.ok) return {};
+
+    const data = (await response.json()) as unknown;
+    if (!isRecord(data) || !Array.isArray(data.tables)) return {};
+
+    const table = data.tables.find((item: unknown) => {
+      if (!isRecord(item)) return false;
+      return cleanText(item.id) === tableIdOrName || cleanText(item.name) === tableIdOrName;
+    });
+    if (!isRecord(table) || !Array.isArray(table.fields)) return {};
+
+    const schema: AirtableSchema = {};
+    for (const field of table.fields) {
+      if (!isRecord(field)) continue;
+      const id = cleanText(field.id);
+      const name = cleanText(field.name);
+      if (!id || !name) continue;
+      schema[id] = { id, name };
+      schema[name] = { id, name };
+    }
+    return schema;
+  } catch {
+    return {};
+  }
+}
+
 function airtableHeaders(env: Env): HeadersInit {
   return {
     Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
@@ -556,29 +598,8 @@ async function resolveAccessTokenExpiresAtField(env: Env): Promise<string> {
   const configured = cleanText(env.AIRTABLE_FIELD_ACCESS_TOKEN_EXPIRES_AT);
   if (configured) return configured;
 
-  try {
-    const response = await fetch(`${AIRTABLE_API}/meta/bases/${env.AIRTABLE_BASE_ID}/tables`, {
-      headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` },
-    });
-    if (!response.ok) return "";
-
-    const data = (await response.json()) as unknown;
-    if (!isRecord(data) || !Array.isArray(data.tables)) return "";
-
-    const table = data.tables.find((item: unknown) => {
-      if (!isRecord(item)) return false;
-      return cleanText(item.id) === env.AIRTABLE_TABLE_MODEL_PARTNERS
-        || cleanText(item.name) === env.AIRTABLE_TABLE_MODEL_PARTNERS;
-    });
-    if (!isRecord(table) || !Array.isArray(table.fields)) return "";
-
-    const field = table.fields.find((item: unknown) => {
-      return isRecord(item) && cleanText(item.name) === "Access Token Expires At";
-    });
-    return isRecord(field) ? cleanText(field.id) || "Access Token Expires At" : "";
-  } catch {
-    return "";
-  }
+  const schema = await tableSchema(env, env.AIRTABLE_TABLE_MODEL_PARTNERS);
+  return resolveSchemaField(schema, ["Access Token Expires At"]);
 }
 
 function airtableRejectedField(errorText: string, fields: AirtableFields): string {
@@ -753,6 +774,7 @@ function normalizePartnerPayload(payload: PartnerRequestPayload): PartnerRequest
 
 function buildPartnerFields(
   env: Env,
+  schema: AirtableSchema,
   payload: PartnerRequestPayload,
   requestId: string,
   partnerName: string,
@@ -760,48 +782,66 @@ function buildPartnerFields(
   existingPartner: AirtableRecord | null,
 ): AirtableFields {
   const fields: AirtableFields = {
-    "Partner Score": score,
     [FIELD_PARTNER_APPROVAL_STATUS]: existingPartner
       ? fieldString(existingPartner.fields, [FIELD_PARTNER_APPROVAL_STATUS, "Approval Status"]) || "needs_follow_up"
       : "needs_follow_up",
   };
 
-  const partnerNameField = cleanText(env.AIRTABLE_FIELD_PARTNER_NAME);
-  if (partnerNameField) fields[partnerNameField] = partnerName;
-
-  const partnerEmailField = cleanText(env.AIRTABLE_FIELD_PARTNER_EMAIL);
-  if (partnerEmailField) fields[partnerEmailField] = cleanText(payload.email);
-
-  const partnerNotesField = cleanText(env.AIRTABLE_FIELD_PARTNER_NOTES);
-  if (partnerNotesField) fields[partnerNotesField] = partnerIntakeNotes(payload, requestId);
+  setSchemaField(fields, schema, ["Partner ID"], `ptr_${requestId}`);
+  setSchemaField(fields, schema, [cleanText(env.AIRTABLE_FIELD_PARTNER_NAME), "Partner Name"], partnerName);
+  setSchemaField(fields, schema, [cleanText(env.AIRTABLE_FIELD_PARTNER_EMAIL), "Email"], cleanText(payload.email));
+  setSchemaField(fields, schema, ["Contact Phone"], cleanText(payload.phone));
+  setSchemaField(fields, schema, ["LINE ID"], cleanText(payload.line_id));
+  setSchemaField(fields, schema, ["Telegram ID", "Telegram Username"], cleanText(payload.telegram));
+  setSchemaField(fields, schema, ["Partner Type"], partnerType(payload));
+  setSchemaField(fields, schema, ["Status"], "needs_follow_up");
+  setSchemaField(fields, schema, ["Partner Score"], score);
+  setSchemaField(fields, schema, [cleanText(env.AIRTABLE_FIELD_PARTNER_NOTES), "Notes Internal", "Notes"], partnerIntakeNotes(payload, requestId));
 
   return compactFields(fields);
 }
 
 function buildModelApplicationFields(
+  schema: AirtableSchema,
+  payload: PartnerRequestPayload,
+  requestId: string,
+  uploads: UploadMetadata[],
+): AirtableFields {
+  const fields: AirtableFields = {};
+  setSchemaField(fields, schema, ["nickname"], cleanText(payload.name_alias) || cleanText(payload.talent_name));
+  setSchemaField(fields, schema, ["Working Name"], cleanText(payload.talent_name) || partnerDisplayName(payload));
+  setSchemaField(fields, schema, ["source"], cleanText(payload.access_source) || "partner_worker");
+  setSchemaField(fields, schema, ["Saved By"], WORKER_NAME);
+  setSchemaField(fields, schema, ["Created At"], new Date().toISOString());
+  setSchemaField(fields, schema, ["consent"], true);
+  setSchemaField(fields, schema, ["status"], "partner_submitted");
+  setSchemaField(fields, schema, ["Notes"], partnerIntakeNotes(payload, requestId));
+  setSchemaField(fields, schema, ["payload_json"], stableJson({ request_id: requestId, payload, uploaded_files: uploads }));
+  setSchemaField(fields, schema, ["location"], cleanText(payload.talent_location));
+  setSchemaField(fields, schema, ["intro"], cleanText(payload.talent_details) || cleanText(payload.why_consider));
+  setSchemaField(fields, schema, ["experience"], cleanText(payload.experience));
+  setSchemaField(fields, schema, ["instagram"], instagramFromPortfolio(payload.portfolio_url));
+  return compactFields(fields);
+}
+
+function buildReferralFields(
+  schema: AirtableSchema,
   payload: PartnerRequestPayload,
   requestId: string,
   partnerRecordId: string,
-  uploads: UploadMetadata[],
 ): AirtableFields {
-  return compactFields({
-    Partner: [partnerRecordId],
-    Status: "partner_submitted",
-    Notes: partnerIntakeNotes(payload, requestId),
-    "Created By Worker": WORKER_NAME,
-    "Payload JSON": stableJson({ request_id: requestId, payload, uploaded_files: uploads }),
-  });
-}
-
-function buildReferralFields(payload: PartnerRequestPayload, requestId: string, partnerRecordId: string): AirtableFields {
-  return compactFields({
-    "Referral ID": `ref_${requestId}`,
-    Partner: [partnerRecordId],
-    Model: cleanText(payload.model_id),
-    "Ownership Status": "pending_review",
-    "Created By Worker": WORKER_NAME,
-    Notes: partnerIntakeNotes(payload, requestId),
-  });
+  const fields: AirtableFields = {};
+  setSchemaField(fields, schema, ["Referral ID"], `ref_${requestId}`);
+  setSchemaField(fields, schema, ["Partner"], [partnerRecordId]);
+  if (isAirtableRecordId(cleanText(payload.model_id))) {
+    setSchemaField(fields, schema, ["Model"], [cleanText(payload.model_id)]);
+  }
+  setSchemaField(fields, schema, ["Ownership Status"], "pending_review");
+  setSchemaField(fields, schema, ["Source Channel"], "webflow_partner");
+  setSchemaField(fields, schema, ["Referred At"], new Date().toISOString());
+  setSchemaField(fields, schema, ["Notes"], partnerIntakeNotes(payload, requestId));
+  setSchemaField(fields, schema, ["Created By Worker"], WORKER_NAME);
+  return compactFields(fields);
 }
 
 function partnerIntakeNotes(payload: PartnerRequestPayload, requestId: string): string {
@@ -837,8 +877,36 @@ function partnerDisplayName(payload: PartnerRequestPayload): string {
   return cleanText(payload.partner_name) || cleanText(payload.name) || cleanText(payload.name_alias) || "Partner";
 }
 
+function partnerType(payload: PartnerRequestPayload): string {
+  if (cleanText(payload.talent_name) || cleanText(payload.model_id)) return "talent_referral";
+  if (cleanText(payload.portfolio_url)) return "portfolio_source";
+  return "partner";
+}
+
+function setSchemaField(
+  fields: AirtableFields,
+  schema: AirtableSchema,
+  candidates: Array<string | undefined>,
+  value: AirtableValue | undefined,
+): void {
+  if (value === undefined || value === null || value === "") return;
+  if (Array.isArray(value) && value.length === 0) return;
+  const field = resolveSchemaField(schema, candidates);
+  if (field) fields[field] = value;
+}
+
+function resolveSchemaField(schema: AirtableSchema, candidates: Array<string | undefined>): string {
+  for (const candidate of candidates) {
+    const key = cleanText(candidate);
+    if (!key) continue;
+    if (schema[key]) return schema[key].id || schema[key].name || key;
+  }
+  return "";
+}
+
 async function findExistingPartner(env: Env, payload: PartnerRequestPayload): Promise<AirtableRecord | null> {
-  const emailField = cleanText(env.AIRTABLE_FIELD_PARTNER_EMAIL);
+  const schema = await tableSchema(env, env.AIRTABLE_TABLE_MODEL_PARTNERS);
+  const emailField = resolveSchemaField(schema, [cleanText(env.AIRTABLE_FIELD_PARTNER_EMAIL), "Email"]);
   const email = cleanText(payload.email);
   if (!emailField || !email) return null;
   return findFirstByFormula(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, `{${emailField}}="${formulaString(email)}"`);
@@ -850,6 +918,17 @@ function emailFromContact(value: string): string {
 
 function phoneFromContact(value: string): string {
   return value.match(/(?:\+?\d[\d\s().-]{6,}\d)/)?.[0]?.trim() || "";
+}
+
+function instagramFromPortfolio(value: string | undefined): string {
+  const text = cleanText(value);
+  if (!text) return "";
+  const match = text.match(/(?:instagram\.com\/|@)([A-Za-z0-9._]+)/i);
+  return match ? `@${match[1]}` : "";
+}
+
+function isAirtableRecordId(value: string): boolean {
+  return /^rec[A-Za-z0-9]{14,}$/.test(value);
 }
 
 function normalizeFileType(file: File): { extension: string; contentType: string } | null {
