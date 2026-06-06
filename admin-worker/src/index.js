@@ -99,6 +99,7 @@ const MODEL_SESSION_STATUS_ALIASES = {
 };
 const SIGIL_PAY_RENEWAL_PATH = "/pay/renewal";
 const SIGIL_PAY_RENEWAL_LEGACY_PATH = "/sigil/pay/renewal";
+const SIGIL_PAY_RENEWAL_PROOF_PATH = "/api/pay/renewal/proof";
 const SIGIL_PAY_RENEWAL_BUILD = "SIGIL_PAY_RENEWAL_V1_20260607";
 const SIGIL_RENEWAL_KENJI_IMAGE = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a24551b2bde23886a55384a_Line-Kenji.png";
 const SIGIL_RENEWAL_LOGO_IMAGE = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0f2cbc7e26b6735aee4cb2_SIGIL%20LOGO%20Transp.webp";
@@ -124,6 +125,10 @@ export default {
 
     if (hostname === "sigil.mmdbkk.com" && (method === "GET" || method === "HEAD") && path === SIGIL_PAY_RENEWAL_PATH) {
       return withCors(req, env, renderSigilPayRenewalPage(req));
+    }
+
+    if (hostname === "sigil.mmdbkk.com" && method === "POST" && path === SIGIL_PAY_RENEWAL_PROOF_PATH) {
+      return withCors(req, env, await handlePublicRenewalProofSubmit(req, env));
     }
 
     // ---- Public ping ----
@@ -1172,8 +1177,25 @@ function renderSigilPayRenewalPage(req) {
             <input class="mmd-renewal-input" name="display_name" type="text" placeholder="เช่น Ken / Mew" required>
           </label>
           <label class="mmd-renewal-field">
-            <span>Contact channel</span>
-            <input class="mmd-renewal-input" name="contact" type="text" placeholder="LINE / Telegram / Email" required>
+            <span>Contact ID / ช่องทางติดต่อ</span>
+            <input class="mmd-renewal-input" name="contact_id" type="text" placeholder="LINE / Telegram / Email" required>
+          </label>
+          <label class="mmd-renewal-field">
+            <span>Selected renewal package</span>
+            <select class="mmd-renewal-input" name="selected_package" required>
+              <option value="">เลือก package ที่ทีมยืนยันแล้ว</option>
+              <option value="sigil_renewal_standard">SIGIL Renewal Standard</option>
+              <option value="sigil_renewal_premium">SIGIL Renewal Premium</option>
+              <option value="sigil_renewal_custom">Custom admin-confirmed renewal</option>
+            </select>
+          </label>
+          <label class="mmd-renewal-field">
+            <span>Amount paid (THB)</span>
+            <input class="mmd-renewal-input" name="amount_paid" type="number" min="1" step="0.01" placeholder="ยอดที่โอนจริง" required>
+          </label>
+          <label class="mmd-renewal-field">
+            <span>Transfer date / time</span>
+            <input class="mmd-renewal-input" name="paid_at" type="datetime-local" required>
           </label>
           <label class="mmd-renewal-field">
             <span>Package or amount note</span>
@@ -1192,7 +1214,11 @@ function renderSigilPayRenewalPage(req) {
             <span>Official verification note</span>
             <textarea class="mmd-renewal-textarea" name="verification_note" placeholder="เช่น เวลาที่โอน, ชื่อบัญชีที่ใช้โอน, ข้อมูลอ้างอิงเพิ่มเติม"></textarea>
           </label>
+          <input type="hidden" name="payment_type" value="renewal">
+          <input type="hidden" name="session_id" value="">
+          <input type="hidden" name="payment_ref" value="">
           <div class="mmd-renewal-safe">Renewal จะ complete ต่อเมื่อทีมตรวจสอบยอดเงินจริง และ dashboard / fund verification ตรงกันแล้วเท่านั้น</div>
+          <div class="mmd-renewal-safe" data-renewal-status>Ready for official verification.</div>
           <div class="mmd-renewal-error" data-renewal-error></div>
           <div class="mmd-renewal-actions">
             <button class="mmd-renewal-submit" type="submit">Send for official verification</button>
@@ -1217,6 +1243,27 @@ function renderSigilPayRenewalPage(req) {
       const proofName = document.querySelector('[data-renewal-proof-name]');
       const form = document.querySelector('[data-renewal-form]');
       const errorBox = document.querySelector('[data-renewal-error]');
+      const statusBox = document.querySelector('[data-renewal-status]');
+      const submitButton = form ? form.querySelector('.mmd-renewal-submit') : null;
+      const storageKey = 'mmd_sigil_renewal_proof_session_v1';
+      const bootstrap = (() => {
+        try {
+          const cached = window.sessionStorage.getItem(storageKey);
+          if (cached) return JSON.parse(cached);
+        } catch (_) {}
+        const seed = Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+        return {
+          session_id: 'renewal_session_' + seed,
+          payment_ref: 'renewal_proof_' + seed,
+        };
+      })();
+      if (form) {
+        const sessionInput = form.querySelector('[name="session_id"]');
+        const paymentRefInput = form.querySelector('[name="payment_ref"]');
+        if (sessionInput) sessionInput.value = bootstrap.session_id;
+        if (paymentRefInput) paymentRefInput.value = bootstrap.payment_ref;
+        try { window.sessionStorage.setItem(storageKey, JSON.stringify(bootstrap)); } catch (_) {}
+      }
       tabs.forEach((tab) => {
         tab.addEventListener('click', () => {
           const key = tab.getAttribute('data-renewal-tab');
@@ -1231,23 +1278,66 @@ function renderSigilPayRenewalPage(req) {
         });
       }
       if (form && errorBox) {
-        form.addEventListener('submit', (event) => {
+        form.addEventListener('submit', async (event) => {
           const displayName = form.querySelector('[name=\"display_name\"]');
-          const contact = form.querySelector('[name=\"contact\"]');
+          const contact = form.querySelector('[name=\"contact_id\"]');
+          const packageSelect = form.querySelector('[name=\"selected_package\"]');
+          const amountPaid = form.querySelector('[name=\"amount_paid\"]');
+          const paidAt = form.querySelector('[name=\"paid_at\"]');
           const packageNote = form.querySelector('[name=\"package_note\"]');
           const proof = form.querySelector('[name=\"proof\"]');
           const missing = [];
           if (!displayName || !displayName.value.trim()) missing.push('display name');
           if (!contact || !contact.value.trim()) missing.push('contact');
+          if (!packageSelect || !packageSelect.value.trim()) missing.push('selected package');
+          if (!amountPaid || !amountPaid.value.trim()) missing.push('amount paid');
+          if (!paidAt || !paidAt.value.trim()) missing.push('transfer date/time');
           if (!packageNote || !packageNote.value.trim()) missing.push('package note');
           if (!proof || !proof.files || !proof.files.length) missing.push('payment proof');
+          const activeTab = tabs.find((node) => node.classList.contains('is-active'));
+          const paymentMethod = activeTab ? activeTab.getAttribute('data-renewal-tab') : 'bank';
           if (missing.length) {
             event.preventDefault();
+            if (statusBox) statusBox.textContent = 'Validation required before upload.';
             errorBox.textContent = 'กรอกข้อมูลให้ครบก่อนส่ง: ' + missing.join(', ');
             return;
           }
           event.preventDefault();
-          errorBox.textContent = 'รับข้อมูลสำหรับ official verification แล้ว กรุณาส่งผ่านช่องทางแอดมินที่กำหนดต่อครับ';
+          errorBox.textContent = '';
+          if (statusBox) statusBox.textContent = 'Submitting proof for official review...';
+          if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.textContent = 'Submitting...';
+          }
+          try {
+            const body = new FormData(form);
+            body.set('payment_method', paymentMethod === 'card' ? 'paypal_card' : 'bank_transfer');
+            body.set('transaction_ref', body.get('payment_ref') || '');
+            const response = await fetch('${SIGIL_PAY_RENEWAL_PROOF_PATH}', {
+              method: 'POST',
+              body,
+              credentials: 'same-origin',
+            });
+            const json = await response.json().catch(() => null);
+            if (!response.ok || !json || !json.ok) {
+              throw new Error((json && (json.error?.message || json.error || json.message)) || 'submit_failed');
+            }
+            if (statusBox) statusBox.textContent = 'Proof received. Pending official review.';
+            errorBox.textContent = '';
+            if (submitButton) submitButton.textContent = 'Proof received';
+            const nextState = {
+              session_id: json.session_id || body.get('session_id') || bootstrap.session_id,
+              payment_ref: json.payment_ref || body.get('payment_ref') || bootstrap.payment_ref,
+            };
+            try { window.sessionStorage.setItem(storageKey, JSON.stringify(nextState)); } catch (_) {}
+          } catch (error) {
+            if (statusBox) statusBox.textContent = 'Submission failed. Still pending your retry.';
+            errorBox.textContent = String(error && error.message ? error.message : error);
+            if (submitButton) {
+              submitButton.disabled = false;
+              submitButton.textContent = 'Send for official verification';
+            }
+          }
         });
       }
     })();
@@ -1262,6 +1352,229 @@ function renderSigilPayRenewalPage(req) {
       "cache-control": "no-store",
     },
   });
+}
+
+async function handlePublicRenewalProofSubmit(req, env) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) {
+    const response = json({ ok: false, error: { code: "missing_airtable_env", message: "Airtable env is missing." } }, 500);
+    response.headers.set("cache-control", "no-store");
+    return response;
+  }
+
+  const payload = await readPublicRenewalProofPayload(req);
+  const missing = [];
+  if (!payload.display_name) missing.push("display_name");
+  if (!payload.contact_id) missing.push("contact_id");
+  if (!payload.selected_package) missing.push("selected_package");
+  if (!(payload.amount_thb > 0)) missing.push("amount_paid");
+  if (!payload.paid_at) missing.push("paid_at");
+  if (!payload.payment_method) missing.push("payment_method");
+  if (!payload.proof_file) missing.push("proof");
+  if (payload.payment_type !== "renewal") missing.push("payment_type");
+
+  if (missing.length) {
+    const response = json({
+      ok: false,
+      error: {
+        code: "validation_failed",
+        message: `Missing or invalid required fields: ${missing.join(", ")}`,
+      },
+    }, 400);
+    response.headers.set("cache-control", "no-store");
+    return response;
+  }
+
+  const tableId = env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || "tblfJfM4Sqag9zrLi";
+  const existing = payload.payment_ref
+    ? await airtableFindOne(env, tableId, `{payment_ref}="${escapeFormulaValue(payload.payment_ref)}"`)
+    : null;
+
+  if (existing?.id) {
+    const response = json({
+      ok: true,
+      proof_received: true,
+      pending_review: true,
+      status: "pending_official_review",
+      payment_type: "renewal",
+      proof_id: str(existing.fields?.proof_id || payload.proof_id),
+      payment_ref: payload.payment_ref,
+      session_id: payload.session_id,
+      record_id: existing.id,
+      duplicate: true,
+      message: "Proof already received and is still pending official review.",
+    });
+    response.headers.set("cache-control", "no-store");
+    return response;
+  }
+
+  const proofId = payload.proof_id || `renewal_proof_${crypto.randomUUID()}`;
+  const file = payload.proof_file;
+  const evidenceRef = `urn:renewal-proof:${proofId}:${encodeURIComponent(file.name || "slip")}`;
+  const noteLines = [
+    `payment_type=renewal`,
+    `review_status=pending_official_review`,
+    `session_id=${payload.session_id}`,
+    `payment_ref=${payload.payment_ref}`,
+    `transaction_ref=${payload.transaction_ref}`,
+    `contact_id=${payload.contact_id}`,
+    `selected_package=${payload.selected_package}`,
+    `payment_method=${payload.payment_method}`,
+    `amount_thb=${payload.amount_thb}`,
+    `paid_at=${payload.paid_at}`,
+    `evidence_ref=${evidenceRef}`,
+    `proof_name=${file.name || ""}`,
+    `proof_type=${file.type || ""}`,
+    `proof_size=${file.size || 0}`,
+    payload.additional_note ? `note=${payload.additional_note}` : "",
+    payload.package_note ? `package_note=${payload.package_note}` : "",
+  ].filter(Boolean);
+
+  try {
+    const rec = await airtableCreate({
+      baseId: env.AIRTABLE_BASE_ID,
+      tableId,
+      apiKey: env.AIRTABLE_API_KEY,
+      fields: {
+        proof_id: proofId,
+        payer_name: payload.display_name,
+        amount_thb: payload.amount_thb,
+        channel: payload.payment_method,
+        payment_ref: payload.payment_ref,
+        slip_url: evidenceRef,
+        note: noteLines.join("\n"),
+        status: "pending",
+      },
+    });
+
+    const notification = await notifyRenewalProofAdmin(env, {
+      proof_id: proofId,
+      display_name: payload.display_name,
+      contact_id: payload.contact_id,
+      selected_package: payload.selected_package,
+      payment_method: payload.payment_method,
+      amount_thb: payload.amount_thb,
+      paid_at: payload.paid_at,
+      payment_ref: payload.payment_ref,
+      evidence_ref: evidenceRef,
+    });
+
+    const response = json({
+      ok: true,
+      proof_received: true,
+      pending_review: true,
+      status: "pending_official_review",
+      payment_type: "renewal",
+      proof_id: proofId,
+      payment_ref: payload.payment_ref,
+      transaction_ref: payload.transaction_ref,
+      session_id: payload.session_id,
+      record_id: rec?.id || "",
+      evidence_ref: evidenceRef,
+      notification,
+      message: "Proof received and pending official review.",
+    });
+    response.headers.set("cache-control", "no-store");
+    return response;
+  } catch (error) {
+    const response = json({
+      ok: false,
+      error: {
+        code: "proof_storage_failed",
+        message: String(error?.message || error),
+      },
+    }, 500);
+    response.headers.set("cache-control", "no-store");
+    return response;
+  }
+}
+
+async function readPublicRenewalProofPayload(req) {
+  const contentType = str(req.headers.get("content-type")).toLowerCase();
+  if (contentType.includes("multipart/form-data") || contentType.includes("application/x-www-form-urlencoded")) {
+    const form = await req.formData();
+    const proof = form.get("proof");
+    const proofFile = proof && typeof proof === "object" && "name" in proof && "size" in proof
+      ? { name: str(proof.name), size: Number(proof.size || 0), type: str(proof.type || "") }
+      : null;
+    const paymentRef = str(form.get("payment_ref") || form.get("transaction_ref")) || `renewal_ref_${crypto.randomUUID()}`;
+    const sessionId = str(form.get("session_id")) || `renewal_session_${crypto.randomUUID()}`;
+    return {
+      proof_id: str(form.get("proof_id")) || "",
+      display_name: str(form.get("display_name") || form.get("member_name") || form.get("nickname")),
+      contact_id: str(form.get("contact_id") || form.get("contact") || form.get("telegram_username") || form.get("line_id")),
+      amount_thb: toNum(form.get("amount_paid") || form.get("amount_thb")),
+      paid_at: normalizeSubmittedDateTime(form.get("paid_at") || form.get("transfer_datetime")),
+      selected_package: str(form.get("selected_package") || form.get("package") || form.get("renewal_package")),
+      payment_method: str(form.get("payment_method") || form.get("channel")),
+      package_note: str(form.get("package_note")),
+      additional_note: str(form.get("verification_note") || form.get("note")),
+      payment_type: str(form.get("payment_type") || "renewal").toLowerCase(),
+      payment_ref: paymentRef,
+      transaction_ref: str(form.get("transaction_ref")) || paymentRef,
+      session_id: sessionId,
+      proof_file: proofFile,
+    };
+  }
+
+  const body = await safeJson(req);
+  const paymentRef = str(body.payment_ref || body.transaction_ref) || `renewal_ref_${crypto.randomUUID()}`;
+  const sessionId = str(body.session_id) || `renewal_session_${crypto.randomUUID()}`;
+  return {
+    proof_id: str(body.proof_id),
+    display_name: str(body.display_name || body.member_name || body.nickname),
+    contact_id: str(body.contact_id || body.contact || body.telegram_username || body.line_id),
+    amount_thb: toNum(body.amount_paid || body.amount_thb),
+    paid_at: normalizeSubmittedDateTime(body.paid_at || body.transfer_datetime),
+    selected_package: str(body.selected_package || body.package || body.renewal_package),
+    payment_method: str(body.payment_method || body.channel),
+    package_note: str(body.package_note),
+    additional_note: str(body.verification_note || body.note),
+    payment_type: str(body.payment_type || "renewal").toLowerCase(),
+    payment_ref: paymentRef,
+    transaction_ref: str(body.transaction_ref) || paymentRef,
+    session_id: sessionId,
+    proof_file: body.evidence_ref ? { name: str(body.evidence_ref), size: 1, type: "reference" } : null,
+  };
+}
+
+async function notifyRenewalProofAdmin(env, payload) {
+  const text = [
+    "RENEWAL PROOF RECEIVED",
+    `Name: ${payload.display_name}`,
+    `Contact: ${payload.contact_id}`,
+    `Package: ${payload.selected_package}`,
+    `Method: ${payload.payment_method}`,
+    `Amount: ${payload.amount_thb}`,
+    `Paid at: ${payload.paid_at}`,
+    `Payment Ref: ${payload.payment_ref}`,
+    `Evidence Ref: ${payload.evidence_ref}`,
+    `Status: pending_official_review`,
+  ].join("\n");
+
+  const result = await telegramInternalSend(env, {
+    text,
+    parse_mode: null,
+    message_thread_id: str(env.TG_THREAD_PRICING_REVIEW || "61"),
+    disable_web_page_preview: true,
+  });
+
+  return {
+    attempted: true,
+    ok: Boolean(result && result.ok),
+    error: result && !result.ok ? (result.error || result.data || result.reason || "notification_failed") : "",
+  };
+}
+
+function normalizeSubmittedDateTime(value) {
+  const raw = str(value);
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) {
+    const parsedLocal = new Date(raw);
+    if (!Number.isNaN(parsedLocal.getTime())) return parsedLocal.toISOString();
+  }
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  return raw;
 }
 
 function isAllowedOrigin(req, env) {
