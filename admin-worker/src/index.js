@@ -101,7 +101,7 @@ const SIGIL_PAY_RENEWAL_PATH = "/pay/renewal";
 const SIGIL_PAY_RENEWAL_LEGACY_PATH = "/sigil/pay/renewal";
 const SIGIL_PAY_RENEWAL_PROOF_PATH = "/api/pay/renewal/proof";
 const SIGIL_PAY_RENEWAL_BUILD = "SIGIL_PAY_RENEWAL_V1_20260607";
-const SIGIL_RENEWAL_KENJI_IMAGE = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a24551b2bde23886a55384a_Line-Kenji.png";
+const SIGIL_RENEWAL_KENJI_IMAGE = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a22f53633aaf32d040022d4_Line-Kenji.webp";
 const SIGIL_RENEWAL_LOGO_IMAGE = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0f2cbc7e26b6735aee4cb2_SIGIL%20LOGO%20Transp.webp";
 const SIGIL_PROMPTPAY_URL = "https://promptpay.io/0829528889";
 const SIGIL_BANK_NAME = "KTB Bank / Krungthai";
@@ -115,20 +115,21 @@ export default {
     const url = new URL(req.url);
     const path = url.pathname;
     const method = req.method.toUpperCase();
-    const hostname = url.hostname;
 
     // ---- CORS / Preflight ----
     if (method === "OPTIONS") return corsPreflight(req, env);
 
-    if (hostname === "sigil.mmdbkk.com" && (method === "GET" || method === "HEAD") && path === SIGIL_PAY_RENEWAL_LEGACY_PATH) {
-      return withCors(req, env, Response.redirect(`https://sigil.mmdbkk.com${SIGIL_PAY_RENEWAL_PATH}`, 301));
+    if ((method === "GET" || method === "HEAD") && path === SIGIL_PAY_RENEWAL_LEGACY_PATH) {
+      const target = new URL(req.url);
+      target.pathname = SIGIL_PAY_RENEWAL_PATH;
+      return withCors(req, env, Response.redirect(target.toString(), 301));
     }
 
-    if (hostname === "sigil.mmdbkk.com" && (method === "GET" || method === "HEAD") && path === SIGIL_PAY_RENEWAL_PATH) {
+    if ((method === "GET" || method === "HEAD") && path === SIGIL_PAY_RENEWAL_PATH) {
       return withCors(req, env, renderSigilPayRenewalPage(req, env));
     }
 
-    if (hostname === "sigil.mmdbkk.com" && method === "POST" && path === SIGIL_PAY_RENEWAL_PROOF_PATH) {
+    if (method === "POST" && path === SIGIL_PAY_RENEWAL_PROOF_PATH) {
       return withCors(req, env, await handlePublicRenewalProofSubmit(req, env));
     }
 
@@ -957,440 +958,324 @@ function getAllowedOrigins(env) {
 function renderSigilPayRenewalPage(req, env) {
   const isHead = req.method.toUpperCase() === "HEAD";
   const turnstileSiteKey = str(env.TURNSTILE_SITE_KEY || SIGIL_RENEWAL_TURNSTILE_SITE_KEY);
+  const turnstileEnabled = Boolean(turnstileSiteKey);
+  const config = {
+    endpoint: SIGIL_PAY_RENEWAL_PROOF_PATH,
+    turnstileSiteKey,
+    turnstileEnabled,
+    maxFileBytes: 12 * 1024 * 1024,
+  };
   const html = `<!doctype html>
 <html lang="th">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
-  <title>Renew Your Access | MMD SĪGIL</title>
-  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
+  <title>Renew Membership | SĪGIL</title>
+  <meta name="description" content="ต่ออายุสมาชิก SĪGIL โดยส่งสลิปให้ทีมตรวจสอบยอดจริง">
   <style>
-    .mmd-renewal-page, .mmd-renewal-page * { box-sizing: border-box; }
-    .mmd-renewal-page {
-      --mmd-renewal-bg: #060504;
-      --mmd-renewal-panel: rgba(16, 13, 10, 0.9);
-      --mmd-renewal-panel-soft: rgba(255,255,255,0.04);
-      --mmd-renewal-line: rgba(232, 193, 109, 0.24);
-      --mmd-renewal-line-strong: rgba(242, 210, 133, 0.55);
-      --mmd-renewal-gold: #ecc46f;
-      --mmd-renewal-gold-strong: #f3d18b;
-      --mmd-renewal-ink: #f8eedb;
-      --mmd-renewal-soft: rgba(248, 238, 219, 0.76);
-      --mmd-renewal-dim: rgba(248, 238, 219, 0.52);
-      --mmd-renewal-red: #ffb6a6;
+    .mmd-renewal-final-root {
       min-height: 100vh;
-      margin: 0;
       background:
-        radial-gradient(circle at top left, rgba(236, 196, 111, 0.22), transparent 24%),
-        linear-gradient(160deg, #050403 0%, #0b0806 42%, #140d07 100%);
-      color: var(--mmd-renewal-ink);
-      font-family: "Noto Sans Thai", Inter, system-ui, sans-serif;
+        radial-gradient(circle at 72% 6%, rgba(206, 168, 91, .20), transparent 28rem),
+        linear-gradient(145deg, #090806 0%, #14110d 46%, #050505 100%);
+      color: #f7efe0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
-    .mmd-renewal-shell { width: min(1220px, calc(100% - 28px)); margin: 0 auto; padding: 22px 0 40px; }
-    .mmd-renewal-hero {
-      display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr); gap: 18px;
-      border: 1px solid var(--mmd-renewal-line); border-radius: 28px; overflow: hidden;
-      background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02)), var(--mmd-renewal-panel);
-      box-shadow: 0 30px 90px rgba(0,0,0,0.45);
+    .mmd-renewal-final-shell { width: min(1160px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 44px; }
+    .mmd-renewal-final-hero { display: grid; gap: 26px; align-items: center; padding: 20px 0 18px; }
+    .mmd-renewal-final-logo { width: 112px; height: auto; display: block; margin-bottom: 20px; }
+    .mmd-renewal-final-kicker { margin: 0 0 10px; color: #d8b76d; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    .mmd-renewal-final-title { margin: 0; font-size: clamp(42px, 8vw, 82px); line-height: .95; letter-spacing: 0; color: #fff8ea; }
+    .mmd-renewal-final-lead { max-width: 720px; margin: 18px 0 0; color: #e9dcc5; font-size: 17px; line-height: 1.75; }
+    .mmd-renewal-final-check { color: #f2dcae; font-size: 13px; line-height: 1.7; margin: 4px 0 0; }
+    .mmd-renewal-final-hero-visual { position: relative; min-height: 360px; border: 1px solid rgba(226, 187, 104, .20); border-radius: 8px; overflow: hidden; background: linear-gradient(160deg, rgba(42, 31, 19, .74), rgba(8, 8, 8, .92)); }
+    .mmd-renewal-final-kenji { width: 100%; height: 420px; object-fit: cover; object-position: center top; display: block; opacity: .96; }
+    .mmd-renewal-final-note { position: absolute; left: 14px; right: 14px; bottom: 14px; padding: 14px 15px; border: 1px solid rgba(244, 215, 151, .22); border-radius: 8px; background: rgba(8, 7, 6, .78); backdrop-filter: blur(12px); color: #f7e9c9; font-size: 14px; line-height: 1.65; }
+    .mmd-renewal-final-steps { display: grid; gap: 10px; margin: 16px 0 24px; }
+    .mmd-renewal-final-step { padding: 13px 14px; border: 1px solid rgba(214, 179, 101, .18); border-radius: 8px; background: rgba(255, 255, 255, .045); color: #f1dfb6; font-weight: 700; }
+    .mmd-renewal-final-layout { display: grid; gap: 18px; }
+    .mmd-renewal-final-panel { border: 1px solid rgba(214, 179, 101, .18); border-radius: 8px; background: rgba(12, 11, 9, .78); box-shadow: 0 24px 70px rgba(0, 0, 0, .28); }
+    .mmd-renewal-final-panel-inner { padding: 18px; }
+    .mmd-renewal-final-heading { margin: 0 0 12px; font-size: 20px; line-height: 1.25; color: #fff4dc; letter-spacing: 0; }
+    .mmd-renewal-final-muted { margin: 0; color: #c9bda8; font-size: 14px; line-height: 1.65; }
+    .mmd-renewal-final-options { display: grid; gap: 10px; }
+    .mmd-renewal-final-option { width: 100%; min-height: 88px; padding: 14px; border: 1px solid rgba(255, 255, 255, .10); border-radius: 8px; background: rgba(255, 255, 255, .035); color: #f4ead9; text-align: left; cursor: pointer; transition: border-color .2s ease, background .2s ease, transform .2s ease; }
+    .mmd-renewal-final-option:hover, .mmd-renewal-final-option.is-active { border-color: rgba(222, 180, 93, .72); background: rgba(222, 180, 93, .10); transform: translateY(-1px); }
+    .mmd-renewal-final-option strong { display: block; margin-bottom: 5px; color: #fff7e8; font-size: 15px; line-height: 1.25; }
+    .mmd-renewal-final-option span { display: block; color: #cdbf9f; font-size: 13px; line-height: 1.55; }
+    .mmd-renewal-final-detail-list { display: grid; gap: 8px; margin-top: 12px; }
+    .mmd-renewal-final-detail-row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid rgba(255, 255, 255, .08); color: #f2e7d1; font-size: 14px; line-height: 1.45; }
+    .mmd-renewal-final-detail-row span:first-child { color: #b9ad98; }
+    .mmd-renewal-final-actions { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 15px; }
+    .mmd-renewal-final-link { display: inline-flex; min-height: 46px; align-items: center; justify-content: center; padding: 0 16px; border-radius: 8px; border: 1px solid rgba(226, 187, 104, .45); color: #18120a; background: linear-gradient(135deg, #f3d48b, #c8973d); font-size: 14px; font-weight: 800; text-decoration: none; }
+    .mmd-renewal-final-link-secondary { color: #f3dfb3; background: rgba(255, 255, 255, .04); }
+    .mmd-renewal-final-form { display: grid; gap: 13px; margin-top: 14px; }
+    .mmd-renewal-final-field { display: grid; gap: 7px; }
+    .mmd-renewal-final-label { color: #e8d8b9; font-size: 13px; font-weight: 700; }
+    .mmd-renewal-final-input, .mmd-renewal-final-textarea { width: 100%; box-sizing: border-box; border: 1px solid rgba(255, 255, 255, .13); border-radius: 8px; background: rgba(255, 255, 255, .055); color: #fff8ec; font: inherit; font-size: 15px; line-height: 1.4; padding: 12px 13px; outline: none; }
+    .mmd-renewal-final-input:focus, .mmd-renewal-final-textarea:focus { border-color: rgba(226, 187, 104, .78); box-shadow: 0 0 0 3px rgba(226, 187, 104, .10); }
+    .mmd-renewal-final-textarea { min-height: 92px; resize: vertical; }
+    .mmd-renewal-final-upload { position: relative; display: grid; place-items: center; min-height: 112px; padding: 14px; border: 1px dashed rgba(226, 187, 104, .45); border-radius: 8px; background: rgba(226, 187, 104, .055); color: #efdfbd; text-align: center; cursor: pointer; }
+    .mmd-renewal-final-file { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .mmd-renewal-final-consent { display: flex; gap: 10px; align-items: flex-start; color: #e8dbc0; font-size: 14px; line-height: 1.65; }
+    .mmd-renewal-final-consent input { margin-top: 5px; accent-color: #d7aa50; }
+    .mmd-renewal-final-turnstile { min-height: 70px; }
+    .mmd-renewal-final-turnstile.is-hidden { display: none; }
+    .mmd-renewal-final-submit { min-height: 52px; border: 0; border-radius: 8px; background: linear-gradient(135deg, #f6d990, #bd842e); color: #140f08; cursor: pointer; font-size: 15px; font-weight: 900; }
+    .mmd-renewal-final-submit:disabled { opacity: .64; cursor: wait; }
+    .mmd-renewal-final-status { display: none; margin-top: 14px; padding: 14px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, .12); color: #f5e6c7; font-size: 14px; line-height: 1.65; }
+    .mmd-renewal-final-status.is-visible { display: block; }
+    .mmd-renewal-final-status.is-success { border-color: rgba(111, 210, 154, .34); background: rgba(111, 210, 154, .09); }
+    .mmd-renewal-final-status.is-warning { border-color: rgba(226, 187, 104, .34); background: rgba(226, 187, 104, .09); }
+    .mmd-renewal-final-status.is-error { border-color: rgba(232, 117, 117, .38); background: rgba(232, 117, 117, .10); }
+    .mmd-renewal-final-status strong { display: block; margin-bottom: 4px; color: #fff4df; font-size: 15px; }
+    @media (min-width: 720px) {
+      .mmd-renewal-final-steps, .mmd-renewal-final-options, .mmd-renewal-final-actions { grid-template-columns: repeat(3, 1fr); }
+      .mmd-renewal-final-actions { grid-template-columns: repeat(2, 1fr); }
+      .mmd-renewal-final-form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 13px; }
     }
-    .mmd-renewal-hero-copy {
-      position: relative; min-height: 680px; padding: clamp(24px, 4vw, 40px);
-      background:
-        linear-gradient(90deg, rgba(5,4,3,0.85), rgba(5,4,3,0.22) 55%, rgba(5,4,3,0.78)),
-        url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69f3f1754d061e5c119b2b13_MMD%20Academy.webp") center/cover no-repeat;
-      display: grid; align-content: end; gap: 18px;
-    }
-    .mmd-renewal-logo { width: min(180px, 40vw); height: auto; display: block; }
-    .mmd-renewal-pill {
-      display: inline-flex; align-items: center; gap: 10px; width: fit-content; padding: 12px 18px;
-      border-radius: 999px; border: 1px solid var(--mmd-renewal-line-strong); background: rgba(16,13,10,0.82);
-      color: var(--mmd-renewal-ink); font-size: 12px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase;
-    }
-    .mmd-renewal-pill::before { content: ""; width: 10px; height: 10px; border-radius: 999px; background: var(--mmd-renewal-gold); box-shadow: 0 0 18px rgba(236,196,111,.7); }
-    .mmd-renewal-kicker { margin: 0; color: var(--mmd-renewal-dim); font-size: 13px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
-    .mmd-renewal-title { margin: 0; font-size: clamp(3.6rem, 8vw, 7rem); line-height: .92; font-weight: 900; }
-    .mmd-renewal-title span { display: block; color: var(--mmd-renewal-gold); }
-    .mmd-renewal-lead, .mmd-renewal-copy, .mmd-renewal-safe { margin: 0; color: var(--mmd-renewal-soft); line-height: 1.7; font-size: clamp(1rem, 1.4vw, 1.12rem); }
-    .mmd-renewal-panel-note {
-      border: 1px solid rgba(242,210,133,0.28); border-radius: 24px; padding: 20px 22px;
-      background: rgba(7,6,4,0.4);
-    }
-    .mmd-renewal-side { padding: clamp(24px, 4vw, 36px); display: grid; gap: 18px; align-content: start; }
-    .mmd-renewal-side-head { display:flex; align-items:center; justify-content:space-between; gap: 12px; }
-    .mmd-renewal-side-head h2 { margin:0; font-size: 1.9rem; line-height:1.05; }
-    .mmd-renewal-chip {
-      border:1px solid var(--mmd-renewal-line-strong); border-radius:999px; padding: 12px 18px;
-      color: var(--mmd-renewal-gold-strong); background: rgba(255,255,255,0.03); font-weight: 900;
-    }
-    .mmd-renewal-summary, .mmd-renewal-section, .mmd-renewal-proof, .mmd-renewal-footer {
-      border: 1px solid var(--mmd-renewal-line); border-radius: 24px; background: rgba(255,255,255,0.02);
-    }
-    .mmd-renewal-summary { padding: 20px; display:grid; gap: 14px; }
-    .mmd-renewal-summary-label { color: var(--mmd-renewal-dim); font-size: .95rem; }
-    .mmd-renewal-summary-value { font-size: 1.05rem; font-weight: 800; }
-    .mmd-renewal-grid { display:grid; gap: 18px; margin-top: 18px; }
-    .mmd-renewal-section, .mmd-renewal-proof, .mmd-renewal-footer { padding: 22px; }
-    .mmd-renewal-section-head { display:grid; gap: 6px; margin-bottom: 14px; }
-    .mmd-renewal-section-head h3 { margin:0; font-size: 1.45rem; }
-    .mmd-renewal-section-head p { margin:0; color: var(--mmd-renewal-soft); line-height:1.65; }
-    .mmd-renewal-confirm { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
-    .mmd-renewal-stat { border:1px solid var(--mmd-renewal-line); border-radius: 20px; padding: 16px; background: rgba(0,0,0,0.18); }
-    .mmd-renewal-stat b { display:block; color: var(--mmd-renewal-dim); font-size: .84rem; margin-bottom: 6px; }
-    .mmd-renewal-stat strong { font-size: 1.08rem; }
-    .mmd-renewal-payment-tabs { display:flex; gap:10px; flex-wrap:wrap; margin-bottom: 16px; }
-    .mmd-renewal-tab {
-      border:1px solid var(--mmd-renewal-line); border-radius: 999px; padding: 12px 16px; background: transparent;
-      color: var(--mmd-renewal-soft); cursor: pointer; font-weight: 800;
-    }
-    .mmd-renewal-tab.is-active { background: linear-gradient(135deg, #f3d18b, #b98a3a); color:#140d07; border-color: transparent; }
-    .mmd-renewal-method { display:none; gap: 14px; }
-    .mmd-renewal-method.is-active { display:grid; }
-    .mmd-renewal-method-card { border:1px solid var(--mmd-renewal-line); border-radius: 22px; padding: 18px; background: rgba(0,0,0,0.16); }
-    .mmd-renewal-method-card h4 { margin:0 0 6px; font-size:1.1rem; }
-    .mmd-renewal-method-card p { margin:0; color: var(--mmd-renewal-soft); line-height:1.65; }
-    .mmd-renewal-link {
-      display:inline-flex; align-items:center; justify-content:center; min-height:48px; padding:0 18px;
-      border-radius:999px; border:1px solid var(--mmd-renewal-line-strong); background: rgba(255,255,255,0.04);
-      color: var(--mmd-renewal-ink); text-decoration:none; font-weight: 900;
-    }
-    .mmd-renewal-form { display:grid; gap: 14px; }
-    .mmd-renewal-field { display:grid; gap: 8px; }
-    .mmd-renewal-field span { color: var(--mmd-renewal-ink); font-size: .95rem; font-weight: 800; }
-    .mmd-renewal-field small { color: var(--mmd-renewal-dim); }
-    .mmd-renewal-input, .mmd-renewal-textarea {
-      width:100%; min-height: 52px; border-radius: 18px; border:1px solid rgba(255,255,255,0.12);
-      background: rgba(0,0,0,0.24); color: var(--mmd-renewal-ink); padding: 14px 16px; outline:none;
-    }
-    .mmd-renewal-textarea { min-height: 120px; resize: vertical; }
-    .mmd-renewal-input:focus, .mmd-renewal-textarea:focus { border-color: var(--mmd-renewal-line-strong); box-shadow: 0 0 0 3px rgba(236,196,111,0.12); }
-    .mmd-renewal-upload {
-      display:flex; align-items:center; justify-content:space-between; gap: 14px; flex-wrap: wrap;
-      border:1px dashed rgba(242,210,133,0.4); border-radius: 18px; padding: 16px 18px; background: rgba(255,255,255,0.02);
-    }
-    .mmd-renewal-upload input { position:absolute; left:-9999px; }
-    .mmd-renewal-upload-label { display:inline-flex; align-items:center; gap:10px; cursor:pointer; font-weight: 800; }
-    .mmd-renewal-upload-name { color: var(--mmd-renewal-soft); }
-    .mmd-renewal-actions { display:flex; gap: 12px; flex-wrap:wrap; align-items:center; }
-    .mmd-renewal-submit {
-      min-height: 52px; border:0; border-radius: 999px; padding: 0 22px; cursor:pointer;
-      background: linear-gradient(135deg, #f3d18b, #b98a3a); color:#140d07; font-weight: 900;
-    }
-    .mmd-renewal-error { min-height: 20px; color: var(--mmd-renewal-red); font-size: .95rem; font-weight: 700; }
-    .mmd-renewal-safe { font-size: .96rem; }
-    .mmd-renewal-turnstile { min-height: 72px; display:grid; gap:8px; align-content:start; }
-    .mmd-renewal-turnstile-note { color: var(--mmd-renewal-dim); font-size: .9rem; }
-    .mmd-renewal-footer { display:grid; grid-template-columns: 120px 1fr; gap: 18px; align-items:center; }
-    .mmd-renewal-kenji { width: 120px; max-width: 100%; display:block; }
-    @media (max-width: 980px) {
-      .mmd-renewal-hero { grid-template-columns: 1fr; }
-      .mmd-renewal-hero-copy { min-height: 560px; }
-      .mmd-renewal-confirm { grid-template-columns: 1fr; }
-      .mmd-renewal-footer { grid-template-columns: 1fr; }
+    @media (min-width: 980px) {
+      .mmd-renewal-final-shell { padding-top: 42px; }
+      .mmd-renewal-final-hero { grid-template-columns: minmax(0, 1.05fr) minmax(340px, .75fr); }
+      .mmd-renewal-final-layout { grid-template-columns: minmax(0, .92fr) minmax(520px, 1.08fr); align-items: start; }
+      .mmd-renewal-final-panel-inner { padding: 22px; }
     }
   </style>
+  ${turnstileEnabled ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>' : ""}
 </head>
-<body class="mmd-renewal-page">
-  <main class="mmd-renewal-shell mmd-renewal-page" data-build="${SIGIL_PAY_RENEWAL_BUILD}" data-turnstile-sitekey="${turnstileSiteKey || SIGIL_RENEWAL_TURNSTILE_SITE_KEY}">
-    <section class="mmd-renewal-hero">
-      <div class="mmd-renewal-hero-copy">
-        <img class="mmd-renewal-logo" src="${SIGIL_RENEWAL_LOGO_IMAGE}" alt="SIGIL logo">
-        <div class="mmd-renewal-pill">Private SIGIL Access</div>
-        <p class="mmd-renewal-kicker">Renew Your Access</p>
-        <h1 class="mmd-renewal-title">ต่ออายุสิทธิ์ <span>MMD SĪGIL</span></h1>
-        <p class="mmd-renewal-lead">หน้านี้ใช้สำหรับสรุป package ที่ทีมยืนยันแล้ว เลือกวิธีชำระเงิน ส่งหลักฐาน และรอการตรวจสอบอย่างเป็นทางการก่อนที่สิทธิ์ renewal จะ complete จริง</p>
-        <div class="mmd-renewal-panel-note">
-          <p class="mmd-renewal-copy">หลักฐานการชำระเงินเป็น supporting evidence เท่านั้น การต่ออายุจะถือว่าสมบูรณ์ต่อเมื่อทีมตรวจสอบยอดเงินและ dashboard verification เรียบร้อยแล้ว</p>
+<body>
+  <main class="mmd-renewal-final-root" data-mmd-renewal-final data-build="${SIGIL_PAY_RENEWAL_BUILD}">
+    <div class="mmd-renewal-final-shell">
+      <section class="mmd-renewal-final-hero" aria-labelledby="mmd-renewal-final-title">
+        <div>
+          <img class="mmd-renewal-final-logo" src="${SIGIL_RENEWAL_LOGO_IMAGE}" alt="SĪGIL logo">
+          <p class="mmd-renewal-final-kicker">SĪGIL Renewal</p>
+          <h1 id="mmd-renewal-final-title" class="mmd-renewal-final-title">Renew Membership</h1>
+          <p class="mmd-renewal-final-lead">ต่ออายุสมาชิกง่าย ๆ ใน 3 ขั้นตอน: เลือกประเภทสมาชิก เลือกวิธีชำระเงิน แล้วส่งสลิปให้ทีมตรวจสอบ</p>
+          <p class="mmd-renewal-final-check">ส่งสลิป = แจ้งว่าชำระแล้ว ยังไม่ใช่การยืนยันสำเร็จทันที ต่ออายุสำเร็จหลังทีมตรวจยอดเข้าจริงแล้วเท่านั้น</p>
+        </div>
+        <div class="mmd-renewal-final-hero-visual">
+          <img class="mmd-renewal-final-kenji" src="${SIGIL_RENEWAL_KENJI_IMAGE}" alt="Kenji, SĪGIL renewal assistant">
+          <div class="mmd-renewal-final-note">ผมจะช่วยพาคุณส่งข้อมูลให้ครบครับ ข้อมูลที่สำคัญคือชื่อที่ใช้ในระบบ ช่องทางติดต่อ ยอดที่โอน วันเวลา และสลิปที่ชัดเจน</div>
+        </div>
+      </section>
+
+      <div class="mmd-renewal-final-steps" aria-label="Renewal steps">
+        <div class="mmd-renewal-final-step">1. เลือกประเภทสมาชิก</div>
+        <div class="mmd-renewal-final-step">2. เลือกวิธีชำระเงิน</div>
+        <div class="mmd-renewal-final-step">3. ส่งสลิปให้ทีมตรวจสอบ</div>
+      </div>
+
+      <div class="mmd-renewal-final-layout">
+        <div class="mmd-renewal-final-panel">
+          <div class="mmd-renewal-final-panel-inner">
+            <h2 class="mmd-renewal-final-heading">เลือกประเภทสมาชิก</h2>
+            <div class="mmd-renewal-final-options" data-mmd-renewal-packages>
+              <button class="mmd-renewal-final-option is-active" type="button" data-renewal-value="standard"><strong>Standard</strong><span>ต่ออายุพื้นฐานสำหรับสมาชิกที่ต้องการใช้ระบบตามปกติ</span></button>
+              <button class="mmd-renewal-final-option" type="button" data-renewal-value="vip"><strong>VIP</strong><span>สำหรับสมาชิกที่ต้องการลำดับดูแลและคำแนะนำที่มากขึ้น</span></button>
+              <button class="mmd-renewal-final-option" type="button" data-renewal-value="black_card_private_access"><strong>Black Card / Private Access</strong><span>ชั้นเข้าถึงส่วนตัว ทีมจะตรวจสอบอย่างระมัดระวัง</span></button>
+            </div>
+
+            <h2 class="mmd-renewal-final-heading" style="margin-top:22px">เลือกวิธีชำระเงิน</h2>
+            <div class="mmd-renewal-final-options" data-mmd-renewal-methods>
+              <button class="mmd-renewal-final-option is-active" type="button" data-renewal-value="promptpay_bank_transfer"><strong>PromptPay / Bank Transfer</strong><span>โอนผ่านบัญชีหรือพร้อมเพย์ แล้วอัปโหลดสลิป</span></button>
+              <button class="mmd-renewal-final-option" type="button" data-renewal-value="credit_card"><strong>Credit Card</strong><span>ชำระผ่าน PayPal / Card อาจมีค่าบริการเพิ่มเติม</span></button>
+              <button class="mmd-renewal-final-option" type="button" data-renewal-value="admin_confirmed_amount"><strong>Admin Confirmed Amount</strong><span>ใช้เมื่อทีมแจ้งยอดเฉพาะให้คุณแล้ว</span></button>
+            </div>
+
+            <h2 class="mmd-renewal-final-heading" style="margin-top:22px">ข้อมูลชำระเงิน</h2>
+            <p class="mmd-renewal-final-muted">ตรวจสอบชื่อบัญชีและยอดก่อนโอนทุกครั้ง หลังส่งสลิป ทีมตรวจสอบยอดจริงก่อนอัปเดตสถานะสมาชิก</p>
+            <div class="mmd-renewal-final-detail-list">
+              <div class="mmd-renewal-final-detail-row"><span>Bank</span><strong>${SIGIL_BANK_NAME}</strong></div>
+              <div class="mmd-renewal-final-detail-row"><span>Account name</span><strong>${SIGIL_BANK_ACCOUNT_NAME}</strong></div>
+              <div class="mmd-renewal-final-detail-row"><span>Account number</span><strong>${SIGIL_BANK_ACCOUNT_NUMBER}</strong></div>
+              <div class="mmd-renewal-final-detail-row"><span>PromptPay</span><strong>082-952-8889</strong></div>
+              <div class="mmd-renewal-final-detail-row"><span>Card note</span><strong>ชำระผ่านบัตรอาจมีค่าบริการเพิ่มเติมประมาณ 4%+</strong></div>
+            </div>
+            <div class="mmd-renewal-final-actions">
+              <a class="mmd-renewal-final-link" href="${SIGIL_PROMPTPAY_URL}" target="_blank" rel="noopener">PromptPay</a>
+              <a class="mmd-renewal-final-link mmd-renewal-final-link-secondary" href="${SIGIL_PAYPAL_URL}" target="_blank" rel="noopener">PayPal / Card</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="mmd-renewal-final-panel">
+          <div class="mmd-renewal-final-panel-inner">
+            <h2 class="mmd-renewal-final-heading">ส่งสลิป / หลักฐาน</h2>
+            <p class="mmd-renewal-final-muted">ทีมตรวจสอบยอดจริงจากข้อมูลที่คุณส่งเข้ามา กรุณากรอกให้ตรงกับสลิปมากที่สุด</p>
+            <form class="mmd-renewal-final-form" data-mmd-renewal-form enctype="multipart/form-data" novalidate>
+              <input type="hidden" name="payment_type" value="renewal">
+              <input type="hidden" name="session_id" data-mmd-renewal-session-id>
+              <input type="hidden" name="payment_ref" data-mmd-renewal-payment-ref>
+              <input type="hidden" name="transaction_ref" data-mmd-renewal-transaction-ref>
+              <input type="hidden" name="selected_package" value="standard" data-mmd-renewal-selected-package>
+              <input type="hidden" name="payment_method" value="promptpay_bank_transfer" data-mmd-renewal-payment-method>
+              <input type="hidden" name="cf_turnstile_response" data-mmd-renewal-turnstile-token>
+
+              <div class="mmd-renewal-final-form-grid">
+                <label class="mmd-renewal-final-field"><span class="mmd-renewal-final-label">ชื่อ / ชื่อเล่นที่ใช้ในระบบ</span><input class="mmd-renewal-final-input" name="display_name" autocomplete="name" required></label>
+                <label class="mmd-renewal-final-field"><span class="mmd-renewal-final-label">ช่องทางติดต่อ</span><input class="mmd-renewal-final-input" name="contact_id" autocomplete="email" required></label>
+                <label class="mmd-renewal-final-field"><span class="mmd-renewal-final-label">ยอดที่ชำระจริง</span><input class="mmd-renewal-final-input" name="amount_paid" inputmode="decimal" placeholder="เช่น 3000" required></label>
+                <label class="mmd-renewal-final-field"><span class="mmd-renewal-final-label">วันและเวลาที่ชำระ</span><input class="mmd-renewal-final-input" name="paid_at" type="datetime-local" required></label>
+              </div>
+
+              <label class="mmd-renewal-final-field"><span class="mmd-renewal-final-label">หมายเหตุ package</span><input class="mmd-renewal-final-input" name="package_note" placeholder="ถ้ามีทีมแจ้งยอดเฉพาะ ใส่รายละเอียดตรงนี้"></label>
+              <label class="mmd-renewal-final-field"><span class="mmd-renewal-final-label">หมายเหตุสำหรับทีมตรวจสอบ</span><textarea class="mmd-renewal-final-textarea" name="verification_note" placeholder="เช่น โอนจากชื่อบัญชีอื่น หรือแบ่งชำระ"></textarea></label>
+
+              <label class="mmd-renewal-final-upload"><span data-mmd-renewal-upload-label>อัปโหลดสลิป / receipt ขนาดไม่เกิน 12MB</span><input class="mmd-renewal-final-file" name="proof" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required data-mmd-renewal-file></label>
+
+              <div class="mmd-renewal-final-turnstile${turnstileEnabled ? "" : " is-hidden"}" data-mmd-renewal-turnstile><div data-mmd-renewal-turnstile-widget></div></div>
+
+              <label class="mmd-renewal-final-consent"><input type="checkbox" data-mmd-renewal-consent required><span>ฉันเข้าใจว่าการส่งสลิปยังไม่ใช่การยืนยันสำเร็จ และการต่ออายุจะเสร็จหลังจากทีมตรวจยอดจริงแล้วเท่านั้น</span></label>
+
+              <button class="mmd-renewal-final-submit" type="submit" data-mmd-renewal-submit>ส่งสลิปให้ทีมตรวจสอบ</button>
+              <div class="mmd-renewal-final-status" data-mmd-renewal-status role="status" aria-live="polite"></div>
+            </form>
+          </div>
         </div>
       </div>
-      <aside class="mmd-renewal-side">
-        <div class="mmd-renewal-side-head">
-          <div>
-            <p class="mmd-renewal-kicker">Official Verification Flow</p>
-            <h2>Renewal Summary</h2>
-          </div>
-          <span class="mmd-renewal-chip">Admin-confirmed amount</span>
-        </div>
-        <section class="mmd-renewal-summary">
-          <div><div class="mmd-renewal-summary-label">Package confirmation</div><div class="mmd-renewal-summary-value">Renew Your Access</div></div>
-          <div><div class="mmd-renewal-summary-label">Amount mode</div><div class="mmd-renewal-summary-value">Final amount is confirmed by admin before activation</div></div>
-          <div><div class="mmd-renewal-summary-label">Verification</div><div class="mmd-renewal-summary-value">Fund check + dashboard check + official approval</div></div>
-        </section>
-        <section class="mmd-renewal-summary">
-          <div><div class="mmd-renewal-summary-label">PromptPay</div><div class="mmd-renewal-summary-value">0829528889</div></div>
-          <div><div class="mmd-renewal-summary-label">Bank</div><div class="mmd-renewal-summary-value">${SIGIL_BANK_NAME}</div></div>
-          <div><div class="mmd-renewal-summary-label">Account</div><div class="mmd-renewal-summary-value">${SIGIL_BANK_ACCOUNT_NAME}</div></div>
-          <div><div class="mmd-renewal-summary-label">Account number</div><div class="mmd-renewal-summary-value">${SIGIL_BANK_ACCOUNT_NUMBER}</div></div>
-        </section>
-      </aside>
-    </section>
-
-    <section class="mmd-renewal-grid">
-      <section class="mmd-renewal-section">
-        <div class="mmd-renewal-section-head">
-          <h3>Package confirmation</h3>
-          <p>ใช้ส่วนนี้เพื่อส่งต่อ package ที่ทีมแจ้งแล้ว และทำให้ลูกค้ารู้ว่าจุดนี้คือ payment-safe flow ไม่ใช่ auto-confirm จากการแนบสลิปอย่างเดียว</p>
-        </div>
-        <div class="mmd-renewal-confirm">
-          <article class="mmd-renewal-stat"><b>Access package</b><strong>Admin-confirmed renewal</strong></article>
-          <article class="mmd-renewal-stat"><b>Amount mode</b><strong>Manual amount verification</strong></article>
-          <article class="mmd-renewal-stat"><b>Completion</b><strong>Official fund/dashboard verification only</strong></article>
-        </div>
-      </section>
-
-      <section class="mmd-renewal-section">
-        <div class="mmd-renewal-section-head">
-          <h3>Payment method</h3>
-          <p>เลือกวิธีชำระเงินที่ทีมยืนยันไว้แล้ว ถ้าใช้บัตรหรือ PayPal ให้เผื่อ service charge ประมาณ 4%+ เพิ่มด้วย</p>
-        </div>
-        <div class="mmd-renewal-payment-tabs" role="tablist" aria-label="Payment method">
-          <button type="button" class="mmd-renewal-tab is-active" data-renewal-tab="bank">PromptPay / Bank transfer</button>
-          <button type="button" class="mmd-renewal-tab" data-renewal-tab="card">Credit card / PayPal</button>
-        </div>
-        <div class="mmd-renewal-method is-active" data-renewal-panel="bank">
-          <article class="mmd-renewal-method-card">
-            <h4>PromptPay / Official payment link</h4>
-            <p>ใช้ลิงก์ทางการด้านล่างเพื่อเปิด PromptPay และยืนยันยอดตามที่แอดมินแจ้งไว้ก่อนส่งหลักฐานกลับมา</p>
-          </article>
-          <div class="mmd-renewal-actions">
-            <a class="mmd-renewal-link" href="${SIGIL_PROMPTPAY_URL}" target="_blank" rel="noopener noreferrer">Open official PromptPay</a>
-          </div>
-          <article class="mmd-renewal-method-card">
-            <h4>Bank transfer details</h4>
-            <p>${SIGIL_BANK_NAME}<br>${SIGIL_BANK_ACCOUNT_NAME}<br>${SIGIL_BANK_ACCOUNT_NUMBER}</p>
-          </article>
-        </div>
-        <div class="mmd-renewal-method" data-renewal-panel="card">
-          <article class="mmd-renewal-method-card">
-            <h4>Credit card / PayPal</h4>
-            <p>ถ้าจะจ่ายด้วยบัตรหรือ PayPal ให้เผื่อค่าธรรมเนียมประมาณ 4%+ แล้วแนบหลักฐานหลังชำระเงินเสร็จ</p>
-          </article>
-          <div class="mmd-renewal-actions">
-            <a class="mmd-renewal-link" href="${SIGIL_PAYPAL_URL}" target="_blank" rel="noopener noreferrer">Open card / PayPal checkout</a>
-          </div>
-        </div>
-      </section>
-
-      <section class="mmd-renewal-proof">
-        <div class="mmd-renewal-section-head">
-          <h3>Proof submission</h3>
-          <p>ส่งชื่อ, contact, package context และหลักฐานการชำระเงินเพื่อให้ทีมใช้ตรวจสอบอย่างเป็นทางการ หลักฐานนี้ไม่ใช่ auto-confirmation</p>
-        </div>
-        <form class="mmd-renewal-form" data-renewal-form novalidate>
-          <label class="mmd-renewal-field">
-            <span>Display name / ชื่อที่ใช้ติดต่อ</span>
-            <input class="mmd-renewal-input" name="display_name" type="text" placeholder="เช่น Ken / Mew" required>
-          </label>
-          <label class="mmd-renewal-field">
-            <span>Contact ID / ช่องทางติดต่อ</span>
-            <input class="mmd-renewal-input" name="contact_id" type="text" placeholder="LINE / Telegram / Email" required>
-          </label>
-          <label class="mmd-renewal-field">
-            <span>Selected renewal package</span>
-            <select class="mmd-renewal-input" name="selected_package" required>
-              <option value="">เลือก package ที่ทีมยืนยันแล้ว</option>
-              <option value="sigil_renewal_standard">SIGIL Renewal Standard</option>
-              <option value="sigil_renewal_premium">SIGIL Renewal Premium</option>
-              <option value="sigil_renewal_custom">Custom admin-confirmed renewal</option>
-            </select>
-          </label>
-          <label class="mmd-renewal-field">
-            <span>Amount paid (THB)</span>
-            <input class="mmd-renewal-input" name="amount_paid" type="number" min="1" step="0.01" placeholder="ยอดที่โอนจริง" required>
-          </label>
-          <label class="mmd-renewal-field">
-            <span>Transfer date / time</span>
-            <input class="mmd-renewal-input" name="paid_at" type="datetime-local" required>
-          </label>
-          <label class="mmd-renewal-field">
-            <span>Package or amount note</span>
-            <textarea class="mmd-renewal-textarea" name="package_note" placeholder="เช่น VIP renewal ตามยอดที่แอดมินยืนยันแล้ว" required></textarea>
-          </label>
-          <label class="mmd-renewal-field">
-            <span>Proof upload</span>
-            <div class="mmd-renewal-upload">
-              <label class="mmd-renewal-upload-label" for="mmd-renewal-proof-input">เลือกสลิป / proof</label>
-              <span class="mmd-renewal-upload-name" data-renewal-proof-name>ยังไม่ได้เลือกไฟล์</span>
-              <input id="mmd-renewal-proof-input" name="proof" type="file" accept="image/*,.pdf">
-            </div>
-            <small>proof ใช้เพื่อ support การตรวจสอบเท่านั้น ไม่ใช่การยืนยันสิทธิ์อัตโนมัติ</small>
-          </label>
-          <label class="mmd-renewal-field">
-            <span>Official verification note</span>
-            <textarea class="mmd-renewal-textarea" name="verification_note" placeholder="เช่น เวลาที่โอน, ชื่อบัญชีที่ใช้โอน, ข้อมูลอ้างอิงเพิ่มเติม"></textarea>
-          </label>
-          <div class="mmd-renewal-turnstile">
-            <div id="mmd-renewal-turnstile-box"></div>
-            <div class="mmd-renewal-turnstile-note">กรุณายืนยัน Turnstile ก่อนส่งหลักฐานเพื่อให้ทีมรับเคสตรวจสอบได้อย่างปลอดภัย</div>
-          </div>
-          <input type="hidden" name="payment_type" value="renewal">
-          <input type="hidden" name="session_id" value="">
-          <input type="hidden" name="payment_ref" value="">
-          <input type="hidden" name="cf_turnstile_response" value="">
-          <div class="mmd-renewal-safe">Renewal จะ complete ต่อเมื่อทีมตรวจสอบยอดเงินจริง และ dashboard / fund verification ตรงกันแล้วเท่านั้น</div>
-          <div class="mmd-renewal-safe" data-renewal-status>Ready for official verification.</div>
-          <div class="mmd-renewal-error" data-renewal-error></div>
-          <div class="mmd-renewal-actions">
-            <button class="mmd-renewal-submit" type="submit">Send for official verification</button>
-          </div>
-        </form>
-      </section>
-
-      <section class="mmd-renewal-footer">
-        <img class="mmd-renewal-kenji" src="${SIGIL_RENEWAL_KENJI_IMAGE}" alt="Kenji concierge">
-        <div>
-          <h3 style="margin:0 0 8px;font-size:1.3rem;">Official review only</h3>
-          <p class="mmd-renewal-copy">Kenji concierge flow นี้มีไว้เพื่อให้ลูกค้าเห็นขั้นตอนการต่ออายุแบบ premium, ชำระเงินอย่างปลอดภัย และเข้าใจชัดเจนว่าการ activate access จะเกิดหลังทีมตรวจสอบเงินจริงและ dashboard เรียบร้อยแล้วเท่านั้น</p>
-        </div>
-      </section>
-    </section>
+    </div>
   </main>
   <script>
-    (() => {
-      const tabs = Array.from(document.querySelectorAll('[data-renewal-tab]'));
-      const panels = Array.from(document.querySelectorAll('[data-renewal-panel]'));
-      const proofInput = document.getElementById('mmd-renewal-proof-input');
-      const proofName = document.querySelector('[data-renewal-proof-name]');
-      const form = document.querySelector('[data-renewal-form]');
-      const errorBox = document.querySelector('[data-renewal-error]');
-      const statusBox = document.querySelector('[data-renewal-status]');
-      const submitButton = form ? form.querySelector('.mmd-renewal-submit') : null;
-      const root = document.querySelector('.mmd-renewal-page[data-turnstile-sitekey]');
-      const turnstileInput = form ? form.querySelector('[name="cf_turnstile_response"]') : null;
-      const turnstileSiteKey = root ? String(root.dataset.turnstileSitekey || '').trim() : '';
-      let turnstileWidgetId = null;
-      const storageKey = 'mmd_sigil_renewal_proof_session_v1';
-      const bootstrap = (() => {
-        try {
-          const cached = window.sessionStorage.getItem(storageKey);
-          if (cached) return JSON.parse(cached);
-        } catch (_) {}
-        const seed = Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
-        return {
-          session_id: 'renewal_session_' + seed,
-          payment_ref: 'renewal_proof_' + seed,
-        };
-      })();
-      if (form) {
-        const sessionInput = form.querySelector('[name="session_id"]');
-        const paymentRefInput = form.querySelector('[name="payment_ref"]');
-        if (sessionInput) sessionInput.value = bootstrap.session_id;
-        if (paymentRefInput) paymentRefInput.value = bootstrap.payment_ref;
-        try { window.sessionStorage.setItem(storageKey, JSON.stringify(bootstrap)); } catch (_) {}
-      }
-      tabs.forEach((tab) => {
-        tab.addEventListener('click', () => {
-          const key = tab.getAttribute('data-renewal-tab');
-          tabs.forEach((node) => node.classList.toggle('is-active', node === tab));
-          panels.forEach((panel) => panel.classList.toggle('is-active', panel.getAttribute('data-renewal-panel') === key));
-        });
+  (function () {
+    var root = document.querySelector("[data-mmd-renewal-final]");
+    if (!root) return;
+    var CONFIG = ${JSON.stringify(config)};
+    var form = root.querySelector("[data-mmd-renewal-form]");
+    var submit = root.querySelector("[data-mmd-renewal-submit]");
+    var statusBox = root.querySelector("[data-mmd-renewal-status]");
+    var fileInput = root.querySelector("[data-mmd-renewal-file]");
+    var uploadLabel = root.querySelector("[data-mmd-renewal-upload-label]");
+    var consent = root.querySelector("[data-mmd-renewal-consent]");
+    var turnstileTokenInput = root.querySelector("[data-mmd-renewal-turnstile-token]");
+    var turnstileWidgetId = null;
+    var turnstileToken = "";
+
+    function tokenPart() {
+      var bytes = new Uint8Array(8);
+      if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(bytes);
+      else for (var i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+      return Array.prototype.map.call(bytes, function (byte) { return byte.toString(16).padStart(2, "0"); }).join("");
+    }
+    function renewalRef(prefix) { return prefix + "_" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "_" + tokenPart(); }
+    function setHidden(selector, value) { var node = root.querySelector(selector); if (node) node.value = value; }
+    function escapeHtml(value) { return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+    function setStatus(kind, title, text) { statusBox.className = "mmd-renewal-final-status is-visible is-" + kind; statusBox.innerHTML = "<strong>" + escapeHtml(title) + "</strong>" + escapeHtml(text); }
+    function clearStatus() { statusBox.className = "mmd-renewal-final-status"; statusBox.textContent = ""; }
+    function activeOption(groupSelector, hiddenSelector) {
+      var group = root.querySelector(groupSelector);
+      var hidden = root.querySelector(hiddenSelector);
+      if (!group || !hidden) return;
+      group.addEventListener("click", function (event) {
+        var option = event.target.closest("[data-renewal-value]");
+        if (!option || !group.contains(option)) return;
+        Array.prototype.forEach.call(group.querySelectorAll("[data-renewal-value]"), function (node) { node.classList.toggle("is-active", node === option); });
+        hidden.value = option.getAttribute("data-renewal-value") || "";
       });
-      if (proofInput && proofName) {
-        proofInput.addEventListener('change', () => {
-          const file = proofInput.files && proofInput.files[0];
-          proofName.textContent = file ? file.name : 'ยังไม่ได้เลือกไฟล์';
-        });
-      }
-      const resetTurnstile = () => {
-        if (turnstileInput) turnstileInput.value = '';
-        if (window.turnstile && turnstileWidgetId != null) {
-          try { window.turnstile.reset(turnstileWidgetId); } catch (_) {}
-        }
+    }
+    function readErrorCode(payload) {
+      if (!payload) return "";
+      if (typeof payload.error === "string") return payload.error;
+      if (payload.error && payload.error.code) return payload.error.code;
+      return payload.code || "";
+    }
+    function getErrorMessage(code) {
+      var map = {
+        validation_failed: "กรุณากรอกข้อมูลที่จำเป็นให้ครบครับ",
+        required_fields_missing: "กรุณากรอกข้อมูลที่จำเป็นให้ครบครับ",
+        missing_required_fields: "กรุณากรอกข้อมูลที่จำเป็นให้ครบครับ",
+        file_missing: "กรุณาแนบสลิป / หลักฐานก่อนส่งครับ",
+        proof_missing: "กรุณาแนบสลิป / หลักฐานก่อนส่งครับ",
+        turnstile_required: "กรุณายืนยัน Turnstile ก่อนส่งครับ",
+        turnstile_token_missing: "กรุณายืนยัน Turnstile ก่อนส่งครับ",
+        turnstile_failed: "Turnstile ไม่ผ่าน กรุณาลองใหม่อีกครั้งครับ",
+        turnstile_verification_failed: "Turnstile ไม่ผ่าน กรุณาลองใหม่อีกครั้งครับ",
+        turnstile_unconfigured: "ระบบป้องกันบอทยังไม่พร้อม กรุณาติดต่อทีมครับ",
+        duplicate_payment_ref: "รายการนี้เคยถูกส่งแล้วครับ",
+        duplicate: "รายการนี้เคยถูกส่งแล้วครับ"
       };
-      const mountTurnstile = () => {
-        if (!turnstileSiteKey || !form) return;
-        const box = document.getElementById('mmd-renewal-turnstile-box');
-        if (!box || !window.turnstile || typeof window.turnstile.render !== 'function') return;
-        if (turnstileWidgetId != null) return;
-        turnstileWidgetId = window.turnstile.render(box, {
-          sitekey: turnstileSiteKey,
-          callback(token) {
-            if (turnstileInput) turnstileInput.value = token || '';
-            if (errorBox) errorBox.textContent = '';
-          },
-          'expired-callback'() {
-            if (turnstileInput) turnstileInput.value = '';
-          },
-          'error-callback'() {
-            if (turnstileInput) turnstileInput.value = '';
-          },
-        });
-      };
-      if (turnstileSiteKey) {
-        const bootTurnstile = () => {
-          if (window.turnstile && typeof window.turnstile.render === 'function') return mountTurnstile();
-          window.setTimeout(bootTurnstile, 150);
-        };
-        bootTurnstile();
+      return map[code] || "ระบบส่งข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้งครับ";
+    }
+    function validateForm() {
+      var required = [["display_name", "กรุณากรอกชื่อ / ชื่อเล่นที่ใช้ในระบบครับ"], ["contact_id", "กรุณากรอกช่องทางติดต่อครับ"], ["amount_paid", "กรุณากรอกยอดที่ชำระจริงครับ"], ["paid_at", "กรุณาใส่วันและเวลาที่ชำระครับ"]];
+      for (var i = 0; i < required.length; i += 1) {
+        var field = form.elements[required[i][0]];
+        if (!field || !String(field.value || "").trim()) { setStatus("error", "ข้อมูลยังไม่ครบ", required[i][1]); if (field && field.focus) field.focus(); return false; }
       }
-      if (form && errorBox) {
-        form.addEventListener('submit', async (event) => {
-          const displayName = form.querySelector('[name=\"display_name\"]');
-          const contact = form.querySelector('[name=\"contact_id\"]');
-          const packageSelect = form.querySelector('[name=\"selected_package\"]');
-          const amountPaid = form.querySelector('[name=\"amount_paid\"]');
-          const paidAt = form.querySelector('[name=\"paid_at\"]');
-          const packageNote = form.querySelector('[name=\"package_note\"]');
-          const proof = form.querySelector('[name=\"proof\"]');
-          const turnstileToken = turnstileInput ? String(turnstileInput.value || '').trim() : '';
-          const missing = [];
-          if (!displayName || !displayName.value.trim()) missing.push('display name');
-          if (!contact || !contact.value.trim()) missing.push('contact');
-          if (!packageSelect || !packageSelect.value.trim()) missing.push('selected package');
-          if (!amountPaid || !amountPaid.value.trim()) missing.push('amount paid');
-          if (!paidAt || !paidAt.value.trim()) missing.push('transfer date/time');
-          if (!packageNote || !packageNote.value.trim()) missing.push('package note');
-          if (!proof || !proof.files || !proof.files.length) missing.push('payment proof');
-          if (!turnstileToken) missing.push('turnstile');
-          const activeTab = tabs.find((node) => node.classList.contains('is-active'));
-          const paymentMethod = activeTab ? activeTab.getAttribute('data-renewal-tab') : 'bank';
-          if (missing.length) {
-            event.preventDefault();
-            if (statusBox) statusBox.textContent = 'Validation required before upload.';
-            errorBox.textContent = 'กรอกข้อมูลให้ครบก่อนส่ง: ' + missing.join(', ');
-            return;
-          }
-          event.preventDefault();
-          errorBox.textContent = '';
-          if (statusBox) statusBox.textContent = 'Submitting proof for official review...';
-          if (submitButton) {
-            submitButton.disabled = true;
-            submitButton.textContent = 'Submitting...';
-          }
-          try {
-            const body = new FormData(form);
-            body.set('payment_method', paymentMethod === 'card' ? 'paypal_card' : 'bank_transfer');
-            body.set('transaction_ref', body.get('payment_ref') || '');
-            const response = await fetch('${SIGIL_PAY_RENEWAL_PROOF_PATH}', {
-              method: 'POST',
-              body,
-              credentials: 'same-origin',
-            });
-            const json = await response.json().catch(() => null);
-            if (!response.ok || !json || !json.ok) {
-              throw new Error((json && (json.error?.message || json.error || json.message)) || 'submit_failed');
-            }
-            if (statusBox) statusBox.textContent = 'Proof received. Pending official review.';
-            errorBox.textContent = '';
-            if (submitButton) submitButton.textContent = 'Proof received';
-            resetTurnstile();
-            const nextState = {
-              session_id: json.session_id || body.get('session_id') || bootstrap.session_id,
-              payment_ref: json.payment_ref || body.get('payment_ref') || bootstrap.payment_ref,
-            };
-            try { window.sessionStorage.setItem(storageKey, JSON.stringify(nextState)); } catch (_) {}
-          } catch (error) {
-            if (statusBox) statusBox.textContent = 'Submission failed. Still pending your retry.';
-            errorBox.textContent = String(error && error.message ? error.message : error);
-            resetTurnstile();
-            if (submitButton) {
-              submitButton.disabled = false;
-              submitButton.textContent = 'Send for official verification';
-            }
-          }
-        });
+      var file = fileInput && fileInput.files ? fileInput.files[0] : null;
+      if (!file) { setStatus("error", "ยังไม่ได้แนบสลิป", "กรุณาแนบสลิป / หลักฐานก่อนส่งครับ"); return false; }
+      if (file.size > CONFIG.maxFileBytes) { setStatus("error", "ไฟล์ใหญ่เกินไป", "กรุณาใช้ไฟล์ขนาดไม่เกิน 12MB ครับ"); return false; }
+      if (CONFIG.turnstileEnabled && !turnstileToken) { setStatus("error", "ยังไม่ได้ยืนยัน Turnstile", "กรุณายืนยัน Turnstile ก่อนส่งครับ"); return false; }
+      if (!consent || !consent.checked) { setStatus("error", "กรุณายืนยันความเข้าใจ", "ต้องยืนยันก่อนว่าการส่งสลิปยังไม่ใช่การยืนยันสำเร็จทันทีครับ"); return false; }
+      return true;
+    }
+    function resetTurnstile() {
+      turnstileToken = "";
+      if (turnstileTokenInput) turnstileTokenInput.value = "";
+      if (CONFIG.turnstileEnabled && window.turnstile && turnstileWidgetId !== null) { try { window.turnstile.reset(turnstileWidgetId); } catch (_) {} }
+    }
+    function renderTurnstile() {
+      if (!CONFIG.turnstileEnabled || !window.turnstile) return;
+      var container = root.querySelector("[data-mmd-renewal-turnstile-widget]");
+      if (!container || turnstileWidgetId !== null) return;
+      turnstileWidgetId = window.turnstile.render(container, {
+        sitekey: CONFIG.turnstileSiteKey,
+        callback: function (token) { turnstileToken = token; if (turnstileTokenInput) turnstileTokenInput.value = token; },
+        "expired-callback": function () { resetTurnstile(); },
+        "error-callback": function () { turnstileToken = ""; if (turnstileTokenInput) turnstileTokenInput.value = ""; }
+      });
+    }
+
+    setHidden("[data-mmd-renewal-session-id]", renewalRef("renewal_session"));
+    setHidden("[data-mmd-renewal-payment-ref]", renewalRef("renewal_pay"));
+    setHidden("[data-mmd-renewal-transaction-ref]", renewalRef("renewal_txn"));
+    activeOption("[data-mmd-renewal-packages]", "[data-mmd-renewal-selected-package]");
+    activeOption("[data-mmd-renewal-methods]", "[data-mmd-renewal-payment-method]");
+    if (fileInput) fileInput.addEventListener("change", function () {
+      var file = fileInput.files && fileInput.files[0];
+      if (!file) { uploadLabel.textContent = "อัปโหลดสลิป / receipt ขนาดไม่เกิน 12MB"; return; }
+      uploadLabel.textContent = file.name + " (" + Math.ceil(file.size / 1024) + " KB)";
+      if (file.size > CONFIG.maxFileBytes) setStatus("error", "ไฟล์ใหญ่เกินไป", "กรุณาใช้ไฟล์ขนาดไม่เกิน 12MB ครับ");
+      else clearStatus();
+    });
+    form.addEventListener("submit", async function (event) {
+      event.preventDefault();
+      clearStatus();
+      if (!validateForm()) return;
+      submit.disabled = true;
+      submit.textContent = "กำลังส่งข้อมูล...";
+      if (turnstileTokenInput) turnstileTokenInput.value = turnstileToken;
+      try {
+        var data = new FormData(form);
+        data.set("cf_turnstile_response", turnstileToken);
+        var response = await fetch(CONFIG.endpoint, { method: "POST", body: data, credentials: "same-origin" });
+        var payload = await response.json().catch(function () { return {}; });
+        if (payload && payload.duplicate) { setStatus("warning", "รายการนี้เคยถูกส่งแล้วครับ", "สถานะยังอยู่ระหว่างรอตรวจสอบยอดจริง ไม่จำเป็นต้องส่งซ้ำถ้าข้อมูลเดิมถูกต้อง"); resetTurnstile(); return; }
+        if (!response.ok || !payload || payload.ok === false) throw new Error(getErrorMessage(readErrorCode(payload)));
+        setStatus("success", "ทีมได้รับข้อมูลแล้ว รอตรวจสอบยอดจริงครับ", "ถ้าข้อมูลตรงกับยอดที่เข้าจริง ทีมจะอัปเดตสถานะสมาชิกและแจ้งกลับผ่านช่องทางที่คุณให้ไว้");
+        form.reset();
+        uploadLabel.textContent = "อัปโหลดสลิป / receipt ขนาดไม่เกิน 12MB";
+        setHidden("[data-mmd-renewal-session-id]", renewalRef("renewal_session"));
+        setHidden("[data-mmd-renewal-payment-ref]", renewalRef("renewal_pay"));
+        setHidden("[data-mmd-renewal-transaction-ref]", renewalRef("renewal_txn"));
+        setHidden("[data-mmd-renewal-selected-package]", "standard");
+        setHidden("[data-mmd-renewal-payment-method]", "promptpay_bank_transfer");
+        Array.prototype.forEach.call(root.querySelectorAll("[data-mmd-renewal-packages] [data-renewal-value]"), function (node, index) { node.classList.toggle("is-active", index === 0); });
+        Array.prototype.forEach.call(root.querySelectorAll("[data-mmd-renewal-methods] [data-renewal-value]"), function (node, index) { node.classList.toggle("is-active", index === 0); });
+        resetTurnstile();
+      } catch (error) {
+        setStatus("error", "ส่งข้อมูลไม่สำเร็จ", error && error.message ? error.message : "network/server error");
+        resetTurnstile();
+      } finally {
+        submit.disabled = false;
+        submit.textContent = "ส่งสลิปให้ทีมตรวจสอบ";
       }
-    })();
+    });
+    if (CONFIG.turnstileEnabled) {
+      var timer = setInterval(function () { if (window.turnstile) { clearInterval(timer); renderTurnstile(); } }, 200);
+    }
+  })();
   </script>
 </body>
 </html>`;
