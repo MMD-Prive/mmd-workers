@@ -108,6 +108,7 @@ const SIGIL_BANK_NAME = "KTB Bank / Krungthai";
 const SIGIL_BANK_ACCOUNT_NAME = "ธัชชะ ป. / Tatcha P.";
 const SIGIL_BANK_ACCOUNT_NUMBER = "1420335898";
 const SIGIL_PAYPAL_URL = "https://www.paypal.com/ncp/payment/M697T7AW2QZZJ";
+const SIGIL_RENEWAL_TURNSTILE_SITE_KEY = "0x4AAAAAACIE9VleQdOBRfBG";
 
 export default {
   async fetch(req, env, ctx) {
@@ -124,7 +125,7 @@ export default {
     }
 
     if (hostname === "sigil.mmdbkk.com" && (method === "GET" || method === "HEAD") && path === SIGIL_PAY_RENEWAL_PATH) {
-      return withCors(req, env, renderSigilPayRenewalPage(req));
+      return withCors(req, env, renderSigilPayRenewalPage(req, env));
     }
 
     if (hostname === "sigil.mmdbkk.com" && method === "POST" && path === SIGIL_PAY_RENEWAL_PROOF_PATH) {
@@ -953,8 +954,9 @@ function getAllowedOrigins(env) {
   return new Set(raw);
 }
 
-function renderSigilPayRenewalPage(req) {
+function renderSigilPayRenewalPage(req, env) {
   const isHead = req.method.toUpperCase() === "HEAD";
+  const turnstileSiteKey = str(env.TURNSTILE_SITE_KEY || SIGIL_RENEWAL_TURNSTILE_SITE_KEY);
   const html = `<!doctype html>
 <html lang="th">
 <head>
@@ -962,6 +964,7 @@ function renderSigilPayRenewalPage(req) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
   <title>Renew Your Access | MMD SĪGIL</title>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
   <style>
     .mmd-renewal-page, .mmd-renewal-page * { box-sizing: border-box; }
     .mmd-renewal-page {
@@ -1075,6 +1078,8 @@ function renderSigilPayRenewalPage(req) {
     }
     .mmd-renewal-error { min-height: 20px; color: var(--mmd-renewal-red); font-size: .95rem; font-weight: 700; }
     .mmd-renewal-safe { font-size: .96rem; }
+    .mmd-renewal-turnstile { min-height: 72px; display:grid; gap:8px; align-content:start; }
+    .mmd-renewal-turnstile-note { color: var(--mmd-renewal-dim); font-size: .9rem; }
     .mmd-renewal-footer { display:grid; grid-template-columns: 120px 1fr; gap: 18px; align-items:center; }
     .mmd-renewal-kenji { width: 120px; max-width: 100%; display:block; }
     @media (max-width: 980px) {
@@ -1086,7 +1091,7 @@ function renderSigilPayRenewalPage(req) {
   </style>
 </head>
 <body class="mmd-renewal-page">
-  <main class="mmd-renewal-shell mmd-renewal-page" data-build="${SIGIL_PAY_RENEWAL_BUILD}">
+  <main class="mmd-renewal-shell mmd-renewal-page" data-build="${SIGIL_PAY_RENEWAL_BUILD}" data-turnstile-sitekey="${turnstileSiteKey || SIGIL_RENEWAL_TURNSTILE_SITE_KEY}">
     <section class="mmd-renewal-hero">
       <div class="mmd-renewal-hero-copy">
         <img class="mmd-renewal-logo" src="${SIGIL_RENEWAL_LOGO_IMAGE}" alt="SIGIL logo">
@@ -1214,9 +1219,14 @@ function renderSigilPayRenewalPage(req) {
             <span>Official verification note</span>
             <textarea class="mmd-renewal-textarea" name="verification_note" placeholder="เช่น เวลาที่โอน, ชื่อบัญชีที่ใช้โอน, ข้อมูลอ้างอิงเพิ่มเติม"></textarea>
           </label>
+          <div class="mmd-renewal-turnstile">
+            <div id="mmd-renewal-turnstile-box"></div>
+            <div class="mmd-renewal-turnstile-note">กรุณายืนยัน Turnstile ก่อนส่งหลักฐานเพื่อให้ทีมรับเคสตรวจสอบได้อย่างปลอดภัย</div>
+          </div>
           <input type="hidden" name="payment_type" value="renewal">
           <input type="hidden" name="session_id" value="">
           <input type="hidden" name="payment_ref" value="">
+          <input type="hidden" name="cf_turnstile_response" value="">
           <div class="mmd-renewal-safe">Renewal จะ complete ต่อเมื่อทีมตรวจสอบยอดเงินจริง และ dashboard / fund verification ตรงกันแล้วเท่านั้น</div>
           <div class="mmd-renewal-safe" data-renewal-status>Ready for official verification.</div>
           <div class="mmd-renewal-error" data-renewal-error></div>
@@ -1245,6 +1255,10 @@ function renderSigilPayRenewalPage(req) {
       const errorBox = document.querySelector('[data-renewal-error]');
       const statusBox = document.querySelector('[data-renewal-status]');
       const submitButton = form ? form.querySelector('.mmd-renewal-submit') : null;
+      const root = document.querySelector('.mmd-renewal-page[data-turnstile-sitekey]');
+      const turnstileInput = form ? form.querySelector('[name="cf_turnstile_response"]') : null;
+      const turnstileSiteKey = root ? String(root.dataset.turnstileSitekey || '').trim() : '';
+      let turnstileWidgetId = null;
       const storageKey = 'mmd_sigil_renewal_proof_session_v1';
       const bootstrap = (() => {
         try {
@@ -1277,6 +1291,38 @@ function renderSigilPayRenewalPage(req) {
           proofName.textContent = file ? file.name : 'ยังไม่ได้เลือกไฟล์';
         });
       }
+      const resetTurnstile = () => {
+        if (turnstileInput) turnstileInput.value = '';
+        if (window.turnstile && turnstileWidgetId != null) {
+          try { window.turnstile.reset(turnstileWidgetId); } catch (_) {}
+        }
+      };
+      const mountTurnstile = () => {
+        if (!turnstileSiteKey || !form) return;
+        const box = document.getElementById('mmd-renewal-turnstile-box');
+        if (!box || !window.turnstile || typeof window.turnstile.render !== 'function') return;
+        if (turnstileWidgetId != null) return;
+        turnstileWidgetId = window.turnstile.render(box, {
+          sitekey: turnstileSiteKey,
+          callback(token) {
+            if (turnstileInput) turnstileInput.value = token || '';
+            if (errorBox) errorBox.textContent = '';
+          },
+          'expired-callback'() {
+            if (turnstileInput) turnstileInput.value = '';
+          },
+          'error-callback'() {
+            if (turnstileInput) turnstileInput.value = '';
+          },
+        });
+      };
+      if (turnstileSiteKey) {
+        const bootTurnstile = () => {
+          if (window.turnstile && typeof window.turnstile.render === 'function') return mountTurnstile();
+          window.setTimeout(bootTurnstile, 150);
+        };
+        bootTurnstile();
+      }
       if (form && errorBox) {
         form.addEventListener('submit', async (event) => {
           const displayName = form.querySelector('[name=\"display_name\"]');
@@ -1286,6 +1332,7 @@ function renderSigilPayRenewalPage(req) {
           const paidAt = form.querySelector('[name=\"paid_at\"]');
           const packageNote = form.querySelector('[name=\"package_note\"]');
           const proof = form.querySelector('[name=\"proof\"]');
+          const turnstileToken = turnstileInput ? String(turnstileInput.value || '').trim() : '';
           const missing = [];
           if (!displayName || !displayName.value.trim()) missing.push('display name');
           if (!contact || !contact.value.trim()) missing.push('contact');
@@ -1294,6 +1341,7 @@ function renderSigilPayRenewalPage(req) {
           if (!paidAt || !paidAt.value.trim()) missing.push('transfer date/time');
           if (!packageNote || !packageNote.value.trim()) missing.push('package note');
           if (!proof || !proof.files || !proof.files.length) missing.push('payment proof');
+          if (!turnstileToken) missing.push('turnstile');
           const activeTab = tabs.find((node) => node.classList.contains('is-active'));
           const paymentMethod = activeTab ? activeTab.getAttribute('data-renewal-tab') : 'bank';
           if (missing.length) {
@@ -1325,6 +1373,7 @@ function renderSigilPayRenewalPage(req) {
             if (statusBox) statusBox.textContent = 'Proof received. Pending official review.';
             errorBox.textContent = '';
             if (submitButton) submitButton.textContent = 'Proof received';
+            resetTurnstile();
             const nextState = {
               session_id: json.session_id || body.get('session_id') || bootstrap.session_id,
               payment_ref: json.payment_ref || body.get('payment_ref') || bootstrap.payment_ref,
@@ -1333,6 +1382,7 @@ function renderSigilPayRenewalPage(req) {
           } catch (error) {
             if (statusBox) statusBox.textContent = 'Submission failed. Still pending your retry.';
             errorBox.textContent = String(error && error.message ? error.message : error);
+            resetTurnstile();
             if (submitButton) {
               submitButton.disabled = false;
               submitButton.textContent = 'Send for official verification';
@@ -1380,6 +1430,45 @@ async function handlePublicRenewalProofSubmit(req, env) {
         message: `Missing or invalid required fields: ${missing.join(", ")}`,
       },
     }, 400);
+    response.headers.set("cache-control", "no-store");
+    return response;
+  }
+
+  const turnstileSecret = str(env.TURNSTILE_SECRET || env.TURNSTILE_SECRET_KEY);
+  if (!turnstileSecret) {
+    const response = json({
+      ok: false,
+      error: {
+        code: "turnstile_unconfigured",
+        message: "Turnstile verification is not configured.",
+      },
+    }, 503);
+    response.headers.set("cache-control", "no-store");
+    return response;
+  }
+
+  if (!payload.cf_turnstile_response) {
+    const response = json({
+      ok: false,
+      error: {
+        code: "turnstile_required",
+        message: "Turnstile verification is required.",
+      },
+    }, 400);
+    response.headers.set("cache-control", "no-store");
+    return response;
+  }
+
+  const turnstile = await verifyRenewalTurnstile(payload.cf_turnstile_response, getClientIp(req), turnstileSecret);
+  if (!turnstile.ok) {
+    const response = json({
+      ok: false,
+      error: {
+        code: "turnstile_failed",
+        message: "Turnstile verification failed.",
+        detail: turnstile.detail || "",
+      },
+    }, 403);
     response.headers.set("cache-control", "no-store");
     return response;
   }
@@ -1509,6 +1598,7 @@ async function readPublicRenewalProofPayload(req) {
       package_note: str(form.get("package_note")),
       additional_note: str(form.get("verification_note") || form.get("note")),
       payment_type: str(form.get("payment_type") || "renewal").toLowerCase(),
+      cf_turnstile_response: str(form.get("cf_turnstile_response") || form.get("turnstile_token") || form.get("cf-turnstile-response")),
       payment_ref: paymentRef,
       transaction_ref: str(form.get("transaction_ref")) || paymentRef,
       session_id: sessionId,
@@ -1530,11 +1620,39 @@ async function readPublicRenewalProofPayload(req) {
     package_note: str(body.package_note),
     additional_note: str(body.verification_note || body.note),
     payment_type: str(body.payment_type || "renewal").toLowerCase(),
+    cf_turnstile_response: str(body.cf_turnstile_response || body.turnstile_token || body["cf-turnstile-response"]),
     payment_ref: paymentRef,
     transaction_ref: str(body.transaction_ref) || paymentRef,
     session_id: sessionId,
     proof_file: body.evidence_ref ? { name: str(body.evidence_ref), size: 1, type: "reference" } : null,
   };
+}
+
+async function verifyRenewalTurnstile(token, ip, secret) {
+  try {
+    const form = new FormData();
+    form.append("secret", secret);
+    form.append("response", str(token));
+    if (ip) form.append("remoteip", ip);
+    const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      body: form,
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) return { ok: false, detail: "turnstile_verify_failed" };
+    if (!data.success) return { ok: false, detail: Array.isArray(data["error-codes"]) ? data["error-codes"].join(",") : String(data["error-codes"] || "not_success") };
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, detail: String(error?.message || error) };
+  }
+}
+
+function getClientIp(req) {
+  return str(
+    req.headers.get("CF-Connecting-IP") ||
+    req.headers.get("X-Forwarded-For")?.split(",")[0] ||
+    ""
+  );
 }
 
 async function notifyRenewalProofAdmin(env, payload) {
