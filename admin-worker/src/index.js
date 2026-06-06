@@ -100,6 +100,10 @@ const MODEL_SESSION_STATUS_ALIASES = {
 const SIGIL_PAY_RENEWAL_PATH = "/pay/renewal";
 const SIGIL_PAY_RENEWAL_LEGACY_PATH = "/sigil/pay/renewal";
 const SIGIL_PAY_RENEWAL_PROOF_PATH = "/api/pay/renewal/proof";
+const PAYMENT_REVIEW_CONSOLE_PATH = "/payment/review-console";
+const PAYMENT_REVIEW_CONSOLE_LEGACY_PATH = "/pay/renewal/review";
+const PAYMENT_RENEWAL_REVIEW_LIST_PATH = "/api/pay/renewal/review/list";
+const PAYMENT_RENEWAL_REVIEW_DECISION_PATH = "/api/pay/renewal/review/decision";
 const SIGIL_PAY_RENEWAL_BUILD = "SIGIL_PAY_RENEWAL_V1_20260607";
 const SIGIL_RENEWAL_KENJI_IMAGE = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a22f53633aaf32d040022d4_Line-Kenji.webp";
 const SIGIL_RENEWAL_LOGO_IMAGE = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0f2cbc7e26b6735aee4cb2_SIGIL%20LOGO%20Transp.webp";
@@ -131,6 +135,24 @@ export default {
 
     if (method === "POST" && path === SIGIL_PAY_RENEWAL_PROOF_PATH) {
       return withCors(req, env, await handlePublicRenewalProofSubmit(req, env));
+    }
+
+    if ((method === "GET" || method === "HEAD") && path === PAYMENT_REVIEW_CONSOLE_LEGACY_PATH) {
+      const target = new URL(req.url);
+      target.pathname = PAYMENT_REVIEW_CONSOLE_PATH;
+      return withCors(req, env, Response.redirect(target.toString(), 302));
+    }
+
+    if ((method === "GET" || method === "HEAD") && path === PAYMENT_REVIEW_CONSOLE_PATH) {
+      return withCors(req, env, renderPaymentReviewConsolePage(req, method));
+    }
+
+    if (method === "GET" && path === PAYMENT_RENEWAL_REVIEW_LIST_PATH) {
+      return withCors(req, env, await handleRenewalReviewList(req, env));
+    }
+
+    if (method === "POST" && path === PAYMENT_RENEWAL_REVIEW_DECISION_PATH) {
+      return withCors(req, env, await handleRenewalReviewDecision(req, env));
     }
 
     // ---- Public ping ----
@@ -1287,6 +1309,851 @@ function renderSigilPayRenewalPage(req, env) {
       "cache-control": "no-store",
     },
   });
+}
+
+function renderPaymentReviewConsolePage(req, method = "GET") {
+  const isHead = method === "HEAD";
+  const html = `<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Payment Review Console</title>
+  <style>
+    .mmd-review-page,
+    .mmd-review-page * {
+      box-sizing: border-box;
+      letter-spacing: 0;
+    }
+    .mmd-review-page {
+      min-height: 100vh;
+      margin: 0;
+      color: #f8efe1;
+      background:
+        radial-gradient(circle at 18% 8%, rgba(214, 170, 80, 0.22), transparent 28%),
+        linear-gradient(135deg, #050505 0%, #15100b 54%, #060504 100%);
+      font-family: Inter, "Noto Sans Thai", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .mmd-review-page a,
+    .mmd-review-page button,
+    .mmd-review-page input,
+    .mmd-review-page select,
+    .mmd-review-page textarea {
+      font: inherit;
+    }
+    .mmd-review-shell {
+      width: min(1180px, calc(100% - 28px));
+      margin: 0 auto;
+      padding: 28px 0 42px;
+    }
+    .mmd-review-hero {
+      position: relative;
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+      gap: 24px;
+      align-items: end;
+      min-height: 420px;
+      padding: clamp(26px, 5vw, 54px);
+      border: 1px solid rgba(232, 190, 105, 0.28);
+      border-radius: 18px;
+      background:
+        linear-gradient(90deg, rgba(4, 4, 4, 0.92), rgba(10, 8, 5, 0.78)),
+        rgba(12, 10, 7, 0.82);
+      box-shadow: 0 30px 90px rgba(0, 0, 0, 0.44);
+    }
+    .mmd-review-hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(2, 2, 2, 0.92), rgba(2, 2, 2, 0.58) 50%, rgba(2, 2, 2, 0.88)),
+        url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0f2cbc7e26b6735aee4cb2_SIGIL%20LOGO%20Transp.webp") right 8% center / min(34vw, 280px) auto no-repeat;
+      opacity: 0.86;
+      pointer-events: none;
+    }
+    .mmd-review-hero > * {
+      position: relative;
+      z-index: 1;
+    }
+    .mmd-review-kicker,
+    .mmd-review-label {
+      margin: 0;
+      color: #d7ae62;
+      font-size: 0.78rem;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .mmd-review-title {
+      margin: 8px 0 0;
+      max-width: 760px;
+      color: #fff9ec;
+      font-size: clamp(2.7rem, 8vw, 6rem);
+      line-height: 0.92;
+      font-weight: 900;
+    }
+    .mmd-review-thai-title {
+      margin: 16px 0 0;
+      color: #f2d392;
+      font-size: clamp(1.25rem, 3vw, 2rem);
+      line-height: 1.2;
+      font-weight: 900;
+    }
+    .mmd-review-copy {
+      max-width: 680px;
+      margin: 14px 0 0;
+      color: rgba(248, 239, 225, 0.82);
+      font-size: 1rem;
+      line-height: 1.8;
+      white-space: pre-line;
+    }
+    .mmd-review-warning {
+      margin-top: 18px;
+      max-width: 720px;
+      padding: 16px;
+      border: 1px solid rgba(255, 194, 113, 0.28);
+      border-radius: 10px;
+      background: rgba(255, 181, 71, 0.08);
+    }
+    .mmd-review-warning h2 {
+      margin: 0 0 8px;
+      color: #ffd99b;
+      font-size: 1rem;
+    }
+    .mmd-review-warning p {
+      margin: 0;
+      color: rgba(255, 242, 219, 0.9);
+      line-height: 1.75;
+      white-space: pre-line;
+    }
+    .mmd-review-status-grid,
+    .mmd-review-kpi-grid {
+      display: grid;
+      gap: 12px;
+    }
+    .mmd-review-status-grid {
+      align-content: end;
+    }
+    .mmd-review-status-item,
+    .mmd-review-kpi-card,
+    .mmd-review-queue,
+    .mmd-review-policy-panel {
+      border: 1px solid rgba(232, 190, 105, 0.18);
+      border-radius: 10px;
+      background: rgba(16, 13, 9, 0.76);
+    }
+    .mmd-review-status-item,
+    .mmd-review-kpi-card {
+      padding: 16px;
+    }
+    .mmd-review-value {
+      margin: 5px 0 0;
+      color: #fff7e7;
+      font-size: 1rem;
+      font-weight: 900;
+    }
+    .mmd-review-toolbar {
+      display: grid;
+      grid-template-columns: minmax(240px, 1fr) minmax(160px, 220px) minmax(160px, 220px) auto auto;
+      gap: 10px;
+      align-items: end;
+      margin-top: 18px;
+    }
+    .mmd-review-field {
+      display: grid;
+      gap: 7px;
+    }
+    .mmd-review-field span {
+      color: rgba(248, 239, 225, 0.72);
+      font-size: 0.8rem;
+      font-weight: 800;
+    }
+    .mmd-review-input,
+    .mmd-review-select,
+    .mmd-review-textarea {
+      width: 100%;
+      min-height: 44px;
+      border: 1px solid rgba(232, 190, 105, 0.24);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: #fff8ea;
+      background: rgba(0, 0, 0, 0.34);
+      outline: none;
+    }
+    .mmd-review-textarea {
+      min-height: 94px;
+      resize: vertical;
+    }
+    .mmd-review-button {
+      min-height: 44px;
+      border: 1px solid rgba(232, 190, 105, 0.34);
+      border-radius: 8px;
+      padding: 0 14px;
+      color: #0d0a06;
+      background: linear-gradient(180deg, #f3d58d, #b98733);
+      font-weight: 900;
+      cursor: pointer;
+    }
+    .mmd-review-button[disabled] {
+      opacity: 0.62;
+      cursor: wait;
+    }
+    .mmd-review-button-secondary {
+      color: #f8efe1;
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .mmd-review-kpi-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-top: 14px;
+    }
+    .mmd-review-kpi-number {
+      margin: 8px 0 0;
+      color: #fff9ec;
+      font-size: 1.8rem;
+      font-weight: 900;
+      line-height: 1;
+    }
+    .mmd-review-main-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+      gap: 14px;
+      margin-top: 14px;
+    }
+    .mmd-review-queue,
+    .mmd-review-policy-panel {
+      padding: 18px;
+    }
+    .mmd-review-section-head {
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .mmd-review-section-head h2,
+    .mmd-review-policy-panel h2 {
+      margin: 0;
+      color: #fff6df;
+      font-size: 1.05rem;
+    }
+    .mmd-review-empty {
+      margin: 0;
+      color: rgba(248, 239, 225, 0.7);
+      line-height: 1.7;
+    }
+    .mmd-review-table-wrap {
+      overflow-x: auto;
+    }
+    .mmd-review-table {
+      width: 100%;
+      min-width: 860px;
+      border-collapse: collapse;
+    }
+    .mmd-review-table th,
+    .mmd-review-table td {
+      border-top: 1px solid rgba(232, 190, 105, 0.12);
+      padding: 12px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .mmd-review-table th {
+      color: #d7ae62;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+    }
+    .mmd-review-table td {
+      color: rgba(248, 239, 225, 0.86);
+      font-size: 0.92rem;
+    }
+    .mmd-review-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      border: 1px solid rgba(232, 190, 105, 0.18);
+      border-radius: 999px;
+      padding: 0 9px;
+      color: #f3d58d;
+      background: rgba(232, 190, 105, 0.08);
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+    .mmd-review-proof-link {
+      color: #f3d58d;
+      font-weight: 900;
+      text-decoration: none;
+    }
+    .mmd-review-policy-panel h3 {
+      margin: 10px 0;
+      color: #f3d58d;
+      font-size: 1rem;
+    }
+    .mmd-review-policy-panel ol {
+      margin: 0;
+      padding-left: 20px;
+      color: rgba(248, 239, 225, 0.82);
+      line-height: 1.75;
+    }
+    .mmd-review-modal[hidden] {
+      display: none;
+    }
+    .mmd-review-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+    }
+    .mmd-review-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.72);
+      backdrop-filter: blur(8px);
+    }
+    .mmd-review-dialog {
+      position: relative;
+      z-index: 1;
+      width: min(680px, 100%);
+      max-height: calc(100vh - 36px);
+      overflow: auto;
+      border: 1px solid rgba(232, 190, 105, 0.26);
+      border-radius: 14px;
+      background: #0d0b08;
+      box-shadow: 0 30px 90px rgba(0, 0, 0, 0.62);
+    }
+    .mmd-review-dialog-inner {
+      padding: 22px;
+    }
+    .mmd-review-modal-close {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 36px;
+      height: 36px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #fff7e7;
+      background: rgba(255, 255, 255, 0.06);
+      cursor: pointer;
+    }
+    .mmd-review-modal-title {
+      margin: 5px 0 0;
+      color: #fff7e7;
+      font-size: 1.8rem;
+    }
+    .mmd-review-form-grid {
+      display: grid;
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .mmd-review-confirm {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      color: rgba(248, 239, 225, 0.84);
+      line-height: 1.55;
+    }
+    .mmd-review-confirm input {
+      width: 18px;
+      height: 18px;
+      margin-top: 2px;
+      accent-color: #d6aa50;
+    }
+    .mmd-review-modal-note,
+    .mmd-review-status-line {
+      margin: 10px 0 0;
+      color: rgba(248, 239, 225, 0.72);
+      line-height: 1.65;
+    }
+    @media (max-width: 900px) {
+      .mmd-review-hero,
+      .mmd-review-main-grid,
+      .mmd-review-toolbar,
+      .mmd-review-kpi-grid {
+        grid-template-columns: 1fr;
+      }
+      .mmd-review-shell {
+        width: min(100% - 18px, 1180px);
+        padding-top: 10px;
+      }
+    }
+  </style>
+</head>
+<body class="mmd-review-page">
+  <main class="mmd-review-shell">
+    <section class="mmd-review-hero" aria-labelledby="mmd-review-title">
+      <div>
+        <p class="mmd-review-kicker">Payment Review Console</p>
+        <h1 id="mmd-review-title" class="mmd-review-title">Payment Review Console</h1>
+        <p class="mmd-review-thai-title">ตรวจรายการต่ออายุสมาชิก</p>
+        <p class="mmd-review-copy">หน้านี้ใช้สำหรับตรวจหลักฐานการชำระเงินจากหน้า “ชำระเงิน”
+
+ก่อนกดยืนยัน ต้องตรวจยอดเงินจริงจากบัญชีธนาคารหรือบอร์ดชำระเงินทุกครั้ง</p>
+        <div class="mmd-review-warning" role="note" aria-label="คำเตือนสำคัญ">
+          <h2>คำเตือนสำคัญ</h2>
+          <p>สลิปเป็นเพียงหลักฐานประกอบเท่านั้น
+ห้ามกดยืนยันจากรูปสลิปอย่างเดียว หากยังไม่พบยอดเงินจริงในช่องทางทางการ</p>
+        </div>
+      </div>
+      <div class="mmd-review-status-grid" aria-label="Review status">
+        <div class="mmd-review-status-item"><p class="mmd-review-label">Review Mode</p><p class="mmd-review-value">MMD Payment ตรวจสอบ</p></div>
+        <div class="mmd-review-status-item"><p class="mmd-review-label">Payment Type</p><p class="mmd-review-value">ต่ออายุสมาชิก</p></div>
+        <div class="mmd-review-status-item"><p class="mmd-review-label">Access Action</p><p class="mmd-review-value">รอระบบยืนยันหลังตรวจเสร็จ</p></div>
+      </div>
+    </section>
+
+    <section class="mmd-review-toolbar" aria-label="Review filters">
+      <label class="mmd-review-field"><span>ค้นหาชื่อสมาชิก เบอร์ติดต่อ หรือเลขอ้างอิง</span><input class="mmd-review-input" data-review-search type="search" autocomplete="off"></label>
+      <label class="mmd-review-field"><span>สถานะรายการ</span><select class="mmd-review-select" data-review-status><option value="">ทั้งหมด</option><option value="pending">รอตรวจสอบ</option><option value="approved">ยืนยันแล้ว</option><option value="rejected">ไม่ผ่าน</option><option value="needs_more_info">ขอข้อมูลเพิ่ม</option><option value="duplicate">รายการซ้ำ</option></select></label>
+      <label class="mmd-review-field"><span>ช่องทางชำระเงิน</span><select class="mmd-review-select" data-review-method><option value="">ทั้งหมด</option><option value="promptpay_bank_transfer">PromptPay / Bank</option><option value="bank_transfer">Bank Transfer</option><option value="paypal_card">PayPal / Card</option></select></label>
+      <button class="mmd-review-button" type="button" data-review-refresh>โหลดรายการใหม่</button>
+      <button class="mmd-review-button mmd-review-button-secondary" type="button" data-review-policy>วิธีตรวจรายการ</button>
+    </section>
+
+    <section class="mmd-review-kpi-grid" aria-label="Review summary">
+      <div class="mmd-review-kpi-card"><p class="mmd-review-label">รอตรวจสอบ</p><p class="mmd-review-kpi-number" data-kpi-pending>0</p></div>
+      <div class="mmd-review-kpi-card"><p class="mmd-review-label">ยืนยันแล้ววันนี้</p><p class="mmd-review-kpi-number" data-kpi-approved>0</p></div>
+      <div class="mmd-review-kpi-card"><p class="mmd-review-label">ไม่ผ่านการตรวจสอบ</p><p class="mmd-review-kpi-number" data-kpi-rejected>0</p></div>
+      <div class="mmd-review-kpi-card"><p class="mmd-review-label">ยอดรวมของรายการที่แสดง</p><p class="mmd-review-kpi-number" data-kpi-total>฿0</p></div>
+    </section>
+
+    <section class="mmd-review-main-grid">
+      <div class="mmd-review-queue">
+        <div class="mmd-review-section-head">
+          <h2>รายการต่ออายุที่รอตรวจสอบ</h2>
+          <span class="mmd-review-pill" data-review-count>0 รายการ</span>
+        </div>
+        <p class="mmd-review-empty" data-review-empty>กำลังโหลดรายการ…</p>
+        <div class="mmd-review-table-wrap" data-review-table-wrap hidden>
+          <table class="mmd-review-table">
+            <thead>
+              <tr>
+                <th>สมาชิก</th>
+                <th>ยอดชำระ</th>
+                <th>ช่องทาง</th>
+                <th>แพ็กเกจ</th>
+                <th>เลขอ้างอิง</th>
+                <th>สถานะ</th>
+                <th>หลักฐาน</th>
+                <th>จัดการ</th>
+              </tr>
+            </thead>
+            <tbody data-review-rows></tbody>
+          </table>
+        </div>
+      </div>
+
+      <aside class="mmd-review-policy-panel" data-policy-panel>
+        <p class="mmd-review-label">วิธีตรวจรายการ</p>
+        <h2>สลิปยังไม่ใช่การยืนยัน</h2>
+        <h3>วิธีตรวจรายการ</h3>
+        <ol>
+          <li>ตรวจยอดเงินจริงจากบัญชีธนาคารหรือบอร์ดชำระเงินก่อนเสมอ</li>
+          <li>ตรวจว่าเลขอ้างอิงไม่ใช่รายการที่เคยส่งเข้ามาแล้ว</li>
+          <li>ถ้ายอดไม่ตรงหรือหลักฐานไม่ชัด ให้เลือก “ไม่ผ่าน” หรือ “ขอข้อมูลเพิ่ม”</li>
+          <li>ใส่หมายเหตุสั้น ๆ ทุกครั้ง เพื่อให้ MMD รู้ว่าตรวจจากอะไร</li>
+          <li>เมื่อบันทึกผลแล้ว ระบบจะจัดการขั้นตอนต่อไปตามสถานะที่เลือก</li>
+        </ol>
+      </aside>
+    </section>
+  </main>
+
+  <section class="mmd-review-modal" data-review-modal hidden>
+    <div class="mmd-review-modal-backdrop" data-review-close></div>
+    <div class="mmd-review-dialog" role="dialog" aria-modal="true" aria-labelledby="mmd-review-modal-title">
+      <button class="mmd-review-modal-close" type="button" data-review-close aria-label="Close">×</button>
+      <div class="mmd-review-dialog-inner">
+        <p class="mmd-review-label">ผลการตรวจสอบ</p>
+        <h2 id="mmd-review-modal-title" class="mmd-review-modal-title">ตรวจหลักฐานการชำระเงิน</h2>
+        <p class="mmd-review-status-line" data-review-modal-summary></p>
+        <form class="mmd-review-form-grid" data-review-form>
+          <label class="mmd-review-field"><span>เลือกผลการตรวจ</span><select class="mmd-review-select" name="decision" required><option value="">เลือกผลการตรวจสอบ</option><option value="approved">ยืนยันยอดนี้</option><option value="rejected">ไม่ผ่านการตรวจสอบ</option><option value="needs_more_info">ขอข้อมูลเพิ่มเติม</option><option value="duplicate">รายการซ้ำ</option></select></label>
+          <label class="mmd-review-field"><span>ยอดเงินจริงที่ตรวจพบ</span><input class="mmd-review-input" name="verified_amount" type="number" min="0" step="1" inputmode="decimal"></label>
+          <label class="mmd-review-field"><span>เลขอ้างอิงจากธนาคารหรือบอร์ดชำระเงิน</span><input class="mmd-review-input" name="official_ref" type="text" autocomplete="off"></label>
+          <label class="mmd-review-field"><span>หมายเหตุการตรวจสอบ</span><textarea class="mmd-review-textarea" name="audit_note" placeholder="เช่น ยอดตรงแล้ว / ยอดไม่ตรง / สลิปไม่ชัด / ขอหลักฐานใหม่ / ติดต่อสมาชิกแล้ว" required></textarea></label>
+          <label class="mmd-review-confirm"><input type="checkbox" name="official_verification_confirmed" required><span>ตรวจยอดเงินจริงจากช่องทางทางการแล้ว</span></label>
+          <button class="mmd-review-button" type="submit">บันทึกผลการตรวจสอบ</button>
+          <p class="mmd-review-modal-note">หลังบันทึกผล ระบบจะนำข้อมูลไปจัดการสถานะสมาชิกตามขั้นตอนต่อไป</p>
+          <p class="mmd-review-status-line" data-review-form-status></p>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    (() => {
+      const state = { records: [], filtered: [], current: null };
+      const els = {
+        search: document.querySelector("[data-review-search]"),
+        status: document.querySelector("[data-review-status]"),
+        method: document.querySelector("[data-review-method]"),
+        refresh: document.querySelector("[data-review-refresh]"),
+        rows: document.querySelector("[data-review-rows]"),
+        empty: document.querySelector("[data-review-empty]"),
+        tableWrap: document.querySelector("[data-review-table-wrap]"),
+        count: document.querySelector("[data-review-count]"),
+        modal: document.querySelector("[data-review-modal]"),
+        summary: document.querySelector("[data-review-modal-summary]"),
+        form: document.querySelector("[data-review-form]"),
+        formStatus: document.querySelector("[data-review-form-status]"),
+        kPending: document.querySelector("[data-kpi-pending]"),
+        kApproved: document.querySelector("[data-kpi-approved]"),
+        kRejected: document.querySelector("[data-kpi-rejected]"),
+        kTotal: document.querySelector("[data-kpi-total]")
+      };
+      const params = new URLSearchParams(window.location.search);
+      const accessT = params.get("t") || "";
+      const statusLabels = {
+        pending: "รอ MMD Payment ตรวจสอบ",
+        pending_official_review: "รอ MMD Payment ตรวจสอบ",
+        approved: "ยืนยันแล้ว",
+        rejected: "ไม่ผ่าน",
+        needs_more_info: "ขอข้อมูลเพิ่ม",
+        duplicate: "รายการซ้ำ"
+      };
+      function escapeText(value) {
+        return String(value == null ? "" : value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
+      }
+      function money(value) {
+        return new Intl.NumberFormat("th-TH", { style: "currency", currency: "THB", maximumFractionDigits: 0 }).format(Number(value || 0));
+      }
+      function displayStatus(value) {
+        return statusLabels[value] || statusLabels.pending;
+      }
+      function matchesFilters(record) {
+        const q = els.search.value.trim().toLowerCase();
+        const status = els.status.value;
+        const method = els.method.value;
+        const haystack = [record.member_name, record.contact, record.payment_ref, record.transaction_ref, record.session_id].join(" ").toLowerCase();
+        if (q && !haystack.includes(q)) return false;
+        if (status && record.status !== status && !(status === "pending" && record.status === "pending_official_review")) return false;
+        if (method && record.payment_method !== method) return false;
+        return true;
+      }
+      function applyFilters() {
+        state.filtered = state.records.filter(matchesFilters);
+        renderRows();
+        renderKpis();
+      }
+      function renderKpis() {
+        const pending = state.filtered.filter((r) => r.status === "pending" || r.status === "pending_official_review").length;
+        const approved = state.filtered.filter((r) => r.status === "approved" && String(r.reviewed_at || "").slice(0, 10) === new Date().toISOString().slice(0, 10)).length;
+        const rejected = state.filtered.filter((r) => r.status === "rejected").length;
+        const total = state.filtered.reduce((sum, r) => sum + Number(r.amount_thb || 0), 0);
+        els.kPending.textContent = String(pending);
+        els.kApproved.textContent = String(approved);
+        els.kRejected.textContent = String(rejected);
+        els.kTotal.textContent = money(total);
+        els.count.textContent = state.filtered.length + " รายการ";
+      }
+      function renderRows() {
+        if (!state.filtered.length) {
+          els.empty.textContent = "ไม่พบรายการ";
+          els.empty.hidden = false;
+          els.tableWrap.hidden = true;
+          els.rows.innerHTML = "";
+          return;
+        }
+        els.empty.hidden = true;
+        els.tableWrap.hidden = false;
+        els.rows.innerHTML = state.filtered.map((record, index) => {
+          const proof = record.evidence_url
+            ? '<a class="mmd-review-proof-link" href="' + escapeText(record.evidence_url) + '" target="_blank" rel="noopener">เปิดหลักฐาน</a>'
+            : '<span class="mmd-review-pill">มีหลักฐานในระบบ</span>';
+          return '<tr>'
+            + '<td><strong>' + escapeText(record.member_name || "Member") + '</strong><br><span>' + escapeText(record.contact || "") + '</span></td>'
+            + '<td>' + money(record.amount_thb) + '</td>'
+            + '<td>' + escapeText(record.payment_method || "-") + '</td>'
+            + '<td>' + escapeText(record.package_code || "-") + '</td>'
+            + '<td>' + escapeText(record.payment_ref || record.transaction_ref || "-") + '</td>'
+            + '<td><span class="mmd-review-pill">' + escapeText(displayStatus(record.status)) + '</span></td>'
+            + '<td>' + proof + '</td>'
+            + '<td><button class="mmd-review-button mmd-review-button-secondary" type="button" data-open-review="' + index + '">ตรวจรายการ</button></td>'
+            + '</tr>';
+        }).join("");
+      }
+      async function loadRecords() {
+        els.refresh.disabled = true;
+        els.refresh.textContent = "กำลังโหลดรายการ…";
+        els.empty.textContent = "กำลังโหลดรายการ…";
+        els.empty.hidden = false;
+        els.tableWrap.hidden = true;
+        try {
+          const url = new URL("/api/pay/renewal/review/list", window.location.origin);
+          if (accessT) url.searchParams.set("t", accessT);
+          const response = await fetch(url.toString(), { method: "GET", credentials: "include" });
+          const data = await response.json();
+          if (!response.ok || !data.ok) throw new Error(data && data.error ? data.error.message || data.error.code || data.error : "load_failed");
+          state.records = Array.isArray(data.records) ? data.records : [];
+          applyFilters();
+        } catch (error) {
+          els.empty.textContent = "ไม่พบรายการ";
+          els.tableWrap.hidden = true;
+        } finally {
+          els.refresh.disabled = false;
+          els.refresh.textContent = "โหลดรายการใหม่";
+        }
+      }
+      function openModal(record) {
+        state.current = record;
+        els.form.reset();
+        els.formStatus.textContent = "";
+        els.summary.textContent = [record.member_name, money(record.amount_thb), record.payment_ref].filter(Boolean).join(" · ");
+        els.modal.hidden = false;
+      }
+      function closeModal() {
+        els.modal.hidden = true;
+        state.current = null;
+      }
+      els.rows.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-open-review]");
+        if (!button) return;
+        const record = state.filtered[Number(button.getAttribute("data-open-review"))];
+        if (record) openModal(record);
+      });
+      Array.prototype.forEach.call(document.querySelectorAll("[data-review-close]"), (node) => node.addEventListener("click", closeModal));
+      Array.prototype.forEach.call([els.search, els.status, els.method], (node) => node.addEventListener("input", applyFilters));
+      els.refresh.addEventListener("click", loadRecords);
+      document.querySelector("[data-review-policy]").addEventListener("click", () => document.querySelector("[data-policy-panel]").scrollIntoView({ behavior: "smooth", block: "start" }));
+      els.form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!state.current) return;
+        const form = new FormData(els.form);
+        const payload = {
+          record_id: state.current.record_id,
+          payment_ref: state.current.payment_ref,
+          session_id: state.current.session_id,
+          payment_type: "renewal",
+          decision: String(form.get("decision") || ""),
+          verified_amount: Number(form.get("verified_amount") || 0),
+          official_ref: String(form.get("official_ref") || ""),
+          audit_note: String(form.get("audit_note") || ""),
+          official_verification_confirmed: Boolean(form.get("official_verification_confirmed")),
+          t: accessT || undefined
+        };
+        els.formStatus.textContent = "กำลังบันทึกผลการตรวจสอบ…";
+        try {
+          const response = await fetch("/api/pay/renewal/review/decision", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify(payload)
+          });
+          const data = await response.json();
+          if (!response.ok || !data.ok) throw new Error(data && data.error ? data.error.message || data.error.code || data.error : "decision_failed");
+          els.formStatus.textContent = "บันทึกผลการตรวจสอบแล้ว";
+          await loadRecords();
+          window.setTimeout(closeModal, 500);
+        } catch (error) {
+          els.formStatus.textContent = "บันทึกผลไม่สำเร็จ";
+        }
+      });
+      loadRecords();
+    })();
+  </script>
+</body>
+</html>`;
+
+  return new Response(isHead ? null : html, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+    },
+  });
+}
+
+async function handleRenewalReviewList(req, env) {
+  if (!(await isPaymentReviewAuthed(req, env))) {
+    const response = json({ ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized" } }, 401);
+    response.headers.set("cache-control", "no-store");
+    return response;
+  }
+
+  const url = new URL(req.url);
+  const tableId = env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || "tblfJfM4Sqag9zrLi";
+  const records = await airtableList(env, tableId, { limit: 100 });
+  const normalized = records
+    .map(normalizeRenewalProofReviewRecord)
+    .filter((record) => record.payment_type === "renewal");
+
+  const status = str(url.searchParams.get("status")).toLowerCase();
+  const method = str(url.searchParams.get("method")).toLowerCase();
+  const q = str(url.searchParams.get("q")).toLowerCase();
+  const filtered = normalized.filter((record) => {
+    const statusMatch = !status || record.status === status || (status === "pending" && record.status === "pending_official_review");
+    const methodMatch = !method || record.payment_method === method;
+    const searchMatch = !q || [
+      record.member_name,
+      record.contact,
+      record.payment_ref,
+      record.transaction_ref,
+      record.session_id,
+    ].join(" ").toLowerCase().includes(q);
+    return statusMatch && methodMatch && searchMatch;
+  });
+
+  const response = json({
+    ok: true,
+    payment_type: "renewal",
+    records: filtered,
+    meta: {
+      count: filtered.length,
+      source: tableId,
+    },
+  });
+  response.headers.set("cache-control", "no-store");
+  return response;
+}
+
+async function handleRenewalReviewDecision(req, env) {
+  const body = await safeJson(req);
+  if (!(await isPaymentReviewAuthed(req, env, body))) {
+    const response = json({ ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized" } }, 401);
+    response.headers.set("cache-control", "no-store");
+    return response;
+  }
+
+  const payload = normalizeRenewalReviewDecisionPayload(body);
+  const missing = [];
+  if (!payload.record_id) missing.push("record_id");
+  if (!payload.decision) missing.push("decision");
+  if (payload.payment_type !== "renewal") missing.push("payment_type");
+  if (!payload.official_verification_confirmed) missing.push("official_verification_confirmed");
+  if (!payload.audit_note) missing.push("audit_note");
+
+  if (missing.length) {
+    const response = json({
+      ok: false,
+      error: {
+        code: "validation_failed",
+        message: `Missing or invalid required fields: ${missing.join(", ")}`,
+      },
+    }, 400);
+    response.headers.set("cache-control", "no-store");
+    return response;
+  }
+
+  const tableId = env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || "tblfJfM4Sqag9zrLi";
+  const now = new Date().toISOString();
+  const patch = {
+    status: payload.decision,
+    verified_at: now,
+    verified_by: "MMD Payment",
+    note: [
+      `payment_type=${payload.payment_type}`,
+      `decision=${payload.decision}`,
+      `payment_ref=${payload.payment_ref}`,
+      `session_id=${payload.session_id}`,
+      `verified_amount=${payload.verified_amount}`,
+      `official_ref=${payload.official_ref}`,
+      `audit_note=${payload.audit_note}`,
+      `official_verification_confirmed=${payload.official_verification_confirmed}`,
+      `reviewed_at=${now}`,
+    ].filter(Boolean).join("\n"),
+  };
+
+  const result = await airtablePatchById(env, tableId, payload.record_id, patch);
+  if (!result.ok) {
+    const response = json({ ok: false, error: { code: "review_decision_failed", message: "Could not save review decision.", detail: result } }, 500);
+    response.headers.set("cache-control", "no-store");
+    return response;
+  }
+
+  const response = json({
+    ok: true,
+    record_id: payload.record_id,
+    payment_ref: payload.payment_ref,
+    session_id: payload.session_id,
+    payment_type: payload.payment_type,
+    decision: payload.decision,
+    official_verification_confirmed: payload.official_verification_confirmed,
+    reviewed_at: now,
+    next_step_owner: "backend",
+  });
+  response.headers.set("cache-control", "no-store");
+  return response;
+}
+
+async function isPaymentReviewAuthed(req, env, body = null) {
+  if (await isAdminRouteAuthed(req, env)) return true;
+  const url = new URL(req.url);
+  const t = str(url.searchParams.get("t") || body?.t);
+  if (!t) return false;
+  return [
+    env.PAYMENT_REVIEW_TOKEN,
+    env.ADMIN_BEARER,
+    env.INTERNAL_TOKEN,
+    env.CONFIRM_KEY,
+  ].filter(Boolean).includes(t);
+}
+
+function normalizeRenewalProofReviewRecord(record) {
+  const fields = record?.fields || {};
+  const note = str(fields.note || fields.notes || fields.Note || "");
+  const meta = parseKeyValueNote(note);
+  const status = normalizeReviewStatus(fields.status || fields.Status || meta.review_status || "pending");
+  const paymentRef = str(fields.payment_ref || fields["Payment Ref"] || meta.payment_ref || record?.id);
+  const transactionRef = str(fields.transaction_ref || meta.transaction_ref || paymentRef);
+  return {
+    record_id: record?.id || "",
+    proof_id: str(fields.proof_id || meta.proof_id || record?.id),
+    member_name: str(fields.payer_name || fields.member_name || fields.display_name || meta.display_name || "Member"),
+    contact: str(fields.contact_id || fields.contact || meta.contact_id || ""),
+    amount_thb: Number(fields.amount_thb || fields.amount || meta.amount_thb || 0),
+    payment_method: str(fields.channel || fields.payment_method || meta.payment_method || ""),
+    package_code: str(fields.package_code || fields.selected_package || meta.selected_package || ""),
+    payment_ref: paymentRef,
+    transaction_ref: transactionRef,
+    session_id: str(fields.session_id || meta.session_id || ""),
+    status,
+    payment_type: str(fields.payment_type || meta.payment_type || "renewal").toLowerCase(),
+    evidence_url: normalizeEvidenceUrl(fields.slip_url || fields.evidence_url || meta.evidence_ref || ""),
+    reviewed_at: str(fields.verified_at || meta.reviewed_at || ""),
+    raw_created_time: record?.createdTime || "",
+  };
+}
+
+function normalizeRenewalReviewDecisionPayload(body = {}) {
+  return {
+    record_id: str(body.record_id),
+    payment_ref: str(body.payment_ref),
+    session_id: str(body.session_id),
+    payment_type: str(body.payment_type || "renewal").toLowerCase(),
+    decision: normalizeReviewStatus(body.decision),
+    verified_amount: Number(body.verified_amount || 0),
+    official_ref: str(body.official_ref),
+    audit_note: str(body.audit_note),
+    official_verification_confirmed: Boolean(body.official_verification_confirmed),
+    t: str(body.t),
+  };
+}
+
+function normalizeReviewStatus(value) {
+  const raw = str(value).toLowerCase();
+  if (["approved", "verified", "confirm", "confirmed"].includes(raw)) return "approved";
+  if (["reject", "rejected", "failed", "invalid"].includes(raw)) return "rejected";
+  if (["need_more_info", "needs_more_info", "needs-info", "more_info"].includes(raw)) return "needs_more_info";
+  if (["duplicate", "duplicated"].includes(raw)) return "duplicate";
+  if (["pending_official_review", "pending_review", "pending"].includes(raw)) return raw === "pending" ? "pending" : "pending_official_review";
+  return raw || "pending";
+}
+
+function parseKeyValueNote(note) {
+  const out = {};
+  for (const line of str(note).split(/\r?\n/)) {
+    const index = line.indexOf("=");
+    if (index <= 0) continue;
+    const key = line.slice(0, index).trim();
+    const value = line.slice(index + 1).trim();
+    if (key) out[key] = value;
+  }
+  return out;
+}
+
+function normalizeEvidenceUrl(value) {
+  const raw = str(value);
+  return /^https?:\/\//i.test(raw) ? raw : "";
 }
 
 async function handlePublicRenewalProofSubmit(req, env) {
