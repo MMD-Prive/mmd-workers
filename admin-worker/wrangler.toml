@@ -275,3 +275,7 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "sigil.mmdbkk.com/sigil/pay/renewal*"
 zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/api/pay/renewal/proof*"
+zone_name = "mmdbkk.com"
