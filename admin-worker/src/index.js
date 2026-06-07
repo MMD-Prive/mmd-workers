@@ -108,9 +108,9 @@ const SIGIL_PAY_RENEWAL_BUILD = "SIGIL_PAY_RENEWAL_V1_20260607";
 const SIGIL_RENEWAL_KENJI_IMAGE = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a22f53633aaf32d040022d4_Line-Kenji.webp";
 const SIGIL_RENEWAL_LOGO_IMAGE = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0f2cbc7e26b6735aee4cb2_SIGIL%20LOGO%20Transp.webp";
 const SIGIL_PROMPTPAY_URL = "https://promptpay.io/0829528889";
-const SIGIL_BANK_NAME = "KTB Bank / Krungthai";
-const SIGIL_BANK_ACCOUNT_NAME = "ธัชชะ ป. / Tatcha P.";
-const SIGIL_BANK_ACCOUNT_NUMBER = "1420335898";
+const SIGIL_BANK_NAME = "TTB";
+const SIGIL_BANK_ACCOUNT_NAME = "ธัชชะ ป";
+const SIGIL_BANK_ACCOUNT_NUMBER = "233-2-98800-1";
 const SIGIL_PAYPAL_URL = "https://www.paypal.com/ncp/payment/M697T7AW2QZZJ";
 const SIGIL_RENEWAL_TURNSTILE_SITE_KEY = "0x4AAAAAACIE9VleQdOBRfBG";
 
