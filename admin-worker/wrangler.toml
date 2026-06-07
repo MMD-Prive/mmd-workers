@@ -273,6 +273,14 @@ pattern = "sigil.mmdbkk.com/pay/renewal*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
+pattern = "sigil.mmdbkk.com/payment/review-console*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/api/pay/renewal/review/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
 pattern = "sigil.mmdbkk.com/sigil/pay/renewal*"
 zone_name = "mmdbkk.com"
 
