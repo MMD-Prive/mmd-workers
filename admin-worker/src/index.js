@@ -2342,7 +2342,16 @@ async function applyRenewalAfterPaymentApproval(env, input) {
   }
 
   const memberFields = member.fields || {};
-  const oldExpiresAt = str(pickAny(memberFields, ["mmd_expire_at", "membership_expires_at", "membership_expiry_date", "expires_at"]));
+  const oldExpiresAt = str(pickAny(memberFields, [
+    "mmd_expire_at",
+    "membership_expires_at",
+    "membership_expiry_date",
+    "expires_at",
+    "Membership Expiry",
+    "Expire At",
+    "Renewal Due Date",
+    "Membership End Date",
+  ]));
   const baseDate = Date.parse(oldExpiresAt) > Date.now() ? oldExpiresAt : input.approvedAt;
   const newExpiresAt = addUtcDays(baseDate, 365);
   const memberstackId = str(pickAny(memberFields, ["memberstack_id", "requested_memberstack_id", "Memberstack ID"]) || payment.memberstack_id);
@@ -2470,6 +2479,11 @@ async function patchRenewalApplyMember(env, member, input) {
     membership_tier: input.tier,
     membership_renewed_at: input.renewed_at,
     membership_expires_at: input.expires_at,
+    "Membership Status": input.status,
+    "Membership Tier": input.tier,
+    "Membership Expiry": input.expires_at,
+    "Expire At": input.expires_at,
+    "Renewal Due Date": input.expires_at,
     last_payment_ref: input.last_payment_ref,
     last_renewal_session_id: input.last_renewal_session_id,
     renewal_source: input.renewal_source,
