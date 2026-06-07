@@ -2019,8 +2019,7 @@ async function handleRenewalReviewDecision(req, env) {
   if (!payload.record_id) missing.push("record_id");
   if (!payload.decision) missing.push("decision");
   if (payload.payment_type !== "renewal") missing.push("payment_type");
-  if (!payload.official_verification_confirmed) missing.push("official_verification_confirmed");
-  if (!payload.audit_note) missing.push("audit_note");
+  if (payload.decision === "approved" && !payload.official_verification_confirmed) missing.push("official_verification_confirmed");
 
   if (missing.length) {
     const response = json({
@@ -2036,6 +2035,7 @@ async function handleRenewalReviewDecision(req, env) {
 
   const tableId = env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || "tblfJfM4Sqag9zrLi";
   const now = new Date().toISOString();
+  const existingReviewRecord = await airtableGetById(env, tableId, payload.record_id);
   const patch = {
     status: renewalReviewDecisionStorageStatus(payload.decision),
     note: [
@@ -2058,15 +2058,52 @@ async function handleRenewalReviewDecision(req, env) {
     return response;
   }
 
+  if (payload.decision !== "approved") {
+    const response = json({
+      ok: true,
+      record_id: payload.record_id,
+      payment_ref: payload.payment_ref,
+      session_id: payload.session_id,
+      payment_type: payload.payment_type,
+      review_status: payload.decision,
+      decision: payload.decision,
+      official_verification_confirmed: payload.official_verification_confirmed,
+      reviewed_at: now,
+      renewal_apply_attempted: false,
+      next_step_owner: "backend",
+    });
+    response.headers.set("cache-control", "no-store");
+    return response;
+  }
+
+  const reviewRecord = {
+    id: result.id || payload.record_id,
+    fields: {
+      ...(existingReviewRecord?.fields || {}),
+      ...(result.fields || {}),
+      status: patch.status,
+      note: [readRenewalReviewNote(existingReviewRecord), patch.note].filter(Boolean).join("\n"),
+    },
+  };
+  const renewalApply = await applyRenewalAfterPaymentApproval(env, {
+    record: reviewRecord,
+    payload,
+    approvedAt: now,
+    reviewedBy: "MMD Payment",
+  });
+
   const response = json({
     ok: true,
     record_id: payload.record_id,
     payment_ref: payload.payment_ref,
     session_id: payload.session_id,
     payment_type: payload.payment_type,
+    review_status: "approved",
     decision: payload.decision,
     official_verification_confirmed: payload.official_verification_confirmed,
     reviewed_at: now,
+    renewal_apply_attempted: true,
+    renewal_apply: renewalApply,
     next_step_owner: "backend",
   });
   response.headers.set("cache-control", "no-store");
@@ -2128,13 +2165,14 @@ function normalizeRenewalReviewDecisionPayload(body = {}) {
 }
 
 function renewalReviewDecisionStorageStatus(decision) {
+  if (decision === "approved") return "approved";
   if (decision === "needs_more_info" || decision === "duplicate") return "pending";
   return decision;
 }
 
 function normalizeReviewStatus(value) {
   const raw = str(value).toLowerCase();
-  if (["approved", "verified", "confirm", "confirmed"].includes(raw)) return "approved";
+  if (["approve", "approved", "verified", "confirm", "confirmed"].includes(raw)) return "approved";
   if (["reject", "rejected", "failed", "invalid"].includes(raw)) return "rejected";
   if (["need_more_info", "needs_more_info", "needs-info", "more_info"].includes(raw)) return "needs_more_info";
   if (["duplicate", "duplicated"].includes(raw)) return "duplicate";
@@ -2157,6 +2195,342 @@ function parseKeyValueNote(note) {
 function normalizeEvidenceUrl(value) {
   const raw = str(value);
   return /^https?:\/\//i.test(raw) ? raw : "";
+}
+
+function renewalProofTable(env) {
+  return env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || "tblfJfM4Sqag9zrLi";
+}
+
+function renewalMembersTable(env) {
+  return env.AIRTABLE_TABLE_MEMBERS || "tblgWc5VRon5o8Mhk";
+}
+
+function renewalClientsTable(env) {
+  return env.AIRTABLE_TABLE_CLIENTS || "tblVv58TCbwh5j1fS";
+}
+
+function normalizeRenewalApplyTier(value) {
+  const raw = str(value).toLowerCase().replace(/[\s-]+/g, "_");
+  if (["standard", "basic"].includes(raw)) return { ok: true, tier: "standard" };
+  if (["vip", "premium_vip"].includes(raw)) return { ok: true, tier: "vip" };
+  if (["svip", "s_vip", "super_vip"].includes(raw)) return { ok: true, tier: "svip" };
+  if (["blackcard", "black_card", "black"].includes(raw)) return { ok: false, status: "blackcard_review_required", tier: "blackcard" };
+  if (["test", "demo", "sandbox"].includes(raw)) return { ok: false, status: "unsupported_package", tier: raw || "test" };
+  return { ok: false, status: "unsupported_package", tier: raw || "unknown" };
+}
+
+function isTrueLike(value) {
+  if (value === true) return true;
+  const raw = str(value).toLowerCase().replace(/[\s-]+/g, "_");
+  return ["true", "yes", "y", "1", "confirmed", "verified", "official_verified"].includes(raw);
+}
+
+function readRenewalReviewNote(record) {
+  return str(record?.fields?.note || record?.fields?.notes || record?.fields?.Note || "");
+}
+
+function normalizeRenewalApplyPayment(record, payload = {}) {
+  const fields = record?.fields || {};
+  const meta = parseKeyValueNote(readRenewalReviewNote(record));
+  const paymentRef = str(payload.payment_ref || fields.payment_ref || fields["Payment Ref"] || meta.payment_ref || record?.id);
+  const transactionRef = str(payload.official_ref || payload.transaction_ref || fields.transaction_ref || meta.transaction_ref || paymentRef);
+  return {
+    record_id: str(record?.id || payload.record_id),
+    payment_ref: paymentRef,
+    session_id: str(payload.session_id || fields.session_id || meta.session_id),
+    transaction_ref: transactionRef,
+    payment_type: str(payload.payment_type || fields.payment_type || meta.payment_type).toLowerCase(),
+    amount: toNum(payload.verified_amount || payload.amount || fields.amount_thb || fields.amount || meta.amount_thb),
+    package_code: str(payload.package_code || payload.selected_package || fields.package_code || fields.selected_package || meta.selected_package),
+    display_name: str(payload.display_name || fields.payer_name || fields.member_name || fields.display_name || meta.display_name),
+    email: normalizeEmail(payload.email || fields.email || meta.email),
+    memberstack_id: str(payload.memberstack_id || fields.memberstack_id || meta.memberstack_id),
+    member_id: str(payload.member_id || fields.member_id || meta.member_id),
+    linked_member_ids: extractLinkedRecordIds(fields.member || fields.Member || fields.client || fields.Client || fields.linked_client),
+    contact_id: str(payload.contact_id || payload.line_user_id || fields.contact_id || fields.contact || meta.contact_id),
+    review_status: normalizeReviewStatus(payload.decision || fields.status || meta.review_status),
+    official_verification_confirmed: isTrueLike(payload.official_verification_confirmed || meta.official_verification_confirmed),
+    duplicate_only: isTrueLike(payload.duplicate_only || fields.duplicate_only || meta.duplicate_only),
+    renewal_apply_status: str(fields.renewal_apply_status || meta.renewal_apply_status).toLowerCase(),
+    renewal_applied_at: str(fields.renewal_applied_at || meta.renewal_applied_at),
+    renewal_apply_result: str(fields.renewal_apply_result || meta.renewal_apply_result),
+    review_note: readRenewalReviewNote(record),
+  };
+}
+
+function isRenewalTestOnlyPayment(payment) {
+  return Boolean(
+    payment.display_name === "MMD_TEST_RENEWAL_REVIEW" ||
+    payment.payment_ref.startsWith("renewal_test_only_") ||
+    payment.session_id.startsWith("renewal_test_session_") ||
+    payment.transaction_ref.startsWith("renewal_test_txn_")
+  );
+}
+
+function validateRenewalApplyPayment(payment) {
+  if (!payment.record_id) return { ok: false, status: "apply_failed", reason: "missing_record_id" };
+  if (!payment.payment_ref) return { ok: false, status: "apply_failed", reason: "missing_payment_ref" };
+  if (!payment.session_id) return { ok: false, status: "apply_failed", reason: "missing_session_id" };
+  if (payment.payment_type !== "renewal") return { ok: false, status: "apply_failed", reason: "payment_type_not_renewal" };
+  if (payment.review_status !== "approved") return { ok: false, status: "apply_failed", reason: "decision_not_approve" };
+  if (!payment.official_verification_confirmed) return { ok: false, status: "apply_failed", reason: "official_verification_not_confirmed" };
+  if (!(Number(payment.amount) > 0)) return { ok: false, status: "apply_failed", reason: "missing_amount" };
+  if (payment.duplicate_only) return { ok: false, status: "apply_failed", reason: "duplicate_only" };
+  if (isRenewalTestOnlyPayment(payment)) return { ok: false, status: "apply_failed", reason: "test_record_skipped" };
+  return { ok: true };
+}
+
+function addUtcDays(value, days) {
+  const base = new Date(value);
+  if (Number.isNaN(base.getTime())) return "";
+  base.setUTCDate(base.getUTCDate() + days);
+  return base.toISOString();
+}
+
+function existingRenewalApplyResult(payment) {
+  try {
+    const parsed = payment.renewal_apply_result ? JSON.parse(payment.renewal_apply_result) : null;
+    if (parsed && typeof parsed === "object") {
+      return { ...parsed, ok: true, status: "already_applied", idempotent: true };
+    }
+  } catch (_) {}
+  return { ok: true, status: "already_applied", idempotent: true };
+}
+
+async function applyRenewalAfterPaymentApproval(env, input) {
+  const table = renewalProofTable(env);
+  const record = input.record;
+  const payment = normalizeRenewalApplyPayment(record, input.payload);
+  const nowIso = new Date().toISOString();
+
+  const guard = validateRenewalApplyPayment(payment);
+  if (!guard.ok) {
+    const result = { ok: false, status: guard.status, reason: guard.reason };
+    await storeRenewalApplyResult(env, table, record.id, payment, result, nowIso);
+    return result;
+  }
+
+  if (payment.renewal_apply_status === "applied" || payment.renewal_applied_at) {
+    return existingRenewalApplyResult(payment);
+  }
+
+  const duplicate = await findAppliedRenewalByPaymentRef(env, table, payment.payment_ref, record.id);
+  if (duplicate) {
+    return existingRenewalApplyResult(normalizeRenewalApplyPayment(duplicate));
+  }
+
+  const packageResult = normalizeRenewalApplyTier(payment.package_code);
+  if (!packageResult.ok) {
+    const result = {
+      ok: false,
+      status: packageResult.status,
+      reason: packageResult.status === "blackcard_review_required"
+        ? "blackcard_requires_manual_review"
+        : "unsupported_package",
+      tier: packageResult.tier,
+    };
+    await storeRenewalApplyResult(env, table, record.id, payment, result, nowIso);
+    return result;
+  }
+
+  const member = await resolveRenewalApplyMember(env, payment);
+  if (!member) {
+    const result = { ok: false, status: "needs_member_linking", reason: "member_not_resolved" };
+    await storeRenewalApplyResult(env, table, record.id, payment, result, nowIso);
+    await notifyRenewalApply(env, `Payment approved but renewal not applied: reason member_not_resolved, payment_ref ${payment.payment_ref}`);
+    return result;
+  }
+
+  const memberFields = member.fields || {};
+  const oldExpiresAt = str(pickAny(memberFields, ["mmd_expire_at", "membership_expires_at", "membership_expiry_date", "expires_at"]));
+  const baseDate = Date.parse(oldExpiresAt) > Date.now() ? oldExpiresAt : input.approvedAt;
+  const newExpiresAt = addUtcDays(baseDate, 365);
+  const memberstackId = str(pickAny(memberFields, ["memberstack_id", "requested_memberstack_id", "Memberstack ID"]) || payment.memberstack_id);
+  const memberId = str(pickAny(memberFields, ["member_id", "Member ID"]) || member.id);
+  const displayName = str(pickAny(memberFields, ["mmd_client_name", "display_name", "Client Name", "nickname", "Name", "full_name"]) || payment.display_name || member.id);
+
+  const memberUpdate = await patchRenewalApplyMember(env, member, {
+    status: "active",
+    tier: packageResult.tier,
+    renewed_at: input.approvedAt,
+    expires_at: newExpiresAt,
+    last_payment_ref: payment.payment_ref,
+    last_renewal_session_id: payment.session_id,
+    renewal_source: "payment_review_console",
+  });
+
+  if (!memberUpdate.ok) {
+    const result = { ok: false, status: "apply_failed", reason: "member_update_failed" };
+    await storeRenewalApplyResult(env, table, record.id, payment, result, nowIso);
+    return result;
+  }
+
+  const audit = await writeRenewalApplyAudit(env, {
+    event_type: "membership_renewal_applied",
+    payment_type: "renewal",
+    payment_ref: payment.payment_ref,
+    session_id: payment.session_id,
+    record_id: record.id,
+    member_id: memberId,
+    memberstack_id: memberstackId,
+    old_expires_at: oldExpiresAt,
+    new_expires_at: newExpiresAt,
+    tier: packageResult.tier,
+    amount_paid: payment.amount,
+    official_ref: payment.transaction_ref,
+    review_note: str(input.payload.audit_note),
+    reviewed_by: input.reviewedBy || "MMD Payment",
+    created_at: nowIso,
+  });
+
+  const result = {
+    ok: true,
+    status: "applied",
+    idempotent: false,
+    member_id: memberId,
+    memberstack_id: memberstackId,
+    old_expires_at: oldExpiresAt || null,
+    new_expires_at: newExpiresAt,
+    tier: packageResult.tier,
+    audit_id: audit.id || null,
+  };
+  await storeRenewalApplyResult(env, table, record.id, payment, result, nowIso);
+  await notifyRenewalApply(env, `Renewal applied: member ${displayName}, tier ${packageResult.tier}, new expiry ${newExpiresAt}, payment_ref ${payment.payment_ref}`);
+  return result;
+}
+
+async function findAppliedRenewalByPaymentRef(env, table, paymentRef, currentRecordId) {
+  if (!paymentRef) return null;
+  const formula = `{payment_ref}="${escapeFormulaValue(paymentRef)}"`;
+  const records = await airtableListRecordsByFormula(env, table, formula, 10);
+  return records.find((record) => {
+    if (record.id === currentRecordId) return false;
+    const normalized = normalizeRenewalApplyPayment(record);
+    return normalized.renewal_apply_status === "applied" || Boolean(normalized.renewal_applied_at);
+  }) || null;
+}
+
+async function resolveRenewalApplyMember(env, payment) {
+  const tables = [renewalMembersTable(env), renewalClientsTable(env)];
+  const searches = [
+    [payment.memberstack_id, ["memberstack_id", "requested_memberstack_id", "Memberstack ID"]],
+    [payment.member_id, ["member_id", "Member ID"]],
+    [payment.contact_id, ["contact_id", "line_user_id", "LINE User ID", "line_id", "Line ID"]],
+    [payment.email, ["email", "Email", "member_email"]],
+  ];
+
+  for (const recordId of payment.linked_member_ids || []) {
+    for (const table of tables) {
+      const record = await airtableGetById(env, table, recordId);
+      if (record) return { ...record, _table: table };
+    }
+  }
+
+  for (const [value, fields] of searches) {
+    if (!value) continue;
+    const matches = await findRenewalMemberMatches(env, tables, fields, value, 2);
+    if (matches.length === 1) return matches[0];
+  }
+
+  if (payment.display_name) {
+    const matches = await findRenewalMemberMatches(
+      env,
+      tables,
+      ["mmd_client_name", "display_name", "Client Name", "nickname", "Name", "full_name"],
+      payment.display_name,
+      2
+    );
+    if (matches.length === 1) return matches[0];
+  }
+
+  return null;
+}
+
+async function findRenewalMemberMatches(env, tables, fields, value, maxRecords = 2) {
+  const matches = [];
+  for (const table of tables) {
+    for (const field of fields) {
+      const rows = await airtableListRecordsByFormula(
+        env,
+        table,
+        `{${field}}="${escapeFormulaValue(value)}"`,
+        maxRecords
+      );
+      matches.push(...rows.map((record) => ({ ...record, _table: table })));
+      if (matches.length >= maxRecords) return matches;
+    }
+  }
+  return matches;
+}
+
+async function patchRenewalApplyMember(env, member, input) {
+  const table = member._table || renewalMembersTable(env);
+  const primary = compactObject({
+    membership_status: input.status,
+    membership_tier: input.tier,
+    membership_renewed_at: input.renewed_at,
+    membership_expires_at: input.expires_at,
+    last_payment_ref: input.last_payment_ref,
+    last_renewal_session_id: input.last_renewal_session_id,
+    renewal_source: input.renewal_source,
+  });
+  const fallback = compactObject({
+    mmd_status: input.status,
+    mmd_tier: input.tier,
+    mmd_expire_at: input.expires_at,
+  });
+  return await airtablePatchByIdWithFallback(env, table, member.id, primary, fallback);
+}
+
+async function storeRenewalApplyResult(env, table, recordId, payment, result, nowIso) {
+  const note = [
+    payment.review_note,
+    `renewal_apply_status=${result.status}`,
+    `renewal_apply_ok=${result.ok}`,
+    `renewal_apply_reason=${result.reason || ""}`,
+    `renewal_applied_at=${result.status === "applied" ? nowIso : ""}`,
+    `renewal_apply_result=${JSON.stringify(result)}`,
+    result.member_id ? `resolved_member_id=${result.member_id}` : "",
+    result.memberstack_id ? `resolved_memberstack_id=${result.memberstack_id}` : "",
+    result.old_expires_at ? `old_expires_at=${result.old_expires_at}` : "",
+    result.new_expires_at ? `new_expires_at=${result.new_expires_at}` : "",
+  ].filter(Boolean).join("\n");
+  const primary = compactObject({
+    renewal_apply_status: result.status,
+    renewal_applied_at: result.status === "applied" ? nowIso : "",
+    renewal_apply_result: JSON.stringify(result),
+    renewal_apply_ref: result.audit_id || `${payment.payment_ref}:renewal_apply`,
+    resolved_member_id: result.member_id,
+    resolved_memberstack_id: result.memberstack_id,
+    old_expires_at: result.old_expires_at,
+    new_expires_at: result.new_expires_at,
+  });
+  const fallback = compactObject({ note });
+  return await airtablePatchByIdWithFallback(env, table, recordId, primary, fallback);
+}
+
+async function writeRenewalApplyAudit(env, payload) {
+  const table = str(env.AIRTABLE_TABLE_RENEWAL_AUDIT || env.AIRTABLE_TABLE_ACTIVITY_LOGS || "");
+  if (!table) return { ok: false, skipped: true };
+  try {
+    const record = await airtableCreateRecord(env, table, payload);
+    return { ok: true, id: record.id || "" };
+  } catch (error) {
+    console.warn("renewal_audit_create_failed", String(error?.message || error));
+    return { ok: false, error: String(error?.message || error) };
+  }
+}
+
+async function notifyRenewalApply(env, text) {
+  const chatId = str(env.TELEGRAM_PAYMENT_REVIEW_CHAT_ID || env.TELEGRAM_CHAT_ID || "");
+  if (!chatId) return { ok: false, skipped: true };
+  return await telegramInternalSend(env, {
+    chat_id: chatId,
+    text,
+    parse_mode: null,
+    message_thread_id: str(env.TG_THREAD_PRICING_REVIEW || "61"),
+    disable_web_page_preview: true,
+  });
 }
 
 async function handlePublicRenewalProofSubmit(req, env) {
@@ -8879,6 +9253,14 @@ async function airtablePatchById(env, tableName, id, patch) {
   });
   if (!r.ok) return { ok: false, error: "airtable_patch_failed", detail: r };
   return { ok: true, id: r.data.id, fields: r.data.fields || {} };
+}
+
+async function airtablePatchByIdWithFallback(env, tableName, id, patch, fallbackPatch) {
+  const primary = await airtablePatchById(env, tableName, id, patch);
+  if (primary.ok || !fallbackPatch || !Object.keys(fallbackPatch).length) return primary;
+  const status = Number(primary.detail?.status || 0);
+  if (status !== 422) return primary;
+  return await airtablePatchById(env, tableName, id, fallbackPatch);
 }
 
 async function airtableCreateRecord(env, tableName, fields) {
