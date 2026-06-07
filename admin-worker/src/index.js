@@ -2038,8 +2038,6 @@ async function handleRenewalReviewDecision(req, env) {
   const now = new Date().toISOString();
   const patch = {
     status: payload.decision,
-    verified_at: now,
-    verified_by: "MMD Payment",
     note: [
       `payment_type=${payload.payment_type}`,
       `decision=${payload.decision}`,
