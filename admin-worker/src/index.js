@@ -2164,11 +2164,12 @@ async function handlePublicRenewalProofSubmit(req, env) {
   }
 
   const payload = await readPublicRenewalProofPayload(req);
+  const testBypass = getRenewalReviewTestBypass(req, env, payload);
   const missing = [];
   if (!payload.display_name) missing.push("display_name");
   if (!payload.contact_id) missing.push("contact_id");
   if (!payload.selected_package) missing.push("selected_package");
-  if (!(payload.amount_thb > 0)) missing.push("amount_paid");
+  if (!(payload.amount_thb > 0) && !testBypass.allowed) missing.push("amount_paid");
   if (!payload.paid_at) missing.push("paid_at");
   if (!payload.payment_method) missing.push("payment_method");
   if (!payload.proof_file) missing.push("proof");
@@ -2186,43 +2187,45 @@ async function handlePublicRenewalProofSubmit(req, env) {
     return response;
   }
 
-  const turnstileSecret = str(env.TURNSTILE_SECRET || env.TURNSTILE_SECRET_KEY);
-  if (!turnstileSecret) {
-    const response = json({
-      ok: false,
-      error: {
-        code: "turnstile_unconfigured",
-        message: "Turnstile verification is not configured.",
-      },
-    }, 503);
-    response.headers.set("cache-control", "no-store");
-    return response;
-  }
+  if (!testBypass.allowed) {
+    const turnstileSecret = str(env.TURNSTILE_SECRET || env.TURNSTILE_SECRET_KEY);
+    if (!turnstileSecret) {
+      const response = json({
+        ok: false,
+        error: {
+          code: "turnstile_unconfigured",
+          message: "Turnstile verification is not configured.",
+        },
+      }, 503);
+      response.headers.set("cache-control", "no-store");
+      return response;
+    }
 
-  if (!payload.cf_turnstile_response) {
-    const response = json({
-      ok: false,
-      error: {
-        code: "turnstile_required",
-        message: "Turnstile verification is required.",
-      },
-    }, 400);
-    response.headers.set("cache-control", "no-store");
-    return response;
-  }
+    if (!payload.cf_turnstile_response) {
+      const response = json({
+        ok: false,
+        error: {
+          code: "turnstile_required",
+          message: "Turnstile verification is required.",
+        },
+      }, 400);
+      response.headers.set("cache-control", "no-store");
+      return response;
+    }
 
-  const turnstile = await verifyRenewalTurnstile(payload.cf_turnstile_response, getClientIp(req), turnstileSecret);
-  if (!turnstile.ok) {
-    const response = json({
-      ok: false,
-      error: {
-        code: "turnstile_failed",
-        message: "Turnstile verification failed.",
-        detail: turnstile.detail || "",
-      },
-    }, 403);
-    response.headers.set("cache-control", "no-store");
-    return response;
+    const turnstile = await verifyRenewalTurnstile(payload.cf_turnstile_response, getClientIp(req), turnstileSecret);
+    if (!turnstile.ok) {
+      const response = json({
+        ok: false,
+        error: {
+          code: "turnstile_failed",
+          message: "Turnstile verification failed.",
+          detail: turnstile.detail || "",
+        },
+      }, 403);
+      response.headers.set("cache-control", "no-store");
+      return response;
+    }
   }
 
   const tableId = env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || "tblfJfM4Sqag9zrLi";
@@ -2242,6 +2245,9 @@ async function handlePublicRenewalProofSubmit(req, env) {
       session_id: payload.session_id,
       record_id: existing.id,
       duplicate: true,
+      test_mode: testBypass.allowed || undefined,
+      turnstile_bypassed_for_test: testBypass.allowed || undefined,
+      next_step_owner: "backend",
       message: "Proof already received and is still pending official review.",
     });
     response.headers.set("cache-control", "no-store");
@@ -2266,6 +2272,7 @@ async function handlePublicRenewalProofSubmit(req, env) {
     `proof_name=${file.name || ""}`,
     `proof_type=${file.type || ""}`,
     `proof_size=${file.size || 0}`,
+    testBypass.allowed ? "TEST_ONLY_RENEWAL_REVIEW_MUTATION" : "",
     payload.additional_note ? `note=${payload.additional_note}` : "",
     payload.package_note ? `package_note=${payload.package_note}` : "",
   ].filter(Boolean);
@@ -2297,6 +2304,7 @@ async function handlePublicRenewalProofSubmit(req, env) {
       paid_at: payload.paid_at,
       payment_ref: payload.payment_ref,
       evidence_ref: evidenceRef,
+      test_mode: testBypass.allowed,
     });
 
     const response = json({
@@ -2312,6 +2320,9 @@ async function handlePublicRenewalProofSubmit(req, env) {
       record_id: rec?.id || "",
       evidence_ref: evidenceRef,
       notification,
+      test_mode: testBypass.allowed || undefined,
+      turnstile_bypassed_for_test: testBypass.allowed || undefined,
+      next_step_owner: "backend",
       message: "Proof received and pending official review.",
     });
     response.headers.set("cache-control", "no-store");
@@ -2327,6 +2338,35 @@ async function handlePublicRenewalProofSubmit(req, env) {
     response.headers.set("cache-control", "no-store");
     return response;
   }
+}
+
+function getRenewalReviewTestBypass(req, env, payload) {
+  const configuredSecret = str(env.MMD_RENEWAL_TEST_KEY);
+  if (!configuredSecret) return { allowed: false };
+
+  const headerMode = str(req.headers.get("X-MMD-Test-Mode"));
+  const headerKey = str(req.headers.get("X-MMD-Test-Key"));
+  const proofName = str(payload.proof_file?.name);
+  const amount = Number(payload.amount_thb);
+  const packageCode = str(payload.selected_package).toLowerCase();
+  const method = str(payload.payment_method).toLowerCase();
+
+  const allowed = [
+    headerMode === "renewal-review-only",
+    Boolean(headerKey) && headerKey === configuredSecret,
+    payload.payment_type === "renewal",
+    payload.display_name === "MMD_TEST_RENEWAL_REVIEW",
+    str(payload.payment_ref).startsWith("renewal_test_only_"),
+    str(payload.session_id).startsWith("renewal_test_session_"),
+    str(payload.transaction_ref).startsWith("renewal_test_txn_"),
+    amount === 0 || amount === 1,
+    str(payload.additional_note).includes("SAFE MUTATION TEST ONLY"),
+    proofName.includes("MMD_TEST_RENEWAL_REVIEW"),
+    packageCode === "standard" || packageCode === "test",
+    method === "promptpay" || method === "test",
+  ].every(Boolean);
+
+  return { allowed };
 }
 
 async function readPublicRenewalProofPayload(req) {
@@ -2409,6 +2449,7 @@ function getClientIp(req) {
 
 async function notifyRenewalProofAdmin(env, payload) {
   const text = [
+    payload.test_mode ? "TEST ONLY - DO NOT PROCESS AS REAL PAYMENT" : "",
     "RENEWAL PROOF RECEIVED",
     `Name: ${payload.display_name}`,
     `Contact: ${payload.contact_id}`,
