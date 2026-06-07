@@ -1,0 +1,16 @@
+name = "sigil-frontend-worker"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+workers_dev = true
+
+[vars]
+TURNSTILE_SITE_KEY = "0x4AAAAAACIE9VleQdOBRfBG"
+SIGIL_FRONTEND_BUILD = "SIGIL_FRONTEND_PREVIEW_V1"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/_frontend-health*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/_preview/pay/renewal*"
+zone_name = "mmdbkk.com"
