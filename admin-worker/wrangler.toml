@@ -2,7 +2,7 @@
 # LOCK v2026-LOCK-01
 
 name = "admin-worker"
-main = "src/index.ts"
+main = "src/index.js"
 compatibility_date = "2026-01-01"
 workers_dev = true
 
@@ -90,7 +90,7 @@ TG_THREAD_PRICING_REVIEW = "61"
 # R2 bucket binding for source-owner model library fallback lookup.
 [[r2_buckets]]
 binding = "MMD_MODEL_ASSETS"
-bucket_name = "mmd-models"
+bucket_name = "mmd-model-assets"
 
 [[routes]]
 pattern = "admin-worker.mmdbkk.com"
