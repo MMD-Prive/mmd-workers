@@ -79,7 +79,7 @@ export default {
       }), env);
     }
 
-    if (url.pathname === "/pay/renewal" || url.pathname === "/_preview/pay/renewal") {
+    if (isRenewalPagePath(url.pathname)) {
       return withHeaders(renderRenewalPage(request, env), env);
     }
 
@@ -95,6 +95,11 @@ export default {
 function normalizePath(pathname) {
   if (!pathname || pathname === "/") return "/";
   return pathname.replace(/\/+$/g, "") || "/";
+}
+
+function isRenewalPagePath(pathname) {
+  const normalized = normalizePath(pathname);
+  return normalized === "/pay/renewal" || normalized === "/_preview/pay/renewal";
 }
 
 function json(payload, status = 200) {
