@@ -2037,7 +2037,7 @@ async function handleRenewalReviewDecision(req, env) {
   const tableId = env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || "tblfJfM4Sqag9zrLi";
   const now = new Date().toISOString();
   const patch = {
-    status: payload.decision,
+    status: renewalReviewDecisionStorageStatus(payload.decision),
     note: [
       `payment_type=${payload.payment_type}`,
       `decision=${payload.decision}`,
@@ -2125,6 +2125,11 @@ function normalizeRenewalReviewDecisionPayload(body = {}) {
     official_verification_confirmed: Boolean(body.official_verification_confirmed),
     t: str(body.t),
   };
+}
+
+function renewalReviewDecisionStorageStatus(decision) {
+  if (decision === "needs_more_info" || decision === "duplicate") return "pending";
+  return decision;
 }
 
 function normalizeReviewStatus(value) {
