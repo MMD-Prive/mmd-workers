@@ -1,0 +1,229 @@
+name = "member-dashboard-chat-worker"
+main = "../tmp/cloudflare-member-dashboard-chat-worker/index.js"
+compatibility_date = "2026-04-18"
+
+[[routes]]
+pattern = "www.mmdbkk.com/api/member/payments/summary*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/api/member/session/next*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/api/member/kenji/chat*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/telegram/channel-post*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/telegram/preview-post*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/telegram/test-channel*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/api/member/dashboard*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/pay/membership*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/api/member/context*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/assets/line-slips/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/pay/renewal*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/api/public/flow*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/access/choose-your-vibe*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/request/private-access*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/ceo/line-notes-import*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/webhooks/telegram*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/internal/admin*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/sigil/confirm*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/confirm*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/confirm*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/renewal*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/sigil/login*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/webhooks/line*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/trust/inme*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/renew*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/pay/renewal*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/trust/inme*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/private-companion-bangkok*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/api/member/payments/summary*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/api/member/session/next*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/api/member/kenji/chat*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/telegram/channel-post*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/telegram/preview-post*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/telegram/test-channel*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/sigil/pay/membership*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/api/member/dashboard*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/assets/line-slips/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/api/member/context*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/sigil/pay/renewal*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/api/public/flow*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/access/choose-your-vibe*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/request/private-access*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/ceo/line-notes-import*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/webhooks/telegram*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/member/confirm*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/webhooks/line*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/sigil/confirm*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/pay/renewal*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/trust/inme*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/private-companion-bangkok*"
+zone_name = "mmdbkk.com"
+
+[vars]
+AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+AIRTABLE_PAYMENT_REF_FIELD_NAME = "Payment Ref"
+AIRTABLE_SCHEMA_JSON = "{\"tables\":{\"models\":\"tblgWc5VRon5o8Mhk\",\"assignments\":\"tblC98mKWbzmPuNzX\",\"sessions\":\"tblC98mKWbzmPuNzX\",\"payouts\":\"tblWGGJJOx5eBvBZJ\"},\"fields\":{\"models\":{\"display_name\":[\"mmd_client_name\",\"display_name\",\"Client Name\",\"nickname\",\"Name\"],\"status\":[\"mmd_status\",\"status\",\"Status\"],\"tier\":[\"mmd_tier\",\"tier\",\"Tier\"]},\"assignments\":{\"memberstack_id\":[\"fldjelgJTzCHSCWZ0\",\"memberstack_id\"],\"assignment_id\":[\"session_id\",\"Session ID\"],\"title\":[\"package_code\",\"Name\"],\"location\":[\"location_label\",\"Location\"],\"scheduled_label\":[\"session_date\",\"scheduled_label\"],\"rate\":[\"amount_thb\",\"rate\"],\"assignment_status\":[\"status\",\"assignment_status\"],\"starts_at\":[\"session_date\"],\"notes\":[\"payment_ref\",\"notes\"]},\"sessions\":{\"memberstack_id\":[\"fldjelgJTzCHSCWZ0\",\"memberstack_id\"],\"session_id\":[\"session_id\",\"Session ID\"],\"name\":[\"package_code\",\"name\"],\"date_label\":[\"session_date\"],\"time_label\":[\"session_date\"],\"session_status\":[\"status\",\"session_status\"],\"starts_at\":[\"session_date\"]},\"payouts\":{\"session_id\":[\"session_id\"],\"amount\":[\"amount\",\"fldvCSwrUW8OMAooS\"],\"latest_payout_status\":[\"verification_status\",\"payment_status\",\"Status\"],\"created_at\":[\"payment_date\",\"Date\"],\"paid_at\":[\"payment_date\"]}}}"
+AIRTABLE_TABLE_CONSOLE_INBOX_ID = "tblFHmfpB2TTrzO2e"
+AIRTABLE_TABLE_PAYMENTS = "tblWGGJJOx5eBvBZJ"
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.com,https://mmdprive.webflow.io"
+LINE_SLIP_ASSETS_PUBLIC_BASE_URL = "https://mmdbkk.com/assets/line-slips"
+LINE_SLIP_PAYMENT_METHOD_VALUE = "bank_transfer"
+TELEGRAM_BLACK_ROOM_ID = "-1003348473234"
+TELEGRAM_BOT_REPLY_ENABLED = "true"
+TELEGRAM_BOT_REPLY_MODE = "basic"
+TELEGRAM_MMD_CHAT_ID = "-1002579607650"
+TELEGRAM_PREMIUM_ROOM_ID = "-1001668261779"
+TELEGRAM_PREVIEW_CHANNEL_ID = "-1002393788585"
+TELEGRAM_STANDARD_ROOM_ID = "-1002073919780"
+TELEGRAM_VIP_LOUNGE_ID = "-1003578473671"
+
+[[kv_namespaces]]
+binding = "PAY_SESSIONS_KV"
+id = "e0c6b8a0785e462dad6d01f61a893e87"
+
+[[r2_buckets]]
+binding = "LINE_SLIP_ASSETS"
+bucket_name = "mmd-line-slip-assets"
