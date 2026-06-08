@@ -17,6 +17,8 @@
     defaultLang: "th",
     enforceMaleWhenProvided: true,
     aftercareUrl: "/aftercare",
+    trustInmeUrl: "/trust/inme",
+    softInmeUrl: "/inme",
     startUrl: "/sigil/start",
     bookingUrl: "/sigil/booking",
     payUrl: "/sigil/pay",
@@ -174,8 +176,27 @@
     return new URLSearchParams(window.location.search).get(name);
   }
 
+  function currentPath() {
+    return (window.location.pathname || "/").replace(/\/+$/, "") || "/";
+  }
+
+  function isTrustInmeRoute() {
+    const path = currentPath();
+    return path === CONFIG.trustInmeUrl || path === CONFIG.softInmeUrl;
+  }
+
+  function redirectToAftercare() {
+    if (isTrustInmeRoute()) {
+      console.warn("[SIGIL] Blocked aftercare redirect on trust/inme entry.");
+      return;
+    }
+
+    window.location.href = CONFIG.aftercareUrl;
+  }
+
   function genderGuard() {
     if (!CONFIG.enforceMaleWhenProvided) return;
+    if (isTrustInmeRoute()) return;
 
     const raw =
       getQueryParam("gender") ||
@@ -189,7 +210,7 @@
     const allowed = ["m", "male", "man", "men", "ชาย", "ผู้ชาย"];
 
     if (!allowed.includes(normalized)) {
-      window.location.href = CONFIG.aftercareUrl;
+      redirectToAftercare();
     }
   }
 
