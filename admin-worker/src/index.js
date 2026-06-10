@@ -125,9 +125,17 @@ export default {
 
     if (
       (method === "GET" || method === "HEAD") &&
-      (path === SIGIL_PAY_RENEWAL_LEGACY_PATH || path === SIGIL_PAY_RENEWAL_PATH)
+      (path === SIGIL_PAY_RENEWAL_LEGACY_PATH ||
+        path === `${SIGIL_PAY_RENEWAL_LEGACY_PATH}/` ||
+        path === SIGIL_PAY_RENEWAL_PATH ||
+        path === `${SIGIL_PAY_RENEWAL_PATH}/`)
     ) {
-      if (path === SIGIL_PAY_RENEWAL_LEGACY_PATH) {
+      if (path === SIGIL_PAY_RENEWAL_LEGACY_PATH || path === `${SIGIL_PAY_RENEWAL_LEGACY_PATH}/`) {
+        const target = new URL(req.url);
+        target.pathname = SIGIL_PAY_RENEWAL_PATH;
+        return withCors(req, env, Response.redirect(target.toString(), 301));
+      }
+      if (path === `${SIGIL_PAY_RENEWAL_PATH}/`) {
         const target = new URL(req.url);
         target.pathname = SIGIL_PAY_RENEWAL_PATH;
         return withCors(req, env, Response.redirect(target.toString(), 301));
@@ -986,45 +994,725 @@ function getAllowedOrigins(env) {
 }
 
 function renderSigilPayRenewalPage(req, env) {
-  const isHead = req.method.toUpperCase() === "HEAD";
+  const url = new URL(req.url);
+  const method = req.method.toUpperCase();
   const turnstileSiteKey = str(env.TURNSTILE_SITE_KEY || SIGIL_RENEWAL_TURNSTILE_SITE_KEY);
-  const config = {
-    endpoint: SIGIL_PAY_RENEWAL_PROOF_PATH,
-    turnstileSiteKey,
-  };
-  const pageStyle = "<style>@import url(\"https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap\");\n\n.mmd-renewal-kenji,\n.mmd-renewal-kenji * {\n  box-sizing: border-box;\n}\n\n.mmd-renewal-kenji {\n  --mmd-bg: #070605;\n  --mmd-panel: rgba(28, 25, 21, 0.92);\n  --mmd-panel-strong: rgba(18, 16, 14, 0.96);\n  --mmd-glass: rgba(255, 255, 255, 0.065);\n  --mmd-line: rgba(255, 255, 255, 0.14);\n  --mmd-line-gold: rgba(222, 180, 98, 0.36);\n  --mmd-text: #fff8ef;\n  --mmd-soft: rgba(255, 248, 239, 0.78);\n  --mmd-muted: rgba(255, 248, 239, 0.56);\n  --mmd-dim: rgba(255, 248, 239, 0.38);\n  --mmd-gold: #deb462;\n  --mmd-warm: #ffb06c;\n  --mmd-amber: #f0ce84;\n  --mmd-error: #ff917e;\n  --mmd-success: #a9e7bd;\n  position: relative;\n  isolation: isolate;\n  min-height: 100svh;\n  overflow: hidden;\n  padding: 14px 0 70px;\n  color: var(--mmd-text);\n  background:\n    radial-gradient(circle at 18% -4%, rgba(255, 176, 108, 0.24), transparent 34%),\n    radial-gradient(circle at 96% 8%, rgba(222, 180, 98, 0.18), transparent 30%),\n    linear-gradient(180deg, #17130f 0%, #080706 48%, #030303 100%);\n  font-family: \"Noto Sans Thai\", \"Manrope\", system-ui, sans-serif;\n}\n\n.mmd-renewal-kenji a {\n  color: inherit;\n  text-decoration: none;\n}\n\n.mmd-renewal-kenji button,\n.mmd-renewal-kenji input,\n.mmd-renewal-kenji textarea {\n  font: inherit;\n}\n\n.mmd-renewal-kenji__bg,\n.mmd-renewal-kenji__orb {\n  position: absolute;\n  pointer-events: none;\n}\n\n.mmd-renewal-kenji__bg {\n  inset: 0;\n  z-index: -1;\n  background-image:\n    linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px),\n    linear-gradient(90deg, rgba(255, 255, 255, 0.055) 1px, transparent 1px);\n  background-size: 68px 68px;\n  mask-image: linear-gradient(180deg, #000 0%, transparent 78%);\n  opacity: 0.8;\n}\n\n.mmd-renewal-kenji__orb {\n  width: 380px;\n  height: 380px;\n  border-radius: 50%;\n  filter: blur(82px);\n  opacity: 0.34;\n}\n\n.mmd-renewal-kenji__orb--left {\n  left: -210px;\n  top: 160px;\n  background: rgba(255, 176, 108, 0.38);\n}\n\n.mmd-renewal-kenji__orb--right {\n  right: -210px;\n  top: 20px;\n  background: rgba(222, 180, 98, 0.28);\n}\n\n.mmd-renewal-kenji__toast {\n  position: fixed;\n  z-index: 1000;\n  left: 50%;\n  bottom: calc(18px + env(safe-area-inset-bottom));\n  width: min(560px, calc(100% - 28px));\n  transform: translateX(-50%) translateY(16px);\n  padding: 12px 16px;\n  border: 1px solid rgba(222, 180, 98, 0.34);\n  border-radius: 999px;\n  background: rgba(12, 10, 8, 0.96);\n  color: var(--mmd-text);\n  text-align: center;\n  font-size: 13px;\n  line-height: 1.45;\n  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.42);\n  opacity: 0;\n  pointer-events: none;\n  transition: 0.22s ease;\n}\n\n.mmd-renewal-kenji__toast.is-show {\n  opacity: 1;\n  transform: translateX(-50%) translateY(0);\n}\n\n.mmd-renewal-kenji__toast.is-error {\n  border-color: rgba(255, 145, 126, 0.5);\n  background: rgba(42, 14, 9, 0.96);\n}\n\n.mmd-renewal-kenji__toast.is-success {\n  border-color: rgba(169, 231, 189, 0.4);\n  background: rgba(10, 35, 19, 0.96);\n}\n\n.mmd-renewal-kenji__wrap {\n  position: relative;\n  z-index: 1;\n  width: min(100% - 26px, 1160px);\n  margin: 0 auto;\n}\n\n.mmd-renewal-kenji__topbar {\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n  padding: 6px 0 14px;\n}\n\n.mmd-renewal-kenji__brand {\n  display: inline-flex;\n  align-items: center;\n  gap: 12px;\n  width: max-content;\n}\n\n.mmd-renewal-kenji__brand img {\n  width: 42px;\n  height: auto;\n  filter: drop-shadow(0 0 18px rgba(222, 180, 98, 0.36));\n}\n\n.mmd-renewal-kenji__brand span {\n  display: grid;\n  gap: 2px;\n}\n\n.mmd-renewal-kenji__brand strong {\n  font-family: \"Manrope\", system-ui, sans-serif;\n  font-size: 15px;\n  line-height: 1;\n  letter-spacing: 0.18em;\n  font-weight: 800;\n}\n\n.mmd-renewal-kenji__brand em {\n  color: var(--mmd-muted);\n  font-family: \"Manrope\", system-ui, sans-serif;\n  font-size: 10px;\n  line-height: 1.2;\n  letter-spacing: 0.1em;\n  text-transform: uppercase;\n  font-style: normal;\n  font-weight: 800;\n}\n\n.mmd-renewal-kenji__nav {\n  display: grid;\n  grid-template-columns: 1fr 1fr;\n  gap: 8px;\n}\n\n.mmd-renewal-kenji__nav a {\n  min-height: 40px;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  border: 1px solid var(--mmd-line);\n  border-radius: 999px;\n  background: rgba(255, 255, 255, 0.06);\n  color: var(--mmd-soft);\n  font-family: \"Manrope\", system-ui, sans-serif;\n  font-size: 10px;\n  letter-spacing: 0.13em;\n  text-transform: uppercase;\n  font-weight: 800;\n  backdrop-filter: blur(14px);\n  -webkit-backdrop-filter: blur(14px);\n}\n\n.mmd-renewal-kenji__hero {\n  overflow: hidden;\n  display: grid;\n  grid-template-columns: 1fr;\n  border: 1px solid rgba(222, 180, 98, 0.34);\n  border-radius: 30px;\n  background:\n    radial-gradient(circle at 12% 0%, rgba(255, 176, 108, 0.12), transparent 36%),\n    linear-gradient(180deg, rgba(36, 31, 26, 0.98), rgba(10, 9, 8, 0.98));\n  box-shadow:\n    0 28px 74px rgba(0, 0, 0, 0.38),\n    inset 0 1px 0 rgba(255, 255, 255, 0.08);\n}\n\n.mmd-renewal-kenji__hero-visual {\n  position: relative;\n  min-height: clamp(390px, 68svh, 640px);\n  margin: 0;\n  overflow: hidden;\n  background: #0c0a08;\n}\n\n.mmd-renewal-kenji__hero-visual img {\n  position: absolute;\n  inset: 0;\n  width: 100%;\n  height: 100%;\n  object-fit: cover;\n  object-position: 52% top;\n  filter: saturate(1.04) contrast(1.04) brightness(1.05);\n  transform: scale(1.01);\n}\n\n.mmd-renewal-kenji__hero-shade {\n  position: absolute;\n  inset: 0;\n  background:\n    linear-gradient(180deg, rgba(7, 6, 5, 0) 34%, rgba(7, 6, 5, 0.72) 78%, rgba(7, 6, 5, 0.95) 100%),\n    linear-gradient(90deg, rgba(7, 6, 5, 0.12), rgba(7, 6, 5, 0.58));\n}\n\n.mmd-renewal-kenji__hero-visual figcaption {\n  position: absolute;\n  left: 16px;\n  right: 16px;\n  bottom: 16px;\n  padding: 15px;\n  border: 1px solid rgba(222, 180, 98, 0.32);\n  border-radius: 22px;\n  background: rgba(10, 9, 8, 0.72);\n  backdrop-filter: blur(16px);\n  -webkit-backdrop-filter: blur(16px);\n}\n\n.mmd-renewal-kenji__hero-visual figcaption span,\n.mmd-renewal-kenji__kicker,\n.mmd-renewal-kenji__card-head > span,\n.mmd-renewal-kenji__kenji-note span,\n.mmd-renewal-kenji__side-card > span,\n.mmd-renewal-kenji__turnstile span,\n.mmd-renewal-kenji__summary span,\n.mmd-renewal-kenji__safe-row span,\n.mmd-renewal-kenji__private-account span {\n  display: block;\n  color: var(--mmd-warm);\n  font-family: \"Manrope\", system-ui, sans-serif;\n  font-size: 10px;\n  line-height: 1.2;\n  letter-spacing: 0.16em;\n  text-transform: uppercase;\n  font-weight: 800;\n}\n\n.mmd-renewal-kenji__hero-visual figcaption strong {\n  display: block;\n  margin-top: 6px;\n  color: var(--mmd-text);\n  font-size: 15px;\n  line-height: 1.4;\n  font-weight: 800;\n}\n\n.mmd-renewal-kenji__hero-copy {\n  position: relative;\n  z-index: 2;\n  padding: 22px;\n}\n\n.mmd-renewal-kenji__hero h1 {\n  margin: 12px 0 0;\n  color: var(--mmd-text);\n  font-family: \"Manrope\", \"Noto Sans Thai\", system-ui, sans-serif;\n  font-size: clamp(48px, 14vw, 88px);\n  line-height: 0.86;\n  letter-spacing: -0.075em;\n  font-weight: 800;\n}\n\n.mmd-renewal-kenji__hero h1 span {\n  display: block;\n}\n\n.mmd-renewal-kenji__lead {\n  margin: 16px 0 0;\n  max-width: 620px;\n  color: rgba(255, 248, 239, 0.86);\n  font-size: 14px;\n  line-height: 1.84;\n  font-weight: 500;\n}\n\n.mmd-renewal-kenji__kenji-note {\n  margin-top: 16px;\n  padding: 15px;\n  border: 1px solid rgba(255, 176, 108, 0.26);\n  border-radius: 20px;\n  background: rgba(255, 176, 108, 0.08);\n}\n\n.mmd-renewal-kenji__kenji-note p {\n  margin: 8px 0 0;\n  color: var(--mmd-soft);\n  font-size: 13.5px;\n  line-height: 1.7;\n}\n\n.mmd-renewal-kenji__hero-actions {\n  display: grid;\n  grid-template-columns: 1fr;\n  gap: 9px;\n  margin-top: 17px;\n}\n\n.mmd-renewal-kenji__hero-actions a,\n.mmd-renewal-kenji__submit,\n.mmd-renewal-kenji__side-cta {\n  min-height: 48px;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  padding: 0 16px;\n  border: 1px solid var(--mmd-line);\n  border-radius: 999px;\n  background: rgba(255, 255, 255, 0.06);\n  color: var(--mmd-soft);\n  font-size: 13px;\n  line-height: 1;\n  font-weight: 800;\n  cursor: pointer;\n  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, opacity 0.18s ease;\n}\n\n.mmd-renewal-kenji__hero-actions a.is-primary,\n.mmd-renewal-kenji__submit {\n  border-color: rgba(222, 180, 98, 0.5);\n  background: linear-gradient(90deg, var(--mmd-warm), var(--mmd-amber));\n  color: #171008;\n  box-shadow: 0 18px 48px rgba(255, 176, 108, 0.22);\n}\n\n.mmd-renewal-kenji__submit {\n  width: 100%;\n  min-height: 56px;\n}\n\n.mmd-renewal-kenji__submit:disabled {\n  opacity: 0.7;\n  cursor: not-allowed;\n}\n\n.mmd-renewal-kenji__hero-actions a:active,\n.mmd-renewal-kenji__submit:active,\n.mmd-renewal-kenji__side-cta:active,\n.mmd-renewal-kenji button:active {\n  transform: scale(0.985);\n}\n\n.mmd-renewal-kenji__guide {\n  display: grid;\n  grid-template-columns: 1fr;\n  gap: 10px;\n  margin-top: 12px;\n}\n\n.mmd-renewal-kenji__guide article {\n  min-height: 118px;\n  padding: 15px;\n  border: 1px solid var(--mmd-line);\n  border-radius: 22px;\n  background: rgba(255, 255, 255, 0.055);\n}\n\n.mmd-renewal-kenji__guide span {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 34px;\n  height: 28px;\n  padding: 0 9px;\n  border: 1px solid rgba(222, 180, 98, 0.34);\n  border-radius: 999px;\n  color: var(--mmd-warm);\n  font-family: \"Manrope\", system-ui, sans-serif;\n  font-size: 10px;\n  font-weight: 800;\n}\n\n.mmd-renewal-kenji__guide strong {\n  display: block;\n  margin-top: 10px;\n  color: var(--mmd-text);\n  font-size: 15px;\n  line-height: 1.35;\n  font-weight: 800;\n}\n\n.mmd-renewal-kenji__guide p {\n  margin: 6px 0 0;\n  color: var(--mmd-muted);\n  font-size: 12.5px;\n  line-height: 1.6;\n}\n\n.mmd-renewal-kenji__main {\n  display: grid;\n  grid-template-columns: 1fr;\n  gap: 16px;\n  margin-top: 16px;\n}\n\n.mmd-renewal-kenji__content,\n.mmd-renewal-kenji__side {\n  display: grid;\n  gap: 16px;\n}\n\n.mmd-renewal-kenji__card,\n.mmd-renewal-kenji__side-card {\n  position: relative;\n  overflow: hidden;\n  padding: 18px;\n  border: 1px solid var(--mmd-line);\n  border-radius: 26px;\n  background:\n    radial-gradient(circle at 100% 0%, rgba(255, 176, 108, 0.08), transparent 34%),\n    linear-gradient(180deg, var(--mmd-panel), var(--mmd-panel-strong));\n  box-shadow:\n    0 24px 60px rgba(0, 0, 0, 0.25),\n    inset 0 1px 0 rgba(255, 255, 255, 0.08);\n}\n\n.mmd-renewal-kenji__card--private {\n  border-color: rgba(222, 180, 98, 0.28);\n  background:\n    radial-gradient(circle at 0% 0%, rgba(255, 176, 108, 0.12), transparent 36%),\n    linear-gradient(180deg, rgba(42, 35, 28, 0.95), rgba(18, 16, 14, 0.98));\n}\n\n.mmd-renewal-kenji h2,\n.mmd-renewal-kenji h3 {\n  margin: 8px 0 0;\n  color: var(--mmd-text);\n  font-family: \"Noto Sans Thai\", \"Manrope\", system-ui, sans-serif;\n  letter-spacing: -0.035em;\n  font-weight: 800;\n}\n\n.mmd-renewal-kenji h2 {\n  font-size: clamp(25px, 6.4vw, 38px);\n  line-height: 1.13;\n}\n\n.mmd-renewal-kenji h3 {\n  font-size: clamp(22px, 5.8vw, 32px);\n  line-height: 1.18;\n}\n\n.mmd-renewal-kenji__card-head p,\n.mmd-renewal-kenji__side-card p {\n  margin: 9px 0 0;\n  color: var(--mmd-muted);\n  font-size: 13px;\n  line-height: 1.75;\n}\n\n.mmd-renewal-kenji__choice-grid,\n.mmd-renewal-kenji__form-grid,\n.mmd-renewal-kenji__summary {\n  display: grid;\n  grid-template-columns: 1fr;\n  gap: 10px;\n}\n\n.mmd-renewal-kenji__choice-grid {\n  margin-top: 15px;\n}\n\n.mmd-renewal-kenji__choice-grid button {\n  min-height: 92px;\n  appearance: none;\n  border: 1px solid var(--mmd-line);\n  border-radius: 18px;\n  padding: 14px;\n  background: rgba(255, 255, 255, 0.055);\n  color: var(--mmd-text);\n  text-align: left;\n  cursor: pointer;\n}\n\n.mmd-renewal-kenji__choice-grid button.is-active {\n  border-color: rgba(222, 180, 98, 0.54);\n  background:\n    linear-gradient(135deg, rgba(255, 176, 108, 0.17), rgba(222, 180, 98, 0.08)),\n    rgba(255, 255, 255, 0.065);\n  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.24);\n}\n\n.mmd-renewal-kenji__choice-grid strong {\n  display: block;\n  font-size: 15px;\n  line-height: 1.32;\n  font-weight: 800;\n}\n\n.mmd-renewal-kenji__choice-grid small {\n  display: block;\n  margin-top: 7px;\n  color: var(--mmd-muted);\n  font-size: 12.5px;\n  line-height: 1.52;\n}\n\n.mmd-renewal-kenji__private-account {\n  display: grid;\n  grid-template-columns: 86px 1fr;\n  gap: 14px;\n  align-items: center;\n  margin-top: 15px;\n  padding: 14px;\n  border: 1px solid rgba(222, 180, 98, 0.24);\n  border-radius: 22px;\n  background: rgba(255, 255, 255, 0.05);\n}\n\n.mmd-renewal-kenji__bank-badge {\n  min-height: 98px;\n  display: grid;\n  place-items: center;\n  border: 1px solid rgba(222, 180, 98, 0.32);\n  border-radius: 19px;\n  background: rgba(222, 180, 98, 0.12);\n  color: var(--mmd-text);\n  font-family: \"Manrope\", system-ui, sans-serif;\n  font-size: 13px;\n  font-weight: 800;\n  letter-spacing: -0.02em;\n}\n\n.mmd-renewal-kenji__private-account strong {\n  display: block;\n  margin-top: 6px;\n  color: var(--mmd-text);\n  font-size: 20px;\n  line-height: 1.3;\n  font-weight: 800;\n}\n\n.mmd-renewal-kenji__private-account p {\n  margin: 7px 0 0;\n  color: var(--mmd-muted);\n  font-size: 12.5px;\n  line-height: 1.65;\n}\n\n.mmd-renewal-kenji__safe-row {\n  margin-top: 12px;\n  padding: 14px;\n  border: 1px dashed rgba(222, 180, 98, 0.28);\n  border-radius: 18px;\n  background: rgba(222, 180, 98, 0.06);\n}\n\n.mmd-renewal-kenji__safe-row strong {\n  display: block;\n  margin-top: 7px;\n  color: var(--mmd-text);\n  font-size: 14px;\n  font-weight: 800;\n}\n\n.mmd-renewal-kenji__safe-row p {\n  margin: 6px 0 0;\n  color: var(--mmd-muted);\n  font-size: 12.5px;\n  line-height: 1.58;\n}\n\n.mmd-renewal-kenji__form {\n  display: grid;\n  gap: 13px;\n  margin-top: 15px;\n}\n\n.mmd-renewal-kenji__field {\n  display: grid;\n  gap: 8px;\n}\n\n.mmd-renewal-kenji__field span {\n  color: var(--mmd-soft);\n  font-size: 13px;\n  line-height: 1.45;\n  font-weight: 650;\n}\n\n.mmd-renewal-kenji__field input,\n.mmd-renewal-kenji__field textarea {\n  width: 100%;\n  min-height: 50px;\n  padding: 12px 14px;\n  border: 1px solid var(--mmd-line);\n  border-radius: 17px;\n  background: rgba(255, 255, 255, 0.06);\n  color: var(--mmd-text);\n  outline: none;\n}\n\n.mmd-renewal-kenji__field textarea {\n  min-height: 112px;\n  resize: vertical;\n}\n\n.mmd-renewal-kenji__field input::placeholder,\n.mmd-renewal-kenji__field textarea::placeholder {\n  color: rgba(255, 248, 239, 0.36);\n}\n\n.mmd-renewal-kenji__field input:focus,\n.mmd-renewal-kenji__field textarea:focus {\n  border-color: rgba(222, 180, 98, 0.5);\n  box-shadow: 0 0 0 4px rgba(222, 180, 98, 0.09);\n}\n\n.mmd-renewal-kenji__field input[aria-invalid=\"true\"],\n.mmd-renewal-kenji__field textarea[aria-invalid=\"true\"],\n.mmd-renewal-kenji__upload.is-invalid,\n.mmd-renewal-kenji__consent.is-invalid {\n  border-color: rgba(255, 145, 126, 0.64);\n  box-shadow: 0 0 0 4px rgba(255, 145, 126, 0.08);\n}\n\n.mmd-renewal-kenji__upload {\n  display: grid;\n  justify-items: center;\n  gap: 9px;\n  padding: 23px 16px;\n  border: 1px dashed rgba(222, 180, 98, 0.38);\n  border-radius: 22px;\n  background: rgba(222, 180, 98, 0.07);\n  text-align: center;\n  cursor: pointer;\n}\n\n.mmd-renewal-kenji__upload input {\n  position: absolute;\n  opacity: 0;\n  pointer-events: none;\n}\n\n.mmd-renewal-kenji__upload-icon {\n  width: 54px;\n  height: 54px;\n  display: grid;\n  place-items: center;\n  border-radius: 19px;\n  background: linear-gradient(90deg, var(--mmd-warm), var(--mmd-amber));\n  color: #171008;\n  font-size: 30px;\n  line-height: 1;\n}\n\n.mmd-renewal-kenji__upload strong {\n  display: block;\n  color: #ffe3a9;\n  font-size: 15px;\n  line-height: 1.4;\n  font-weight: 800;\n}\n\n.mmd-renewal-kenji__upload small,\n.mmd-renewal-kenji__turnstile small {\n  color: var(--mmd-muted);\n  font-size: 12px;\n  line-height: 1.58;\n}\n\n.mmd-renewal-kenji__turnstile {\n  display: grid;\n  gap: 8px;\n  padding: 13px;\n  border: 1px solid var(--mmd-line);\n  border-radius: 19px;\n  background: rgba(255, 255, 255, 0.045);\n}\n\n.mmd-renewal-kenji__turnstile-box {\n  min-height: 65px;\n}\n\n.mmd-renewal-kenji__turnstile-missing {\n  padding: 12px 14px;\n  border: 1px dashed rgba(222, 180, 98, 0.32);\n  border-radius: 14px;\n  color: var(--mmd-muted);\n  font-size: 13px;\n  line-height: 1.55;\n}\n\n.mmd-renewal-kenji__consent {\n  display: flex;\n  gap: 10px;\n  align-items: flex-start;\n  padding: 13px;\n  border: 1px solid var(--mmd-line);\n  border-radius: 19px;\n  background: rgba(255, 255, 255, 0.045);\n}\n\n.mmd-renewal-kenji__consent input {\n  width: 18px;\n  height: 18px;\n  margin-top: 4px;\n  accent-color: var(--mmd-gold);\n}\n\n.mmd-renewal-kenji__consent span {\n  color: var(--mmd-soft);\n  font-size: 13px;\n  line-height: 1.55;\n}\n\n.mmd-renewal-kenji__status {\n  padding: 13px 14px;\n  border-radius: 18px;\n  font-size: 13px;\n  line-height: 1.6;\n}\n\n.mmd-renewal-kenji__status.is-success {\n  color: #e2f8e8;\n  border: 1px solid rgba(169, 231, 189, 0.34);\n  background: rgba(169, 231, 189, 0.1);\n}\n\n.mmd-renewal-kenji__status.is-error {\n  color: #ffdad4;\n  border: 1px solid rgba(255, 145, 126, 0.4);\n  background: rgba(255, 145, 126, 0.1);\n}\n\n.mmd-renewal-kenji__side-card {\n  padding: 18px;\n}\n\n.mmd-renewal-kenji__side-card ul {\n  display: grid;\n  gap: 10px;\n  margin: 14px 0 0;\n  padding: 0;\n  list-style: none;\n}\n\n.mmd-renewal-kenji__side-card li {\n  position: relative;\n  padding-left: 22px;\n  color: var(--mmd-soft);\n  font-size: 13px;\n  line-height: 1.58;\n}\n\n.mmd-renewal-kenji__side-card li::before {\n  content: \"\";\n  position: absolute;\n  left: 0;\n  top: 0.62em;\n  width: 8px;\n  height: 8px;\n  border-radius: 999px;\n  background: var(--mmd-gold);\n  box-shadow: 0 0 14px rgba(222, 180, 98, 0.72);\n}\n\n.mmd-renewal-kenji__summary {\n  margin-top: 14px;\n}\n\n.mmd-renewal-kenji__summary div {\n  min-height: 68px;\n  padding: 13px;\n  border: 1px solid var(--mmd-line);\n  border-radius: 17px;\n  background: rgba(255, 255, 255, 0.05);\n}\n\n.mmd-renewal-kenji__summary strong {\n  display: block;\n  margin-top: 8px;\n  color: var(--mmd-text);\n  font-size: 14px;\n  line-height: 1.35;\n  font-weight: 800;\n}\n\n.mmd-renewal-kenji__side-cta {\n  width: 100%;\n  margin-top: 13px;\n}\n\n.mmd-renewal-kenji__soft-warning {\n  color: var(--mmd-muted);\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .mmd-renewal-kenji *,\n  .mmd-renewal-kenji *::before,\n  .mmd-renewal-kenji *::after {\n    transition: none !important;\n    scroll-behavior: auto !important;\n  }\n}\n\n@media screen and (min-width: 720px) {\n  .mmd-renewal-kenji {\n    padding: 22px 0 80px;\n  }\n\n  .mmd-renewal-kenji__wrap {\n    width: min(100% - 46px, 1160px);\n  }\n\n  .mmd-renewal-kenji__topbar {\n    min-height: 74px;\n    flex-direction: row;\n    align-items: center;\n    justify-content: space-between;\n  }\n\n  .mmd-renewal-kenji__brand img {\n    width: 48px;\n  }\n\n  .mmd-renewal-kenji__nav {\n    display: flex;\n    justify-content: flex-end;\n  }\n\n  .mmd-renewal-kenji__nav a {\n    min-width: 132px;\n  }\n\n  .mmd-renewal-kenji__hero {\n    grid-template-columns: minmax(360px, 0.88fr) minmax(0, 1fr);\n    min-height: 520px;\n  }\n\n  .mmd-renewal-kenji__hero-visual {\n    min-height: 520px;\n    order: 2;\n  }\n\n  .mmd-renewal-kenji__hero-copy {\n    min-height: 520px;\n    display: flex;\n    flex-direction: column;\n    justify-content: center;\n    padding: 34px;\n    order: 1;\n  }\n\n  .mmd-renewal-kenji__hero-actions {\n    grid-template-columns: max-content max-content;\n  }\n\n  .mmd-renewal-kenji__hero-actions a {\n    min-width: 185px;\n  }\n\n  .mmd-renewal-kenji__guide {\n    grid-template-columns: repeat(4, 1fr);\n  }\n\n  .mmd-renewal-kenji__choice-grid {\n    grid-template-columns: repeat(3, 1fr);\n  }\n\n  .mmd-renewal-kenji__form-grid {\n    grid-template-columns: 1fr 1fr;\n  }\n\n  .mmd-renewal-kenji__summary {\n    grid-template-columns: 1fr 1fr;\n  }\n\n  .mmd-renewal-kenji__summary div:last-child {\n    grid-column: 1 / -1;\n  }\n}\n\n@media screen and (min-width: 1040px) {\n  .mmd-renewal-kenji__main {\n    grid-template-columns: minmax(0, 1fr) 350px;\n    align-items: start;\n    gap: 18px;\n  }\n\n  .mmd-renewal-kenji__side {\n    position: sticky;\n    top: 22px;\n  }\n\n  .mmd-renewal-kenji__card,\n  .mmd-renewal-kenji__side-card {\n    padding: 22px;\n  }\n}</style>";
-  const pageSection = "<section\n  id=\"mmd-renewal-kenji\"\n  class=\"mmd-renewal-kenji\"\n  data-mmd-renewal-kenji\n  data-endpoint=\"/api/pay/renewal/proof\"\n>\n  <div class=\"mmd-renewal-kenji__bg\" aria-hidden=\"true\">\n    <div class=\"mmd-renewal-kenji__orb mmd-renewal-kenji__orb--left\"></div>\n    <div class=\"mmd-renewal-kenji__orb mmd-renewal-kenji__orb--right\"></div>\n  </div>\n\n  <div class=\"mmd-renewal-kenji__toast\" data-renewal-toast role=\"status\" aria-live=\"polite\"></div>\n\n  <div class=\"mmd-renewal-kenji__wrap\">\n    <header class=\"mmd-renewal-kenji__topbar\">\n      <a class=\"mmd-renewal-kenji__brand\" href=\"/pay/renewal\" aria-label=\"SIGIL renewal page\">\n        <img\n          src=\"https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0f2cbc7e26b6735aee4cb2_SIGIL%20LOGO%20Transp.webp\"\n          alt=\"SIGIL\"\n          loading=\"eager\"\n          decoding=\"async\"\n        />\n        <span>\n          <strong>SIGIL</strong>\n          <em>Membership Renewal</em>\n        </span>\n      </a>\n\n      <nav class=\"mmd-renewal-kenji__nav\" aria-label=\"Renewal navigation\">\n        <a href=\"/trust/inme\">Trust-Inme</a>\n        <a href=\"/member/dashboard\">Member</a>\n      </nav>\n    </header>\n\n    <section class=\"mmd-renewal-kenji__hero\" aria-labelledby=\"mmdRenewalKenjiTitle\">\n      <figure class=\"mmd-renewal-kenji__hero-visual\">\n        <img\n          src=\"https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a294c07eba33a6c36555beb_ChatGPT%20Image%20Jun%2010%2C%202026%2C%2006_35_22%20PM.webp\"\n          alt=\"Kenji guiding a SIGIL membership renewal review\"\n          loading=\"eager\"\n          decoding=\"async\"\n        />\n        <div class=\"mmd-renewal-kenji__hero-shade\"></div>\n        <figcaption>\n          <span>Kenji is here</span>\n          <strong>ส่งสลิปให้ผมช่วยพาเข้าคิวตรวจสอบครับ</strong>\n        </figcaption>\n      </figure>\n\n      <div class=\"mmd-renewal-kenji__hero-copy\">\n        <p class=\"mmd-renewal-kenji__kicker\">MMD PRIVÉ · SIGIL ACCESS</p>\n\n        <h1 id=\"mmdRenewalKenjiTitle\">\n          <span>Renew</span>\n          <span>with Kenji</span>\n        </h1>\n\n        <p class=\"mmd-renewal-kenji__lead\">\n          หน้านี้สำหรับสมัครสมาชิก ต่ออายุ หรือส่งหลักฐานเข้า Black Card Review ครับ\n          ผมจะช่วยรับข้อมูลให้ครบก่อนส่งต่อทีมตรวจยอดจริง ไม่ต้องกังวลว่าต้องเขียนเป็นภาษาทางการ\n          แค่ส่งข้อมูลให้ชัดพอที่ทีมจะตรวจสอบได้ก็พอครับ\n        </p>\n\n        <div class=\"mmd-renewal-kenji__kenji-note\">\n          <span>Kenji Note</span>\n          <p>\n            สลิปที่ส่งเข้ามายังไม่ใช่การยืนยันสำเร็จทันทีนะครับ\n            มันคือการบอกผมว่า “ช่วยเอารายการนี้ไปให้ทีมเช็กให้หน่อย”\n            หลังจากทีมตรวจยอดจริงแล้ว สถานะสมาชิกถึงจะถูกอัปเดตอย่างเป็นทางการครับ\n          </p>\n        </div>\n\n        <div class=\"mmd-renewal-kenji__hero-actions\">\n          <a class=\"is-primary\" href=\"#mmdRenewalKenjiForm\">ส่งหลักฐานให้เคนจิ</a>\n          <a href=\"#mmdRenewalKenjiGuide\">อ่านก่อนส่ง</a>\n        </div>\n      </div>\n    </section>\n\n    <section class=\"mmd-renewal-kenji__guide\" id=\"mmdRenewalKenjiGuide\" aria-label=\"Renewal guide\">\n      <article>\n        <span>01</span>\n        <strong>เลือกสิ่งที่ต้องการทำ</strong>\n        <p>สมัครใหม่ ต่ออายุ หรือส่งเข้า Black Card Review ให้ตรงกับเรื่องที่คุยกับแอดมินไว้ครับ</p>\n      </article>\n\n      <article>\n        <span>02</span>\n        <strong>ชำระผ่านบัญชีที่ได้รับแจ้ง</strong>\n        <p>ใช้บัญชี Krungsri ที่ทีมแจ้งเท่านั้น เลขบัญชีจะไม่โชว์บนหน้านี้เพื่อความปลอดภัยครับ</p>\n      </article>\n\n      <article>\n        <span>03</span>\n        <strong>แนบสลิปที่อ่านชัด</strong>\n        <p>ให้เห็นยอด เวลา และข้อมูลการโอนชัดเจน ถ้าสลิปไม่ชัด ทีมอาจต้องขอใหม่ครับ</p>\n      </article>\n\n      <article>\n        <span>04</span>\n        <strong>รอทีมตรวจยอดจริง</strong>\n        <p>หลังส่งแล้ว รายการจะเข้าคิวตรวจสอบ ไม่ใช่การอนุมัติหรือเปิดสิทธิ์อัตโนมัติครับ</p>\n      </article>\n    </section>\n\n    <main class=\"mmd-renewal-kenji__main\">\n      <section class=\"mmd-renewal-kenji__content\">\n        <section class=\"mmd-renewal-kenji__card\">\n          <div class=\"mmd-renewal-kenji__card-head\">\n            <span>Access Type</span>\n            <h2>เลือกเรื่องที่ให้ผมช่วยส่งตรวจ</h2>\n            <p>\n              ถ้าไม่แน่ใจให้เลือก Renewal ไว้ก่อน แล้วเขียนหมายเหตุเพิ่มให้ผมกับทีมตรวจสอบอ่านต่อได้ครับ\n            </p>\n          </div>\n\n          <div class=\"mmd-renewal-kenji__choice-grid\" role=\"radiogroup\" aria-label=\"Membership payment type\">\n            <button type=\"button\" class=\"is-active\" data-package=\"signup\" aria-pressed=\"true\">\n              <strong>Signup</strong>\n              <small>สมัครสมาชิกใหม่ หรือเริ่มเข้าระบบสมาชิก MMD Privé</small>\n            </button>\n\n            <button type=\"button\" data-package=\"renewal\" aria-pressed=\"false\">\n              <strong>Renewal</strong>\n              <small>ต่ออายุจากสถานะเดิม หรือกลับมาใช้งานต่อ</small>\n            </button>\n\n            <button type=\"button\" data-package=\"blackcard_review\" aria-pressed=\"false\">\n              <strong>Black Card Review</strong>\n              <small>ส่งหลักฐานเพื่อให้ทีมพิจารณาแบบส่วนตัว ไม่ใช่การซื้อสิทธิ์อัตโนมัติ</small>\n            </button>\n          </div>\n        </section>\n\n        <section class=\"mmd-renewal-kenji__card mmd-renewal-kenji__card--private\">\n          <div class=\"mmd-renewal-kenji__card-head\">\n            <span>Payment Account</span>\n            <h2>บัญชีรับโอนจะไม่โชว์บนหน้า public</h2>\n            <p>\n              รอบนี้ใช้บัญชี Krungsri ตามที่ทีมแจ้งให้สมาชิกครับ\n              เพื่อความปลอดภัย ผมจะไม่แสดงเลขบัญชีหรือ PromptPay บนหน้าเว็บนี้\n              ถ้ายังไม่มีข้อมูลบัญชี ให้กลับไปดูจากแชทที่แอดมินส่งให้ก่อนชำระเงินนะครับ\n            </p>\n          </div>\n\n          <div class=\"mmd-renewal-kenji__private-account\">\n            <div class=\"mmd-renewal-kenji__bank-badge\">Krungsri</div>\n            <div>\n              <span>Official account for this flow</span>\n              <strong>Tatcha</strong>\n              <p>\n                โปรดตรวจชื่อบัญชีให้ตรงกับที่ได้รับแจ้งจากทีม ก่อนโอนเงินทุกครั้ง\n                เลขบัญชีและ PromptPay จะไม่ถูกแสดงบนหน้านี้ครับ\n              </p>\n            </div>\n          </div>\n\n          <div class=\"mmd-renewal-kenji__safe-row\">\n            <span>Privacy Lock</span>\n            <strong>เลขบัญชีไม่แสดงบนหน้าเว็บ</strong>\n            <p>ช่วยลดการ copy ผิด flow และป้องกันข้อมูลบัญชีถูกนำไปใช้ผิดบริบทครับ</p>\n          </div>\n        </section>\n\n        <section class=\"mmd-renewal-kenji__card\" id=\"mmdRenewalKenjiForm\">\n          <div class=\"mmd-renewal-kenji__card-head\">\n            <span>Payment Proof</span>\n            <h2>ส่งหลักฐานให้ผมช่วยตรวจต่อ</h2>\n            <p>\n              กรอกเท่าที่จำเป็นให้ครบ แนบสลิปที่ชัด และใส่หมายเหตุแบบภาษาคนได้เลยครับ\n              ผมจะจัดข้อมูลให้ทีมตรวจยอดต่อเอง\n            </p>\n          </div>\n\n          <form\n            class=\"mmd-renewal-kenji__form\"\n            action=\"/api/pay/renewal/proof\"\n            method=\"POST\"\n            enctype=\"multipart/form-data\"\n            data-renewal-form\n            novalidate\n          >\n            <input type=\"hidden\" name=\"payment_type\" value=\"renewal\">\n            <input type=\"hidden\" name=\"selected_package\" value=\"signup\">\n            <input type=\"hidden\" name=\"payment_method\" value=\"krungsri_bank_transfer\">\n            <input type=\"hidden\" name=\"payment_bank\" value=\"Krungsri\">\n            <input type=\"hidden\" name=\"session_id\" value=\"\">\n            <input type=\"hidden\" name=\"payment_ref\" value=\"\">\n            <input type=\"hidden\" name=\"transaction_ref\" value=\"\">\n            <input type=\"hidden\" name=\"cf_turnstile_response\" value=\"\">\n            <input type=\"hidden\" name=\"t\" value=\"\" data-renewal-token>\n\n            <div class=\"mmd-renewal-kenji__form-grid\">\n              <label class=\"mmd-renewal-kenji__field\">\n                <span>ชื่อ / ชื่อเล่น</span>\n                <input type=\"text\" name=\"display_name\" placeholder=\"ชื่อที่แอดมินหรือระบบรู้จัก\" required>\n              </label>\n\n              <label class=\"mmd-renewal-kenji__field\">\n                <span>ช่องทางติดต่อกลับ</span>\n                <input type=\"text\" name=\"contact_id\" placeholder=\"LINE, Telegram หรือช่องทางที่ติดต่อได้\" required>\n              </label>\n\n              <label class=\"mmd-renewal-kenji__field\">\n                <span>ยอดที่ชำระจริง</span>\n                <input type=\"number\" name=\"amount_paid\" inputmode=\"decimal\" min=\"1\" placeholder=\"เช่น 3000\" required>\n              </label>\n\n              <label class=\"mmd-renewal-kenji__field\">\n                <span>วันและเวลาที่ชำระ</span>\n                <input type=\"datetime-local\" name=\"paid_at\" required>\n              </label>\n            </div>\n\n            <label class=\"mmd-renewal-kenji__field\">\n              <span>เรื่องที่ต้องการให้ตรวจ</span>\n              <input\n                type=\"text\"\n                name=\"package_note\"\n                placeholder=\"เช่น สมัครใหม่ / ต่ออายุ / Black Card Review / ยอดที่แอดมินแจ้ง\"\n              >\n            </label>\n\n            <label class=\"mmd-renewal-kenji__field\">\n              <span>เล่าให้เคนจิฟังเพิ่มได้ครับ</span>\n              <textarea\n                name=\"verification_note\"\n                rows=\"4\"\n                placeholder=\"เช่น โอนจากชื่อบัญชีอะไร, แอดมินแจ้งยอดเท่าไร, หรือมีอะไรอยากให้ทีมช่วยเช็กเป็นพิเศษ\"\n              ></textarea>\n            </label>\n\n            <label class=\"mmd-renewal-kenji__upload\" data-upload-box>\n              <input type=\"file\" name=\"proof\" accept=\"image/*,.pdf\" required>\n              <span class=\"mmd-renewal-kenji__upload-icon\">+</span>\n              <strong data-upload-label>แนบสลิป / หลักฐานการโอน</strong>\n              <small>ใช้ไฟล์ที่เห็นยอด วันเวลา และข้อมูลการชำระเงินชัดเจน รองรับรูปภาพหรือ PDF ไม่เกิน 12MB</small>\n            </label>\n\n            <div class=\"mmd-renewal-kenji__turnstile\">\n              <span>Security Check</span>\n              <div class=\"mmd-renewal-kenji__turnstile-box\" data-turnstile-box></div>\n              <small>ใช้ป้องกันการส่งฟอร์มอัตโนมัติและรักษาความปลอดภัยของข้อมูลครับ</small>\n            </div>\n\n            <label class=\"mmd-renewal-kenji__consent\" data-consent-box>\n              <input type=\"checkbox\" name=\"renewal_consent\" required>\n              <span>\n                ฉันเข้าใจว่าการส่งสลิปยังไม่ใช่การยืนยันสำเร็จ\n                ทีมจะตรวจยอดเงินจริงก่อนอัปเดตสถานะสมาชิกหรือสิทธิ์การเข้าถึง\n              </span>\n            </label>\n\n            <button class=\"mmd-renewal-kenji__submit\" type=\"submit\" data-submit-button>\n              ส่งหลักฐานให้เคนจิตรวจต่อ\n            </button>\n\n            <div class=\"mmd-renewal-kenji__status\" data-status-box hidden></div>\n          </form>\n        </section>\n      </section>\n\n      <aside class=\"mmd-renewal-kenji__side\">\n        <section class=\"mmd-renewal-kenji__side-card is-sticky\">\n          <span>Kenji Summary</span>\n          <h2>ก่อนกดส่ง ผมขอเช็กนิดเดียวครับ</h2>\n          <p data-kenji-line>\n            สมัครสมาชิกใช้บัญชี Krungsri ที่ทีมแจ้งเท่านั้นครับ หลังส่งหลักฐาน ทีมจะตรวจยอดก่อนเปิดสถานะสมาชิก\n          </p>\n\n          <div class=\"mmd-renewal-kenji__summary\">\n            <div>\n              <span>Selected</span>\n              <strong data-final-type>Signup</strong>\n            </div>\n            <div>\n              <span>Payment</span>\n              <strong>Krungsri</strong>\n            </div>\n            <div>\n              <span>Status</span>\n              <strong data-final-status>Waiting for proof</strong>\n            </div>\n          </div>\n\n          <a class=\"mmd-renewal-kenji__side-cta\" href=\"#mmdRenewalKenjiForm\">ไปที่ฟอร์ม</a>\n\n          <p class=\"mmd-renewal-kenji__soft-warning\">\n            ผมจะรับเรื่องให้ แต่การอนุมัติจริงต้องรอทีมตรวจยอดและยืนยันอย่างเป็นทางการเท่านั้นครับ\n          </p>\n        </section>\n\n        <section class=\"mmd-renewal-kenji__side-card\">\n          <span>What not to do</span>\n          <h2>อย่าส่งข้อมูลผิด flow</h2>\n          <ul>\n            <li>อย่าใช้หน้านี้แทน job payment ถ้าแอดมินส่ง flow อื่นให้</li>\n            <li>อย่าส่งสลิปที่เบลอหรืออ่านยอดไม่ได้</li>\n            <li>อย่าแนบข้อมูลบัญชีส่วนตัวเพิ่มเติมถ้าไม่จำเป็น</li>\n            <li>อย่าถือว่าการส่งฟอร์มคือการอนุมัติทันที</li>\n          </ul>\n        </section>\n      </aside>\n    </main>\n  </div>\n</section>";
-  const pageScript = "<script>\n(function () {\n  var root = document.querySelector(\"[data-mmd-renewal-kenji]\");\n  if (!root) return;\n\n  var config = window.MMD_RENEWAL_KENJI_CONFIG || {};\n  var form = root.querySelector(\"[data-renewal-form]\");\n  if (!form) return;\n\n  var toastBox = root.querySelector(\"[data-renewal-toast]\");\n  var statusBox = root.querySelector(\"[data-status-box]\");\n  var submitButton = root.querySelector(\"[data-submit-button]\");\n  var uploadInput = form.querySelector('input[name=\"proof\"]');\n  var uploadBox = root.querySelector(\"[data-upload-box]\");\n  var uploadLabel = root.querySelector(\"[data-upload-label]\");\n  var consentBox = root.querySelector(\"[data-consent-box]\");\n  var packageButtons = Array.prototype.slice.call(root.querySelectorAll(\"[data-package]\"));\n  var selectedPackageInput = form.querySelector('input[name=\"selected_package\"]');\n  var finalType = root.querySelector(\"[data-final-type]\");\n  var finalStatus = root.querySelector(\"[data-final-status]\");\n  var kenjiLine = root.querySelector(\"[data-kenji-line]\");\n  var turnstileField = form.querySelector('input[name=\"cf_turnstile_response\"]');\n  var tokenField = form.querySelector(\"[data-renewal-token]\");\n  var turnstileWidgetId = null;\n\n  var packageLabels = {\n    signup: \"Signup\",\n    renewal: \"Renewal\",\n    blackcard_review: \"Black Card Review\"\n  };\n\n  var kenjiLines = {\n    signup: \"สมัครสมาชิกใช้บัญชี Krungsri ที่ทีมแจ้งเท่านั้นครับ หลังส่งหลักฐาน ทีมจะตรวจยอดก่อนเปิดสถานะสมาชิก\",\n    renewal: \"ต่ออายุสมาชิกใช้บัญชี Krungsri ที่ทีมแจ้งเท่านั้นครับ ส่งสลิปแล้วรอทีมตรวจยอดจริงก่อนอัปเดตสถานะ\",\n    blackcard_review: \"Black Card เป็น Private Review เท่านั้นครับ การส่งหลักฐานไม่ใช่การซื้อสิทธิ์อัตโนมัติ ทีมจะตรวจยอดและพิจารณาสถานะก่อน\"\n  };\n\n  function clean(value) {\n    return String(value || \"\").trim();\n  }\n\n  function makeRef(prefix) {\n    var cryptoObj = window.crypto || window.msCrypto;\n    if (cryptoObj && cryptoObj.getRandomValues) {\n      var arr = new Uint32Array(2);\n      cryptoObj.getRandomValues(arr);\n      return prefix + \"_\" + Date.now().toString(36) + \"_\" + arr[0].toString(36) + arr[1].toString(36);\n    }\n    return prefix + \"_\" + Date.now().toString(36) + \"_\" + Math.floor(Math.random() * 1000000).toString(36);\n  }\n\n  function setFreshRefs() {\n    var session = form.querySelector('input[name=\"session_id\"]');\n    var payment = form.querySelector('input[name=\"payment_ref\"]');\n    var transaction = form.querySelector('input[name=\"transaction_ref\"]');\n\n    if (session) session.value = makeRef(\"renewal_session\");\n    if (payment) payment.value = makeRef(\"renewal_ref\");\n    if (transaction) transaction.value = makeRef(\"renewal_txn\");\n  }\n\n  function preserveTokenParam() {\n    try {\n      var url = new URL(window.location.href);\n      var t = url.searchParams.get(\"t\") || \"\";\n      if (tokenField) tokenField.value = t;\n    } catch (error) {\n      if (tokenField) tokenField.value = \"\";\n    }\n  }\n\n  function toast(message, type) {\n    if (!toastBox) return;\n\n    toastBox.textContent = message;\n    toastBox.classList.remove(\"is-error\", \"is-success\");\n    if (type === \"error\") toastBox.classList.add(\"is-error\");\n    if (type === \"success\") toastBox.classList.add(\"is-success\");\n    toastBox.classList.add(\"is-show\");\n\n    clearTimeout(toast.timer);\n    toast.timer = window.setTimeout(function () {\n      toastBox.classList.remove(\"is-show\");\n    }, 2900);\n  }\n\n  function showStatus(type, message) {\n    if (!statusBox) return;\n\n    statusBox.hidden = false;\n    statusBox.className = \"mmd-renewal-kenji__status\";\n    statusBox.classList.add(type === \"success\" ? \"is-success\" : \"is-error\");\n    statusBox.textContent = message;\n  }\n\n  function clearStatus() {\n    if (!statusBox) return;\n\n    statusBox.hidden = true;\n    statusBox.textContent = \"\";\n    statusBox.className = \"mmd-renewal-kenji__status\";\n  }\n\n  function markInvalid(field, invalid) {\n    if (!field) return;\n    if (invalid) field.setAttribute(\"aria-invalid\", \"true\");\n    else field.removeAttribute(\"aria-invalid\");\n  }\n\n  function setPackage(value) {\n    if (!selectedPackageInput) return;\n\n    selectedPackageInput.value = value;\n\n    packageButtons.forEach(function (button) {\n      var active = button.getAttribute(\"data-package\") === value;\n      button.classList.toggle(\"is-active\", active);\n      button.setAttribute(\"aria-pressed\", active ? \"true\" : \"false\");\n    });\n\n    if (finalType) {\n      finalType.textContent = packageLabels[value] || \"Signup\";\n    }\n\n    if (kenjiLine) {\n      kenjiLine.textContent = kenjiLines[value] || kenjiLines.signup;\n    }\n  }\n\n  function validateForm() {\n    var ok = true;\n    clearStatus();\n\n    var requiredFields = Array.prototype.slice.call(form.querySelectorAll(\"[required]\"));\n\n    requiredFields.forEach(function (field) {\n      var invalid = false;\n\n      if (field.type === \"checkbox\") {\n        invalid = !field.checked;\n        if (consentBox) consentBox.classList.toggle(\"is-invalid\", invalid);\n      } else if (field.type === \"file\") {\n        invalid = !(field.files && field.files.length);\n        if (uploadBox) uploadBox.classList.toggle(\"is-invalid\", invalid);\n      } else {\n        invalid = !clean(field.value);\n        markInvalid(field, invalid);\n      }\n\n      if (invalid) ok = false;\n    });\n\n    if (!ok) {\n      showStatus(\"error\", \"กรอกข้อมูลที่จำเป็นให้ครบก่อนนะครับ โดยเฉพาะชื่อ ช่องทางติดต่อ ยอด เวลา และสลิป\");\n      toast(\"ยังมีข้อมูลที่ต้องเติมครับ\", \"error\");\n      return false;\n    }\n\n    if (config.turnstileSiteKey && turnstileField && !turnstileField.value) {\n      showStatus(\"error\", \"ช่วยยืนยัน Security Check ก่อนส่งให้ผมนิดหนึ่งครับ\");\n      toast(\"กรุณายืนยัน Security Check ก่อนครับ\", \"error\");\n      return false;\n    }\n\n    return true;\n  }\n\n  function resetTurnstile() {\n    if (window.turnstile && turnstileWidgetId !== null) {\n      window.turnstile.reset(turnstileWidgetId);\n    }\n    if (turnstileField) turnstileField.value = \"\";\n  }\n\n  function renderTurnstile() {\n    var box = root.querySelector(\"[data-turnstile-box]\");\n    if (!box) return;\n\n    if (!config.turnstileSiteKey || config.turnstileSiteKey === \"REPLACE_WITH_TURNSTILE_SITE_KEY\") {\n      box.innerHTML =\n        '<div class=\"mmd-renewal-kenji__turnstile-missing\">ยังไม่ได้ตั้งค่า Turnstile Site Key สำหรับหน้านี้ครับ</div>';\n      return;\n    }\n\n    if (!window.turnstile) {\n      window.setTimeout(renderTurnstile, 350);\n      return;\n    }\n\n    turnstileWidgetId = window.turnstile.render(box, {\n      sitekey: config.turnstileSiteKey,\n      theme: \"dark\",\n      callback: function (token) {\n        if (turnstileField) turnstileField.value = token || \"\";\n      },\n      \"expired-callback\": function () {\n        if (turnstileField) turnstileField.value = \"\";\n      },\n      \"error-callback\": function () {\n        if (turnstileField) turnstileField.value = \"\";\n      }\n    });\n  }\n\n  packageButtons.forEach(function (button) {\n    button.addEventListener(\"click\", function () {\n      setPackage(button.getAttribute(\"data-package\") || \"signup\");\n      clearStatus();\n    });\n  });\n\n  if (uploadInput) {\n    uploadInput.addEventListener(\"change\", function () {\n      clearStatus();\n      if (uploadBox) uploadBox.classList.remove(\"is-invalid\");\n\n      var file = uploadInput.files && uploadInput.files[0];\n\n      if (!file) {\n        if (uploadLabel) uploadLabel.textContent = \"แนบสลิป / หลักฐานการโอน\";\n        return;\n      }\n\n      var maxSize = 12 * 1024 * 1024;\n\n      if (file.size > maxSize) {\n        uploadInput.value = \"\";\n        if (uploadLabel) uploadLabel.textContent = \"แนบสลิป / หลักฐานการโอน\";\n        if (uploadBox) uploadBox.classList.add(\"is-invalid\");\n        showStatus(\"error\", \"ไฟล์ใหญ่เกินไปครับ ขอไฟล์ไม่เกิน 12MB นะครับ\");\n        toast(\"ไฟล์ใหญ่เกิน 12MB ครับ\", \"error\");\n        return;\n      }\n\n      if (uploadLabel) {\n        uploadLabel.textContent = file.name;\n      }\n    });\n  }\n\n  form.addEventListener(\"input\", function (event) {\n    var target = event.target;\n\n    if (target && target.matches(\"input, textarea\")) {\n      markInvalid(target, false);\n    }\n\n    if (consentBox) consentBox.classList.remove(\"is-invalid\");\n    if (uploadBox) uploadBox.classList.remove(\"is-invalid\");\n    clearStatus();\n  });\n\n  form.addEventListener(\"submit\", async function (event) {\n    event.preventDefault();\n\n    if (!validateForm()) return;\n\n    if (submitButton) {\n      submitButton.disabled = true;\n      submitButton.textContent = \"กำลังส่งให้เคนจิ...\";\n    }\n\n    clearStatus();\n\n    try {\n      var formData = new FormData(form);\n\n      var response = await fetch(config.endpoint || \"/api/pay/renewal/proof\", {\n        method: \"POST\",\n        body: formData,\n        credentials: \"same-origin\"\n      });\n\n      var data = await response.json().catch(function () {\n        return {};\n      });\n\n      if (!response.ok || !data.ok) {\n        var code = data && data.error && data.error.code ? data.error.code : (data.error || data.message || \"submit_failed\");\n        throw new Error(typeof code === \"string\" ? code : \"submit_failed\");\n      }\n\n      if (data.duplicate) {\n        showStatus(\n          \"success\",\n          \"รายการนี้เคยส่งเข้ามาแล้วครับ ไม่ต้องส่งซ้ำ เดี๋ยวทีมตรวจจากรายการเดิมให้\"\n        );\n        toast(\"รายการนี้อยู่ในคิวตรวจสอบแล้วครับ\", \"success\");\n      } else {\n        showStatus(\n          \"success\",\n          \"ผมได้รับหลักฐานแล้วครับ รายการนี้จะถูกส่งต่อให้ทีมตรวจยอดจริงก่อนอัปเดตสถานะ\"\n        );\n        toast(\"ได้รับหลักฐานแล้วครับ\", \"success\");\n      }\n\n      if (finalStatus) {\n        finalStatus.textContent = \"Pending official review\";\n      }\n\n      form.reset();\n\n      var paymentType = form.querySelector('input[name=\"payment_type\"]');\n      var paymentMethod = form.querySelector('input[name=\"payment_method\"]');\n      var paymentBank = form.querySelector('input[name=\"payment_bank\"]');\n\n      if (paymentType) paymentType.value = \"renewal\";\n      if (paymentMethod) paymentMethod.value = \"krungsri_bank_transfer\";\n      if (paymentBank) paymentBank.value = \"Krungsri\";\n\n      preserveTokenParam();\n      setPackage(\"signup\");\n      setFreshRefs();\n\n      if (uploadLabel) uploadLabel.textContent = \"แนบสลิป / หลักฐานการโอน\";\n      if (uploadBox) uploadBox.classList.remove(\"is-invalid\");\n      if (consentBox) consentBox.classList.remove(\"is-invalid\");\n\n      resetTurnstile();\n    } catch (error) {\n      var message = \"ตอนนี้ส่งข้อมูลไม่สำเร็จครับ ลองใหม่อีกครั้ง หรือส่งให้แอดมินช่วยตรวจได้เลย\";\n      var raw = String((error && error.message) || \"\");\n\n      if (raw.indexOf(\"turnstile\") !== -1) {\n        message = \"Security Check ไม่ผ่านครับ ลองยืนยันอีกครั้งก่อนส่งนะครับ\";\n      }\n\n      if (raw.indexOf(\"duplicate\") !== -1) {\n        message = \"รายการนี้เคยส่งแล้วครับ ทีมจะตรวจสอบจากรายการเดิมให้\";\n      }\n\n      showStatus(\"error\", message);\n      toast(message, \"error\");\n      resetTurnstile();\n    } finally {\n      if (submitButton) {\n        submitButton.disabled = false;\n        submitButton.textContent = \"ส่งหลักฐานให้เคนจิตรวจต่อ\";\n      }\n    }\n  });\n\n  preserveTokenParam();\n  setFreshRefs();\n  setPackage(\"signup\");\n  renderTurnstile();\n})();\n</script>";
-  const html = [
-    '<!doctype html>',
-    '<html lang="th">',
-    '<head>',
-    '  <meta charset="utf-8">',
-    '  <meta name="viewport" content="width=device-width, initial-scale=1">',
-    '  <meta name="robots" content="noindex,nofollow">',
-    '  <title>Renew with Kenji | SĪGIL</title>',
-    '  <meta name="description" content="สมัครสมาชิก ต่ออายุ หรือส่งหลักฐานเข้า Black Card Review ผ่าน Kenji และรอทีมตรวจยอดจริง">',
-    '  <link rel="preload" as="image" href="' + SIGIL_RENEWAL_KENJI_IMAGE + '">',
-    pageStyle,
-    turnstileSiteKey ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>' : '',
-    '</head>',
-    '<body>',
-    pageSection.replaceAll('__SIGIL_RENEWAL_LOGO_IMAGE__', SIGIL_RENEWAL_LOGO_IMAGE),
-    '<script>window.MMD_RENEWAL_KENJI_CONFIG = ' + JSON.stringify(config) + ';</script>',
-    pageScript,
-    '</body>',
-    '</html>',
-  ].filter(Boolean).join('\n');
-  return new Response(isHead ? null : html, {
+  const token = url.searchParams.get("t") || "";
+  const html = `<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Renew with Kenji | SĪGIL</title>
+  <meta name="description" content="ส่งหลักฐานสมัครสมาชิก ต่ออายุ หรือ Black Card Review ให้ Kenji ส่งต่อทีมตรวจสอบอย่างเป็นทางการ">
+  ${turnstileSiteKey ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>' : ""}
+  <style>
+    .mmd-renewal-kenji-public,
+    .mmd-renewal-kenji-public * {
+      box-sizing: border-box;
+      letter-spacing: 0;
+    }
+    .mmd-renewal-kenji-public {
+      --bg: #080605;
+      --panel: rgba(22, 18, 15, 0.86);
+      --panel-strong: rgba(12, 10, 8, 0.96);
+      --line: rgba(230, 185, 102, 0.24);
+      --line-soft: rgba(255, 255, 255, 0.12);
+      --text: #fff8ec;
+      --soft: rgba(255, 248, 236, 0.76);
+      --muted: rgba(255, 248, 236, 0.56);
+      --gold: #e0b768;
+      --warm: #ffb978;
+      min-height: 100vh;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 8% 0%, rgba(255, 185, 120, 0.18), transparent 36rem),
+        radial-gradient(circle at 98% 6%, rgba(224, 183, 104, 0.16), transparent 30rem),
+        linear-gradient(145deg, #17110d 0%, #070605 48%, #030303 100%);
+      font-family: "Noto Sans Thai", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .mmd-renewal-kenji-public a {
+      color: inherit;
+      text-decoration: none;
+    }
+    .mmd-renewal-kenji-public button,
+    .mmd-renewal-kenji-public input,
+    .mmd-renewal-kenji-public textarea {
+      font: inherit;
+    }
+    .mmd-renewal-kenji-public__wrap {
+      width: min(1160px, calc(100% - 28px));
+      margin: 0 auto;
+      padding: 18px 0 58px;
+    }
+    .mmd-renewal-kenji-public__top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 8px 0 18px;
+    }
+    .mmd-renewal-kenji-public__brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .mmd-renewal-kenji-public__logo {
+      width: 46px;
+      height: auto;
+      filter: drop-shadow(0 12px 28px rgba(224, 183, 104, 0.28));
+    }
+    .mmd-renewal-kenji-public__brand strong,
+    .mmd-renewal-kenji-public__eyebrow,
+    .mmd-renewal-kenji-public__label {
+      color: var(--warm);
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    .mmd-renewal-kenji-public__brand span {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.25;
+    }
+    .mmd-renewal-kenji-public__pill {
+      display: none;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 10px 13px;
+      color: var(--soft);
+      background: rgba(255, 255, 255, 0.05);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .mmd-renewal-kenji-public__hero {
+      overflow: hidden;
+      display: grid;
+      gap: 0;
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      background:
+        radial-gradient(circle at 0% 0%, rgba(255, 185, 120, 0.12), transparent 28rem),
+        linear-gradient(180deg, rgba(29, 24, 20, 0.96), rgba(9, 8, 7, 0.98));
+      box-shadow: 0 28px 88px rgba(0, 0, 0, 0.42);
+    }
+    .mmd-renewal-kenji-public__visual {
+      position: relative;
+      min-height: 360px;
+      margin: 0;
+      background:
+        linear-gradient(180deg, rgba(0,0,0,0.12), rgba(0,0,0,0.86)),
+        url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a22f53633aaf32d040022d4_Line-Kenji.webp") center top / cover no-repeat;
+    }
+    .mmd-renewal-kenji-public__visual-card {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 14px;
+      padding: 14px;
+      border: 1px solid rgba(224, 183, 104, 0.32);
+      border-radius: 20px;
+      background: rgba(9, 8, 7, 0.72);
+      backdrop-filter: blur(16px);
+    }
+    .mmd-renewal-kenji-public__visual-card strong {
+      display: block;
+      margin-top: 6px;
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.45;
+    }
+    .mmd-renewal-kenji-public__copy {
+      padding: 22px;
+    }
+    .mmd-renewal-kenji-public h1 {
+      margin: 12px 0 0;
+      max-width: 760px;
+      color: var(--text);
+      font-size: clamp(48px, 14vw, 96px);
+      line-height: 0.88;
+      font-weight: 950;
+    }
+    .mmd-renewal-kenji-public h1 span {
+      display: block;
+    }
+    .mmd-renewal-kenji-public__lead {
+      margin: 16px 0 0;
+      max-width: 700px;
+      color: var(--soft);
+      font-size: 15px;
+      line-height: 1.85;
+      font-weight: 600;
+    }
+    .mmd-renewal-kenji-public__note {
+      margin-top: 16px;
+      padding: 15px;
+      border: 1px solid rgba(255, 185, 120, 0.28);
+      border-radius: 20px;
+      background: rgba(255, 185, 120, 0.08);
+    }
+    .mmd-renewal-kenji-public__note p {
+      margin: 8px 0 0;
+      color: var(--soft);
+      font-size: 14px;
+      line-height: 1.72;
+    }
+    .mmd-renewal-kenji-public__actions {
+      display: grid;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .mmd-renewal-kenji-public__button,
+    .mmd-renewal-kenji-public__submit {
+      min-height: 52px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--line-soft);
+      border-radius: 999px;
+      padding: 0 18px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--soft);
+      font-weight: 900;
+      cursor: pointer;
+    }
+    .mmd-renewal-kenji-public__button.is-primary,
+    .mmd-renewal-kenji-public__submit {
+      border-color: rgba(224, 183, 104, 0.5);
+      background: linear-gradient(90deg, var(--warm), #f1d48c);
+      color: #171008;
+      box-shadow: 0 18px 50px rgba(255, 185, 120, 0.22);
+    }
+    .mmd-renewal-kenji-public__grid,
+    .mmd-renewal-kenji-public__main,
+    .mmd-renewal-kenji-public__form-grid {
+      display: grid;
+      gap: 14px;
+      margin-top: 14px;
+    }
+    .mmd-renewal-kenji-public__card {
+      padding: 18px;
+      border: 1px solid var(--line-soft);
+      border-radius: 22px;
+      background:
+        radial-gradient(circle at 100% 0%, rgba(255, 185, 120, 0.08), transparent 24rem),
+        linear-gradient(180deg, var(--panel), var(--panel-strong));
+    }
+    .mmd-renewal-kenji-public__card h2 {
+      margin: 7px 0 0;
+      color: var(--text);
+      font-size: clamp(24px, 6vw, 36px);
+      line-height: 1.15;
+    }
+    .mmd-renewal-kenji-public__card p,
+    .mmd-renewal-kenji-public__card li {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.72;
+    }
+    .mmd-renewal-kenji-public__choice-grid {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .mmd-renewal-kenji-public__choice-grid button {
+      min-height: 92px;
+      border: 1px solid var(--line-soft);
+      border-radius: 18px;
+      padding: 14px;
+      background: rgba(255, 255, 255, 0.055);
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+    }
+    .mmd-renewal-kenji-public__choice-grid button.is-active {
+      border-color: rgba(224, 183, 104, 0.58);
+      background: linear-gradient(135deg, rgba(255, 185, 120, 0.18), rgba(224, 183, 104, 0.08));
+    }
+    .mmd-renewal-kenji-public__choice-grid strong {
+      display: block;
+      font-size: 16px;
+    }
+    .mmd-renewal-kenji-public__choice-grid small {
+      display: block;
+      margin-top: 7px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .mmd-renewal-kenji-public__account {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+      padding: 14px;
+      border: 1px solid rgba(224, 183, 104, 0.28);
+      border-radius: 20px;
+      background: rgba(224, 183, 104, 0.08);
+    }
+    .mmd-renewal-kenji-public__bank {
+      min-height: 72px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(224, 183, 104, 0.34);
+      border-radius: 18px;
+      color: var(--text);
+      background: rgba(0, 0, 0, 0.18);
+      font-weight: 950;
+    }
+    .mmd-renewal-kenji-public__form {
+      display: grid;
+      gap: 13px;
+      margin-top: 15px;
+    }
+    .mmd-renewal-kenji-public__field {
+      display: grid;
+      gap: 8px;
+    }
+    .mmd-renewal-kenji-public__field span {
+      color: var(--soft);
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .mmd-renewal-kenji-public__field input,
+    .mmd-renewal-kenji-public__field textarea {
+      width: 100%;
+      min-height: 50px;
+      border: 1px solid var(--line-soft);
+      border-radius: 16px;
+      padding: 12px 14px;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.06);
+      outline: none;
+    }
+    .mmd-renewal-kenji-public__field textarea {
+      min-height: 112px;
+      resize: vertical;
+    }
+    .mmd-renewal-kenji-public__field input[aria-invalid="true"],
+    .mmd-renewal-kenji-public__upload.is-invalid,
+    .mmd-renewal-kenji-public__consent.is-invalid {
+      border-color: rgba(255, 143, 122, 0.68);
+      box-shadow: 0 0 0 4px rgba(255, 143, 122, 0.08);
+    }
+    .mmd-renewal-kenji-public__upload {
+      display: grid;
+      justify-items: center;
+      gap: 9px;
+      border: 1px dashed rgba(224, 183, 104, 0.4);
+      border-radius: 20px;
+      padding: 22px 16px;
+      background: rgba(224, 183, 104, 0.07);
+      text-align: center;
+      cursor: pointer;
+    }
+    .mmd-renewal-kenji-public__upload input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .mmd-renewal-kenji-public__turnstile,
+    .mmd-renewal-kenji-public__consent,
+    .mmd-renewal-kenji-public__status {
+      border: 1px solid var(--line-soft);
+      border-radius: 18px;
+      padding: 13px;
+      background: rgba(255, 255, 255, 0.045);
+    }
+    .mmd-renewal-kenji-public__consent {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .mmd-renewal-kenji-public__consent input {
+      width: 18px;
+      height: 18px;
+      margin-top: 4px;
+      accent-color: var(--gold);
+    }
+    .mmd-renewal-kenji-public__consent span,
+    .mmd-renewal-kenji-public__turnstile small {
+      color: var(--soft);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .mmd-renewal-kenji-public__status.is-success {
+      color: #e3faeb;
+      border-color: rgba(169, 231, 189, 0.34);
+      background: rgba(169, 231, 189, 0.1);
+    }
+    .mmd-renewal-kenji-public__status.is-error {
+      color: #ffddd6;
+      border-color: rgba(255, 143, 122, 0.44);
+      background: rgba(255, 143, 122, 0.1);
+    }
+    .mmd-renewal-kenji-public__submit:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+    @media (min-width: 760px) {
+      .mmd-renewal-kenji-public__wrap { width: min(1160px, calc(100% - 46px)); padding-top: 24px; }
+      .mmd-renewal-kenji-public__pill { display: inline-flex; }
+      .mmd-renewal-kenji-public__hero { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr); min-height: 560px; }
+      .mmd-renewal-kenji-public__visual { order: 2; min-height: 560px; }
+      .mmd-renewal-kenji-public__copy { display: flex; flex-direction: column; justify-content: center; padding: clamp(28px, 5vw, 56px); }
+      .mmd-renewal-kenji-public__actions { grid-template-columns: max-content max-content; }
+      .mmd-renewal-kenji-public__grid { grid-template-columns: repeat(4, 1fr); }
+      .mmd-renewal-kenji-public__main { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); align-items: start; }
+      .mmd-renewal-kenji-public__form-grid { grid-template-columns: 1fr 1fr; }
+      .mmd-renewal-kenji-public__account { grid-template-columns: 120px 1fr; align-items: center; }
+      .mmd-renewal-kenji-public__choice-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <section class="mmd-renewal-kenji-public" data-mmd-renewal-kenji-public data-endpoint="/api/pay/renewal/proof">
+    <div class="mmd-renewal-kenji-public__wrap">
+      <header class="mmd-renewal-kenji-public__top">
+        <a class="mmd-renewal-kenji-public__brand" href="/sigil/pay/renewal" aria-label="SIGIL renewal">
+          <img class="mmd-renewal-kenji-public__logo" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0f2cbc7e26b6735aee4cb2_SIGIL%20LOGO%20Transp.webp" alt="SIGIL">
+          <span><strong>SIGIL</strong><span>Membership Renewal</span></span>
+        </a>
+        <span class="mmd-renewal-kenji-public__pill">Proof enters official review only</span>
+      </header>
+
+      <section class="mmd-renewal-kenji-public__hero" aria-labelledby="mmdRenewalKenjiPublicTitle">
+        <figure class="mmd-renewal-kenji-public__visual">
+          <figcaption class="mmd-renewal-kenji-public__visual-card">
+            <span class="mmd-renewal-kenji-public__label">Kenji is here</span>
+            <strong>ส่งหลักฐานให้ผมช่วยพาเข้าคิวตรวจสอบครับ</strong>
+          </figcaption>
+        </figure>
+        <div class="mmd-renewal-kenji-public__copy">
+          <p class="mmd-renewal-kenji-public__eyebrow">MMD PRIVÉ · SIGIL ACCESS</p>
+          <h1 id="mmdRenewalKenjiPublicTitle"><span>Renew</span><span>with Kenji</span></h1>
+          <p class="mmd-renewal-kenji-public__lead">
+            หน้านี้ใช้ส่งหลักฐานสำหรับ Signup, Renewal หรือ Black Card Review ครับ
+            ผมจะช่วยรับข้อมูลให้ครบ แล้วส่งต่อให้ทีมตรวจยอดจริงอย่างเป็นทางการ
+            การส่งสลิปเป็นแค่หลักฐานประกอบ ไม่ใช่การยืนยันหรือเปิดสิทธิ์ทันทีนะครับ
+          </p>
+          <div class="mmd-renewal-kenji-public__note">
+            <span class="mmd-renewal-kenji-public__label">Kenji Note</span>
+            <p>
+              รายละเอียดบัญชีจะไม่แสดงบนหน้า public เพื่อความปลอดภัยครับ
+              กรุณาใช้ข้อมูลชำระเงินที่แอดมินหรือทีมส่งให้ในแชทก่อนส่งหลักฐานเข้ามา
+            </p>
+          </div>
+          <div class="mmd-renewal-kenji-public__actions">
+            <a class="mmd-renewal-kenji-public__button is-primary" href="#mmdRenewalKenjiPublicForm">ส่งหลักฐานให้เคนจิ</a>
+            <a class="mmd-renewal-kenji-public__button" href="#mmdRenewalKenjiPublicGuide">อ่านก่อนส่ง</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="mmd-renewal-kenji-public__grid" id="mmdRenewalKenjiPublicGuide" aria-label="Renewal guide">
+        <article class="mmd-renewal-kenji-public__card">
+          <span class="mmd-renewal-kenji-public__label">01</span>
+          <h2>เลือกเรื่อง</h2>
+          <p>Signup, Renewal หรือ Black Card Review ให้ตรงกับที่คุยกับทีมไว้ครับ</p>
+        </article>
+        <article class="mmd-renewal-kenji-public__card">
+          <span class="mmd-renewal-kenji-public__label">02</span>
+          <h2>ใช้ข้อมูลจากทีม</h2>
+          <p>ชำระตามรายละเอียดที่แอดมินส่งให้ ไม่ใช้เลขบัญชีจากแหล่งอื่นครับ</p>
+        </article>
+        <article class="mmd-renewal-kenji-public__card">
+          <span class="mmd-renewal-kenji-public__label">03</span>
+          <h2>แนบสลิปชัด</h2>
+          <p>ให้เห็นยอด เวลา และข้อมูลการโอนชัดพอสำหรับทีมตรวจสอบจริง</p>
+        </article>
+        <article class="mmd-renewal-kenji-public__card">
+          <span class="mmd-renewal-kenji-public__label">04</span>
+          <h2>รอตรวจยอด</h2>
+          <p>สถานะสมาชิกหรือ Black Card จะอัปเดตหลังทีมยืนยันเท่านั้นครับ</p>
+        </article>
+      </section>
+
+      <main class="mmd-renewal-kenji-public__main">
+        <section class="mmd-renewal-kenji-public__card">
+          <span class="mmd-renewal-kenji-public__label">Payment Context</span>
+          <h2>Krungsri / Tatcha</h2>
+          <p>
+            บริบทการชำระเงินของหน้านี้คือ Krungsri / Tatcha ครับ
+            แต่เลขบัญชีและช่องทางชำระแบบสแกนจะไม่ถูกแสดงบนหน้า public
+            เพื่อป้องกันการคัดลอกผิด flow และลดความเสี่ยงจากข้อมูลที่ถูกส่งต่อผิดที่
+          </p>
+          <div class="mmd-renewal-kenji-public__account">
+            <div class="mmd-renewal-kenji-public__bank">Krungsri</div>
+            <div>
+              <span class="mmd-renewal-kenji-public__label">Official context</span>
+              <h2>Tatcha</h2>
+              <p>ก่อนโอน โปรดเทียบชื่อบัญชีและรายละเอียดจากข้อความที่ทีมส่งให้เท่านั้นครับ</p>
+            </div>
+          </div>
+          <ul>
+            <li>ไม่มีเลขบัญชีบนหน้า public</li>
+            <li>ไม่มีปุ่มชำระเงินอัตโนมัติบนหน้า public</li>
+            <li>หลักฐานที่ส่งเข้ามาจะรอ official verification</li>
+          </ul>
+        </section>
+
+        <section class="mmd-renewal-kenji-public__card" id="mmdRenewalKenjiPublicForm">
+          <span class="mmd-renewal-kenji-public__label">Payment Proof</span>
+          <h2>ส่งหลักฐานให้ผมช่วยตรวจต่อ</h2>
+          <p>กรอกข้อมูลเท่าที่จำเป็น แนบสลิป และใส่หมายเหตุแบบภาษาคนได้เลยครับ</p>
+
+          <form class="mmd-renewal-kenji-public__form" action="/api/pay/renewal/proof" method="POST" enctype="multipart/form-data" data-renewal-form novalidate>
+            <input type="hidden" name="payment_type" value="renewal">
+            <input type="hidden" name="selected_package" value="signup">
+            <input type="hidden" name="payment_method" value="krungsri_bank_transfer">
+            <input type="hidden" name="session_id" value="">
+            <input type="hidden" name="payment_ref" value="">
+            <input type="hidden" name="transaction_ref" value="">
+            <input type="hidden" name="cf_turnstile_response" value="">
+            <input type="hidden" name="t" value="${escapeHtml(token)}" data-renewal-token>
+
+            <div class="mmd-renewal-kenji-public__choice-grid" role="radiogroup" aria-label="Proof type">
+              <button type="button" class="is-active" data-package="signup" aria-pressed="true"><strong>Signup</strong><small>สมัครสมาชิกใหม่หรือเริ่มเข้าระบบสมาชิก</small></button>
+              <button type="button" data-package="renewal" aria-pressed="false"><strong>Renewal</strong><small>ต่ออายุจากสถานะเดิมหรือกลับมาใช้งานต่อ</small></button>
+              <button type="button" data-package="blackcard_review" aria-pressed="false"><strong>Black Card Review</strong><small>ส่งหลักฐานเพื่อให้ทีมพิจารณาแบบส่วนตัว</small></button>
+            </div>
+
+            <div class="mmd-renewal-kenji-public__form-grid">
+              <label class="mmd-renewal-kenji-public__field"><span>ชื่อ / ชื่อเล่น</span><input type="text" name="display_name" placeholder="ชื่อที่ทีมรู้จัก" required></label>
+              <label class="mmd-renewal-kenji-public__field"><span>ช่องทางติดต่อกลับ</span><input type="text" name="contact_id" placeholder="LINE, Telegram หรือช่องทางที่ติดต่อได้" required></label>
+              <label class="mmd-renewal-kenji-public__field"><span>ยอดที่ชำระจริง</span><input type="number" name="amount_paid" inputmode="decimal" min="1" placeholder="เช่น 3000" required></label>
+              <label class="mmd-renewal-kenji-public__field"><span>วันและเวลาที่ชำระ</span><input type="datetime-local" name="paid_at" required></label>
+            </div>
+
+            <label class="mmd-renewal-kenji-public__field"><span>เรื่องที่ต้องการให้ตรวจ</span><input type="text" name="package_note" placeholder="เช่น สมัครใหม่ / ต่ออายุ / Black Card Review / ยอดที่แอดมินแจ้ง"></label>
+            <label class="mmd-renewal-kenji-public__field"><span>เล่าให้เคนจิฟังเพิ่มได้ครับ</span><textarea name="verification_note" rows="4" placeholder="เช่น โอนจากชื่อบัญชีอะไร หรือมีอะไรให้ทีมช่วยเช็กเป็นพิเศษ"></textarea></label>
+
+            <label class="mmd-renewal-kenji-public__upload" data-upload-box>
+              <input type="file" name="proof" accept="image/*,.pdf" required>
+              <strong data-upload-label>แนบสลิป / หลักฐานการโอน</strong>
+              <small>รองรับรูปภาพหรือ PDF ไม่เกิน 12MB</small>
+            </label>
+
+            <div class="mmd-renewal-kenji-public__turnstile">
+              <span class="mmd-renewal-kenji-public__label">Security Check</span>
+              <div data-turnstile-box></div>
+              <small>ใช้ป้องกันการส่งฟอร์มอัตโนมัติและรักษาความปลอดภัยของข้อมูลครับ</small>
+            </div>
+
+            <label class="mmd-renewal-kenji-public__consent" data-consent-box>
+              <input type="checkbox" name="renewal_consent" required>
+              <span>ฉันเข้าใจว่าการส่งสลิปยังไม่ใช่การยืนยันสำเร็จ ทีมจะตรวจยอดเงินจริงก่อนอัปเดตสถานะสมาชิก การต่ออายุ การอัปเกรด หรือ Black Card Review</span>
+            </label>
+
+            <button class="mmd-renewal-kenji-public__submit" type="submit" data-submit-button>ส่งหลักฐานให้เคนจิตรวจต่อ</button>
+            <div class="mmd-renewal-kenji-public__status" data-status-box hidden></div>
+          </form>
+        </section>
+      </main>
+    </div>
+  </section>
+  <script>
+  (function () {
+    var root = document.querySelector("[data-mmd-renewal-kenji-public]");
+    if (!root) return;
+    var config = { endpoint: "/api/pay/renewal/proof", turnstileSiteKey: ${JSON.stringify(turnstileSiteKey)} };
+    var form = root.querySelector("[data-renewal-form]");
+    var statusBox = root.querySelector("[data-status-box]");
+    var submitButton = root.querySelector("[data-submit-button]");
+    var uploadInput = form.querySelector('input[name="proof"]');
+    var uploadBox = root.querySelector("[data-upload-box]");
+    var uploadLabel = root.querySelector("[data-upload-label]");
+    var consentBox = root.querySelector("[data-consent-box]");
+    var selectedPackageInput = form.querySelector('input[name="selected_package"]');
+    var turnstileField = form.querySelector('input[name="cf_turnstile_response"]');
+    var tokenField = form.querySelector("[data-renewal-token]");
+    var turnstileWidgetId = null;
+
+    function clean(value) { return String(value || "").trim(); }
+    function makeRef(prefix) {
+      var cryptoObj = window.crypto || window.msCrypto;
+      if (cryptoObj && cryptoObj.getRandomValues) {
+        var arr = new Uint32Array(2);
+        cryptoObj.getRandomValues(arr);
+        return prefix + "_" + Date.now().toString(36) + "_" + arr[0].toString(36) + arr[1].toString(36);
+      }
+      return prefix + "_" + Date.now().toString(36) + "_" + Math.floor(Math.random() * 1000000).toString(36);
+    }
+    function setFreshRefs() {
+      var session = form.querySelector('input[name="session_id"]');
+      var payment = form.querySelector('input[name="payment_ref"]');
+      var transaction = form.querySelector('input[name="transaction_ref"]');
+      if (session) session.value = makeRef("renewal_session");
+      if (payment) payment.value = makeRef("renewal_ref");
+      if (transaction) transaction.value = makeRef("renewal_txn");
+    }
+    function preserveTokenParam() {
+      try {
+        var t = new URL(window.location.href).searchParams.get("t") || "";
+        if (tokenField) tokenField.value = t;
+      } catch (_) {}
+    }
+    function showStatus(type, message) {
+      if (!statusBox) return;
+      statusBox.hidden = false;
+      statusBox.className = "mmd-renewal-kenji-public__status";
+      statusBox.classList.add(type === "success" ? "is-success" : "is-error");
+      statusBox.textContent = message;
+    }
+    function clearStatus() {
+      if (!statusBox) return;
+      statusBox.hidden = true;
+      statusBox.textContent = "";
+      statusBox.className = "mmd-renewal-kenji-public__status";
+    }
+    function markInvalid(field, invalid) {
+      if (!field) return;
+      if (invalid) field.setAttribute("aria-invalid", "true");
+      else field.removeAttribute("aria-invalid");
+    }
+    root.querySelectorAll("[data-package]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        var value = button.getAttribute("data-package") || "signup";
+        if (selectedPackageInput) selectedPackageInput.value = value;
+        root.querySelectorAll("[data-package]").forEach(function (item) {
+          var active = item === button;
+          item.classList.toggle("is-active", active);
+          item.setAttribute("aria-pressed", active ? "true" : "false");
+        });
+        clearStatus();
+      });
+    });
+    if (uploadInput) {
+      uploadInput.addEventListener("change", function () {
+        clearStatus();
+        if (uploadBox) uploadBox.classList.remove("is-invalid");
+        var file = uploadInput.files && uploadInput.files[0];
+        if (!file) {
+          if (uploadLabel) uploadLabel.textContent = "แนบสลิป / หลักฐานการโอน";
+          return;
+        }
+        if (file.size > 12 * 1024 * 1024) {
+          uploadInput.value = "";
+          if (uploadLabel) uploadLabel.textContent = "แนบสลิป / หลักฐานการโอน";
+          if (uploadBox) uploadBox.classList.add("is-invalid");
+          showStatus("error", "ไฟล์ใหญ่เกินไปครับ ขอไฟล์ไม่เกิน 12MB นะครับ");
+          return;
+        }
+        if (uploadLabel) uploadLabel.textContent = file.name;
+      });
+    }
+    function validateForm() {
+      var ok = true;
+      clearStatus();
+      Array.prototype.slice.call(form.querySelectorAll("[required]")).forEach(function (field) {
+        var invalid = false;
+        if (field.type === "checkbox") {
+          invalid = !field.checked;
+          if (consentBox) consentBox.classList.toggle("is-invalid", invalid);
+        } else if (field.type === "file") {
+          invalid = !(field.files && field.files.length);
+          if (uploadBox) uploadBox.classList.toggle("is-invalid", invalid);
+        } else {
+          invalid = !clean(field.value);
+          markInvalid(field, invalid);
+        }
+        if (invalid) ok = false;
+      });
+      if (!ok) {
+        showStatus("error", "กรอกข้อมูลที่จำเป็นให้ครบก่อนนะครับ โดยเฉพาะชื่อ ช่องทางติดต่อ ยอด เวลา และสลิป");
+        return false;
+      }
+      if (config.turnstileSiteKey && turnstileField && !turnstileField.value) {
+        showStatus("error", "ช่วยยืนยัน Security Check ก่อนส่งให้ผมนิดหนึ่งครับ");
+        return false;
+      }
+      return true;
+    }
+    function resetTurnstile() {
+      if (window.turnstile && turnstileWidgetId !== null) window.turnstile.reset(turnstileWidgetId);
+      if (turnstileField) turnstileField.value = "";
+    }
+    function renderTurnstile() {
+      var box = root.querySelector("[data-turnstile-box]");
+      if (!box) return;
+      if (!config.turnstileSiteKey) {
+        box.innerHTML = '<small>Security Check จะทำงานเมื่อมีการตั้งค่า Turnstile Site Key บน worker ครับ</small>';
+        return;
+      }
+      if (!window.turnstile) {
+        window.setTimeout(renderTurnstile, 350);
+        return;
+      }
+      turnstileWidgetId = window.turnstile.render(box, {
+        sitekey: config.turnstileSiteKey,
+        theme: "dark",
+        callback: function (token) { if (turnstileField) turnstileField.value = token || ""; },
+        "expired-callback": function () { if (turnstileField) turnstileField.value = ""; },
+        "error-callback": function () { if (turnstileField) turnstileField.value = ""; }
+      });
+    }
+    form.addEventListener("input", function (event) {
+      if (event.target && event.target.matches("input, textarea")) markInvalid(event.target, false);
+      if (consentBox) consentBox.classList.remove("is-invalid");
+      if (uploadBox) uploadBox.classList.remove("is-invalid");
+      clearStatus();
+    });
+    form.addEventListener("submit", async function (event) {
+      event.preventDefault();
+      if (!validateForm()) return;
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = "กำลังส่งให้เคนจิ...";
+      }
+      try {
+        var response = await fetch(config.endpoint, { method: "POST", body: new FormData(form), credentials: "same-origin" });
+        var data = await response.json().catch(function () { return {}; });
+        if (!response.ok || !data.ok) {
+          var code = data && data.error && data.error.code ? data.error.code : data.error || data.message || "submit_failed";
+          throw new Error(typeof code === "string" ? code : "submit_failed");
+        }
+        if (data.duplicate) {
+          showStatus("success", "รายการนี้เคยส่งเข้ามาแล้วครับ ไม่ต้องส่งซ้ำ ทีมจะตรวจจากรายการเดิมให้");
+        } else {
+          showStatus("success", "ผมได้รับหลักฐานแล้วครับ รายการนี้จะถูกส่งต่อให้ทีมตรวจยอดจริงก่อนอัปเดตสถานะ");
+        }
+        form.reset();
+        preserveTokenParam();
+        setFreshRefs();
+        if (uploadLabel) uploadLabel.textContent = "แนบสลิป / หลักฐานการโอน";
+        resetTurnstile();
+      } catch (error) {
+        var raw = String(error && error.message || "");
+        var message = raw.indexOf("duplicate") !== -1
+          ? "รายการนี้เคยส่งแล้วครับ ทีมจะตรวจสอบจากรายการเดิมให้"
+          : "ตอนนี้ส่งข้อมูลไม่สำเร็จครับ ลองใหม่อีกครั้ง หรือส่งให้แอดมินช่วยตรวจได้เลย";
+        if (raw.indexOf("turnstile") !== -1) message = "Security Check ไม่ผ่านครับ ลองยืนยันอีกครั้งก่อนส่งนะครับ";
+        showStatus("error", message);
+        resetTurnstile();
+      } finally {
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.textContent = "ส่งหลักฐานให้เคนจิตรวจต่อ";
+        }
+      }
+    });
+    preserveTokenParam();
+    setFreshRefs();
+    renderTurnstile();
+  })();
+  <\/script>
+</body>
+</html>`;
+  return new Response(method === "HEAD" ? null : html, {
     status: 200,
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
       "x-robots-tag": "noindex, nofollow",
-    },
+      "x-mmd-route-source": "admin-worker:sigil-renewal-kenji",
+      "x-mmd-route-revision": "renewal-kenji-public-safe-20260611"
+    }
   });
 }
-
 function renderPaymentReviewConsolePage(req, method = "GET") {
   const isHead = method === "HEAD";
   const html = `<!doctype html>
