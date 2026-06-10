@@ -26,3 +26,11 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "sigil.mmdbkk.com/_preview/member/dashboard*"
 zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/member/dashboard*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/member/profile*"
+zone_name = "mmdbkk.com"

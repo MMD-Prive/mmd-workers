@@ -261,6 +261,10 @@ pattern = "www.mmdbkk.com/api/member/*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
+pattern = "sigil.mmdbkk.com/api/member/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
 pattern = "mmdbkk.com/v1/model/session/*"
 zone_name = "mmdbkk.com"
 

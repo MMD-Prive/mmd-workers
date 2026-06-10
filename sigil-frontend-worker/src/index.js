@@ -75,6 +75,10 @@ export default {
       return withHeaders(renderMemberDashboardPage(request, env), env);
     }
 
+    if (frontendPath === "/member/profile") {
+      return withHeaders(renderMemberProfilePage(request, env), env);
+    }
+
     const placeholder = PLACEHOLDER_ROUTES.get(frontendPath);
     if (placeholder) {
       return withHeaders(renderPlaceholderPage(request, placeholder, env), env);
@@ -621,6 +625,75 @@ function renderMemberDashboardPage(request, env) {
       <a class="member-dashboard-button" href="${escapeHtml(`${CANONICAL_ORIGIN}/pay/renewal${tokenSuffix}`)}">Renew Membership</a>
       <a class="member-dashboard-button secondary" href="${escapeHtml(`${CANONICAL_ORIGIN}/trust/inme${tokenSuffix}`)}">Back to Access Gate</a>
       <a class="member-dashboard-button secondary" href="${escapeHtml(`${CANONICAL_ORIGIN}/aftercare${tokenSuffix}`)}">Contact Support</a>
+    </div>
+  </main>
+</body>
+</html>`;
+  return htmlResponse(request, html);
+}
+
+function renderMemberProfilePage(request, env) {
+  const url = new URL(request.url);
+  const tokenSuffix = tokenQuerySuffix(url);
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Member Profile | SĪGIL</title>
+  <style>
+    body { margin: 0; min-height: 100vh; color: #f7efe1; background: linear-gradient(145deg, #040404, #11100d 48%, #060504); font-family: Inter, "Noto Sans Thai", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .member-dashboard { width: min(1160px, calc(100% - 28px)); margin: 0 auto; padding: 30px 0 48px; }
+    .member-dashboard-top { display: flex; justify-content: space-between; gap: 18px; align-items: center; }
+    .member-dashboard-logo { width: 92px; filter: drop-shadow(0 12px 30px rgba(220,177,87,.24)); }
+    .member-dashboard-pill { border: 1px solid rgba(226,187,104,.34); border-radius: 999px; padding: 8px 12px; color: #f1ddb0; font-size: 13px; }
+    h1 { margin: 28px 0 0; max-width: 820px; color: #fff6e4; font-size: clamp(40px, 7vw, 76px); line-height: .94; }
+    .member-dashboard-lead { max-width: 760px; color: #dfd2bb; font-size: 16px; line-height: 1.75; }
+    .member-dashboard-grid { display: grid; gap: 14px; margin-top: 24px; }
+    .member-dashboard-card { border: 1px solid rgba(222,180,93,.18); border-radius: 8px; background: rgba(12,11,9,.80); padding: 18px; box-shadow: 0 24px 70px rgba(0,0,0,.30); }
+    .member-dashboard-card h2 { margin: 0 0 8px; color: #fff4df; font-size: 19px; }
+    .member-dashboard-card p, .member-dashboard-card li { color: #d6cab5; line-height: 1.65; }
+    .member-dashboard-card ul { margin: 10px 0 0; padding-left: 19px; }
+    .member-dashboard-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    .member-dashboard-button { display: inline-flex; min-height: 46px; align-items: center; justify-content: center; border-radius: 8px; padding: 0 15px; color: #171007; background: linear-gradient(135deg, #f7dc93, #c18b34); font-weight: 950; text-decoration: none; }
+    .member-dashboard-button.secondary { color: #f4dfb6; background: rgba(255,255,255,.045); border: 1px solid rgba(226,187,104,.34); }
+    code { color: #ffe2a1; }
+    @media (min-width: 820px) { .member-dashboard-grid { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body data-sigil-member-profile-shell data-token-handling="${url.searchParams.has("t") ? "preserved" : "available"}">
+  <main class="member-dashboard">
+    <div class="member-dashboard-top">
+      <img class="member-dashboard-logo" src="${SIGIL_LOGO_IMAGE}" alt="SĪGIL logo">
+      <span class="member-dashboard-pill">Verification-first profile shell</span>
+    </div>
+    <h1>Member Profile</h1>
+    <p class="member-dashboard-lead">Kenji keeps this profile surface steady while the backend checks your signed member token. Profile data is loaded only after official verification.</p>
+    <div class="member-dashboard-grid">
+      <section class="member-dashboard-card">
+        <h2>Profile verification</h2>
+        <p>This page preserves the dashboard token and points client-side calls to the secure member profile APIs.</p>
+        <ul>
+          <li><code>GET /api/member/profile</code></li>
+          <li><code>GET /api/member/profile/member-id/check</code></li>
+          <li><code>POST /api/member/profile/member-id</code></li>
+        </ul>
+      </section>
+      <section class="member-dashboard-card">
+        <h2>Access continuity</h2>
+        <p>If the token is missing or expired, the backend returns a verification error instead of exposing private profile data.</p>
+        <ul>
+          <li><code>GET /api/member/dashboard</code></li>
+          <li><code>GET /api/member/session/next</code></li>
+          <li><code>GET /api/member/payments/summary</code></li>
+        </ul>
+      </section>
+    </div>
+    <div class="member-dashboard-actions">
+      <a class="member-dashboard-button" href="${escapeHtml(`${CANONICAL_ORIGIN}/member/dashboard${tokenSuffix}`)}">Open Dashboard</a>
+      <a class="member-dashboard-button secondary" href="${escapeHtml(`${CANONICAL_ORIGIN}/pay/renewal${tokenSuffix}`)}">Renew Membership</a>
+      <a class="member-dashboard-button secondary" href="${escapeHtml(`${CANONICAL_ORIGIN}/trust/inme${tokenSuffix}`)}">Back to Access Gate</a>
     </div>
   </main>
 </body>
