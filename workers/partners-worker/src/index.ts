@@ -516,31 +516,17 @@ async function findFirstByFormula(env: Env, table: string, formula: string): Pro
   return records[0] || null;
 }
 
-async function listByFormula(env: Env, table: string, formula: string, maxRecords = 100): Promise<AirtableRecord[]> {
-  requireAirtable(env);
-  const url = new URL(`${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(table)}`);
-  url.searchParams.set("pageSize", String(Math.min(maxRecords, 100)));
-  url.searchParams.set("maxRecords", String(maxRecords));
-  url.searchParams.set("filterByFormula", formula);
-
-  const response = await fetch(url.toString(), { headers: airtableHeaders(env) });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`Airtable list ${table} failed: ${response.status} ${text}`);
-  }
-
-  const data = JSON.parse(text) as AirtableListResponse;
-  return data.records || [];
-}
-
-async function listRecords(env: Env, table: string, maxRecords = 100): Promise<AirtableRecord[]> {
+async function listByFormula(env: Env, table: string, formula: string, maxRecords?: number): Promise<AirtableRecord[]> {
   requireAirtable(env);
   const records: AirtableRecord[] = [];
   let offset = "";
 
   do {
+    const remaining = maxRecords ? maxRecords - records.length : 100;
     const url = new URL(`${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(table)}`);
-    url.searchParams.set("pageSize", String(Math.min(maxRecords - records.length, 100)));
+    url.searchParams.set("pageSize", String(Math.min(remaining, 100)));
+    url.searchParams.set("filterByFormula", formula);
+    if (maxRecords) url.searchParams.set("maxRecords", String(maxRecords));
     if (offset) url.searchParams.set("offset", offset);
 
     const response = await fetch(url.toString(), { headers: airtableHeaders(env) });
@@ -552,9 +538,34 @@ async function listRecords(env: Env, table: string, maxRecords = 100): Promise<A
     const data = JSON.parse(text) as AirtableListResponse;
     records.push(...(data.records || []));
     offset = data.offset || "";
-  } while (offset && records.length < maxRecords);
+  } while (offset && (!maxRecords || records.length < maxRecords));
 
-  return records.slice(0, maxRecords);
+  return maxRecords ? records.slice(0, maxRecords) : records;
+}
+
+async function listRecords(env: Env, table: string, maxRecords?: number): Promise<AirtableRecord[]> {
+  requireAirtable(env);
+  const records: AirtableRecord[] = [];
+  let offset = "";
+
+  do {
+    const remaining = maxRecords ? maxRecords - records.length : 100;
+    const url = new URL(`${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(table)}`);
+    url.searchParams.set("pageSize", String(Math.min(remaining, 100)));
+    if (offset) url.searchParams.set("offset", offset);
+
+    const response = await fetch(url.toString(), { headers: airtableHeaders(env) });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`Airtable list ${table} failed: ${response.status} ${text}`);
+    }
+
+    const data = JSON.parse(text) as AirtableListResponse;
+    records.push(...(data.records || []));
+    offset = data.offset || "";
+  } while (offset && (!maxRecords || records.length < maxRecords));
+
+  return maxRecords ? records.slice(0, maxRecords) : records;
 }
 
 async function tableSchema(env: Env, tableIdOrName: string): Promise<AirtableSchema> {
@@ -789,9 +800,7 @@ function buildPartnerFields(
   existingPartner: AirtableRecord | null,
 ): AirtableFields {
   const fields: AirtableFields = {
-    [FIELD_PARTNER_APPROVAL_STATUS]: existingPartner
-      ? fieldString(existingPartner.fields, [FIELD_PARTNER_APPROVAL_STATUS, "Approval Status"]) || "needs_follow_up"
-      : "needs_follow_up",
+    [FIELD_PARTNER_APPROVAL_STATUS]: existingPartner ? undefined : "needs_follow_up",
   };
 
   setConfiguredOrSchemaField(fields, schema, env.AIRTABLE_FIELD_PARTNER_ID, ["Partner ID"], `ptr_${requestId}`);
