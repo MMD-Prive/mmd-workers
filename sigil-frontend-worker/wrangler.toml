@@ -14,3 +14,15 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "sigil.mmdbkk.com/_preview/pay/renewal*"
 zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/_preview/trust/inme*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/_preview/inme*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/_preview/member/dashboard*"
+zone_name = "mmdbkk.com"
