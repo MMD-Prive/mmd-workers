@@ -1,4 +1,4 @@
-import { json } from "../lib/http.js";
+import { json, safeJson } from "../lib/http.js";
 import { dtFindMember } from "../lib/memberstack_dt.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -15,26 +15,49 @@ const UPCOMING_SESSION_EMPTY_STATE = {
 export async function handleMemberDashboardRequest(req, env) {
   const url = new URL(req.url);
   const path = url.pathname;
-
-  const tokenResult = await readDashboardToken(url, env);
-  if (!tokenResult.ok) {
-    return dashboardErrorResponse(tokenResult.error);
-  }
+  const method = req.method.toUpperCase();
 
   try {
-    const context = await resolveMemberContext(env, tokenResult.token_payload);
-    const collections = await fetchDashboardCollections(env, context);
+    const state = await loadMemberDashboardState(url, env);
+    if (!state.ok) {
+      return dashboardErrorResponse(state.error);
+    }
+
+    const { context, collections, meta } = state;
 
     if (path === "/api/member/dashboard") {
-      return json(buildDashboardPayload(context, collections, tokenResult.meta));
+      return json(buildDashboardPayload(context, collections, meta));
+    }
+
+    if (path === "/api/member/profile") {
+      return json(buildProfilePayload(context, collections, meta));
+    }
+
+    if (path === "/api/member/profile/member-id/check") {
+      return json(await buildMemberIdAvailabilityPayload(url, env, context, meta));
+    }
+
+    if (method === "POST" && path === "/api/member/profile/member-id") {
+      const body = (await safeJson(req)) || {};
+      return json(await confirmMemberId(body, env, context, collections, meta));
+    }
+
+    if ((method === "GET" || method === "HEAD") && path === "/api/member/dashboard/view") {
+      return renderMemberDashboardPreviewPage({
+        method,
+        dashboard: buildDashboardPayload(context, collections, meta),
+        nextSession: buildNextSessionPayload(collections, meta),
+        payments: buildPaymentSummaryPayload(collections, meta),
+        token: toStr(url.searchParams.get("t")),
+      });
     }
 
     if (path === "/api/member/session/next") {
-      return json(buildNextSessionPayload(collections, tokenResult.meta));
+      return json(buildNextSessionPayload(collections, meta));
     }
 
     if (path === "/api/member/payments/summary") {
-      return json(buildPaymentSummaryPayload(collections, tokenResult.meta));
+      return json(buildPaymentSummaryPayload(collections, meta));
     }
 
     return dashboardErrorResponse(makeDashboardError("not_found", "Route not found.", 404, false));
@@ -43,6 +66,63 @@ export async function handleMemberDashboardRequest(req, env) {
     const code = message.includes("missing_airtable_env") ? "upstream_unavailable" : "internal_error";
     const status = code === "upstream_unavailable" ? 503 : 500;
     return dashboardErrorResponse(makeDashboardError(code, message, status, code === "upstream_unavailable"));
+  }
+}
+
+export async function handleMemberKenjiChatRequest(req, env) {
+  const url = new URL(req.url);
+  const body = (await safeJson(req)) || {};
+
+  try {
+    const state = await loadMemberDashboardState(url, env);
+    if (!state.ok) {
+      return dashboardErrorResponse(state.error);
+    }
+
+    const { context, collections, meta } = state;
+    const text = firstNonEmpty(body?.message, body?.text, body?.input);
+    if (!text) {
+      return dashboardErrorResponse(
+        makeDashboardError("message_missing", "Missing Kenji message.", 400, false, meta),
+      );
+    }
+
+    const nextSession = buildNextSessionPayload(collections, meta).session;
+    const payments = buildPaymentSummaryPayload(collections, meta).payments;
+    const dashboard = buildDashboardPayload(context, collections, meta);
+    const reply = await requestKenjiChatReply(
+      env,
+      {
+        text,
+        language: normalizeKenjiLanguage(body?.language, text),
+        context,
+        collections,
+        dashboard,
+        nextSession,
+        payments,
+      },
+    );
+
+    return json({
+      ok: true,
+      reply: reply.text,
+      kenji: dashboard.kenji,
+      meta: {
+        ...meta,
+        assistant: reply.assistant,
+        persona: reply.persona,
+        route_id: reply.route_id,
+        intent: reply.intent,
+        next_action: reply.next_action,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error || "internal_error");
+    const unavailable = message.includes("missing_chat_worker_env") || message.includes("kenji_chat_error_");
+    const code = unavailable ? "kenji_unavailable" : "internal_error";
+    const status = unavailable ? 503 : 500;
+    const responseMessage = unavailable ? "Kenji is unavailable right now." : message;
+    return dashboardErrorResponse(makeDashboardError(code, responseMessage, status, unavailable));
   }
 }
 
@@ -80,8 +160,10 @@ export async function mintMemberDashboardToken(body, env) {
     payload,
     urls: {
       dashboard: `/api/member/dashboard?t=${encodeURIComponent(token)}`,
+      dashboard_preview: `/api/member/dashboard/view?t=${encodeURIComponent(token)}`,
       next_session: `/api/member/session/next?t=${encodeURIComponent(token)}`,
       payments_summary: `/api/member/payments/summary?t=${encodeURIComponent(token)}`,
+      kenji_chat: `/api/member/kenji/chat?t=${encodeURIComponent(token)}`,
     },
   };
 }
@@ -140,6 +222,23 @@ async function readDashboardToken(url, env) {
     ok: true,
     token_payload: tokenPayload,
     meta,
+  };
+}
+
+async function loadMemberDashboardState(url, env) {
+  const tokenResult = await readDashboardToken(url, env);
+  if (!tokenResult.ok) {
+    return tokenResult;
+  }
+
+  const context = await resolveMemberContext(env, tokenResult.token_payload);
+  const collections = await fetchDashboardCollections(env, context);
+
+  return {
+    ok: true,
+    context,
+    collections,
+    meta: tokenResult.meta,
   };
 }
 
@@ -375,9 +474,141 @@ function buildDashboardPayload(context, collections, meta) {
       dashboard_status: "Dashboard verified",
       concierge_status: context.kenji_mode === "live" ? "Kenji AI live" : "Kenji AI ready",
     },
-    kenji: {
-      mode: context.kenji_mode,
+    kenji: buildKenjiSurface(context),
+    meta,
+  };
+}
+
+function buildProfilePayload(context, collections, meta) {
+  return {
+    ok: true,
+    profile: buildProfileSnapshot(context, collections),
+    meta,
+  };
+}
+
+function buildProfileSnapshot(context, collections) {
+  const points = computePoints(collections.points);
+  const dashboard = buildDashboardPayload(context, collections, buildMeta("profile_snapshot"));
+  const member = dashboard.member;
+  const status = normalizeProfileStatus(context.status, member);
+  const tier = normalizeProfileTier(context.tier, context);
+  const hasPaid = collections.payments.some(isVerifiedPayment);
+  const accessLayer = status === "Guest" || status === "Expired" ? "MMD PRIVÉ" : (hasPaid || tier !== null ? "SĪGIL" : "MMD PRIVÉ");
+  const effectiveTier = accessLayer === "SĪGIL" ? tier || "Standard" : null;
+  const usernameParts = profileUsernameParts(context);
+  const pointReviewStatus = profilePointsStatus(context);
+  const telegramAccess = deriveProfileTelegramAccess(status, effectiveTier);
+  const modelAccessScope = accessLayer === "SĪGIL" && status === "Active" ? "private_models_enabled" : "public_models_only";
+  const sevenDaysExpiresAt = normalizeProfileDate(firstNonEmpty(context.token.seven_days_expires_at, context.memberRecord?.seven_days_expires_at));
+  const upgradeOfferExpiresAt = normalizeProfileDate(firstNonEmpty(context.token.upgrade_offer_expires_at, context.memberRecord?.upgrade_offer_expires_at));
+  const upgradeWindow = effectiveTier === "7 Days"
+    ? {
+        seven_days_expires_at: sevenDaysExpiresAt || null,
+        upgrade_offer_expires_at: upgradeOfferExpiresAt || null,
+        special_price_applies_within_window: true,
+      }
+    : null;
+
+  return {
+    client_id: firstNonEmpty(context.customer_key, context.memberstack_id, context.token.client_id, context.token.member_id) || null,
+    client_name: context.display_name || null,
+    username_display: usernameParts.display || null,
+    username_key: usernameParts.key || null,
+    nickname_part: usernameParts.nickname_part || null,
+    id_code_part: usernameParts.id_code_part || null,
+    access_layer: accessLayer,
+    status,
+    tier: effectiveTier,
+    previous_tier: firstNonEmpty(context.token.previous_tier, context.memberRecord?.previous_tier) || null,
+    package_type: firstNonEmpty(context.token.package_type, context.token.package_code, context.memberRecord?.package_type) || null,
+    member_since: normalizeProfileDate(firstNonEmpty(context.token.member_since, context.memberRecord?.member_since, context.memberRecord?.created_at)) || null,
+    expires_at: normalizeProfileDate(firstNonEmpty(context.token.membership_expires_at, context.token.expires_at, context.memberRecord?.membership_expires_at)) || null,
+    seven_days_expires_at: sevenDaysExpiresAt || null,
+    upgrade_offer_expires_at: upgradeOfferExpiresAt || null,
+    onboarding_assistant: buildOnboardingAssistant(context),
+    points: {
+      total: points.active_points,
+      status: pointReviewStatus,
     },
+    telegram_access: telegramAccess,
+    model_access: {
+      scope: modelAccessScope,
+      note: "Depends on model visibility, points, availability, and system rules.",
+    },
+    upgrade_window: upgradeWindow,
+    primary_cta: deriveProfilePrimaryCta(status, effectiveTier, pointReviewStatus),
+  };
+}
+
+async function buildMemberIdAvailabilityPayload(url, env, context, meta) {
+  const normalized = normalizeMemberIdParts({
+    nickname_part: url.searchParams.get("nickname_part"),
+    id_code_part: url.searchParams.get("id_code_part"),
+    username_key: url.searchParams.get("username_key"),
+  });
+  if (!normalized.ok) {
+    return { ok: false, available: false, error: normalized.error, meta };
+  }
+  const existing = await findExistingMemberId(env, normalized.username_key, context);
+  return {
+    ok: true,
+    available: !existing,
+    username_display: normalized.username_display,
+    username_key: normalized.username_key,
+    meta,
+  };
+}
+
+async function confirmMemberId(body, env, context, collections, meta) {
+  const normalized = normalizeMemberIdParts(body);
+  if (!normalized.ok) {
+    return { ok: false, error: normalized.error, meta };
+  }
+
+  const existing = await findExistingMemberId(env, normalized.username_key, context);
+  if (existing) {
+    return {
+      ok: false,
+      error: "member_id_not_available",
+      available: false,
+      username_key: normalized.username_key,
+      meta,
+    };
+  }
+
+  const target = await findWritableMemberIdentityRecord(env, context);
+  if (!target) {
+    return {
+      ok: false,
+      error: "member_record_not_found",
+      meta,
+    };
+  }
+
+  await airtablePatchWithFallback(env, target.table, target.id, {
+    username_display: normalized.username_display,
+    username_key: normalized.username_key,
+    nickname_part: normalized.nickname_part,
+    id_code_part: normalized.id_code_part,
+    username: normalized.username_key,
+  });
+
+  context.username = normalized.username_display;
+  context.memberRecord = {
+    ...(context.memberRecord || {}),
+    username_display: normalized.username_display,
+    username_key: normalized.username_key,
+    nickname_part: normalized.nickname_part,
+    id_code_part: normalized.id_code_part,
+  };
+
+  return {
+    ok: true,
+    available: true,
+    username_display: normalized.username_display,
+    username_key: normalized.username_key,
+    profile: buildProfileSnapshot(context, collections),
     meta,
   };
 }
@@ -460,6 +691,21 @@ function summarizePayments(sessions, payments) {
   };
 }
 
+function buildKenjiSurface(context) {
+  return {
+    enabled: true,
+    mode: context.kenji_mode,
+    persona: "kenji",
+    surface: "member_dashboard",
+    chat_path: "/api/member/kenji/chat",
+    starters: [
+      "คิวถัดไปของผมคืออะไร",
+      "ตอนนี้ผมต้องทำอะไรต่อ",
+      "สรุปสถานะการชำระเงินให้หน่อย",
+    ],
+  };
+}
+
 function computePoints(points) {
   const now = Date.now();
   let active = 0;
@@ -472,6 +718,100 @@ function computePoints(points) {
 
   return {
     active_points: Math.max(0, active),
+  };
+}
+
+async function requestKenjiChatReply(
+  env,
+  {
+    text,
+    language,
+    context,
+    collections,
+    dashboard,
+    nextSession,
+    payments,
+  },
+) {
+  const token = toStr(env.INTERNAL_TOKEN);
+  const url = toStr(env.CHAT_INTERNAL_URL);
+  if ((!url && !env.CHAT_WORKER) || !token) {
+    throw new Error("missing_chat_worker_env");
+  }
+
+  const memberId = context.memberstack_id || firstNonEmpty(context.token.member_id, context.token.memberstack_id) || "";
+  const requestInit = {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Internal-Token": token,
+    },
+    body: JSON.stringify({
+      channel: "web",
+      assistant: "per_ai",
+      persona: "kenji",
+      language,
+      tier: context.tier,
+      user_type: "member",
+      member_id: memberId,
+      surface: "member_dashboard",
+      text,
+      memory: buildKenjiMemory(context, collections, dashboard, nextSession, payments),
+      context: buildKenjiContext(dashboard, nextSession, payments),
+    }),
+  };
+
+  const response = env.CHAT_WORKER
+    ? await env.CHAT_WORKER.fetch(
+        new Request("https://chat-worker.internal/v1/chat/internal", requestInit),
+      )
+    : await fetch(url, requestInit);
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload?.ok || !toStr(payload?.reply)) {
+    throw new Error(`kenji_chat_error_${response.status || 500}`);
+  }
+
+  return {
+    text: toStr(payload.reply),
+    assistant: toStr(payload?.meta?.assistant || "per_ai") || "per_ai",
+    persona: toStr(payload?.meta?.persona || "kenji") || "kenji",
+    route_id: toStr(payload?.meta?.route_id),
+    intent: toStr(payload?.meta?.intent),
+    next_action: toStr(payload?.meta?.next_action),
+  };
+}
+
+function buildKenjiMemory(context, collections, dashboard, nextSession, payments) {
+  const points = computePoints(collections.points);
+  const nextSessionActive = Boolean(nextSession?.session_id || nextSession?.date);
+  return {
+    surface: "member_dashboard",
+    member_id: dashboard.member.member_id,
+    member_name: dashboard.member.display_name,
+    tier: toStr(context.tier).toLowerCase(),
+    total_spend: payments.paid_amount,
+    active_points: points.active_points,
+    total_sessions: dashboard.member.total_sessions,
+    dashboard_status: dashboard.member.dashboard_status,
+    next_session_date: nextSessionActive ? toStr(nextSession.date) : "",
+    next_session_date_label: nextSessionActive ? toStr(nextSession.date_label) : "",
+    next_session_name: nextSessionActive ? toStr(nextSession.name) : "",
+    next_session_payment_status: nextSessionActive ? toStr(nextSession.payment_status).toLowerCase() : "",
+    next_session_reminder_status: nextSessionActive ? toStr(nextSession.reminder_status).toLowerCase() : "",
+    payment_balance_amount: payments.balance_amount,
+    payment_paid_amount: payments.paid_amount,
+    payment_total_amount: payments.total_amount,
+    payment_currency: payments.currency,
+  };
+}
+
+function buildKenjiContext(dashboard, nextSession, payments) {
+  return {
+    surface: "member_dashboard",
+    member: dashboard.member,
+    next_session: nextSession,
+    payments,
   };
 }
 
@@ -829,6 +1169,883 @@ function formatTime(date) {
     hour12: false,
     timeZone: "Asia/Bangkok",
   }).format(parsed);
+}
+
+function normalizeKenjiLanguage(language, text) {
+  const requested = toStr(language).toLowerCase();
+  if (requested === "th" || requested === "thai") return "th";
+  if (requested === "en" || requested === "english") return "en";
+  return hasThaiText(text) ? "th" : "en";
+}
+
+function hasThaiText(value) {
+  return /[\u0E00-\u0E7F]/.test(toStr(value));
+}
+
+function renderMemberDashboardPreviewPage({ method, dashboard, nextSession, payments, token }) {
+  const initialState = {
+    dashboard,
+    nextSession,
+    payments,
+    token,
+  };
+
+  if (method === "HEAD") {
+    return new Response(null, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
+  const html = `<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Member Dashboard Preview</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: rgba(15, 23, 42, 0.76);
+        --panel-strong: rgba(15, 23, 42, 0.92);
+        --line: rgba(148, 163, 184, 0.24);
+        --text: #e5eefc;
+        --muted: #94a3b8;
+        --accent: #f59e0b;
+        --accent-soft: rgba(245, 158, 11, 0.18);
+        --accent-2: #38bdf8;
+        --ok: #34d399;
+        --warn: #fb7185;
+        --shadow: 0 24px 80px rgba(15, 23, 42, 0.35);
+        --radius: 22px;
+        font-family: "SF Pro Display", "Segoe UI", sans-serif;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 32%),
+          radial-gradient(circle at top right, rgba(245, 158, 11, 0.18), transparent 28%),
+          linear-gradient(180deg, #0f172a 0%, #111827 52%, #020617 100%);
+      }
+      .shell {
+        width: min(1180px, calc(100vw - 32px));
+        margin: 24px auto 40px;
+      }
+      .hero, .panel {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        backdrop-filter: blur(18px);
+        box-shadow: var(--shadow);
+      }
+      .hero {
+        border-radius: 30px;
+        padding: 28px;
+        display: grid;
+        gap: 20px;
+      }
+      .hero-top {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
+      }
+      .eyebrow {
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        font-size: 12px;
+        color: var(--accent-2);
+        margin-bottom: 12px;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(28px, 4vw, 46px);
+        line-height: 0.98;
+      }
+      .subtext {
+        margin: 10px 0 0;
+        max-width: 680px;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.6;
+      }
+      .hero-badges, .stat-grid, .action-row, .starter-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .badge, .stat, .starter, .ghost-button, .send-button {
+        border-radius: 999px;
+        border: 1px solid var(--line);
+      }
+      .badge {
+        padding: 10px 14px;
+        background: rgba(15, 23, 42, 0.54);
+        color: var(--text);
+        font-size: 13px;
+      }
+      .badge strong {
+        color: white;
+      }
+      .layout {
+        margin-top: 20px;
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        gap: 20px;
+      }
+      .column {
+        display: grid;
+        gap: 20px;
+      }
+      .panel {
+        border-radius: var(--radius);
+        padding: 20px;
+      }
+      .panel h2 {
+        margin: 0 0 6px;
+        font-size: 20px;
+      }
+      .panel p.section-note {
+        margin: 0 0 18px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .stat {
+        min-width: 140px;
+        padding: 14px 16px;
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .stat-label {
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+      }
+      .stat-value {
+        margin-top: 8px;
+        font-size: 24px;
+        font-weight: 600;
+      }
+      .session-card, .payment-card {
+        display: grid;
+        gap: 10px;
+        padding: 18px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .session-title, .payment-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+      }
+      .session-name, .payment-name {
+        font-size: 20px;
+        font-weight: 600;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 12px;
+        border-radius: 999px;
+        font-size: 13px;
+        background: var(--accent-soft);
+        color: #fde68a;
+      }
+      .pill.ok {
+        background: rgba(52, 211, 153, 0.18);
+        color: #a7f3d0;
+      }
+      .list-line {
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .money-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .money-item {
+        padding: 16px;
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .money-label {
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+      .money-value {
+        margin-top: 10px;
+        font-size: 24px;
+        font-weight: 600;
+      }
+      .kenji-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .kenji-avatar {
+        width: 48px;
+        height: 48px;
+        border-radius: 16px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(56, 189, 248, 0.22));
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+      .kenji-title {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .kenji-copy h2 {
+        margin-bottom: 2px;
+      }
+      .kenji-copy span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .starter-row {
+        margin-bottom: 14px;
+      }
+      .starter, .ghost-button {
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+        padding: 10px 14px;
+      }
+      .starter:hover, .ghost-button:hover {
+        border-color: rgba(245, 158, 11, 0.45);
+        background: rgba(245, 158, 11, 0.08);
+      }
+      .messages {
+        min-height: 280px;
+        max-height: 460px;
+        overflow: auto;
+        display: grid;
+        gap: 12px;
+        padding-right: 4px;
+      }
+      .message {
+        padding: 14px 16px;
+        border-radius: 18px;
+        max-width: 88%;
+        line-height: 1.55;
+        font-size: 14px;
+      }
+      .message.user {
+        margin-left: auto;
+        background: linear-gradient(135deg, rgba(56, 189, 248, 0.3), rgba(59, 130, 246, 0.2));
+        border: 1px solid rgba(125, 211, 252, 0.18);
+      }
+      .message.kenji {
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--line);
+      }
+      .composer {
+        margin-top: 16px;
+        display: grid;
+        gap: 12px;
+      }
+      textarea {
+        width: 100%;
+        min-height: 110px;
+        resize: vertical;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: rgba(2, 6, 23, 0.62);
+        color: var(--text);
+        padding: 16px;
+        font: inherit;
+      }
+      textarea:focus {
+        outline: none;
+        border-color: rgba(56, 189, 248, 0.52);
+        box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.12);
+      }
+      .action-row {
+        justify-content: space-between;
+        align-items: center;
+      }
+      .helper {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .send-button {
+        cursor: pointer;
+        border: 0;
+        padding: 12px 18px;
+        background: linear-gradient(135deg, var(--accent), #fb7185);
+        color: #111827;
+        font-weight: 700;
+      }
+      .status {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 13px;
+        min-height: 18px;
+      }
+      .status.error {
+        color: #fda4af;
+      }
+      @media (max-width: 980px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 720px) {
+        .shell {
+          width: min(100vw - 20px, 100%);
+          margin: 12px auto 28px;
+        }
+        .hero, .panel {
+          border-radius: 20px;
+          padding: 18px;
+        }
+        .money-grid {
+          grid-template-columns: 1fr;
+        }
+        .message {
+          max-width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <div class="hero-top">
+          <div>
+            <div class="eyebrow">Member Dashboard Preview</div>
+            <h1 id="member-name">Loading...</h1>
+            <p class="subtext" id="hero-copy">Preparing member continuity view and Kenji bridge.</p>
+          </div>
+          <div class="hero-badges" id="hero-badges"></div>
+        </div>
+        <div class="stat-grid" id="top-stats"></div>
+      </section>
+
+      <section class="layout">
+        <div class="column">
+          <section class="panel">
+            <h2>Upcoming Session</h2>
+            <p class="section-note">This is fed from the same member dashboard facade payload, not from raw truth workers in the browser.</p>
+            <div class="session-card">
+              <div class="session-title">
+                <div>
+                  <div class="session-name" id="session-name">No active session</div>
+                  <div class="list-line" id="session-date">No upcoming session</div>
+                </div>
+                <div class="pill" id="payment-badge">No Payment Yet</div>
+              </div>
+              <div class="list-line" id="session-meta">Private route available when a new session is created</div>
+              <div class="pill" id="reminder-badge">No Reminder Scheduled</div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Payment Summary</h2>
+            <p class="section-note">A quick view of total, paid, and balance amounts for the current member lane.</p>
+            <div class="money-grid" id="money-grid"></div>
+          </section>
+        </div>
+
+        <div class="column">
+          <section class="panel">
+            <div class="kenji-header">
+              <div class="kenji-title">
+                <div class="kenji-avatar">KJ</div>
+                <div class="kenji-copy">
+                  <h2>Kenji Continuity</h2>
+                  <span id="kenji-mode">Dashboard-linked concierge</span>
+                </div>
+              </div>
+              <button class="ghost-button" id="refresh-button" type="button">Refresh</button>
+            </div>
+
+            <div class="starter-row" id="starter-row"></div>
+            <div class="messages" id="messages"></div>
+
+            <form class="composer" id="chat-form">
+              <textarea id="chat-input" placeholder="ถาม Kenji เรื่องคิวถัดไป, ยอดที่ต้องชำระ, หรือควรทำอะไรต่อ"></textarea>
+              <div class="action-row">
+                <div class="helper">The preview uses the same signed dashboard token and member context.</div>
+                <button class="send-button" id="send-button" type="submit">Send to Kenji</button>
+              </div>
+            </form>
+            <div class="status" id="status-line"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script id="initial-state" type="application/json">${escapeScriptJson(initialState)}</script>
+    <script>
+      const state = JSON.parse(document.getElementById("initial-state").textContent);
+      const dashboardPath = "/api/member/dashboard";
+      const nextSessionPath = "/api/member/session/next";
+      const paymentsPath = "/api/member/payments/summary";
+      const kenjiPath = (state.dashboard.kenji && state.dashboard.kenji.chat_path) || "/api/member/kenji/chat";
+      const token = state.token;
+      const messages = [];
+
+      const el = {
+        memberName: document.getElementById("member-name"),
+        heroCopy: document.getElementById("hero-copy"),
+        heroBadges: document.getElementById("hero-badges"),
+        topStats: document.getElementById("top-stats"),
+        sessionName: document.getElementById("session-name"),
+        sessionDate: document.getElementById("session-date"),
+        sessionMeta: document.getElementById("session-meta"),
+        paymentBadge: document.getElementById("payment-badge"),
+        reminderBadge: document.getElementById("reminder-badge"),
+        moneyGrid: document.getElementById("money-grid"),
+        kenjiMode: document.getElementById("kenji-mode"),
+        starterRow: document.getElementById("starter-row"),
+        messages: document.getElementById("messages"),
+        chatForm: document.getElementById("chat-form"),
+        chatInput: document.getElementById("chat-input"),
+        sendButton: document.getElementById("send-button"),
+        statusLine: document.getElementById("status-line"),
+        refreshButton: document.getElementById("refresh-button"),
+      };
+
+      function formatMoney(value, currency) {
+        const amount = Number(value || 0);
+        return new Intl.NumberFormat("en-US", {
+          style: "currency",
+          currency: currency || "THB",
+          maximumFractionDigits: 0,
+        }).format(amount);
+      }
+
+      function escapeHtml(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function renderBadges(member) {
+        const badges = [
+          "<span class=\\"badge\\"><strong>Tier</strong> " + escapeHtml(member.tier || "STANDARD") + "</span>",
+          "<span class=\\"badge\\"><strong>Status</strong> " + escapeHtml(member.status || "ACTIVE") + "</span>",
+          "<span class=\\"badge\\"><strong>Concierge</strong> " + escapeHtml(member.concierge_status || "Kenji AI ready") + "</span>",
+        ];
+        el.heroBadges.innerHTML = badges.join("");
+      }
+
+      function renderStats(member) {
+        const stats = [
+          { label: "Points", value: String(member.points || 0) },
+          { label: "Total Sessions", value: String(member.total_sessions || 0) },
+          { label: "Identity", value: member.identity || member.display_name || "Member" },
+        ];
+        el.topStats.innerHTML = stats.map(function (item) {
+          return "<div class=\\"stat\\"><div class=\\"stat-label\\">" + escapeHtml(item.label) + "</div><div class=\\"stat-value\\">" + escapeHtml(item.value) + "</div></div>";
+        }).join("");
+      }
+
+      function renderSession(session) {
+        const paymentVerified = String(session.payment_status || "").toLowerCase().includes("verified");
+        el.sessionName.textContent = session.name || "No active session";
+        el.sessionDate.textContent = session.date_label || "No upcoming session";
+        el.sessionMeta.textContent = session.meta || "Private route available when a new session is created";
+        el.paymentBadge.textContent = session.payment_badge || "No Payment Yet";
+        el.paymentBadge.className = "pill" + (paymentVerified ? " ok" : "");
+        el.reminderBadge.textContent = session.reminder_badge || "No Reminder Scheduled";
+      }
+
+      function renderPayments(payments) {
+        const items = [
+          { label: "Total", value: formatMoney(payments.total_amount, payments.currency) },
+          { label: "Paid", value: formatMoney(payments.paid_amount, payments.currency) },
+          { label: "Balance", value: formatMoney(payments.balance_amount, payments.currency) },
+        ];
+        el.moneyGrid.innerHTML = items.map(function (item) {
+          return "<div class=\\"money-item\\"><div class=\\"money-label\\">" + escapeHtml(item.label) + "</div><div class=\\"money-value\\">" + escapeHtml(item.value) + "</div></div>";
+        }).join("");
+      }
+
+      function renderStarters(kenji) {
+        const starters = Array.isArray(kenji.starters) ? kenji.starters : [];
+        el.starterRow.innerHTML = starters.map(function (text) {
+          return "<button class=\\"starter\\" type=\\"button\\" data-starter=\\"" + escapeHtml(text) + "\\">" + escapeHtml(text) + "</button>";
+        }).join("");
+        Array.from(el.starterRow.querySelectorAll("[data-starter]")).forEach(function (button) {
+          button.addEventListener("click", function () {
+            el.chatInput.value = button.getAttribute("data-starter") || "";
+            el.chatInput.focus();
+          });
+        });
+      }
+
+      function renderDashboard(data) {
+        const member = data.dashboard.member;
+        el.memberName.textContent = member.display_name || "Member Dashboard";
+        el.heroCopy.textContent = member.concierge_status === "Kenji AI live"
+          ? "Kenji is live on this dashboard lane and can continue with session, payment, and next-step context."
+          : "Kenji is connected to the member dashboard facade and ready to continue the current member lane.";
+        el.kenjiMode.textContent = "Mode: " + ((data.dashboard.kenji && data.dashboard.kenji.mode) || "demo");
+        renderBadges(member);
+        renderStats(member);
+        renderSession(data.nextSession.session || {});
+        renderPayments(data.payments.payments || {});
+        renderStarters(data.dashboard.kenji || {});
+      }
+
+      function pushMessage(role, text) {
+        messages.push({ role: role, text: text });
+        el.messages.innerHTML = messages.map(function (item) {
+          return "<div class=\\"message " + escapeHtml(item.role) + "\\">" + escapeHtml(item.text) + "</div>";
+        }).join("");
+        el.messages.scrollTop = el.messages.scrollHeight;
+      }
+
+      function setStatus(text, isError) {
+        el.statusLine.textContent = text || "";
+        el.statusLine.className = "status" + (isError ? " error" : "");
+      }
+
+      async function fetchJson(path, options) {
+        const response = await fetch(path + "?t=" + encodeURIComponent(token), options);
+        const data = await response.json().catch(function () { return null; });
+        if (!response.ok || !data || data.ok === false) {
+          const message = data && data.error && data.error.message
+            ? data.error.message
+            : data && data.error
+              ? String(data.error)
+              : "Request failed";
+          throw new Error(message);
+        }
+        return data;
+      }
+
+      async function refreshDashboard() {
+        setStatus("Refreshing dashboard context...");
+        try {
+          const fresh = await Promise.all([
+            fetchJson(dashboardPath),
+            fetchJson(nextSessionPath),
+            fetchJson(paymentsPath),
+          ]);
+          state.dashboard = fresh[0];
+          state.nextSession = fresh[1];
+          state.payments = fresh[2];
+          renderDashboard(state);
+          setStatus("Dashboard refreshed.");
+        } catch (error) {
+          setStatus(error.message || "Refresh failed.", true);
+        }
+      }
+
+      async function sendKenjiMessage(text) {
+        pushMessage("user", text);
+        setStatus("Kenji is replying...");
+        el.sendButton.disabled = true;
+        try {
+          const data = await fetchJson(kenjiPath, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: text }),
+          });
+          pushMessage("kenji", data.reply || "Kenji is here.");
+          setStatus("Kenji replied.");
+        } catch (error) {
+          pushMessage("kenji", "Kenji cannot reply right now.");
+          setStatus(error.message || "Kenji is unavailable.", true);
+        } finally {
+          el.sendButton.disabled = false;
+        }
+      }
+
+      el.chatForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        const text = el.chatInput.value.trim();
+        if (!text) return;
+        el.chatInput.value = "";
+        await sendKenjiMessage(text);
+      });
+
+      el.refreshButton.addEventListener("click", refreshDashboard);
+
+      renderDashboard(state);
+      pushMessage("kenji", "Kenji is connected to this dashboard preview. Ask about your next session, payment status, or what to do next.");
+      setStatus("Preview ready.");
+    </script>
+  </body>
+</html>`;
+
+  return new Response(html, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+function normalizeProfileStatus(value, member) {
+  const raw = toStr(value || member?.status).toLowerCase().replace(/[_-]+/g, " ");
+  if (!raw || raw === "guest") return "Guest";
+  if (raw.includes("expired") || raw.includes("inactive") || raw.includes("cancel")) return "Expired";
+  if (raw.includes("pending")) return "Pending Review";
+  return "Active";
+}
+
+function normalizeProfileTier(value, context) {
+  const raw = firstNonEmpty(value, context.token.current_tier, context.token.target_tier).toLowerCase().replace(/[_-]+/g, " ");
+  if (!raw) return null;
+  if (raw.includes("7") || raw.includes("seven")) return "7 Days";
+  if (raw.includes("standard")) return "Standard";
+  if (raw.includes("premium")) return "Premium";
+  if (raw === "vip" || raw.includes(" vip")) return "VIP";
+  if (raw.includes("svip")) return "SVIP";
+  if (raw.includes("black")) return "Black Card";
+  return null;
+}
+
+function profileUsernameParts(context) {
+  const display = firstNonEmpty(
+    context.memberRecord?.username_display,
+    context.memberRecord?.customFields?.username_display,
+    context.token.username_display,
+  );
+  const key = firstNonEmpty(
+    context.memberRecord?.username_key,
+    context.memberRecord?.customFields?.username_key,
+    context.token.username_key,
+  );
+  const nicknamePart = firstNonEmpty(
+    context.memberRecord?.nickname_part,
+    context.memberRecord?.customFields?.nickname_part,
+    context.token.nickname_part,
+  );
+  const idCodePart = firstNonEmpty(
+    context.memberRecord?.id_code_part,
+    context.memberRecord?.customFields?.id_code_part,
+    context.token.id_code_part,
+  );
+  if (display || key || (nicknamePart && idCodePart)) {
+    return {
+      display: display || `${nicknamePart} ${idCodePart}`.trim() || key,
+      key: key || `${nicknamePart}${idCodePart}`.replace(/\s+/g, ""),
+      nickname_part: nicknamePart,
+      id_code_part: idCodePart,
+    };
+  }
+  const legacy = toStr(context.username).replace(/^@+/, "");
+  return {
+    display: legacy,
+    key: legacy.replace(/[^a-z0-9]/gi, "").toLowerCase(),
+    nickname_part: "",
+    id_code_part: "",
+  };
+}
+
+function profilePointsStatus(context) {
+  const raw = firstNonEmpty(
+    context.token.points_status,
+    context.token.point_status,
+    context.memberRecord?.points_status,
+    context.memberRecord?.customFields?.points_status,
+  ).toLowerCase();
+  return raw.includes("verified") || raw.includes("approved") ? "verified" : "pending_review";
+}
+
+function deriveProfileTelegramAccess(status, tier) {
+  if (status === "Expired") {
+    return { standard_group: "retained_if_policy_allows", premium_group: "removed" };
+  }
+  if (tier === "7 Days") {
+    return { standard_group: "active", premium_group: "active" };
+  }
+  if (tier === "Standard") {
+    return { standard_group: "active", premium_group: "not_included" };
+  }
+  if (["Premium", "VIP", "Black Card", "SVIP"].includes(tier)) {
+    return { standard_group: "active", premium_group: "active" };
+  }
+  return { standard_group: "inactive", premium_group: "inactive" };
+}
+
+function buildOnboardingAssistant(context) {
+  const rawKey = firstNonEmpty(
+    context.token.onboarding_assistant_key,
+    context.token.onboarding_assistant,
+    context.memberRecord?.onboarding_assistant,
+    context.memberRecord?.customFields?.onboarding_assistant,
+  ).toLowerCase();
+  const key = ["hito", "hiro", "hima", "hiei"].includes(rawKey) ? rawKey : "";
+  return {
+    selected: Boolean(key),
+    character_key: key,
+    display_name: key ? key[0].toUpperCase() + key.slice(1) : "",
+    source: firstNonEmpty(context.token.onboarding_assistant_source, context.memberRecord?.onboarding_assistant_source) || "/trust/inme",
+    status: key ? "active" : "not_selected",
+  };
+}
+
+function deriveProfilePrimaryCta(status, tier, pointStatus) {
+  if (pointStatus === "pending_review") return { label: "Check Status", href: "/member/dashboard" };
+  if (status === "Guest") return { label: "Start Membership", href: "/trust/inme" };
+  if (status === "Expired") return { label: "Renew Access", href: "/pay/renewal" };
+  if (tier === "7 Days") return { label: "Upgrade Tier", href: "/pay/renewal" };
+  return { label: "Open Dashboard", href: "/member/dashboard" };
+}
+
+function normalizeProfileDate(value) {
+  const raw = toStr(value);
+  if (!raw) return "";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeMemberIdParts(input) {
+  const rawKey = toStr(input?.username_key).toLowerCase();
+  let nicknamePart = toStr(input?.nickname_part).toLowerCase();
+  let idCodePart = toStr(input?.id_code_part).toLowerCase();
+  if (rawKey && !/^[a-z]{3,10}$/.test(rawKey)) {
+    return { ok: false, error: "username_key_invalid" };
+  }
+  const key = rawKey;
+  if ((!nicknamePart || !idCodePart) && key.length >= 3) {
+    nicknamePart = key.slice(0, -2);
+    idCodePart = key.slice(-2);
+  }
+  if (!/^[a-z]{1,8}$/.test(nicknamePart)) {
+    return { ok: false, error: "nickname_part_invalid" };
+  }
+  if (!/^[a-z]{2}$/.test(idCodePart)) {
+    return { ok: false, error: "id_code_part_invalid" };
+  }
+  return {
+    ok: true,
+    nickname_part: nicknamePart,
+    id_code_part: idCodePart,
+    username_display: `${nicknamePart} ${idCodePart}`,
+    username_key: `${nicknamePart}${idCodePart}`,
+  };
+}
+
+async function findExistingMemberId(env, usernameKey, context) {
+  const tables = [getMembersTable(env), getClientsTable(env)];
+  const usernameDisplay = `${usernameKey.slice(0, -2)} ${usernameKey.slice(-2)}`;
+  const candidates = [
+    ["username_key", usernameKey],
+    ["username", usernameKey],
+    ["member_username", usernameKey],
+    ["Member Username", usernameKey],
+    ["username_display", usernameDisplay],
+    ["Member ID", usernameDisplay],
+    ["member_id", usernameKey],
+  ];
+  for (const tableName of tables) {
+    for (const [field, value] of candidates) {
+      const rows = await tryAirtableListByField(env, tableName, field, value, 2);
+      const existing = rows.find((row) => !isSameIdentityRecord(row, context));
+      if (existing) return existing;
+    }
+  }
+  return null;
+}
+
+function isSameIdentityRecord(row, context) {
+  const fields = row?.fields || {};
+  const recordMemberstackId = firstNonEmpty(atVal(fields, "memberstack_id"), atVal(fields, "Memberstack ID"));
+  const recordEmail = firstNonEmpty(atVal(fields, "email"), atVal(fields, "Email"));
+  const recordCustomerKey = firstNonEmpty(atVal(fields, "customer_key"), atVal(fields, "client_id"));
+  if (recordMemberstackId && recordMemberstackId === context.memberstack_id) return true;
+  if (recordEmail && recordEmail.toLowerCase() === context.member_email.toLowerCase()) return true;
+  if (recordCustomerKey && recordCustomerKey === context.customer_key) return true;
+  return false;
+}
+
+async function findWritableMemberIdentityRecord(env, context) {
+  const identifiers = buildIdentifiers(context);
+  for (const tableName of [getMembersTable(env), getClientsTable(env)]) {
+    for (const identifier of identifiers) {
+      const rows = await tryAirtableListByField(env, tableName, identifier.field, identifier.value, 1);
+      if (rows[0]?.id) return { table: tableName, id: rows[0].id };
+    }
+  }
+  return null;
+}
+
+async function airtablePatchWithFallback(env, tableName, recordId, fields) {
+  const fallbacks = [
+    fields,
+    {
+      username_display: fields.username_display,
+      username_key: fields.username_key,
+      nickname_part: fields.nickname_part,
+      id_code_part: fields.id_code_part,
+    },
+    {
+      username: fields.username,
+    },
+  ];
+  let lastError = null;
+  for (const candidate of fallbacks) {
+    try {
+      return await airtablePatch(env, tableName, recordId, candidate);
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error || "");
+      if (!message.includes("Unknown field names") && !message.includes("INVALID_VALUE_FOR_COLUMN")) throw error;
+    }
+  }
+  throw lastError || new Error("airtable_patch_failed");
+}
+
+async function airtablePatch(env, tableName, recordId, fields) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) {
+    throw new Error("missing_airtable_env");
+  }
+  const res = await fetch(`${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}/${recordId}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ fields, typecast: true }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`airtable_patch_error_${res.status}:${JSON.stringify(payload)}`);
+  return payload;
+}
+
+function getMembersTable(env) {
+  return env.AIRTABLE_TABLE_MEMBERS_ID || env.AIRTABLE_TABLE_MEMBERS || "Members";
+}
+
+function getClientsTable(env) {
+  return env.AIRTABLE_TABLE_CLIENTS_ID || env.AIRTABLE_TABLE_CLIENTS || "Clients";
+}
+
+function escapeScriptJson(value) {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026");
 }
 
 function uppercaseLabel(value) {
