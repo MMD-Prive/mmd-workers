@@ -1,0 +1,15 @@
+{
+  "name": "partners-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260603.1",
+    "typescript": "^5.6.3",
+    "wrangler": "^4.50.0"
+  }
+}

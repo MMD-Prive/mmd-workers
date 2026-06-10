@@ -1,0 +1,29 @@
+name = "partners-worker"
+main = "src/index.ts"
+compatibility_date = "2026-06-04"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[vars]
+AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+AIRTABLE_TABLE_MODEL_PARTNERS = "tbl1ksDlsTiiGEHWe"
+AIRTABLE_TABLE_MODEL_REFERRALS = "tblrmSsCZxJSCQR9n"
+AIRTABLE_TABLE_PARTNER_COMMISSIONS = "tblbq4M1bhpwU2BGW"
+AIRTABLE_TABLE_MODEL_APPLICATIONS = "tblwUa8ySWln8OfaJ"
+AIRTABLE_TABLE_PARTNER_ASSETS = "tblJs0KDI7RYp4ZrT"
+PARTNER_ASSETS_BUCKET_NAME = "mmd-sigil-partner-assets"
+REVIEW_URL = "/partner/review"
+DASHBOARD_URL = "/partner/dashboard"
+TERMS_URL = "/partner/terms"
+RECOGNIZED_URL = "/partner/recognized"
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io"
+TELEGRAM_ADMIN_CHAT_ID = "-1003546439681"
+TELEGRAM_ADMIN_THREAD_ID = "61"
+
+[[r2_buckets]]
+binding = "PARTNER_ASSETS"
+bucket_name = "mmd-sigil-partner-assets"
