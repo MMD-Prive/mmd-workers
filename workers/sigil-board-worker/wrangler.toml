@@ -24,5 +24,5 @@ SIGIL_RUNTIME_PATH = "/sigil/board/runtime"
 
 [[kv_namespaces]]
 binding = "SIGIL_BOARD_KV"
-id = "REPLACE_WITH_PRODUCTION_KV_ID"
-preview_id = "REPLACE_WITH_PREVIEW_KV_ID"
+id = "7922350083a644db8a48c16c7e48fca7"
+preview_id = "f673c4ab6e4f456baefeab032564db72"
