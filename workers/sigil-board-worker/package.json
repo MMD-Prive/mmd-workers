@@ -1,0 +1,14 @@
+{
+  "name": "sigil-board-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --config wrangler.toml",
+    "deploy": "wrangler deploy --config wrangler.toml",
+    "check": "node --check src/index.js",
+    "test": "npm run check"
+  },
+  "devDependencies": {
+    "wrangler": "^4.50.0"
+  }
+}
