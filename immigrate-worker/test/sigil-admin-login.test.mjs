@@ -108,6 +108,29 @@ try {
   }
 
   {
+    const response = await call("/member/dashboard?t=abc&code=gold&promo=vip&debug=recovery");
+    const html = await response.text();
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-mmd-worker"), "immigrate-worker");
+    assert.equal(response.headers.get("x-mmd-page"), "member-dashboard");
+    assert.match(html, /Member Home \/ Status Hub/);
+    assert.ok(html.includes("/member/membership?t=abc&amp;code=gold&amp;promo=vip&amp;debug=recovery"));
+    assert.doesNotMatch(html, /name="token"/);
+  }
+
+  {
+    const response = await call("/member/membership?t=abc&code=gold&promo=vip&debug=recovery");
+    const html = await response.text();
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-mmd-worker"), "immigrate-worker");
+    assert.equal(response.headers.get("x-mmd-page"), "member-membership");
+    assert.match(html, /Choose your private access/);
+    assert.ok(html.includes("/member/dashboard?t=abc&amp;code=gold&amp;promo=vip&amp;debug=recovery"));
+    assert.ok(html.includes("/pay/membership?t=abc&amp;code=gold&amp;promo=vip&amp;debug=recovery"));
+    assert.doesNotMatch(html, /name="token"/);
+  }
+
+  {
     const response = await call("/admin/login?next=/sigil/admin/control-room");
     assert.equal(response.status, 302);
     assert.equal(response.headers.get("location"), "https://mmdbkk.com/sigil/admin/login?next=%2Fsigil%2Fadmin%2Fcontrol-room");

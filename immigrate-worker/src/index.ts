@@ -119,6 +119,9 @@ const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
   "https://mmdprive.webflow.io",
   "https://mmdprive.com",
 ]);
+const MEMBER_DASHBOARD_ALIAS_PATH = "/member/dashboard";
+const MEMBER_MEMBERSHIP_ALIAS_PATH = "/member/membership";
+const MEMBER_ROUTE_BUILD = "member-route-recovery-20260615a";
 
 type AdminGateSession = {
   ok: true;
@@ -2597,6 +2600,182 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
+function memberRouteHeaders(page: string): Headers {
+  return new Headers({
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+    "x-mmd-worker": "immigrate-worker",
+    "x-mmd-page": page,
+    "x-mmd-member-route-build": MEMBER_ROUTE_BUILD,
+  });
+}
+
+function isMemberDashboardAlias(pathname: string): boolean {
+  return pathname === MEMBER_DASHBOARD_ALIAS_PATH || pathname === `${MEMBER_DASHBOARD_ALIAS_PATH}/`;
+}
+
+function isMemberMembershipAlias(pathname: string): boolean {
+  return pathname === MEMBER_MEMBERSHIP_ALIAS_PATH || pathname === `${MEMBER_MEMBERSHIP_ALIAS_PATH}/`;
+}
+
+function renderMemberDashboardPage(request: Request): Response {
+  const url = new URL(request.url);
+  const query = url.search;
+  const membershipHref = `${MEMBER_MEMBERSHIP_ALIAS_PATH}${query}`;
+  const bookingHref = `/sigil/booking${query}`;
+  const paymentHref = `/pay/membership${query}`;
+  const promo = url.searchParams.get("promo") || url.searchParams.get("code") || "";
+  const debug = url.searchParams.get("debug") || "";
+  const html = `<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Member Home / Status Hub | MMD Privé</title>
+    <style>
+      :root { color-scheme: dark; --bg: #050403; --panel: rgba(18,14,9,.78); --line: rgba(231,197,121,.22); --gold: #e7c579; --gold2: #ffe6a7; --text: #fff4df; --muted: rgba(255,244,223,.72); --ink: #160f07; }
+      * { box-sizing: border-box; letter-spacing: 0; }
+      html, body { margin: 0; min-height: 100%; background: var(--bg); }
+      body { color: var(--text); font-family: Inter, "Avenir Next", "Segoe UI", "Noto Sans Thai", Arial, sans-serif; }
+      .member-home { min-height: 100vh; position: relative; isolation: isolate; overflow: hidden; padding: 22px; background: #050403; }
+      .member-home::before { content: ""; position: fixed; inset: 0; z-index: -3; background: linear-gradient(90deg, rgba(4,3,2,.96), rgba(4,3,2,.72) 44%, rgba(4,3,2,.35)), url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69fdb49288f202d72aabca66_ChatGPT%20Image%20Apr%2029%2C%202026%2C%2002_09_24%20AM.webp") center top / cover no-repeat; filter: saturate(1.05) contrast(1.04) brightness(.74); }
+      .member-home::after { content: ""; position: fixed; inset: 0; z-index: -2; background: linear-gradient(180deg, rgba(5,4,3,.08), #050403 88%); }
+      .member-home__shell { width: min(1160px, 100%); margin: 0 auto; display: grid; gap: 18px; }
+      .member-home__top { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+      .member-home__brand { color: var(--text); text-decoration: none; font-weight: 950; }
+      .member-home__status { min-height: 34px; display: inline-flex; align-items: center; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--gold2); background: rgba(0,0,0,.24); font-size: 12px; font-weight: 850; text-transform: uppercase; }
+      .member-home__hero { min-height: clamp(470px, 64vh, 680px); display: grid; align-content: end; padding: clamp(42px, 8vw, 92px) 0 22px; }
+      .member-home__kicker, .member-home__card span { color: var(--gold); font-size: 12px; font-weight: 900; text-transform: uppercase; }
+      .member-home h1 { max-width: 780px; margin: 12px 0 0; color: #fff7e9; font-size: clamp(52px, 12vw, 118px); line-height: .88; font-weight: 950; }
+      .member-home__lead { max-width: 650px; margin: 14px 0 0; color: var(--muted); font-size: 17px; line-height: 1.72; }
+      .member-home__grid { display: grid; grid-template-columns: 1.2fr .8fr; gap: 14px; padding-bottom: 26px; }
+      .member-home__card { min-height: 190px; display: grid; align-content: space-between; gap: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.025)), var(--panel); box-shadow: 0 22px 70px rgba(0,0,0,.34); backdrop-filter: blur(16px); }
+      .member-home__card strong { display: block; margin-top: 8px; color: #fff6e7; font-size: 28px; line-height: 1.05; }
+      .member-home__card p { margin: 0; color: var(--muted); line-height: 1.6; }
+      .member-home__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+      .member-home__btn { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; padding: 0 15px; border: 1px solid rgba(230,189,103,.34); border-radius: 999px; color: var(--text); background: rgba(255,255,255,.055); text-decoration: none; font-weight: 850; }
+      .member-home__btn.primary { color: var(--ink); background: linear-gradient(180deg, #ffe6a7, #bd862f); border-color: rgba(255,231,174,.72); }
+      .member-home__meta { margin-top: 10px; color: rgba(255,244,223,.58); font-size: 12px; overflow-wrap: anywhere; }
+      @media (max-width: 840px) { .member-home { padding: 16px; } .member-home__top { align-items: flex-start; flex-direction: column; } .member-home__grid { grid-template-columns: 1fr; } .member-home__hero { min-height: 610px; } }
+    </style>
+  </head>
+  <body>
+    <main class="member-home" data-mmd-member-dashboard data-build="${MEMBER_ROUTE_BUILD}">
+      <div class="member-home__shell">
+        <header class="member-home__top">
+          <a class="member-home__brand" href="/trust/inme">MMD PRIVÉ / MEMBER</a>
+          <span class="member-home__status">Member route ready</span>
+        </header>
+        <section class="member-home__hero">
+          <p class="member-home__kicker">Private member home</p>
+          <h1>Member Home / Status Hub</h1>
+          <p class="member-home__lead">Kenji จะพาคุณไปต่อในเส้นทางสมาชิกของ MMD Privé ครับ หน้านี้เป็น member area ไม่ใช่ payment หรือ admin layer.</p>
+          <div class="member-home__actions">
+            <a class="member-home__btn primary" href="${escapeHtml(membershipHref)}">Membership</a>
+            <a class="member-home__btn" href="${escapeHtml(bookingHref)}">Booking</a>
+            <a class="member-home__btn" href="${escapeHtml(paymentHref)}">Payment</a>
+          </div>
+          <p class="member-home__meta">debug: ${escapeHtml(debug || "off")}${promo ? ` · promo: ${escapeHtml(promo)}` : ""}</p>
+        </section>
+        <section class="member-home__grid" aria-label="Member status">
+          <article class="member-home__card">
+            <div><span>Access Signal</span><strong>Member area</strong></div>
+            <p>เส้นทางนี้คงอยู่ที่ /member/dashboard และไม่ redirect ไป Webflow, payment, trust หรือ JSON auth response ครับ</p>
+          </article>
+          <article class="member-home__card">
+            <div><span>Next Step</span><strong>Choose route</strong></div>
+            <p>เลือก membership, booking หรือ payment ตามสถานะของคุณ โดย query string เดิมยังถูกส่งต่อครับ</p>
+          </article>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>`;
+
+  return new Response(request.method === "HEAD" ? null : html, {
+    status: 200,
+    headers: memberRouteHeaders("member-dashboard"),
+  });
+}
+
+function renderMemberMembershipPage(request: Request): Response {
+  const url = new URL(request.url);
+  const query = url.search;
+  const dashboardHref = `${MEMBER_DASHBOARD_ALIAS_PATH}${query}`;
+  const paymentHref = `/pay/membership${query}`;
+  const packages = [
+    ["Essential", "Private member access, status hub, and guided next steps."],
+    ["Premium", "Priority continuity for booking, renewal, and private route support."],
+    ["Black Card", "Highest-touch private access reviewed through the member layer."],
+  ];
+  const html = `<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Member Membership | MMD Privé</title>
+    <style>
+      :root { color-scheme: dark; --bg:#050403; --panel:rgba(14,11,8,.78); --line:rgba(231,197,121,.22); --gold:#e7c579; --gold2:#ffe6a7; --text:#fff4df; --muted:rgba(255,244,223,.70); --ink:#160f07; }
+      * { box-sizing: border-box; letter-spacing: 0; }
+      html, body { margin: 0; min-height: 100%; background: var(--bg); }
+      body { color: var(--text); font-family: Inter, "Avenir Next", "Segoe UI", "Noto Sans Thai", Arial, sans-serif; }
+      .member-packages { min-height: 100vh; position: relative; isolation: isolate; overflow: hidden; padding: 22px; background: #050403; }
+      .member-packages::before { content:""; position: fixed; inset: 0; z-index:-3; background: linear-gradient(90deg, rgba(4,3,2,.94), rgba(4,3,2,.70) 46%, rgba(4,3,2,.38)), url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69f7868b147766ca087fd499_Hito%20membership.webp") center top / cover no-repeat; filter: saturate(1.02) contrast(1.04) brightness(.72); }
+      .member-packages::after { content:""; position: fixed; inset: 0; z-index:-2; background: linear-gradient(180deg, rgba(5,4,3,.08), #050403 88%); }
+      .member-packages__shell { width: min(1160px, 100%); margin: 0 auto; display: grid; gap: 18px; }
+      .member-packages__top { min-height: 64px; display:flex; align-items:center; justify-content:space-between; gap: 14px; }
+      .member-packages__brand { color: var(--text); text-decoration:none; font-weight: 950; }
+      .member-packages__status { min-height: 34px; display:inline-flex; align-items:center; padding: 0 12px; border:1px solid var(--line); border-radius:999px; color: var(--gold2); background:rgba(0,0,0,.24); font-size:12px; font-weight:850; text-transform:uppercase; }
+      .member-packages__hero { min-height: clamp(470px, 64vh, 680px); display:grid; align-content:end; padding: clamp(42px, 8vw, 92px) 0 22px; }
+      .member-packages__kicker, .member-packages__card span { color: var(--gold); font-size:12px; font-weight:900; text-transform:uppercase; }
+      .member-packages h1 { max-width: 780px; margin: 12px 0 0; color:#fff7e9; font-size: clamp(52px, 12vw, 118px); line-height:.88; font-weight:950; }
+      .member-packages__lead { max-width: 650px; margin: 14px 0 0; color: var(--muted); font-size: 17px; line-height:1.72; }
+      .member-packages__grid { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; padding-bottom: 26px; }
+      .member-packages__card { min-height: 230px; display:grid; align-content:space-between; gap: 18px; padding: 18px; border:1px solid var(--line); border-radius:14px; background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.025)), var(--panel); box-shadow:0 22px 70px rgba(0,0,0,.34); backdrop-filter: blur(16px); }
+      .member-packages__card strong { display:block; margin-top: 8px; color:#fff6e7; font-size:28px; line-height:1.05; }
+      .member-packages__card p { margin: 0; color: var(--muted); line-height:1.6; }
+      .member-packages__actions { display:flex; flex-wrap:wrap; gap:10px; }
+      .member-packages__btn { min-height:44px; display:inline-flex; align-items:center; justify-content:center; padding:0 15px; border:1px solid rgba(230,189,103,.34); border-radius:999px; color:var(--text); background:rgba(255,255,255,.055); text-decoration:none; font-weight:850; }
+      .member-packages__btn.primary { color:var(--ink); background:linear-gradient(180deg, #ffe6a7, #bd862f); border-color:rgba(255,231,174,.72); }
+      .member-packages__note { display:grid; grid-template-columns: 1fr auto; gap: 14px; align-items:center; margin-bottom: 36px; padding: 16px; border:1px solid var(--line); border-radius:14px; background:rgba(8,6,4,.74); }
+      .member-packages__note p { margin:0; color:var(--muted); line-height:1.6; }
+      @media (max-width: 840px) { .member-packages { padding: 16px; } .member-packages__top, .member-packages__note { align-items:flex-start; flex-direction:column; display:flex; } .member-packages__grid { grid-template-columns:1fr; } .member-packages__hero { min-height: 610px; } }
+    </style>
+  </head>
+  <body>
+    <main class="member-packages" data-mmd-member-membership data-build="${MEMBER_ROUTE_BUILD}">
+      <div class="member-packages__shell">
+        <header class="member-packages__top">
+          <a class="member-packages__brand" href="${escapeHtml(dashboardHref)}">MMD PRIVÉ / MEMBER</a>
+          <span class="member-packages__status">Package selection</span>
+        </header>
+        <section class="member-packages__hero">
+          <p class="member-packages__kicker">Member-facing membership</p>
+          <h1>Choose your private access.</h1>
+          <p class="member-packages__lead">หน้านี้เป็น package selection สำหรับสมาชิก ไม่ใช่ payment layer. เลือกเส้นทางสมาชิกก่อน แล้วค่อยไปชำระเงินเมื่อพร้อมครับ</p>
+          <div class="member-packages__actions">
+            <a class="member-packages__btn primary" href="${escapeHtml(dashboardHref)}">Member Dashboard</a>
+            <a class="member-packages__btn" href="${escapeHtml(paymentHref)}">Continue to Payment</a>
+          </div>
+        </section>
+        <section class="member-packages__grid" aria-label="Membership packages">
+          ${packages.map(([name, line]) => `<article class="member-packages__card"><div><span>Member option</span><strong>${escapeHtml(name)}</strong></div><p>${escapeHtml(line)}</p><div class="member-packages__actions"><a class="member-packages__btn primary" href="${escapeHtml(paymentHref)}">Select ${escapeHtml(name)}</a></div></article>`).join("")}
+        </section>
+        <section class="member-packages__note" aria-label="Route lock">
+          <p><strong>Route lock:</strong> /member/membership stays in the member layer. /pay/membership remains the separate payment page.</p>
+          <a class="member-packages__btn" href="${escapeHtml(dashboardHref)}">Back to Status Hub</a>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>`;
+
+  return new Response(request.method === "HEAD" ? null : html, {
+    status: 200,
+    headers: memberRouteHeaders("member-membership"),
+  });
+}
+
 function adminGateBootstrapScript(session: AdminGateSession, next: string): string {
   return `
 <script>
@@ -4152,6 +4331,14 @@ export default {
         }
 
         return renderSigilAdminLoginPage(request);
+      }
+
+      if ((request.method === "GET" || request.method === "HEAD") && isMemberDashboardAlias(url.pathname)) {
+        return renderMemberDashboardPage(request);
+      }
+
+      if ((request.method === "GET" || request.method === "HEAD") && isMemberMembershipAlias(url.pathname)) {
+        return renderMemberMembershipPage(request);
       }
 
       if (request.method === "POST" && url.pathname === SIGIL_ADMIN.login) {
