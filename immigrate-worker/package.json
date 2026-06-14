@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "test": "node test/payment-page-v12-draft.test.mjs && node test/member-routes.test.mjs && node test/sigil-booking-api.test.mjs && node test/sigil-admin-login.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
