@@ -1,0 +1,62 @@
+name = "mmd-redirect-worker"
+main = "src/index.js"
+compatibility_date = "2026-06-07"
+workers_dev = false
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[[services]]
+binding = "IMMIGRATE_WORKER"
+service = "immigrate-worker"
+
+[[routes]]
+pattern = "mmdbkk.com/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/member/dashboard"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/member/dashboard/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/member/membership"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/member/membership/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/dashboard"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/dashboard/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/membership"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/membership/"
+zone_name = "mmdbkk.com"
+
+# Temporary safety catch for old SIGIL admin route leakage.
+# mmd-redirect-worker must pass /sigil/* through; SIGIL admin login is owned by immigrate-worker.
+[[routes]]
+pattern = "mmdbkk.com/sigil/admin*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/admin*"
+zone_name = "mmdbkk.com"
