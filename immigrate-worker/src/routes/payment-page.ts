@@ -11,8 +11,11 @@ import {
 import type { Env } from "../types";
 
 export const PAYMENT_PAGE_PATH = "/pay";
+export const MEMBERSHIP_PAYMENT_PAGE_PATH = "/pay/membership";
 
 const LEGACY_PAYMENT_PATHS = new Set([
+  "/sigil/pay",
+  "/sigil/pay/",
   "/sigil/pay/session",
   "/confirmation/payment-confirmation",
 ]);
@@ -157,6 +160,35 @@ function getPaypalCardUrl(env: Env): string {
       env.CREDIT_CARD_PAYMENT_URL ||
       env.PAYPAL_URL,
   );
+}
+
+function draftOnlyPaymentContext(env: Env): PaymentPageContext {
+  return {
+    token: "",
+    token_kind: "booking_draft",
+    payment_record_id: "",
+    session_id: "",
+    payment_ref: "",
+    payment_type: "deposit",
+    amount_thb: null,
+    total_amount_thb: null,
+    deposit_amount_thb: null,
+    final_amount_thb: null,
+    client_name: "",
+    model_name: "",
+    package_code: "",
+    member_email: "",
+    payment_status: "draft",
+    promptpay_id: toStr(env.PROMPTPAY_ID),
+    bank_name: toStr(env.PAYMENT_BANK_NAME || "PromptPay / Thai bank transfer"),
+    bank_account_name: toStr(env.PAYMENT_BANK_ACCOUNT_NAME || "MMD SIGIL"),
+    bank_account_number: toStr(env.PAYMENT_BANK_ACCOUNT_NUMBER || env.PROMPTPAY_ID),
+    bank_branch: toStr(env.PAYMENT_BANK_BRANCH),
+    paypal_card_url: getPaypalCardUrl(env),
+    warnings: [
+      "This page has your booking draft only. MMD will confirm the schedule and amount before payment is treated as complete.",
+    ],
+  };
 }
 
 function htmlResponse(body: string, status = 200): Response {
@@ -856,6 +888,7 @@ function renderSubmission(result: SubmissionResult | null): string {
 function renderPaymentPage(context: PaymentPageContext, submission: SubmissionResult | null = null): Response {
   const qrUrl = promptPayQrUrl(context.promptpay_id, context.amount_thb);
   const canSubmit = Boolean(context.session_id && context.payment_ref && context.amount_thb && context.amount_thb > 0);
+  const canOpenPaymentDetails = canSubmit && Boolean(qrUrl || context.bank_account_number);
   const paypalCardUrl = context.paypal_card_url;
 
   return htmlResponse(`<!doctype html>
@@ -984,6 +1017,63 @@ function renderPaymentPage(context: PaymentPageContext, submission: SubmissionRe
     }
     .method h3, form h2 { margin: 0 0 8px; font-size: 1rem; color: var(--gold-2); }
     .method p { margin: 6px 0; color: var(--muted); line-height: 1.45; }
+    .summary-panel { margin-top: 24px; }
+    .summary-panel[hidden] { display: none; }
+    .summary-sync {
+      margin: 12px 0 0;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 0.92rem;
+    }
+    .summary-sync[data-kind="success"] { color: var(--ok); }
+    .summary-sync[data-kind="error"] { color: var(--danger); }
+    .summary-grid { display: grid; gap: 10px; margin-top: 14px; }
+    .summary-item {
+      display: grid;
+      grid-template-columns: 150px minmax(0, 1fr);
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(217, 180, 91, 0.12);
+    }
+    .summary-item dt { color: var(--muted); margin: 0; }
+    .summary-item dd { margin: 0; min-width: 0; white-space: pre-line; }
+    .payment-actions { display: grid; gap: 12px; margin-top: 14px; }
+    .payment-note { color: var(--muted); line-height: 1.55; margin: 0; }
+    .payment-dialog {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      background: rgba(0, 0, 0, 0.72);
+    }
+    .payment-dialog.is-open { display: flex; }
+    .payment-dialog__panel {
+      width: min(720px, 100%);
+      max-height: min(760px, calc(100vh - 36px));
+      overflow: auto;
+      border: 1px solid var(--line);
+      background: #101010;
+      padding: 20px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+    }
+    .payment-dialog__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .payment-dialog__head h2 { margin: 0; color: var(--gold-2); font-size: 1.15rem; }
+    .payment-dialog__close {
+      width: auto;
+      min-height: 36px;
+      padding: 0 12px;
+      background: transparent;
+      color: var(--gold-2);
+    }
     a.button, button {
       display: inline-flex;
       justify-content: center;
@@ -1031,7 +1121,7 @@ function renderPaymentPage(context: PaymentPageContext, submission: SubmissionRe
       main { width: min(100% - 24px, 640px); padding-top: 20px; }
       header { align-items: flex-start; flex-direction: column; }
       .grid, .methods { grid-template-columns: 1fr; }
-      .row { grid-template-columns: 1fr; gap: 4px; }
+      .row, .summary-item { grid-template-columns: 1fr; gap: 4px; }
       .status-pill { white-space: normal; }
     }
   </style>
@@ -1055,11 +1145,11 @@ function renderPaymentPage(context: PaymentPageContext, submission: SubmissionRe
           <div class="sub">${escapeHtml(paymentTypeLabel(context.payment_type))}</div>
           <div class="amount">${escapeHtml(formatMoney(context.amount_thb))}</div>
         </div>
-        <div class="qr">
-          ${qrUrl ? `<img src="${escapeAttr(qrUrl)}" alt="PromptPay QR for ${escapeAttr(context.promptpay_id)}" />` : ""}
+        <p class="payment-note">Payment and booking are confirmed only after MMD verifies the schedule, amount, and payment proof. Open the payment details when you are ready to transfer.</p>
+        <div class="payment-actions">
+          <button type="button" data-payment-open ${canOpenPaymentDetails ? "" : "disabled"}>Open payment details</button>
         </div>
         <div class="rows">
-          <div class="row"><span>PromptPay ID</span><code>${escapeHtml(context.promptpay_id || "Not configured")}</code></div>
           <div class="row"><span>Payment ref</span><code>${escapeHtml(context.payment_ref || "Missing")}</code></div>
           <div class="row"><span>Session ID</span><code>${escapeHtml(context.session_id || "Missing")}</code></div>
           <div class="row"><span>Client</span><span>${escapeHtml(context.client_name || "MMD client")}</span></div>
@@ -1070,24 +1160,12 @@ function renderPaymentPage(context: PaymentPageContext, submission: SubmissionRe
       <div class="panel">
         ${renderSubmission(submission)}
         ${renderWarnings(context.warnings)}
-        <div class="methods">
-          <article class="method">
-            <h3>Bank transfer</h3>
-            <p>${escapeHtml(context.bank_name)}</p>
-            <p>Account name: <strong>${escapeHtml(context.bank_account_name)}</strong></p>
-            <p>Account number: <code>${escapeHtml(context.bank_account_number || context.promptpay_id)}</code></p>
-            ${context.bank_branch ? `<p>Branch: ${escapeHtml(context.bank_branch)}</p>` : ""}
-          </article>
-          <article class="method">
-            <h3>PayPal / Credit Card</h3>
-            <p>A 6% processing fee applies to PayPal or Credit Card payments.</p>
-            ${
-              paypalCardUrl
-                ? `<a class="button" href="${escapeAttr(paypalCardUrl)}" target="_blank" rel="noopener noreferrer">Open card payment</a>`
-                : `<span class="button disabled">Card URL not configured</span>`
-            }
-          </article>
-        </div>
+        <section class="summary-panel" data-booking-summary hidden>
+          <h2>Booking summary</h2>
+          <p class="payment-note">Kenji will keep this as a draft until MMD checks the schedule, amount, and proof.</p>
+          <p class="summary-sync" data-booking-sync-status></p>
+          <dl class="summary-grid" data-booking-summary-list></dl>
+        </section>
 
         <form method="post" action="${escapeAttr(`${PAYMENT_PAGE_PATH}?t=${encodeURIComponent(context.token)}`)}">
           <h2>Submit payment proof</h2>
@@ -1108,11 +1186,321 @@ function renderPaymentPage(context: PaymentPageContext, submission: SubmissionRe
             <textarea name="note"></textarea>
           </label>
           <button type="submit" ${canSubmit ? "" : "disabled"}>Submit for manual review</button>
-          <p class="fineprint">The page keeps <code>session_id</code> and <code>payment_ref</code> inside the signed token and server lookup, so refreshes and repeat submissions remain idempotent.</p>
+          <p class="fineprint">Your booking/payment stays pending until MMD manually verifies the schedule, amount, and payment proof.</p>
         </form>
       </div>
     </section>
+
+    <section class="payment-dialog" data-payment-dialog aria-hidden="true">
+      <div class="payment-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="paymentDetailsTitle">
+        <div class="payment-dialog__head">
+          <h2 id="paymentDetailsTitle">Payment details</h2>
+          <button class="payment-dialog__close" type="button" data-payment-close>Close</button>
+        </div>
+        <div class="methods">
+          <article class="method">
+            <h3>Bank transfer</h3>
+            <p>${escapeHtml(context.bank_name)}</p>
+            <p>Account name: <strong>${escapeHtml(context.bank_account_name)}</strong></p>
+            <p>Account number: <code>${escapeHtml(context.bank_account_number || context.promptpay_id || "Not configured")}</code></p>
+            ${context.bank_branch ? `<p>Branch: ${escapeHtml(context.bank_branch)}</p>` : ""}
+          </article>
+          <article class="method">
+            <h3>QR payment</h3>
+            <div class="qr">
+              ${qrUrl ? `<img src="${escapeAttr(qrUrl)}" alt="PromptPay QR" />` : ""}
+            </div>
+          </article>
+          <article class="method">
+            <h3>PayPal / Credit Card</h3>
+            <p>A 6% processing fee applies to PayPal or Credit Card payments.</p>
+            ${
+              paypalCardUrl
+                ? `<a class="button" href="${escapeAttr(paypalCardUrl)}" target="_blank" rel="noopener noreferrer">Open card payment</a>`
+                : `<span class="button disabled">Card URL not configured</span>`
+            }
+          </article>
+        </div>
+      </div>
+    </section>
   </main>
+  <script>
+    (() => {
+      const DRAFT_KEYS = [
+        "sigil_booking_draft_v12",
+        "sigil_booking_draft_v11",
+        "sigil_booking_draft_v10",
+        "sigil_booking_draft_v9",
+        "sigil_booking_draft",
+        "sigil_booking_request_draft_v2",
+        "mmd_booking_draft",
+        "booking_draft"
+      ];
+      const BOOKING_ENDPOINT = "/v1/public/booking-request";
+      const text = (value, fallback = "-") => String(value ?? "").trim() || fallback;
+      const label = (item, fallback = "-") => text(item && (item.label || item.value), fallback);
+      const params = new URLSearchParams(window.location.search);
+
+      function readDraft() {
+        for (const key of DRAFT_KEYS) {
+          try {
+            const raw = window.localStorage.getItem(key);
+            if (!raw) continue;
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === "object") return parsed;
+          } catch {}
+        }
+        return draftFromParams();
+      }
+
+      function saveDraft(draft) {
+        try {
+          const key = draft && draft.version === "v2" ? "sigil_booking_request_draft_v2" : DRAFT_KEYS[0];
+          window.localStorage.setItem(key, JSON.stringify(draft));
+        } catch {}
+      }
+
+      function draftFromParams() {
+        const get = (name) => params.get(name) || "";
+        if (![...params.keys()].length) return null;
+        return {
+          lane: { label: get("lane_label") || get("lane") },
+          job_class: { label: get("job_class_label") || get("job_class") || get("class") },
+          schedule: {
+            date: get("date"),
+            time: get("time"),
+            duration_label: get("duration_label") || get("duration")
+          },
+          location: {
+            place_name: get("place_name") || get("place"),
+            google_address: get("google_address") || get("address")
+          },
+          model_spec: {
+            model_id_or_name: get("model_id_or_name") || get("model"),
+            height_min_cm: get("height_min_cm"),
+            height_max_cm: get("height_max_cm"),
+            orientation_label: get("orientation_label") || get("orientation"),
+            private_type_label: get("private_type_label") || get("private_type"),
+            body_type_label: get("body_type_label") || get("body_type"),
+            face_look_label: get("face_look_label") || get("face_look")
+          },
+          client: { contact: get("contact") || get("client_contact") }
+        };
+      }
+
+      function first() {
+        for (let i = 0; i < arguments.length; i += 1) {
+          const value = String(arguments[i] ?? "").trim();
+          if (value) return value;
+        }
+        return "";
+      }
+
+      function numericDuration(value) {
+        const raw = String(value ?? "").trim().toLowerCase();
+        if (!raw) return "";
+        const match = raw.match(/\\d+(?:\\.\\d+)?/);
+        if (match) return match[0];
+        if (raw === "short") return "2";
+        if (raw === "standard") return "3";
+        if (raw === "extended" || raw === "long") return "4";
+        return "";
+      }
+
+      function draftBrief(draft) {
+        const pieces = [
+          first(draft.brief, draft.note),
+          draft.model_spec ? modelSpecSummary(draft.model_spec) : "",
+          draft.preferred_models && draft.preferred_models.length
+            ? "Preferred models: " + draft.preferred_models.map((model) => label(model, "")).filter(Boolean).join(", ")
+            : "",
+          draft.preferred_slots && draft.preferred_slots.length
+            ? "Preferred slots: " + draft.preferred_slots.map((slot) => text(slot.value, "")).filter(Boolean).join(" | ")
+            : ""
+        ].filter(Boolean);
+        return pieces.join("\\n") || "Booking draft from review page";
+      }
+
+      function bookingPayloadFromDraft(draft) {
+        const schedule = draft.schedule || {};
+        const location = draft.location || {};
+        const client = draft.client || {};
+        const modelSpec = draft.model_spec || {};
+        const jobType = draft.job_type || draft.jobType || draft.job_class || {};
+        const packageTier = draft.package_tier || draft.packageTier || {};
+        const duration = draft.duration || {};
+        const preference = draft.preference || {};
+        return {
+          source: "sigil_booking",
+          mode: "request",
+          build_marker: "SIGIL_BOOKING_BUILD: payment-page-draft-api-20260614",
+          t: params.get("t") || "",
+          code: params.get("code") || "",
+          promo: params.get("promo") || "",
+          session_id: params.get("session_id") || first(draft.session_id),
+          payment_ref: params.get("payment_ref") || first(draft.payment_ref),
+          booking_id: params.get("booking_id") || first(draft.booking_id),
+          booking_ref: params.get("booking_ref") || first(draft.booking_ref),
+          request_mode: first(draft.request_mode, draft.mode, "review"),
+          booking_lane: first(draft.booking_lane, draft.lane && draft.lane.value, "member_booking"),
+          request_type: first(draft.request_type, "brief_first"),
+          matching_mode: first(draft.matching_mode, "sigil_assisted_recommendation"),
+          request_status: "pending_operator_review",
+          brief: draftBrief(draft),
+          selected_model_id: first(modelSpec.model_id_or_name, draft.selected_model_id),
+          selected_model_name: first(modelSpec.model_id_or_name, draft.selected_model_name),
+          job_type: first(jobType.value, draft.job_type, "private_booking"),
+          package_tier: first(packageTier.value, draft.package_tier, "premium"),
+          duration_hours: numericDuration(first(duration.hours, duration.value, duration.label, schedule.duration_hours, schedule.duration_label)),
+          booking_date: first(schedule.date, draft.booking_date),
+          start_time: first(schedule.time, draft.start_time),
+          area: first(location.area, location.place_name, draft.area),
+          location_name: first(location.place_name, location.google_address, draft.area),
+          preferred_vibe: first(preference.value, draft.preferred_vibe),
+          language_preference: first(modelSpec.language_preference, draft.language_preference),
+          client_name: first(client.name, draft.client_name),
+          contact: first(client.contact, draft.contact),
+          note: first(draft.note),
+          page_path: window.location.pathname,
+          created_from_url: window.location.href,
+          created_at_client: new Date().toISOString()
+        };
+      }
+
+      function missingBookingFields(payload) {
+        return [
+          "brief",
+          "booking_lane",
+          "request_mode",
+          "job_type",
+          "package_tier",
+          "duration_hours",
+          "booking_date",
+          "start_time",
+          "area",
+          "client_name",
+          "contact"
+        ].filter((key) => !String(payload[key] ?? "").trim());
+      }
+
+      function setSyncStatus(message, kind) {
+        const el = document.querySelector("[data-booking-sync-status]");
+        if (!el) return;
+        el.textContent = message || "";
+        if (kind) el.dataset.kind = kind;
+        else delete el.dataset.kind;
+      }
+
+      function modelSpecSummary(spec = {}) {
+        const min = text(spec.height_min_cm, "");
+        const max = text(spec.height_max_cm, "");
+        const height = min && max ? min + " to " + max + " cm" : "-";
+        return [
+          "Model ID/Name: " + text(spec.model_id_or_name),
+          "Height: " + height,
+          "Orientation: " + text(spec.orientation_label, "Let Kenji review"),
+          "VIP/PN: " + text(spec.private_type_label, "Let Kenji review"),
+          "Body: " + text(spec.body_type_label, "Let Kenji review"),
+          "Look: " + text(spec.face_look_label, "Let Kenji review")
+        ].join("\\n");
+      }
+
+      function renderBookingSummary() {
+        const panel = document.querySelector("[data-booking-summary]");
+        const list = document.querySelector("[data-booking-summary-list]");
+        if (!panel || !list) return;
+        const draft = readDraft();
+        if (!draft) return;
+        const dateTime = [draft.schedule && draft.schedule.date, draft.schedule && draft.schedule.time].map((part) => text(part, "")).filter(Boolean).join(" ");
+        const rows = [
+          ["Job Lane", label(draft.lane)],
+          ["Job Class", label(draft.job_class)],
+          ["Date & Time", text(dateTime)],
+          ["Duration", text(draft.schedule && draft.schedule.duration_label)],
+          ["Place Name", text(draft.location && draft.location.place_name)],
+          ["Google Address", text(draft.location && draft.location.google_address)],
+          ["Model Spec", modelSpecSummary(draft.model_spec || {})],
+          ["Contact", text((draft.client && draft.client.contact) || draft.contact)],
+          ["Booking ID", text(draft.booking_id || draft.booking_ref, "Pending sync")]
+        ];
+        list.innerHTML = rows.map(([term, value]) => '<div class="summary-item"><dt>' + escapeHtml(term) + '</dt><dd>' + escapeHtml(value) + '</dd></div>').join("");
+        panel.hidden = false;
+        syncBookingDraft(draft);
+      }
+
+      async function syncBookingDraft(draft) {
+        if (!draft || draft.booking_id || draft.booking_ref) {
+          if (draft && (draft.booking_id || draft.booking_ref)) setSyncStatus("Booking draft is linked to the API.", "success");
+          return;
+        }
+        const payload = bookingPayloadFromDraft(draft);
+        const missing = missingBookingFields(payload);
+        if (missing.length) {
+          setSyncStatus("Kenji needs a little more detail before payment: " + missing.join(", ") + ".", "error");
+          return;
+        }
+
+        setSyncStatus("Kenji is saving this booking draft...", "");
+        try {
+          const res = await fetch(BOOKING_ENDPOINT + window.location.search, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || data.ok === false) {
+            const message = data && data.error && data.error.message ? data.error.message : "Booking draft could not be saved.";
+            throw new Error(message);
+          }
+
+          const nextDraft = Object.assign({}, draft, {
+            booking_id: data.booking_id || data.request_id || "",
+            booking_ref: data.booking_ref || data.booking_id || data.request_id || "",
+            session_id: data.session_id || payload.session_id || "",
+            payment_ref: data.payment_ref || payload.payment_ref || "",
+            api_next_url: data.next_url || ""
+          });
+          saveDraft(nextDraft);
+          if (data.next_url) window.history.replaceState(null, "", data.next_url);
+          setSyncStatus("Booking draft saved. Ref: " + text(nextDraft.booking_ref), "success");
+          renderBookingSummary();
+        } catch (error) {
+          setSyncStatus("Kenji could not save this draft yet. " + (error && error.message ? error.message : "Please try again."), "error");
+        }
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function bindPaymentDialog() {
+        const dialog = document.querySelector("[data-payment-dialog]");
+        const open = document.querySelector("[data-payment-open]");
+        const close = document.querySelector("[data-payment-close]");
+        if (!dialog || !open || !close) return;
+        const setOpen = (isOpen) => {
+          dialog.classList.toggle("is-open", isOpen);
+          dialog.setAttribute("aria-hidden", isOpen ? "false" : "true");
+        };
+        open.addEventListener("click", () => setOpen(true));
+        close.addEventListener("click", () => setOpen(false));
+        dialog.addEventListener("click", (event) => {
+          if (event.target === dialog) setOpen(false);
+        });
+        window.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") setOpen(false);
+        });
+      }
+
+      renderBookingSummary();
+      bindPaymentDialog();
+    })();
+  </script>
 </body>
 </html>`);
 }
@@ -1154,7 +1542,7 @@ function renderPaymentErrorPage(message: string, status = 400): Response {
 }
 
 export function isPaymentPageRoute(pathname: string): boolean {
-  return pathname === PAYMENT_PAGE_PATH || LEGACY_PAYMENT_PATHS.has(pathname);
+  return pathname === PAYMENT_PAGE_PATH || pathname === MEMBERSHIP_PAYMENT_PAGE_PATH || LEGACY_PAYMENT_PATHS.has(pathname);
 }
 
 export function canonicalPaymentRedirect(request: Request): Response | null {
@@ -1165,11 +1553,10 @@ export function canonicalPaymentRedirect(request: Request): Response | null {
   const token = toStr(url.searchParams.get("t"));
   if (!token) return null;
 
-  const onlyT = Array.from(url.searchParams.keys()).every((key) => key === "t");
-  if (url.pathname === PAYMENT_PAGE_PATH && onlyT) return null;
+  if (url.pathname === PAYMENT_PAGE_PATH || url.pathname === MEMBERSHIP_PAYMENT_PAGE_PATH) return null;
 
   const canonical = new URL(PAYMENT_PAGE_PATH, url.origin);
-  canonical.searchParams.set("t", token);
+  url.searchParams.forEach((value, key) => canonical.searchParams.append(key, value));
   return redirect(canonical.toString(), 302);
 }
 
@@ -1185,11 +1572,11 @@ export async function handlePaymentPage(request: Request, env: Env): Promise<Res
   }
 
   const url = new URL(request.url);
-  const onlyT = Array.from(url.searchParams.keys()).every((key) => key === "t");
-  if (!onlyT) return renderPaymentErrorPage("Payment link must use canonical /pay?t=... format.", 400);
-
   const token = toStr(url.searchParams.get("t"));
-  if (!token) return renderPaymentErrorPage("Missing payment token. Use /pay?t=...", 400);
+  if (!token) {
+    if (request.method === "GET") return renderPaymentPage(draftOnlyPaymentContext(env));
+    return renderPaymentErrorPage("Missing payment token. Use /pay?t=... before submitting proof.", 400);
+  }
 
   let context: PaymentPageContext;
   try {

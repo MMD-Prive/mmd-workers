@@ -4,9 +4,10 @@ import { readInternalToken } from "../lib/auth";
 
 export const SIGIL_ADMIN_ROOT = "/sigil/admin";
 export const SIGIL_ADMIN_LOGIN_PATH = "/sigil/admin/login";
+export const SIGIL_ADMIN_AUTH_ME_PATH = "/sigil/admin/auth/me";
 export const SIGIL_ADMIN_SETUP_PATH = "/sigil/admin/setup";
 export const SIGIL_ADMIN_LOGOUT_PATH = "/sigil/admin/logout";
-export const SIGIL_ADMIN_SUCCESS_PATH = "/sigil/admin/jobs/create-session";
+export const SIGIL_ADMIN_SUCCESS_PATH = "/sigil/admin/control-room";
 export const INTERNAL_ADMIN_INVITE_CREATE_PATH = "/internal/admin/invites/create";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -17,6 +18,7 @@ const SETUP_TTL_SECONDS = 60 * 20;
 const PASSWORD_HASH_ITERATIONS = 100_000;
 const MAX_WORKER_PBKDF2_ITERATIONS = 100_000;
 const PASSWORD_HASH_ALGORITHM = "pbkdf2-sha256";
+const SIGIL_ADMIN_LOGIN_BUILD = "SIGIL_ADMIN_LOGIN_V3_20260602_WORKER_SOURCE";
 
 type AirtableFields = Record<string, unknown>;
 
@@ -220,6 +222,20 @@ function clearCookie(name: string): string {
   return buildCookie(name, "", 0);
 }
 
+function normalizeSigilAdminNext(value: unknown, fallback = SIGIL_ADMIN_SUCCESS_PATH): string {
+  const raw = toStr(value);
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return fallback;
+
+  try {
+    const parsed = new URL(raw, "https://sigil.mmdbkk.com");
+    if (parsed.origin !== "https://sigil.mmdbkk.com") return fallback;
+    if (!parsed.pathname.startsWith(`${SIGIL_ADMIN_ROOT}/`)) return fallback;
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return fallback;
+  }
+}
+
 function htmlResponse(html: string, init?: ResponseInit): Response {
   return new Response(html, {
     ...init,
@@ -307,171 +323,212 @@ function renderLoginPage(error = false, status = 200): Response {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MMD SĪGIL Admin Console</title>
+    <title>SIGIL Admin Gate</title>
+    <link rel="stylesheet" href="https://models.mmdbkk.com/webflow/sigil/admin/login/admin-login.css?v=20260602-sigil-admin-v2" />
     <style>
-      :root {
-        color-scheme: dark;
-        --bg: #050403;
-        --panel: rgba(12,10,8,.84);
-        --line: rgba(229,195,120,.26);
-        --line-strong: rgba(242,205,121,.58);
-        --text: #f8efe2;
-        --cream: #fff4df;
-        --muted: rgba(232,220,203,.72);
-        --gold: #d7aa4f;
-        --gold-strong: #f1ca72;
-        --danger: #f4b3b3;
-      }
-      * { box-sizing: border-box; }
-      html { min-height: 100%; }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        color: var(--text);
-        background:
-          linear-gradient(90deg, rgba(5,4,3,.98) 0%, rgba(5,4,3,.88) 39%, rgba(5,4,3,.18) 72%),
-          url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69f9a0baa5daddee0378d009_Boss%20Ewvon%20Login.webp") right center / cover no-repeat,
-          var(--bg);
-        font-family: Inter, "Avenir Next", "Segoe UI", Arial, sans-serif;
-      }
-      .login-page {
-        min-height: 100vh;
-        display: grid;
-        grid-template-columns: minmax(320px, 460px) minmax(0, 1fr);
-        align-items: center;
-        gap: 28px;
-        padding: clamp(22px, 5vw, 72px);
-      }
-      .login-card {
-        display: grid;
-        gap: 26px;
-        width: 100%;
-        padding: clamp(28px, 4vw, 42px);
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        background:
-          linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.012)),
-          var(--panel);
-        box-shadow: 0 30px 90px rgba(0,0,0,.48);
-        backdrop-filter: blur(18px);
-      }
-      .brand {
-        display: grid;
-        gap: 8px;
-      }
-      .brand-mark {
-        margin: 0;
-        color: var(--gold-strong);
-        font-size: .86rem;
-        font-weight: 800;
-        letter-spacing: .2em;
-        text-transform: uppercase;
-      }
-      h1 {
-        margin: 0;
-        color: var(--cream);
-        font-family: Baskerville, "Iowan Old Style", Palatino, Georgia, serif;
-        font-size: clamp(2.6rem, 6vw, 4.7rem);
-        font-weight: 600;
-        line-height: .9;
-        letter-spacing: 0;
-      }
-      .subtitle {
-        margin: 0;
-        color: var(--muted);
-        font-size: 1rem;
-        line-height: 1.5;
-      }
-      form {
-        display: grid;
-        gap: 16px;
-      }
-      label {
-        display: grid;
-        gap: 8px;
-        color: var(--gold);
-        font-size: .88rem;
-        font-weight: 800;
-      }
-      input {
-        width: 100%;
-        min-height: 52px;
-        padding: 0 15px;
-        border: 1px solid var(--line);
-        border-radius: 9px;
-        background: rgba(0,0,0,.42);
-        color: var(--text);
-        font: 600 1rem/1.3 Inter, "Avenir Next", "Segoe UI", Arial, sans-serif;
-        outline: none;
-      }
-      input:focus {
-        border-color: var(--line-strong);
-        box-shadow: 0 0 0 3px rgba(215,170,79,.14);
-      }
-      button {
-        min-height: 52px;
-        border: 1px solid rgba(241,202,114,.78);
-        border-radius: 9px;
-        background: linear-gradient(180deg, #f1ca72 0%, #c49336 100%);
-        color: #171006;
-        font: 800 1rem/1 Inter, "Avenir Next", "Segoe UI", Arial, sans-serif;
-        cursor: pointer;
-        box-shadow: 0 14px 34px rgba(196,147,54,.25);
-      }
-      .error {
-        min-height: 20px;
-        margin: 0;
-        color: var(--danger);
-        font-size: .9rem;
-        line-height: 1.45;
-      }
-      .art-space {
-        min-height: 72vh;
-      }
-      @media (max-width: 820px) {
-        body {
-          background:
-            linear-gradient(180deg, rgba(5,4,3,.92), rgba(5,4,3,.72)),
-            url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69f9a0baa5daddee0378d009_Boss%20Ewvon%20Login.webp") center top / cover no-repeat,
-            var(--bg);
-        }
-        .login-page {
-          grid-template-columns: 1fr;
-          align-items: end;
-          padding: 18px;
-        }
-        .login-card {
-          margin-top: 30vh;
-        }
-        .art-space { display: none; }
-      }
+      .sigil-admin-login,.sigil-admin-login *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#030303}.sigil-admin-login{color-scheme:dark;width:100%;min-height:100vh;min-height:100svh;overflow-x:hidden;color:#f8efe0;background:#030303;font-family:Inter,"Avenir Next","Segoe UI",Arial,sans-serif}.sigil-admin-login .salx-stage{position:relative;isolation:isolate;min-height:100vh;min-height:100svh;display:grid;grid-template-rows:auto 1fr;overflow:hidden;background:radial-gradient(circle at 20% 22%,rgba(235,181,91,.2),transparent 31%),radial-gradient(circle at 76% 14%,rgba(95,69,35,.24),transparent 34%),linear-gradient(135deg,#040302 0%,#0c0906 46%,#020202 100%)}.sigil-admin-login .salx-bg{position:absolute;inset:0;z-index:-3;background-image:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0802e10402165b8404527c_BPEWPRIVELogin.png");background-position:center;background-size:cover;opacity:.42;filter:saturate(.55) contrast(1.08) brightness(.42);transform:scale(1.01)}.sigil-admin-login .salx-stage:before{content:"";position:absolute;inset:0;z-index:-2;background:linear-gradient(90deg,rgba(2,2,2,.96) 0%,rgba(4,3,2,.74) 42%,rgba(3,2,1,.88) 100%),radial-gradient(circle at 70% 48%,rgba(226,165,75,.18),transparent 34%),linear-gradient(180deg,rgba(0,0,0,.48),rgba(0,0,0,.9))}.sigil-admin-login .salx-stage:after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(90deg,rgba(244,188,88,.06) 1px,transparent 1px),linear-gradient(180deg,rgba(244,188,88,.045) 1px,transparent 1px);background-size:88px 88px;opacity:.34}.sigil-admin-login .salx-topbar{width:min(1220px,calc(100% - clamp(32px,6vw,72px)));margin:0 auto;padding:clamp(18px,3vw,28px) 0;display:flex;align-items:center;justify-content:space-between;gap:18px}.sigil-admin-login .salx-brand{min-width:0;display:inline-flex;align-items:center;gap:12px;color:inherit;text-decoration:none}.sigil-admin-login .salx-brand-logo{width:clamp(48px,6vw,68px);height:clamp(48px,6vw,68px);object-fit:contain;filter:drop-shadow(0 10px 24px rgba(0,0,0,.56))}.sigil-admin-login .salx-brand-copy{display:grid;gap:2px;line-height:1}.sigil-admin-login .salx-brand-copy span,.sigil-admin-login .salx-route span,.sigil-admin-login .salx-kicker,.sigil-admin-login .salx-brief span{color:rgba(248,239,224,.62);font-size:11px;font-weight:850;letter-spacing:.14em;text-transform:uppercase}.sigil-admin-login .salx-brand-copy strong{color:#f6c777;font-size:14px;font-weight:900}.sigil-admin-login .salx-route{margin:0;display:grid;justify-items:end;gap:4px;padding:10px 14px;border:1px solid rgba(246,199,119,.24);border-radius:8px;background:rgba(5,4,3,.58);backdrop-filter:blur(18px)}.sigil-admin-login .salx-route strong{color:#fff7e8;font-size:13px;font-weight:800}.sigil-admin-login .salx-shell{width:min(1220px,calc(100% - clamp(32px,6vw,72px)));margin:0 auto;padding:clamp(34px,7vh,82px) 0 clamp(32px,6vh,70px);display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,430px);align-items:center;gap:clamp(30px,6vw,86px)}.sigil-admin-login .salx-command{min-width:0;display:grid;gap:18px}.sigil-admin-login .salx-kicker{margin:0;color:#f2c26f}.sigil-admin-login .salx-canary{width:fit-content;margin:0;padding:6px 9px;border:1px solid rgba(246,199,119,.28);border-radius:8px;color:rgba(255,225,163,.78);background:rgba(7,6,4,.62);font-size:11px;font-weight:850;line-height:1}.sigil-admin-login .salx-command h1{max-width:760px;margin:0;color:#fffaf0;font-size:clamp(50px,8vw,116px);line-height:.9;font-weight:950;letter-spacing:0;text-wrap:balance}.sigil-admin-login .salx-lede{max-width:620px;margin:0;color:rgba(248,239,224,.78);font-size:clamp(17px,1.8vw,21px);line-height:1.62}.sigil-admin-login .salx-brief{width:min(100%,520px);display:grid;gap:8px;padding:16px 18px;border:1px solid rgba(246,199,119,.22);border-radius:8px;background:rgba(8,7,5,.58);box-shadow:inset 0 1px 0 rgba(255,255,255,.05);backdrop-filter:blur(18px)}.sigil-admin-login .salx-brief p,.sigil-admin-login .salx-status,.sigil-admin-login .salx-footnote{margin:0;color:rgba(248,239,224,.7);font-size:14px;line-height:1.6}.sigil-admin-login .salx-panel{min-width:0;display:grid;gap:20px;padding:clamp(22px,3vw,32px);border:1px solid rgba(246,199,119,.3);border-radius:8px;background:radial-gradient(circle at 18% 0%,rgba(246,199,119,.16),transparent 42%),linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.025)),rgba(7,6,4,.86);box-shadow:0 34px 90px rgba(0,0,0,.62);backdrop-filter:blur(26px)}.sigil-admin-login .salx-panel-header{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:15px}.sigil-admin-login .salx-panel-logo{width:58px;height:58px;object-fit:contain}.sigil-admin-login .salx-panel h2{margin:4px 0 0;color:#fff6e7;font-size:clamp(26px,3vw,36px);line-height:1.06;font-weight:900;letter-spacing:0}.sigil-admin-login .salx-status{min-height:24px;padding:12px 14px;border:1px solid rgba(248,239,224,.1);border-radius:8px;background:rgba(0,0,0,.28)}.sigil-admin-login .salx-status.is-error{color:#ffd1c7;border-color:rgba(255,115,92,.42);background:rgba(82,15,7,.28)}.sigil-admin-login .salx-status.is-ok{color:#ffe1a6;border-color:rgba(246,199,119,.42);background:rgba(83,55,13,.24)}.sigil-admin-login .salx-form{display:grid;gap:16px}.sigil-admin-login .salx-field{display:grid;gap:8px;color:rgba(248,239,224,.84);font-size:13px;font-weight:820}.sigil-admin-login .salx-field input{width:100%;min-height:54px;border:1px solid rgba(248,239,224,.14);border-radius:8px;padding:0 14px;color:#fffaf0;background:rgba(0,0,0,.34);outline:none;font:inherit}.sigil-admin-login .salx-field input:focus{border-color:rgba(246,199,119,.76);box-shadow:0 0 0 3px rgba(246,199,119,.16)}.sigil-admin-login .salx-password-wrap{position:relative;display:block}.sigil-admin-login .salx-password-wrap input{padding-right:78px}.sigil-admin-login .salx-password-toggle{position:absolute;top:50%;right:8px;min-width:56px;min-height:38px;border:1px solid rgba(246,199,119,.22);border-radius:8px;color:#f4cc87;background:rgba(9,7,4,.72);font:inherit;font-size:12px;font-weight:850;cursor:pointer;transform:translateY(-50%)}.sigil-admin-login .salx-submit{width:100%;min-height:64px;display:grid;place-items:center;gap:2px;border:0;border-radius:8px;color:#170f05;background:linear-gradient(180deg,#ffe1a3 0%,#d59d4d 52%,#a96c2d 100%);box-shadow:0 18px 40px rgba(187,125,45,.28);cursor:pointer;font:inherit}.sigil-admin-login .salx-submit span{font-size:15px;font-weight:950}.sigil-admin-login .salx-submit small{color:rgba(23,15,5,.72);font-size:11px;font-weight:900;letter-spacing:.08em}.sigil-admin-login .salx-submit:disabled{cursor:wait;opacity:.68}.sigil-admin-login .salx-footnote{font-size:12px;color:rgba(248,239,224,.54)}@media(max-width:860px){.sigil-admin-login .salx-topbar{align-items:flex-start;flex-direction:column}.sigil-admin-login .salx-route{justify-items:start;width:100%}.sigil-admin-login .salx-shell{grid-template-columns:minmax(0,1fr);align-items:start;padding-top:22px}.sigil-admin-login .salx-command h1{font-size:clamp(44px,15vw,72px)}}@media(max-width:520px){.sigil-admin-login .salx-topbar,.sigil-admin-login .salx-shell{width:min(100% - 28px,1220px)}.sigil-admin-login .salx-panel{padding:20px}.sigil-admin-login .salx-panel-header{grid-template-columns:minmax(0,1fr)}}
     </style>
   </head>
   <body>
-    <main class="login-page">
-      <section class="login-card" aria-label="MMD SĪGIL Admin Console login">
-        <div class="brand">
-          <p class="brand-mark">MMD SĪGIL</p>
-          <h1>Admin Console</h1>
-          <p class="subtitle">Secure operator access</p>
+    <main
+      id="sigil-admin-login"
+      class="sigil-admin-login"
+      data-route="${SIGIL_ADMIN_LOGIN_PATH}"
+      data-action="${SIGIL_ADMIN_LOGIN_PATH}"
+      data-next="${SIGIL_ADMIN_SUCCESS_PATH}"
+    >
+      <section class="salx-stage" aria-labelledby="salx-title">
+        <div class="salx-bg" aria-hidden="true"></div>
+
+        <header class="salx-topbar">
+          <a class="salx-brand" href="${SIGIL_ADMIN_LOGIN_PATH}" aria-label="SIGIL Admin Gate">
+            <img
+              class="salx-brand-logo"
+              src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0f2cbc7e26b6735aee4cb2_SIGIL%20LOGO%20Transp.webp"
+              alt="SIGIL"
+              loading="eager"
+            >
+            <span class="salx-brand-copy">
+              <span>SIGIL</span>
+              <strong>Private Admin</strong>
+            </span>
+          </a>
+
+          <p class="salx-route" aria-label="Canonical route">
+            <span>Canonical route</span>
+            <strong>${SIGIL_ADMIN_LOGIN_PATH}</strong>
+          </p>
+        </header>
+
+        <div class="salx-shell">
+          <section class="salx-command" aria-label="Admin access brief">
+            <p class="salx-canary">${SIGIL_ADMIN_LOGIN_BUILD}</p>
+            <p class="salx-kicker">Operator Access / Restricted Surface</p>
+            <h1 id="salx-title">SIGIL Admin Gate</h1>
+            <p class="salx-lede">
+              Private control room entry for approved operators handling protected sessions,
+              review flow, and operational decisions.
+            </p>
+
+            <div class="salx-brief" aria-label="Access boundary">
+              <span>Access boundary</span>
+              <p>Public, client, model, and member surfaces stay outside this admin route.</p>
+            </div>
+          </section>
+
+          <section class="salx-panel" aria-label="Admin login form">
+            <div class="salx-panel-header">
+              <img
+                class="salx-panel-logo"
+                src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0f2cbc7e26b6735aee4cb2_SIGIL%20LOGO%20Transp.webp"
+                alt="SIGIL"
+                loading="eager"
+              >
+              <div>
+                <p class="salx-kicker">Secure Entry</p>
+                <h2>Verify operator credentials</h2>
+              </div>
+            </div>
+
+            <p id="salx-status" class="salx-status${error ? ` is-error` : ``}" role="status" aria-live="polite">
+              ${error ? `Invalid username or password.` : `Ready for private admin sign-in.`}
+            </p>
+
+            <form id="salx-form" class="salx-form" method="post" action="${SIGIL_ADMIN_LOGIN_PATH}" novalidate>
+              <input id="salx-next" name="next" type="hidden" value="${SIGIL_ADMIN_SUCCESS_PATH}">
+              <input id="salx-t" name="t" type="hidden" value="">
+
+              <label class="salx-field" for="salx-identity">
+                <span>Operator identity</span>
+                <input id="salx-identity" name="identity" type="text" autocomplete="username" required autofocus>
+              </label>
+
+              <label class="salx-field" for="salx-password">
+                <span>Password</span>
+                <span class="salx-password-wrap">
+                  <input id="salx-password" name="password" type="password" autocomplete="current-password" required>
+                  <button class="salx-password-toggle" type="button" aria-controls="salx-password" aria-pressed="false">
+                    Show
+                  </button>
+                </span>
+              </label>
+
+              <label class="salx-field" for="salx-gate-code">
+                <span>Gate Code / OTP</span>
+                <input id="salx-gate-code" name="gate_code" type="text" autocomplete="one-time-code" inputmode="numeric">
+              </label>
+
+              <button id="salx-submit" class="salx-submit" type="submit">
+                <span>Enter Control Room</span>
+                <small>POST ${SIGIL_ADMIN_LOGIN_PATH}</small>
+              </button>
+            </form>
+
+            <p class="salx-footnote">Private route label: ${SIGIL_ADMIN_LOGIN_PATH}</p>
+          </section>
         </div>
-        ${error ? `<p class="error">Invalid username or password.</p>` : `<p class="error" aria-hidden="true"></p>`}
-        <form method="post" action="${SIGIL_ADMIN_LOGIN_PATH}">
-          <label>
-            Username or email
-            <input name="identity" type="text" autocomplete="username" required autofocus />
-          </label>
-          <label>
-            Password
-            <input name="password" type="password" autocomplete="current-password" required />
-          </label>
-          <button type="submit">Enter Console</button>
-        </form>
       </section>
-      <div class="art-space" aria-hidden="true"></div>
     </main>
+    <script>
+      (function () {
+        var root = document.getElementById("sigil-admin-login");
+        if (!root) return;
+        if (root.getAttribute("data-salx-js") === "ready") return;
+        root.setAttribute("data-salx-js", "ready");
+
+        var safeDefaultNext = "${SIGIL_ADMIN_SUCCESS_PATH}";
+        var publicPaths = [
+          "/sigil/guide",
+          "/mmd-blackcard",
+          "/blackcard",
+          "/sigil/start",
+          "/sigil/pay",
+          "/sigil/apply",
+          "/sigil/session",
+          "/model/dashboard"
+        ];
+
+        var form = document.getElementById("salx-form");
+        var status = document.getElementById("salx-status");
+        var nextInput = document.getElementById("salx-next");
+        var tInput = document.getElementById("salx-t");
+        var identityInput = document.getElementById("salx-identity");
+        var passwordInput = document.getElementById("salx-password");
+        var passwordToggle = document.querySelector(".salx-password-toggle");
+        var query = new URLSearchParams(window.location.search);
+        var route = root.getAttribute("data-route") || "${SIGIL_ADMIN_LOGIN_PATH}";
+        var action = root.getAttribute("data-action") || route;
+        var configuredNext = root.getAttribute("data-next") || safeDefaultNext;
+
+        function setStatus(message, tone) {
+          if (!status) return;
+          status.textContent = message;
+          status.classList.toggle("is-error", tone === "error");
+          status.classList.toggle("is-ok", tone === "ok");
+        }
+
+        function cleanNext(value) {
+          var raw = typeof value === "string" ? value : "";
+          if (!raw || raw.charAt(0) !== "/" || raw.slice(0, 2) === "//") return safeDefaultNext;
+          try {
+            var parsed = new URL(raw, window.location.origin);
+            if (parsed.origin !== window.location.origin) return safeDefaultNext;
+            if (parsed.pathname.indexOf("/sigil/admin/") !== 0) return safeDefaultNext;
+            return parsed.pathname + parsed.search + parsed.hash;
+          } catch (error) {
+            return safeDefaultNext;
+          }
+        }
+
+        if (publicPaths.indexOf(window.location.pathname) !== -1) {
+          root.setAttribute("data-route-warning", "public-surface");
+          setStatus("This package is not assigned to this public surface.", "error");
+          return;
+        }
+
+        root.setAttribute("data-canonical-route", route);
+
+        if (form) form.setAttribute("action", action);
+        if (nextInput) nextInput.value = cleanNext(query.get("next") || configuredNext);
+        if (tInput) tInput.value = query.get("t") || "";
+
+        if (passwordToggle && passwordInput) {
+          passwordToggle.addEventListener("click", function () {
+            var shouldShow = passwordInput.type === "password";
+            passwordInput.type = shouldShow ? "text" : "password";
+            passwordToggle.textContent = shouldShow ? "Hide" : "Show";
+            passwordToggle.setAttribute("aria-pressed", shouldShow ? "true" : "false");
+          });
+        }
+
+        if (!form) return;
+
+        form.addEventListener("submit", function (event) {
+          var missingIdentity = !identityInput || !identityInput.value.trim();
+          var missingPassword = !passwordInput || !passwordInput.value;
+
+          if (missingIdentity || missingPassword) {
+            event.preventDefault();
+            setStatus("Enter operator identity and password to continue.", "error");
+            return;
+          }
+
+          setStatus("Submitting admin gate request.", "ok");
+
+          var submitButton = form.querySelector("button[type='submit']");
+          if (submitButton) submitButton.disabled = true;
+        });
+      })();
+    </script>
+    <script src="https://models.mmdbkk.com/webflow/sigil/admin/login/admin-login.js?v=20260602-sigil-admin-v2" defer></script>
   </body>
-</html>`), status);
+</html>`, {
+    headers: {
+      "x-mmd-worker": "immigrate-worker",
+      "x-mmd-page": "sigil-admin-login",
+      "x-mmd-sigil-login-build": SIGIL_ADMIN_LOGIN_BUILD,
+    },
+  }), status);
 }
 
 function renderSetupPage(error = ""): Response {
@@ -1019,6 +1076,7 @@ async function handleLoginPost(request: Request, env: Env): Promise<Response> {
   const body = await readRequestBody(request);
   const identity = toStr(body.identity || body.username || body.email);
   const password = toStr(body.password);
+  const next = normalizeSigilAdminNext(body.next);
   let user: AirtableRecord | null = null;
 
   try {
@@ -1105,7 +1163,7 @@ async function handleLoginPost(request: Request, env: Env): Promise<Response> {
       env,
     );
 
-    return redirect(SIGIL_ADMIN_SUCCESS_PATH, 302, {
+    return redirect(next, 302, {
       "set-cookie": buildCookie(SESSION_COOKIE, cookie, SESSION_TTL_SECONDS),
     });
   } catch {
@@ -1137,6 +1195,22 @@ async function handleLogout(request: Request, env: Env): Promise<Response> {
   await revokeSessionFromCookie(request, env);
   return redirect(SIGIL_ADMIN_LOGIN_PATH, 302, {
     "set-cookie": clearCookie(SESSION_COOKIE),
+  });
+}
+
+async function handleAuthMe(request: Request, env: Env): Promise<Response> {
+  const session = await getValidSigilAdminSession(request, env);
+  if (!session) {
+    return jsonResponse(
+      { ok: false, error: { code: "UNAUTHORIZED", message: "Unauthorized" } },
+      { status: 401 },
+    );
+  }
+
+  return jsonResponse({
+    ok: true,
+    admin_user_record_id: session.adminUserRecordId,
+    session_record_id: session.sessionRecordId,
   });
 }
 
@@ -1236,6 +1310,7 @@ export function isSigilAdminPath(pathname: string): boolean {
 export function isSigilAdminPublicAuthPath(pathname: string): boolean {
   return (
     pathname === SIGIL_ADMIN_LOGIN_PATH ||
+    pathname === SIGIL_ADMIN_AUTH_ME_PATH ||
     pathname === SIGIL_ADMIN_SETUP_PATH ||
     pathname === SIGIL_ADMIN_LOGOUT_PATH
   );
@@ -1251,10 +1326,23 @@ export async function handleSigilAdminAuthRoute(request: Request, env: Env): Pro
     return handleSetupPost(request, env);
   }
   if (url.pathname === SIGIL_ADMIN_LOGIN_PATH && (request.method === "GET" || request.method === "HEAD")) {
-    return request.method === "HEAD" ? new Response(null, { status: 200 }) : renderLoginPage();
+    return request.method === "HEAD"
+      ? new Response(null, {
+          status: 200,
+          headers: {
+            "cache-control": "no-store",
+            "x-mmd-worker": "immigrate-worker",
+            "x-mmd-page": "sigil-admin-login",
+            "x-mmd-sigil-login-build": SIGIL_ADMIN_LOGIN_BUILD,
+          },
+        })
+      : renderLoginPage();
   }
   if (url.pathname === SIGIL_ADMIN_LOGIN_PATH && request.method === "POST") {
     return handleLoginPost(request, env);
+  }
+  if (url.pathname === SIGIL_ADMIN_AUTH_ME_PATH && request.method === "GET") {
+    return handleAuthMe(request, env);
   }
   if (url.pathname === SIGIL_ADMIN_LOGOUT_PATH && (request.method === "GET" || request.method === "POST")) {
     return handleLogout(request, env);
@@ -1266,7 +1354,7 @@ export async function handleSigilAdminAuthRoute(request: Request, env: Env): Pro
 export function makeSigilAdminLoginRedirect(request: Request): Response {
   const url = new URL(request.url);
   const loginUrl = new URL(SIGIL_ADMIN_LOGIN_PATH, url.origin);
-  const next = `${url.pathname}${url.search}`;
+  const next = normalizeSigilAdminNext(`${url.pathname}${url.search}`, "");
   if (next && next !== SIGIL_ADMIN_LOGIN_PATH) {
     loginUrl.searchParams.set("next", next);
   }

@@ -8,6 +8,7 @@ import {
   MODEL_SESSION_STATUS_PATH,
 } from "./routes/model-session";
 import {
+  PAYMENT_PAGE_PATH,
   canonicalPaymentRedirect,
   handlePaymentPage,
   isPaymentPageRoute,
@@ -34,11 +35,13 @@ import {
   buildImmigrationLinkContext,
   canReadAirtable,
   confirmCustomerBookingToAirtable,
+  findBookingClient,
   intakeLineClientUpsert,
   listRecordsFromAirtable,
   listSessionsFromAirtable,
   patchClientMemberstackId,
   previewLineClientUpsert,
+  searchBookingModel,
   syncRecordsToAirtable,
   writeLinkAuditRecord,
 } from "./lib/airtable";
@@ -87,6 +90,7 @@ const VERSION = "v0-mvp";
 const CANONICAL = {
   ping: "/ping",
   health: "/v1/immigrate/health",
+  lineWebhook: "/webhooks/line",
   linePreview: "/v1/immigrate/line/preview",
   lineIntake: "/v1/immigrate/line/intake",
   createJob: "/v1/admin/create-job",
@@ -128,6 +132,13 @@ const SIGIL = {
   controlRoomSessions: "/sigil/admin/control-room/sessions/live",
   controlRoomSessionRefresh: "/sigil/admin/control-room/sessions/refresh",
   booking: "/sigil/booking",
+  apply: "/sigil/apply",
+  applyStatus: "/sigil/apply/status",
+  // Apply status/received means "received and waiting for Per to read privately".
+  // It is not an approved state; approval/official consideration must stay separate.
+  modelApply: "/sigil/model/apply",
+  modelApplyPrivate: "/sigil/model/apply/private-model",
+  modelApplyPrivateReceived: "/sigil/model/apply/private-model/received",
   createSession: "/sigil/admin/jobs/create-session",
   createJob: "/sigil/admin/jobs/create-job",
   modelPromoteImmigration: "/sigil/admin/models/promote-immigration",
@@ -141,8 +152,49 @@ const SIGIL = {
   recoveryAck: "/sigil/api/recovery/ack",
   recoveryComplaintEvidence: "/sigil/api/recovery/complaint-evidence",
   customerConfirm: "/sigil/api/jobs/customer-confirm",
+  clientResolve: "/sigil/api/client/resolve",
+  modelSearch: "/sigil/api/models/search",
+  privateModelApply: "/sigil/api/private-model/apply",
+  privateModelUploadUrl: "/sigil/api/private-model/upload-url",
+  privateModelUploadFile: "/sigil/api/private-model/upload-file",
+  publicModelApply: "/sigil/api/public-model/apply",
+  publicModelUploadUrl: "/sigil/api/public-model/upload-url",
+  publicModelUploadFile: "/sigil/api/public-model/upload-file",
   sendLineSessionCard: "/sigil/admin/jobs/send-line-session-card",
 } as const;
+
+const PUBLIC_LEGAL_ORIGIN_PATHS = new Set([
+  "/terms",
+  "/terms/",
+  "/legal/terms",
+  "/legal/terms/",
+]);
+
+const PUBLIC_LEGAL_CANONICAL_PATHS = new Map([
+  ["/terms", "/terms"],
+  ["/terms/", "/terms"],
+  ["/legal/terms", "/legal/terms"],
+  ["/legal/terms/", "/legal/terms"],
+]);
+
+const PUBLIC_LEGAL_CANONICAL_HOST = "mmdbkk.com";
+const SIGIL_PUBLIC_HOST = "sigil.mmdbkk.com";
+
+function isPublicLegalOriginRoute(request: Request, url: URL): boolean {
+  return (request.method === "GET" || request.method === "HEAD") && PUBLIC_LEGAL_ORIGIN_PATHS.has(url.pathname);
+}
+
+function publicLegalCanonicalRedirect(request: Request, url: URL): Response | null {
+  if (!isPublicLegalOriginRoute(request, url)) return null;
+  if (url.hostname.toLowerCase() !== SIGIL_PUBLIC_HOST) return null;
+
+  const canonicalUrl = new URL(url.toString());
+  canonicalUrl.protocol = "https:";
+  canonicalUrl.hostname = PUBLIC_LEGAL_CANONICAL_HOST;
+  canonicalUrl.port = "";
+  canonicalUrl.pathname = PUBLIC_LEGAL_CANONICAL_PATHS.get(url.pathname) || url.pathname;
+  return redirect(canonicalUrl.toString(), 302, { "cache-control": "no-store" });
+}
 
 const LEGACY_ADMIN_LOGIN_PATHS = new Set([
   CONTROL_ROOM.login,
@@ -161,6 +213,21 @@ function canonicalSigilAdminRedirect(url: URL): Response | null {
   canonicalUrl.hostname = SIGIL_ADMIN_CANONICAL_HOST;
   canonicalUrl.port = "";
   return redirect(canonicalUrl.toString(), 302);
+}
+
+function watchUnexpectedSigilGatewayHit(request: Request, url: URL): void {
+  if (url.hostname.toLowerCase() !== SIGIL_ADMIN_CANONICAL_HOST) return;
+  if (!url.pathname.startsWith("/sigil/")) return;
+
+  console.warn("sigil_gateway_unexpected_hit", {
+    worker: "immigrate-worker",
+    host: url.hostname,
+    path: url.pathname,
+    method: request.method,
+    ray: request.headers.get("cf-ray") || "",
+    userAgent: request.headers.get("user-agent") || "",
+    at: new Date().toISOString(),
+  });
 }
 
 function canonicalAdminLoginAliasRedirect(request: Request): Response | null {
@@ -213,6 +280,7 @@ const PUBLIC = {
 const ADMIN_GATE_SESSION_KEY = "mmd_admin_gate_v1";
 const ADMIN_GATE_TTL_MS = 8 * 60 * 60 * 1000;
 const ADMIN_GATE_DEFAULT_NEXT = CONTROL_ROOM.root;
+const SIGIL_ADMIN_LOGIN_BUILD = "SIGIL_ADMIN_LOGIN_V3_20260602_WORKER_SOURCE";
 const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
   "https://mmdbkk.com",
   "https://www.mmdbkk.com",
@@ -407,6 +475,10 @@ function isLineIntakeRoute(pathname: string): boolean {
   return pathname === CANONICAL.lineIntake;
 }
 
+function isLineWebhookRoute(pathname: string): boolean {
+  return pathname === CANONICAL.lineWebhook;
+}
+
 function isCreateJobRoute(pathname: string): boolean {
   return pathname === CANONICAL.createJob;
 }
@@ -598,14 +670,15 @@ function buildCorsHeaders(request: Request, env: Env): Headers {
   const headers = new Headers();
   const origin = request.headers.get("origin") || "";
   const allowed = getPublicAllowedOrigins(env);
+  const requestOrigin = new URL(request.url).origin;
 
-  if (origin && allowed.includes(origin)) {
+  if (origin && (origin === requestOrigin || allowed.includes(origin))) {
     headers.set("access-control-allow-origin", origin);
     headers.set("vary", "origin");
   }
 
   headers.set("access-control-allow-methods", "GET,POST,PUT,OPTIONS");
-  headers.set("access-control-allow-headers", "content-type, authorization, x-internal-token, x-request-id");
+  headers.set("access-control-allow-headers", "content-type, authorization, x-internal-token, x-request-id, x-line-signature");
   headers.set("access-control-max-age", "86400");
   return headers;
 }
@@ -657,6 +730,381 @@ function publicJson(request: Request, env: Env, data: unknown, init?: ResponseIn
   return withCors(request, env, json(data, init));
 }
 
+type BookingAccessScope = "none" | "member" | "private";
+type BookingMemberStatus = "active" | "expired" | "migration_pending" | "membership_required" | "unknown";
+type BookingLookupStatus = "member_found" | "legacy_line_found" | "not_found" | "client_found";
+type BookingNextAction =
+  | "continue_booking"
+  | "renew_membership"
+  | "complete_membership_signup"
+  | "signup_or_login"
+  | "private_access_review";
+
+type BookingClientResolveInput = {
+  t?: string;
+  memberstack_id?: string;
+  line_user_id?: string;
+  line_note?: string;
+  client_name?: string;
+  client_contact?: string;
+  booking_ref?: string;
+  intent?: string;
+};
+
+type BookingClientAccess = {
+  ok: true;
+  client_lookup_status: BookingLookupStatus;
+  member_status: BookingMemberStatus;
+  membership_tier: string | null;
+  access_scope: BookingAccessScope;
+  can_search_public_models: boolean;
+  can_search_private_models: boolean;
+  next_required_action: BookingNextAction;
+  client_id?: string;
+};
+
+const BOOKING_ALLOWED_ORIGIN_HOSTS = new Set(["sigil.mmdbkk.com", "mmdbkk.com", "www.mmdbkk.com"]);
+const BOOKING_MEMBER_REQUIRED_REDIRECT = "/sigil/inme?mode=signup&next=/sigil/booking";
+const BOOKING_RENEWAL_REDIRECT = "/sigil/pay/renewal?next=/sigil/booking";
+const BOOKING_MIGRATION_REDIRECT = "/sigil/inme?mode=immigrate&next=/sigil/booking";
+const BOOKING_PRIVATE_ACCESS_REDIRECT = "/sigil/inme?mode=private_access&next=/sigil/booking";
+
+function bookingCorsHeaders(request: Request): Headers {
+  const headers = new Headers();
+  const origin = request.headers.get("origin") || "";
+  if (origin) {
+    try {
+      const host = new URL(origin).hostname.toLowerCase();
+      if (BOOKING_ALLOWED_ORIGIN_HOSTS.has(host)) {
+        headers.set("access-control-allow-origin", origin);
+        headers.set("vary", "origin");
+      }
+    } catch {
+      // Ignore malformed Origin headers.
+    }
+  }
+  headers.set("access-control-allow-methods", "GET,POST,OPTIONS");
+  headers.set("access-control-allow-headers", "content-type, x-request-id");
+  headers.set("access-control-max-age", "86400");
+  return headers;
+}
+
+function withBookingCors(request: Request, response: Response): Response {
+  const headers = new Headers(response.headers);
+  bookingCorsHeaders(request).forEach((value, key) => headers.set(key, value));
+  headers.set("cache-control", "no-store");
+  return new Response(response.body, {
+    status: response.status,
+    headers,
+  });
+}
+
+function bookingJson(request: Request, data: unknown, init?: ResponseInit): Response {
+  return withBookingCors(request, json(data, init));
+}
+
+function isSigilBookingApiRoute(pathname: string): boolean {
+  return pathname === SIGIL.clientResolve || pathname === SIGIL.modelSearch;
+}
+
+function fieldString(fields: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = fields[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    if (typeof value === "boolean") return value ? "true" : "false";
+  }
+  return "";
+}
+
+function fieldBool(fields: Record<string, unknown>, keys: string[]): boolean {
+  return keys.some((key) => {
+    const value = fields[key];
+    if (typeof value === "boolean") return value;
+    const text = toStr(value).toLowerCase();
+    return ["true", "yes", "y", "approved", "active", "vip", "private"].includes(text);
+  });
+}
+
+function fieldNumber(fields: Record<string, unknown>, keys: string[]): number {
+  for (const key of keys) {
+    const value = Number(fields[key]);
+    if (Number.isFinite(value)) return value;
+  }
+  return 0;
+}
+
+function normalizeMembershipTier(value: string): string | null {
+  const raw = value.trim();
+  if (!raw) return null;
+  const lower = raw.toLowerCase().replace(/[_-]+/g, " ");
+  if (lower.includes("black")) return "Black Card";
+  if (lower.includes("vip") || lower.includes("svip")) return "VIP";
+  if (lower.includes("premium")) return "Premium";
+  if (lower.includes("standard") || lower.includes("member")) return "Standard";
+  return raw;
+}
+
+function isExpiredDate(value: string): boolean {
+  if (!value) return false;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) && time < Date.now();
+}
+
+function inferMemberStatus(fields: Record<string, unknown>, hasMemberstack: boolean, matchedField: string): BookingMemberStatus {
+  const raw = fieldString(fields, [
+    "member_status",
+    "membership_status",
+    "Membership Status",
+    "client_status",
+    "Status",
+    "verification_status",
+  ]).toLowerCase();
+  const expiry = fieldString(fields, [
+    "membership_expire_at",
+    "membership_expiry",
+    "expire_at",
+    "expires_at",
+    "Expiry",
+    "Expiration Date",
+  ]);
+
+  if (raw.includes("expired") || isExpiredDate(expiry)) return "expired";
+  if (raw.includes("migration") || raw.includes("immigration") || raw.includes("pending_link")) return "migration_pending";
+  if (raw.includes("active") || raw.includes("approved") || raw.includes("paid")) return "active";
+  if (hasMemberstack) return "active";
+  if (matchedField.toLowerCase().includes("line")) return "migration_pending";
+  return "membership_required";
+}
+
+function hasPrivateBookingAccess(fields: Record<string, unknown>, membershipTier: string | null): boolean {
+  if (membershipTier === "VIP" || membershipTier === "Black Card") return true;
+  return fieldBool(fields, [
+    "private_access",
+    "private_access_approved",
+    "private_access_active",
+    "Private Access",
+    "VIP Approved",
+    "approved_private_status",
+  ]);
+}
+
+function bookingActionForStatus(status: BookingMemberStatus, privateAccess: boolean): BookingNextAction {
+  if (status === "active") return privateAccess ? "continue_booking" : "continue_booking";
+  if (status === "expired") return "renew_membership";
+  if (status === "migration_pending") return "complete_membership_signup";
+  if (status === "membership_required") return "signup_or_login";
+  return "signup_or_login";
+}
+
+async function resolveInviteIdentityForBooking(env: Env, input: BookingClientResolveInput): Promise<BookingClientResolveInput> {
+  const token = toStr(input.t);
+  if (!token) return input;
+  const secret = toStr(env.CONFIRM_KEY) || toStr(env.INTERNAL_TOKEN);
+  if (!secret) return input;
+
+  try {
+    const payload = await verifyInviteToken(token, secret);
+    return {
+      ...input,
+      memberstack_id: toStr(input.memberstack_id) || toStr(payload.memberstack_id),
+      line_user_id: toStr(input.line_user_id) || toStr(payload.line_user_id),
+      client_name: toStr(input.client_name) || toStr(payload.mmd_client_name || payload.nickname),
+      client_contact: toStr(input.client_contact) || toStr(payload.email),
+    };
+  } catch {
+    return input;
+  }
+}
+
+async function resolveBookingClientAccess(env: Env, input: BookingClientResolveInput): Promise<BookingClientAccess> {
+  const enriched = await resolveInviteIdentityForBooking(env, input);
+  const lookup = await findBookingClient(env, enriched);
+
+  if (!lookup) {
+    return {
+      ok: true,
+      client_lookup_status: "not_found",
+      member_status: "membership_required",
+      membership_tier: null,
+      access_scope: "none",
+      can_search_public_models: false,
+      can_search_private_models: false,
+      next_required_action: "signup_or_login",
+    };
+  }
+
+  const fields = lookup.fields as Record<string, unknown>;
+  const memberstackId = toStr(enriched.memberstack_id) || fieldString(fields, ["memberstack_id", "Memberstack ID"]);
+  const membershipTier = normalizeMembershipTier(fieldString(fields, [
+    "membership_tier",
+    "current_tier",
+    "tier",
+    "Membership Tier",
+    "vip_level",
+  ]));
+  const memberStatus = inferMemberStatus(fields, Boolean(memberstackId), lookup.matched_field);
+  const privateAccess = memberStatus === "active" && hasPrivateBookingAccess(fields, membershipTier);
+  const activeMember = memberStatus === "active";
+  const lookupStatus: BookingLookupStatus = memberstackId
+    ? "member_found"
+    : lookup.matched_field.toLowerCase().includes("line")
+      ? "legacy_line_found"
+      : "client_found";
+
+  return {
+    ok: true,
+    client_lookup_status: lookupStatus,
+    member_status: memberStatus,
+    membership_tier: membershipTier,
+    access_scope: privateAccess ? "private" : activeMember ? "member" : "none",
+    can_search_public_models: activeMember,
+    can_search_private_models: privateAccess,
+    next_required_action: bookingActionForStatus(memberStatus, privateAccess),
+    client_id: lookup.record_id,
+  };
+}
+
+async function readBookingResolveBody(request: Request): Promise<BookingClientResolveInput | null> {
+  const body = (await request.json().catch(() => null)) as BookingClientResolveInput | null;
+  if (!body || typeof body !== "object") return null;
+  return {
+    t: toStr(body.t),
+    memberstack_id: toStr(body.memberstack_id),
+    line_user_id: toStr(body.line_user_id),
+    line_note: toStr(body.line_note),
+    client_name: toStr(body.client_name),
+    client_contact: toStr(body.client_contact),
+    booking_ref: toStr(body.booking_ref),
+    intent: toStr(body.intent),
+  };
+}
+
+async function handleSigilClientResolve(request: Request, env: Env): Promise<Response> {
+  if (request.method === "OPTIONS") {
+    return withBookingCors(request, new Response(null, { status: 204 }));
+  }
+  if (request.method !== "POST") {
+    return bookingJson(request, { ok: false, error: "METHOD_NOT_ALLOWED" }, { status: 405, headers: { allow: "POST, OPTIONS" } });
+  }
+
+  const body = await readBookingResolveBody(request);
+  if (!body) {
+    return bookingJson(request, { ok: false, error: "INVALID_INPUT" }, { status: 400 });
+  }
+
+  return bookingJson(request, await resolveBookingClientAccess(env, body));
+}
+
+function bookingLockedResponse(request: Request, error: "MEMBER_REQUIRED" | "PRIVATE_ACCESS_REQUIRED", action: BookingNextAction, redirectUrl: string): Response {
+  return bookingJson(
+    request,
+    {
+      ok: false,
+      matched: false,
+      error,
+      next_required_action: action,
+      redirect_url: redirectUrl,
+    },
+    { status: 403 },
+  );
+}
+
+function isModelBookable(fields: Record<string, unknown>, scope: string): boolean {
+  const status = fieldString(fields, ["status", "Status", "model_status"]).toLowerCase();
+  const visibility = fieldString(fields, ["booking_visibility", "Booking Visibility", "visibility"]).toLowerCase();
+  if (status && !["active", "bookable", "available"].some((word) => status.includes(word))) return false;
+  if (fieldBool(fields, ["inactive", "archived", "hidden"])) return false;
+  if (scope === "public" && visibility.includes("private")) return false;
+  if (visibility && ["hidden", "internal", "admin"].some((word) => visibility.includes(word))) return false;
+  return true;
+}
+
+function modelCoverUrl(env: Env, fields: Record<string, unknown>): { cover_url: string; asset_status: string; source: string } {
+  const direct = fieldString(fields, ["r2_cover_url", "cover_url", "Cover URL"]);
+  if (direct.startsWith("https://")) return { cover_url: direct, asset_status: "r2_found", source: "airtable+r2" };
+
+  const prefix = fieldString(fields, ["r2_prefix", "R2 Prefix", "model_asset_prefix"]);
+  const publicBase = toStr(env.R2_PUBLIC_BASE_URL).replace(/\/+$/, "");
+  if (prefix && publicBase) {
+    return {
+      cover_url: `${publicBase}/${prefix.replace(/^\/+|\/+$/g, "")}/cover.webp`,
+      asset_status: "r2_found",
+      source: "airtable+r2",
+    };
+  }
+
+  const driveHint = fieldString(fields, ["drive_folder_id", "google_drive_folder", "Drive Folder"]);
+  return {
+    cover_url: "",
+    asset_status: driveHint ? "drive_pending_sync" : "missing_asset",
+    source: driveHint ? "airtable+drive_index" : "airtable",
+  };
+}
+
+function publicSafeModel(env: Env, record: { record_id: string; fields: Record<string, unknown> }) {
+  const fields = record.fields;
+  const assets = modelCoverUrl(env, fields);
+  return {
+    model_id: fieldString(fields, ["model_id", "Model ID"]) || record.record_id,
+    display_name: fieldString(fields, ["display_name", "Display Name", "nickname", "Nickname"]) || "Model",
+    status: fieldString(fields, ["status", "Status", "model_status"]) || "active",
+    cover_url: assets.cover_url,
+    gallery_count: fieldNumber(fields, ["gallery_count", "Gallery Count", "r2_gallery_count"]),
+    asset_status: assets.asset_status,
+    source: assets.source,
+    public_safe: true,
+  };
+}
+
+async function handleSigilModelSearch(request: Request, env: Env): Promise<Response> {
+  if (request.method === "OPTIONS") {
+    return withBookingCors(request, new Response(null, { status: 204 }));
+  }
+  if (request.method !== "GET") {
+    return bookingJson(request, { ok: false, error: "METHOD_NOT_ALLOWED" }, { status: 405, headers: { allow: "GET, OPTIONS" } });
+  }
+
+  const url = new URL(request.url);
+  const scope = url.searchParams.get("scope") === "private" ? "private" : "public";
+  const access = await resolveBookingClientAccess(env, {
+    t: url.searchParams.get("t") || "",
+    memberstack_id: url.searchParams.get("memberstack_id") || "",
+    line_user_id: url.searchParams.get("line_user_id") || "",
+    client_name: url.searchParams.get("client_name") || "",
+    client_contact: url.searchParams.get("client_contact") || "",
+    booking_ref: url.searchParams.get("booking_ref") || "",
+  });
+
+  if (!access.can_search_public_models) {
+    const redirectUrl = access.member_status === "expired"
+      ? BOOKING_RENEWAL_REDIRECT
+      : access.member_status === "migration_pending"
+        ? BOOKING_MIGRATION_REDIRECT
+        : BOOKING_MEMBER_REQUIRED_REDIRECT;
+    return bookingLockedResponse(request, "MEMBER_REQUIRED", access.next_required_action, redirectUrl);
+  }
+
+  if (scope === "private" && !access.can_search_private_models) {
+    return bookingLockedResponse(request, "PRIVATE_ACCESS_REQUIRED", "private_access_review", BOOKING_PRIVATE_ACCESS_REDIRECT);
+  }
+
+  const query = url.searchParams.get("q") || "";
+  const match = await searchBookingModel(env, query);
+  if (!match || !isModelBookable(match.fields as Record<string, unknown>, scope)) {
+    return bookingJson(request, { ok: true, matched: false });
+  }
+
+  return bookingJson(request, {
+    ok: true,
+    matched: true,
+    model: publicSafeModel(env, {
+      record_id: match.record_id,
+      fields: match.fields as Record<string, unknown>,
+    }),
+  });
+}
+
 type PublicRenewalStatusRequest = {
   email?: string;
   email_primary?: string;
@@ -684,7 +1132,12 @@ type PublicBookingRequestBody = Record<string, unknown> & {
   client_name?: string;
   contact?: string;
   t?: string;
+  code?: string;
+  promo?: string;
   session_id?: string;
+  booking_id?: string;
+  booking_ref?: string;
+  payment_ref?: string;
 };
 
 const PUBLIC_BOOKING_REQUIRED_FIELDS = [
@@ -711,7 +1164,12 @@ function sanitizePublicBookingPayload(body: PublicBookingRequestBody): Record<st
     "mode",
     "build_marker",
     "t",
+    "code",
+    "promo",
     "session_id",
+    "booking_id",
+    "booking_ref",
+    "payment_ref",
     "request_mode",
     "booking_lane",
     "request_type",
@@ -841,7 +1299,18 @@ async function handlePublicBookingRequest(request: Request, env: Env): Promise<R
   const now = new Date().toISOString();
   const safePayload = sanitizePublicBookingPayload(body);
   safePayload.request_id = requestId;
+  safePayload.booking_id = toStr(body.booking_id) || requestId;
+  safePayload.booking_ref = toStr(body.booking_ref) || requestId;
   safePayload.received_at = now;
+  const nextUrl = bookingRequestNextUrl(request, {
+    booking_id: requestId,
+    booking_ref: requestId,
+    t: toStr(body.t),
+    code: toStr(body.code),
+    promo: toStr(body.promo),
+    session_id: toStr(body.session_id),
+    payment_ref: toStr(body.payment_ref),
+  });
 
   const record: MigrationRecord = {
     migration_id: requestId,
@@ -880,7 +1349,12 @@ async function handlePublicBookingRequest(request: Request, env: Env): Promise<R
     return publicJson(request, env, {
       ok: true,
       request_id: requestId,
+      booking_id: requestId,
+      booking_ref: requestId,
+      session_id: toStr(body.session_id) || undefined,
+      payment_ref: toStr(body.payment_ref) || undefined,
       record_id: result?.airtable_record_id || result?.migration_id || requestId,
+      next_url: nextUrl,
       storage: {
         worker: "immigrate-worker",
         mode: sync.mode,
@@ -903,6 +1377,31 @@ async function handlePublicBookingRequest(request: Request, env: Env): Promise<R
       { status: 502 },
     );
   }
+}
+
+function bookingRequestNextUrl(
+  request: Request,
+  ids: {
+    booking_id: string;
+    booking_ref: string;
+    t?: string;
+    code?: string;
+    promo?: string;
+    session_id?: string;
+    payment_ref?: string;
+  },
+): string {
+  const current = new URL(request.url);
+  const next = new URL(PAYMENT_PAGE_PATH, current.origin);
+  for (const key of ["t", "code", "promo"] as const) {
+    const value = current.searchParams.get(key) || toStr(ids[key]);
+    if (value) next.searchParams.set(key, value);
+  }
+  next.searchParams.set("booking_id", ids.booking_id);
+  next.searchParams.set("booking_ref", ids.booking_ref);
+  if (ids.session_id) next.searchParams.set("session_id", ids.session_id);
+  if (ids.payment_ref) next.searchParams.set("payment_ref", ids.payment_ref);
+  return `${next.pathname}${next.search}`;
 }
 
 type PublicRenewalStatusResponse = {
@@ -2618,7 +3117,9 @@ async function isValidPrivateModelUploadSignature(
 }
 
 function privateModelUploadUrl(request: Request, key: string, expires: number, contentType: string, signature: string): string {
-  const url = new URL(PUBLIC.privateModelUploadFile, new URL(request.url).origin);
+  const requestUrl = new URL(request.url);
+  const uploadPath = isSigilPath(requestUrl.pathname) ? SIGIL.privateModelUploadFile : PUBLIC.privateModelUploadFile;
+  const url = new URL(uploadPath, requestUrl.origin);
   url.searchParams.set("key", key);
   url.searchParams.set("expires", String(expires));
   url.searchParams.set("content_type", contentType);
@@ -2712,9 +3213,13 @@ function privateModelAirtableFields(applicationId: string, payload: Record<strin
     created_at: toStr(payload.submitted_at) || now,
     submitted_at: payload.submitted_at,
     occupation: payload.occupation,
+    working_name: payload.working_name,
     location: payload.location,
     height: payload.height,
     weight: payload.weight,
+    private_standard: payload.private_standard,
+    minimum_rate_thb: payload.minimum_rate_thb,
+    private_note: payload.private_note,
     instagram: payload.instagram,
     intro: payload.intro,
     experience: payload.experience,
@@ -3033,7 +3538,10 @@ async function handlePrivateModelApply(request: Request, env: Env): Promise<Resp
     page_url: privateModelText(body.page_url, 700),
     form_version: privateModelText(body.form_version, 160),
     nickname: privateModelText(body.nickname, 100),
+    working_name: privateModelText(body.working_name || body.nickname, 100),
     age: privateModelText(body.age, 8),
+    parent_brand: privateModelText(body.parent_brand, 120),
+    layer: privateModelText(body.layer, 120),
     occupation: privateModelText(body.occupation, 160),
     location: privateModelText(body.location, 200),
     height: privateModelText(body.height, 20),
@@ -3048,6 +3556,9 @@ async function handlePrivateModelApply(request: Request, env: Env): Promise<Resp
     skills: privateModelLongText(body.skills),
     taste_lifestyle_collectibles: privateModelLongText(body.taste_lifestyle_collectibles),
     private_readiness: privateModelText(body.private_readiness, 180),
+    private_standard: privateModelText(body.private_standard, 180),
+    minimum_rate_thb: toNum(body.minimum_rate_thb),
+    private_note: privateModelLongText(body.private_note, 2000),
     lgbt_professional: privateModelText(body.lgbt_professional, 180),
     privacy_level: privateModelText(body.privacy_level, 180),
     protection_notes: privateModelLongText(body.protection_notes),
@@ -3230,7 +3741,9 @@ function publicModelApplicationId(): string {
 }
 
 function publicModelUploadUrl(request: Request, key: string, expires: number, contentType: string, signature: string): string {
-  const url = new URL(PUBLIC.publicModelUploadFile, new URL(request.url).origin);
+  const requestUrl = new URL(request.url);
+  const uploadPath = isSigilPath(requestUrl.pathname) ? SIGIL.publicModelUploadFile : PUBLIC.publicModelUploadFile;
+  const url = new URL(uploadPath, requestUrl.origin);
   url.searchParams.set("key", key);
   url.searchParams.set("expires", String(expires));
   url.searchParams.set("content_type", contentType);
@@ -4182,6 +4695,294 @@ async function handleLinePreview(request: Request, env: Env): Promise<Response> 
   };
 
   return json(body);
+}
+
+const PER_AI_REPLY_COPY = `สวัสดีครับ ผมคือ Per AI ของ MMD Privé ครับ
+ผมช่วยรับเรื่อง เช็กข้อมูลเบื้องต้นจากระบบ และส่งให้ Per ดูได้ถ้าเป็นเคสที่ต้องดูเป็นพิเศษครับ
+
+ตอนนี้พี่อยากให้ผมช่วยเรื่องไหนก่อนครับ
+1) สมัครสมาชิก / ต่ออายุ
+2) เช็กแพ็กเกจหรือสถานะสมาชิก
+3) สอบถามบริการหรือนายแบบ
+4) ส่งรูปหรือโปรไฟล์คนที่อยากให้ MMD พิจารณา
+5) ให้ Per ดูเป็นเคสส่วนตัว
+
+พิมพ์เล่าได้เลยครับ เดี๋ยวผมช่วยจัดเรื่องให้เป็นขั้นตอนครับ`;
+
+function normalizeLineIntentText(value: unknown): string {
+  return toStr(value)
+    .toLowerCase()
+    .normalize("NFKC")
+    .replace(/[._\-]+/g, " ")
+    .replace(/[^a-z0-9ก-๙\s]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isTalkToPerAi(text: unknown): boolean {
+  const compact = normalizeLineIntentText(text).replace(/\s+/g, "");
+  return (
+    compact.includes("คุยกับperai") ||
+    compact.includes("คุยกับper") ||
+    compact.includes("คุยกับเปอร์") ||
+    compact.includes("ขอคุยกับperai") ||
+    compact.includes("ขอคุยกับper") ||
+    compact.includes("ขอคุยกับเปอร์") ||
+    compact === "perai" ||
+    compact.includes("perai")
+  );
+}
+
+function inferLineWebhookIntent(text: unknown): string {
+  if (isTalkToPerAi(text)) return "talk_to_per_ai";
+  return "line_message";
+}
+
+function lineAutoReplyEnabled(env: Env): boolean {
+  return String(env.LINE_AUTO_REPLY_ENABLED ?? "true").toLowerCase() !== "false";
+}
+
+function getLineWebhookText(event: Record<string, unknown>): string {
+  const message = event.message && typeof event.message === "object"
+    ? event.message as Record<string, unknown>
+    : {};
+  return event.type === "message" && message.type === "text" ? toStr(message.text) : "";
+}
+
+function getLineWebhookReplyToken(event: Record<string, unknown>): string {
+  return toStr(event.replyToken);
+}
+
+function getLineWebhookUserId(event: Record<string, unknown>): string {
+  const source = event.source && typeof event.source === "object"
+    ? event.source as Record<string, unknown>
+    : {};
+  return toStr(source.userId || source.groupId || source.roomId);
+}
+
+function getLineWebhookMessageId(event: Record<string, unknown>): string {
+  const message = event.message && typeof event.message === "object"
+    ? event.message as Record<string, unknown>
+    : {};
+  return toStr(message.id || event.webhookEventId) || `evt_${crypto.randomUUID()}`;
+}
+
+function lineConsoleInboxTable(env: Env): string {
+  return env.AIRTABLE_TABLE_CONSOLE_INBOX_ID || "tblFHmfpB2TTrzO2e";
+}
+
+async function verifyLineWebhookSignature(rawBody: string, signature: string, secret: string): Promise<boolean> {
+  if (!rawBody || !signature || !secret) return false;
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signed = await crypto.subtle.sign("HMAC", key, encoder.encode(rawBody));
+  const generated = arrayBufferToBase64(signed);
+  return timingSafeStringEqual(generated, signature);
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function timingSafeStringEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+async function fetchLineProfile(env: Env, userId: string): Promise<Record<string, unknown> | null> {
+  if (!env.LINE_CHANNEL_ACCESS_TOKEN || !userId || userId.startsWith("C") || userId.startsWith("R")) {
+    return null;
+  }
+  const response = await fetch(`https://api.line.me/v2/bot/profile/${encodeURIComponent(userId)}`, {
+    method: "GET",
+    headers: {
+      authorization: `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}`,
+    },
+  });
+  if (!response.ok) return null;
+  return await response.json().catch(() => null) as Record<string, unknown> | null;
+}
+
+async function writeLineWebhookTrace(
+  env: Env,
+  event: Record<string, unknown>,
+  input: {
+    text: string;
+    intent: string;
+    profile: Record<string, unknown> | null;
+  },
+): Promise<{ ok: boolean; id: string; deduped: boolean; error?: string }> {
+  const eventId = getLineWebhookMessageId(event);
+  const inboxId = `line_${eventId}`;
+  const lineUserId = getLineWebhookUserId(event);
+  const now = new Date().toISOString();
+  const message = event.message && typeof event.message === "object"
+    ? event.message as Record<string, unknown>
+    : {};
+
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) {
+    return { ok: false, id: inboxId, deduped: false, error: "airtable_not_configured" };
+  }
+
+  try {
+    const existing = await airtableImportRequest(env, lineConsoleInboxTable(env), {
+      query: {
+        maxRecords: "1",
+        filterByFormula: `{inbox_id}="${encodeFormulaValue(inboxId)}"`,
+      },
+    });
+    const existingRecord = Array.isArray(existing.records) ? existing.records[0] as { id?: string } | undefined : undefined;
+    if (existingRecord?.id) {
+      return { ok: true, id: existingRecord.id, deduped: true };
+    }
+
+    const record = await airtableImportRequest(env, lineConsoleInboxTable(env), {
+      method: "POST",
+      body: {
+        records: [
+          {
+            fields: compactFields({
+              inbox_id: inboxId,
+              created_by: "cloudflare-line-webhook",
+              source: "LINE_OFC",
+              intent: input.intent,
+              member_name: toStr(input.profile?.displayName),
+              member_phone: "",
+              line_user_id: lineUserId,
+              line_id: eventId,
+              legacy_tags: [
+                "line_webhook",
+                "production:mmdbkk_webhooks_line",
+                event.type ? `event:${toStr(event.type)}` : "",
+                message.type ? `message:${toStr(message.type)}` : "",
+                input.intent ? `intent:${input.intent}` : "",
+              ].filter(Boolean).join(", "),
+              admin_note: `LINE webhook inbound trace\nIntent: ${input.intent}\nMessage: ${input.text || "-"}`,
+              payload_json: JSON.stringify({
+                source_channel: "line",
+                production_route: "https://mmdbkk.com/webhooks/line",
+                source_user_id: lineUserId,
+                source_message_id: eventId,
+                received_at: now,
+                raw_text: input.text,
+                parsed_intent: input.intent,
+                event_type: toStr(event.type),
+                message_type: toStr(message.type),
+                profile: input.profile ? { displayName: toStr(input.profile.displayName) } : null,
+              }, null, 2),
+              status: "new",
+            }),
+          },
+        ],
+      },
+    });
+    const created = Array.isArray(record.records) ? record.records[0] as { id?: string } | undefined : undefined;
+    return { ok: true, id: toStr(created?.id || inboxId), deduped: false };
+  } catch (error) {
+    return {
+      ok: false,
+      id: inboxId,
+      deduped: false,
+      error: error instanceof Error ? error.message : "airtable_trace_failed",
+    };
+  }
+}
+
+async function replyLineWebhook(env: Env, replyToken: string, text: string): Promise<boolean> {
+  if (!env.LINE_CHANNEL_ACCESS_TOKEN || !replyToken || !text) return false;
+  const response = await fetch("https://api.line.me/v2/bot/message/reply", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}`,
+    },
+    body: JSON.stringify({
+      replyToken,
+      messages: [{ type: "text", text }],
+    }),
+  });
+  if (!response.ok) {
+    const responseText = await response.text().catch(() => "");
+    throw new Error(`line_reply_failed:${response.status}${responseText ? `:${responseText.slice(0, 240)}` : ""}`);
+  }
+  return true;
+}
+
+async function handleLineWebhook(request: Request, env: Env): Promise<Response> {
+  const meta = makeMeta(request);
+  if (request.method === "GET" || request.method === "HEAD") {
+    return json({ ok: true, service: "immigrate-worker", route: CANONICAL.lineWebhook, meta });
+  }
+  if (request.method === "OPTIONS") {
+    return withCors(request, env, new Response(null, { status: 204 }));
+  }
+  if (request.method !== "POST") {
+    return json({ ok: false, error: { code: "METHOD_NOT_ALLOWED", message: "Method not allowed" }, meta }, { status: 405 });
+  }
+  if (!env.LINE_CHANNEL_SECRET) {
+    return json({ ok: false, error: { code: "LINE_SECRET_NOT_CONFIGURED", message: "LINE_CHANNEL_SECRET is not configured" }, meta }, { status: 500 });
+  }
+
+  const rawBody = await request.text();
+  const signature = request.headers.get("x-line-signature") || "";
+  if (!(await verifyLineWebhookSignature(rawBody, signature, env.LINE_CHANNEL_SECRET))) {
+    return json({ ok: false, error: { code: "INVALID_LINE_SIGNATURE", message: "Invalid LINE signature" }, meta }, { status: 401 });
+  }
+
+  let payload: { events?: unknown[] };
+  try {
+    payload = JSON.parse(rawBody || "{}") as { events?: unknown[] };
+  } catch {
+    return json({ ok: false, error: { code: "INVALID_JSON", message: "Invalid JSON body" }, meta }, { status: 400 });
+  }
+  const events = Array.isArray(payload.events) ? payload.events : [];
+  const processed = [];
+
+  for (const item of events) {
+    const event = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    const text = getLineWebhookText(event);
+    const intent = inferLineWebhookIntent(text);
+    const profile = await fetchLineProfile(env, getLineWebhookUserId(event));
+    const trace = await writeLineWebhookTrace(env, event, { text, intent, profile });
+    let replied = false;
+    let reply_error = "";
+
+    if (!trace.deduped && lineAutoReplyEnabled(env) && intent === "talk_to_per_ai") {
+      try {
+        replied = await replyLineWebhook(env, getLineWebhookReplyToken(event), PER_AI_REPLY_COPY);
+      } catch (error) {
+        reply_error = error instanceof Error ? error.message : "line_reply_failed";
+      }
+    }
+
+    processed.push({
+      intent,
+      trace_ok: trace.ok,
+      trace_id: trace.id,
+      trace_deduped: trace.deduped,
+      trace_error: trace.error || "",
+      replied,
+      reply_error,
+    });
+  }
+
+  return json({ ok: true, processed, meta });
 }
 
 async function promoteLineClientAfterIntake(
@@ -7111,13 +7912,19 @@ function isPublicCustomerConfirmRoute(pathname: string): boolean {
 function isPublicPrivateModelRoute(pathname: string): boolean {
   return pathname === PUBLIC.privateModelApply ||
     pathname === PUBLIC.privateModelUploadUrl ||
-    pathname === PUBLIC.privateModelUploadFile;
+    pathname === PUBLIC.privateModelUploadFile ||
+    pathname === SIGIL.privateModelApply ||
+    pathname === SIGIL.privateModelUploadUrl ||
+    pathname === SIGIL.privateModelUploadFile;
 }
 
 function isPublicPublicModelRoute(pathname: string): boolean {
   return pathname === PUBLIC.publicModelApply ||
     pathname === PUBLIC.publicModelUploadUrl ||
-    pathname === PUBLIC.publicModelUploadFile;
+    pathname === PUBLIC.publicModelUploadFile ||
+    pathname === SIGIL.publicModelApply ||
+    pathname === SIGIL.publicModelUploadUrl ||
+    pathname === SIGIL.publicModelUploadFile;
 }
 
 function isLogsRoute(pathname: string): boolean {
@@ -7562,7 +8369,7 @@ async function withInjectedSigilAdminBootstrap(response: Response): Promise<Resp
 
 function renderAdminLoginPage(request: Request, env: Env): Response {
   const url = new URL(request.url);
-  const fallbackNext = SIGIL.booking;
+  const fallbackNext = url.pathname === SIGIL.login ? SIGIL.createSession : CONTROL_ROOM.root;
   const normalizedNext = normalizeAdminNextPath(url.searchParams.get("next"), fallbackNext);
   const next = normalizedNext === "/internal" ||
     normalizedNext.startsWith("/internal/") ||
@@ -7576,7 +8383,7 @@ function renderAdminLoginPage(request: Request, env: Env): Response {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MMD SIGIL Admin Authorization</title>
+    <title>SIGIL Admin Gate</title>
     <style>
       :root {
         color-scheme: dark;
@@ -7745,6 +8552,18 @@ function renderAdminLoginPage(request: Request, env: Env): Response {
         line-height: 1.5;
         text-align: center;
       }
+      .mmd-admin-login12__canary {
+        width: fit-content;
+        margin: 0 0 12px;
+        padding: 6px 9px;
+        border: 1px solid rgba(232, 198, 126, 0.28);
+        border-radius: 8px;
+        color: rgba(255, 228, 166, 0.82);
+        background: rgba(0, 0, 0, 0.28);
+        font-size: 10px;
+        line-height: 1;
+        font-weight: 850;
+      }
 
       @media (min-width: 980px) {
         .mmd-admin-login12__panel { transform: translate(2vw, 4vh); }
@@ -7764,7 +8583,7 @@ function renderAdminLoginPage(request: Request, env: Env): Response {
     </style>
   </head>
   <body>
-    <main class="mmd-admin-login12" data-mmd-admin-login12>
+    <main id="sigil-admin-login" class="sigil-admin-login mmd-admin-login12" data-mmd-admin-login12 data-route="${url.pathname}" data-action="${url.pathname === SIGIL.login ? SIGIL.loginSession : CONTROL_ROOM.loginSession}" data-next="${next}">
       <img
         class="mmd-admin-login12__bg"
         src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a09e4421f8599631d51a35f_Login%20Ewvon.webp"
@@ -7776,12 +8595,15 @@ function renderAdminLoginPage(request: Request, env: Env): Response {
 
       <div class="mmd-admin-login12__stage">
         <section class="mmd-admin-login12__panel" aria-label="Admin authorization">
-          <p class="mmd-admin-login12__kicker">Operator Authorization</p>
+          <p class="mmd-admin-login12__canary">${SIGIL_ADMIN_LOGIN_BUILD}</p>
+          <p class="mmd-admin-login12__kicker">SIGIL Admin Gate</p>
 
-          <form id="admin-login-form" class="mmd-admin-login12__form">
+          <form id="admin-login-form" class="mmd-admin-login12__form" method="post" action="${url.pathname === SIGIL.login ? SIGIL.loginSession : CONTROL_ROOM.loginSession}">
+            <input name="next" type="hidden" value="${next}" />
+            <input name="t" type="hidden" value="" />
             <label class="mmd-admin-login12__label" for="accessCode">Admin password or access code</label>
             <input id="accessCode" class="mmd-admin-login12__input" name="accessCode" type="password" placeholder="Admin password" autocomplete="current-password" autofocus />
-            <button id="submit" class="mmd-admin-login12__button" type="submit">Enter Console</button>
+            <button id="submit" class="mmd-admin-login12__button" type="submit">Enter Control Room</button>
             <p class="mmd-admin-login12__note">Authorized internal operators only.</p>
             <p id="status" class="mmd-admin-login12__status" role="status" aria-live="polite"></p>
           </form>
@@ -7809,13 +8631,13 @@ function renderAdminLoginPage(request: Request, env: Env): Response {
         function normalizeNext(value) {
           try {
             const url = new URL(value || next, location.origin);
-            if (url.origin !== location.origin) return "/internal/admin/jobs/create-session";
+            if (url.origin !== location.origin) return ${JSON.stringify(fallbackNext)};
             const out = url.pathname + url.search + url.hash;
-            return out === "/internal" || out.indexOf("/internal/") === 0
+            return out === "/internal" || out.indexOf("/internal/") === 0 || out.indexOf("/sigil/admin/") === 0
               ? out
-              : "/internal/admin/jobs/create-session";
+              : ${JSON.stringify(fallbackNext)};
           } catch {
-            return "/internal/admin/jobs/create-session";
+            return ${JSON.stringify(fallbackNext)};
           }
         }
 
@@ -7866,7 +8688,7 @@ function renderAdminLoginPage(request: Request, env: Env): Response {
             setStatus("Unable to sign in right now.", "error");
           } finally {
             submit.disabled = false;
-            submit.textContent = "Enter Console";
+            submit.textContent = "Enter Control Room";
           }
         });
       })();
@@ -7879,6 +8701,7 @@ function renderAdminLoginPage(request: Request, env: Env): Response {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
       "x-mmd-worker": "immigrate-worker",
+      "x-mmd-sigil-login-build": SIGIL_ADMIN_LOGIN_BUILD,
     },
   });
 }
@@ -8195,8 +9018,8 @@ function renderMemberLoginPage(): Response {
 
 const SIGIL_LOGIN_PATH = "/sigil/login";
 const SIGIL_LOGIN_BUILD = "sigil-login-only-memberstack-shell-20260517a";
-const SIGIL_RENEWAL_PATH = "/sigil/renewal";
-const SIGIL_RENEWAL_URL = "https://sigil.mmdbkk.com/sigil/renewal";
+const SIGIL_RENEWAL_PATH = "/sigil/pay/renewal";
+const SIGIL_RENEWAL_URL = "https://www.mmdbkk.com/sigil/pay/renewal";
 
 function renderSigilLoginOnlyPage(request: Request): Response {
   const url = new URL(request.url);
@@ -8356,11 +9179,97 @@ function renderSigilLoginOnlyPage(request: Request): Response {
   });
 }
 
+function renderSigilApplyPage(request: Request): Response {
+  const html = `<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SIGIL Apply | MMD Privé</title>
+  <style>
+    html,body{margin:0;min-height:100%;background:#050403;color:#fff4df;font-family:"Avenir Next",Inter,"Noto Sans Thai",system-ui,sans-serif}
+    *{box-sizing:border-box}
+    .sps{min-height:100vh;background:radial-gradient(circle at 78% 14%,rgba(236,196,111,.18),transparent 30%),linear-gradient(135deg,#050403 0%,#0e0b08 52%,#1b1308 100%);overflow:hidden}
+    .sps-shell{width:min(1180px,calc(100% - 28px));margin:0 auto;padding:clamp(18px,3vw,34px) 0;display:grid;gap:14px}
+    .sps-hero,.sps-panel{border:1px solid rgba(233,193,106,.2);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.014)),rgba(17,14,10,.88);box-shadow:0 28px 72px rgba(0,0,0,.34)}
+    .sps-hero{min-height:min(620px,84vh);display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.36fr);gap:18px;align-items:end;padding:clamp(22px,4vw,50px)}
+    .sps-hero-copy,.sps-context,.sps-form,.sps-form-head,.sps-field,.sps-fieldset,.sps-actions{display:grid;gap:12px}
+    .sps-hero-copy{gap:18px;max-width:840px}.sps-kicker,.sps-section-label,.sps-hero-note span,.sps-foot{margin:0;color:rgba(255,244,223,.5);font-size:.74rem;line-height:1.35;font-weight:850;text-transform:uppercase}
+    h1,h2,p,fieldset,legend{margin:0}h1{font-size:clamp(3rem,8vw,6.7rem);line-height:.93;font-weight:900;letter-spacing:0}h2{font-size:clamp(1.2rem,2.5vw,2rem);line-height:1.1;font-weight:850;letter-spacing:0}
+    .sps-lede,.sps-context p,.sps-hero-note p,.sps-field small,.sps-option small,.sps-consent,.sps-status{color:rgba(255,244,223,.72);font-size:clamp(.96rem,1.5vw,1.12rem);line-height:1.72}
+    .sps-hero-note{min-height:220px;display:grid;align-content:end;gap:10px;padding:20px;border:1px solid rgba(246,213,139,.52);border-radius:8px;background:rgba(0,0,0,.2)}
+    .sps-layout{display:grid;grid-template-columns:minmax(280px,.45fr) minmax(0,.75fr);gap:14px;align-items:start}.sps-panel{padding:clamp(18px,3vw,28px)}.sps-context{position:sticky;top:16px}.sps-fieldset{padding:0;border:0}
+    label,legend{color:#fff4df;font-size:.94rem;line-height:1.45;font-weight:800}.sps-contact-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+    input[type=text],input[type=tel],input[type=number],textarea{width:100%;min-height:50px;border:1px solid rgba(255,255,255,.13);border-radius:8px;padding:12px 14px;color:#fff4df;background:rgba(0,0,0,.26);outline:none;font:inherit}
+    textarea{min-height:112px;resize:vertical}input:focus,textarea:focus{border-color:rgba(246,213,139,.52);box-shadow:0 0 0 3px rgba(236,196,111,.13)}.sps-options{display:grid;gap:10px}
+    .sps-option{min-height:78px;display:grid;grid-template-columns:22px minmax(0,1fr);gap:10px;align-items:start;padding:14px;border:1px solid rgba(255,255,255,.11);border-radius:8px;background:rgba(0,0,0,.18);cursor:pointer}
+    .sps-option:has(input:checked){border-color:rgba(246,213,139,.52);background:rgba(236,196,111,.12)}.sps-option input,.sps-consent input{width:18px;height:18px;accent-color:#ecc46f}.sps-option span,.sps-consent{display:grid;gap:4px}
+    .sps-consent{grid-template-columns:22px minmax(0,1fr);align-items:start}.sps-hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+    .sps-button{width:100%;min-height:62px;border:1px solid rgba(246,213,139,.8);border-radius:8px;background:linear-gradient(135deg,#f5d58d,#bd8734);color:#171006;cursor:pointer;display:grid;gap:2px;place-items:center;font:inherit;font-weight:850}
+    .sps-button small{color:rgba(23,16,6,.72);font-size:.78rem;font-weight:750}.sps-button[disabled]{opacity:.55;cursor:not-allowed}.sps-status.is-error{color:#ffaaa4}.sps-status.is-ok{color:#a8e6ba}.sps-foot{text-transform:none}
+    @media(max-width:940px){.sps-hero,.sps-layout{grid-template-columns:1fr}.sps-context{position:relative;top:auto}}@media(max-width:640px){.sps-shell{width:min(100% - 16px,1180px)}h1{font-size:clamp(2.6rem,15vw,4.1rem)}.sps-contact-grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <section id="sigil-private-setup" class="sps" data-endpoint="${SIGIL.privateModelApply}" data-dashboard-url="${SIGIL.applyStatus}">
+    <div class="sps-shell">
+      <header class="sps-hero" aria-labelledby="sps-title"><div class="sps-hero-copy"><p class="sps-kicker">MMD PRIVÉ / SIGIL ACCESS</p><h1 id="sps-title">ถ้าจะเข้าชั้น private ให้ตั้งขอบเขตก่อน</h1><p class="sps-lede">ต้าอยู่ตรงนี้เพื่อรับข้อมูลเบื้องต้นของพี่น้องครับ ตอบเฉพาะสิ่งที่จำเป็นก่อน: ชื่อที่ใช้ทำงาน, ช่องทางติดต่อ, standard ที่รับได้, และ rate ขั้นต่ำที่สบายใจจริง.</p></div><aside class="sps-hero-note" aria-label="Private apply note"><span>Private Apply</span><p>ข้อมูลนี้ไม่ใช่ public profile. พี่เปอร์จะได้อ่านโปรไฟล์แบบส่วนตัว และพิจารณาความเหมาะสมก่อนมีการติดต่อกลับครับ.</p></aside></header>
+      <main class="sps-layout"><section class="sps-panel sps-context"><p class="sps-section-label">Per Voice</p><h2>ไม่ต้องรับทุกอย่าง แค่บอกเส้นที่คุณถือได้จริง</h2><p>SIGIL อยู่ใต้ MMD Privé ในฐานะ private access layer. ต้าได้รับข้อมูลไว้ก่อน แล้วพี่เปอร์จะอ่านความเหมาะสมของงาน ลูกค้า และจังหวะการดูแลแบบส่วนตัวครับ.</p></section>
+        <form class="sps-panel sps-form" data-private-setup-form novalidate><div class="sps-form-head"><p class="sps-section-label">Setup</p><h2>เปิดทางสมัครแบบมีขอบเขต</h2></div>
+          <label class="sps-field" for="sps-nickname"><span>ชื่อที่ให้ TarT เรียก</span><input id="sps-nickname" name="nickname" type="text" autocomplete="nickname" maxlength="100" required></label>
+          <fieldset class="sps-fieldset"><legend>ช่องทางติดต่ออย่างน้อย 1 ช่องทาง</legend><div class="sps-contact-grid"><label class="sps-field" for="sps-phone"><span>Phone</span><input id="sps-phone" name="phone" type="tel" autocomplete="tel" maxlength="40"></label><label class="sps-field" for="sps-telegram"><span>Telegram</span><input id="sps-telegram" name="telegram_username" type="text" maxlength="80" placeholder="@username"></label><label class="sps-field" for="sps-line"><span>LINE ID</span><input id="sps-line" name="line_id" type="text" maxlength="80"></label></div></fieldset>
+          <fieldset class="sps-fieldset"><legend>Private Standard</legend><div class="sps-options"><label class="sps-option"><input type="radio" name="private_standard" value="standard_private" required><span><strong>Standard Private</strong><small>ขอบเขตชัด รับเฉพาะงานที่อ่านแล้วสบายใจ</small></span></label><label class="sps-option"><input type="radio" name="private_standard" value="premium_private"><span><strong>Premium Private</strong><small>เลือกงานน้อยลง แต่ต้องเหมาะกับบุคลิกและ rate สูงขึ้น</small></span></label><label class="sps-option"><input type="radio" name="private_standard" value="selective_case_by_case"><span><strong>Selective</strong><small>ให้พี่เปอร์อ่านความเหมาะสมเป็นเคสก่อนทุกครั้ง</small></span></label></div></fieldset>
+          <label class="sps-field" for="sps-rate"><span>Minimum Rate (THB)</span><input id="sps-rate" name="minimum_rate_thb" type="number" inputmode="numeric" min="0" step="500" placeholder="8000" required><small>ใส่ตัวเลขที่คุณรับได้จริง ไม่ต้องกดตัวเองให้ต่ำเพื่อผ่านหน้าแรก</small></label>
+          <label class="sps-field" for="sps-note"><span>Private Note</span><textarea id="sps-note" name="private_note" rows="4" maxlength="700" placeholder="มีขอบเขต เวลา โซน หรือเรื่องที่อยากให้ TarT รู้ก่อน บอกไว้ตรงนี้ได้ครับ"></textarea></label>
+          <label class="sps-consent"><input name="consent" type="checkbox" required><span>ผมเข้าใจว่า SIGIL เป็น private access layer ใต้ MMD Privé และข้อมูลนี้เป็นข้อมูลเบื้องต้นให้พี่เปอร์อ่านแบบส่วนตัวก่อนเท่านั้น</span></label><input class="sps-hp" name="website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true">
+          <div class="sps-actions"><button class="sps-button" type="submit"><span>ส่งให้ TarT อ่านต่อ</span><small>Continue private apply</small></button><p class="sps-status" data-private-setup-status role="status" aria-live="polite"></p></div>
+        </form></main><footer class="sps-foot">SIGIL private apply แยกจากเส้นจองของลูกค้า.</footer>
+    </div>
+  </section>
+  <script>
+  (function(){"use strict";var root=document.getElementById("sigil-private-setup");if(!root)return;var form=root.querySelector("[data-private-setup-form]");var status=root.querySelector("[data-private-setup-status]");if(!form)return;var endpoint=root.getAttribute("data-endpoint")||"/sigil/api/private-model/apply";var dashboardUrl=root.getAttribute("data-dashboard-url")||"/sigil/apply/status";function clean(value){return String(value||"").trim()}function field(name){return form.elements[name]}function value(name){var input=field(name);return input?clean(input.value):""}function setStatus(message,tone){if(!status)return;status.textContent=message||"";status.classList.toggle("is-error",tone==="error");status.classList.toggle("is-ok",tone==="ok")}function selectedStandard(){var selected=form.querySelector('input[name="private_standard"]:checked');return selected?selected.value:""}function hasContact(payload){return Boolean(payload.phone||payload.telegram_username||payload.line_id)}function setSubmitting(isSubmitting){var button=form.querySelector('button[type="submit"]');if(button)button.disabled=isSubmitting}function redirectTarget(applicationId){var target=new URL(dashboardUrl,window.location.origin);if(applicationId)target.searchParams.set("application_id",applicationId);target.searchParams.set("source","private_setup");return target.toString()}function payload(){var rate=Number(value("minimum_rate_thb"));var nickname=value("nickname");return{application_type:"private_model",source:"sigil_apply_private_model",handler:"TarT",parent_brand:"MMD PRIVÉ",layer:"SIGIL",privacy_level:"private",work_type:"private_model",nickname:nickname,working_name:nickname,age:18,phone:value("phone"),telegram_username:value("telegram_username"),line_id:value("line_id"),private_standard:selectedStandard(),minimum_rate_thb:Number.isFinite(rate)?rate:0,private_note:value("private_note"),consent:Boolean(field("consent")&&field("consent").checked),page_url:window.location.href.split("?")[0],language:"th",timezone:"Asia/Bangkok",form_version:"sigil_apply_private_setup_20260530"}}function validate(data){if(!data.nickname)return"ขอชื่อที่ให้ต้าเรียกก่อนครับ";if(!hasContact(data))return"ขอช่องทางติดต่ออย่างน้อย 1 ช่องทางครับ";if(!data.private_standard)return"ขอเลือก private standard ก่อนครับ";if(!data.minimum_rate_thb||data.minimum_rate_thb<0)return"ขอ minimum rate ที่รับได้จริงก่อนครับ";if(!data.consent)return"ขอให้ยืนยัน consent ก่อนส่งข้อมูลให้ต้าอ่านต่อครับ";return""}function readJson(response){return response.json().catch(function(){return{}}).then(function(data){if(!response.ok||data.ok===false)throw new Error(data.error&&data.error.message||data.error||data.message||"submit_failed");return data})}form.addEventListener("submit",function(event){event.preventDefault();if(value("website"))return;var data=payload();var error=validate(data);if(error){setStatus(error,"error");return}setSubmitting(true);setStatus("ต้าได้รับข้อมูลแล้วครับ กำลังพาไปหน้ารับข้อมูล...");fetch(endpoint,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(data)}).then(readJson).then(function(result){setStatus("เรียบร้อยครับ ไม่ต้องส่งข้อมูลซ้ำนะครับ","ok");window.location.assign(redirectTarget(result.application_id||result.id||""))}).catch(function(submitError){setSubmitting(false);setStatus("ส่งไม่สำเร็จครับ ลองเช็กข้อมูลอีกครั้ง หรือส่งให้ต้าช่วยดูได้เลย","error");if(window.console&&window.console.warn)window.console.warn("SIGIL apply failed",submitError&&submitError.message?submitError.message:submitError)})})}());
+  </script>
+</body>
+</html>`;
+
+  return new Response(request.method === "HEAD" ? null : html, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "x-mmd-worker": "immigrate-worker",
+      "x-mmd-page": "sigil-apply",
+    },
+  });
+}
+
+function renderSigilApplyStatusPage(request: Request): Response {
+  const url = new URL(request.url);
+  const applicationId = escapeHtml(url.searchParams.get("application_id") || "");
+  const html = `<!doctype html>
+<html lang="th">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>SIGIL Apply Received | MMD Privé</title><style>
+html,body{margin:0;min-height:100%;background:#050403;color:#fff4df;font-family:"Avenir Next",Inter,"Noto Sans Thai",system-ui,sans-serif}*{box-sizing:border-box}main{min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 70% 18%,rgba(236,196,111,.18),transparent 32%),linear-gradient(135deg,#050403,#161008)}section{width:min(760px,100%);border:1px solid rgba(233,193,106,.24);border-radius:8px;background:rgba(17,14,10,.9);box-shadow:0 28px 72px rgba(0,0,0,.34);padding:clamp(24px,5vw,48px);display:grid;gap:16px}p{margin:0;color:rgba(255,244,223,.72);font-size:1rem;line-height:1.75}.kicker{color:rgba(255,244,223,.5);font-size:.74rem;font-weight:850;text-transform:uppercase}h1{margin:0;font-size:clamp(2.4rem,8vw,5.4rem);line-height:.94;letter-spacing:0}code{display:inline-block;margin-top:6px;padding:8px 10px;border:1px solid rgba(233,193,106,.18);border-radius:8px;color:#f5d58d;background:rgba(0,0,0,.2)}a{min-height:48px;display:inline-grid;place-items:center;margin-top:8px;padding:12px 16px;border:1px solid rgba(246,213,139,.7);border-radius:8px;background:linear-gradient(135deg,#f5d58d,#bd8734);color:#171006;text-decoration:none;font-weight:850}
+</style></head>
+<body><main><section><p class="kicker">SIGIL / PRIVATE APPLY</p><h1>ต้าได้รับข้อมูลของพี่น้องแล้วนะครับ</h1><p>เดี๋ยวขอเวลาไม่นาน พี่เปอร์จะได้อ่านโปรไฟล์ของพี่แบบส่วนตัว และจะพิจารณาทุกความเหมาะสมนะครับ</p><p>ไม่ต้องส่งข้อมูลซ้ำนะครับ รอการติดต่อกลับถ้าผ่านการพิจารณาครับผม</p><p>ได้รับโปรไฟล์แล้วครับ ที่เหลือคือรอการยืนยัน หรือติดต่อกลับ ถึงจะแปลว่าได้รับการพิจารณาอย่างเป็นทางการครับ</p>${applicationId ? `<p>Application ID<br><code>${applicationId}</code></p>` : ""}<a href="${SIGIL.apply}">กลับไปหน้า Apply</a></section></main></body>
+</html>`;
+
+  return new Response(request.method === "HEAD" ? null : html, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "x-mmd-worker": "immigrate-worker",
+      "x-mmd-page": "sigil-apply-status",
+    },
+  });
+}
+
 const MEMBER_ACCOUNT_PATH = "/sigil/member/account";
 const MEMBER_DASHBOARD_ALIAS_PATH = "/member/dashboard";
+const MEMBER_MEMBERSHIP_ALIAS_PATH = "/member/membership";
 const MODEL_CONSOLE_PATH = "/sigil/model/console";
 const MODEL_CONSOLE_ALIAS_PATH = "/model/console";
-const SIGIL_MEMBER_BUILD = "member-dashboard-bridge-20260517a";
+const MODEL_CONFIRM_ALIAS_PATH = "/model/confirm";
+const SIGIL_MEMBER_BUILD = "member-dashboard-home-20260612a";
 const SIGIL_MODEL_BUILD = "model-console-bridge-20260517a";
 const MMD_MODEL_BUILD = "model-console-mmd-skin-20260520a";
 
@@ -8442,9 +9351,9 @@ function renderSigilMemberAccountPage(request: Request): Response {
           <div class="sigil-member-bridge__panel">
             <p class="sigil-member-bridge__kicker">Access snapshot</p>
             <div class="sigil-member-bridge__cards">
-              <article class="sigil-member-bridge__card"><span>Membership / Access</span><strong>Bridge Check</strong><em>ตรวจสิทธิ์จาก token/session server-side ในขั้นตอนถัดไป</em></article>
-              <article class="sigil-member-bridge__card"><span>Package / Tier</span><strong>Pending Sync</strong><em>ไม่ให้ frontend ตัดสิน package truth เอง</em></article>
-              <article class="sigil-member-bridge__card"><span>Renewal State</span><strong>Review</strong><em>ถ้าหมดอายุหรือ renewal pending ให้ไป renewal/pay flow</em></article>
+              <article class="sigil-member-bridge__card"><span>Membership / Access</span><strong data-member-access>Bridge Check</strong><em data-member-access-note>ตรวจสิทธิ์จาก token/session server-side ในขั้นตอนถัดไป</em></article>
+              <article class="sigil-member-bridge__card"><span>Package / Tier</span><strong data-member-tier>Pending Sync</strong><em data-member-tier-note>ไม่ให้ frontend ตัดสิน package truth เอง</em></article>
+              <article class="sigil-member-bridge__card"><span>Renewal State</span><strong data-member-renewal>Review</strong><em data-member-renewal-note>ถ้าหมดอายุหรือ renewal pending ให้ไป renewal/pay flow</em></article>
             </div>
             <div class="sigil-member-bridge__actions">
               <a class="sigil-member-bridge__btn sigil-member-bridge__btn--gold" href="${startHref}">Continue with Kenji</a>
@@ -8458,12 +9367,504 @@ function renderSigilMemberAccountPage(request: Request): Response {
           <aside class="sigil-member-bridge__panel sigil-member-bridge__side">
             <p class="sigil-member-bridge__kicker">Next action</p>
             <h2>Continue the member route</h2>
-            <p class="sigil-member-bridge__lead">ถ้าสถานะ active ให้ไป start, guide หรือ booking. ถ้า expired หรือ renewal pending ให้ไป renewal/pay ก่อน.</p>
+            <p class="sigil-member-bridge__lead" data-member-next-copy>ถ้าสถานะ active ให้ไป start, guide หรือ booking. ถ้า expired หรือ renewal pending ให้ไป renewal/pay ก่อน.</p>
             <div class="sigil-member-bridge__meta">
               <span>token t: <code>${escapeHtml(token || "not provided")}</code></span>
               <span>session_id: <code>${escapeHtml(sessionId || "not provided")}</code></span>
+              <span>dashboard: <code data-member-dashboard-state>${token ? "loading" : "token required"}</code></span>
             </div>
           </aside>
+        </section>
+      </div>
+    </main>
+    <script>
+      (function(){
+        var token = ${JSON.stringify(token)};
+        function setText(selector, value){
+          var node = document.querySelector(selector);
+          if (node) node.textContent = value || "-";
+        }
+        function pick(obj, path){
+          return path.split(".").reduce(function(value, key){
+            return value && value[key] != null ? value[key] : "";
+          }, obj || {});
+        }
+        function label(value, fallback){
+          return String(value || fallback || "-").trim();
+        }
+        if (!token) return;
+        fetch("/api/member/dashboard?t=" + encodeURIComponent(token), { credentials: "include" })
+          .then(function(response){
+            return response.json().catch(function(){ return {}; }).then(function(payload){
+              if (!response.ok || payload.ok === false) {
+                throw new Error(payload && payload.error && payload.error.message || "dashboard_unavailable");
+              }
+              return payload;
+            });
+          })
+          .then(function(payload){
+            var member = payload.member || {};
+            var status = payload.status || {};
+            setText("[data-member-access]", label(status.member_status || member.status, "Active"));
+            setText("[data-member-access-note]", label(member.display_name || member.full_name, "Dashboard verified"));
+            setText("[data-member-tier]", label(member.tier || member.package_code, "Member"));
+            setText("[data-member-tier-note]", label(member.expires_at ? "Expires " + member.expires_at : member.member_id, "Synced from backend"));
+            setText("[data-member-renewal]", label(status.renewal_status || status.payment_status || "Ready"));
+            setText("[data-member-renewal-note]", label(status.dashboard_status || "Backend dashboard loaded"));
+            setText("[data-member-next-copy]", "สิทธิ์สมาชิกโหลดจาก backend แล้ว คุณสามารถไป start, guide หรือ booking ต่อได้เลย.");
+            setText("[data-member-dashboard-state]", "verified");
+          })
+          .catch(function(error){
+            setText("[data-member-dashboard-state]", error && error.message ? error.message : "dashboard_unavailable");
+          });
+      })();
+    </script>
+  </body>
+</html>`;
+
+  return new Response(request.method === "HEAD" ? null : html, {
+    headers: bridgeHeaders("member-dashboard"),
+  });
+}
+
+function renderMmdMemberDashboardPage(request: Request): Response {
+  const url = new URL(request.url);
+  const query = url.search || "";
+  const membershipHref = `/member/membership${query}`;
+  const trustHref = `/trust/inme${query}`;
+  const bookingHref = `/sigil/booking${query}`;
+  const paymentHref = `/pay${query}`;
+  const html = `<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kenji Member Dashboard | MMD Privé</title>
+    <!-- SIGIL_MEMBER_BUILD: ${SIGIL_MEMBER_BUILD} -->
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; letter-spacing: 0; }
+      html, body { margin: 0; min-height: 100%; background: #050403; }
+      body { color: #fff4df; font-family: Inter, "Avenir Next", "Segoe UI", "Noto Sans Thai", Arial, sans-serif; }
+      #mmd-member-dashboard,
+      #mmd-member-dashboard * { box-sizing: border-box; }
+      #mmd-member-dashboard.mmddash {
+        position: relative;
+        min-height: 100vh;
+        overflow: hidden;
+        isolation: isolate;
+        background: #050403;
+      }
+      #mmd-member-dashboard .mmddash-hero-img {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center top;
+        z-index: -4;
+        filter: saturate(1.08) contrast(1.05) brightness(.72);
+      }
+      #mmd-member-dashboard .mmddash-shade {
+        position: fixed;
+        inset: 0;
+        z-index: -3;
+        background:
+          linear-gradient(90deg, rgba(4,3,2,.96) 0%, rgba(4,3,2,.78) 42%, rgba(4,3,2,.36) 100%),
+          linear-gradient(180deg, rgba(4,3,2,.15) 0%, rgba(4,3,2,.72) 78%, #050403 100%);
+      }
+      #mmd-member-dashboard .mmddash-aura {
+        position: fixed;
+        inset: -20%;
+        z-index: -2;
+        background:
+          radial-gradient(circle at 20% 12%, rgba(233, 190, 103, .23), transparent 30%),
+          radial-gradient(circle at 78% 10%, rgba(255, 231, 174, .14), transparent 26%),
+          radial-gradient(circle at 50% 105%, rgba(160, 103, 31, .18), transparent 36%);
+        pointer-events: none;
+      }
+      #mmd-member-dashboard .mmddash-top,
+      #mmd-member-dashboard .mmddash-hero,
+      #mmd-member-dashboard .mmddash-livebar,
+      #mmd-member-dashboard .mmddash-grid {
+        position: relative;
+        z-index: 1;
+        width: min(1180px, calc(100% - 28px));
+        margin-inline: auto;
+      }
+      #mmd-member-dashboard .mmddash-top {
+        min-height: 74px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding-top: 16px;
+      }
+      #mmd-member-dashboard .mmddash-brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        color: #fff4df;
+        text-decoration: none;
+        font-weight: 900;
+      }
+      #mmd-member-dashboard .mmddash-logo { width: 38px; height: 38px; object-fit: contain; filter: drop-shadow(0 10px 26px rgba(0,0,0,.45)); }
+      #mmd-member-dashboard .mmddash-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 36px;
+        padding: 0 12px;
+        border: 1px solid rgba(230, 189, 103, .28);
+        border-radius: 999px;
+        color: #f3d99c;
+        background: rgba(12, 9, 5, .52);
+        font-size: 12px;
+        font-weight: 850;
+        text-transform: uppercase;
+      }
+      #mmd-member-dashboard .mmddash-status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #d9ae58; box-shadow: 0 0 18px rgba(217, 174, 88, .72); }
+      #mmd-member-dashboard .mmddash-hero {
+        min-height: clamp(540px, 74vh, 760px);
+        display: grid;
+        align-items: end;
+        padding: clamp(44px, 10vw, 116px) 0 clamp(24px, 6vw, 58px);
+      }
+      #mmd-member-dashboard .mmddash-copy { max-width: 700px; display: grid; gap: 14px; }
+      #mmd-member-dashboard .mmddash-kicker,
+      #mmd-member-dashboard .mmddash-panel span,
+      #mmd-member-dashboard .mmddash-kenji span,
+      #mmd-member-dashboard .mmddash-promo span {
+        color: #e7c579;
+        font-size: 12px;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+      #mmd-member-dashboard h1 {
+        margin: 0;
+        color: #fff7e9;
+        font-size: clamp(54px, 14vw, 128px);
+        line-height: .86;
+        font-weight: 950;
+        text-wrap: balance;
+      }
+      #mmd-member-dashboard .mmddash-thai {
+        margin: 0;
+        color: #f0d89e;
+        font-size: clamp(22px, 5vw, 42px);
+        line-height: 1.18;
+        font-weight: 850;
+      }
+      #mmd-member-dashboard .mmddash-message {
+        margin: 0;
+        max-width: 590px;
+        color: rgba(255, 244, 223, .78);
+        font-size: 16px;
+        line-height: 1.74;
+      }
+      #mmd-member-dashboard .mmddash-livebar {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 14px;
+        align-items: center;
+        margin-top: -28px;
+        margin-bottom: 14px;
+        padding: 14px;
+        border: 1px solid rgba(230, 189, 103, .20);
+        border-radius: 14px;
+        background: rgba(8, 6, 4, .72);
+        backdrop-filter: blur(16px);
+        box-shadow: 0 20px 70px rgba(0,0,0,.34);
+      }
+      #mmd-member-dashboard .mmddash-livebar strong { color: #fff3d6; }
+      #mmd-member-dashboard .mmddash-livebar small { color: rgba(255,244,223,.66); line-height: 1.5; }
+      #mmd-member-dashboard .mmddash-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; padding-bottom: 34px; }
+      #mmd-member-dashboard .mmddash-panel,
+      #mmd-member-dashboard .mmddash-kenji,
+      #mmd-member-dashboard .mmddash-promo {
+        min-height: 150px;
+        display: grid;
+        align-content: space-between;
+        gap: 14px;
+        padding: 18px;
+        border: 1px solid rgba(230, 189, 103, .18);
+        border-radius: 14px;
+        background: linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.024)), rgba(9, 7, 5, .76);
+        box-shadow: 0 20px 70px rgba(0,0,0,.28);
+        backdrop-filter: blur(18px);
+      }
+      #mmd-member-dashboard .mmddash-panel strong,
+      #mmd-member-dashboard .mmddash-kenji strong,
+      #mmd-member-dashboard .mmddash-promo strong { color: #fff6e7; font-size: 22px; line-height: 1.15; }
+      #mmd-member-dashboard .mmddash-panel small,
+      #mmd-member-dashboard .mmddash-kenji small,
+      #mmd-member-dashboard .mmddash-promo small { color: rgba(255,244,223,.67); line-height: 1.55; }
+      #mmd-member-dashboard .mmddash-kenji { grid-column: span 2; background: linear-gradient(135deg, rgba(231,197,121,.14), rgba(255,255,255,.025)), rgba(9,7,5,.78); }
+      #mmd-member-dashboard .mmddash-promo[hidden] { display: none !important; }
+      #mmd-member-dashboard .mmddash-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 2px; }
+      #mmd-member-dashboard .mmddash-btn { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; padding: 0 15px; border: 1px solid rgba(230,189,103,.34); border-radius: 999px; color: #fff4df; background: rgba(255,255,255,.055); text-decoration: none; font-weight: 850; }
+      #mmd-member-dashboard .mmddash-btn.primary { color: #160f07; background: linear-gradient(180deg, #ffe6a7, #bd862f); border-color: rgba(255,231,174,.72); }
+      @media (max-width: 820px) {
+        #mmd-member-dashboard .mmddash-top { align-items: flex-start; flex-direction: column; }
+        #mmd-member-dashboard .mmddash-livebar { grid-template-columns: 1fr; }
+        #mmd-member-dashboard .mmddash-grid { grid-template-columns: 1fr; }
+        #mmd-member-dashboard .mmddash-kenji { grid-column: auto; }
+        #mmd-member-dashboard .mmddash-hero { min-height: 650px; }
+        #mmd-member-dashboard .mmddash-hero-img { object-position: 62% top; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="mmd-member-dashboard" class="mmddash" data-state="boot">
+      <img class="mmddash-hero-img" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69fdb49288f202d72aabca66_ChatGPT%20Image%20Apr%2029%2C%202026%2C%2002_09_24%20AM.webp" alt="Kenji Member Dashboard" loading="eager" />
+      <div class="mmddash-shade" aria-hidden="true"></div>
+      <div class="mmddash-aura" aria-hidden="true"></div>
+
+      <header class="mmddash-top">
+        <a class="mmddash-brand" href="/trust/inme" aria-label="MMD SIGIL">
+          <img class="mmddash-logo" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0f2cbc7e26b6735aee4cb2_SIGIL%20LOGO%20Transp.webp" alt="" aria-hidden="true" />
+          <span>MMD SIGIL</span>
+        </a>
+        <div class="mmddash-status" id="dashSystemState">Checking member route</div>
+      </header>
+
+      <main>
+        <section class="mmddash-hero" aria-labelledby="mmd-member-dashboard-title">
+          <div class="mmddash-copy">
+            <p class="mmddash-kicker">PRIVATE MEMBER HOME</p>
+            <h1 id="mmd-member-dashboard-title">Welcome back.</h1>
+            <p class="mmddash-thai">ผมดูทางหลักให้คุณเอง</p>
+            <p class="mmddash-message" id="dashHeroText">กำลังตรวจสอบสิทธิ์สมาชิก session และทางต่อที่ปลอดภัยที่สุดสำหรับคุณครับ</p>
+            <div class="mmddash-actions">
+              <a class="mmddash-btn primary" id="dashHeroCta" href="${membershipHref}">Membership</a>
+              <a class="mmddash-btn" href="${trustHref}">Back to Trust</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="mmddash-livebar" aria-label="Dashboard live status">
+          <div>
+            <strong id="dashLiveTitle">Member Home / Status Hub</strong><br />
+            <small id="dashLiveCopy">Kenji is holding the route while member data syncs from the secure dashboard endpoint.</small>
+          </div>
+          <small><span id="dashTokenPreview">Token t: checking</span> · <span id="dashSessionId">Session: checking</span> · <span id="dashPaymentStatus">Payment: checking</span> · <span id="dashGuideMini">Guide: Kenji</span></small>
+        </section>
+
+        <section class="mmddash-grid" aria-label="Member status cards">
+          <article class="mmddash-kenji">
+            <span>Kenji Route</span>
+            <strong id="dashGuideTitle">Kenji is standing by</strong>
+            <small id="dashKenjiCopy">Full member dashboard controls are loaded here. Secure data appears after access validation.</small>
+          </article>
+          <article class="mmddash-panel">
+            <span>Access Signal</span>
+            <strong id="dashStatus">Checking access</strong>
+            <small id="dashStatusText">Kenji will show the correct access state after dashboard validation.</small>
+          </article>
+          <article class="mmddash-panel">
+            <span>Session Signal</span>
+            <strong id="dashSessionState">Checking session</strong>
+            <small id="dashSessionCopy">Session details remain inside the secure member route.</small>
+          </article>
+          <article class="mmddash-panel">
+            <span>Path Signal</span>
+            <strong id="dashPathState">Checking route</strong>
+            <small id="dashPathCopy">Kenji keeps this page focused on member status and next actions.</small>
+          </article>
+          <article class="mmddash-panel">
+            <span>Member Actions</span>
+            <strong>Next step</strong>
+            <small><a class="mmddash-btn primary" id="dashBookingCta" href="${bookingHref}">Booking</a> <a class="mmddash-btn" id="dashPaymentCta" href="${paymentHref}">Payment</a> <a class="mmddash-btn" id="dashRenewCta" href="${membershipHref}">Membership</a></small>
+          </article>
+          <article class="mmddash-promo" id="dashPromotionBox" hidden>
+            <span>Promotion Status</span>
+            <strong id="dashPromotionCode">Code detected</strong>
+            <small id="dashPromotionStatus">Checking promotion status.</small>
+          </article>
+        </section>
+      </main>
+    </div>
+    <script>
+      (() => {
+        const root = document.getElementById("mmd-member-dashboard");
+        if (!root) return;
+
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get("t") || "";
+        const urlPromo = params.get("code") || params.get("promo") || "";
+        const setText = (id, value) => {
+          const node = document.getElementById(id);
+          if (node) node.textContent = value == null || value === "" ? "-" : String(value);
+        };
+        const first = (...values) => values.find((value) => value !== undefined && value !== null && String(value).trim() !== "") || "";
+        const promoFromPayload = (payload) => ({
+          code: first(payload?.promo_code, payload?.promotion_code, payload?.access_code, payload?.promotion?.code, payload?.promotion?.promo_code),
+          status: first(payload?.promo_status, payload?.promotion_status, payload?.promotion?.status)
+        });
+        const showPromo = (code, status) => {
+          const box = document.getElementById("dashPromotionBox");
+          if (!box || !code) return;
+          box.hidden = false;
+          setText("dashPromotionCode", code);
+          setText("dashPromotionStatus", status || "Promotion code attached.");
+        };
+
+        if (urlPromo) showPromo(urlPromo, "Promotion code attached.");
+        setText("dashTokenPreview", token ? "Token t: present" : "Token t: checking");
+
+        function lockNoToken() {
+          root.dataset.state = "locked";
+          setText("dashSystemState", "TOKEN REQUIRED");
+          setText("dashStatus", "Access locked");
+          setText("dashStatusText", "Open this dashboard from the latest secure member link to unlock live status.");
+          setText("dashHeroText", "ต้องใช้ลิงก์สมาชิกที่มี token t เพื่อโหลดสถานะจริงครับ");
+          setText("dashLiveCopy", "The full dashboard is loaded. Live data is locked until token t is present.");
+          setText("dashTokenPreview", "Token t: required");
+          setText("dashSessionId", "Session: locked");
+          setText("dashPaymentStatus", "Payment: locked");
+          setText("dashGuideMini", "Guide: locked");
+        }
+
+        async function loadDashboard() {
+          if (!token) {
+            lockNoToken();
+            return;
+          }
+
+          try {
+            root.dataset.state = "loading";
+            setText("dashSystemState", "Loading secure status");
+            const endpoint = new URL("https://mmdbkk.com/v1/member/dashboard");
+            endpoint.searchParams.set("t", token);
+            const response = await fetch(endpoint.toString(), {
+              method: "GET",
+              credentials: "include",
+              headers: { Accept: "application/json" }
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.ok === false) throw new Error(payload?.error?.message || "dashboard_unavailable");
+
+            const member = payload?.member || {};
+            const status = payload?.status || {};
+            const session = payload?.next_session || payload?.session || {};
+            const promo = promoFromPayload(payload);
+            const promoCode = promo.code || urlPromo;
+
+            root.dataset.state = "ready";
+            setText("dashSystemState", "Member route ready");
+            setText("dashHeroText", "Your secure member route is ready. Kenji will keep the next step clean.");
+            setText("dashLiveTitle", first(member.display_name, member.full_name, "Member Home / Status Hub"));
+            setText("dashLiveCopy", first(status.dashboard_status, status.member_status, "Official status loaded from the member dashboard endpoint."));
+            setText("dashStatus", first(member.tier, member.package_code, status.member_status, "Member"));
+            setText("dashStatusText", first(member.member_id, member.identity, "Access verified by the dashboard endpoint."));
+            setText("dashSessionState", first(session.name, session.date_label, "Session route ready"));
+            setText("dashSessionCopy", first(session.meta, session.session_status, "Session details remain protected."));
+            setText("dashPathState", first(payload.route_guide, payload.layer, "Route checked"));
+            setText("dashSessionId", first(session.session_id, session.id, "Session: ready"));
+            setText("dashPaymentStatus", first(payload?.payments_summary?.latest_payout_status, payload?.payment_status, "Payment: checking"));
+            setText("dashGuideMini", first(payload?.route_guide, payload?.assistant_core, "Guide: Kenji"));
+            if (promoCode) showPromo(promoCode, promo.status || "Promotion code attached.");
+          } catch (error) {
+            root.dataset.state = "error";
+            setText("dashSystemState", "Secure status unavailable");
+            setText("dashLiveCopy", error?.message || "Unable to load dashboard at the moment.");
+          }
+        }
+
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", () => void loadDashboard(), { once: true });
+        } else {
+          void loadDashboard();
+        }
+      })();
+    </script>
+  </body>
+</html>`;
+
+  return new Response(request.method === "HEAD" ? null : html, {
+    headers: bridgeHeaders("member-dashboard"),
+  });
+}
+
+function renderMmdMemberMembershipPage(request: Request): Response {
+  const url = new URL(request.url);
+  const query = url.search || "";
+  const dashboardHref = `/member/dashboard${query}`;
+  const paymentHref = `/pay/membership${query}`;
+  const packages = [
+    {
+      name: "Essential",
+      line: "Private member access, status hub, and guided next steps.",
+      tag: "Member-facing",
+    },
+    {
+      name: "Premium",
+      line: "Priority continuity for booking, renewal, and private route support.",
+      tag: "Recommended",
+    },
+    {
+      name: "Black Card",
+      line: "Highest-touch private access reviewed through the member layer.",
+      tag: "Private review",
+    },
+  ];
+  const html = `<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Member Membership | MMD Privé</title>
+    <!-- SIGIL_MEMBER_BUILD: ${SIGIL_MEMBER_BUILD} -->
+    <style>
+      :root { color-scheme: dark; --bg:#050403; --panel:rgba(14,11,8,.78); --line:rgba(231,197,121,.22); --gold:#e7c579; --gold2:#ffe6a7; --text:#fff4df; --muted:rgba(255,244,223,.70); --ink:#160f07; }
+      * { box-sizing: border-box; letter-spacing: 0; }
+      html, body { margin: 0; min-height: 100%; background: var(--bg); }
+      body { color: var(--text); font-family: Inter, "Avenir Next", "Segoe UI", "Noto Sans Thai", Arial, sans-serif; }
+      .mmdmem { min-height: 100vh; position: relative; isolation: isolate; overflow: hidden; padding: 22px; background: #050403; }
+      .mmdmem::before { content:""; position: fixed; inset: 0; z-index:-3; background: linear-gradient(90deg, rgba(4,3,2,.94), rgba(4,3,2,.70) 46%, rgba(4,3,2,.38)), url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69f7868b147766ca087fd499_Hito%20membership.webp") center top / cover no-repeat; filter: saturate(1.02) contrast(1.04) brightness(.72); }
+      .mmdmem::after { content:""; position: fixed; inset: 0; z-index:-2; background: linear-gradient(180deg, rgba(5,4,3,.08), #050403 88%); }
+      .mmdmem__shell { width: min(1160px, 100%); margin: 0 auto; display: grid; gap: 18px; }
+      .mmdmem__top { min-height: 64px; display:flex; align-items:center; justify-content:space-between; gap: 14px; }
+      .mmdmem__brand { color: var(--text); text-decoration:none; font-weight: 950; }
+      .mmdmem__status { min-height: 34px; display:inline-flex; align-items:center; padding: 0 12px; border:1px solid var(--line); border-radius:999px; color: var(--gold2); background:rgba(0,0,0,.24); font-size:12px; font-weight:850; text-transform:uppercase; }
+      .mmdmem__hero { min-height: clamp(470px, 64vh, 680px); display:grid; align-content:end; padding: clamp(42px, 8vw, 92px) 0 22px; }
+      .mmdmem__kicker, .mmdmem__card span { color: var(--gold); font-size:12px; font-weight:900; text-transform:uppercase; }
+      .mmdmem h1 { max-width: 780px; margin: 12px 0 0; color:#fff7e9; font-size: clamp(52px, 12vw, 118px); line-height:.88; font-weight:950; }
+      .mmdmem__lead { max-width: 650px; margin: 14px 0 0; color: var(--muted); font-size: 17px; line-height:1.72; }
+      .mmdmem__grid { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; padding-bottom: 26px; }
+      .mmdmem__card { min-height: 230px; display:grid; align-content:space-between; gap: 18px; padding: 18px; border:1px solid var(--line); border-radius:14px; background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.025)), var(--panel); box-shadow:0 22px 70px rgba(0,0,0,.34); backdrop-filter: blur(16px); }
+      .mmdmem__card strong { display:block; margin-top: 8px; color:#fff6e7; font-size:28px; line-height:1.05; }
+      .mmdmem__card p { margin: 0; color: var(--muted); line-height:1.6; }
+      .mmdmem__actions { display:flex; flex-wrap:wrap; gap:10px; }
+      .mmdmem__btn { min-height:44px; display:inline-flex; align-items:center; justify-content:center; padding:0 15px; border:1px solid rgba(230,189,103,.34); border-radius:999px; color:var(--text); background:rgba(255,255,255,.055); text-decoration:none; font-weight:850; }
+      .mmdmem__btn.primary { color:var(--ink); background:linear-gradient(180deg, #ffe6a7, #bd862f); border-color:rgba(255,231,174,.72); }
+      .mmdmem__note { display:grid; grid-template-columns: 1fr auto; gap: 14px; align-items:center; margin-bottom: 36px; padding: 16px; border:1px solid var(--line); border-radius:14px; background:rgba(8,6,4,.74); }
+      .mmdmem__note p { margin:0; color:var(--muted); line-height:1.6; }
+      @media (max-width: 840px) { .mmdmem { padding: 16px; } .mmdmem__top, .mmdmem__note { align-items:flex-start; flex-direction:column; display:flex; } .mmdmem__grid { grid-template-columns:1fr; } .mmdmem__hero { min-height: 610px; } }
+    </style>
+  </head>
+  <body>
+    <main class="mmdmem" data-mmd-member-membership data-build="${SIGIL_MEMBER_BUILD}">
+      <div class="mmdmem__shell">
+        <header class="mmdmem__top">
+          <a class="mmdmem__brand" href="${dashboardHref}">MMD PRIVÉ / MEMBER</a>
+          <span class="mmdmem__status">Package selection</span>
+        </header>
+        <section class="mmdmem__hero">
+          <p class="mmdmem__kicker">Member-facing membership</p>
+          <h1>Choose your private access.</h1>
+          <p class="mmdmem__lead">หน้านี้เป็น package selection สำหรับสมาชิก ไม่ใช่ payment layer. เลือกเส้นทางสมาชิกก่อน แล้วค่อยไปชำระเงินเมื่อพร้อมครับ</p>
+          <div class="mmdmem__actions">
+            <a class="mmdmem__btn primary" href="${dashboardHref}">Member Dashboard</a>
+            <a class="mmdmem__btn" href="${paymentHref}">Continue to Payment</a>
+          </div>
+        </section>
+        <section class="mmdmem__grid" aria-label="Membership packages">
+          ${packages.map((item) => `<article class="mmdmem__card"><div><span>${item.tag}</span><strong>${item.name}</strong></div><p>${item.line}</p><div class="mmdmem__actions"><a class="mmdmem__btn primary" href="${paymentHref}">Select ${item.name}</a></div></article>`).join("")}
+        </section>
+        <section class="mmdmem__note" aria-label="Route lock">
+          <p><strong>Route lock:</strong> /member/membership stays in the member layer. /pay/membership remains the separate payment page.</p>
+          <a class="mmdmem__btn" href="${dashboardHref}">Back to Status Hub</a>
         </section>
       </div>
     </main>
@@ -8471,7 +9872,7 @@ function renderSigilMemberAccountPage(request: Request): Response {
 </html>`;
 
   return new Response(request.method === "HEAD" ? null : html, {
-    headers: bridgeHeaders("member-dashboard"),
+    headers: bridgeHeaders("member-membership"),
   });
 }
 
@@ -9125,15 +10526,54 @@ function renderSigilBookingPage(request: Request): Response {
           return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== "" && value !== null && value !== undefined));
         }
 
+        function preservedSearch(allowed) {
+          const current = new URLSearchParams(window.location.search);
+          const next = new URLSearchParams();
+          allowed.forEach((key) => {
+            const value = current.get(key);
+            if (value) next.set(key, value);
+          });
+          const out = next.toString();
+          return out ? "?" + out : "";
+        }
+
+        function preserveOnPath(path) {
+          return path + preservedSearch(["t", "code", "promo", "booking_ref", "session_id"]);
+        }
+
         document.querySelectorAll("[data-lane]").forEach((button) => {
           button.addEventListener("click", () => setLane(button.getAttribute("data-lane") || "standard"));
         });
 
-        searchButton.addEventListener("click", () => {
+        searchButton.addEventListener("click", async () => {
           const query = searchInput.value.trim();
-          searchResults.textContent = query
-            ? "Standard Search queued for: " + query + ". Add or confirm the model name before submitting."
-            : "Enter a model name or code for Standard Search.";
+          if (!query) {
+            searchResults.textContent = "Enter a model name or code for Standard Search.";
+            return;
+          }
+
+          const params = new URLSearchParams(window.location.search);
+          params.set("q", query);
+          params.set("scope", read("job_type") === "private_booking" ? "private" : "public");
+          if (read("customer_name")) params.set("client_name", read("customer_name"));
+
+          searchResults.textContent = "Checking member access...";
+          try {
+            const response = await fetch("/sigil/api/models/search?" + params.toString(), { credentials: "include" });
+            const data = await response.json().catch(() => null);
+            if (!response.ok || !data || data.ok === false) {
+              searchResults.textContent = data && data.next_required_action
+                ? "Model list locked: " + data.next_required_action
+                : "Model list locked. Sign in or renew before searching.";
+              if (data && data.redirect_url) window.location.href = data.redirect_url;
+              return;
+            }
+            searchResults.textContent = data.matched && data.model
+              ? "Matched: " + data.model.display_name + " (" + data.model.model_id + ")"
+              : "No active, visible model matched that search.";
+          } catch {
+            searchResults.textContent = "Model search is temporarily unavailable.";
+          }
         });
 
         logout.addEventListener("click", () => {
@@ -9226,8 +10666,8 @@ function renderSigilBookingPage(request: Request): Response {
             payment_stage: depositPercent >= 100 ? "full" : "deposit",
             payment_method: "promptpay",
             return_url: "/member/first-db",
-            cancel_url: "/sigil/booking",
-            confirm_page: "/pay",
+            cancel_url: preserveOnPath("/sigil/booking"),
+            confirm_page: preserveOnPath("/sigil/pay"),
             model_confirm_page: "/model/console",
             note: bookingNote,
             notes: bookingNote,
@@ -12212,6 +13652,21 @@ export default {
 
     try {
       const url = new URL(request.url);
+      watchUnexpectedSigilGatewayHit(request, url);
+
+      if (isLineWebhookRoute(url.pathname)) {
+        return await handleLineWebhook(request, env);
+      }
+
+      const legalCanonicalRedirect = publicLegalCanonicalRedirect(request, url);
+      if (legalCanonicalRedirect) {
+        return legalCanonicalRedirect;
+      }
+
+      if (isPublicLegalOriginRoute(request, url)) {
+        return fetch(request);
+      }
+
       const sigilAdminCanonicalRedirect = canonicalSigilAdminRedirect(url);
       if (sigilAdminCanonicalRedirect) {
         return sigilAdminCanonicalRedirect;
@@ -12250,11 +13705,14 @@ export default {
           || isPublicCustomerConfirmRoute(url.pathname)
           || isPublicPrivateModelRoute(url.pathname)
           || isPublicPublicModelRoute(url.pathname)
+          || isSigilBookingApiRoute(url.pathname)
           || isPaymentPageRoute(url.pathname)
           || isModelSessionAdminPath(url.pathname)
         )
       ) {
-        return withCors(request, env, new Response(null, { status: 204 }));
+        return isSigilBookingApiRoute(url.pathname)
+          ? withBookingCors(request, new Response(null, { status: 204 }))
+          : withCors(request, env, new Response(null, { status: 204 }));
       }
 
       const sigilAdminAuthResponse = await handleSigilAdminAuthRoute(request, env);
@@ -12299,6 +13757,14 @@ export default {
 
       if (request.method === "GET" && (url.pathname === PUBLIC.onboardingResolve || url.pathname === SIGIL.inviteResolve)) {
         return await handleResolveInvite(request, env);
+      }
+
+      if (url.pathname === SIGIL.clientResolve) {
+        return await handleSigilClientResolve(request, env);
+      }
+
+      if (url.pathname === SIGIL.modelSearch) {
+        return await handleSigilModelSearch(request, env);
       }
 
       if (request.method === "GET" && url.pathname === MODEL_SESSION_DASHBOARD_PATH) {
@@ -12349,27 +13815,27 @@ export default {
         return await handleCustomerConfirm(request, env);
       }
 
-      if (request.method === "POST" && url.pathname === PUBLIC.privateModelApply) {
+      if (request.method === "POST" && (url.pathname === PUBLIC.privateModelApply || url.pathname === SIGIL.privateModelApply)) {
         return await handlePrivateModelApply(request, env);
       }
 
-      if (request.method === "POST" && url.pathname === PUBLIC.privateModelUploadUrl) {
+      if (request.method === "POST" && (url.pathname === PUBLIC.privateModelUploadUrl || url.pathname === SIGIL.privateModelUploadUrl)) {
         return await handlePrivateModelUploadUrl(request, env);
       }
 
-      if (request.method === "PUT" && url.pathname === PUBLIC.privateModelUploadFile) {
+      if (request.method === "PUT" && (url.pathname === PUBLIC.privateModelUploadFile || url.pathname === SIGIL.privateModelUploadFile)) {
         return await handlePrivateModelUploadFile(request, env);
       }
 
-      if (request.method === "POST" && url.pathname === PUBLIC.publicModelApply) {
+      if (request.method === "POST" && (url.pathname === PUBLIC.publicModelApply || url.pathname === SIGIL.publicModelApply)) {
         return await handlePublicModelApply(request, env);
       }
 
-      if (request.method === "POST" && url.pathname === PUBLIC.publicModelUploadUrl) {
+      if (request.method === "POST" && (url.pathname === PUBLIC.publicModelUploadUrl || url.pathname === SIGIL.publicModelUploadUrl)) {
         return await handlePublicModelUploadUrl(request, env);
       }
 
-      if (request.method === "PUT" && url.pathname === PUBLIC.publicModelUploadFile) {
+      if (request.method === "PUT" && (url.pathname === PUBLIC.publicModelUploadFile || url.pathname === SIGIL.publicModelUploadFile)) {
         return await handlePublicModelUploadFile(request, env);
       }
 
@@ -12377,7 +13843,7 @@ export default {
         return handleSendLineSessionCard(request, env);
       }
 
-      if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/login") {
+      if ((request.method === "GET" || request.method === "HEAD") && (url.pathname === "/login" || url.pathname === "/member/login")) {
         return renderMemberLoginPage();
       }
 
@@ -12385,12 +13851,36 @@ export default {
         return renderSigilLoginOnlyPage(request);
       }
 
+      if (
+        (request.method === "GET" || request.method === "HEAD") &&
+        (url.pathname === SIGIL.apply || url.pathname === SIGIL.modelApply || url.pathname === SIGIL.modelApplyPrivate)
+      ) {
+        return renderSigilApplyPage(request);
+      }
+
+      if (
+        (request.method === "GET" || request.method === "HEAD") &&
+        (url.pathname === SIGIL.applyStatus || url.pathname === SIGIL.modelApplyPrivateReceived)
+      ) {
+        return renderSigilApplyStatusPage(request);
+      }
+
       if ((request.method === "GET" || request.method === "HEAD") && url.pathname === MEMBER_ACCOUNT_PATH) {
         return renderSigilMemberAccountPage(request);
       }
 
-      if ((request.method === "GET" || request.method === "HEAD") && url.pathname === MEMBER_DASHBOARD_ALIAS_PATH) {
-        return bridgeRedirect(request, MEMBER_ACCOUNT_PATH);
+      if (
+        (request.method === "GET" || request.method === "HEAD") &&
+        (url.pathname === MEMBER_DASHBOARD_ALIAS_PATH || url.pathname === `${MEMBER_DASHBOARD_ALIAS_PATH}/`)
+      ) {
+        return renderMmdMemberDashboardPage(request);
+      }
+
+      if (
+        (request.method === "GET" || request.method === "HEAD") &&
+        (url.pathname === MEMBER_MEMBERSHIP_ALIAS_PATH || url.pathname === `${MEMBER_MEMBERSHIP_ALIAS_PATH}/`)
+      ) {
+        return renderMmdMemberMembershipPage(request);
       }
 
       if ((request.method === "GET" || request.method === "HEAD") && url.pathname === MODEL_CONSOLE_PATH) {
@@ -12399,6 +13889,10 @@ export default {
 
       if ((request.method === "GET" || request.method === "HEAD") && url.pathname === MODEL_CONSOLE_ALIAS_PATH) {
         return renderMmdModelConsolePage(request);
+      }
+
+      if ((request.method === "GET" || request.method === "HEAD") && url.pathname === MODEL_CONFIRM_ALIAS_PATH) {
+        return bridgeRedirect(request, MODEL_CONSOLE_ALIAS_PATH);
       }
 
       if (
