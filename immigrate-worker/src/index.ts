@@ -82,6 +82,15 @@ const CONTROL_ROOM = {
   sessionRefresh: "/internal/admin/control-room/sessions/refresh",
 } as const;
 
+const SIGIL_ADMIN = {
+  root: "/sigil/admin",
+  login: "/sigil/admin/login",
+  authMe: "/sigil/admin/auth/me",
+  logout: "/sigil/admin/logout",
+  controlRoom: "/sigil/admin/control-room",
+  dashboard: "/sigil/admin/dashboard",
+} as const;
+
 const ADMIN_JOBS = {
   createSession: "/internal/admin/create-session",
   createSessionLegacy: "/internal/admin/jobs/create-session",
@@ -104,7 +113,7 @@ const PUBLIC = {
 
 const ADMIN_GATE_SESSION_KEY = "mmd_admin_gate_v1";
 const ADMIN_GATE_TTL_MS = 8 * 60 * 60 * 1000;
-const ADMIN_GATE_DEFAULT_NEXT = CONTROL_ROOM.root;
+const ADMIN_GATE_DEFAULT_NEXT = SIGIL_ADMIN.dashboard;
 const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
   "https://mmdbkk.com",
   "https://mmdprive.webflow.io",
@@ -2376,11 +2385,40 @@ function isProtectedBrowserRoute(pathname: string): boolean {
   return true;
 }
 
+function isSigilAdminPath(pathname: string): boolean {
+  return pathname === SIGIL_ADMIN.root || pathname.startsWith(`${SIGIL_ADMIN.root}/`);
+}
+
+function isSigilProtectedBrowserRoute(pathname: string): boolean {
+  return (
+    pathname === SIGIL_ADMIN.controlRoom ||
+    pathname.startsWith(`${SIGIL_ADMIN.controlRoom}/`) ||
+    pathname === SIGIL_ADMIN.dashboard ||
+    pathname.startsWith(`${SIGIL_ADMIN.dashboard}/`)
+  );
+}
+
+function toInternalAdminPath(pathname: string): string {
+  if (pathname === SIGIL_ADMIN.dashboard || pathname.startsWith(`${SIGIL_ADMIN.dashboard}/`)) {
+    return CONTROL_ROOM.root + pathname.slice(SIGIL_ADMIN.dashboard.length);
+  }
+  if (pathname === SIGIL_ADMIN.controlRoom || pathname.startsWith(`${SIGIL_ADMIN.controlRoom}/`)) {
+    return CONTROL_ROOM.root + pathname.slice(SIGIL_ADMIN.controlRoom.length);
+  }
+  return pathname;
+}
+
+function makeRequestWithPath(request: Request, pathname: string): Request {
+  const url = new URL(request.url);
+  url.pathname = pathname;
+  return new Request(url.toString(), request);
+}
+
 function makeLoginRedirect(request: Request, pathname: string): Response {
   const url = new URL(request.url);
   const next = pathname + url.search;
-  const loginUrl = new URL(CONTROL_ROOM.login, url.origin);
-  loginUrl.searchParams.set("next", next);
+  const loginUrl = new URL(SIGIL_ADMIN.login, url.origin);
+  loginUrl.searchParams.set("next", normalizeSigilAdminNextPath(next));
   return redirect(loginUrl.toString(), 302);
 }
 
@@ -2465,32 +2503,32 @@ async function verifyAdminAuthority(
 }
 
 function makeGateSessionCookie(request: Request, session: AdminGateSession): string {
-  const isSecure = new URL(request.url).protocol === "https:";
   const parts = [
     `${ADMIN_GATE_SESSION_KEY}=${encodeURIComponent(encodeGateSession(session))}`,
     "Path=/",
+    "HttpOnly",
+    "Secure",
     "SameSite=Lax",
     `Max-Age=${Math.floor(ADMIN_GATE_TTL_MS / 1000)}`,
   ];
 
-  if (isSecure) parts.push("Secure");
   return parts.join("; ");
 }
 
 function clearGateSessionCookie(request: Request): string {
-  const isSecure = new URL(request.url).protocol === "https:";
   const parts = [
     `${ADMIN_GATE_SESSION_KEY}=`,
     "Path=/",
+    "HttpOnly",
+    "Secure",
     "SameSite=Lax",
     "Max-Age=0",
   ];
 
-  if (isSecure) parts.push("Secure");
   return parts.join("; ");
 }
 
-function normalizeAdminNextPath(value: unknown): string {
+function normalizeSigilAdminNextPath(value: unknown): string {
   const raw = toStr(value);
   if (!raw.startsWith("/") || raw.startsWith("//")) {
     return ADMIN_GATE_DEFAULT_NEXT;
@@ -2501,9 +2539,32 @@ function normalizeAdminNextPath(value: unknown): string {
     if (parsed.origin !== "https://mmdbkk.com") {
       return ADMIN_GATE_DEFAULT_NEXT;
     }
+    if (!isSigilAdminPath(parsed.pathname)) {
+      return ADMIN_GATE_DEFAULT_NEXT;
+    }
+    if (parsed.pathname === SIGIL_ADMIN.login || parsed.pathname === SIGIL_ADMIN.authMe || parsed.pathname === SIGIL_ADMIN.logout) {
+      return ADMIN_GATE_DEFAULT_NEXT;
+    }
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   } catch {
     return ADMIN_GATE_DEFAULT_NEXT;
+  }
+}
+
+function normalizeAdminNextPath(value: unknown): string {
+  const raw = toStr(value);
+  if (!raw.startsWith("/") || raw.startsWith("//")) {
+    return CONTROL_ROOM.root;
+  }
+
+  try {
+    const parsed = new URL(raw, "https://mmdbkk.com");
+    if (parsed.origin !== "https://mmdbkk.com") {
+      return CONTROL_ROOM.root;
+    }
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return CONTROL_ROOM.root;
   }
 }
 
@@ -2540,80 +2601,34 @@ function adminGateBootstrapScript(session: AdminGateSession, next: string): stri
   return `
 <script>
 (() => {
-  const KEY = ${JSON.stringify(ADMIN_GATE_SESSION_KEY)};
-  const TTL_MS = ${String(ADMIN_GATE_TTL_MS)};
-  const LOGIN_PATH = ${JSON.stringify(CONTROL_ROOM.login)};
-  const serverSession = ${JSON.stringify(session)};
+  const LOGIN_PATH = ${JSON.stringify(SIGIL_ADMIN.login)};
+  const LOGOUT_PATH = ${JSON.stringify(SIGIL_ADMIN.logout)};
+  const AUTH_ME_PATH = ${JSON.stringify(SIGIL_ADMIN.authMe)};
   const defaultNext = ${JSON.stringify(next)};
-
-  function isValid(value) {
-    return !!value &&
-      value.ok === true &&
-      typeof value.at === "number" &&
-      Date.now() - value.at <= TTL_MS &&
-      typeof value.baseUrl === "string" &&
-      value.baseUrl.length > 0 &&
-      (value.bearer || value.confirmKey);
-  }
 
   function getNextUrl() {
     return location.pathname + location.search + location.hash;
   }
 
   function redirectToLogin() {
-    try { sessionStorage.removeItem(KEY); } catch {}
     location.replace(LOGIN_PATH + "?next=" + encodeURIComponent(getNextUrl() || defaultNext));
   }
 
-  let session = null;
-  try {
-    session = JSON.parse(sessionStorage.getItem(KEY) || "null");
-  } catch {
-    session = null;
-  }
-
-  if (!isValid(session) && isValid(serverSession)) {
-    session = serverSession;
-    try { sessionStorage.setItem(KEY, JSON.stringify(session)); } catch {}
-  }
-
-  if (!isValid(session)) {
-    redirectToLogin();
-    return;
-  }
-
-  const originalFetch = window.fetch.bind(window);
   window.__MMD_ADMIN_GATE__ = {
-    key: KEY,
-    session,
-    getSession() {
-      return session;
+    authenticated: true,
+    baseUrl: ${JSON.stringify(session.baseUrl)},
+    async check() {
+      const response = await fetch(AUTH_ME_PATH, { credentials: "same-origin" });
+      if (!response.ok) redirectToLogin();
+      return response;
     },
     buildHeaders(extraHeaders) {
-      const headers = new Headers(extraHeaders || {});
-      if (session.bearer) headers.set("Authorization", "Bearer " + session.bearer);
-      if (session.confirmKey) headers.set("X-Confirm-Key", session.confirmKey);
-      return headers;
+      return new Headers(extraHeaders || {});
     },
     logout() {
-      try { sessionStorage.removeItem(KEY); } catch {}
-      return originalFetch(${JSON.stringify(CONTROL_ROOM.loginSession)}, { method: "DELETE", credentials: "same-origin" })
+      return fetch(LOGOUT_PATH, { method: "POST", credentials: "same-origin" })
         .finally(() => location.replace(LOGIN_PATH + "?next=" + encodeURIComponent(defaultNext)));
     }
-  };
-
-  window.fetch = function(input, init) {
-    const raw = typeof input === "string" || input instanceof URL ? String(input) : "";
-    if (!raw) return originalFetch(input, init);
-
-    const url = new URL(raw, location.origin);
-    if (!url.pathname.startsWith("/v1/admin/")) {
-      return originalFetch(input, init);
-    }
-
-    const target = session.baseUrl.replace(/\\/+$/, "") + url.pathname + url.search + url.hash;
-    const headers = window.__MMD_ADMIN_GATE__.buildHeaders(init && init.headers);
-    return originalFetch(target, { ...init, headers });
   };
 })();
 </script>`;
@@ -2825,7 +2840,7 @@ function renderAdminLoginPage(request: Request): Response {
         }
 
         function storeSession(session) {
-          sessionStorage.setItem(KEY, JSON.stringify(session));
+          void session;
         }
 
         form.addEventListener("submit", async (event) => {
@@ -2875,6 +2890,199 @@ function renderAdminLoginPage(request: Request): Response {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
     },
+  });
+}
+
+type SigilLoginBody = {
+  baseUrl?: string;
+  identity?: string;
+  password?: string;
+  gate_code?: string;
+  otp?: string;
+  accessCode?: string;
+  bearer?: string;
+  confirmKey?: string;
+  next?: string;
+};
+
+async function readSigilLoginBody(request: Request): Promise<SigilLoginBody | null> {
+  const contentType = request.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return (await request.json().catch(() => null)) as SigilLoginBody | null;
+  }
+
+  const form = await request.formData().catch(() => null);
+  if (!form) return null;
+
+  return {
+    baseUrl: toStr(form.get("baseUrl")),
+    identity: toStr(form.get("identity")),
+    password: toStr(form.get("password")),
+    gate_code: toStr(form.get("gate_code")),
+    otp: toStr(form.get("otp")),
+    accessCode: toStr(form.get("accessCode")),
+    bearer: toStr(form.get("bearer")),
+    confirmKey: toStr(form.get("confirmKey")),
+    next: toStr(form.get("next")),
+  };
+}
+
+function renderSigilAdminLoginPage(request: Request, init?: ResponseInit & { error?: string }): Response {
+  const url = new URL(request.url);
+  const next = normalizeSigilAdminNextPath(url.searchParams.get("next"));
+  const error = toStr(init?.error);
+  let defaultBaseUrl = "https://mmdbkk.com";
+  try {
+    defaultBaseUrl = normalizeAdminBaseUrl(url.origin, request);
+  } catch {}
+
+  const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SIGIL Admin Login</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #050406;
+        --panel: rgba(15, 12, 18, .88);
+        --line: rgba(221, 184, 108, .22);
+        --text: #f8efe2;
+        --muted: #b9aa97;
+        --gold: #d7ad63;
+        --gold-strong: #f0cc83;
+        --danger: #ef9b9b;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(215,173,99,.18), transparent 30%),
+          linear-gradient(180deg, #111014 0%, #070609 58%, #030303 100%);
+        font-family: Baskerville, "Iowan Old Style", Palatino, Georgia, serif;
+      }
+      .sigil-admin-login-v1 {
+        width: min(100%, 720px);
+        padding: clamp(24px, 5vw, 40px);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--panel);
+        box-shadow: 0 28px 90px rgba(0,0,0,.45);
+      }
+      .kicker {
+        margin: 0 0 12px;
+        color: var(--gold);
+        font: 700 .78rem/1.2 "Avenir Next Condensed", "Gill Sans", sans-serif;
+        letter-spacing: .2em;
+        text-transform: uppercase;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(2.2rem, 9vw, 4.6rem);
+        line-height: .92;
+      }
+      .lead {
+        max-width: 44rem;
+        margin: 18px 0 0;
+        color: var(--muted);
+        line-height: 1.65;
+      }
+      form {
+        display: grid;
+        gap: 14px;
+        margin-top: 28px;
+      }
+      label {
+        display: grid;
+        gap: 8px;
+        color: var(--gold-strong);
+        font: 700 .78rem/1.2 "Avenir Next Condensed", "Gill Sans", sans-serif;
+        letter-spacing: .14em;
+        text-transform: uppercase;
+      }
+      input {
+        width: 100%;
+        min-height: 52px;
+        padding: 0 16px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: rgba(5,4,6,.74);
+        color: var(--text);
+        font: inherit;
+      }
+      button {
+        min-height: 50px;
+        border: 1px solid rgba(240,204,131,.44);
+        border-radius: 12px;
+        background: linear-gradient(135deg, rgba(215,173,99,.32), rgba(96,72,28,.38));
+        color: var(--text);
+        font: 700 .88rem/1 "Avenir Next Condensed", "Gill Sans", sans-serif;
+        letter-spacing: .13em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      .error {
+        min-height: 1.25rem;
+        margin: 0;
+        color: var(--danger);
+      }
+      .meta {
+        margin: 0;
+        color: var(--muted);
+        font-size: .92rem;
+        overflow-wrap: anywhere;
+      }
+      @media (max-width: 520px) {
+        body { padding: 16px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="sigil-admin-login-v1">
+      <p class="kicker">SIGIL Internal Command</p>
+      <h1>Admin access.</h1>
+      <p class="lead">Enter the Gate Code / OTP to request a server-verified admin session.</p>
+
+      <form method="post" action="${SIGIL_ADMIN.login}" autocomplete="on">
+        <input type="hidden" name="next" value="${escapeHtml(next)}" />
+        <input type="hidden" name="baseUrl" value="${escapeHtml(defaultBaseUrl)}" />
+
+        <label>Operator
+          <input name="identity" type="text" autocomplete="username" inputmode="email" />
+        </label>
+
+        <label>Gate Code / OTP
+          <input name="gate_code" type="password" autocomplete="one-time-code" required />
+        </label>
+
+        <label>Password
+          <input name="password" type="password" autocomplete="current-password" />
+        </label>
+
+        <p class="meta">Next: ${escapeHtml(next)}</p>
+        <p class="error" role="alert">${escapeHtml(error)}</p>
+        <button type="submit">Unlock SIGIL</button>
+      </form>
+    </main>
+  </body>
+</html>`;
+
+  const headers = new Headers(init?.headers);
+  headers.set("content-type", "text/html; charset=utf-8");
+  headers.set("cache-control", "no-store");
+  headers.set("x-mmd-worker", "immigrate-worker");
+  headers.set("x-mmd-page", "sigil-admin-login");
+
+  return new Response(html, {
+    status: init?.status || 200,
+    statusText: init?.statusText,
+    headers,
   });
 }
 
@@ -3758,6 +3966,96 @@ async function handleAdminLoginSession(request: Request, env: Env): Promise<Resp
   );
 }
 
+async function handleSigilAdminLogin(request: Request, env: Env): Promise<Response> {
+  const body = await readSigilLoginBody(request);
+  const gateCode = toStr(body?.gate_code || body?.otp);
+  const password = toStr(body?.password || body?.accessCode);
+  const bearer = toStr(body?.bearer) || gateCode || password;
+  const confirmKey = toStr(body?.confirmKey);
+  const next = normalizeSigilAdminNextPath(body?.next);
+  let baseUrl = "";
+
+  try {
+    baseUrl = normalizeAdminBaseUrl(body?.baseUrl, request);
+  } catch {
+    return renderSigilAdminLoginPage(request, {
+      status: 401,
+      error: "Unable to verify SIGIL admin access.",
+    });
+  }
+
+  if (!bearer && !confirmKey) {
+    return renderSigilAdminLoginPage(request, {
+      status: 401,
+      error: "Gate Code / OTP is required.",
+    });
+  }
+
+  const headers = new Headers();
+  if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
+  if (confirmKey) headers.set("X-Confirm-Key", confirmKey);
+
+  const verified = await verifyAdminAuthority(baseUrl, request, env, headers);
+  if (!verified) {
+    return renderSigilAdminLoginPage(request, {
+      status: 401,
+      error: "Unable to verify SIGIL admin access.",
+    });
+  }
+
+  const session: AdminGateSession = {
+    ok: true,
+    at: Date.now(),
+    baseUrl,
+    ...(bearer ? { bearer } : {}),
+    ...(confirmKey ? { confirmKey } : {}),
+  };
+
+  return redirect(next, 302, {
+    "set-cookie": makeGateSessionCookie(request, session),
+    "cache-control": "no-store",
+  });
+}
+
+function handleSigilAdminMe(request: Request): Response {
+  const session = getValidatedGateSession(request);
+  if (!session) {
+    return json(
+      { ok: false, error: { code: "ADMIN_SESSION_REQUIRED", message: "Admin session required" } },
+      { status: 401, headers: { "cache-control": "no-store" } },
+    );
+  }
+
+  return json(
+    { ok: true, data: { authenticated: true, baseUrl: session.baseUrl } },
+    { headers: { "cache-control": "no-store" } },
+  );
+}
+
+function handleSigilAdminLogout(request: Request): Response {
+  return redirect(SIGIL_ADMIN.login, 302, {
+    "set-cookie": clearGateSessionCookie(request),
+    "cache-control": "no-store",
+  });
+}
+
+function makeLegacyAdminRedirect(request: Request): Response | null {
+  const url = new URL(request.url);
+  if (url.pathname === "/admin/login" || url.pathname === CONTROL_ROOM.login) {
+    const target = new URL(SIGIL_ADMIN.login, url.origin);
+    target.searchParams.set("next", normalizeSigilAdminNextPath(url.searchParams.get("next")));
+    return redirect(target.toString(), 302);
+  }
+
+  if (url.pathname === CONTROL_ROOM.root || url.pathname.startsWith(`${CONTROL_ROOM.root}/`)) {
+    const target = new URL(request.url);
+    target.pathname = SIGIL_ADMIN.controlRoom + url.pathname.slice(CONTROL_ROOM.root.length);
+    return redirect(target.toString(), 302);
+  }
+
+  return null;
+}
+
 async function handleVerifyAccessCode(request: Request, env: Env): Promise<Response> {
   const meta = makeMeta(request);
 
@@ -3830,6 +4128,42 @@ export default {
 
       if (request.method === "POST" && isPublicCustomerConfirmRoute(url.pathname)) {
         return await handleCustomerConfirm(request, env);
+      }
+
+      const legacyAdminRedirect = makeLegacyAdminRedirect(request);
+      if (
+        legacyAdminRedirect &&
+        (request.method === "GET" || request.method === "HEAD")
+      ) {
+        return legacyAdminRedirect;
+      }
+
+      if ((request.method === "GET" || request.method === "HEAD") && url.pathname === SIGIL_ADMIN.login) {
+        if (request.method === "HEAD") {
+          return new Response(null, {
+            status: 200,
+            headers: {
+              "content-type": "text/html; charset=utf-8",
+              "cache-control": "no-store",
+              "x-mmd-worker": "immigrate-worker",
+              "x-mmd-page": "sigil-admin-login",
+            },
+          });
+        }
+
+        return renderSigilAdminLoginPage(request);
+      }
+
+      if (request.method === "POST" && url.pathname === SIGIL_ADMIN.login) {
+        return await handleSigilAdminLogin(request, env);
+      }
+
+      if (request.method === "GET" && url.pathname === SIGIL_ADMIN.authMe) {
+        return handleSigilAdminMe(request);
+      }
+
+      if ((request.method === "GET" || request.method === "POST") && url.pathname === SIGIL_ADMIN.logout) {
+        return handleSigilAdminLogout(request);
       }
 
       if ((request.method === "GET" || request.method === "HEAD") && url.pathname === CONTROL_ROOM.login) {
@@ -3920,6 +4254,25 @@ export default {
         }
 
         return await withInjectedAdminBootstrap(request, upstream, gateSession);
+      }
+
+      if ((request.method === "GET" || request.method === "HEAD") && isSigilProtectedBrowserRoute(url.pathname)) {
+        if (isAuthorized(request, env)) {
+          return fetch(makeRequestWithPath(request, toInternalAdminPath(url.pathname)));
+        }
+
+        const gateSession = getValidatedGateSession(request);
+        if (!gateSession) {
+          return makeLoginRedirect(request, url.pathname);
+        }
+
+        const upstreamRequest = makeRequestWithPath(request, toInternalAdminPath(url.pathname));
+        const upstream = await fetch(upstreamRequest);
+        if (request.method === "HEAD") {
+          return upstream;
+        }
+
+        return await withInjectedAdminBootstrap(upstreamRequest, upstream, gateSession);
       }
 
       if (!isAuthorized(request, env)) {
