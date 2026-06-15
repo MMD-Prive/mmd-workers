@@ -75,7 +75,7 @@ const MODEL_SESSION_STATUS_PATH = "/v1/model/session/status";
 const MODEL_SESSION_GPS_PATH = "/v1/model/session/gps";
 const MODEL_SESSION_UPDATE_PATH = "/v1/model/session/update";
 const MODEL_SESSION_EMERGENCY_PATH = "/v1/model/session/emergency";
-const MODEL_SESSION_STUB_PATHS = new Set([
+const MODEL_SESSION_SIGNAL_PATHS = new Set([
   MODEL_SESSION_GPS_PATH,
   MODEL_SESSION_UPDATE_PATH,
   MODEL_SESSION_EMERGENCY_PATH,
@@ -195,8 +195,8 @@ export default {
       return withCors(req, env, await handleModelSessionStatus(req, env));
     }
 
-    if (method === "POST" && MODEL_SESSION_STUB_PATHS.has(path)) {
-      return withCors(req, env, await handleModelSessionStub(req, env, path));
+    if (method === "POST" && MODEL_SESSION_SIGNAL_PATHS.has(path)) {
+      return withCors(req, env, await handleModelSessionSignal(req, env, path));
     }
 
     if (method === "POST" && path === "/api/member/kenji/chat") {
@@ -3619,6 +3619,10 @@ function normalizeModelSessionStatus(value) {
   return MODEL_SESSION_STATUS_ALIASES[raw] || raw;
 }
 
+function normalizeModelSessionSignalType(value) {
+  return str(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
 function uniqueValues(values) {
   return [...new Set(values.map((value) => str(value)).filter(Boolean))];
 }
@@ -4148,7 +4152,7 @@ async function handleModelSessionStatus(req, env) {
     const paymentRecords = await findModelPaymentRecords(env, context.session);
     const paymentSummary = derivePaymentSummary(env, context.session, job, paymentRecords);
     if (status === "work_started" && !paymentSummary.final_payment_confirmed) {
-      return modelSessionError(423, "FINAL_PAYMENT_REQUIRED", "final_payment_required_before_work_started");
+      return modelSessionError(423, "PAYMENT_GATE_LOCKED", "final_payment_not_confirmed");
     }
 
     const sessionId = sessionIdFromModelFields(env, context.session.fields || {}) || context.assignmentKey;
@@ -4186,35 +4190,113 @@ async function handleModelSessionStatus(req, env) {
   }
 }
 
-async function handleModelSessionStub(req, env, path) {
+function modelActivityLogsTable(env) {
+  return str(env.AIRTABLE_TABLE_ACTIVITY_LOGS || "activity_logs");
+}
+
+function modelSessionSignalAction(path, body) {
+  if (path === MODEL_SESSION_GPS_PATH) {
+    if (body.enabled === true || body.live_on === true) return "gps_on";
+    if (body.enabled === false || body.live_on === false) return "gps_off";
+    return "gps";
+  }
+  if (path === MODEL_SESSION_EMERGENCY_PATH) return "emergency";
+  return normalizeModelSessionSignalType(body.type || body.action || body.update_type) || "update";
+}
+
+function modelSessionSignalStatus(path, body) {
+  if (path === MODEL_SESSION_GPS_PATH) {
+    if (body.enabled === true || body.live_on === true) return "active";
+    if (body.enabled === false || body.live_on === false) return "paused";
+    return "received";
+  }
+  if (path === MODEL_SESSION_EMERGENCY_PATH) return "sent";
+  return "received";
+}
+
+async function writeModelSessionActivityLog(env, input) {
+  const fields = compactObject({
+    Name: `model-session:${input.action}:${input.sessionId || input.assignmentKey}`,
+    action: `model_session_${input.action}`,
+    actor: "model",
+    role: "model",
+    scope: "model_session",
+    session_id: input.sessionId,
+    payment_ref: input.paymentRef,
+    job_id: input.jobId,
+    model_name: input.modelName,
+    model_record_id: input.modelRecordId,
+    status: input.status,
+    payload_json: JSON.stringify(input.payload || {}),
+    created_at: input.createdAt,
+  });
+  return await airtableCreateRecord(env, modelActivityLogsTable(env), fields);
+}
+
+async function handleModelSessionSignal(req, env, path) {
   const body = await safeJson(req);
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return modelSessionError(400, "INVALID_REQUEST_BODY", "invalid_request_body");
   }
 
-  const token = readModelSessionToken(req, body);
-  if (!token) return modelSessionError(400, "MISSING_T", "missing_t");
+  const signedRef = readModelSessionToken(req, body);
+  if (!signedRef) return modelSessionError(400, "MISSING_T", "missing_t");
 
   try {
-    const context = await resolveModelSessionContext(env, token);
-    const sessionId = sessionIdFromModelFields(env, context.session.fields || {}) || context.assignmentKey;
-    const action = path === MODEL_SESSION_GPS_PATH
-      ? "gps"
-      : path === MODEL_SESSION_EMERGENCY_PATH
-        ? "emergency"
-        : "update";
+    const context = await resolveModelSessionContext(env, signedRef);
+    const sessionFields = context.session.fields || {};
+    const job = await findModelSessionJob(env, context.session);
+    const jobId = jobIdFromFields(job?.fields || {}) || jobIdFromFields(sessionFields);
+    const sessionId = sessionIdFromModelFields(env, sessionFields) || context.assignmentKey;
+    const paymentRef = paymentRefFromModelFields(env, sessionFields);
+    const action = modelSessionSignalAction(path, body);
+    const status = modelSessionSignalStatus(path, body);
+    const createdAt = new Date().toISOString();
+    const payload = {
+      route: path,
+      action,
+      status,
+      session_id: sessionId,
+      payment_ref: paymentRef,
+      job_id: jobId,
+      model_invite_id: context.invite.invite_id,
+      model_name: modelNameFromSessionFields(sessionFields) || str(context.invite.model_name),
+      model_record_id: modelRecordIdFromSessionFields(sessionFields) || str(context.invite.model_record_id),
+      gps_enabled: body.enabled ?? body.live_on,
+      lat: body.lat,
+      lng: body.lng,
+      eta_text: str(body.eta_text || body.eta || ""),
+      live_map_url: str(body.live_map_url || body.map_url || ""),
+      note: str(body.note || body.message || ""),
+      type: normalizeModelSessionSignalType(body.type || body.update_type || ""),
+      source_surface: "model_console",
+      source: "admin_worker_model_session_truth_state",
+      at: createdAt,
+    };
+    const activity = await writeModelSessionActivityLog(env, {
+      action,
+      status,
+      sessionId,
+      paymentRef,
+      jobId,
+      modelName: payload.model_name,
+      modelRecordId: payload.model_record_id,
+      assignmentKey: context.assignmentKey,
+      payload,
+      createdAt,
+    });
 
-    return json(
-      {
-        ok: true,
-        stubbed: true,
-        implemented: false,
-        action,
-        session_id: sessionId,
-        message: "Accepted by admin-worker facade without writing truth state.",
+    return json({
+      ok: true,
+      action,
+      status,
+      session_id: sessionId,
+      activity_log: {
+        id: activity.id || "",
+        table: modelActivityLogsTable(env),
+        action: `model_session_${action}`,
       },
-      202
-    );
+    });
   } catch (error) {
     const err = normalizeModelSessionError(error);
     return modelSessionError(err.status, err.code, err.message, err.detail);
