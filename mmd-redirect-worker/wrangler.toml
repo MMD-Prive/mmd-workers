@@ -1,0 +1,214 @@
+name = "mmd-redirect-worker"
+main = "src/index.js"
+compatibility_date = "2026-06-07"
+workers_dev = false
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[[services]]
+binding = "IMMIGRATE_WORKER"
+service = "immigrate-worker"
+
+[[services]]
+binding = "ADMIN_WORKER"
+service = "admin-worker"
+
+[[routes]]
+pattern = "mmdbkk.com/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/inme"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/inme/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/inme"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/inme/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/login"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/login/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/login"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/login/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/login*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/login*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/member"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/member/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/member/dashboard"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/member/dashboard/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/dashboard"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/dashboard/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/members"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/members/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/members"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/members/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/membership"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/membership/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/membership"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/membership/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/renew"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/renew/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/renew"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/renew/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/renewal"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/renewal/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/renewal"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/renewal/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/trust"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/trust/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/trust"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/trust/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/trust/inme"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/trust/inme/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/trust/inme"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/trust/inme/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/trust/inme*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/trust/inme*"
+zone_name = "mmdbkk.com"
+
+# Temporary safety catch for old SIGIL admin route leakage.
+# mmd-redirect-worker MUST NOT redirect /sigil/*.
+# Long-term owner should be SIGIL/admin worker, not redirect worker.
+[[routes]]
+pattern = "mmdbkk.com/sigil/admin*"
+zone_name = "mmdbkk.com"
+
+# Temporary safety catch for old SIGIL admin route leakage.
+# mmd-redirect-worker MUST NOT redirect /sigil/*.
+# Long-term owner should be SIGIL/admin worker, not redirect worker.
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/admin*"
+zone_name = "mmdbkk.com"

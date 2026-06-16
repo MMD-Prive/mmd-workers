@@ -3,7 +3,7 @@ import { dtFindMember } from "../lib/memberstack_dt.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const VERIFIED_PAYMENT_STATUSES = new Set(["paid", "success", "verified"]);
-const VERIFIED_VERIFICATION_STATUSES = new Set(["verified", "approved", "success"]);
+const VERIFIED_VERIFICATION_STATUSES = new Set(["verified", "approved", "success", "matched", "funds_matched"]);
 const UPCOMING_SESSION_EMPTY_STATE = {
   date_label: "No upcoming session",
   name: "No active session",
@@ -42,13 +42,17 @@ export async function handleMemberDashboardRequest(req, env) {
       return json(await confirmMemberId(body, env, context, collections, meta));
     }
 
-    if ((method === "GET" || method === "HEAD") && path === "/api/member/dashboard/view") {
+    if (
+      (method === "GET" || method === "HEAD") &&
+      (path === "/api/member/dashboard/view" || path === "/member/dashboard" || path === "/member/payments")
+    ) {
       return renderMemberDashboardPreviewPage({
         method,
         dashboard: buildDashboardPayload(context, collections, meta),
         nextSession: buildNextSessionPayload(collections, meta),
-        payments: buildPaymentSummaryPayload(collections, meta),
+        payments: buildPaymentSummaryPayload(collections, meta, url),
         token: toStr(url.searchParams.get("t")),
+        surface: path === "/member/payments" ? "payments" : "dashboard",
       });
     }
 
@@ -57,7 +61,7 @@ export async function handleMemberDashboardRequest(req, env) {
     }
 
     if (path === "/api/member/payments/summary") {
-      return json(buildPaymentSummaryPayload(collections, meta));
+      return json(buildPaymentSummaryPayload(collections, meta, url));
     }
 
     return dashboardErrorResponse(makeDashboardError("not_found", "Route not found.", 404, false));
@@ -161,6 +165,8 @@ export async function mintMemberDashboardToken(body, env) {
     urls: {
       dashboard: `/api/member/dashboard?t=${encodeURIComponent(token)}`,
       dashboard_preview: `/api/member/dashboard/view?t=${encodeURIComponent(token)}`,
+      member_dashboard: `/member/dashboard?t=${encodeURIComponent(token)}`,
+      member_payments: `/member/payments?t=${encodeURIComponent(token)}`,
       next_session: `/api/member/session/next?t=${encodeURIComponent(token)}`,
       payments_summary: `/api/member/payments/summary?t=${encodeURIComponent(token)}`,
       kenji_chat: `/api/member/kenji/chat?t=${encodeURIComponent(token)}`,
@@ -622,11 +628,14 @@ function buildNextSessionPayload(collections, meta) {
   };
 }
 
-function buildPaymentSummaryPayload(collections, meta) {
+function buildPaymentSummaryPayload(collections, meta, url = null) {
   const summary = summarizePayments(collections.sessions, collections.payments);
   return {
     ok: true,
-    payments: summary,
+    payments: {
+      ...summary,
+      items: collections.payments.map((payment) => mapPaymentItem(payment, url)),
+    },
     meta,
   };
 }
@@ -689,6 +698,89 @@ function summarizePayments(sessions, payments) {
     verified_payments_count: verifiedPayments.length,
     currency: "THB",
   };
+}
+
+function mapPaymentItem(payment, url) {
+  const status = publicPaymentStatus(payment);
+  const proofStatus = publicProofStatus(payment, status);
+  const paymentRef = toStr(payment.payment_ref);
+  const sessionId = toStr(payment.session_id);
+  const bookingRef = toStr(payment.booking_ref);
+  const bookingId = toStr(payment.booking_id);
+  const nextAction = publicNextAction(status, proofStatus);
+
+  return {
+    payment_ref: paymentRef,
+    session_id: sessionId,
+    booking_ref: bookingRef,
+    booking_id: bookingId,
+    payment_type: toStr(payment.payment_type) || "payment",
+    amount: safeInt(payment.amount_thb),
+    currency: toStr(payment.currency) || "THB",
+    method: toStr(payment.method) || "bank_transfer",
+    status,
+    proof_status: proofStatus,
+    created_at: toStr(payment.created_at),
+    verified_at: status === "verified" ? toStr(payment.verified_at) || null : null,
+    next_action: nextAction,
+    next_url: buildPaymentNextUrl(url, {
+      payment_ref: paymentRef,
+      session_id: sessionId,
+      booking_ref: bookingRef,
+      booking_id: bookingId,
+    }),
+  };
+}
+
+function publicPaymentStatus(payment) {
+  const paymentStatus = toStr(payment.payment_status).toLowerCase();
+  const verificationStatus = toStr(payment.verification_status).toLowerCase();
+  const proofStatus = toStr(payment.proof_status).toLowerCase();
+  const raw = [verificationStatus, paymentStatus, proofStatus].join(" ");
+
+  if (isVerifiedPayment(payment)) return "verified";
+  if (/\b(rejected|declined|failed|void|cancelled|canceled)\b/.test(raw)) return "rejected";
+  if (/\b(expired|stale|timeout)\b/.test(raw)) return "expired";
+  if (/\b(submitted|uploaded|received|review|reviewing|verify|verifying|pending_verification|awaiting_verification)\b/.test(raw)) {
+    return "verifying";
+  }
+  return "pending";
+}
+
+function publicProofStatus(payment, status) {
+  const raw = toStr(payment.proof_status || payment.verification_status || payment.payment_status).toLowerCase();
+  if (status === "verified") return "verified";
+  if (status === "rejected") return "rejected";
+  if (/\b(submitted|uploaded|received|review|reviewing|verify|verifying|pending_verification|awaiting_verification)\b/.test(raw)) {
+    return "submitted";
+  }
+  return "missing";
+}
+
+function publicNextAction(status, proofStatus) {
+  if (status === "verified") return "none";
+  if (status === "rejected") return "resubmit_proof";
+  if (status === "expired") return "restart_payment";
+  if (proofStatus === "submitted" || status === "verifying") return "await_verification";
+  return "submit_proof";
+}
+
+function buildPaymentNextUrl(url, payment) {
+  const out = new URL("/sigil/pay", "https://mmdbkk.com");
+  out.searchParams.set("intent", "proof");
+
+  const source = url instanceof URL ? url.searchParams : new URLSearchParams();
+  for (const key of ["t", "code", "promo", "session_id", "payment_ref", "booking_ref", "booking_id"]) {
+    const value = toStr(source.get(key));
+    if (value) out.searchParams.set(key, value);
+  }
+
+  for (const key of ["session_id", "payment_ref", "booking_ref", "booking_id"]) {
+    const value = toStr(payment[key]);
+    if (value) out.searchParams.set(key, value);
+  }
+
+  return `${out.pathname}?${out.searchParams.toString()}`;
 }
 
 function buildKenjiSurface(context) {
@@ -935,6 +1027,57 @@ function shapePayment(record, env) {
       atVal(fields, "session_id"),
       atVal(fields, "Session ID"),
     ) || "",
+    booking_ref: firstNonEmpty(
+      atVal(fields, env.AT_PAYMENTS__BOOKING_REF),
+      atVal(fields, "booking_ref"),
+      atVal(fields, "Booking Ref"),
+      atVal(fields, "Booking Reference"),
+    ) || "",
+    booking_id: firstNonEmpty(
+      atVal(fields, env.AT_PAYMENTS__BOOKING_ID),
+      atVal(fields, "booking_id"),
+      atVal(fields, "Booking ID"),
+    ) || "",
+    payment_type: firstNonEmpty(
+      atVal(fields, env.AT_PAYMENTS__PAYMENT_TYPE),
+      atVal(fields, "payment_type"),
+      atVal(fields, "Payment Type"),
+      atVal(fields, "type"),
+    ) || "payment",
+    currency: firstNonEmpty(
+      atVal(fields, env.AT_PAYMENTS__CURRENCY),
+      atVal(fields, "currency"),
+      atVal(fields, "Currency"),
+    ) || "THB",
+    method: firstNonEmpty(
+      atVal(fields, env.AT_PAYMENTS__METHOD),
+      atVal(fields, "method"),
+      atVal(fields, "payment_method"),
+      atVal(fields, "Payment Method"),
+    ) || "bank_transfer",
+    proof_status: toStr(
+      firstNonEmpty(
+        atVal(fields, env.AT_PAYMENTS__PROOF_STATUS),
+        atVal(fields, "proof_status"),
+        atVal(fields, "Proof Status"),
+      ),
+    ).toLowerCase(),
+    created_at: normalizeDate(
+      firstNonEmpty(
+        atVal(fields, env.AT_PAYMENTS__CREATED_AT),
+        atVal(fields, "created_at"),
+        atVal(fields, "Created At"),
+        atVal(fields, "payment_date"),
+        atVal(fields, "Payment Date"),
+      ),
+    ),
+    verified_at: normalizeDate(
+      firstNonEmpty(
+        atVal(fields, env.AT_PAYMENTS__VERIFIED_AT),
+        atVal(fields, "verified_at"),
+        atVal(fields, "Verified At"),
+      ),
+    ),
   };
 }
 
@@ -1182,12 +1325,13 @@ function hasThaiText(value) {
   return /[\u0E00-\u0E7F]/.test(toStr(value));
 }
 
-function renderMemberDashboardPreviewPage({ method, dashboard, nextSession, payments, token }) {
+function renderMemberDashboardPreviewPage({ method, dashboard, nextSession, payments, token, surface = "dashboard" }) {
   const initialState = {
     dashboard,
     nextSession,
     payments,
     token,
+    surface,
   };
 
   if (method === "HEAD") {
@@ -1205,7 +1349,7 @@ function renderMemberDashboardPreviewPage({ method, dashboard, nextSession, paym
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Member Dashboard Preview</title>
+    <title>${surface === "payments" ? "Member Payments" : "Member Dashboard"}</title>
     <style>
       :root {
         --bg: #0f172a;
@@ -1526,12 +1670,12 @@ function renderMemberDashboardPreviewPage({ method, dashboard, nextSession, paym
       }
     </style>
   </head>
-  <body>
+  <body data-member-surface="${surface === "payments" ? "payments" : "dashboard"}">
     <main class="shell">
       <section class="hero">
         <div class="hero-top">
           <div>
-            <div class="eyebrow">Member Dashboard Preview</div>
+            <div class="eyebrow">${surface === "payments" ? "Member Payments" : "Member Dashboard"}</div>
             <h1 id="member-name">Loading...</h1>
             <p class="subtext" id="hero-copy">Preparing member continuity view and Kenji bridge.</p>
           </div>
@@ -1558,7 +1702,7 @@ function renderMemberDashboardPreviewPage({ method, dashboard, nextSession, paym
             </div>
           </section>
 
-          <section class="panel">
+          <section class="panel" id="member-payments">
             <h2>Payment Summary</h2>
             <p class="section-note">A quick view of total, paid, and balance amounts for the current member lane.</p>
             <div class="money-grid" id="money-grid"></div>
@@ -1787,6 +1931,9 @@ function renderMemberDashboardPreviewPage({ method, dashboard, nextSession, paym
       el.refreshButton.addEventListener("click", refreshDashboard);
 
       renderDashboard(state);
+      if (state.surface === "payments") {
+        document.getElementById("member-payments")?.scrollIntoView({ block: "start" });
+      }
       pushMessage("kenji", "Kenji is connected to this dashboard preview. Ask about your next session, payment status, or what to do next.");
       setStatus("Preview ready.");
     </script>
@@ -1906,8 +2053,8 @@ function buildOnboardingAssistant(context) {
 function deriveProfilePrimaryCta(status, tier, pointStatus) {
   if (pointStatus === "pending_review") return { label: "Check Status", href: "/member/dashboard" };
   if (status === "Guest") return { label: "Start Membership", href: "/trust/inme" };
-  if (status === "Expired") return { label: "Renew Access", href: "/pay/renewal" };
-  if (tier === "7 Days") return { label: "Upgrade Tier", href: "/pay/renewal" };
+  if (status === "Expired") return { label: "Renew Access", href: "/sigil/pay/renewal" };
+  if (tier === "7 Days") return { label: "Upgrade Tier", href: "/sigil/pay/renewal" };
   return { label: "Open Dashboard", href: "/member/dashboard" };
 }
 
