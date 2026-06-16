@@ -28,6 +28,32 @@ import { demoLinksCreate, demoLinksGet } from "./src/routes/demo-links.js";
 
 const LOCK = "admin-worker-v2026-03-11-full";
 const AIRTABLE_API = "https://api.airtable.com/v0";
+const MEMBER_SYSTEM_PAGE_META = {
+  "/member/profile": {
+    page: "member-profile",
+    title: "MMD Privé | Member Profile",
+    heading: "Member Profile",
+    note: "จัดการข้อมูลสมาชิก สถานะบัญชี และรายละเอียดสำคัญของพื้นที่ส่วนตัว",
+  },
+  "/member/sessions": {
+    page: "member-sessions",
+    title: "MMD Privé | Member Sessions",
+    heading: "Member Sessions",
+    note: "ตรวจคิว เซสชันถัดไป และสถานะที่เกี่ยวข้องกับการนัดหมายของคุณ",
+  },
+  "/member/points": {
+    page: "member-points",
+    title: "MMD Privé | Member Points",
+    heading: "Member Points",
+    note: "ดูคะแนน สิทธิ์ และสถานะการใช้งานในระบบสมาชิกของ MMD Privé",
+  },
+  "/member/upgrade": {
+    page: "member-upgrade",
+    title: "MMD Privé | Member Upgrade",
+    heading: "Member Upgrade",
+    note: "ตรวจหน้าต่างอัปเกรด สิทธิ์ปัจจุบัน และเส้นทางต่อไปของสมาชิก",
+  },
+};
 const MODEL_SAFE_SEARCH_FIELDS = ["name", "nickname", "telegram_username", "telegram_id", "unique_key"];
 const MODEL_SEARCH_FIELDS = [
   "name",
@@ -100,6 +126,11 @@ export default {
         }),
         cors
       );
+    }
+
+    const memberSystemPage = getMemberSystemPageMeta(path);
+    if ((method === "GET" || method === "HEAD") && memberSystemPage) {
+      return renderMemberSystemPage(req, memberSystemPage);
     }
 
     // ------------------------------------------------------
@@ -599,6 +630,68 @@ export default {
     return withCors(json({ ok: false, error: "not_found" }, 404), cors);
   },
 };
+
+function getMemberSystemPageMeta(path) {
+  const normalized = path.length > 1 ? path.replace(/\/+$/g, "") : path;
+  return MEMBER_SYSTEM_PAGE_META[normalized] || null;
+}
+
+function renderMemberSystemPage(req, page) {
+  const url = new URL(req.url);
+  const query = url.search || "";
+  const links = [
+    { label: "Dashboard", href: "/member/dashboard" },
+    { label: "Payments", href: "/member/payments" },
+    { label: "Profile", href: "/member/profile" },
+    { label: "Sessions", href: "/member/sessions" },
+    { label: "Points", href: "/member/points" },
+    { label: "Upgrade", href: "/member/upgrade" },
+  ];
+  const nav = links
+    .map((link) => `<a href="${escHtml(`${link.href}${query}`)}">${escHtml(link.label)}</a>`)
+    .join("");
+  const html = `<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escHtml(page.title)}</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; letter-spacing: 0; }
+      body { margin: 0; min-height: 100vh; padding: 22px; background: radial-gradient(circle at top left, #1f1709 0, #080604 42%, #050403 100%); color: #fff7e8; font-family: Inter, "Avenir Next", "Segoe UI", "Noto Sans Thai", Arial, sans-serif; }
+      main { width: min(860px, 100%); margin: 0 auto; padding: 28px 0 42px; }
+      .brand { margin: 0 0 14px; color: #ffd784; font-size: 13px; font-weight: 900; line-height: 1.4; text-transform: uppercase; }
+      h1 { margin: 0 0 14px; color: #fff; font-size: clamp(38px, 10vw, 78px); line-height: 1; overflow-wrap: anywhere; }
+      p { margin: 0; color: #fff1d5; font-size: 17px; line-height: 1.68; }
+      nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0; }
+      a { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; padding: 0 14px; border: 1px solid #d8ad5a; border-radius: 999px; color: #fff7e8; background: #17110a; text-decoration: none; font-weight: 850; line-height: 1.2; }
+      .panel { margin-top: 18px; padding: 18px; border: 1px solid rgba(216, 173, 90, .34); border-radius: 8px; background: rgba(23, 17, 10, .72); }
+    </style>
+  </head>
+  <body data-mmd-member-system-page="${escHtml(page.page)}">
+    <main>
+      <p class="brand">MMD Privé Member System</p>
+      <h1>${escHtml(page.heading)}</h1>
+      <p>${escHtml(page.note)}</p>
+      <nav aria-label="Member system">${nav}</nav>
+      <section class="panel" aria-label="Member continuity">
+        <p>พื้นที่นี้อยู่ในระบบสมาชิกหลักของ MMD Privé และเชื่อมต่อกับเส้นทางสมาชิกที่เกี่ยวข้อง</p>
+      </section>
+    </main>
+  </body>
+</html>`;
+
+  return new Response(req.method.toUpperCase() === "HEAD" ? null : html, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "x-mmd-owner": "admin-worker",
+      "x-mmd-page": page.page,
+    },
+  });
+}
 
 /* =========================
    CORS
