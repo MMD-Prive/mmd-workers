@@ -13,6 +13,8 @@ export const CANONICAL_PROTOCOL = "https:";
 export const CONFIRM_PAYMENT_PATH = "/confirm/payment-confirmation";
 export const MEMBER_DASHBOARD_UPSTREAM = "https://immigrate-worker.malemodel-bkk.workers.dev";
 export const ADMIN_WORKER_UPSTREAM = "https://admin-worker.malemodel-bkk.workers.dev";
+export const FRONT_GATE = "mmd-redirect-worker";
+export const FRONT_VERSION = "20260616T051100Z";
 
 // Domains that should redirect into the canonical site.
 // Add/remove domains here only.
@@ -58,6 +60,8 @@ export const NEVER_REDIRECT_EXACT_PATHS = new Set([
   "/member/payments/",
   "/hall",
   "/hall/",
+  "/model/console",
+  "/model/console/",
 ]);
 
 // Exact old-path to new-path redirects.
@@ -125,6 +129,17 @@ export function buildTargetUrl(originalUrl, nextPathname) {
   target.pathname = nextPathname;
   // target.search is preserved automatically.
   return target;
+}
+
+function withFrontGateHeaders(response) {
+  const headers = new Headers(response.headers);
+  headers.set("x-mmd-front-gate", FRONT_GATE);
+  headers.set("x-mmd-front-version", FRONT_VERSION);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 function isConfirmPaymentPage(url) {
@@ -207,7 +222,7 @@ async function maybeInjectConfirmPaymentBridge(request, response, url) {
 async function fetchPassThrough(request) {
   const url = new URL(request.url);
   const response = await fetch(new Request(request, { redirect: "follow" }));
-  return maybeInjectConfirmPaymentBridge(request, response, url);
+  return withFrontGateHeaders(await maybeInjectConfirmPaymentBridge(request, response, url));
 }
 
 function isMemberDashboardPath(url) {
@@ -230,60 +245,105 @@ function isHallPath(url) {
   return pathname === "/hall" || pathname === "/hall/";
 }
 
+function isModelConsolePath(url) {
+  const pathname = url.pathname.toLowerCase();
+  return pathname === "/model/console" || pathname === "/model/console/";
+}
+
+function isMemberPath(url) {
+  const pathname = url.pathname.toLowerCase();
+  return pathname === "/member" || pathname === "/member/" || pathname.startsWith("/member/");
+}
+
+function isKnownLegacyMemberRedirect(url) {
+  const pathname = normalizePath(url.pathname).toLowerCase();
+  return Boolean(EXACT_PATH_REDIRECTS[pathname]);
+}
+
 function isMemberFrontendPath(url) {
   return isMemberDashboardPath(url) || isMemberMembershipPath(url);
 }
 
 async function fetchMemberFrontend(request, env, url) {
+  // TODO(member-route-migration): /member/dashboard and /member/membership are
+  // legacy locked routes still owned by immigrate-worker. Do not add new
+  // member-facing route dependencies here; migrate these to the canonical
+  // member layer when it is ready.
   if (env?.IMMIGRATE_WORKER?.fetch) {
-    return env.IMMIGRATE_WORKER.fetch(request);
+    return withFrontGateHeaders(await env.IMMIGRATE_WORKER.fetch(request));
   }
 
   const target = new URL(MEMBER_DASHBOARD_UPSTREAM);
   target.pathname = url.pathname;
   target.search = url.search;
-  return fetch(new Request(target.toString(), request));
+  return withFrontGateHeaders(await fetch(new Request(target.toString(), request)));
 }
 
 async function fetchAdminMemberPage(request, env, url) {
   if (env?.ADMIN_WORKER?.fetch) {
-    return env.ADMIN_WORKER.fetch(request);
+    return withFrontGateHeaders(await env.ADMIN_WORKER.fetch(request));
   }
 
   const target = new URL(ADMIN_WORKER_UPSTREAM);
   target.pathname = url.pathname;
   target.search = url.search;
-  return fetch(new Request(target.toString(), request));
+  return withFrontGateHeaders(await fetch(new Request(target.toString(), request)));
 }
 
-function renderTemporaryHallRecovery(request) {
+function formatMemberPageHeading(pathname) {
+  const slug = normalizePath(pathname).split("/").filter(Boolean).at(-1) || "";
+  const words = slug
+    .replace(/[^a-z0-9-]+/gi, "-")
+    .split("-")
+    .filter(Boolean)
+    .slice(0, 6);
+
+  if (!words.length) return "Member Page";
+
+  return words
+    .map((word) => {
+      if (/^\d+$/.test(word) || word.length <= 2) return word.toUpperCase();
+      return `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`;
+    })
+    .join(" ");
+}
+
+function renderRouteRecoveryShell(request, page, title, heading, copy, links = []) {
   const url = new URL(request.url);
   const query = url.search || "";
-  const dashboardHref = `/member/dashboard${query}`;
-  const paymentsHref = `/member/payments${query}`;
+  const renderedLinks = links
+    .map((link, index) => {
+      const href = `${link.href}${query}`;
+      const className = index === 0 ? ` class="primary"` : "";
+      return `<a${className} href="${href}">${link.label}</a>`;
+    })
+    .join("");
   const html = `<!doctype html>
 <html lang="th">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MMD Privé | Hall Temporary Recovery</title>
+    <title>${title}</title>
     <style>
       :root { color-scheme: dark; }
       * { box-sizing: border-box; letter-spacing: 0; }
-      body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #050403; color: #fff4df; font-family: Inter, "Avenir Next", "Segoe UI", "Noto Sans Thai", Arial, sans-serif; }
-      main { width: min(720px, 100%); display: grid; gap: 16px; }
-      h1 { margin: 0; font-size: clamp(40px, 10vw, 82px); line-height: .9; }
-      p { margin: 0; color: rgba(255,244,223,.72); line-height: 1.7; }
-      a { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; margin: 8px 8px 0 0; padding: 0 14px; border: 1px solid rgba(230,189,103,.34); border-radius: 999px; color: #fff4df; background: rgba(255,255,255,.055); text-decoration: none; font-weight: 850; }
-      a.primary { color: #160f07; background: linear-gradient(180deg,#ffe6a7,#bd862f); border-color: rgba(255,231,174,.72); }
+      html { min-height: 100%; background: #050403; }
+      body { margin: 0; min-height: 100vh; padding: 22px; background: radial-gradient(circle at top left, #241907 0, #090705 36%, #050403 100%); color: #fff7e8; font-family: Inter, "Avenir Next", "Segoe UI", "Noto Sans Thai", Arial, sans-serif; }
+      main { width: min(780px, 100%); margin: 0 auto; padding: 28px 0 40px; display: block; }
+      .brand { margin: 0 0 14px; color: #ffd784; font-size: 13px; font-weight: 900; line-height: 1.4; text-transform: uppercase; }
+      h1 { margin: 0 0 16px; color: #ffffff; font-size: clamp(38px, 12vw, 76px); line-height: 1; overflow-wrap: anywhere; }
+      p { margin: 0 0 16px; color: #fff1d5; font-size: 17px; line-height: 1.65; }
+      .actions { margin-top: 14px; }
+      a { min-height: 46px; display: inline-flex; align-items: center; justify-content: center; margin: 8px 8px 0 0; padding: 0 16px; border: 1px solid #d8ad5a; border-radius: 999px; color: #fff7e8; background: #17110a; text-decoration: none; font-weight: 850; line-height: 1.2; }
+      a.primary { color: #130d05; background: #ffd784; border-color: #ffd784; }
     </style>
   </head>
   <body>
-    <main data-mmd-temporary-hall-recovery>
-      <p>Temporary route recovery</p>
-      <h1>MMD Hall</h1>
-      <p>หน้า Hall ยังไม่มี canonical renderer ใน member layer ตอนนี้ หน้านี้ป้องกัน fallback ระหว่างต่อ route owner ที่ถูกต้องครับ</p>
-      <p><a class="primary" href="${dashboardHref}">Member Dashboard</a><a href="${paymentsHref}">Member Payments</a></p>
+    <main data-mmd-page-shell="${page}">
+      <p class="brand">MMD Privé</p>
+      <h1>${heading}</h1>
+      <p>${copy}</p>
+      <p class="actions">${renderedLinks}</p>
     </main>
   </body>
 </html>`;
@@ -291,12 +351,59 @@ function renderTemporaryHallRecovery(request) {
   return new Response(request.method.toUpperCase() === "HEAD" ? null : html, {
     headers: {
       "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store",
+      "cache-control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+      "pragma": "no-cache",
+      "expires": "0",
       "x-mmd-worker": "mmd-redirect-worker",
-      "x-mmd-page": "hall-temporary-recovery",
+      "x-mmd-front-gate": FRONT_GATE,
+      "x-mmd-front-version": FRONT_VERSION,
+      "x-mmd-page": page,
       "x-mmd-temporary-route": "true",
     },
   });
+}
+
+function renderMemberStaticRecovery(request) {
+  const heading = formatMemberPageHeading(new URL(request.url).pathname);
+  return renderRouteRecoveryShell(
+    request,
+    "member-static",
+    "MMD Privé | Member",
+    heading,
+    "หน้านี้อยู่ในพื้นที่สมาชิกของ MMD Privé และพร้อมเชื่อมต่อกับเนื้อหาหลักในขั้นต่อไป",
+    [
+      { label: "Enter Member Area", href: "/member/dashboard" },
+      { label: "Membership", href: "/member/membership" },
+    ],
+  );
+}
+
+function renderHallRecovery(request) {
+  return renderRouteRecoveryShell(
+    request,
+    "hall",
+    "MMD Privé | Hall",
+    "MMD Hall",
+    "พื้นที่กลางสำหรับเข้าสู่ระบบสมาชิก ตรวจสถานะ และไปต่อยังเส้นทางที่เกี่ยวข้องของ MMD Privé",
+    [
+      { label: "Enter Member Area", href: "/member/dashboard" },
+      { label: "Member Payments", href: "/member/payments" },
+    ],
+  );
+}
+
+function renderModelConsoleRecovery(request) {
+  return renderRouteRecoveryShell(
+    request,
+    "model-console",
+    "MMD Privé | Model Console",
+    "Model Console",
+    "พื้นที่สำหรับผู้ให้บริการตรวจสถานะงานและไปต่อยังขั้นตอนที่เกี่ยวข้องของ MMD Privé",
+    [
+      { label: "Continue", href: "/v1/model/session/dashboard" },
+      { label: "Member Area", href: "/member/dashboard" },
+    ],
+  );
 }
 
 export function findMappedPath(pathname) {
@@ -325,7 +432,7 @@ export default {
     // Safety: never redirect non-page traffic.
     // This prevents breaking POST/payment/webhook/API flows.
     if (!isSafePageRequest(request)) {
-      return fetch(request);
+      return withFrontGateHeaders(await fetch(request));
     }
 
     if (isMemberFrontendPath(url)) {
@@ -337,7 +444,15 @@ export default {
     }
 
     if (isHallPath(url)) {
-      return renderTemporaryHallRecovery(request);
+      return renderHallRecovery(request);
+    }
+
+    if (isModelConsolePath(url)) {
+      return renderModelConsoleRecovery(request);
+    }
+
+    if (isMemberPath(url) && !isKnownLegacyMemberRedirect(url)) {
+      return renderMemberStaticRecovery(request);
     }
 
     if (shouldNeverTouch(url)) {
@@ -363,6 +478,6 @@ export default {
     }
 
     // 301 = permanent redirect for public pages.
-    return Response.redirect(target.toString(), 301);
+    return withFrontGateHeaders(Response.redirect(target.toString(), 301));
   },
 };

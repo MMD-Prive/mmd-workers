@@ -34,6 +34,23 @@ async function requestWithEnv(url, env, init) {
   return worker.fetch(new Request(url, init), env);
 }
 
+const VISIBLE_DEBUG_TEXT = [
+  "Front Gate Active",
+  "Route recovery shell",
+  "x-mmd-page",
+  "x-mmd-front-gate",
+  "x-mmd-front-version",
+  "fallback",
+  "recovery",
+];
+
+function assertPolishedShell(html, url) {
+  assert.doesNotMatch(html, /name=["']token["']/i, url);
+  for (const text of VISIBLE_DEBUG_TEXT) {
+    assert.doesNotMatch(html, new RegExp(text, "i"), `${url} should not show ${text}`);
+  }
+}
+
 describe("MMD permanent redirect guard", () => {
   it("canonicalizes www legacy paths and preserves query strings", async () => {
     const response = await request("http://www.mmdbkk.com/inme?t=abc123&ref=line");
@@ -132,7 +149,8 @@ describe("MMD permanent redirect guard", () => {
       ADMIN_WORKER: {
         fetch: async (request) => {
           adminRequests.push(request);
-          return new Response("member payments", {
+          const query = new URL(request.url).search;
+          return new Response(`<a href="/member/dashboard${query}">Dashboard</a>`, {
             status: 200,
             headers: { "x-mmd-worker": "admin-worker", "x-mmd-page": "member-payments" },
           });
@@ -148,20 +166,23 @@ describe("MMD permanent redirect guard", () => {
 
     for (const url of urls) {
       const response = await requestWithEnv(url, env);
+      const html = await response.text();
       assert.equal(response.status, 200, url);
       assert.equal(response.headers.get("location"), null, url);
       assert.equal(response.headers.get("x-mmd-worker"), "admin-worker", url);
       assert.equal(response.headers.get("x-mmd-page"), "member-payments", url);
+      assert.match(html, new RegExp(`/member/dashboard\\${new URL(url).search}`), url);
+      assert.doesNotMatch(html, /name=["']token["']/i, url);
       assert.equal(adminRequests.at(-1).url, url);
     }
 
     assert.equal(passThroughRequests.length, 0);
   });
 
-  it("renders /hall as a temporary front-gate recovery page without redirecting or changing query strings", async () => {
+  it("renders /hall as a polished MMD Privé page without redirecting or changing query strings", async () => {
     const urls = [
-      "https://mmdbkk.com/hall?t=abc",
-      "https://mmdbkk.com/hall/?t=abc",
+      "https://mmdbkk.com/hall?t=abc&cb=test",
+      "https://mmdbkk.com/hall/?t=abc&cb=test",
       "https://www.mmdbkk.com/hall?t=abc&code=x&promo=y&debug=1",
     ];
 
@@ -173,11 +194,67 @@ describe("MMD permanent redirect guard", () => {
       assert.equal(response.status, 200, url);
       assert.equal(response.headers.get("location"), null, url);
       assert.equal(response.headers.get("x-mmd-worker"), "mmd-redirect-worker", url);
-      assert.equal(response.headers.get("x-mmd-page"), "hall-temporary-recovery", url);
+      assert.equal(response.headers.get("x-mmd-page"), "hall", url);
       assert.equal(response.headers.get("x-mmd-temporary-route"), "true", url);
+      assert.equal(response.headers.get("cache-control"), "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0", url);
+      assert.equal(response.headers.get("pragma"), "no-cache", url);
+      assert.equal(response.headers.get("expires"), "0", url);
       assert.match(html, /MMD Hall/, url);
-      assert.match(html, new RegExp(`/member/dashboard\\${query}`), url);
-      assert.match(html, new RegExp(`/member/payments\\${query}`), url);
+      assert.match(html, /พื้นที่กลางสำหรับเข้าสู่ระบบสมาชิก/, url);
+      assert.ok(html.includes(`/member/dashboard${query}`), url);
+      assert.ok(html.includes(`/member/payments${query}`), url);
+      assertPolishedShell(html, url);
+    }
+
+    assert.equal(passThroughRequests.length, 0);
+  });
+
+  it("renders unknown /member/* routes as polished MMD Privé pages without redirecting", async () => {
+    const urls = [
+      "https://mmdbkk.com/member/kenji-20-ai?t=abc&cb=test",
+      "https://mmdbkk.com/member/some-new-page?t=abc&cb=test",
+      "https://www.mmdbkk.com/member/kenji-20-ai?t=abc&code=x&promo=y&debug=1",
+    ];
+
+    for (const url of urls) {
+      const response = await request(url);
+      const html = await response.text();
+      const query = new URL(url).search;
+
+      assert.equal(response.status, 200, url);
+      assert.equal(response.headers.get("location"), null, url);
+      assert.equal(response.headers.get("x-mmd-page"), "member-static", url);
+      assert.equal(response.headers.get("x-mmd-temporary-route"), "true", url);
+      assert.match(html, url.includes("kenji-20-ai") ? /Kenji 20 AI/ : /Some New Page/, url);
+      assert.match(html, /หน้านี้อยู่ในพื้นที่สมาชิกของ MMD Privé/, url);
+      assert.ok(html.includes(`/member/dashboard${query}`), url);
+      assert.ok(html.includes(`/member/membership${query}`), url);
+      assertPolishedShell(html, url);
+    }
+
+    assert.equal(passThroughRequests.length, 0);
+  });
+
+  it("renders /model/console as a polished MMD Privé page without redirecting", async () => {
+    const urls = [
+      "https://mmdbkk.com/model/console?t=abc&cb=test",
+      "https://www.mmdbkk.com/model/console?t=abc&debug=1",
+    ];
+
+    for (const url of urls) {
+      const response = await request(url);
+      const html = await response.text();
+      const query = new URL(url).search;
+
+      assert.equal(response.status, 200, url);
+      assert.equal(response.headers.get("location"), null, url);
+      assert.equal(response.headers.get("x-mmd-page"), "model-console", url);
+      assert.equal(response.headers.get("x-mmd-temporary-route"), "true", url);
+      assert.match(html, /Model Console/, url);
+      assert.match(html, /พื้นที่สำหรับผู้ให้บริการตรวจสถานะงาน/, url);
+      assert.ok(html.includes(`/v1/model/session/dashboard${query}`), url);
+      assert.ok(html.includes(`/member/dashboard${query}`), url);
+      assertPolishedShell(html, url);
     }
 
     assert.equal(passThroughRequests.length, 0);
