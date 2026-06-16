@@ -58,6 +58,14 @@ export const NEVER_REDIRECT_EXACT_PATHS = new Set([
   "/member/membership/",
   "/member/payments",
   "/member/payments/",
+  "/member/profile",
+  "/member/profile/",
+  "/member/sessions",
+  "/member/sessions/",
+  "/member/points",
+  "/member/points/",
+  "/member/upgrade",
+  "/member/upgrade/",
   "/hall",
   "/hall/",
   "/model/console",
@@ -238,6 +246,21 @@ function isMemberMembershipPath(url) {
 function isMemberPaymentsPath(url) {
   const pathname = url.pathname.toLowerCase();
   return pathname === "/member/payments" || pathname === "/member/payments/";
+}
+
+function isAdminMemberSystemPath(url) {
+  const pathname = url.pathname.toLowerCase();
+  return (
+    isMemberPaymentsPath(url) ||
+    pathname === "/member/profile" ||
+    pathname === "/member/profile/" ||
+    pathname === "/member/sessions" ||
+    pathname === "/member/sessions/" ||
+    pathname === "/member/points" ||
+    pathname === "/member/points/" ||
+    pathname === "/member/upgrade" ||
+    pathname === "/member/upgrade/"
+  );
 }
 
 function isHallPath(url) {
@@ -439,7 +462,7 @@ export default {
       return fetchMemberFrontend(request, env, url);
     }
 
-    if (isMemberPaymentsPath(url)) {
+    if (isAdminMemberSystemPath(url)) {
       return fetchAdminMemberPage(request, env, url);
     }
 

@@ -179,6 +179,47 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
+  it("delegates known member system pages to admin-worker without using the member-static shell", async () => {
+    const adminRequests = [];
+    const env = {
+      ADMIN_WORKER: {
+        fetch: async (request) => {
+          adminRequests.push(request);
+          const url = new URL(request.url);
+          const slug = url.pathname.replace(/^\/member\/|\/$/g, "");
+          return new Response(`<main><h1>${slug}</h1><a href="/member/dashboard${url.search}">Dashboard</a></main>`, {
+            status: 200,
+            headers: { "x-mmd-owner": "admin-worker", "x-mmd-page": `member-${slug}` },
+          });
+        },
+      },
+    };
+
+    const urls = [
+      "https://mmdbkk.com/member/profile?t=abc&cb=test",
+      "https://mmdbkk.com/member/sessions?t=abc&cb=test",
+      "https://mmdbkk.com/member/points?t=abc&cb=test",
+      "https://mmdbkk.com/member/upgrade?t=abc&cb=test",
+      "https://www.mmdbkk.com/member/profile?t=abc&code=x&promo=y&cb=test",
+    ];
+
+    for (const url of urls) {
+      const response = await requestWithEnv(url, env);
+      const html = await response.text();
+      const query = new URL(url).search;
+
+      assert.equal(response.status, 200, url);
+      assert.equal(response.headers.get("location"), null, url);
+      assert.equal(response.headers.get("x-mmd-owner"), "admin-worker", url);
+      assert.notEqual(response.headers.get("x-mmd-page"), "member-static", url);
+      assert.ok(html.includes(`/member/dashboard${query}`), url);
+      assertPolishedShell(html, url);
+      assert.equal(adminRequests.at(-1).url, url);
+    }
+
+    assert.equal(passThroughRequests.length, 0);
+  });
+
   it("renders /hall as a polished MMD Privé page without redirecting or changing query strings", async () => {
     const urls = [
       "https://mmdbkk.com/hall?t=abc&cb=test",
