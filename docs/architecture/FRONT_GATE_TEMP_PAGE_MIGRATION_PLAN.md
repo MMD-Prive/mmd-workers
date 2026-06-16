@@ -46,26 +46,23 @@ Candidate owners found:
 No clear existing `mmd-pages-worker`, static page worker, or Cloudflare Pages
 project was found in the repo scan.
 
+## Migration Priority
+
+Priority 1: `/member/*`
+
+Priority 2: `/model/console`
+
+Priority 3: `/hall`
+
+`/member/*` is first because it affects customer and member access directly.
+The member route family includes dashboard, membership, payment, profile,
+sessions, points, upgrade, and member-only pages. These routes are more
+business-critical than `/hall`, which is a public/member-adjacent discovery
+surface.
+
 ## Recommended Canonical Owners
 
-### `/hall`
-
-Recommended owner: future `mmd-pages-worker` or Cloudflare Pages/Webflow public
-experience route.
-
-Reasoning:
-
-- `/hall` is a public/member-adjacent experience surface, not an admin,
-  migration, or system route.
-- Existing chat knowledge confirms `/hall` as the MMD Hall public browsing
-  interest route.
-- No current worker has a clean canonical Hall page renderer.
-
-Temporary state:
-
-- Keep the `mmd-redirect-worker` shell until a public page owner exists.
-
-### Unknown `/member/*`
+### `/member/*`
 
 Recommended owner: `admin-worker` member facade for authenticated/member-linked
 surfaces, plus a future page owner for static member content.
@@ -74,18 +71,48 @@ Reasoning:
 
 - `admin-worker/src/memberDashboard.js` already owns the member dashboard,
   payments page, payments summary, and Kenji chat facade.
-- Unknown static member slugs such as `/member/kenji-20-ai` are not currently
-  canonical admin pages, but they are member-facing and should not live in
-  `immigrate-worker`.
-- A first step can route known authenticated member surfaces through
-  `admin-worker`; static/non-auth member pages should move to a lightweight
-  page owner when one exists.
+- Member system pages are tied to customer access, payment state, session
+  continuity, and upgrade flows. They should move out of front-gate temporary
+  rendering first.
+- Member static/content pages such as `/member/kenji-20-ai` are not currently
+  canonical admin pages, but they are member-facing and should not permanently
+  live in `mmd-redirect-worker` or `immigrate-worker`.
+
+Member route categories:
+
+#### A. Member system pages
+
+- `/member/dashboard`
+- `/member/membership`
+- `/member/payments`
+- `/member/profile`
+- `/member/sessions`
+- `/member/points`
+- `/member/upgrade`
+
+These should be owned by the canonical member system owner, likely
+`admin-worker` or an existing member app/facade if confirmed.
+
+#### B. Member static/content pages
+
+- `/member/kenji-20-ai`
+- unknown member content pages
+- future member-only narrative/static pages
+
+These need a canonical content/page owner decision, such as:
+
+- future `member-pages-worker`
+- future `mmd-pages-worker`
+- Cloudflare Pages/Webflow route
+- content registry backed by a worker
 
 Temporary state:
 
 - Keep unknown `/member/*` emergency pages in `mmd-redirect-worker` until each
   slug is classified as either an admin-worker member facade route or a static
   page route.
+- `mmd-redirect-worker` should remain only the front gate and emergency fallback.
+  It should not permanently render user-visible `/member/*` pages.
 
 ### `/model/console`
 
@@ -105,28 +132,48 @@ Temporary state:
 - Keep `/model/console` in `mmd-redirect-worker` until a safe alias/route plan
   maps it to `/sigil/model/console` without losing query params.
 
+### `/hall`
+
+Recommended owner: future `mmd-pages-worker` or Cloudflare Pages/Webflow public
+experience route.
+
+Reasoning:
+
+- `/hall` is a public/member-adjacent experience surface, not an admin,
+  migration, or system route.
+- Existing chat knowledge confirms `/hall` as the MMD Hall public browsing
+  interest route.
+- No current worker has a clean canonical Hall page renderer.
+
+Temporary state:
+
+- Keep the `mmd-redirect-worker` shell until a public page owner exists.
+
 ## Proposed Phases
 
-1. Route inventory PR
-   - Add a small route ownership table for `/hall`, `/member/*`, and
-     `/model/console`.
-   - Confirm whether `/model/console` should remain a public alias or redirect
-     to `/sigil/model/console`.
-   - Confirm whether `/member/kenji-20-ai` is authenticated member content,
-     public member marketing, or Webflow/static content.
+1. Member system ownership PR
+   - Decide canonical owner for known member system routes.
+   - Route confirmed member system pages out of front-gate temporary shells.
+   - Keep unknown member static/content pages on the polished temporary shell
+     until a content owner exists.
+   - Preserve all query params, especially canonical `t`.
+   - Never introduce `token`.
+   - Add tests for routing ownership and fallback behavior.
+   - Do not touch `/hall` or `/model/console` in the first implementation PR.
 
-2. Model console ownership PR
+2. Member static/content decision PR
+   - Decide whether member static/content pages live in `admin-worker`, a new
+     `member-pages-worker`, a new `mmd-pages-worker`, Cloudflare Pages/Webflow,
+     or a content registry backed by a worker.
+   - Classify `/member/kenji-20-ai` and future member-only narrative/static
+     pages before moving them out of the emergency shell.
+
+3. Model console ownership PR
    - Move `/model/console` handling out of the front gate by adding a safe alias
      to the existing canonical model console owner.
    - Preserve all query params, including `t`.
    - Keep `mmd-redirect-worker` protection until production headers prove the
      canonical owner is serving the route.
-
-3. Member static classification PR
-   - Add an explicit allowlist/registry for known member slugs and owners.
-   - Route authenticated/dashboard-like member surfaces to `admin-worker`.
-   - Leave unknown slugs protected by the front gate until a static page owner
-     exists.
 
 4. Hall canonical page PR
    - Create or wire the smallest public page owner for `/hall`.
@@ -138,19 +185,40 @@ Temporary state:
 
 - Moving `/model/console` too quickly could break signed model session links if
   query params are not preserved exactly.
-- Treating unknown `/member/*` as one category may mix authenticated member
-  surfaces with public/static content.
+- Treating `/member/*` as one category may mix authenticated member system
+  surfaces with member static/content pages.
+- Leaving member system pages in temporary front-gate shells too long can
+  affect customer access, payment continuity, session visibility, points, and
+  upgrade flows.
 - Moving `/hall` into `admin-worker` would blur public experience and admin/member
   facade ownership.
 - Removing front-gate shells before production route bindings are verified can
   reintroduce black-screen failures.
 
-## Smallest Safe First PR
+## Recommended Smallest Safe First Implementation PR
 
-Create a route ownership registry/documentation PR only:
+Title: `Route canonical member pages out of front-gate temporary shell`
 
-- document owners for `/hall`, `/member/*`, and `/model/console`;
-- add no runtime route changes;
-- leave `mmd-redirect-worker` shells active;
-- do not touch `immigrate-worker`;
-- use only `t` and preserve query params in all future route moves.
+Scope:
+
+- Decide canonical owner for known member system routes.
+- Keep unknown member static/content pages on polished temporary shell until a
+  content owner exists.
+- Preserve query params, especially canonical `t`.
+- Never introduce `token`.
+- Add tests for routing ownership and fallback behavior.
+- Do not touch `/hall` or `/model/console` in the first implementation PR.
+
+## Open Decision
+
+Should member static/content pages live in:
+
+- `admin-worker`
+- new `member-pages-worker`
+- new `mmd-pages-worker`
+- Cloudflare Pages/Webflow
+- a content registry
+
+Until this decision is made, `mmd-redirect-worker` should keep emergency
+fallback shells for unknown member content routes, but it should not become the
+permanent user-visible page renderer.
