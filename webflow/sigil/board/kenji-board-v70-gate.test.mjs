@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const source = await readFile(new URL("./kenji-board-v70-gate.js", import.meta.url), "utf8");
+const snippet = await readFile(new URL("./kenji-board-v70-webflow-snippet.html", import.meta.url), "utf8");
 
 test("V7 gate helper uses delegated click handling and fallback unlock API", () => {
   assert.match(source, /document\.addEventListener\("click"/);
@@ -18,4 +19,31 @@ test("V7 gate helper keeps the mock passphrase client-only", () => {
   assert.doesNotMatch(source, /\bfetch\s*\(/);
   assert.doesNotMatch(source, /XMLHttpRequest/);
   assert.doesNotMatch(source, /\bmethod\s*:\s*["']POST["']/i);
+});
+
+test("V7 Webflow snippet includes required root and gate selectors", () => {
+  assert.match(snippet, /data-mmd-board-v70/);
+  assert.match(snippet, /data-v70-gate-passphrase/);
+  assert.match(snippet, /data-v70-action="unlock-gate"/);
+  assert.match(snippet, /data-v70-gate-status/);
+  assert.match(snippet, /kenji-board-v70-gate\.js/);
+});
+
+test("V7 Webflow snippet stays secret-free and read-only", () => {
+  const forbidden = [
+    /\bfetch\s*\(/i,
+    /\bmethod\s*:\s*["']POST["']/i,
+    /XMLHttpRequest/i,
+    /Airtable\s*token/i,
+    /AIRTABLE_[A-Z0-9_]+/i,
+    /admin[_ -]?key/i,
+    /worker\s*secret/i,
+    /wrangler\s+secret/i,
+    /sk-[A-Za-z0-9_-]+/i,
+    /pat[A-Za-z0-9]{10,}/i
+  ];
+
+  for (const pattern of forbidden) {
+    assert.doesNotMatch(snippet, pattern);
+  }
 });
