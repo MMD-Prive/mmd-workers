@@ -14,7 +14,7 @@ export const CONFIRM_PAYMENT_PATH = "/confirm/payment-confirmation";
 export const MEMBER_DASHBOARD_UPSTREAM = "https://immigrate-worker.malemodel-bkk.workers.dev";
 export const ADMIN_WORKER_UPSTREAM = "https://admin-worker.malemodel-bkk.workers.dev";
 export const FRONT_GATE = "mmd-redirect-worker";
-export const FRONT_VERSION = "20260616T051100Z";
+export const FRONT_VERSION = "20260617T060000Z";
 
 // Domains that should redirect into the canonical site.
 // Add/remove domains here only.
@@ -28,6 +28,13 @@ export const REDIRECT_HOSTS = new Set([
 
 // Subdomains or hosts that must never be redirected by this worker.
 export const NEVER_TOUCH_HOSTS = new Set(["sigil.mmdbkk.com"]);
+
+export const LINE_WEBHOOK_PATHS = new Set([
+  "/webhooks/line",
+  "/webhooks/line/",
+  "/webhook/line",
+  "/webhook/line/",
+]);
 
 // These are not normal public pages.
 // Do not redirect payment/API/webhook/admin traffic unless intentionally designed.
@@ -168,7 +175,7 @@ function confirmPaymentDashboardBridgeScript() {
       requestUrl = typeof input === "string" ? input : input && input.url || "";
     } catch (_) {}
     var result = originalFetch.apply(this, arguments);
-    if (!/(\\/v1\\/payments\\/notify(?:\\?|$)|\\/sigil\\/api\\/payments\\/manual-intake(?:\\?|$))/.test(requestUrl)) return result;
+    if (!/(\/v1\/payments\/notify(?:\?|$)|\/sigil\/api\/payments\/manual-intake(?:\?|$))/.test(requestUrl)) return result;
     return result.then(function(response){
       try {
         response.clone().json().then(function(payload){
@@ -223,6 +230,24 @@ async function fetchPassThrough(request) {
   const url = new URL(request.url);
   const response = await fetch(new Request(request, { redirect: "follow" }));
   return withFrontGateHeaders(await maybeInjectConfirmPaymentBridge(request, response, url));
+}
+
+function isLineWebhookPath(url) {
+  return LINE_WEBHOOK_PATHS.has(url.pathname.toLowerCase());
+}
+
+async function fetchLineWebhook(request, env = {}, url) {
+  const upstream = String(env?.LINE_WEBHOOK_UPSTREAM_URL || "").trim();
+
+  if (!upstream) {
+    return fetchPassThrough(request);
+  }
+
+  const target = new URL(upstream);
+  target.search = url.search;
+
+  const upstreamRequest = new Request(target.toString(), request);
+  return withFrontGateHeaders(await fetch(upstreamRequest));
 }
 
 function isMemberDashboardPath(url) {
@@ -428,6 +453,10 @@ export function findMappedPath(pathname) {
 export default {
   async fetch(request, env = {}) {
     const url = new URL(request.url);
+
+    if (isLineWebhookPath(url)) {
+      return fetchLineWebhook(request, env, url);
+    }
 
     // Safety: never redirect non-page traffic.
     // This prevents breaking POST/payment/webhook/API flows.
