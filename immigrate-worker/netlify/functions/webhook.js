@@ -1,4 +1,10 @@
 import crypto from "node:crypto";
+import {
+  buildKenjiMemberReply,
+  classifyKenjiMemberIntent,
+  getSafeMemberSummary,
+  isKenjiMemberLineCandidate,
+} from "../../../shared/kenji-member-concierge-core.mjs";
 
 const DEFAULT_SYNC_TABLE = "MMD — Console Inbox";
 const LINE_API_BASE = "https://api.line.me/v2/bot";
@@ -22,6 +28,17 @@ const FAQ_REPLY_INTENTS = new Set([
   "contact_admin",
 ]);
 const PRICING_REVIEW_INTENTS = new Set(["pricing_review", "ask_where_to_get_rate", "image_rate_inquiry"]);
+const KENJI_MEMBER_INTENTS = new Set([
+  "talk_to_per_ai",
+  "payment_slip",
+  "points",
+  "vip",
+  "svip",
+  "black_card",
+  "membership",
+  "create_session",
+  "greeting",
+]);
 const STOP_MODEL_WORDS = new Set([
   "วันที่",
   "เวลา",
@@ -198,7 +215,10 @@ function looksLikeSpecificModelRequest(text) {
 function isTalkToPerAi(text = "") {
   const normalized = normalizeLookup(text).replace(/\s+/g, "");
   return (
+    normalized.includes("kenji") ||
+    normalized.includes("เคนจิ") ||
     normalized.includes("คุยกับเปอร์") ||
+    normalized.includes("คุยกับเคนจิ") ||
     normalized.includes("คุยกับper") ||
     normalized.includes("คุยกับperai") ||
     normalized.includes("ขอคุยกับเปอร์") ||
@@ -207,6 +227,10 @@ function isTalkToPerAi(text = "") {
     normalized.includes("ติดต่อper") ||
     normalized.includes("perai")
   );
+}
+
+function getKenjiCoreIntent(text) {
+  return classifyKenjiMemberIntent(text, {}).intent;
 }
 
 function inferFaqIntent(text) {
@@ -371,6 +395,12 @@ function inferIntent(text, event) {
   }
 
   if (isTalkToPerAi(text)) return "talk_to_per_ai";
+  const kenjiIntent = getKenjiCoreIntent(text);
+  if (kenjiIntent === "black_card") return "black_card";
+  if (kenjiIntent === "svip") return "svip";
+  if (kenjiIntent === "payment_slip") return "payment_slip";
+  if (kenjiIntent === "vip") return "vip";
+  if (kenjiIntent === "points") return "points";
   const faqIntent = inferFaqIntent(text);
   if (faqIntent) {
     return hasPriorImageContext(event) && (faqIntent === "pricing_review" || faqIntent === "ask_where_to_get_rate")
@@ -570,11 +600,13 @@ function buildModelSourceFallbackReply({ prefix, booking, resolution }) {
   return `รับทราบครับ ${prefix}ผมเห็นว่าต้องการเช็ก ${requestedName} เดี๋ยวส่งให้ Per ตรวจสอบจากประวัติ model-side ก่อนยืนยันนะครับ`;
 }
 
-function shouldAutoReplyForIntent(intent, text, event) {
+function shouldAutoReplyForIntent(intent, text, event, options = {}) {
   if (event?.type === "follow") return true;
   if (hasClientTag(text)) return true;
   if (intent === "model_availability") return true;
   if (FAQ_REPLY_INTENTS.has(intent)) return true;
+  if (options.lineKenjiAiEnabled && KENJI_MEMBER_INTENTS.has(intent)) return true;
+  if (options.lineKenjiAiEnabled && isKenjiMemberLineCandidate(text)) return true;
   return false;
 }
 
@@ -657,6 +689,22 @@ Premium จะเหมาะกับคนที่ต้องการเล
 ถ้ามีรายละเอียดเพิ่มเติม เช่น แพ็กเกจที่สนใจ วันเวลา หรือแนวนายแบบที่ต้องการ ส่งเพิ่มไว้ในแชทนี้ได้เลยครับ`;
   }
   return "";
+}
+
+function buildLineMemberSummary(event, profile) {
+  return getSafeMemberSummary({
+    display_name: String(profile?.displayName || "").trim(),
+    line_user_id: getLineUserId(event),
+    membership_status: "LINE Member",
+    tier: "Preview",
+    active_points: 0,
+  });
+}
+
+function buildKenjiLineReply(event, profile, options = {}) {
+  return buildKenjiMemberReply(toTextMessage(event), buildLineMemberSummary(event, profile), {
+    lineOfficialChatUrl: options.lineOfficialChatUrl || "",
+  });
 }
 
 function parsePricingRequest(text) {
@@ -760,7 +808,7 @@ async function buildAutoReplyMessage(event, profile, options = {}) {
   const prefix = firstName ? `${firstName} ` : "";
   const intent = inferIntent(text, event);
 
-  if (!shouldAutoReplyForIntent(intent, text, event)) {
+  if (!shouldAutoReplyForIntent(intent, text, event, options)) {
     logLineWebhookDebug(options, { intent, reply_sent: false, category: "not_auto_reply_intent" });
     return "";
   }
@@ -801,6 +849,14 @@ async function buildAutoReplyMessage(event, profile, options = {}) {
     return reply;
   }
 
+  if (options.lineKenjiAiEnabled && intent === "talk_to_per_ai") {
+    const reply = buildKenjiLineReply(event, profile, options);
+    if (options.lineKenjiAiDebug) {
+      logLineWebhookDebug(options, { intent, reply_sent: Boolean(reply), category: "kenji_member_concierge" });
+    }
+    return reply;
+  }
+
   if (FAQ_REPLY_INTENTS.has(intent)) {
     let pricingReview = null;
     const adContext = parseAdContextFromText(text);
@@ -816,6 +872,14 @@ async function buildAutoReplyMessage(event, profile, options = {}) {
       pricing_review_created: Boolean(pricingReview?.ok),
       telegram_sent: Boolean(pricingReview?.telegram_sent),
     });
+    return reply;
+  }
+
+  if (options.lineKenjiAiEnabled && (KENJI_MEMBER_INTENTS.has(intent) || isKenjiMemberLineCandidate(text))) {
+    const reply = buildKenjiLineReply(event, profile, options);
+    if (options.lineKenjiAiDebug) {
+      logLineWebhookDebug(options, { intent, reply_sent: Boolean(reply), category: "kenji_member_concierge" });
+    }
     return reply;
   }
 
@@ -895,6 +959,9 @@ export async function handler(event) {
   const autoReplyEnabled = String(process.env.LINE_AUTO_REPLY_ENABLED || "false").toLowerCase() === "true";
   const lineModelLookupDebug = process.env.LINE_MODEL_LOOKUP_DEBUG || "";
   const lineWebhookDebug = process.env.LINE_WEBHOOK_DEBUG || "";
+  const lineKenjiAiEnabled = String(process.env.LINE_KENJI_AI_ENABLED || "false").toLowerCase() === "true";
+  const lineKenjiAiDebug = String(process.env.LINE_KENJI_AI_DEBUG || "false").toLowerCase() === "true";
+  const lineOfficialChatUrl = process.env.LINE_OFFICIAL_CHAT_URL || "";
 
   if (!lineChannelSecret || !airtableApiKey || !airtableBaseId) {
     return json(500, {
@@ -929,7 +996,7 @@ export async function handler(event) {
     const clientTagged = hasClientTag(messageText);
     const intent = inferIntent(messageText, item);
     const shouldFetchProfile =
-      (clientTagged || intent === "model_availability" || FAQ_REPLY_INTENTS.has(intent)) &&
+      (clientTagged || intent === "model_availability" || FAQ_REPLY_INTENTS.has(intent) || (lineKenjiAiEnabled && (KENJI_MEMBER_INTENTS.has(intent) || isKenjiMemberLineCandidate(messageText)))) &&
       item?.source?.type === "user" &&
       lineChannelAccessToken;
     const profile = shouldFetchProfile ? await fetchLineProfile(lineChannelAccessToken, lineUserId) : null;
@@ -946,6 +1013,9 @@ export async function handler(event) {
       confirmKey,
       lineModelLookupDebug,
       lineWebhookDebug,
+      lineKenjiAiEnabled,
+      lineKenjiAiDebug,
+      lineOfficialChatUrl,
       createPricingReviewEnabled: !record?.deduped,
     });
     const replied =
@@ -973,4 +1043,4 @@ export async function handler(event) {
   });
 }
 
-export { buildFaqReply, choosePricingReplyStrategy, inferFaqIntent, inferIntent, parseAdContextFromText, shouldAutoReplyForIntent };
+export { buildAutoReplyMessage, buildFaqReply, choosePricingReplyStrategy, inferFaqIntent, inferIntent, parseAdContextFromText, shouldAutoReplyForIntent };
