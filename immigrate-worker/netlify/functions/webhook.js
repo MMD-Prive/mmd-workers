@@ -98,6 +98,16 @@ function toTextMessage(event) {
   return String(event.message.text || "").trim();
 }
 
+function getLineEventTextForIntent(event) {
+  if (event?.type === "message" && event?.message?.type === "text") {
+    return String(event.message.text || "").trim();
+  }
+  if (event?.type === "postback") {
+    return String(event?.postback?.displayText || event?.postback?.data || "").trim();
+  }
+  return "";
+}
+
 function isImageMessage(event) {
   return event?.type === "message" && event?.message?.type === "image";
 }
@@ -214,9 +224,14 @@ function looksLikeSpecificModelRequest(text) {
 
 function isTalkToPerAi(text = "") {
   const normalized = normalizeLookup(text).replace(/\s+/g, "");
+  const spaced = normalizeLookup(text);
   return (
     normalized.includes("kenji") ||
     normalized.includes("เคนจิ") ||
+    normalized.includes("hiper") ||
+    normalized.includes("helloper") ||
+    normalized.includes("สวัสดีเปอร์") ||
+    /\b(?:hi|hello)\s+per\b/i.test(spaced) ||
     normalized.includes("คุยกับเปอร์") ||
     normalized.includes("คุยกับเคนจิ") ||
     normalized.includes("คุยกับper") ||
@@ -418,6 +433,8 @@ function inferIntent(text, event) {
 
 function buildAdminNote(event, text) {
   if (text) return text;
+  const intentText = getLineEventTextForIntent(event);
+  if (intentText) return intentText;
   if (event?.type === "follow") return "[follow] user added LINE OA";
   if (event?.type === "unfollow") return "[unfollow] user blocked or removed LINE OA";
   if (event?.type === "postback") return `[postback] ${String(event?.postback?.data || "").trim() || "received"}`;
@@ -449,7 +466,7 @@ function buildAirtableRecord(event) {
 
 function buildAirtableRecordWithProfile(event, profile) {
   const receivedAt = new Date().toISOString();
-  const messageText = toTextMessage(event);
+  const messageText = getLineEventTextForIntent(event);
   const lineUserId = getLineUserId(event);
   const eventId = String(event?.message?.id || event?.webhookEventId || `evt_${Date.now()}`);
   const migrationId = `line_${eventId}`;
@@ -702,7 +719,7 @@ function buildLineMemberSummary(event, profile) {
 }
 
 function buildKenjiLineReply(event, profile, options = {}) {
-  return buildKenjiMemberReply(toTextMessage(event), buildLineMemberSummary(event, profile), {
+  return buildKenjiMemberReply(getLineEventTextForIntent(event), buildLineMemberSummary(event, profile), {
     lineOfficialChatUrl: options.lineOfficialChatUrl || "",
   });
 }
@@ -802,7 +819,7 @@ function logLineWebhookDebug(options, data) {
 }
 
 async function buildAutoReplyMessage(event, profile, options = {}) {
-  const text = toTextMessage(event);
+  const text = getLineEventTextForIntent(event);
   const name = String(profile?.displayName || "").trim();
   const firstName = name ? name.split(/\s+/)[0] : "";
   const prefix = firstName ? `${firstName} ` : "";
@@ -992,7 +1009,7 @@ export async function handler(event) {
 
   for (const item of events) {
     const lineUserId = getLineUserId(item);
-    const messageText = toTextMessage(item);
+    const messageText = getLineEventTextForIntent(item);
     const clientTagged = hasClientTag(messageText);
     const intent = inferIntent(messageText, item);
     const shouldFetchProfile =
@@ -1043,4 +1060,4 @@ export async function handler(event) {
   });
 }
 
-export { buildAutoReplyMessage, buildFaqReply, choosePricingReplyStrategy, inferFaqIntent, inferIntent, parseAdContextFromText, shouldAutoReplyForIntent };
+export { buildAutoReplyMessage, buildFaqReply, choosePricingReplyStrategy, getLineEventTextForIntent, inferFaqIntent, inferIntent, parseAdContextFromText, shouldAutoReplyForIntent };

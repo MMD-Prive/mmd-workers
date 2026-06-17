@@ -3,6 +3,7 @@ import {
   buildAutoReplyMessage,
   buildFaqReply,
   choosePricingReplyStrategy,
+  getLineEventTextForIntent,
   inferFaqIntent,
   inferIntent,
   shouldAutoReplyForIntent,
@@ -21,6 +22,13 @@ const imageEvent = (context = {}) => ({
   source: { type: "user", userId: "U123" },
   replyToken: "reply-token",
   ...context,
+});
+
+const postbackEvent = (data, displayText = "") => ({
+  type: "postback",
+  postback: { data, displayText },
+  source: { type: "user", userId: "U123" },
+  replyToken: "reply-token",
 });
 
 assert.equal(inferFaqIntent("สอบถามเรทได้ที่ไหนครับ"), "ask_where_to_get_rate");
@@ -61,6 +69,24 @@ const profile = { displayName: "Boss" };
 const kenjiReply = await buildAutoReplyMessage(textEvent("เคนจิ"), profile, { lineKenjiAiEnabled: true });
 assert.match(kenjiReply, /Kenji/);
 assert.match(kenjiReply, /ผู้ช่วยสมาชิก/);
+
+const hiPerReply = await buildAutoReplyMessage(textEvent("Hi Per"), profile, { lineKenjiAiEnabled: true });
+assert.match(hiPerReply, /Kenji/);
+assert.match(hiPerReply, /ผู้ช่วยสมาชิก/);
+
+const thaiHiPerReply = await buildAutoReplyMessage(textEvent("สวัสดี เปอร์"), profile, { lineKenjiAiEnabled: true });
+assert.match(thaiHiPerReply, /Kenji/);
+assert.match(thaiHiPerReply, /ผู้ช่วยสมาชิก/);
+
+const plainGreetingReply = await buildAutoReplyMessage(textEvent("สวัสดีครับ"), profile, { lineKenjiAiEnabled: true });
+assert.match(plainGreetingReply, /สวัสดีครับ/);
+assert.match(plainGreetingReply, /วันนี้ให้ผมช่วย/);
+
+const richMenuPostback = postbackEvent("action=kenji&trigger=Hi%20Per", "Hi Per");
+assert.equal(getLineEventTextForIntent(richMenuPostback), "Hi Per");
+const postbackReply = await buildAutoReplyMessage(richMenuPostback, profile, { lineKenjiAiEnabled: true });
+assert.match(postbackReply, /Kenji/);
+assert.match(postbackReply, /ผู้ช่วยสมาชิก/);
 
 const slipReply = await buildAutoReplyMessage(textEvent("ส่งสลิปแล้ว"), profile, { lineKenjiAiEnabled: true });
 assert.match(slipReply, /supporting evidence/);

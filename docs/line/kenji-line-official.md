@@ -31,6 +31,9 @@ Use the existing Netlify LINE webhook URL. Do not introduce frontend secrets.
 ## Test Phrases
 
 ```text
+Hi Per
+สวัสดี เปอร์
+สวัสดีครับ
 เคนจิ
 คุยกับ Per AI
 จอง
@@ -39,6 +42,8 @@ Use the existing Netlify LINE webhook URL. Do not introduce frontend secrets.
 VIP
 SVIP
 Black Card
+Rich Menu: Hi Per
+Rich Menu: สวัสดี เปอร์
 ```
 
 Expected behavior:
@@ -61,4 +66,3 @@ Expected behavior:
 - Black Card is private review only.
 - LINE OA Kenji does not enable real Worker Control POST actions.
 - Deduped LINE events must not reply twice.
-
