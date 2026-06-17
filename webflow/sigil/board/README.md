@@ -29,3 +29,40 @@ localStorage.setItem("mmd_board_v70_role", "boss_per");
 
 This helper does not include secrets and does not send production writes from
 Webflow.
+
+### Webflow Placement For `/sigil/board`
+
+1. Add the V7 board embed first on the `/sigil/board` Webflow page.
+2. The embed must include the V7 root and gate elements shown in
+   `kenji-board-v70-webflow-snippet.html`:
+   - `[data-mmd-board-v70]`
+   - `[data-v70-gate-passphrase]`
+   - `[data-v70-action="unlock-gate"]`
+   - `[data-v70-gate-status]`
+3. Load `kenji-board-v70-gate.js` after the V7 board embed/root markup.
+
+Recommended Webflow order:
+
+```html
+<!-- 1. V7 board embed/root markup first -->
+<!-- Paste the contents of kenji-board-v70-webflow-snippet.html, excluding this comment. -->
+
+<!-- 2. Gate helper after the V7 board embed -->
+<script src="https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-workers@main/webflow/sigil/board/kenji-board-v70-gate.js"></script>
+```
+
+### Smoke Test
+
+1. Open `/sigil/board`.
+2. Enter the mock passphrase `sigil`.
+3. Click the element with `[data-v70-action="unlock-gate"]`.
+4. Confirm the browser localStorage values:
+
+```js
+localStorage.getItem("mmd_board_v70_gate") === "unlocked";
+localStorage.getItem("mmd_board_v70_role") === "boss_per";
+```
+
+This is a Webflow UI gate only. It must not perform backend writes, Worker
+route changes, Airtable writes, payment changes, membership changes, token
+handling changes, SVIP changes, or Black Card behavior changes.
