@@ -3,6 +3,7 @@
   Placement:
   1. Paste the V7 board embed/root markup first on /sigil/board.
   2. Load kenji-board-v70-gate.js after this embed.
+  3. Load kenji-board-v70-smoke-test.js last, or in Before </body>.
 -->
 <section data-mmd-board-v70 data-gate="locked" data-role="guest">
   <div class="mmd-board-v70__gate-panel" data-v70-gate-panel>
@@ -24,3 +25,6 @@
 
 <!-- Load after the V7 board embed/root markup. -->
 <script src="https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-workers@main/webflow/sigil/board/kenji-board-v70-gate.js"></script>
+
+<!-- Load last for console verification. -->
+<script src="https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-workers@main/webflow/sigil/board/kenji-board-v70-smoke-test.js"></script>
