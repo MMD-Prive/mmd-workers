@@ -14,10 +14,8 @@ export const CONFIRM_PAYMENT_PATH = "/confirm/payment-confirmation";
 export const MEMBER_DASHBOARD_UPSTREAM = "https://immigrate-worker.malemodel-bkk.workers.dev";
 export const ADMIN_WORKER_UPSTREAM = "https://admin-worker.malemodel-bkk.workers.dev";
 export const FRONT_GATE = "mmd-redirect-worker";
-export const FRONT_VERSION = "20260616T051100Z";
+export const FRONT_VERSION = "20260617T060000Z";
 
-// Domains that should redirect into the canonical site.
-// Add/remove domains here only.
 export const REDIRECT_HOSTS = new Set([
   "www.mmdbkk.com",
   "mmdbkk.com",
@@ -26,11 +24,15 @@ export const REDIRECT_HOSTS = new Set([
   "malemodel-bkk.workers.dev",
 ]);
 
-// Subdomains or hosts that must never be redirected by this worker.
 export const NEVER_TOUCH_HOSTS = new Set(["sigil.mmdbkk.com"]);
 
-// These are not normal public pages.
-// Do not redirect payment/API/webhook/admin traffic unless intentionally designed.
+export const LINE_WEBHOOK_PATHS = new Set([
+  "/webhooks/line",
+  "/webhooks/line/",
+  "/webhook/line",
+  "/webhook/line/",
+]);
+
 export const NEVER_TOUCH_PREFIXES = [
   "/api/",
   "/webhook/",
@@ -47,10 +49,6 @@ export const NEVER_TOUCH_PREFIXES = [
   "/uploads/",
 ];
 
-// Host-agnostic front-router protected pages owned by another Worker/source.
-// These paths must pass through exactly, with query strings preserved, so the
-// member dashboard cannot accidentally fall back to Webflow or legacy redirects
-// on either mmdbkk.com or www.mmdbkk.com.
 export const NEVER_REDIRECT_EXACT_PATHS = new Set([
   "/member/dashboard",
   "/member/dashboard/",
@@ -64,8 +62,6 @@ export const NEVER_REDIRECT_EXACT_PATHS = new Set([
   "/model/console/",
 ]);
 
-// Exact old-path to new-path redirects.
-// Keep lowercase keys. The target can keep proper casing if needed.
 export const EXACT_PATH_REDIRECTS = {
   "/inme": "/trust/inme",
   "/login": "/trust/inme",
@@ -78,8 +74,6 @@ export const EXACT_PATH_REDIRECTS = {
   "/trust": "/trust/inme",
 };
 
-// Folder-level redirects.
-// Example: /old-academy/anything -> /academy/anything
 export const FOLDER_REDIRECTS = [
   {
     from: "/old-academy/",
@@ -98,25 +92,17 @@ export function isSafePageRequest(request) {
 
 export function normalizePath(pathname) {
   let path = pathname || "/";
-
-  // Collapse duplicate slashes: /a//b -> /a/b
   path = path.replace(/\/{2,}/g, "/");
-
-  // Remove trailing slash except root.
-  // Example: /trust/inme/ -> /trust/inme
   if (path.length > 1) {
     path = path.replace(/\/+$/g, "");
   }
-
   return path || "/";
 }
 
 export function shouldNeverTouch(url) {
   if (NEVER_TOUCH_HOSTS.has(url.hostname)) return true;
-
   const pathname = url.pathname.toLowerCase();
   if (NEVER_REDIRECT_EXACT_PATHS.has(pathname)) return true;
-
   return NEVER_TOUCH_PREFIXES.some((prefix) => {
     return pathname === prefix.slice(0, -1) || pathname.startsWith(prefix);
   });
@@ -127,7 +113,6 @@ export function buildTargetUrl(originalUrl, nextPathname) {
   target.protocol = CANONICAL_PROTOCOL;
   target.hostname = CANONICAL_HOST;
   target.pathname = nextPathname;
-  // target.search is preserved automatically.
   return target;
 }
 
@@ -200,12 +185,10 @@ async function maybeInjectConfirmPaymentBridge(request, response, url) {
   if (!isConfirmPaymentPage(url)) return response;
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.toLowerCase().includes("text/html")) return response;
-
   const html = await response.text();
   if (html.includes("mmd-confirm-dashboard-bridge")) {
     return new Response(html, response);
   }
-
   const script = confirmPaymentDashboardBridgeScript();
   const rewritten = html.includes("</body>")
     ? html.replace("</body>", `${script}</body>`)
@@ -223,6 +206,21 @@ async function fetchPassThrough(request) {
   const url = new URL(request.url);
   const response = await fetch(new Request(request, { redirect: "follow" }));
   return withFrontGateHeaders(await maybeInjectConfirmPaymentBridge(request, response, url));
+}
+
+function isLineWebhookPath(url) {
+  return LINE_WEBHOOK_PATHS.has(url.pathname.toLowerCase());
+}
+
+async function fetchLineWebhook(request, env = {}, url) {
+  const upstream = String(env?.LINE_WEBHOOK_UPSTREAM_URL || "").trim();
+  if (!upstream) {
+    return fetchPassThrough(request);
+  }
+  const target = new URL(upstream);
+  target.search = url.search;
+  const upstreamRequest = new Request(target.toString(), request);
+  return withFrontGateHeaders(await fetch(upstreamRequest));
 }
 
 function isMemberDashboardPath(url) {
@@ -265,14 +263,9 @@ function isMemberFrontendPath(url) {
 }
 
 async function fetchMemberFrontend(request, env, url) {
-  // TODO(member-route-migration): /member/dashboard and /member/membership are
-  // legacy locked routes still owned by immigrate-worker. Do not add new
-  // member-facing route dependencies here; migrate these to the canonical
-  // member layer when it is ready.
   if (env?.IMMIGRATE_WORKER?.fetch) {
     return withFrontGateHeaders(await env.IMMIGRATE_WORKER.fetch(request));
   }
-
   const target = new URL(MEMBER_DASHBOARD_UPSTREAM);
   target.pathname = url.pathname;
   target.search = url.search;
@@ -283,7 +276,6 @@ async function fetchAdminMemberPage(request, env, url) {
   if (env?.ADMIN_WORKER?.fetch) {
     return withFrontGateHeaders(await env.ADMIN_WORKER.fetch(request));
   }
-
   const target = new URL(ADMIN_WORKER_UPSTREAM);
   target.pathname = url.pathname;
   target.search = url.search;
@@ -297,9 +289,7 @@ function formatMemberPageHeading(pathname) {
     .split("-")
     .filter(Boolean)
     .slice(0, 6);
-
   if (!words.length) return "Member Page";
-
   return words
     .map((word) => {
       if (/^\d+$/.test(word) || word.length <= 2) return word.toUpperCase();
@@ -347,7 +337,6 @@ function renderRouteRecoveryShell(request, page, title, heading, copy, links = [
     </main>
   </body>
 </html>`;
-
   return new Response(request.method.toUpperCase() === "HEAD" ? null : html, {
     headers: {
       "content-type": "text/html; charset=utf-8",
@@ -409,11 +398,9 @@ function renderModelConsoleRecovery(request) {
 export function findMappedPath(pathname) {
   const normalized = normalizePath(pathname);
   const key = normalized.toLowerCase();
-
   if (EXACT_PATH_REDIRECTS[key]) {
     return EXACT_PATH_REDIRECTS[key];
   }
-
   for (const rule of FOLDER_REDIRECTS) {
     const fromLower = rule.from.toLowerCase();
     if (key.startsWith(fromLower)) {
@@ -421,63 +408,48 @@ export function findMappedPath(pathname) {
       return `${rule.to}${rest}`.replace(/\/{2,}/g, "/");
     }
   }
-
   return normalized;
 }
 
 export default {
   async fetch(request, env = {}) {
     const url = new URL(request.url);
-
-    // Safety: never redirect non-page traffic.
-    // This prevents breaking POST/payment/webhook/API flows.
+    if (isLineWebhookPath(url)) {
+      return fetchLineWebhook(request, env, url);
+    }
     if (!isSafePageRequest(request)) {
       return withFrontGateHeaders(await fetch(request));
     }
-
     if (isMemberFrontendPath(url)) {
       return fetchMemberFrontend(request, env, url);
     }
-
     if (isMemberPaymentsPath(url)) {
       return fetchAdminMemberPage(request, env, url);
     }
-
     if (isHallPath(url)) {
       return renderHallRecovery(request);
     }
-
     if (isModelConsolePath(url)) {
       return renderModelConsoleRecovery(request);
     }
-
     if (isMemberPath(url) && !isKnownLegacyMemberRedirect(url)) {
       return renderMemberStaticRecovery(request);
     }
-
     if (shouldNeverTouch(url)) {
       return fetchPassThrough(request);
     }
-
-    // If this host is not managed by this redirect worker, pass through.
     if (!REDIRECT_HOSTS.has(url.hostname)) {
       return fetchPassThrough(request);
     }
-
     const mappedPath = findMappedPath(url.pathname);
     const target = buildTargetUrl(url, mappedPath);
-
     const needsRedirect =
       url.protocol !== CANONICAL_PROTOCOL ||
       url.hostname !== CANONICAL_HOST ||
       url.pathname !== mappedPath;
-
-    // Prevent redirect loop.
     if (!needsRedirect || target.toString() === url.toString()) {
       return fetchPassThrough(request);
     }
-
-    // 301 = permanent redirect for public pages.
     return withFrontGateHeaders(Response.redirect(target.toString(), 301));
   },
 };

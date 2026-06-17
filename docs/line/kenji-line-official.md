@@ -9,7 +9,25 @@ Kenji LINE OA is the member-facing concierge entry for MMD Privé. It is not the
 - `/sigil/board`: internal system/admin/rules/control layer
 - LINE OA Kenji: member-facing conversational entry
 
+## Production Webhook Route
+
+LINE Official should keep using the stable MMD domain route:
+
+```text
+https://mmdbkk.com/webhooks/line
+```
+
+This route is owned at the `mmd-redirect-worker` front gate and can bridge to the configured LINE webhook implementation through:
+
+```text
+LINE_WEBHOOK_UPSTREAM_URL=https://<your-site>.netlify.app/.netlify/functions/webhook
+```
+
+Do not ask LINE Official to point directly to Netlify as the long-term production URL unless there is an intentional migration decision. The public LINE OA URL should remain stable on `mmdbkk.com`; the upstream can be changed behind the gate.
+
 ## Required Env
+
+For the active LINE webhook implementation:
 
 ```text
 LINE_AUTO_REPLY_ENABLED=true
@@ -20,13 +38,17 @@ AIRTABLE_API_KEY=...
 AIRTABLE_BASE_ID=...
 ```
 
+For the `mmdbkk.com/webhooks/line` bridge in `mmd-redirect-worker`:
+
+```text
+LINE_WEBHOOK_UPSTREAM_URL=https://<your-site>.netlify.app/.netlify/functions/webhook
+```
+
 Optional:
 
 ```text
 LINE_KENJI_AI_DEBUG=true
 ```
-
-Use the existing Netlify LINE webhook URL. Do not introduce frontend secrets.
 
 ## Test Phrases
 
@@ -66,3 +88,4 @@ Expected behavior:
 - Black Card is private review only.
 - LINE OA Kenji does not enable real Worker Control POST actions.
 - Deduped LINE events must not reply twice.
+- Netlify / immigrate-worker can be an upstream compatibility target, but should not become the canonical long-term LINE route owner.
