@@ -29,6 +29,22 @@ test("V7 Webflow snippet includes required root and gate selectors", () => {
   assert.match(snippet, /kenji-board-v70-gate\.js/);
 });
 
+test("V7 Webflow snippet keeps wrapper neutral so only unlock control matches gate action", () => {
+  const classTokens = Array.from(snippet.matchAll(/class="([^"]*)"/g))
+    .flatMap((match) => match[1].split(/\s+/).filter(Boolean));
+
+  assert.match(snippet, /class="mmd-board-v70__gate-panel"/);
+  assert.match(snippet, /data-v70-gate-panel/);
+  assert.ok(!classTokens.includes("mmd-board-v70__gate"));
+  assert.doesNotMatch(snippet, /data-mmd-board-v70-unlock/);
+  assert.doesNotMatch(snippet, /data-mmd-board-v70-gate/);
+  assert.doesNotMatch(snippet, /data-gate-action="unlock"/);
+
+  const unlockActionMatches = snippet.match(/data-v70-action="unlock-gate"/g) || [];
+  assert.equal(unlockActionMatches.length, 1);
+  assert.match(snippet, /<button[^>]*data-v70-action="unlock-gate"[^>]*>/);
+});
+
 test("V7 Webflow snippet stays secret-free and read-only", () => {
   const forbidden = [
     /\bfetch\s*\(/i,
