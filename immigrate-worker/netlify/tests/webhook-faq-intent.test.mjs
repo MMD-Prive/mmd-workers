@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  buildAutoReplyMessage,
   buildFaqReply,
   choosePricingReplyStrategy,
   inferFaqIntent,
@@ -51,5 +52,31 @@ assert.equal(choosePricingReplyStrategy({}), "generic_pricing_ack");
 
 assert.equal(shouldAutoReplyForIntent("pricing_review"), true);
 assert.equal(shouldAutoReplyForIntent("model_availability"), true);
+
+assert.equal(shouldAutoReplyForIntent("greeting", "สวัสดี", textEvent("สวัสดี")), false);
+assert.equal(shouldAutoReplyForIntent("greeting", "สวัสดี", textEvent("สวัสดี"), { lineKenjiAiEnabled: true }), true);
+assert.equal(shouldAutoReplyForIntent("note_only", "เคนจิ", textEvent("เคนจิ"), { lineKenjiAiEnabled: true }), true);
+
+const profile = { displayName: "Boss" };
+const kenjiReply = await buildAutoReplyMessage(textEvent("เคนจิ"), profile, { lineKenjiAiEnabled: true });
+assert.match(kenjiReply, /Kenji/);
+assert.match(kenjiReply, /ผู้ช่วยสมาชิก/);
+
+const slipReply = await buildAutoReplyMessage(textEvent("ส่งสลิปแล้ว"), profile, { lineKenjiAiEnabled: true });
+assert.match(slipReply, /supporting evidence/);
+assert.match(slipReply, /official verification/);
+assert.match(slipReply, /fund matching/);
+
+const svipReply = await buildAutoReplyMessage(textEvent("SVIP"), profile, { lineKenjiAiEnabled: true });
+assert.match(svipReply, /Boss Per/);
+assert.match(svipReply, /ไม่ได้ปลดล็อกจากแต้มอัตโนมัติ/);
+
+const blackCardReply = await buildAutoReplyMessage(textEvent("Black Card"), profile, { lineKenjiAiEnabled: true });
+assert.match(blackCardReply, /private review/);
+assert.match(blackCardReply, /automatic approval/);
+
+const bookingReply = await buildAutoReplyMessage(textEvent("จอง"), profile, { lineKenjiAiEnabled: true });
+assert.match(bookingReply, /ผมช่วยพาไปขั้นตอนการจองได้ครับ/);
+assert.match(bookingReply, /ขอเช็กสถานะสมาชิก/);
 
 console.log("webhook FAQ/pricing intent tests passed");

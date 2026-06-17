@@ -16,6 +16,7 @@
     "dev:events": "wrangler dev --config workers/events-worker/wrangler.toml",
     "dev:telegram": "wrangler dev --config workers/telegram-worker/wrangler.toml",
     "dev:sigil-board": "wrangler dev --config workers/sigil-board-worker/wrangler.toml",
-    "check:sigil-board": "node --check workers/sigil-board-worker/src/index.js"
+    "check:sigil-board": "node --check workers/sigil-board-worker/src/index.js",
+    "test:kenji-line": "node --test shared/kenji-member-concierge-core.test.mjs"
   }
 }
