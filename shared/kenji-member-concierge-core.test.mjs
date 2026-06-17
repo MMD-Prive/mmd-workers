@@ -10,6 +10,12 @@ const summary = getSafeMemberSummary({ display_name: "บอส", active_points:
 
 assert.equal(classifyKenjiMemberIntent("").intent, "empty");
 assert.equal(classifyKenjiMemberIntent("สวัสดีครับ").intent, "greeting");
+assert.equal(classifyKenjiMemberIntent("Hi Per").intent, "talk_to_per_ai");
+assert.equal(classifyKenjiMemberIntent("hi per").intent, "talk_to_per_ai");
+assert.equal(classifyKenjiMemberIntent("hiper").intent, "talk_to_per_ai");
+assert.equal(classifyKenjiMemberIntent("hello per").intent, "talk_to_per_ai");
+assert.equal(classifyKenjiMemberIntent("สวัสดี เปอร์").intent, "talk_to_per_ai");
+assert.equal(classifyKenjiMemberIntent("สวัสดีเปอร์").intent, "talk_to_per_ai");
 assert.equal(classifyKenjiMemberIntent("เคนจิ").intent, "talk_to_per_ai");
 assert.equal(classifyKenjiMemberIntent("คุยกับ Per AI").intent, "talk_to_per_ai");
 assert.equal(classifyKenjiMemberIntent("อยากจองครับ").intent, "booking");
@@ -50,4 +56,3 @@ const pointsReply = buildKenjiMemberReply("แต้ม", summary);
 assert.match(pointsReply, /1,280/);
 
 console.log("kenji member concierge core tests passed");
-

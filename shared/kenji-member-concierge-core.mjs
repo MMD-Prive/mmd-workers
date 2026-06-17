@@ -116,7 +116,17 @@ export function classifyKenjiMemberIntent(input, memberSummary = {}) {
 
   if (
     includesAny(text, ["kenji", "kenji ai", "per ai", "เคนจิ", "เปอร์ ai"]) ||
-    includesAny(dense, ["คุยกับเคนจิ", "คุยกับperai", "คุยกับเปอร์ai", "ขอคุยกับเคนจิ", "ขอคุยกับperai"])
+    includesAny(dense, [
+      "คุยกับเคนจิ",
+      "คุยกับperai",
+      "คุยกับเปอร์ai",
+      "ขอคุยกับเคนจิ",
+      "ขอคุยกับperai",
+      "hiper",
+      "helloper",
+      "สวัสดีเปอร์",
+    ]) ||
+    /\b(?:hi|hello)\s+per\b/i.test(text)
   ) {
     return { intent: INTENTS.TALK_TO_PER_AI, confidence: 0.9 };
   }
