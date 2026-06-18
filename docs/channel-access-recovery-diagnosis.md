@@ -22,6 +22,14 @@ Telegram has a live `telegram-worker` for bot/internal messaging, but its public
 - Configure a production `PROMO_CODES_KV` binding for `telegram-worker` before deploying `/promo/issue`.
 - Wire Telegram login/verification to call `/promo/issue` after official verification. This patch only adds the minimal issuing layer.
 
+## Production Gate Checklist
+
+- [ ] LINE default rich menu ID confirmed.
+- [ ] LINE rich menu action map confirmed to send supported trigger text/postback.
+- [ ] `PROMO_CODES_KV` production binding configured for `telegram-worker`.
+- [ ] Telegram production route owner decided: `member-dashboard-chat-worker` bridge or `telegram-worker` route.
+- [ ] Telegram login/verification calls `/promo/issue` only after verification.
+
 ## Safety
 
 - No secrets were printed or changed.
