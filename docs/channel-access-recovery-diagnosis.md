@@ -69,6 +69,18 @@ Do not deploy `/promo/issue` while the binding still contains placeholder IDs.
 - Do not issue promo codes before Telegram user verification.
 - Do not use promo codes as payment confirmation, membership confirmation, SVIP approval, or Black Card approval.
 
+### LINE Rich Menu Gate
+
+The LINE Official default rich menu ID and action map are not present in this repository/worktree.
+
+Before production readiness, confirm from LINE Official Manager or LINE Messaging API:
+- default rich menu ID
+- Per AI / Kenji AI button action type
+- text/postback/URI payload
+- whether the button sends `Hi Per` or another supported trigger alias
+
+Do not claim LINE rich menu is repaired until the action map is confirmed.
+
 ## Safety
 
 - No secrets were printed or changed.
