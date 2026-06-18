@@ -227,10 +227,13 @@ function isTalkToPerAi(text = "") {
   const spaced = normalizeLookup(text);
   return (
     normalized.includes("kenji") ||
+    normalized.includes("kenjiai") ||
     normalized.includes("เคนจิ") ||
     normalized.includes("hiper") ||
     normalized.includes("helloper") ||
     normalized.includes("สวัสดีเปอร์") ||
+    normalized.includes("เปอร์ai") ||
+    normalized.includes("เปอร์เอไอ") ||
     /\b(?:hi|hello)\s+per\b/i.test(spaced) ||
     normalized.includes("คุยกับเปอร์") ||
     normalized.includes("คุยกับเคนจิ") ||
@@ -958,6 +961,19 @@ async function writeEventToAirtable({ baseId, apiKey, tableName, event, profile 
 
 export async function handler(event) {
   if (event.httpMethod === "GET") {
+    const query = event.queryStringParameters || {};
+    if (String(query.health || query.diagnostic || "") === "1") {
+      return json(200, {
+        ok: true,
+        owner: "line-webhook-netlify",
+        canonical_assistant_id: "kenji_ai",
+        public_alias: "Per AI",
+        kenji_ai_trigger_supported: true,
+        supported_triggers: ["Hi Per", "สวัสดี เปอร์", "Per AI", "Kenji", "Kenji AI", "เคนจิ", "เปอร์ ai"],
+        rich_menu_checked: false,
+        request_id: crypto.randomUUID(),
+      });
+    }
     return json(200, { ok: true, service: "line-webhook-netlify" });
   }
 
