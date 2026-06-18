@@ -38,6 +38,37 @@ The binding must point to a real Cloudflare KV namespace created for personal pr
 
 Do not deploy `/promo/issue` while the binding still contains placeholder IDs.
 
+## Latest Production Gate Status
+
+### Completed
+
+- LINE diagnostic and trigger alias support added.
+- Telegram `/promo/issue` issuing layer added.
+- `PROMO_CODES_KV` real Cloudflare KV namespace IDs configured in `telegram-worker/wrangler.toml`.
+- PR remains draft.
+- No deploy performed.
+
+### Still Blocked Before Production
+
+1. LINE rich menu gate
+   - Confirm LINE Official default rich menu ID.
+   - Confirm action map for the Per AI / Kenji AI button.
+   - Confirm whether action type is text, postback, or URI.
+   - If text, expected trigger should be `Hi Per` or another supported alias.
+
+2. Telegram bridge/source owner gate
+   - Actual `member-dashboard-chat-worker` source is missing from this worktree.
+   - Historical docs mention `tmp/cloudflare-member-dashboard-chat-worker/index.js`, but that bundle is not present.
+   - Do not patch `chat-worker` unless confirmed as the production source for `member-dashboard-chat-worker`.
+   - Bridge from Telegram verification to `telegram-worker POST /promo/issue` requires source recovery or route owner mapping.
+
+### Production Safety Lock
+
+- Do not deploy PR #77 until LINE rich menu action map is confirmed.
+- Do not deploy Telegram promo issuing until the verified Telegram route owner is confirmed.
+- Do not issue promo codes before Telegram user verification.
+- Do not use promo codes as payment confirmation, membership confirmation, SVIP approval, or Black Card approval.
+
 ## Safety
 
 - No secrets were printed or changed.
