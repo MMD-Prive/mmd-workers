@@ -106,9 +106,16 @@ Remaining external confirmation before LINE gate fully passes:
 ## LINE Rich Menu Current Production Finding
 
 Current manual finding:
-- No active/default rich menu is currently in use in LINE Official Manager.
-- Rich Menu V6 must be recreated or reactivated manually in LINE Official Manager.
-- This is an external LINE configuration issue, not a webhook code issue.
+- An old LINE rich menu is still active/currently in use.
+- Rich Menu V6 is not active/default yet.
+- This is an external LINE Official configuration issue, not a webhook code issue.
+- PR #77 already supports the intended V6 Button 3 payload: `Hi Per`.
+
+Required manual action:
+- Recreate or activate Rich Menu V6 in LINE Official Manager.
+- Set Rich Menu V6 as the active/default rich menu.
+- Do not delete the old rich menu until V6 has been tested.
+- After V6 is active, test Button 3 sends `Hi Per`.
 
 Required V6 mapping:
 
@@ -133,8 +140,7 @@ Required V6 mapping:
 
 Deploy status:
 - Do not deploy PR #77 for this issue.
-- Recreate/reactivate Rich Menu V6 manually first.
-- After manual setup, test Button 3 sends `Hi Per`.
+- Manual LINE rich menu replacement must happen first.
 
 ## Safety
 
