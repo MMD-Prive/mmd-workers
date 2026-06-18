@@ -103,6 +103,39 @@ Remaining external confirmation before LINE gate fully passes:
 - Confirm active/default = yes.
 - Confirm Button 3 is saved as Message payload `Hi Per`.
 
+## LINE Rich Menu Current Production Finding
+
+Current manual finding:
+- No active/default rich menu is currently in use in LINE Official Manager.
+- Rich Menu V6 must be recreated or reactivated manually in LINE Official Manager.
+- This is an external LINE configuration issue, not a webhook code issue.
+
+Required V6 mapping:
+
+1. สมัครสมาชิก
+   - URL: https://www.mmdbkk.com/pay/membership?src=line-richmenu
+
+2. ต่ออายุสมาชิก
+   - URL: https://www.mmdbkk.com/sigil/pay/renewal?src=line-richmenu
+
+3. คุยกับ Per
+   - Action: Message
+   - Payload: Hi Per
+
+4. สิทธิประโยชน์
+   - URL: https://www.mmdbkk.com/membership/benefits?src=line-richmenu
+
+5. ค้นหานายแบบ
+   - URL: https://www.mmdbkk.com/sigil/models?src=line-richmenu&entry=model-finder
+
+6. จองนายแบบ
+   - URL: https://www.mmdbkk.com/sigil/booking?src=line-richmenu
+
+Deploy status:
+- Do not deploy PR #77 for this issue.
+- Recreate/reactivate Rich Menu V6 manually first.
+- After manual setup, test Button 3 sends `Hi Per`.
+
 ## Safety
 
 - No secrets were printed or changed.
