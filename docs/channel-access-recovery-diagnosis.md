@@ -30,6 +30,14 @@ Telegram has a live `telegram-worker` for bot/internal messaging, but its public
 - [ ] Telegram production route owner decided: `member-dashboard-chat-worker` bridge or `telegram-worker` route.
 - [ ] Telegram login/verification calls `/promo/issue` only after verification.
 
+### PROMO_CODES_KV Binding
+
+`PROMO_CODES_KV` is required before deploying `telegram-worker` `/promo/issue`.
+
+The binding must point to a real Cloudflare KV namespace created for personal promo code records.
+
+Do not deploy `/promo/issue` while the binding still contains placeholder IDs.
+
 ## Safety
 
 - No secrets were printed or changed.

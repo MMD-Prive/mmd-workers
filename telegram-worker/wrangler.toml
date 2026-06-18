@@ -2,6 +2,11 @@ name = "telegram-worker"
 main = "src/index.js"
 compatibility_date = "2026-01-20"
 
+[[kv_namespaces]]
+binding = "PROMO_CODES_KV"
+id = "REPLACE_WITH_PROMO_CODES_KV_ID"
+preview_id = "REPLACE_WITH_PROMO_CODES_KV_PREVIEW_ID"
+
 [vars]
 TELEGRAM_CHAT_ID = "-1003546439681"
 TG_THREAD_MEMBERSHIP = "20"
