@@ -81,6 +81,28 @@ Before production readiness, confirm from LINE Official Manager or LINE Messagin
 
 Do not claim LINE rich menu is repaired until the action map is confirmed.
 
+## LINE Rich Menu V6 Decision
+
+Button 3 final mapping is locked:
+
+- Label: `คุยกับ Per`
+- Action type: `Message`
+- Payload: `Hi Per`
+
+Compatibility:
+- Pass in principle because PR #77 already supports `Hi Per`.
+- No LINE webhook code patch is needed.
+- No new test is needed for this decision.
+
+Important:
+- `คุยกับ Per` is the customer-facing label only.
+- `Hi Per` is the actual LINE Message payload.
+
+Remaining external confirmation before LINE gate fully passes:
+- Confirm default rich menu ID from LINE Official Manager.
+- Confirm active/default = yes.
+- Confirm Button 3 is saved as Message payload `Hi Per`.
+
 ## Safety
 
 - No secrets were printed or changed.
