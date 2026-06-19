@@ -990,9 +990,71 @@ function redactedPrefix(prefix) {
   return `${parts.slice(0, 3).join("/")}/.../`;
 }
 
+const PUBLIC_MODEL_ASSET_PREFIX_RE = /^models\/[^/]+\/(?:profile|gallery|compcard)\/$/;
+const PUBLIC_MODEL_ASSET_KEY_RE = /^models\/[^/]+\/(?:(?:profile\/main)|(?:gallery\/[^/]+)|(?:compcard\/[^/]+))\.jpg$/;
+const PROTECTED_MODEL_ASSET_PREFIXES = [
+  "private/",
+  "evidence/",
+  "line-notes/",
+  "sigil/",
+  "blackcard/",
+  "slips/",
+];
+
+function validateModelAssetPathSyntax(value) {
+  const raw = str(value);
+  if (!raw) return { ok: false, error: "missing_model_asset_path" };
+  if (/^https?:\/\//i.test(raw)) return { ok: false, error: "model_asset_path_must_not_be_url" };
+  if (raw.startsWith("/")) return { ok: false, error: "model_asset_path_must_not_start_with_slash" };
+  if (raw.includes("\\")) return { ok: false, error: "model_asset_path_must_not_contain_backslash" };
+  if (raw.includes("..")) return { ok: false, error: "model_asset_path_must_not_contain_dotdot" };
+
+  const clean = raw.replace(/\/+$/g, raw.endsWith("/") ? "/" : "");
+  const segmentPath = clean.endsWith("/") ? clean.slice(0, -1) : clean;
+  const parts = segmentPath.split("/");
+  if (parts.some((part) => part === "")) {
+    return { ok: false, error: "model_asset_path_must_not_contain_empty_segments" };
+  }
+
+  const lower = clean.toLowerCase();
+  if (PROTECTED_MODEL_ASSET_PREFIXES.some((prefix) => lower.startsWith(prefix))) {
+    return { ok: false, error: "protected_model_asset_prefix_not_allowed" };
+  }
+
+  return { ok: true, path: clean };
+}
+
+function validatePublicModelAssetPrefix(value) {
+  const syntax = validateModelAssetPathSyntax(value);
+  if (!syntax.ok) return syntax;
+  const prefix = normalizeR2Prefix(syntax.path);
+  if (!PUBLIC_MODEL_ASSET_PREFIX_RE.test(prefix)) {
+    return { ok: false, error: "model_asset_prefix_not_public_safe", path: prefix };
+  }
+  return { ok: true, prefix };
+}
+
+function validatePublicModelAssetKey(value) {
+  const syntax = validateModelAssetPathSyntax(value);
+  if (!syntax.ok) return syntax;
+  const key = syntax.path.replace(/\/+$/g, "");
+  if (!PUBLIC_MODEL_ASSET_KEY_RE.test(key)) {
+    return { ok: false, error: "model_asset_key_not_public_safe", path: key };
+  }
+  return { ok: true, key };
+}
+
+function assertPublicModelAssetPrefix(value) {
+  const validation = validatePublicModelAssetPrefix(value);
+  if (!validation.ok) {
+    throw new Error(validation.error || "invalid_model_asset_prefix");
+  }
+  return validation.prefix;
+}
+
 async function listR2ObjectCount(env, folderPrefix, limit = 1000) {
   const bucket = env.MMD_MODEL_ASSETS;
-  const prefix = normalizeR2Prefix(folderPrefix);
+  const prefix = assertPublicModelAssetPrefix(folderPrefix);
   if (!bucket || !prefix || typeof bucket.list !== "function") return { object_count: null, exists: false };
   const listing = await bucket.list({ prefix, limit });
   const objects = Array.isArray(listing?.objects) ? listing.objects : [];
@@ -1077,11 +1139,14 @@ async function searchR2ByConfiguredCategories(env, { q, sourceOwner, categoryPat
   }
 
   for (const basePrefix of uniqueStrings(bases)) {
-    const listing = await bucket.list({ prefix: basePrefix, limit: 1000 });
+    const validation = validatePublicModelAssetPrefix(basePrefix);
+    if (!validation.ok) continue;
+    const safeBasePrefix = validation.prefix;
+    const listing = await bucket.list({ prefix: safeBasePrefix, limit: 1000 });
     const objects = Array.isArray(listing?.objects) ? listing.objects : [];
     const folderCounts = new Map();
     for (const object of objects) {
-      const segment = segmentAfterBase(object?.key, basePrefix);
+      const segment = segmentAfterBase(object?.key, safeBasePrefix);
       if (!segment) continue;
       folderCounts.set(segment, (folderCounts.get(segment) || 0) + 1);
     }
@@ -1089,7 +1154,7 @@ async function searchR2ByConfiguredCategories(env, { q, sourceOwner, categoryPat
     for (const [folderName, objectCount] of folderCounts.entries()) {
       const folderToken = normalizeLooseToken(folderName);
       if (folderToken === queryToken || folderToken.includes(queryToken) || queryToken.includes(folderToken)) {
-        const matchedPrefix = joinR2Path(basePrefix, folderName);
+        const matchedPrefix = joinR2Path(safeBasePrefix, folderName);
         return {
           matched_name: folderName,
           matched_prefix: matchedPrefix,
@@ -1139,11 +1204,13 @@ async function searchR2ModelSource(env, { q, sourceOwner, categoryPath }) {
   const owner = getModelSourceOwner(env, sourceOwner);
   const exactCandidates = buildR2ExactPrefixCandidates({ q, sourceOwner: owner, categoryPath, env });
   for (const prefix of exactCandidates) {
-    const count = await listR2ObjectCount(env, prefix, 200);
+    const validation = validatePublicModelAssetPrefix(prefix);
+    if (!validation.ok) continue;
+    const count = await listR2ObjectCount(env, validation.prefix, 200);
     if (count.exists) {
       return {
         matched_name: str(q),
-        matched_prefix: normalizeR2Prefix(prefix),
+        matched_prefix: validation.prefix,
         category_path: normalizeCategoryPath(categoryPath || inferCategoryFromPrefix(prefix, owner)),
         object_count: count.object_count,
       };
@@ -1224,21 +1291,30 @@ async function stageModelFromSource(env, body = {}) {
   const modelName = str(body.model_name || body.name || body.q);
   const sourceOwner = getModelSourceOwner(env, body.source_owner);
   const categoryPath = normalizeCategoryPath(body.category_path);
-  const r2Prefix = normalizeR2Prefix(body.r2_prefix);
+  const rawR2Prefix = str(body.r2_prefix);
+  const r2Prefix = normalizeR2Prefix(rawR2Prefix);
   if (!modelName) throw new Error("missing_model_name");
 
   const resolved = r2Prefix
-    ? {
+    ? (() => {
+        const prefixValidation = validatePublicModelAssetPrefix(rawR2Prefix);
+        if (!prefixValidation.ok) throw new Error(prefixValidation.error || "invalid_model_asset_prefix");
+        return {
         ok: true,
-        found: (await listR2ObjectCount(env, r2Prefix, 200)).exists,
+        found: null,
         source: "r2",
         query: modelName,
         source_owner: sourceOwner,
         matched_name: modelName,
-        matched_prefix: r2Prefix,
-        category_path: categoryPath || inferCategoryFromPrefix(r2Prefix, sourceOwner),
-      }
+        matched_prefix: prefixValidation.prefix,
+        category_path: categoryPath || inferCategoryFromPrefix(prefixValidation.prefix, sourceOwner),
+      };
+      })()
     : await resolveModelSource(env, { q: modelName, sourceOwner, categoryPath });
+
+  if (r2Prefix && resolved.source === "r2") {
+    resolved.found = (await listR2ObjectCount(env, resolved.matched_prefix, 200)).exists;
+  }
 
   if (resolved.source === "airtable") return { ok: true, staged: false, reason: "already_exists_in_airtable", resolved };
   if (resolved.source !== "r2" || !resolved.found) return { ok: false, staged: false, reason: "r2_source_not_found", resolved };
@@ -2127,6 +2203,8 @@ export {
   calculateProvisionalPricing,
   choosePricingReplyStrategy,
   parseAdContextSignals,
+  validatePublicModelAssetKey,
+  validatePublicModelAssetPrefix,
 };
 
 /* =========================
