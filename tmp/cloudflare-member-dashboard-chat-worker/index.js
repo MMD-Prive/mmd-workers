@@ -1705,6 +1705,12 @@ var index_default = {
       if (request.method === "POST" && url.pathname === "/webhooks/line") {
         return handleLineOfficialWebhook(request, env, ctx);
       }
+      if (request.method === "POST" && url.pathname === "/internal/line/rich-menu/create") {
+        return handleLineRichMenuAdminRoute(request, env, handleLineCreateHiPerRichMenu);
+      }
+      if (request.method === "POST" && url.pathname === "/internal/line/rich-menu/maintain") {
+        return handleLineRichMenuAdminRoute(request, env, handleLinePerAiRichMenuMaintenance);
+      }
       if (request.method === "POST" && url.pathname === "/webhooks/telegram") {
         return handleTelegramWebhook(request, env);
       }
@@ -5309,6 +5315,40 @@ async function handleLineCreateHiPerRichMenu(request, env) {
   });
 }
 __name(handleLineCreateHiPerRichMenu, "handleLineCreateHiPerRichMenu");
+async function handleLineRichMenuAdminRoute(request, env, handler) {
+  const adminKey = env.ADMIN_TEST_KEY || env.CONFIRM_KEY;
+  if (!adminKey) {
+    return json(request, env, {
+      ok: false,
+      error: "admin_key_not_configured",
+      hint: "Set CONFIRM_KEY or ADMIN_TEST_KEY as a Cloudflare secret before using this internal endpoint."
+    }, 500);
+  }
+  const suppliedKey = request.headers.get("x-admin-key") || "";
+  if (!suppliedKey) {
+    return json(request, env, {
+      ok: false,
+      error: "missing_admin_key",
+      hint: "Pass x-admin-key header with CONFIRM_KEY value."
+    }, 401);
+  }
+  if (suppliedKey !== adminKey) {
+    return json(request, env, {
+      ok: false,
+      error: "invalid_admin_key",
+      hint: "Check the admin key. No LINE token was used or exposed."
+    }, 403);
+  }
+  if (!env.LINE_CHANNEL_ACCESS_TOKEN) {
+    return json(request, env, {
+      ok: false,
+      error: "line_token_not_configured",
+      hint: "LINE_CHANNEL_ACCESS_TOKEN is not set. No LINE API call was made."
+    }, 500);
+  }
+  return handler(request, env);
+}
+__name(handleLineRichMenuAdminRoute, "handleLineRichMenuAdminRoute");
 function uint8ArrayFromBase64(value) {
   const binary = atob(value);
   const bytes = new Uint8Array(binary.length);
