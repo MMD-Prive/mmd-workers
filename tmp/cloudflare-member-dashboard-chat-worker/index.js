@@ -5411,6 +5411,9 @@ async function handleLinePerAiRichMenuMaintenance(request, env) {
     }, 409);
   }
   const candidates = findLinePerAiRichMenuAreas(richMenu);
+  const alreadyCorrect = candidates.length > 0 && candidates.every(
+    (c) => c.action_type === "message" && c.label === "Hi Per" && c.text === "Hi Per"
+  );
   if (mode === "plan") {
     return json(request, env, {
       ok: true,
@@ -5418,8 +5421,19 @@ async function handleLinePerAiRichMenuMaintenance(request, env) {
       current_default_rich_menu_id: currentRichMenuId,
       candidate_count: candidates.length,
       candidates,
+      already_correct: alreadyCorrect,
+      would_create: !alreadyCorrect,
       would_link_as: "default",
       required_action: { type: "message", label: "Hi Per", text: "Hi Per" }
+    });
+  }
+  if (alreadyCorrect) {
+    return json(request, env, {
+      ok: true,
+      mode,
+      result: "already_correct",
+      current_default_rich_menu_id: currentRichMenuId,
+      changed_area_indexes: []
     });
   }
   if (candidates.length !== 1 && body?.force !== true) {
