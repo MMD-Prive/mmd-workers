@@ -91,7 +91,7 @@ pattern = "sigil.mmdbkk.com/sigil/login*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
-pattern = "www.mmdbkk.com/webhooks/line*"
+pattern = "sigil.mmdbkk.com/internal/line/rich-menu*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
@@ -180,10 +180,6 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "mmdbkk.com/member/confirm*"
-zone_name = "mmdbkk.com"
-
-[[routes]]
-pattern = "mmdbkk.com/webhooks/line*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
