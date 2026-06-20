@@ -67,14 +67,14 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(response.headers.get("location"), "https://mmdbkk.com/trust/inme?t=abc");
   });
 
-  it("maps /member and /membership to the membership benefits page", async () => {
+  it("maps /member to the legacy benefits page and /membership to member membership", async () => {
     const member = await request("https://mmdbkk.com/member?t=abc");
     const membership = await request("https://www.mmdbkk.com/membership?t=abc");
 
     assert.equal(member.status, 301);
     assert.equal(member.headers.get("location"), "https://mmdbkk.com/membership/benefits?t=abc");
     assert.equal(membership.status, 301);
-    assert.equal(membership.headers.get("location"), "https://mmdbkk.com/membership/benefits?t=abc");
+    assert.equal(membership.headers.get("location"), "https://mmdbkk.com/member/membership?t=abc");
   });
 
   it("delegates /member/dashboard to immigrate-worker by service binding without redirecting or changing query strings", async () => {
@@ -109,18 +109,24 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
-  it("delegates /member/membership to immigrate-worker by service binding without redirecting or changing query strings", async () => {
-    const serviceRequests = [];
+  it("uses the Webflow origin for /member/membership without redirecting or changing query strings", async () => {
+    const immigrateRequests = [];
+    const webflowRequests = [];
     const env = {
+      WEBFLOW_ORIGIN_HOST: "mmdprive.webflow.io",
       IMMIGRATE_WORKER: {
         fetch: async (request) => {
-          serviceRequests.push(request);
-          return new Response("member membership", {
-            status: 200,
-            headers: { "x-mmd-worker": "immigrate-worker", "x-mmd-page": "member-membership" },
-          });
+          immigrateRequests.push(request);
+          throw new Error(`/member/membership must not route to immigrate-worker: ${request.url}`);
         },
       },
+    };
+    globalThis.fetch = async (request) => {
+      webflowRequests.push(request);
+      return new Response("webflow membership", {
+        status: 200,
+        headers: { "x-webflow-page": "member-membership" },
+      });
     };
 
     const urls = [
@@ -134,13 +140,19 @@ describe("MMD permanent redirect guard", () => {
 
     for (const url of urls) {
       const response = await requestWithEnv(url, env);
+      const expected = new URL(url);
+      expected.protocol = "https:";
+      expected.hostname = "mmdprive.webflow.io";
+
       assert.equal(response.status, 200, url);
-      assert.equal(response.headers.get("location"), null);
-      assert.equal(response.headers.get("x-mmd-page"), "member-membership");
-      assert.equal(serviceRequests.at(-1).url, url);
+      assert.equal(response.headers.get("location"), null, url);
+      assert.equal(response.headers.get("x-webflow-page"), "member-membership", url);
+      assert.equal(response.headers.get("x-mmd-front-gate"), "mmd-redirect-worker", url);
+      assert.equal(webflowRequests.at(-1).url, expected.toString(), url);
     }
 
-    assert.equal(passThroughRequests.length, 0);
+    assert.equal(immigrateRequests.length, 0);
+    assert.equal(webflowRequests.length, urls.length);
   });
 
   it("delegates /member/payments to admin-worker without redirecting or changing query strings", async () => {
@@ -260,12 +272,12 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
-  it("falls back to the immigrate-worker upstream for /member/membership when service binding is missing", async () => {
+  it("falls back to the configured Webflow origin for /member/membership when service binding is missing", async () => {
     globalThis.fetch = async (request) => {
       passThroughRequests.push(request);
-      return new Response("membership upstream", {
+      return new Response("membership webflow origin", {
         status: 200,
-        headers: { "x-mmd-worker": "immigrate-worker", "x-mmd-page": "member-membership" },
+        headers: { "x-webflow-page": "member-membership" },
       });
     };
 
@@ -279,10 +291,36 @@ describe("MMD permanent redirect guard", () => {
       const response = await request(url);
       const expected = new URL(url);
       expected.protocol = "https:";
-      expected.hostname = "immigrate-worker.malemodel-bkk.workers.dev";
+      expected.hostname = "mmdprive.webflow.io";
       assert.equal(response.status, 200, url);
       assert.equal(response.headers.get("location"), null);
+      assert.equal(response.headers.get("x-webflow-page"), "member-membership");
       assert.equal(passThroughRequests.at(-1).url, expected.toString());
+    }
+  });
+
+  it("does not redirect /member/membership to payment, trust, or legacy membership pages", async () => {
+    const upstreamRequests = [];
+    globalThis.fetch = async (request) => {
+      upstreamRequests.push(request);
+      return new Response("webflow membership", { status: 200 });
+    };
+
+    const urls = [
+      "https://mmdbkk.com/member/membership?t=abc&code=x&promo=y",
+      "https://www.mmdbkk.com/member/membership?t=abc&code=x&promo=y",
+      "https://mmdbkk.com/member/membership/?t=abc&code=x&promo=y",
+    ];
+
+    for (const url of urls) {
+      const response = await request(url);
+
+      assert.equal(response.status, 200, url);
+      assert.equal(response.headers.get("location"), null, url);
+      assert.doesNotMatch(upstreamRequests.at(-1).url, /\/pay\/membership|\/trust\/inme|\/membership\/benefits/i, url);
+      assert.match(upstreamRequests.at(-1).url, /[?&]t=abc(?:&|$)/, url);
+      assert.match(upstreamRequests.at(-1).url, /[?&]code=x(?:&|$)/, url);
+      assert.match(upstreamRequests.at(-1).url, /[?&]promo=y(?:&|$)/, url);
     }
   });
 
@@ -326,18 +364,18 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.at(-1).url, "https://mmdbkk.com/pay/membership?t=abc&code=x&promo=y&debug=1");
   });
 
-  it("maps nested /member/membership paths to /pay/membership paths", async () => {
+  it("maps nested /member/membership paths to /member/membership paths", async () => {
     const response = await request("https://www.mmdbkk.com/member/membership/benefits?t=abc");
 
     assert.equal(response.status, 301);
-    assert.equal(response.headers.get("location"), "https://mmdbkk.com/pay/membership?t=abc");
+    assert.equal(response.headers.get("location"), "https://mmdbkk.com/member/membership?t=abc");
   });
 
-  it("maps /member/membership/benefits directly to /pay/membership", async () => {
+  it("maps /member/membership/benefits directly to /member/membership", async () => {
     const response = await request("https://mmdbkk.com/member/membership/benefits?t=abc");
 
     assert.equal(response.status, 301);
-    assert.equal(response.headers.get("location"), "https://mmdbkk.com/pay/membership?t=abc");
+    assert.equal(response.headers.get("location"), "https://mmdbkk.com/member/membership?t=abc");
   });
 
   it("canonicalizes www host without changing query parameter order or names", async () => {
