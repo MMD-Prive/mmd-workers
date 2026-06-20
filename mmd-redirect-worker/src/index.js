@@ -12,7 +12,6 @@ export const CANONICAL_HOST = "mmdbkk.com";
 export const CANONICAL_PROTOCOL = "https:";
 export const CONFIRM_PAYMENT_PATH = "/confirm/payment-confirmation";
 export const MEMBER_DASHBOARD_UPSTREAM = "https://immigrate-worker.malemodel-bkk.workers.dev";
-export const MEMBER_PAGES_UPSTREAM = "https://member-pages-worker.malemodel-bkk.workers.dev";
 export const ADMIN_WORKER_UPSTREAM = "https://admin-worker.malemodel-bkk.workers.dev";
 export const FRONT_GATE = "mmd-redirect-worker";
 export const FRONT_VERSION = "20260620T000000Z";
@@ -67,9 +66,9 @@ export const EXACT_PATH_REDIRECTS = {
   "/inme": "/trust/inme",
   "/login": "/trust/inme",
   "/member": "/membership/benefits",
-  "/member/membership/benefits": "/pay/membership",
+  "/member/membership/benefits": "/member/membership",
   "/members": "/trust/inme",
-  "/membership": "/membership/benefits",
+  "/membership": "/member/membership",
   "/renew": "/trust/inme",
   "/renewal": "/trust/inme",
   "/trust": "/trust/inme",
@@ -273,16 +272,6 @@ async function fetchMemberFrontend(request, env, url) {
   return withFrontGateHeaders(await fetch(new Request(target.toString(), request)));
 }
 
-async function fetchMemberPage(request, env, url) {
-  if (env?.MEMBER_PAGES_WORKER?.fetch) {
-    return withFrontGateHeaders(await env.MEMBER_PAGES_WORKER.fetch(request));
-  }
-  const target = new URL(MEMBER_PAGES_UPSTREAM);
-  target.pathname = url.pathname;
-  target.search = url.search;
-  return withFrontGateHeaders(await fetch(new Request(target.toString(), request)));
-}
-
 async function fetchAdminMemberPage(request, env, url) {
   if (env?.ADMIN_WORKER?.fetch) {
     return withFrontGateHeaders(await env.ADMIN_WORKER.fetch(request));
@@ -434,9 +423,6 @@ export default {
     if (isMemberFrontendPath(url)) {
       return fetchMemberFrontend(request, env, url);
     }
-    if (isMemberMembershipPath(url)) {
-      return fetchMemberPage(request, env, url);
-    }
     if (isMemberPaymentsPath(url)) {
       return fetchAdminMemberPage(request, env, url);
     }
@@ -446,11 +432,11 @@ export default {
     if (isModelConsolePath(url)) {
       return renderModelConsoleRecovery(request);
     }
-    if (isMemberPath(url) && !isKnownLegacyMemberRedirect(url)) {
-      return renderMemberStaticRecovery(request);
-    }
     if (shouldNeverTouch(url)) {
       return fetchPassThrough(request);
+    }
+    if (isMemberPath(url) && !isKnownLegacyMemberRedirect(url)) {
+      return renderMemberStaticRecovery(request);
     }
     if (!REDIRECT_HOSTS.has(url.hostname)) {
       return fetchPassThrough(request);
