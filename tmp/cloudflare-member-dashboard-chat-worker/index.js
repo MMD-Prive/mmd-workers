@@ -1963,7 +1963,7 @@ function renderSigilPayRenewalPage(url, method, env) {
                 <input type="hidden" name="session_id" data-mmd-renewx-session-id>
                 <input type="hidden" name="payment_ref" data-mmd-renewx-payment-ref>
                 <input type="hidden" name="transaction_ref" data-mmd-renewx-transaction-ref>
-                <input type="hidden" name="selected_package" value="standard_renewal" data-mmd-renewx-package>
+                <input type="hidden" name="selected_package" value="standard" data-mmd-renewx-package>
                 <input type="hidden" name="payment_method" value="bank_transfer" data-mmd-renewx-method>
                 <input type="hidden" name="cf_turnstile_response" data-mmd-renewx-turnstile-token>
 

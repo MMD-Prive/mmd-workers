@@ -32,6 +32,8 @@ const banned = [
   "MMD Privé — Membership",   // raw-HTML form — must not appear either
   // old page markers
   "mmd-renewal-premium-root",
+  "mmd-renewal-kenji-public",
+  "Renew with Kenji",
   "Renew or Upgrade Access",
   legacyRenewalSlug,
   legacyRenewalBuild,
@@ -83,6 +85,25 @@ test("build ID is MMD_RENEWX_20260620b", async () => {
   const response = await worker.fetch(new Request("https://www.mmdbkk.com/pay/renewal"), env, ctx);
   const html = await response.text();
   assert.ok(html.includes("MMD_RENEWX_20260620b"), "data-build should be MMD_RENEWX_20260620b");
+});
+
+test("renewal page submits supported standard package code", async () => {
+  const response = await worker.fetch(new Request("https://www.mmdbkk.com/pay/renewal"), env, ctx);
+  const html = await response.text();
+  assert.match(
+    html,
+    /name="selected_package"\s+value="standard"/,
+    "selected_package must submit supported standard package code"
+  );
+  assert.ok(
+    !html.includes('name="selected_package" value="standard_renewal"'),
+    "selected_package must not submit unsupported standard_renewal package code"
+  );
+  assert.ok(html.includes("mmd-renewx"), "mmd-renewx marker must remain present");
+  assert.ok(html.includes("MMD_RENEWX_20260620b"), "MMD_RENEWX_20260620b marker must remain present");
+  for (const marker of ["mmd-renewal-kenji-public", "Renew with Kenji", legacyRenewalSlug, legacyRenewalBuild]) {
+    assert.ok(!html.includes(marker), `must not contain legacy marker: ${marker}`);
+  }
 });
 
 test("hero images present in HTML", async () => {
