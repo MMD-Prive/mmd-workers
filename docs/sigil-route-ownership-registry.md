@@ -70,7 +70,7 @@ Read-only production probe:
 | `/member/login` | `mmd-redirect-worker` temporary shell | 200 HTML temporary member shell, no redirect, `t/code/promo` preserved in shell links. Customer-facing but not true auth. | Needs decision: either Webflow login/start page or real member auth worker. | needs source recovery |
 | `/member/dashboard` | `immigrate-worker` | `mmd-redirect-worker` delegates to `IMMIGRATE_WORKER`; 200 HTML `Member Home / Status Hub`; no redirect; `t/code/promo` preserved. Customer-facing. | Keep current owner until explicit migration. | locked, do not touch |
 | `/member/profile` | `mmd-redirect-worker` temporary shell | 200 temporary member shell; no redirect; query preserved in shell links. Customer-facing placeholder. | Move to new member worker or admin/member facade after product decision. | needs source recovery |
-| `/member/membership` | `member-pages-worker` today; intended owner needs decision | `mmd-redirect-worker` delegates to `MEMBER_PAGES_WORKER`; 200 membership packages page; no redirect; `t/code/promo` preserved in dashboard/payment links. Customer-facing. | Unknown / needs decision: keep `member-pages-worker` temporarily or move to Webflow if Webflow is declared canonical. | needs route fix only after decision |
+| `/member/membership` | Webflow, confirmed by Per; current temporary renderer is `member-pages-worker` | `mmd-redirect-worker` delegates to `MEMBER_PAGES_WORKER`; 200 membership packages page; no redirect; `t/code/promo` preserved in dashboard/payment links. Customer-facing. | Move to Webflow. Per confirmed Option A: Webflow is canonical owner for `/member/membership`. | needs route fix |
 | `/member/upgrade` | `mmd-redirect-worker` temporary shell | 200 temporary member shell; no redirect; query preserved in shell links. Customer-facing placeholder. | Move to new member worker or Webflow/member page source after decision. | needs source recovery |
 | `/member/points` | `mmd-redirect-worker` temporary shell | 200 temporary member shell; no redirect; query preserved in shell links. Customer-facing placeholder. | Move to new member worker or member API/page source after decision. | needs source recovery |
 | `/member/payments` | `admin-worker` | `mmd-redirect-worker` delegates to `ADMIN_WORKER`; production probe returned 401 JSON for unauthenticated HEAD; route is protected/member-private, query reaches worker. | Keep admin/member facade until a dedicated member worker exists. | locked |
@@ -94,8 +94,10 @@ Read-only production probe:
 
 ### Is `/member/membership` intended to be Webflow-owned?
 
-Not confirmed by the current repository state. On `origin/main`, the explicit
-production route is:
+Yes. Per confirmed Option A: Webflow is canonical owner for
+`/member/membership`.
+
+The current repository state still shows this explicit production route:
 
 ```txt
 mmd-redirect-worker /member/membership
@@ -107,12 +109,13 @@ The live production probe also matches the package content rendered by
 `member-pages-worker`, including `Standard`, `Premium`, `VIP`, `BLACK CARD NOTE`,
 and preserved `t/code/promo` links.
 
-Therefore the registry does not mark Webflow as the confirmed owner yet. It
-marks the future owner as `unknown / needs decision`.
+Therefore this registry records a split state: current production still routes
+through `member-pages-worker`, but the intended future owner is Webflow.
 
 ### Is `member-pages-worker` only a temporary renderer?
 
-Likely yes, but not formally locked by a registry before this file. Evidence:
+Yes. With Per's Option A decision, `member-pages-worker` is only a temporary
+renderer / rollback source until route cleanup is approved. Evidence:
 
 - It only renders `/member/membership`.
 - It is a lightweight HTML renderer, not a broad member system.
@@ -120,24 +123,22 @@ Likely yes, but not formally locked by a registry before this file. Evidence:
 - Webflow content exists for nearby SIGIL/public surfaces, but not as a confirmed
   canonical `/member/membership` source in this repo.
 
-Treat `member-pages-worker` as the current production owner and probable
-temporary renderer until Per/product explicitly confirms Webflow or another
-member layer as canonical.
+Treat `member-pages-worker` as the current production renderer, not the future
+design source of truth.
 
 ### Should future design edits happen in Webflow or in a Worker source file?
 
-Do not edit either until the owner decision is made.
+Future design edits must happen in Webflow, not in
+`member-pages-worker/src/index.js`.
 
-- If the decision is Webflow-owned, future design edits happen in Webflow, and
-  `member-pages-worker` becomes rollback/legacy only.
-- If the decision is worker-owned, future design edits happen in
-  `member-pages-worker/src/index.js` or its replacement worker, not Webflow.
+`member-pages-worker` should stay in place only as rollback/legacy until Per
+approves cleanup.
 
 ### What exact route change is needed, if any?
 
 No route change should be made as part of this registry PR.
 
-If Per confirms Webflow as canonical, the route fix should be:
+Because Per confirmed Webflow as canonical, the follow-up route fix should be:
 
 1. In `mmd-redirect-worker/src/index.js`, stop calling `fetchMemberPage()` for
    `isMemberMembershipPath(url)`.
@@ -150,15 +151,12 @@ If Per confirms Webflow as canonical, the route fix should be:
    `MEMBER_PAGES_WORKER`, preserves `t/code/promo`, and does not redirect to
    `/pay/membership`, `/trust/inme`, or legacy pages.
 
-If Per confirms `member-pages-worker` as canonical, no route change is needed;
-the page source should be worker-owned and Webflow edits should not be treated
-as production edits for `/member/membership`.
-
 ## Temporary / Legacy Sources
 
 | Source | Registry status | Notes |
 | --- | --- | --- |
-| `immigrate-worker` membership renderer | legacy/migration only for `/member/membership` while front gate points at `member-pages-worker` | Do not redesign here unless route ownership changes back. |
+| `immigrate-worker` membership renderer | legacy/migration only for `/member/membership` while front gate points at `member-pages-worker` | Do not redesign here; Webflow is the confirmed future source of truth. |
+| `member-pages-worker` membership renderer | temporary renderer / rollback only | Current production renderer for `/member/membership`, but not the future design source of truth after Per confirmed Webflow ownership. |
 | `member-dashboard-chat-worker` / tmp Cloudflare snapshots | legacy/migration only | Not present as canonical source on `origin/main`; do not base new route decisions on snapshots. |
 | `mmd-redirect-worker` unknown member shells | temporary recovery only | Useful for safe 200s, but not a design source of truth. |
 | Legacy migration scripts/docs | legacy/migration only | Evidence for history, not production owner. |
@@ -168,7 +166,7 @@ as production edits for `/member/membership`.
 | Area | Locked now | Needs decision | Do not touch |
 | --- | --- | --- | --- |
 | Member dashboard | `/member/dashboard` -> `immigrate-worker` | none for this task | behavior unchanged |
-| Member membership | current owner `member-pages-worker` | Webflow vs worker canonical source | no route change in this PR |
+| Member membership | future owner Webflow; current renderer `member-pages-worker` | route fix needed to move off `member-pages-worker` | no route change in this PR |
 | Member placeholders | none | `/member/login`, `/member/profile`, `/member/upgrade`, `/member/points`, `/member/sessions` | no redesign in this PR |
 | Payment renewal | current renewal page/API behavior | none in this task | `/pay/renewal`, payment renewal work |
 | Trust entry | `/inme` alias redirects | `/trust/inme` currently redirects to renewal; product decision needed | no route change in this PR |
