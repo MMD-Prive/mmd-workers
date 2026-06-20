@@ -12,9 +12,10 @@ export const CANONICAL_HOST = "mmdbkk.com";
 export const CANONICAL_PROTOCOL = "https:";
 export const CONFIRM_PAYMENT_PATH = "/confirm/payment-confirmation";
 export const MEMBER_DASHBOARD_UPSTREAM = "https://immigrate-worker.malemodel-bkk.workers.dev";
+export const MEMBER_PAGES_UPSTREAM = "https://member-pages-worker.malemodel-bkk.workers.dev";
 export const ADMIN_WORKER_UPSTREAM = "https://admin-worker.malemodel-bkk.workers.dev";
 export const FRONT_GATE = "mmd-redirect-worker";
-export const FRONT_VERSION = "20260617T060000Z";
+export const FRONT_VERSION = "20260620T000000Z";
 
 export const REDIRECT_HOSTS = new Set([
   "www.mmdbkk.com",
@@ -259,7 +260,7 @@ function isKnownLegacyMemberRedirect(url) {
 }
 
 function isMemberFrontendPath(url) {
-  return isMemberDashboardPath(url) || isMemberMembershipPath(url);
+  return isMemberDashboardPath(url);
 }
 
 async function fetchMemberFrontend(request, env, url) {
@@ -267,6 +268,16 @@ async function fetchMemberFrontend(request, env, url) {
     return withFrontGateHeaders(await env.IMMIGRATE_WORKER.fetch(request));
   }
   const target = new URL(MEMBER_DASHBOARD_UPSTREAM);
+  target.pathname = url.pathname;
+  target.search = url.search;
+  return withFrontGateHeaders(await fetch(new Request(target.toString(), request)));
+}
+
+async function fetchMemberPage(request, env, url) {
+  if (env?.MEMBER_PAGES_WORKER?.fetch) {
+    return withFrontGateHeaders(await env.MEMBER_PAGES_WORKER.fetch(request));
+  }
+  const target = new URL(MEMBER_PAGES_UPSTREAM);
   target.pathname = url.pathname;
   target.search = url.search;
   return withFrontGateHeaders(await fetch(new Request(target.toString(), request)));
@@ -422,6 +433,9 @@ export default {
     }
     if (isMemberFrontendPath(url)) {
       return fetchMemberFrontend(request, env, url);
+    }
+    if (isMemberMembershipPath(url)) {
+      return fetchMemberPage(request, env, url);
     }
     if (isMemberPaymentsPath(url)) {
       return fetchAdminMemberPage(request, env, url);
