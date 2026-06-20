@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
 import worker, {
+  ROUTE_HOP_HEADER,
   findMappedPath,
+  getRouteHop,
   normalizePath,
+  resolveRouteOwner,
   shouldNeverTouch,
 } from "../src/index.js";
 
@@ -57,6 +60,7 @@ describe("MMD permanent redirect guard", () => {
 
     assert.equal(response.status, 301);
     assert.equal(response.headers.get("location"), "https://mmdbkk.com/trust/inme?t=abc123&ref=line");
+    assert.equal(response.headers.get("x-mmd-route-id"), "canonical-redirect");
     assert.equal(passThroughRequests.length, 0);
   });
 
@@ -65,6 +69,7 @@ describe("MMD permanent redirect guard", () => {
 
     assert.equal(response.status, 301);
     assert.equal(response.headers.get("location"), "https://mmdbkk.com/trust/inme?t=abc");
+    assert.equal(response.headers.get("x-mmd-route-mode"), "terminal-redirect");
   });
 
   it("maps /member and /membership to the membership benefits page", async () => {
@@ -103,21 +108,24 @@ describe("MMD permanent redirect guard", () => {
       assert.equal(response.status, 200, url);
       assert.equal(response.headers.get("location"), null);
       assert.equal(response.headers.get("x-mmd-page"), "member-dashboard");
+      assert.equal(response.headers.get("x-mmd-route-id"), "member-dashboard");
+      assert.equal(response.headers.get("x-mmd-route-owner"), "immigrate-worker");
       assert.equal(serviceRequests.at(-1).url, url);
+      assert.equal(serviceRequests.at(-1).headers.get(ROUTE_HOP_HEADER), "1");
     }
 
     assert.equal(passThroughRequests.length, 0);
   });
 
-  it("delegates /member/membership to immigrate-worker by service binding without redirecting or changing query strings", async () => {
+  it("delegates /member/membership to member-pages-worker by service binding without redirecting or changing query strings", async () => {
     const serviceRequests = [];
     const env = {
-      IMMIGRATE_WORKER: {
+      MEMBER_PAGES_WORKER: {
         fetch: async (request) => {
           serviceRequests.push(request);
           return new Response("member membership", {
             status: 200,
-            headers: { "x-mmd-worker": "immigrate-worker", "x-mmd-page": "member-membership" },
+            headers: { "x-mmd-worker": "member-pages-worker", "x-mmd-page": "member-membership" },
           });
         },
       },
@@ -137,7 +145,10 @@ describe("MMD permanent redirect guard", () => {
       assert.equal(response.status, 200, url);
       assert.equal(response.headers.get("location"), null);
       assert.equal(response.headers.get("x-mmd-page"), "member-membership");
+      assert.equal(response.headers.get("x-mmd-route-id"), "member-membership");
+      assert.equal(response.headers.get("x-mmd-route-owner"), "member-pages-worker");
       assert.equal(serviceRequests.at(-1).url, url);
+      assert.equal(serviceRequests.at(-1).headers.get(ROUTE_HOP_HEADER), "1");
     }
 
     assert.equal(passThroughRequests.length, 0);
@@ -171,9 +182,11 @@ describe("MMD permanent redirect guard", () => {
       assert.equal(response.headers.get("location"), null, url);
       assert.equal(response.headers.get("x-mmd-worker"), "admin-worker", url);
       assert.equal(response.headers.get("x-mmd-page"), "member-payments", url);
+      assert.equal(response.headers.get("x-mmd-route-id"), "member-payments", url);
       assert.match(html, new RegExp(`/member/dashboard\\${new URL(url).search}`), url);
       assert.doesNotMatch(html, /name=["']token["']/i, url);
       assert.equal(adminRequests.at(-1).url, url);
+      assert.equal(adminRequests.at(-1).headers.get(ROUTE_HOP_HEADER), "1");
     }
 
     assert.equal(passThroughRequests.length, 0);
@@ -195,6 +208,7 @@ describe("MMD permanent redirect guard", () => {
       assert.equal(response.headers.get("location"), null, url);
       assert.equal(response.headers.get("x-mmd-worker"), "mmd-redirect-worker", url);
       assert.equal(response.headers.get("x-mmd-page"), "hall", url);
+      assert.equal(response.headers.get("x-mmd-route-id"), "hall", url);
       assert.equal(response.headers.get("x-mmd-temporary-route"), "true", url);
       assert.equal(response.headers.get("cache-control"), "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0", url);
       assert.equal(response.headers.get("pragma"), "no-cache", url);
@@ -224,6 +238,7 @@ describe("MMD permanent redirect guard", () => {
       assert.equal(response.status, 200, url);
       assert.equal(response.headers.get("location"), null, url);
       assert.equal(response.headers.get("x-mmd-page"), "member-static", url);
+      assert.equal(response.headers.get("x-mmd-route-id"), "member-static", url);
       assert.equal(response.headers.get("x-mmd-temporary-route"), "true", url);
       assert.match(html, url.includes("kenji-20-ai") ? /Kenji 20 AI/ : /Some New Page/, url);
       assert.match(html, /หน้านี้อยู่ในพื้นที่สมาชิกของ MMD Privé/, url);
@@ -249,6 +264,7 @@ describe("MMD permanent redirect guard", () => {
       assert.equal(response.status, 200, url);
       assert.equal(response.headers.get("location"), null, url);
       assert.equal(response.headers.get("x-mmd-page"), "model-console", url);
+      assert.equal(response.headers.get("x-mmd-route-id"), "model-console", url);
       assert.equal(response.headers.get("x-mmd-temporary-route"), "true", url);
       assert.match(html, /Model Console/, url);
       assert.match(html, /พื้นที่สำหรับผู้ให้บริการตรวจสถานะงาน/, url);
@@ -260,12 +276,12 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
-  it("falls back to the immigrate-worker upstream for /member/membership when service binding is missing", async () => {
+  it("falls back to the member-pages-worker upstream for /member/membership when service binding is missing", async () => {
     globalThis.fetch = async (request) => {
       passThroughRequests.push(request);
       return new Response("membership upstream", {
         status: 200,
-        headers: { "x-mmd-worker": "immigrate-worker", "x-mmd-page": "member-membership" },
+        headers: { "x-mmd-worker": "member-pages-worker", "x-mmd-page": "member-membership" },
       });
     };
 
@@ -279,10 +295,12 @@ describe("MMD permanent redirect guard", () => {
       const response = await request(url);
       const expected = new URL(url);
       expected.protocol = "https:";
-      expected.hostname = "immigrate-worker.malemodel-bkk.workers.dev";
+      expected.hostname = "member-pages-worker.malemodel-bkk.workers.dev";
       assert.equal(response.status, 200, url);
       assert.equal(response.headers.get("location"), null);
+      assert.equal(response.headers.get("x-mmd-route-id"), "member-membership");
       assert.equal(passThroughRequests.at(-1).url, expected.toString());
+      assert.equal(passThroughRequests.at(-1).headers.get(ROUTE_HOP_HEADER), "1");
     }
   });
 
@@ -313,7 +331,9 @@ describe("MMD permanent redirect guard", () => {
       expected.hostname = "immigrate-worker.malemodel-bkk.workers.dev";
       assert.equal(response.status, 209, url);
       assert.equal(passThroughRequests.at(-1).url, expected.toString());
+      assert.equal(passThroughRequests.at(-1).headers.get(ROUTE_HOP_HEADER), "1");
       assert.equal(response.headers.get("location"), null);
+      assert.equal(response.headers.get("x-mmd-route-id"), "member-dashboard");
     }
   });
 
@@ -323,6 +343,7 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(response.status, 209);
     assert.equal(response.headers.get("location"), null);
     assert.equal(response.headers.get("x-test-pass-through"), "1");
+    assert.equal(response.headers.get("x-mmd-route-id"), "never-touch-pass-through");
     assert.equal(passThroughRequests.at(-1).url, "https://mmdbkk.com/pay/membership?t=abc&code=x&promo=y&debug=1");
   });
 
@@ -381,12 +402,15 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 1);
   });
 
-  it("passes through canonical URLs that do not need changes", async () => {
+  it("passes through canonical URLs that do not need changes as terminal pass-through", async () => {
     const response = await request("https://mmdbkk.com/about?t=abc");
 
     assert.equal(response.status, 209);
     assert.equal(response.headers.get("x-test-pass-through"), "1");
+    assert.equal(response.headers.get("x-mmd-route-id"), "canonical-pass-through");
+    assert.equal(response.headers.get("x-mmd-route-mode"), "terminal-pass-through");
     assert.equal(passThroughRequests.length, 1);
+    assert.equal(passThroughRequests.at(-1).headers.get(ROUTE_HOP_HEADER), "1");
   });
 
   it("passes through already canonical /trust/inme", async () => {
@@ -400,6 +424,7 @@ describe("MMD permanent redirect guard", () => {
     const response = await request("https://www.mmdbkk.com/inme?t=abc", { method: "POST" });
 
     assert.equal(response.status, 209);
+    assert.equal(response.headers.get("x-mmd-route-id"), "unsafe-method-pass-through");
     assert.equal(passThroughRequests.length, 1);
   });
 
@@ -408,6 +433,23 @@ describe("MMD permanent redirect guard", () => {
 
     assert.equal(response.status, 209);
     assert.equal(passThroughRequests.length, 1);
+  });
+
+  it("passes through SIGIL admin and booking with explicit route ownership", async () => {
+    const urls = [
+      ["https://mmdbkk.com/sigil/admin/login?t=abc", "sigil-admin", "sigil-admin-worker"],
+      ["https://mmdbkk.com/sigil/booking?t=abc", "sigil-booking", "sigil-model-search-worker"],
+    ];
+
+    for (const [url, routeId, owner] of urls) {
+      const response = await request(url);
+      assert.equal(response.status, 209, url);
+      assert.equal(response.headers.get("location"), null, url);
+      assert.equal(response.headers.get("x-mmd-route-id"), routeId, url);
+      assert.equal(response.headers.get("x-mmd-route-owner"), owner, url);
+      assert.equal(passThroughRequests.at(-1).url, url);
+      assert.equal(passThroughRequests.at(-1).headers.get(ROUTE_HOP_HEADER), "1", url);
+    }
   });
 
   it("passes through API, payment, webhook, admin, and asset prefixes", async () => {
@@ -422,7 +464,6 @@ describe("MMD permanent redirect guard", () => {
       "/payment/review",
       "/payment-webhook/stripe",
       "/admin/console",
-      "/sigil/admin/login",
       "/sigil/pay/renewal",
       "/sigil/api/recovery/ack",
       "/cdn-cgi/trace",
@@ -443,6 +484,7 @@ describe("MMD permanent redirect guard", () => {
     const response = await request("https://sigil.mmdbkk.com/inme?t=abc");
 
     assert.equal(response.status, 209);
+    assert.equal(response.headers.get("x-mmd-route-id"), "never-touch-pass-through");
     assert.equal(passThroughRequests.length, 1);
   });
 
@@ -450,6 +492,7 @@ describe("MMD permanent redirect guard", () => {
     const response = await request("https://models.mmdbkk.com/inme?t=abc");
 
     assert.equal(response.status, 209);
+    assert.equal(response.headers.get("x-mmd-route-id"), "unmanaged-host-pass-through");
     assert.equal(passThroughRequests.length, 1);
   });
 
@@ -457,7 +500,21 @@ describe("MMD permanent redirect guard", () => {
     const response = await request("https://sigil.mmdbkk.com/sigil/admin/login?t=abc");
 
     assert.equal(response.status, 209);
+    assert.equal(response.headers.get("x-mmd-route-id"), "sigil-admin");
     assert.equal(passThroughRequests.length, 1);
+  });
+
+  it("blocks requests that re-enter the front gate too many times", async () => {
+    const response = await request("https://mmdbkk.com/about?t=abc", {
+      headers: { [ROUTE_HOP_HEADER]: "2" },
+    });
+    const text = await response.text();
+
+    assert.equal(response.status, 508);
+    assert.equal(text, "MMD route loop blocked");
+    assert.equal(response.headers.get("x-mmd-route-error"), "loop-blocked");
+    assert.equal(response.headers.get("x-mmd-route-id"), "route-loop-blocked");
+    assert.equal(passThroughRequests.length, 0);
   });
 
   it("injects the dashboard bridge on the payment confirmation page only", async () => {
@@ -494,5 +551,19 @@ describe("redirect helpers", () => {
   it("recognizes exact no-touch prefixes without trailing slash", () => {
     assert.equal(shouldNeverTouch(new URL("https://mmdbkk.com/api")), true);
     assert.equal(shouldNeverTouch(new URL("https://mmdbkk.com/payment")), true);
+  });
+
+  it("resolves explicit route owners without path-group inference", () => {
+    assert.equal(resolveRouteOwner(new URL("https://mmdbkk.com/member/dashboard?t=abc")).id, "member-dashboard");
+    assert.equal(resolveRouteOwner(new URL("https://mmdbkk.com/member/membership?t=abc")).id, "member-membership");
+    assert.equal(resolveRouteOwner(new URL("https://mmdbkk.com/sigil/admin/login")).id, "sigil-admin");
+    assert.equal(resolveRouteOwner(new URL("https://mmdbkk.com/sigil/booking")).id, "sigil-booking");
+    assert.equal(resolveRouteOwner(new URL("https://mmdbkk.com/member/membership/benefits")), null);
+  });
+
+  it("reads route hop headers safely", () => {
+    assert.equal(getRouteHop(new Request("https://mmdbkk.com/about")), 0);
+    assert.equal(getRouteHop(new Request("https://mmdbkk.com/about", { headers: { [ROUTE_HOP_HEADER]: "2" } })), 2);
+    assert.equal(getRouteHop(new Request("https://mmdbkk.com/about", { headers: { [ROUTE_HOP_HEADER]: "bad" } })), 0);
   });
 });
