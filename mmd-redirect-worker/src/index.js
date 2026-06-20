@@ -16,6 +16,8 @@ export const MEMBER_PAGES_UPSTREAM = "https://member-pages-worker.malemodel-bkk.
 export const ADMIN_WORKER_UPSTREAM = "https://admin-worker.malemodel-bkk.workers.dev";
 export const FRONT_GATE = "mmd-redirect-worker";
 export const FRONT_VERSION = "20260620T000000Z";
+export const ROUTE_HOP_HEADER = "x-mmd-route-hop";
+export const MAX_ROUTE_HOPS = 2;
 
 export const REDIRECT_HOSTS = new Set([
   "www.mmdbkk.com",
@@ -86,6 +88,115 @@ export const FOLDER_REDIRECTS = [
   },
 ];
 
+export const ROUTE_REGISTRY = [
+  {
+    id: "line-webhook",
+    owner: "line-webhook-netlify",
+    mode: "upstream-bridge",
+    status: "production",
+    exactPaths: ["/webhook/line", "/webhooks/line"],
+  },
+  {
+    id: "member-dashboard",
+    owner: "immigrate-worker",
+    mode: "protected-pass-through",
+    status: "locked-production",
+    exactPaths: ["/member/dashboard"],
+  },
+  {
+    id: "member-membership",
+    owner: "member-pages-worker",
+    mode: "protected-pass-through",
+    status: "not-ready-to-publish",
+    exactPaths: ["/member/membership"],
+  },
+  {
+    id: "member-payments",
+    owner: "admin-worker",
+    mode: "protected-pass-through",
+    status: "production",
+    exactPaths: ["/member/payments"],
+  },
+  {
+    id: "sigil-admin",
+    owner: "sigil-admin-worker",
+    mode: "protected-pass-through",
+    status: "production",
+    prefixes: ["/sigil/admin"],
+  },
+  {
+    id: "sigil-booking",
+    owner: "sigil-model-search-worker",
+    mode: "planned-protected-pass-through",
+    status: "planned",
+    exactPaths: ["/sigil/booking"],
+  },
+  {
+    id: "hall",
+    owner: "mmd-redirect-worker",
+    mode: "route-recovery-shell",
+    status: "temporary",
+    exactPaths: ["/hall"],
+  },
+  {
+    id: "model-console",
+    owner: "mmd-redirect-worker",
+    mode: "route-recovery-shell",
+    status: "temporary",
+    exactPaths: ["/model/console"],
+  },
+  {
+    id: "member-static",
+    owner: "mmd-redirect-worker",
+    mode: "controlled-member-fallback",
+    status: "temporary",
+    prefixes: ["/member/"],
+    skipKnownLegacyRedirects: true,
+  },
+];
+
+export const PASS_THROUGH_ROUTE = {
+  id: "canonical-pass-through",
+  owner: "origin",
+  mode: "terminal-pass-through",
+  status: "public",
+};
+
+export const NEVER_TOUCH_ROUTE = {
+  id: "never-touch-pass-through",
+  owner: "origin",
+  mode: "terminal-pass-through",
+  status: "protected",
+};
+
+export const UNMANAGED_HOST_ROUTE = {
+  id: "unmanaged-host-pass-through",
+  owner: "origin",
+  mode: "terminal-pass-through",
+  status: "external-host",
+};
+
+export const REDIRECT_ROUTE = {
+  id: "canonical-redirect",
+  owner: "mmd-redirect-worker",
+  mode: "terminal-redirect",
+  status: "managed",
+};
+
+export const UNSAFE_METHOD_ROUTE = {
+  id: "unsafe-method-pass-through",
+  owner: "origin",
+  mode: "terminal-pass-through",
+  status: "unsafe-method",
+};
+
+export const LOOP_BLOCKED_ROUTE = {
+  id: "route-loop-blocked",
+  owner: "mmd-redirect-worker",
+  mode: "terminal-error",
+  status: "loop-blocked",
+};
+
 export function isSafePageRequest(request) {
   const method = request.method.toUpperCase();
   return method === "GET" || method === "HEAD";
@@ -117,15 +228,65 @@ export function buildTargetUrl(originalUrl, nextPathname) {
   return target;
 }
 
-function withFrontGateHeaders(response) {
+export function getRouteHop(request) {
+  const hop = Number.parseInt(request.headers.get(ROUTE_HOP_HEADER) || "0", 10);
+  return Number.isFinite(hop) && hop > 0 ? hop : 0;
+}
+
+function routeMatches(route, url) {
+  const normalized = normalizePath(url.pathname).toLowerCase();
+  if (route.skipKnownLegacyRedirects && isKnownLegacyMemberRedirect(url)) return false;
+  if (route.exactPaths?.includes(normalized)) return true;
+  return Boolean(
+    route.prefixes?.some((prefix) => {
+      const normalizedPrefix = normalizePath(prefix).toLowerCase();
+      return normalized === normalizedPrefix || normalized.startsWith(`${normalizedPrefix}/`);
+    }),
+  );
+}
+
+export function resolveRouteOwner(url) {
+  return ROUTE_REGISTRY.find((route) => routeMatches(route, url)) || null;
+}
+
+function withFrontGateHeaders(response, route = null) {
   const headers = new Headers(response.headers);
   headers.set("x-mmd-front-gate", FRONT_GATE);
   headers.set("x-mmd-front-version", FRONT_VERSION);
+  if (route) {
+    headers.set("x-mmd-route-id", route.id);
+    headers.set("x-mmd-route-owner", route.owner);
+    headers.set("x-mmd-route-mode", route.mode);
+    headers.set("x-mmd-route-status", route.status);
+  }
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
     headers,
   });
+}
+
+function buildLoopBlockedResponse(request) {
+  return withFrontGateHeaders(
+    new Response(request.method.toUpperCase() === "HEAD" ? null : "MMD route loop blocked", {
+      status: 508,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+        "x-mmd-route-error": "loop-blocked",
+      },
+    }),
+    LOOP_BLOCKED_ROUTE,
+  );
+}
+
+function createRoutedRequest(request, targetUrl = request.url, init = {}) {
+  const headers = new Headers(request.headers);
+  headers.set(ROUTE_HOP_HEADER, String(getRouteHop(request) + 1));
+  const routedInit = { ...init, headers };
+  const routedRequest = new Request(request, routedInit);
+  if (String(targetUrl) === request.url) return routedRequest;
+  return new Request(String(targetUrl), routedRequest);
 }
 
 function isConfirmPaymentPage(url) {
@@ -203,25 +364,24 @@ async function maybeInjectConfirmPaymentBridge(request, response, url) {
   });
 }
 
-async function fetchPassThrough(request) {
+async function fetchPassThrough(request, route = PASS_THROUGH_ROUTE) {
   const url = new URL(request.url);
-  const response = await fetch(new Request(request, { redirect: "follow" }));
-  return withFrontGateHeaders(await maybeInjectConfirmPaymentBridge(request, response, url));
+  const response = await fetch(createRoutedRequest(request, request.url, { redirect: "follow" }));
+  return withFrontGateHeaders(await maybeInjectConfirmPaymentBridge(request, response, url), route);
 }
 
 function isLineWebhookPath(url) {
   return LINE_WEBHOOK_PATHS.has(url.pathname.toLowerCase());
 }
 
-async function fetchLineWebhook(request, env = {}, url) {
+async function fetchLineWebhook(request, env = {}, url, route) {
   const upstream = String(env?.LINE_WEBHOOK_UPSTREAM_URL || "").trim();
   if (!upstream) {
-    return fetchPassThrough(request);
+    return fetchPassThrough(request, route);
   }
   const target = new URL(upstream);
   target.search = url.search;
-  const upstreamRequest = new Request(target.toString(), request);
-  return withFrontGateHeaders(await fetch(upstreamRequest));
+  return withFrontGateHeaders(await fetch(createRoutedRequest(request, target.toString())), route);
 }
 
 function isMemberDashboardPath(url) {
@@ -263,34 +423,34 @@ function isMemberFrontendPath(url) {
   return isMemberDashboardPath(url);
 }
 
-async function fetchMemberFrontend(request, env, url) {
+async function fetchMemberFrontend(request, env, url, route) {
   if (env?.IMMIGRATE_WORKER?.fetch) {
-    return withFrontGateHeaders(await env.IMMIGRATE_WORKER.fetch(request));
+    return withFrontGateHeaders(await env.IMMIGRATE_WORKER.fetch(createRoutedRequest(request)), route);
   }
   const target = new URL(MEMBER_DASHBOARD_UPSTREAM);
   target.pathname = url.pathname;
   target.search = url.search;
-  return withFrontGateHeaders(await fetch(new Request(target.toString(), request)));
+  return withFrontGateHeaders(await fetch(createRoutedRequest(request, target.toString())), route);
 }
 
-async function fetchMemberPage(request, env, url) {
+async function fetchMemberPage(request, env, url, route) {
   if (env?.MEMBER_PAGES_WORKER?.fetch) {
-    return withFrontGateHeaders(await env.MEMBER_PAGES_WORKER.fetch(request));
+    return withFrontGateHeaders(await env.MEMBER_PAGES_WORKER.fetch(createRoutedRequest(request)), route);
   }
   const target = new URL(MEMBER_PAGES_UPSTREAM);
   target.pathname = url.pathname;
   target.search = url.search;
-  return withFrontGateHeaders(await fetch(new Request(target.toString(), request)));
+  return withFrontGateHeaders(await fetch(createRoutedRequest(request, target.toString())), route);
 }
 
-async function fetchAdminMemberPage(request, env, url) {
+async function fetchAdminMemberPage(request, env, url, route) {
   if (env?.ADMIN_WORKER?.fetch) {
-    return withFrontGateHeaders(await env.ADMIN_WORKER.fetch(request));
+    return withFrontGateHeaders(await env.ADMIN_WORKER.fetch(createRoutedRequest(request)), route);
   }
   const target = new URL(ADMIN_WORKER_UPSTREAM);
   target.pathname = url.pathname;
   target.search = url.search;
-  return withFrontGateHeaders(await fetch(new Request(target.toString(), request)));
+  return withFrontGateHeaders(await fetch(createRoutedRequest(request, target.toString())), route);
 }
 
 function formatMemberPageHeading(pathname) {
@@ -425,35 +585,43 @@ export function findMappedPath(pathname) {
 export default {
   async fetch(request, env = {}) {
     const url = new URL(request.url);
-    if (isLineWebhookPath(url)) {
-      return fetchLineWebhook(request, env, url);
+    const route = resolveRouteOwner(url);
+
+    if (getRouteHop(request) >= MAX_ROUTE_HOPS) {
+      return buildLoopBlockedResponse(request);
+    }
+    if (route?.id === "line-webhook" || isLineWebhookPath(url)) {
+      return fetchLineWebhook(request, env, url, route || ROUTE_REGISTRY[0]);
     }
     if (!isSafePageRequest(request)) {
-      return withFrontGateHeaders(await fetch(request));
+      return fetchPassThrough(request, UNSAFE_METHOD_ROUTE);
     }
-    if (isMemberFrontendPath(url)) {
-      return fetchMemberFrontend(request, env, url);
+    if (route?.id === "member-dashboard" || isMemberFrontendPath(url)) {
+      return fetchMemberFrontend(request, env, url, route || ROUTE_REGISTRY[1]);
     }
-    if (isMemberMembershipPath(url)) {
-      return fetchMemberPage(request, env, url);
+    if (route?.id === "member-membership" || isMemberMembershipPath(url)) {
+      return fetchMemberPage(request, env, url, route || ROUTE_REGISTRY[2]);
     }
-    if (isMemberPaymentsPath(url)) {
-      return fetchAdminMemberPage(request, env, url);
+    if (route?.id === "member-payments" || isMemberPaymentsPath(url)) {
+      return fetchAdminMemberPage(request, env, url, route || ROUTE_REGISTRY[3]);
     }
-    if (isHallPath(url)) {
-      return renderHallRecovery(request);
+    if (route?.id === "hall" || isHallPath(url)) {
+      return withFrontGateHeaders(renderHallRecovery(request), route || ROUTE_REGISTRY[6]);
     }
-    if (isModelConsolePath(url)) {
-      return renderModelConsoleRecovery(request);
+    if (route?.id === "model-console" || isModelConsolePath(url)) {
+      return withFrontGateHeaders(renderModelConsoleRecovery(request), route || ROUTE_REGISTRY[7]);
     }
-    if (isMemberPath(url) && !isKnownLegacyMemberRedirect(url)) {
-      return renderMemberStaticRecovery(request);
+    if (route?.id === "member-static" || (isMemberPath(url) && !isKnownLegacyMemberRedirect(url))) {
+      return withFrontGateHeaders(renderMemberStaticRecovery(request), route || ROUTE_REGISTRY[8]);
+    }
+    if (route?.id === "sigil-admin" || route?.id === "sigil-booking") {
+      return fetchPassThrough(request, route);
     }
     if (shouldNeverTouch(url)) {
-      return fetchPassThrough(request);
+      return fetchPassThrough(request, NEVER_TOUCH_ROUTE);
     }
     if (!REDIRECT_HOSTS.has(url.hostname)) {
-      return fetchPassThrough(request);
+      return fetchPassThrough(request, UNMANAGED_HOST_ROUTE);
     }
     const mappedPath = findMappedPath(url.pathname);
     const target = buildTargetUrl(url, mappedPath);
@@ -462,8 +630,8 @@ export default {
       url.hostname !== CANONICAL_HOST ||
       url.pathname !== mappedPath;
     if (!needsRedirect || target.toString() === url.toString()) {
-      return fetchPassThrough(request);
+      return fetchPassThrough(request, PASS_THROUGH_ROUTE);
     }
-    return withFrontGateHeaders(Response.redirect(target.toString(), 301));
+    return withFrontGateHeaders(Response.redirect(target.toString(), 301), REDIRECT_ROUTE);
   },
 };
