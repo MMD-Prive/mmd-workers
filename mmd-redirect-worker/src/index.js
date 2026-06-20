@@ -17,6 +17,7 @@ export const ADMIN_WORKER_UPSTREAM = "https://admin-worker.malemodel-bkk.workers
 export const SIGIL_WORKER_UPSTREAM = "https://sigil.mmdbkk.com";
 export const FRONT_GATE = "mmd-redirect-worker";
 export const FRONT_VERSION = "20260622T071500Z";
+export const DEFAULT_WEBFLOW_ORIGIN_HOST = "mmdprive.webflow.io";
 export const SIGIL_APPLY_PAGE = "sigil-private-model-setup";
 export const SIGIL_PRIVATE_MODEL_APPLY_API_PAGE = "sigil-private-model-apply-api";
 export const SIGIL_APPLY_ROUTE_OWNER = "sigil-worker";
@@ -24,8 +25,7 @@ export const SIGIL_APPLY_ROUTE_OWNER = "sigil-worker";
 export const REDIRECT_HOSTS = new Set(["www.mmdbkk.com", "mmdbkk.com", "mmdprive.com", "www.mmdprive.com", "malemodel-bkk.workers.dev"]);
 export const NEVER_TOUCH_HOSTS = new Set(["sigil.mmdbkk.com"]);
 export const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webhook/line", "/webhook/line/"]);
-export const MEMBER_PAGE_PATHS = new Set(["/member/membership", "/member/membership/", "/member/profile", "/member/profile/", "/pay/membership", "/pay/membership/", "/pay/pending-verification", "/pay/pending-verification/"]);
-
+export const MEMBER_PAGE_PATHS = new Set(["/member/profile", "/member/profile/", "/pay/membership", "/pay/membership/", "/pay/pending-verification", "/pay/pending-verification/"]);
 export const NEVER_TOUCH_PREFIXES = ["/api/", "/webhook/", "/webhooks/", "/pay/", "/payments/", "/payment/", "/payment-webhook/", "/admin/", "/sigil/", "/cdn-cgi/", "/assets/", "/static/", "/uploads/"];
 export const NEVER_REDIRECT_EXACT_PATHS = new Set(["/member/dashboard", "/member/dashboard/", "/member/membership", "/member/membership/", "/member/profile", "/member/profile/", "/member/payments", "/member/payments/", "/pay/membership", "/pay/membership/", "/pay/pending-verification", "/pay/pending-verification/", "/hall", "/hall/", "/model/console", "/model/console/"]);
 export const EXACT_PATH_REDIRECTS = { "/trust/inme": "/sigil/start", "/inme": "/sigil/start", "/login": "/sigil/start", "/member": "/member/dashboard", "/member/membership/benefits": "/member/membership", "/members": "/sigil/start", "/membership": "/member/membership", "/membership/benefits": "/member/membership", "/renew": "/sigil/membership", "/renewal": "/sigil/membership", "/trust": "/sigil/start" };
@@ -100,11 +100,52 @@ async function fetchPassThrough(request) {
   return withFrontGateHeaders(await maybeInjectConfirmPaymentBridge(request, response, url));
 }
 
+function getWebflowOriginHost(env = {}) {
+  return String(env.WEBFLOW_ORIGIN_HOST || DEFAULT_WEBFLOW_ORIGIN_HOST)
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/.*$/g, "");
+}
+
+function buildWebflowOriginUrl(request, env = {}) {
+  const host = getWebflowOriginHost(env);
+  if (!host) return null;
+
+  const target = new URL(request.url);
+  target.protocol = "https:";
+  target.hostname = host;
+  target.port = "";
+  return target;
+}
+
+async function fetchWebflowOriginPage(request, env = {}) {
+  const incoming = new URL(request.url);
+  const target = buildWebflowOriginUrl(request, env);
+
+  if (!target || target.hostname === incoming.hostname) {
+    return fetchPassThrough(request);
+  }
+
+  const headers = new Headers(request.headers);
+  headers.delete("host");
+  const response = await fetch(
+    new Request(target.toString(), {
+      method: request.method,
+      headers,
+      redirect: "follow",
+    }),
+  );
+  const passThrough = withFrontGateHeaders(response);
+  passThrough.headers.set("x-mmd-origin-pass-through", "webflow-origin");
+  return passThrough;
+}
+
 function isLineWebhookPath(url) { return LINE_WEBHOOK_PATHS.has(url.pathname.toLowerCase()); }
 function isSigilApplyPath(url) { const p = url.pathname.toLowerCase(); return p === "/sigil/apply" || p === "/sigil/apply/"; }
 function isSigilMembershipPath(url) { const p = url.pathname.toLowerCase(); return p === "/sigil/membership" || p === "/sigil/membership/"; }
 function isSigilPrivateModelApplyApiPath(url) { const p = url.pathname.toLowerCase(); return p === "/sigil/api/private-model/apply" || p === "/sigil/api/private-model/apply/"; }
 function isMemberDashboardPath(url) { const p = url.pathname.toLowerCase(); return p === "/member/dashboard" || p === "/member/dashboard/"; }
+function isMemberMembershipPath(url) { const p = url.pathname.toLowerCase(); return p === "/member/membership" || p === "/member/membership/"; }
 function isMemberPagePath(url) { return MEMBER_PAGE_PATHS.has(url.pathname.toLowerCase()); }
 function isMemberPaymentsPath(url) { const p = url.pathname.toLowerCase(); return p === "/member/payments" || p === "/member/payments/"; }
 function isHallPath(url) { const p = url.pathname.toLowerCase(); return p === "/hall" || p === "/hall/"; }
@@ -207,6 +248,7 @@ export default {
     if (isSigilApplyPath(url)) return fetchSigilApplyPage(request, env, url);
     if (isSigilMembershipPath(url)) return fetchMemberPage(request, env, url);
     if (isMemberDashboardPath(url)) return fetchMemberFrontend(request, env, url);
+    if (isMemberMembershipPath(url)) return fetchWebflowOriginPage(request, env);
     if (isMemberPagePath(url)) return fetchMemberPage(request, env, url);
     if (isMemberPaymentsPath(url)) return fetchAdminMemberPage(request, env, url);
     if (isHallPath(url)) return renderHallRecovery(request);
