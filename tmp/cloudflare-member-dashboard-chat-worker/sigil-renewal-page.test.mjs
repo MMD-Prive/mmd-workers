@@ -6,68 +6,109 @@ const env = { TURNSTILE_SITE_KEY: "0xTEST" };
 const ctx = {};
 
 const required = [
-  "Renew with Kenji",
-  "mmd-renewal-kenji-public",
-  "/api/pay/renewal/proof",
-  "Krungsri",
-  "Tatcha",
-  "Security Check",
-  "สลิปยังไม่ใช่การยืนยันสำเร็จ",
-  "Signup",
-  "Renewal",
-  "Black Card Review",
-  "payment_type",
-  "selected_package",
-  "payment_method",
-  "session_id",
-  "payment_ref",
-  "transaction_ref",
-  "cf_turnstile_response",
-  'name="t"',
+  // root / namespace markers
+  "mmd-renewal-redesign",
+  "mmd-renewx",
+  "Renewal Payment",
+  // proof form
+  "sigil.mmdbkk.com/api/pay/renewal/proof",
+  "display_name",
+  "amount_paid",
+  "paid_at",
+  "proof",
+  // consent disclaimer
+  "หลักฐานประกอบเท่านั้น",
 ];
+
+const legacyRenewalSlug = ["sigil", "renewal", "v3"].join("-");
+const legacyRenewalBuild = ["SIGIL", "RENEWAL", "V3", "20260612"].join("_");
+const legacyTrustInmeUrl = `https://sigil.mmdbkk.com/${["trust", "inme"].join("/")}`;
 
 const banned = [
-  "8034847793",
-  "PromptPay",
-  "TTB",
-  "233-2-98800-1",
-  "082-952-8889",
-  "PayPal",
-  "Krungthai",
-  "KTB",
-  "1420335898",
+  // Per's banned production markers (literal — some rendered uppercase by CSS)
+  "Payment details",
+  "ส่งหลักฐานการชำระเงิน",
+  "MMD PRIVÉ — MEMBERSHIP",   // uppercase form (text-transform:uppercase would produce this)
+  "MMD Privé — Membership",   // raw-HTML form — must not appear either
+  // old page markers
+  "mmd-renewal-premium-root",
+  "mmd-renewal-kenji-public",
+  "Renew with Kenji",
+  "Renew or Upgrade Access",
+  legacyRenewalSlug,
+  legacyRenewalBuild,
+  // prohibited Thai copy
+  "ระบบ",
+  "ทีมงาน",
+  // prohibited English copy
+  "admin confirmation",
 ];
 
-for (const path of ["/sigil/pay/renewal", "/sigil/pay/renewal/", "/pay/renewal"]) {
-  test(`GET ${path} renders the Kenji renewal page`, async () => {
+for (const path of ["/sigil/pay/renewal", "/sigil/pay/renewal/", "/pay/renewal", "/pay/renewal/"]) {
+  test(`GET ${path} renders mmd-renewx redesign (banned markers absent)`, async () => {
     const response = await worker.fetch(new Request(`https://www.mmdbkk.com${path}`), env, ctx);
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 200, `expected 200 for ${path}`);
     assert.equal(response.headers.get("content-type"), "text/html; charset=utf-8");
     assert.equal(response.headers.get("cache-control"), "no-store");
-
     const html = await response.text();
-    for (const marker of required) assert.ok(html.includes(marker), `missing ${marker}`);
-    for (const marker of banned) assert.ok(!html.includes(marker), `must not expose ${marker}`);
+    for (const marker of required) assert.ok(html.includes(marker), `missing required: ${marker}`);
+    for (const marker of banned) assert.ok(!html.includes(marker), `must not contain: ${marker}`);
   });
 }
 
-test("GET /sigil/pay/renewal preserves t query param", async () => {
+test("HEAD /pay/renewal returns 200 with empty body", async () => {
   const response = await worker.fetch(
-    new Request("https://www.mmdbkk.com/sigil/pay/renewal?t=test123"),
-    env,
-    ctx
-  );
-  assert.equal(response.status, 200);
-  const html = await response.text();
-  assert.ok(html.includes('name="t" value="test123"'));
-});
-
-test("HEAD /sigil/pay/renewal returns headers only", async () => {
-  const response = await worker.fetch(
-    new Request("https://www.mmdbkk.com/sigil/pay/renewal", { method: "HEAD" }),
-    env,
-    ctx
+    new Request("https://www.mmdbkk.com/pay/renewal", { method: "HEAD" }), env, ctx
   );
   assert.equal(response.status, 200);
   assert.equal(await response.text(), "");
+});
+
+test("GET /trust/inme redirects to https://mmdbkk.com/sigil/pay/renewal", async () => {
+  const response = await worker.fetch(
+    new Request(legacyTrustInmeUrl), env, ctx
+  );
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get("location"), "https://mmdbkk.com/sigil/pay/renewal");
+});
+
+test("proof endpoint is absolute sigil.mmdbkk.com URL in rendered HTML", async () => {
+  const response = await worker.fetch(new Request("https://www.mmdbkk.com/pay/renewal"), env, ctx);
+  const html = await response.text();
+  assert.ok(
+    html.includes("https://sigil.mmdbkk.com/api/pay/renewal/proof"),
+    "CONFIG.endpoint must be absolute sigil.mmdbkk.com proof URL"
+  );
+});
+
+test("build ID is MMD_RENEWX_20260620b", async () => {
+  const response = await worker.fetch(new Request("https://www.mmdbkk.com/pay/renewal"), env, ctx);
+  const html = await response.text();
+  assert.ok(html.includes("MMD_RENEWX_20260620b"), "data-build should be MMD_RENEWX_20260620b");
+});
+
+test("renewal page submits supported standard package code", async () => {
+  const response = await worker.fetch(new Request("https://www.mmdbkk.com/pay/renewal"), env, ctx);
+  const html = await response.text();
+  assert.match(
+    html,
+    /name="selected_package"\s+value="standard"/,
+    "selected_package must submit supported standard package code"
+  );
+  assert.ok(
+    !html.includes('name="selected_package" value="standard_renewal"'),
+    "selected_package must not submit unsupported standard_renewal package code"
+  );
+  assert.ok(html.includes("mmd-renewx"), "mmd-renewx marker must remain present");
+  assert.ok(html.includes("MMD_RENEWX_20260620b"), "MMD_RENEWX_20260620b marker must remain present");
+  for (const marker of ["mmd-renewal-kenji-public", "Renew with Kenji", legacyRenewalSlug, legacyRenewalBuild]) {
+    assert.ok(!html.includes(marker), `must not contain legacy marker: ${marker}`);
+  }
+});
+
+test("hero images present in HTML", async () => {
+  const response = await worker.fetch(new Request("https://www.mmdbkk.com/pay/renewal"), env, ctx);
+  const html = await response.text();
+  assert.ok(html.includes("Hero%20renew43.webp"), "missing desktop hero");
+  assert.ok(html.includes("Hero%20Renew%20Mob.webp"), "missing mobile hero");
 });
