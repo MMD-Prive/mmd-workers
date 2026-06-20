@@ -11,6 +11,10 @@ head_sampling_rate = 1
 binding = "IMMIGRATE_WORKER"
 service = "immigrate-worker"
 
+[[services]]
+binding = "MEMBER_PAGES_WORKER"
+service = "member-pages-worker"
+
 [[routes]]
 pattern = "mmdbkk.com/*"
 zone_name = "mmdbkk.com"
