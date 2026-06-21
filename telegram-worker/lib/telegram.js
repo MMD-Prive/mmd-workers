@@ -11,6 +11,39 @@ export const TG_THREADS = (env) => ({
   points_threshold: int(env.TG_THREAD_POINTS) || 17,
 });
 
+export async function sendTelegramMessage(payload, env) {
+  const botToken = String(env.TELEGRAM_BOT_TOKEN || "").trim();
+  if (!botToken) {
+    return { ok: false, skipped: true, reason: "missing_telegram_bot_token" };
+  }
+
+  const chatId = String(payload.chat_id || "").trim();
+  if (!chatId) {
+    return { ok: false, error: "missing_chat_id" };
+  }
+
+  const body = {
+    chat_id: chatId,
+    text: String(payload.text || ""),
+    parse_mode: payload.parse_mode || "HTML",
+    disable_web_page_preview: payload.disable_web_page_preview !== false,
+  };
+
+  const threadId = int(payload.message_thread_id);
+  if (threadId) body.message_thread_id = threadId;
+  if (payload.reply_markup) body.reply_markup = payload.reply_markup;
+
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok || (data && data.ok === false)) return { ok: false, status: res.status, error: data || null };
+  return { ok: true, result: data?.result || data };
+}
+
 export async function telegramNotify(payload, env) {
   if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
     return { ok: false, skipped: true, reason: "missing_telegram_env" };
@@ -24,22 +57,13 @@ export async function telegramNotify(payload, env) {
   }
 
   const text = formatTelegramMessage(payload);
-
-  const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: env.TELEGRAM_CHAT_ID,
-      message_thread_id: threadId,
-      text,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    }),
-  });
-
-  const data = await res.json().catch(() => null);
-  if (!res.ok || (data && data.ok === false)) return { ok: false, status: res.status, error: data || null };
-  return { ok: true, thread_id: threadId };
+  return sendTelegramMessage({
+    chat_id: env.TELEGRAM_CHAT_ID,
+    message_thread_id: threadId,
+    text,
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  }, env);
 }
 
 export function formatTelegramMessage(p) {
