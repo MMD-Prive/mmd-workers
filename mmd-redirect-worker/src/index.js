@@ -14,6 +14,7 @@ export const CONFIRM_PAYMENT_PATH = "/confirm/payment-confirmation";
 export const MEMBER_DASHBOARD_UPSTREAM = "https://immigrate-worker.malemodel-bkk.workers.dev";
 export const MEMBER_PAGES_UPSTREAM = "https://member-pages-worker.malemodel-bkk.workers.dev";
 export const ADMIN_WORKER_UPSTREAM = "https://admin-worker.malemodel-bkk.workers.dev";
+export const DEFAULT_WEBFLOW_ORIGIN_HOST = "mmdprive.webflow.io";
 export const FRONT_GATE = "mmd-redirect-worker";
 export const FRONT_VERSION = "20260620T000000Z";
 
@@ -67,9 +68,9 @@ export const EXACT_PATH_REDIRECTS = {
   "/inme": "/trust/inme",
   "/login": "/trust/inme",
   "/member": "/membership/benefits",
-  "/member/membership/benefits": "/pay/membership",
+  "/member/membership/benefits": "/member/membership",
   "/members": "/trust/inme",
-  "/membership": "/membership/benefits",
+  "/membership": "/member/membership",
   "/renew": "/trust/inme",
   "/renewal": "/trust/inme",
   "/trust": "/trust/inme",
@@ -224,6 +225,36 @@ async function fetchLineWebhook(request, env = {}, url) {
   return withFrontGateHeaders(await fetch(upstreamRequest));
 }
 
+function getWebflowOriginHost(env = {}) {
+  return String(env.WEBFLOW_ORIGIN_HOST || DEFAULT_WEBFLOW_ORIGIN_HOST)
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/.*$/g, "");
+}
+
+async function fetchWebflowOrigin(request, env, url) {
+  const host = getWebflowOriginHost(env);
+  const target = new URL(request.url);
+  target.protocol = "https:";
+  target.hostname = host;
+  target.port = "";
+  target.pathname = url.pathname;
+  target.search = url.search;
+
+  const headers = new Headers(request.headers);
+  headers.delete("host");
+
+  return withFrontGateHeaders(
+    await fetch(
+      new Request(target.toString(), {
+        method: request.method,
+        headers,
+        redirect: "follow",
+      }),
+    ),
+  );
+}
+
 function isMemberDashboardPath(url) {
   const pathname = url.pathname.toLowerCase();
   return pathname === "/member/dashboard" || pathname === "/member/dashboard/";
@@ -264,6 +295,9 @@ function isMemberFrontendPath(url) {
 }
 
 async function fetchMemberFrontend(request, env, url) {
+  // TODO(member-route-migration): /member/dashboard is a legacy locked route
+  // still owned by immigrate-worker. Do not add new member-facing route
+  // dependencies here; migrate it to the canonical member layer when ready.
   if (env?.IMMIGRATE_WORKER?.fetch) {
     return withFrontGateHeaders(await env.IMMIGRATE_WORKER.fetch(request));
   }
@@ -434,9 +468,11 @@ export default {
     if (isMemberFrontendPath(url)) {
       return fetchMemberFrontend(request, env, url);
     }
+
     if (isMemberMembershipPath(url)) {
-      return fetchMemberPage(request, env, url);
+      return fetchWebflowOrigin(request, env, url);
     }
+
     if (isMemberPaymentsPath(url)) {
       return fetchAdminMemberPage(request, env, url);
     }
