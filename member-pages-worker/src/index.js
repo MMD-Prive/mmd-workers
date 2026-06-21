@@ -472,7 +472,7 @@ export function renderMembershipPage(request) {
         <a class="mmd-member-membership__button secondary" href="${escapeAttribute(dashboardHref)}">Check status</a>
       </section>
 
-      <p class="mmd-member-membership__footer">MMD Privé keeps `/member/*` as the customer-facing Member Area. Private system and admin layers remain under `/sigil/*`. Query parameters are preserved for continuity.</p>
+      <p class="mmd-member-membership__footer">MMD Privé keeps <code>/member/&#42;</code> as the customer-facing Member Area. Private system and admin layers remain under <code>/sigil/&#42;</code>. Query parameters are preserved for continuity.</p>
     </main>
   </body>
 </html>`;
