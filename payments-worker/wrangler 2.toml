@@ -24,6 +24,7 @@ POINTS_RATE = "100"
 WEB_BASE_URL = "https://mmdbkk.com"
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
 PAY_SESSIONS_TTL_DAYS = "30"
+AT_PAYMENTS__RECEIPT_PHOTO = "fldjhGzMEoxnwIADW"
 
 [[kv_namespaces]]
 binding = "PAY_SESSIONS_KV"

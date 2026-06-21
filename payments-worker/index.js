@@ -818,6 +818,8 @@ async function createOrUpdatePaymentIntent(env, payload) {
   const amountField = paymentField(env, "AT_PAYMENTS__AMOUNT", "Amount");
   const packageCodeField = paymentField(env, "AT_PAYMENTS__PACKAGE_CODE", "Package Code");
   const createdAtField = paymentField(env, "AT_PAYMENTS__CREATED_AT", "Created At");
+  const receiptPhotoField = paymentField(env, "AT_PAYMENTS__RECEIPT_PHOTO", "");
+  const receiptUrl = toStr(payload.receipt_url || payload.slip_url);
 
   const fields = compact({
     [paymentRefField]: payload.payment_ref,
@@ -826,6 +828,9 @@ async function createOrUpdatePaymentIntent(env, payload) {
     [packageCodeField]: payload.package_code || "",
     [createdAtField]: payload.created_at || nowIso(),
   });
+  if (receiptUrl && receiptPhotoField) {
+    fields[receiptPhotoField] = [{ url: receiptUrl }];
+  }
 
   if (existing?.id) {
     await airtablePatch(env, table, existing.id, fields);
