@@ -4,6 +4,8 @@ compatibility_date = "2026-01-20"
 
 [vars]
 TELEGRAM_CHAT_ID = "-1003546439681"
+TELEGRAM_PREVIEW_CHANNEL_ID = "-1002393788585"
+TELEGRAM_BOT_USERNAME = "mmdprivebot"
 TG_THREAD_MEMBERSHIP = "20"
 TG_THREAD_CONFIRM = "21"
 TG_THREAD_POINTS = "17"
@@ -13,3 +15,16 @@ POINTS_RATE = "1000"
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_TABLE_PAYMENTS = "payments"
 AIRTABLE_TABLE_POINTS_LEDGER = "points_ledger"
+
+# Do not put secrets here.
+# Configure these with wrangler secret put:
+# TELEGRAM_BOT_TOKEN
+# TELEGRAM_WEBHOOK_SECRET
+# INTERNAL_API_TOKEN
+# PREVIEW_PROMO_SECRET
+#
+# Optional persistent promo-code ledger:
+# [[kv_namespaces]]
+# binding = "PREVIEW_PROMO_CODES_KV"
+# id = "<production_kv_namespace_id>"
+# preview_id = "<preview_kv_namespace_id>"
