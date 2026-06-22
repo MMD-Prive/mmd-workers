@@ -14,8 +14,11 @@ export const CONFIRM_PAYMENT_PATH = "/confirm/payment-confirmation";
 export const MEMBER_DASHBOARD_UPSTREAM = "https://immigrate-worker.malemodel-bkk.workers.dev";
 export const MEMBER_PAGES_UPSTREAM = "https://member-pages-worker.malemodel-bkk.workers.dev";
 export const ADMIN_WORKER_UPSTREAM = "https://admin-worker.malemodel-bkk.workers.dev";
+export const SIGIL_WORKER_UPSTREAM = "https://sigil.mmdbkk.com";
 export const FRONT_GATE = "mmd-redirect-worker";
 export const FRONT_VERSION = "20260622T071500Z";
+export const SIGIL_APPLY_PAGE = "sigil-private-model-setup";
+export const SIGIL_APPLY_ROUTE_OWNER = "sigil-worker";
 
 export const REDIRECT_HOSTS = new Set(["www.mmdbkk.com", "mmdbkk.com", "mmdprive.com", "www.mmdprive.com", "malemodel-bkk.workers.dev"]);
 export const NEVER_TOUCH_HOSTS = new Set(["sigil.mmdbkk.com"]);
@@ -61,6 +64,14 @@ function withFrontGateHeaders(response) {
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
+function withRouteOwnerHeaders(response, { owner, page, origin }) {
+  const frontGateResponse = withFrontGateHeaders(response);
+  frontGateResponse.headers.set("x-mmd-route-owner", owner);
+  frontGateResponse.headers.set("x-mmd-page", page);
+  frontGateResponse.headers.set("x-mmd-origin", origin);
+  return frontGateResponse;
+}
+
 function isConfirmPaymentPage(url) {
   return url.pathname === CONFIRM_PAYMENT_PATH || url.pathname === `${CONFIRM_PAYMENT_PATH}/`;
 }
@@ -89,6 +100,7 @@ async function fetchPassThrough(request) {
 }
 
 function isLineWebhookPath(url) { return LINE_WEBHOOK_PATHS.has(url.pathname.toLowerCase()); }
+function isSigilApplyPath(url) { const p = url.pathname.toLowerCase(); return p === "/sigil/apply" || p === "/sigil/apply/"; }
 function isMemberDashboardPath(url) { const p = url.pathname.toLowerCase(); return p === "/member/dashboard" || p === "/member/dashboard/"; }
 function isMemberPagePath(url) { return MEMBER_PAGE_PATHS.has(url.pathname.toLowerCase()); }
 function isMemberPaymentsPath(url) { const p = url.pathname.toLowerCase(); return p === "/member/payments" || p === "/member/payments/"; }
@@ -111,6 +123,25 @@ async function fetchMemberFrontend(request, env, url) {
   target.pathname = url.pathname;
   target.search = url.search;
   return withFrontGateHeaders(await fetch(new Request(target.toString(), request)));
+}
+
+async function fetchSigilApplyPage(request, env, url) {
+  if (env?.SIGIL_WORKER?.fetch) {
+    return withRouteOwnerHeaders(await env.SIGIL_WORKER.fetch(request), {
+      owner: SIGIL_APPLY_ROUTE_OWNER,
+      page: SIGIL_APPLY_PAGE,
+      origin: "service-binding:sigil-worker",
+    });
+  }
+
+  const target = new URL(SIGIL_WORKER_UPSTREAM);
+  target.pathname = url.pathname;
+  target.search = url.search;
+  return withRouteOwnerHeaders(await fetch(new Request(target.toString(), request)), {
+    owner: SIGIL_APPLY_ROUTE_OWNER,
+    page: SIGIL_APPLY_PAGE,
+    origin: SIGIL_WORKER_UPSTREAM,
+  });
 }
 
 async function fetchMemberPage(request, env, url) {
@@ -161,6 +192,7 @@ export default {
     const url = new URL(request.url);
     if (isLineWebhookPath(url)) return fetchLineWebhook(request, env, url);
     if (!isSafePageRequest(request)) return withFrontGateHeaders(await fetch(request));
+    if (isSigilApplyPath(url)) return fetchSigilApplyPage(request, env, url);
     if (isMemberDashboardPath(url)) return fetchMemberFrontend(request, env, url);
     if (isMemberPagePath(url)) return fetchMemberPage(request, env, url);
     if (isMemberPaymentsPath(url)) return fetchAdminMemberPage(request, env, url);
