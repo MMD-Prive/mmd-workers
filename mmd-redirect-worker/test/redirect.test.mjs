@@ -216,6 +216,23 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, urls.length);
   });
 
+  it("fails closed without Webflow or generic pass-through when /sigil/apply service binding throws", async () => {
+    const env = {
+      SIGIL_WORKER: {
+        fetch: async () => {
+          throw new Error("sigil service unavailable");
+        },
+      },
+    };
+
+    await assert.rejects(
+      requestWithEnv("https://www.mmdbkk.com/sigil/apply?t=abc&code=x&promo=y", env),
+      /sigil service unavailable/,
+    );
+
+    assert.equal(passThroughRequests.length, 0);
+  });
+
   it("delegates /member/payments to admin-worker without redirecting or changing query strings", async () => {
     const adminRequests = [];
     const env = {
