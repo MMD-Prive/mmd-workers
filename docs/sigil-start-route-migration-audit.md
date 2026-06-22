@@ -104,3 +104,58 @@ decisions must preserve the full query string exactly, including `t`, `code`,
 | `/pay/pending-verification/` | `mmd-redirect-worker` member page route delegation | Unchanged payment/member page owner behind front gate | Delegates to `MEMBER_PAGES_WORKER` fallback `member-pages-worker` | Keep pending verification flow untouched | Delegate/proxy, no alias redirect | Preserve exact request URL and query | Same as `/pay/pending-verification` | Slash variant must not redirect. |
 | `/sigil/membership` | `mmd-redirect-worker` catchall with `/sigil/` never-redirect prefix | `/sigil/membership` content owner behind canonical site/SIGIL content | Pass-through if reached | Keep canonical renewal/access conditions route | Pass-through/render by content owner | Preserve exact request URL and query | `x-mmd-front-gate: mmd-redirect-worker`, `x-mmd-front-version`, no `location` | This PR only points aliases here; it does not change page rendering. |
 | `/sigil/membership/` | `mmd-redirect-worker` catchall with `/sigil/` never-redirect prefix | `/sigil/membership` content owner behind canonical site/SIGIL content | Pass-through if reached | Keep canonical renewal/access conditions route | Pass-through/render by content owner | Preserve exact request URL and query | Same as `/sigil/membership` | Slash variant must not redirect to SIGIL start or payment. |
+
+## PR #94 Production Completion Note
+
+Status: completed in production.
+
+Deployed worker:
+
+```text
+mmd-redirect-worker
+version: c7f66eb2-0d3f-4984-b5df-121a2be3768d
+```
+
+Production smoke confirmed the final canonical redirects below. Every redirect
+preserves the full query string, including `t`, `code`, `promo`, `payment_ref`,
+`session_id`, and unknown params, and returns
+`x-mmd-front-gate: mmd-redirect-worker`.
+
+```text
+/member -> /member/dashboard
+/member/ -> /member/dashboard
+
+/membership -> /member/membership
+/membership/ -> /member/membership
+/membership/benefits -> /member/membership
+/membership/benefits/ -> /member/membership
+
+/member/membership/benefits -> /member/membership
+/member/membership/benefits/ -> /member/membership
+
+/renew -> /sigil/membership
+/renew/ -> /sigil/membership
+/renewal -> /sigil/membership
+/renewal/ -> /sigil/membership
+```
+
+Production smoke also confirmed these protected routes stayed stable:
+
+```text
+/trust/inme -> /sigil/start
+/sigil/apply -> sigil-worker
+/sigil/api/private-model/apply -> sigil-worker
+/member/dashboard = member home / status hub
+/member/membership = package selection
+/pay/* not redirected to SIGIL/member pages
+/webhooks/line not redirected
+```
+
+Deployment guardrails honored:
+
+- No Webflow publish.
+- No `sigil-worker` deploy.
+- No payment logic changes.
+- No membership rendering logic changes.
+- No points, Black Card, webhook processing, admin auth, or unrelated logic
+  changes.
