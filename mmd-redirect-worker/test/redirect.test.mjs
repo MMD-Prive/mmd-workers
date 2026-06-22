@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
 import worker, {
@@ -140,13 +141,14 @@ describe("MMD permanent redirect guard", () => {
       const response = await requestWithEnv(url, env);
       const upstream = new URL(url);
       upstream.protocol = "https:";
-      upstream.hostname = new URL(url).hostname;
+      upstream.hostname = "mmdprive.webflow.io";
 
       assert.notEqual(response.status, 301, url);
       assert.notEqual(response.status, 302, url);
       assert.equal(response.headers.get("location"), null, url);
       assert.equal(response.headers.get("x-mmd-worker"), null, url);
       assert.notEqual(response.headers.get("x-mmd-worker"), "member-pages-worker", url);
+      assert.equal(response.headers.get("x-mmd-origin-pass-through"), "webflow-origin", url);
       assert.equal(passThroughRequests.at(-1).url, upstream.toString(), url);
     }
 
@@ -291,6 +293,7 @@ describe("MMD permanent redirect guard", () => {
       const response = await request(url);
       const expected = new URL(url);
       expected.protocol = "https:";
+      expected.hostname = "mmdprive.webflow.io";
       assert.equal(response.status, 200, url);
       assert.equal(response.headers.get("location"), null);
       assert.equal(response.headers.get("x-webflow-page"), "member-membership");
@@ -321,7 +324,15 @@ describe("MMD permanent redirect guard", () => {
       assert.match(upstreamUrl, /[?&]t=abc(?:&|$)/, url);
       assert.match(upstreamUrl, /[?&]code=x(?:&|$)/, url);
       assert.match(upstreamUrl, /[?&]promo=y(?:&|$)/, url);
+      assert.match(upstreamUrl, /^https:\/\/mmdprive\.webflow\.io\/member\/membership\/?/);
     }
+  });
+
+  it("does not claim /trust/inme routes owned by member-dashboard-chat-worker", () => {
+    const wrangler = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
+
+    assert.doesNotMatch(wrangler, /pattern\s*=\s*"mmdbkk\.com\/trust\/inme\/?\*?"/);
+    assert.doesNotMatch(wrangler, /pattern\s*=\s*"www\.mmdbkk\.com\/trust\/inme\/?\*?"/);
   });
 
   it("proxies /member/dashboard on both hosts without redirecting or changing query strings", async () => {

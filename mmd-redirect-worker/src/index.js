@@ -15,6 +15,7 @@ export const MEMBER_DASHBOARD_UPSTREAM = "https://immigrate-worker.malemodel-bkk
 export const ADMIN_WORKER_UPSTREAM = "https://admin-worker.malemodel-bkk.workers.dev";
 export const FRONT_GATE = "mmd-redirect-worker";
 export const FRONT_VERSION = "20260620T000000Z";
+export const DEFAULT_WEBFLOW_ORIGIN_HOST = "mmdprive.webflow.io";
 
 export const REDIRECT_HOSTS = new Set([
   "www.mmdbkk.com",
@@ -206,6 +207,46 @@ async function fetchPassThrough(request) {
   const url = new URL(request.url);
   const response = await fetch(new Request(request, { redirect: "follow" }));
   return withFrontGateHeaders(await maybeInjectConfirmPaymentBridge(request, response, url));
+}
+
+function getWebflowOriginHost(env = {}) {
+  return String(env.WEBFLOW_ORIGIN_HOST || DEFAULT_WEBFLOW_ORIGIN_HOST)
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/.*$/g, "");
+}
+
+function buildWebflowOriginUrl(request, env = {}) {
+  const host = getWebflowOriginHost(env);
+  if (!host) return null;
+
+  const target = new URL(request.url);
+  target.protocol = "https:";
+  target.hostname = host;
+  target.port = "";
+  return target;
+}
+
+async function fetchWebflowOriginPage(request, env = {}) {
+  const incoming = new URL(request.url);
+  const target = buildWebflowOriginUrl(request, env);
+
+  if (!target || target.hostname === incoming.hostname) {
+    return fetchPassThrough(request);
+  }
+
+  const headers = new Headers(request.headers);
+  headers.delete("host");
+  const response = await fetch(
+    new Request(target.toString(), {
+      method: request.method,
+      headers,
+      redirect: "follow",
+    }),
+  );
+  const passThrough = withFrontGateHeaders(response);
+  passThrough.headers.set("x-mmd-origin-pass-through", "webflow-origin");
+  return passThrough;
 }
 
 function isLineWebhookPath(url) {
@@ -422,6 +463,9 @@ export default {
     }
     if (isMemberFrontendPath(url)) {
       return fetchMemberFrontend(request, env, url);
+    }
+    if (isMemberMembershipPath(url)) {
+      return fetchWebflowOriginPage(request, env);
     }
     if (isMemberPaymentsPath(url)) {
       return fetchAdminMemberPage(request, env, url);

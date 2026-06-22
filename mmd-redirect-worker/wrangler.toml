@@ -7,13 +7,12 @@ workers_dev = false
 enabled = true
 head_sampling_rate = 1
 
+[vars]
+WEBFLOW_ORIGIN_HOST = "mmdprive.webflow.io"
+
 [[services]]
 binding = "IMMIGRATE_WORKER"
 service = "immigrate-worker"
-
-[[services]]
-binding = "MEMBER_PAGES_WORKER"
-service = "member-pages-worker"
 
 [[routes]]
 pattern = "mmdbkk.com/*"
