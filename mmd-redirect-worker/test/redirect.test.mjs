@@ -47,6 +47,7 @@ const VISIBLE_DEBUG_TEXT = [
 
 const TELEGRAM_BRIEF_FORBIDDEN_TEXT = /Briefing HYPE TELEGRAMBOT|TELEGRAMBOT|CEO TELEGRAM BRIEF/i;
 const wranglerConfig = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
+const PRESERVED_QUERY = "t=test-token&code=abc&promo=gold&payment_ref=pay123&session_id=sess_1&x=1";
 
 function assertPolishedShell(html, url) {
   assert.doesNotMatch(html, /name=["']token["']/i, url);
@@ -75,17 +76,15 @@ describe("MMD permanent redirect guard", () => {
       "/inme",
       "/login",
       "/members",
-      "/renew",
-      "/renewal",
       "/trust",
     ];
 
     for (const alias of aliases) {
-      const response = await request(`https://www.mmdbkk.com${alias}?t=abc&code=x&promo=y&payment_ref=pay_1&debug=1`);
+      const response = await request(`https://www.mmdbkk.com${alias}?${PRESERVED_QUERY}`);
       assert.equal(response.status, 301, alias);
       assert.equal(
         response.headers.get("location"),
-        "https://mmdbkk.com/sigil/start?t=abc&code=x&promo=y&payment_ref=pay_1&debug=1",
+        `https://mmdbkk.com/sigil/start?${PRESERVED_QUERY}`,
         alias,
       );
     }
@@ -93,14 +92,53 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
-  it("maps /member and /membership to the membership benefits page", async () => {
-    const member = await request("https://mmdbkk.com/member?t=abc");
-    const membership = await request("https://www.mmdbkk.com/membership?t=abc");
+  it("redirects /member to /member/dashboard with query strings preserved exactly", async () => {
+    for (const path of ["/member", "/member/"]) {
+      const response = await request(`https://www.mmdbkk.com${path}?${PRESERVED_QUERY}`);
 
-    assert.equal(member.status, 301);
-    assert.equal(member.headers.get("location"), "https://mmdbkk.com/membership/benefits?t=abc");
-    assert.equal(membership.status, 301);
-    assert.equal(membership.headers.get("location"), "https://mmdbkk.com/membership/benefits?t=abc");
+      assert.equal(response.status, 301, path);
+      assert.equal(response.headers.get("location"), `https://mmdbkk.com/member/dashboard?${PRESERVED_QUERY}`, path);
+      assert.equal(response.headers.get("x-mmd-front-gate"), "mmd-redirect-worker", path);
+    }
+
+    assert.equal(passThroughRequests.length, 0);
+  });
+
+  it("redirects legacy membership routes to /member/membership with query strings preserved exactly", async () => {
+    const aliases = [
+      "/membership",
+      "/membership/",
+      "/membership/benefits",
+      "/membership/benefits/",
+      "/member/membership/benefits",
+      "/member/membership/benefits/",
+    ];
+
+    for (const alias of aliases) {
+      const response = await request(`https://www.mmdbkk.com${alias}?${PRESERVED_QUERY}`);
+
+      assert.equal(response.status, 301, alias);
+      assert.equal(response.headers.get("location"), `https://mmdbkk.com/member/membership?${PRESERVED_QUERY}`, alias);
+      assert.equal(response.headers.get("x-mmd-front-gate"), "mmd-redirect-worker", alias);
+      assert.notEqual(response.headers.get("location"), `https://mmdbkk.com/pay/membership?${PRESERVED_QUERY}`, alias);
+      assert.notEqual(response.headers.get("location"), `https://mmdbkk.com/membership/benefits?${PRESERVED_QUERY}`, alias);
+    }
+
+    assert.equal(passThroughRequests.length, 0);
+  });
+
+  it("redirects renewal aliases to /sigil/membership with query strings preserved exactly", async () => {
+    for (const path of ["/renew", "/renew/", "/renewal", "/renewal/"]) {
+      const response = await request(`https://www.mmdbkk.com${path}?${PRESERVED_QUERY}`);
+
+      assert.equal(response.status, 301, path);
+      assert.equal(response.headers.get("location"), `https://mmdbkk.com/sigil/membership?${PRESERVED_QUERY}`, path);
+      assert.equal(response.headers.get("x-mmd-front-gate"), "mmd-redirect-worker", path);
+      assert.notEqual(response.headers.get("location"), `https://mmdbkk.com/trust/inme?${PRESERVED_QUERY}`, path);
+      assert.notEqual(response.headers.get("location"), `https://mmdbkk.com/sigil/start?${PRESERVED_QUERY}`, path);
+    }
+
+    assert.equal(passThroughRequests.length, 0);
   });
 
   it("delegates /member/dashboard to immigrate-worker by service binding without redirecting or changing query strings", async () => {
@@ -559,18 +597,39 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.at(-1).method, "POST");
   });
 
-  it("maps nested /member/membership paths to /pay/membership paths", async () => {
-    const response = await request("https://www.mmdbkk.com/member/membership/benefits?t=abc");
+  it("keeps protected membership, payment, webhook, SIGIL start, and SIGIL apply routes from legacy redirects", async () => {
+    const protectedRequests = [
+      { url: `https://www.mmdbkk.com/member/dashboard?${PRESERVED_QUERY}`, expectedStatus: 209 },
+      { url: `https://www.mmdbkk.com/member/membership?${PRESERVED_QUERY}`, expectedStatus: 209 },
+      { url: `https://www.mmdbkk.com/pay/membership?${PRESERVED_QUERY}`, expectedStatus: 209 },
+      { url: `https://www.mmdbkk.com/pay/pending-verification?${PRESERVED_QUERY}`, expectedStatus: 209 },
+      { url: `https://www.mmdbkk.com/webhooks/line?${PRESERVED_QUERY}`, expectedStatus: 209 },
+      { url: `https://www.mmdbkk.com/sigil/start?${PRESERVED_QUERY}`, expectedStatus: 209 },
+      { url: `https://www.mmdbkk.com/sigil/apply?${PRESERVED_QUERY}`, expectedStatus: 209 },
+    ];
 
-    assert.equal(response.status, 301);
-    assert.equal(response.headers.get("location"), "https://mmdbkk.com/pay/membership?t=abc");
-  });
+    for (const { url, expectedStatus } of protectedRequests) {
+      const response = await request(url);
 
-  it("maps /member/membership/benefits directly to /pay/membership", async () => {
-    const response = await request("https://mmdbkk.com/member/membership/benefits?t=abc");
+      assert.equal(response.status, expectedStatus, url);
+      assert.equal(response.headers.get("location"), null, url);
+      assert.equal(response.headers.get("x-mmd-front-gate"), "mmd-redirect-worker", url);
+      assert.notEqual(response.headers.get("location"), `https://mmdbkk.com/sigil/start?${PRESERVED_QUERY}`, url);
+    }
 
-    assert.equal(response.status, 301);
-    assert.equal(response.headers.get("location"), "https://mmdbkk.com/pay/membership?t=abc");
+    const api = await request(`https://www.mmdbkk.com/sigil/api/private-model/apply?${PRESERVED_QUERY}`, {
+      method: "OPTIONS",
+      headers: {
+        origin: "https://www.mmdbkk.com",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "content-type",
+      },
+    });
+
+    assert.equal(api.status, 209);
+    assert.equal(api.headers.get("location"), null);
+    assert.equal(api.headers.get("x-mmd-route-owner"), "sigil-worker");
+    assert.equal(api.headers.get("x-mmd-page"), "sigil-private-model-apply-api");
   });
 
   it("canonicalizes www host without changing query parameter order or names", async () => {
@@ -723,6 +782,8 @@ describe("redirect helpers", () => {
   it("maps exact and folder redirects case-insensitively", () => {
     assert.equal(findMappedPath("/LOGIN/"), "/sigil/start");
     assert.equal(findMappedPath("/trust/inme"), "/sigil/start");
+    assert.equal(findMappedPath("/MEMBERSHIP/BENEFITS/"), "/member/membership");
+    assert.equal(findMappedPath("/renewal/"), "/sigil/membership");
     assert.equal(findMappedPath("/old-academy/Lv1"), "/academy/Lv1");
   });
 
