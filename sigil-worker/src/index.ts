@@ -12,8 +12,20 @@ const SIGIL_APPLY_PATH = "/sigil/apply";
 const SIGIL_MODEL_APPLY_PATH = "/sigil/model/apply";
 const SIGIL_MODEL_APPLY_PRIVATE_PATH = "/sigil/model/apply/private-model";
 const SIGIL_MODEL_APPLY_PRIVATE_RECEIVED_PATH = "/sigil/model/apply/private-model/received";
+const SIGIL_PRIVATE_MODEL_APPLY_API_PATH = "/sigil/api/private-model/apply";
+const SIGIL_PRIVATE_MODEL_APPLY_ENDPOINT = `https://sigil.mmdbkk.com${SIGIL_PRIVATE_MODEL_APPLY_API_PATH}`;
 const SIGIL_LOGO_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0f2cbc7e26b6735aee4cb2_SIGIL%20LOGO%20Transp.webp";
 const SIGIL_LOGIN_BG_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0802e10402165b8404527c_BPEWPRIVELogin.png";
+const PRIVATE_MODEL_APPLY_ALLOWED_ORIGINS = new Set([
+  "https://mmdbkk.com",
+  "https://www.mmdbkk.com",
+  "https://sigil.mmdbkk.com",
+]);
+const PRIVATE_MODEL_STANDARD_VALUES = new Set([
+  "standard_private",
+  "premium_private",
+  "selective_case_by_case",
+]);
 
 const PRIVATE_MODEL_SETUP_CSS = `#sigil-private-setup {
   --sps-ink: #fff4df;
@@ -222,7 +234,7 @@ const PRIVATE_MODEL_SETUP_SCRIPT = `(function () {
   var form = root.querySelector("[data-private-setup-form]");
   var status = root.querySelector("[data-private-setup-status]");
   if (!form) return;
-  var endpoint = root.getAttribute("data-endpoint") || "/sigil/api/private-model/apply";
+  var endpoint = root.getAttribute("data-endpoint") || "https://sigil.mmdbkk.com/sigil/api/private-model/apply";
   var dashboardUrl = root.getAttribute("data-dashboard-url") || "/sigil/model/apply/private-model/received";
   function clean(value) { return String(value || "").trim(); }
   function field(name) { return form.elements[name]; }
@@ -262,6 +274,7 @@ const PRIVATE_MODEL_SETUP_SCRIPT = `(function () {
       minimum_rate_thb: Number.isFinite(rate) ? rate : 0,
       private_note: value("private_note"),
       consent: Boolean(field("consent") && field("consent").checked),
+      website: value("website"),
       page_url: window.location.href.split("?")[0],
       language: "th",
       timezone: "Asia/Bangkok",
@@ -317,6 +330,8 @@ const FIRST_WAVE_ROUTES = new Set<string>([
   "POST /sigil/admin/verify-access-code",
   "GET /sigil/apply",
   "GET /sigil/apply/",
+  "OPTIONS /sigil/api/private-model/apply",
+  "POST /sigil/api/private-model/apply",
   "GET /sigil/model/apply",
   "GET /sigil/model/apply/",
   "GET /sigil/model/apply/private-model",
@@ -400,6 +415,22 @@ export default {
       return response;
     }
 
+    if (url.pathname === SIGIL_PRIVATE_MODEL_APPLY_API_PATH) {
+      const response = request.method === "OPTIONS"
+        ? privateModelApplyOptions(request)
+        : request.method === "POST"
+          ? await handlePrivateModelApply(request)
+          : withPrivateModelApplyCors(
+            json({ ok: false, error: "method_not_allowed", message: "Use POST for this endpoint." }, 405),
+            request,
+          );
+      const owned = withSigilHeaders(response, build);
+      owned.headers.set("x-mmd-route-owner", OWNER);
+      owned.headers.set("x-mmd-page", "sigil-private-model-apply-api");
+      owned.headers.set("x-mmd-sigil-migration-wave", "first");
+      return owned;
+    }
+
     const upstreamUrl = toUpstreamUrl(url, upstreamBaseUrl);
     const upstreamRequest = new Request(upstreamUrl.toString(), request);
     const upstream = await fetch(upstreamRequest);
@@ -418,6 +449,150 @@ export default {
     return response;
   },
 };
+
+type PrivateModelApplyPayload = {
+  nickname?: unknown;
+  phone?: unknown;
+  telegram_username?: unknown;
+  line_id?: unknown;
+  private_standard?: unknown;
+  minimum_rate_thb?: unknown;
+  private_note?: unknown;
+  consent?: unknown;
+  website?: unknown;
+};
+
+async function handlePrivateModelApply(request: Request): Promise<Response> {
+  const contentType = request.headers.get("content-type") || "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    return withPrivateModelApplyCors(
+      json({
+        ok: false,
+        error: "invalid_request",
+        message: "Send this application as JSON.",
+      }, 400),
+      request,
+    );
+  }
+
+  let payload: PrivateModelApplyPayload;
+  try {
+    const parsed = await request.json();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("invalid payload");
+    }
+    payload = parsed as PrivateModelApplyPayload;
+  } catch {
+    return withPrivateModelApplyCors(
+      json({
+        ok: false,
+        error: "invalid_request",
+        message: "Check the application fields and try again.",
+      }, 400),
+      request,
+    );
+  }
+
+  const validationMessage = validatePrivateModelApplyPayload(payload);
+  if (validationMessage) {
+    return withPrivateModelApplyCors(
+      json({ ok: false, error: "invalid_request", message: validationMessage }, 400),
+      request,
+    );
+  }
+
+  if (cleanPayloadString(payload.website)) {
+    return withPrivateModelApplyCors(
+      json({
+        ok: true,
+        status: "received",
+        application_id: "",
+        received_url: SIGIL_MODEL_APPLY_PRIVATE_RECEIVED_PATH,
+      }),
+      request,
+    );
+  }
+
+  const applicationId = `sigil_private_${Date.now().toString(36)}_${crypto.randomUUID().slice(0, 8)}`;
+  return withPrivateModelApplyCors(
+    json({
+      ok: true,
+      status: "received",
+      application_id: applicationId,
+      id: applicationId,
+      received_url: SIGIL_MODEL_APPLY_PRIVATE_RECEIVED_PATH,
+      dashboard_url: SIGIL_MODEL_APPLY_PRIVATE_RECEIVED_PATH,
+      message: "Application received.",
+    }),
+    request,
+  );
+}
+
+function validatePrivateModelApplyPayload(payload: PrivateModelApplyPayload): string {
+  if (!cleanPayloadString(payload.nickname)) {
+    return "Please add the name TarT should use.";
+  }
+
+  if (!(
+    cleanPayloadString(payload.phone) ||
+    cleanPayloadString(payload.telegram_username) ||
+    cleanPayloadString(payload.line_id)
+  )) {
+    return "Please add at least one contact channel.";
+  }
+
+  const standard = cleanPayloadString(payload.private_standard);
+  if (!standard || !PRIVATE_MODEL_STANDARD_VALUES.has(standard)) {
+    return "Please choose a private standard.";
+  }
+
+  const rate = Number(payload.minimum_rate_thb);
+  if (!Number.isFinite(rate) || rate <= 0) {
+    return "Please add a valid minimum rate.";
+  }
+
+  if (payload.consent !== true) {
+    return "Please confirm consent before submitting.";
+  }
+
+  return "";
+}
+
+function cleanPayloadString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function privateModelApplyOptions(request: Request): Response {
+  return withPrivateModelApplyCors(new Response(null, {
+    status: 204,
+    headers: {
+      "cache-control": "no-store",
+      "access-control-max-age": "86400",
+    },
+  }), request);
+}
+
+function withPrivateModelApplyCors(response: Response, request: Request): Response {
+  const headers = new Headers(response.headers);
+  const origin = request.headers.get("origin") || "";
+  if (PRIVATE_MODEL_APPLY_ALLOWED_ORIGINS.has(origin)) {
+    headers.set("access-control-allow-origin", origin);
+    headers.set("access-control-allow-methods", "POST, OPTIONS");
+    headers.set("access-control-allow-headers", request.headers.get("access-control-request-headers") || "content-type");
+    headers.set("vary", appendVary(headers.get("vary"), "Origin"));
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function appendVary(current: string | null, value: string): string {
+  if (!current) return value;
+  const parts = current.split(",").map((part) => part.trim().toLowerCase());
+  return parts.includes(value.toLowerCase()) ? current : `${current}, ${value}`;
+}
 
 function renderAdminLoginPage(url: URL): Response {
   const next = normalizeLocalNext(url.searchParams.get("next") || "") || DEFAULT_ADMIN_NEXT;
@@ -812,7 +987,7 @@ function renderPrivateModelSetupPage(request: Request): Response {
   <section
     id="sigil-private-setup"
     class="sps sps-private-apply"
-    data-endpoint="https://mmdbkk.com/sigil/api/private-model/apply"
+    data-endpoint="${SIGIL_PRIVATE_MODEL_APPLY_ENDPOINT}"
     data-dashboard-url="${SIGIL_MODEL_APPLY_PRIVATE_RECEIVED_PATH}"
     data-received-url="${SIGIL_MODEL_APPLY_PRIVATE_RECEIVED_PATH}"
   >
