@@ -1,531 +1,147 @@
 const WORKER = "member-pages-worker";
-const VERSION = "20260620-member-membership-latest";
+const VERSION = "20260622-payment-first-profile-flow";
 
-const MEMBERSHIP_PATHS = new Set(["/member/membership", "/member/membership/"]);
+const PAGE_PATHS = new Set([
+  "/member/membership", "/member/membership/",
+  "/pay/membership", "/pay/membership/",
+  "/pay/pending-verification", "/pay/pending-verification/",
+  "/member/profile", "/member/profile/",
+]);
 
 const PACKAGES = [
-  {
-    key: "standard",
-    eyebrow: "STANDARD PACKAGE",
-    title: "Standard",
-    subtitle: "แพ็กเกจของคนมีระดับ",
-    price: "เริ่มจาก ฿15,000",
-    note: "เหมาะสำหรับสมาชิกที่ต้องการเริ่มใช้ MMD Privé อย่างเป็นระบบ มีพื้นที่สมาชิกและเส้นทางชำระเงินที่ชัดเจน",
-    points: [
-      "เข้าสู่ Member Area และตรวจสถานะสมาชิก",
-      "ใช้เส้นทางชำระเงินหรือ renew ผ่านระบบ",
-      "เหมาะกับการเริ่มต้นแบบสุภาพ เป็นส่วนตัว และไม่ซับซ้อน",
-    ],
-  },
-  {
-    key: "premium",
-    eyebrow: "PREMIUM PACKAGE",
-    title: "Premium",
-    subtitle: "แพ็กเกจของคนที่ต้องการความพรีเมียม",
-    price: "เริ่มจาก ฿25,000",
-    note: "สำหรับสมาชิกที่ต้องการประสบการณ์ที่ถูกจัดวางละเอียดขึ้น เหมาะกับ preference ที่เฉพาะตัวและต้องการการดูแลที่นิ่งกว่า",
-    points: [
-      "เหมาะกับ companion preference ที่ละเอียดขึ้น",
-      "การดูแลและการจัดลำดับคำขอพรีเมียมกว่า Standard",
-      "ใช้ร่วมกับประวัติสมาชิกและ dashboard เพื่อความต่อเนื่อง",
-    ],
-  },
-  {
-    key: "vip",
-    eyebrow: "VIP CURATION",
-    title: "VIP",
-    subtitle: "ถูกจัดลำดับและดูแลเป็นส่วนตัวกว่า",
-    price: "Private review",
-    note: "สำหรับสมาชิกที่มีประวัติและความต้องการชัดเจน MMD จะพิจารณาความเหมาะสมของคำขอและจัดลำดับการดูแลเป็นรายกรณี",
-    points: [
-      "การจัดลำดับคำขอเป็นส่วนตัวกว่า",
-      "เหมาะกับคำขอที่ต้องการความละเอียดและความต่อเนื่อง",
-      "ขึ้นกับสถานะสมาชิก ประวัติ และการตรวจสอบของระบบ",
-    ],
-  },
+  { key: "trial", title: "Trial", eyebrow: "GUEST PASS", price: "เริ่มจาก ฿5,000", amount: 5000, copy: "Guest Pass สำหรับเริ่มใช้งานแบบมีกรอบเวลา" },
+  { key: "standard", title: "Standard", eyebrow: "STANDARD PACKAGE", price: "เริ่มจาก ฿15,000", amount: 15000, copy: "แพ็กเกจหลักสำหรับเริ่มใช้ MMD Privé อย่างเป็นระบบ" },
+  { key: "premium", title: "Premium", eyebrow: "PREMIUM PACKAGE", price: "เริ่มจาก ฿25,000", amount: 25000, copy: "แพ็กเกจสำหรับความต้องการและ companion preference ที่ละเอียดขึ้น" },
 ];
 
+export function isMemberPagePath(url) {
+  return PAGE_PATHS.has(url.pathname.toLowerCase());
+}
+
 export function isMembershipPath(url) {
-  return MEMBERSHIP_PATHS.has(url.pathname.toLowerCase());
+  const p = url.pathname.toLowerCase();
+  return p === "/member/membership" || p === "/member/membership/";
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env = {}) {
     const url = new URL(request.url);
     const method = request.method.toUpperCase();
-
-    if (method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: {
-          allow: "GET, HEAD, OPTIONS",
-          "x-mmd-worker": WORKER,
-          "x-mmd-version": VERSION,
-        },
-      });
-    }
-
-    if (method !== "GET" && method !== "HEAD") {
-      return new Response("Method Not Allowed", {
-        status: 405,
-        headers: {
-          allow: "GET, HEAD, OPTIONS",
-          "content-type": "text/plain; charset=utf-8",
-          "x-mmd-worker": WORKER,
-          "x-mmd-version": VERSION,
-        },
-      });
-    }
-
-    if (!isMembershipPath(url)) {
-      return new Response("Not Found", {
-        status: 404,
-        headers: {
-          "content-type": "text/plain; charset=utf-8",
-          "x-mmd-worker": WORKER,
-          "x-mmd-version": VERSION,
-        },
-      });
-    }
-
-    return renderMembershipPage(request);
+    if (method === "OPTIONS") return new Response(null, { status: 204, headers: headers("text/plain") });
+    if (method !== "GET" && method !== "HEAD") return new Response("Method Not Allowed", { status: 405, headers: headers("text/plain; charset=utf-8") });
+    if (!isMemberPagePath(url)) return new Response("Not Found", { status: 404, headers: headers("text/plain; charset=utf-8") });
+    const p = url.pathname.toLowerCase().replace(/\/+$/, "") || "/";
+    if (p === "/pay/membership") return renderPay(request, env);
+    if (p === "/pay/pending-verification") return renderPending(request);
+    if (p === "/member/profile") return renderProfile(request);
+    return renderMembership(request);
   },
 };
 
-export function renderMembershipPage(request) {
+export function renderMembership(request) {
   const url = new URL(request.url);
-  const selectedPlan = (url.searchParams.get("plan") || url.searchParams.get("package") || "").toLowerCase();
-  const query = url.search || "";
-  const dashboardHref = appendQuery("/member/dashboard", query);
-  const paymentHref = appendQuery("/pay/membership", query);
-  const profileHref = appendQuery("/member/profile", query);
-
-  const packageCards = PACKAGES.map((item) => renderPackageCard(item, selectedPlan, query)).join("");
-
-  const html = `<!doctype html>
-<html lang="th">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MMD Privé | Membership</title>
-    <meta name="robots" content="noindex, nofollow" />
-    <style>
-      :root { color-scheme: dark; }
-      * { box-sizing: border-box; }
-      html { min-height: 100%; background: #090604; }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        color: #fff7e8;
-        background:
-          radial-gradient(circle at 18% 0%, rgba(248, 197, 108, 0.24), transparent 34%),
-          radial-gradient(circle at 88% 16%, rgba(132, 24, 12, 0.34), transparent 38%),
-          linear-gradient(145deg, #070403 0%, #110b06 48%, #050403 100%);
-        font-family: Inter, "Avenir Next", "Segoe UI", "Noto Sans Thai", Arial, sans-serif;
-      }
-      a { color: inherit; }
-      .mmd-member-membership {
-        width: min(1180px, calc(100% - 32px));
-        margin: 0 auto;
-        padding: 28px 0 44px;
-      }
-      .mmd-member-membership__nav {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 14px;
-        margin-bottom: 34px;
-      }
-      .mmd-member-membership__brand {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        font-size: 13px;
-        font-weight: 900;
-        letter-spacing: .16em;
-        text-transform: uppercase;
-        color: #ffd98d;
-      }
-      .mmd-member-membership__mark {
-        width: 24px;
-        height: 24px;
-        border-radius: 999px;
-        background: linear-gradient(135deg, #ffe0a3, #b98632 54%, #56380d);
-        box-shadow: 0 0 28px rgba(255, 201, 104, .32);
-      }
-      .mmd-member-membership__nav-actions {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: flex-end;
-        gap: 10px;
-      }
-      .mmd-member-membership__ghost {
-        min-height: 40px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border: 1px solid rgba(255, 216, 151, .28);
-        border-radius: 999px;
-        padding: 0 14px;
-        color: #fff1d0;
-        background: rgba(255, 255, 255, .045);
-        text-decoration: none;
-        font-size: 13px;
-        font-weight: 800;
-      }
-      .mmd-member-membership__hero {
-        display: grid;
-        grid-template-columns: minmax(0, 1.08fr) minmax(280px, .92fr);
-        gap: 24px;
-        align-items: stretch;
-        margin-bottom: 24px;
-      }
-      .mmd-member-membership__panel {
-        border: 1px solid rgba(255, 216, 151, .18);
-        border-radius: 32px;
-        background: rgba(11, 8, 6, .74);
-        box-shadow: 0 24px 80px rgba(0, 0, 0, .34);
-        backdrop-filter: blur(18px);
-      }
-      .mmd-member-membership__intro {
-        padding: clamp(28px, 5vw, 54px);
-      }
-      .mmd-member-membership__eyebrow {
-        margin: 0 0 14px;
-        color: #ffd98d;
-        font-size: 12px;
-        font-weight: 900;
-        letter-spacing: .2em;
-        text-transform: uppercase;
-      }
-      .mmd-member-membership h1 {
-        max-width: 760px;
-        margin: 0 0 18px;
-        color: #ffffff;
-        font-size: clamp(42px, 8vw, 92px);
-        line-height: .93;
-        letter-spacing: -0.065em;
-      }
-      .mmd-member-membership__lead {
-        max-width: 700px;
-        margin: 0 0 24px;
-        color: #fff0cf;
-        font-size: clamp(16px, 2vw, 20px);
-        line-height: 1.75;
-      }
-      .mmd-member-membership__actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-        margin-top: 18px;
-      }
-      .mmd-member-membership__button {
-        min-height: 48px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 999px;
-        padding: 0 18px;
-        color: #120b04;
-        background: linear-gradient(135deg, #ffe3a3, #d6a044);
-        text-decoration: none;
-        font-size: 14px;
-        font-weight: 950;
-        box-shadow: 0 14px 42px rgba(255, 201, 104, .18);
-      }
-      .mmd-member-membership__button.secondary {
-        color: #fff4dc;
-        background: rgba(255, 255, 255, .07);
-        border: 1px solid rgba(255, 216, 151, .25);
-        box-shadow: none;
-      }
-      .mmd-member-membership__status {
-        padding: clamp(24px, 4vw, 34px);
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        gap: 20px;
-      }
-      .mmd-member-membership__status-card {
-        border-radius: 24px;
-        padding: 20px;
-        background: linear-gradient(145deg, rgba(255, 220, 157, .16), rgba(255, 255, 255, .04));
-        border: 1px solid rgba(255, 216, 151, .20);
-      }
-      .mmd-member-membership__status-title {
-        margin: 0 0 10px;
-        color: #fff;
-        font-size: 21px;
-        font-weight: 950;
-      }
-      .mmd-member-membership__status-copy {
-        margin: 0;
-        color: #ffe9bc;
-        font-size: 15px;
-        line-height: 1.7;
-      }
-      .mmd-member-membership__grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 16px;
-        margin-top: 16px;
-      }
-      .mmd-member-membership__package {
-        position: relative;
-        overflow: hidden;
-        min-height: 100%;
-        padding: 24px;
-        border: 1px solid rgba(255, 216, 151, .18);
-        border-radius: 28px;
-        background: rgba(255, 255, 255, .055);
-      }
-      .mmd-member-membership__package.is-selected {
-        border-color: rgba(255, 219, 145, .72);
-        box-shadow: 0 0 0 1px rgba(255, 219, 145, .26), 0 22px 70px rgba(218, 160, 70, .14);
-      }
-      .mmd-member-membership__package::before {
-        content: "";
-        position: absolute;
-        inset: -1px -1px auto auto;
-        width: 140px;
-        height: 140px;
-        background: radial-gradient(circle, rgba(255, 215, 132, .20), transparent 64%);
-        pointer-events: none;
-      }
-      .mmd-member-membership__package-kicker {
-        margin: 0 0 12px;
-        color: #ffd98d;
-        font-size: 11px;
-        font-weight: 950;
-        letter-spacing: .17em;
-      }
-      .mmd-member-membership__package h2 {
-        margin: 0 0 8px;
-        color: #fff;
-        font-size: 30px;
-        line-height: 1.05;
-      }
-      .mmd-member-membership__package-subtitle {
-        margin: 0 0 14px;
-        color: #ffe3a9;
-        font-size: 16px;
-        font-weight: 850;
-      }
-      .mmd-member-membership__price {
-        margin: 0 0 14px;
-        color: #fff;
-        font-size: 19px;
-        font-weight: 950;
-      }
-      .mmd-member-membership__note {
-        margin: 0 0 18px;
-        color: #f4dfbb;
-        font-size: 14px;
-        line-height: 1.75;
-      }
-      .mmd-member-membership__list {
-        display: grid;
-        gap: 10px;
-        margin: 0 0 20px;
-        padding: 0;
-        list-style: none;
-      }
-      .mmd-member-membership__list li {
-        position: relative;
-        padding-left: 18px;
-        color: #fff1d3;
-        font-size: 14px;
-        line-height: 1.58;
-      }
-      .mmd-member-membership__list li::before {
-        content: "";
-        position: absolute;
-        left: 0;
-        top: .65em;
-        width: 7px;
-        height: 7px;
-        border-radius: 99px;
-        background: #ffd98d;
-      }
-      .mmd-member-membership__package-link {
-        width: 100%;
-        min-height: 44px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 999px;
-        color: #140d05;
-        background: #ffd98d;
-        text-decoration: none;
-        font-size: 14px;
-        font-weight: 950;
-      }
-      .mmd-member-membership__blackcard {
-        margin-top: 16px;
-        padding: clamp(22px, 4vw, 34px);
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 18px;
-        align-items: center;
-        border-color: rgba(255, 216, 151, .22);
-        background:
-          linear-gradient(135deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, .025)),
-          radial-gradient(circle at top right, rgba(255, 214, 135, .16), transparent 42%);
-      }
-      .mmd-member-membership__blackcard h2 {
-        margin: 0 0 10px;
-        color: #fff;
-        font-size: clamp(28px, 5vw, 54px);
-        line-height: .98;
-        letter-spacing: -0.045em;
-      }
-      .mmd-member-membership__blackcard p {
-        max-width: 790px;
-        margin: 0;
-        color: #ffe8bd;
-        font-size: 15px;
-        line-height: 1.75;
-      }
-      .mmd-member-membership__footer {
-        margin: 22px 0 0;
-        color: #d9c39e;
-        font-size: 12px;
-        line-height: 1.7;
-      }
-      @media (max-width: 920px) {
-        .mmd-member-membership__hero,
-        .mmd-member-membership__blackcard {
-          grid-template-columns: 1fr;
-        }
-        .mmd-member-membership__grid {
-          grid-template-columns: 1fr;
-        }
-      }
-      @media (max-width: 640px) {
-        .mmd-member-membership {
-          width: min(100% - 22px, 1180px);
-          padding-top: 18px;
-        }
-        .mmd-member-membership__nav {
-          align-items: flex-start;
-          flex-direction: column;
-        }
-        .mmd-member-membership__nav-actions,
-        .mmd-member-membership__actions {
-          width: 100%;
-        }
-        .mmd-member-membership__ghost,
-        .mmd-member-membership__button {
-          width: 100%;
-        }
-        .mmd-member-membership__intro,
-        .mmd-member-membership__status,
-        .mmd-member-membership__package {
-          border-radius: 24px;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <main class="mmd-member-membership" data-mmd-page="member-membership" data-mmd-version="${VERSION}">
-      <nav class="mmd-member-membership__nav" aria-label="Membership navigation">
-        <div class="mmd-member-membership__brand"><span class="mmd-member-membership__mark" aria-hidden="true"></span><span>MMD Privé</span></div>
-        <div class="mmd-member-membership__nav-actions">
-          <a class="mmd-member-membership__ghost" href="${escapeAttribute(dashboardHref)}">Member Dashboard</a>
-          <a class="mmd-member-membership__ghost" href="${escapeAttribute(profileHref)}">Member Profile</a>
-        </div>
-      </nav>
-
-      <section class="mmd-member-membership__hero" aria-labelledby="mmd-member-membership-title">
-        <div class="mmd-member-membership__panel mmd-member-membership__intro">
-          <p class="mmd-member-membership__eyebrow">Member-facing Package Selection</p>
-          <h1 id="mmd-member-membership-title">Membership</h1>
-          <p class="mmd-member-membership__lead">เลือกแพ็กเกจสมาชิกของ MMD Privé ให้ตรงกับระดับการดูแลที่ต้องการ หน้านี้เป็นพื้นที่สำหรับเริ่ม ต่ออายุ หรืออัปเกรดสมาชิก หลังจากส่งข้อมูลหรือหลักฐานชำระเงินแล้ว ระบบจะตรวจสอบก่อนยืนยันสถานะเสมอ</p>
-          <div class="mmd-member-membership__actions">
-            <a class="mmd-member-membership__button" href="${escapeAttribute(paymentHref)}">Start / Renew / Upgrade</a>
-            <a class="mmd-member-membership__button secondary" href="${escapeAttribute(dashboardHref)}">Continue to Dashboard</a>
-          </div>
-        </div>
-
-        <aside class="mmd-member-membership__panel mmd-member-membership__status" aria-label="Membership status note">
-          <div class="mmd-member-membership__status-card">
-            <p class="mmd-member-membership__status-title">Verification first</p>
-            <p class="mmd-member-membership__status-copy">สลิปหรือหลักฐานชำระเงินเป็นข้อมูลประกอบเท่านั้น สถานะสมาชิกและสิทธิ์การใช้งานจะเริ่มหลังจากยอดถูกตรวจสอบและจับคู่กับบัญชีทางการเรียบร้อยแล้ว</p>
-          </div>
-          <div class="mmd-member-membership__status-card">
-            <p class="mmd-member-membership__status-title">Companion preference</p>
-            <p class="mmd-member-membership__status-copy">การเลือกแพ็กเกจช่วยบอกระดับการดูแล ไม่ใช่การยืนยันงานหรือยืนยัน companion ทันที คำขอจะถูกตรวจสอบตามสถานะและความเหมาะสมก่อนเสมอ</p>
-          </div>
-        </aside>
-      </section>
-
-      <section class="mmd-member-membership__grid" aria-label="Membership packages">
-        ${packageCards}
-      </section>
-
-      <section class="mmd-member-membership__panel mmd-member-membership__blackcard" aria-label="Black Card note">
-        <div>
-          <p class="mmd-member-membership__eyebrow">BLACK CARD NOTE</p>
-          <h2>ไม่ใช่ซื้อ แต่ถูกพิจารณา</h2>
-          <p>Black Card เป็นชั้นสิทธิ์ที่ MMD พิจารณาแบบเป็นส่วนตัวตามประวัติ ความเหมาะสม และความไว้วางใจของระบบ ไม่ใช่แพ็กเกจที่กดซื้อเพื่อปลดล็อกทันที และไม่ผูกกับการชำระเงินครั้งเดียว</p>
-        </div>
-        <a class="mmd-member-membership__button secondary" href="${escapeAttribute(dashboardHref)}">Check status</a>
-      </section>
-
-      <p class="mmd-member-membership__footer">MMD Privé keeps `/member/*` as the customer-facing Member Area. Private system and admin layers remain under `/sigil/*`. Query parameters are preserved for continuity.</p>
-    </main>
-  </body>
-</html>`;
-
-  return new Response(request.method.toUpperCase() === "HEAD" ? null : html, {
-    status: 200,
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
-      pragma: "no-cache",
-      expires: "0",
-      "x-mmd-worker": WORKER,
-      "x-mmd-page": "member-membership",
-      "x-mmd-version": VERSION,
-    },
-  });
+  const plan = normalizePlan(url.searchParams.get("plan") || url.searchParams.get("package"));
+  const cards = PACKAGES.map((pkg) => packageCard(pkg, plan, url.search)).join("");
+  return page(request, "member-membership", `
+    ${nav(url.search)}
+    <section class="hero"><div class="panel"><p class="eyebrow">Member-facing Package Selection</p><h1>Membership</h1><p>เลือก Trial, Standard หรือ Premium แล้วไปต่อที่หน้าโอนเงินก่อน ระบบจะตรวจสอบยอดจริงก่อนเปิดสถานะสมาชิกและ points เสมอ</p><p class="actions"><a class="btn" href="${attr(appendQuery("/pay/membership", url.search, plan ? { plan } : {}))}">Continue to Payment</a><a class="btn ghost" href="${attr(appendQuery("/member/dashboard", url.search))}">Member Dashboard</a></p></div>${doctrine()}</section>
+    <section class="grid">${cards}</section>
+    <section class="panel black"><p class="eyebrow">BLACK CARD NOTE</p><h2>ไม่ใช่แพ็กเกจที่กดซื้อ</h2><p>350 points คือ Black Card review eligible เท่านั้น ไม่ใช่ auto approved และไม่ใช่ทางลัดจากการส่งสลิป</p></section>
+  `);
 }
 
-function renderPackageCard(item, selectedPlan, query) {
-  const selectedClass = selectedPlan === item.key ? " is-selected" : "";
-  const href = appendQuery("/pay/membership", query, { plan: item.key });
-  const points = item.points.map((point) => `<li>${escapeHtml(point)}</li>`).join("");
-
-  return `<article class="mmd-member-membership__package${selectedClass}" data-plan="${escapeAttribute(item.key)}">
-    <p class="mmd-member-membership__package-kicker">${escapeHtml(item.eyebrow)}</p>
-    <h2>${escapeHtml(item.title)}</h2>
-    <p class="mmd-member-membership__package-subtitle">${escapeHtml(item.subtitle)}</p>
-    <p class="mmd-member-membership__price">${escapeHtml(item.price)}</p>
-    <p class="mmd-member-membership__note">${escapeHtml(item.note)}</p>
-    <ul class="mmd-member-membership__list">${points}</ul>
-    <a class="mmd-member-membership__package-link" href="${escapeAttribute(href)}">เลือก ${escapeHtml(item.title)}</a>
-  </article>`;
+export function renderPay(request, env = {}) {
+  const url = new URL(request.url);
+  const plan = normalizePlan(url.searchParams.get("plan") || url.searchParams.get("package")) || "standard";
+  const pkg = getPackage(plan);
+  const amount = positive(url.searchParams.get("amount")) || pkg.amount;
+  const apiBase = String(env.PAYMENTS_API_BASE || "https://payments-worker.malemodel-bkk.workers.dev").replace(/\/+$/, "");
+  return page(request, "pay-membership", `
+    ${nav(url.search)}
+    <section class="hero"><div class="panel"><p class="eyebrow">Payment First Membership</p><h1>Transfer First</h1><p>กรุณาโอนเงินตามยอดแพ็กเกจที่เลือก แล้วส่งหลักฐานเพื่อให้ระบบตรวจสอบ สลิปเป็น evidence เท่านั้น สถานะสมาชิกและ points จะเริ่มหลัง official verification complete</p><div class="summary"><b>Package</b><span>${html(pkg.title)}</span><b>Amount</b><span>฿${money(amount)}</span><b>Status</b><span>Awaiting proof</span></div></div>${doctrine()}</section>
+    <section class="panel"><p class="eyebrow">TRANSFER DETAILS</p><h2>โอนเงินก่อน แล้วส่งหลักฐาน</h2><p>หลังโอนแล้วให้ใส่ลิงก์สลิปหรือหลักฐานการโอน เพื่อสร้าง payment evidence record เป็นสถานะ pending verification</p><form id="payform" data-api="${attr(apiBase)}" data-plan="${attr(plan)}" data-amount="${attr(String(amount))}"><label>Member Email หรือ username<input name="member_email" value="${attr(url.searchParams.get("email") || "")}" /></label><label>Session ID<input name="session_id" value="${attr(url.searchParams.get("session_id") || url.searchParams.get("sid") || "")}" placeholder="ระบบจะสร้างให้ถ้าเว้นว่าง" /></label><label>Slip URL / proof URL<input name="receipt_url" required placeholder="วางลิงก์รูปสลิป หรือหลักฐานการโอน" /></label><label>Note<textarea name="notes" rows="3" placeholder="รายละเอียดเพิ่มเติม"></textarea></label><button class="btn" type="submit">Submit for Verification</button></form><div id="payresult" class="notice" hidden></div></section>
+    <script>${paymentScript()}</script>
+  `);
 }
 
-function appendQuery(basePath, query, extraParams = {}) {
+export function renderPending(request) {
+  const url = new URL(request.url);
+  const ref = url.searchParams.get("payment_ref") || url.searchParams.get("transaction_ref") || "";
+  const profile = appendQuery("/member/profile", url.search, { status: "pending_verification", payment_ref: ref });
+  return page(request, "pay-pending-verification", `${nav(url.search)}<section class="panel center"><p class="eyebrow">PENDING VERIFICATION</p><h1>Evidence Received</h1><p>ระบบรับหลักฐานแล้ว แต่ยังไม่ถือว่า paid และยังไม่เปิด membership หรือ points จนกว่า official verification จะครบชุด</p><div class="summary"><b>Payment Ref</b><span>${html(ref || "Pending")}</span><b>Status</b><span>pending_verification</span><b>Rule</b><span>verified funds only</span></div><p class="actions"><a class="btn" href="${attr(profile)}">Continue to Member Profile</a><a class="btn ghost" href="${attr(appendQuery("/member/dashboard", url.search))}">Member Dashboard</a></p></section>`);
+}
+
+export function renderProfile(request) {
+  const url = new URL(request.url);
+  const status = String(url.searchParams.get("status") || "pending_verification").toLowerCase();
+  const verified = status === "verified" || status === "active";
+  const plan = normalizePlan(url.searchParams.get("plan") || url.searchParams.get("package")) || "standard";
+  const pkg = getPackage(plan);
+  const ref = url.searchParams.get("payment_ref") || url.searchParams.get("transaction_ref") || "";
+  const amount = positive(url.searchParams.get("amount")) || pkg.amount;
+  const points = verified ? Math.floor(amount / 100) : 0;
+  return page(request, "member-profile", `${nav(url.search)}<section class="panel center"><p class="eyebrow">MEMBER PROFILE</p><h1>${verified ? "Active Profile" : "Pending Profile"}</h1><p>Member Profile แสดง verified truth เท่านั้น หากเพิ่งส่งหลักฐานการโอน โปรไฟล์จะอยู่ในสถานะ pending verification และยังไม่เพิ่ม points จนกว่ายอดจริงจะถูกตรวจสอบครบชุด</p><div class="profile"><span>Membership Status</span><b>${verified ? "Active" : "Pending Verification"}</b><span>Package</span><b>${html(pkg.title)}</b><span>Payment Status</span><b>${verified ? "Verified" : "Evidence Received"}</b><span>Payment Ref</span><b>${html(ref || "Waiting")}</b><span>Verified Points</span><b>${points} points</b><span>Black Card</span><b>${points >= 350 ? "Review Eligible" : "Not Eligible"}</b></div><p class="actions"><a class="btn" href="${attr(appendQuery("/member/dashboard", url.search))}">Member Dashboard</a><a class="btn ghost" href="${attr(appendQuery("/pay/membership", url.search, { plan }))}">Continue Payment</a></p></section>`);
+}
+
+function packageCard(pkg, selected, query) {
+  const href = appendQuery("/pay/membership", query, { plan: pkg.key, amount: pkg.amount });
+  return `<article class="pkg ${selected === pkg.key ? "on" : ""}"><p class="eyebrow">${html(pkg.eyebrow)}</p><h2>${html(pkg.title)}</h2><p>${html(pkg.copy)}</p><p class="price">${html(pkg.price)}</p><a class="btn" href="${attr(href)}">เลือก ${html(pkg.title)}</a></article>`;
+}
+
+function nav(query) {
+  return `<nav><a class="brand" href="${attr(appendQuery("/member/membership", query))}">MMD Privé</a><span><a href="${attr(appendQuery("/member/dashboard", query))}">Dashboard</a><a href="${attr(appendQuery("/member/profile", query))}">Profile</a></span></nav>`;
+}
+
+function doctrine() {
+  return `<aside class="panel side"><h2>Verification first</h2><p>proof is not payment truth<br>verified funds are payment truth<br>points follow verified funds only</p><p>Black Card is review/approval only</p></aside>`;
+}
+
+function page(request, slug, body) {
+  const output = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>MMD Privé | ${html(slug)}</title><style>${styles()}</style></head><body><main data-mmd-page="${attr(slug)}" data-mmd-version="${VERSION}">${body}<footer>Payment page accepts proof. Verification gate confirms money. Airtable records truth. Member Profile displays verified truth only.</footer></main></body></html>`;
+  return new Response(request.method.toUpperCase() === "HEAD" ? null : output, { status: 200, headers: { ...headers("text/html; charset=utf-8"), "cache-control": "no-store, no-cache, must-revalidate, max-age=0" } });
+}
+
+function headers(type) {
+  return { "content-type": type, "x-mmd-worker": WORKER, "x-mmd-version": VERSION };
+}
+
+function appendQuery(base, query, extra = {}) {
   const params = new URLSearchParams(query || "");
-  for (const [key, value] of Object.entries(extraParams)) {
-    if (value == null || String(value).trim() === "") continue;
-    params.set(key, String(value));
-  }
+  Object.entries(extra).forEach(([k, v]) => { if (v != null && String(v).trim()) params.set(k, String(v)); });
   const rendered = params.toString();
-  return rendered ? `${basePath}?${rendered}` : basePath;
+  return rendered ? `${base}?${rendered}` : base;
 }
 
-function escapeHtml(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+function normalizePlan(value) {
+  const plan = String(value || "").toLowerCase().trim();
+  return PACKAGES.some((pkg) => pkg.key === plan) ? plan : "";
 }
 
-function escapeAttribute(value) {
-  return escapeHtml(value)
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+function getPackage(plan) {
+  return PACKAGES.find((pkg) => pkg.key === plan) || PACKAGES[1];
+}
+
+function positive(value) {
+  const n = Number(String(value || "").replace(/,/g, ""));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function money(value) {
+  return new Intl.NumberFormat("th-TH").format(Number(value || 0));
+}
+
+function html(value) {
+  return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function attr(value) {
+  return html(value).replace(/"/g, "&quot;");
+}
+
+function paymentScript() {
+  return `(function(){var f=document.getElementById("payform"),r=document.getElementById("payresult");if(!f||!r)return;function out(t){r.hidden=false;r.textContent=t;}function sid(){return "mem_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,10);}f.addEventListener("submit",function(e){e.preventDefault();var d=new FormData(f),api=f.getAttribute("data-api"),plan=f.getAttribute("data-plan"),amount=Number(f.getAttribute("data-amount")||0),sessionId=String(d.get("session_id")||"").trim()||sid();var payload={session_id:sessionId,payment_stage:"membership",payment_type:"membership",package_code:plan,amount:amount,member_email:String(d.get("member_email")||"").trim(),receipt_url:String(d.get("receipt_url")||"").trim(),notes:String(d.get("notes")||"").trim(),payment_method:"promptpay"};out("กำลังส่งหลักฐานเข้าระบบตรวจสอบ...");fetch(api+"/v1/pay/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(function(x){return x.json().catch(function(){return{}}).then(function(j){return{ok:x.ok,json:j}})}).then(function(o){if(!o.ok||!o.json||o.json.ok===false)throw new Error(o.json&&(o.json.error||o.json.message)||"payment_submit_failed");var ref=o.json.payment_ref||o.json.transaction_ref||"";var next=new URL("/pay/pending-verification",location.origin);new URLSearchParams(location.search||"").forEach(function(v,k){next.searchParams.set(k,v)});next.searchParams.set("status","pending_verification");next.searchParams.set("plan",plan);next.searchParams.set("amount",String(amount));next.searchParams.set("session_id",sessionId);if(ref)next.searchParams.set("payment_ref",ref);location.href=next.toString();}).catch(function(err){out("ส่งหลักฐานไม่สำเร็จ: "+(err&&err.message||err));});});})();`;
+}
+
+function styles() {
+  return `:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 20% 0%,rgba(245,190,92,.22),transparent 34%),linear-gradient(145deg,#070403,#120b06 52%,#050403);color:#fff7e8;font-family:Inter,"Segoe UI","Noto Sans Thai",Arial,sans-serif}main{width:min(1120px,calc(100% - 32px));margin:auto;padding:28px 0 44px}nav{display:flex;justify-content:space-between;gap:14px;align-items:center;margin-bottom:28px}.brand,nav a{color:#ffd98d;text-decoration:none;font-weight:900}nav span{display:flex;gap:12px;flex-wrap:wrap}.hero{display:grid;grid-template-columns:1.05fr .95fr;gap:20px;margin-bottom:20px}.panel,.pkg{border:1px solid rgba(255,216,151,.2);border-radius:28px;background:rgba(11,8,6,.75);box-shadow:0 24px 80px rgba(0,0,0,.34);padding:clamp(24px,4vw,46px)}.side{padding:28px}.eyebrow{margin:0 0 12px;color:#ffd98d;font-size:12px;font-weight:950;letter-spacing:.18em;text-transform:uppercase}h1{margin:0 0 16px;font-size:clamp(44px,8vw,88px);line-height:.94;letter-spacing:-.055em}h2{margin:0 0 12px;font-size:clamp(26px,4vw,44px);line-height:1}p{color:#ffe9bc;line-height:1.7}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.pkg.on{border-color:#ffd98d}.price{color:#fff;font-weight:950}.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;border-radius:999px;padding:0 16px;background:#ffd98d;color:#140d05;text-decoration:none;font-weight:950;border:0;cursor:pointer}.ghost{background:rgba(255,255,255,.06);color:#fff4dc;border:1px solid rgba(255,216,151,.25)}.actions{display:flex;gap:10px;flex-wrap:wrap}.summary,.profile{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:18px 0}.profile{grid-template-columns:repeat(2,minmax(0,1fr))}.summary>* ,.profile>*{padding:14px;border-radius:16px;background:rgba(255,255,255,.06);overflow-wrap:anywhere}form{display:grid;gap:12px;max-width:720px}label{display:grid;gap:8px;color:#ffe7b7;font-weight:850}input,textarea{width:100%;border:1px solid rgba(255,216,151,.24);border-radius:16px;padding:14px 16px;color:#fff7e8;background:rgba(255,255,255,.065);font:inherit}.notice{margin-top:14px;padding:14px;border-radius:16px;background:rgba(255,255,255,.07)}.center{max-width:880px;margin:auto}.black{margin-top:16px}footer{margin-top:22px;color:#d9c39e;font-size:12px;line-height:1.7}@media(max-width:860px){.hero,.grid,.summary,.profile{grid-template-columns:1fr}nav{align-items:flex-start;flex-direction:column}.btn{width:100%}}`;
 }
