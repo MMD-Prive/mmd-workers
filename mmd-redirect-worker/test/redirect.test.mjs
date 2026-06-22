@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
 import worker, {
@@ -45,6 +46,7 @@ const VISIBLE_DEBUG_TEXT = [
 ];
 
 const TELEGRAM_BRIEF_FORBIDDEN_TEXT = /Briefing HYPE TELEGRAMBOT|TELEGRAMBOT|CEO TELEGRAM BRIEF/i;
+const wranglerConfig = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
 
 function assertPolishedShell(html, url) {
   assert.doesNotMatch(html, /name=["']token["']/i, url);
@@ -54,6 +56,11 @@ function assertPolishedShell(html, url) {
 }
 
 describe("MMD permanent redirect guard", () => {
+  it("declares explicit /trust/inme route ownership for mmd-redirect-worker", () => {
+    assert.ok(wranglerConfig.includes('pattern = "mmdbkk.com/trust/inme*"'));
+    assert.ok(wranglerConfig.includes('pattern = "www.mmdbkk.com/trust/inme*"'));
+  });
+
   it("canonicalizes www legacy paths and preserves query strings", async () => {
     const response = await request("http://www.mmdbkk.com/inme?t=abc123&ref=line");
 

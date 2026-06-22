@@ -42,3 +42,27 @@ The minimal gated patch may only:
 It must not redesign pages, publish Webflow, deploy production, or change
 payment, membership, points, Black Card, webhook processing, admin auth, or
 unrelated route families.
+
+## `/trust/inme*` Worker Route Ownership Correction
+
+Production investigation after the initial SIGIL Start migration found that
+`/trust/inme` was still intercepted before `mmd-redirect-worker` by more
+specific Cloudflare Worker routes:
+
+| Production route | Previous production owner | Correct owner |
+| --- | --- | --- |
+| `mmdbkk.com/trust/inme*` | `member-dashboard-chat-worker` | `mmd-redirect-worker` |
+| `www.mmdbkk.com/trust/inme*` | `member-dashboard-chat-worker` | `mmd-redirect-worker` |
+
+`mmd-redirect-worker/wrangler.toml` now declares both explicit route patterns
+so the canonical redirect logic in `mmd-redirect-worker/src/index.js` can own:
+
+`/trust/inme?t=...` -> `/sigil/start?t=...`
+
+The full query string must remain preserved exactly.
+
+The current `main` branch used for this PR does not contain a tracked
+`member-dashboard-chat-worker/wrangler.toml`, so this PR cannot remove those
+older declarations from that worker's config. Future changes to
+`member-dashboard-chat-worker` must not reintroduce ownership of
+`mmdbkk.com/trust/inme*` or `www.mmdbkk.com/trust/inme*`.
