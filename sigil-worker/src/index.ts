@@ -21,10 +21,16 @@ const PRIVATE_MODEL_APPLY_ALLOWED_ORIGINS = new Set([
   "https://www.mmdbkk.com",
   "https://sigil.mmdbkk.com",
 ]);
-const PRIVATE_MODEL_STANDARD_VALUES = new Set([
-  "standard_private",
-  "premium_private",
-  "selective_case_by_case",
+const PRIVATE_MODEL_STANDARD_ALIASES = new Map([
+  ["standard", "standard_private"],
+  ["standard_private", "standard_private"],
+  ["standard-private", "standard_private"],
+  ["premium", "premium_private"],
+  ["premium_private", "premium_private"],
+  ["premium-private", "premium_private"],
+  ["selective", "selective_case_by_case"],
+  ["selective_case_by_case", "selective_case_by_case"],
+  ["selective-case-by-case", "selective_case_by_case"],
 ]);
 
 const PRIVATE_MODEL_SETUP_CSS = `#sigil-private-setup {
@@ -493,7 +499,8 @@ async function handlePrivateModelApply(request: Request): Promise<Response> {
     );
   }
 
-  const validationMessage = validatePrivateModelApplyPayload(payload);
+  const normalizedStandard = normalizePrivateModelStandard(payload.private_standard);
+  const validationMessage = validatePrivateModelApplyPayload(payload, normalizedStandard);
   if (validationMessage) {
     return withPrivateModelApplyCors(
       json({ ok: false, error: "invalid_request", message: validationMessage }, 400),
@@ -520,6 +527,7 @@ async function handlePrivateModelApply(request: Request): Promise<Response> {
       status: "received",
       application_id: applicationId,
       id: applicationId,
+      private_standard: normalizedStandard,
       received_url: SIGIL_MODEL_APPLY_PRIVATE_RECEIVED_PATH,
       dashboard_url: SIGIL_MODEL_APPLY_PRIVATE_RECEIVED_PATH,
       message: "Application received.",
@@ -528,7 +536,7 @@ async function handlePrivateModelApply(request: Request): Promise<Response> {
   );
 }
 
-function validatePrivateModelApplyPayload(payload: PrivateModelApplyPayload): string {
+function validatePrivateModelApplyPayload(payload: PrivateModelApplyPayload, normalizedStandard: string): string {
   if (!cleanPayloadString(payload.nickname)) {
     return "Please add the name TarT should use.";
   }
@@ -541,8 +549,7 @@ function validatePrivateModelApplyPayload(payload: PrivateModelApplyPayload): st
     return "Please add at least one contact channel.";
   }
 
-  const standard = cleanPayloadString(payload.private_standard);
-  if (!standard || !PRIVATE_MODEL_STANDARD_VALUES.has(standard)) {
+  if (!normalizedStandard) {
     return "Please choose a private standard.";
   }
 
@@ -556,6 +563,10 @@ function validatePrivateModelApplyPayload(payload: PrivateModelApplyPayload): st
   }
 
   return "";
+}
+
+function normalizePrivateModelStandard(value: unknown): string {
+  return PRIVATE_MODEL_STANDARD_ALIASES.get(cleanPayloadString(value).toLowerCase()) || "";
 }
 
 function cleanPayloadString(value: unknown): string {

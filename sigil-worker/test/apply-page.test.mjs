@@ -61,6 +61,9 @@ test("sigil apply page keeps polished private apply package", async () => {
   assert.match(source, /name="telegram_username"/);
   assert.match(source, /name="line_id"/);
   assert.match(source, /name="private_standard"/);
+  assert.match(source, /name="private_standard" value="standard_private"/);
+  assert.match(source, /name="private_standard" value="premium_private"/);
+  assert.match(source, /name="private_standard" value="selective_case_by_case"/);
   assert.match(source, /name="minimum_rate_thb"/);
   assert.match(source, /name="private_note"/);
   assert.match(source, /name="consent"/);
@@ -110,8 +113,33 @@ test("private model apply API accepts valid POSTs from apex and www pages", asyn
     assert.equal(body.ok, true);
     assert.equal(body.status, "received");
     assert.match(body.application_id, /^sigil_private_/);
+    assert.equal(body.private_standard, "standard_private");
     assert.equal(body.received_url, "/sigil/model/apply/private-model/received");
   }
+});
+
+test("private model apply API accepts safe standard aliases and normalizes them", async () => {
+  const payload = validPayload();
+  payload.private_standard = "standard";
+
+  const { response, upstreamCalls } = await runWorker(
+    new Request("https://sigil.mmdbkk.com/sigil/api/private-model/apply", {
+      method: "POST",
+      headers: {
+        origin: "https://www.mmdbkk.com",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    }),
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-mmd-page"), "sigil-private-model-apply-api");
+  assert.equal(response.headers.has("x-mmd-sigil-upstream"), false);
+  assert.equal(upstreamCalls, 0);
+  assert.equal(body.ok, true);
+  assert.equal(body.private_standard, "standard_private");
 });
 
 test("private model apply API returns a user-safe validation error", async () => {
@@ -141,6 +169,31 @@ test("private model apply API returns a user-safe validation error", async () =>
   assert.equal(body.error, "invalid_request");
   assert.match(body.message, /name TarT/);
   assert.doesNotMatch(JSON.stringify(body), forbiddenTelegramBrief);
+});
+
+test("private model apply API keeps validation failure for missing standard", async () => {
+  const invalid = validPayload();
+  invalid.private_standard = "";
+
+  const { response, upstreamCalls } = await runWorker(
+    new Request("https://sigil.mmdbkk.com/sigil/api/private-model/apply", {
+      method: "POST",
+      headers: {
+        origin: "https://www.mmdbkk.com",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(invalid),
+    }),
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(response.headers.get("x-mmd-page"), "sigil-private-model-apply-api");
+  assert.equal(response.headers.has("x-mmd-sigil-upstream"), false);
+  assert.equal(upstreamCalls, 0);
+  assert.equal(body.ok, false);
+  assert.equal(body.error, "invalid_request");
+  assert.match(body.message, /private standard/);
 });
 
 test("private model apply API handles CORS preflight without fallback", async () => {
