@@ -2,6 +2,7 @@ const WORKER = "member-pages-worker";
 const VERSION = "20260622-payment-first-profile-flow";
 
 const PAGE_PATHS = new Set([
+  "/sigil/membership", "/sigil/membership/",
   "/member/membership", "/member/membership/",
   "/pay/membership", "/pay/membership/",
   "/pay/pending-verification", "/pay/pending-verification/",
@@ -31,6 +32,7 @@ export default {
     if (method !== "GET" && method !== "HEAD") return new Response("Method Not Allowed", { status: 405, headers: headers("text/plain; charset=utf-8") });
     if (!isMemberPagePath(url)) return new Response("Not Found", { status: 404, headers: headers("text/plain; charset=utf-8") });
     const p = url.pathname.toLowerCase().replace(/\/+$/, "") || "/";
+    if (p === "/sigil/membership") return renderSigilMembership(request);
     if (p === "/pay/membership") return renderPay(request, env);
     if (p === "/pay/pending-verification") return renderPending(request);
     if (p === "/member/profile") return renderProfile(request);
@@ -47,6 +49,16 @@ export function renderMembership(request) {
     <section class="hero"><div class="panel"><p class="eyebrow">Member-facing Package Selection</p><h1>Membership</h1><p>เลือก Trial, Standard หรือ Premium แล้วไปต่อที่หน้าโอนเงินก่อน ระบบจะตรวจสอบยอดจริงก่อนเปิดสถานะสมาชิกและ points เสมอ</p><p class="actions"><a class="btn" href="${attr(appendQuery("/pay/membership", url.search, plan ? { plan } : {}))}">Continue to Payment</a><a class="btn ghost" href="${attr(appendQuery("/member/dashboard", url.search))}">Member Dashboard</a></p></div>${doctrine()}</section>
     <section class="grid">${cards}</section>
     <section class="panel black"><p class="eyebrow">BLACK CARD NOTE</p><h2>ไม่ใช่แพ็กเกจที่กดซื้อ</h2><p>350 points คือ Black Card review eligible เท่านั้น ไม่ใช่ auto approved และไม่ใช่ทางลัดจากการส่งสลิป</p></section>
+  `);
+}
+
+export function renderSigilMembership(request) {
+  const url = new URL(request.url);
+  const packages = PACKAGES.map((pkg) => `<article class="pkg"><p class="eyebrow">${html(pkg.eyebrow)}</p><h2>${html(pkg.title)}</h2><p>${html(pkg.copy)}</p></article>`).join("");
+  return page(request, "sigil-membership", `
+    ${nav(url.search)}
+    <section class="hero"><div class="panel"><p class="eyebrow">SIGIL ACCESS CONDITIONS</p><h1>Renewal / Access Conditions</h1><p>หน้านี้คือเงื่อนไขการต่ออายุและการเข้าถึง ไม่ใช่หน้า checkout และไม่ใช่การยืนยันสถานะสมาชิกทันที</p><p>หากมีการชำระเงินหรือส่งหลักฐาน ระบบจะถือเป็นข้อมูลรอตรวจสอบเท่านั้น การยืนยันสมาชิกเกิดขึ้นหลัง official verification ครบถ้วนเท่านั้น</p><p class="actions"><a class="btn" href="${attr(appendQuery("/member/membership", url.search))}">ดูแพ็กเกจสมาชิก</a><a class="btn ghost" href="${attr(appendQuery("/member/dashboard", url.search))}">Member Dashboard</a></p></div><aside class="panel side"><h2>Access rule</h2><p>สถานะจริงอ้างอิงจากข้อมูลที่ตรวจสอบแล้วเท่านั้น ไม่ใช่จากสลิป ข้อความ หรือการกรอกฟอร์มเพียงอย่างเดียว</p><p>Black Card เป็น private consideration/review ไม่ใช่ automatic approval และไม่ใช่แพ็กเกจที่กดซื้อเอง</p></aside></section>
+    <section class="grid">${packages}</section>
   `);
 }
 
@@ -98,7 +110,7 @@ function doctrine() {
 
 function page(request, slug, body) {
   const output = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>MMD Privé | ${html(slug)}</title><style>${styles()}</style></head><body><main data-mmd-page="${attr(slug)}" data-mmd-version="${VERSION}">${body}<footer>Payment page accepts proof. Verification gate confirms money. Airtable records truth. Member Profile displays verified truth only.</footer></main></body></html>`;
-  return new Response(request.method.toUpperCase() === "HEAD" ? null : output, { status: 200, headers: { ...headers("text/html; charset=utf-8"), "cache-control": "no-store, no-cache, must-revalidate, max-age=0" } });
+  return new Response(request.method.toUpperCase() === "HEAD" ? null : output, { status: 200, headers: { ...headers("text/html; charset=utf-8"), "x-mmd-page": slug, "cache-control": "no-store, no-cache, must-revalidate, max-age=0" } });
 }
 
 function headers(type) {

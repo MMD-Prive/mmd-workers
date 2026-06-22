@@ -16,15 +16,46 @@ describe("member-pages-worker membership page", () => {
     assert.equal(response.headers.get("x-mmd-worker"), "member-pages-worker");
     assert.equal(response.headers.get("x-mmd-page"), "member-membership");
     assert.match(html, /Membership/);
+    assert.match(html, /Trial/);
     assert.match(html, /Standard/);
     assert.match(html, /Premium/);
-    assert.match(html, /VIP/);
     assert.match(html, /BLACK CARD NOTE/);
-    assert.match(html, /ไม่ใช่ซื้อ แต่ถูกพิจารณา/);
+    assert.match(html, /ไม่ใช่แพ็กเกจที่กดซื้อ/);
+    assert.doesNotMatch(html, /VIP/i);
     assert.doesNotMatch(html, /SVIP/i);
     assert.doesNotMatch(html, /name=["']token["']/i);
     assert.ok(html.includes("/pay/membership?t=abc&amp;code=x&amp;promo=y"));
     assert.ok(html.includes("/member/dashboard?t=abc&amp;code=x&amp;promo=y"));
+  });
+
+  it("renders SIGIL membership renewal/access conditions without checkout claims", async () => {
+    const response = await request("https://mmdbkk.com/sigil/membership?t=abc&code=x&promo=y&payment_ref=pay123&session_id=sess123");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-mmd-worker"), "member-pages-worker");
+    assert.equal(response.headers.get("x-mmd-page"), "sigil-membership");
+    assert.match(html, /Renewal \/ Access Conditions/);
+    assert.match(html, /ไม่ใช่หน้า checkout/);
+    assert.match(html, /official verification/);
+    assert.match(html, /Trial/);
+    assert.match(html, /Standard/);
+    assert.match(html, /Premium/);
+    assert.match(html, /private consideration\/review/);
+    assert.doesNotMatch(html, /SVIP/i);
+    assert.doesNotMatch(html, /VIP/i);
+    assert.ok(html.includes("/member/membership?t=abc&amp;code=x&amp;promo=y&amp;payment_ref=pay123&amp;session_id=sess123"));
+    assert.ok(html.includes("/member/dashboard?t=abc&amp;code=x&amp;promo=y&amp;payment_ref=pay123&amp;session_id=sess123"));
+  });
+
+  it("returns no body for SIGIL membership HEAD while keeping ownership headers", async () => {
+    const response = await request("https://mmdbkk.com/sigil/membership/?t=abc", { method: "HEAD" });
+    const body = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.equal(body, "");
+    assert.equal(response.headers.get("x-mmd-worker"), "member-pages-worker");
+    assert.equal(response.headers.get("x-mmd-page"), "sigil-membership");
   });
 
   it("returns no body for HEAD while keeping ownership headers", async () => {

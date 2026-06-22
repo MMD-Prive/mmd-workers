@@ -102,6 +102,7 @@ async function fetchPassThrough(request) {
 
 function isLineWebhookPath(url) { return LINE_WEBHOOK_PATHS.has(url.pathname.toLowerCase()); }
 function isSigilApplyPath(url) { const p = url.pathname.toLowerCase(); return p === "/sigil/apply" || p === "/sigil/apply/"; }
+function isSigilMembershipPath(url) { const p = url.pathname.toLowerCase(); return p === "/sigil/membership" || p === "/sigil/membership/"; }
 function isSigilPrivateModelApplyApiPath(url) { const p = url.pathname.toLowerCase(); return p === "/sigil/api/private-model/apply" || p === "/sigil/api/private-model/apply/"; }
 function isMemberDashboardPath(url) { const p = url.pathname.toLowerCase(); return p === "/member/dashboard" || p === "/member/dashboard/"; }
 function isMemberPagePath(url) { return MEMBER_PAGE_PATHS.has(url.pathname.toLowerCase()); }
@@ -204,6 +205,7 @@ export default {
     if (isSigilPrivateModelApplyApiPath(url)) return fetchSigilPrivateModelApplyApi(request, env, url);
     if (!isSafePageRequest(request)) return withFrontGateHeaders(await fetch(request));
     if (isSigilApplyPath(url)) return fetchSigilApplyPage(request, env, url);
+    if (isSigilMembershipPath(url)) return fetchMemberPage(request, env, url);
     if (isMemberDashboardPath(url)) return fetchMemberFrontend(request, env, url);
     if (isMemberPagePath(url)) return fetchMemberPage(request, env, url);
     if (isMemberPaymentsPath(url)) return fetchAdminMemberPage(request, env, url);
