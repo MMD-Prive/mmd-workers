@@ -8,14 +8,319 @@ const DEFAULT_ADMIN_NEXT = "/sigil/admin/jobs/create-session";
 const SIGIL_ADMIN_LOGIN_PATH = "/sigil/admin/login";
 const SIGIL_ADMIN_LOGIN_SESSION_PATH = "/sigil/admin/login/session";
 const SIGIL_ADMIN_LOGIN_UI_BUILD = "SIGIL_ADMIN_LOGIN_UI_V2";
+const SIGIL_APPLY_PATH = "/sigil/apply";
+const SIGIL_MODEL_APPLY_PATH = "/sigil/model/apply";
+const SIGIL_MODEL_APPLY_PRIVATE_PATH = "/sigil/model/apply/private-model";
+const SIGIL_MODEL_APPLY_PRIVATE_RECEIVED_PATH = "/sigil/model/apply/private-model/received";
 const SIGIL_LOGO_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0f2cbc7e26b6735aee4cb2_SIGIL%20LOGO%20Transp.webp";
 const SIGIL_LOGIN_BG_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0802e10402165b8404527c_BPEWPRIVELogin.png";
+
+const PRIVATE_MODEL_SETUP_CSS = `#sigil-private-setup {
+  --sps-ink: #fff4df;
+  --sps-soft: rgba(255, 244, 223, 0.76);
+  --sps-dim: rgba(255, 244, 223, 0.56);
+  --sps-panel: rgba(17, 14, 10, 0.88);
+  --sps-line: rgba(233, 193, 106, 0.22);
+  --sps-line-strong: rgba(246, 213, 139, 0.54);
+  --sps-gold: #ecc46f;
+  width: 100%;
+  min-height: 100vh;
+  color: var(--sps-ink);
+  background:
+    radial-gradient(circle at 78% 14%, rgba(236, 196, 111, 0.18), transparent 30%),
+    linear-gradient(135deg, #050403 0%, #0e0b08 52%, #1b1308 100%);
+  font-family: "Avenir Next", Inter, "Noto Sans Thai", system-ui, sans-serif;
+}
+#sigil-private-setup,
+#sigil-private-setup * { box-sizing: border-box; letter-spacing: 0; }
+#sigil-private-setup :where(h1, h2, p, fieldset, legend) { margin: 0; }
+#sigil-private-setup :where(input, textarea, button) { font: inherit; }
+#sigil-private-setup .sps-shell {
+  width: min(1180px, calc(100% - 28px));
+  margin: 0 auto;
+  padding: clamp(18px, 3vw, 34px) 0;
+  display: grid;
+  gap: 14px;
+}
+#sigil-private-setup .sps-hero,
+#sigil-private-setup .sps-panel {
+  border: 1px solid var(--sps-line);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.014)), var(--sps-panel);
+  box-shadow: 0 28px 72px rgba(0, 0, 0, 0.34);
+}
+#sigil-private-setup .sps-hero {
+  min-height: min(560px, 78vh);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.36fr);
+  gap: 18px;
+  align-items: end;
+  padding: clamp(22px, 4vw, 50px);
+}
+#sigil-private-setup .sps-hero-copy,
+#sigil-private-setup .sps-context,
+#sigil-private-setup .sps-form,
+#sigil-private-setup .sps-form-head,
+#sigil-private-setup .sps-field,
+#sigil-private-setup .sps-fieldset,
+#sigil-private-setup .sps-actions { display: grid; gap: 12px; }
+#sigil-private-setup .sps-kicker,
+#sigil-private-setup .sps-section-label,
+#sigil-private-setup .sps-hero-note span {
+  color: var(--sps-dim);
+  font-size: 0.74rem;
+  line-height: 1.35;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+#sigil-private-setup h1 {
+  max-width: 860px;
+  color: var(--sps-ink);
+  font-size: clamp(3rem, 8vw, 6.5rem);
+  line-height: 0.94;
+  font-weight: 900;
+}
+#sigil-private-setup h2 {
+  color: var(--sps-ink);
+  font-size: clamp(1.2rem, 2.5vw, 2rem);
+  line-height: 1.1;
+  font-weight: 850;
+}
+#sigil-private-setup .sps-lede,
+#sigil-private-setup .sps-context p,
+#sigil-private-setup .sps-hero-note p,
+#sigil-private-setup .sps-field small,
+#sigil-private-setup .sps-option small,
+#sigil-private-setup .sps-consent,
+#sigil-private-setup .sps-status {
+  color: var(--sps-soft);
+  font-size: clamp(0.96rem, 1.5vw, 1.12rem);
+  line-height: 1.72;
+}
+#sigil-private-setup .sps-hero-note {
+  min-height: 220px;
+  display: grid;
+  align-content: end;
+  gap: 10px;
+  padding: 20px;
+  border: 1px solid var(--sps-line-strong);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+}
+#sigil-private-setup .sps-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.45fr) minmax(0, 0.75fr);
+  gap: 14px;
+  align-items: start;
+}
+#sigil-private-setup .sps-panel { padding: clamp(18px, 3vw, 28px); }
+#sigil-private-setup .sps-context { position: sticky; top: 16px; }
+#sigil-private-setup .sps-fieldset { padding: 0; border: 0; }
+#sigil-private-setup label,
+#sigil-private-setup legend {
+  color: var(--sps-ink);
+  font-size: 0.94rem;
+  line-height: 1.45;
+  font-weight: 800;
+}
+#sigil-private-setup .sps-contact-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+#sigil-private-setup input[type="text"],
+#sigil-private-setup input[type="tel"],
+#sigil-private-setup input[type="number"],
+#sigil-private-setup textarea {
+  width: 100%;
+  min-height: 50px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  padding: 12px 14px;
+  color: var(--sps-ink);
+  background: rgba(0, 0, 0, 0.26);
+  outline: none;
+}
+#sigil-private-setup textarea { min-height: 112px; resize: vertical; }
+#sigil-private-setup input:focus,
+#sigil-private-setup textarea:focus {
+  border-color: var(--sps-line-strong);
+  box-shadow: 0 0 0 3px rgba(236, 196, 111, 0.13);
+}
+#sigil-private-setup .sps-options { display: grid; gap: 10px; }
+#sigil-private-setup .sps-option {
+  min-height: 78px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+}
+#sigil-private-setup .sps-option:has(input:checked) {
+  border-color: var(--sps-line-strong);
+  background: rgba(236, 196, 111, 0.12);
+}
+#sigil-private-setup .sps-option input,
+#sigil-private-setup .sps-consent input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--sps-gold);
+}
+#sigil-private-setup .sps-option span,
+#sigil-private-setup .sps-consent { display: grid; gap: 4px; }
+#sigil-private-setup .sps-consent {
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+}
+#sigil-private-setup .sps-hp {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+#sigil-private-setup .sps-button {
+  width: 100%;
+  min-height: 62px;
+  border: 1px solid rgba(246, 213, 139, 0.8);
+  border-radius: 8px;
+  background: linear-gradient(135deg, #f5d58d, #bd8734);
+  color: #171006;
+  cursor: pointer;
+  display: grid;
+  gap: 2px;
+  place-items: center;
+  font-weight: 850;
+}
+#sigil-private-setup .sps-button small {
+  color: rgba(23, 16, 6, 0.72);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+#sigil-private-setup .sps-button[disabled] { opacity: 0.55; cursor: not-allowed; }
+#sigil-private-setup .sps-status.is-error { color: #ffaaa4; }
+#sigil-private-setup .sps-status.is-ok { color: #a8e6ba; }
+@media (max-width: 900px) {
+  #sigil-private-setup .sps-hero,
+  #sigil-private-setup .sps-layout { grid-template-columns: 1fr; }
+  #sigil-private-setup .sps-context { position: relative; top: auto; }
+}
+@media (max-width: 640px) {
+  #sigil-private-setup .sps-shell { width: min(100% - 16px, 1180px); }
+  #sigil-private-setup h1 { font-size: clamp(2.6rem, 15vw, 4.1rem); }
+  #sigil-private-setup .sps-contact-grid { grid-template-columns: 1fr; }
+}`;
+
+const PRIVATE_MODEL_SETUP_SCRIPT = `(function () {
+  "use strict";
+  var root = document.getElementById("sigil-private-setup");
+  if (!root) return;
+  var form = root.querySelector("[data-private-setup-form]");
+  var status = root.querySelector("[data-private-setup-status]");
+  if (!form) return;
+  var endpoint = root.getAttribute("data-endpoint") || "/sigil/api/private-model/apply";
+  var dashboardUrl = root.getAttribute("data-dashboard-url") || "/sigil/model/apply/private-model/received";
+  function clean(value) { return String(value || "").trim(); }
+  function field(name) { return form.elements[name]; }
+  function value(name) { var input = field(name); return input ? clean(input.value) : ""; }
+  function setStatus(message, tone) {
+    if (!status) return;
+    status.textContent = message || "";
+    status.classList.toggle("is-error", tone === "error");
+    status.classList.toggle("is-ok", tone === "ok");
+  }
+  function selectedStandard() {
+    var selected = form.querySelector('input[name="private_standard"]:checked');
+    return selected ? selected.value : "";
+  }
+  function setSubmitting(isSubmitting) {
+    var button = form.querySelector('button[type="submit"]');
+    if (button) button.disabled = isSubmitting;
+  }
+  function payload() {
+    var rate = Number(value("minimum_rate_thb"));
+    var nickname = value("nickname");
+    return {
+      application_type: "private_model",
+      source: "sigil_private_model_setup",
+      handler: "TarT",
+      parent_brand: "MMD PRIVÉ",
+      layer: "SIGIL",
+      privacy_level: "private",
+      work_type: "private_model",
+      nickname: nickname,
+      working_name: nickname,
+      age: 18,
+      phone: value("phone"),
+      telegram_username: value("telegram_username"),
+      line_id: value("line_id"),
+      private_standard: selectedStandard(),
+      minimum_rate_thb: Number.isFinite(rate) ? rate : 0,
+      private_note: value("private_note"),
+      consent: Boolean(field("consent") && field("consent").checked),
+      page_url: window.location.href.split("?")[0],
+      language: "th",
+      timezone: "Asia/Bangkok",
+      form_version: "sigil_private_setup_lvmax_20260523"
+    };
+  }
+  function validate(data) {
+    if (!data.nickname) return "ขอชื่อที่ให้ต้าเรียกก่อนครับ";
+    if (!(data.phone || data.telegram_username || data.line_id)) return "ขอช่องทางติดต่ออย่างน้อย 1 ช่องทางครับ";
+    if (!data.private_standard) return "ขอเลือก private standard ก่อนครับ";
+    if (!data.minimum_rate_thb || data.minimum_rate_thb < 0) return "ขอ minimum rate ที่รับได้จริงก่อนครับ";
+    if (!data.consent) return "ขอให้ยืนยัน consent ก่อนส่งข้อมูลให้ต้าอ่านต่อครับ";
+    return "";
+  }
+  function redirectTarget(applicationId) {
+    var target = new URL(dashboardUrl, window.location.origin);
+    if (applicationId) target.searchParams.set("application_id", applicationId);
+    target.searchParams.set("source", "private_setup");
+    return target.toString();
+  }
+  function readJson(response) {
+    return response.json().catch(function () { return {}; }).then(function (data) {
+      if (!response.ok || data.ok === false) throw new Error(data.error || data.message || "submit_failed");
+      return data;
+    });
+  }
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    if (value("website")) return;
+    var data = payload();
+    var error = validate(data);
+    if (error) { setStatus(error, "error"); return; }
+    setSubmitting(true);
+    setStatus("ต้าได้รับข้อมูลแล้วครับ กำลังพาไปหน้ารับข้อมูล...");
+    fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(data)
+    }).then(readJson).then(function (result) {
+      setStatus("เรียบร้อยครับ ไม่ต้องส่งข้อมูลซ้ำนะครับ", "ok");
+      window.location.assign(redirectTarget(result.application_id || result.id || ""));
+    }).catch(function () {
+      setSubmitting(false);
+      setStatus("ส่งไม่สำเร็จครับ ลองเช็กข้อมูลอีกครั้ง หรือส่งให้ต้าช่วยดูได้เลย", "error");
+    });
+  });
+}());`;
 
 const FIRST_WAVE_ROUTES = new Set<string>([
   "GET /sigil/admin/login",
   "POST /sigil/admin/login/session",
   "DELETE /sigil/admin/login/session",
   "POST /sigil/admin/verify-access-code",
+  "GET /sigil/apply",
+  "GET /sigil/apply/",
+  "GET /sigil/model/apply",
+  "GET /sigil/model/apply/",
+  "GET /sigil/model/apply/private-model",
+  "GET /sigil/model/apply/private-model/",
   "GET /sigil/admin/control-room",
   "GET /sigil/admin/jobs/create-session",
   "GET /sigil/admin/jobs/create-job",
@@ -84,6 +389,13 @@ export default {
         ? new Response(null, { status: 200, headers: adminLoginHeaders() })
         : renderAdminLoginPage(url);
       const response = withSigilHeaders(loginResponse, build);
+      response.headers.set("x-mmd-sigil-migration-wave", "first");
+      return response;
+    }
+
+    if ((request.method === "GET" || request.method === "HEAD") && isPrivateModelSetupRoute(url.pathname)) {
+      const response = withSigilHeaders(renderPrivateModelSetupPage(request), build);
+      response.headers.set("x-mmd-sigil-page-source", "inline-private-model-setup");
       response.headers.set("x-mmd-sigil-migration-wave", "first");
       return response;
     }
@@ -474,6 +786,149 @@ function renderAdminLoginPage(url: URL): Response {
   return new Response(html, {
     status: 200,
     headers: adminLoginHeaders(),
+  });
+}
+
+function isPrivateModelSetupRoute(pathname: string): boolean {
+  return pathname === SIGIL_APPLY_PATH ||
+    pathname === `${SIGIL_APPLY_PATH}/` ||
+    pathname === SIGIL_MODEL_APPLY_PATH ||
+    pathname === `${SIGIL_MODEL_APPLY_PATH}/` ||
+    pathname === SIGIL_MODEL_APPLY_PRIVATE_PATH ||
+    pathname === `${SIGIL_MODEL_APPLY_PRIVATE_PATH}/`;
+}
+
+function renderPrivateModelSetupPage(request: Request): Response {
+  const html = `<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>SIGIL Private Model Setup | MMD Privé</title>
+  <style>${PRIVATE_MODEL_SETUP_CSS}</style>
+</head>
+<body>
+  <section
+    id="sigil-private-setup"
+    class="sps sps-private-apply"
+    data-endpoint="https://mmdbkk.com/sigil/api/private-model/apply"
+    data-dashboard-url="${SIGIL_MODEL_APPLY_PRIVATE_RECEIVED_PATH}"
+    data-received-url="${SIGIL_MODEL_APPLY_PRIVATE_RECEIVED_PATH}"
+  >
+    <div class="sps-shell">
+      <header class="sps-hero" aria-labelledby="sps-title">
+        <div class="sps-hero-copy">
+          <p class="sps-kicker">MMD PRIVÉ / SIGIL ACCESS</p>
+          <h1 id="sps-title">ถ้าจะเข้าชั้น private ให้ตั้งขอบเขตก่อน</h1>
+          <p class="sps-lede">
+            ต้าอยู่ตรงนี้เพื่อรับข้อมูลเบื้องต้นของพี่น้องครับ ตอบเฉพาะสิ่งที่จำเป็นก่อน: ชื่อที่ใช้ทำงาน, ช่องทางติดต่อ, standard ที่รับได้, และ rate ขั้นต่ำที่สบายใจจริง.
+          </p>
+        </div>
+        <aside class="sps-hero-note" aria-label="Private apply note">
+          <span>Private Apply</span>
+          <p>ข้อมูลนี้ไม่ใช่ public profile. พี่เปอร์จะได้อ่านโปรไฟล์แบบส่วนตัว และพิจารณาความเหมาะสมก่อนมีการติดต่อกลับครับ.</p>
+        </aside>
+      </header>
+
+      <main class="sps-layout">
+        <section class="sps-panel sps-context">
+          <p class="sps-section-label">Per Voice</p>
+          <h2>ไม่ต้องรับทุกอย่าง แค่บอกเส้นที่คุณถือได้จริง</h2>
+          <p>
+            SIGIL อยู่ใต้ MMD Privé ในฐานะ private access layer. ต้าได้รับข้อมูลไว้ก่อน แล้วพี่เปอร์จะอ่านความเหมาะสมของงาน ลูกค้า และจังหวะการดูแลแบบส่วนตัวครับ.
+          </p>
+        </section>
+
+        <form class="sps-panel sps-form" data-private-setup-form novalidate>
+          <div class="sps-form-head">
+            <p class="sps-section-label">Setup</p>
+            <h2>เปิดทางสมัครแบบมีขอบเขต</h2>
+          </div>
+
+          <label class="sps-field" for="sps-nickname">
+            <span>ชื่อที่ให้ TarT เรียก</span>
+            <input id="sps-nickname" name="nickname" type="text" autocomplete="nickname" maxlength="100" required>
+          </label>
+
+          <fieldset class="sps-fieldset">
+            <legend>ช่องทางติดต่ออย่างน้อย 1 ช่องทาง</legend>
+            <div class="sps-contact-grid">
+              <label class="sps-field" for="sps-phone">
+                <span>Phone</span>
+                <input id="sps-phone" name="phone" type="tel" autocomplete="tel" maxlength="40">
+              </label>
+              <label class="sps-field" for="sps-telegram">
+                <span>Telegram</span>
+                <input id="sps-telegram" name="telegram_username" type="text" maxlength="80" placeholder="@username">
+              </label>
+              <label class="sps-field" for="sps-line">
+                <span>LINE ID</span>
+                <input id="sps-line" name="line_id" type="text" maxlength="80">
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="sps-fieldset">
+            <legend>Private Standard</legend>
+            <div class="sps-options">
+              <label class="sps-option">
+                <input type="radio" name="private_standard" value="standard_private" required>
+                <span><strong>Standard Private</strong><small>ขอบเขตชัด รับเฉพาะงานที่อ่านแล้วสบายใจ</small></span>
+              </label>
+              <label class="sps-option">
+                <input type="radio" name="private_standard" value="premium_private">
+                <span><strong>Premium Private</strong><small>เลือกงานน้อยลง แต่ต้องเหมาะกับบุคลิกและ rate สูงขึ้น</small></span>
+              </label>
+              <label class="sps-option">
+                <input type="radio" name="private_standard" value="selective_case_by_case">
+                <span><strong>Selective</strong><small>ให้พี่เปอร์อ่านความเหมาะสมเป็นเคสก่อนทุกครั้ง</small></span>
+              </label>
+            </div>
+          </fieldset>
+
+          <label class="sps-field" for="sps-rate">
+            <span>Minimum Rate (THB)</span>
+            <input id="sps-rate" name="minimum_rate_thb" type="number" inputmode="numeric" min="0" step="500" placeholder="8000" required>
+            <small>ใส่ตัวเลขที่คุณรับได้จริง ไม่ต้องกดตัวเองให้ต่ำเพื่อผ่านหน้าแรก</small>
+          </label>
+
+          <label class="sps-field" for="sps-note">
+            <span>Private Note</span>
+            <textarea id="sps-note" name="private_note" rows="4" maxlength="700" placeholder="มีขอบเขต เวลา โซน หรือเรื่องที่อยากให้ TarT รู้ก่อน บอกไว้ตรงนี้ได้ครับ"></textarea>
+          </label>
+
+          <label class="sps-consent">
+            <input name="consent" type="checkbox" required>
+            <span>ผมเข้าใจว่า SIGIL เป็น private access layer ใต้ MMD Privé และข้อมูลนี้เป็นข้อมูลเบื้องต้นให้พี่เปอร์อ่านแบบส่วนตัวก่อนเท่านั้น</span>
+          </label>
+
+          <input class="sps-hp" name="website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true">
+
+          <div class="sps-actions">
+            <button class="sps-button" type="submit">
+              <span>ส่งให้ TarT อ่านต่อ</span>
+              <small>Continue private apply</small>
+            </button>
+            <p class="sps-status" data-private-setup-status role="status" aria-live="polite"></p>
+          </div>
+        </form>
+      </main>
+    </div>
+  </section>
+  <script>${PRIVATE_MODEL_SETUP_SCRIPT}</script>
+</body>
+</html>`;
+
+  return new Response(request.method === "HEAD" ? null : html, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "x-mmd-route-owner": OWNER,
+      "x-mmd-page": "sigil-private-model-setup",
+      "x-mmd-sigil-webflow-package": "inline-private-model-setup",
+    },
   });
 }
 
