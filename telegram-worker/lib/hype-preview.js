@@ -227,9 +227,8 @@ function hypeWelcomeText() {
     "",
     "Standard รับ 150 points",
     "Premium รับ 250 points",
-    "Black Card รับ 350 points",
     "",
-    "Black Card สำหรับผู้ที่ผ่านการพิจารณาเท่านั้น",
+    "Black Card เปิดรับโดยการพิจารณาเป็นรายบุคคลเท่านั้น ไม่ใช่แพ็กเกจที่เลือกสมัครได้ทั่วไปนะครับ",
     "พอยท์จะได้รับหลังการสมัครและการชำระเงินผ่านการตรวจสอบเรียบร้อยนะครับ",
   ].join("\n");
 }
@@ -244,7 +243,7 @@ function codeIssuedText(code) {
     "",
     "Standard รับ 150 points",
     "Premium รับ 250 points",
-    "Black Card รับ 350 points",
+    "Black Card — เปิดรับโดยการพิจารณาเท่านั้น ไม่ใช่แพ็กเกจซื้อทั่วไปครับ",
     "",
     "พอยท์จะได้รับหลังระบบตรวจสอบเรียบร้อยนะครับ",
   ].join("\n");
@@ -477,7 +476,10 @@ export async function handleTelegramWebhook(update, env) {
 }
 
 function validationMessage(pkg, points) {
-  const label = pkg === "blackcard" ? "Black Card" : pkg === "premium" ? "Premium" : "Standard";
+  if (pkg === "blackcard") {
+    return "Black Card อยู่ระหว่างการพิจารณาอนุมัติ พอยท์จะได้รับหลังผ่านการตรวจสอบครบถ้วนเท่านั้น";
+  }
+  const label = pkg === "premium" ? "Premium" : "Standard";
   return `${label} รับ ${points} points หลังการสมัครและการชำระเงินผ่านการตรวจสอบเรียบร้อย`;
 }
 
