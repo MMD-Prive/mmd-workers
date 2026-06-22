@@ -633,6 +633,7 @@ describe("MMD permanent redirect guard", () => {
       assert.match(upstreamUrl, /[?&]t=abc(?:&|$)/, url);
       assert.match(upstreamUrl, /[?&]code=x(?:&|$)/, url);
       assert.match(upstreamUrl, /[?&]promo=y(?:&|$)/, url);
+      assert.match(upstreamUrl, /^https:\/\/mmdprive\.webflow\.io\/member\/membership\/?/);
     }
   });
 
