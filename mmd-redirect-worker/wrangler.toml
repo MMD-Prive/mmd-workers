@@ -20,6 +20,14 @@ binding = "SIGIL_WORKER"
 service = "sigil-worker"
 
 [[routes]]
+pattern = "mmdbkk.com/trust/inme*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/trust/inme*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
 pattern = "mmdbkk.com/*"
 zone_name = "mmdbkk.com"
 
