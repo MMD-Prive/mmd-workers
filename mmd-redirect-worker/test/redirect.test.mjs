@@ -44,6 +44,8 @@ const VISIBLE_DEBUG_TEXT = [
   "recovery",
 ];
 
+const TELEGRAM_BRIEF_FORBIDDEN_TEXT = /Briefing HYPE TELEGRAMBOT|TELEGRAMBOT|CEO TELEGRAM BRIEF/i;
+
 function assertPolishedShell(html, url) {
   assert.doesNotMatch(html, /name=["']token["']/i, url);
   for (const text of VISIBLE_DEBUG_TEXT) {
@@ -139,6 +141,94 @@ describe("MMD permanent redirect guard", () => {
       assert.equal(response.headers.get("x-mmd-page"), "member-membership");
       assert.equal(serviceRequests.at(-1).url, url);
     }
+
+    assert.equal(passThroughRequests.length, 0);
+  });
+
+  it("delegates canonical /sigil/apply routes to sigil-worker with ownership headers and preserved query strings", async () => {
+    const sigilRequests = [];
+    const env = {
+      SIGIL_WORKER: {
+        fetch: async (request) => {
+          sigilRequests.push(request);
+          const url = new URL(request.url);
+          return new Response(`<main>SIGIL Private Model Setup ${url.search}</main>`, {
+            status: 200,
+            headers: {
+              "content-type": "text/html; charset=utf-8",
+              "x-mmd-page": "sigil-private-model-setup",
+              "x-mmd-sigil-page-source": "webflow/private-model-setup",
+            },
+          });
+        },
+      },
+    };
+
+    const urls = [
+      "https://mmdbkk.com/sigil/apply",
+      "https://mmdbkk.com/sigil/apply/",
+      "https://www.mmdbkk.com/sigil/apply?t=abc&code=x&promo=y",
+      "https://www.mmdbkk.com/sigil/apply/?t=abc&code=x&promo=y",
+    ];
+
+    for (const url of urls) {
+      const response = await requestWithEnv(url, env);
+      const html = await response.text();
+
+      assert.equal(response.status, 200, url);
+      assert.equal(response.headers.get("location"), null, url);
+      assert.equal(response.headers.get("x-mmd-route-owner"), "sigil-worker", url);
+      assert.equal(response.headers.get("x-mmd-page"), "sigil-private-model-setup", url);
+      assert.equal(response.headers.get("x-mmd-origin"), "service-binding:sigil-worker", url);
+      assert.equal(response.headers.get("x-mmd-front-gate"), "mmd-redirect-worker", url);
+      assert.equal(response.headers.get("x-mmd-front-version"), "20260622T071500Z", url);
+      assert.doesNotMatch(html, TELEGRAM_BRIEF_FORBIDDEN_TEXT, url);
+      assert.equal(sigilRequests.at(-1).url, url);
+    }
+
+    assert.equal(sigilRequests.length, urls.length);
+    assert.equal(passThroughRequests.length, 0);
+  });
+
+  it("does not use Webflow or generic pass-through for /sigil/apply when the service binding is unavailable", async () => {
+    const urls = [
+      "https://mmdbkk.com/sigil/apply?t=abc&code=x&promo=y",
+      "https://www.mmdbkk.com/sigil/apply/?t=abc&code=x&promo=y",
+    ];
+
+    for (const url of urls) {
+      const response = await request(url);
+      const html = await response.text();
+      const expected = new URL(url);
+      expected.protocol = "https:";
+      expected.hostname = "sigil.mmdbkk.com";
+
+      assert.equal(response.status, 209, url);
+      assert.equal(response.headers.get("location"), null, url);
+      assert.equal(response.headers.get("x-mmd-route-owner"), "sigil-worker", url);
+      assert.equal(response.headers.get("x-mmd-page"), "sigil-private-model-setup", url);
+      assert.equal(response.headers.get("x-mmd-origin"), "https://sigil.mmdbkk.com", url);
+      assert.equal(passThroughRequests.at(-1).url, expected.toString(), url);
+      assert.notEqual(new URL(passThroughRequests.at(-1).url).hostname, "mmdprive.webflow.io", url);
+      assert.doesNotMatch(html, TELEGRAM_BRIEF_FORBIDDEN_TEXT, url);
+    }
+
+    assert.equal(passThroughRequests.length, urls.length);
+  });
+
+  it("fails closed without Webflow or generic pass-through when /sigil/apply service binding throws", async () => {
+    const env = {
+      SIGIL_WORKER: {
+        fetch: async () => {
+          throw new Error("sigil service unavailable");
+        },
+      },
+    };
+
+    await assert.rejects(
+      requestWithEnv("https://www.mmdbkk.com/sigil/apply?t=abc&code=x&promo=y", env),
+      /sigil service unavailable/,
+    );
 
     assert.equal(passThroughRequests.length, 0);
   });
