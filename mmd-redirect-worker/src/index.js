@@ -18,6 +18,7 @@ export const SIGIL_WORKER_UPSTREAM = "https://sigil.mmdbkk.com";
 export const FRONT_GATE = "mmd-redirect-worker";
 export const FRONT_VERSION = "20260622T071500Z";
 export const SIGIL_APPLY_PAGE = "sigil-private-model-setup";
+export const SIGIL_PRIVATE_MODEL_APPLY_API_PAGE = "sigil-private-model-apply-api";
 export const SIGIL_APPLY_ROUTE_OWNER = "sigil-worker";
 
 export const REDIRECT_HOSTS = new Set(["www.mmdbkk.com", "mmdbkk.com", "mmdprive.com", "www.mmdprive.com", "malemodel-bkk.workers.dev"]);
@@ -27,7 +28,7 @@ export const MEMBER_PAGE_PATHS = new Set(["/member/membership", "/member/members
 
 export const NEVER_TOUCH_PREFIXES = ["/api/", "/webhook/", "/webhooks/", "/pay/", "/payments/", "/payment/", "/payment-webhook/", "/admin/", "/sigil/", "/cdn-cgi/", "/assets/", "/static/", "/uploads/"];
 export const NEVER_REDIRECT_EXACT_PATHS = new Set(["/member/dashboard", "/member/dashboard/", "/member/membership", "/member/membership/", "/member/profile", "/member/profile/", "/member/payments", "/member/payments/", "/pay/membership", "/pay/membership/", "/pay/pending-verification", "/pay/pending-verification/", "/hall", "/hall/", "/model/console", "/model/console/"]);
-export const EXACT_PATH_REDIRECTS = { "/inme": "/trust/inme", "/login": "/trust/inme", "/member": "/membership/benefits", "/member/membership/benefits": "/pay/membership", "/members": "/trust/inme", "/membership": "/membership/benefits", "/renew": "/trust/inme", "/renewal": "/trust/inme", "/trust": "/trust/inme" };
+export const EXACT_PATH_REDIRECTS = { "/trust/inme": "/sigil/start", "/inme": "/sigil/start", "/login": "/sigil/start", "/member": "/membership/benefits", "/member/membership/benefits": "/pay/membership", "/members": "/sigil/start", "/membership": "/membership/benefits", "/renew": "/sigil/start", "/renewal": "/sigil/start", "/trust": "/sigil/start" };
 export const FOLDER_REDIRECTS = [{ from: "/old-academy/", to: "/academy/" }, { from: "/old-trust/", to: "/trust/" }];
 
 export function isSafePageRequest(request) {
@@ -101,6 +102,7 @@ async function fetchPassThrough(request) {
 
 function isLineWebhookPath(url) { return LINE_WEBHOOK_PATHS.has(url.pathname.toLowerCase()); }
 function isSigilApplyPath(url) { const p = url.pathname.toLowerCase(); return p === "/sigil/apply" || p === "/sigil/apply/"; }
+function isSigilPrivateModelApplyApiPath(url) { const p = url.pathname.toLowerCase(); return p === "/sigil/api/private-model/apply" || p === "/sigil/api/private-model/apply/"; }
 function isMemberDashboardPath(url) { const p = url.pathname.toLowerCase(); return p === "/member/dashboard" || p === "/member/dashboard/"; }
 function isMemberPagePath(url) { return MEMBER_PAGE_PATHS.has(url.pathname.toLowerCase()); }
 function isMemberPaymentsPath(url) { const p = url.pathname.toLowerCase(); return p === "/member/payments" || p === "/member/payments/"; }
@@ -126,10 +128,18 @@ async function fetchMemberFrontend(request, env, url) {
 }
 
 async function fetchSigilApplyPage(request, env, url) {
+  return fetchSigilWorkerRoute(request, env, url, SIGIL_APPLY_PAGE);
+}
+
+async function fetchSigilPrivateModelApplyApi(request, env, url) {
+  return fetchSigilWorkerRoute(request, env, url, SIGIL_PRIVATE_MODEL_APPLY_API_PAGE);
+}
+
+async function fetchSigilWorkerRoute(request, env, url, page) {
   if (env?.SIGIL_WORKER?.fetch) {
     return withRouteOwnerHeaders(await env.SIGIL_WORKER.fetch(request), {
       owner: SIGIL_APPLY_ROUTE_OWNER,
-      page: SIGIL_APPLY_PAGE,
+      page,
       origin: "service-binding:sigil-worker",
     });
   }
@@ -139,7 +149,7 @@ async function fetchSigilApplyPage(request, env, url) {
   target.search = url.search;
   return withRouteOwnerHeaders(await fetch(new Request(target.toString(), request)), {
     owner: SIGIL_APPLY_ROUTE_OWNER,
-    page: SIGIL_APPLY_PAGE,
+    page,
     origin: SIGIL_WORKER_UPSTREAM,
   });
 }
@@ -191,6 +201,7 @@ export default {
   async fetch(request, env = {}) {
     const url = new URL(request.url);
     if (isLineWebhookPath(url)) return fetchLineWebhook(request, env, url);
+    if (isSigilPrivateModelApplyApiPath(url)) return fetchSigilPrivateModelApplyApi(request, env, url);
     if (!isSafePageRequest(request)) return withFrontGateHeaders(await fetch(request));
     if (isSigilApplyPath(url)) return fetchSigilApplyPage(request, env, url);
     if (isMemberDashboardPath(url)) return fetchMemberFrontend(request, env, url);
