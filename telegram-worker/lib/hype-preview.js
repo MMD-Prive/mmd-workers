@@ -220,7 +220,7 @@ function extractStartPayload(text) {
 
 function hypeWelcomeText() {
   return [
-    "เข้าสู่ระบบเรียบร้อยครับ",
+    "เข้าสู่ระบบเรียบร้อยครับ 🟡",
     "",
     "ผมจะออกโค้ดส่วนตัว 6 หลักให้ทันที",
     "โค้ดนี้สำหรับสมาชิกใหม่ ใช้รับพอยท์พิเศษตามแพ็กเกจที่สมัคร",
@@ -235,7 +235,7 @@ function hypeWelcomeText() {
 
 function codeIssuedText(code) {
   return [
-    "รหัสของคุณคือ",
+    "รหัสของคุณคือ 🔐",
     "",
     `<code>${escapeHtml(code)}</code>`,
     "",
