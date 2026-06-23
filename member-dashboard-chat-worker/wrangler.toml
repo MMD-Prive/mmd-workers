@@ -99,19 +99,11 @@ pattern = "sigil.mmdbkk.com/internal/line/rich-menu*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
-pattern = "sigil.mmdbkk.com/trust/inme*"
-zone_name = "mmdbkk.com"
-
-[[routes]]
 pattern = "www.mmdbkk.com/sigil/renew*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/pay/renewal*"
-zone_name = "mmdbkk.com"
-
-[[routes]]
-pattern = "www.mmdbkk.com/trust/inme*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
@@ -196,10 +188,6 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "mmdbkk.com/pay/renewal*"
-zone_name = "mmdbkk.com"
-
-[[routes]]
-pattern = "mmdbkk.com/trust/inme*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
