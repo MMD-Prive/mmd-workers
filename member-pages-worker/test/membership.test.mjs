@@ -16,6 +16,10 @@ describe("member-pages-worker membership page", () => {
     assert.equal(response.headers.get("x-mmd-worker"), "member-pages-worker");
     assert.equal(response.headers.get("x-mmd-page"), "member-membership");
     assert.match(html, /Membership/);
+    assert.match(html, /membership-hero/);
+    assert.match(html, /membership-card/);
+    assert.match(html, /Choose package/);
+    assert.match(html, /Official verification/);
     assert.match(html, /Trial/);
     assert.match(html, /Standard/);
     assert.match(html, /Premium/);
