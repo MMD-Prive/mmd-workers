@@ -325,3 +325,113 @@ Proof/slip is not payment truth
 Verified funds are payment truth
 Points follow verified funds only
 ```
+
+## `/pay/renewal` Route Ownership Audit and Decision Record
+
+Audit date: 2026-06-23.
+
+Scope: audit-only. No production deploy, no Webflow publish, no runtime code
+change, and no payment submission.
+
+Live route finding:
+
+| Route | Live status | Live owner headers | Content identity | Finding |
+| --- | --- | --- | --- | --- |
+| `/pay/membership` | `200` | `x-mmd-front-gate: mmd-redirect-worker`, `x-mmd-worker: member-pages-worker`, `x-mmd-page: pay-membership` | `MMD Privé | pay-membership` | Owned through the front gate and delegated to `member-pages-worker`. |
+| `/pay/membership/` | `200` | Same as non-slash route | `MMD Privé | pay-membership` | Slash variant is stable. |
+| `/pay/pending-verification` | `200` | `x-mmd-front-gate: mmd-redirect-worker`, `x-mmd-worker: member-pages-worker`, `x-mmd-page: pay-pending-verification` | `MMD Privé | pay-pending-verification` | Owned through the front gate and delegated to `member-pages-worker`. |
+| `/pay/pending-verification/` | `200` | Same as non-slash route | `MMD Privé | pay-pending-verification` | Slash variant is stable. |
+| `/pay/renewal` | `200` | No `x-mmd-front-gate`, no `x-mmd-worker`, no `x-mmd-page`; includes `x-mmd-route-source: member-dashboard-chat-worker:mmd-renewx` and `x-mmd-route-revision: MMD_RENEWX_20260620b` | `Renewal Payment | SĪGIL`, `mmd-renewx` | Not Webflow leakage, not Kontrix, not 404. It is served intentionally by `member-dashboard-chat-worker:mmd-renewx`, outside the front gate. |
+| `/pay/renewal/` | `200` | Same as non-slash route | `Renewal Payment | SĪGIL`, `mmd-renewx` | Slash variant has the same owner/identity behavior. |
+
+Cloudflare Worker route ownership:
+
+| Pattern | Production Worker route owner | Route ID | Note |
+| --- | --- | --- | --- |
+| `mmdbkk.com/pay/renewal*` | `member-dashboard-chat-worker` | `7cb14a4bc55c4356b9fcda33b8a3579b` | More specific than `mmdbkk.com/*`, so it wins before `mmd-redirect-worker`. |
+| `www.mmdbkk.com/pay/renewal*` | `member-dashboard-chat-worker` | `9e0a707421314b0cb70b2224435b4efa` | More specific than `www.mmdbkk.com/*`, so it wins before `mmd-redirect-worker`. |
+| `mmdbkk.com/pay/*` | Not found | n/a | No generic `/pay/*` Worker route was found. |
+| `www.mmdbkk.com/pay/*` | Not found | n/a | No generic `/pay/*` Worker route was found. |
+| `mmdbkk.com/*` | `mmd-redirect-worker` | `cb57c678c4e14bd2ab02990cc3ba7bef` | Broad front-gate route for routes without a more-specific owner. |
+| `www.mmdbkk.com/*` | `mmd-redirect-worker` | `a506e82ce6174da1af40230aee0dcb12` | Broad front-gate route for routes without a more-specific owner. |
+
+Repository/code ownership finding:
+
+- Current tracked `main` does not include a tracked
+  `member-dashboard-chat-worker` implementation or route config.
+- The local exported production snapshot under
+  `tmp/cloudflare-member-dashboard-chat-worker/` and the local
+  `member-dashboard-chat-worker/wrangler.toml` show that `/pay/renewal*` and
+  `/sigil/pay/renewal*` are declared for `member-dashboard-chat-worker`.
+- The exported worker snapshot handles `/pay/renewal` and `/pay/renewal/` in
+  the renewal page path set and returns the `mmd-renewx` renewal payment page.
+- The snapshot also includes tests for `/pay/renewal` and `/pay/renewal/`,
+  confirming the page is an active production flow rather than a stale 404 or
+  origin leak.
+- The rendered page points proof submission at
+  `https://sigil.mmdbkk.com/api/pay/renewal/proof`.
+- The broader worker contains LINE and Telegram webhook/admin/payment-review
+  logic. Moving `/pay/renewal*` behind another front-gate route without a
+  separate migration could disturb that coupled renewal/payment proof surface.
+
+Payment safety doctrine observed:
+
+- The renewal/payment ecosystem includes proof/slip language as supporting
+  evidence only.
+- LINE slip intake records notes including: "Supporting evidence; do not
+  confirm payment from slip alone."
+- Payment records remain pending/pending review or pending match; the audit did
+  not find evidence that a public proof/slip alone confirms membership,
+  awards points, or grants Black Card approval.
+
+Decision recommendation:
+
+Option A is the recommended near-term canonical decision:
+
+```text
+Keep /pay/renewal and /pay/renewal/ owned by member-dashboard-chat-worker:mmd-renewx.
+Document it as an intentional payment-route exception.
+Do not move it through mmd-redirect-worker until the payment proof endpoint,
+LINE/Telegram review dependencies, and any route-config source-of-truth are
+explicitly migrated together.
+```
+
+Recommended follow-up PR if code change is approved:
+
+- Bring the active `member-dashboard-chat-worker` route/source config under a
+  tracked source-of-truth if it is not already tracked elsewhere.
+- Add or standardize response identity headers for `/pay/renewal` and
+  `/pay/renewal/`:
+
+```text
+x-mmd-worker: member-dashboard-chat-worker
+x-mmd-page: pay-renewal
+x-mmd-route-source: member-dashboard-chat-worker:mmd-renewx
+x-mmd-route-revision: MMD_RENEWX_...
+```
+
+- Add regression tests proving `/pay/renewal` and `/pay/renewal/` return `200`,
+  preserve query params, keep proof/slip as evidence only, and do not imply
+  automatic membership confirmation, points award, or Black Card approval.
+- Do not add broad `/pay/*` redirects.
+- Do not change payment verification, membership activation, points, Black
+  Card, webhook processing, admin auth, Webflow, or `sigil-worker` behavior.
+
+Option B is not recommended without a separate explicit migration approval:
+
+```text
+Move exact /pay/renewal and /pay/renewal/ through mmd-redirect-worker,
+delegate to an approved content owner, and preserve all query params.
+```
+
+Risk assessment:
+
+- Current user-facing content is not wrong-origin content, but the missing
+  standard identity headers make `/pay/renewal` harder to audit alongside
+  `/pay/membership` and `/pay/pending-verification`.
+- Moving ownership prematurely could break an active renewal payment proof
+  flow, especially because the current flow is coupled to proof submission,
+  LINE slip intake, Telegram/admin review, and `member-dashboard-chat-worker`
+  routes.
+- The safest minimal next step is documentation plus a later header-only
+  `member-dashboard-chat-worker` PR, not a route move.
