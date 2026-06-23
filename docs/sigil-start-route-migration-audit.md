@@ -273,3 +273,55 @@ Deployment guardrails honored:
 - No Black Card logic change.
 - No webhook processing change.
 - No admin auth change.
+
+## PR #99 Production Completion Note
+
+Status: completed in production.
+
+PR:
+
+```text
+PR #99: Polish member membership page
+Merged commit: b3caba82dcf17e41d9ee517c6f2f54cdd1f1264c
+```
+
+Deployed worker:
+
+```text
+member-pages-worker
+version: e5cdac95-cc15-40d8-ae1a-dccd156f1bd6
+```
+
+Scope:
+
+- Visual/content polish for `/member/membership` only.
+- `/member/membership` remains owned by `member-pages-worker`.
+- `x-mmd-page` remains `member-membership`.
+- No route ownership change.
+- No `mmd-redirect-worker` deploy.
+- No `sigil-worker` deploy.
+- No Webflow publish.
+- No payment verification, membership update, points, Black Card, webhook,
+  admin auth, or unrelated logic changes.
+
+Validation:
+
+```text
+node --check member-pages-worker/src/index.js passed
+node --test member-pages-worker/test/membership.test.mjs passed, 5 tests, 0 failed
+```
+
+Live smoke:
+
+```text
+/member/membership -> HTTP 200, x-mmd-page: member-membership, x-mmd-worker: member-pages-worker
+/membership -> 301 /member/membership with query preserved
+Protected routes remained stable
+Trial, Standard, Premium present
+VIP absent
+SVIP absent
+Black Card copy remains review/private consideration only
+Proof/slip is not payment truth
+Verified funds are payment truth
+Points follow verified funds only
+```
