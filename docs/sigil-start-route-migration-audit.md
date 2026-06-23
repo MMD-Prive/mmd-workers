@@ -200,3 +200,76 @@ Page content policy:
 - Confirmation happens only after official verification.
 - Black Card may be described only as private consideration/review, not
   automatic approval.
+
+## PR #96 Production Completion Note
+
+Status: completed in production.
+
+PR:
+
+```text
+PR #96: Fix SIGIL membership canonical page owner
+Merged commit: 3ba7a4cd271efaf3360f54d7cac3dae514541d66
+```
+
+Deployed workers:
+
+```text
+member-pages-worker
+version: 2ac598b6-6307-4065-b600-1a1f5aaf8642
+
+mmd-redirect-worker
+version: 716aaa2b-4eca-4b41-a834-9ccdbff82d59
+```
+
+Production smoke confirmed the canonical SIGIL membership page owner:
+
+```text
+/sigil/membership -> 200, x-mmd-page: sigil-membership, x-mmd-worker: member-pages-worker
+/sigil/membership/ -> 200, x-mmd-page: sigil-membership, x-mmd-worker: member-pages-worker
+
+/renew -> /sigil/membership with full query preserved
+/renewal -> /sigil/membership with full query preserved
+```
+
+Following `/renew` and `/renewal` now reaches final `HTTP 200` SIGIL
+membership content:
+
+```text
+title: MMD Privé | sigil-membership
+h1: Renewal / Access Conditions
+```
+
+Protected route stability remained confirmed after the PR #96 production
+deploy:
+
+```text
+/trust/inme -> /sigil/start
+/sigil/start -> 200 stable
+/sigil/apply -> sigil-worker, x-mmd-page: sigil-private-model-setup
+/sigil/api/private-model/apply OPTIONS -> 204, sigil-worker, x-mmd-page: sigil-private-model-apply-api
+/member/dashboard -> immigrate-worker, x-mmd-page: member-dashboard
+/member/membership -> member-pages-worker, x-mmd-page: member-membership
+/pay/membership -> member-pages-worker, x-mmd-page: pay-membership
+/pay/pending-verification -> member-pages-worker, x-mmd-page: pay-pending-verification
+/webhooks/line -> 200, no redirect
+```
+
+Forbidden checks passed:
+
+```text
+PASS: /sigil/membership no longer shows Kontrix/404 content
+PASS: /renew reaches SIGIL membership content
+```
+
+Deployment guardrails honored:
+
+- No Webflow publish.
+- No `sigil-worker` deploy.
+- No real payment submission.
+- No payment verification logic change.
+- No membership update logic change.
+- No points logic change.
+- No Black Card logic change.
+- No webhook processing change.
+- No admin auth change.
