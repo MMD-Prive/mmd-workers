@@ -14,8 +14,8 @@ code_scope: personal
 one_time_use: true
 new_member_only: true
 
-public_offer_headline_th: "รับรหัส 6 หลักผ่าน Telegram Preview เพื่อใช้รับ POINTS พิเศษ สูงสุดถึง 350 POINTS"
-public_offer_short_th: "สมาชิกใหม่ รับพอยท์พิเศษตามแพ็กเกจ สูงสุดถึง 350 points"
+public_offer_headline_th: "รับรหัส 6 หลักผ่าน Telegram Preview เพื่อใช้รับ Points พิเศษสำหรับ Standard และ Premium"
+public_offer_short_th: "สมาชิกใหม่ Standard ได้ 150 Points และ Premium ได้ 250 Points หลังผ่านการตรวจสอบอย่างเป็นทางการ"
 
 points_rules:
   standard:
@@ -37,10 +37,10 @@ eligibility_rules:
   - "สำหรับสมาชิกใหม่เท่านั้น"
   - "ใช้ได้ 1 สิทธิ์ต่อบัญชี"
   - "ใช้ได้ 1 ครั้งต่อ Telegram user ต่อ campaign"
-  - "ใช้ได้กับการสมัคร Standard, Premium, และ Black Card"
-  - "Black Card สำหรับผู้ที่ผ่านการพิจารณาเท่านั้น"
-  - "POINTS จะได้รับหลังการสมัครและการชำระเงินผ่านการตรวจสอบเรียบร้อย"
-  - "การรับรหัสยังไม่ถือว่าได้รับ points"
+  - "ใช้ได้กับการสมัคร Standard และ Premium หลังผ่านการตรวจสอบอย่างเป็นทางการ"
+  - "Black Card เปิดรับโดยการพิจารณาเป็นรายบุคคลเท่านั้น ไม่ใช่แพ็กเกจที่เลือกสมัครได้ทั่วไป"
+  - "Points จะได้รับหลังการสมัครและการชำระเงินผ่านการตรวจสอบเรียบร้อย"
+  - "การรับรหัสยังไม่ถือว่าได้รับ Points"
   - "การรับรหัสยังไม่ถือว่าสมัครสมาชิกสำเร็จ"
   - "ไม่ใช่โค้ดส่วนลดเงินสด"
   - "ไม่สามารถแลกเป็นเงินสดได้"
@@ -71,29 +71,28 @@ copy_locks:
     ผมจะออกโค้ดส่วนตัว 6 หลักให้ทันที
     โค้ดนี้สำหรับสมาชิกใหม่ ใช้รับพอยท์พิเศษตามแพ็กเกจที่สมัคร
 
-    Standard รับ 150 points
-    Premium รับ 250 points
-    Black Card รับ 350 points
+    Standard ได้ 150 Points
+    Premium ได้ 250 Points
 
-    Black Card สำหรับผู้ที่ผ่านการพิจารณาเท่านั้น
-    พอยท์จะได้รับหลังการสมัครและการชำระเงินผ่านการตรวจสอบเรียบร้อยนะครับ
+    Black Card เปิดรับโดยการพิจารณาเป็นรายบุคคลเท่านั้น ไม่ใช่แพ็กเกจที่เลือกสมัครได้ทั่วไป
+    Points จะได้รับหลังการสมัครและการชำระเงินผ่านการตรวจสอบเรียบร้อยนะครับ
   poster_copy_th: |
     รับรหัส 6 หลักผ่าน Telegram Preview
-    เพื่อใช้รับ POINTS พิเศษ ตามแพ็กเกจที่สมัคร
-    สูงสุดถึง 350 POINTS
+    เพื่อใช้รับ Points พิเศษสำหรับสมาชิกใหม่
 
-    STANDARD 150 POINTS
-    PREMIUM 250 POINTS
-    BLACK CARD 350 POINTS
+    Standard ได้ 150 Points
+    Premium ได้ 250 Points
+
+    Black Card private consideration / review only
   poster_small_print_th: |
     สำหรับสมาชิกใหม่เท่านั้น • ใช้ได้ 1 สิทธิ์ต่อบัญชี
-    Black Card สำหรับผู้ที่ผ่านการพิจารณาเท่านั้น
-    POINTS จะได้รับหลังการสมัครและการชำระเงินผ่านการตรวจสอบเรียบร้อย
+    Black Card เปิดรับโดยการพิจารณาเป็นรายบุคคลเท่านั้น ไม่ใช่แพ็กเกจที่เลือกสมัครได้ทั่วไป
+    Points apply after official verification only
 
 unsafe_copy:
   - "รับ points ทันที"
   - "ได้รับ points แล้ว"
-  - "รับ 350 points ทุกแพ็กเกจ"
+  - "กล่าวว่าได้พอยท์สูงสุดทันทีทุกแพ็กเกจ"
   - "โค้ดส่วนลด 10%"
   - "ลดสูงสุด 10%"
-  - "Black Card ซื้อได้ทันที"
+  - "กล่าวว่า Black Card เป็นแพ็กเกจที่สมัครได้ทันที"
