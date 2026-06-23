@@ -4097,9 +4097,36 @@ function normalizeLookup(text = "") {
   return normalizeLineIntentText(text);
 }
 __name(normalizeLookup, "normalizeLookup");
+function compactLineIntentText(text = "") {
+  return normalizeLookup(text).replace(/\s+/g, "");
+}
+__name(compactLineIntentText, "compactLineIntentText");
+function decodeLineIntentText(text = "") {
+  try {
+    return decodeURIComponent(String(text || "").replace(/\+/g, " "));
+  } catch {
+    return String(text || "");
+  }
+}
+__name(decodeLineIntentText, "decodeLineIntentText");
+function getLineEventTextForIntent(event) {
+  if (event?.type === "message" && event?.message?.type === "text") {
+    return String(event.message.text || "");
+  }
+  if (event?.type === "postback") {
+    return String(event?.postback?.displayText || event?.postback?.data || "");
+  }
+  return "";
+}
+__name(getLineEventTextForIntent, "getLineEventTextForIntent");
 function isTalkToPerAi(text = "") {
   const normalized = normalizeLookup(text);
-  return normalized === "hi per" || normalized === "สวัสดี เปอร์";
+  const decoded = normalizeLookup(decodeLineIntentText(text));
+  const compact = compactLineIntentText(decoded);
+  const delimitedHiPer = /(^|[=&?])hi per($|[&])/.test(decoded);
+  const delimitedHelloPer = /(^|[=&?])hello per($|[&])/.test(decoded);
+  const delimitedThaiPer = /(^|[=&?])สวัสดี ?เปอร์($|[&])/.test(decoded);
+  return normalized.includes("talk_to_per_ai") || normalized.includes("per_ai") || delimitedHiPer || delimitedHelloPer || delimitedThaiPer || decoded === "hi per" || decoded === "hello per" || decoded === "สวัสดี เปอร์" || compact === "hiper" || compact === "helloper" || compact === "สวัสดีเปอร์";
 }
 __name(isTalkToPerAi, "isTalkToPerAi");
 function isTalkToPerAiIntent(text) {
@@ -4107,7 +4134,7 @@ function isTalkToPerAiIntent(text) {
 }
 __name(isTalkToPerAiIntent, "isTalkToPerAiIntent");
 function isLineTalkToPerAiEvent(event) {
-  return event?.type === "message" && event?.message?.type === "text" && isTalkToPerAiIntent(event?.message?.text);
+  return isTalkToPerAiIntent(getLineEventTextForIntent(event));
 }
 __name(isLineTalkToPerAiEvent, "isLineTalkToPerAiEvent");
 async function handleLineOfficialWebhook(request, env, ctx) {
@@ -4126,7 +4153,7 @@ async function handleLineOfficialWebhook(request, env, ctx) {
   const results = [];
   for (const event of events) {
     const eventMessage = event?.message || {};
-    const eventText = String(eventMessage?.text || "");
+    const eventText = getLineEventTextForIntent(event);
     console.log("line_event_received", JSON.stringify({
       source_event_id: getLineSourceEventId(event),
       event_type: event?.type || "",
@@ -4142,7 +4169,7 @@ async function handleLineOfficialWebhook(request, env, ctx) {
     }));
     if (ctx && typeof ctx.waitUntil === "function") {
       const sourceEventId = getLineSourceEventId(event);
-      const messageText = String(event?.message?.text || "");
+      const messageText = getLineEventTextForIntent(event);
       console.log("line_event_queued", JSON.stringify({
         source_event_id: sourceEventId,
         message_text: messageText,
@@ -4578,11 +4605,11 @@ async function processLineOfficialEvent(env, event) {
   const lineUserId = asText(event?.source?.userId) || "";
   const isImage = event?.type === "message" && message?.type === "image" && message?.id;
   const isText = event?.type === "message" && message?.type === "text";
-  const messageText = String(message?.text || "");
+  const messageText = getLineEventTextForIntent(event);
   const isPossiblePaymentText = isText && LINE_PAYMENT_PROOF_RE.test(messageText);
   const normalizedText = normalizeLineIntentText(messageText);
-  const isTalkToPerAi = isText && isTalkToPerAiIntent(messageText);
-  if (isText) {
+  const isTalkToPerAi = isTalkToPerAiIntent(messageText);
+  if (isText || event?.type === "postback") {
     console.log("line_text_intent_debug", JSON.stringify({
       source_event_id: sourceEventId,
       message_text: messageText,
@@ -4593,7 +4620,8 @@ async function processLineOfficialEvent(env, event) {
       source_user_id_exists: Boolean(lineUserId),
       event_keys: Object.keys(event || {}).sort(),
       event_type: event?.type || "",
-      message_type: message?.type || ""
+      message_type: message?.type || "",
+      postback_keys: Object.keys(event?.postback || {}).sort()
     }));
   }
   if (isTalkToPerAi) {
@@ -6220,4 +6248,3 @@ export {
   index_default as default
 };
 //# sourceMappingURL=index.js.map
-
