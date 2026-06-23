@@ -159,3 +159,44 @@ Deployment guardrails honored:
 - No membership rendering logic changes.
 - No points, Black Card, webhook processing, admin auth, or unrelated logic
   changes.
+
+## PR #96 SIGIL Membership Canonical Page Owner Audit
+
+Live audit after PR #93, PR #94, and PR #95 found one remaining identity issue:
+
+```text
+/renew -> /sigil/membership
+/renewal -> /sigil/membership
+/sigil/membership -> 404 Kontrix - Not Found / Thai 401-style access heading
+```
+
+The redirect mapping is correct and must not be reverted to `/sigil/start`.
+The missing piece is a valid page owner/render path for `/sigil/membership`.
+
+Owner audit:
+
+| Question | Finding |
+| --- | --- |
+| Does `member-pages-worker` already support `/sigil/membership`? | No. Before PR #96, `member-pages-worker` only recognized `/member/membership`, `/pay/membership`, `/pay/pending-verification`, and `/member/profile`. |
+| Does `mmd-redirect-worker` pass `/sigil/membership` through to origin because `/sigil/*` is in `NEVER_TOUCH_PREFIXES`? | Yes. Before PR #96, `/sigil/membership` had no explicit handler, so it reached generic `/sigil/` never-touch pass-through. |
+| Is Webflow/origin returning Kontrix 404 for `/sigil/membership`? | Yes. Live GET/HEAD audit showed `HTTP 404`, title `Kontrix - Not Found`, and a Thai 401-style heading when the route passed through. |
+| Which worker should own the rendered page? | `member-pages-worker` should own the content for the renewal/access conditions page. `mmd-redirect-worker` remains the front route/proxy owner. |
+
+Target ownership:
+
+| Route | Front route/proxy owner | Content owner | Page identity | Behavior |
+| --- | --- | --- | --- | --- |
+| `/sigil/membership` | `mmd-redirect-worker` | `member-pages-worker` | `x-mmd-page: sigil-membership` | Delegate/proxy before generic `/sigil/*` pass-through; return `200` content, not origin 404. |
+| `/sigil/membership/` | `mmd-redirect-worker` | `member-pages-worker` | `x-mmd-page: sigil-membership` | Same as non-slash variant, preserving query string. |
+
+Page content policy:
+
+- Thai primary copy with concise English labels where useful.
+- Renewal/access conditions page, not checkout.
+- Trial, Standard, and Premium are the only customer-facing sold packages if
+  package context appears.
+- VIP and SVIP must not appear as customer-facing purchase/upgrade options.
+- Payment slip/proof must not imply membership confirmation.
+- Confirmation happens only after official verification.
+- Black Card may be described only as private consideration/review, not
+  automatic approval.

@@ -207,6 +207,80 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
+  it("delegates /sigil/membership to member-pages-worker before generic SIGIL pass-through", async () => {
+    const serviceRequests = [];
+    const env = {
+      MEMBER_PAGES_WORKER: {
+        fetch: async (request) => {
+          serviceRequests.push(request);
+          return new Response("<main>Renewal / Access Conditions official verification</main>", {
+            status: 200,
+            headers: { "content-type": "text/html; charset=utf-8", "x-mmd-worker": "member-pages-worker", "x-mmd-page": "sigil-membership" },
+          });
+        },
+      },
+    };
+
+    for (const url of [
+      `https://mmdbkk.com/sigil/membership?${PRESERVED_QUERY}`,
+      `https://www.mmdbkk.com/sigil/membership/?${PRESERVED_QUERY}`,
+    ]) {
+      const response = await requestWithEnv(url, env);
+      const html = await response.text();
+
+      assert.equal(response.status, 200, url);
+      assert.equal(response.headers.get("location"), null, url);
+      assert.equal(response.headers.get("x-mmd-front-gate"), "mmd-redirect-worker", url);
+      assert.equal(response.headers.get("x-mmd-page"), "sigil-membership", url);
+      assert.equal(response.headers.get("x-mmd-worker"), "member-pages-worker", url);
+      assert.match(html, /Renewal \/ Access Conditions/, url);
+      assert.equal(serviceRequests.at(-1).url, url);
+    }
+
+    assert.equal(serviceRequests.length, 2);
+    assert.equal(passThroughRequests.length, 0);
+  });
+
+  it("falls back to member-pages-worker upstream for /sigil/membership without Webflow pass-through", async () => {
+    const response = await request(`https://www.mmdbkk.com/sigil/membership?${PRESERVED_QUERY}`);
+    const expected = new URL(`https://www.mmdbkk.com/sigil/membership?${PRESERVED_QUERY}`);
+    expected.protocol = "https:";
+    expected.hostname = "member-pages-worker.malemodel-bkk.workers.dev";
+
+    assert.equal(response.status, 209);
+    assert.equal(response.headers.get("location"), null);
+    assert.equal(response.headers.get("x-mmd-front-gate"), "mmd-redirect-worker");
+    assert.equal(passThroughRequests.at(-1).url, expected.toString());
+    assert.notEqual(new URL(passThroughRequests.at(-1).url).hostname, "mmdprive.webflow.io");
+  });
+
+  it("following renewal aliases reaches valid SIGIL membership content", async () => {
+    const env = {
+      MEMBER_PAGES_WORKER: {
+        fetch: async (request) => new Response("<main>Renewal / Access Conditions official verification</main>", {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8", "x-mmd-worker": "member-pages-worker", "x-mmd-page": "sigil-membership" },
+        }),
+      },
+    };
+
+    for (const alias of ["/renew", "/renewal"]) {
+      const first = await requestWithEnv(`https://www.mmdbkk.com${alias}?${PRESERVED_QUERY}`, env);
+      assert.equal(first.status, 301, alias);
+      assert.equal(first.headers.get("location"), `https://mmdbkk.com/sigil/membership?${PRESERVED_QUERY}`, alias);
+
+      const followed = await requestWithEnv(first.headers.get("location"), env);
+      const html = await followed.text();
+
+      assert.equal(followed.status, 200, alias);
+      assert.equal(followed.headers.get("location"), null, alias);
+      assert.equal(followed.headers.get("x-mmd-page"), "sigil-membership", alias);
+      assert.match(html, /Renewal \/ Access Conditions/, alias);
+    }
+
+    assert.equal(passThroughRequests.length, 0);
+  });
+
   it("delegates canonical /sigil/apply routes to sigil-worker with ownership headers and preserved query strings", async () => {
     const sigilRequests = [];
     const env = {
@@ -605,6 +679,7 @@ describe("MMD permanent redirect guard", () => {
       { url: `https://www.mmdbkk.com/pay/pending-verification?${PRESERVED_QUERY}`, expectedStatus: 209 },
       { url: `https://www.mmdbkk.com/webhooks/line?${PRESERVED_QUERY}`, expectedStatus: 209 },
       { url: `https://www.mmdbkk.com/sigil/start?${PRESERVED_QUERY}`, expectedStatus: 209 },
+      { url: `https://www.mmdbkk.com/sigil/membership?${PRESERVED_QUERY}`, expectedStatus: 209 },
       { url: `https://www.mmdbkk.com/sigil/apply?${PRESERVED_QUERY}`, expectedStatus: 209 },
     ];
 
