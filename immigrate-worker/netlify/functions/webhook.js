@@ -5,6 +5,7 @@ import {
   getSafeMemberSummary,
   isKenjiMemberLineCandidate,
 } from "../../../shared/kenji-member-concierge-core.mjs";
+import { loadKenjiMemberMemoryForLine } from "./kenji-member-memory-context.mjs";
 
 const DEFAULT_SYNC_TABLE = "MMD — Console Inbox";
 const LINE_API_BASE = "https://api.line.me/v2/bot";
@@ -718,8 +719,37 @@ function buildLineMemberSummary(event, profile) {
   });
 }
 
-function buildKenjiLineReply(event, profile, options = {}) {
-  return buildKenjiMemberReply(getLineEventTextForIntent(event), buildLineMemberSummary(event, profile), {
+async function buildKenjiLineReply(event, profile, options = {}) {
+  let memberSummary = buildLineMemberSummary(event, profile);
+
+  if (options.airtableBaseId && options.airtableApiKey && getLineUserId(event)) {
+    try {
+      const memory = await loadKenjiMemberMemoryForLine({
+        baseId: options.airtableBaseId,
+        apiKey: options.airtableApiKey,
+        lineUserId: getLineUserId(event),
+        lineDisplayName: String(profile?.displayName || "").trim(),
+        profile,
+      });
+      if (memory?.kenji_safe_context) {
+        memberSummary = memory.kenji_safe_context;
+        logLineWebhookDebug(options, {
+          intent: classifyKenjiMemberIntent(getLineEventTextForIntent(event), memberSummary).intent,
+          reply_sent: false,
+          category: "kenji_member_memory_loaded",
+        });
+      }
+    } catch (error) {
+      logLineWebhookDebug(options, {
+        intent: classifyKenjiMemberIntent(getLineEventTextForIntent(event), memberSummary).intent,
+        reply_sent: false,
+        category: "kenji_member_memory_fallback",
+        error: String(error?.message || error || "unknown"),
+      });
+    }
+  }
+
+  return buildKenjiMemberReply(getLineEventTextForIntent(event), memberSummary, {
     lineOfficialChatUrl: options.lineOfficialChatUrl || "",
   });
 }
@@ -867,7 +897,7 @@ async function buildAutoReplyMessage(event, profile, options = {}) {
   }
 
   if (options.lineKenjiAiEnabled && intent === "talk_to_per_ai") {
-    const reply = buildKenjiLineReply(event, profile, options);
+    const reply = await buildKenjiLineReply(event, profile, options);
     if (options.lineKenjiAiDebug) {
       logLineWebhookDebug(options, { intent, reply_sent: Boolean(reply), category: "kenji_member_concierge" });
     }
@@ -893,7 +923,7 @@ async function buildAutoReplyMessage(event, profile, options = {}) {
   }
 
   if (options.lineKenjiAiEnabled && (KENJI_MEMBER_INTENTS.has(intent) || isKenjiMemberLineCandidate(text))) {
-    const reply = buildKenjiLineReply(event, profile, options);
+    const reply = await buildKenjiLineReply(event, profile, options);
     if (options.lineKenjiAiDebug) {
       logLineWebhookDebug(options, { intent, reply_sent: Boolean(reply), category: "kenji_member_concierge" });
     }
@@ -1025,6 +1055,8 @@ export async function handler(event) {
       profile,
     });
     const replyText = await buildAutoReplyMessage(item, profile, {
+      airtableBaseId,
+      airtableApiKey,
       adminWorkerBaseUrl,
       internalToken,
       confirmKey,
