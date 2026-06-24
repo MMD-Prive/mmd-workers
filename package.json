@@ -17,7 +17,7 @@
     "dev:telegram": "wrangler dev --config telegram-worker/wrangler.toml",
     "dev:sigil-board": "wrangler dev --config workers/sigil-board-worker/wrangler.toml",
     "check:sigil-board": "node --check workers/sigil-board-worker/src/index.js",
-    "check:kenji-member-memory": "node --check shared/kenji-member-memory-snapshot.mjs",
+    "check:kenji-member-memory": "node --check shared/kenji-member-memory-snapshot.mjs && node --check immigrate-worker/netlify/functions/kenji-member-memory-context.mjs",
     "test:kenji-line": "node --test shared/kenji-member-concierge-core.test.mjs",
     "test:kenji-member-memory": "node --test shared/kenji-member-memory-snapshot.test.mjs"
   }
