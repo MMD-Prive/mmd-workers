@@ -19,7 +19,7 @@ AIRTABLE_TABLE_POINTS_LEDGER = "points_ledger"
 # Do not put secrets here.
 # Configure these with wrangler secret put:
 # TELEGRAM_BOT_TOKEN
-# TELEGRAM_WEBHOOK_SECRET
+# TELEGRAM_WEBHOOK_SECRET_TOKEN
 # INTERNAL_API_TOKEN
 # PREVIEW_PROMO_SECRET
 #
