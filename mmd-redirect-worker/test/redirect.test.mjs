@@ -173,16 +173,20 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
-  it("delegates /member/membership to member-pages-worker by service binding without redirecting or changing query strings", async () => {
-    const serviceRequests = [];
+  it("passes /member/membership through to the Webflow origin path without redirecting or changing query strings", async () => {
+    const memberPageRequests = [];
+    const immigrateRequests = [];
     const env = {
       MEMBER_PAGES_WORKER: {
         fetch: async (request) => {
-          serviceRequests.push(request);
-          return new Response("member membership", {
-            status: 200,
-            headers: { "x-mmd-worker": "immigrate-worker", "x-mmd-page": "member-membership" },
-          });
+          memberPageRequests.push(request);
+          throw new Error(`/member/membership must not route to member-pages-worker: ${request.url}`);
+        },
+      },
+      IMMIGRATE_WORKER: {
+        fetch: async (request) => {
+          immigrateRequests.push(request);
+          throw new Error(`/member/membership must not route to immigrate-worker: ${request.url}`);
         },
       },
     };
@@ -198,13 +202,22 @@ describe("MMD permanent redirect guard", () => {
 
     for (const url of urls) {
       const response = await requestWithEnv(url, env);
-      assert.equal(response.status, 200, url);
-      assert.equal(response.headers.get("location"), null);
-      assert.equal(response.headers.get("x-mmd-page"), "member-membership");
-      assert.equal(serviceRequests.at(-1).url, url);
+      const upstream = new URL(url);
+      upstream.protocol = "https:";
+      upstream.hostname = "mmdprive.webflow.io";
+
+      assert.notEqual(response.status, 301, url);
+      assert.notEqual(response.status, 302, url);
+      assert.equal(response.headers.get("location"), null, url);
+      assert.equal(response.headers.get("x-mmd-worker"), null, url);
+      assert.notEqual(response.headers.get("x-mmd-worker"), "member-pages-worker", url);
+      assert.equal(response.headers.get("x-mmd-origin-pass-through"), "webflow-origin", url);
+      assert.equal(passThroughRequests.at(-1).url, upstream.toString(), url);
     }
 
-    assert.equal(passThroughRequests.length, 0);
+    assert.equal(memberPageRequests.length, 0);
+    assert.equal(immigrateRequests.length, 0);
+    assert.equal(passThroughRequests.length, urls.length);
   });
 
   it("delegates /sigil/membership to member-pages-worker before generic SIGIL pass-through", async () => {
@@ -569,12 +582,12 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
-  it("falls back to the member-pages-worker upstream for /member/membership when service binding is missing", async () => {
+  it("passes /member/membership through to origin when service bindings are missing", async () => {
     globalThis.fetch = async (request) => {
       passThroughRequests.push(request);
-      return new Response("membership upstream", {
+      return new Response("webflow membership", {
         status: 200,
-        headers: { "x-mmd-worker": "immigrate-worker", "x-mmd-page": "member-membership" },
+        headers: { "x-webflow-page": "member-membership" },
       });
     };
 
@@ -588,10 +601,39 @@ describe("MMD permanent redirect guard", () => {
       const response = await request(url);
       const expected = new URL(url);
       expected.protocol = "https:";
-      expected.hostname = "member-pages-worker.malemodel-bkk.workers.dev";
+      expected.hostname = "mmdprive.webflow.io";
       assert.equal(response.status, 200, url);
       assert.equal(response.headers.get("location"), null);
+      assert.equal(response.headers.get("x-webflow-page"), "member-membership");
+      assert.notEqual(response.headers.get("x-mmd-worker"), "member-pages-worker", url);
+      assert.equal(response.headers.get("x-mmd-origin-pass-through"), "webflow-origin", url);
       assert.equal(passThroughRequests.at(-1).url, expected.toString());
+    }
+  });
+
+  it("preserves t, code, and promo on /member/membership without legacy redirects", async () => {
+    globalThis.fetch = async (request) => {
+      passThroughRequests.push(request);
+      return new Response("webflow membership", { status: 200 });
+    };
+
+    const urls = [
+      "https://mmdbkk.com/member/membership?t=abc&code=x&promo=y",
+      "https://www.mmdbkk.com/member/membership?t=abc&code=x&promo=y",
+      "https://mmdbkk.com/member/membership/?t=abc&code=x&promo=y",
+    ];
+
+    for (const url of urls) {
+      const response = await request(url);
+      const upstreamUrl = passThroughRequests.at(-1).url;
+
+      assert.equal(response.status, 200, url);
+      assert.equal(response.headers.get("location"), null, url);
+      assert.doesNotMatch(upstreamUrl, /\/pay\/membership|\/trust\/inme|\/membership\/benefits/i, url);
+      assert.match(upstreamUrl, /[?&]t=abc(?:&|$)/, url);
+      assert.match(upstreamUrl, /[?&]code=x(?:&|$)/, url);
+      assert.match(upstreamUrl, /[?&]promo=y(?:&|$)/, url);
+      assert.match(upstreamUrl, /^https:\/\/mmdprive\.webflow\.io\/member\/membership\/?/);
     }
   });
 
