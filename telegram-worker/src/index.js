@@ -235,10 +235,23 @@ function parseStartArg(text) {
 }
 
 function requireTelegramSecret(req, env) {
-  const expected = clean(env.TELEGRAM_WEBHOOK_SECRET);
+  const expected = clean(env.TELEGRAM_WEBHOOK_SECRET_TOKEN);
   if (!expected) return;
   const actual = clean(req.headers.get("X-Telegram-Bot-Api-Secret-Token"));
-  if (actual !== expected) throw new HttpError(403, { ok: false, error: "telegram_secret_required" });
+  if (!actual || !timingSafeEqual(actual, expected)) {
+    throw new HttpError(401, { ok: false, error: "unauthorized" });
+  }
+}
+
+function timingSafeEqual(left, right) {
+  const a = String(left || "");
+  const b = String(right || "");
+  let diff = a.length ^ b.length;
+  const max = Math.max(a.length, b.length);
+  for (let index = 0; index < max; index += 1) {
+    diff |= (a.charCodeAt(index) || 0) ^ (b.charCodeAt(index) || 0);
+  }
+  return diff === 0;
 }
 
 function previewUserKey(userId) {
