@@ -894,6 +894,9 @@ export function modelSchemaPatchV1Tables(env = {}) {
         depositStatus: str(env.AT_PAYMENTS__DEPOSIT_STATUS || "deposit_status"),
         verificationStatus: str(env.AT_PAYMENTS__VERIFICATION_STATUS || "verification_status"),
         officialVerifiedAt: str(env.AT_PAYMENTS__OFFICIAL_VERIFIED_AT || "official_verified_at"),
+        officialVerificationRef: str(env.AT_PAYMENTS__OFFICIAL_VERIFICATION_REF || "official_verification_ref"),
+        officialVerifiedBy: str(env.AT_PAYMENTS__OFFICIAL_VERIFIED_BY || "official_verified_by"),
+        officialMatchReason: str(env.AT_PAYMENTS__OFFICIAL_MATCH_REASON || "official_match_reason"),
       },
     },
     mediaAssets: {
@@ -1437,14 +1440,16 @@ async function assertFlashAuthorizationBasis(env, body, tables) {
   return "verified_deposit";
 }
 
-function isVerifiedDepositRecord(record, tables) {
+export function isVerifiedDepositRecord(record, tables) {
   const fields = record?.fields || {};
-  const depositStatus = normalizeSchemaPatchWord(fields[tables.payments.fields.depositStatus]);
   const verificationStatus = normalizeSchemaPatchWord(fields[tables.payments.fields.verificationStatus]);
   const officialVerifiedAt = str(fields[tables.payments.fields.officialVerifiedAt]);
+  const officialVerificationRef = str(fields[tables.payments.fields.officialVerificationRef]);
+  const officialVerifiedBy = str(fields[tables.payments.fields.officialVerifiedBy]);
+  const officialMatchReason = str(fields[tables.payments.fields.officialMatchReason]);
   if (officialVerifiedAt) return true;
-  return ["verified", "paid", "confirmed", "complete", "completed"].includes(depositStatus) ||
-    ["verified", "official_verified", "confirmed", "success", "succeeded"].includes(verificationStatus);
+  return verificationStatus === "official_verified" &&
+    Boolean(officialVerificationRef && (officialVerifiedBy || officialMatchReason));
 }
 
 function isPublicCandidateMedia(mediaType) {
@@ -1455,6 +1460,13 @@ function addMinutesIso(minutes) {
   const date = new Date();
   date.setUTCMinutes(date.getUTCMinutes() + Math.max(1, Number(minutes) || 30));
   return date.toISOString();
+}
+
+function base64UrlEncodeString(value) {
+  const bytes = new TextEncoder().encode(String(value || ""));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 async function sha256Hex(value) {
