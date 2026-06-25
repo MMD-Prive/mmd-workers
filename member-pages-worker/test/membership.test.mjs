@@ -72,6 +72,60 @@ describe("member-pages-worker membership page", () => {
     assert.equal(response.headers.get("x-mmd-page"), "member-membership");
   });
 
+  it("renders member profile in pending safe state by default", async () => {
+    const response = await request("https://mmdbkk.com/member/profile");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-mmd-worker"), "member-pages-worker");
+    assert.equal(response.headers.get("x-mmd-page"), "member-profile");
+    assert.match(html, /Pending Profile/);
+    assert.match(html, /Pending Verification/);
+    assert.match(html, /Waiting official verification/);
+    assert.match(html, /verified funds only/);
+    assert.match(html, /proof is not payment truth/);
+    assert.match(html, /points pending official verification/);
+    assert.match(html, /review unavailable until official verification/);
+    assert.doesNotMatch(html, /Active Profile/);
+    assert.doesNotMatch(html, /Verified Points/);
+    assert.doesNotMatch(html, /Review Eligible/);
+  });
+
+  it("does not trust verified status, amount, points, or payment ref from query params", async () => {
+    const response = await request("https://mmdbkk.com/member/profile?status=verified&amount=35000&plan=premium&payment_ref=fake-ref");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-mmd-worker"), "member-pages-worker");
+    assert.equal(response.headers.get("x-mmd-page"), "member-profile");
+    assert.match(html, /Pending Profile/);
+    assert.match(html, /Pending Verification/);
+    assert.match(html, /official verification/);
+    assert.match(html, /proof is not payment truth/);
+    assert.match(html, /verified funds only/);
+    assert.doesNotMatch(html, /Active Profile/);
+    assert.doesNotMatch(html, /350 points/);
+    assert.doesNotMatch(html, /Review Eligible/);
+    assert.match(html, /<span>Payment Ref<\/span><b>Waiting official verification<\/b>/);
+    assert.doesNotMatch(html, /Verified payment truth/i);
+  });
+
+  it("keeps member profile slash variant in pending safe state", async () => {
+    const response = await request("https://mmdbkk.com/member/profile/?status=active&amount=35000&payment_ref=fake-ref");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-mmd-worker"), "member-pages-worker");
+    assert.equal(response.headers.get("x-mmd-page"), "member-profile");
+    assert.match(html, /Pending Profile/);
+    assert.match(html, /Pending Verification/);
+    assert.match(html, /points pending official verification/);
+    assert.doesNotMatch(html, /Active Profile/);
+    assert.doesNotMatch(html, /350 points/);
+    assert.doesNotMatch(html, /Review Eligible/);
+    assert.match(html, /<span>Payment Ref<\/span><b>Waiting official verification<\/b>/);
+  });
+
   it("keeps unknown paths closed", async () => {
     const response = await request("https://mmdbkk.com/member/dashboard?t=abc");
 

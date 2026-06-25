@@ -107,14 +107,9 @@ export function renderPending(request) {
 
 export function renderProfile(request) {
   const url = new URL(request.url);
-  const status = String(url.searchParams.get("status") || "pending_verification").toLowerCase();
-  const verified = status === "verified" || status === "active";
   const plan = normalizePlan(url.searchParams.get("plan") || url.searchParams.get("package")) || "standard";
   const pkg = getPackage(plan);
-  const ref = url.searchParams.get("payment_ref") || url.searchParams.get("transaction_ref") || "";
-  const amount = positive(url.searchParams.get("amount")) || pkg.amount;
-  const points = verified ? Math.floor(amount / 100) : 0;
-  return page(request, "member-profile", `${nav(url.search)}<section class="panel center"><p class="eyebrow">MEMBER PROFILE</p><h1>${verified ? "Active Profile" : "Pending Profile"}</h1><p>Member Profile แสดง verified truth เท่านั้น หากเพิ่งส่งหลักฐานการโอน โปรไฟล์จะอยู่ในสถานะ pending verification และยังไม่เพิ่ม points จนกว่ายอดจริงจะถูกตรวจสอบครบชุด</p><div class="profile"><span>Membership Status</span><b>${verified ? "Active" : "Pending Verification"}</b><span>Package</span><b>${html(pkg.title)}</b><span>Payment Status</span><b>${verified ? "Verified" : "Evidence Received"}</b><span>Payment Ref</span><b>${html(ref || "Waiting")}</b><span>Verified Points</span><b>${points} points</b><span>Black Card</span><b>${points >= 350 ? "Review Eligible" : "Not Eligible"}</b></div><p class="actions"><a class="btn" href="${attr(appendQuery("/member/dashboard", url.search))}">Member Dashboard</a><a class="btn ghost" href="${attr(appendQuery("/pay/membership", url.search, { plan }))}">Continue Payment</a></p></section>`);
+  return page(request, "member-profile", `${nav(url.search)}<section class="panel center"><p class="eyebrow">MEMBER PROFILE</p><h1>Pending Profile</h1><p>Member Profile แสดง verified truth จาก official verification เท่านั้น URL query, payment_ref, amount, status, proof หรือ slip เป็นข้อมูลประกอบ ไม่ใช่ payment truth และไม่ใช่การยืนยันสมาชิก</p><div class="profile"><span>Membership Status</span><b>Pending Verification</b><span>Requested Package</span><b>${html(pkg.title)}</b><span>Payment Status</span><b>Evidence Received</b><span>Payment Ref</span><b>Waiting official verification</b><span>Points Status</span><b>points pending official verification</b><span>Black Card</span><b>review unavailable until official verification</b></div><div class="notice">proof is not payment truth · verified funds only · points follow verified funds only</div><p class="actions"><a class="btn" href="${attr(appendQuery("/member/dashboard", url.search))}">Member Dashboard</a><a class="btn ghost" href="${attr(appendQuery("/pay/membership", url.search, { plan }))}">Continue Payment</a></p></section>`);
 }
 
 function packageCard(pkg, selected, query) {
