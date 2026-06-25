@@ -14,8 +14,10 @@ code_scope: personal
 one_time_use: true
 new_member_only: true
 
-public_offer_headline_th: "รับรหัส 6 หลักผ่าน Telegram Preview เพื่อใช้รับ Points พิเศษสำหรับ Standard และ Premium"
-public_offer_short_th: "สมาชิกใหม่ Standard ได้ 150 Points และ Premium ได้ 250 Points หลังผ่านการตรวจสอบอย่างเป็นทางการ"
+# Customer-facing headline. Max purchasable package is Premium (250 Points).
+# Black Card is private consideration only — not a normal purchasable package.
+public_offer_headline_th: "รับรหัส 6 หลักผ่าน Telegram Preview เพื่อใช้รับ Points พิเศษ Standard ได้ 150 / Premium ได้ 250"
+public_offer_short_th: "สมาชิกใหม่ รับ Points พิเศษตามแพ็กเกจที่สมัคร — Standard ได้ 150 Points, Premium ได้ 250 Points"
 
 points_rules:
   standard:
@@ -29,6 +31,9 @@ points_rules:
   blackcard:
     label: "Black Card"
     bonus_points: 350
+    # Backend approval-only. Black Card is NOT a normal purchasable package.
+    # bonus_points applies only after explicit blackcard_approved: true is set by admin.
+    # Must never appear in customer-facing copy as an automatic points path.
     eligibility: "new_member_private_approval_only"
 
 max_bonus_points: 350
@@ -37,7 +42,7 @@ eligibility_rules:
   - "สำหรับสมาชิกใหม่เท่านั้น"
   - "ใช้ได้ 1 สิทธิ์ต่อบัญชี"
   - "ใช้ได้ 1 ครั้งต่อ Telegram user ต่อ campaign"
-  - "ใช้ได้กับการสมัคร Standard และ Premium หลังผ่านการตรวจสอบอย่างเป็นทางการ"
+  - "ใช้ได้กับการสมัคร Standard และ Premium"
   - "Black Card เปิดรับโดยการพิจารณาเป็นรายบุคคลเท่านั้น ไม่ใช่แพ็กเกจที่เลือกสมัครได้ทั่วไป"
   - "Points จะได้รับหลังการสมัครและการชำระเงินผ่านการตรวจสอบเรียบร้อย"
   - "การรับรหัสยังไม่ถือว่าได้รับ Points"
@@ -52,7 +57,7 @@ campaign_window:
   booking_advance_days_from_signup: 90
 
 customer_entry_url:
-  telegram_deep_link: "https://t.me/mmdprivebot?start=preview_pride_jun2026"
+  telegram_deep_link: "https://t.me/mmdprivebot?start=preview"
   signup_url_v1: "https://mmdbkk.com/trust/inme"
   signup_url_later: "https://mmdbkk.com/member/membership"
 
@@ -66,7 +71,7 @@ credit_trigger: payment_verified_and_new_member_confirmed
 
 copy_locks:
   hype_welcome_th: |
-    เข้าสู่ระบบเรียบร้อยครับ
+    เข้าสู่ระบบเรียบร้อยครับ 🟡
 
     ผมจะออกโค้ดส่วนตัว 6 หลักให้ทันที
     โค้ดนี้สำหรับสมาชิกใหม่ ใช้รับพอยท์พิเศษตามแพ็กเกจที่สมัคร
@@ -74,25 +79,44 @@ copy_locks:
     Standard ได้ 150 Points
     Premium ได้ 250 Points
 
-    Black Card เปิดรับโดยการพิจารณาเป็นรายบุคคลเท่านั้น ไม่ใช่แพ็กเกจที่เลือกสมัครได้ทั่วไป
-    Points จะได้รับหลังการสมัครและการชำระเงินผ่านการตรวจสอบเรียบร้อยนะครับ
-  poster_copy_th: |
-    รับรหัส 6 หลักผ่าน Telegram Preview
-    เพื่อใช้รับ Points พิเศษสำหรับสมาชิกใหม่
+    Black Card เปิดรับโดยการพิจารณาเป็นรายบุคคลเท่านั้น ไม่ใช่แพ็กเกจที่เลือกสมัครได้ทั่วไปนะครับ
+    พอยท์จะได้รับหลังการสมัครและการชำระเงินผ่านการตรวจสอบเรียบร้อยนะครับ
+  hype_code_issued_th: |
+    รหัสของคุณคือ 🔐
+
+    XXXXXX
+
+    ใช้สำหรับสมัครสมาชิกใหม่ 1 ครั้ง
 
     Standard ได้ 150 Points
     Premium ได้ 250 Points
+    Black Card — เปิดรับโดยการพิจารณาเท่านั้น ไม่ใช่แพ็กเกจซื้อทั่วไปครับ
 
-    Black Card private consideration / review only
+    พอยท์จะได้รับหลังระบบตรวจสอบเรียบร้อยนะครับ
+  poster_copy_th: |
+    รับรหัส 6 หลักผ่าน Telegram Preview
+    เพื่อใช้รับ Points พิเศษ ตามแพ็กเกจที่สมัคร
+
+    Standard ได้ 150 Points
+    Premium ได้ 250 Points
+    Black Card — เปิดรับโดยการพิจารณาเป็นรายบุคคลเท่านั้น ไม่ใช่แพ็กเกจซื้อทั่วไป
   poster_small_print_th: |
     สำหรับสมาชิกใหม่เท่านั้น • ใช้ได้ 1 สิทธิ์ต่อบัญชี
     Black Card เปิดรับโดยการพิจารณาเป็นรายบุคคลเท่านั้น ไม่ใช่แพ็กเกจที่เลือกสมัครได้ทั่วไป
-    Points apply after official verification only
+    Points จะได้รับหลังการสมัครและการชำระเงินผ่านการตรวจสอบเรียบร้อย
 
 unsafe_copy:
   - "รับ points ทันที"
   - "ได้รับ points แล้ว"
-  - "กล่าวว่าได้พอยท์สูงสุดทันทีทุกแพ็กเกจ"
+  - "รับ 350 points ทุกแพ็กเกจ"
+  - "BLACK CARD 350 POINTS"
+  - "Black Card รับ 350 points"
+  - "Black Card ได้ 350 Points"
+  - "Standard รับ 150 points"
+  - "Premium รับ 250 points"
+  - "STANDARD 150 POINTS"
+  - "PREMIUM 250 POINTS"
+  - "สูงสุดถึง 350 POINTS"
   - "โค้ดส่วนลด 10%"
   - "ลดสูงสุด 10%"
-  - "กล่าวว่า Black Card เป็นแพ็กเกจที่สมัครได้ทันที"
+  - "Black Card ซื้อได้ทันที"
