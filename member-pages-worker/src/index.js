@@ -9,6 +9,11 @@ const PAGE_PATHS = new Set([
   "/member/profile", "/member/profile/",
 ]);
 
+const LIFF_IDENTIFY_PATHS = new Set([
+  "/member/api/liff/identify",
+  "/member/api/liff/identify/",
+]);
+
 const PACKAGES = [
   { key: "7days", aliases: ["7day", "7_days", "guest", "guestpass", "trial"], title: "7 Days Guest Pass", eyebrow: "TEMPORARY PREMIUM ACCESS", price: 1499, duration: "7 days", tier: "guest-pass", copy: "Temporary Premium Telegram access and public preview for a short review window. No Drive access." },
   { key: "standard", aliases: ["lite", "std"], title: "Standard Package", eyebrow: "STANDARD ACCESS", price: 1199, duration: "365 days", tier: "standard", copy: "Standard models, Standard Drive, Standard Telegram, and verified member status for one year." },
@@ -19,10 +24,20 @@ export function isMemberPagePath(url) {
   return PAGE_PATHS.has(url.pathname.toLowerCase());
 }
 
+export function isMembershipPath(url) {
+  const p = url.pathname.toLowerCase();
+  return p === "/member/membership" || p === "/member/membership/";
+}
+
+export function isLiffIdentifyPath(url) {
+  return LIFF_IDENTIFY_PATHS.has(url.pathname.toLowerCase());
+}
+
 export default {
   async fetch(request, env = {}) {
     const url = new URL(request.url);
     const method = request.method.toUpperCase();
+    if (isLiffIdentifyPath(url)) return handleLiffIdentify(request, env);
     if (method === "OPTIONS") return new Response(null, { status: 204, headers: headers("text/plain") });
     if (method !== "GET" && method !== "HEAD") return new Response("Method Not Allowed", { status: 405, headers: headers("text/plain; charset=utf-8") });
     if (!isMemberPagePath(url)) return new Response("Not Found", { status: 404, headers: headers("text/plain; charset=utf-8") });
@@ -36,7 +51,58 @@ export default {
   },
 };
 
-function renderMembership(request) {
+export async function handleLiffIdentify(request, env = {}) {
+  const method = request.method.toUpperCase();
+  if (method === "OPTIONS") return new Response(null, { status: 204, headers: apiHeaders() });
+  if (method !== "POST") {
+    return liffJson({ ok: false, error: { code: "METHOD_NOT_ALLOWED", message: "POST required" } }, 405);
+  }
+
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return liffJson({ ok: false, error: { code: "INVALID_INPUT", message: "valid JSON object required" } }, 400);
+  }
+
+  const lineUserId = clean(body.line_user_id || body.lineUserId || body.sub);
+  if (!lineUserId) {
+    return liffJson({ ok: false, error: { code: "LINE_USER_ID_REQUIRED", message: "line_user_id is required" } }, 400);
+  }
+
+  const entryRoute = normalizeEntryRoute(body.entry_route || body.entryRoute);
+  const safeQuery = pickSafeQuery(body, new URL(request.url).searchParams);
+  const status = identityStatusFor(entryRoute, safeQuery);
+  const nextRoute = buildNextRoute(entryRoute, safeQuery);
+
+  return liffJson({
+    ok: true,
+    data: {
+      identity_status: status,
+      next_route: nextRoute,
+      review_required: status !== "linked",
+      customer_safe_summary: {
+        line_display_name: clean(body.line_display_name || body.lineDisplayName),
+        line_picture_url: clean(body.line_picture_url || body.linePictureUrl),
+        entry_route: entryRoute,
+        identity_only: true,
+      },
+      materialization: {
+        membership_active: false,
+        points_awarded: false,
+        payments_verified: false,
+        entitlements_materialized: false,
+        reason: "liff_identity_linking_only",
+      },
+      safe_next: {
+        public_membership: appendSafeQuery("/member/membership", safeQuery),
+        sigil_membership: appendSafeQuery("/sigil/membership", safeQuery),
+        dashboard: appendSafeQuery("/member/dashboard", safeQuery),
+        payment: appendSafeQuery("/pay/membership", safeQuery),
+      },
+    },
+  });
+}
+
+export function renderMembership(request) {
   const url = new URL(request.url);
   const selected = normalizePlan(url.searchParams.get("plan") || url.searchParams.get("package"));
   const packageCards = PACKAGES.map((pkg) => membershipPackageCard(pkg, selected, url.search)).join("");
@@ -159,6 +225,64 @@ function page(request, slug, body) {
 
 function headers(type) {
   return { "content-type": type, "x-mmd-worker": WORKER, "x-mmd-version": VERSION };
+}
+
+function apiHeaders() {
+  return {
+    ...headers("application/json; charset=utf-8"),
+    "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "POST,OPTIONS",
+    "access-control-allow-headers": "content-type, authorization",
+    "x-mmd-page": "liff-identity-bridge",
+  };
+}
+
+function liffJson(data, status = 200) {
+  return new Response(JSON.stringify(data), { status, headers: apiHeaders() });
+}
+
+function clean(value) {
+  return String(value || "").trim().slice(0, 300);
+}
+
+function normalizeEntryRoute(value) {
+  const route = clean(value).toLowerCase().replace(/[^a-z0-9_/-]+/g, "_");
+  if (route.includes("sigil")) return "sigil_membership";
+  if (route.includes("dashboard")) return "dashboard";
+  if (route.includes("pay") || route.includes("payment")) return "pay_membership";
+  return "public_membership";
+}
+
+function pickSafeQuery(body, searchParams = new URLSearchParams()) {
+  const safe = {};
+  for (const key of ["t", "code", "promo"]) {
+    const value = clean(body[key] || searchParams.get(key));
+    if (value) safe[key] = value;
+  }
+  return safe;
+}
+
+function identityStatusFor(entryRoute, safeQuery) {
+  if (entryRoute === "sigil_membership") return "review_required";
+  if (safeQuery.t || safeQuery.code) return "possible_match";
+  return "new_public_member";
+}
+
+function buildNextRoute(entryRoute, safeQuery) {
+  if (entryRoute === "sigil_membership") return appendSafeQuery("/sigil/membership", safeQuery);
+  if (entryRoute === "dashboard") return appendSafeQuery("/member/dashboard", safeQuery);
+  if (entryRoute === "pay_membership") return appendSafeQuery("/pay/membership", safeQuery);
+  return appendSafeQuery("/member/membership", safeQuery);
+}
+
+function appendSafeQuery(base, safeQuery = {}) {
+  const params = new URLSearchParams();
+  for (const key of ["t", "code", "promo"]) {
+    if (safeQuery[key]) params.set(key, safeQuery[key]);
+  }
+  const rendered = params.toString();
+  return rendered ? `${base}?${rendered}` : base;
 }
 
 function appendQuery(base, query, extra = {}) {
