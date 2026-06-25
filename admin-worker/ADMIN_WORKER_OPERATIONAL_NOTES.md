@@ -103,6 +103,33 @@ Required/supported config:
 
 Related architecture note: `docs/architecture/AD_CONTEXT_LEDGER.md`.
 
+## Model Console V16 Schema Patch V1
+
+`admin-worker` owns controlled Airtable writes and authorization workflows for the Model Console V16 schema patch. The first additive route set is:
+
+- `POST /v1/model/visibility/update`
+- `POST /v1/model/rate/request`
+- `POST /v1/model/media/upload-init`
+- `POST /v1/model/media/upload-complete`
+- `POST /v1/model/media/review-request`
+- `POST /v1/model/private-gallery/request`
+- `POST /v1/model/private-flash/request`
+- `POST /v1/model/private-flash/authorize`
+
+Admin-authenticated writes are enabled in this patch. Model-originated write requests must use the signed model-console `t` invite path before non-admin writes are accepted. `/v1/model/private-flash/authorize` is admin-only and stores only `preview_token_hash` for preview access grants; the raw `t` is returned once to the authorized caller and is never written to Airtable.
+
+Worker ownership:
+
+- `admin-worker`: source of truth for review requests, model visibility/rate/media review writes, private gallery review state, and private flash preview grants.
+- `payments-worker`: source of truth for payments. A slip or proof must never unlock flash preview; flash authorization requires a verified deposit record or manual admin unlock.
+- `events-worker`: owns ETA, 4PM reconfirm, calendar sync, and session timeline automation.
+- `realtime-worker`: may carry live GPS/ETA signals but must not own durable business state.
+- `telegram-worker`: internal notification only.
+- `chat-worker`: may express status to users but must not become the state-change source of truth.
+- `immigrate-worker`: legacy/migration only. Do not add Model Console V16 production features there because it would split authorization and Airtable write ownership away from `admin-worker`.
+
+The Airtable schema layer is intentionally additive and configurable through env names for `Models`, `Sessions`, `Clients`, `Payments`, `MMD — Model Media Assets`, `MMD — Model Review Requests`, and `MMD — Private Flash Preview Grants`. If a new table or field has not been created yet, the route fails closed with `missing_table` or `schema_not_ready`.
+
 ## Example
 
 ```bash
