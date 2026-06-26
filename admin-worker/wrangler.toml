@@ -22,6 +22,7 @@ AIRTABLE_TABLE_CONSOLE_INBOX_ID = "tblFHmfpB2TTrzO2e"
 AIRTABLE_TABLE_PAYMENT_PROOFS_ID = "tblfJfM4Sqag9zrLi"
 
 # Optional table names (ถ้าคุณใช้ name-based endpoints)
+AIRTABLE_TABLE_DEMO_LINKS = "Demo Links"
 AIRTABLE_TABLE_MEMBERS = "members"
 AIRTABLE_TABLE_MODELS = "models"
 MODEL_SOURCE_OWNER_DEFAULT = "lonelysomething"
