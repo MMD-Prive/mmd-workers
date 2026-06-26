@@ -117,9 +117,11 @@ await (async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") || "", /text\/html/);
   assert.match(html, /SĪGIL \/ BOOKING \/ REQUEST/);
-  assert.match(html, /fetch\("https:\/\/immigrate-worker\.malemodel-bkk\.workers\.dev\/v1\/public\/booking-request"/);
-  assert.match(html, /\/v1\/public\/booking-request/);
+  assert.match(html, /fetch\("\/v1\/public\/booking-request"/);
   assert.doesNotMatch(html, /fetch\("\/sigil\/booking"/);
+  assert.doesNotMatch(html, /immigrate-worker\.malemodel-bkk\.workers\.dev\/v1\/public\/booking-request/);
+  assert.doesNotMatch(html, /https:\/\/sigil\.mmdbkk\.com\/v1\/public\/booking-request/);
+  assert.doesNotMatch(html, /https:\/\/mmdbkk\.com\/v1\/public\/booking-request/);
   assert.doesNotMatch(html, /raw_token_should_not_render/);
   assert.doesNotMatch(html, /orientation_label|r2_prefix|primary_image_key|airtable_record_id|redirect_url|raw token/i);
 })();

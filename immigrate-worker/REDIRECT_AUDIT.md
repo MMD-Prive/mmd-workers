@@ -92,8 +92,8 @@ Scope: `/sigil/booking` HTML page submit route and public booking request respon
 - Kept `/sigil/booking` as the HTML page route.
 - Did not make POST `/sigil/booking` public; it remains on the existing admin/create-links path.
 - Updated the SIGIL booking frontend to submit public booking requests through the existing public handler path:
-  - `https://immigrate-worker.malemodel-bkk.workers.dev/v1/public/booking-request`
-- Used the worker host because `https://sigil.mmdbkk.com/v1/public/booking-request` currently returns 522 and is not routed to `immigrate-worker`.
+  - `/v1/public/booking-request`
+- The public submit path is rendered as a relative path only. It does not hardcode `workers.dev`, `sigil.mmdbkk.com`, or `mmdbkk.com`.
 - Aligned frontend payload with the existing public booking handler required fields instead of adding a new backend contract.
 - Added a public `contact` field required by `PUBLIC_BOOKING_REQUIRED_FIELDS`.
 - Removed payment refs, confirm/cancel URLs, metadata blobs, and raw token propagation from the booking page submit payload.
@@ -117,7 +117,7 @@ Result: passed.
 Covered:
 
 - GET `/sigil/booking` returns HTML.
-- HTML/JS submits to `/v1/public/booking-request` through the existing public handler host.
+- HTML/JS submits to relative `/v1/public/booking-request`.
 - HTML/JS does not submit the public form to `/sigil/booking`.
 - POST `/v1/public/booking-request` reaches `handlePublicBookingRequest`.
 - POST `/sigil/booking` remains non-public and redirects toward SIGIL admin login without becoming the public booking handler.
@@ -155,7 +155,7 @@ curl -i "https://sigil.mmdbkk.com/sigil/booking?cb=$(date +%s)"
 Result: HTTP 200. Live HTML contains:
 
 ```js
-fetch("https://immigrate-worker.malemodel-bkk.workers.dev/v1/public/booking-request", ...)
+fetch("/v1/public/booking-request", ...)
 ```
 
 Model search:
@@ -173,6 +173,13 @@ curl -i -X POST "https://immigrate-worker.malemodel-bkk.workers.dev/v1/public/bo
 ```
 
 Result: HTTP 200, `ok: true`, pending/request IDs returned. Response omitted Airtable storage internals and did not use confirmed-booking language.
+
+Note: the Phase 6A live public booking request smoke exercised the production public booking write path and created test Airtable records. Safe labels used:
+
+- `Codex Phase 6A Smoke`
+- `Codex Phase 6A Smoke Final`
+
+These records were created as explicit smoke-test records and should be treated as test data. No cleanup/mark-test mutation was performed in this PR follow-up because that would be another production Airtable write and was not requested.
 
 Manual browser smoke:
 

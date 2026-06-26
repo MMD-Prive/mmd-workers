@@ -10246,7 +10246,7 @@ function renderMmdModelConsolePage(request: Request): Response {
 
 function renderSigilBookingPage(request: Request): Response {
   const bootstrap = sigilAdminBrowserBootstrapScript();
-  const submitPath = `https://immigrate-worker.malemodel-bkk.workers.dev${PUBLIC.bookingRequest}`;
+  const submitPath = PUBLIC.bookingRequest;
   const html = `<!doctype html>
 <html lang="th">
   <head>
