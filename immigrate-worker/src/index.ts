@@ -154,6 +154,7 @@ const SIGIL = {
   recoveryComplaintEvidence: "/sigil/api/recovery/complaint-evidence",
   customerConfirm: "/sigil/api/jobs/customer-confirm",
   clientResolve: "/sigil/api/client/resolve",
+  bookingRequest: "/api/sigil/booking/request",
   canonicalModelSearch: "/api/sigil/models/search",
   modelSearch: "/sigil/api/models/search",
   newArrivals: "/api/sigil/models/new-arrivals",
@@ -8072,7 +8073,7 @@ function isPublicRenewalStatusRoute(pathname: string): boolean {
 }
 
 function isPublicBookingRequestRoute(pathname: string): boolean {
-  return pathname === PUBLIC.bookingRequest;
+  return pathname === PUBLIC.bookingRequest || pathname === SIGIL.bookingRequest;
 }
 
 function isPublicPointsTopupRoute(pathname: string): boolean {
@@ -10246,7 +10247,7 @@ function renderMmdModelConsolePage(request: Request): Response {
 
 function renderSigilBookingPage(request: Request): Response {
   const bootstrap = sigilAdminBrowserBootstrapScript();
-  const submitPath = PUBLIC.bookingRequest;
+  const submitPath = SIGIL.bookingRequest;
   const html = `<!doctype html>
 <html lang="th">
   <head>

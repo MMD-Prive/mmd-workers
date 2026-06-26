@@ -92,7 +92,9 @@ Scope: `/sigil/booking` HTML page submit route and public booking request respon
 - Kept `/sigil/booking` as the HTML page route.
 - Did not make POST `/sigil/booking` public; it remains on the existing admin/create-links path.
 - Updated the SIGIL booking frontend to submit public booking requests through the existing public handler path:
-  - `/v1/public/booking-request`
+  - `/api/sigil/booking/request`
+- Kept `/v1/public/booking-request` as a backward-compatible alias for the same public booking handler.
+- The SIGIL-routed submit path avoids relying on `/v1/public/*` host routing from `sigil.mmdbkk.com`.
 - The public submit path is rendered as a relative path only. It does not hardcode `workers.dev`, `sigil.mmdbkk.com`, or `mmdbkk.com`.
 - Aligned frontend payload with the existing public booking handler required fields instead of adding a new backend contract.
 - Added a public `contact` field required by `PUBLIC_BOOKING_REQUIRED_FIELDS`.
@@ -117,9 +119,10 @@ Result: passed.
 Covered:
 
 - GET `/sigil/booking` returns HTML.
-- HTML/JS submits to relative `/v1/public/booking-request`.
+- HTML/JS submits to relative `/api/sigil/booking/request`.
 - HTML/JS does not submit the public form to `/sigil/booking`.
-- POST `/v1/public/booking-request` reaches `handlePublicBookingRequest`.
+- POST `/api/sigil/booking/request` reaches `handlePublicBookingRequest`.
+- POST `/v1/public/booking-request` remains a compatibility route to `handlePublicBookingRequest`.
 - POST `/sigil/booking` remains non-public and redirects toward SIGIL admin login without becoming the public booking handler.
 - Booking page HTML does not contain forbidden field names such as `orientation_label`, `r2_prefix`, `primary_image_key`, `airtable_record_id`, `redirect_url`, or raw token values.
 - Existing model search, new-arrivals, and detail sanitizer tests still pass.
@@ -155,7 +158,7 @@ curl -i "https://sigil.mmdbkk.com/sigil/booking?cb=$(date +%s)"
 Result: HTTP 200. Live HTML contains:
 
 ```js
-fetch("/v1/public/booking-request", ...)
+fetch("/api/sigil/booking/request", ...)
 ```
 
 Model search:
@@ -169,10 +172,10 @@ Result: HTTP 200, `status: "models_found"`, Kenji returned with the public-safe 
 Public booking request:
 
 ```sh
-curl -i -X POST "https://immigrate-worker.malemodel-bkk.workers.dev/v1/public/booking-request"
+curl -i -X POST "https://sigil.mmdbkk.com/api/sigil/booking/request"
 ```
 
-Result: HTTP 200, `ok: true`, pending/request IDs returned. Response omitted Airtable storage internals and did not use confirmed-booking language.
+Expected result after deploy: HTTP 200, `ok: true`, pending/request IDs returned. Response omits Airtable storage internals and does not use confirmed-booking language.
 
 Note: the Phase 6A live public booking request smoke exercised the production public booking write path and created test Airtable records. Safe labels used:
 

@@ -117,11 +117,11 @@ await (async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") || "", /text\/html/);
   assert.match(html, /SĪGIL \/ BOOKING \/ REQUEST/);
-  assert.match(html, /fetch\("\/v1\/public\/booking-request"/);
+  assert.match(html, /fetch\("\/api\/sigil\/booking\/request"/);
   assert.doesNotMatch(html, /fetch\("\/sigil\/booking"/);
-  assert.doesNotMatch(html, /immigrate-worker\.malemodel-bkk\.workers\.dev\/v1\/public\/booking-request/);
-  assert.doesNotMatch(html, /https:\/\/sigil\.mmdbkk\.com\/v1\/public\/booking-request/);
-  assert.doesNotMatch(html, /https:\/\/mmdbkk\.com\/v1\/public\/booking-request/);
+  assert.doesNotMatch(html, /immigrate-worker\.malemodel-bkk\.workers\.dev\/api\/sigil\/booking\/request/);
+  assert.doesNotMatch(html, /https:\/\/sigil\.mmdbkk\.com\/api\/sigil\/booking\/request/);
+  assert.doesNotMatch(html, /https:\/\/mmdbkk\.com\/api\/sigil\/booking\/request/);
   assert.doesNotMatch(html, /raw_token_should_not_render/);
   assert.doesNotMatch(html, /orientation_label|r2_prefix|primary_image_key|airtable_record_id|redirect_url|raw token/i);
 })();
@@ -146,20 +146,22 @@ await (async () => {
     brief: "Request pending review for Kenji.",
     note: "Request pending review only.",
   };
-  const response = await call("/v1/public/booking-request", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  }, {
-    ENABLE_AIRTABLE_SYNC: "false",
-  });
-  const body = await jsonBody(response);
-  assert.equal(response.status, 200);
-  assert.equal(body.ok, true);
-  assert.match(body.request_id, /^bkreq_/);
-  assert.equal(body.booking_id, body.request_id);
-  assert.equal(body.record_id, body.request_id);
-  assert.doesNotMatch(JSON.stringify(body), /airtable_record_id|redirect_url|raw_token|upstream|stack/i);
+  for (const path of ["/api/sigil/booking/request", "/v1/public/booking-request"]) {
+    const response = await call(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    }, {
+      ENABLE_AIRTABLE_SYNC: "false",
+    });
+    const body = await jsonBody(response);
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.match(body.request_id, /^bkreq_/);
+    assert.equal(body.booking_id, body.request_id);
+    assert.equal(body.record_id, body.request_id);
+    assert.doesNotMatch(JSON.stringify(body), /airtable_record_id|redirect_url|raw_token|upstream|stack/i);
+  }
 })();
 
 await (async () => {
