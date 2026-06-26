@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 
 import worker, {
   findMappedPath,
+  FRONT_VERSION,
   normalizePath,
   shouldNeverTouch,
 } from "../src/index.js";
@@ -57,9 +58,9 @@ function assertPolishedShell(html, url) {
 }
 
 describe("MMD permanent redirect guard", () => {
-  it("declares explicit /trust/inme route ownership for mmd-redirect-worker", () => {
-    assert.ok(wranglerConfig.includes('pattern = "mmdbkk.com/trust/inme*"'));
-    assert.ok(wranglerConfig.includes('pattern = "www.mmdbkk.com/trust/inme*"'));
+  it("does not declare stale explicit /trust/inme route ownership", () => {
+    assert.equal(wranglerConfig.includes('pattern = "mmdbkk.com/trust/inme*"'), false);
+    assert.equal(wranglerConfig.includes('pattern = "www.mmdbkk.com/trust/inme*"'), false);
   });
 
   it("canonicalizes www legacy paths and preserves query strings", async () => {
@@ -317,7 +318,7 @@ describe("MMD permanent redirect guard", () => {
       assert.equal(response.headers.get("x-mmd-page"), "sigil-private-model-setup", url);
       assert.equal(response.headers.get("x-mmd-origin"), "service-binding:sigil-worker", url);
       assert.equal(response.headers.get("x-mmd-front-gate"), "mmd-redirect-worker", url);
-      assert.equal(response.headers.get("x-mmd-front-version"), "20260622T071500Z", url);
+      assert.equal(response.headers.get("x-mmd-front-version"), FRONT_VERSION, url);
       assert.doesNotMatch(html, TELEGRAM_BRIEF_FORBIDDEN_TEXT, url);
       assert.equal(sigilRequests.at(-1).url, url);
     }
@@ -534,7 +535,7 @@ describe("MMD permanent redirect guard", () => {
       assert.equal(response.headers.get("location"), null, url);
       assert.equal(response.headers.get("x-mmd-page"), "member-static", url);
       assert.equal(response.headers.get("x-mmd-temporary-route"), "true", url);
-      assert.match(html, url.includes("kenji-20-ai") ? /Kenji 20 AI/ : /Some New Page/, url);
+      assert.match(html, /Member Page/, url);
       assert.match(html, /หน้านี้อยู่ในพื้นที่สมาชิกของ MMD Privé/, url);
       assert.ok(html.includes(`/member/dashboard${query}`), url);
       assert.ok(html.includes(`/member/membership${query}`), url);
@@ -650,10 +651,17 @@ describe("MMD permanent redirect guard", () => {
     for (const url of genericPayUrls) {
       const response = await request(url);
 
-      assert.equal(response.status, 209, url);
-      assert.equal(response.headers.get("location"), null, url);
-      assert.equal(response.headers.get("x-test-pass-through"), "1", url);
-      assert.equal(passThroughRequests.at(-1).url, url, url);
+      if (new URL(url).hostname === "www.mmdbkk.com") {
+        const expected = new URL(url);
+        expected.hostname = "mmdbkk.com";
+        assert.equal(response.status, 301, url);
+        assert.equal(response.headers.get("location"), expected.toString(), url);
+      } else {
+        assert.equal(response.status, 209, url);
+        assert.equal(response.headers.get("location"), null, url);
+        assert.equal(response.headers.get("x-test-pass-through"), "1", url);
+        assert.equal(passThroughRequests.at(-1).url, url, url);
+      }
     }
   });
 
@@ -784,7 +792,6 @@ describe("MMD permanent redirect guard", () => {
       "/api/health",
       "/webhook/line",
       "/webhooks/line",
-      "/pay/renewal",
       "/payments/checkout",
       "/payments/test",
       "/payment/review",
@@ -828,7 +835,7 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 1);
   });
 
-  it("injects the dashboard bridge on the payment confirmation page only", async () => {
+  it("passes through the payment confirmation page without front-gate injection", async () => {
     globalThis.fetch = async (request) => {
       passThroughRequests.push(request);
       return new Response("<html><body><main>confirm</main></body></html>", {
@@ -841,8 +848,7 @@ describe("MMD permanent redirect guard", () => {
     const html = await response.text();
 
     assert.equal(response.status, 200);
-    assert.match(html, /mmd-confirm-dashboard-bridge/);
-    assert.match(html, /payments\\\/notify/);
+    assert.doesNotMatch(html, /mmd-confirm-dashboard-bridge/);
     assert.equal(passThroughRequests.length, 1);
   });
 });
