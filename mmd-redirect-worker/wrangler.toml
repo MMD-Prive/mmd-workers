@@ -28,6 +28,14 @@ pattern = "www.mmdbkk.com/trust/inme*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
+pattern = "mmdbkk.com/blackcard*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/blackcard*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
 pattern = "mmdbkk.com/*"
 zone_name = "mmdbkk.com"
 
