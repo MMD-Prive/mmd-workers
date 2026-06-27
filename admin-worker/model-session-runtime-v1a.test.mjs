@@ -371,3 +371,28 @@ test("start_work is rejected when live payment truth is not confirmed", async ()
     mock.restore();
   }
 });
+
+test("start_work succeeds after live payment truth confirms final payment", async () => {
+  const t = await signedModelT();
+  const mock = installRuntimeFetchMock({
+    initialState: "final_payment_confirmed",
+    paymentTruth: { ok: true, final_payment_confirmed: true },
+  });
+  try {
+    const { response, body } = await postAction(t, "start_work", {
+      env: { ...BASE_ENV, MODEL_SESSION_PAYMENT_TRUTH_URL: "https://payments.test/final-payment/status" },
+    });
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.session.normalized_state, "work_started");
+    assert.equal(mock.session.fields.state, "work_started");
+
+    const paymentCallIndex = mock.calls.findIndex((call) => call.url === "https://payments.test/final-payment/status");
+    const patchCallIndex = mock.calls.findIndex((call) => call.method === "PATCH" && call.url.includes("/sessions/"));
+    assert.notEqual(paymentCallIndex, -1);
+    assert.notEqual(patchCallIndex, -1);
+    assert(paymentCallIndex < patchCallIndex);
+  } finally {
+    mock.restore();
+  }
+});
