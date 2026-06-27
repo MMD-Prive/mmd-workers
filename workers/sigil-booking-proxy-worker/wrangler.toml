@@ -7,28 +7,18 @@ workers_dev = false
 enabled = true
 head_sampling_rate = 1
 
-# Exact canonical page owner. This must win over the generic sigil.mmdbkk.com/* owner.
+# Canonical page owner. This must win over the generic sigil.mmdbkk.com/* owner.
+# Use wildcard route patterns so query strings, trailing slashes, and future safe params
+# cannot fall through to the old/default SIGIL booking page.
 [[routes]]
-pattern = "sigil.mmdbkk.com/sigil/booking"
-zone_name = "mmdbkk.com"
-
-[[routes]]
-pattern = "sigil.mmdbkk.com/sigil/booking/"
+pattern = "sigil.mmdbkk.com/sigil/booking*"
 zone_name = "mmdbkk.com"
 
 # Front-gate redirects. These routes must win over the generic mmd-redirect-worker mmdbkk.com/* route.
 [[routes]]
-pattern = "mmdbkk.com/sigil/booking"
+pattern = "mmdbkk.com/sigil/booking*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
-pattern = "mmdbkk.com/sigil/booking/"
-zone_name = "mmdbkk.com"
-
-[[routes]]
-pattern = "www.mmdbkk.com/sigil/booking"
-zone_name = "mmdbkk.com"
-
-[[routes]]
-pattern = "www.mmdbkk.com/sigil/booking/"
+pattern = "www.mmdbkk.com/sigil/booking*"
 zone_name = "mmdbkk.com"
