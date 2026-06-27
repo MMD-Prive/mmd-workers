@@ -95,6 +95,7 @@ export const MODEL_SCHEMA_PATCH_V1_ROUTES = Object.freeze({
 const MODEL_SCHEMA_PATCH_V1_ROUTE_SET = new Set(Object.values(MODEL_SCHEMA_PATCH_V1_ROUTES));
 const MODEL_SESSION_CURRENT_PATH = "/v1/model/session/current";
 const MODEL_SESSION_ACTION_PATH = "/v1/model/session/action";
+const MODEL_SESSION_LINK_PATH = "/v1/admin/model/session/link";
 const MODEL_SESSION_MODEL_BLOCKED_ACTIONS = new Set([
   "confirm_final_payment",
   "mark_final_payment_confirmed",
@@ -384,6 +385,10 @@ export default {
       // ====================================================
       if (!isAuthed(req, env)) {
         return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
+      }
+
+      if (method === "POST" && path === MODEL_SESSION_LINK_PATH) {
+        return withCors(await handleModelSessionLinkIssuer(req, env), cors);
       }
 
       // ----------------------------------------------------
@@ -1157,6 +1162,13 @@ function base64UrlDecodeUtf8(input) {
   return new TextDecoder().decode(bytes);
 }
 
+function base64UrlEncodeUtf8(input) {
+  const bytes = new TextEncoder().encode(String(input || ""));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
 function bytesToHex(buffer) {
   return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -1322,6 +1334,84 @@ function modelSessionResponseSession(tables, record) {
     route: page?.path || "",
     allowed_actions: getAllowedModelSessionActions(normalized),
   };
+}
+
+async function signModelSessionPayload(payload, env) {
+  const secret = str(env.CONFIRM_KEY || env.INTERNAL_TOKEN);
+  if (!secret) return "";
+  const encoded = base64UrlEncodeUtf8(JSON.stringify(payload));
+  return `${encoded}.${await hmacSha256Hex(encoded, secret)}`;
+}
+
+function modelSessionLinkIssuerFormulas(tables, body) {
+  const fields = tables.sessions.fields;
+  const formulas = [];
+  const sessionId = str(body?.session_id);
+  const paymentRef = str(body?.payment_ref);
+  if (sessionId) formulas.push(exactFormula(fields.sessionId, sessionId));
+  if (paymentRef) formulas.push(exactFormula(fields.paymentRef, paymentRef));
+  return [...new Set(formulas)];
+}
+
+function modelSessionLinkCurrentUrl(req, env, t) {
+  const currentUrl = str(env.MODEL_SESSION_CURRENT_URL);
+  const url = currentUrl
+    ? new URL(currentUrl)
+    : new URL(MODEL_SESSION_CURRENT_PATH, str(env.MODEL_SESSION_PUBLIC_BASE_URL) || new URL(req.url).origin);
+  url.searchParams.set("t", t);
+  return url.toString();
+}
+
+async function handleModelSessionLinkIssuer(req, env) {
+  const body = await safeJson(req);
+  const tables = modelSessionTables(env);
+  const formulas = modelSessionLinkIssuerFormulas(tables, body);
+  if (!formulas.length) return modelSessionJson({ ok: false, error: "missing_lookup_key" }, 400);
+
+  let session = null;
+  for (const formula of formulas) {
+    const found = await modelSessionFindOne(env, tables.sessions.table, formula);
+    if (!found.ok) return modelSessionJson({ ok: false, error: "schema_not_ready" }, 503);
+    if (found.record) {
+      session = found.record;
+      break;
+    }
+  }
+  if (!session) return modelSessionJson({ ok: false, error: "session_not_found" }, 404);
+
+  const responseSession = modelSessionResponseSession(tables, session);
+  if (!responseSession.normalized_state) {
+    return modelSessionJson({ ok: false, error: "schema_not_ready" }, 503);
+  }
+
+  const fields = session.fields || {};
+  const modelRecordId = str(fields[tables.sessions.fields.modelRecordId] || "");
+  const modelName = str(fields[tables.sessions.fields.modelName] || "");
+  if (!modelRecordId && !modelName) {
+    return modelSessionJson({ ok: false, error: "model_identity_not_ready" }, 409);
+  }
+
+  const expiresInSeconds = clampInt(body?.expires_in_seconds, 300, 86400, 3600);
+  const exp = Math.floor(Date.now() / 1000) + expiresInSeconds;
+  const payload = compactObject({
+    kind: "model_session",
+    role: "model",
+    session_id: responseSession.session_id || str(body?.session_id),
+    payment_ref: str(fields[tables.sessions.fields.paymentRef] || body?.payment_ref),
+    model_record_id: modelRecordId,
+    model_name: modelName,
+    exp,
+  });
+
+  const t = await signModelSessionPayload(payload, env);
+  if (!t) return modelSessionJson({ ok: false, error: "signing_not_ready" }, 503);
+
+  return modelSessionJson({
+    ok: true,
+    expires_at: new Date(exp * 1000).toISOString(),
+    session: responseSession,
+    model_session_url: modelSessionLinkCurrentUrl(req, env, t),
+  });
 }
 
 async function handleModelSessionCurrent(req, env) {
