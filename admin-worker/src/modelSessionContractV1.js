@@ -34,6 +34,14 @@ export const MODEL_SESSION_STATE_ALIASES = Object.freeze({
   payout: "payout_pending",
 });
 
+export const MODEL_SESSION_ACTION_ALIASES = Object.freeze({
+  go_en_route: "start_travel",
+  accept_offer: "accept_job",
+  decline_offer: "decline_job",
+  finish_work: "mark_work_finished",
+  mark_separated: "confirm_separated",
+});
+
 export const MODEL_SESSION_PAGE_OWNERSHIP = Object.freeze([
   Object.freeze({
     path: "/model/session/offered",
@@ -62,18 +70,18 @@ export const MODEL_SESSION_PAGE_OWNERSHIP = Object.freeze([
 ]);
 
 export const MODEL_SESSION_ALLOWED_ACTIONS = Object.freeze({
-  offered: Object.freeze(["accept_offer", "decline_offer"]),
+  offered: Object.freeze(["accept_job", "decline_job"]),
   offer_declined: Object.freeze([]),
   offer_expired: Object.freeze([]),
-  confirmed: Object.freeze(["go_en_route"]),
+  confirmed: Object.freeze(["start_travel"]),
   en_route: Object.freeze(["mark_nearby", "mark_arrived", "send_eta"]),
   nearby: Object.freeze(["mark_arrived", "send_eta"]),
   arrived: Object.freeze(["mark_met_customer", "report_delay"]),
   met_customer: Object.freeze(["mark_final_payment_pending", "request_payment_check"]),
   final_payment_pending: Object.freeze(["request_payment_check"]),
   final_payment_confirmed: Object.freeze(["start_work"]),
-  work_started: Object.freeze(["finish_work", "emergency"]),
-  work_finished: Object.freeze(["mark_separated"]),
+  work_started: Object.freeze(["mark_work_finished", "emergency"]),
+  work_finished: Object.freeze(["confirm_separated"]),
   separated: Object.freeze(["request_review"]),
   under_review: Object.freeze(["mark_payout_pending"]),
   payout_pending: Object.freeze(["close_session"]),
@@ -81,11 +89,11 @@ export const MODEL_SESSION_ALLOWED_ACTIONS = Object.freeze({
 });
 
 export const MODEL_SESSION_TRANSITIONS = Object.freeze({
-  accept_offer: Object.freeze({
+  accept_job: Object.freeze({
     from: Object.freeze(["offered"]),
     to: "confirmed",
   }),
-  decline_offer: Object.freeze({
+  decline_job: Object.freeze({
     from: Object.freeze(["offered"]),
     to: "offer_declined",
   }),
@@ -93,7 +101,7 @@ export const MODEL_SESSION_TRANSITIONS = Object.freeze({
     from: Object.freeze(["offered"]),
     to: "offer_expired",
   }),
-  go_en_route: Object.freeze({
+  start_travel: Object.freeze({
     from: Object.freeze(["confirmed"]),
     to: "en_route",
   }),
@@ -123,11 +131,11 @@ export const MODEL_SESSION_TRANSITIONS = Object.freeze({
     to: "work_started",
     requires: Object.freeze(["current_state_recheck", "payments_worker_live_check"]),
   }),
-  finish_work: Object.freeze({
+  mark_work_finished: Object.freeze({
     from: Object.freeze(["work_started"]),
     to: "work_finished",
   }),
-  mark_separated: Object.freeze({
+  confirm_separated: Object.freeze({
     from: Object.freeze(["work_finished"]),
     to: "separated",
   }),
@@ -162,6 +170,11 @@ function normalizeInput(value) {
     .replace(/^_+|_+$/g, "");
 }
 
+export function normalizeModelSessionAction(value) {
+  const action = normalizeInput(value);
+  return MODEL_SESSION_ACTION_ALIASES[action] || action;
+}
+
 export function normalizeSessionState(value) {
   const state = normalizeInput(value);
   if (!state) return "";
@@ -189,11 +202,11 @@ export function getAllowedModelSessionActions(value) {
 }
 
 export function isModelSessionActionVisible(value, action) {
-  return getAllowedModelSessionActions(value).includes(normalizeInput(action));
+  return getAllowedModelSessionActions(value).includes(normalizeModelSessionAction(action));
 }
 
 export function resolveModelSessionTransition(action, currentState) {
-  const actionKey = normalizeInput(action);
+  const actionKey = normalizeModelSessionAction(action);
   const transition = MODEL_SESSION_TRANSITIONS[actionKey];
   const state = normalizeSessionState(currentState);
 

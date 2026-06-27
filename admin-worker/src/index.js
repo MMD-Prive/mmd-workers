@@ -25,6 +25,13 @@
 // ==========================================================
 
 import { demoLinksCreate, demoLinksGet } from "./routes/demo-links.js";
+import {
+  getAllowedModelSessionActions,
+  normalizeModelSessionAction,
+  normalizeSessionState,
+  resolveModelSessionPage,
+  resolveModelSessionTransition,
+} from "./modelSessionContractV1.js";
 
 const LOCK = "admin-worker-v2026-03-11-full";
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -86,6 +93,25 @@ export const MODEL_SCHEMA_PATCH_V1_ROUTES = Object.freeze({
   privateFlashAuthorize: "/v1/model/private-flash/authorize",
 });
 const MODEL_SCHEMA_PATCH_V1_ROUTE_SET = new Set(Object.values(MODEL_SCHEMA_PATCH_V1_ROUTES));
+const MODEL_SESSION_CURRENT_PATH = "/v1/model/session/current";
+const MODEL_SESSION_ACTION_PATH = "/v1/model/session/action";
+const MODEL_SESSION_MODEL_BLOCKED_ACTIONS = new Set([
+  "confirm_final_payment",
+  "mark_final_payment_confirmed",
+  "set_final_payment_confirmed",
+  "mark_final_payment_pending",
+]);
+const MODEL_SESSION_MODEL_ALLOWED_ACTIONS = new Set([
+  "accept_job",
+  "decline_job",
+  "start_travel",
+  "mark_arrived",
+  "mark_met_customer",
+  "mark_work_finished",
+  "confirm_separated",
+  "start_work",
+  "go_en_route",
+]);
 
 export default {
   async fetch(req, env) {
@@ -126,6 +152,14 @@ export default {
 
     if (method === "POST" && MODEL_SCHEMA_PATCH_V1_ROUTE_SET.has(path)) {
       return withCors(await handleModelSchemaPatchV1Route(req, env, path), cors);
+    }
+
+    if (method === "GET" && path === MODEL_SESSION_CURRENT_PATH) {
+      return withCors(await handleModelSessionCurrent(req, env), cors);
+    }
+
+    if (method === "POST" && path === MODEL_SESSION_ACTION_PATH) {
+      return withCors(await handleModelSessionAction(req, env), cors);
     }
 
     // ------------------------------------------------------
@@ -1082,6 +1116,301 @@ function modelSchemaPatchJson(payload, status = 200) {
   const response = json(payload, status);
   response.headers.set("cache-control", "no-store");
   return response;
+}
+
+/* =========================
+   Model Session Runtime V1a
+========================= */
+function modelSessionJson(payload, status = 200) {
+  const response = json(payload, status);
+  response.headers.set("cache-control", "no-store");
+  return response;
+}
+
+function modelSessionTables(env = {}) {
+  return {
+    sessions: {
+      table: str(env.AIRTABLE_TABLE_SESSIONS || "sessions"),
+      fields: {
+        sessionId: str(env.AT_SESSIONS__SESSION_ID || "session_id"),
+        paymentRef: str(env.AT_SESSIONS__PAYMENT_REF || "payment_ref"),
+        state: str(env.AT_SESSIONS__STATE || env.AT_SESSIONS__STATE_FIELD || "state"),
+        status: str(env.AT_SESSIONS__STATUS || "status"),
+        modelRecordId: str(env.AT_SESSIONS__MODEL_RECORD_ID || "model_record_id"),
+        modelName: str(env.AT_SESSIONS__MODEL_NAME || "model_name"),
+      },
+    },
+  };
+}
+
+function readModelSessionT(req, body = null) {
+  const url = new URL(req.url);
+  return str(url.searchParams.get("t") || body?.t || "");
+}
+
+function base64UrlDecodeUtf8(input) {
+  const normalized = String(input || "").replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+function bytesToHex(buffer) {
+  return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function hmacSha256Hex(message, secret) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(String(secret || "")),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  return bytesToHex(await crypto.subtle.sign("HMAC", key, enc.encode(String(message || ""))));
+}
+
+function isModelSessionPayload(payload) {
+  if (!payload || payload.role !== "model") return false;
+  if (payload.kind === "model_confirm") return true;
+  if (payload.kind === "customer_invite" && payload.lane === "model_console") return true;
+  if (payload.kind === "model_session" || payload.kind === "model_console") return true;
+  return false;
+}
+
+async function verifyModelSessionT(t, env) {
+  const secret = str(env.CONFIRM_KEY || env.INTERNAL_TOKEN);
+  if (!secret || !t) return null;
+  const parts = String(t).split(".");
+  if (parts.length !== 2) return null;
+  const [encoded, signature] = parts;
+  if (!encoded || !signature) return null;
+  const expected = await hmacSha256Hex(encoded, secret);
+  if (signature !== expected) return null;
+
+  let payload = null;
+  try {
+    payload = JSON.parse(base64UrlDecodeUtf8(encoded));
+  } catch (_) {
+    return null;
+  }
+
+  const exp = Number(payload?.exp || 0);
+  if (exp && exp <= Math.floor(Date.now() / 1000)) return null;
+  if (!isModelSessionPayload(payload)) return null;
+  return payload;
+}
+
+function modelSessionAssignmentKeys(payload) {
+  return [
+    str(payload?.session_id),
+    str(payload?.immigration_id),
+    str(payload?.assignment_key),
+    str(payload?.payment_ref),
+  ].filter(Boolean);
+}
+
+function modelSessionFieldValues(fields, names) {
+  const values = [];
+  for (const name of names) {
+    const value = fields?.[name];
+    if (Array.isArray(value)) {
+      for (const item of value) values.push(str(item));
+    } else {
+      values.push(str(value));
+    }
+  }
+  return [...new Set(values.filter(Boolean))];
+}
+
+function exactFormula(field, value) {
+  return `{${field}}="${escapeFormulaValue(value)}"`;
+}
+
+function modelSessionLookupFormulas(env, payload) {
+  const tables = modelSessionTables(env);
+  const fields = tables.sessions.fields;
+  const formulas = [];
+  const sessionKeys = [str(payload?.session_id), str(payload?.immigration_id), str(payload?.assignment_key)].filter(Boolean);
+  const paymentRef = str(payload?.payment_ref);
+  for (const key of sessionKeys) formulas.push(exactFormula(fields.sessionId, key));
+  if (paymentRef) formulas.push(exactFormula(fields.paymentRef, paymentRef));
+  return [...new Set(formulas)];
+}
+
+async function modelSessionFindOne(env, tableName, filterByFormula) {
+  const params = new URLSearchParams();
+  params.set("pageSize", "1");
+  params.set("filterByFormula", filterByFormula);
+  const result = await airtableFetch(env, `/${encodeURIComponent(tableName)}?${params.toString()}`);
+  if (!result.ok) return { ok: false, detail: result };
+  const record = result.data?.records?.[0];
+  return { ok: true, record: record ? { id: record.id, fields: record.fields || {} } : null };
+}
+
+function modelSessionOwnsRecord(env, payload, record) {
+  const fields = record?.fields || {};
+  const tables = modelSessionTables(env);
+  const names = tables.sessions.fields;
+  const assignmentKeys = new Set(modelSessionAssignmentKeys(payload));
+  const sessionValues = modelSessionFieldValues(fields, [names.sessionId, names.paymentRef]);
+  if (sessionValues.length && !sessionValues.some((value) => assignmentKeys.has(value))) return false;
+
+  const payloadModelId = str(payload?.model_record_id || payload?.model_id);
+  const recordModelIds = modelSessionFieldValues(fields, [names.modelRecordId, "Model Record ID", "model_id", "Model"]);
+  if (payloadModelId && recordModelIds.length && !recordModelIds.includes(payloadModelId)) return false;
+
+  const payloadModelName = str(payload?.model_name).toLowerCase();
+  const recordModelNames = modelSessionFieldValues(fields, [names.modelName, "Model Name", "working_name"]).map((value) => value.toLowerCase());
+  if (payloadModelName && recordModelNames.length && !recordModelNames.includes(payloadModelName)) return false;
+
+  return true;
+}
+
+async function resolveModelSessionContext(req, env, body = null) {
+  const t = readModelSessionT(req, body);
+  const payload = await verifyModelSessionT(t, env);
+  if (!payload) return { ok: false, status: 401, error: "unauthorized" };
+
+  const tables = modelSessionTables(env);
+  const formulas = modelSessionLookupFormulas(env, payload);
+  if (!formulas.length) return { ok: false, status: 403, error: "forbidden" };
+
+  for (const formula of formulas) {
+    const found = await modelSessionFindOne(env, tables.sessions.table, formula);
+    if (!found.ok) return { ok: false, status: 503, error: "schema_not_ready" };
+    if (!found.record) continue;
+    if (!modelSessionOwnsRecord(env, payload, found.record)) {
+      return { ok: false, status: 403, error: "forbidden" };
+    }
+    return { ok: true, payload, session: found.record, tables };
+  }
+
+  return { ok: false, status: 403, error: "forbidden" };
+}
+
+function resolveModelSessionStateField(tables, fields) {
+  const preferred = [tables.sessions.fields.state, tables.sessions.fields.status, "state", "status"];
+  for (const field of [...new Set(preferred)]) {
+    if (Object.prototype.hasOwnProperty.call(fields || {}, field)) return field;
+  }
+  return "";
+}
+
+function modelSessionStateFromRecord(tables, record) {
+  const field = resolveModelSessionStateField(tables, record?.fields || {});
+  return { field, state: field ? str(record.fields[field]) : "" };
+}
+
+function modelSessionPageSlug(page) {
+  return str(page?.path).replace(/^\/model\/session\//, "").replace(/-/g, "_");
+}
+
+function modelSessionResponseSession(tables, record) {
+  const fields = record?.fields || {};
+  const stateInfo = modelSessionStateFromRecord(tables, record);
+  const normalized = normalizeSessionState(stateInfo.state);
+  const page = resolveModelSessionPage(normalized);
+  return {
+    session_id: str(fields[tables.sessions.fields.sessionId] || ""),
+    state: stateInfo.state,
+    normalized_state: normalized,
+    page: modelSessionPageSlug(page),
+    route: page?.path || "",
+    allowed_actions: getAllowedModelSessionActions(normalized),
+  };
+}
+
+async function handleModelSessionCurrent(req, env) {
+  const context = await resolveModelSessionContext(req, env);
+  if (!context.ok) return modelSessionJson({ ok: false, error: context.error }, context.status);
+
+  const stateInfo = modelSessionStateFromRecord(context.tables, context.session);
+  if (!stateInfo.field || !normalizeSessionState(stateInfo.state)) {
+    return modelSessionJson({ ok: false, error: "schema_not_ready" }, 503);
+  }
+
+  return modelSessionJson({
+    ok: true,
+    session: modelSessionResponseSession(context.tables, context.session),
+  });
+}
+
+async function verifyStartWorkPaymentTruth(env, session) {
+  const truthUrl = str(env.MODEL_SESSION_PAYMENT_TRUTH_URL || env.PAYMENTS_WORKER_FINAL_PAYMENT_STATUS_URL);
+  // Runtime V1a must fail closed until payments-worker exposes a stable final-payment truth endpoint.
+  if (!truthUrl) return { ok: false, error: "payment_gate_not_ready" };
+
+  const res = await fetch(truthUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(env.CONFIRM_KEY ? { "X-Confirm-Key": env.CONFIRM_KEY } : {}),
+    },
+    body: JSON.stringify({
+      session_id: session.session_id,
+      action: "start_work_preflight",
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) return { ok: false, error: "payment_not_confirmed" };
+  const confirmed =
+    data.final_payment_confirmed === true ||
+    data.official_final_payment_confirmed === true ||
+    normalizeSessionState(data.final_payment_status) === "final_payment_confirmed";
+  return confirmed ? { ok: true } : { ok: false, error: "payment_not_confirmed" };
+}
+
+async function handleModelSessionAction(req, env) {
+  const body = await safeJson(req);
+  const authContext = await resolveModelSessionContext(req, env, body);
+  if (!authContext.ok) return modelSessionJson({ ok: false, error: authContext.error }, authContext.status);
+
+  const action = normalizeModelSessionAction(body?.action);
+  if (!MODEL_SESSION_MODEL_ALLOWED_ACTIONS.has(str(body?.action)) && !MODEL_SESSION_MODEL_ALLOWED_ACTIONS.has(action)) {
+    return modelSessionJson({ ok: false, error: "invalid_transition" }, 409);
+  }
+  if (MODEL_SESSION_MODEL_BLOCKED_ACTIONS.has(action) || action.includes("final_payment_confirmed")) {
+    return modelSessionJson({ ok: false, error: "invalid_transition" }, 409);
+  }
+
+  const reread = await resolveModelSessionContext(req, env, body);
+  if (!reread.ok) return modelSessionJson({ ok: false, error: reread.error }, reread.status);
+
+  const stateInfo = modelSessionStateFromRecord(reread.tables, reread.session);
+  if (!stateInfo.field || !normalizeSessionState(stateInfo.state)) {
+    return modelSessionJson({ ok: false, error: "schema_not_ready" }, 503);
+  }
+
+  const transition = resolveModelSessionTransition(action, stateInfo.state);
+  if (!transition.ok) return modelSessionJson({ ok: false, error: "invalid_transition" }, 409);
+
+  if (transition.to === "final_payment_confirmed") {
+    return modelSessionJson({ ok: false, error: "invalid_transition" }, 409);
+  }
+
+  const currentSession = modelSessionResponseSession(reread.tables, reread.session);
+  if (action === "start_work") {
+    const payment = await verifyStartWorkPaymentTruth(env, currentSession);
+    if (!payment.ok) return modelSessionJson({ ok: false, error: payment.error }, 403);
+  }
+
+  const patch = { [stateInfo.field]: transition.to };
+  if (action === "decline_job" && str(body?.reason)) {
+    const reasonField = str(env.AT_SESSIONS__DECLINE_REASON || "decline_reason");
+    patch[reasonField] = str(body.reason).slice(0, 500);
+  }
+
+  const updated = await airtablePatchById(env, reread.tables.sessions.table, reread.session.id, patch);
+  if (!updated.ok) return modelSessionJson({ ok: false, error: "schema_not_ready" }, 503);
+
+  return modelSessionJson({
+    ok: true,
+    session: modelSessionResponseSession(reread.tables, { id: updated.id, fields: updated.fields }),
+  });
 }
 
 function schemaPatchError(code, status, message) {
