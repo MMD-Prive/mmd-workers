@@ -141,6 +141,15 @@ function renderRouteRecoveryShell(request, page, title, heading, copy, links = [
   return new Response(request.method.toUpperCase() === "HEAD" ? null : html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store, no-cache, must-revalidate, max-age=0", "x-mmd-worker": FRONT_GATE, "x-mmd-front-gate": FRONT_GATE, "x-mmd-front-version": FRONT_VERSION, "x-mmd-page": page, "x-mmd-temporary-route": "true" } });
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function renderPublicBlackcardPage(request) {
   const url = new URL(request.url);
   const query = url.search || "";
@@ -157,9 +166,92 @@ function renderPublicBlackcardPage(request) {
     network: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a3ee967872acc872ddce194_MMD%20Prive%20Network%20Casing.webp"
   };
 
-  const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="description" content="MMD Privé Black Card public reading page. Private review status, founder approval only."><title>MMD Privé | Black Card</title><style>${blackcardStyles()}</style></head><body><main id="mmd-blackcard" class="mbc" data-mmd-page="${PUBLIC_BLACKCARD_PAGE}" data-status-api="/api/blackcard/status" data-profile-url="/sigil/member/profile"><section class="mbc-hero" aria-label="Black Card private review"><img class="mbc-hero-img" src="${images.hero}" alt="Black Card private review"><div class="mbc-shade" aria-hidden="true"></div><div class="mbc-shell mbc-hero-shell"><nav class="mbc-top" aria-label="Black Card navigation"><a class="mbc-mark" href="/blackcard${query}"><span>MMD</span></a><div class="mbc-brand"><span>MMD PRIVÉ</span><strong>Black Card</strong></div><div class="mbc-pills"><span>PUBLIC READING</span><span>PRIVATE REVIEW</span><span>FOUNDER APPROVAL ONLY</span></div></nav><div class="mbc-hero-grid"><div class="mbc-copy"><p class="mbc-kicker">BLACK CARD</p><h1>Not bought.<br><span>Quietly approved.</span></h1><p class="mbc-lead">Black Card is not purchased into existence. It is reviewed, verified, and quietly approved.</p><p>Black Card คือ private review status สำหรับสมาชิกที่มีประวัติชัดเจน ความไว้ใจสะสม และเหมาะกับ access ที่ลึกขึ้นกว่าเดิม หน้านี้อ่านได้แบบ public ไม่ต้อง login และไม่มีปุ่มจ่ายเงินโดยตรง</p><div class="mbc-actions"><a class="mbc-btn primary" href="${reviewHref}">Request Black Card Review</a><a class="mbc-btn ghost" href="${statusHref}">Check Status</a></div></div><aside class="mbc-hero-panel"><span>Core rule</span><strong>Payment does not equal activation.</strong><p>Proof/slip เป็น evidence เท่านั้น สถานะ paid, points, membership หรือ Black Card approval ต้องผ่าน official verification และ Boss Per approval ก่อน</p></aside></div></div></section><section id="blackcard-status" class="mbc-shell mbc-status"><article class="mbc-panel"><p class="mbc-kicker">PRIVATE STATUS</p><h2>ตรวจสถานะ Black Card</h2><p>ใส่ access code, email, LINE ID หรือ token ที่ได้รับจาก MMD เพื่อดูสถานะ review แบบ read-only หน้านี้ไม่เปลี่ยนสถานะ ไม่เพิ่ม points และไม่อนุมัติเอง</p><form id="mbcStatusForm" class="mbc-form" autocomplete="off"><label for="mbcStatusInput">Access / Email / LINE ID</label><div><input id="mbcStatusInput" name="q" type="text" placeholder="code, email, LINE ID หรือ token"><button class="mbc-btn primary" type="submit">Check</button></div></form><div id="mbcStatusResult" class="mbc-result" aria-live="polite"><span>Ready</span><strong>ยังไม่ได้ตรวจสถานะ</strong><p>ผลลัพธ์จะแสดงจาก Worker gate หรือ admin verified record เท่านั้น</p></div></article><div class="mbc-signal-grid"><article><span>01</span><strong>Verified history</strong><p>ประวัติสมาชิกและธุรกรรมที่ตรวจสอบแล้ว</p></article><article><span>02</span><strong>Trust record</strong><p>รูปแบบการใช้งาน ความชัดเจน และความน่าเชื่อถือ</p></article><article><span>03</span><strong>Manual approval</strong><p>Final decision โดย Boss Per เท่านั้น</p></article></div></section><section class="mbc-shell mbc-split" id="review-request"><div class="mbc-text"><p class="mbc-kicker">PRIVATE REVIEW</p><h2>Review happens quietly.</h2><p>Black Card review จะดูจากประวัติจริง ไม่ใช่ยอดจ่ายครั้งเดียว MMD จะตรวจ membership history, verified payments, points, notes และความเหมาะสมก่อนขึ้นสถานะให้สมาชิก</p><div class="mbc-stack"><div><span>Not instant</span><strong>ไม่มีการอนุมัติอัตโนมัติ</strong></div><div><span>Not checkout</span><strong>ไม่ใช่ public payment package</strong></div><div><span>Not final by slip</span><strong>สลิปเป็นหลักฐานประกอบเท่านั้น</strong></div></div></div><figure class="mbc-image"><img src="${images.review}" alt="Private review desk"><figcaption><span>Review desk</span><strong>ข้อมูลถูกอ่านก่อน access ถูกเปิด</strong></figcaption></figure></section><section class="mbc-shell mbc-split reverse"><figure class="mbc-image tall"><img src="${images.card}" alt="Black Card identity"></figure><div class="mbc-text"><p class="mbc-kicker">THE CARD</p><h2>Access with weight.</h2><p>Black Card คือ private access layer สำหรับสมาชิกที่เหมาะกับการดูแลในระดับสูงกว่าเดิม ทั้งด้าน privacy, priority, profile visibility และความต่อเนื่องของประวัติสมาชิก</p><div class="mbc-stack"><div><span>Priority</span><strong>ได้รับการพิจารณาก่อนในสิทธิ์ที่เหมาะสม</strong></div><div><span>Privacy</span><strong>ข้อมูลและ access ถูกคุมด้วย gate</strong></div><div><span>Continuity</span><strong>history และ points ถูกเก็บเป็น record</strong></div></div></div></section><section class="mbc-shell mbc-split"><div class="mbc-text"><p class="mbc-kicker">PAYMENT TRUTH</p><h2>Proof is not payment truth.</h2><p>หลักฐานการโอนหรือสลิปเป็น evidence เท่านั้น Payment truth คือยอดที่ official verification ตรวจพบและ match แล้วเท่านั้น หลังจากนั้นจึงค่อยพิจารณา points, membership state และ Black Card review</p><div class="mbc-doctrine"><article><span>Evidence</span><strong>Slip/proof received</strong><p>รับไว้ประกอบการตรวจสอบ</p></article><article><span>Truth</span><strong>Verified funds only</strong><p>อ้างอิงยอดจริงในบัญชีหรือ dashboard</p></article><article><span>Decision</span><strong>Boss Per approval</strong><p>approval ไม่เปิดเองจากยอดหรือ points</p></article></div></div><figure class="mbc-image"><img src="${images.pay}" alt="SIGIL payment verification"></figure></section><section class="mbc-shell mbc-split reverse"><figure class="mbc-image"><img src="${images.profile}" alt="Member profile and membership history"></figure><div class="mbc-text"><p class="mbc-kicker">MEMBER PROFILE</p><h2>Every status leaves a trail.</h2><p>หลังข้อมูลถูกตรวจแล้ว สมาชิกสามารถดู profile, membership history, points และ Black Card review state ได้จาก member profile ของตัวเอง ข้อมูลที่ยังไม่ verified จะไม่ถูกนับเป็น points หรือสิทธิ์ใช้งานจริง</p><div class="mbc-profile-panel"><div><span>Status</span><strong id="mbcDemoStatus">Pending review</strong></div><div><span>Points</span><strong id="mbcDemoPoints">Verified only</strong></div><div><span>Approval</span><strong id="mbcDemoApproval">Boss Per only</strong></div></div><div class="mbc-actions"><a id="mbcProfileBtn" class="mbc-btn primary" href="${profileHref}">Open Member Profile</a><button id="mbcCopyProfileBtn" class="mbc-btn ghost" type="button">Copy Profile Link</button></div></div></section><section class="mbc-shell mbc-network"><img src="${images.network}" alt="MMD Privé private network"><div><p class="mbc-kicker">MMD PRIVÉ NETWORK</p><h2>Access is layered.</h2><p>Black Card อยู่ในระบบ access หลายชั้น ข้อมูลสมาชิก, payment verification, points, member profile และ private review ต้องเดินผ่าน gate ที่ถูกต้องก่อนเปิดสถานะจริง</p><div class="mbc-network-grid"><article><span>01</span><strong>Member identity</strong><p>ยืนยันตัวตนและช่องทางติดต่อ</p></article><article><span>02</span><strong>Verified payment</strong><p>ตรวจยอดจริงก่อนนับ points</p></article><article><span>03</span><strong>Review state</strong><p>Pending, Under Review, Approved หรือ Not Eligible</p></article><article><span>04</span><strong>Private access</strong><p>เปิดสิทธิ์หลัง approval เท่านั้น</p></article></div></div></section><section class="mbc-shell mbc-process"><p class="mbc-kicker">PROCESS</p><h2>How review moves.</h2><div class="mbc-process-grid"><article><span>1</span><strong>Request review</strong><p>สมาชิกส่งคำขอ หรือ MMD เปิด draft review จากข้อมูลที่มีอยู่</p></article><article><span>2</span><strong>Verify records</strong><p>ตรวจ membership history, payment record, points และ notes</p></article><article><span>3</span><strong>Hold decision</strong><p>ข้อมูลไม่ครบจะค้าง pending หรือ under review</p></article><article><span>4</span><strong>Approve manually</strong><p>อนุมัติเฉพาะเมื่อ Boss Per ตัดสินใจ</p></article></div></section><section class="mbc-shell mbc-final"><div><p class="mbc-kicker">PUBLIC READING PAGE</p><h2>Reserved. Verified. Quietly recognized.</h2><p>/blackcard เป็นหน้าอ่าน public เท่านั้น ไม่ redirect ไป login ไม่ redirect ไป payment และไม่เปิดสิทธิ์จากสลิป</p></div><div class="mbc-actions"><a class="mbc-btn primary" href="${statusHref}">Check Status</a><a class="mbc-btn ghost" href="${aliasHref}">Open Alias</a></div></section><footer class="mbc-shell mbc-footer"><strong>MMD BLACK CARD</strong><span>© 2026 MMD Privé. Private review only.</span></footer></main><script>${blackcardScript()}</script></body></html>`;
+  const html = `<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="description" content="MMD Privé Black Card public reading page. Private review status, founder approval only.">
+<title>MMD Privé | Black Card</title>
+<style>${blackcardStyles()}</style>
+</head>
+<body>
+<main id="mmd-blackcard" class="mbc" data-mmd-page="${PUBLIC_BLACKCARD_PAGE}" data-status-api="/api/blackcard/status" data-profile-url="/sigil/member/profile">
+  <section class="mbc-hero" aria-label="Black Card private review">
+    <img class="mbc-hero-img" src="${images.hero}" alt="Black Card private review">
+    <div class="mbc-shade" aria-hidden="true"></div>
+    <div class="mbc-shell mbc-hero-shell">
+      <nav class="mbc-top" aria-label="Black Card navigation">
+        <a class="mbc-mark" href="/blackcard${query}" aria-label="MMD Black Card"><span>BC</span></a>
+        <div class="mbc-brand"><span>MMD PRIVÉ</span><strong>Black Card</strong></div>
+        <div class="mbc-pills"><span>PUBLIC READING</span><span>PRIVATE REVIEW</span><span>FOUNDER APPROVAL ONLY</span></div>
+      </nav>
+      <div class="mbc-hero-grid">
+        <div class="mbc-copy">
+          <p class="mbc-kicker">BLACK CARD</p>
+          <h1>Not bought.<br><span>Quietly approved.</span></h1>
+          <p class="mbc-lead">Black Card is not purchased into existence. It is reviewed, verified, and quietly approved.</p>
+          <p>Black Card คือ private review status สำหรับสมาชิกที่มีประวัติชัดเจน ความไว้ใจสะสม และเหมาะกับ access ที่ลึกขึ้นกว่าเดิม หน้านี้อ่านได้แบบ public ไม่ต้อง login และไม่มีปุ่มจ่ายเงินโดยตรง</p>
+          <div class="mbc-actions"><a class="mbc-btn primary" href="${reviewHref}">Request Black Card Review</a><a class="mbc-btn ghost" href="${statusHref}">Check Status</a></div>
+        </div>
+        <aside class="mbc-hero-panel"><span>Core rule</span><strong>Payment does not equal activation.</strong><p>Proof/slip เป็น evidence เท่านั้น สถานะ paid, points, membership หรือ Black Card approval ต้องผ่าน official verification และ Boss Per approval ก่อน</p></aside>
+      </div>
+    </div>
+  </section>
 
-  return new Response(request.method.toUpperCase() === "HEAD" ? null : html, { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store, no-cache, must-revalidate, max-age=0", "x-mmd-worker": FRONT_GATE, "x-mmd-front-gate": FRONT_GATE, "x-mmd-front-version": FRONT_VERSION, "x-mmd-page": PUBLIC_BLACKCARD_PAGE, "x-mmd-route-owner": FRONT_GATE, "x-mmd-origin": "front-gate:public-blackcard-review-safe" } });
+  <section id="blackcard-status" class="mbc-shell mbc-status">
+    <article class="mbc-panel"><p class="mbc-kicker">PRIVATE STATUS</p><h2>ตรวจสถานะ Black Card</h2><p>ใส่ access code, email, LINE ID หรือ token ที่ได้รับจาก MMD เพื่อดูสถานะ review แบบ read-only หน้านี้ไม่เปลี่ยนสถานะ ไม่เพิ่ม points และไม่อนุมัติเอง</p><form id="mbcStatusForm" class="mbc-form" autocomplete="off"><label for="mbcStatusInput">Access / Email / LINE ID</label><div><input id="mbcStatusInput" name="q" type="text" placeholder="code, email, LINE ID หรือ token"><button class="mbc-btn primary" type="submit">Check</button></div></form><div id="mbcStatusResult" class="mbc-result" aria-live="polite"><span>Ready</span><strong>ยังไม่ได้ตรวจสถานะ</strong><p>ผลลัพธ์จะแสดงจาก Worker gate หรือ admin verified record เท่านั้น</p></div></article>
+    <div class="mbc-signal-grid"><article><span>01</span><strong>Verified history</strong><p>ประวัติสมาชิกและธุรกรรมที่ตรวจสอบแล้ว</p></article><article><span>02</span><strong>Trust record</strong><p>รูปแบบการใช้งาน ความชัดเจน และความน่าเชื่อถือ</p></article><article><span>03</span><strong>Manual approval</strong><p>Final decision โดย Boss Per เท่านั้น</p></article></div>
+  </section>
+
+  <section class="mbc-shell mbc-split" id="review-request">
+    <div class="mbc-text"><p class="mbc-kicker">PRIVATE REVIEW</p><h2>Review happens quietly.</h2><p>Black Card review จะดูจากประวัติจริง ไม่ใช่ยอดจ่ายครั้งเดียว MMD จะตรวจ membership history, verified payments, points, notes และความเหมาะสมก่อนขึ้นสถานะให้สมาชิก</p><div class="mbc-stack"><div><span>Not instant</span><strong>ไม่มีการอนุมัติอัตโนมัติ</strong></div><div><span>Not checkout</span><strong>ไม่ใช่ public payment package</strong></div><div><span>Not final by slip</span><strong>สลิปเป็นหลักฐานประกอบเท่านั้น</strong></div></div></div>
+    <figure class="mbc-image"><img src="${images.review}" alt="Private review desk"><figcaption><span>Review desk</span><strong>ข้อมูลถูกอ่านก่อน access ถูกเปิด</strong></figcaption></figure>
+  </section>
+
+  <section class="mbc-shell mbc-split reverse">
+    <figure class="mbc-image tall"><img src="${images.card}" alt="Black Card identity"></figure>
+    <div class="mbc-text"><p class="mbc-kicker">THE CARD</p><h2>Access with weight.</h2><p>Black Card คือ private access layer สำหรับสมาชิกที่เหมาะกับการดูแลในระดับสูงกว่าเดิม ทั้งด้าน privacy, priority, profile visibility และความต่อเนื่องของประวัติสมาชิก</p><div class="mbc-stack"><div><span>Priority</span><strong>ได้รับการพิจารณาก่อนในสิทธิ์ที่เหมาะสม</strong></div><div><span>Privacy</span><strong>ข้อมูลและ access ถูกคุมด้วย gate</strong></div><div><span>Continuity</span><strong>history และ points ถูกเก็บเป็น record</strong></div></div></div>
+  </section>
+
+  <section class="mbc-shell mbc-split">
+    <div class="mbc-text"><p class="mbc-kicker">PAYMENT TRUTH</p><h2>Proof is not payment truth.</h2><p>หลักฐานการโอนหรือสลิปเป็น evidence เท่านั้น Payment truth คือยอดที่ official verification ตรวจพบและ match แล้วเท่านั้น หลังจากนั้นจึงค่อยพิจารณา points, membership state และ Black Card review</p><div class="mbc-doctrine"><article><span>Evidence</span><strong>Slip/proof received</strong><p>รับไว้ประกอบการตรวจสอบ</p></article><article><span>Truth</span><strong>Verified funds only</strong><p>อ้างอิงยอดจริงในบัญชีหรือ dashboard</p></article><article><span>Decision</span><strong>Boss Per approval</strong><p>approval ไม่เปิดเองจากยอดหรือ points</p></article></div></div>
+    <figure class="mbc-image"><img src="${images.pay}" alt="SIGIL payment verification"></figure>
+  </section>
+
+  <section class="mbc-shell mbc-split reverse">
+    <figure class="mbc-image"><img src="${images.profile}" alt="Member profile and membership history"></figure>
+    <div class="mbc-text"><p class="mbc-kicker">MEMBER PROFILE</p><h2>Every status leaves a trail.</h2><p>หลังข้อมูลถูกตรวจแล้ว สมาชิกสามารถดู profile, membership history, points และ Black Card review state ได้จาก member profile ของตัวเอง ข้อมูลที่ยังไม่ verified จะไม่ถูกนับเป็น points หรือสิทธิ์ใช้งานจริง</p><div class="mbc-profile-panel"><div><span>Status</span><strong id="mbcDemoStatus">Pending review</strong></div><div><span>Points</span><strong id="mbcDemoPoints">Verified only</strong></div><div><span>Approval</span><strong id="mbcDemoApproval">Boss Per only</strong></div></div><div class="mbc-actions"><a id="mbcProfileBtn" class="mbc-btn primary" href="${profileHref}">Open Member Profile</a><button id="mbcCopyProfileBtn" class="mbc-btn ghost" type="button">Copy Profile Link</button></div></div>
+  </section>
+
+  <section class="mbc-shell mbc-network">
+    <img src="${images.network}" alt="MMD Privé private network">
+    <div><p class="mbc-kicker">MMD PRIVÉ NETWORK</p><h2>Access is layered.</h2><p>Black Card อยู่ในระบบ access หลายชั้น ข้อมูลสมาชิก, payment verification, points, member profile และ private review ต้องเดินผ่าน gate ที่ถูกต้องก่อนเปิดสถานะจริง</p><div class="mbc-network-grid"><article><span>01</span><strong>Member identity</strong><p>ยืนยันตัวตนและช่องทางติดต่อ</p></article><article><span>02</span><strong>Verified payment</strong><p>ตรวจยอดจริงก่อนนับ points</p></article><article><span>03</span><strong>Review state</strong><p>Pending, Under Review, Approved หรือ Not Eligible</p></article><article><span>04</span><strong>Private access</strong><p>เปิดสิทธิ์หลัง approval เท่านั้น</p></article></div></div>
+  </section>
+
+  <section class="mbc-shell mbc-process"><p class="mbc-kicker">PROCESS</p><h2>How review moves.</h2><div class="mbc-process-grid"><article><span>1</span><strong>Request review</strong><p>สมาชิกส่งคำขอ หรือ MMD เปิด draft review จากข้อมูลที่มีอยู่</p></article><article><span>2</span><strong>Verify records</strong><p>ตรวจ membership history, payment record, points และ notes</p></article><article><span>3</span><strong>Hold decision</strong><p>ข้อมูลไม่ครบจะค้าง pending หรือ under review</p></article><article><span>4</span><strong>Approve manually</strong><p>อนุมัติเฉพาะเมื่อ Boss Per ตัดสินใจ</p></article></div></section>
+
+  <section class="mbc-shell mbc-final"><div><p class="mbc-kicker">PUBLIC READING PAGE</p><h2>Reserved. Verified. Quietly recognized.</h2><p>/blackcard เป็นหน้าอ่าน public เท่านั้น ไม่ redirect ไป login ไม่ redirect ไป payment และไม่เปิดสิทธิ์จากสลิป</p></div><div class="mbc-actions"><a class="mbc-btn primary" href="${statusHref}">Check Status</a><a class="mbc-btn ghost" href="${aliasHref}">Open Alias</a></div></section>
+  <footer class="mbc-shell mbc-footer"><strong>MMD BLACK CARD</strong><span>© 2026 MMD Privé. Private review only.</span></footer>
+</main>
+<script>${blackcardScript()}</script>
+</body>
+</html>`;
+
+  return new Response(request.method.toUpperCase() === "HEAD" ? null : html, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+      "x-mmd-worker": FRONT_GATE,
+      "x-mmd-front-gate": FRONT_GATE,
+      "x-mmd-front-version": FRONT_VERSION,
+      "x-mmd-page": PUBLIC_BLACKCARD_PAGE,
+      "x-mmd-route-owner": FRONT_GATE,
+      "x-mmd-origin": "front-gate:public-blackcard-review-safe"
+    }
+  });
 }
 
 function blackcardStyles() {
