@@ -1,0 +1,34 @@
+name = "sigil-booking-proxy-worker"
+main = "src/index.js"
+compatibility_date = "2026-06-07"
+workers_dev = false
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+# Exact canonical page owner. This must win over the generic sigil.mmdbkk.com/* owner.
+[[routes]]
+pattern = "sigil.mmdbkk.com/sigil/booking"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/sigil/booking/"
+zone_name = "mmdbkk.com"
+
+# Front-gate redirects. These routes must win over the generic mmd-redirect-worker mmdbkk.com/* route.
+[[routes]]
+pattern = "mmdbkk.com/sigil/booking"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/sigil/booking/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/booking"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/booking/"
+zone_name = "mmdbkk.com"
