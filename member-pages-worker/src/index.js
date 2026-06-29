@@ -3,6 +3,7 @@ const VERSION = "20260626-membership-payment-v3";
 
 const PAGE_PATHS = new Set([
   "/sigil/membership", "/sigil/membership/",
+  "/sigil/pay/renewal", "/sigil/pay/renewal/",
   "/member/membership", "/member/membership/",
   "/pay/membership", "/pay/membership/",
   "/pay/pending-verification", "/pay/pending-verification/",
@@ -44,6 +45,7 @@ export default {
 
     const p = cleanPath(url.pathname);
     if (p === "/sigil/membership") return renderSigilMembership(request);
+    if (p === "/sigil/pay/renewal") return renderRenewalPay(request, env);
     if (p === "/pay/membership") return renderPay(request, env);
     if (p === "/pay/pending-verification") return renderPending(request);
     if (p === "/member/profile") return renderProfile(request);
@@ -68,16 +70,21 @@ export async function handleLiffIdentify(request, env = {}) {
     return liffJson({ ok: false, error: { code: "LINE_USER_ID_REQUIRED", message: "line_user_id is required" } }, 400);
   }
 
-  const entryRoute = normalizeEntryRoute(body.entry_route || body.entryRoute);
+  const entryRoute = normalizeEntryRoute(body.entry_route || body.entryRoute || body.intent);
   const safeQuery = pickSafeQuery(body, new URL(request.url).searchParams);
+  const membership = await resolveMembershipState({ env, lineUserId, entryRoute, safeQuery });
   const status = identityStatusFor(entryRoute, safeQuery);
-  const dashboardUnlock = dashboardUnlockFor(body, entryRoute, safeQuery);
-  const nextRoute = buildNextRoute(entryRoute, safeQuery, dashboardUnlock);
+  const dashboardUnlock = dashboardUnlockFor(membership, entryRoute, safeQuery);
+  const nextRoute = buildNextRoute(entryRoute, safeQuery, dashboardUnlock, membership);
 
   return liffJson({
     ok: true,
     data: {
+      intent: entryRoute,
       identity_status: status,
+      membership_state: membership.membership_state,
+      package_state: membership.package_state,
+      rich_menu_target: richMenuTargetFor(membership),
       next_route: nextRoute,
       dashboard_unlock: dashboardUnlock,
       review_required: status !== "linked",
@@ -99,6 +106,9 @@ export async function handleLiffIdentify(request, env = {}) {
         sigil_membership: appendSafeQuery("/sigil/membership", safeQuery),
         dashboard: dashboardUnlock.unlocked ? appendSafeQuery("/member/dashboard", safeQuery) : null,
         payment: appendSafeQuery("/pay/membership", safeQuery),
+        renewal: appendSafeQuery("/sigil/pay/renewal", safeQuery),
+        booking: canUsePrivateRoute(membership) ? appendSafeQuery("/sigil/booking", safeQuery) : null,
+        pending_verification: appendSafeQuery("/pay/pending-verification", safeQuery),
       },
     },
   });
@@ -138,6 +148,36 @@ function renderSigilMembership(request) {
       <div class="panel hero-panel"><p class="eyebrow">SIGIL ACCESS CONDITIONS</p><h1>Renewal / Access</h1><p class="lead">หน้านี้คือเงื่อนไขการต่ออายุและการเข้าถึง ไม่ใช่ public checkout และไม่ใช่การยืนยันสถานะสมาชิกทันที</p><p>สถานะจริงอ้างอิงจาก ledger และ official verification เท่านั้น</p><p class="actions"><a class="btn" href="${attr(appendQuery("/member/membership", url.search))}">ดูแพ็กเกจสมาชิก</a><a class="btn ghost" href="${attr(appendQuery("/member/dashboard", url.search))}">Member Dashboard</a></p></div>
       <aside class="panel side-card"><p class="eyebrow">Private layer</p><h2>Black Card holder layer</h2><p>/sigil/blackcard เป็นชั้น private หลัง approval ไม่ใช่ public sales page</p></aside>
     </section>
+  `);
+}
+
+function renderRenewalPay(request, env = {}) {
+  const url = new URL(request.url);
+  const apiBase = String(env.PAYMENTS_API_BASE || "https://payments-worker.malemodel-bkk.workers.dev").replace(/\/+$/, "");
+  return page(request, "sigil-pay-renewal", `
+    ${nav(url.search)}
+    <section class="hero payment-hero">
+      <div class="panel hero-panel">
+        <p class="eyebrow">Renewal Evidence</p>
+        <h1>Membership Renewal</h1>
+        <p class="lead">ต่ออายุสมาชิกโดยส่งหลักฐานให้ทีมตรวจสอบ สถานะจะไม่ active จนกว่า official verification จะสำเร็จ</p>
+        <div class="summary"><b>Status</b><span>Awaiting proof</span><b>Rule</b><span>Evidence only</span><b>Verification</b><span>Official review required</span></div>
+      </div>
+      <aside class="panel side-card"><p class="eyebrow">Safe renewal route</p><h2>Proof is not activation.</h2><p>เส้นทางนี้รับ renewal intent อย่างปลอดภัย แต่ไม่เปิด membership, points, package, access, or dashboard จากสลิปเพียงอย่างเดียว</p></aside>
+    </section>
+    <section class="panel form-panel">
+      <p class="eyebrow">Submit renewal proof</p>
+      <h2>ส่งหลักฐานต่ออายุ</h2>
+      <form id="payform" data-api="${attr(apiBase)}" data-plan="${attr(normalizePlan(url.searchParams.get("plan") || url.searchParams.get("package")) || "renewal")}" data-amount="${attr(url.searchParams.get("amount") || "")}">
+        <label>Member Email หรือ username<input name="member_email" value="${attr(url.searchParams.get("email") || "")}" autocomplete="email" /></label>
+        <label>Renewal Reference<input name="session_id" value="${attr(url.searchParams.get("session_id") || url.searchParams.get("sid") || "")}" placeholder="เว้นว่างได้ ระบบจะสร้าง evidence id" /></label>
+        <label>Slip URL / proof URL<input name="receipt_url" required placeholder="วางลิงก์รูปสลิปหรือหลักฐานการโอน" /></label>
+        <label>Note<textarea name="notes" rows="3" placeholder="รายละเอียดเพิ่มเติม"></textarea></label>
+        <button class="btn" type="submit">Submit Renewal Evidence</button>
+      </form>
+      <div id="payresult" class="notice" hidden></div>
+    </section>
+    <script>${paymentScript("membership_renewal")}</script>
   `);
 }
 
@@ -250,7 +290,11 @@ function clean(value) {
 
 function normalizeEntryRoute(value) {
   const route = clean(value).toLowerCase().replace(/[^a-z0-9_/-]+/g, "_");
-  if (route.includes("sigil")) return "sigil_membership";
+  if (route === "member_status" || route.includes("status")) return "member_status";
+  if (route === "renewal" || route === "renew" || route.includes("renewal")) return "renewal";
+  if (route === "booking_request" || route.includes("booking")) return "booking_request";
+  if (route === "public_membership" || route.includes("public_membership")) return "public_membership";
+  if (route === "sigil_membership" || route.includes("sigil")) return "sigil_membership";
   if (route.includes("dashboard")) return "dashboard";
   if (route.includes("pay") || route.includes("payment")) return "pay_membership";
   return "public_membership";
@@ -271,23 +315,42 @@ function identityStatusFor(entryRoute, safeQuery) {
   return "new_public_member";
 }
 
-function buildNextRoute(entryRoute, safeQuery, dashboardUnlock = { unlocked: false }) {
+function buildNextRoute(entryRoute, safeQuery, dashboardUnlock = { unlocked: false }, membership = defaultMembershipState()) {
   if (entryRoute === "sigil_membership") return appendSafeQuery("/sigil/membership", safeQuery);
   if (entryRoute === "dashboard" && dashboardUnlock.unlocked) return appendSafeQuery("/member/dashboard", safeQuery);
   if (entryRoute === "dashboard") return appendSafeQuery("/member/membership", safeQuery);
   if (entryRoute === "pay_membership") return appendSafeQuery("/pay/membership", safeQuery);
+  if (entryRoute === "member_status") return routeForMemberStatus(membership, safeQuery);
+  if (entryRoute === "renewal") return routeForRenewal(membership, safeQuery);
+  if (entryRoute === "booking_request") return routeForBooking(membership, safeQuery);
   return appendSafeQuery("/member/membership", safeQuery);
 }
 
-function dashboardUnlockFor(body, entryRoute, safeQuery) {
-  const sessionId = clean(body.session_id || body.sessionId || body.confirmed_session_id || body.confirmedSessionId);
-  const jobId = clean(body.job_id || body.jobId || body.confirmed_job_id || body.confirmedJobId);
-  const hasRealSession = truthy(body.first_real_session_exists || body.has_real_session || body.hasRealSession || body.confirmed_session_exists || body.confirmedSessionExists);
-  const hasRealJob = truthy(body.first_real_job_exists || body.has_real_job || body.hasRealJob || body.confirmed_job_exists || body.confirmedJobExists);
-  const status = clean(body.session_status || body.sessionStatus || body.job_status || body.jobStatus).toLowerCase();
-  const deniedStatus = ["", "draft", "pending", "pending_verification", "membership", "identity_only", "lead", "review_required", "proof_received"];
-  const evidenceId = sessionId || jobId;
-  const unlocked = Boolean(evidenceId && (hasRealSession || hasRealJob) && !deniedStatus.includes(status));
+function routeForMemberStatus(membership, safeQuery) {
+  if (canUsePrivateRoute(membership)) return appendSafeQuery("/member/profile", safeQuery, { status: "active" });
+  if (isRenewalRequired(membership)) return appendSafeQuery("/sigil/pay/renewal", safeQuery);
+  if (membership.membership_state === "no_paid_package" || membership.package_state === "none") return appendSafeQuery("/member/membership", safeQuery);
+  return appendSafeQuery("/member/profile", safeQuery, { status: "review_required" });
+}
+
+function routeForRenewal(membership, safeQuery) {
+  if (isRenewalRequired(membership)) return appendSafeQuery("/sigil/pay/renewal", safeQuery);
+  if (canUsePrivateRoute(membership)) return appendSafeQuery("/member/profile", safeQuery, { status: "active" });
+  if (membership.membership_state === "no_paid_package" || membership.package_state === "none") return appendSafeQuery("/member/membership", safeQuery);
+  return appendSafeQuery("/member/profile", safeQuery, { status: "review_required" });
+}
+
+function routeForBooking(membership, safeQuery) {
+  if (canUsePrivateRoute(membership)) return appendSafeQuery("/sigil/booking", safeQuery);
+  if (isRenewalRequired(membership)) return appendSafeQuery("/sigil/pay/renewal", safeQuery);
+  if (membership.membership_state === "no_paid_package" || membership.package_state === "none") return appendSafeQuery("/member/membership", safeQuery);
+  return appendSafeQuery("/member/profile", safeQuery, { status: "review_required" });
+}
+
+function dashboardUnlockFor(membership, entryRoute, safeQuery) {
+  const liveStatuses = new Set(["confirmed", "en_route", "arrived", "met", "work_started", "completed"]);
+  const sessionStatus = clean(membership.first_session_status || membership.session_status || membership.job_status).toLowerCase();
+  const unlocked = Boolean(membership.trusted && truthy(membership.has_first_job) && liveStatuses.has(sessionStatus));
   const holdingRoute = appendSafeQuery(entryRoute === "sigil_membership" ? "/sigil/membership" : "/member/membership", safeQuery);
 
   return {
@@ -297,15 +360,90 @@ function dashboardUnlockFor(body, entryRoute, safeQuery) {
   };
 }
 
+async function resolveMembershipState({ env, lineUserId, entryRoute, safeQuery }) {
+  const fallback = defaultMembershipState();
+  const resolver = env?.MEMBER_STATUS_RESOLVER;
+  if (!resolver?.fetch) return fallback;
+
+  try {
+    const response = await resolver.fetch(new Request("https://member-status-resolver.local/resolve", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        line_user_id: lineUserId,
+        intent: entryRoute,
+        safe_query: safeQuery,
+      }),
+    }));
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) return { ...fallback, membership_state: "review_required" };
+    const data = payload?.data && typeof payload.data === "object" ? payload.data : payload;
+    return {
+      trusted: true,
+      membership_state: normalizeMembershipState(data.membership_state || data.membershipStatus || data.member_status),
+      package_state: normalizePackageState(data.package_state || data.packageStatus),
+      has_first_job: truthy(data.has_first_job || data.hasFirstJob || data.first_real_job_exists || data.firstRealJobExists),
+      first_session_status: clean(data.first_session_status || data.firstSessionStatus || data.session_status || data.job_status).toLowerCase(),
+    };
+  } catch {
+    return { ...fallback, membership_state: "review_required" };
+  }
+}
+
+function defaultMembershipState() {
+  return {
+    trusted: false,
+    membership_state: "unknown",
+    package_state: "unknown",
+    rich_menu_target: "public_member",
+    has_first_job: false,
+    first_session_status: "",
+  };
+}
+
+function normalizeMembershipState(value) {
+  const state = clean(value).toLowerCase();
+  if (state === "active" || state === "current") return "active";
+  if (state === "expired") return "expired";
+  if (state === "no_paid_package" || state === "none" || state === "no_package") return "no_paid_package";
+  if (state === "review_required") return "review_required";
+  return "unknown";
+}
+
+function normalizePackageState(value) {
+  const state = clean(value).toLowerCase();
+  if (state === "active" || state === "current") return "current";
+  if (state === "expired") return "expired";
+  if (state === "none" || state === "no_paid_package" || state === "no_package") return "none";
+  return "unknown";
+}
+
+function canUsePrivateRoute(membership) {
+  return membership.trusted && membership.membership_state === "active" && membership.package_state === "current";
+}
+
+function isRenewalRequired(membership) {
+  return membership.trusted && (membership.membership_state === "expired" || membership.package_state === "expired");
+}
+
+function richMenuTargetFor(membership) {
+  if (canUsePrivateRoute(membership)) return "private_member";
+  if (isRenewalRequired(membership)) return "renewal_required";
+  return "public_member";
+}
+
 function truthy(value) {
   return value === true || value === 1 || String(value || "").toLowerCase() === "true" || String(value || "").toLowerCase() === "yes";
 }
 
-function appendSafeQuery(base, safeQuery = {}) {
+function appendSafeQuery(base, safeQuery = {}, extra = {}) {
   const params = new URLSearchParams();
   for (const key of ["t", "code", "promo"]) {
     if (safeQuery[key]) params.set(key, safeQuery[key]);
   }
+  Object.entries(extra).forEach(([key, value]) => {
+    if (value != null && String(value).trim()) params.set(key, String(value));
+  });
   const rendered = params.toString();
   return rendered ? `${base}?${rendered}` : base;
 }
@@ -350,8 +488,8 @@ function attr(value) {
   return html(value).replace(/"/g, "&quot;");
 }
 
-function paymentScript() {
-  return `(function(){var f=document.getElementById("payform"),r=document.getElementById("payresult");if(!f||!r)return;function out(t){r.hidden=false;r.textContent=t;}function sid(){return "mem_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,10);}f.addEventListener("submit",function(e){e.preventDefault();var d=new FormData(f),api=f.getAttribute("data-api"),plan=f.getAttribute("data-plan"),amount=Number(f.getAttribute("data-amount")||0),sessionId=String(d.get("session_id")||"").trim()||sid();var payload={session_id:sessionId,payment_stage:"membership",payment_type:"membership",package_code:plan,amount:amount,member_email:String(d.get("member_email")||"").trim(),receipt_url:String(d.get("receipt_url")||"").trim(),notes:String(d.get("notes")||"").trim(),payment_method:"promptpay"};out("กำลังส่งหลักฐานเข้าระบบตรวจสอบ...");fetch(api+"/v1/pay/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(function(x){return x.json().catch(function(){return{}}).then(function(j){return{ok:x.ok,json:j}})}).then(function(o){if(!o.ok||!o.json||o.json.ok===false)throw new Error(o.json&&(o.json.error||o.json.message)||"payment_submit_failed");var ref=o.json.payment_ref||o.json.transaction_ref||"";var next=new URL("/pay/pending-verification",location.origin);new URLSearchParams(location.search||"").forEach(function(v,k){next.searchParams.set(k,v)});next.searchParams.set("status","pending_verification");next.searchParams.set("plan",plan);next.searchParams.set("amount",String(amount));next.searchParams.set("session_id",sessionId);if(ref)next.searchParams.set("payment_ref",ref);location.href=next.toString();}).catch(function(err){out("ส่งหลักฐานไม่สำเร็จ: "+(err&&err.message||err));});});})();`;
+function paymentScript(stage = "membership") {
+  return `(function(){var f=document.getElementById("payform"),r=document.getElementById("payresult");if(!f||!r)return;function out(t){r.hidden=false;r.textContent=t;}function sid(){return "mem_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,10);}f.addEventListener("submit",function(e){e.preventDefault();var d=new FormData(f),api=f.getAttribute("data-api"),plan=f.getAttribute("data-plan"),amount=Number(f.getAttribute("data-amount")||0),sessionId=String(d.get("session_id")||"").trim()||sid();var payload={session_id:sessionId,payment_stage:${JSON.stringify(stage)},payment_type:${JSON.stringify(stage)},package_code:plan,amount:amount,member_email:String(d.get("member_email")||"").trim(),receipt_url:String(d.get("receipt_url")||"").trim(),notes:String(d.get("notes")||"").trim(),payment_method:"promptpay"};out("กำลังส่งหลักฐานเข้าระบบตรวจสอบ...");fetch(api+"/v1/pay/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(function(x){return x.json().catch(function(){return{}}).then(function(j){return{ok:x.ok,json:j}})}).then(function(o){if(!o.ok||!o.json||o.json.ok===false)throw new Error(o.json&&(o.json.error||o.json.message)||"payment_submit_failed");var ref=o.json.payment_ref||o.json.transaction_ref||"";var next=new URL("/pay/pending-verification",location.origin);new URLSearchParams(location.search||"").forEach(function(v,k){next.searchParams.set(k,v)});next.searchParams.set("status","pending_verification");next.searchParams.set("plan",plan);next.searchParams.set("amount",String(amount));next.searchParams.set("session_id",sessionId);if(ref)next.searchParams.set("payment_ref",ref);location.href=next.toString();}).catch(function(err){out("ส่งหลักฐานไม่สำเร็จ: "+(err&&err.message||err));});});})();`;
 }
 
 function styles() {

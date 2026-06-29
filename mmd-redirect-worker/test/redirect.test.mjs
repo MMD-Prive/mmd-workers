@@ -242,6 +242,39 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
+  it("delegates /sigil/pay/renewal to member-pages-worker before generic SIGIL pass-through", async () => {
+    const serviceRequests = [];
+    const env = {
+      MEMBER_PAGES_WORKER: {
+        fetch: async (request) => {
+          serviceRequests.push(request);
+          return new Response("<main>Renewal Evidence official verification</main>", {
+            status: 200,
+            headers: { "content-type": "text/html; charset=utf-8", "x-mmd-worker": "member-pages-worker", "x-mmd-page": "sigil-pay-renewal" },
+          });
+        },
+      },
+    };
+
+    for (const url of [
+      `https://mmdbkk.com/sigil/pay/renewal?${PRESERVED_QUERY}`,
+      `https://www.mmdbkk.com/sigil/pay/renewal/?${PRESERVED_QUERY}`,
+    ]) {
+      const response = await requestWithEnv(url, env);
+      const html = await response.text();
+
+      assert.equal(response.status, 200, url);
+      assert.equal(response.headers.get("location"), null, url);
+      assert.equal(response.headers.get("x-mmd-front-gate"), "mmd-redirect-worker", url);
+      assert.equal(response.headers.get("x-mmd-page"), "sigil-pay-renewal", url);
+      assert.equal(response.headers.get("x-mmd-worker"), "member-pages-worker", url);
+      assert.match(html, /Renewal Evidence/, url);
+      assert.equal(serviceRequests.at(-1).url, url);
+    }
+
+    assert.equal(passThroughRequests.length, 0);
+  });
+
   it("falls back to member-pages-worker upstream for /sigil/membership without Webflow pass-through", async () => {
     const response = await request(`https://www.mmdbkk.com/sigil/membership?${PRESERVED_QUERY}`);
     const expected = new URL(`https://www.mmdbkk.com/sigil/membership?${PRESERVED_QUERY}`);
