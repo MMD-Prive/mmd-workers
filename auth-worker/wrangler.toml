@@ -1,0 +1,43 @@
+name = "mmd-auth-worker"
+main = "src/index.js"
+compatibility_date = "2026-01-20"
+
+[vars]
+# Comma-separated origins that may call the auth API.
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://mmdprive.webflow.io,https://mmdprive.com"
+WEB_BASE_URL = "https://mmdbkk.com"
+COOKIE_DOMAIN = ".mmdbkk.com"
+
+AUTH_COOKIE_NAME = "mmd_auth"
+AUTH_SESSION_TTL_DAYS = "30"
+AUTH_CODE_TTL_MINUTES = "10"
+AUTH_CODE_LENGTH = "6"
+AUTH_MAX_CODE_ATTEMPTS = "5"
+
+# Airtable table names in the existing MMD Commerce Operating System base.
+# You can replace these with Airtable table IDs later.
+AIRTABLE_TABLE_MEMBERS = "Members"
+AIRTABLE_TABLE_MEMBER_PACKAGES = "member_packages"
+AIRTABLE_TABLE_PACKAGES = "packages"
+AIRTABLE_TABLE_PAYMENTS = "Payments"
+AIRTABLE_TABLE_SESSIONS = "Sessions"
+AIRTABLE_TABLE_POINTS_LEDGER = "MMD — Points Ledger"
+AIRTABLE_TABLE_MEMBER_ENTITLEMENTS = "MMD — Member Entitlements"
+AIRTABLE_TABLE_ACCESS_LOG = "System — Access Log"
+AIRTABLE_TABLE_AUTH_IDENTITIES = "MMD — Auth Identities"
+AIRTABLE_TABLE_AUTH_LOGIN_CODES = "MMD — Auth Login Codes"
+AIRTABLE_TABLE_AUTH_SESSIONS = "MMD — Auth Sessions"
+
+# Default paths used by Webflow pages.
+LOGIN_PATH = "/login"
+DENIED_PATH = "/membership/upgrade-required"
+EXPIRED_PATH = "/membership/renewal"
+
+# DEV ONLY. Set to "true" only while testing so the API returns the login code.
+MMD_AUTH_DEV_MODE = "false"
+
+# Required secrets to set with wrangler secret put:
+# AIRTABLE_API_KEY
+# AIRTABLE_BASE_ID
+# AUTH_HMAC_SECRET
+# ADMIN_BEARER
