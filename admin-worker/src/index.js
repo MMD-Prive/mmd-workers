@@ -1135,13 +1135,13 @@ function modelSessionJson(payload, status = 200) {
 function modelSessionTables(env = {}) {
   return {
     sessions: {
-      table: str(env.AIRTABLE_TABLE_SESSIONS || "sessions"),
+      table: str(env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX"),
       fields: {
         sessionId: str(env.AT_SESSIONS__SESSION_ID || "session_id"),
         paymentRef: str(env.AT_SESSIONS__PAYMENT_REF || "payment_ref"),
-        state: str(env.AT_SESSIONS__STATE || env.AT_SESSIONS__STATE_FIELD || "state"),
+        state: str(env.AT_SESSIONS__STATE || "session_state"),
         status: str(env.AT_SESSIONS__STATUS || "status"),
-        modelRecordId: str(env.AT_SESSIONS__MODEL_RECORD_ID || "model_record_id"),
+        modelRecordId: str(env.AT_SESSIONS__MODEL_RECORD_ID || "Assigned Model"),
         modelName: str(env.AT_SESSIONS__MODEL_NAME || "model_name"),
       },
     },
@@ -1313,8 +1313,23 @@ function resolveModelSessionStateField(tables, fields) {
 }
 
 function modelSessionStateFromRecord(tables, record) {
-  const field = resolveModelSessionStateField(tables, record?.fields || {});
-  return { field, state: field ? str(record.fields[field]) : "" };
+  const fields = record?.fields || {};
+  const preferred = [tables.sessions.fields.state, tables.sessions.fields.status, "state", "status"];
+  const present = [];
+  for (const field of [...new Set(preferred)]) {
+    if (!Object.prototype.hasOwnProperty.call(fields, field)) continue;
+    present.push(field);
+    const value = str(fields[field]);
+    if (value) return { field, state: value };
+  }
+  const field = present[0] || "";
+  return { field, state: field ? str(fields[field]) : "" };
+}
+
+function modelSessionModelRecordIdFromFields(fields, fieldName) {
+  const value = fields?.[fieldName];
+  if (Array.isArray(value)) return str(value[0] || "");
+  return str(value || "");
 }
 
 function modelSessionPageSlug(page) {
@@ -1366,7 +1381,7 @@ async function handleModelSessionLinkIssuer(req, env) {
   const body = await safeJson(req);
   const tables = modelSessionTables(env);
   const formulas = modelSessionLinkIssuerFormulas(tables, body);
-  if (!formulas.length) return modelSessionJson({ ok: false, error: "missing_lookup_key" }, 400);
+  if (!formulas.length) return modelSessionJson({ ok: false, error: "missing_session_identifier" }, 400);
 
   let session = null;
   for (const formula of formulas) {
@@ -1385,7 +1400,7 @@ async function handleModelSessionLinkIssuer(req, env) {
   }
 
   const fields = session.fields || {};
-  const modelRecordId = str(fields[tables.sessions.fields.modelRecordId] || "");
+  const modelRecordId = modelSessionModelRecordIdFromFields(fields, tables.sessions.fields.modelRecordId);
   const modelName = str(fields[tables.sessions.fields.modelName] || "");
   if (!modelRecordId && !modelName) {
     return modelSessionJson({ ok: false, error: "model_identity_not_ready" }, 409);
