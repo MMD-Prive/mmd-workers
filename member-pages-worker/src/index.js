@@ -71,13 +71,15 @@ export async function handleLiffIdentify(request, env = {}) {
   const entryRoute = normalizeEntryRoute(body.entry_route || body.entryRoute);
   const safeQuery = pickSafeQuery(body, new URL(request.url).searchParams);
   const status = identityStatusFor(entryRoute, safeQuery);
-  const nextRoute = buildNextRoute(entryRoute, safeQuery);
+  const dashboardUnlock = dashboardUnlockFor(body, entryRoute, safeQuery);
+  const nextRoute = buildNextRoute(entryRoute, safeQuery, dashboardUnlock);
 
   return liffJson({
     ok: true,
     data: {
       identity_status: status,
       next_route: nextRoute,
+      dashboard_unlock: dashboardUnlock,
       review_required: status !== "linked",
       customer_safe_summary: {
         line_display_name: clean(body.line_display_name || body.lineDisplayName),
@@ -95,7 +97,7 @@ export async function handleLiffIdentify(request, env = {}) {
       safe_next: {
         public_membership: appendSafeQuery("/member/membership", safeQuery),
         sigil_membership: appendSafeQuery("/sigil/membership", safeQuery),
-        dashboard: appendSafeQuery("/member/dashboard", safeQuery),
+        dashboard: dashboardUnlock.unlocked ? appendSafeQuery("/member/dashboard", safeQuery) : null,
         payment: appendSafeQuery("/pay/membership", safeQuery),
       },
     },
@@ -269,11 +271,34 @@ function identityStatusFor(entryRoute, safeQuery) {
   return "new_public_member";
 }
 
-function buildNextRoute(entryRoute, safeQuery) {
+function buildNextRoute(entryRoute, safeQuery, dashboardUnlock = { unlocked: false }) {
   if (entryRoute === "sigil_membership") return appendSafeQuery("/sigil/membership", safeQuery);
-  if (entryRoute === "dashboard") return appendSafeQuery("/member/dashboard", safeQuery);
+  if (entryRoute === "dashboard" && dashboardUnlock.unlocked) return appendSafeQuery("/member/dashboard", safeQuery);
+  if (entryRoute === "dashboard") return appendSafeQuery("/member/membership", safeQuery);
   if (entryRoute === "pay_membership") return appendSafeQuery("/pay/membership", safeQuery);
   return appendSafeQuery("/member/membership", safeQuery);
+}
+
+function dashboardUnlockFor(body, entryRoute, safeQuery) {
+  const sessionId = clean(body.session_id || body.sessionId || body.confirmed_session_id || body.confirmedSessionId);
+  const jobId = clean(body.job_id || body.jobId || body.confirmed_job_id || body.confirmedJobId);
+  const hasRealSession = truthy(body.first_real_session_exists || body.has_real_session || body.hasRealSession || body.confirmed_session_exists || body.confirmedSessionExists);
+  const hasRealJob = truthy(body.first_real_job_exists || body.has_real_job || body.hasRealJob || body.confirmed_job_exists || body.confirmedJobExists);
+  const status = clean(body.session_status || body.sessionStatus || body.job_status || body.jobStatus).toLowerCase();
+  const deniedStatus = ["", "draft", "pending", "pending_verification", "membership", "identity_only", "lead", "review_required", "proof_received"];
+  const evidenceId = sessionId || jobId;
+  const unlocked = Boolean(evidenceId && (hasRealSession || hasRealJob) && !deniedStatus.includes(status));
+  const holdingRoute = appendSafeQuery(entryRoute === "sigil_membership" ? "/sigil/membership" : "/member/membership", safeQuery);
+
+  return {
+    unlocked,
+    holding_route: unlocked ? null : holdingRoute,
+    reason: unlocked ? "first_real_job_or_session_exists" : "waiting_for_first_real_job_or_session",
+  };
+}
+
+function truthy(value) {
+  return value === true || value === 1 || String(value || "").toLowerCase() === "true" || String(value || "").toLowerCase() === "yes";
 }
 
 function appendSafeQuery(base, safeQuery = {}) {

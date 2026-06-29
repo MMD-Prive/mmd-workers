@@ -93,9 +93,55 @@ describe("LIFF identity bridge", () => {
       admin: "should-not-pass",
     });
 
-    assert.equal(body.data.next_route, "/member/dashboard?t=tok&code=code-1&promo=promo-1");
+    assert.equal(body.data.next_route, "/member/membership?t=tok&code=code-1&promo=promo-1");
+    assert.equal(body.data.dashboard_unlock.unlocked, false);
+    assert.equal(body.data.dashboard_unlock.holding_route, "/member/membership?t=tok&code=code-1&promo=promo-1");
+    assert.equal(body.data.dashboard_unlock.reason, "waiting_for_first_real_job_or_session");
+    assert.equal(body.data.safe_next.dashboard, null);
     assert.equal(body.data.safe_next.payment, "/pay/membership?t=tok&code=code-1&promo=promo-1");
     assert.doesNotMatch(JSON.stringify(body.data.safe_next), /payment_ref|session_id|admin|should-not-pass/);
+  });
+
+  it("does not route dashboard entry to /member/dashboard from LIFF identity alone", async () => {
+    const { body } = await identify(
+      {
+        line_user_id: "Uabc123",
+        entry_route: "dashboard",
+        t: "tok",
+        membership_status: "active",
+        payment_status: "paid",
+        entitlement_level: "premium",
+      },
+      "https://mmdbkk.com/member/api/liff/identify",
+    );
+
+    assert.equal(body.ok, true);
+    assert.equal(body.data.next_route, "/member/membership?t=tok");
+    assert.equal(body.data.dashboard_unlock.unlocked, false);
+    assert.equal(body.data.dashboard_unlock.holding_route, "/member/membership?t=tok");
+    assert.equal(body.data.safe_next.dashboard, null);
+    assert.doesNotMatch(JSON.stringify(body.data), /\/member\/dashboard/);
+  });
+
+  it("unlocks /member/dashboard only after first real job or session evidence exists", async () => {
+    const { body } = await identify(
+      {
+        line_user_id: "Uabc123",
+        entry_route: "dashboard",
+        t: "tok",
+        session_id: "sess_real_123",
+        first_real_session_exists: true,
+        session_status: "confirmed",
+      },
+      "https://mmdbkk.com/member/api/liff/identify",
+    );
+
+    assert.equal(body.ok, true);
+    assert.equal(body.data.next_route, "/member/dashboard?t=tok");
+    assert.equal(body.data.dashboard_unlock.unlocked, true);
+    assert.equal(body.data.dashboard_unlock.holding_route, null);
+    assert.equal(body.data.dashboard_unlock.reason, "first_real_job_or_session_exists");
+    assert.equal(body.data.safe_next.dashboard, "/member/dashboard?t=tok");
   });
 
   it("requires line_user_id", async () => {
