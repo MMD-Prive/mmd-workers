@@ -14,7 +14,6 @@ const BASE_ENV = {
   INTERNAL_TOKEN,
   AIRTABLE_API_KEY: "test_airtable_key_link_v1b",
   AIRTABLE_BASE_ID: "appLinkIssuer",
-  AIRTABLE_TABLE_SESSIONS: "sessions",
 };
 
 const SESSION_RECORD = {
@@ -22,9 +21,10 @@ const SESSION_RECORD = {
   fields: {
     session_id: "session_link_v1b",
     payment_ref: "payment_link_v1b",
-    model_record_id: "model_link_v1b",
+    "Assigned Model": ["recModelLinkV1b"],
     model_name: "Runtime Test Model",
-    state: "assigned",
+    session_state: "assigned",
+    status: "closed",
   },
 };
 
@@ -47,7 +47,7 @@ function installLinkIssuerFetchMock({ session = SESSION_RECORD, airtableStatus =
 
     const parts = url.pathname.split("/").filter(Boolean);
     const table = decodeURIComponent(parts[2] || parts.at(-1) || "");
-    if (table !== "sessions" || method !== "GET") return jsonResponse({ records: [] }, 404);
+    if (table !== "tblC98mKWbzmPuNzX" || method !== "GET") return jsonResponse({ records: [] }, 404);
     if (airtableStatus !== 200) return jsonResponse({ error: { type: "INVALID_REQUEST" } }, airtableStatus);
 
     const formula = url.searchParams.get("filterByFormula") || "";
@@ -98,7 +98,7 @@ test("missing lookup key returns 400", async () => {
       headers: { Authorization: `Bearer ${ADMIN_BEARER}` },
     });
     assert.equal(response.status, 400);
-    assert.equal(body.error, "missing_lookup_key");
+    assert.equal(body.error, "missing_session_identifier");
     assert.equal(mock.calls.length, 0);
   } finally {
     mock.restore();
@@ -129,6 +129,7 @@ test("session not found returns 404", async () => {
     assert.equal(response.status, 404);
     assert.equal(body.error, "session_not_found");
     assert.equal(mock.calls.length, 1);
+    assert.equal(JSON.stringify(body).includes("schema_not_ready"), false);
   } finally {
     mock.restore();
   }
@@ -140,7 +141,7 @@ test("missing model identity fields returns 409", async () => {
       ...SESSION_RECORD,
       fields: {
         ...SESSION_RECORD.fields,
-        model_record_id: "",
+        "Assigned Model": [],
         model_name: "",
       },
     },
@@ -156,7 +157,7 @@ test("missing model identity fields returns 409", async () => {
   }
 });
 
-test("model_record_id alone is enough to issue a signed URL", async () => {
+test("Assigned Model linked record array is enough to issue a signed URL", async () => {
   const mock = installLinkIssuerFetchMock({
     session: {
       ...SESSION_RECORD,
@@ -184,7 +185,7 @@ test("model_name alone is enough to issue a signed URL", async () => {
       ...SESSION_RECORD,
       fields: {
         ...SESSION_RECORD.fields,
-        model_record_id: "",
+        "Assigned Model": "",
       },
     },
   });
@@ -195,6 +196,127 @@ test("model_name alone is enough to issue a signed URL", async () => {
     assert.equal(response.status, 200);
     assert.equal(body.ok, true);
     assert.match(body.model_session_url, /\bt=/);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("Airtable formulas use only session_id and payment_ref fields", async () => {
+  const mock = installLinkIssuerFetchMock();
+  try {
+    const { response } = await postLink(
+      { session_id: "session_link_v1b", payment_ref: "payment_link_v1b" },
+      { headers: { Authorization: `Bearer ${ADMIN_BEARER}` } },
+    );
+    assert.equal(response.status, 200);
+    assert.equal(mock.calls.length, 1);
+    const formula = new URL(mock.calls[0].url).searchParams.get("filterByFormula") || "";
+    assert.match(formula, /\{session_id\}/);
+    assert.doesNotMatch(formula, /model_record_id|Assigned Model|model_name/);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("payment_ref lookup uses payment_ref formula", async () => {
+  const mock = installLinkIssuerFetchMock();
+  try {
+    const { response, body } = await postLink(
+      { payment_ref: "payment_link_v1b" },
+      { headers: { Authorization: `Bearer ${ADMIN_BEARER}` } },
+    );
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    const formula = new URL(mock.calls[0].url).searchParams.get("filterByFormula") || "";
+    assert.match(formula, /\{payment_ref\}/);
+    assert.doesNotMatch(formula, /model_record_id|Assigned Model|model_name/);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("session_state is preferred over status", async () => {
+  const mock = installLinkIssuerFetchMock({
+    session: {
+      ...SESSION_RECORD,
+      fields: {
+        ...SESSION_RECORD.fields,
+        session_state: "traveling",
+        status: "closed",
+      },
+    },
+  });
+  try {
+    const { response, body } = await postLink({ session_id: "session_link_v1b" }, {
+      headers: { Authorization: `Bearer ${ADMIN_BEARER}` },
+    });
+    assert.equal(response.status, 200);
+    assert.equal(body.session.normalized_state, "en_route");
+  } finally {
+    mock.restore();
+  }
+});
+
+test("status fallback works when session_state is absent", async () => {
+  const { session_state, ...fieldsWithoutState } = SESSION_RECORD.fields;
+  const mock = installLinkIssuerFetchMock({
+    session: {
+      ...SESSION_RECORD,
+      fields: {
+        ...fieldsWithoutState,
+        status: "met_client",
+      },
+    },
+  });
+  try {
+    const { response, body } = await postLink({ session_id: "session_link_v1b" }, {
+      headers: { Authorization: `Bearer ${ADMIN_BEARER}` },
+    });
+    assert.equal(response.status, 200);
+    assert.equal(body.session.normalized_state, "met_customer");
+  } finally {
+    mock.restore();
+  }
+});
+
+test("status fallback works when session_state is blank", async () => {
+  const mock = installLinkIssuerFetchMock({
+    session: {
+      ...SESSION_RECORD,
+      fields: {
+        ...SESSION_RECORD.fields,
+        session_state: "",
+        status: "payment_pending",
+      },
+    },
+  });
+  try {
+    const { response, body } = await postLink({ session_id: "session_link_v1b" }, {
+      headers: { Authorization: `Bearer ${ADMIN_BEARER}` },
+    });
+    assert.equal(response.status, 200);
+    assert.equal(body.session.normalized_state, "final_payment_pending");
+  } finally {
+    mock.restore();
+  }
+});
+
+test("existing record with invalid state returns schema_not_ready", async () => {
+  const mock = installLinkIssuerFetchMock({
+    session: {
+      ...SESSION_RECORD,
+      fields: {
+        ...SESSION_RECORD.fields,
+        session_state: "not_a_model_session_state",
+      },
+    },
+  });
+  try {
+    const { response, body } = await postLink({ session_id: "session_link_v1b" }, {
+      headers: { Authorization: `Bearer ${ADMIN_BEARER}` },
+    });
+    assert.equal(response.status, 503);
+    assert.equal(body.error, "schema_not_ready");
   } finally {
     mock.restore();
   }
