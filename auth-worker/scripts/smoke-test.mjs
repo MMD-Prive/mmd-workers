@@ -17,6 +17,12 @@ try {
     assert(data?.ok === true, "expected ok=true");
   });
 
+  await step("GET /v1/auth/me unauthenticated", async () => {
+    const { response, data } = await request("/v1/auth/me");
+    assert(response.status === 401, `expected 401, got ${response.status}`);
+    assert(data?.authenticated === false, "expected authenticated=false");
+  });
+
   let devCode = "";
   await step("POST /v1/auth/request-code", async () => {
     const { response, data } = await request("/v1/auth/request-code", {
@@ -49,6 +55,19 @@ try {
     assert(data?.ok === true, "expected ok=true");
     assert(data?.authenticated === true, "expected authenticated=true");
     assert(data?.profile, "expected profile");
+    assert(data.profile.member_id, "expected profile.member_id");
+    assert(data.profile.status, "expected profile.status");
+    assert(Array.isArray(data.profile.entitlements), "expected profile.entitlements array");
+    assert(Array.isArray(data.profile.grants), "expected profile.grants array");
+  });
+
+  await step("GET /v1/auth/me grants shape", async () => {
+    const { response, data } = await request("/v1/auth/me", {
+      headers: { Cookie: sessionCookie },
+    });
+    assert(response.ok, `expected 2xx, got ${response.status}`);
+    assert(data?.authenticated === true, "expected authenticated=true");
+    assert(Array.isArray(data?.profile?.grants), "expected grants array");
   });
 
   await step("POST /v1/auth/logout", async () => {

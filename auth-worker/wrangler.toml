@@ -28,6 +28,35 @@ AIRTABLE_TABLE_AUTH_IDENTITIES = "MMD — Auth Identities"
 AIRTABLE_TABLE_AUTH_LOGIN_CODES = "MMD — Auth Login Codes"
 AIRTABLE_TABLE_AUTH_SESSIONS = "MMD — Auth Sessions"
 
+# MMD — Member Entitlements mapping.
+# The current table does not expose the old auth MVP member_id field.
+# Entitlement reads are fail-safe: if the identity/status fields are missing or unmapped,
+# /v1/auth/me returns an empty grants array instead of failing login/gate checks.
+AIRTABLE_ENTITLEMENT_MEMBERSTACK_ID_FIELD = "memberstack_id"
+AIRTABLE_ENTITLEMENT_MEMBER_EMAIL_FIELD = "member_email"
+AIRTABLE_ENTITLEMENT_TELEGRAM_USER_ID_FIELD = "telegram_user_id"
+AIRTABLE_ENTITLEMENT_TELEGRAM_USERNAME_FIELD = "telegram_username"
+AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD = "line_user_id"
+AIRTABLE_ENTITLEMENT_ACCESS_STATUS_FIELDS = "access_status"
+AIRTABLE_ENTITLEMENT_MEMBER_STATUS_FIELDS = "member_status"
+AIRTABLE_ENTITLEMENT_ACTIVE_VALUES = "active,grace"
+AIRTABLE_ENTITLEMENT_BLOCKED_MEMBER_STATUS_VALUES = "inactive,blocked"
+AIRTABLE_ENTITLEMENT_RESOURCE_FIELDS = "resource_key,access_key,package_code"
+AIRTABLE_ENTITLEMENT_TIER_FIELDS = "min_tier,tier,package_code"
+AIRTABLE_ENTITLEMENT_EXPIRES_AT_FIELDS = "expire_at"
+
+# System — Access Log mapping.
+# Result is normalized to success/fail. Other log fields are optional and should be
+# mapped here only after the corresponding Airtable fields exist.
+AIRTABLE_ACCESS_LOG_EVENT_ID_FIELD = "Event ID"
+AIRTABLE_ACCESS_LOG_ACTION_FIELD = "Action"
+AIRTABLE_ACCESS_LOG_RESULT_FIELD = "Result"
+AIRTABLE_ACCESS_LOG_MEMBER_FIELD = ""
+AIRTABLE_ACCESS_LOG_METADATA_FIELD = ""
+AIRTABLE_ACCESS_LOG_IP_HASH_FIELD = ""
+AIRTABLE_ACCESS_LOG_USER_AGENT_FIELD = ""
+AIRTABLE_ACCESS_LOG_CREATED_AT_FIELD = ""
+
 # Default paths used by Webflow pages.
 LOGIN_PATH = "/login"
 DENIED_PATH = "/membership/upgrade-required"

@@ -288,7 +288,14 @@ async function readSession(request, env) {
 async function buildProfile(env, memberFields) {
   const memberId = String(memberFields.member_id || "");
   const email = normalizeEmail(memberFields.email || "");
-  const entitlements = await deriveMemberEntitlements(env, memberId);
+  const entitlements = await deriveMemberEntitlements(env, {
+    member_id: memberId,
+    email,
+    memberstack_id: memberFields.memberstack_id || "",
+    telegram_user_id: memberFields.telegram_user_id || "",
+    telegram_username: memberFields.telegram_username || "",
+    line_user_id: memberFields.line_user_id || memberFields.line_id || "",
+  });
   const packageAccess = await derivePackageAccess(env, memberFields);
 
   return {
@@ -335,12 +342,13 @@ async function derivePackageAccess(env, memberFields) {
   return { tier: best.tier, status: "active", expire_at: best.expire_at, package_code: best.package_code };
 }
 
-async function deriveMemberEntitlements(env, memberId) {
-  if (!memberId) return [];
+async function deriveMemberEntitlements(env, memberIdentity) {
+  const identityFormula = entitlementIdentityFormula(env, memberIdentity);
+  if (!identityFormula) return [];
   let records = [];
   try {
     records = await airtableList(env, table(env, "MEMBER_ENTITLEMENTS"), {
-      filterByFormula: `AND({member_id}=${formulaString(memberId)}, {status}='active')`,
+      filterByFormula: identityFormula,
       maxRecords: 100,
     });
   } catch (error) {
@@ -348,15 +356,53 @@ async function deriveMemberEntitlements(env, memberId) {
     return [];
   }
   const now = Date.now();
+  const accessStatusFields = envList(env.AIRTABLE_ENTITLEMENT_ACCESS_STATUS_FIELDS || "access_status");
+  const memberStatusFields = envList(env.AIRTABLE_ENTITLEMENT_MEMBER_STATUS_FIELDS || "member_status");
+  const activeValues = envList(env.AIRTABLE_ENTITLEMENT_ACTIVE_VALUES || "active,grace").map((v) => v.toLowerCase());
+  const blockedMemberValues = envList(env.AIRTABLE_ENTITLEMENT_BLOCKED_MEMBER_STATUS_VALUES || "inactive,blocked").map((v) => v.toLowerCase());
+  const resourceFields = envList(env.AIRTABLE_ENTITLEMENT_RESOURCE_FIELDS || "resource_key,access_key,package_code");
+  const minTierFields = envList(env.AIRTABLE_ENTITLEMENT_TIER_FIELDS || "min_tier,tier,package_code");
+  const expiresAtFields = envList(env.AIRTABLE_ENTITLEMENT_EXPIRES_AT_FIELDS || "expire_at");
+
   return records
     .map((r) => r.fields || {})
     .filter((f) => {
-      const starts = f.starts_at ? Date.parse(f.starts_at) : 0;
-      const expires = f.expires_at ? Date.parse(f.expires_at) : Number.MAX_SAFE_INTEGER;
-      return starts <= now && expires >= now;
+      const accessStatus = stringField(f, accessStatusFields).toLowerCase();
+      if (!accessStatus || !activeValues.includes(accessStatus)) return false;
+
+      const memberStatus = stringField(f, memberStatusFields).toLowerCase();
+      if (memberStatus && blockedMemberValues.includes(memberStatus)) return false;
+
+      const expiresAt = stringField(f, expiresAtFields);
+      const expires = expiresAt ? Date.parse(expiresAt) : Number.MAX_SAFE_INTEGER;
+      return expires >= now;
     })
-    .map((f) => ({ resource_key: f.resource_key || "", min_tier: f.min_tier || "", expires_at: f.expires_at || "" }))
+    .map((f) => ({
+      resource_key: stringField(f, resourceFields),
+      min_tier: normalizeTierValue(stringField(f, minTierFields)),
+      expires_at: stringField(f, expiresAtFields),
+    }))
     .filter((g) => g.resource_key);
+}
+
+function entitlementIdentityFormula(env, identity) {
+  const clauses = [];
+  addFormulaClause(clauses, env.AIRTABLE_ENTITLEMENT_MEMBERSTACK_ID_FIELD || "memberstack_id", identity?.memberstack_id);
+  addFormulaClause(clauses, env.AIRTABLE_ENTITLEMENT_MEMBER_EMAIL_FIELD || "member_email", identity?.email, true);
+  addFormulaClause(clauses, env.AIRTABLE_ENTITLEMENT_TELEGRAM_USER_ID_FIELD || "telegram_user_id", identity?.telegram_user_id);
+  addFormulaClause(clauses, env.AIRTABLE_ENTITLEMENT_TELEGRAM_USERNAME_FIELD || "telegram_username", identity?.telegram_username, true);
+  addFormulaClause(clauses, env.AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD || "line_user_id", identity?.line_user_id);
+  if (!clauses.length) return "";
+  return clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`;
+}
+
+function addFormulaClause(clauses, field, value, lower = false) {
+  const fieldName = String(field || "").trim();
+  const fieldValue = String(value || "").trim();
+  if (!fieldName || !fieldValue) return;
+  const left = lower ? `LOWER({${fieldName}})` : `{${fieldName}}`;
+  const right = formulaString(lower ? fieldValue.toLowerCase() : fieldValue);
+  clauses.push(`${left}=${right}`);
 }
 
 function tierFromPackageCode(value) {
@@ -453,6 +499,9 @@ function normalizeMemberRecord(record) {
     email: normalizeEmail(fields.email || fields["Contact Email"] || ""),
     phone: fields.phone || fields["Phone Number"] || "",
     telegram_username: fields.telegram_username || "",
+    telegram_user_id: fields.telegram_user_id || "",
+    memberstack_id: fields.memberstack_id || "",
+    line_user_id: fields.line_user_id || fields.line_id || "",
   };
 }
 
@@ -477,20 +526,59 @@ function compactFields(fields) {
 
 async function audit(env, request, memberId, action, result, metadata = {}) {
   try {
-    await airtableCreate(env, table(env, "ACCESS_LOG"), compactFields({
-      access_log_id: randomId("log"),
-      member_id: memberId || "",
-      action,
-      result,
-      metadata_json: JSON.stringify(metadata),
-      ip_hash: await hashClientValue(env, getClientIp(request)),
-      user_agent: request.headers.get("user-agent") || "",
-      created_at: nowIso(),
-    }));
+    const fields = compactFields({
+      [env.AIRTABLE_ACCESS_LOG_EVENT_ID_FIELD || "Event ID"]: randomId("log"),
+      [env.AIRTABLE_ACCESS_LOG_ACTION_FIELD || "Action"]: action,
+      [env.AIRTABLE_ACCESS_LOG_RESULT_FIELD || "Result"]: normalizeAuditResult(result),
+      ...optionalField(env.AIRTABLE_ACCESS_LOG_MEMBER_FIELD, memberId || ""),
+      ...optionalField(env.AIRTABLE_ACCESS_LOG_METADATA_FIELD, JSON.stringify(metadata)),
+      ...optionalField(env.AIRTABLE_ACCESS_LOG_IP_HASH_FIELD, await hashClientValue(env, getClientIp(request))),
+      ...optionalField(env.AIRTABLE_ACCESS_LOG_USER_AGENT_FIELD, request.headers.get("user-agent") || ""),
+      ...optionalField(env.AIRTABLE_ACCESS_LOG_CREATED_AT_FIELD, nowIso()),
+    });
+    if (Object.keys(fields).length) await airtableCreate(env, table(env, "ACCESS_LOG"), fields);
   } catch (error) {
     console.warn("Access log write skipped", safeAirtableReadDebug(table(env, "ACCESS_LOG"), error));
     // Audit failures must never block auth.
   }
+}
+
+function normalizeAuditResult(result) {
+  return String(result || "").toLowerCase() === "success" ? "success" : "fail";
+}
+
+function optionalField(field, value) {
+  const key = String(field || "").trim();
+  return key ? { [key]: value } : {};
+}
+
+function envList(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function stringField(fields, candidates) {
+  for (const field of candidates) {
+    const value = fields[field];
+    const normalized = normalizeFieldValue(value);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+function normalizeFieldValue(value) {
+  if (value === undefined || value === null) return "";
+  if (Array.isArray(value)) return value.map(normalizeFieldValue).filter(Boolean).join(",");
+  if (typeof value === "object") return String(value.name || value.id || "").trim();
+  return String(value).trim();
+}
+
+function normalizeTierValue(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "black_card") return "blackcard";
+  return raw;
 }
 
 function normalizeIdentity(body) {
