@@ -6,3 +6,7 @@ dist
 *.dev.vars
 .env
 .env.*
+
+# Next.js build output
+.next/
+apps/**/.next/
