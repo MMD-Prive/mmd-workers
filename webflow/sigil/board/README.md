@@ -18,6 +18,11 @@ Load `webflow/mmd-gate.js` first, then load this helper after the V7.0 board
 embed. It adds a delegated click handler for gate unlock controls and exposes
 `window.mmdBoardV70UnlockGate()` as a console fallback.
 
+Protected Webflow pages must set
+`window.MMD_AUTH_WORKER_BASE_URL = "https://mmdbkk.com"` before loading
+`webflow/mmd-gate.js`. This is required on `mmdprive.webflow.io` so auth checks
+call the canonical `mmdbkk.com` auth route.
+
 The gate checks the native MMD auth-worker session with `GET /v1/auth/me` and
 `credentials: "include"`. It must not compute access from Memberstack
 `customFields`, localStorage, DOM attributes, or browser-only passphrases.
@@ -29,12 +34,14 @@ Webflow.
 
 1. Add the HTML/root embed first on the `/sigil/board` Webflow page.
 2. Add the main V7 board inline JS after the HTML/root embed.
-3. Load `webflow/mmd-gate.js` before any protected page/gate script.
-4. Load `kenji-board-v70-gate.js` after the V7 board/root markup and board
+3. Set `window.MMD_AUTH_WORKER_BASE_URL = "https://mmdbkk.com"` before
+   `webflow/mmd-gate.js`.
+4. Load `webflow/mmd-gate.js` before any protected page/gate script.
+5. Load `kenji-board-v70-gate.js` after the V7 board/root markup and board
    inline JS.
-5. Load `kenji-board-v70-smoke-test.js` last, or in Webflow **Before
+6. Load `kenji-board-v70-smoke-test.js` last, or in Webflow **Before
    `</body>`**.
-6. The HTML/root embed must include the V7 root and gate elements shown in
+7. The HTML/root embed must include the V7 root and gate elements shown in
    `kenji-board-v70-webflow-snippet.html`:
    - `[data-mmd-board-v70]`
    - `[data-v70-auth-check]`
@@ -52,13 +59,18 @@ Recommended Webflow order:
   /* Paste the main Kenji Board V7.0 inline JS here. */
 </script>
 
-<!-- 3. Auth-worker gate helper before protected scripts -->
+<!-- 3. Set the canonical auth-worker base before the shared gate helper -->
+<script>
+  window.MMD_AUTH_WORKER_BASE_URL = "https://mmdbkk.com";
+</script>
+
+<!-- 4. Auth-worker gate helper before protected scripts -->
 <script src="https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-workers@main/webflow/mmd-gate.js"></script>
 
-<!-- 4. Gate helper after the V7 board/root markup -->
+<!-- 5. Gate helper after the V7 board/root markup -->
 <script src="https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-workers@main/webflow/sigil/board/kenji-board-v70-gate.js"></script>
 
-<!-- 5. Smoke helper last, or in Webflow Before </body> -->
+<!-- 6. Smoke helper last, or in Webflow Before </body> -->
 <script src="https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-workers@main/webflow/sigil/board/kenji-board-v70-smoke-test.js"></script>
 ```
 
