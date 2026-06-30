@@ -14,6 +14,24 @@ POST /member/api/liff/identify
 
 The resolver is read-only for LINE OA publish readiness. It may read Airtable-backed truth, but it must not let a LIFF body create or promote member status.
 
+## Production Binding Decision
+
+The production owner must approve the binding before any LINE OA publish. This table is a decision record placeholder, not a Wrangler change.
+
+| Candidate owner worker/service | Required env/binding name | Read-only scope | Failure behavior | Owner approval |
+| --- | --- | --- | --- | --- |
+| `member-pages-worker` | `MEMBER_STATUS_RESOLVER` | Resolve LIFF identity and route intent for `/member/api/liff/identify`; read membership/package/session truth only. | Fail closed to public membership or renewal route; no active/current inference; no dashboard unlock. | [ ] Owner approved |
+| Dedicated `member-status-resolver` service | `MEMBER_STATUS_RESOLVER` | Central read-only resolver for LINE/member identity, membership state, package state, and first real job/session evidence. | Fail closed with `membership_state: unknown`, `package_state: unknown`, `safe_next.dashboard: null`. | [ ] Owner approved |
+| Existing auth/member truth service, if selected by owner | `MEMBER_STATUS_RESOLVER` | Read existing Airtable-backed truth through approved service boundary; return only customer-safe routing state. | Treat timeout, missing binding, malformed response, or ambiguous identity as resolver unavailable. | [ ] Owner approved |
+
+Decision requirements:
+
+- Choose exactly one production owner before LINE OA publish.
+- Keep the binding name `MEMBER_STATUS_RESOLVER`.
+- Keep the resolver read-only for this rollout.
+- Keep all writes, status promotion, package lifecycle, payment verification, and Airtable schema changes outside this plan.
+- Document owner approval in the PR or release checklist before publish.
+
 ## Resolver Request Contract
 
 The caller sends the resolver a normalized server-side request. Only identity and intent fields are inputs; status claims from the public body are ignored.
@@ -115,6 +133,18 @@ The resolver must read existing truth sources. This plan does not create tables,
 | Can dashboard unlock? | `Sessions` / Jobs equivalent operational table | trusted member/client/session relation | real job/session ID, status, member link, package link | Unlock only after trusted first real job/session evidence; no public body claim can unlock it. |
 | Should points/tier be displayed? | `MMD - Points Ledger`, entitlements, package truth | trusted member/client references | verified points/tier fields | Display only after trusted lookup; never accept points/tier from LIFF body. |
 
+## Airtable Live-Field Confirmation Checklist
+
+Confirm table names, field names, linked-record behavior, allowed values, and read filters against production Airtable before LINE OA publish. Do not create or modify schema from this checklist.
+
+| Source | Required confirmation | Publish gate |
+| --- | --- | --- |
+| `MMD - Member Entitlements` | Confirm lookup keys for `line_user_id`, `member_email`, and/or `memberstack_id`; confirm active values for `member_status` and `access_status`; confirm expiry field such as `expire_at`; confirm package/tier fields. | [ ] Confirmed |
+| `member_packages` | Confirm member lookup keys; confirm `status` active/current values; confirm `package_code`; confirm `start_date` and `end_date`; confirm payment reference is evidence of a backend-owned flow only. | [ ] Confirmed |
+| `Clients` | Confirm LINE identity fields, display-name fields, member/client link fields, and whether this table is lookup-only or staging/read context for LINE OA. | [ ] Confirmed |
+| `Sessions / Jobs` | Confirm canonical table name(s), real job/session ID fields, member/client link fields, package/payment relation fields, and allowed statuses for first real job/session unlock. | [ ] Confirmed |
+| Optional `MMD - LIFF Renewal Sessions` | Confirm whether the table exists; confirm fields for attempt logging such as `line_user_id`, `entry_route`, `source`, `safe_next_route`, status, timestamps, and dashboard unlock reason. | [ ] Confirmed or explicitly not used |
+
 ## Resolver-Unavailable Fallback
 
 If `MEMBER_STATUS_RESOLVER` is missing, throws, times out, returns malformed JSON, returns ambiguous identity, or cannot reach Airtable:
@@ -169,6 +199,18 @@ Dashboard remains locked for:
 - pending verification,
 - package signup without trusted first real job/session.
 
+## Test Identity Preparation Matrix
+
+Prepare production-safe test identities before LINE OA publish. Do not use public LIFF body claims to create these states.
+
+| Scenario | Required trusted Airtable state | Expected resolver result | Expected route behavior | Prepared |
+| --- | --- | --- | --- | --- |
+| active/current | Matched LINE identity, active entitlement, current package, unexpired access window. | `membership_state: active`, `package_state: current`, `rich_menu_target: private_member`, `safe_next.dashboard: null` unless unlock evidence also exists. | Member status/booking intents may route to private-eligible profile or `/sigil/booking`; dashboard remains locked without first real job/session. | [ ] |
+| expired | Matched LINE identity with expired entitlement or expired package. | `membership_state: expired`, `package_state: expired`, `rich_menu_target: renewal_required`. | Renewal route is `/sigil/pay/renewal`; no dashboard unlock. | [ ] |
+| no paid package | Matched LINE identity with no verified paid package. | `membership_state: no_paid_package`, `package_state: none`, `rich_menu_target: public_member`. | Route to `/member/membership`; no booking or dashboard unlock. | [ ] |
+| unknown/review_required | No match, ambiguous match, missing required fields, pending review, resolver error, or incomplete truth. | `membership_state: unknown` or `review_required`, `package_state: unknown`, `rich_menu_target: public_member`. | Fail closed to `/member/membership` or review-safe profile; no active/current result. | [ ] |
+| first real job/session unlock | Active/current member plus trusted first real job/session record with allowed status. | `dashboard_unlock.allowed: true` with reason from backend session/job evidence. | `/member/dashboard` may be exposed only after resolver returns trusted unlock. | [ ] |
+
 ## `/sigil/pay/renewal` Evidence-Only Status
 
 `/sigil/pay/renewal` is a renewal evidence route. It may collect or show payment proof state, but proof is not payment truth.
@@ -207,6 +249,24 @@ Complete all items before publishing Rich Menu changes in LINE OA Manager:
 - [ ] Confirm only `t`, `code`, and `promo` are preserved into safe customer routes.
 - [ ] Confirm unknown or resolver-unavailable states fail closed to public membership/renewal routes.
 - [ ] Confirm no deploy, Webflow publish, Airtable schema/data change, or LINE OA publish happens until owner approval.
+
+## Final Go/No-Go Criteria Before LINE OA Publish
+
+Publish is GO only when all criteria are true:
+
+- [ ] One production owner for `MEMBER_STATUS_RESOLVER` is approved.
+- [ ] Binding name and target service are confirmed outside this docs PR.
+- [ ] Resolver contract is implemented and returns only customer-safe fields.
+- [ ] Airtable live-field confirmation checklist is complete.
+- [ ] Test identity matrix has passing results for every scenario.
+- [ ] Public LIFF body spoof test cannot fake active/current, points/tier, package state, or dashboard unlock.
+- [ ] Resolver-unavailable test fails closed to public membership/renewal routes.
+- [ ] `/sigil/pay/renewal` remains evidence-only.
+- [ ] `/sigil/booking` ownership/pass-through behavior remains unchanged.
+- [ ] No Rich Menu action points directly to `/member/dashboard`.
+- [ ] Owner explicitly approves LINE OA Manager publish.
+
+Publish is NO-GO if any item is incomplete, ambiguous, or blocked.
 
 ## Blockers Before LINE OA Publish
 
