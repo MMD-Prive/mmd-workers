@@ -4,11 +4,8 @@
   if (window.mmdBoardV70GateHandlerInstalled) return;
   window.mmdBoardV70GateHandlerInstalled = true;
 
-  var GATE_KEY = "mmd_board_v70_gate";
-  var ROLE_KEY = "mmd_board_v70_role";
   var UNLOCKED = "unlocked";
-  var ROLE = "boss_per";
-  var MOCK_PASSPHRASE = "sigil";
+  var ROLE = "member";
 
   var ROOT_SELECTOR = [
     "[data-mmd-board-v70]",
@@ -32,12 +29,10 @@
     ".mmd-board-v70__gate"
   ].join(",");
 
-  var PASSPHRASE_SELECTOR = [
-    "[data-v70-gate-passphrase]",
-    "[data-v7-gate-passphrase]",
-    "[name='mmd_board_v70_passphrase']",
-    "#mmdBoardV70Passphrase",
-    "[data-gate-passphrase]"
+  var AUTH_CHECK_SELECTOR = [
+    "[data-v70-auth-check]",
+    "[data-v7-auth-check]",
+    "[data-mmd-auth-check]"
   ].join(",");
 
   var STATUS_SELECTOR = [
@@ -47,27 +42,12 @@
     "[data-gate-status]"
   ].join(",");
 
-  function clean(value) {
-    return String(value || "").trim();
-  }
-
   function findRoot(node) {
     if (node && node.closest) {
       var closest = node.closest(ROOT_SELECTOR);
       if (closest) return closest;
     }
     return document.querySelector(ROOT_SELECTOR);
-  }
-
-  function readPassphrase(root, explicitPassphrase) {
-    var explicit = clean(explicitPassphrase);
-    if (explicit) return explicit;
-
-    var input = root && root.querySelector ? root.querySelector(PASSPHRASE_SELECTOR) : null;
-    if (!input) input = document.querySelector(PASSPHRASE_SELECTOR);
-    if (input) return clean(input.value || input.textContent);
-
-    return clean(window.prompt ? window.prompt("Gate passphrase") : "");
   }
 
   function setStatus(root, message, tone) {
@@ -79,45 +59,54 @@
     target.setAttribute("data-gate-tone", tone || "neutral");
   }
 
-  function applyUnlockedState(root) {
-    localStorage.setItem(GATE_KEY, UNLOCKED);
-    localStorage.setItem(ROLE_KEY, ROLE);
-
+  function applyUnlockedState(root, auth) {
     if (root) {
       root.setAttribute("data-gate", UNLOCKED);
       root.setAttribute("data-role", ROLE);
       root.classList.add("is-gate-unlocked");
     }
 
-    setStatus(root, "Gate unlocked for boss_per.", "ok");
+    setStatus(root, "Gate unlocked.", "ok");
     document.dispatchEvent(new CustomEvent("mmd:board-v70-gate-unlocked", {
       detail: {
         gate: UNLOCKED,
-        role: ROLE
+        role: ROLE,
+        auth: auth
       }
     }));
 
     return {
       ok: true,
       gate: UNLOCKED,
-      role: ROLE
+      role: ROLE,
+      auth: auth
     };
   }
 
-  function unlockGate(options) {
-    var detail = typeof options === "string" ? { passphrase: options } : options || {};
+  async function unlockGate(options) {
+    var detail = typeof options === "string" ? {} : options || {};
     var root = detail.root || findRoot(detail.target);
-    var passphrase = readPassphrase(root, detail.passphrase);
+    var gate = window.MMDGate;
 
-    if (passphrase !== MOCK_PASSPHRASE) {
-      setStatus(root, "Gate locked. Check passphrase.", "error");
+    if (!gate || typeof gate.requireMmdAuth !== "function") {
+      setStatus(root, "Auth gate unavailable. Load mmd-gate.js before this helper.", "error");
       return {
         ok: false,
-        error: "invalid_passphrase"
+        error: "auth_gate_unavailable"
       };
     }
 
-    return applyUnlockedState(root);
+    setStatus(root, "Checking session.", "pending");
+    var auth = await gate.requireMmdAuth({ redirect: detail.redirect !== false });
+    if (!auth) {
+      setStatus(root, "Session required.", "error");
+      return {
+        ok: false,
+        error: "session_required"
+      };
+    }
+
+    return applyUnlockedState(root, auth);
   }
 
   document.addEventListener("click", function (event) {
@@ -131,7 +120,17 @@
     unlockGate({
       target: gate,
       root: root,
-      passphrase: gate.getAttribute("data-passphrase")
+      redirect: gate.getAttribute("data-no-redirect") !== "true"
+    });
+  });
+
+  document.addEventListener("DOMContentLoaded", function () {
+    var authCheck = document.querySelector(AUTH_CHECK_SELECTOR);
+    if (!authCheck) return;
+
+    unlockGate({
+      target: authCheck,
+      root: findRoot(authCheck)
     });
   });
 

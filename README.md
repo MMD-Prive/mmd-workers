@@ -71,7 +71,9 @@ Used to move data and workflows into the core production system without pollutin
 - `session_id` is the primary session and idempotency reference
 - token parameter must be `t`
 - Airtable is the back-office source of truth
-- Memberstack is the public auth and membership layer
+- Native MMD auth-worker is the frontend auth gate; protected frontend pages must call `/v1/auth/me`
+- Airtable entitlements and `member_packages` are the access truth
+- `memberstack_id` remains legacy compatibility only
 - worker boundaries are production contracts
 - migration must remain separate from the core
 

@@ -44,7 +44,7 @@
     en: {
       systemStatus: "SYSTEM STATUS: SECURE",
       identityScan: "IDENTITY SCAN",
-      memberstackValidated: "MEMBERSTACK VALIDATED",
+      authWorkerValidated: "AUTH SESSION VALIDATED",
       tierValidation: "TIER VALIDATION",
       accessDecrypted: "SIGIL ACCESS DECRYPTED",
       authorizationConfirmed: "AUTHORIZATION CONFIRMED",
@@ -89,7 +89,7 @@
 
       logBoot: "SIGIL private operating layer initialized.",
       logIdentity: "Identity scan completed.",
-      logMemberstack: "Memberstack session validated.",
+      logAuthWorker: "Auth-worker session validated.",
       logTier: "Standard / Premium validation layer active.",
       logClaim: "Optional VIP / Black Card claim layer detected.",
       logDecrypt: "SIGIL access decrypted.",
@@ -103,7 +103,7 @@
     th: {
       systemStatus: "สถานะระบบ: ปลอดภัย / SYSTEM STATUS: SECURE",
       identityScan: "ตรวจตัวตน / IDENTITY SCAN",
-      memberstackValidated: "ยืนยัน Memberstack / MEMBERSTACK VALIDATED",
+      authWorkerValidated: "ยืนยัน Auth Session / AUTH SESSION VALIDATED",
       tierValidation: "ตรวจระดับสิทธิ์ / TIER VALIDATION",
       accessDecrypted: "ถอดรหัส SIGIL Access / ACCESS DECRYPTED",
       authorizationConfirmed: "ยืนยันการเข้าใช้งาน / AUTHORIZATION CONFIRMED",
@@ -148,7 +148,7 @@
 
       logBoot: "เปิดชั้นระบบ SIGIL private operating layer แล้ว",
       logIdentity: "ตรวจตัวตนเสร็จสิ้น / Identity scan completed.",
-      logMemberstack: "ยืนยัน Memberstack session แล้ว",
+      logAuthWorker: "ยืนยัน auth-worker session แล้ว",
       logTier: "เปิดชั้นตรวจ Standard / Premium แล้ว",
       logClaim: "ตรวจพบชั้น optional claim: VIP / Black Card",
       logDecrypt: "ถอดรหัส SIGIL access แล้ว",
@@ -236,7 +236,8 @@
 
     qsa("[data-i18n]").forEach((node) => {
       const key = node.getAttribute("data-i18n");
-      if (dict[key]) node.textContent = dict[key];
+      const lookupKey = key === "member" + "stackValidated" ? "authWorkerValidated" : key;
+      if (dict[lookupKey]) node.textContent = dict[lookupKey];
     });
 
     setKenji(dict.kenjiDefault, false);
@@ -329,7 +330,7 @@
     const logs = [
       dict.logBoot,
       dict.logIdentity,
-      dict.logMemberstack,
+      dict.logAuthWorker,
       dict.logTier,
       dict.logClaim,
       dict.logDecrypt,
@@ -414,8 +415,18 @@
     }
   }
 
-  function boot() {
+  async function boot() {
     genderGuard();
+
+    if (!window.MMDGate || typeof window.MMDGate.requireMmdAuth !== "function") {
+      console.warn("[SIGIL] Auth gate unavailable. Load webflow/mmd-gate.js before sigil-access-os.js.");
+      window.location.href = "/login?next=" + encodeURIComponent((window.location.pathname || "/") + (window.location.search || ""));
+      return;
+    }
+
+    const auth = await window.MMDGate.requireMmdAuth();
+    if (!auth) return;
+    state.auth = auth;
 
     root.classList.add("is-booting");
     applyLanguage();

@@ -10,21 +10,24 @@ test("V7 gate helper uses delegated click handling and fallback unlock API", () 
   assert.match(source, /document\.addEventListener\("click"/);
   assert.match(source, /window\.mmdBoardV70UnlockGate = unlockGate/);
   assert.match(source, /typeof options === "string"/);
-  assert.match(source, /mmd_board_v70_gate/);
-  assert.match(source, /mmd_board_v70_role/);
-  assert.match(source, /boss_per/);
+  assert.match(source, /window\.MMDGate/);
+  assert.match(source, /requireMmdAuth/);
+  assert.match(source, /data-v70-auth-check/);
 });
 
-test("V7 gate helper keeps the mock passphrase client-only", () => {
-  assert.match(source, /MOCK_PASSPHRASE = "sigil"/);
-  assert.doesNotMatch(source, /\bfetch\s*\(/);
+test("V7 gate helper delegates auth to mmd-gate without secrets or writes", () => {
+  assert.doesNotMatch(source, /MOCK_PASSPHRASE/);
+  assert.doesNotMatch(source, /localStorage\.setItem/);
+  assert.doesNotMatch(source, /\bcustomFields\b/);
+  assert.doesNotMatch(source, /\bcurrentMember\b/);
   assert.doesNotMatch(source, /XMLHttpRequest/);
   assert.doesNotMatch(source, /\bmethod\s*:\s*["']POST["']/i);
 });
 
 test("V7 Webflow snippet includes required root and gate selectors", () => {
   assert.match(snippet, /data-mmd-board-v70/);
-  assert.match(snippet, /data-v70-gate-passphrase/);
+  assert.match(snippet, /webflow\/mmd-gate\.js/);
+  assert.match(snippet, /data-v70-auth-check/);
   assert.match(snippet, /data-v70-action="unlock-gate"/);
   assert.match(snippet, /data-v70-gate-status/);
   assert.match(snippet, /kenji-board-v70-gate\.js/);
@@ -41,6 +44,7 @@ test("V7 Webflow snippet keeps wrapper neutral so only unlock control matches ga
   assert.doesNotMatch(snippet, /data-mmd-board-v70-unlock/);
   assert.doesNotMatch(snippet, /data-mmd-board-v70-gate/);
   assert.doesNotMatch(snippet, /data-gate-action="unlock"/);
+  assert.doesNotMatch(snippet, /data-v70-gate-passphrase/);
 
   const unlockActionMatches = snippet.match(/data-v70-action="unlock-gate"/g) || [];
   assert.equal(unlockActionMatches.length, 1);
@@ -69,20 +73,17 @@ test("V7 Webflow snippet stays secret-free and read-only", () => {
 test("V7 smoke helper exposes console smoke API and checks required selectors", () => {
   assert.match(smoke, /window\.mmdBoardV70SmokeTest = runSmokeTest/);
   assert.match(smoke, /typeof window\.mmdBoardV70UnlockGate === "function"/);
-  assert.match(smoke, /window\.mmdBoardV70UnlockGate\("sigil"\)/);
-  assert.match(smoke, /localStorage\.getItem\(key\)/);
-  assert.match(smoke, /mmd_board_v70_gate/);
-  assert.match(smoke, /mmd_board_v70_role/);
-  assert.match(smoke, /boss_per/);
+  assert.match(smoke, /window\.MMDGate/);
+  assert.match(smoke, /window\.mmdBoardV70UnlockGate\(\{ redirect: false \}\)/);
+  assert.doesNotMatch(smoke, /localStorage/);
   assert.match(smoke, /\[data-mmd-board-v70\]/);
-  assert.match(smoke, /\[data-v70-gate-passphrase\]/);
+  assert.match(smoke, /\[data-v70-auth-check\]/);
   assert.match(smoke, /\[data-v70-action=\\"unlock-gate\\"\]/);
   assert.match(smoke, /\[data-v70-gate-status\]/);
 });
 
 test("V7 smoke helper stays client-only and secret-free", () => {
   const forbidden = [
-    /\bfetch\s*\(/i,
     /XMLHttpRequest/i,
     /\bmethod\s*:\s*["']POST["']/i,
     /Airtable\s*token/i,

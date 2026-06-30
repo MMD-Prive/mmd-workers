@@ -2,26 +2,23 @@
   MMD SIGIL Board V7.0 Webflow embed snippet
   Placement:
   1. Paste the V7 board embed/root markup first on /sigil/board.
-  2. Load kenji-board-v70-gate.js after this embed.
-  3. Load kenji-board-v70-smoke-test.js last, or in Before </body>.
+  2. Load webflow/mmd-gate.js after this embed.
+  3. Load kenji-board-v70-gate.js after the auth gate helper.
+  4. Load kenji-board-v70-smoke-test.js last, or in Before </body>.
 -->
 <section data-mmd-board-v70 data-gate="locked" data-role="guest">
   <div class="mmd-board-v70__gate-panel" data-v70-gate-panel>
-    <label for="mmd-board-v70-passphrase">Gate passphrase</label>
-    <input
-      id="mmd-board-v70-passphrase"
-      type="password"
-      autocomplete="off"
-      data-v70-gate-passphrase
-    />
-    <button type="button" data-v70-action="unlock-gate">
-      Unlock V7 Gate
+    <button type="button" data-v70-action="unlock-gate" data-v70-auth-check>
+      Check SIGIL Access
     </button>
     <p data-v70-gate-status aria-live="polite">
-      Gate locked.
+      Auth session required.
     </p>
   </div>
 </section>
+
+<!-- Load before the board gate helper. -->
+<script src="https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-workers@main/webflow/mmd-gate.js"></script>
 
 <!-- Load after the V7 board embed/root markup. -->
 <script src="https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-workers@main/webflow/sigil/board/kenji-board-v70-gate.js"></script>
