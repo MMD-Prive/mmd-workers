@@ -36,6 +36,22 @@ pattern = "www.mmdbkk.com/*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
+pattern = "mmdbkk.com/member/promotion"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/member/promotion/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/promotion"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/promotion/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
 pattern = "mmdbkk.com/member/dashboard"
 zone_name = "mmdbkk.com"
 
