@@ -48,12 +48,39 @@ const VISIBLE_DEBUG_TEXT = [
 
 const TELEGRAM_BRIEF_FORBIDDEN_TEXT = /Briefing HYPE TELEGRAMBOT|TELEGRAMBOT|CEO TELEGRAM BRIEF/i;
 const wranglerConfig = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
+const redirectSource = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
 const PRESERVED_QUERY = "t=test-token&code=abc&promo=gold&payment_ref=pay123&session_id=sess_1&x=1";
+const FORBIDDEN_PRODUCTION_TEXT = [
+  "x-mmd-temporary-route",
+  "data-mmd-page-shell",
+  "Front Gate Active",
+  "Route recovery shell",
+  "fallback",
+  "recovery",
+  "default",
+  "autodirect",
+];
 
 function assertPolishedShell(html, url) {
   assert.doesNotMatch(html, /name=["']token["']/i, url);
   for (const text of VISIBLE_DEBUG_TEXT) {
     assert.doesNotMatch(html, new RegExp(text, "i"), `${url} should not show ${text}`);
+  }
+}
+
+async function assertNoTemporaryProductionMarkers(response, url, { body = true } = {}) {
+  assert.equal(response.headers.get("x-mmd-temporary-route"), null, url);
+  for (const [name, value] of response.headers) {
+    for (const text of FORBIDDEN_PRODUCTION_TEXT) {
+      const marker = new RegExp(text, "i");
+      assert.doesNotMatch(name, marker, `${url} header name should not include ${text}`);
+      assert.doesNotMatch(value, marker, `${url} header value should not include ${text}`);
+    }
+  }
+  if (!body) return;
+  const html = await response.clone().text();
+  for (const text of FORBIDDEN_PRODUCTION_TEXT) {
+    assert.doesNotMatch(html, new RegExp(text, "i"), `${url} should not include ${text}`);
   }
 }
 
@@ -88,6 +115,26 @@ describe("MMD permanent redirect guard", () => {
         `https://mmdbkk.com/sigil/start?${PRESERVED_QUERY}`,
         alias,
       );
+    }
+
+    assert.equal(passThroughRequests.length, 0);
+  });
+
+  it("redirects safe public aliases with query strings preserved exactly", async () => {
+    const aliases = [
+      ["/term-1", "/legal/terms"],
+      ["/home", "/"],
+      ["/confidential-model-brief", "/docs/confidential-model-brief"],
+      ["/private-companion-bangkok", "/docs/private-companion-bangkok"],
+      ["/real-cases", "/docs/real-cases"],
+    ];
+
+    for (const [alias, target] of aliases) {
+      const response = await request(`https://www.mmdbkk.com${alias}?${PRESERVED_QUERY}`);
+
+      assert.equal(response.status, 301, alias);
+      assert.equal(response.headers.get("location"), `https://mmdbkk.com${target}?${PRESERVED_QUERY}`, alias);
+      await assertNoTemporaryProductionMarkers(response, alias);
     }
 
     assert.equal(passThroughRequests.length, 0);
@@ -524,7 +571,7 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
-  it("renders /hall as a polished MMD Privé page without redirecting or changing query strings", async () => {
+  it("fails closed for /hall without temporary route headers or shell content", async () => {
     const urls = [
       "https://mmdbkk.com/hall?t=abc&cb=test",
       "https://mmdbkk.com/hall/?t=abc&cb=test",
@@ -533,26 +580,17 @@ describe("MMD permanent redirect guard", () => {
 
     for (const url of urls) {
       const response = await request(url);
-      const html = await response.text();
-      const query = new URL(url).search;
 
-      assert.equal(response.status, 200, url);
+      assert.match(String(response.status), /^(404|410)$/, url);
       assert.equal(response.headers.get("location"), null, url);
-      assert.equal(response.headers.get("x-mmd-worker"), "mmd-redirect-worker", url);
-      assert.equal(response.headers.get("x-mmd-page"), "hall", url);
-      assert.equal(response.headers.get("x-mmd-temporary-route"), "true", url);
       assert.equal(response.headers.get("cache-control"), "no-store, no-cache, must-revalidate, max-age=0", url);
-      assert.match(html, /MMD Hall/, url);
-      assert.match(html, /พื้นที่กลางสำหรับเข้าสู่ระบบสมาชิก/, url);
-      assert.ok(html.includes(`/member/dashboard${query}`), url);
-      assert.ok(html.includes(`/member/payments${query}`), url);
-      assertPolishedShell(html, url);
+      await assertNoTemporaryProductionMarkers(response, url);
     }
 
     assert.equal(passThroughRequests.length, 0);
   });
 
-  it("renders unknown /member/* routes as polished MMD Privé pages without redirecting", async () => {
+  it("fails closed for unknown /member/* routes without temporary route headers or shell content", async () => {
     const urls = [
       "https://mmdbkk.com/member/kenji-20-ai?t=abc&cb=test",
       "https://mmdbkk.com/member/some-new-page?t=abc&cb=test",
@@ -561,24 +599,16 @@ describe("MMD permanent redirect guard", () => {
 
     for (const url of urls) {
       const response = await request(url);
-      const html = await response.text();
-      const query = new URL(url).search;
 
-      assert.equal(response.status, 200, url);
+      assert.match(String(response.status), /^(404|410)$/, url);
       assert.equal(response.headers.get("location"), null, url);
-      assert.equal(response.headers.get("x-mmd-page"), "member-static", url);
-      assert.equal(response.headers.get("x-mmd-temporary-route"), "true", url);
-      assert.match(html, /Member Page/, url);
-      assert.match(html, /หน้านี้อยู่ในพื้นที่สมาชิกของ MMD Privé/, url);
-      assert.ok(html.includes(`/member/dashboard${query}`), url);
-      assert.ok(html.includes(`/member/membership${query}`), url);
-      assertPolishedShell(html, url);
+      await assertNoTemporaryProductionMarkers(response, url);
     }
 
     assert.equal(passThroughRequests.length, 0);
   });
 
-  it("renders /model/console as a polished MMD Privé page without redirecting", async () => {
+  it("fails closed for /model/console without temporary route headers or shell content", async () => {
     const urls = [
       "https://mmdbkk.com/model/console?t=abc&cb=test",
       "https://www.mmdbkk.com/model/console?t=abc&debug=1",
@@ -586,21 +616,62 @@ describe("MMD permanent redirect guard", () => {
 
     for (const url of urls) {
       const response = await request(url);
-      const html = await response.text();
-      const query = new URL(url).search;
 
-      assert.equal(response.status, 200, url);
+      assert.match(String(response.status), /^(404|410)$/, url);
       assert.equal(response.headers.get("location"), null, url);
-      assert.equal(response.headers.get("x-mmd-page"), "model-console", url);
-      assert.equal(response.headers.get("x-mmd-temporary-route"), "true", url);
-      assert.match(html, /Model Console/, url);
-      assert.match(html, /พื้นที่สำหรับผู้ให้บริการตรวจสถานะงาน/, url);
-      assert.ok(html.includes(`/v1/model/session/dashboard${query}`), url);
-      assert.ok(html.includes(`/member/dashboard${query}`), url);
-      assertPolishedShell(html, url);
+      await assertNoTemporaryProductionMarkers(response, url);
     }
 
     assert.equal(passThroughRequests.length, 0);
+  });
+
+  it("strips forbidden temporary route markers at the front-gate boundary", async () => {
+    const env = {
+      IMMIGRATE_WORKER: {
+        fetch: async () => new Response("<main>member dashboard</main>", {
+          headers: { "content-type": "text/html; charset=utf-8", "x-mmd-member-route-build": "member-route-recovery-20260615a", "x-mmd-page": "member-dashboard" },
+        }),
+      },
+      MEMBER_PAGES_WORKER: {
+        fetch: async (request) => new Response(`<main>member page ${new URL(request.url).pathname}</main>`, {
+          headers: { "content-type": "text/html; charset=utf-8", "x-mmd-page": "member-page", "x-mmd-temporary-route": "true" },
+        }),
+      },
+      ADMIN_WORKER: {
+        fetch: async () => new Response("<main>member payments</main>", {
+          headers: { "content-type": "text/html; charset=utf-8", "x-mmd-page": "member-payments", "x-mmd-default-route": "old" },
+        }),
+      },
+      SIGIL_WORKER: {
+        fetch: async () => new Response("<main>sigil apply</main>", {
+          headers: { "content-type": "text/html; charset=utf-8", "x-mmd-page": "sigil-private-model-setup", "x-mmd-route-recovery": "old" },
+        }),
+      },
+    };
+
+    const paths = [
+      "/member/dashboard",
+      "/member/membership",
+      "/member/profile",
+      "/member/payments",
+      "/sigil/membership",
+      "/sigil/pay/renewal",
+      "/sigil/apply",
+    ];
+
+    for (const path of paths) {
+      const response = await requestWithEnv(`https://mmdbkk.com${path}?${PRESERVED_QUERY}`, env);
+      await assertNoTemporaryProductionMarkers(response, path);
+    }
+  });
+
+  it("keeps recovery shells out of source-reachable production route handling", () => {
+    assert.equal(redirectSource.includes("renderRouteRecoveryShell"), false);
+    assert.equal(redirectSource.includes("renderHallRecovery"), false);
+    assert.equal(redirectSource.includes("renderModelConsoleRecovery"), false);
+    assert.equal(redirectSource.includes("renderMemberStaticRecovery"), false);
+    assert.doesNotMatch(redirectSource, /<main\s+data-mmd-page-shell=/);
+    assert.doesNotMatch(redirectSource, /headers:\s*{[^}]*["']x-mmd-temporary-route["']/s);
   });
 
   it("falls back to the member-pages-worker upstream for /member/membership when service binding is missing", async () => {

@@ -22,8 +22,9 @@ export const MEMBER_PAGE_PATHS = new Set(["/member/membership", "/member/members
 export const MEMBER_API_PATHS = new Set(["/member/api/liff/identify", "/member/api/liff/identify/"]);
 export const NEVER_TOUCH_PREFIXES = ["/api/", "/webhook/", "/webhooks/", "/payments/", "/payment/", "/payment-webhook/", "/admin/", "/sigil/", "/cdn-cgi/", "/assets/", "/static/", "/uploads/"];
 export const NEVER_REDIRECT_EXACT_PATHS = new Set(["/member/dashboard", "/member/dashboard/", "/member/membership", "/member/membership/", "/member/profile", "/member/profile/", "/member/payments", "/member/payments/", "/pay/membership", "/pay/membership/", "/pay/pending-verification", "/pay/pending-verification/", "/sigil/pay/renewal", "/sigil/pay/renewal/", "/hall", "/hall/", "/model/console", "/model/console/", "/blackcard", "/blackcard/", "/blackcard/black-card", "/blackcard/black-card/"]);
-export const EXACT_PATH_REDIRECTS = { "/trust/inme": "/sigil/start", "/inme": "/sigil/start", "/login": "/sigil/start", "/member": "/member/dashboard", "/member/membership/benefits": "/member/membership", "/members": "/sigil/start", "/membership": "/member/membership", "/membership/benefits": "/member/membership", "/renew": "/sigil/membership", "/renewal": "/sigil/membership", "/trust": "/sigil/start" };
+export const EXACT_PATH_REDIRECTS = { "/confidential-model-brief": "/docs/confidential-model-brief", "/home": "/", "/private-companion-bangkok": "/docs/private-companion-bangkok", "/real-cases": "/docs/real-cases", "/term-1": "/legal/terms", "/trust/inme": "/sigil/start", "/inme": "/sigil/start", "/login": "/sigil/start", "/member": "/member/dashboard", "/member/membership/benefits": "/member/membership", "/members": "/sigil/start", "/membership": "/member/membership", "/membership/benefits": "/member/membership", "/renew": "/sigil/membership", "/renewal": "/sigil/membership", "/trust": "/sigil/start" };
 export const FOLDER_REDIRECTS = [{ from: "/old-academy/", to: "/academy/" }, { from: "/old-trust/", to: "/trust/" }];
+const FORBIDDEN_PRODUCTION_HEADER_MARKER = /x-mmd-temporary-route|data-mmd-page-shell|front gate active|route recovery shell|fallback|recovery|default|autodirect/i;
 
 export function isSafePageRequest(request) {
   const method = request.method.toUpperCase();
@@ -56,6 +57,11 @@ export function findMappedPath(pathname) {
 
 function withFrontGateHeaders(response) {
   const headers = new Headers(response.headers);
+  for (const [name, value] of headers) {
+    if (FORBIDDEN_PRODUCTION_HEADER_MARKER.test(name) || FORBIDDEN_PRODUCTION_HEADER_MARKER.test(value)) {
+      headers.delete(name);
+    }
+  }
   headers.set("x-mmd-front-gate", FRONT_GATE);
   headers.set("x-mmd-front-version", FRONT_VERSION);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
@@ -74,6 +80,16 @@ function appendQuery(base, query, extra = {}) {
   Object.entries(extra).forEach(([k, v]) => { if (v != null && String(v).trim()) params.set(k, String(v)); });
   const rendered = params.toString();
   return rendered ? `${base}?${rendered}` : base;
+}
+
+function failClosed(request) {
+  return withFrontGateHeaders(new Response(request.method.toUpperCase() === "HEAD" ? null : "Not found", {
+    status: 404,
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+    },
+  }));
 }
 
 async function fetchPassThrough(request) {
@@ -134,13 +150,6 @@ async function fetchSigilWorkerRoute(request, env, url, page) {
   target.pathname = url.pathname;
   target.search = url.search;
   return withRouteOwnerHeaders(await fetch(new Request(target.toString(), request)), { owner: SIGIL_APPLY_ROUTE_OWNER, page, origin: SIGIL_WORKER_UPSTREAM });
-}
-
-function renderRouteRecoveryShell(request, page, title, heading, copy, links = []) {
-  const query = new URL(request.url).search || "";
-  const renderedLinks = links.map((link, i) => `<a${i === 0 ? " class=\"primary\"" : ""} href="${link.href}${query}">${link.label}</a>`).join("");
-  const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;padding:22px;background:radial-gradient(circle at top left,#241907 0,#090705 36%,#050403 100%);color:#fff7e8;font-family:Inter,"Segoe UI","Noto Sans Thai",Arial,sans-serif}main{width:min(780px,100%);margin:0 auto;padding:28px 0 40px}.brand{margin:0 0 14px;color:#ffd784;font-size:13px;font-weight:900;text-transform:uppercase}h1{margin:0 0 16px;font-size:clamp(38px,12vw,76px);line-height:1}p{margin:0 0 16px;color:#fff1d5;font-size:17px;line-height:1.65}a{min-height:46px;display:inline-flex;align-items:center;justify-content:center;margin:8px 8px 0 0;padding:0 16px;border:1px solid #d8ad5a;border-radius:999px;color:#fff7e8;background:#17110a;text-decoration:none;font-weight:850}a.primary{color:#130d05;background:#ffd784;border-color:#ffd784}</style></head><body><main data-mmd-page-shell="${page}"><p class="brand">MMD Privé</p><h1>${heading}</h1><p>${copy}</p><p>${renderedLinks}</p></main></body></html>`;
-  return new Response(request.method.toUpperCase() === "HEAD" ? null : html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store, no-cache, must-revalidate, max-age=0", "x-mmd-worker": FRONT_GATE, "x-mmd-front-gate": FRONT_GATE, "x-mmd-front-version": FRONT_VERSION, "x-mmd-page": page, "x-mmd-temporary-route": "true" } });
 }
 
 function renderPublicBlackcardPage(request) {
@@ -258,10 +267,6 @@ function blackcardScript() {
   return `(function(){const root=document.getElementById("mmd-blackcard");if(!root)return;const $=id=>root.querySelector("#"+id);const qs=new URLSearchParams(location.search);const access=String(qs.get("t")||qs.get("code")||qs.get("access")||"").trim();const statusApi=root.dataset.statusApi||"/api/blackcard/status";const profileUrl=root.dataset.profileUrl||"/sigil/member/profile";function esc(v){return String(v||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\"/g,"&quot;").replace(/'/g,"&#039;")}function link(t){const clean=String(t||"").trim();if(!clean)return profileUrl;return profileUrl+(profileUrl.includes("?")?"&":"?")+"t="+encodeURIComponent(clean)}function result(mode,title,body,label){const el=$("mbcStatusResult");if(!el)return;el.classList.remove("is-approved","is-pending");if(mode)el.classList.add(mode);el.innerHTML="<span>"+esc(label||"Status")+"</span><strong>"+esc(title)+"</strong><p>"+esc(body)+"</p>"}function demo(s,p,a){const se=$("mbcDemoStatus"),pe=$("mbcDemoPoints"),ae=$("mbcDemoApproval");if(se)se.textContent=s;if(pe)pe.textContent=p;if(ae)ae.textContent=a}function setProfile(t){const b=$("mbcProfileBtn");if(b)b.href=link(t)}async function check(q){q=String(q||"").trim();if(!q){result("is-pending","กรอกข้อมูลก่อนตรวจสถานะ","ใส่ access code, email, LINE ID หรือ token ที่ได้รับจาก MMD ก่อนครับ","Waiting");return}result("is-pending","กำลังตรวจสถานะ","กำลังส่งข้อมูลไปยัง Worker gate แบบ read-only หน้านี้ไม่เปลี่ยนสถานะใด ๆ","Checking");try{const u=new URL(statusApi,location.origin);u.searchParams.set("q",q);const r=await fetch(u.toString(),{headers:{accept:"application/json"}});if(!r.ok)throw new Error("not_ready");const d=await r.json();const st=String(d.status||d.review_status||"under_review").toLowerCase();const pts=d.points||d.verified_points||"Verified only";if(st==="approved"){result("is-approved","Black Card approved","สถานะผ่านการอนุมัติแล้ว เปิด Member Profile เพื่อดู points, history และ access ล่าสุด","Approved");demo("Approved",String(pts).includes("point")?String(pts):String(pts)+" points","Boss Per approved");setProfile(q);return}result("is-pending",st==="pending"||st==="under_review"?"Under review":"Manual review required","ยังไม่พบ approval ที่พร้อมใช้งาน ต้องให้ MMD ตรวจ record และ Boss Per ตัดสินใจขั้นสุดท้าย","Safe review");demo("Under review",String(pts),"Boss Per only");setProfile(q)}catch(e){result("is-pending","Manual review required","Worker ยังไม่ตอบหรือยังไม่มี record ที่ verified หน้านี้ไม่อนุมัติ Black Card เอง ให้ใช้ Airtable/Admin Console เป็น source of truth","Safe fallback");demo("Pending review","Verified only","Boss Per only");setProfile(q)}}function init(){const form=$("mbcStatusForm"),input=$("mbcStatusInput"),copy=$("mbcCopyProfileBtn");if(input&&access)input.value=access;if(access)setProfile(access);if(form&&input)form.addEventListener("submit",e=>{e.preventDefault();check(input.value)});if(copy)copy.addEventListener("click",async()=>{const token=input&&input.value?input.value:access;const value=new URL(link(token),location.origin).toString();try{await navigator.clipboard.writeText(value);copy.textContent="Copied";setTimeout(()=>copy.textContent="Copy Profile Link",1500)}catch(e){result("is-pending","Profile link ready",value,"Copy fallback")}});if(access)result("is-pending","Access token attached","กด Check เพื่อให้ Worker gate ตรวจสถานะล่าสุด โดยไม่เปลี่ยนสถานะใด ๆ จากหน้าเว็บ","Ready")}init()})();`;
 }
 
-function renderHallRecovery(request) { return renderRouteRecoveryShell(request, "hall", "MMD Privé | Hall", "MMD Hall", "พื้นที่กลางสำหรับเข้าสู่ระบบสมาชิก ตรวจสถานะ และไปต่อยังเส้นทางที่เกี่ยวข้องของ MMD Privé", [{ label: "Enter Member Area", href: "/member/dashboard" }, { label: "Member Payments", href: "/member/payments" }]); }
-function renderModelConsoleRecovery(request) { return renderRouteRecoveryShell(request, "model-console", "MMD Privé | Model Console", "Model Console", "พื้นที่สำหรับผู้ให้บริการตรวจสถานะงานและไปต่อยังขั้นตอนที่เกี่ยวข้องของ MMD Privé", [{ label: "Continue", href: "/v1/model/session/dashboard" }, { label: "Member Area", href: "/member/dashboard" }]); }
-function renderMemberStaticRecovery(request) { return renderRouteRecoveryShell(request, "member-static", "MMD Privé | Member", "Member Page", "หน้านี้อยู่ในพื้นที่สมาชิกของ MMD Privé และพร้อมเชื่อมต่อกับเนื้อหาหลักในขั้นต่อไป", [{ label: "Enter Member Area", href: "/member/dashboard" }, { label: "Membership", href: "/member/membership" }]); }
-
 export default {
   async fetch(request, env = {}) {
     const url = new URL(request.url);
@@ -275,9 +280,9 @@ export default {
     if (isMemberDashboardPath(url)) return fetchMemberFrontend(request, env, url);
     if (isMemberPagePath(url)) return fetchMemberPage(request, env, url);
     if (isMemberPaymentsPath(url)) return fetchAdminMemberPage(request, env, url);
-    if (isHallPath(url)) return renderHallRecovery(request);
-    if (isModelConsolePath(url)) return renderModelConsoleRecovery(request);
-    if (isMemberPath(url) && !isKnownLegacyMemberRedirect(url)) return renderMemberStaticRecovery(request);
+    if (isHallPath(url)) return failClosed(request);
+    if (isModelConsolePath(url)) return failClosed(request);
+    if (isMemberPath(url) && !isKnownLegacyMemberRedirect(url)) return failClosed(request);
     if (shouldNeverTouch(url)) return fetchPassThrough(request);
     if (!REDIRECT_HOSTS.has(url.hostname)) return fetchPassThrough(request);
 
