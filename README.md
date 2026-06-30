@@ -72,6 +72,7 @@ Used to move data and workflows into the core production system without pollutin
 - token parameter must be `t`
 - Airtable is the back-office source of truth
 - Native MMD auth-worker is the frontend auth gate; protected frontend pages must call `/v1/auth/me`
+- Webflow protected pages must set `window.MMD_AUTH_WORKER_BASE_URL = "https://mmdbkk.com"` before loading `webflow/mmd-gate.js`, so `mmdprive.webflow.io` checks auth through the canonical `mmdbkk.com` route
 - Airtable entitlements and `member_packages` are the access truth
 - `memberstack_id` remains legacy compatibility only
 - worker boundaries are production contracts
