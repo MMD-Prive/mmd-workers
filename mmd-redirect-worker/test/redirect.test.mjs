@@ -75,7 +75,6 @@ describe("MMD permanent redirect guard", () => {
     const aliases = [
       "/trust/inme",
       "/inme",
-      "/login",
       "/members",
       "/trust",
     ];
@@ -91,6 +90,16 @@ describe("MMD permanent redirect guard", () => {
     }
 
     assert.equal(passThroughRequests.length, 0);
+  });
+
+  it("passes through /login without redirecting to SIGIL start", async () => {
+    const response = await request(`https://mmdbkk.com/login?${PRESERVED_QUERY}`);
+
+    assert.equal(response.status, 209);
+    assert.equal(response.headers.get("location"), null);
+    assert.equal(response.headers.get("x-mmd-front-gate"), "mmd-redirect-worker");
+    assert.equal(passThroughRequests.length, 1);
+    assert.equal(passThroughRequests[0].url, `https://mmdbkk.com/login?${PRESERVED_QUERY}`);
   });
 
   it("redirects /member to /member/dashboard with query strings preserved exactly", async () => {
@@ -894,7 +903,7 @@ describe("redirect helpers", () => {
   });
 
   it("maps exact and folder redirects case-insensitively", () => {
-    assert.equal(findMappedPath("/LOGIN/"), "/sigil/start");
+    assert.equal(findMappedPath("/LOGIN/"), "/LOGIN");
     assert.equal(findMappedPath("/trust/inme"), "/sigil/start");
     assert.equal(findMappedPath("/MEMBERSHIP/BENEFITS/"), "/member/membership");
     assert.equal(findMappedPath("/renewal/"), "/sigil/membership");

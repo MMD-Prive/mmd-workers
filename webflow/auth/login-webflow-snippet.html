@@ -1,0 +1,51 @@
+<section class="mmd-login" data-mmd-login>
+  <style>
+    .mmd-login, .mmd-login * { box-sizing: border-box; letter-spacing: 0; }
+    .mmd-login { min-height: 100vh; display: grid; place-items: center; padding: 24px; color: #fff4df; background: linear-gradient(135deg, #050403, #171006 56%, #050403); font-family: Inter, "Segoe UI", Arial, sans-serif; }
+    .mmd-login__panel { width: min(520px, 100%); display: grid; gap: 18px; padding: 28px; border: 1px solid rgba(231, 197, 121, .24); border-radius: 12px; background: rgba(13, 10, 7, .78); box-shadow: 0 28px 90px rgba(0, 0, 0, .4); }
+    .mmd-login__kicker { margin: 0; color: #e7c579; font-size: 12px; font-weight: 900; text-transform: uppercase; }
+    .mmd-login h1 { margin: 0; color: #fff7e9; font-size: clamp(38px, 9vw, 64px); line-height: .95; }
+    .mmd-login p { margin: 0; color: rgba(255, 244, 223, .72); line-height: 1.65; }
+    .mmd-login label { display: grid; gap: 8px; color: rgba(255, 244, 223, .82); font-size: 13px; font-weight: 800; }
+    .mmd-login input { min-height: 48px; width: 100%; padding: 0 14px; border: 1px solid rgba(231, 197, 121, .22); border-radius: 8px; color: #fff7e9; background: rgba(255, 255, 255, .06); font: inherit; }
+    .mmd-login__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .mmd-login button { min-height: 46px; padding: 0 16px; border: 1px solid rgba(255, 231, 174, .72); border-radius: 999px; color: #160f07; background: linear-gradient(180deg, #ffe6a7, #bd862f); font: inherit; font-weight: 900; cursor: pointer; }
+    .mmd-login button.secondary { color: #fff4df; border-color: rgba(231, 197, 121, .28); background: rgba(255, 255, 255, .06); }
+    .mmd-login button:disabled { cursor: not-allowed; opacity: .52; }
+    .mmd-login__status { min-height: 22px; color: rgba(255, 244, 223, .72); font-size: 13px; }
+    .mmd-login__status[data-state="error"] { color: #ffb4a8; }
+    .mmd-login__status[data-state="success"] { color: #c5f7c6; }
+  </style>
+
+  <main class="mmd-login__panel" aria-label="MMD member login">
+    <p class="mmd-login__kicker">MMD member access</p>
+    <h1>Login</h1>
+    <p>Use your MMD member email to request a 6-digit code. The session is stored by the auth worker as a secure HttpOnly cookie.</p>
+
+    <label>
+      Email
+      <input data-mmd-login-email type="email" autocomplete="email" inputmode="email" placeholder="you@example.com">
+    </label>
+
+    <div class="mmd-login__actions">
+      <button data-mmd-login-request type="button">Request code</button>
+    </div>
+
+    <div data-mmd-login-code-panel hidden>
+      <label>
+        6-digit code
+        <input data-mmd-login-code type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" disabled>
+      </label>
+      <div class="mmd-login__actions">
+        <button data-mmd-login-verify type="button" disabled>Verify and continue</button>
+      </div>
+    </div>
+
+    <p class="mmd-login__status" data-mmd-login-status aria-live="polite"></p>
+  </main>
+</section>
+
+<script>
+  window.MMD_AUTH_WORKER_BASE_URL = "https://mmdbkk.com";
+</script>
+<script src="https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-workers@main/webflow/auth/login.js"></script>

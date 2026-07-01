@@ -1,0 +1,51 @@
+<section class="mmd-member-dashboard" data-mmd-member-dashboard-auth>
+  <style>
+    .mmd-member-dashboard, .mmd-member-dashboard * { box-sizing: border-box; letter-spacing: 0; }
+    .mmd-member-dashboard { min-height: 100vh; padding: 24px; color: #fff4df; background: #050403; font-family: Inter, "Segoe UI", Arial, sans-serif; }
+    .mmd-member-dashboard__shell { width: min(1080px, 100%); display: grid; gap: 18px; margin: 0 auto; }
+    .mmd-member-dashboard__top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; }
+    .mmd-member-dashboard__brand { color: #fff7e9; font-weight: 950; text-decoration: none; }
+    .mmd-member-dashboard__badge { color: #e7c579; font-size: 12px; font-weight: 900; text-transform: uppercase; }
+    .mmd-member-dashboard h1 { margin: 18px 0 0; color: #fff7e9; font-size: clamp(42px, 10vw, 92px); line-height: .92; }
+    .mmd-member-dashboard p { margin: 0; color: rgba(255, 244, 223, .72); line-height: 1.65; }
+    .mmd-member-dashboard__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .mmd-member-dashboard__card { display: grid; gap: 12px; min-height: 150px; padding: 18px; border: 1px solid rgba(231, 197, 121, .22); border-radius: 10px; background: rgba(18, 14, 9, .78); }
+    .mmd-member-dashboard__card span { color: #e7c579; font-size: 12px; font-weight: 900; text-transform: uppercase; }
+    .mmd-member-dashboard__card strong { color: #fff7e9; font-size: 28px; line-height: 1.05; overflow-wrap: anywhere; }
+    .mmd-member-dashboard ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .mmd-member-dashboard li { display: grid; gap: 4px; padding: 10px; border: 1px solid rgba(255, 255, 255, .08); border-radius: 8px; color: rgba(255, 244, 223, .72); background: rgba(255, 255, 255, .04); }
+    .mmd-member-dashboard button { min-height: 42px; padding: 0 14px; border: 1px solid rgba(231, 197, 121, .28); border-radius: 999px; color: #fff4df; background: rgba(255, 255, 255, .06); font: inherit; font-weight: 850; cursor: pointer; }
+    @media (max-width: 760px) { .mmd-member-dashboard__top { align-items: flex-start; flex-direction: column; } .mmd-member-dashboard__grid { grid-template-columns: 1fr; } }
+  </style>
+
+  <main class="mmd-member-dashboard__shell" aria-label="MMD member dashboard">
+    <header class="mmd-member-dashboard__top">
+      <a class="mmd-member-dashboard__brand" href="/member/dashboard">MMD PRIVÉ / MEMBER</a>
+      <button data-mmd-member-logout type="button">Logout</button>
+    </header>
+
+    <section>
+      <p class="mmd-member-dashboard__badge">Session</p>
+      <h1>Member Dashboard</h1>
+    </section>
+
+    <section class="mmd-member-dashboard__grid">
+      <article class="mmd-member-dashboard__card"><span>Name</span><strong data-mmd-member-field="name">Loading...</strong></article>
+      <article class="mmd-member-dashboard__card"><span>Email</span><strong data-mmd-member-field="email">Loading...</strong></article>
+      <article class="mmd-member-dashboard__card"><span>Phone</span><strong data-mmd-member-field="phone">Loading...</strong></article>
+      <article class="mmd-member-dashboard__card"><span>Tier</span><strong data-mmd-member-field="tier">Loading...</strong></article>
+      <article class="mmd-member-dashboard__card"><span>Status</span><strong data-mmd-member-field="status">Loading...</strong></article>
+      <article class="mmd-member-dashboard__card"><span>Expires</span><strong data-mmd-member-field="expire_at">Loading...</strong></article>
+      <article class="mmd-member-dashboard__card"><span>Package</span><strong data-mmd-member-field="package_code">Loading...</strong></article>
+      <article class="mmd-member-dashboard__card"><span>Session expires</span><strong data-mmd-member-field="session_expires_at">Loading...</strong></article>
+      <article class="mmd-member-dashboard__card"><span>Entitlements</span><ul data-mmd-member-list="entitlements"><li>Loading...</li></ul></article>
+      <article class="mmd-member-dashboard__card"><span>Grants</span><ul data-mmd-member-list="grants"><li>Loading...</li></ul></article>
+    </section>
+  </main>
+</section>
+
+<script>
+  window.MMD_AUTH_WORKER_BASE_URL = "https://mmdbkk.com";
+</script>
+<script src="https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-workers@main/webflow/mmd-gate.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-workers@main/webflow/member/dashboard.js"></script>
