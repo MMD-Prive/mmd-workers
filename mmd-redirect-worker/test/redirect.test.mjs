@@ -275,6 +275,39 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
+  it("keeps /sigil/pay/membership exact paths from redirecting to renewal", async () => {
+    const urls = [
+      "https://mmdbkk.com/sigil/pay/membership",
+      "https://mmdbkk.com/sigil/pay/membership/",
+      "https://mmdbkk.com/sigil/pay/membership?code=TEST",
+      "https://mmdbkk.com/sigil/pay/membership?package=premium",
+    ];
+
+    for (const url of urls) {
+      const response = await request(url);
+
+      assert.notEqual(response.status, 301, url);
+      assert.notEqual(response.status, 302, url);
+      assert.equal(response.headers.get("location"), null, url);
+      assert.equal(response.headers.get("x-mmd-front-gate"), "mmd-redirect-worker", url);
+      assert.equal(passThroughRequests.at(-1).url, url, url);
+      assert.notEqual(passThroughRequests.at(-1).url, "https://mmdbkk.com/sigil/pay/renewal", url);
+    }
+  });
+
+  it("keeps /sigil/pay/renewal manual-only without rewriting unknown routes to renewal", async () => {
+    const renewal = await request(`https://mmdbkk.com/sigil/pay/renewal?${PRESERVED_QUERY}`);
+    assert.notEqual(renewal.status, 301);
+    assert.notEqual(renewal.status, 302);
+    assert.equal(renewal.headers.get("location"), null);
+
+    const unknown = await request("https://mmdbkk.com/sigil/pay/unknown?code=TEST");
+    assert.notEqual(unknown.status, 301);
+    assert.notEqual(unknown.status, 302);
+    assert.equal(unknown.headers.get("location"), null);
+    assert.equal(passThroughRequests.at(-1).url, "https://mmdbkk.com/sigil/pay/unknown?code=TEST");
+  });
+
   it("falls back to member-pages-worker upstream for /sigil/membership without Webflow pass-through", async () => {
     const response = await request(`https://www.mmdbkk.com/sigil/membership?${PRESERVED_QUERY}`);
     const expected = new URL(`https://www.mmdbkk.com/sigil/membership?${PRESERVED_QUERY}`);

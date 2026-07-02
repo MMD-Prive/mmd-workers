@@ -697,5 +697,3 @@ async function airtableSumPaidForStage(sessionId, stage, env) {
   }
   return sum;
 }
-
->>>>>>> main
