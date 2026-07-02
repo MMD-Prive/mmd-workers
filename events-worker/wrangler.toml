@@ -6,11 +6,6 @@ compatibility_date = "2026-02-27"
 [triggers]
 crons = ["*/15 * * * *"] # run every 15 minutes
 
-# KV bindings (create namespace and replace id)
-[[kv_namespaces]]
-binding = "EVENTS_QUEUE_KV"
-id = "REPLACE_EVENTS_QUEUE_KV_ID"
-
 [vars]
 # required runtime vars (set actual values in dashboard or use wrangler kv/vars)
 TELEGRAM_WORKER_BASE = "https://telegram-worker.malemodel-bkk.workers.dev"
