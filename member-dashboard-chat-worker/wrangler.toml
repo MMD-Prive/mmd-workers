@@ -1,0 +1,9 @@
+name = "member-dashboard-chat-worker"
+main = "src/index.js"
+compatibility_date = "2026-07-02"
+workers_dev = true
+
+[observability]
+enabled = true
+
+# No routes in this PR. Bind LINE_CHANNEL_ACCESS_TOKEN as a Cloudflare secret only.
