@@ -1,27 +1,29 @@
 # MMD LINE Connection Runbook
 
-Purpose: connect LINE Official Account traffic through the MMD Kenji two-worker lock without creating another public LINE Worker.
+Purpose: connect LINE Official Account traffic using the current MMD memory lock without creating another public LINE Worker and without reviving legacy migration ownership.
 
-## Two-worker lock
+## Current MMD memory lock
 
-The Kenji LINE route is locked to two workers:
+The production LINE OFC route remains:
 
-1. `immigrate-worker`
-   - Owns LINE intake compatibility.
-   - Receives LINE webhook events or receives them behind a stable public bridge.
-   - Verifies LINE signature.
-   - Writes safe inbound records to Airtable / Console Inbox.
-   - Loads Kenji member memory where enabled.
-   - Creates draft, log, and handoff before any risky reply.
+```txt
+https://mmdbkk.com/webhooks/line
+```
 
-2. `ai-worker`
-   - Owns AI search, retrieval, ranking, summarization, and intelligence support.
-   - Does not own LINE public webhook routing.
-   - Does not verify LINE signatures.
-   - Does not confirm payment, VIP, Black Card, final price, model availability, or private access.
-   - May be called by the LINE layer for approved knowledge and safe answer support.
+The runtime ownership lock is:
 
-Do not use `mmd-redirect-worker` as Kenji brain. It may only act as front gate / bridge when healthy.
+```txt
+member-dashboard-chat-worker = current production LINE webhook owner / Kenji member-facing entry
+ai-worker = intelligence and answer support
+```
+
+Long-term architecture may rename or consolidate the LINE surface into `chat-worker`, but the current deployed production owner from MMD memory is `member-dashboard-chat-worker`.
+
+## Explicit exclusions
+
+Do not revive or retarget LINE OFC to `immigrate-worker` unless there is a separate, explicit migration decision.
+
+Do not use `mmd-redirect-worker` as Kenji brain. It must not own `/webhooks/line`; it may only pass through or front-gate routes that are not owned by a more specific worker.
 
 Do not use `admin-worker` as public LINE webhook owner.
 
@@ -33,67 +35,58 @@ Do not use `himai-chat-worker` for MMD production LINE. It is a pattern referenc
 
 ```txt
 LINE Official Account
-→ stable public route
-→ immigrate-worker
+→ https://mmdbkk.com/webhooks/line
+→ member-dashboard-chat-worker
 → ai-worker when answer intelligence is needed
 → Airtable / Console Inbox / Admin handoff
 ```
 
-## Stable public route option
+## Route requirement
 
-LINE Developers may point to the stable MMD domain route when the front gate is healthy:
+LINE Developers should point to:
 
 ```txt
 https://mmdbkk.com/webhooks/line
 ```
 
-This route may bridge through `mmd-redirect-worker` using:
+Do not point LINE directly to Webflow, Memberstack, page script, Telegram, admin-worker, or a generic redirect route.
+
+## Current safety mode
+
+Start or keep safe mode unless owner review confirms low-risk behavior:
 
 ```txt
-LINE_WEBHOOK_UPSTREAM_URL=<existing immigrate-worker LINE handler URL>
-```
-
-## Bypass route option
-
-If `mmd-redirect-worker` is unstable, bypass it and point LINE Developers directly to the existing LINE upstream until the front gate is repaired:
-
-```txt
-https://<your-site>.netlify.app/.netlify/functions/webhook
-```
-
-This is allowed as a compatibility bypass, not as the long-term canonical owner.
-
-## Required env on immigrate-worker LINE upstream
-
-```txt
-LINE_CHANNEL_SECRET=...
-LINE_CHANNEL_ACCESS_TOKEN=...
-AIRTABLE_API_KEY=...
-AIRTABLE_BASE_ID=appsV1ILPRfIjkaYg
-AIRTABLE_SYNC_TABLE=MMD — Console Inbox
+LINE_AUTO_REPLY_ENABLED=false
 LINE_KENJI_AI_ENABLED=true
 LINE_KENJI_AI_DEBUG=true
-LINE_AUTO_REPLY_ENABLED=false
 ```
 
-`LINE_AUTO_REPLY_ENABLED=false` is the safe launch default. Keep it off until owner review confirms low-risk reply behavior.
+If production has already enabled auto reply, only allow low-risk acknowledgement flows. Payment proof, final price, model availability, VIP, Black Card, refund, complaint, and private access remain human or owner review.
 
-## Required env on ai-worker
+## ai-worker role
 
-`ai-worker` should hold only intelligence-side settings. It must not hold public LINE webhook ownership.
+`ai-worker` should hold only intelligence-side responsibilities:
 
-```txt
-AI_MAX_RESULTS=...
-AI_TIMEOUT_MS=...
-FEATURE_RETRIEVAL=true
-FEATURE_SUMMARIZATION=true
-```
+- search
+- retrieval
+- ranking
+- summarization
+- answer support for approved knowledge/context
 
-Add Airtable or knowledge-source bindings only when the AI layer is approved to retrieve from those sources.
+It must not verify LINE signatures, own LINE public routing, grant access, confirm payment, or make owner-level decisions.
 
-## Production rule
+## member-dashboard-chat-worker role
 
-Kenji may acknowledge safe low-risk requests only after review. Payment proof, final price, model availability, VIP or Black Card, refund, complaint, and private access must remain human or owner review.
+`member-dashboard-chat-worker` owns the LINE entry while this MMD memory lock is active:
+
+- `POST /webhooks/line`
+- LINE signature verification
+- `Hi Per` / Kenji trigger handling
+- safe LINE reply behavior
+- Airtable Console Inbox logging
+- member-facing LINE continuity
+
+This worker may call `ai-worker` for answer intelligence, but public LINE webhook ownership stays here.
 
 ## Route lock
 
@@ -104,7 +97,8 @@ Cloudflare Worker Router owns routing. Webflow displays pages only. Memberstack 
 For Kenji LINE, lock runtime responsibility as:
 
 ```txt
-immigrate-worker = LINE intake and handoff bridge
+member-dashboard-chat-worker = LINE webhook owner and Kenji member-facing entry
 ai-worker = intelligence and answer support
-mmd-redirect-worker = optional bridge/front gate only
+mmd-redirect-worker = not LINE owner; no Kenji brain role
+immigrate-worker = legacy/migration only; do not revive for LINE OFC without explicit decision
 ```
