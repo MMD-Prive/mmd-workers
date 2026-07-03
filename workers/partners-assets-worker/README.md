@@ -1,4 +1,4 @@
-# SĪGIL Partner Worker
+# SĪGIL Partner Assets Worker
 
 Production Cloudflare Worker for the MMD SĪGIL Partner System v2.
 
