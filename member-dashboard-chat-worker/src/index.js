@@ -42,6 +42,24 @@ function hasTrustedEvent(input = {}, request = null) {
   return input.trusted_event === true || header === "true" || header === "1";
 }
 
+function getBearerToken(request = null) {
+  const auth = asString(request?.headers?.get("Authorization"));
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  return asString(match?.[1]);
+}
+
+function hasInternalAuth(request = null, env = {}) {
+  const bearer = getBearerToken(request);
+  const confirmKey = asString(request?.headers?.get("X-Confirm-Key"));
+  const expectedInternalToken = asString(env.INTERNAL_TOKEN);
+  const expectedConfirmKey = asString(env.CONFIRM_KEY);
+
+  return Boolean(
+    (expectedInternalToken && bearer && bearer === expectedInternalToken) ||
+      (expectedConfirmKey && confirmKey && confirmKey === expectedConfirmKey),
+  );
+}
+
 function sanitizeLineText(value) {
   let text = asString(value);
   for (const marker of PRIVATE_MARKERS) text = text.replace(marker, "[redacted]");
@@ -129,6 +147,8 @@ export default {
     }
 
     if (request.method === "POST" && url.pathname === "/v1/internal/line/public-menu-fallback") {
+      if (!hasInternalAuth(request, env)) return json({ ok: false, error: "internal_auth_required" }, 401);
+
       const body = await readJson(request);
       if (!body || typeof body !== "object") return json({ ok: false, error: "invalid_json" }, 400);
 
