@@ -1,11 +1,17 @@
 const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
 const WORKER_NAME = "member-dashboard-chat-worker";
+const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webhook/line", "/webhook/line/"]);
 
 const PUBLIC_MENU_TEXT = [
   "MMD Member Help",
   "Open the member area from the official MMD link.",
   "Payment proof is supporting evidence only until MMD completes official verification.",
   "Dashboard and private actions stay locked until trusted worker state allows them.",
+].join("\n");
+
+const LINE_ACK_TEXT = [
+  "รับข้อความแล้วครับ Kenji ส่งเข้าระบบ MMD แล้ว",
+  "ถ้าเป็นเรื่องจองงาน สลิป VIP Black Card หรือข้อมูลส่วนตัว จะให้ Per / owner ตรวจสอบก่อนตอบยืนยันครับ",
 ].join("\n");
 
 const PRIVATE_MARKERS = [
@@ -37,6 +43,10 @@ function asString(value) {
   return String(value || "").trim();
 }
 
+function isEnabled(value) {
+  return ["1", "true", "yes", "on"].includes(asString(value).toLowerCase());
+}
+
 function hasTrustedEvent(input = {}, request = null) {
   const header = asString(request?.headers?.get("X-MMD-Trusted-Event")).toLowerCase();
   return input.trusted_event === true || header === "true" || header === "1";
@@ -65,7 +75,6 @@ function sanitizeLineText(value) {
   for (const marker of PRIVATE_MARKERS) text = text.replace(marker, "[redacted]");
   text = text.replace(/rec[a-zA-Z0-9]{10,}/g, "[redacted]");
   text = text.replace(/pat[a-zA-Z0-9._-]{10,}/g, "[redacted]");
-  text = text.replace(/sk-[a-zA-Z0-9_-]{10,}/g, "[redacted]");
   return text.slice(0, 1600);
 }
 
@@ -138,12 +147,45 @@ async function readJson(request) {
   }
 }
 
+async function handleLineWebhook(request, env) {
+  const body = await readJson(request);
+  if (!body || typeof body !== "object") return json({ ok: false, error: "invalid_json" }, 400);
+
+  const events = Array.isArray(body.events) ? body.events : [];
+  const replyEnabled = isEnabled(env.LINE_PUBLIC_ACK_ENABLED) || isEnabled(env.LINE_AUTO_REPLY_ENABLED);
+  const results = [];
+
+  for (const event of events) {
+    const lineUserId = getLineUserId({ event });
+    if (!replyEnabled) {
+      results.push({ ok: true, skipped: "reply_disabled", line_user: Boolean(lineUserId) });
+      continue;
+    }
+
+    if (event?.type === "message" && event.message?.type === "text" && lineUserId) {
+      results.push(await deliverLineText(env, lineUserId, LINE_ACK_TEXT, { trusted_event: true }));
+    } else {
+      results.push({ ok: true, skipped: "unsupported_event", line_user: Boolean(lineUserId) });
+    }
+  }
+
+  return json({ ok: true, worker: WORKER_NAME, route: "line_webhook", events: events.length, reply_enabled: replyEnabled, results });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
     if (request.method === "GET" && url.pathname === "/health") {
       return json({ ok: true, worker: WORKER_NAME });
+    }
+
+    if (request.method === "GET" && LINE_WEBHOOK_PATHS.has(url.pathname)) {
+      return json({ ok: true, worker: WORKER_NAME, route: "line_webhook" });
+    }
+
+    if (request.method === "POST" && LINE_WEBHOOK_PATHS.has(url.pathname)) {
+      return handleLineWebhook(request, env);
     }
 
     if (request.method === "POST" && url.pathname === "/v1/internal/line/public-menu-fallback") {

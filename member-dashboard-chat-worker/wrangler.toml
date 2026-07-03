@@ -6,4 +6,20 @@ workers_dev = false
 [observability]
 enabled = true
 
-# No routes in this PR. Bind LINE_CHANNEL_ACCESS_TOKEN, INTERNAL_TOKEN, and CONFIRM_KEY as Cloudflare secrets only.
+[[routes]]
+pattern = "mmdbkk.com/webhooks/line"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/webhooks/line/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/webhooks/line"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/webhooks/line/"
+zone_name = "mmdbkk.com"
+
+# Bind LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, INTERNAL_TOKEN, and CONFIRM_KEY as Cloudflare secrets only.
