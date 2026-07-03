@@ -9,6 +9,19 @@ import worker, {
 } from "../src/index.js";
 
 const LINE_USER_ID = "U1234567890abcdef1234567890abcdef";
+const AUTH_ENV = {
+  INTERNAL_TOKEN: "internal-token",
+  CONFIRM_KEY: "confirm-key",
+  LINE_CHANNEL_ACCESS_TOKEN: "line-token",
+};
+
+function fallbackRequest({ headers = {}, body = { line_user_id: LINE_USER_ID } } = {}) {
+  return new Request("https://worker/v1/internal/line/public-menu-fallback", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body: JSON.stringify(body),
+  });
+}
 
 test("getLineUserId accepts only LINE user ids", () => {
   assert.equal(getLineUserId({ line_user_id: LINE_USER_ID }), LINE_USER_ID);
@@ -78,7 +91,7 @@ test("deliverLinePublicMenu sends public-only help copy", async () => {
 
     assert.equal(result.ok, true);
     const text = JSON.parse(calls[0].init.body).messages[0].text;
-    assert.match(text, /entry|official verification|trusted worker state/i);
+    assert.match(text, /official verification|trusted worker state/i);
     assert.doesNotMatch(text, /activate|points|package unlocked|dashboard access granted/i);
   } finally {
     globalThis.fetch = originalFetch;
@@ -92,7 +105,7 @@ test("pushLinePublicMenu requires trusted server-side input", async () => {
   });
 });
 
-test("worker route fails closed and pushes only trusted public menu fallback", async () => {
+test("worker route rejects trusted_event without internal auth and does not call LINE", async () => {
   const calls = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
@@ -101,20 +114,101 @@ test("worker route fails closed and pushes only trusted public menu fallback", a
   };
 
   try {
-    const untrusted = await worker.fetch(new Request("https://worker/v1/internal/line/public-menu-fallback", {
-      method: "POST",
-      body: JSON.stringify({ line_user_id: LINE_USER_ID }),
-    }), { LINE_CHANNEL_ACCESS_TOKEN: "line-token" });
-    assert.equal(untrusted.status, 400);
-    assert.equal(calls.length, 0);
+    const response = await worker.fetch(fallbackRequest({
+      headers: { "X-MMD-Trusted-Event": "true" },
+    }), AUTH_ENV);
 
-    const trusted = await worker.fetch(new Request("https://worker/v1/internal/line/public-menu-fallback", {
-      method: "POST",
-      headers: { "content-type": "application/json", "X-MMD-Trusted-Event": "true" },
-      body: JSON.stringify({ line_user_id: LINE_USER_ID }),
-    }), { LINE_CHANNEL_ACCESS_TOKEN: "line-token" });
-    assert.equal(trusted.status, 200);
+    assert.equal(response.status, 401);
+    assert.equal(calls.length, 0);
+    assert.deepEqual(await response.json(), { ok: false, error: "internal_auth_required" });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("worker route rejects invalid internal auth and does not call LINE", async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, init });
+    return new Response("{}", { status: 200 });
+  };
+
+  try {
+    const response = await worker.fetch(fallbackRequest({
+      headers: {
+        authorization: "Bearer wrong-token",
+        "X-MMD-Trusted-Event": "true",
+      },
+    }), AUTH_ENV);
+
+    assert.equal(response.status, 401);
+    assert.equal(calls.length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("worker route accepts bearer internal auth plus trusted event", async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, init });
+    return new Response("{}", { status: 200 });
+  };
+
+  try {
+    const response = await worker.fetch(fallbackRequest({
+      headers: {
+        authorization: "Bearer internal-token",
+        "X-MMD-Trusted-Event": "true",
+      },
+    }), AUTH_ENV);
+
+    assert.equal(response.status, 200);
     assert.equal(calls.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("worker route accepts X-Confirm-Key internal auth plus trusted body", async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, init });
+    return new Response("{}", { status: 200 });
+  };
+
+  try {
+    const response = await worker.fetch(fallbackRequest({
+      headers: { "X-Confirm-Key": "confirm-key" },
+      body: { line_user_id: LINE_USER_ID, trusted_event: true },
+    }), AUTH_ENV);
+
+    assert.equal(response.status, 200);
+    assert.equal(calls.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("worker route still requires trusted event after valid internal auth", async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, init });
+    return new Response("{}", { status: 200 });
+  };
+
+  try {
+    const response = await worker.fetch(fallbackRequest({
+      headers: { authorization: "Bearer internal-token" },
+    }), AUTH_ENV);
+
+    assert.equal(response.status, 400);
+    assert.equal(calls.length, 0);
+    assert.deepEqual(await response.json(), { ok: false, error: "trusted_event_required" });
   } finally {
     globalThis.fetch = originalFetch;
   }
