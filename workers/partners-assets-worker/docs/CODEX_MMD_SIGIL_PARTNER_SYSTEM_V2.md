@@ -9,7 +9,7 @@ Implement the MMD SĪGIL Partner System v2 as a production Cloudflare Worker for
 ## Worker target
 
 ```txt
-workers/partners-worker/
+workers/partners-assets-worker/
   docs/CODEX_MMD_SIGIL_PARTNER_SYSTEM_V2.md
   src/index.ts
   wrangler.toml
