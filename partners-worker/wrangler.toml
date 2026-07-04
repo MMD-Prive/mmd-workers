@@ -4,12 +4,13 @@ compatibility_date = "2026-04-27"
 compatibility_flags = [ "nodejs_compat" ]
 workers_dev = true
 
-routes = [
-  { pattern = "www.mmdbkk.com/terms*", zone_name = "mmdbkk.com" },
-  { pattern = "www.mmdbkk.com/legal/terms*", zone_name = "mmdbkk.com" },
-  { pattern = "mmdbkk.com/terms*", zone_name = "mmdbkk.com" },
-  { pattern = "mmdbkk.com/legal/terms*", zone_name = "mmdbkk.com" }
-]
+# Zone routes are governed outside this config. The mmdbkk.com/terms* patterns
+# previously listed here are currently served by mmd-redirect-worker's catch-all;
+# declaring them would seize them on deploy.
+
+[[r2_buckets]]
+binding = "PARTNER_ASSETS"
+bucket_name = "mmd-sigil-partner-assets"
 
 [observability]
 enabled = true
