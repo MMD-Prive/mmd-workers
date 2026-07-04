@@ -1,5 +1,9 @@
 type SecretName = "AIRTABLE_API_KEY" | "TELEGRAM_BOT_TOKEN" | "TOKEN_SECRET";
-type RuntimeEnv = Env & Partial<Record<SecretName | "PUBLIC_SITE_URL", string>>;
+type OptionalVarName =
+  | "PUBLIC_SITE_URL"
+  | "TELEGRAM_PUBLIC_MODEL_THREAD_ID"
+  | "TELEGRAM_ADMIN_THREAD_ID";
+type RuntimeEnv = Env & Partial<Record<SecretName | OptionalVarName, string>>;
 
 type AirtableFieldValue = string | number | boolean | string[] | null;
 type AirtableFields = Record<string, AirtableFieldValue>;
@@ -277,6 +281,13 @@ export default {
 
       if (request.method === "POST" && url.pathname === "/v1/partner/request") {
         return await handlePartnerRequest(request, runtimeEnv, ctx);
+      }
+
+      if (
+        request.method === "POST" &&
+        (url.pathname === "/v1/apply/public-model" || url.pathname === "/apply/public-model")
+      ) {
+        return await handlePublicModelApplication(request, runtimeEnv, ctx);
       }
 
       if (request.method === "GET" && url.pathname === "/v1/partner/verify") {
@@ -630,6 +641,133 @@ async function handlePartnerRequest(request: Request, env: RuntimeEnv, ctx: Exec
   });
 }
 
+async function handlePublicModelApplication(
+  request: Request,
+  env: RuntimeEnv,
+  ctx: ExecutionContext
+): Promise<Response> {
+  const body = await readJsonObject(request);
+  if (!body.ok) {
+    return errorResponse(request, env, "invalid_json", body.error, 400, false);
+  }
+
+  const requestId = resolveRequestId(body.value);
+  const nameAlias = readString(body.value, "name_alias");
+  const talentName = readString(body.value, "talent_name") || nameAlias;
+  const age = readNumberOrNull(body.value, "age");
+  const talentLocation = readString(body.value, "talent_location");
+  const identity = readString(body.value, "identity");
+  const lineId = readString(body.value, "line_id");
+  const phone = readString(body.value, "phone");
+  const email = readString(body.value, "email");
+  const portfolioUrl = readString(body.value, "portfolio_url");
+  const height = readString(body.value, "height");
+  const bodyProfile = readString(body.value, "body_profile");
+  const workTypes = readStringArray(body.value, "work_types").length
+    ? readStringArray(body.value, "work_types")
+    : readStringArray(body.value, "work_type");
+  const skills = readString(body.value, "skills");
+  const availability = readString(body.value, "availability");
+  const travelReady = readString(body.value, "travel_ready");
+  const boundaries = readString(body.value, "boundaries");
+  const whyConsider = readString(body.value, "why_consider");
+  const extraNotes = readString(body.value, "notes");
+  const consent = body.value.consent === true || readString(body.value, "consent") === "true";
+  const sourcePath = readString(body.value, "source_path") || "/apply/public-model";
+  const files = normalizeUploadedFiles(body.value.files, requestId);
+
+  if (!nameAlias || !identity || !skills || !whyConsider) {
+    return errorResponse(
+      request,
+      env,
+      "required_fields_missing",
+      "name_alias, identity, skills, and why_consider are required.",
+      400,
+      false
+    );
+  }
+
+  if (!lineId && !phone && !email) {
+    return errorResponse(
+      request,
+      env,
+      "contact_missing",
+      "At least one contact channel (line_id, phone, or email) is required.",
+      400,
+      false
+    );
+  }
+
+  if (!consent) {
+    return errorResponse(request, env, "consent_required", "Privacy consent is required.", 400, false);
+  }
+
+  if (age !== null && (age < 18 || age > 70)) {
+    return errorResponse(request, env, "invalid_age", "Applicants must be between 18 and 70.", 400, false);
+  }
+
+  if (files.length > MAX_FILES_PER_REQUEST) {
+    return errorResponse(request, env, "too_many_files", "Maximum 10 files per application.", 400, false);
+  }
+
+  const now = new Date().toISOString();
+  const contact = [
+    lineId ? `LINE: ${lineId}` : "",
+    phone ? `Phone/WhatsApp: ${phone}` : "",
+    email ? `Email: ${email}` : ""
+  ].filter(Boolean).join(" | ");
+
+  const applicationRecord = await createAirtableRecord(
+    env,
+    env.AIRTABLE_TABLE_MODEL_APPLICATIONS,
+    buildPublicModelApplicationFields({
+      requestId,
+      nameAlias,
+      talentName,
+      age,
+      talentLocation,
+      identity,
+      contact,
+      portfolioUrl,
+      height,
+      bodyProfile,
+      workTypes,
+      skills,
+      availability,
+      travelReady,
+      boundaries,
+      whyConsider,
+      extraNotes,
+      sourcePath,
+      files,
+      now
+    }),
+    true
+  );
+
+  ctx.waitUntil(
+    sendTelegramMessage(env, buildPublicModelTelegramMessage({
+      nameAlias,
+      talentName,
+      age,
+      height,
+      talentLocation,
+      contact,
+      workTypes,
+      files,
+      whyConsider,
+      applicationRecordId: applicationRecord.id
+    }), publicModelThreadId(env)).catch((error) => console.error("telegram public model application failed", error))
+  );
+
+  return json(request, env, {
+    ok: true,
+    request_id: requestId,
+    model_application_record_id: applicationRecord.id,
+    files_received: files.length
+  });
+}
+
 async function handlePartnerApprove(request: Request, env: RuntimeEnv, ctx: ExecutionContext): Promise<Response> {
   const body = await readJsonObject(request);
   if (!body.ok) {
@@ -916,6 +1054,78 @@ function buildModelApplicationFields(input: {
   setOptional(fields, MODEL_APPLICATIONS.instagram, instagramHandle(input.portfolioUrl));
   setOptional(fields, MODEL_APPLICATIONS.bkkDistrict, input.talentLocation);
   setOptional(fields, MODEL_APPLICATIONS.telegramUsername, input.contactParts.telegram);
+
+  return fields;
+}
+
+function buildPublicModelApplicationFields(input: {
+  requestId: string;
+  nameAlias: string;
+  talentName: string;
+  age: number | null;
+  talentLocation: string;
+  identity: string;
+  contact: string;
+  portfolioUrl: string;
+  height: string;
+  bodyProfile: string;
+  workTypes: string[];
+  skills: string;
+  availability: string;
+  travelReady: string;
+  boundaries: string;
+  whyConsider: string;
+  extraNotes: string;
+  sourcePath: string;
+  files: UploadedFileMetadata[];
+  now: string;
+}): AirtableFields {
+  const fileLines = input.files.length
+    ? [`\nFiles (${input.files.length}):`, ...input.files.map(
+        (file) => `- ${file.file_category}: ${file.file_name} (${file.r2_key})`
+      )]
+    : ["\nFiles: 0"];
+
+  const notes = [
+    `Request ID: ${input.requestId}`,
+    "Application Type: public_model",
+    "Intent: modeling_public_events",
+    `Source Path: ${input.sourcePath}`,
+    `Contact: ${input.contact}`,
+    input.age !== null ? `Age: ${input.age}` : "",
+    input.height ? `Height: ${input.height}` : "",
+    input.bodyProfile ? `Body profile: ${input.bodyProfile}` : "",
+    input.workTypes.length ? `Work interests: ${input.workTypes.join(", ")}` : "",
+    input.availability ? `Availability: ${input.availability}` : "",
+    input.travelReady ? `Travel: ${input.travelReady}` : "",
+    input.portfolioUrl ? `Portfolio URL: ${input.portfolioUrl}` : "",
+    "",
+    "Identity:",
+    input.identity,
+    "",
+    "Skills / Personality:",
+    input.skills,
+    input.boundaries ? `\nBoundaries:\n${input.boundaries}` : "",
+    `\nWhy MMD:\n${input.whyConsider}`,
+    input.extraNotes ? `\nNotes:\n${input.extraNotes}` : "",
+    ...fileLines
+  ].filter(Boolean).join("\n");
+
+  const fields: AirtableFields = {
+    [MODEL_APPLICATIONS.nickname]: input.nameAlias,
+    [MODEL_APPLICATIONS.workingName]: input.talentName,
+    [MODEL_APPLICATIONS.notes]: notes,
+    [MODEL_APPLICATIONS.source]: "apply_public_model",
+    [MODEL_APPLICATIONS.savedBy]: "partners-worker",
+    [MODEL_APPLICATIONS.createdAt]: input.now,
+    [MODEL_APPLICATIONS.consentToPrivacy]: true,
+    [MODEL_APPLICATIONS.applicationStatus]: "new_review"
+  };
+
+  setOptional(fields, MODEL_APPLICATIONS.age, input.age);
+  setOptional(fields, MODEL_APPLICATIONS.heightCm, parseHeightCm(input.height));
+  setOptional(fields, MODEL_APPLICATIONS.instagram, instagramHandle(input.portfolioUrl));
+  setOptional(fields, MODEL_APPLICATIONS.bkkDistrict, input.talentLocation);
 
   return fields;
 }
@@ -1334,7 +1544,7 @@ function randomBase64Url(byteLength: number): string {
   return base64UrlEncodeBytes(bytes);
 }
 
-async function sendTelegramMessage(env: RuntimeEnv, text: string): Promise<void> {
+async function sendTelegramMessage(env: RuntimeEnv, text: string, threadIdOverride?: number): Promise<void> {
   const token = env.TELEGRAM_BOT_TOKEN || "";
   if (!token || !env.TELEGRAM_CHAT_ID) {
     console.warn("Telegram notification skipped: missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID.");
@@ -1346,7 +1556,7 @@ async function sendTelegramMessage(env: RuntimeEnv, text: string): Promise<void>
     text
   };
 
-  const threadId = Number(env.TG_THREAD_CONFIRM || 0);
+  const threadId = threadIdOverride ?? Number(env.TG_THREAD_CONFIRM || 0);
   if (Number.isFinite(threadId) && threadId > 0) {
     payload.message_thread_id = threadId;
   }
@@ -1384,6 +1594,42 @@ function buildNewRequestTelegramMessage(input: {
     `Score: ${input.score}`,
     `Files: ${input.files.length}`,
     `Partner Record: ${input.partnerRecordId}`,
+    "",
+    "Why:",
+    input.whyConsider
+  ].join("\n");
+}
+
+function publicModelThreadId(env: RuntimeEnv): number | undefined {
+  const raw = env.TELEGRAM_PUBLIC_MODEL_THREAD_ID || env.TELEGRAM_ADMIN_THREAD_ID || "";
+  const threadId = Number(raw);
+  return Number.isFinite(threadId) && threadId > 0 ? threadId : undefined;
+}
+
+function buildPublicModelTelegramMessage(input: {
+  nameAlias: string;
+  talentName: string;
+  age: number | null;
+  height: string;
+  talentLocation: string;
+  contact: string;
+  workTypes: string[];
+  files: UploadedFileMetadata[];
+  whyConsider: string;
+  applicationRecordId: string;
+}): string {
+  return [
+    "MMD Public Model Application",
+    "",
+    `Name: ${input.nameAlias}`,
+    `Working Name: ${input.talentName || "-"}`,
+    `Age: ${input.age ?? "-"}`,
+    `Height: ${input.height || "-"}`,
+    `Location: ${input.talentLocation || "-"}`,
+    `Contact: ${input.contact}`,
+    `Work interests: ${input.workTypes.join(", ") || "-"}`,
+    `Files: ${input.files.length}`,
+    `Application Record: ${input.applicationRecordId}`,
     "",
     "Why:",
     input.whyConsider
@@ -1476,6 +1722,29 @@ function setOptional(fields: AirtableFields, key: string, value: AirtableFieldVa
   if (value === undefined || value === null || value === "") return;
   if (Array.isArray(value) && value.length === 0) return;
   fields[key] = value;
+}
+
+function readNumberOrNull(body: Record<string, unknown>, key: string): number | null {
+  const raw = readString(body, key);
+  if (!raw) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+function readStringArray(body: Record<string, unknown>, key: string): string[] {
+  const value = body[key];
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function parseHeightCm(value: string): number | null {
+  const match = value.match(/(\d{2,3}(?:\.\d+)?)/);
+  if (!match?.[1]) return null;
+  const height = Number(match[1]);
+  return height >= 100 && height <= 250 ? Math.round(height) : null;
 }
 
 function readString(body: Record<string, unknown>, key: string): string {

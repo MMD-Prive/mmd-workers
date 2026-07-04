@@ -16,6 +16,38 @@ Layer ownership:
 - `GET /v1/partner/dashboard?t=...`
 - `POST /v1/partner/accept-terms`
 - `POST /v1/partner/approve`
+- `POST /v1/apply/public-model` (alias: `POST /apply/public-model`)
+
+## Public model application
+
+`POST /v1/apply/public-model` backs the public `/apply/public-model` form. It is a direct
+applicant lane, not a partner lane. Public model applicants are not partners:
+
+- It writes only to `AIRTABLE_TABLE_MODEL_APPLICATIONS` — never to Model Partners,
+  Model Referrals, or Partner Assets.
+- Record values: `applicationStatus = new_review`, `source = apply_public_model`,
+  `savedBy = partners-worker`, `consentToPrivacy = true`.
+- `Application Type: public_model`, `Intent: modeling_public_events`, and
+  `Source Path: /apply/public-model` are recorded in the notes payload (the Model
+  Applications table has no dedicated fields for them).
+- Uploaded file metadata (category, name, R2 key) is recorded in the notes payload.
+  Files themselves are uploaded beforehand via `/v1/partner/upload` using the shared
+  `prq_` request id.
+
+Required fields: `name_alias`, `identity`, `skills`, `why_consider`, `consent: true`,
+and at least one of `line_id` / `phone` / `email`. Optional: `request_id` (`prq_` format),
+`talent_name`, `age` (18-70), `talent_location`, `portfolio_url`, `height`,
+`body_profile`, `work_types[]`, `availability`, `travel_ready`, `boundaries`, `notes`,
+`source_path`, `files[]`.
+
+Response: `{ ok, request_id, model_application_record_id, files_received }`.
+
+Telegram: sends an `MMD Public Model Application` message. Thread routing uses
+`TELEGRAM_PUBLIC_MODEL_THREAD_ID` if set, falling back to `TELEGRAM_ADMIN_THREAD_ID`,
+then to the default `TG_THREAD_CONFIRM` behavior. Both new vars are optional.
+
+CORS: `ALLOWED_ORIGINS` includes `https://mmdprive.com` and `https://www.mmdprive.com`
+for this form.
 
 ## Legal terms redirect scope
 
