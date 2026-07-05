@@ -2,11 +2,27 @@ name = "sigil-board-worker"
 main = "src/index.js"
 compatibility_date = "2026-06-04"
 compatibility_flags = ["nodejs_compat"]
-workers_dev = true
+workers_dev = false
 
 [observability]
 enabled = true
 head_sampling_rate = 1
+
+# SIGIL Board API owner only.
+# Do not route sigil.mmdbkk.com/sigil/board* here, because the Webflow page owns
+# the visible /sigil/board surface. This worker owns only API paths used by the
+# board runtime bridge and controlled server-side actions.
+[[routes]]
+pattern = "sigil.mmdbkk.com/sigil/board/runtime*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/sigil/board/actions/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/sigil/board/audit*"
+zone_name = "mmdbkk.com"
 
 [vars]
 WORKER_NAME = "sigil-board-worker"
