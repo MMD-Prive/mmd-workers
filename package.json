@@ -19,6 +19,8 @@
     "dev:sigil-board": "wrangler dev --config workers/sigil-board-worker/wrangler.toml",
     "dev:sigil-booking-proxy": "wrangler dev --config workers/sigil-booking-proxy-worker/wrangler.toml",
     "check:sigil-board": "node --check workers/sigil-board-worker/src/index.js",
+    "check:sigil-board-webflow": "node --check webflow/mmd-gate.js && node --check webflow/sigil/board/kenji-board-v70-gate.js && node --check webflow/sigil/board/kenji-board-v70-runtime.js && node --check webflow/sigil/board/kenji-board-v70-smoke-test.js",
+    "test:sigil-board-webflow": "node --test webflow/sigil/board/kenji-board-v70-gate.test.mjs",
     "check:sigil-booking-proxy": "node --check workers/sigil-booking-proxy-worker/src/index.js",
     "test:sigil-booking-proxy": "node --test workers/sigil-booking-proxy-worker/test/index.test.mjs",
     "check:kenji-member-memory": "node --check shared/kenji-member-memory-snapshot.mjs && node --check immigrate-worker/netlify/functions/kenji-member-memory-context.mjs",
