@@ -3,11 +3,13 @@
   Placement:
   1. Paste the V7 board embed/root markup first on /sigil/board.
   2. Set MMD_AUTH_WORKER_BASE_URL before loading webflow/mmd-gate.js.
-  3. Load webflow/mmd-gate.js after this embed.
-  4. Load kenji-board-v70-gate.js after the auth gate helper.
-  5. Load kenji-board-v70-smoke-test.js last, or in Before </body>.
+  3. Set MMD_SIGIL_BOARD_WORKER_BASE_URL before loading the runtime helper.
+  4. Load webflow/mmd-gate.js after this embed.
+  5. Load kenji-board-v70-gate.js after the auth gate helper.
+  6. Load kenji-board-v70-runtime.js after the board gate helper.
+  7. Load kenji-board-v70-smoke-test.js last, or in Before </body>.
 -->
-<section data-mmd-board-v70 data-gate="locked" data-role="guest">
+<section data-mmd-board-v70 data-gate="locked" data-role="guest" data-runtime="idle">
   <div class="mmd-board-v70__gate-panel" data-v70-gate-panel>
     <button type="button" data-v70-action="unlock-gate" data-v70-auth-check>
       Check SIGIL Access
@@ -16,11 +18,20 @@
       Auth session required.
     </p>
   </div>
+
+  <div class="mmd-board-v70__runtime-panel" data-v70-runtime-panel>
+    <p data-v70-runtime-status aria-live="polite">
+      Runtime waiting for SIGIL access.
+    </p>
+    <p data-v70-runtime-meta></p>
+    <ul data-v70-runtime-rules></ul>
+  </div>
 </section>
 
 <!-- Set before loading the shared auth gate helper. -->
 <script>
   window.MMD_AUTH_WORKER_BASE_URL = "https://mmdbkk.com";
+  window.MMD_SIGIL_BOARD_WORKER_BASE_URL = "https://sigil.mmdbkk.com";
 </script>
 
 <!-- Load before the board gate helper. -->
@@ -28,6 +39,9 @@
 
 <!-- Load after the V7 board embed/root markup. -->
 <script src="https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-workers@main/webflow/sigil/board/kenji-board-v70-gate.js"></script>
+
+<!-- Load after the gate helper to connect the read-only V7 runtime. -->
+<script src="https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-workers@main/webflow/sigil/board/kenji-board-v70-runtime.js"></script>
 
 <!-- Load last for console verification. -->
 <script src="https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-workers@main/webflow/sigil/board/kenji-board-v70-smoke-test.js"></script>
