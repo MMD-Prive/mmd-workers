@@ -4,9 +4,15 @@ compatibility_date = "2026-04-27"
 compatibility_flags = [ "nodejs_compat" ]
 workers_dev = true
 
-# Zone routes are governed outside this config. The mmdbkk.com/terms* patterns
-# previously listed here are currently served by mmd-redirect-worker's catch-all;
-# declaring them would seize them on deploy.
+# Exact public API routes only. mmd-redirect-worker owns the mmdbkk.com/* and
+# www.mmdbkk.com/* catch-alls; these more-specific patterns take precedence at
+# the edge without changing that worker. Do not add broad patterns here.
+routes = [
+  { pattern = "mmdbkk.com/v1/apply/public-model*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/v1/apply/public-model*", zone_name = "mmdbkk.com" },
+  { pattern = "mmdbkk.com/v1/partner/upload*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/v1/partner/upload*", zone_name = "mmdbkk.com" }
+]
 
 [[r2_buckets]]
 binding = "PARTNER_ASSETS"
