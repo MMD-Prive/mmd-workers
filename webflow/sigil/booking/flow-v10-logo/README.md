@@ -4,13 +4,11 @@ Mobile-first Webflow package for `/sigil/booking` with the MMD Privé logo locku
 
 ## Install
 
-Use the split files in this folder for Webflow:
+Use the full embed file for this version:
 
-1. `01-head-css.html` → Page Settings → Custom Code → Inside `<head>`
-2. `02-body-embed.html` → Webflow Embed element
-3. `03-before-body-js.html` → Page Settings → Custom Code → Before `</body>`
+- `sigil-booking-flow-v10-logo-full-code.html` → paste into one Webflow Embed element on `/sigil/booking`.
 
-`sigil-booking-flow-v10-logo-full-code.html` is the one-piece fallback version.
+This version intentionally ships as one self-contained Webflow embed to reduce Webflow placement drift and avoid the previous split-code flow/layout mismatch.
 
 ## Brand / logo
 
