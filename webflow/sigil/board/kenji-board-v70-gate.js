@@ -97,7 +97,7 @@
     }
 
     setStatus(root, "Checking session.", "pending");
-    var auth = await gate.requireMmdAuth({ redirect: detail.redirect !== false });
+    var auth = await gate.requireMmdAuth({ redirect: detail.redirect === true });
     if (!auth) {
       setStatus(root, "Session required.", "error");
       return {
@@ -130,7 +130,8 @@
 
     unlockGate({
       target: authCheck,
-      root: findRoot(authCheck)
+      root: findRoot(authCheck),
+      redirect: authCheck.getAttribute("data-auto-redirect") === "true"
     });
   });
 
