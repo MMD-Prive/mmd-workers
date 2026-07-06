@@ -15,6 +15,10 @@ routes = [
   { pattern = "mmdbkk.com/legal/terms*", zone_name = "mmdbkk.com" }
 ]
 
+[[r2_buckets]]
+binding = "PARTNER_ASSETS"
+bucket_name = "mmd-sigil-partner-assets"
+
 [observability]
 enabled = true
 head_sampling_rate = 1
