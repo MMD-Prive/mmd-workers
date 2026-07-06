@@ -1,0 +1,507 @@
+<!-- MMD SIGIL Create Sessions Webflow HTML snippet -->
+<!-- CSS: /admin-console-V1/create-sessions/create-sessions.css -->
+<!-- JS: /admin-console-V1/create-sessions/create-sessions.js -->
+<section class="mmd-cs-v14" data-cs-root data-admin-base="https://mmdbkk.com">
+  <div class="mmd-cs-v14__noise" aria-hidden="true"></div>
+  <div class="mmd-cs-v14__glow" aria-hidden="true"></div>
+
+  <div class="mmd-cs-v14__shell">
+    <header class="mmd-cs-v14__topbar">
+      <div class="mmd-cs-v14__toprow">
+        <div class="mmd-cs-v14__brand" aria-label="SIGIL Internal">
+          <img
+            src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a42742ad97e40996e482610_%20%20LOGO%20INTERNAL.webp"
+            alt="SIGIL Internal"
+            loading="eager"
+            decoding="async"
+          />
+        </div>
+
+        <div class="mmd-cs-v14__lights" aria-label="System status">
+          <span class="mmd-cs-v14__light"><i data-cs-hook="auth" data-state="idle"></i>Auth</span>
+          <span class="mmd-cs-v14__light"><i data-cs-hook="member" data-state="idle"></i>Members</span>
+          <span class="mmd-cs-v14__light"><i data-cs-hook="models" data-state="idle"></i>Models</span>
+          <span class="mmd-cs-v14__light"><i data-cs-hook="create" data-state="idle"></i>Create</span>
+          <span class="mmd-cs-v14__light"><i data-cs-hook="telegram" data-state="idle"></i>Telegram</span>
+        </div>
+      </div>
+
+      <div class="mmd-cs-v14__toolbar">
+        <label class="mmd-cs-v14__searchWrap" aria-label="ค้นหาลูกค้า">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M21 21l-4.35-4.35m1.85-5.15a7 7 0 1 1-14 0a7 7 0 0 1 14 0Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+          </svg>
+          <input
+            class="mmd-cs-v14__search"
+            type="search"
+            placeholder="พิมพ์ชื่อ username phone line user id หรือ #hashtag"
+            data-cs-search
+          />
+        </label>
+
+        <div class="mmd-cs-v14__toolbarActions">
+          <button class="mmd-cs-v14__btn" type="button" data-cs-action="check-auth">check auth</button>
+          <button class="mmd-cs-v14__btn mmd-cs-v14__btn--gold" type="button" data-cs-action="member-search">search member</button>
+          <button class="mmd-cs-v14__btn" type="button" data-cs-action="recent-members">recent</button>
+          <button class="mmd-cs-v14__btn" type="button" data-cs-action="reload-models">load models</button>
+        </div>
+      </div>
+
+      <div class="mmd-cs-v14__quickRow">
+        <div class="mmd-cs-v14__quickTags">
+          <button type="button" class="mmd-cs-v14__chip" data-cs-quick="#client">#client</button>
+          <button type="button" class="mmd-cs-v14__chip" data-cs-quick="#purchased">#purchased</button>
+          <button type="button" class="mmd-cs-v14__chip" data-cs-quick="#premium">#premium</button>
+          <button type="button" class="mmd-cs-v14__chip" data-cs-quick="#vip">#vip</button>
+          <button type="button" class="mmd-cs-v14__chip" data-cs-quick="#svip">#svip</button>
+          <button type="button" class="mmd-cs-v14__chip" data-cs-quick="-vip-">-vip-</button>
+        </div>
+        <p class="mmd-cs-v14__statusCopy" data-cs-status>ยังไม่ได้เชื่อม auth</p>
+      </div>
+    </header>
+
+    <section class="mmd-cs-v14__hero">
+      <div class="mmd-cs-v14__heroCopy">
+        <h1 class="mmd-cs-v14__headline">Create Sessions</h1>
+        <p class="mmd-cs-v14__lead">
+          เปิดหน้านี้มา มองหาลูกค้าที่ต้องเร่งปิดงาน หรือมีความเร่งด่วนก่อนครับ ดูให้ชัวร์ก่อน อย่าเพิ่งรีบกดส่ง
+        </p>
+
+        <div class="mmd-cs-v14__summaryGrid">
+          <div class="mmd-cs-v14__summaryCard">
+            <span>client</span>
+            <strong data-cs-sum-client>-</strong>
+            <small>ลูกค้าที่กำลังทำงานอยู่</small>
+          </div>
+          <div class="mmd-cs-v14__summaryCard">
+            <span>work</span>
+            <strong data-cs-sum-work>-</strong>
+            <small>ประเภทของงาน</small>
+          </div>
+          <div class="mmd-cs-v14__summaryCard">
+            <span>group</span>
+            <strong data-cs-sum-folder>-</strong>
+            <small>กลุ่มคนทำงาน</small>
+          </div>
+          <div class="mmd-cs-v14__summaryCard">
+            <span>model</span>
+            <strong data-cs-sum-model>-</strong>
+            <small>คนทำงานที่เลือก</small>
+          </div>
+          <div class="mmd-cs-v14__summaryCard">
+            <span>ready</span>
+            <strong data-cs-sum-gate>-</strong>
+            <small>พร้อมเปิดงานหรือยัง</small>
+          </div>
+          <div class="mmd-cs-v14__summaryCard">
+            <span>amount</span>
+            <strong data-cs-sum-amount>-</strong>
+            <small>ยอดที่จะส่งเข้า flow</small>
+          </div>
+        </div>
+      </div>
+
+      <div class="mmd-cs-v14__heroArt">
+        <img data-cs-media="hero" alt="Create Sessions Hero" loading="eager" decoding="async" />
+      </div>
+    </section>
+
+    <div class="mmd-cs-v14__grid">
+      <div class="mmd-cs-v14__col">
+        <section class="mmd-cs-v14__section">
+          <div class="mmd-cs-v14__sectionHead">
+            <div class="mmd-cs-v14__sectionCopy">
+              <span>step 01</span>
+              <h2>ค้นหาลูกค้า</h2>
+              <p>หารายชื่อให้เจอก่อน จะได้เจอข้อมูลแต่ละคนที่ถูกต้อง ถ้ายังไม่แน่ใจ อย่าเพิ่งเดาแล้วส่งให้ลูกค้า</p>
+            </div>
+            <div class="mmd-cs-v14__thumb">
+              <img data-cs-media="findClient" alt="ค้นหาลูกค้า" loading="lazy" decoding="async" />
+            </div>
+          </div>
+
+          <div class="mmd-cs-v14__resultList" data-cs-member-results>
+            <div class="mmd-cs-v14__empty">ยังไม่ได้ค้น member</div>
+          </div>
+
+          <div class="mmd-cs-v14__pickedCard">
+            <div class="mmd-cs-v14__pickedIcon" data-cs-client-initial>C</div>
+            <div>
+              <strong class="mmd-cs-v14__pickedTitle" data-cs-selected-client-name>-</strong>
+              <p class="mmd-cs-v14__pickedMeta" data-cs-selected-client-meta>-</p>
+              <p class="mmd-cs-v14__pickedSub" data-cs-selected-confidence>-</p>
+            </div>
+          </div>
+
+          <div class="mmd-cs-v14__statusGrid">
+            <div class="mmd-cs-v14__statusCard">
+              <span>tier</span>
+              <strong data-cs-client-tier>-</strong>
+            </div>
+            <div class="mmd-cs-v14__statusCard">
+              <span>membership</span>
+              <strong data-cs-client-membership>-</strong>
+            </div>
+            <div class="mmd-cs-v14__statusCard">
+              <span>history</span>
+              <strong data-cs-client-history>-</strong>
+            </div>
+            <div class="mmd-cs-v14__statusCard">
+              <span>private hint</span>
+              <strong data-cs-client-private-hint>-</strong>
+            </div>
+          </div>
+
+          <div class="mmd-cs-v14__fields mmd-cs-v14__fields--4">
+            <label class="mmd-cs-v14__field">
+              <span>ชื่อลูกค้า</span>
+              <input id="csClientName" type="text" placeholder="ชื่อ / ชื่อเล่น" />
+            </label>
+            <label class="mmd-cs-v14__field">
+              <span>username</span>
+              <input id="csUsername" type="text" placeholder="member username" />
+            </label>
+            <label class="mmd-cs-v14__field">
+              <span>แพ็กเกจ / tier</span>
+              <select id="csPackage">
+                <option value="">Not selected</option>
+                <option value="7days">7 Days</option>
+                <option value="standard">Standard</option>
+                <option value="premium">Premium</option>
+                <option value="vip">VIP</option>
+                <option value="svip">SVIP</option>
+                <option value="blackcard">Black Card</option>
+              </select>
+            </label>
+            <label class="mmd-cs-v14__field">
+              <span>สถานะสมาชิก</span>
+              <select id="csMembershipStatus">
+                <option value="">Unknown</option>
+                <option value="active">Active</option>
+                <option value="expired">Expired</option>
+                <option value="guest">Guest</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="mmd-cs-v14__notice" data-cs-member-notice>ยังไม่ได้เลือกลูกค้า</div>
+        </section>
+
+        <section class="mmd-cs-v14__section">
+          <div class="mmd-cs-v14__sectionHead">
+            <div class="mmd-cs-v14__sectionCopy">
+              <span>step 02</span>
+              <h2>เลือกประเภทงาน</h2>
+              <p>ตรงนี้สำคัญน้าา เพราะ public กับ private คืองานคนละประเภทเลย ถ้าเลือกผิดตั้งแต่แรก เดี๋ยวจะทำให้ลูกค้าเข้าใจผิด เป็นเรื่องใหญ่ต้องมาตามแก้ไข</p>
+            </div>
+            <div class="mmd-cs-v14__thumb">
+              <img data-cs-media="workType" alt="เลือกประเภทงาน" loading="lazy" decoding="async" />
+            </div>
+          </div>
+
+          <div class="mmd-cs-v14__typeButtons">
+            <button type="button" class="mmd-cs-v14__typeBtn mmd-cs-v14__typeBtn--public" data-cs-work="public">
+              <span>Public Models</span>
+              <small>travel / extreme</small>
+            </button>
+            <button type="button" class="mmd-cs-v14__typeBtn mmd-cs-v14__typeBtn--private" data-cs-work="private">
+              <span>Private Models</span>
+              <small>vip / pn</small>
+            </button>
+          </div>
+        </section>
+
+        <section class="mmd-cs-v14__section">
+          <div class="mmd-cs-v14__sectionHead">
+            <div class="mmd-cs-v14__sectionCopy">
+              <span>step 03</span>
+              <h2 data-cs-lane-title>เลือก lane ของงาน</h2>
+              <p data-cs-lane-note>เลือกประเภทของงานก่อน ระบบจะเปิด step ถัดไปให้เอง</p>
+            </div>
+            <div class="mmd-cs-v14__thumb">
+              <img data-cs-lane-image alt="lane" loading="lazy" decoding="async" />
+            </div>
+          </div>
+
+          <div class="mmd-cs-v14__laneShell" data-cs-lane-shell>
+            <div class="mmd-cs-v14__empty">เลือกประเภทของงานก่อน</div>
+          </div>
+        </section>
+
+        <section class="mmd-cs-v14__section">
+          <div class="mmd-cs-v14__sectionHead">
+            <div class="mmd-cs-v14__sectionCopy">
+              <span>step 04</span>
+              <h2>คัดคนทำงาน</h2>
+              <p>ไม่ต้องรีบ ใจเย็น ๆ เลือกให้ตรงกับความต้องการลูกค้าก่อน ผูกง่ายกว่าแก้เสมอนะ</p>
+            </div>
+            <div class="mmd-cs-v14__thumb">
+              <img data-cs-media="selectModel" alt="คัดคนทำงาน" loading="lazy" decoding="async" />
+            </div>
+          </div>
+
+          <div class="mmd-cs-v14__fields mmd-cs-v14__fields--2 mmd-cs-v14__fields--tight">
+            <label class="mmd-cs-v14__field">
+              <span>ค้นหาคนทำงาน</span>
+              <input id="csModelLookupKey" type="text" placeholder="ค้นจากชื่อ รหัส หรือ keyword" />
+            </label>
+            <label class="mmd-cs-v14__field">
+              <span>กลุ่มที่เลือก</span>
+              <input id="csModelPool" type="text" placeholder="auto from group" readonly />
+            </label>
+          </div>
+
+          <div class="mmd-cs-v14__filterBar">
+            <label class="mmd-cs-v14__flag"><input type="checkbox" id="csFlagBurn" /><span>Burn</span></label>
+            <label class="mmd-cs-v14__flag"><input type="checkbox" id="csFlagMk" /><span>MK</span></label>
+            <label class="mmd-cs-v14__flag"><input type="checkbox" id="csFlagLive" /><span>Live</span></label>
+            <label class="mmd-cs-v14__flag"><input type="checkbox" id="csAvailableOnly" checked /><span>Available only</span></label>
+            <span class="mmd-cs-v14__modelCount" data-cs-model-count>0 models</span>
+          </div>
+
+          <div class="mmd-cs-v14__resultList mmd-cs-v14__resultList--models" data-cs-model-results>
+            <div class="mmd-cs-v14__empty">ยังไม่ได้โหลด models list</div>
+          </div>
+
+          <div class="mmd-cs-v14__inlinePicked">
+            <div class="mmd-cs-v14__pickedIcon" data-cs-model-initial>M</div>
+            <div>
+              <strong class="mmd-cs-v14__pickedTitle" data-cs-selected-model-name>-</strong>
+              <p class="mmd-cs-v14__pickedMeta" data-cs-selected-model-meta>-</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="mmd-cs-v14__col">
+        <section class="mmd-cs-v14__section">
+          <div class="mmd-cs-v14__sectionHead">
+            <div class="mmd-cs-v14__sectionCopy">
+              <span>step 05</span>
+              <h2>เช็กความพร้อมก่อนเปิดงาน</h2>
+              <p>ถ้ายังไม่ชัวร์ พักก่อนได้นะ เคลียร์ส่วนอื่นให้ครบก่อน แล้วค่อยกดสร้างงาน งานจะไม่ค้างคาทีหลัง</p>
+            </div>
+            <div class="mmd-cs-v14__thumb">
+              <img data-cs-media="readiness" alt="เช็กความพร้อมก่อนเปิดงาน" loading="lazy" decoding="async" />
+            </div>
+          </div>
+
+          <div class="mmd-cs-v14__readinessPill" data-cs-gate-label>not ready</div>
+
+          <div class="mmd-cs-v14__fields mmd-cs-v14__fields--2">
+            <label class="mmd-cs-v14__field">
+              <span>Telegram ลูกค้า</span>
+              <input id="csCustomerTelegram" type="text" placeholder="@client" />
+            </label>
+            <label class="mmd-cs-v14__field">
+              <span>สถานะลูกค้า</span>
+              <select id="csCustomerTelegramStatus">
+                <option value="missing">missing</option>
+                <option value="linked">linked</option>
+                <option value="verified">verified</option>
+              </select>
+            </label>
+            <label class="mmd-cs-v14__field">
+              <span>Telegram คนทำงาน</span>
+              <input id="csModelTelegram" type="text" placeholder="@model" />
+            </label>
+            <label class="mmd-cs-v14__field">
+              <span>สถานะคนทำงาน</span>
+              <select id="csModelTelegramStatus">
+                <option value="missing">missing</option>
+                <option value="linked">linked</option>
+                <option value="verified">verified</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="mmd-cs-v14__notice" data-cs-gate-notice>เลือกประเภทของงานก่อน ระบบจะประเมินความพร้อมให้</div>
+        </section>
+
+        <section class="mmd-cs-v14__section">
+          <div class="mmd-cs-v14__sectionHead">
+            <div class="mmd-cs-v14__sectionCopy">
+              <span>step 06</span>
+              <h2>ใส่งานจริง</h2>
+              <p>วัน เวลา สถานที่ และยอด ต้องพอให้คนรับช่วงต่อทำงานได้ทันทีนะครับ ไม่อย่างนั้นจะต้องย้อนกลับมาแก้อีก</p>
+            </div>
+            <div class="mmd-cs-v14__thumb">
+              <img data-cs-media="enterDetails" alt="ใส่งานจริง" loading="lazy" decoding="async" />
+            </div>
+          </div>
+
+          <div class="mmd-cs-v14__fields mmd-cs-v14__fields--4">
+            <label class="mmd-cs-v14__field">
+              <span>วันที่งาน</span>
+              <input id="csDate" type="date" />
+            </label>
+            <label class="mmd-cs-v14__field">
+              <span>เวลาเริ่ม</span>
+              <input id="csStart" type="time" />
+            </label>
+            <label class="mmd-cs-v14__field">
+              <span>ระยะเวลา</span>
+              <select id="csDuration">
+                <option value="01:00">01:00</option>
+                <option value="01:30" selected>01:30</option>
+                <option value="02:00">02:00</option>
+                <option value="03:00">03:00</option>
+                <option value="04:00">04:00</option>
+                <option value="06:00">06:00</option>
+              </select>
+            </label>
+            <label class="mmd-cs-v14__field">
+              <span>เวลาจบ</span>
+              <input id="csEnd" type="time" readonly />
+            </label>
+
+            <label class="mmd-cs-v14__field mmd-cs-v14__field--wide">
+              <span>สถานที่</span>
+              <input id="csLocation" type="text" placeholder="Hotel / private location / area" />
+            </label>
+            <label class="mmd-cs-v14__field mmd-cs-v14__field--wide">
+              <span>Google Map URL</span>
+              <input id="csMap" type="url" placeholder="https://maps.google.com/..." />
+            </label>
+
+            <label class="mmd-cs-v14__field">
+              <span>ยอดเงิน THB</span>
+              <input id="csAmount" type="number" min="0" step="100" placeholder="5900" />
+            </label>
+            <label class="mmd-cs-v14__field">
+              <span>Assigned Person</span>
+              <select id="csAssignedPerson">
+                <option value="Boss Per">Boss Per</option>
+                <option value="Ewvon">Ewvon</option>
+                <option value="Chang">Chang</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="mmd-cs-v14__fields mmd-cs-v14__fields--2">
+            <label class="mmd-cs-v14__field">
+              <span>หมายเหตุการดูแล</span>
+              <textarea id="csHandlingNote" placeholder="คำแนะนำสำหรับคนดูแลงาน"></textarea>
+            </label>
+            <label class="mmd-cs-v14__field">
+              <span>หมายเหตุภายใน</span>
+              <textarea id="csOperationNote" placeholder="internal note / risk / special request"></textarea>
+            </label>
+          </div>
+        </section>
+
+        <section class="mmd-cs-v14__section">
+          <div class="mmd-cs-v14__sectionHead">
+            <div class="mmd-cs-v14__sectionCopy">
+              <span>step 07</span>
+              <h2>สรุปก่อนสร้างงาน</h2>
+              <p>ถ้ายังมีจุดไหนไม่ชัด อย่าเพิ่งกดครับ ดูตรงนี้ให้ครบก่อน งานจะได้ไม่หลุดมือ</p>
+            </div>
+            <div class="mmd-cs-v14__thumb">
+              <img data-cs-media="review" alt="สรุปก่อนสร้างงาน" loading="lazy" decoding="async" />
+            </div>
+          </div>
+
+          <div class="mmd-cs-v14__reviewGrid">
+            <div class="mmd-cs-v14__reviewCard">
+              <span>ลูกค้า</span>
+              <strong data-cs-review-client>-</strong>
+            </div>
+            <div class="mmd-cs-v14__reviewCard">
+              <span>ประเภทงาน</span>
+              <strong data-cs-review-work>-</strong>
+            </div>
+            <div class="mmd-cs-v14__reviewCard">
+              <span>กลุ่ม</span>
+              <strong data-cs-review-group>-</strong>
+            </div>
+            <div class="mmd-cs-v14__reviewCard">
+              <span>คนทำงาน</span>
+              <strong data-cs-review-model>-</strong>
+            </div>
+            <div class="mmd-cs-v14__reviewCard">
+              <span>ความพร้อม</span>
+              <strong data-cs-review-ready>-</strong>
+            </div>
+            <div class="mmd-cs-v14__reviewCard">
+              <span>assigned</span>
+              <strong data-cs-review-assigned>-</strong>
+            </div>
+          </div>
+
+          <div class="mmd-cs-v14__summaryStrip">
+            <span>next action</span>
+            <strong data-cs-next-action>Find member</strong>
+            <p data-cs-next-copy>เริ่มจาก member search ก่อนครับ</p>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="mmd-cs-v14__dock">
+      <div class="mmd-cs-v14__dockCopy">
+        <span>สร้างงานและส่งต่อ</span>
+        <strong>พร้อมแล้วค่อยกดครับ</strong>
+        <p>หน้านี้มีไว้ใช้จริงทุกวัน ให้แม่นก่อนเร็วเสมอ</p>
+      </div>
+
+      <div class="mmd-cs-v14__dockActions">
+        <button type="button" class="mmd-cs-v14__btn" data-cs-action="save-draft">save draft</button>
+        <button type="button" class="mmd-cs-v14__btn" data-cs-action="reset">reset</button>
+        <button type="button" class="mmd-cs-v14__btn mmd-cs-v14__btn--gold" data-cs-action="create-session">create session</button>
+      </div>
+    </div>
+
+    <section class="mmd-cs-v14__section mmd-cs-v14__section--output" data-cs-output hidden>
+      <div class="mmd-cs-v14__sectionHead">
+        <div class="mmd-cs-v14__sectionCopy">
+          <span>step 08</span>
+          <h2>สร้างงานและส่งต่อ</h2>
+          <p>ถ้าทุกอย่างตรงแล้วค่อยกดครับ พอสร้างงานสำเร็จ ตรงนี้จะใช้ส่งต่อให้ทีมได้เลย</p>
+        </div>
+        <div class="mmd-cs-v14__thumb">
+          <img data-cs-media="review" alt="สร้างงานและส่งต่อ" loading="lazy" decoding="async" />
+        </div>
+      </div>
+
+      <div class="mmd-cs-v14__outputGrid">
+        <div class="mmd-cs-v14__outputCard">
+          <span>Session ID</span>
+          <strong data-cs-out-session>-</strong>
+        </div>
+        <div class="mmd-cs-v14__outputCard">
+          <span>Status</span>
+          <strong data-cs-out-status>-</strong>
+        </div>
+        <div class="mmd-cs-v14__outputCard">
+          <span>Payment Ref</span>
+          <strong data-cs-out-payment>-</strong>
+        </div>
+        <div class="mmd-cs-v14__outputCard">
+          <span>Telegram DM</span>
+          <strong data-cs-out-notify>-</strong>
+        </div>
+      </div>
+
+      <div class="mmd-cs-v14__outputActions">
+        <button type="button" class="mmd-cs-v14__btn" data-cs-action="copy-customer-message">copy customer message</button>
+        <button type="button" class="mmd-cs-v14__btn" data-cs-action="copy-model-message">copy model message</button>
+        <button type="button" class="mmd-cs-v14__btn" data-cs-action="send-customer-dm">send customer dm</button>
+        <button type="button" class="mmd-cs-v14__btn" data-cs-action="send-model-dm">send model dm</button>
+      </div>
+
+      <div class="mmd-cs-v14__fields mmd-cs-v14__fields--2">
+        <label class="mmd-cs-v14__field">
+          <span>Customer Message</span>
+          <textarea id="csOutCustomerMessage"></textarea>
+        </label>
+        <label class="mmd-cs-v14__field">
+          <span>Model Message</span>
+          <textarea id="csOutModelMessage"></textarea>
+        </label>
+      </div>
+    </section>
+
+    <div class="mmd-cs-v14__toast" data-cs-toast></div>
+  </div>
+</section>
