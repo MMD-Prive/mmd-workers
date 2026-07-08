@@ -62,39 +62,48 @@
         <div class="mmd-cs-v14__sectionCopy mmd-cs-v14__sectionCopy--hero">
           <span>Create Sessions</span>
           <h1 class="mmd-cs-v14__headline">Create Sessions</h1>
-          <p class="mmd-cs-v14__lead">เปิดหน้านี้มา มองหาลูกค้าที่ต้องเร่งปิดงาน หรือมีความเร่งด่วนก่อนครับ ดูให้ชัวร์ก่อน อย่าเพิ่งรีบกดส่ง</p>
+          <p class="mmd-cs-v14__lead">เปิดหน้านี้มา ให้เริ่มจากลูกค้าที่ต้องดูแลก่อนครับ หาชื่อให้ถูก เลือก lane ให้ตรง แล้วค่อยสร้างงาน งานจะไหลต่อได้ง่ายกว่าและผิดพลาดน้อยกว่า</p>
+        </div>
+
+        <div class="mmd-cs-v14__flowPills" aria-label="Create Sessions flow overview">
+          <span>Client</span>
+          <span>Work Type</span>
+          <span>Lane</span>
+          <span>Model</span>
+          <span>Readiness</span>
+          <span>Create</span>
         </div>
 
         <div class="mmd-cs-v14__summaryGrid">
           <div class="mmd-cs-v14__summaryCard">
             <span>client</span>
             <strong data-cs-sum-client>-</strong>
-            <small>ลูกค้าที่กำลังทำงานอยู่</small>
+            <small>ลูกค้าที่กำลังจะเปิดงาน</small>
           </div>
           <div class="mmd-cs-v14__summaryCard">
             <span>work</span>
             <strong data-cs-sum-work>-</strong>
-            <small>ประเภทของงาน</small>
+            <small>ประเภทของงานที่เลือก</small>
           </div>
           <div class="mmd-cs-v14__summaryCard">
             <span>group</span>
             <strong data-cs-sum-folder>-</strong>
-            <small>กลุ่มคนทำงาน</small>
+            <small>กลุ่มคนทำงานที่กำลังใช้</small>
           </div>
           <div class="mmd-cs-v14__summaryCard">
             <span>model</span>
             <strong data-cs-sum-model>-</strong>
-            <small>คนทำงานที่เลือก</small>
+            <small>คนทำงานที่เลือกไว้</small>
           </div>
           <div class="mmd-cs-v14__summaryCard">
             <span>ready</span>
             <strong data-cs-sum-gate>-</strong>
-            <small>พร้อมเปิดงานหรือยัง</small>
+            <small>เช็กความพร้อมก่อนเปิดงาน</small>
           </div>
           <div class="mmd-cs-v14__summaryCard">
             <span>amount</span>
             <strong data-cs-sum-amount>-</strong>
-            <small>ยอดที่จะส่งเข้า flow</small>
+            <small>ยอดที่จะเข้าสู่ flow งาน</small>
           </div>
         </div>
       </div>
@@ -110,7 +119,7 @@
           <div class="mmd-cs-v14__sectionCopy">
             <span>step 01</span>
             <h2>ค้นหาลูกค้า</h2>
-            <p>หารายชื่อให้เจอก่อน จะได้เจอข้อมูลแต่ละคนที่ถูกต้อง ถ้ายังไม่แน่ใจ อย่าเพิ่งเดาแล้วส่งให้ลูกค้า</p>
+            <p>เริ่มจากชื่อลูกค้าที่ถูกต้องก่อนครับ ถ้ายังหาไม่เจอ อย่าเพิ่งเดาแล้วผูกงาน เพราะจุดเริ่มที่ผิดจะทำให้ทั้ง flow เพี้ยนตามไปหมด</p>
           </div>
           <div class="mmd-cs-v14__thumb">
             <img data-cs-media="findClient" alt="ค้นหาลูกค้า" loading="lazy" decoding="async" />
@@ -190,7 +199,7 @@
             <div class="mmd-cs-v14__sectionCopy">
               <span>step 02</span>
               <h2>เลือกประเภทงาน</h2>
-              <p>ตรงนี้สำคัญน้าา เพราะ public กับ private คืองานคนละประเภทเลย ถ้าเลือกผิดตั้งแต่แรก เดี๋ยวจะทำให้ลูกค้าเข้าใจผิด เป็นเรื่องใหญ่ต้องมาตามแก้ไข</p>
+              <p>แยก public กับ private ให้ชัดก่อนครับ เพราะสอง lane นี้คนละอารมณ์ คนละเงื่อนไข และคนละวิธีคัด ถ้าเริ่มผิดตั้งแต่ตรงนี้ เดี๋ยวต้องย้อนกลับมาแก้ทั้งหน้า</p>
             </div>
             <div class="mmd-cs-v14__thumb">
               <img data-cs-media="workType" alt="เลือกประเภทงาน" loading="lazy" decoding="async" />
@@ -213,8 +222,8 @@
           <div class="mmd-cs-v14__sectionHead">
             <div class="mmd-cs-v14__sectionCopy">
               <span>step 03</span>
-              <h2 data-cs-lane-title>เลือก lane ของงาน</h2>
-              <p data-cs-lane-note>เลือกประเภทของงานก่อน ระบบจะเปิด step ถัดไปให้เอง</p>
+              <h2 data-cs-lane-title>เปิด lane ให้ตรง</h2>
+              <p data-cs-lane-note>ถ้าเป็น public ให้ลงกลุ่มงานก่อน ถ้าเป็น private ให้เช็กสิทธิ์และเลือก lane ให้ตรงตั้งแต่แรก</p>
             </div>
             <div class="mmd-cs-v14__thumb">
               <img data-cs-lane-image alt="lane" loading="lazy" decoding="async" />
@@ -232,7 +241,7 @@
           <div class="mmd-cs-v14__sectionCopy">
             <span>step 04</span>
             <h2>คัดคนทำงาน</h2>
-            <p>ไม่ต้องรีบ ใจเย็น ๆ เลือกให้ตรงกับความต้องการลูกค้าก่อน ผูกง่ายกว่าแก้เสมอนะ</p>
+            <p>ค่อย ๆ ดูรายชื่อให้ตรงกับสิ่งที่ลูกค้าต้องการก่อนครับ เลือกให้แม่นก่อนเร็วเสมอ เพราะผูกง่ายกว่าตามแก้ทีหลัง</p>
           </div>
           <div class="mmd-cs-v14__thumb">
             <img data-cs-media="selectModel" alt="คัดคนทำงาน" loading="lazy" decoding="async" />
@@ -277,7 +286,7 @@
             <div class="mmd-cs-v14__sectionCopy">
               <span>step 05</span>
               <h2>เช็กความพร้อมก่อนเปิดงาน</h2>
-              <p>ถ้ายังไม่ชัวร์ พักก่อนได้นะ เคลียร์ส่วนอื่นให้ครบก่อน แล้วค่อยกดสร้างงาน งานจะไม่ค้างคาทีหลัง</p>
+              <p>งาน private อย่าข้ามตรงนี้นะครับ ดู Telegram และ readiness ให้ครบก่อน ถ้ายังไม่พร้อมจริง พักไว้ก่อนจะปลอดภัยกว่า</p>
             </div>
             <div class="mmd-cs-v14__thumb">
               <img data-cs-media="readiness" alt="เช็กความพร้อมก่อนเปิดงาน" loading="lazy" decoding="async" />
@@ -321,7 +330,7 @@
             <div class="mmd-cs-v14__sectionCopy">
               <span>step 06</span>
               <h2>ใส่งานจริง</h2>
-              <p>วัน เวลา สถานที่ และยอด ต้องพอให้คนรับช่วงต่อทำงานได้ทันทีนะครับ ไม่อย่างนั้นจะต้องย้อนกลับมาแก้อีก</p>
+              <p>วัน เวลา สถานที่ ยอด และคนดูแลงาน ต้องชัดพอให้คนรับช่วงต่อเปิดงานได้ทันทีครับ กรอกให้ครบครั้งเดียว จะไม่ต้องย้อนกลับมาแก้อีก</p>
             </div>
             <div class="mmd-cs-v14__thumb">
               <img data-cs-media="enterDetails" alt="ใส่งานจริง" loading="lazy" decoding="async" />
@@ -395,7 +404,7 @@
         <div class="mmd-cs-v14__sectionCopy">
           <span>step 07</span>
           <h2>สรุปก่อนสร้างงาน</h2>
-          <p>ถ้ายังมีจุดไหนไม่ชัด อย่าเพิ่งกดครับ ดูตรงนี้ให้ครบก่อน งานจะได้ไม่หลุดมือ</p>
+          <p>นี่คือจุดเช็กสุดท้ายครับ ดูลูกค้า ประเภทงาน กลุ่ม คนทำงาน และ readiness ให้ครบก่อนกด เพื่อให้งานออกไปแบบนิ่งและไม่หลุดมือ</p>
         </div>
         <div class="mmd-cs-v14__thumb">
           <img data-cs-media="review" alt="สรุปก่อนสร้างงาน" loading="lazy" decoding="async" />
@@ -438,9 +447,9 @@
 
     <div class="mmd-cs-v14__dock">
       <div class="mmd-cs-v14__dockCopy">
-        <span>สร้างงานและส่งต่อ</span>
-        <strong>พร้อมแล้วค่อยกดครับ</strong>
-        <p>หน้านี้มีไว้ใช้จริงทุกวัน ให้แม่นก่อนเร็วเสมอ</p>
+        <span>พร้อมแล้วค่อยกด</span>
+        <strong>สร้างงานและส่งต่อ</strong>
+        <p>ให้หน้านี้ช่วยเราทำงานเร็วขึ้น แต่แม่นก่อนเสมอครับ</p>
       </div>
 
       <div class="mmd-cs-v14__dockActions">
@@ -455,7 +464,7 @@
         <div class="mmd-cs-v14__sectionCopy">
           <span>step 08</span>
           <h2>สร้างงานและส่งต่อ</h2>
-          <p>ถ้าทุกอย่างตรงแล้วค่อยกดครับ พอสร้างงานสำเร็จ ตรงนี้จะใช้ส่งต่อให้ทีมได้เลย</p>
+          <p>พอสร้างงานสำเร็จแล้ว ส่วนนี้ใช้คัดลอกหรือส่งต่อข้อความให้ลูกค้าและคนทำงานได้เลยครับ ให้ flow ต่อจากหน้านี้ได้ทันที</p>
         </div>
         <div class="mmd-cs-v14__thumb">
           <img data-cs-media="review" alt="สร้างงานและส่งต่อ" loading="lazy" decoding="async" />
