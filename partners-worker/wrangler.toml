@@ -4,15 +4,14 @@ compatibility_date = "2026-04-27"
 compatibility_flags = [ "nodejs_compat" ]
 workers_dev = true
 
+# Route ownership is intentionally narrow.
+# Do not claim shared terms/legal routes here; those are currently owned outside
+# partners-worker and will conflict during `wrangler deploy`.
 routes = [
   { pattern = "mmdbkk.com/v1/apply/public-model*", zone_name = "mmdbkk.com" },
   { pattern = "www.mmdbkk.com/v1/apply/public-model*", zone_name = "mmdbkk.com" },
   { pattern = "mmdbkk.com/v1/partner/upload*", zone_name = "mmdbkk.com" },
-  { pattern = "www.mmdbkk.com/v1/partner/upload*", zone_name = "mmdbkk.com" },
-  { pattern = "www.mmdbkk.com/terms*", zone_name = "mmdbkk.com" },
-  { pattern = "www.mmdbkk.com/legal/terms*", zone_name = "mmdbkk.com" },
-  { pattern = "mmdbkk.com/terms*", zone_name = "mmdbkk.com" },
-  { pattern = "mmdbkk.com/legal/terms*", zone_name = "mmdbkk.com" }
+  { pattern = "www.mmdbkk.com/v1/partner/upload*", zone_name = "mmdbkk.com" }
 ]
 
 [[r2_buckets]]
