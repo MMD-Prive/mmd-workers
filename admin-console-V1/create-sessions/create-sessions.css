@@ -129,7 +129,8 @@
 .mmd-cs-v14__filterBar,
 .mmd-cs-v14__typeButtons,
 .mmd-cs-v14__groupButtons,
-.mmd-cs-v14__outputActions {
+.mmd-cs-v14__outputActions,
+.mmd-cs-v14__flowPills {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -327,6 +328,25 @@
   line-height: 0.95;
   letter-spacing: -0.045em;
   max-width: 8ch;
+}
+
+.mmd-cs-v14__flowPills {
+  gap: 10px;
+}
+
+.mmd-cs-v14__flowPills span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(247, 242, 234, 0.76);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .mmd-cs-v14__summaryGrid,
@@ -920,10 +940,6 @@
   .mmd-cs-v14__section--review .mmd-cs-v14__reviewGrid,
   .mmd-cs-v14__section--output .mmd-cs-v14__outputGrid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .mmd-cs-v14__section--review .mmd-cs-v14__summaryStrip {
-    margin-top: 16px;
   }
 
   .mmd-cs-v14__section--output {
