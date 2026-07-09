@@ -4,6 +4,8 @@ const SOURCE = "worker";
 
 const BOARD_STATUS_PATH = "/v1/sigil/board/status";
 const BOARD_QUEUE_PATH = "/v1/sigil/board/queue";
+const BOARD_CARDS_KV_KEY = "sigil:board:v1:cards";
+const BOARD_META_KV_KEY = "sigil:board:v1:meta";
 
 const EMPTY_COUNTS = Object.freeze({
   critical: 0,
@@ -51,7 +53,10 @@ export default {
       return json({ ok: false, error: "not_found" }, 404, corsHeaders);
     } catch (error) {
       console.error(JSON.stringify({ worker: workerName(env), error: errorMessage(error) }));
-      return json({ ok: false, error: "board_source_unavailable" }, 503, corsHeaders);
+      const emptyCards = [];
+      if (url.pathname === BOARD_STATUS_PATH) return json(statusResponse(emptyCards), 200, corsHeaders);
+      if (url.pathname === BOARD_QUEUE_PATH) return json(queueResponse(emptyCards), 200, corsHeaders);
+      return json({ ok: false, error: "internal_error" }, 500, corsHeaders);
     }
   },
 };
@@ -82,14 +87,19 @@ async function loadBoardCards(env) {
 }
 
 async function readBoardSource(env) {
+  const kv = env?.SIGIL_BOARD_KV;
+  if (kv && typeof kv.get === "function") {
+    try {
+      const stored = await kv.get(BOARD_CARDS_KV_KEY);
+      return parseJson(stored);
+    } catch (error) {
+      console.error(JSON.stringify({ worker: workerName(env), source: "kv", error: errorMessage(error) }));
+      return [];
+    }
+  }
+
   if (env?.SIGIL_BOARD_QUEUE_JSON) return parseJson(env.SIGIL_BOARD_QUEUE_JSON);
   if (Array.isArray(env?.SIGIL_BOARD_QUEUE_RECORDS)) return env.SIGIL_BOARD_QUEUE_RECORDS;
-
-  const kv = env?.SIGIL_BOARD_QUEUE_KV || env?.SIGIL_BOARD_KV;
-  if (kv && typeof kv.get === "function") {
-    const stored = await kv.get("sigil:board:queue", "json");
-    if (stored) return stored;
-  }
 
   return [];
 }
@@ -109,12 +119,13 @@ function sanitizeCard(record, index) {
   const lane = allowedValue(readAlias(fields, ["lane", "Lane", "category", "Category", "type", "Type"]), ALLOWED_LANES, inferLane(fields));
   const status = safeText(readAlias(fields, ["status", "Status", "state", "State"]), inferStatus(lane));
   const priority = allowedValue(readAlias(fields, ["priority", "Priority"]), ALLOWED_PRIORITIES, inferPriority(fields, lane, status));
-  const risk = safeText(readAlias(fields, ["risk", "Risk", "risk_note", "Risk Note"]), inferRisk(fields, lane));
-  const nextAction = safeText(readAlias(fields, ["next_action", "Next Action", "next", "Next"]), inferNextAction(lane));
+  const risk = safeText(readAlias(fields, ["risk", "Risk", "risk_note", "Risk Note"]), inferRisk(fields, lane), 120);
+  const nextAction = safeText(readAlias(fields, ["next_action", "Next Action", "next", "Next"]), inferNextAction(lane), 120);
   const owner = allowedValue(readAlias(fields, ["owner", "Owner", "assignee", "Assignee"]), ALLOWED_OWNERS, inferOwner(lane, risk));
-  const title = safeText(readAlias(fields, ["title", "Title", "name", "Name", "subject", "Subject"]), inferTitle(lane));
-  const summary = safeText(readAlias(fields, ["summary", "Summary", "note_summary", "Note Summary"]), inferSummary(lane, risk));
-  const needsPerDecision = Boolean(readAlias(fields, ["needs_per_decision", "Needs Per Decision"])) || inferNeedsPerDecision(fields, lane, risk);
+  const title = safeText(readAlias(fields, ["title", "Title", "name", "Name", "subject", "Subject"]), inferTitle(lane), 90);
+  const summary = safeText(readAlias(fields, ["summary", "Summary", "note_summary", "Note Summary"]), inferSummary(lane, risk), 180);
+  const needsPerDecisionRaw = readAlias(fields, ["needs_per_decision", "Needs Per Decision"]);
+  const needsPerDecision = needsPerDecisionRaw !== "" ? safeBoolean(needsPerDecisionRaw) : inferNeedsPerDecision(fields, lane, risk);
 
   return {
     id: stableCardId(record, fields, index),
@@ -133,11 +144,11 @@ function sanitizeCard(record, index) {
 function countCards(cards) {
   const counts = { ...EMPTY_COUNTS };
   for (const card of cards) {
-    const haystack = `${card.lane} ${card.status} ${card.priority} ${card.risk} ${card.title}`.toLowerCase();
-    if (card.priority === "Critical" || /critical|mismatch|privacy|complaint|route|auth|risk/.test(haystack)) counts.critical += 1;
-    if (card.needs_per_decision || /per|svip|black card|rollback|private review|refund/.test(haystack)) counts.ready_for_per += 1;
-    if (card.lane === "Payment" || /payment|slip|proof|paid|transfer/.test(haystack)) counts.payment_pending += 1;
-    if (/need info|missing|incomplete|unknown|reference/.test(haystack)) counts.need_info += 1;
+    const status = String(card.status || "").toLowerCase();
+    if (card.priority === "Critical" || card.lane === "Risk") counts.critical += 1;
+    if (card.needs_per_decision === true || card.owner === "Per") counts.ready_for_per += 1;
+    if (card.lane === "Payment" && /pending|review|need info/.test(status)) counts.payment_pending += 1;
+    if (card.status === "Need Info" || card.lane === "Need Info") counts.need_info += 1;
   }
   return counts;
 }
@@ -165,7 +176,7 @@ function readAlias(fields, aliases) {
   return "";
 }
 
-function safeText(value, fallback = "") {
+function safeText(value, fallback = "", maxLength = 180) {
   let output = Array.isArray(value) ? value.join(", ") : String(value == null ? "" : value);
   output = output.replace(/\s+/g, " ").trim();
   if (!output) output = fallback;
@@ -176,7 +187,7 @@ function safeText(value, fallback = "") {
     .replace(/\b\d{7,}:[A-Za-z0-9_-]{20,}\b/g, "[masked]")
     .replace(/https?:\/\/\S+/gi, "[masked]")
     .replace(/\b(token|secret|passphrase|api[_ -]?key|bank|slip[_ -]?url)\b/gi, "[redacted]");
-  return output.slice(0, 180);
+  return output.slice(0, maxLength);
 }
 
 function allowedValue(value, allowed, fallback) {
@@ -251,16 +262,34 @@ function inferSummary(lane, risk) {
 }
 
 function inferNeedsPerDecision(fields, lane, risk) {
-  const text = `${JSON.stringify(fields || {})} ${lane} ${risk}`.toLowerCase();
+  const text = [
+    readAlias(fields, ["title", "Title", "name", "Name", "subject", "Subject"]),
+    readAlias(fields, ["status", "Status", "state", "State"]),
+    readAlias(fields, ["summary", "Summary", "note_summary", "Note Summary"]),
+    readAlias(fields, ["next_action", "Next Action", "next", "Next"]),
+    lane,
+    risk,
+  ].join(" ").toLowerCase();
   return /mismatch|vip|svip|black card|refund|manual review|complaint|rollback|per/.test(text);
 }
 
 function parseJson(value) {
+  if (!value) return [];
+  if (Array.isArray(value) || typeof value === "object") return value;
   try {
     return JSON.parse(value);
   } catch {
     return [];
   }
+}
+
+function safeBoolean(value) {
+  if (value === true) return true;
+  if (value === false) return false;
+  const normalized = String(value == null ? "" : value).trim().toLowerCase();
+  if (["true", "yes", "y", "1"].includes(normalized)) return true;
+  if (["false", "no", "n", "0"].includes(normalized)) return false;
+  return false;
 }
 
 function shortHash(value) {
@@ -314,6 +343,8 @@ function errorMessage(error) {
 export const testInternals = {
   BOARD_STATUS_PATH,
   BOARD_QUEUE_PATH,
+  BOARD_CARDS_KV_KEY,
+  BOARD_META_KV_KEY,
   countCards,
   sanitizeCard,
   statusResponse,

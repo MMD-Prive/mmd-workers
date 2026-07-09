@@ -18,6 +18,12 @@ WORKER_NAME = "sigil-worker"
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.webflow.io"
 
 # Do not put secrets here.
-# Board queue reads are optional and read-only:
+# Board queue reads are read-only:
 # - SIGIL_BOARD_QUEUE_JSON as non-secret JSON for smoke/dev only
-# - SIGIL_BOARD_QUEUE_KV or SIGIL_BOARD_KV binding when production source is wired
+# - SIGIL_BOARD_KV production key: sigil:board:v1:cards
+# - SIGIL_BOARD_KV optional meta key: sigil:board:v1:meta
+
+[[kv_namespaces]]
+binding = "SIGIL_BOARD_KV"
+id = "7922350083a644db8a48c16c7e48fca7"
+preview_id = "f673c4ab6e4f456baefeab032564db72"

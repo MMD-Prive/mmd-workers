@@ -12,11 +12,22 @@ async function json(response) {
   return response.json();
 }
 
+function mockKv(value) {
+  return {
+    calls: [],
+    async get(key) {
+      this.calls.push(key);
+      return value;
+    },
+  };
+}
+
 const sourceRecords = [
   {
-    id: "recSECRET123",
+    id: "recXXXXXXXXXXXXXX",
     fields: {
-      Title: "Payment proof from +66 812 345 678",
+      id: "recXXXXXXXXXXXXXX",
+      Title: "Payment proof review",
       Lane: "Payment",
       Status: "Need Info",
       Priority: "High",
@@ -29,9 +40,17 @@ const sourceRecords = [
       email: "user@example.com",
       line_user_id: "U1234567890abcdef1234567890abcdef",
       telegram_id: "12345678:abcdefghiJKLMNOPQRST",
+      telegram_username: "@private_user",
       bank: "private bank details",
+      bank_account: "123-456-7890",
+      amount_raw: "99000",
+      payment_ref_raw: "pay_raw_private",
+      airtable_record_id: "recPRIVATEID12345",
+      raw_payload: { should: "not return" },
+      admin_note_raw: "private admin note",
       token: "secret-token",
       passphrase: "secret passphrase",
+      api_key: "private-api-key",
     },
   },
   {
@@ -49,7 +68,8 @@ const sourceRecords = [
 ];
 
 test("GET /v1/sigil/board/status returns exact read-only status schema", async () => {
-  const response = await call("/v1/sigil/board/status", {}, { SIGIL_BOARD_QUEUE_RECORDS: sourceRecords });
+  const kv = mockKv(JSON.stringify(sourceRecords));
+  const response = await call("/v1/sigil/board/status", {}, { SIGIL_BOARD_KV: kv });
   assert.equal(response.status, 200);
   const body = await json(response);
 
@@ -61,10 +81,13 @@ test("GET /v1/sigil/board/status returns exact read-only status schema", async (
   assert.deepEqual(Object.keys(body.counts), ["critical", "ready_for_per", "payment_pending", "need_info"]);
   assert.equal(body.counts.payment_pending, 1);
   assert.equal(body.counts.ready_for_per, 2);
+  assert.equal(body.counts.need_info, 1);
+  assert.deepEqual(kv.calls, ["sigil:board:v1:cards"]);
 });
 
-test("GET /v1/sigil/board/queue returns exact queue schema with sanitized cards", async () => {
-  const response = await call("/v1/sigil/board/queue", {}, { SIGIL_BOARD_QUEUE_RECORDS: sourceRecords });
+test("GET /v1/sigil/board/queue reads sanitized cards from mocked KV", async () => {
+  const kv = mockKv(JSON.stringify(sourceRecords));
+  const response = await call("/v1/sigil/board/queue", {}, { SIGIL_BOARD_KV: kv });
   assert.equal(response.status, 200);
   const body = await json(response);
 
@@ -88,24 +111,36 @@ test("GET /v1/sigil/board/queue returns exact queue schema with sanitized cards"
     "summary",
   ]);
   assert.match(card.id, /^sigil_card_[a-z0-9]+$/);
+  assert.notEqual(card.id, "recXXXXXXXXXXXXXX");
   assert.equal(card.lane, "Payment");
   assert.equal(card.priority, "High");
   assert.equal(card.owner, "MMD");
   assert.equal(card.needs_per_decision, true);
+  assert.equal(card.title, "Payment proof review");
+  assert.equal(card.next_action, "ตรวจยอดจากระบบทางการก่อนตอบ");
 
   const serialized = JSON.stringify(body).toLowerCase();
   for (const forbidden of [
-    "recsecret",
+    "recxxxxxxxxxxxxxx",
+    "recprivateid",
     "+66",
     "812",
     "user@example.com",
     "line_user_id",
     "telegram_id",
+    "telegram_username",
     "slip_url",
     "private.example",
     "bank",
+    "bank_account",
+    "amount_raw",
+    "payment_ref_raw",
+    "airtable_record_id",
+    "raw_payload",
+    "admin_note_raw",
     "secret-token",
     "passphrase",
+    "api_key",
     "masked_email",
     "masked_phone",
     "masked_line_id",
@@ -115,7 +150,7 @@ test("GET /v1/sigil/board/queue returns exact queue schema with sanitized cards"
   }
 });
 
-test("empty source returns successful empty board responses", async () => {
+test("missing KV returns successful empty board responses", async () => {
   const status = await json(await call("/v1/sigil/board/status"));
   const queue = await json(await call("/v1/sigil/board/queue"));
 
@@ -126,6 +161,51 @@ test("empty source returns successful empty board responses", async () => {
     need_info: 0,
   });
   assert.deepEqual(queue.cards, []);
+});
+
+test("invalid KV JSON returns ok true and empty cards", async () => {
+  const kv = mockKv("{not-json");
+  const queueResponse = await call("/v1/sigil/board/queue", {}, { SIGIL_BOARD_KV: kv });
+  const statusResponse = await call("/v1/sigil/board/status", {}, { SIGIL_BOARD_KV: kv });
+  const queue = await json(queueResponse);
+  const status = await json(statusResponse);
+
+  assert.equal(queueResponse.status, 200);
+  assert.equal(statusResponse.status, 200);
+  assert.equal(queue.ok, true);
+  assert.deepEqual(queue.cards, []);
+  assert.deepEqual(status.counts, {
+    critical: 0,
+    ready_for_per: 0,
+    payment_pending: 0,
+    need_info: 0,
+  });
+});
+
+test("status counts are derived from sanitized cards using V8.2.1 rules", async () => {
+  const kv = mockKv(JSON.stringify([
+    { title: "Risk item", lane: "Risk", status: "Read Only", priority: "Low", owner: "Admin" },
+    { title: "Per item", lane: "Private Review", status: "Ready for Per", priority: "High", owner: "Per" },
+    { title: "Payment pending", lane: "Payment", status: "Pending Review", priority: "High", owner: "MMD" },
+    { title: "Missing info", lane: "Need Info", status: "Read Only", priority: "Medium", owner: "MMD" },
+  ]));
+  const body = await json(await call("/v1/sigil/board/status", {}, { SIGIL_BOARD_KV: kv }));
+
+  assert.deepEqual(body.counts, {
+    critical: 1,
+    ready_for_per: 1,
+    payment_pending: 1,
+    need_info: 1,
+  });
+});
+
+test("explicit needs_per_decision false stays false", async () => {
+  const kv = mockKv(JSON.stringify([
+    { title: "Payment pending", lane: "Payment", status: "Pending Review", priority: "High", owner: "MMD", needs_per_decision: false },
+  ]));
+  const body = await json(await call("/v1/sigil/board/queue", {}, { SIGIL_BOARD_KV: kv }));
+
+  assert.equal(body.cards[0].needs_per_decision, false);
 });
 
 test("board endpoints are GET-only and do not expose mutation routes", async () => {
