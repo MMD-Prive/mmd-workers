@@ -1,8 +1,20 @@
 const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const LINE_PROFILE_BASE_URL = "https://api.line.me/v2/bot/profile";
+const LINE_RICH_MENU_LINK_URL = "https://api.line.me/v2/bot/user";
+const LINE_RICH_MENU_API_URL = "https://api.line.me/v2/bot/richmenu";
+const LINE_RICH_MENU_DATA_URL = "https://api-data.line.me/v2/bot/richmenu";
+const LINE_DEFAULT_RICH_MENU_URL = "https://api.line.me/v2/bot/user/all/richmenu";
 const WORKER_NAME = "member-dashboard-chat-worker";
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webhook/line", "/webhook/line/"]);
+const LINE_RICH_MENU_SYNC_PATH = "/v1/internal/line/rich-menu/sync";
+const LINE_RICH_MENU_PUBLIC_WORLD_BASE_PATH = "/v1/internal/line/rich-menu/public-world";
+const LINE_RICH_MENU_DEFAULT_PATH = "/v1/internal/line/rich-menu/default";
+const LINE_RICH_MENU_LIST_PATH = "/v1/internal/line/rich-menu/list";
+const SERVICE_LINE_RICH_MENU_PUBLIC_WORLD_BASE_PATH = "/__internal/line/rich-menu/public-world";
+const SERVICE_LINE_RICH_MENU_PRIVATE_MEMBER_BASE_PATH = "/__internal/line/rich-menu/private-member";
+const SERVICE_LINE_RICH_MENU_DEFAULT_PATH = "/__internal/line/rich-menu/default";
+const SERVICE_LINE_RICH_MENU_LIST_PATH = "/__internal/line/rich-menu/list";
 const DEFAULT_SYNC_TABLE = "MMD — Console Inbox";
 
 const PUBLIC_MENU_TEXT = [
@@ -70,6 +82,24 @@ function hasInternalAuth(request = null, env = {}) {
     (expectedInternalToken && bearer && bearer === expectedInternalToken) ||
       (expectedConfirmKey && confirmKey && confirmKey === expectedConfirmKey),
   );
+}
+
+function hasBearerInternalAuth(request = null, env = {}) {
+  const bearer = getBearerToken(request);
+  const expectedInternalToken = asString(env.INTERNAL_TOKEN);
+  return Boolean(expectedInternalToken && bearer && bearer === expectedInternalToken);
+}
+
+function hasServiceBindingAuth(request = null, allowedCallers = []) {
+  const service = asString(request?.headers?.get("x-mmd-service-binding"));
+  const internal = asString(request?.headers?.get("x-mmd-internal-call")).toLowerCase();
+  let serviceHost = "";
+  try {
+    serviceHost = new URL(request.url).hostname;
+  } catch (_) {
+    serviceHost = "";
+  }
+  return serviceHost === "member-dashboard-chat-worker.local" && internal === "true" && allowedCallers.includes(service);
 }
 
 function sanitizeLineText(value) {
@@ -432,12 +462,505 @@ export async function pushLinePublicMenu(input = {}, env = {}, request = null) {
   return deliverLinePublicMenu(env, lineUserId, { trusted_event: true });
 }
 
+export async function linkRichMenuToUser(env = {}, lineUserId, richMenuId) {
+  const token = asString(env.LINE_CHANNEL_ACCESS_TOKEN);
+  const userId = asString(lineUserId);
+  const menuId = asString(richMenuId);
+
+  if (!token) return { ok: false, error: "line_token_missing" };
+  if (!userId) return { ok: false, error: "line_user_id_missing" };
+  if (!menuId) return { ok: false, error: "rich_menu_id_missing" };
+
+  const response = await fetch(`${LINE_RICH_MENU_LINK_URL}/${encodeURIComponent(userId)}/richmenu/${encodeURIComponent(menuId)}`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) return { ok: false, error: "line_rich_menu_link_failed", status: response.status };
+  return { ok: true, status: response.status };
+}
+
+export function getRichMenuIdForTarget(env = {}, target) {
+  const normalized = asString(target).toLowerCase();
+  if (normalized === "public_member") return asString(env.LINE_RICH_MENU_PUBLIC_ID);
+  if (normalized === "private_member") return asString(env.LINE_RICH_MENU_PRIVATE_ID || env.LINE_RICH_MENU_MEMBER_ID);
+  if (normalized === "renewal") return asString(env.LINE_RICH_MENU_RENEWAL_ID);
+  if (normalized === "blackcard") return asString(env.LINE_RICH_MENU_BLACKCARD_ID);
+  return "";
+}
+
+function normalizeRichMenuState(value) {
+  return asString(value)
+    .toLowerCase()
+    .replace(/[_\s-]+/g, "_");
+}
+
+export function resolveRichMenuTarget(input = {}) {
+  const membershipState = normalizeRichMenuState(input.membership_state || input.membershipState || input.member_status);
+  const packageState = normalizeRichMenuState(input.package_state || input.packageState || input.package_status);
+  const tier = normalizeRichMenuState(input.tier || input.member_tier || input.package_tier);
+
+  if (tier === "blackcard" || tier === "black_card") return "blackcard";
+  if (membershipState === "expired" || packageState === "expired" || membershipState === "renewal_due") return "renewal";
+  if (membershipState === "active" || packageState === "current" || packageState === "active") return "private_member";
+  return "public_member";
+}
+
+function richMenuBounds(x, y, width, height) {
+  return { x, y, width, height };
+}
+
+function mmdbkkMembershipUrl(entryRoute, extra = "") {
+  return `https://mmdbkk.com/member/membership?source=line&entry_route=${entryRoute}${extra}`;
+}
+
+export function createPublicWorldRichMenuDraft() {
+  return {
+    size: { width: 2500, height: 1686 },
+    selected: true,
+    name: "MMD Public World",
+    chatBarText: "MMD",
+    areas: [
+      { bounds: richMenuBounds(0, 0, 833, 843), action: { type: "message", text: "Hi Per" } },
+      { bounds: richMenuBounds(834, 0, 833, 843), action: { type: "uri", uri: mmdbkkMembershipUrl("public_membership") } },
+      { bounds: richMenuBounds(1667, 0, 833, 843), action: { type: "uri", uri: mmdbkkMembershipUrl("member_status") } },
+      { bounds: richMenuBounds(0, 843, 833, 843), action: { type: "uri", uri: mmdbkkMembershipUrl("booking_request", "&service=dinner_travel") } },
+      { bounds: richMenuBounds(834, 843, 833, 843), action: { type: "uri", uri: "https://mmdbkk.com/pay/membership?source=line&entry_route=payment_proof" } },
+      { bounds: richMenuBounds(1667, 843, 833, 843), action: { type: "message", text: "Hi MMD" } },
+    ],
+  };
+}
+
+export const buildPublicWorldRichMenu = createPublicWorldRichMenuDraft;
+
+export function createPrivateMemberRichMenuDraft() {
+  return {
+    size: { width: 2500, height: 1686 },
+    selected: true,
+    name: "MMD Private Member",
+    chatBarText: "MMD",
+    areas: [
+      { bounds: richMenuBounds(0, 0, 833, 843), action: { type: "uri", uri: mmdbkkMembershipUrl("member_status") } },
+      { bounds: richMenuBounds(834, 0, 833, 843), action: { type: "uri", uri: mmdbkkMembershipUrl("points") } },
+      { bounds: richMenuBounds(1667, 0, 833, 843), action: { type: "uri", uri: mmdbkkMembershipUrl("renewal") } },
+      {
+        bounds: richMenuBounds(0, 843, 833, 843),
+        action: {
+          type: "postback",
+          data: "mmd_action=private_support&source=private_rich_menu",
+          displayText: "Private Support",
+        },
+      },
+      { bounds: richMenuBounds(834, 843, 833, 843), action: { type: "uri", uri: "https://mmdbkk.com/pay/membership?source=line&entry_route=payment_proof" } },
+      { bounds: richMenuBounds(1667, 843, 833, 843), action: { type: "message", text: "Hi MMD" } },
+    ],
+  };
+}
+
+function buildMinimalPublicWorldRichMenu() {
+  return {
+    size: { width: 2500, height: 1686 },
+    selected: true,
+    name: "MMD Public World Minimal",
+    chatBarText: "MMD",
+    areas: [{ bounds: richMenuBounds(0, 0, 2500, 1686), action: { type: "message", text: "Hi Per" } }],
+  };
+}
+
+function buildPublicWorldRichMenuVariant(kind = "full") {
+  if (kind === "minimal") return buildMinimalPublicWorldRichMenu();
+  const draft = buildPublicWorldRichMenu();
+  if (kind === "no-postback") {
+    return {
+      ...draft,
+      areas: draft.areas.map((area, index) => (
+        area.action.type === "postback" || index === 5 ? { ...area, action: { type: "message", text: "Hi Per" } } : area
+      )),
+    };
+  }
+  if (kind === "message-only") {
+    return {
+      ...draft,
+      areas: draft.areas.map((area) => ({ ...area, action: { type: "message", text: "Hi Per" } })),
+    };
+  }
+  if (kind === "uri-only") {
+    return {
+      ...draft,
+      areas: draft.areas.map((area, index) => ({
+        ...area,
+        action: { type: "uri", uri: mmdbkkMembershipUrl(index === 0 ? "public_membership" : "member_status") },
+      })),
+    };
+  }
+  return draft;
+}
+
+function requireLineToken(env = {}) {
+  const token = asString(env.LINE_CHANNEL_ACCESS_TOKEN);
+  if (!token) return { ok: false, error: "line_token_missing" };
+  return { ok: true, token };
+}
+
+function safeJsonParse(rawBody) {
+  try {
+    return JSON.parse(rawBody);
+  } catch (_) {
+    return null;
+  }
+}
+
+function lineSafeReason(status = 0) {
+  if (status === 400) return "payload_invalid";
+  if (status === 401 || status === 403) return "line_auth_failed";
+  if (status === 404) return "line_resource_missing";
+  if ([429, 500, 502, 503, 504].includes(Number(status))) return "line_upstream_unavailable";
+  return "line_api_unknown_error";
+}
+
+function sanitizeLineErrorExcerpt(rawText = "") {
+  let value = asString(rawText);
+  value = value.replace(/authorization\s*[:=]\s*bearer\s+[^\s",}]+/gi, "[auth-redacted]");
+  value = value.replace(/bearer\s+[A-Za-z0-9._~+/=-]+/gi, "[auth-redacted]");
+  value = value.replace(/(channel[_\s-]?access[_\s-]?token|secret|token|api[_\s-]?key)\s*[:=]\s*["']?[^"',}\s]+/gi, "[secret-redacted]");
+  value = value.replace(/richmenu-[A-Za-z0-9_-]+/gi, "[richmenu-id-redacted]");
+  value = value.replace(/U[a-f0-9]{32}/gi, "[line-user-redacted]");
+  return value.slice(0, 300);
+}
+
+function safeLineApiError(operation, response, rawText = "", options = {}) {
+  const status = Number(response?.status || 0);
+  const excerpt = options.debug ? sanitizeLineErrorExcerpt(rawText) : "";
+  return {
+    ok: false,
+    error: "line_api_failed",
+    operation,
+    line_status: status,
+    safe_reason: lineSafeReason(status),
+    ...(excerpt ? { line_error_excerpt: excerpt } : {}),
+  };
+}
+
+async function lineApiJson(env = {}, url, init = {}, options = {}) {
+  const token = requireLineToken(env);
+  if (!token.ok) return token;
+  try {
+    const response = await fetch(url, {
+      ...init,
+      headers: {
+        authorization: `Bearer ${token.token}`,
+        "content-type": "application/json",
+        ...(init.headers || {}),
+      },
+    });
+    const rawText = await response.text().catch(() => "");
+    const data = rawText ? safeJsonParse(rawText) || {} : {};
+    if (!response.ok) return safeLineApiError(options.operation || "line_api_json", response, rawText, options);
+    return { ok: true, status: response.status, data };
+  } catch (_) {
+    return { ok: false, error: "line_api_fetch_failed" };
+  }
+}
+
+async function lineApiRaw(env = {}, url, init = {}, options = {}) {
+  const token = requireLineToken(env);
+  if (!token.ok) return token;
+  try {
+    const response = await fetch(url, {
+      ...init,
+      headers: {
+        authorization: `Bearer ${token.token}`,
+        ...(init.headers || {}),
+      },
+    });
+    const rawText = await response.text().catch(() => "");
+    if (!response.ok) return safeLineApiError(options.operation || "line_api_raw", response, rawText, options);
+    return { ok: true, status: response.status };
+  } catch (_) {
+    return { ok: false, error: "line_api_fetch_failed" };
+  }
+}
+
+function sanitizeRichMenuList(payload = {}) {
+  const richmenus = Array.isArray(payload.richmenus) ? payload.richmenus : [];
+  return richmenus.map((menu) => ({
+    richMenuId: asString(menu.richMenuId),
+    name: asString(menu.name),
+    chatBarText: asString(menu.chatBarText),
+    selected: menu.selected === true,
+    areas_count: Array.isArray(menu.areas) ? menu.areas.length : 0,
+  }));
+}
+
 async function readJson(request) {
   try {
     return await request.json();
   } catch (_) {
     return null;
   }
+}
+
+async function handleRichMenuSync(request, env) {
+  if (!hasInternalAuth(request, env)) return json({ ok: false, error: "internal_auth_required" }, 401);
+  const body = await readJson(request);
+  if (!body || typeof body !== "object") return json({ ok: false, error: "invalid_json" }, 400);
+
+  const lineUserId = getLineUserId(body);
+  if (!lineUserId) return json({ ok: false, error: "line_user_id_missing" }, 400);
+
+  const richMenuTarget = resolveRichMenuTarget(body);
+  const richMenuId = getRichMenuIdForTarget(env, richMenuTarget);
+  if (!richMenuId) return json({ ok: false, error: "rich_menu_id_missing", rich_menu_target: richMenuTarget }, 400);
+
+  const linked = await linkRichMenuToUser(env, lineUserId, richMenuId);
+  if (!linked.ok) {
+    return json({ ok: false, ...linked, rich_menu_target: richMenuTarget, line_user_id: lineUserId }, linked.error === "line_token_missing" ? 500 : 502);
+  }
+
+  return json({ ok: true, linked: true, rich_menu_target: richMenuTarget, line_user_id: lineUserId });
+}
+
+function publicWorldDraftResponse() {
+  const draft = createPublicWorldRichMenuDraft();
+  return json({ ok: true, rich_menu_type: "public_world", draft, rich_menu: draft });
+}
+
+function privateMemberDraftResponse() {
+  const draft = createPrivateMemberRichMenuDraft();
+  return json({ ok: true, rich_menu_type: "private_member", draft, rich_menu: draft });
+}
+
+async function validatePublicWorldRichMenu(env, options = {}) {
+  const draft = buildPublicWorldRichMenuVariant(options.variant || "full");
+  const result = await lineApiJson(env, `${LINE_RICH_MENU_API_URL}/validate`, {
+    method: "POST",
+    body: JSON.stringify(draft),
+  }, {
+    operation: "rich_menu_validate",
+    debug: options.debug === true,
+  });
+  if (!result.ok) return result;
+  return { ok: true, validated: true, variant: options.variant || "full" };
+}
+
+async function validatePrivateMemberRichMenu(env, options = {}) {
+  const draft = createPrivateMemberRichMenuDraft();
+  const result = await lineApiJson(env, `${LINE_RICH_MENU_API_URL}/validate`, {
+    method: "POST",
+    body: JSON.stringify(draft),
+  }, {
+    operation: "rich_menu_validate",
+    debug: options.debug === true,
+  });
+  if (!result.ok) return result;
+  return { ok: true, validated: true, rich_menu_type: "private_member" };
+}
+
+async function createPublicWorldRichMenu(env) {
+  const draft = buildPublicWorldRichMenu();
+  const result = await lineApiJson(env, LINE_RICH_MENU_API_URL, {
+    method: "POST",
+    body: JSON.stringify(draft),
+  }, { operation: "rich_menu_create" });
+  if (!result.ok) return result;
+  return {
+    ok: true,
+    created: true,
+    rich_menu_type: "public_world",
+    rich_menu_id: asString(result.data?.richMenuId || result.data?.rich_menu_id),
+  };
+}
+
+function isAllowedRichMenuImageUrl(rawUrl = "") {
+  try {
+    const url = new URL(asString(rawUrl));
+    return url.protocol === "https:";
+  } catch (_) {
+    return false;
+  }
+}
+
+async function uploadPublicWorldRichMenuImage(env, input = {}) {
+  const richMenuId = asString(input.rich_menu_id || input.richMenuId);
+  const imageUrl = asString(input.image_url || input.imageUrl);
+  if (!richMenuId) return { ok: false, error: "rich_menu_id_missing" };
+  if (!imageUrl) return { ok: false, error: "image_url_missing" };
+  if (!isAllowedRichMenuImageUrl(imageUrl)) return { ok: false, error: "image_url_invalid" };
+  const imagePath = new URL(imageUrl).pathname.toLowerCase();
+  if (!/\.(?:jpe?g|png)$/.test(imagePath)) return { ok: false, error: "rich_menu_image_type_invalid" };
+
+  let imageResponse;
+  try {
+    imageResponse = await fetch(imageUrl);
+  } catch (_) {
+    return { ok: false, error: "rich_menu_image_fetch_failed" };
+  }
+  if (!imageResponse.ok) return { ok: false, error: "rich_menu_image_fetch_failed", status: imageResponse.status };
+
+  const contentType = asString(imageResponse.headers.get("content-type")).toLowerCase();
+  if (!["image/png", "image/jpeg"].includes(contentType)) {
+    return { ok: false, error: "rich_menu_image_content_type_invalid", content_type: contentType || "unknown" };
+  }
+  const body = await imageResponse.arrayBuffer();
+  const result = await lineApiRaw(env, `${LINE_RICH_MENU_DATA_URL}/${encodeURIComponent(richMenuId)}/content`, {
+    method: "POST",
+    headers: { "content-type": contentType },
+    body,
+  }, { operation: "rich_menu_image_upload" });
+  if (!result.ok) return { ...result, error: "rich_menu_image_upload_failed" };
+  return { ok: true, image_uploaded: true, rich_menu_type: "public_world", rich_menu_id: richMenuId };
+}
+
+async function setPublicWorldDefault(env, input = {}) {
+  const richMenuId = asString(input.rich_menu_id || input.richMenuId);
+  if (!richMenuId) return { ok: false, error: "rich_menu_id_missing" };
+  const result = await lineApiRaw(env, `${LINE_DEFAULT_RICH_MENU_URL}/${encodeURIComponent(richMenuId)}`, {
+    method: "POST",
+  }, { operation: "rich_menu_set_default" });
+  if (!result.ok) return result;
+  return { ok: true, default_set: true, rich_menu_type: "public_world", rich_menu_id: richMenuId };
+}
+
+async function publishPublicWorldRichMenu(env, input = {}) {
+  const imageUrl = asString(input.image_url || input.imageUrl);
+  if (!imageUrl) return { ok: false, error: "rich_menu_image_required" };
+
+  const validated = await validatePublicWorldRichMenu(env);
+  if (!validated.ok) return validated;
+
+  const created = await createPublicWorldRichMenu(env);
+  if (!created.ok) return created;
+
+  const uploaded = await uploadPublicWorldRichMenuImage(env, { ...input, rich_menu_id: created.rich_menu_id });
+  if (!uploaded.ok) {
+    return {
+      ok: false,
+      created: true,
+      image_uploaded: false,
+      default_set: false,
+      error: uploaded.error || "rich_menu_image_upload_failed",
+      rich_menu_type: "public_world",
+      rich_menu_id: created.rich_menu_id,
+    };
+  }
+
+  const defaultSet = await setPublicWorldDefault(env, { rich_menu_id: created.rich_menu_id });
+  if (!defaultSet.ok) {
+    return { ok: false, created: true, image_uploaded: true, default_set: false, error: defaultSet.error, rich_menu_type: "public_world", rich_menu_id: created.rich_menu_id };
+  }
+
+  return {
+    ok: true,
+    validated: true,
+    created: true,
+    image_uploaded: true,
+    default_set: true,
+    rich_menu_type: "public_world",
+    rich_menu_id: created.rich_menu_id,
+  };
+}
+
+async function handleRichMenuDefault(request, env) {
+  if (!hasInternalAuth(request, env)) return json({ ok: false, error: "internal_auth_required" }, 401);
+  const result = await lineApiJson(env, LINE_DEFAULT_RICH_MENU_URL, { method: "GET" }, { operation: "rich_menu_default" });
+  if (!result.ok) return json(result, result.error === "line_token_missing" ? 500 : 502);
+  return json({ ok: true, rich_menu_id: asString(result.data?.richMenuId || result.data?.rich_menu_id) });
+}
+
+async function handleRichMenuList(request, env) {
+  if (!hasInternalAuth(request, env)) return json({ ok: false, error: "internal_auth_required" }, 401);
+  const result = await lineApiJson(env, `${LINE_RICH_MENU_API_URL}/list`, { method: "GET" }, { operation: "rich_menu_list" });
+  if (!result.ok) return json(result, result.error === "line_token_missing" ? 500 : 502);
+  return json({ ok: true, richmenus: sanitizeRichMenuList(result.data) });
+}
+
+function richMenuStatus(result, fallback = 200) {
+  if (result.ok) return fallback;
+  if (result.error === "line_token_missing") return 500;
+  if ([
+    "rich_menu_id_missing",
+    "rich_menu_image_required",
+    "image_url_missing",
+    "image_url_invalid",
+    "rich_menu_image_type_invalid",
+    "rich_menu_image_content_type_invalid",
+  ].includes(result.error)) {
+    return 400;
+  }
+  return result.status || 502;
+}
+
+async function handlePublicWorldRichMenuRoute(request, env, path, serviceBound = false) {
+  if (!serviceBound && !hasInternalAuth(request, env)) return json({ ok: false, error: "internal_auth_required" }, 401);
+  const base = serviceBound ? SERVICE_LINE_RICH_MENU_PUBLIC_WORLD_BASE_PATH : LINE_RICH_MENU_PUBLIC_WORLD_BASE_PATH;
+  const debug = new URL(request.url).searchParams.get("debug") === "1" && (serviceBound || hasBearerInternalAuth(request, env));
+
+  if (request.method === "POST" && path === `${base}/draft`) return publicWorldDraftResponse();
+  if (request.method === "POST" && path === `${base}/validate`) {
+    const result = await validatePublicWorldRichMenu(env, { debug });
+    return json(result, result.ok ? 200 : richMenuStatus(result));
+  }
+  if (request.method === "POST" && path === `${base}/validate-minimal`) {
+    const result = await validatePublicWorldRichMenu(env, { variant: "minimal", debug });
+    return json(result, result.ok ? 200 : richMenuStatus(result));
+  }
+  if (request.method === "POST" && path === `${base}/validate-no-postback`) {
+    const result = await validatePublicWorldRichMenu(env, { variant: "no-postback", debug });
+    return json(result, result.ok ? 200 : richMenuStatus(result));
+  }
+  if (request.method === "POST" && path === `${base}/validate-message-only`) {
+    const result = await validatePublicWorldRichMenu(env, { variant: "message-only", debug });
+    return json(result, result.ok ? 200 : richMenuStatus(result));
+  }
+  if (request.method === "POST" && path === `${base}/validate-uri-only`) {
+    const result = await validatePublicWorldRichMenu(env, { variant: "uri-only", debug });
+    return json(result, result.ok ? 200 : richMenuStatus(result));
+  }
+  if (request.method === "POST" && path === `${base}/create`) {
+    const result = await createPublicWorldRichMenu(env);
+    return json(result, result.ok ? 200 : richMenuStatus(result));
+  }
+  if (request.method === "POST" && path === `${base}/upload-image`) {
+    const result = await uploadPublicWorldRichMenuImage(env, await readJson(request));
+    return json(result, result.ok ? 200 : richMenuStatus(result));
+  }
+  if (request.method === "POST" && path === `${base}/set-default`) {
+    const result = await setPublicWorldDefault(env, await readJson(request));
+    return json(result, result.ok ? 200 : richMenuStatus(result));
+  }
+  if (request.method === "POST" && path === `${base}/publish`) {
+    if (serviceBound && !hasServiceBindingAuth(request, ["admin-worker"])) return json({ ok: false, error: "internal_auth_required" }, 401);
+    const result = await publishPublicWorldRichMenu(env, await readJson(request));
+    return json(result, result.ok ? 200 : richMenuStatus(result));
+  }
+  return json({ ok: false, error: "not_found" }, 404);
+}
+
+async function handlePrivateMemberRichMenuRoute(request, env, path) {
+  if (request.method === "POST" && path === `${SERVICE_LINE_RICH_MENU_PRIVATE_MEMBER_BASE_PATH}/draft`) return privateMemberDraftResponse();
+  if (request.method === "POST" && path === `${SERVICE_LINE_RICH_MENU_PRIVATE_MEMBER_BASE_PATH}/validate`) {
+    const debug = new URL(request.url).searchParams.get("debug") === "1";
+    const result = await validatePrivateMemberRichMenu(env, { debug });
+    return json(result, result.ok ? 200 : richMenuStatus(result));
+  }
+  return json({ ok: false, error: "not_found" }, 404);
+}
+
+async function handleServiceBoundRichMenuRoute(request, env, path) {
+  if (!hasServiceBindingAuth(request, ["admin-worker"])) return json({ ok: false, error: "internal_auth_required" }, 401);
+  if (path.startsWith(`${SERVICE_LINE_RICH_MENU_PUBLIC_WORLD_BASE_PATH}/`)) return handlePublicWorldRichMenuRoute(request, env, path, true);
+  if (path.startsWith(`${SERVICE_LINE_RICH_MENU_PRIVATE_MEMBER_BASE_PATH}/`)) return handlePrivateMemberRichMenuRoute(request, env, path);
+  if (request.method === "GET" && path === SERVICE_LINE_RICH_MENU_DEFAULT_PATH) {
+    const result = await lineApiJson(env, LINE_DEFAULT_RICH_MENU_URL, { method: "GET" }, { operation: "rich_menu_default" });
+    if (!result.ok) return json(result, richMenuStatus(result));
+    return json({ ok: true, rich_menu_id: asString(result.data?.richMenuId || result.data?.rich_menu_id) });
+  }
+  if (request.method === "GET" && path === SERVICE_LINE_RICH_MENU_LIST_PATH) {
+    const result = await lineApiJson(env, `${LINE_RICH_MENU_API_URL}/list`, { method: "GET" }, { operation: "rich_menu_list" });
+    if (!result.ok) return json(result, richMenuStatus(result));
+    return json({ ok: true, richmenus: sanitizeRichMenuList(result.data) });
+  }
+  return json({ ok: false, error: "not_found" }, 404);
 }
 
 async function handleLineWebhook(request, env) {
@@ -500,6 +1023,31 @@ export default {
 
     if (request.method === "POST" && LINE_WEBHOOK_PATHS.has(url.pathname)) {
       return handleLineWebhook(request, env);
+    }
+
+    if (
+      url.pathname.startsWith(`${SERVICE_LINE_RICH_MENU_PUBLIC_WORLD_BASE_PATH}/`) ||
+      url.pathname.startsWith(`${SERVICE_LINE_RICH_MENU_PRIVATE_MEMBER_BASE_PATH}/`) ||
+      url.pathname === SERVICE_LINE_RICH_MENU_DEFAULT_PATH ||
+      url.pathname === SERVICE_LINE_RICH_MENU_LIST_PATH
+    ) {
+      return handleServiceBoundRichMenuRoute(request, env, url.pathname);
+    }
+
+    if (request.method === "POST" && url.pathname === LINE_RICH_MENU_SYNC_PATH) {
+      return handleRichMenuSync(request, env);
+    }
+
+    if (url.pathname.startsWith(`${LINE_RICH_MENU_PUBLIC_WORLD_BASE_PATH}/`)) {
+      return handlePublicWorldRichMenuRoute(request, env, url.pathname, false);
+    }
+
+    if (request.method === "GET" && url.pathname === LINE_RICH_MENU_DEFAULT_PATH) {
+      return handleRichMenuDefault(request, env);
+    }
+
+    if (request.method === "GET" && url.pathname === LINE_RICH_MENU_LIST_PATH) {
+      return handleRichMenuList(request, env);
     }
 
     if (request.method === "POST" && url.pathname === "/v1/internal/line/public-menu-fallback") {
