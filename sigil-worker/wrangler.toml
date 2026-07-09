@@ -4,22 +4,11 @@ compatibility_date = "2026-06-04"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
+# Minimal production trigger set for Complaint Evidence intake.
+# Keep this lean because Cloudflare route deployment failed when adding multiple new SIGIL subdomain triggers at once.
+# Existing board/model routes should stay managed from their current Cloudflare trigger state until migrated deliberately.
 routes = [
-  { pattern = "www.mmdbkk.com/v1/sigil/board/*", zone_name = "mmdbkk.com" },
-  { pattern = "mmdbkk.com/v1/sigil/board/*", zone_name = "mmdbkk.com" },
-
-  # SIGIL worker health checks on the SIGIL subdomain.
-  { pattern = "sigil.mmdbkk.com/ping", zone_name = "mmdbkk.com" },
-  { pattern = "sigil.mmdbkk.com/health", zone_name = "mmdbkk.com" },
-
-  # Recovery coupon APIs used by /sigil/recovery/coupon.
-  { pattern = "sigil.mmdbkk.com/api/recovery/coupon/*", zone_name = "mmdbkk.com" },
-
-  # Complaint evidence intake used by /sigil/recovery/complaint.
-  { pattern = "sigil.mmdbkk.com/member/api/recovery/*", zone_name = "mmdbkk.com" },
-
-  # SIGIL board read APIs on the SIGIL subdomain.
-  { pattern = "sigil.mmdbkk.com/v1/sigil/board/*", zone_name = "mmdbkk.com" }
+  { pattern = "sigil.mmdbkk.com/member/api/recovery/*", zone_name = "mmdbkk.com" }
 ]
 
 [observability]
