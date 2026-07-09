@@ -1,0 +1,29 @@
+name = "mmd-care-intake-worker"
+main = "src/index.js"
+compatibility_date = "2026-06-04"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+# Fresh route-free worker for MMD Private Care / SIGIL Complaint Evidence intake.
+# Do not add routes here until Cloudflare route conflict on sigil-worker is cleared.
+# Public workers.dev endpoint after deploy:
+# https://mmd-care-intake-worker.malemodel-bkk.workers.dev/member/api/recovery/complaint-evidence
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[vars]
+WORKER_NAME = "mmd-care-intake-worker"
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.webflow.io"
+
+# Optional secrets:
+# COMPLAINT_GOOGLE_DRIVE_WEBHOOK_URL
+# COMPLAINT_TELEGRAM_WEBHOOK_URL
+# Optional dedicated KV:
+# SIGIL_COMPLAINT_KV
+
+[[kv_namespaces]]
+binding = "SIGIL_BOARD_KV"
+id = "7922350083a644db8a48c16c7e48fca7"
+preview_id = "f673c4ab6e4f456baefeab032564db72"
