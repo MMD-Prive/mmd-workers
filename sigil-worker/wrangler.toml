@@ -1,0 +1,23 @@
+name = "sigil-worker"
+main = "src/index.js"
+compatibility_date = "2026-06-04"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+routes = [
+  { pattern = "www.mmdbkk.com/v1/sigil/board/*", zone_name = "mmdbkk.com" },
+  { pattern = "mmdbkk.com/v1/sigil/board/*", zone_name = "mmdbkk.com" }
+]
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[vars]
+WORKER_NAME = "sigil-worker"
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.webflow.io"
+
+# Do not put secrets here.
+# Board queue reads are optional and read-only:
+# - SIGIL_BOARD_QUEUE_JSON as non-secret JSON for smoke/dev only
+# - SIGIL_BOARD_QUEUE_KV or SIGIL_BOARD_KV binding when production source is wired
