@@ -28,7 +28,7 @@ head_sampling_rate = 1
 
 [vars]
 WORKER_NAME = "sigil-worker"
-ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.webflow.io,https://mmdprive.com"
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.webflow.io"
 
 # Do not put secrets here.
 # Board queue reads are read-only:
