@@ -9,6 +9,17 @@ const BOARD_META_KV_KEY = "sigil:board:v1:meta";
 const DEFAULT_QUEUE_LIMIT = 50;
 const MAX_QUEUE_LIMIT = 100;
 
+const RECOVERY_COUPON_STATUS_PATH = "/api/recovery/coupon/status";
+const RECOVERY_COUPON_ACK_PATH = "/api/recovery/coupon/ack";
+const RECOVERY_COUPON_KV_PREFIX = "sigil:recovery:coupon:v1:";
+const DEFAULT_RECOVERY_COUPON = Object.freeze({
+  coupon_id: "CPN-APOLOGY-JET-001",
+  discount_percent: 10,
+  client_name: "คุณเจต",
+  status: "Active",
+  validity: "Valid 60 days",
+});
+
 const EMPTY_COUNTS = Object.freeze({
   critical: 0,
   ready_for_per: 0,
@@ -28,7 +39,6 @@ const ALLOWED_LANES = new Set([
   "Risk",
   "Need Info",
 ]);
-
 const ALLOWED_OWNERS = new Set(["MMD", "Per", "Kenji", "Ewvon", "Yuki", "Admin"]);
 const ALLOWED_PRIORITIES = new Set(["Critical", "High", "Medium", "Low"]);
 
@@ -45,6 +55,10 @@ export default {
         return json({ ok: true, worker: workerName(env), mode: MODE }, 200, corsHeaders);
       }
 
+      if (isRecoveryCouponPath(url.pathname)) {
+        return handleRecoveryCouponRequest(request, env, corsHeaders);
+      }
+
       if (url.pathname === BOARD_STATUS_PATH || url.pathname === BOARD_QUEUE_PATH) {
         if (request.method !== "GET") return methodNotAllowed(corsHeaders);
         const cards = await loadBoardCards(env);
@@ -58,6 +72,9 @@ export default {
       const emptyCards = [];
       if (url.pathname === BOARD_STATUS_PATH) return json(statusResponse(emptyCards), 200, corsHeaders);
       if (url.pathname === BOARD_QUEUE_PATH) return json(queueResponse(emptyCards, queueLimitFrom(url)), 200, corsHeaders);
+      if (isRecoveryCouponPath(url.pathname)) {
+        return json({ ok: false, error: "internal_error", message: errorMessage(error) }, 500, corsHeaders);
+      }
       return json({ ok: false, error: "internal_error" }, 500, corsHeaders);
     }
   },
@@ -85,6 +102,184 @@ function queueResponse(cards, limit = DEFAULT_QUEUE_LIMIT) {
     limit,
     cards: returnedCards,
   };
+}
+
+async function handleRecoveryCouponRequest(request, env, corsHeaders) {
+  const url = new URL(request.url);
+
+  if (url.pathname === RECOVERY_COUPON_STATUS_PATH) {
+    if (request.method !== "GET") return methodNotAllowed(corsHeaders, "GET, OPTIONS");
+    return handleRecoveryCouponStatus(request, env, corsHeaders);
+  }
+
+  if (url.pathname === RECOVERY_COUPON_ACK_PATH) {
+    if (request.method !== "POST") return methodNotAllowed(corsHeaders, "POST, OPTIONS");
+    return handleRecoveryCouponAck(request, env, corsHeaders);
+  }
+
+  return json({ ok: false, error: "not_found" }, 404, corsHeaders);
+}
+
+async function handleRecoveryCouponStatus(request, env, corsHeaders) {
+  const url = new URL(request.url);
+  const lookup = recoveryCouponLookupFromUrl(url);
+  const stored = await readStoredRecoveryCoupon(env, lookup);
+  const coupon = normalizeRecoveryCoupon({
+    ...DEFAULT_RECOVERY_COUPON,
+    ...stored,
+    coupon_id: stored?.coupon_id || lookup.coupon_id || DEFAULT_RECOVERY_COUPON.coupon_id,
+    token: stored?.token || lookup.token || null,
+    session_id: stored?.session_id || lookup.session_id || null,
+  });
+
+  return json(
+    {
+      ok: true,
+      source: stored ? "kv" : "fallback",
+      mode: MODE,
+      coupon,
+    },
+    200,
+    corsHeaders,
+  );
+}
+
+async function handleRecoveryCouponAck(request, env, corsHeaders) {
+  const body = await request.json().catch(() => null);
+
+  if (!body || typeof body !== "object") {
+    return json({ ok: false, error: "invalid_json", message: "valid JSON payload is required" }, 400, corsHeaders);
+  }
+
+  const couponId = safeText(body.coupon_id || body.couponId || DEFAULT_RECOVERY_COUPON.coupon_id, DEFAULT_RECOVERY_COUPON.coupon_id, 120);
+  if (!couponId) {
+    return json({ ok: false, error: "missing_coupon_id", message: "coupon_id is required" }, 400, corsHeaders);
+  }
+
+  const now = new Date().toISOString();
+  const coupon = normalizeRecoveryCoupon({
+    ...DEFAULT_RECOVERY_COUPON,
+    coupon_id: couponId,
+    discount_percent: readNumber(body.discount_percent || body.discount, DEFAULT_RECOVERY_COUPON.discount_percent),
+    client_name: safeText(body.client_name || body.clientName || DEFAULT_RECOVERY_COUPON.client_name, DEFAULT_RECOVERY_COUPON.client_name, 120),
+    status: "Claimed",
+    validity: safeText(body.validity || DEFAULT_RECOVERY_COUPON.validity, DEFAULT_RECOVERY_COUPON.validity, 120),
+    token: safeText(body.token, "", 500) || null,
+    session_id: safeText(body.session_id || body.sid, "", 120) || null,
+    route: safeText(body.route, "", 160) || null,
+    page: safeText(body.page, "recovery-coupon", 120),
+    acknowledged_at: now,
+    updated_at: now,
+  });
+
+  const write = await writeStoredRecoveryCoupon(env, coupon);
+
+  return json(
+    {
+      ok: true,
+      source: write.persisted ? "kv" : "ephemeral",
+      mode: MODE,
+      message: "Coupon acknowledged",
+      coupon,
+      storage: write,
+    },
+    200,
+    corsHeaders,
+  );
+}
+
+function recoveryCouponLookupFromUrl(url) {
+  return {
+    token: safeText(url.searchParams.get("t"), "", 500),
+    session_id: safeText(url.searchParams.get("sid"), "", 120),
+    coupon_id: safeText(url.searchParams.get("coupon") || url.searchParams.get("coupon_id"), "", 120),
+  };
+}
+
+async function readStoredRecoveryCoupon(env, lookup) {
+  const kv = recoveryCouponKv(env);
+  if (!kv || typeof kv.get !== "function") return null;
+
+  const keys = recoveryCouponLookupKeys(lookup);
+  for (const key of keys) {
+    try {
+      const raw = await kv.get(key);
+      const parsed = parseJson(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    } catch (error) {
+      console.error(JSON.stringify({ worker: workerName(env), source: "recovery_coupon_kv_read", error: errorMessage(error) }));
+    }
+  }
+
+  return null;
+}
+
+async function writeStoredRecoveryCoupon(env, coupon) {
+  const kv = recoveryCouponKv(env);
+  if (!kv || typeof kv.put !== "function") return { persisted: false, reason: "missing_SIGIL_RECOVERY_KV" };
+
+  const keys = recoveryCouponLookupKeys({
+    coupon_id: coupon.coupon_id,
+    token: coupon.token,
+    session_id: coupon.session_id,
+  });
+  const value = JSON.stringify(coupon);
+
+  try {
+    await Promise.all(keys.map((key) => kv.put(key, value)));
+    return { persisted: true, keys_written: keys.length };
+  } catch (error) {
+    console.error(JSON.stringify({ worker: workerName(env), source: "recovery_coupon_kv_write", error: errorMessage(error) }));
+    return { persisted: false, reason: errorMessage(error) };
+  }
+}
+
+function recoveryCouponKv(env) {
+  return env?.SIGIL_RECOVERY_KV || env?.RECOVERY_COUPON_KV || env?.SIGIL_BOARD_KV || null;
+}
+
+function recoveryCouponLookupKeys(lookup) {
+  return [
+    lookup?.coupon_id ? `${RECOVERY_COUPON_KV_PREFIX}coupon:${lookup.coupon_id}` : "",
+    lookup?.session_id ? `${RECOVERY_COUPON_KV_PREFIX}sid:${lookup.session_id}` : "",
+    lookup?.token ? `${RECOVERY_COUPON_KV_PREFIX}token:${shortHash(String(lookup.token))}` : "",
+  ].filter(Boolean);
+}
+
+function normalizeRecoveryCoupon(value) {
+  return {
+    coupon_id: safeText(value?.coupon_id || DEFAULT_RECOVERY_COUPON.coupon_id, DEFAULT_RECOVERY_COUPON.coupon_id, 120),
+    discount_percent: readNumber(value?.discount_percent || value?.discount, DEFAULT_RECOVERY_COUPON.discount_percent),
+    client_name: safeText(value?.client_name || DEFAULT_RECOVERY_COUPON.client_name, DEFAULT_RECOVERY_COUPON.client_name, 120),
+    status: normalizeRecoveryStatus(value?.status || value?.coupon_status || DEFAULT_RECOVERY_COUPON.status),
+    validity: safeText(value?.validity || DEFAULT_RECOVERY_COUPON.validity, DEFAULT_RECOVERY_COUPON.validity, 120),
+    token: value?.token || null,
+    session_id: value?.session_id || null,
+    route: value?.route || null,
+    page: value?.page || null,
+    acknowledged_at: value?.acknowledged_at || null,
+    updated_at: value?.updated_at || null,
+  };
+}
+
+function normalizeRecoveryStatus(value) {
+  const raw = safeText(value, "Active", 40);
+  const normalized = raw.toLowerCase();
+  if (normalized === "active") return "Active";
+  if (normalized === "claimed") return "Claimed";
+  if (normalized === "used") return "Used";
+  if (normalized === "expired") return "Expired";
+  if (normalized === "revoked") return "Revoked";
+  return raw;
+}
+
+function readNumber(value, fallback) {
+  const n = Number(String(value ?? "").replace(/,/g, "").trim());
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function isRecoveryCouponPath(pathname) {
+  return pathname === RECOVERY_COUPON_STATUS_PATH || pathname === RECOVERY_COUPON_ACK_PATH;
 }
 
 async function loadBoardCards(env) {
@@ -363,9 +558,9 @@ function shortHash(value) {
   return (hash >>> 0).toString(36).slice(0, 10);
 }
 
-function methodNotAllowed(headers) {
+function methodNotAllowed(headers, allow = "GET, OPTIONS") {
   const responseHeaders = new Headers(headers);
-  responseHeaders.set("allow", "GET, OPTIONS");
+  responseHeaders.set("allow", allow);
   return json({ ok: false, error: "method_not_allowed" }, 405, responseHeaders);
 }
 
@@ -385,8 +580,8 @@ function corsFor(request, env) {
 
   headers.set("content-type", "application/json; charset=utf-8");
   headers.set("vary", "Origin");
-  headers.set("access-control-allow-methods", "GET,OPTIONS");
-  headers.set("access-control-allow-headers", "content-type,x-request-id");
+  headers.set("access-control-allow-methods", "GET,POST,OPTIONS");
+  headers.set("access-control-allow-headers", "content-type,x-request-id,x-mmd-client,x-mmd-proxy,x-mmd-route");
   headers.set("access-control-max-age", "86400");
 
   if (origin && allowed.includes(origin)) {
@@ -418,10 +613,15 @@ export const testInternals = {
   BOARD_META_KV_KEY,
   DEFAULT_QUEUE_LIMIT,
   MAX_QUEUE_LIMIT,
+  RECOVERY_COUPON_STATUS_PATH,
+  RECOVERY_COUPON_ACK_PATH,
+  RECOVERY_COUPON_KV_PREFIX,
   countCards,
   queueLimitFrom,
   sanitizeCard,
   sortCards,
   statusResponse,
   queueResponse,
+  normalizeRecoveryCoupon,
+  recoveryCouponLookupKeys,
 };
