@@ -5,7 +5,6 @@ const SOURCE = "worker";
 const BOARD_STATUS_PATH = "/v1/sigil/board/status";
 const BOARD_QUEUE_PATH = "/v1/sigil/board/queue";
 const BOARD_CARDS_KV_KEY = "sigil:board:v1:cards";
-const BOARD_META_KV_KEY = "sigil:board:v1:meta";
 const DEFAULT_QUEUE_LIMIT = 50;
 const MAX_QUEUE_LIMIT = 100;
 
@@ -19,6 +18,23 @@ const DEFAULT_RECOVERY_COUPON = Object.freeze({
   status: "Active",
   validity: "Valid 60 days",
 });
+
+const COMPLAINT_EVIDENCE_PATH = "/member/api/recovery/complaint-evidence";
+const COMPLAINT_CASE_KV_PREFIX = "sigil:complaint:case:v1:";
+const MAX_EVIDENCE_FILES_PER_SIDE = 12;
+const MAX_EVIDENCE_FILE_BYTES = 15 * 1024 * 1024;
+const MAX_TOTAL_EVIDENCE_FILES = MAX_EVIDENCE_FILES_PER_SIDE * 2;
+const ALLOWED_EVIDENCE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "pdf"]);
+const ALLOWED_EVIDENCE_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/heic",
+  "image/heif",
+  "application/pdf",
+]);
+const ALLOWED_COMPLAINT_LANES = new Set(["client", "assistant", "model"]);
 
 const EMPTY_COUNTS = Object.freeze({
   critical: 0,
@@ -59,6 +75,11 @@ export default {
         return handleRecoveryCouponRequest(request, env, corsHeaders);
       }
 
+      if (url.pathname === COMPLAINT_EVIDENCE_PATH) {
+        if (request.method !== "POST") return methodNotAllowed(corsHeaders, "POST, OPTIONS");
+        return handleComplaintEvidence(request, env, corsHeaders);
+      }
+
       if (url.pathname === BOARD_STATUS_PATH || url.pathname === BOARD_QUEUE_PATH) {
         if (request.method !== "GET") return methodNotAllowed(corsHeaders);
         const cards = await loadBoardCards(env);
@@ -68,14 +89,10 @@ export default {
 
       return json({ ok: false, error: "not_found" }, 404, corsHeaders);
     } catch (error) {
-      console.error(JSON.stringify({ worker: workerName(env), error: errorMessage(error) }));
-      const emptyCards = [];
-      if (url.pathname === BOARD_STATUS_PATH) return json(statusResponse(emptyCards), 200, corsHeaders);
-      if (url.pathname === BOARD_QUEUE_PATH) return json(queueResponse(emptyCards, queueLimitFrom(url)), 200, corsHeaders);
-      if (isRecoveryCouponPath(url.pathname)) {
-        return json({ ok: false, error: "internal_error", message: errorMessage(error) }, 500, corsHeaders);
-      }
-      return json({ ok: false, error: "internal_error" }, 500, corsHeaders);
+      console.error(JSON.stringify({ worker: workerName(env), path: url.pathname, error: errorMessage(error) }));
+      if (url.pathname === BOARD_STATUS_PATH) return json(statusResponse([]), 200, corsHeaders);
+      if (url.pathname === BOARD_QUEUE_PATH) return json(queueResponse([], queueLimitFrom(url)), 200, corsHeaders);
+      return json({ ok: false, error: "internal_error", message: errorMessage(error) }, 500, corsHeaders);
     }
   },
 };
@@ -132,29 +149,17 @@ async function handleRecoveryCouponStatus(request, env, corsHeaders) {
     session_id: stored?.session_id || lookup.session_id || null,
   });
 
-  return json(
-    {
-      ok: true,
-      source: stored ? "kv" : "fallback",
-      mode: MODE,
-      coupon,
-    },
-    200,
-    corsHeaders,
-  );
+  return json({ ok: true, source: stored ? "kv" : "fallback", mode: MODE, coupon }, 200, corsHeaders);
 }
 
 async function handleRecoveryCouponAck(request, env, corsHeaders) {
   const body = await request.json().catch(() => null);
-
   if (!body || typeof body !== "object") {
     return json({ ok: false, error: "invalid_json", message: "valid JSON payload is required" }, 400, corsHeaders);
   }
 
   const couponId = safeText(body.coupon_id || body.couponId || DEFAULT_RECOVERY_COUPON.coupon_id, DEFAULT_RECOVERY_COUPON.coupon_id, 120);
-  if (!couponId) {
-    return json({ ok: false, error: "missing_coupon_id", message: "coupon_id is required" }, 400, corsHeaders);
-  }
+  if (!couponId) return json({ ok: false, error: "missing_coupon_id", message: "coupon_id is required" }, 400, corsHeaders);
 
   const now = new Date().toISOString();
   const coupon = normalizeRecoveryCoupon({
@@ -173,19 +178,290 @@ async function handleRecoveryCouponAck(request, env, corsHeaders) {
   });
 
   const write = await writeStoredRecoveryCoupon(env, coupon);
+  return json({ ok: true, source: write.persisted ? "kv" : "ephemeral", mode: MODE, message: "Coupon acknowledged", coupon, storage: write }, 200, corsHeaders);
+}
+
+async function handleComplaintEvidence(request, env, corsHeaders) {
+  const contentType = request.headers.get("content-type") || "";
+  if (!/multipart\/form-data/i.test(contentType)) {
+    return json({ ok: false, error: "invalid_content_type", message: "multipart/form-data is required" }, 415, corsHeaders);
+  }
+
+  const formData = await request.formData();
+  const now = new Date().toISOString();
+  const complaintId = makeComplaintId(formData, now);
+  const lane = normalizeComplaintLane(formData.get("lane"));
+
+  const clientFiles = fileEntries(formData, "client_evidence[]", "client_evidence");
+  const modelFiles = fileEntries(formData, "model_evidence[]", "model_evidence");
+  const allFiles = [...clientFiles.map((file) => ["client", file]), ...modelFiles.map((file) => ["model", file])];
+  const fileError = validateEvidenceFiles(allFiles);
+  if (fileError) return json(fileError, 400, corsHeaders);
+
+  const caseRecord = normalizeComplaintCase({
+    complaint_id: complaintId,
+    lane,
+    token: safeText(formData.get("token"), "", 500) || null,
+    session_id: safeText(formData.get("session_id"), "", 120) || null,
+    case_id: safeText(formData.get("case_id"), "", 120) || null,
+    source: safeText(formData.get("source"), "webflow", 80),
+    client_name: safeText(formData.get("client_name"), "", 120),
+    model_name: safeText(formData.get("model_name"), "", 120),
+    case_date: safeText(formData.get("case_date"), "", 40),
+    case_time: safeText(formData.get("case_time"), "", 40),
+    case_location: safeText(formData.get("case_location"), "", 180),
+    client_statement: safeLongText(formData.get("client_statement"), 4000),
+    assistant_statement: safeLongText(formData.get("assistant_statement"), 4000),
+    model_statement: safeLongText(formData.get("model_statement"), 4000),
+    lane_statement: safeLongText(formData.get("lane_statement"), 4000),
+    statement: safeLongText(formData.get("statement"), 5000),
+    workflow_status: safeText(formData.get("workflow_status"), "received_with_evidence", 80),
+    next_step: safeText(formData.get("next_step"), "mmd_assistant_review", 80),
+    final_approver: safeText(formData.get("final_approver"), "Boss Per", 80),
+    page: safeText(formData.get("page"), "mmd-private-care-complaint", 120),
+    route: safeText(formData.get("route"), "", 160),
+    referrer: safeText(formData.get("referrer"), "", 260),
+    user_agent: safeText(formData.get("user_agent"), "", 260),
+    received_at: now,
+    evidence: {
+      client: clientFiles.map((file) => evidenceFileMeta(file)),
+      model: modelFiles.map((file) => evidenceFileMeta(file)),
+      total_files: allFiles.length,
+      total_bytes: allFiles.reduce((sum, pair) => sum + Number(pair[1].size || 0), 0),
+      binary_storage: "not_stored_in_kv",
+      note: "This worker stores metadata in KV and can forward case data to optional webhooks. Raw file bytes require R2/Drive upload integration.",
+    },
+  });
+
+  const kvWrite = await writeStoredComplaintCase(env, caseRecord);
+  const boardWrite = await appendComplaintBoardCard(env, caseRecord);
+  const webhooks = await forwardComplaintWebhooks(env, caseRecord);
 
   return json(
     {
       ok: true,
-      source: write.persisted ? "kv" : "ephemeral",
+      source: kvWrite.persisted ? "kv" : "ephemeral",
       mode: MODE,
-      message: "Coupon acknowledged",
-      coupon,
-      storage: write,
+      message: "Complaint evidence received",
+      complaint: caseRecord,
+      storage: {
+        case_record: kvWrite,
+        board_card: boardWrite,
+        google_drive: webhooks.google_drive,
+        telegram: webhooks.telegram,
+      },
     },
     200,
     corsHeaders,
   );
+}
+
+function makeComplaintId(formData, now) {
+  const explicit = safeText(formData.get("case_id"), "", 120);
+  if (/^cmp_[a-z0-9_\-]+$/i.test(explicit)) return explicit;
+  const sid = safeText(formData.get("session_id"), "", 120);
+  const token = safeText(formData.get("token"), "", 500);
+  const fingerprint = [sid, token, formData.get("client_name"), formData.get("model_name"), now].join("|");
+  return `cmp_${Date.now().toString(36)}_${shortHash(fingerprint)}`;
+}
+
+function normalizeComplaintLane(value) {
+  const lane = String(value || "client").trim().toLowerCase();
+  return ALLOWED_COMPLAINT_LANES.has(lane) ? lane : "client";
+}
+
+function fileEntries(formData, arrayKey, fallbackKey) {
+  const entries = [...formData.getAll(arrayKey), ...formData.getAll(fallbackKey)];
+  return entries.filter((entry) => isFileLike(entry) && entry.size > 0);
+}
+
+function isFileLike(value) {
+  return value && typeof value === "object" && typeof value.name === "string" && typeof value.size === "number";
+}
+
+function validateEvidenceFiles(pairs) {
+  if (pairs.length > MAX_TOTAL_EVIDENCE_FILES) {
+    return { ok: false, error: "too_many_files", message: `แนบไฟล์ได้รวมสูงสุด ${MAX_TOTAL_EVIDENCE_FILES} ไฟล์` };
+  }
+
+  const sideCounts = { client: 0, model: 0 };
+  for (const [side, file] of pairs) {
+    sideCounts[side] += 1;
+    if (sideCounts[side] > MAX_EVIDENCE_FILES_PER_SIDE) {
+      return { ok: false, error: "too_many_files", message: `${side} evidence แนบไฟล์ได้สูงสุด ${MAX_EVIDENCE_FILES_PER_SIDE} ไฟล์` };
+    }
+
+    if (file.size > MAX_EVIDENCE_FILE_BYTES) {
+      return { ok: false, error: "file_too_large", message: `ไฟล์ ${file.name} มีขนาดเกิน 15MB` };
+    }
+
+    const ext = fileExtension(file.name);
+    const typeOk = ALLOWED_EVIDENCE_MIME_TYPES.has(String(file.type || "").toLowerCase());
+    const extOk = ALLOWED_EVIDENCE_EXTENSIONS.has(ext);
+    if (!typeOk && !extOk) {
+      return { ok: false, error: "unsupported_file_type", message: `ไฟล์ ${file.name} ไม่ใช่ประเภทที่รองรับ` };
+    }
+  }
+
+  return null;
+}
+
+function evidenceFileMeta(file) {
+  return {
+    name: safeText(file.name, "untitled", 160),
+    size: Number(file.size || 0),
+    type: safeText(file.type, "application/octet-stream", 80),
+    extension: fileExtension(file.name),
+    storage_status: "metadata_received",
+  };
+}
+
+function fileExtension(name) {
+  const match = String(name || "").toLowerCase().match(/\.([a-z0-9]+)$/);
+  return match ? match[1] : "";
+}
+
+function normalizeComplaintCase(value) {
+  return {
+    complaint_id: value.complaint_id,
+    lane: value.lane,
+    token: value.token,
+    session_id: value.session_id,
+    case_id: value.case_id,
+    source: value.source,
+    client_name: value.client_name,
+    model_name: value.model_name,
+    case_date: value.case_date,
+    case_time: value.case_time,
+    case_location: value.case_location,
+    client_statement: value.client_statement,
+    assistant_statement: value.assistant_statement,
+    model_statement: value.model_statement,
+    lane_statement: value.lane_statement,
+    statement: value.statement,
+    workflow_status: value.workflow_status,
+    next_step: value.next_step,
+    final_approver: value.final_approver,
+    page: value.page,
+    route: value.route,
+    referrer: value.referrer,
+    user_agent: value.user_agent,
+    received_at: value.received_at,
+    evidence: value.evidence,
+  };
+}
+
+async function writeStoredComplaintCase(env, caseRecord) {
+  const kv = complaintKv(env);
+  if (!kv || typeof kv.put !== "function") return { persisted: false, reason: "missing_SIGIL_COMPLAINT_KV" };
+  const keys = complaintLookupKeys(caseRecord);
+  const value = JSON.stringify(caseRecord);
+
+  try {
+    await Promise.all(keys.map((key) => kv.put(key, value)));
+    return { persisted: true, keys_written: keys.length };
+  } catch (error) {
+    console.error(JSON.stringify({ worker: workerName(env), source: "complaint_kv_write", error: errorMessage(error) }));
+    return { persisted: false, reason: errorMessage(error) };
+  }
+}
+
+async function appendComplaintBoardCard(env, caseRecord) {
+  const kv = env?.SIGIL_BOARD_KV;
+  if (!kv || typeof kv.get !== "function" || typeof kv.put !== "function") return { persisted: false, reason: "missing_SIGIL_BOARD_KV" };
+
+  try {
+    const existing = normalizeSourceRecords(parseJson(await kv.get(BOARD_CARDS_KV_KEY)));
+    const card = complaintBoardCard(caseRecord);
+    const next = [card, ...existing.filter((item) => stableCardId(item, item.fields || item, 0) !== card.id)].slice(0, 200);
+    await kv.put(BOARD_CARDS_KV_KEY, JSON.stringify({ cards: next, updated_at: new Date().toISOString(), source: "complaint_evidence" }));
+    return { persisted: true, card_id: card.id };
+  } catch (error) {
+    console.error(JSON.stringify({ worker: workerName(env), source: "complaint_board_write", error: errorMessage(error) }));
+    return { persisted: false, reason: errorMessage(error) };
+  }
+}
+
+function complaintBoardCard(caseRecord) {
+  const titleName = caseRecord.client_name || caseRecord.model_name || caseRecord.complaint_id;
+  return {
+    id: `sigil_card_${shortHash(caseRecord.complaint_id)}`,
+    title: `Private care complaint: ${safeText(titleName, "new case", 60)}`,
+    lane: caseRecord.lane === "model" ? "Model" : "Private Review",
+    status: "Need Info",
+    priority: complaintPriority(caseRecord),
+    risk: complaintRisk(caseRecord),
+    next_action: "MMD Assistant ตรวจข้อมูลและหลักฐานก่อนส่งต่อ Per หากจำเป็น",
+    owner: caseRecord.lane === "assistant" ? "Kenji" : "MMD",
+    needs_per_decision: complaintNeedsPer(caseRecord),
+    summary: safeText(caseRecord.lane_statement || caseRecord.statement || "Complaint evidence received", "Complaint evidence received", 180),
+    received_at: caseRecord.received_at,
+  };
+}
+
+function complaintPriority(caseRecord) {
+  const text = `${caseRecord.statement} ${caseRecord.lane_statement} ${caseRecord.case_location}`.toLowerCase();
+  if (/privacy|safe|leak|refund|คืนเงิน|ไม่ปลอดภัย|ละเมิด|ข้อมูล/.test(text)) return "Critical";
+  if (caseRecord.evidence?.total_files > 0) return "High";
+  return "Medium";
+}
+
+function complaintRisk(caseRecord) {
+  const text = `${caseRecord.statement} ${caseRecord.lane_statement}`.toLowerCase();
+  if (/privacy|leak|ข้อมูล|ความปลอดภัย|ละเมิด/.test(text)) return "Safety review required";
+  if (/refund|คืนเงิน|payment|จ่าย|ชำระ/.test(text)) return "Refund or payment review";
+  return "Private care review";
+}
+
+function complaintNeedsPer(caseRecord) {
+  return complaintPriority(caseRecord) === "Critical" || /refund|คืนเงิน|privacy|leak|ละเมิด|ความปลอดภัย/i.test(`${caseRecord.statement} ${caseRecord.lane_statement}`);
+}
+
+async function forwardComplaintWebhooks(env, caseRecord) {
+  const googleDrive = await forwardJsonWebhook(env?.COMPLAINT_GOOGLE_DRIVE_WEBHOOK_URL, caseRecord, "google_drive");
+  const telegram = await forwardJsonWebhook(env?.COMPLAINT_TELEGRAM_WEBHOOK_URL, complaintTelegramPayload(caseRecord), "telegram");
+  return { google_drive: googleDrive, telegram };
+}
+
+async function forwardJsonWebhook(url, payload, label) {
+  if (!url) return { forwarded: false, reason: `missing_${label}_webhook_url` };
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return { forwarded: res.ok, status: res.status };
+  } catch (error) {
+    return { forwarded: false, reason: errorMessage(error) };
+  }
+}
+
+function complaintTelegramPayload(caseRecord) {
+  return {
+    type: "mmd_private_care_complaint",
+    complaint_id: caseRecord.complaint_id,
+    lane: caseRecord.lane,
+    client_name: caseRecord.client_name,
+    model_name: caseRecord.model_name,
+    priority: complaintPriority(caseRecord),
+    needs_per_decision: complaintNeedsPer(caseRecord),
+    evidence_count: caseRecord.evidence?.total_files || 0,
+    received_at: caseRecord.received_at,
+  };
+}
+
+function complaintKv(env) {
+  return env?.SIGIL_COMPLAINT_KV || env?.SIGIL_RECOVERY_KV || env?.SIGIL_BOARD_KV || null;
+}
+
+function complaintLookupKeys(caseRecord) {
+  return [
+    `${COMPLAINT_CASE_KV_PREFIX}id:${caseRecord.complaint_id}`,
+    caseRecord.session_id ? `${COMPLAINT_CASE_KV_PREFIX}sid:${caseRecord.session_id}` : "",
+    caseRecord.token ? `${COMPLAINT_CASE_KV_PREFIX}token:${shortHash(String(caseRecord.token))}` : "",
+  ].filter(Boolean);
 }
 
 function recoveryCouponLookupFromUrl(url) {
@@ -199,37 +475,26 @@ function recoveryCouponLookupFromUrl(url) {
 async function readStoredRecoveryCoupon(env, lookup) {
   const kv = recoveryCouponKv(env);
   if (!kv || typeof kv.get !== "function") return null;
-
-  const keys = recoveryCouponLookupKeys(lookup);
-  for (const key of keys) {
+  for (const key of recoveryCouponLookupKeys(lookup)) {
     try {
-      const raw = await kv.get(key);
-      const parsed = parseJson(raw);
+      const parsed = parseJson(await kv.get(key));
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
     } catch (error) {
       console.error(JSON.stringify({ worker: workerName(env), source: "recovery_coupon_kv_read", error: errorMessage(error) }));
     }
   }
-
   return null;
 }
 
 async function writeStoredRecoveryCoupon(env, coupon) {
   const kv = recoveryCouponKv(env);
   if (!kv || typeof kv.put !== "function") return { persisted: false, reason: "missing_SIGIL_RECOVERY_KV" };
-
-  const keys = recoveryCouponLookupKeys({
-    coupon_id: coupon.coupon_id,
-    token: coupon.token,
-    session_id: coupon.session_id,
-  });
+  const keys = recoveryCouponLookupKeys({ coupon_id: coupon.coupon_id, token: coupon.token, session_id: coupon.session_id });
   const value = JSON.stringify(coupon);
-
   try {
     await Promise.all(keys.map((key) => kv.put(key, value)));
     return { persisted: true, keys_written: keys.length };
   } catch (error) {
-    console.error(JSON.stringify({ worker: workerName(env), source: "recovery_coupon_kv_write", error: errorMessage(error) }));
     return { persisted: false, reason: errorMessage(error) };
   }
 }
@@ -273,11 +538,6 @@ function normalizeRecoveryStatus(value) {
   return raw;
 }
 
-function readNumber(value, fallback) {
-  const n = Number(String(value ?? "").replace(/,/g, "").trim());
-  return Number.isFinite(n) ? n : fallback;
-}
-
 function isRecoveryCouponPath(pathname) {
   return pathname === RECOVERY_COUPON_STATUS_PATH || pathname === RECOVERY_COUPON_ACK_PATH;
 }
@@ -292,17 +552,14 @@ async function readBoardSource(env) {
   const kv = env?.SIGIL_BOARD_KV;
   if (kv && typeof kv.get === "function") {
     try {
-      const stored = await kv.get(BOARD_CARDS_KV_KEY);
-      return parseJson(stored);
+      return parseJson(await kv.get(BOARD_CARDS_KV_KEY));
     } catch (error) {
       console.error(JSON.stringify({ worker: workerName(env), source: "kv", error: errorMessage(error) }));
       return [];
     }
   }
-
   if (env?.SIGIL_BOARD_QUEUE_JSON) return parseJson(env.SIGIL_BOARD_QUEUE_JSON);
   if (Array.isArray(env?.SIGIL_BOARD_QUEUE_RECORDS)) return env.SIGIL_BOARD_QUEUE_RECORDS;
-
   return [];
 }
 
@@ -317,9 +574,8 @@ function normalizeSourceRecords(source) {
 function sanitizeCard(record, index) {
   if (!record || typeof record !== "object") return null;
   const fields = record.fields && typeof record.fields === "object" ? record.fields : record;
-
   const lane = allowedValue(readAlias(fields, ["lane", "Lane", "category", "Category", "type", "Type"]), ALLOWED_LANES, inferLane(fields));
-  let status = safeText(readAlias(fields, ["status", "Status", "state", "State"]), inferStatus(lane));
+  let status = safeText(readAlias(fields, ["status", "Status", "state", "State"]), inferStatus(lane), 80);
   const priority = allowedValue(readAlias(fields, ["priority", "Priority"]), ALLOWED_PRIORITIES, inferPriority(fields, lane, status));
   let risk = safeText(readAlias(fields, ["risk", "Risk", "risk_note", "Risk Note"]), inferRisk(fields, lane), 120);
   let nextAction = safeText(readAlias(fields, ["next_action", "Next Action", "next", "Next"]), inferNextAction(lane), 120);
@@ -334,7 +590,6 @@ function sanitizeCard(record, index) {
   risk = deepFieldSanitize("risk", risk, lane);
   nextAction = deepFieldSanitize("next_action", nextAction, lane);
   summary = deepFieldSanitize("summary", summary, lane);
-
   return {
     id: stableCardId(record, fields, index),
     title,
@@ -379,16 +634,15 @@ function cardSortScore(card) {
 
 function normalizeBoardStatus(status, card) {
   const cleanStatus = safeText(status, "Read Only", 40);
-  const readyForPer = card.needsPerDecision === true || card.owner === "Per" || card.owner === "Ewvon";
+  const readyForPer = card.needsPerDecision === true || card.needs_per_decision === true || card.owner === "Per" || card.owner === "Ewvon";
   if (/^ready for per$/i.test(cleanStatus) && !readyForPer) return "Awaiting Info";
-  if (card.needsPerDecision === false && card.owner === "Kenji" && card.priority === "Low" && /^ready for per$/i.test(cleanStatus)) return "Awaiting Info";
+  if ((card.needsPerDecision === false || card.needs_per_decision === false) && card.owner === "Kenji" && card.priority === "Low" && /^ready for per$/i.test(cleanStatus)) return "Awaiting Info";
   return cleanStatus;
 }
 
 function stableCardId(record, fields, index) {
   const explicit = safeText(readAlias(fields, ["id", "card_id", "Card ID"]), "");
   if (/^sigil_card_[a-z0-9]+$/i.test(explicit)) return explicit.toLowerCase();
-
   const fingerprint = [
     readAlias(fields, ["title", "Title", "name", "Name", "subject", "Subject"]),
     readAlias(fields, ["lane", "Lane", "category", "Category"]),
@@ -397,7 +651,6 @@ function stableCardId(record, fields, index) {
     readAlias(fields, ["owner", "Owner"]),
     index,
   ].map((value) => String(value || "")).join("|");
-
   return `sigil_card_${shortHash(fingerprint)}`;
 }
 
@@ -412,6 +665,18 @@ function safeText(value, fallback = "", maxLength = 180) {
   let output = Array.isArray(value) ? value.join(", ") : String(value == null ? "" : value);
   output = output.replace(/\s+/g, " ").trim();
   if (!output) output = fallback;
+  output = output
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[masked]")
+    .replace(/\+?\d[\d\s().-]{7,}\d/g, "[masked]")
+    .replace(/\bU[a-f0-9]{20,}\b/gi, "[masked]")
+    .replace(/\b\d{7,}:[A-Za-z0-9_-]{20,}\b/g, "[masked]")
+    .replace(/https?:\/\/\S+/gi, "[masked]")
+    .replace(/\b(token|secret|passphrase|api[_ -]?key|bank|slip[_ -]?url)\b/gi, "[redacted]");
+  return output.slice(0, maxLength);
+}
+
+function safeLongText(value, maxLength = 4000) {
+  let output = String(value == null ? "" : value).replace(/\r\n/g, "\n").trim();
   output = output
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[masked]")
     .replace(/\+?\d[\d\s().-]{7,}\d/g, "[masked]")
@@ -533,6 +798,11 @@ function inferNeedsPerDecision(fields, lane, risk) {
   return /mismatch|vip|svip|black card|refund|manual review|complaint|rollback|per/.test(text);
 }
 
+function readNumber(value, fallback) {
+  const n = Number(String(value ?? "").replace(/,/g, "").trim());
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function parseJson(value) {
   if (!value) return [];
   if (Array.isArray(value) || typeof value === "object") return value;
@@ -577,18 +847,15 @@ function corsFor(request, env) {
     .map((item) => item.trim())
     .filter(Boolean);
   const headers = new Headers();
-
   headers.set("content-type", "application/json; charset=utf-8");
   headers.set("vary", "Origin");
   headers.set("access-control-allow-methods", "GET,POST,OPTIONS");
   headers.set("access-control-allow-headers", "content-type,x-request-id,x-mmd-client,x-mmd-proxy,x-mmd-route");
   headers.set("access-control-max-age", "86400");
-
   if (origin && allowed.includes(origin)) {
     headers.set("access-control-allow-origin", origin);
     headers.set("access-control-allow-credentials", "true");
   }
-
   return headers;
 }
 
@@ -610,12 +877,13 @@ export const testInternals = {
   BOARD_STATUS_PATH,
   BOARD_QUEUE_PATH,
   BOARD_CARDS_KV_KEY,
-  BOARD_META_KV_KEY,
   DEFAULT_QUEUE_LIMIT,
   MAX_QUEUE_LIMIT,
   RECOVERY_COUPON_STATUS_PATH,
   RECOVERY_COUPON_ACK_PATH,
   RECOVERY_COUPON_KV_PREFIX,
+  COMPLAINT_EVIDENCE_PATH,
+  COMPLAINT_CASE_KV_PREFIX,
   countCards,
   queueLimitFrom,
   sanitizeCard,
@@ -624,4 +892,7 @@ export const testInternals = {
   queueResponse,
   normalizeRecoveryCoupon,
   recoveryCouponLookupKeys,
+  normalizeComplaintLane,
+  evidenceFileMeta,
+  complaintLookupKeys,
 };
