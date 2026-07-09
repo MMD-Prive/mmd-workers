@@ -67,6 +67,24 @@ const sourceRecords = [
   },
 ];
 
+function makeCards(count, overrides = {}) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `safe_${index}`,
+    title: `line_[masked] archive item ${index}`,
+    lane: "Need Info",
+    status: "Awaiting Info",
+    priority: "Low",
+    risk: "Read-only advisory",
+    next_action: "อ่านข้อมูลและจัดลำดับต่อ",
+    owner: "Kenji",
+    needs_per_decision: false,
+    summary: "ข้อมูลนี้เป็น advisory read-only",
+    ...overrides,
+  }));
+}
+
+const strictBadPattern = /rec[A-Za-z0-9]{10,}|Canonical Client|LINE Official immigration identity|line_user_i|line_user_id|nickname:|emails:|email|phone|telegram:|@[A-Za-z0-9_]|proof_attached|requested_path|payment_method|bank|SVIP|Black Card|raw_payload|secret|token|passphrase|api_key/;
+
 test("GET /v1/sigil/board/status returns exact read-only status schema", async () => {
   const kv = mockKv(JSON.stringify(sourceRecords));
   const response = await call("/v1/sigil/board/status", {}, { SIGIL_BOARD_KV: kv });
@@ -91,13 +109,17 @@ test("GET /v1/sigil/board/queue reads sanitized cards from mocked KV", async () 
   assert.equal(response.status, 200);
   const body = await json(response);
 
-  assert.deepEqual(Object.keys(body), ["ok", "source", "mode", "cards"]);
+  assert.deepEqual(Object.keys(body), ["ok", "source", "mode", "total_cards", "returned_cards", "limit", "cards"]);
   assert.equal(body.ok, true);
   assert.equal(body.source, "worker");
   assert.equal(body.mode, "read_only");
+  assert.equal(body.total_cards, 2);
+  assert.equal(body.returned_cards, 2);
+  assert.equal(body.limit, 50);
   assert.equal(body.cards.length, 2);
 
-  const card = body.cards[0];
+  const card = body.cards.find((item) => item.lane === "Payment");
+  assert(card);
   assert.deepEqual(Object.keys(card), [
     "id",
     "title",
@@ -206,6 +228,122 @@ test("explicit needs_per_decision false stays false", async () => {
   const body = await json(await call("/v1/sigil/board/queue", {}, { SIGIL_BOARD_KV: kv }));
 
   assert.equal(body.cards[0].needs_per_decision, false);
+});
+
+test("queue default returns max 50 cards with metadata", async () => {
+  const kv = mockKv(JSON.stringify(makeCards(108)));
+  const body = await json(await call("/v1/sigil/board/queue", {}, { SIGIL_BOARD_KV: kv }));
+
+  assert.equal(body.total_cards, 108);
+  assert.equal(body.returned_cards, 50);
+  assert.equal(body.limit, 50);
+  assert.equal(body.cards.length, 50);
+});
+
+test("queue limit query supports 30 and caps at 100", async () => {
+  const kv30 = mockKv(JSON.stringify(makeCards(108)));
+  const body30 = await json(await call("/v1/sigil/board/queue?limit=30", {}, { SIGIL_BOARD_KV: kv30 }));
+  assert.equal(body30.limit, 30);
+  assert.equal(body30.returned_cards, 30);
+  assert.equal(body30.cards.length, 30);
+
+  const kv100 = mockKv(JSON.stringify(makeCards(108)));
+  const body100 = await json(await call("/v1/sigil/board/queue?limit=999", {}, { SIGIL_BOARD_KV: kv100 }));
+  assert.equal(body100.limit, 100);
+  assert.equal(body100.returned_cards, 100);
+  assert.equal(body100.cards.length, 100);
+});
+
+test("status counts are based on all cards, not limited queue", async () => {
+  const cards = [
+    ...makeCards(60),
+    { title: "Critical complaint", lane: "Risk", status: "Ready for Per", priority: "Critical", owner: "Per", needs_per_decision: true },
+    { title: "Payment proof", lane: "Payment", status: "Pending Review", priority: "High", owner: "MMD", needs_per_decision: false },
+  ];
+  const kv = mockKv(JSON.stringify(cards));
+  const status = await json(await call("/v1/sigil/board/status", {}, { SIGIL_BOARD_KV: kv }));
+  const queue = await json(await call("/v1/sigil/board/queue?limit=30", {}, { SIGIL_BOARD_KV: kv }));
+
+  assert.equal(queue.cards.length, 30);
+  assert.equal(status.counts.critical, 1);
+  assert.equal(status.counts.ready_for_per, 1);
+  assert.equal(status.counts.payment_pending, 1);
+  assert.equal(status.counts.need_info, 60);
+});
+
+test("queue sort puts Critical and Per decision cards first", async () => {
+  const cards = [
+    ...makeCards(3),
+    { title: "Payment proof", lane: "Payment", status: "Pending Review", priority: "High", owner: "MMD", needs_per_decision: false },
+    { title: "Per decision", lane: "Private Review", status: "Ready for Per", priority: "Medium", owner: "Per", needs_per_decision: true },
+    { title: "Critical route risk", lane: "Risk", status: "Ready for Per", priority: "Critical", owner: "Admin", needs_per_decision: true },
+  ];
+  const kv = mockKv(JSON.stringify(cards));
+  const body = await json(await call("/v1/sigil/board/queue", {}, { SIGIL_BOARD_KV: kv }));
+
+  assert.equal(body.cards[0].title, "Critical route risk");
+  assert.equal(body.cards[1].title, "Per decision");
+  assert.equal(body.cards[2].title, "Payment proof");
+});
+
+test("low priority Kenji cards are not labeled Ready for Per", async () => {
+  const kv = mockKv(JSON.stringify([
+    { title: "line_[masked] item", lane: "Need Info", status: "Ready for Per", priority: "Low", owner: "Kenji", needs_per_decision: false },
+  ]));
+  const body = await json(await call("/v1/sigil/board/queue", {}, { SIGIL_BOARD_KV: kv }));
+
+  assert.equal(body.cards[0].status, "Awaiting Info");
+  assert.equal(body.cards[0].owner, "Kenji");
+  assert.equal(body.cards[0].needs_per_decision, false);
+});
+
+test("deep sanitizer replaces raw operational summary with safe lane template", async () => {
+  const kv = mockKv(JSON.stringify([
+    {
+      id: "recSENSITIVE123456",
+      title: "Canonical Client recSENSITIVE123456",
+      lane: "Private Review",
+      status: "Ready for Per",
+      priority: "High",
+      risk: "SVIP raw note with line_user_id and LINE Official immigration identity",
+      next_action: "telegram: @rawhandle requested_path proof_attached",
+      owner: "Per",
+      needs_per_decision: true,
+      summary: "Canonical Client คุณทดสอบ SVIP recSENSITIVE123456 LINE Official immigration identity line_user_id telegram: @rawhandle",
+    },
+  ]));
+  const body = await json(await call("/v1/sigil/board/queue", {}, { SIGIL_BOARD_KV: kv }));
+  const card = body.cards[0];
+
+  assert.equal(card.summary, "ต้องสรุปเข้าคิวพิจารณาแบบส่วนตัว");
+  assert.equal(card.title, "Private review item");
+  assert.equal(card.next_action, "สรุป advisory ให้ Per");
+  assert.equal(card.risk, "Read-only advisory");
+  assert.equal(strictBadPattern.test(JSON.stringify(body)), false);
+});
+
+test("deep sanitizer replaces renewal form dump summary with safe template", async () => {
+  const kv = mockKv(JSON.stringify([
+    {
+      title: "renewal raw title nickname: boss",
+      lane: "Payment",
+      status: "Pending Review",
+      priority: "High",
+      risk: "payment_method bank transfer",
+      next_action: "phone email telegram: @rawhandle",
+      owner: "MMD",
+      needs_per_decision: false,
+      summary: "renewal dump nickname: abc emails: a@example.com phone 0812345678 telegram: @rawhandle bank payment_method raw_payload",
+    },
+  ]));
+  const body = await json(await call("/v1/sigil/board/queue", {}, { SIGIL_BOARD_KV: kv }));
+  const card = body.cards[0];
+
+  assert.equal(card.summary, "รายการชำระเงินต้องตรวจสอบจากระบบทางการก่อนตอบ");
+  assert.equal(card.title, "Payment review");
+  assert.equal(card.next_action, "ตรวจยอดจากระบบทางการก่อนตอบ");
+  assert.equal(card.risk, "Slip evidence only");
+  assert.equal(strictBadPattern.test(JSON.stringify(body)), false);
 });
 
 test("board endpoints are GET-only and do not expose mutation routes", async () => {

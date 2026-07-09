@@ -6,6 +6,8 @@ const BOARD_STATUS_PATH = "/v1/sigil/board/status";
 const BOARD_QUEUE_PATH = "/v1/sigil/board/queue";
 const BOARD_CARDS_KV_KEY = "sigil:board:v1:cards";
 const BOARD_META_KV_KEY = "sigil:board:v1:meta";
+const DEFAULT_QUEUE_LIMIT = 50;
+const MAX_QUEUE_LIMIT = 100;
 
 const EMPTY_COUNTS = Object.freeze({
   critical: 0,
@@ -47,7 +49,7 @@ export default {
         if (request.method !== "GET") return methodNotAllowed(corsHeaders);
         const cards = await loadBoardCards(env);
         if (url.pathname === BOARD_STATUS_PATH) return json(statusResponse(cards), 200, corsHeaders);
-        return json(queueResponse(cards), 200, corsHeaders);
+        return json(queueResponse(cards, queueLimitFrom(url)), 200, corsHeaders);
       }
 
       return json({ ok: false, error: "not_found" }, 404, corsHeaders);
@@ -55,7 +57,7 @@ export default {
       console.error(JSON.stringify({ worker: workerName(env), error: errorMessage(error) }));
       const emptyCards = [];
       if (url.pathname === BOARD_STATUS_PATH) return json(statusResponse(emptyCards), 200, corsHeaders);
-      if (url.pathname === BOARD_QUEUE_PATH) return json(queueResponse(emptyCards), 200, corsHeaders);
+      if (url.pathname === BOARD_QUEUE_PATH) return json(queueResponse(emptyCards, queueLimitFrom(url)), 200, corsHeaders);
       return json({ ok: false, error: "internal_error" }, 500, corsHeaders);
     }
   },
@@ -71,12 +73,17 @@ function statusResponse(cards, lastChecked = new Date().toISOString()) {
   };
 }
 
-function queueResponse(cards) {
+function queueResponse(cards, limit = DEFAULT_QUEUE_LIMIT) {
+  const sortedCards = sortCards(cards);
+  const returnedCards = sortedCards.slice(0, limit);
   return {
     ok: true,
     source: SOURCE,
     mode: MODE,
-    cards,
+    total_cards: cards.length,
+    returned_cards: returnedCards.length,
+    limit,
+    cards: returnedCards,
   };
 }
 
@@ -117,25 +124,31 @@ function sanitizeCard(record, index) {
   const fields = record.fields && typeof record.fields === "object" ? record.fields : record;
 
   const lane = allowedValue(readAlias(fields, ["lane", "Lane", "category", "Category", "type", "Type"]), ALLOWED_LANES, inferLane(fields));
-  const status = safeText(readAlias(fields, ["status", "Status", "state", "State"]), inferStatus(lane));
+  let status = safeText(readAlias(fields, ["status", "Status", "state", "State"]), inferStatus(lane));
   const priority = allowedValue(readAlias(fields, ["priority", "Priority"]), ALLOWED_PRIORITIES, inferPriority(fields, lane, status));
-  const risk = safeText(readAlias(fields, ["risk", "Risk", "risk_note", "Risk Note"]), inferRisk(fields, lane), 120);
-  const nextAction = safeText(readAlias(fields, ["next_action", "Next Action", "next", "Next"]), inferNextAction(lane), 120);
+  let risk = safeText(readAlias(fields, ["risk", "Risk", "risk_note", "Risk Note"]), inferRisk(fields, lane), 120);
+  let nextAction = safeText(readAlias(fields, ["next_action", "Next Action", "next", "Next"]), inferNextAction(lane), 120);
   const owner = allowedValue(readAlias(fields, ["owner", "Owner", "assignee", "Assignee"]), ALLOWED_OWNERS, inferOwner(lane, risk));
-  const title = safeText(readAlias(fields, ["title", "Title", "name", "Name", "subject", "Subject"]), inferTitle(lane), 90);
-  const summary = safeText(readAlias(fields, ["summary", "Summary", "note_summary", "Note Summary"]), inferSummary(lane, risk), 180);
+  let title = safeText(readAlias(fields, ["title", "Title", "name", "Name", "subject", "Subject"]), inferTitle(lane), 90);
+  let summary = safeText(readAlias(fields, ["summary", "Summary", "note_summary", "Note Summary"]), inferSummary(lane), 180);
   const needsPerDecisionRaw = readAlias(fields, ["needs_per_decision", "Needs Per Decision"]);
   const needsPerDecision = needsPerDecisionRaw !== "" ? safeBoolean(needsPerDecisionRaw) : inferNeedsPerDecision(fields, lane, risk);
+  status = normalizeBoardStatus(status, { lane, priority, owner, needsPerDecision });
+  title = deepFieldSanitize("title", title, lane);
+  status = deepFieldSanitize("status", status, lane);
+  risk = deepFieldSanitize("risk", risk, lane);
+  nextAction = deepFieldSanitize("next_action", nextAction, lane);
+  summary = deepFieldSanitize("summary", summary, lane);
 
   return {
     id: stableCardId(record, fields, index),
     title,
-    lane,
+    lane: deepFieldSanitize("lane", lane, lane) || "Risk",
     status,
-    priority,
+    priority: deepFieldSanitize("priority", priority, lane) || "Low",
     risk,
     next_action: nextAction,
-    owner,
+    owner: deepFieldSanitize("owner", owner, lane) || "MMD",
     needs_per_decision: needsPerDecision,
     summary,
   };
@@ -146,11 +159,35 @@ function countCards(cards) {
   for (const card of cards) {
     const status = String(card.status || "").toLowerCase();
     if (card.priority === "Critical" || card.lane === "Risk") counts.critical += 1;
-    if (card.needs_per_decision === true || card.owner === "Per") counts.ready_for_per += 1;
+    if (card.needs_per_decision === true || card.owner === "Per" || card.owner === "Ewvon") counts.ready_for_per += 1;
     if (card.lane === "Payment" && /pending|review|need info/.test(status)) counts.payment_pending += 1;
-    if (card.status === "Need Info" || card.lane === "Need Info") counts.need_info += 1;
+    if (card.lane === "Need Info" || /need info|awaiting info|missing info/.test(status)) counts.need_info += 1;
   }
   return counts;
+}
+
+function sortCards(cards) {
+  return [...cards].sort((left, right) => cardSortScore(right) - cardSortScore(left));
+}
+
+function cardSortScore(card) {
+  const status = String(card.status || "").toLowerCase();
+  const priorityScore = { Critical: 100000, High: 1000, Medium: 100, Low: 10 }[card.priority] || 0;
+  let score = priorityScore;
+  if (card.priority === "Critical") score += 50000;
+  if (card.needs_per_decision === true) score += 20000;
+  if (card.owner === "Per" || card.owner === "Ewvon") score += 10000;
+  if (card.lane === "Payment" && /pending|review|need info/.test(status)) score += 5000;
+  if (card.lane === "Need Info") score += 2500;
+  return score;
+}
+
+function normalizeBoardStatus(status, card) {
+  const cleanStatus = safeText(status, "Read Only", 40);
+  const readyForPer = card.needsPerDecision === true || card.owner === "Per" || card.owner === "Ewvon";
+  if (/^ready for per$/i.test(cleanStatus) && !readyForPer) return "Awaiting Info";
+  if (card.needsPerDecision === false && card.owner === "Kenji" && card.priority === "Low" && /^ready for per$/i.test(cleanStatus)) return "Awaiting Info";
+  return cleanStatus;
 }
 
 function stableCardId(record, fields, index) {
@@ -190,6 +227,21 @@ function safeText(value, fallback = "", maxLength = 180) {
   return output.slice(0, maxLength);
 }
 
+function deepFieldSanitize(field, value, lane) {
+  const text = safeText(value, "", field === "title" ? 90 : field === "next_action" || field === "risk" ? 120 : 180);
+  if (!hasBadText(text)) return text;
+  if (field === "summary") return safeSummaryForLane(lane);
+  if (field === "title") return safeTitleForLane(lane);
+  if (field === "next_action") return inferNextAction(lane);
+  if (field === "risk") return lane === "Payment" ? "Slip evidence only" : "Read-only advisory";
+  if (field === "status") return lane === "Need Info" ? "Awaiting Info" : "Read Only";
+  return "";
+}
+
+function hasBadText(value) {
+  return /rec[A-Za-z0-9]{10,}|Canonical Client|LINE Official immigration identity|line_user_i|line_user_id|nickname:|emails:|email|phone|telegram:|@[A-Za-z0-9_]|proof_attached|requested_path|payment_method|bank|raw_payload|admin_note|token|secret|passphrase|api_key|SVIP|Black Card|VIP/.test(String(value || ""));
+}
+
 function allowedValue(value, allowed, fallback) {
   const cleanValue = safeText(value, "");
   return allowed.has(cleanValue) ? cleanValue : fallback;
@@ -197,7 +249,7 @@ function allowedValue(value, allowed, fallback) {
 
 function inferLane(fields) {
   const text = JSON.stringify(fields || {}).toLowerCase();
-  if (/black/.test(text)) return "Black Card";
+  if (/black/.test(text)) return "Private Review";
   if (/svip|vip|rollback|private/.test(text)) return "Private Review";
   if (/payment|slip|proof|transfer|refund/.test(text)) return "Payment";
   if (/booking|location|model/.test(text)) return /model/.test(text) ? "Model" : "Booking";
@@ -254,11 +306,24 @@ function inferTitle(lane) {
   return "Operational board item";
 }
 
-function inferSummary(lane, risk) {
-  if (lane === "Payment") return "สลิปเป็นหลักฐานเท่านั้น ต้องตรวจยอดจริงก่อนเปลี่ยนสถานะ";
-  if (lane === "Black Card") return "Black Card เป็น private review เท่านั้น ไม่มี auto approval";
-  if (lane === "Private Review") return "เคสนี้ต้องให้ Per ตัดสินใจแบบ manual";
-  return risk || "ข้อมูลนี้เป็น advisory read-only";
+function inferSummary(lane) {
+  return safeSummaryForLane(lane);
+}
+
+function safeSummaryForLane(lane) {
+  if (lane === "Payment") return "รายการชำระเงินต้องตรวจสอบจากระบบทางการก่อนตอบ";
+  if (lane === "Need Info") return "ต้องขอข้อมูลเพิ่มเติมก่อนเดินเรื่อง";
+  if (lane === "Private Review") return "ต้องสรุปเข้าคิวพิจารณาแบบส่วนตัว";
+  if (lane === "Black Card") return "ต้องตรวจสอบในชั้น private review เท่านั้น";
+  return "รายการนี้เป็น read-only advisory สำหรับตรวจสอบต่อ";
+}
+
+function safeTitleForLane(lane) {
+  if (lane === "Payment") return "Payment review";
+  if (lane === "Need Info") return "Need info review";
+  if (lane === "Private Review" || lane === "Black Card") return "Private review item";
+  if (lane === "Booking") return "Booking review";
+  return "Board review item";
 }
 
 function inferNeedsPerDecision(fields, lane, risk) {
@@ -304,6 +369,12 @@ function methodNotAllowed(headers) {
   return json({ ok: false, error: "method_not_allowed" }, 405, responseHeaders);
 }
 
+function queueLimitFrom(url) {
+  const requested = Number(url.searchParams.get("limit") || DEFAULT_QUEUE_LIMIT);
+  if (!Number.isFinite(requested) || requested <= 0) return DEFAULT_QUEUE_LIMIT;
+  return Math.min(MAX_QUEUE_LIMIT, Math.floor(requested));
+}
+
 function corsFor(request, env) {
   const origin = request.headers.get("origin") || "";
   const allowed = (env?.ALLOWED_ORIGINS || "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.webflow.io")
@@ -345,8 +416,12 @@ export const testInternals = {
   BOARD_QUEUE_PATH,
   BOARD_CARDS_KV_KEY,
   BOARD_META_KV_KEY,
+  DEFAULT_QUEUE_LIMIT,
+  MAX_QUEUE_LIMIT,
   countCards,
+  queueLimitFrom,
   sanitizeCard,
+  sortCards,
   statusResponse,
   queueResponse,
 };

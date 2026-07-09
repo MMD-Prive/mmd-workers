@@ -1,47 +1,843 @@
 <!--
   MMD SIGIL Board V7.0 Webflow embed snippet
-  Placement:
-  1. Paste the V7 board embed/root markup first on /sigil/board.
-  2. Set MMD_AUTH_WORKER_BASE_URL before loading webflow/mmd-gate.js.
-  3. Set MMD_SIGIL_BOARD_WORKER_BASE_URL before loading the runtime helper.
-  4. Load webflow/mmd-gate.js after this embed.
-  5. Load kenji-board-v70-gate.js after the auth gate helper.
-  6. Load kenji-board-v70-runtime.js after the board gate helper.
-  7. Load kenji-board-v70-smoke-test.js last, or in Before </body>.
+  Self-contained visual shell for /sigil/board.
+  UI-only, read-only, no write or control actions.
 -->
-<section data-mmd-board-v70 data-gate="locked" data-role="guest" data-runtime="idle">
-  <div class="mmd-board-v70__gate-panel" data-v70-gate-panel>
-    <button type="button" data-v70-action="unlock-gate" data-v70-auth-check>
-      Check SIGIL Access
-    </button>
-    <p data-v70-gate-status aria-live="polite">
-      Auth session required.
-    </p>
-  </div>
+<style>
+  [data-mmd-board-v70] {
+    --mmd-board-gold: #d6b46a;
+    --mmd-board-gold-soft: rgba(214, 180, 106, .16);
+    --mmd-board-line: rgba(214, 180, 106, .15);
+    --mmd-board-text: #f1eadc;
+    --mmd-board-muted: rgba(241, 234, 220, .66);
+    --mmd-board-dim: rgba(241, 234, 220, .42);
+    --mmd-board-panel: rgba(9, 8, 6, .72);
+    --mmd-board-hero: url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a4f27a6a95d4cf6e19ee569_Board%20Hero.webp");
+    --mmd-board-01: url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a4f27a674e3d49c0280d896_Board-01.webp");
+    --mmd-board-02: url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a4f27a6b5d1a62f319842aa_Board-02.webp");
+    --mmd-board-03: url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a4f27a6c6834d6eeeb74a85_Board-03.webp");
+    --mmd-board-04: url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a4f27a65c5fd95c7b063720_Board-04.webp");
+    --mmd-board-05: url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a4f27a6b5d1a62f319842ae_Board-05.webp");
+    --mmd-board-06: url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a4f27a6032d396bcce10fbb_Board-06.webp");
+    --mmd-board-07: url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a4f27a67623d818c9373c3a_Board-07.webp");
+    --mmd-board-08: url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a4f27a66a1fa7f0e05331e2_Board-08.webp");
+    --mmd-board-09: url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a4f27a6f1d7a80b8abdff31_Board-09.webp");
+    --mmd-board-10: url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a4f27a607b8c872ea1372f7_Board-10.webp");
+    --mmd-board-11: url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a4f27a6600537a057426061_Board-11.webp");
+    color: var(--mmd-board-text);
+    background: #030302;
+    border: 1px solid rgba(214, 180, 106, .12);
+    border-radius: 8px;
+    padding: 18px;
+    font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    overflow: visible;
+  }
+  [data-mmd-board-v70],
+  [data-mmd-board-v70] * { box-sizing: border-box; }
+  [data-mmd-board-v70] :is(h1,h2,h3,p,ul) { margin-top: 0; }
+  .mmd-board-v70__shell { display: grid; gap: 16px; }
+  .mmd-board-v70__hero {
+    position: relative;
+    min-height: 280px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, .42fr);
+    gap: 18px;
+    align-items: end;
+    padding: 22px;
+    border: 1px solid rgba(214, 180, 106, .14);
+    border-radius: 8px;
+    background:
+      linear-gradient(90deg, rgba(0,0,0,.88), rgba(0,0,0,.64) 44%, rgba(0,0,0,.72)),
+      linear-gradient(180deg, rgba(0,0,0,.18), rgba(0,0,0,.82)),
+      var(--mmd-board-hero) center / cover no-repeat;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 22px 70px rgba(0,0,0,.42);
+  }
+  .mmd-board-v70__brand { display: flex; align-items: center; gap: 14px; margin-bottom: 42px; }
+  .mmd-board-v70__mark {
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
+    display: grid;
+    place-items: center;
+    color: var(--mmd-board-gold);
+    font: 700 13px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .12em;
+  }
+  .mmd-board-v70__eyebrow,
+  .mmd-board-v70__kicker,
+  .mmd-board-v70__metric span,
+  .mmd-board-v70__queue-card b {
+    color: var(--mmd-board-gold);
+    font: 700 10px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+  }
+  .mmd-board-v70__title {
+    max-width: 760px;
+    margin: 8px 0 10px;
+    color: var(--mmd-board-text);
+    font: 700 34px/1.08 Inter, system-ui, sans-serif;
+    letter-spacing: .03em;
+  }
+  .mmd-board-v70__subtitle {
+    max-width: 720px;
+    margin: 0;
+    color: var(--mmd-board-muted);
+    font: 15px/1.65 Inter, system-ui, sans-serif;
+  }
+  .mmd-board-v70__safe-card,
+  .mmd-board-v70__metric,
+  .mmd-board-v70__panel,
+  .mmd-board-v70__queue-card,
+  .mmd-board-v70__rules {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(214, 180, 106, .14);
+    border-radius: 8px;
+    background:
+      linear-gradient(135deg, rgba(0,0,0,.84), rgba(0,0,0,.70)),
+      linear-gradient(180deg, rgba(0,0,0,.20), rgba(0,0,0,.82)),
+      var(--mmd-card-image, none) center / cover no-repeat,
+      var(--mmd-board-panel);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.035), 0 16px 46px rgba(0,0,0,.28);
+  }
+  .mmd-board-v70__safe-card {
+    align-self: stretch;
+    display: grid;
+    gap: 12px;
+    padding: 18px;
+    --mmd-card-image: var(--mmd-board-07);
+  }
+  .mmd-board-v70__safe-card p,
+  .mmd-board-v70__metric p,
+  .mmd-board-v70__panel p,
+  .mmd-board-v70__queue-card p,
+  .mmd-board-v70__rules li {
+    color: var(--mmd-board-muted);
+    font: 13px/1.58 Inter, system-ui, sans-serif;
+  }
+  .mmd-board-v70__safe-card p,
+  .mmd-board-v70__metric p,
+  .mmd-board-v70__panel p,
+  .mmd-board-v70__queue-card p { margin: 0; }
+  .mmd-board-v70__safe-card button {
+    width: max-content;
+    border: 1px solid rgba(214, 180, 106, .26);
+    border-radius: 7px;
+    background: rgba(214, 180, 106, .10);
+    color: var(--mmd-board-gold);
+    padding: 10px 12px;
+    font: 700 11px/1 Inter, system-ui, sans-serif;
+    letter-spacing: .08em;
+    cursor: pointer;
+  }
+  .mmd-board-v70__strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .mmd-board-v70__metric {
+    min-height: 124px;
+    display: grid;
+    align-content: space-between;
+    gap: 12px;
+    padding: 16px;
+  }
+  .mmd-board-v70__metric[data-card="critical"] { --mmd-card-image: var(--mmd-board-03); }
+  .mmd-board-v70__metric[data-card="ready"] { --mmd-card-image: var(--mmd-board-02); }
+  .mmd-board-v70__metric[data-card="payment"] { --mmd-card-image: var(--mmd-board-01); }
+  .mmd-board-v70__metric[data-card="info"] { --mmd-card-image: var(--mmd-board-04); }
+  .mmd-board-v70__metric strong {
+    display: block;
+    margin: 4px 0;
+    color: var(--mmd-board-text);
+    font: 700 28px/1 Inter, system-ui, sans-serif;
+  }
+  .mmd-board-v70__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(280px, .82fr);
+    gap: 14px;
+    align-items: start;
+  }
+  .mmd-board-v70__panel {
+    padding: 16px;
+  }
+  .mmd-board-v70__panel[data-panel="queue"] { --mmd-card-image: var(--mmd-board-09); }
+  .mmd-board-v70__panel[data-panel="assistant"] {
+    --mmd-card-image: var(--mmd-board-08);
+    align-self: start;
+    position: sticky;
+    top: 18px;
+    max-height: calc(100vh - 36px);
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+  .mmd-board-v70__panel[data-panel="privacy"] { --mmd-card-image: var(--mmd-board-11); }
+  .mmd-board-v70__section-title {
+    margin: 7px 0 14px;
+    color: var(--mmd-board-text);
+    font: 700 18px/1.25 Inter, system-ui, sans-serif;
+    letter-spacing: .06em;
+  }
+  .mmd-board-v70__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .mmd-board-v70__pill {
+    border: 1px solid rgba(214, 180, 106, .18);
+    border-radius: 999px;
+    background: rgba(0,0,0,.28);
+    color: var(--mmd-board-muted);
+    padding: 7px 9px;
+    font: 700 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .mmd-board-v70__queue-tools {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 0 12px;
+  }
+  .mmd-board-v70__filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    min-width: 0;
+  }
+  .mmd-board-v70__filter,
+  .mmd-board-v70__refresh {
+    appearance: none;
+    border: 1px solid rgba(214, 180, 106, .18);
+    border-radius: 999px;
+    background: rgba(0,0,0,.28);
+    color: var(--mmd-board-muted);
+    cursor: pointer;
+    font: 800 10px/1.15 Inter, system-ui, sans-serif;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    transition: border-color .18s ease, background .18s ease, color .18s ease, box-shadow .18s ease, opacity .18s ease;
+  }
+  .mmd-board-v70__filter {
+    min-height: 32px;
+    padding: 8px 11px;
+  }
+  .mmd-board-v70__filter.is-active,
+  .mmd-board-v70__filter[aria-pressed="true"] {
+    border-color: rgba(214, 180, 106, .62);
+    background: rgba(214, 180, 106, .15);
+    color: var(--mmd-board-text);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 0 0 1px rgba(214,180,106,.12);
+  }
+  .mmd-board-v70__filter:focus,
+  .mmd-board-v70__refresh:focus { outline: none; }
+  .mmd-board-v70__filter:focus-visible,
+  .mmd-board-v70__refresh:focus-visible {
+    outline: none;
+    border-color: rgba(214, 180, 106, .70);
+    box-shadow: 0 0 0 2px rgba(214,180,106,.24);
+  }
+  .mmd-board-v70__refresh-wrap {
+    display: grid;
+    justify-items: end;
+    gap: 5px;
+    flex: 0 0 auto;
+  }
+  .mmd-board-v70__refresh {
+    display: inline-grid;
+    gap: 2px;
+    min-height: 34px;
+    padding: 8px 12px;
+    color: var(--mmd-board-text);
+  }
+  .mmd-board-v70__refresh small {
+    color: var(--mmd-board-dim);
+    font: 700 9px/1.1 Inter, system-ui, sans-serif;
+    letter-spacing: .04em;
+    text-transform: none;
+  }
+  .mmd-board-v70__refresh:disabled {
+    cursor: progress;
+    opacity: .68;
+  }
+  .mmd-board-v70__refresh-note {
+    min-height: 15px;
+    color: var(--mmd-board-gold);
+    font: 700 10px/1.2 Inter, system-ui, sans-serif;
+  }
+  .mmd-board-v70__refresh-note[data-state="error"] { color: #f0a889; }
+  .mmd-board-v70__queue { display: grid; gap: 10px; }
+  .mmd-board-v70__queue-card {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 8px;
+    border-color: rgba(214, 180, 106, .12);
+    outline: none;
+    background:
+      linear-gradient(135deg, rgba(0,0,0,.92), rgba(0,0,0,.78)),
+      linear-gradient(180deg, rgba(0,0,0,.24), rgba(0,0,0,.72)),
+      var(--mmd-card-image, none) center / cover no-repeat,
+      rgba(0,0,0,.35);
+  }
+  .mmd-board-v70__queue-card[data-row="payment"] { --mmd-card-image: var(--mmd-board-01); }
+  .mmd-board-v70__queue-card[data-row="svip"] { --mmd-card-image: var(--mmd-board-05); }
+  .mmd-board-v70__queue-card[data-row="black"] { --mmd-card-image: var(--mmd-board-06); }
+  .mmd-board-v70__queue-card[data-row="worker"] { --mmd-card-image: var(--mmd-board-09); cursor: pointer; }
+  .mmd-board-v70__queue-card[data-row="worker"]:hover,
+  .mmd-board-v70__queue-card.is-selected {
+    border-color: rgba(214, 180, 106, .56);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 0 0 1px rgba(214,180,106,.18), 0 18px 46px rgba(0,0,0,.34);
+  }
+  .mmd-board-v70__queue-card:focus { outline: none; }
+  .mmd-board-v70__queue-card:focus-visible {
+    outline: none;
+    border-color: rgba(214, 180, 106, .64);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 0 0 2px rgba(214,180,106,.24), 0 14px 36px rgba(0,0,0,.32);
+  }
+  .mmd-board-v70__queue-card span {
+    color: var(--mmd-board-text);
+    font: 700 14px/1.35 Inter, system-ui, sans-serif;
+  }
+  .mmd-board-v70__queue-card small {
+    color: var(--mmd-board-dim);
+    font: 700 10px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .mmd-board-v70__card-meta {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .mmd-board-v70__chip {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    border: 1px solid rgba(214, 180, 106, .13);
+    border-radius: 7px;
+    background: rgba(0,0,0,.32);
+    padding: 6px 7px;
+  }
+  .mmd-board-v70__chip[data-wide="true"] { grid-column: span 2; }
+  .mmd-board-v70__chip small {
+    color: var(--mmd-board-gold);
+    font: 700 9px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+  }
+  .mmd-board-v70__chip span {
+    color: var(--mmd-board-text);
+    font: 600 12px/1.35 Inter, system-ui, sans-serif;
+    overflow-wrap: anywhere;
+  }
+  .mmd-board-v70__empty {
+    border: 1px dashed rgba(214, 180, 106, .20);
+    border-radius: 8px;
+    padding: 16px;
+    color: var(--mmd-board-muted);
+    font: 13px/1.58 Inter, system-ui, sans-serif;
+  }
+  .mmd-board-v70__assistant-grid { display: grid; gap: 12px; }
+  .mmd-board-v70__assistant-grid div {
+    border-top: 1px solid rgba(214, 180, 106, .13);
+    padding-top: 10px;
+  }
+  .mmd-board-v70__rules {
+    padding: 13px 15px;
+    --mmd-card-image: var(--mmd-board-10);
+  }
+  .mmd-board-v70__rules summary {
+    cursor: pointer;
+    color: var(--mmd-board-gold);
+    font: 700 12px/1.4 Inter, system-ui, sans-serif;
+    letter-spacing: .12em;
+  }
+  .mmd-board-v70__rules ul {
+    margin: 12px 0 0;
+    padding-left: 18px;
+  }
+  .mmd-board-v70__privacy-row {
+    display: grid;
+    grid-template-columns: 1fr minmax(220px, .44fr);
+    gap: 14px;
+    align-items: stretch;
+  }
+  .mmd-board-v70__privacy-row .mmd-board-v70__panel { padding: 13px 15px; }
+  @media (max-width: 980px) {
+    [data-mmd-board-v70] { padding: 12px; }
+    .mmd-board-v70__hero,
+    .mmd-board-v70__strip,
+    .mmd-board-v70__grid,
+    .mmd-board-v70__privacy-row { grid-template-columns: 1fr; }
+    .mmd-board-v70__hero { min-height: 0; padding: 18px; }
+    .mmd-board-v70__brand { margin-bottom: 26px; }
+    .mmd-board-v70__title { font-size: 27px; }
+    .mmd-board-v70__queue-tools { align-items: stretch; flex-direction: column; }
+    .mmd-board-v70__refresh-wrap { justify-items: start; }
+    .mmd-board-v70__card-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .mmd-board-v70__panel[data-panel="assistant"] { position: static; max-height: none; overflow: visible; }
+  }
+  @media (max-width: 620px) {
+    .mmd-board-v70__filter { flex: 1 1 auto; }
+    .mmd-board-v70__refresh { width: 100%; justify-items: center; }
+    .mmd-board-v70__refresh-wrap { width: 100%; }
+    .mmd-board-v70__card-meta { grid-template-columns: 1fr; }
+    .mmd-board-v70__chip[data-wide="true"] { grid-column: 1 / -1; }
+  }
+</style>
 
-  <div class="mmd-board-v70__runtime-panel" data-v70-runtime-panel>
-    <p data-v70-runtime-status aria-live="polite">
-      Runtime waiting for SIGIL access.
-    </p>
-    <p data-v70-runtime-meta></p>
-    <ul data-v70-runtime-rules></ul>
+<section data-mmd-board-v70 data-gate="locked" data-role="guest">
+  <div class="mmd-board-v70__shell" data-kenji-board-dashboard-patch="true">
+    <header class="mmd-board-v70__hero">
+      <div>
+        <div class="mmd-board-v70__brand">
+          <div class="mmd-board-v70__mark" aria-hidden="true">SIGIL</div>
+          <div>
+            <div class="mmd-board-v70__eyebrow">ภาพรวม / บอร์ดวันนี้ / กฎล็อก</div>
+            <h1 class="mmd-board-v70__title">SIGIL / Kenji Board</h1>
+            <p class="mmd-board-v70__subtitle">บอร์ดปฏิบัติการแบบอ่านอย่างเดียวสำหรับสรุปคิว ความเสี่ยง และเรื่องที่ต้องให้ Per หรือ Ewvon ตัดสินใจ</p>
+          </div>
+        </div>
+        <p class="mmd-board-v70__subtitle">ไม่มีปุ่มอนุมัติ ไม่มีคำสั่งเขียนข้อมูล และไม่มีการยืนยันสลิป / SVIP / Black Card จากหน้าเว็บนี้</p>
+        <div class="mmd-board-v70__meta" aria-label="Board data status">
+          <span class="mmd-board-v70__pill">Source: <b data-v81-source>Safe Mode</b></span>
+          <span class="mmd-board-v70__pill">Mode: <b data-v81-mode>read_only</b></span>
+          <span class="mmd-board-v70__pill">Last Checked: <b data-v81-last-checked>กำลังอ่าน Worker</b></span>
+        </div>
+      </div>
+
+      <div class="mmd-board-v70__safe-card" data-v70-gate-panel>
+        <div class="mmd-board-v70__kicker" data-v81-side-label>Safe Mode</div>
+        <p data-v70-gate-status aria-live="polite">Safe Mode พร้อมอ่าน แต่ยังต้องตรวจ session ก่อนเปิดข้อมูลภายใน</p>
+        <button type="button" data-v70-action="unlock-gate" data-v70-auth-check>ตรวจสิทธิ์ SIGIL</button>
+      </div>
+    </header>
+
+    <section class="mmd-board-v70__strip" aria-label="Today Command Strip">
+      <article class="mmd-board-v70__metric" data-card="critical"><span>Critical</span><strong data-v81-count="critical">0</strong><p>เรื่องเสี่ยงสูงที่ต้องหยุดก่อนยืนยัน</p></article>
+      <article class="mmd-board-v70__metric" data-card="ready"><span>Ready for Per</span><strong data-v81-count="ready_for_per">0</strong><p>เรื่องพร้อมให้ Per ตัดสินใจ</p></article>
+      <article class="mmd-board-v70__metric" data-card="payment"><span>Payment Pending</span><strong data-v81-count="payment_pending">0</strong><p>Premium Renewal / สลิปเป็นหลักฐาน รอตรวจสอบทางการ</p></article>
+      <article class="mmd-board-v70__metric" data-card="info"><span>Need Info</span><strong data-v81-count="need_info">0</strong><p>ต้องขอข้อมูลเพิ่มก่อนเดินเรื่อง</p></article>
+    </section>
+
+    <section class="mmd-board-v70__grid">
+      <div class="mmd-board-v70__panel" data-panel="queue">
+        <div class="mmd-board-v70__kicker">Board Queue</div>
+        <h2 class="mmd-board-v70__section-title">บอร์ดคิวอ่านอย่างเดียว</h2>
+        <p data-v81-queue-summary>Showing fallback queue</p>
+        <div class="mmd-board-v70__queue-tools" data-v824-controls>
+          <div class="mmd-board-v70__filters" role="toolbar" aria-label="Board filters">
+            <button type="button" class="mmd-board-v70__filter is-active" data-v824-filter="all" aria-pressed="true">All</button>
+            <button type="button" class="mmd-board-v70__filter" data-v824-filter="per" aria-pressed="false">Per</button>
+            <button type="button" class="mmd-board-v70__filter" data-v824-filter="payment" aria-pressed="false">Payment</button>
+            <button type="button" class="mmd-board-v70__filter" data-v824-filter="need_info" aria-pressed="false">Need Info</button>
+            <button type="button" class="mmd-board-v70__filter" data-v824-filter="critical" aria-pressed="false">Critical</button>
+            <button type="button" class="mmd-board-v70__filter" data-v824-filter="high" aria-pressed="false">High</button>
+          </div>
+          <div class="mmd-board-v70__refresh-wrap">
+            <button type="button" class="mmd-board-v70__refresh" data-v824-refresh aria-label="Refresh Board"><span data-v824-refresh-label>Refresh Board</span><small>ดึงข้อมูลล่าสุด</small></button>
+            <span class="mmd-board-v70__refresh-note" data-v824-refresh-note aria-live="polite"></span>
+          </div>
+        </div>
+        <div class="mmd-board-v70__queue" data-v81-queue>
+          <article class="mmd-board-v70__queue-card is-selected" data-row="payment" data-v81-demo-card><b>Title</b><span>Payment proof review</span><div class="mmd-board-v70__card-meta"><div class="mmd-board-v70__chip"><small>Lane</small><span>Payment</span></div><div class="mmd-board-v70__chip"><small>Status</small><span>รอตรวจสอบ</span></div><div class="mmd-board-v70__chip"><small>Priority</small><span>High</span></div><div class="mmd-board-v70__chip"><small>Owner</small><span>MMD</span></div><div class="mmd-board-v70__chip" data-wide="true"><small>Risk</small><span>Slip evidence only</span></div><div class="mmd-board-v70__chip" data-wide="true"><small>Next Action</small><span>ตรวจยอดจากระบบทางการก่อนตอบ</span></div><div class="mmd-board-v70__chip"><small>Card ID</small><span>fallback_payment</span></div></div></article>
+          <article class="mmd-board-v70__queue-card" data-row="svip" data-v81-demo-card><b>Title</b><span>SVIP Review Candidate</span><div class="mmd-board-v70__card-meta"><div class="mmd-board-v70__chip"><small>Lane</small><span>Private Review</span></div><div class="mmd-board-v70__chip"><small>Status</small><span>ต้องพิจารณา</span></div><div class="mmd-board-v70__chip"><small>Priority</small><span>High</span></div><div class="mmd-board-v70__chip"><small>Owner</small><span>Per</span></div><div class="mmd-board-v70__chip" data-wide="true"><small>Risk</small><span>Per manual decision only</span></div><div class="mmd-board-v70__chip" data-wide="true"><small>Next Action</small><span>สรุป advisory ให้ Per</span></div><div class="mmd-board-v70__chip"><small>Card ID</small><span>fallback_svip</span></div></div></article>
+          <article class="mmd-board-v70__queue-card" data-row="black" data-v81-demo-card><b>Title</b><span>Black Card Private Review</span><div class="mmd-board-v70__card-meta"><div class="mmd-board-v70__chip"><small>Lane</small><span>Black Card</span></div><div class="mmd-board-v70__chip"><small>Status</small><span>private review</span></div><div class="mmd-board-v70__chip"><small>Priority</small><span>High</span></div><div class="mmd-board-v70__chip"><small>Owner</small><span>Ewvon</span></div><div class="mmd-board-v70__chip" data-wide="true"><small>Risk</small><span>Ewvon private review only</span></div><div class="mmd-board-v70__chip" data-wide="true"><small>Next Action</small><span>ห้ามอนุมัติอัตโนมัติ</span></div><div class="mmd-board-v70__chip"><small>Card ID</small><span>fallback_black_card</span></div></div></article>
+        </div>
+      </div>
+
+      <aside class="mmd-board-v70__panel" data-panel="assistant">
+        <div class="mmd-board-v70__kicker">Kenji Assistant Panel</div>
+        <h2 class="mmd-board-v70__section-title">สรุปเคสที่เลือก</h2>
+        <div class="mmd-board-v70__assistant-grid">
+          <div><p><b>Summary:</b> <span data-v81-assistant="summary">สลิปเป็นหลักฐานเท่านั้น ต้องตรวจยอดจริงก่อนเปลี่ยนสถานะ</span></p></div>
+          <div><p><b>Risk:</b> <span data-v81-assistant="risk">Slip evidence only</span></p></div>
+          <div><p><b>Next Action:</b> <span data-v81-assistant="next_action">ตรวจยอดจากระบบทางการก่อนตอบ</span></p></div>
+          <div><p><b>Needs Per Decision:</b> <span data-v81-assistant="needs_per_decision">ใช่ ต้องให้ Per ตัดสินใจ</span></p></div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="mmd-board-v70__privacy-row">
+      <details class="mmd-board-v70__rules">
+        <summary>กฎล็อก / วิธีใช้งาน</summary>
+        <ul>
+          <li>สลิปเป็นหลักฐานเท่านั้น ยังไม่ใช่การยืนยันชำระเงิน</li>
+          <li>SVIP เป็นการตัดสินใจของ Per เท่านั้น</li>
+          <li>Black Card ต้องผ่าน Ewvon private review ไม่มีอนุมัติอัตโนมัติ</li>
+          <li>หน้าเว็บต้องไม่มีข้อมูลลับฝั่งระบบ</li>
+          <li>คำสั่งควบคุมต้องผ่าน server-side auth และ audit</li>
+          <li>Rollback เป็นสิทธิ์ของ Per เท่านั้น</li>
+        </ul>
+      </details>
+
+      <aside class="mmd-board-v70__panel" data-panel="privacy">
+        <div class="mmd-board-v70__kicker">Privacy / Secure Data</div>
+        <p>ข้อมูลบนหน้าเป็น advisory display เท่านั้น ไม่ใช้ Memberstack เป็น source of truth และไม่เปิดเผยข้อมูลลับฝั่งระบบใน frontend</p>
+      </aside>
+    </section>
   </div>
 </section>
 
-<!-- Set before loading the shared auth gate helper. -->
 <script>
-  window.MMD_AUTH_WORKER_BASE_URL = "https://mmdbkk.com";
-  window.MMD_SIGIL_BOARD_WORKER_BASE_URL = "https://sigil.mmdbkk.com";
+  (function () {
+    "use strict";
+    var STATUS_ENDPOINT = "/v1/sigil/board/status";
+    var QUEUE_ENDPOINT = "/v1/sigil/board/queue";
+    var SAFE_MODE_COPY = "Safe Mode พร้อมอ่าน แต่ยังไม่มีข้อมูลจาก Worker";
+    var FALLBACK_CARDS = [
+      {
+        id: "fallback_payment",
+        title: "Payment proof review",
+        lane: "Payment",
+        status: "รอตรวจสอบ",
+        priority: "High",
+        risk: "Slip evidence only",
+        next_action: "ตรวจยอดจากระบบทางการก่อนตอบ",
+        owner: "MMD",
+        needs_per_decision: true,
+        summary: "สลิปเป็นหลักฐานเท่านั้น ต้องตรวจยอดจริงก่อนเปลี่ยนสถานะ"
+      },
+      {
+        id: "fallback_svip",
+        title: "SVIP Review Candidate",
+        lane: "Private Review",
+        status: "ต้องพิจารณา",
+        priority: "High",
+        risk: "Per manual decision only",
+        next_action: "สรุป advisory ให้ Per",
+        owner: "Per",
+        needs_per_decision: true,
+        summary: "SVIP เป็นการตัดสินใจของ Per เท่านั้น"
+      },
+      {
+        id: "fallback_black_card",
+        title: "Black Card Private Review",
+        lane: "Black Card",
+        status: "private review",
+        priority: "High",
+        risk: "Ewvon private review only",
+        next_action: "ห้ามอนุมัติอัตโนมัติ",
+        owner: "Ewvon",
+        needs_per_decision: true,
+        summary: "Black Card เป็น private review เท่านั้น"
+      }
+    ];
+
+    var root = document.querySelector("[data-mmd-board-v70]");
+    if (!root) return;
+
+    var boardState = {
+      cards: [],
+      filter: "all",
+      meta: { total: 0, returned: 0, limit: 50 },
+      refreshing: false,
+      refreshTimer: null
+    };
+
+    function text(value, fallback) {
+      var clean = String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+      return clean.slice(0, 220) || fallback || "";
+    }
+
+    function boolText(value) {
+      return value === true ? "ใช่ ต้องให้ Per ตัดสินใจ" : "ไม่ใช่ในตอนนี้";
+    }
+
+    function lower(value) {
+      return String(value == null ? "" : value).toLowerCase();
+    }
+
+    function setText(selector, value) {
+      var node = root.querySelector(selector);
+      if (node) node.textContent = value;
+    }
+
+    function updateSource(source, lastChecked) {
+      setText("[data-v81-source]", source);
+      setText("[data-v81-last-checked]", lastChecked || new Date().toISOString());
+      setText("[data-v81-mode]", "read_only");
+      setText("[data-v81-side-label]", source === "Worker" ? "WORKER MODE" : "Safe Mode");
+    }
+
+    function updateSafeMode(message) {
+      var copy = message || SAFE_MODE_COPY;
+      setText("[data-v70-gate-status]", copy);
+      setText("[data-v81-queue-summary]", "Showing fallback queue");
+      updateSource("Safe Mode", new Date().toISOString());
+    }
+
+    function updateCounts(counts) {
+      var safeCounts = counts && typeof counts === "object" ? counts : {};
+      ["critical", "ready_for_per", "payment_pending", "need_info"].forEach(function (key) {
+        var value = Number(safeCounts[key]);
+        setText('[data-v81-count="' + key + '"]', Number.isFinite(value) && value >= 0 ? String(Math.floor(value)) : "0");
+      });
+    }
+
+    function sanitizeCard(card, index) {
+      if (!card || typeof card !== "object") return null;
+      return {
+        id: text(card.id, "card_" + index),
+        title: text(card.title, "Untitled case"),
+        lane: text(card.lane, "Board"),
+        status: text(card.status, "Read Only"),
+        priority: text(card.priority, "Normal"),
+        risk: text(card.risk, "อ่านข้อมูล sanitized เท่านั้น"),
+        next_action: text(card.next_action, "รอข้อมูลเพิ่มเติม"),
+        owner: text(card.owner, "MMD"),
+        needs_per_decision: card.needs_per_decision === true,
+        summary: text(card.summary, "อ่านสถานะและสรุปเคสเท่านั้น")
+      };
+    }
+
+    function setAssistant(card) {
+      setText('[data-v81-assistant="summary"]', card ? card.summary : "ยังไม่มีเคสให้สรุปในตอนนี้");
+      setText('[data-v81-assistant="risk"]', card ? card.risk : "ไม่มีเคสที่ต้องประเมินในตอนนี้");
+      setText('[data-v81-assistant="next_action"]', card ? card.next_action : "รอข้อมูล sanitized จาก Worker");
+      setText('[data-v81-assistant="needs_per_decision"]', card ? boolText(card.needs_per_decision) : "ยังไม่ระบุ");
+    }
+
+    function setAssistantFilterEmpty() {
+      setText('[data-v81-assistant="summary"]', "ไม่มีรายการในตัวกรองนี้");
+      setText('[data-v81-assistant="risk"]', "ไม่มีความเสี่ยงใหม่จากตัวกรองนี้");
+      setText('[data-v81-assistant="next_action"]', "เลือกตัวกรองอื่น หรือกด Refresh Board");
+      setText('[data-v81-assistant="needs_per_decision"]', "ไม่ใช่ในตอนนี้");
+    }
+
+    function appendChip(parent, label, value, wide) {
+      var chip = document.createElement("div");
+      chip.className = "mmd-board-v70__chip";
+      if (wide) chip.setAttribute("data-wide", "true");
+      var small = document.createElement("small");
+      var span = document.createElement("span");
+      small.textContent = label;
+      span.textContent = value;
+      chip.appendChild(small);
+      chip.appendChild(span);
+      parent.appendChild(chip);
+    }
+
+    function matchesFilter(card, filter) {
+      var lane = lower(card.lane);
+      var status = lower(card.status);
+      var priority = lower(card.priority);
+      var owner = text(card.owner, "");
+      if (filter === "per") return card.needs_per_decision === true || owner === "Per" || owner === "Ewvon";
+      if (filter === "payment") return lane === "payment";
+      if (filter === "need_info") return lane === "need info" || status.indexOf("need info") !== -1 || status.indexOf("awaiting info") !== -1;
+      if (filter === "critical") return priority === "critical" || lane === "risk";
+      if (filter === "high") return priority === "high";
+      return true;
+    }
+
+    function filteredCards() {
+      return boardState.cards.filter(function (card) {
+        return matchesFilter(card, boardState.filter);
+      });
+    }
+
+    function queueSummary(visibleCount) {
+      var total = Number(boardState.meta.total);
+      var returned = Number(boardState.meta.returned);
+      if (!Number.isFinite(total) || total < 0) total = boardState.cards.length;
+      if (!Number.isFinite(returned) || returned < 0) returned = boardState.cards.length;
+      if (boardState.filter === "all") {
+        return "Showing top " + returned + " of " + total;
+      }
+      return "Showing " + visibleCount + " filtered cards from top " + returned + " of " + total;
+    }
+
+    function setActiveFilter(filter) {
+      boardState.filter = filter || "all";
+      Array.prototype.forEach.call(root.querySelectorAll("[data-v824-filter]"), function (button) {
+        var active = button.getAttribute("data-v824-filter") === boardState.filter;
+        button.classList.toggle("is-active", active);
+        button.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+    }
+
+    function renderQueue(cards, options) {
+      var queue = root.querySelector("[data-v81-queue]");
+      if (!queue) return;
+      queue.textContent = "";
+      if (options && options.summary) setText("[data-v81-queue-summary]", options.summary);
+      if (!cards.length) {
+        var empty = document.createElement("div");
+        empty.className = "mmd-board-v70__empty";
+        empty.textContent = options && options.emptyText ? options.emptyText : options && options.safeMode ? SAFE_MODE_COPY : "ยังไม่มีเคสในบอร์ดตอนนี้";
+        queue.appendChild(empty);
+        if (options && options.filterEmpty) setAssistantFilterEmpty();
+        else setAssistant(null);
+        return;
+      }
+      cards.forEach(function (card, index) {
+        var item = document.createElement("article");
+        item.className = "mmd-board-v70__queue-card" + (index === 0 ? " is-selected" : "");
+        item.setAttribute("data-row", "worker");
+        item.setAttribute("tabindex", "0");
+        item.setAttribute("role", "button");
+        item.setAttribute("aria-label", "อ่านเคส " + card.title);
+
+        var label = document.createElement("b");
+        var title = document.createElement("span");
+        var detail = document.createElement("div");
+        label.textContent = "Title";
+        title.textContent = card.title;
+        detail.className = "mmd-board-v70__card-meta";
+        appendChip(detail, "Lane", card.lane);
+        appendChip(detail, "Status", card.status);
+        appendChip(detail, "Priority", card.priority);
+        appendChip(detail, "Owner", card.owner);
+        appendChip(detail, "Risk", card.risk, true);
+        appendChip(detail, "Next Action", card.next_action, true);
+        appendChip(detail, "Card ID", card.id);
+        item.appendChild(label);
+        item.appendChild(title);
+        item.appendChild(detail);
+
+        function choose() {
+          Array.prototype.forEach.call(queue.querySelectorAll(".mmd-board-v70__queue-card"), function (other) {
+            other.classList.remove("is-selected");
+          });
+          item.classList.add("is-selected");
+          setAssistant(card);
+        }
+        item.addEventListener("click", choose);
+        item.addEventListener("keydown", function (event) {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            choose();
+          }
+        });
+        queue.appendChild(item);
+      });
+      setAssistant(cards[0]);
+    }
+
+    function renderFilteredQueue(options) {
+      var visible = filteredCards();
+      var emptyText = boardState.filter === "all" ? "ยังไม่มีเคสในบอร์ดตอนนี้" : "ไม่มีรายการในตัวกรองนี้";
+      renderQueue(visible, {
+        safeMode: options && options.safeMode,
+        filterEmpty: boardState.filter !== "all",
+        emptyText: emptyText,
+        summary: options && options.summary ? options.summary : queueSummary(visible.length)
+      });
+    }
+
+    function validJson(response) {
+      if (!response || !response.ok) throw new Error("board_read_failed");
+      return response.json();
+    }
+
+    function readJson(path) {
+      var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      var timer = controller ? setTimeout(function () { controller.abort(); }, 4500) : null;
+      return fetch(path, {
+        credentials: "same-origin",
+        cache: "no-store",
+        signal: controller ? controller.signal : undefined
+      }).then(validJson).finally(function () {
+        if (timer) clearTimeout(timer);
+      });
+    }
+
+    function applyStatus(payload) {
+      if (!payload || payload.ok !== true || payload.mode !== "read_only") throw new Error("invalid_board_status");
+      updateCounts(payload.counts);
+      updateSource(payload.source === "worker" ? "Worker" : "Fallback", text(payload.last_checked, new Date().toISOString()));
+      setText("[data-v70-gate-status]", payload.source === "worker" ? "READ-ONLY LIVE จาก Worker" : "บอร์ดอ่านข้อมูลแบบ fallback");
+    }
+
+    function applyQueue(payload) {
+      if (!payload || payload.ok !== true || payload.mode !== "read_only" || !Array.isArray(payload.cards)) {
+        throw new Error("invalid_board_queue");
+      }
+      var cards = payload.cards.map(sanitizeCard).filter(Boolean);
+      var total = Number(payload.total_cards);
+      var returned = Number(payload.returned_cards);
+      var limit = Number(payload.limit);
+      boardState.cards = cards;
+      boardState.meta = {
+        total: Number.isFinite(total) ? total : cards.length,
+        returned: Number.isFinite(returned) ? returned : cards.length,
+        limit: Number.isFinite(limit) ? limit : cards.length
+      };
+      renderFilteredQueue({ safeMode: false });
+    }
+
+    function showFallback() {
+      updateSafeMode(SAFE_MODE_COPY);
+      updateCounts({});
+      boardState.cards = FALLBACK_CARDS.map(sanitizeCard).filter(Boolean);
+      boardState.meta = { total: boardState.cards.length, returned: boardState.cards.length, limit: boardState.cards.length };
+      renderFilteredQueue({ safeMode: true, summary: "Showing fallback queue" });
+    }
+
+    function setRefreshState(state, message) {
+      var button = root.querySelector("[data-v824-refresh]");
+      var label = root.querySelector("[data-v824-refresh-label]");
+      var note = root.querySelector("[data-v824-refresh-note]");
+      boardState.refreshing = state === "loading";
+      if (button) button.disabled = boardState.refreshing;
+      if (label) label.textContent = boardState.refreshing ? "Refreshing..." : "Refresh Board";
+      if (note) {
+        note.textContent = message || "";
+        note.setAttribute("data-state", state === "error" ? "error" : "");
+      }
+      if (boardState.refreshTimer) clearTimeout(boardState.refreshTimer);
+      if (state === "success") {
+        boardState.refreshTimer = setTimeout(function () {
+          var freshNote = root.querySelector("[data-v824-refresh-note]");
+          if (freshNote) freshNote.textContent = "";
+        }, 1800);
+      }
+    }
+
+    function refreshBoard() {
+      if (boardState.refreshing) return;
+      setRefreshState("loading", "");
+      Promise.all([readJson(STATUS_ENDPOINT), readJson(QUEUE_ENDPOINT)])
+        .then(function (results) {
+          applyStatus(results[0]);
+          applyQueue(results[1]);
+          setRefreshState("success", "Updated");
+        })
+        .catch(function () {
+          setRefreshState("error", "รีเฟรชไม่สำเร็จ ลองใหม่อีกครั้ง");
+        });
+    }
+
+    Array.prototype.forEach.call(root.querySelectorAll("[data-v824-filter]"), function (button) {
+      button.addEventListener("click", function () {
+        setActiveFilter(button.getAttribute("data-v824-filter"));
+        renderFilteredQueue();
+      });
+    });
+    var refreshButton = root.querySelector("[data-v824-refresh]");
+    if (refreshButton) refreshButton.addEventListener("click", refreshBoard);
+
+    if (/fallback_empty_kv/i.test(root.textContent || "")) {
+      updateSafeMode(SAFE_MODE_COPY);
+    }
+
+    showFallback();
+    Promise.all([readJson(STATUS_ENDPOINT), readJson(QUEUE_ENDPOINT)])
+      .then(function (results) {
+        applyStatus(results[0]);
+        applyQueue(results[1]);
+      })
+      .catch(function () {
+        showFallback();
+      });
+  })();
 </script>
-
-<!-- Load before the board gate helper. -->
-<script src="https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-workers@main/webflow/mmd-gate.js"></script>
-
-<!-- Load after the V7 board embed/root markup. -->
-<script src="https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-workers@main/webflow/sigil/board/kenji-board-v70-gate.js"></script>
-
-<!-- Load after the gate helper to connect the read-only V7 runtime. -->
-<script src="https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-workers@main/webflow/sigil/board/kenji-board-v70-runtime.js"></script>
-
-<!-- Load last for console verification. -->
-<script src="https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-workers@main/webflow/sigil/board/kenji-board-v70-smoke-test.js"></script>

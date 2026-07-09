@@ -96,6 +96,11 @@ const MODEL_SCHEMA_PATCH_V1_ROUTE_SET = new Set(Object.values(MODEL_SCHEMA_PATCH
 const MODEL_SESSION_CURRENT_PATH = "/v1/model/session/current";
 const MODEL_SESSION_ACTION_PATH = "/v1/model/session/action";
 const MODEL_SESSION_LINK_PATH = "/v1/admin/model/session/link";
+const ADMIN_RICH_MENU_BASE_PATH = "/v1/admin/line/rich-menu";
+const SIGIL_BOARD_PUBLISH_PATH = "/v1/admin/sigil/board/publish";
+const SIGIL_BOARD_CARDS_KV_KEY = "sigil:board:v1:cards";
+const SIGIL_BOARD_META_KV_KEY = "sigil:board:v1:meta";
+const MEMBER_DASHBOARD_RICH_MENU_BASE_URL = "https://member-dashboard-chat-worker.local/__internal/line/rich-menu";
 const MODEL_SESSION_MODEL_BLOCKED_ACTIONS = new Set([
   "confirm_final_payment",
   "mark_final_payment_confirmed",
@@ -117,7 +122,7 @@ const MODEL_SESSION_MODEL_ALLOWED_ACTIONS = new Set([
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
-    const path = url.pathname;
+    const path = normalizePathname(url.pathname);
     const method = req.method.toUpperCase();
     const cors = corsHeaders(req, env);
 
@@ -151,6 +156,13 @@ export default {
       return withCors(await demoLinksGet(req, env), cors);
     }
 
+    if (
+      (method === "GET" || method === "HEAD") &&
+      path === MODEL_SCHEMA_PATCH_V1_ROUTES.privateFlashAuthorize
+    ) {
+      return withCors(modelSchemaPatchJson({ ok: false, error: "unauthorized" }, 401), cors);
+    }
+
     if (method === "POST" && MODEL_SCHEMA_PATCH_V1_ROUTE_SET.has(path)) {
       return withCors(await handleModelSchemaPatchV1Route(req, env, path), cors);
     }
@@ -175,6 +187,13 @@ export default {
       // IMMIGRATION / WRITER ENDPOINTS
       // STRICT: X-Confirm-Key only
       // ====================================================
+      if (method === "POST" && path === SIGIL_BOARD_PUBLISH_PATH) {
+        if (!isAuthed(req, env)) {
+          return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
+        }
+        return withCors(json(await publishSigilBoardQueue(env)), cors);
+      }
+
       if (method === "POST" && path === "/v1/admin/console/inbox") {
         if (!isConfirmKeyAuthed(req, env)) {
           return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
@@ -385,6 +404,10 @@ export default {
       // ====================================================
       if (!isAuthed(req, env)) {
         return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
+      }
+
+      if (isAdminRichMenuRoute(path, method)) {
+        return withCors(await handleAdminRichMenuRoute(req, env, path, method), cors);
       }
 
       if (method === "POST" && path === MODEL_SESSION_LINK_PATH) {
@@ -741,8 +764,97 @@ async function safeJson(req) {
   }
 }
 
+function normalizePathname(pathname = "") {
+  const normalized = String(pathname || "/").replace(/\/{2,}/g, "/");
+  if (normalized.length > 1) return normalized.replace(/\/$/, "");
+  return normalized || "/";
+}
+
+function isAdminRichMenuRoute(path, method) {
+  return (
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/draft`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate-minimal`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate-no-postback`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate-message-only`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate-uri-only`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/publish`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/draft`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/validate`) ||
+    (method === "GET" && path === `${ADMIN_RICH_MENU_BASE_PATH}/default`) ||
+    (method === "GET" && path === `${ADMIN_RICH_MENU_BASE_PATH}/list`)
+  );
+}
+
+function adminRichMenuServicePath(path) {
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/draft`) return "/public-world/draft";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate`) return "/public-world/validate";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate-minimal`) return "/public-world/validate-minimal";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate-no-postback`) return "/public-world/validate-no-postback";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate-message-only`) return "/public-world/validate-message-only";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate-uri-only`) return "/public-world/validate-uri-only";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/publish`) return "/public-world/publish";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/draft`) return "/private-member/draft";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/validate`) return "/private-member/validate";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/default`) return "/default";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/list`) return "/list";
+  return "";
+}
+
+function sanitizeRichMenuAdminPayload(value) {
+  const forbidden = /^(authorization|cookie|set-cookie|token|secret|admin_bearer|internal_token|confirm_key|line_channel_access_token)$/i;
+  if (Array.isArray(value)) return value.map((item) => sanitizeRichMenuAdminPayload(item));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [key, item] of Object.entries(value)) {
+      if (forbidden.test(key)) continue;
+      out[key] = sanitizeRichMenuAdminPayload(item);
+    }
+    return out;
+  }
+  if (typeof value === "string") return value.replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/g, "Bearer [redacted]");
+  return value;
+}
+
+async function handleAdminRichMenuRoute(req, env, path, method) {
+  const binding = env.MEMBER_DASHBOARD_CHAT_WORKER;
+  if (!binding || typeof binding.fetch !== "function") {
+    return json({ ok: false, error: "service_binding_unavailable" }, 502);
+  }
+
+  const servicePath = adminRichMenuServicePath(path);
+  if (!servicePath) return json({ ok: false, error: "not_found" }, 404);
+
+  const init = {
+    method,
+    headers: {
+      "content-type": "application/json",
+      "x-mmd-service-binding": "admin-worker",
+      "x-mmd-internal-call": "true",
+    },
+  };
+
+  if (method !== "GET") {
+    init.body = JSON.stringify(await safeJson(req));
+  }
+
+  const url = new URL(req.url);
+  const serviceUrl = new URL(`${MEMBER_DASHBOARD_RICH_MENU_BASE_URL}${servicePath}`);
+  if (url.searchParams.get("debug") === "1") serviceUrl.searchParams.set("debug", "1");
+  const upstream = await binding.fetch(new Request(serviceUrl, init));
+  const payload = await upstream.json().catch(() => ({ ok: false, error: "member_dashboard_response_invalid" }));
+  return json(sanitizeRichMenuAdminPayload(payload), upstream.status);
+}
+
 function str(value) {
   return String(value || "").trim();
+}
+
+function truthy(value) {
+  if (value === true) return true;
+  if (value === false) return false;
+  const normalized = str(value).toLowerCase();
+  return ["true", "yes", "y", "1"].includes(normalized);
 }
 
 function num(value) {
@@ -2390,6 +2502,217 @@ function buildSigilAdminNote({
   if (journeyStage) lines.push(`Stage: ${journeyStage}`);
   if (note) lines.push(`Note: ${note}`);
   return lines.join(" | ");
+}
+
+/* =========================
+   SIGIL Board Publisher
+========================= */
+async function publishSigilBoardQueue(env) {
+  if (!env.SIGIL_BOARD_KV || typeof env.SIGIL_BOARD_KV.put !== "function") {
+    return { ok: false, error: "missing_sigil_board_kv" };
+  }
+
+  const records = await collectSigilBoardSourceRecords(env);
+  const cards = records.map((record, index) => sanitizeSigilBoardCard(record, index)).filter(Boolean);
+  const jsonCards = JSON.stringify(cards);
+  const publishedAt = new Date().toISOString();
+
+  await env.SIGIL_BOARD_KV.put(SIGIL_BOARD_CARDS_KV_KEY, jsonCards);
+  await env.SIGIL_BOARD_KV.put(SIGIL_BOARD_META_KV_KEY, JSON.stringify({
+    ok: true,
+    source: "admin-worker",
+    mode: "internal_publish",
+    published: cards.length,
+    published_at: publishedAt,
+  }));
+
+  return {
+    ok: true,
+    published: cards.length,
+    key: SIGIL_BOARD_CARDS_KV_KEY,
+    source: "admin-worker",
+    mode: "internal_publish",
+  };
+}
+
+async function collectSigilBoardSourceRecords(env) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return [];
+
+  const sources = [
+    { source: "console_inbox", table: env.AIRTABLE_TABLE_CONSOLE_INBOX_ID || "tblFHmfpB2TTrzO2e" },
+    { source: "payment_proofs", table: env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || "tblfJfM4Sqag9zrLi" },
+    { source: "sessions", table: env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX" },
+    { source: "payments", table: env.AIRTABLE_TABLE_PAYMENTS || "payments" },
+    { source: "member_packages", table: env.AIRTABLE_TABLE_MEMBER_PACKAGES || env.AIRTABLE_TABLE_MEMBERS || "members" },
+  ];
+
+  const out = [];
+  for (const source of sources) {
+    const records = await airtableList(env, source.table, { limit: 25 });
+    for (const record of records) out.push({ ...record, source: source.source });
+  }
+  return out;
+}
+
+function sanitizeSigilBoardCard(record, index) {
+  if (!record || typeof record !== "object") return null;
+  const fields = record.fields && typeof record.fields === "object" ? record.fields : record;
+  const source = str(record.source || fields.source || "");
+  const lane = sigilBoardLane(fields, source);
+  const status = sigilBoardStatus(fields, lane);
+  const priority = sigilBoardPriority(fields, lane, status);
+  const risk = sigilBoardRisk(fields, lane);
+  const owner = sigilBoardOwner(fields, lane, risk);
+  const needsPerDecision = sigilBoardNeedsPerDecision(fields, lane, risk, owner);
+
+  return {
+    id: sigilBoardCardId(record, fields, source, index),
+    title: sigilBoardTitle(lane, sigilBoardFirstField(fields, ["title", "Title", "subject", "Subject", "inbox_id", "payment_ref", "session_id"])),
+    lane,
+    status,
+    priority,
+    risk,
+    next_action: sigilBoardNextAction(lane),
+    owner,
+    needs_per_decision: needsPerDecision,
+    summary: sigilBoardSummary(lane),
+  };
+}
+
+function sigilBoardLane(fields, source) {
+  const text = sigilBoardSourceText(fields, source);
+  if (source === "payment_proofs" || source === "payments" || /payment|slip|proof|transfer/.test(text)) return "Payment";
+  if (/black\s*card/.test(text)) return "Private Review";
+  if (/vip|svip|private exception|private review|refund/.test(text)) return "Private Review";
+  if (/complaint|privacy|mismatch|sensitive escalation|route\/auth|auth error|route error/.test(text)) return "Risk";
+  if (/booking|session|location|schedule/.test(text)) return "Booking";
+  if (/partner/.test(text)) return "Partner";
+  if (/model/.test(text)) return "Model";
+  if (/member|identity|package|renewal/.test(text)) return "Member";
+  if (/missing|incomplete|need info|reference/.test(text)) return "Need Info";
+  return source === "console_inbox" ? "Need Info" : "Risk";
+}
+
+function sigilBoardStatus(fields, lane) {
+  const status = str(sigilBoardFirstField(fields, ["status", "Status", "state", "State", "verification_status", "Verification Status"]));
+  if (/need[_\s-]?info/i.test(status)) return "Need Info";
+  if (/pending|review|uploaded|new/i.test(status)) return lane === "Payment" ? "Pending Review" : "Ready for Per";
+  if (lane === "Payment" || lane === "Need Info") return "Need Info";
+  if (lane === "Private Review" || lane === "Black Card" || lane === "Risk") return "Ready for Per";
+  return "Read Only";
+}
+
+function sigilBoardPriority(fields, lane, status) {
+  const text = `${sigilBoardSourceText(fields)} ${lane} ${status}`;
+  if (/critical|mismatch|privacy|complaint|auth error|route error|sensitive escalation/.test(text) || lane === "Risk") return "Critical";
+  if (/payment|refund|vip|svip|black card|manual review|private review/.test(text) || lane === "Payment" || lane === "Black Card") return "High";
+  if (/missing|incomplete|need info|booking|partner|model|member/.test(text)) return "Medium";
+  return "Low";
+}
+
+function sigilBoardRisk(fields, lane) {
+  const text = sigilBoardSourceText(fields);
+  if (lane === "Payment") return "Slip evidence only";
+  if (lane === "Black Card") return "Ewvon private review only";
+  if (/svip|vip|private review/.test(text) || lane === "Private Review") return "Per manual decision only";
+  if (lane === "Risk") return "Safety review required";
+  return "Read-only advisory";
+}
+
+function sigilBoardOwner(fields, lane, risk) {
+  const owner = sigilBoardSafeText(sigilBoardFirstField(fields, ["owner", "Owner", "assignee", "Assignee"]), "", 24);
+  if (["MMD", "Per", "Kenji", "Ewvon", "Yuki", "Admin"].includes(owner)) return owner;
+  if (lane === "Black Card" || /ewvon/i.test(risk)) return "Ewvon";
+  if (lane === "Private Review" || lane === "Risk" || /per/i.test(risk)) return "Per";
+  if (lane === "Need Info") return "Kenji";
+  return "MMD";
+}
+
+function sigilBoardNeedsPerDecision(fields, lane, risk, owner) {
+  const explicit = sigilBoardFirstField(fields, ["needs_per_decision", "Needs Per Decision"]);
+  if (explicit !== "") return truthy(explicit);
+  const text = sigilBoardSourceText(fields);
+  return owner === "Per" || owner === "Ewvon" || /mismatch|unknown payer|vip|svip|black card|refund|manual review|complaint|private exception/.test(text) || /per|ewvon/i.test(risk);
+}
+
+function sigilBoardTitle(lane, rawTitle = "") {
+  const title = str(rawTitle);
+  if (/^line_\[masked\]$/i.test(title) || /^line_\[masked\]\b/i.test(title)) return "line_[masked]";
+  if (/^img[_-]/i.test(title)) return "Evidence review";
+  if (/renewal/i.test(title)) return "Renewal review";
+  if (sigilBoardHasBadText(title) || title.length > 90 || /[{}`]|\\n|\\r|payload|form|dump/i.test(title)) return "Board review item";
+  if (lane === "Payment") return "Payment proof review";
+  if (lane === "Black Card") return "Private review item";
+  if (lane === "Private Review") return "Private review queue";
+  if (lane === "Booking") return "Booking context request";
+  if (lane === "Need Info") return "Missing info review";
+  return title || "Operational board item";
+}
+
+function sigilBoardNextAction(lane) {
+  if (lane === "Payment") return "ตรวจยอดจากระบบทางการก่อนตอบ";
+  if (lane === "Black Card") return "ส่งเป็น private review ให้ Ewvon";
+  if (lane === "Private Review" || lane === "Risk") return "สรุป advisory ให้ Per";
+  if (lane === "Need Info" || lane === "Booking") return "ขอข้อมูลเพิ่มก่อนเดินเรื่อง";
+  return "อ่านข้อมูลและจัดลำดับต่อ";
+}
+
+function sigilBoardSummary(lane) {
+  if (lane === "Payment") return "รายการชำระเงินต้องตรวจสอบจากระบบทางการก่อนตอบ";
+  if (lane === "Need Info") return "ต้องขอข้อมูลเพิ่มเติมก่อนเดินเรื่อง";
+  if (lane === "Private Review") return "ต้องสรุปเข้าคิวพิจารณาแบบส่วนตัว";
+  if (lane === "Black Card") return "ต้องตรวจสอบในชั้น private review เท่านั้น";
+  return "รายการนี้เป็น read-only advisory สำหรับตรวจสอบต่อ";
+}
+
+function sigilBoardCardId(record, fields, source, index) {
+  const fingerprint = [
+    source,
+    record.id || "",
+    sigilBoardFirstField(fields, ["inbox_id", "payment_ref", "session_id", "title", "Title", "subject", "Subject"]),
+    sigilBoardFirstField(fields, ["status", "Status", "state", "State"]),
+    index,
+  ].map((value) => str(value)).join("|");
+  return `sigil_card_${shortHash(fingerprint)}`;
+}
+
+function sigilBoardSourceText(fields, source = "") {
+  return [
+    source,
+    sigilBoardFirstField(fields, ["status", "Status", "state", "State", "intent", "Intent", "legacy_tags", "priority"]),
+    sigilBoardFirstField(fields, ["admin_note", "note", "Note", "summary", "Summary", "payload_json", "error_message"]),
+  ].map((value) => str(value)).join(" ").toLowerCase();
+}
+
+function sigilBoardFirstField(fields, names) {
+  for (const name of names) {
+    const value = fields?.[name];
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return "";
+}
+
+function sigilBoardSafeText(value, fallback = "", maxLength = 180) {
+  let out = Array.isArray(value) ? value.join(", ") : str(value);
+  out = out.replace(/\s+/g, " ").trim() || fallback;
+  out = out
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[masked]")
+    .replace(/\+?\d[\d\s().-]{7,}\d/g, "[masked]")
+    .replace(/\bU[a-f0-9]{20,}\b/gi, "[masked]")
+    .replace(/\b\d{7,}:[A-Za-z0-9_-]{20,}\b/g, "[masked]")
+    .replace(/https?:\/\/\S+/gi, "[masked]")
+    .replace(/\b(token|secret|passphrase|api[_ -]?key|bank|slip[_ -]?url|payment[_ -]?ref[_ -]?raw|amount[_ -]?raw)\b/gi, "[redacted]");
+  return out.slice(0, maxLength);
+}
+
+function sigilBoardHasBadText(value) {
+  return /rec[A-Za-z0-9]{10,}|Canonical Client|LINE Official immigration identity|line_user_i|line_user_id|nickname:|emails:|email|phone|telegram:|@[A-Za-z0-9_]|proof_attached|requested_path|payment_method|bank|raw_payload|admin_note|token|secret|passphrase|api_key|SVIP|Black Card|VIP/.test(str(value));
+}
+
+function shortHash(value) {
+  let hash = 5381;
+  for (let index = 0; index < value.length; index += 1) hash = ((hash << 5) + hash) ^ value.charCodeAt(index);
+  return (hash >>> 0).toString(36).slice(0, 10);
 }
 
 /* =========================
