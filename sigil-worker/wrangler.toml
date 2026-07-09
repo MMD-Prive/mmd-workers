@@ -4,15 +4,16 @@ compatibility_date = "2026-06-04"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
-# Stable production triggers that Cloudflare currently accepts for this worker.
-# Complaint Evidence intake is available through workers.dev until the blocked custom route
-# sigil.mmdbkk.com/member/api/recovery/* is added manually in Cloudflare or the route conflict is cleared.
-routes = [
-  { pattern = "sigil.mmdbkk.com/api/sigil/models/search*", zone_name = "mmdbkk.com" },
-  { pattern = "sigil.mmdbkk.com/api/sigil/models/new-arrivals*", zone_name = "mmdbkk.com" },
-  { pattern = "www.mmdbkk.com/v1/sigil/board/*", zone_name = "mmdbkk.com" },
-  { pattern = "mmdbkk.com/v1/sigil/board/*", zone_name = "mmdbkk.com" }
-]
+# No custom routes are declared here on purpose.
+# Cloudflare API is currently rejecting route updates for this worker at /workers/scripts/sigil-worker/routes.
+# Keeping routes out of wrangler.toml allows deploys to succeed through workers.dev.
+# Temporary public Complaint Evidence intake URL:
+# https://sigil-worker.malemodel-bkk.workers.dev/member/api/recovery/complaint-evidence
+#
+# When the Cloudflare route conflict is cleared manually, add the custom route back:
+# routes = [
+#   { pattern = "sigil.mmdbkk.com/member/api/recovery/*", zone_name = "mmdbkk.com" }
+# ]
 
 [observability]
 enabled = true
@@ -32,8 +33,6 @@ ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbk
 # - Bind SIGIL_COMPLAINT_KV in Cloudflare for dedicated complaint case storage.
 # - SIGIL_RECOVERY_KV can be bound as fallback shared recovery storage.
 # - COMPLAINT_GOOGLE_DRIVE_WEBHOOK_URL and COMPLAINT_TELEGRAM_WEBHOOK_URL are optional secrets.
-# - Temporary public intake URL while custom route is blocked:
-#   https://sigil-worker.malemodel-bkk.workers.dev/member/api/recovery/complaint-evidence
 
 [[kv_namespaces]]
 binding = "SIGIL_BOARD_KV"
