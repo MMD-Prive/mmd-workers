@@ -1,0 +1,30 @@
+name = "sigil-complaint-worker"
+main = "src/index.js"
+compatibility_date = "2026-06-04"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+# Purpose: dedicated workers.dev intake for SIGIL Complaint Evidence.
+# No custom routes are declared here, so deploy avoids the existing 409 route conflict on sigil-worker.
+# Public temporary endpoint:
+# https://sigil-complaint-worker.malemodel-bkk.workers.dev/member/api/recovery/complaint-evidence
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[vars]
+WORKER_NAME = "sigil-complaint-worker"
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.webflow.io"
+
+# Optional secrets:
+# - COMPLAINT_GOOGLE_DRIVE_WEBHOOK_URL
+# - COMPLAINT_TELEGRAM_WEBHOOK_URL
+# Optional KV bindings:
+# - SIGIL_COMPLAINT_KV for dedicated complaint metadata
+# - SIGIL_BOARD_KV for board card append and fallback metadata
+
+[[kv_namespaces]]
+binding = "SIGIL_BOARD_KV"
+id = "7922350083a644db8a48c16c7e48fca7"
+preview_id = "f673c4ab6e4f456baefeab032564db72"
