@@ -6,7 +6,20 @@ workers_dev = true
 
 routes = [
   { pattern = "www.mmdbkk.com/v1/sigil/board/*", zone_name = "mmdbkk.com" },
-  { pattern = "mmdbkk.com/v1/sigil/board/*", zone_name = "mmdbkk.com" }
+  { pattern = "mmdbkk.com/v1/sigil/board/*", zone_name = "mmdbkk.com" },
+
+  # SIGIL worker health checks on the SIGIL subdomain.
+  { pattern = "sigil.mmdbkk.com/ping", zone_name = "mmdbkk.com" },
+  { pattern = "sigil.mmdbkk.com/health", zone_name = "mmdbkk.com" },
+
+  # Recovery coupon APIs used by /sigil/recovery/coupon.
+  { pattern = "sigil.mmdbkk.com/api/recovery/coupon/*", zone_name = "mmdbkk.com" },
+
+  # Complaint evidence intake used by /sigil/recovery/complaint.
+  { pattern = "sigil.mmdbkk.com/member/api/recovery/*", zone_name = "mmdbkk.com" },
+
+  # SIGIL board read APIs on the SIGIL subdomain.
+  { pattern = "sigil.mmdbkk.com/v1/sigil/board/*", zone_name = "mmdbkk.com" }
 ]
 
 [observability]
@@ -15,13 +28,18 @@ head_sampling_rate = 1
 
 [vars]
 WORKER_NAME = "sigil-worker"
-ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.webflow.io"
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.webflow.io,https://mmdprive.com"
 
 # Do not put secrets here.
 # Board queue reads are read-only:
 # - SIGIL_BOARD_QUEUE_JSON as non-secret JSON for smoke/dev only
 # - SIGIL_BOARD_KV production key: sigil:board:v1:cards
 # - SIGIL_BOARD_KV optional meta key: sigil:board:v1:meta
+#
+# Production complaint evidence metadata:
+# - Bind SIGIL_COMPLAINT_KV in Cloudflare for dedicated complaint case storage.
+# - SIGIL_RECOVERY_KV can be bound as fallback shared recovery storage.
+# - COMPLAINT_GOOGLE_DRIVE_WEBHOOK_URL and COMPLAINT_TELEGRAM_WEBHOOK_URL are optional secrets.
 
 [[kv_namespaces]]
 binding = "SIGIL_BOARD_KV"
