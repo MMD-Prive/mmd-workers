@@ -1,0 +1,147 @@
+<section
+  class="kenji-knowledge-room"
+  data-api-base="https://sigil.mmdbkk.com"
+  data-list-path="/v1/admin/kenji/knowledge/list"
+  data-draft-path="/v1/admin/kenji/knowledge/draft"
+  data-item-path="/v1/admin/kenji/knowledge"
+  data-meta-path="/v1/admin/kenji/knowledge/meta"
+>
+  <link rel="stylesheet" href="./kenji-knowledge-v14.css">
+
+  <picture class="kkr-hero-media" aria-hidden="true">
+    <source media="(max-width: 767px)" srcset="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a50960b8c276e4f3514375b_Kenji_Mob.webp">
+    <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a50960b557e5620e2f41522_Kenji%20Desk.webp" alt="">
+  </picture>
+
+  <div class="kkr-shell">
+    <header class="kkr-hero">
+      <p class="kkr-kicker">MMD Internal Admin</p>
+      <h1>Kenji Knowledge Room</h1>
+      <p class="kkr-hero-copy">ห้องนี้คือพื้นที่ที่ MMD ใช้สอน Kenji ว่าควรตอบลูกค้ายังไงในเรื่องที่พบบ่อย ทุกคำตอบต้องช่วยให้ลูกค้าไปต่อได้ โดยไม่ยืนยันแทนระบบจริง และไม่เปิดเผยข้อมูลหลังบ้าน</p>
+    </header>
+
+    <div class="kkr-toolbar" aria-label="Worker connection">
+      <label class="kkr-field kkr-key-field">
+        <span>Admin Key</span>
+        <input data-kkr-key type="password" autocomplete="off" placeholder="ใส่ Admin Key">
+      </label>
+      <button class="kkr-btn kkr-btn-primary" type="button" data-kkr-connect>เชื่อมต่อ Worker</button>
+      <button class="kkr-btn" type="button" data-kkr-clear-key>ล้าง Key</button>
+      <p class="kkr-status" data-kkr-status>ใส่ Admin Key แล้วกดเชื่อมต่อ Worker เพื่อโหลดคลังความรู้ของ Kenji</p>
+    </div>
+
+    <main class="kkr-main">
+      <aside class="kkr-panel kkr-list-panel">
+        <div class="kkr-panel-head">
+          <div>
+            <p class="kkr-label">Knowledge Cards</p>
+            <h2>คลังคำตอบ</h2>
+          </div>
+          <button class="kkr-icon-btn" type="button" data-kkr-refresh title="Refresh" aria-label="Refresh">↻</button>
+        </div>
+
+        <div class="kkr-filters">
+          <input data-kkr-search type="search" placeholder="ค้นหา title, lane, language, answer">
+          <select data-kkr-filter-status aria-label="Status">
+            <option value="all">All status</option>
+            <option value="draft">Draft</option>
+            <option value="review">Review</option>
+            <option value="published">Published</option>
+            <option value="archived">Archived</option>
+          </select>
+        </div>
+
+        <div class="kkr-counts" data-kkr-counts></div>
+        <div class="kkr-card-list" data-kkr-list></div>
+      </aside>
+
+      <section class="kkr-panel kkr-editor-panel">
+        <div class="kkr-panel-head">
+          <div>
+            <p class="kkr-label">Card Editor</p>
+            <h2 data-kkr-editor-title>สร้างการ์ดใหม่</h2>
+          </div>
+          <button class="kkr-btn" type="button" data-kkr-new>New</button>
+        </div>
+
+        <form class="kkr-form" data-kkr-form>
+          <input data-kkr-id type="hidden">
+
+          <label class="kkr-field">
+            <span>Title</span>
+            <input data-kkr-title required maxlength="120" placeholder="เช่น Renewal next step">
+          </label>
+
+          <div class="kkr-grid">
+            <label class="kkr-field">
+              <span>Lane</span>
+              <select data-kkr-lane required></select>
+            </label>
+            <label class="kkr-field">
+              <span>Audience</span>
+              <select data-kkr-audience required></select>
+            </label>
+            <label class="kkr-field">
+              <span>Language</span>
+              <select data-kkr-language required></select>
+            </label>
+            <label class="kkr-field">
+              <span>Status</span>
+              <select data-kkr-status-field>
+                <option value="draft">draft</option>
+                <option value="review">review</option>
+                <option value="archived">archived</option>
+              </select>
+            </label>
+          </div>
+
+          <label class="kkr-field">
+            <span>Customer question examples</span>
+            <textarea data-kkr-questions rows="3" placeholder="หนึ่งตัวอย่างต่อหนึ่งบรรทัด"></textarea>
+          </label>
+
+          <label class="kkr-field">
+            <span>Kenji safe answer</span>
+            <textarea data-kkr-answer rows="7" required placeholder="คำตอบที่ช่วยลูกค้าไปต่อ โดยไม่ยืนยันแทนระบบจริง"></textarea>
+          </label>
+
+          <div class="kkr-grid">
+            <label class="kkr-field">
+              <span>Do rules</span>
+              <textarea data-kkr-do rows="4" placeholder="หนึ่ง rule ต่อหนึ่งบรรทัด"></textarea>
+            </label>
+            <label class="kkr-field">
+              <span>Don't rules</span>
+              <textarea data-kkr-dont rows="4" placeholder="หนึ่ง rule ต่อหนึ่งบรรทัด"></textarea>
+            </label>
+          </div>
+
+          <label class="kkr-field">
+            <span>Escalation rule</span>
+            <textarea data-kkr-escalation rows="3" placeholder="เมื่อไรที่ Kenji ต้องส่งต่อ Per"></textarea>
+          </label>
+
+          <label class="kkr-field">
+            <span>Related routes</span>
+            <textarea data-kkr-routes rows="2" placeholder="/sigil/booking"></textarea>
+          </label>
+
+          <div class="kkr-actions">
+            <button class="kkr-btn kkr-btn-primary" type="submit" data-kkr-save>Save</button>
+            <button class="kkr-btn" type="button" data-kkr-preview>Preview Reply</button>
+            <button class="kkr-btn kkr-btn-gold" type="button" data-kkr-publish>Publish</button>
+            <button class="kkr-btn kkr-btn-danger" type="button" data-kkr-archive>Archive</button>
+          </div>
+        </form>
+
+        <div class="kkr-preview" data-kkr-preview-box hidden>
+          <p class="kkr-label">Kenji Preview</p>
+          <div data-kkr-preview-text></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="kkr-toast" data-kkr-toast role="status" aria-live="polite"></div>
+  <script src="./kenji-knowledge-v14.js"></script>
+</section>

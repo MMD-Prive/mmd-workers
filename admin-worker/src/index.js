@@ -25,6 +25,7 @@
 // ==========================================================
 
 import { demoLinksCreate, demoLinksGet } from "./routes/demo-links.js";
+import { handleKenjiKnowledgeRequest } from "./kenji-knowledge.js";
 import {
   getAllowedModelSessionActions,
   normalizeModelSessionAction,
@@ -125,6 +126,9 @@ export default {
     const path = normalizePathname(url.pathname);
     const method = req.method.toUpperCase();
     const cors = corsHeaders(req, env);
+
+    const kenjiKnowledgeResponse = await handleKenjiKnowledgeRequest(req, env);
+    if (kenjiKnowledgeResponse) return kenjiKnowledgeResponse;
 
     if (method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors });
