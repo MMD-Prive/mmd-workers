@@ -50,8 +50,8 @@ bucket_name = "mmd-models"
 
 [[kv_namespaces]]
 binding = "KENJI_KNOWLEDGE_KV"
-id = "PUT_PRODUCTION_KV_ID_HERE"
-preview_id = "PUT_PREVIEW_KV_ID_HERE"
+id = "d5e1ba8a5f124e5fb8b8b8d3bc532d3d"
+preview_id = "65007e6d7d194085a0864d7ade111ffb"
 
 # ---- Secrets (set via wrangler secret) ----
 # ADMIN_BEARER

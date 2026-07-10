@@ -10,3 +10,11 @@ dist
 # Next.js build output
 .next/
 apps/**/.next/
+
+mmd-care-intake-worker/test.png
+
+mmd-care-intake-worker/test.png
+
+# Local smoke-test files
+/test.png
+**/test.png
