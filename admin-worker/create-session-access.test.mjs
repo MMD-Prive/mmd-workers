@@ -26,6 +26,8 @@ const tables = {
     member("recMemBlack000001", "client_black", "mem_black", "black@example.test"),
     member("recMemSvip0000001", "client_svip", "mem_svip", "svip@example.test"),
     member("recMemExpired0001", "client_expired", "mem_expired", "expired@example.test"),
+    member("recMemInactive01", "client_inactive", "mem_inactive", "inactive@example.test"),
+    member("recMemGuest00001", "client_guest", "mem_guest", "guest@example.test"),
   ],
   member_packages: [
     pkg("recPkgStandard001", "standard@example.test", "Standard", future),
@@ -34,6 +36,8 @@ const tables = {
     pkg("recPkgBlack00001", "black@example.test", "Black Card", future),
     pkg("recPkgSvip000001", "svip@example.test", "SVIP", future),
     pkg("recPkgExpired001", "expired@example.test", "Black Card", past),
+    pkg("recPkgInactive01", "inactive@example.test", "Black Card", future, "inactive"),
+    pkg("recPkgGuest0001", "guest@example.test", "Guest", future),
   ],
   models: [
     model("recStandardModel01", "Standard Straight", "standard", "straight"),
@@ -69,13 +73,13 @@ function member(id, clientId, memberId, email) {
   };
 }
 
-function pkg(id, email, packageCode, endDate) {
+function pkg(id, email, packageCode, endDate, status = "active") {
   return {
     id,
     fields: {
       member_email: email,
       package_code: packageCode,
-      status: "active",
+      status,
       end_date: endDate,
     },
   };
@@ -218,6 +222,12 @@ assert.deepEqual(gaySearch.items.map((item) => item.model_name), ["VIP Gay"]);
 
 const expiredSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=exclusive&client_id=client_expired&allowed_model_folders=exclusive&normalized_membership_tier=blackcard"));
 assert.deepEqual(expiredSearch.items, []);
+
+const inactiveSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=exclusive&client_id=client_inactive&allowed_model_folders=exclusive&normalized_membership_tier=blackcard"));
+assert.deepEqual(inactiveSearch.items, []);
+
+const guestSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=standard&client_id=client_guest&allowed_model_folders=standard&normalized_membership_tier=standard"));
+assert.deepEqual(guestSearch.items, []);
 
 await rejectsWithCode(
   searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=standard&client_id=client_missing")),
