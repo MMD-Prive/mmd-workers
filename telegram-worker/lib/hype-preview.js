@@ -271,6 +271,10 @@ function alreadyIssuedText(code) {
 
 function signupUrl(code, campaignId, env) {
   const base = str(env.HYPE_PREVIEW_SIGNUP_URL || "https://mmdbkk.com/trust/inme");
+  return withPreviewQuery(base, code, campaignId);
+}
+
+function withPreviewQuery(base, code, campaignId) {
   const url = new URL(base);
   url.searchParams.set("promo", code);
   url.searchParams.set("src", "telegram_preview");
@@ -278,12 +282,28 @@ function signupUrl(code, campaignId, env) {
   return url.toString();
 }
 
-function inlineButtons(code, campaignId, env) {
+function hallUrl(code, campaignId, env) {
+  return withPreviewQuery(str(env.HYPE_PREVIEW_HALL_URL || "https://mmdbkk.com/hall"), code, campaignId);
+}
+
+function bookingUrl(code, campaignId, env) {
+  return withPreviewQuery(str(env.HYPE_PREVIEW_BOOKING_URL || "https://mmdbkk.com/sigil/booking"), code, campaignId);
+}
+
+function benefitsUrl(code, campaignId, env) {
+  return withPreviewQuery(str(env.HYPE_PREVIEW_PACKAGES_URL || "https://mmdbkk.com/member/membership"), code, campaignId);
+}
+
+export function inlineButtons(code, campaignId, env) {
   return {
     inline_keyboard: [
-      [{ text: "สมัครสมาชิกใหม่", url: signupUrl(code, campaignId, env) }],
-      [{ text: "ดูแพ็กเกจ", url: str(env.HYPE_PREVIEW_PACKAGES_URL || "https://mmdbkk.com/member/membership") }],
-      [{ text: "กลับไป Preview Channel", url: str(env.HYPE_PREVIEW_CHANNEL_URL || "https://t.me/MMDPriveTH") }],
+      [
+        { text: "Preview Models", url: hallUrl(code, campaignId, env) },
+        { text: "Booking", url: bookingUrl(code, campaignId, env) },
+      ],
+      [{ text: "Apply for Membership", url: signupUrl(code, campaignId, env) }],
+      [{ text: "Our Benefits", url: benefitsUrl(code, campaignId, env) }],
+      [{ text: "Back to Preview Channel", url: str(env.HYPE_PREVIEW_CHANNEL_URL || "https://t.me/MMDPriveTH") }],
     ],
   };
 }
