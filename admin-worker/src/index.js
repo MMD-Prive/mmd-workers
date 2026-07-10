@@ -593,6 +593,22 @@ export default {
       }
 
       // ----------------------------------------------------
+      // Models search (create-session booking search)
+      // Entitlement-enforced + sanitized; /v1/admin/models/list
+      // stays the raw admin inventory endpoint.
+      // ----------------------------------------------------
+      if (method === "GET" && path === "/v1/admin/models/search") {
+        try {
+          return withCors(json(await searchCreateSessionModels(env, url)), cors);
+        } catch (e) {
+          if (e instanceof CreateSessionAccessError) {
+            return withCors(json({ ok: false, error: { code: e.code, message: e.message } }, e.status), cors);
+          }
+          return withCors(json({ ok: false, error: String(e?.message || e || "models_search_failed") }, 500), cors);
+        }
+      }
+
+      // ----------------------------------------------------
       // Models source resolver
       // ----------------------------------------------------
       if (method === "GET" && path === "/v1/admin/models/resolve-source") {
@@ -666,7 +682,11 @@ export default {
             cors
           );
         } catch (e) {
-          return withCors(json({ ok: false, error: String(e?.message || e || "job_create_failed") }, 500), cors);
+          if (e instanceof CreateSessionAccessError) {
+            return withCors(json({ ok: false, error: { code: e.code, message: e.message } }, e.status), cors);
+          }
+          const error = String(e?.message || e || "job_create_failed");
+          return withCors(json({ ok: false, error }, error.startsWith("private_") ? 403 : 500), cors);
         }
       }
 
@@ -3550,22 +3570,412 @@ export {
 };
 
 /* =========================
+   Create Session Private Access
+   Authoritative membership + model gate. Frontend membership fields
+   (private_access.*, client_lineage.tier / membership_status,
+   allowed_private_folders) are advisory UX data only and never grant access.
+========================= */
+const PRIVATE_ACCESS_FOLDERS = {
+  standard: ["standard"],
+  premium: ["standard", "premium"],
+  vip: ["standard", "premium", "vip"],
+  black_card: ["standard", "premium", "vip", "exclusive"],
+};
+const PRIVATE_ACCESS_TIER_RANK = { standard: 1, premium: 2, vip: 3, black_card: 4 };
+const CANONICAL_PRIVATE_FOLDERS = new Set(["standard", "premium", "vip", "exclusive"]);
+const PUBLIC_MODEL_FOLDERS = new Set(["travel", "extreme"]);
+const MODEL_BLOCKED_STATUS_TOKENS = new Set(["inactive", "blocked", "suspended", "archived", "disabled", "banned", "off", "retired"]);
+const MODEL_UNAVAILABLE_TOKENS = new Set(["unavailable", "not_available", "paused", "busy", "on_hold", "hold"]);
+
+class CreateSessionAccessError extends Error {
+  constructor(code, message, status = 403) {
+    super(message);
+    this.name = "CreateSessionAccessError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+function accessToken(value) {
+  return String(value == null ? "" : value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function membershipTierFromText(value) {
+  const token = accessToken(value);
+  if (!token) return "";
+  // legacy SVIP normalizes to Black Card access; check before the "vip" substring
+  if (token.includes("black") || token.includes("svip")) return "black_card";
+  if (token.includes("vip")) return "vip";
+  if (token.includes("premium")) return "premium";
+  if (token.includes("standard") || token.includes("lite")) return "standard";
+  return "";
+}
+
+function normalizeCustomerLane(value) {
+  const token = accessToken(value);
+  if (token === "gay") return "gay";
+  if (token === "straight") return "straight";
+  if (token === "both" || token === "bi" || token === "all") return "both";
+  return "";
+}
+
+function formulaText(value) {
+  return `"${String(value == null ? "" : value).replace(/"/g, '\\"')}"`;
+}
+
+async function airtableListByFormula(env, tableName, filterByFormula, limit = 50) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return [];
+  const params = new URLSearchParams();
+  params.set("pageSize", String(Math.max(1, Math.min(100, limit))));
+  if (filterByFormula) params.set("filterByFormula", filterByFormula);
+  const r = await airtableFetch(env, `/${encodeURIComponent(tableName)}?${params.toString()}`);
+  if (!r.ok) return [];
+  return (r.data?.records || []).map((rec) => ({ id: rec.id, fields: rec.fields || {}, createdTime: rec.createdTime }));
+}
+
+async function resolveAuthoritativeMemberAccess(env, ids = {}) {
+  const membersTable = env.AIRTABLE_TABLE_MEMBERS || "members";
+  const lookups = [
+    ["client_id", ids.client_id, false],
+    ["member_id", ids.member_id, false],
+    ["Member ID", ids.member_id, false],
+    ["memberstack_id", ids.memberstack_id, false],
+    ["line_record_id", ids.line_record_id, false],
+    ["line_record", ids.line_record_id, false],
+    ["line_user_id", ids.line_user_id, false],
+    ["line_id", ids.line_user_id, false],
+    ["email", ids.member_email, true],
+    ["Contact Email", ids.member_email, true],
+    ["telegram_username", ids.telegram_username, true],
+  ];
+
+  let member = null;
+  for (const [field, value, lower] of lookups) {
+    const raw = str(value);
+    if (!raw) continue;
+    const left = lower ? `LOWER({${field}})` : `{${field}}`;
+    member = await airtableFindOne(env, membersTable, `${left}=${formulaText(lower ? raw.toLowerCase() : raw)}`);
+    if (member) break;
+  }
+  if (!member) return { resolved: false, allowed_folders: [] };
+
+  const memberFields = member.fields || {};
+  const memberEmail = str(memberFields["Contact Email"] || memberFields.member_email || memberFields.email || ids.member_email).toLowerCase();
+
+  // member_packages ledger is the membership source of truth (mirrors auth-worker derivePackageAccess)
+  let best = null;
+  if (memberEmail) {
+    const ledgerTable = env.AIRTABLE_TABLE_MEMBER_PACKAGES || "member_packages";
+    const now = Date.now();
+    const records = await airtableListByFormula(env, ledgerTable, `LOWER({member_email})=${formulaText(memberEmail)}`, 20);
+    for (const record of records) {
+      const f = record.fields || {};
+      if (accessToken(f.status) !== "active") continue;
+      const endAt = Date.parse(str(f.end_date || f.end_at || f.expire_at || f.expires_at));
+      if (!endAt || endAt < now) continue;
+      const tier = membershipTierFromText(f.package_code || f.tier);
+      if (!tier) continue;
+      const rank = PRIVATE_ACCESS_TIER_RANK[tier] || 0;
+      if (!best || rank > best.rank || (rank === best.rank && endAt > best.endAt)) {
+        best = { tier, rank, endAt, package_code: str(f.package_code || f.tier), expire_at: str(f.end_date || f.end_at || f.expire_at || f.expires_at) };
+      }
+    }
+  }
+
+  if (!best) {
+    return {
+      resolved: true,
+      member_record_id: member.id,
+      member_id: str(memberFields.member_id || memberFields["Member ID"]),
+      member_email: memberEmail,
+      membership_status: memberEmail ? "no_active_membership" : "no_ledger_identity",
+      tier: "",
+      allowed_folders: [],
+    };
+  }
+
+  return {
+    resolved: true,
+    member_record_id: member.id,
+    member_id: str(memberFields.member_id || memberFields["Member ID"]),
+    member_email: memberEmail,
+    membership_status: "active",
+    tier: best.tier,
+    package_code: best.package_code,
+    expire_at: best.expire_at,
+    allowed_folders: PRIVATE_ACCESS_FOLDERS[best.tier].slice(),
+  };
+}
+
+function modelAccessProfile(fields = {}) {
+  const rawTags = []
+    .concat(Array.isArray(fields.legacy_tags) ? fields.legacy_tags : String(fields.legacy_tags || "").split(/[,\n]/))
+    .concat(Array.isArray(fields.tags) ? fields.tags : String(fields.tags || "").split(/[,\n]/));
+  const tags = new Set(rawTags.map(accessToken).filter(Boolean));
+
+  const visibilityToken = accessToken(fields.booking_visibility);
+  const salesLayer = accessToken(fields.sales_layer);
+  let bookingVisibility = "";
+  if (visibilityToken === "private" || salesLayer.includes("private")) bookingVisibility = "private";
+  else if (visibilityToken === "public" || salesLayer.includes("public")) bookingVisibility = "public";
+
+  let accessFolder = accessToken(fields.access_folder || fields.model_access_folder || fields.model_folder);
+  if (!CANONICAL_PRIVATE_FOLDERS.has(accessFolder)) {
+    accessFolder = "";
+    const tierSource = accessToken([fields.model_tier, fields.approved_client_visibility, fields.private_tier].filter(Boolean).join(" "));
+    if (tierSource.includes("exclusive") || tierSource.includes("black")) accessFolder = "exclusive";
+    else if (tierSource.includes("vip")) accessFolder = "vip";
+    else if (tierSource.includes("premium")) accessFolder = "premium";
+    else if (tierSource.includes("standard")) accessFolder = "standard";
+  }
+
+  const serviceSource = accessToken([fields.service_layer, fields.job_types, fields.private_tier].filter(Boolean).join(" "));
+  const publicFolders = [];
+  if (serviceSource.includes("travel") || tags.has("travel")) publicFolders.push("travel");
+  if (serviceSource.includes("extreme") || tags.has("extreme")) publicFolders.push("extreme");
+
+  const lane = normalizeCustomerLane(fields.customer_lane || fields.orientation_label || fields.orientation);
+  const statusActive = !MODEL_BLOCKED_STATUS_TOKENS.has(accessToken(fields.status));
+  const availabilityToken = accessToken(fields.availability_status);
+  const availableNow =
+    fields.available_now === true ||
+    ["yes", "true", "1", "available"].includes(accessToken(fields.available_now)) ||
+    ["available", "active", "bookable"].includes(availabilityToken);
+  const explicitlyUnavailable =
+    fields.available_now === false ||
+    accessToken(fields.available_now) === "no" ||
+    MODEL_UNAVAILABLE_TOKENS.has(availabilityToken);
+
+  // burn / mk / live / pn are operational compatibility flags, never membership access folders
+  const ops = {
+    burn: accessToken(fields.burn_ability) === "yes" || tags.has("burn"),
+    mk: accessToken(fields.mk_ability) === "yes" || tags.has("mk"),
+    live: accessToken(fields.live_ability) === "yes" || tags.has("live"),
+    pn_compatible: accessToken(fields.pn_ability) === "yes" || tags.has("pn"),
+  };
+
+  return { bookingVisibility, accessFolder, publicFolders, lane, statusActive, availableNow, explicitlyUnavailable, ops };
+}
+
+function sanitizeCreateSessionModel(record, profile) {
+  const fields = record.fields || {};
+  const folders = profile.bookingVisibility === "private"
+    ? (profile.accessFolder ? [profile.accessFolder] : [])
+    : profile.publicFolders.slice();
+  return {
+    model_id: record.id,
+    model_name: str(fields.working_name || fields.display_name || fields.model_name || fields.nickname || fields.name || fields.Name),
+    model_lookup_key: str(fields.model_lookup_key || fields.unique_key || fields.model_code),
+    telegram_username: str(fields.telegram_username),
+    telegram_status: str(fields.telegram_status) || (str(fields.telegram_username) ? "linked" : "missing"),
+    folders,
+    orientation: profile.lane,
+    status: !profile.statusActive ? "inactive" : profile.availableNow ? "available" : "active",
+    available: profile.availableNow && !profile.explicitlyUnavailable,
+    operational: { ...profile.ops },
+  };
+}
+
+async function resolveCreateSessionModel(env, { model_id = "", model_key = "" } = {}) {
+  const modelsTable = env.AIRTABLE_TABLE_MODELS || "models";
+  const id = str(model_id);
+  if (/^rec[A-Za-z0-9]{14,}$/.test(id)) {
+    const r = await airtableFetch(env, `/${encodeURIComponent(modelsTable)}/${id}`);
+    if (r.ok && r.data?.id) return { id: r.data.id, fields: r.data.fields || {} };
+  }
+  const key = str(model_key || id);
+  if (!key) return null;
+  for (const field of ["model_lookup_key", "unique_key", "model_code"]) {
+    const found = await airtableFindOne(env, modelsTable, `{${field}}=${formulaText(key)}`);
+    if (found) return found;
+  }
+  return null;
+}
+
+async function enforcePrivateCreateAccess(env, body = {}) {
+  const work = body?.work || {};
+  const model = body?.model || {};
+  const privateAccess = body?.private_access || {};
+  const telegramGate = body?.telegram_gate || {};
+  const lineage = body?.client_lineage || {};
+  const lineIdentity = body?.line_identity || {};
+
+  const selectedFolder = accessToken(privateAccess.selected_private_folder || work.model_folder || body.model_folder);
+  const selectedOrientation = normalizeCustomerLane(privateAccess.selected_orientation || model.selected_orientation || body.selected_orientation);
+  const customerTelegram = str(telegramGate.customer_telegram_status || body.customer_telegram_status);
+  const modelTelegram = str(telegramGate.model_telegram_status || body.model_telegram_status);
+  const telegramOk = ["linked", "verified"].includes(customerTelegram) && ["linked", "verified"].includes(modelTelegram);
+
+  // Membership comes from the backend ledger; frontend tier/status fields never grant access.
+  const memberAccess = await resolveAuthoritativeMemberAccess(env, {
+    member_id: str(body.member_id || lineage.member_id),
+    client_id: str(body.client_id || lineage.client_id),
+    memberstack_id: str(body.memberstack_id || lineage.memberstack_id),
+    line_record_id: str(lineIdentity.line_record_id || body.line_record_id),
+    line_user_id: str(lineIdentity.line_user_id || body.line_user_id),
+    member_email: str(lineage.member_email || body.member_email || lineage.email),
+    telegram_username: str(telegramGate.customer_telegram_username || lineage.customer_telegram_username),
+  });
+  if (!memberAccess.resolved) {
+    throw new CreateSessionAccessError("AUTHORITATIVE_MEMBER_NOT_FOUND", "The client membership record could not be resolved.", 404);
+  }
+  const allowedFolders = memberAccess.allowed_folders;
+  if (!allowedFolders.length) throw new CreateSessionAccessError("private_eligibility_blocked", "Client membership is not active for private work.");
+  if (!CANONICAL_PRIVATE_FOLDERS.has(selectedFolder)) throw new CreateSessionAccessError("private_folder_invalid", "Selected private folder is not a canonical membership access folder.");
+  if (!allowedFolders.includes(selectedFolder)) throw new CreateSessionAccessError("private_folder_not_allowed", "Selected private folder is above the client's membership access.");
+  if (selectedOrientation !== "straight" && selectedOrientation !== "gay") throw new CreateSessionAccessError("private_orientation_required", "Private work requires a straight or gay customer lane.");
+  if (!telegramOk) throw new CreateSessionAccessError("private_telegram_gate_required", "Customer and model Telegram must be linked or verified for private work.");
+
+  // Never trust browser-submitted model metadata; re-resolve the model record.
+  const modelRecord = await resolveCreateSessionModel(env, {
+    model_id: str(model.model_id || body.model_id),
+    model_key: str(model.model_lookup_key || body.model_lookup_key || body.model_key),
+  });
+  if (!modelRecord) throw new CreateSessionAccessError("private_model_not_found", "The selected model could not be resolved.", 404);
+  const profile = modelAccessProfile(modelRecord.fields || {});
+  if (profile.bookingVisibility !== "private") throw new CreateSessionAccessError("private_model_not_private", "The selected model is not a private-work model.");
+  if (!CANONICAL_PRIVATE_FOLDERS.has(profile.accessFolder)) throw new CreateSessionAccessError("private_model_folder_invalid", "The selected model has no canonical private access folder.");
+  if (profile.accessFolder !== selectedFolder) throw new CreateSessionAccessError("private_model_folder_denied", "The selected model is outside the selected access folder.");
+  if (!allowedFolders.includes(profile.accessFolder)) throw new CreateSessionAccessError("private_model_folder_denied", "The selected model is above the client's membership access.");
+  if (profile.lane !== selectedOrientation && profile.lane !== "both") throw new CreateSessionAccessError("private_model_lane_mismatch", "The selected model does not serve the selected customer lane.");
+  if (!profile.statusActive) throw new CreateSessionAccessError("private_model_inactive", "The selected model is not active.");
+  if (profile.explicitlyUnavailable) throw new CreateSessionAccessError("private_model_unavailable", "The selected model is not currently bookable.");
+
+  return { memberAccess, modelRecord, profile, selectedFolder, selectedOrientation };
+}
+
+async function searchCreateSessionModels(env, url) {
+  const q = str(url.searchParams.get("q") || url.searchParams.get("search") || "");
+  const limit = clampInt(url.searchParams.get("limit"), 1, 100, 50);
+  const workType = accessToken(url.searchParams.get("work_type"));
+  const visibilityParam = accessToken(url.searchParams.get("booking_visibility"));
+  const bookingVisibility = visibilityParam === "private" || (!visibilityParam && workType === "private") ? "private" : "public";
+  const lane = normalizeCustomerLane(url.searchParams.get("customer_lane") || url.searchParams.get("orientation"));
+  const selectedFolder = accessToken(url.searchParams.get("selected_access_folder") || url.searchParams.get("folder"));
+  const flag = (name) => ["1", "true", "yes"].includes(accessToken(url.searchParams.get(name)));
+  const availableOnly = flag("available_only");
+  const wantBurn = flag("burn");
+  const wantMk = flag("mk");
+  const wantLive = flag("live");
+
+  let allowedFolders = null;
+  let memberSummary = null;
+  if (bookingVisibility === "private") {
+    const ids = {
+      member_id: str(url.searchParams.get("member_id")),
+      client_id: str(url.searchParams.get("client_id")),
+      memberstack_id: str(url.searchParams.get("memberstack_id")),
+      line_record_id: str(url.searchParams.get("line_record_id")),
+      line_user_id: str(url.searchParams.get("line_user_id")),
+      member_email: str(url.searchParams.get("member_email")),
+      telegram_username: str(url.searchParams.get("customer_telegram_username")),
+    };
+    if (!Object.values(ids).some(Boolean)) {
+      throw new CreateSessionAccessError("AUTHORITATIVE_MEMBER_NOT_FOUND", "The client membership record could not be resolved.", 404);
+    }
+    const memberAccess = await resolveAuthoritativeMemberAccess(env, ids);
+    if (!memberAccess.resolved) {
+      throw new CreateSessionAccessError("AUTHORITATIVE_MEMBER_NOT_FOUND", "The client membership record could not be resolved.", 404);
+    }
+    allowedFolders = memberAccess.allowed_folders;
+    memberSummary = {
+      eligibility_checked: true,
+      eligibility_result: allowedFolders.length ? "allowed" : "blocked",
+      private_access_level: memberAccess.tier || "blocked",
+      allowed_private_folders: allowedFolders.slice(),
+    };
+    if (!allowedFolders.length) {
+      // blocked or unknown-entitlement members receive no protected model names
+      return { ok: true, layer: "core", booking_visibility: bookingVisibility, folder: selectedFolder, customer_lane: lane, items: [], private_access: memberSummary };
+    }
+    if (!CANONICAL_PRIVATE_FOLDERS.has(selectedFolder)) throw new CreateSessionAccessError("private_folder_invalid", "Selected private folder is not a canonical membership access folder.");
+    if (!allowedFolders.includes(selectedFolder)) throw new CreateSessionAccessError("private_folder_not_allowed", "Selected private folder is above the client's membership access.");
+    if (lane !== "straight" && lane !== "gay") throw new CreateSessionAccessError("private_orientation_required", "Private model search requires a straight or gay customer lane.");
+  } else if (selectedFolder && !PUBLIC_MODEL_FOLDERS.has(selectedFolder)) {
+    throw new CreateSessionAccessError("public_folder_invalid", "Public work uses the travel or extreme folder.", 400);
+  }
+
+  const modelsTable = env.AIRTABLE_TABLE_MODELS || "models";
+  const records = await airtableList(env, modelsTable, {
+    q,
+    limit: 100,
+    matchFields: getModelSearchFields(env),
+    fallbackMatchFields: MODEL_SAFE_SEARCH_FIELDS,
+  });
+
+  const items = [];
+  for (const record of records) {
+    const profile = modelAccessProfile(record.fields || {});
+    if (!profile.statusActive) continue;
+    if (availableOnly && (!profile.availableNow || profile.explicitlyUnavailable)) continue;
+    if (wantBurn && !profile.ops.burn) continue;
+    if (wantMk && !profile.ops.mk) continue;
+    if (wantLive && !profile.ops.live) continue;
+    if (bookingVisibility === "private") {
+      if (profile.bookingVisibility !== "private") continue;
+      if (!CANONICAL_PRIVATE_FOLDERS.has(profile.accessFolder)) continue;
+      if (profile.accessFolder !== selectedFolder) continue;
+      if (!allowedFolders.includes(profile.accessFolder)) continue;
+      if (profile.lane !== lane && profile.lane !== "both") continue;
+    } else {
+      if (profile.bookingVisibility === "private") continue;
+      if (selectedFolder && !profile.publicFolders.includes(selectedFolder)) continue;
+      if (lane && profile.lane && profile.lane !== lane && profile.lane !== "both") continue;
+    }
+    items.push(sanitizeCreateSessionModel(record, profile));
+    if (items.length >= limit) break;
+  }
+
+  const out = { ok: true, layer: "core", booking_visibility: bookingVisibility, folder: selectedFolder, customer_lane: lane, items };
+  if (memberSummary) out.private_access = memberSummary;
+  return out;
+}
+
+export {
+  CreateSessionAccessError,
+  PRIVATE_ACCESS_FOLDERS,
+  membershipTierFromText,
+  normalizeCustomerLane,
+  modelAccessProfile,
+  sanitizeCreateSessionModel,
+  resolveAuthoritativeMemberAccess,
+  resolveCreateSessionModel,
+  enforcePrivateCreateAccess,
+  searchCreateSessionModels,
+};
+
+/* =========================
    Job create
 ========================= */
 async function createAdminJob(env, body) {
-  const client_name = strReq(body.client_name, "client_name");
-  const model_name = strReq(body.model_name, "model_name");
-  const job_type = strReq(body.job_type, "job_type");
-  const job_date = strReq(body.job_date, "job_date");
-  const start_time = strReq(body.start_time, "start_time");
-  const end_time = strReq(body.end_time, "end_time");
-  const location_name = strReq(body.location_name, "location_name");
+  const work = body?.work || {};
+  const model = body?.model || {};
+  const jobDetails = body?.job_details || {};
+  const payment = body?.payment || {};
+  const notes = body?.notes || {};
+  const privateAccess = body?.private_access || {};
+  const telegramGate = body?.telegram_gate || {};
+  const jobVisibility = str(work.job_visibility || body.job_visibility || body.booking_visibility || "");
 
-  const google_map_url = str(body.google_map_url || "");
-  const note = str(body.note || body.notes || "");
-  const payment_type = str(body.payment_type || "full");
-  const payment_method = str(body.payment_method || "promptpay");
-  const amount_thb = numReq(body.amount_thb, "amount_thb");
+  if (jobVisibility === "private") {
+    // Authoritative gate: resolves the member from the backend ledger and the
+    // model from Airtable. Browser-supplied membership/model fields never grant access.
+    await enforcePrivateCreateAccess(env, body);
+  }
+
+  const client_name = strReq(body.client_name || body.client_lineage?.client_name, "client_name");
+  const model_name = strReq(body.model_name || model.model_name, "model_name");
+  const job_type = strReq(body.job_type || work.job_lane || work.work_type, "job_type");
+  const job_date = strReq(body.job_date || jobDetails.job_date, "job_date");
+  const start_time = strReq(body.start_time || jobDetails.start_time, "start_time");
+  const end_time = strReq(body.end_time || jobDetails.end_time, "end_time");
+  const location_name = strReq(body.location_name || jobDetails.location_name, "location_name");
+
+  const google_map_url = str(body.google_map_url || jobDetails.google_map_url || "");
+  const note = str(body.note || notes.operation_note || notes.handling_note || body.notes || "");
+  const payment_type = str(body.payment_type || payment.payment_type || "full");
+  const payment_method = str(body.payment_method || payment.payment_method || "promptpay");
+  const amount_thb = numReq(body.amount_thb || payment.amount_thb, "amount_thb");
 
   const webBase = str(env.WEB_BASE_URL || "https://mmdbkk.com").replace(/\/+$/, "");
   const confirm_page = absoluteUrl(body.confirm_page || "/confirm/job-confirmation", webBase);
