@@ -1,0 +1,304 @@
+<!-- MMD PRIVÉ — KENJI MEMBER APPLICATION GATE -->
+<section
+  id="mmd-member-application"
+  class="mmd-member-application"
+  data-api-base="https://sigil.mmdbkk.com"
+  data-submit-path="/v1/member/applications"
+  data-dashboard-url="/member/dashboard"
+  data-membership-url="/member/membership"
+  data-help-url="https://t.me/mmdapply"
+  aria-label="MMD Privé Member Application"
+>
+  <div class="mmd-member-application__bg" aria-hidden="true">
+    <span class="mmd-member-application__glow mmd-member-application__glow--gold"></span>
+    <span class="mmd-member-application__glow mmd-member-application__glow--violet"></span>
+    <span class="mmd-member-application__grid"></span>
+  </div>
+
+  <header class="mmd-member-application__header">
+    <a href="/" class="mmd-member-application__brand" aria-label="MMD Privé Home">
+      <span class="mmd-member-application__brand-mark">MMD</span>
+      <span>
+        <b>PRIVÉ</b>
+        <small>MEMBER APPLICATION GATE</small>
+      </span>
+    </a>
+
+    <div class="mmd-member-application__header-status">
+      <span class="mmd-member-application__status-dot"></span>
+      <span>PRIVATE ACCESS</span>
+    </div>
+  </header>
+
+  <main class="mmd-member-application__main">
+    <section class="mmd-member-application__hero">
+      <div class="mmd-member-application__hero-copy">
+        <span class="mmd-member-application__eyebrow">KENJI / MEMBER CONTINUITY</span>
+        <h1>เริ่มต้นให้ถูกทาง<br><em>แล้วผมจะพาไปต่อเอง</em></h1>
+        <p>
+          หน้านี้คือ Member Application Gate สำหรับผู้ที่ต้องการสมัครสมาชิก
+          ต่อเส้นทางจากโค้ดเชิญ หรือกลับเข้ามาดำเนินการต่ออย่างเป็นส่วนตัว
+        </p>
+
+        <div class="mmd-member-application__kenji-line">
+          <span>K</span>
+          <p>“ตอบเท่าที่จำเป็นครับ ระบบจะบันทึกร่างไว้ในอุปกรณ์ของคุณโดยอัตโนมัติ”</p>
+        </div>
+      </div>
+
+      <aside class="mmd-member-application__summary-card">
+        <span class="mmd-member-application__summary-label">APPLICATION GATE</span>
+        <strong>5 STEPS</strong>
+        <p>Profile · Contact · Intent · Preferences · Review</p>
+        <div class="mmd-member-application__query-badges" id="mmdApplicationQueryBadges"></div>
+      </aside>
+    </section>
+
+    <section class="mmd-member-application__wizard-shell">
+      <aside class="mmd-member-application__steps" aria-label="Application steps">
+        <button type="button" class="is-active" data-step-jump="0"><span>01</span><b>Profile</b></button>
+        <button type="button" data-step-jump="1"><span>02</span><b>Contact</b></button>
+        <button type="button" data-step-jump="2"><span>03</span><b>Intent</b></button>
+        <button type="button" data-step-jump="3"><span>04</span><b>Preferences</b></button>
+        <button type="button" data-step-jump="4"><span>05</span><b>Review</b></button>
+      </aside>
+
+      <form id="mmdMemberApplicationForm" class="mmd-member-application__form" novalidate>
+        <input type="hidden" name="t" id="mmdApplicationToken">
+        <input type="hidden" name="code" id="mmdApplicationCode">
+        <input type="hidden" name="promo" id="mmdApplicationPromo">
+        <input type="hidden" name="source" value="member_apply">
+        <input type="hidden" name="route" value="/member/apply">
+
+        <div class="mmd-member-application__progress">
+          <div><span id="mmdApplicationProgressBar"></span></div>
+          <small>
+            <b id="mmdApplicationProgressLabel">ขั้นตอน 1 จาก 5</b>
+            <span id="mmdApplicationDraftState">Draft ready</span>
+          </small>
+        </div>
+
+        <section class="mmd-member-application__panel is-active" data-panel="0">
+          <div class="mmd-member-application__panel-head">
+            <span>STEP 01</span>
+            <h2>ข้อมูลพื้นฐาน</h2>
+            <p>ใช้ข้อมูลที่คุณสามารถยืนยันได้จริง</p>
+          </div>
+
+          <div class="mmd-member-application__fields">
+            <label>
+              <span>ชื่อที่ต้องการให้เรียก *</span>
+              <input type="text" name="preferred_name" maxlength="80" required autocomplete="name" placeholder="เช่น Per">
+              <small class="mmd-member-application__error"></small>
+            </label>
+
+            <label>
+              <span>ชื่อจริงและนามสกุล *</span>
+              <input type="text" name="full_name" maxlength="140" required autocomplete="name" placeholder="ชื่อสำหรับยืนยันตัวตน">
+              <small class="mmd-member-application__error"></small>
+            </label>
+
+            <div class="mmd-member-application__field-row">
+              <label>
+                <span>วันเกิด *</span>
+                <input type="date" name="birth_date" required>
+                <small class="mmd-member-application__error"></small>
+              </label>
+
+              <label>
+                <span>สัญชาติ *</span>
+                <input type="text" name="nationality" maxlength="80" required placeholder="Thai">
+                <small class="mmd-member-application__error"></small>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section class="mmd-member-application__panel" data-panel="1">
+          <div class="mmd-member-application__panel-head">
+            <span>STEP 02</span>
+            <h2>เลือกช่องทางติดต่อ</h2>
+            <p>เลือกช่องทางหลัก 1 ช่องทาง และกรอกข้อมูลให้ตรงกัน</p>
+          </div>
+
+          <fieldset class="mmd-member-application__contact-choice">
+            <legend>ช่องทางหลัก *</legend>
+            <label>
+              <input type="radio" name="primary_channel" value="line" required>
+              <span><b>LINE</b><small>เหมาะกับการติดต่อในไทย</small></span>
+            </label>
+            <label>
+              <input type="radio" name="primary_channel" value="telegram" required>
+              <span><b>Telegram</b><small>เหมาะกับการติดต่อแบบ private</small></span>
+            </label>
+            <label>
+              <input type="radio" name="primary_channel" value="email" required>
+              <span><b>Email</b><small>เหมาะกับข้อมูลทางการ</small></span>
+            </label>
+            <small class="mmd-member-application__error" data-group-error="primary_channel"></small>
+          </fieldset>
+
+          <div class="mmd-member-application__fields">
+            <label data-channel-field="line" hidden>
+              <span>LINE ID หรือชื่อที่แสดง *</span>
+              <input type="text" name="line_contact" maxlength="100" placeholder="LINE ID / Display name">
+              <small class="mmd-member-application__error"></small>
+            </label>
+
+            <label data-channel-field="telegram" hidden>
+              <span>Telegram Username *</span>
+              <input type="text" name="telegram_username" maxlength="100" placeholder="@username">
+              <small class="mmd-member-application__error"></small>
+            </label>
+
+            <label data-channel-field="email" hidden>
+              <span>Email *</span>
+              <input type="email" name="email" maxlength="160" autocomplete="email" placeholder="name@email.com">
+              <small class="mmd-member-application__error"></small>
+            </label>
+
+            <label>
+              <span>เบอร์โทรศัพท์ *</span>
+              <input type="tel" name="phone" maxlength="30" required autocomplete="tel" placeholder="08x xxx xxxx">
+              <small class="mmd-member-application__error"></small>
+            </label>
+          </div>
+        </section>
+
+        <section class="mmd-member-application__panel" data-panel="2">
+          <div class="mmd-member-application__panel-head">
+            <span>STEP 03</span>
+            <h2>จุดประสงค์ของการสมัคร</h2>
+            <p>ช่วยให้ Kenji ส่งคุณไปยัง Membership route ที่เหมาะสม</p>
+          </div>
+
+          <div class="mmd-member-application__option-cards">
+            <label>
+              <input type="radio" name="application_intent" value="new_membership" required>
+              <span><b>สมัครสมาชิกใหม่</b><small>เริ่มต้นเลือกแพ็กเกจและสิทธิ์การเข้าถึง</small></span>
+            </label>
+            <label>
+              <input type="radio" name="application_intent" value="renew_membership" required>
+              <span><b>ต่ออายุสมาชิก</b><small>กลับเข้ามาตรวจสถานะและดำเนินการต่ออายุ</small></span>
+            </label>
+            <label>
+              <input type="radio" name="application_intent" value="upgrade_membership" required>
+              <span><b>อัปเกรดสมาชิก</b><small>พิจารณาระดับการเข้าถึงที่สูงขึ้น</small></span>
+            </label>
+            <label>
+              <input type="radio" name="application_intent" value="continue_application" required>
+              <span><b>ดำเนินการต่อ</b><small>มี token, code หรือ promotion อยู่แล้ว</small></span>
+            </label>
+          </div>
+          <small class="mmd-member-application__error" data-group-error="application_intent"></small>
+
+          <label class="mmd-member-application__textarea">
+            <span>มีอะไรที่ควรให้ MMD ทราบก่อนหรือไม่</span>
+            <textarea name="notes" rows="5" maxlength="1200" placeholder="ไม่จำเป็นต้องตอบ หากยังไม่มีข้อมูลเพิ่มเติม"></textarea>
+            <small><span data-count-for="notes">0</span>/1200</small>
+          </label>
+        </section>
+
+        <section class="mmd-member-application__panel" data-panel="3">
+          <div class="mmd-member-application__panel-head">
+            <span>STEP 04</span>
+            <h2>ความต้องการเบื้องต้น</h2>
+            <p>ยังไม่ใช่การจองจริง ใช้เพื่อช่วยจัด route เท่านั้น</p>
+          </div>
+
+          <fieldset class="mmd-member-application__chip-group">
+            <legend>ภาษาที่สะดวก *</legend>
+            <label><input type="checkbox" name="languages" value="th"><span>ไทย</span></label>
+            <label><input type="checkbox" name="languages" value="en"><span>English</span></label>
+            <label><input type="checkbox" name="languages" value="zh"><span>中文</span></label>
+            <label><input type="checkbox" name="languages" value="jp"><span>日本語</span></label>
+            <small class="mmd-member-application__error" data-group-error="languages"></small>
+          </fieldset>
+
+          <fieldset class="mmd-member-application__chip-group">
+            <legend>สิ่งที่สนใจ *</legend>
+            <label><input type="checkbox" name="interests" value="membership"><span>Membership</span></label>
+            <label><input type="checkbox" name="interests" value="private_models"><span>Private Models</span></label>
+            <label><input type="checkbox" name="interests" value="public_work"><span>Public Work</span></label>
+            <label><input type="checkbox" name="interests" value="travel"><span>Travel Experience</span></label>
+            <label><input type="checkbox" name="interests" value="black_card"><span>Black Card</span></label>
+            <small class="mmd-member-application__error" data-group-error="interests"></small>
+          </fieldset>
+
+          <label class="mmd-member-application__textarea">
+            <span>สไตล์การดูแลที่คุณสบายใจ</span>
+            <textarea name="care_preference" rows="4" maxlength="900" placeholder="เช่น ต้องการคำแนะนำชัดเจน ต้องการความเป็นส่วนตัวสูง หรือยังไม่แน่ใจ"></textarea>
+            <small><span data-count-for="care_preference">0</span>/900</small>
+          </label>
+        </section>
+
+        <section class="mmd-member-application__panel" data-panel="4">
+          <div class="mmd-member-application__panel-head">
+            <span>STEP 05</span>
+            <h2>ตรวจสอบก่อนส่ง</h2>
+            <p>ข้อมูลจะถูกส่งไปยัง Worker เมื่อคุณกดยืนยัน</p>
+          </div>
+
+          <div id="mmdApplicationReview" class="mmd-member-application__review"></div>
+
+          <div class="mmd-member-application__consents">
+            <label>
+              <input type="checkbox" name="consent_accuracy" required>
+              <span>ฉันยืนยันว่าข้อมูลที่ให้เป็นความจริง</span>
+            </label>
+            <label>
+              <input type="checkbox" name="consent_privacy" required>
+              <span>ฉันยินยอมให้ MMD ใช้ข้อมูลนี้เพื่อการตรวจสอบและติดต่อกลับ</span>
+            </label>
+          </div>
+
+          <div class="mmd-member-application__final-note">
+            <span>KENJI / FINAL CHECK</span>
+            <p>การส่งใบสมัครยังไม่ใช่การอนุมัติสมาชิก ระบบจะตรวจสอบก่อนพาคุณไปยังหน้าถัดไปครับ</p>
+          </div>
+        </section>
+
+        <div class="mmd-member-application__actions">
+          <button type="button" id="mmdApplicationBack" class="mmd-member-application__btn mmd-member-application__btn--ghost" hidden>
+            ย้อนกลับ
+          </button>
+          <button type="button" id="mmdApplicationNext" class="mmd-member-application__btn mmd-member-application__btn--primary">
+            ดำเนินการต่อ
+          </button>
+          <button type="submit" id="mmdApplicationSubmit" class="mmd-member-application__btn mmd-member-application__btn--primary" hidden>
+            ส่งใบสมัคร
+          </button>
+        </div>
+
+        <div id="mmdApplicationState" class="mmd-member-application__state" role="status" aria-live="polite"></div>
+      </form>
+    </section>
+  </main>
+
+  <footer class="mmd-member-application__footer">
+    <a id="mmdApplicationMembershipLink" href="/member/membership">Membership Page</a>
+    <a id="mmdApplicationDashboardLink" href="/member/dashboard">Member Dashboard</a>
+    <a id="mmdApplicationHelpLink" href="https://t.me/mmdapply" target="_blank" rel="noopener">Need help?</a>
+  </footer>
+
+  <div id="mmdApplicationSuccess" class="mmd-member-application__modal" hidden>
+    <div class="mmd-member-application__modal-card" role="dialog" aria-modal="true">
+      <span class="mmd-member-application__modal-icon">✓</span>
+      <p class="mmd-member-application__eyebrow">APPLICATION RECEIVED</p>
+      <h2>ระบบรับข้อมูลแล้ว</h2>
+      <p>เก็บหมายเลขอ้างอิงนี้ไว้สำหรับติดตามสถานะ</p>
+      <div class="mmd-member-application__reference">
+        <small>APPLICATION REFERENCE</small>
+        <strong id="mmdApplicationReference">MMD-APP</strong>
+      </div>
+      <div class="mmd-member-application__modal-actions">
+        <button type="button" id="mmdApplicationGoMembership" class="mmd-member-application__btn mmd-member-application__btn--primary">
+          ไป Membership Page
+        </button>
+        <button type="button" id="mmdApplicationGoDashboard" class="mmd-member-application__btn mmd-member-application__btn--ghost">
+          ไป Member Dashboard
+        </button>
+      </div>
+    </div>
+  </div>
+</section>

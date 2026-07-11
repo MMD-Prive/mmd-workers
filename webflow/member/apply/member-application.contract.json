@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sigil.mmdbkk.com/schema/member-application.contract.json",
+  "title": "MMD Member Application Request",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "preferred_name",
+    "full_name",
+    "birth_date",
+    "nationality",
+    "primary_channel",
+    "phone",
+    "application_intent",
+    "languages",
+    "interests",
+    "consent_accuracy",
+    "consent_privacy",
+    "source",
+    "route",
+    "submitted_at"
+  ],
+  "properties": {
+    "t": { "type": "string", "maxLength": 2048 },
+    "code": { "type": "string", "maxLength": 160 },
+    "promo": { "type": "string", "maxLength": 160 },
+    "preferred_name": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "full_name": { "type": "string", "minLength": 1, "maxLength": 140 },
+    "birth_date": { "type": "string", "format": "date" },
+    "nationality": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "primary_channel": { "type": "string", "enum": ["line", "telegram", "email"] },
+    "line_contact": { "type": "string", "maxLength": 100 },
+    "telegram_username": { "type": "string", "maxLength": 100 },
+    "email": { "type": "string", "format": "email", "maxLength": 160 },
+    "phone": { "type": "string", "minLength": 1, "maxLength": 30 },
+    "application_intent": {
+      "type": "string",
+      "enum": ["new_membership", "renew_membership", "upgrade_membership", "continue_application"]
+    },
+    "notes": { "type": "string", "maxLength": 1200 },
+    "languages": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "enum": ["th", "en", "zh", "jp"] }
+    },
+    "interests": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": ["membership", "private_models", "public_work", "travel", "black_card"]
+      }
+    },
+    "care_preference": { "type": "string", "maxLength": 900 },
+    "consent_accuracy": { "const": true },
+    "consent_privacy": { "const": true },
+    "source": { "const": "member_apply" },
+    "route": { "const": "/member/apply" },
+    "page_url": { "type": "string", "format": "uri", "maxLength": 4096 },
+    "submitted_at": { "type": "string", "format": "date-time" },
+    "client_version": { "type": "string", "maxLength": 80 },
+    "timezone": { "type": "string", "maxLength": 100 },
+    "locale": { "type": "string", "maxLength": 40 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "primary_channel": { "const": "line" } } },
+      "then": { "required": ["line_contact"] }
+    },
+    {
+      "if": { "properties": { "primary_channel": { "const": "telegram" } } },
+      "then": { "required": ["telegram_username"] }
+    },
+    {
+      "if": { "properties": { "primary_channel": { "const": "email" } } },
+      "then": { "required": ["email"] }
+    }
+  ]
+}
