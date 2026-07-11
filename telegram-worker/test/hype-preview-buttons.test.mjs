@@ -46,25 +46,32 @@ describe("HYPE preview inline buttons", () => {
     assertPreviewParams(byLabel(markup, "Apply for Membership").url);
     assertPreviewParams(byLabel(markup, "Our Benefits").url);
 
-    assert.equal(new URL(byLabel(markup, "Preview Models").url).pathname, "/hall");
+    assert.equal(new URL(byLabel(markup, "Preview Models").url).pathname, "/profiles");
     assert.equal(new URL(byLabel(markup, "Booking").url).pathname, "/sigil/booking");
-    assert.equal(new URL(byLabel(markup, "Apply for Membership").url).pathname, "/trust/inme");
+    assert.equal(new URL(byLabel(markup, "Apply for Membership").url).pathname, "/member/apply");
     assert.equal(new URL(byLabel(markup, "Our Benefits").url).pathname, "/member/membership");
     assert.equal(byLabel(markup, "Back to Preview Channel").url, "https://t.me/MMDPriveTH");
+
+    for (const button of flatButtons(markup)) {
+      assert.doesNotMatch(button.url, /\/hall(?:[/?#]|$)/);
+      assert.doesNotMatch(button.url, /\/membership\/benefits(?:[/?#]|$)/);
+      assert.doesNotMatch(button.url, /line|liff/i);
+    }
+    assert.doesNotMatch(byLabel(markup, "Our Benefits").url, /\/pay\/membership(?:[/?#]|$)/);
   });
 
   it("honors safe URL env overrides without using legacy benefits URL", () => {
     const markup = inlineButtons(CODE, CAMPAIGN, {
-      HYPE_PREVIEW_HALL_URL: "https://example.com/custom-hall",
+      HYPE_PREVIEW_PROFILES_URL: "https://example.com/custom-profiles",
       HYPE_PREVIEW_BOOKING_URL: "https://example.com/custom-booking",
-      HYPE_PREVIEW_SIGNUP_URL: "https://example.com/custom-signup",
+      HYPE_PREVIEW_APPLY_URL: "https://example.com/custom-apply",
       HYPE_PREVIEW_PACKAGES_URL: "https://example.com/member/membership",
       HYPE_PREVIEW_CHANNEL_URL: "https://t.me/customPreview",
     });
 
-    assert.equal(new URL(byLabel(markup, "Preview Models").url).pathname, "/custom-hall");
+    assert.equal(new URL(byLabel(markup, "Preview Models").url).pathname, "/custom-profiles");
     assert.equal(new URL(byLabel(markup, "Booking").url).pathname, "/custom-booking");
-    assert.equal(new URL(byLabel(markup, "Apply for Membership").url).pathname, "/custom-signup");
+    assert.equal(new URL(byLabel(markup, "Apply for Membership").url).pathname, "/custom-apply");
     assert.equal(new URL(byLabel(markup, "Our Benefits").url).pathname, "/member/membership");
     assert.doesNotMatch(byLabel(markup, "Our Benefits").url, /\/membership\/benefits/);
     assert.equal(byLabel(markup, "Back to Preview Channel").url, "https://t.me/customPreview");
