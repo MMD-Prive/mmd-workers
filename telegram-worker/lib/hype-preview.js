@@ -274,6 +274,11 @@ function signupUrl(code, campaignId, env) {
   return withPreviewQuery(base, code, campaignId);
 }
 
+function applyMembershipUrl(code, campaignId, env) {
+  const base = str(env.HYPE_PREVIEW_APPLY_URL || "https://mmdbkk.com/member/apply");
+  return withPreviewQuery(base, code, campaignId);
+}
+
 function withPreviewQuery(base, code, campaignId) {
   const url = new URL(base);
   url.searchParams.set("promo", code);
@@ -283,7 +288,7 @@ function withPreviewQuery(base, code, campaignId) {
 }
 
 function hallUrl(code, campaignId, env) {
-  return withPreviewQuery(str(env.HYPE_PREVIEW_HALL_URL || "https://mmdbkk.com/hall"), code, campaignId);
+  return withPreviewQuery(str(env.HYPE_PREVIEW_PROFILES_URL || "https://mmdbkk.com/profiles"), code, campaignId);
 }
 
 function bookingUrl(code, campaignId, env) {
@@ -301,7 +306,7 @@ export function inlineButtons(code, campaignId, env) {
         { text: "Preview Models", url: hallUrl(code, campaignId, env) },
         { text: "Booking", url: bookingUrl(code, campaignId, env) },
       ],
-      [{ text: "Apply for Membership", url: signupUrl(code, campaignId, env) }],
+      [{ text: "Apply for Membership", url: applyMembershipUrl(code, campaignId, env) }],
       [{ text: "Our Benefits", url: benefitsUrl(code, campaignId, env) }],
       [{ text: "Back to Preview Channel", url: str(env.HYPE_PREVIEW_CHANNEL_URL || "https://t.me/MMDPriveTH") }],
     ],
