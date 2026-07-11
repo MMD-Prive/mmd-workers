@@ -221,7 +221,7 @@ test("allowlisted Kenji knowledge reply uses published safe answer", async () =>
   };
 
   try {
-    const response = await worker.fetch(await signedLineRequest({ events: [lineTextEvent("Kenji AI ส่งสลิปแล้วต้องรอไหม")] }), {
+    const response = await worker.fetch(await signedLineRequest({ events: [lineTextEvent("Hi MMD ส่งสลิปแล้วต้องรอไหม")] }), {
       ...BASE_ENV,
       LINE_KENJI_KNOWLEDGE_ENABLED: "true",
       LINE_KENJI_KNOWLEDGE_ALLOWLIST: LINE_USER_ID,

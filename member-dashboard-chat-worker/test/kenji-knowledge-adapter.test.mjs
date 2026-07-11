@@ -42,6 +42,64 @@ function publishedCard(overrides = {}) {
   };
 }
 
+function knowledgeCards() {
+  return [
+    publishedCard({
+      id: "card-payment",
+      title: "ส่งสลิปแล้วต้องรอไหม",
+      lane: "Payment",
+      audience: "public_member",
+      customer_question_examples: ["ส่งสลิปแล้วต้องรอไหม", "MMD ช่วยเช็กเรื่องสลิปหน่อย"],
+      kenji_safe_answer: "ได้รับหลักฐานแล้วครับ MMD ต้องตรวจจากระบบทางการก่อนอัปเดตสถานะนะครับ",
+      related_routes: ["/sigil/confirm/payment-confirmation"],
+    }),
+    publishedCard({
+      id: "card-membership",
+      title: "สมัครสมาชิกต้องทำยังไง",
+      lane: "Membership",
+      audience: "public",
+      customer_question_examples: ["สมัครสมาชิกต้องทำยังไง"],
+      kenji_safe_answer: "สมัครสมาชิกได้จากหน้าสมาชิกครับ ถ้าข้อมูลยังไม่ขึ้น ให้รอระบบ MMD ตรวจสอบก่อนนะครับ",
+      related_routes: ["/member/membership"],
+    }),
+    publishedCard({
+      id: "card-renewal",
+      title: "ต่ออายุสมาชิกยังไง",
+      lane: "Renewal",
+      audience: "member",
+      customer_question_examples: ["ต่ออายุสมาชิกยังไง"],
+    }),
+    publishedCard({
+      id: "card-booking",
+      title: "จองยังไง",
+      lane: "Booking",
+      audience: "public_member",
+      customer_question_examples: ["จองยังไง"],
+      kenji_safe_answer: "เริ่มจองได้จากหน้าจองครับ Kenji ช่วยดูขั้นตอนให้ได้ แต่การยืนยันจริงต้องรอระบบ MMD นะครับ",
+      related_routes: ["/sigil/booking"],
+    }),
+  ];
+}
+
+function fetchCards(cards = knowledgeCards()) {
+  return async () => new Response(JSON.stringify({ ok: true, cards }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+async function withCapturedLogs(fn) {
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (...args) => logs.push(args);
+  try {
+    const value = await fn(logs);
+    return { value, logs };
+  } finally {
+    console.log = originalLog;
+  }
+}
+
 test("feature flags and allowlist must both be enabled", () => {
   assert.equal(isKenjiKnowledgeEnabled(env()), true);
   assert.equal(isKenjiKnowledgeEnabled(env({ LINE_KENJI_AI_ENABLED: "false" })), false);
@@ -121,4 +179,116 @@ test("maybeBuildKenjiKnowledgeReply is controlled mode only", async () => {
   assert.equal(await maybeBuildKenjiKnowledgeReply({ env: env(), userId: "Uother", messageText: "Kenji AI ต่ออายุ", fetchImpl }), null);
   assert.equal(await maybeBuildKenjiKnowledgeReply({ env: env({ LINE_KENJI_KNOWLEDGE_DRY_RUN: "true" }), userId: LINE_USER_ID, messageText: "Kenji AI ต่ออายุ", fetchImpl }), null);
   assert.equal(await maybeBuildKenjiKnowledgeReply({ env: env(), userId: LINE_USER_ID, messageText: "Kenji", fetchImpl }), null);
+});
+
+test("customer-facing payment triggers match published Payment card", async () => {
+  for (const messageText of [
+    "Hi MMD ส่งสลิปแล้วต้องรอไหม",
+    "MMD ช่วยเช็กเรื่องสลิปหน่อย",
+    "ส่งสลิปแล้วต้องรอไหม",
+  ]) {
+    const reply = await maybeBuildKenjiKnowledgeReply({
+      env: env(),
+      userId: LINE_USER_ID,
+      messageText,
+      fetchImpl: fetchCards(),
+    });
+    assert.match(reply, /ได้รับหลักฐานแล้วครับ/);
+    assert.match(reply, /\/sigil\/confirm\/payment-confirmation/);
+  }
+});
+
+test("customer-facing membership renewal and booking direct intents match cards", async () => {
+  const cases = [
+    ["สมัครสมาชิกต้องทำยังไง", /สมัครสมาชิกได้จากหน้าสมาชิก/],
+    ["ต่ออายุสมาชิกยังไง", /ต่ออายุได้ครับ/],
+    ["จองยังไง", /เริ่มจองได้จากหน้าจอง/],
+  ];
+
+  for (const [messageText, expected] of cases) {
+    const reply = await maybeBuildKenjiKnowledgeReply({
+      env: env(),
+      userId: LINE_USER_ID,
+      messageText,
+      fetchImpl: fetchCards(),
+    });
+    assert.match(reply, expected);
+  }
+});
+
+test("non-allowlisted customer messages random text and trigger-only text return null", async () => {
+  for (const messageText of [
+    "Hi MMD ส่งสลิปแล้วต้องรอไหม",
+    "MMD ช่วยเช็กเรื่องสลิปหน่อย",
+    "ส่งสลิปแล้วต้องรอไหม",
+    "สมัครสมาชิกต้องทำยังไง",
+    "ต่ออายุสมาชิกยังไง",
+    "จองยังไง",
+  ]) {
+    assert.equal(await maybeBuildKenjiKnowledgeReply({
+      env: env(),
+      userId: "Uother",
+      messageText,
+      fetchImpl: fetchCards(),
+    }), null);
+  }
+
+  assert.equal(await maybeBuildKenjiKnowledgeReply({ env: env(), userId: LINE_USER_ID, messageText: "วันนี้ฝนตกไหม", fetchImpl: fetchCards() }), null);
+  assert.equal(await maybeBuildKenjiKnowledgeReply({ env: env(), userId: LINE_USER_ID, messageText: "Hi MMD", fetchImpl: fetchCards() }), null);
+  assert.equal(await maybeBuildKenjiKnowledgeReply({ env: env(), userId: LINE_USER_ID, messageText: "คุยกับเปอร์", fetchImpl: fetchCards() }), null);
+});
+
+test("backward-compatible internal Kenji phrases still match", async () => {
+  for (const messageText of [
+    "Kenji AI ส่งสลิปแล้วต้องรอไหม",
+    "Per AI ส่งสลิปแล้วต้องรอไหม",
+    "เปอร์ ai ส่งสลิปแล้วต้องรอไหม",
+  ]) {
+    const reply = await maybeBuildKenjiKnowledgeReply({
+      env: env(),
+      userId: LINE_USER_ID,
+      messageText,
+      fetchImpl: fetchCards(),
+    });
+    assert.match(reply, /ได้รับหลักฐานแล้วครับ/);
+  }
+});
+
+test("safety filter blocks unsafe payment confirmation answer", async () => {
+  const reply = await maybeBuildKenjiKnowledgeReply({
+    env: env(),
+    userId: LINE_USER_ID,
+    messageText: "ส่งสลิปแล้วต้องรอไหม",
+    fetchImpl: fetchCards([
+      publishedCard({
+        id: "unsafe-payment",
+        lane: "Payment",
+        customer_question_examples: ["ส่งสลิปแล้วต้องรอไหม"],
+        kenji_safe_answer: "payment confirmed",
+      }),
+    ]),
+  });
+
+  assert.equal(reply, "ผมช่วยอธิบายขั้นตอนเบื้องต้นให้ได้ครับ แต่เคสนี้ต้องให้ MMD ตรวจจากระบบทางการก่อนนะครับ");
+});
+
+test("diagnostics do not include full user id token card id or full message text", async () => {
+  const { logs } = await withCapturedLogs(async () => maybeBuildKenjiKnowledgeReply({
+    env: env(),
+    userId: LINE_USER_ID,
+    messageText: "Hi MMD ส่งสลิปแล้วต้องรอไหม",
+    fetchImpl: fetchCards(),
+  }));
+  const rendered = JSON.stringify(logs);
+
+  assert.match(rendered, /line_kenji_knowledge_probe/);
+  assert.match(rendered, /line_kenji_knowledge_match/);
+  assert.match(rendered, /"allowlisted":true/);
+  assert.match(rendered, /"has_question":true/);
+  assert.match(rendered, /"lane":"Payment"/);
+  assert.doesNotMatch(rendered, new RegExp(LINE_USER_ID));
+  assert.doesNotMatch(rendered, /internal-test-token/);
+  assert.doesNotMatch(rendered, /card-payment/);
+  assert.doesNotMatch(rendered, /ส่งสลิปแล้วต้องรอไหม/);
+  assert.doesNotMatch(rendered, /Authorization|Bearer/i);
 });

@@ -7,6 +7,8 @@ const cache = new Map();
 
 const TRIGGER_PATTERNS = [
   /\bhi\s+per\b/i,
+  /\bhi\s+mmd\b/i,
+  /\bmmd\b/i,
   /\bper\s*ai\b/i,
   /\bkenji\s*ai\b/i,
   /\bkenji\b/i,
@@ -17,6 +19,8 @@ const TRIGGER_PATTERNS = [
 
 const TRIGGER_ONLY_PATTERNS = [
   "hi per",
+  "hi mmd",
+  "mmd",
   "per ai",
   "kenji ai",
   "kenji",
@@ -139,6 +143,21 @@ function hasSafeDirectIntent(text = "") {
   return Object.values(LANE_KEYWORDS).flat().some((keyword) => normalized.includes(normalizeKnowledgeText(keyword)));
 }
 
+function diagnostics(event, fields = {}) {
+  console.log(event, {
+    event,
+    enabled: Boolean(fields.enabled),
+    knowledge_enabled: Boolean(fields.knowledge_enabled),
+    allowlisted: Boolean(fields.allowlisted),
+    has_question: Boolean(fields.has_question),
+    matched: Boolean(fields.matched),
+    reason: asString(fields.reason),
+    lane: asString(fields.lane),
+    language: asString(fields.language),
+    answer_safe: Boolean(fields.answer_safe),
+  });
+}
+
 function cacheKey(env = {}) {
   return `${asString(env.KENJI_KNOWLEDGE_BASE_URL).replace(/\/+$/, "")}|${asString(env.KENJI_KNOWLEDGE_INTERNAL_TOKEN || env.INTERNAL_TOKEN) ? "authed" : "missing"}`;
 }
@@ -197,6 +216,14 @@ function laneKeywordHits(messageText, lane) {
   return keywords.filter((keyword) => normalized.includes(normalizeKnowledgeText(keyword))).length;
 }
 
+function cardLaneKeywordHits(card = {}) {
+  const content = [
+    card.title,
+    ...(Array.isArray(card.customer_question_examples) ? card.customer_question_examples : []),
+  ].join(" ");
+  return laneKeywordHits(content, card.lane);
+}
+
 export function scoreKnowledgeCard(messageText = "", card = {}) {
   if (!isUsablePublishedCard(card)) return 0;
   const message = stripTriggers(messageText) || normalizeKnowledgeText(messageText);
@@ -224,6 +251,8 @@ export function scoreKnowledgeCard(messageText = "", card = {}) {
   else if (laneHits >= 1 && score >= 45) score += 6;
   else if (laneHits >= 2) score = Math.max(score, 34);
   else if (laneHits >= 1) score = Math.max(score, 24);
+
+  if (laneHits >= 1 && cardLaneKeywordHits(card) >= 1) score = Math.max(score, 64);
 
   return score;
 }
@@ -265,17 +294,65 @@ export function buildKenjiKnowledgeReply(messageText = "", card = {}) {
 }
 
 export async function maybeBuildKenjiKnowledgeReply({ env = {}, userId = "", messageText = "", fetchImpl = fetch } = {}) {
-  if (!isKenjiKnowledgeEnabled(env)) return null;
-  if (!isLineUserAllowlisted(env, userId)) return null;
-  if (!asString(messageText)) return null;
-  if (isTriggerOnly(messageText)) return null;
-  if (!hasKenjiTrigger(messageText) && !hasSafeDirectIntent(messageText)) return null;
-  if (isEnabled(env.LINE_KENJI_KNOWLEDGE_DRY_RUN)) return null;
+  const enabled = isEnabled(env.LINE_KENJI_AI_ENABLED);
+  const knowledgeEnabled = isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED);
+  const allowlisted = isLineUserAllowlisted(env, userId);
+  const language = detectMessageLanguage(messageText);
+  const hasQuestion = Boolean(asString(messageText)) && !isTriggerOnly(messageText) && (hasKenjiTrigger(messageText) || hasSafeDirectIntent(messageText));
+
+  diagnostics("line_kenji_knowledge_probe", {
+    enabled,
+    knowledge_enabled: knowledgeEnabled,
+    allowlisted,
+    has_question: hasQuestion,
+    language,
+  });
+
+  if (!enabled) {
+    diagnostics("line_kenji_knowledge_blocked", { enabled, knowledge_enabled: knowledgeEnabled, allowlisted, has_question: hasQuestion, language, reason: "feature_off" });
+    return null;
+  }
+  if (!knowledgeEnabled) {
+    diagnostics("line_kenji_knowledge_blocked", { enabled, knowledge_enabled: knowledgeEnabled, allowlisted, has_question: hasQuestion, language, reason: "knowledge_off" });
+    return null;
+  }
+  if (!allowlisted) {
+    diagnostics("line_kenji_knowledge_blocked", { enabled, knowledge_enabled: knowledgeEnabled, allowlisted, has_question: hasQuestion, language, reason: "not_allowlisted" });
+    return null;
+  }
+  if (!hasQuestion) {
+    diagnostics("line_kenji_knowledge_blocked", { enabled, knowledge_enabled: knowledgeEnabled, allowlisted, has_question: hasQuestion, language, reason: "no_question" });
+    return null;
+  }
+  if (isEnabled(env.LINE_KENJI_KNOWLEDGE_DRY_RUN)) {
+    diagnostics("line_kenji_knowledge_blocked", { enabled, knowledge_enabled: knowledgeEnabled, allowlisted, has_question: hasQuestion, language, reason: "feature_off" });
+    return null;
+  }
 
   const cards = await fetchPublishedKenjiKnowledge(env, fetchImpl);
-  if (!cards.length) return null;
-  const card = findBestKnowledgeCard(messageText, cards, { language: detectMessageLanguage(messageText) });
-  if (!card) return null;
+  if (!cards.length) {
+    diagnostics("line_kenji_knowledge_fallback", { enabled, knowledge_enabled: knowledgeEnabled, allowlisted, has_question: hasQuestion, language, reason: "no_cards" });
+    return null;
+  }
+  const card = findBestKnowledgeCard(messageText, cards, { language });
+  if (!card) {
+    diagnostics("line_kenji_knowledge_fallback", { enabled, knowledge_enabled: knowledgeEnabled, allowlisted, has_question: hasQuestion, language, reason: "no_match" });
+    return null;
+  }
+  const answerSafe = isSafeKenjiKnowledgeAnswer(card.kenji_safe_answer);
+  diagnostics("line_kenji_knowledge_match", {
+    enabled,
+    knowledge_enabled: knowledgeEnabled,
+    allowlisted,
+    has_question: hasQuestion,
+    matched: true,
+    lane: card.lane,
+    language,
+    answer_safe: answerSafe,
+  });
+  if (!answerSafe) {
+    diagnostics("line_kenji_knowledge_fallback", { enabled, knowledge_enabled: knowledgeEnabled, allowlisted, has_question: hasQuestion, language, reason: "unsafe_answer", lane: card.lane, answer_safe: false });
+  }
   return buildKenjiKnowledgeReply(messageText, card);
 }
 
