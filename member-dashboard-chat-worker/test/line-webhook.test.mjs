@@ -181,3 +181,64 @@ test("valid LINE event can auto reply through reply API when not deduped", async
     globalThis.fetch = originalFetch;
   }
 });
+
+test("allowlisted Kenji knowledge reply uses published safe answer", async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const href = String(url);
+    calls.push({ url: href, init });
+
+    if (href.includes("/profile/")) {
+      return new Response(JSON.stringify({ displayName: "Client" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    if (href.includes("/v1/internal/kenji/knowledge/published")) {
+      return new Response(JSON.stringify({
+        ok: true,
+        cards: [{
+          id: "card-payment",
+          title: "ส่งสลิปแล้วต้องรอไหม",
+          lane: "Payment",
+          audience: "public_member",
+          language: "th",
+          customer_question_examples: ["ส่งสลิปแล้วต้องรอไหม"],
+          kenji_safe_answer: "ได้รับหลักฐานแล้วครับ MMD ต้องตรวจจากระบบทางการก่อนอัปเดตสถานะนะครับ",
+          related_routes: ["/sigil/confirm/payment-confirmation"],
+          status: "published",
+        }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+
+    if (href.includes("/message/reply")) {
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }
+
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+
+  try {
+    const response = await worker.fetch(await signedLineRequest({ events: [lineTextEvent("Kenji AI ส่งสลิปแล้วต้องรอไหม")] }), {
+      ...BASE_ENV,
+      LINE_KENJI_KNOWLEDGE_ENABLED: "true",
+      LINE_KENJI_KNOWLEDGE_ALLOWLIST: LINE_USER_ID,
+      KENJI_KNOWLEDGE_BASE_URL: "https://admin-worker.test",
+      KENJI_KNOWLEDGE_INTERNAL_TOKEN: "internal-test-token",
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.saved[0].replied, true);
+
+    const replyBodies = calls
+      .filter((call) => call.url.includes("/message/reply"))
+      .map((call) => JSON.parse(call.init.body));
+    assert.equal(replyBodies.length, 1);
+    assert.match(replyBodies[0].messages[0].text, /ได้รับหลักฐานแล้วครับ/);
+    assert.doesNotMatch(replyBodies[0].messages[0].text, /admin-worker|KV|card-payment|internal/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
