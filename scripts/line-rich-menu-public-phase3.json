@@ -1,0 +1,38 @@
+{
+  "name": "MMD Public Rich Menu Phase 3",
+  "chatBarText": "MMD Privé",
+  "selected": true,
+  "size": {
+    "width": 2500,
+    "height": 1686
+  },
+  "imagePath": "../tmp/rich-public-under1mb.jpg",
+  "expectedCurrentDefaultRichMenuId": "richmenu-20b6fc38ee13d4f50270f568596e915e",
+  "rollbackRichMenuId": "richmenu-20b6fc38ee13d4f50270f568596e915e",
+  "areas": [
+    {
+      "bounds": { "x": 825, "y": 430, "width": 510, "height": 560 },
+      "action": { "type": "message", "text": "Hi Per" }
+    },
+    {
+      "bounds": { "x": 1340, "y": 430, "width": 510, "height": 560 },
+      "action": { "type": "uri", "uri": "https://mmdbkk.com/sigil/member/membership" }
+    },
+    {
+      "bounds": { "x": 1855, "y": 430, "width": 510, "height": 560 },
+      "action": { "type": "uri", "uri": "https://mmdbkk.com/sigil/member/dashboard" }
+    },
+    {
+      "bounds": { "x": 825, "y": 1020, "width": 510, "height": 560 },
+      "action": { "type": "uri", "uri": "https://mmdbkk.com/sigil/booking" }
+    },
+    {
+      "bounds": { "x": 1340, "y": 1020, "width": 510, "height": 560 },
+      "action": { "type": "uri", "uri": "https://mmdbkk.com/sigil/confirm/payment-confirmation" }
+    },
+    {
+      "bounds": { "x": 1855, "y": 1020, "width": 510, "height": 560 },
+      "action": { "type": "message", "text": "Hi MMD" }
+    }
+  ]
+}
