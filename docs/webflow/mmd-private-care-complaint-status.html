@@ -1,12 +1,181 @@
 <!--
 MMD Private Care / Complaint Status Page
 Route: /sigil/recovery/complaint/status
-Webflow split: paste section in body, CSS in head, JS before body close.
+Webflow split: HTML / CSS / JS.
 
-Security rule:
-- This public page must never call Airtable directly.
-- It reads status through Worker only.
-- Worker can read KV/R2/Airtable server-side.
+Security:
+- Public frontend never calls Airtable directly.
+- Status data must come from Worker.
+- Worker may read KV/R2/Airtable server-side.
 
-Expected optional Worker status endpoint:
-GET https://mmd-care-intake-worker.malemodel-bkk.workers.dev/member/api/recovery/complaint-status?id=<complaint_id>&t=<token
+Optional Worker endpoint expected by this page:
+GET /member/api/recovery/complaint-status?id=<complaint_id>&t=<token>&sid=<session_id>
+Fallback: If endpoint is not available, the page displays URL params safely.
+-->
+
+<!-- =========================
+1) HTML
+========================= -->
+<section
+  id="mmd-care-status"
+  class="mmd-care-status"
+  data-api-base="https://mmd-care-intake-worker.malemodel-bkk.workers.dev"
+  data-status-endpoint="/member/api/recovery/complaint-status"
+  data-complaint-url="/sigil/recovery/complaint"
+  data-success-url="/sigil/recovery/complaint/success"
+  data-telegram-url="https://t.me/mmdapply"
+>
+  <div class="mmd-care-status__bg" aria-hidden="true">
+    <picture>
+      <source media="(min-width: 768px)" srcset="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a529b3275614ee836733b53_Kenji%20Complaint%20Desktop.webp" />
+      <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a529b323ee14396ea1304b4_Kenji%20Complaint%20Mob.webp" alt="" loading="eager" decoding="async" fetchpriority="high" />
+    </picture>
+  </div>
+  <div class="mmd-care-status__shade" aria-hidden="true"></div>
+
+  <main class="mmd-care-status__shell">
+    <section class="mmd-care-status__card">
+      <div class="mmd-care-status__lang" aria-label="Language switch">
+        <button type="button" data-lang-btn="th">TH</button>
+        <button type="button" data-lang-btn="en">EN</button>
+      </div>
+
+      <p class="mmd-care-status__kicker" data-i18n="kicker">MMD PRIVATE CARE</p>
+      <h1 data-i18n="title">เช็กสถานะเคสกับ Kenji</h1>
+      <p class="mmd-care-status__lead" data-i18n="lead">ใส่ Complaint ID หรือเปิดจากลิงก์ที่ MMD ส่งให้ เพื่อดูว่าเคสอยู่ขั้นไหน โดยไม่แสดงหลักฐานจริงบนหน้าสาธารณะ</p>
+
+      <form class="mmd-care-status__search" data-status-form novalidate>
+        <label>
+          <span data-i18n="id_label">Complaint ID</span>
+          <input name="complaint_id" type="text" autocomplete="off" placeholder="complaint_xxxxx" data-i18n-placeholder="id_placeholder" />
+        </label>
+        <label>
+          <span data-i18n="token_label">รหัสอ้างอิง ถ้ามี</span>
+          <input name="token" type="text" autocomplete="off" placeholder="code หรือ t จากลิงก์" data-i18n-placeholder="token_placeholder" />
+        </label>
+        <button type="submit" data-i18n="check_button">เช็กสถานะ</button>
+      </form>
+
+      <div class="mmd-care-status__state" data-status-state="idle">
+        <span data-state-dot></span>
+        <div>
+          <strong data-status-title data-i18n="idle_title">รอข้อมูลเคส</strong>
+          <p data-status-desc data-i18n="idle_desc">กรอก Complaint ID หรือเปิดลิงก์จากหน้า Success เพื่อให้ Kenji ดึงสถานะล่าสุดให้ครับ</p>
+        </div>
+      </div>
+
+      <div class="mmd-care-status__summary">
+        <div>
+          <span data-i18n="complaint_label">Complaint ID</span>
+          <strong data-case-id>-</strong>
+        </div>
+        <div>
+          <span data-i18n="lane_label">ช่องทางตรวจสอบ</span>
+          <strong data-case-lane>-</strong>
+        </div>
+        <div>
+          <span data-i18n="evidence_label">หลักฐาน</span>
+          <strong data-case-evidence>-</strong>
+        </div>
+        <div>
+          <span data-i18n="updated_label">อัปเดตล่าสุด</span>
+          <strong data-case-updated>-</strong>
+        </div>
+      </div>
+
+      <section class="mmd-care-status__timeline" aria-label="Case timeline">
+        <div data-step="received">
+          <i></i>
+          <div><strong data-i18n="step_received_title">รับเรื่องแล้ว</strong><span data-i18n="step_received_text">ระบบเปิดแฟ้ม Private Review แล้ว</span></div>
+        </div>
+        <div data-step="reviewing">
+          <i></i>
+          <div><strong data-i18n="step_reviewing_title">กำลังตรวจข้อมูล</strong><span data-i18n="step_reviewing_text">MMD ตรวจรายละเอียดและหลักฐานอย่างระวัง</span></div>
+        </div>
+        <div data-step="need_info">
+          <i></i>
+          <div><strong data-i18n="step_need_info_title">อาจต้องขอข้อมูลเพิ่ม</strong><span data-i18n="step_need_info_text">ถ้าข้อมูลยังไม่พอ MMD จะใช้ Complaint ID นี้ตามเรื่อง</span></div>
+        </div>
+        <div data-step="per_review">
+          <i></i>
+          <div><strong data-i18n="step_per_title">ส่งต่อ Per หากจำเป็น</strong><span data-i18n="step_per_text">เฉพาะเคสที่ต้องตัดสินใจขั้นสุดท้าย</span></div>
+        </div>
+        <div data-step="closed">
+          <i></i>
+          <div><strong data-i18n="step_closed_title">ปิดเคส</strong><span data-i18n="step_closed_text">มีข้อสรุปหรือแนวทางดูแลต่อแล้ว</span></div>
+        </div>
+      </section>
+
+      <div class="mmd-care-status__next">
+        <p class="mmd-care-status__mini" data-i18n="next_kicker">KENJI NOTE</p>
+        <h2 data-i18n="next_title">ถ้ายังไม่มีอัปเดต ไม่ต้องส่งซ้ำครับ</h2>
+        <p data-i18n="next_text">ใช้หน้านี้เช็กสถานะได้ หรือส่ง Complaint ID ให้ MMD เพื่อให้ค้นแฟ้มเร็วขึ้น ถ้ามีหลักฐานใหม่จริง ๆ ค่อยเพิ่มข้อมูลจากปุ่มด้านล่าง</p>
+      </div>
+
+      <div class="mmd-care-status__actions">
+        <a class="mmd-care-status__primary" href="/sigil/recovery/complaint" data-add-link data-i18n="add_more">เพิ่มข้อมูลหรือหลักฐาน</a>
+        <a class="mmd-care-status__ghost" href="https://t.me/mmdapply" data-telegram-link data-i18n="contact">ติดต่อ MMD</a>
+        <button class="mmd-care-status__quiet" type="button" data-copy-link data-i18n="copy_link">คัดลอกลิงก์สถานะ</button>
+      </div>
+
+      <p class="mmd-care-status__privacy" data-i18n="privacy">หน้านี้ไม่มี secret หรือ API key ฝังอยู่ และไม่ดึง Airtable จาก browser โดยตรง</p>
+    </section>
+  </main>
+</section>
+
+<!-- =========================
+2) CSS
+========================= -->
+<style>
+  @import url("https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800;900&display=swap");
+  .mmd-care-status{--black:#070706;--panel:rgba(18,16,13,.84);--line:rgba(255,229,184,.22);--gold:#d8ad62;--gold-soft:#ffe6b5;--ivory:#fff8e9;--text:rgba(255,250,240,.94);--muted:rgba(255,248,233,.74);--soft:rgba(255,248,233,.56);--ok:#a8f0c6;--warn:#ffd58a;--danger:#ff9a9a;--font:"Noto Sans Thai","Sarabun",Tahoma,system-ui,sans-serif;position:relative;min-height:100svh;overflow:clip;background:var(--black);color:var(--ivory);font-family:var(--font);text-rendering:geometricPrecision}.mmd-care-status *,.mmd-care-status *:before,.mmd-care-status *:after{box-sizing:border-box}.mmd-care-status__bg,.mmd-care-status__bg picture,.mmd-care-status__bg img{position:absolute;inset:0;width:100%;height:100%}.mmd-care-status__bg{z-index:0}.mmd-care-status__bg img{object-fit:cover;object-position:center;opacity:.66;transform:scale(1.02)}.mmd-care-status__shade{position:absolute;inset:0;z-index:1;background:radial-gradient(circle at 50% 24%,rgba(216,173,98,.14),transparent 32%),linear-gradient(180deg,rgba(0,0,0,.28),rgba(0,0,0,.86)),linear-gradient(90deg,rgba(0,0,0,.78),rgba(0,0,0,.34),rgba(0,0,0,.72));pointer-events:none}.mmd-care-status__shell{position:relative;z-index:2;min-height:100svh;display:grid;place-items:end center;padding:22px 16px 32px}.mmd-care-status__card{width:min(100%,820px);border:1px solid var(--line);border-radius:32px;padding:20px;background:radial-gradient(circle at top left,rgba(216,173,98,.16),transparent 42%),linear-gradient(180deg,rgba(255,255,255,.064),rgba(255,255,255,.02)),var(--panel);box-shadow:0 32px 110px rgba(0,0,0,.56),inset 0 1px 0 rgba(255,255,255,.08);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}.mmd-care-status__lang{display:inline-flex;gap:6px;margin-bottom:14px;padding:4px;border:1px solid rgba(255,229,184,.18);border-radius:999px;background:rgba(0,0,0,.24)}.mmd-care-status__lang button{min-width:42px;min-height:30px;border:0;border-radius:999px;padding:6px 10px;background:transparent;color:rgba(255,248,233,.62);font-family:var(--font);font-size:12px;font-weight:800;cursor:pointer}.mmd-care-status__lang button.is-active{background:linear-gradient(135deg,#fff1c7 0%,#d8ad62 54%,#8a5e22 100%);color:#15100a}.mmd-care-status__kicker,.mmd-care-status__mini{margin:0;color:rgba(255,231,188,.92);font-size:11px;font-weight:800;letter-spacing:.15em;line-height:1.5;text-transform:uppercase}.mmd-care-status h1{margin:8px 0 0;color:var(--ivory);font-size:clamp(38px,10vw,76px);line-height:1.06;letter-spacing:-.052em;font-weight:850;text-wrap:balance}.mmd-care-status__lead{margin:14px 0 0;color:var(--muted);font-size:15.5px;line-height:1.9}.mmd-care-status__search{display:grid;gap:10px;margin-top:18px;padding:14px;border:1px solid rgba(255,229,184,.18);border-radius:24px;background:rgba(0,0,0,.28)}.mmd-care-status__search label{display:grid;gap:8px}.mmd-care-status__search span,.mmd-care-status__summary span{color:rgba(255,231,188,.82);font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.mmd-care-status__search input{width:100%;min-height:52px;border:1px solid rgba(255,231,182,.24);border-radius:17px;padding:14px 15px;outline:none;background:rgba(0,0,0,.36);color:var(--text);font-family:var(--font);font-size:15px;line-height:1.65}.mmd-care-status__search input::placeholder{color:rgba(255,248,232,.48)}.mmd-care-status__search button,.mmd-care-status__primary{border:1px solid rgba(255,231,182,.86);border-radius:999px;background:linear-gradient(135deg,#fff1c7 0%,#d8ad62 46%,#8a5e22 100%);color:#15100a;box-shadow:0 16px 38px rgba(216,173,98,.24)}.mmd-care-status__search button{min-height:52px;padding:14px 18px;font-family:var(--font);font-size:14px;font-weight:850;cursor:pointer}.mmd-care-status__state{display:grid;grid-template-columns:14px 1fr;gap:12px;margin-top:14px;padding:14px;border:1px solid rgba(255,229,184,.17);border-radius:20px;background:rgba(255,255,255,.036)}.mmd-care-status__state>span{width:12px;height:12px;margin-top:7px;border-radius:999px;background:var(--soft);box-shadow:0 0 0 5px rgba(255,229,184,.04)}.mmd-care-status__state[data-status-state=ok]>span{background:var(--ok);box-shadow:0 0 0 5px rgba(168,240,198,.08)}.mmd-care-status__state[data-status-state=review]>span{background:var(--warn);box-shadow:0 0 0 5px rgba(255,213,138,.08)}.mmd-care-status__state[data-status-state=error]>span{background:var(--danger);box-shadow:0 0 0 5px rgba(255,154,154,.08)}.mmd-care-status__state strong{display:block;color:var(--text);font-size:16px;line-height:1.55}.mmd-care-status__state p{margin:3px 0 0;color:var(--muted);font-size:13.5px;line-height:1.7}.mmd-care-status__summary{display:grid;gap:10px;margin-top:12px}.mmd-care-status__summary>div{min-width:0;padding:14px;border:1px solid rgba(255,229,184,.17);border-radius:20px;background:rgba(255,255,255,.036)}.mmd-care-status__summary strong{display:block;margin-top:6px;color:var(--text);font-size:15px;line-height:1.55;overflow-wrap:anywhere}.mmd-care-status__timeline{display:grid;gap:10px;margin-top:14px}.mmd-care-status__timeline>div{display:grid;grid-template-columns:18px 1fr;gap:11px;padding:12px;border:1px solid rgba(255,229,184,.14);border-radius:18px;background:rgba(0,0,0,.2);opacity:.56}.mmd-care-status__timeline>div.is-active,.mmd-care-status__timeline>div.is-done{opacity:1}.mmd-care-status__timeline i{width:12px;height:12px;margin-top:6px;border-radius:999px;background:rgba(255,229,184,.32);box-shadow:0 0 0 5px rgba(255,229,184,.04)}.mmd-care-status__timeline .is-done i{background:var(--ok);box-shadow:0 0 0 5px rgba(168,240,198,.08)}.mmd-care-status__timeline .is-active i{background:var(--warn);box-shadow:0 0 0 5px rgba(255,213,138,.08)}.mmd-care-status__timeline strong{display:block;color:var(--text);font-size:14px;line-height:1.55}.mmd-care-status__timeline span{display:block;margin-top:3px;color:var(--soft);font-size:13px;line-height:1.65}.mmd-care-status__next{margin-top:14px;padding:16px;border:1px solid rgba(216,173,98,.28);border-radius:22px;background:rgba(216,173,98,.08)}.mmd-care-status__next h2{margin:8px 0 0;color:var(--ivory);font-size:22px;line-height:1.34;letter-spacing:-.025em}.mmd-care-status__next p:not(.mmd-care-status__mini){margin:8px 0 0;color:var(--muted);font-size:14px;line-height:1.85}.mmd-care-status__actions{display:grid;gap:10px;margin-top:16px}.mmd-care-status__primary,.mmd-care-status__ghost,.mmd-care-status__quiet{display:inline-flex;align-items:center;justify-content:center;min-height:52px;border-radius:999px;padding:14px 18px;font-family:var(--font);font-size:14px;font-weight:850;line-height:1.2;text-decoration:none;text-align:center;cursor:pointer}.mmd-care-status__ghost,.mmd-care-status__quiet{border:1px solid rgba(255,229,184,.24);background:rgba(255,255,255,.055);color:rgba(255,248,233,.86)}.mmd-care-status__quiet{min-height:44px}.mmd-care-status__privacy{margin:14px 0 0;color:rgba(255,248,233,.5);font-size:12.5px;line-height:1.7;text-align:center}@media(min-width:760px){.mmd-care-status__shell{place-items:center start;padding:70px clamp(32px,7vw,112px)}.mmd-care-status__card{padding:30px;border-radius:38px}.mmd-care-status h1{font-size:clamp(54px,5.4vw,88px)}.mmd-care-status__lead{font-size:16px;max-width:660px}.mmd-care-status__search{grid-template-columns:1fr 1fr auto;align-items:end}.mmd-care-status__summary{grid-template-columns:repeat(4,minmax(0,1fr))}.mmd-care-status__actions{grid-template-columns:1.15fr .85fr auto;align-items:center}}@media(max-width:420px){.mmd-care-status__card{padding:18px 15px;border-radius:26px}.mmd-care-status h1{font-size:clamp(38px,12vw,54px)}}
+</style>
+
+<!-- =========================
+3) JS
+========================= -->
+<script>
+(function(){
+  const root=document.querySelector("#mmd-care-status"); if(!root)return;
+  const I18N={
+    th:{kicker:"MMD PRIVATE CARE",title:"เช็กสถานะเคสกับ Kenji",lead:"ใส่ Complaint ID หรือเปิดจากลิงก์ที่ MMD ส่งให้ เพื่อดูว่าเคสอยู่ขั้นไหน โดยไม่แสดงหลักฐานจริงบนหน้าสาธารณะ",id_label:"Complaint ID",id_placeholder:"complaint_xxxxx",token_label:"รหัสอ้างอิง ถ้ามี",token_placeholder:"code หรือ t จากลิงก์",check_button:"เช็กสถานะ",idle_title:"รอข้อมูลเคส",idle_desc:"กรอก Complaint ID หรือเปิดลิงก์จากหน้า Success เพื่อให้ Kenji ดึงสถานะล่าสุดให้ครับ",loading_title:"Kenji กำลังตรวจแฟ้ม",loading_desc:"กำลังดึงสถานะล่าสุดจากช่องรับเรื่องส่วนตัวของ MMD",ok_title:"เจอแฟ้มเคสแล้วครับ",ok_desc:"สถานะด้านล่างคือข้อมูลล่าสุดที่เปิดให้ดูได้จากฝั่งหน้าเว็บ",review_title:"เคสอยู่ระหว่างตรวจสอบ",review_desc:"MMD กำลังตรวจรายละเอียดอย่างระวัง ถ้ายังไม่มีอัปเดต ไม่ต้องส่งซ้ำครับ",not_found_title:"ยังไม่พบแฟ้มจากข้อมูลนี้",not_found_desc:"ตรวจ Complaint ID หรือรหัสอ้างอิงอีกครั้ง ถ้ายังไม่เจอให้ส่งรหัสเคสให้ MMD ช่วยค้น",error_title:"ยังเช็กสถานะไม่ได้",error_desc:"ช่องตรวจสถานะอาจยังไม่เปิดใน Worker ตอนนี้ หน้าเว็บจะแสดงข้อมูลจากลิงก์แทน",complaint_label:"Complaint ID",lane_label:"ช่องทางตรวจสอบ",evidence_label:"หลักฐาน",updated_label:"อัปเดตล่าสุด",evidence_r2:"เก็บเข้าแฟ้มส่วนตัวแล้ว",evidence_received:"รับข้อมูลแล้ว",step_received_title:"รับเรื่องแล้ว",step_received_text:"ระบบเปิดแฟ้ม Private Review แล้ว",step_reviewing_title:"กำลังตรวจข้อมูล",step_reviewing_text:"MMD ตรวจรายละเอียดและหลักฐานอย่างระวัง",step_need_info_title:"อาจต้องขอข้อมูลเพิ่ม",step_need_info_text:"ถ้าข้อมูลยังไม่พอ MMD จะใช้ Complaint ID นี้ตามเรื่อง",step_per_title:"ส่งต่อ Per หากจำเป็น",step_per_text:"เฉพาะเคสที่ต้องตัดสินใจขั้นสุดท้าย",step_closed_title:"ปิดเคส",step_closed_text:"มีข้อสรุปหรือแนวทางดูแลต่อแล้ว",next_kicker:"KENJI NOTE",next_title:"ถ้ายังไม่มีอัปเดต ไม่ต้องส่งซ้ำครับ",next_text:"ใช้หน้านี้เช็กสถานะได้ หรือส่ง Complaint ID ให้ MMD เพื่อให้ค้นแฟ้มเร็วขึ้น ถ้ามีหลักฐานใหม่จริง ๆ ค่อยเพิ่มข้อมูลจากปุ่มด้านล่าง",add_more:"เพิ่มข้อมูลหรือหลักฐาน",contact:"ติดต่อ MMD",copy_link:"คัดลอกลิงก์สถานะ",copied:"คัดลอกแล้ว",privacy:"หน้านี้ไม่มี secret หรือ API key ฝังอยู่ และไม่ดึง Airtable จาก browser โดยตรง",dash:"-"},
+    en:{kicker:"MMD PRIVATE CARE",title:"Check your case with Kenji",lead:"Enter your Complaint ID or open the link from MMD to see where the case is, without showing real evidence publicly.",id_label:"Complaint ID",id_placeholder:"complaint_xxxxx",token_label:"Reference code, if any",token_placeholder:"code or t from the link",check_button:"Check status",idle_title:"Waiting for case details",idle_desc:"Enter a Complaint ID or open the Success Page link so Kenji can check the latest status.",loading_title:"Kenji is checking the file",loading_desc:"Fetching the latest status from MMD private intake.",ok_title:"Case file found",ok_desc:"The status below is the latest information available to this page.",review_title:"Case under review",review_desc:"MMD is reviewing the details carefully. If there is no update yet, you do not need to submit again.",not_found_title:"No case file found for this information",not_found_desc:"Please check the Complaint ID or reference code again. If it still cannot be found, send the ID to MMD for help.",error_title:"Status is not available yet",error_desc:"The Worker status channel may not be open yet. This page will show safe link data instead.",complaint_label:"Complaint ID",lane_label:"Review lane",evidence_label:"Evidence",updated_label:"Last update",evidence_r2:"Stored safely in the private file",evidence_received:"Information received",step_received_title:"Received",step_received_text:"The case has been opened as a Private Review file.",step_reviewing_title:"Reviewing details",step_reviewing_text:"MMD is reviewing the details and evidence carefully.",step_need_info_title:"More information may be needed",step_need_info_text:"If details are missing, MMD will use this Complaint ID to follow up.",step_per_title:"Escalate to Per if needed",step_per_text:"Only for cases requiring a final decision.",step_closed_title:"Closed",step_closed_text:"A conclusion or care direction has been reached.",next_kicker:"KENJI NOTE",next_title:"If there is no update yet, no need to submit again.",next_text:"Use this page to check status, or send your Complaint ID to MMD so the file can be found quickly. Add more details only if you truly have new evidence.",add_more:"Add details or evidence",contact:"Contact MMD",copy_link:"Copy status link",copied:"Copied",privacy:"This page contains no secret or API key, and it does not call Airtable directly from the browser.",dash:"-"}
+  };
+  const form=root.querySelector("[data-status-form]"), state=root.querySelector(".mmd-care-status__state"), stateTitle=root.querySelector("[data-status-title]"), stateDesc=root.querySelector("[data-status-desc]"), idNode=root.querySelector("[data-case-id]"), laneNode=root.querySelector("[data-case-lane]"), evidenceNode=root.querySelector("[data-case-evidence]"), updatedNode=root.querySelector("[data-case-updated]"), addLink=root.querySelector("[data-add-link]"), telegramLink=root.querySelector("[data-telegram-link]"), copyBtn=root.querySelector("[data-copy-link]");
+  const params=new URLSearchParams(location.search); let currentLang=getLang();
+  function getLang(){const v=(params.get("lang")||localStorage.getItem("mmdCareStatusLang")||"th").toLowerCase();return v==="en"?"en":"th"} function t(k){return (I18N[currentLang]&&I18N[currentLang][k])||I18N.th[k]||k}
+  function cleanBase(v){return String(v||"").replace(/\/+$/,"")} function applyLanguage(lang){currentLang=lang==="en"?"en":"th";root.setAttribute("data-lang",currentLang);document.documentElement.setAttribute("lang",currentLang);try{localStorage.setItem("mmdCareStatusLang",currentLang)}catch(e){} root.querySelectorAll("[data-i18n]").forEach(n=>{n.textContent=t(n.getAttribute("data-i18n"))}); root.querySelectorAll("[data-i18n-placeholder]").forEach(n=>{n.setAttribute("placeholder",t(n.getAttribute("data-i18n-placeholder")))}); root.querySelectorAll("[data-lang-btn]").forEach(b=>b.classList.toggle("is-active",b.getAttribute("data-lang-btn")===currentLang)); hydrateInputs(); renderFromParams();}
+  function readParams(){return {id:params.get("id")||params.get("complaint_id")||params.get("case")||"",token:params.get("t")||params.get("token")||params.get("code")||"",sid:params.get("sid")||params.get("session_id")||"",lane:params.get("lane")||"Private Review",files:params.get("files")||params.get("stored_files")||"",status:params.get("status")||"received",updated:params.get("updated")||params.get("updated_at")||""}}
+  function hydrateInputs(){const d=readParams(); if(form){const id=form.elements.complaint_id, token=form.elements.token; if(id&&!id.value)id.value=d.id; if(token&&!token.value)token.value=d.token;}}
+  function setState(kind,title,desc){state.dataset.statusState=kind; stateTitle.textContent=title; stateDesc.textContent=desc;}
+  function normalizeStatus(s){s=String(s||"received").toLowerCase(); if(["new","received","need info","need_info","reviewing","private review","per_review","closed"].includes(s))return s.replace(" ","_"); return "received"}
+  function setTimeline(status){const order=["received","reviewing","need_info","per_review","closed"]; const current=normalizeStatus(status); const index=Math.max(0,order.indexOf(current)); root.querySelectorAll("[data-step]").forEach(el=>{const i=order.indexOf(el.dataset.step); el.classList.toggle("is-done",i>=0&&i<index); el.classList.toggle("is-active",i===index);});}
+  function renderCase(data,source){const id=data.id||data.complaint_id||""; const files=Number(data.files||data.stored_files||0); const status=normalizeStatus(data.status||data.workflow_status||"received"); idNode.textContent=id||t("dash"); laneNode.textContent=data.lane||"Private Review"; evidenceNode.textContent=(files>0||data.binary_storage==="stored_in_r2")?t("evidence_r2")+(files>0?" · "+files+" files":""):t("evidence_received"); updatedNode.textContent=data.updated_at||data.updated||data.received_at||t("dash"); setTimeline(status); if(status==="reviewing"||status==="need_info"||status==="per_review") setState("review",t("review_title"),t("review_desc")); else setState("ok",t("ok_title"),t("ok_desc")); updateLinks(id,data.token||readParams().token,data.sid||readParams().sid);}
+  function renderFromParams(){const d=readParams(); if(d.id||d.token||d.sid){renderCase({id:d.id,lane:d.lane,files:d.files,status:d.status,updated:d.updated,token:d.token,sid:d.sid},"params");} else {idNode.textContent=laneNode.textContent=evidenceNode.textContent=updatedNode.textContent=t("dash"); setTimeline("received"); setState("idle",t("idle_title"),t("idle_desc"));}}
+  function updateLinks(id,token,sid){const base=root.getAttribute("data-complaint-url")||"/sigil/recovery/complaint"; const u=new URL(base,location.origin); if(id)u.searchParams.set("complaint_id",id); if(token)u.searchParams.set("t",token); if(sid)u.searchParams.set("sid",sid); u.searchParams.set("lang",currentLang); if(addLink)addLink.href=u.pathname+u.search; if(telegramLink)telegramLink.href=root.getAttribute("data-telegram-url")||"https://t.me/mmdapply";}
+  async function fetchStatus(id,token){const api=cleanBase(root.getAttribute("data-api-base")); const path=root.getAttribute("data-status-endpoint")||"/member/api/recovery/complaint-status"; if(!api||!id&&!token) return null; const u=new URL(api+path); if(id)u.searchParams.set("id",id); if(token)u.searchParams.set("t",token); const sid=readParams().sid; if(sid)u.searchParams.set("sid",sid); const res=await fetch(u.toString(),{method:"GET",cache:"no-store",headers:{"X-MMD-Client":"mmd-private-care-status-page"}}); if(res.status===404) return {notFound:true}; if(!res.ok) throw new Error("status_endpoint_failed"); return await res.json();}
+  async function checkNow(ev){if(ev)ev.preventDefault(); const id=form?.elements.complaint_id?.value?.trim()||readParams().id; const token=form?.elements.token?.value?.trim()||readParams().token; setState("review",t("loading_title"),t("loading_desc")); try{const data=await fetchStatus(id,token); if(data&&data.notFound){setState("error",t("not_found_title"),t("not_found_desc")); renderCase({id:id,token:token,status:"received"},"fallback"); return;} if(data&&data.ok!==false){renderCase(data.complaint||data.case||data,"api"); return;} throw new Error("empty_status");}catch(e){setState("error",t("error_title"),t("error_desc")); renderCase({id:id,token:token,status:"received"},"fallback");}}
+  async function copyLink(){try{await navigator.clipboard.writeText(location.href); const old=copyBtn.textContent; copyBtn.textContent=t("copied"); setTimeout(()=>copyBtn.textContent=old,1300);}catch(e){}}
+  root.querySelectorAll("[data-lang-btn]").forEach(b=>b.addEventListener("click",()=>applyLanguage(b.getAttribute("data-lang-btn")||"th"))); if(form)form.addEventListener("submit",checkNow); if(copyBtn)copyBtn.addEventListener("click",copyLink); applyLanguage(currentLang); if(readParams().id||readParams().token) checkNow();
+})();
+</script>
+
+<!--
+Airtable status mapping suggestion, server-side only:
+Table: complaint_cases or console_inbox/payment_proofs-style private board
+Fields:
+- complaint_id singleLineText unique
+- token_hash singleLineText
+- session_id singleLineText
+- lane singleSelect: Private Review, Model, MMD
+- status singleSelect: received, reviewing, need_info, per_review, closed
+- priority singleSelect: Critical, High, Medium, Low
+- evidence_count number
+- binary_storage singleLineText: stored_in_r2 / not_stored_in_kv
+- board_card_id singleLineText
+- received_at dateTime
+- updated_at dateTime
+- public_status_note multilineText
+Worker response shape:
+{ "ok": true, "complaint": { "id":"complaint_x", "lane":"Private Review", "status":"reviewing", "files":2, "binary_storage":"stored_in_r2", "updated_at":"2026-07-12T00:00:00.000Z" } }
+-->
