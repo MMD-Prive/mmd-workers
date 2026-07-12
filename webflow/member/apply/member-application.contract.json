@@ -35,7 +35,7 @@
     "phone": { "type": "string", "minLength": 1, "maxLength": 30 },
     "application_intent": {
       "type": "string",
-      "enum": ["new_membership", "renew_membership", "upgrade_membership", "continue_application"]
+      "enum": ["public_models", "mmd_curated_models", "member_privileges", "continue_application"]
     },
     "notes": { "type": "string", "maxLength": 1200 },
     "languages": {
@@ -50,14 +50,14 @@
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "enum": ["membership", "private_models", "public_work", "travel", "black_card"]
+        "enum": ["public_models", "model_matching", "membership", "promotion", "black_card"]
       }
     },
     "care_preference": { "type": "string", "maxLength": 900 },
     "consent_accuracy": { "const": true },
     "consent_privacy": { "const": true },
     "source": { "const": "member_apply" },
-    "route": { "const": "/member/apply" },
+    "route": { "const": "/sigil/member/apply" },
     "page_url": { "type": "string", "format": "uri", "maxLength": 4096 },
     "submitted_at": { "type": "string", "format": "date-time" },
     "client_version": { "type": "string", "maxLength": 80 },
