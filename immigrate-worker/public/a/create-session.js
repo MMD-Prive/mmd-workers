@@ -34,6 +34,7 @@
     clients: [],
     selectedClient: null,
     workType: "",
+    privateOrientation: "",
     modelFolder: "",
     models: [],
     selectedModel: null,
@@ -139,8 +140,10 @@
       ["extreme", "Extreme Model", "แฟ้ม Public Work ที่ต้องใช้ energy / performance / intensity สูงกว่า", "Choose Extreme"]
     ],
     private: [
-      ["vip", "VIP", "แฟ้ม Private Work ระดับ VIP", "Choose VIP"],
-      ["pn", "PN", "แฟ้ม PN โดยอนุญาต Model ในแฟ้ม VIP ที่ compatible เข้า PN ได้ด้วย", "Choose PN"]
+      ["standard", "Standard", "แฟ้ม Private Work สำหรับ membership Standard (active) ขึ้นไป", "Choose Standard"],
+      ["premium", "Premium", "แฟ้ม Private Work สำหรับ membership Premium (active) ขึ้นไป", "Choose Premium"],
+      ["vip", "VIP", "แฟ้ม Private Work สำหรับ membership VIP (active) ขึ้นไป", "Choose VIP"],
+      ["exclusive", "Exclusive", "แฟ้ม Private Work สำหรับ Black Card (active) เท่านั้น", "Choose Exclusive"]
     ]
   };
 
@@ -159,6 +162,8 @@
   const demoClients = [
     {
       client_id: "cli_ruch_001",
+      member_id: "mmd_demo_ruch_001",
+      member_email: "ruch.vip@demo.mmd",
       client_name: "รัช",
       username: "ruch vip",
       phone: "hidden",
@@ -177,6 +182,8 @@
     },
     {
       client_id: "cli_man_001",
+      member_id: "mmd_demo_man_001",
+      member_email: "man.premium@demo.mmd",
       client_name: "Man",
       username: "man 24",
       phone: "hidden",
@@ -195,8 +202,10 @@
     },
     {
       client_id: "cli_win_002",
+      member_id: "mmd_demo_win_002",
+      member_email: "win.vip@demo.mmd",
       client_name: "Win",
-      username: "win pn",
+      username: "win vip",
       phone: "hidden",
       package_code: "VIP",
       tier: "vip",
@@ -220,8 +229,8 @@
       lookup_key: "TMIB-HITO-01",
       telegram_username: "@hito_sigil",
       telegram_status: "linked",
-      folders: ["travel", "extreme", "vip", "pn"],
-      vip_can_pn: true,
+      folders: ["travel", "extreme", "premium", "vip", "exclusive"],
+      orientation: "both",
       status: "available",
       note: "Steady route / calm personal assistant"
     },
@@ -231,8 +240,8 @@
       lookup_key: "TMIB-KJ-01",
       telegram_username: "@kenji_sigil",
       telegram_status: "linked",
-      folders: ["travel", "vip", "pn"],
-      vip_can_pn: true,
+      folders: ["travel", "standard", "premium", "vip"],
+      orientation: "straight",
       status: "available",
       note: "Client continuity / premium lead"
     },
@@ -242,8 +251,8 @@
       lookup_key: "TMIB-TT-01",
       telegram_username: "@tart_sigil",
       telegram_status: "linked",
-      folders: ["travel", "extreme"],
-      vip_can_pn: false,
+      folders: ["travel", "extreme", "standard"],
+      orientation: "both",
       status: "available",
       note: "Scout / public work"
     },
@@ -253,8 +262,8 @@
       lookup_key: "TMIB-YUKI-01",
       telegram_username: "@yuki_sigil",
       telegram_status: "verified",
-      folders: ["vip", "pn"],
-      vip_can_pn: true,
+      folders: ["vip", "exclusive"],
+      orientation: "gay",
       status: "approval",
       note: "Approval / partnership authority"
     }
@@ -341,6 +350,9 @@
   function normalizeClients(data) {
     return (data?.records || data?.items || data?.data || []).map((item, index) => ({
       client_id: item.client_id || item.id || `client_${index}`,
+      member_id: item.member_id || "",
+      member_email: item.member_email || item.contact_email || item.email || "",
+      memberstack_id: item.memberstack_id || "",
       client_name: item.client_name || item.clientName || item.name || item.nickname || "",
       username: item.username || item.member_username || "",
       phone: item.phone || item.member_phone || "",
@@ -367,10 +379,85 @@
       telegram_username: item.telegram_username || item.model_telegram_username || "",
       telegram_status: item.telegram_status || "missing",
       folders: Array.isArray(item.folders) ? item.folders : [],
-      vip_can_pn: Boolean(item.vip_can_pn || item.pn_compatible),
+      orientation: normalizeOrientation(item.orientation || item.model_orientation || item.private_orientation || item.booking_orientation),
       status: item.status || "available",
       note: item.note || item.description || ""
     }));
+  }
+
+  function normalizeToken(value) {
+    return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  }
+
+  function normalizeOrientation(value) {
+    const token = normalizeToken(value);
+    if (token === "gay") return "gay";
+    if (token === "both" || token === "bi" || token === "all") return "both";
+    if (token === "straight") return "straight";
+    return "";
+  }
+
+  function selectedClientSnapshot() {
+    const client = state.selectedClient || {};
+    return {
+      package_code: String(val(el.package) || client.package_code || ""),
+      tier: String(client.tier || ""),
+      membership_status: String(val(el.membershipStatus) || client.membership_status || "")
+    };
+  }
+
+  const privateAccessFolders = {
+    standard: ["standard"],
+    premium: ["standard", "premium"],
+    vip: ["standard", "premium", "vip"],
+    black_card: ["standard", "premium", "vip", "exclusive"]
+  };
+
+  const privateAccessLabels = {
+    standard: "Standard",
+    premium: "Premium",
+    vip: "VIP",
+    black_card: "Black Card"
+  };
+
+  function membershipAccessLevel(tierText) {
+    // legacy SVIP normalizes to Black Card access; check before "vip" (substring)
+    if (tierText.includes("black") || tierText.includes("svip")) return "black_card";
+    if (tierText.includes("vip")) return "vip";
+    if (tierText.includes("premium")) return "premium";
+    if (tierText.includes("standard")) return "standard";
+    return "";
+  }
+
+  function privateEligibility() {
+    const client = selectedClientSnapshot();
+    const status = normalizeToken(client.membership_status);
+    const tierText = normalizeToken([client.package_code, client.tier].filter(Boolean).join(" "));
+    const active = status === "active";
+    const level = active ? membershipAccessLevel(tierText) : "";
+    if (!state.selectedClient || !active || !level) {
+      return {
+        eligibility_checked: Boolean(state.selectedClient),
+        eligibility_result: "blocked",
+        private_access_level: "blocked",
+        allowed_private_folders: []
+      };
+    }
+    return {
+      eligibility_checked: true,
+      eligibility_result: "allowed",
+      private_access_level: level,
+      allowed_private_folders: privateAccessFolders[level].slice()
+    };
+  }
+
+  function privateAccessPayload() {
+    const access = privateEligibility();
+    return {
+      ...access,
+      selected_orientation: state.workType === "private" ? state.privateOrientation : "",
+      selected_private_folder: state.workType === "private" ? state.modelFolder : ""
+    };
   }
 
   async function checkSession() {
@@ -546,6 +633,8 @@
       el.lineageNotice.classList.add("is-ok");
     }
     renderClients();
+    renderFolders();
+    renderModels();
     updateAll();
     setStatus("Client lineage selected.", "ok");
     scrollToNode($("#work-panel"));
@@ -565,6 +654,10 @@
       el.customerTelegram
     ].forEach((node) => setVal(node, ""));
     setVal(el.customerTelegramStatus, "missing");
+    state.privateOrientation = "";
+    state.modelFolder = "";
+    state.models = [];
+    state.selectedModel = null;
     text(el.clientInitial, "C");
     text(el.selectedClientName, "-");
     text(el.selectedClientMeta, "-");
@@ -578,12 +671,15 @@
       el.lineageNotice.classList.remove("is-ok", "is-bad");
     }
     renderClients();
+    renderFolders();
+    renderModels();
     updateAll();
     scrollToNode($("#client-search"));
   }
 
   function selectWorkType(type) {
     state.workType = type;
+    state.privateOrientation = "";
     state.modelFolder = "";
     state.models = [];
     state.selectedModel = null;
@@ -592,7 +688,7 @@
     });
     renderFolders();
     renderModels();
-    text(el.folderHelper, type === "public" ? "Public Work: เลือกแฟ้ม Travel Model หรือ Extreme Model" : "Private Work: เลือกแฟ้ม VIP หรือ PN");
+    text(el.folderHelper, type === "public" ? "Public Work: เลือกแฟ้ม Travel Model หรือ Extreme Model" : "Private Work: ตรวจ eligibility ก่อน แล้วเลือก Straight หรือ Gay");
     setStatus(type === "public" ? "Public Work selected." : "Private Work selected.", "ok");
     updateAll();
     scrollToNode($("#model-panel"));
@@ -605,10 +701,37 @@
 
   function renderFolders() {
     if (!el.folderGrid) return;
-    const rows = folders[state.workType] || [];
+    let rows = folders[state.workType] || [];
     if (!rows.length) {
       el.folderGrid.innerHTML = '<div class="mmdop__empty">เลือก Public Work หรือ Private Work ก่อน</div>';
       return;
+    }
+    if (state.workType === "private") {
+      const access = privateEligibility();
+      if (access.eligibility_result !== "allowed") {
+        el.folderGrid.innerHTML = '<div class="mmdop__empty">Private create ถูกบล็อกสำหรับ inactive / expired / guest / unknown ให้บันทึก draft หรือ pending review เท่านั้น</div>';
+        return;
+      }
+      if (!state.privateOrientation) {
+        el.folderGrid.innerHTML = `
+        <button class="mmdop__folder" type="button" data-op-private-orientation="straight">
+          <span>PRIVATE ORIENTATION</span>
+          <strong>Straight</strong>
+          <p>Eligibility ผ่านแล้ว เลือก orientation ก่อนแสดงแฟ้ม Private</p>
+          <em>Choose Straight</em>
+        </button>
+        <button class="mmdop__folder" type="button" data-op-private-orientation="gay">
+          <span>PRIVATE ORIENTATION</span>
+          <strong>Gay</strong>
+          <p>Eligibility ผ่านแล้ว เลือก orientation ก่อนแสดงแฟ้ม Private</p>
+          <em>Choose Gay</em>
+        </button>`;
+        $$('[data-op-private-orientation]').forEach((button) => {
+          button.addEventListener("click", () => selectPrivateOrientation(button.dataset.opPrivateOrientation));
+        });
+        return;
+      }
+      rows = rows.filter(([id]) => access.allowed_private_folders.includes(id));
     }
     el.folderGrid.innerHTML = rows
       .map(([id, title, copy, cta]) => `
@@ -624,6 +747,16 @@
     });
   }
 
+  function selectPrivateOrientation(orientation) {
+    state.privateOrientation = normalizeOrientation(orientation);
+    state.modelFolder = "";
+    state.models = [];
+    state.selectedModel = null;
+    renderFolders();
+    renderModels();
+    updateAll();
+  }
+
   async function selectFolder(folderId) {
     state.modelFolder = folderId;
     state.selectedModel = null;
@@ -634,10 +767,13 @@
   }
 
   function demoModelsForFolder(folderId) {
-    if (folderId === "pn") {
-      return demoModels.filter((model) => model.folders.includes("pn") || (model.folders.includes("vip") && model.vip_can_pn));
-    }
-    return demoModels.filter((model) => model.folders.includes(folderId));
+    const allowedByFolder = (model) => model.folders.includes(folderId);
+    const allowedByOrientation = (model) => {
+      if (state.workType !== "private") return true;
+      const orientation = normalizeOrientation(model.orientation);
+      return orientation === state.privateOrientation || orientation === "both";
+    };
+    return demoModels.filter((model) => allowedByFolder(model) && allowedByOrientation(model));
   }
 
   async function loadModels() {
@@ -654,7 +790,25 @@
     }
     setStatus("กำลังโหลด Model Pool...", "");
     try {
-      const url = `${api(config.endpoints.modelSearch)}?work_type=${encodeURIComponent(state.workType)}&folder=${encodeURIComponent(state.modelFolder)}`;
+      const params = new URLSearchParams({
+        work_type: state.workType,
+        selected_access_folder: state.modelFolder
+      });
+      if (state.workType === "private") {
+        // entitlement is resolved server-side from the client identifier;
+        // frontend eligibility fields are advisory UX only
+        params.set("booking_visibility", "private");
+        params.set("customer_lane", state.privateOrientation);
+        const client = state.selectedClient || {};
+        if (client.client_id) params.set("client_id", client.client_id);
+        if (client.member_id) params.set("member_id", client.member_id);
+        if (client.memberstack_id) params.set("memberstack_id", client.memberstack_id);
+        if (client.member_email) params.set("member_email", client.member_email);
+        if (client.line_record_id) params.set("line_record_id", client.line_record_id);
+        if (client.line_user_id) params.set("line_user_id", client.line_user_id);
+        if (client.customer_telegram_username) params.set("customer_telegram_username", client.customer_telegram_username);
+      }
+      const url = `${api(config.endpoints.modelSearch)}?${params.toString()}`;
       const result = await requestJson(url);
       if (!result.ok) throw new Error(`HTTP ${result.status}`);
       state.models = normalizeModels(result.data);
@@ -690,12 +844,9 @@
     el.modelSelect.innerHTML =
       '<option value="">เลือก Model</option>' +
       state.models
-        .map((model) => {
-          const suffix = state.modelFolder === "pn" && model.folders.includes("vip") ? " · VIP compatible" : "";
-          return `<option value="${esc(model.model_id)}">${esc(model.model_name + suffix)}</option>`;
-        })
+        .map((model) => `<option value="${esc(model.model_id)}">${esc(model.model_name)}</option>`)
         .join("");
-    text(el.modelRule, state.modelFolder === "pn" ? "PN shows PN + VIP-compatible models" : folderLabel(state.modelFolder));
+    text(el.modelRule, folderLabel(state.modelFolder));
     renderModelPreview();
   }
 
@@ -798,6 +949,11 @@
     if (!String(val(el.clientName) || "").trim()) missing.push("Client Name");
     if (!String(val(el.lineUserId) || "").trim()) missing.push("LINE User ID");
     if (!state.workType) missing.push("Work Type");
+    if (state.workType === "private") {
+      const access = privateEligibility();
+      if (access.eligibility_result !== "allowed") missing.push("Private Eligibility");
+      if (!state.privateOrientation) missing.push("Private Orientation");
+    }
     if (!state.modelFolder) missing.push("Model Folder");
     if (!state.selectedModel) missing.push("Model");
     if (!String(val(el.date) || "").trim()) missing.push("Date");
@@ -844,7 +1000,13 @@
       return;
     }
     if (!state.modelFolder) {
-      setNext("เลือก Model Folder", state.workType === "public" ? "Travel หรือ Extreme" : "VIP หรือ PN");
+      if (state.workType === "private" && privateEligibility().eligibility_result !== "allowed") {
+        setNext("Private Pending Review", "บันทึก draft เท่านั้น ลูกค้ายังไม่ active eligible");
+      } else if (state.workType === "private" && !state.privateOrientation) {
+        setNext("เลือก Orientation", "Straight หรือ Gay ก่อนเลือกแฟ้ม Private");
+      } else {
+        setNext("เลือก Model Folder", state.workType === "public" ? "Travel หรือ Extreme" : "แฟ้ม Private ที่ eligibility อนุญาต");
+      }
       setActiveStep("folder");
       return;
     }
@@ -877,8 +1039,13 @@
     text(el.statStatus, getMissingFields().length ? "Not ready" : "Ready");
     text(el.railFolder, state.modelFolder ? folderLabel(state.modelFolder) : "Not selected");
     if (state.workType === "public") text(el.railFolderCopy, "Public Work ใช้ Travel Model หรือ Extreme Model");
-    else if (state.workType === "private") text(el.railFolderCopy, "Private Work ใช้ VIP / PN และ PN รับ VIP-compatible ได้");
-    else text(el.railFolderCopy, "Public = Travel / Extreme · Private = VIP / PN");
+    else if (state.workType === "private") {
+      const access = privateEligibility();
+      text(el.railFolderCopy, access.eligibility_result === "allowed"
+        ? `Private ${privateAccessLabels[access.private_access_level] || access.private_access_level}: ${access.allowed_private_folders.map(folderLabel).join(" / ")} · ${state.privateOrientation || "เลือก orientation"}`
+        : "Private create blocked: draft / pending review only");
+    }
+    else text(el.railFolderCopy, "Public = Travel / Extreme · Private = Standard / Premium / VIP / Exclusive");
   }
 
   function updateReadyState() {
@@ -928,12 +1095,14 @@
         model_folder_label: folderLabel(state.modelFolder),
         privacy_level: state.workType === "private" ? "restricted" : "standard"
       },
+      private_access: privateAccessPayload(),
       model: {
         model_id: model.model_id || "",
         model_name: model.model_name || "",
         model_lookup_key: model.lookup_key || "",
         model_pool: state.modelFolder,
-        model_pool_rule: state.modelFolder === "pn" ? "pn_allows_vip_compatible" : "strict_folder_match"
+        selected_orientation: state.workType === "private" ? state.privateOrientation : "",
+        model_pool_rule: "strict_folder_match"
       },
       telegram_gate: {
         telegram_required: true,
@@ -1017,7 +1186,11 @@
       selectClient(state.clients[0].client_id);
     }
     if (!state.workType) selectWorkType("public");
-    if (!state.modelFolder) await selectFolder(state.workType === "private" ? "vip" : "travel");
+    if (state.workType === "private" && !state.privateOrientation) selectPrivateOrientation("straight");
+    if (!state.modelFolder) {
+      const access = privateEligibility();
+      await selectFolder(state.workType === "private" ? access.allowed_private_folders[0] || "standard" : "travel");
+    }
     if (!state.selectedModel) {
       const firstModel = state.models[0] || demoModelsForFolder(state.modelFolder)[0];
       if (firstModel && el.modelSelect) {
@@ -1227,6 +1400,7 @@
     state.clients = [];
     state.selectedClient = null;
     state.workType = "";
+    state.privateOrientation = "";
     state.modelFolder = "";
     state.models = [];
     state.selectedModel = null;
