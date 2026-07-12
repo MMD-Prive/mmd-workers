@@ -1,0 +1,18 @@
+{
+  "name": "mmd-kenji-knowledge",
+  "version": "1.0.0",
+  "status": "draft",
+  "schema_version": "1.0.0",
+  "default_language": "th",
+  "source_of_truth": "git",
+  "review_gate": "pull_request",
+  "final_reviewer": "Boss Per",
+  "allowed_owners": ["Boss Per", "Ewvon", "Chang"],
+  "published_status": "published",
+  "cards_root": "knowledge/kenji/cards",
+  "policy_files": [
+    "knowledge/kenji/routes.json",
+    "knowledge/kenji/boundaries.json",
+    "knowledge/kenji/escalation.json"
+  ]
+}
