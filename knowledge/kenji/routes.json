@@ -1,0 +1,20 @@
+{
+  "version": "1.0.0",
+  "public_and_member_safe_routes": {
+    "/sigil/inme": "Client entry and orientation",
+    "/sigil/start": "Guided start",
+    "/sigil/guide": "Guide selection and explanation",
+    "/sigil/booking": "Booking request flow",
+    "/sigil/pay": "Payment and renewal guidance",
+    "/member/dashboard": "Member home and safe status surface",
+    "/sigil/member/account": "Member account surface",
+    "/sigil/apply": "Model and applicant routing only"
+  },
+  "forbidden_route_classes": [
+    "internal_admin",
+    "secret_worker_route",
+    "service_binding_alias",
+    "mutation_endpoint",
+    "tokenized_private_route"
+  ]
+}
