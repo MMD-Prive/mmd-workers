@@ -149,6 +149,10 @@ export default {
       );
     }
 
+    if (path === "/v1/line/member/bind") {
+      return withCors(await handleLineMemberBind(req, env, method, cors), cors);
+    }
+
     // ------------------------------------------------------
     // DEMO LINKS (internal tool + public confirm fetch)
     // ------------------------------------------------------
@@ -746,6 +750,156 @@ function withCors(res, cors) {
     status: res.status,
     headers,
   });
+}
+
+const LINE_MEMBER_BIND_ORIGINS = new Set([
+  "https://mmdbkk.com",
+  "https://www.mmdbkk.com",
+  "https://mmdprive.webflow.io",
+  "https://mmdprive.com",
+]);
+
+const LINE_MEMBER_BIND_ALLOWED_PACKAGES = new Set([
+  "",
+  "trial_guest_pass",
+  "guest_pass",
+  "7days",
+  "standard",
+  "standard_package",
+  "premium",
+  "premium_package",
+]);
+
+const LINE_MEMBER_BIND_FORBIDDEN_KEY = /(^|_)(token|access_token|id_token|secret|api_key|private_note|admin_note)(_|$)/i;
+
+function isLineMemberBindOriginAllowed(req) {
+  const origin = req.headers.get("Origin") || "";
+  if (!origin) return true;
+  return LINE_MEMBER_BIND_ORIGINS.has(origin);
+}
+
+async function handleLineMemberBind(req, env, method) {
+  if (!isLineMemberBindOriginAllowed(req)) {
+    return json({ ok: false, error: "origin_not_allowed" }, 403);
+  }
+
+  if (method === "OPTIONS") return new Response(null, { status: 204 });
+  if (method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+
+  const contentType = req.headers.get("Content-Type") || "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    return json({ ok: false, error: "json_required" }, 415);
+  }
+
+  const body = await safeJson(req);
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return json({ ok: false, error: "invalid_json" }, 400);
+  }
+
+  if (containsForbiddenLineBindKey(body)) {
+    return json({ ok: false, error: "forbidden_payload_field" }, 400);
+  }
+
+  const source = str(body.source);
+  if (source !== "sigil_member_membership") {
+    return json({ ok: false, error: "invalid_source" }, 400);
+  }
+
+  const lineUserId = str(body.line_user_id || body.lineUserId);
+  if (!isPlausibleLineUserId(lineUserId)) {
+    return json({ ok: false, error: "invalid_line_user_id" }, 400);
+  }
+
+  const selectedPackage = normalizeLineMemberSelectedPackage(body.selected_package || body.package || body.package_code);
+  if (selectedPackage === null) {
+    return json({ ok: false, error: "invalid_selected_package" }, 400);
+  }
+
+  const now = new Date().toISOString();
+  const evidenceId = `liff_bind_${crypto.randomUUID()}`;
+  const lineUserIdHash = await sha256Hex(lineUserId);
+  const displayName = str(body.line_display_name || body.lineDisplayName).slice(0, 120);
+  const picturePresent = Boolean(str(body.line_picture_url || body.linePictureUrl));
+  const context = body.context && typeof body.context === "object" && !Array.isArray(body.context) ? body.context : {};
+
+  const evidencePayload = {
+    evidence_id: evidenceId,
+    source,
+    created_at: now,
+    selected_package: selectedPackage,
+    line_user_id_hash: lineUserIdHash,
+    line_display_name: displayName,
+    line_picture_url_present: picturePresent,
+    context: pickLineMemberBindContext(context),
+    materialization: {
+      membership_active: false,
+      points_awarded: false,
+      payments_verified: false,
+      entitlements_materialized: false,
+      reason: "liff_membership_entry_identity_evidence_only",
+    },
+  };
+
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) {
+    return json({
+      ok: true,
+      mode: "accepted_no_persistence",
+      evidence_id: evidenceId,
+      materialization: evidencePayload.materialization,
+    });
+  }
+
+  const rec = await airtableCreate({
+    baseId: env.AIRTABLE_BASE_ID,
+    tableId: env.AIRTABLE_TABLE_CONSOLE_INBOX_ID || "tblFHmfpB2TTrzO2e",
+    apiKey: env.AIRTABLE_API_KEY,
+    fields: {
+      inbox_id: evidenceId,
+      source,
+      intent: "liff_member_bind",
+      member_name: displayName,
+      line_user_id: lineUserId,
+      legacy_tags: "line_liff, membership_entry, identity_evidence_only",
+      admin_note: `LIFF membership entry evidence only. line_user_id_hash=${lineUserIdHash.slice(0, 16)} package=${selectedPackage || "none"}`,
+      payload_json: JSON.stringify(evidencePayload),
+      status: "new",
+      error_message: "",
+    },
+  });
+
+  return json({
+    ok: true,
+    mode: "persisted",
+    evidence_id: evidenceId,
+    record_id: rec?.id || null,
+    materialization: evidencePayload.materialization,
+  });
+}
+
+function isPlausibleLineUserId(value) {
+  const text = str(value);
+  return /^U[A-Za-z0-9_-]{8,80}$/.test(text);
+}
+
+function normalizeLineMemberSelectedPackage(value) {
+  const normalized = str(value).toLowerCase().replace(/[^a-z0-9_/-]+/g, "_").replace(/\/+/g, "_").slice(0, 80);
+  if (!LINE_MEMBER_BIND_ALLOWED_PACKAGES.has(normalized)) return null;
+  return normalized;
+}
+
+function containsForbiddenLineBindKey(value) {
+  if (!value || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.some((item) => containsForbiddenLineBindKey(item));
+  return Object.entries(value).some(([key, item]) => LINE_MEMBER_BIND_FORBIDDEN_KEY.test(key) || containsForbiddenLineBindKey(item));
+}
+
+function pickLineMemberBindContext(context) {
+  const out = {};
+  for (const key of ["os", "language", "type", "viewType", "utm_source", "rich_menu_id"]) {
+    const value = str(context[key]);
+    if (value) out[key] = value.slice(0, 120);
+  }
+  return out;
 }
 
 /* =========================

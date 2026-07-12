@@ -6,6 +6,14 @@ main = "src/index.js"
 compatibility_date = "2026-01-01"
 workers_dev = true
 
+[[routes]]
+pattern = "sigil.mmdbkk.com/v1/line/member/bind"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/v1/line/member/bind/"
+zone_name = "mmdbkk.com"
+
 # ใช้สำหรับ CORS (browser calls)
 [vars]
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
