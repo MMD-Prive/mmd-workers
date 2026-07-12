@@ -6,8 +6,9 @@ workers_dev = true
 
 # Fresh route-free worker for MMD Private Care / SIGIL Complaint Evidence intake.
 # Do not add routes here until Cloudflare route conflict on sigil-worker is cleared.
-# Public workers.dev endpoint after deploy:
+# Public workers.dev endpoints after deploy:
 # https://mmd-care-intake-worker.malemodel-bkk.workers.dev/member/api/recovery/complaint-evidence
+# https://mmd-care-intake-worker.malemodel-bkk.workers.dev/member/api/recovery/complaint-status
 
 [observability]
 enabled = true
@@ -16,7 +17,12 @@ head_sampling_rate = 1
 [vars]
 WORKER_NAME = "mmd-care-intake-worker"
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.webflow.io"
+AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+AIRTABLE_PRIVATE_CARE_CASES_TABLE = "private_care_cases"
 
+# Required secret for Airtable server-side reads/writes:
+# npx wrangler secret put AIRTABLE_API_TOKEN --config ./mmd-care-intake-worker/wrangler.toml
+#
 # Optional secrets:
 # COMPLAINT_GOOGLE_DRIVE_WEBHOOK_URL
 # COMPLAINT_TELEGRAM_WEBHOOK_URL
@@ -27,3 +33,8 @@ ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbk
 binding = "SIGIL_BOARD_KV"
 id = "7922350083a644db8a48c16c7e48fca7"
 preview_id = "f673c4ab6e4f456baefeab032564db72"
+
+# Optional private evidence bucket. Uncomment only if bucket is already created in Cloudflare.
+# [[r2_buckets]]
+# binding = "COMPLAINT_EVIDENCE_R2"
+# bucket_name = "mmd-care-evidence"
