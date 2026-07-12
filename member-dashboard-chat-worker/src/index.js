@@ -179,8 +179,22 @@ function getLineEventText(event = {}) {
   return "";
 }
 
+function getLineRawEventText(event = {}) {
+  if (event?.type === "message" && event?.message?.type === "text") return String(event.message.text || "");
+  if (event?.type === "postback") return String(event?.postback?.displayText || event?.postback?.data || "");
+  return "";
+}
+
 function getLineEventId(event = {}) {
   return asString(event?.message?.id || event?.webhookEventId || event?.replyToken || `evt_${Date.now()}`);
+}
+
+function getLineMessageType(event = {}) {
+  return asString(event?.message?.type || "");
+}
+
+function getLineSourceType(event = {}) {
+  return asString(event?.source?.type || "");
 }
 
 function normalizeLookup(value) {
@@ -195,6 +209,74 @@ function normalizeLookup(value) {
 
 function compactLookup(value) {
   return normalizeLookup(value).replace(/\s+/g, "");
+}
+
+export function normalizeLinePublicTriggerText(text = "") {
+  return String(text || "")
+    .normalize("NFKC")
+    .replace(/[\u200B\u200C\u200D\uFEFF]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function getLinePublicTriggerDiagnostics(text = "") {
+  const raw = String(text || "");
+  const normalized = normalizeLinePublicTriggerText(raw);
+  return {
+    normalized_length: normalized.length,
+    raw_length: raw.length,
+    has_zero_width: /[\u200B\u200C\u200D\uFEFF]/.test(raw),
+    has_leading_or_trailing_space: raw !== raw.trim(),
+    has_repeated_space: /\s{2,}/.test(raw.replace(/[\u200B\u200C\u200D\uFEFF]/g, "")),
+  };
+}
+
+function getPublicTriggerCategory(text = "") {
+  const spaced = normalizeLinePublicTriggerText(text);
+  const compact = spaced.replace(/\s+/g, "");
+  if (
+    compact === "per" ||
+    compact === "hiper" ||
+    compact === "helloper" ||
+    compact === "คุยกับเปอร์" ||
+    compact === "คุยกับเปอร์ครับ" ||
+    compact === "คุยกับper" ||
+    compact === "คุยกับperครับ" ||
+    /\b(?:hi|hello)\s+per\b/i.test(spaced)
+  ) {
+    return "public_per";
+  }
+  if (compact === "himmd" || compact === "himmdforenglish" || compact === "english") return "public_english";
+  return "unknown";
+}
+
+function isPublicSafeTriggerCategory(category = "") {
+  return category === "public_per" || category === "public_english";
+}
+
+function logLinePublicTriggerSkip(details = {}) {
+  console.log("line_public_trigger_skip", JSON.stringify({
+    reason: asString(details.reason || "unknown"),
+    trigger_category: asString(details.trigger_category || "unknown"),
+    auto_reply_enabled: Boolean(details.auto_reply_enabled),
+    has_source_user: Boolean(details.has_source_user),
+    has_reply_text: Boolean(details.has_reply_text),
+    is_public_safe_trigger: Boolean(details.is_public_safe_trigger),
+    message_type: asString(details.message_type),
+    source_type: asString(details.source_type),
+    has_channel_token: Boolean(details.has_channel_token),
+    deduped: Boolean(details.deduped),
+    normalized_length: Number(details.normalized_length || 0),
+    raw_length: Number(details.raw_length || 0),
+    has_zero_width: Boolean(details.has_zero_width),
+    has_leading_or_trailing_space: Boolean(details.has_leading_or_trailing_space),
+    has_repeated_space: Boolean(details.has_repeated_space),
+  }));
+}
+
+function logLineDeliveryResult(name, result = {}) {
+  console.log(name, JSON.stringify({ status: Number(result.status || 0) || undefined }));
 }
 
 export function isKenjiLineCandidate(text = "") {
@@ -982,13 +1064,29 @@ async function handleLineWebhook(request, env) {
   const events = Array.isArray(body.events) ? body.events : [];
   const autoReplyEnabled = isEnabled(env.LINE_AUTO_REPLY_ENABLED);
   const kenjiEnabled = isEnabled(env.LINE_KENJI_AI_ENABLED);
+  const hasChannelToken = Boolean(asString(env.LINE_CHANNEL_ACCESS_TOKEN));
   const saved = [];
+
+  if (events.length === 0) {
+    logLinePublicTriggerSkip({
+      reason: "no_events",
+      auto_reply_enabled: autoReplyEnabled,
+      has_channel_token: hasChannelToken,
+    });
+  }
 
   for (const event of events) {
     const text = getLineEventText(event);
+    const rawText = getLineRawEventText(event);
     const lineUserId = getLineUserId({ event });
     const intent = inferLineIntent(text, event);
-    const shouldFetchProfile = Boolean(autoReplyEnabled && lineUserId && event?.source?.type === "user" && asString(env.LINE_CHANNEL_ACCESS_TOKEN));
+    const messageType = getLineMessageType(event);
+    const sourceType = getLineSourceType(event);
+    const replyToken = getReplyToken(event);
+    const triggerDiagnostics = getLinePublicTriggerDiagnostics(rawText);
+    const triggerCategory = getPublicTriggerCategory(rawText);
+    const isPublicSafeTrigger = isPublicSafeTriggerCategory(triggerCategory);
+    const shouldFetchProfile = Boolean(autoReplyEnabled && lineUserId && event?.source?.type === "user" && hasChannelToken);
     const profile = shouldFetchProfile ? await fetchLineProfile(env, lineUserId) : null;
     const record = await writeLineEventToConsoleInbox(env, event, profile, intent);
     const replyText = kenjiEnabled ? buildKenjiLineReply(event, profile, { forceReply: autoReplyEnabled }) : "";
@@ -996,8 +1094,49 @@ async function handleLineWebhook(request, env) {
       ? await maybeBuildKenjiKnowledgeReply({ env, userId: lineUserId, messageText: text, fetchImpl: globalThis.fetch })
       : null;
     const finalReplyText = knowledgeReply || replyText;
-    const shouldReply = Boolean(autoReplyEnabled && !record?.deduped && finalReplyText && getReplyToken(event));
-    const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), finalReplyText, { trusted_event: true }) : null;
+    const baseSkipDetails = {
+      trigger_category: triggerCategory,
+      auto_reply_enabled: autoReplyEnabled,
+      has_source_user: Boolean(lineUserId),
+      has_reply_text: Boolean(finalReplyText),
+      is_public_safe_trigger: isPublicSafeTrigger,
+      message_type: messageType,
+      source_type: sourceType,
+      has_channel_token: hasChannelToken,
+      deduped: Boolean(record?.deduped),
+      ...triggerDiagnostics,
+    };
+    let skipReason = "";
+    let replyResult = null;
+    let pushResult = null;
+
+    if (event?.type !== "message") {
+      skipReason = "unsupported_event_type";
+    } else if (messageType !== "text") {
+      skipReason = "unsupported_message_type";
+    } else if (!autoReplyEnabled) {
+      skipReason = "auto_reply_disabled";
+    } else if (record?.deduped) {
+      skipReason = "deduped";
+    } else if (!finalReplyText) {
+      skipReason = "missing_reply_text";
+    } else if (!hasChannelToken) {
+      skipReason = "missing_channel_token";
+    } else if (replyToken) {
+      replyResult = await sendLineReply(env, replyToken, finalReplyText, { trusted_event: true });
+      logLineDeliveryResult(replyResult?.ok ? "line_reply_success" : "line_reply_failed", replyResult);
+      if (!replyResult?.ok) skipReason = "reply_not_allowed";
+    } else if (!isPublicSafeTrigger) {
+      skipReason = "no_public_trigger_match";
+    } else if (!lineUserId) {
+      skipReason = "missing_source_user";
+    } else {
+      pushResult = await deliverLineText(env, lineUserId, finalReplyText, { trusted_event: true });
+      logLineDeliveryResult(pushResult?.ok ? "line_push_fallback_success" : "line_push_fallback_failed", pushResult);
+      if (!pushResult?.ok) skipReason = "push_not_allowed";
+    }
+
+    if (skipReason) logLinePublicTriggerSkip({ ...baseSkipDetails, reason: skipReason });
 
     saved.push({
       ok: true,
@@ -1007,6 +1146,7 @@ async function handleLineWebhook(request, env) {
       recorded: Boolean(record?.id),
       record_skipped: Boolean(record?.skipped),
       replied: Boolean(replyResult?.ok),
+      pushed: Boolean(pushResult?.ok),
       line_user: Boolean(lineUserId),
       message_id: getLineEventId(event),
     });

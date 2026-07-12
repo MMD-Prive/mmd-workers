@@ -23,3 +23,6 @@ pattern = "www.mmdbkk.com/webhooks/line/"
 zone_name = "mmdbkk.com"
 
 # Bind LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, INTERNAL_TOKEN, and CONFIRM_KEY as Cloudflare secrets only.
+
+[vars]
+LINE_AUTO_REPLY_ENABLED = "true"
