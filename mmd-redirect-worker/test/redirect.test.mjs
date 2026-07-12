@@ -611,6 +611,79 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
+  it("serves /member/apply as the Kenji Member Application Gate before generic member handling", async () => {
+    const urls = [
+      "https://mmdbkk.com/member/apply?t=abc&code=KJ-001&promo=gold",
+      "https://mmdbkk.com/member/apply/?t=abc&code=KJ-001&promo=gold",
+      "https://www.mmdbkk.com/member/apply?t=abc&code=KJ-001&promo=gold",
+    ];
+
+    for (const url of urls) {
+      const response = await request(url);
+      const html = await response.text();
+
+      assert.equal(response.status, 200, url);
+      assert.equal(response.headers.get("location"), null, url);
+      assert.equal(response.headers.get("x-mmd-front-gate"), "mmd-redirect-worker", url);
+      assert.equal(response.headers.get("x-mmd-route-owner"), "mmd-redirect-worker", url);
+      assert.equal(response.headers.get("x-mmd-page"), "kenji-member-application-gate", url);
+      assert.equal(response.headers.get("x-mmd-apply-owner-fix"), "phase-apply-guard-v2", url);
+      assert.equal(response.headers.get("x-mmd-temporary-route"), null, url);
+      assert.match(html, /Kenji Member Application Gate/, url);
+      assert.match(html, /data-api-base="https:\/\/sigil\.mmdbkk\.com"/, url);
+      assert.match(html, /data-submit-path="\/v1\/member\/applications"/, url);
+      assert.match(html, /data-dashboard-url="\/member\/dashboard"/, url);
+      assert.match(html, /data-membership-url="\/member\/membership"/, url);
+      assert.match(html, /data-help-url="https:\/\/t\.me\/mmdapply"/, url);
+      assert.match(html, /data-step="1"/, url);
+      assert.match(html, /data-step="2"/, url);
+      assert.match(html, /data-step="3"/, url);
+      assert.match(html, /data-step="4"/, url);
+      assert.match(html, /data-step="5"/, url);
+      assert.match(html, /localStorage\.setItem/, url);
+      assert.match(html, /params\.get\("t"\)/, url);
+      assert.match(html, /params\.get\("code"\)/, url);
+      assert.match(html, /params\.get\("promo"\)/, url);
+      assert.match(html, /fetch\(endpoint/, url);
+      assert.doesNotMatch(html, /Member Page/, url);
+      assert.doesNotMatch(html, /member-static/, url);
+      assert.doesNotMatch(html, /หน้านี้อยู่ในพื้นที่สมาชิกของ MMD Privé/, url);
+      assert.doesNotMatch(html, /\/default|\/autodirect|\/member\/login|\/login|\/pay\/membership|\/member\/mermbership/i, url);
+      assert.doesNotMatch(html, /api[_-]?key|secret|bearer\s+[a-z0-9._-]+/i, url);
+      assertPolishedShell(html, url);
+    }
+
+    assert.equal(passThroughRequests.length, 0);
+  });
+
+  it("serves HEAD /member/apply with Kenji owner headers and no body", async () => {
+    const response = await request("https://mmdbkk.com/member/apply?t=abc", { method: "HEAD" });
+    const body = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("location"), null);
+    assert.equal(response.headers.get("x-mmd-page"), "kenji-member-application-gate");
+    assert.equal(response.headers.get("x-mmd-route-owner"), "mmd-redirect-worker");
+    assert.equal(response.headers.get("x-mmd-apply-owner-fix"), "phase-apply-guard-v2");
+    assert.equal(response.headers.get("x-mmd-temporary-route"), null);
+    assert.equal(body, "");
+    assert.equal(passThroughRequests.length, 0);
+  });
+
+  it("leaves /default and /autodirect pass-through behavior unchanged", async () => {
+    for (const path of ["/default", "/autodirect"]) {
+      const response = await request(`https://mmdbkk.com${path}?t=abc`);
+
+      assert.equal(response.status, 209, path);
+      assert.equal(response.headers.get("x-test-pass-through"), "1", path);
+      assert.equal(response.headers.get("location"), null, path);
+    }
+
+    assert.equal(passThroughRequests.length, 2);
+    assert.equal(passThroughRequests[0].url, "https://mmdbkk.com/default?t=abc");
+    assert.equal(passThroughRequests[1].url, "https://mmdbkk.com/autodirect?t=abc");
+  });
+
   it("renders /model/console as a polished MMD Privé page without redirecting", async () => {
     const urls = [
       "https://mmdbkk.com/model/console?t=abc&cb=test",
