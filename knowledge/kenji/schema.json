@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdbkk.com/schemas/kenji-knowledge-card-v1.json",
+  "title": "Kenji Knowledge Card",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "version",
+    "status",
+    "lane",
+    "audience",
+    "language",
+    "title",
+    "questions",
+    "safe_answer",
+    "allowed_actions",
+    "forbidden_actions",
+    "escalate_when",
+    "safe_routes",
+    "owner",
+    "final_reviewer"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$" },
+    "version": { "type": "integer", "minimum": 1 },
+    "status": { "enum": ["draft", "review", "published", "archived"] },
+    "lane": { "enum": ["membership", "renewal", "payment", "booking", "guide", "travel", "support", "apply-routing", "privacy", "rules", "escalation"] },
+    "audience": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["public", "public_member", "member", "premium", "vip_review", "blackcard_review", "internal_only"] }
+    },
+    "language": { "enum": ["th", "en", "zh", "jp"] },
+    "title": { "type": "string", "minLength": 3, "maxLength": 160 },
+    "questions": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "safe_answer": { "type": "string", "minLength": 20, "maxLength": 5000 },
+    "allowed_actions": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "forbidden_actions": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "escalate_when": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "safe_routes": { "type": "array", "items": { "type": "string", "pattern": "^/" }, "uniqueItems": true },
+    "owner": { "enum": ["Boss Per", "Ewvon", "Chang"] },
+    "final_reviewer": { "const": "Boss Per" },
+    "change_reason": { "type": "string", "maxLength": 1200 },
+    "notes": { "type": "string", "maxLength": 1200 }
+  }
+}
