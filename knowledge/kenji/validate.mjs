@@ -1,0 +1,86 @@
+import fs from "node:fs";
+import path from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const cardsRoot = path.join(here, "cards");
+const routes = JSON.parse(fs.readFileSync(path.join(here, "routes.json"), "utf8"));
+const safeRoutes = new Set(Object.keys(routes.public_and_member_safe_routes || {}));
+const allowedOwners = new Set(["Boss Per", "Ewvon", "Chang"]);
+const allowedStatuses = new Set(["draft", "review", "published", "archived"]);
+const forbiddenPatterns = [
+  /authorization:\s*bearer/i,
+  /x-confirm-key/i,
+  /api[_-]?key/i,
+  /client_secret/i,
+  /line_user_id/i,
+  /telegram_id/i,
+  /memberstack_id/i,
+  /airtable record/i,
+  /mark\s*paid/i,
+  /unlock(?:ed)?\s*membership/i
+];
+
+function walk(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) return walk(full);
+    return entry.name.endsWith(".json") ? [full] : [];
+  });
+}
+
+function fail(file, message) {
+  console.error(`FAIL ${path.relative(here, file)}: ${message}`);
+  process.exitCode = 1;
+}
+
+for (const file of walk(cardsRoot)) {
+  let card;
+  try {
+    card = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    fail(file, `invalid JSON: ${error.message}`);
+    continue;
+  }
+
+  const required = [
+    "id", "version", "status", "lane", "audience", "language", "title",
+    "questions", "safe_answer", "allowed_actions", "forbidden_actions",
+    "escalate_when", "safe_routes", "owner", "final_reviewer"
+  ];
+
+  for (const key of required) {
+    if (card[key] === undefined || card[key] === null || card[key] === "") {
+      fail(file, `missing required field ${key}`);
+    }
+  }
+
+  if (!/^[a-z0-9][a-z0-9-]+$/.test(card.id || "")) fail(file, "invalid id");
+  if (!Number.isInteger(card.version) || card.version < 1) fail(file, "version must be a positive integer");
+  if (!allowedStatuses.has(card.status)) fail(file, `invalid status ${card.status}`);
+  if (!allowedOwners.has(card.owner)) fail(file, `invalid owner ${card.owner}`);
+  if (card.final_reviewer !== "Boss Per") fail(file, "final_reviewer must be Boss Per");
+
+  for (const route of card.safe_routes || []) {
+    if (!safeRoutes.has(route)) fail(file, `unsafe or unknown route ${route}`);
+  }
+
+  const text = JSON.stringify(card);
+  for (const pattern of forbiddenPatterns) {
+    if (pattern.test(text)) fail(file, `forbidden content matched ${pattern}`);
+  }
+
+  if (!Array.isArray(card.forbidden_actions) || card.forbidden_actions.length === 0) {
+    fail(file, "forbidden_actions must not be empty");
+  }
+
+  if (!Array.isArray(card.escalate_when) || card.escalate_when.length === 0) {
+    fail(file, "escalate_when must not be empty");
+  }
+
+  console.log(`OK   ${path.relative(here, file)}`);
+}
+
+if (process.exitCode) process.exit(process.exitCode);
+console.log("Kenji knowledge validation passed.");
