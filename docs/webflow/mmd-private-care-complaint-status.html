@@ -1,0 +1,12 @@
+<!--
+MMD Private Care / Complaint Status Page
+Route: /sigil/recovery/complaint/status
+Webflow split: paste section in body, CSS in head, JS before body close.
+
+Security rule:
+- This public page must never call Airtable directly.
+- It reads status through Worker only.
+- Worker can read KV/R2/Airtable server-side.
+
+Expected optional Worker status endpoint:
+GET https://mmd-care-intake-worker.malemodel-bkk.workers.dev/member/api/recovery/complaint-status?id=<complaint_id>&t=<token
