@@ -34,7 +34,6 @@ binding = "SIGIL_BOARD_KV"
 id = "7922350083a644db8a48c16c7e48fca7"
 preview_id = "f673c4ab6e4f456baefeab032564db72"
 
-# Optional private evidence bucket. Uncomment only if bucket is already created in Cloudflare.
-# [[r2_buckets]]
-# binding = "COMPLAINT_EVIDENCE_R2"
-# bucket_name = "mmd-care-evidence"
+[[r2_buckets]]
+binding = "COMPLAINT_EVIDENCE_R2"
+bucket_name = "mmd-care-evidence"
