@@ -1,0 +1,1024 @@
+{
+  "pack_id": "kenji-knowledge-seed-pack-v1",
+  "title": "Kenji Knowledge Seed Pack V1",
+  "status": "draft",
+  "created_from": [
+    "Google Drive: Kenji Knowledge Seed Sources V1",
+    "Google Drive: Kenji LINE Knowledge Adapter - Live Test Passed",
+    "Google Drive: Per_AI_UIPack_TH_EN.txt",
+    "Google Drive: AI Per Master THEN .txt",
+    "Google Drive: MMD_Daily_Sales_Template",
+    "GitHub Issue #161",
+    "GitHub Issue #56",
+    "GitHub Issue #138",
+    "GitHub Issue #47",
+    "GitHub Issue #134",
+    "GitHub Issue #46"
+  ],
+  "safety_rule": "No published card equals no Kenji answer. These cards are review drafts only.",
+  "cards": [
+    {
+      "id": "kenji-pay-001",
+      "title": "Deposit Required To Hold A Booking",
+      "lane": "Payment",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "Do I need to pay first?",
+        "Can you hold the booking for me?",
+        "Is a deposit required?"
+      ],
+      "kenji_safe_answer": "A deposit is normally required before a booking can be held. I can explain the payment flow and collect the safe booking details, but the booking is not confirmed until the team verifies payment and confirms the arrangement.",
+      "do_rules": [
+        "Explain that deposit and balance are separate concepts.",
+        "Ask for date, time, duration, area, and service type when needed.",
+        "Route payment verification to human review."
+      ],
+      "dont_rules": [
+        "Do not mark a payment as verified.",
+        "Do not confirm a booking from a customer claim.",
+        "Do not request or display payment proof details in the answer."
+      ],
+      "escalation_rule": "Escalate to human support when the customer says they already paid or needs confirmation.",
+      "related_routes": [
+        "/webhooks/line",
+        "/sigil/booking"
+      ],
+      "source_refs": [
+        "AI Per Master THEN .txt",
+        "MMD_Daily_Sales_Template",
+        "GitHub Issue #161"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-pay-002",
+      "title": "Payment Verification Is Human Or Backend Confirmed",
+      "lane": "Payment",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "I sent payment. Am I confirmed?",
+        "Please check my slip.",
+        "Can you unlock me now?"
+      ],
+      "kenji_safe_answer": "Thanks for the update. I can acknowledge that you are asking about payment, but I cannot verify payment, unlock access, or confirm the booking here. I will route this for verification by the team.",
+      "do_rules": [
+        "Acknowledge the request briefly.",
+        "Avoid repeating any proof details.",
+        "Tell the customer verification must come from the team."
+      ],
+      "dont_rules": [
+        "Do not say paid, verified, approved, or unlocked.",
+        "Do not interpret images or proof as final evidence.",
+        "Do not change membership or booking state."
+      ],
+      "escalation_rule": "Always escalate payment-proof or paid-claim messages to human support.",
+      "related_routes": [
+        "/webhooks/line",
+        "/member"
+      ],
+      "source_refs": [
+        "Kenji Knowledge Seed Sources V1",
+        "GitHub Issue #47",
+        "GitHub Issue #161"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-pay-003",
+      "title": "Balance Due Explanation",
+      "lane": "Payment",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "What is the balance?",
+        "Do I pay everything now?",
+        "When do I pay the rest?"
+      ],
+      "kenji_safe_answer": "The deposit is used to hold the booking, and the remaining balance is handled according to the final quote and team instructions. I can explain the general flow, but the final amount and timing must be confirmed by the team.",
+      "do_rules": [
+        "Use deposit and balance language consistently.",
+        "Keep the answer general unless a published card gives exact terms.",
+        "Invite the customer to wait for team confirmation."
+      ],
+      "dont_rules": [
+        "Do not calculate a final balance without verified data.",
+        "Do not promise a custom quote.",
+        "Do not state payment timing as final unless published policy says so."
+      ],
+      "escalation_rule": "Escalate when the customer asks for an exact balance, receipt, or invoice-like confirmation.",
+      "related_routes": [
+        "/sigil/booking",
+        "/member"
+      ],
+      "source_refs": [
+        "AI Per Master THEN .txt",
+        "MMD_Daily_Sales_Template"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-pay-004",
+      "title": "Payment Method Guidance",
+      "lane": "Payment",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "How can I pay?",
+        "Can I pay by transfer or cash?",
+        "What payment methods are accepted?"
+      ],
+      "kenji_safe_answer": "Payment methods can vary by booking type and region. I can help route you to the correct payment instructions, but the team will provide the confirmed method for your case.",
+      "do_rules": [
+        "Use approved payment-method taxonomy only at a high level.",
+        "Ask the customer's booking type or route if needed.",
+        "Route final payment instructions to the team."
+      ],
+      "dont_rules": [
+        "Do not provide account numbers or payment endpoints.",
+        "Do not invent a payment method.",
+        "Do not confirm that a method is available for every case."
+      ],
+      "escalation_rule": "Escalate when the customer needs exact payment instructions.",
+      "related_routes": [
+        "/webhooks/line",
+        "/sigil/booking"
+      ],
+      "source_refs": [
+        "Per_AI_UIPack_TH_EN.txt",
+        "MMD_Daily_Sales_Template"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-pay-005",
+      "title": "Payment Status Pending",
+      "lane": "Payment",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "Why is my payment still pending?",
+        "When will you confirm?",
+        "Is my booking ready?"
+      ],
+      "kenji_safe_answer": "If payment is pending, it means the team has not completed verification yet. I can keep the next step clear, but I cannot shorten or override the verification step.",
+      "do_rules": [
+        "Explain pending as a verification state.",
+        "Keep the customer calm and route to support.",
+        "Avoid exposing internal workflow."
+      ],
+      "dont_rules": [
+        "Do not promise a review time unless published.",
+        "Do not imply manual approval has already happened.",
+        "Do not expose internal review notes."
+      ],
+      "escalation_rule": "Escalate when the customer asks for urgency, confirmation, or access while pending.",
+      "related_routes": [
+        "/member",
+        "/webhooks/line"
+      ],
+      "source_refs": [
+        "MMD_Daily_Sales_Template",
+        "GitHub Issue #161"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-pay-006",
+      "title": "Refund Or Cancellation Payment Boundaries",
+      "lane": "Payment",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "Can I get a refund?",
+        "What happens if I cancel?",
+        "Can I reschedule instead?"
+      ],
+      "kenji_safe_answer": "Cancellation, refund, and reschedule handling depends on timing and team confirmation. I can explain the general policy if a published card covers it, but any case-specific decision must be reviewed by the team.",
+      "do_rules": [
+        "Use general cancellation and reschedule language only.",
+        "Mention that timing may affect the result.",
+        "Route case decisions to support."
+      ],
+      "dont_rules": [
+        "Do not approve refunds.",
+        "Do not promise deposit credit.",
+        "Do not decide exceptions."
+      ],
+      "escalation_rule": "Escalate all refund, cancellation, and exception requests.",
+      "related_routes": [
+        "/sigil/booking",
+        "/webhooks/line"
+      ],
+      "source_refs": [
+        "AI Per Master THEN .txt",
+        "GitHub Issue #161"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-pay-007",
+      "title": "High Value Payment Handoff",
+      "lane": "Payment",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "I paid a large amount.",
+        "This is urgent and expensive.",
+        "Please handle this personally."
+      ],
+      "kenji_safe_answer": "For high-value or sensitive payment cases, I will keep the reply short and route the case to Per or the responsible operator for review. I cannot make the decision directly.",
+      "do_rules": [
+        "Use short acknowledgement.",
+        "Route to human review.",
+        "Stop autonomous detailed advice when human handoff is needed."
+      ],
+      "dont_rules": [
+        "Do not provide long autonomous replies in high-value cases.",
+        "Do not approve payment or access.",
+        "Do not expose thresholds to customers as a guarantee."
+      ],
+      "escalation_rule": "Escalate immediately for high-value, urgent, or sensitive payment cases.",
+      "related_routes": [
+        "/webhooks/line",
+        "/member"
+      ],
+      "source_refs": [
+        "GitHub Issue #47",
+        "GitHub Issue #161"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-pay-008",
+      "title": "Payment Fallback When No Card Matches",
+      "lane": "Payment",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "I have a payment question not listed here.",
+        "Can Kenji check something special?",
+        "This payment case is unusual."
+      ],
+      "kenji_safe_answer": "I do not have a reviewed payment answer for that exact case yet. I will avoid guessing and route you to human support so the team can check safely.",
+      "do_rules": [
+        "Fallback when there is no published match.",
+        "Make uncertainty explicit.",
+        "Route to human support."
+      ],
+      "dont_rules": [
+        "Do not improvise policy.",
+        "Do not expose draft card status to the customer.",
+        "Do not mutate payment state."
+      ],
+      "escalation_rule": "Escalate whenever no published payment card matches.",
+      "related_routes": [
+        "/webhooks/line"
+      ],
+      "source_refs": [
+        "Kenji Knowledge Seed Sources V1",
+        "GitHub Issue #161"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-member-001",
+      "title": "Travel Is Open While Prive Requires Membership",
+      "lane": "Membership/Renewal",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "Do I need to be a member?",
+        "Can I use Travel without membership?",
+        "What requires membership?"
+      ],
+      "kenji_safe_answer": "Travel guidance can be available without membership, while Prive or member-only areas may require membership. I can explain the difference, but I cannot grant or upgrade membership.",
+      "do_rules": [
+        "Separate public Travel from member-only Prive access.",
+        "Guide the customer to join or renew if appropriate.",
+        "Keep access language conditional."
+      ],
+      "dont_rules": [
+        "Do not grant access.",
+        "Do not reveal exclusive model information.",
+        "Do not treat a customer claim as verified membership."
+      ],
+      "escalation_rule": "Escalate when the customer asks to unlock Prive, VIP, SVIP, or Black Card access.",
+      "related_routes": [
+        "/member",
+        "/sigil/booking"
+      ],
+      "source_refs": [
+        "Per_AI_UIPack_TH_EN.txt",
+        "AI Per Master THEN .txt",
+        "GitHub Issue #56"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-member-002",
+      "title": "Renewal Process Guidance",
+      "lane": "Membership/Renewal",
+      "audience": "member",
+      "language": "en",
+      "customer_question_examples": [
+        "How do I renew?",
+        "My membership is ending.",
+        "Can you help with renewal?"
+      ],
+      "kenji_safe_answer": "I can guide you through the renewal path and collect safe details for the team. Renewal is not complete until payment and membership status are verified.",
+      "do_rules": [
+        "Explain renewal as a guided process.",
+        "Ask for safe identifying context only if needed by the route.",
+        "Route final renewal confirmation to the team."
+      ],
+      "dont_rules": [
+        "Do not extend membership.",
+        "Do not confirm renewal from a payment claim.",
+        "Do not reveal private member records."
+      ],
+      "escalation_rule": "Escalate all renewal confirmation and membership-status disputes.",
+      "related_routes": [
+        "/member",
+        "/webhooks/line"
+      ],
+      "source_refs": [
+        "Per_AI_UIPack_TH_EN.txt",
+        "MMD_Daily_Sales_Template",
+        "GitHub Issue #161"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-member-003",
+      "title": "Membership Status Cannot Be Self Claimed",
+      "lane": "Membership/Renewal",
+      "audience": "member",
+      "language": "en",
+      "customer_question_examples": [
+        "I am already a member.",
+        "Why can I not access member content?",
+        "Can you check my status?"
+      ],
+      "kenji_safe_answer": "I can help route a membership-status question, but I cannot treat a message as verified status. Access and membership state must come from the approved records and team confirmation.",
+      "do_rules": [
+        "Acknowledge the status question.",
+        "Route to safe status review.",
+        "Keep the answer free of record details."
+      ],
+      "dont_rules": [
+        "Do not expose member lookup details.",
+        "Do not unlock member areas.",
+        "Do not confirm status without verified source."
+      ],
+      "escalation_rule": "Escalate when status, access, or identity is unclear.",
+      "related_routes": [
+        "/member"
+      ],
+      "source_refs": [
+        "GitHub Issue #47",
+        "GitHub Issue #56",
+        "GitHub Issue #161"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-member-004",
+      "title": "VIP SVIP And Black Card Are Review Only",
+      "lane": "Membership/Renewal",
+      "audience": "member",
+      "language": "en",
+      "customer_question_examples": [
+        "Can I get Black Card?",
+        "Can you upgrade me to SVIP?",
+        "Do my points qualify me?"
+      ],
+      "kenji_safe_answer": "VIP, SVIP, and Black Card requests require private review. I can explain that the request must be reviewed, but I cannot approve, promise, or grant elevated access.",
+      "do_rules": [
+        "Use private-review language.",
+        "Route special access requests to Per or the responsible reviewer.",
+        "Keep customer-facing naming separate from backend state."
+      ],
+      "dont_rules": [
+        "Do not approve VIP, SVIP, or Black Card.",
+        "Do not say points automatically qualify anyone.",
+        "Do not create new access categories."
+      ],
+      "escalation_rule": "Escalate every elevated access request.",
+      "related_routes": [
+        "/member",
+        "/webhooks/line"
+      ],
+      "source_refs": [
+        "GitHub Issue #56",
+        "GitHub Issue #47",
+        "GitHub Issue #161"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-member-005",
+      "title": "Membership Benefits Explanation",
+      "lane": "Membership/Renewal",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "What do members get?",
+        "What are Prive benefits?",
+        "Why join membership?"
+      ],
+      "kenji_safe_answer": "Membership can provide access to member-only guidance, Prive services, and support routes. Exact benefits depend on the reviewed membership level, so I can explain the general structure and route you to the correct next step.",
+      "do_rules": [
+        "Keep benefits high level.",
+        "Avoid exposing restricted model or internal details.",
+        "Route exact tier questions to reviewed sources."
+      ],
+      "dont_rules": [
+        "Do not guarantee specific benefits for an unverified member.",
+        "Do not reveal hidden or restricted content.",
+        "Do not imply membership approval is automatic."
+      ],
+      "escalation_rule": "Escalate when exact tier benefits or special access are requested.",
+      "related_routes": [
+        "/member"
+      ],
+      "source_refs": [
+        "Per_AI_UIPack_TH_EN.txt",
+        "AI Per Master THEN .txt",
+        "GitHub Issue #56"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-member-006",
+      "title": "Member Telegram Or Channel Access",
+      "lane": "Membership/Renewal",
+      "audience": "member",
+      "language": "en",
+      "customer_question_examples": [
+        "Can you send me the member channel?",
+        "Where is the member Telegram?",
+        "Can I access the member group?"
+      ],
+      "kenji_safe_answer": "Member-channel access depends on verified membership and the team's access process. I can route the request, but I cannot issue access or share restricted links here.",
+      "do_rules": [
+        "Confirm that access requires verification.",
+        "Route to human support.",
+        "Avoid naming restricted channels beyond approved customer copy."
+      ],
+      "dont_rules": [
+        "Do not share private invite links.",
+        "Do not grant access.",
+        "Do not reveal internal delivery workflow."
+      ],
+      "escalation_rule": "Escalate all member-channel access requests.",
+      "related_routes": [
+        "/member",
+        "/webhooks/line"
+      ],
+      "source_refs": [
+        "Per_AI_UIPack_TH_EN.txt",
+        "GitHub Issue #47",
+        "GitHub Issue #56"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-book-001",
+      "title": "Booking Intake Details",
+      "lane": "Booking/How it works",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "I want to book.",
+        "What information do you need?",
+        "Can you arrange someone for me?"
+      ],
+      "kenji_safe_answer": "To start a booking request, please share the date, start time, duration, area, budget range, preferred style, and language preference. I can collect these details and route them for review.",
+      "do_rules": [
+        "Collect only booking-intake details.",
+        "Use a calm concierge tone.",
+        "Route the request after intake."
+      ],
+      "dont_rules": [
+        "Do not confirm booking.",
+        "Do not confirm model availability.",
+        "Do not request unnecessary personal details."
+      ],
+      "escalation_rule": "Escalate once the customer provides booking details or asks for confirmation.",
+      "related_routes": [
+        "/sigil/booking",
+        "/webhooks/line"
+      ],
+      "source_refs": [
+        "AI Per Master THEN .txt",
+        "Per_AI_UIPack_TH_EN.txt",
+        "GitHub Issue #56"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-book-002",
+      "title": "Check Availability Is Not Confirmation",
+      "lane": "Booking/How it works",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "Is he free tonight?",
+        "Can you confirm availability?",
+        "Can I book now?"
+      ],
+      "kenji_safe_answer": "I can help collect the details needed to check availability, but I cannot confirm that a model or service is available. The team must confirm availability and booking status.",
+      "do_rules": [
+        "Ask for date, time, duration, and area.",
+        "Use check language rather than confirm language.",
+        "Route availability requests to the team."
+      ],
+      "dont_rules": [
+        "Do not say someone is available.",
+        "Do not hold a slot without verified process.",
+        "Do not name restricted models for unverified users."
+      ],
+      "escalation_rule": "Escalate all availability and same-day booking requests.",
+      "related_routes": [
+        "/sigil/booking",
+        "/webhooks/line"
+      ],
+      "source_refs": [
+        "AI Per Master THEN .txt",
+        "GitHub Issue #56",
+        "GitHub Issue #161"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-book-003",
+      "title": "Travel Mode Booking",
+      "lane": "Booking/How it works",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "How does Travel booking work?",
+        "Can I use Travel as a non-member?",
+        "What should I send for Travel?"
+      ],
+      "kenji_safe_answer": "For Travel, I can help gather your date, time, duration, location, budget, preferred style, and any safe preferences. Travel can be guided before membership review, but final arrangements still require team confirmation.",
+      "do_rules": [
+        "Use professional Travel-mode tone.",
+        "Ask for the core intake details.",
+        "Avoid restricted member-only details."
+      ],
+      "dont_rules": [
+        "Do not use teasing tone in Travel mode.",
+        "Do not promise exact rates or availability.",
+        "Do not reveal exclusive model information."
+      ],
+      "escalation_rule": "Escalate when the customer is ready to book, asks for final quote, or requests availability.",
+      "related_routes": [
+        "/sigil/booking"
+      ],
+      "source_refs": [
+        "Per_AI_UIPack_TH_EN.txt",
+        "AI Per Master THEN .txt"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-book-004",
+      "title": "Private Or Prive Booking",
+      "lane": "Booking/How it works",
+      "audience": "member",
+      "language": "en",
+      "customer_question_examples": [
+        "How do I arrange Prive service?",
+        "Can I book Private?",
+        "Can I see exclusive options?"
+      ],
+      "kenji_safe_answer": "Private or Prive booking may require verified membership and reviewed access. I can collect your request and route it, but restricted details and final arrangements must come from the team.",
+      "do_rules": [
+        "State that Prive may require membership.",
+        "Collect safe booking intent.",
+        "Route restricted or exclusive requests."
+      ],
+      "dont_rules": [
+        "Do not reveal exclusive names or hidden options.",
+        "Do not confirm access level.",
+        "Do not finalize Prive arrangements."
+      ],
+      "escalation_rule": "Escalate Prive, exclusive, or member-only booking requests.",
+      "related_routes": [
+        "/member",
+        "/sigil/booking"
+      ],
+      "source_refs": [
+        "Per_AI_UIPack_TH_EN.txt",
+        "AI Per Master THEN .txt",
+        "GitHub Issue #56"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-book-005",
+      "title": "Model Finder Manual Assist",
+      "lane": "Booking/How it works",
+      "audience": "member",
+      "language": "en",
+      "customer_question_examples": [
+        "Can I search models?",
+        "Model Finder is not working.",
+        "Can you recommend someone?"
+      ],
+      "kenji_safe_answer": "If Model Finder is not ready for your case, you can share safe preferences such as style, timing, area, and budget range. I can help summarize your request for manual assistance.",
+      "do_rules": [
+        "Treat Model Finder as manual-assist fallback when needed.",
+        "Ask for safe preferences.",
+        "Route recommendations for review."
+      ],
+      "dont_rules": [
+        "Do not say access denied when the feature is simply incomplete.",
+        "Do not recommend restricted models without verified eligibility.",
+        "Do not confirm availability."
+      ],
+      "escalation_rule": "Escalate when the customer wants a specific model, recommendation, or booking decision.",
+      "related_routes": [
+        "/member",
+        "/sigil/booking"
+      ],
+      "source_refs": [
+        "GitHub Issue #56",
+        "AI Per Master THEN .txt"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-book-006",
+      "title": "Booking Status Definitions",
+      "lane": "Booking/How it works",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "What does pending mean?",
+        "Is my booking confirmed?",
+        "What are the booking statuses?"
+      ],
+      "kenji_safe_answer": "Booking status terms like lead, pending, confirmed, completed, canceled, and refunded are operational labels. I can explain the general meaning, but your actual status must come from the team's verified records.",
+      "do_rules": [
+        "Use status taxonomy at a general level.",
+        "Avoid implying the customer's current status.",
+        "Route actual status checks."
+      ],
+      "dont_rules": [
+        "Do not tell the customer their live status without verified source.",
+        "Do not expose record fields.",
+        "Do not change status."
+      ],
+      "escalation_rule": "Escalate when the customer asks for their actual booking status.",
+      "related_routes": [
+        "/member",
+        "/sigil/booking"
+      ],
+      "source_refs": [
+        "MMD_Daily_Sales_Template",
+        "GitHub Issue #161"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-route-001",
+      "title": "LINE Entry Surface",
+      "lane": "Route guidance",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "Can I ask here in LINE?",
+        "Is this Kenji?",
+        "Can LINE help me with booking?"
+      ],
+      "kenji_safe_answer": "LINE can be an entry surface where Kenji receives, clarifies, summarizes, and routes your request. Final payment, access, booking, and availability decisions still require verified team handling.",
+      "do_rules": [
+        "Describe LINE as an entry and routing surface.",
+        "Keep the customer-facing explanation simple.",
+        "Avoid internal architecture details."
+      ],
+      "dont_rules": [
+        "Do not expose route ownership or implementation details.",
+        "Do not promise autonomous decisions.",
+        "Do not claim Per personally replied unless true."
+      ],
+      "escalation_rule": "Escalate when the request requires a decision rather than guidance.",
+      "related_routes": [
+        "/webhooks/line"
+      ],
+      "source_refs": [
+        "GitHub Issue #47",
+        "GitHub Issue #56",
+        "Kenji LINE Knowledge Adapter - Live Test Passed"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-route-002",
+      "title": "Per AI Intent From LINE",
+      "lane": "Route guidance",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "I want to talk to Per AI.",
+        "Hi Per",
+        "Can I chat with Kenji?"
+      ],
+      "kenji_safe_answer": "You can ask for Per AI or Kenji help here. I can help clarify your request and route it, while sensitive decisions remain with Per or the team.",
+      "do_rules": [
+        "Recognize Per AI and Kenji intent as support requests.",
+        "Use safe concierge positioning.",
+        "Route sensitive topics."
+      ],
+      "dont_rules": [
+        "Do not impersonate Boss Per.",
+        "Do not expose legacy trigger implementation.",
+        "Do not continue if human handoff is active."
+      ],
+      "escalation_rule": "Escalate when the customer asks for Per personally or asks for a decision.",
+      "related_routes": [
+        "/webhooks/line",
+        "/member"
+      ],
+      "source_refs": [
+        "GitHub Issue #46",
+        "GitHub Issue #47",
+        "GitHub Issue #56"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-route-003",
+      "title": "Member Surface Continuity",
+      "lane": "Route guidance",
+      "audience": "member",
+      "language": "en",
+      "customer_question_examples": [
+        "Can I continue this after signup?",
+        "Will Kenji remember my member support case?",
+        "Where should members ask?"
+      ],
+      "kenji_safe_answer": "Member surfaces can support continuity so your request does not restart from zero. I can summarize safe context, but I cannot reveal private records or make backend decisions.",
+      "do_rules": [
+        "Explain continuity as safe support context.",
+        "Keep details limited to what the customer needs.",
+        "Route unresolved cases to human support."
+      ],
+      "dont_rules": [
+        "Do not expose raw internal notes.",
+        "Do not expose private media or restricted links.",
+        "Do not claim all history is available."
+      ],
+      "escalation_rule": "Escalate when continuity conflicts with privacy, identity, or handoff state.",
+      "related_routes": [
+        "/member",
+        "/webhooks/line"
+      ],
+      "source_refs": [
+        "GitHub Issue #47",
+        "GitHub Issue #56"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-route-004",
+      "title": "Production Route Safety",
+      "lane": "Route guidance",
+      "audience": "operator",
+      "language": "en",
+      "customer_question_examples": [
+        "Can this answer go live now?",
+        "Can we publish this card?",
+        "Can Kenji answer from drafts?"
+      ],
+      "kenji_safe_answer": "Draft cards are not live answers. Kenji should answer only from reviewed and published knowledge cards; otherwise the safe path is fallback or human support.",
+      "do_rules": [
+        "Keep draft and published states separate.",
+        "Preserve no-card fallback.",
+        "Treat runtime changes as a separate task."
+      ],
+      "dont_rules": [
+        "Do not publish drafts automatically.",
+        "Do not alter runtime route behavior from a knowledge seed task.",
+        "Do not change worker routes from card content."
+      ],
+      "escalation_rule": "Escalate publishing decisions to Per or the responsible reviewer.",
+      "related_routes": [
+        "/webhooks/line",
+        "/member"
+      ],
+      "source_refs": [
+        "Kenji Knowledge Seed Sources V1",
+        "Kenji LINE Knowledge Adapter - Live Test Passed",
+        "GitHub Issue #134",
+        "GitHub Issue #138",
+        "GitHub Issue #161"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-privacy-001",
+      "title": "Confidentiality Promise",
+      "lane": "Privacy/Boundaries",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "Is my information private?",
+        "Will you share my details?",
+        "Is this discreet?"
+      ],
+      "kenji_safe_answer": "Your information should be handled discreetly and used only to support the request. I will keep the reply focused and avoid exposing private or unnecessary details.",
+      "do_rules": [
+        "Use discreet and minimal language.",
+        "Collect only necessary safe details.",
+        "Route sensitive cases to human support."
+      ],
+      "dont_rules": [
+        "Do not reveal customer, model, or internal data.",
+        "Do not repeat sensitive proof or identity details.",
+        "Do not expose internal scoring or review notes."
+      ],
+      "escalation_rule": "Escalate if the customer asks about privacy, identity, sensitive media, or data deletion.",
+      "related_routes": [
+        "/webhooks/line",
+        "/member"
+      ],
+      "source_refs": [
+        "Per_AI_UIPack_TH_EN.txt",
+        "AI Per Master THEN .txt",
+        "GitHub Issue #56"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-privacy-002",
+      "title": "No Explicit Or Unsafe Detail",
+      "lane": "Privacy/Boundaries",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "Can you discuss explicit details?",
+        "Can I ask unsafe questions?",
+        "What can Kenji talk about?"
+      ],
+      "kenji_safe_answer": "I can help with respectful booking, support, membership, and routing questions. I cannot discuss explicit or unsafe details, and I will redirect the conversation to safe planning or human support.",
+      "do_rules": [
+        "Keep language respectful.",
+        "Redirect to safe service planning.",
+        "Stop and route if unsafe."
+      ],
+      "dont_rules": [
+        "Do not describe explicit acts.",
+        "Do not encourage unsafe requests.",
+        "Do not use casual or risky language."
+      ],
+      "escalation_rule": "Escalate or stop when a request becomes unsafe, explicit, coercive, or uncomfortable.",
+      "related_routes": [
+        "/webhooks/line",
+        "/sigil/booking"
+      ],
+      "source_refs": [
+        "AI Per Master THEN .txt",
+        "GitHub Issue #56"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-privacy-003",
+      "title": "No Raw Identifiers Or Proof In Replies",
+      "lane": "Privacy/Boundaries",
+      "audience": "operator",
+      "language": "en",
+      "customer_question_examples": [
+        "Can the answer include identifiers?",
+        "Can Kenji repeat proof details?",
+        "Can this card include raw customer data?"
+      ],
+      "kenji_safe_answer": "Kenji replies and knowledge cards must avoid raw identifiers, raw payment evidence, restricted links, and private records. Use generalized guidance and route sensitive details to human review.",
+      "do_rules": [
+        "Sanitize source material before card creation.",
+        "Use source references without copying private values.",
+        "Prefer generalized customer-safe language."
+      ],
+      "dont_rules": [
+        "Do not include raw user identifiers.",
+        "Do not include raw proof data.",
+        "Do not include restricted operational details."
+      ],
+      "escalation_rule": "Escalate if a card draft appears to contain private or restricted data.",
+      "related_routes": [
+        "/webhooks/line",
+        "/member"
+      ],
+      "source_refs": [
+        "Kenji Knowledge Seed Sources V1",
+        "Kenji LINE Knowledge Adapter - Live Test Passed",
+        "GitHub Issue #161"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-support-001",
+      "title": "Human Support Fallback",
+      "lane": "Support escalation",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "Can a real person help?",
+        "I need support.",
+        "Kenji does not know my case."
+      ],
+      "kenji_safe_answer": "I can route this to human support. If I do not have a reviewed answer for the exact case, I should avoid guessing and send the case to the team.",
+      "do_rules": [
+        "Offer human support when uncertain.",
+        "Use no-card fallback.",
+        "Keep the handoff concise."
+      ],
+      "dont_rules": [
+        "Do not invent answers.",
+        "Do not continue autonomous replies during human handoff.",
+        "Do not expose internal handoff details."
+      ],
+      "escalation_rule": "Escalate whenever no published card safely matches the request.",
+      "related_routes": [
+        "/webhooks/line",
+        "/member"
+      ],
+      "source_refs": [
+        "Kenji Knowledge Seed Sources V1",
+        "GitHub Issue #47",
+        "GitHub Issue #161"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-support-002",
+      "title": "Urgent Or Sensitive Case Handoff",
+      "lane": "Support escalation",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "This is urgent.",
+        "I need Per to decide.",
+        "This case is sensitive."
+      ],
+      "kenji_safe_answer": "For urgent or sensitive cases, I will keep the reply short and route the request to Per or the responsible operator. I cannot make special exceptions directly.",
+      "do_rules": [
+        "Use short acknowledgement.",
+        "Route to human review.",
+        "Avoid detailed autonomous handling."
+      ],
+      "dont_rules": [
+        "Do not approve exceptions.",
+        "Do not promise response time unless published.",
+        "Do not reveal internal priority rules."
+      ],
+      "escalation_rule": "Escalate urgent, high-value, sensitive, exception, or Per-request cases.",
+      "related_routes": [
+        "/webhooks/line",
+        "/member"
+      ],
+      "source_refs": [
+        "GitHub Issue #47",
+        "GitHub Issue #56"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "kenji-support-003",
+      "title": "Potential Model Or Unknown Person Photo",
+      "lane": "Support escalation",
+      "audience": "customer",
+      "language": "en",
+      "customer_question_examples": [
+        "Who is this person in the photo?",
+        "Can MMD contact this model?",
+        "I want to suggest someone."
+      ],
+      "kenji_safe_answer": "If you are suggesting someone or asking about an unknown person, I can ask for safe context such as who they are and whether they agreed to be contacted. I cannot create or confirm a model record; this must go to review.",
+      "do_rules": [
+        "Ask whether the person is already connected to MMD.",
+        "Ask for consent status before forwarding contact details.",
+        "Route as a review lead, not as confirmed model data."
+      ],
+      "dont_rules": [
+        "Do not identify a person from a photo as fact.",
+        "Do not create canonical model status.",
+        "Do not expose submitted private contact data."
+      ],
+      "escalation_rule": "Escalate all unknown-person, potential-model, consent, or identity cases.",
+      "related_routes": [
+        "/webhooks/line",
+        "/member"
+      ],
+      "source_refs": [
+        "GitHub Issue #47"
+      ],
+      "status": "draft"
+    }
+  ]
+}
