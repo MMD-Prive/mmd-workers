@@ -1,0 +1,136 @@
+{
+  "version": "kenji-live-verified-cards-v1",
+  "status": "safe_export",
+  "source": "live_verified_knowledge_lanes",
+  "cards": [
+    {
+      "title": "Payment Slip Verification",
+      "lane": "Payment",
+      "language": "th",
+      "audience": "public_member",
+      "status": "published",
+      "customer_question_examples": [
+        "ส่งสลิปแล้วต้องรอไหม",
+        "ส่งสลิปแล้ว",
+        "MMD ช่วยเช็กเรื่องสลิปหน่อย",
+        "Hi MMD ส่งสลิปแล้วต้องรอไหม",
+        "payment slip wait",
+        "payment proof"
+      ],
+      "kenji_safe_answer": "ได้รับหลักฐานแล้วครับ MMD ต้องตรวจจากระบบทางการก่อนอัปเดตสถานะนะครับ ระหว่างนี้กรุณารอการตรวจสอบจากทีม MMD ครับ",
+      "related_routes": [
+        "/confirm/payment-confirmation",
+        "/member/dashboard"
+      ],
+      "safety_notes": [
+        "Does not confirm payment.",
+        "Does not mark paid.",
+        "Routes user to official review flow."
+      ]
+    },
+    {
+      "title": "Membership Signup Guide",
+      "lane": "Membership",
+      "language": "th",
+      "audience": "public_member",
+      "status": "published",
+      "customer_question_examples": [
+        "สมัครสมาชิกต้องทำยังไง",
+        "สมัครสมาชิกยังไง",
+        "อยากสมัครสมาชิก",
+        "MMD สมัครสมาชิกตรงไหน",
+        "Hi MMD สมัครสมาชิกต้องทำยังไง",
+        "แพ็กเกจสมาชิกมีอะไรบ้าง",
+        "membership สมัครยังไง",
+        "how to join MMD"
+      ],
+      "kenji_safe_answer": "การสมัครสมาชิกของ MMD จะเริ่มจากการเลือกแพ็กเกจและส่งข้อมูลให้ระบบตรวจสอบก่อนครับ การสมัครยังไม่ใช่การอนุมัติทันที และสิทธิ์สมาชิกจะเริ่มใช้ได้หลังจาก MMD ตรวจข้อมูลและสถานะการชำระเงินเรียบร้อยแล้วครับ",
+      "related_routes": [
+        "/member/membership",
+        "/member/login"
+      ],
+      "safety_notes": [
+        "Does not approve membership.",
+        "Does not unlock access.",
+        "Explains that MMD must review first."
+      ]
+    },
+    {
+      "title": "Membership Renewal Guide",
+      "lane": "Renewal",
+      "language": "th",
+      "audience": "public_member",
+      "status": "published",
+      "customer_question_examples": [
+        "ต่ออายุสมาชิกยังไง",
+        "สมาชิกหมดอายุต้องทำยังไง",
+        "ต่ออายุตรงไหน",
+        "อยากต่ออายุสมาชิก",
+        "Hi MMD ต่ออายุสมาชิกยังไง",
+        "renew membership",
+        "how to renew",
+        "สมาชิกหมดอายุแล้วต่อได้ไหม"
+      ],
+      "kenji_safe_answer": "การต่ออายุสมาชิกของ MMD ต้องให้ระบบตรวจสถานะสมาชิกเดิมและประวัติที่เกี่ยวข้องก่อนครับ หลังจากตรวจแล้ว MMD จะแจ้งขั้นตอนต่ออายุที่เหมาะสมให้ ไม่ถือว่าสถานะต่ออายุสำเร็จจนกว่าระบบจะตรวจยอดและอัปเดตสิทธิ์เรียบร้อยครับ",
+      "related_routes": [
+        "/member/membership",
+        "/member/dashboard"
+      ],
+      "safety_notes": [
+        "Does not confirm renewal success.",
+        "Does not restore access.",
+        "Explains that MMD must verify status."
+      ]
+    },
+    {
+      "title": "Booking Request Guide",
+      "lane": "Booking",
+      "language": "th",
+      "audience": "public_member",
+      "status": "published",
+      "customer_question_examples": [
+        "จองยังไง",
+        "อยากจองต้องทำยังไง",
+        "จอง MMD ตรงไหน",
+        "Hi MMD จองยังไง",
+        "booking how",
+        "how to book"
+      ],
+      "kenji_safe_answer": "เริ่มจองได้จากช่องทางทางการของ MMD ครับ หลังจากส่งรายละเอียดแล้ว ทีมงานจะตรวจข้อมูล เวลา และเงื่อนไขที่เกี่ยวข้องก่อนตอบกลับ การส่งคำขอยังไม่ถือว่าเป็นการยืนยันการจองครับ",
+      "related_routes": [
+        "/sigil/booking",
+        "/member/dashboard"
+      ],
+      "safety_notes": [
+        "Does not confirm booking.",
+        "Does not confirm model availability.",
+        "Routes user to official booking flow."
+      ]
+    },
+    {
+      "title": "Customer Rules Guide",
+      "lane": "Rules",
+      "language": "th",
+      "audience": "public_member",
+      "status": "published",
+      "customer_question_examples": [
+        "มีกฎอะไรบ้าง",
+        "ขอกฎของ MMD หน่อย",
+        "ต้องทำตามกฎอะไร",
+        "Hi MMD มีกฎอะไรบ้าง",
+        "customer rules",
+        "MMD rules"
+      ],
+      "kenji_safe_answer": "กฎของ MMD มีไว้เพื่อความปลอดภัย ความเป็นส่วนตัว และความสบายใจของทุกฝ่ายครับ กรุณาอ่านกฎจากหน้าทางการก่อนใช้บริการ และหากมีเคสพิเศษให้ติดต่อ MMD เพื่อให้ทีมงานตรวจและตอบตามนโยบายครับ",
+      "related_routes": [
+        "/rules/customer",
+        "/member/dashboard"
+      ],
+      "safety_notes": [
+        "Does not waive rules.",
+        "Does not grant exceptions.",
+        "Routes sensitive cases to MMD review."
+      ]
+    }
+  ]
+}
