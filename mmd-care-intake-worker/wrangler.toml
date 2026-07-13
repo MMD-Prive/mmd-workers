@@ -9,6 +9,7 @@ workers_dev = true
 # Public workers.dev endpoints after deploy:
 # https://mmd-care-intake-worker.malemodel-bkk.workers.dev/member/api/recovery/complaint-evidence
 # https://mmd-care-intake-worker.malemodel-bkk.workers.dev/member/api/recovery/complaint-status
+# https://mmd-care-intake-worker.malemodel-bkk.workers.dev/member/api/recovery/coupon-status
 
 [observability]
 enabled = true
@@ -19,6 +20,7 @@ WORKER_NAME = "mmd-care-intake-worker"
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.webflow.io"
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_PRIVATE_CARE_CASES_TABLE = "private_care_cases"
+AIRTABLE_RECOVERY_COUPONS_TABLE = "tblRbIaXXSFCDyb08"
 
 # Required secret for Airtable server-side reads/writes:
 # npx wrangler secret put AIRTABLE_API_TOKEN --config ./mmd-care-intake-worker/wrangler.toml

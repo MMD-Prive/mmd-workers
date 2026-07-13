@@ -2,6 +2,7 @@ const WORKER_NAME_FALLBACK = "mmd-care-intake-worker";
 const MODE = "private_care_metadata_intake";
 const COMPLAINT_PATH = "/member/api/recovery/complaint-evidence";
 const STATUS_PATH = "/member/api/recovery/complaint-status";
+const COUPON_STATUS_PATH = "/member/api/recovery/coupon-status";
 const CASE_KEY_PREFIX = "mmd:private-care:complaint:v1:";
 const BOARD_CARDS_KEY = "sigil:board:v1:cards";
 const MAX_FILES_PER_SIDE = 12;
@@ -9,6 +10,7 @@ const MAX_FILE_BYTES = 15 * 1024 * 1024;
 const MAX_TOTAL_FILES = MAX_FILES_PER_SIDE * 2;
 const AIRTABLE_BASE_ID_DEFAULT = "appsV1ILPRfIjkaYg";
 const AIRTABLE_CASE_TABLE_DEFAULT = "private_care_cases";
+const AIRTABLE_COUPON_TABLE_DEFAULT = "tblRbIaXXSFCDyb08";
 const ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "pdf"]);
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "application/pdf"]);
 const ALLOWED_LANES = new Set(["client", "internal", "model"]);
@@ -23,7 +25,7 @@ export default {
 
       if (url.pathname === "/ping" || url.pathname === "/health") {
         if (request.method !== "GET") return methodNotAllowed(cors, "GET, OPTIONS");
-        return json({ ok: true, worker: workerName(env), mode: MODE, complaint_path: COMPLAINT_PATH, status_path: STATUS_PATH }, 200, cors);
+        return json({ ok: true, worker: workerName(env), mode: MODE, complaint_path: COMPLAINT_PATH, status_path: STATUS_PATH, coupon_status_path: COUPON_STATUS_PATH }, 200, cors);
       }
 
       if (url.pathname === COMPLAINT_PATH) {
@@ -34,6 +36,11 @@ export default {
       if (url.pathname === STATUS_PATH) {
         if (request.method !== "GET") return methodNotAllowed(cors, "GET, OPTIONS");
         return handleComplaintStatus(request, env, cors);
+      }
+
+      if (url.pathname === COUPON_STATUS_PATH) {
+        if (request.method !== "GET") return methodNotAllowed(cors, "GET, OPTIONS");
+        return handleRecoveryCouponStatus(request, env, cors);
       }
 
       return json({ ok: false, error: "not_found", path: url.pathname }, 404, cors);
@@ -108,6 +115,28 @@ async function handleComplaintStatus(request, env, cors) {
   if (kv.found) return json({ ok: true, source: "kv", case: publicCaseFromRecord(kv.record) }, 200, cors);
 
   return json({ ok: false, error: "not_found", message: "Private care case not found", airtable, kv }, 404, cors);
+}
+
+async function handleRecoveryCouponStatus(request, env, cors) {
+  const url = new URL(request.url);
+  const couponId = clean(url.searchParams.get("coupon") || url.searchParams.get("coupon_id") || url.searchParams.get("code"), "", 160);
+  const sid = clean(url.searchParams.get("sid") || url.searchParams.get("session_id"), "", 160);
+  const token = clean(url.searchParams.get("t") || url.searchParams.get("token"), "", 500);
+
+  if (!couponId && !sid && !token) {
+    return json({ ok: false, error: "missing_lookup", message: "coupon, session_id, or token is required" }, 400, cors);
+  }
+
+  const airtable = await findAirtableCoupon(env, { couponId, sid, token });
+  if (airtable.found) {
+    return json({ ok: true, source: "airtable", verified: true, coupon: publicCouponFromAirtable(airtable.record) }, 200, cors);
+  }
+
+  if (couponId) {
+    return json({ ok: true, source: "link_preview", verified: false, coupon: publicCouponFromQuery(url), lookup: { airtable } }, 200, cors);
+  }
+
+  return json({ ok: false, error: "not_found", message: "Recovery coupon not found", airtable }, 404, cors);
 }
 
 function buildComplaintRecord(form, now) {
@@ -320,6 +349,27 @@ async function findAirtableCase(env, lookup) {
   }
 }
 
+async function findAirtableCoupon(env, lookup) {
+  const airtable = airtableCouponConfig(env);
+  if (!airtable.enabled) return { found: false, reason: airtable.reason };
+
+  const formulas = [];
+  if (lookup.couponId) formulas.push(`{coupon_id}=${airtableString(lookup.couponId)}`);
+  if (lookup.sid) formulas.push(`{session_id}=${airtableString(lookup.sid)}`);
+  if (lookup.token) formulas.push(`{token_hash}=${airtableString(shortHash(lookup.token))}`);
+  if (!formulas.length) return { found: false, reason: "missing_lookup" };
+
+  const qs = new URLSearchParams({ maxRecords: "1", filterByFormula: formulas.length === 1 ? formulas[0] : `OR(${formulas.join(",")})` });
+
+  try {
+    const data = await airtableFetchWithConfig(airtable, `/${airtable.baseId}/${encodeURIComponent(airtable.tableName)}?${qs.toString()}`);
+    const record = Array.isArray(data.records) ? data.records[0] : null;
+    return record ? { found: true, record } : { found: false, reason: "not_found" };
+  } catch (error) {
+    return { found: false, reason: errorMessage(error) };
+  }
+}
+
 function airtableFields(record, card, r2Write) {
   return {
     complaint_id: record.complaint_id,
@@ -362,6 +412,15 @@ function normalizeWorkflowStatus(value) {
   return "received";
 }
 
+function normalizeCouponStatus(value) {
+  const text = String(value || "pending").trim().toLowerCase();
+  if (/active|valid|ready|available|approved/.test(text)) return "active";
+  if (/used|redeemed|claimed/.test(text)) return "used";
+  if (/expired|หมดอายุ/.test(text)) return "expired";
+  if (/invalid|void|cancel|revoked|not_found/.test(text)) return "invalid";
+  return "pending";
+}
+
 function publicCaseFromAirtable(record) {
   const fields = record?.fields || {};
   return publicCaseFromRecord({
@@ -401,6 +460,41 @@ function publicCaseFromRecord(record) {
   };
 }
 
+function publicCouponFromAirtable(record) {
+  const fields = record?.fields || {};
+  return {
+    coupon_id: clean(fields.coupon_id, "", 160),
+    status: normalizeCouponStatus(fields.status),
+    valid: ["active", "pending"].includes(normalizeCouponStatus(fields.status)),
+    discount_percent: numberOrNull(fields.discount_percent),
+    client_name: clean(fields.client_name, "สมาชิก MMD", 120),
+    validity_label: clean(fields.validity, "", 120),
+    expires_at: fields.expires_at || null,
+    claimed_at: fields.claimed_at || null,
+    used_at: fields.used_at || null,
+    coupon_type: clean(fields.coupon_type, "recovery", 80),
+    campaign_code: clean(fields.campaign_code, "", 100),
+    source_route: clean(fields.source_route, "/sigil/recovery/coupon", 160),
+    note_public_safe: clean(fields.note_public_safe, "Kenji พบสิทธิ์นี้แล้วครับ MMD จะตรวจสิทธิ์อีกครั้งก่อนใช้งานจริง", 500),
+  };
+}
+
+function publicCouponFromQuery(url) {
+  const status = normalizeCouponStatus(url.searchParams.get("status") || "pending");
+  return {
+    coupon_id: clean(url.searchParams.get("coupon") || url.searchParams.get("coupon_id") || url.searchParams.get("code"), "", 160),
+    status,
+    valid: false,
+    discount_percent: numberOrNull(url.searchParams.get("discount")) ?? 10,
+    client_name: clean(url.searchParams.get("client"), "สมาชิก MMD", 120),
+    validity_label: clean(url.searchParams.get("validity"), "60 วัน", 120),
+    expires_at: url.searchParams.get("expires_at") || url.searchParams.get("expires") || null,
+    coupon_type: "recovery",
+    source_route: "/sigil/recovery/coupon",
+    note_public_safe: "Kenji เห็นรหัสจากลิงก์นี้แล้วครับ MMD จะตรวจสิทธิ์จากแฟ้มหลักก่อนใช้งานจริง",
+  };
+}
+
 function airtableConfig(env) {
   const token = env?.AIRTABLE_API_TOKEN || env?.AIRTABLE_TOKEN;
   if (!token) return { enabled: false, reason: "missing_AIRTABLE_API_TOKEN" };
@@ -412,8 +506,23 @@ function airtableConfig(env) {
   };
 }
 
+function airtableCouponConfig(env) {
+  const token = env?.AIRTABLE_API_TOKEN || env?.AIRTABLE_TOKEN;
+  if (!token) return { enabled: false, reason: "missing_AIRTABLE_API_TOKEN" };
+  return {
+    enabled: true,
+    token,
+    baseId: env?.AIRTABLE_BASE_ID || AIRTABLE_BASE_ID_DEFAULT,
+    tableName: env?.AIRTABLE_RECOVERY_COUPONS_TABLE || AIRTABLE_COUPON_TABLE_DEFAULT,
+  };
+}
+
 async function airtableFetch(env, path, init = {}) {
   const airtable = airtableConfig(env);
+  return airtableFetchWithConfig(airtable, path, init);
+}
+
+async function airtableFetchWithConfig(airtable, path, init = {}) {
   const res = await fetch(`https://api.airtable.com/v0${path}`, {
     ...init,
     headers: { authorization: `Bearer ${airtable.token}`, "content-type": "application/json", ...(init.headers || {}) },
@@ -512,6 +621,11 @@ function clean(value, fallback = "", maxLength = 180) {
 
 function cleanLong(value, maxLength = 4000) {
   return clean(value, "", maxLength);
+}
+
+function numberOrNull(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
 }
 
 function redactedRecord(record) {
