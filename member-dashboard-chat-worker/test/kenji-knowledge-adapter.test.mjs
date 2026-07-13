@@ -145,7 +145,37 @@ test("fetchPublishedKenjiKnowledge fails closed", async () => {
   assert.deepEqual(await fetchPublishedKenjiKnowledge(env({ KENJI_KNOWLEDGE_BASE_URL: "" }), async () => {
     throw new Error("must_not_fetch");
   }), []);
-  assert.deepEqual(await fetchPublishedKenjiKnowledge(env(), async () => new Response("no", { status: 500 })), []);
+  assert.deepEqual(await fetchPublishedKenjiKnowledge(env({ KENJI_KNOWLEDGE_BASE_URL: "https://fail-closed.test" }), async () => new Response("no", { status: 500 })), []);
+});
+
+test("fetchPublishedKenjiKnowledge can use bounded stale cache after fetch failure", async () => {
+  const cards = [publishedCard({ id: "stale-renewal" })];
+  const envValue = env({
+    KENJI_KNOWLEDGE_BASE_URL: "https://stale-cache.test",
+    KENJI_KNOWLEDGE_CACHE_TTL_MS: "1",
+    KENJI_KNOWLEDGE_STALE_CACHE_TTL_MS: "60000",
+  });
+
+  const fresh = await fetchPublishedKenjiKnowledge(envValue, fetchCards(cards));
+  assert.deepEqual(fresh.map((card) => card.id), ["stale-renewal"]);
+
+  await new Promise((resolve) => setTimeout(resolve, 5));
+
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (...args) => logs.push(args);
+  try {
+    const stale = await fetchPublishedKenjiKnowledge(envValue, async () => new Response("no", { status: 500 }));
+    assert.deepEqual(stale.map((card) => card.id), ["stale-renewal"]);
+    const rendered = JSON.stringify(logs);
+    assert.match(rendered, /line_kenji_knowledge_fetch_debug/);
+    assert.match(rendered, /"stale_cache_hit":true/);
+    assert.match(rendered, /"error_type":"http_error"/);
+    assert.match(rendered, /"usable_cards_count":1/);
+    assert.doesNotMatch(rendered, /internal-test-token|Authorization|Bearer|secret/i);
+  } finally {
+    console.log = originalLog;
+  }
 });
 
 test("scores and selects matching safe published card", () => {

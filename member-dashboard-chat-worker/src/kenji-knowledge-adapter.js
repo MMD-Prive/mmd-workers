@@ -1,5 +1,6 @@
 const DEFAULT_TIMEOUT_MS = 1500;
 const DEFAULT_CACHE_TTL_MS = 60000;
+const DEFAULT_STALE_CACHE_TTL_MS = 300000;
 const PUBLISHED_PATH = "/v1/internal/kenji/knowledge/published";
 const FALLBACK_TH = "ผมช่วยอธิบายขั้นตอนเบื้องต้นให้ได้ครับ แต่เคสนี้ต้องให้ MMD ตรวจจากระบบทางการก่อนนะครับ";
 
@@ -119,6 +120,9 @@ function safeFetchLog(marker, fields = {}) {
     cache_ttl_ms: Number.isFinite(Number(fields.cache_ttl_ms)) ? Number(fields.cache_ttl_ms) : 0,
     cache_hit: Boolean(fields.cache_hit),
     cache_age_ms: Number.isFinite(Number(fields.cache_age_ms)) ? Number(fields.cache_age_ms) : 0,
+    stale_cache_hit: Boolean(fields.stale_cache_hit),
+    stale_cache_age_ms: Number.isFinite(Number(fields.stale_cache_age_ms)) ? Number(fields.stale_cache_age_ms) : 0,
+    stale_cache_ttl_ms: Number.isFinite(Number(fields.stale_cache_ttl_ms)) ? Number(fields.stale_cache_ttl_ms) : 0,
     http_status: Number.isFinite(Number(fields.http_status)) ? Number(fields.http_status) : 0,
     response_ok_boolean: Boolean(fields.response_ok_boolean),
     top_level_keys: Array.isArray(fields.top_level_keys) ? fields.top_level_keys.map(asString).filter(Boolean).slice(0, 8) : [],
@@ -210,10 +214,26 @@ function fetchErrorType(error, timedOut) {
   return "unknown";
 }
 
+function staleCachedCards(cached, staleTtlMs) {
+  if (!cached || !Array.isArray(cached.cards) || !cached.cards.length) return null;
+  const ageMs = Date.now() - cached.ts;
+  if (ageMs > staleTtlMs) return null;
+  return { cards: cached.cards, ageMs };
+}
+
+function logFetchDebug(baseFetchLog, startedAt, fields = {}) {
+  safeFetchLog("line_kenji_knowledge_fetch_debug", {
+    ...baseFetchLog,
+    elapsed_ms: Date.now() - startedAt,
+    ...fields,
+  });
+}
+
 export async function fetchPublishedKenjiKnowledge(env = {}, fetchImpl = fetch, diagnostics = {}) {
   const baseUrl = asString(env.KENJI_KNOWLEDGE_BASE_URL).replace(/\/+$/, "");
   const token = asString(env.KENJI_KNOWLEDGE_INTERNAL_TOKEN || env.INTERNAL_TOKEN);
   const ttlMs = numberFromEnv(env.KENJI_KNOWLEDGE_CACHE_TTL_MS, DEFAULT_CACHE_TTL_MS);
+  const staleTtlMs = numberFromEnv(env.KENJI_KNOWLEDGE_STALE_CACHE_TTL_MS, DEFAULT_STALE_CACHE_TTL_MS);
   const timeoutMs = numberFromEnv(env.KENJI_KNOWLEDGE_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
   const startedAt = Date.now();
   const baseFetchLog = {
@@ -224,14 +244,13 @@ export async function fetchPublishedKenjiKnowledge(env = {}, fetchImpl = fetch, 
     token_present: Boolean(token),
     timeout_ms: timeoutMs,
     cache_ttl_ms: ttlMs,
+    stale_cache_ttl_ms: staleTtlMs,
   };
 
   safeFetchLog("line_kenji_knowledge_fetch_start", baseFetchLog);
 
   if (!baseUrl || !token || typeof fetchImpl !== "function") {
-    safeFetchLog("line_kenji_knowledge_fetch_debug", {
-      ...baseFetchLog,
-      elapsed_ms: Date.now() - startedAt,
+    logFetchDebug(baseFetchLog, startedAt, {
       error_type: "unknown",
       fallback_reason: "empty_cards",
     });
@@ -254,6 +273,24 @@ export async function fetchPublishedKenjiKnowledge(env = {}, fetchImpl = fetch, 
     });
     return cached.cards;
   }
+  const staleCache = staleCachedCards(cached, staleTtlMs);
+
+  const returnStaleOrEmpty = (fields = {}) => {
+    if (staleCache) {
+      logFetchDebug(baseFetchLog, startedAt, {
+        ...fields,
+        stale_cache_hit: true,
+        stale_cache_age_ms: staleCache.ageMs,
+        cards_is_array: true,
+        cards_count: fields.cards_count || staleCache.cards.length,
+        usable_cards_count: staleCache.cards.length,
+        fallback_reason: "",
+      });
+      return staleCache.cards;
+    }
+    logFetchDebug(baseFetchLog, startedAt, fields);
+    return [];
+  };
 
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
   let timedOut = false;
@@ -270,72 +307,71 @@ export async function fetchPublishedKenjiKnowledge(env = {}, fetchImpl = fetch, 
     });
     const httpStatus = Number(response?.status || 0);
     if (!response || !response.ok) {
-      safeFetchLog("line_kenji_knowledge_fetch_debug", {
-        ...baseFetchLog,
+      return returnStaleOrEmpty({
         http_status: httpStatus,
         response_ok_boolean: Boolean(response?.ok),
-        elapsed_ms: Date.now() - startedAt,
         error_type: "http_error",
         fallback_reason: "empty_cards",
       });
-      return [];
     }
 
     let data = null;
     try {
       data = await response.json();
     } catch (_) {
-      safeFetchLog("line_kenji_knowledge_fetch_debug", {
-        ...baseFetchLog,
+      return returnStaleOrEmpty({
         http_status: httpStatus,
         response_ok_boolean: true,
-        elapsed_ms: Date.now() - startedAt,
         error_type: "parse_error",
         fallback_reason: "empty_cards",
       });
-      return [];
     }
 
     const topLevelKeys = data && typeof data === "object" && !Array.isArray(data) ? Object.keys(data) : [];
     const cardsIsArray = Array.isArray(data?.cards);
     if (!cardsIsArray) {
-      safeFetchLog("line_kenji_knowledge_fetch_debug", {
-        ...baseFetchLog,
+      return returnStaleOrEmpty({
         http_status: httpStatus,
         response_ok_boolean: true,
         top_level_keys: topLevelKeys,
         cards_is_array: false,
-        elapsed_ms: Date.now() - startedAt,
         error_type: "shape_error",
         fallback_reason: "empty_cards",
       });
-      return [];
     }
 
     const cards = data.cards.filter(isUsablePublishedCard);
+    if (!cards.length) {
+      return returnStaleOrEmpty({
+        http_status: httpStatus,
+        response_ok_boolean: true,
+        top_level_keys: topLevelKeys,
+        cards_is_array: true,
+        cards_count: data.cards.length,
+        usable_cards_count: 0,
+        error_type: "empty_cards",
+        fallback_reason: "empty_cards",
+      });
+    }
+
     cache.set(key, { ts: Date.now(), cards });
-    safeFetchLog("line_kenji_knowledge_fetch_debug", {
-      ...baseFetchLog,
+    logFetchDebug(baseFetchLog, startedAt, {
       http_status: httpStatus,
       response_ok_boolean: true,
       top_level_keys: topLevelKeys,
       cards_is_array: true,
       cards_count: data.cards.length,
       usable_cards_count: cards.length,
-      elapsed_ms: Date.now() - startedAt,
-      error_type: cards.length ? "" : "empty_cards",
-      fallback_reason: cards.length ? "" : "empty_cards",
+      error_type: "",
+      fallback_reason: "",
     });
     return cards;
   } catch (error) {
     const errorType = fetchErrorType(error, timedOut);
-    safeFetchLog("line_kenji_knowledge_fetch_debug", {
-      ...baseFetchLog,
-      elapsed_ms: Date.now() - startedAt,
+    return returnStaleOrEmpty({
       error_type: errorType,
       fallback_reason: "empty_cards",
     });
-    return [];
   } finally {
     if (timer) clearTimeout(timer);
   }

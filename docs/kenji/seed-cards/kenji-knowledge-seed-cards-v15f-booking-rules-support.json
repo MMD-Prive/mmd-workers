@@ -1,0 +1,188 @@
+{
+  "pack_id": "kenji-knowledge-seed-cards-v15f-booking-rules-support",
+  "title": "Kenji Knowledge Seed Cards V1.5F - Booking Rules Support",
+  "status": "draft",
+  "created_from": [
+    "MMD memory: Kenji Knowledge Publish Verification V1.5E live checked",
+    "GitHub repo: MMD-Prive/mmd-workers"
+  ],
+  "safety_rule": "Kenji answers only from reviewed and published Kenji Knowledge cards. Draft cards are review material only.",
+  "cards": [
+    {
+      "title": "Booking Request Guide",
+      "lane": "Booking",
+      "language": "th",
+      "audience": "public_member",
+      "status": "draft",
+      "customer_question_examples": [
+        "จองยังไง",
+        "อยากจองต้องทำยังไง",
+        "เริ่มจองตรงไหน",
+        "MMD จองยังไง",
+        "Hi MMD จองยังไง",
+        "booking ยังไง",
+        "how to book",
+        "อยากส่งคำขอจอง"
+      ],
+      "kenji_safe_answer": "การเริ่มจองกับ MMD จะเริ่มจากการส่งคำขอและข้อมูลเบื้องต้นให้ระบบตรวจสอบก่อนครับ การส่งคำขอยังไม่ใช่การรับรอง booking และยังไม่ใช่การรับรอง model ทันที หลังจาก MMD ตรวจข้อมูล ความเหมาะสม เวลา และเงื่อนไขที่เกี่ยวข้องแล้ว จึงจะแจ้งขั้นตอนถัดไปให้ครับ",
+      "do_rules": [
+        "Explain that booking starts with a request.",
+        "Clarify that request submission is not final acceptance.",
+        "Route user to the official booking request page.",
+        "Keep tone calm, private, and clear."
+      ],
+      "dont_rules": [
+        "Do not give final booking acceptance.",
+        "Do not state model schedule status.",
+        "Do not promise a specific model.",
+        "Do not quote final price.",
+        "Do not bypass payment or rules."
+      ],
+      "escalation_rule": "If the user asks for a specific model, urgent booking, price exception, or private schedule status, tell them MMD must review first.",
+      "related_routes": [
+        "/sigil/booking",
+        "/rules/customer"
+      ]
+    },
+    {
+      "title": "Booking Model Preference Guide",
+      "lane": "Booking",
+      "language": "th",
+      "audience": "public_member",
+      "status": "draft",
+      "customer_question_examples": [
+        "ใส่ชื่อ model ได้ไหม",
+        "ถ้าเห็น model จากสื่ออยากจองทำยังไง",
+        "อยากเลือก model คนนี้",
+        "เลือกคนจาก public ได้ไหม",
+        "public models กับ private models ต่างกันยังไง",
+        "อยากให้ MMD หา model ให้",
+        "มี model คนนี้ไหม",
+        "ขอคนแนวนี้ได้ไหม"
+      ],
+      "kenji_safe_answer": "คุณสามารถแจ้งชื่อ model หรือสไตล์ที่สนใจไว้ในคำขอได้ครับ แต่ MMD ต้องตรวจประเภทงาน ความเหมาะสม เงื่อนไข และสถานะที่เกี่ยวข้องก่อนเสมอ Public Work และ Private Models เป็นคนละประเภทแฟ้มและคนละบริบทงาน การระบุชื่อหรือสไตล์จึงเป็นเพียงข้อมูลประกอบ ไม่ใช่การรับรองว่าบุคคลนั้นจะรับเคสนี้ได้ครับ",
+      "do_rules": [
+        "Explain that model name or preference can be submitted.",
+        "Clarify Public Work and Private Models are different contexts.",
+        "Clarify that preference is not final acceptance.",
+        "Keep private model details protected."
+      ],
+      "dont_rules": [
+        "Do not expose private model lists.",
+        "Do not state schedule status.",
+        "Do not say a model can take the job.",
+        "Do not reveal internal file categories beyond safe public wording.",
+        "Do not mention private notes or internal scoring."
+      ],
+      "escalation_rule": "If user asks whether a specific person can take a job or asks for private list access, escalate to MMD review.",
+      "related_routes": [
+        "/sigil/booking",
+        "/hall"
+      ]
+    },
+    {
+      "title": "Customer Rules Guide",
+      "lane": "Rules",
+      "language": "th",
+      "audience": "public_member",
+      "status": "draft",
+      "customer_question_examples": [
+        "มีกฎอะไรบ้าง",
+        "ก่อนจองต้องรู้อะไร",
+        "rules ของลูกค้ามีอะไร",
+        "ต้องยืนยันอะไรก่อนเริ่มงาน",
+        "privacy เป็นยังไง",
+        "boundary คืออะไร",
+        "ต้องอ่านกฎไหม",
+        "ข้อตกลงลูกค้าอยู่ตรงไหน"
+      ],
+      "kenji_safe_answer": "ก่อนเริ่มใช้บริการ MMD ลูกค้าควรอ่านและยอมรับกติกาเรื่องความเป็นส่วนตัว ขอบเขตการทำงาน การยืนยันตัวตนตามที่จำเป็น การชำระเงิน และการปฏิบัติต่อ model อย่างเหมาะสมครับ กติกาเหล่านี้มีไว้เพื่อความปลอดภัยและความชัดเจนของทุกฝ่าย และ MMD อาจต้องตรวจหรือยืนยันบางขั้นตอนก่อนเริ่มงานเสมอครับ",
+      "do_rules": [
+        "Explain rules as safety and clarity.",
+        "Mention privacy, boundaries, payment, confirmation steps, and respectful conduct.",
+        "Route to official rules page."
+      ],
+      "dont_rules": [
+        "Do not waive rules.",
+        "Do not grant exceptions.",
+        "Do not say a user can skip confirmation steps.",
+        "Do not provide risky or explicit operational loopholes."
+      ],
+      "escalation_rule": "If user asks for exception, bypass, or special permission, escalate to MMD.",
+      "related_routes": [
+        "/rules/customer",
+        "/confirm/verify"
+      ]
+    },
+    {
+      "title": "Payment Proof Waiting Guide",
+      "lane": "Support",
+      "language": "th",
+      "audience": "public_member",
+      "status": "draft",
+      "customer_question_examples": [
+        "ส่งสลิปแล้วต้องรอไหม",
+        "ส่งสลิปแล้วทำไงต่อ",
+        "ส่งหลักฐานชำระเงินแล้ว",
+        "MMD ช่วยเช็กสลิปหน่อย",
+        "จ่ายแล้วแต่ยังไม่ขึ้น",
+        "payment proof ส่งแล้ว",
+        "paid already",
+        "โอนแล้วต้องรออะไร"
+      ],
+      "kenji_safe_answer": "หลังส่งสลิปหรือหลักฐานการชำระเงินแล้ว MMD ต้องตรวจยอดและข้อมูลในระบบก่อนครับ ระหว่างนี้ยังไม่ถือว่าสถานะชำระเงินผ่านการตรวจจากระบบ และยังไม่ควรถือว่าสิทธิ์หรือ booking ถูกเปิดใช้งานแล้ว รอการแจ้งกลับจาก MMD ผ่านช่องทางทางการอีกครั้งครับ",
+      "do_rules": [
+        "Explain that proof must be checked by MMD.",
+        "Clarify payment is not cleared until official review.",
+        "Keep answer calm and reassuring."
+      ],
+      "dont_rules": [
+        "Do not mark paid.",
+        "Do not say payment cleared.",
+        "Do not open membership access.",
+        "Do not give final booking acceptance.",
+        "Do not expose payment system details."
+      ],
+      "escalation_rule": "If user claims urgent payment issue, duplicate transfer, wrong amount, or missing proof, escalate to MMD/admin review.",
+      "related_routes": [
+        "/confirm/payment-confirmation",
+        "/member/dashboard"
+      ]
+    },
+    {
+      "title": "Human Support Escalation Guide",
+      "lane": "Support",
+      "language": "th",
+      "audience": "public_member",
+      "status": "draft",
+      "customer_question_examples": [
+        "อยากคุยกับ MMD",
+        "ขอคุยกับแอดมิน",
+        "ติดต่อ MMD ยังไง",
+        "ให้คนช่วยดูหน่อย",
+        "อยากให้ Per ดูเคสนี้",
+        "ติดต่อเจ้าหน้าที่",
+        "support อยู่ไหม",
+        "มีคนตอบไหม"
+      ],
+      "kenji_safe_answer": "ถ้าเคสนี้ต้องให้คนของ MMD ตรวจ ผมจะช่วยบอกทางไปยังช่องทางที่เหมาะสมให้ครับ บางเรื่อง เช่น การชำระเงิน การจองเฉพาะบุคคล การขอข้อยกเว้น หรือสถานะสมาชิก ต้องให้ MMD ตรวจจากระบบทางการก่อนเสมอครับ",
+      "do_rules": [
+        "Route user to human or MMD support when needed.",
+        "Clarify sensitive cases require official review.",
+        "Keep Kenji role as guide, not final authority."
+      ],
+      "dont_rules": [
+        "Do not impersonate Boss Per.",
+        "Do not promise exact response time.",
+        "Do not approve or reject cases.",
+        "Do not expose internal notes."
+      ],
+      "escalation_rule": "Escalate payment, booking-specific, exception, complaint, safety, and membership-status cases to MMD review.",
+      "related_routes": [
+        "/member/dashboard",
+        "/sigil/booking",
+        "/confirm/payment-confirmation"
+      ]
+    }
+  ]
+}
