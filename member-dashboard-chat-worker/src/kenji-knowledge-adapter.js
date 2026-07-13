@@ -107,6 +107,31 @@ function safeKnowledgeLog(marker, fields = {}) {
   console.log(marker, payload);
 }
 
+function safeFetchLog(marker, fields = {}) {
+  const payload = {
+    event: marker,
+    enabled: Boolean(fields.enabled),
+    knowledge_enabled: Boolean(fields.knowledge_enabled),
+    allowlisted: Boolean(fields.allowlisted),
+    fetch_url_present: Boolean(fields.fetch_url_present),
+    token_present: Boolean(fields.token_present),
+    timeout_ms: Number.isFinite(Number(fields.timeout_ms)) ? Number(fields.timeout_ms) : 0,
+    cache_ttl_ms: Number.isFinite(Number(fields.cache_ttl_ms)) ? Number(fields.cache_ttl_ms) : 0,
+    cache_hit: Boolean(fields.cache_hit),
+    cache_age_ms: Number.isFinite(Number(fields.cache_age_ms)) ? Number(fields.cache_age_ms) : 0,
+    http_status: Number.isFinite(Number(fields.http_status)) ? Number(fields.http_status) : 0,
+    response_ok_boolean: Boolean(fields.response_ok_boolean),
+    top_level_keys: Array.isArray(fields.top_level_keys) ? fields.top_level_keys.map(asString).filter(Boolean).slice(0, 8) : [],
+    cards_is_array: Boolean(fields.cards_is_array),
+    cards_count: Number.isFinite(Number(fields.cards_count)) ? Number(fields.cards_count) : 0,
+    usable_cards_count: Number.isFinite(Number(fields.usable_cards_count)) ? Number(fields.usable_cards_count) : 0,
+    elapsed_ms: Number.isFinite(Number(fields.elapsed_ms)) ? Number(fields.elapsed_ms) : 0,
+    error_type: asString(fields.error_type),
+    fallback_reason: asString(fields.fallback_reason),
+  };
+  console.log(marker, payload);
+}
+
 function numberFromEnv(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -178,19 +203,64 @@ function cacheKey(env = {}) {
   return `${asString(env.KENJI_KNOWLEDGE_BASE_URL).replace(/\/+$/, "")}|${asString(env.KENJI_KNOWLEDGE_INTERNAL_TOKEN || env.INTERNAL_TOKEN) ? "authed" : "missing"}`;
 }
 
-export async function fetchPublishedKenjiKnowledge(env = {}, fetchImpl = fetch) {
+function fetchErrorType(error, timedOut) {
+  if (timedOut) return "timeout";
+  if (error?.name === "AbortError") return "abort";
+  if (error?.name === "SyntaxError") return "parse_error";
+  return "unknown";
+}
+
+export async function fetchPublishedKenjiKnowledge(env = {}, fetchImpl = fetch, diagnostics = {}) {
   const baseUrl = asString(env.KENJI_KNOWLEDGE_BASE_URL).replace(/\/+$/, "");
   const token = asString(env.KENJI_KNOWLEDGE_INTERNAL_TOKEN || env.INTERNAL_TOKEN);
-  if (!baseUrl || !token || typeof fetchImpl !== "function") return [];
-
   const ttlMs = numberFromEnv(env.KENJI_KNOWLEDGE_CACHE_TTL_MS, DEFAULT_CACHE_TTL_MS);
+  const timeoutMs = numberFromEnv(env.KENJI_KNOWLEDGE_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
+  const startedAt = Date.now();
+  const baseFetchLog = {
+    enabled: diagnostics.enabled,
+    knowledge_enabled: diagnostics.knowledge_enabled,
+    allowlisted: diagnostics.allowlisted,
+    fetch_url_present: Boolean(baseUrl),
+    token_present: Boolean(token),
+    timeout_ms: timeoutMs,
+    cache_ttl_ms: ttlMs,
+  };
+
+  safeFetchLog("line_kenji_knowledge_fetch_start", baseFetchLog);
+
+  if (!baseUrl || !token || typeof fetchImpl !== "function") {
+    safeFetchLog("line_kenji_knowledge_fetch_debug", {
+      ...baseFetchLog,
+      elapsed_ms: Date.now() - startedAt,
+      error_type: "unknown",
+      fallback_reason: "empty_cards",
+    });
+    return [];
+  }
+
   const key = cacheKey(env);
   const cached = cache.get(key);
-  if (cached && Date.now() - cached.ts < ttlMs) return cached.cards;
+  if (cached && Date.now() - cached.ts < ttlMs) {
+    safeFetchLog("line_kenji_knowledge_fetch_debug", {
+      ...baseFetchLog,
+      cache_hit: true,
+      cache_age_ms: Date.now() - cached.ts,
+      cards_is_array: true,
+      cards_count: cached.cards.length,
+      usable_cards_count: cached.cards.length,
+      elapsed_ms: Date.now() - startedAt,
+      fallback_reason: cached.cards.length ? "" : "empty_cards",
+      error_type: cached.cards.length ? "" : "empty_cards",
+    });
+    return cached.cards;
+  }
 
-  const timeoutMs = numberFromEnv(env.KENJI_KNOWLEDGE_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  let timedOut = false;
+  const timer = controller ? setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs) : null;
 
   try {
     const response = await fetchImpl(`${baseUrl}${PUBLISHED_PATH}`, {
@@ -198,12 +268,73 @@ export async function fetchPublishedKenjiKnowledge(env = {}, fetchImpl = fetch) 
       headers: { Authorization: `Bearer ${token}` },
       signal: controller?.signal,
     });
-    if (!response || !response.ok) return [];
-    const data = await response.json().catch(() => null);
-    const cards = Array.isArray(data?.cards) ? data.cards.filter(isUsablePublishedCard) : [];
+    const httpStatus = Number(response?.status || 0);
+    if (!response || !response.ok) {
+      safeFetchLog("line_kenji_knowledge_fetch_debug", {
+        ...baseFetchLog,
+        http_status: httpStatus,
+        response_ok_boolean: Boolean(response?.ok),
+        elapsed_ms: Date.now() - startedAt,
+        error_type: "http_error",
+        fallback_reason: "empty_cards",
+      });
+      return [];
+    }
+
+    let data = null;
+    try {
+      data = await response.json();
+    } catch (_) {
+      safeFetchLog("line_kenji_knowledge_fetch_debug", {
+        ...baseFetchLog,
+        http_status: httpStatus,
+        response_ok_boolean: true,
+        elapsed_ms: Date.now() - startedAt,
+        error_type: "parse_error",
+        fallback_reason: "empty_cards",
+      });
+      return [];
+    }
+
+    const topLevelKeys = data && typeof data === "object" && !Array.isArray(data) ? Object.keys(data) : [];
+    const cardsIsArray = Array.isArray(data?.cards);
+    if (!cardsIsArray) {
+      safeFetchLog("line_kenji_knowledge_fetch_debug", {
+        ...baseFetchLog,
+        http_status: httpStatus,
+        response_ok_boolean: true,
+        top_level_keys: topLevelKeys,
+        cards_is_array: false,
+        elapsed_ms: Date.now() - startedAt,
+        error_type: "shape_error",
+        fallback_reason: "empty_cards",
+      });
+      return [];
+    }
+
+    const cards = data.cards.filter(isUsablePublishedCard);
     cache.set(key, { ts: Date.now(), cards });
+    safeFetchLog("line_kenji_knowledge_fetch_debug", {
+      ...baseFetchLog,
+      http_status: httpStatus,
+      response_ok_boolean: true,
+      top_level_keys: topLevelKeys,
+      cards_is_array: true,
+      cards_count: data.cards.length,
+      usable_cards_count: cards.length,
+      elapsed_ms: Date.now() - startedAt,
+      error_type: cards.length ? "" : "empty_cards",
+      fallback_reason: cards.length ? "" : "empty_cards",
+    });
     return cards;
-  } catch (_) {
+  } catch (error) {
+    const errorType = fetchErrorType(error, timedOut);
+    safeFetchLog("line_kenji_knowledge_fetch_debug", {
+      ...baseFetchLog,
+      elapsed_ms: Date.now() - startedAt,
+      error_type: errorType,
+      fallback_reason: "empty_cards",
+    });
     return [];
   } finally {
     if (timer) clearTimeout(timer);
@@ -340,7 +471,7 @@ export async function maybeBuildKenjiKnowledgeReply({ env = {}, userId = "", mes
     return null;
   }
 
-  const cards = await fetchPublishedKenjiKnowledge(env, fetchImpl);
+  const cards = await fetchPublishedKenjiKnowledge(env, fetchImpl, baseLog);
   if (!cards.length) {
     safeKnowledgeLog("line_kenji_knowledge_fallback", { ...baseLog, reason: "no_cards" });
     return null;
