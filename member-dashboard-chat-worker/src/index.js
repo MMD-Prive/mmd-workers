@@ -1,3 +1,5 @@
+import { maybeBuildKenjiKnowledgeReply } from "./kenji-knowledge-adapter.js";
+
 const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const LINE_PROFILE_BASE_URL = "https://api.line.me/v2/bot/profile";
@@ -990,8 +992,12 @@ async function handleLineWebhook(request, env) {
     const profile = shouldFetchProfile ? await fetchLineProfile(env, lineUserId) : null;
     const record = await writeLineEventToConsoleInbox(env, event, profile, intent);
     const replyText = kenjiEnabled ? buildKenjiLineReply(event, profile, { forceReply: autoReplyEnabled }) : "";
-    const shouldReply = Boolean(autoReplyEnabled && !record?.deduped && replyText && getReplyToken(event));
-    const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
+    const knowledgeReply = autoReplyEnabled && event?.type === "message" && event?.message?.type === "text"
+      ? await maybeBuildKenjiKnowledgeReply({ env, userId: lineUserId, messageText: text, fetchImpl: globalThis.fetch })
+      : null;
+    const finalReplyText = knowledgeReply || replyText;
+    const shouldReply = Boolean(autoReplyEnabled && !record?.deduped && finalReplyText && getReplyToken(event));
+    const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), finalReplyText, { trusted_event: true }) : null;
 
     saved.push({
       ok: true,
