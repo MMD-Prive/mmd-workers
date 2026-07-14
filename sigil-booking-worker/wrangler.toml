@@ -1,0 +1,32 @@
+# sigil-booking-worker/wrangler.toml
+# MMD Booking / SIGIL public booking resolver
+
+name = "sigil-booking-worker"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+workers_dev = true
+
+[vars]
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
+AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+WEB_BASE_URL = "https://mmdbkk.com"
+PAY_URL = "/sigil/pay"
+INME_URL = "/trust/inme"
+MODEL_PUBLIC_ASSET_BASE_URL = ""
+
+# Airtable table IDs
+AIRTABLE_TABLE_BOOKING_REQUESTS_ID = "tblQa2OK4U69eOCRF"
+AIRTABLE_TABLE_MODELS_ID = "tblI4B0bI446vp9GX"
+AIRTABLE_TABLE_MEMBERS_ID = "tblgWc5VRon5o8Mhk"
+AIRTABLE_TABLE_MEMBER_PACKAGES_ID = "tblurt3GuKKiNjQAK"
+AIRTABLE_TABLE_ENTITLEMENTS_ID = "tblNImdF9PKAxhXGi"
+
+# Optional R2 lookup for object-exists checks. Public URLs still come from Airtable
+# Public Image URL or MODEL_PUBLIC_ASSET_BASE_URL + primary_image_key.
+[[r2_buckets]]
+binding = "MMD_MODEL_ASSETS"
+bucket_name = "mmd-models"
+
+# ---- Secrets ----
+# AIRTABLE_API_KEY
+# INTERNAL_TOKEN optional for server-to-server tests
