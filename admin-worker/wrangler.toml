@@ -48,6 +48,11 @@ TG_THREAD_PRICING_REVIEW = "61"
 binding = "MMD_MODEL_ASSETS"
 bucket_name = "mmd-models"
 
+[[kv_namespaces]]
+binding = "KENJI_KNOWLEDGE_KV"
+id = "d5e1ba8a5f124e5fb8b8b8d3bc532d3d"
+preview_id = "65007e6d7d194085a0864d7ade111ffb"
+
 # ---- Secrets (set via wrangler secret) ----
 # ADMIN_BEARER
 # CONFIRM_KEY

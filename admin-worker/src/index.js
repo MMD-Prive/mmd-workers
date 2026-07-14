@@ -25,6 +25,7 @@
 // ==========================================================
 
 import { demoLinksCreate, demoLinksGet } from "./routes/demo-links.js";
+import { handleKenjiKnowledgeRequest } from "./kenji-knowledge.js";
 import {
   getAllowedModelSessionActions,
   normalizeModelSessionAction,
@@ -129,6 +130,9 @@ export default {
     if (method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors });
     }
+
+    const kenjiKnowledgeResponse = await handleKenjiKnowledgeRequest(req, env);
+    if (kenjiKnowledgeResponse) return kenjiKnowledgeResponse;
 
     // ------------------------------------------------------
     // Public ping
