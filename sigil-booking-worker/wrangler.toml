@@ -12,7 +12,14 @@ AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 WEB_BASE_URL = "https://mmdbkk.com"
 PAY_URL = "/sigil/pay"
 INME_URL = "/trust/inme"
+INTERNAL_ADMIN_BOOKING_URL = "/internal/admin/console"
 MODEL_PUBLIC_ASSET_BASE_URL = ""
+
+# Telegram notification for new booking drafts
+TELEGRAM_NOTIFY_ENABLED = "true"
+TELEGRAM_INTERNAL_SEND_URL = "https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send"
+TELEGRAM_BOOKING_CHAT_ID = ""
+TG_THREAD_BOOKING_DRAFT = ""
 
 # Airtable table IDs
 AIRTABLE_TABLE_BOOKING_REQUESTS_ID = "tblQa2OK4U69eOCRF"
@@ -29,4 +36,5 @@ bucket_name = "mmd-models"
 
 # ---- Secrets ----
 # AIRTABLE_API_KEY
-# INTERNAL_TOKEN optional for server-to-server tests
+# INTERNAL_TOKEN optional for telegram-worker auth
+# CONFIRM_KEY optional for telegram-worker auth
