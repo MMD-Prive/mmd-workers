@@ -3,7 +3,7 @@ import { requireInternalToken } from "../lib/guard.js";
 import { sendTelegramMessage, telegramNotify } from "../lib/telegram.js";
 import { escapeHtml } from "../lib/util.js";
 
-const LOCK = "telegram-preview-hype-v20260621a";
+const LOCK = "telegram-preview-hype-v20260621a-v1-alias";
 const PREVIEW_START = "preview";
 const DEFAULT_BOT_USERNAME = "mmdprivebot";
 const PREVIEW_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -12,7 +12,7 @@ const PREVIEW_CODE_TTL_SECONDS = 60 * 60 * 24 * 90;
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
-    const path = url.pathname;
+    const path = normalizePath(url.pathname);
 
     try {
       if (req.method === "GET" && (path === "/" || path === "/health" || path === "/ping")) {
@@ -22,10 +22,15 @@ export default {
           worker: "telegram",
           preview_channel_configured: Boolean(clean(env.TELEGRAM_PREVIEW_CHANNEL_ID)),
           preview_bot_username: botUsername(env),
+          routes: {
+            webhook: ["/telegram/webhook", "/v1/webhook"],
+            internal_send: ["/telegram/internal/send", "/v1/internal/send", "/v1/send"],
+            preview_post: ["/telegram/preview/post", "/v1/preview/post"],
+          },
         }, 200);
       }
 
-      if (path === "/telegram/webhook" && req.method === "POST") {
+      if (isTelegramWebhookPath(path) && req.method === "POST") {
         requireTelegramSecret(req, env);
         const update = await safeJson(req);
         if (!update) return json({ ok: false, error: "invalid_json" }, 400);
@@ -33,7 +38,7 @@ export default {
         return json({ ok: true, received: true, ...result }, 200);
       }
 
-      if (path === "/telegram/internal/send" && req.method === "POST") {
+      if (isInternalSendPath(path) && req.method === "POST") {
         requireInternalToken(req, env);
         const body = await safeJson(req);
         if (!body) return json({ ok: false, error: "invalid_json" }, 400);
@@ -41,7 +46,7 @@ export default {
         return json({ ok: true, telegram: tg }, 200);
       }
 
-      if (path === "/telegram/preview/post" && req.method === "POST") {
+      if (isPreviewPostPath(path) && req.method === "POST") {
         requireInternalToken(req, env);
         const body = (await safeJson(req)) || {};
         const result = await postPreviewChannelCta(body, env);
@@ -49,7 +54,7 @@ export default {
         return json(result, status);
       }
 
-      return json({ ok: false, error: "not_found" }, 404);
+      return json({ ok: false, error: "not_found", path }, 404);
     } catch (err) {
       if (err instanceof HttpError) return json(err.body, err.status);
       return json({ ok: false, error: "server_error", detail: String(err?.message || err) }, 500);
@@ -248,10 +253,27 @@ function timingSafeEqual(left, right) {
   const b = String(right || "");
   let diff = a.length ^ b.length;
   const max = Math.max(a.length, b.length);
-  for (let index = 0; index < max; index += 1) {
+  for (let index = 0; index < max; index++) {
     diff |= (a.charCodeAt(index) || 0) ^ (b.charCodeAt(index) || 0);
   }
   return diff === 0;
+}
+
+function isTelegramWebhookPath(path) {
+  return path === "/telegram/webhook" || path === "/v1/webhook";
+}
+
+function isInternalSendPath(path) {
+  return path === "/telegram/internal/send" || path === "/v1/internal/send" || path === "/v1/send";
+}
+
+function isPreviewPostPath(path) {
+  return path === "/telegram/preview/post" || path === "/v1/preview/post";
+}
+
+function normalizePath(path = "") {
+  const p = String(path || "/").replace(/\/{2,}/g, "/");
+  return p.length > 1 ? p.replace(/\/$/, "") : p;
 }
 
 function previewUserKey(userId) {
