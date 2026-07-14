@@ -43,14 +43,14 @@ Webflow must not read Airtable, R2, Google Drive, or Gmail directly. This worker
 
 ## Telegram notify
 
-Configure these vars to push each new booking draft into the internal/admin Telegram channel or topic:
+Booking draft notifications are configured for the `MMD Privé & HYPE` forum supergroup and the `MMD • Booking` topic.
 
 ```toml
 TELEGRAM_NOTIFY_ENABLED = "true"
 TELEGRAM_INTERNAL_SEND_URL = "https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send"
-TELEGRAM_BOOKING_CHAT_ID = "-100xxxxxxxxxx"
-TG_THREAD_BOOKING_DRAFT = ""
-INTERNAL_ADMIN_BOOKING_URL = "/internal/admin/console"
+TELEGRAM_BOOKING_CHAT_ID = "-1003546439681"
+TG_THREAD_BOOKING_DRAFT = "1399"
+INTERNAL_ADMIN_BOOKING_URL = "https://sigil.mmdbkk.com/internal/admin/console"
 ```
 
 Optional auth secrets, depending on the telegram-worker gate:
