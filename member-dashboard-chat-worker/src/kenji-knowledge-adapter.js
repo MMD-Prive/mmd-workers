@@ -1,4 +1,4 @@
-const DEFAULT_TIMEOUT_MS = 1500;
+const DEFAULT_TIMEOUT_MS = 2500;
 const DEFAULT_CACHE_TTL_MS = 60000;
 const DEFAULT_STALE_CACHE_TTL_MS = 300000;
 const PUBLISHED_PATH = "/v1/internal/kenji/knowledge/published";
