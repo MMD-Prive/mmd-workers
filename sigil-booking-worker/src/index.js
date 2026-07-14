@@ -48,7 +48,7 @@ async function handleClientResolve(req, env) {
 
   await upsertBookingRequest(env, bookingRef, {
     "Request ID": bookingRef,
-    "Request Status": "draft",
+    "Request Status": normalizeRequestStatus("draft"),
     "Created At": new Date().toISOString(),
     "Source": "sigil_booking",
     "Source Path": str(body.source_path || body.page_path || "/sigil/booking"),
@@ -114,7 +114,7 @@ async function handleBookingIntake(req, env) {
 
   const fields = compact({
     "Request ID": bookingRef,
-    "Request Status": str(body.request_status || "draft"),
+    "Request Status": normalizeRequestStatus(body.request_status),
     "Created At": new Date().toISOString(),
     "Source": str(body.source || "sigil_booking"),
     "Source Path": str(body.source_path || "/sigil/booking"),
@@ -307,6 +307,7 @@ async function notifyBookingDraft(env, { body, fields, rec, bookingRef, sessionI
   });
   try {
     const headers = { "Content-Type": "application/json" };
+    if (env.AUTH_SERVICE_BOOKING_TO_TELEGRAM) headers["X-Internal-Token"] = env.AUTH_SERVICE_BOOKING_TO_TELEGRAM;
     if (env.INTERNAL_TOKEN) headers.Authorization = `Bearer ${env.INTERNAL_TOKEN}`;
     if (env.CONFIRM_KEY) headers["X-Confirm-Key"] = env.CONFIRM_KEY;
     const response = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(payload) });
@@ -370,13 +371,23 @@ async function airtableListByFormula(env, table, formula, limit = 50) {
 }
 
 async function airtableCreate(env, table, fields) {
-  const res = await airtableFetch(env, `/${encodeURIComponent(table)}`, { method: "POST", body: JSON.stringify({ fields: compact(fields) }) });
+  let cleanFields = compact(fields);
+  let res = await airtableFetch(env, `/${encodeURIComponent(table)}`, { method: "POST", body: JSON.stringify({ fields: cleanFields }) });
+  if (!res.ok && isRequestStatusSelectFailure(res, cleanFields)) {
+    cleanFields = withoutRequestStatus(cleanFields);
+    res = await airtableFetch(env, `/${encodeURIComponent(table)}`, { method: "POST", body: JSON.stringify({ fields: cleanFields }) });
+  }
   if (!res.ok) throw new Error(`airtable_create_failed:${res.status}:${res.text || ""}`);
   return res.data;
 }
 
 async function airtablePatch(env, table, recordId, fields) {
-  const res = await airtableFetch(env, `/${encodeURIComponent(table)}/${recordId}`, { method: "PATCH", body: JSON.stringify({ fields: compact(fields) }) });
+  let cleanFields = compact(fields);
+  let res = await airtableFetch(env, `/${encodeURIComponent(table)}/${recordId}`, { method: "PATCH", body: JSON.stringify({ fields: cleanFields }) });
+  if (!res.ok && isRequestStatusSelectFailure(res, cleanFields)) {
+    cleanFields = withoutRequestStatus(cleanFields);
+    res = await airtableFetch(env, `/${encodeURIComponent(table)}/${recordId}`, { method: "PATCH", body: JSON.stringify({ fields: cleanFields }) });
+  }
   if (!res.ok) throw new Error(`airtable_patch_failed:${res.status}:${res.text || ""}`);
   return res.data;
 }
@@ -423,7 +434,11 @@ function inferContactMethod(contact, line) { if (contact.includes("@")) return "
 function tierFromText(v) { const t = token(v); if (t.includes("black") || t.includes("svip")) return "black_card"; if (t.includes("vip")) return "vip"; if (t.includes("premium")) return "premium"; if (t.includes("standard") || t.includes("lite")) return "standard"; return ""; }
 function normalizeMemberStatus(v) { const t = token(v); if (["active", "existing", "existing_active", "member_active", "active_member"].includes(t)) return "active"; if (["expired", "inactive", "cancelled", "canceled", "lapsed"].includes(t)) return t === "cancelled" || t === "canceled" ? "inactive" : t; if (["new", "guest", "not_found", "pending", "review_required"].includes(t)) return t; return "unknown"; }
 function normalizeAccessScope(v) { const t = token(v); if (["public_private", "private_review", "blocked"].includes(t)) return t; return "public_only"; }
+function normalizeRequestStatus(v) { const t = token(unwrapJsonString(v)); return ["draft", "pending", "review_required", "confirmed", "cancelled", "canceled"].includes(t) ? t : "draft"; }
 function normalizeJobClass(v) { const t = token(v); return ["travel", "extreme", "vip", "pn", "private_review"].includes(t) ? t : "travel"; }
 function normalizeModelAssetSource(v) { const t = token(v); return ["r2_catalog", "r2_prefix", "airtable_attachment", "drive_folder", "gmail_folder_reference", "manual_review"].includes(t) ? t : "manual_review"; }
+function unwrapJsonString(v) { const s = str(v); if (s.length < 2 || s[0] !== '"' || s[s.length - 1] !== '"') return s; try { const parsed = JSON.parse(s); return typeof parsed === "string" ? parsed : s; } catch (_) { return s.replace(/^"+|"+$/g, ""); } }
+function isRequestStatusSelectFailure(res, fields) { return Object.hasOwn(fields || {}, "Request Status") && res.status === 422 && /(INVALID_MULTIPLE_CHOICE_OPTIONS|INVALID_VALUE_FOR_COLUMN|Request Status|draft)/i.test(str(res.text)); }
+function withoutRequestStatus(fields) { const next = { ...fields }; delete next["Request Status"]; return next; }
 function publicUrlFromKey(env, key) { const base = str(env.MODEL_PUBLIC_ASSET_BASE_URL).replace(/\/+$/, ""); const k = str(key).replace(/^\/+/, ""); return base && k ? `${base}/${encodeURI(k)}` : ""; }
 function escHtml(v) { return str(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
