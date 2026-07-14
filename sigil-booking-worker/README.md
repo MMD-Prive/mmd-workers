@@ -21,6 +21,7 @@ Webflow must not read Airtable, R2, Google Drive, or Gmail directly. This worker
 
 - `POST /sigil/api/booking/intake`
   - Saves the booking draft into `SIGIL Booking Requests`.
+  - Sends a Telegram/internal-admin notification when Telegram vars are configured.
   - Maps the v24 Webflow payload into the new Airtable fields:
     - `session_id`
     - `booking_ref`
@@ -39,6 +40,27 @@ Webflow must not read Airtable, R2, Google Drive, or Gmail directly. This worker
     - `r2_key_snapshot`
     - `drive_folder_id_snapshot`
     - `resolver_payload_json`
+
+## Telegram notify
+
+Configure these vars to push each new booking draft into the internal/admin Telegram channel or topic:
+
+```toml
+TELEGRAM_NOTIFY_ENABLED = "true"
+TELEGRAM_INTERNAL_SEND_URL = "https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send"
+TELEGRAM_BOOKING_CHAT_ID = "-100xxxxxxxxxx"
+TG_THREAD_BOOKING_DRAFT = ""
+INTERNAL_ADMIN_BOOKING_URL = "/internal/admin/console"
+```
+
+Optional auth secrets, depending on the telegram-worker gate:
+
+```bash
+wrangler secret put INTERNAL_TOKEN
+wrangler secret put CONFIRM_KEY
+```
+
+The notify payload is deliberately advisory only. It includes booking ref, session id, Airtable record id, client/contact, route, member/access status, model/preference, date/time/place, and a note that this is still a draft.
 
 ## Deployment notes
 
