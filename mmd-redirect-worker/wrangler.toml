@@ -16,6 +16,10 @@ binding = "MEMBER_PAGES_WORKER"
 service = "member-pages-worker"
 
 [[services]]
+binding = "ADMIN_WORKER"
+service = "admin-worker"
+
+[[services]]
 binding = "SIGIL_WORKER"
 service = "sigil-worker"
 

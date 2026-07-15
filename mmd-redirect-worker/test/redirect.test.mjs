@@ -174,6 +174,37 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
+  it("bridges /api/member/dashboard to admin-worker core with only safe query keys", async () => {
+    const serviceRequests = [];
+    const env = {
+      ADMIN_WORKER: {
+        fetch: async (request) => {
+          serviceRequests.push(request);
+          return Response.json({
+            ok: true,
+            data: { dashboard_state: "pending" },
+          }, {
+            headers: { "x-mmd-worker": "admin-worker", "x-mmd-page": "member-dashboard-api" },
+          });
+        },
+      },
+    };
+
+    const response = await requestWithEnv(
+      "https://www.mmdbkk.com/api/member/dashboard?t=tok&code=c&promo=p&source=line&invite=i&unsafe=https://evil.example",
+      env,
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-mmd-front-gate"), "mmd-redirect-worker");
+    assert.equal(serviceRequests.length, 1);
+    assert.equal(
+      serviceRequests[0].url,
+      "https://www.mmdbkk.com/v1/member/dashboard?t=tok&code=c&promo=p&source=line&invite=i",
+    );
+    assert.equal(passThroughRequests.length, 0);
+  });
+
   it("delegates /member/membership to member-pages-worker by service binding without redirecting or changing query strings", async () => {
     const serviceRequests = [];
     const env = {

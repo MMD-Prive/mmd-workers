@@ -21,6 +21,7 @@ export const PUBLIC_BLACKCARD_PATHS = new Set(["/blackcard", "/blackcard/", "/bl
 export const WEBFLOW_MEMBER_PAGE_PATHS = new Set(["/member/promotion", "/member/promotion/", "/member/apply", "/member/apply/"]);
 export const MEMBER_PAGE_PATHS = new Set(["/member/membership", "/member/membership/", "/member/profile", "/member/profile/", "/pay/membership", "/pay/membership/", "/pay/pending-verification", "/pay/pending-verification/", "/sigil/pay/renewal", "/sigil/pay/renewal/"]);
 export const MEMBER_API_PATHS = new Set(["/member/api/liff/identify", "/member/api/liff/identify/"]);
+export const MEMBER_DASHBOARD_API_PATHS = new Set(["/api/member/dashboard", "/api/member/dashboard/"]);
 export const NEVER_TOUCH_PREFIXES = ["/api/", "/webhook/", "/webhooks/", "/payments/", "/payment/", "/payment-webhook/", "/admin/", "/sigil/", "/cdn-cgi/", "/assets/", "/static/", "/uploads/"];
 export const NEVER_REDIRECT_EXACT_PATHS = new Set(["/member/promotion", "/member/promotion/", "/member/apply", "/member/apply/", "/member/dashboard", "/member/dashboard/", "/member/membership", "/member/membership/", "/member/profile", "/member/profile/", "/member/payments", "/member/payments/", "/pay/membership", "/pay/membership/", "/pay/pending-verification", "/pay/pending-verification/", "/sigil/pay/membership", "/sigil/pay/membership/", "/sigil/pay/renewal", "/sigil/pay/renewal/", "/hall", "/hall/", "/model/console", "/model/console/", "/blackcard", "/blackcard/", "/blackcard/black-card", "/blackcard/black-card/"]);
 export const EXACT_PATH_REDIRECTS = { "/trust/inme": "/sigil/start", "/inme": "/sigil/start", "/login": "/sigil/start", "/member": "/member/dashboard", "/member/membership/benefits": "/member/membership", "/members": "/sigil/start", "/membership": "/member/membership", "/membership/benefits": "/member/membership", "/renew": "/sigil/membership", "/renewal": "/sigil/membership", "/trust": "/sigil/start" };
@@ -88,6 +89,7 @@ function isSigilApplyPath(url) { const p = url.pathname.toLowerCase(); return p 
 function isSigilPrivateModelApplyApiPath(url) { const p = url.pathname.toLowerCase(); return p === "/sigil/api/private-model/apply" || p === "/sigil/api/private-model/apply/"; }
 function isSigilMembershipPath(url) { const p = url.pathname.toLowerCase(); return p === "/sigil/membership" || p === "/sigil/membership/"; }
 function isMemberDashboardPath(url) { const p = url.pathname.toLowerCase(); return p === "/member/dashboard" || p === "/member/dashboard/"; }
+function isMemberDashboardApiPath(url) { return MEMBER_DASHBOARD_API_PATHS.has(url.pathname.toLowerCase()); }
 function isMemberPagePath(url) { return MEMBER_PAGE_PATHS.has(url.pathname.toLowerCase()); }
 function isMemberApiPath(url) { return MEMBER_API_PATHS.has(url.pathname.toLowerCase()); }
 function isMemberPaymentsPath(url) { const p = url.pathname.toLowerCase(); return p === "/member/payments" || p === "/member/payments/"; }
@@ -128,12 +130,34 @@ async function fetchAdminMemberPage(request, env, url) {
   return withFrontGateHeaders(await fetch(new Request(target.toString(), request)));
 }
 
+async function fetchMemberDashboardApi(request, env, url) {
+  const target = new URL(request.url);
+  target.pathname = "/v1/member/dashboard";
+  target.search = safeMemberDashboardSearch(url.searchParams);
+  const upstreamRequest = new Request(target.toString(), request);
+  if (env?.ADMIN_WORKER?.fetch) return withFrontGateHeaders(await env.ADMIN_WORKER.fetch(upstreamRequest));
+  const fallback = new URL(ADMIN_WORKER_UPSTREAM);
+  fallback.pathname = target.pathname;
+  fallback.search = target.search;
+  return withFrontGateHeaders(await fetch(new Request(fallback.toString(), upstreamRequest)));
+}
+
 async function fetchSigilWorkerRoute(request, env, url, page) {
   if (env?.SIGIL_WORKER?.fetch) return withRouteOwnerHeaders(await env.SIGIL_WORKER.fetch(request), { owner: SIGIL_APPLY_ROUTE_OWNER, page, origin: "service-binding:sigil-worker" });
   const target = new URL(SIGIL_WORKER_UPSTREAM);
   target.pathname = url.pathname;
   target.search = url.search;
   return withRouteOwnerHeaders(await fetch(new Request(target.toString(), request)), { owner: SIGIL_APPLY_ROUTE_OWNER, page, origin: SIGIL_WORKER_UPSTREAM });
+}
+
+function safeMemberDashboardSearch(params) {
+  const safe = new URLSearchParams();
+  for (const key of ["t", "code", "promo", "source", "invite"]) {
+    const value = params.get(key);
+    if (value) safe.set(key, value);
+  }
+  const rendered = safe.toString();
+  return rendered ? `?${rendered}` : "";
 }
 
 function renderRouteRecoveryShell(request, page, title, heading, copy, links = []) {
@@ -159,6 +183,7 @@ export default {
     const url = new URL(request.url);
     if (isLineWebhookPath(url)) return fetchLineWebhook(request, env, url);
     if (isSigilPrivateModelApplyApiPath(url)) return fetchSigilWorkerRoute(request, env, url, "sigil-private-model-apply-api");
+    if (isMemberDashboardApiPath(url)) return fetchMemberDashboardApi(request, env, url);
     if (isMemberApiPath(url)) return fetchMemberPage(request, env, url);
     if (!isSafePageRequest(request)) return withFrontGateHeaders(await fetch(request));
     if (isBlackcardPublicPath(url)) return renderPublicBlackcardPage(request);
