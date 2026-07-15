@@ -1,0 +1,57 @@
+# MMD R2 Deployment Note: SIGIL Private Models Webflow Assets
+
+Documentation date: 2026-07-15
+
+Deployment evidence:
+- R2 upload was completed before this note was added.
+- Public validation was reported on 2026-07-15 around 20:45 Asia/Bangkok.
+- Public object `Last-Modified` headers showed 2026-07-15 13:44-13:45 UTC.
+
+This note records the completed Cloudflare R2 upload for SIGIL Private Models
+Webflow assets. These assets belong to the SIGIL Private Models page family and
+related Webflow embeds, including `/sigil/private-models`.
+
+This is not a Kenji Knownledge V9.1 deployment. Do not confuse these assets with
+`webflow/internal/admin/kenji-knowledge/`, the Kenji Knownledge V9.1 Webflow
+Loader, Kenji Board bridge assets, or PR #170 Kenji Knownledge assets.
+
+## R2 Location
+
+- Bucket: `mmd-models`
+- Public domain: `https://models.mmdbkk.com`
+- Prefix: `webflow/sigil/private-models/`
+
+## Uploaded Files
+
+- `sigil-private-models.css`
+- `sigil-private-models-v2-polish.css`
+- `sigil-private-models-v3.css`
+- `sigil-private-models.js`
+- `sigil-private-models-v3.js`
+- `sigil-private-models-webflow-snippet.html`
+
+## Public URLs
+
+- `https://models.mmdbkk.com/webflow/sigil/private-models/sigil-private-models.css`
+- `https://models.mmdbkk.com/webflow/sigil/private-models/sigil-private-models-v2-polish.css`
+- `https://models.mmdbkk.com/webflow/sigil/private-models/sigil-private-models-v3.css`
+- `https://models.mmdbkk.com/webflow/sigil/private-models/sigil-private-models.js`
+- `https://models.mmdbkk.com/webflow/sigil/private-models/sigil-private-models-v3.js`
+- `https://models.mmdbkk.com/webflow/sigil/private-models/sigil-private-models-webflow-snippet.html`
+
+## Validation Reported
+
+- All 6 public URLs returned `HTTP/2 200`.
+- CSS assets served as `text/css`.
+- JS assets served as `application/javascript`.
+- HTML snippet served as `text/html`.
+- `Cache-Control` was set to `public, max-age=300`.
+
+## Operational Notes
+
+- The original R2 upload did not change repo files.
+- The original R2 upload did not include a commit or push.
+- The original R2 upload did not deploy Workers.
+- The original R2 upload did not publish Webflow.
+- Existing dirty worktree files were left untouched.
+- This note is documentation only and does not change code behavior.
