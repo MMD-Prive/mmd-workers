@@ -10,3 +10,130 @@
 >
   <div class="srr2-bg" aria-hidden="true"></div>
 
+  <header class="srr2-hero">
+    <div class="srr2-topbar">
+      <div class="srr2-mark">SĪGIL</div>
+      <div class="srr2-chip" id="srr2StatusChip">Recovery route ready</div>
+    </div>
+
+    <div class="srr2-hero-grid">
+      <div class="srr2-copy">
+        <p class="srr2-kicker">MMD PRIVÉ / PRIVATE CARE</p>
+        <h1>Report<br>Request</h1>
+        <p class="srr2-lead">ถ้ามีเรื่องที่ไม่สบายใจ หรืออยากให้ MMD ตรวจสอบอย่างจริงจัง แจ้งไว้ตรงนี้ได้ครับ หน้านี้แยกจาก Aftercare ปกติ เพื่อให้เรื่องร้องเรียน ความเป็นส่วนตัว apology หรือ coupon case ถูกส่งเข้าเส้นทางที่เหมาะสมกว่า</p>
+        <div class="srr2-actions">
+          <a class="srr2-btn srr2-btn-primary" href="#srr2FormCard">เริ่มแจ้งเรื่อง</a>
+          <a class="srr2-btn srr2-btn-ghost" data-srr2-link="aftercare" href="/sigil/aftercare">กลับ Aftercare</a>
+        </div>
+      </div>
+
+      <aside class="srr2-card srr2-kenji">
+        <div class="srr2-card-label">Kenji note</div>
+        <p>เขียนเท่าที่จำเป็นก็พอครับ แนบแคปแชท รูปหน้างาน สลิป หรือหลักฐานที่เกี่ยวข้องได้ เพื่อให้ MMD ตรวจสอบและดูแลต่ออย่างเป็นธรรมที่สุด</p>
+        <div class="srr2-mini-grid">
+          <span>R2 Evidence</span><strong>Private</strong>
+          <span>Drive Mirror</span><strong>Optional</strong>
+          <span>Telegram Alert</span><strong>Internal</strong>
+        </div>
+      </aside>
+    </div>
+  </header>
+
+  <main class="srr2-main">
+    <form id="srr2FormCard" class="srr2-card srr2-form" novalidate>
+      <input type="hidden" name="token" id="srr2Token">
+      <input type="hidden" name="session_id" id="srr2SessionId">
+      <input type="hidden" name="sid" id="srr2Sid">
+      <input type="hidden" name="job_id" id="srr2JobId">
+      <input type="hidden" name="payment_ref" id="srr2PaymentRef">
+      <input type="hidden" name="model_id" id="srr2ModelId">
+      <input type="hidden" name="source" value="sigil_recovery_room_v2">
+
+      <div class="srr2-section-head">
+        <p class="srr2-kicker">Recovery Form</p>
+        <h2>กรุณาเล่าเรื่องที่ต้องให้ MMD ตรวจสอบ</h2>
+        <p>ระบบจะส่งข้อมูลไปที่ complaint worker, เก็บหลักฐานใน R2 และแจ้งเตือนภายในตาม route ล่าสุด</p>
+      </div>
+
+      <div class="srr2-field">
+        <label>เลือกฝั่งของเรื่องนี้</label>
+        <div class="srr2-segment" role="radiogroup">
+          <label><input type="radio" name="lane" value="client" checked><span>Customer</span></label>
+          <label><input type="radio" name="lane" value="assistant"><span>Assistant</span></label>
+          <label><input type="radio" name="lane" value="model"><span>Model</span></label>
+        </div>
+      </div>
+
+      <div class="srr2-field">
+        <label>ประเภทเรื่อง</label>
+        <div class="srr2-options">
+          <label><input type="radio" name="recovery_category" value="experience" checked><span>ประสบการณ์ไม่ตรงที่คาด</span></label>
+          <label><input type="radio" name="recovery_category" value="privacy"><span>ความเป็นส่วนตัว</span></label>
+          <label><input type="radio" name="recovery_category" value="model_or_session"><span>Model / Session</span></label>
+          <label><input type="radio" name="recovery_category" value="payment"><span>Payment</span></label>
+          <label><input type="radio" name="recovery_category" value="apology_coupon"><span>Apology / Coupon</span></label>
+          <label><input type="radio" name="recovery_category" value="other"><span>อื่น ๆ</span></label>
+        </div>
+      </div>
+
+      <div class="srr2-grid-two">
+        <div class="srr2-field"><label for="srr2ClientName">ชื่อที่ให้ MMD เรียก</label><input id="srr2ClientName" name="client_name" type="text" placeholder="เช่น คุณเจต"></div>
+        <div class="srr2-field"><label for="srr2ModelName">ชื่อ model / รหัสที่เกี่ยวข้อง</label><input id="srr2ModelName" name="model_name" type="text" placeholder="ถ้าจำได้"></div>
+        <div class="srr2-field"><label for="srr2CaseDate">วันที่เกิดเรื่อง</label><input id="srr2CaseDate" name="case_date" type="date"></div>
+        <div class="srr2-field"><label for="srr2CaseTime">ช่วงเวลา</label><input id="srr2CaseTime" name="case_time" type="text" placeholder="เช่น 20:30 หรือ หลังจบงาน"></div>
+      </div>
+
+      <div class="srr2-field">
+        <label for="srr2Location">สถานที่ / ช่องทาง</label>
+        <input id="srr2Location" name="case_location" type="text" placeholder="เช่น โรงแรม, LINE, Telegram, Payment">
+      </div>
+
+      <div class="srr2-field">
+        <label for="srr2Statement">รายละเอียดที่อยากให้ตรวจสอบ</label>
+        <textarea id="srr2Statement" name="lane_statement" rows="7" required placeholder="เล่าแบบสั้น ชัด และปลอดภัย ไม่ต้องใส่ข้อมูลส่วนตัวเกินจำเป็น"></textarea>
+      </div>
+
+      <div class="srr2-evidence">
+        <div class="srr2-evidence-head">
+          <h3>หลักฐานประกอบการตรวจสอบ</h3>
+          <p>รองรับ jpg, png, webp, gif, heic, heif, pdf สูงสุด 12 ไฟล์ต่อฝั่ง และ 15MB ต่อไฟล์</p>
+        </div>
+        <div class="srr2-grid-two">
+          <div class="srr2-upload"><label for="srr2ClientEvidence">Customer evidence</label><input id="srr2ClientEvidence" name="client_evidence[]" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.gif,.heic,.heif,.pdf,image/jpeg,image/png,image/webp,image/gif,application/pdf"><div class="srr2-files" id="srr2ClientFiles">ยังไม่มีไฟล์</div></div>
+          <div class="srr2-upload"><label for="srr2ModelEvidence">Model / system evidence</label><input id="srr2ModelEvidence" name="model_evidence[]" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.gif,.heic,.heif,.pdf,image/jpeg,image/png,image/webp,image/gif,application/pdf"><div class="srr2-files" id="srr2ModelFiles">ยังไม่มีไฟล์</div></div>
+        </div>
+      </div>
+
+      <div class="srr2-field"><label for="srr2Expected">อยากให้ MMD ช่วยอย่างไร</label><textarea id="srr2Expected" name="expected_action" rows="4" placeholder="เช่น ขอให้ตรวจสอบ, ติดต่อกลับ, ดูเรื่อง payment, พิจารณา apology/coupon"></textarea></div>
+
+      <div class="srr2-field"><label>สิ่งที่ต้องการให้ทำต่อ</label><div class="srr2-options"><label><input type="checkbox" name="request_action" value="contact_back"><span>ติดต่อกลับ</span></label><label><input type="checkbox" name="request_action" value="payment_check"><span>ตรวจ payment</span></label><label><input type="checkbox" name="request_action" value="coupon_review"><span>พิจารณา coupon</span></label><label><input type="checkbox" name="request_action" value="privacy_review"><span>ตรวจเรื่อง privacy</span></label></div></div>
+
+      <div class="srr2-grid-two">
+        <div class="srr2-field"><label>ระดับความเร่งด่วน</label><select name="urgency" id="srr2Urgency"><option value="normal">Normal</option><option value="important">Important</option><option value="sensitive">Sensitive</option></select></div>
+        <div class="srr2-field"><label for="srr2Contact">ช่องทางติดต่อกลับ</label><input id="srr2Contact" name="contact" type="text" placeholder="LINE / Telegram / เบอร์ที่สะดวก"></div>
+      </div>
+
+      <label class="srr2-consent"><input id="srr2Consent" name="consent" type="checkbox" required><span>ยืนยันว่าข้อมูลนี้ส่งให้ MMD ใช้ตรวจสอบภายใน และเข้าใจว่าหลักฐานจะถูกเก็บในพื้นที่ส่วนตัวของระบบ</span></label>
+      <label class="srr2-consent"><input name="privacy_sensitive" type="checkbox"><span>เรื่องนี้มีข้อมูลส่วนตัวหรือความอ่อนไหวเป็นพิเศษ</span></label>
+
+      <button class="srr2-submit" id="srr2Submit" type="submit">Send Report</button>
+      <p class="srr2-result" id="srr2Result" role="status" aria-live="polite"></p>
+    </form>
+
+    <section class="srr2-routes">
+      <a class="srr2-route" data-srr2-link="aftercare" href="/sigil/aftercare"><span>Aftercare</span><strong>กลับไป feedback ปกติ</strong></a>
+      <a class="srr2-route" data-srr2-link="dashboard" href="/sigil/member/dashboard"><span>Member Dashboard</span><strong>กลับหน้าสถานะสมาชิก</strong></a>
+      <a class="srr2-route" data-srr2-link="booking" href="/sigil/booking"><span>Booking</span><strong>เริ่ม request ใหม่</strong></a>
+    </section>
+  </main>
+
+  <footer class="mmd-signature-footer" aria-label="SĪGIL System signature">
+    <div class="mmd-signature-inner">
+      <p class="mmd-signature-brand">SĪGIL SYSTEM</p>
+      <p class="mmd-signature-line">Bangkok • Kept Secrets</p>
+      <p class="mmd-signature-tagline">Discreet by your desire, Elegant by choice.</p>
+      <p class="mmd-signature-credit">Private system architecture, visual language, character world, cinematic writing, access flow and operations by <strong>Per</strong> × <strong>AI System Workers</strong>.</p>
+      <p class="mmd-signature-year">2020 - 2026</p>
+    </div>
+  </footer>
+</section>
