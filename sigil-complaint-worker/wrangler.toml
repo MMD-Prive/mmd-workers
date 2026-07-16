@@ -23,8 +23,17 @@ ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbk
 # Optional KV bindings:
 # - SIGIL_COMPLAINT_KV for dedicated complaint metadata
 # - SIGIL_BOARD_KV for board card append and fallback metadata
+# Optional R2 binding for raw evidence bytes:
+# - SIGIL_COMPLAINT_EVIDENCE_R2 stores uploaded screenshots, slips, images, HEIC/HEIF, and PDFs.
+#   Create the bucket in Cloudflare before deploy if it does not exist yet:
+#   wrangler r2 bucket create sigil-complaint-evidence
 
 [[kv_namespaces]]
 binding = "SIGIL_BOARD_KV"
 id = "7922350083a644db8a48c16c7e48fca7"
 preview_id = "f673c4ab6e4f456baefeab032564db72"
+
+[[r2_buckets]]
+binding = "SIGIL_COMPLAINT_EVIDENCE_R2"
+bucket_name = "sigil-complaint-evidence"
+# preview_bucket_name = "sigil-complaint-evidence-preview"
