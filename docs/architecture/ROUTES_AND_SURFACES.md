@@ -117,6 +117,7 @@ MMD should be understood as a multi-lane system, not a single path.
 
 ```txt
 Public Trust / Entry
+- /hall
 - /trust/inme
 - /start
 - package / FAQ / contact surfaces
@@ -150,6 +151,25 @@ System / Internal
 ---
 
 ## Canonical public front door
+
+### `/hall`
+
+`/hall` is the **MMD Privé Public Hall**.
+
+It is a public browse-first, access-later surface. It may guide visitors toward
+`/trust/inme` and `/member/membership`, but it must not become the old member
+login gateway or payment shortcut hub.
+
+The legacy MMD Hall member gateway has been removed. Do not restore copy or
+primary actions such as `MMD Hall`, `Enter Member Area`, `Member Payments`, or
+the old Thai member-status gateway framing.
+
+Route boundaries:
+
+- member status hub remains `/member/dashboard`
+- payment hub remains `/member/payments` or `/confirm/payment-confirmation`
+  depending on the payment flow
+- Trust entry remains `/trust/inme`
 
 ### `/trust/inme`
 

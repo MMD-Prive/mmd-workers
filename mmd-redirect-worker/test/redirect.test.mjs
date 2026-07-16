@@ -47,6 +47,12 @@ const VISIBLE_DEBUG_TEXT = [
 ];
 
 const TELEGRAM_BRIEF_FORBIDDEN_TEXT = /Briefing HYPE TELEGRAMBOT|TELEGRAMBOT|CEO TELEGRAM BRIEF/i;
+const LEGACY_HALL_FORBIDDEN_TEXT = [
+  "MMD Hall",
+  "Enter Member Area",
+  "Member Payments",
+  "พื้นที่กลางสำหรับเข้าสู่ระบบสมาชิก",
+];
 const wranglerConfig = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
 const PRESERVED_QUERY = "t=test-token&code=abc&promo=gold&payment_ref=pay123&session_id=sess_1&x=1";
 
@@ -588,7 +594,7 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
-  it("renders /hall as a polished MMD Privé page without redirecting or changing query strings", async () => {
+  it("renders /hall as the MMD Privé Public Hall without legacy member gateway copy", async () => {
     const urls = [
       "https://mmdbkk.com/hall?t=abc&cb=test",
       "https://mmdbkk.com/hall/?t=abc&cb=test",
@@ -603,17 +609,36 @@ describe("MMD permanent redirect guard", () => {
       assert.equal(response.status, 200, url);
       assert.equal(response.headers.get("location"), null, url);
       assert.equal(response.headers.get("x-mmd-worker"), "mmd-redirect-worker", url);
-      assert.equal(response.headers.get("x-mmd-page"), "hall", url);
-      assert.equal(response.headers.get("x-mmd-temporary-route"), "true", url);
+      assert.equal(response.headers.get("x-mmd-page"), "public-hall", url);
+      assert.equal(response.headers.get("x-mmd-route-owner"), "mmd-redirect-worker", url);
+      assert.equal(response.headers.get("x-mmd-origin"), "front-gate:public-hall", url);
+      assert.equal(response.headers.get("x-mmd-temporary-route"), null, url);
       assert.equal(response.headers.get("cache-control"), "no-store, no-cache, must-revalidate, max-age=0", url);
-      assert.match(html, /MMD Hall/, url);
-      assert.match(html, /พื้นที่กลางสำหรับเข้าสู่ระบบสมาชิก/, url);
-      assert.ok(html.includes(`/member/dashboard${query}`), url);
-      assert.ok(html.includes(`/member/payments${query}`), url);
+      assert.match(html, /Public Hall/, url);
+      assert.match(html, /Browse first/, url);
+      assert.match(html, /Access later/, url);
+      assert.match(html, /MMD PRIVÉ PUBLIC HALL/, url);
+      for (const text of LEGACY_HALL_FORBIDDEN_TEXT) {
+        assert.doesNotMatch(html, new RegExp(text, "i"), `${url} should not include legacy Hall text: ${text}`);
+      }
+      assert.ok(html.includes(`/trust/inme${query}`), url);
+      assert.ok(html.includes(`/member/membership${query}`), url);
+      assert.equal(html.includes(`/member/dashboard${query}`), false, url);
+      assert.equal(html.includes(`/member/payments${query}`), false, url);
+      assert.doesNotMatch(html, /pass-through|not_found|Webflow fallback/i, url);
       assertPolishedShell(html, url);
     }
 
     assert.equal(passThroughRequests.length, 0);
+  });
+
+  it("keeps member route ownership locks unchanged while /hall stays public", () => {
+    assert.match(wranglerConfig, /pattern = "mmdbkk\.com\/member\/dashboard"/);
+    assert.match(wranglerConfig, /pattern = "www\.mmdbkk\.com\/member\/dashboard"/);
+    assert.match(wranglerConfig, /pattern = "mmdbkk\.com\/member\/membership"/);
+    assert.match(wranglerConfig, /pattern = "www\.mmdbkk\.com\/member\/membership"/);
+    assert.doesNotMatch(wranglerConfig, /pattern = "mmdbkk\.com\/hall"/);
+    assert.doesNotMatch(wranglerConfig, /pattern = "www\.mmdbkk\.com\/hall"/);
   });
 
   it("renders unknown /member/* routes as polished MMD Privé pages without redirecting", async () => {

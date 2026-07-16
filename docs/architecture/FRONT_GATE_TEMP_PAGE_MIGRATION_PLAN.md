@@ -57,13 +57,18 @@ Reasoning:
 
 - `/hall` is a public/member-adjacent experience surface, not an admin,
   migration, or system route.
-- Existing chat knowledge confirms `/hall` as the MMD Hall public browsing
-  interest route.
-- No current worker has a clean canonical Hall page renderer.
+- `/hall` is the MMD Privé Public Hall: a browse-first, access-later public
+  surface for understanding the MMD Privé world before private entry.
+- The old MMD Hall member gateway copy and its member dashboard/payment shortcut
+  renderer have been removed from `mmd-redirect-worker`.
 
-Temporary state:
+Current state:
 
-- Keep the `mmd-redirect-worker` shell until a public page owner exists.
+- `mmd-redirect-worker` owns the safe Public Hall response for `/hall`.
+- Member status remains `/member/dashboard`.
+- Payment and confirmation flows remain `/member/payments` or
+  `/confirm/payment-confirmation` depending on the flow.
+- Trust entry remains `/trust/inme`.
 
 ### Unknown `/member/*`
 
@@ -129,10 +134,12 @@ Temporary state:
      exists.
 
 4. Hall canonical page PR
-   - Create or wire the smallest public page owner for `/hall`.
-   - Prefer existing Webflow/Pages/static deployment patterns if confirmed.
-   - Only after production verification, remove the `/hall` emergency shell from
-     `mmd-redirect-worker`.
+   - Keep `/hall` as the Public Hall surface.
+   - Do not restore the old member gateway copy or dashboard/payment shortcut
+     shell.
+   - If `/hall` later moves to Webflow/Pages, keep the same Public Hall identity
+     and preserve `/member/dashboard`, `/member/payments`, and `/trust/inme`
+     as separate lanes.
 
 ## Risks
 
