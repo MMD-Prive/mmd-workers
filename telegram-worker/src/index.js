@@ -25,6 +25,7 @@ export default {
           routes: {
             webhook: ["/telegram/webhook", "/v1/webhook"],
             internal_send: ["/telegram/internal/send", "/v1/internal/send", "/v1/send"],
+            complaint_notify: ["/telegram/internal/complaint", "/v1/internal/complaint"],
             preview_post: ["/telegram/preview/post", "/v1/preview/post"],
           },
         }, 200);
@@ -44,6 +45,15 @@ export default {
         if (!body) return json({ ok: false, error: "invalid_json" }, 400);
         const tg = await telegramNotify(body, env);
         return json({ ok: true, telegram: tg }, 200);
+      }
+
+      if (isComplaintInternalPath(path) && req.method === "POST") {
+        requireInternalToken(req, env);
+        const body = await safeJson(req);
+        if (!body) return json({ ok: false, error: "invalid_json" }, 400);
+        const result = await postComplaintNotification(body, env);
+        const status = result?.telegram?.ok === false ? 502 : 200;
+        return json(result, status);
       }
 
       if (isPreviewPostPath(path) && req.method === "POST") {
@@ -94,6 +104,42 @@ async function handleTelegramWebhook(update, env) {
   }
 
   return { handled: false, reason: "no_matching_command" };
+}
+
+async function postComplaintNotification(body, env) {
+  const complaint = body.complaint || body;
+  const evidence = complaint.evidence || body.evidence || {};
+  const evidenceCount = evidence.total_files ?? body.evidence_count ?? 0;
+  const storage = evidence.binary_storage || body.evidence_storage || "unknown";
+  const statement = complaint.statement || complaint.lane_statement || body.statement || "No statement provided.";
+
+  const text = [
+    "🚨 <b>SIGIL Recovery Report</b>",
+    "",
+    `<b>Case:</b> <code>${escapeHtml(complaint.complaint_id || "-")}</code>`,
+    `<b>Lane:</b> ${escapeHtml(complaint.lane || "-")}`,
+    `<b>Client:</b> ${escapeHtml(complaint.client_name || "-")}`,
+    `<b>Model:</b> ${escapeHtml(complaint.model_name || "-")}`,
+    `<b>Session:</b> <code>${escapeHtml(complaint.session_id || "-")}</code>`,
+    `<b>Evidence:</b> ${escapeHtml(String(evidenceCount))} file(s)`,
+    `<b>Storage:</b> ${escapeHtml(storage)}`,
+    `<b>Received:</b> ${escapeHtml(complaint.received_at || body.received_at || new Date().toISOString())}`,
+    "",
+    `<b>Statement:</b> ${escapeHtml(statement).slice(0, 900)}`,
+  ].join("\n");
+
+  const telegram = await telegramNotify({
+    text,
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  }, env);
+
+  return {
+    ok: telegram?.ok === true,
+    mode: "complaint_internal_notification",
+    complaint_id: complaint.complaint_id || null,
+    telegram,
+  };
 }
 
 async function postPreviewChannelCta(body, env) {
@@ -265,6 +311,10 @@ function isTelegramWebhookPath(path) {
 
 function isInternalSendPath(path) {
   return path === "/telegram/internal/send" || path === "/v1/internal/send" || path === "/v1/send";
+}
+
+function isComplaintInternalPath(path) {
+  return path === "/telegram/internal/complaint" || path === "/v1/internal/complaint";
 }
 
 function isPreviewPostPath(path) {
