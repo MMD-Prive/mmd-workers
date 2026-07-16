@@ -1,11 +1,12 @@
 const WORKER_NAME_FALLBACK = "sigil-complaint-worker";
-const MODE = "metadata_intake";
+const MODE = "r2_binary_intake";
 const COMPLAINT_EVIDENCE_PATH = "/member/api/recovery/complaint-evidence";
 const COMPLAINT_CASE_KV_PREFIX = "sigil:complaint:case:v1:";
 const BOARD_CARDS_KV_KEY = "sigil:board:v1:cards";
 const MAX_EVIDENCE_FILES_PER_SIDE = 12;
 const MAX_EVIDENCE_FILE_BYTES = 15 * 1024 * 1024;
 const MAX_TOTAL_EVIDENCE_FILES = MAX_EVIDENCE_FILES_PER_SIDE * 2;
+const EVIDENCE_R2_PREFIX = "sigil/complaints/v1";
 const ALLOWED_EVIDENCE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "pdf"]);
 const ALLOWED_EVIDENCE_MIME_TYPES = new Set([
   "image/jpeg",
@@ -28,7 +29,12 @@ export default {
 
       if (url.pathname === "/health" || url.pathname === "/ping") {
         if (request.method !== "GET") return methodNotAllowed(corsHeaders, "GET, OPTIONS");
-        return json({ ok: true, worker: workerName(env), mode: MODE }, 200, corsHeaders);
+        return json({
+          ok: true,
+          worker: workerName(env),
+          mode: MODE,
+          evidence_storage: evidenceBucket(env) ? "cloudflare_r2" : "metadata_only",
+        }, 200, corsHeaders);
       }
 
       if (url.pathname === COMPLAINT_EVIDENCE_PATH) {
@@ -61,6 +67,9 @@ async function handleComplaintEvidence(request, env, corsHeaders) {
   const fileError = validateEvidenceFiles(allFiles);
   if (fileError) return json(fileError, 400, corsHeaders);
 
+  const evidenceStorage = await storeEvidenceFiles(env, complaintId, allFiles, now);
+  const evidenceMeta = buildEvidenceRecord(evidenceStorage, allFiles);
+
   const caseRecord = normalizeComplaintCase({
     complaint_id: complaintId,
     lane,
@@ -86,14 +95,7 @@ async function handleComplaintEvidence(request, env, corsHeaders) {
     referrer: safeText(formData.get("referrer"), "", 260),
     user_agent: safeText(formData.get("user_agent"), "", 260),
     received_at: now,
-    evidence: {
-      client: clientFiles.map((file) => evidenceFileMeta(file)),
-      model: modelFiles.map((file) => evidenceFileMeta(file)),
-      total_files: allFiles.length,
-      total_bytes: allFiles.reduce((sum, pair) => sum + Number(pair[1].size || 0), 0),
-      binary_storage: "not_stored_in_kv",
-      note: "This worker stores evidence metadata only. Raw file bytes require R2 or Drive binary upload integration.",
-    },
+    evidence: evidenceMeta,
   });
 
   const kvWrite = await writeStoredComplaintCase(env, caseRecord);
@@ -110,6 +112,7 @@ async function handleComplaintEvidence(request, env, corsHeaders) {
       storage: {
         case_record: kvWrite,
         board_card: boardWrite,
+        r2: evidenceStorage.storage,
         google_drive: webhooks.google_drive,
         telegram: webhooks.telegram,
       },
@@ -169,14 +172,100 @@ function validateEvidenceFiles(pairs) {
   return null;
 }
 
-function evidenceFileMeta(file) {
+async function storeEvidenceFiles(env, complaintId, pairs, receivedAt) {
+  const bucket = evidenceBucket(env);
+  if (!bucket || typeof bucket.put !== "function") {
+    return {
+      storage: {
+        persisted: false,
+        provider: "metadata_only",
+        reason: "missing_SIGIL_COMPLAINT_EVIDENCE_R2",
+      },
+      files: pairs.map(([side, file], index) => ({ side, ...evidenceFileMeta(file, { index }) })),
+    };
+  }
+
+  const files = [];
+  for (let index = 0; index < pairs.length; index += 1) {
+    const [side, file] = pairs[index];
+    const r2Key = evidenceR2Key(complaintId, side, file, index);
+    await bucket.put(r2Key, file.stream(), {
+      httpMetadata: {
+        contentType: String(file.type || "application/octet-stream"),
+      },
+      customMetadata: {
+        complaint_id: complaintId,
+        side,
+        original_name: safeText(file.name, "untitled", 160),
+        received_at: receivedAt,
+      },
+    });
+    files.push({
+      side,
+      ...evidenceFileMeta(file, {
+        index,
+        storage_status: "stored",
+        storage_provider: "cloudflare_r2",
+        r2_key: r2Key,
+      }),
+    });
+  }
+
+  return {
+    storage: {
+      persisted: true,
+      provider: "cloudflare_r2",
+      binding: "SIGIL_COMPLAINT_EVIDENCE_R2",
+      files_written: files.length,
+      prefix: `${EVIDENCE_R2_PREFIX}/${complaintId}`,
+    },
+    files,
+  };
+}
+
+function buildEvidenceRecord(evidenceStorage, originalPairs) {
+  const files = evidenceStorage.files || [];
+  return {
+    client: files.filter((file) => file.side === "client").map(stripEvidenceSide),
+    model: files.filter((file) => file.side === "model").map(stripEvidenceSide),
+    total_files: originalPairs.length,
+    total_bytes: originalPairs.reduce((sum, pair) => sum + Number(pair[1].size || 0), 0),
+    binary_storage: evidenceStorage.storage?.persisted ? "cloudflare_r2" : "metadata_only",
+    storage_provider: evidenceStorage.storage?.provider || "metadata_only",
+    storage: evidenceStorage.storage,
+    note: evidenceStorage.storage?.persisted
+      ? "Raw evidence bytes were stored in private Cloudflare R2. Use admin-signed access before sharing."
+      : "This worker stored evidence metadata only because SIGIL_COMPLAINT_EVIDENCE_R2 was not bound.",
+  };
+}
+
+function stripEvidenceSide(file) {
+  const { side, ...rest } = file;
+  return rest;
+}
+
+function evidenceFileMeta(file, extra = {}) {
   return {
     name: safeText(file.name, "untitled", 160),
     size: Number(file.size || 0),
     type: safeText(file.type, "application/octet-stream", 80),
     extension: fileExtension(file.name),
-    storage_status: "metadata_received",
+    storage_status: extra.storage_status || "metadata_received",
+    storage_provider: extra.storage_provider || "metadata_only",
+    ...(extra.r2_key ? { r2_key: extra.r2_key } : {}),
   };
+}
+
+function evidenceBucket(env) {
+  return env?.SIGIL_COMPLAINT_EVIDENCE_R2 || env?.COMPLAINT_EVIDENCE_R2 || null;
+}
+
+function evidenceR2Key(complaintId, side, file, index) {
+  const ext = fileExtension(file.name) || "bin";
+  const safeSide = ALLOWED_COMPLAINT_LANES.has(side) ? side : "client";
+  const fingerprint = shortHash([complaintId, side, index, file.name, file.size, file.type].join("|"));
+  const ordinal = String(index + 1).padStart(2, "0");
+  return `${EVIDENCE_R2_PREFIX}/${complaintId}/${safeSide}/${ordinal}-${fingerprint}.${ext}`;
 }
 
 function fileExtension(name) {
@@ -327,6 +416,7 @@ function complaintTelegramPayload(caseRecord) {
     priority: complaintPriority(caseRecord),
     needs_per_decision: complaintNeedsPer(caseRecord),
     evidence_count: caseRecord.evidence?.total_files || 0,
+    evidence_storage: caseRecord.evidence?.binary_storage || "metadata_only",
     received_at: caseRecord.received_at,
   };
 }
