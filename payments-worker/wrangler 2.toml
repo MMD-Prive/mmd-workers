@@ -1,7 +1,11 @@
 name = "payments-worker"
-main = "index.with-slip-evidence.js"
+main = "index.slip-evidence-clean.js"
 compatibility_date = "2026-03-12"
 workers_dev = true
+
+# Production entrypoint:
+# - index.slip-evidence-clean.js handles /v1/pay/slip/evidence first.
+# - All other payment routes are delegated back to index.js.
 
 # Production API routes for SIGIL payment flows.
 # These prevent sigil.mmdbkk.com/v1/* payment requests from falling through to origin and returning Cloudflare 522.
@@ -25,6 +29,11 @@ AT_PAYMENTS__PAYMENT_STATUS = "fldEJ1hmm7KwWuI6q"
 AT_PAYMENTS__NOTES = "fldjsZIKoJPawlb2u"
 AT_PAYMENTS__VERIFICATION_STATUS = "fldJ7a0Ube9F0bmRy"
 AT_PAYMENTS__PAYMENT_INTENT_STATUS = "fld04fr3bRJTohO6y"
+AT_PAYMENTS__SESSION_ID = "fld2wdhBvc8xrV6y5"
+AT_PAYMENTS__PAYMENT_STAGE = "fldrr9g8ZZjqAbdKQ"
+AT_PAYMENTS__PAYMENT_TYPE = "fldydUWHhqVLMkNSC"
+AT_PAYMENTS__SOURCE = "flduqtlX4PuOAJbFC"
+AT_PAYMENTS__PAYMENT_EVIDENCE_SOURCE = "fldHXyExqojVyxJPX"
 AT_PAYMENTS__CREATED_AT = "flduxcPpowBxEZSLu"
 
 TELEGRAM_CHAT_ID = "-1003546439681"
