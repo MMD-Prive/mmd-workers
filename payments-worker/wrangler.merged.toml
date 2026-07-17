@@ -1,6 +1,13 @@
 name = "payments-worker"
-main = "src/index.js"
+main = "index.with-slip-evidence.js"
 compatibility_date = "2026-01-20"
+
+# Production entrypoint:
+# - index.with-slip-evidence.js handles /v1/pay/slip/evidence first.
+# - All other payment routes are delegated back to index.js.
+#
+# This mirrors wrangler 2.toml so deploys using wrangler.merged.toml do not
+# fall back to src/index.js and return 404 for the slip evidence route.
 
 # Production API routes for SIGIL payment flows.
 # These prevent sigil.mmdbkk.com/v1/* payment requests from falling through to origin and returning Cloudflare 522.
