@@ -585,6 +585,31 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
+  it("renders /internal/admin/kenji-knowledge as the R2 loader shell", async () => {
+    const urls = [
+      "https://mmdbkk.com/internal/admin/kenji-knowledge",
+      "https://mmdbkk.com/internal/admin/kenji-knowledge/",
+      "https://www.mmdbkk.com/internal/admin/kenji-knowledge?cb=test",
+    ];
+
+    for (const url of urls) {
+      const response = await request(url);
+      const html = await response.text();
+
+      assert.equal(response.status, 200, url);
+      assert.equal(response.headers.get("location"), null, url);
+      assert.match(response.headers.get("content-type") || "", /^text\/html/i, url);
+      assert.equal(response.headers.get("x-mmd-front-gate"), "mmd-redirect-worker", url);
+      assert.equal(response.headers.get("x-mmd-page"), "kenji-knowledge-admin", url);
+      assert.match(html, /<link rel="stylesheet" href="https:\/\/models\.mmdbkk\.com\/webflow\/internal\/admin\/kenji-knowledge\/kenji-knowledge-v9-board-bridge\.css">/, url);
+      assert.match(html, /<div id="mmdKenjiKnowledgeV9"><\/div>/, url);
+      assert.match(html, /<script defer src="https:\/\/models\.mmdbkk\.com\/webflow\/internal\/admin\/kenji-knowledge\/kenji-knowledge-v9-1-webflow-loader\.js"><\/script>/, url);
+      assert.doesNotMatch(html, /\/v1\/admin\/sigil\/board\/publish|method:\s*["']POST|payment approved|unlock membership/i, url);
+    }
+
+    assert.equal(passThroughRequests.length, 0);
+  });
+
   it("renders unknown /member/* routes as polished MMD Privé pages without redirecting", async () => {
     const urls = [
       "https://mmdbkk.com/member/kenji-20-ai?t=abc&cb=test",
