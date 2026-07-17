@@ -13,6 +13,7 @@ export const FRONT_GATE = "mmd-redirect-worker";
 export const FRONT_VERSION = "20260710-member-apply-webflow-pass-through";
 export const PUBLIC_BLACKCARD_PAGE = "public-blackcard";
 export const SIGIL_APPLY_ROUTE_OWNER = "sigil-worker";
+export const KENJI_KNOWLEDGE_ADMIN_PATHS = new Set(["/internal/admin/kenji-knowledge", "/internal/admin/kenji-knowledge/"]);
 
 export const REDIRECT_HOSTS = new Set(["www.mmdbkk.com", "mmdbkk.com", "mmdprive.com", "www.mmdprive.com", "malemodel-bkk.workers.dev"]);
 export const NEVER_TOUCH_HOSTS = new Set(["sigil.mmdbkk.com"]);
@@ -93,6 +94,7 @@ function isMemberApiPath(url) { return MEMBER_API_PATHS.has(url.pathname.toLower
 function isMemberPaymentsPath(url) { const p = url.pathname.toLowerCase(); return p === "/member/payments" || p === "/member/payments/"; }
 function isHallPath(url) { const p = url.pathname.toLowerCase(); return p === "/hall" || p === "/hall/"; }
 function isModelConsolePath(url) { const p = url.pathname.toLowerCase(); return p === "/model/console" || p === "/model/console/"; }
+function isKenjiKnowledgeAdminPath(url) { return KENJI_KNOWLEDGE_ADMIN_PATHS.has(url.pathname.toLowerCase()); }
 function isMemberPath(url) { const p = url.pathname.toLowerCase(); return p === "/member" || p === "/member/" || p.startsWith("/member/"); }
 function isKnownLegacyMemberRedirect(url) { return Boolean(EXACT_PATH_REDIRECTS[normalizePath(url.pathname).toLowerCase()]); }
 
@@ -153,6 +155,10 @@ function renderPublicBlackcardPage(request) {
 function renderHallRecovery(request) { return renderRouteRecoveryShell(request, "hall", "MMD Privé | Hall", "MMD Hall", "พื้นที่กลางสำหรับเข้าสู่ระบบสมาชิก ตรวจสถานะ และไปต่อยังเส้นทางที่เกี่ยวข้องของ MMD Privé", [{ label: "Enter Member Area", href: "/member/dashboard" }, { label: "Member Payments", href: "/member/payments" }]); }
 function renderModelConsoleRecovery(request) { return renderRouteRecoveryShell(request, "model-console", "MMD Privé | Model Console", "Model Console", "พื้นที่สำหรับผู้ให้บริการตรวจสถานะงานและไปต่อยังขั้นตอนที่เกี่ยวข้องของ MMD Privé", [{ label: "Continue", href: "/v1/model/session/dashboard" }, { label: "Member Area", href: "/member/dashboard" }]); }
 function renderMemberStaticRecovery(request) { return renderRouteRecoveryShell(request, "member-static", "MMD Privé | Member", "Member Page", "หน้านี้อยู่ในพื้นที่สมาชิกของ MMD Privé และพร้อมเชื่อมต่อกับเนื้อหาหลักในขั้นต่อไป", [{ label: "Enter Member Area", href: "/member/dashboard" }, { label: "Membership", href: "/member/membership" }]); }
+function renderKenjiKnowledgeAdminShell(request) {
+  const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Kenji Knowledge Admin</title><link rel="stylesheet" href="https://models.mmdbkk.com/webflow/internal/admin/kenji-knowledge/kenji-knowledge-v9-board-bridge.css"></head><body><div id="mmdKenjiKnowledgeV9"></div><script defer src="https://models.mmdbkk.com/webflow/internal/admin/kenji-knowledge/kenji-knowledge-v9-1-webflow-loader.js"></script></body></html>`;
+  return new Response(request.method.toUpperCase() === "HEAD" ? null : html, { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store, no-cache, must-revalidate, max-age=0", "x-mmd-worker": FRONT_GATE, "x-mmd-front-gate": FRONT_GATE, "x-mmd-front-version": FRONT_VERSION, "x-mmd-page": "kenji-knowledge-admin", "x-mmd-route-owner": FRONT_GATE, "x-mmd-origin": "front-gate:kenji-knowledge-r2-loader-shell" } });
+}
 
 export default {
   async fetch(request, env = {}) {
@@ -168,6 +174,7 @@ export default {
     if (isWebflowMemberPagePath(url)) return fetchPassThrough(request);
     if (isMemberPagePath(url)) return fetchMemberPage(request, env, url);
     if (isMemberPaymentsPath(url)) return fetchAdminMemberPage(request, env, url);
+    if (isKenjiKnowledgeAdminPath(url)) return renderKenjiKnowledgeAdminShell(request);
     if (isHallPath(url)) return renderHallRecovery(request);
     if (isModelConsolePath(url)) return renderModelConsoleRecovery(request);
     if (isMemberPath(url) && !isKnownLegacyMemberRedirect(url)) return renderMemberStaticRecovery(request);
