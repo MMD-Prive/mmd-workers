@@ -18,6 +18,15 @@ test("Kenji Knowledge V9.2 bridge reads SIGIL Board only and never calls publish
   assert.doesNotMatch(js, /fetch\([^\n]*(?:POST|PATCH|PUT|DELETE)/i);
 });
 
+test("Kenji Knowledge V9.2 loader renders into the existing Webflow root", async () => {
+  const js = await source();
+  assert.match(js, /ROOT_ID\s*=\s*"mmdKenjiKnowledgeV9"/);
+  assert.match(js, /root\.classList\.add\("kk4", "kk4--v92"\)/);
+  assert.match(js, /root\.innerHTML\s*=\s*renderShell\(\)/);
+  assert.doesNotMatch(js, /outerHTML\s*=\s*renderShell\(\)/);
+  assert.doesNotMatch(js, /<section id="mmdKenjiKnowledgeV9"/);
+});
+
 test("Kenji Knowledge V9.2 bridge displays required read-only safety banner", async () => {
   const js = await source();
   assert.match(js, /Board data is advisory read-only\. Kenji cannot approve, unlock, confirm, or write operational changes\./);
