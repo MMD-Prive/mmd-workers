@@ -19,7 +19,7 @@ function esc(value) {
 }
 
 function compact(obj) {
-  return Object.fromEntries(Object.entries(obj).filter(([, value]) => value !== undefined));
+  return Object.fromEntries(Object.entries(obj).filter(([, value]) => value !== undefined && value !== ""));
 }
 
 function jsonResponse(data, status = 200, extraHeaders = {}) {
@@ -67,6 +67,10 @@ function withCors(req, env, res) {
   });
 }
 
+function atField(env, envKey, fallbackName) {
+  return toStr(env[envKey] || fallbackName);
+}
+
 function getAirtableBaseId(env) {
   const baseId = toStr(env.AIRTABLE_BASE_ID);
   if (!baseId) throw new Error("missing_airtable_base_id");
@@ -81,6 +85,15 @@ function getAirtableApiKey(env) {
 
 function getPaymentsTable(env) {
   return toStr(env.AIRTABLE_TABLE_PAYMENTS || "payments");
+}
+
+function getPaymentRefFormulaField(env) {
+  return toStr(
+    env.AT_PAYMENTS__PAYMENT_REF_NAME ||
+      env.AIRTABLE_PAYMENTS_FIELD_PAYMENT_REF_NAME ||
+      env.AIRTABLE_FIELD_PAYMENT_REF_NAME ||
+      "Payment Reference"
+  );
 }
 
 function encodeFormulaValue(value) {
@@ -103,12 +116,56 @@ async function airtableFetch(env, path, init = {}) {
 }
 
 async function findPaymentByPaymentRef(env, paymentRef) {
-  if (!paymentRef) return null;
-  const table = getPaymentsTable(env);
-  const formula = `{payment_ref}='${encodeFormulaValue(paymentRef)}'`;
-  const path = `${encodeURIComponent(table)}?maxRecords=1&filterByFormula=${encodeURIComponent(formula)}`;
-  const data = await airtableFetch(env, path, { method: "GET" });
-  return data?.records?.[0] || null;
+  if (!paymentRef) return { record: null, error: null, skipped: true };
+
+  try {
+    const table = getPaymentsTable(env);
+    const fieldName = getPaymentRefFormulaField(env);
+    const formula = `{${fieldName}}='${encodeFormulaValue(paymentRef)}'`;
+    const path = `${encodeURIComponent(table)}?maxRecords=1&filterByFormula=${encodeURIComponent(formula)}`;
+    const data = await airtableFetch(env, path, { method: "GET" });
+    return { record: data?.records?.[0] || null, error: null, skipped: false, formula_field: fieldName };
+  } catch (err) {
+    return { record: null, error: String(err?.message || err), skipped: false };
+  }
+}
+
+function buildEvidenceNote(payload, lookupInfo = null) {
+  return [
+    `slip_evidence_received_at=${nowIso()}`,
+    "evidence_only=true",
+    "official_verification_required=true",
+    payload.payment_ref ? `payment_ref=${payload.payment_ref}` : "",
+    payload.session_id ? `session_id=${payload.session_id}` : "",
+    payload.payment_stage ? `payment_stage=${payload.payment_stage}` : "",
+    payload.proof_type ? `proof_type=${payload.proof_type}` : "",
+    payload.source_page ? `source_page=${payload.source_page}` : "",
+    payload.file_meta?.name ? `file_name=${payload.file_meta.name}` : "",
+    payload.file_meta?.type ? `file_type=${payload.file_meta.type}` : "",
+    payload.file_meta?.size ? `file_size=${payload.file_meta.size}` : "",
+    lookupInfo?.error ? `lookup_error=${lookupInfo.error}` : "",
+  ].filter(Boolean).join("; ");
+}
+
+function putField(fields, key, value) {
+  if (!key || value === undefined || value === "") return;
+  fields[key] = value;
+}
+
+function buildAirtableFields(env, payload, lookupInfo = null, minimal = false) {
+  const fields = {};
+  const note = buildEvidenceNote(payload, lookupInfo);
+
+  putField(fields, atField(env, "AT_PAYMENTS__PAYMENT_REF", "Payment Reference"), payload.payment_ref);
+  putField(fields, atField(env, "AT_PAYMENTS__NOTES", "Notes"), note);
+
+  if (!minimal) {
+    putField(fields, atField(env, "AT_PAYMENTS__PAYMENT_STATUS", "Payment Status"), "pending");
+    putField(fields, atField(env, "AT_PAYMENTS__VERIFICATION_STATUS", "Verification Status"), "pending");
+    putField(fields, atField(env, "AT_PAYMENTS__PAYMENT_INTENT_STATUS", "Payment Intent Status (AI)"), "manual_slip_evidence_received");
+  }
+
+  return compact(fields);
 }
 
 async function createPaymentEvidenceRecord(env, fields) {
@@ -122,10 +179,51 @@ async function createPaymentEvidenceRecord(env, fields) {
 
 async function patchPaymentEvidence(env, recordId, fields) {
   const table = getPaymentsTable(env);
-  return airtableFetch(env, `${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`, {
+  const data = await airtableFetch(env, `${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`, {
     method: "PATCH",
     body: JSON.stringify({ fields }),
   });
+  return data || null;
+}
+
+async function writeEvidencePendingReview(env, payload) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID || !env.AIRTABLE_TABLE_PAYMENTS) {
+    return { ok: true, skipped: true, reason: "missing_airtable_config" };
+  }
+
+  const lookup = await findPaymentByPaymentRef(env, payload.payment_ref);
+  const record = lookup.record;
+  const fullFields = buildAirtableFields(env, payload, lookup, false);
+  const minimalFields = buildAirtableFields(env, payload, lookup, true);
+
+  try {
+    if (record?.id) {
+      await patchPaymentEvidence(env, record.id, fullFields);
+      return { ok: true, mode: "update", record_id: record.id, lookup_error: lookup.error || null };
+    }
+
+    const created = await createPaymentEvidenceRecord(env, fullFields);
+    return { ok: true, mode: "create", record_id: created?.id || null, lookup_error: lookup.error || null };
+  } catch (err) {
+    const firstError = String(err?.message || err);
+
+    try {
+      if (record?.id) {
+        await patchPaymentEvidence(env, record.id, minimalFields);
+        return { ok: true, mode: "update_minimal", record_id: record.id, retry_from: firstError, lookup_error: lookup.error || null };
+      }
+
+      const created = await createPaymentEvidenceRecord(env, minimalFields);
+      return { ok: true, mode: "create_minimal", record_id: created?.id || null, retry_from: firstError, lookup_error: lookup.error || null };
+    } catch (retryErr) {
+      return {
+        ok: false,
+        error: String(retryErr?.message || retryErr),
+        first_error: firstError,
+        lookup_error: lookup.error || null,
+      };
+    }
+  }
 }
 
 async function telegramSend(env, text, threadId = null) {
@@ -215,55 +313,6 @@ async function readSlipEvidenceForm(req) {
     file_meta,
     file_received: !!file_meta,
   };
-}
-
-function makeEvidenceNote(payload) {
-  return [
-    `slip_evidence_received_at=${nowIso()}`,
-    "evidence_only=true",
-    "official_verification_required=true",
-    payload.payment_ref ? `payment_ref=${payload.payment_ref}` : "",
-    payload.session_id ? `session_id=${payload.session_id}` : "",
-    payload.payment_stage ? `payment_stage=${payload.payment_stage}` : "",
-    payload.proof_type ? `proof_type=${payload.proof_type}` : "",
-    payload.source_page ? `source_page=${payload.source_page}` : "",
-    payload.file_meta?.name ? `file_name=${payload.file_meta.name}` : "",
-    payload.file_meta?.type ? `file_type=${payload.file_meta.type}` : "",
-    payload.file_meta?.size ? `file_size=${payload.file_meta.size}` : "",
-  ].filter(Boolean).join("; ");
-}
-
-async function writeEvidencePendingReview(env, payload) {
-  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID || !env.AIRTABLE_TABLE_PAYMENTS) {
-    return { ok: true, skipped: true, reason: "missing_airtable_config" };
-  }
-
-  const evidenceNote = makeEvidenceNote(payload);
-  const existing = payload.payment_ref ? await findPaymentByPaymentRef(env, payload.payment_ref) : null;
-  const existingFields = existing?.fields || {};
-  const previousNotes = toStr(existingFields.notes || existingFields.note || existingFields["Notes"] || "");
-
-  const fields = compact({
-    payment_ref: payload.payment_ref || undefined,
-    session_id: payload.session_id || undefined,
-    payment_stage: payload.payment_stage || undefined,
-    payment_type: payload.payment_stage || undefined,
-    notes: previousNotes ? `${previousNotes}\n${evidenceNote}` : evidenceNote,
-    "Payment Status": "pending",
-    "Verification Status": "pending",
-    "Payment Intent Status (AI)": "manual_slip_evidence_received",
-  });
-
-  if (existing?.id) {
-    await patchPaymentEvidence(env, existing.id, fields);
-    return { ok: true, mode: "update", record_id: existing.id };
-  }
-
-  const created = await createPaymentEvidenceRecord(env, {
-    ...fields,
-    "Created At": nowIso(),
-  });
-  return { ok: true, mode: "create", record_id: created?.id || null };
 }
 
 async function notifySlipEvidence(env, payload, airtableWrite) {
