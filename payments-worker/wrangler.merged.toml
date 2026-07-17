@@ -2,12 +2,20 @@ name = "payments-worker"
 main = "src/index.js"
 compatibility_date = "2026-01-20"
 
+# Production API routes for SIGIL payment flows.
+# These prevent sigil.mmdbkk.com/v1/* payment requests from falling through to origin and returning Cloudflare 522.
+routes = [
+  { pattern = "sigil.mmdbkk.com/v1/pay/*", zone_name = "mmdbkk.com" },
+  { pattern = "sigil.mmdbkk.com/v1/payments/*", zone_name = "mmdbkk.com" },
+  { pattern = "sigil.mmdbkk.com/v1/confirm/*", zone_name = "mmdbkk.com" }
+]
+
 kv_namespaces = [
   { binding = "PAY_SESSIONS_KV", id = "a9b6e92309024aa8a7ed1869d2c80afd" }
 ]
 
 [vars]
-ALLOWED_ORIGINS = "\"https://mmdprive.com,https://mmdprive.webflow.io,https://mmdbkk.com\""
+ALLOWED_ORIGINS = "\"https://mmdprive.com,https://mmdprive.webflow.io,https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com\""
 
 WEB_BASE_URL = "https://mmdprive.webflow.io"
 CONFIRM_BASE_URL = "https://mmdprive.webflow.io"
@@ -63,4 +71,3 @@ AT_PAYMENTS__CREATED_AT            = "flduxcPpowBxEZSLu"
 TELEGRAM_CHAT_ID = "-1003546439681"
 TG_THREAD_CONFIRM = "61"
 TG_THREAD_POINTS = "17"
-

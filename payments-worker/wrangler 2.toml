@@ -3,6 +3,14 @@ main = "index.js"
 compatibility_date = "2026-03-12"
 workers_dev = true
 
+# Production API routes for SIGIL payment flows.
+# These prevent sigil.mmdbkk.com/v1/* payment requests from falling through to origin and returning Cloudflare 522.
+routes = [
+  { pattern = "sigil.mmdbkk.com/v1/pay/*", zone_name = "mmdbkk.com" },
+  { pattern = "sigil.mmdbkk.com/v1/payments/*", zone_name = "mmdbkk.com" },
+  { pattern = "sigil.mmdbkk.com/v1/confirm/*", zone_name = "mmdbkk.com" }
+]
+
 [vars]
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_TABLE_PAYMENTS = "tblWGGJJOx5eBvBZJ"
@@ -13,7 +21,7 @@ TG_THREAD_CONFIRM = "61"
 TG_THREAD_POINTS = "17"
 POINTS_RATE = "100"
 WEB_BASE_URL = "https://mmdbkk.com"
-ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
 PAY_SESSIONS_TTL_DAYS = "30"
 
 [[kv_namespaces]]
