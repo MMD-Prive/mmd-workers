@@ -1,9 +1,9 @@
 name = "payments-worker"
-main = "index.with-slip-evidence.js"
+main = "index.slip-evidence-clean.js"
 compatibility_date = "2026-01-20"
 
 # Production entrypoint:
-# - index.with-slip-evidence.js handles /v1/pay/slip/evidence first.
+# - index.slip-evidence-clean.js handles /v1/pay/slip/evidence first.
 # - All other payment routes are delegated back to index.js.
 #
 # This mirrors wrangler 2.toml so deploys using wrangler.merged.toml do not
@@ -64,6 +64,7 @@ AT_SESSIONS__MEMBERSTACK_ID    = "fldjelgJTzCHSCWZ0"
 
 # --- LOCK FIELD IDs: Payments (minimum) ---
 AT_PAYMENTS__PAYMENT_REF           = "fldOO6SY49iDw8VBZ"
+AT_PAYMENTS__PAYMENT_REF_NAME      = "Payment Reference"
 AT_PAYMENTS__PAYMENT_DATE          = "fld3yAwxIu2dkw7fO"
 AT_PAYMENTS__AMOUNT                = "fldvCSwrUW8OMAooS"
 AT_PAYMENTS__PAYMENT_STATUS        = "fldEJ1hmm7KwWuI6q"
@@ -74,6 +75,11 @@ AT_PAYMENTS__VERIFICATION_STATUS   = "fldJ7a0Ube9F0bmRy"
 AT_PAYMENTS__PAYMENT_INTENT_STATUS = "fld04fr3bRJTohO6y"
 AT_PAYMENTS__PACKAGE_CODE          = "fldfyHYVrzbGPvMJR"
 AT_PAYMENTS__CREATED_AT            = "flduxcPpowBxEZSLu"
+AT_PAYMENTS__SESSION_ID            = "fld2wdhBvc8xrV6y5"
+AT_PAYMENTS__PAYMENT_STAGE         = "fldrr9g8ZZjqAbdKQ"
+AT_PAYMENTS__PAYMENT_TYPE          = "fldydUWHhqVLMkNSC"
+AT_PAYMENTS__SOURCE                = "flduqtlX4PuOAJbFC"
+AT_PAYMENTS__PAYMENT_EVIDENCE_SOURCE = "fldHXyExqojVyxJPX"
 
 TELEGRAM_CHAT_ID = "-1003546439681"
 TG_THREAD_CONFIRM = "61"
