@@ -8,4 +8,49 @@ workers_dev = true
 # - All other payment routes are delegated back to index.js.
 
 # Production API routes for SIGIL payment flows.
-# These prevent sigil
+# These prevent sigil.mmdbkk.com/v1/* payment requests from falling through to origin and returning Cloudflare 522.
+routes = [
+  { pattern = "sigil.mmdbkk.com/v1/pay/*", zone_name = "mmdbkk.com" },
+  { pattern = "sigil.mmdbkk.com/v1/payments/*", zone_name = "mmdbkk.com" },
+  { pattern = "sigil.mmdbkk.com/v1/confirm/*", zone_name = "mmdbkk.com" }
+]
+
+[vars]
+# Public/runtime base
+WEB_BASE_URL = "https://mmdbkk.com"
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
+
+# Airtable base and tables
+AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+AIRTABLE_TABLE_PAYMENTS = "tblWGGJJOx5eBvBZJ"
+AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
+AIRTABLE_TABLE_POINTS_LEDGER = "points_ledger"
+
+# Telegram notification targets
+TELEGRAM_CHAT_ID = "-1003546439681"
+TG_THREAD_CONFIRM = "61"
+TG_THREAD_POINTS = "17"
+
+# Payment policy
+POINTS_RATE = "100"
+PAY_SESSIONS_TTL_DAYS = "30"
+
+# Slip evidence route contract.
+# The route is evidence-only and must never unlock, mark paid, verify, confirm, activate membership, or award points.
+SLIP_EVIDENCE_ROUTE = "/v1/pay/slip/evidence"
+SLIP_EVIDENCE_MODE = "evidence_only"
+SLIP_EVIDENCE_BINARY_STORAGE = "metadata_only_not_persisted"
+SLIP_EVIDENCE_OFFICIAL_VERIFICATION_REQUIRED = "true"
+SLIP_EVIDENCE_PAYMENT_STATUS = "pending"
+SLIP_EVIDENCE_VERIFICATION_STATUS = "pending"
+
+# Required secrets are intentionally not stored in GitHub:
+# - AIRTABLE_API_KEY
+# - TELEGRAM_BOT_TOKEN
+# - CONFIRM_KEY
+# - INTERNAL_TOKEN
+
+[[kv_namespaces]]
+binding = "PAY_SESSIONS_KV"
+id = "e0c6b8a0785e462dad6d01f61a893e87"
+preview_id = "8f3ede8e3b0f447ea046cee47c7eef0b"
