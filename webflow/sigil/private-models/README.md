@@ -5,7 +5,7 @@ Deployment date/time: not recorded in this repo note
 
 This note records the completed Cloudflare R2 upload for SIGIL Private Models Webflow assets. These assets belong to the SIGIL Private Models page family and related Webflow embeds, such as `/sigil/private-models`.
 
-This is not a Kenji Knownledge V9.1 deployment. Do not confuse these assets with `webflow/internal/admin/kenji-knowledge/`, the Kenji Knownledge V9.1 Webflow Loader, Kenji Board bridge assets, or PR #170 Kenji Knownledge assets.
+This is not a Kenji Knowledge V9.1 deployment. Do not confuse these assets with `webflow/internal/admin/kenji-knowledge/`, the Kenji Knowledge V9.1 Webflow Loader, Kenji Board bridge assets, or PR #170 Kenji Knowledge assets.
 
 ## R2 Location
 
@@ -44,5 +44,7 @@ This is not a Kenji Knownledge V9.1 deployment. Do not confuse these assets with
 - No repo files were changed as part of the original R2 upload.
 - No commit or push was part of the original R2 upload.
 - No Worker deploy was part of the original R2 upload.
+- No deploy commands were run as part of this documentation note.
+- No worker files touched as part of this documentation note.
 - No Webflow publish was part of the original R2 upload.
 - Existing dirty worktree files were left untouched.
