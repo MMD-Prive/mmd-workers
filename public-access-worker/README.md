@@ -42,7 +42,7 @@ The route accepts `multipart/form-data` with:
 
 ```toml
 [[r2_buckets]]
-binding = "PUBLIC_ACCESS_EVIDENCE"
+binding = "mmd_public_access_evidence"
 bucket_name = "mmd-public-access-evidence"
 ```
 
@@ -53,7 +53,7 @@ wrangler secret put TELEGRAM_INTERNAL_SEND_URL
 wrangler secret put TELEGRAM_PUBLIC_ACCESS_CHAT_ID
 ```
 
-Airtable table: `Public Access Requests`.
+Airtable table: `Public Access Requests` (`tblGeXzavXL5nb24l`).
 
 Required fields are documented in `docs/architecture/PUBLIC_ACCESS_V1.md`.
 
