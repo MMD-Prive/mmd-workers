@@ -214,7 +214,10 @@ function compact(value) {
 }
 
 function normalizePath(path) {
-  return path.replace(/\/+$/, "") || "/";
+  const normalized = path.replace(/\/+$/, "") || "/";
+  return normalized.startsWith("/public/api/")
+    ? normalized.slice("/public/api".length)
+    : normalized;
 }
 
 function json(data, status = 200) {
