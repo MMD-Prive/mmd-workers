@@ -7,7 +7,7 @@ routes = [
 ]
 
 [[r2_buckets]]
-binding = "PUBLIC_ACCESS_EVIDENCE"
+binding = "mmd_public_access_evidence"
 bucket_name = "mmd-public-access-evidence"
 
 [vars]
