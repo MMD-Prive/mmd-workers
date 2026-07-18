@@ -35,7 +35,7 @@ export default {
 };
 
 async function handleIntake(request, env) {
-  requireEnv(env, ["AIRTABLE_API_KEY", "AIRTABLE_BASE_ID", "PUBLIC_ACCESS_EVIDENCE"]);
+  requireEnv(env, ["AIRTABLE_API_KEY", "AIRTABLE_BASE_ID", "mmd_public_access_evidence"]);
   const form = await request.formData();
 
   const name = required(form.get("name"), "name");
@@ -58,7 +58,7 @@ async function handleIntake(request, env) {
   const r2Key = buildEvidenceKey(requestId, evidence);
   const digest = await sha256File(evidence);
 
-  await env.PUBLIC_ACCESS_EVIDENCE.put(r2Key, await evidence.arrayBuffer(), {
+  await env.mmd_public_access_evidence.put(r2Key, await evidence.arrayBuffer(), {
     httpMetadata: { contentType: evidence.type },
     customMetadata: {
       request_id: requestId,
