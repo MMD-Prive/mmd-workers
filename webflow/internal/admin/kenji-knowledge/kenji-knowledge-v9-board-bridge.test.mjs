@@ -31,6 +31,8 @@ test("Kenji Knowledge V10 Save Draft posts only to the draft endpoint", async ()
   const js = await source();
   assert.equal((js.match(/method\s*:\s*"POST"/g) || []).length, 1);
   assert.match(js, /fetch\(KNOWLEDGE_DRAFT_ENDPOINT,\s*\{[\s\S]*?method\s*:\s*"POST"/);
+  assert.match(js, /Save to Backend Draft/);
+  assert.match(js, /Save Local Draft/);
   assert.doesNotMatch(js, /\/v1\/admin\/kenji\/knowledge\/:id\/publish/);
   assert.doesNotMatch(js, /\/v1\/admin\/kenji\/knowledge\/[^"']+\/publish/);
   assert.doesNotMatch(js, /\/v1\/admin\/sigil\/board\/publish/);
@@ -51,6 +53,29 @@ test("Kenji Knowledge V9.2 loader renders into the existing Webflow root", async
   assert.match(js, /root\.innerHTML\s*=\s*renderShell\(\)/);
   assert.doesNotMatch(js, /outerHTML\s*=\s*renderShell\(\)/);
   assert.doesNotMatch(js, /<section id="mmdKenjiKnowledgeV9"/);
+});
+
+test("Kenji Knowledge V10 UX includes status strip and quick start choices", async () => {
+  const js = await source();
+  assert.match(js, /kk4__status-strip/);
+  assert.match(js, /Knowledge API/);
+  assert.match(js, /Runtime Published/);
+  assert.match(js, /Last Sync/);
+  assert.match(js, /kk4__quick-start/);
+  assert.match(js, /เขียนจากศูนย์/);
+  assert.match(js, /ใช้เทมเพลต Payment/);
+  assert.match(js, /ใช้เทมเพลต Membership/);
+  assert.match(js, /สร้างจาก Board/);
+});
+
+test("Kenji Knowledge V10 editor uses guided operator sections and lane notes", async () => {
+  const js = await source();
+  assert.match(js, /A\. ลูกค้าถามว่าอะไร/);
+  assert.match(js, /B\. Kenji ควรตอบอย่างไร/);
+  assert.match(js, /C\. กฎความปลอดภัย/);
+  assert.match(js, /Payment — สลิป \/ ยอด \/ ชำระเงิน/);
+  assert.match(js, /Escalation — ต้องให้ Per\/MMD ตัดสินใจ/);
+  assert.match(js, /Kenji รับเรื่องได้ แต่ห้ามยืนยันว่าจ่ายสำเร็จ/);
 });
 
 test("Kenji Knowledge V9.2 bridge displays required read-only safety banner", async () => {
@@ -95,4 +120,7 @@ test("Kenji Knowledge V9.2 CSS contains bridge UI states", async () => {
   assert.match(css, /kk4__safety-banner/);
   assert.match(css, /kk4__board-card\.is-selected/);
   assert.match(css, /kk4__assistant-lines/);
+  assert.match(css, /kk4__status-strip/);
+  assert.match(css, /kk4__quick-start/);
+  assert.match(css, /kk4__editor-section/);
 });
