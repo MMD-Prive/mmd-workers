@@ -7,6 +7,10 @@
   var STATUS_ENDPOINT = "/v1/sigil/board/status";
   var QUEUE_ENDPOINT = "/v1/sigil/board/queue";
   var ADMIN_AUTH_ENDPOINT = "/v1/admin/auth/me";
+  var KNOWLEDGE_META_ENDPOINT = "/v1/admin/kenji/knowledge/meta";
+  var KNOWLEDGE_LIST_ENDPOINT = "/v1/admin/kenji/knowledge/list";
+  var KNOWLEDGE_DRAFT_ENDPOINT = "/v1/admin/kenji/knowledge/draft";
+  var KNOWLEDGE_PUBLISHED_ENDPOINT = "/v1/internal/kenji/knowledge/published";
   var SAFE_MODE_COPY = "Safe Mode พร้อมอ่าน แต่ยังไม่โหลด Board จนกว่าจะผ่านการตรวจสิทธิ์";
   var SAFETY_COPY = "ข้อมูลจาก Board เป็นสัญญาณอ่านอย่างเดียว Kenji ช่วยสรุปและร่างคำตอบได้ แต่ไม่สามารถอนุมัติสลิป เปิดสมาชิก ยืนยันการจอง หรือปลดล็อกสิทธิ์ใด ๆ ได้";
   var SAFETY_COPY_EN = "Board data is advisory read-only. Kenji cannot approve, unlock, confirm, or write operational changes.";
@@ -74,7 +78,12 @@
     boardFilter: "all",
     selectedBoardId: "fallback_payment",
     boardAuthed: false,
-    boardLoading: false
+    boardLoading: false,
+    knowledgeLiveConnected: false,
+    knowledgeSourceLabel: "Local fallback",
+    runtimeSourceLabel: "fallback",
+    runtimePublishedCount: 0,
+    lastSyncAt: ""
   };
 
   function esc(value) {
@@ -104,11 +113,12 @@
       + '<header class="kk4__topbar"><a class="kk4__brand" href="/internal/admin"><span class="kk4__brand-mark">K</span><span class="kk4__brand-copy"><strong>KENJI KNOWLEDGE</strong><small>V9.2 BOARD BRIDGE</small></span></a><div class="kk4__status-pill" data-state="ready"><span></span><b>Loader พร้อมใช้งาน</b></div></header>'
       + '<main class="kk4__container"><section class="kk4__hero"><picture class="kk4__hero-image"><img src="' + img.hero + '" alt="Kenji Knowledge command room" loading="eager"></picture><div class="kk4__hero-overlay"></div><div class="kk4__hero-copy"><span class="kk4__eyebrow">MMD PRIVE / INTERNAL KNOWLEDGE ROOM</span><h1>Kenji Knowledge</h1><p>ห้องสอน Kenji ให้ตอบอย่างปลอดภัย เขียน Knowledge Draft และอ่านสัญญาณจาก Kenji Board แบบ read-only โดยไม่แตะการอนุมัติจริง</p><div class="kk4__hero-actions"><button type="button" class="kk4__button kk4__button--gold" data-view="knowledge">เขียน Knowledge</button><button type="button" class="kk4__button" data-view="campaign">Campaign Mode</button><button type="button" class="kk4__button" data-view="runtime">Runtime / Board</button></div></div></section>'
       + '<section class="kk4__safety-banner" role="note"><b>' + esc(SAFETY_COPY_EN) + '</b><span>' + esc(SAFETY_COPY) + '</span></section>'
+      + '<section class="kk4__metrics kk4__metrics--source" aria-label="Kenji Knowledge source status"><article><span>Knowledge source</span><strong id="kk91KnowledgeSource">Local fallback</strong><p id="kk91KnowledgeSourceHelp">Fallback cards render immediately before live backend sync.</p></article><article><span>Runtime source</span><strong id="kk91RuntimeSource">fallback</strong><p id="kk91RuntimeCount">Published runtime cards: 0</p></article><article><span>Last sync</span><strong id="kk91LastSync">-</strong><p>Updated only after a live API sync succeeds</p></article><article><span>Backend</span><strong id="kk91BackendState">Safe</strong><p>No frontend publish or operational write-back</p></article></section>'
       + '<section class="kk4__metrics"><article><span>Published</span><strong data-count="published">0</strong><p>การ์ดที่ใช้เป็นคำตอบได้</p></article><article><span>Drafts</span><strong data-count="draft">0</strong><p>รอแก้และตรวจภาษา</p></article><article><span>Campaign</span><strong>5</strong><p>Member Status Review 2026</p></article><article><span>Board</span><strong data-board-count="total">0</strong><p>อ่านสถานะจาก /sigil/board</p></article></section>'
       + '<nav class="kk4__lane-tabs" aria-label="Knowledge lanes"><button type="button" data-view="knowledge" class="is-active">01 Knowledge</button><button type="button" data-view="campaign">02 Campaign</button><button type="button" data-view="runtime">03 Runtime</button></nav>'
       + '<section class="kk4__view is-active" data-panel="knowledge"><div class="kk4__workspace"><article class="kk4__card kk4__editor"><span class="kk4__mini-label">Knowledge Draft Helper</span><h2>ร่าง Safe Answer</h2><label>Title<input id="kk91Title" placeholder="เช่น ลูกค้าถามเรื่องสลิป"></label><label>Lane<select id="kk91Lane"><option value="Payment">Payment</option><option value="Booking">Booking</option><option value="Escalation">Escalation</option><option value="Privacy">Privacy</option><option value="Support">Support</option></select></label><div class="kk4__form-grid"><label>Audience<input id="kk91Audience" value="internal_only"></label><label>Language<input id="kk91Language" value="th"></label></div><label>Customer Question Examples<textarea id="kk91Questions" rows="3" placeholder="หนึ่งตัวอย่างต่อหนึ่งบรรทัด"></textarea></label><label>Kenji Safe Answer<textarea id="kk91Answer" rows="6" placeholder="คำตอบที่ Kenji พูดได้โดยไม่ข้ามอำนาจระบบ"></textarea></label><label>Do Rules<textarea id="kk91DoRules" rows="3"></textarea></label><label>Don\'t Rules<textarea id="kk91DontRules" rows="3"></textarea></label><label>Escalation Rule<textarea id="kk91Escalation" rows="3"></textarea></label><label>Related Routes<input id="kk91Routes" placeholder="[] หรือ /member/dashboard"></label><div class="kk4__form-row"><button class="kk4__button kk4__button--gold" type="button" id="kk91SaveDraft">Save Draft</button><button class="kk4__button" type="button" id="kk91Export">Export JSON</button></div></article><article class="kk4__card"><span class="kk4__mini-label">Knowledge Library</span><h2>คลัง Knowledge</h2><div class="kk4__card-list" id="kk91CardList"></div></article></div></section>'
       + '<section class="kk4__view" data-panel="campaign"><div class="kk4__image-panel"><img src="' + img.campaign + '" alt="Campaign review table" loading="lazy"><div><span class="kk4__mini-label">Campaign Mode</span><h2>Member Status Review 2026</h2><p>ตรวจลูกค้าปัจจุบัน ลูกค้าหมดอายุ ลูกค้าใหม่ และเคสไม่ชัด ก่อนให้ Kenji แนะนำคำตอบที่ไม่ยืนยันสิทธิ์แทนระบบ</p></div></div><div class="kk4__campaign-grid" id="kk91CampaignList"></div></section>'
-      + '<section class="kk4__view" data-panel="runtime"><div class="kk4__runtime-hero"><img src="' + img.runtime + '" alt="Published runtime health" loading="lazy"><div><span class="kk4__mini-label">Published Runtime Health</span><h2>Board Bridge อ่านอย่างเดียว</h2><p id="kk91BoardStatus">' + SAFE_MODE_COPY + '</p><button type="button" class="kk4__button kk4__button--gold" id="kk91RefreshBoard">ตรวจสิทธิ์และ Refresh Board</button></div></div><section class="kk4__metrics kk4__metrics--board"><article><span>Critical</span><strong data-board-count="critical">0</strong><p>เรื่องที่ต้องหยุดก่อนยืนยัน</p></article><article><span>Ready for Per</span><strong data-board-count="ready_for_per">0</strong><p>พร้อมให้ Per ตัดสินใจ</p></article><article><span>Payment Pending</span><strong data-board-count="payment_pending">0</strong><p>สลิปรอตรวจทางการ</p></article><article><span>Need Info</span><strong data-board-count="need_info">0</strong><p>ต้องขอข้อมูลเพิ่ม</p></article></section><div class="kk4__board-layout"><article class="kk4__card"><span class="kk4__mini-label">Board Queue</span><h2>คิวอ่านอย่างเดียว</h2><div class="kk4__filter-row"><button type="button" data-board-filter="all" class="is-active">All</button><button type="button" data-board-filter="per">Per</button><button type="button" data-board-filter="payment">Payment</button><button type="button" data-board-filter="need_info">Need Info</button><button type="button" data-board-filter="critical">Critical</button><button type="button" data-board-filter="high">High</button></div><div class="kk4__card-list" id="kk91BoardList"></div></article><aside class="kk4__card"><span class="kk4__mini-label">Knowledge Draft from Board</span><h2>Selected Card Helper</h2><img class="kk4__side-image" src="' + img.safety + '" alt="Safety boundary" loading="lazy"><p>' + esc(SAFETY_COPY) + '</p><div id="kk91AssistantPanel"></div></aside></div></section></main><div class="kk4__toast" id="kk91Toast" role="status" aria-live="polite"></div>';
+      + '<section class="kk4__view" data-panel="runtime"><div class="kk4__runtime-hero"><img src="' + img.runtime + '" alt="Published runtime health" loading="lazy"><div><span class="kk4__mini-label">Published Runtime Health</span><h2>Board Bridge อ่านอย่างเดียว</h2><p id="kk91RuntimeStatus">Published runtime cards: 0 / Source: fallback</p><p id="kk91BoardStatus">' + SAFE_MODE_COPY + '</p><button type="button" class="kk4__button kk4__button--gold" id="kk91RefreshBoard">ตรวจสิทธิ์และ Refresh Board</button></div></div><section class="kk4__metrics kk4__metrics--board"><article><span>Critical</span><strong data-board-count="critical">0</strong><p>เรื่องที่ต้องหยุดก่อนยืนยัน</p></article><article><span>Ready for Per</span><strong data-board-count="ready_for_per">0</strong><p>พร้อมให้ Per ตัดสินใจ</p></article><article><span>Payment Pending</span><strong data-board-count="payment_pending">0</strong><p>สลิปรอตรวจทางการ</p></article><article><span>Need Info</span><strong data-board-count="need_info">0</strong><p>ต้องขอข้อมูลเพิ่ม</p></article></section><div class="kk4__board-layout"><article class="kk4__card"><span class="kk4__mini-label">Board Queue</span><h2>คิวอ่านอย่างเดียว</h2><div class="kk4__filter-row"><button type="button" data-board-filter="all" class="is-active">All</button><button type="button" data-board-filter="per">Per</button><button type="button" data-board-filter="payment">Payment</button><button type="button" data-board-filter="need_info">Need Info</button><button type="button" data-board-filter="critical">Critical</button><button type="button" data-board-filter="high">High</button></div><div class="kk4__card-list" id="kk91BoardList"></div></article><aside class="kk4__card"><span class="kk4__mini-label">Knowledge Draft from Board</span><h2>Selected Card Helper</h2><img class="kk4__side-image" src="' + img.safety + '" alt="Safety boundary" loading="lazy"><p>' + esc(SAFETY_COPY) + '</p><div id="kk91AssistantPanel"></div></aside></div></section></main><div class="kk4__toast" id="kk91Toast" role="status" aria-live="polite"></div>';
   }
 
   function loadCards() {
@@ -155,6 +165,103 @@
   function updateCounts() {
     setText('[data-count="published"]', state.cards.filter(function (card) { return card.status === "published"; }).length);
     setText('[data-count="draft"]', state.cards.filter(function (card) { return card.status !== "published"; }).length);
+  }
+
+  function updateSourcePanel() {
+    setText("#kk91KnowledgeSource", state.knowledgeSourceLabel);
+    setText("#kk91RuntimeSource", state.runtimeSourceLabel);
+    setText("#kk91RuntimeCount", "Published runtime cards: " + Number(state.runtimePublishedCount || 0));
+    setText("#kk91RuntimeStatus", "Published runtime cards: " + Number(state.runtimePublishedCount || 0) + " / Source: " + state.runtimeSourceLabel);
+    setText("#kk91LastSync", state.lastSyncAt || "-");
+    setText("#kk91BackendState", state.knowledgeLiveConnected ? "Live API" : "Fallback");
+  }
+
+  function setKnowledgeSource(label, help, connected) {
+    state.knowledgeSourceLabel = label;
+    state.knowledgeLiveConnected = connected === true;
+    setText("#kk91KnowledgeSourceHelp", help || "");
+    updateSourcePanel();
+  }
+
+  function setRuntimeSource(label, count) {
+    state.runtimeSourceLabel = label;
+    state.runtimePublishedCount = Number(count || 0);
+    updateSourcePanel();
+  }
+
+  function stampLiveSync() {
+    state.lastSyncAt = new Date().toLocaleString("th-TH", { hour12: false });
+    updateSourcePanel();
+  }
+
+  function extractCards(payload) {
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload && payload.cards)) return payload.cards;
+    if (Array.isArray(payload && payload.items)) return payload.items;
+    if (Array.isArray(payload && payload.data && payload.data.cards)) return payload.data.cards;
+    return [];
+  }
+
+  function fetchJson(endpoint, options) {
+    return fetch(endpoint, options || { credentials: "same-origin", cache: "no-store" }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (payload) {
+        return { response: response, payload: payload };
+      });
+    });
+  }
+
+  function refreshKnowledgeBackend() {
+    return fetchJson(ADMIN_AUTH_ENDPOINT, { credentials: "same-origin", cache: "no-store" })
+      .then(function (authResult) {
+        var authResponse = authResult.response;
+        if (authResponse.status === 401 || authResponse.status === 403) {
+          setKnowledgeSource("Auth required — local fallback only", "Auth required — local fallback only", false);
+          return null;
+        }
+        if (!authResponse.ok) throw new Error("admin_auth_failed");
+        return Promise.all([
+          fetchJson(KNOWLEDGE_META_ENDPOINT, { credentials: "same-origin", cache: "no-store" }),
+          fetchJson(KNOWLEDGE_LIST_ENDPOINT, { credentials: "same-origin", cache: "no-store" })
+        ]);
+      })
+      .then(function (result) {
+        if (!result) return;
+        var metaResponse = result[0].response;
+        var listResponse = result[1].response;
+        if (metaResponse.status === 404 || listResponse.status === 404) {
+          setKnowledgeSource("Knowledge API route missing", "Knowledge API route missing", false);
+          return;
+        }
+        if (!metaResponse.ok || !listResponse.ok) throw new Error("knowledge_api_failed");
+        var cards = extractCards(result[1].payload);
+        if (!cards.length) {
+          setKnowledgeSource("Live API connected", "Live API connected", true);
+          state.cards = [];
+        } else {
+          setKnowledgeSource("Live API connected", "Live API connected", true);
+          state.cards = cards;
+        }
+        saveCards();
+        renderCards();
+        stampLiveSync();
+      })
+      .catch(function () {
+        setKnowledgeSource("Backend disconnected — local fallback only", "Backend disconnected — local fallback only", false);
+      });
+  }
+
+  function refreshRuntimePublished() {
+    return fetchJson(KNOWLEDGE_PUBLISHED_ENDPOINT, { credentials: "same-origin", cache: "no-store" })
+      .then(function (result) {
+        if (!result.response.ok) {
+          setRuntimeSource("unavailable", 0);
+          return;
+        }
+        setRuntimeSource("live runtime", extractCards(result.payload).length);
+      })
+      .catch(function () {
+        setRuntimeSource("unavailable", 0);
+      });
   }
 
   function renderCards() {
@@ -211,16 +318,41 @@
     };
   }
 
+  function saveDraftLocal(draft, message) {
+    state.cards.unshift(draft);
+    saveCards();
+    renderCards();
+    toast(message || "บันทึก Draft แล้ว");
+  }
+
   function saveDraft() {
     var draft = readDraftFromEditor();
     if (!draft.kenji_safe_answer) {
       toast("ยังไม่มี Kenji Safe Answer");
       return;
     }
-    state.cards.unshift(draft);
-    saveCards();
-    renderCards();
-    toast("บันทึก Draft แล้ว");
+    if (!state.knowledgeLiveConnected) {
+      saveDraftLocal(draft, "บันทึกเฉพาะในเครื่อง ยังไม่เข้า backend");
+      return;
+    }
+    fetch(KNOWLEDGE_DRAFT_ENDPOINT, {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(draft)
+    })
+      .then(function (response) {
+        if (!response.ok) throw new Error("draft_save_failed");
+        return response.json().catch(function () { return { ok: true }; });
+      })
+      .then(function () {
+        toast("บันทึก Draft เข้า backend แล้ว");
+        return refreshKnowledgeBackend();
+      })
+      .catch(function () {
+        toast("บันทึก backend ไม่สำเร็จ ยังไม่ได้ publish");
+      });
   }
 
   function exportJson() {
@@ -481,6 +613,9 @@
   renderCards();
   renderCampaigns();
   renderBoard();
+  updateSourcePanel();
   setView("knowledge");
   setText("#kk91BoardStatus", SAFE_MODE_COPY);
+  refreshRuntimePublished();
+  refreshKnowledgeBackend();
 })();
