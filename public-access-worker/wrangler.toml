@@ -13,10 +13,10 @@ bucket_name = "mmd-public-access-evidence"
 [vars]
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io"
 AIRTABLE_TABLE_PUBLIC_ACCESS_REQUESTS = "Public Access Requests"
-PUBLIC_ACCESS_ADMIN_URL = "https://sigil.mmdbkk.com/internal/admin/console"
+PUBLIC_ACCESS_ADMIN_URL = "https://sigil.mmdbkk.com/internal/admin/console"\nTELEGRAM_INTERNAL_SEND_URL = "https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send"\nTELEGRAM_PUBLIC_ACCESS_CHAT_ID = "-1003546439681"
 
 # Secrets — do not commit:
 # AIRTABLE_API_KEY
-# TELEGRAM_INTERNAL_TOKEN
+# AUTH_SERVICE_PUBLIC_ACCESS_TO_TELEGRAM (or reuse TELEGRAM_INTERNAL_TOKEN / INTERNAL_TOKEN)
 # TELEGRAM_INTERNAL_SEND_URL
 # TELEGRAM_PUBLIC_ACCESS_CHAT_ID
