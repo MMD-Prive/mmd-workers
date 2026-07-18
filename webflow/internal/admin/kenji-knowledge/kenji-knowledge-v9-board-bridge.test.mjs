@@ -14,8 +14,34 @@ test("Kenji Knowledge V9.2 bridge reads SIGIL Board only and never calls publish
   assert.match(js, /STATUS_ENDPOINT\s*=\s*"\/v1\/sigil\/board\/status"/);
   assert.match(js, /QUEUE_ENDPOINT\s*=\s*"\/v1\/sigil\/board\/queue"/);
   assert.doesNotMatch(js, /\/v1\/admin\/sigil\/board\/publish/);
-  assert.doesNotMatch(js, /method\s*:\s*["'](?:POST|PATCH|PUT|DELETE)["']/i);
-  assert.doesNotMatch(js, /fetch\([^\n]*(?:POST|PATCH|PUT|DELETE)/i);
+  assert.match(js, /fetch\(STATUS_ENDPOINT,\s*\{\s*credentials:\s*"same-origin",\s*cache:\s*"no-store"\s*\}/);
+  assert.match(js, /fetch\(QUEUE_ENDPOINT,\s*\{\s*credentials:\s*"same-origin",\s*cache:\s*"no-store"\s*\}/);
+  assert.doesNotMatch(js, /method\s*:\s*["'](?:PATCH|PUT|DELETE)["']/i);
+});
+
+test("Kenji Knowledge V10 loader defines live backend endpoints", async () => {
+  const js = await source();
+  assert.match(js, /KNOWLEDGE_META_ENDPOINT\s*=\s*"\/v1\/admin\/kenji\/knowledge\/meta"/);
+  assert.match(js, /KNOWLEDGE_LIST_ENDPOINT\s*=\s*"\/v1\/admin\/kenji\/knowledge\/list"/);
+  assert.match(js, /KNOWLEDGE_DRAFT_ENDPOINT\s*=\s*"\/v1\/admin\/kenji\/knowledge\/draft"/);
+  assert.match(js, /KNOWLEDGE_PUBLISHED_ENDPOINT\s*=\s*"\/v1\/internal\/kenji\/knowledge\/published"/);
+});
+
+test("Kenji Knowledge V10 Save Draft posts only to the draft endpoint", async () => {
+  const js = await source();
+  assert.equal((js.match(/method\s*:\s*"POST"/g) || []).length, 1);
+  assert.match(js, /fetch\(KNOWLEDGE_DRAFT_ENDPOINT,\s*\{[\s\S]*?method\s*:\s*"POST"/);
+  assert.doesNotMatch(js, /\/v1\/admin\/kenji\/knowledge\/:id\/publish/);
+  assert.doesNotMatch(js, /\/v1\/admin\/kenji\/knowledge\/[^"']+\/publish/);
+  assert.doesNotMatch(js, /\/v1\/admin\/sigil\/board\/publish/);
+});
+
+test("Kenji Knowledge V10 loader has no operational approval write calls", async () => {
+  const js = await source();
+  assert.doesNotMatch(js, /fetch\([^)]*(payment|slip)[^)]*(approve|approved|confirm|paid)/i);
+  assert.doesNotMatch(js, /fetch\([^)]*(unlock|membership)[^)]*(unlock|active|grant)/i);
+  assert.doesNotMatch(js, /fetch\([^)]*(vip|svip|black[\s_-]*card)[^)]*(grant|approve|unlock)/i);
+  assert.doesNotMatch(js, /fetch\([^)]*(booking)[^)]*(confirm|approve)/i);
 });
 
 test("Kenji Knowledge V9.2 loader renders into the existing Webflow root", async () => {
