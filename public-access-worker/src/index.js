@@ -144,7 +144,8 @@ async function notifyMmd(env, payload) {
 
   try {
     const headers = { "Content-Type": "application/json" };
-    const internalToken = env.AUTH_SERVICE_PUBLIC_ACCESS_TO_TELEGRAM || env.TELEGRAM_INTERNAL_TOKEN || env.INTERNAL_TOKEN;\n    if (internalToken) headers["X-Internal-Token"] = internalToken;
+    const internalToken = env.AUTH_SERVICE_PUBLIC_ACCESS_TO_TELEGRAM || env.TELEGRAM_INTERNAL_TOKEN || env.INTERNAL_TOKEN;
+    if (internalToken) headers["X-Internal-Token"] = internalToken;
     const res = await fetch(endpoint, {
       method: "POST",
       headers,
