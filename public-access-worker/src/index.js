@@ -12,11 +12,13 @@ export default {
     const cors = corsHeaders(request, env);
 
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (!isAllowedOrigin(request, env)) return withCors(json({ ok: false, error: "origin_not_allowed" }, 403), cors);
 
+    // Monitoring is read-only and safe without a browser Origin.
     if (request.method === "GET" && (path === "/health" || path === "/ping")) {
       return withCors(json({ ok: true, worker: "public-access-worker", version: "v1", ts: Date.now() }), cors);
     }
+
+    if (!isAllowedOrigin(request, env)) return withCors(json({ ok: false, error: "origin_not_allowed" }, 403), cors);
 
     if (request.method === "POST" && path === "/public/api/access/intake") {
       try {
