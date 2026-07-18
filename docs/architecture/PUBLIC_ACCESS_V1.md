@@ -56,6 +56,11 @@ Schema:
 - Payment Status (single select/text)
 - Access Status (single select/text)
 
+## R2 binding
+
+Provisioned bucket: `mmd-public-access-evidence`  
+Worker binding: `mmd_public_access_evidence`
+
 ## Public response
 
 ```json
