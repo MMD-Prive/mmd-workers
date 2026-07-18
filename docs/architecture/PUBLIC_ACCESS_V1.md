@@ -30,7 +30,12 @@ It is not a booking confirmation page.
 
 ## Airtable: Public Access Requests
 
-Create these fields before deploy:
+Created in MMD Commerce Operating System:
+
+- Base ID: `appsV1ILPRfIjkaYg`
+- Table ID: `tblGeXzavXL5nb24l`
+
+Schema:
 
 - Request ID (single line text)
 - Status (single select: PENDING_REVIEW, APPROVED, DECLINED, NEEDS_MORE_INFO)
