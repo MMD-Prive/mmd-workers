@@ -99,6 +99,16 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/sigil/apply/"
 zone_name = "mmdbkk.com"
 
+# Kenji Knowledge admin route shell wildcard.
+# Narrow wildcard shell route to beat broader /internal/admin* interceptors.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/kenji-knowledge*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/kenji-knowledge*"
+zone_name = "mmdbkk.com"
+
 # Kenji Knowledge admin route shell.
 # Exact page shell owned by mmd-redirect-worker because it owns mmdbkk.com/*.
 [[routes]]
