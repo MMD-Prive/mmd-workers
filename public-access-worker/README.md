@@ -48,7 +48,7 @@ bucket_name = "mmd-public-access-evidence"
 
 ```bash
 wrangler secret put AIRTABLE_API_KEY
-wrangler secret put TELEGRAM_INTERNAL_TOKEN
+wrangler secret put AUTH_SERVICE_PUBLIC_ACCESS_TO_TELEGRAM
 wrangler secret put TELEGRAM_INTERNAL_SEND_URL
 wrangler secret put TELEGRAM_PUBLIC_ACCESS_CHAT_ID
 ```
