@@ -26,11 +26,11 @@
     Rules: "Kenji อธิบายกฎได้ แต่ห้ามยกเว้นกฎหรือให้สิทธิ์พิเศษ"
   };
   var img = {
-    heroDesktop: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a5ba32f52334f4687bc374c_Kenji%20Knowledge%20Desk.webp",
-    heroMobile: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a5ba330cd7a8d988bf4b4f3_Kenji%20Knowledge%20Mob.webp",
+    heroDesktop: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a5c9a27c22a6dea5d4b8cfd_Kenji%20Board%20Desk.webp",
+    heroMobile: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a5c9a27186a3fba41878ac7_Kenji%20Board%20Mob.webp",
     campaign: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a5ba3303273d555c71ad755_Kenji%20Knowledge%2002.webp",
     safety: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a5ba330d5be7818122c8e46_Kenji%20Knowledge%2003.webp",
-    runtime: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a5ba3304a8d977d819b7561_Kenji%20Knowledge%2004.webp"
+    runtime: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a5c9a274c8783adb42a0adc_Kenji%20Board%2001.webp"
   };
   var starterCards = [
     {
