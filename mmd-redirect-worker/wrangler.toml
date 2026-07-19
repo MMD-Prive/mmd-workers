@@ -127,6 +127,14 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/internal/admin/kenji-knowledge/"
 zone_name = "mmdbkk.com"
 
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/kenji-knowledge*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/kenji-knowledge*"
+zone_name = "mmdbkk.com"
+
 # Temporary safety catch for old SIGIL admin route leakage.
 # mmd-redirect-worker must pass /sigil/* through; SIGIL admin login is owned by immigrate-worker.
 [[routes]]
