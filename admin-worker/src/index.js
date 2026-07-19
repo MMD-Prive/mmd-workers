@@ -130,6 +130,10 @@ export default {
       return new Response(null, { status: 204, headers: cors });
     }
 
+    if ((method === "GET" || method === "HEAD") && path === "/internal/admin/kenji-knowledge") {
+      return kenjiKnowledgeAdminShell(req);
+    }
+
     // ------------------------------------------------------
     // Public ping
     // ------------------------------------------------------
@@ -772,6 +776,19 @@ function json(data, status = 200) {
     status,
     headers: {
       "Content-Type": "application/json",
+    },
+  });
+}
+
+function kenjiKnowledgeAdminShell(req) {
+  const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Kenji Knowledge Admin</title><link rel="stylesheet" href="https://models.mmdbkk.com/webflow/internal/admin/kenji-knowledge/kenji-knowledge-v9-board-bridge.css"></head><body><div id="mmdKenjiKnowledgeV9"></div><script defer src="https://models.mmdbkk.com/webflow/internal/admin/kenji-knowledge/kenji-knowledge-v9-1-webflow-loader.js"></script></body></html>`;
+  return new Response(req.method.toUpperCase() === "HEAD" ? null : html, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+      "x-mmd-page": "kenji-knowledge-admin",
+      "x-mmd-origin": "admin-worker:kenji-knowledge-r2-loader-shell",
     },
   });
 }
