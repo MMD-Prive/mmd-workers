@@ -51,3 +51,29 @@
 #mmdKenjiKnowledgeV9 .kk4__side-image[src*="Kenji%20Board"] {
   filter: brightness(1.10) contrast(1.02) saturate(1.04) !important;
 }
+
+/* Kenji Board operator cards polish: reduce backend/default feel. */
+#mmdKenjiKnowledgeV9 .kk4__stat-card,
+#mmdKenjiKnowledgeV9 .kk4__source-card {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(236, 194, 112, .10), transparent 38%),
+    linear-gradient(145deg, rgba(20, 14, 8, .88), rgba(7, 5, 4, .94)) !important;
+  border-color: rgba(236, 194, 112, .28) !important;
+  box-shadow: 0 18px 44px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+#mmdKenjiKnowledgeV9 .kk4__stat-card h3,
+#mmdKenjiKnowledgeV9 .kk4__source-card h3 {
+  color: #edc674 !important;
+  letter-spacing: .16em;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__stat-card strong,
+#mmdKenjiKnowledgeV9 .kk4__source-card strong {
+  color: #fff1dd !important;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__stat-card p,
+#mmdKenjiKnowledgeV9 .kk4__source-card p {
+  color: rgba(255, 239, 215, .74) !important;
+}
