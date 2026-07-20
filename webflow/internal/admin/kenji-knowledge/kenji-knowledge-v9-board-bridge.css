@@ -77,3 +77,55 @@
 #mmdKenjiKnowledgeV9 .kk4__source-card p {
   color: rgba(255, 239, 215, .74) !important;
 }
+
+/* Kenji Knowledge shell polish: remove default white edge and strengthen MMD shell identity. */
+html,
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #080604 !important;
+  overflow-x: hidden !important;
+}
+
+#mmdKenjiKnowledgeV9 {
+  min-height: 100svh;
+  background: #080604;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__brand-mark {
+  width: 54px;
+  font-size: 12px;
+  letter-spacing: .08em;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__hero-overlay {
+  background:
+    linear-gradient(90deg, rgba(0,0,0,.72), rgba(0,0,0,.40) 42%, rgba(0,0,0,.10) 72%, rgba(0,0,0,.02)),
+    linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.28)) !important;
+}
+
+/* Kenji Knowledge shell polish: remove default white edge and strengthen MMD shell identity. */
+html,
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #080604 !important;
+  overflow-x: hidden !important;
+}
+
+#mmdKenjiKnowledgeV9 {
+  min-height: 100svh;
+  background: #080604;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__brand-mark {
+  width: 54px;
+  font-size: 12px;
+  letter-spacing: .08em;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__hero-overlay {
+  background:
+    linear-gradient(90deg, rgba(0,0,0,.72), rgba(0,0,0,.40) 42%, rgba(0,0,0,.10) 72%, rgba(0,0,0,.02)),
+    linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.28)) !important;
+}
