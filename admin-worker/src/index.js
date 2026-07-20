@@ -787,8 +787,10 @@ function kenjiKnowledgeAdminShell(req) {
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+      "x-mmd-route-owner": "admin-worker",
       "x-mmd-page": "kenji-knowledge-admin",
-      "x-mmd-origin": "admin-worker:kenji-knowledge-r2-loader-shell",
+      "x-mmd-origin": "admin-worker:kenji-knowledge-shell",
+      "x-mmd-worker": "admin-worker",
     },
   });
 }
