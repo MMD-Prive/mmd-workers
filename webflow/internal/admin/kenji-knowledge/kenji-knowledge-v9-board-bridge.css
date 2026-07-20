@@ -129,3 +129,22 @@ body {
     linear-gradient(90deg, rgba(0,0,0,.72), rgba(0,0,0,.40) 42%, rgba(0,0,0,.10) 72%, rgba(0,0,0,.02)),
     linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.28)) !important;
 }
+
+/* Kenji Knowledge MMD mark: override loader fallback K mark without touching logic. */
+#mmdKenjiKnowledgeV9 .kk4__brand-mark {
+  width: 60px !important;
+  min-width: 60px !important;
+  font-size: 0 !important;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__brand-mark::after {
+  content: "MMD";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: .08em;
+  color: #0b0703;
+}
