@@ -30,3 +30,24 @@
 #mmdKenjiKnowledgeV9 .kk4__side-image[src*="Kenji%20Board"] {
   filter: brightness(1.14) contrast(1.04) saturate(1.06);
 }
+
+/* Kenji Board normal-light pass: reduce dark overlay and keep all board images naturally visible. */
+#mmdKenjiKnowledgeV9 .kk4__hero-overlay {
+  background:
+    linear-gradient(90deg, rgba(0,0,0,.74), rgba(0,0,0,.42) 44%, rgba(0,0,0,.08) 78%, rgba(0,0,0,.02)),
+    linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.34)) !important;
+}
+
+#mmdKenjiKnowledgeV9 img[src*="Kenji%20Board"] {
+  filter: brightness(1.08) contrast(1.02) saturate(1.04) !important;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__hero-image img[src*="Kenji%20Board"] {
+  filter: brightness(1.12) contrast(1.01) saturate(1.04) !important;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__image-panel img[src*="Kenji%20Board"],
+#mmdKenjiKnowledgeV9 .kk4__runtime-hero img[src*="Kenji%20Board"],
+#mmdKenjiKnowledgeV9 .kk4__side-image[src*="Kenji%20Board"] {
+  filter: brightness(1.10) contrast(1.02) saturate(1.04) !important;
+}
