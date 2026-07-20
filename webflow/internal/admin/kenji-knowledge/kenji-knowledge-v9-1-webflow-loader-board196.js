@@ -84,7 +84,7 @@
 
   var state = {
     cards: loadCards(),
-    view: "knowledge",
+    view: "runtime",
     boardCards: fallbackBoard.map(sanitizeBoardCard),
     boardFilter: "all",
     selectedBoardId: "fallback_payment",
@@ -339,7 +339,7 @@
       escalation_rule: "ถ้าเกี่ยวกับสถานะ สิทธิ์ หรือยอดเงิน ให้ส่งต่อ MMD ตรวจสอบก่อนตอบ",
       related_routes: []
     });
-    setView("knowledge");
+    setView("runtime");
     toast("ส่ง Campaign เข้า Draft แล้ว");
   }
 
@@ -622,7 +622,7 @@
     state.selectedBoardId = card.id;
     renderBoard();
     fillDraft(buildDraftFromBoardCard(card));
-    setView("knowledge");
+    setView("runtime");
     toast("สร้าง Knowledge Draft จาก Board แล้ว");
   }
 
@@ -723,7 +723,7 @@
   renderBoard();
   updateSourcePanel();
   updateLaneNote();
-  setView("knowledge");
+  setView("runtime");
   setText("#kk91BoardStatus", SAFE_MODE_COPY);
   refreshRuntimePublished();
   refreshKnowledgeBackend();
