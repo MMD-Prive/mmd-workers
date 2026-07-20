@@ -6,6 +6,32 @@ main = "src/dashboard-worker.js"
 compatibility_date = "2026-01-01"
 workers_dev = true
 
+# Kenji Knowledge ownership only. Keep these patterns narrow; do not claim
+# /internal/admin/* or either host catch-all.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/kenji-knowledge"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/kenji-knowledge/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/kenji-knowledge*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/kenji-knowledge"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/kenji-knowledge/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/kenji-knowledge*"
+zone_name = "mmdbkk.com"
+
 # ใช้สำหรับ CORS (browser calls)
 [vars]
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com"
