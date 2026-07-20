@@ -32,6 +32,48 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/internal/admin/kenji-knowledge*"
 zone_name = "mmdbkk.com"
 
+# Kenji Knowledge readiness APIs. Keep these exact; do not claim broad
+# /v1/admin/*, /v1/internal/*, or either host catch-all.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/auth/me"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/auth/me"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/internal/kenji/knowledge/published"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/internal/kenji/knowledge/published"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/knowledge/meta"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/knowledge/meta"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/knowledge/list"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/knowledge/list"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/knowledge/draft"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/knowledge/draft"
+zone_name = "mmdbkk.com"
+
 # ใช้สำหรับ CORS (browser calls)
 [vars]
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com"

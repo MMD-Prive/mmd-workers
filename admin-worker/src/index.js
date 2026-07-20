@@ -98,6 +98,11 @@ const MODEL_SESSION_ACTION_PATH = "/v1/model/session/action";
 const MODEL_SESSION_LINK_PATH = "/v1/admin/model/session/link";
 const ADMIN_RICH_MENU_BASE_PATH = "/v1/admin/line/rich-menu";
 const SIGIL_BOARD_PUBLISH_PATH = "/v1/admin/sigil/board/publish";
+const KENJI_KNOWLEDGE_AUTH_ME_PATH = "/v1/admin/auth/me";
+const KENJI_KNOWLEDGE_META_PATH = "/v1/admin/kenji/knowledge/meta";
+const KENJI_KNOWLEDGE_LIST_PATH = "/v1/admin/kenji/knowledge/list";
+const KENJI_KNOWLEDGE_DRAFT_PATH = "/v1/admin/kenji/knowledge/draft";
+const KENJI_KNOWLEDGE_PUBLISHED_PATH = "/v1/internal/kenji/knowledge/published";
 const SIGIL_BOARD_CARDS_KV_KEY = "sigil:board:v1:cards";
 const SIGIL_BOARD_META_KV_KEY = "sigil:board:v1:meta";
 const MEMBER_DASHBOARD_RICH_MENU_BASE_URL = "https://member-dashboard-chat-worker.local/__internal/line/rich-menu";
@@ -132,6 +137,10 @@ export default {
 
     if ((method === "GET" || method === "HEAD") && path === "/internal/admin/kenji-knowledge") {
       return kenjiKnowledgeAdminShell(req);
+    }
+
+    if (isKenjiKnowledgeReadinessRoute(path, method)) {
+      return withCors(await handleKenjiKnowledgeReadinessRoute(req, env, path, method), cors);
     }
 
     // ------------------------------------------------------
@@ -795,11 +804,119 @@ function kenjiKnowledgeAdminShell(req) {
   });
 }
 
+function isKenjiKnowledgeReadinessRoute(path, method) {
+  if ((method === "GET" || method === "HEAD") && path === KENJI_KNOWLEDGE_AUTH_ME_PATH) return true;
+  if ((method === "GET" || method === "HEAD") && path === KENJI_KNOWLEDGE_META_PATH) return true;
+  if ((method === "GET" || method === "HEAD") && path === KENJI_KNOWLEDGE_LIST_PATH) return true;
+  if ((method === "POST" || method === "HEAD") && path === KENJI_KNOWLEDGE_DRAFT_PATH) return true;
+  if ((method === "GET" || method === "HEAD") && path === KENJI_KNOWLEDGE_PUBLISHED_PATH) return true;
+  return false;
+}
+
+async function handleKenjiKnowledgeReadinessRoute(req, env, path, method) {
+  if (!isAllowedOrigin(req, env)) {
+    return jsonForMethod(req, { ok: false, error: "origin_not_allowed" }, 403);
+  }
+
+  if (!isAuthed(req, env)) {
+    return jsonForMethod(req, { ok: false, authenticated: false, error: "unauthorized" }, 401);
+  }
+
+  if (path === KENJI_KNOWLEDGE_AUTH_ME_PATH) {
+    return jsonForMethod(req, {
+      ok: true,
+      authenticated: true,
+      worker: "admin-worker",
+      scope: "internal_admin",
+      source: "admin-worker",
+    });
+  }
+
+  if (path === KENJI_KNOWLEDGE_PUBLISHED_PATH) {
+    return jsonForMethod(req, {
+      ok: true,
+      source: "admin-worker",
+      mode: "published_runtime",
+      cards: [],
+    });
+  }
+
+  if (path === KENJI_KNOWLEDGE_META_PATH) {
+    return jsonForMethod(req, {
+      ok: true,
+      source: "admin-worker",
+      mode: "kenji_knowledge_readiness",
+      storage: {
+        persisted: false,
+        reason: "not_configured",
+      },
+    });
+  }
+
+  if (path === KENJI_KNOWLEDGE_LIST_PATH) {
+    return jsonForMethod(req, {
+      ok: true,
+      source: "admin-worker",
+      mode: "kenji_knowledge_list",
+      cards: [],
+    });
+  }
+
+  if (path === KENJI_KNOWLEDGE_DRAFT_PATH) {
+    if (method === "HEAD") {
+      return jsonForMethod(req, {
+        ok: true,
+        source: "admin-worker",
+        mode: "kenji_knowledge_draft",
+      });
+    }
+
+    const parsed = await parseJsonObject(req);
+    if (!parsed.ok) {
+      return jsonForMethod(req, { ok: false, error: "invalid_json" }, 400);
+    }
+
+    return jsonForMethod(req, {
+      ok: true,
+      source: "admin-worker",
+      mode: "kenji_knowledge_draft",
+      draft_received: true,
+      storage: {
+        persisted: false,
+        reason: "not_configured",
+      },
+    });
+  }
+
+  return jsonForMethod(req, { ok: false, error: "not_found" }, 404);
+}
+
+function jsonForMethod(req, data, status = 200) {
+  if (req.method.toUpperCase() === "HEAD") {
+    return new Response(null, {
+      status,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  }
+  return json(data, status);
+}
+
 async function safeJson(req) {
   try {
     return await req.json();
   } catch (_) {
     return {};
+  }
+}
+
+async function parseJsonObject(req) {
+  try {
+    const data = await req.json();
+    return { ok: Boolean(data && typeof data === "object" && !Array.isArray(data)), data };
+  } catch (_) {
+    return { ok: false, data: null };
   }
 }
 
