@@ -163,6 +163,48 @@ test("suffix pass-through preserves method, query, headers, body, and origin res
   assert.equal(await response.text(), "origin-body");
 });
 
+for (const [routeKind, path] of [["canonical", CANONICAL], ["compatibility-alias", ALIAS]]) {
+  for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+    test(`${method} exact ${routeKind} passes through to origin once`, async () => {
+      const requestPath = `${path}?source=exact-method-test`;
+      const requestBody = JSON.stringify({ routeKind, method });
+      let calls = 0;
+      const response = await withOriginFetchMock(
+        async (incoming) => {
+          calls += 1;
+          assert.equal(incoming.method, method);
+          assert.equal(incoming.url, `https://mmdbkk.com${requestPath}`);
+          assert.equal(incoming.headers.get("content-type"), "application/json");
+          assert.equal(incoming.headers.get("x-safe-test"), "preserved");
+          assert.equal(await incoming.text(), requestBody);
+          return new Response(`origin:${routeKind}:${method}`, {
+            status: 202,
+            headers: { "content-type": "text/exact-origin-test" },
+          });
+        },
+        () => request(requestPath, {
+          method,
+          headers: { "content-type": "application/json", "x-safe-test": "preserved" },
+          body: requestBody,
+        })
+      );
+
+      const body = await response.text();
+      assert.equal(calls, 1);
+      assert.equal(response.status, 202);
+      assert.equal(response.headers.get("content-type"), "text/exact-origin-test");
+      assert.equal(response.headers.get("x-mmd-route-owner"), null);
+      assert.equal(response.headers.get("x-mmd-page"), null);
+      assert.equal(response.headers.get("x-mmd-worker"), null);
+      assert.equal(response.headers.get("x-mmd-route-kind"), null);
+      assert.equal(response.headers.get("x-mmd-route-canonical"), null);
+      assert.equal(body, `origin:${routeKind}:${method}`);
+      assert.equal(body.includes(ROOT), false);
+      assert.equal(body.includes("not_found"), false);
+    });
+  }
+}
+
 test("canonical and alias route ownership is narrow and isolated", async () => {
   const [adminConfig, redirectConfig, immigrateConfig, immigrateSource] = await Promise.all([
     readFile(new URL("./wrangler.toml", import.meta.url), "utf8"),

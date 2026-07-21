@@ -148,11 +148,14 @@ export default {
       return new Response(null, { status: 204, headers: cors });
     }
 
-    if ((method === "GET" || method === "HEAD") && isKenjiKnowledgeShellPath(path)) {
-      return kenjiKnowledgeAdminShell(
-        req,
-        path === KENJI_KNOWLEDGE_CANONICAL_PATH ? "canonical" : "compatibility-alias"
-      );
+    if (isKenjiKnowledgeShellPath(path)) {
+      if (method === "GET" || method === "HEAD") {
+        return kenjiKnowledgeAdminShell(
+          req,
+          path === KENJI_KNOWLEDGE_CANONICAL_PATH ? "canonical" : "compatibility-alias"
+        );
+      }
+      return passThroughKenjiSuffixToOrigin(req);
     }
 
     if (isKenjiKnowledgeReadinessRoute(path, method)) {
