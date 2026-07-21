@@ -98,6 +98,8 @@ const MODEL_SESSION_ACTION_PATH = "/v1/model/session/action";
 const MODEL_SESSION_LINK_PATH = "/v1/admin/model/session/link";
 const ADMIN_RICH_MENU_BASE_PATH = "/v1/admin/line/rich-menu";
 const SIGIL_BOARD_PUBLISH_PATH = "/v1/admin/sigil/board/publish";
+const KENJI_KNOWLEDGE_CANONICAL_PATH = "/sigil/internal/admin/kenji-knowledge";
+const KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH = "/internal/admin/kenji-knowledge";
 const KENJI_KNOWLEDGE_AUTH_ME_PATH = "/v1/admin/auth/me";
 const KENJI_KNOWLEDGE_META_PATH = "/v1/admin/kenji/knowledge/meta";
 const KENJI_KNOWLEDGE_LIST_PATH = "/v1/admin/kenji/knowledge/list";
@@ -138,12 +140,22 @@ export default {
     const method = req.method.toUpperCase();
     const cors = corsHeaders(req, env);
 
+    if (isKenjiKnowledgeCapturedPath(path) && !isKenjiKnowledgeShellPath(path)) {
+      return passThroughKenjiSuffixToOrigin(req);
+    }
+
     if (method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors });
     }
 
-    if ((method === "GET" || method === "HEAD") && path === "/internal/admin/kenji-knowledge") {
-      return kenjiKnowledgeAdminShell(req);
+    if (isKenjiKnowledgeShellPath(path)) {
+      if (method === "GET" || method === "HEAD") {
+        return kenjiKnowledgeAdminShell(
+          req,
+          path === KENJI_KNOWLEDGE_CANONICAL_PATH ? "canonical" : "compatibility-alias"
+        );
+      }
+      return passThroughKenjiSuffixToOrigin(req);
     }
 
     if (isKenjiKnowledgeReadinessRoute(path, method)) {
@@ -841,7 +853,7 @@ function json(data, status = 200) {
   });
 }
 
-function kenjiKnowledgeAdminShell(req) {
+function kenjiKnowledgeAdminShell(req, routeKind) {
   const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#080604"><title>MMD Kenji Knowledge</title><link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%23080604%27/%3E%3Ctext x=%2732%27 y=%2738%27 text-anchor=%27middle%27 font-family=%27Arial,sans-serif%27 font-size=%2715%27 font-weight=%27700%27 fill=%27%23edc674%27%3EMMD%3C/text%3E%3C/svg%3E"><link rel="shortcut icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%23080604%27/%3E%3Ctext x=%2732%27 y=%2738%27 text-anchor=%27middle%27 font-family=%27Arial,sans-serif%27 font-size=%2715%27 font-weight=%27700%27 fill=%27%23edc674%27%3EMMD%3C/text%3E%3C/svg%3E"><style>html,body{margin:0!important;padding:0!important;min-height:100%;background:#080604;color:#fff0dc;overflow-x:hidden}body{background:linear-gradient(180deg,#080604 0%,#050403 100%)}#mmdKenjiKnowledgeV9{min-height:100svh}</style><link rel="stylesheet" href="https://models.mmdbkk.com/webflow/internal/admin/kenji-knowledge/kenji-knowledge-v9-board-bridge.css"></head><body><div id="mmdKenjiKnowledgeV9"></div><script defer src="https://models.mmdbkk.com/webflow/internal/admin/kenji-knowledge/kenji-knowledge-v9-1-webflow-loader-board196.js"></script></body></html>`;
   return new Response(req.method.toUpperCase() === "HEAD" ? null : html, {
     status: 200,
@@ -852,8 +864,27 @@ function kenjiKnowledgeAdminShell(req) {
       "x-mmd-page": "kenji-knowledge-admin",
       "x-mmd-origin": "admin-worker:kenji-knowledge-shell",
       "x-mmd-worker": "admin-worker",
+      "x-mmd-route-canonical": KENJI_KNOWLEDGE_CANONICAL_PATH,
+      "x-mmd-route-kind": routeKind,
     },
   });
+}
+
+function isKenjiKnowledgeShellPath(path) {
+  return path === KENJI_KNOWLEDGE_CANONICAL_PATH || path === KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH;
+}
+
+function isKenjiKnowledgeCapturedPath(path) {
+  return (
+    path.startsWith(KENJI_KNOWLEDGE_CANONICAL_PATH) ||
+    path.startsWith(KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH)
+  );
+}
+
+function passThroughKenjiSuffixToOrigin(req) {
+  // Worker Route origin semantics bypass same-zone Worker routes unless
+  // global_fetch_strictly_public is explicitly enabled (it is not in this Worker).
+  return fetch(req);
 }
 
 function isKenjiKnowledgeReadinessRoute(path, method) {

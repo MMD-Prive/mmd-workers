@@ -74,7 +74,7 @@ Abbreviations: `PV` = production verification required (all rows: yes); `Q all` 
 | 27 | `/sigil/admin/*` | all | explicit front-gate route but pass-through; legacy implementation | admin-worker · page | admin · Q all; B | yes | A,F,G,H,I | P0 | migrate exact pages / B,F |
 | 28 | SIGIL board families | all | pass-through; possible specific worker | canonical board owner unresolved | admin/board · Q all; B | no | F,G,H,J | P0 | reconcile registry/config/prod / F |
 | 29 | `/internal/admin/*` | all | pass-through; admin/legacy overlap | admin-worker · page | admin · Q all; B | no | B,F,G,H,I,J | P0 | enumerate exact routes / B,F |
-| 30 | Kenji Knowledge admin | GET, HEAD | PR B1 prepared: six narrow routes moved from mmd-redirect-worker to admin-worker | admin-worker · page | unchanged existing behavior · Q all | yes | G,H | P0 | deploy/verify admin first, then front-gate config / B1; live verification / B2 |
+| 30 | Kenji Knowledge admin | all captured; GET/HEAD shell only | canonical `/sigil/internal/admin/kenji-knowledge`; old `/internal/admin/kenji-knowledge` retained as `temporary_compatibility_alias`; terminating wildcards cover query URLs, while exact pathname classification passes suffixes/subpaths unchanged to origin | admin-worker · page; origin for non-exact siblings | same shell; unchanged auth · Q all; suffix method/body preserved | yes | G,H | P0 | verify canonical apex/www/slash/query/auth/API/assets/logs and origin pass-through before explicit alias removal approval / B1.2 |
 | 31 | `/v1/admin/*` | all | generic pass-through | admin-worker · API | endpoint-specific admin · Q all; B | no | B,G,H,J | P0 | exact API ownership / F |
 | 32 | LINE webhook aliases | POST, OPTIONS, GET passthrough | env bridge; specific route only for plural path | chat worker canonical; alias unresolved · API | LINE signature · Q all; B | yes | F,G,H,J | P0 | verify signature/body/alias / F |
 | 33 | Rich Menu publisher routes | POST | generic pass-through | admin-worker/internal LINE owner · API | internal/admin · Q all; B | no | B,F,G,H | P0 | enumerate exact endpoints / F |
@@ -171,13 +171,13 @@ Every PR is small and reversible.
 ### PR B — Kenji Knowledge admin exact ownership
 
 - Files: admin-worker handler/tests/wrangler as proven necessary; front-gate handler/tests only after production proof.
-- Route: `/internal/admin/kenji-knowledge` only.
+- Canonical route: `/sigil/internal/admin/kenji-knowledge`; temporary compatibility alias: `/internal/admin/kenji-knowledge`.
 - Tests: GET/HEAD, admin auth, loader asset URLs, content type, query/cookie handling, 404 siblings.
 - Production verification: deployed admin entry point, exact route, asset availability, auth, winning owner.
 - Rollback: restore previous exact route/handler; do not use catch-all as the long-term rollback.
 - Non-goals: other admin routes, board changes, immigrate expansion.
 
-PR B1 repository state is `prepared_not_live_verified`: the handler, owner headers, six narrow route patterns transferred from mmd-redirect-worker to admin-worker, production-entrypoint tests, and handoff runbook are prepared. The global catch-alls remain unchanged. PR B2 may remove any rollback-only front-gate source only after the ordered live verification in `docs/operations/KENJI_KNOWLEDGE_ROUTE_HANDOFF_20260720.md`.
+PR B1.2 repository state is `prepared_not_live_verified`: canonical and alias paths share one shell implementation; six canonical patterns are added while six alias patterns remain; route-kind and canonical headers distinguish them. Cloudflare requires each terminating wildcard to match query-bearing URLs, so admin-worker classifies the pathname exactly and uses the proven Route-origin `fetch(request)` behavior for captured non-exact suffixes/subpaths. Those sibling URLs receive the origin response unchanged—not the Kenji shell or admin JSON 404—and same-zone recursion is avoided because `global_fetch_strictly_public` is not enabled. The global catch-alls remain unchanged. Alias removal requires canonical production deploy, authenticated apex/www smokes, API and asset MIME passes, browser acceptance, an observation window, and explicit approval. Do not mark the alias retired before that gate.
 
 ### PR C — Public inline pages
 
