@@ -250,7 +250,7 @@ export default {
       // STRICT: X-Confirm-Key only
       // ====================================================
       if (method === "POST" && path === SIGIL_BOARD_PUBLISH_PATH) {
-        if (!isAuthed(req, env)) {
+        if (!(await isAuthed(req, env))) {
           return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
         }
         return withCors(json(await publishSigilBoardQueue(env)), cors);
@@ -464,7 +464,7 @@ export default {
       // CORE ADMIN AUTH
       // Bearer OR Confirm-Key
       // ====================================================
-      if (!isAuthed(req, env)) {
+      if (!(await isAuthed(req, env))) {
         return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
       }
 
@@ -809,7 +809,7 @@ function withCors(res, cors) {
 /* =========================
    Auth
 ========================= */
-function isAuthed(req, env) {
+async function isAuthed(req, env) {
   const auth = req.headers.get("Authorization") || "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
   if (env.ADMIN_BEARER && bearer && bearer === env.ADMIN_BEARER) return true;
@@ -818,7 +818,7 @@ function isAuthed(req, env) {
   const ck = str(req.headers.get("X-Confirm-Key") || "");
   if (env.CONFIRM_KEY && ck && ck === env.CONFIRM_KEY) return true;
 
-  if (isAdminGateSessionAuthed(req, env)) return true;
+  if (await isAdminGateSessionAuthed(req, env)) return true;
 
   return false;
 }
@@ -828,32 +828,30 @@ function isConfirmKeyAuthed(req, env) {
   return Boolean(env.CONFIRM_KEY && ck && ck === env.CONFIRM_KEY);
 }
 
-function isAdminGateSessionAuthed(req, env) {
-  const session = readAdminGateSession(req);
-  if (!session || session.ok !== true) return false;
-  if (!session.baseUrl || !ADMIN_GATE_ALLOWED_BASE_URLS.has(session.baseUrl)) return false;
-  if (session.baseUrl !== new URL(req.url).origin) return false;
-  if (!Number.isFinite(session.at)) return false;
-  const age = Date.now() - session.at;
-  if (age < 0 || age > ADMIN_GATE_TTL_MS) return false;
-
-  const bearer = str(session.bearer || "");
-  if (env.ADMIN_BEARER && bearer && bearer === env.ADMIN_BEARER) return true;
-  if (env.INTERNAL_TOKEN && bearer && bearer === env.INTERNAL_TOKEN) return true;
-
-  const confirmKey = str(session.confirmKey || "");
-  if (env.CONFIRM_KEY && confirmKey && confirmKey === env.CONFIRM_KEY) return true;
-
-  return false;
+async function isAdminGateSessionAuthed(req, env) {
+  const session = await readAdminGateSession(req, env);
+  if (!session || session.version !== 1) return false;
+  if (session.scope !== "internal_admin") return false;
+  if (!session.host || !ADMIN_GATE_ALLOWED_BASE_URLS.has(session.host)) return false;
+  if (session.host !== new URL(req.url).origin) return false;
+  if (!Number.isFinite(session.iat) || !Number.isFinite(session.exp)) return false;
+  const now = Date.now();
+  if (session.iat > now || session.exp <= now || session.exp - session.iat > ADMIN_GATE_TTL_MS) return false;
+  if (!session.nonce || typeof session.nonce !== "string") return false;
+  return true;
 }
 
-function readAdminGateSession(req) {
+async function readAdminGateSession(req, env) {
   const raw = parseCookieMap(req).get(ADMIN_GATE_SESSION_COOKIE);
   if (!raw) return null;
 
   try {
     const decoded = decodeURIComponent(raw);
-    const parsed = JSON.parse(atob(decoded));
+    const [payloadPart, signaturePart] = decoded.split(".");
+    if (!payloadPart || !signaturePart) return null;
+    const expected = await signAdminGatePayload(payloadPart, env);
+    if (!expected || !(await constantTimeEqual(signaturePart, expected))) return null;
+    const parsed = JSON.parse(base64UrlDecode(payloadPart));
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
     return parsed;
   } catch (_) {
@@ -897,17 +895,20 @@ async function handleAdminLogin(req, env) {
   if (!proof) return adminLoginPage(req, { status: 401, error: "Unable to sign in." });
 
   const next = normalizeAdminLoginNext(form.get("next"), requestOrigin);
+  const now = Date.now();
   const session = {
-    ok: true,
-    at: Date.now(),
+    version: 1,
+    scope: "internal_admin",
+    host: requestOrigin,
+    iat: now,
+    exp: now + ADMIN_GATE_TTL_MS,
     nonce: crypto.randomUUID(),
-    baseUrl: requestOrigin,
-    [proof.kind]: proof.value,
+    auth_method: proof.kind,
   };
   const headers = new Headers({
     "Cache-Control": "no-store, private",
     Location: next,
-    "Set-Cookie": makeAdminGateCookie(session),
+    "Set-Cookie": await makeAdminGateCookie(session, env),
   });
   return new Response(null, { status: 303, headers });
 }
@@ -955,9 +956,50 @@ async function constantTimeEqual(left, right) {
   return difference === 0;
 }
 
-function makeAdminGateCookie(session) {
-  const value = encodeURIComponent(btoa(JSON.stringify(session)));
+async function makeAdminGateCookie(session, env) {
+  const payload = base64UrlEncode(JSON.stringify(session));
+  const signature = await signAdminGatePayload(payload, env);
+  if (!signature) throw new Error("missing_admin_session_signing_key");
+  const value = encodeURIComponent(`${payload}.${signature}`);
   return `${ADMIN_GATE_SESSION_COOKIE}=${value}; Path=/; Max-Age=${Math.floor(ADMIN_GATE_TTL_MS / 1000)}; HttpOnly; Secure; SameSite=Lax`;
+}
+
+function getAdminSessionSigningSecret(env) {
+  return str(env.ADMIN_SESSION_SECRET || env.ADMIN_BEARER || env.INTERNAL_TOKEN || env.CONFIRM_KEY || "");
+}
+
+async function signAdminGatePayload(payload, env) {
+  const secret = getAdminSessionSigningSecret(env);
+  if (!secret) return "";
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+  return base64UrlEncodeBytes(new Uint8Array(signature));
+}
+
+function base64UrlEncode(value) {
+  return base64UrlEncodeBytes(new TextEncoder().encode(value));
+}
+
+function base64UrlEncodeBytes(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlDecode(value) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
 }
 
 function normalizeAdminLoginNext(raw, origin) {
@@ -1134,7 +1176,7 @@ async function handleKenjiKnowledgeReadinessRoute(req, env, path, method) {
     return jsonForMethod(req, { ok: false, error: "origin_not_allowed" }, 403);
   }
 
-  if (!isAuthed(req, env)) {
+  if (!(await isAuthed(req, env))) {
     return jsonForMethod(req, { ok: false, authenticated: false, error: "unauthorized" }, 401);
   }
 
@@ -1650,7 +1692,7 @@ async function handleModelSchemaPatchV1Route(req, env, path) {
   if (!isAllowedOrigin(req, env)) return modelSchemaPatchJson({ ok: false, error: "origin_not_allowed" }, 403);
 
   const body = await safeJson(req);
-  const adminAuthed = isAuthed(req, env);
+  const adminAuthed = await isAuthed(req, env);
   const isAuthorizeRoute = path === MODEL_SCHEMA_PATCH_V1_ROUTES.privateFlashAuthorize;
   if (isAuthorizeRoute && !adminAuthed) return modelSchemaPatchJson({ ok: false, error: "unauthorized" }, 401);
   if (!adminAuthed) return modelSchemaPatchJson({ ok: false, error: "signed_t_required" }, 401);

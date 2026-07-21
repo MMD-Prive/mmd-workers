@@ -6,6 +6,7 @@ import {
 } from "./internal-pages";
 
 export interface InternalRoutesEnv extends InternalPageEnv {
+  ADMIN_WORKER?: Fetcher;
   ADMIN_WORKER_BASE_URL?: string;
   ASSETS?: Fetcher;
 }
@@ -29,6 +30,10 @@ function publicAdminAuthBaseUrl(request: Request): string {
   if (hostname === "mmdbkk.com") return "https://mmdbkk.com";
   if (hostname === "www.mmdbkk.com") return "https://www.mmdbkk.com";
   return "";
+}
+
+function adminLoginRedirect(url: URL): Response {
+  return redirect(`/internal/admin/login?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`, 302);
 }
 
 async function serveAsset(request: Request, env: InternalRoutesEnv): Promise<Response | null> {
@@ -60,26 +65,28 @@ async function requireAdminGate(request: Request, env: InternalRoutesEnv): Promi
   if (url.searchParams.has("mock")) return null;
 
   const adminBase = publicAdminAuthBaseUrl(request);
-  if (!adminBase) {
-    return redirect(`/internal/admin/login?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`, 302);
-  }
+  if (!adminBase || !env.ADMIN_WORKER) return adminLoginRedirect(url);
 
   try {
-    const verifyRes = await fetch(`${adminBase}/v1/admin/auth/me`, {
+    const publicHost = new URL(adminBase).hostname;
+    const verifyReq = new Request(`${adminBase}/v1/admin/auth/me`, {
       method: "GET",
       headers: {
         accept: "application/json",
         cookie: request.headers.get("cookie") || "",
-        "x-mmd-gate": "mmd_admin_gate_v1",
+        "user-agent": request.headers.get("user-agent") || "",
+        "x-mmd-auth-bridge": "immigrate-internal-admin-gate",
+        "x-mmd-public-host": publicHost,
       },
     });
+    const verifyRes = await env.ADMIN_WORKER.fetch(verifyReq);
 
     if (verifyRes.ok) return null;
   } catch {
     // Use admin login fallback below.
   }
 
-  return redirect(`/internal/admin/login?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`, 302);
+  return adminLoginRedirect(url);
 }
 
 async function proxyAdminApi(request: Request, env: InternalRoutesEnv): Promise<Response | null> {

@@ -22,21 +22,27 @@ async function jsonRequest(path, init = {}, env = BASE_ENV, host = "mmdbkk.com")
   return { response, body: await response.json() };
 }
 
-function adminGateCookie(overrides = {}) {
+async function adminGateCookie(overrides = {}) {
+  const now = Date.now();
   const session = {
-    ok: true,
-    at: Date.now(),
-    baseUrl: "https://mmdbkk.com",
-    bearer: ADMIN_BEARER,
+    version: 1,
+    scope: "internal_admin",
+    host: "https://mmdbkk.com",
+    iat: now,
+    exp: now + (8 * 60 * 60 * 1000),
+    nonce: crypto.randomUUID(),
+    auth_method: "admin_login",
     ...overrides,
   };
-  return `${ADMIN_COOKIE_NAME}=${encodeURIComponent(btoa(JSON.stringify(session)))}`;
+  const payload = base64UrlEncode(JSON.stringify(session));
+  const signature = await signPayload(payload);
+  return `${ADMIN_COOKIE_NAME}=${encodeURIComponent(`${payload}.${signature}`)}`;
 }
 
-function cookieHeaders({ origin = "https://mmdbkk.com", cookie = adminGateCookie(), contentType = false } = {}) {
+async function cookieHeaders({ origin = "https://mmdbkk.com", cookie, contentType = false } = {}) {
   return {
     Origin: origin,
-    Cookie: cookie,
+    Cookie: cookie || await adminGateCookie(),
     ...(contentType ? { "content-type": "application/json" } : {}),
   };
 }
@@ -54,7 +60,7 @@ test("no browser auth returns 401", async () => {
 
 test("valid HttpOnly admin gate cookie is browser-compatible auth", async () => {
   const { response, body } = await jsonRequest("/v1/admin/auth/me", {
-    headers: cookieHeaders(),
+    headers: await cookieHeaders(),
   });
 
   assert.equal(response.status, 200);
@@ -69,13 +75,13 @@ test("valid HttpOnly admin gate cookie is browser-compatible auth", async () => 
 
 test("invalid and expired admin gate cookies return 401", async () => {
   const invalid = await jsonRequest("/v1/admin/auth/me", {
-    headers: cookieHeaders({ cookie: adminGateCookie({ bearer: "wrong" }) }),
+    headers: await cookieHeaders({ cookie: `${ADMIN_COOKIE_NAME}=invalid.signed` }),
   });
   assert.equal(invalid.response.status, 401);
   assert.equal(invalid.body.error, "unauthorized");
 
   const expired = await jsonRequest("/v1/admin/auth/me", {
-    headers: cookieHeaders({ cookie: adminGateCookie({ at: Date.now() - 9 * 60 * 60 * 1000 }) }),
+    headers: await cookieHeaders({ cookie: await adminGateCookie({ iat: Date.now() - 9 * 60 * 60 * 1000, exp: Date.now() - 1000 }) }),
   });
   assert.equal(expired.response.status, 401);
   assert.equal(expired.body.error, "unauthorized");
@@ -83,15 +89,15 @@ test("invalid and expired admin gate cookies return 401", async () => {
 
 test("apex and www origins accept their separately host-bound browser cookies", async () => {
   const apex = await jsonRequest("/v1/admin/auth/me", {
-    headers: cookieHeaders({ origin: "https://mmdbkk.com" }),
+    headers: await cookieHeaders({ origin: "https://mmdbkk.com" }),
   });
   assert.equal(apex.response.status, 200);
   assert.equal(apex.response.headers.get("access-control-allow-origin"), "https://mmdbkk.com");
 
   const www = await jsonRequest("/v1/admin/auth/me", {
-    headers: cookieHeaders({
+    headers: await cookieHeaders({
       origin: "https://www.mmdbkk.com",
-      cookie: adminGateCookie({ baseUrl: "https://www.mmdbkk.com" }),
+      cookie: await adminGateCookie({ host: "https://www.mmdbkk.com" }),
     }),
   }, BASE_ENV, "www.mmdbkk.com");
   assert.equal(www.response.status, 200);
@@ -100,7 +106,7 @@ test("apex and www origins accept their separately host-bound browser cookies", 
 
 test("unapproved origin returns 403 before auth data", async () => {
   const { response, body } = await jsonRequest("/v1/admin/auth/me", {
-    headers: cookieHeaders({ origin: "https://evil.example" }),
+    headers: await cookieHeaders({ origin: "https://evil.example" }),
   });
 
   assert.equal(response.status, 403);
@@ -126,7 +132,7 @@ test("OPTIONS returns 204 for browser preflight", async () => {
 test("HEAD enforces browser auth and returns an empty body", async () => {
   const authed = await request("/v1/admin/auth/me", {
     method: "HEAD",
-    headers: cookieHeaders(),
+    headers: await cookieHeaders(),
   });
   assert.equal(authed.status, 200);
   assert.equal(await authed.text(), "");
@@ -141,7 +147,7 @@ test("HEAD enforces browser auth and returns an empty body", async () => {
 
 test("published endpoint uses the same browser auth contract and readiness schema", async () => {
   const { response, body } = await jsonRequest("/v1/internal/kenji/knowledge/published", {
-    headers: cookieHeaders(),
+    headers: await cookieHeaders(),
   });
 
   assert.equal(response.status, 200);
@@ -156,7 +162,7 @@ test("published endpoint uses the same browser auth contract and readiness schem
 test("draft POST uses the same browser auth contract and remains inert", async () => {
   const { response, body } = await jsonRequest("/v1/admin/kenji/knowledge/draft", {
     method: "POST",
-    headers: cookieHeaders({ contentType: true }),
+    headers: await cookieHeaders({ contentType: true }),
     body: JSON.stringify({ title: "Browser draft" }),
   });
 
@@ -168,7 +174,7 @@ test("draft POST uses the same browser auth contract and remains inert", async (
 
 test("responses do not expose browser cookie or server secrets", async () => {
   const { body } = await jsonRequest("/v1/admin/auth/me", {
-    headers: cookieHeaders(),
+    headers: await cookieHeaders(),
   });
   const serialized = JSON.stringify(body);
 
@@ -184,3 +190,26 @@ test("no broad routes are added for browser auth compatibility", async () => {
   assert.doesNotMatch(adminConfig, /pattern = "(?:www\.)?mmdbkk\.com\/v1\/internal\/\*"/);
   assert.doesNotMatch(adminConfig, /pattern = "(?:www\.)?mmdbkk\.com\/\*"/);
 });
+
+async function signPayload(payload) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(ADMIN_BEARER),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+  return base64UrlEncodeBytes(new Uint8Array(signature));
+}
+
+function base64UrlEncode(value) {
+  return base64UrlEncodeBytes(new TextEncoder().encode(value));
+}
+
+function base64UrlEncodeBytes(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}

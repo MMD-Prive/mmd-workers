@@ -9,6 +9,7 @@ const SESSION = "/internal/admin/login/session";
 const KENJI = "/sigil/internal/admin/kenji-knowledge";
 const ENV = {
   ADMIN_BEARER: "focused_admin_login_test_credential",
+  INTERNAL_TOKEN: "focused_admin_login_test_internal_token",
   CONFIRM_KEY: "focused_admin_login_test_confirm_key",
   ALLOWED_ORIGINS: "https://mmdbkk.com,https://www.mmdbkk.com",
 };
@@ -27,6 +28,15 @@ function login(credential = ENV.ADMIN_BEARER, { host = "mmdbkk.com", next = KENJ
 
 function cookiePair(response) {
   return (response.headers.get("set-cookie") || "").split(";", 1)[0];
+}
+
+function cookieValue(cookie) {
+  return decodeURIComponent(String(cookie || "").split("=", 2)[1] || "");
+}
+
+function decodeCookiePayload(cookie) {
+  const [payloadPart] = cookieValue(cookie).split(".");
+  return JSON.parse(base64UrlDecode(payloadPart));
 }
 
 async function withOriginFetchMock(mock, run) {
@@ -107,6 +117,17 @@ test("valid login issues a fresh secure host-only cookie and redirects", async (
     assert.equal(body.includes(cookiePair(first)), false);
     assert.equal(logs.length, 0);
     assert.equal(logs.flat().join(" ").includes(ENV.ADMIN_BEARER), false);
+    assert.equal(header.includes(ENV.ADMIN_BEARER), false);
+    assert.equal(header.includes(ENV.INTERNAL_TOKEN), false);
+    assert.equal(header.includes(ENV.CONFIRM_KEY), false);
+    assert.equal(header.includes("focused_admin_login_test_credential"), false);
+    const payload = decodeCookiePayload(cookiePair(first));
+    assert.deepEqual(Object.keys(payload).sort(), ["auth_method", "exp", "host", "iat", "nonce", "scope", "version"]);
+    assert.equal(payload.scope, "internal_admin");
+    assert.equal(payload.host, "https://mmdbkk.com");
+    assert.equal(JSON.stringify(payload).includes(ENV.ADMIN_BEARER), false);
+    assert.equal(JSON.stringify(payload).includes(ENV.INTERNAL_TOKEN), false);
+    assert.equal(JSON.stringify(payload).includes(ENV.CONFIRM_KEY), false);
     assert.notEqual(cookiePair(first), "");
     assert.notEqual(cookiePair(second), "");
     assert.notEqual(cookiePair(first), cookiePair(second));
@@ -149,12 +170,15 @@ test("invalid, empty, malformed, and cross-origin login never set a cookie", asy
   }
 });
 
-test("expired, future, and tampered cookies are rejected", async () => {
-  const expired = sessionCookie({ at: Date.now() - (9 * 60 * 60 * 1000) });
-  const future = sessionCookie({ at: Date.now() + 60_000 });
-  const tampered = sessionCookie({ bearer: "tampered" });
+test("expired, future, tampered payload, and tampered signature cookies are rejected", async () => {
+  const now = Date.now();
+  const valid = cookiePair(await login());
+  const expired = await sessionCookie({ iat: now - (9 * 60 * 60 * 1000), exp: now - 1000 });
+  const future = await sessionCookie({ iat: now + 60_000, exp: now + ADMIN_GATE_TTL_MS });
+  const tamperedPayload = tamperCookiePayload(valid, { host: "https://www.mmdbkk.com" });
+  const tamperedSignature = tamperCookieSignature(valid);
 
-  for (const Cookie of [expired, future, tampered]) {
+  for (const Cookie of [expired, future, tamperedPayload, tamperedSignature]) {
     const response = await request("/v1/admin/auth/me", {
       headers: { Origin: "https://mmdbkk.com", Cookie },
     });
@@ -227,6 +251,18 @@ test("next redirects are allowlisted and external targets fall back to canonical
     const response = await login(ENV.ADMIN_BEARER, { next });
     assert.equal(response.headers.get("location"), KENJI);
   }
+});
+
+test("existing bearer and confirm-key auth still work without a cookie", async () => {
+  const bearer = await request("/v1/admin/auth/me", {
+    headers: { Origin: "https://mmdbkk.com", Authorization: `Bearer ${ENV.INTERNAL_TOKEN}` },
+  });
+  assert.equal(bearer.status, 200);
+
+  const confirmKey = await request("/v1/admin/auth/me", {
+    headers: { Origin: "https://mmdbkk.com", "X-Confirm-Key": ENV.CONFIRM_KEY },
+  });
+  assert.equal(confirmKey.status, 200);
 });
 
 test("unauthorized admin root points only to the canonical login", async () => {
@@ -350,15 +386,68 @@ test("login ownership routes are query-safe, narrow, unique, and absent from oth
   assert.doesNotMatch(admin, /pattern = "(?:www\.)?mmdbkk\.com\/internal\/admin\/login\/session\*"/);
 });
 
-function sessionCookie(overrides = {}) {
+const ADMIN_GATE_TTL_MS = 8 * 60 * 60 * 1000;
+
+async function sessionCookie(overrides = {}) {
+  const now = Date.now();
   const session = {
-    ok: true,
-    at: Date.now(),
-    baseUrl: "https://mmdbkk.com",
-    bearer: ENV.ADMIN_BEARER,
+    version: 1,
+    scope: "internal_admin",
+    host: "https://mmdbkk.com",
+    iat: now,
+    exp: now + ADMIN_GATE_TTL_MS,
+    nonce: crypto.randomUUID(),
+    auth_method: "bearer",
     ...overrides,
   };
-  return `mmd_admin_gate_v1=${encodeURIComponent(btoa(JSON.stringify(session)))}`;
+  const payload = base64UrlEncode(JSON.stringify(session));
+  const signature = await signPayload(payload);
+  return `mmd_admin_gate_v1=${encodeURIComponent(`${payload}.${signature}`)}`;
+}
+
+function tamperCookiePayload(cookie, patch) {
+  const [payloadPart, signaturePart] = cookieValue(cookie).split(".");
+  const payload = JSON.parse(base64UrlDecode(payloadPart));
+  const tampered = base64UrlEncode(JSON.stringify({ ...payload, ...patch }));
+  return `mmd_admin_gate_v1=${encodeURIComponent(`${tampered}.${signaturePart}`)}`;
+}
+
+function tamperCookieSignature(cookie) {
+  const [payloadPart, signaturePart] = cookieValue(cookie).split(".");
+  const replacement = signaturePart.endsWith("A") ? "B" : "A";
+  return `mmd_admin_gate_v1=${encodeURIComponent(`${payloadPart}.${signaturePart.slice(0, -1)}${replacement}`)}`;
+}
+
+async function signPayload(payload) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(ENV.ADMIN_BEARER),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+  return base64UrlEncodeBytes(new Uint8Array(signature));
+}
+
+function base64UrlEncode(value) {
+  return base64UrlEncodeBytes(new TextEncoder().encode(value));
+}
+
+function base64UrlEncodeBytes(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlDecode(value) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
 }
 
 function count(value, needle) {
