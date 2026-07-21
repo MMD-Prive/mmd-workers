@@ -185,6 +185,27 @@ try {
     assert.equal(bindingCalls[0].headers.get("x-mmd-auth-bridge"), "immigrate-internal-admin-api");
     assert.equal(bindingCalls[0].headers.get("x-mmd-public-host"), "www.mmdbkk.com");
   }
+
+  {
+    bindingCalls.length = 0;
+    const payload = JSON.stringify({ session_id: "sess_public_safe", source: "test" });
+    const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/create-job?source=worker-page", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer should-not-forward",
+        cookie: "mmd_admin_gate_v1=signed-test-cookie",
+      },
+      body: payload,
+    }), bridgeEnv);
+    assert.equal(response.status, 200);
+    assert.equal(bindingCalls.length, 1);
+    assert.equal(bindingCalls[0].url, "https://mmdbkk.com/v1/admin/create-job?source=worker-page");
+    assert.equal(bindingCalls[0].method, "POST");
+    assert.equal(bindingCalls[0].headers.get("authorization"), null);
+    assert.equal(bindingCalls[0].headers.get("content-type"), "application/json");
+    assert.equal(await bindingCalls[0].text(), payload);
+  }
 } finally {
   await rm(tmp, { recursive: true, force: true });
 }

@@ -98,8 +98,10 @@ const MODEL_SESSION_ACTION_PATH = "/v1/model/session/action";
 const MODEL_SESSION_LINK_PATH = "/v1/admin/model/session/link";
 const ADMIN_RICH_MENU_BASE_PATH = "/v1/admin/line/rich-menu";
 const SIGIL_BOARD_PUBLISH_PATH = "/v1/admin/sigil/board/publish";
-const KENJI_KNOWLEDGE_CANONICAL_PATH = "/sigil/internal/admin/kenji-knowledge";
-const KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH = "/internal/admin/kenji-knowledge";
+const INTERNAL_ADMIN_PREFIX = "/internal/admin";
+const SIGIL_INTERNAL_ADMIN_PREFIX = "/sigil/internal/admin";
+const KENJI_KNOWLEDGE_CANONICAL_PATH = "/internal/admin/kenji-knowledge";
+const KENJI_KNOWLEDGE_LEGACY_SIGIL_PATH = "/sigil/internal/admin/kenji-knowledge";
 const KENJI_KNOWLEDGE_AUTH_ME_PATH = "/v1/admin/auth/me";
 const KENJI_KNOWLEDGE_META_PATH = "/v1/admin/kenji/knowledge/meta";
 const KENJI_KNOWLEDGE_LIST_PATH = "/v1/admin/kenji/knowledge/list";
@@ -148,8 +150,12 @@ export default {
     const method = req.method.toUpperCase();
     const cors = corsHeaders(req, env);
 
+    if (isLegacySigilInternalAdminPath(path)) {
+      return redirectLegacySigilInternalAdmin(req);
+    }
+
     if (isKenjiKnowledgeCapturedPath(path) && !isKenjiKnowledgeShellPath(path)) {
-      return passThroughKenjiSuffixToOrigin(req);
+      return adminRouteNotFound();
     }
 
     if (
@@ -157,7 +163,7 @@ export default {
       path !== ADMIN_LOGIN_PAGE_PATH &&
       path !== ADMIN_LOGIN_SESSION_PATH
     ) {
-      return passThroughKenjiSuffixToOrigin(req);
+      return adminRouteNotFound();
     }
 
     if (method === "OPTIONS") {
@@ -180,12 +186,9 @@ export default {
 
     if (isKenjiKnowledgeShellPath(path)) {
       if (method === "GET" || method === "HEAD") {
-        return kenjiKnowledgeAdminShell(
-          req,
-          path === KENJI_KNOWLEDGE_CANONICAL_PATH ? "canonical" : "compatibility-alias"
-        );
+        return kenjiKnowledgeAdminShell(req, "canonical");
       }
-      return passThroughKenjiSuffixToOrigin(req);
+      return methodNotAllowed(["GET", "HEAD"]);
     }
 
     if (isKenjiKnowledgeReadinessRoute(path, method)) {
@@ -1009,25 +1012,31 @@ function normalizeAdminLoginNext(raw, origin) {
   if (hasTraversalSegment(value)) return fallback;
   try {
     const target = new URL(value, origin);
-    if (target.origin !== origin || !isAllowedAdminNextPath(target.pathname)) return fallback;
+    const pathname = canonicalizeAdminNextPath(target.pathname);
+    if (target.origin !== origin || !isAllowedAdminNextPath(pathname)) return fallback;
     if (hasCredentialQuery(target.searchParams)) return fallback;
-    return `${target.pathname}${target.search}`;
+    return `${pathname}${target.search}`;
   } catch (_) {
     return fallback;
   }
 }
 
+function canonicalizeAdminNextPath(pathname) {
+  if (isLegacySigilInternalAdminPath(pathname)) {
+    return `${INTERNAL_ADMIN_PREFIX}${pathname.slice(SIGIL_INTERNAL_ADMIN_PREFIX.length)}`;
+  }
+  return pathname;
+}
+
 function isAllowedAdminNextPath(pathname) {
   // Approved repository-backed protected destinations only:
-  // - Kenji canonical and compatibility alias shells owned by admin-worker.
+  // - Kenji canonical shell owned by admin-worker.
   // - Immigrate protected control-room pages that redirect through this login.
   // - Existing create-session/create-job internal pages linked from control-room.
   const exact = new Set([
     ADMIN_LOGIN_ROOT_PATH,
     KENJI_KNOWLEDGE_CANONICAL_PATH,
     `${KENJI_KNOWLEDGE_CANONICAL_PATH}/`,
-    KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH,
-    `${KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH}/`,
     ADMIN_NEXT_CREATE_SESSION_LEGACY_PATH,
     ADMIN_NEXT_CREATE_SESSION_PATH,
     ADMIN_NEXT_CREATE_JOB_PATH,
@@ -1146,20 +1155,32 @@ function kenjiKnowledgeAdminShell(req, routeKind) {
 }
 
 function isKenjiKnowledgeShellPath(path) {
-  return path === KENJI_KNOWLEDGE_CANONICAL_PATH || path === KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH;
+  return path === KENJI_KNOWLEDGE_CANONICAL_PATH;
 }
 
 function isKenjiKnowledgeCapturedPath(path) {
-  return (
-    path.startsWith(KENJI_KNOWLEDGE_CANONICAL_PATH) ||
-    path.startsWith(KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH)
-  );
+  return path.startsWith(KENJI_KNOWLEDGE_CANONICAL_PATH);
 }
 
-function passThroughKenjiSuffixToOrigin(req) {
-  // Worker Route origin semantics bypass same-zone Worker routes unless
-  // global_fetch_strictly_public is explicitly enabled (it is not in this Worker).
-  return fetch(req);
+function isLegacySigilInternalAdminPath(path) {
+  return path === SIGIL_INTERNAL_ADMIN_PREFIX || path.startsWith(`${SIGIL_INTERNAL_ADMIN_PREFIX}/`);
+}
+
+function redirectLegacySigilInternalAdmin(req) {
+  const url = new URL(req.url);
+  url.pathname = `${INTERNAL_ADMIN_PREFIX}${url.pathname.slice(SIGIL_INTERNAL_ADMIN_PREFIX.length)}`;
+  return new Response(null, {
+    status: 308,
+    headers: {
+      "cache-control": "no-store",
+      location: `${url.pathname}${url.search}`,
+      "x-mmd-route-canonical": `${url.pathname}${url.search}`,
+    },
+  });
+}
+
+function adminRouteNotFound() {
+  return json({ ok: false, error: "admin_route_not_found" }, 404);
 }
 
 function isKenjiKnowledgeReadinessRoute(path, method) {

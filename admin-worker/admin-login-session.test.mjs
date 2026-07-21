@@ -6,7 +6,8 @@ import worker from "./src/dashboard-worker.js";
 
 const LOGIN = "/internal/admin/login";
 const SESSION = "/internal/admin/login/session";
-const KENJI = "/sigil/internal/admin/kenji-knowledge";
+const KENJI = "/internal/admin/kenji-knowledge";
+const LEGACY_SIGIL_KENJI = "/sigil/internal/admin/kenji-knowledge";
 const ENV = {
   ADMIN_BEARER: "focused_admin_login_test_credential",
   INTERNAL_TOKEN: "focused_admin_login_test_internal_token",
@@ -72,7 +73,7 @@ test("apex and www query-bearing login pages render without redirecting", async 
     assert.equal(response.status, 200, host);
     assert.equal(response.headers.get("location"), null, host);
     assert.match(html, /action="\/internal\/admin\/login\/session"/, host);
-    assert.match(html, /name="next" value="\/sigil\/internal\/admin\/kenji-knowledge\?source=query-login"/, host);
+    assert.match(html, /name="next" value="\/internal\/admin\/kenji-knowledge\?source=query-login"/, host);
   }
 });
 
@@ -81,7 +82,7 @@ test("query login sanitizes external, protocol-relative, and unapproved next val
     const response = await request(`${LOGIN}?next=${encodeURIComponent(next)}`);
     const html = await response.text();
     assert.equal(response.status, 200);
-    assert.match(html, /name="next" value="\/sigil\/internal\/admin\/kenji-knowledge"/);
+    assert.match(html, /name="next" value="\/internal\/admin\/kenji-knowledge"/);
     assert.equal(html.includes("evil.example"), false);
     assert.equal(html.includes("/unapproved"), false);
   }
@@ -236,7 +237,7 @@ test("direct workers.dev auth/me rejects public-host cookies and forwarded-host 
 test("next redirects are allowlisted and external targets fall back to canonical", async () => {
   const allowedTargets = [
     `${KENJI}?source=login`,
-    "/internal/admin/kenji-knowledge",
+    LEGACY_SIGIL_KENJI,
     "/internal/admin/control-room",
     "/internal/admin/control-room?tab=line-inbox",
     "/internal/admin/control-room/sessions/live?filter=open",
@@ -246,7 +247,7 @@ test("next redirects are allowlisted and external targets fall back to canonical
   ];
   for (const next of allowedTargets) {
     const allowed = await login(ENV.ADMIN_BEARER, { next });
-    assert.equal(allowed.headers.get("location"), next);
+    assert.equal(allowed.headers.get("location"), next === LEGACY_SIGIL_KENJI ? KENJI : next);
   }
 
   for (const next of [
@@ -325,7 +326,7 @@ test("exact session endpoint never passes through and keeps method behavior", as
   assert.equal(calls, 0);
 });
 
-test("captured login suffixes pass through to origin exactly once without login artifacts", async () => {
+test("captured login suffixes fail closed without origin/Webflow fallback", async () => {
   const cases = [
     ["mmdbkk.com", `${LOGIN}-other?source=apex`],
     ["mmdbkk.com", `${LOGIN}/foo?source=slash`],
@@ -338,32 +339,19 @@ test("captured login suffixes pass through to origin exactly once without login 
     const requestBody = JSON.stringify({ safe: true });
     const response = await withOriginFetchMock(async (incoming) => {
       calls += 1;
-      assert.equal(incoming.method, "POST");
-      assert.equal(incoming.url, `https://${host}${path}`);
-      assert.equal(incoming.headers.get("content-type"), "application/json");
-      assert.equal(incoming.headers.get("x-safe-test"), "preserved");
-      assert.equal(await incoming.text(), requestBody);
-      return new Response("origin-preserved", {
-        status: 207,
-        headers: { "content-type": "application/origin-test", "x-origin-test": "true" },
-      });
+      return new Response("unexpected-origin");
     }, () => request(path, {
       method: "POST",
       headers: { "content-type": "application/json", "x-safe-test": "preserved" },
       body: requestBody,
     }, host));
 
-    assert.equal(calls, 1, path);
-    assert.equal(response.status, 207, path);
-    assert.equal(response.headers.get("content-type"), "application/origin-test", path);
-    assert.equal(response.headers.get("x-origin-test"), "true", path);
+    assert.equal(calls, 0, path);
+    assert.equal(response.status, 404, path);
     assert.equal(response.headers.get("set-cookie"), null, path);
     assert.equal(response.headers.get("x-mmd-route-owner"), null, path);
     assert.equal(response.headers.get("x-mmd-page"), null, path);
-    const body = await response.text();
-    assert.equal(body, "origin-preserved", path);
-    assert.equal(body.includes("<form"), false, path);
-    assert.equal(body.includes("not_found"), false, path);
+    assert.equal((await response.json()).error, "admin_route_not_found", path);
   }
 });
 

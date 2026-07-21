@@ -111,12 +111,15 @@ async function proxyAdminApi(request: Request, env: InternalRoutesEnv): Promise<
   headers.set("x-mmd-auth-bridge", "immigrate-internal-admin-api");
   headers.set("x-mmd-public-host", publicHost);
 
-  const proxied = new Request(target.toString(), {
+  const init: RequestInit & { duplex?: "half" } = {
     method: request.method,
     headers,
     body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
     redirect: "manual",
-  });
+  };
+  if (init.body) init.duplex = "half";
+
+  const proxied = new Request(target.toString(), init);
 
   const res = await env.ADMIN_WORKER.fetch(proxied);
   const outHeaders = new Headers(res.headers);

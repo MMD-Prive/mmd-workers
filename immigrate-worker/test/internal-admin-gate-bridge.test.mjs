@@ -100,6 +100,19 @@ test("protected www admin page verifies auth/me through admin-worker binding wit
   assert.equal(calls[0].headers.get("x-mmd-public-host"), "www.mmdbkk.com");
 });
 
+test("create-session page loads an existing bundled create-session asset", async () => {
+  const calls = [];
+  const { result: response } = await withPublicFetchTrap(() => handleInternalRoutes(request("/internal/admin/jobs/create-session"), {
+    ADMIN_WORKER: adminWorkerBinding(calls),
+    ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
+  }));
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(html, /<script src="\/a\/create-session\.js"><\/script>/);
+  assert.doesNotMatch(html, /create-session-v4\.js/);
+});
+
 test("workers.dev and unknown hosts do not verify a public-host cookie", async () => {
   for (const host of ["immigrate-worker.malemodel-bkk.workers.dev", "evil.example"]) {
     const calls = [];
@@ -157,6 +170,45 @@ test("admin API proxy uses admin-worker binding with original public host", asyn
   assert.equal(calls[0].url, "https://mmdbkk.com/v1/admin/models/search?query=test");
   assert.equal(calls[0].headers.get("authorization"), null);
   assert.equal(calls[0].headers.get("x-mmd-auth-bridge"), "immigrate-internal-admin-api");
+});
+
+test("create-job API POST is proxied through admin-worker binding with body and content type preserved", async () => {
+  const calls = [];
+  const payload = JSON.stringify({ session_id: "sess_public_safe", note: "bridge only" });
+  const { result: response, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/v1/admin/create-job?source=worker-page", "mmdbkk.com", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: "mmd_admin_gate_v1=safe-test-cookie",
+      authorization: "Bearer should-not-forward",
+    },
+    body: payload,
+  }), {
+    ADMIN_WORKER: {
+      fetch: async (input) => {
+        calls.push(input);
+        return Response.json({
+          ok: true,
+          echoed: await input.text(),
+          content_type: input.headers.get("content-type"),
+        });
+      },
+    },
+    ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
+  }));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(publicCalls, 0);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://mmdbkk.com/v1/admin/create-job?source=worker-page");
+  assert.equal(calls[0].method, "POST");
+  assert.equal(calls[0].headers.get("authorization"), null);
+  assert.equal(calls[0].headers.get("content-type"), "application/json");
+  assert.equal(calls[0].headers.get("cookie"), "mmd_admin_gate_v1=safe-test-cookie");
+  assert.equal(calls[0].headers.get("x-mmd-auth-bridge"), "immigrate-internal-admin-api");
+  assert.equal(body.echoed, payload);
+  assert.equal(body.content_type, "application/json");
 });
 
 test("admin API proxy fails closed without admin-worker binding", async () => {

@@ -40,8 +40,8 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/internal/admin/login/session"
 zone_name = "mmdbkk.com"
 
-# Kenji Knowledge ownership only. Keep these patterns narrow; do not claim
-# /sigil/internal/admin/*, /internal/admin/*, or either host catch-all.
+# Kenji Knowledge legacy redirect only. Keep these patterns narrow; do not
+# claim /sigil/internal/admin/*, /internal/admin/*, or either host catch-all.
 [[routes]]
 pattern = "mmdbkk.com/sigil/internal/admin/kenji-knowledge"
 zone_name = "mmdbkk.com"
@@ -66,8 +66,7 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/sigil/internal/admin/kenji-knowledge*"
 zone_name = "mmdbkk.com"
 
-# Temporary compatibility alias. Retain until canonical production verification
-# and explicit removal approval.
+# Kenji Knowledge canonical admin namespace.
 [[routes]]
 pattern = "mmdbkk.com/internal/admin/kenji-knowledge"
 zone_name = "mmdbkk.com"
