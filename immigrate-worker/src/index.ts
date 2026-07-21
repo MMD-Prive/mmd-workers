@@ -1,4 +1,5 @@
 import { isAuthorized, readInternalToken } from "./lib/auth";
+import { handleInternalRoutes } from "./internal-routes";
 import {
   buildImmigrationLinkContext,
   canReadAirtable,
@@ -103,6 +104,19 @@ const JOBS = {
   createInvite: "/internal/jobs/create-invite-link",
   customerConfirm: "/internal/jobs/customer-confirm",
 } as const;
+
+const INTERNAL_ROUTES_BRIDGE_ADMIN_API_PATHS = new Set([
+  "/v1/admin/auth/me",
+  "/v1/admin/ping",
+  "/v1/admin/clients/lineage-lookup",
+  "/v1/admin/clients/recent",
+  "/v1/admin/models/search",
+  "/v1/admin/job/draft",
+  "/v1/admin/create-job",
+  "/v1/admin/create-session",
+  "/v1/admin/jobs/create-session",
+  "/v1/admin/line/push",
+]);
 
 const PUBLIC = {
   onboardingResolve: "/member/api/invite/resolve",
@@ -2401,6 +2415,17 @@ function isSigilProtectedBrowserRoute(pathname: string): boolean {
   );
 }
 
+function shouldUseInternalRoutesBridge(pathname: string): boolean {
+  if (pathname.startsWith("/a/")) return true;
+  if (INTERNAL_ROUTES_BRIDGE_ADMIN_API_PATHS.has(pathname)) return true;
+  return (
+    pathname === CONTROL_ROOM.root ||
+    pathname === ADMIN_JOBS.createSession ||
+    pathname === ADMIN_JOBS.createSessionLegacy ||
+    pathname === JOBS.createJob
+  );
+}
+
 function toInternalAdminPath(pathname: string): string {
   if (pathname === SIGIL_ADMIN.dashboard || pathname.startsWith(`${SIGIL_ADMIN.dashboard}/`)) {
     return CONTROL_ROOM.root + pathname.slice(SIGIL_ADMIN.dashboard.length);
@@ -4307,6 +4332,11 @@ export default {
 
       if (request.method === "POST" && isPublicCustomerConfirmRoute(url.pathname)) {
         return await handleCustomerConfirm(request, env);
+      }
+
+      if (shouldUseInternalRoutesBridge(url.pathname)) {
+        const internalResponse = await handleInternalRoutes(request, env);
+        if (internalResponse) return internalResponse;
       }
 
       const legacyAdminRedirect = makeLegacyAdminRedirect(request);

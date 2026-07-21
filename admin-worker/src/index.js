@@ -98,17 +98,27 @@ const MODEL_SESSION_ACTION_PATH = "/v1/model/session/action";
 const MODEL_SESSION_LINK_PATH = "/v1/admin/model/session/link";
 const ADMIN_RICH_MENU_BASE_PATH = "/v1/admin/line/rich-menu";
 const SIGIL_BOARD_PUBLISH_PATH = "/v1/admin/sigil/board/publish";
-const KENJI_KNOWLEDGE_CANONICAL_PATH = "/sigil/internal/admin/kenji-knowledge";
-const KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH = "/internal/admin/kenji-knowledge";
+const INTERNAL_ADMIN_PREFIX = "/internal/admin";
+const SIGIL_INTERNAL_ADMIN_PREFIX = "/sigil/internal/admin";
+const KENJI_KNOWLEDGE_CANONICAL_PATH = "/internal/admin/kenji-knowledge";
+const KENJI_KNOWLEDGE_LEGACY_SIGIL_PATH = "/sigil/internal/admin/kenji-knowledge";
 const KENJI_KNOWLEDGE_AUTH_ME_PATH = "/v1/admin/auth/me";
 const KENJI_KNOWLEDGE_META_PATH = "/v1/admin/kenji/knowledge/meta";
 const KENJI_KNOWLEDGE_LIST_PATH = "/v1/admin/kenji/knowledge/list";
 const KENJI_KNOWLEDGE_DRAFT_PATH = "/v1/admin/kenji/knowledge/draft";
 const KENJI_KNOWLEDGE_PUBLISHED_PATH = "/v1/internal/kenji/knowledge/published";
+const ADMIN_LOGIN_ROOT_PATH = "/internal/admin";
+const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
+const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
+const ADMIN_NEXT_INTERNAL_CONTROL_ROOM_PATH = "/internal/admin/control-room";
+const ADMIN_NEXT_CREATE_SESSION_LEGACY_PATH = "/internal/admin/create-session";
+const ADMIN_NEXT_CREATE_SESSION_PATH = "/internal/admin/jobs/create-session";
+const ADMIN_NEXT_CREATE_JOB_PATH = "/internal/jobs/create-job";
 const ADMIN_GATE_SESSION_COOKIE = "mmd_admin_gate_v1";
 const ADMIN_GATE_TTL_MS = 8 * 60 * 60 * 1000;
 const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
   "https://mmdbkk.com",
+  "https://www.mmdbkk.com",
   "https://mmdprive.webflow.io",
   "https://mmdprive.com",
 ]);
@@ -140,22 +150,45 @@ export default {
     const method = req.method.toUpperCase();
     const cors = corsHeaders(req, env);
 
+    if (isLegacySigilInternalAdminPath(path)) {
+      return redirectLegacySigilInternalAdmin(req);
+    }
+
     if (isKenjiKnowledgeCapturedPath(path) && !isKenjiKnowledgeShellPath(path)) {
-      return passThroughKenjiSuffixToOrigin(req);
+      return adminRouteNotFound();
+    }
+
+    if (
+      path.startsWith(ADMIN_LOGIN_PAGE_PATH) &&
+      path !== ADMIN_LOGIN_PAGE_PATH &&
+      path !== ADMIN_LOGIN_SESSION_PATH
+    ) {
+      return adminRouteNotFound();
     }
 
     if (method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors });
     }
 
+    if (path === ADMIN_LOGIN_ROOT_PATH && (method === "GET" || method === "HEAD")) {
+      return adminLoginRequiredPage(req);
+    }
+
+    if (path === ADMIN_LOGIN_PAGE_PATH && (method === "GET" || method === "HEAD")) {
+      return adminLoginPage(req);
+    }
+
+    if (path === ADMIN_LOGIN_SESSION_PATH) {
+      if (method === "POST") return handleAdminLogin(req, env);
+      if (method === "DELETE") return handleAdminLogout(req);
+      return methodNotAllowed(["POST", "DELETE"]);
+    }
+
     if (isKenjiKnowledgeShellPath(path)) {
       if (method === "GET" || method === "HEAD") {
-        return kenjiKnowledgeAdminShell(
-          req,
-          path === KENJI_KNOWLEDGE_CANONICAL_PATH ? "canonical" : "compatibility-alias"
-        );
+        return kenjiKnowledgeAdminShell(req, "canonical");
       }
-      return passThroughKenjiSuffixToOrigin(req);
+      return methodNotAllowed(["GET", "HEAD"]);
     }
 
     if (isKenjiKnowledgeReadinessRoute(path, method)) {
@@ -220,7 +253,7 @@ export default {
       // STRICT: X-Confirm-Key only
       // ====================================================
       if (method === "POST" && path === SIGIL_BOARD_PUBLISH_PATH) {
-        if (!isAuthed(req, env)) {
+        if (!(await isAuthed(req, env))) {
           return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
         }
         return withCors(json(await publishSigilBoardQueue(env)), cors);
@@ -434,7 +467,7 @@ export default {
       // CORE ADMIN AUTH
       // Bearer OR Confirm-Key
       // ====================================================
-      if (!isAuthed(req, env)) {
+      if (!(await isAuthed(req, env))) {
         return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
       }
 
@@ -779,7 +812,7 @@ function withCors(res, cors) {
 /* =========================
    Auth
 ========================= */
-function isAuthed(req, env) {
+export async function isAuthed(req, env) {
   const auth = req.headers.get("Authorization") || "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
   if (env.ADMIN_BEARER && bearer && bearer === env.ADMIN_BEARER) return true;
@@ -788,7 +821,7 @@ function isAuthed(req, env) {
   const ck = str(req.headers.get("X-Confirm-Key") || "");
   if (env.CONFIRM_KEY && ck && ck === env.CONFIRM_KEY) return true;
 
-  if (isAdminGateSessionAuthed(req, env)) return true;
+  if (await isAdminGateSessionAuthed(req, env)) return true;
 
   return false;
 }
@@ -798,30 +831,30 @@ function isConfirmKeyAuthed(req, env) {
   return Boolean(env.CONFIRM_KEY && ck && ck === env.CONFIRM_KEY);
 }
 
-function isAdminGateSessionAuthed(req, env) {
-  const session = readAdminGateSession(req);
-  if (!session || session.ok !== true) return false;
-  if (!session.baseUrl || !ADMIN_GATE_ALLOWED_BASE_URLS.has(session.baseUrl)) return false;
-  if (!Number.isFinite(session.at)) return false;
-  if (Date.now() - session.at > ADMIN_GATE_TTL_MS) return false;
-
-  const bearer = str(session.bearer || "");
-  if (env.ADMIN_BEARER && bearer && bearer === env.ADMIN_BEARER) return true;
-  if (env.INTERNAL_TOKEN && bearer && bearer === env.INTERNAL_TOKEN) return true;
-
-  const confirmKey = str(session.confirmKey || "");
-  if (env.CONFIRM_KEY && confirmKey && confirmKey === env.CONFIRM_KEY) return true;
-
-  return false;
+async function isAdminGateSessionAuthed(req, env) {
+  const session = await readAdminGateSession(req, env);
+  if (!session || session.version !== 1) return false;
+  if (session.scope !== "internal_admin") return false;
+  if (!session.host || !ADMIN_GATE_ALLOWED_BASE_URLS.has(session.host)) return false;
+  if (session.host !== new URL(req.url).origin) return false;
+  if (!Number.isFinite(session.iat) || !Number.isFinite(session.exp)) return false;
+  const now = Date.now();
+  if (session.iat > now || session.exp <= now || session.exp - session.iat > ADMIN_GATE_TTL_MS) return false;
+  if (!session.nonce || typeof session.nonce !== "string") return false;
+  return true;
 }
 
-function readAdminGateSession(req) {
+async function readAdminGateSession(req, env) {
   const raw = parseCookieMap(req).get(ADMIN_GATE_SESSION_COOKIE);
   if (!raw) return null;
 
   try {
     const decoded = decodeURIComponent(raw);
-    const parsed = JSON.parse(atob(decoded));
+    const [payloadPart, signaturePart] = decoded.split(".");
+    if (!payloadPart || !signaturePart) return null;
+    const expected = await signAdminGatePayload(payloadPart, env);
+    if (!expected || !(await constantTimeEqual(signaturePart, expected))) return null;
+    const parsed = JSON.parse(base64UrlDecode(payloadPart));
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
     return parsed;
   } catch (_) {
@@ -839,6 +872,257 @@ function parseCookieMap(req) {
     map.set(key, rest.join("=").trim());
   }
   return map;
+}
+
+async function handleAdminLogin(req, env) {
+  const origin = req.headers.get("Origin") || "";
+  const requestOrigin = new URL(req.url).origin;
+  if (origin !== requestOrigin || !ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin)) {
+    return adminLoginPage(req, { status: 403, error: "Unable to sign in." });
+  }
+
+  const contentType = (req.headers.get("Content-Type") || "").split(";", 1)[0].trim().toLowerCase();
+  if (contentType !== "application/x-www-form-urlencoded") {
+    return adminLoginPage(req, { status: 400, error: "Unable to sign in." });
+  }
+
+  let form;
+  try {
+    form = new URLSearchParams(await req.text());
+  } catch (_) {
+    return adminLoginPage(req, { status: 400, error: "Unable to sign in." });
+  }
+
+  const credential = str(form.get("credential") || "");
+  const proof = await resolveAdminSessionProof(credential, env);
+  if (!proof) return adminLoginPage(req, { status: 401, error: "Unable to sign in." });
+
+  const next = normalizeAdminLoginNext(form.get("next"), requestOrigin);
+  const now = Date.now();
+  const session = {
+    version: 1,
+    scope: "internal_admin",
+    host: requestOrigin,
+    iat: now,
+    exp: now + ADMIN_GATE_TTL_MS,
+    nonce: crypto.randomUUID(),
+    auth_method: proof.kind,
+  };
+  const headers = new Headers({
+    "Cache-Control": "no-store, private",
+    Location: next,
+    "Set-Cookie": await makeAdminGateCookie(session, env),
+  });
+  return new Response(null, { status: 303, headers });
+}
+
+function handleAdminLogout(req) {
+  const requestOrigin = new URL(req.url).origin;
+  const origin = req.headers.get("Origin") || "";
+  if (origin !== requestOrigin || !ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin)) {
+    return json({ ok: false, error: "forbidden" }, 403);
+  }
+  return new Response(null, {
+    status: 303,
+    headers: {
+      "Cache-Control": "no-store, private",
+      Location: ADMIN_LOGIN_PAGE_PATH,
+      "Set-Cookie": `${ADMIN_GATE_SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+    },
+  });
+}
+
+async function resolveAdminSessionProof(credential, env) {
+  if (!credential) return null;
+  const candidates = [
+    ["bearer", str(env.ADMIN_BEARER || "")],
+    ["bearer", str(env.INTERNAL_TOKEN || "")],
+    ["confirmKey", str(env.CONFIRM_KEY || "")],
+  ];
+  let match = null;
+  for (const [kind, value] of candidates) {
+    if (value && (await constantTimeEqual(credential, value)) && !match) match = { kind, value };
+  }
+  return match;
+}
+
+async function constantTimeEqual(left, right) {
+  const encoder = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(left)),
+    crypto.subtle.digest("SHA-256", encoder.encode(right)),
+  ]);
+  const aa = new Uint8Array(a);
+  const bb = new Uint8Array(b);
+  let difference = 0;
+  for (let i = 0; i < aa.length; i += 1) difference |= aa[i] ^ bb[i];
+  return difference === 0;
+}
+
+async function makeAdminGateCookie(session, env) {
+  const payload = base64UrlEncode(JSON.stringify(session));
+  const signature = await signAdminGatePayload(payload, env);
+  if (!signature) throw new Error("missing_admin_session_signing_key");
+  const value = encodeURIComponent(`${payload}.${signature}`);
+  return `${ADMIN_GATE_SESSION_COOKIE}=${value}; Path=/; Max-Age=${Math.floor(ADMIN_GATE_TTL_MS / 1000)}; HttpOnly; Secure; SameSite=Lax`;
+}
+
+function getAdminSessionSigningSecret(env) {
+  return str(env.ADMIN_SESSION_SECRET || env.ADMIN_BEARER || env.INTERNAL_TOKEN || env.CONFIRM_KEY || "");
+}
+
+async function signAdminGatePayload(payload, env) {
+  const secret = getAdminSessionSigningSecret(env);
+  if (!secret) return "";
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+  return base64UrlEncodeBytes(new Uint8Array(signature));
+}
+
+function base64UrlEncode(value) {
+  return base64UrlEncodeBytes(new TextEncoder().encode(value));
+}
+
+function base64UrlEncodeBytes(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlDecode(value) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+function normalizeAdminLoginNext(raw, origin) {
+  const fallback = KENJI_KNOWLEDGE_CANONICAL_PATH;
+  const value = str(raw || fallback);
+  if (!value.startsWith("/") || value.startsWith("//")) return fallback;
+  if (hasTraversalSegment(value)) return fallback;
+  try {
+    const target = new URL(value, origin);
+    const pathname = canonicalizeAdminNextPath(target.pathname);
+    if (target.origin !== origin || !isAllowedAdminNextPath(pathname)) return fallback;
+    if (hasCredentialQuery(target.searchParams)) return fallback;
+    return `${pathname}${target.search}`;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function canonicalizeAdminNextPath(pathname) {
+  if (isLegacySigilInternalAdminPath(pathname)) {
+    return `${INTERNAL_ADMIN_PREFIX}${pathname.slice(SIGIL_INTERNAL_ADMIN_PREFIX.length)}`;
+  }
+  return pathname;
+}
+
+function isAllowedAdminNextPath(pathname) {
+  // Approved repository-backed protected destinations only:
+  // - Kenji canonical shell owned by admin-worker.
+  // - Immigrate protected control-room pages that redirect through this login.
+  // - Existing create-session/create-job internal pages linked from control-room.
+  const exact = new Set([
+    ADMIN_LOGIN_ROOT_PATH,
+    KENJI_KNOWLEDGE_CANONICAL_PATH,
+    `${KENJI_KNOWLEDGE_CANONICAL_PATH}/`,
+    ADMIN_NEXT_CREATE_SESSION_LEGACY_PATH,
+    ADMIN_NEXT_CREATE_SESSION_PATH,
+    ADMIN_NEXT_CREATE_JOB_PATH,
+  ]);
+  if (exact.has(pathname)) return true;
+  return pathname === ADMIN_NEXT_INTERNAL_CONTROL_ROOM_PATH || pathname.startsWith(`${ADMIN_NEXT_INTERNAL_CONTROL_ROOM_PATH}/`);
+}
+
+function hasCredentialQuery(params) {
+  const blocked = new Set([
+    "access_token",
+    "authorization",
+    "bearer",
+    "confirm_key",
+    "cookie",
+    "credential",
+    "password",
+    "secret",
+    "token",
+    "x-confirm-key",
+  ]);
+  for (const key of params.keys()) {
+    if (blocked.has(str(key).toLowerCase())) return true;
+  }
+  return false;
+}
+
+function hasTraversalSegment(value) {
+  let decoded = value;
+  for (let i = 0; i < 2; i += 1) {
+    if (/(^|\/)\.\.(?:\/|$)/.test(decoded)) return true;
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    } catch (_) {
+      break;
+    }
+  }
+  return /(^|\/)\.\.(?:\/|$)/.test(decoded);
+}
+
+function adminLoginRequiredPage(req) {
+  const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>MMD Admin</title></head><body><main><h1>Admin access required</h1><p><a href="${ADMIN_LOGIN_PAGE_PATH}">Sign in to MMD Admin</a></p></main></body></html>`;
+  return adminHtml(req, body, 401);
+}
+
+function adminLoginPage(req, { status = 200, error = "" } = {}) {
+  const url = new URL(req.url);
+  const next = normalizeAdminLoginNext(url.searchParams.get("next"), url.origin);
+  const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>MMD Admin Sign In</title></head><body><main><h1>MMD Admin Sign In</h1>${error ? `<p role="alert">${error}</p>` : ""}<form method="post" action="${ADMIN_LOGIN_SESSION_PATH}"><label>Access code <input name="credential" type="password" required autocomplete="current-password"></label><input type="hidden" name="next" value="${escapeHtmlAttribute(next)}"><button type="submit">Sign in</button></form></main></body></html>`;
+  return adminHtml(req, body, status);
+}
+
+function adminHtml(req, body, status) {
+  return new Response(req.method.toUpperCase() === "HEAD" ? null : body, {
+    status,
+    headers: {
+      "Cache-Control": "no-store, private",
+      "Content-Security-Policy": "default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; style-src 'unsafe-inline'",
+      "Content-Type": "text/html; charset=utf-8",
+      "Referrer-Policy": "no-referrer",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
+
+function escapeHtmlAttribute(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]);
+}
+
+function methodNotAllowed(allowed) {
+  return new Response(JSON.stringify({ ok: false, error: "method_not_allowed" }), {
+    status: 405,
+    headers: {
+      Allow: allowed.join(", "),
+      "Cache-Control": "no-store",
+      "Content-Type": "application/json",
+    },
+  });
 }
 
 /* =========================
@@ -871,20 +1155,32 @@ function kenjiKnowledgeAdminShell(req, routeKind) {
 }
 
 function isKenjiKnowledgeShellPath(path) {
-  return path === KENJI_KNOWLEDGE_CANONICAL_PATH || path === KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH;
+  return path === KENJI_KNOWLEDGE_CANONICAL_PATH;
 }
 
 function isKenjiKnowledgeCapturedPath(path) {
-  return (
-    path.startsWith(KENJI_KNOWLEDGE_CANONICAL_PATH) ||
-    path.startsWith(KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH)
-  );
+  return path.startsWith(KENJI_KNOWLEDGE_CANONICAL_PATH);
 }
 
-function passThroughKenjiSuffixToOrigin(req) {
-  // Worker Route origin semantics bypass same-zone Worker routes unless
-  // global_fetch_strictly_public is explicitly enabled (it is not in this Worker).
-  return fetch(req);
+function isLegacySigilInternalAdminPath(path) {
+  return path === SIGIL_INTERNAL_ADMIN_PREFIX || path.startsWith(`${SIGIL_INTERNAL_ADMIN_PREFIX}/`);
+}
+
+function redirectLegacySigilInternalAdmin(req) {
+  const url = new URL(req.url);
+  url.pathname = `${INTERNAL_ADMIN_PREFIX}${url.pathname.slice(SIGIL_INTERNAL_ADMIN_PREFIX.length)}`;
+  return new Response(null, {
+    status: 308,
+    headers: {
+      "cache-control": "no-store",
+      location: `${url.pathname}${url.search}`,
+      "x-mmd-route-canonical": `${url.pathname}${url.search}`,
+    },
+  });
+}
+
+function adminRouteNotFound() {
+  return json({ ok: false, error: "admin_route_not_found" }, 404);
 }
 
 function isKenjiKnowledgeReadinessRoute(path, method) {
@@ -901,7 +1197,7 @@ async function handleKenjiKnowledgeReadinessRoute(req, env, path, method) {
     return jsonForMethod(req, { ok: false, error: "origin_not_allowed" }, 403);
   }
 
-  if (!isAuthed(req, env)) {
+  if (!(await isAuthed(req, env))) {
     return jsonForMethod(req, { ok: false, authenticated: false, error: "unauthorized" }, 401);
   }
 
@@ -1417,7 +1713,7 @@ async function handleModelSchemaPatchV1Route(req, env, path) {
   if (!isAllowedOrigin(req, env)) return modelSchemaPatchJson({ ok: false, error: "origin_not_allowed" }, 403);
 
   const body = await safeJson(req);
-  const adminAuthed = isAuthed(req, env);
+  const adminAuthed = await isAuthed(req, env);
   const isAuthorizeRoute = path === MODEL_SCHEMA_PATCH_V1_ROUTES.privateFlashAuthorize;
   if (isAuthorizeRoute && !adminAuthed) return modelSchemaPatchJson({ ok: false, error: "unauthorized" }, 401);
   if (!adminAuthed) return modelSchemaPatchJson({ ok: false, error: "signed_t_required" }, 401);

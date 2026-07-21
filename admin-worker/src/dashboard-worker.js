@@ -8,7 +8,7 @@
 // - Keep the dashboard endpoint read-only and safe for Webflow.
 // =========================================================
 
-import coreWorker from "./index.js";
+import coreWorker, { isAuthed as isCoreAuthed } from "./index.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DASHBOARD_PATH = "/v1/admin/dashboard";
@@ -29,7 +29,7 @@ export default {
         return withCors(json({ ok: false, error: "origin_not_allowed" }, 403), cors);
       }
 
-      if (!isAuthed(req, env)) {
+      if (!(await isAuthed(req, env))) {
         return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
       }
 
@@ -377,16 +377,8 @@ function isAllowedOrigin(req, env) {
   return allow.includes(origin);
 }
 
-function isAuthed(req, env) {
-  const auth = req.headers.get("Authorization") || "";
-  const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-  if (env.ADMIN_BEARER && bearer && bearer === env.ADMIN_BEARER) return true;
-  if (env.INTERNAL_TOKEN && bearer && bearer === env.INTERNAL_TOKEN) return true;
-
-  const confirmKey = str(req.headers.get("X-Confirm-Key") || "");
-  if (env.CONFIRM_KEY && confirmKey && confirmKey === env.CONFIRM_KEY) return true;
-
-  return false;
+async function isAuthed(req, env) {
+  return await isCoreAuthed(req, env);
 }
 
 function json(data, status = 200) {
