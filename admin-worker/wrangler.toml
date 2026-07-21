@@ -21,7 +21,15 @@ pattern = "mmdbkk.com/internal/admin/login"
 zone_name = "mmdbkk.com"
 
 [[routes]]
+pattern = "mmdbkk.com/internal/admin/login*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
 pattern = "www.mmdbkk.com/internal/admin/login"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/login*"
 zone_name = "mmdbkk.com"
 
 [[routes]]

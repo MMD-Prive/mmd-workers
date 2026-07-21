@@ -148,6 +148,14 @@ export default {
       return passThroughKenjiSuffixToOrigin(req);
     }
 
+    if (
+      path.startsWith(ADMIN_LOGIN_PAGE_PATH) &&
+      path !== ADMIN_LOGIN_PAGE_PATH &&
+      path !== ADMIN_LOGIN_SESSION_PATH
+    ) {
+      return passThroughKenjiSuffixToOrigin(req);
+    }
+
     if (method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors });
     }

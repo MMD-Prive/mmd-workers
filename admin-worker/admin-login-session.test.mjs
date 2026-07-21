@@ -29,6 +29,16 @@ function cookiePair(response) {
   return (response.headers.get("set-cookie") || "").split(";", 1)[0];
 }
 
+async function withOriginFetchMock(mock, run) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = mock;
+  try {
+    return await run();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 test("GET login renders a safe server-side POST form", async () => {
   const response = await request(`${LOGIN}?next=${encodeURIComponent(KENJI)}`);
   const html = await response.text();
@@ -41,6 +51,37 @@ test("GET login renders a safe server-side POST form", async () => {
   assert.match(html, /action="\/internal\/admin\/login\/session"/);
   assert.match(html, /type="password"/);
   assert.doesNotMatch(html, /localStorage|sessionStorage|<script|\/private/);
+});
+
+test("apex and www query-bearing login pages render without redirecting", async () => {
+  for (const host of ["mmdbkk.com", "www.mmdbkk.com"]) {
+    const path = `${LOGIN}?next=${encodeURIComponent(`${KENJI}?source=query-login`)}`;
+    const response = await request(path, {}, host);
+    const html = await response.text();
+
+    assert.equal(response.status, 200, host);
+    assert.equal(response.headers.get("location"), null, host);
+    assert.match(html, /action="\/internal\/admin\/login\/session"/, host);
+    assert.match(html, /name="next" value="\/sigil\/internal\/admin\/kenji-knowledge\?source=query-login"/, host);
+  }
+});
+
+test("query login sanitizes external, protocol-relative, and unapproved next values", async () => {
+  for (const next of ["https://evil.example/steal", "//evil.example/steal", "/unapproved"]) {
+    const response = await request(`${LOGIN}?next=${encodeURIComponent(next)}`);
+    const html = await response.text();
+    assert.equal(response.status, 200);
+    assert.match(html, /name="next" value="\/sigil\/internal\/admin\/kenji-knowledge"/);
+    assert.equal(html.includes("evil.example"), false);
+    assert.equal(html.includes("/unapproved"), false);
+  }
+});
+
+test("HEAD query login returns login headers with an empty body", async () => {
+  const response = await request(`${LOGIN}?next=${encodeURIComponent(KENJI)}`, { method: "HEAD" });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") || "", /^text\/html\b/);
+  assert.equal(await response.text(), "");
 });
 
 test("valid login issues a fresh secure host-only cookie and redirects", async () => {
@@ -173,7 +214,73 @@ test("logout expires the same host-only cookie without exposing its value", asyn
   assert.doesNotMatch(cookie, /Domain=/i);
 });
 
-test("login ownership routes are exact, unique, and not added to other workers", async () => {
+test("exact session endpoint never passes through and keeps method behavior", async () => {
+  let calls = 0;
+  await withOriginFetchMock(async () => {
+    calls += 1;
+    return new Response("unexpected-origin");
+  }, async () => {
+    const post = await login();
+    assert.equal(post.status, 303);
+    assert.match(post.headers.get("set-cookie") || "", /^mmd_admin_gate_v1=/);
+
+    const remove = await request(SESSION, {
+      method: "DELETE",
+      headers: { Origin: "https://mmdbkk.com" },
+    });
+    assert.equal(remove.status, 303);
+    assert.match(remove.headers.get("set-cookie") || "", /Max-Age=0/);
+
+    const get = await request(SESSION);
+    assert.equal(get.status, 405);
+    assert.equal((await get.json()).error, "method_not_allowed");
+  });
+  assert.equal(calls, 0);
+});
+
+test("captured login suffixes pass through to origin exactly once without login artifacts", async () => {
+  const cases = [
+    ["mmdbkk.com", `${LOGIN}-other?source=apex`],
+    ["mmdbkk.com", `${LOGIN}/foo?source=slash`],
+    ["mmdbkk.com", `${SESSION}-extra?source=session-suffix`],
+    ["www.mmdbkk.com", `${LOGIN}-other?source=www`],
+  ];
+
+  for (const [host, path] of cases) {
+    let calls = 0;
+    const requestBody = JSON.stringify({ safe: true });
+    const response = await withOriginFetchMock(async (incoming) => {
+      calls += 1;
+      assert.equal(incoming.method, "POST");
+      assert.equal(incoming.url, `https://${host}${path}`);
+      assert.equal(incoming.headers.get("content-type"), "application/json");
+      assert.equal(incoming.headers.get("x-safe-test"), "preserved");
+      assert.equal(await incoming.text(), requestBody);
+      return new Response("origin-preserved", {
+        status: 207,
+        headers: { "content-type": "application/origin-test", "x-origin-test": "true" },
+      });
+    }, () => request(path, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-safe-test": "preserved" },
+      body: requestBody,
+    }, host));
+
+    assert.equal(calls, 1, path);
+    assert.equal(response.status, 207, path);
+    assert.equal(response.headers.get("content-type"), "application/origin-test", path);
+    assert.equal(response.headers.get("x-origin-test"), "true", path);
+    assert.equal(response.headers.get("set-cookie"), null, path);
+    assert.equal(response.headers.get("x-mmd-route-owner"), null, path);
+    assert.equal(response.headers.get("x-mmd-page"), null, path);
+    const body = await response.text();
+    assert.equal(body, "origin-preserved", path);
+    assert.equal(body.includes("<form"), false, path);
+    assert.equal(body.includes("not_found"), false, path);
+  }
+});
+
+test("login ownership routes are query-safe, narrow, unique, and absent from other workers", async () => {
   const [admin, redirect, immigrate] = await Promise.all([
     readFile(new URL("./wrangler.toml", import.meta.url), "utf8"),
     readFile(new URL("../mmd-redirect-worker/wrangler.toml", import.meta.url), "utf8"),
@@ -192,7 +299,17 @@ test("login ownership routes are exact, unique, and not added to other workers",
     assert.equal(count(redirect, `pattern = "${pattern}"`), 0, pattern);
     assert.equal(count(immigrate, `pattern = "${pattern}"`), 0, pattern);
   }
+  for (const pattern of [
+    "mmdbkk.com/internal/admin/login*",
+    "www.mmdbkk.com/internal/admin/login*",
+  ]) {
+    assert.equal(count(admin, `pattern = "${pattern}"`), 1, pattern);
+    assert.equal(count(redirect, `pattern = "${pattern}"`), 0, pattern);
+    assert.equal(count(immigrate, `pattern = "${pattern}"`), 0, pattern);
+  }
   assert.doesNotMatch(admin, /pattern = "(?:www\.)?mmdbkk\.com\/internal\/admin\/\*"/);
+  assert.doesNotMatch(admin, /pattern = "(?:www\.)?mmdbkk\.com\/internal\/admin\*"/);
+  assert.doesNotMatch(admin, /pattern = "(?:www\.)?mmdbkk\.com\/internal\/admin\/login\/session\*"/);
 });
 
 function sessionCookie(overrides = {}) {
