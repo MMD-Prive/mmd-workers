@@ -88,7 +88,9 @@ test("GET /v1/internal/kenji/knowledge/published returns loader-compatible cards
   assert.equal(response.status, 200);
   assert.equal(body.ok, true);
   assert.equal(body.source, "admin-worker");
-  assert.equal(body.mode, "published_runtime");
+  assert.equal(body.mode, "published_runtime_readiness");
+  assert.equal(body.data_status, "readiness_only");
+  assert.deepEqual(body.storage, { persisted: false, reason: "not_configured" });
   assert.deepEqual(body.cards, []);
 });
 
