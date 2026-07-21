@@ -809,7 +809,7 @@ function withCors(res, cors) {
 /* =========================
    Auth
 ========================= */
-async function isAuthed(req, env) {
+export async function isAuthed(req, env) {
   const auth = req.headers.get("Authorization") || "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
   if (env.ADMIN_BEARER && bearer && bearer === env.ADMIN_BEARER) return true;

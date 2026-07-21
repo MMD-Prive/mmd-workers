@@ -152,6 +152,19 @@ test("issued apex cookie authenticates auth/me and Kenji readiness APIs", async 
   }
 });
 
+test("issued apex cookie authenticates dashboard wrapper entrypoint", async () => {
+  const response = await login();
+  const Cookie = cookiePair(response);
+  const dashboard = await request("/v1/admin/dashboard", {
+    headers: { Origin: "https://mmdbkk.com", Cookie },
+  });
+  const body = await dashboard.json();
+
+  assert.equal(dashboard.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.source, "admin-worker");
+});
+
 test("invalid, empty, malformed, and cross-origin login never set a cookie", async () => {
   const cases = [
     await login("invalid"),

@@ -144,24 +144,29 @@ test("missing admin-worker binding fails closed without direct public fetch fall
   assert.equal(response.headers.get("location"), "/internal/admin/login?next=%2Finternal%2Fadmin%2Fcontrol-room");
 });
 
-test("admin API proxy still uses configured admin-worker base", async () => {
+test("admin API proxy uses admin-worker binding with original public host", async () => {
   const calls = [];
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input) => {
-    calls.push(String(input.url || input));
-    return Response.json({ ok: true, authenticated: true });
-  };
-  let response;
-  try {
-    response = await handleInternalRoutes(request("/v1/admin/auth/me"), {
-      ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
-    });
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  const { result: response, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/v1/admin/models/search?query=test"), {
+    ADMIN_WORKER: adminWorkerBinding(calls),
+    ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
+  }));
 
   assert.equal(response.status, 200);
-  assert.deepEqual(calls, ["https://admin-worker.malemodel-bkk.workers.dev/v1/admin/auth/me"]);
+  assert.equal(publicCalls, 0);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://mmdbkk.com/v1/admin/models/search?query=test");
+  assert.equal(calls[0].headers.get("authorization"), null);
+  assert.equal(calls[0].headers.get("x-mmd-auth-bridge"), "immigrate-internal-admin-api");
+});
+
+test("admin API proxy fails closed without admin-worker binding", async () => {
+  const { result: response, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/v1/admin/models/search?query=test"), {
+    ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
+  }));
+
+  assert.equal(publicCalls, 0);
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).error, "admin_worker_binding_required");
 });
 
 test("protected-page login redirects preserve only same-origin internal next paths", async () => {
