@@ -98,6 +98,18 @@ const MODEL_SESSION_ACTION_PATH = "/v1/model/session/action";
 const MODEL_SESSION_LINK_PATH = "/v1/admin/model/session/link";
 const ADMIN_RICH_MENU_BASE_PATH = "/v1/admin/line/rich-menu";
 const SIGIL_BOARD_PUBLISH_PATH = "/v1/admin/sigil/board/publish";
+const KENJI_KNOWLEDGE_AUTH_ME_PATH = "/v1/admin/auth/me";
+const KENJI_KNOWLEDGE_META_PATH = "/v1/admin/kenji/knowledge/meta";
+const KENJI_KNOWLEDGE_LIST_PATH = "/v1/admin/kenji/knowledge/list";
+const KENJI_KNOWLEDGE_DRAFT_PATH = "/v1/admin/kenji/knowledge/draft";
+const KENJI_KNOWLEDGE_PUBLISHED_PATH = "/v1/internal/kenji/knowledge/published";
+const ADMIN_GATE_SESSION_COOKIE = "mmd_admin_gate_v1";
+const ADMIN_GATE_TTL_MS = 8 * 60 * 60 * 1000;
+const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
+  "https://mmdbkk.com",
+  "https://mmdprive.webflow.io",
+  "https://mmdprive.com",
+]);
 const SIGIL_BOARD_CARDS_KV_KEY = "sigil:board:v1:cards";
 const SIGIL_BOARD_META_KV_KEY = "sigil:board:v1:meta";
 const MEMBER_DASHBOARD_RICH_MENU_BASE_URL = "https://member-dashboard-chat-worker.local/__internal/line/rich-menu";
@@ -132,6 +144,10 @@ export default {
 
     if ((method === "GET" || method === "HEAD") && path === "/internal/admin/kenji-knowledge") {
       return kenjiKnowledgeAdminShell(req);
+    }
+
+    if (isKenjiKnowledgeReadinessRoute(path, method)) {
+      return withCors(await handleKenjiKnowledgeReadinessRoute(req, env, path, method), cors);
     }
 
     // ------------------------------------------------------
@@ -760,12 +776,57 @@ function isAuthed(req, env) {
   const ck = str(req.headers.get("X-Confirm-Key") || "");
   if (env.CONFIRM_KEY && ck && ck === env.CONFIRM_KEY) return true;
 
+  if (isAdminGateSessionAuthed(req, env)) return true;
+
   return false;
 }
 
 function isConfirmKeyAuthed(req, env) {
   const ck = str(req.headers.get("X-Confirm-Key") || "");
   return Boolean(env.CONFIRM_KEY && ck && ck === env.CONFIRM_KEY);
+}
+
+function isAdminGateSessionAuthed(req, env) {
+  const session = readAdminGateSession(req);
+  if (!session || session.ok !== true) return false;
+  if (!session.baseUrl || !ADMIN_GATE_ALLOWED_BASE_URLS.has(session.baseUrl)) return false;
+  if (!Number.isFinite(session.at)) return false;
+  if (Date.now() - session.at > ADMIN_GATE_TTL_MS) return false;
+
+  const bearer = str(session.bearer || "");
+  if (env.ADMIN_BEARER && bearer && bearer === env.ADMIN_BEARER) return true;
+  if (env.INTERNAL_TOKEN && bearer && bearer === env.INTERNAL_TOKEN) return true;
+
+  const confirmKey = str(session.confirmKey || "");
+  if (env.CONFIRM_KEY && confirmKey && confirmKey === env.CONFIRM_KEY) return true;
+
+  return false;
+}
+
+function readAdminGateSession(req) {
+  const raw = parseCookieMap(req).get(ADMIN_GATE_SESSION_COOKIE);
+  if (!raw) return null;
+
+  try {
+    const decoded = decodeURIComponent(raw);
+    const parsed = JSON.parse(atob(decoded));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    return parsed;
+  } catch (_) {
+    return null;
+  }
+}
+
+function parseCookieMap(req) {
+  const map = new Map();
+  const raw = req.headers.get("Cookie") || "";
+  for (const part of raw.split(";")) {
+    const [name, ...rest] = part.split("=");
+    const key = str(name || "");
+    if (!key) continue;
+    map.set(key, rest.join("=").trim());
+  }
+  return map;
 }
 
 /* =========================
@@ -795,11 +856,124 @@ function kenjiKnowledgeAdminShell(req) {
   });
 }
 
+function isKenjiKnowledgeReadinessRoute(path, method) {
+  if ((method === "GET" || method === "HEAD") && path === KENJI_KNOWLEDGE_AUTH_ME_PATH) return true;
+  if ((method === "GET" || method === "HEAD") && path === KENJI_KNOWLEDGE_META_PATH) return true;
+  if ((method === "GET" || method === "HEAD") && path === KENJI_KNOWLEDGE_LIST_PATH) return true;
+  if ((method === "POST" || method === "HEAD") && path === KENJI_KNOWLEDGE_DRAFT_PATH) return true;
+  if ((method === "GET" || method === "HEAD") && path === KENJI_KNOWLEDGE_PUBLISHED_PATH) return true;
+  return false;
+}
+
+async function handleKenjiKnowledgeReadinessRoute(req, env, path, method) {
+  if (!isAllowedOrigin(req, env)) {
+    return jsonForMethod(req, { ok: false, error: "origin_not_allowed" }, 403);
+  }
+
+  if (!isAuthed(req, env)) {
+    return jsonForMethod(req, { ok: false, authenticated: false, error: "unauthorized" }, 401);
+  }
+
+  if (path === KENJI_KNOWLEDGE_AUTH_ME_PATH) {
+    return jsonForMethod(req, {
+      ok: true,
+      authenticated: true,
+      worker: "admin-worker",
+      scope: "internal_admin",
+      source: "admin-worker",
+    });
+  }
+
+  if (path === KENJI_KNOWLEDGE_PUBLISHED_PATH) {
+    return jsonForMethod(req, {
+      ok: true,
+      source: "admin-worker",
+      mode: "published_runtime_readiness",
+      data_status: "readiness_only",
+      storage: {
+        persisted: false,
+        reason: "not_configured",
+      },
+      cards: [],
+    });
+  }
+
+  if (path === KENJI_KNOWLEDGE_META_PATH) {
+    return jsonForMethod(req, {
+      ok: true,
+      source: "admin-worker",
+      mode: "kenji_knowledge_readiness",
+      storage: {
+        persisted: false,
+        reason: "not_configured",
+      },
+    });
+  }
+
+  if (path === KENJI_KNOWLEDGE_LIST_PATH) {
+    return jsonForMethod(req, {
+      ok: true,
+      source: "admin-worker",
+      mode: "kenji_knowledge_list",
+      cards: [],
+    });
+  }
+
+  if (path === KENJI_KNOWLEDGE_DRAFT_PATH) {
+    if (method === "HEAD") {
+      return jsonForMethod(req, {
+        ok: true,
+        source: "admin-worker",
+        mode: "kenji_knowledge_draft",
+      });
+    }
+
+    const parsed = await parseJsonObject(req);
+    if (!parsed.ok) {
+      return jsonForMethod(req, { ok: false, error: "invalid_json" }, 400);
+    }
+
+    return jsonForMethod(req, {
+      ok: true,
+      source: "admin-worker",
+      mode: "kenji_knowledge_draft",
+      draft_received: true,
+      storage: {
+        persisted: false,
+        reason: "not_configured",
+      },
+    });
+  }
+
+  return jsonForMethod(req, { ok: false, error: "not_found" }, 404);
+}
+
+function jsonForMethod(req, data, status = 200) {
+  if (req.method.toUpperCase() === "HEAD") {
+    return new Response(null, {
+      status,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  }
+  return json(data, status);
+}
+
 async function safeJson(req) {
   try {
     return await req.json();
   } catch (_) {
     return {};
+  }
+}
+
+async function parseJsonObject(req) {
+  try {
+    const data = await req.json();
+    return { ok: Boolean(data && typeof data === "object" && !Array.isArray(data)), data };
+  } catch (_) {
+    return { ok: false, data: null };
   }
 }
 

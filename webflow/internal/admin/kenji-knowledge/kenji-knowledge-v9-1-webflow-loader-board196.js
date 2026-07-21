@@ -270,7 +270,7 @@
         if (!metaResponse.ok || !listResponse.ok) throw new Error("knowledge_api_failed");
         var cards = extractCards(result[1].payload);
         if (!cards.length) {
-          setKnowledgeSource("Live API connected", "Live API connected", true);
+          setKnowledgeSource("Backend readiness connected", "Backend readiness connected", true);
           state.cards = [];
         } else {
           setKnowledgeSource("Live API connected", "Live API connected", true);
@@ -292,7 +292,12 @@
           setRuntimeSource("unavailable", 0);
           return;
         }
-        setRuntimeSource("live runtime", extractCards(result.payload).length);
+        var cards = extractCards(result.payload);
+        if (!cards.length && result.payload && result.payload.data_status === "readiness_only") {
+          setRuntimeSource("readiness only", 0);
+          return;
+        }
+        setRuntimeSource(cards.length ? "live runtime" : "no published data", cards.length);
       })
       .catch(function () {
         setRuntimeSource("unavailable", 0);
