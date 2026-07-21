@@ -74,6 +74,11 @@ function clientsUrl(env: Env): string {
   return `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${table}`;
 }
 
+function modelsUrl(env: Env): string {
+  const table = encodeURIComponent(env.AIRTABLE_TABLE_MODELS || "Models");
+  return `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${table}`;
+}
+
 function headers(env: Env): HeadersInit {
   return {
     Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
@@ -1304,4 +1309,58 @@ export async function confirmCustomerBookingToAirtable(
     selected_amount_thb: selectedAmount,
     confirmed_at: confirmedAt,
   };
+}
+
+export async function searchBookingModel(env: Env, query: string) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return null;
+  const q = toStr(query).toLowerCase();
+  if (!q) return null;
+  const records = await listBookingModels(env, 100);
+  const record = records.find((item) => {
+    const fields = item.fields || {};
+    const haystack = [
+      pickString(fields, ["model_id", "Model ID"]),
+      pickString(fields, ["model_record_id", "canonical_slug", "unique_key", "public_model_id", "slug"]),
+      pickString(fields, ["nickname", "Nickname"]),
+      pickString(fields, ["working_name", "Model Name", "display_name", "Display Name", "display_name_compact"]),
+    ].join(" ").toLowerCase();
+    return haystack.includes(q);
+  });
+  return record ? { record_id: record.record_id, fields: record.fields || {} } : null;
+}
+
+export async function listBookingModels(env: Env, limit = 12) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return [];
+  const url = new URL(modelsUrl(env));
+  url.searchParams.set("maxRecords", String(Math.max(1, Math.min(100, limit))));
+  const response = await fetch(url.toString(), { headers: headers(env) });
+  if (!response.ok) throw new Error("model_list_unavailable");
+  const data = (await response.json()) as AirtableListResponse;
+  return (data.records || []).map((record) => ({
+    record_id: record.id,
+    fields: record.fields || {},
+  }));
+}
+
+export async function findBookingClient(env: Env, input: Record<string, unknown>) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return null;
+  const candidates = [
+    ["memberstack_id", toStr(input.memberstack_id)],
+    ["line_user_id", toStr(input.line_user_id)],
+    ["email", toStr(input.client_contact)],
+    ["Client Name", toStr(input.client_name)],
+  ].filter(([, value]) => value);
+  if (!candidates.length) return null;
+  const [field, value] = candidates[0];
+  const formula = `{${field}}="${encodeFormulaValue(value)}"`;
+  const url = new URL(clientsUrl(env));
+  url.searchParams.set("maxRecords", "1");
+  url.searchParams.set("filterByFormula", formula);
+  const response = await fetch(url.toString(), { headers: headers(env) });
+  if (!response.ok) return null;
+  const data = (await response.json()) as AirtableListResponse;
+  const record = data.records?.[0];
+  return record
+    ? { id: record.id, fields: record.fields || {}, matched_field: field, matched_value: value }
+    : null;
 }
