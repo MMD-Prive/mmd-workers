@@ -105,10 +105,14 @@ const KENJI_KNOWLEDGE_META_PATH = "/v1/admin/kenji/knowledge/meta";
 const KENJI_KNOWLEDGE_LIST_PATH = "/v1/admin/kenji/knowledge/list";
 const KENJI_KNOWLEDGE_DRAFT_PATH = "/v1/admin/kenji/knowledge/draft";
 const KENJI_KNOWLEDGE_PUBLISHED_PATH = "/v1/internal/kenji/knowledge/published";
+const ADMIN_LOGIN_ROOT_PATH = "/internal/admin";
+const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
+const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
 const ADMIN_GATE_SESSION_COOKIE = "mmd_admin_gate_v1";
 const ADMIN_GATE_TTL_MS = 8 * 60 * 60 * 1000;
 const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
   "https://mmdbkk.com",
+  "https://www.mmdbkk.com",
   "https://mmdprive.webflow.io",
   "https://mmdprive.com",
 ]);
@@ -146,6 +150,20 @@ export default {
 
     if (method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors });
+    }
+
+    if (path === ADMIN_LOGIN_ROOT_PATH && (method === "GET" || method === "HEAD")) {
+      return adminLoginRequiredPage(req);
+    }
+
+    if (path === ADMIN_LOGIN_PAGE_PATH && (method === "GET" || method === "HEAD")) {
+      return adminLoginPage(req);
+    }
+
+    if (path === ADMIN_LOGIN_SESSION_PATH) {
+      if (method === "POST") return handleAdminLogin(req, env);
+      if (method === "DELETE") return handleAdminLogout(req);
+      return methodNotAllowed(["POST", "DELETE"]);
     }
 
     if (isKenjiKnowledgeShellPath(path)) {
@@ -802,8 +820,10 @@ function isAdminGateSessionAuthed(req, env) {
   const session = readAdminGateSession(req);
   if (!session || session.ok !== true) return false;
   if (!session.baseUrl || !ADMIN_GATE_ALLOWED_BASE_URLS.has(session.baseUrl)) return false;
+  if (session.baseUrl !== new URL(req.url).origin) return false;
   if (!Number.isFinite(session.at)) return false;
-  if (Date.now() - session.at > ADMIN_GATE_TTL_MS) return false;
+  const age = Date.now() - session.at;
+  if (age < 0 || age > ADMIN_GATE_TTL_MS) return false;
 
   const bearer = str(session.bearer || "");
   if (env.ADMIN_BEARER && bearer && bearer === env.ADMIN_BEARER) return true;
@@ -839,6 +859,159 @@ function parseCookieMap(req) {
     map.set(key, rest.join("=").trim());
   }
   return map;
+}
+
+async function handleAdminLogin(req, env) {
+  const origin = req.headers.get("Origin") || "";
+  const requestOrigin = new URL(req.url).origin;
+  if (origin !== requestOrigin || !ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin)) {
+    return adminLoginPage(req, { status: 403, error: "Unable to sign in." });
+  }
+
+  const contentType = (req.headers.get("Content-Type") || "").split(";", 1)[0].trim().toLowerCase();
+  if (contentType !== "application/x-www-form-urlencoded") {
+    return adminLoginPage(req, { status: 400, error: "Unable to sign in." });
+  }
+
+  let form;
+  try {
+    form = new URLSearchParams(await req.text());
+  } catch (_) {
+    return adminLoginPage(req, { status: 400, error: "Unable to sign in." });
+  }
+
+  const credential = str(form.get("credential") || "");
+  const proof = await resolveAdminSessionProof(credential, env);
+  if (!proof) return adminLoginPage(req, { status: 401, error: "Unable to sign in." });
+
+  const next = normalizeAdminLoginNext(form.get("next"), requestOrigin);
+  const session = {
+    ok: true,
+    at: Date.now(),
+    nonce: crypto.randomUUID(),
+    baseUrl: requestOrigin,
+    [proof.kind]: proof.value,
+  };
+  const headers = new Headers({
+    "Cache-Control": "no-store, private",
+    Location: next,
+    "Set-Cookie": makeAdminGateCookie(session),
+  });
+  return new Response(null, { status: 303, headers });
+}
+
+function handleAdminLogout(req) {
+  const requestOrigin = new URL(req.url).origin;
+  const origin = req.headers.get("Origin") || "";
+  if (origin !== requestOrigin || !ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin)) {
+    return json({ ok: false, error: "forbidden" }, 403);
+  }
+  return new Response(null, {
+    status: 303,
+    headers: {
+      "Cache-Control": "no-store, private",
+      Location: ADMIN_LOGIN_PAGE_PATH,
+      "Set-Cookie": `${ADMIN_GATE_SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+    },
+  });
+}
+
+async function resolveAdminSessionProof(credential, env) {
+  if (!credential) return null;
+  const candidates = [
+    ["bearer", str(env.ADMIN_BEARER || "")],
+    ["bearer", str(env.INTERNAL_TOKEN || "")],
+    ["confirmKey", str(env.CONFIRM_KEY || "")],
+  ];
+  let match = null;
+  for (const [kind, value] of candidates) {
+    if (value && (await constantTimeEqual(credential, value)) && !match) match = { kind, value };
+  }
+  return match;
+}
+
+async function constantTimeEqual(left, right) {
+  const encoder = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(left)),
+    crypto.subtle.digest("SHA-256", encoder.encode(right)),
+  ]);
+  const aa = new Uint8Array(a);
+  const bb = new Uint8Array(b);
+  let difference = 0;
+  for (let i = 0; i < aa.length; i += 1) difference |= aa[i] ^ bb[i];
+  return difference === 0;
+}
+
+function makeAdminGateCookie(session) {
+  const value = encodeURIComponent(btoa(JSON.stringify(session)));
+  return `${ADMIN_GATE_SESSION_COOKIE}=${value}; Path=/; Max-Age=${Math.floor(ADMIN_GATE_TTL_MS / 1000)}; HttpOnly; Secure; SameSite=Lax`;
+}
+
+function normalizeAdminLoginNext(raw, origin) {
+  const fallback = KENJI_KNOWLEDGE_CANONICAL_PATH;
+  const value = str(raw || fallback);
+  if (!value.startsWith("/") || value.startsWith("//")) return fallback;
+  try {
+    const target = new URL(value, origin);
+    const allowed = new Set([
+      ADMIN_LOGIN_ROOT_PATH,
+      KENJI_KNOWLEDGE_CANONICAL_PATH,
+      `${KENJI_KNOWLEDGE_CANONICAL_PATH}/`,
+      KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH,
+      `${KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH}/`,
+    ]);
+    if (target.origin !== origin || !allowed.has(target.pathname)) return fallback;
+    return `${target.pathname}${target.search}`;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function adminLoginRequiredPage(req) {
+  const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>MMD Admin</title></head><body><main><h1>Admin access required</h1><p><a href="${ADMIN_LOGIN_PAGE_PATH}">Sign in to MMD Admin</a></p></main></body></html>`;
+  return adminHtml(req, body, 401);
+}
+
+function adminLoginPage(req, { status = 200, error = "" } = {}) {
+  const url = new URL(req.url);
+  const next = normalizeAdminLoginNext(url.searchParams.get("next"), url.origin);
+  const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>MMD Admin Sign In</title></head><body><main><h1>MMD Admin Sign In</h1>${error ? `<p role="alert">${error}</p>` : ""}<form method="post" action="${ADMIN_LOGIN_SESSION_PATH}"><label>Access code <input name="credential" type="password" required autocomplete="current-password"></label><input type="hidden" name="next" value="${escapeHtmlAttribute(next)}"><button type="submit">Sign in</button></form></main></body></html>`;
+  return adminHtml(req, body, status);
+}
+
+function adminHtml(req, body, status) {
+  return new Response(req.method.toUpperCase() === "HEAD" ? null : body, {
+    status,
+    headers: {
+      "Cache-Control": "no-store, private",
+      "Content-Security-Policy": "default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; style-src 'unsafe-inline'",
+      "Content-Type": "text/html; charset=utf-8",
+      "Referrer-Policy": "no-referrer",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
+
+function escapeHtmlAttribute(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]);
+}
+
+function methodNotAllowed(allowed) {
+  return new Response(JSON.stringify({ ok: false, error: "method_not_allowed" }), {
+    status: 405,
+    headers: {
+      Allow: allowed.join(", "),
+      "Cache-Control": "no-store",
+      "Content-Type": "application/json",
+    },
+  });
 }
 
 /* =========================

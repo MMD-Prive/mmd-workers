@@ -19,7 +19,11 @@ The terminating wildcard declarations are required because Cloudflare route matc
 
 Suffix URLs such as `-other` and `/foo` are not Kenji Knowledge-owned surfaces. They pass through to the application origin, so sibling paths remain available to their actual owner without a redirect or a pass-through proxy binding.
 
-Authentication behavior is intentionally unchanged. PR B1 adds no auth gate, bypass, cookie, token, or secret handling. Production verification must confirm that the observed behavior matches the previously served route before any cleanup.
+PR B1.3 prepares the missing browser session issuer in `admin-worker`; it does not deploy it. The canonical login page is `GET /internal/admin/login`, session creation is `POST /internal/admin/login/session`, and logout is `DELETE /internal/admin/login/session`. Successful server-side authentication issues `mmd_admin_gate_v1` with `Path=/`, `Max-Age=28800`, `HttpOnly`, `Secure`, and `SameSite=Lax`, without a `Domain` attribute. The cookie is never returned in HTML or JSON.
+
+Login submissions require an exact same-origin `Origin`, form-encoded POST body, a current approved server secret, and an allowlisted relative `next` target. The default target is `/sigil/internal/admin/kenji-knowledge`. Apex and www sessions are issued and validated separately: the session base URL must equal the request origin. Invalid, malformed, empty, cross-origin, expired, future-dated, or tampered sessions are rejected without setting a cookie or revealing which credential failed. No persistent login-failure rate-limit binding exists in the current admin-worker configuration, so PR B1.3 adds no process-local limiter that could provide misleading protection.
+
+The login owner is limited to six exact apex/www route declarations for `/internal/admin`, `/internal/admin/login`, and `/internal/admin/login/session`. No `/internal/admin/*` route is added. The `/private` path is not a canonical login route and is not linked from the restored UI. `mmd-redirect-worker` and `immigrate-worker` are not expanded or modified.
 
 ## Prepared route patterns
 

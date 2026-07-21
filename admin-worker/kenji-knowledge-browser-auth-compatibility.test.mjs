@@ -81,7 +81,7 @@ test("invalid and expired admin gate cookies return 401", async () => {
   assert.equal(expired.body.error, "unauthorized");
 });
 
-test("apex and www origins are allowed for browser-cookie auth", async () => {
+test("apex and www origins accept their separately host-bound browser cookies", async () => {
   const apex = await jsonRequest("/v1/admin/auth/me", {
     headers: cookieHeaders({ origin: "https://mmdbkk.com" }),
   });
@@ -89,7 +89,10 @@ test("apex and www origins are allowed for browser-cookie auth", async () => {
   assert.equal(apex.response.headers.get("access-control-allow-origin"), "https://mmdbkk.com");
 
   const www = await jsonRequest("/v1/admin/auth/me", {
-    headers: cookieHeaders({ origin: "https://www.mmdbkk.com" }),
+    headers: cookieHeaders({
+      origin: "https://www.mmdbkk.com",
+      cookie: adminGateCookie({ baseUrl: "https://www.mmdbkk.com" }),
+    }),
   }, BASE_ENV, "www.mmdbkk.com");
   assert.equal(www.response.status, 200);
   assert.equal(www.response.headers.get("access-control-allow-origin"), "https://www.mmdbkk.com");
