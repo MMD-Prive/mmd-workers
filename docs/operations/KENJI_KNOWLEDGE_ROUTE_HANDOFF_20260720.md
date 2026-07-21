@@ -4,19 +4,33 @@
 
 - Repository owner: `admin-worker`
 - Previous owner: `mmd-redirect-worker`
+- Canonical route: `/sigil/internal/admin/kenji-knowledge`
+- Temporary alias: `/internal/admin/kenji-knowledge`
+- Alias status: `temporary_compatibility_alias`
 - Migration state: `prepared_not_live_verified`
 - Production state: **PRODUCTION VERIFICATION REQUIRED**
 - Next phase: PR B2 after live verification
 
-PR B1 changes repository ownership only. It does not deploy or mutate Cloudflare. The configured production entry point is `admin-worker/src/dashboard-worker.js`, which delegates non-dashboard requests to `admin-worker/src/index.js`; the existing Kenji handler therefore serves GET and HEAD for the normalized exact/trailing-slash path.
+PR B1.2 adds the canonical SIGIL path while retaining the old path as a temporary compatibility alias. It does not deploy or mutate Cloudflare. The configured production entry point is `admin-worker/src/dashboard-worker.js`, which delegates non-dashboard requests to `admin-worker/src/index.js`; both normalized exact/trailing-slash paths use the same shell implementation.
 
-PR B1 moves the six Kenji-specific patterns from `mmd-redirect-worker/wrangler.toml` to `admin-worker/wrangler.toml`. The two global catch-alls remain and are not changed. The post-B1 repository state is six narrow Kenji patterns in the admin-worker config and zero Kenji-specific patterns in the redirect-worker config.
+PR B1.2 keeps the six old compatibility patterns and adds six canonical patterns to `admin-worker/wrangler.toml`. The two redirect-worker global catch-alls remain unchanged. There are zero Kenji-specific patterns in the redirect-worker config.
 
 Authentication behavior is intentionally unchanged. PR B1 adds no auth gate, bypass, cookie, token, or secret handling. Production verification must confirm that the observed behavior matches the previously served route before any cleanup.
 
 ## Prepared route patterns
 
-All use `zone_name = "mmdbkk.com"`:
+All use `zone_name = "mmdbkk.com"`.
+
+Canonical:
+
+- `mmdbkk.com/sigil/internal/admin/kenji-knowledge`
+- `mmdbkk.com/sigil/internal/admin/kenji-knowledge/`
+- `mmdbkk.com/sigil/internal/admin/kenji-knowledge*`
+- `www.mmdbkk.com/sigil/internal/admin/kenji-knowledge`
+- `www.mmdbkk.com/sigil/internal/admin/kenji-knowledge/`
+- `www.mmdbkk.com/sigil/internal/admin/kenji-knowledge*`
+
+Temporary compatibility alias retained:
 
 - `mmdbkk.com/internal/admin/kenji-knowledge`
 - `mmdbkk.com/internal/admin/kenji-knowledge/`
@@ -25,7 +39,7 @@ All use `zone_name = "mmdbkk.com"`:
 - `www.mmdbkk.com/internal/admin/kenji-knowledge/`
 - `www.mmdbkk.com/internal/admin/kenji-knowledge*`
 
-No `/internal/admin/*`, `/internal/*`, apex catch-all, or www catch-all is assigned to admin-worker.
+No `/sigil/*`, `/sigil/internal/admin/*`, `/internal/admin/*`, apex catch-all, or www catch-all is assigned to admin-worker.
 
 ## Expected response contract
 
@@ -39,6 +53,9 @@ No `/internal/admin/*`, `/internal/*`, apex catch-all, or www catch-all is assig
 - `x-mmd-page: kenji-knowledge-admin`
 - `x-mmd-origin: admin-worker:kenji-knowledge-shell`
 - `x-mmd-worker: admin-worker`
+- `x-mmd-route-canonical: /sigil/internal/admin/kenji-knowledge`
+- canonical: `x-mmd-route-kind: canonical`
+- old alias: `x-mmd-route-kind: compatibility-alias`
 - `cache-control: no-store, no-cache, must-revalidate, max-age=0`
 - no `x-mmd-front-gate`
 
@@ -68,6 +85,10 @@ Use non-secret test data. Record live route identifiers and sensitive operationa
 3. Confirm the previous page response is restored on apex and www, including trailing slash and query string.
 4. Keep the admin-worker handler intact for diagnosis and a later retry.
 5. Do not broaden either Worker’s ownership.
+
+## Compatibility alias removal gate
+
+Do not remove `/internal/admin/kenji-knowledge` until all of the following pass: canonical production deploy; authenticated apex and www smoke; exact, slash, and query variants; GET and HEAD; API 200 smoke; asset MIME checks; browser acceptance; healthy logs through an observation window; and explicit approval to remove the alias.
 
 ## PR B2 gate
 

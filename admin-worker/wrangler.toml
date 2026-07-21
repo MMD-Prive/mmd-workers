@@ -7,7 +7,33 @@ compatibility_date = "2026-01-01"
 workers_dev = true
 
 # Kenji Knowledge ownership only. Keep these patterns narrow; do not claim
-# /internal/admin/* or either host catch-all.
+# /sigil/internal/admin/*, /internal/admin/*, or either host catch-all.
+[[routes]]
+pattern = "mmdbkk.com/sigil/internal/admin/kenji-knowledge"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/sigil/internal/admin/kenji-knowledge/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/sigil/internal/admin/kenji-knowledge*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/internal/admin/kenji-knowledge"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/internal/admin/kenji-knowledge/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/internal/admin/kenji-knowledge*"
+zone_name = "mmdbkk.com"
+
+# Temporary compatibility alias. Retain until canonical production verification
+# and explicit removal approval.
 [[routes]]
 pattern = "mmdbkk.com/internal/admin/kenji-knowledge"
 zone_name = "mmdbkk.com"
