@@ -108,6 +108,10 @@ const KENJI_KNOWLEDGE_PUBLISHED_PATH = "/v1/internal/kenji/knowledge/published";
 const ADMIN_LOGIN_ROOT_PATH = "/internal/admin";
 const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
+const ADMIN_NEXT_INTERNAL_CONTROL_ROOM_PATH = "/internal/admin/control-room";
+const ADMIN_NEXT_CREATE_SESSION_LEGACY_PATH = "/internal/admin/create-session";
+const ADMIN_NEXT_CREATE_SESSION_PATH = "/internal/admin/jobs/create-session";
+const ADMIN_NEXT_CREATE_JOB_PATH = "/internal/jobs/create-job";
 const ADMIN_GATE_SESSION_COOKIE = "mmd_admin_gate_v1";
 const ADMIN_GATE_TTL_MS = 8 * 60 * 60 * 1000;
 const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
@@ -960,20 +964,68 @@ function normalizeAdminLoginNext(raw, origin) {
   const fallback = KENJI_KNOWLEDGE_CANONICAL_PATH;
   const value = str(raw || fallback);
   if (!value.startsWith("/") || value.startsWith("//")) return fallback;
+  if (hasTraversalSegment(value)) return fallback;
   try {
     const target = new URL(value, origin);
-    const allowed = new Set([
-      ADMIN_LOGIN_ROOT_PATH,
-      KENJI_KNOWLEDGE_CANONICAL_PATH,
-      `${KENJI_KNOWLEDGE_CANONICAL_PATH}/`,
-      KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH,
-      `${KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH}/`,
-    ]);
-    if (target.origin !== origin || !allowed.has(target.pathname)) return fallback;
+    if (target.origin !== origin || !isAllowedAdminNextPath(target.pathname)) return fallback;
+    if (hasCredentialQuery(target.searchParams)) return fallback;
     return `${target.pathname}${target.search}`;
   } catch (_) {
     return fallback;
   }
+}
+
+function isAllowedAdminNextPath(pathname) {
+  // Approved repository-backed protected destinations only:
+  // - Kenji canonical and compatibility alias shells owned by admin-worker.
+  // - Immigrate protected control-room pages that redirect through this login.
+  // - Existing create-session/create-job internal pages linked from control-room.
+  const exact = new Set([
+    ADMIN_LOGIN_ROOT_PATH,
+    KENJI_KNOWLEDGE_CANONICAL_PATH,
+    `${KENJI_KNOWLEDGE_CANONICAL_PATH}/`,
+    KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH,
+    `${KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH}/`,
+    ADMIN_NEXT_CREATE_SESSION_LEGACY_PATH,
+    ADMIN_NEXT_CREATE_SESSION_PATH,
+    ADMIN_NEXT_CREATE_JOB_PATH,
+  ]);
+  if (exact.has(pathname)) return true;
+  return pathname === ADMIN_NEXT_INTERNAL_CONTROL_ROOM_PATH || pathname.startsWith(`${ADMIN_NEXT_INTERNAL_CONTROL_ROOM_PATH}/`);
+}
+
+function hasCredentialQuery(params) {
+  const blocked = new Set([
+    "access_token",
+    "authorization",
+    "bearer",
+    "confirm_key",
+    "cookie",
+    "credential",
+    "password",
+    "secret",
+    "token",
+    "x-confirm-key",
+  ]);
+  for (const key of params.keys()) {
+    if (blocked.has(str(key).toLowerCase())) return true;
+  }
+  return false;
+}
+
+function hasTraversalSegment(value) {
+  let decoded = value;
+  for (let i = 0; i < 2; i += 1) {
+    if (/(^|\/)\.\.(?:\/|$)/.test(decoded)) return true;
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    } catch (_) {
+      break;
+    }
+  }
+  return /(^|\/)\.\.(?:\/|$)/.test(decoded);
 }
 
 function adminLoginRequiredPage(req) {

@@ -181,11 +181,49 @@ test("apex and www sessions are independently host-bound", async () => {
   assert.equal(wwwOnApex.status, 401);
 });
 
-test("next redirects are allowlisted and external targets fall back to canonical", async () => {
-  const allowed = await login(ENV.ADMIN_BEARER, { next: `${KENJI}?source=login` });
-  assert.equal(allowed.headers.get("location"), `${KENJI}?source=login`);
+test("direct workers.dev auth/me rejects public-host cookies and forwarded-host markers", async () => {
+  const Cookie = cookiePair(await login());
+  const response = await request("/v1/admin/auth/me", {
+    headers: {
+      Origin: "https://mmdbkk.com",
+      Cookie,
+      "X-Forwarded-Host": "mmdbkk.com",
+      "X-MMD-Public-Origin": "https://mmdbkk.com",
+    },
+  }, "admin-worker.malemodel-bkk.workers.dev");
 
-  for (const next of ["https://evil.example/steal", "//evil.example/steal", "/unapproved"]) {
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).authenticated, false);
+});
+
+test("next redirects are allowlisted and external targets fall back to canonical", async () => {
+  const allowedTargets = [
+    `${KENJI}?source=login`,
+    "/internal/admin/kenji-knowledge",
+    "/internal/admin/control-room",
+    "/internal/admin/control-room?tab=line-inbox",
+    "/internal/admin/control-room/sessions/live?filter=open",
+    "/internal/admin/create-session",
+    "/internal/admin/jobs/create-session",
+    "/internal/jobs/create-job?session=sess_public_safe",
+  ];
+  for (const next of allowedTargets) {
+    const allowed = await login(ENV.ADMIN_BEARER, { next });
+    assert.equal(allowed.headers.get("location"), next);
+  }
+
+  for (const next of [
+    "https://evil.example/steal",
+    "//evil.example/steal",
+    "/unapproved",
+    "/internal/admin/unknown",
+    "/sigil/internal/admin/unknown",
+    "/%2F%2Fevil.example/steal",
+    "/internal/admin/control-room/../unknown",
+    "/internal/admin/control-room/%2e%2e/unknown",
+    "/internal/admin/control-room?token=secret",
+    "/internal/jobs/create-job?credential=secret",
+  ]) {
     const response = await login(ENV.ADMIN_BEARER, { next });
     assert.equal(response.headers.get("location"), KENJI);
   }

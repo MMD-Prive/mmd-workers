@@ -24,6 +24,13 @@ function withQuery(path: string, url: URL): string {
   return `${path}${url.search || ""}`;
 }
 
+function publicAdminAuthBaseUrl(request: Request): string {
+  const { hostname } = new URL(request.url);
+  if (hostname === "mmdbkk.com") return "https://mmdbkk.com";
+  if (hostname === "www.mmdbkk.com") return "https://www.mmdbkk.com";
+  return "";
+}
+
 async function serveAsset(request: Request, env: InternalRoutesEnv): Promise<Response | null> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/a/")) return null;
@@ -52,9 +59,13 @@ async function requireAdminGate(request: Request, env: InternalRoutesEnv): Promi
   const url = new URL(request.url);
   if (url.searchParams.has("mock")) return null;
 
-  const adminBase = env.ADMIN_WORKER_BASE_URL || "https://admin-worker.malemodel-bkk.workers.dev";
+  const adminBase = publicAdminAuthBaseUrl(request);
+  if (!adminBase) {
+    return redirect(`/internal/admin/login?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`, 302);
+  }
+
   try {
-    const verifyRes = await fetch(`${adminBase.replace(/\/$/, "")}/v1/admin/auth/me`, {
+    const verifyRes = await fetch(`${adminBase}/v1/admin/auth/me`, {
       method: "GET",
       headers: {
         accept: "application/json",
