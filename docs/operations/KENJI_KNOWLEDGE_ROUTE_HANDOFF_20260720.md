@@ -15,6 +15,10 @@ PR B1.2 adds the canonical SIGIL path while retaining the old path as a temporar
 
 PR B1.2 keeps the six old compatibility patterns and adds six canonical patterns to `admin-worker/wrangler.toml`. The two redirect-worker global catch-alls remain unchanged. There are zero Kenji-specific patterns in the redirect-worker config.
 
+The terminating wildcard declarations are required because Cloudflare route matching includes the query string and an exact pattern does not match a query-bearing URL. Inside `admin-worker`, pathname classification remains exact: only the normalized canonical and compatibility-alias pathnames receive the shared shell. A request captured by either wildcard with any other suffix or subpath is returned directly from `fetch(request)`, which uses Cloudflare Route origin semantics. It preserves the destination, query, method, headers, body, status, content type, and response body without adding Kenji ownership headers or substituting the admin JSON fallback. With `global_fetch_strictly_public` absent, same-zone global fetch targets the zone origin and ignores Worker routes, preventing recursion through admin-worker or the redirect-worker catch-all.
+
+Suffix URLs such as `-other` and `/foo` are not Kenji Knowledge-owned surfaces. They pass through to the application origin, so sibling paths remain available to their actual owner without a redirect or a pass-through proxy binding.
+
 Authentication behavior is intentionally unchanged. PR B1 adds no auth gate, bypass, cookie, token, or secret handling. Production verification must confirm that the observed behavior matches the previously served route before any cleanup.
 
 ## Prepared route patterns
@@ -40,6 +44,8 @@ Temporary compatibility alias retained:
 - `www.mmdbkk.com/internal/admin/kenji-knowledge*`
 
 No `/sigil/*`, `/sigil/internal/admin/*`, `/internal/admin/*`, apex catch-all, or www catch-all is assigned to admin-worker.
+
+The four terminating Kenji wildcards cover query-string variants only at the routing layer. They do not expand shell ownership because runtime pathname classification rejects non-exact suffixes and subpaths before the core admin router.
 
 ## Expected response contract
 

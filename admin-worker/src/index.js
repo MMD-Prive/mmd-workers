@@ -140,14 +140,15 @@ export default {
     const method = req.method.toUpperCase();
     const cors = corsHeaders(req, env);
 
+    if (isKenjiKnowledgeCapturedPath(path) && !isKenjiKnowledgeShellPath(path)) {
+      return passThroughKenjiSuffixToOrigin(req);
+    }
+
     if (method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors });
     }
 
-    if (
-      (method === "GET" || method === "HEAD") &&
-      (path === KENJI_KNOWLEDGE_CANONICAL_PATH || path === KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH)
-    ) {
+    if ((method === "GET" || method === "HEAD") && isKenjiKnowledgeShellPath(path)) {
       return kenjiKnowledgeAdminShell(
         req,
         path === KENJI_KNOWLEDGE_CANONICAL_PATH ? "canonical" : "compatibility-alias"
@@ -864,6 +865,23 @@ function kenjiKnowledgeAdminShell(req, routeKind) {
       "x-mmd-route-kind": routeKind,
     },
   });
+}
+
+function isKenjiKnowledgeShellPath(path) {
+  return path === KENJI_KNOWLEDGE_CANONICAL_PATH || path === KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH;
+}
+
+function isKenjiKnowledgeCapturedPath(path) {
+  return (
+    path.startsWith(KENJI_KNOWLEDGE_CANONICAL_PATH) ||
+    path.startsWith(KENJI_KNOWLEDGE_COMPATIBILITY_ALIAS_PATH)
+  );
+}
+
+function passThroughKenjiSuffixToOrigin(req) {
+  // Worker Route origin semantics bypass same-zone Worker routes unless
+  // global_fetch_strictly_public is explicitly enabled (it is not in this Worker).
+  return fetch(req);
 }
 
 function isKenjiKnowledgeReadinessRoute(path, method) {

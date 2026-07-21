@@ -14,6 +14,16 @@ async function request(path, init) {
   return worker.fetch(new Request(`https://mmdbkk.com${path}`, init), {}, {});
 }
 
+async function withOriginFetchMock(mock, run) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = mock;
+  try {
+    return await run();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 function assertSharedHeaders(response, kind) {
   assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker");
   assert.equal(response.headers.get("x-mmd-page"), "kenji-knowledge-admin");
@@ -41,21 +51,21 @@ for (const path of [CANONICAL, `${CANONICAL}/`, `${CANONICAL}?source=canonical-t
   });
 }
 
-for (const path of [CANONICAL, `${CANONICAL}/`]) {
+for (const path of [CANONICAL, `${CANONICAL}/`, `${CANONICAL}?source=head-test`, `${ALIAS}?source=head-test`]) {
   test(`canonical HEAD is bodyless: ${path}`, async () => {
     const response = await request(path, { method: "HEAD" });
 
     assert.equal(response.status, 200);
-    assertSharedHeaders(response, "canonical");
+    assertSharedHeaders(response, path.startsWith(ALIAS) ? "compatibility-alias" : "canonical");
     assert.equal(await response.text(), "");
   });
 }
 
-test("compatibility alias exact and slash serve the same shell as canonical", async () => {
+test("compatibility alias exact, slash, and query serve the same shell as canonical", async () => {
   const canonical = await request(CANONICAL);
   const canonicalHtml = await canonical.text();
 
-  for (const path of [ALIAS, `${ALIAS}/`]) {
+  for (const path of [ALIAS, `${ALIAS}/`, `${ALIAS}?source=alias-test`]) {
     const response = await request(path);
     const html = await response.text();
 
@@ -66,8 +76,19 @@ test("compatibility alias exact and slash serve the same shell as canonical", as
   }
 });
 
+test("canonical and alias query requests serve without redirecting or changing their URL", async () => {
+  for (const path of [`${CANONICAL}?source=test`, `${ALIAS}?source=test`]) {
+    const incoming = new Request(`https://mmdbkk.com${path}`);
+    const originalUrl = incoming.url;
+    const response = await worker.fetch(incoming, {}, {});
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("location"), null);
+    assert.equal(incoming.url, originalUrl);
+  }
+});
+
 for (const path of [
-  "/sigil/internal/admin/kenji-knowledge-other",
   "/sigil/internal/admin/kenji",
   "/sigil/internal/admin/other",
 ]) {
@@ -79,6 +100,68 @@ for (const path of [
     assert.equal(response.headers.get("x-mmd-page"), null);
   });
 }
+
+for (const path of [
+  `${CANONICAL}-other`,
+  `${CANONICAL}/foo`,
+  `${ALIAS}-other`,
+  `${ALIAS}/foo`,
+]) {
+  test(`captured Kenji suffix passes through to origin exactly once: ${path}`, async () => {
+    const calls = [];
+    const response = await withOriginFetchMock(
+      async (incoming) => {
+        calls.push(incoming);
+        return new Response(`origin:${new URL(incoming.url).pathname}`, {
+          status: 418,
+          headers: { "content-type": "text/plain; charset=utf-8", "x-origin-test": "true" },
+        });
+      },
+      () => request(path)
+    );
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, `https://mmdbkk.com${path}`);
+    assert.equal(response.status, 418);
+    assert.equal(response.headers.get("content-type"), "text/plain; charset=utf-8");
+    assert.equal(response.headers.get("x-origin-test"), "true");
+    assert.equal(response.headers.get("x-mmd-page"), null);
+    assert.equal(response.headers.get("x-mmd-route-kind"), null);
+    assert.equal(await response.text(), `origin:${path}`);
+  });
+}
+
+test("suffix pass-through preserves method, query, headers, body, and origin response", async () => {
+  const path = `${CANONICAL}/foo?source=suffix-test`;
+  let calls = 0;
+  const response = await withOriginFetchMock(
+    async (incoming) => {
+      calls += 1;
+      assert.equal(incoming.method, "POST");
+      assert.equal(incoming.url, `https://mmdbkk.com${path}`);
+      assert.equal(incoming.headers.get("content-type"), "application/json");
+      assert.equal(incoming.headers.get("x-safe-test"), "preserved");
+      assert.deepEqual(await incoming.json(), { safe: true });
+      return new Response("origin-body", {
+        status: 207,
+        headers: { "content-type": "application/origin-test" },
+      });
+    },
+    () => request(path, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-safe-test": "preserved" },
+      body: JSON.stringify({ safe: true }),
+    })
+  );
+
+  assert.equal(calls, 1);
+  assert.equal(response.status, 207);
+  assert.equal(response.headers.get("content-type"), "application/origin-test");
+  assert.equal(response.headers.get("x-mmd-route-owner"), null);
+  assert.equal(response.headers.get("x-mmd-page"), null);
+  assert.equal(response.headers.get("x-mmd-route-kind"), null);
+  assert.equal(await response.text(), "origin-body");
+});
 
 test("canonical and alias route ownership is narrow and isolated", async () => {
   const [adminConfig, redirectConfig, immigrateConfig, immigrateSource] = await Promise.all([
@@ -111,6 +194,7 @@ test("canonical and alias route ownership is narrow and isolated", async () => {
   for (const pattern of forbidden) {
     assert.equal(count(adminConfig, `pattern = "${pattern}"`), 0, pattern);
   }
+  assert.doesNotMatch(adminConfig, /global_fetch_strictly_public/);
 });
 
 test("PR 206 readiness API route declarations remain exact", async () => {
