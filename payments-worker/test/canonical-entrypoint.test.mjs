@@ -9,6 +9,6 @@ test("canonical entrypoint keeps payment slip evidence evidence-only", async () 
 });
 
 test("canonical entrypoint delegates normal payment paths to the base worker", async () => {
-  const response = await worker.fetch(new Request("https://sigil.mmdbkk.com/v1/pay/unknown"));
+  const response = await worker.fetch(new Request("https://sigil.mmdbkk.com/v1/pay/unknown"), {});
   assert.equal(response.status, 404);
 });
