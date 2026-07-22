@@ -25,6 +25,7 @@
     "check:kenji-member-memory": "node --check shared/kenji-member-memory-snapshot.mjs && node --check immigrate-worker/netlify/functions/kenji-member-memory-context.mjs",
     "test:kenji-line": "node --test shared/kenji-member-concierge-core.test.mjs",
     "test:kenji-member-memory": "node --test shared/kenji-member-memory-snapshot.test.mjs",
-    "check:payments": "node --check payments-worker/index.js && node --check payments-worker/index.slip-evidence-clean.js"
+    "check:payments": "node --check payments-worker/index.js && node --check payments-worker/index.slip-evidence-clean.js",
+    "test:payments": "npm run check:payments && node --test payments-worker/test/canonical-entrypoint.test.mjs"
   }
 }
