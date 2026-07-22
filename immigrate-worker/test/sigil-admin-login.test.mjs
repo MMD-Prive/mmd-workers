@@ -2,14 +2,17 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const tmp = await mkdtemp(join(tmpdir(), "sigil-admin-login-"));
 const outfile = join(tmp, "worker.mjs");
+const workerRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 await build({
-  entryPoints: ["src/index.ts"],
+  entryPoints: [join(workerRoot, "src/index.ts")],
   outfile,
   bundle: true,
   format: "esm",
@@ -200,11 +203,20 @@ try {
     }), bridgeEnv);
     assert.equal(response.status, 200);
     assert.equal(bindingCalls.length, 1);
-    assert.equal(bindingCalls[0].url, "https://mmdbkk.com/v1/admin/create-job?source=worker-page");
+    assert.equal(bindingCalls[0].url, "https://mmdbkk.com/v1/admin/job/create?source=worker-page");
     assert.equal(bindingCalls[0].method, "POST");
     assert.equal(bindingCalls[0].headers.get("authorization"), null);
     assert.equal(bindingCalls[0].headers.get("content-type"), "application/json");
-    assert.equal(await bindingCalls[0].text(), payload);
+    const forwardedPayload = JSON.parse(await bindingCalls[0].text());
+    assert.equal(forwardedPayload.session_id, "sess_public_safe");
+    assert.equal(forwardedPayload.client_name, "sess_public_safe");
+    assert.equal(forwardedPayload.model_name, "model_pending");
+    assert.equal(forwardedPayload.job_type, "public_work");
+    assert.equal(forwardedPayload.job_date, "pending_date");
+    assert.equal(forwardedPayload.start_time, "00:00");
+    assert.equal(forwardedPayload.end_time, "01:30");
+    assert.equal(forwardedPayload.location_name, "pending_location");
+    assert.equal(forwardedPayload.amount_thb, 1);
   }
 } finally {
   await rm(tmp, { recursive: true, force: true });
