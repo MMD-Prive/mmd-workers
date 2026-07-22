@@ -21,7 +21,7 @@ test("derives LINE subject server-side and forwards only its hash", async () => 
   const env = {
     LINE_ID_HASH_SECRET: "x".repeat(48),
     INTERNAL_SERVICE_SECRET: "y".repeat(48),
-    MEMBER_STATUS_RESOLVER: {
+    PROMOTION_MEMBER_STATUS_RESOLVER: {
       fetch: async (request) => {
         const input = await request.json();
         assert.equal(input.lineUserId, LINE_ID);

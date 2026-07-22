@@ -60,8 +60,8 @@ export async function verifyLineAccessToken(accessToken, env = {}) {
 }
 
 async function resolveMemberSnapshot(lineUserId, env) {
-  if (!env.MEMBER_STATUS_RESOLVER?.fetch) return { ok: false, status: 503, error: "member_status_resolver_missing" };
-  const response = await env.MEMBER_STATUS_RESOLVER.fetch(new Request("https://member-status-resolver.internal/v1/internal/members/by-line", {
+  if (!env.PROMOTION_MEMBER_STATUS_RESOLVER?.fetch) return { ok: false, status: 503, error: "member_status_resolver_missing" };
+  const response = await env.PROMOTION_MEMBER_STATUS_RESOLVER.fetch(new Request("https://promotion-member-status-resolver.internal/v1/internal/members/by-line", {
     method: "POST",
     headers: { "content-type": "application/json", "x-mmd-internal-secret": String(env.INTERNAL_SERVICE_SECRET || "") },
     body: JSON.stringify({ lineUserId }),
