@@ -36,6 +36,16 @@ function adminLoginRedirect(url: URL): Response {
   return redirect(`/internal/admin/login?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`, 302);
 }
 
+async function withSameOriginAdminBase(response: Response): Promise<Response> {
+  const html = await response.text();
+  const rewritten = html.replace('adminBase:""', 'adminBase:location.origin');
+  return new Response(rewritten, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
 async function serveAsset(request: Request, env: InternalRoutesEnv): Promise<Response | null> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/a/")) return null;
@@ -89,6 +99,48 @@ async function requireAdminGate(request: Request, env: InternalRoutesEnv): Promi
   return adminLoginRedirect(url);
 }
 
+function str(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function addMinutes(time: string, minutes: number): string {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(str(time));
+  if (!match) return "";
+  const start = Number(match[1]) * 60 + Number(match[2]);
+  const next = (start + minutes) % (24 * 60);
+  return `${String(Math.floor(next / 60)).padStart(2, "0")}:${String(next % 60).padStart(2, "0")}`;
+}
+
+function normalizeAdminJobPayload(body: Record<string, unknown>): Record<string, unknown> {
+  const work = (body.work && typeof body.work === "object" ? body.work : {}) as Record<string, unknown>;
+  const model = (body.model && typeof body.model === "object" ? body.model : {}) as Record<string, unknown>;
+  const jobDetails = (body.job_details && typeof body.job_details === "object" ? body.job_details : {}) as Record<string, unknown>;
+  const payment = (body.payment && typeof body.payment === "object" ? body.payment : {}) as Record<string, unknown>;
+  const notes = (body.notes && typeof body.notes === "object" ? body.notes : {}) as Record<string, unknown>;
+  const clientLineage = (body.client_lineage && typeof body.client_lineage === "object" ? body.client_lineage : {}) as Record<string, unknown>;
+
+  const sessionId = str(body.session_id);
+  const startTime = str(body.start_time || jobDetails.start_time) || "00:00";
+  const endTime = str(body.end_time || jobDetails.end_time) || addMinutes(startTime, 90);
+  const amount = Number(body.amount_thb || payment.amount_thb || 1);
+
+  return {
+    ...body,
+    client_name: str(body.client_name || clientLineage.client_name) || sessionId,
+    model_name: str(body.model_name || model.model_name || body.model_lookup_key) || "model_pending",
+    job_type: str(body.job_type || work.job_lane || work.work_type || body.job_visibility) || "public_work",
+    job_date: str(body.job_date || jobDetails.job_date) || "pending_date",
+    start_time: startTime,
+    end_time: endTime,
+    location_name: str(body.location_name || jobDetails.location_name) || "pending_location",
+    google_map_url: str(body.google_map_url || jobDetails.google_map_url),
+    amount_thb: Number.isFinite(amount) && amount > 0 ? amount : 1,
+    payment_type: str(body.payment_type || payment.payment_type) || "full",
+    payment_method: str(body.payment_method || payment.payment_method) || "promptpay",
+    note: str(body.note || notes.operation_note || notes.handling_note || body.notes),
+  };
+}
+
 async function proxyAdminApi(request: Request, env: InternalRoutesEnv): Promise<Response | null> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/v1/admin/")) return null;
@@ -97,7 +149,13 @@ async function proxyAdminApi(request: Request, env: InternalRoutesEnv): Promise<
   if (!adminBase || !env.ADMIN_WORKER) {
     return Response.json({ ok: false, error: "admin_worker_binding_required" }, { status: 502 });
   }
-  const targetPath = url.pathname === "/v1/admin/jobs/create-session" ? "/v1/admin/create-session" : url.pathname;
+  const adminApiAliases: Record<string, string> = {
+    "/v1/admin/create-job": "/v1/admin/job/create",
+    "/v1/admin/create-session": "/v1/admin/job/create",
+    "/v1/admin/jobs/create-session": "/v1/admin/job/create",
+  };
+  const targetPath = adminApiAliases[url.pathname] || url.pathname;
+  const shouldNormalizeAdminJob = Boolean(adminApiAliases[url.pathname]) && request.method === "POST";
   const publicHost = new URL(adminBase).hostname;
   const target = new URL(`${adminBase}${targetPath}`);
   target.search = url.search;
@@ -111,10 +169,18 @@ async function proxyAdminApi(request: Request, env: InternalRoutesEnv): Promise<
   headers.set("x-mmd-auth-bridge", "immigrate-internal-admin-api");
   headers.set("x-mmd-public-host", publicHost);
 
+  let body: BodyInit | null | undefined =
+    request.method === "GET" || request.method === "HEAD" ? undefined : request.body;
+  if (shouldNormalizeAdminJob && contentType?.toLowerCase().includes("application/json")) {
+    const rawBody = await request.text();
+    const parsed = rawBody ? JSON.parse(rawBody) : {};
+    body = JSON.stringify(normalizeAdminJobPayload(parsed && typeof parsed === "object" ? parsed : {}));
+  }
+
   const init: RequestInit & { duplex?: "half" } = {
     method: request.method,
     headers,
-    body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
+    body,
     redirect: "manual",
   };
   if (init.body) init.duplex = "half";
@@ -153,7 +219,7 @@ export async function handleInternalRoutes(request: Request, env: InternalRoutes
   if (pathname === "/internal/admin/jobs/create-session") {
     const gate = await requireAdminGate(request, env);
     if (gate) return gate;
-    return renderCreateSessionPage(env);
+    return withSameOriginAdminBase(renderCreateSessionPage(env));
   }
 
   if (pathname === "/internal/jobs/create-job") {
