@@ -73,14 +73,6 @@ pattern = "www.mmdbkk.com/v1/admin/ping*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
-pattern = "mmdbkk.com/v1/admin/clients/lineage-lookup*"
-zone_name = "mmdbkk.com"
-
-[[routes]]
-pattern = "www.mmdbkk.com/v1/admin/clients/lineage-lookup*"
-zone_name = "mmdbkk.com"
-
-[[routes]]
 pattern = "mmdbkk.com/v1/admin/clients/recent*"
 zone_name = "mmdbkk.com"
 

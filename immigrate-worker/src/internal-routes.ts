@@ -122,7 +122,10 @@ function normalizeAdminJobPayload(body: Record<string, unknown>): Record<string,
   const sessionId = str(body.session_id);
   const startTime = str(body.start_time || jobDetails.start_time) || "00:00";
   const endTime = str(body.end_time || jobDetails.end_time) || addMinutes(startTime, 90);
-  const amount = Number(body.amount_thb || payment.amount_thb || 1);
+  const amountValue = body.amount_thb ?? payment.amount_thb;
+  if (!str(amountValue)) throw new Error("invalid_amount_thb");
+  const amount = Number(amountValue);
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error("invalid_amount_thb");
 
   return {
     ...body,
@@ -134,7 +137,7 @@ function normalizeAdminJobPayload(body: Record<string, unknown>): Record<string,
     end_time: endTime,
     location_name: str(body.location_name || jobDetails.location_name) || "pending_location",
     google_map_url: str(body.google_map_url || jobDetails.google_map_url),
-    amount_thb: Number.isFinite(amount) && amount > 0 ? amount : 1,
+    amount_thb: amount,
     payment_type: str(body.payment_type || payment.payment_type) || "full",
     payment_method: str(body.payment_method || payment.payment_method) || "promptpay",
     note: str(body.note || notes.operation_note || notes.handling_note || body.notes),
@@ -173,8 +176,19 @@ async function proxyAdminApi(request: Request, env: InternalRoutesEnv): Promise<
     request.method === "GET" || request.method === "HEAD" ? undefined : request.body;
   if (shouldNormalizeAdminJob && contentType?.toLowerCase().includes("application/json")) {
     const rawBody = await request.text();
-    const parsed = rawBody ? JSON.parse(rawBody) : {};
-    body = JSON.stringify(normalizeAdminJobPayload(parsed && typeof parsed === "object" ? parsed : {}));
+    try {
+      const parsed = rawBody ? JSON.parse(rawBody) : {};
+      body = JSON.stringify(normalizeAdminJobPayload(parsed && typeof parsed === "object" ? parsed : {}));
+    } catch {
+      return Response.json(
+        {
+          ok: false,
+          error: "invalid_amount_thb",
+          message: "amount_thb is required and must be a number greater than 0",
+        },
+        { status: 400 }
+      );
+    }
   }
 
   const init: RequestInit & { duplex?: "half" } = {
