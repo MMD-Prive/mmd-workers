@@ -1,0 +1,166 @@
+# CODEXMIN - PHASE 1A Route Inventory Normalization
+
+Date: 2026-07-23
+Source: current repo checkout only, no production route changes.
+Branch observed: `hotfix/admin-kenji-knowledge-shell`
+HEAD observed: `fa2e954d870a851deac32eb5a65176e96c73a9b8`
+
+This is the single Phase 1A normalization pass for route truth. It classifies
+known public routes, page routes, API routes, aliases, legacy surfaces, and
+unresolved ownership conflicts. It does not approve owner moves, route deletion,
+worker deployment, Webflow publishing, or alias removal.
+
+## Status Key
+
+| Status | Meaning |
+| --- | --- |
+| LIVE CONNECTED | Route has an explicit repo owner and connected route/API handling. |
+| UI READY / BACKEND MISSING | Frontend or Webflow artifact exists, but backend owner is missing or not proven. |
+| API READY / UI MISSING | Backend API exists, but canonical page/UI is missing or not proven. |
+| ROUTE ONLY / REDIRECT | Front gate or route config only redirects, aliases, proxies, or protects path. |
+| LEGACY | Existing surface kept temporarily for compatibility. |
+| UNRESOLVED | Multiple owners, missing owner, or conflicting route truth. |
+| DEPRECATED | Known old path retained only as compatibility marker. |
+| REMOVE LATER | Candidate for removal only after Phase 6 proof and approval. |
+
+## Priority Route Inventory
+
+| Canonical route | Type | Normalized status | Current owner evidence | Current route behavior | Phase 1A decision |
+| --- | --- | --- | --- | --- | --- |
+| `/sigil/start` | Page / entry | ROUTE ONLY / REDIRECT | `mmd-redirect-worker/src/index.js` maps `/trust/inme`, `/inme`, `/login`, `/members`, `/trust` to `/sigil/start`; `immigrate-worker/src/index.ts` renders SIGIL System Access Gate copy. | Canonical target exists as entry concept, but owner is not fully normalized in route config. | Keep as priority unresolved owner lock item. Do not remove aliases. |
+| `/sigil/booking` | Page proxy | LIVE CONNECTED | `workers/sigil-booking-proxy-worker/wrangler.toml`; `workers/sigil-booking-proxy-worker/src/index.js`; existing `docs/sigil-route-ownership-registry.md`. | `sigil-booking-proxy-worker` owns exact public route family and proxies Webflow page on `sigil.mmdbkk.com`; apex/www redirect to canonical `sigil.mmdbkk.com`. | Canonical owner candidate: `sigil-booking-proxy-worker`. Keep aliases temporarily. |
+| `/sigil/apply` | Worker page | LIVE CONNECTED | `mmd-redirect-worker/wrangler.toml`; `mmd-redirect-worker/src/index.js`; existing SIGIL registry. | Front gate delegates to `sigil-worker` with route owner headers; no broad Webflow fallback should serve this page. | Canonical owner candidate: `sigil-worker`, still fronted by `mmd-redirect-worker`. |
+| `/sigil/member/apply` | Webflow UI + planned backend | UI READY / BACKEND MISSING | `webflow/member/apply/README.md`; `webflow/member/apply/member-apply.html`; `webflow/member/apply/member-application.contract.json`. | Webflow artifact says canonical frontend is `/sigil/member/apply` and posts to `/v1/member/applications`, but repo search does not show a proven backend route owner for that API. | Keep as UI-ready unresolved. Backend owner must be locked before production ready. |
+| `/member/apply` | Webflow pass-through alias | ROUTE ONLY / REDIRECT | `mmd-redirect-worker/src/index.js` includes `/member/apply` in Webflow member page pass-through and never-redirect exact paths. | Alias/pass-through, not canonical per Webflow member apply docs. | Keep temporary alias. Do not delete in Phase 1. |
+| `/member/dashboard` | Member page / dashboard | UNRESOLVED | `mmd-redirect-worker/src/index.js` delegates to `immigrate-worker`; `immigrate-worker/src/index.ts` has dashboard alias handling; `member-pages-worker/src/index.js` only links/gates access. | Live route is front-gated to `immigrate-worker`; target architecture mentions possible owner move out of legacy. | Owner not locked. Phase 3 owner decision required. |
+| `/member/membership` | Worker page | LIVE CONNECTED | `mmd-redirect-worker/src/index.js` delegates member page paths to `member-pages-worker`; `member-pages-worker/src/index.js` renders membership package selection. | Member package page exists; payment proof stays evidence only; no auto-renewal redirect. | Canonical owner candidate: `member-pages-worker`, still fronted by `mmd-redirect-worker`. |
+| `/member/payments` | Admin/member payment page | UNRESOLVED | `mmd-redirect-worker/src/index.js` delegates to `admin-worker`; no dedicated route config found. | Front gate sends page to admin worker; auth/member ownership needs Phase 3/5 decision. | Keep unresolved. Do not move during Phase 1A. |
+| `/sigil/pay/renewal` | Worker page | LIVE CONNECTED | `member-dashboard-chat-worker/wrangler.toml`; `member-dashboard-chat-worker/src/renderers/single-renewal-renderer.js`; `member-dashboard-chat-worker/src/index.js`. | Dedicated route config on apex/www/sigil hosts; renderer returns canonical renewal review page; Webflow bridge remains separate UI cleanup task. | Canonical owner candidate: `member-dashboard-chat-worker`. |
+| `/pay/renewal` | Alias page | LIVE CONNECTED | `member-dashboard-chat-worker/wrangler.toml`; `single-renewal-renderer.js`. | Alias route family served by same renewal renderer. | Keep as temporary alias until Phase 6 proof. |
+| `/sigil/pay/membership` | Payment route lock / member page | ROUTE ONLY / REDIRECT | `mmd-redirect-worker/src/index.js` never-redirect exact path; `member-pages-worker/src/index.js` renders safety/fallback page. | Protected from auto-renewal redirects; not a final payment truth owner. | Keep route lock. Payment owner still belongs in Phase 2. |
+| `/pay/membership` | Payment evidence page | LIVE CONNECTED | `mmd-redirect-worker/src/index.js`; `member-pages-worker/src/index.js`. | Member payment evidence page posts to payment verification flow; proof is not activation. | Canonical payment evidence page candidate: `member-pages-worker`; payment truth remains `payments-worker`/backend. |
+| `/sigil/model/console` | Model console | UNRESOLVED | Priority plan lists `/sigil/model/console`; repo front gate currently has `/model/console` recovery shell, not `/sigil/model/console`. | Canonical SIGIL model console route not proven in route config. | Needs Phase 4 owner lock. |
+| `/model/console` | Legacy model console shell | LEGACY | `mmd-redirect-worker/src/index.js` renders temporary model console recovery shell. | Temporary shell links to `/v1/model/session/dashboard`. | Mark legacy. Remove only after Phase 4 proves new console owner. |
+| `/public/access` | Public access intake | UNRESOLVED | Plan lists route; repo evidence found `webflow/sigil/access/*` and `mmd-redirect-worker` public hall/trust links, but no exact `/public/access` owner. | No canonical route owner proven. | Phase 2 public access audit required. |
+| `/profiles` | Public browse page | UNRESOLVED | Plan lists route; no exact owner found in priority route search. | No canonical owner proven from current repo scan. | Phase 2 public browse owner required. |
+| `/sigil/recovery` | Recovery / complaint family | UI READY / BACKEND MISSING | `immigrate-worker/public/sigil/recovery/*`; `mmd-care-intake-worker/src/index.js`; `sigil-worker/src/index.js`; README references `/sigil/recovery/complaint`. | Assets/API pieces exist, but exact canonical page owner is not normalized. | Keep unresolved. Do not collapse into generic recovery shell. |
+| `/sigil/aftercare` | Aftercare page | UNRESOLVED | `webflow/sigil/access/sigil-access-os.js` references `/aftercare`; no exact `/sigil/aftercare` owner found. | No canonical owner proven. | Phase 2/6 decision required; no route action in Phase 1. |
+
+## API Inventory
+
+| Canonical API route | Type | Normalized status | Current owner evidence | Notes |
+| --- | --- | --- | --- | --- |
+| `/sigil/api/client/resolve` | API | API READY / UI MISSING | `sigil-booking-worker/src/index.js`; `sigil-booking-worker/wrangler.toml` routes `sigil.mmdbkk.com/sigil/api/*`. | Booking helper API; route family owner is `sigil-booking-worker`. |
+| `/sigil/api/models/search` | API | API READY / UI MISSING | `sigil-booking-worker/src/index.js`. | Public/private model search for booking flow. |
+| `/sigil/api/booking/intake` | API | API READY / UI MISSING | `sigil-booking-worker/src/index.js`. | Booking intake backend; customer UI owner is separate. |
+| `/sigil/api/private-model/apply` | API | LIVE CONNECTED | `mmd-redirect-worker/src/index.js` delegates to `sigil-worker`. | Private model apply API is front-gated to `sigil-worker`. |
+| `/v1/public-model/apply` | API | API READY / UI MISSING | `sigil-worker/src/index.js`. | Public model application API. Root `partners-worker` also exposes `/v1/apply/public-model`; names must remain distinct until owner lock. |
+| `/v1/apply/public-model` | API | UNRESOLVED | `partners-worker/wrangler.toml`; `partners-worker/src/index.ts`. | Overlaps conceptually with `sigil-worker` public model API. Needs Phase 4/partners owner decision. |
+| `/v1/member/applications` | API | UNRESOLVED | Referenced by `webflow/member/apply/*`; no backend route found in current priority scan. | Required for `/sigil/member/apply`; backend owner missing. |
+| `/v1/member/dashboard` | API | LIVE CONNECTED | `mmd-redirect-worker/src/index.js` maps `/api/member/dashboard` to admin-worker path. | Admin-worker provides dashboard API behind front gate mapping. |
+| `/api/member/dashboard` | API alias | ROUTE ONLY / REDIRECT | `mmd-redirect-worker/src/index.js`. | Alias to `/v1/member/dashboard`; keep temporarily. |
+| `/member/api/liff/identify` | API | LIVE CONNECTED | `mmd-redirect-worker/src/index.js`; `member-pages-worker/src/index.js`. | LIFF identity bridge; must not unlock dashboard/payment by itself. |
+| `/v1/admin/line/liff-renewal-queue` | API | API READY / UI MISSING | `member-pages-worker/src/index.js`. | Admin renewal queue API in member-pages worker; needs Phase 5 owner review. |
+| `/internal/admin/liff-renewal-queue` | Internal UI | UI READY / BACKEND MISSING | `member-pages-worker/src/index.js`. | Internal UI path; auth/owner to be confirmed in Phase 5. |
+| `/v1/admin/model/session/link` | API | LIVE CONNECTED | `admin-worker/src/index.js`. | Model session link issuer. |
+| `/v1/model/session/current` | API | LIVE CONNECTED | `admin-worker/src/index.js`. | Signed model session runtime API. |
+| `/v1/model/session/action` | API | LIVE CONNECTED | `admin-worker/src/index.js`. | Signed model session action API with server-side state checks. |
+| `/v1/admin/job/create` | API | LIVE CONNECTED | `admin-worker/src/index.js`. | Admin create-job/session-adjacent backend. |
+| `/v1/admin/members/list` | API | LIVE CONNECTED | `admin-worker/src/index.js`. | Admin member review/list. |
+| `/v1/admin/members/update` | API | LIVE CONNECTED | `admin-worker/src/index.js`. | Admin member update; protected admin API. |
+| `/v1/admin/models/list` | API | LIVE CONNECTED | `admin-worker/src/index.js`. | Admin model list. |
+| `/v1/admin/models/search` | API | LIVE CONNECTED | `admin-worker/src/index.js`. | Admin model search. |
+| `/v1/admin/models/upsert` | API | LIVE CONNECTED | `admin-worker/src/index.js`. | Admin model upsert. |
+| `/v1/admin/payment/proof` | API | LIVE CONNECTED | `admin-worker/src/index.js`. | Admin payment proof handling; do not treat frontend proof as approval. |
+| `/v1/admin/sigil/board/publish` | API | API READY / UI MISSING | `admin-worker/src/index.js`. | Admin board publish endpoint; Phase 5, not Phase 1 route owner. |
+| `/sigil/board/runtime` | API | LIVE CONNECTED | `workers/sigil-board-worker/wrangler.toml`; `workers/sigil-board-worker/src/index.js`; existing registry. | Board runtime API; not the visible `/sigil/board` page. |
+| `/sigil/board/actions/*` | API | LIVE CONNECTED | `workers/sigil-board-worker/wrangler.toml`; `workers/sigil-board-worker/src/index.js`. | Controlled queue action API. |
+| `/sigil/board/audit*` | API | LIVE CONNECTED | `workers/sigil-board-worker/wrangler.toml`; `workers/sigil-board-worker/src/index.js`. | Controlled audit API. |
+| `/member/api/recovery/complaint-evidence` | API | API READY / UI MISSING | `mmd-care-intake-worker/src/index.js`; `sigil-worker/src/index.js`. | Duplicate implementation evidence; owner must be locked before production route changes. |
+| `/member/api/recovery/complaint-status` | API | API READY / UI MISSING | `mmd-care-intake-worker/src/index.js`. | Recovery status API. |
+| `/member/api/recovery/coupon-status` | API | API READY / UI MISSING | `mmd-care-intake-worker/src/index.js`. | Recovery coupon status API. |
+| `/api/recovery/coupon/status` | API | API READY / UI MISSING | `sigil-worker/src/index.js`. | SIGIL coupon status API. |
+| `/api/recovery/coupon/ack` | API | API READY / UI MISSING | `sigil-worker/src/index.js`. | SIGIL coupon acknowledgment API. |
+| `/v1/partner/upload` | API | LIVE CONNECTED | `partners-worker/wrangler.toml`; `partners-worker/src/index.ts`. | Partner upload API. |
+| `/v1/partner/request` | API | LIVE CONNECTED | `partners-worker/src/index.ts`. | Partner request API; route config does not explicitly list this exact path in root config. |
+| `/v1/partner/verify` | API | API READY / UI MISSING | `partners-worker/src/index.ts`. | Partner verify API. |
+| `/v1/partner/dashboard` | API | API READY / UI MISSING | `partners-worker/src/index.ts`. | Partner dashboard API. |
+| `/telegram/webhook` and `/v1/webhook` | API | LIVE CONNECTED | `telegram-worker/src/index.js`. | Telegram webhook aliases. |
+| `/telegram/internal/send`, `/v1/internal/send`, `/v1/send` | API | LIVE CONNECTED | `telegram-worker/src/index.js`. | Internal notification APIs. |
+| `/v1/rt/room/open` | API | API READY / UI MISSING | `realtime-worker/src/index.js`. | Realtime room open API. |
+| `/v1/rt/ws` | WebSocket API | API READY / UI MISSING | `realtime-worker/src/index.js`. | Durable Object websocket route. |
+
+## Webflow / UI Artifacts
+
+| UI artifact | Claimed route | Normalized status | Evidence | Phase 1A decision |
+| --- | --- | --- | --- | --- |
+| SIGIL booking Webflow page | `/sigil/booking` | LIVE CONNECTED | `workers/sigil-booking-proxy-worker` proxies `https://mmdprive.webflow.io/sigil/booking`. | Keep Webflow as display page, Worker as route owner. |
+| SIGIL member application | `/sigil/member/apply` | UI READY / BACKEND MISSING | `webflow/member/apply/README.md`, HTML/JS/CSS artifacts. | Needs backend owner for `/v1/member/applications`. |
+| SIGIL renewal Webflow bridge | `/sigil/pay/renewal` | ROUTE ONLY / REDIRECT | `webflow/sigil/pay/renewal/webflow-renewal-redirect-snippet.html`. | Bridge should redirect Webflow stale page to canonical worker route; not production renderer owner. |
+| SIGIL access OS | Not normalized; likely trust/public access family | UI READY / BACKEND MISSING | `webflow/sigil/access/*`. | Requires Phase 2 public access route audit. |
+| SIGIL private models | Private model page layer | UI READY / BACKEND MISSING | `webflow/sigil/private-models/*`. | Do not mix with customer route inventory beyond owner note. |
+| SIGIL board visible page | `/sigil/board` | LIVE CONNECTED | Existing registry marks Webflow page surface. | Keep Webflow visible page; API owner remains `sigil-board-worker`. |
+
+## Alias / Legacy / Removal Candidates
+
+| Route or pattern | Current class | Evidence | Keep temporarily? | Removal rule |
+| --- | --- | --- | --- | --- |
+| `/trust/inme` | Alias | `mmd-redirect-worker/src/index.js` maps to `/sigil/start`. | Yes | Remove only in Phase 6 after `/sigil/start` owner is live and approved. |
+| `/inme` | Alias | `mmd-redirect-worker/src/index.js`. | Yes | Same as above. |
+| `/login` | Alias | `mmd-redirect-worker/src/index.js`. | Yes | Same as above. |
+| `/members` | Alias | `mmd-redirect-worker/src/index.js`. | Yes | Same as above. |
+| `/trust` | Alias | `mmd-redirect-worker/src/index.js`. | Yes | Same as above. |
+| `/member` | Alias | `mmd-redirect-worker/src/index.js` maps to `/member/dashboard`. | Yes | Remove only after member dashboard owner/auth are production ready. |
+| `/membership` | Alias | `mmd-redirect-worker/src/index.js` maps to `/member/membership`. | Yes | Remove only after member flow is production ready. |
+| `/member/membership/benefits` | Alias | `mmd-redirect-worker/src/index.js` maps to `/member/membership`. | Yes | Remove only after member flow is production ready. |
+| `/membership/benefits` | Alias | `mmd-redirect-worker/src/index.js` maps to `/member/membership`. | Yes | Remove only after member flow is production ready. |
+| `/renew` | Legacy alias | `mmd-redirect-worker/src/index.js` maps to `/sigil/membership`, not renewal payment. | Yes | Phase 6 only, after renewal/membership route contracts are proven. |
+| `/renewal` | Legacy alias | `mmd-redirect-worker/src/index.js` maps to `/sigil/membership`, not renewal payment. | Yes | Phase 6 only, after renewal/membership route contracts are proven. |
+| `/model/console` | Legacy shell | `mmd-redirect-worker/src/index.js`. | Yes | Remove after `/sigil/model/console` owner is live. |
+| `/old-academy/*` | Deprecated redirect | `mmd-redirect-worker/src/index.js`. | Yes | Phase 6 redirect-rule migration candidate. |
+| `/old-trust/*` | Deprecated redirect | `mmd-redirect-worker/src/index.js`. | Yes | Phase 6 redirect-rule migration candidate. |
+| `mmdbkk.com/*`, `www.mmdbkk.com/*` front gate | Legacy/front gate catch-all | `mmd-redirect-worker/wrangler.toml`. | Yes | Do not remove until every new owner is live and Phase 6 proof is complete. |
+
+## Duplicate / Conflict List
+
+| Area | Conflicting evidence | Normalized decision |
+| --- | --- | --- |
+| Member dashboard | `mmd-redirect-worker` fronts route; `immigrate-worker` renders dashboard; target plan expects possible new owner. | UNRESOLVED. Phase 3 must decide canonical dashboard owner. |
+| Member application | `/sigil/member/apply` UI exists, `/member/apply` alias/pass-through exists, `/v1/member/applications` backend not found. | UNRESOLVED. Lock canonical route and backend before publishing changes. |
+| Public model apply | `sigil-worker` exposes `/v1/public-model/apply`; `partners-worker` exposes `/v1/apply/public-model` and `/apply/public-model`. | UNRESOLVED. Phase 4/partner route owner decision required. |
+| Recovery / complaint | `mmd-care-intake-worker` and `sigil-worker` both contain recovery/complaint API handling. | UNRESOLVED. Pick one owner group before route changes. |
+| SIGIL renewal Webflow page | Worker route owner exists, but Webflow stale page bridge is separate display cleanup. | ROUTE ONLY / REDIRECT bridge. Do not treat Webflow as canonical renderer. |
+| Partners worker root vs nested/assets | Root `partners-worker` has API route patterns and R2 binding; nested assets worker exists separately. | UNRESOLVED unless already approved elsewhere. Do not delete/rename in Phase 1A. |
+| `mmd-redirect-worker` catch-all | Still fronts many connected and unresolved routes. | LEGACY/front gate. Retire only in Phase 6. |
+
+## Canonical Owner Candidates
+
+| Route/API family | Candidate owner | Confidence | Notes |
+| --- | --- | --- | --- |
+| `/sigil/booking` page | `sigil-booking-proxy-worker` | High | Current registry and route config agree. |
+| `/sigil/api/*` booking APIs | `sigil-booking-worker` | Medium | API family exists under `sigil.mmdbkk.com/sigil/api/*`; page owner is separate. |
+| `/sigil/apply` | `sigil-worker` | High | Front gate delegates to SIGIL worker and existing registry agrees. |
+| `/sigil/pay/renewal` | `member-dashboard-chat-worker` | High | Route config and renderer agree. |
+| `/member/membership` | `member-pages-worker` | High | Front gate delegates member page path to member-pages worker. |
+| `/pay/membership` | `member-pages-worker` page, backend payment truth elsewhere | Medium | UI exists; final payment truth remains backend/payment worker concern. |
+| `/member/dashboard` | TBD | Low | Current route uses `immigrate-worker`; target architecture wants non-legacy owner decision. |
+| `/member/payments` | `admin-worker` currently, TBD for member surface | Low | Front gate delegates to admin worker, but member surface ownership not locked. |
+| `/sigil/member/apply` | TBD | Low | UI exists; backend route missing. |
+| `/sigil/model/console` | TBD | Low | No exact canonical route owner found. |
+| `/public/access` | TBD | Low | No exact route owner found. |
+| `/sigil/recovery` | TBD | Low | Assets and APIs exist, owner not normalized. |
+| `/sigil/aftercare` | TBD | Low | No exact route owner found. |
+
+## Stop Line
+
+Phase 1A produced a normalized route inventory only.
+
+No source behavior was changed.
+No workers were deployed.
+No Cloudflare routes were modified.
+No Webflow publish was performed.
+No aliases, catch-all routes, or legacy workers were removed.
+
+Next recommended CodexMin task:
+`CODEXMIN - PHASE 1B - CANONICAL OWNER LOCK`
+
