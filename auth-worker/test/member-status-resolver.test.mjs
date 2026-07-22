@@ -65,3 +65,34 @@ test("member status resolver returns only the active package snapshot for a veri
     globalThis.fetch = originalFetch;
   }
 });
+
+test("member status resolver returns the most recent expired package for promotion eligibility", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith("/Members")) {
+      return Response.json({ records: [{ id: "rec_member", fields: { member_id: "mem_1", "Contact Email": "member@example.com", line_user_id: LINE_ID } }] });
+    }
+    if (url.pathname.endsWith("/member_packages")) {
+      return Response.json({ records: [{ id: "rec_package", fields: { status: "expired", package_code: "standard", start_date: "2025-01-01", end_date: "2026-06-01" } }] });
+    }
+    throw new Error(`Unexpected fetch ${url}`);
+  };
+
+  try {
+    const response = await worker.fetch(new Request("https://auth.internal/v1/internal/members/by-line", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-mmd-internal-secret": INTERNAL_SECRET },
+      body: JSON.stringify({ lineUserId: LINE_ID }),
+    }), env());
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.membershipState, "expired");
+    assert.equal(payload.data.packageState, "previous");
+    assert.equal(payload.data.membershipTier, "standard");
+    assert.equal(payload.data.membershipEndAt, "2026-06-01");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

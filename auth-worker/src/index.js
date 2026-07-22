@@ -247,7 +247,10 @@ async function handleMemberSnapshotByLine(request, env) {
   const member = await findMemberByLineUserId(env, lineUserId);
   if (!member) return json(request, env, 404, { ok: false, error: "member_not_found" });
 
-  const packageAccess = await derivePackageAccess(env, member.fields || {});
+  // Promotion eligibility must also see a member's last expired package.  The
+  // normal account gate intentionally returns only active access, so use this
+  // dedicated snapshot and keep the existing login/gate behaviour unchanged.
+  const packageAccess = await deriveLatestMembershipSnapshot(env, member.fields || {});
   const isActive = packageAccess.status === "active";
   return json(request, env, 200, {
     ok: true,
@@ -255,8 +258,8 @@ async function handleMemberSnapshotByLine(request, env) {
       memberId: member.fields.member_id,
       clientId: String(member.fields.client_id || member.fields.clientId || ""),
       matchStatus: "matched",
-      membershipState: isActive ? "active" : "no_paid_package",
-      packageState: isActive ? "current" : "none",
+      membershipState: isActive ? "active" : "expired",
+      packageState: isActive ? "current" : "previous",
       membershipTier: packageAccess.tier,
       membershipStartAt: packageAccess.start_at,
       membershipEndAt: packageAccess.expire_at,
@@ -383,6 +386,44 @@ async function derivePackageAccess(env, memberFields) {
 
   if (!best) return { tier: "guest", status: "no_active_membership", start_at: "", expire_at: "", package_code: "" };
   return { tier: best.tier, status: "active", start_at: best.start_at, expire_at: best.expire_at, package_code: best.package_code };
+}
+
+// This is deliberately separate from derivePackageAccess(): account access
+// must remain active-only, while a time-limited promotion may classify a
+// verified member from their most recent completed membership.
+async function deriveLatestMembershipSnapshot(env, memberFields) {
+  const email = normalizeEmail(memberFields.email || "");
+  if (!email) return { tier: "guest", status: "none", start_at: "", expire_at: "", package_code: "" };
+
+  const records = await airtableList(env, table(env, "MEMBER_PACKAGES"), {
+    filterByFormula: `LOWER({${env.AIRTABLE_MEMBER_PACKAGES_MEMBER_EMAIL_FIELD || "member_email"}})=${formulaString(email)}`,
+    sort: [{ field: env.AIRTABLE_MEMBER_PACKAGES_END_DATE_FIELD || "end_date", direction: "desc" }],
+    maxRecords: 20,
+  });
+
+  const statusField = env.AIRTABLE_MEMBER_PACKAGES_STATUS_FIELD || "status";
+  const endDateField = env.AIRTABLE_MEMBER_PACKAGES_END_DATE_FIELD || "end_date";
+  const startDateField = env.AIRTABLE_MEMBER_PACKAGES_START_DATE_FIELD || "start_date";
+  const packageCodeField = env.AIRTABLE_MEMBER_PACKAGES_PACKAGE_CODE_FIELD || "package_code";
+  const acceptedStatuses = new Set(["active", "expired"]);
+  const now = Date.now();
+
+  for (const record of records) {
+    const f = record.fields || {};
+    if (!acceptedStatuses.has(String(f[statusField] || "").trim().toLowerCase())) continue;
+    const endAt = Date.parse(f[endDateField] || "");
+    if (!endAt) continue;
+    const packageCode = f[packageCodeField] || f.tier || "";
+    return {
+      tier: tierFromPackageCode(packageCode),
+      status: endAt >= now ? "active" : "expired",
+      start_at: f[startDateField] || "",
+      expire_at: f[endDateField] || "",
+      package_code: packageCode,
+    };
+  }
+
+  return { tier: "guest", status: "none", start_at: "", expire_at: "", package_code: "" };
 }
 
 async function deriveMemberEntitlements(env, memberIdentity) {
