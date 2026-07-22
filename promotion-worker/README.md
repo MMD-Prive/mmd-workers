@@ -1,6 +1,6 @@
 # promotion-worker
 
-Owner of MMD campaign Claim and eligibility state. This worker is intentionally not deployed by this PR.
+Owner of MMD campaign Claim, eligibility state, and benefit-application coordination. This worker is intentionally not deployed by this PR.
 
 ## Locked campaign policy
 
@@ -17,12 +17,12 @@ Owner of MMD campaign Claim and eligibility state. This worker is intentionally 
 ## Boundaries
 
 - LIFF/member pages call internal Claim endpoints through a service binding; browsers never receive the internal secret.
-- admin-worker authenticates reviewers and approvers before it requests a Claim transition.
+- admin-worker authenticates reviewers and approvers before requesting a Claim transition.
 - payments-worker performs the final membership/Points mutation through an internal-only endpoint.
-- promotion-worker owns Claim state and eligibility.
+- promotion-worker owns Claim state, eligibility, the two-benefit plan, partial-retry selection, and customer-safe result projection.
 - Airtable is audit/storage truth; raw LIFF or admin tokens must never be stored.
 
-## Implemented endpoints
+## Implemented foundation
 
 - `GET /health`
 - `POST /v1/promotions/eligibility/preview` — calculation only
@@ -30,14 +30,24 @@ Owner of MMD campaign Claim and eligibility state. This worker is intentionally 
 - `GET /v1/internal/promotions/claims/:claimId` — internal Claim read
 - `POST /v1/internal/promotions/claims/:claimId/transition` — validated state transition
 - `POST /v1/internal/promotions/apply` — approved-Claim proxy; requires secret and Payments Worker binding
+- deterministic two-benefit Apply plan
+- partial-failure retry selection
+- application-status aggregation
+- mandatory audit-event shape
+- customer-safe Dashboard projection
 
-The Claim adapter uses Airtable table and field IDs from the production `MMD — Campaign Claims` schema. It stores an immutable first-Claim reference timestamp, membership snapshots, eligibility output, and customer-safe status data.
+The Claim adapter uses production Airtable table and field IDs for `MMD — Campaign Claims`. It stores the immutable first-Claim reference timestamp, membership snapshots, eligibility output, and customer-safe status data.
 
-## Before deployment
+The cross-worker route, authorization, response, and release-test contract is in `docs/promotions/mmd-6th-anniversary-integration-contract.md`.
 
-1. Add admin session verification and role-specific approve/adjust routes through admin-worker.
-2. Implement the idempotent Payments Worker apply endpoint and Benefit Applications ledger.
-3. Bind member-pages-worker, admin-worker, and Payments Worker; configure secrets outside git.
-4. Add integration tests for Airtable create/resume, partial failure, retry, reversal, and duplicate requests.
-5. Add Activity Logs audit writes for every state change.
-6. Add Dashboard readback, route ownership, and smoke tests.
+## Remaining release gates
+
+1. Wire verified admin-session routes in admin-worker.
+2. Wire the Benefit Applications ledger and idempotent mutation endpoint in payments-worker.
+3. Wire server-side LIFF open/resume in member-pages-worker.
+4. Wire applied-result readback in member-dashboard-chat-worker.
+5. Add integration tests using the real Worker bindings and Airtable test records.
+6. Configure production bindings and secrets outside git.
+7. Deploy only after all release tests pass.
+
+No production balance, Points ledger, membership date, route, or Worker deployment is changed by this branch.
