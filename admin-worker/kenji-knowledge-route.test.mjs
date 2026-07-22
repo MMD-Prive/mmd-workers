@@ -63,16 +63,18 @@ for (const path of [CANONICAL, `${CANONICAL}/`, `${CANONICAL}?source=head-test`]
 
 test("legacy sigil internal admin route redirects to canonical with query preserved", async () => {
   for (const [path, location] of [
-    [LEGACY_SIGIL, CANONICAL],
-    [`${LEGACY_SIGIL}/`, `${CANONICAL}/`],
-    [`${LEGACY_SIGIL}?source=legacy-test`, `${CANONICAL}?source=legacy-test`],
-    [`${LEGACY_SIGIL}/foo?source=legacy-test`, `${CANONICAL}/foo?source=legacy-test`],
+    [LEGACY_SIGIL, `https://mmdbkk.com${CANONICAL}`],
+    [`${LEGACY_SIGIL}/`, `https://mmdbkk.com${CANONICAL}/`],
+    [`${LEGACY_SIGIL}?abc=123`, `https://mmdbkk.com${CANONICAL}?abc=123`],
+    [`${LEGACY_SIGIL}/foo?source=legacy-test`, `https://mmdbkk.com${CANONICAL}/foo?source=legacy-test`],
+    ["/sigil/internal/admin/login?next=/internal/admin/kenji-knowledge", "https://mmdbkk.com/internal/admin/login?next=/internal/admin/kenji-knowledge"],
+    ["/sigil/internal/admin/console?x=1", "https://mmdbkk.com/internal/admin/console?x=1"],
   ]) {
     const response = await request(path);
 
     assert.equal(response.status, 308, path);
     assert.equal(response.headers.get("location"), location, path);
-    assert.equal(response.headers.get("x-mmd-route-canonical"), location, path);
+    assert.equal(response.headers.get("x-mmd-route-canonical"), location.replace("https://mmdbkk.com", ""), path);
     assert.equal(await response.text(), "");
   }
 });
@@ -96,7 +98,7 @@ for (const path of [
     const response = await request(path);
 
     assert.equal(response.status, 308);
-    assert.equal(response.headers.get("location"), path.replace("/sigil/internal/admin", "/internal/admin"));
+    assert.equal(response.headers.get("location"), `https://mmdbkk.com${path.replace("/sigil/internal/admin", "/internal/admin")}`);
   });
 }
 
@@ -187,8 +189,17 @@ test("canonical and alias route ownership is narrow and isolated", async () => {
   ]);
   const canonicalPatterns = routePatterns(CANONICAL);
   const legacySigilPatterns = routePatterns(LEGACY_SIGIL);
+  const legacySigilRedirectPatterns = [
+    "mmdbkk.com/sigil/internal/admin*",
+    "www.mmdbkk.com/sigil/internal/admin*",
+  ];
 
   for (const pattern of [...canonicalPatterns, ...legacySigilPatterns]) {
+    assert.equal(count(adminConfig, `pattern = "${pattern}"`), 1, pattern);
+    assert.equal(count(redirectConfig, `pattern = "${pattern}"`), 0, pattern);
+    assert.equal(count(immigrateConfig, pattern), 0, pattern);
+  }
+  for (const pattern of legacySigilRedirectPatterns) {
     assert.equal(count(adminConfig, `pattern = "${pattern}"`), 1, pattern);
     assert.equal(count(redirectConfig, `pattern = "${pattern}"`), 0, pattern);
     assert.equal(count(immigrateConfig, pattern), 0, pattern);
@@ -199,8 +210,6 @@ test("canonical and alias route ownership is narrow and isolated", async () => {
   const forbidden = [
     "mmdbkk.com/sigil/*",
     "www.mmdbkk.com/sigil/*",
-    "mmdbkk.com/sigil/internal/admin/*",
-    "www.mmdbkk.com/sigil/internal/admin/*",
     "mmdbkk.com/internal/admin/*",
     "www.mmdbkk.com/internal/admin/*",
     "mmdbkk.com/*",
