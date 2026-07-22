@@ -178,6 +178,12 @@ approved, merged, and this document exists on `main`.
 | Phase 5A/5B | Lock admin visible pages and create-session flow. Keep Kenji Knowledge PR #209 separate. |
 | Phase 6A/6B | Migrate redirects and retire front gate only after acceptance proof. |
 
+## Status Enum Mapping
+
+Human-readable Markdown labels use spaces and slashes for readability.
+JSON uses uppercase underscore machine enums.
+The mapping is one-to-one and does not change route meaning.
+
 ## Phase 1B Stop Line
 
 Documentation only.
@@ -187,4 +193,3 @@ No Cloudflare route mutation.
 No Webflow publish.
 No alias removal.
 No legacy Worker removal.
-
