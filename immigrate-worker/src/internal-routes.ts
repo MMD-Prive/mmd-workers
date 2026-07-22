@@ -46,6 +46,28 @@ async function withSameOriginAdminBase(response: Response): Promise<Response> {
   });
 }
 
+async function withCreateJobAmountInput(response: Response): Promise<Response> {
+  const html = await response.text();
+  const amountField = `<label class="mmdop__field"><span>Amount THB</span><input class="mmdop__input" id="amount_thb" name="amount_thb" type="number" min="1" step="1" required /></label>`;
+  const withInput = html.replace(
+    `<label class="mmdop__field"><span>Job Date</span>`,
+    `${amountField}<label class="mmdop__field"><span>Job Date</span>`
+  );
+  const withAmountRead = withInput.replace(
+    `const payload={session_id:$("job-session-id")?.value||"",`,
+    `const amount=Number($("amount_thb")?.value||"");const payload={session_id:$("job-session-id")?.value||"",amount_thb:amount,`
+  );
+  const rewritten = withAmountRead.replace(
+    `if(!payload.session_id){setStatus("กรุณาใส่ Session ID ก่อน",true);return}`,
+    `if(!payload.session_id){setStatus("กรุณาใส่ Session ID ก่อน",true);return}if(!Number.isFinite(payload.amount_thb)||payload.amount_thb<=0){setStatus("กรุณาใส่ Amount THB มากกว่า 0",true);return}`
+  );
+  return new Response(rewritten, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
 async function serveAsset(request: Request, env: InternalRoutesEnv): Promise<Response | null> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/a/")) return null;
@@ -239,7 +261,7 @@ export async function handleInternalRoutes(request: Request, env: InternalRoutes
   if (pathname === "/internal/jobs/create-job") {
     const gate = await requireAdminGate(request, env);
     if (gate) return gate;
-    return renderCreateJobPage();
+    return withCreateJobAmountInput(renderCreateJobPage());
   }
 
   return null;

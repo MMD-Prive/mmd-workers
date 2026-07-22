@@ -118,6 +118,25 @@ test("create-session page loads an existing bundled create-session asset", async
   assert.doesNotMatch(html, /immigrate-worker\.malemodel-bkk\.workers\.dev/);
 });
 
+test("create-job page renders a required positive amount_thb input and payload field", async () => {
+  const calls = [];
+  const { result: response, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/internal/jobs/create-job"), {
+    ADMIN_WORKER: adminWorkerBinding(calls),
+    ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
+  }));
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(publicCalls, 0);
+  assert.equal(calls.length, 1);
+  assert.match(html, /<span>Amount THB<\/span><input class="mmdop__input" id="amount_thb" name="amount_thb" type="number" min="1" step="1" required \/>/);
+  assert.match(html, /const amount=Number\(\$\("amount_thb"\)\?\.value\|\|""\);/);
+  assert.match(html, /amount_thb:amount/);
+  assert.match(html, /Number\.isFinite\(payload\.amount_thb\)\|\|payload\.amount_thb<=0/);
+  assert.doesNotMatch(html, /amount_thb\s*:\s*1/);
+  assert.doesNotMatch(html, /amount_thb\s*(?:\|\||\?\?)\s*1/);
+});
+
 test("workers.dev and unknown hosts do not verify a public-host cookie", async () => {
   for (const host of ["immigrate-worker.malemodel-bkk.workers.dev", "evil.example"]) {
     const calls = [];
@@ -208,6 +227,42 @@ test("create-job API POST without positive amount is rejected before admin-worke
   assert.equal(calls.length, 0);
   assert.equal(body.ok, false);
   assert.equal(body.error, "invalid_amount_thb");
+});
+
+test("create-job API POST with valid amount forwards through admin-worker binding", async () => {
+  const calls = [];
+  const payload = JSON.stringify({ session_id: "sess_public_safe", amount_thb: 15000, note: "bridge only" });
+  const { result: response, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/v1/admin/create-job?source=worker-page", "mmdbkk.com", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: "mmd_admin_gate_v1=safe-test-cookie",
+      authorization: "Bearer should-not-forward",
+    },
+    body: payload,
+  }), {
+    ADMIN_WORKER: {
+      fetch: async (input) => {
+        calls.push(input);
+        return Response.json({
+          ok: true,
+          echoed: await input.text(),
+          content_type: input.headers.get("content-type"),
+        });
+      },
+    },
+    ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
+  }));
+  const body = await response.json();
+  const forwardedPayload = JSON.parse(body.echoed);
+
+  assert.equal(response.status, 200);
+  assert.equal(publicCalls, 0);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://mmdbkk.com/v1/admin/job/create?source=worker-page");
+  assert.equal(calls[0].headers.get("authorization"), null);
+  assert.equal(forwardedPayload.amount_thb, 15000);
+  assert.equal(forwardedPayload.session_id, "sess_public_safe");
 });
 
 test("create-job API POST rejects invalid, zero, and negative amount values", async () => {
