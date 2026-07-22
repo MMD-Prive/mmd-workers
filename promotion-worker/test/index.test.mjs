@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyEligibility, makeIdempotencyKey, validateTransition } from "../src/index.js";
+import { classifyEligibility, makeClaimId, makeIdempotencyKey, validateTransition } from "../src/index.js";
 
 test("active member receives four months", () => {
   const x = classifyEligibility({ referenceDate: "2026-08-05", membershipEndAt: "2026-11-30", membershipTier: "premium" });
@@ -39,4 +39,15 @@ test("approve and apply are separate transitions", () => {
 test("idempotency key is deterministic per benefit", () => {
   assert.equal(makeIdempotencyKey("mmd_6th_anniversary_2026", "MMD6-2026-000184", "anniversary_points_66"),
     "mmd_6th_anniversary_2026:MMD6-2026-000184:anniversary_points_66");
+});
+
+test("claim id is opaque and year-scoped", () => {
+  assert.equal(
+    makeClaimId(new Date("2026-08-05T00:00:00Z"), "12345678-90ab-cdef-1234-567890abcdef"),
+    "MMD6-2026-1234567890"
+  );
+});
+
+test("invalid eligibility dates fail closed", () => {
+  assert.throws(() => classifyEligibility({ referenceDate: "bad", membershipEndAt: "2026-01-01", membershipTier: "standard" }));
 });
