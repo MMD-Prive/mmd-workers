@@ -5,14 +5,13 @@
     "check": "node --check chat-worker/src/index.js && node --check scripts/smoke-chat-worker.js",
     "smoke": "node scripts/smoke-chat-worker.js",
     "test": "npm run check && npm run smoke",
-    "deploy:payments": "wrangler deploy --config workers/payments-worker/wrangler.toml",
+    "deploy:payments": "wrangler deploy --config payments-worker/wrangler.toml",
     "deploy:admin": "wrangler deploy --config workers/admin-worker/wrangler.toml",
     "deploy:events": "wrangler deploy --config workers/events-worker/wrangler.toml",
     "deploy:telegram": "wrangler deploy --config telegram-worker/wrangler.toml",
     "deploy:sigil-board": "wrangler deploy --config workers/sigil-board-worker/wrangler.toml",
     "deploy:sigil-booking-proxy": "wrangler deploy --config workers/sigil-booking-proxy-worker/wrangler.toml",
-
-    "dev:payments": "wrangler dev --config workers/payments-worker/wrangler.toml",
+    "dev:payments": "wrangler dev --config payments-worker/wrangler.toml",
     "dev:admin": "wrangler dev --config workers/admin-worker/wrangler.toml",
     "dev:events": "wrangler dev --config workers/events-worker/wrangler.toml",
     "dev:telegram": "wrangler dev --config telegram-worker/wrangler.toml",
@@ -25,6 +24,7 @@
     "test:sigil-booking-proxy": "node --test workers/sigil-booking-proxy-worker/test/index.test.mjs",
     "check:kenji-member-memory": "node --check shared/kenji-member-memory-snapshot.mjs && node --check immigrate-worker/netlify/functions/kenji-member-memory-context.mjs",
     "test:kenji-line": "node --test shared/kenji-member-concierge-core.test.mjs",
-    "test:kenji-member-memory": "node --test shared/kenji-member-memory-snapshot.test.mjs"
+    "test:kenji-member-memory": "node --test shared/kenji-member-memory-snapshot.test.mjs",
+    "check:payments": "node --check payments-worker/index.js && node --check payments-worker/index.slip-evidence-clean.js"
   }
 }
