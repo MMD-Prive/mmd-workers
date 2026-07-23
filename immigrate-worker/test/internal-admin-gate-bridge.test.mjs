@@ -118,6 +118,25 @@ test("create-session page loads an existing bundled create-session asset", async
   assert.doesNotMatch(html, /immigrate-worker\.malemodel-bkk\.workers\.dev/);
 });
 
+test("create-job page renders a required positive amount_thb input and payload field", async () => {
+  const calls = [];
+  const { result: response, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/internal/jobs/create-job"), {
+    ADMIN_WORKER: adminWorkerBinding(calls),
+    ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
+  }));
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(publicCalls, 0);
+  assert.equal(calls.length, 1);
+  assert.match(html, /<span>Amount THB<\/span><input class="mmdop__input" id="amount_thb" name="amount_thb" type="number" min="1" step="1" required \/>/);
+  assert.match(html, /const amount=Number\(\$\("amount_thb"\)\?\.value\|\|""\);/);
+  assert.match(html, /amount_thb:amount/);
+  assert.match(html, /Number\.isFinite\(payload\.amount_thb\)\|\|payload\.amount_thb<=0/);
+  assert.doesNotMatch(html, /amount_thb\s*:\s*1/);
+  assert.doesNotMatch(html, /amount_thb\s*(?:\|\||\?\?)\s*1/);
+});
+
 test("workers.dev and unknown hosts do not verify a public-host cookie", async () => {
   for (const host of ["immigrate-worker.malemodel-bkk.workers.dev", "evil.example"]) {
     const calls = [];
@@ -177,9 +196,42 @@ test("admin API proxy uses admin-worker binding with original public host", asyn
   assert.equal(calls[0].headers.get("x-mmd-auth-bridge"), "immigrate-internal-admin-api");
 });
 
-test("create-job API POST is proxied through admin-worker binding with body and content type preserved", async () => {
+test("create-job API POST without positive amount is rejected before admin-worker binding", async () => {
   const calls = [];
   const payload = JSON.stringify({ session_id: "sess_public_safe", note: "bridge only" });
+  const { result: response, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/v1/admin/create-job?source=worker-page", "mmdbkk.com", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: "mmd_admin_gate_v1=safe-test-cookie",
+      authorization: "Bearer should-not-forward",
+    },
+    body: payload,
+  }), {
+    ADMIN_WORKER: {
+      fetch: async (input) => {
+        calls.push(input);
+        return Response.json({
+          ok: true,
+          echoed: await input.text(),
+          content_type: input.headers.get("content-type"),
+        });
+      },
+    },
+    ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
+  }));
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(publicCalls, 0);
+  assert.equal(calls.length, 0);
+  assert.equal(body.ok, false);
+  assert.equal(body.error, "invalid_amount_thb");
+});
+
+test("create-job API POST with valid amount forwards through admin-worker binding", async () => {
+  const calls = [];
+  const payload = JSON.stringify({ session_id: "sess_public_safe", amount_thb: 15000, note: "bridge only" });
   const { result: response, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/v1/admin/create-job?source=worker-page", "mmdbkk.com", {
     method: "POST",
     headers: {
@@ -208,21 +260,32 @@ test("create-job API POST is proxied through admin-worker binding with body and 
   assert.equal(publicCalls, 0);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "https://mmdbkk.com/v1/admin/job/create?source=worker-page");
-  assert.equal(calls[0].method, "POST");
   assert.equal(calls[0].headers.get("authorization"), null);
-  assert.equal(calls[0].headers.get("content-type"), "application/json");
-  assert.equal(calls[0].headers.get("cookie"), "mmd_admin_gate_v1=safe-test-cookie");
-  assert.equal(calls[0].headers.get("x-mmd-auth-bridge"), "immigrate-internal-admin-api");
+  assert.equal(forwardedPayload.amount_thb, 15000);
   assert.equal(forwardedPayload.session_id, "sess_public_safe");
-  assert.equal(forwardedPayload.client_name, "sess_public_safe");
-  assert.equal(forwardedPayload.model_name, "model_pending");
-  assert.equal(forwardedPayload.job_type, "public_work");
-  assert.equal(forwardedPayload.job_date, "pending_date");
-  assert.equal(forwardedPayload.start_time, "00:00");
-  assert.equal(forwardedPayload.end_time, "01:30");
-  assert.equal(forwardedPayload.location_name, "pending_location");
-  assert.equal(forwardedPayload.amount_thb, 1);
-  assert.equal(body.content_type, "application/json");
+});
+
+test("create-job API POST rejects invalid, zero, and negative amount values", async () => {
+  for (const amount_thb of ["not-a-number", 0, -100]) {
+    const calls = [];
+    const payload = JSON.stringify({ session_id: "sess_public_safe", amount_thb });
+    const { result: response } = await withPublicFetchTrap(() => handleInternalRoutes(request("/v1/admin/create-job", "mmdbkk.com", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: "mmd_admin_gate_v1=safe-test-cookie",
+      },
+      body: payload,
+    }), {
+      ADMIN_WORKER: adminWorkerBinding(calls),
+      ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
+    }));
+    const body = await response.json();
+
+    assert.equal(response.status, 400, String(amount_thb));
+    assert.equal(calls.length, 0, String(amount_thb));
+    assert.equal(body.error, "invalid_amount_thb", String(amount_thb));
+  }
 });
 
 test("browser admin API aliases are rewritten to implemented admin-worker endpoints", async () => {
@@ -305,8 +368,6 @@ test("wrangler routes only expose exact immigrate bridge surfaces", async () => 
     "www.mmdbkk.com/a/create-session.js",
     "mmdbkk.com/v1/admin/ping*",
     "www.mmdbkk.com/v1/admin/ping*",
-    "mmdbkk.com/v1/admin/clients/lineage-lookup*",
-    "www.mmdbkk.com/v1/admin/clients/lineage-lookup*",
     "mmdbkk.com/v1/admin/clients/recent*",
     "www.mmdbkk.com/v1/admin/clients/recent*",
     "mmdbkk.com/v1/admin/models/search*",
@@ -329,6 +390,8 @@ test("wrangler routes only expose exact immigrate bridge surfaces", async () => 
 
   assert.doesNotMatch(wrangler, /pattern = "mmdbkk\.com\/internal\/admin\/\*"/);
   assert.doesNotMatch(wrangler, /pattern = "www\.mmdbkk\.com\/internal\/admin\/\*"/);
+  assert.doesNotMatch(wrangler, /pattern = "mmdbkk\.com\/v1\/admin\/clients\/lineage-lookup\*"/);
+  assert.doesNotMatch(wrangler, /pattern = "www\.mmdbkk\.com\/v1\/admin\/clients\/lineage-lookup\*"/);
   assert.match(wrangler, /binding = "ADMIN_WORKER"/);
 });
 

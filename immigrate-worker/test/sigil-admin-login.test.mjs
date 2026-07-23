@@ -191,7 +191,7 @@ try {
 
   {
     bindingCalls.length = 0;
-    const payload = JSON.stringify({ session_id: "sess_public_safe", source: "test" });
+    const payload = JSON.stringify({ session_id: "sess_public_safe", amount_thb: 9000, source: "test" });
     const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/create-job?source=worker-page", {
       method: "POST",
       headers: {
@@ -216,7 +216,7 @@ try {
     assert.equal(forwardedPayload.start_time, "00:00");
     assert.equal(forwardedPayload.end_time, "01:30");
     assert.equal(forwardedPayload.location_name, "pending_location");
-    assert.equal(forwardedPayload.amount_thb, 1);
+    assert.equal(forwardedPayload.amount_thb, 9000);
   }
 } finally {
   await rm(tmp, { recursive: true, force: true });

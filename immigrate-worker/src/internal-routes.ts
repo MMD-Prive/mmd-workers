@@ -46,6 +46,28 @@ async function withSameOriginAdminBase(response: Response): Promise<Response> {
   });
 }
 
+async function withCreateJobAmountInput(response: Response): Promise<Response> {
+  const html = await response.text();
+  const amountField = `<label class="mmdop__field"><span>Amount THB</span><input class="mmdop__input" id="amount_thb" name="amount_thb" type="number" min="1" step="1" required /></label>`;
+  const withInput = html.replace(
+    `<label class="mmdop__field"><span>Job Date</span>`,
+    `${amountField}<label class="mmdop__field"><span>Job Date</span>`
+  );
+  const withAmountRead = withInput.replace(
+    `const payload={session_id:$("job-session-id")?.value||"",`,
+    `const amount=Number($("amount_thb")?.value||"");const payload={session_id:$("job-session-id")?.value||"",amount_thb:amount,`
+  );
+  const rewritten = withAmountRead.replace(
+    `if(!payload.session_id){setStatus("กรุณาใส่ Session ID ก่อน",true);return}`,
+    `if(!payload.session_id){setStatus("กรุณาใส่ Session ID ก่อน",true);return}if(!Number.isFinite(payload.amount_thb)||payload.amount_thb<=0){setStatus("กรุณาใส่ Amount THB มากกว่า 0",true);return}`
+  );
+  return new Response(rewritten, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
 async function serveAsset(request: Request, env: InternalRoutesEnv): Promise<Response | null> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/a/")) return null;
@@ -122,7 +144,10 @@ function normalizeAdminJobPayload(body: Record<string, unknown>): Record<string,
   const sessionId = str(body.session_id);
   const startTime = str(body.start_time || jobDetails.start_time) || "00:00";
   const endTime = str(body.end_time || jobDetails.end_time) || addMinutes(startTime, 90);
-  const amount = Number(body.amount_thb || payment.amount_thb || 1);
+  const amountValue = body.amount_thb ?? payment.amount_thb;
+  if (!str(amountValue)) throw new Error("invalid_amount_thb");
+  const amount = Number(amountValue);
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error("invalid_amount_thb");
 
   return {
     ...body,
@@ -134,7 +159,7 @@ function normalizeAdminJobPayload(body: Record<string, unknown>): Record<string,
     end_time: endTime,
     location_name: str(body.location_name || jobDetails.location_name) || "pending_location",
     google_map_url: str(body.google_map_url || jobDetails.google_map_url),
-    amount_thb: Number.isFinite(amount) && amount > 0 ? amount : 1,
+    amount_thb: amount,
     payment_type: str(body.payment_type || payment.payment_type) || "full",
     payment_method: str(body.payment_method || payment.payment_method) || "promptpay",
     note: str(body.note || notes.operation_note || notes.handling_note || body.notes),
@@ -173,8 +198,19 @@ async function proxyAdminApi(request: Request, env: InternalRoutesEnv): Promise<
     request.method === "GET" || request.method === "HEAD" ? undefined : request.body;
   if (shouldNormalizeAdminJob && contentType?.toLowerCase().includes("application/json")) {
     const rawBody = await request.text();
-    const parsed = rawBody ? JSON.parse(rawBody) : {};
-    body = JSON.stringify(normalizeAdminJobPayload(parsed && typeof parsed === "object" ? parsed : {}));
+    try {
+      const parsed = rawBody ? JSON.parse(rawBody) : {};
+      body = JSON.stringify(normalizeAdminJobPayload(parsed && typeof parsed === "object" ? parsed : {}));
+    } catch {
+      return Response.json(
+        {
+          ok: false,
+          error: "invalid_amount_thb",
+          message: "amount_thb is required and must be a number greater than 0",
+        },
+        { status: 400 }
+      );
+    }
   }
 
   const init: RequestInit & { duplex?: "half" } = {
@@ -225,7 +261,7 @@ export async function handleInternalRoutes(request: Request, env: InternalRoutes
   if (pathname === "/internal/jobs/create-job") {
     const gate = await requireAdminGate(request, env);
     if (gate) return gate;
-    return renderCreateJobPage();
+    return withCreateJobAmountInput(renderCreateJobPage());
   }
 
   return null;
