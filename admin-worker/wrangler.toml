@@ -40,8 +40,16 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/internal/admin/login/session"
 zone_name = "mmdbkk.com"
 
-# Kenji Knowledge legacy redirect only. Keep these patterns narrow; do not
-# claim /sigil/internal/admin/*, /internal/admin/*, or either host catch-all.
+# Legacy SIGIL internal admin redirect only. Keep these patterns narrow; do not
+# render SIGIL-prefixed admin pages or claim /internal/admin/* or either host catch-all.
+[[routes]]
+pattern = "mmdbkk.com/sigil/internal/admin*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/internal/admin*"
+zone_name = "mmdbkk.com"
+
 [[routes]]
 pattern = "mmdbkk.com/sigil/internal/admin/kenji-knowledge"
 zone_name = "mmdbkk.com"

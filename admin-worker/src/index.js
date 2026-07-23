@@ -1169,11 +1169,12 @@ function isLegacySigilInternalAdminPath(path) {
 function redirectLegacySigilInternalAdmin(req) {
   const url = new URL(req.url);
   url.pathname = `${INTERNAL_ADMIN_PREFIX}${url.pathname.slice(SIGIL_INTERNAL_ADMIN_PREFIX.length)}`;
+  const location = `${url.origin}${url.pathname}${url.search}`;
   return new Response(null, {
     status: 308,
     headers: {
       "cache-control": "no-store",
-      location: `${url.pathname}${url.search}`,
+      location,
       "x-mmd-route-canonical": `${url.pathname}${url.search}`,
     },
   });
