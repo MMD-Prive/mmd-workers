@@ -159,6 +159,29 @@ test("published endpoint uses the same browser auth contract and readiness schem
   assert.deepEqual(body.cards, []);
 });
 
+test("list and read endpoints use the same browser auth contract", async () => {
+  const list = await jsonRequest("/v1/admin/kenji/knowledge/list?status=draft&lane=client&limit=5", {
+    headers: await cookieHeaders(),
+  });
+
+  assert.equal(list.response.status, 200);
+  assert.equal(list.body.ok, true);
+  assert.equal(list.body.mode, "kenji_knowledge_list");
+  assert.equal(list.body.query.status, "draft");
+  assert.equal(list.body.query.lane, "client");
+  assert.equal(list.body.query.limit, 5);
+  assert.deepEqual(list.body.storage, { persisted: false, reason: "not_configured" });
+  assert.deepEqual(list.body.cards, []);
+
+  const missing = await jsonRequest("/v1/admin/kenji/knowledge/kk_safe_001", {
+    headers: await cookieHeaders(),
+  });
+  assert.equal(missing.response.status, 404);
+  assert.equal(missing.body.ok, false);
+  assert.equal(missing.body.error, "not_found");
+  assert.equal(missing.body.id, "kk_safe_001");
+});
+
 test("draft POST uses the same browser auth contract and remains inert", async () => {
   const { response, body } = await jsonRequest("/v1/admin/kenji/knowledge/draft", {
     method: "POST",

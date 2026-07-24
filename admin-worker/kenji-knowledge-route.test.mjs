@@ -228,6 +228,7 @@ test("PR 206 readiness API route declarations remain exact", async () => {
     "/v1/internal/kenji/knowledge/published",
     "/v1/admin/kenji/knowledge/meta",
     "/v1/admin/kenji/knowledge/list",
+    "/v1/admin/kenji/knowledge/*",
     "/v1/admin/kenji/knowledge/draft",
   ];
 

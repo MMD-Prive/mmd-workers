@@ -104,7 +104,24 @@ test("Kenji Knowledge meta/list/draft readiness endpoints are authenticated and 
   const list = await jsonRequest("/v1/admin/kenji/knowledge/list", { headers: bearerHeaders() });
   assert.equal(list.response.status, 200);
   assert.equal(list.body.ok, true);
+  assert.equal(list.body.mode, "kenji_knowledge_list");
+  assert.equal(list.body.data_status, "no_storage");
+  assert.deepEqual(list.body.storage, { persisted: false, reason: "not_configured" });
+  assert.deepEqual(list.body.query, {
+    q: null,
+    status: null,
+    lane: null,
+    language: null,
+    audience: null,
+    sort: "updated_at",
+    order: "desc",
+    limit: 25,
+  });
   assert.deepEqual(list.body.cards, []);
+  assert.deepEqual(list.body.items, []);
+  assert.equal(list.body.count, 0);
+  assert.equal(list.body.total, 0);
+  assert.equal(list.body.has_more, false);
 
   const draft = await jsonRequest("/v1/admin/kenji/knowledge/draft", {
     method: "POST",
@@ -118,6 +135,101 @@ test("Kenji Knowledge meta/list/draft readiness endpoints are authenticated and 
   assert.equal(draft.body.ok, true);
   assert.equal(draft.body.draft_received, true);
   assert.deepEqual(draft.body.storage, { persisted: false, reason: "not_configured" });
+});
+
+test("Kenji Knowledge list accepts safe filter query and keeps stable empty no-storage shape", async () => {
+  const { response, body } = await jsonRequest("/v1/admin/kenji/knowledge/list?q=route&status=draft&lane=client&language=th&audience=internal_only&sort=title&order=asc&limit=10", {
+    headers: bearerHeaders(),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.mode, "kenji_knowledge_list");
+  assert.equal(body.data_status, "no_storage");
+  assert.deepEqual(body.query, {
+    q: "route",
+    status: "draft",
+    lane: "client",
+    language: "th",
+    audience: "internal_only",
+    sort: "title",
+    order: "asc",
+    limit: 10,
+  });
+  assert.deepEqual(body.storage, { persisted: false, reason: "not_configured" });
+  assert.deepEqual(body.cards, []);
+  assert.deepEqual(body.items, []);
+  assert.equal(body.count, 0);
+  assert.equal(body.total, 0);
+  assert.equal(body.has_more, false);
+});
+
+test("Kenji Knowledge list rejects malformed query values", async () => {
+  const cases = [
+    ["limit", "/v1/admin/kenji/knowledge/list?limit=0"],
+    ["limit", "/v1/admin/kenji/knowledge/list?limit=101"],
+    ["limit", "/v1/admin/kenji/knowledge/list?limit=abc"],
+    ["order", "/v1/admin/kenji/knowledge/list?order=newest"],
+    ["sort", "/v1/admin/kenji/knowledge/list?sort=rank"],
+    ["status", "/v1/admin/kenji/knowledge/list?status=deleted"],
+    ["lane", "/v1/admin/kenji/knowledge/list?lane=unknown"],
+    ["language", "/v1/admin/kenji/knowledge/list?language=thai"],
+    ["audience", "/v1/admin/kenji/knowledge/list?audience=everyone"],
+    ["q", `/v1/admin/kenji/knowledge/list?q=${"x".repeat(121)}`],
+  ];
+
+  for (const [field, path] of cases) {
+    const { response, body } = await jsonRequest(path, { headers: bearerHeaders() });
+    assert.equal(response.status, 400, path);
+    assert.equal(body.ok, false, path);
+    assert.equal(body.error, "invalid_query", path);
+    assert.equal(body.field, field, path);
+  }
+});
+
+test("Kenji Knowledge read endpoint rejects malformed ids and returns not found for valid missing ids", async () => {
+  for (const id of ["ab", "bad/id", "%2F%2Fevil.example", " space"]) {
+    const { response, body } = await jsonRequest(`/v1/admin/kenji/knowledge/${id}`, { headers: bearerHeaders() });
+    assert.equal(response.status, 400, id);
+    assert.equal(body.ok, false, id);
+    assert.equal(body.error, "invalid_id", id);
+    assert.equal(body.field, "id", id);
+  }
+
+  const missing = await jsonRequest("/v1/admin/kenji/knowledge/kk_safe_001", { headers: bearerHeaders() });
+  assert.equal(missing.response.status, 404);
+  assert.deepEqual(missing.body, {
+    ok: false,
+    source: "admin-worker",
+    mode: "kenji_knowledge_read",
+    error: "not_found",
+    code: "kenji_knowledge_not_found",
+    id: "kk_safe_001",
+    storage: { persisted: false, reason: "not_configured" },
+  });
+});
+
+test("HEAD Kenji Knowledge list and read endpoints keep status without a body", async () => {
+  const list = await request("/v1/admin/kenji/knowledge/list?limit=5", {
+    method: "HEAD",
+    headers: bearerHeaders(),
+  });
+  assert.equal(list.status, 200);
+  assert.equal(await list.text(), "");
+
+  const malformed = await request("/v1/admin/kenji/knowledge/bad/id", {
+    method: "HEAD",
+    headers: bearerHeaders(),
+  });
+  assert.equal(malformed.status, 400);
+  assert.equal(await malformed.text(), "");
+
+  const missing = await request("/v1/admin/kenji/knowledge/kk_safe_001", {
+    method: "HEAD",
+    headers: bearerHeaders(),
+  });
+  assert.equal(missing.status, 404);
+  assert.equal(await missing.text(), "");
 });
 
 test("OPTIONS still returns CORS preflight success", async () => {
@@ -149,6 +261,8 @@ test("Kenji readiness route ownership remains exact and absent from redirect-wor
     "www.mmdbkk.com/v1/admin/kenji/knowledge/meta",
     "mmdbkk.com/v1/admin/kenji/knowledge/list",
     "www.mmdbkk.com/v1/admin/kenji/knowledge/list",
+    "mmdbkk.com/v1/admin/kenji/knowledge/*",
+    "www.mmdbkk.com/v1/admin/kenji/knowledge/*",
     "mmdbkk.com/v1/admin/kenji/knowledge/draft",
     "www.mmdbkk.com/v1/admin/kenji/knowledge/draft",
   ];
@@ -160,6 +274,7 @@ test("Kenji readiness route ownership remains exact and absent from redirect-wor
 
   assert.doesNotMatch(adminConfig, /pattern = "(?:www\.)?mmdbkk\.com\/v1\/admin\/\*"/);
   assert.doesNotMatch(adminConfig, /pattern = "(?:www\.)?mmdbkk\.com\/v1\/internal\/\*"/);
+  assert.doesNotMatch(adminConfig, /pattern = "(?:www\.)?mmdbkk\.com\/v1\/admin\/kenji\/\*"/);
   assert.doesNotMatch(adminConfig, /pattern = "(?:www\.)?mmdbkk\.com\/\*"/);
   assert.doesNotMatch(redirectConfig, /v1\/admin\/auth\/me|v1\/internal\/kenji\/knowledge\/published/);
   assert.doesNotMatch(redirectSource, /v1\/admin\/auth\/me|v1\/internal\/kenji\/knowledge\/published/);
