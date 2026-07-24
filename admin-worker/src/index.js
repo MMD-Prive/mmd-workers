@@ -1098,7 +1098,53 @@ function adminLoginRequiredPage(req) {
 function adminLoginPage(req, { status = 200, error = "" } = {}) {
   const url = new URL(req.url);
   const next = normalizeAdminLoginNext(url.searchParams.get("next"), url.origin);
-  const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>MMD Admin Sign In</title></head><body><main><h1>MMD Admin Sign In</h1>${error ? `<p role="alert">${error}</p>` : ""}<form method="post" action="${ADMIN_LOGIN_SESSION_PATH}"><label>Access code <input name="credential" type="password" required autocomplete="current-password"></label><input type="hidden" name="next" value="${escapeHtmlAttribute(next)}"><button type="submit">Sign in</button></form></main></body></html>`;
+  const body = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <title>SIGIL Internal Login</title>
+    <style>
+      :root{color-scheme:dark;--bg:#050406;--panel:rgba(15,12,18,.9);--line:rgba(221,184,108,.24);--text:#f8efe2;--muted:#b9aa97;--gold:#d7ad63;--gold-strong:#f0cc83;--danger:#ef9b9b}
+      *{box-sizing:border-box}
+      body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;color:var(--text);background:radial-gradient(circle at top left,rgba(215,173,99,.2),transparent 30%),radial-gradient(circle at bottom right,rgba(120,68,83,.14),transparent 32%),linear-gradient(180deg,#111014 0%,#070609 58%,#030303 100%);font-family:Baskerville,"Iowan Old Style",Palatino,Georgia,serif}
+      .sigil-internal-login{width:min(100%,760px);padding:clamp(24px,5vw,42px);border:1px solid var(--line);border-radius:24px;background:var(--panel);box-shadow:0 28px 90px rgba(0,0,0,.45)}
+      .kicker{margin:0 0 12px;color:var(--gold);font:700 .78rem/1.2 "Avenir Next Condensed","Gill Sans",sans-serif;letter-spacing:.2em;text-transform:uppercase}
+      h1{margin:0;font-size:clamp(2.3rem,9vw,4.8rem);line-height:.92}
+      .lead{max-width:46rem;margin:18px 0 0;color:var(--muted);line-height:1.65}
+      .state{display:grid;gap:8px;margin-top:22px;padding:16px;border:1px solid rgba(221,184,108,.16);border-radius:16px;background:rgba(255,255,255,.035)}
+      .state strong{color:var(--gold-strong);font:700 .78rem/1.2 "Avenir Next Condensed","Gill Sans",sans-serif;letter-spacing:.14em;text-transform:uppercase}
+      .state span{color:var(--muted);font-size:.94rem;overflow-wrap:anywhere}
+      form{display:grid;gap:14px;margin-top:24px}
+      label{display:grid;gap:8px;color:var(--gold-strong);font:700 .78rem/1.2 "Avenir Next Condensed","Gill Sans",sans-serif;letter-spacing:.14em;text-transform:uppercase}
+      input{width:100%;min-height:52px;padding:0 16px;border:1px solid var(--line);border-radius:12px;background:rgba(5,4,6,.74);color:var(--text);font:inherit}
+      button{min-height:50px;border:1px solid rgba(240,204,131,.44);border-radius:12px;background:linear-gradient(135deg,rgba(215,173,99,.34),rgba(96,72,28,.42));color:var(--text);font:700 .88rem/1 "Avenir Next Condensed","Gill Sans",sans-serif;letter-spacing:.13em;text-transform:uppercase;cursor:pointer}
+      .error{min-height:1.25rem;margin:0;color:var(--danger)}
+      @media (max-width:520px){body{padding:16px}.sigil-internal-login{border-radius:20px}}
+    </style>
+  </head>
+  <body>
+    <main class="sigil-internal-login" data-mmd-page="sigil-internal-login">
+      <p class="kicker">SIGIL Internal Command</p>
+      <h1>Internal access.</h1>
+      <p class="lead">Create a control-room identity session with the approved admin access code. Verification stays server-side and issues the existing secure HttpOnly admin cookie.</p>
+      <div class="state" aria-label="Invite state">
+        <strong>Invite state</strong>
+        <span>Private operator gate. Existing access-code login remains active for approved admins.</span>
+      </div>
+      <form method="post" action="${ADMIN_LOGIN_SESSION_PATH}" autocomplete="on">
+        <input type="hidden" name="next" value="${escapeHtmlAttribute(next)}">
+        <label>Access Code / Invite Key
+          <input name="credential" type="password" required autocomplete="current-password">
+        </label>
+        <p class="state"><strong>Next route</strong><span>${escHtml(next)}</span></p>
+        <p class="error" role="alert">${escHtml(error)}</p>
+        <button type="submit">Unlock SIGIL</button>
+      </form>
+    </main>
+  </body>
+</html>`;
   return adminHtml(req, body, status);
 }
 
