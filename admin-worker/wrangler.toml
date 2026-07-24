@@ -134,6 +134,14 @@ pattern = "www.mmdbkk.com/v1/admin/kenji/knowledge/list"
 zone_name = "mmdbkk.com"
 
 [[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/knowledge/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/knowledge/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
 pattern = "mmdbkk.com/v1/admin/kenji/knowledge/draft"
 zone_name = "mmdbkk.com"
 

@@ -107,6 +107,14 @@ const KENJI_KNOWLEDGE_META_PATH = "/v1/admin/kenji/knowledge/meta";
 const KENJI_KNOWLEDGE_LIST_PATH = "/v1/admin/kenji/knowledge/list";
 const KENJI_KNOWLEDGE_DRAFT_PATH = "/v1/admin/kenji/knowledge/draft";
 const KENJI_KNOWLEDGE_PUBLISHED_PATH = "/v1/internal/kenji/knowledge/published";
+const KENJI_KNOWLEDGE_DETAIL_PREFIX = "/v1/admin/kenji/knowledge/";
+const KENJI_KNOWLEDGE_DEFAULT_LIMIT = 25;
+const KENJI_KNOWLEDGE_MAX_LIMIT = 100;
+const KENJI_KNOWLEDGE_ALLOWED_STATUS = new Set(["draft", "published", "archived", "review", "ready"]);
+const KENJI_KNOWLEDGE_ALLOWED_LANE = new Set(["client", "model", "partner", "admin", "operations", "brand", "system"]);
+const KENJI_KNOWLEDGE_ALLOWED_LANGUAGE = new Set(["th", "en", "ja", "zh", "ko"]);
+const KENJI_KNOWLEDGE_ALLOWED_AUDIENCE = new Set(["internal", "internal_only", "operator", "client", "model", "partner", "public"]);
+const KENJI_KNOWLEDGE_ALLOWED_SORT = new Set(["updated_at", "created_at", "title", "status", "lane", "language", "audience"]);
 const ADMIN_LOGIN_ROOT_PATH = "/internal/admin";
 const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
@@ -1188,9 +1196,19 @@ function isKenjiKnowledgeReadinessRoute(path, method) {
   if ((method === "GET" || method === "HEAD") && path === KENJI_KNOWLEDGE_AUTH_ME_PATH) return true;
   if ((method === "GET" || method === "HEAD") && path === KENJI_KNOWLEDGE_META_PATH) return true;
   if ((method === "GET" || method === "HEAD") && path === KENJI_KNOWLEDGE_LIST_PATH) return true;
+  if ((method === "GET" || method === "HEAD") && isKenjiKnowledgeDetailPath(path)) return true;
   if ((method === "POST" || method === "HEAD") && path === KENJI_KNOWLEDGE_DRAFT_PATH) return true;
   if ((method === "GET" || method === "HEAD") && path === KENJI_KNOWLEDGE_PUBLISHED_PATH) return true;
   return false;
+}
+
+function isKenjiKnowledgeDetailPath(path) {
+  if (!path.startsWith(KENJI_KNOWLEDGE_DETAIL_PREFIX)) return false;
+  return ![
+    KENJI_KNOWLEDGE_META_PATH,
+    KENJI_KNOWLEDGE_LIST_PATH,
+    KENJI_KNOWLEDGE_DRAFT_PATH,
+  ].includes(path);
 }
 
 async function handleKenjiKnowledgeReadinessRoute(req, env, path, method) {
@@ -1239,12 +1257,15 @@ async function handleKenjiKnowledgeReadinessRoute(req, env, path, method) {
   }
 
   if (path === KENJI_KNOWLEDGE_LIST_PATH) {
-    return jsonForMethod(req, {
-      ok: true,
-      source: "admin-worker",
-      mode: "kenji_knowledge_list",
-      cards: [],
-    });
+    const parsed = parseKenjiKnowledgeListQuery(new URL(req.url).searchParams);
+    if (!parsed.ok) return jsonForMethod(req, kenjiKnowledgeInvalidQuery(parsed.field, parsed.message), 400);
+    return jsonForMethod(req, kenjiKnowledgeEmptyListResponse(parsed.query));
+  }
+
+  if (isKenjiKnowledgeDetailPath(path)) {
+    const parsed = parseKenjiKnowledgeId(path.slice(KENJI_KNOWLEDGE_DETAIL_PREFIX.length));
+    if (!parsed.ok) return jsonForMethod(req, kenjiKnowledgeInvalidIdResponse(parsed.message), 400);
+    return jsonForMethod(req, kenjiKnowledgeReadNotFoundResponse(parsed.id), 404);
   }
 
   if (path === KENJI_KNOWLEDGE_DRAFT_PATH) {
@@ -1274,6 +1295,141 @@ async function handleKenjiKnowledgeReadinessRoute(req, env, path, method) {
   }
 
   return jsonForMethod(req, { ok: false, error: "not_found" }, 404);
+}
+
+function kenjiKnowledgeStorageStatus() {
+  return { persisted: false, reason: "not_configured" };
+}
+
+function kenjiKnowledgeDefaultQuery() {
+  return {
+    q: null,
+    status: null,
+    lane: null,
+    language: null,
+    audience: null,
+    sort: "updated_at",
+    order: "desc",
+    limit: KENJI_KNOWLEDGE_DEFAULT_LIMIT,
+  };
+}
+
+function parseKenjiKnowledgeListQuery(params) {
+  const query = kenjiKnowledgeDefaultQuery();
+  const singleValue = (field) => {
+    const values = params.getAll(field);
+    if (values.length > 1) {
+      return { ok: false, field, message: `${field} must be provided only once` };
+    }
+    return { ok: true, value: values[0] ?? null };
+  };
+
+  for (const field of ["q", "status", "lane", "language", "audience", "sort", "order", "limit"]) {
+    const result = singleValue(field);
+    if (!result.ok) return result;
+    if (result.value === null || result.value === "") continue;
+
+    const raw = String(result.value);
+    const value = raw.trim();
+    if (raw !== value || /[\u0000-\u001f\u007f]/.test(value)) {
+      return { ok: false, field, message: `${field} is malformed` };
+    }
+
+    if (field === "q") {
+      if (value.length > 120) return { ok: false, field, message: "q is too long" };
+      query.q = value;
+      continue;
+    }
+
+    if (field === "limit") {
+      if (!/^\d+$/.test(value)) return { ok: false, field, message: "limit must be an integer" };
+      const limit = Number(value);
+      if (!Number.isInteger(limit) || limit < 1 || limit > KENJI_KNOWLEDGE_MAX_LIMIT) {
+        return { ok: false, field, message: `limit must be between 1 and ${KENJI_KNOWLEDGE_MAX_LIMIT}` };
+      }
+      query.limit = limit;
+      continue;
+    }
+
+    if (field === "order") {
+      if (value !== "asc" && value !== "desc") return { ok: false, field, message: "order must be asc or desc" };
+      query.order = value;
+      continue;
+    }
+
+    const allowed = {
+      status: KENJI_KNOWLEDGE_ALLOWED_STATUS,
+      lane: KENJI_KNOWLEDGE_ALLOWED_LANE,
+      language: KENJI_KNOWLEDGE_ALLOWED_LANGUAGE,
+      audience: KENJI_KNOWLEDGE_ALLOWED_AUDIENCE,
+      sort: KENJI_KNOWLEDGE_ALLOWED_SORT,
+    }[field];
+    if (!allowed.has(value)) return { ok: false, field, message: `${field} is not supported` };
+    query[field] = value;
+  }
+
+  return { ok: true, query };
+}
+
+function parseKenjiKnowledgeId(value) {
+  const id = String(value || "").trim();
+  if (!id || id !== value || id.includes("/") || !/^[A-Za-z0-9][A-Za-z0-9_-]{2,79}$/.test(id)) {
+    return { ok: false, message: "id must be 3-80 characters using letters, numbers, underscore, or hyphen" };
+  }
+  if (["meta", "list", "draft"].includes(id)) {
+    return { ok: false, message: "id is reserved" };
+  }
+  return { ok: true, id };
+}
+
+function kenjiKnowledgeInvalidQuery(field, message) {
+  return {
+    ok: false,
+    source: "admin-worker",
+    mode: "kenji_knowledge_list",
+    error: "invalid_query",
+    field,
+    message,
+  };
+}
+
+function kenjiKnowledgeInvalidIdResponse(message) {
+  return {
+    ok: false,
+    source: "admin-worker",
+    mode: "kenji_knowledge_read",
+    error: "invalid_id",
+    field: "id",
+    message,
+  };
+}
+
+function kenjiKnowledgeEmptyListResponse(query = kenjiKnowledgeDefaultQuery()) {
+  return {
+    ok: true,
+    source: "admin-worker",
+    mode: "kenji_knowledge_list",
+    data_status: "no_storage",
+    storage: kenjiKnowledgeStorageStatus(),
+    query,
+    cards: [],
+    items: [],
+    count: 0,
+    total: 0,
+    has_more: false,
+  };
+}
+
+function kenjiKnowledgeReadNotFoundResponse(id) {
+  return {
+    ok: false,
+    source: "admin-worker",
+    mode: "kenji_knowledge_read",
+    error: "not_found",
+    code: "kenji_knowledge_not_found",
+    id,
+    storage: kenjiKnowledgeStorageStatus(),
+  };
 }
 
 function jsonForMethod(req, data, status = 200) {
