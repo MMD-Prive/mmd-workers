@@ -5,9 +5,9 @@
     "base_main_sha": "dbc4669062162ec78244423131bc5ecc54445b27",
     "input_artifact": "docs/architecture/ROUTE_INVENTORY_NORMALIZED.md",
     "source_artifact": "docs/architecture/ROUTE_CANONICAL_OWNER_LOCK.md",
-    "consistency_fix": "Phase 1B.5A",
+    "consistency_fix": "Phase 1B.5B1",
     "documentation_only": true,
-    "owner_decisions_changed": 0
+    "owner_decisions_changed": 4
   },
   "principles": {
     "webflow_visible_public_pages": true,
@@ -281,32 +281,36 @@
         "/sigil/access"
       ],
       "alias_notes": null,
-      "status": "UI_READY_BACKEND_MISSING",
-      "status_display": "UI READY / BACKEND MISSING",
+      "status": "API_READY_UI_MISSING",
+      "status_display": "API READY / UI MISSING",
       "surface_type": "page",
       "page_owner": "Webflow page, public-access-worker API",
-      "api_owner": "future public-access-worker for write API",
-      "current_owner": "none proven",
+      "api_owner": "public-access-worker for POST /public/api/access/intake",
+      "current_owner": "none proven for visible page; public-access-worker for intake API",
       "current_front_gate": "unknown",
       "ui_location": "webflow/sigil/access/* evidence only",
-      "backend_owner": "future public-access-worker for write API",
+      "backend_owner": "public-access-worker",
       "candidate_owner": "Webflow page, public-access-worker API",
-      "owner_decision": "UNRESOLVED",
-      "owner_confidence": "LOW",
+      "owner_decision": "TEMPORARY",
+      "owner_confidence": "MEDIUM",
       "compatibility_decision": "none",
-      "production_verified": "unverified",
-      "production_verification": "not verified",
-      "risk": "public intake cannot be frontend truth",
-      "evidence": "not verified",
+      "production_verified": "source_config_verified_live_pending",
+      "production_verification": "visible page not verified; API source/config verified, live smoke pending",
+      "risk": "public intake must remain evidence-only and cannot grant access",
+      "evidence": "webflow/sigil/access/* for UI artifact; public-access-worker/src/index.js implements POST /public/api/access/intake; public-access-worker/wrangler.toml routes sigil.mmdbkk.com/public/api/*",
       "conflicts": [
-        "exact route missing"
+        "visible page route missing",
+        "unknown /public/api/* subpaths are not implemented"
       ],
       "migration_phase": "Phase 2A",
       "acceptance_requirements": [
-        "/public/api/access/intake"
+        "Prove visible page route owner.",
+        "Live-smoke POST /public/api/access/intake and OPTIONS.",
+        "Confirm allowed-Origin behavior, evidence-only response, and no access grant.",
+        "Confirm unknown /public/api/* subpaths fail closed."
       ],
       "notes": {
-        "blocker_reason": "public intake cannot be frontend truth",
+        "blocker_reason": "visible page route owner and live API smoke pending",
         "remove_later_decision": null
       }
     },
@@ -1675,44 +1679,48 @@
       "route_family": "Internal admin login",
       "hosts": [
         "mmdbkk.com",
-        "www.mmdbkk.com",
-        "sigil.mmdbkk.com"
+        "www.mmdbkk.com"
       ],
       "methods": [
         "GET",
-        "POST"
+        "HEAD",
+        "POST session"
       ],
       "canonical_route": "/internal/admin/login",
       "aliases": [
-        "/sigil/internal/admin/*"
+        "/internal/admin/login/session",
+        "/sigil/internal/admin/* legacy redirects"
       ],
       "alias_notes": null,
-      "status": "UNRESOLVED",
-      "status_display": "UNRESOLVED",
-      "surface_type": "page_or_api",
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED",
+      "surface_type": "internal_admin_auth_surface",
       "page_owner": "admin-worker",
-      "api_owner": "admin-worker expected",
-      "current_owner": "none proven",
-      "current_front_gate": "unknown",
-      "ui_location": "none proven",
-      "backend_owner": "admin-worker expected",
+      "api_owner": "admin-worker",
+      "current_owner": "admin-worker",
+      "current_front_gate": "exact apex/www routes in admin-worker/wrangler.toml",
+      "ui_location": "admin-worker login page",
+      "backend_owner": "admin-worker signed-session handler",
       "candidate_owner": "admin-worker",
-      "owner_decision": "UNRESOLVED",
-      "owner_confidence": "BLOCKED",
-      "compatibility_decision": "none",
-      "production_verified": "unverified",
-      "production_verification": "not verified",
-      "risk": "admin auth sensitive",
-      "evidence": "not verified",
+      "owner_decision": "LOCKED",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "keep legacy SIGIL redirects only where proven",
+      "production_verified": "source_config_verified_live_pending",
+      "production_verification": "source/config verified; live production smoke pending",
+      "risk": "admin auth sensitive; cookie security must follow source behavior",
+      "evidence": "admin-worker/wrangler.toml exact /internal/admin/login and /internal/admin/login/session apex/www routes; admin-worker/src/index.js renders login, verifies POST, and issues HMAC-signed HttpOnly Secure SameSite=Lax cookie; admin-worker/admin-login-session.test.mjs covers route config and session behavior",
       "conflicts": [
-        "secure session not normalized"
+        "no broad /internal/admin/* route; exact login/session only"
       ],
       "migration_phase": "Phase 5A",
       "acceptance_requirements": [
-        "Define signed session/login page."
+        "Live-smoke GET /internal/admin/login without exposing credentials.",
+        "Live-smoke POST /internal/admin/login/session safely.",
+        "Confirm HMAC-signed HttpOnly Secure SameSite=Lax host-only cookie behavior.",
+        "Confirm no broad internal admin wildcard route is introduced."
       ],
       "notes": {
-        "blocker_reason": "admin auth sensitive",
+        "blocker_reason": "live production smoke pending only",
         "remove_later_decision": null
       }
     },
@@ -1808,48 +1816,51 @@
     },
     {
       "route_id": "39_kenji_knowledge_canonical",
-      "route": "/sigil/internal/admin/kenji-knowledge",
+      "route": "/internal/admin/kenji-knowledge",
       "route_family": "Kenji Knowledge canonical",
       "hosts": [
-        "sigil/internal hosts"
+        "mmdbkk.com",
+        "www.mmdbkk.com"
       ],
       "methods": [
         "GET",
         "HEAD"
       ],
-      "canonical_route": "/sigil/internal/admin/kenji-knowledge",
+      "canonical_route": "/internal/admin/kenji-knowledge",
       "aliases": [
-        "/internal/admin/kenji-knowledge"
+        "/sigil/internal/admin/kenji-knowledge"
       ],
-      "alias_notes": null,
-      "status": "UNRESOLVED",
-      "status_display": "UNRESOLVED",
+      "alias_notes": "SIGIL-prefixed route is legacy compatibility redirect to canonical non-SIGIL path with query preserved.",
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED",
       "surface_type": "page",
       "page_owner": "admin-worker",
-      "api_owner": "admin-worker",
-      "current_owner": "admin-worker has /internal/admin/kenji-knowledge only",
-      "current_front_gate": "none/direct workers.dev not canonical",
-      "ui_location": "admin shell",
-      "backend_owner": "admin-worker",
+      "api_owner": "admin-worker readiness APIs",
+      "current_owner": "admin-worker",
+      "current_front_gate": "exact apex/www route config in admin-worker/wrangler.toml",
+      "ui_location": "admin-worker Kenji Knowledge shell",
+      "backend_owner": "admin-worker readiness APIs",
       "candidate_owner": "admin-worker",
-      "owner_decision": "UNRESOLVED",
-      "owner_confidence": "LOW",
-      "compatibility_decision": "keep alias",
-      "production_verified": "unverified",
-      "production_verification": "not verified",
-      "risk": "do not modify PR #209",
-      "evidence": "not verified",
+      "owner_decision": "LOCKED",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "keep legacy SIGIL redirect until Phase 6",
+      "production_verified": "source_config_verified_live_pending",
+      "production_verification": "source/config verified; live production smoke pending",
+      "risk": "do not reverse canonical/legacy relationship",
+      "evidence": "admin-worker/src/index.js defines KENJI_KNOWLEDGE_CANONICAL_PATH as /internal/admin/kenji-knowledge and KENJI_KNOWLEDGE_LEGACY_SIGIL_PATH as /sigil/internal/admin/kenji-knowledge; admin-worker/wrangler.toml exact routes match; kenji route tests cover canonical shell and 308 legacy redirect with query preserved",
       "conflicts": [
-        "PR #209 separate",
-        "canonical route not implemented"
+        "PR #209 remains separate",
+        "SIGIL-prefixed path is legacy redirect, not canonical"
       ],
       "migration_phase": "Phase 5",
       "acceptance_requirements": [
-        "Finish PR #209 separately",
-        "then prove canonical route."
+        "Live-smoke canonical GET/HEAD.",
+        "Live-smoke legacy 308 redirect from /sigil/internal/admin/kenji-knowledge.",
+        "Confirm query preservation and owner headers.",
+        "Confirm no broad internal wildcard route."
       ],
       "notes": {
-        "blocker_reason": "do not modify PR #209",
+        "blocker_reason": "live production smoke pending only",
         "remove_later_decision": null
       }
     },
@@ -1987,18 +1998,43 @@
   "api_namespaces": [
     {
       "namespace": "/v1/admin/*",
-      "canonical_owner": "admin-worker",
+      "canonical_owner": "admin-worker default owner with explicit route exceptions",
       "visibility": "internal/admin",
       "auth_requirement": "ADMIN_BEARER, signed session, confirm key, or service binding per endpoint",
-      "source_of_truth": "Admin Worker and backend stores",
+      "source_of_truth": "Admin Worker and backend stores; route-specific exception Workers where documented",
       "temporary_proxy": "possible front gate/service proxy",
       "known_overlap": [
-        "admin pages not all normalized"
+        "admin pages not all normalized",
+        "POST /v1/admin/access/grant remains auth-worker",
+        "/v1/admin/line/liff-renewal-queue remains non-default/pending source confirmation"
       ],
-      "target_direct_route": "direct admin route/service binding",
-      "owner_decision": "LOCKED",
-      "evidence": "ROUTE_CANONICAL_OWNER_LOCK.md API Namespace Ownership table",
-      "notes": "admin pages not all normalized"
+      "target_direct_route": "direct admin route/service binding; exceptions keep exact owners until migrated/proxied",
+      "owner_decision": "LOCKED_DEFAULT_WITH_EXCEPTIONS",
+      "evidence": "admin-worker source for default namespace; auth-worker/src/index.js and auth-worker/README.md for POST /v1/admin/access/grant; current source scan did not confirm exact member-pages LIFF renewal queue handler",
+      "notes": "Route specificity wins over namespace default; do not route exception contracts to admin-worker until migrated/proxied.",
+      "default_owner": "admin-worker",
+      "route_exceptions": [
+        {
+          "route": "/v1/admin/access/grant",
+          "method": "POST",
+          "exception_owner": "auth-worker",
+          "current_status": "API_READY_UI_MISSING",
+          "migration_state": "MVP owner retained until moved behind or proxied by admin-worker",
+          "auth_contract": "ADMIN_BEARER per auth-worker README",
+          "evidence": "auth-worker/src/index.js handleAdminGrant; auth-worker/README.md states POST /v1/admin/access/grant remains in auth-worker for MVP",
+          "acceptance_requirement": "Do not capture with admin-worker wildcard until migration/proxy acceptance passes."
+        },
+        {
+          "route": "/v1/admin/line/liff-renewal-queue",
+          "method": "unknown pending source confirmation",
+          "exception_owner": "member-pages-worker candidate",
+          "current_status": "UNRESOLVED",
+          "migration_state": "exception candidate retained pending exact handler/route confirmation",
+          "auth_contract": "pending source confirmation",
+          "evidence": "ROUTE_INVENTORY_NORMALIZED.md listed member-pages-worker, but current source scan did not find exact handler",
+          "acceptance_requirement": "Confirm exact handler, method, auth, and route attachment before migration or removal."
+        }
+      ]
     },
     {
       "namespace": "/v1/pay/*",
@@ -2077,18 +2113,33 @@
     },
     {
       "namespace": "/public/api/*",
-      "canonical_owner": "public-access-worker target",
+      "canonical_owner": "public-access-worker target for implemented intake route",
       "visibility": "public submit",
-      "auth_requirement": "origin/rate-limit and anti-abuse",
-      "source_of_truth": "public access intake backend",
+      "auth_requirement": "allowed Origin, form validation, evidence file limits/type allowlist; no automatic access grant",
+      "source_of_truth": "public-access-worker/src/index.js and public-access-worker/wrangler.toml",
       "temporary_proxy": null,
       "known_overlap": [
-        "worker not proven in repo scan"
+        "only POST /public/api/access/intake and OPTIONS are implemented",
+        "unknown subpaths fail closed"
       ],
-      "target_direct_route": "public-access-worker",
-      "owner_decision": "UNRESOLVED",
-      "evidence": "ROUTE_CANONICAL_OWNER_LOCK.md API Namespace Ownership table",
-      "notes": "worker not proven in repo scan"
+      "target_direct_route": "sigil.mmdbkk.com/public/api/* route config, live smoke pending",
+      "owner_decision": "LOCKED_IMPLEMENTATION_PRODUCTION_PENDING",
+      "evidence": "public-access-worker/src/index.js implements POST /public/api/access/intake and OPTIONS; public-access-worker/wrangler.toml routes sigil.mmdbkk.com/public/api/*",
+      "notes": "Lock is for repository implementation ownership only; production live verification remains separate.",
+      "default_owner": "public-access-worker for explicit implemented routes only",
+      "implemented_routes": [
+        {
+          "route": "/public/api/access/intake",
+          "methods": [
+            "POST",
+            "OPTIONS"
+          ],
+          "owner": "public-access-worker",
+          "status": "API_READY_UI_MISSING",
+          "production_verification": "pending",
+          "unknown_subpaths": "not implemented/fail closed"
+        }
+      ]
     },
     {
       "namespace": "/sigil/api/*",
@@ -2312,15 +2363,15 @@
       "removal_phase": "Phase 6B"
     },
     {
-      "source_route": "/internal/admin/kenji-knowledge",
-      "target_route": "/sigil/internal/admin/kenji-knowledge future",
-      "redirect_type": "compatibility alias",
+      "source_route": "/sigil/internal/admin/kenji-knowledge",
+      "target_route": "/internal/admin/kenji-knowledge",
+      "redirect_type": "legacy compatibility redirect",
       "query_preservation": "preserve query",
       "host_behavior": "internal/sigil hosts",
-      "current_implementation": "admin-worker route only for non-sigil path",
-      "target_implementation": "Redirect/alias after PR #209",
-      "keep_until": "canonical route live",
-      "removal_phase": "Phase 5/6"
+      "current_implementation": "admin-worker 308 redirect from SIGIL-prefixed legacy route",
+      "target_implementation": "canonical admin-worker shell",
+      "keep_until": "canonical route live; legacy retained until Phase 6 approval",
+      "removal_phase": "Phase 6"
     },
     {
       "source_route": "Black Card aliases",
@@ -2367,7 +2418,7 @@
     },
     "admin-worker": {
       "classification": "canonical active API owner",
-      "decision": "Owns /v1/admin/* and model session/admin APIs; visible admin pages need explicit locks."
+      "decision": "Owns default /v1/admin/*, model session/admin APIs, exact admin login/session, and Kenji Knowledge canonical shell; route-level /v1/admin/* exceptions retain current owners until migration/proxy."
     },
     "member-dashboard-chat-worker": {
       "classification": "active LINE worker and renewal renderer candidate",
@@ -2394,8 +2445,8 @@
       "decision": "Owns current booking API subset under /sigil/api/*."
     },
     "public-access-worker": {
-      "classification": "not proven in repo scan",
-      "decision": "Target owner only; BLOCKED until implementation evidence exists."
+      "classification": "active public access intake API owner",
+      "decision": "Repo-proven owner for POST /public/api/access/intake under sigil.mmdbkk.com/public/api/*; production smoke remains pending and unknown subpaths are not implemented."
     },
     "sigil-board-worker": {
       "classification": "canonical active API owner",
@@ -2426,7 +2477,7 @@
     },
     {
       "area": "/public/access and /sigil/access",
-      "blocker": "UI artifacts exist, but exact route and public API owner are not proven.",
+      "blocker": "UI artifacts exist, but exact visible page route is not proven; POST /public/api/access/intake implementation/config owner is public-access-worker, live smoke pending.",
       "required_next_phase": "Phase 2A"
     },
     {
@@ -2481,13 +2532,8 @@
     },
     {
       "area": "internal admin visible pages",
-      "blocker": "Admin APIs exist, visible page routes not normalized.",
+      "blocker": "Admin login and Kenji shell are source/config proven; remaining admin visible pages still need exact route owner locks.",
       "required_next_phase": "Phase 5A/5B"
-    },
-    {
-      "area": "Kenji Knowledge canonical route",
-      "blocker": "PR #209 separate; current route evidence is alias only.",
-      "required_next_phase": "Phase 5"
     },
     {
       "area": "public model apply API overlap",
