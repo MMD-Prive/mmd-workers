@@ -5,7 +5,7 @@
     "base_main_sha": "dbc4669062162ec78244423131bc5ecc54445b27",
     "input_artifact": "docs/architecture/ROUTE_INVENTORY_NORMALIZED.md",
     "source_artifact": "docs/architecture/ROUTE_CANONICAL_OWNER_LOCK.md",
-    "consistency_fix": "Phase 1B.2",
+    "consistency_fix": "Phase 1B.5A",
     "documentation_only": true,
     "owner_decisions_changed": 0
   },
@@ -122,7 +122,7 @@
         "canonical redirect before removing shell."
       ],
       "notes": {
-        "blocker_reason": null,
+        "blocker_reason": "catch-all dependency",
         "remove_later_decision": null
       }
     },
@@ -259,7 +259,7 @@
         "query policy before redirect rule migration."
       ],
       "notes": {
-        "blocker_reason": null,
+        "blocker_reason": "stale public shortcut possible",
         "remove_later_decision": null
       }
     },
@@ -407,7 +407,7 @@
         "/sigil/start"
       ],
       "notes": {
-        "blocker_reason": null,
+        "blocker_reason": "front gate retained",
         "remove_later_decision": null
       }
     },
@@ -455,7 +455,7 @@
         "blocked frontend state writes."
       ],
       "notes": {
-        "blocker_reason": null,
+        "blocker_reason": "aftercare redirect in JS must not become truth",
         "remove_later_decision": null
       }
     },
@@ -647,7 +647,7 @@
         "/booking/intake"
       ],
       "notes": {
-        "blocker_reason": null,
+        "blocker_reason": "API route family broadness",
         "remove_later_decision": null
       }
     },
@@ -873,7 +873,7 @@
         "Verify trusted state source before LOCKED."
       ],
       "notes": {
-        "blocker_reason": null,
+        "blocker_reason": "profile page may imply active state",
         "remove_later_decision": null
       }
     },
@@ -1099,7 +1099,7 @@
         "Remove/migrate only after canonical apply route is live."
       ],
       "notes": {
-        "blocker_reason": null,
+        "blocker_reason": "alias may mask missing canonical route",
         "remove_later_decision": null
       }
     },
@@ -1211,36 +1211,35 @@
         "/pay/renewal"
       ],
       "alias_notes": null,
-      "status": "LIVE_CONNECTED",
-      "status_display": "LIVE CONNECTED",
+      "status": "PARTIAL_INTEGRATION",
+      "status_display": "PARTIAL INTEGRATION",
       "surface_type": "page",
-      "page_owner": "member-dashboard-chat-worker",
+      "page_owner": "member-dashboard-chat-worker candidate renderer pending route proof",
       "api_owner": "payment/review APIs separate",
-      "current_owner": "member-dashboard-chat-worker",
-      "current_front_gate": "direct route config",
-      "ui_location": "Worker renderer",
+      "current_owner": "member-pages-worker manual legacy safety via front gate; member-dashboard-chat-worker renderer candidate",
+      "current_front_gate": "mmd-redirect-worker on current repo evidence",
+      "ui_location": "manual legacy safety page; renderer candidate unverified",
       "backend_owner": "payment/review APIs separate",
-      "candidate_owner": "member-dashboard-chat-worker",
-      "owner_decision": "LOCKED",
-      "owner_confidence": "HIGH",
-      "compatibility_decision": "keep /pay/renewal alias",
+      "candidate_owner": "member-dashboard-chat-worker candidate renderer pending route proof",
+      "owner_decision": "TEMPORARY",
+      "owner_confidence": "MEDIUM",
+      "compatibility_decision": "keep /pay/renewal compatibility until audit",
       "production_verified": "unverified",
-      "production_verification": "not verified here",
-      "risk": "renewal UI must not verify payment",
-      "evidence": "not verified here",
+      "production_verification": "not verified; exact production route owner unresolved",
+      "risk": "route precedence and production attachment not proven; renewal UI must not verify payment",
+      "evidence": "not verified; exact production route owner unresolved",
       "conflicts": [
-        "stale Webflow bridge pending"
+        "member-dashboard-chat-worker/wrangler.toml"
       ],
       "migration_phase": "Phase 3/7",
       "acceptance_requirements": [
-        "Verify exact",
-        "slash",
-        "query",
-        "HEAD",
-        "stale Webflow bridge."
+        "Audit exact route config",
+        "production winner",
+        "GET/HEAD/slash/query behavior",
+        "Webflow bridge before locking owner."
       ],
       "notes": {
-        "blocker_reason": null,
+        "blocker_reason": "route precedence and production attachment not proven; renewal UI must not verify payment",
         "remove_later_decision": null
       }
     },
@@ -1262,32 +1261,36 @@
         "/sigil/pay/renewal"
       ],
       "alias_notes": null,
-      "status": "LIVE_CONNECTED",
-      "status_display": "LIVE CONNECTED",
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED",
       "surface_type": "page",
-      "page_owner": "member-dashboard-chat-worker",
+      "page_owner": "member-dashboard-chat-worker candidate renderer pending route proof",
       "api_owner": "payment/review APIs separate",
-      "current_owner": "member-dashboard-chat-worker",
-      "current_front_gate": "direct route config",
-      "ui_location": "Worker renderer",
+      "current_owner": "none proven in current route config; historical chat-worker renderer evidence only",
+      "current_front_gate": "unknown or route precedence outside current front-gate proof",
+      "ui_location": "renderer candidate unverified",
       "backend_owner": "payment/review APIs separate",
-      "candidate_owner": "member-dashboard-chat-worker",
-      "owner_decision": "TEMPORARY",
-      "owner_confidence": "HIGH",
-      "compatibility_decision": "keep until Phase 6",
+      "candidate_owner": "member-dashboard-chat-worker candidate renderer pending route proof",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "keep compatibility until Phase 6 after route proof",
       "production_verified": "unverified",
-      "production_verification": "not verified here",
-      "risk": "alias removal later",
-      "evidence": "not verified here",
+      "production_verification": "not verified; exact production route owner unresolved",
+      "risk": "alias removal or ownership would be unsafe before route audit",
+      "evidence": "not verified; exact production route owner unresolved",
       "conflicts": [
-        "alias vs canonical route"
+        "member-dashboard-chat-worker/wrangler.toml"
       ],
       "migration_phase": "Phase 6A",
       "acceptance_requirements": [
-        "Verify canonical route adoption before alias removal."
+        "Verify exact route attachment",
+        "production winner",
+        "query preservation",
+        "GET/HEAD/slash behavior",
+        "then decide alias owner."
       ],
       "notes": {
-        "blocker_reason": null,
+        "blocker_reason": "alias removal or ownership would be unsafe before route audit",
         "remove_later_decision": null
       }
     },
@@ -1331,7 +1334,7 @@
         "Decide final membership payment UI/API split."
       ],
       "notes": {
-        "blocker_reason": null,
+        "blocker_reason": "route lock can be mistaken as final payment owner",
         "remove_later_decision": null
       }
     },
@@ -1397,34 +1400,35 @@
         "/sigil/apply/"
       ],
       "alias_notes": null,
-      "status": "LIVE_CONNECTED",
-      "status_display": "LIVE CONNECTED",
+      "status": "PARTIAL_INTEGRATION",
+      "status_display": "PARTIAL INTEGRATION",
       "surface_type": "page",
-      "page_owner": "sigil-worker",
-      "api_owner": "sigil-worker",
-      "current_owner": "sigil-worker via front gate",
+      "page_owner": "sigil-worker candidate target pending implementation",
+      "api_owner": "sigil-worker candidate target only",
+      "current_owner": "mmd-redirect-worker delegates to SIGIL_WORKER; target handler absent in current sigil-worker/src/index.js",
       "current_front_gate": "mmd-redirect-worker",
-      "ui_location": "Worker page",
-      "backend_owner": "sigil-worker",
-      "candidate_owner": "sigil-worker",
-      "owner_decision": "LOCKED",
-      "owner_confidence": "HIGH",
-      "compatibility_decision": "slash alias retained",
+      "ui_location": "UI/page handler missing or unverified in sigil-worker",
+      "backend_owner": "sigil-worker candidate target only",
+      "candidate_owner": "sigil-worker candidate target pending implementation",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "slash alias retained only as compatibility",
       "production_verified": "unverified",
-      "production_verification": "registry evidence only",
-      "risk": "none if service binding works",
-      "evidence": "registry evidence only",
+      "production_verification": "not verified; target handler and production route incomplete",
+      "risk": "target Worker currently falls through to not_found; private model entry must not lock without handler proof",
+      "evidence": "not verified; target handler and production route incomplete",
       "conflicts": [
-        "front gate dependency"
+        "front gate delegation without matching target handler"
       ],
       "migration_phase": "Phase 4A",
       "acceptance_requirements": [
-        "Verify headers",
-        "query",
+        "Implement/prove GET/HEAD handler",
+        "slash/query behavior",
+        "owner headers",
         "no stale Telegram brief."
       ],
       "notes": {
-        "blocker_reason": null,
+        "blocker_reason": "target Worker currently falls through to not_found; private model entry must not lock without handler proof",
         "remove_later_decision": null
       }
     },
@@ -1445,33 +1449,36 @@
         "slash variant"
       ],
       "alias_notes": null,
-      "status": "LIVE_CONNECTED",
-      "status_display": "LIVE CONNECTED",
+      "status": "PARTIAL_INTEGRATION",
+      "status_display": "PARTIAL INTEGRATION",
       "surface_type": "page_or_api",
-      "page_owner": "sigil-worker",
-      "api_owner": "sigil-worker",
-      "current_owner": "sigil-worker",
+      "page_owner": "sigil-worker candidate target pending implementation",
+      "api_owner": "sigil-worker candidate target only",
+      "current_owner": "mmd-redirect-worker delegates to SIGIL_WORKER; target handler absent in current sigil-worker/src/index.js",
       "current_front_gate": "mmd-redirect-worker",
       "ui_location": "unknown",
-      "backend_owner": "sigil-worker",
-      "candidate_owner": "sigil-worker",
-      "owner_decision": "LOCKED",
-      "owner_confidence": "HIGH",
-      "compatibility_decision": "slash alias retained",
+      "backend_owner": "sigil-worker candidate target only",
+      "candidate_owner": "sigil-worker candidate target pending implementation",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "slash alias retained only as compatibility",
       "production_verified": "unverified",
-      "production_verification": "not verified here",
-      "risk": "API must remain backend-only",
-      "evidence": "not verified here",
+      "production_verification": "not verified; target handler and request contract incomplete",
+      "risk": "POST/OPTIONS/body preservation cannot be locked until target API exists",
+      "evidence": "not verified; target handler and request contract incomplete",
       "conflicts": [
-        "front gate dependency"
+        "front gate delegation without matching target handler"
       ],
       "migration_phase": "Phase 4A",
       "acceptance_requirements": [
-        "Verify POST/OPTIONS",
+        "Implement/prove POST/OPTIONS handler",
+        "auth",
+        "body preservation",
+        "route attachment",
         "no Webflow pass-through."
       ],
       "notes": {
-        "blocker_reason": null,
+        "blocker_reason": "POST/OPTIONS/body preservation cannot be locked until target API exists",
         "remove_later_decision": null
       }
     },
@@ -2363,8 +2370,8 @@
       "decision": "Owns /v1/admin/* and model session/admin APIs; visible admin pages need explicit locks."
     },
     "member-dashboard-chat-worker": {
-      "classification": "canonical active for renewal; active migration pending for LINE",
-      "decision": "Owns /sigil/pay/renewal; LINE webhook/rich-menu routes are temporary/proven-only."
+      "classification": "active LINE worker and renewal renderer candidate",
+      "decision": "Renewal route ownership is TEMPORARY or UNRESOLVED until exact route attachment and production winner are proven; LINE webhook/rich-menu routes are temporary/proven-only."
     },
     "member-pages-worker": {
       "classification": "canonical active for member membership/payment evidence pages",
@@ -2375,8 +2382,8 @@
       "decision": "API map remains TEMPORARY until exact /v1/pay* route evidence is enumerated."
     },
     "sigil-worker": {
-      "classification": "canonical active for SIGIL apply/private model APIs",
-      "decision": "Also has recovery/public model API overlap requiring future lock."
+      "classification": "candidate target for SIGIL apply/private model APIs; active for other implemented APIs",
+      "decision": "SIGIL apply/private model apply remain UNRESOLVED until matching handlers and route attachment are proven; recovery/public model API overlap still requires future lock."
     },
     "sigil-booking-proxy-worker": {
       "classification": "canonical active page route proxy",
