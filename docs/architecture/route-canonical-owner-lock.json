@@ -5,9 +5,9 @@
     "base_main_sha": "dbc4669062162ec78244423131bc5ecc54445b27",
     "input_artifact": "docs/architecture/ROUTE_INVENTORY_NORMALIZED.md",
     "source_artifact": "docs/architecture/ROUTE_CANONICAL_OWNER_LOCK.md",
-    "consistency_fix": "Phase 1B.5B1",
+    "consistency_fix": "Phase 1B.5B3",
     "documentation_only": true,
-    "owner_decisions_changed": 4
+    "owner_decisions_changed": 1
   },
   "principles": {
     "webflow_visible_public_pages": true,
@@ -721,28 +721,34 @@
       "status_display": "UNRESOLVED",
       "surface_type": "page",
       "page_owner": "TBD non-legacy owner",
-      "api_owner": "admin-worker API via /v1/member/dashboard",
-      "current_owner": "immigrate-worker temporary",
-      "current_front_gate": "mmd-redirect-worker",
-      "ui_location": "legacy dashboard shell",
-      "backend_owner": "admin-worker API via /v1/member/dashboard",
-      "candidate_owner": "TBD non-legacy owner",
+      "api_owner": "unknown; /v1/member/dashboard handler not proven",
+      "current_owner": "immigrate-worker temporary page renderer",
+      "current_front_gate": "mmd-redirect-worker page route to immigrate-worker; no dashboard API rewrite proven",
+      "ui_location": "legacy dashboard shell in immigrate-worker",
+      "backend_owner": "unresolved dashboard API contract; /v1/member/dashboard and /api/member/dashboard handlers/mapping not proven",
+      "candidate_owner": "TBD non-legacy page owner; API owner TBD",
       "owner_decision": "UNRESOLVED",
       "owner_confidence": "BLOCKED",
       "compatibility_decision": "keep /member alias",
       "production_verified": "unverified",
-      "production_verification": "not verified",
-      "risk": "cannot lock legacy as canonical",
-      "evidence": "not verified",
+      "production_verification": "page source/config evidence only; API not verified",
+      "risk": "legacy page dependency; dashboard UI may depend on API endpoint returning 404 or fall-through",
+      "evidence": "mmd-redirect-worker/src/index.js handles /member/dashboard as page route via fetchMemberFrontend; immigrate-worker/src/index.ts renders /member/dashboard; no exact /v1/member/dashboard, /api/member/dashboard, or /member/api/dashboard handler found in current source scan",
       "conflicts": [
-        "legacy dependency"
+        "legacy page dependency",
+        "backend API handler missing",
+        "alias/rewrite mapping missing or unverified"
       ],
       "migration_phase": "Phase 3A",
       "acceptance_requirements": [
-        "mmd_member_id"
+        "Separate /member/dashboard page route from /v1/member/dashboard API contract.",
+        "Select non-legacy dashboard page owner and auth.",
+        "Implement/prove /v1/member/dashboard or approved replacement API.",
+        "Prove /api/member/dashboard alias or remove it from contract.",
+        "Keep mmd_member_id as target identity."
       ],
       "notes": {
-        "blocker_reason": "cannot lock legacy as canonical",
+        "blocker_reason": "member dashboard backend API handler and alias mapping are not proven",
         "remove_later_decision": null
       }
     },
@@ -2068,18 +2074,42 @@
     },
     {
       "namespace": "/v1/member/*",
-      "canonical_owner": "split: admin-worker for dashboard/status until Phase 3, TBD for applications",
+      "canonical_owner": "unresolved default; route-specific handlers only when proven",
       "visibility": "member/internal",
-      "auth_requirement": "token t, signed session, mmd_member_id target",
-      "source_of_truth": "trusted Worker state",
-      "temporary_proxy": "mmd-redirect-worker for /api/member/dashboard",
+      "auth_requirement": "token t, signed session, mmd_member_id target after contract exists",
+      "source_of_truth": "trusted Worker state after handler exists",
+      "temporary_proxy": "none proven for dashboard API",
       "known_overlap": [
-        "/v1/member/applications"
+        "/v1/member/applications missing",
+        "/v1/member/dashboard handler missing",
+        "/api/member/dashboard alias mapping unproven"
       ],
       "target_direct_route": "TBD",
       "owner_decision": "UNRESOLVED",
-      "evidence": "ROUTE_CANONICAL_OWNER_LOCK.md API Namespace Ownership table",
-      "notes": "/v1/member/applications missing"
+      "evidence": "No exact /v1/member/dashboard handler or /api/member/dashboard mapping found in current source scan; /member/dashboard page route is separate.",
+      "notes": "Page/API separation required: /member/dashboard is page route, /v1/member/dashboard is backend API contract.",
+      "route_exceptions": [
+        {
+          "route": "/v1/member/dashboard",
+          "method": "unknown pending implementation",
+          "exception_owner": "TBD",
+          "current_status": "UNRESOLVED",
+          "migration_state": "Phase 3A implementation/acceptance required",
+          "auth_contract": "pending member dashboard API contract",
+          "evidence": "No exact handler found in admin-worker, mmd-redirect-worker, immigrate-worker, member-dashboard-chat-worker, or member-pages-worker current source scan.",
+          "acceptance_requirement": "Implement/prove handler, auth, response contract, and route attachment before dashboard UI depends on it."
+        },
+        {
+          "route": "/api/member/dashboard",
+          "method": "unknown pending mapping",
+          "exception_owner": "TBD alias only if proven",
+          "current_status": "UNRESOLVED",
+          "migration_state": "alias/rewrite mapping unproven",
+          "auth_contract": "pending member dashboard API contract",
+          "evidence": "mmd-redirect-worker MEMBER_API_PATHS only includes /member/api/liff/identify; no /api/member/dashboard rewrite found.",
+          "acceptance_requirement": "Prove alias/rewrite to canonical API or remove alias from contract."
+        }
+      ]
     },
     {
       "namespace": "/v1/job/*",
@@ -2502,7 +2532,7 @@
     },
     {
       "area": "/member/dashboard",
-      "blocker": "Current legacy immigrate-worker dependency cannot be canonical.",
+      "blocker": "Current legacy page route uses mmd-redirect-worker to immigrate-worker; /v1/member/dashboard and /api/member/dashboard backend API handler/mapping are not proven.",
       "required_next_phase": "Phase 3A"
     },
     {

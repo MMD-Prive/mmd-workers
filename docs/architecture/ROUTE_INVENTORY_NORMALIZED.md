@@ -58,8 +58,8 @@ worker deployment, Webflow publishing, or alias removal.
 | `/public/api/access/intake` | API | API READY / UI MISSING | `public-access-worker/src/index.js`; `public-access-worker/wrangler.toml` routes `sigil.mmdbkk.com/public/api/*`. | Public access intake writes evidence/request records only; allowed-Origin, consent, file size/type, Airtable/R2, and Telegram notification behavior are implemented. Production smoke remains pending. |
 | `/v1/apply/public-model` | API | UNRESOLVED | `partners-worker/wrangler.toml`; `partners-worker/src/index.ts`. | Overlaps conceptually with `sigil-worker` public model API. Needs Phase 4/partners owner decision. |
 | `/v1/member/applications` | API | UNRESOLVED | Referenced by `webflow/member/apply/*`; no backend route found in current priority scan. | Required for `/sigil/member/apply`; backend owner missing. |
-| `/v1/member/dashboard` | API | LIVE CONNECTED | `mmd-redirect-worker/src/index.js` maps `/api/member/dashboard` to admin-worker path. | Admin-worker provides dashboard API behind front gate mapping. |
-| `/api/member/dashboard` | API alias | ROUTE ONLY / REDIRECT | `mmd-redirect-worker/src/index.js`. | Alias to `/v1/member/dashboard`; keep temporarily. |
+| `/v1/member/dashboard` | API | UNRESOLVED | No exact handler found in `admin-worker`, `mmd-redirect-worker`, `immigrate-worker`, `member-dashboard-chat-worker`, or `member-pages-worker` current source scan. | Backend API contract is separate from `/member/dashboard` page route. Phase 3 must implement/prove handler, auth, response contract, and route attachment before dashboard UI depends on it. |
+| `/api/member/dashboard` | API alias | UNRESOLVED | No exact alias/rewrite found in `mmd-redirect-worker`; current `MEMBER_API_PATHS` only includes `/member/api/liff/identify`. | Intended alias/mapping is unproven. Do not claim redirect/proxy to `/v1/member/dashboard` until source and route evidence exist. |
 | `/member/api/liff/identify` | API | LIVE CONNECTED | `mmd-redirect-worker/src/index.js`; `member-pages-worker/src/index.js`. | LIFF identity bridge; must not unlock dashboard/payment by itself. |
 | `/v1/admin/access/grant` | API | API READY / UI MISSING | `auth-worker/src/index.js`; `auth-worker/README.md`. | Explicit `/v1/admin/*` namespace exception. `auth-worker` owns the MVP grant endpoint, guarded by `ADMIN_BEARER`, until moved behind or proxied by `admin-worker`. |
 | `/v1/admin/line/liff-renewal-queue` | API | UNRESOLVED | Prior inventory listed `member-pages-worker/src/index.js`, but exact handler was not found in the current source scan. | Keep as explicit `/v1/admin/*` exception candidate until source handler/route attachment is confirmed or removed from inventory. |
@@ -132,6 +132,7 @@ worker deployment, Webflow publishing, or alias removal.
 | Public model apply | `sigil-worker` exposes `/v1/public-model/apply`; `partners-worker` exposes `/v1/apply/public-model` and `/apply/public-model`. | UNRESOLVED. Phase 4/partner route owner decision required. |
 | Recovery / complaint | `mmd-care-intake-worker` and `sigil-worker` both contain recovery/complaint API handling. | UNRESOLVED. Pick one owner group before route changes. |
 | SIGIL renewal Webflow page | Worker route owner exists, but Webflow stale page bridge is separate display cleanup. | ROUTE ONLY / REDIRECT bridge. Do not treat Webflow as canonical renderer. |
+| Member dashboard page/API split | `/member/dashboard` has legacy page evidence through `mmd-redirect-worker` to `immigrate-worker`; `/v1/member/dashboard` and `/api/member/dashboard` have no exact handler or rewrite evidence. | Keep page route unresolved by owner; downgrade dashboard API to UNRESOLVED until Phase 3 handler and mapping acceptance. |
 | Partners worker root vs nested/assets | Root `partners-worker` has API route patterns and R2 binding; nested assets worker exists separately. | UNRESOLVED unless already approved elsewhere. Do not delete/rename in Phase 1A. |
 | `mmd-redirect-worker` catch-all | Still fronts many connected and unresolved routes. | LEGACY/front gate. Retire only in Phase 6. |
 
@@ -145,7 +146,8 @@ worker deployment, Webflow publishing, or alias removal.
 | `/sigil/pay/renewal` | `member-dashboard-chat-worker` renderer candidate | Low | Renderer evidence exists, but current route config does not prove direct ownership and production winner is unverified. |
 | `/member/membership` | `member-pages-worker` | High | Front gate delegates member page path to member-pages worker. |
 | `/pay/membership` | `member-pages-worker` page, backend payment truth elsewhere | Medium | UI exists; final payment truth remains backend/payment worker concern. |
-| `/member/dashboard` | TBD | Low | Current route uses `immigrate-worker`; target architecture wants non-legacy owner decision. |
+| `/member/dashboard` page | TBD | Low | Current page route uses `mmd-redirect-worker` to `immigrate-worker`; target architecture wants non-legacy owner decision. This does not prove `/v1/member/dashboard`. |
+| `/v1/member/dashboard` API | TBD | Low | No exact handler or `/api/member/dashboard` mapping found in current source scan; Phase 3 must define and prove the backend API contract. |
 | `/member/payments` | `admin-worker` currently, TBD for member surface | Low | Front gate delegates to admin worker, but member surface ownership not locked. |
 | `/sigil/member/apply` | TBD | Low | UI exists; backend route missing. |
 | `/sigil/model/console` | TBD | Low | No exact canonical route owner found. |
