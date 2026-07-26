@@ -12,7 +12,7 @@ function isLegacyAdminLoginPath(pathname: string): boolean {
   return LEGACY_ADMIN_LOGIN_PATHS.has(pathname);
 }
 
-function redirectLegacyAdminLogin(request: Request, url: URL): Response {
+function redirectLegacyAdminLogin(url: URL): Response {
   const location = new URL(`${CANONICAL_ADMIN_LOGIN_PATH}${url.search}`, url.origin).toString();
 
   return new Response(null, {
@@ -45,17 +45,17 @@ function legacyAdminLoginMethodNotAllowed(): Response {
 }
 
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
     if (isLegacyAdminLoginPath(url.pathname)) {
       if (request.method === "GET" || request.method === "HEAD") {
-        return redirectLegacyAdminLogin(request, url);
+        return redirectLegacyAdminLogin(url);
       }
 
       return legacyAdminLoginMethodNotAllowed();
     }
 
-    return worker.fetch(request, env, ctx);
+    return worker.fetch(request, env);
   },
 };
