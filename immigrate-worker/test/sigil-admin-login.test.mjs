@@ -12,7 +12,7 @@ const outfile = join(tmp, "worker.mjs");
 const workerRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 await build({
-  entryPoints: [join(workerRoot, "src/index.ts")],
+  entryPoints: [join(workerRoot, "src/canonical-admin-login-wrapper.ts")],
   outfile,
   bundle: true,
   format: "esm",
@@ -52,74 +52,59 @@ globalThis.fetch = async (input, init = {}) => {
   });
 };
 
-async function call(path, init) {
-  return worker.fetch(new Request(`https://mmdbkk.com${path}`, init), env);
+async function call(path, init, host = "mmdbkk.com") {
+  return worker.fetch(new Request(`https://${host}${path}`, init), env);
 }
 
 try {
-  {
-    const response = await call("/sigil/admin/login");
-    const html = await response.text();
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get("x-mmd-worker"), "immigrate-worker");
-    assert.equal(response.headers.get("x-mmd-page"), "sigil-admin-login");
-    assert.match(html, /class="sigil-admin-login-v1"/);
-    assert.match(html, /Gate Code \/ OTP/);
-    assert.match(html, /method="post" action="\/sigil\/admin\/login"/);
-    assert.match(html, /name="gate_code"/);
-    assert.doesNotMatch(html, /localStorage|sessionStorage|\?mock|name="token"/);
-  }
-
-  {
-    const form = new FormData();
-    form.set("gate_code", "wrong");
-    form.set("next", "/sigil/admin/dashboard");
-    const response = await call("/sigil/admin/login", { method: "POST", body: form });
-    const html = await response.text();
-    assert.equal(response.status, 401);
-    assert.equal(response.headers.get("set-cookie"), null);
-    assert.match(html, /Unable to verify SIGIL admin access/);
-  }
-
-  {
-    const form = new FormData();
-    form.set("gate_code", "valid-gate");
-    form.set("next", "/sigil/admin/control-room");
-    const response = await call("/sigil/admin/login", { method: "POST", body: form });
-    assert.equal(response.status, 302);
-    assert.equal(response.headers.get("location"), "/sigil/admin/control-room");
-    const cookie = response.headers.get("set-cookie") || "";
-    assert.match(cookie, /mmd_admin_gate_v1=/);
-    assert.match(cookie, /HttpOnly/);
-    assert.match(cookie, /Secure/);
-    assert.match(cookie, /SameSite=Lax/);
-  }
-
-  for (const next of [
-    "https://evil.example/sigil/admin/control-room",
-    "//evil.example/sigil/admin/control-room",
-    "/member/login",
-    "/pay/membership",
-    "/trust/inme",
+  for (const legacyPath of [
+    "/sigil/admin/login?abc=123&next=%2Finternal%2Fadmin%2Fcontrol-room",
+    "/sigil/internal/admin/login?abc=123",
+    "/admin/login?abc=123",
   ]) {
+    const response = await call(legacyPath);
+    assert.equal(response.status, 308, legacyPath);
+    assert.equal(
+      response.headers.get("location"),
+      `https://mmdbkk.com/internal/admin/login${new URL(`https://mmdbkk.com${legacyPath}`).search}`,
+      legacyPath,
+    );
+    assert.equal(response.headers.get("cache-control"), "no-store", legacyPath);
+    assert.equal(response.headers.get("x-mmd-admin-login-canonical"), "/internal/admin/login", legacyPath);
+    assert.equal(await response.text(), "", legacyPath);
+  }
+
+  {
+    const response = await call("/sigil/admin/login?abc=123", { method: "HEAD" });
+    assert.equal(response.status, 308);
+    assert.equal(response.headers.get("location"), "https://mmdbkk.com/internal/admin/login?abc=123");
+    assert.equal(await response.text(), "");
+  }
+
+  {
     const form = new FormData();
     form.set("gate_code", "valid-gate");
-    form.set("next", next);
+    form.set("next", "/internal/admin/control-room");
     const response = await call("/sigil/admin/login", { method: "POST", body: form });
-    assert.equal(response.status, 302);
-    assert.equal(response.headers.get("location"), "/sigil/admin/dashboard");
+    const body = await response.json();
+    assert.equal(response.status, 405);
+    assert.equal(response.headers.get("allow"), "GET, HEAD");
+    assert.equal(response.headers.get("set-cookie"), null);
+    assert.equal(body.ok, false);
+    assert.equal(body.error, "legacy_admin_login_method_not_allowed");
+    assert.equal(body.canonical_login, "/internal/admin/login");
   }
 
   {
     const response = await call("/member/login");
-    assert.notEqual(response.status, 302);
-    assert.notEqual(response.headers.get("location"), "/sigil/admin/login");
+    assert.notEqual(response.status, 308);
+    assert.notEqual(response.headers.get("location"), "https://mmdbkk.com/internal/admin/login");
   }
 
   {
     const response = await call("/pay/membership");
-    assert.notEqual(response.status, 302);
-    assert.notEqual(response.headers.get("location"), "/sigil/admin/login");
+    assert.notEqual(response.status, 308);
+    assert.notEqual(response.headers.get("location"), "https://mmdbkk.com/internal/admin/login");
   }
 
   {
@@ -143,12 +128,6 @@ try {
     assert.ok(html.includes("/member/dashboard?t=abc&amp;code=gold&amp;promo=vip&amp;debug=recovery"));
     assert.ok(html.includes("/pay/membership?t=abc&amp;code=gold&amp;promo=vip&amp;debug=recovery"));
     assert.doesNotMatch(html, /name="token"/);
-  }
-
-  {
-    const response = await call("/admin/login?next=/sigil/admin/control-room");
-    assert.equal(response.status, 302);
-    assert.equal(response.headers.get("location"), "https://mmdbkk.com/sigil/admin/login?next=%2Fsigil%2Fadmin%2Fcontrol-room");
   }
 
   {
