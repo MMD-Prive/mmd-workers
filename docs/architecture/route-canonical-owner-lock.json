@@ -624,34 +624,36 @@
       "canonical_route": "/sigil/api/* booking subset",
       "aliases": [],
       "alias_notes": null,
-      "status": "API_READY_UI_MISSING",
-      "status_display": "API READY / UI MISSING",
+      "status": "PARTIAL_INTEGRATION",
+      "status_display": "PARTIAL INTEGRATION",
       "surface_type": "page_or_api",
-      "page_owner": "sigil-booking-worker",
-      "api_owner": "sigil-booking-worker",
-      "current_owner": "sigil-booking-worker",
-      "current_front_gate": "route config",
+      "page_owner": "sigil-booking-worker implementation only",
+      "api_owner": "sigil-booking-worker repository handlers",
+      "current_owner": "sigil-booking-worker implementation only",
+      "current_front_gate": "workers.dev config only; custom-host route attachment missing/unverified",
       "ui_location": "unknown",
-      "backend_owner": "sigil-booking-worker",
-      "candidate_owner": "sigil-booking-worker",
-      "owner_decision": "TEMPORARY",
+      "backend_owner": "sigil-booking-worker repository handlers",
+      "candidate_owner": "sigil-booking-worker handler candidate pending route binding",
+      "owner_decision": "UNRESOLVED",
       "owner_confidence": "MEDIUM",
       "compatibility_decision": "none",
       "production_verified": "unverified",
-      "production_verification": "not verified",
-      "risk": "API route family broadness",
-      "evidence": "not verified",
+      "production_verification": "not verified; custom-host route attachment absent from sigil-booking-worker/wrangler.toml",
+      "risk": "API route family broadness; workers.dev must not become canonical production owner",
+      "evidence": "sigil-booking-worker/src/index.js implements POST /sigil/api/client/resolve, GET|POST /sigil/api/models/search, and POST /sigil/api/booking/intake; sigil-booking-worker/wrangler.toml has workers_dev = true and no custom-host [[routes]]; README mapping is suggested only",
       "conflicts": [
-        "namespace may include non-booking APIs later"
+        "namespace may include non-booking APIs later",
+        "custom-host route attachment unproven"
       ],
       "migration_phase": "Phase 2B",
       "acceptance_requirements": [
-        "/sigil/api/client/resolve",
-        "/models/search",
-        "/booking/intake"
+        "Add/prove exact custom-host binding for /sigil/api/client/resolve",
+        "Add/prove exact custom-host binding for /sigil/api/models/search",
+        "Add/prove exact custom-host binding for /sigil/api/booking/intake",
+        "production acceptance must prove methods and fail-closed unknown subpaths"
       ],
       "notes": {
-        "blocker_reason": "API route family broadness",
+        "blocker_reason": "custom-host route attachment missing/unverified",
         "remove_later_decision": null
       }
     },
@@ -2012,11 +2014,14 @@
       "known_overlap": [
         "admin pages not all normalized",
         "POST /v1/admin/access/grant remains auth-worker",
+        "POST /v1/admin/create-session remains immigrate-worker bridge",
+        "POST /v1/admin/create-job remains immigrate-worker bridge",
+        "POST /v1/admin/jobs/create-session remains immigrate-worker bridge",
         "/v1/admin/line/liff-renewal-queue remains non-default/pending source confirmation"
       ],
       "target_direct_route": "direct admin route/service binding; exceptions keep exact owners until migrated/proxied",
       "owner_decision": "LOCKED_DEFAULT_WITH_EXCEPTIONS",
-      "evidence": "admin-worker source for default namespace; auth-worker/src/index.js and auth-worker/README.md for POST /v1/admin/access/grant; current source scan did not confirm exact member-pages LIFF renewal queue handler",
+      "evidence": "admin-worker source for default namespace; auth-worker/src/index.js and auth-worker/README.md for POST /v1/admin/access/grant; immigrate-worker/wrangler.toml exact create-session/create-job alias routes; immigrate-worker/src/internal-routes.ts alias map to /v1/admin/job/create with payload normalization and ADMIN_WORKER service-binding fetch; current source scan did not confirm exact member-pages LIFF renewal queue handler",
       "notes": "Route specificity wins over namespace default; do not route exception contracts to admin-worker until migrated/proxied.",
       "default_owner": "admin-worker",
       "route_exceptions": [
@@ -2029,6 +2034,48 @@
           "auth_contract": "ADMIN_BEARER per auth-worker README",
           "evidence": "auth-worker/src/index.js handleAdminGrant; auth-worker/README.md states POST /v1/admin/access/grant remains in auth-worker for MVP",
           "acceptance_requirement": "Do not capture with admin-worker wildcard until migration/proxy acceptance passes."
+        },
+        {
+          "route": "/v1/admin/create-session",
+          "method": "POST",
+          "exception_owner": "immigrate-worker",
+          "role": "legacy/temporary compatibility bridge",
+          "current_status": "ROUTE_ONLY_REDIRECT",
+          "migration_state": "TEMPORARY ingress bridge until direct canonical clients and acceptance migration complete",
+          "auth_contract": "forwards cookie and bridge headers through ADMIN_WORKER binding; inbound Authorization header is not forwarded",
+          "canonical_backend_target": "/v1/admin/job/create",
+          "canonical_backend_owner": "admin-worker",
+          "payload_normalization": "JSON POST bodies are normalized to the admin job create payload when content-type is application/json",
+          "evidence": "immigrate-worker/wrangler.toml exact apex/www routes; immigrate-worker/src/internal-routes.ts maps alias to /v1/admin/job/create; immigrate-worker/test/internal-admin-gate-bridge.test.mjs proves service-binding forwarding and normalization",
+          "acceptance_requirement": "Do not capture with admin-worker wildcard until direct canonical clients and bridge removal acceptance pass."
+        },
+        {
+          "route": "/v1/admin/create-job",
+          "method": "POST",
+          "exception_owner": "immigrate-worker",
+          "role": "legacy/temporary compatibility bridge",
+          "current_status": "ROUTE_ONLY_REDIRECT",
+          "migration_state": "TEMPORARY ingress bridge until direct canonical clients and acceptance migration complete",
+          "auth_contract": "forwards cookie and bridge headers through ADMIN_WORKER binding; inbound Authorization header is not forwarded",
+          "canonical_backend_target": "/v1/admin/job/create",
+          "canonical_backend_owner": "admin-worker",
+          "payload_normalization": "JSON POST bodies are normalized to the admin job create payload when content-type is application/json",
+          "evidence": "immigrate-worker/wrangler.toml exact apex/www routes; immigrate-worker/src/internal-routes.ts maps alias to /v1/admin/job/create; immigrate-worker/test/internal-admin-gate-bridge.test.mjs proves service-binding forwarding and normalization",
+          "acceptance_requirement": "Do not capture with admin-worker wildcard until direct canonical clients and bridge removal acceptance pass."
+        },
+        {
+          "route": "/v1/admin/jobs/create-session",
+          "method": "POST",
+          "exception_owner": "immigrate-worker",
+          "role": "legacy/temporary compatibility bridge",
+          "current_status": "ROUTE_ONLY_REDIRECT",
+          "migration_state": "TEMPORARY ingress bridge until direct canonical clients and acceptance migration complete",
+          "auth_contract": "forwards cookie and bridge headers through ADMIN_WORKER binding; inbound Authorization header is not forwarded",
+          "canonical_backend_target": "/v1/admin/job/create",
+          "canonical_backend_owner": "admin-worker",
+          "payload_normalization": "JSON POST bodies are normalized to the admin job create payload when content-type is application/json",
+          "evidence": "immigrate-worker/wrangler.toml exact apex/www routes; immigrate-worker/src/internal-routes.ts maps alias to /v1/admin/job/create; immigrate-worker/test/internal-admin-gate-bridge.test.mjs proves service-binding forwarding and normalization",
+          "acceptance_requirement": "Do not capture with admin-worker wildcard until direct canonical clients and bridge removal acceptance pass."
         },
         {
           "route": "/v1/admin/line/liff-renewal-queue",
@@ -2173,18 +2220,51 @@
     },
     {
       "namespace": "/sigil/api/*",
-      "canonical_owner": "sigil-booking-worker for booking APIs; sigil-worker for private model apply",
+      "canonical_owner": null,
+      "candidate_owner": "sigil-booking-worker for implemented booking handlers; sigil-worker candidate target for private-model apply",
       "visibility": "public/internal by endpoint",
       "auth_requirement": "endpoint-specific",
-      "source_of_truth": "SIGIL booking/apply contracts",
+      "source_of_truth": "SIGIL booking/apply contracts after route attachment is proven",
       "temporary_proxy": "mmd-redirect-worker for private apply",
       "known_overlap": [
-        "broad route family can collide"
+        "broad route family can collide",
+        "private-model apply exact route remains unresolved",
+        "booking custom-host route attachment missing/unverified"
       ],
-      "target_direct_route": "explicit route partitions",
-      "owner_decision": "TEMPORARY",
-      "evidence": "ROUTE_CANONICAL_OWNER_LOCK.md API Namespace Ownership table",
-      "notes": "broad route family can collide"
+      "target_direct_route": "explicit route partitions; no workers.dev canonical ownership",
+      "owner_decision": "UNRESOLVED",
+      "evidence": "sigil-booking-worker/src/index.js implements booking handlers; sigil-booking-worker/wrangler.toml has workers_dev = true and no custom-host [[routes]]; /sigil/api/private-model/apply exact route is PARTIAL_INTEGRATION with sigil-worker candidate only",
+      "notes": "Namespace record may not be more authoritative than exact route records.",
+      "route_partitions": [
+        {
+          "partition": "booking_api_handlers",
+          "routes": [
+            "/sigil/api/client/resolve",
+            "/sigil/api/models/search",
+            "/sigil/api/booking/intake"
+          ],
+          "implementation_owner": "sigil-booking-worker",
+          "implementation_status": "implemented in repository",
+          "custom_host_route_attachment": "missing/unverified",
+          "production_route_owner": "UNRESOLVED",
+          "status": "PARTIAL_INTEGRATION",
+          "owner_decision": "UNRESOLVED",
+          "blocker": "exact custom-host binding absent/unverified",
+          "next_action": "Phase 2B route attachment and production acceptance"
+        },
+        {
+          "partition": "private_model_apply",
+          "route": "/sigil/api/private-model/apply",
+          "canonical_owner": null,
+          "candidate_owner": "sigil-worker",
+          "current_handler": "missing/unverified",
+          "production_route_attachment": "missing/unverified",
+          "status": "PARTIAL_INTEGRATION",
+          "owner_decision": "UNRESOLVED",
+          "blocker": "no matching handler or custom route",
+          "implementation_phase": "Phase 4A"
+        }
+      ]
     },
     {
       "namespace": "/kenji/*",
@@ -2444,11 +2524,11 @@
     },
     "immigrate-worker": {
       "classification": "legacy/temporary bridge",
-      "decision": "Cannot become canonical owner; member dashboard dependency is blocker."
+      "decision": "Cannot become canonical owner; member dashboard dependency is blocker. Owns only temporary ingress bridge exceptions for /v1/admin/create-session, /v1/admin/create-job, and /v1/admin/jobs/create-session until direct canonical clients and acceptance migration complete."
     },
     "admin-worker": {
       "classification": "canonical active API owner",
-      "decision": "Owns default /v1/admin/*, model session/admin APIs, exact admin login/session, and Kenji Knowledge canonical shell; route-level /v1/admin/* exceptions retain current owners until migration/proxy."
+      "decision": "Owns default /v1/admin/*, model session/admin APIs, exact admin login/session, Kenji Knowledge canonical shell, and canonical /v1/admin/job/create; route-level /v1/admin/* exceptions retain current ingress owners until migration/proxy."
     },
     "member-dashboard-chat-worker": {
       "classification": "active LINE worker and renewal renderer candidate",
@@ -2464,15 +2544,15 @@
     },
     "sigil-worker": {
       "classification": "candidate target for SIGIL apply/private model APIs; active for other implemented APIs",
-      "decision": "SIGIL apply/private model apply remain UNRESOLVED until matching handlers and route attachment are proven; recovery/public model API overlap still requires future lock."
+      "decision": "SIGIL apply/private model apply remain UNRESOLVED until matching handlers and route attachment are proven; sigil-worker is not the canonical current owner of the /sigil/api/* namespace. Recovery/public model API overlap still requires future lock."
     },
     "sigil-booking-proxy-worker": {
       "classification": "canonical active page route proxy",
       "decision": "Owns /sigil/booking route behavior; Webflow owns visible source."
     },
     "sigil-booking-worker": {
-      "classification": "active booking API owner",
-      "decision": "Owns current booking API subset under /sigil/api/*."
+      "classification": "booking API implementation owner",
+      "decision": "Implements current booking API subset under /sigil/api/*, but custom-host route ownership is missing/unverified because the current Wrangler file has workers_dev = true and no [[routes]]."
     },
     "public-access-worker": {
       "classification": "active public access intake API owner",
