@@ -53,6 +53,36 @@ try {
     error: "legacy_admin_login_method_not_allowed",
     canonical_login: "/internal/admin/login",
   });
+
+  for (const [legacyPath, canonicalPath] of [
+    ["/sigil/admin", "/internal/admin/dashboard"],
+    ["/sigil/admin/dashboard", "/internal/admin/dashboard"],
+    ["/sigil/admin/control-room", "/internal/admin/control-room"],
+  ]) {
+    const response = await call(`${legacyPath}?source=legacy`);
+    assert.equal(response.status, 308, legacyPath);
+    assert.equal(response.headers.get("location"), `https://mmdbkk.com${canonicalPath}?source=legacy`);
+    assert.equal(response.headers.get("x-mmd-admin-canonical"), canonicalPath);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(await response.text(), "");
+
+    const headResponse = await call(legacyPath, { method: "HEAD" });
+    assert.equal(headResponse.status, 308, `${legacyPath} HEAD`);
+    assert.equal(await headResponse.text(), "");
+
+    const postResponse = await call(legacyPath, { method: "POST", body: "unsafe=1" });
+    assert.equal(postResponse.status, 405, `${legacyPath} POST`);
+    assert.equal(postResponse.headers.get("set-cookie"), null);
+    assert.deepEqual(await postResponse.json(), {
+      ok: false,
+      error: "legacy_admin_browser_method_not_allowed",
+      canonical_path: canonicalPath,
+    });
+  }
+
+  const distinctSigilControlRoom = await call("/sigil/control-room");
+  assert.notEqual(distinctSigilControlRoom.status, 308);
+  assert.notEqual(distinctSigilControlRoom.headers.get("x-mmd-admin-canonical"), "/internal/admin/control-room");
 } finally {
   await rm(tmp, { recursive: true, force: true });
 }

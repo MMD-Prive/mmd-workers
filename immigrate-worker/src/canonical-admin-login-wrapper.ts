@@ -7,20 +7,25 @@ const LEGACY_ADMIN_LOGIN_PATHS = new Set([
   "/sigil/internal/admin/login",
   "/admin/login",
 ]);
+const LEGACY_ADMIN_BROWSER_ROUTES = new Map([
+  ["/sigil/admin", "/internal/admin/dashboard"],
+  ["/sigil/admin/dashboard", "/internal/admin/dashboard"],
+  ["/sigil/admin/control-room", "/internal/admin/control-room"],
+]);
 
 function isLegacyAdminLoginPath(pathname: string): boolean {
   return LEGACY_ADMIN_LOGIN_PATHS.has(pathname);
 }
 
-function redirectLegacyAdminLogin(url: URL): Response {
-  const location = new URL(`${CANONICAL_ADMIN_LOGIN_PATH}${url.search}`, url.origin).toString();
+function redirectToCanonical(url: URL, canonicalPath: string, headerName: string): Response {
+  const location = new URL(`${canonicalPath}${url.search}`, url.origin).toString();
 
   return new Response(null, {
     status: 308,
     headers: {
       location,
       "cache-control": "no-store",
-      "x-mmd-admin-login-canonical": CANONICAL_ADMIN_LOGIN_PATH,
+      [headerName]: canonicalPath,
     },
   });
 }
@@ -44,16 +49,44 @@ function legacyAdminLoginMethodNotAllowed(): Response {
   );
 }
 
+function legacyAdminBrowserMethodNotAllowed(canonicalPath: string): Response {
+  return new Response(
+    JSON.stringify({
+      ok: false,
+      error: "legacy_admin_browser_method_not_allowed",
+      canonical_path: canonicalPath,
+    }),
+    {
+      status: 405,
+      headers: {
+        allow: "GET, HEAD",
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+        "x-mmd-admin-canonical": canonicalPath,
+      },
+    },
+  );
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
     if (isLegacyAdminLoginPath(url.pathname)) {
       if (request.method === "GET" || request.method === "HEAD") {
-        return redirectLegacyAdminLogin(url);
+        return redirectToCanonical(url, CANONICAL_ADMIN_LOGIN_PATH, "x-mmd-admin-login-canonical");
       }
 
       return legacyAdminLoginMethodNotAllowed();
+    }
+
+    const canonicalBrowserPath = LEGACY_ADMIN_BROWSER_ROUTES.get(url.pathname);
+    if (canonicalBrowserPath) {
+      if (request.method === "GET" || request.method === "HEAD") {
+        return redirectToCanonical(url, canonicalBrowserPath, "x-mmd-admin-canonical");
+      }
+
+      return legacyAdminBrowserMethodNotAllowed(canonicalBrowserPath);
     }
 
     return worker.fetch(request, env);
