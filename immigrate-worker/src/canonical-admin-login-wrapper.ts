@@ -68,6 +68,30 @@ function legacyAdminBrowserMethodNotAllowed(canonicalPath: string): Response {
   );
 }
 
+function rewriteLegacyAdminLoginRedirect(request: Request, response: Response): Response {
+  if (response.status < 300 || response.status >= 400) return response;
+
+  const rawLocation = response.headers.get("location");
+  if (!rawLocation) return response;
+
+  const requestUrl = new URL(request.url);
+  const redirectUrl = new URL(rawLocation, requestUrl.origin);
+  if (!isLegacyAdminLoginPath(redirectUrl.pathname)) return response;
+
+  redirectUrl.pathname = CANONICAL_ADMIN_LOGIN_PATH;
+
+  const headers = new Headers(response.headers);
+  headers.set("location", redirectUrl.toString());
+  headers.set("cache-control", "no-store");
+  headers.set("x-mmd-admin-login-canonical", CANONICAL_ADMIN_LOGIN_PATH);
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -89,6 +113,7 @@ export default {
       return legacyAdminBrowserMethodNotAllowed(canonicalBrowserPath);
     }
 
-    return worker.fetch(request, env);
+    const response = await worker.fetch(request, env);
+    return rewriteLegacyAdminLoginRedirect(request, response);
   },
 };

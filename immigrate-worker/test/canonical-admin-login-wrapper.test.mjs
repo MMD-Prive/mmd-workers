@@ -80,6 +80,14 @@ try {
     });
   }
 
+  const protectedControlRoom = await call("/internal/admin/control-room?view=live");
+  assert.ok(protectedControlRoom.status >= 300 && protectedControlRoom.status < 400);
+  const protectedLocation = new URL(protectedControlRoom.headers.get("location"));
+  assert.equal(protectedLocation.pathname, "/internal/admin/login");
+  assert.equal(protectedLocation.searchParams.get("next"), "/internal/admin/control-room?view=live");
+  assert.equal(protectedControlRoom.headers.get("x-mmd-admin-login-canonical"), "/internal/admin/login");
+  assert.equal(protectedControlRoom.headers.get("cache-control"), "no-store");
+
   const distinctSigilControlRoom = await call("/sigil/control-room");
   assert.notEqual(distinctSigilControlRoom.status, 308);
   assert.notEqual(distinctSigilControlRoom.headers.get("x-mmd-admin-canonical"), "/internal/admin/control-room");
