@@ -5,9 +5,9 @@
     "base_main_sha": "dbc4669062162ec78244423131bc5ecc54445b27",
     "input_artifact": "docs/architecture/ROUTE_INVENTORY_NORMALIZED.md",
     "source_artifact": "docs/architecture/ROUTE_CANONICAL_OWNER_LOCK.md",
-    "consistency_fix": "Phase 1B.5B7",
+    "consistency_fix": "Phase 1B.5B8",
     "documentation_only": true,
-    "owner_decisions_changed": 2
+    "owner_decisions_changed": 3
   },
   "principles": {
     "webflow_visible_public_pages": true,
@@ -2436,19 +2436,68 @@
     },
     {
       "namespace": "Telegram endpoints",
-      "canonical_owner": "telegram-worker",
+      "canonical_owner": null,
+      "implementation_owner": "telegram-worker",
+      "candidate_owner": "telegram-worker",
+      "production_route_owner": "UNRESOLVED",
       "visibility": "webhook/internal",
       "auth_requirement": "Telegram secret token or internal auth",
-      "source_of_truth": "Telegram Bot API and internal message contract",
+      "source_of_truth": "Telegram Bot API and internal message contract after production route binding is proven",
       "temporary_proxy": null,
       "known_overlap": [
         "/v1/webhook",
-        "/v1/send"
+        "/v1/send",
+        "workers.dev/internal consumer evidence is not canonical production ownership"
       ],
-      "target_direct_route": "telegram-worker",
-      "owner_decision": "LOCKED",
-      "evidence": "ROUTE_CANONICAL_OWNER_LOCK.md API Namespace Ownership table",
-      "notes": "aliases /v1/webhook, /v1/send"
+      "target_direct_route": "custom-host route or service binding TBD",
+      "custom_host_attachment": "missing/unverified",
+      "service_binding": "missing/unverified",
+      "workers_dev": "development/internal endpoint evidence only",
+      "status": "PARTIAL_INTEGRATION",
+      "owner_decision": "UNRESOLVED",
+      "evidence": "telegram-worker/src/index.js implements webhook/send/complaint/preview aliases; telegram-worker/wrangler.toml has no custom-host [[routes]] or service binding evidence in this artifact; internal consumers reference telegram-worker.malemodel-bkk.workers.dev.",
+      "notes": "Telegram implementation is repo-proven, but production route ownership remains unresolved until exact custom-host route or service binding is proven.",
+      "route_partitions": [
+        {
+          "partition": "webhook",
+          "routes": [
+            "/telegram/webhook",
+            "/v1/webhook"
+          ],
+          "implementation_owner": "telegram-worker",
+          "implementation_status": "implemented in repository",
+          "production_route_owner": "UNRESOLVED",
+          "owner_decision": "UNRESOLVED",
+          "acceptance_requirement": "Prove exact webhook production route or service binding, Telegram secret-token behavior, alias behavior, and production smoke."
+        },
+        {
+          "partition": "internal_send",
+          "routes": [
+            "/telegram/internal/send",
+            "/v1/internal/send",
+            "/v1/send"
+          ],
+          "implementation_owner": "telegram-worker",
+          "implementation_status": "implemented in repository",
+          "production_route_owner": "UNRESOLVED",
+          "owner_decision": "UNRESOLVED",
+          "acceptance_requirement": "Prove exact send production route or service binding, internal auth, alias behavior, and production smoke."
+        },
+        {
+          "partition": "complaint_and_preview",
+          "routes": [
+            "/telegram/internal/complaint",
+            "/v1/internal/complaint",
+            "/telegram/preview/post",
+            "/v1/preview/post"
+          ],
+          "implementation_owner": "telegram-worker",
+          "implementation_status": "implemented in repository",
+          "production_route_owner": "UNRESOLVED",
+          "owner_decision": "UNRESOLVED",
+          "acceptance_requirement": "Prove exact production route or binding, internal auth, alias behavior, and production smoke before locking production ownership."
+        }
+      ]
     },
     {
       "namespace": "LINE endpoints",
@@ -2676,8 +2725,26 @@
       "decision": "No new scope; retire in Phase 6 only."
     },
     "immigrate-worker": {
-      "classification": "legacy/temporary bridge",
-      "decision": "Cannot become canonical owner; member dashboard dependency is blocker. Owns only temporary ingress bridge exceptions for /v1/admin/create-session, /v1/admin/create-job, and /v1/admin/jobs/create-session until direct canonical clients and acceptance migration complete."
+      "classification": "legacy/temporary compatibility bridge",
+      "role": "legacy/temporary compatibility bridge",
+      "canonical_business_owner": false,
+      "ingress_exception_count": 9,
+      "path_preserving_bridge_count": 6,
+      "normalized_alias_count": 3,
+      "path_preserving_bridge_routes": [
+        "/v1/admin/ping",
+        "/v1/admin/clients/lineage-lookup",
+        "/v1/admin/clients/recent",
+        "/v1/admin/models/search",
+        "/v1/admin/job/draft",
+        "/v1/admin/line/push"
+      ],
+      "normalized_aliases_targeting_v1_admin_job_create": [
+        "/v1/admin/create-session",
+        "/v1/admin/create-job",
+        "/v1/admin/jobs/create-session"
+      ],
+      "decision": "Cannot become canonical business owner; preserves all nine temporary /v1/admin/* ingress bridge exceptions until direct canonical clients and acceptance migration complete. Six routes preserve path/query to the upstream admin operation; three create-session/create-job aliases normalize JSON payloads and target /v1/admin/job/create."
     },
     "admin-worker": {
       "classification": "canonical active API owner",
@@ -2720,8 +2787,13 @@
       "decision": "Do not lock Kenji public routes without evidence."
     },
     "telegram-worker": {
-      "classification": "canonical active messaging owner",
-      "decision": "Owns Telegram webhook/internal send."
+      "classification": "messaging implementation owner",
+      "implementation_owner": true,
+      "production_route_owner": "UNRESOLVED",
+      "custom_host_attachment": "missing/unverified",
+      "service_binding": "missing/unverified",
+      "workers_dev": "development/internal endpoint evidence only",
+      "decision": "Implements Telegram webhook/internal send/complaint/preview aliases, but production route ownership remains UNRESOLVED until custom-host route or service binding is proven. workers.dev is not canonical."
     },
     "events-worker": {
       "classification": "active but migration pending",
@@ -2734,74 +2806,175 @@
   },
   "unresolved_decisions": [
     {
-      "area": "/, /profiles, /services/companion",
+      "route_or_namespace_key": "/, /profiles, /services/companion",
+      "implementation_status": "not proven",
+      "production_ownership_status": "UNRESOLVED",
       "blocker": "Not proven in Phase 1A evidence.",
-      "required_next_phase": "Phase 2A"
+      "candidate_owner": "Webflow or catalog Worker TBD",
+      "required_next_phase": "Phase 2A",
+      "acceptance_requirement": "Prove exact apex/www/Webflow route, headers, owner, and no Worker truth before locking."
     },
     {
-      "area": "/public/access and /sigil/access",
+      "route_or_namespace_key": "/public/access and /sigil/access",
+      "implementation_status": "visible page route not proven; POST /public/api/access/intake implementation/config owner is public-access-worker",
+      "production_ownership_status": "UNRESOLVED for visible page; API production smoke pending",
       "blocker": "UI artifacts exist, but exact visible page route is not proven; POST /public/api/access/intake implementation/config owner is public-access-worker, live smoke pending.",
-      "required_next_phase": "Phase 2A"
+      "candidate_owner": "Webflow visible page; public-access-worker API",
+      "required_next_phase": "Phase 2A",
+      "acceptance_requirement": "Prove visible page owner and live-smoke intake API without granting access from evidence."
     },
     {
-      "area": "/sigil/start",
+      "route_or_namespace_key": "/sigil/start",
+      "implementation_status": "alias target exists as entry concept",
+      "production_ownership_status": "UNRESOLVED",
       "blocker": "Alias target exists, but canonical visible owner is not proven.",
-      "required_next_phase": "Phase 2A"
+      "candidate_owner": "Webflow or approved entry Worker TBD",
+      "required_next_phase": "Phase 2A",
+      "acceptance_requirement": "Prove exact page owner, query preservation, and alias behavior before migration."
     },
     {
-      "area": "/sigil/recovery",
+      "route_or_namespace_key": "/sigil/recovery",
+      "implementation_status": "assets/API pieces exist",
+      "production_ownership_status": "UNRESOLVED",
       "blocker": "Duplicate recovery API evidence and no normalized visible owner.",
-      "required_next_phase": "Phase 2A or Phase 6"
+      "candidate_owner": "Webflow page plus explicit recovery API Worker TBD",
+      "required_next_phase": "Phase 2A or Phase 6",
+      "acceptance_requirement": "Choose one API owner, prove status/evidence API behavior, and avoid generic recovery shell collapse."
     },
     {
-      "area": "/sigil/aftercare",
+      "route_or_namespace_key": "/sigil/aftercare",
+      "implementation_status": "JS reference only",
+      "production_ownership_status": "UNRESOLVED",
       "blocker": "JS reference only, no exact owner.",
-      "required_next_phase": "Phase 2A"
+      "candidate_owner": "Webflow TBD",
+      "required_next_phase": "Phase 2A",
+      "acceptance_requirement": "Prove exact route exists and has an approved owner, or defer/remove by approval."
     },
     {
-      "area": "/member/login",
+      "route_or_namespace_key": "/sigil/pay/renewal and /pay/renewal",
+      "implementation_status": "renderer/front-gate evidence exists; direct production route attachment not proven",
+      "production_ownership_status": "UNRESOLVED or TEMPORARY pending exact route proof",
+      "blocker": "Exact direct production route owner, production winner, GET/HEAD/slash/query behavior, and Webflow bridge outcome are not proven.",
+      "candidate_owner": "member-dashboard-chat-worker renderer candidate; current front-gate/member-pages dependency retained",
+      "required_next_phase": "Phase 3/7 and Phase 6A",
+      "acceptance_requirement": "Audit exact route config, production winner, GET/HEAD/slash/query behavior, and Webflow bridge redirect before locking owner or removing aliases."
+    },
+    {
+      "route_or_namespace_key": "/sigil/apply and /sigil/api/private-model/apply",
+      "implementation_status": "front-gate delegation exists; target handlers missing/unverified",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "Matching sigil-worker page/API handlers and custom route attachment are missing/unverified.",
+      "candidate_owner": "sigil-worker candidate target only",
+      "required_next_phase": "Phase 4A",
+      "acceptance_requirement": "Implement/prove GET/HEAD/slash/query and POST/OPTIONS/body/auth behavior, owner headers, and exact production route attachment."
+    },
+    {
+      "route_or_namespace_key": "/sigil/api/* booking partition",
+      "implementation_status": "sigil-booking-worker implements /sigil/api/client/resolve, /sigil/api/models/search, and /sigil/api/booking/intake",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "Custom-host route attachment and production reachability are missing/unverified.",
+      "candidate_owner": "sigil-booking-worker implementation owner",
+      "required_next_phase": "Phase 2B",
+      "acceptance_requirement": "Prove exact custom-host binding, method coverage, production smoke, and fail-closed unknown subpaths."
+    },
+    {
+      "route_or_namespace_key": "/v1/rt/*",
+      "implementation_status": "realtime-worker implements room open and Durable Object websocket handlers",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "No exact custom-host route or service binding proof; workers.dev is not canonical.",
+      "candidate_owner": "realtime-worker implementation owner",
+      "required_next_phase": "Realtime route binding acceptance",
+      "acceptance_requirement": "Prove custom-host route or service binding, auth, room open/websocket paths, aliases if any, and production smoke."
+    },
+    {
+      "route_or_namespace_key": "Telegram endpoints",
+      "implementation_status": "telegram-worker implements webhook/send/complaint/preview aliases",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "No exact custom-host route or service binding proof; workers.dev/internal consumer URLs are not canonical.",
+      "candidate_owner": "telegram-worker implementation owner",
+      "required_next_phase": "Telegram route binding acceptance",
+      "acceptance_requirement": "Prove exact route/binding, webhook path, send path, auth, aliases, and production smoke."
+    },
+    {
+      "route_or_namespace_key": "/member/login",
+      "implementation_status": "not proven",
+      "production_ownership_status": "UNRESOLVED",
       "blocker": "Login/session contract not normalized.",
-      "required_next_phase": "Phase 3A"
+      "candidate_owner": "admin-worker or auth Worker TBD",
+      "required_next_phase": "Phase 3A",
+      "acceptance_requirement": "Define and prove mmd_member_id login/session contract."
     },
     {
-      "area": "/member/dashboard",
+      "route_or_namespace_key": "/member/dashboard, /v1/member/dashboard, /api/member/dashboard",
+      "implementation_status": "legacy page evidence exists; backend API handler/mapping not proven",
+      "production_ownership_status": "UNRESOLVED",
       "blocker": "Current legacy page route uses mmd-redirect-worker to immigrate-worker; /v1/member/dashboard and /api/member/dashboard backend API handler/mapping are not proven.",
-      "required_next_phase": "Phase 3A"
+      "candidate_owner": "TBD non-legacy page owner; API owner unresolved",
+      "required_next_phase": "Phase 3A",
+      "acceptance_requirement": "Separate page route from API contract, select dashboard owner/auth, implement or prove backend API, and keep mmd_member_id target."
     },
     {
-      "area": "/member/payments",
+      "route_or_namespace_key": "/member/payments",
+      "implementation_status": "admin-worker page delegation evidence only",
+      "production_ownership_status": "UNRESOLVED",
       "blocker": "Current admin-worker page delegation mixes member UI and admin review ownership.",
-      "required_next_phase": "Phase 3A/5"
+      "candidate_owner": "TBD page owner; payments/admin APIs server-side",
+      "required_next_phase": "Phase 3A/5",
+      "acceptance_requirement": "Separate member payment status UI from admin review APIs and prove auth/member boundaries."
     },
     {
-      "area": "/sigil/member/apply",
+      "route_or_namespace_key": "/sigil/member/apply",
+      "implementation_status": "Webflow UI exists",
+      "production_ownership_status": "UNRESOLVED for backend",
       "blocker": "UI exists but /v1/member/applications backend owner missing.",
-      "required_next_phase": "Phase 3B"
+      "candidate_owner": "Webflow page plus explicit backend TBD",
+      "required_next_phase": "Phase 3B",
+      "acceptance_requirement": "Add/prove backend owner for /v1/member/applications before live lock."
     },
     {
-      "area": "/sigil/pay, generic",
+      "route_or_namespace_key": "/sigil/pay, generic",
+      "implementation_status": "not implemented",
+      "production_ownership_status": "UNRESOLVED",
       "blocker": "No implementation evidence.",
-      "required_next_phase": "Phase 7"
+      "candidate_owner": "none",
+      "required_next_phase": "Phase 7",
+      "acceptance_requirement": "Implementation evidence required before owner lock."
     },
     {
-      "area": "/sigil/model/console, /sigil/model/client-brief",
+      "route_or_namespace_key": "/sigil/model/console, /sigil/model/client-brief",
+      "implementation_status": "current /model/console is legacy shell; canonical route not proven",
+      "production_ownership_status": "UNRESOLVED",
       "blocker": "No exact visible owner; current /model/console is legacy shell.",
-      "required_next_phase": "Phase 4B"
+      "candidate_owner": "TBD Worker or Webflow",
+      "required_next_phase": "Phase 4B",
+      "acceptance_requirement": "Prove auth, model session, private brief access, and canonical visible owner."
     },
     {
-      "area": "model confirmation routes",
+      "route_or_namespace_key": "model confirmation routes",
+      "implementation_status": "not proven",
+      "production_ownership_status": "UNRESOLVED",
       "blocker": "Contract/owner not proven.",
-      "required_next_phase": "Phase 4A"
+      "candidate_owner": "TBD",
+      "required_next_phase": "Phase 4A",
+      "acceptance_requirement": "Define and prove confirm route contract, owner, auth, and private data boundaries."
     },
     {
-      "area": "internal admin visible pages",
+      "route_or_namespace_key": "internal admin visible pages",
+      "implementation_status": "admin login, Kenji shell, create-session, and create-job are source/config proven; remaining pages not fully locked",
+      "production_ownership_status": "PARTIAL",
       "blocker": "Admin login and Kenji shell are source/config proven; remaining admin visible pages still need exact route owner locks.",
-      "required_next_phase": "Phase 5A/5B"
+      "candidate_owner": "admin-worker or temporary immigrate-worker ingress depending exact route",
+      "required_next_phase": "Phase 5A/5B",
+      "acceptance_requirement": "Prove signed session, auth, audit behavior, exact route proof, and migration safety per page."
     },
     {
-      "area": "public model apply API overlap",
+      "route_or_namespace_key": "public model apply API overlap",
+      "implementation_status": "overlapping concepts exist in sigil-worker and partners-worker route families",
+      "production_ownership_status": "UNRESOLVED",
       "blocker": "sigil-worker and partners-worker route families overlap conceptually.",
-      "required_next_phase": "Phase 4"
+      "candidate_owner": "TBD between sigil-worker and partners-worker route families",
+      "required_next_phase": "Phase 4",
+      "acceptance_requirement": "Choose exact method/route/API contract owner and prove no write/API collision."
     }
   ],
   "remove_later_items": [

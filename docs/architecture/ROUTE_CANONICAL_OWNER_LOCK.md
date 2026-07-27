@@ -88,7 +88,7 @@ approved, merged, and this document exists on `main`.
 | `/public/api/*` | `public-access-worker` target for implemented intake route | public submit | allowed Origin, form validation, evidence file limits/type allowlist; no automatic access grant | `public-access-worker/src/index.js` and `public-access-worker/wrangler.toml` | only `POST /public/api/access/intake` and OPTIONS are implemented; unknown subpaths fail closed | none | `sigil.mmdbkk.com/public/api/*` route config, live smoke pending | LOCKED for repo implementation, production verification pending |
 | `/sigil/api/*` | unknown canonical namespace owner; implemented booking handlers are `sigil-booking-worker` candidate, private-model apply candidate target is `sigil-worker` | public/internal by endpoint | endpoint-specific | SIGIL booking/apply contracts after route attachment is proven | broad route family can collide; private-model apply exact route remains unresolved | `mmd-redirect-worker` for private apply only | explicit route partitions; no workers.dev canonical ownership | UNRESOLVED |
 | `/kenji/*` | `chat-worker` target where public AI/access is proven | public/member/internal varies | endpoint-specific | chat/AI backend | Kenji Knowledge admin is separate PR #209 | none | explicit route partitions | UNRESOLVED |
-| Telegram endpoints | `telegram-worker` | webhook/internal | Telegram secret token or internal auth | Telegram Bot API and internal message contract | aliases `/v1/webhook`, `/v1/send` | none | `telegram-worker` | LOCKED |
+| Telegram endpoints | UNRESOLVED production route owner; implementation owner `telegram-worker` | webhook/internal | Telegram secret token or internal auth | Telegram Bot API and internal message contract after custom-host route or service binding is proven | aliases `/v1/webhook`, `/v1/send`; workers.dev internal-consumer evidence only | none proven | custom-host route or service binding TBD | UNRESOLVED |
 | LINE endpoints | `member-dashboard-chat-worker` for current proven webhook/rich-menu continuity | webhook/internal | LINE signature, internal token/confirm key | LINE event and trusted Worker state | admin rich menu APIs in `admin-worker` | `mmd-redirect-worker` webhook bridge legacy | explicit route partitions | TEMPORARY |
 | Generic webhooks | Endpoint-specific Worker | webhook/internal | provider signature | provider event truth | `/webhook/line` aliases | front gate bridge legacy | explicit provider routes | TEMPORARY |
 
@@ -133,7 +133,11 @@ Namespace exception notes:
 | `/sigil/start` | Alias target exists, but canonical visible owner is not proven. | Phase 2A |
 | `/sigil/recovery` | Duplicate recovery API evidence and no normalized visible owner. | Phase 2A or Phase 6 |
 | `/sigil/aftercare` | JS reference only, no exact owner. | Phase 2A |
+| `/sigil/pay/renewal`, `/pay/renewal` | Renderer/front-gate evidence exists, but exact direct production route owner and Webflow bridge outcome are not proven. | Phase 3/7 and Phase 6A |
+| `/sigil/apply`, `/sigil/api/private-model/apply` | Front-gate delegation exists, but matching target handlers and custom route attachment are missing/unverified. | Phase 4A |
 | `/sigil/api/*` booking handlers | Repository handlers exist in `sigil-booking-worker`, but custom-host route attachment and production reachability are missing/unverified. | Phase 2B |
+| `/v1/rt/*` | `realtime-worker` implementation exists, but production route ownership is unresolved until custom-host route or service binding proof. | Realtime route binding acceptance |
+| Telegram endpoints | `telegram-worker` implementation exists, but production route ownership is unresolved until exact custom-host route or service binding proof. | Telegram route binding acceptance |
 | `/member/login` | Login/session contract not normalized. | Phase 3A |
 | `/member/dashboard` | Current legacy `immigrate-worker` dependency cannot be canonical. | Phase 3A |
 | `/member/payments` | Current admin-worker page delegation mixes member UI and admin review ownership. | Phase 3A/5 |
@@ -172,7 +176,7 @@ Namespace exception notes:
 | `public-access-worker` | active public access intake API owner | Repo-proven owner for `POST /public/api/access/intake` under `sigil.mmdbkk.com/public/api/*`; production smoke remains pending and unknown subpaths are not implemented. |
 | `sigil-board-worker` | canonical active API owner | Owns board runtime/actions/audit. |
 | `chat-worker` | active but unresolved for `/kenji/*` | Do not lock Kenji public routes without evidence. |
-| `telegram-worker` | canonical active messaging owner | Owns Telegram webhook/internal send. |
+| `telegram-worker` | messaging implementation owner | Implements Telegram webhook/internal send aliases; production route ownership remains UNRESOLVED until custom-host route or service binding is proven. workers.dev/internal consumers are not canonical production ownership. |
 | `events-worker` | active but migration pending | Job/events ownership needs exact route lock. |
 | `realtime-worker` | realtime implementation owner | Implements `/v1/rt/*`; production route ownership remains UNRESOLVED until custom-host route or service binding is proven. workers.dev is not canonical. |
 
