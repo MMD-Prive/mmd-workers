@@ -2,9 +2,35 @@
 # LOCK v2026-LOCK-01
 
 name = "admin-worker"
-main = "src/dashboard-worker.js"
+main = "src/model-liff-worker.js"
 compatibility_date = "2026-01-01"
 workers_dev = true
+
+# Model LIFF auth and session runtime. Keep these exact so the public page stays
+# owned by Webflow while API traffic is owned by admin-worker.
+[[routes]]
+pattern = "mmdbkk.com/v1/model/liff/exchange"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/liff/exchange"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/model/session/current*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/session/current*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/model/session/action"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/session/action"
+zone_name = "mmdbkk.com"
 
 # Internal admin login/session owner. Exact routes only; apex and www issue
 # separate host-only cookies.
@@ -152,6 +178,12 @@ zone_name = "mmdbkk.com"
 # ใช้สำหรับ CORS (browser calls)
 [vars]
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com"
+
+# LINE MINI App environment IDs
+LINE_MINIAPP_DEV_CHANNEL_ID = "2010864852"
+LINE_MINIAPP_REVIEW_CHANNEL_ID = "2010864853"
+LINE_MINIAPP_PUBLISHED_CHANNEL_ID = "2010864854"
+MODEL_LIFF_SESSION_TTL_SECONDS = "3600"
 
 # Base URLs (LOCK)
 PAYMENTS_BASE_URL = "https://payments-worker.malemodel-bkk.workers.dev"
