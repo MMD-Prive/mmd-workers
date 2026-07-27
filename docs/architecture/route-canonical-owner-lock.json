@@ -5,9 +5,9 @@
     "base_main_sha": "dbc4669062162ec78244423131bc5ecc54445b27",
     "input_artifact": "docs/architecture/ROUTE_INVENTORY_NORMALIZED.md",
     "source_artifact": "docs/architecture/ROUTE_CANONICAL_OWNER_LOCK.md",
-    "consistency_fix": "Phase 1B.5B8",
+    "consistency_fix": "Phase 1B.5B10",
     "documentation_only": true,
-    "owner_decisions_changed": 3
+    "owner_decisions_changed": 6
   },
   "principles": {
     "webflow_visible_public_pages": true,
@@ -2501,18 +2501,49 @@
     },
     {
       "namespace": "LINE endpoints",
-      "canonical_owner": "member-dashboard-chat-worker for current proven webhook/rich-menu continuity",
+      "canonical_owner": "member-dashboard-chat-worker for /webhooks/line production webhook only; rich-menu/internal production owner unresolved",
+      "implementation_owner": "member-dashboard-chat-worker",
       "visibility": "webhook/internal",
       "auth_requirement": "LINE signature, internal token/confirm key",
-      "source_of_truth": "LINE event and trusted Worker state",
+      "source_of_truth": "LINE event and trusted Worker state after exact binding proof",
       "temporary_proxy": "mmd-redirect-worker webhook bridge legacy",
       "known_overlap": [
-        "admin-worker"
+        "admin-worker rich-menu proxy",
+        "rich-menu/internal APIs require exact route or service binding proof"
       ],
       "target_direct_route": "explicit route partitions",
-      "owner_decision": "TEMPORARY",
-      "evidence": "ROUTE_CANONICAL_OWNER_LOCK.md API Namespace Ownership table",
-      "notes": "admin rich menu APIs in admin-worker"
+      "owner_decision": "TEMPORARY_WEBHOOK_UNRESOLVED_RICH_MENU",
+      "evidence": "member-dashboard-chat-worker/wrangler.toml proves apex/www /webhooks/line routes only; member-dashboard-chat-worker/src/index.js implements /v1/internal/line/* and /__internal/line/* rich-menu APIs; admin-worker/src/index.js proxies admin rich-menu calls through MEMBER_DASHBOARD_CHAT_WORKER and can return service_binding_unavailable when absent.",
+      "notes": "Do not treat webhook continuity and rich-menu/internal API continuity as one LIVE_CONNECTED surface.",
+      "route_partitions": [
+        {
+          "partition": "line_webhook",
+          "routes": [
+            "/webhooks/line",
+            "/webhooks/line/"
+          ],
+          "implementation_owner": "member-dashboard-chat-worker",
+          "production_route_owner": "member-dashboard-chat-worker",
+          "custom_host_attachment": "proven in member-dashboard-chat-worker/wrangler.toml for apex/www",
+          "status": "LIVE_CONNECTED",
+          "owner_decision": "TEMPORARY",
+          "acceptance_requirement": "Maintain LINE signature verification and current webhook route continuity."
+        },
+        {
+          "partition": "rich_menu_internal_apis",
+          "routes": [
+            "/v1/internal/line/*",
+            "/__internal/line/*"
+          ],
+          "implementation_owner": "member-dashboard-chat-worker",
+          "production_route_owner": "UNRESOLVED",
+          "custom_host_attachment": "missing/unverified",
+          "service_binding": "missing/unverified",
+          "status": "PARTIAL_INTEGRATION",
+          "owner_decision": "UNRESOLVED",
+          "acceptance_requirement": "Prove exact internal route or MEMBER_DASHBOARD_CHAT_WORKER service binding, auth, aliases, and production smoke before locking rich-menu owner."
+        }
+      ]
     },
     {
       "namespace": "Generic webhooks",
@@ -2751,8 +2782,8 @@
       "decision": "Owns default /v1/admin/*, model session/admin APIs, exact admin login/session, Kenji Knowledge canonical shell, and canonical /v1/admin/job/create; route-level /v1/admin/* exceptions retain current ingress owners until migration/proxy."
     },
     "member-dashboard-chat-worker": {
-      "classification": "active LINE worker and renewal renderer candidate",
-      "decision": "Renewal route ownership is TEMPORARY or UNRESOLVED until exact route attachment and production winner are proven; LINE webhook/rich-menu routes are temporary/proven-only."
+      "classification": "active LINE webhook owner, rich-menu implementation owner, and renewal renderer candidate",
+      "decision": "/webhooks/line is production-proven in current route config. /v1/internal/line/* and /__internal/line/* rich-menu/internal APIs are implemented but production route/service-binding ownership remains UNRESOLVED. Renewal route ownership is TEMPORARY or UNRESOLVED until exact route attachment and production winner are proven."
     },
     "member-pages-worker": {
       "classification": "canonical active for member membership/payment evidence pages",
@@ -2894,6 +2925,33 @@
       "candidate_owner": "telegram-worker implementation owner",
       "required_next_phase": "Telegram route binding acceptance",
       "acceptance_requirement": "Prove exact route/binding, webhook path, send path, auth, aliases, and production smoke."
+    },
+    {
+      "route_or_namespace_key": "/internal/admin/liff-renewal-queue and /v1/admin/line/liff-renewal-queue",
+      "implementation_status": "internal UI handler not proven; API exception candidate unresolved",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "No implemented/proven internal UI handler or route attachment; UI must remain separate from API candidate.",
+      "candidate_owner": "TBD for UI; API candidate pending exact handler/route confirmation",
+      "required_next_phase": "Phase 5",
+      "acceptance_requirement": "Prove UI handler/route attachment separately from API handler, method, auth, and route before locking owner."
+    },
+    {
+      "route_or_namespace_key": "/v1/partner/request",
+      "implementation_status": "partners-worker implements POST /v1/partner/request",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "partners-worker custom-host route config does not include /v1/partner/request; workers.dev references are not canonical production ownership.",
+      "candidate_owner": "partners-worker implementation owner",
+      "required_next_phase": "Partner route binding acceptance",
+      "acceptance_requirement": "Prove exact custom-host route or binding, CORS/auth/method behavior, and production smoke before locking owner."
+    },
+    {
+      "route_or_namespace_key": "LINE rich-menu/internal APIs",
+      "implementation_status": "member-dashboard-chat-worker implements /v1/internal/line/* and /__internal/line/* rich-menu/internal APIs",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "/webhooks/line route is proven, but rich-menu/internal APIs lack exact route or service binding proof; admin-worker can return service_binding_unavailable.",
+      "candidate_owner": "member-dashboard-chat-worker implementation owner; admin-worker admin proxy depends on binding",
+      "required_next_phase": "LINE rich-menu binding acceptance",
+      "acceptance_requirement": "Prove exact internal route or MEMBER_DASHBOARD_CHAT_WORKER service binding, auth, aliases, and production smoke before locking rich-menu owner."
     },
     {
       "route_or_namespace_key": "/member/login",
