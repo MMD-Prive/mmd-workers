@@ -5,9 +5,9 @@
     "base_main_sha": "dbc4669062162ec78244423131bc5ecc54445b27",
     "input_artifact": "docs/architecture/ROUTE_INVENTORY_NORMALIZED.md",
     "source_artifact": "docs/architecture/ROUTE_CANONICAL_OWNER_LOCK.md",
-    "consistency_fix": "Phase 1B.5B3",
+    "consistency_fix": "Phase 1B.5B7",
     "documentation_only": true,
-    "owner_decisions_changed": 1
+    "owner_decisions_changed": 2
   },
   "principles": {
     "webflow_visible_public_pages": true,
@@ -1777,48 +1777,97 @@
       }
     },
     {
-      "route_id": "38_internal_admin_create_session",
+      "route_id": "38_internal_admin_create_session_page",
       "route": "/internal/admin/jobs/create-session",
-      "route_family": "Internal admin create session",
+      "route_family": "Internal admin create session page",
       "hosts": [
-        "internal hosts"
+        "mmdbkk.com",
+        "www.mmdbkk.com"
       ],
       "methods": [
         "GET",
-        "POST"
+        "HEAD"
       ],
       "canonical_route": "/internal/admin/jobs/create-session",
       "aliases": [
-        "/internal/jobs/create-job"
+        "/internal/admin/create-session"
       ],
-      "alias_notes": null,
-      "status": "UNRESOLVED",
-      "status_display": "UNRESOLVED",
-      "surface_type": "page_or_api",
-      "page_owner": "admin-worker",
-      "api_owner": "admin-worker create job API",
-      "current_owner": "none proven",
-      "current_front_gate": "unknown",
-      "ui_location": "none proven",
-      "backend_owner": "admin-worker create job API",
-      "candidate_owner": "admin-worker",
-      "owner_decision": "UNRESOLVED",
-      "owner_confidence": "BLOCKED",
-      "compatibility_decision": "none",
-      "production_verified": "unverified",
-      "production_verification": "not verified",
+      "alias_notes": "/internal/admin/create-session is a legacy 308 redirect to /internal/admin/jobs/create-session with query preserved.",
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED",
+      "surface_type": "internal_admin_page",
+      "page_owner": "immigrate-worker",
+      "api_owner": "admin-worker create/session APIs through /v1/admin/create-session bridge",
+      "current_owner": "immigrate-worker",
+      "current_front_gate": "exact apex/www routes in immigrate-worker/wrangler.toml; legacy /internal/admin/create-session route redirects 308",
+      "ui_location": "immigrate-worker renderCreateSessionPage",
+      "backend_owner": "admin-worker create/session APIs through ADMIN_WORKER bridge",
+      "candidate_owner": "immigrate-worker ingress with admin-worker backend",
+      "owner_decision": "TEMPORARY",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "keep legacy redirect to /internal/admin/jobs/create-session",
+      "production_verified": "source_config_verified_live_pending",
+      "production_verification": "source/config verified; live production smoke pending",
       "risk": "job creation sensitive",
-      "evidence": "not verified",
+      "evidence": "immigrate-worker/wrangler.toml exact apex/www routes for /internal/admin/jobs/create-session* and /internal/admin/create-session*; immigrate-worker/src/internal-routes.ts redirects the legacy path and renders renderCreateSessionPage(env); immigrate-worker/src/internal-pages.ts defines the create-session page; internal admin gate bridge tests cover route patterns and page loading.",
       "conflicts": [
-        "UI route missing"
+        "temporary ingress must not be collapsed into admin-worker wildcard before accepted migration"
       ],
       "migration_phase": "Phase 5B",
       "acceptance_requirements": [
-        "Prove UI/API split",
-        "audit trail."
+        "Verify admin gate.",
+        "Verify page asset loading.",
+        "Verify /internal/admin/create-session redirects to /internal/admin/jobs/create-session with query preserved.",
+        "Verify backend bridge behavior before migration."
       ],
       "notes": {
-        "blocker_reason": "job creation sensitive",
+        "blocker_reason": "production smoke pending only; migration still requires acceptance",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "38b_internal_create_job_page",
+      "route": "/internal/jobs/create-job",
+      "route_family": "Internal create job page",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/internal/jobs/create-job",
+      "aliases": [],
+      "alias_notes": "This is a separate implemented page, not an alias of /internal/admin/jobs/create-session.",
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED",
+      "surface_type": "internal_admin_page",
+      "page_owner": "immigrate-worker",
+      "api_owner": "admin-worker create-job API through /v1/admin/create-job bridge",
+      "current_owner": "immigrate-worker",
+      "current_front_gate": "exact apex/www routes in immigrate-worker/wrangler.toml",
+      "ui_location": "immigrate-worker renderCreateJobPage",
+      "backend_owner": "admin-worker create-job API through ADMIN_WORKER bridge",
+      "candidate_owner": "immigrate-worker ingress with admin-worker backend",
+      "owner_decision": "TEMPORARY",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "none",
+      "production_verified": "source_config_verified_live_pending",
+      "production_verification": "source/config verified; live production smoke pending",
+      "risk": "job creation sensitive",
+      "evidence": "immigrate-worker/wrangler.toml exact apex/www routes for /internal/jobs/create-job*; immigrate-worker/src/internal-routes.ts renders renderCreateJobPage(); immigrate-worker/src/internal-pages.ts defines the create-job page and posts through the admin bridge.",
+      "conflicts": [
+        "must remain distinct from create-session page in owner artifacts"
+      ],
+      "migration_phase": "Phase 5B",
+      "acceptance_requirements": [
+        "Verify admin gate.",
+        "Verify page/form contract.",
+        "Verify /v1/admin/create-job bridge behavior before migration."
+      ],
+      "notes": {
+        "blocker_reason": "production smoke pending only; migration still requires acceptance",
         "remove_later_decision": null
       }
     },
@@ -2277,18 +2326,20 @@
     },
     {
       "namespace": "/v1/rt/*",
-      "canonical_owner": "realtime-worker",
+      "canonical_owner": null,
+      "implementation_owner": "realtime-worker",
       "visibility": "internal/realtime client",
       "auth_requirement": "room token / server auth",
-      "source_of_truth": "Durable Object room state",
+      "source_of_truth": "Durable Object room state after production route binding is proven",
       "temporary_proxy": null,
       "known_overlap": [
-        "none found"
+        "workers.dev only is not canonical production ownership",
+        "no custom-host route or service binding proof recorded in this lock"
       ],
-      "target_direct_route": "realtime-worker",
-      "owner_decision": "LOCKED",
+      "target_direct_route": "custom-host route or service binding TBD",
+      "owner_decision": "UNRESOLVED",
       "evidence": "ROUTE_CANONICAL_OWNER_LOCK.md API Namespace Ownership table",
-      "notes": "none found"
+      "notes": "realtime-worker implements /v1/rt/room/open and /v1/rt/ws, but production route ownership remains unresolved until custom-host route or service binding is proven."
     },
     {
       "namespace": "/public/api/*",
@@ -2677,8 +2728,8 @@
       "decision": "Job/events ownership needs exact route lock."
     },
     "realtime-worker": {
-      "classification": "canonical active realtime owner",
-      "decision": "Owns /v1/rt/*."
+      "classification": "realtime implementation owner",
+      "decision": "Implements /v1/rt/*, but production route ownership remains UNRESOLVED until custom-host route or service binding is proven. workers.dev is not canonical."
     }
   },
   "unresolved_decisions": [

@@ -98,8 +98,11 @@ worker deployment, Webflow publishing, or alias removal.
 | `/v1/partner/dashboard` | API | API READY / UI MISSING | `partners-worker/src/index.ts`. | Partner dashboard API. |
 | `/telegram/webhook` and `/v1/webhook` | API | LIVE CONNECTED | `telegram-worker/src/index.js`. | Telegram webhook aliases. |
 | `/telegram/internal/send`, `/v1/internal/send`, `/v1/send` | API | LIVE CONNECTED | `telegram-worker/src/index.js`. | Internal notification APIs. |
-| `/v1/rt/room/open` | API | API READY / UI MISSING | `realtime-worker/src/index.js`. | Realtime room open API. |
-| `/v1/rt/ws` | WebSocket API | API READY / UI MISSING | `realtime-worker/src/index.js`. | Durable Object websocket route. |
+| `/internal/admin/jobs/create-session` | Internal UI | LIVE CONNECTED | `immigrate-worker/wrangler.toml`; `immigrate-worker/src/internal-routes.ts`; `immigrate-worker/src/internal-pages.ts`. | Implemented create-session page; temporary ingress owner `immigrate-worker`; backend bridge remains `admin-worker`. |
+| `/internal/jobs/create-job` | Internal UI | LIVE CONNECTED | `immigrate-worker/wrangler.toml`; `immigrate-worker/src/internal-routes.ts`; `immigrate-worker/src/internal-pages.ts`. | Implemented separate create-job page; temporary ingress owner `immigrate-worker`; backend bridge remains `admin-worker`. |
+| `/internal/admin/create-session` | Internal UI redirect | ROUTE ONLY / REDIRECT | `immigrate-worker/src/internal-routes.ts`. | Legacy redirect to `/internal/admin/jobs/create-session` with query preserved. |
+| `/v1/rt/room/open` | API | API READY / UI MISSING | `realtime-worker/src/index.js`; `realtime-worker/wrangler.toml`. | Realtime room open API implementation exists; production route owner remains unresolved because no custom-host route or service binding is proven. |
+| `/v1/rt/ws` | WebSocket API | API READY / UI MISSING | `realtime-worker/src/index.js`; `realtime-worker/wrangler.toml`. | Durable Object websocket implementation exists; workers.dev is not canonical production ownership. |
 
 ## Webflow / UI Artifacts
 
