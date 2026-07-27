@@ -5,9 +5,9 @@
     "base_main_sha": "dbc4669062162ec78244423131bc5ecc54445b27",
     "input_artifact": "docs/architecture/ROUTE_INVENTORY_NORMALIZED.md",
     "source_artifact": "docs/architecture/ROUTE_CANONICAL_OWNER_LOCK.md",
-    "consistency_fix": "Phase 1B.5B10",
+    "consistency_fix": "Phase 1B.5B12",
     "documentation_only": true,
-    "owner_decisions_changed": 6
+    "owner_decisions_changed": 7
   },
   "principles": {
     "webflow_visible_public_pages": true,
@@ -281,36 +281,39 @@
         "/sigil/access"
       ],
       "alias_notes": null,
-      "status": "API_READY_UI_MISSING",
-      "status_display": "API READY / UI MISSING",
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED / UI MISSING",
       "surface_type": "page",
-      "page_owner": "Webflow page, public-access-worker API",
+      "page_owner": null,
       "api_owner": "public-access-worker for POST /public/api/access/intake",
-      "current_owner": "none proven for visible page; public-access-worker for intake API",
+      "current_owner": "none proven for visible page",
       "current_front_gate": "unknown",
-      "ui_location": "webflow/sigil/access/* evidence only",
-      "backend_owner": "public-access-worker",
-      "candidate_owner": "Webflow page, public-access-worker API",
-      "owner_decision": "TEMPORARY",
-      "owner_confidence": "MEDIUM",
+      "ui_location": "no exact visible /public/access handler proven; webflow/sigil/access/* is adjacent UI evidence only",
+      "backend_owner": "public-access-worker for separate intake API",
+      "candidate_owner": "unknown visible page owner; public-access-worker API remains separate",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "LOW",
       "compatibility_decision": "none",
       "production_verified": "source_config_verified_live_pending",
-      "production_verification": "visible page not verified; API source/config verified, live smoke pending",
-      "risk": "public intake must remain evidence-only and cannot grant access",
-      "evidence": "webflow/sigil/access/* for UI artifact; public-access-worker/src/index.js implements POST /public/api/access/intake; public-access-worker/wrangler.toml routes sigil.mmdbkk.com/public/api/*",
+      "production_verification": "visible page not verified; API source/config verified separately, live smoke pending",
+      "risk": "page absence must not downgrade intake API; public intake must remain evidence-only and cannot grant access",
+      "evidence": "No exact visible /public/access owner or handler proven; webflow/sigil/access/* is adjacent UI artifact evidence only. public-access-worker/src/index.js implements POST /public/api/access/intake; public-access-worker/wrangler.toml routes sigil.mmdbkk.com/public/api/*.",
       "conflicts": [
         "visible page route missing",
+        "page must not inherit API implementation proof",
         "unknown /public/api/* subpaths are not implemented"
       ],
       "migration_phase": "Phase 2A",
       "acceptance_requirements": [
-        "Prove visible page route owner.",
+        "Identify or implement visible page owner.",
+        "Attach/prove /public/access page route.",
+        "Verify CTA/form integration to /public/api/access/intake.",
         "Live-smoke POST /public/api/access/intake and OPTIONS.",
         "Confirm allowed-Origin behavior, evidence-only response, and no access grant.",
         "Confirm unknown /public/api/* subpaths fail closed."
       ],
       "notes": {
-        "blocker_reason": "visible page route owner and live API smoke pending",
+        "blocker_reason": "visible page route owner and handler are missing/unverified; API implementation remains separate",
         "remove_later_decision": null
       }
     },
