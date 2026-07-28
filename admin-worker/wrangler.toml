@@ -2,7 +2,7 @@
 # LOCK v2026-LOCK-01
 
 name = "admin-worker"
-main = "src/model-liff-worker.js"
+main = "src/model-referral-worker.js"
 compatibility_date = "2026-01-01"
 workers_dev = true
 
@@ -30,6 +30,23 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/model/session/action"
+zone_name = "mmdbkk.com"
+
+# Model Referral APIs. Exact routes only; model-session token validation stays in the Worker.
+[[routes]]
+pattern = "mmdbkk.com/v1/model/referral/me"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/referral/me"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/model/referrals"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/referrals"
 zone_name = "mmdbkk.com"
 
 # Internal admin login/session owner. Exact routes only; apex and www issue
@@ -194,6 +211,7 @@ AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 
 # Writer table IDs (LOCK)
 AIRTABLE_TABLE_CONSOLE_INBOX_ID = "tblFHmfpB2TTrzO2e"
+AIRTABLE_TABLE_MODEL_REFERRAL_INBOX_ID = "tblFHmfpB2TTrzO2e"
 AIRTABLE_TABLE_PAYMENT_PROOFS_ID = "tblfJfM4Sqag9zrLi"
 
 # Optional table names (ถ้าคุณใช้ name-based endpoints)
