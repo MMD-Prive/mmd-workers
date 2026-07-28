@@ -19,12 +19,12 @@ function request(path, init = {}, host = "mmdbkk.com", env = ENV) {
   return worker.fetch(new Request(`https://${host}${path}`, init), env, {});
 }
 
-function login(credential = ENV.ADMIN_BEARER, { host = "mmdbkk.com", next = KENJI, origin = `https://${host}`, contentType = "application/x-www-form-urlencoded" } = {}) {
+function login(credential = ENV.ADMIN_BEARER, { host = "mmdbkk.com", next = KENJI, origin = `https://${host}`, contentType = "application/x-www-form-urlencoded", env = ENV } = {}) {
   return request(SESSION, {
     method: "POST",
     headers: { Origin: origin, "Content-Type": contentType },
     body: new URLSearchParams({ credential, next }).toString(),
-  }, host);
+  }, host, env);
 }
 
 function cookiePair(response) {
@@ -134,6 +134,21 @@ test("valid login issues a fresh secure host-only cookie and redirects", async (
     assert.notEqual(cookiePair(first), cookiePair(second));
   } finally {
     console.log = originalLog;
+  }
+});
+
+test("dedicated login credential is isolated from API bearer credentials", async () => {
+  const dedicatedCredential = "focused_dedicated_admin_login_credential";
+  const env = { ...ENV, ADMIN_LOGIN_CREDENTIAL: dedicatedCredential };
+
+  const valid = await login(dedicatedCredential, { env });
+  assert.equal(valid.status, 303);
+  assert.match(valid.headers.get("set-cookie") || "", /^mmd_admin_gate_v1=/);
+
+  for (const credential of [ENV.ADMIN_BEARER, ENV.INTERNAL_TOKEN, ENV.CONFIRM_KEY]) {
+    const rejected = await login(credential, { env });
+    assert.equal(rejected.status, 401);
+    assert.equal(rejected.headers.get("set-cookie"), null);
   }
 });
 

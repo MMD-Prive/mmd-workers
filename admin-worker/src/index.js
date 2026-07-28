@@ -942,11 +942,14 @@ function handleAdminLogout(req) {
 
 async function resolveAdminSessionProof(credential, env) {
   if (!credential) return null;
-  const candidates = [
-    ["bearer", str(env.ADMIN_BEARER || "")],
-    ["bearer", str(env.INTERNAL_TOKEN || "")],
-    ["confirmKey", str(env.CONFIRM_KEY || "")],
-  ];
+  const loginCredential = str(env.ADMIN_LOGIN_CREDENTIAL || "");
+  const candidates = loginCredential
+    ? [["login", loginCredential]]
+    : [
+        ["bearer", str(env.ADMIN_BEARER || "")],
+        ["bearer", str(env.INTERNAL_TOKEN || "")],
+        ["confirmKey", str(env.CONFIRM_KEY || "")],
+      ];
   let match = null;
   for (const [kind, value] of candidates) {
     if (value && (await constantTimeEqual(credential, value)) && !match) match = { kind, value };
