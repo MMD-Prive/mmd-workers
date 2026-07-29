@@ -58,9 +58,18 @@ test("GET login renders a safe server-side POST form", async () => {
   assert.match(response.headers.get("content-type") || "", /^text\/html\b/);
   assert.match(response.headers.get("cache-control") || "", /no-store/);
   assert.match(response.headers.get("content-security-policy") || "", /form-action 'self'/);
+  assert.match(html, /<title>SIGIL Internal Login<\/title>/);
+  assert.match(html, /class="sigil-internal-login"/);
+  assert.match(html, /SIGIL Internal Command/);
+  assert.match(html, /Invite state/);
   assert.match(html, /method="post"/);
   assert.match(html, /action="\/internal\/admin\/login\/session"/);
+  assert.match(html, /name="credential"/);
+  assert.match(html, /name="next" value="\/internal\/admin\/kenji-knowledge"/);
   assert.match(html, /type="password"/);
+  assert.doesNotMatch(html, /MMD Admin Sign In/);
+  assert.doesNotMatch(html, /admin-worker\.malemodel-bkk\.workers\.dev/);
+  assert.doesNotMatch(html, /mmdprive\.webflow\.io\/internal\/admin\/login/);
   assert.doesNotMatch(html, /localStorage|sessionStorage|<script|\/private/);
 });
 
