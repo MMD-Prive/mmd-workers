@@ -25,6 +25,10 @@ const TIER_RANK = {
   blackcard: 6,
 };
 
+const MEMBER_STATUS_RESOLVER_PATH = "/__internal/member-status/resolve";
+const LIFF_IDENTITY_RESOLUTION_PURPOSE = "liff_identity_resolution";
+const MEMBER_STATUS_RESOLVER_SECRET_HEADER = "x-mmd-member-resolver-secret";
+
 export default {
   async fetch(request, env, ctx) {
     try {
@@ -51,6 +55,10 @@ export default {
 
       if (path === "/v1/auth/logout" && request.method === "POST") {
         return handleLogout(request, env);
+      }
+
+      if (path === MEMBER_STATUS_RESOLVER_PATH && request.method === "POST") {
+        return handleInternalMemberStatusResolve(request, env);
       }
 
       if (path === "/v1/admin/access/grant" && request.method === "POST") {
@@ -225,6 +233,35 @@ async function handleLogout(request, env) {
   return json(request, env, 200, { ok: true }, {
     "Set-Cookie": clearSessionCookie(env),
   });
+}
+
+// This endpoint is reachable only through the configured service binding and
+// a dedicated resolver secret. It intentionally returns no member attributes.
+async function handleInternalMemberStatusResolve(request, env) {
+  if (!isInternalMemberStatusResolverRequest(request, env)) {
+    return json(request, env, 404, { ok: false, error: { code: "NOT_FOUND", message: "Route not found" } });
+  }
+
+  const body = await readStrictJsonObject(request);
+  const allowedKeys = new Set(["line_user_id", "purpose"]);
+  if (!body || Object.keys(body).some((key) => !allowedKeys.has(key))) {
+    return json(request, env, 400, { ok: false, error: { code: "INVALID_RESOLVER_REQUEST", message: "A valid resolver request is required." } });
+  }
+
+  const lineUserId = String(body.line_user_id || "").trim();
+  if (!isCanonicalLineUserId(lineUserId) || body.purpose !== LIFF_IDENTITY_RESOLUTION_PURPOSE) {
+    return json(request, env, 400, { ok: false, error: { code: "INVALID_RESOLVER_REQUEST", message: "A valid resolver request is required." } });
+  }
+
+  try {
+    const matches = await findMemberRecordsByLineUserId(env, lineUserId);
+    if (matches.length > 1) {
+      return json(request, env, 409, { ok: false, error: { code: "MEMBER_MATCH_AMBIGUOUS", message: "Member identity could not be resolved safely." } });
+    }
+    return json(request, env, 200, { ok: true, data: { member_exists: matches.length === 1 } });
+  } catch {
+    return json(request, env, 503, { ok: false, error: { code: "MEMBER_STATUS_RESOLVER_UNAVAILABLE", message: "Member identity could not be resolved safely." } });
+  }
 }
 
 async function handleAdminGrant(request, env) {
@@ -489,6 +526,15 @@ async function findMemberById(env, memberId) {
   return record ? { ...record, fields: normalizeMemberRecord(record) } : null;
 }
 
+async function findMemberRecordsByLineUserId(env, lineUserId) {
+  const field = String(env.AIRTABLE_MEMBERS_LINE_USER_ID_FIELD || "line_user_id").trim();
+  if (!field) throw new Error("AIRTABLE_MEMBERS_LINE_USER_ID_FIELD is required.");
+  return airtableList(env, table(env, "MEMBERS"), {
+    filterByFormula: `{${field}}=${formulaString(lineUserId)}`,
+    maxRecords: 2,
+  });
+}
+
 function normalizeMemberRecord(record) {
   const fields = record.fields || {};
   const memberId = String(fields.member_id || fields["Member ID"] || fields.auth_member_id || "");
@@ -730,6 +776,18 @@ async function readJson(request) {
   try { return JSON.parse(text); } catch (_) { return {}; }
 }
 
+async function readStrictJsonObject(request) {
+  if (!/^application\/json(?:;|$)/i.test(request.headers.get("content-type") || "")) return null;
+  const text = await request.text();
+  if (!text) return null;
+  try {
+    const body = JSON.parse(text);
+    return body && typeof body === "object" && !Array.isArray(body) ? body : null;
+  } catch {
+    return null;
+  }
+}
+
 function makeSessionCookie(env, token, expiresAt) {
   const name = env.AUTH_COOKIE_NAME || "mmd_auth";
   const maxAge = Math.max(0, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000));
@@ -785,6 +843,16 @@ function safeEqual(a, b) {
   let result = 0;
   for (let i = 0; i < x.length; i += 1) result |= x.charCodeAt(i) ^ y.charCodeAt(i);
   return result === 0;
+}
+
+function isInternalMemberStatusResolverRequest(request, env) {
+  const expected = String(env.MEMBER_STATUS_RESOLVER_SECRET || "");
+  const received = String(request.headers.get(MEMBER_STATUS_RESOLVER_SECRET_HEADER) || "");
+  return expected.length >= 32 && received.length === expected.length && safeEqual(expected, received);
+}
+
+function isCanonicalLineUserId(value) {
+  return /^U[0-9a-f]{32}$/i.test(String(value || ""));
 }
 
 function randomDigits(length) {

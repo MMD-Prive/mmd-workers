@@ -5,16 +5,22 @@ workers_dev = true
 
 [vars]
 LIFF_VERIFY_TIMEOUT_MS = "5000"
+LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "5000"
 LINE_ID_TOKEN_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify"
 
 [[kv_namespaces]]
 binding = "LIFF_IDENTITY_KV"
 id = "12f4c4e7357d4019b5e0951be0b984f5"
 
+[[services]]
+binding = "MEMBER_STATUS_RESOLVER"
+service = "mmd-auth-worker"
+
 # Required before deployment:
 # - secret LINE_LOGIN_CHANNEL_ID
 # - secret LIFF_SESSION_SECRET
-# - service binding MEMBER_STATUS_RESOLVER
+# - secret MEMBER_STATUS_RESOLVER_SECRET (same value in mmd-auth-worker)
+# - service binding MEMBER_STATUS_RESOLVER -> mmd-auth-worker
 #
 # Route ownership intentionally remains unconfigured in Phase 1 source until
 # apex precedence against mmd-redirect-worker and any existing catch-all is

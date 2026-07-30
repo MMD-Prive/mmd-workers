@@ -6,8 +6,12 @@ const LINE_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify";
 const SESSION_TTL_SECONDS = 15 * 60;
 const HALL_TOKEN_TTL_SECONDS = 5 * 60;
 const VERIFY_TIMEOUT_MS = 5000;
+const MEMBER_RESOLVER_TIMEOUT_MS = 5000;
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const HANDOFF_COOKIE = "__Host-mmd_liff_handoff";
+const MEMBER_RESOLVER_PATH = "/__internal/member-status/resolve";
+const MEMBER_RESOLVER_PURPOSE = "liff_identity_resolution";
+const MEMBER_RESOLVER_SECRET_HEADER = "x-mmd-member-resolver-secret";
 
 const LEGACY_IDENTIFY_PATHS = new Set(["/member/api/liff/identify", "/member/api/liff/identify/"]);
 const START_PATHS = new Set(["/member/api/liff/start", "/member/api/liff/start/"]);
@@ -171,19 +175,29 @@ async function verifyLineIdToken(idToken, env) {
 
 async function resolveExistingMember(env, lineUserId) {
   const resolver = env.MEMBER_STATUS_RESOLVER;
-  if (!resolver?.fetch) return { ok: false, exists: false };
+  const resolverSecret = String(env.MEMBER_STATUS_RESOLVER_SECRET || "");
+  if (!resolver?.fetch || resolverSecret.length < 32) return { ok: false, exists: false };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(env.LIFF_MEMBER_RESOLVER_TIMEOUT_MS || MEMBER_RESOLVER_TIMEOUT_MS));
   try {
-    const response = await resolver.fetch(new Request("https://member-status-resolver.local/resolve", {
+    const response = await resolver.fetch(new Request(`https://mmd-auth-worker.internal${MEMBER_RESOLVER_PATH}`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ line_user_id: lineUserId, purpose: "liff_identity_resolution" }),
+      headers: {
+        "content-type": "application/json",
+        [MEMBER_RESOLVER_SECRET_HEADER]: resolverSecret,
+      },
+      body: JSON.stringify({ line_user_id: lineUserId, purpose: MEMBER_RESOLVER_PURPOSE }),
+      signal: controller.signal,
     }));
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || payload.ok === false) return { ok: false, exists: false };
     const data = payload.data && typeof payload.data === "object" ? payload.data : payload;
-    return { ok: true, exists: Boolean(data.member_exists || data.exists || data.mmd_member_id || data.member_id) };
+    if (typeof data.member_exists !== "boolean") return { ok: false, exists: false };
+    return { ok: true, exists: data.member_exists };
   } catch {
     return { ok: false, exists: false };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -279,7 +293,8 @@ function cookieValue(request, name) {
   return "";
 }
 
-function hasFoundationBindings(env) { return Boolean(env.LIFF_IDENTITY_KV && env.MEMBER_STATUS_RESOLVER?.fetch && env.LINE_LOGIN_CHANNEL_ID && env.LIFF_SESSION_SECRET); }
+function hasFoundationBindings(env) { return Boolean(env.LIFF_IDENTITY_KV && env.MEMBER_STATUS_RESOLVER?.fetch && hasMemberResolverSecret(env) && env.LINE_LOGIN_CHANNEL_ID && env.LIFF_SESSION_SECRET); }
+function hasMemberResolverSecret(env) { return String(env.MEMBER_STATUS_RESOLVER_SECRET || "").length >= 32; }
 function isLiffPrefix(path) { return path === "/member/api/liff" || path.startsWith("/member/api/liff/"); }
 function hasBrowserIdentityClaims(body) { return BROWSER_IDENTITY_FIELDS.some((key) => Object.prototype.hasOwnProperty.call(body, key)); }
 function hasUnexpectedKeys(body, allowed) { return Object.keys(body || {}).some((key) => !allowed.has(key)); }

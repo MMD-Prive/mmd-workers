@@ -29,7 +29,10 @@ function resolver(payload = { member_exists: false }, status = 200) {
   return {
     calls,
     fetch: async (request) => {
-      calls.push(await request.json());
+      calls.push({
+        ...(await request.json()),
+        _resolver_secret: request.headers.get("x-mmd-member-resolver-secret"),
+      });
       return new Response(JSON.stringify({ ok: status < 400, data: payload }), {
         status,
         headers: { "content-type": "application/json" },
@@ -42,6 +45,7 @@ function env(overrides = {}) {
   return {
     LINE_LOGIN_CHANNEL_ID: "2000000000",
     LIFF_SESSION_SECRET: "test-only-session-secret-not-production",
+    MEMBER_STATUS_RESOLVER_SECRET: "test-only-member-status-resolver-secret-1234567890",
     LIFF_IDENTITY_KV: new MemoryKv(),
     MEMBER_STATUS_RESOLVER: resolver(),
     ...overrides,
@@ -105,7 +109,7 @@ function assertHostCookie(cookie, name, maxAge) {
 }
 
 function assertNoSensitive(rendered) {
-  assert.doesNotMatch(rendered, /valid-token|private-id-token|Uprivate-line-sub|private-signed-t/i);
+  assert.doesNotMatch(rendered, /valid-token|private-id-token|Uprivate-line-sub|private-signed-t|test-only-member-status-resolver-secret-1234567890/i);
   assert.doesNotMatch(rendered, /session_token|hall_token|__Host-mmd_liff_session=[A-Za-z0-9]|__Host-mmd_liff_handoff=[A-Za-z0-9]/i);
   assert.doesNotMatch(rendered, /svip|blackcard|5000|9999|premium|888/i);
 }
@@ -197,10 +201,19 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     const { response, payload } = await request("/member/api/liff/start?t=private-signed-t", { body: { id_token: "private-id-token" } }, runtime);
     assert.equal(response.status, 200);
     assert.equal(memberResolver.calls[0].line_user_id, "Uprivate-line-sub");
+    assert.equal(memberResolver.calls[0].purpose, "liff_identity_resolution");
+    assert.equal(memberResolver.calls[0]._resolver_secret, runtime.MEMBER_STATUS_RESOLVER_SECRET);
     assert.equal(payload.data.identity_state, "existing_member");
     assert.equal(payload.data.member_resolved, true);
     assert.equal(payload.data.pending_identity, false);
     assertNoSensitive(JSON.stringify(payload));
+  });
+
+  it("fails closed when the dedicated internal resolver secret is unavailable", async () => {
+    const runtime = env({ MEMBER_STATUS_RESOLVER_SECRET: "" });
+    const result = await request("/member/api/liff/start", { body: { id_token: "valid" } }, runtime);
+    assert.equal(result.response.status, 503);
+    assert.equal(result.payload.error.code, "LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   });
 
   it("unknown verified identity creates only one idempotent pending identity and resolver failure creates none", async () => {
