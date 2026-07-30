@@ -27,7 +27,18 @@ export const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", 
 export const PUBLIC_BLACKCARD_PATHS = new Set(["/blackcard", "/blackcard/", "/blackcard/black-card", "/blackcard/black-card/"]);
 export const WEBFLOW_MEMBER_PAGE_PATHS = new Set([CANONICAL_MEMBERSHIP_PATH, `${CANONICAL_MEMBERSHIP_PATH}/`, "/member/promotion", "/member/promotion/", "/member/apply", "/member/apply/"]);
 export const MEMBER_PAGE_PATHS = new Set(["/member/profile", "/member/profile/", "/pay/membership", "/pay/membership/", "/pay/pending-verification", "/pay/pending-verification/", "/sigil/pay/renewal", "/sigil/pay/renewal/"]);
-export const MEMBER_API_PATHS = new Set(["/member/api/liff/identify", "/member/api/liff/identify/"]);
+export const MEMBER_API_PATHS = new Set([
+  "/member/api/liff/identify",
+  "/member/api/liff/identify/",
+  "/member/api/liff/start",
+  "/member/api/liff/start/",
+  "/member/api/liff/intent",
+  "/member/api/liff/intent/",
+  "/member/api/liff/status",
+  "/member/api/liff/status/",
+  "/member/api/liff/hall-token",
+  "/member/api/liff/hall-token/",
+]);
 export const NEVER_TOUCH_PREFIXES = ["/api/", "/webhook/", "/webhooks/", "/payments/", "/payment/", "/payment-webhook/", "/admin/", "/sigil/", "/cdn-cgi/", "/assets/", "/static/", "/uploads/"];
 export const NEVER_REDIRECT_EXACT_PATHS = new Set(["/member/promotion", "/member/promotion/", "/member/apply", "/member/apply/", "/member/dashboard", "/member/dashboard/", CANONICAL_MEMBERSHIP_PATH, `${CANONICAL_MEMBERSHIP_PATH}/`, "/member/profile", "/member/profile/", "/member/payments", "/member/payments/", "/pay/membership", "/pay/membership/", "/pay/pending-verification", "/pay/pending-verification/", "/sigil/pay/membership", "/sigil/pay/membership/", "/sigil/pay/renewal", "/sigil/pay/renewal/", "/hall", "/hall/", "/model/console", "/model/console/", "/blackcard", "/blackcard/", "/blackcard/black-card", "/blackcard/black-card/"]);
 export const EXACT_PATH_REDIRECTS = { "/trust/inme": "/sigil/start", "/inme": "/sigil/start", "/login": "/sigil/start", "/member": "/member/dashboard", "/member/membership": CANONICAL_MEMBERSHIP_PATH, "/member/membership/benefits": CANONICAL_MEMBERSHIP_PATH, "/members": "/sigil/start", "/membership": CANONICAL_MEMBERSHIP_PATH, "/membership/benefits": CANONICAL_MEMBERSHIP_PATH, "/renew": "/sigil/membership", "/renewal": "/sigil/membership", "/trust": "/sigil/start" };
