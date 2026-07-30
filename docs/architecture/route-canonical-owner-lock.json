@@ -1,0 +1,3196 @@
+{
+  "metadata": {
+    "phase": "1B",
+    "status": "READY_FOR_HUMAN_REVIEW",
+    "base_main_sha": "dbc4669062162ec78244423131bc5ecc54445b27",
+    "input_artifact": "docs/architecture/ROUTE_INVENTORY_NORMALIZED.md",
+    "source_artifact": "docs/architecture/ROUTE_CANONICAL_OWNER_LOCK.md",
+    "consistency_fix": "Phase 1B.5B14",
+    "documentation_only": true,
+    "owner_decisions_changed": 10
+  },
+  "principles": {
+    "webflow_visible_public_pages": true,
+    "worker_pages_require_server_state_or_exact_proxy": true,
+    "api_owner_is_business_contract_worker": true,
+    "mmd_redirect_worker_deprecated": true,
+    "immigrate_worker_legacy_only": true,
+    "catch_all_never_canonical": true,
+    "workers_dev_never_canonical": true,
+    "target_member_identity": "mmd_member_id",
+    "memberstack_target_architecture": false
+  },
+  "status_mapping": {
+    "note": "Human-readable Markdown labels use spaces and slashes for readability. JSON uses uppercase underscore machine enums. The mapping is one-to-one and does not change route meaning.",
+    "LIVE_CONNECTED": "LIVE CONNECTED",
+    "UI_READY_BACKEND_MISSING": "UI READY / BACKEND MISSING",
+    "API_READY_UI_MISSING": "API READY / UI MISSING",
+    "PARTIAL_INTEGRATION": "PARTIAL INTEGRATION",
+    "ROUTE_ONLY_REDIRECT": "ROUTE ONLY / REDIRECT",
+    "LEGACY": "LEGACY",
+    "UNRESOLVED": "UNRESOLVED",
+    "DEPRECATED": "DEPRECATED",
+    "REMOVE_LATER": "REMOVE LATER",
+    "NOT_IMPLEMENTED": "NOT IMPLEMENTED"
+  },
+  "route_records": [
+    {
+      "route_id": "01_public_home",
+      "route": "/",
+      "route_family": "Public home",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com",
+        "Webflow"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/",
+      "aliases": [],
+      "alias_notes": null,
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED",
+      "surface_type": "page",
+      "page_owner": "Webflow",
+      "api_owner": "unknown",
+      "current_owner": "Webflow",
+      "current_front_gate": "unknown/current front gate if routed through apex",
+      "ui_location": "Webflow",
+      "backend_owner": "unknown",
+      "candidate_owner": "Webflow",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "LOW",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "not verified in Phase 1B",
+      "risk": "product IA not normalized",
+      "evidence": "not verified in Phase 1B",
+      "conflicts": [
+        "not in Phase 1A evidence"
+      ],
+      "migration_phase": "Phase 2A",
+      "acceptance_requirements": [
+        "Verify apex/www/Webflow route",
+        "headers",
+        "no Worker truth."
+      ],
+      "notes": {
+        "blocker_reason": "product IA not normalized",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "02_public_hall",
+      "route": "/hall",
+      "route_family": "Public hall",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/hall",
+      "aliases": [],
+      "alias_notes": null,
+      "status": "ROUTE_ONLY_REDIRECT",
+      "status_display": "ROUTE ONLY / REDIRECT",
+      "surface_type": "page",
+      "page_owner": "Webflow",
+      "api_owner": "unknown",
+      "current_owner": "mmd-redirect-worker temporary page",
+      "current_front_gate": "mmd-redirect-worker",
+      "ui_location": "front-gate shell",
+      "backend_owner": "unknown",
+      "candidate_owner": "Webflow",
+      "owner_decision": "TEMPORARY",
+      "owner_confidence": "MEDIUM",
+      "compatibility_decision": "keep current front-gate shell until Webflow owner exists",
+      "production_verified": "unverified",
+      "production_verification": "not verified in Phase 1B",
+      "risk": "catch-all dependency",
+      "evidence": "not verified in Phase 1B",
+      "conflicts": [
+        "should be Webflow long-term"
+      ],
+      "migration_phase": "Phase 2A",
+      "acceptance_requirements": [
+        "Prove Webflow page",
+        "canonical redirect before removing shell."
+      ],
+      "notes": {
+        "blocker_reason": "catch-all dependency",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "03_profiles",
+      "route": "/profiles",
+      "route_family": "Profiles",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com",
+        "Webflow"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/profiles",
+      "aliases": [],
+      "alias_notes": null,
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED",
+      "surface_type": "page",
+      "page_owner": "Webflow or catalog Worker",
+      "api_owner": "unknown",
+      "current_owner": "none proven",
+      "current_front_gate": "unknown",
+      "ui_location": "none proven",
+      "backend_owner": "unknown",
+      "candidate_owner": "Webflow or catalog Worker",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "public catalog IA blocked",
+      "evidence": "not verified",
+      "conflicts": [
+        "no implementation evidence"
+      ],
+      "migration_phase": "Phase 2A",
+      "acceptance_requirements": [
+        "Identify existing page/API owner or create approved future task."
+      ],
+      "notes": {
+        "blocker_reason": "public catalog IA blocked",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "04_companion_services",
+      "route": "/services/companion",
+      "route_family": "Companion services",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com",
+        "Webflow"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/services/companion",
+      "aliases": [],
+      "alias_notes": null,
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED",
+      "surface_type": "page",
+      "page_owner": "Webflow",
+      "api_owner": "unknown",
+      "current_owner": "none proven",
+      "current_front_gate": "unknown",
+      "ui_location": "none proven",
+      "backend_owner": "unknown",
+      "candidate_owner": "Webflow",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "product IA blocked",
+      "evidence": "not verified",
+      "conflicts": [
+        "no implementation evidence"
+      ],
+      "migration_phase": "Phase 2A",
+      "acceptance_requirements": [
+        "Prove current route or remove from canonical scope by approval."
+      ],
+      "notes": {
+        "blocker_reason": "product IA blocked",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "05_booking_shortcut",
+      "route": "/booking",
+      "route_family": "Booking shortcut",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/booking",
+      "aliases": [
+        "/sigil/booking"
+      ],
+      "alias_notes": null,
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED",
+      "surface_type": "page",
+      "page_owner": "Redirect Rule to /sigil/booking",
+      "api_owner": "unknown",
+      "current_owner": "not explicitly proven",
+      "current_front_gate": "likely mmd-redirect-worker or Webflow",
+      "ui_location": "unknown",
+      "backend_owner": "unknown",
+      "candidate_owner": "Redirect Rule to /sigil/booking",
+      "owner_decision": "TEMPORARY",
+      "owner_confidence": "LOW",
+      "compatibility_decision": "preserve if present",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "stale public shortcut possible",
+      "evidence": "not verified",
+      "conflicts": [
+        "/sigil/booking"
+      ],
+      "migration_phase": "Phase 2B or 6A",
+      "acceptance_requirements": [
+        "Verify current behavior",
+        "query policy before redirect rule migration."
+      ],
+      "notes": {
+        "blocker_reason": "stale public shortcut possible",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "06_public_access",
+      "route": "/public/access",
+      "route_family": "Public access",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com",
+        "Webflow"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/public/access",
+      "aliases": [
+        "/sigil/access"
+      ],
+      "alias_notes": null,
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED / UI MISSING",
+      "surface_type": "page",
+      "page_owner": null,
+      "api_owner": "public-access-worker for POST /public/api/access/intake",
+      "current_owner": "none proven for visible page",
+      "current_front_gate": "unknown",
+      "ui_location": "no exact visible /public/access handler proven; webflow/sigil/access/* is adjacent UI evidence only",
+      "backend_owner": "public-access-worker for separate intake API",
+      "candidate_owner": "unknown visible page owner; public-access-worker API remains separate",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "LOW",
+      "compatibility_decision": "none",
+      "production_verified": "source_config_verified_live_pending",
+      "production_verification": "visible page not verified; API source/config verified separately, live smoke pending",
+      "risk": "page absence must not downgrade intake API; public intake must remain evidence-only and cannot grant access",
+      "evidence": "No exact visible /public/access owner or handler proven; webflow/sigil/access/* is adjacent UI artifact evidence only. public-access-worker/src/index.js implements POST /public/api/access/intake; public-access-worker/wrangler.toml routes sigil.mmdbkk.com/public/api/*.",
+      "conflicts": [
+        "visible page route missing",
+        "page must not inherit API implementation proof",
+        "unknown /public/api/* subpaths are not implemented"
+      ],
+      "migration_phase": "Phase 2A",
+      "acceptance_requirements": [
+        "Identify or implement visible page owner.",
+        "Attach/prove /public/access page route.",
+        "Verify CTA/form integration to /public/api/access/intake.",
+        "Live-smoke POST /public/api/access/intake and OPTIONS.",
+        "Confirm allowed-Origin behavior, evidence-only response, and no access grant.",
+        "Confirm unknown /public/api/* subpaths fail closed."
+      ],
+      "notes": {
+        "blocker_reason": "visible page route owner and handler are missing/unverified; API implementation remains separate",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "07_sigil_start",
+      "route": "/sigil/start",
+      "route_family": "SIGIL start",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/sigil/start",
+      "aliases": [
+        "/trust/inme",
+        "/inme",
+        "/login",
+        "/trust",
+        "/members"
+      ],
+      "alias_notes": null,
+      "status": "ROUTE_ONLY_REDIRECT",
+      "status_display": "ROUTE ONLY / REDIRECT",
+      "surface_type": "page",
+      "page_owner": "Webflow",
+      "api_owner": "unknown",
+      "current_owner": "partial immigrate-worker shell evidence",
+      "current_front_gate": "mmd-redirect-worker aliases",
+      "ui_location": "immigrate-worker shell evidence",
+      "backend_owner": "unknown",
+      "candidate_owner": "Webflow",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "LOW",
+      "compatibility_decision": "retain aliases",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "legacy shell/catch-all dependency",
+      "evidence": "not verified",
+      "conflicts": [
+        "owner not normalized"
+      ],
+      "migration_phase": "Phase 2A",
+      "acceptance_requirements": [
+        "Prove exact page owner",
+        "query preservation."
+      ],
+      "notes": {
+        "blocker_reason": "legacy shell/catch-all dependency",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "08_trust_aliases",
+      "route": "/sigil/start",
+      "route_family": "Trust aliases",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/sigil/start",
+      "aliases": [
+        "/trust/inme",
+        "/inme",
+        "/login",
+        "/trust",
+        "/members"
+      ],
+      "alias_notes": null,
+      "status": "ROUTE_ONLY_REDIRECT",
+      "status_display": "ROUTE ONLY / REDIRECT",
+      "surface_type": "page",
+      "page_owner": "Cloudflare Redirect Rules later",
+      "api_owner": "unknown",
+      "current_owner": "mmd-redirect-worker",
+      "current_front_gate": "mmd-redirect-worker",
+      "ui_location": "unknown",
+      "backend_owner": "unknown",
+      "candidate_owner": "Cloudflare Redirect Rules later",
+      "owner_decision": "TEMPORARY",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "keep aliases",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "front gate retained",
+      "evidence": "not verified",
+      "conflicts": [
+        "no Cloudflare Redirect Rule yet"
+      ],
+      "migration_phase": "Phase 6A",
+      "acceptance_requirements": [
+        "/sigil/start"
+      ],
+      "notes": {
+        "blocker_reason": "front gate retained",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "09_sigil_access",
+      "route": "/sigil/access",
+      "route_family": "SIGIL access",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com",
+        "Webflow"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/sigil/access",
+      "aliases": [
+        "/public/access"
+      ],
+      "alias_notes": null,
+      "status": "UI_READY_BACKEND_MISSING",
+      "status_display": "UI READY / BACKEND MISSING",
+      "surface_type": "page",
+      "page_owner": "Webflow",
+      "api_owner": "future public access API",
+      "current_owner": "Webflow artifact only",
+      "current_front_gate": "unknown",
+      "ui_location": "webflow/sigil/access/*",
+      "backend_owner": "future public access API",
+      "candidate_owner": "Webflow",
+      "owner_decision": "TEMPORARY",
+      "owner_confidence": "MEDIUM",
+      "compatibility_decision": "keep as UI artifact until IA decision",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "aftercare redirect in JS must not become truth",
+      "evidence": "not verified",
+      "conflicts": [
+        "/public/access"
+      ],
+      "migration_phase": "Phase 2A",
+      "acceptance_requirements": [
+        "Verify published route",
+        "blocked frontend state writes."
+      ],
+      "notes": {
+        "blocker_reason": "aftercare redirect in JS must not become truth",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "10_recovery",
+      "route": "/sigil/recovery",
+      "route_family": "Recovery",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com",
+        "Webflow"
+      ],
+      "methods": [
+        "GET",
+        "HEAD",
+        "POST_FOR_APIS"
+      ],
+      "canonical_route": "/sigil/recovery",
+      "aliases": [
+        "recovery complaint/coupon subroutes"
+      ],
+      "alias_notes": null,
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED",
+      "surface_type": "page_or_api",
+      "page_owner": "Webflow page plus explicit recovery API Worker",
+      "api_owner": "mmd-care-intake-worker or sigil-worker APIs",
+      "current_owner": "split evidence",
+      "current_front_gate": "unknown",
+      "ui_location": "immigrate-worker/public/sigil/recovery/*",
+      "backend_owner": "mmd-care-intake-worker or sigil-worker APIs",
+      "candidate_owner": "Webflow page plus explicit recovery API Worker",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "private care data exposure if wrong owner",
+      "evidence": "not verified",
+      "conflicts": [
+        "duplicate API implementations"
+      ],
+      "migration_phase": "Phase 2A or 6",
+      "acceptance_requirements": [
+        "Choose one API owner",
+        "prove no generic shell."
+      ],
+      "notes": {
+        "blocker_reason": "private care data exposure if wrong owner",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "11_aftercare",
+      "route": "/sigil/aftercare",
+      "route_family": "Aftercare",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com",
+        "Webflow"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/sigil/aftercare",
+      "aliases": [
+        "/aftercare"
+      ],
+      "alias_notes": null,
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED",
+      "surface_type": "page",
+      "page_owner": "Webflow",
+      "api_owner": "none proven",
+      "current_owner": "none proven",
+      "current_front_gate": "unknown",
+      "ui_location": "JS references only",
+      "backend_owner": "none proven",
+      "candidate_owner": "Webflow",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "IA only",
+      "evidence": "not verified",
+      "conflicts": [
+        "no exact implementation evidence"
+      ],
+      "migration_phase": "Phase 2A",
+      "acceptance_requirements": [
+        "Prove route exists or defer/remove by approval."
+      ],
+      "notes": {
+        "blocker_reason": "IA only",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "12_booking_page",
+      "route": "/sigil/booking",
+      "route_family": "Booking page",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com",
+        "sigil.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/sigil/booking",
+      "aliases": [
+        "/sigil/booking/",
+        "/booking"
+      ],
+      "alias_notes": null,
+      "status": "PARTIAL_INTEGRATION",
+      "status_display": "PARTIAL INTEGRATION",
+      "surface_type": "page",
+      "page_owner": "sigil-booking-proxy-worker for route, Webflow for visible UI",
+      "api_owner": "sigil-booking-worker for APIs",
+      "current_owner": "sigil-booking-proxy-worker",
+      "current_front_gate": "direct route config, older front gate not canonical",
+      "ui_location": "Webflow page proxied through Worker",
+      "backend_owner": "sigil-booking-worker for APIs",
+      "candidate_owner": "sigil-booking-proxy-worker for route, Webflow for visible UI",
+      "owner_decision": "LOCKED",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "keep /booking if present",
+      "production_verified": "unverified",
+      "production_verification": "registry evidence only; live not reverified here",
+      "risk": "Webflow source must stay current",
+      "evidence": "registry evidence only; live not reverified here",
+      "conflicts": [
+        "stale/default page risk"
+      ],
+      "migration_phase": "Phase 2B",
+      "acceptance_requirements": [
+        "Verify apex/www redirect",
+        "sigil host proxy",
+        "safe query allowlist",
+        "stale marker absence."
+      ],
+      "notes": {
+        "blocker_reason": null,
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "13_booking_apis",
+      "route": "/sigil/api/* booking subset",
+      "route_family": "Booking APIs",
+      "hosts": [
+        "sigil.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "canonical_route": "/sigil/api/* booking subset",
+      "aliases": [],
+      "alias_notes": null,
+      "status": "PARTIAL_INTEGRATION",
+      "status_display": "PARTIAL INTEGRATION",
+      "surface_type": "page_or_api",
+      "page_owner": "sigil-booking-worker implementation only",
+      "api_owner": "sigil-booking-worker repository handlers",
+      "current_owner": "sigil-booking-worker implementation only",
+      "current_front_gate": "workers.dev config only; custom-host route attachment missing/unverified",
+      "ui_location": "unknown",
+      "backend_owner": "sigil-booking-worker repository handlers",
+      "candidate_owner": "sigil-booking-worker handler candidate pending route binding",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "MEDIUM",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "not verified; custom-host route attachment absent from sigil-booking-worker/wrangler.toml",
+      "risk": "API route family broadness; workers.dev must not become canonical production owner",
+      "evidence": "sigil-booking-worker/src/index.js implements POST /sigil/api/client/resolve, GET|POST /sigil/api/models/search, and POST /sigil/api/booking/intake; sigil-booking-worker/wrangler.toml has workers_dev = true and no custom-host [[routes]]; README mapping is suggested only",
+      "conflicts": [
+        "namespace may include non-booking APIs later",
+        "custom-host route attachment unproven"
+      ],
+      "migration_phase": "Phase 2B",
+      "acceptance_requirements": [
+        "Add/prove exact custom-host binding for /sigil/api/client/resolve",
+        "Add/prove exact custom-host binding for /sigil/api/models/search",
+        "Add/prove exact custom-host binding for /sigil/api/booking/intake",
+        "production acceptance must prove methods and fail-closed unknown subpaths"
+      ],
+      "notes": {
+        "blocker_reason": "custom-host route attachment missing/unverified",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "14_member_login",
+      "route": "/member/login",
+      "route_family": "Member login",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD",
+        "POST/API_TBD"
+      ],
+      "canonical_route": "/member/login",
+      "aliases": [],
+      "alias_notes": null,
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED",
+      "surface_type": "page_or_api",
+      "page_owner": "admin-worker or auth Worker TBD",
+      "api_owner": "auth/session owner TBD",
+      "current_owner": "none proven",
+      "current_front_gate": "unknown",
+      "ui_location": "none proven",
+      "backend_owner": "auth/session owner TBD",
+      "candidate_owner": "admin-worker or auth Worker TBD",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "Memberstack must not return as target",
+      "evidence": "not verified",
+      "conflicts": [
+        "target login contract absent"
+      ],
+      "migration_phase": "Phase 3A",
+      "acceptance_requirements": [
+        "mmd_member_id"
+      ],
+      "notes": {
+        "blocker_reason": "Memberstack must not return as target",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "15_member_dashboard",
+      "route": "/member/dashboard",
+      "route_family": "Member dashboard",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/member/dashboard",
+      "aliases": [
+        "/member"
+      ],
+      "alias_notes": null,
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED",
+      "surface_type": "page",
+      "page_owner": "TBD non-legacy owner",
+      "api_owner": "unknown; /v1/member/dashboard handler not proven",
+      "current_owner": "immigrate-worker temporary page renderer",
+      "current_front_gate": "mmd-redirect-worker page route to immigrate-worker; no dashboard API rewrite proven",
+      "ui_location": "legacy dashboard shell in immigrate-worker",
+      "backend_owner": "unresolved dashboard API contract; /v1/member/dashboard and /api/member/dashboard handlers/mapping not proven",
+      "candidate_owner": "TBD non-legacy page owner; API owner TBD",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "keep /member alias",
+      "production_verified": "unverified",
+      "production_verification": "page source/config evidence only; API not verified",
+      "risk": "legacy page dependency; dashboard UI may depend on API endpoint returning 404 or fall-through",
+      "evidence": "mmd-redirect-worker/src/index.js handles /member/dashboard as page route via fetchMemberFrontend; immigrate-worker/src/index.ts renders /member/dashboard; no exact /v1/member/dashboard, /api/member/dashboard, or /member/api/dashboard handler found in current source scan",
+      "conflicts": [
+        "legacy page dependency",
+        "backend API handler missing",
+        "alias/rewrite mapping missing or unverified"
+      ],
+      "migration_phase": "Phase 3A",
+      "acceptance_requirements": [
+        "Separate /member/dashboard page route from /v1/member/dashboard API contract.",
+        "Select non-legacy dashboard page owner and auth.",
+        "Implement/prove /v1/member/dashboard or approved replacement API.",
+        "Prove /api/member/dashboard alias or remove it from contract.",
+        "Keep mmd_member_id as target identity."
+      ],
+      "notes": {
+        "blocker_reason": "member dashboard backend API handler and alias mapping are not proven",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "16_member_membership",
+      "route": "/member/membership",
+      "route_family": "Member membership",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/member/membership",
+      "aliases": [
+        "/membership"
+      ],
+      "alias_notes": null,
+      "status": "PARTIAL_INTEGRATION",
+      "status_display": "PARTIAL INTEGRATION",
+      "surface_type": "page",
+      "page_owner": "member-pages-worker",
+      "api_owner": "payment APIs separate",
+      "current_owner": "member-pages-worker",
+      "current_front_gate": "mmd-redirect-worker",
+      "ui_location": "Worker-rendered page",
+      "backend_owner": "payment APIs separate",
+      "candidate_owner": "member-pages-worker",
+      "owner_decision": "LOCKED",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "keep aliases",
+      "production_verified": "unverified",
+      "production_verification": "not live verified here",
+      "risk": "page is not payment truth",
+      "evidence": "not live verified here",
+      "conflicts": [
+        "front gate dependency"
+      ],
+      "migration_phase": "Phase 3A",
+      "acceptance_requirements": [
+        "Verify query preservation",
+        "no auto-renewal redirect."
+      ],
+      "notes": {
+        "blocker_reason": null,
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "17_member_payments",
+      "route": "/member/payments",
+      "route_family": "Member payments",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/member/payments",
+      "aliases": [],
+      "alias_notes": null,
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED",
+      "surface_type": "page",
+      "page_owner": "TBD page owner; APIs server-side",
+      "api_owner": "payments-worker and admin-worker review",
+      "current_owner": "admin-worker currently",
+      "current_front_gate": "mmd-redirect-worker",
+      "ui_location": "admin/member payment surface",
+      "backend_owner": "payments-worker and admin-worker review",
+      "candidate_owner": "TBD page owner; APIs server-side",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "exposing admin context to member route",
+      "evidence": "not verified",
+      "conflicts": [
+        "member page vs admin owner ambiguity"
+      ],
+      "migration_phase": "Phase 3A/5",
+      "acceptance_requirements": [
+        "Separate member payment status UI from admin review APIs."
+      ],
+      "notes": {
+        "blocker_reason": "exposing admin context to member route",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "18_member_profile",
+      "route": "/member/profile",
+      "route_family": "Member profile",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/member/profile",
+      "aliases": [],
+      "alias_notes": null,
+      "status": "UI_READY_BACKEND_MISSING",
+      "status_display": "UI READY / BACKEND MISSING",
+      "surface_type": "page",
+      "page_owner": "member-pages-worker temporary",
+      "api_owner": "member status backend TBD",
+      "current_owner": "member-pages-worker",
+      "current_front_gate": "mmd-redirect-worker",
+      "ui_location": "Worker-rendered placeholder/status page",
+      "backend_owner": "member status backend TBD",
+      "candidate_owner": "member-pages-worker temporary",
+      "owner_decision": "TEMPORARY",
+      "owner_confidence": "MEDIUM",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "profile page may imply active state",
+      "evidence": "not verified",
+      "conflicts": [
+        "status truth not fully defined"
+      ],
+      "migration_phase": "Phase 3A",
+      "acceptance_requirements": [
+        "Verify trusted state source before LOCKED."
+      ],
+      "notes": {
+        "blocker_reason": "profile page may imply active state",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "19_member_points",
+      "route": "/member/points",
+      "route_family": "Member points",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/member/points",
+      "aliases": [],
+      "alias_notes": null,
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED",
+      "surface_type": "page",
+      "page_owner": "TBD",
+      "api_owner": "unknown",
+      "current_owner": "none proven",
+      "current_front_gate": "unknown",
+      "ui_location": "unknown",
+      "backend_owner": "unknown",
+      "candidate_owner": "TBD",
+      "owner_decision": "NOT_IMPLEMENTED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "points logic protected",
+      "evidence": "not verified",
+      "conflicts": [
+        "future IA only"
+      ],
+      "migration_phase": "Phase 3",
+      "acceptance_requirements": [
+        "Implement only after approved member points contract."
+      ],
+      "notes": {
+        "blocker_reason": "points logic protected",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "20_member_sessions",
+      "route": "/member/sessions",
+      "route_family": "Member sessions",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/member/sessions",
+      "aliases": [],
+      "alias_notes": null,
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED",
+      "surface_type": "page",
+      "page_owner": "TBD",
+      "api_owner": "unknown",
+      "current_owner": "none proven",
+      "current_front_gate": "unknown",
+      "ui_location": "unknown",
+      "backend_owner": "unknown",
+      "candidate_owner": "TBD",
+      "owner_decision": "NOT_IMPLEMENTED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "session data sensitive",
+      "evidence": "not verified",
+      "conflicts": [
+        "future IA only"
+      ],
+      "migration_phase": "Phase 3",
+      "acceptance_requirements": [
+        "Implement only after approved member session contract."
+      ],
+      "notes": {
+        "blocker_reason": "session data sensitive",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "21_member_security",
+      "route": "/member/security",
+      "route_family": "Member security",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/member/security",
+      "aliases": [],
+      "alias_notes": null,
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED",
+      "surface_type": "page",
+      "page_owner": "TBD",
+      "api_owner": "unknown",
+      "current_owner": "none proven",
+      "current_front_gate": "unknown",
+      "ui_location": "unknown",
+      "backend_owner": "unknown",
+      "candidate_owner": "TBD",
+      "owner_decision": "NOT_IMPLEMENTED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "auth/security sensitive",
+      "evidence": "not verified",
+      "conflicts": [
+        "future IA only"
+      ],
+      "migration_phase": "Phase 3",
+      "acceptance_requirements": [
+        "Implement only after approved auth/security contract."
+      ],
+      "notes": {
+        "blocker_reason": "auth/security sensitive",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "22_member_apply_canonical",
+      "route": "/sigil/member/apply",
+      "route_family": "Member apply canonical",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com",
+        "Webflow"
+      ],
+      "methods": [
+        "GET",
+        "HEAD",
+        "POST_API_SEPARATE"
+      ],
+      "canonical_route": "/sigil/member/apply",
+      "aliases": [
+        "/member/apply"
+      ],
+      "alias_notes": null,
+      "status": "UI_READY_BACKEND_MISSING",
+      "status_display": "UI READY / BACKEND MISSING",
+      "surface_type": "page_or_api",
+      "page_owner": "Webflow page plus explicit backend TBD",
+      "api_owner": "/v1/member/applications missing",
+      "current_owner": "Webflow artifact only",
+      "current_front_gate": "unknown",
+      "ui_location": "webflow/member/apply/*",
+      "backend_owner": "/v1/member/applications missing",
+      "candidate_owner": "Webflow page plus explicit backend TBD",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "keep /member/apply alias",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "member application data cannot rely on frontend",
+      "evidence": "not verified",
+      "conflicts": [
+        "backend absent"
+      ],
+      "migration_phase": "Phase 3B",
+      "acceptance_requirements": [
+        "Add/prove backend owner before live lock."
+      ],
+      "notes": {
+        "blocker_reason": "member application data cannot rely on frontend",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "23_member_apply_alias",
+      "route": "/member/apply",
+      "route_family": "Member apply alias",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/member/apply",
+      "aliases": [
+        "/sigil/member/apply"
+      ],
+      "alias_notes": null,
+      "status": "ROUTE_ONLY_REDIRECT",
+      "status_display": "ROUTE ONLY / REDIRECT",
+      "surface_type": "page",
+      "page_owner": "Redirect/pass-through compatibility",
+      "api_owner": "unknown",
+      "current_owner": "mmd-redirect-worker pass-through",
+      "current_front_gate": "mmd-redirect-worker",
+      "ui_location": "Webflow pass-through",
+      "backend_owner": "unknown",
+      "candidate_owner": "Redirect/pass-through compatibility",
+      "owner_decision": "TEMPORARY",
+      "owner_confidence": "MEDIUM",
+      "compatibility_decision": "keep",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "alias may mask missing canonical route",
+      "evidence": "not verified",
+      "conflicts": [
+        "alias currently not canonical"
+      ],
+      "migration_phase": "Phase 6A",
+      "acceptance_requirements": [
+        "Remove/migrate only after canonical apply route is live."
+      ],
+      "notes": {
+        "blocker_reason": "alias may mask missing canonical route",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "24_payment_membership_page",
+      "route": "/pay/membership",
+      "route_family": "Payment membership page",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD",
+        "POST_FORM_->_API"
+      ],
+      "canonical_route": "/pay/membership",
+      "aliases": [],
+      "alias_notes": null,
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED",
+      "surface_type": "page_or_api",
+      "page_owner": "member-pages-worker page, payments-worker APIs",
+      "api_owner": "payments-worker APIs expected",
+      "current_owner": "member-pages-worker",
+      "current_front_gate": "mmd-redirect-worker",
+      "ui_location": "Worker-rendered payment evidence page",
+      "backend_owner": "payments-worker APIs expected",
+      "candidate_owner": "member-pages-worker page, payments-worker APIs",
+      "owner_decision": "LOCKED",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "proof cannot activate membership",
+      "evidence": "not verified",
+      "conflicts": [
+        "payment API ownership not fully mapped"
+      ],
+      "migration_phase": "Phase 2/7",
+      "acceptance_requirements": [
+        "Verify evidence submission owner",
+        "pending state."
+      ],
+      "notes": {
+        "blocker_reason": null,
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "25_payment_pending",
+      "route": "/pay/pending-verification",
+      "route_family": "Payment pending",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/pay/pending-verification",
+      "aliases": [],
+      "alias_notes": null,
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED",
+      "surface_type": "page",
+      "page_owner": "member-pages-worker page",
+      "api_owner": "payments-worker/admin review",
+      "current_owner": "member-pages-worker",
+      "current_front_gate": "mmd-redirect-worker",
+      "ui_location": "Worker-rendered pending page",
+      "backend_owner": "payments-worker/admin review",
+      "candidate_owner": "member-pages-worker page",
+      "owner_decision": "LOCKED",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "user may infer approval",
+      "evidence": "not verified",
+      "conflicts": [
+        "backend pending status API separate"
+      ],
+      "migration_phase": "Phase 2/7",
+      "acceptance_requirements": [
+        "Verify no activation from proof alone."
+      ],
+      "notes": {
+        "blocker_reason": null,
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "26_renewal_canonical",
+      "route": "/sigil/pay/renewal",
+      "route_family": "Renewal canonical",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com",
+        "sigil.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/sigil/pay/renewal",
+      "aliases": [
+        "/pay/renewal"
+      ],
+      "alias_notes": null,
+      "status": "PARTIAL_INTEGRATION",
+      "status_display": "PARTIAL INTEGRATION",
+      "surface_type": "page",
+      "page_owner": "member-dashboard-chat-worker candidate renderer pending route proof",
+      "api_owner": "payment/review APIs separate",
+      "current_owner": "member-pages-worker manual legacy safety via front gate; member-dashboard-chat-worker renderer candidate",
+      "current_front_gate": "mmd-redirect-worker on current repo evidence",
+      "ui_location": "manual legacy safety page; renderer candidate unverified",
+      "backend_owner": "payment/review APIs separate",
+      "candidate_owner": "member-dashboard-chat-worker candidate renderer pending route proof",
+      "owner_decision": "TEMPORARY",
+      "owner_confidence": "MEDIUM",
+      "compatibility_decision": "keep /pay/renewal compatibility until audit",
+      "production_verified": "unverified",
+      "production_verification": "not verified; exact production route owner unresolved",
+      "risk": "route precedence and production attachment not proven; renewal UI must not verify payment",
+      "evidence": "not verified; exact production route owner unresolved",
+      "conflicts": [
+        "member-dashboard-chat-worker/wrangler.toml"
+      ],
+      "migration_phase": "Phase 3/7",
+      "acceptance_requirements": [
+        "Audit exact route config",
+        "production winner",
+        "GET/HEAD/slash/query behavior",
+        "Webflow bridge before locking owner."
+      ],
+      "notes": {
+        "blocker_reason": "route precedence and production attachment not proven; renewal UI must not verify payment",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "27_renewal_alias",
+      "route": "/pay/renewal",
+      "route_family": "Renewal alias",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com",
+        "sigil.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/pay/renewal",
+      "aliases": [
+        "/sigil/pay/renewal"
+      ],
+      "alias_notes": null,
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED",
+      "surface_type": "page",
+      "page_owner": "member-dashboard-chat-worker candidate renderer pending route proof",
+      "api_owner": "payment/review APIs separate",
+      "current_owner": "none proven in current route config; historical chat-worker renderer evidence only",
+      "current_front_gate": "unknown or route precedence outside current front-gate proof",
+      "ui_location": "renderer candidate unverified",
+      "backend_owner": "payment/review APIs separate",
+      "candidate_owner": "member-dashboard-chat-worker candidate renderer pending route proof",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "keep compatibility until Phase 6 after route proof",
+      "production_verified": "unverified",
+      "production_verification": "not verified; exact production route owner unresolved",
+      "risk": "alias removal or ownership would be unsafe before route audit",
+      "evidence": "not verified; exact production route owner unresolved",
+      "conflicts": [
+        "member-dashboard-chat-worker/wrangler.toml"
+      ],
+      "migration_phase": "Phase 6A",
+      "acceptance_requirements": [
+        "Verify exact route attachment",
+        "production winner",
+        "query preservation",
+        "GET/HEAD/slash behavior",
+        "then decide alias owner."
+      ],
+      "notes": {
+        "blocker_reason": "alias removal or ownership would be unsafe before route audit",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "28_sigil_membership_payment",
+      "route": "/sigil/pay/membership",
+      "route_family": "SIGIL membership payment",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/sigil/pay/membership",
+      "aliases": [],
+      "alias_notes": null,
+      "status": "ROUTE_ONLY_REDIRECT",
+      "status_display": "ROUTE ONLY / REDIRECT",
+      "surface_type": "page",
+      "page_owner": "member-pages-worker temporary lock",
+      "api_owner": "payment API separate",
+      "current_owner": "member-pages-worker safety page",
+      "current_front_gate": "mmd-redirect-worker never-redirect",
+      "ui_location": "Worker safety/fallback page",
+      "backend_owner": "payment API separate",
+      "candidate_owner": "member-pages-worker temporary lock",
+      "owner_decision": "TEMPORARY",
+      "owner_confidence": "MEDIUM",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "route lock can be mistaken as final payment owner",
+      "evidence": "not verified",
+      "conflicts": [
+        "may be Webflow target later"
+      ],
+      "migration_phase": "Phase 2/7",
+      "acceptance_requirements": [
+        "Decide final membership payment UI/API split."
+      ],
+      "notes": {
+        "blocker_reason": "route lock can be mistaken as final payment owner",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "29_generic_sigil_pay",
+      "route": "/sigil/pay",
+      "route_family": "Generic SIGIL pay",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com",
+        "sigil.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/sigil/pay",
+      "aliases": [],
+      "alias_notes": null,
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED",
+      "surface_type": "page",
+      "page_owner": "unknown",
+      "api_owner": "unknown",
+      "current_owner": "none proven",
+      "current_front_gate": "unknown",
+      "ui_location": "unknown",
+      "backend_owner": "unknown",
+      "candidate_owner": "unknown",
+      "owner_decision": "NOT_IMPLEMENTED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "must not be invented",
+      "evidence": "not verified",
+      "conflicts": [
+        "no implementation"
+      ],
+      "migration_phase": "Phase 7",
+      "acceptance_requirements": [
+        "Do not lock without real implementation."
+      ],
+      "notes": {
+        "blocker_reason": "must not be invented",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "30_private_model_apply_page",
+      "route": "/sigil/apply",
+      "route_family": "Private model apply page",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/sigil/apply",
+      "aliases": [
+        "/sigil/apply/"
+      ],
+      "alias_notes": null,
+      "status": "PARTIAL_INTEGRATION",
+      "status_display": "PARTIAL INTEGRATION",
+      "surface_type": "page",
+      "page_owner": "sigil-worker candidate target pending implementation",
+      "api_owner": "sigil-worker candidate target only",
+      "current_owner": "mmd-redirect-worker delegates to SIGIL_WORKER; target handler absent in current sigil-worker/src/index.js",
+      "current_front_gate": "mmd-redirect-worker",
+      "ui_location": "UI/page handler missing or unverified in sigil-worker",
+      "backend_owner": "sigil-worker candidate target only",
+      "candidate_owner": "sigil-worker candidate target pending implementation",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "slash alias retained only as compatibility",
+      "production_verified": "unverified",
+      "production_verification": "not verified; target handler and production route incomplete",
+      "risk": "target Worker currently falls through to not_found; private model entry must not lock without handler proof",
+      "evidence": "not verified; target handler and production route incomplete",
+      "conflicts": [
+        "front gate delegation without matching target handler"
+      ],
+      "migration_phase": "Phase 4A",
+      "acceptance_requirements": [
+        "Implement/prove GET/HEAD handler",
+        "slash/query behavior",
+        "owner headers",
+        "no stale Telegram brief."
+      ],
+      "notes": {
+        "blocker_reason": "target Worker currently falls through to not_found; private model entry must not lock without handler proof",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "31_private_model_apply_api",
+      "route": "/sigil/api/private-model/apply",
+      "route_family": "Private model apply API",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "POST",
+        "OPTIONS"
+      ],
+      "canonical_route": "/sigil/api/private-model/apply",
+      "aliases": [
+        "slash variant"
+      ],
+      "alias_notes": null,
+      "status": "PARTIAL_INTEGRATION",
+      "status_display": "PARTIAL INTEGRATION",
+      "surface_type": "page_or_api",
+      "page_owner": "sigil-worker candidate target pending implementation",
+      "api_owner": "sigil-worker candidate target only",
+      "current_owner": "mmd-redirect-worker delegates to SIGIL_WORKER; target handler absent in current sigil-worker/src/index.js",
+      "current_front_gate": "mmd-redirect-worker",
+      "ui_location": "unknown",
+      "backend_owner": "sigil-worker candidate target only",
+      "candidate_owner": "sigil-worker candidate target pending implementation",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "slash alias retained only as compatibility",
+      "production_verified": "unverified",
+      "production_verification": "not verified; target handler and request contract incomplete",
+      "risk": "POST/OPTIONS/body preservation cannot be locked until target API exists",
+      "evidence": "not verified; target handler and request contract incomplete",
+      "conflicts": [
+        "front gate delegation without matching target handler"
+      ],
+      "migration_phase": "Phase 4A",
+      "acceptance_requirements": [
+        "Implement/prove POST/OPTIONS handler",
+        "auth",
+        "body preservation",
+        "route attachment",
+        "no Webflow pass-through."
+      ],
+      "notes": {
+        "blocker_reason": "POST/OPTIONS/body preservation cannot be locked until target API exists",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "32_model_confirm",
+      "route": "/sigil/apply/private-model-confirm",
+      "route_family": "Model confirm",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com",
+        "sigil.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "POST_TBD"
+      ],
+      "canonical_route": "/sigil/apply/private-model-confirm",
+      "aliases": [
+        "model confirmation routes"
+      ],
+      "alias_notes": null,
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED",
+      "surface_type": "page_or_api",
+      "page_owner": "TBD",
+      "api_owner": "admin/model session APIs exist",
+      "current_owner": "none proven",
+      "current_front_gate": "unknown",
+      "ui_location": "none proven",
+      "backend_owner": "admin/model session APIs exist",
+      "candidate_owner": "TBD",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "model identity sensitive",
+      "evidence": "not verified",
+      "conflicts": [
+        "incomplete evidence"
+      ],
+      "migration_phase": "Phase 4A",
+      "acceptance_requirements": [
+        "Define confirm route contract",
+        "owner."
+      ],
+      "notes": {
+        "blocker_reason": "model identity sensitive",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "33_model_console_canonical",
+      "route": "/sigil/model/console",
+      "route_family": "Model console canonical",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com",
+        "sigil.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/sigil/model/console",
+      "aliases": [
+        "/model/console"
+      ],
+      "alias_notes": null,
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED",
+      "surface_type": "page",
+      "page_owner": "TBD Worker or Webflow",
+      "api_owner": "admin-worker model session APIs",
+      "current_owner": "none proven",
+      "current_front_gate": "unknown",
+      "ui_location": "none proven",
+      "backend_owner": "admin-worker model session APIs",
+      "candidate_owner": "TBD Worker or Webflow",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "keep /model/console temporary",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "contradictory evidence",
+      "evidence": "not verified",
+      "conflicts": [
+        "/model/console"
+      ],
+      "migration_phase": "Phase 4B",
+      "acceptance_requirements": [
+        "Choose visible console owner",
+        "prove auth."
+      ],
+      "notes": {
+        "blocker_reason": "contradictory evidence",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "34_model_console_legacy",
+      "route": "/model/console",
+      "route_family": "Model console legacy",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/model/console",
+      "aliases": [
+        "/sigil/model/console"
+      ],
+      "alias_notes": null,
+      "status": "LEGACY",
+      "status_display": "LEGACY",
+      "surface_type": "page",
+      "page_owner": "alias/remove later",
+      "api_owner": "model session APIs elsewhere",
+      "current_owner": "mmd-redirect-worker recovery shell",
+      "current_front_gate": "mmd-redirect-worker",
+      "ui_location": "temporary shell",
+      "backend_owner": "model session APIs elsewhere",
+      "candidate_owner": "alias/remove later",
+      "owner_decision": "REMOVE_LATER",
+      "owner_confidence": "MEDIUM",
+      "compatibility_decision": "keep until replacement live",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "generic recovery shell not valid page",
+      "evidence": "not verified",
+      "conflicts": [
+        "not canonical"
+      ],
+      "migration_phase": "Phase 6",
+      "acceptance_requirements": [
+        "Remove only after canonical console passes acceptance."
+      ],
+      "notes": {
+        "blocker_reason": null,
+        "remove_later_decision": "keep until replacement live"
+      }
+    },
+    {
+      "route_id": "35_model_client_brief",
+      "route": "/sigil/model/client-brief",
+      "route_family": "Model client brief",
+      "hosts": [
+        "sigil.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/sigil/model/client-brief",
+      "aliases": [],
+      "alias_notes": null,
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED",
+      "surface_type": "page",
+      "page_owner": "TBD",
+      "api_owner": "admin/model session APIs",
+      "current_owner": "none proven",
+      "current_front_gate": "unknown",
+      "ui_location": "unknown",
+      "backend_owner": "admin/model session APIs",
+      "candidate_owner": "TBD",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "private brief sensitive",
+      "evidence": "not verified",
+      "conflicts": [
+        "no route owner"
+      ],
+      "migration_phase": "Phase 4B",
+      "acceptance_requirements": [
+        "Prove route",
+        "auth",
+        "private data boundaries."
+      ],
+      "notes": {
+        "blocker_reason": "private brief sensitive",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "36_internal_admin_login",
+      "route": "/internal/admin/login",
+      "route_family": "Internal admin login",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD",
+        "POST session",
+        "DELETE session"
+      ],
+      "canonical_route": "/internal/admin/login",
+      "aliases": [
+        "/internal/admin/login/session",
+        "/sigil/internal/admin/* legacy redirects"
+      ],
+      "alias_notes": null,
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED",
+      "surface_type": "internal_admin_auth_surface",
+      "page_owner": "admin-worker",
+      "api_owner": "admin-worker",
+      "current_owner": "admin-worker",
+      "current_front_gate": "exact apex/www routes in admin-worker/wrangler.toml",
+      "ui_location": "admin-worker login page",
+      "backend_owner": "admin-worker signed-session and logout handlers",
+      "candidate_owner": "admin-worker",
+      "owner_decision": "LOCKED",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "keep legacy SIGIL redirects only where proven",
+      "production_verified": "source_config_verified_live_pending",
+      "production_verification": "source/config verified; live production smoke pending",
+      "risk": "admin auth sensitive; cookie security must follow source behavior",
+      "evidence": "admin-worker/wrangler.toml exact /internal/admin/login and /internal/admin/login/session apex/www routes; admin-worker/src/index.js renders login, verifies POST, issues HMAC-signed HttpOnly Secure SameSite=Lax cookie, and handles DELETE logout; admin-worker/admin-login-session.test.mjs covers route config and session behavior",
+      "conflicts": [
+        "no broad /internal/admin/* route; exact login/session only"
+      ],
+      "migration_phase": "Phase 5A",
+      "acceptance_requirements": [
+        "Live-smoke GET /internal/admin/login without exposing credentials.",
+        "Live-smoke POST /internal/admin/login/session safely.",
+        "Live-smoke DELETE /internal/admin/login/session logout safely.",
+        "Confirm HMAC-signed HttpOnly Secure SameSite=Lax host-only cookie behavior.",
+        "Confirm logout clears the admin session cookie.",
+        "Confirm no broad internal admin wildcard route is introduced."
+      ],
+      "notes": {
+        "blocker_reason": "live production smoke pending only",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "37_internal_admin_dashboard",
+      "route": "/internal/admin/dashboard",
+      "route_family": "Internal admin dashboard",
+      "hosts": [
+        "internal hosts"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/internal/admin/dashboard",
+      "aliases": [],
+      "alias_notes": null,
+      "status": "UNRESOLVED",
+      "status_display": "UNRESOLVED",
+      "surface_type": "page",
+      "page_owner": "admin-worker",
+      "api_owner": "admin-worker",
+      "current_owner": "none proven",
+      "current_front_gate": "unknown",
+      "ui_location": "none proven",
+      "backend_owner": "admin-worker",
+      "candidate_owner": "admin-worker",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "BLOCKED",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "not verified",
+      "risk": "admin data sensitive",
+      "evidence": "not verified",
+      "conflicts": [
+        "surface owner missing"
+      ],
+      "migration_phase": "Phase 5A",
+      "acceptance_requirements": [
+        "Prove explicit owner",
+        "no unsigned cookies."
+      ],
+      "notes": {
+        "blocker_reason": "admin data sensitive",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "38_internal_admin_create_session_page",
+      "route": "/internal/admin/jobs/create-session",
+      "route_family": "Internal admin create session page",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/internal/admin/jobs/create-session",
+      "aliases": [
+        "/internal/admin/create-session"
+      ],
+      "alias_notes": "/internal/admin/create-session is a legacy 308 redirect to /internal/admin/jobs/create-session with query preserved.",
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED",
+      "surface_type": "internal_admin_page",
+      "page_owner": "immigrate-worker",
+      "api_owner": "admin-worker create/session APIs through /v1/admin/create-session bridge",
+      "current_owner": "immigrate-worker",
+      "current_front_gate": "exact apex/www routes in immigrate-worker/wrangler.toml; legacy /internal/admin/create-session route redirects 308",
+      "ui_location": "immigrate-worker renderCreateSessionPage",
+      "backend_owner": "admin-worker create/session APIs through ADMIN_WORKER bridge",
+      "candidate_owner": "immigrate-worker ingress with admin-worker backend",
+      "owner_decision": "TEMPORARY",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "keep legacy redirect to /internal/admin/jobs/create-session",
+      "production_verified": "source_config_verified_live_pending",
+      "production_verification": "source/config verified; live production smoke pending",
+      "risk": "job creation sensitive",
+      "evidence": "immigrate-worker/wrangler.toml exact apex/www routes for /internal/admin/jobs/create-session* and /internal/admin/create-session*; immigrate-worker/src/internal-routes.ts redirects the legacy path and renders renderCreateSessionPage(env); immigrate-worker/src/internal-pages.ts defines the create-session page; internal admin gate bridge tests cover route patterns and page loading.",
+      "conflicts": [
+        "temporary ingress must not be collapsed into admin-worker wildcard before accepted migration"
+      ],
+      "migration_phase": "Phase 5B",
+      "acceptance_requirements": [
+        "Verify admin gate.",
+        "Verify page asset loading.",
+        "Verify /internal/admin/create-session redirects to /internal/admin/jobs/create-session with query preserved.",
+        "Verify backend bridge behavior before migration."
+      ],
+      "notes": {
+        "blocker_reason": "production smoke pending only; migration still requires acceptance",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "38b_internal_create_job_page",
+      "route": "/internal/jobs/create-job",
+      "route_family": "Internal create job page",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/internal/jobs/create-job",
+      "aliases": [],
+      "alias_notes": "This is a separate implemented page, not an alias of /internal/admin/jobs/create-session.",
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED",
+      "surface_type": "internal_admin_page",
+      "page_owner": "immigrate-worker",
+      "api_owner": "admin-worker create-job API through /v1/admin/create-job bridge",
+      "current_owner": "immigrate-worker",
+      "current_front_gate": "exact apex/www routes in immigrate-worker/wrangler.toml",
+      "ui_location": "immigrate-worker renderCreateJobPage",
+      "backend_owner": "admin-worker create-job API through ADMIN_WORKER bridge",
+      "candidate_owner": "immigrate-worker ingress with admin-worker backend",
+      "owner_decision": "TEMPORARY",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "none",
+      "production_verified": "source_config_verified_live_pending",
+      "production_verification": "source/config verified; live production smoke pending",
+      "risk": "job creation sensitive",
+      "evidence": "immigrate-worker/wrangler.toml exact apex/www routes for /internal/jobs/create-job*; immigrate-worker/src/internal-routes.ts renders renderCreateJobPage(); immigrate-worker/src/internal-pages.ts defines the create-job page and posts through the admin bridge.",
+      "conflicts": [
+        "must remain distinct from create-session page in owner artifacts"
+      ],
+      "migration_phase": "Phase 5B",
+      "acceptance_requirements": [
+        "Verify admin gate.",
+        "Verify page/form contract.",
+        "Verify /v1/admin/create-job bridge behavior before migration."
+      ],
+      "notes": {
+        "blocker_reason": "production smoke pending only; migration still requires acceptance",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "39_kenji_knowledge_canonical",
+      "route": "/internal/admin/kenji-knowledge",
+      "route_family": "Kenji Knowledge canonical",
+      "hosts": [
+        "mmdbkk.com",
+        "www.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/internal/admin/kenji-knowledge",
+      "aliases": [
+        "/sigil/internal/admin/kenji-knowledge"
+      ],
+      "alias_notes": "SIGIL-prefixed route is legacy compatibility redirect to canonical non-SIGIL path with query preserved.",
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED",
+      "surface_type": "page",
+      "page_owner": "admin-worker",
+      "api_owner": "admin-worker readiness APIs",
+      "current_owner": "admin-worker",
+      "current_front_gate": "exact apex/www route config in admin-worker/wrangler.toml",
+      "ui_location": "admin-worker Kenji Knowledge shell",
+      "backend_owner": "admin-worker readiness APIs",
+      "candidate_owner": "admin-worker",
+      "owner_decision": "LOCKED",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "keep legacy SIGIL redirect until Phase 6",
+      "production_verified": "source_config_verified_live_pending",
+      "production_verification": "source/config verified; live production smoke pending",
+      "risk": "do not reverse canonical/legacy relationship",
+      "evidence": "admin-worker/src/index.js defines KENJI_KNOWLEDGE_CANONICAL_PATH as /internal/admin/kenji-knowledge and KENJI_KNOWLEDGE_LEGACY_SIGIL_PATH as /sigil/internal/admin/kenji-knowledge; admin-worker/wrangler.toml exact routes match; kenji route tests cover canonical shell and 308 legacy redirect with query preserved",
+      "conflicts": [
+        "PR #209 remains separate",
+        "SIGIL-prefixed path is legacy redirect, not canonical"
+      ],
+      "migration_phase": "Phase 5",
+      "acceptance_requirements": [
+        "Live-smoke canonical GET/HEAD.",
+        "Live-smoke legacy 308 redirect from /sigil/internal/admin/kenji-knowledge.",
+        "Confirm query preservation and owner headers.",
+        "Confirm no broad internal wildcard route."
+      ],
+      "notes": {
+        "blocker_reason": "live production smoke pending only",
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "40_admin_apis",
+      "route": "/v1/admin/*",
+      "route_family": "Admin APIs",
+      "hosts": [
+        "API hosts"
+      ],
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "canonical_route": "/v1/admin/*",
+      "aliases": [
+        "/v1/admin/ping",
+        "/v1/admin/clients/lineage-lookup",
+        "/v1/admin/clients/recent",
+        "/v1/admin/models/search",
+        "/v1/admin/job/draft",
+        "/v1/admin/create-session",
+        "/v1/admin/create-job",
+        "/v1/admin/jobs/create-session",
+        "/v1/admin/line/push"
+      ],
+      "alias_notes": "listed aliases are temporary immigrate-worker ingress bridge exceptions, not direct admin-worker route ownership",
+      "status": "PARTIAL_INTEGRATION",
+      "status_display": "PARTIAL INTEGRATION",
+      "surface_type": "page_or_api",
+      "page_owner": "admin-worker",
+      "api_owner": "admin-worker",
+      "current_owner": "admin-worker default implementation owner; route-level exceptions retain current ingress owners",
+      "current_front_gate": "exact routes only where proven; broad /v1/admin/* route absent",
+      "ui_location": "unknown",
+      "backend_owner": "admin-worker implements several backend handlers; missing bridge backend operations remain unresolved",
+      "candidate_owner": "admin-worker default implementation owner; immigrate-worker bridge only for listed ingress routes",
+      "owner_decision": "LOCKED_DEFAULT_WITH_EXCEPTIONS",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "bridge ingress source/config verified; direct admin-worker production ingress missing for unlisted APIs; namespace not fully enumerated here",
+      "risk": "admin secrets/auth; route specificity must win over namespace default; handler evidence alone must not be treated as production ingress",
+      "evidence": "admin-worker source for default implementation evidence; admin-worker/wrangler.toml exact/narrow login, Kenji, and Kenji-readiness routes with no broad /v1/admin/*; immigrate-worker/wrangler.toml exact apex/www admin bridge ingress routes; immigrate-worker/src/internal-routes.ts forwards /v1/admin/* through ADMIN_WORKER with cookie and bridge headers",
+      "conflicts": [
+        "wildcard can swallow implemented non-admin-worker contracts",
+        "handler evidence alone can overstate production reachability",
+        "missing bridge backend operations must remain unresolved"
+      ],
+      "migration_phase": "Phase 5",
+      "acceptance_requirements": [
+        "Verify exact route or service-binding ingress per endpoint family",
+        "Maintain route-level exceptions before any wildcard route migration",
+        "Implement or formally map missing bridge backend handlers before assigning canonical backend ownership",
+        "Remove immigrate-worker bridge ingress only after direct canonical clients and acceptance migration complete"
+      ],
+      "notes": {
+        "blocker_reason": null,
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "41_sigil_board_page",
+      "route": "/sigil/board",
+      "route_family": "SIGIL board page",
+      "hosts": [
+        "sigil host/Webflow"
+      ],
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "canonical_route": "/sigil/board",
+      "aliases": [],
+      "alias_notes": null,
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED",
+      "surface_type": "page",
+      "page_owner": "Webflow",
+      "api_owner": "sigil-board-worker for APIs",
+      "current_owner": "Webflow visible surface",
+      "current_front_gate": "unknown",
+      "ui_location": "Webflow",
+      "backend_owner": "sigil-board-worker for APIs",
+      "candidate_owner": "Webflow",
+      "owner_decision": "LOCKED",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "registry evidence",
+      "risk": "page cannot imply write auth",
+      "evidence": "registry evidence",
+      "conflicts": [
+        "must not be swallowed by API Worker"
+      ],
+      "migration_phase": "Phase 5/10",
+      "acceptance_requirements": [
+        "Verify visible page remains Webflow."
+      ],
+      "notes": {
+        "blocker_reason": null,
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "42_sigil_board_apis",
+      "route": "/sigil/board/runtime, /runtime/dry-run, /runtime/rollback, /actions/*, /audit*",
+      "route_family": "SIGIL board APIs",
+      "hosts": [
+        "sigil.mmdbkk.com"
+      ],
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "canonical_route": "/sigil/board/runtime, /runtime/dry-run, /runtime/rollback, /actions/*, /audit*",
+      "aliases": [],
+      "alias_notes": null,
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED",
+      "surface_type": "page_or_api",
+      "page_owner": "sigil-board-worker",
+      "api_owner": "sigil-board-worker",
+      "current_owner": "sigil-board-worker",
+      "current_front_gate": "direct route config",
+      "ui_location": "unknown",
+      "backend_owner": "sigil-board-worker",
+      "candidate_owner": "sigil-board-worker",
+      "owner_decision": "LOCKED",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "none",
+      "production_verified": "unverified",
+      "production_verification": "registry evidence",
+      "risk": "board control safety",
+      "evidence": "registry evidence",
+      "conflicts": [
+        "POST auth requirements"
+      ],
+      "migration_phase": "Phase 5/10",
+      "acceptance_requirements": [
+        "Verify read-only runtime",
+        "server-auth POST controls."
+      ],
+      "notes": {
+        "blocker_reason": null,
+        "remove_later_decision": null
+      }
+    },
+    {
+      "route_id": "42b_sigil_board_ui_apis",
+      "route": "/v1/sigil/board/status, /v1/sigil/board/queue",
+      "route_family": "SIGIL board UI APIs",
+      "hosts": [
+        "sigil host/Webflow"
+      ],
+      "methods": [
+        "GET"
+      ],
+      "canonical_route": "/v1/sigil/board/status, /v1/sigil/board/queue",
+      "aliases": [],
+      "alias_notes": "Called by the /sigil/board Webflow snippet; distinct from /sigil/board/* runtime/action/audit APIs.",
+      "status": "PARTIAL_INTEGRATION",
+      "status_display": "PARTIAL INTEGRATION",
+      "surface_type": "api",
+      "page_owner": "Webflow page calls these APIs",
+      "api_owner": "sigil-worker implementation owner",
+      "current_owner": "sigil-worker implementation only",
+      "current_front_gate": "no exact custom-host route or service binding proven; sigil-worker/wrangler.toml declares workers_dev = true and no custom routes",
+      "ui_location": "webflow/sigil/board/kenji-board-v70-webflow-snippet.html",
+      "backend_owner": "sigil-worker read-only board status/queue handlers",
+      "candidate_owner": "sigil-worker implementation owner; production owner unresolved",
+      "owner_decision": "UNRESOLVED",
+      "owner_confidence": "MEDIUM",
+      "compatibility_decision": "none",
+      "production_verified": "source_verified_route_unresolved",
+      "production_verification": "source handler proven; production route/binding missing",
+      "risk": "same-origin Webflow board calls can fall back to static safe-mode cards; fallback must not be treated as API connectivity",
+      "evidence": "sigil-worker/src/index.js implements /v1/sigil/board/status and /v1/sigil/board/queue; sigil-worker/wrangler.toml declares workers_dev = true and no custom routes; webflow/sigil/board/kenji-board-v70-webflow-snippet.html calls both same-origin APIs.",
+      "conflicts": [
+        "production route owner missing",
+        "service binding proof missing",
+        "must not be conflated with /sigil/board/* worker APIs"
+      ],
+      "migration_phase": "Phase 5/10",
+      "acceptance_requirements": [
+        "Prove exact custom-host route or service binding.",
+        "Prove auth and response schema.",
+        "Prove failure behavior and production smoke."
+      ],
+      "notes": {
+        "blocker_reason": "published board UI is not proven to reach these handlers",
+        "remove_later_decision": null
+      }
+    }
+  ],
+  "api_namespaces": [
+    {
+      "namespace": "/v1/admin/*",
+      "canonical_owner": "admin-worker default implementation owner with explicit route exceptions",
+      "visibility": "internal/admin",
+      "auth_requirement": "ADMIN_BEARER, signed session, confirm key, or service binding per endpoint",
+      "source_of_truth": "Admin Worker and backend stores; route-specific exception Workers where documented",
+      "temporary_proxy": "possible front gate/service proxy",
+      "known_overlap": [
+        "admin pages not all normalized",
+        "direct admin-worker custom-host route is exact/narrow only",
+        "POST /v1/admin/access/grant remains auth-worker",
+        "/v1/admin/ping remains immigrate-worker bridge",
+        "/v1/admin/clients/lineage-lookup remains immigrate-worker bridge",
+        "/v1/admin/clients/recent remains immigrate-worker bridge",
+        "/v1/admin/models/search remains immigrate-worker bridge",
+        "/v1/admin/job/draft remains immigrate-worker bridge",
+        "POST /v1/admin/create-session remains immigrate-worker bridge",
+        "POST /v1/admin/create-job remains immigrate-worker bridge",
+        "POST /v1/admin/jobs/create-session remains immigrate-worker bridge",
+        "/v1/admin/line/push remains immigrate-worker bridge",
+        "path-preserving bridge backend targets /v1/admin/clients/lineage-lookup, /v1/admin/clients/recent, /v1/admin/job/draft, and /v1/admin/line/push have no matching admin-worker handler in current source scan",
+        "/v1/admin/line/liff-renewal-queue remains non-default/pending source confirmation"
+      ],
+      "target_direct_route": "exact direct admin route or service binding required; exceptions keep exact ingress owners until migrated/proxied",
+      "owner_decision": "LOCKED_DEFAULT_WITH_EXCEPTIONS",
+      "evidence": "admin-worker source for implementation evidence; admin-worker/wrangler.toml exact/narrow login, Kenji, and Kenji-readiness routes with no broad /v1/admin/*; auth-worker/src/index.js and auth-worker/README.md for POST /v1/admin/access/grant; immigrate-worker/wrangler.toml exact admin bridge ingress routes; immigrate-worker/src/internal-routes.ts forwards /v1/admin/* through ADMIN_WORKER with cookie and bridge headers, plus alias map to /v1/admin/job/create with payload normalization for create-session/create-job paths; current source scan did not confirm exact member-pages LIFF renewal queue handler",
+      "notes": "Route specificity wins over namespace default. Handler implementation is separate from production ingress. Do not route exception contracts to admin-worker until migrated/proxied and backend handlers exist.",
+      "default_owner": "admin-worker",
+      "route_exceptions": [
+        {
+          "route": "/v1/admin/access/grant",
+          "method": "POST",
+          "exception_owner": "auth-worker",
+          "current_status": "API_READY_UI_MISSING",
+          "migration_state": "MVP owner retained until moved behind or proxied by admin-worker",
+          "auth_contract": "ADMIN_BEARER per auth-worker README",
+          "evidence": "auth-worker/src/index.js handleAdminGrant; auth-worker/README.md states POST /v1/admin/access/grant remains in auth-worker for MVP",
+          "acceptance_requirement": "Do not capture with admin-worker wildcard until migration/proxy acceptance passes."
+        },
+        {
+          "route": "/v1/admin/ping",
+          "method": "passthrough",
+          "exception_owner": "immigrate-worker",
+          "role": "legacy/temporary admin ingress bridge",
+          "current_status": "ROUTE_ONLY_REDIRECT",
+          "migration_state": "TEMPORARY ingress bridge until direct canonical clients and acceptance migration complete",
+          "auth_contract": "forwards cookie and bridge headers through ADMIN_WORKER binding; inbound Authorization header is not forwarded",
+          "canonical_backend_target": "/v1/admin/ping",
+          "canonical_backend_owner": "admin-worker",
+          "backend_handler_status": "implemented in current admin-worker/src/index.js scan",
+          "payload_normalization": "none; path and query are preserved",
+          "evidence": "immigrate-worker/wrangler.toml exact apex/www routes; immigrate-worker/src/internal-routes.ts forwards /v1/admin/* through ADMIN_WORKER; immigrate-worker/test/internal-admin-gate-bridge.test.mjs includes route-pattern coverage",
+          "acceptance_requirement": "Do not capture with admin-worker wildcard until direct canonical clients and bridge removal acceptance pass."
+        },
+        {
+          "route": "/v1/admin/clients/lineage-lookup",
+          "method": "passthrough",
+          "exception_owner": "immigrate-worker",
+          "role": "legacy/temporary admin ingress bridge",
+          "current_status": "ROUTE_ONLY_REDIRECT",
+          "migration_state": "TEMPORARY ingress bridge until direct canonical clients and acceptance migration complete",
+          "auth_contract": "forwards cookie and bridge headers through ADMIN_WORKER binding; inbound Authorization header is not forwarded",
+          "canonical_backend_target": "/v1/admin/clients/lineage-lookup",
+          "canonical_backend_owner": "UNRESOLVED",
+          "backend_handler_status": "missing in current admin-worker/src/index.js scan",
+          "payload_normalization": "none; path and query are preserved",
+          "evidence": "immigrate-worker/wrangler.toml exact apex/www routes; immigrate-worker/src/internal-routes.ts forwards /v1/admin/* through ADMIN_WORKER; immigrate-worker/test/internal-admin-gate-bridge.test.mjs includes route-pattern coverage",
+          "acceptance_requirement": "Preserve ingress, but implement or formally map the backend handler, method, auth, payload, response, failure behavior, and production reachability before assigning canonical backend ownership."
+        },
+        {
+          "route": "/v1/admin/clients/recent",
+          "method": "passthrough",
+          "exception_owner": "immigrate-worker",
+          "role": "legacy/temporary admin ingress bridge",
+          "current_status": "ROUTE_ONLY_REDIRECT",
+          "migration_state": "TEMPORARY ingress bridge until direct canonical clients and acceptance migration complete",
+          "auth_contract": "forwards cookie and bridge headers through ADMIN_WORKER binding; inbound Authorization header is not forwarded",
+          "canonical_backend_target": "/v1/admin/clients/recent",
+          "canonical_backend_owner": "UNRESOLVED",
+          "backend_handler_status": "missing in current admin-worker/src/index.js scan",
+          "payload_normalization": "none; path and query are preserved",
+          "evidence": "immigrate-worker/wrangler.toml exact apex/www routes; immigrate-worker/src/internal-routes.ts forwards /v1/admin/* through ADMIN_WORKER; immigrate-worker/test/internal-admin-gate-bridge.test.mjs includes route-pattern coverage",
+          "acceptance_requirement": "Preserve ingress, but implement or formally map the backend handler, method, auth, payload, response, failure behavior, and production reachability before assigning canonical backend ownership."
+        },
+        {
+          "route": "/v1/admin/models/search",
+          "method": "passthrough",
+          "exception_owner": "immigrate-worker",
+          "role": "legacy/temporary admin ingress bridge",
+          "current_status": "ROUTE_ONLY_REDIRECT",
+          "migration_state": "TEMPORARY ingress bridge until direct canonical clients and acceptance migration complete",
+          "auth_contract": "forwards cookie and bridge headers through ADMIN_WORKER binding; inbound Authorization header is not forwarded",
+          "canonical_backend_target": "/v1/admin/models/search",
+          "canonical_backend_owner": "admin-worker",
+          "backend_handler_status": "implemented in current admin-worker/src/index.js scan",
+          "payload_normalization": "none; path and query are preserved",
+          "evidence": "immigrate-worker/wrangler.toml exact apex/www routes; immigrate-worker/src/internal-routes.ts forwards /v1/admin/* through ADMIN_WORKER; immigrate-worker/test/internal-admin-gate-bridge.test.mjs includes route-pattern coverage",
+          "acceptance_requirement": "Do not capture with admin-worker wildcard until direct canonical clients and bridge removal acceptance pass."
+        },
+        {
+          "route": "/v1/admin/job/draft",
+          "method": "passthrough",
+          "exception_owner": "immigrate-worker",
+          "role": "legacy/temporary admin ingress bridge",
+          "current_status": "ROUTE_ONLY_REDIRECT",
+          "migration_state": "TEMPORARY ingress bridge until direct canonical clients and acceptance migration complete",
+          "auth_contract": "forwards cookie and bridge headers through ADMIN_WORKER binding; inbound Authorization header is not forwarded",
+          "canonical_backend_target": "/v1/admin/job/draft",
+          "canonical_backend_owner": "UNRESOLVED",
+          "backend_handler_status": "missing in current admin-worker/src/index.js scan",
+          "payload_normalization": "none; path and query are preserved",
+          "evidence": "immigrate-worker/wrangler.toml exact apex/www routes; immigrate-worker/src/internal-routes.ts forwards /v1/admin/* through ADMIN_WORKER; immigrate-worker/test/internal-admin-gate-bridge.test.mjs includes route-pattern coverage",
+          "acceptance_requirement": "Preserve ingress, but implement or formally map the backend handler, method, auth, payload, response, failure behavior, and production reachability before assigning canonical backend ownership."
+        },
+        {
+          "route": "/v1/admin/create-session",
+          "method": "POST",
+          "exception_owner": "immigrate-worker",
+          "role": "legacy/temporary compatibility bridge",
+          "current_status": "ROUTE_ONLY_REDIRECT",
+          "migration_state": "TEMPORARY ingress bridge until direct canonical clients and acceptance migration complete",
+          "auth_contract": "forwards cookie and bridge headers through ADMIN_WORKER binding; inbound Authorization header is not forwarded",
+          "canonical_backend_target": "/v1/admin/job/create",
+          "canonical_backend_owner": "admin-worker",
+          "backend_handler_status": "implemented in current admin-worker/src/index.js scan",
+          "payload_normalization": "JSON POST bodies are normalized to the admin job create payload when content-type is application/json",
+          "evidence": "immigrate-worker/wrangler.toml exact apex/www routes; immigrate-worker/src/internal-routes.ts maps alias to /v1/admin/job/create; immigrate-worker/test/internal-admin-gate-bridge.test.mjs proves service-binding forwarding and normalization",
+          "acceptance_requirement": "Do not capture with admin-worker wildcard until direct canonical clients and bridge removal acceptance pass."
+        },
+        {
+          "route": "/v1/admin/create-job",
+          "method": "POST",
+          "exception_owner": "immigrate-worker",
+          "role": "legacy/temporary compatibility bridge",
+          "current_status": "ROUTE_ONLY_REDIRECT",
+          "migration_state": "TEMPORARY ingress bridge until direct canonical clients and acceptance migration complete",
+          "auth_contract": "forwards cookie and bridge headers through ADMIN_WORKER binding; inbound Authorization header is not forwarded",
+          "canonical_backend_target": "/v1/admin/job/create",
+          "canonical_backend_owner": "admin-worker",
+          "backend_handler_status": "implemented in current admin-worker/src/index.js scan",
+          "payload_normalization": "JSON POST bodies are normalized to the admin job create payload when content-type is application/json",
+          "evidence": "immigrate-worker/wrangler.toml exact apex/www routes; immigrate-worker/src/internal-routes.ts maps alias to /v1/admin/job/create; immigrate-worker/test/internal-admin-gate-bridge.test.mjs proves service-binding forwarding and normalization",
+          "acceptance_requirement": "Do not capture with admin-worker wildcard until direct canonical clients and bridge removal acceptance pass."
+        },
+        {
+          "route": "/v1/admin/jobs/create-session",
+          "method": "POST",
+          "exception_owner": "immigrate-worker",
+          "role": "legacy/temporary compatibility bridge",
+          "current_status": "ROUTE_ONLY_REDIRECT",
+          "migration_state": "TEMPORARY ingress bridge until direct canonical clients and acceptance migration complete",
+          "auth_contract": "forwards cookie and bridge headers through ADMIN_WORKER binding; inbound Authorization header is not forwarded",
+          "canonical_backend_target": "/v1/admin/job/create",
+          "canonical_backend_owner": "admin-worker",
+          "payload_normalization": "JSON POST bodies are normalized to the admin job create payload when content-type is application/json",
+          "evidence": "immigrate-worker/wrangler.toml exact apex/www routes; immigrate-worker/src/internal-routes.ts maps alias to /v1/admin/job/create; immigrate-worker/test/internal-admin-gate-bridge.test.mjs proves service-binding forwarding and normalization",
+          "acceptance_requirement": "Do not capture with admin-worker wildcard until direct canonical clients and bridge removal acceptance pass."
+        },
+        {
+          "route": "/v1/admin/line/push",
+          "method": "passthrough",
+          "exception_owner": "immigrate-worker",
+          "role": "legacy/temporary admin ingress bridge",
+          "current_status": "ROUTE_ONLY_REDIRECT",
+          "migration_state": "TEMPORARY ingress bridge until direct canonical clients and acceptance migration complete",
+          "auth_contract": "forwards cookie and bridge headers through ADMIN_WORKER binding; inbound Authorization header is not forwarded",
+          "canonical_backend_target": "/v1/admin/line/push",
+          "canonical_backend_owner": "UNRESOLVED",
+          "backend_handler_status": "missing in current admin-worker/src/index.js scan",
+          "payload_normalization": "none; path and query are preserved",
+          "evidence": "immigrate-worker/wrangler.toml exact apex/www routes; immigrate-worker/src/internal-routes.ts forwards /v1/admin/* through ADMIN_WORKER; immigrate-worker/test/internal-admin-gate-bridge.test.mjs includes route-pattern coverage",
+          "acceptance_requirement": "Preserve ingress, but implement or formally map the backend handler, method, auth, payload, response, failure behavior, and production reachability before assigning canonical backend ownership."
+        },
+        {
+          "route": "/v1/admin/line/liff-renewal-queue",
+          "method": "unknown pending source confirmation",
+          "exception_owner": "member-pages-worker candidate",
+          "current_status": "UNRESOLVED",
+          "migration_state": "exception candidate retained pending exact handler/route confirmation",
+          "auth_contract": "pending source confirmation",
+          "evidence": "ROUTE_INVENTORY_NORMALIZED.md listed member-pages-worker, but current source scan did not find exact handler",
+          "acceptance_requirement": "Confirm exact handler, method, auth, and route attachment before migration or removal."
+        }
+      ]
+    },
+    {
+      "namespace": "/v1/pay/*",
+      "canonical_owner": "payments-worker",
+      "visibility": "public submit plus internal review",
+      "auth_requirement": "endpoint-specific token/origin/auth",
+      "source_of_truth": "Payments ledger/provider truth",
+      "temporary_proxy": "unknown current proxy",
+      "known_overlap": [
+        "member-pages evidence forms"
+      ],
+      "target_direct_route": "payments-worker",
+      "owner_decision": "TEMPORARY",
+      "evidence": "ROUTE_CANONICAL_OWNER_LOCK.md API Namespace Ownership table",
+      "notes": "member-pages evidence forms"
+    },
+    {
+      "namespace": "/v1/payments/*",
+      "canonical_owner": "payments-worker",
+      "visibility": "public/internal depending endpoint",
+      "auth_requirement": "endpoint-specific token/origin/auth",
+      "source_of_truth": "Payments ledger/provider truth",
+      "temporary_proxy": "unknown current proxy",
+      "known_overlap": [
+        "legacy payment routes"
+      ],
+      "target_direct_route": "payments-worker",
+      "owner_decision": "TEMPORARY",
+      "evidence": "ROUTE_CANONICAL_OWNER_LOCK.md API Namespace Ownership table",
+      "notes": "legacy payment routes"
+    },
+    {
+      "namespace": "/v1/member/*",
+      "canonical_owner": "unresolved default; route-specific handlers only when proven",
+      "visibility": "member/internal",
+      "auth_requirement": "token t, signed session, mmd_member_id target after contract exists",
+      "source_of_truth": "trusted Worker state after handler exists",
+      "temporary_proxy": "none proven for dashboard API",
+      "known_overlap": [
+        "/v1/member/applications missing",
+        "/v1/member/dashboard handler missing",
+        "/api/member/dashboard alias mapping unproven"
+      ],
+      "target_direct_route": "TBD",
+      "owner_decision": "UNRESOLVED",
+      "evidence": "No exact /v1/member/dashboard handler or /api/member/dashboard mapping found in current source scan; /member/dashboard page route is separate.",
+      "notes": "Page/API separation required: /member/dashboard is page route, /v1/member/dashboard is backend API contract.",
+      "route_exceptions": [
+        {
+          "route": "/v1/member/dashboard",
+          "method": "unknown pending implementation",
+          "exception_owner": "TBD",
+          "current_status": "UNRESOLVED",
+          "migration_state": "Phase 3A implementation/acceptance required",
+          "auth_contract": "pending member dashboard API contract",
+          "evidence": "No exact handler found in admin-worker, mmd-redirect-worker, immigrate-worker, member-dashboard-chat-worker, or member-pages-worker current source scan.",
+          "acceptance_requirement": "Implement/prove handler, auth, response contract, and route attachment before dashboard UI depends on it."
+        },
+        {
+          "route": "/api/member/dashboard",
+          "method": "unknown pending mapping",
+          "exception_owner": "TBD alias only if proven",
+          "current_status": "UNRESOLVED",
+          "migration_state": "alias/rewrite mapping unproven",
+          "auth_contract": "pending member dashboard API contract",
+          "evidence": "mmd-redirect-worker MEMBER_API_PATHS only includes /member/api/liff/identify; no /api/member/dashboard rewrite found.",
+          "acceptance_requirement": "Prove alias/rewrite to canonical API or remove alias from contract."
+        }
+      ]
+    },
+    {
+      "namespace": "/v1/job/*",
+      "canonical_owner": "events-worker or admin-worker depending operation",
+      "visibility": "internal/admin",
+      "auth_requirement": "server-side auth",
+      "source_of_truth": "job/session backend",
+      "temporary_proxy": "none proven",
+      "known_overlap": [
+        "create-job currently in admin-worker"
+      ],
+      "target_direct_route": "explicit owner per endpoint",
+      "owner_decision": "UNRESOLVED",
+      "evidence": "ROUTE_CANONICAL_OWNER_LOCK.md API Namespace Ownership table",
+      "notes": "create-job currently in admin-worker"
+    },
+    {
+      "namespace": "/v1/rt/*",
+      "canonical_owner": null,
+      "implementation_owner": "realtime-worker",
+      "visibility": "internal/realtime client",
+      "auth_requirement": "room token / server auth",
+      "source_of_truth": "Durable Object room state after production route binding is proven",
+      "temporary_proxy": null,
+      "known_overlap": [
+        "workers.dev only is not canonical production ownership",
+        "no custom-host route or service binding proof recorded in this lock"
+      ],
+      "target_direct_route": "custom-host route or service binding TBD",
+      "owner_decision": "UNRESOLVED",
+      "evidence": "ROUTE_CANONICAL_OWNER_LOCK.md API Namespace Ownership table",
+      "notes": "realtime-worker implements /v1/rt/room/open and /v1/rt/ws, but production route ownership remains unresolved until custom-host route or service binding is proven."
+    },
+    {
+      "namespace": "/public/api/*",
+      "canonical_owner": "public-access-worker target for implemented intake route",
+      "visibility": "public submit",
+      "auth_requirement": "allowed Origin, form validation, evidence file limits/type allowlist; no automatic access grant",
+      "source_of_truth": "public-access-worker/src/index.js and public-access-worker/wrangler.toml",
+      "temporary_proxy": null,
+      "known_overlap": [
+        "only POST /public/api/access/intake and OPTIONS are implemented",
+        "unknown subpaths fail closed"
+      ],
+      "target_direct_route": "sigil.mmdbkk.com/public/api/* route config, live smoke pending",
+      "owner_decision": "LOCKED_IMPLEMENTATION_PRODUCTION_PENDING",
+      "evidence": "public-access-worker/src/index.js implements POST /public/api/access/intake and OPTIONS; public-access-worker/wrangler.toml routes sigil.mmdbkk.com/public/api/*",
+      "notes": "Lock is for repository implementation ownership only; production live verification remains separate.",
+      "default_owner": "public-access-worker for explicit implemented routes only",
+      "implemented_routes": [
+        {
+          "route": "/public/api/access/intake",
+          "methods": [
+            "POST",
+            "OPTIONS"
+          ],
+          "owner": "public-access-worker",
+          "status": "API_READY_UI_MISSING",
+          "production_verification": "pending",
+          "unknown_subpaths": "not implemented/fail closed"
+        }
+      ]
+    },
+    {
+      "namespace": "/sigil/api/*",
+      "canonical_owner": null,
+      "candidate_owner": "sigil-booking-worker for implemented booking handlers; sigil-worker candidate target for private-model apply",
+      "visibility": "public/internal by endpoint",
+      "auth_requirement": "endpoint-specific",
+      "source_of_truth": "SIGIL booking/apply contracts after route attachment is proven",
+      "temporary_proxy": "mmd-redirect-worker for private apply",
+      "known_overlap": [
+        "broad route family can collide",
+        "private-model apply exact route remains unresolved",
+        "booking custom-host route attachment missing/unverified"
+      ],
+      "target_direct_route": "explicit route partitions; no workers.dev canonical ownership",
+      "owner_decision": "UNRESOLVED",
+      "evidence": "sigil-booking-worker/src/index.js implements booking handlers; sigil-booking-worker/wrangler.toml has workers_dev = true and no custom-host [[routes]]; /sigil/api/private-model/apply exact route is PARTIAL_INTEGRATION with sigil-worker candidate only",
+      "notes": "Namespace record may not be more authoritative than exact route records.",
+      "route_partitions": [
+        {
+          "partition": "booking_api_handlers",
+          "routes": [
+            "/sigil/api/client/resolve",
+            "/sigil/api/models/search",
+            "/sigil/api/booking/intake"
+          ],
+          "implementation_owner": "sigil-booking-worker",
+          "implementation_status": "implemented in repository",
+          "custom_host_route_attachment": "missing/unverified",
+          "production_route_owner": "UNRESOLVED",
+          "status": "PARTIAL_INTEGRATION",
+          "owner_decision": "UNRESOLVED",
+          "blocker": "exact custom-host binding absent/unverified",
+          "next_action": "Phase 2B route attachment and production acceptance"
+        },
+        {
+          "partition": "private_model_apply",
+          "route": "/sigil/api/private-model/apply",
+          "canonical_owner": null,
+          "candidate_owner": "sigil-worker",
+          "current_handler": "missing/unverified",
+          "production_route_attachment": "missing/unverified",
+          "status": "PARTIAL_INTEGRATION",
+          "owner_decision": "UNRESOLVED",
+          "blocker": "no matching handler or custom route",
+          "implementation_phase": "Phase 4A"
+        }
+      ]
+    },
+    {
+      "namespace": "/kenji/*",
+      "canonical_owner": "chat-worker target where public AI/access is proven",
+      "visibility": "public/member/internal varies",
+      "auth_requirement": "endpoint-specific",
+      "source_of_truth": "chat/AI backend",
+      "temporary_proxy": null,
+      "known_overlap": [
+        "Kenji Knowledge admin is separate PR #209"
+      ],
+      "target_direct_route": "explicit route partitions",
+      "owner_decision": "UNRESOLVED",
+      "evidence": "ROUTE_CANONICAL_OWNER_LOCK.md API Namespace Ownership table",
+      "notes": "Kenji Knowledge admin is separate PR #209"
+    },
+    {
+      "namespace": "Telegram endpoints",
+      "canonical_owner": null,
+      "implementation_owner": "telegram-worker",
+      "candidate_owner": "telegram-worker",
+      "production_route_owner": "UNRESOLVED",
+      "visibility": "webhook/internal",
+      "auth_requirement": "Telegram secret token or internal auth",
+      "source_of_truth": "Telegram Bot API and internal message contract after production route binding is proven",
+      "temporary_proxy": null,
+      "known_overlap": [
+        "/v1/webhook",
+        "/v1/send",
+        "workers.dev/internal consumer evidence is not canonical production ownership"
+      ],
+      "target_direct_route": "custom-host route or service binding TBD",
+      "custom_host_attachment": "missing/unverified",
+      "service_binding": "missing/unverified",
+      "workers_dev": "development/internal endpoint evidence only",
+      "status": "PARTIAL_INTEGRATION",
+      "owner_decision": "UNRESOLVED",
+      "evidence": "telegram-worker/src/index.js implements webhook/send/complaint/preview aliases; telegram-worker/wrangler.toml has no custom-host [[routes]] or service binding evidence in this artifact; internal consumers reference telegram-worker.malemodel-bkk.workers.dev.",
+      "notes": "Telegram implementation is repo-proven, but production route ownership remains unresolved until exact custom-host route or service binding is proven.",
+      "route_partitions": [
+        {
+          "partition": "webhook",
+          "routes": [
+            "/telegram/webhook",
+            "/v1/webhook"
+          ],
+          "implementation_owner": "telegram-worker",
+          "implementation_status": "implemented in repository",
+          "production_route_owner": "UNRESOLVED",
+          "owner_decision": "UNRESOLVED",
+          "acceptance_requirement": "Prove exact webhook production route or service binding, Telegram secret-token behavior, alias behavior, and production smoke."
+        },
+        {
+          "partition": "internal_send",
+          "routes": [
+            "/telegram/internal/send",
+            "/v1/internal/send",
+            "/v1/send"
+          ],
+          "implementation_owner": "telegram-worker",
+          "implementation_status": "implemented in repository",
+          "production_route_owner": "UNRESOLVED",
+          "owner_decision": "UNRESOLVED",
+          "acceptance_requirement": "Prove exact send production route or service binding, internal auth, alias behavior, and production smoke."
+        },
+        {
+          "partition": "complaint_and_preview",
+          "routes": [
+            "/telegram/internal/complaint",
+            "/v1/internal/complaint",
+            "/telegram/preview/post",
+            "/v1/preview/post"
+          ],
+          "implementation_owner": "telegram-worker",
+          "implementation_status": "implemented in repository",
+          "production_route_owner": "UNRESOLVED",
+          "owner_decision": "UNRESOLVED",
+          "acceptance_requirement": "Prove exact production route or binding, internal auth, alias behavior, and production smoke before locking production ownership."
+        }
+      ]
+    },
+    {
+      "namespace": "LINE endpoints",
+      "canonical_owner": "member-dashboard-chat-worker for /webhooks/line production webhook only; rich-menu/internal production owner unresolved",
+      "implementation_owner": "member-dashboard-chat-worker",
+      "visibility": "webhook/internal",
+      "auth_requirement": "LINE signature, internal token/confirm key",
+      "source_of_truth": "LINE event and trusted Worker state after exact binding proof",
+      "temporary_proxy": "mmd-redirect-worker webhook bridge legacy",
+      "known_overlap": [
+        "admin-worker rich-menu proxy",
+        "rich-menu/internal APIs require exact route or service binding proof"
+      ],
+      "target_direct_route": "explicit route partitions",
+      "owner_decision": "TEMPORARY_WEBHOOK_UNRESOLVED_RICH_MENU",
+      "evidence": "member-dashboard-chat-worker/wrangler.toml proves apex/www /webhooks/line routes only; member-dashboard-chat-worker/src/index.js implements /v1/internal/line/* and /__internal/line/* rich-menu APIs; admin-worker/src/index.js proxies admin rich-menu calls through MEMBER_DASHBOARD_CHAT_WORKER and can return service_binding_unavailable when absent.",
+      "notes": "Do not treat webhook continuity and rich-menu/internal API continuity as one LIVE_CONNECTED surface.",
+      "route_partitions": [
+        {
+          "partition": "line_webhook",
+          "routes": [
+            "/webhooks/line",
+            "/webhooks/line/"
+          ],
+          "implementation_owner": "member-dashboard-chat-worker",
+          "production_route_owner": "member-dashboard-chat-worker",
+          "custom_host_attachment": "proven in member-dashboard-chat-worker/wrangler.toml for apex/www",
+          "status": "LIVE_CONNECTED",
+          "owner_decision": "TEMPORARY",
+          "acceptance_requirement": "Maintain LINE signature verification and current webhook route continuity."
+        },
+        {
+          "partition": "rich_menu_internal_apis",
+          "routes": [
+            "/v1/internal/line/*",
+            "/__internal/line/*"
+          ],
+          "implementation_owner": "member-dashboard-chat-worker",
+          "production_route_owner": "UNRESOLVED",
+          "custom_host_attachment": "missing/unverified",
+          "service_binding": "missing/unverified",
+          "status": "PARTIAL_INTEGRATION",
+          "owner_decision": "UNRESOLVED",
+          "acceptance_requirement": "Prove exact internal route or MEMBER_DASHBOARD_CHAT_WORKER service binding, auth, aliases, and production smoke before locking rich-menu owner."
+        }
+      ]
+    },
+    {
+      "namespace": "Generic webhooks",
+      "canonical_owner": "Endpoint-specific Worker",
+      "visibility": "webhook/internal",
+      "auth_requirement": "provider signature",
+      "source_of_truth": "provider event truth",
+      "temporary_proxy": "front gate bridge legacy",
+      "known_overlap": [
+        "/webhook/line"
+      ],
+      "target_direct_route": "explicit provider routes",
+      "owner_decision": "TEMPORARY",
+      "evidence": "ROUTE_CANONICAL_OWNER_LOCK.md API Namespace Ownership table",
+      "notes": "/webhook/line aliases"
+    }
+  ],
+  "redirects_and_aliases": [
+    {
+      "source_route": "www.*",
+      "target_route": "apex or canonical host",
+      "redirect_type": "host canonicalization",
+      "query_preservation": "preserve full query unless route allowlist says otherwise",
+      "host_behavior": "www to apex for front-gated routes",
+      "current_implementation": "mmd-redirect-worker",
+      "target_implementation": "Cloudflare Redirect Rules",
+      "keep_until": "all canonical owners proven",
+      "removal_phase": "Phase 6A"
+    },
+    {
+      "source_route": "/inme",
+      "target_route": "/sigil/start",
+      "redirect_type": "301 compatibility",
+      "query_preservation": "preserve query",
+      "host_behavior": "apex/www",
+      "current_implementation": "mmd-redirect-worker",
+      "target_implementation": "Redirect Rule",
+      "keep_until": "/sigil/start live and approved",
+      "removal_phase": "Phase 6A"
+    },
+    {
+      "source_route": "/login",
+      "target_route": "/sigil/start or future /member/login after auth decision",
+      "redirect_type": "301 compatibility",
+      "query_preservation": "preserve query",
+      "host_behavior": "apex/www",
+      "current_implementation": "mmd-redirect-worker",
+      "target_implementation": "Redirect Rule after owner lock",
+      "keep_until": "login IA resolved",
+      "removal_phase": "Phase 6A"
+    },
+    {
+      "source_route": "/trust",
+      "target_route": "/sigil/start",
+      "redirect_type": "301 compatibility",
+      "query_preservation": "preserve query",
+      "host_behavior": "apex/www",
+      "current_implementation": "mmd-redirect-worker",
+      "target_implementation": "Redirect Rule",
+      "keep_until": "/sigil/start live and approved",
+      "removal_phase": "Phase 6A"
+    },
+    {
+      "source_route": "/trust/inme",
+      "target_route": "/sigil/start",
+      "redirect_type": "301 compatibility",
+      "query_preservation": "preserve query",
+      "host_behavior": "apex/www",
+      "current_implementation": "mmd-redirect-worker",
+      "target_implementation": "Redirect Rule",
+      "keep_until": "/sigil/start live and approved",
+      "removal_phase": "Phase 6A"
+    },
+    {
+      "source_route": "/members",
+      "target_route": "/sigil/start",
+      "redirect_type": "301 compatibility",
+      "query_preservation": "preserve query",
+      "host_behavior": "apex/www",
+      "current_implementation": "mmd-redirect-worker",
+      "target_implementation": "Redirect Rule",
+      "keep_until": "/sigil/start live and approved",
+      "removal_phase": "Phase 6A"
+    },
+    {
+      "source_route": "/member",
+      "target_route": "/member/dashboard",
+      "redirect_type": "301 compatibility",
+      "query_preservation": "preserve query",
+      "host_behavior": "apex/www",
+      "current_implementation": "mmd-redirect-worker",
+      "target_implementation": "Redirect Rule",
+      "keep_until": "dashboard owner/auth live",
+      "removal_phase": "Phase 6A"
+    },
+    {
+      "source_route": "/membership",
+      "target_route": "/member/membership",
+      "redirect_type": "301 compatibility",
+      "query_preservation": "preserve query",
+      "host_behavior": "apex/www",
+      "current_implementation": "mmd-redirect-worker",
+      "target_implementation": "Redirect Rule",
+      "keep_until": "membership page verified",
+      "removal_phase": "Phase 6A"
+    },
+    {
+      "source_route": "/membership/benefits",
+      "target_route": "/member/membership",
+      "redirect_type": "301 compatibility",
+      "query_preservation": "preserve query",
+      "host_behavior": "apex/www",
+      "current_implementation": "mmd-redirect-worker",
+      "target_implementation": "Redirect Rule",
+      "keep_until": "membership page verified",
+      "removal_phase": "Phase 6A"
+    },
+    {
+      "source_route": "/member/membership/benefits",
+      "target_route": "/member/membership",
+      "redirect_type": "301 compatibility",
+      "query_preservation": "preserve query",
+      "host_behavior": "apex/www",
+      "current_implementation": "mmd-redirect-worker",
+      "target_implementation": "Redirect Rule",
+      "keep_until": "membership page verified",
+      "removal_phase": "Phase 6A"
+    },
+    {
+      "source_route": "/renew",
+      "target_route": "/sigil/membership",
+      "redirect_type": "301 legacy",
+      "query_preservation": "preserve query",
+      "host_behavior": "apex/www",
+      "current_implementation": "mmd-redirect-worker",
+      "target_implementation": "Redirect Rule or remove",
+      "keep_until": "renewal/membership contracts proven",
+      "removal_phase": "Phase 6A"
+    },
+    {
+      "source_route": "/renewal",
+      "target_route": "/sigil/membership",
+      "redirect_type": "301 legacy",
+      "query_preservation": "preserve query",
+      "host_behavior": "apex/www",
+      "current_implementation": "mmd-redirect-worker",
+      "target_implementation": "Redirect Rule or remove",
+      "keep_until": "renewal/membership contracts proven",
+      "removal_phase": "Phase 6A"
+    },
+    {
+      "source_route": "/model/console",
+      "target_route": "/sigil/model/console future",
+      "redirect_type": "temporary shell now",
+      "query_preservation": "preserve query in shell links",
+      "host_behavior": "apex/www",
+      "current_implementation": "mmd-redirect-worker recovery shell",
+      "target_implementation": "Redirect Rule after replacement",
+      "keep_until": "canonical console live",
+      "removal_phase": "Phase 6B"
+    },
+    {
+      "source_route": "/sigil/internal/admin/kenji-knowledge",
+      "target_route": "/internal/admin/kenji-knowledge",
+      "redirect_type": "legacy compatibility redirect",
+      "query_preservation": "preserve query",
+      "host_behavior": "internal/sigil hosts",
+      "current_implementation": "admin-worker 308 redirect from SIGIL-prefixed legacy route",
+      "target_implementation": "canonical admin-worker shell",
+      "keep_until": "canonical route live; legacy retained until Phase 6 approval",
+      "removal_phase": "Phase 6"
+    },
+    {
+      "source_route": "Black Card aliases",
+      "target_route": "/blackcard canonical public review page TBD",
+      "redirect_type": "compatibility",
+      "query_preservation": "preserve query",
+      "host_behavior": "apex/www",
+      "current_implementation": "mmd-redirect-worker public page",
+      "target_implementation": "Webflow or explicit Worker after decision",
+      "keep_until": "Black Card architecture approved",
+      "removal_phase": "Phase 6"
+    },
+    {
+      "source_route": "/old-academy/*",
+      "target_route": "/academy/*",
+      "redirect_type": "folder redirect",
+      "query_preservation": "preserve suffix/query",
+      "host_behavior": "apex/www",
+      "current_implementation": "mmd-redirect-worker",
+      "target_implementation": "Bulk Redirect",
+      "keep_until": "academy owner proven",
+      "removal_phase": "Phase 6A"
+    },
+    {
+      "source_route": "/old-trust/*",
+      "target_route": "/trust/*",
+      "redirect_type": "folder redirect",
+      "query_preservation": "preserve suffix/query",
+      "host_behavior": "apex/www",
+      "current_implementation": "mmd-redirect-worker",
+      "target_implementation": "Bulk Redirect",
+      "keep_until": "trust owner proven",
+      "removal_phase": "Phase 6A"
+    }
+  ],
+  "worker_classifications": {
+    "mmd-redirect-worker": {
+      "classification": "deprecated front gate",
+      "decision": "No new scope; retire in Phase 6 only."
+    },
+    "immigrate-worker": {
+      "classification": "legacy/temporary compatibility bridge",
+      "role": "legacy/temporary compatibility bridge",
+      "canonical_business_owner": false,
+      "ingress_exception_count": 9,
+      "path_preserving_bridge_count": 6,
+      "normalized_alias_count": 3,
+      "path_preserving_bridge_routes": [
+        "/v1/admin/ping",
+        "/v1/admin/clients/lineage-lookup",
+        "/v1/admin/clients/recent",
+        "/v1/admin/models/search",
+        "/v1/admin/job/draft",
+        "/v1/admin/line/push"
+      ],
+      "normalized_aliases_targeting_v1_admin_job_create": [
+        "/v1/admin/create-session",
+        "/v1/admin/create-job",
+        "/v1/admin/jobs/create-session"
+      ],
+      "decision": "Cannot become canonical business owner; preserves all nine temporary /v1/admin/* ingress bridge exceptions until direct canonical clients and acceptance migration complete. Six routes preserve path/query to the upstream admin operation; three create-session/create-job aliases normalize JSON payloads and target /v1/admin/job/create. Ingress ownership does not prove target backend handler existence."
+    },
+    "admin-worker": {
+      "classification": "canonical active implementation owner for admin backend candidates",
+      "production_ingress": "endpoint-specific unless exact route, bridge, or service binding is proven",
+      "missing_bridge_backend_operations": [
+        "/v1/admin/clients/lineage-lookup",
+        "/v1/admin/clients/recent",
+        "/v1/admin/job/draft",
+        "/v1/admin/line/push"
+      ],
+      "decision": "Owns exact admin login/session and Kenji Knowledge routes where configured, and implements many admin/model handlers. Direct production ingress remains endpoint-specific unless exact route/service-binding proof exists; missing bridge backend operations remain UNRESOLVED."
+    },
+    "member-dashboard-chat-worker": {
+      "classification": "active LINE webhook owner, rich-menu implementation owner, and renewal renderer candidate",
+      "decision": "/webhooks/line is production-proven in current route config. /v1/internal/line/* and /__internal/line/* rich-menu/internal APIs are implemented but production route/service-binding ownership remains UNRESOLVED. Renewal route ownership is TEMPORARY or UNRESOLVED until exact route attachment and production winner are proven."
+    },
+    "member-pages-worker": {
+      "classification": "canonical active for member membership/payment evidence pages",
+      "decision": "Does not own payment truth or dashboard truth."
+    },
+    "payments-worker": {
+      "classification": "canonical active payment API target",
+      "decision": "API map remains TEMPORARY until exact /v1/pay* route evidence is enumerated."
+    },
+    "sigil-worker": {
+      "classification": "candidate target for SIGIL apply/private model APIs; implementation owner for board UI status/queue APIs",
+      "board_ui_api_implementation_owner": [
+        "/v1/sigil/board/status",
+        "/v1/sigil/board/queue"
+      ],
+      "board_ui_api_production_owner": "UNRESOLVED",
+      "decision": "SIGIL apply/private model apply remain UNRESOLVED until matching handlers and route attachment are proven. /v1/sigil/board/status and /v1/sigil/board/queue handlers are implemented, but production ownership remains UNRESOLVED until exact custom-host route or service binding proof. Recovery/public model API overlap still requires future lock."
+    },
+    "sigil-booking-proxy-worker": {
+      "classification": "canonical active page route proxy",
+      "decision": "Owns /sigil/booking route behavior; Webflow owns visible source."
+    },
+    "sigil-booking-worker": {
+      "classification": "booking API implementation owner",
+      "decision": "Implements current booking API subset under /sigil/api/*, but custom-host route ownership is missing/unverified because the current Wrangler file has workers_dev = true and no [[routes]]."
+    },
+    "public-access-worker": {
+      "classification": "active public access intake API owner",
+      "decision": "Repo-proven owner for POST /public/api/access/intake under sigil.mmdbkk.com/public/api/*; production smoke remains pending and unknown subpaths are not implemented."
+    },
+    "sigil-board-worker": {
+      "classification": "canonical active API owner",
+      "decision": "Owns board runtime/actions/audit."
+    },
+    "chat-worker": {
+      "classification": "active but unresolved for /kenji/*",
+      "decision": "Do not lock Kenji public routes without evidence."
+    },
+    "telegram-worker": {
+      "classification": "messaging implementation owner",
+      "implementation_owner": true,
+      "production_route_owner": "UNRESOLVED",
+      "custom_host_attachment": "missing/unverified",
+      "service_binding": "missing/unverified",
+      "workers_dev": "development/internal endpoint evidence only",
+      "decision": "Implements Telegram webhook/internal send/complaint/preview aliases, but production route ownership remains UNRESOLVED until custom-host route or service binding is proven. workers.dev is not canonical."
+    },
+    "events-worker": {
+      "classification": "active but migration pending",
+      "decision": "Job/events ownership needs exact route lock."
+    },
+    "realtime-worker": {
+      "classification": "realtime implementation owner",
+      "decision": "Implements /v1/rt/*, but production route ownership remains UNRESOLVED until custom-host route or service binding is proven. workers.dev is not canonical."
+    }
+  },
+  "unresolved_decisions": [
+    {
+      "route_or_namespace_key": "/, /profiles, /services/companion",
+      "implementation_status": "not proven",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "Not proven in Phase 1A evidence.",
+      "candidate_owner": "Webflow or catalog Worker TBD",
+      "required_next_phase": "Phase 2A",
+      "acceptance_requirement": "Prove exact apex/www/Webflow route, headers, owner, and no Worker truth before locking."
+    },
+    {
+      "route_or_namespace_key": "/public/access and /sigil/access",
+      "implementation_status": "visible page route not proven; POST /public/api/access/intake implementation/config owner is public-access-worker",
+      "production_ownership_status": "UNRESOLVED for visible page; API production smoke pending",
+      "blocker": "UI artifacts exist, but exact visible page route is not proven; POST /public/api/access/intake implementation/config owner is public-access-worker, live smoke pending.",
+      "candidate_owner": "Webflow visible page; public-access-worker API",
+      "required_next_phase": "Phase 2A",
+      "acceptance_requirement": "Prove visible page owner and live-smoke intake API without granting access from evidence."
+    },
+    {
+      "route_or_namespace_key": "/sigil/start",
+      "implementation_status": "alias target exists as entry concept",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "Alias target exists, but canonical visible owner is not proven.",
+      "candidate_owner": "Webflow or approved entry Worker TBD",
+      "required_next_phase": "Phase 2A",
+      "acceptance_requirement": "Prove exact page owner, query preservation, and alias behavior before migration."
+    },
+    {
+      "route_or_namespace_key": "/sigil/recovery",
+      "implementation_status": "assets/API pieces exist",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "Duplicate recovery API evidence and no normalized visible owner.",
+      "candidate_owner": "Webflow page plus explicit recovery API Worker TBD",
+      "required_next_phase": "Phase 2A or Phase 6",
+      "acceptance_requirement": "Choose one API owner, prove status/evidence API behavior, and avoid generic recovery shell collapse."
+    },
+    {
+      "route_or_namespace_key": "/sigil/aftercare",
+      "implementation_status": "JS reference only",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "JS reference only, no exact owner.",
+      "candidate_owner": "Webflow TBD",
+      "required_next_phase": "Phase 2A",
+      "acceptance_requirement": "Prove exact route exists and has an approved owner, or defer/remove by approval."
+    },
+    {
+      "route_or_namespace_key": "/sigil/pay/renewal and /pay/renewal",
+      "implementation_status": "renderer/front-gate evidence exists; direct production route attachment not proven",
+      "production_ownership_status": "UNRESOLVED or TEMPORARY pending exact route proof",
+      "blocker": "Exact direct production route owner, production winner, GET/HEAD/slash/query behavior, and Webflow bridge outcome are not proven.",
+      "candidate_owner": "member-dashboard-chat-worker renderer candidate; current front-gate/member-pages dependency retained",
+      "required_next_phase": "Phase 3/7 and Phase 6A",
+      "acceptance_requirement": "Audit exact route config, production winner, GET/HEAD/slash/query behavior, and Webflow bridge redirect before locking owner or removing aliases."
+    },
+    {
+      "route_or_namespace_key": "/sigil/apply and /sigil/api/private-model/apply",
+      "implementation_status": "front-gate delegation exists; target handlers missing/unverified",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "Matching sigil-worker page/API handlers and custom route attachment are missing/unverified.",
+      "candidate_owner": "sigil-worker candidate target only",
+      "required_next_phase": "Phase 4A",
+      "acceptance_requirement": "Implement/prove GET/HEAD/slash/query and POST/OPTIONS/body/auth behavior, owner headers, and exact production route attachment."
+    },
+    {
+      "route_or_namespace_key": "/sigil/api/* booking partition",
+      "implementation_status": "sigil-booking-worker implements /sigil/api/client/resolve, /sigil/api/models/search, and /sigil/api/booking/intake",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "Custom-host route attachment and production reachability are missing/unverified.",
+      "candidate_owner": "sigil-booking-worker implementation owner",
+      "required_next_phase": "Phase 2B",
+      "acceptance_requirement": "Prove exact custom-host binding, method coverage, production smoke, and fail-closed unknown subpaths."
+    },
+    {
+      "route_or_namespace_key": "/v1/rt/*",
+      "implementation_status": "realtime-worker implements room open and Durable Object websocket handlers",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "No exact custom-host route or service binding proof; workers.dev is not canonical.",
+      "candidate_owner": "realtime-worker implementation owner",
+      "required_next_phase": "Realtime route binding acceptance",
+      "acceptance_requirement": "Prove custom-host route or service binding, auth, room open/websocket paths, aliases if any, and production smoke."
+    },
+    {
+      "route_or_namespace_key": "Telegram endpoints",
+      "implementation_status": "telegram-worker implements webhook/send/complaint/preview aliases",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "No exact custom-host route or service binding proof; workers.dev/internal consumer URLs are not canonical.",
+      "candidate_owner": "telegram-worker implementation owner",
+      "required_next_phase": "Telegram route binding acceptance",
+      "acceptance_requirement": "Prove exact route/binding, webhook path, send path, auth, aliases, and production smoke."
+    },
+    {
+      "route_or_namespace_key": "/internal/admin/liff-renewal-queue and /v1/admin/line/liff-renewal-queue",
+      "implementation_status": "internal UI handler not proven; API exception candidate unresolved",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "No implemented/proven internal UI handler or route attachment; UI must remain separate from API candidate.",
+      "candidate_owner": "TBD for UI; API candidate pending exact handler/route confirmation",
+      "required_next_phase": "Phase 5",
+      "acceptance_requirement": "Prove UI handler/route attachment separately from API handler, method, auth, and route before locking owner."
+    },
+    {
+      "route_or_namespace_key": "/v1/partner/request",
+      "implementation_status": "partners-worker implements POST /v1/partner/request",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "partners-worker custom-host route config does not include /v1/partner/request; workers.dev references are not canonical production ownership.",
+      "candidate_owner": "partners-worker implementation owner",
+      "required_next_phase": "Partner route binding acceptance",
+      "acceptance_requirement": "Prove exact custom-host route or binding, CORS/auth/method behavior, and production smoke before locking owner."
+    },
+    {
+      "route_or_namespace_key": "LINE rich-menu/internal APIs",
+      "implementation_status": "member-dashboard-chat-worker implements /v1/internal/line/* and /__internal/line/* rich-menu/internal APIs",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "/webhooks/line route is proven, but rich-menu/internal APIs lack exact route or service binding proof; admin-worker can return service_binding_unavailable.",
+      "candidate_owner": "member-dashboard-chat-worker implementation owner; admin-worker admin proxy depends on binding",
+      "required_next_phase": "LINE rich-menu binding acceptance",
+      "acceptance_requirement": "Prove exact internal route or MEMBER_DASHBOARD_CHAT_WORKER service binding, auth, aliases, and production smoke before locking rich-menu owner."
+    },
+    {
+      "route_or_namespace_key": "/v1/sigil/board/status and /v1/sigil/board/queue",
+      "implementation_status": "sigil-worker implements read-only board status and queue handlers",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "The Webflow board calls these same-origin APIs, but sigil-worker has no exact custom-host route or service binding proof; safe-mode fallback is not API connectivity proof.",
+      "candidate_owner": "sigil-worker implementation owner",
+      "required_next_phase": "Phase 5/10 board UI API binding acceptance",
+      "acceptance_requirement": "Prove exact custom-host route or service binding, auth, response schema, failure behavior, and production smoke before locking production ownership."
+    },
+    {
+      "route_or_namespace_key": "direct admin/model APIs without exact ingress",
+      "implementation_status": "admin-worker implements handlers such as /v1/model/session/current, /v1/model/session/action, /v1/admin/model/session/link, /v1/admin/job/create, and member/model/payment admin APIs",
+      "production_ownership_status": "UNRESOLVED for direct paths without exact route, bridge, or service-binding proof",
+      "blocker": "admin-worker/wrangler.toml attaches exact login, Kenji, and Kenji-readiness routes only and has no broad /v1/admin/* route; handler evidence alone does not prove production ingress.",
+      "candidate_owner": "admin-worker implementation owner",
+      "required_next_phase": "Phase 5 admin API route binding acceptance",
+      "acceptance_requirement": "Prove exact production ingress, auth, method, response/failure behavior, and smoke per endpoint before marking direct APIs live-connected."
+    },
+    {
+      "route_or_namespace_key": "missing admin bridge backend operations",
+      "implementation_status": "immigrate-worker preserves ingress routes, but /v1/admin/clients/lineage-lookup, /v1/admin/clients/recent, /v1/admin/job/draft, and /v1/admin/line/push have no matching admin-worker handler in the current scan",
+      "production_ownership_status": "UNRESOLVED backend contracts; ingress remains TEMPORARY",
+      "blocker": "Path-preserving bridge requests may forward through ADMIN_WORKER to missing backend handlers and fall through to 404.",
+      "candidate_owner": "TBD backend owner; admin-worker candidate only after implementation or formal mapping",
+      "required_next_phase": "Phase 5 bridge backend acceptance",
+      "acceptance_requirement": "Implement or formally map backend operation, method, auth, payload, response, failure behavior, and production reachability while preserving existing ingress until migration is accepted."
+    },
+    {
+      "route_or_namespace_key": "/member/login",
+      "implementation_status": "not proven",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "Login/session contract not normalized.",
+      "candidate_owner": "admin-worker or auth Worker TBD",
+      "required_next_phase": "Phase 3A",
+      "acceptance_requirement": "Define and prove mmd_member_id login/session contract."
+    },
+    {
+      "route_or_namespace_key": "/member/dashboard, /v1/member/dashboard, /api/member/dashboard",
+      "implementation_status": "legacy page evidence exists; backend API handler/mapping not proven",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "Current legacy page route uses mmd-redirect-worker to immigrate-worker; /v1/member/dashboard and /api/member/dashboard backend API handler/mapping are not proven.",
+      "candidate_owner": "TBD non-legacy page owner; API owner unresolved",
+      "required_next_phase": "Phase 3A",
+      "acceptance_requirement": "Separate page route from API contract, select dashboard owner/auth, implement or prove backend API, and keep mmd_member_id target."
+    },
+    {
+      "route_or_namespace_key": "/member/payments",
+      "implementation_status": "admin-worker page delegation evidence only",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "Current admin-worker page delegation mixes member UI and admin review ownership.",
+      "candidate_owner": "TBD page owner; payments/admin APIs server-side",
+      "required_next_phase": "Phase 3A/5",
+      "acceptance_requirement": "Separate member payment status UI from admin review APIs and prove auth/member boundaries."
+    },
+    {
+      "route_or_namespace_key": "/sigil/member/apply",
+      "implementation_status": "Webflow UI exists",
+      "production_ownership_status": "UNRESOLVED for backend",
+      "blocker": "UI exists but /v1/member/applications backend owner missing.",
+      "candidate_owner": "Webflow page plus explicit backend TBD",
+      "required_next_phase": "Phase 3B",
+      "acceptance_requirement": "Add/prove backend owner for /v1/member/applications before live lock."
+    },
+    {
+      "route_or_namespace_key": "/sigil/pay, generic",
+      "implementation_status": "not implemented",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "No implementation evidence.",
+      "candidate_owner": "none",
+      "required_next_phase": "Phase 7",
+      "acceptance_requirement": "Implementation evidence required before owner lock."
+    },
+    {
+      "route_or_namespace_key": "/sigil/model/console, /sigil/model/client-brief",
+      "implementation_status": "current /model/console is legacy shell; canonical route not proven",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "No exact visible owner; current /model/console is legacy shell.",
+      "candidate_owner": "TBD Worker or Webflow",
+      "required_next_phase": "Phase 4B",
+      "acceptance_requirement": "Prove auth, model session, private brief access, and canonical visible owner."
+    },
+    {
+      "route_or_namespace_key": "model confirmation routes",
+      "implementation_status": "not proven",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "Contract/owner not proven.",
+      "candidate_owner": "TBD",
+      "required_next_phase": "Phase 4A",
+      "acceptance_requirement": "Define and prove confirm route contract, owner, auth, and private data boundaries."
+    },
+    {
+      "route_or_namespace_key": "internal admin visible pages",
+      "implementation_status": "admin login, Kenji shell, create-session, and create-job are source/config proven; remaining pages not fully locked",
+      "production_ownership_status": "PARTIAL",
+      "blocker": "Admin login and Kenji shell are source/config proven; remaining admin visible pages still need exact route owner locks.",
+      "candidate_owner": "admin-worker or temporary immigrate-worker ingress depending exact route",
+      "required_next_phase": "Phase 5A/5B",
+      "acceptance_requirement": "Prove signed session, auth, audit behavior, exact route proof, and migration safety per page."
+    },
+    {
+      "route_or_namespace_key": "public model apply API overlap",
+      "implementation_status": "overlapping concepts exist in sigil-worker and partners-worker route families",
+      "production_ownership_status": "UNRESOLVED",
+      "blocker": "sigil-worker and partners-worker route families overlap conceptually.",
+      "candidate_owner": "TBD between sigil-worker and partners-worker route families",
+      "required_next_phase": "Phase 4",
+      "acceptance_requirement": "Choose exact method/route/API contract owner and prove no write/API collision."
+    }
+  ],
+  "remove_later_items": [
+    {
+      "item": "mmd-redirect-worker catch-all",
+      "current_owner": "mmd-redirect-worker",
+      "replacement_condition": "Every dependent route has live direct owner or Redirect Rule.",
+      "removal_gate": "Phase 6 proof sequence and rollback plan."
+    },
+    {
+      "item": "/model/console shell",
+      "current_owner": "mmd-redirect-worker",
+      "replacement_condition": "/sigil/model/console live with auth and model session acceptance.",
+      "removal_gate": "Phase 6 after Phase 4B."
+    },
+    {
+      "item": "trust/login aliases",
+      "current_owner": "mmd-redirect-worker",
+      "replacement_condition": "/sigil/start live and approved.",
+      "removal_gate": "Phase 6A."
+    },
+    {
+      "item": "membership aliases",
+      "current_owner": "mmd-redirect-worker",
+      "replacement_condition": "/member/membership and dashboard flow live.",
+      "removal_gate": "Phase 6A."
+    },
+    {
+      "item": "/renew, /renewal aliases",
+      "current_owner": "mmd-redirect-worker",
+      "replacement_condition": "Renewal and membership route contracts proven.",
+      "removal_gate": "Phase 6A."
+    },
+    {
+      "item": "old academy/trust folder redirects",
+      "current_owner": "mmd-redirect-worker",
+      "replacement_condition": "Destination owners proven.",
+      "removal_gate": "Phase 6A Bulk Redirect migration."
+    },
+    {
+      "item": "workers.dev fallbacks",
+      "current_owner": "multiple Workers",
+      "replacement_condition": "Production routes/service bindings proven.",
+      "removal_gate": "Per-worker Phase 6 cleanup."
+    }
+  ],
+  "quality_gates": {
+    "documentation_only": true,
+    "runtime_files_changed": false,
+    "deploy_performed": false,
+    "cloudflare_route_mutation": false,
+    "webflow_publish": false,
+    "json_valid": true,
+    "generic_catch_all_canonical": false,
+    "workers_dev_canonical": false
+  }
+}
