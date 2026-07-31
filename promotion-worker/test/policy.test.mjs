@@ -63,9 +63,9 @@ test("benefits use separate identity campaign keys and upgrade adds no points", 
   const plan = buildBenefitPlan({ claimId: "claim-1", identityHash: "a".repeat(64), claimStatus: "benefit_approved",
     approvedMonths: 6, pointsAward: 300, paymentRequired: false, effectiveAt: "2026-08-01T00:00:00Z",
     membershipEndSnapshot: "2026-12-31", membershipTier: "standard", upgradeApplied: true });
-  assert.deepEqual(plan.map(x => x.benefitType), ["membership_extension", "anniversary_points"]);
+  assert.deepEqual(plan.map(x => x.benefitType), ["membership_extension", "membership_upgrade", "anniversary_points"]);
   assert.equal(plan[0].payload.tier, "premium");
-  assert.notEqual(plan[0].idempotencyKey, plan[1].idempotencyKey);
+  assert.equal(new Set(plan.map(x => x.idempotencyKey)).size, 3);
   assert.equal(plan.filter(x => x.benefitType === "anniversary_points").length, 1);
 });
 
@@ -74,4 +74,10 @@ test("payment gates and internal-only considerations", () => {
     pointsAward:200,paymentRequired:true,paymentVerified:false,effectiveAt:"2026-08-01" }), /verified_payment_required/);
   assert.deepEqual(internalConsiderations({ verifiedSpend365: 120000, verifiedLifetimeServiceSpend: 50000, hasVerifiedMembershipHistory: true }), ["vip_consideration"]);
   assert.deepEqual(internalConsiderations({ verifiedLifetimeServiceSpend: 50001, hasVerifiedMembershipHistory: true }), ["blackcard_private_consideration"]);
+});
+
+test("final Points are 300 current, 200 returning, and 66 new",()=>{
+  assert.equal(classifyEligibility({...base,membershipEndAt:"2026-12-01"}).pointsAward,300);
+  assert.equal(classifyEligibility({...base,membershipEndAt:"2026-07-01"}).pointsAward,200);
+  assert.equal(classifyEligibility({membershipHistory:[]}).pointsAward,66);
 });

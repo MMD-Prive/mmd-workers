@@ -1,6 +1,8 @@
 import { CAMPAIGN_ID, REFERENCE_DATE, assertCampaignActive, buildBenefitPlan, classifyEligibility,
   internalConsiderations, resolveMembershipPrice, resolveUpgradePrice, validateApprovedMonths, PolicyError } from "./policy.js";
 import { buildAuditEvent, customerSafeResult, validateTransition } from "./benefit-coordinator.js";
+import { AirtableClaimStore } from "./airtable-claim-store.js";
+export { CampaignClaimCoordinator } from "./claim-coordinator.js";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
 
@@ -46,8 +48,12 @@ async function openClaim(request, env) {
     reviewStatus: eligibility.manualReview ? "manual_review" : "pending", paymentVerified: false, upgradePaymentVerified: false,
     createdAt: now.toISOString(), updatedAt: now.toISOString(), audits: [], applications: [],
   };
-  await store.create(claim);
-  return json({ ok: true, resumed: false, data: customerSafeResult(claim), claim }, 201);
+  const audit = buildAuditEvent({ requestId: request.headers.get("x-request-id") || crypto.randomUUID(), actorId: "verified_line_member",
+    adminSessionId: "verified_line_session", eventType: "claim_created", claimId: claim.claimId, campaignId: CAMPAIGN_ID,
+    before: null, after: claim, reason: "verified_line_claim_open", idempotencyKey: `${CAMPAIGN_ID}:${identityHash}:claim` }, now);
+  const result = await createClaimSerialized(env, store, claim, audit);
+  const saved = result.existing || result.created || claim;
+  return json({ ok: true, resumed: Boolean(result.existing), data: customerSafeResult(saved), claim: saved }, result.existing ? 200 : 201);
 }
 
 async function readClaim(env, claimId) {
@@ -64,17 +70,27 @@ async function transitionClaim(request, env, claimId) {
   const next = structuredClone(before);
   if (to === "benefit_approved") {
     next.approvedMonths = validateApprovedMonths(before.eligibility, body.approvedMonths);
-    if (before.paymentRequired && body.paymentVerified !== true) throw new HttpError(409, "verified_payment_required");
-    next.paymentVerified = Boolean(body.paymentVerified);
-    next.upgradeRequired = Boolean(body.upgradeRequired);
-    next.upgradePaymentVerified = Boolean(body.upgradePaymentVerified);
-    next.upgradeApplied = Boolean(body.upgradeApplied);
-    next.effectiveAt = required(body.effectiveAt);
+    const upgradeRequired = body.upgradeRequested === true;
+    const truth = await verifyPaymentTruth(env, before, {
+      paymentReference: body.paymentReference, upgradePaymentReference: body.upgradePaymentReference, upgradeRequired,
+    });
+    if (before.paymentRequired && truth.paymentVerified !== true) throw new HttpError(409, "verified_payment_required");
+    if (upgradeRequired && truth.upgradePaymentVerified !== true) throw new HttpError(409, "verified_upgrade_payment_required");
+    next.paymentVerified = before.paymentRequired ? truth.paymentVerified === true : true;
+    next.paymentReference = truth.paymentReference || null;
+    next.upgradeRequired = upgradeRequired;
+    next.upgradePaymentVerified = upgradeRequired ? truth.upgradePaymentVerified === true : false;
+    next.upgradePaymentReference = truth.upgradePaymentReference || null;
+    next.upgradeApplied = upgradeRequired;
+    next.paymentTruth = truth;
+    next.effectiveAt = approvalEffectiveAt(before, truth, body);
+    next.approvedBy = required(body.actor?.id);
+    next.approvedAt = serverNow(env).toISOString();
   }
   next.claimStatus = to; next.reviewStatus = to; next.updatedAt = serverNow(env).toISOString();
   const audit = auditFrom(request, body, before, next);
   next.audits = [...(before.audits || []), audit];
-  await store.update(next, before.updatedAt);
+  await store.update(next, before.updatedAt, audit);
   return json({ ok: true, claim: next, transition: { from: before.claimStatus, to }, audit });
 }
 
@@ -83,22 +99,24 @@ async function applyClaim(request, env) {
   if (!before) throw new HttpError(404, "claim_not_found");
   const plan = buildBenefitPlan(before);
   if (!env.PAYMENTS_WORKER?.fetch) throw new HttpError(503, "payments_worker_binding_missing");
-  const results = [];
-  for (const item of plan) {
-    const response = await env.PAYMENTS_WORKER.fetch(new Request("https://payments-worker.local/v1/internal/campaign-benefits/apply", {
-      method: "POST", headers: { "content-type": "application/json", "x-mmd-service-binding": "promotion-worker",
-        "x-mmd-internal-secret": String(env.INTERNAL_SERVICE_SECRET || ""), "idempotency-key": item.idempotencyKey },
-      body: JSON.stringify({ ...item, actor: body.actor, requestId: body.requestId }) }));
-    const result = await response.json().catch(() => ({ ok: false, status: "failed" }));
-    results.push({ benefitType: item.benefitType, ...result });
-    if (!response.ok) break;
-  }
-  const complete = results.length === plan.length && results.every(x => ["applied", "already_applied"].includes(x.status));
+  const response = await env.PAYMENTS_WORKER.fetch(new Request("https://payments-worker.local/v1/internal/campaign-benefits/apply", {
+    method: "POST", headers: { "content-type": "application/json", "x-mmd-service-binding": "promotion-worker",
+      "x-mmd-internal-secret": String(env.INTERNAL_SERVICE_SECRET || ""), "x-request-id": required(body.requestId) },
+    body: JSON.stringify({ campaignId: CAMPAIGN_ID, claimId: before.claimId, identityHash: before.identityHash,
+      memberId: before.memberId, membershipEndSnapshot: before.membershipEndSnapshot, paymentTruth: before.paymentTruth || {},
+      paymentRequired: Boolean(before.paymentRequired), upgradeRequired: Boolean(before.upgradeRequired),
+      plan, actor: body.actor, requestId: body.requestId, reason: body.reason }) }));
+  const result = await response.json().catch(() => ({ ok: false, status: "failed", results: [] }));
+  const results = Array.isArray(result.results) ? result.results : [];
+  const complete = response.ok && result.status === "completed" && results.length === plan.length &&
+    results.every(x => ["applied", "already_applied"].includes(x.status));
   const next = { ...before, claimStatus: complete ? "benefit_applied" : "apply_partially_failed", applications: results,
+    newMembershipExpiry: result.newMembershipExpiry || before.newMembershipExpiry || null,
+    appliedBy: complete ? required(body.actor?.id) : before.appliedBy || null,
     appliedAt: complete ? serverNow(env).toISOString() : null, updatedAt: serverNow(env).toISOString() };
   const audit = auditFrom(request, { ...body, eventType: complete ? "benefit_applied" : "apply_partially_failed",
     idempotencyKey: plan.map(x => x.idempotencyKey).join(",") }, before, next);
-  next.audits = [...(before.audits || []), audit]; await store.update(next, before.updatedAt);
+  next.audits = [...(before.audits || []), audit]; await store.update(next, before.updatedAt, audit);
   return json({ ok: complete, status: next.claimStatus, results, data: customerSafeResult(next) }, complete ? 200 : 409);
 }
 
@@ -108,11 +126,41 @@ async function pricing(request) { const body = await bodyJson(request); return j
 function auditFrom(request, body, before, after) { const actor = body.actor || {}; return buildAuditEvent({
   requestId: body.requestId || request.headers.get("x-request-id"), actorId: actor.id, adminSessionId: actor.sessionId,
   eventType: body.eventType || after.claimStatus, claimId: before.claimId, campaignId: CAMPAIGN_ID,
-  before, after, reason: body.reason, idempotencyKey: body.idempotencyKey }); }
+  before: auditState(before), after: auditState(after), reason: body.reason, idempotencyKey: body.idempotencyKey }); }
+function auditState(claim) { const { audits, ...state } = claim || {}; return state; }
 
 function claimStore(env) {
   if (env.CAMPAIGN_CLAIM_STORE) return env.CAMPAIGN_CLAIM_STORE;
-  throw new HttpError(503, "campaign_claim_store_binding_missing");
+  try { return new AirtableClaimStore(env); } catch (error) { throw new HttpError(503, error.code || "campaign_claim_store_missing"); }
+}
+async function createClaimSerialized(env, store, claim, audit) {
+  if (env.CAMPAIGN_CLAIM_STORE) { const created = await store.create(claim, audit); return { created }; }
+  if (!env.CAMPAIGN_CLAIM_COORDINATOR?.getByName) throw new HttpError(503, "campaign_claim_coordinator_missing");
+  const response = await env.CAMPAIGN_CLAIM_COORDINATOR.getByName(`${CAMPAIGN_ID}:${claim.identityHash}`).fetch(
+    new Request("https://campaign-claim.local/open", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ claim, audit }) }));
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new HttpError(503, result.error || "campaign_claim_create_failed");
+  return result;
+}
+async function verifyPaymentTruth(env, claim, input) {
+  if (!claim.paymentRequired && !input.upgradeRequired) return { paymentVerified: true, upgradePaymentVerified: false };
+  if (!env.PAYMENTS_WORKER?.fetch) throw new HttpError(503, "payments_worker_binding_missing");
+  const response = await env.PAYMENTS_WORKER.fetch(new Request("https://payments-worker.local/v1/internal/campaign-payments/verify", {
+    method: "POST", headers: { "content-type": "application/json", "x-mmd-service-binding": "promotion-worker",
+      "x-mmd-internal-secret": String(env.INTERNAL_SERVICE_SECRET || "") },
+    body: JSON.stringify({ campaignId: CAMPAIGN_ID, claimId: claim.claimId, memberId: claim.memberId,
+      membershipEndSnapshot: claim.membershipEndSnapshot, paymentRequired: claim.paymentRequired,
+      paymentReference: input.paymentReference, upgradeRequired: input.upgradeRequired,
+      upgradePaymentReference: input.upgradePaymentReference }) }));
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new HttpError(response.status === 409 ? 409 : 503, result.error || "payment_truth_unavailable");
+  return result;
+}
+function approvalEffectiveAt(claim, truth, body) {
+  if (claim.status === "current_member") return required(claim.membershipEndSnapshot);
+  if (["recently_expired", "inactive_expired", "former_member"].includes(claim.status)) return required(truth.packageEndAt);
+  if (claim.status === "new_member") return required(truth.packageStartAt);
+  return required(body.effectiveAt);
 }
 async function internal(request, env) { const a = String(env.INTERNAL_SERVICE_SECRET || ""); const b = String(request.headers.get("x-mmd-internal-secret") || "");
   if (request.headers.get("x-mmd-service-binding") && a.length >= 24) return safeEqual(a, b); return false; }

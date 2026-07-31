@@ -20,6 +20,10 @@ AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_TABLE_PAYMENTS = "tblWGGJJOx5eBvBZJ"
 AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
 AIRTABLE_TABLE_POINTS_LEDGER = "points_ledger"
+AIRTABLE_TABLE_MEMBER_PACKAGES = "tblurt3GuKKiNjQAK"
+AIRTABLE_TABLE_MEMBERS = "tblgWc5VRon5o8Mhk"
+AIRTABLE_TABLE_CAMPAIGN_BENEFIT_APPLICATIONS = "tblc2iGQJs2b9XpgA"
+AIRTABLE_TABLE_ACTIVITY_LOGS = "tblbUWRoFL6OI6QMJ"
 
 # Payments table field mappings for slip evidence writes.
 # Field IDs avoid hard-coded display-name drift in Airtable.
@@ -56,3 +60,15 @@ SLIP_EVIDENCE_VERIFICATION_STATUS = "pending"
 binding = "PAY_SESSIONS_KV"
 id = "e0c6b8a0785e462dad6d01f61a893e87"
 preview_id = "8f3ede8e3b0f447ea046cee47c7eef0b"
+
+[[durable_objects.bindings]]
+name = "CAMPAIGN_MUTATION_COORDINATOR"
+class_name = "CampaignMutationCoordinator"
+
+[[migrations]]
+tag = "campaign-mutation-coordinator-v1"
+new_sqlite_classes = ["CampaignMutationCoordinator"]
+
+# Required secrets: AIRTABLE_API_KEY, INTERNAL_SERVICE_SECRET.
+# CAMPAIGN_SCHEMA_VERSION and AT_POINTS__EXPIRES_AT must remain absent until the
+# final Benefit Application choices and Points expiry field are proven in Airtable.

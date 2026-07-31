@@ -84,7 +84,7 @@ export function resolveUpgradePrice(input = {}) {
 }
 
 export function buildBenefitPlan(claim) {
-  if (!claim || claim.claimStatus !== "benefit_approved") throw new PolicyError("claim_not_approved");
+  if (!claim || !["benefit_approved", "apply_partially_failed"].includes(claim.claimStatus)) throw new PolicyError("claim_not_approved");
   if (claim.paymentRequired && claim.paymentVerified !== true) throw new PolicyError("verified_payment_required");
   if (claim.upgradeRequired && claim.upgradePaymentVerified !== true) throw new PolicyError("verified_upgrade_payment_required");
   const plan = [];
@@ -95,7 +95,12 @@ export function buildBenefitPlan(claim) {
       effectiveAt: claim.effectiveAt,
       tier: claim.upgradeApplied ? "premium" : claim.membershipTier,
       atomicWithTierUpgrade: Boolean(claim.upgradeApplied),
+      newExpiry: addCalendarMonths(date(claim.effectiveAt, "effectiveAt"), Number(claim.approvedMonths)).toISOString(),
     }));
+  }
+  if (claim.upgradeApplied) {
+    plan.push(benefit(claim, "membership_upgrade", { tier: "premium", effectiveAt: claim.effectiveAt,
+      newExpiry: Number(claim.approvedMonths) > 0 ? addCalendarMonths(date(claim.effectiveAt, "effectiveAt"), Number(claim.approvedMonths)).toISOString() : claim.effectiveAt }));
   }
   plan.push(benefit(claim, "anniversary_points", {
     points: Number(claim.pointsAward),

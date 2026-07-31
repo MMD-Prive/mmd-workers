@@ -7,6 +7,8 @@ workers_dev = false
 CAMPAIGN_ID = "mmd_6th_anniversary_2026"
 CAMPAIGN_TIMEZONE = "Asia/Bangkok"
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io"
+AIRTABLE_TABLE_CAMPAIGN_CLAIMS = "tblTH1LGJikBI0rly"
+AIRTABLE_TABLE_ACTIVITY_LOGS = "tblbUWRoFL6OI6QMJ"
 
 [observability]
 enabled = true
@@ -16,4 +18,13 @@ head_sampling_rate = 1
 binding = "PAYMENTS_WORKER"
 service = "payments-worker"
 
+[[durable_objects.bindings]]
+name = "CAMPAIGN_CLAIM_COORDINATOR"
+class_name = "CampaignClaimCoordinator"
+
+[[migrations]]
+tag = "campaign-claim-coordinator-v1"
+new_sqlite_classes = ["CampaignClaimCoordinator"]
+
 # Secrets: INTERNAL_SERVICE_SECRET, AIRTABLE_TOKEN, AIRTABLE_BASE_ID
+# CAMPAIGN_SCHEMA_VERSION must remain absent until the 2026-08-final Airtable select contract is verified.
