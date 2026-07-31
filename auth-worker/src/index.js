@@ -53,6 +53,10 @@ export default {
         return handleLogout(request, env);
       }
 
+      if (path === "/v1/internal/members/by-line" && request.method === "POST") {
+        return handleMemberSnapshotByLine(request, env);
+      }
+
       if (path === "/v1/admin/access/grant" && request.method === "POST") {
         return handleAdminGrant(request, env);
       }
@@ -227,6 +231,44 @@ async function handleLogout(request, env) {
   });
 }
 
+// Service-binding-only resolver used by member-pages-worker.  It deliberately
+// returns a small immutable membership snapshot, never the full member record.
+async function handleMemberSnapshotByLine(request, env) {
+  if (!isInternalServiceRequest(request, env)) {
+    return json(request, env, 401, { ok: false, error: "internal_service_unauthorized" });
+  }
+
+  const body = await readJson(request);
+  const lineUserId = String(body.lineUserId || body.line_user_id || "").trim();
+  if (!/^U[0-9a-f]{32}$/i.test(lineUserId)) {
+    return json(request, env, 400, { ok: false, error: "valid_line_user_id_required" });
+  }
+
+  const member = await findMemberByLineUserId(env, lineUserId);
+  if (!member) return json(request, env, 404, { ok: false, error: "member_not_found" });
+
+  // Promotion eligibility must also see a member's last expired package.  The
+  // normal account gate intentionally returns only active access, so use this
+  // dedicated snapshot and keep the existing login/gate behaviour unchanged.
+  const packageAccess = await deriveLatestMembershipSnapshot(env, member.fields || {});
+  const isActive = packageAccess.status === "active";
+  return json(request, env, 200, {
+    ok: true,
+    data: {
+      memberId: member.fields.member_id,
+      clientId: String(member.fields.client_id || member.fields.clientId || ""),
+      matchStatus: "matched",
+      membershipState: isActive ? "active" : "expired",
+      packageState: isActive ? "current" : "previous",
+      membershipTier: packageAccess.tier,
+      membershipStartAt: packageAccess.start_at,
+      membershipEndAt: packageAccess.expire_at,
+      hasFirstJob: false,
+      firstSessionStatus: "",
+    },
+  });
+}
+
 async function handleAdminGrant(request, env) {
   const auth = request.headers.get("authorization") || "";
   if (!env.ADMIN_BEARER || auth !== `Bearer ${env.ADMIN_BEARER}`) {
@@ -316,11 +358,11 @@ async function buildProfile(env, memberFields) {
 
 async function derivePackageAccess(env, memberFields) {
   const email = normalizeEmail(memberFields.email || "");
-  if (!email) return { tier: "guest", status: "guest", expire_at: "", package_code: "" };
+  if (!email) return { tier: "guest", status: "no_active_membership", start_at: "", expire_at: "", package_code: "" };
 
   const records = await airtableList(env, table(env, "MEMBER_PACKAGES"), {
-    filterByFormula: `LOWER({member_email})=${formulaString(email)}`,
-    sort: [{ field: "end_date", direction: "desc" }],
+    filterByFormula: `LOWER({${env.AIRTABLE_MEMBER_PACKAGES_MEMBER_EMAIL_FIELD || "member_email"}})=${formulaString(email)}`,
+    sort: [{ field: env.AIRTABLE_MEMBER_PACKAGES_END_DATE_FIELD || "end_date", direction: "desc" }],
     maxRecords: 20,
   });
 
@@ -328,18 +370,60 @@ async function derivePackageAccess(env, memberFields) {
   let best = null;
   for (const record of records) {
     const f = record.fields || {};
-    if (String(f.status || "").toLowerCase() !== "active") continue;
-    const endAt = Date.parse(f.end_date || "");
+    const statusField = env.AIRTABLE_MEMBER_PACKAGES_STATUS_FIELD || "status";
+    const endDateField = env.AIRTABLE_MEMBER_PACKAGES_END_DATE_FIELD || "end_date";
+    const startDateField = env.AIRTABLE_MEMBER_PACKAGES_START_DATE_FIELD || "start_date";
+    const packageCodeField = env.AIRTABLE_MEMBER_PACKAGES_PACKAGE_CODE_FIELD || "package_code";
+    if (String(f[statusField] || "").toLowerCase() !== "active") continue;
+    const endAt = Date.parse(f[endDateField] || "");
     if (!endAt || endAt < now) continue;
-    const tier = tierFromPackageCode(f.package_code || f.tier || "");
+    const tier = tierFromPackageCode(f[packageCodeField] || f.tier || "");
     const rank = TIER_RANK[tier] || 0;
     if (!best || rank > best.rank || endAt > best.endAt) {
-      best = { tier, rank, endAt, package_code: f.package_code || f.tier || "", expire_at: f.end_date || "" };
+      best = { tier, rank, endAt, package_code: f[packageCodeField] || f.tier || "", start_at: f[startDateField] || "", expire_at: f[endDateField] || "" };
     }
   }
 
-  if (!best) return { tier: "guest", status: "no_active_membership", expire_at: "", package_code: "" };
-  return { tier: best.tier, status: "active", expire_at: best.expire_at, package_code: best.package_code };
+  if (!best) return { tier: "guest", status: "no_active_membership", start_at: "", expire_at: "", package_code: "" };
+  return { tier: best.tier, status: "active", start_at: best.start_at, expire_at: best.expire_at, package_code: best.package_code };
+}
+
+// This is deliberately separate from derivePackageAccess(): account access
+// must remain active-only, while a time-limited promotion may classify a
+// verified member from their most recent completed membership.
+async function deriveLatestMembershipSnapshot(env, memberFields) {
+  const email = normalizeEmail(memberFields.email || "");
+  if (!email) return { tier: "guest", status: "none", start_at: "", expire_at: "", package_code: "" };
+
+  const records = await airtableList(env, table(env, "MEMBER_PACKAGES"), {
+    filterByFormula: `LOWER({${env.AIRTABLE_MEMBER_PACKAGES_MEMBER_EMAIL_FIELD || "member_email"}})=${formulaString(email)}`,
+    sort: [{ field: env.AIRTABLE_MEMBER_PACKAGES_END_DATE_FIELD || "end_date", direction: "desc" }],
+    maxRecords: 20,
+  });
+
+  const statusField = env.AIRTABLE_MEMBER_PACKAGES_STATUS_FIELD || "status";
+  const endDateField = env.AIRTABLE_MEMBER_PACKAGES_END_DATE_FIELD || "end_date";
+  const startDateField = env.AIRTABLE_MEMBER_PACKAGES_START_DATE_FIELD || "start_date";
+  const packageCodeField = env.AIRTABLE_MEMBER_PACKAGES_PACKAGE_CODE_FIELD || "package_code";
+  const acceptedStatuses = new Set(["active", "expired"]);
+  const now = Date.now();
+
+  for (const record of records) {
+    const f = record.fields || {};
+    if (!acceptedStatuses.has(String(f[statusField] || "").trim().toLowerCase())) continue;
+    const endAt = Date.parse(f[endDateField] || "");
+    if (!endAt) continue;
+    const packageCode = f[packageCodeField] || f.tier || "";
+    return {
+      tier: tierFromPackageCode(packageCode),
+      status: endAt >= now ? "active" : "expired",
+      start_at: f[startDateField] || "",
+      expire_at: f[endDateField] || "",
+      package_code: packageCode,
+    };
+  }
+
+  return { tier: "guest", status: "none", start_at: "", expire_at: "", package_code: "" };
 }
 
 async function deriveMemberEntitlements(env, memberIdentity) {
@@ -486,6 +570,13 @@ async function findMemberById(env, memberId) {
     return record ? { ...record, fields: normalizeMemberRecord(record) } : null;
   }
   const record = await airtableFirst(env, table(env, "MEMBERS"), `{member_id}=${formulaString(id)}`);
+  return record ? { ...record, fields: normalizeMemberRecord(record) } : null;
+}
+
+async function findMemberByLineUserId(env, lineUserId) {
+  const field = String(env.AIRTABLE_MEMBERS_LINE_USER_ID_FIELD || "line_user_id").trim();
+  if (!field) throw new Error("AIRTABLE_MEMBERS_LINE_USER_ID_FIELD is required.");
+  const record = await airtableFirst(env, table(env, "MEMBERS"), `{${field}}=${formulaString(lineUserId)}`);
   return record ? { ...record, fields: normalizeMemberRecord(record) } : null;
 }
 
@@ -785,6 +876,12 @@ function safeEqual(a, b) {
   let result = 0;
   for (let i = 0; i < x.length; i += 1) result |= x.charCodeAt(i) ^ y.charCodeAt(i);
   return result === 0;
+}
+
+function isInternalServiceRequest(request, env) {
+  const expected = String(env.INTERNAL_SERVICE_SECRET || "");
+  const received = String(request.headers.get("x-mmd-internal-secret") || "");
+  return expected.length >= 24 && safeEqual(expected, received);
 }
 
 function randomDigits(length) {

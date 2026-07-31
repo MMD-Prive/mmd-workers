@@ -1,0 +1,58 @@
+name = "payments-worker"
+main = "index.slip-evidence-clean.js"
+compatibility_date = "2026-03-12"
+workers_dev = true
+
+# Production entrypoint:
+# - index.slip-evidence-clean.js handles /v1/pay/slip/evidence first.
+# - All other payment routes are delegated back to index.js.
+
+# Production API routes for SIGIL payment flows.
+# These prevent sigil.mmdbkk.com/v1/* payment requests from falling through to origin and returning Cloudflare 522.
+routes = [
+  { pattern = "sigil.mmdbkk.com/v1/pay/*", zone_name = "mmdbkk.com" },
+  { pattern = "sigil.mmdbkk.com/v1/payments/*", zone_name = "mmdbkk.com" },
+  { pattern = "sigil.mmdbkk.com/v1/confirm/*", zone_name = "mmdbkk.com" }
+]
+
+[vars]
+AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+AIRTABLE_TABLE_PAYMENTS = "tblWGGJJOx5eBvBZJ"
+AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
+AIRTABLE_TABLE_POINTS_LEDGER = "points_ledger"
+
+# Payments table field mappings for slip evidence writes.
+# Field IDs avoid hard-coded display-name drift in Airtable.
+AT_PAYMENTS__PAYMENT_REF = "fldOO6SY49iDw8VBZ"
+AT_PAYMENTS__PAYMENT_REF_NAME = "Payment Reference"
+AT_PAYMENTS__PAYMENT_STATUS = "fldEJ1hmm7KwWuI6q"
+AT_PAYMENTS__NOTES = "fldjsZIKoJPawlb2u"
+AT_PAYMENTS__VERIFICATION_STATUS = "fldJ7a0Ube9F0bmRy"
+AT_PAYMENTS__PAYMENT_INTENT_STATUS = "fld04fr3bRJTohO6y"
+AT_PAYMENTS__SESSION_ID = "fld2wdhBvc8xrV6y5"
+AT_PAYMENTS__PAYMENT_STAGE = "fldrr9g8ZZjqAbdKQ"
+AT_PAYMENTS__PAYMENT_TYPE = "fldydUWHhqVLMkNSC"
+AT_PAYMENTS__SOURCE = "flduqtlX4PuOAJbFC"
+AT_PAYMENTS__PAYMENT_EVIDENCE_SOURCE = "fldHXyExqojVyxJPX"
+AT_PAYMENTS__CREATED_AT = "flduxcPpowBxEZSLu"
+
+TELEGRAM_CHAT_ID = "-1003546439681"
+TG_THREAD_CONFIRM = "61"
+TG_THREAD_POINTS = "17"
+POINTS_RATE = "100"
+WEB_BASE_URL = "https://mmdbkk.com"
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
+PAY_SESSIONS_TTL_DAYS = "30"
+
+# Slip evidence route stays evidence-only.
+SLIP_EVIDENCE_ROUTE = "/v1/pay/slip/evidence"
+SLIP_EVIDENCE_MODE = "evidence_only"
+SLIP_EVIDENCE_BINARY_STORAGE = "metadata_only_not_persisted"
+SLIP_EVIDENCE_OFFICIAL_VERIFICATION_REQUIRED = "true"
+SLIP_EVIDENCE_PAYMENT_STATUS = "pending"
+SLIP_EVIDENCE_VERIFICATION_STATUS = "pending"
+
+[[kv_namespaces]]
+binding = "PAY_SESSIONS_KV"
+id = "e0c6b8a0785e462dad6d01f61a893e87"
+preview_id = "8f3ede8e3b0f447ea046cee47c7eef0b"

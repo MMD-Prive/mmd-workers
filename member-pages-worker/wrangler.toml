@@ -6,3 +6,13 @@ workers_dev = true
 [observability]
 enabled = true
 head_sampling_rate = 1
+
+# Promotion Claim bridge. Bind LINE_ID_HASH_SECRET and INTERNAL_SERVICE_SECRET as secrets.
+# PROMOTION_MEMBER_STATUS_RESOLVER must resolve a verified LINE subject to an immutable member snapshot.
+[[services]]
+binding = "PROMOTION_WORKER"
+service = "promotion-worker"
+
+[[services]]
+binding = "PROMOTION_MEMBER_STATUS_RESOLVER"
+service = "mmd-auth-worker"

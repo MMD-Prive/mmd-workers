@@ -28,6 +28,15 @@ AIRTABLE_TABLE_AUTH_IDENTITIES = "MMD — Auth Identities"
 AIRTABLE_TABLE_AUTH_LOGIN_CODES = "MMD — Auth Login Codes"
 AIRTABLE_TABLE_AUTH_SESSIONS = "MMD — Auth Sessions"
 
+# Canonical membership resolver field mappings.  Keep these explicit so the
+# service-binding endpoint never guesses an Airtable column name.
+AIRTABLE_MEMBERS_LINE_USER_ID_FIELD = "line_user_id"
+AIRTABLE_MEMBER_PACKAGES_MEMBER_EMAIL_FIELD = "member_email"
+AIRTABLE_MEMBER_PACKAGES_STATUS_FIELD = "status"
+AIRTABLE_MEMBER_PACKAGES_START_DATE_FIELD = "start_date"
+AIRTABLE_MEMBER_PACKAGES_END_DATE_FIELD = "end_date"
+AIRTABLE_MEMBER_PACKAGES_PACKAGE_CODE_FIELD = "package_code"
+
 # MMD — Member Entitlements mapping.
 # The current table does not expose the old auth MVP member_id field.
 # Entitlement reads are fail-safe: if the identity/status fields are missing or unmapped,
@@ -70,3 +79,4 @@ MMD_AUTH_DEV_MODE = "false"
 # AIRTABLE_BASE_ID
 # AUTH_HMAC_SECRET
 # ADMIN_BEARER
+# INTERNAL_SERVICE_SECRET

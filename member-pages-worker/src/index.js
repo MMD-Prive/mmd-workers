@@ -1,3 +1,5 @@
+import { handlePromotionClaimOpen } from "./promotion-claim.js";
+
 const WORKER = "member-pages-worker";
 const VERSION = "20260701-disable-auto-renewal-routing";
 
@@ -16,6 +18,8 @@ const PAGE_PATHS = new Set([
   "/pay/pending-verification", "/pay/pending-verification/",
   "/member/profile", "/member/profile/",
 ]);
+
+const PROMOTION_CLAIM_PATHS = new Set(["/member/api/liff/promotion-claim", "/member/api/liff/promotion-claim/"]);
 
 const LIFF_IDENTIFY_PATHS = new Set([
   "/member/api/liff/identify",
@@ -45,6 +49,7 @@ export default {
   async fetch(request, env = {}) {
     const url = new URL(request.url);
     const method = request.method.toUpperCase();
+    if (PROMOTION_CLAIM_PATHS.has(url.pathname.toLowerCase())) return handlePromotionClaimOpen(request, env);
     if (isLiffIdentifyPath(url)) return handleLiffIdentify(request, env);
     if (method === "OPTIONS") return new Response(null, { status: 204, headers: headers("text/plain") });
     if (method !== "GET" && method !== "HEAD") return new Response("Method Not Allowed", { status: 405, headers: headers("text/plain; charset=utf-8") });
