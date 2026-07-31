@@ -1,0 +1,19 @@
+name = "promotion-worker"
+main = "src/index.js"
+compatibility_date = "2026-07-31"
+workers_dev = false
+
+[vars]
+CAMPAIGN_ID = "mmd_6th_anniversary_2026"
+CAMPAIGN_TIMEZONE = "Asia/Bangkok"
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io"
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[[services]]
+binding = "PAYMENTS_WORKER"
+service = "payments-worker"
+
+# Secrets: INTERNAL_SERVICE_SECRET, AIRTABLE_TOKEN, AIRTABLE_BASE_ID

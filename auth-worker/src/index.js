@@ -53,6 +53,10 @@ export default {
         return handleLogout(request, env);
       }
 
+      if (path === "/v1/internal/members/by-line" && request.method === "POST") {
+        return handlePromotionMemberSnapshot(request, env);
+      }
+
       if (path === "/v1/admin/access/grant" && request.method === "POST") {
         return handleAdminGrant(request, env);
       }
@@ -66,6 +70,126 @@ export default {
     }
   },
 };
+
+async function handlePromotionMemberSnapshot(request, env) {
+  if (!(await isTrustedPromotionCaller(request, env))) {
+    return json(request, env, 403, { ok: false, error: "forbidden" });
+  }
+  const body = await readJson(request);
+  const lineUserId = String(body.lineUserId || "").trim();
+  if (!/^U[a-f0-9]{32}$/i.test(lineUserId)) {
+    return json(request, env, 400, { ok: false, error: "invalid_line_identity" });
+  }
+
+  const lineField = String(env.AIRTABLE_MEMBER_LINE_USER_ID_FIELD || "line_user_id").trim();
+  const memberRecord = await airtableFirst(env, table(env, "MEMBERS"), `{${lineField}}=${formulaString(lineUserId)}`);
+  if (!memberRecord) {
+    return json(request, env, 200, { ok: true, data: emptyPromotionSnapshot() });
+  }
+
+  const member = normalizeMemberRecord(memberRecord);
+  const email = normalizeEmail(member.email);
+  const packages = email ? await airtableList(env, table(env, "MEMBER_PACKAGES"), {
+    filterByFormula: `LOWER({member_email})=${formulaString(email)}`,
+    sort: [{ field: "end_date", direction: "desc" }],
+    maxRecords: 100,
+  }) : [];
+  const payments = email ? await airtableList(env, table(env, "PAYMENTS"), {
+    filterByFormula: `LOWER({member_email})=${formulaString(email)}`,
+    maxRecords: 100,
+  }) : [];
+
+  return json(request, env, 200, {
+    ok: true,
+    data: buildPromotionMemberSnapshot(memberRecord.id, member, packages, payments),
+  });
+}
+
+export function buildPromotionMemberSnapshot(recordId, member = {}, packageRecords = [], paymentRecords = [], now = new Date()) {
+  const history = packageRecords.map((record) => {
+    const fields = record.fields || {};
+    const startAt = String(fields.start_date || fields.start_at || "").trim() || null;
+    const endAt = String(fields.end_date || fields.expire_at || fields.expires_at || "").trim() || null;
+    return {
+      packageId: String(record.id || fields.package_id || "") || null,
+      tier: tierFromPackageCode(fields.package_code || fields.tier || ""),
+      startAt,
+      endAt,
+      status: String(fields.status || "").trim().toLowerCase(),
+      verified: isVerifiedPackage(fields),
+    };
+  }).filter((item) => item.verified);
+  history.sort((a, b) => Date.parse(b.endAt || "") - Date.parse(a.endAt || ""));
+  const latest = history[0] || null;
+  const conflictingHistory = hasPromotionHistoryConflict(history);
+  const spend = verifiedPromotionSpend(paymentRecords, now);
+  return {
+    memberId: String(member.member_id || (recordId ? `mmd_rec_${recordId}` : "")) || null,
+    clientId: String(member.client_id || member.memberstack_id || "") || null,
+    membershipTier: latest?.tier || "",
+    membershipStartAt: latest?.startAt || null,
+    membershipEndAt: latest?.endAt || null,
+    membershipHistory: history,
+    hasVerifiedMembershipHistory: history.length > 0,
+    conflictingHistory,
+    verifiedSpend365: spend.last365,
+    verifiedLifetimeServiceSpend: spend.lifetimeService,
+  };
+}
+
+function emptyPromotionSnapshot() {
+  return { memberId: null, clientId: null, membershipTier: "", membershipStartAt: null,
+    membershipEndAt: null, membershipHistory: [], hasVerifiedMembershipHistory: false,
+    conflictingHistory: false, verifiedSpend365: 0, verifiedLifetimeServiceSpend: 0 };
+}
+
+function isVerifiedPackage(fields) {
+  const value = String(fields.verification_status || fields.payment_status || fields.status || "").trim().toLowerCase();
+  return ["active", "expired", "verified", "paid", "completed"].includes(value);
+}
+
+function hasPromotionHistoryConflict(history) {
+  if (history.some((item) => !item.endAt || Number.isNaN(Date.parse(item.endAt)))) return true;
+  const topEnd = history[0]?.endAt;
+  if (!topEnd) return false;
+  return history.slice(1).some((item) => item.endAt === topEnd && item.tier !== history[0].tier);
+}
+
+function verifiedPromotionSpend(records, now) {
+  const cutoff = new Date(now); cutoff.setUTCDate(cutoff.getUTCDate() - 365);
+  let last365 = 0; let lifetimeService = 0;
+  for (const record of records) {
+    const fields = record.fields || {};
+    const status = String(fields.verification_status || fields.payment_status || fields.status || "").trim().toLowerCase();
+    if (!["verified", "paid", "completed", "success"].includes(status)) continue;
+    const amount = Number(fields.amount_thb ?? fields.amount ?? fields.total_thb ?? 0);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    const paidAt = new Date(fields.verified_at || fields.paid_at || fields.created_at || fields.date || "");
+    if (!Number.isNaN(paidAt.getTime()) && paidAt >= cutoff && paidAt <= now) last365 += amount;
+    const category = String(fields.category || fields.payment_type || fields.product_type || "").toLowerCase();
+    if (/service|session|booking|job/.test(category)) lifetimeService += amount;
+  }
+  return { last365, lifetimeService };
+}
+
+async function isTrustedPromotionCaller(request, env) {
+  const caller = String(request.headers.get("x-mmd-service-binding") || "");
+  if (caller !== "member-pages-worker") return false;
+  const expected = String(env.INTERNAL_SERVICE_SECRET || "");
+  const supplied = String(request.headers.get("x-mmd-internal-secret") || "");
+  return expected.length >= 24 && await constantTimeSecretEqual(expected, supplied);
+}
+
+async function constantTimeSecretEqual(left, right) {
+  const encoder = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(left)),
+    crypto.subtle.digest("SHA-256", encoder.encode(right)),
+  ]);
+  const aa = new Uint8Array(a); const bb = new Uint8Array(b); let difference = 0;
+  for (let index = 0; index < aa.length; index += 1) difference |= aa[index] ^ bb[index];
+  return difference === 0;
+}
 
 async function handleRequestCode(request, env) {
   const body = await readJson(request);
