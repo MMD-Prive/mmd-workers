@@ -117,7 +117,7 @@ export async function handleLiffIdentify(request, env = {}) {
       },
       safe_next: {
         public_membership: appendSafeQuery(CANONICAL_MEMBERSHIP_PATH, safeQuery),
-        sigil_membership: appendSafeQuery(CANONICAL_MEMBERSHIP_PATH, safeQuery),
+        sigil_membership: appendSafeQuery("/sigil/membership", safeQuery),
         dashboard: dashboardUnlock.unlocked ? appendSafeQuery("/member/dashboard", safeQuery) : null,
         payment: appendSafeQuery("/pay/membership", safeQuery),
         sigil_payment: appendSafeQuery("/sigil/pay/membership", safeQuery),
@@ -142,7 +142,7 @@ function normalizeEntryRoute(value) {
 }
 
 function buildNextRoute(entryRoute, safeQuery, dashboardUnlock = { unlocked: false }, membership = defaultMembershipState()) {
-  if (entryRoute === "sigil_membership") return appendSafeQuery(CANONICAL_MEMBERSHIP_PATH, safeQuery);
+  if (entryRoute === "sigil_membership") return appendSafeQuery("/sigil/membership", safeQuery);
   if (entryRoute === "dashboard" && dashboardUnlock.unlocked) return appendSafeQuery("/member/dashboard", safeQuery);
   if (entryRoute === "dashboard") return appendSafeQuery(CANONICAL_MEMBERSHIP_PATH, safeQuery);
   if (entryRoute === "pay_membership") return appendSafeQuery("/pay/membership", safeQuery);
