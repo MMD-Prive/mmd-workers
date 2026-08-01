@@ -2,6 +2,8 @@
 
 Last updated: 2026-06-23
 
+> Superseded membership-route note (2026-08-01): `/sigil/member/membership` is now the canonical membership gate. References below to `/member/membership` describe the historical route; that path is retained only as a query-preserving `301` compatibility alias.
+
 Canonical rule: `/trust/inme` is legacy. The canonical SIGIL entry gate is
 `/sigil/start`.
 

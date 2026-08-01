@@ -1,5 +1,7 @@
 const WORKER = "member-pages-worker";
-const VERSION = "20260801-membership-approved-v2";
+const VERSION = "20260801-sigil-member-membership-v3";
+const CANONICAL_MEMBERSHIP_PATH = "/sigil/member/membership";
+const LEGACY_MEMBERSHIP_PATH = "/member/membership";
 
 // ROUTE LOCK
 // /sigil/pay/membership and /pay/membership are membership payment routes.
@@ -8,6 +10,7 @@ const VERSION = "20260801-membership-approved-v2";
 // Renewal can exist only as a manual legacy evidence page.
 
 const PAGE_PATHS = new Set([
+  CANONICAL_MEMBERSHIP_PATH, `${CANONICAL_MEMBERSHIP_PATH}/`,
   "/sigil/membership", "/sigil/membership/",
   "/sigil/pay/membership", "/sigil/pay/membership/",
   "/sigil/pay/renewal", "/sigil/pay/renewal/",
@@ -34,7 +37,12 @@ export function isMemberPagePath(url) {
 
 export function isMembershipPath(url) {
   const p = url.pathname.toLowerCase();
-  return p === "/member/membership" || p === "/member/membership/";
+  return p === CANONICAL_MEMBERSHIP_PATH || p === `${CANONICAL_MEMBERSHIP_PATH}/`;
+}
+
+function isLegacyMembershipPath(url) {
+  const p = url.pathname.toLowerCase();
+  return p === LEGACY_MEMBERSHIP_PATH || p === `${LEGACY_MEMBERSHIP_PATH}/`;
 }
 
 export function isLiffIdentifyPath(url) {
@@ -49,6 +57,7 @@ export default {
     if (method === "OPTIONS") return new Response(null, { status: 204, headers: headers("text/plain") });
     if (method !== "GET" && method !== "HEAD") return new Response("Method Not Allowed", { status: 405, headers: headers("text/plain; charset=utf-8") });
     if (!isMemberPagePath(url)) return new Response("Not Found", { status: 404, headers: headers("text/plain; charset=utf-8") });
+    if (isLegacyMembershipPath(url)) return redirectToCanonicalMembership(request);
 
     const p = cleanPath(url.pathname);
     if (p === "/sigil/membership") return renderSigilMembership(request);
@@ -107,8 +116,8 @@ export async function handleLiffIdentify(request, env = {}) {
         reason: "liff_identity_linking_only",
       },
       safe_next: {
-        public_membership: appendSafeQuery("/member/membership", safeQuery),
-        sigil_membership: appendSafeQuery("/sigil/membership", safeQuery),
+        public_membership: appendSafeQuery(CANONICAL_MEMBERSHIP_PATH, safeQuery),
+        sigil_membership: appendSafeQuery(CANONICAL_MEMBERSHIP_PATH, safeQuery),
         dashboard: dashboardUnlock.unlocked ? appendSafeQuery("/member/dashboard", safeQuery) : null,
         payment: appendSafeQuery("/pay/membership", safeQuery),
         sigil_payment: appendSafeQuery("/sigil/pay/membership", safeQuery),
@@ -133,24 +142,33 @@ function normalizeEntryRoute(value) {
 }
 
 function buildNextRoute(entryRoute, safeQuery, dashboardUnlock = { unlocked: false }, membership = defaultMembershipState()) {
-  if (entryRoute === "sigil_membership") return appendSafeQuery("/sigil/membership", safeQuery);
+  if (entryRoute === "sigil_membership") return appendSafeQuery(CANONICAL_MEMBERSHIP_PATH, safeQuery);
   if (entryRoute === "dashboard" && dashboardUnlock.unlocked) return appendSafeQuery("/member/dashboard", safeQuery);
-  if (entryRoute === "dashboard") return appendSafeQuery("/member/membership", safeQuery);
+  if (entryRoute === "dashboard") return appendSafeQuery(CANONICAL_MEMBERSHIP_PATH, safeQuery);
   if (entryRoute === "pay_membership") return appendSafeQuery("/pay/membership", safeQuery);
   if (entryRoute === "member_status") return routeForMemberStatus(membership, safeQuery);
-  if (entryRoute === "membership_review") return appendSafeQuery("/member/membership", safeQuery);
+  if (entryRoute === "membership_review") return appendSafeQuery(CANONICAL_MEMBERSHIP_PATH, safeQuery);
   if (entryRoute === "booking_request") return routeForBooking(membership, safeQuery);
-  return appendSafeQuery("/member/membership", safeQuery);
+  return appendSafeQuery(CANONICAL_MEMBERSHIP_PATH, safeQuery);
 }
 
 function routeForMemberStatus(membership, safeQuery) {
   if (canUsePrivateRoute(membership)) return appendSafeQuery("/member/profile", safeQuery, { status: "active" });
-  return appendSafeQuery("/member/membership", safeQuery);
+  return appendSafeQuery(CANONICAL_MEMBERSHIP_PATH, safeQuery);
 }
 
 function routeForBooking(membership, safeQuery) {
   if (canUsePrivateRoute(membership)) return appendSafeQuery("/sigil/booking", safeQuery);
-  return appendSafeQuery("/member/membership", safeQuery);
+  return appendSafeQuery(CANONICAL_MEMBERSHIP_PATH, safeQuery);
+}
+
+function redirectToCanonicalMembership(request) {
+  const source = new URL(request.url);
+  const target = new URL(source.toString());
+  target.pathname = CANONICAL_MEMBERSHIP_PATH;
+  const response = Response.redirect(target.toString(), 301);
+  if (request.method.toUpperCase() !== "HEAD") return response;
+  return new Response(null, { status: response.status, headers: response.headers });
 }
 
 function renderMembership(request) {
@@ -201,7 +219,7 @@ function renderSigilMembership(request) {
         <h1>Renewal / Access Conditions</h1>
         <p class="lead">หน้านี้ใช้ทบทวนเงื่อนไขสมาชิกและการต่ออายุ ไม่ใช่หน้า checkout และไม่ยืนยันสถานะจากหลักฐานเพียงอย่างเดียว</p>
         <p>Trial, Standard และ Premium จะเริ่มหรือกลับมาใช้งานได้หลัง official verification จากข้อมูลสมาชิกจริงเท่านั้น</p>
-        <div class="actions"><a class="btn" href="${attr(appendQuery("/member/membership", url.search))}">ดูแพ็กเกจสมาชิก</a><a class="btn ghost" href="${attr(appendQuery("/member/dashboard", url.search))}">Member Dashboard</a></div>
+        <div class="actions"><a class="btn" href="${attr(appendQuery(CANONICAL_MEMBERSHIP_PATH, url.search))}">ดูแพ็กเกจสมาชิก</a><a class="btn ghost" href="${attr(appendQuery("/member/dashboard", url.search))}">Member Dashboard</a></div>
       </div>
       <aside class="panel side-card blackcard-note">
         <p class="eyebrow">PRIVATE CONSIDERATION</p>
@@ -213,12 +231,12 @@ function renderSigilMembership(request) {
 
 function renderSigilPayMembershipSafety(request) {
   const url = new URL(request.url);
-  return page(request, "sigil-pay-membership-safety", `${nav(url.search)}<section class="hero payment-hero"><div class="panel hero-panel"><p class="eyebrow">SIGIL PAYMENT ROUTE LOCK</p><h1>Membership Payment</h1><p class="lead">เส้นทางนี้ถูกล็อกเป็น membership payment route และจะไม่ถูกส่งไป renewal อัตโนมัติ</p><p>ถ้าหน้า Webflow ถูกผูกไว้ที่ /sigil/pay/membership ให้ Cloudflare route หลัก pass-through ไป Webflow ได้โดยไม่ใช้ renewal logic</p><p class="actions"><a class="btn" href="${attr(appendQuery("/pay/membership", url.search))}">Fallback Payment Page</a><a class="btn ghost" href="${attr(appendQuery("/member/membership", url.search))}">Package Selection</a></p></div><aside class="panel side-card"><p class="eyebrow">Guarded</p><h2>No auto renewal redirect.</h2><p>ระบบ identity / status จะไม่ส่งหน้านี้ไป /sigil/pay/renewal อีก</p></aside></section>`);
+  return page(request, "sigil-pay-membership-safety", `${nav(url.search)}<section class="hero payment-hero"><div class="panel hero-panel"><p class="eyebrow">SIGIL PAYMENT ROUTE LOCK</p><h1>Membership Payment</h1><p class="lead">เส้นทางนี้ถูกล็อกเป็น membership payment route และจะไม่ถูกส่งไป renewal อัตโนมัติ</p><p>ถ้าหน้า Webflow ถูกผูกไว้ที่ /sigil/pay/membership ให้ Cloudflare route หลัก pass-through ไป Webflow ได้โดยไม่ใช้ renewal logic</p><p class="actions"><a class="btn" href="${attr(appendQuery("/pay/membership", url.search))}">Fallback Payment Page</a><a class="btn ghost" href="${attr(appendQuery(CANONICAL_MEMBERSHIP_PATH, url.search))}">Package Selection</a></p></div><aside class="panel side-card"><p class="eyebrow">Guarded</p><h2>No auto renewal redirect.</h2><p>ระบบ identity / status จะไม่ส่งหน้านี้ไป /sigil/pay/renewal อีก</p></aside></section>`);
 }
 
 function renderRenewalLegacySafety(request) {
   const url = new URL(request.url);
-  return page(request, "sigil-pay-renewal-manual-only", `${nav(url.search)}<section class="hero payment-hero"><div class="panel hero-panel"><p class="eyebrow">Manual Legacy Route</p><h1>Renewal route is manual only</h1><p class="lead">หน้านี้ไม่ใช่ fallback อัตโนมัติของ payment membership แล้ว ถ้าลูกค้าเข้ามาผิดทางให้กลับไปหน้าเลือกแพ็กเกจหรือ payment membership</p><p class="actions"><a class="btn" href="${attr(appendQuery("/sigil/pay/membership", url.search))}">ไป Membership Payment</a><a class="btn ghost" href="${attr(appendQuery("/member/membership", url.search))}">เลือกแพ็กเกจ</a></p></div><aside class="panel side-card"><p class="eyebrow">Guarded</p><h2>ไม่เปิดสิทธิ์อัตโนมัติ</h2><p>Renewal evidence ต้องเกิดจากเจตนาชัดเจนเท่านั้น ไม่ใช่ default redirect</p></aside></section>`);
+  return page(request, "sigil-pay-renewal-manual-only", `${nav(url.search)}<section class="hero payment-hero"><div class="panel hero-panel"><p class="eyebrow">Manual Legacy Route</p><h1>Renewal route is manual only</h1><p class="lead">หน้านี้ไม่ใช่ fallback อัตโนมัติของ payment membership แล้ว ถ้าลูกค้าเข้ามาผิดทางให้กลับไปหน้าเลือกแพ็กเกจหรือ payment membership</p><p class="actions"><a class="btn" href="${attr(appendQuery("/sigil/pay/membership", url.search))}">ไป Membership Payment</a><a class="btn ghost" href="${attr(appendQuery(CANONICAL_MEMBERSHIP_PATH, url.search))}">เลือกแพ็กเกจ</a></p></div><aside class="panel side-card"><p class="eyebrow">Guarded</p><h2>ไม่เปิดสิทธิ์อัตโนมัติ</h2><p>Renewal evidence ต้องเกิดจากเจตนาชัดเจนเท่านั้น ไม่ใช่ default redirect</p></aside></section>`);
 }
 
 function renderPay(request, env = {}) {
@@ -239,12 +257,12 @@ function renderPending(request) {
 
 function renderProfile(request) {
   const url = new URL(request.url);
-  return page(request, "member-profile", `${nav(url.search)}<section class="hero"><div class="panel hero-panel"><p class="eyebrow">Member Profile</p><h1>Member Status</h1><p class="lead">หน้านี้แสดงสถานะสมาชิกหลังตรวจสอบจาก ledger และระบบจริง</p><p class="actions"><a class="btn" href="${attr(appendQuery("/member/dashboard", url.search))}">Dashboard</a><a class="btn ghost" href="${attr(appendQuery("/member/membership", url.search))}">Membership</a></p></div></section>`);
+  return page(request, "member-profile", `${nav(url.search)}<section class="hero"><div class="panel hero-panel"><p class="eyebrow">Member Profile</p><h1>Member Status</h1><p class="lead">หน้านี้แสดงสถานะสมาชิกหลังตรวจสอบจาก ledger และระบบจริง</p><p class="actions"><a class="btn" href="${attr(appendQuery("/member/dashboard", url.search))}">Dashboard</a><a class="btn ghost" href="${attr(appendQuery(CANONICAL_MEMBERSHIP_PATH, url.search))}">Membership</a></p></div></section>`);
 }
 
 function renderBlackCardPaymentBlocked(request) {
   const url = new URL(request.url);
-  return page(request, "blackcard-payment-blocked", `${nav(url.search)}<section class="hero"><div class="panel hero-panel"><p class="eyebrow">Black Card Review</p><h1>Payment blocked</h1><p class="lead">Black Card ต้องผ่าน owner/founder approval ก่อน ไม่ใช่การกดจ่ายตรง</p><p class="actions"><a class="btn" href="${attr(appendQuery("/blackcard", url.search))}">Read Black Card</a><a class="btn ghost" href="${attr(appendQuery("/member/membership", url.search))}">Back to Membership</a></p></div></section>`);
+  return page(request, "blackcard-payment-blocked", `${nav(url.search)}<section class="hero"><div class="panel hero-panel"><p class="eyebrow">Black Card Review</p><h1>Payment blocked</h1><p class="lead">Black Card ต้องผ่าน owner/founder approval ก่อน ไม่ใช่การกดจ่ายตรง</p><p class="actions"><a class="btn" href="${attr(appendQuery("/blackcard", url.search))}">Read Black Card</a><a class="btn ghost" href="${attr(appendQuery(CANONICAL_MEMBERSHIP_PATH, url.search))}">Back to Membership</a></p></div></section>`);
 }
 
 function membershipPackageCard(pkg, selected, query) {
@@ -254,7 +272,7 @@ function membershipPackageCard(pkg, selected, query) {
 }
 
 function nav(query = "") {
-  return `<nav><a class="brand" href="${attr(appendQuery("/member/membership", query))}">MMD PRIVÉ</a><span><a href="${attr(appendQuery("/blackcard", query))}">Black Card</a><a href="${attr(appendQuery("/member/membership", query))}">Membership</a><a href="${attr(appendQuery("/member/dashboard", query))}">Dashboard</a></span></nav>`;
+  return `<nav><a class="brand" href="${attr(appendQuery(CANONICAL_MEMBERSHIP_PATH, query))}">MMD PRIVÉ</a><span><a href="${attr(appendQuery("/blackcard", query))}">Black Card</a><a href="${attr(appendQuery(CANONICAL_MEMBERSHIP_PATH, query))}">Membership</a><a href="${attr(appendQuery("/member/dashboard", query))}">Dashboard</a></span></nav>`;
 }
 
 function page(request, slug, body) {
@@ -274,7 +292,7 @@ function liffJson(data, status = 200) { return new Response(JSON.stringify(data)
 function clean(value) { return String(value || "").trim().slice(0, 300); }
 function pickSafeQuery(body, searchParams = new URLSearchParams()) { const safe = {}; for (const key of ["t", "code", "promo"]) { const value = clean(body[key] || searchParams.get(key)); if (value) safe[key] = value; } return safe; }
 function identityStatusFor(entryRoute, safeQuery) { if (entryRoute === "sigil_membership") return "review_required"; if (safeQuery.t || safeQuery.code) return "possible_match"; return "new_public_member"; }
-function dashboardUnlockFor(membership, entryRoute, safeQuery) { const liveStatuses = new Set(["confirmed", "en_route", "arrived", "met", "work_started", "completed"]); const sessionStatus = clean(membership.first_session_status || membership.session_status || membership.job_status).toLowerCase(); const unlocked = Boolean(membership.trusted && truthy(membership.has_first_job) && liveStatuses.has(sessionStatus)); const holdingRoute = appendSafeQuery(entryRoute === "sigil_membership" ? "/sigil/membership" : "/member/membership", safeQuery); return { unlocked, holding_route: unlocked ? null : holdingRoute, reason: unlocked ? "first_real_job_or_session_exists" : "waiting_for_first_real_job_or_session" }; }
+function dashboardUnlockFor(membership, entryRoute, safeQuery) { const liveStatuses = new Set(["confirmed", "en_route", "arrived", "met", "work_started", "completed"]); const sessionStatus = clean(membership.first_session_status || membership.session_status || membership.job_status).toLowerCase(); const unlocked = Boolean(membership.trusted && truthy(membership.has_first_job) && liveStatuses.has(sessionStatus)); const holdingRoute = appendSafeQuery(CANONICAL_MEMBERSHIP_PATH, safeQuery); return { unlocked, holding_route: unlocked ? null : holdingRoute, reason: unlocked ? "first_real_job_or_session_exists" : "waiting_for_first_real_job_or_session" }; }
 async function resolveMembershipState({ env, lineUserId, entryRoute, safeQuery }) { const fallback = defaultMembershipState(); const resolver = env?.MEMBER_STATUS_RESOLVER; if (!resolver?.fetch) return fallback; try { const response = await resolver.fetch(new Request("https://member-status-resolver.local/resolve", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ line_user_id: lineUserId, intent: entryRoute, safe_query: safeQuery }) })); const payload = await response.json().catch(() => ({})); if (!response.ok || payload?.ok === false) return { ...fallback, membership_state: "review_required" }; const data = payload?.data && typeof payload.data === "object" ? payload.data : payload; return { trusted: true, membership_state: normalizeMembershipState(data.membership_state || data.membershipStatus || data.member_status), package_state: normalizePackageState(data.package_state || data.packageStatus), has_first_job: truthy(data.has_first_job || data.hasFirstJob || data.first_real_job_exists || data.firstRealJobExists), first_session_status: clean(data.first_session_status || data.firstSessionStatus || data.session_status || data.job_status).toLowerCase() }; } catch { return { ...fallback, membership_state: "review_required" }; } }
 function defaultMembershipState() { return { trusted: false, membership_state: "unknown", package_state: "unknown", rich_menu_target: "public_member", has_first_job: false, first_session_status: "" }; }
 function normalizeMembershipState(value) { const state = clean(value).toLowerCase(); if (state === "active" || state === "current") return "active"; if (state === "expired") return "expired"; if (state === "no_paid_package" || state === "none" || state === "no_package") return "no_paid_package"; if (state === "review_required") return "review_required"; return "unknown"; }

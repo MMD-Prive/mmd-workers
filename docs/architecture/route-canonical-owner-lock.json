@@ -759,7 +759,7 @@
     },
     {
       "route_id": "16_member_membership",
-      "route": "/member/membership",
+      "route": "/sigil/member/membership",
       "route_family": "Member membership",
       "hosts": [
         "mmdbkk.com",
@@ -769,8 +769,9 @@
         "GET",
         "HEAD"
       ],
-      "canonical_route": "/member/membership",
+      "canonical_route": "/sigil/member/membership",
       "aliases": [
+        "/member/membership",
         "/membership"
       ],
       "alias_notes": null,
@@ -2706,7 +2707,7 @@
     },
     {
       "source_route": "/membership",
-      "target_route": "/member/membership",
+      "target_route": "/sigil/member/membership",
       "redirect_type": "301 compatibility",
       "query_preservation": "preserve query",
       "host_behavior": "apex/www",
@@ -2717,7 +2718,7 @@
     },
     {
       "source_route": "/membership/benefits",
-      "target_route": "/member/membership",
+      "target_route": "/sigil/member/membership",
       "redirect_type": "301 compatibility",
       "query_preservation": "preserve query",
       "host_behavior": "apex/www",
@@ -2728,7 +2729,7 @@
     },
     {
       "source_route": "/member/membership/benefits",
-      "target_route": "/member/membership",
+      "target_route": "/sigil/member/membership",
       "redirect_type": "301 compatibility",
       "query_preservation": "preserve query",
       "host_behavior": "apex/www",
@@ -3161,7 +3162,7 @@
     {
       "item": "membership aliases",
       "current_owner": "mmd-redirect-worker",
-      "replacement_condition": "/member/membership and dashboard flow live.",
+      "replacement_condition": "/sigil/member/membership and dashboard flow live.",
       "removal_gate": "Phase 6A."
     },
     {

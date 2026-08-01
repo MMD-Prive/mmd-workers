@@ -82,9 +82,9 @@ test("service-bound private-member draft returns canonical mapping", async () =>
   assert.equal(payload.rich_menu_type, "private_member");
   assert.equal(payload.rich_menu.name, "MMD Private Member");
   assert.equal(payload.rich_menu.areas.length, 6);
-  assert.equal(payload.rich_menu.areas[0].action.uri, "https://mmdbkk.com/member/membership?source=line&entry_route=member_status");
-  assert.equal(payload.rich_menu.areas[1].action.uri, "https://mmdbkk.com/member/membership?source=line&entry_route=points");
-  assert.equal(payload.rich_menu.areas[2].action.uri, "https://mmdbkk.com/member/membership?source=line&entry_route=renewal");
+  assert.equal(payload.rich_menu.areas[0].action.uri, "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=member_status");
+  assert.equal(payload.rich_menu.areas[1].action.uri, "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=points");
+  assert.equal(payload.rich_menu.areas[2].action.uri, "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=renewal");
   assert.deepEqual(payload.rich_menu.areas[3].action, {
     type: "postback",
     data: "mmd_action=private_support&source=private_rich_menu",
@@ -157,12 +157,12 @@ test("draft endpoint returns Public World with Message action Hi Per and safe ro
   assert.equal(payload.draft.areas[0].action.type, "message");
   assert.equal(payload.draft.areas[0].action.text, "Hi Per");
   assert.equal(payload.rich_menu.areas.length, 6);
-  assert.equal(payload.draft.areas[3].action.uri, "https://mmdbkk.com/member/membership?source=line&entry_route=booking_request&service=dinner_travel");
+  assert.equal(payload.draft.areas[3].action.uri, "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=booking_request&service=dinner_travel");
   assert.equal(payload.draft.areas[4].action.uri, "https://mmdbkk.com/pay/membership?source=line&entry_route=payment_proof");
   assert.deepEqual(payload.draft.areas[5].action, { type: "message", text: "Hi MMD" });
   assert.doesNotMatch(rendered, /\/member\/dashboard/);
   assert.doesNotMatch(rendered, /\/internal|\/admin/);
-  assert.match(rendered, /https:\/\/mmdbkk\.com\/member\/membership/);
+  assert.match(rendered, /https:\/\/mmdbkk\.com\/sigil\/member\/membership/);
 });
 
 test("validate endpoint calls LINE rich menu validate", async () => {
@@ -313,7 +313,7 @@ test("validate variants isolate postback message and URI actions", async () => {
     assert.equal(noPostback.areas[5].action.type, "message");
     assert.equal(noPostback.areas[5].action.text, "Hi Per");
     assert.equal(messageOnly.areas.every((area) => area.action.type === "message"), true);
-    assert.equal(uriOnly.areas.every((area) => area.action.type === "uri" && area.action.uri.startsWith("https://mmdbkk.com/member/membership")), true);
+    assert.equal(uriOnly.areas.every((area) => area.action.type === "uri" && area.action.uri.startsWith("https://mmdbkk.com/sigil/member/membership")), true);
     assert.equal(JSON.stringify({ noPostback, messageOnly, uriOnly }).includes("/member/dashboard"), false);
   } finally {
     globalThis.fetch = originalFetch;
