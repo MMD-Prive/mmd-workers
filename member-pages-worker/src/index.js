@@ -1,5 +1,5 @@
 const WORKER = "member-pages-worker";
-const VERSION = "20260701-disable-auto-renewal-routing";
+const VERSION = "20260801-membership-approved-v2";
 
 // ROUTE LOCK
 // /sigil/pay/membership and /pay/membership are membership payment routes.
@@ -23,9 +23,9 @@ const LIFF_IDENTIFY_PATHS = new Set([
 ]);
 
 const PACKAGES = [
-  { key: "7days", aliases: ["7day", "7_days", "guest", "guestpass", "trial"], title: "7 Days Guest Pass", eyebrow: "TEMPORARY ACCESS", price: 1499, duration: "7 days", tier: "guest-pass", copy: "Temporary membership access for a short review window. Official verification is still required." },
-  { key: "standard", aliases: ["lite", "std"], title: "Standard Package", eyebrow: "STANDARD ACCESS", price: 1199, duration: "365 days", tier: "standard", copy: "Standard member access after official verification." },
-  { key: "premium", aliases: ["prem"], title: "Premium Package", eyebrow: "PREMIUM ACCESS", price: 2999, duration: "365 days", tier: "premium", copy: "Broader member access after official verification." },
+  { key: "7days", aliases: ["7day", "7_days", "guest", "guestpass", "trial"], title: "Trial · 7 Days Guest Pass", eyebrow: "TRIAL ACCESS", price: 1499, duration: "7-day access · 3-month booking window", tier: "guest-pass", copy: "เริ่มทดลองใช้สิทธิ์สมาชิก 7 วัน และเลือกนายแบบได้ถึงระดับ Premium หลังผ่านการตรวจสอบ" },
+  { key: "standard", aliases: ["lite", "std"], title: "Standard Membership", eyebrow: "STANDARD ACCESS", price: 1199, duration: "365 days", tier: "standard", copy: "สิทธิ์สมาชิกสำหรับเริ่มต้นใช้งาน MMD อย่างต่อเนื่อง หลังผ่านการตรวจสอบอย่างเป็นทางการ" },
+  { key: "premium", aliases: ["prem"], title: "Premium Membership", eyebrow: "PREMIUM ACCESS", price: 2999, duration: "365 days", tier: "premium", copy: "สิทธิ์ที่กว้างขึ้นสำหรับการคัดเลือกและการดูแลที่ละเอียดกว่า หลังผ่านการตรวจสอบอย่างเป็นทางการ" },
 ];
 
 export function isMemberPagePath(url) {
@@ -157,12 +157,58 @@ function renderMembership(request) {
   const url = new URL(request.url);
   const selected = normalizePlan(url.searchParams.get("plan") || url.searchParams.get("package"));
   const packageCards = PACKAGES.map((pkg) => membershipPackageCard(pkg, selected, url.search)).join("");
-  return page(request, "member-membership", `${nav(url.search)}<section class="hero membership-hero"><div class="panel hero-panel"><p class="eyebrow">Member Package Selection</p><h1>Choose Your Access</h1><p class="lead">เลือกแพ็กเกจสมาชิกก่อน แล้วไปหน้า payment เฉพาะแพ็กเกจที่ซื้อได้จริง สถานะจะเริ่มหลัง official verification เท่านั้น</p><div class="steps"><span>Choose package</span><span>Transfer / proof</span><span>Official verification</span></div><p class="fine">สลิปเป็น supporting evidence เท่านั้น ไม่ใช่การเปิดสถานะสมาชิกอัตโนมัติ</p></div><aside class="panel side-card"><p class="eyebrow">Black Card Review</p><h2>ไม่ใช่แพ็กเกจที่ซื้อได้ทันที</h2><p>Black Card เป็น private review status สำหรับเคสที่ผ่าน owner/founder approval เท่านั้น</p><p class="actions"><a class="btn ghost" href="${attr(appendQuery("/blackcard", url.search))}">Read Black Card</a><a class="btn ghost" href="${attr(appendQuery("/member/dashboard", url.search))}">Member Login</a></p></aside></section><section class="package-grid">${packageCards}</section><section class="panel rule-panel"><p class="eyebrow">Route rule</p><h2>Membership routes stay membership routes</h2><p>/pay/membership และ /sigil/pay/membership จะไม่ถูกส่งไป renewal อัตโนมัติอีก</p></section>`);
+  return page(request, "member-membership", `${nav(url.search)}
+    <section class="hero membership-hero">
+      <div class="panel hero-panel membership-intro">
+        <p class="eyebrow">MMD PRIVÉ MEMBERSHIP</p>
+        <h1>Choose your<br>Privé Access</h1>
+        <p class="lead">เลือกสิทธิ์ที่เหมาะกับคุณ แล้วส่งหลักฐานเพื่อให้ MMD ตรวจสอบ สถานะสมาชิกจะเริ่มเมื่อได้รับการยืนยันอย่างเป็นทางการเท่านั้น</p>
+        <div class="steps" aria-label="Membership verification steps">
+          <span><b>01</b>Choose package</span>
+          <span><b>02</b>Transfer &amp; proof</span>
+          <span><b>03</b>Official verification</span>
+        </div>
+        <p class="fine proof-note">สลิปเป็นหลักฐานประกอบการตรวจสอบ ไม่ได้เปิดสถานะสมาชิกโดยอัตโนมัติ</p>
+      </div>
+      <aside class="panel side-card blackcard-note">
+        <p class="eyebrow">BLACK CARD NOTE</p>
+        <h2>ไม่ใช่แพ็กเกจที่กดซื้อได้ทันที</h2>
+        <p>Black Card เป็นสถานะ private review สำหรับสมาชิกที่ผ่านการพิจารณาและอนุมัติโดย Founder เท่านั้น</p>
+        <div class="actions stacked-actions">
+          <a class="btn ghost" href="${attr(appendQuery("/blackcard/black-card", url.search))}">อ่านรายละเอียด Black Card</a>
+          <a class="text-link" href="${attr(appendQuery("/member/dashboard", url.search))}">เข้าสู่ Member Dashboard <span aria-hidden="true">↗</span></a>
+        </div>
+      </aside>
+    </section>
+    <section class="packages-section" aria-labelledby="membership-packages-title">
+      <div class="section-heading">
+        <div><p class="eyebrow">MEMBERSHIP OPTIONS</p><h2 id="membership-packages-title">เริ่มจากสิทธิ์ที่พอดีกับคุณ</h2></div>
+        <p>Trial, Standard และ Premium เป็นแพ็กเกจที่สมัครได้จริง โดยทุกแพ็กเกจต้องผ่าน official verification</p>
+      </div>
+      <div class="package-grid">${packageCards}</div>
+    </section>
+    <section class="assurance-strip" aria-label="Membership safeguards">
+      <span>Private by design</span><span>Official verification</span><span>Member ledger protected</span>
+    </section>`);
 }
 
 function renderSigilMembership(request) {
   const url = new URL(request.url);
-  return page(request, "sigil-membership", `${nav(url.search)}<section class="hero"><div class="panel hero-panel"><p class="eyebrow">SIGIL ACCESS CONDITIONS</p><h1>Membership Access</h1><p class="lead">หน้านี้คือเงื่อนไขการเข้าถึง ไม่ใช่ public checkout และไม่ใช่การยืนยันสถานะสมาชิกทันที</p><p>สถานะจริงอ้างอิงจาก ledger และ official verification เท่านั้น</p><p class="actions"><a class="btn" href="${attr(appendQuery("/member/membership", url.search))}">ดูแพ็กเกจสมาชิก</a><a class="btn ghost" href="${attr(appendQuery("/sigil/pay/membership", url.search))}">ไปหน้าชำระสมาชิก</a></p></div><aside class="panel side-card"><p class="eyebrow">Private layer</p><h2>Black Card holder layer</h2><p>/sigil/blackcard เป็นชั้น private หลัง approval ไม่ใช่ public sales page</p></aside></section>`);
+  return page(request, "sigil-membership", `${nav(url.search)}
+    <section class="hero sigil-membership-hero">
+      <div class="panel hero-panel membership-intro">
+        <p class="eyebrow">SIGIL MEMBERSHIP REVIEW</p>
+        <h1>Renewal / Access Conditions</h1>
+        <p class="lead">หน้านี้ใช้ทบทวนเงื่อนไขสมาชิกและการต่ออายุ ไม่ใช่หน้า checkout และไม่ยืนยันสถานะจากหลักฐานเพียงอย่างเดียว</p>
+        <p>Trial, Standard และ Premium จะเริ่มหรือกลับมาใช้งานได้หลัง official verification จากข้อมูลสมาชิกจริงเท่านั้น</p>
+        <div class="actions"><a class="btn" href="${attr(appendQuery("/member/membership", url.search))}">ดูแพ็กเกจสมาชิก</a><a class="btn ghost" href="${attr(appendQuery("/member/dashboard", url.search))}">Member Dashboard</a></div>
+      </div>
+      <aside class="panel side-card blackcard-note">
+        <p class="eyebrow">PRIVATE CONSIDERATION</p>
+        <h2>Black Card remains invitation-led.</h2>
+        <p>Black Card อยู่ในขั้น private consideration/review หลังการอนุมัติ ไม่ใช่แพ็กเกจสำหรับชำระตรง</p>
+      </aside>
+    </section>`);
 }
 
 function renderSigilPayMembershipSafety(request) {
@@ -204,7 +250,7 @@ function renderBlackCardPaymentBlocked(request) {
 function membershipPackageCard(pkg, selected, query) {
   const isSelected = selected === pkg.key;
   const payUrl = appendQuery("/pay/membership", query, { plan: pkg.key, amount: pkg.price });
-  return `<article class="panel package${isSelected ? " selected" : ""}"><p class="eyebrow">${html(pkg.eyebrow)}</p><h2>${html(pkg.title)}</h2><p>${html(pkg.copy)}</p><p class="price">${money(pkg.price)} THB</p><p class="fine">${html(pkg.duration)}</p><p class="actions"><a class="btn" href="${attr(payUrl)}">เลือกแพ็กเกจนี้</a></p></article>`;
+  return `<article class="panel package membership-card${isSelected ? " selected" : ""}"${isSelected ? ' aria-current="true"' : ""}><div><p class="eyebrow">${html(pkg.eyebrow)}</p><h3>${html(pkg.title)}</h3><p>${html(pkg.copy)}</p></div><div class="package-footer"><p class="price"><span>${money(pkg.price)}</span> THB</p><p class="fine">${html(pkg.duration)}</p><p class="actions"><a class="btn" href="${attr(payUrl)}">เลือกแพ็กเกจนี้ <span aria-hidden="true">→</span></a></p></div></article>`;
 }
 
 function nav(query = "") {
@@ -212,7 +258,7 @@ function nav(query = "") {
 }
 
 function page(request, slug, body) {
-  const output = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>MMD Privé | ${html(slug)}</title><style>${styles()}</style></head><body><main data-mmd-page="${attr(slug)}" data-mmd-version="${VERSION}">${body}<footer>Payment proof is evidence only. Verification opens access. Member ledger is the source of truth. Auto renewal routing is disabled.</footer></main></body></html>`;
+  const output = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>MMD Privé | ${html(slug)}</title><style>${styles()}</style></head><body><main data-mmd-page="${attr(slug)}" data-mmd-version="${VERSION}">${body}<footer>Payment proof is evidence only. Verification opens access. Member ledger is the source of truth. Auto renewal routing is disabled.</footer></main></body></html>`;
   return new Response(request.method.toUpperCase() === "HEAD" ? null : output, { status: 200, headers: { ...headers("text/html; charset=utf-8"), "x-mmd-page": slug, "x-mmd-version": VERSION, "x-mmd-auto-renewal-route": "disabled", "cache-control": "no-store, no-cache, must-revalidate, max-age=0" } });
 }
 
@@ -247,4 +293,4 @@ function money(value) { return new Intl.NumberFormat("th-TH").format(Number(valu
 function html(value) { return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 function attr(value) { return html(value).replace(/"/g, "&quot;"); }
 function paymentScript(stage = "membership") { return `(function(){var f=document.getElementById("payform"),r=document.getElementById("payresult");if(!f||!r)return;function out(t){r.hidden=false;r.textContent=t;}function sid(){return "mem_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,10);}f.addEventListener("submit",function(e){e.preventDefault();var d=new FormData(f),api=f.getAttribute("data-api"),plan=f.getAttribute("data-plan"),amount=Number(f.getAttribute("data-amount")||0),sessionId=String(d.get("session_id")||"").trim()||sid();var payload={session_id:sessionId,payment_stage:${JSON.stringify(stage)},payment_type:${JSON.stringify(stage)},package_code:plan,amount:amount,member_email:String(d.get("member_email")||"").trim(),receipt_url:String(d.get("receipt_url")||"").trim(),notes:String(d.get("notes")||"").trim(),payment_method:"promptpay"};out("กำลังส่งหลักฐานเข้าระบบตรวจสอบ...");fetch(api+"/v1/pay/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(function(x){return x.json().catch(function(){return{}}).then(function(j){return{ok:x.ok,json:j}})}).then(function(o){if(!o.ok||!o.json||o.json.ok===false)throw new Error(o.json&&(o.json.error||o.json.message)||"payment_submit_failed");var ref=o.json.payment_ref||o.json.transaction_ref||"";var next=new URL("/pay/pending-verification",location.origin);new URLSearchParams(location.search||"").forEach(function(v,k){next.searchParams.set(k,v)});next.searchParams.set("status","pending_verification");next.searchParams.set("plan",plan);next.searchParams.set("amount",String(amount));next.searchParams.set("session_id",sessionId);if(ref)next.searchParams.set("payment_ref",ref);location.href=next.toString();}).catch(function(err){out("ส่งหลักฐานไม่สำเร็จ: "+(err&&err.message||err));});});})();`; }
-function styles() { return `:root{color-scheme:dark;--bg:#030201;--ink:#fff7e8;--muted:rgba(255,247,232,.64);--gold:#ffd98d;--gold2:#b98632;--line:rgba(255,216,151,.2);--panel:rgba(12,8,5,.76)}*{box-sizing:border-box}html{background:var(--bg)}body{margin:0;min-height:100vh;background:radial-gradient(circle at top left,#2b1b07 0,#080604 42%,#030201 100%);color:var(--ink);font-family:Inter,"Segoe UI","Noto Sans Thai",Arial,sans-serif}main{width:min(1120px,calc(100% - 28px));margin:0 auto;padding:16px 0 42px}nav{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px 0 18px}nav a{color:var(--ink);text-decoration:none;font-weight:800}.brand{color:var(--gold);letter-spacing:.12em}nav span{display:flex;gap:12px;flex-wrap:wrap}.hero{display:grid;gap:14px;margin:0 0 16px}.panel{border:1px solid var(--line);border-radius:26px;background:var(--panel);box-shadow:0 24px 78px rgba(0,0,0,.36);backdrop-filter:blur(14px);padding:clamp(18px,4vw,34px)}.hero-panel h1{margin:0 0 12px;font-size:clamp(42px,10vw,88px);line-height:.95;letter-spacing:-.055em}.eyebrow{margin:0 0 10px;color:var(--gold);font-size:12px;font-weight:900;letter-spacing:.14em;text-transform:uppercase}.lead{font-size:17px;line-height:1.68;color:rgba(255,247,232,.82)}p{line-height:1.7;color:var(--muted)}.steps,.summary{display:grid;gap:8px;margin-top:18px}.steps span,.summary span,.summary b{padding:10px 12px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.045)}.summary b{color:var(--gold)}.package-grid{display:grid;gap:12px}.package.selected{border-color:rgba(255,217,141,.58)}.price{font-size:28px;font-weight:900;color:#fff}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.btn,button.btn{min-height:48px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--gold2);border-radius:999px;padding:0 18px;color:#150e06;background:linear-gradient(135deg,#ffe7aa,#b98632);font-weight:900;text-decoration:none;cursor:pointer}.btn.ghost{color:var(--ink);background:rgba(255,255,255,.06)}label{display:grid;gap:7px;margin:12px 0;color:rgba(255,247,232,.86);font-weight:800}input,textarea{width:100%;border:1px solid rgba(255,255,255,.12);border-radius:16px;background:rgba(0,0,0,.28);color:#fff7e8;padding:13px 14px;outline:none}.notice{margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:16px;color:var(--gold)}footer{padding:24px 0;color:rgba(255,247,232,.46);font-size:12px;text-align:center}@media(min-width:760px){.hero{grid-template-columns:1.45fr .75fr;align-items:stretch}.package-grid{grid-template-columns:repeat(3,1fr)}.steps,.summary{grid-template-columns:repeat(3,1fr)}}`; }
+function styles() { return `:root{color-scheme:dark;--bg:#050403;--ink:#fffaf0;--muted:#c9c1b5;--soft:#a69d90;--gold:#f3d47d;--gold2:#b9852d;--line:rgba(243,212,125,.22);--panel:rgba(13,10,7,.88)}*{box-sizing:border-box}html{background:var(--bg);scroll-behavior:smooth}body{margin:0;min-height:100vh;background:radial-gradient(circle at 8% 0,rgba(137,82,18,.26),transparent 34rem),radial-gradient(circle at 90% 18%,rgba(107,28,46,.12),transparent 28rem),linear-gradient(135deg,#090704 0,#050403 52%,#020201 100%);color:var(--ink);font-family:"LINE Seed Sans TH","Noto Sans Thai","Segoe UI",Arial,sans-serif;-webkit-font-smoothing:antialiased}main{width:min(1240px,calc(100% - 32px));margin:0 auto;padding:18px 0 max(84px,env(safe-area-inset-bottom))}nav{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:8px 0 24px}nav a{color:var(--ink);text-decoration:none;font-size:14px;font-weight:750}nav a:hover{color:var(--gold)}.brand{color:var(--gold);letter-spacing:.14em}nav span{display:flex;gap:18px;flex-wrap:wrap}.hero{display:grid;gap:16px;margin:0 0 18px}.panel{border:1px solid var(--line);border-radius:28px;background:linear-gradient(145deg,rgba(19,14,10,.94),rgba(8,6,5,.88));box-shadow:0 24px 80px rgba(0,0,0,.34);backdrop-filter:blur(18px);padding:clamp(22px,4vw,44px)}.hero-panel h1{max-width:850px;margin:0 0 20px;font-size:clamp(48px,9vw,100px);line-height:.91;letter-spacing:-.058em}.hero-panel h1 br{display:block}.eyebrow{margin:0 0 13px;color:var(--gold);font-size:12px;font-weight:850;letter-spacing:.17em;text-transform:uppercase}.lead{max-width:760px;margin:0;color:#e8e0d4;font-size:clamp(17px,2vw,20px);line-height:1.72}p{line-height:1.72;color:var(--muted)}.steps,.summary{display:grid;gap:9px;margin-top:24px}.steps span,.summary span,.summary b{min-width:0;padding:12px 14px;border:1px solid rgba(255,255,255,.09);border-radius:14px;background:rgba(255,255,255,.045)}.steps span{display:flex;gap:10px;align-items:center;color:#f5eee3}.steps b{color:var(--gold);font-size:11px;letter-spacing:.08em}.summary b{color:var(--gold)}.proof-note{margin:18px 0 0;color:#b9b0a4}.side-card{display:flex;flex-direction:column;justify-content:center}.side-card h2{margin:4px 0 14px;font-size:clamp(28px,3.2vw,42px);line-height:1.16;letter-spacing:-.03em}.blackcard-note{background:radial-gradient(circle at 100% 0,rgba(199,151,62,.13),transparent 50%),linear-gradient(145deg,rgba(19,14,10,.95),rgba(7,5,4,.93))}.stacked-actions{align-items:flex-start;flex-direction:column}.text-link{color:#f3e4b3;text-decoration:none;font-weight:750}.text-link:hover{color:#fff}.packages-section{padding:clamp(40px,7vw,76px) 0 18px}.section-heading{display:grid;gap:12px;align-items:end;margin-bottom:22px}.section-heading h2{margin:0;font-size:clamp(32px,5vw,58px);line-height:1.08;letter-spacing:-.04em}.section-heading>p{max-width:520px;margin:0}.package-grid{display:grid;gap:14px}.membership-card{min-height:390px;display:flex;flex-direction:column;justify-content:space-between;transition:transform .22s ease,border-color .22s ease,background .22s ease}.membership-card:hover{transform:translateY(-4px);border-color:rgba(243,212,125,.48);background:linear-gradient(145deg,rgba(25,18,11,.98),rgba(9,7,5,.92))}.membership-card.selected{border-color:rgba(243,212,125,.72);box-shadow:0 24px 80px rgba(108,69,13,.24)}.membership-card h3{margin:4px 0 16px;color:#fffaf0;font-size:clamp(27px,3vw,36px);line-height:1.12;letter-spacing:-.035em}.membership-card p{margin-top:0}.package-footer{padding-top:26px}.price{margin:0;color:#fff;font-size:14px;font-weight:750;letter-spacing:.04em}.price span{font-size:34px;letter-spacing:-.035em}.fine{color:var(--soft);font-size:13px}.assurance-strip{display:grid;gap:1px;margin-top:16px;overflow:hidden;border:1px solid rgba(255,255,255,.08);border-radius:20px;background:rgba(255,255,255,.08)}.assurance-strip span{padding:16px 18px;background:#0c0907;color:#d9d0c3;font-size:13px;font-weight:750;text-align:center}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.btn,button.btn{min-height:50px;display:inline-flex;align-items:center;justify-content:center;gap:14px;border:1px solid var(--gold2);border-radius:999px;padding:0 20px;color:#171005;background:linear-gradient(135deg,#ffe9a8,#bd8630);font-weight:850;text-decoration:none;cursor:pointer}.btn:hover{filter:brightness(1.06)}.btn.ghost{color:var(--ink);background:rgba(255,255,255,.055)}label{display:grid;gap:7px;margin:12px 0;color:#e6ddd0;font-weight:750}input,textarea{width:100%;border:1px solid rgba(255,255,255,.13);border-radius:16px;background:rgba(0,0,0,.3);color:#fffaf0;padding:13px 14px;outline:none}.notice{margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:16px;color:var(--gold)}footer{padding:34px 0 0;color:#8e8579;font-size:12px;text-align:center}@media(max-width:639px){main{width:min(100% - 22px,1240px);padding-top:10px}nav{align-items:flex-start;padding-bottom:16px}nav span{justify-content:flex-end;gap:10px}nav span a:nth-child(2){display:none}.panel{border-radius:23px}.hero-panel h1{font-size:clamp(48px,16vw,70px)}.membership-card{min-height:0}.btn{width:100%}.stacked-actions{align-items:stretch}.text-link{padding:8px 2px}.assurance-strip{grid-template-columns:1fr}}@media(min-width:640px){.assurance-strip{grid-template-columns:repeat(3,1fr)}}@media(min-width:760px){.hero{grid-template-columns:minmax(0,1.48fr) minmax(300px,.72fr);align-items:stretch}.package-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.steps,.summary{grid-template-columns:repeat(3,minmax(0,1fr))}.section-heading{grid-template-columns:minmax(0,1fr) minmax(280px,.65fr)}}`; }
