@@ -15,6 +15,7 @@ describe("member-pages-worker membership page", () => {
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("x-mmd-worker"), "member-pages-worker");
     assert.equal(response.headers.get("x-mmd-page"), "member-membership");
+    assert.equal(response.headers.get("x-mmd-version"), "20260801-membership-approved-v2");
     assert.match(html, /Membership/);
     assert.match(html, /membership-hero/);
     assert.match(html, /membership-card/);
@@ -25,10 +26,15 @@ describe("member-pages-worker membership page", () => {
     assert.match(html, /Premium/);
     assert.match(html, /BLACK CARD NOTE/);
     assert.match(html, /ไม่ใช่แพ็กเกจที่กดซื้อ/);
+    assert.match(html, /LINE Seed Sans TH/);
+    assert.match(html, /Noto Sans Thai/);
     assert.doesNotMatch(html, /VIP/i);
     assert.doesNotMatch(html, /SVIP/i);
+    assert.doesNotMatch(html, /Membership routes stay membership routes/);
+    assert.doesNotMatch(html, /Route rule/);
     assert.doesNotMatch(html, /name=["']token["']/i);
     assert.ok(html.includes("/pay/membership?t=abc&amp;code=x&amp;promo=y"));
+    assert.ok(html.includes("/blackcard/black-card?t=abc&amp;code=x&amp;promo=y"));
     assert.ok(html.includes("/member/dashboard?t=abc&amp;code=x&amp;promo=y"));
   });
 
