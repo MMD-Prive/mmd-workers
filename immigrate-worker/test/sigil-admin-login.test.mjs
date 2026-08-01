@@ -129,12 +129,12 @@ try {
     assert.equal(response.headers.get("x-mmd-worker"), "immigrate-worker");
     assert.equal(response.headers.get("x-mmd-page"), "member-dashboard");
     assert.match(html, /Member Home \/ Status Hub/);
-    assert.ok(html.includes("/member/membership?t=abc&amp;code=gold&amp;promo=vip&amp;debug=recovery"));
+    assert.ok(html.includes("/sigil/member/membership?t=abc&amp;code=gold&amp;promo=vip&amp;debug=recovery"));
     assert.doesNotMatch(html, /name="token"/);
   }
 
   {
-    const response = await call("/member/membership?t=abc&code=gold&promo=vip&debug=recovery");
+    const response = await call("/sigil/member/membership?t=abc&code=gold&promo=vip&debug=recovery");
     const html = await response.text();
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("x-mmd-worker"), "immigrate-worker");

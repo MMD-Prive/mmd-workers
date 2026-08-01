@@ -14,7 +14,7 @@ Canonical frontend route: `/sigil/member/apply`.
 data-api-base="https://sigil.mmdbkk.com"
 data-submit-path="/v1/member/applications"
 data-dashboard-url="/sigil/member/dashboard"
-data-membership-url="/member/membership"
+data-membership-url="/sigil/member/membership"
 data-help-url="https://t.me/mmdapply"
 ```
 
@@ -48,7 +48,7 @@ Draft data uses `sessionStorage`, not `localStorage`. The draft is scoped to the
 - Kenji is the client/member continuity surface.
 - The page is for MMD membership, Public Models, curated male-model services, and member privileges.
 - It is not model recruitment.
-- Membership selection remains at `/member/membership`.
+- Membership selection is canonical at `/sigil/member/membership`; `/member/membership` remains a query-preserving compatibility redirect.
 - Member continuity goes to `/sigil/member/dashboard`.
 
 ## Deployment order

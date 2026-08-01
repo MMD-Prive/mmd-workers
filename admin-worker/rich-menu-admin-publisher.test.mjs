@@ -12,9 +12,9 @@ function canonicalPublicRichMenu() {
   return {
     areas: [
       { action: { type: "message", text: "Hi Per" } },
-      { action: { type: "uri", uri: "https://mmdbkk.com/member/membership?source=line&entry_route=public_membership" } },
-      { action: { type: "uri", uri: "https://mmdbkk.com/member/membership?source=line&entry_route=member_status" } },
-      { action: { type: "uri", uri: "https://mmdbkk.com/member/membership?source=line&entry_route=booking_request&service=dinner_travel" } },
+      { action: { type: "uri", uri: "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=public_membership" } },
+      { action: { type: "uri", uri: "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=member_status" } },
+      { action: { type: "uri", uri: "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=booking_request&service=dinner_travel" } },
       { action: { type: "uri", uri: "https://mmdbkk.com/pay/membership?source=line&entry_route=payment_proof" } },
       { action: { type: "message", text: "Hi MMD" } },
     ],
@@ -24,9 +24,9 @@ function canonicalPublicRichMenu() {
 function canonicalPrivateRichMenu() {
   return {
     areas: [
-      { action: { type: "uri", uri: "https://mmdbkk.com/member/membership?source=line&entry_route=member_status" } },
-      { action: { type: "uri", uri: "https://mmdbkk.com/member/membership?source=line&entry_route=points" } },
-      { action: { type: "uri", uri: "https://mmdbkk.com/member/membership?source=line&entry_route=renewal" } },
+      { action: { type: "uri", uri: "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=member_status" } },
+      { action: { type: "uri", uri: "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=points" } },
+      { action: { type: "uri", uri: "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=renewal" } },
       { action: { type: "postback", data: "mmd_action=private_support&source=private_rich_menu", displayText: "Private Support" } },
       { action: { type: "uri", uri: "https://mmdbkk.com/pay/membership?source=line&entry_route=payment_proof" } },
       { action: { type: "message", text: "Hi MMD" } },
@@ -97,9 +97,9 @@ test("admin draft calls member-dashboard service binding without forwarding oper
   assert.equal(body.ok, true);
   assert.equal(body.rich_menu.areas.length, 6);
   assert.deepEqual(body.rich_menu.areas[0].action, { type: "message", text: "Hi Per" });
-  assert.equal(body.rich_menu.areas[1].action.uri, "https://mmdbkk.com/member/membership?source=line&entry_route=public_membership");
-  assert.equal(body.rich_menu.areas[2].action.uri, "https://mmdbkk.com/member/membership?source=line&entry_route=member_status");
-  assert.equal(body.rich_menu.areas[3].action.uri, "https://mmdbkk.com/member/membership?source=line&entry_route=booking_request&service=dinner_travel");
+  assert.equal(body.rich_menu.areas[1].action.uri, "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=public_membership");
+  assert.equal(body.rich_menu.areas[2].action.uri, "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=member_status");
+  assert.equal(body.rich_menu.areas[3].action.uri, "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=booking_request&service=dinner_travel");
   assert.equal(body.rich_menu.areas[4].action.uri, "https://mmdbkk.com/pay/membership?source=line&entry_route=payment_proof");
   assert.deepEqual(body.rich_menu.areas[5].action, { type: "message", text: "Hi MMD" });
   assert.equal(calls.length, 1);

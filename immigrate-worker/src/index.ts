@@ -134,7 +134,7 @@ const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
   "https://mmdprive.com",
 ]);
 const MEMBER_DASHBOARD_ALIAS_PATH = "/member/dashboard";
-const MEMBER_MEMBERSHIP_ALIAS_PATH = "/member/membership";
+const MEMBER_MEMBERSHIP_ALIAS_PATH = "/sigil/member/membership";
 const MEMBER_ROUTE_BUILD = "member-route-recovery-20260615a";
 
 type AdminGateSession = {
@@ -2787,7 +2787,7 @@ function renderMemberMembershipPage(request: Request): Response {
           ${packages.map(([name, line]) => `<article class="member-packages__card"><div><span>Member option</span><strong>${escapeHtml(name)}</strong></div><p>${escapeHtml(line)}</p><div class="member-packages__actions"><a class="member-packages__btn primary" href="${escapeHtml(paymentHref)}">Select ${escapeHtml(name)}</a></div></article>`).join("")}
         </section>
         <section class="member-packages__note" aria-label="Route lock">
-          <p><strong>Route lock:</strong> /member/membership stays in the member layer. /pay/membership remains the separate payment page.</p>
+          <p><strong>Route lock:</strong> /sigil/member/membership is the canonical member gate. /pay/membership remains the separate payment page.</p>
           <a class="member-packages__btn" href="${escapeHtml(dashboardHref)}">Back to Status Hub</a>
         </section>
       </div>

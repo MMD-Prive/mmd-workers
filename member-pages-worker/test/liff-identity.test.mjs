@@ -30,7 +30,7 @@ function assertNoAutoRenewalRoute(data, expectedSigilPayment = "/sigil/pay/membe
 }
 
 describe("LIFF identity bridge", () => {
-  it("keeps public membership LIFF flow out of SIGIL by default", async () => {
+  it("routes public membership LIFF flow to the canonical SIGIL member membership gate", async () => {
     const { response, body } = await identify({
       line_user_id: "Uabc123",
       line_display_name: "Jay Public",
@@ -50,8 +50,7 @@ describe("LIFF identity bridge", () => {
     assert.equal(body.data.package_state, "unknown");
     assert.equal(body.data.rich_menu_target, "public_member");
     assert.equal(body.data.identity_status, "possible_match");
-    assert.equal(body.data.next_route, "/member/membership?t=abc&code=KJ-PRV-123456&promo=public-rate");
-    assert.doesNotMatch(body.data.next_route, /^\/sigil\//);
+    assert.equal(body.data.next_route, "/sigil/member/membership?t=abc&code=KJ-PRV-123456&promo=public-rate");
     assert.equal(body.data.customer_safe_summary.entry_route, "public_membership");
   });
 
@@ -67,7 +66,7 @@ describe("LIFF identity bridge", () => {
     assert.equal(body.ok, true);
     assert.equal(body.data.identity_status, "review_required");
     assert.equal(body.data.review_required, true);
-    assert.equal(body.data.next_route, "/sigil/membership?t=sigil-token&code=private-code&promo=renewal");
+    assert.equal(body.data.next_route, "/sigil/member/membership?t=sigil-token&code=private-code&promo=renewal");
     assert.equal(body.data.customer_safe_summary.entry_route, "sigil_membership");
   });
 
@@ -113,9 +112,9 @@ describe("LIFF identity bridge", () => {
       admin: "should-not-pass",
     });
 
-    assert.equal(body.data.next_route, "/member/membership?t=tok&code=code-1&promo=promo-1");
+    assert.equal(body.data.next_route, "/sigil/member/membership?t=tok&code=code-1&promo=promo-1");
     assert.equal(body.data.dashboard_unlock.unlocked, false);
-    assert.equal(body.data.dashboard_unlock.holding_route, "/member/membership?t=tok&code=code-1&promo=promo-1");
+    assert.equal(body.data.dashboard_unlock.holding_route, "/sigil/member/membership?t=tok&code=code-1&promo=promo-1");
     assert.equal(body.data.dashboard_unlock.reason, "waiting_for_first_real_job_or_session");
     assert.equal(body.data.safe_next.dashboard, null);
     assert.equal(body.data.safe_next.payment, "/pay/membership?t=tok&code=code-1&promo=promo-1");
@@ -136,9 +135,9 @@ describe("LIFF identity bridge", () => {
     );
 
     assert.equal(body.ok, true);
-    assert.equal(body.data.next_route, "/member/membership?t=tok");
+    assert.equal(body.data.next_route, "/sigil/member/membership?t=tok");
     assert.equal(body.data.dashboard_unlock.unlocked, false);
-    assert.equal(body.data.dashboard_unlock.holding_route, "/member/membership?t=tok");
+    assert.equal(body.data.dashboard_unlock.holding_route, "/sigil/member/membership?t=tok");
     assert.equal(body.data.safe_next.dashboard, null);
     assert.doesNotMatch(JSON.stringify(body.data), /\/member\/dashboard/);
   });
@@ -157,7 +156,7 @@ describe("LIFF identity bridge", () => {
     );
 
     assert.equal(body.ok, true);
-    assert.equal(body.data.next_route, "/member/membership?t=tok");
+    assert.equal(body.data.next_route, "/sigil/member/membership?t=tok");
     assert.equal(body.data.dashboard_unlock.unlocked, false);
     assert.equal(body.data.safe_next.dashboard, null);
   });
@@ -229,11 +228,11 @@ describe("LIFF identity bridge", () => {
 
     assert.equal(statusResult.body.data.membership_state, "expired");
     assert.equal(statusResult.body.data.rich_menu_target, "public_member");
-    assert.equal(statusResult.body.data.next_route, "/member/membership?t=tok");
+    assert.equal(statusResult.body.data.next_route, "/sigil/member/membership?t=tok");
     assert.equal(statusResult.body.data.safe_next.booking, null);
     assertNoAutoRenewalRoute(statusResult.body.data);
     assert.equal(renewalResult.body.data.intent, "membership_review");
-    assert.equal(renewalResult.body.data.next_route, "/member/membership?t=tok");
+    assert.equal(renewalResult.body.data.next_route, "/sigil/member/membership?t=tok");
     assert.equal(renewalResult.body.data.safe_next.dashboard, null);
     assertNoAutoRenewalRoute(renewalResult.body.data);
   });
@@ -246,7 +245,7 @@ describe("LIFF identity bridge", () => {
 
     assert.equal(body.ok, true);
     assert.equal(body.data.intent, "membership_review");
-    assert.equal(body.data.next_route, "/member/membership?t=tok");
+    assert.equal(body.data.next_route, "/sigil/member/membership?t=tok");
     assertNoAutoRenewalRoute(body.data);
   });
 
@@ -276,7 +275,7 @@ describe("LIFF identity bridge", () => {
     assert.equal(active.body.data.next_route, "/sigil/booking?t=tok");
     assert.equal(active.body.data.rich_menu_target, "private_member");
     assert.equal(active.body.data.safe_next.dashboard, null);
-    assert.equal(expired.body.data.next_route, "/member/membership?t=tok");
+    assert.equal(expired.body.data.next_route, "/sigil/member/membership?t=tok");
     assert.equal(expired.body.data.rich_menu_target, "public_member");
     assert.equal(expired.body.data.safe_next.booking, null);
     assertNoAutoRenewalRoute(expired.body.data);
@@ -316,13 +315,13 @@ describe("LIFF identity bridge", () => {
     assert.equal(noPaid.body.data.membership_state, "no_paid_package");
     assert.equal(noPaid.body.data.package_state, "none");
     assert.equal(noPaid.body.data.rich_menu_target, "public_member");
-    assert.equal(noPaid.body.data.next_route, "/member/membership?t=tok");
+    assert.equal(noPaid.body.data.next_route, "/sigil/member/membership?t=tok");
     assert.equal(noPaid.body.data.safe_next.booking, null);
     assertNoAutoRenewalRoute(noPaid.body.data);
     assert.equal(unknown.body.data.membership_state, "unknown");
     assert.equal(unknown.body.data.package_state, "unknown");
     assert.equal(unknown.body.data.rich_menu_target, "public_member");
-    assert.equal(unknown.body.data.next_route, "/member/membership?t=tok");
+    assert.equal(unknown.body.data.next_route, "/sigil/member/membership?t=tok");
     assert.equal(unknown.body.data.safe_next.dashboard, null);
     assertNoAutoRenewalRoute(unknown.body.data);
   });

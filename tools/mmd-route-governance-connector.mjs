@@ -32,7 +32,7 @@ const liffChecks = [
     name: "renewal",
     body: { line_user_id: "Ucodexmin_route_lock_check", entry_route: "renewal", t: "tok" },
     expectedIntent: "membership_review",
-    expectedNextRoute: "/member/membership?t=tok",
+    expectedNextRoute: "/sigil/member/membership?t=tok",
   },
   {
     name: "pay_membership",
