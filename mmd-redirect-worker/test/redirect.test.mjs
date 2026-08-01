@@ -176,7 +176,7 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
-  it("delegates /sigil/member/membership to member-pages-worker by service binding without redirecting or changing query strings", async () => {
+  it("passes /sigil/member/membership through to the published Webflow page even when the member-pages service binding exists", async () => {
     const serviceRequests = [];
     const env = {
       MEMBER_PAGES_WORKER: {
@@ -201,13 +201,14 @@ describe("MMD permanent redirect guard", () => {
 
     for (const url of urls) {
       const response = await requestWithEnv(url, env);
-      assert.equal(response.status, 200, url);
+      assert.equal(response.status, 209, url);
       assert.equal(response.headers.get("location"), null);
-      assert.equal(response.headers.get("x-mmd-page"), "member-membership");
-      assert.equal(serviceRequests.at(-1).url, url);
+      assert.equal(response.headers.get("x-test-pass-through"), "1", url);
+      assert.equal(passThroughRequests.at(-1).url, url);
     }
 
-    assert.equal(passThroughRequests.length, 0);
+    assert.equal(serviceRequests.length, 0);
+    assert.equal(passThroughRequests.length, urls.length);
   });
 
   it("delegates /sigil/membership to member-pages-worker before generic SIGIL pass-through", async () => {
@@ -663,12 +664,12 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
-  it("falls back to the member-pages-worker upstream for /sigil/member/membership when service binding is missing", async () => {
+  it("passes /sigil/member/membership through to Webflow when the member-pages service binding is missing", async () => {
     globalThis.fetch = async (request) => {
       passThroughRequests.push(request);
       return new Response("membership upstream", {
-        status: 200,
-        headers: { "x-mmd-worker": "immigrate-worker", "x-mmd-page": "member-membership" },
+        status: 209,
+        headers: { "x-test-pass-through": "1" },
       });
     };
 
@@ -680,12 +681,10 @@ describe("MMD permanent redirect guard", () => {
 
     for (const url of urls) {
       const response = await request(url);
-      const expected = new URL(url);
-      expected.protocol = "https:";
-      expected.hostname = "member-pages-worker.malemodel-bkk.workers.dev";
-      assert.equal(response.status, 200, url);
+      assert.equal(response.status, 209, url);
       assert.equal(response.headers.get("location"), null);
-      assert.equal(passThroughRequests.at(-1).url, expected.toString());
+      assert.equal(response.headers.get("x-test-pass-through"), "1", url);
+      assert.equal(passThroughRequests.at(-1).url, url);
     }
   });
 

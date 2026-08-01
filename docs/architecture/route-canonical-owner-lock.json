@@ -778,26 +778,27 @@
       "status": "PARTIAL_INTEGRATION",
       "status_display": "PARTIAL INTEGRATION",
       "surface_type": "page",
-      "page_owner": "member-pages-worker",
+      "page_owner": "Webflow",
       "api_owner": "payment APIs separate",
-      "current_owner": "member-pages-worker",
+      "current_owner": "Webflow",
       "current_front_gate": "mmd-redirect-worker",
-      "ui_location": "Worker-rendered page",
+      "ui_location": "Published Webflow page",
       "backend_owner": "payment APIs separate",
-      "candidate_owner": "member-pages-worker",
+      "candidate_owner": "Webflow",
       "owner_decision": "LOCKED",
       "owner_confidence": "HIGH",
       "compatibility_decision": "keep aliases",
       "production_verified": "unverified",
       "production_verification": "not live verified here",
-      "risk": "page is not payment truth",
+      "risk": "front gate must not shadow the full Webflow UI with the abbreviated Worker fallback; page is not payment truth",
       "evidence": "not live verified here",
       "conflicts": [
-        "front gate dependency"
+        "front gate pass-through dependency"
       ],
       "migration_phase": "Phase 3A",
       "acceptance_requirements": [
-        "Verify query preservation",
+        "Verify the full Webflow membership UI is visible",
+        "Verify query preservation and LIFF API ownership",
         "no auto-renewal redirect."
       ],
       "notes": {
