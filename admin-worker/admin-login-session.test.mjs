@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { webcrypto } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import worker from "./src/dashboard-worker.js";
+
+if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
 const LOGIN = "/internal/admin/login";
 const SESSION = "/internal/admin/login/session";
@@ -58,10 +61,10 @@ test("GET login renders a safe server-side POST form", async () => {
   assert.match(response.headers.get("content-type") || "", /^text\/html\b/);
   assert.match(response.headers.get("cache-control") || "", /no-store/);
   assert.match(response.headers.get("content-security-policy") || "", /form-action 'self'/);
-  assert.match(html, /<title>SIGIL Internal Login<\/title>/);
-  assert.match(html, /class="sigil-internal-login"/);
-  assert.match(html, /SIGIL Internal Command/);
-  assert.match(html, /Invite state/);
+  assert.match(html, /<title>MMD Privé · Internal Login<\/title>/);
+  assert.match(html, /data-mmd-page="admin-login-approved-hero"/);
+  assert.match(html, /Create your/);
+  assert.match(html, /Ewvon and Chang in MMD internal administration environment/);
   assert.match(html, /method="post"/);
   assert.match(html, /action="\/internal\/admin\/login\/session"/);
   assert.match(html, /name="credential"/);
@@ -70,7 +73,7 @@ test("GET login renders a safe server-side POST form", async () => {
   assert.doesNotMatch(html, /MMD Admin Sign In/);
   assert.doesNotMatch(html, /admin-worker\.malemodel-bkk\.workers\.dev/);
   assert.doesNotMatch(html, /mmdprive\.webflow\.io\/internal\/admin\/login/);
-  assert.doesNotMatch(html, /localStorage|sessionStorage|<script|\/private/);
+  assert.doesNotMatch(html, /localStorage|sessionStorage|Internal access\.|sigil-internal-login/);
 });
 
 test("apex and www query-bearing login pages render without redirecting", async () => {
