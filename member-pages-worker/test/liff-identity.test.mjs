@@ -66,7 +66,8 @@ describe("LIFF identity bridge", () => {
     assert.equal(body.ok, true);
     assert.equal(body.data.identity_status, "review_required");
     assert.equal(body.data.review_required, true);
-    assert.equal(body.data.next_route, "/sigil/member/membership?t=sigil-token&code=private-code&promo=renewal");
+    assert.equal(body.data.next_route, "/sigil/membership?t=sigil-token&code=private-code&promo=renewal");
+    assert.equal(body.data.safe_next.sigil_membership, "/sigil/membership?t=sigil-token&code=private-code&promo=renewal");
     assert.equal(body.data.customer_safe_summary.entry_route, "sigil_membership");
   });
 
