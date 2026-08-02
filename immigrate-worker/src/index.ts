@@ -97,6 +97,11 @@ const ADMIN_JOBS = {
   createSessionLegacy: "/internal/admin/jobs/create-session",
 } as const;
 
+const ANNIVERSARY_ADMIN = {
+  page: "/internal/admin/control-room/campaigns/anniversary",
+  apiPrefix: "/v1/admin/campaigns/anniversary",
+} as const;
+
 const JOBS = {
   root: "/internal/jobs",
   createJob: "/internal/jobs/create-job",
@@ -2417,9 +2422,11 @@ function isSigilProtectedBrowserRoute(pathname: string): boolean {
 
 function shouldUseInternalRoutesBridge(pathname: string): boolean {
   if (pathname.startsWith("/a/")) return true;
+  if (pathname.startsWith(`${ANNIVERSARY_ADMIN.apiPrefix}/`)) return true;
   if (INTERNAL_ROUTES_BRIDGE_ADMIN_API_PATHS.has(pathname)) return true;
   return (
     pathname === CONTROL_ROOM.root ||
+    pathname === ANNIVERSARY_ADMIN.page ||
     pathname === ADMIN_JOBS.createSession ||
     pathname === ADMIN_JOBS.createSessionLegacy ||
     pathname === JOBS.createJob

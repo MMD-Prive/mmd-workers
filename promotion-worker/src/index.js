@@ -3,7 +3,6 @@ import { CAMPAIGN_ID, REFERENCE_DATE, assertCampaignActive, buildBenefitPlan, cl
 import { buildAuditEvent, customerSafeResult, validateTransition } from "./benefit-coordinator.js";
 import { AirtableClaimStore } from "./airtable-claim-store.js";
 import { normalizeAdminDecision, requireAdminContext, adminDecisionPatch, assertAdminApplyAllowed, AdminGateError } from "./campaign-admin-core.js";
-export { CampaignClaimCoordinator } from "./claim-coordinator.js";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
 
@@ -55,8 +54,9 @@ async function openClaim(request, env) {
   const audit = buildAuditEvent({ requestId: request.headers.get("x-request-id") || crypto.randomUUID(), actorId: "verified_line_member",
     adminSessionId: "verified_line_session", eventType: "claim_created", claimId: claim.claimId, campaignId: CAMPAIGN_ID,
     before: null, after: claim, reason: "verified_line_claim_open", idempotencyKey: `${CAMPAIGN_ID}:${identityHash}:claim` }, now);
-  const result = await createClaimSerialized(env, store, claim, audit);
-  const saved = result.existing || result.created || claim;
+  const claimWithAudit = { ...claim, audits: [audit] };
+  const result = await createClaimSerialized(env, store, claimWithAudit, audit);
+  const saved = result.existing || result.created || claimWithAudit;
   return json({ ok: true, resumed: Boolean(result.existing), data: customerSafeResult(saved), claim: saved }, result.existing ? 200 : 201);
 }
 
@@ -145,7 +145,10 @@ function claimStore(env) {
   try { return new AirtableClaimStore(env); } catch (error) { throw new HttpError(503, error.code || "campaign_claim_store_missing"); }
 }
 async function createClaimSerialized(env, store, claim, audit) {
-  if (env.CAMPAIGN_CLAIM_STORE) { const created = await store.create(claim, audit); return { created }; }
+  if (env.CAMPAIGN_CLAIM_STORE) {
+    const created = await store.create(claim, audit);
+    return created?.claimId && created.claimId !== claim.claimId ? { existing: created } : { created };
+  }
   if (!env.CAMPAIGN_CLAIM_COORDINATOR?.getByName) throw new HttpError(503, "campaign_claim_coordinator_missing");
   const response = await env.CAMPAIGN_CLAIM_COORDINATOR.getByName(`${CAMPAIGN_ID}:${claim.identityHash}`).fetch(
     new Request("https://campaign-claim.local/open", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ claim, audit }) }));

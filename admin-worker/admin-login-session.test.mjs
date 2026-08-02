@@ -168,7 +168,15 @@ test("issued apex cookie authenticates auth/me and Kenji readiness APIs", async 
 
   const me = await request("/v1/admin/auth/me", { headers });
   assert.equal(me.status, 200);
-  assert.equal((await me.json()).authenticated, true);
+  const identity = await me.json();
+  assert.equal(identity.authenticated, true);
+  assert.equal(identity.actor.id, "per");
+  assert.equal(identity.session.actor.id, "per");
+  assert.match(identity.session.id, /^adm_[a-f0-9]{24}$/);
+  assert.match(identity.session.issued_at, /^\d{4}-\d{2}-\d{2}T/);
+  assert.match(identity.session.expires_at, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(JSON.stringify(identity).includes("nonce"), false);
+  assert.equal(JSON.stringify(identity).includes(cookieValue(Cookie)), false);
 
   for (const path of ["/v1/internal/kenji/knowledge/published", "/v1/admin/kenji/knowledge/meta", "/v1/admin/kenji/knowledge/list"]) {
     const readiness = await request(path, { headers });
@@ -296,11 +304,13 @@ test("existing bearer and confirm-key auth still work without a cookie", async (
     headers: { Origin: "https://mmdbkk.com", Authorization: `Bearer ${ENV.INTERNAL_TOKEN}` },
   });
   assert.equal(bearer.status, 200);
+  assert.equal((await bearer.json()).session, null);
 
   const confirmKey = await request("/v1/admin/auth/me", {
     headers: { Origin: "https://mmdbkk.com", "X-Confirm-Key": ENV.CONFIRM_KEY },
   });
   assert.equal(confirmKey.status, 200);
+  assert.equal((await confirmKey.json()).session, null);
 });
 
 test("unauthorized admin root points only to the canonical login", async () => {

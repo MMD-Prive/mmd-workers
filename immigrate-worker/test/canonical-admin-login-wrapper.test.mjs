@@ -82,7 +82,10 @@ try {
 
   const protectedControlRoom = await call("/internal/admin/control-room?view=live");
   assert.ok(protectedControlRoom.status >= 300 && protectedControlRoom.status < 400);
-  const protectedLocation = new URL(protectedControlRoom.headers.get("location"));
+  const protectedLocation = new URL(
+    protectedControlRoom.headers.get("location"),
+    "https://mmdbkk.com",
+  );
   assert.equal(protectedLocation.pathname, "/internal/admin/login");
   assert.equal(protectedLocation.searchParams.get("next"), "/internal/admin/control-room?view=live");
   assert.equal(protectedControlRoom.headers.get("x-mmd-admin-login-canonical"), "/internal/admin/login");

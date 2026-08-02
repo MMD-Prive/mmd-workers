@@ -51,6 +51,38 @@ function adminWorkerBinding(calls, status = 200) {
   };
 }
 
+function signedAdminWorkerBinding(calls, status = 200) {
+  return {
+    fetch: async (input) => {
+      calls.push(input);
+      return Response.json(status === 200 ? {
+        ok: true,
+        authenticated: true,
+        actor: { id: "per" },
+        session: { id: "adm_signed_session_001" },
+      } : { ok: false, authenticated: false }, { status });
+    },
+  };
+}
+
+function promotionWorkerBinding(calls, responseBody = null) {
+  return {
+    fetch: async (input) => {
+      calls.push(input);
+      if (responseBody) return Response.json(responseBody);
+      return Response.json({
+        ok: true,
+        claim: {
+          claimId: "MMD6-2026-ABCDEF123456",
+          claimStatus: "matched",
+          status: "current_member",
+          audits: [],
+        },
+      });
+    },
+  };
+}
+
 async function withPublicFetchTrap(run) {
   const originalFetch = globalThis.fetch;
   let calls = 0;
@@ -135,6 +167,111 @@ test("create-job page renders a required positive amount_thb input and payload f
   assert.match(html, /Number\.isFinite\(payload\.amount_thb\)\|\|payload\.amount_thb<=0/);
   assert.doesNotMatch(html, /amount_thb\s*:\s*1/);
   assert.doesNotMatch(html, /amount_thb\s*(?:\|\||\?\?)\s*1/);
+});
+
+test("anniversary Control Room page is protected and loads the same-origin UI asset", async () => {
+  const authCalls = [];
+  const { result: response, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/internal/admin/control-room/campaigns/anniversary"), {
+    ADMIN_WORKER: signedAdminWorkerBinding(authCalls),
+  }));
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(publicCalls, 0);
+  assert.equal(authCalls.length, 1);
+  assert.match(html, /data-mmd-anniversary-control/);
+  assert.match(html, /\/a\/anniversary-control-room\.js/);
+  assert.match(html, /Care Back/);
+  assert.doesNotMatch(html, /ADMIN_BEARER|INTERNAL_SERVICE_SECRET|x-mmd-internal-secret/);
+});
+
+test("anniversary claim read requires a signed Admin session and forwards only internal service authority", async () => {
+  const authCalls = [];
+  const promotionCalls = [];
+  const response = await handleInternalRoutes(request("/v1/admin/campaigns/anniversary/claims/MMD6-2026-ABCDEF123456"), {
+    ADMIN_WORKER: signedAdminWorkerBinding(authCalls),
+    PROMOTION_WORKER: promotionWorkerBinding(promotionCalls),
+    INTERNAL_SERVICE_SECRET: "s".repeat(32),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(authCalls.length, 1);
+  assert.equal(authCalls[0].headers.get("authorization"), null);
+  assert.equal(authCalls[0].headers.get("x-mmd-auth-bridge"), "immigrate-anniversary-admin-authority");
+  assert.equal(promotionCalls.length, 1);
+  assert.equal(promotionCalls[0].url, "https://promotion-worker.local/v1/internal/promotions/claims/MMD6-2026-ABCDEF123456");
+  assert.equal(promotionCalls[0].headers.get("x-mmd-service-binding"), "immigrate-worker");
+  assert.equal(promotionCalls[0].headers.get("x-mmd-internal-secret"), "s".repeat(32));
+  assert.equal(promotionCalls[0].headers.get("cookie"), null);
+});
+
+test("anniversary decision ignores browser actor and creates server-side audit context", async () => {
+  const authCalls = [];
+  const promotionCalls = [];
+  const response = await handleInternalRoutes(request("/v1/admin/campaigns/anniversary/claims/MMD6-2026-ABCDEF123456/decision", "mmdbkk.com", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      action: "approve",
+      reason: "payment and history verified",
+      approvedMonths: 6,
+      paymentReference: "pay_membership_001",
+      actor: { id: "attacker", sessionId: "fake" },
+      requestId: "browser-controlled",
+    }),
+  }), {
+    ADMIN_WORKER: signedAdminWorkerBinding(authCalls),
+    PROMOTION_WORKER: promotionWorkerBinding(promotionCalls),
+    INTERNAL_SERVICE_SECRET: "s".repeat(32),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(promotionCalls.length, 1);
+  const forwarded = JSON.parse(await promotionCalls[0].text());
+  assert.deepEqual(forwarded.actor, { id: "per", sessionId: "adm_signed_session_001" });
+  assert.match(forwarded.requestId, /^cr_[0-9a-f-]{36}$/i);
+  assert.notEqual(forwarded.requestId, "browser-controlled");
+  assert.equal(forwarded.reason, "payment and history verified");
+  assert.equal(forwarded.paymentReference, "pay_membership_001");
+});
+
+test("anniversary apply is fail-closed without real session context", async () => {
+  const authCalls = [];
+  const promotionCalls = [];
+  const response = await handleInternalRoutes(request("/v1/admin/campaigns/anniversary/apply", "mmdbkk.com", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ claimId: "MMD6-2026-ABCDEF123456", reason: "approved" }),
+  }), {
+    ADMIN_WORKER: signedAdminWorkerBinding(authCalls, 401),
+    PROMOTION_WORKER: promotionWorkerBinding(promotionCalls),
+    INTERNAL_SERVICE_SECRET: "s".repeat(32),
+  });
+
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).error, "admin_session_required");
+  assert.equal(authCalls.length, 1);
+  assert.equal(promotionCalls.length, 0);
+});
+
+test("anniversary apply forwards claim and signed context without browser credentials", async () => {
+  const authCalls = [];
+  const promotionCalls = [];
+  const response = await handleInternalRoutes(request("/v1/admin/campaigns/anniversary/apply", "mmdbkk.com", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ claimId: "MMD6-2026-ABCDEF123456", reason: "final apply", actor: { id: "fake" } }),
+  }), {
+    ADMIN_WORKER: signedAdminWorkerBinding(authCalls),
+    PROMOTION_WORKER: promotionWorkerBinding(promotionCalls, { ok: true, status: "benefit_applied" }),
+    INTERNAL_SERVICE_SECRET: "s".repeat(32),
+  });
+
+  assert.equal(response.status, 200);
+  const forwarded = JSON.parse(await promotionCalls[0].text());
+  assert.equal(forwarded.claimId, "MMD6-2026-ABCDEF123456");
+  assert.equal(forwarded.reason, "final apply");
+  assert.deepEqual(forwarded.actor, { id: "per", sessionId: "adm_signed_session_001" });
 });
 
 test("workers.dev and unknown hosts do not verify a public-host cookie", async () => {
@@ -358,6 +495,8 @@ test("wrangler routes only expose exact immigrate bridge surfaces", async () => 
   const requiredPatterns = [
     "mmdbkk.com/internal/admin/control-room*",
     "www.mmdbkk.com/internal/admin/control-room*",
+    "mmdbkk.com/v1/admin/campaigns/anniversary*",
+    "www.mmdbkk.com/v1/admin/campaigns/anniversary*",
     "mmdbkk.com/internal/admin/create-session*",
     "www.mmdbkk.com/internal/admin/create-session*",
     "mmdbkk.com/internal/admin/jobs/create-session*",
@@ -393,6 +532,7 @@ test("wrangler routes only expose exact immigrate bridge surfaces", async () => 
   assert.doesNotMatch(wrangler, /pattern = "mmdbkk\.com\/v1\/admin\/clients\/lineage-lookup\*"/);
   assert.doesNotMatch(wrangler, /pattern = "www\.mmdbkk\.com\/v1\/admin\/clients\/lineage-lookup\*"/);
   assert.match(wrangler, /binding = "ADMIN_WORKER"/);
+  assert.match(wrangler, /binding = "PROMOTION_WORKER"/);
 });
 
 test("protected-page login redirects preserve only same-origin internal next paths", async () => {

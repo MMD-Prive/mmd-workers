@@ -24,12 +24,24 @@ ADMIN_WORKER_BASE_URL = "https://admin-worker.malemodel-bkk.workers.dev"
 binding = "ADMIN_WORKER"
 service = "admin-worker"
 
+[[services]]
+binding = "PROMOTION_WORKER"
+service = "promotion-worker"
+
 [[routes]]
 pattern = "mmdbkk.com/internal/admin/control-room*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/internal/admin/control-room*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/campaigns/anniversary*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/campaigns/anniversary*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
@@ -130,6 +142,7 @@ zone_name = "mmdbkk.com"
 
 # Secrets:
 # wrangler secret put INTERNAL_TOKEN
+# wrangler secret put INTERNAL_SERVICE_SECRET
 # wrangler secret put AIRTABLE_API_KEY
 
 # Exact/narrow routes above let the post-login worker-rendered admin pages and
