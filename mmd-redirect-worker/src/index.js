@@ -10,11 +10,16 @@ export const MEMBER_PAGES_UPSTREAM = "https://member-pages-worker.malemodel-bkk.
 export const ADMIN_WORKER_UPSTREAM = "https://admin-worker.malemodel-bkk.workers.dev";
 export const SIGIL_WORKER_UPSTREAM = "https://sigil.mmdbkk.com";
 export const FRONT_GATE = "mmd-redirect-worker";
-export const FRONT_VERSION = "20260802-sigil-member-membership-webflow";
+export const FRONT_VERSION = "20260803-studio-route-polish";
 export const CANONICAL_MEMBERSHIP_PATH = "/sigil/member/membership";
 export const PUBLIC_BLACKCARD_PAGE = "public-blackcard";
 export const SIGIL_APPLY_ROUTE_OWNER = "sigil-worker";
 export const KENJI_KNOWLEDGE_ADMIN_PATHS = new Set(["/internal/admin/kenji-knowledge", "/internal/admin/kenji-knowledge/"]);
+export const STUDIO_WEBFLOW_ROUTE_REWRITES = new Map([
+  ["/studio/upload", { path: "/internal/admin/studio/upload", page: "studio-upload" }],
+  ["/studio/review", { path: "/internal/admin/studio/review", page: "studio-review" }],
+  ["/studio/model-preview", { path: "/internal/admin/studio/model-preview", page: "studio-model-preview" }],
+]);
 
 export const REDIRECT_HOSTS = new Set(["www.mmdbkk.com", "mmdbkk.com", "mmdprive.com", "www.mmdprive.com", "malemodel-bkk.workers.dev"]);
 export const NEVER_TOUCH_HOSTS = new Set(["sigil.mmdbkk.com"]);
@@ -55,6 +60,10 @@ export function findMappedPath(pathname) {
     if (key.startsWith(rule.from.toLowerCase())) return `${rule.to}${normalized.slice(rule.from.length)}`.replace(/\/{2,}/g, "/");
   }
   return normalized;
+}
+
+export function findStudioWebflowRoute(pathname) {
+  return STUDIO_WEBFLOW_ROUTE_REWRITES.get(normalizePath(pathname).toLowerCase()) || null;
 }
 
 function withFrontGateHeaders(response) {
@@ -139,6 +148,15 @@ async function fetchSigilWorkerRoute(request, env, url, page) {
   return withRouteOwnerHeaders(await fetch(new Request(target.toString(), request)), { owner: SIGIL_APPLY_ROUTE_OWNER, page, origin: SIGIL_WORKER_UPSTREAM });
 }
 
+async function fetchStudioWebflowRoute(request, url, route) {
+  const target = new URL(url.toString());
+  target.protocol = CANONICAL_PROTOCOL;
+  target.hostname = CANONICAL_HOST;
+  target.pathname = route.path;
+  const response = await fetch(new Request(target.toString(), request));
+  return withRouteOwnerHeaders(response, { owner: FRONT_GATE, page: route.page, origin: `webflow-rewrite:${route.path}` });
+}
+
 function htmlResponse(request, html, page, extraHeaders = {}) {
   return new Response(request.method.toUpperCase() === "HEAD" ? null : html, {
     status: 200,
@@ -182,6 +200,8 @@ export default {
     if (isSigilPrivateModelApplyApiPath(url)) return fetchSigilWorkerRoute(request, env, url, "sigil-private-model-apply-api");
     if (isMemberApiPath(url)) return fetchMemberPage(request, env, url);
     if (!isSafePageRequest(request)) return withFrontGateHeaders(await fetch(request));
+    const studioRoute = findStudioWebflowRoute(url.pathname);
+    if (studioRoute) return fetchStudioWebflowRoute(request, url, studioRoute);
     if (isBlackcardPublicPath(url)) return renderPublicBlackcardPage(request);
     if (isSigilApplyPath(url)) return fetchSigilWorkerRoute(request, env, url, "sigil-private-model-setup");
     if (isSigilMembershipPath(url)) return fetchMemberPage(request, env, url);
