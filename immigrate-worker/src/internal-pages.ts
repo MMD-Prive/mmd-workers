@@ -55,6 +55,7 @@ export function renderControlRoomPage(): Response {
     <section class="admin-menu">
       <a href="/internal/admin/create-session"><strong>Create Session</strong><span>Canonical route: /internal/admin/create-session</span></a>
       <a href="/internal/jobs/create-job"><strong>Create Job</strong><span>Canonical route: /internal/jobs/create-job</span></a>
+      <a href="/sigil/board"><strong>Campaigns</strong><span>Review campaigns in the private SIGIL Board</span></a>
     </section>
   </main></section>`);
 }
