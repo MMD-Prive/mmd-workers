@@ -19,6 +19,15 @@ test("admin/browser payment booleans cannot turn an unpaid record into truth",as
   finally{globalThis.fetch=original;}
 });
 
+test("Paid and verified payment without campaign_claim_id fails closed",async()=>{
+  const original=globalThis.fetch;
+  globalThis.fetch=mockAirtable({payments:{"renewal-ref":{id:"recPayment000002",fields:{
+    [F.ref]:"renewal-ref",[F.status]:"Paid",[F.verification]:"verified",[F.stage]:"membership",
+  }}}});
+  try{const store=new AirtablePaymentTruthStore(env);await assert.rejects(()=>store.verify({claimId:"claim-1",paymentRequired:true,paymentReference:"renewal-ref"}),/payment_claim_mismatch/);}
+  finally{globalThis.fetch=original;}
+});
+
 test("authoritative renewal and Premium upgrade records must both be Paid and verified",async()=>{
   const payment=(ref,pkg)=>({id:`rec${ref}`,fields:{[F.ref]:ref,[F.status]:"Paid",[F.verification]:"verified",[F.stage]:"membership",[F.pkg]:pkg,[F.claim]:"claim-1",[F.email]:"member@example.com"}});
   const packageRecord={id:"recPackage000001",fields:{[F.start]:"2026-08-01",[F.end]:"2027-08-01",[F.memberEmail]:"member@example.com",[F.memberStatus]:"active"}};
