@@ -58,6 +58,40 @@ function assertPolishedShell(html, url) {
 }
 
 describe("MMD permanent redirect guard", () => {
+  it("renders /blackcard and /mmd-blackcard as the same public page without a login redirect", async () => {
+    for (const query of ["", "?t=test"]) {
+      const canonical = await request(`https://mmdbkk.com/blackcard${query}`);
+      const alias = await request(`https://mmdbkk.com/mmd-blackcard${query}`);
+      const canonicalHtml = await canonical.text();
+      const aliasHtml = await alias.text();
+
+      for (const [route, response, html] of [
+        ["/blackcard", canonical, canonicalHtml],
+        ["/mmd-blackcard", alias, aliasHtml],
+      ]) {
+        assert.equal(response.status, 200, `${route}${query}`);
+        assert.equal(response.headers.get("location"), null, `${route}${query}`);
+        assert.equal(response.headers.get("x-mmd-page"), "public-blackcard", `${route}${query}`);
+        assert.doesNotMatch(html, /(?:internal\/admin|sigil\/admin|admin|member)\/login/i, `${route}${query}`);
+        if (query) assert.match(html, /href="\/sigil\/member\/membership\?t=test"/, `${route}${query}`);
+      }
+
+      assert.equal(aliasHtml, canonicalHtml, query || "without query");
+    }
+
+    assert.equal(passThroughRequests.length, 0);
+  });
+
+  it("leaves /sigil/guide untouched", async () => {
+    const url = "https://mmdbkk.com/sigil/guide?t=test";
+    const response = await request(url);
+
+    assert.equal(response.status, 209);
+    assert.equal(response.headers.get("location"), null);
+    assert.equal(passThroughRequests.length, 1);
+    assert.equal(passThroughRequests[0].url, url);
+  });
+
   it("does not declare stale explicit /trust/inme route ownership", () => {
     assert.equal(wranglerConfig.includes('pattern = "mmdbkk.com/trust/inme*"'), false);
     assert.equal(wranglerConfig.includes('pattern = "www.mmdbkk.com/trust/inme*"'), false);
