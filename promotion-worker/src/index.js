@@ -2,6 +2,7 @@ import { CAMPAIGN_ID, REFERENCE_DATE, assertCampaignActive, buildBenefitPlan, cl
   internalConsiderations, resolveMembershipPrice, resolveUpgradePrice, validateApprovedMonths, PolicyError } from "./policy.js";
 import { buildAuditEvent, customerSafeResult, validateTransition } from "./benefit-coordinator.js";
 import { AirtableClaimStore } from "./airtable-claim-store.js";
+import { normalizeAdminDecision, requireAdminContext, adminDecisionPatch, assertAdminApplyAllowed, AdminGateError } from "./campaign-admin-core.js";
 export { CampaignClaimCoordinator } from "./claim-coordinator.js";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
@@ -9,7 +10,8 @@ const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache
 export default { async fetch(request, env = {}) {
   try { return await route(request, env); }
   catch (error) {
-    const status = error instanceof HttpError ? error.status : error instanceof PolicyError ? 409 : 500;
+    const status = error instanceof HttpError ? error.status : error instanceof PolicyError ? 409 :
+      error instanceof AdminGateError ? (error.code === "claim_not_approved_for_apply" ? 409 : 400) : 500;
     return json({ ok: false, error: status === 500 ? "internal_error" : error.code || error.message }, status);
   }
 } };
@@ -22,6 +24,8 @@ async function route(request, env) {
   if (method === "POST" && path === "/v1/internal/promotions/pricing/resolve") return pricing(request);
   const claim = path.match(/^\/v1\/internal\/promotions\/claims\/([^/]+)$/);
   if (method === "GET" && claim) return readClaim(env, decodeURIComponent(claim[1]));
+  const decision = path.match(/^\/v1\/internal\/promotions\/admin\/claims\/([^/]+)\/decision$/);
+  if (method === "POST" && decision) return adminDecisionClaim(request, env, decodeURIComponent(decision[1]));
   const transition = path.match(/^\/v1\/internal\/promotions\/claims\/([^/]+)\/transition$/);
   if (method === "POST" && transition) return transitionClaim(request, env, decodeURIComponent(transition[1]));
   if (method === "POST" && path === "/v1/internal/promotions/apply") return applyClaim(request, env);
@@ -62,10 +66,17 @@ async function readClaim(env, claimId) {
   return json({ ok: true, claim, data: customerSafeResult(claim) });
 }
 
+async function adminDecisionClaim(request, env, claimId) {
+  const body = await bodyJson(request); const decision = normalizeAdminDecision(body.action);
+  const forwarded = new Request(request.url, { method: "POST", headers: request.headers,
+    body: JSON.stringify({ ...body, toStatus: decision.status, eventType: `admin_${decision.action}` }) });
+  return transitionClaim(forwarded, env, claimId);
+}
+
 async function transitionClaim(request, env, claimId) {
   const store = claimStore(env); const before = await store.findById(required(claimId));
   if (!before) throw new HttpError(404, "claim_not_found");
-  const body = await bodyJson(request); const to = required(body.toStatus);
+  const body = await bodyJson(request); const context = requireAdminContext(body); const to = required(body.toStatus);
   if (!validateTransition(before.claimStatus, to)) throw new HttpError(409, "invalid_status_transition");
   const next = structuredClone(before);
   if (to === "benefit_approved") {
@@ -84,9 +95,8 @@ async function transitionClaim(request, env, claimId) {
     next.upgradeApplied = upgradeRequired;
     next.paymentTruth = truth;
     next.effectiveAt = approvalEffectiveAt(before, truth, body);
-    next.approvedBy = required(body.actor?.id);
-    next.approvedAt = serverNow(env).toISOString();
   }
+  Object.assign(next, adminDecisionPatch(to, context, serverNow(env)));
   next.claimStatus = to; next.reviewStatus = to; next.updatedAt = serverNow(env).toISOString();
   const audit = auditFrom(request, body, before, next);
   next.audits = [...(before.audits || []), audit];
@@ -95,8 +105,9 @@ async function transitionClaim(request, env, claimId) {
 }
 
 async function applyClaim(request, env) {
-  const body = await bodyJson(request); const store = claimStore(env); const before = await store.findById(required(body.claimId));
+  const body = await bodyJson(request); requireAdminContext(body); const store = claimStore(env); const before = await store.findById(required(body.claimId));
   if (!before) throw new HttpError(404, "claim_not_found");
+  assertAdminApplyAllowed(before);
   const plan = buildBenefitPlan(before);
   if (!env.PAYMENTS_WORKER?.fetch) throw new HttpError(503, "payments_worker_binding_missing");
   const response = await env.PAYMENTS_WORKER.fetch(new Request("https://payments-worker.local/v1/internal/campaign-benefits/apply", {
