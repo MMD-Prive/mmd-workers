@@ -1,4 +1,6 @@
 import baseWorker from "./index.js";
+import { handleCampaignInternalRoute } from "./campaign-internal-routes.js";
+export { CampaignMutationCoordinator } from "./campaign-internal-routes.js";
 
 const API = "https://api.airtable.com/v0";
 const PATH = "/v1/pay/slip/evidence";
@@ -254,6 +256,8 @@ async function handle(req, env) {
 
 export default {
   async fetch(req, env, ctx) {
+    const campaignResponse = await handleCampaignInternalRoute(req, env);
+    if (campaignResponse) return campaignResponse;
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/+$/g, "") || "/";
     const method = req.method.toUpperCase();

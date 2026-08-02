@@ -6,6 +6,8 @@
 
 const LOCK = "payments-production-v10-clean";
 const AIRTABLE_API = "https://api.airtable.com/v0";
+const ANNIVERSARY_CAMPAIGN_ID = "mmd_6th_anniversary_2026";
+const CAMPAIGN_CLAIM_FIELD_ID = "fld0qxp5w6QwMiaue";
 
 /* -------------------------------------------------- */
 /* basic helpers */
@@ -149,6 +151,30 @@ function truthy(v) {
 
 function compact(obj) {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
+}
+
+function campaignPaymentHandoff(body, paymentStage) {
+  const campaignId = toStr(body.campaign_id || body.campaignId);
+  const claimId = toStr(body.campaign_claim_id || body.campaignClaimId);
+  if (!campaignId && !claimId) return null;
+  if (campaignId !== ANNIVERSARY_CAMPAIGN_ID) throw new Error("invalid_campaign_id");
+  if (!claimId) throw new Error("campaign_claim_id_required");
+  if (!/^MMD6-\d{4}-[A-Z0-9]{12}$/.test(claimId)) throw new Error("invalid_campaign_claim_id");
+  if (paymentStage !== "membership") throw new Error("campaign_membership_payment_required");
+  return { campaignId, claimId };
+}
+
+function paymentCampaignClaimId(record, env) {
+  const fields = record?.fields || {};
+  const configured = toStr(env.AT_PAYMENTS__CAMPAIGN_CLAIM_ID || CAMPAIGN_CLAIM_FIELD_ID);
+  return toStr(fields[configured] || fields[CAMPAIGN_CLAIM_FIELD_ID] || fields.campaign_claim_id);
+}
+
+function assertPaymentClaimMatch(record, handoff, env) {
+  if (!record?.id || !handoff) return;
+  const existingClaimId = paymentCampaignClaimId(record, env);
+  if (!existingClaimId) throw new Error("payment_campaign_claim_missing");
+  if (existingClaimId !== handoff.claimId) throw new Error("payment_campaign_claim_mismatch");
 }
 
 /* -------------------------------------------------- */
@@ -448,9 +474,11 @@ async function createOrUpdatePaymentIntent(env, payload) {
     "Payment Intent Status (AI)": payload.intent_status || "manual_review",
     "Payment Date": payload.paid_at || nowIso(),
     "Created At": payload.created_at || nowIso(),
+    [toStr(env.AT_PAYMENTS__CAMPAIGN_CLAIM_ID || CAMPAIGN_CLAIM_FIELD_ID)]: payload.campaign_claim_id || undefined,
   });
 
   if (existing?.id) {
+    assertPaymentClaimMatch(existing, payload.campaign_claim_id ? { claimId: payload.campaign_claim_id } : null, env);
     await airtablePatch(env, table, existing.id, fields);
     return { ok: true, mode: "update", record_id: existing.id };
   }
@@ -559,6 +587,7 @@ async function handleVerify(req, env) {
   try {
     const session_id = toStr(assertRequired(body.session_id, "session_id"));
     const payment_stage = normalizeStage(body.payment_stage || body.payment_type || "deposit");
+    const campaignHandoff = campaignPaymentHandoff(body, payment_stage);
     const amount = ensurePositiveNumber(body.amount, "amount");
     const payment_method = toStr(body.payment_method || "promptpay");
     const member_email = toStr(body.member_email || body.email);
@@ -571,6 +600,7 @@ async function handleVerify(req, env) {
 
     const duplicateByRef = await findPaymentByPaymentRef(env, payment_ref);
     if (duplicateByRef?.id) {
+      assertPaymentClaimMatch(duplicateByRef, campaignHandoff, env);
       return withCors(
         req,
         env,
@@ -588,6 +618,7 @@ async function handleVerify(req, env) {
 
     const duplicateByStage = await findSuccessfulPaymentBySessionAndType(env, session_id, payment_stage);
     if (duplicateByStage?.id && verify_strict) {
+      assertPaymentClaimMatch(duplicateByStage, campaignHandoff, env);
       return withCors(
         req,
         env,
@@ -618,6 +649,7 @@ async function handleVerify(req, env) {
       verification_status: "pending",
       intent_status: receipt_url ? "manual_slip_submitted" : "manual_review",
       created_at: nowIso(),
+      campaign_claim_id: campaignHandoff?.claimId,
     });
 
     try {
@@ -670,6 +702,7 @@ async function handleNotify(req, env) {
   try {
     const payment_ref = toStr(assertRequired(body.payment_ref || body.transaction_ref, "payment_ref"));
     const stage = normalizeStage(body.stage || body.payment_stage || body.payment_type || "deposit");
+    const campaignHandoff = campaignPaymentHandoff(body, stage);
     const session_id = toStr(body.session_id);
     const amount_thb = ensurePositiveNumber(body.amount_thb || body.amount, "amount_thb");
     const member_email = toStr(body.member_email || body.email);
@@ -692,6 +725,7 @@ async function handleNotify(req, env) {
       verification_status: "verified",
       intent_status: receipt_url ? "manual_slip_submitted" : "manual_review",
       created_at: nowIso(),
+      campaign_claim_id: campaignHandoff?.claimId,
     });
 
     const session_updated = session_id

@@ -1,4 +1,5 @@
 import {
+  renderAnniversaryCampaignPage,
   renderControlRoomPage,
   renderCreateJobPage,
   renderCreateSessionPage,
@@ -7,9 +8,20 @@ import {
 
 export interface InternalRoutesEnv extends InternalPageEnv {
   ADMIN_WORKER?: Fetcher;
+  PROMOTION_WORKER?: Fetcher;
   ADMIN_WORKER_BASE_URL?: string;
+  INTERNAL_SERVICE_SECRET?: string;
   ASSETS?: Fetcher;
 }
+
+const ANNIVERSARY_PAGE = "/internal/admin/control-room/campaigns/anniversary";
+const ANNIVERSARY_API = "/v1/admin/campaigns/anniversary";
+const CLAIM_ID_PATTERN = /^MMD6-\d{4}-[A-Z0-9]{12}$/;
+
+type AdminAuthority = {
+  actorId: string;
+  sessionId: string;
+};
 
 function redirect(to: string, status = 302): Response {
   return new Response(null, {
@@ -33,7 +45,15 @@ function publicAdminAuthBaseUrl(request: Request): string {
 }
 
 function adminLoginRedirect(url: URL): Response {
-  return redirect(`/internal/admin/login?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`, 302);
+  const response = redirect(`/internal/admin/login?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`, 302);
+  const headers = new Headers(response.headers);
+  headers.set("cache-control", "no-store");
+  headers.set("x-mmd-admin-login-canonical", "/internal/admin/login");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 async function withSameOriginAdminBase(response: Response): Promise<Response> {
@@ -119,6 +139,148 @@ async function requireAdminGate(request: Request, env: InternalRoutesEnv): Promi
   }
 
   return adminLoginRedirect(url);
+}
+
+async function resolveAdminAuthority(request: Request, env: InternalRoutesEnv): Promise<AdminAuthority | null> {
+  const adminBase = publicAdminAuthBaseUrl(request);
+  if (!adminBase || !env.ADMIN_WORKER) return null;
+
+  try {
+    const publicHost = new URL(adminBase).hostname;
+    const verifyReq = new Request(`${adminBase}/v1/admin/auth/me`, {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+        cookie: request.headers.get("cookie") || "",
+        "user-agent": request.headers.get("user-agent") || "",
+        "x-mmd-auth-bridge": "immigrate-anniversary-admin-authority",
+        "x-mmd-public-host": publicHost,
+      },
+    });
+    const response = await env.ADMIN_WORKER.fetch(verifyReq);
+    if (!response.ok) return null;
+    const body = await response.json().catch(() => ({})) as {
+      authenticated?: boolean;
+      actor?: { id?: string };
+      session?: { id?: string };
+    };
+    const actorId = str(body.actor?.id);
+    const sessionId = str(body.session?.id);
+    if (body.authenticated !== true || !actorId || !sessionId) return null;
+    return { actorId, sessionId };
+  } catch {
+    return null;
+  }
+}
+
+function campaignJson(value: unknown, status = 200): Response {
+  return Response.json(value, {
+    status,
+    headers: { "cache-control": "no-store, private", "x-mmd-route-owner": "immigrate-worker" },
+  });
+}
+
+function safeClaimId(value: unknown): string {
+  const claimId = str(value).toUpperCase();
+  return CLAIM_ID_PATTERN.test(claimId) ? claimId : "";
+}
+
+function safeReason(value: unknown): string {
+  const reason = str(value);
+  return reason.length > 0 && reason.length <= 500 ? reason : "";
+}
+
+function safeReference(value: unknown): string {
+  return str(value).slice(0, 180);
+}
+
+async function proxyCampaignAdminApi(request: Request, env: InternalRoutesEnv): Promise<Response | null> {
+  const url = new URL(request.url);
+  const pathname = url.pathname.replace(/\/+$/, "") || "/";
+  if (pathname !== `${ANNIVERSARY_API}/apply` && !pathname.startsWith(`${ANNIVERSARY_API}/claims/`)) return null;
+
+  if (!env.ADMIN_WORKER) return campaignJson({ ok: false, error: "admin_worker_binding_required" }, 502);
+  const authority = await resolveAdminAuthority(request, env);
+  if (!authority) return campaignJson({ ok: false, error: "admin_session_required" }, 401);
+  if (!env.PROMOTION_WORKER) return campaignJson({ ok: false, error: "promotion_worker_binding_required" }, 502);
+  const internalSecret = str(env.INTERNAL_SERVICE_SECRET);
+  if (internalSecret.length < 24) return campaignJson({ ok: false, error: "internal_service_secret_required" }, 503);
+
+  const claimMatch = pathname.match(/^\/v1\/admin\/campaigns\/anniversary\/claims\/([^/]+)$/);
+  const decisionMatch = pathname.match(/^\/v1\/admin\/campaigns\/anniversary\/claims\/([^/]+)\/decision$/);
+  const requestId = `cr_${crypto.randomUUID()}`;
+  let targetPath = "";
+  let body: Record<string, unknown> | undefined;
+
+  if (claimMatch) {
+    if (request.method !== "GET") return campaignJson({ ok: false, error: "method_not_allowed" }, 405);
+    const claimId = safeClaimId(decodeURIComponent(claimMatch[1]));
+    if (!claimId) return campaignJson({ ok: false, error: "invalid_claim_id" }, 400);
+    targetPath = `/v1/internal/promotions/claims/${encodeURIComponent(claimId)}`;
+  } else if (decisionMatch) {
+    if (request.method !== "POST") return campaignJson({ ok: false, error: "method_not_allowed" }, 405);
+    const claimId = safeClaimId(decodeURIComponent(decisionMatch[1]));
+    if (!claimId) return campaignJson({ ok: false, error: "invalid_claim_id" }, 400);
+    const input = await request.json().catch(() => null) as Record<string, unknown> | null;
+    if (!input) return campaignJson({ ok: false, error: "invalid_json" }, 400);
+    const action = str(input.action).toLowerCase();
+    if (!new Set(["approve", "reject", "manual_review"]).has(action)) {
+      return campaignJson({ ok: false, error: "invalid_admin_decision" }, 400);
+    }
+    const reason = safeReason(input.reason);
+    if (!reason) return campaignJson({ ok: false, error: "admin_reason_required" }, 400);
+    const approvedMonths = input.approvedMonths === undefined || input.approvedMonths === ""
+      ? undefined
+      : Number(input.approvedMonths);
+    if (approvedMonths !== undefined && (!Number.isInteger(approvedMonths) || approvedMonths < 0 || approvedMonths > 6)) {
+      return campaignJson({ ok: false, error: "invalid_approved_months" }, 400);
+    }
+    targetPath = `/v1/internal/promotions/admin/claims/${encodeURIComponent(claimId)}/decision`;
+    body = {
+      action,
+      reason,
+      ...(approvedMonths === undefined ? {} : { approvedMonths }),
+      paymentReference: safeReference(input.paymentReference),
+      upgradeRequested: input.upgradeRequested === true,
+      upgradePaymentReference: safeReference(input.upgradePaymentReference),
+      actor: { id: authority.actorId, sessionId: authority.sessionId },
+      requestId,
+    };
+  } else if (pathname === `${ANNIVERSARY_API}/apply`) {
+    if (request.method !== "POST") return campaignJson({ ok: false, error: "method_not_allowed" }, 405);
+    const input = await request.json().catch(() => null) as Record<string, unknown> | null;
+    if (!input) return campaignJson({ ok: false, error: "invalid_json" }, 400);
+    const claimId = safeClaimId(input.claimId);
+    if (!claimId) return campaignJson({ ok: false, error: "invalid_claim_id" }, 400);
+    const reason = safeReason(input.reason);
+    if (!reason) return campaignJson({ ok: false, error: "admin_reason_required" }, 400);
+    targetPath = "/v1/internal/promotions/apply";
+    body = {
+      claimId,
+      reason,
+      actor: { id: authority.actorId, sessionId: authority.sessionId },
+      requestId,
+    };
+  } else {
+    return campaignJson({ ok: false, error: "not_found" }, 404);
+  }
+
+  const headers = new Headers({
+    accept: "application/json",
+    "x-mmd-service-binding": "immigrate-worker",
+    "x-mmd-internal-secret": internalSecret,
+    "x-request-id": requestId,
+  });
+  if (body) headers.set("content-type", "application/json");
+  const upstream = await env.PROMOTION_WORKER.fetch(new Request(`https://promotion-worker.local${targetPath}`, {
+    method: request.method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  }));
+  const outHeaders = new Headers(upstream.headers);
+  outHeaders.set("cache-control", "no-store, private");
+  outHeaders.set("x-mmd-route-owner", "immigrate-worker");
+  return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers: outHeaders });
 }
 
 function str(value: unknown): string {
@@ -236,6 +398,9 @@ export async function handleInternalRoutes(request: Request, env: InternalRoutes
   const assetRes = await serveAsset(request, env);
   if (assetRes) return assetRes;
 
+  const campaignApiRes = await proxyCampaignAdminApi(request, env);
+  if (campaignApiRes) return campaignApiRes;
+
   const apiRes = await proxyAdminApi(request, env);
   if (apiRes) return apiRes;
 
@@ -250,6 +415,12 @@ export async function handleInternalRoutes(request: Request, env: InternalRoutes
     const gate = await requireAdminGate(request, env);
     if (gate) return gate;
     return renderControlRoomPage();
+  }
+
+  if (pathname === ANNIVERSARY_PAGE) {
+    const gate = await requireAdminGate(request, env);
+    if (gate) return gate;
+    return renderAnniversaryCampaignPage();
   }
 
   if (pathname === "/internal/admin/jobs/create-session") {

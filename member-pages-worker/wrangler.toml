@@ -3,6 +3,16 @@ main = "src/index.js"
 compatibility_date = "2026-06-20"
 workers_dev = true
 
+[[services]]
+binding = "PROMOTION_WORKER"
+service = "promotion-worker"
+
+[[services]]
+binding = "PROMOTION_MEMBER_STATUS_RESOLVER"
+service = "mmd-auth-worker"
+
 [observability]
 enabled = true
 head_sampling_rate = 1
+
+# Secrets: INTERNAL_SERVICE_SECRET, LINE_ID_HASH_SECRET

@@ -27,6 +27,7 @@ AIRTABLE_TABLE_ACCESS_LOG = "System — Access Log"
 AIRTABLE_TABLE_AUTH_IDENTITIES = "MMD — Auth Identities"
 AIRTABLE_TABLE_AUTH_LOGIN_CODES = "MMD — Auth Login Codes"
 AIRTABLE_TABLE_AUTH_SESSIONS = "MMD — Auth Sessions"
+AIRTABLE_MEMBER_LINE_USER_ID_FIELD = "line_user_id"
 
 # MMD — Member Entitlements mapping.
 # The current table does not expose the old auth MVP member_id field.
@@ -70,3 +71,4 @@ MMD_AUTH_DEV_MODE = "false"
 # AIRTABLE_BASE_ID
 # AUTH_HMAC_SECRET
 # ADMIN_BEARER
+# INTERNAL_SERVICE_SECRET

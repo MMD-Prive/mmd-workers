@@ -178,6 +178,7 @@ zone_name = "mmdbkk.com"
 # ใช้สำหรับ CORS (browser calls)
 [vars]
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com"
+ADMIN_ACTOR_ID = "per"
 
 # LINE MINI App environment IDs
 LINE_MINIAPP_DEV_CHANNEL_ID = "2010864852"

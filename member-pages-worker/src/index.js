@@ -1,3 +1,5 @@
+import { handlePromotionClaim } from "./promotion-claim.js";
+
 const WORKER = "member-pages-worker";
 const VERSION = "20260801-sigil-member-membership-v3";
 const CANONICAL_MEMBERSHIP_PATH = "/sigil/member/membership";
@@ -24,6 +26,7 @@ const LIFF_IDENTIFY_PATHS = new Set([
   "/member/api/liff/identify",
   "/member/api/liff/identify/",
 ]);
+const PROMOTION_CLAIM_PATHS = new Set(["/member/api/liff/promotion-claim", "/member/api/liff/promotion-claim/"]);
 
 const PACKAGES = [
   { key: "7days", aliases: ["7day", "7_days", "guest", "guestpass", "trial"], title: "Trial · 7 Days Guest Pass", eyebrow: "TRIAL ACCESS", price: 1499, duration: "7-day access · 3-month booking window", tier: "guest-pass", copy: "เริ่มทดลองใช้สิทธิ์สมาชิก 7 วัน และเลือกนายแบบได้ถึงระดับ Premium หลังผ่านการตรวจสอบ" },
@@ -53,6 +56,7 @@ export default {
   async fetch(request, env = {}) {
     const url = new URL(request.url);
     const method = request.method.toUpperCase();
+    if (PROMOTION_CLAIM_PATHS.has(url.pathname.toLowerCase())) return handlePromotionClaim(request, env);
     if (isLiffIdentifyPath(url)) return handleLiffIdentify(request, env);
     if (method === "OPTIONS") return new Response(null, { status: 204, headers: headers("text/plain") });
     if (method !== "GET" && method !== "HEAD") return new Response("Method Not Allowed", { status: 405, headers: headers("text/plain; charset=utf-8") });
