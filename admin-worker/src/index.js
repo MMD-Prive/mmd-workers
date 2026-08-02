@@ -32,6 +32,10 @@ import {
   resolveModelSessionPage,
   resolveModelSessionTransition,
 } from "./modelSessionContractV1.js";
+import {
+  buildModelSessionTelegramPayload,
+  normalizeModelSessionTelegramEvent,
+} from "./modelSessionTelegram.js";
 
 const LOCK = "admin-worker-v2026-03-11-full";
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -96,10 +100,16 @@ const MODEL_SCHEMA_PATCH_V1_ROUTE_SET = new Set(Object.values(MODEL_SCHEMA_PATCH
 const MODEL_SESSION_CURRENT_PATH = "/v1/model/session/current";
 const MODEL_SESSION_ACTION_PATH = "/v1/model/session/action";
 const MODEL_SESSION_LINK_PATH = "/v1/admin/model/session/link";
+const MODEL_SESSION_NOTIFY_PATH = "/v1/admin/model/session/notify";
+const MODEL_CONSOLE_PATH = "/sigil/model/console";
 const ADMIN_RICH_MENU_BASE_PATH = "/v1/admin/line/rich-menu";
 const SIGIL_BOARD_PUBLISH_PATH = "/v1/admin/sigil/board/publish";
 const SIGIL_BOARD_CARDS_KV_KEY = "sigil:board:v1:cards";
 const SIGIL_BOARD_META_KV_KEY = "sigil:board:v1:meta";
+const MODEL_MIGRATION_TOKEN_PREFIX = "hype:model:migration:v1:";
+const MODEL_CONSOLE_SESSION_PREFIX = "hype:model:session:v1:";
+const MODEL_CONSOLE_COOKIE = "mmd_model_console_v1";
+const MODEL_CONSOLE_SESSION_TTL_SECONDS = 8 * 60 * 60;
 const MEMBER_DASHBOARD_RICH_MENU_BASE_URL = "https://member-dashboard-chat-worker.local/__internal/line/rich-menu";
 const MODEL_SESSION_MODEL_BLOCKED_ACTIONS = new Set([
   "confirm_final_payment",
@@ -116,6 +126,7 @@ const MODEL_SESSION_MODEL_ALLOWED_ACTIONS = new Set([
   "mark_work_finished",
   "confirm_separated",
   "start_work",
+  "emergency",
   "go_en_route",
 ]);
 
@@ -177,6 +188,10 @@ export default {
 
     if (method === "POST" && path === MODEL_SESSION_ACTION_PATH) {
       return withCors(await handleModelSessionAction(req, env), cors);
+    }
+
+    if ((method === "GET" || method === "HEAD") && path === MODEL_CONSOLE_PATH) {
+      return handleModelConsole(req, env, method);
     }
 
     // ------------------------------------------------------
@@ -416,6 +431,10 @@ export default {
 
       if (method === "POST" && path === MODEL_SESSION_LINK_PATH) {
         return withCors(await handleModelSessionLinkIssuer(req, env), cors);
+      }
+
+      if (method === "POST" && path === MODEL_SESSION_NOTIFY_PATH) {
+        return withCors(await handleModelSessionNotification(req, env), cors);
       }
 
       // ----------------------------------------------------
@@ -1281,6 +1300,136 @@ function modelSessionJson(payload, status = 200) {
   return response;
 }
 
+async function handleModelConsole(req, env, method = "GET") {
+  const url = new URL(req.url);
+  const token = str(url.searchParams.get("t"));
+  if (token) {
+    const consumed = await consumeModelMigrationToken(env, token);
+    if (!consumed.ok) return modelConsoleJson({ ok: false, error: consumed.error }, consumed.status);
+
+    const headers = new Headers({
+      "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+      "location": MODEL_CONSOLE_PATH,
+      "set-cookie": modelConsoleSessionCookie(consumed.session_token, MODEL_CONSOLE_SESSION_TTL_SECONDS),
+      "x-mmd-route-owner": "admin-worker",
+      "x-mmd-page": "model-console",
+    });
+    return new Response(null, { status: 303, headers });
+  }
+
+  const session = await readModelConsoleSession(req, env);
+  if (!session.ok) return modelConsoleJson({ ok: false, error: session.error }, session.status);
+  const html = renderModelConsoleShell();
+  return new Response(method === "HEAD" ? null : html, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+      "x-mmd-route-owner": "admin-worker",
+      "x-mmd-page": "model-console",
+    },
+  });
+}
+
+function modelConsoleJson(payload, status = 200) {
+  const response = json(payload, status);
+  response.headers.set("cache-control", "no-store");
+  response.headers.set("x-mmd-route-owner", "admin-worker");
+  response.headers.set("x-mmd-page", "model-console");
+  return response;
+}
+
+async function consumeModelMigrationToken(env, token) {
+  const kv = modelJobLinksKv(env);
+  if (!kv) return { ok: false, status: 503, error: "model_token_store_unavailable" };
+
+  const tokenHash = await sha256Hex(token);
+  const key = `${MODEL_MIGRATION_TOKEN_PREFIX}${tokenHash}`;
+  const record = await kv.get(key, "json").catch(() => null);
+  if (!record) return { ok: false, status: 401, error: "unauthorized" };
+  if (record.role !== "model") return { ok: false, status: 403, error: "forbidden" };
+
+  const expiresAt = Date.parse(str(record.expires_at));
+  if (!expiresAt || expiresAt <= Date.now()) {
+    await kv.delete?.(key).catch(() => undefined);
+    return { ok: false, status: 401, error: "unauthorized" };
+  }
+
+  const modelRecordId = str(record.model_record_id);
+  if (!modelRecordId) return { ok: false, status: 403, error: "forbidden" };
+
+  await kv.delete?.(key).catch(() => undefined);
+  const sessionToken = randomUrlToken(32);
+  const sessionHash = await sha256Hex(sessionToken);
+  await kv.put(`${MODEL_CONSOLE_SESSION_PREFIX}${sessionHash}`, JSON.stringify({
+    role: "model",
+    model_record_id: modelRecordId,
+    source: "hype_telegram",
+    created_at: new Date().toISOString(),
+  }), { expirationTtl: MODEL_CONSOLE_SESSION_TTL_SECONDS });
+
+  return { ok: true, session_token: sessionToken };
+}
+
+async function readModelConsoleSession(req, env) {
+  const kv = modelJobLinksKv(env);
+  if (!kv) return { ok: false, status: 503, error: "model_token_store_unavailable" };
+  const cookie = parseCookieHeader(req.headers.get("cookie"));
+  const sessionToken = str(cookie[MODEL_CONSOLE_COOKIE]);
+  if (!sessionToken) return { ok: false, status: 401, error: "unauthorized" };
+
+  const sessionHash = await sha256Hex(sessionToken);
+  const session = await kv.get(`${MODEL_CONSOLE_SESSION_PREFIX}${sessionHash}`, "json").catch(() => null);
+  if (!session) return { ok: false, status: 401, error: "unauthorized" };
+  if (session.role !== "model") return { ok: false, status: 403, error: "forbidden" };
+  return { ok: true, session };
+}
+
+function modelJobLinksKv(env) {
+  const kv = env.MODEL_JOB_LINKS || env.HYPE_MODEL_MIGRATION_KV;
+  return kv && typeof kv.get === "function" && typeof kv.put === "function" ? kv : null;
+}
+
+function modelConsoleSessionCookie(token, maxAge) {
+  return [
+    `${MODEL_CONSOLE_COOKIE}=${encodeURIComponent(token)}`,
+    "Path=/",
+    `Max-Age=${Math.max(1, Number(maxAge) || MODEL_CONSOLE_SESSION_TTL_SECONDS)}`,
+    "HttpOnly",
+    "Secure",
+    "SameSite=Lax",
+  ].join("; ");
+}
+
+function parseCookieHeader(header) {
+  const out = {};
+  for (const part of str(header).split(";")) {
+    const index = part.indexOf("=");
+    if (index <= 0) continue;
+    const key = part.slice(0, index).trim();
+    const value = part.slice(index + 1).trim();
+    if (!key) continue;
+    try {
+      out[key] = decodeURIComponent(value);
+    } catch (_) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+function renderModelConsoleShell() {
+  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>MMD Model Dashboard</title><style>body{margin:0;background:#080604;color:#fff1dc;font-family:Inter,"Noto Sans Thai",Arial,sans-serif}.wrap{min-height:100vh;display:grid;place-items:center;padding:24px}.card{width:min(720px,100%);border:1px solid rgba(231,192,107,.25);border-radius:24px;padding:28px;background:linear-gradient(145deg,rgba(28,20,12,.92),rgba(8,6,4,.96));box-shadow:0 24px 60px rgba(0,0,0,.36)}h1{margin:0 0 10px;color:#f1ce7c;font-size:28px}p{margin:0;color:rgba(255,239,220,.78);line-height:1.7}.pill{display:inline-flex;margin-bottom:16px;border:1px solid rgba(231,192,107,.28);border-radius:999px;padding:8px 12px;color:#e7c06b;font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}</style></head><body><main class="wrap"><section class="card"><span class="pill">Model Role Session</span><h1>Model Dashboard</h1><p>เข้าสู่พื้นที่ Model Dashboard สำเร็จแล้วครับ เซสชันนี้เปิดจาก HYPE Telegram และผูกกับ role model เท่านั้น</p></section></main></body></html>`;
+}
+
+function randomUrlToken(byteLength) {
+  const bytes = new Uint8Array(byteLength);
+  crypto.getRandomValues(bytes);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
 function modelSessionTables(env = {}) {
   return {
     sessions: {
@@ -1292,6 +1441,7 @@ function modelSessionTables(env = {}) {
         status: str(env.AT_SESSIONS__STATUS || "status"),
         modelRecordId: str(env.AT_SESSIONS__MODEL_RECORD_ID || "Assigned Model"),
         modelName: str(env.AT_SESSIONS__MODEL_NAME || "model_name"),
+        modelTelegramChatId: str(env.AT_SESSIONS__MODEL_TELEGRAM_CHAT_ID || "model_telegram_chat_id"),
       },
     },
   };
@@ -1421,7 +1571,7 @@ function modelSessionOwnsRecord(env, payload, record) {
   if (sessionValues.length && !sessionValues.some((value) => assignmentKeys.has(value))) return false;
 
   const payloadModelId = str(payload?.model_record_id || payload?.model_id);
-  const recordModelIds = modelSessionFieldValues(fields, [names.modelRecordId, "Model Record ID", "model_id", "Model"]);
+  const recordModelIds = modelSessionFieldValues(fields, [names.modelRecordId, "model_record_id", "Model Record ID", "model_id", "Model"]);
   if (payloadModelId && recordModelIds.length && !recordModelIds.includes(payloadModelId)) return false;
 
   const payloadModelName = str(payload?.model_name).toLowerCase();
@@ -1524,6 +1674,76 @@ function modelSessionLinkCurrentUrl(req, env, t) {
     : new URL(MODEL_SESSION_CURRENT_PATH, str(env.MODEL_SESSION_PUBLIC_BASE_URL) || new URL(req.url).origin);
   url.searchParams.set("t", t);
   return url.toString();
+}
+
+async function modelSessionSignedLinkForRecord(req, env, tables, session, expiresInSeconds = 600) {
+  const responseSession = modelSessionResponseSession(tables, session);
+  const fields = session.fields || {};
+  const modelRecordId = modelSessionModelRecordIdFromFields(fields, tables.sessions.fields.modelRecordId);
+  const modelName = str(fields[tables.sessions.fields.modelName] || "");
+  if (!responseSession.normalized_state || (!modelRecordId && !modelName)) return null;
+
+  const exp = Math.floor(Date.now() / 1000) + clampInt(expiresInSeconds, 60, 3600, 600);
+  const payload = compactObject({
+    kind: "model_session",
+    role: "model",
+    session_id: responseSession.session_id,
+    payment_ref: str(fields[tables.sessions.fields.paymentRef]),
+    model_record_id: modelRecordId,
+    model_name: modelName,
+    exp,
+  });
+  const t = await signModelSessionPayload(payload, env);
+  if (!t) return null;
+  return { url: modelSessionLinkCurrentUrl(req, env, t), expires_at: new Date(exp * 1000).toISOString() };
+}
+
+async function findModelSessionForNotification(env, body) {
+  const tables = modelSessionTables(env);
+  const formulas = modelSessionLinkIssuerFormulas(tables, body);
+  if (!formulas.length) return { ok: false, status: 400, error: "missing_session_identifier" };
+  for (const formula of formulas) {
+    const found = await modelSessionFindOne(env, tables.sessions.table, formula);
+    if (!found.ok) return { ok: false, status: 503, error: "schema_not_ready" };
+    if (found.record) return { ok: true, tables, session: found.record };
+  }
+  return { ok: false, status: 404, error: "session_not_found" };
+}
+
+async function sendModelSessionTelegramEvent(req, env, { event, tables, session }) {
+  const state = normalizeSessionState(modelSessionStateFromRecord(tables, session).state);
+  const fields = session.fields || {};
+  const link = event === "emergency_alert"
+    ? null
+    : await modelSessionSignedLinkForRecord(req, env, tables, session, env.MODEL_SESSION_TELEGRAM_LINK_TTL_SECONDS || 600);
+  const built = buildModelSessionTelegramPayload({
+    event,
+    state,
+    chatId: fields[tables.sessions.fields.modelTelegramChatId],
+    modelSessionUrl: link?.url,
+    emergencyChatId: env.MODEL_SESSION_EMERGENCY_CHAT_ID || env.TELEGRAM_CHAT_ID,
+    emergencyThreadId: env.MODEL_SESSION_EMERGENCY_THREAD_ID,
+    emergencyUrl: env.MODEL_SESSION_EMERGENCY_CONSOLE_URL,
+  });
+  if (!built.ok) return built;
+  const telegram = await telegramInternalSend(env, built.payload);
+  return { ok: telegram.ok === true, event: built.event, telegram, expires_at: link?.expires_at || null };
+}
+
+async function handleModelSessionNotification(req, env) {
+  const body = await safeJson(req);
+  const event = normalizeModelSessionTelegramEvent(body?.event);
+  if (!event || event === "emergency_alert") {
+    return modelSessionJson({ ok: false, error: "invalid_notification_event" }, 400);
+  }
+  const found = await findModelSessionForNotification(env, body);
+  if (!found.ok) return modelSessionJson({ ok: false, error: found.error }, found.status);
+  const notification = await sendModelSessionTelegramEvent(req, env, { event, tables: found.tables, session: found.session });
+  if (!notification.ok) {
+    const status = notification.error === "invalid_notification_event" ? 409 : 503;
+    return modelSessionJson({ ok: false, error: notification.error || notification.telegram?.error || "telegram_send_failed" }, status);
+  }
+  return modelSessionJson({ ok: true, notification });
 }
 
 async function handleModelSessionLinkIssuer(req, env) {
@@ -1640,6 +1860,17 @@ async function handleModelSessionAction(req, env) {
   }
 
   const transition = resolveModelSessionTransition(action, stateInfo.state);
+  if (action === "emergency") {
+    const notification = await sendModelSessionTelegramEvent(req, env, {
+      event: "emergency_alert",
+      tables: reread.tables,
+      session: reread.session,
+    });
+    if (!notification.ok) {
+      return modelSessionJson({ ok: false, error: notification.error || notification.telegram?.error || "telegram_send_failed" }, 503);
+    }
+    return modelSessionJson({ ok: true, session: modelSessionResponseSession(reread.tables, reread.session), notification });
+  }
   if (!transition.ok) return modelSessionJson({ ok: false, error: "invalid_transition" }, 409);
 
   if (transition.to === "final_payment_confirmed") {
@@ -2955,6 +3186,7 @@ async function telegramInternalSend(env, payload) {
     text: payload.text,
     parse_mode: payload.parse_mode || "HTML",
     disable_web_page_preview: payload.disable_web_page_preview ?? true,
+    ...(payload.reply_markup ? { reply_markup: payload.reply_markup } : {}),
   };
 
   const res = await fetch(url, {
