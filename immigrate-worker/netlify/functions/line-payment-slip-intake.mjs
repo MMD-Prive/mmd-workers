@@ -305,7 +305,8 @@ export async function processPaymentSlipImage({ env, event, fetchImpl = fetch, n
     try { links = await resolveDeterministicLinks({ env, identity, extraction, fetchImpl }); } catch { links.ambiguous = true; }
     const threshold = Math.max(0.5, Math.min(1, numberOrNull(env.LINE_SLIP_CONFIDENCE_THRESHOLD) || 0.85));
     const reconciliationComplete = Boolean(extraction.payment_ref && extraction.amount_thb != null);
-    const reviewRequired = Boolean(duplicateSha || duplicateRef || links.ambiguous || extraction.confidence_score < threshold || !reconciliationComplete);
+    const deterministicallyLinked = Boolean(links.member || links.session || links.payment || links.renewal);
+    const reviewRequired = Boolean(duplicateSha || duplicateRef || links.ambiguous || extraction.confidence_score < threshold || !reconciliationComplete || !deterministicallyLinked);
     const fields = proofFields({ identity, stored, extraction, duplicateSha, duplicateRef, links, reviewRequired });
     const proof = await createProof({ env, fields, fetchImpl });
     if (!proof?.id) throw new Error("payment_proof_create_failed");

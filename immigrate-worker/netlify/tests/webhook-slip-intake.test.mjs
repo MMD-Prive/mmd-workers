@@ -67,7 +67,7 @@ function jsonResponse(value, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 }
 
-function pipelineFetch({ qr = {}, ocr = {}, existingProof = null, duplicateRef = null, r2Status = 200, telegramStatus = 200 } = {}) {
+function pipelineFetch({ qr = {}, ocr = {}, existingProof = null, duplicateRef = null, memberRecord = { id: "recMember" }, r2Status = 200, telegramStatus = 200 } = {}) {
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
     const href = String(url);
@@ -85,6 +85,7 @@ function pipelineFetch({ qr = {}, ocr = {}, existingProof = null, duplicateRef =
       if (init.method === "POST") return jsonResponse({ id: "recProofCreated", fields: JSON.parse(init.body).fields });
       if (formula.includes("{proof_id}=") && !formula.includes("AND(")) return jsonResponse({ records: existingProof ? [existingProof] : [] });
       if (formula.includes("{payment_ref}") && duplicateRef) return jsonResponse({ records: [duplicateRef] });
+      if (formula.includes("{line_id}") && memberRecord) return jsonResponse({ records: [memberRecord] });
       return jsonResponse({ records: [] });
     }
     throw new Error(`unexpected fetch: ${href}`);
@@ -231,6 +232,10 @@ test("partial extraction and post-storage persistence failure remain review-only
   const partialResult = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl: partial.fetchImpl });
   assert.equal(partialResult.reviewRequired, true);
 
+  const orphan = pipelineFetch({ qr: { payment_ref: "PAY-ORPHAN", amount_thb: 100, confidence_score: 0.99 }, memberRecord: null });
+  const orphanResult = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl: orphan.fetchImpl });
+  assert.equal(orphanResult.reviewRequired, true);
+
   const failed = pipelineFetch({ qr: { payment_ref: "PAY-FAIL", amount_thb: 100, confidence_score: 0.99 } });
   const originalFetch = failed.fetchImpl;
   const result = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl: async (url, init = {}) => {
@@ -293,6 +298,7 @@ test("valid signed handler event performs the narrow image-slip intake and safe 
         if (formula.includes("{line_user_id}")) {
           return jsonResponse({ records: [{ id: "recContext", fields: { payload_json: JSON.stringify({ raw_text: "ส่งสลิปการโอนครับ" }) } }] });
         }
+        if (href.includes("/Members?") && formula.includes("{line_id}")) return jsonResponse({ records: [{ id: "recMember" }] });
         return jsonResponse({ records: [] });
       }
       throw new Error(`unexpected fetch: ${href}`);

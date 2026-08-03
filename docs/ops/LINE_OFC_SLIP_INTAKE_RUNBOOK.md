@@ -4,6 +4,8 @@
 
 Deployment is pending. This PR does not deploy, publish, merge, change routes, create an R2 bucket, or configure secrets.
 
+The existing production route remains owned by `member-dashboard-chat-worker`. Configure its `LINE_WEBHOOK_UPSTREAM_URL` to the HTTPS URL of the authoritative Netlify webhook function. The Worker verifies the LINE signature before forwarding the unchanged body and signature; invalid, unavailable, or non-HTTPS upstreams fail closed. No Cloudflare route change is required.
+
 ## Required environment
 
 Existing LINE/Airtable configuration:

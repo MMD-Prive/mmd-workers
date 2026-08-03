@@ -80,6 +80,40 @@ test("valid LINE signature can process empty events safely", async () => {
   });
 });
 
+test("routed Worker delegates a verified webhook to the authoritative HTTPS upstream", async () => {
+  const originalFetch = globalThis.fetch;
+  let forwarded;
+  globalThis.fetch = async (url, init) => {
+    forwarded = { url: String(url), init };
+    return new Response(JSON.stringify({ ok: true, events: 1 }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  try {
+    const request = await signedLineRequest({ events: [lineTextEvent("ส่งสลิป")] });
+    const signature = request.headers.get("x-line-signature");
+    const response = await worker.fetch(request, { ...BASE_ENV, LINE_WEBHOOK_UPSTREAM_URL: "https://mmdhome.netlify.app/.netlify/functions/webhook" });
+    assert.equal(response.status, 200);
+    assert.equal(forwarded.url, "https://mmdhome.netlify.app/.netlify/functions/webhook");
+    assert.equal(forwarded.init.headers["x-line-signature"], signature);
+    assert.equal(forwarded.init.headers["x-mmd-forwarded-by"], "member-dashboard-chat-worker");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("routed Worker fails closed when the configured upstream is invalid or unavailable", async () => {
+  const invalid = await worker.fetch(await signedLineRequest({ events: [] }), { ...BASE_ENV, LINE_WEBHOOK_UPSTREAM_URL: "http://not-secure.test/webhook" });
+  assert.equal(invalid.status, 503);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("network unavailable"); };
+  try {
+    const unavailable = await worker.fetch(await signedLineRequest({ events: [] }), { ...BASE_ENV, LINE_WEBHOOK_UPSTREAM_URL: "https://upstream.test/webhook" });
+    assert.equal(unavailable.status, 502);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("Kenji trigger phrases route to talk_to_per_ai intent", async () => {
   const phrases = ["Hi Per", "Per AI", "Kenji AI", "เปอร์ ai", "เปอร์เอไอ"];
 

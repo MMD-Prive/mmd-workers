@@ -970,6 +970,35 @@ async function handleLineWebhook(request, env) {
 
   if (!validSignature) return json({ ok: false, error: "invalid_signature" }, 401);
 
+  const upstreamValue = asString(env.LINE_WEBHOOK_UPSTREAM_URL);
+  if (upstreamValue) {
+    let upstream;
+    try {
+      upstream = new URL(upstreamValue);
+    } catch (_) {
+      return json({ ok: false, error: "line_webhook_upstream_invalid" }, 503);
+    }
+    if (upstream.protocol !== "https:") return json({ ok: false, error: "line_webhook_upstream_invalid" }, 503);
+    try {
+      const response = await fetch(upstream, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-line-signature": signature,
+          "x-mmd-forwarded-by": WORKER_NAME,
+        },
+        body: rawBody,
+      });
+      if (!response.ok) return json({ ok: false, error: "line_webhook_upstream_failed" }, 502);
+      return new Response(response.body, {
+        status: response.status,
+        headers: { "content-type": response.headers.get("content-type") || "application/json; charset=utf-8", "cache-control": "no-store", "x-mmd-worker": WORKER_NAME },
+      });
+    } catch (_) {
+      return json({ ok: false, error: "line_webhook_upstream_unavailable" }, 502);
+    }
+  }
+
   let body;
   try {
     body = JSON.parse(rawBody || "{}");

@@ -23,3 +23,4 @@ pattern = "www.mmdbkk.com/webhooks/line/"
 zone_name = "mmdbkk.com"
 
 # Bind LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, INTERNAL_TOKEN, and CONFIRM_KEY as Cloudflare secrets only.
+# Set LINE_WEBHOOK_UPSTREAM_URL to the HTTPS URL of the authoritative Netlify webhook function.
