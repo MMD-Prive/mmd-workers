@@ -4,6 +4,8 @@ import test from "node:test";
 
 import { handler } from "../functions/webhook.js";
 import {
+  DEFAULT_MAX_AMOUNT_THB,
+  RETRY_SLIP_ACK,
   SAFE_SLIP_ACK,
   buildProofIdentity,
   buildStagedHandoff,
@@ -12,6 +14,7 @@ import {
   isImageMessage,
   looksLikePaymentSlipContext,
   loadRecentPaymentContext,
+  normalizeAmountThb,
   processPaymentSlipImage,
   putPrivateR2Object,
 } from "../functions/line-payment-slip-intake.mjs";
@@ -67,12 +70,13 @@ function jsonResponse(value, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 }
 
-function pipelineFetch({ qr = {}, ocr = {}, existingProof = null, duplicateRef = null, memberRecord = { id: "recMember" }, r2Status = 200, telegramStatus = 200 } = {}) {
+function pipelineFetch({ qr = {}, ocr = {}, existingProof = null, duplicateRef = null, memberRecord = { id: "recMember" }, lineResponse, r2Status = 200, airtableCreateStatus = 200, telegramStatus = 200 } = {}) {
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
     const href = String(url);
     calls.push({ href, init });
     if (href.includes("api-data.line.me")) {
+      if (lineResponse) return lineResponse();
       return new Response(Buffer.from("image-bytes"), { status: 200, headers: { "content-type": "image/jpeg", "content-length": "11" } });
     }
     if (href.includes("r2.cloudflarestorage.com")) return new Response("", { status: r2Status });
@@ -82,7 +86,7 @@ function pipelineFetch({ qr = {}, ocr = {}, existingProof = null, duplicateRef =
     if (href.includes("api.airtable.com")) {
       const parsed = new URL(href);
       const formula = parsed.searchParams.get("filterByFormula") || "";
-      if (init.method === "POST") return jsonResponse({ id: "recProofCreated", fields: JSON.parse(init.body).fields });
+      if (init.method === "POST") return jsonResponse(airtableCreateStatus === 200 ? { id: "recProofCreated", fields: JSON.parse(init.body).fields } : {}, airtableCreateStatus);
       if (formula.includes("{proof_id}=") && !formula.includes("AND(")) return jsonResponse({ records: existingProof ? [existingProof] : [] });
       if (formula.includes("{payment_ref}") && duplicateRef) return jsonResponse({ records: [duplicateRef] });
       if (formula.includes("{line_id}") && memberRecord) return jsonResponse({ records: [memberRecord] });
@@ -100,18 +104,49 @@ test("image detector requires a supported image event and explicit recent paymen
   assert.equal(looksLikePaymentSlipContext({ type: "message", message: { type: "text", id: "x" } }, ["ส่งสลิป"]), false);
 });
 
-test("recent payment context is time-bounded and sorted newest-first", async () => {
-  let requested;
-  await loadRecentPaymentContext({
+test("recent payment context uses a bounded valid formula and nested timestamps", async () => {
+  const requests = [];
+  const context = await loadRecentPaymentContext({
     env: BASE_ENV,
     lineUserId: LINE_USER_ID,
     now: new Date("2026-08-03T10:00:00Z"),
-    fetchImpl: async (url) => { requested = new URL(url); return jsonResponse({ records: [] }); },
+    fetchImpl: async (url) => {
+      requests.push(new URL(url));
+      return jsonResponse({ records: [
+        { id: "older", createdTime: "2026-08-03T09:55:00Z", fields: { payload_json: JSON.stringify({ raw_text: "ส่งสลิป", received_at: "2026-08-03T09:55:00Z" }) } },
+        { id: "newer", createdTime: "2026-08-03T09:59:00Z", fields: { payload_json: JSON.stringify({ raw_text: "ชำระแล้ว", received_at: "2026-08-03T09:59:00Z" }) } },
+      ] });
+    },
   });
-  assert.match(requested.searchParams.get("filterByFormula"), /IS_AFTER\(\{received_at\}/);
-  assert.match(requested.searchParams.get("filterByFormula"), /2026-08-03T09:45:00\.000Z/);
-  assert.equal(requested.searchParams.get("sort[0][field]"), "received_at");
-  assert.equal(requested.searchParams.get("sort[0][direction]"), "desc");
+  assert.deepEqual(context, ["ชำระแล้ว", "ส่งสลิป"]);
+  assert.equal(requests.length, 1);
+  const formula = requests[0].searchParams.get("filterByFormula");
+  assert.match(formula, /\{line_user_id\}/);
+  assert.match(formula, /IS_AFTER\(CREATED_TIME\(\),DATETIME_PARSE\('2026-08-03T09:45:00\.000Z'\)\)/);
+  assert.doesNotMatch(formula, /\{received_at\}/);
+  assert.equal(requests[0].searchParams.get("maxRecords"), "20");
+});
+
+test("recent payment context falls back to record creation time and fails safely", async () => {
+  const fallback = await loadRecentPaymentContext({
+    env: BASE_ENV,
+    lineUserId: LINE_USER_ID,
+    now: new Date("2026-08-03T10:00:00Z"),
+    fetchImpl: async () => jsonResponse({ records: [{ id: "fallback", createdTime: "2026-08-03T09:58:00Z", fields: { payload_json: JSON.stringify({ raw_text: "payment proof" }) } }] }),
+  });
+  assert.deepEqual(fallback, ["payment proof"]);
+  const failed = await loadRecentPaymentContext({ env: BASE_ENV, lineUserId: LINE_USER_ID, fetchImpl: async () => jsonResponse({}, 422) });
+  assert.deepEqual(failed, []);
+});
+
+test("amount normalization accepts positive currency values and rejects unsafe inputs", () => {
+  assert.equal(normalizeAmountThb(1250), 1250);
+  assert.equal(normalizeAmountThb("1250.129"), 1250.13);
+  for (const value of [null, "", "   ", "0", 0, -1, "not-a-number", Number.NaN, Number.POSITIVE_INFINITY, true, [], 0.001]) {
+    assert.equal(normalizeAmountThb(value), null, String(value));
+  }
+  assert.equal(normalizeAmountThb(DEFAULT_MAX_AMOUNT_THB + 0.01), null);
+  assert.equal(normalizeAmountThb(501, 500), null);
 });
 
 test("LINE image download validates MIME, body, and maximum size", async () => {
@@ -185,6 +220,14 @@ test("extraction runs QR first and OCR only as fallback", async () => {
   });
   assert.equal(requestQr.payment_ref, "OCR-SLIP-REF");
   assert.deepEqual(requestQrCalls, [BASE_ENV.LINE_SLIP_QR_EXTRACTOR_URL, BASE_ENV.LINE_SLIP_OCR_EXTRACTOR_URL]);
+
+  const invalidOnly = await extractPaymentSlip({
+    env: BASE_ENV,
+    image,
+    fetchImpl: async () => jsonResponse({ amount_thb: "0", confidence_score: 0.99 }),
+  });
+  assert.equal(invalidOnly.amount_thb, null);
+  assert.equal(invalidOnly.confidence_score, 0);
 });
 
 test("duplicate webhook/message returns the existing proof without downloading", async () => {
@@ -192,7 +235,27 @@ test("duplicate webhook/message returns the existing proof without downloading",
   const result = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl });
   assert.equal(result.deduped, true);
   assert.equal(result.state, "pending");
+  assert.equal(result.replyText, SAFE_SLIP_ACK);
   assert.equal(calls.some((call) => call.href.includes("api-data.line.me")), false);
+});
+
+test("download and storage failures never claim durable receipt", async () => {
+  const cases = [
+    ["download", pipelineFetch({ lineResponse: () => new Response("", { status: 503 }) })],
+    ["mime", pipelineFetch({ lineResponse: () => new Response("text", { status: 200, headers: { "content-type": "text/plain" } }) })],
+    ["oversized", pipelineFetch({ lineResponse: () => new Response(Buffer.from("abc"), { status: 200, headers: { "content-type": "image/png", "content-length": "99999999" } }) })],
+    ["empty", pipelineFetch({ lineResponse: () => new Response(Buffer.alloc(0), { status: 200, headers: { "content-type": "image/png" } }) })],
+    ["r2", pipelineFetch({ r2Status: 500 })],
+  ];
+  for (const [name, pipeline] of cases) {
+    const result = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl: pipeline.fetchImpl });
+    assert.equal(result.ok, false, name);
+    assert.equal(result.state, "retry_required", name);
+    assert.equal(result.replyText, RETRY_SLIP_ACK, name);
+    assert.doesNotMatch(result.replyText, /ได้รับหลักฐานการชำระเงินแล้ว/, name);
+    assert.doesNotMatch(JSON.stringify(result), /"(?:status|state)":"(?:paid|verified)"/, name);
+    assert.equal(pipeline.calls.some((call) => call.href.includes("api.telegram.org")), true, name);
+  }
 });
 
 test("duplicate payment_ref and low confidence remain review-only", async () => {
@@ -236,26 +299,38 @@ test("partial extraction and post-storage persistence failure remain review-only
   const orphanResult = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl: orphan.fetchImpl });
   assert.equal(orphanResult.reviewRequired, true);
 
-  const failed = pipelineFetch({ qr: { payment_ref: "PAY-FAIL", amount_thb: 100, confidence_score: 0.99 } });
-  const originalFetch = failed.fetchImpl;
-  const result = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl: async (url, init = {}) => {
-    if (String(url).includes("api.airtable.com") && init.method === "POST") return jsonResponse({}, 500);
-    return originalFetch(url, init);
-  }});
-  assert.equal(result.state, "manual_review");
+  const failed = pipelineFetch({ qr: { payment_ref: "PAY-FAIL", amount_thb: 100, confidence_score: 0.99 }, airtableCreateStatus: 500 });
+  const result = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl: failed.fetchImpl });
+  assert.equal(result.state, "retry_required");
+  assert.equal(result.replyText, RETRY_SLIP_ACK);
+  assert.doesNotMatch(result.replyText, /ได้รับหลักฐานการชำระเงินแล้ว/);
   assert.equal(failed.calls.some((call) => call.href.includes("api.telegram.org")), true);
 });
 
 test("R2 and Telegram failures do not create a paid or verified state", async () => {
   const r2Failure = pipelineFetch({ r2Status: 500 });
   const failed = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl: r2Failure.fetchImpl });
-  assert.equal(failed.state, "manual_review");
+  assert.equal(failed.state, "retry_required");
   assert.doesNotMatch(failed.replyText, /ตรวจสอบเรียบร้อยแล้ว/);
 
   const telegramFailure = pipelineFetch({ qr: { payment_ref: "PAY-TELEGRAM", amount_thb: 100, confidence_score: 0.99 }, telegramStatus: 500 });
   const pending = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl: telegramFailure.fetchImpl });
   assert.equal(pending.state, "pending");
   assert.equal(pending.telegram.ok, false);
+});
+
+test("invalid amounts are excluded from Airtable, deterministic amount matching, and remain review-required", async () => {
+  for (const amount of ["", "0", 0, -50, "invalid", Number.POSITIVE_INFINITY, DEFAULT_MAX_AMOUNT_THB + 1]) {
+    const pipeline = pipelineFetch({ qr: { payment_ref: "PAY-INVALID-AMOUNT", amount_thb: amount, confidence_score: 0.99 } });
+    const result = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl: pipeline.fetchImpl });
+    assert.equal(result.reviewRequired, true, String(amount));
+    const create = pipeline.calls.find((call) => call.href.includes("api.airtable.com") && call.init.method === "POST");
+    const fields = JSON.parse(create.init.body).fields;
+    assert.equal(Object.hasOwn(fields, "amount_thb"), false, String(amount));
+    const linkCalls = pipeline.calls.filter((call) => call.href.includes("api.airtable.com") && call.init.method !== "POST");
+    assert.equal(linkCalls.some((call) => /\{(?:Amount|amount_thb)\}=/.test(new URL(call.href).searchParams.get("filterByFormula") || "")), false, String(amount));
+    assert.doesNotMatch(create.init.body, /"status":"verified"|"status":"paid"/);
+  }
 });
 
 test("staged payments handoff contract cannot mark paid or mutate benefits", () => {
@@ -296,7 +371,8 @@ test("valid signed handler event performs the narrow image-slip intake and safe 
             : jsonResponse({ id: "recConsole" });
         }
         if (formula.includes("{line_user_id}")) {
-          return jsonResponse({ records: [{ id: "recContext", fields: { payload_json: JSON.stringify({ raw_text: "ส่งสลิปการโอนครับ" }) } }] });
+          const receivedAt = new Date().toISOString();
+          return jsonResponse({ records: [{ id: "recContext", createdTime: receivedAt, fields: { payload_json: JSON.stringify({ raw_text: "ส่งสลิปการโอนครับ", received_at: receivedAt }) } }] });
         }
         if (href.includes("/Members?") && formula.includes("{line_id}")) return jsonResponse({ records: [{ id: "recMember" }] });
         return jsonResponse({ records: [] });
@@ -313,6 +389,83 @@ test("valid signed handler event performs the narrow image-slip intake and safe 
       assert.equal(calls.filter((call) => call.href.includes("api-data.line.me")).length, 1);
       assert.equal(calls.filter((call) => call.href.includes("r2.cloudflarestorage.com")).length, 1);
       assert.equal(calls.some((call) => call.href.includes("payments-worker")), false);
+      const replyCall = calls.find((call) => call.href.includes("/message/reply"));
+      assert.equal(JSON.parse(replyCall.init.body).messages[0].text, SAFE_SLIP_ACK);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+test("LINE reply failure is redacted and returns a retryable webhook error", async () => {
+  await withEnv(BASE_ENV, async () => {
+    const originalFetch = globalThis.fetch;
+    const originalError = console.error;
+    const logs = [];
+    const calls = [];
+    globalThis.fetch = async (url, init = {}) => {
+      const href = String(url);
+      calls.push({ href, init });
+      if (href.includes("/profile/")) return jsonResponse({ displayName: "Test Client" });
+      if (href.includes("api-data.line.me")) return new Response(Buffer.from("image-bytes"), { status: 200, headers: { "content-type": "image/jpeg" } });
+      if (href.includes("r2.cloudflarestorage.com")) return new Response("", { status: 200 });
+      if (href === BASE_ENV.LINE_SLIP_QR_EXTRACTOR_URL) return jsonResponse({ payment_ref: "PAY-REPLY-FAIL", amount_thb: 500, confidence_score: 0.99 });
+      if (href.includes("api.telegram.org")) return jsonResponse({ ok: true });
+      if (href.includes("api.line.me/v2/bot/message/reply")) return jsonResponse({}, 500);
+      if (href.includes("api.airtable.com")) {
+        const formula = new URL(href).searchParams.get("filterByFormula") || "";
+        if (init.method === "POST") return href.includes(encodeURIComponent("MMD — Payment Proofs")) ? jsonResponse({ id: "recProof" }) : jsonResponse({ id: "recConsole" });
+        if (formula.includes("CREATED_TIME()")) return jsonResponse({ records: [{ id: "recContext", createdTime: new Date().toISOString(), fields: { payload_json: JSON.stringify({ raw_text: "ส่งสลิป", received_at: new Date().toISOString() }) } }] });
+        if (href.includes("/Members?") && formula.includes("{line_id}")) return jsonResponse({ records: [{ id: "recMember" }] });
+        return jsonResponse({ records: [] });
+      }
+      throw new Error(`unexpected fetch: ${href}`);
+    };
+    console.error = (value) => logs.push(String(value));
+    try {
+      const response = await handler(signedNetlifyEvent({ events: [imageEvent()] }));
+      assert.equal(response.statusCode, 502);
+      assert.deepEqual(JSON.parse(response.body), { ok: false, error: "line_payment_slip_reply_failed", processed: 0 });
+      assert.equal(logs.length, 1);
+      assert.match(logs[0], /line_payment_slip_reply_failed/);
+      assert.doesNotMatch(logs[0], /telegram-token|r2-secret-key|PAY-REPLY-FAIL|line-message-1/);
+      assert.equal(calls.some((call) => call.href.includes("api.line.me/v2/bot/message/reply")), true);
+    } finally {
+      globalThis.fetch = originalFetch;
+      console.error = originalError;
+    }
+  });
+});
+
+test("LINE redelivery can acknowledge an idempotently existing durable proof", async () => {
+  await withEnv(BASE_ENV, async () => {
+    const originalFetch = globalThis.fetch;
+    const calls = [];
+    globalThis.fetch = async (url, init = {}) => {
+      const href = String(url);
+      calls.push({ href, init });
+      if (href.includes("/profile/")) return jsonResponse({ displayName: "Test Client" });
+      if (href.includes("api.line.me/v2/bot/message/reply")) return jsonResponse({ ok: true });
+      if (href.includes("api.airtable.com")) {
+        const formula = new URL(href).searchParams.get("filterByFormula") || "";
+        if (formula.includes("CREATED_TIME()")) {
+          const receivedAt = new Date().toISOString();
+          return jsonResponse({ records: [{ id: "recContext", createdTime: receivedAt, fields: { payload_json: JSON.stringify({ raw_text: "ส่งสลิป", received_at: receivedAt }) } }] });
+        }
+        if (formula.includes("{proof_id}=")) return jsonResponse({ records: [{ id: "recExistingProof" }] });
+        if (formula.includes("{inbox_id}")) return jsonResponse({ records: [{ id: "recExistingInbox" }] });
+        return jsonResponse({ records: [] });
+      }
+      throw new Error(`unexpected fetch: ${href}`);
+    };
+    try {
+      const event = imageEvent({ deliveryContext: { isRedelivery: true } });
+      const response = await handler(signedNetlifyEvent({ events: [event] }));
+      assert.equal(response.statusCode, 200);
+      const payload = JSON.parse(response.body);
+      assert.equal(payload.saved[0].payment_slip_intake.deduped, true);
+      assert.equal(payload.saved[0].replied, true);
+      assert.equal(calls.some((call) => call.href.includes("api-data.line.me")), false);
       const replyCall = calls.find((call) => call.href.includes("/message/reply"));
       assert.equal(JSON.parse(replyCall.init.body).messages[0].text, SAFE_SLIP_ACK);
     } finally {
