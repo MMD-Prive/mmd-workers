@@ -172,12 +172,26 @@ async function records({ env, table, formula, maxRecords = 2, sort, fetchImpl })
   return Array.isArray(data.records) ? data.records : [];
 }
 
+async function pagedRecords({ env, table, formula, pageSize = 100, fetchImpl }) {
+  const found = [];
+  let offset = "";
+  do {
+    const query = { pageSize, filterByFormula: formula };
+    if (offset) query.offset = offset;
+    const data = await airtable({ env, table, query, fetchImpl });
+    if (Array.isArray(data.records)) found.push(...data.records);
+    offset = clean(data.offset);
+  } while (offset);
+  return found;
+}
+
 export async function loadRecentPaymentContext({ env, lineUserId, fetchImpl = fetch, now = new Date() }) {
   if (!clean(lineUserId)) return [];
   try {
-    const cutoffMs = now.getTime() - 15 * 60 * 1000;
-    const formula = `{line_user_id}='${formulaValue(lineUserId)}'`;
-    const found = await records({ env, table: env.AIRTABLE_SYNC_TABLE || "MMD — Console Inbox", formula, maxRecords: 25, fetchImpl });
+    const cutoff = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
+    const cutoffMs = Date.parse(cutoff);
+    const formula = `AND({line_user_id}='${formulaValue(lineUserId)}',IS_AFTER(CREATED_TIME(),DATETIME_PARSE('${cutoff}'))) `;
+    const found = await pagedRecords({ env, table: env.AIRTABLE_SYNC_TABLE || "MMD — Console Inbox", formula, pageSize: 100, fetchImpl });
     return found
       .map((record) => {
         let payload = {};
