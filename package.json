@@ -11,6 +11,7 @@
     "deploy:admin": "npm run test:admin-login && npm run test:studio-real-worker && wrangler deploy --config admin-worker/wrangler.toml",
     "deploy:events": "wrangler deploy --config workers/events-worker/wrangler.toml",
     "deploy:telegram": "wrangler deploy --config telegram-worker/wrangler.toml",
+    "deploy:sigil-booking": "wrangler deploy --config sigil-booking-worker/wrangler.toml",
     "deploy:sigil-board": "wrangler deploy --config workers/sigil-board-worker/wrangler.toml",
     "deploy:sigil-booking-proxy": "wrangler deploy --config workers/sigil-booking-proxy-worker/wrangler.toml",
 
@@ -18,6 +19,7 @@
     "dev:admin": "wrangler dev --config admin-worker/wrangler.toml",
     "dev:events": "wrangler dev --config workers/events-worker/wrangler.toml",
     "dev:telegram": "wrangler dev --config telegram-worker/wrangler.toml",
+    "dev:sigil-booking": "wrangler dev --config sigil-booking-worker/wrangler.toml",
     "dev:sigil-board": "wrangler dev --config workers/sigil-board-worker/wrangler.toml",
     "dev:sigil-booking-proxy": "wrangler dev --config workers/sigil-booking-proxy-worker/wrangler.toml",
     "check:sigil-board": "node --check workers/sigil-board-worker/src/index.js",
