@@ -2,7 +2,7 @@
   "name": "mmd-workers",
   "private": true,
   "scripts": {
-    "check": "node --check chat-worker/src/index.js && node --check scripts/smoke-chat-worker.js && node --check admin-worker/src/studio-real-worker.js",
+    "check": "node --check chat-worker/src/index.js && node --check scripts/smoke-chat-worker.js && node --check admin-worker/src/studio-real-worker.js && node --check sigil-booking-worker/src/index.js && node --check sigil-booking-worker/src/model-image-policy-worker.js",
     "smoke": "node scripts/smoke-chat-worker.js",
     "test": "npm run check && npm run smoke && npm run test:admin-login && npm run test:studio-real-worker",
     "test:admin-login": "node --test admin-worker/admin-login-hero.test.mjs admin-worker/admin-login-session.test.mjs admin-worker/admin-login-regression-guard.test.mjs",
@@ -11,6 +11,7 @@
     "deploy:admin": "npm run test:admin-login && npm run test:studio-real-worker && wrangler deploy --config admin-worker/wrangler.toml",
     "deploy:events": "wrangler deploy --config workers/events-worker/wrangler.toml",
     "deploy:telegram": "wrangler deploy --config telegram-worker/wrangler.toml",
+    "deploy:sigil-booking": "npm run check && wrangler deploy --config sigil-booking-worker/wrangler.toml",
     "deploy:sigil-board": "wrangler deploy --config workers/sigil-board-worker/wrangler.toml",
     "deploy:sigil-booking-proxy": "wrangler deploy --config workers/sigil-booking-proxy-worker/wrangler.toml",
 
@@ -18,6 +19,7 @@
     "dev:admin": "wrangler dev --config admin-worker/wrangler.toml",
     "dev:events": "wrangler dev --config workers/events-worker/wrangler.toml",
     "dev:telegram": "wrangler dev --config telegram-worker/wrangler.toml",
+    "dev:sigil-booking": "wrangler dev --config sigil-booking-worker/wrangler.toml",
     "dev:sigil-board": "wrangler dev --config workers/sigil-board-worker/wrangler.toml",
     "dev:sigil-booking-proxy": "wrangler dev --config workers/sigil-booking-proxy-worker/wrangler.toml",
     "check:sigil-board": "node --check workers/sigil-board-worker/src/index.js",
