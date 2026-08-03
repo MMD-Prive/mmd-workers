@@ -28,6 +28,10 @@ AIRTABLE_TABLE_AUTH_IDENTITIES = "MMD — Auth Identities"
 AIRTABLE_TABLE_AUTH_LOGIN_CODES = "MMD — Auth Login Codes"
 AIRTABLE_TABLE_AUTH_SESSIONS = "MMD — Auth Sessions"
 
+# Read-only LINE subject resolver mapping. This is used only by the internal
+# MEMBER_STATUS_RESOLVER service-binding contract.
+AIRTABLE_MEMBERS_LINE_USER_ID_FIELD = "line_user_id"
+
 # MMD — Member Entitlements mapping.
 # The current table does not expose the old auth MVP member_id field.
 # Entitlement reads are fail-safe: if the identity/status fields are missing or unmapped,
@@ -70,3 +74,4 @@ MMD_AUTH_DEV_MODE = "false"
 # AIRTABLE_BASE_ID
 # AUTH_HMAC_SECRET
 # ADMIN_BEARER
+# MEMBER_STATUS_RESOLVER_SECRET
