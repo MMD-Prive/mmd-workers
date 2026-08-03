@@ -4,6 +4,7 @@ import { handleStudioRequest } from "./src/studio-real-worker.js";
 
 const BASE_ENV = {
   ADMIN_BEARER: "admin-t",
+  INTERNAL_API_TOKEN: "internal-api-k",
   CONFIRM_KEY: "confirm-k",
   AIRTABLE_BASE_ID: "base1",
   AIRTABLE_API_KEY: "airkey",
@@ -46,6 +47,28 @@ test("intake validate success", async () => {
   assert.equal(data.ok, true);
   assert.equal(data.safe_preview_only, true);
   assert.equal(data.normalized.model_name, "Test Model");
+});
+
+test("existing worker internal token header is accepted", async () => {
+  const res = await handleStudioRequest(req("/studio/api/intake/validate", {
+    model_name: "Internal Header Model",
+    field: "ST",
+    layer: "Private / SIGIL",
+    template_hint: "MMD Compcard",
+  }, { headers: { "X-Internal-Token": "internal-api-k" } }), BASE_ENV);
+  assert.equal(res.status, 200);
+  assert.equal((await json(res)).ok, true);
+});
+
+test("existing confirm key can authenticate studio smoke", async () => {
+  const res = await handleStudioRequest(req("/studio/api/intake/validate?t=confirm-k", {
+    model_name: "Confirm Key Model",
+    field: "ST",
+    layer: "Private / SIGIL",
+    template_hint: "MMD Compcard",
+  }), BASE_ENV);
+  assert.equal(res.status, 200);
+  assert.equal((await json(res)).ok, true);
 });
 
 test("intake commit requires admin t", async () => {

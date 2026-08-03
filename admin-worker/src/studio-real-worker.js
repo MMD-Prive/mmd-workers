@@ -402,10 +402,24 @@ function buildIntakeWarnings(normalized) {
 
 async function isStudioAuthed(request, env) {
   if (await isCoreAuthed(request, env)) return true;
-  const t = clean(new URL(request.url).searchParams.get("t"));
-  if (!t) return false;
-  const allowed = [env.ADMIN_BEARER, env.INTERNAL_TOKEN, env.STUDIO_ADMIN_TOKEN].map(clean).filter(Boolean);
-  return allowed.includes(t);
+  const url = new URL(request.url);
+  const bearer = clean(request.headers.get("Authorization")).replace(/^Bearer\s+/i, "");
+  const supplied = [
+    url.searchParams.get("t"),
+    bearer,
+    request.headers.get("X-Internal-Token"),
+    request.headers.get("X-Confirm-Key"),
+  ].map(clean).filter(Boolean);
+  if (!supplied.length) return false;
+  const allowed = [
+    env.ADMIN_BEARER,
+    env.INTERNAL_TOKEN,
+    env.INTERNAL_API_TOKEN,
+    env.STUDIO_ADMIN_TOKEN,
+    env.CONFIRM_KEY,
+    env.STUDIO_CONFIRM_KEY,
+  ].map(clean).filter(Boolean);
+  return supplied.some((value) => allowed.includes(value));
 }
 
 function isSecondConfirmed(request, env, body) {
@@ -497,7 +511,7 @@ function corsHeaders(request, env) {
   const origin = clean(request.headers.get("origin"));
   const headers = new Headers({
     "access-control-allow-methods": "POST, OPTIONS",
-    "access-control-allow-headers": "Content-Type, Authorization, X-Confirm-Key, Idempotency-Key",
+    "access-control-allow-headers": "Content-Type, Authorization, X-Confirm-Key, X-Internal-Token, Idempotency-Key",
     "access-control-allow-credentials": "true",
     "access-control-max-age": "86400",
     vary: "Origin",
