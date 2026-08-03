@@ -6,6 +6,11 @@ import {
   isKenjiMemberLineCandidate,
 } from "../../../shared/kenji-member-concierge-core.mjs";
 import { loadKenjiMemberMemoryForLine } from "./kenji-member-memory-context.mjs";
+import {
+  loadRecentPaymentContext,
+  looksLikePaymentSlipContext,
+  processPaymentSlipImage,
+} from "./line-payment-slip-intake.mjs";
 
 const DEFAULT_SYNC_TABLE = "MMD — Console Inbox";
 const LINE_API_BASE = "https://api.line.me/v2/bot";
@@ -1047,28 +1052,46 @@ export async function handler(event) {
       item?.source?.type === "user" &&
       lineChannelAccessToken;
     const profile = shouldFetchProfile ? await fetchLineProfile(lineChannelAccessToken, lineUserId) : null;
+    const recentContext = isImageMessage(item)
+      ? await loadRecentPaymentContext({ env: process.env, lineUserId })
+      : [];
+    const paymentSlipCandidate = looksLikePaymentSlipContext(item, recentContext);
+    const paymentSlipProfile = paymentSlipCandidate && !profile && item?.source?.type === "user" && lineChannelAccessToken
+      ? await fetchLineProfile(lineChannelAccessToken, lineUserId)
+      : profile;
+    const paymentSlipResult = paymentSlipCandidate
+      ? await processPaymentSlipImage({ env: process.env, event: item }).catch((error) => ({
+          ok: false,
+          deduped: false,
+          state: "manual_review",
+          error: String(error?.message || error || "payment_slip_intake_failed"),
+          replyText: "ได้รับหลักฐานการชำระเงินแล้วครับ แต่รายละเอียดต้องให้ทาง MMD ตรวจสอบด้วยตนเอง กรุณารอสักครู่ก่อนนะครับ",
+        }))
+      : null;
     const record = await writeEventToAirtable({
       baseId: airtableBaseId,
       apiKey: airtableApiKey,
       tableName: airtableTableName,
       event: item,
-      profile,
+      profile: paymentSlipProfile,
     });
-    const replyText = await buildAutoReplyMessage(item, profile, {
-      airtableBaseId,
-      airtableApiKey,
-      adminWorkerBaseUrl,
-      internalToken,
-      confirmKey,
-      lineModelLookupDebug,
-      lineWebhookDebug,
-      lineKenjiAiEnabled,
-      lineKenjiAiDebug,
-      lineOfficialChatUrl,
-      createPricingReviewEnabled: !record?.deduped,
-    });
+    const replyText = paymentSlipCandidate
+      ? String(paymentSlipResult?.replyText || "")
+      : await buildAutoReplyMessage(item, profile, {
+          airtableBaseId,
+          airtableApiKey,
+          adminWorkerBaseUrl,
+          internalToken,
+          confirmKey,
+          lineModelLookupDebug,
+          lineWebhookDebug,
+          lineKenjiAiEnabled,
+          lineKenjiAiDebug,
+          lineOfficialChatUrl,
+          createPricingReviewEnabled: !record?.deduped,
+        });
     const replied =
-      !record?.deduped && autoReplyEnabled && replyText
+      !record?.deduped && !paymentSlipResult?.deduped && autoReplyEnabled && replyText
         ? await sendLineReply(lineChannelAccessToken, getReplyToken(item), replyText)
         : false;
     saved.push({
@@ -1082,6 +1105,17 @@ export async function handler(event) {
       profile_name: String(profile?.displayName || ""),
       line_user_id: lineUserId,
       message_id: String(item?.message?.id || item?.webhookEventId || ""),
+      payment_slip_intake: paymentSlipCandidate
+        ? {
+            ok: Boolean(paymentSlipResult?.ok),
+            deduped: Boolean(paymentSlipResult?.deduped),
+            proof_id: String(paymentSlipResult?.proofId || ""),
+            state: String(paymentSlipResult?.state || "manual_review"),
+            review_required: Boolean(paymentSlipResult?.reviewRequired),
+            duplicate_payment_ref: Boolean(paymentSlipResult?.duplicatePaymentRef),
+            extraction_method: String(paymentSlipResult?.extractionMethod || ""),
+          }
+        : null,
     });
   }
 
