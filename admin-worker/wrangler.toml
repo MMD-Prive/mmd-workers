@@ -198,6 +198,11 @@ MODEL_LIFF_SESSION_TTL_SECONDS = "3600"
 PAYMENTS_BASE_URL = "https://payments-worker.malemodel-bkk.workers.dev"
 TELEGRAM_INTERNAL_SEND_URL = "https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send"
 
+# Studio Telegram alerts. Alert thread defaults to the MMD admin forum alert topic.
+TELEGRAM_STUDIO_NOTIFY_ENABLED = "true"
+TELEGRAM_STUDIO_CHAT_ID = "-1003546439681"
+TG_THREAD_STUDIO_ALERT = "9"
+
 # Airtable
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 
