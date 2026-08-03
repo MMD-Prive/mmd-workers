@@ -49,7 +49,7 @@ LINE_SLIP_OCR_EXTRACTOR_URL
 LINE_SLIP_EXTRACTOR_TOKEN
 ```
 
-QR is always attempted first. OCR runs only when QR returns no useful fields. If either adapter is missing or confidence is below the threshold, the proof remains review-only.
+QR is always attempted first. OCR runs unless QR returns a genuine transaction reference; PromptPay recipient proxies and requested amounts are not transaction evidence. If either adapter is missing or confidence is below the threshold, the proof remains review-only.
 
 The MMD-controlled implementation lives at `services/mmd-slip-extractor`. Deploy it as a separate Netlify project with that directory as the project base. Configure only:
 
@@ -106,7 +106,7 @@ Telegram delivery is best effort. Failure is returned in the internal intake res
 
 ## Rollback
 
-Rollback the Netlify function to the previous known-good commit. Existing pending Payment Proof rows and private R2 objects are evidence and must not be deleted automatically. Disable automatic classification by unsetting the extraction adapter URLs while retaining the existing generic image path.
+Rollback the Netlify function and `member-dashboard-chat-worker` to their previous known-good versions. Existing pending Payment Proof rows and private R2 objects are evidence and must not be deleted automatically. If only the upstream application is unhealthy, remove `LINE_WEBHOOK_UPSTREAM_URL` from the route owner to restore its existing local generic webhook behavior, then verify the Worker health route and a signed synthetic webhook. Disable automatic classification by unsetting the extraction adapter URLs while retaining the existing generic image path.
 
 ## Deployment command
 
@@ -114,8 +114,9 @@ After separate production approval and environment verification:
 
 ```sh
 cd immigrate-worker && npx netlify deploy --prod
+npx wrangler deploy --config member-dashboard-chat-worker/wrangler.toml
 ```
 
-Do not run this command as part of this PR.
+Deploy the Netlify application first, verify its health, configure `LINE_WEBHOOK_UPSTREAM_URL`, and deploy the existing route owner last. Do not change its routes. Do not run these commands as part of this PR.
 
 Deploy the extractor independently from `services/mmd-slip-extractor`; do not point the LINE webhook at a preview URL. A deploy preview must use its own bearer token and synthetic images only.
