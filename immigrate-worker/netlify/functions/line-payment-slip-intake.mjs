@@ -128,7 +128,10 @@ async function callExtractor({ url, token, image, method, fetchImpl }) {
 export async function extractPaymentSlip({ env, image, fetchImpl = fetch }) {
   const token = clean(env.LINE_SLIP_EXTRACTOR_TOKEN);
   const qr = await callExtractor({ url: env.LINE_SLIP_QR_EXTRACTOR_URL, token, image, method: "qr", fetchImpl });
-  if (extractionUseful(qr.result)) return { ...qr.result, extraction_error: "" };
+  // A payment-request QR can contain an amount and recipient proxy without
+  // proving that a transfer occurred. Only accept QR-first when it has a
+  // transaction reference; otherwise continue to OCR the slip evidence.
+  if (clean(qr.result?.payment_ref)) return { ...qr.result, extraction_error: "" };
   const ocr = await callExtractor({ url: env.LINE_SLIP_OCR_EXTRACTOR_URL, token, image, method: "ocr", fetchImpl });
   if (extractionUseful(ocr.result)) return { ...ocr.result, extraction_error: qr.error || "" };
   return {
@@ -150,15 +153,22 @@ async function airtable({ env, table, query = {}, init = {}, fetchImpl = fetch }
   return payload;
 }
 
-async function records({ env, table, formula, maxRecords = 2, fetchImpl }) {
-  const data = await airtable({ env, table, query: { maxRecords, filterByFormula: formula }, fetchImpl });
+async function records({ env, table, formula, maxRecords = 2, sort, fetchImpl }) {
+  const query = { maxRecords, filterByFormula: formula };
+  if (sort) {
+    query["sort[0][field]"] = sort.field;
+    query["sort[0][direction]"] = sort.direction;
+  }
+  const data = await airtable({ env, table, query, fetchImpl });
   return Array.isArray(data.records) ? data.records : [];
 }
 
-export async function loadRecentPaymentContext({ env, lineUserId, fetchImpl = fetch }) {
+export async function loadRecentPaymentContext({ env, lineUserId, fetchImpl = fetch, now = new Date() }) {
   if (!clean(lineUserId)) return [];
   try {
-    const found = await records({ env, table: env.AIRTABLE_SYNC_TABLE || "MMD — Console Inbox", formula: `{line_user_id}='${formulaValue(lineUserId)}'`, maxRecords: 5, fetchImpl });
+    const cutoff = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
+    const formula = `AND({line_user_id}='${formulaValue(lineUserId)}',IS_AFTER({received_at},DATETIME_PARSE('${cutoff}')))`;
+    const found = await records({ env, table: env.AIRTABLE_SYNC_TABLE || "MMD — Console Inbox", formula, maxRecords: 5, sort: { field: "received_at", direction: "desc" }, fetchImpl });
     return found.flatMap((record) => {
       try {
         const payload = JSON.parse(record?.fields?.payload_json || "{}");
@@ -242,7 +252,10 @@ function proofFields({ identity, stored, extraction, duplicateSha, duplicateRef,
   const fields = { proof_id: identity.proofId, channel: "line_ofc", note, status: "pending" };
   if (extraction.payer_name) fields.payer_name = extraction.payer_name;
   if (extraction.amount_thb != null) fields.amount_thb = extraction.amount_thb;
-  if (extraction.paid_at && !Number.isNaN(Date.parse(extraction.paid_at))) fields.paid_at = new Date(extraction.paid_at).toISOString().slice(0, 10);
+  if (extraction.paid_at && !Number.isNaN(Date.parse(extraction.paid_at))) {
+    const localDate = clean(extraction.paid_at).match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
+    fields.paid_at = localDate || new Date(extraction.paid_at).toISOString().slice(0, 10);
+  }
   if (extraction.payment_ref) fields.payment_ref = extraction.payment_ref;
   if (links.member) fields.member = [links.member];
   if (links.session) fields.session = [links.session];
@@ -280,20 +293,26 @@ export async function processPaymentSlipImage({ env, event, fetchImpl = fetch, n
     await notifyOps({ env, kind: "extraction_failed", proofId: identity.proofId, status: "manual_review", fetchImpl }).catch(() => null);
     return { ok: false, deduped: false, proofId: identity.proofId, state: "manual_review", error: clean(error?.message || error), replyText: MANUAL_SLIP_ACK };
   }
-  const extraction = await extractPaymentSlip({ env, image, fetchImpl });
-  const duplicateShaFormula = `AND(FIND('${formulaValue(stored.sha256)}',{note})>0,{proof_id}!='${formulaValue(identity.proofId)}')`;
-  const duplicateRefFormula = extraction.payment_ref ? `AND({payment_ref}='${formulaValue(extraction.payment_ref)}',{proof_id}!='${formulaValue(identity.proofId)}')` : "FALSE()";
-  const [duplicateSha, duplicateRef] = await Promise.all([
-    findDuplicate({ env, formula: duplicateShaFormula, fetchImpl }),
-    findDuplicate({ env, formula: duplicateRefFormula, fetchImpl }),
-  ]);
-  let links = { member: "", session: "", payment: "", renewal: "", ambiguous: false };
-  try { links = await resolveDeterministicLinks({ env, identity, extraction, fetchImpl }); } catch { links.ambiguous = true; }
-  const threshold = Math.max(0.5, Math.min(1, numberOrNull(env.LINE_SLIP_CONFIDENCE_THRESHOLD) || 0.85));
-  const reviewRequired = Boolean(duplicateSha || duplicateRef || links.ambiguous || extraction.confidence_score < threshold || !extractionUseful(extraction));
-  const fields = proofFields({ identity, stored, extraction, duplicateSha, duplicateRef, links, reviewRequired });
-  const proof = await createProof({ env, fields, fetchImpl });
-  if (!proof?.id) throw new Error("payment_proof_create_failed");
-  const telegram = await notifyOps({ env, kind: duplicateSha || duplicateRef ? "duplicate" : extractionUseful(extraction) ? "received" : "extraction_failed", proofId: identity.proofId, extraction, status: reviewRequired ? "review_required" : "pending", fetchImpl }).catch(() => ({ ok: false }));
-  return { ok: true, deduped: false, proofId: identity.proofId, proofRecordId: proof.id, state: "pending", reviewRequired, duplicatePaymentRef: Boolean(duplicateRef), extractionMethod: extraction.extraction_method, telegram, replyText: reviewRequired ? MANUAL_SLIP_ACK : SAFE_SLIP_ACK };
+  try {
+    const extraction = await extractPaymentSlip({ env, image, fetchImpl });
+    const duplicateShaFormula = `AND(FIND('${formulaValue(stored.sha256)}',{note})>0,{proof_id}!='${formulaValue(identity.proofId)}')`;
+    const duplicateRefFormula = extraction.payment_ref ? `AND({payment_ref}='${formulaValue(extraction.payment_ref)}',{proof_id}!='${formulaValue(identity.proofId)}')` : "FALSE()";
+    const [duplicateSha, duplicateRef] = await Promise.all([
+      findDuplicate({ env, formula: duplicateShaFormula, fetchImpl }),
+      findDuplicate({ env, formula: duplicateRefFormula, fetchImpl }),
+    ]);
+    let links = { member: "", session: "", payment: "", renewal: "", ambiguous: false };
+    try { links = await resolveDeterministicLinks({ env, identity, extraction, fetchImpl }); } catch { links.ambiguous = true; }
+    const threshold = Math.max(0.5, Math.min(1, numberOrNull(env.LINE_SLIP_CONFIDENCE_THRESHOLD) || 0.85));
+    const reconciliationComplete = Boolean(extraction.payment_ref && extraction.amount_thb != null);
+    const reviewRequired = Boolean(duplicateSha || duplicateRef || links.ambiguous || extraction.confidence_score < threshold || !reconciliationComplete);
+    const fields = proofFields({ identity, stored, extraction, duplicateSha, duplicateRef, links, reviewRequired });
+    const proof = await createProof({ env, fields, fetchImpl });
+    if (!proof?.id) throw new Error("payment_proof_create_failed");
+    const telegram = await notifyOps({ env, kind: duplicateSha || duplicateRef ? "duplicate" : extractionUseful(extraction) ? "received" : "extraction_failed", proofId: identity.proofId, extraction, status: reviewRequired ? "review_required" : "pending", fetchImpl }).catch(() => ({ ok: false }));
+    return { ok: true, deduped: false, proofId: identity.proofId, proofRecordId: proof.id, state: "pending", reviewRequired, duplicatePaymentRef: Boolean(duplicateRef), extractionMethod: extraction.extraction_method, telegram, replyText: reviewRequired ? MANUAL_SLIP_ACK : SAFE_SLIP_ACK };
+  } catch (error) {
+    await notifyOps({ env, kind: "extraction_failed", proofId: identity.proofId, status: "post_storage_failure", fetchImpl }).catch(() => null);
+    return { ok: false, deduped: false, proofId: identity.proofId, state: "manual_review", error: clean(error?.message || error), replyText: MANUAL_SLIP_ACK };
+  }
 }

@@ -71,12 +71,10 @@ export function parsePromptPayPayload(payload) {
   const merchant = top.find((item) => Number(item.tag) >= 26 && Number(item.tag) <= 51);
   const merchantFields = merchant ? parseTlv(merchant.value) : [];
   const aid = merchantFields.find((item) => item.tag === "00")?.value || "";
-  const ref = merchantFields.find((item) => ["01", "02", "03"].includes(item.tag))?.value || "";
   const amount = Number(get("54"));
-  result.payment_ref = clean(ref);
   result.amount_thb = Number.isFinite(amount) && amount > 0 ? amount : null;
   result.provider = aid.includes("A000000677010111") ? "promptpay" : "emv_qr";
-  result.confidence_score = result.payment_ref || result.amount_thb != null ? 0.9 : 0.55;
+  result.confidence_score = result.amount_thb != null ? 0.55 : 0;
   return result;
 }
 
@@ -89,9 +87,8 @@ export async function extractQr(bytes) {
   if (!code?.data) return emptyResult();
   const parsed = parsePromptPayPayload(code.data);
   if (!parsed.payment_ref && parsed.amount_thb == null) {
-    parsed.payment_ref = code.data.length <= 160 ? code.data : "";
     parsed.provider = "qr";
-    parsed.confidence_score = parsed.payment_ref ? 0.5 : 0;
+    parsed.confidence_score = 0;
   }
   return parsed;
 }

@@ -1091,7 +1091,7 @@ export async function handler(event) {
           createPricingReviewEnabled: !record?.deduped,
         });
     const replied =
-      !record?.deduped && !paymentSlipResult?.deduped && autoReplyEnabled && replyText
+      !record?.deduped && autoReplyEnabled && replyText
         ? await sendLineReply(lineChannelAccessToken, getReplyToken(item), replyText)
         : false;
     saved.push({

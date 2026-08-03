@@ -23,17 +23,18 @@ test("request validation accepts supported images and rejects invalid input", as
 test("PromptPay EMV parsing remains extraction-only", () => {
   const result = parsePromptPayPayload(EMV);
   assert.equal(result.provider, "promptpay");
-  assert.equal(result.payment_ref, "0066812345678");
+  assert.equal(result.payment_ref, "");
   assert.equal(result.amount_thb, 100);
   assert.equal(Object.hasOwn(result, "paid"), false);
   assert.equal(Object.hasOwn(result, "verified"), false);
 });
 
-test("QR decoder extracts a synthetic PromptPay payload and returns empty when missing", async () => {
+test("QR decoder does not treat a PromptPay recipient proxy as a transaction reference", async () => {
   const png = await QRCode.toBuffer(EMV, { errorCorrectionLevel: "M", margin: 4, width: 500 });
   const result = await extractQr(png);
   assert.equal(result.provider, "promptpay");
-  assert.equal(result.payment_ref, "0066812345678");
+  assert.equal(result.payment_ref, "");
+  assert.equal(result.amount_thb, 100);
   const blank = await import("sharp").then(({ default: sharp }) => sharp({ create: { width: 200, height: 200, channels: 4, background: "white" } }).png().toBuffer());
   assert.deepEqual(await extractQr(blank), normalizedResponse().result);
 });

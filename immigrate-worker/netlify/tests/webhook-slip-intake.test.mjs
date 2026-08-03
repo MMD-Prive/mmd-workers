@@ -11,6 +11,7 @@ import {
   extractPaymentSlip,
   isImageMessage,
   looksLikePaymentSlipContext,
+  loadRecentPaymentContext,
   processPaymentSlipImage,
   putPrivateR2Object,
 } from "../functions/line-payment-slip-intake.mjs";
@@ -98,6 +99,20 @@ test("image detector requires a supported image event and explicit recent paymen
   assert.equal(looksLikePaymentSlipContext({ type: "message", message: { type: "text", id: "x" } }, ["ส่งสลิป"]), false);
 });
 
+test("recent payment context is time-bounded and sorted newest-first", async () => {
+  let requested;
+  await loadRecentPaymentContext({
+    env: BASE_ENV,
+    lineUserId: LINE_USER_ID,
+    now: new Date("2026-08-03T10:00:00Z"),
+    fetchImpl: async (url) => { requested = new URL(url); return jsonResponse({ records: [] }); },
+  });
+  assert.match(requested.searchParams.get("filterByFormula"), /IS_AFTER\(\{received_at\}/);
+  assert.match(requested.searchParams.get("filterByFormula"), /2026-08-03T09:45:00\.000Z/);
+  assert.equal(requested.searchParams.get("sort[0][field]"), "received_at");
+  assert.equal(requested.searchParams.get("sort[0][direction]"), "desc");
+});
+
 test("LINE image download validates MIME, body, and maximum size", async () => {
   const ok = await downloadLineImage({
     accessToken: "token",
@@ -157,6 +172,18 @@ test("extraction runs QR first and OCR only as fallback", async () => {
   });
   assert.equal(ocr.extraction_method, "ocr");
   assert.deepEqual(calls, [BASE_ENV.LINE_SLIP_QR_EXTRACTOR_URL, BASE_ENV.LINE_SLIP_OCR_EXTRACTOR_URL]);
+
+  const requestQrCalls = [];
+  const requestQr = await extractPaymentSlip({
+    env: BASE_ENV,
+    image,
+    fetchImpl: async (url) => {
+      requestQrCalls.push(String(url));
+      return String(url).endsWith("/qr") ? jsonResponse({ amount_thb: 500, provider: "promptpay", confidence_score: 0.55 }) : jsonResponse({ payment_ref: "OCR-SLIP-REF", amount_thb: 500, confidence_score: 0.9 });
+    },
+  });
+  assert.equal(requestQr.payment_ref, "OCR-SLIP-REF");
+  assert.deepEqual(requestQrCalls, [BASE_ENV.LINE_SLIP_QR_EXTRACTOR_URL, BASE_ENV.LINE_SLIP_OCR_EXTRACTOR_URL]);
 });
 
 test("duplicate webhook/message returns the existing proof without downloading", async () => {
@@ -180,7 +207,7 @@ test("duplicate payment_ref and low confidence remain review-only", async () => 
 });
 
 test("successful intake creates pending LINE OFC evidence with internal provider metadata and never auto-verifies", async () => {
-  const { calls, fetchImpl } = pipelineFetch({ qr: { payment_ref: "PAY-12345678", amount_thb: 1200, paid_at: "2026-08-03T01:00:00Z", payer_name: "Test", provider: "promptpay", sender_bank: "SCB", receiver_bank: "KBANK", confidence_score: 0.99 } });
+  const { calls, fetchImpl } = pipelineFetch({ qr: { payment_ref: "PAY-12345678", amount_thb: 1200, paid_at: "2026-08-03T01:00:00+07:00", payer_name: "Test", provider: "promptpay", sender_bank: "SCB", receiver_bank: "KBANK", confidence_score: 0.99 } });
   const result = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl, now: new Date("2026-08-03T00:00:00Z") });
   assert.equal(result.ok, true);
   assert.equal(result.state, "pending");
@@ -191,11 +218,27 @@ test("successful intake creates pending LINE OFC evidence with internal provider
   assert.equal(fields.channel, "line_ofc");
   assert.equal(fields.status, "pending");
   assert.equal(fields.payment_ref, "PAY-12345678");
+  assert.equal(fields.paid_at, "2026-08-03");
   assert.equal(note.provider, "promptpay");
   assert.equal(note.sender_bank, "SCB");
   assert.equal(note.receiver_bank, "KBANK");
   assert.doesNotMatch(create.init.body, /"status":"verified"|"status":"paid"/);
   assert.equal(calls.some((call) => call.href.includes("payments-worker")), false);
+});
+
+test("partial extraction and post-storage persistence failure remain review-only and alert Ops", async () => {
+  const partial = pipelineFetch({ qr: { payment_ref: "", payer_name: "Test", confidence_score: 0.99 }, ocr: { payer_name: "Test", confidence_score: 0.99 } });
+  const partialResult = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl: partial.fetchImpl });
+  assert.equal(partialResult.reviewRequired, true);
+
+  const failed = pipelineFetch({ qr: { payment_ref: "PAY-FAIL", amount_thb: 100, confidence_score: 0.99 } });
+  const originalFetch = failed.fetchImpl;
+  const result = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl: async (url, init = {}) => {
+    if (String(url).includes("api.airtable.com") && init.method === "POST") return jsonResponse({}, 500);
+    return originalFetch(url, init);
+  }});
+  assert.equal(result.state, "manual_review");
+  assert.equal(failed.calls.some((call) => call.href.includes("api.telegram.org")), true);
 });
 
 test("R2 and Telegram failures do not create a paid or verified state", async () => {
