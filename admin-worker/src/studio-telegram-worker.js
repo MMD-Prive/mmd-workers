@@ -38,10 +38,10 @@ async function notifyStudioTelegram(env, { path, body, result }) {
   }
 
   const endpoint = clean(env.TELEGRAM_INTERNAL_SEND_URL || env.TELEGRAM_NOTIFY_URL);
-  const chatId = clean(env.TELEGRAM_STUDIO_CHAT_ID || env.TELEGRAM_BOOKING_CHAT_ID || env.TELEGRAM_INTERNAL_CHAT_ID || env.TELEGRAM_ADMIN_CHAT_ID);
+  const chatId = clean(env.TELEGRAM_STUDIO_CHAT_ID || env.TELEGRAM_CHAT_ID || env.TELEGRAM_BOOKING_CHAT_ID || env.TELEGRAM_INTERNAL_CHAT_ID || env.TELEGRAM_ADMIN_CHAT_ID);
   if (!endpoint || !chatId) return { ok: false, skipped: true, reason: "missing_telegram_config" };
 
-  const threadId = clean(env.TG_THREAD_STUDIO_ALERT || env.TG_THREAD_ALERT || env.TELEGRAM_STUDIO_THREAD_ID || env.TELEGRAM_ALERT_THREAD_ID || env.TELEGRAM_THREAD_ID || "9");
+  const threadId = clean(env.TG_THREAD_STUDIO_ALERT || env.TG_THREAD_ALERTS_EXCEPTIONS || env.TG_THREAD_ALERT || env.TELEGRAM_STUDIO_THREAD_ID || env.TELEGRAM_ALERT_THREAD_ID || env.TELEGRAM_THREAD_ID || "9");
   const kind = studioAlertKind(path);
   const text = buildStudioTelegramText({ kind, body, result });
   const payload = compact({
