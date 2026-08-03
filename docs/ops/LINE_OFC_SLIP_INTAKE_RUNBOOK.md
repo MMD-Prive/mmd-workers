@@ -27,6 +27,7 @@ AIRTABLE_TABLE_SESSIONS=Sessions
 AIRTABLE_TABLE_PAYMENTS=Payments
 AIRTABLE_TABLE_LIFF_RENEWAL_SESSIONS=MMD — LIFF Renewal Sessions
 LINE_SLIP_MAX_IMAGE_BYTES=10485760
+LINE_SLIP_MAX_AMOUNT_THB=10000000
 LINE_SLIP_CONFIDENCE_THRESHOLD=0.85
 ```
 
@@ -90,6 +91,18 @@ git diff --check
 
 Review is mandatory when download/storage fails, extraction is unavailable or low-confidence, SHA/payment reference is duplicated, or deterministic links are absent/ambiguous. Compare the private original against official bank/payment truth. Do not use OCR text as approval evidence.
 
+The recent-context lookup requires no Airtable migration. It uses the existing `line_user_id` field and Airtable `CREATED_TIME()` to bound the query to 20 records from the preceding 15 minutes, then orders valid nested `payload_json.received_at` timestamps with record `createdTime` as fallback.
+
+`LINE_SLIP_MAX_AMOUNT_THB` defaults to `10000000`. Amounts must be finite, greater than zero, no higher than that limit, and are rounded to two decimal places. Invalid amounts become `null`, are omitted from Airtable amount fields and amount-based matching, and keep the proof review-required.
+
+The normal receipt acknowledgement is allowed only after the image is downloaded, hashed, privately stored, and the pending Payment Proof is created or confirmed idempotently existing. Download, R2, or evidence-persistence failure sends:
+
+```text
+ขณะนี้ระบบยังบันทึกหลักฐานการชำระเงินไม่สำเร็จครับ กรุณาเก็บสลิปไว้ก่อน ทาง MMD จะตรวจสอบและแจ้งให้ทราบอีกครั้งครับ
+```
+
+That message does not claim durable receipt. Telegram Ops is notified when configured. A LINE reply failure returns a retryable webhook error and emits only redacted operational metadata.
+
 P0 writes a pending-only handoff contract inside the Payment Proof note. It does not call the paid/verified payments endpoint. A later authorized phase must define an authenticated pending-evidence endpoint or callback before automatic verification delivery is enabled.
 
 The Payment Proof `channel` records intake source, so LINE OA evidence uses `line_ofc`. Payment provider and sender/receiver bank details remain internal `note` metadata. The entire `note` is internal-only and must never be serialized by customer-facing or frontend APIs.
@@ -106,7 +119,7 @@ Telegram delivery is best effort. Failure is returned in the internal intake res
 
 ## Rollback
 
-Rollback the Netlify function and `member-dashboard-chat-worker` to their previous known-good versions. Existing pending Payment Proof rows and private R2 objects are evidence and must not be deleted automatically. If only the upstream application is unhealthy, remove `LINE_WEBHOOK_UPSTREAM_URL` from the route owner to restore its existing local generic webhook behavior, then verify the Worker health route and a signed synthetic webhook. Disable automatic classification by unsetting the extraction adapter URLs while retaining the existing generic image path.
+Rollback the Netlify function to the previous known-good version if recent-context lookup, acknowledgement gating, or amount normalization regresses. Existing pending Payment Proof rows and private R2 objects are evidence and must not be deleted automatically. If only the upstream application is unhealthy, remove `LINE_WEBHOOK_UPSTREAM_URL` from the route owner to restore its existing local generic webhook behavior, then verify the Worker health route and a signed synthetic webhook. Disable automatic classification by unsetting the extraction adapter URLs while retaining the existing generic image path. No Airtable schema rollback is required.
 
 ## Deployment command
 

@@ -2,11 +2,12 @@ import crypto from "node:crypto";
 
 export const SAFE_SLIP_ACK = "ได้รับหลักฐานการชำระเงินแล้วครับ ผมกำลังส่งรายละเอียดให้ทางระบบตรวจสอบ กรุณารอสักครู่ก่อนนะครับ";
 export const MANUAL_SLIP_ACK = "ได้รับหลักฐานการชำระเงินแล้วครับ แต่รายละเอียดต้องให้ทาง MMD ตรวจสอบด้วยตนเอง กรุณารอสักครู่ก่อนนะครับ";
-export const RETRY_SLIP_ACK = "ขออภัยครับ ระบบยังรับรูปสลิปนี้ไม่สำเร็จ รบกวนส่งรูปสลิปอีกครั้ง หรือพิมพ์หา MMD เพื่อให้น้องๆช่วยตรวจให้ครับ";
+export const RETRY_SLIP_ACK = "ขณะนี้ระบบยังบันทึกหลักฐานการชำระเงินไม่สำเร็จครับ กรุณาเก็บสลิปไว้ก่อน ทาง MMD จะตรวจสอบและแจ้งให้ทราบอีกครั้งครับ";
 
 const SLIP_CONTEXT_RE = /(สลิป|หลักฐาน.{0,12}(ชำระ|โอน|จ่าย)|โอนแล้ว|จ่ายแล้ว|ชำระแล้ว|payment\s*(slip|proof)|transfer\s*(slip|proof)|promptpay)/i;
 const IMAGE_TYPES = new Map([["image/jpeg", "jpg"], ["image/png", "png"], ["image/webp", "webp"]]);
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+export const DEFAULT_MAX_AMOUNT_THB = 10_000_000;
 
 const clean = (value) => (value == null ? "" : String(value).trim());
 const numberOrNull = (value) => {
@@ -14,9 +15,15 @@ const numberOrNull = (value) => {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
 };
-const positiveNumberOrNull = (value) => {
+export const normalizeAmountThb = (value, maxAmount = DEFAULT_MAX_AMOUNT_THB) => {
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  if (typeof value === "string" && !/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(clean(value))) return null;
   const numeric = numberOrNull(value);
-  return numeric != null && numeric > 0 ? numeric : null;
+  const configuredMax = numberOrNull(maxAmount);
+  const limit = configuredMax != null && configuredMax > 0 ? configuredMax : DEFAULT_MAX_AMOUNT_THB;
+  if (numeric == null || numeric <= 0 || numeric > limit) return null;
+  const normalized = Math.round((numeric + Number.EPSILON) * 100) / 100;
+  return normalized > 0 && normalized <= limit ? normalized : null;
 };
 const formulaValue = (value) => String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 const sha256 = (value) => crypto.createHash("sha256").update(value).digest("hex");
@@ -99,26 +106,32 @@ export async function putPrivateR2Object({ env, key, image, fetchImpl = fetch, n
   return { key, sha256: image.sha256, mimeType: image.mimeType, byteSize: image.byteSize };
 }
 
-function normalizeExtraction(payload, method) {
+function normalizeExtraction(payload, method, maxAmount) {
   const data = payload?.result && typeof payload.result === "object" ? payload.result : payload || {};
+  const rawAmount = data.amount_thb ?? data.amount;
+  const amountThb = normalizeAmountThb(rawAmount, maxAmount);
+  const paymentRef = clean(data.payment_ref || data.provider_txn_id || data.transaction_ref);
+  const paidAt = clean(data.paid_at || data.transfer_at);
+  const payerName = clean(data.payer_name || data.sender_name);
+  const confidence = Math.max(0, Math.min(1, numberOrNull(data.confidence_score ?? data.confidence) || 0));
   return {
-    payment_ref: clean(data.payment_ref || data.provider_txn_id || data.transaction_ref),
-    amount_thb: positiveNumberOrNull(data.amount_thb ?? data.amount),
-    paid_at: clean(data.paid_at || data.transfer_at),
-    payer_name: clean(data.payer_name || data.sender_name),
+    payment_ref: paymentRef,
+    amount_thb: amountThb,
+    paid_at: paidAt,
+    payer_name: payerName,
     sender_bank: clean(data.sender_bank),
     receiver_bank: clean(data.receiver_bank),
     provider: clean(data.provider || data.bank),
     session_id: clean(data.session_id || data.payment_intent_session_id),
     campaign_claim_id: clean(data.campaign_claim_id),
     extraction_method: method,
-    confidence_score: Math.max(0, Math.min(1, numberOrNull(data.confidence_score ?? data.confidence) || 0)),
+    confidence_score: amountThb == null && !paymentRef && !paidAt && !payerName ? 0 : confidence,
   };
 }
 
 const extractionUseful = (result) => Boolean(result && (result.payment_ref || result.amount_thb != null || result.paid_at || result.payer_name));
 
-async function callExtractor({ url, token, image, method, fetchImpl }) {
+async function callExtractor({ url, token, image, method, maxAmount, fetchImpl }) {
   if (!clean(url)) return { available: false, error: `${method}_adapter_unavailable`, result: null };
   try {
     const response = await fetchImpl(url, {
@@ -128,7 +141,7 @@ async function callExtractor({ url, token, image, method, fetchImpl }) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) return { available: true, error: `${method}_adapter_failed_${response.status}`, result: null };
-    return { available: true, error: "", result: normalizeExtraction(payload, method) };
+    return { available: true, error: "", result: normalizeExtraction(payload, method, maxAmount) };
   } catch {
     return { available: true, error: `${method}_adapter_failed`, result: null };
   }
@@ -136,12 +149,13 @@ async function callExtractor({ url, token, image, method, fetchImpl }) {
 
 export async function extractPaymentSlip({ env, image, fetchImpl = fetch }) {
   const token = clean(env.LINE_SLIP_EXTRACTOR_TOKEN);
-  const qr = await callExtractor({ url: env.LINE_SLIP_QR_EXTRACTOR_URL, token, image, method: "qr", fetchImpl });
+  const maxAmount = env.LINE_SLIP_MAX_AMOUNT_THB;
+  const qr = await callExtractor({ url: env.LINE_SLIP_QR_EXTRACTOR_URL, token, image, method: "qr", maxAmount, fetchImpl });
   // A payment-request QR can contain an amount and recipient proxy without
   // proving that a transfer occurred. Only accept QR-first when it has a
   // transaction reference; otherwise continue to OCR the slip evidence.
   if (clean(qr.result?.payment_ref)) return { ...qr.result, extraction_error: "" };
-  const ocr = await callExtractor({ url: env.LINE_SLIP_OCR_EXTRACTOR_URL, token, image, method: "ocr", fetchImpl });
+  const ocr = await callExtractor({ url: env.LINE_SLIP_OCR_EXTRACTOR_URL, token, image, method: "ocr", maxAmount, fetchImpl });
   if (extractionUseful(ocr.result)) return { ...ocr.result, extraction_error: qr.error || "" };
   return {
     payment_ref: "", amount_thb: null, paid_at: "", payer_name: "", sender_bank: "", receiver_bank: "", provider: "",
@@ -172,26 +186,13 @@ async function records({ env, table, formula, maxRecords = 2, sort, fetchImpl })
   return Array.isArray(data.records) ? data.records : [];
 }
 
-async function pagedRecords({ env, table, formula, pageSize = 100, fetchImpl }) {
-  const found = [];
-  let offset = "";
-  do {
-    const query = { pageSize, filterByFormula: formula };
-    if (offset) query.offset = offset;
-    const data = await airtable({ env, table, query, fetchImpl });
-    if (Array.isArray(data.records)) found.push(...data.records);
-    offset = clean(data.offset);
-  } while (offset);
-  return found;
-}
-
 export async function loadRecentPaymentContext({ env, lineUserId, fetchImpl = fetch, now = new Date() }) {
   if (!clean(lineUserId)) return [];
   try {
     const cutoff = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
     const cutoffMs = Date.parse(cutoff);
-    const formula = `AND({line_user_id}='${formulaValue(lineUserId)}',IS_AFTER(CREATED_TIME(),DATETIME_PARSE('${cutoff}'))) `;
-    const found = await pagedRecords({ env, table: env.AIRTABLE_SYNC_TABLE || "MMD — Console Inbox", formula, pageSize: 100, fetchImpl });
+    const formula = `AND({line_user_id}='${formulaValue(lineUserId)}',IS_AFTER(CREATED_TIME(),DATETIME_PARSE('${cutoff}')))`;
+    const found = await records({ env, table: env.AIRTABLE_SYNC_TABLE || "MMD — Console Inbox", formula, maxRecords: 20, fetchImpl });
     return found
       .map((record) => {
         let payload = {};
@@ -312,7 +313,7 @@ export async function notifyOps({ env, kind, proofId, extraction = {}, status = 
 export async function processPaymentSlipImage({ env, event, fetchImpl = fetch, now = new Date() }) {
   const identity = buildProofIdentity(event);
   const existing = await findExistingProof({ env, identity, fetchImpl });
-  if (existing?.id) return { ok: true, deduped: true, proofId: identity.proofId, state: "pending", replyText: "" };
+  if (existing?.id) return { ok: true, deduped: true, proofId: identity.proofId, state: "pending", replyText: SAFE_SLIP_ACK };
   let image;
   let stored;
   try {
@@ -343,6 +344,6 @@ export async function processPaymentSlipImage({ env, event, fetchImpl = fetch, n
     return { ok: true, deduped: false, proofId: identity.proofId, proofRecordId: proof.id, state: "pending", reviewRequired, duplicatePaymentRef: Boolean(duplicateRef), extractionMethod: extraction.extraction_method, telegram, replyText: reviewRequired ? MANUAL_SLIP_ACK : SAFE_SLIP_ACK };
   } catch (error) {
     await notifyOps({ env, kind: "extraction_failed", proofId: identity.proofId, status: "post_storage_failure", fetchImpl }).catch(() => null);
-    return { ok: false, deduped: false, proofId: identity.proofId, state: "manual_review", error: clean(error?.message || error), replyText: MANUAL_SLIP_ACK };
+    return { ok: false, deduped: false, proofId: identity.proofId, state: "retry_required", error: clean(error?.message || error), replyText: RETRY_SLIP_ACK };
   }
 }

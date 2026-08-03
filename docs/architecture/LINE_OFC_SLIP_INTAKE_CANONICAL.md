@@ -10,18 +10,19 @@ The public production route remains owned by `member-dashboard-chat-worker`. Aft
 
 1. The existing handler verifies `x-line-signature` and parses the webhook body.
 2. Existing intent and profile lookup behavior runs unchanged.
-3. For image events only, recent Console Inbox text for the same LINE identity is inspected.
+3. For image events only, up to 20 Console Inbox records for the same LINE identity created within the last 15 minutes are inspected. The Airtable formula uses the existing `line_user_id` field plus `CREATED_TIME()`; nested `payload_json.received_at` is used for ordering when present, with Airtable record `createdTime` as the safe fallback. No schema migration is required.
 4. The production route owner (`member-dashboard-chat-worker`) verifies the LINE signature and delegates the unchanged signed body to the authoritative Netlify webhook over HTTPS when `LINE_WEBHOOK_UPSTREAM_URL` is configured. Upstream failures return a retryable error; they do not fall through to a second intake path.
 5. `looksLikePaymentSlipContext()` requires explicit payment-slip language. Unclassified images continue through existing generic image/pricing behavior.
 6. The original image is downloaded from LINE, with HTTP, MIME, byte-limit, and non-empty checks.
 7. SHA-256 is computed before storage.
 8. The original is stored privately in Cloudflare R2.
 9. A replaceable adapter attempts QR extraction first, then OCR.
-10. Missing or low-confidence extraction remains `review_required`.
-11. One pending record is created in `MMD — Payment Proofs`.
-12. Exact Airtable matches are linked only when unique. Multiple matches or no deterministic link force review.
-13. Telegram Ops receives a masked operational summary. Telegram failure cannot change evidence state.
-14. LINE receives a pending-review acknowledgement. P0 never sends a verified reply.
+10. Amounts are usable only when finite, strictly positive, at most `LINE_SLIP_MAX_AMOUNT_THB`, and normalized to two-decimal currency precision. Invalid amounts become `null` and cannot clear review or enter amount-based linking.
+11. Missing or low-confidence extraction remains `review_required`.
+12. One pending record is created in `MMD — Payment Proofs`.
+13. Exact Airtable matches are linked only when unique. Multiple matches or no deterministic link force review.
+14. Telegram Ops receives a masked operational summary. Telegram failure cannot change evidence state.
+15. LINE receives the normal receipt acknowledgement only after private storage and Payment Proof persistence succeed, or an existing idempotent proof is confirmed. Download, storage, or evidence-persistence failure receives the retry/manual-review message and never claims durable receipt. P0 never sends a verified reply.
 
 ## MMD-controlled extractor
 
@@ -76,13 +77,15 @@ The R2 bucket has no public URL. The key is internal metadata only and is never 
 
 ```text
 image candidate
-  -> download/storage failure -> manual_review
+  -> download/storage/evidence-persistence failure -> retry_required
   -> stored -> QR -> OCR fallback -> pending or review_required
   -> duplicate/ambiguous/low confidence -> review_required
   -> pending handoff contract -> payments-worker verification in a later authorized phase
 ```
 
 There is no `paid` or `verified` transition in P0.
+
+If the LINE reply API fails after evidence processing, the webhook returns a retryable error and records only a redacted operational event. Tokens, raw bytes, private keys, object keys, and full payment references are never logged.
 
 ## Privacy rules
 

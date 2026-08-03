@@ -7,6 +7,7 @@ import {
 } from "../../../shared/kenji-member-concierge-core.mjs";
 import { loadKenjiMemberMemoryForLine } from "./kenji-member-memory-context.mjs";
 import {
+  RETRY_SLIP_ACK,
   loadRecentPaymentContext,
   looksLikePaymentSlipContext,
   processPaymentSlipImage,
@@ -1063,9 +1064,9 @@ export async function handler(event) {
       ? await processPaymentSlipImage({ env: process.env, event: item }).catch((error) => ({
           ok: false,
           deduped: false,
-          state: "manual_review",
+          state: "retry_required",
           error: String(error?.message || error || "payment_slip_intake_failed"),
-          replyText: "ได้รับหลักฐานการชำระเงินแล้วครับ แต่รายละเอียดต้องให้ทาง MMD ตรวจสอบด้วยตนเอง กรุณารอสักครู่ก่อนนะครับ",
+          replyText: RETRY_SLIP_ACK,
         }))
       : null;
     const record = await writeEventToAirtable({
@@ -1090,10 +1091,16 @@ export async function handler(event) {
           lineOfficialChatUrl,
           createPricingReviewEnabled: !record?.deduped,
         });
-    const replied =
-      !record?.deduped && autoReplyEnabled && replyText
-        ? await sendLineReply(lineChannelAccessToken, getReplyToken(item), replyText)
-        : false;
+    const isSlipRedelivery = Boolean(paymentSlipCandidate && item?.deliveryContext?.isRedelivery);
+    const shouldReply = Boolean((!record?.deduped || isSlipRedelivery) && autoReplyEnabled && replyText && getReplyToken(item));
+    let replied = false;
+    if (shouldReply) {
+      try { replied = await sendLineReply(lineChannelAccessToken, getReplyToken(item), replyText); } catch { replied = false; }
+      if (!replied && paymentSlipCandidate) {
+        console.error(JSON.stringify({ event: "line_payment_slip_reply_failed", category: "line_reply_failed", state: String(paymentSlipResult?.state || "retry_required") }));
+        return json(502, { ok: false, error: "line_payment_slip_reply_failed", processed: saved.length });
+      }
+    }
     saved.push({
       id: record?.id || "",
       deduped: Boolean(record?.deduped),
