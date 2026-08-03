@@ -84,6 +84,8 @@ test("EMs invalid run_number fails", async () => {
 test("review commit does not publish", async () => {
   installAirtableMock();
   const res = await handleStudioRequest(req("/studio/api/review/commit?t=admin-t", {
+    studio_review_id: "review_test_001",
+    idempotency_key: "review_commit_test_001",
     model_name: "Review Model",
     field: "ST",
     layer: "Private / SIGIL",
