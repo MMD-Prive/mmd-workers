@@ -1,4 +1,4 @@
-import worker from "./model-liff-worker.js";
+import worker from "./studio-real-worker.js";
 import {
   ADMIN_LOGIN_SESSION_PATH,
   APPROVED_ADMIN_LOGIN_HERO,
