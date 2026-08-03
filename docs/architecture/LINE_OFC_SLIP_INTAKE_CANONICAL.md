@@ -22,6 +22,14 @@ The authoritative LINE Official Account webhook is `immigrate-worker/netlify/fun
 12. Telegram Ops receives a masked operational summary. Telegram failure cannot change evidence state.
 13. LINE receives a pending-review acknowledgement. P0 never sends a verified reply.
 
+## MMD-controlled extractor
+
+`services/mmd-slip-extractor` is a separately deployed, stateless Netlify Function service. It exposes `GET /health`, `POST /v1/extract/qr`, and `POST /v1/extract/ocr`. Extraction routes require a dedicated bearer token, accept only JPEG/PNG/WebP within the configured four-megabyte binary limit, and use Netlify path rate limiting.
+
+QR decoding uses local image decoding plus `jsQR`, followed by a narrow EMV/PromptPay parser. OCR fallback uses local Tesseract.js execution with packaged Thai and English language data. Images are not sent to an OCR vendor, stored, cached, logged, or used for training. The extractor returns normalized evidence only and has no payment, Airtable, R2, LINE, member, points, or session authority.
+
+The implementation privacy review is documented in `services/mmd-slip-extractor/PRIVACY.md`. Netlify and Cloudflare remain infrastructure subprocessors; final organizational acceptance of the applicable service terms or DPA is an external approval gate.
+
 ## Airtable mapping
 
 No Airtable schema mutation is performed by this PR. Existing fields are reused:
@@ -82,3 +90,5 @@ There is no `paid` or `verified` transition in P0.
 - Keep raw binaries private in R2.
 - Telegram uses a masked payment reference and excludes the private object key.
 - Never expose Airtable record IDs, internal links, or extraction payloads to the LINE user.
+- Never log extractor request bodies, decoded QR payloads, OCR text, or normalized payment fields.
+- Keep production and preview extractor bearer tokens distinct and stored only in their corresponding Netlify contexts.

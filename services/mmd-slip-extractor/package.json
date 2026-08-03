@@ -1,0 +1,20 @@
+{
+  "name": "mmd-slip-extractor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check netlify/functions/extract.mjs && node --check lib/extractor.mjs"
+  },
+  "dependencies": {
+    "@tesseract.js-data/eng": "1.0.0",
+    "@tesseract.js-data/tha": "1.0.0",
+    "jsqr": "1.4.0",
+    "sharp": "0.35.3",
+    "tesseract.js": "7.0.0"
+  },
+  "devDependencies": {
+    "qrcode": "1.5.4"
+  }
+}

@@ -49,6 +49,15 @@ LINE_SLIP_EXTRACTOR_TOKEN
 
 QR is always attempted first. OCR runs only when QR returns no useful fields. If either adapter is missing or confidence is below the threshold, the proof remains review-only.
 
+The MMD-controlled implementation lives at `services/mmd-slip-extractor`. Deploy it as a separate Netlify project with that directory as the project base. Configure only:
+
+```text
+MMD_SLIP_EXTRACTOR_TOKEN
+MMD_SLIP_EXTRACTOR_MAX_BYTES=4194304
+```
+
+Use distinct production and preview tokens. Configure the webhook adapter URLs as the separate extractor project's `/v1/extract/qr` and `/v1/extract/ocr` routes. The service performs local QR and Thai/English OCR without runtime image persistence or third-party OCR submission. Complete the external DPA/processor acceptance recorded in its privacy review before production use.
+
 Telegram Ops:
 
 ```text
@@ -64,7 +73,8 @@ TELEGRAM_OPS_CHAT_ID
 4. Confirm `MMD — Payment Proofs` retains the documented fields and `pending` status choice.
    Confirm `channel` accepts the intake-source value `line_ofc`; provider and sender/receiver bank details remain inside internal `note` metadata.
 5. Confirm QR/OCR adapters accept only authenticated server-side requests.
-6. Run:
+6. Confirm the extractor deploy log applies the in-code 30-request-per-minute, per-IP-and-domain rate limit.
+7. Run:
 
 ```sh
 node --test immigrate-worker/netlify/tests/webhook-slip-intake.test.mjs
@@ -105,3 +115,5 @@ cd immigrate-worker && npx netlify deploy --prod
 ```
 
 Do not run this command as part of this PR.
+
+Deploy the extractor independently from `services/mmd-slip-extractor`; do not point the LINE webhook at a preview URL. A deploy preview must use its own bearer token and synthetic images only.
