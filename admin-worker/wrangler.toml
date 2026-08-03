@@ -32,6 +32,15 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/model/session/action"
 zone_name = "mmdbkk.com"
 
+# Studio real assistant APIs. Keep these narrow so /studio remains Webflow-owned.
+[[routes]]
+pattern = "mmdbkk.com/studio/api/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/studio/api/*"
+zone_name = "mmdbkk.com"
+
 # Internal admin login/session owner. Exact routes only; apex and www issue
 # separate host-only cookies.
 [[routes]]
@@ -195,6 +204,13 @@ AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 # Writer table IDs (LOCK)
 AIRTABLE_TABLE_CONSOLE_INBOX_ID = "tblFHmfpB2TTrzO2e"
 AIRTABLE_TABLE_PAYMENT_PROOFS_ID = "tblfJfM4Sqag9zrLi"
+
+# Studio real assistant table names. If these tables are not present yet, the worker
+# safely falls back to AIRTABLE_TABLE_CONSOLE_INBOX_ID and stores the immutable
+# Studio snapshot in payload_json.
+AIRTABLE_TABLE_STUDIO_INTAKE = "Studio_Intake"
+AIRTABLE_TABLE_STUDIO_REVIEW = "Studio_Review"
+AIRTABLE_TABLE_STUDIO_PUBLISH = "Studio_Publish"
 
 # Optional table names (ถ้าคุณใช้ name-based endpoints)
 AIRTABLE_TABLE_DEMO_LINKS = "Demo Links"
