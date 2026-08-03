@@ -126,8 +126,20 @@ function detectImagePolicy(fields, model) {
   if (/(^|_)gws\d*(_|$)/.test(text) || /(^|_)ems\d*(_|$)/.test(text) || text.includes("_gws_") || text.includes("_ems_")) {
     return "ai_generated";
   }
-  if (text.includes("standard") || text.includes("premium")) return "real_photo";
+
+  if (isStandardOrPremiumPrivateTier(text)) return "real_photo";
   return "public_preview";
+}
+
+function isStandardOrPremiumPrivateTier(text) {
+  if (text.includes("standard") || text.includes("premium")) return true;
+  if (/(^|_)mdl_pri_str(_|$)/.test(text) || /(^|_)pri_str(_|$)/.test(text)) return true;
+  if (/(^|_)mdl_pri_std(_|$)/.test(text) || /(^|_)pri_std(_|$)/.test(text)) return true;
+  if (/(^|_)mdl_pri_prm(_|$)/.test(text) || /(^|_)pri_prm(_|$)/.test(text)) return true;
+  if (/(^|_)mdl_pri_prem(_|$)/.test(text) || /(^|_)pri_prem(_|$)/.test(text)) return true;
+  if (text.includes("private_models_standard_package") || text.includes("mmd_private_models_standard_package")) return true;
+  if (text.includes("private_models_premium_package") || text.includes("mmd_private_models_premium_package")) return true;
+  return false;
 }
 
 function resolveRealPhotoAsset(fields, env) {
