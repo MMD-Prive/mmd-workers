@@ -232,11 +232,14 @@ function proofFields({ identity, stored, extraction, duplicateSha, duplicateRef,
     schema: "line_ofc_payment_proof_v1", line_user_id_hash: identity.lineUserIdHash, line_message_id: identity.messageId,
     webhook_event_id: identity.webhookEventId, r2_key: stored.key, evidence_sha256: stored.sha256, mime_type: stored.mimeType,
     byte_size: stored.byteSize, extraction_method: extraction.extraction_method, extraction_confidence: extraction.confidence_score,
+    provider: extraction.provider || null, sender_bank: extraction.sender_bank || null, receiver_bank: extraction.receiver_bank || null,
     duplicate_status: duplicateRef ? "duplicate_payment_ref" : duplicateSha ? "duplicate_sha" : "not_detected",
     extraction_error: extraction.extraction_error || null, raw_payload_json_redacted: { message_id: identity.messageId, webhook_event_id: identity.webhookEventId },
     links, payments_worker_handoff: buildStagedHandoff({ proofId: identity.proofId, extraction, reviewRequired }),
   });
-  const fields = { proof_id: identity.proofId, channel: extraction.provider.toLowerCase() === "promptpay" ? "promptpay" : "bank_transfer", note, status: "pending" };
+  // INTERNAL ONLY: note contains private R2 and payment-evidence metadata.
+  // Never return this field from customer-facing or frontend APIs.
+  const fields = { proof_id: identity.proofId, channel: "line_ofc", note, status: "pending" };
   if (extraction.payer_name) fields.payer_name = extraction.payer_name;
   if (extraction.amount_thb != null) fields.amount_thb = extraction.amount_thb;
   if (extraction.paid_at && !Number.isNaN(Date.parse(extraction.paid_at))) fields.paid_at = new Date(extraction.paid_at).toISOString().slice(0, 10);

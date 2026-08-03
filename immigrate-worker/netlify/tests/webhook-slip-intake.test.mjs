@@ -179,16 +179,21 @@ test("duplicate payment_ref and low confidence remain review-only", async () => 
   assert.doesNotMatch(result.replyText, /ตรวจสอบเรียบร้อยแล้ว/);
 });
 
-test("successful intake creates pending Airtable evidence and never auto-verifies", async () => {
-  const { calls, fetchImpl } = pipelineFetch({ qr: { payment_ref: "PAY-12345678", amount_thb: 1200, paid_at: "2026-08-03T01:00:00Z", payer_name: "Test", provider: "promptpay", confidence_score: 0.99 } });
+test("successful intake creates pending LINE OFC evidence with internal provider metadata and never auto-verifies", async () => {
+  const { calls, fetchImpl } = pipelineFetch({ qr: { payment_ref: "PAY-12345678", amount_thb: 1200, paid_at: "2026-08-03T01:00:00Z", payer_name: "Test", provider: "promptpay", sender_bank: "SCB", receiver_bank: "KBANK", confidence_score: 0.99 } });
   const result = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl, now: new Date("2026-08-03T00:00:00Z") });
   assert.equal(result.ok, true);
   assert.equal(result.state, "pending");
   assert.equal(result.replyText, SAFE_SLIP_ACK);
   const create = calls.find((call) => call.href.includes("api.airtable.com") && call.init.method === "POST");
   const fields = JSON.parse(create.init.body).fields;
+  const note = JSON.parse(fields.note);
+  assert.equal(fields.channel, "line_ofc");
   assert.equal(fields.status, "pending");
   assert.equal(fields.payment_ref, "PAY-12345678");
+  assert.equal(note.provider, "promptpay");
+  assert.equal(note.sender_bank, "SCB");
+  assert.equal(note.receiver_bank, "KBANK");
   assert.doesNotMatch(create.init.body, /"status":"verified"|"status":"paid"/);
   assert.equal(calls.some((call) => call.href.includes("payments-worker")), false);
 });

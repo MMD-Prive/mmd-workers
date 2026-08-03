@@ -62,6 +62,7 @@ TELEGRAM_OPS_CHAT_ID
 2. Confirm all required secret names exist without printing values.
 3. Confirm the R2 bucket is private and the credentials are bucket-scoped.
 4. Confirm `MMD — Payment Proofs` retains the documented fields and `pending` status choice.
+   Confirm `channel` accepts the intake-source value `line_ofc`; provider and sender/receiver bank details remain inside internal `note` metadata.
 5. Confirm QR/OCR adapters accept only authenticated server-side requests.
 6. Run:
 
@@ -78,6 +79,8 @@ git diff --check
 Review is mandatory when download/storage fails, extraction is unavailable or low-confidence, SHA/payment reference is duplicated, or deterministic links are absent/ambiguous. Compare the private original against official bank/payment truth. Do not use OCR text as approval evidence.
 
 P0 writes a pending-only handoff contract inside the Payment Proof note. It does not call the paid/verified payments endpoint. A later authorized phase must define an authenticated pending-evidence endpoint or callback before automatic verification delivery is enabled.
+
+The Payment Proof `channel` records intake source, so LINE OA evidence uses `line_ofc`. Payment provider and sender/receiver bank details remain internal `note` metadata. The entire `note` is internal-only and must never be serialized by customer-facing or frontend APIs.
 
 ## Replay behavior
 

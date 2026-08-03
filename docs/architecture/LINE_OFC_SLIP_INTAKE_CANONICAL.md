@@ -32,7 +32,7 @@ No Airtable schema mutation is performed by this PR. Existing fields are reused:
 | `payer_name` | Extracted payer name when available |
 | `amount_thb` | Extracted amount when available |
 | `paid_at` | Extracted transfer date when valid |
-| `channel` | Existing `promptpay` or `bank_transfer` choice |
+| `channel` | Intake source; LINE OA evidence always uses `line_ofc` |
 | `payment_ref` | Extracted provider reference |
 | `note` | Internal JSON metadata described below |
 | `status` | Always `pending` |
@@ -40,7 +40,9 @@ No Airtable schema mutation is performed by this PR. Existing fields are reused:
 | `MMD — LIFF Renewal Sessions` | Unique exact renewal-session link only |
 | `campaign_claim_id` | Extracted deterministic value when supplied |
 
-The existing internal `note` stores the missing narrow metadata without exposing it to browsers: hashed LINE identity, LINE message ID, webhook event ID, private R2 key, evidence SHA-256, MIME type, byte size, extraction method/confidence/error, duplicate state, redacted event reference, deterministic-link result, and the pending-only payments handoff contract.
+The existing internal `note` stores the missing narrow metadata without exposing it to browsers: payment provider, sender/receiver bank, hashed LINE identity, LINE message ID, webhook event ID, private R2 key, evidence SHA-256, MIME type, byte size, extraction method/confidence/error, duplicate state, redacted event reference, deterministic-link result, and the pending-only payments handoff contract. Provider and bank values describe the payment rail; they do not replace the `line_ofc` intake-source channel.
+
+`note` is internal-only. Customer-facing and frontend APIs must never serialize or return it.
 
 ## Idempotency and duplicates
 
@@ -80,4 +82,3 @@ There is no `paid` or `verified` transition in P0.
 - Keep raw binaries private in R2.
 - Telegram uses a masked payment reference and excludes the private object key.
 - Never expose Airtable record IDs, internal links, or extraction payloads to the LINE user.
-
