@@ -1,6 +1,6 @@
 import { CAMPAIGN_ID, REFERENCE_DATE, assertCampaignActive, buildBenefitPlan, classifyEligibility,
   internalConsiderations, resolveMembershipPrice, resolveUpgradePrice, validateApprovedMonths, PolicyError } from "./policy.js";
-import { buildAuditEvent, customerSafeResult, validateTransition } from "./benefit-coordinator.js";
+import { buildAuditEvent, customerSafeDashboardResult, customerSafeResult, validateTransition } from "./benefit-coordinator.js";
 import { AirtableClaimStore } from "./airtable-claim-store.js";
 import { normalizeAdminDecision, requireAdminContext, adminDecisionPatch, assertAdminApplyAllowed, AdminGateError } from "./campaign-admin-core.js";
 
@@ -20,6 +20,7 @@ async function route(request, env) {
   if (method === "GET" && path === "/health") return json({ ok: true, worker: "promotion-worker", campaignId: CAMPAIGN_ID });
   if (!path.startsWith("/v1/internal/") || !(await internal(request, env))) throw new HttpError(403, "forbidden");
   if (method === "POST" && path === "/v1/internal/promotions/claims/open") return openClaim(request, env);
+  if (method === "POST" && path === "/v1/internal/promotions/member-readback") return memberReadback(request, env);
   if (method === "POST" && path === "/v1/internal/promotions/pricing/resolve") return pricing(request);
   const claim = path.match(/^\/v1\/internal\/promotions\/claims\/([^/]+)$/);
   if (method === "GET" && claim) return readClaim(env, decodeURIComponent(claim[1]));
@@ -29,6 +30,13 @@ async function route(request, env) {
   if (method === "POST" && transition) return transitionClaim(request, env, decodeURIComponent(transition[1]));
   if (method === "POST" && path === "/v1/internal/promotions/apply") return applyClaim(request, env);
   throw new HttpError(404, "not_found");
+}
+
+async function memberReadback(request, env) {
+  const body = await bodyJson(request);
+  if (body.campaignId && body.campaignId !== CAMPAIGN_ID) throw new HttpError(400, "invalid_campaign");
+  const claim = await claimStore(env).findByIdentity(requiredHash(body.identityHash));
+  return json({ ok:true,data:customerSafeDashboardResult(claim,serverNow(env)) });
 }
 
 async function openClaim(request, env) {

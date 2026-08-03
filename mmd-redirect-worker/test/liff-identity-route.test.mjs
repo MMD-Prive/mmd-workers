@@ -61,6 +61,19 @@ describe("LIFF identity API front gate", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
+  for (const path of ["/member/api/liff/promotion-claim", "/member/api/liff/dashboard"]) {
+    it(`routes POST ${path} to member-pages-worker without generic pass-through`, async () => {
+      const serviceRequests = [];
+      const response = await requestWithEnv(`https://mmdbkk.com${path}?t=safe`, {
+        MEMBER_PAGES_WORKER:{ fetch:async (request) => { serviceRequests.push(request); return Response.json({ ok:true }); } },
+      }, { method:"POST",headers:{ authorization:"Bearer verified" } });
+      assert.equal(response.status,200);
+      assert.equal(serviceRequests.length,1);
+      assert.equal(serviceRequests[0].url,`https://mmdbkk.com${path}?t=safe`);
+      assert.equal(passThroughRequests.length,0);
+    });
+  }
+
   it("falls back to member-pages-worker upstream for LIFF identity without generic pass-through", async () => {
     const response = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/identify?t=abc", {
       method: "POST",

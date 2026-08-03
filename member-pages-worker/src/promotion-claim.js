@@ -18,6 +18,20 @@ export async function handlePromotionClaim(request, env = {}) {
   return response(upstream.ok ? { ok:true,data:payload.data,resumed:Boolean(payload.resumed) } : { ok:false,error:payload.error||"claim_open_failed" }, upstream.status);
 }
 
+export async function verifiedMemberContext(request, env = {}) {
+  const token = bearer(request);
+  if (!token) return { ok:false,status:401,error:"line_access_token_required" };
+  const verified = await verifyLineToken(token, env);
+  if (!verified.ok) return verified;
+  const snapshot = await resolveSnapshot(verified.userId, env);
+  if (!snapshot.ok) return snapshot;
+  try {
+    return { ok:true,status:200,identityHash:await hmac(verified.userId, env.LINE_ID_HASH_SECRET),snapshot:snapshot.data };
+  } catch {
+    return { ok:false,status:503,error:"member_identity_hash_unavailable" };
+  }
+}
+
 export async function verifyLineToken(token, env = {}) {
   const endpoint = String(env.LINE_PROFILE_ENDPOINT || "https://api.line.me/v2/profile");
   let result; try { result = await fetch(endpoint,{headers:{authorization:`Bearer ${token}`,accept:"application/json"}}); }

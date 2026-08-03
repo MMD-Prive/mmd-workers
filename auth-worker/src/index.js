@@ -126,6 +126,8 @@ export function buildPromotionMemberSnapshot(recordId, member = {}, packageRecor
   return {
     memberId: String(member.member_id || (recordId ? `mmd_rec_${recordId}` : "")) || null,
     clientId: String(member.client_id || member.memberstack_id || "") || null,
+    displayName: String(member.name || "").trim().slice(0, 120) || null,
+    pointsActive: safeNonNegativeNumber(member.active_points ?? member.points_active ?? member.points ?? member.Points),
     membershipTier: latest?.tier || "",
     membershipStartAt: latest?.startAt || null,
     membershipEndAt: latest?.endAt || null,
@@ -137,8 +139,13 @@ export function buildPromotionMemberSnapshot(recordId, member = {}, packageRecor
   };
 }
 
+function safeNonNegativeNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
 function emptyPromotionSnapshot() {
-  return { memberId: null, clientId: null, membershipTier: "", membershipStartAt: null,
+  return { memberId: null, clientId: null, displayName: null, pointsActive: null, membershipTier: "", membershipStartAt: null,
     membershipEndAt: null, membershipHistory: [], hasVerifiedMembershipHistory: false,
     conflictingHistory: false, verifiedSpend365: 0, verifiedLifetimeServiceSpend: 0 };
 }

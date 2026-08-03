@@ -1,4 +1,5 @@
 import { handlePromotionClaim } from "./promotion-claim.js";
+import { handleMemberDashboardReadback } from "./member-dashboard-readback.js";
 
 const WORKER = "member-pages-worker";
 const VERSION = "20260701-disable-auto-renewal-routing";
@@ -24,6 +25,7 @@ const LIFF_IDENTIFY_PATHS = new Set([
   "/member/api/liff/identify/",
 ]);
 const PROMOTION_CLAIM_PATHS = new Set(["/member/api/liff/promotion-claim", "/member/api/liff/promotion-claim/"]);
+const MEMBER_DASHBOARD_API_PATHS = new Set(["/member/api/liff/dashboard", "/member/api/liff/dashboard/"]);
 
 const PACKAGES = [
   { key: "7days", aliases: ["7day", "7_days", "guest", "guestpass", "trial"], title: "7 Days Guest Pass", eyebrow: "TEMPORARY ACCESS", price: 1499, duration: "7 days", tier: "guest-pass", copy: "Temporary membership access for a short review window. Official verification is still required." },
@@ -48,6 +50,7 @@ export default {
   async fetch(request, env = {}) {
     const url = new URL(request.url);
     const method = request.method.toUpperCase();
+    if (MEMBER_DASHBOARD_API_PATHS.has(url.pathname.toLowerCase())) return handleMemberDashboardReadback(request, env);
     if (PROMOTION_CLAIM_PATHS.has(url.pathname.toLowerCase())) return handlePromotionClaim(request, env);
     if (isLiffIdentifyPath(url)) return handleLiffIdentify(request, env);
     if (method === "OPTIONS") return new Response(null, { status: 204, headers: headers("text/plain") });
