@@ -102,6 +102,7 @@ function detectImagePolicy(fields, model) {
     fields.category,
     fields.category_path,
     fields.folder_name,
+    fields.folder_scope_key,
     fields.r2_prefix,
     fields.primary_image_key,
     fields.unique_key,
@@ -119,6 +120,8 @@ function detectImagePolicy(fields, model) {
     fields.package,
     fields.sales_layer,
     fields.private_work_format,
+    fields.exclusive_group,
+    fields.catalog_group,
     model.field,
     model.run_number,
     model.unique_key,
@@ -129,7 +132,15 @@ function detectImagePolicy(fields, model) {
     model.primary_image_key,
   ].map(clean).filter(Boolean).join(" "));
 
-  if (/(^|_)gws\d*(_|$)/.test(text) || /(^|_)ems\d*(_|$)/.test(text) || text.includes("_gws_") || text.includes("_ems_")) {
+  if (
+    /(^|_)gws\d*(_|$)/.test(text) ||
+    /(^|_)ems\d*(_|$)/.test(text) ||
+    text.includes("_gws_") ||
+    text.includes("_ems_") ||
+    text.includes("guest_who") ||
+    /(^|_)mdl_exc_oth(_|$)/.test(text) ||
+    /(^|_)exc_oth(_|$)/.test(text)
+  ) {
     return "ai_generated";
   }
 
