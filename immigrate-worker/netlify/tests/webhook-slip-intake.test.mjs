@@ -5,6 +5,7 @@ import test from "node:test";
 import { handler } from "../functions/webhook.js";
 import {
   DEFAULT_MAX_AMOUNT_THB,
+  MANUAL_SLIP_ACK,
   RETRY_SLIP_ACK,
   SAFE_SLIP_ACK,
   buildProofIdentity,
@@ -267,6 +268,7 @@ test("duplicate payment_ref and low confidence remain review-only", async () => 
   assert.equal(result.state, "pending");
   assert.equal(result.reviewRequired, true);
   assert.equal(result.duplicatePaymentRef, true);
+  assert.equal(result.replyText, MANUAL_SLIP_ACK);
   assert.doesNotMatch(result.replyText, /ตรวจสอบเรียบร้อยแล้ว/);
 });
 
@@ -290,14 +292,16 @@ test("successful intake creates pending LINE OFC evidence with internal provider
   assert.equal(calls.some((call) => call.href.includes("payments-worker")), false);
 });
 
-test("partial extraction and post-storage persistence failure remain review-only and alert Ops", async () => {
+test("first durable unlinked or incomplete evidence uses manual acknowledgement while persistence failure uses retry", async () => {
   const partial = pipelineFetch({ qr: { payment_ref: "", payer_name: "Test", confidence_score: 0.99 }, ocr: { payer_name: "Test", confidence_score: 0.99 } });
   const partialResult = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl: partial.fetchImpl });
   assert.equal(partialResult.reviewRequired, true);
+  assert.equal(partialResult.replyText, MANUAL_SLIP_ACK);
 
   const orphan = pipelineFetch({ qr: { payment_ref: "PAY-ORPHAN", amount_thb: 100, confidence_score: 0.99 }, memberRecord: null });
   const orphanResult = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl: orphan.fetchImpl });
   assert.equal(orphanResult.reviewRequired, true);
+  assert.equal(orphanResult.replyText, MANUAL_SLIP_ACK);
 
   const failed = pipelineFetch({ qr: { payment_ref: "PAY-FAIL", amount_thb: 100, confidence_score: 0.99 }, airtableCreateStatus: 500 });
   const result = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl: failed.fetchImpl });
@@ -317,6 +321,7 @@ test("R2 and Telegram failures do not create a paid or verified state", async ()
   const pending = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl: telegramFailure.fetchImpl });
   assert.equal(pending.state, "pending");
   assert.equal(pending.telegram.ok, false);
+  assert.equal(pending.replyText, SAFE_SLIP_ACK);
 });
 
 test("invalid amounts are excluded from Airtable, deterministic amount matching, and remain review-required", async () => {
@@ -324,6 +329,7 @@ test("invalid amounts are excluded from Airtable, deterministic amount matching,
     const pipeline = pipelineFetch({ qr: { payment_ref: "PAY-INVALID-AMOUNT", amount_thb: amount, confidence_score: 0.99 } });
     const result = await processPaymentSlipImage({ env: BASE_ENV, event: imageEvent(), fetchImpl: pipeline.fetchImpl });
     assert.equal(result.reviewRequired, true, String(amount));
+    assert.equal(result.replyText, MANUAL_SLIP_ACK, String(amount));
     const create = pipeline.calls.find((call) => call.href.includes("api.airtable.com") && call.init.method === "POST");
     const fields = JSON.parse(create.init.body).fields;
     assert.equal(Object.hasOwn(fields, "amount_thb"), false, String(amount));
@@ -340,6 +346,13 @@ test("staged payments handoff contract cannot mark paid or mutate benefits", () 
   assert.equal(handoff.may_award_points, false);
   assert.equal(handoff.may_extend_membership, false);
   assert.equal(handoff.may_confirm_session, false);
+});
+
+test("acknowledgement contract never claims paid or verified", () => {
+  const paidOrVerified = /\b(?:paid|verified)\b|ชำระเงินเรียบร้อย|ยืนยันการชำระเงิน/i;
+  for (const acknowledgement of [MANUAL_SLIP_ACK, SAFE_SLIP_ACK, RETRY_SLIP_ACK]) {
+    assert.doesNotMatch(acknowledgement, paidOrVerified);
+  }
 });
 
 test("handler preserves invalid signature rejection", async () => {
@@ -391,6 +404,9 @@ test("valid signed handler event performs the narrow image-slip intake and safe 
       assert.equal(calls.some((call) => call.href.includes("payments-worker")), false);
       const replyCall = calls.find((call) => call.href.includes("/message/reply"));
       assert.equal(JSON.parse(replyCall.init.body).messages[0].text, SAFE_SLIP_ACK);
+      const proofCreateIndex = calls.findIndex((call) => call.href.includes(encodeURIComponent("MMD — Payment Proofs")) && call.init.method === "POST");
+      const replyIndex = calls.findIndex((call) => call.href.includes("/message/reply"));
+      assert.ok(proofCreateIndex >= 0 && proofCreateIndex < replyIndex);
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -430,6 +446,9 @@ test("LINE reply failure is redacted and returns a retryable webhook error", asy
       assert.match(logs[0], /line_payment_slip_reply_failed/);
       assert.doesNotMatch(logs[0], /telegram-token|r2-secret-key|PAY-REPLY-FAIL|line-message-1/);
       assert.equal(calls.some((call) => call.href.includes("api.line.me/v2/bot/message/reply")), true);
+      const proofCreateIndex = calls.findIndex((call) => call.href.includes(encodeURIComponent("MMD — Payment Proofs")) && call.init.method === "POST");
+      const replyIndex = calls.findIndex((call) => call.href.includes("api.line.me/v2/bot/message/reply"));
+      assert.ok(proofCreateIndex >= 0 && proofCreateIndex < replyIndex);
     } finally {
       globalThis.fetch = originalFetch;
       console.error = originalError;
