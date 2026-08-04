@@ -6,6 +6,8 @@ import { escapeHtml } from "../lib/util.js";
 const LOCK = "telegram-preview-hype-v20260621a-v1-alias";
 const PREVIEW_START = "preview";
 const DEFAULT_BOT_USERNAME = "mmdprivebot";
+const DEFAULT_PUBLIC_BASE_URL = "https://www.mmdbkk.com";
+const DEFAULT_PREVIEW_CHANNEL_URL = "https://t.me/MMDPriveTH";
 const PREVIEW_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const PREVIEW_CODE_TTL_SECONDS = 60 * 60 * 24 * 90;
 
@@ -88,6 +90,7 @@ async function handleTelegramWebhook(update, env) {
       text: previewIssuedText(record),
       parse_mode: "HTML",
       disable_web_page_preview: true,
+      reply_markup: previewButtonMarkup(env),
     }, env);
     return { handled: true, flow: "preview_start", telegram, code_status: record.status };
   }
@@ -159,7 +162,7 @@ async function postPreviewChannelCta(body, env) {
       dry_run: true,
       chat_id: chatId,
       text,
-      reply_markup: previewButtonMarkup(env, body.button_text),
+      reply_markup: previewButtonMarkup(env),
     };
   }
 
@@ -168,7 +171,7 @@ async function postPreviewChannelCta(body, env) {
     text,
     parse_mode: "HTML",
     disable_web_page_preview: true,
-    reply_markup: previewButtonMarkup(env, body.button_text),
+    reply_markup: previewButtonMarkup(env),
   }, env);
 
   return {
@@ -271,13 +274,44 @@ function previewWelcomeText() {
   ].join("\n");
 }
 
-function previewButtonMarkup(env, label) {
+function previewButtonMarkup(env) {
   return {
-    inline_keyboard: [[{
-      text: clean(label) || "รับโค้ดส่วนตัว",
-      url: `https://t.me/${botUsername(env)}?start=${PREVIEW_START}`,
-    }]],
+    inline_keyboard: [
+      [{
+        text: "🎁 เช็กสิทธิ์ 6 YEARS CARE BACK",
+        url: publicUrl(env, "/promotion/6-years-care-back"),
+      }],
+      [{
+        text: "Preview Models",
+        url: publicUrl(env, "/profiles"),
+      }, {
+        text: "Booking",
+        url: publicUrl(env, "/sigil/booking"),
+      }],
+      [{
+        text: "Apply for Membership",
+        url: publicUrl(env, "/sigil/member/membership"),
+      }],
+      [{
+        text: "Our Benefits",
+        url: publicUrl(env, "/sigil/member/membership/benefits"),
+      }],
+      [{
+        text: "Back to Preview Channel",
+        url: previewChannelUrl(env),
+      }],
+    ],
   };
+}
+
+function publicUrl(env, path) {
+  const base = clean(env.MMD_PUBLIC_BASE_URL || env.PUBLIC_BASE_URL || DEFAULT_PUBLIC_BASE_URL).replace(/\/+$/, "");
+  const normalizedPath = `/${clean(path).replace(/^\/+/, "")}`;
+  return `${base}${normalizedPath}`;
+}
+
+function previewChannelUrl(env) {
+  return clean(env.TELEGRAM_PREVIEW_CHANNEL_URL || env.PREVIEW_CHANNEL_URL) || DEFAULT_PREVIEW_CHANNEL_URL;
 }
 
 function parseStartArg(text) {
