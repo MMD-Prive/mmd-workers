@@ -362,6 +362,36 @@ test("handler preserves invalid signature rejection", async () => {
   });
 });
 
+test("payment-context text uses an Airtable-compatible Console Inbox intent", async () => {
+  await withEnv({ ...BASE_ENV, LINE_AUTO_REPLY_ENABLED: "false", LINE_KENJI_AI_ENABLED: "false" }, async () => {
+    const originalFetch = globalThis.fetch;
+    let consoleFields;
+    globalThis.fetch = async (url, init = {}) => {
+      const href = String(url);
+      if (href.includes("api.airtable.com") && init.method === "POST") {
+        consoleFields = JSON.parse(init.body).fields;
+        return jsonResponse({ id: "recConsole" });
+      }
+      if (href.includes("api.airtable.com")) return jsonResponse({ records: [] });
+      throw new Error(`unexpected fetch: ${href}`);
+    };
+    try {
+      const event = {
+        type: "message",
+        webhookEventId: "webhook-payment-context-1",
+        source: { type: "user", userId: LINE_USER_ID },
+        message: { type: "text", id: "line-payment-context-1", text: "ส่งสลิปชำระเงิน" },
+      };
+      const response = await handler(signedNetlifyEvent({ events: [event] }));
+      assert.equal(response.statusCode, 200);
+      assert.equal(consoleFields.intent, "note_only");
+      assert.equal(JSON.parse(consoleFields.payload_json).parsed_intent, "payment_slip");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 test("valid signed handler event performs the narrow image-slip intake and safe reply", async () => {
   await withEnv(BASE_ENV, async () => {
     const originalFetch = globalThis.fetch;
