@@ -732,11 +732,12 @@ describe("MMD permanent redirect guard", () => {
       const response = await request(url);
       const expected = new URL(url);
       expected.protocol = "https:";
-      expected.hostname = "member-pages-worker.malemodel-bkk.workers.dev";
+      expected.hostname = "mmdprive.webflow.io";
 
       assert.equal(response.status, 209, url);
       assert.equal(response.headers.get("location"), null, url);
       assert.equal(response.headers.get("x-test-pass-through"), "1", url);
+      assert.equal(response.headers.get("x-mmd-origin-pass-through"), "webflow-origin", url);
       assert.equal(passThroughRequests.at(-1).url, expected.toString(), url);
     }
 
