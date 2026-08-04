@@ -23,7 +23,7 @@
   const API_BASE = (root.dataset.apiBase || window.location.origin).replace(/\/$/, "");
   const SUBMIT_PATH = root.dataset.submitPath || "/v1/member/applications";
   const DASHBOARD_URL = root.dataset.dashboardUrl || "/member/dashboard";
-  const MEMBERSHIP_URL = root.dataset.membershipUrl || "/sigil/member/membership";
+  const MEMBERSHIP_URL = root.dataset.membershipUrl || "/member/membership";
   const HELP_URL = root.dataset.helpUrl || "https://t.me/mmdapply";
 
   const DRAFT_KEY = "mmd_member_application_draft_v1";

@@ -342,11 +342,11 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
   });
 
   it("existing member pages, renewal, payment, and dashboard behavior remain delegated unchanged", async () => {
-    const legacyMembership = await worker.fetch(new Request("https://mmdbkk.com/member/membership", { method: "GET" }), {});
+    const legacyMembership = await worker.fetch(new Request("https://mmdbkk.com/sigil/member/membership", { method: "GET" }), {});
     assert.equal(legacyMembership.status, 301);
-    assert.equal(new URL(legacyMembership.headers.get("location")).pathname, "/sigil/member/membership");
+    assert.equal(new URL(legacyMembership.headers.get("location")).pathname, "/member/membership");
 
-    for (const path of ["/sigil/member/membership", "/sigil/pay/renewal", "/pay/membership"]) {
+    for (const path of ["/member/membership", "/sigil/pay/renewal", "/pay/membership"]) {
       const response = await worker.fetch(new Request(`https://mmdbkk.com${path}`, { method: "GET" }), {});
       assert.equal(response.status, 200);
       assert.equal(response.headers.get("x-mmd-worker"), "member-pages-worker");

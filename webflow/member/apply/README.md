@@ -1,6 +1,6 @@
 # MMD Privé Member Application Gate
 
-Canonical frontend route: `/sigil/member/apply`.
+Canonical frontend route: `/member/apply`.
 
 ## Webflow placement
 
@@ -11,10 +11,10 @@ Canonical frontend route: `/sigil/member/apply`.
 ## Public configuration
 
 ```html
-data-api-base="https://sigil.mmdbkk.com"
+data-api-base="https://mmdbkk.com"
 data-submit-path="/v1/member/applications"
-data-dashboard-url="/sigil/member/dashboard"
-data-membership-url="/sigil/member/membership"
+data-dashboard-url="/member/dashboard"
+data-membership-url="/member/membership"
 data-help-url="https://t.me/mmdapply"
 ```
 
@@ -23,7 +23,7 @@ No secret, bearer token, API key, confirm key, or admin credential belongs in th
 ## Request contract
 
 ```http
-POST https://sigil.mmdbkk.com/v1/member/applications
+POST https://mmdbkk.com/v1/member/applications
 Content-Type: application/json
 X-Idempotency-Key: member-apply:YYYY-MM-DD:<fingerprint>
 ```
@@ -33,7 +33,7 @@ Required locks:
 ```json
 {
   "source": "member_apply",
-  "route": "/sigil/member/apply"
+  "route": "/member/apply"
 }
 ```
 
@@ -48,13 +48,13 @@ Draft data uses `sessionStorage`, not `localStorage`. The draft is scoped to the
 - Kenji is the client/member continuity surface.
 - The page is for MMD membership, Public Models, curated male-model services, and member privileges.
 - It is not model recruitment.
-- Membership selection is canonical at `/sigil/member/membership`; `/member/membership` remains a query-preserving compatibility redirect.
-- Member continuity goes to `/sigil/member/dashboard`.
+- Membership selection is canonical at `/member/membership`.
+- Member continuity goes to `/member/dashboard`.
 
 ## Deployment order
 
-1. Deploy the Worker/backend contract accepting `route = /sigil/member/apply`.
-2. Publish the Webflow frontend at `/sigil/member/apply`.
+1. Deploy the Worker/backend contract accepting `route = /member/apply`.
+2. Publish the Webflow frontend at `/member/apply`.
 3. Verify `POST /v1/member/applications` with `t`, `code`, and `promo`.
 4. Confirm successful responses return a stable `application_reference`.
 5. Smoke test online, timeout, validation, duplicate, and error states.

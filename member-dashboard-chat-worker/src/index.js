@@ -511,7 +511,7 @@ function richMenuBounds(x, y, width, height) {
 }
 
 function mmdbkkMembershipUrl(entryRoute, extra = "") {
-  return `https://mmdbkk.com/sigil/member/membership?source=line&entry_route=${entryRoute}${extra}`;
+  return `https://mmdbkk.com/member/membership?source=line&entry_route=${entryRoute}${extra}`;
 }
 
 export function createPublicWorldRichMenuDraft() {

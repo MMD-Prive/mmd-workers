@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://sigil.mmdbkk.com/schema/member-application.contract.json",
+  "$id": "https://mmdbkk.com/schema/member-application.contract.json",
   "title": "MMD Member Application Request",
   "type": "object",
   "additionalProperties": true,
@@ -57,7 +57,7 @@
     "consent_accuracy": { "const": true },
     "consent_privacy": { "const": true },
     "source": { "const": "member_apply" },
-    "route": { "const": "/sigil/member/apply" },
+    "route": { "const": "/member/apply" },
     "page_url": { "type": "string", "format": "uri", "maxLength": 4096 },
     "submitted_at": { "type": "string", "format": "date-time" },
     "client_version": { "type": "string", "maxLength": 80 },

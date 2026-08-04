@@ -1,7 +1,7 @@
 const WORKER = "member-pages-worker";
-const VERSION = "20260801-sigil-member-membership-v3";
-const CANONICAL_MEMBERSHIP_PATH = "/sigil/member/membership";
-const LEGACY_MEMBERSHIP_PATH = "/member/membership";
+const VERSION = "20260804-public-private-boundary-v1";
+const CANONICAL_MEMBERSHIP_PATH = "/member/membership";
+const LEGACY_MEMBERSHIP_PATH = "/sigil/member/membership";
 
 // ROUTE LOCK
 // /sigil/pay/membership and /pay/membership are membership payment routes.
@@ -11,6 +11,7 @@ const LEGACY_MEMBERSHIP_PATH = "/member/membership";
 
 const PAGE_PATHS = new Set([
   CANONICAL_MEMBERSHIP_PATH, `${CANONICAL_MEMBERSHIP_PATH}/`,
+  LEGACY_MEMBERSHIP_PATH, `${LEGACY_MEMBERSHIP_PATH}/`,
   "/sigil/membership", "/sigil/membership/",
   "/sigil/pay/membership", "/sigil/pay/membership/",
   "/sigil/pay/renewal", "/sigil/pay/renewal/",
@@ -117,12 +118,10 @@ export async function handleLiffIdentify(request, env = {}) {
       },
       safe_next: {
         public_membership: appendSafeQuery(CANONICAL_MEMBERSHIP_PATH, safeQuery),
-        sigil_membership: appendSafeQuery("/sigil/membership", safeQuery),
         dashboard: dashboardUnlock.unlocked ? appendSafeQuery("/member/dashboard", safeQuery) : null,
         payment: appendSafeQuery("/pay/membership", safeQuery),
-        sigil_payment: appendSafeQuery("/sigil/pay/membership", safeQuery),
         renewal: null,
-        booking: canUsePrivateRoute(membership) ? appendSafeQuery("/sigil/booking", safeQuery) : null,
+        booking: canUsePrivateRoute(membership) ? appendSafeQuery("/member/dashboard", safeQuery, { intent: "booking_request" }) : null,
         pending_verification: appendSafeQuery("/pay/pending-verification", safeQuery),
       },
     },
@@ -135,14 +134,14 @@ function normalizeEntryRoute(value) {
   if (route === "renewal" || route === "renew" || route.includes("renewal")) return "membership_review";
   if (route === "booking_request" || route.includes("booking")) return "booking_request";
   if (route === "public_membership" || route.includes("public_membership")) return "public_membership";
-  if (route === "sigil_membership" || route.includes("sigil")) return "sigil_membership";
+  if (route === "sigil_membership" || route.includes("sigil")) return "public_membership";
   if (route.includes("dashboard")) return "dashboard";
   if (route.includes("pay") || route.includes("payment")) return "pay_membership";
   return "public_membership";
 }
 
 function buildNextRoute(entryRoute, safeQuery, dashboardUnlock = { unlocked: false }, membership = defaultMembershipState()) {
-  if (entryRoute === "sigil_membership") return appendSafeQuery("/sigil/membership", safeQuery);
+  if (entryRoute === "sigil_membership") return appendSafeQuery(CANONICAL_MEMBERSHIP_PATH, safeQuery);
   if (entryRoute === "dashboard" && dashboardUnlock.unlocked) return appendSafeQuery("/member/dashboard", safeQuery);
   if (entryRoute === "dashboard") return appendSafeQuery(CANONICAL_MEMBERSHIP_PATH, safeQuery);
   if (entryRoute === "pay_membership") return appendSafeQuery("/pay/membership", safeQuery);
@@ -158,7 +157,7 @@ function routeForMemberStatus(membership, safeQuery) {
 }
 
 function routeForBooking(membership, safeQuery) {
-  if (canUsePrivateRoute(membership)) return appendSafeQuery("/sigil/booking", safeQuery);
+  if (canUsePrivateRoute(membership)) return appendSafeQuery("/member/dashboard", safeQuery, { intent: "booking_request" });
   return appendSafeQuery(CANONICAL_MEMBERSHIP_PATH, safeQuery);
 }
 

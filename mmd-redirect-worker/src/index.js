@@ -11,7 +11,8 @@ export const ADMIN_WORKER_UPSTREAM = "https://admin-worker.malemodel-bkk.workers
 export const SIGIL_WORKER_UPSTREAM = "https://sigil.mmdbkk.com";
 export const FRONT_GATE = "mmd-redirect-worker";
 export const FRONT_VERSION = "20260803-studio-route-polish";
-export const CANONICAL_MEMBERSHIP_PATH = "/sigil/member/membership";
+export const CANONICAL_MEMBERSHIP_PATH = "/member/membership";
+export const PRIVATE_MEMBERSHIP_PATH = "/sigil/member/membership";
 export const PUBLIC_BLACKCARD_PAGE = "public-blackcard";
 export const SIGIL_APPLY_ROUTE_OWNER = "sigil-worker";
 export const KENJI_KNOWLEDGE_ADMIN_PATHS = new Set(["/internal/admin/kenji-knowledge", "/internal/admin/kenji-knowledge/"]);
@@ -25,8 +26,8 @@ export const REDIRECT_HOSTS = new Set(["www.mmdbkk.com", "mmdbkk.com", "mmdprive
 export const NEVER_TOUCH_HOSTS = new Set(["sigil.mmdbkk.com"]);
 export const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webhook/line", "/webhook/line/"]);
 export const PUBLIC_BLACKCARD_PATHS = new Set(["/blackcard", "/blackcard/", "/blackcard/black-card", "/blackcard/black-card/"]);
-export const WEBFLOW_MEMBER_PAGE_PATHS = new Set([CANONICAL_MEMBERSHIP_PATH, `${CANONICAL_MEMBERSHIP_PATH}/`, "/member/promotion", "/member/promotion/", "/member/apply", "/member/apply/"]);
-export const MEMBER_PAGE_PATHS = new Set(["/member/profile", "/member/profile/", "/pay/membership", "/pay/membership/", "/pay/pending-verification", "/pay/pending-verification/", "/sigil/pay/renewal", "/sigil/pay/renewal/"]);
+export const WEBFLOW_MEMBER_PAGE_PATHS = new Set([PRIVATE_MEMBERSHIP_PATH, `${PRIVATE_MEMBERSHIP_PATH}/`, "/member/promotion", "/member/promotion/", "/member/apply", "/member/apply/"]);
+export const MEMBER_PAGE_PATHS = new Set([CANONICAL_MEMBERSHIP_PATH, `${CANONICAL_MEMBERSHIP_PATH}/`, "/member/profile", "/member/profile/", "/pay/membership", "/pay/membership/", "/pay/pending-verification", "/pay/pending-verification/", "/sigil/pay/renewal", "/sigil/pay/renewal/"]);
 export const MEMBER_API_PATHS = new Set([
   "/member/api/liff/identify",
   "/member/api/liff/identify/",
@@ -40,8 +41,8 @@ export const MEMBER_API_PATHS = new Set([
   "/member/api/liff/hall-token/",
 ]);
 export const NEVER_TOUCH_PREFIXES = ["/api/", "/webhook/", "/webhooks/", "/payments/", "/payment/", "/payment-webhook/", "/admin/", "/sigil/", "/cdn-cgi/", "/assets/", "/static/", "/uploads/"];
-export const NEVER_REDIRECT_EXACT_PATHS = new Set(["/member/promotion", "/member/promotion/", "/member/apply", "/member/apply/", "/member/dashboard", "/member/dashboard/", CANONICAL_MEMBERSHIP_PATH, `${CANONICAL_MEMBERSHIP_PATH}/`, "/member/profile", "/member/profile/", "/member/payments", "/member/payments/", "/pay/membership", "/pay/membership/", "/pay/pending-verification", "/pay/pending-verification/", "/sigil/pay/membership", "/sigil/pay/membership/", "/sigil/pay/renewal", "/sigil/pay/renewal/", "/hall", "/hall/", "/model/console", "/model/console/", "/blackcard", "/blackcard/", "/blackcard/black-card", "/blackcard/black-card/"]);
-export const EXACT_PATH_REDIRECTS = { "/trust/inme": "/sigil/start", "/inme": "/sigil/start", "/login": "/sigil/start", "/member": "/member/dashboard", "/member/membership": CANONICAL_MEMBERSHIP_PATH, "/member/membership/benefits": CANONICAL_MEMBERSHIP_PATH, "/members": "/sigil/start", "/membership": CANONICAL_MEMBERSHIP_PATH, "/membership/benefits": CANONICAL_MEMBERSHIP_PATH, "/renew": "/sigil/membership", "/renewal": "/sigil/membership", "/trust": "/sigil/start" };
+export const NEVER_REDIRECT_EXACT_PATHS = new Set(["/member/promotion", "/member/promotion/", "/member/apply", "/member/apply/", "/member/dashboard", "/member/dashboard/", CANONICAL_MEMBERSHIP_PATH, `${CANONICAL_MEMBERSHIP_PATH}/`, PRIVATE_MEMBERSHIP_PATH, `${PRIVATE_MEMBERSHIP_PATH}/`, "/member/profile", "/member/profile/", "/member/payments", "/member/payments/", "/pay/membership", "/pay/membership/", "/pay/pending-verification", "/pay/pending-verification/", "/sigil/pay/membership", "/sigil/pay/membership/", "/sigil/pay/renewal", "/sigil/pay/renewal/", "/hall", "/hall/", "/model/console", "/model/console/", "/blackcard", "/blackcard/", "/blackcard/black-card", "/blackcard/black-card/"]);
+export const EXACT_PATH_REDIRECTS = { "/trust/inme": "/hall", "/inme": "/hall", "/login": "/member/dashboard", "/member": "/member/dashboard", "/member/membership/benefits": CANONICAL_MEMBERSHIP_PATH, "/members": "/member/dashboard", "/membership": CANONICAL_MEMBERSHIP_PATH, "/membership/benefits": CANONICAL_MEMBERSHIP_PATH, "/renew": CANONICAL_MEMBERSHIP_PATH, "/renewal": CANONICAL_MEMBERSHIP_PATH, "/trust": "/hall" };
 export const FOLDER_REDIRECTS = [{ from: "/old-academy/", to: "/academy/" }, { from: "/old-trust/", to: "/trust/" }];
 
 export function isSafePageRequest(request) {
@@ -112,6 +113,7 @@ function isSigilMembershipPath(url) { const p = url.pathname.toLowerCase(); retu
 function isMemberDashboardPath(url) { const p = url.pathname.toLowerCase(); return p === "/member/dashboard" || p === "/member/dashboard/"; }
 function isMemberPagePath(url) { return MEMBER_PAGE_PATHS.has(url.pathname.toLowerCase()); }
 function isMemberApiPath(url) { return MEMBER_API_PATHS.has(url.pathname.toLowerCase()); }
+function isMemberApplicationApiPath(url) { const p = url.pathname.toLowerCase(); return p === "/v1/member/applications" || p === "/v1/member/applications/"; }
 function isMemberPaymentsPath(url) { const p = url.pathname.toLowerCase(); return p === "/member/payments" || p === "/member/payments/"; }
 function isHallPath(url) { const p = url.pathname.toLowerCase(); return p === "/hall" || p === "/hall/"; }
 function isModelConsolePath(url) { const p = url.pathname.toLowerCase(); return p === "/model/console" || p === "/model/console/"; }
@@ -209,6 +211,7 @@ export default {
     const url = new URL(request.url);
     if (isLineWebhookPath(url)) return fetchLineWebhook(request, env, url);
     if (isSigilPrivateModelApplyApiPath(url)) return fetchSigilWorkerRoute(request, env, url, "sigil-private-model-apply-api");
+    if (isMemberApplicationApiPath(url)) return fetchSigilWorkerRoute(request, env, url, "member-application-api");
     if (isMemberApiPath(url)) return fetchMemberPage(request, env, url);
     if (!isSafePageRequest(request)) return withFrontGateHeaders(await fetch(request));
     const studioRoute = findStudioWebflowRoute(url.pathname);
