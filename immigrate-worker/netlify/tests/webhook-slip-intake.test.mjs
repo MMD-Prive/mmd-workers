@@ -523,14 +523,18 @@ test("LINE redelivery can acknowledge an idempotently existing durable proof", a
   });
 });
 
-test("handler preserves non-slip image fallback and performs no slip download", async () => {
+test("handler preserves non-slip image fallback with an Airtable-compatible intent", async () => {
   await withEnv(BASE_ENV, async () => {
     const originalFetch = globalThis.fetch;
     const calls = [];
+    let consoleFields;
     globalThis.fetch = async (url, init = {}) => {
       const href = String(url);
       calls.push(href);
-      if (href.includes("api.airtable.com") && init.method === "POST") return jsonResponse({ id: "recConsole" });
+      if (href.includes("api.airtable.com") && init.method === "POST") {
+        consoleFields = JSON.parse(init.body).fields;
+        return jsonResponse({ id: "recConsole" });
+      }
       if (href.includes("api.airtable.com")) return jsonResponse({ records: [] });
       if (href.includes("api.line.me/v2/bot/message/reply")) return jsonResponse({ ok: true });
       return jsonResponse({ ok: true });
@@ -541,6 +545,7 @@ test("handler preserves non-slip image fallback and performs no slip download", 
       const payload = JSON.parse(response.body);
       assert.equal(payload.saved[0].payment_slip_intake, null);
       assert.equal(calls.some((url) => url.includes("api-data.line.me")), false);
+      assert.equal(consoleFields.intent, "note_only");
     } finally {
       globalThis.fetch = originalFetch;
     }
