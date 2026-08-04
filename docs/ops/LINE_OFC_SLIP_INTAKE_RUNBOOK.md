@@ -95,13 +95,29 @@ The recent-context lookup requires no Airtable migration. It uses the existing `
 
 `LINE_SLIP_MAX_AMOUNT_THB` defaults to `10000000`. Amounts must be finite, greater than zero, no higher than that limit, and are rounded to two decimal places. Invalid amounts become `null`, are omitted from Airtable amount fields and amount-based matching, and keep the proof review-required.
 
-The normal receipt acknowledgement is allowed only after the image is downloaded, hashed, privately stored, and the pending Payment Proof is created or confirmed idempotently existing. Download, R2, or evidence-persistence failure sends:
+An acknowledgement is classified only after the required evidence state is known:
+
+1. First durable evidence that is unlinked, ambiguous, low-confidence, duplicated, or otherwise review-required sends `MANUAL_SLIP_ACK`:
+
+```text
+ได้รับหลักฐานการชำระเงินแล้วครับ แต่รายละเอียดต้องให้ทาง MMD ตรวจสอบด้วยตนเอง กรุณารอสักครู่ก่อนนะครับ
+```
+
+2. Evidence safely accepted into the normal pending flow, or an idempotent replay where the durable proof already exists, sends `SAFE_SLIP_ACK`:
+
+```text
+ได้รับหลักฐานการชำระเงินแล้วครับ ผมกำลังส่งรายละเอียดให้ทางระบบตรวจสอบ กรุณารอสักครู่ก่อนนะครับ
+```
+
+3. Download, private R2 storage, Payment Proof persistence, or another pre-durable failure sends `RETRY_SLIP_ACK`:
 
 ```text
 ขณะนี้ระบบยังบันทึกหลักฐานการชำระเงินไม่สำเร็จครับ กรุณาเก็บสลิปไว้ก่อน ทาง MMD จะตรวจสอบและแจ้งให้ทราบอีกครั้งครับ
 ```
 
-That message does not claim durable receipt. Telegram Ops is notified when configured. A LINE reply failure returns a retryable webhook error and emits only redacted operational metadata.
+`MANUAL_SLIP_ACK` confirms evidence receipt without implying deterministic payment/session linking. `SAFE_SLIP_ACK` confirms durable pending processing only. `RETRY_SLIP_ACK` never claims durable receipt. All created evidence remains `status=pending`; no acknowledgement means paid or verified, and `payments-worker` remains Money Truth.
+
+The LINE reply is attempted only after private R2 and Payment Proof persistence succeed, or an existing durable proof is confirmed idempotently. Telegram Ops is notified when configured, but Telegram failure cannot change acknowledgement classification. A LINE reply failure returns a retryable webhook error and emits only redacted operational metadata.
 
 P0 writes a pending-only handoff contract inside the Payment Proof note. It does not call the paid/verified payments endpoint. A later authorized phase must define an authenticated pending-evidence endpoint or callback before automatic verification delivery is enabled.
 
@@ -111,6 +127,7 @@ The Payment Proof `channel` records intake source, so LINE OA evidence uses `lin
 
 - Replayed `webhookEventId` with the same image message returns the existing deterministic proof.
 - Replayed `message.id` never downloads or writes the evidence again.
+- An idempotent replay of an existing durable proof may receive `SAFE_SLIP_ACK` because persistence has already been established.
 - Duplicate SHA or payment reference creates a separate pending evidence record flagged for review; it never patches the earlier proof/payment.
 
 ## Telegram failure

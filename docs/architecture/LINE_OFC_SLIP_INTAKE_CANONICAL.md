@@ -22,7 +22,17 @@ The public production route remains owned by `member-dashboard-chat-worker`. Aft
 12. One pending record is created in `MMD — Payment Proofs`.
 13. Exact Airtable matches are linked only when unique. Multiple matches or no deterministic link force review.
 14. Telegram Ops receives a masked operational summary. Telegram failure cannot change evidence state.
-15. LINE receives the normal receipt acknowledgement only after private storage and Payment Proof persistence succeed, or an existing idempotent proof is confirmed. Download, storage, or evidence-persistence failure receives the retry/manual-review message and never claims durable receipt. P0 never sends a verified reply.
+15. LINE receives an acknowledgement only after the classification below is known. First durable evidence that remains unlinked, ambiguous, low-confidence, duplicated, or otherwise `review_required` receives `MANUAL_SLIP_ACK`. Safely pending evidence and an idempotent replay of an existing durable proof receive `SAFE_SLIP_ACK`. Download, R2, or Payment Proof persistence failure receives `RETRY_SLIP_ACK`, which never claims durable receipt. P0 never sends a paid or verified reply.
+
+## Acknowledgement contract
+
+| Evidence state | Acknowledgement | Meaning |
+| --- | --- | --- |
+| Durable, but unlinked, ambiguous, low-confidence, duplicated, or otherwise review-required | `MANUAL_SLIP_ACK` | Evidence was stored, but payment/session linking and verification require MMD review. |
+| Durable and safely accepted into the normal pending flow, or idempotent replay of an existing durable proof | `SAFE_SLIP_ACK` | Durable pending processing only. It does not confirm payment verification. |
+| Download, private R2 storage, Payment Proof persistence, or another pre-durable step failed | `RETRY_SLIP_ACK` | Durable receipt is not claimed; the sender must retain the slip for retry/manual follow-up. |
+
+All created evidence remains `status=pending`. None of these acknowledgements means paid or verified, and none changes the `payments-worker` Money Truth boundary. Telegram delivery is best effort and cannot change acknowledgement classification. The reply is attempted only after the required durable R2 and Airtable operations succeed, or after an existing durable proof is confirmed idempotently.
 
 ## MMD-controlled extractor
 
@@ -77,9 +87,10 @@ The R2 bucket has no public URL. The key is internal metadata only and is never 
 
 ```text
 image candidate
-  -> download/storage/evidence-persistence failure -> retry_required
-  -> stored -> QR -> OCR fallback -> pending or review_required
-  -> duplicate/ambiguous/low confidence -> review_required
+  -> download/storage/evidence-persistence failure -> retry_required -> RETRY_SLIP_ACK
+  -> stored -> QR -> OCR fallback -> safely pending -> SAFE_SLIP_ACK
+  -> stored -> duplicate/ambiguous/low confidence/unlinked -> review_required -> MANUAL_SLIP_ACK
+  -> existing durable proof -> idempotent replay -> SAFE_SLIP_ACK
   -> pending handoff contract -> payments-worker verification in a later authorized phase
 ```
 
