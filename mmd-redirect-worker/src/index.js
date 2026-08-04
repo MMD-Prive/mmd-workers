@@ -9,6 +9,7 @@ export const MEMBER_DASHBOARD_UPSTREAM = "https://immigrate-worker.malemodel-bkk
 export const MEMBER_PAGES_UPSTREAM = "https://member-pages-worker.malemodel-bkk.workers.dev";
 export const ADMIN_WORKER_UPSTREAM = "https://admin-worker.malemodel-bkk.workers.dev";
 export const SIGIL_WORKER_UPSTREAM = "https://sigil.mmdbkk.com";
+export const DEFAULT_WEBFLOW_ORIGIN_HOST = "mmdprive.webflow.io";
 export const FRONT_GATE = "mmd-redirect-worker";
 export const FRONT_VERSION = "20260803-studio-route-polish";
 export const CANONICAL_MEMBERSHIP_PATH = "/sigil/member/membership";
@@ -26,7 +27,8 @@ export const NEVER_TOUCH_HOSTS = new Set(["sigil.mmdbkk.com"]);
 export const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webhook/line", "/webhook/line/"]);
 export const PUBLIC_BLACKCARD_PATHS = new Set(["/blackcard", "/blackcard/", "/blackcard/black-card", "/blackcard/black-card/"]);
 export const WEBFLOW_MEMBER_PAGE_PATHS = new Set([CANONICAL_MEMBERSHIP_PATH, `${CANONICAL_MEMBERSHIP_PATH}/`, "/member/promotion", "/member/promotion/", "/member/apply", "/member/apply/"]);
-export const MEMBER_PAGE_PATHS = new Set(["/member/profile", "/member/profile/", "/pay/membership", "/pay/membership/", "/pay/pending-verification", "/pay/pending-verification/", "/sigil/pay/renewal", "/sigil/pay/renewal/"]);
+export const WEBFLOW_PAY_MEMBERSHIP_PATHS = new Set(["/pay/membership", "/pay/membership/"]);
+export const MEMBER_PAGE_PATHS = new Set(["/member/profile", "/member/profile/", "/pay/pending-verification", "/pay/pending-verification/", "/sigil/pay/renewal", "/sigil/pay/renewal/"]);
 export const MEMBER_API_PATHS = new Set([
   "/member/api/liff/identify",
   "/member/api/liff/identify/",
@@ -40,7 +42,7 @@ export const MEMBER_API_PATHS = new Set([
   "/member/api/liff/hall-token/",
 ]);
 export const NEVER_TOUCH_PREFIXES = ["/api/", "/webhook/", "/webhooks/", "/payments/", "/payment/", "/payment-webhook/", "/admin/", "/sigil/", "/cdn-cgi/", "/assets/", "/static/", "/uploads/"];
-export const NEVER_REDIRECT_EXACT_PATHS = new Set(["/member/promotion", "/member/promotion/", "/member/apply", "/member/apply/", "/member/dashboard", "/member/dashboard/", CANONICAL_MEMBERSHIP_PATH, `${CANONICAL_MEMBERSHIP_PATH}/`, "/member/profile", "/member/profile/", "/member/payments", "/member/payments/", "/pay/membership", "/pay/membership/", "/pay/pending-verification", "/pay/pending-verification/", "/sigil/pay/membership", "/sigil/pay/membership/", "/sigil/pay/renewal", "/sigil/pay/renewal/", "/hall", "/hall/", "/model/console", "/model/console/", "/blackcard", "/blackcard/", "/blackcard/black-card", "/blackcard/black-card/"]);
+export const NEVER_REDIRECT_EXACT_PATHS = new Set(["/member/promotion", "/member/promotion/", "/member/apply", "/member/apply/", "/member/dashboard", "/member/dashboard/", CANONICAL_MEMBERSHIP_PATH, `${CANONICAL_MEMBERSHIP_PATH}/`, "/member/profile", "/member/profile/", "/member/payments", "/member/payments/", "/pay/pending-verification", "/pay/pending-verification/", "/sigil/pay/membership", "/sigil/pay/membership/", "/sigil/pay/renewal", "/sigil/pay/renewal/", "/hall", "/hall/", "/model/console", "/model/console/", "/blackcard", "/blackcard/", "/blackcard/black-card", "/blackcard/black-card/"]);
 export const EXACT_PATH_REDIRECTS = { "/trust/inme": "/sigil/start", "/inme": "/sigil/start", "/login": "/sigil/start", "/member": "/member/dashboard", "/member/membership": CANONICAL_MEMBERSHIP_PATH, "/member/membership/benefits": CANONICAL_MEMBERSHIP_PATH, "/members": "/sigil/start", "/membership": CANONICAL_MEMBERSHIP_PATH, "/membership/benefits": CANONICAL_MEMBERSHIP_PATH, "/renew": "/sigil/membership", "/renewal": "/sigil/membership", "/trust": "/sigil/start" };
 export const FOLDER_REDIRECTS = [{ from: "/old-academy/", to: "/academy/" }, { from: "/old-trust/", to: "/trust/" }];
 
@@ -84,6 +86,12 @@ function withFrontGateHeaders(response) {
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
+function withWebflowOriginHeaders(response) {
+  const frontGateResponse = withFrontGateHeaders(response);
+  frontGateResponse.headers.set("x-mmd-origin-pass-through", "webflow-origin");
+  return frontGateResponse;
+}
+
 function withRouteOwnerHeaders(response, { owner, page, origin }) {
   const frontGateResponse = withFrontGateHeaders(response);
   frontGateResponse.headers.set("x-mmd-route-owner", owner);
@@ -103,9 +111,20 @@ async function fetchPassThrough(request) {
   return withFrontGateHeaders(await fetch(new Request(request, { redirect: "follow" })));
 }
 
+async function fetchWebflowOriginPage(request, env = {}, url = new URL(request.url)) {
+  const host = String(env?.WEBFLOW_ORIGIN_HOST || DEFAULT_WEBFLOW_ORIGIN_HOST).trim() || DEFAULT_WEBFLOW_ORIGIN_HOST;
+  const target = new URL(request.url);
+  target.protocol = "https:";
+  target.hostname = host;
+  target.pathname = url.pathname;
+  target.search = url.search;
+  return withWebflowOriginHeaders(await fetch(new Request(target.toString(), request)));
+}
+
 function isLineWebhookPath(url) { return LINE_WEBHOOK_PATHS.has(url.pathname.toLowerCase()); }
 function isBlackcardPublicPath(url) { return PUBLIC_BLACKCARD_PATHS.has(url.pathname.toLowerCase()); }
 function isWebflowMemberPagePath(url) { return WEBFLOW_MEMBER_PAGE_PATHS.has(url.pathname.toLowerCase()); }
+function isWebflowPayMembershipPath(url) { return WEBFLOW_PAY_MEMBERSHIP_PATHS.has(url.pathname.toLowerCase()); }
 function isSigilApplyPath(url) { const p = url.pathname.toLowerCase(); return p === "/sigil/apply" || p === "/sigil/apply/"; }
 function isSigilPrivateModelApplyApiPath(url) { const p = url.pathname.toLowerCase(); return p === "/sigil/api/private-model/apply" || p === "/sigil/api/private-model/apply/"; }
 function isSigilMembershipPath(url) { const p = url.pathname.toLowerCase(); return p === "/sigil/membership" || p === "/sigil/membership/"; }
@@ -218,6 +237,7 @@ export default {
     if (isSigilMembershipPath(url)) return fetchMemberPage(request, env, url);
     if (isMemberDashboardPath(url)) return fetchMemberFrontend(request, env, url);
     if (isWebflowMemberPagePath(url)) return fetchPassThrough(request);
+    if (isWebflowPayMembershipPath(url)) return fetchWebflowOriginPage(request, env, url);
     if (isMemberPagePath(url)) return fetchMemberPage(request, env, url);
     if (isMemberPaymentsPath(url)) return fetchAdminMemberPage(request, env, url);
     if (isKenjiKnowledgeAdminPath(url)) return renderKenjiKnowledgeAdminShell(request);
