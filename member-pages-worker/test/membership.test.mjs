@@ -8,14 +8,14 @@ async function request(url, init) {
 }
 
 describe("member-pages-worker membership page", () => {
-  it("renders the latest SIGIL member membership packages without SVIP and preserves query params", async () => {
-    const response = await request("https://mmdbkk.com/sigil/member/membership?t=abc&code=x&promo=y");
+  it("renders the public member membership packages without SVIP and preserves query params", async () => {
+    const response = await request("https://mmdbkk.com/member/membership?t=abc&code=x&promo=y");
     const html = await response.text();
 
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("x-mmd-worker"), "member-pages-worker");
     assert.equal(response.headers.get("x-mmd-page"), "member-membership");
-    assert.equal(response.headers.get("x-mmd-version"), "20260801-sigil-member-membership-v3");
+    assert.equal(response.headers.get("x-mmd-version"), "20260804-public-private-boundary-v1");
     assert.match(html, /Membership/);
     assert.match(html, /membership-hero/);
     assert.match(html, /membership-card/);
@@ -54,7 +54,7 @@ describe("member-pages-worker membership page", () => {
     assert.match(html, /private consideration\/review/);
     assert.doesNotMatch(html, /SVIP/i);
     assert.doesNotMatch(html, /VIP/i);
-    assert.ok(html.includes("/sigil/member/membership?t=abc&amp;code=x&amp;promo=y&amp;payment_ref=pay123&amp;session_id=sess123"));
+    assert.ok(html.includes("/member/membership?t=abc&amp;code=x&amp;promo=y&amp;payment_ref=pay123&amp;session_id=sess123"));
     assert.ok(html.includes("/member/dashboard?t=abc&amp;code=x&amp;promo=y&amp;payment_ref=pay123&amp;session_id=sess123"));
   });
 
@@ -69,7 +69,7 @@ describe("member-pages-worker membership page", () => {
   });
 
   it("returns no body for HEAD while keeping ownership headers", async () => {
-    const response = await request("https://mmdbkk.com/sigil/member/membership?t=abc", { method: "HEAD" });
+    const response = await request("https://mmdbkk.com/member/membership?t=abc", { method: "HEAD" });
     const body = await response.text();
 
     assert.equal(response.status, 200);
@@ -78,12 +78,12 @@ describe("member-pages-worker membership page", () => {
     assert.equal(response.headers.get("x-mmd-page"), "member-membership");
   });
 
-  it("redirects the legacy member membership path to the SIGIL canonical route with the full query preserved", async () => {
-    for (const path of ["/member/membership", "/member/membership/"]) {
+  it("redirects the legacy private membership path to the public canonical route with the full query preserved", async () => {
+    for (const path of ["/sigil/member/membership", "/sigil/member/membership/"]) {
       const response = await request(`https://mmdbkk.com${path}?t=abc&code=x&promo=y&source=line`);
 
       assert.equal(response.status, 301, path);
-      assert.equal(response.headers.get("location"), "https://mmdbkk.com/sigil/member/membership?t=abc&code=x&promo=y&source=line", path);
+      assert.equal(response.headers.get("location"), "https://mmdbkk.com/member/membership?t=abc&code=x&promo=y&source=line", path);
     }
   });
 

@@ -67,25 +67,25 @@ describe("MMD permanent redirect guard", () => {
     const response = await request("http://www.mmdbkk.com/inme?t=abc123&ref=line");
 
     assert.equal(response.status, 301);
-    assert.equal(response.headers.get("location"), "https://mmdbkk.com/sigil/start?t=abc123&ref=line");
+    assert.equal(response.headers.get("location"), "https://mmdbkk.com/hall?t=abc123&ref=line");
     assert.equal(passThroughRequests.length, 0);
   });
 
-  it("maps legacy SIGIL start aliases to /sigil/start and preserves query strings exactly", async () => {
-    const aliases = [
-      "/trust/inme",
-      "/inme",
-      "/login",
-      "/members",
-      "/trust",
-    ];
+  it("maps public aliases only to public destinations and preserves query strings exactly", async () => {
+    const aliases = new Map([
+      ["/trust/inme", "/hall"],
+      ["/inme", "/hall"],
+      ["/login", "/member/dashboard"],
+      ["/members", "/member/dashboard"],
+      ["/trust", "/hall"],
+    ]);
 
-    for (const alias of aliases) {
+    for (const [alias, destination] of aliases) {
       const response = await request(`https://www.mmdbkk.com${alias}?${PRESERVED_QUERY}`);
       assert.equal(response.status, 301, alias);
       assert.equal(
         response.headers.get("location"),
-        `https://mmdbkk.com/sigil/start?${PRESERVED_QUERY}`,
+        `https://mmdbkk.com${destination}?${PRESERVED_QUERY}`,
         alias,
       );
     }
@@ -105,14 +105,12 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
-  it("redirects legacy membership routes to /sigil/member/membership with query strings preserved exactly", async () => {
+  it("redirects legacy membership routes to /member/membership with query strings preserved exactly", async () => {
     const aliases = [
       "/membership",
       "/membership/",
       "/membership/benefits",
       "/membership/benefits/",
-      "/member/membership",
-      "/member/membership/",
       "/member/membership/benefits",
       "/member/membership/benefits/",
     ];
@@ -121,7 +119,7 @@ describe("MMD permanent redirect guard", () => {
       const response = await request(`https://www.mmdbkk.com${alias}?${PRESERVED_QUERY}`);
 
       assert.equal(response.status, 301, alias);
-      assert.equal(response.headers.get("location"), `https://mmdbkk.com/sigil/member/membership?${PRESERVED_QUERY}`, alias);
+      assert.equal(response.headers.get("location"), `https://mmdbkk.com/member/membership?${PRESERVED_QUERY}`, alias);
       assert.equal(response.headers.get("x-mmd-front-gate"), "mmd-redirect-worker", alias);
       assert.notEqual(response.headers.get("location"), `https://mmdbkk.com/pay/membership?${PRESERVED_QUERY}`, alias);
       assert.notEqual(response.headers.get("location"), `https://mmdbkk.com/membership/benefits?${PRESERVED_QUERY}`, alias);
@@ -130,12 +128,12 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
-  it("redirects renewal aliases to /sigil/membership with query strings preserved exactly", async () => {
+  it("redirects renewal aliases to public membership with query strings preserved exactly", async () => {
     for (const path of ["/renew", "/renew/", "/renewal", "/renewal/"]) {
       const response = await request(`https://www.mmdbkk.com${path}?${PRESERVED_QUERY}`);
 
       assert.equal(response.status, 301, path);
-      assert.equal(response.headers.get("location"), `https://mmdbkk.com/sigil/membership?${PRESERVED_QUERY}`, path);
+      assert.equal(response.headers.get("location"), `https://mmdbkk.com/member/membership?${PRESERVED_QUERY}`, path);
       assert.equal(response.headers.get("x-mmd-front-gate"), "mmd-redirect-worker", path);
       assert.notEqual(response.headers.get("location"), `https://mmdbkk.com/trust/inme?${PRESERVED_QUERY}`, path);
       assert.notEqual(response.headers.get("location"), `https://mmdbkk.com/sigil/start?${PRESERVED_QUERY}`, path);
@@ -176,7 +174,7 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
-  it("passes /sigil/member/membership through to the published Webflow page even when the member-pages service binding exists", async () => {
+  it("delegates /member/membership to member-pages-worker without a private redirect", async () => {
     const serviceRequests = [];
     const env = {
       MEMBER_PAGES_WORKER: {
@@ -191,24 +189,23 @@ describe("MMD permanent redirect guard", () => {
     };
 
     const urls = [
-      "https://mmdbkk.com/sigil/member/membership",
-      "https://www.mmdbkk.com/sigil/member/membership",
-      "https://mmdbkk.com/sigil/member/membership/",
-      "https://www.mmdbkk.com/sigil/member/membership/",
-      "https://mmdbkk.com/sigil/member/membership?t=abc&code=x&promo=y&debug=1",
-      "https://www.mmdbkk.com/sigil/member/membership?t=abc&code=x&promo=y&debug=1",
+      "https://mmdbkk.com/member/membership",
+      "https://www.mmdbkk.com/member/membership",
+      "https://mmdbkk.com/member/membership/",
+      "https://www.mmdbkk.com/member/membership/",
+      "https://mmdbkk.com/member/membership?t=abc&code=x&promo=y&debug=1",
+      "https://www.mmdbkk.com/member/membership?t=abc&code=x&promo=y&debug=1",
     ];
 
     for (const url of urls) {
       const response = await requestWithEnv(url, env);
-      assert.equal(response.status, 209, url);
+      assert.equal(response.status, 200, url);
       assert.equal(response.headers.get("location"), null);
-      assert.equal(response.headers.get("x-test-pass-through"), "1", url);
-      assert.equal(passThroughRequests.at(-1).url, url);
+      assert.equal(serviceRequests.at(-1).url, url);
     }
 
-    assert.equal(serviceRequests.length, 0);
-    assert.equal(passThroughRequests.length, urls.length);
+    assert.equal(serviceRequests.length, urls.length);
+    assert.equal(passThroughRequests.length, 0);
   });
 
   it("delegates /sigil/membership to member-pages-worker before generic SIGIL pass-through", async () => {
@@ -324,12 +321,12 @@ describe("MMD permanent redirect guard", () => {
     assert.notEqual(new URL(passThroughRequests.at(-1).url).hostname, "mmdprive.webflow.io");
   });
 
-  it("following renewal aliases reaches valid SIGIL membership content", async () => {
+  it("following renewal aliases reaches valid public membership content", async () => {
     const env = {
       MEMBER_PAGES_WORKER: {
         fetch: async (request) => new Response("<main>Renewal / Access Conditions official verification</main>", {
           status: 200,
-          headers: { "content-type": "text/html; charset=utf-8", "x-mmd-worker": "member-pages-worker", "x-mmd-page": "sigil-membership" },
+          headers: { "content-type": "text/html; charset=utf-8", "x-mmd-worker": "member-pages-worker", "x-mmd-page": "member-membership" },
         }),
       },
     };
@@ -337,14 +334,14 @@ describe("MMD permanent redirect guard", () => {
     for (const alias of ["/renew", "/renewal"]) {
       const first = await requestWithEnv(`https://www.mmdbkk.com${alias}?${PRESERVED_QUERY}`, env);
       assert.equal(first.status, 301, alias);
-      assert.equal(first.headers.get("location"), `https://mmdbkk.com/sigil/membership?${PRESERVED_QUERY}`, alias);
+      assert.equal(first.headers.get("location"), `https://mmdbkk.com/member/membership?${PRESERVED_QUERY}`, alias);
 
       const followed = await requestWithEnv(first.headers.get("location"), env);
       const html = await followed.text();
 
       assert.equal(followed.status, 200, alias);
       assert.equal(followed.headers.get("location"), null, alias);
-      assert.equal(followed.headers.get("x-mmd-page"), "sigil-membership", alias);
+      assert.equal(followed.headers.get("x-mmd-page"), "member-membership", alias);
       assert.match(html, /Renewal \/ Access Conditions/, alias);
     }
 
@@ -632,7 +629,7 @@ describe("MMD permanent redirect guard", () => {
       assert.match(html, /Member Page/, url);
       assert.match(html, /หน้านี้อยู่ในพื้นที่สมาชิกของ MMD Privé/, url);
       assert.ok(html.includes(`/member/dashboard${query}`), url);
-      assert.ok(html.includes(`/sigil/member/membership${query}`), url);
+      assert.ok(html.includes(`/member/membership${query}`), url);
       assertPolishedShell(html, url);
     }
 
@@ -664,7 +661,7 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
-  it("passes /sigil/member/membership through to Webflow when the member-pages service binding is missing", async () => {
+  it("falls back to member-pages upstream for /member/membership when the binding is missing", async () => {
     globalThis.fetch = async (request) => {
       passThroughRequests.push(request);
       return new Response("membership upstream", {
@@ -674,9 +671,9 @@ describe("MMD permanent redirect guard", () => {
     };
 
     const urls = [
-      "https://mmdbkk.com/sigil/member/membership",
-      "https://mmdbkk.com/sigil/member/membership/",
-      "https://mmdbkk.com/sigil/member/membership?t=abc&code=x&promo=y&debug=1",
+      "https://mmdbkk.com/member/membership",
+      "https://mmdbkk.com/member/membership/",
+      "https://mmdbkk.com/member/membership?t=abc&code=x&promo=y&debug=1",
     ];
 
     for (const url of urls) {
@@ -684,7 +681,7 @@ describe("MMD permanent redirect guard", () => {
       assert.equal(response.status, 209, url);
       assert.equal(response.headers.get("location"), null);
       assert.equal(response.headers.get("x-test-pass-through"), "1", url);
-      assert.equal(passThroughRequests.at(-1).url, url);
+      assert.equal(passThroughRequests.at(-1).url, `https://member-pages-worker.malemodel-bkk.workers.dev${new URL(url).pathname}${new URL(url).search}`);
     }
   });
 
@@ -774,7 +771,7 @@ describe("MMD permanent redirect guard", () => {
   it("keeps protected membership, payment, webhook, SIGIL start, and SIGIL apply routes from legacy redirects", async () => {
     const protectedRequests = [
       { url: `https://www.mmdbkk.com/member/dashboard?${PRESERVED_QUERY}`, expectedStatus: 209 },
-      { url: `https://www.mmdbkk.com/sigil/member/membership?${PRESERVED_QUERY}`, expectedStatus: 209 },
+      { url: `https://www.mmdbkk.com/member/membership?${PRESERVED_QUERY}`, expectedStatus: 209 },
       { url: `https://www.mmdbkk.com/pay/membership?${PRESERVED_QUERY}`, expectedStatus: 209 },
       { url: `https://www.mmdbkk.com/pay/pending-verification?${PRESERVED_QUERY}`, expectedStatus: 209 },
       { url: `https://www.mmdbkk.com/webhooks/line?${PRESERVED_QUERY}`, expectedStatus: 209 },
@@ -825,27 +822,29 @@ describe("MMD permanent redirect guard", () => {
     const response = await request("https://mmdbkk.com/trust//inme/?t=kept");
 
     assert.equal(response.status, 301);
-    assert.equal(response.headers.get("location"), "https://mmdbkk.com/sigil/start?t=kept");
+    assert.equal(response.headers.get("location"), "https://mmdbkk.com/hall?t=kept");
   });
 
-  it("redirects a trailing legacy slash once to SIGIL start and then passes through canonical target", async () => {
+  it("redirects a trailing legacy slash once to the public hall", async () => {
     const first = await request("https://mmdbkk.com/trust/inme/");
     assert.equal(first.status, 301);
-    assert.equal(first.headers.get("location"), "https://mmdbkk.com/sigil/start");
+    assert.equal(first.headers.get("location"), "https://mmdbkk.com/hall");
 
     const second = await request(first.headers.get("location"));
-    assert.equal(second.status, 209);
-    assert.equal(passThroughRequests.length, 1);
+    assert.equal(second.status, 200);
+    assert.equal(second.headers.get("x-mmd-page"), "hall");
+    assert.equal(passThroughRequests.length, 0);
   });
 
-  it("normalizes duplicate legacy slashes once to SIGIL start and then passes through canonical target", async () => {
+  it("normalizes duplicate legacy slashes once to the public hall", async () => {
     const first = await request("https://mmdbkk.com/trust//inme");
     assert.equal(first.status, 301);
-    assert.equal(first.headers.get("location"), "https://mmdbkk.com/sigil/start");
+    assert.equal(first.headers.get("location"), "https://mmdbkk.com/hall");
 
     const second = await request(first.headers.get("location"));
-    assert.equal(second.status, 209);
-    assert.equal(passThroughRequests.length, 1);
+    assert.equal(second.status, 200);
+    assert.equal(second.headers.get("x-mmd-page"), "hall");
+    assert.equal(passThroughRequests.length, 0);
   });
 
   it("passes through canonical URLs that do not need changes", async () => {
@@ -953,10 +952,10 @@ describe("redirect helpers", () => {
   });
 
   it("maps exact and folder redirects case-insensitively", () => {
-    assert.equal(findMappedPath("/LOGIN/"), "/sigil/start");
-    assert.equal(findMappedPath("/trust/inme"), "/sigil/start");
-    assert.equal(findMappedPath("/MEMBERSHIP/BENEFITS/"), "/sigil/member/membership");
-    assert.equal(findMappedPath("/renewal/"), "/sigil/membership");
+    assert.equal(findMappedPath("/LOGIN/"), "/member/dashboard");
+    assert.equal(findMappedPath("/trust/inme"), "/hall");
+    assert.equal(findMappedPath("/MEMBERSHIP/BENEFITS/"), "/member/membership");
+    assert.equal(findMappedPath("/renewal/"), "/member/membership");
     assert.equal(findMappedPath("/old-academy/Lv1"), "/academy/Lv1");
   });
 
