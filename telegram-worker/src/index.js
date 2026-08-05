@@ -282,19 +282,19 @@ function previewButtonMarkup(env) {
         url: publicUrl(env, "/promotion/6-years-care-back"),
       }],
       [{
+        text: "My Code / Status",
+        url: publicUrl(env, "/member/dashboard"),
+      }],
+      [{
         text: "Preview Models",
         url: publicUrl(env, "/profiles"),
       }, {
-        text: "Booking",
-        url: publicUrl(env, "/sigil/booking"),
+        text: "Apply / Renew Membership",
+        url: publicUrl(env, "/pay/membership"),
       }],
       [{
-        text: "Apply for Membership",
-        url: publicUrl(env, "/sigil/member/membership"),
-      }],
-      [{
-        text: "Our Benefits",
-        url: publicUrl(env, "/sigil/member/membership/benefits"),
+        text: "Help / How It Works",
+        url: publicUrl(env, "/promotion/6-years-care-back#how-it-works"),
       }],
       [{
         text: "Back to Preview Channel",
