@@ -191,7 +191,7 @@ function renderMembership(request) {
       <aside class="panel side-card blackcard-note">
         <p class="eyebrow">BLACK CARD NOTE</p>
         <h2>ไม่ใช่แพ็กเกจที่กดซื้อได้ทันที</h2>
-        <p>Black Card เป็นสถานะ private review สำหรับสมาชิกที่ผ่านการพิจารณาและอนุมัติโดย Founder เท่านั้น</p>
+        <p>Black Card เป็นสถานะ private review สำหรับสมาชิกที่ผ่านการพิจารณาและยืนยันโดย MMD เท่านั้น</p>
         <div class="actions stacked-actions">
           <a class="btn ghost" href="${attr(appendQuery("/blackcard/black-card", url.search))}">อ่านรายละเอียด Black Card</a>
           <a class="text-link" href="${attr(appendQuery("/member/dashboard", url.search))}">เข้าสู่ Member Dashboard <span aria-hidden="true">↗</span></a>
@@ -262,7 +262,7 @@ function renderProfile(request) {
 
 function renderBlackCardPaymentBlocked(request) {
   const url = new URL(request.url);
-  return page(request, "blackcard-payment-blocked", `${nav(url.search)}<section class="hero"><div class="panel hero-panel"><p class="eyebrow">Black Card Review</p><h1>Payment blocked</h1><p class="lead">Black Card ต้องผ่าน owner/founder approval ก่อน ไม่ใช่การกดจ่ายตรง</p><p class="actions"><a class="btn" href="${attr(appendQuery("/blackcard", url.search))}">Read Black Card</a><a class="btn ghost" href="${attr(appendQuery(CANONICAL_MEMBERSHIP_PATH, url.search))}">Back to Membership</a></p></div></section>`);
+  return page(request, "blackcard-payment-blocked", `${nav(url.search)}<section class="hero"><div class="panel hero-panel"><p class="eyebrow">Black Card Review</p><h1>Payment blocked</h1><p class="lead">Black Card ต้องให้ MMD ตรวจและยืนยันก่อน ไม่ใช่การกดจ่ายตรง</p><p class="actions"><a class="btn" href="${attr(appendQuery("/blackcard", url.search))}">Read Black Card</a><a class="btn ghost" href="${attr(appendQuery(CANONICAL_MEMBERSHIP_PATH, url.search))}">Back to Membership</a></p></div></section>`);
 }
 
 function membershipPackageCard(pkg, selected, query) {

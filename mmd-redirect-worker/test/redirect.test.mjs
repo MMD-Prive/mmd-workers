@@ -176,6 +176,69 @@ describe("MMD permanent redirect guard", () => {
     assert.equal(passThroughRequests.length, 0);
   });
 
+  it("bridges /api/member/dashboard to admin-worker with only safe query keys", async () => {
+    const serviceRequests = [];
+    const env = {
+      ADMIN_WORKER: {
+        fetch: async (request) => {
+          serviceRequests.push(request);
+          return Response.json({
+            ok: true,
+            data: {
+              dashboard_state: "review_required",
+              telegram_access: { status: "review_required" },
+              next_recommended_step: { key: "mmd_review" },
+            },
+          }, {
+            headers: { "x-mmd-worker": "admin-worker", "x-mmd-page": "member-dashboard-api" },
+          });
+        },
+      },
+    };
+
+    const response = await requestWithEnv(
+      "https://www.mmdbkk.com/api/member/dashboard?t=tok&code=c&promo=p&source=line&invite=i&unsafe=https://evil.example&payment_ref=pay_1&session_id=sess_1",
+      env,
+    );
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("location"), null);
+    assert.equal(response.headers.get("x-mmd-front-gate"), "mmd-redirect-worker");
+    assert.equal(response.headers.get("x-mmd-worker"), "admin-worker");
+    assert.equal(body.data.telegram_access.status, "review_required");
+    assert.equal(body.data.next_recommended_step.key, "mmd_review");
+    assert.equal(serviceRequests.length, 1);
+    assert.equal(
+      serviceRequests[0].url,
+      "https://www.mmdbkk.com/v1/member/dashboard?t=tok&code=c&promo=p&source=line&invite=i",
+    );
+    assert.equal(passThroughRequests.length, 0);
+  });
+
+  it("declares exact dashboard API front-gate routes without broad API ownership", () => {
+    for (const pattern of [
+      'pattern = "mmdbkk.com/api/member/dashboard"',
+      'pattern = "mmdbkk.com/api/member/dashboard/"',
+      'pattern = "www.mmdbkk.com/api/member/dashboard"',
+      'pattern = "www.mmdbkk.com/api/member/dashboard/"',
+    ]) {
+      assert.ok(wranglerConfig.includes(pattern), pattern);
+    }
+    assert.equal(wranglerConfig.includes('pattern = "mmdbkk.com/api/*"'), false);
+    assert.equal(wranglerConfig.includes('pattern = "www.mmdbkk.com/api/*"'), false);
+  });
+
+  it("masks internal ownership labels on the front-gate public Black Card page", async () => {
+    const response = await request("https://mmdbkk.com/blackcard/black-card?t=abc");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-mmd-page"), "public-blackcard");
+    assert.doesNotMatch(html, /owner|founder|Ops Owner|Sales Owner|Handler|Operator|Admin|Staff|MMD Assistant|MMS Assistant|Chang|Ewvon|Assist/i);
+    assert.match(html, /MMD review/);
+  });
+
   it("passes /sigil/member/membership through to the published Webflow page even when the member-pages service binding exists", async () => {
     const serviceRequests = [];
     const env = {
