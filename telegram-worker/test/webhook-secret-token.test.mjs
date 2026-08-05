@@ -35,32 +35,36 @@ function webhookRequest(headers = {}) {
   });
 }
 
-function expectedCareBackKeyboard() {
+function expectedCareBackKeyboard(baseUrl = "https://www.mmdbkk.com", previewChannelUrl = "https://t.me/MMDPriveTH") {
   return [
     [{
       text: "🎁 เช็กสิทธิ์ 6 YEARS CARE BACK",
-      url: "https://www.mmdbkk.com/promotion/6-years-care-back",
+      url: `${baseUrl}/promotion/6-years-care-back`,
+    }],
+    [{
+      text: "My Code / Status",
+      url: `${baseUrl}/member/dashboard`,
     }],
     [{
       text: "Preview Models",
-      url: "https://www.mmdbkk.com/profiles",
+      url: `${baseUrl}/profiles`,
     }, {
-      text: "Booking",
-      url: "https://www.mmdbkk.com/sigil/booking",
+      text: "Apply / Renew Membership",
+      url: `${baseUrl}/pay/membership`,
     }],
     [{
-      text: "Apply for Membership",
-      url: "https://www.mmdbkk.com/sigil/member/membership",
-    }],
-    [{
-      text: "Our Benefits",
-      url: "https://www.mmdbkk.com/sigil/member/membership/benefits",
+      text: "Help / How It Works",
+      url: `${baseUrl}/promotion/6-years-care-back#how-it-works`,
     }],
     [{
       text: "Back to Preview Channel",
-      url: "https://t.me/MMDPriveTH",
+      url: previewChannelUrl,
     }],
   ];
+}
+
+function flattenKeyboardUrls(replyMarkup) {
+  return replyMarkup.inline_keyboard.flat().map((button) => button.url);
 }
 
 test("/telegram/webhook rejects missing secret token when configured", async () => {
@@ -134,6 +138,7 @@ test("/telegram/preview/post remains protected by INTERNAL_API_TOKEN", async () 
   assert.equal(allowedBody.ok, true);
   assert.equal(allowedBody.dry_run, true);
   assert.deepEqual(allowedBody.reply_markup.inline_keyboard, expectedCareBackKeyboard());
+  assert.deepEqual(flattenKeyboardUrls(allowedBody.reply_markup).filter((url) => url.includes("/sigil/")), []);
 });
 
 test("/telegram/preview/post uses configured public and preview channel URLs", async () => {
@@ -151,29 +156,6 @@ test("/telegram/preview/post uses configured public and preview channel URLs", a
   const body = await response.json();
 
   assert.equal(response.status, 200);
-  assert.deepEqual(body.reply_markup.inline_keyboard, [
-    [{
-      text: "🎁 เช็กสิทธิ์ 6 YEARS CARE BACK",
-      url: "https://mmd.example/promotion/6-years-care-back",
-    }],
-    [{
-      text: "Preview Models",
-      url: "https://mmd.example/profiles",
-    }, {
-      text: "Booking",
-      url: "https://mmd.example/sigil/booking",
-    }],
-    [{
-      text: "Apply for Membership",
-      url: "https://mmd.example/sigil/member/membership",
-    }],
-    [{
-      text: "Our Benefits",
-      url: "https://mmd.example/sigil/member/membership/benefits",
-    }],
-    [{
-      text: "Back to Preview Channel",
-      url: "https://t.me/examplePreview",
-    }],
-  ]);
+  assert.deepEqual(body.reply_markup.inline_keyboard, expectedCareBackKeyboard("https://mmd.example", "https://t.me/examplePreview"));
+  assert.deepEqual(flattenKeyboardUrls(body.reply_markup).filter((url) => url.includes("/sigil/")), []);
 });
