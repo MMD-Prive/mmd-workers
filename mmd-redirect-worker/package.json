@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "deploy": "wrangler deploy",
+    "deploy": "../scripts/deploy-worker.sh mmd-redirect-worker",
     "check": "node --check src/index.js",
     "test": "node --test test/*.test.mjs"
   },
