@@ -1,0 +1,31 @@
+name = "public-talent-worker"
+main = "src/index.ts"
+compatibility_date = "2026-08-06"
+compatibility_flags = [ "nodejs_compat" ]
+workers_dev = true
+
+# Route ownership is intentionally limited to Public Talent intake APIs.
+routes = [
+  { pattern = "mmdbkk.com/v1/public-talent/*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/v1/public-talent/*", zone_name = "mmdbkk.com" }
+]
+
+[[r2_buckets]]
+binding = "PUBLIC_TALENT_ASSETS"
+bucket_name = "mmd-sigil-partner-assets"
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[vars]
+AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+AIRTABLE_TABLE_PUBLIC_TALENT_REFERRALS = "tblzXcmbiVDTk9zTe"
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://mmdprive.com,https://www.mmdprive.com"
+TELEGRAM_CHAT_ID = "-1003546439681"
+
+# Secrets required before deploy:
+# wrangler secret put AIRTABLE_API_KEY
+# wrangler secret put TELEGRAM_BOT_TOKEN
+# Optional non-secret thread routing:
+# TELEGRAM_PUBLIC_TALENT_THREAD_ID = "..."
