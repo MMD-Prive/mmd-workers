@@ -1,0 +1,109 @@
+<section class="crx" data-control-room data-login-route="/internal/admin/login">
+  <aside class="crx__rail">
+    <a class="crx__brand" href="/internal/admin/control-room">
+      <span class="crx__brandMark">M</span>
+      <span><b>MMD PRIVÉ</b><small>INTERNAL CONTROL</small></span>
+    </a>
+
+    <nav class="crx__nav" aria-label="Internal admin navigation">
+      <a class="is-active" href="/internal/admin/control-room"><span>01</span>Control Room</a>
+      <a href="/internal/admin/jobs/create-session"><span>02</span>Create Session</a>
+      <a href="/internal/admin/kenji-knowledge"><span>03</span>Kenji Knowledge</a>
+      <a href="/member/kenji-ai-20?mode=admin-preview"><span>04</span>Kenji AI 20</a>
+      <a href="/studio"><span>05</span>Studio</a>
+      <a href="/internal/admin/membership-access"><span>06</span>Membership</a>
+    </nav>
+
+    <div class="crx__identity">
+      <small>SIGNED IN AS</small>
+      <b data-admin-name>กำลังตรวจสิทธิ์</b>
+      <span data-admin-role>Secure admin session</span>
+    </div>
+    <button class="crx__logout" type="button" data-logout>ออกจากระบบ</button>
+  </aside>
+
+  <main class="crx__main">
+    <header class="crx__topbar">
+      <div>
+        <p class="crx__eyebrow">MMD PRIVÉ · OPERATOR HOME</p>
+        <h1>Control Room</h1>
+        <p class="crx__lead">ผมรวมของที่ต้องใช้ไว้หน้าเดียวแล้วครับ ดูงานก่อน แล้วค่อยไปแก้ความรู้ ทดลองคำตอบ หรือเปิด Studio ต่อได้เลย</p>
+      </div>
+      <div class="crx__topActions">
+        <button type="button" data-refresh>เช็กข้อมูลอีกครั้ง</button>
+        <a href="/internal/admin/jobs/create-session">สร้าง Session ใหม่</a>
+      </div>
+    </header>
+
+    <section class="crx__hero">
+      <div class="crx__heroImage" aria-hidden="true"></div>
+      <div class="crx__heroShade" aria-hidden="true"></div>
+      <div class="crx__heroCopy">
+        <span class="crx__live"><i></i><b data-system-state>กำลังเช็กระบบ</b></span>
+        <h2>เห็นภาพรวมก่อนครับ<br><em>แล้วค่อยเลือกว่าจะไปทำอะไรต่อ</em></h2>
+        <p data-system-copy>กำลังตรวจ admin session และจุดเชื่อมหลักของ Control Room</p>
+      </div>
+    </section>
+
+    <section class="crx__metrics" aria-label="Control room metrics">
+      <article><span>งานวันนี้</span><b data-metric="sessions">—</b><small>Session ที่กำลังเดิน</small></article>
+      <article><span>รอตรวจยอด</span><b data-metric="payments">—</b><small>Payment ที่ต้องเปิดดู</small></article>
+      <article><span>สมาชิกที่รอดู</span><b data-metric="members">—</b><small>Access หรือ renewal</small></article>
+      <article><span>เรื่องที่ควรระวัง</span><b data-metric="alerts">—</b><small>รายการที่ควรจัดการก่อน</small></article>
+    </section>
+
+    <section class="crx__workspace">
+      <article class="crx__panel crx__panel--wide">
+        <div class="crx__panelHead">
+          <div><p class="crx__eyebrow">WORKSPACE</p><h3>เลือกพื้นที่ที่ต้องใช้</h3></div>
+          <span>ใช้ session เดียวกันทั้งหมด</span>
+        </div>
+
+        <div class="crx__apps">
+          <a class="crx__app crx__app--gold" href="/internal/admin/kenji-knowledge">
+            <small>KNOWLEDGE SOURCE</small><h4>Kenji Knowledge</h4>
+            <p>เปิดความจำที่ Kenji ใช้อ้างอิง แก้ route, flow, copy และ decision สำคัญ</p>
+            <b>เปิด Knowledge →</b>
+          </a>
+          <a class="crx__app" href="/member/kenji-ai-20?mode=admin-preview">
+            <small>ADMIN PREVIEW</small><h4>Kenji AI 20</h4>
+            <p>ทดลองมุมมองฝั่งสมาชิก เช็กคำตอบ และดูว่าควรพา user ไปหน้าไหน</p>
+            <b>เปิด Preview →</b>
+          </a>
+          <a class="crx__app" href="/studio">
+            <small>CREATE & REVIEW</small><h4>Studio</h4>
+            <p>ค้น source, เลือก template, เตรียมงาน และส่งต่อเข้า review โดยไม่แตะ backend truth</p>
+            <b>เปิด Studio →</b>
+          </a>
+        </div>
+      </article>
+
+      <aside class="crx__panel">
+        <div class="crx__panelHead"><div><p class="crx__eyebrow">SYSTEM CHECK</p><h3>ระบบพร้อมไหม</h3></div></div>
+        <div class="crx__health">
+          <div data-health="admin"><span>Admin session</span><b>Checking</b></div>
+          <div data-health="knowledge"><span>Kenji Knowledge</span><b>Checking</b></div>
+          <div data-health="preview"><span>Kenji AI preview</span><b>Checking</b></div>
+          <div data-health="studio"><span>Studio</span><b>Checking</b></div>
+          <div data-health="payments"><span>Payments</span><b>Checking</b></div>
+        </div>
+        <p class="crx__note">หน้านี้เอาไว้ดูและพาไปต่อครับ การอนุมัติเงินจริง สิทธิ์สมาชิก และ session truth ยังอยู่ที่ Worker เหมือนเดิม</p>
+      </aside>
+    </section>
+
+    <section class="crx__flow">
+      <div class="crx__panelHead"><div><p class="crx__eyebrow">SIMPLE FLOW</p><h3>ใช้สามห้องนี้ยังไง</h3></div></div>
+      <div class="crx__steps">
+        <article><b>01</b><h4>แก้ข้อมูล</h4><p>เข้า Kenji Knowledge เมื่อความจำ route, copy หรือกติกาต้องอัปเดต</p></article>
+        <article><b>02</b><h4>ทดลองคำตอบ</h4><p>เปิด Kenji AI 20 ใน admin preview เพื่อดูว่าลูกค้าจะเห็นและเข้าใจอย่างไร</p></article>
+        <article><b>03</b><h4>เตรียมงาน</h4><p>ใช้ Studio สำหรับ source, template และ review handoff ก่อนนำไปใช้จริง</p></article>
+        <article><b>04</b><h4>กลับมาดูผล</h4><p>กลับ Control Room เพื่อเช็กสถานะรวม ไม่ต้องเปิดหลายหน้าค้างไว้</p></article>
+      </div>
+    </section>
+
+    <footer class="crx__footer">
+      <span>MMD Privé Internal · Desktop-first operator surface</span>
+      <span data-session-note>Secure session required</span>
+    </footer>
+  </main>
+</section>
