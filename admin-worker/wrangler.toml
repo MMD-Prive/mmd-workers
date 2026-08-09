@@ -152,6 +152,16 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/internal/kenji/knowledge/published"
 zone_name = "mmdbkk.com"
 
+# Kenji Knowledge public-safe runtime APIs. Keep these exact; do not expose
+# internal/admin notes or claim broad /v1/public/*.
+[[routes]]
+pattern = "mmdbkk.com/v1/public/kenji/knowledge/published"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/public/kenji/knowledge/published"
+zone_name = "mmdbkk.com"
+
 [[routes]]
 pattern = "mmdbkk.com/v1/admin/kenji/knowledge/meta"
 zone_name = "mmdbkk.com"
