@@ -4,6 +4,7 @@ import {
   APPROVED_ADMIN_LOGIN_HERO,
   renderApprovedAdminLogin,
 } from "./admin-login-page.js";
+import { handleKenjiKnowledgeRequest, isKenjiKnowledgeRequest } from "./kenji-knowledge-runtime.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export { ADMIN_LOGIN_SESSION_PATH, APPROVED_ADMIN_LOGIN_HERO };
@@ -22,6 +23,10 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+
+    if (isKenjiKnowledgeRequest(path, method)) {
+      return handleKenjiKnowledgeRequest(request, env, ctx);
+    }
 
     if (path === ADMIN_LOGIN_PAGE_PATH && (method === "GET" || method === "HEAD")) {
       return renderAdminLogin(request, {
