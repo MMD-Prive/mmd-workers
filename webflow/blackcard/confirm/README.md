@@ -14,14 +14,15 @@ Canonical source-control handoff for the customer-facing Black Card Companion Pr
 - Ewvon voice: receives context, organizes the request, and passes it to MMD for official review.
 - A submitted preference is not a booking confirmation, availability guarantee, Black Card approval, membership grant, payment confirmation, or points award.
 - Query parameter `t` is preserved for the request payload and success return.
-- Local draft expires after seven days.
+- Local draft expires after seven days, is scoped by a one-way hash of `t`, and is disabled when `t` is absent.
+- Legacy unscoped draft data is removed on initialization.
 - Success return is `/blackcard/black-card`.
 - Companion assets map to Hito, Hima, Hiro, and Hiei.
 - CSS and JavaScript are scoped to `#mmd-blackcard-confirm`.
 
 ## Release gate
 
-`data-submit-endpoint` is intentionally empty. The page must fail closed and must not display success until a reviewed same-origin endpoint returns a successful response.
+`data-submit-endpoint` is intentionally empty. The page must fail closed and must not display success until a reviewed same-origin endpoint returns a successful response. The client rejects a configured endpoint whose origin differs from the page origin.
 
 Before publication or endpoint activation:
 
