@@ -64,7 +64,7 @@ export default {
   async fetch(request, env = {}) {
     const url = new URL(request.url);
     const method = request.method.toUpperCase();
-    if (isLiffStatusPath(url)) return handleLiffStatus(request, env);
+    if (isLiffStatusPath(url) && method !== "OPTIONS") return handleLiffStatus(request, env);
     if (isLiffIdentifyPath(url)) return handleLiffIdentify(request, env);
     if (method === "OPTIONS") return new Response(null, { status: 204, headers: headers("text/plain") });
     if (method !== "GET" && method !== "HEAD") return new Response("Method Not Allowed", { status: 405, headers: headers("text/plain; charset=utf-8") });
