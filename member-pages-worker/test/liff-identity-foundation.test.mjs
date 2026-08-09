@@ -384,12 +384,46 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     const checked = await request("/member/api/liff/status", { method: "GET", cookie: cookiePair(startCookie) }, runtime);
     const rotatedCookie = findCookie(checked.response, "__Host-mmd_liff_session");
     assert.equal(checked.response.status, 200);
+    assert.equal(checked.response.headers.get("access-control-allow-origin"), "https://mmdbkk.com");
     assertHostCookie(rotatedCookie, "__Host-mmd_liff_session", 900);
     assert.notEqual(cookiePair(rotatedCookie), cookiePair(startCookie));
     assertNoSensitive(JSON.stringify(checked.payload));
 
     const replay = await request("/member/api/liff/status", { method: "GET", cookie: cookiePair(startCookie) }, runtime);
     assert.equal(replay.response.status, 401);
+  });
+
+  it("rejects an unapproved status origin before session rotation or storage writes", async () => {
+    const runtime = env();
+    const started = await start(runtime);
+    const startCookie = cookiePair(findCookie(started.response, "__Host-mmd_liff_session"));
+    const recordsBefore = JSON.stringify(runtime.LIFF_GATEWAY_STORE.records);
+    const decisionsBefore = runtime.LIFF_GATEWAY_STORE.decisions.length;
+    const resolverCallsBefore = runtime.MEMBER_STATUS_RESOLVER.calls.length;
+
+    const rejected = await request("/member/api/liff/status", {
+      method: "GET",
+      cookie: startCookie,
+      origin: "https://evil.example",
+    }, runtime);
+
+    assert.equal(rejected.response.status, 403);
+    assert.equal(rejected.payload.error.code, "ORIGIN_NOT_ALLOWED");
+    assert.equal(findCookie(rejected.response, "__Host-mmd_liff_session"), "");
+    assert.equal(rejected.response.headers.get("access-control-allow-origin"), null);
+    assert.equal(JSON.stringify(runtime.LIFF_GATEWAY_STORE.records), recordsBefore);
+    assert.equal(runtime.LIFF_GATEWAY_STORE.decisions.length, decisionsBefore);
+    assert.equal(runtime.MEMBER_STATUS_RESOLVER.calls.length, resolverCallsBefore);
+
+    const approved = await request("/member/api/liff/status", {
+      method: "GET",
+      cookie: startCookie,
+      origin: "https://www.mmdbkk.com",
+    }, runtime);
+
+    assert.equal(approved.response.status, 200);
+    assert.equal(approved.response.headers.get("access-control-allow-origin"), "https://www.mmdbkk.com");
+    assertHostCookie(findCookie(approved.response, "__Host-mmd_liff_session"), "__Host-mmd_liff_session", 900);
   });
 
   it("keeps the prior cookie usable when package storage fails after rotation", async () => {
@@ -631,6 +665,8 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.deepEqual(rejected.payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
 
     const memberRuntime = env({ MEMBER_STATUS_RESOLVER: resolver({ member_exists: true }) });
+    const memberPayments = paymentsWorker();
+    memberRuntime.PAYMENTS_WORKER = memberPayments;
     memberRuntime.LIFF_GATEWAY_STORE.packages.set("standard", {
       package_code: "standard",
       pricing_lane: "standard_1199",
@@ -647,8 +683,88 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
 
     assert.equal(allowed.response.status, 200);
     assert.equal(allowed.payload.data.member_resolved, true);
+    assert.equal(allowed.payload.data.next_screen_key, "payment_start");
     assert.equal(allowed.payload.data.payment_summary.package_code, "standard");
     assert.deepEqual(allowed.payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
+    assert.equal(memberPayments.calls.length, 0);
+  });
+
+  it("keeps unknown recovery intents out of audience-specific and future package lanes", async () => {
+    const recoveryCases = [
+        {
+          liffIntent: "renew",
+          audience: "female_view",
+          packageCode: "believe",
+          packageRule: {
+            package_code: "believe",
+            pricing_lane: "believe_member_2999",
+            amount_thb: 2999,
+            duration_days: 365,
+            points_after_verification: 250,
+            requires_manual_review: false,
+          },
+        },
+        {
+          liffIntent: "renew",
+          audience: "lgbt_view",
+          packageCode: "gay",
+          packageRule: {
+            package_code: "gay",
+            pricing_lane: "gay_extreme_900",
+            amount_thb: 900,
+            duration_days: 365,
+            points_after_verification: 90,
+            requires_manual_review: false,
+          },
+        },
+        {
+          liffIntent: "continue_payment",
+          audience: null,
+          packageCode: "future_lane",
+          packageRule: {
+            package_code: "future_lane",
+            pricing_lane: "special_review",
+            amount_thb: 1,
+            duration_days: 1,
+            points_after_verification: 0,
+            requires_manual_review: false,
+          },
+        },
+    ];
+
+    for (const recovery of recoveryCases) {
+      const runtime = env();
+      const payments = paymentsWorker();
+      runtime.PAYMENTS_WORKER = payments;
+      runtime.LIFF_GATEWAY_STORE.packages.set(recovery.packageCode, recovery.packageRule);
+      if (recovery.audience) runtime.LIFF_GATEWAY_STORE.inventory.add(recovery.audience);
+
+      const started = await start(runtime, { id_token: `unknown-${recovery.packageCode}`, liff_intent: recovery.liffIntent });
+      let cookie = cookiePair(findCookie(started.response, "__Host-mmd_liff_session"));
+      if (recovery.audience) {
+        const audience = await request("/member/api/liff/audience", {
+          cookie,
+          body: { hall_audience_context: recovery.audience },
+        }, runtime);
+        assert.equal(audience.response.status, 409);
+        assert.equal(audience.payload.error.code, "MEMBER_LOOKUP_REQUIRED");
+        assert.equal(audience.payload.data.next_screen_key, "renew_member_lookup");
+        cookie = cookiePair(findCookie(audience.response, "__Host-mmd_liff_session"));
+      }
+
+      const rejected = await request("/member/api/liff/package", {
+        cookie,
+        body: { requested_package_code: recovery.packageCode },
+      }, runtime);
+
+      assert.equal(rejected.response.status, 409);
+      assert.equal(rejected.payload.error.code, "MEMBER_LOOKUP_REQUIRED");
+      assert.equal(rejected.payload.data.next_screen_key, "renew_member_lookup");
+      assert.equal(rejected.payload.data.route_after_liff, null);
+      assert.equal("payment_summary" in rejected.payload.data, false);
+      assert.deepEqual(rejected.payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
+      assert.equal(payments.calls.length, 0);
+    }
   });
 
   it("routes an unknown renewal package selection to member lookup without grants", async () => {
@@ -751,7 +867,10 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(renewed.response.status, 200);
     assert.equal(renewed.payload.data.next_screen_key, "renew_member_lookup");
     assert.equal(payment.response.status, 409);
-    assert.equal(payment.payload.error.code, "PAYMENT_INTENT_NOT_READY");
+    assert.equal(payment.payload.error.code, "MEMBER_LOOKUP_REQUIRED");
+    assert.equal(payment.payload.data.next_screen_key, "renew_member_lookup");
+    assert.equal("payment_summary" in payment.payload.data, false);
+    assert.deepEqual(payment.payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
     assert.equal(payments.calls.length, 0);
   });
 

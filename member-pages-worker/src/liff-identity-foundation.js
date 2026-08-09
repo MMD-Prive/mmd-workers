@@ -195,6 +195,7 @@ export async function handleAudience(request, env = {}) {
 
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
+  if (requiresMemberLookupForRecovery(auth.session)) return saveMemberLookupRequired(env, gatewayStore, auth);
   try {
     const previousContext = packageContextForSession(auth.session);
     if (audience === "female_view" || audience === "lgbt_view") {
@@ -232,6 +233,7 @@ export async function handlePackage(request, env = {}) {
 
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
+  if (requiresMemberLookupForRecovery(auth.session)) return saveMemberLookupRequired(env, gatewayStore, auth);
   if (Object.prototype.hasOwnProperty.call(body, "promo_code")) {
     const promoCode = normalizePromoCode(body.promo_code);
     if (promoCode !== auth.session.promo_code) {
@@ -247,17 +249,6 @@ export async function handlePackage(request, env = {}) {
     packageRule = await gatewayStore.resolvePackage(requestedPackage);
   } catch (error) {
     return gatewayStorageFailure(error);
-  }
-  if (requiresMemberLookupForPackage(packageRule, auth.session)) {
-    applyMemberLookupRequired(auth.session);
-    return saveGatewayStateError(
-      env,
-      gatewayStore,
-      auth,
-      "MEMBER_LOOKUP_REQUIRED",
-      "Member verification is required before this renewal step.",
-      409,
-    );
   }
   if (!packageRule || !isPackageAllowedForSession(packageRule, auth.session)) {
     return saveRotatedError(env, auth, "PACKAGE_NOT_AVAILABLE", "This package is not available for the current route.", 409);
@@ -301,23 +292,13 @@ export async function handlePaymentIntent(request, env = {}) {
 
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
+  if (requiresMemberLookupForRecovery(auth.session)) return saveMemberLookupRequired(env, gatewayStore, auth);
   const selected = auth.session.selected_package;
   if (!selected || selected.package_code !== packageCode || auth.session.hype_decision_status === "manual_review") {
     return saveRotatedError(env, auth, "PAYMENT_INTENT_NOT_READY", "Select an eligible package first.", 409);
   }
   try {
     const currentPackage = await gatewayStore.resolvePackage(selected.package_code);
-    if (requiresMemberLookupForPackage(currentPackage, auth.session)) {
-      applyMemberLookupRequired(auth.session);
-      return saveGatewayStateError(
-        env,
-        gatewayStore,
-        auth,
-        "MEMBER_LOOKUP_REQUIRED",
-        "Member verification is required before this renewal step.",
-        409,
-      );
-    }
     if (!currentPackage || !isPackageAllowedForSession(currentPackage, auth.session) || !isSelectedPackageCurrent(selected, currentPackage, auth.session)) {
       return saveRotatedError(env, auth, "PAYMENT_INTENT_STALE_PACKAGE", "Select an eligible package first.", 409);
     }
@@ -343,6 +324,8 @@ export async function handlePaymentIntent(request, env = {}) {
 
 export async function handleStatus(request, env = {}) {
   if (request.method !== "GET") return methodNotAllowed("GET");
+  const originFailure = rejectUnapprovedOrigin(request);
+  if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
   if (!gatewayStore) return unavailable("LIFF_GATEWAY_STORAGE_NOT_CONFIGURED");
@@ -815,20 +798,11 @@ function isSelectedPackageCurrent(selected, currentPackage, session) {
     && selected.requires_manual_review === currentPackage.requires_manual_review;
 }
 
-function isRecoveryPackageLane(packageRule, session) {
-  return Boolean(packageRule)
-    && ["standard_1199", "premium_2999"].includes(packageRule.pricing_lane)
-    && ["renew", "continue_payment"].includes(session.liff_intent);
-}
-
-function hasVerifiedRecoveryEligibility(session) {
+function requiresMemberLookupForRecovery(session) {
   // No approved payments-worker contract currently verifies recoverable payment
   // sessions, so only the internal member resolver can satisfy this gate.
-  return session.member_exists === true;
-}
-
-function requiresMemberLookupForPackage(packageRule, session) {
-  return isRecoveryPackageLane(packageRule, session) && !hasVerifiedRecoveryEligibility(session);
+  return ["renew", "continue_payment"].includes(session.liff_intent)
+    && session.member_exists !== true;
 }
 
 function applyMemberLookupRequired(session) {
@@ -837,9 +811,21 @@ function applyMemberLookupRequired(session) {
   session.next_screen_key = "renew_member_lookup";
 }
 
+async function saveMemberLookupRequired(env, gatewayStore, auth) {
+  applyMemberLookupRequired(auth.session);
+  return saveGatewayStateError(
+    env,
+    gatewayStore,
+    auth,
+    "MEMBER_LOOKUP_REQUIRED",
+    "Member verification is required before this renewal step.",
+    409,
+  );
+}
+
 function isPackageAllowedForSession(packageRule, session) {
   if (!packageRule || typeof packageRule !== "object") return false;
-  if (requiresMemberLookupForPackage(packageRule, session)) return false;
+  if (requiresMemberLookupForRecovery(session)) return false;
   if (packageRule.requires_manual_review) return true;
   if (session.hall_audience_context === "female_view") return packageRule.pricing_lane === "believe_member_2999";
   if (session.hall_audience_context === "lgbt_view") return packageRule.pricing_lane === "gay_extreme_900";
@@ -884,6 +870,14 @@ async function resolveScreen(gatewayStore, screenKey) {
 
 function requireSameOrigin(request) {
   if (!isApprovedOrigin(request)) return json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "Same-origin request required." } }, 403);
+  return null;
+}
+
+function rejectUnapprovedOrigin(request) {
+  const origin = request.headers.get("origin") || "";
+  if (origin && !APPROVED_ORIGINS.has(origin)) {
+    return json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "Same-origin request required." } }, 403);
+  }
   return null;
 }
 
