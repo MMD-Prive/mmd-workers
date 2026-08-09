@@ -23,6 +23,7 @@ The following cards are treated as the current active card set for Kenji AI 2.0:
 7. `kenji_20_007_retired_routes` — Drop 690 main route guard.
 8. `kenji_20_008_membership_intake_catalog` — Membership Intake service catalog.
 9. `kenji_20_009_web_forbidden_terms` — Web forbidden terms guard.
+10. `kenji_20_010_cloudflare_deploy_gate` — Cloudflare deploy gate.
 
 ## Route map
 
