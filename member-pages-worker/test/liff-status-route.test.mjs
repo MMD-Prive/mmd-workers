@@ -30,4 +30,14 @@ describe("member-pages LIFF status route", () => {
     assert.equal(response.headers.get("x-mmd-worker"), "member-pages-worker");
     assert.equal((await response.json()).error.code, "LIFF_SESSION_REQUIRED");
   });
+  it("keeps OPTIONS preflight on the entrypoint CORS response", async () => {
+    const response = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/status", {
+      method: "OPTIONS",
+      headers: { origin: "https://liff.line.me" },
+    }), env());
+
+    assert.equal(response.status, 204);
+    assert.equal(response.headers.get("access-control-allow-origin"), "*");
+  });
+
 });
