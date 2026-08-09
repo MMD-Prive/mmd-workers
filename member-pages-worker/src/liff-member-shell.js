@@ -22,15 +22,16 @@ export function handleLiffMemberShell(request, env = {}) {
     promoCode: normalizePromoCode(url.searchParams.get("promo_code") || url.searchParams.get("code")),
     startEndpoint: "/member/api/liff/start",
   };
-  const html = renderShell(config);
+  const nonce = crypto.randomUUID().replace(/-/g, "");
+  const html = renderShell(config, nonce);
   const headers = shellHeaders({
     "content-type": "text/html; charset=utf-8",
-    "content-security-policy": "default-src 'self'; script-src 'self' https://static.line-scdn.net 'unsafe-inline'; connect-src 'self' https://api.line.me https://access.line.me; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'self'; object-src 'none'",
+    "content-security-policy": `default-src 'self'; script-src 'self' https://static.line-scdn.net 'nonce-${nonce}'; connect-src 'self' https://api.line.me https://access.line.me; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'self'; object-src 'none'`,
   });
   return new Response(method === "HEAD" ? null : html, { status: 200, headers });
 }
 
-function renderShell(config) {
+function renderShell(config, nonce) {
   const safeConfig = jsonForInlineScript(config);
   return `<!doctype html>
 <html lang="th">
@@ -59,7 +60,7 @@ function renderShell(config) {
   <div id="status" class="status">Secure same-site session · mmdbkk.com</div>
 </main>
 <script src="${LIFF_SDK_URL}"></script>
-<script>
+<script nonce="${nonce}">
 (() => {
   "use strict";
   const CONFIG = ${safeConfig};
