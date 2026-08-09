@@ -651,6 +651,34 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.deepEqual(allowed.payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
   });
 
+  it("routes an unknown renewal package selection to member lookup without grants", async () => {
+    const runtime = env();
+    const payments = paymentsWorker();
+    runtime.PAYMENTS_WORKER = payments;
+    runtime.LIFF_GATEWAY_STORE.packages.set("standard", {
+      package_code: "standard",
+      pricing_lane: "standard_1199",
+      amount_thb: 1199,
+      duration_days: 365,
+      points_after_verification: 0,
+      requires_manual_review: false,
+    });
+    const started = await start(runtime, { id_token: "renew-token", liff_intent: "renew" });
+    const rejected = await request("/member/api/liff/package", {
+      cookie: cookiePair(findCookie(started.response, "__Host-mmd_liff_session")),
+      body: { requested_package_code: "standard" },
+    }, runtime);
+
+    assert.equal(started.payload.data.next_screen_key, "renew_member_lookup");
+    assert.equal(rejected.response.status, 409);
+    assert.equal(rejected.payload.error.code, "MEMBER_LOOKUP_REQUIRED");
+    assert.equal(rejected.payload.data.next_screen_key, "renew_member_lookup");
+    assert.equal(rejected.payload.data.route_after_liff, null);
+    assert.equal("payment_summary" in rejected.payload.data, false);
+    assert.deepEqual(rejected.payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
+    assert.equal(payments.calls.length, 0);
+  });
+
   it("invalidates a package when the Hall audience changes", async () => {
     const runtime = env();
     const payments = paymentsWorker();
