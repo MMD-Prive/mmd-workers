@@ -1,4 +1,13 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
+const DEFAULT_AIRTABLE_REQUEST_TIMEOUT_MS = 4000;
+const MIN_AIRTABLE_REQUEST_TIMEOUT_MS = 500;
+const MAX_AIRTABLE_REQUEST_TIMEOUT_MS = 10000;
+
+const CLEARABLE_SESSION_FIELDS = new Set([
+  "route_after_liff",
+  "payment_intent_session_id",
+  "signed_route_token_hash",
+]);
 
 const TABLE_DEFAULTS = Object.freeze({
   RENEWAL_SESSIONS: "MMD — LIFF Renewal Sessions",
@@ -72,7 +81,7 @@ class AirtableLiffGatewayStore {
       payment_intent_session_id: session.payment_intent_session_id,
       route_after_liff: session.route_after_liff,
       signed_route_token_hash: session.signed_route_token_hash,
-    });
+    }, { preserveNullKeys: recordId ? CLEARABLE_SESSION_FIELDS : undefined });
     const table = tableName(this.env, "LIFF_RENEWAL_SESSIONS");
     const record = recordId
       ? await this.write("PATCH", table, { recordId, body: { fields } })
@@ -138,24 +147,29 @@ class AirtableLiffGatewayStore {
     if (query?.filterByFormula) url.searchParams.set("filterByFormula", query.filterByFormula);
     if (query?.maxRecords) url.searchParams.set("maxRecords", String(query.maxRecords));
 
-    let response;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), airtableRequestTimeoutMs(this.env));
     try {
-      response = await fetch(url.toString(), {
+      const response = await fetch(url.toString(), {
         method,
         headers: {
           Authorization: `Bearer ${this.env.AIRTABLE_API_KEY}`,
           ...(body ? { "content-type": "application/json" } : {}),
         },
         body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
       });
-    } catch {
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload || typeof payload !== "object") {
+        throw new LiffGatewayStorageError(response.status === 401 || response.status === 403 ? "LIFF_GATEWAY_STORAGE_FORBIDDEN" : "LIFF_GATEWAY_STORAGE_UNAVAILABLE");
+      }
+      return payload;
+    } catch (error) {
+      if (error instanceof LiffGatewayStorageError) throw error;
       throw new LiffGatewayStorageError();
+    } finally {
+      clearTimeout(timeout);
     }
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || !payload || typeof payload !== "object") {
-      throw new LiffGatewayStorageError(response.status === 401 || response.status === 403 ? "LIFF_GATEWAY_STORAGE_FORBIDDEN" : "LIFF_GATEWAY_STORAGE_UNAVAILABLE");
-    }
-    return payload;
   }
 }
 
@@ -176,8 +190,19 @@ function tableName(env, key) {
   return String(env[`AIRTABLE_TABLE_${key}`] || TABLE_DEFAULTS[key] || TABLE_DEFAULTS[key.replace(/^LIFF_/, "")] || "").trim();
 }
 
-function compactFields(fields) {
-  return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined && value !== null && value !== ""));
+function compactFields(fields, { preserveNullKeys } = {}) {
+  return Object.fromEntries(Object.entries(fields).filter(([key, value]) => {
+    if (value === undefined || value === "") return false;
+    // Airtable clears an existing field when PATCH receives null. Only the
+    // session fields whose lifecycle explicitly supports clearing retain it.
+    return value !== null || preserveNullKeys?.has(key);
+  }));
+}
+
+function airtableRequestTimeoutMs(env) {
+  const configured = Number(env.AIRTABLE_REQUEST_TIMEOUT_MS);
+  if (!Number.isInteger(configured)) return DEFAULT_AIRTABLE_REQUEST_TIMEOUT_MS;
+  return Math.min(MAX_AIRTABLE_REQUEST_TIMEOUT_MS, Math.max(MIN_AIRTABLE_REQUEST_TIMEOUT_MS, configured));
 }
 
 function formulaString(value) {

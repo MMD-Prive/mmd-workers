@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 
-import { getLiffGatewayStore } from "../src/liff-gateway-airtable.js";
+import { getLiffGatewayStore, LiffGatewayStorageError } from "../src/liff-gateway-airtable.js";
 
 const realFetch = globalThis.fetch;
 
@@ -9,10 +9,11 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-function env() {
+function env(overrides = {}) {
   return {
     AIRTABLE_API_KEY: "test-airtable-key-not-production",
     AIRTABLE_BASE_ID: "appTestBase",
+    ...overrides,
   };
 }
 
@@ -24,6 +25,7 @@ function mockAirtable(handler) {
       method: init.method || "GET",
       headers: new Headers(init.headers),
       body: init.body ? JSON.parse(init.body) : null,
+      signal: init.signal,
     };
     calls.push(request);
     return handler(request);
@@ -71,6 +73,41 @@ describe("LIFF gateway Airtable adapter", () => {
       signed_route_token_hash: "a".repeat(64),
     });
     assert.doesNotMatch(JSON.stringify(calls[0].body), /must-not-leave-worker|Uprivate|never-store-me/);
+  });
+
+  it("preserves only approved null clears in an existing LIFF session PATCH", async () => {
+    const calls = mockAirtable(async () => new Response(JSON.stringify({ id: "recLiff1" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    const store = getLiffGatewayStore(env());
+    await store.upsertSession({
+      session_id: "1a1b1c1d-1e1f-4a1b-8c1d-1e1f1a1b1c1d",
+      liff_intent: "signup",
+      source_channel: undefined,
+      hype_decision_status: null,
+      hall_audience_context: "unknown",
+      model_visibility_mode: undefined,
+      pricing_lane: "unknown",
+      payment_intent_session_id: null,
+      route_after_liff: null,
+      signed_route_token_hash: null,
+    }, "recLiff1");
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "PATCH");
+    assert.deepEqual(calls[0].body.fields, {
+      session_id: "1a1b1c1d-1e1f-4a1b-8c1d-1e1f1a1b1c1d",
+      liff_intent: "signup",
+      hall_audience_context: "unknown",
+      pricing_lane: "unknown",
+      payment_intent_session_id: null,
+      route_after_liff: null,
+      signed_route_token_hash: null,
+    });
+    assert.equal("source_channel" in calls[0].body.fields, false);
+    assert.equal("hype_decision_status" in calls[0].body.fields, false);
+    assert.equal("model_visibility_mode" in calls[0].body.fields, false);
   });
 
   it("uses a sanitized Flow Screens spec and strips unknown action endpoints", async () => {
@@ -148,6 +185,58 @@ describe("LIFF gateway Airtable adapter", () => {
 
       assert.equal(packageRule, null, field);
       assert.equal(calls.length, 1, field);
+    }
+  });
+
+  it("aborts a stalled Airtable request and returns a controlled storage failure", async () => {
+    let aborted = false;
+    globalThis.fetch = async (_url, init = {}) => new Promise((_resolve, reject) => {
+      assert.ok(init.signal instanceof AbortSignal);
+      init.signal.addEventListener("abort", () => {
+        aborted = true;
+        const error = new Error("aborted");
+        error.name = "AbortError";
+        reject(error);
+      }, { once: true });
+    });
+
+    await assert.rejects(
+      getLiffGatewayStore(env({ AIRTABLE_REQUEST_TIMEOUT_MS: 500 })).loadScreen("start_intent"),
+      (error) => error instanceof LiffGatewayStorageError && error.code === "LIFF_GATEWAY_STORAGE_UNAVAILABLE",
+    );
+    assert.equal(aborted, true);
+  });
+
+  it("clears an Airtable timeout after a successful request", async () => {
+    let aborted = false;
+    const calls = mockAirtable(async (request) => {
+      request.signal.addEventListener("abort", () => { aborted = true; }, { once: true });
+      return new Response(JSON.stringify({ records: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+
+    const records = await getLiffGatewayStore(env({ AIRTABLE_REQUEST_TIMEOUT_MS: 500 })).loadScreen("start_intent");
+    assert.equal(records, null);
+    assert.equal(calls.length, 1);
+    assert.ok(calls[0].signal instanceof AbortSignal);
+    await new Promise((resolve) => setTimeout(resolve, 550));
+    assert.equal(aborted, false);
+  });
+
+  it("keeps Airtable 4xx and 5xx responses controlled", async () => {
+    for (const status of [403, 500]) {
+      mockAirtable(async () => new Response(JSON.stringify({ error: { type: "error" } }), {
+        status,
+        headers: { "content-type": "application/json" },
+      }));
+
+      await assert.rejects(
+        getLiffGatewayStore(env()).loadScreen("start_intent"),
+        (error) => error instanceof LiffGatewayStorageError
+          && error.code === (status === 403 ? "LIFF_GATEWAY_STORAGE_FORBIDDEN" : "LIFF_GATEWAY_STORAGE_UNAVAILABLE"),
+      );
     }
   });
 });

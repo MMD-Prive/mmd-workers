@@ -689,6 +689,84 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(memberPayments.calls.length, 0);
   });
 
+  it("keeps status sessions in lookup or status-only flow without a payment summary", async () => {
+    const packageRules = [
+      ["standard", "standard_1199", 1199],
+      ["premium", "premium_2999", 2999],
+    ];
+    for (const [packageCode, pricingLane, amountThb] of packageRules) {
+      const runtime = env();
+      const payments = paymentsWorker();
+      runtime.PAYMENTS_WORKER = payments;
+      runtime.LIFF_GATEWAY_STORE.packages.set(packageCode, {
+        package_code: packageCode,
+        pricing_lane: pricingLane,
+        amount_thb: amountThb,
+        duration_days: 365,
+        points_after_verification: 0,
+        requires_manual_review: false,
+      });
+
+      const started = await start(runtime, { id_token: `unknown-status-${packageCode}`, liff_intent: "status" });
+      const rejected = await request("/member/api/liff/package", {
+        cookie: cookiePair(findCookie(started.response, "__Host-mmd_liff_session")),
+        body: { requested_package_code: packageCode },
+      }, runtime);
+
+      assert.equal(rejected.response.status, 409, packageCode);
+      assert.equal(rejected.payload.error.code, "MEMBER_LOOKUP_REQUIRED", packageCode);
+      assert.equal(rejected.payload.data.next_screen_key, "renew_member_lookup", packageCode);
+      assert.equal(rejected.payload.data.route_after_liff, null, packageCode);
+      assert.equal("payment_summary" in rejected.payload.data, false, packageCode);
+      assert.deepEqual(rejected.payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false }, packageCode);
+      assert.equal(payments.calls.length, 0, packageCode);
+
+      const blockedPayment = await request("/member/api/liff/payment-intent", {
+        cookie: cookiePair(findCookie(rejected.response, "__Host-mmd_liff_session")),
+        body: { package_code: packageCode, payment_stage: "membership" },
+      }, runtime);
+      assert.equal(blockedPayment.response.status, 409, packageCode);
+      assert.equal(blockedPayment.payload.error.code, "MEMBER_LOOKUP_REQUIRED", packageCode);
+      assert.equal("payment_summary" in blockedPayment.payload.data, false, packageCode);
+      assert.equal(payments.calls.length, 0, packageCode);
+    }
+
+    const memberRuntime = env({ MEMBER_STATUS_RESOLVER: resolver({ member_exists: true }) });
+    const memberPayments = paymentsWorker();
+    memberRuntime.PAYMENTS_WORKER = memberPayments;
+    memberRuntime.LIFF_GATEWAY_STORE.packages.set("standard", {
+      package_code: "standard",
+      pricing_lane: "standard_1199",
+      amount_thb: 1199,
+      duration_days: 365,
+      points_after_verification: 0,
+      requires_manual_review: false,
+    });
+    const memberStart = await start(memberRuntime, { id_token: "member-status", liff_intent: "status" });
+    const statusOnly = await request("/member/api/liff/package", {
+      cookie: cookiePair(findCookie(memberStart.response, "__Host-mmd_liff_session")),
+      body: { requested_package_code: "standard" },
+    }, memberRuntime);
+
+    assert.equal(memberStart.payload.data.next_screen_key, "status_result");
+    assert.equal(statusOnly.response.status, 409);
+    assert.equal(statusOnly.payload.error.code, "STATUS_FLOW_ONLY");
+    assert.equal(statusOnly.payload.data.next_screen_key, "status_result");
+    assert.equal(statusOnly.payload.data.route_after_liff, null);
+    assert.equal("payment_summary" in statusOnly.payload.data, false);
+    assert.deepEqual(statusOnly.payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
+    assert.equal(memberPayments.calls.length, 0);
+
+    const memberPayment = await request("/member/api/liff/payment-intent", {
+      cookie: cookiePair(findCookie(statusOnly.response, "__Host-mmd_liff_session")),
+      body: { package_code: "standard", payment_stage: "membership" },
+    }, memberRuntime);
+    assert.equal(memberPayment.response.status, 409);
+    assert.equal(memberPayment.payload.error.code, "STATUS_FLOW_ONLY");
+    assert.equal("payment_summary" in memberPayment.payload.data, false);
+    assert.equal(memberPayments.calls.length, 0);
+  });
+
   it("keeps unknown recovery intents out of audience-specific and future package lanes", async () => {
     const recoveryCases = [
         {

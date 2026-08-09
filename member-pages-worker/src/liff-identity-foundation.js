@@ -195,7 +195,8 @@ export async function handleAudience(request, env = {}) {
 
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
-  if (requiresMemberLookupForRecovery(auth.session)) return saveMemberLookupRequired(env, gatewayStore, auth);
+  if (requiresMemberLookupForProtectedFlow(auth.session)) return saveMemberLookupRequired(env, gatewayStore, auth);
+  if (isStatusOnlyFlow(auth.session)) return saveStatusFlowOnly(env, gatewayStore, auth);
   try {
     const previousContext = packageContextForSession(auth.session);
     if (audience === "female_view" || audience === "lgbt_view") {
@@ -233,7 +234,8 @@ export async function handlePackage(request, env = {}) {
 
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
-  if (requiresMemberLookupForRecovery(auth.session)) return saveMemberLookupRequired(env, gatewayStore, auth);
+  if (requiresMemberLookupForProtectedFlow(auth.session)) return saveMemberLookupRequired(env, gatewayStore, auth);
+  if (isStatusOnlyFlow(auth.session)) return saveStatusFlowOnly(env, gatewayStore, auth);
   if (Object.prototype.hasOwnProperty.call(body, "promo_code")) {
     const promoCode = normalizePromoCode(body.promo_code);
     if (promoCode !== auth.session.promo_code) {
@@ -292,7 +294,8 @@ export async function handlePaymentIntent(request, env = {}) {
 
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
-  if (requiresMemberLookupForRecovery(auth.session)) return saveMemberLookupRequired(env, gatewayStore, auth);
+  if (requiresMemberLookupForProtectedFlow(auth.session)) return saveMemberLookupRequired(env, gatewayStore, auth);
+  if (isStatusOnlyFlow(auth.session)) return saveStatusFlowOnly(env, gatewayStore, auth);
   const selected = auth.session.selected_package;
   if (!selected || selected.package_code !== packageCode || auth.session.hype_decision_status === "manual_review") {
     return saveRotatedError(env, auth, "PAYMENT_INTENT_NOT_READY", "Select an eligible package first.", 409);
@@ -798,11 +801,16 @@ function isSelectedPackageCurrent(selected, currentPackage, session) {
     && selected.requires_manual_review === currentPackage.requires_manual_review;
 }
 
-function requiresMemberLookupForRecovery(session) {
+function requiresMemberLookupForProtectedFlow(session) {
   // No approved payments-worker contract currently verifies recoverable payment
-  // sessions, so only the internal member resolver can satisfy this gate.
-  return ["renew", "continue_payment"].includes(session.liff_intent)
+  // sessions or member status, so only the internal member resolver can
+  // satisfy these protected flows.
+  return ["renew", "continue_payment", "status"].includes(session.liff_intent)
     && session.member_exists !== true;
+}
+
+function isStatusOnlyFlow(session) {
+  return session.liff_intent === "status";
 }
 
 function applyMemberLookupRequired(session) {
@@ -818,18 +826,36 @@ async function saveMemberLookupRequired(env, gatewayStore, auth) {
     gatewayStore,
     auth,
     "MEMBER_LOOKUP_REQUIRED",
-    "Member verification is required before this renewal step.",
+    "Member verification is required before this step.",
+    409,
+  );
+}
+
+function applyStatusFlowOnly(session) {
+  invalidatePackageSelection(session);
+  session.route_after_liff = null;
+  session.next_screen_key = "status_result";
+}
+
+async function saveStatusFlowOnly(env, gatewayStore, auth) {
+  applyStatusFlowOnly(auth.session);
+  return saveGatewayStateError(
+    env,
+    gatewayStore,
+    auth,
+    "STATUS_FLOW_ONLY",
+    "This session is limited to member status.",
     409,
   );
 }
 
 function isPackageAllowedForSession(packageRule, session) {
   if (!packageRule || typeof packageRule !== "object") return false;
-  if (requiresMemberLookupForRecovery(session)) return false;
+  if (requiresMemberLookupForProtectedFlow(session) || isStatusOnlyFlow(session)) return false;
   if (packageRule.requires_manual_review) return true;
   if (session.hall_audience_context === "female_view") return packageRule.pricing_lane === "believe_member_2999";
   if (session.hall_audience_context === "lgbt_view") return packageRule.pricing_lane === "gay_extreme_900";
-  return ["standard_1199", "premium_2999"].includes(packageRule.pricing_lane) && ["renew", "continue_payment", "status"].includes(session.liff_intent);
+  return ["standard_1199", "premium_2999"].includes(packageRule.pricing_lane) && ["renew", "continue_payment"].includes(session.liff_intent);
 }
 
 function safePaymentSummary(packageRule) {
