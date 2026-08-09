@@ -50,7 +50,7 @@ export async function telegramNotify(payload, env) {
     const directText = String(payload.text || "").trim();
     if (!directText) return { ok: false, error: "missing_text" };
 
-    return sendTelegramMessage({
+    const result = await sendTelegramMessage({
       chat_id: directChatId,
       message_thread_id: payload.message_thread_id || payload.thread_id,
       text: directText,
@@ -58,6 +58,13 @@ export async function telegramNotify(payload, env) {
       disable_web_page_preview: payload.disable_web_page_preview !== false,
       reply_markup: payload.reply_markup,
     }, env);
+
+    if (!result?.ok) {
+      const reason = result?.reason || result?.error?.description || result?.error || result?.status || "unknown";
+      throw new Error(`telegram_direct_send_failed:${String(reason).slice(0, 160)}`);
+    }
+
+    return result;
   }
 
   if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
