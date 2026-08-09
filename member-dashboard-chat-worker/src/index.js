@@ -7,6 +7,7 @@ const LINE_RICH_MENU_DATA_URL = "https://api-data.line.me/v2/bot/richmenu";
 const LINE_DEFAULT_RICH_MENU_URL = "https://api.line.me/v2/bot/user/all/richmenu";
 const WORKER_NAME = "member-dashboard-chat-worker";
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webhook/line", "/webhook/line/"]);
+const MEMBER_LIFF_PREFIX = "/member/api/liff/";
 const LINE_RICH_MENU_SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const LINE_RICH_MENU_PUBLIC_WORLD_BASE_PATH = "/v1/internal/line/rich-menu/public-world";
 const LINE_RICH_MENU_DEFAULT_PATH = "/v1/internal/line/rich-menu/default";
@@ -46,6 +47,24 @@ function json(payload, status = 200) {
       "cache-control": "no-store",
       "x-mmd-worker": WORKER_NAME,
     },
+  });
+}
+
+async function handleMemberLiffFrontGate(request, env) {
+  if (!env.MEMBER_PAGES_WORKER?.fetch) {
+    return json({ ok: false, error: { code: "LIFF_UPSTREAM_NOT_CONFIGURED", message: "Member identity service is unavailable." } }, 503);
+  }
+
+  const upstreamRequest = new Request(request.url, request);
+  const upstreamResponse = await env.MEMBER_PAGES_WORKER.fetch(upstreamRequest);
+  const headers = new Headers(upstreamResponse.headers);
+  headers.set("x-mmd-worker", WORKER_NAME);
+  headers.set("x-mmd-route-owner", WORKER_NAME);
+  headers.set("x-mmd-upstream-service", "member-pages-worker");
+  return new Response(upstreamResponse.body, {
+    status: upstreamResponse.status,
+    statusText: upstreamResponse.statusText,
+    headers,
   });
 }
 
@@ -1041,6 +1060,10 @@ async function handleLineWebhook(request, env) {
 export default {
   async fetch(request, env = {}) {
     const url = new URL(request.url);
+
+    if (url.pathname.startsWith(MEMBER_LIFF_PREFIX)) {
+      return handleMemberLiffFrontGate(request, env);
+    }
 
     if (request.method === "GET" && url.pathname === "/health") {
       return json({ ok: true, worker: WORKER_NAME });
