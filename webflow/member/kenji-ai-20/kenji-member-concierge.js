@@ -11,7 +11,10 @@
 
   const INTENTS = Object.freeze({
     EMPTY: "empty",
-    BOOKING: "booking",
+    MMD_COMPANION: "mmd_companion",
+    MMS_WELLNESS: "mms_wellness",
+    PARTNER_VENUE: "partner_venue",
+    PRIVATE_TALENT: "private_talent",
     PAYMENT: "payment_slip",
     POINTS: "points",
     VIP: "vip",
@@ -84,8 +87,20 @@
       return { intent: INTENTS.EMPTY, priority: 100, confidence: 1 };
     }
 
-    if (includesAny(text, ["จอง", "booking", "book", "reserve", "appointment", "session"])) {
-      return { intent: INTENTS.BOOKING, priority: 90, confidence: 0.95 };
+    if (includesAny(text, ["massage", "male massage", "นวด", "คลายกล้าม", "recovery", "wellness", "therapist"])) {
+      return { intent: INTENTS.MMS_WELLNESS, priority: 96, confidence: 0.95 };
+    }
+
+    if (includesAny(text, ["relax spa", "partner venue", "ไม่มีสถานที่", "ไม่มีที่", "สถานที่พร้อมอุปกรณ์", "ใช้ร้าน"])) {
+      return { intent: INTENTS.PARTNER_VENUE, priority: 95, confidence: 0.95 };
+    }
+
+    if (includesAny(text, ["private talent", "specialist", "freelancer", "special skill", "ทักษะพิเศษ", "ล่าม", "ภาษา", "performance", "creative", "business presence"])) {
+      return { intent: INTENTS.PRIVATE_TALENT, priority: 94, confidence: 0.95 };
+    }
+
+    if (includesAny(text, ["dinner", "dining", "drinks", "event", "appearance", "social", "ทานข้าว", "ดินเนอร์", "ดื่ม", "อีเวนต์", "ออกงาน", "จอง", "booking", "book", "reserve", "appointment", "session"])) {
+      return { intent: INTENTS.MMD_COMPANION, priority: 90, confidence: 0.95 };
     }
 
     if (includesAny(text, ["ส่งสลิป", "สลิป", "slip", "payment", "paid", "โอน", "ชำระ", "จ่าย"])) {
@@ -142,11 +157,17 @@
 
     switch (classified.intent) {
       case INTENTS.EMPTY:
-        return "Kenji here. Tell me what you want help with today: booking, payment proof, points, VIP, SVIP, Black Card, or membership renewal.";
-      case INTENTS.BOOKING:
-        return `${SAFE_COPY.booking}${statusLine} I can help you move from Member Home / Status Hub into the right next step.`;
+        return "ผมช่วยดูเส้นทางที่เหมาะกับ request ของคุณก่อนนะครับ เลือกได้ทั้ง MMD Companion, MMS Wellness, Partner Venue, Private Talent, Membership หรือ Payment Proof";
+      case INTENTS.MMS_WELLNESS:
+        return "ถ้าต้องการ male massage หรือ recovery service ผมจะแยกเป็น MMS Wellness route ให้ครับ เลือกได้ทั้ง hotel / home visit หรือ Partner Venue โดยต้องให้ MMD ตรวจรายละเอียดก่อน";
+      case INTENTS.PARTNER_VENUE:
+        return "ถ้าไม่มีสถานที่ที่เหมาะสม ผมช่วยแยกไป Partner Venue อย่าง Relax Spa by 9 ได้ครับ ขั้นตอนนี้เป็น request เพื่อ review ยังไม่ใช่การยืนยันคิว";
+      case INTENTS.PRIVATE_TALENT:
+        return "ผมช่วยรับ Private Talent & Specialist request แล้วส่งเข้า MMD review ก่อนพาไปขั้นตอนที่เหมาะสมครับ";
+      case INTENTS.MMD_COMPANION:
+        return `ผมช่วยรับ MMD Companion request สำหรับ Private Social, Dining, Drinks, Event หรือ Appearance ได้ครับ${statusLine} MMD จะตรวจความเหมาะสมและความพร้อมก่อนยืนยัน`;
       case INTENTS.PAYMENT:
-        return `${SAFE_COPY.payment} I can help you prepare the details for review without treating the slip as final confirmation.`;
+        return "ถ้าต้องส่งหลักฐาน ผมจะพาไป /confirm/payment-proof ครับ MMD จะตรวจยอดจริงก่อนอัปเดตขั้นตอนถัดไป หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request";
       case INTENTS.POINTS:
         return `Your points summary is ${formatPoints(summary.points_balance)} points. Points can guide the next step, but they must not override booking, payment, SVIP, Black Card, or membership intent.`;
       case INTENTS.VIP:
@@ -156,7 +177,7 @@
       case INTENTS.BLACK_CARD:
         return `${SAFE_COPY.blackCard} I can help prepare the member context for that private review.`;
       case INTENTS.MEMBERSHIP:
-        return `I can help with membership status or renewal from Member Home / Status Hub.${statusLine} I will keep payment confirmation separate from official verification.`;
+        return `ผมช่วยดูสถานะสมาชิกหรือการต่ออายุได้ครับ${statusLine} และจะแยก Payment Proof ออกจากการยืนยันยอดอย่างเป็นทางการเสมอ`;
       case INTENTS.HIGH_POINTS:
         return `Your points look strong at ${formatPoints(summary.points_balance)} points. With no stronger intent detected, I can guide the next suitable member step without making automatic VIP, SVIP, or Black Card decisions.`;
       default:
