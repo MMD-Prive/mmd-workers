@@ -80,38 +80,34 @@ test("valid LINE signature can process empty events safely", async () => {
   });
 });
 
-test("routed Worker delegates a verified webhook to the authoritative HTTPS upstream", async () => {
-  const originalFetch = globalThis.fetch;
-  let forwarded;
-  globalThis.fetch = async (url, init) => {
-    forwarded = { url: String(url), init };
-    return new Response(JSON.stringify({ ok: true, events: 1 }), { status: 200, headers: { "content-type": "application/json" } });
-  };
-  try {
-    const request = await signedLineRequest({ events: [lineTextEvent("ส่งสลิป")] });
-    const signature = request.headers.get("x-line-signature");
-    const response = await worker.fetch(request, { ...BASE_ENV, LINE_WEBHOOK_UPSTREAM_URL: "https://mmdhome.netlify.app/.netlify/functions/webhook" });
-    assert.equal(response.status, 200);
-    assert.equal(forwarded.url, "https://mmdhome.netlify.app/.netlify/functions/webhook");
-    assert.equal(forwarded.init.headers["x-line-signature"], signature);
-    assert.equal(forwarded.init.headers["x-mmd-forwarded-by"], "member-dashboard-chat-worker");
-  } finally {
-    globalThis.fetch = originalFetch;
+test("Cloudflare owner ignores retired upstream configuration", async () => {
+  const response = await worker.fetch(
+    await signedLineRequest({ events: [] }),
+    { ...BASE_ENV, LINE_WEBHOOK_UPSTREAM_URL: "https://legacy.invalid/webhook" },
+  );
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).worker, "member-dashboard-chat-worker");
+});
+
+test("Kenji 2.0 separates MMD, MMS, venue, and talent lanes", () => {
+  const cases = [
+    ["ไป dinner", "mmd_companion", /MMD Companion/],
+    ["อยากนวด recovery", "mms_wellness", /MMS Wellness/],
+    ["ไม่มีสถานที่ ใช้ Relax Spa", "partner_venue", /Relax Spa by 9/],
+    ["หา private talent ด้านภาษา", "private_talent", /Private Talent/],
+  ];
+  for (const [text, intent, replyPattern] of cases) {
+    const event = lineTextEvent(text);
+    assert.equal(inferLineIntent(text, event), intent);
+    assert.match(buildKenjiLineReply(event), replyPattern);
   }
 });
 
-test("routed Worker fails closed when the configured upstream is invalid or unavailable", async () => {
-  const invalid = await worker.fetch(await signedLineRequest({ events: [] }), { ...BASE_ENV, LINE_WEBHOOK_UPSTREAM_URL: "http://not-secure.test/webhook" });
-  assert.equal(invalid.status, 503);
-
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => { throw new Error("network unavailable"); };
-  try {
-    const unavailable = await worker.fetch(await signedLineRequest({ events: [] }), { ...BASE_ENV, LINE_WEBHOOK_UPSTREAM_URL: "https://upstream.test/webhook" });
-    assert.equal(unavailable.status, 502);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+test("payment proof routes safely without confirming funds", () => {
+  const reply = buildKenjiLineReply(lineTextEvent("ส่งสลิป"));
+  assert.match(reply, /\/confirm\/payment-proof/);
+  assert.match(reply, /ยังไม่ถือว่ายืนยันยอด/);
+  assert.doesNotMatch(reply, /ชำระเงินสำเร็จ|approved/i);
 });
 
 test("Kenji trigger phrases route to talk_to_per_ai intent", async () => {
