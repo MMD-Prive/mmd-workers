@@ -12,6 +12,8 @@ import coreWorker, { isAuthed as isCoreAuthed } from "./index.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DASHBOARD_PATH = "/v1/admin/dashboard";
+const MEMBER_DASHBOARD_PATH = "/v1/member/dashboard";
+const SAFE_MEMBER_QUERY_KEYS = ["t", "code", "promo", "source", "invite"];
 
 export default {
   async fetch(req, env, ctx) {
@@ -22,6 +24,14 @@ export default {
 
     if (method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors });
+    }
+
+    if (path === MEMBER_DASHBOARD_PATH) {
+      if (method !== "GET" && method !== "HEAD") {
+        return withCors(memberDashboardJson({ ok: false, error: "method_not_allowed" }, 405), cors);
+      }
+
+      return withCors(handleMemberDashboard(url, method === "HEAD"), cors);
     }
 
     if (path === DASHBOARD_PATH) {
@@ -43,6 +53,109 @@ export default {
     return coreWorker.fetch(req, env, ctx);
   },
 };
+
+function handleMemberDashboard(url, head = false) {
+  const token = str(url.searchParams.get("t"));
+  if (!token) {
+    return memberDashboardJson({
+      ok: false,
+      state: "invalid_link",
+      message: "ไม่พบลิงก์ส่วนตัวครับ",
+    }, 404, head);
+  }
+
+  const query = safeMemberQuery(url.searchParams);
+  return memberDashboardJson({
+    ok: true,
+    data: buildSafeMemberDashboardContract(query),
+  }, 200, head);
+}
+
+function memberDashboardJson(data, status = 200, head = false) {
+  return new Response(head ? null : JSON.stringify(data), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+      "x-mmd-worker": "admin-worker",
+      "x-mmd-page": "member-dashboard-api",
+      "x-mmd-contract": "customer-safe-status",
+    },
+  });
+}
+
+function buildSafeMemberDashboardContract(query) {
+  const actions = buildMemberDashboardActions(query);
+  return {
+    dashboard_state: "review_required",
+    member: {
+      display_name: "สมาชิก MMD",
+      tier: null,
+      status: "review_required",
+      expires_at: null,
+    },
+    access: {
+      status: "review_required",
+      tier: null,
+      expire_label: null,
+      model_access: [],
+    },
+    points: {
+      available: false,
+      active: null,
+      lifetime: null,
+      spend_year: null,
+      spend_lifetime: null,
+      status: "MMD will confirm points after review.",
+    },
+    payment: {
+      status: "review_required",
+      message: "MMD is reviewing your payment evidence.",
+    },
+    telegram_access: {
+      status: "review_required",
+      label: "MMD will confirm Telegram access.",
+    },
+    next_recommended_step: {
+      key: "mmd_review",
+      label: "MMD is reviewing your member status.",
+      href: actions.membership_url,
+    },
+    actions,
+    grants: {
+      membership: false,
+      points: false,
+      payment_status: false,
+      telegram_access: false,
+      private_access: false,
+    },
+    data_status: "contract_only",
+    updates: [],
+  };
+}
+
+function buildMemberDashboardActions(query) {
+  return {
+    membership_url: appendSafeMemberQuery("/sigil/member/membership", query),
+    payment_url: appendSafeMemberQuery("/confirm/payment-confirmation", query),
+    booking_url: null,
+    renewal_url: null,
+  };
+}
+
+function safeMemberQuery(params) {
+  const out = new URLSearchParams();
+  for (const key of SAFE_MEMBER_QUERY_KEYS) {
+    const value = str(params.get(key));
+    if (value) out.set(key, value);
+  }
+  return out;
+}
+
+function appendSafeMemberQuery(path, params) {
+  const rendered = params.toString();
+  return rendered ? `${path}?${rendered}` : path;
+}
 
 async function buildAdminDashboard(env) {
   const now = new Date();

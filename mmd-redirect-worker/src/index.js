@@ -41,6 +41,7 @@ export const MEMBER_API_PATHS = new Set([
   "/member/api/liff/hall-token",
   "/member/api/liff/hall-token/",
 ]);
+export const MEMBER_DASHBOARD_API_PATHS = new Set(["/api/member/dashboard", "/api/member/dashboard/"]);
 export const NEVER_TOUCH_PREFIXES = ["/api/", "/webhook/", "/webhooks/", "/payments/", "/payment/", "/payment-webhook/", "/admin/", "/sigil/", "/cdn-cgi/", "/assets/", "/static/", "/uploads/"];
 export const NEVER_REDIRECT_EXACT_PATHS = new Set(["/member/promotion", "/member/promotion/", "/member/apply", "/member/apply/", "/member/dashboard", "/member/dashboard/", CANONICAL_MEMBERSHIP_PATH, `${CANONICAL_MEMBERSHIP_PATH}/`, "/member/profile", "/member/profile/", "/member/payments", "/member/payments/", "/pay/pending-verification", "/pay/pending-verification/", "/sigil/pay/membership", "/sigil/pay/membership/", "/sigil/pay/renewal", "/sigil/pay/renewal/", "/hall", "/hall/", "/model/console", "/model/console/", "/blackcard", "/blackcard/", "/blackcard/black-card", "/blackcard/black-card/"]);
 export const EXACT_PATH_REDIRECTS = { "/trust/inme": "/sigil/start", "/inme": "/sigil/start", "/login": "/sigil/start", "/member": "/member/dashboard", "/member/membership": CANONICAL_MEMBERSHIP_PATH, "/member/membership/benefits": CANONICAL_MEMBERSHIP_PATH, "/members": "/sigil/start", "/membership": CANONICAL_MEMBERSHIP_PATH, "/membership/benefits": CANONICAL_MEMBERSHIP_PATH, "/renew": "/sigil/membership", "/renewal": "/sigil/membership", "/trust": "/sigil/start" };
@@ -129,6 +130,7 @@ function isSigilApplyPath(url) { const p = url.pathname.toLowerCase(); return p 
 function isSigilPrivateModelApplyApiPath(url) { const p = url.pathname.toLowerCase(); return p === "/sigil/api/private-model/apply" || p === "/sigil/api/private-model/apply/"; }
 function isSigilMembershipPath(url) { const p = url.pathname.toLowerCase(); return p === "/sigil/membership" || p === "/sigil/membership/"; }
 function isMemberDashboardPath(url) { const p = url.pathname.toLowerCase(); return p === "/member/dashboard" || p === "/member/dashboard/"; }
+function isMemberDashboardApiPath(url) { return MEMBER_DASHBOARD_API_PATHS.has(url.pathname.toLowerCase()); }
 function isMemberPagePath(url) { return MEMBER_PAGE_PATHS.has(url.pathname.toLowerCase()); }
 function isMemberApiPath(url) { return MEMBER_API_PATHS.has(url.pathname.toLowerCase()); }
 function isMemberPaymentsPath(url) { const p = url.pathname.toLowerCase(); return p === "/member/payments" || p === "/member/payments/"; }
@@ -168,6 +170,28 @@ async function fetchAdminMemberPage(request, env, url) {
   target.pathname = url.pathname;
   target.search = url.search;
   return withFrontGateHeaders(await fetch(new Request(target.toString(), request)));
+}
+
+async function fetchMemberDashboardApi(request, env, url) {
+  const target = new URL(request.url);
+  target.pathname = "/v1/member/dashboard";
+  target.search = safeMemberDashboardSearch(url.searchParams);
+  const upstreamRequest = new Request(target.toString(), request);
+  if (env?.ADMIN_WORKER?.fetch) return withFrontGateHeaders(await env.ADMIN_WORKER.fetch(upstreamRequest));
+  const fallback = new URL(ADMIN_WORKER_UPSTREAM);
+  fallback.pathname = target.pathname;
+  fallback.search = target.search;
+  return withFrontGateHeaders(await fetch(new Request(fallback.toString(), upstreamRequest)));
+}
+
+function safeMemberDashboardSearch(params) {
+  const safe = new URLSearchParams();
+  for (const key of ["t", "code", "promo", "source", "invite"]) {
+    const value = params.get(key);
+    if (value) safe.set(key, value);
+  }
+  const rendered = safe.toString();
+  return rendered ? `?${rendered}` : "";
 }
 
 async function fetchSigilWorkerRoute(request, env, url, page) {
@@ -211,7 +235,7 @@ function renderRouteRecoveryShell(request, page, title, heading, copy, links = [
 
 function renderPublicBlackcardPage(request) {
   const query = new URL(request.url).search || "";
-  const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>MMD Privé | Black Card</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#050404;color:#fff6df;font-family:Inter,"Segoe UI","Noto Sans Thai",Arial,sans-serif}.hero{min-height:100vh;display:grid;place-items:end start;padding:28px;background:linear-gradient(90deg,rgba(5,4,4,.86),rgba(5,4,4,.24)),url(https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a2e89da3f9feeabc206fa8c_SIGIL_Wall.webp) center/cover}.panel{width:min(760px,100%);padding:clamp(24px,5vw,54px);border:1px solid rgba(216,177,95,.25);border-radius:32px;background:rgba(8,7,6,.72);backdrop-filter:blur(18px);box-shadow:0 28px 90px rgba(0,0,0,.36)}.mark{width:54px;height:54px;object-fit:contain;margin-bottom:28px;filter:drop-shadow(0 10px 24px rgba(216,177,95,.22))}.kicker{color:#f4dd95;font-size:12px;font-weight:900;letter-spacing:.18em;text-transform:uppercase}h1{margin:10px 0 16px;font-size:clamp(46px,11vw,92px);line-height:.94;letter-spacing:-.05em}p{margin:0 0 14px;color:rgba(255,246,223,.78);font-size:17px;line-height:1.75}.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}a{min-height:48px;display:inline-flex;align-items:center;justify-content:center;padding:0 18px;border-radius:999px;text-decoration:none;font-weight:850}.primary{color:#150f07;background:linear-gradient(135deg,#f7e6a8,#bd8730)}.ghost{color:#fff6df;border:1px solid rgba(216,177,95,.28);background:rgba(255,255,255,.06)}</style></head><body><main class="hero"><section class="panel"><img class="mark" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a3f71e229504b27874227cd_MMD%20Logo%20Only.webp" alt="MMD"><p class="kicker">BLACK CARD PRIVILEGES</p><h1>สิทธิ์ที่ดีที่สุด<br>ของสมาชิก MMD</h1><p>Black Card คือระดับการดูแลที่เปิดให้สมาชิกเข้าถึงตัวเลือกมากกว่า เร็วกว่า และละเอียดกว่าการเป็นสมาชิกปกติ</p><p>สถานะจริงยังอ้างอิงจาก owner review, ledger และ official verification เท่านั้น หน้านี้ไม่มีการเปิดสิทธิ์อัตโนมัติ</p><div class="actions"><a class="primary" href="${CANONICAL_MEMBERSHIP_PATH}${query}">ดูแพ็กเกจสมาชิก</a><a class="ghost" href="/member/dashboard${query}">Member Dashboard</a></div></section></main></body></html>`;
+  const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>MMD Privé | Black Card</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#050404;color:#fff6df;font-family:Inter,"Segoe UI","Noto Sans Thai",Arial,sans-serif}.hero{min-height:100vh;display:grid;place-items:end start;padding:28px;background:linear-gradient(90deg,rgba(5,4,4,.86),rgba(5,4,4,.24)),url(https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a2e89da3f9feeabc206fa8c_SIGIL_Wall.webp) center/cover}.panel{width:min(760px,100%);padding:clamp(24px,5vw,54px);border:1px solid rgba(216,177,95,.25);border-radius:32px;background:rgba(8,7,6,.72);backdrop-filter:blur(18px);box-shadow:0 28px 90px rgba(0,0,0,.36)}.mark{width:54px;height:54px;object-fit:contain;margin-bottom:28px;filter:drop-shadow(0 10px 24px rgba(216,177,95,.22))}.kicker{color:#f4dd95;font-size:12px;font-weight:900;letter-spacing:.18em;text-transform:uppercase}h1{margin:10px 0 16px;font-size:clamp(46px,11vw,92px);line-height:.94;letter-spacing:-.05em}p{margin:0 0 14px;color:rgba(255,246,223,.78);font-size:17px;line-height:1.75}.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}a{min-height:48px;display:inline-flex;align-items:center;justify-content:center;padding:0 18px;border-radius:999px;text-decoration:none;font-weight:850}.primary{color:#150f07;background:linear-gradient(135deg,#f7e6a8,#bd8730)}.ghost{color:#fff6df;border:1px solid rgba(216,177,95,.28);background:rgba(255,255,255,.06)}</style></head><body><main class="hero"><section class="panel"><img class="mark" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a3f71e229504b27874227cd_MMD%20Logo%20Only.webp" alt="MMD"><p class="kicker">BLACK CARD PRIVILEGES</p><h1>สิทธิ์ที่ดีที่สุด<br>ของสมาชิก MMD</h1><p>Black Card คือระดับการดูแลที่เปิดให้สมาชิกเข้าถึงตัวเลือกมากกว่า เร็วกว่า และละเอียดกว่าการเป็นสมาชิกปกติ</p><p>สถานะจริงยังอ้างอิงจาก MMD review, ledger และ official verification เท่านั้น หน้านี้ไม่มีการเปิดสิทธิ์อัตโนมัติ</p><div class="actions"><a class="primary" href="${CANONICAL_MEMBERSHIP_PATH}${query}">ดูแพ็กเกจสมาชิก</a><a class="ghost" href="/member/dashboard${query}">Member Dashboard</a></div></section></main></body></html>`;
   return htmlResponse(request, html, PUBLIC_BLACKCARD_PAGE, { "x-mmd-route-owner": FRONT_GATE, "x-mmd-origin": "front-gate:public-blackcard-safe" });
 }
 
@@ -229,6 +253,7 @@ export default {
     if (isLineWebhookPath(url)) return fetchLineWebhook(request, env, url);
     if (isSigilPrivateModelApplyApiPath(url)) return fetchSigilWorkerRoute(request, env, url, "sigil-private-model-apply-api");
     if (isMemberApiPath(url)) return fetchMemberPage(request, env, url);
+    if (isMemberDashboardApiPath(url)) return fetchMemberDashboardApi(request, env, url);
     if (!isSafePageRequest(request)) return withFrontGateHeaders(await fetch(request));
     const studioRoute = findStudioWebflowRoute(url.pathname);
     if (studioRoute) return fetchStudioWebflowRoute(request, url, studioRoute);

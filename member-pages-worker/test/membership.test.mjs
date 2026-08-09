@@ -78,6 +78,19 @@ describe("member-pages-worker membership page", () => {
     assert.equal(response.headers.get("x-mmd-page"), "member-membership");
   });
 
+  it("masks internal ownership labels from customer-facing membership pages", async () => {
+    for (const url of [
+      "https://mmdbkk.com/sigil/member/membership?t=abc",
+      "https://mmdbkk.com/pay/membership?plan=blackcard",
+    ]) {
+      const response = await request(url);
+      const html = await response.text();
+
+      assert.doesNotMatch(html, /owner|founder|Ops Owner|Sales Owner|Handler|Operator|Admin|Staff|MMD Assistant|MMS Assistant|Chang|Ewvon|Assist/i, url);
+      assert.match(html, /MMD/i, url);
+    }
+  });
+
   it("redirects the legacy member membership path to the SIGIL canonical route with the full query preserved", async () => {
     for (const path of ["/member/membership", "/member/membership/"]) {
       const response = await request(`https://mmdbkk.com${path}?t=abc&code=x&promo=y&source=line`);
