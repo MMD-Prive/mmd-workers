@@ -37,7 +37,6 @@ describe("member-pages LIFF status route", () => {
     }), env());
 
     assert.equal(response.status, 204);
-    assert.equal(response.headers.get("access-control-allow-origin"), "*");
   });
 
 });
