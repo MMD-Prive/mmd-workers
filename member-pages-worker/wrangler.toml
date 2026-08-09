@@ -4,7 +4,11 @@ compatibility_date = "2026-06-20"
 workers_dev = true
 
 routes = [
-  { pattern = "mmdbkk.com/member/api/liff/*", zone_name = "mmdbkk.com" }
+  { pattern = "mmdbkk.com/member/api/liff/*", zone_name = "mmdbkk.com" },
+  # Repo-only declaration for the approved same-site LIFF shell. Do not deploy
+  # until LINE_LIFF_ID and the remaining LIFF live gates are explicitly cleared.
+  # The trailing wildcard is required so query-string entry URLs also match.
+  { pattern = "mmdbkk.com/member/liff*", zone_name = "mmdbkk.com" }
 ]
 
 [vars]
@@ -21,12 +25,13 @@ binding = "MEMBER_STATUS_RESOLVER"
 service = "mmd-auth-worker"
 
 # Required before deployment:
+# - public var LINE_LIFF_ID for the approved LIFF app endpoint
 # - secret LINE_LOGIN_CHANNEL_ID
 # - secret LIFF_SESSION_SECRET
 # - secret MEMBER_STATUS_RESOLVER_SECRET (same value in mmd-auth-worker)
 # - service binding MEMBER_STATUS_RESOLVER -> mmd-auth-worker
 #
-# This exact API route has precedence over the member catch-all in
+# These exact routes have precedence over the member catch-all in
 # mmd-redirect-worker. Do not add www routes without confirming www is an API host.
 
 [observability]
