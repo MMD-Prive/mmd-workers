@@ -136,7 +136,7 @@ export async function handleStart(request, env = {}) {
     pricing_lane: "unknown",
     promo_code: normalizePromoCode(body.promo_code),
     route_after_liff: null,
-    next_screen_key: liffIntent === "unknown" ? "start_intent" : nextScreenForIntent(liffIntent),
+    next_screen_key: liffIntent === "unknown" ? "start_intent" : nextScreenForIntent(liffIntent, existing.exists),
     continuity,
   });
   try {
@@ -173,7 +173,7 @@ export async function handleIntent(request, env = {}) {
   try {
     await persistGatewaySession(env, gatewayStore, auth.session);
     await recordGatewayDecision(gatewayStore, auth.session);
-    await saveSession(env, auth.newHash, auth.session, SESSION_TTL_SECONDS);
+    await commitRotatedSession(env, auth);
   } catch (error) {
     return gatewayStorageFailure(error);
   }
@@ -210,7 +210,7 @@ export async function handleAudience(request, env = {}) {
     }
     await persistGatewaySession(env, gatewayStore, auth.session);
     await recordGatewayDecision(gatewayStore, auth.session);
-    await saveSession(env, auth.newHash, auth.session, SESSION_TTL_SECONDS);
+    await commitRotatedSession(env, auth);
   } catch (error) {
     return gatewayStorageFailure(error);
   }
@@ -248,6 +248,17 @@ export async function handlePackage(request, env = {}) {
   } catch (error) {
     return gatewayStorageFailure(error);
   }
+  if (requiresMemberLookupForPackage(packageRule, auth.session)) {
+    applyMemberLookupRequired(auth.session);
+    return saveGatewayStateError(
+      env,
+      gatewayStore,
+      auth,
+      "MEMBER_LOOKUP_REQUIRED",
+      "Member verification is required before this renewal step.",
+      409,
+    );
+  }
   if (!packageRule || !isPackageAllowedForSession(packageRule, auth.session)) {
     return saveRotatedError(env, auth, "PACKAGE_NOT_AVAILABLE", "This package is not available for the current route.", 409);
   }
@@ -266,7 +277,7 @@ export async function handlePackage(request, env = {}) {
   try {
     await persistGatewaySession(env, gatewayStore, auth.session);
     await recordGatewayDecision(gatewayStore, auth.session);
-    await saveSession(env, auth.newHash, auth.session, SESSION_TTL_SECONDS);
+    await commitRotatedSession(env, auth);
   } catch (error) {
     return gatewayStorageFailure(error);
   }
@@ -296,6 +307,17 @@ export async function handlePaymentIntent(request, env = {}) {
   }
   try {
     const currentPackage = await gatewayStore.resolvePackage(selected.package_code);
+    if (requiresMemberLookupForPackage(currentPackage, auth.session)) {
+      applyMemberLookupRequired(auth.session);
+      return saveGatewayStateError(
+        env,
+        gatewayStore,
+        auth,
+        "MEMBER_LOOKUP_REQUIRED",
+        "Member verification is required before this renewal step.",
+        409,
+      );
+    }
     if (!currentPackage || !isPackageAllowedForSession(currentPackage, auth.session) || !isSelectedPackageCurrent(selected, currentPackage, auth.session)) {
       return saveRotatedError(env, auth, "PAYMENT_INTENT_STALE_PACKAGE", "Select an eligible package first.", 409);
     }
@@ -331,7 +353,7 @@ export async function handleStatus(request, env = {}) {
   try {
     await persistGatewaySession(env, gatewayStore, auth.session);
     await recordGatewayDecision(gatewayStore, auth.session);
-    await saveSession(env, auth.newHash, auth.session, SESSION_TTL_SECONDS);
+    await commitRotatedSession(env, auth);
   } catch (error) {
     return gatewayStorageFailure(error);
   }
@@ -383,7 +405,7 @@ export async function handleHallToken(request, env = {}) {
     }), { expirationTtl: HALL_TOKEN_TTL_SECONDS });
     await persistGatewaySession(env, gatewayStore, auth.session);
     await recordGatewayDecision(gatewayStore, auth.session);
-    await saveSession(env, auth.newHash, auth.session, SESSION_TTL_SECONDS);
+    await commitRotatedSession(env, auth);
     return json({ ok: true, data: { redirect_to: `/hall?t=${encodeURIComponent(token)}`, expires_in: HALL_TOKEN_TTL_SECONDS } }, 200, {
       cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
     });
@@ -466,16 +488,16 @@ async function issueSession(env, data) {
 }
 
 async function authenticateAndRotate(request, env) {
-  // KV read/delete is bounded cookie rotation only. It is not presented as
-  // atomic replay protection; live-sensitive actions remain blocked below.
+  // KV rotation is bounded and non-atomic. Keep the prior session until the
+  // replacement state is persisted so a dependency failure cannot strand it.
+  // Live-sensitive actions remain blocked until an atomic guard exists.
   const auth = await authenticateSession(request, env);
   if (!auth.ok) return auth;
-  await env.LIFF_IDENTITY_KV.delete(auth.key);
   const newToken = randomToken(32);
   const newHash = await keyedDigest(env, `session:${newToken}`);
   auth.session.rotation = Number(auth.session.rotation || 0) + 1;
   auth.session.expires_at = Date.now() + SESSION_TTL_SECONDS * 1000;
-  return { ok: true, session: auth.session, newToken, newHash };
+  return { ok: true, session: auth.session, key: auth.key, newToken, newHash };
 }
 
 async function authenticateSession(request, env) {
@@ -493,6 +515,11 @@ async function authenticateSession(request, env) {
 
 async function saveSession(env, hash, session, ttl) {
   await env.LIFF_IDENTITY_KV.put(`liff:session:${hash}`, JSON.stringify(session), { expirationTtl: ttl });
+}
+
+async function commitRotatedSession(env, auth) {
+  await saveSession(env, auth.newHash, auth.session, SESSION_TTL_SECONDS);
+  await env.LIFF_IDENTITY_KV.delete(auth.key);
 }
 
 async function signHallRouteToken(env, payload) {
@@ -565,7 +592,10 @@ async function persistGatewayStart(env, gatewayStore, session) {
 }
 
 async function persistGatewaySession(env, gatewayStore, session) {
-  const mappingKey = `liff:gateway-record:${session.identity_key}`;
+  const sessionId = String(session.session_id || "").trim();
+  if (!sessionId) throw new LiffGatewayStorageError("LIFF_GATEWAY_SESSION_INVALID");
+  const mappingHash = await keyedDigest(env, `gateway-record:${sessionId}`);
+  const mappingKey = `liff:gateway-record:${mappingHash}`;
   const existing = session.gateway_record_id ? null : await env.LIFF_IDENTITY_KV.get(mappingKey, "json");
   const record = await gatewayStore.upsertSession(gatewaySessionRecord(session), session.gateway_record_id || existing?.record_id || "");
   const recordId = String(record?.record_id || "").trim();
@@ -667,10 +697,10 @@ function fallbackScreen(key) {
   };
 }
 
-function nextScreenForIntent(intent) {
+function nextScreenForIntent(intent, memberExists = false) {
   if (["signup", "promo", "hall"].includes(intent)) return "audience_select";
   if (intent === "renew") return "renew_member_lookup";
-  if (intent === "continue_payment") return "payment_start";
+  if (intent === "continue_payment") return memberExists ? "payment_start" : "renew_member_lookup";
   return "status_result";
 }
 
@@ -692,8 +722,12 @@ function applyGatewayIntent(session, intent) {
     return;
   }
   session.hype_decision_status = "decided";
-  session.next_screen_key = nextScreenForIntent(intent);
-  session.route_after_liff = intent === "renew" ? "/member/membership" : intent === "continue_payment" ? "/member/payments" : null;
+  session.next_screen_key = nextScreenForIntent(intent, session.member_exists === true);
+  session.route_after_liff = intent === "renew" && session.member_exists === true
+    ? "/member/membership"
+    : intent === "continue_payment" && session.member_exists === true
+      ? "/member/payments"
+      : null;
 }
 
 function applyAudience(session, audience) {
@@ -781,8 +815,31 @@ function isSelectedPackageCurrent(selected, currentPackage, session) {
     && selected.requires_manual_review === currentPackage.requires_manual_review;
 }
 
+function isRecoveryPackageLane(packageRule, session) {
+  return Boolean(packageRule)
+    && ["standard_1199", "premium_2999"].includes(packageRule.pricing_lane)
+    && ["renew", "continue_payment"].includes(session.liff_intent);
+}
+
+function hasVerifiedRecoveryEligibility(session) {
+  // No approved payments-worker contract currently verifies recoverable payment
+  // sessions, so only the internal member resolver can satisfy this gate.
+  return session.member_exists === true;
+}
+
+function requiresMemberLookupForPackage(packageRule, session) {
+  return isRecoveryPackageLane(packageRule, session) && !hasVerifiedRecoveryEligibility(session);
+}
+
+function applyMemberLookupRequired(session) {
+  invalidatePackageSelection(session);
+  session.route_after_liff = null;
+  session.next_screen_key = "renew_member_lookup";
+}
+
 function isPackageAllowedForSession(packageRule, session) {
   if (!packageRule || typeof packageRule !== "object") return false;
+  if (requiresMemberLookupForPackage(packageRule, session)) return false;
   if (packageRule.requires_manual_review) return true;
   if (session.hall_audience_context === "female_view") return packageRule.pricing_lane === "believe_member_2999";
   if (session.hall_audience_context === "lgbt_view") return packageRule.pricing_lane === "gay_extreme_900";
@@ -899,14 +956,18 @@ function gatewayStorageFailure(error) {
   return json({ ok: false, error: { code, message: "LIFF session storage is temporarily unavailable." } }, 503);
 }
 async function saveRotatedError(env, auth, code, message, status) {
-  await saveSession(env, auth.newHash, auth.session, SESSION_TTL_SECONDS);
+  try {
+    await commitRotatedSession(env, auth);
+  } catch (error) {
+    return gatewayStorageFailure(error);
+  }
   return json({ ok: false, error: { code, message } }, status, { cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)] });
 }
 async function saveGatewayStateError(env, gatewayStore, auth, code, message, status) {
   try {
     await persistGatewaySession(env, gatewayStore, auth.session);
     await recordGatewayDecision(gatewayStore, auth.session);
-    await saveSession(env, auth.newHash, auth.session, SESSION_TTL_SECONDS);
+    await commitRotatedSession(env, auth);
   } catch (error) {
     return gatewayStorageFailure(error);
   }

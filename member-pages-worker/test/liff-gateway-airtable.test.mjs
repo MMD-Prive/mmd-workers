@@ -126,4 +126,28 @@ describe("LIFF gateway Airtable adapter", () => {
     assert.equal(calls.length, 2);
     assert.match(new URL(calls[1].url).searchParams.get("filterByFormula"), /show_profile_to_female/);
   });
+
+  it("rejects fractional package numeric values instead of truncating them", async () => {
+    const validFields = {
+      package_code: "standard",
+      pricing_lane: "standard_1199",
+      amount_thb: 1199,
+      duration_days: 365,
+      points_after_verification: 0,
+      requires_manual_review: false,
+    };
+    for (const [field, value] of [
+      ["amount_thb", 1199.5],
+      ["duration_days", 365.5],
+      ["points_after_verification", 0.5],
+    ]) {
+      const calls = mockAirtable(async () => new Response(JSON.stringify({
+        records: [{ fields: { ...validFields, [field]: value } }],
+      }), { headers: { "content-type": "application/json" } }));
+      const packageRule = await getLiffGatewayStore(env()).resolvePackage("standard");
+
+      assert.equal(packageRule, null, field);
+      assert.equal(calls.length, 1, field);
+    }
+  });
 });

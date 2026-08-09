@@ -240,7 +240,7 @@ function sanitizePackageRecord(fields, requestedCode) {
 
 function numberField(value) {
   const number = Number(value);
-  return Number.isFinite(number) ? Math.trunc(number) : NaN;
+  return Number.isFinite(number) ? number : NaN;
 }
 
 function firstText(...values) {
