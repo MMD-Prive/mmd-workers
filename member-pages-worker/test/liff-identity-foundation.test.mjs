@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { afterEach, describe, it } from "node:test";
 
-import worker, { verifyHallRouteToken } from "../src/liff-identity-foundation.js";
+import worker, { createHallRouteToken, verifyHallRouteToken } from "../src/liff-identity-foundation.js";
 
 const realFetch = globalThis.fetch;
 const realLog = console.log;
@@ -156,6 +157,12 @@ function assertNoSensitive(rendered) {
   assert.doesNotMatch(rendered, /svip|blackcard|5000|9999|premium|888/i);
 }
 
+async function keyedDigestForTest(secret, value) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 describe("Phase 1 LIFF identity foundation security correction", () => {
   it("valid LINE token succeeds, sets secure session cookie, and returns no raw token", async () => {
     const { response, payload } = await start();
@@ -278,6 +285,15 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(preflight.status, 204);
     assert.equal(preflight.headers.get("access-control-allow-origin"), "https://mmdprive.com");
 
+    lineVerify();
+    const wwwResponse = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/start", {
+      method: "POST",
+      headers: { origin: "https://www.mmdbkk.com", "content-type": "application/json" },
+      body: JSON.stringify({ id_token: "valid" }),
+    }), env());
+    assert.equal(wwwResponse.status, 200);
+    assert.equal(wwwResponse.headers.get("access-control-allow-origin"), "https://www.mmdbkk.com");
+
     const rejectedPreflight = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/start", {
       method: "OPTIONS",
       headers: { origin: "https://evil.example" },
@@ -336,7 +352,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal([...broken.LIFF_IDENTITY_KV.map.keys()].filter((key) => key.startsWith("liff:pending:")).length, 0);
   });
 
-  it("status authenticates with cookie, rotates through Set-Cookie only, and rejects replay", async () => {
+  it("status authenticates with cookie, rotates through Set-Cookie only, and retires a prior cookie on sequential reuse", async () => {
     const runtime = env();
     const started = await start(runtime);
     const startCookie = findCookie(started.response, "__Host-mmd_liff_session");
@@ -528,7 +544,120 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(spoof.payload.error.code, "BROWSER_IDENTITY_REJECTED");
   });
 
-  it("calls only the mock payment-token binding and never marks a LIFF session paid", async () => {
+  it("invalidates a package when the Hall audience changes", async () => {
+    const runtime = env();
+    const payments = paymentsWorker();
+    runtime.PAYMENTS_WORKER = payments;
+    runtime.LIFF_GATEWAY_STORE.inventory.add("female_view");
+    runtime.LIFF_GATEWAY_STORE.inventory.add("lgbt_view");
+    runtime.LIFF_GATEWAY_STORE.packages.set("believe", {
+      package_code: "believe",
+      pricing_lane: "believe_member_2999",
+      amount_thb: 2999,
+      duration_days: 365,
+      points_after_verification: 250,
+      requires_manual_review: false,
+    });
+    const started = await start(runtime, { id_token: "valid", liff_intent: "signup" });
+    const female = await request("/member/api/liff/audience", {
+      cookie: cookiePair(findCookie(started.response, "__Host-mmd_liff_session")),
+      body: { hall_audience_context: "female_view" },
+    }, runtime);
+    const selected = await request("/member/api/liff/package", {
+      cookie: cookiePair(findCookie(female.response, "__Host-mmd_liff_session")),
+      body: { requested_package_code: "believe" },
+    }, runtime);
+    const lgbt = await request("/member/api/liff/audience", {
+      cookie: cookiePair(findCookie(selected.response, "__Host-mmd_liff_session")),
+      body: { hall_audience_context: "lgbt_view" },
+    }, runtime);
+    const payment = await request("/member/api/liff/payment-intent", {
+      cookie: cookiePair(findCookie(lgbt.response, "__Host-mmd_liff_session")),
+      body: { package_code: "believe", payment_stage: "membership" },
+    }, runtime);
+
+    assert.equal(lgbt.response.status, 200);
+    assert.equal(payment.response.status, 409);
+    assert.equal(payment.payload.error.code, "PAYMENT_INTENT_NOT_READY");
+    assert.equal(payments.calls.length, 0);
+  });
+
+  it("invalidates a package when the LIFF intent changes", async () => {
+    const runtime = env();
+    const payments = paymentsWorker();
+    runtime.PAYMENTS_WORKER = payments;
+    runtime.LIFF_GATEWAY_STORE.inventory.add("female_view");
+    runtime.LIFF_GATEWAY_STORE.packages.set("believe", {
+      package_code: "believe",
+      pricing_lane: "believe_member_2999",
+      amount_thb: 2999,
+      duration_days: 365,
+      points_after_verification: 250,
+      requires_manual_review: false,
+    });
+    const started = await start(runtime, { id_token: "valid", liff_intent: "signup" });
+    const audience = await request("/member/api/liff/audience", {
+      cookie: cookiePair(findCookie(started.response, "__Host-mmd_liff_session")),
+      body: { hall_audience_context: "female_view" },
+    }, runtime);
+    const selected = await request("/member/api/liff/package", {
+      cookie: cookiePair(findCookie(audience.response, "__Host-mmd_liff_session")),
+      body: { requested_package_code: "believe" },
+    }, runtime);
+    const renewed = await request("/member/api/liff/intent", {
+      cookie: cookiePair(findCookie(selected.response, "__Host-mmd_liff_session")),
+      body: { liff_intent: "renew" },
+    }, runtime);
+    const payment = await request("/member/api/liff/payment-intent", {
+      cookie: cookiePair(findCookie(renewed.response, "__Host-mmd_liff_session")),
+      body: { package_code: "believe", payment_stage: "renewal" },
+    }, runtime);
+
+    assert.equal(renewed.response.status, 200);
+    assert.equal(renewed.payload.data.next_screen_key, "renew_member_lookup");
+    assert.equal(payment.response.status, 409);
+    assert.equal(payment.payload.error.code, "PAYMENT_INTENT_NOT_READY");
+    assert.equal(payments.calls.length, 0);
+  });
+
+  it("revalidates the stored package context before payment intent", async () => {
+    const runtime = env();
+    const payments = paymentsWorker();
+    runtime.PAYMENTS_WORKER = payments;
+    runtime.LIFF_GATEWAY_STORE.inventory.add("female_view");
+    runtime.LIFF_GATEWAY_STORE.packages.set("believe", {
+      package_code: "believe",
+      pricing_lane: "believe_member_2999",
+      amount_thb: 2999,
+      duration_days: 365,
+      points_after_verification: 250,
+      requires_manual_review: false,
+    });
+    const started = await start(runtime, { id_token: "valid", liff_intent: "signup" });
+    const audience = await request("/member/api/liff/audience", {
+      cookie: cookiePair(findCookie(started.response, "__Host-mmd_liff_session")),
+      body: { hall_audience_context: "female_view" },
+    }, runtime);
+    const selected = await request("/member/api/liff/package", {
+      cookie: cookiePair(findCookie(audience.response, "__Host-mmd_liff_session")),
+      body: { requested_package_code: "believe" },
+    }, runtime);
+    const sessionKey = [...runtime.LIFF_IDENTITY_KV.map.keys()].find((key) => key.startsWith("liff:session:"));
+    const stored = JSON.parse(runtime.LIFF_IDENTITY_KV.map.get(sessionKey));
+    stored.selected_package.context.pricing_lane = "tampered_lane";
+    runtime.LIFF_IDENTITY_KV.map.set(sessionKey, JSON.stringify(stored));
+
+    const payment = await request("/member/api/liff/payment-intent", {
+      cookie: cookiePair(findCookie(selected.response, "__Host-mmd_liff_session")),
+      body: { package_code: "believe", payment_stage: "membership" },
+    }, runtime);
+
+    assert.equal(payment.response.status, 409);
+    assert.equal(payment.payload.error.code, "PAYMENT_INTENT_STALE_PACKAGE");
+    assert.equal(payments.calls.length, 0);
+  });
+
+  it("keeps payment intent blocked until an approved token contract exists", async () => {
     const runtime = env();
     const payments = paymentsWorker();
     runtime.PAYMENTS_WORKER = payments;
@@ -555,19 +684,15 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
       body: { package_code: "believe", payment_stage: "membership" },
     }, runtime);
 
-    assert.equal(payment.response.status, 200);
-    assert.equal(payment.payload.data.payment_ready, true);
-    assert.equal(payment.payload.data.route_after_liff, "/member/payments");
+    assert.equal(payment.response.status, 503);
+    assert.equal(payment.payload.error.code, "PAYMENT_TOKEN_CONTRACT_UNAVAILABLE");
+    assert.equal(payment.payload.data.payment_binding_status, "contract_unavailable");
+    assert.equal(payment.payload.data.route_after_liff, null);
     assert.deepEqual(payment.payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
-    assert.equal(payments.calls.length, 1);
-    assert.equal(payments.calls[0].url, "https://payments-worker.internal/v1/pay/token");
-    assert.equal(payments.calls[0].body.package_code, "believe");
-    assert.equal(payments.calls[0].body.amount_thb, 2999);
-    assert.equal(payments.calls[0].body.source_channel, "line_liff");
-    assert.doesNotMatch(JSON.stringify(payments.calls[0].body), /U123|line_user_id|id_token|tier|points|paid/i);
+    assert.equal(payments.calls.length, 0);
   });
 
-  it("fails closed when the payment-token binding is unavailable", async () => {
+  it("returns the same controlled payment block when no payment binding exists", async () => {
     const runtime = env();
     runtime.LIFF_GATEWAY_STORE.inventory.add("female_view");
     runtime.LIFF_GATEWAY_STORE.packages.set("believe", {
@@ -593,11 +718,13 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     }, runtime);
 
     assert.equal(payment.response.status, 503);
-    assert.equal(payment.payload.error.code, "PAYMENTS_WORKER_NOT_CONFIGURED");
-    assert.deepEqual(payment.payload, { ok: false, error: { code: "PAYMENTS_WORKER_NOT_CONFIGURED", message: "Payment setup is not available yet." } });
+    assert.equal(payment.payload.error.code, "PAYMENT_TOKEN_CONTRACT_UNAVAILABLE");
+    assert.equal(payment.payload.data.payment_binding_status, "contract_unavailable");
+    assert.equal(payment.payload.data.route_after_liff, null);
+    assert.deepEqual(payment.payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
   });
 
-  it("issues a signed Hall token with hash-only storage and no raw LINE subject", async () => {
+  it("blocks Hall handoff until an atomic session guard is implemented", async () => {
     const runtime = env();
     runtime.LIFF_GATEWAY_STORE.inventory.add("female_view");
     lineVerify({ sub: "Uprivate-line-sub" });
@@ -607,20 +734,56 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
       body: { hall_audience_context: "female_view" },
     }, runtime);
     const result = await request("/member/api/liff/hall-token", { cookie: cookiePair(findCookie(audience.response, "__Host-mmd_liff_session")), body: {} }, runtime);
-    assert.equal(result.response.status, 200);
-    const redirect = new URL(result.payload.data.redirect_to, "https://mmdbkk.com");
-    const token = redirect.searchParams.get("t");
-    assert.equal(redirect.pathname, "/hall");
-    assert.match(token, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
-    assert.equal(result.payload.data.expires_in, 300);
+    assert.equal(result.response.status, 503);
+    assert.equal(result.payload.error.code, "LIFF_ATOMIC_SESSION_GUARD_REQUIRED");
+    assert.equal(result.payload.data.route_after_liff, null);
+    assert.equal("redirect_to" in result.payload.data, false);
     assertHostCookie(findCookie(result.response, "__Host-mmd_liff_session"), "__Host-mmd_liff_session", 900);
     assert.doesNotMatch(JSON.stringify(result.payload), /Uprivate-line-sub|private-id-token|private-signed-t|female_view|show_female_profiles/i);
-    const stored = runtime.LIFF_GATEWAY_STORE.records[0];
-    assert.match(stored.signed_route_token_hash, /^[0-9a-f]{64}$/);
-    assert.doesNotMatch(JSON.stringify(stored), new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  });
+
+  it("blocks concurrent Hall handoff attempts while no atomic session guard exists", async () => {
+    const runtime = env();
+    runtime.LIFF_GATEWAY_STORE.inventory.add("female_view");
+    const started = await start(runtime, { id_token: "valid", liff_intent: "hall" });
+    const audience = await request("/member/api/liff/audience", {
+      cookie: cookiePair(findCookie(started.response, "__Host-mmd_liff_session")),
+      body: { hall_audience_context: "female_view" },
+    }, runtime);
+    const cookie = cookiePair(findCookie(audience.response, "__Host-mmd_liff_session"));
+    const attempts = await Promise.all([
+      request("/member/api/liff/hall-token", { cookie, body: {} }, runtime),
+      request("/member/api/liff/hall-token", { cookie, body: {} }, runtime),
+    ]);
+
+    assert.ok(attempts.every((attempt) => attempt.response.status >= 400));
+    assert.ok(attempts.every((attempt) => attempt.payload?.data?.redirect_to == null));
+  });
+
+  it("signs an opaque Hall payload with jti only and requires server-side context storage", async () => {
+    const runtime = env();
+    const { token, payload } = await createHallRouteToken(runtime);
+    const decoded = JSON.parse(Buffer.from(token.split(".")[0], "base64url").toString("utf8"));
+
+    assert.match(token, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+    assert.deepEqual(decoded, payload);
+    assert.deepEqual(Object.keys(decoded).sort(), ["aud", "exp", "iat", "jti", "v"]);
+    assert.equal(decoded.aud, "hall");
+    assert.equal(typeof decoded.jti, "string");
+    for (const forbidden of ["sid", "line_user_id", "member", "mode", "record_id", "session_id"]) {
+      assert.equal(forbidden in decoded, false, forbidden);
+    }
+    const tokenHash = await keyedDigestForTest(runtime.LIFF_SESSION_SECRET, `hall:${token}`);
+    const jtiHash = await keyedDigestForTest(runtime.LIFF_SESSION_SECRET, `hall-jti:${decoded.jti}`);
+    await runtime.LIFF_IDENTITY_KV.put(`liff:hall:${jtiHash}`, JSON.stringify({
+      session_id: "internal-session-id",
+      model_visibility_mode: "show_female_profiles",
+      token_hash: tokenHash,
+      expires_at: decoded.exp,
+    }));
     assert.deepEqual(await verifyHallRouteToken(token, runtime), {
       ok: true,
-      context: { session_id: result.payload.data.redirect_to ? stored.session_id : "", model_visibility_mode: "show_female_profiles" },
+      context: { session_id: "internal-session-id", model_visibility_mode: "show_female_profiles" },
     });
   });
 

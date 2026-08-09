@@ -12,7 +12,7 @@ const SESSION_COOKIE = "__Host-mmd_liff_session";
 const MEMBER_RESOLVER_PATH = "/__internal/member-status/resolve";
 const MEMBER_RESOLVER_PURPOSE = "liff_identity_resolution";
 const MEMBER_RESOLVER_SECRET_HEADER = "x-mmd-member-resolver-secret";
-const PAYMENT_TOKEN_PATH = "/v1/pay/token";
+const PAYMENT_BINDING_STATUS = "contract_unavailable";
 
 const LEGACY_IDENTIFY_PATHS = new Set(["/member/api/liff/identify", "/member/api/liff/identify/"]);
 const START_PATHS = new Set(["/member/api/liff/start", "/member/api/liff/start/"]);
@@ -24,6 +24,7 @@ const STATUS_PATHS = new Set(["/member/api/liff/status", "/member/api/liff/statu
 const HALL_TOKEN_PATHS = new Set(["/member/api/liff/hall-token", "/member/api/liff/hall-token/"]);
 const APPROVED_ORIGINS = new Set([
   "https://mmdbkk.com",
+  "https://www.mmdbkk.com",
   "https://mmdprive.webflow.io",
   "https://mmdprive.com",
 ]);
@@ -133,6 +134,7 @@ export async function handleStart(request, env = {}) {
     hall_audience_context: "unknown",
     model_visibility_mode: "hold_until_selected",
     pricing_lane: "unknown",
+    promo_code: normalizePromoCode(body.promo_code),
     route_after_liff: null,
     next_screen_key: liffIntent === "unknown" ? "start_intent" : nextScreenForIntent(liffIntent),
     continuity,
@@ -163,7 +165,11 @@ export async function handleIntent(request, env = {}) {
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
   auth.session.intent = normalizeIntent(body.intent);
-  applyGatewayIntent(auth.session, normalizeLiffIntent(body.liff_intent ?? body.intent));
+  const nextLiffIntent = normalizeLiffIntent(body.liff_intent ?? body.intent);
+  if (nextLiffIntent !== auth.session.liff_intent) {
+    invalidatePackageSelection(auth.session);
+    applyGatewayIntent(auth.session, nextLiffIntent);
+  }
   try {
     await persistGatewaySession(env, gatewayStore, auth.session);
     await recordGatewayDecision(gatewayStore, auth.session);
@@ -190,6 +196,7 @@ export async function handleAudience(request, env = {}) {
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
   try {
+    const previousContext = packageContextForSession(auth.session);
     if (audience === "female_view" || audience === "lgbt_view") {
       if (await gatewayStore.hasHallAudienceInventory(audience)) applyAudience(auth.session, audience);
       else applyManualReview(auth.session);
@@ -197,6 +204,9 @@ export async function handleAudience(request, env = {}) {
       applyManualReview(auth.session);
     } else {
       applyUnknownAudience(auth.session);
+    }
+    if (!samePackageContext(previousContext, packageContextForSession(auth.session))) {
+      invalidatePackageSelection(auth.session);
     }
     await persistGatewaySession(env, gatewayStore, auth.session);
     await recordGatewayDecision(gatewayStore, auth.session);
@@ -222,6 +232,13 @@ export async function handlePackage(request, env = {}) {
 
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
+  if (Object.prototype.hasOwnProperty.call(body, "promo_code")) {
+    const promoCode = normalizePromoCode(body.promo_code);
+    if (promoCode !== auth.session.promo_code) {
+      auth.session.promo_code = promoCode;
+      invalidatePackageSelection(auth.session);
+    }
+  }
   if (auth.session.hype_decision_status === "manual_review" || (requiresAudience(auth.session.liff_intent) && auth.session.hall_audience_context === "unknown")) {
     return saveRotatedError(env, auth, "PACKAGE_NOT_READY", "Choose the appropriate route first.", 409);
   }
@@ -235,10 +252,13 @@ export async function handlePackage(request, env = {}) {
     return saveRotatedError(env, auth, "PACKAGE_NOT_AVAILABLE", "This package is not available for the current route.", 409);
   }
   if (packageRule.requires_manual_review) {
+    invalidatePackageSelection(auth.session);
     applyManualReview(auth.session);
   } else {
-    auth.session.selected_package = packageRule;
     auth.session.pricing_lane = packageRule.pricing_lane;
+    auth.session.selected_package = selectedPackageForSession(packageRule, auth.session);
+    auth.session.payment_intent_session_id = null;
+    auth.session.payment_binding_status = null;
     auth.session.hype_decision_status = "decided";
     auth.session.route_after_liff = "/member/payments";
     auth.session.next_screen_key = "payment_start";
@@ -266,8 +286,7 @@ export async function handlePaymentIntent(request, env = {}) {
   if (!body) return invalidInput();
   if (hasUnexpectedKeys(body, PAYMENT_INTENT_BODY_KEYS) || hasBrowserIdentityClaims(body)) return browserIdentityRejected();
   const packageCode = normalizePackageCode(body.package_code);
-  const paymentStage = normalizePaymentStage(body.payment_stage);
-  if (!packageCode || !paymentStage) return json({ ok: false, error: { code: "PAYMENT_INTENT_INVALID", message: "A selected package and payment stage are required." } }, 400);
+  if (!packageCode || !normalizePaymentStage(body.payment_stage)) return json({ ok: false, error: { code: "PAYMENT_INTENT_INVALID", message: "A selected package and payment stage are required." } }, 400);
 
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
@@ -275,21 +294,29 @@ export async function handlePaymentIntent(request, env = {}) {
   if (!selected || selected.package_code !== packageCode || auth.session.hype_decision_status === "manual_review") {
     return saveRotatedError(env, auth, "PAYMENT_INTENT_NOT_READY", "Select an eligible package first.", 409);
   }
-  if (!auth.session.payment_intent_session_id) auth.session.payment_intent_session_id = `liffpay_${crypto.randomUUID()}`;
-  const payment = await createPaymentIntent(env, auth.session, selected, paymentStage);
-  if (!payment.ok) return saveRotatedError(env, auth, payment.code, "Payment setup is not available yet.", payment.status);
-
-  auth.session.route_after_liff = "/member/payments";
-  auth.session.next_screen_key = "payment_start";
-  auth.session.hype_decision_status = "decided";
   try {
-    await persistGatewaySession(env, gatewayStore, auth.session);
-    await recordGatewayDecision(gatewayStore, auth.session);
-    await saveSession(env, auth.newHash, auth.session, SESSION_TTL_SECONDS);
+    const currentPackage = await gatewayStore.resolvePackage(selected.package_code);
+    if (!currentPackage || !isPackageAllowedForSession(currentPackage, auth.session) || !isSelectedPackageCurrent(selected, currentPackage, auth.session)) {
+      return saveRotatedError(env, auth, "PAYMENT_INTENT_STALE_PACKAGE", "Select an eligible package first.", 409);
+    }
   } catch (error) {
     return gatewayStorageFailure(error);
   }
-  return json({ ok: true, data: { ...(await safeSessionView(gatewayStore, auth.session)), payment_ready: true } }, 200, { cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)] });
+
+  // TODO(live enablement): bind an explicitly approved, non-granting
+  // PAYMENTS_WORKER token contract before this foundation makes any payment call.
+  auth.session.payment_intent_session_id = null;
+  auth.session.payment_binding_status = PAYMENT_BINDING_STATUS;
+  auth.session.route_after_liff = null;
+  auth.session.next_screen_key = "payment_unavailable";
+  return saveGatewayStateError(
+    env,
+    gatewayStore,
+    auth,
+    "PAYMENT_TOKEN_CONTRACT_UNAVAILABLE",
+    "Payment setup is not available yet.",
+    503,
+  );
 }
 
 export async function handleStatus(request, env = {}) {
@@ -326,26 +353,34 @@ export async function handleHallToken(request, env = {}) {
   if (auth.session.liff_intent !== "hall" || !isVisibleHallMode(auth.session.model_visibility_mode)) {
     return saveRotatedError(env, auth, "HALL_AUDIENCE_REQUIRED", "Choose the appropriate route first.", 409);
   }
+  if (!hasAtomicSessionReplayGuard(env)) {
+    auth.session.route_after_liff = null;
+    auth.session.next_screen_key = "session_guard_required";
+    return saveGatewayStateError(
+      env,
+      gatewayStore,
+      auth,
+      "LIFF_ATOMIC_SESSION_GUARD_REQUIRED",
+      "This protected step is not available yet.",
+      503,
+    );
+  }
   try {
     if (!await gatewayStore.hasHallAudienceInventory(auth.session.hall_audience_context)) {
       return saveRotatedError(env, auth, "HALL_REVIEW_REQUIRED", "This route needs private review first.", 409);
     }
-    const now = Date.now();
-    const payload = {
-      v: 1,
-      sid: auth.session.session_id,
-      mode: auth.session.model_visibility_mode,
-      member: auth.session.member_exists ? "matched" : "pending",
-      iat: now,
-      exp: now + HALL_TOKEN_TTL_SECONDS * 1000,
-      jti: crypto.randomUUID(),
-    };
-    const token = await signHallRouteToken(env, payload);
+    const { token, payload } = await createHallRouteToken(env);
     const tokenHash = await keyedDigest(env, `hall:${token}`);
+    const jtiHash = await keyedDigest(env, `hall-jti:${payload.jti}`);
     auth.session.signed_route_token_hash = tokenHash;
     auth.session.route_after_liff = "/hall";
     auth.session.next_screen_key = "hall_route";
-    await env.LIFF_IDENTITY_KV.put(`liff:hall:${tokenHash}`, JSON.stringify({ session_id: auth.session.session_id, expires_at: payload.exp }), { expirationTtl: HALL_TOKEN_TTL_SECONDS });
+    await env.LIFF_IDENTITY_KV.put(`liff:hall:${jtiHash}`, JSON.stringify({
+      session_id: auth.session.session_id,
+      model_visibility_mode: auth.session.model_visibility_mode,
+      token_hash: tokenHash,
+      expires_at: payload.exp,
+    }), { expirationTtl: HALL_TOKEN_TTL_SECONDS });
     await persistGatewaySession(env, gatewayStore, auth.session);
     await recordGatewayDecision(gatewayStore, auth.session);
     await saveSession(env, auth.newHash, auth.session, SESSION_TTL_SECONDS);
@@ -431,8 +466,11 @@ async function issueSession(env, data) {
 }
 
 async function authenticateAndRotate(request, env) {
-  const auth = await authenticateSession(request, env, { consume: true });
+  // KV read/delete is bounded cookie rotation only. It is not presented as
+  // atomic replay protection; live-sensitive actions remain blocked below.
+  const auth = await authenticateSession(request, env);
   if (!auth.ok) return auth;
+  await env.LIFF_IDENTITY_KV.delete(auth.key);
   const newToken = randomToken(32);
   const newHash = await keyedDigest(env, `session:${newToken}`);
   auth.session.rotation = Number(auth.session.rotation || 0) + 1;
@@ -440,7 +478,7 @@ async function authenticateAndRotate(request, env) {
   return { ok: true, session: auth.session, newToken, newHash };
 }
 
-async function authenticateSession(request, env, { consume = false } = {}) {
+async function authenticateSession(request, env) {
   const token = cookieValue(request, SESSION_COOKIE);
   if (!token) return authFailure("LIFF_SESSION_REQUIRED", "Authenticated LIFF session required.");
   const hash = await keyedDigest(env, `session:${token}`);
@@ -450,8 +488,7 @@ async function authenticateSession(request, env, { consume = false } = {}) {
     if (session) await env.LIFF_IDENTITY_KV.delete(key);
     return authFailure("LIFF_SESSION_INVALID", "LIFF session is invalid or expired.");
   }
-  if (consume) await env.LIFF_IDENTITY_KV.delete(key);
-  return { ok: true, session };
+  return { ok: true, session, key };
 }
 
 async function saveSession(env, hash, session, ttl) {
@@ -464,15 +501,28 @@ async function signHallRouteToken(env, payload) {
   return `${encoded}.${signature}`;
 }
 
+export async function createHallRouteToken(env = {}) {
+  const now = Date.now();
+  const payload = {
+    v: 1,
+    aud: "hall",
+    iat: now,
+    exp: now + HALL_TOKEN_TTL_SECONDS * 1000,
+    jti: crypto.randomUUID(),
+  };
+  return { token: await signHallRouteToken(env, payload), payload };
+}
+
 export async function verifyHallRouteToken(token, env = {}) {
   const parsed = parseHallRouteToken(token);
   if (!parsed) return { ok: false, code: "HALL_TOKEN_INVALID" };
   if (!await verifyHallRouteSignature(env, parsed.encoded, parsed.signature) || !isValidHallPayload(parsed.payload)) return { ok: false, code: "HALL_TOKEN_INVALID" };
   if (parsed.payload.exp <= Date.now()) return { ok: false, code: "HALL_TOKEN_EXPIRED" };
   const tokenHash = await keyedDigest(env, `hall:${token}`);
-  const stored = await env.LIFF_IDENTITY_KV?.get(`liff:hall:${tokenHash}`, "json");
-  if (!stored || stored.session_id !== parsed.payload.sid || Number(stored.expires_at || 0) <= Date.now()) return { ok: false, code: "HALL_TOKEN_INVALID" };
-  return { ok: true, context: { session_id: parsed.payload.sid, model_visibility_mode: parsed.payload.mode } };
+  const jtiHash = await keyedDigest(env, `hall-jti:${parsed.payload.jti}`);
+  const stored = await env.LIFF_IDENTITY_KV?.get(`liff:hall:${jtiHash}`, "json");
+  if (!stored || stored.token_hash !== tokenHash || Number(stored.expires_at || 0) <= Date.now()) return { ok: false, code: "HALL_TOKEN_INVALID" };
+  return { ok: true, context: { session_id: stored.session_id, model_visibility_mode: stored.model_visibility_mode } };
 }
 
 function parseHallRouteToken(token) {
@@ -489,9 +539,7 @@ function parseHallRouteToken(token) {
 
 function isValidHallPayload(payload) {
   return payload.v === 1
-    && typeof payload.sid === "string" && /^[0-9a-f-]{36}$/i.test(payload.sid)
-    && isVisibleHallMode(payload.mode)
-    && ["matched", "pending"].includes(payload.member)
+    && payload.aud === "hall"
     && Number.isFinite(payload.iat)
     && Number.isFinite(payload.exp)
     && payload.exp > payload.iat
@@ -594,6 +642,20 @@ function fallbackScreen(key) {
       actions: [{ id: "start_payment", label: "ไปต่อที่การชำระเงิน", endpoint: "/member/api/liff/payment-intent", method: "POST" }],
     };
   }
+  if (key === "payment_unavailable") {
+    return {
+      key,
+      copy: "ขั้นตอนชำระเงินยังไม่พร้อมใช้งานในตอนนี้ครับ",
+      actions: [],
+    };
+  }
+  if (key === "session_guard_required") {
+    return {
+      key,
+      copy: "ขั้นตอนนี้ยังไม่พร้อมให้ดำเนินการต่อในตอนนี้ครับ",
+      actions: [],
+    };
+  }
   return {
     key: "start_intent",
     copy: "ยินดีต้อนรับสู่ MMD Privé\nHYPE จะช่วยพาคุณไปยังขั้นตอนที่เหมาะกับคุณที่สุดครับ",
@@ -614,6 +676,8 @@ function nextScreenForIntent(intent) {
 
 function applyGatewayIntent(session, intent) {
   session.liff_intent = intent;
+  session.hall_audience_context = "unknown";
+  session.model_visibility_mode = "hold_until_selected";
   session.pricing_lane = "unknown";
   if (intent === "unknown") {
     session.hype_decision_status = "asking_intent";
@@ -667,6 +731,56 @@ function applyUnknownAudience(session) {
   session.next_screen_key = "audience_select";
 }
 
+function invalidatePackageSelection(session) {
+  session.selected_package = null;
+  session.payment_intent_session_id = null;
+  session.payment_binding_status = null;
+}
+
+function packageContextForSession(session) {
+  return {
+    liff_intent: session.liff_intent || "unknown",
+    hall_audience_context: session.hall_audience_context || "unknown",
+    model_visibility_mode: session.model_visibility_mode || "hold_until_selected",
+    pricing_lane: session.pricing_lane || "unknown",
+    promo_code: session.promo_code || null,
+    hype_decision_status: session.hype_decision_status || "not_started",
+  };
+}
+
+function selectedPackageForSession(packageRule, session) {
+  return {
+    ...packageRule,
+    context: {
+      ...packageContextForSession(session),
+      package_code: packageRule.package_code,
+      resolved_at: new Date().toISOString(),
+    },
+  };
+}
+
+function samePackageContext(a, b) {
+  return a.liff_intent === b.liff_intent
+    && a.hall_audience_context === b.hall_audience_context
+    && a.model_visibility_mode === b.model_visibility_mode
+    && a.pricing_lane === b.pricing_lane
+    && a.promo_code === b.promo_code
+    && a.hype_decision_status === b.hype_decision_status;
+}
+
+function isSelectedPackageCurrent(selected, currentPackage, session) {
+  const context = selected?.context;
+  return Boolean(context)
+    && context.package_code === selected.package_code
+    && samePackageContext(context, packageContextForSession(session))
+    && selected.package_code === currentPackage.package_code
+    && selected.pricing_lane === currentPackage.pricing_lane
+    && selected.amount_thb === currentPackage.amount_thb
+    && selected.duration_days === currentPackage.duration_days
+    && selected.points_after_verification === currentPackage.points_after_verification
+    && selected.requires_manual_review === currentPackage.requires_manual_review;
+}
+
 function isPackageAllowedForSession(packageRule, session) {
   if (!packageRule || typeof packageRule !== "object") return false;
   if (packageRule.requires_manual_review) return true;
@@ -685,29 +799,6 @@ function safePaymentSummary(packageRule) {
   };
 }
 
-async function createPaymentIntent(env, session, selectedPackage, paymentStage) {
-  const paymentsWorker = env.PAYMENTS_WORKER;
-  if (!paymentsWorker?.fetch) return { ok: false, status: 503, code: "PAYMENTS_WORKER_NOT_CONFIGURED" };
-  try {
-    const response = await paymentsWorker.fetch(new Request(`https://payments-worker.internal${PAYMENT_TOKEN_PATH}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        session_id: session.payment_intent_session_id,
-        payment_stage: paymentStage,
-        package_code: selectedPackage.package_code,
-        amount_thb: selectedPackage.amount_thb,
-        source_channel: session.source_channel,
-      }),
-    }));
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || !payload || payload.ok === false) return { ok: false, status: 503, code: "PAYMENT_INTENT_UNAVAILABLE" };
-    return { ok: true };
-  } catch {
-    return { ok: false, status: 503, code: "PAYMENT_INTENT_UNAVAILABLE" };
-  }
-}
-
 async function safeSessionView(gatewayStore, session) {
   const screen = await resolveScreen(gatewayStore, session.next_screen_key || "start_intent");
   return {
@@ -718,6 +809,7 @@ async function safeSessionView(gatewayStore, session) {
     next_screen_key: screen.key,
     screen,
     route_after_liff: session.route_after_liff || null,
+    ...(session.payment_binding_status ? { payment_binding_status: session.payment_binding_status } : {}),
     expires_in: SESSION_TTL_SECONDS,
     grants: noGrants(),
   };
@@ -764,12 +856,18 @@ function cookieValue(request, name) {
 
 function hasFoundationBindings(env) { return Boolean(env.LIFF_IDENTITY_KV && env.MEMBER_STATUS_RESOLVER?.fetch && hasMemberResolverSecret(env) && env.LINE_LOGIN_CHANNEL_ID && env.LIFF_SESSION_SECRET); }
 function hasMemberResolverSecret(env) { return String(env.MEMBER_STATUS_RESOLVER_SECRET || "").length >= 32; }
+function hasAtomicSessionReplayGuard(_env) {
+  // A Durable Object or equivalent atomic guard has not been approved for this
+  // foundation. Do not enable sensitive Hall handoff by configuration alone.
+  return false;
+}
 function isLiffPrefix(path) { return path === "/member/api/liff" || path.startsWith("/member/api/liff/"); }
 function hasBrowserIdentityClaims(body) { return BROWSER_IDENTITY_FIELDS.some((key) => Object.prototype.hasOwnProperty.call(body, key)); }
 function hasUnexpectedKeys(body, allowed) { return Object.keys(body || {}).some((key) => !allowed.has(key)); }
 function normalizeLiffIntent(value) { const intent = String(value || "unknown").trim().toLowerCase(); return LIFF_INTENTS.has(intent) ? intent : "unknown"; }
 function normalizeAudience(value) { const audience = String(value || "").trim().toLowerCase(); return HALL_AUDIENCES.has(audience) ? audience : ""; }
 function normalizePackageCode(value) { const code = String(value || "").trim().toLowerCase(); return /^[a-z0-9][a-z0-9_-]{1,62}$/.test(code) ? code : ""; }
+function normalizePromoCode(value) { const code = String(value || "").trim().toLowerCase(); return /^[a-z0-9][a-z0-9_-]{0,62}$/.test(code) ? code : ""; }
 function normalizePaymentStage(value) { const stage = String(value || "").trim().toLowerCase(); return stage === "membership" || stage === "renewal" ? stage : ""; }
 function singleIdToken(body) { if (body.id_token && body.line_id_token) return ""; return exactToken(body.id_token || body.line_id_token); }
 function requiresAudience(intent) { return intent === "signup" || intent === "promo" || intent === "hall"; }
@@ -803,6 +901,20 @@ function gatewayStorageFailure(error) {
 async function saveRotatedError(env, auth, code, message, status) {
   await saveSession(env, auth.newHash, auth.session, SESSION_TTL_SECONDS);
   return json({ ok: false, error: { code, message } }, status, { cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)] });
+}
+async function saveGatewayStateError(env, gatewayStore, auth, code, message, status) {
+  try {
+    await persistGatewaySession(env, gatewayStore, auth.session);
+    await recordGatewayDecision(gatewayStore, auth.session);
+    await saveSession(env, auth.newHash, auth.session, SESSION_TTL_SECONDS);
+  } catch (error) {
+    return gatewayStorageFailure(error);
+  }
+  return json({
+    ok: false,
+    data: await safeSessionView(gatewayStore, auth.session),
+    error: { code, message },
+  }, status, { cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)] });
 }
 function methodNotAllowed(methods) { return json({ ok: false, error: { code: "METHOD_NOT_ALLOWED", message: `${methods} required` } }, 405, { headers: { allow: methods } }); }
 function authFailure(code, message) { return { ok: false, response: json({ ok: false, error: { code, message } }, 401, { cookies: [clearCookie(SESSION_COOKIE)] }) }; }
