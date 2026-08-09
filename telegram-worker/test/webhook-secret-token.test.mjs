@@ -4,12 +4,14 @@ import test from "node:test";
 import worker from "../src/index.js";
 
 const WEBHOOK_URL = "https://telegram-worker.mmd.test/telegram/webhook";
+const INTERNAL_SEND_URL = "https://telegram-worker.mmd.test/telegram/internal/send";
 const PREVIEW_POST_URL = "https://telegram-worker.mmd.test/telegram/preview/post";
 
 function env(overrides = {}) {
   return {
     TELEGRAM_WEBHOOK_SECRET_TOKEN: "expected-secret",
     INTERNAL_API_TOKEN: "internal-secret",
+    TELEGRAM_BOT_TOKEN: "telegram-token",
     TELEGRAM_PREVIEW_CHANNEL_ID: "-100123",
     TELEGRAM_BOT_USERNAME: "mmdprivebot",
     ...overrides,
@@ -111,6 +113,83 @@ test("/telegram/webhook remains open when secret token is not configured", async
 
   assert.equal(response.status, 200);
   assert.equal(body.reason, "no_matching_command");
+});
+
+test("/telegram/internal/send rejects missing internal token", async () => {
+  const response = await worker.fetch(new Request(INTERNAL_SEND_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      chat_id: "-1003546439681",
+      message_thread_id: "1399",
+      text: "booking draft",
+    }),
+  }), env());
+  const body = await response.json();
+
+  assert.equal(response.status, 403);
+  assert.equal(body.error, "internal_token_required");
+});
+
+test("/telegram/internal/send accepts bearer auth and preserves explicit booking topic", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let telegramRequest = null;
+
+  globalThis.fetch = async (url, init = {}) => {
+    telegramRequest = {
+      url: String(url),
+      method: init.method,
+      headers: init.headers,
+      body: JSON.parse(String(init.body || "{}")),
+    };
+    return new Response(JSON.stringify({
+      ok: true,
+      result: {
+        message_id: 77,
+        chat: { id: -1003546439681 },
+        message_thread_id: 1399,
+      },
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  try {
+    const response = await worker.fetch(new Request(INTERNAL_SEND_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer internal-secret",
+      },
+      body: JSON.stringify({
+        chat_id: "-1003546439681",
+        message_thread_id: "1399",
+        thread_id: "1399",
+        text: "🕯️ <b>MMD Booking Draft</b>",
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+        source: "sigil_booking_worker",
+        intent: "booking_draft_notify",
+      }),
+    }), env());
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.telegram.ok, true);
+    assert.match(telegramRequest.url, /api\.telegram\.org\/bottelegram-token\/sendMessage$/);
+    assert.equal(telegramRequest.method, "POST");
+    assert.deepEqual(telegramRequest.body, {
+      chat_id: "-1003546439681",
+      text: "🕯️ <b>MMD Booking Draft</b>",
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      message_thread_id: 1399,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("/telegram/preview/post remains protected by INTERNAL_API_TOKEN", async () => {
