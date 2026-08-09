@@ -1,0 +1,49 @@
+/* MMD Kenji AI 2.0 safe flow + knowledge runtime v21.5 */
+(()=> {
+  const root=document.querySelector('[data-mmd-kenji-v21]');
+  if(!root||root.dataset.safeFlow==='v21.5') return;
+  root.dataset.safeFlow='v21.5';
+  const $=s=>root.querySelector(s), $$=s=>Array.from(root.querySelectorAll(s));
+  const q=new URLSearchParams(location.search), token=(q.get('t')||'').trim();
+  const nodes={name:$('[data-k21-name]'),tier:$('[data-k21-tier]'),points:$('[data-k21-points]'),state:$('[data-k21-state]'),g:$('[data-k21-greeting]'),ai:$('[data-k21-ai-text]'),bar:$('[data-k21-progress-bar]'),pc:$('[data-k21-progress-copy]'),pn:$('[data-k21-progress-number]'),input:$('[data-k21-input]'),toast:$('[data-k21-toast]')};
+  const staticCards=[
+    ['kenji_20_001_role','ผมช่วยดูเส้นทางที่เหมาะกับ request ของคุณก่อนนะครับ บาง request ต้องให้ MMD พิจารณาความเหมาะสมก่อน โดยเฉพาะ access ที่มีรายละเอียดเฉพาะ'],
+    ['kenji_20_002_route_map','ผมช่วยแยกเส้นทางให้ครับ: MMD Companion, MMS Wellness หรือ Partner Venue เช่น Relax Spa by 9 ตามบริบท ทั้งหมดต้องให้ MMD ตรวจความเหมาะสมก่อนครับ'],
+    ['kenji_20_008_membership_intake_catalog','ถ้าคุณสนใจ Membership Access ผมช่วยรับความสนใจและแยกเส้นทางให้ MMD review ก่อนครับ ขั้นตอนนี้เป็น intake และ review เท่านั้น ยังไม่ใช่การยืนยัน membership, ราคา, booking หรือ access ครับ'],
+    ['kenji_20_007_drop_690_guard','ผมจะไม่พาไปเส้น Public Access 690 แบบเดิมแล้วครับ ถ้าเป็น request ใหม่ ผมจะพาไป Reviewed Access / Membership Intake หรือ Payment Proof ตามบริบท และให้ MMD ตรวจความเหมาะสมก่อนเสมอ'],
+    ['kenji_20_006_payment_proof','ถ้าต้องส่งหลักฐาน ผมจะพาไปหน้า Payment Proof ครับ: https://mmdbkk.com/confirm/payment-proof\n\nMMD จะรับหลักฐานไว้ตรวจยอดจริงก่อนอัปเดตขั้นตอนถัดไป หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request ครับ'],
+    ['kenji_20_009_web_forbidden_terms','ผมจะใช้ถ้อยคำที่ปลอดภัยและให้ MMD ตรวจสอบก่อนเสมอครับ ถ้ามีเรื่องชำระเงินหรือ access ผมจะพาไปหน้าที่ถูกต้องและใช้คำว่า รับหลักฐานแล้ว / รอตรวจยอดจริง / MMD ตรวจยอดจริง เท่านั้น']
+  ].map(([id,answer])=>({id,knowledge_id:id,answer,customer_answer:answer}));
+  let cards=staticCards.slice(), knowledgeSource='static_route_map';
+  const fmt=n=>new Intl.NumberFormat('th-TH').format(Math.max(0,+n||0))+' pts';
+  const mapTier=v=>({standard:'Standard Package',premium:'Premium Package',vip:'VIP',svip:'SVIP',black_card:'Exclusive Black Card',blackcard:'Exclusive Black Card'}[String(v||'').toLowerCase().replace(/[\s-]+/g,'_')]||v||'Member');
+  const ms=p=>{p=+p||0;return p<1200?[1200,1200-p,'อีกขั้นก่อนเปิด GWs']:p<2500?[2500,2500-p,'อีกขั้นก่อนเปิด EMs']:[p||2500,0,'ถึงระดับสิทธิ์แต้มหลักแล้ว']};
+  const cardText=c=>String(c&&(c.customer_answer||c.answer||'')||'').trim();
+  const cardId=c=>String(c&&(c.knowledge_id||c.id)||'');
+  function patchCopy(){
+    const brand=$('.mmd-k21__brand-name'); if(brand)brand.textContent='MMD PRIVÉ MEMBER';
+    const role=$('.mmd-k21__identity-role'); if(role)role.textContent='Member Concierge · MMD Privé';
+    $$('.mmd-k21__action[href="/confirm/payment-confirmation"],.mmd-k21__button[href="/confirm/payment-confirmation"]').forEach(a=>{a.href='/confirm/payment-proof';const s=a.querySelector('strong'),m=a.querySelector('small');if(s)s.textContent='ส่งหลักฐาน';if(m)m.textContent='ให้ MMD ตรวจยอดจริงก่อนอัปเดตสถานะ'});
+    const title=$('#k21-secure-title'); if(title)title.textContent='เรื่องหลักฐาน ผมจะพาไปหน้าที่ถูกต้องครับ';
+    const copy=$('.mmd-k21__secure-copy'); if(copy)copy.textContent='หน้านี้ไม่ขอเลขบัญชี รหัส OTP หรือข้อมูลบัตร ถ้าต้องส่งหลักฐาน ให้ใช้หน้า Payment Proof เท่านั้น';
+    const foot=$('.mmd-k21__footer-note'); if(foot)foot.textContent='Kenji AI 2.0 ช่วยพาไปยังขั้นตอนที่เกี่ยวข้อง ข้อมูลสมาชิกและหลักฐานที่ส่งจะอิงการตรวจสอบของ MMD';
+  }
+  function preserve(){ $$('[data-preserve-t]').forEach(a=>{try{let u=new URL(a.getAttribute('href'),location.origin);if(token)u.searchParams.set('t',token);a.href=u.pathname+u.search+u.hash}catch(e){}}) }
+  function state(label,cls){if(nodes.state){nodes.state.textContent=label;nodes.state.dataset.state=cls||'live'}}
+  function render(m){m=m||{};let name=m.display_name||m.nickname||m.name||'สมาชิก MMD',p=+(m.active_points||m.points||0),mm=ms(p),percent=mm[1]?Math.min(100,p/mm[0]*100):100;[nodes.name,nodes.tier,nodes.points].forEach(n=>n&&n.classList.remove('mmd-k21__skeleton'));if(nodes.name)nodes.name.textContent=name;if(nodes.tier)nodes.tier.textContent=mapTier(m.tier||m.package_name);if(nodes.points)nodes.points.textContent=fmt(p);if(nodes.bar)nodes.bar.style.width=percent+'%';if(nodes.pc)nodes.pc.textContent=mm[2];if(nodes.pn)nodes.pn.textContent=mm[1]?'อีก '+new Intl.NumberFormat('th-TH').format(mm[1])+' pts':'พร้อมใช้สิทธิ์';if(nodes.g)nodes.g.textContent='สวัสดีครับ '+name+' วันนี้อยากจอง เช็กแต้ม ต่ออายุ หรือส่งหลักฐาน บอกผมสั้น ๆ ได้เลยครับ';if(nodes.ai&&!nodes.ai.dataset.knowledgeTouched)nodes.ai.textContent='สถานะเชื่อมแล้วครับ จะจอง เช็กแต้ม ต่ออายุ หรือเพิ่งส่งหลักฐาน บอกผมได้เลย';state('เชื่อมแล้ว','live')}
+  function signedOut(){[nodes.name,nodes.tier,nodes.points].forEach(n=>n&&n.classList.remove('mmd-k21__skeleton'));if(nodes.name)nodes.name.textContent='ยังไม่เชื่อมสมาชิก';if(nodes.tier)nodes.tier.textContent='Guest';if(nodes.points)nodes.points.textContent='0 pts';if(nodes.bar)nodes.bar.style.width='0%';if(nodes.pc)nodes.pc.textContent='เปิดผ่าน Member Link เพื่อดูข้อมูลจริง';if(nodes.pn)nodes.pn.textContent='รอการเชื่อม';if(nodes.g)nodes.g.textContent='ลิงก์นี้ยังไม่ได้เชื่อมกับข้อมูลสมาชิกครับ เข้าผ่าน Member Link ก่อน แล้วผมจะพากลับมาที่สถานะของคุณ';if(nodes.ai&&!nodes.ai.dataset.knowledgeTouched)nodes.ai.textContent='ผมจะไม่เดาข้อมูลของคุณ กด Member Home เพื่อเข้าสู่หน้าสมาชิกก่อนนะครับ';state('ยังไม่เชื่อม','error')}
+  async function loadMember(){if(!token)return signedOut();try{let u=new URL(root.dataset.dashboardEndpoint||'/api/member/dashboard',location.origin);u.searchParams.set('t',token);let r=await fetch(u,{credentials:'same-origin',headers:{Accept:'application/json'}});if(!r.ok)throw Error(r.status);let j=await r.json();render(j.member||j)}catch(e){signedOut()}}
+  async function loadKnowledge(){try{let r=await fetch('/v1/internal/kenji/knowledge/published',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});let j=await r.json().catch(()=>({}));if(r.ok&&Array.isArray(j.cards)&&j.cards.length){cards=j.cards;knowledgeSource='published_runtime';root.dataset.knowledgeSource='published_runtime';return true}throw Error('knowledge_unavailable')}catch(e){cards=staticCards.slice();knowledgeSource='static_route_map';root.dataset.knowledgeSource='static_route_map';return false}}
+  const route=i=>({booking:'/sigil/booking?from=kenji-ai-20',proof:'/confirm/payment-proof',renewal:'/member/membership',membership:'/member/membership',black_card:'/blackcard/black-card',status:'/member/dashboard'}[i]||'');
+  function go(path){let u=new URL(path,location.origin);if(token)u.searchParams.set('t',token);setTimeout(()=>location.assign(u.pathname+u.search+u.hash),620)}
+  function toast(x){if(!nodes.toast)return;clearTimeout(root._kt);nodes.toast.textContent=x;nodes.toast.dataset.open='true';root._kt=setTimeout(()=>nodes.toast.dataset.open='false',2300)}
+  function intent(x){x=String(x||'').toLowerCase();if(/690|public access/.test(x))return'drop690';if(/หลักฐาน|สลิป|ชำระ|payment|proof|โอน/.test(x))return'proof';if(/membership|member|สมาชิก|สมัคร|ต่ออายุ|renew|package|access/.test(x))return'membership';if(/mms|massage|wellness|recovery|spa|relax/.test(x))return'wellness';if(/จอง|booking|book|นัด|companion|dining|event|appearance|social/.test(x))return'booking';if(/แต้ม|point/.test(x))return'points';if(/black/.test(x))return'black_card';if(/ห้าม|forbidden|term|copy|paid|verified|approved|successful/.test(x))return'terms';return'general'}
+  function findCard(i){const map={proof:'kenji_20_006_payment_proof',membership:'kenji_20_008_membership_intake_catalog',renewal:'kenji_20_008_membership_intake_catalog',booking:'kenji_20_002_route_map',wellness:'kenji_20_002_route_map',drop690:'kenji_20_007_drop_690_guard',terms:'kenji_20_009_web_forbidden_terms',general:'kenji_20_001_role'};let id=map[i]||map.general;return cards.find(c=>cardId(c)===id)||staticCards.find(c=>c.id===id)||staticCards[0]}
+  function reply(i){let p=parseInt(String(nodes.points&&nodes.points.textContent||'0').replace(/\D/g,''),10)||0;let c=findCard(i),txt=cardText(c);if(i==='points')txt='ตอนนี้แสดง '+fmt(p)+' ครับ '+(ms(p)[1]?'อีก '+ms(p)[1]+' pts ถึงสิทธิ์ถัดไป':'สิทธิ์แต้มหลักพร้อมแล้ว');if(i==='black_card')txt='Exclusive Black Card เป็นสิทธิ์ระดับ private access การเปิดสิทธิ์จะอิงสถานะบัญชีและการพิจารณาส่วนตัว';if(nodes.ai){nodes.ai.dataset.knowledgeTouched='true';nodes.ai.textContent=txt}toast(knowledgeSource==='published_runtime'?'ใช้ Knowledge ที่ MMD approve แล้วครับ':'ใช้ fallback route map ที่ล็อกไว้ก่อนครับ')}
+  function handleAsk(x,shouldRoute=true){let i=intent(x);reply(i);let r={proof:route('proof'),membership:route('membership'),renewal:route('membership'),booking:route('booking'),wellness:route('booking'),drop690:route('membership'),black_card:route('black_card')}[i]||'';if(shouldRoute&&r)go(r);return true}
+  $$('[data-intent]').forEach(b=>b.onclick=()=>handleAsk(b.dataset.intent||'',true));
+  const form=$('[data-k21-form]');if(form)form.onsubmit=e=>{e.preventDefault();let v=String(nodes.input&&nodes.input.value||'').trim();if(nodes.input)nodes.input.value='';handleAsk(v,true)};
+  patchCopy();preserve();loadKnowledge().then(loadMember);
+  window.MMDKenjiMemberConciergeV214=Object.freeze({reload:loadMember,knowledgeReload:loadKnowledge,ask:x=>handleAsk(x,false),routeAsk:x=>handleAsk(x,true)});
+  window.MMDKenjiKnowledgeRuntimeV215=Object.freeze({reload:loadKnowledge,ask:x=>handleAsk(x,false),routeAsk:x=>handleAsk(x,true),get cards(){return cards.slice()},get source(){return knowledgeSource}});
+})();
