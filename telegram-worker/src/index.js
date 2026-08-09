@@ -8,8 +8,6 @@ const PREVIEW_START = "preview";
 const DEFAULT_BOT_USERNAME = "mmdprivebot";
 const DEFAULT_PUBLIC_BASE_URL = "https://www.mmdbkk.com";
 const DEFAULT_PREVIEW_CHANNEL_URL = "https://t.me/MMDPriveTH";
-const PREVIEW_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const PREVIEW_CODE_TTL_SECONDS = 60 * 60 * 24 * 90;
 
 export default {
   async fetch(req, env) {
@@ -84,15 +82,19 @@ async function handleTelegramWebhook(update, env) {
 
   const startArg = parseStartArg(text);
   if (startArg === PREVIEW_START) {
-    const record = await issuePreviewPromo(message, env);
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
-      text: previewIssuedText(record),
+      text: previewVerificationRequiredText(),
       parse_mode: "HTML",
       disable_web_page_preview: true,
       reply_markup: previewButtonMarkup(env),
     }, env);
-    return { handled: true, flow: "preview_start", telegram, code_status: record.status };
+    return {
+      handled: true,
+      flow: "preview_start",
+      telegram,
+      code_status: "verification_required",
+    };
   }
 
   if (text === "/start" || text.toLowerCase().startsWith("/start@")) {
@@ -152,8 +154,8 @@ async function postPreviewChannelCta(body, env) {
   const text = clean(body.text) || [
     "MMD Privé Preview เปิดให้เช็กสิทธิ์ 6 YEARS CARE BACK แล้วครับ",
     "",
-    "กดรับโค้ดด้านล่างเพื่อให้ HYPE ออกโค้ดส่วนตัวให้คุณ",
-    "โค้ดใช้ได้ 1 ครั้ง และจะมีผลหลังจาก MMD ตรวจสอบข้อมูลเรียบร้อยแล้วครับ",
+    "กดตรวจสอบสิทธิ์ด้านล่างเพื่อเข้าสู่การยืนยันตัวตนกับ HYPE",
+    "โค้ดส่วนตัวจะแสดงหลังจากระบบตรวจสอบข้อมูลสำเร็จแล้วเท่านั้นครับ",
   ].join("\n");
 
   if (body.dry_run === true) {
@@ -182,84 +184,12 @@ async function postPreviewChannelCta(body, env) {
   };
 }
 
-async function issuePreviewPromo(message, env) {
-  const user = message.from || {};
-  const userId = clean(user.id);
-  if (!userId) {
-    return { status: "blocked", error: "missing_telegram_user_id" };
-  }
-
-  const existing = await readPreviewRecord(env, userId);
-  if (existing?.promo_code) {
-    return { ...existing, status: existing.status || "issued", reissued: true };
-  }
-
-  const promoCode = await makePreviewCode(env, userId);
-  const record = {
-    telegram_user_id: userId,
-    telegram_username: clean(user.username) || undefined,
-    first_name: clean(user.first_name) || undefined,
-    promo_code: promoCode,
-    promo_source: "preview_channel",
-    status: "issued",
-    verification_status: "pending_system_verification",
-    issued_at: new Date().toISOString(),
-  };
-
-  await writePreviewRecord(env, record);
-  return record;
-}
-
-async function readPreviewRecord(env, userId) {
-  if (!env.PREVIEW_PROMO_CODES_KV) return null;
-  return env.PREVIEW_PROMO_CODES_KV.get(previewUserKey(userId), "json").catch(() => null);
-}
-
-async function writePreviewRecord(env, record) {
-  if (!env.PREVIEW_PROMO_CODES_KV) return;
-  const value = JSON.stringify(record);
-  await env.PREVIEW_PROMO_CODES_KV.put(previewUserKey(record.telegram_user_id), value, { expirationTtl: PREVIEW_CODE_TTL_SECONDS });
-  await env.PREVIEW_PROMO_CODES_KV.put(previewCodeKey(record.promo_code), value, { expirationTtl: PREVIEW_CODE_TTL_SECONDS });
-}
-
-async function makePreviewCode(env, userId) {
-  const secret = clean(env.PREVIEW_PROMO_SECRET || env.TELEGRAM_BOT_TOKEN || env.INTERNAL_API_TOKEN || "mmd-preview-channel-v1");
-  const bytes = new TextEncoder().encode(`${secret}:${userId}:preview_channel:v1`);
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-  let code = "";
-  for (let index = 0; index < 6; index += 1) {
-    code += PREVIEW_CODE_ALPHABET[digest[index] % PREVIEW_CODE_ALPHABET.length];
-  }
-  return code;
-}
-
-function previewIssuedText(record) {
-  if (record.error) {
-    return [
-      "ตอนนี้ระบบยังตรวจสอบข้อมูลไม่สมบูรณ์ครับ",
-      "",
-      "กรุณาลองใหม่อีกครั้ง หรือกลับมากดรับโค้ดภายหลังนะครับ",
-      "สิทธิ์จะมีผลหลังจากระบบตรวจสอบเรียบร้อยแล้วเท่านั้นครับ",
-    ].join("\n");
-  }
-
-  if (record.reissued) {
-    return [
-      "คุณมีโค้ดส่วนตัวสำหรับ 6 YEARS CARE BACK อยู่แล้วครับ",
-      "",
-      `<code>${escapeHtml(record.promo_code)}</code>`,
-      "",
-      "โค้ดนี้ใช้ได้ 1 ครั้ง และจะมีผลหลังจาก MMD ตรวจสอบข้อมูลเรียบร้อยแล้วนะครับ",
-    ].join("\n");
-  }
-
+function previewVerificationRequiredText() {
   return [
-    "เข้าสู่ระบบเรียบร้อยครับ",
+    "ยินดีต้อนรับสู่ 6 YEARS CARE BACK ครับ",
     "",
-    "ผมออกโค้ดส่วนตัวสำหรับ 6 YEARS CARE BACK ให้แล้ว",
-    "โค้ดนี้ใช้ได้ 1 ครั้ง และจะมีผลหลังจาก MMD ตรวจสอบข้อมูลเรียบร้อยแล้วนะครับ",
-    "",
-    `<code>${escapeHtml(record.promo_code)}</code>`,
+    "HYPE จะพาคุณตรวจสอบตัวตนและสิทธิ์ก่อน",
+    "โค้ดส่วนตัวจะแสดงหลังจากระบบตรวจสอบข้อมูลสำเร็จแล้วเท่านั้นครับ",
   ].join("\n");
 }
 
@@ -267,10 +197,10 @@ function previewWelcomeText() {
   return [
     "ยินดีต้อนรับสู่ MMD Privé Preview ครับ",
     "",
-    "ช่องนี้ใช้สำหรับเช็กสิทธิ์ 6 YEARS CARE BACK และรับโค้ดส่วนตัวก่อนเข้าใช้งานจริง",
-    "กดรับโค้ดด้านล่างได้เลยนะครับ",
+    "ช่องนี้ใช้สำหรับเริ่มตรวจสอบสิทธิ์ 6 YEARS CARE BACK",
+    "กดตรวจสอบสิทธิ์ด้านล่างเพื่อยืนยันตัวตนกับ HYPE ได้เลยครับ",
     "",
-    "โค้ดเป็นสิทธิ์ส่วนตัว ใช้ได้ 1 ครั้ง และจะมีผลหลังจาก MMD ตรวจสอบข้อมูลเรียบร้อยแล้วครับ",
+    "โค้ดเป็นสิทธิ์ส่วนตัว ใช้ได้ 1 ครั้ง และจะแสดงหลังจากระบบตรวจสอบข้อมูลสำเร็จแล้วเท่านั้นครับ",
   ].join("\n");
 }
 
@@ -358,14 +288,6 @@ function isPreviewPostPath(path) {
 function normalizePath(path = "") {
   const p = String(path || "/").replace(/\/{2,}/g, "/");
   return p.length > 1 ? p.replace(/\/$/, "") : p;
-}
-
-function previewUserKey(userId) {
-  return `preview:user:${userId}`;
-}
-
-function previewCodeKey(code) {
-  return `preview:code:${code}`;
 }
 
 function botUsername(env) {
