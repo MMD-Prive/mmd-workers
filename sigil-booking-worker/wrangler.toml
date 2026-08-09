@@ -6,6 +6,22 @@ main = "src/model-image-policy-worker.js"
 compatibility_date = "2026-01-01"
 workers_dev = true
 
+# Production API attachment for Webflow /sigil/booking.
+# Keep these route patterns narrow. Do not capture all /sigil/api/* paths
+# because other SIGIL/API owners may exist or be added later.
+# Each pattern ends with * so requests with query strings still match.
+[[routes]]
+pattern = "sigil.mmdbkk.com/sigil/api/client/resolve*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/sigil/api/models/search*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/sigil/api/booking/intake*"
+zone_name = "mmdbkk.com"
+
 [vars]
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
