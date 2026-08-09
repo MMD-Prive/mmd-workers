@@ -53,21 +53,59 @@ TG_THREAD_BOOKING_DRAFT = "1399"
 INTERNAL_ADMIN_BOOKING_URL = "https://sigil.mmdbkk.com/internal/admin/console"
 ```
 
-Optional auth secrets, depending on the telegram-worker gate:
+The booking chat is a Telegram forum supergroup. `TG_THREAD_BOOKING_DRAFT` is required because booking drafts must land in the `MMD • Booking` topic, not the General topic.
 
-```bash
-wrangler secret put INTERNAL_TOKEN
-wrangler secret put CONFIRM_KEY
+### Auth contract
+
+`sigil-booking-worker` calls `telegram-worker` with bearer auth:
+
+```http
+Authorization: Bearer <INTERNAL_TOKEN>
 ```
 
-The notify payload is deliberately advisory only. It includes booking ref, session id, Airtable record id, client/contact, route, member/access status, model/preference, date/time/place, and a note that this is still a draft.
+`telegram-worker` also accepts the legacy internal header:
+
+```http
+X-Internal-Token: <INTERNAL_API_TOKEN>
+```
+
+Production requirement:
+
+```text
+sigil-booking-worker.INTERNAL_TOKEN == telegram-worker.INTERNAL_API_TOKEN
+```
+
+Do not rotate `telegram-worker.INTERNAL_API_TOKEN` blindly because other workers may already depend on it. Prefer setting or updating `sigil-booking-worker.INTERNAL_TOKEN` to match the current Telegram worker internal token.
+
+### Notify payload behavior
+
+The notify payload is advisory only. It includes booking ref, session id, Airtable record id, client/contact, route, member/access status, model/preference, date/time/place, and a note that this is still a draft.
+
+Telegram delivery now fails closed for direct forum-topic sends. If Telegram rejects a message, `/telegram/internal/send` returns a non-2xx response and `sigil-booking-worker` records `telegram_notify.ok = false` instead of marking delivery as successful.
 
 ## Deployment notes
 
-Required secret:
+Required booking worker secret:
 
 ```bash
-wrangler secret put AIRTABLE_API_KEY
+wrangler secret put AIRTABLE_API_KEY --config sigil-booking-worker/wrangler.toml
+wrangler secret put INTERNAL_TOKEN --config sigil-booking-worker/wrangler.toml
+```
+
+Required Telegram worker secrets:
+
+```bash
+wrangler secret put TELEGRAM_BOT_TOKEN --config telegram-worker/wrangler.toml
+wrangler secret put INTERNAL_API_TOKEN --config telegram-worker/wrangler.toml
+```
+
+Suggested deploy order:
+
+```bash
+git pull --ff-only
+npm run test:telegram
+npm run deploy:telegram
+npm run deploy:sigil-booking
 ```
 
 Suggested route binding:
@@ -81,6 +119,58 @@ The page should keep using:
 ```html
 data-api-base="https://sigil.mmdbkk.com"
 ```
+
+## Smoke test
+
+Test the Telegram topic path before creating a real booking record:
+
+```bash
+curl -sS \
+  -X POST \
+  "https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $INTERNAL_API_TOKEN" \
+  --data '{
+    "chat_id": "-1003546439681",
+    "message_thread_id": "1399",
+    "text": "🧪 <b>MMD Booking Notify Test</b>\\nSIGIL Booking topic delivery is ready.",
+    "parse_mode": "HTML",
+    "disable_web_page_preview": true
+  }'
+```
+
+Expected result:
+
+```json
+{
+  "ok": true,
+  "telegram": {
+    "ok": true
+  }
+}
+```
+
+The test message must appear in `MMD Privé & HYPE` → `MMD • Booking`, not General and not payment topics.
+
+Then submit one real `/sigil/booking` draft. The booking intake response should include:
+
+```json
+{
+  "ok": true,
+  "telegram_notify": {
+    "ok": true,
+    "skipped": false
+  }
+}
+```
+
+If `telegram_notify.ok` is false, check:
+
+1. `TELEGRAM_BOT_TOKEN` exists on `telegram-worker`.
+2. `INTERNAL_TOKEN` and `INTERNAL_API_TOKEN` match.
+3. The bot is still a member of `MMD Privé & HYPE`.
+4. `TG_THREAD_BOOKING_DRAFT` is still `1399`.
+5. Telegram did not reject the HTML payload.
 
 ## Safety lock
 
