@@ -22,5 +22,10 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/webhooks/line/"
 zone_name = "mmdbkk.com"
 
+# Cloudflare-only LINE runtime.
 # Bind LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, INTERNAL_TOKEN, and CONFIRM_KEY as Cloudflare secrets only.
-# Set LINE_WEBHOOK_UPSTREAM_URL to the HTTPS URL of the authoritative Netlify webhook function.
+# LINE_WEBHOOK_UPSTREAM_URL is retired and must remain unset.
+#
+# Runtime flags are configured in Cloudflare, not committed here:
+# LINE_AUTO_REPLY_ENABLED=true
+# LINE_KENJI_AI_ENABLED=true
