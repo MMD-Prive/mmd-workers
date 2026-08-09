@@ -29,7 +29,7 @@ export async function sendTelegramMessage(payload, env) {
     disable_web_page_preview: payload.disable_web_page_preview !== false,
   };
 
-  const threadId = int(payload.message_thread_id);
+  const threadId = int(payload.message_thread_id || payload.thread_id);
   if (threadId) body.message_thread_id = threadId;
   if (payload.reply_markup) body.reply_markup = payload.reply_markup;
 
@@ -45,6 +45,21 @@ export async function sendTelegramMessage(payload, env) {
 }
 
 export async function telegramNotify(payload, env) {
+  const directChatId = String(payload.chat_id || "").trim();
+  if (directChatId) {
+    const directText = String(payload.text || "").trim();
+    if (!directText) return { ok: false, error: "missing_text" };
+
+    return sendTelegramMessage({
+      chat_id: directChatId,
+      message_thread_id: payload.message_thread_id || payload.thread_id,
+      text: directText,
+      parse_mode: payload.parse_mode || "HTML",
+      disable_web_page_preview: payload.disable_web_page_preview !== false,
+      reply_markup: payload.reply_markup,
+    }, env);
+  }
+
   if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
     return { ok: false, skipped: true, reason: "missing_telegram_env" };
   }
