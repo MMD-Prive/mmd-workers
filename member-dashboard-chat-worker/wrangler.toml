@@ -3,6 +3,18 @@ main = "src/index.js"
 compatibility_date = "2026-07-02"
 workers_dev = false
 
+[[services]]
+binding = "MEMBER_PAGES_WORKER"
+service = "member-pages-worker"
+
+[[routes]]
+pattern = "mmdbkk.com/member/api/liff/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/api/liff/*"
+zone_name = "mmdbkk.com"
+
 [observability]
 enabled = true
 

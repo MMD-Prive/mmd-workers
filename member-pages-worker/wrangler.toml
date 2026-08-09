@@ -3,10 +3,6 @@ main = "src/index.js"
 compatibility_date = "2026-06-20"
 workers_dev = true
 
-routes = [
-  { pattern = "mmdbkk.com/member/api/liff/*", zone_name = "mmdbkk.com" }
-]
-
 [vars]
 LIFF_VERIFY_TIMEOUT_MS = "5000"
 LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "5000"
@@ -26,8 +22,10 @@ service = "mmd-auth-worker"
 # - secret MEMBER_STATUS_RESOLVER_SECRET (same value in mmd-auth-worker)
 # - service binding MEMBER_STATUS_RESOLVER -> mmd-auth-worker
 #
-# This exact API route has precedence over the member catch-all in
-# mmd-redirect-worker. Do not add www routes without confirming www is an API host.
+# No public custom route is attached here. member-dashboard-chat-worker owns the
+# public member front gate and delegates LIFF identity calls through a service
+# binding. Do not restore mmd-redirect-worker or attach this implementation
+# worker directly to mmdbkk.com.
 
 [observability]
 enabled = true
