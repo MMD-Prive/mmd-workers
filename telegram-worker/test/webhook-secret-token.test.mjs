@@ -37,6 +37,31 @@ function webhookRequest(headers = {}) {
   });
 }
 
+function internalSendRequest(body, headers = {}) {
+  return new Request(INTERNAL_SEND_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: "Bearer internal-secret",
+      ...headers,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+function bookingPayload() {
+  return {
+    chat_id: "-1003546439681",
+    message_thread_id: "1399",
+    thread_id: "1399",
+    text: "🕯️ <b>MMD Booking Draft</b>",
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+    source: "sigil_booking_worker",
+    intent: "booking_draft_notify",
+  };
+}
+
 function expectedCareBackKeyboard(baseUrl = "https://www.mmdbkk.com", previewChannelUrl = "https://t.me/MMDPriveTH") {
   return [
     [{
@@ -156,23 +181,7 @@ test("/telegram/internal/send accepts bearer auth and preserves explicit booking
   };
 
   try {
-    const response = await worker.fetch(new Request(INTERNAL_SEND_URL, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: "Bearer internal-secret",
-      },
-      body: JSON.stringify({
-        chat_id: "-1003546439681",
-        message_thread_id: "1399",
-        thread_id: "1399",
-        text: "🕯️ <b>MMD Booking Draft</b>",
-        parse_mode: "HTML",
-        disable_web_page_preview: true,
-        source: "sigil_booking_worker",
-        intent: "booking_draft_notify",
-      }),
-    }), env());
+    const response = await worker.fetch(internalSendRequest(bookingPayload()), env());
     const body = await response.json();
 
     assert.equal(response.status, 200);
@@ -187,6 +196,32 @@ test("/telegram/internal/send accepts bearer auth and preserves explicit booking
       disable_web_page_preview: true,
       message_thread_id: 1399,
     });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("/telegram/internal/send fails closed when Telegram rejects direct topic delivery", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    ok: false,
+    error_code: 400,
+    description: "Bad Request: message thread not found",
+  }), {
+    status: 400,
+    headers: { "content-type": "application/json" },
+  });
+
+  try {
+    const response = await worker.fetch(internalSendRequest(bookingPayload()), env());
+    const body = await response.json();
+
+    assert.equal(response.status, 500);
+    assert.equal(body.ok, false);
+    assert.equal(body.error, "server_error");
+    assert.match(body.detail, /^telegram_direct_send_failed:/);
+    assert.match(body.detail, /message thread not found/);
   } finally {
     globalThis.fetch = originalFetch;
   }
