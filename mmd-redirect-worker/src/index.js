@@ -36,6 +36,12 @@ export const MEMBER_API_PATHS = new Set([
   "/member/api/liff/start/",
   "/member/api/liff/intent",
   "/member/api/liff/intent/",
+  "/member/api/liff/audience",
+  "/member/api/liff/audience/",
+  "/member/api/liff/package",
+  "/member/api/liff/package/",
+  "/member/api/liff/payment-intent",
+  "/member/api/liff/payment-intent/",
   "/member/api/liff/status",
   "/member/api/liff/status/",
   "/member/api/liff/hall-token",
@@ -131,6 +137,7 @@ function isSigilMembershipPath(url) { const p = url.pathname.toLowerCase(); retu
 function isMemberDashboardPath(url) { const p = url.pathname.toLowerCase(); return p === "/member/dashboard" || p === "/member/dashboard/"; }
 function isMemberPagePath(url) { return MEMBER_PAGE_PATHS.has(url.pathname.toLowerCase()); }
 function isMemberApiPath(url) { return MEMBER_API_PATHS.has(url.pathname.toLowerCase()); }
+function isLiffApiPath(url) { const p = url.pathname.toLowerCase(); return p === "/member/api/liff" || p.startsWith("/member/api/liff/"); }
 function isMemberPaymentsPath(url) { const p = url.pathname.toLowerCase(); return p === "/member/payments" || p === "/member/payments/"; }
 function isHallPath(url) { const p = url.pathname.toLowerCase(); return p === "/hall" || p === "/hall/"; }
 function isModelConsolePath(url) { const p = url.pathname.toLowerCase(); return p === "/model/console" || p === "/model/console/"; }
@@ -223,12 +230,28 @@ function renderKenjiKnowledgeAdminShell(request) {
   return htmlResponse(request, html, "kenji-knowledge-admin", { "x-mmd-route-owner": FRONT_GATE, "x-mmd-origin": "front-gate:kenji-knowledge-r2-loader-shell" });
 }
 
+function liffRouteNotFound() {
+  return withFrontGateHeaders(new Response(JSON.stringify({
+    ok: false,
+    error: { code: "LIFF_ROUTE_NOT_FOUND", message: "Unknown LIFF identity route." },
+  }), {
+    status: 404,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+      "x-content-type-options": "nosniff",
+    },
+  }));
+}
+
 export default {
   async fetch(request, env = {}) {
     const url = new URL(request.url);
     if (isLineWebhookPath(url)) return fetchLineWebhook(request, env, url);
     if (isSigilPrivateModelApplyApiPath(url)) return fetchSigilWorkerRoute(request, env, url, "sigil-private-model-apply-api");
-    if (isMemberApiPath(url)) return fetchMemberPage(request, env, url);
+    if (isLiffApiPath(url)) return isMemberApiPath(url)
+      ? fetchMemberPage(request, env, url)
+      : liffRouteNotFound();
     if (!isSafePageRequest(request)) return withFrontGateHeaders(await fetch(request));
     const studioRoute = findStudioWebflowRoute(url.pathname);
     if (studioRoute) return fetchStudioWebflowRoute(request, url, studioRoute);
