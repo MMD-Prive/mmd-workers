@@ -229,7 +229,10 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(svip|s vip|super\s*vip)/i.test(normalized)) return "svip";
   if (/(black\s*card|แบล็คการ์ด|บัตรดำ)/i.test(normalized)) return "black_card";
   if (/(vip|วีไอพี)/i.test(normalized)) return "vip";
-  if (/(จอง|book|booking|คิว|นัด|reserve)/i.test(normalized)) return "create_session";
+  if (/(massage|male massage|นวด|คลายกล้าม|recovery|wellness|therapist|เทอราปิส)/i.test(normalized)) return "mms_wellness";
+  if (/(relax spa|partner venue|ไม่มีสถานที่|ไม่มีที่|สถานที่พร้อมอุปกรณ์|ใช้ร้าน)/i.test(normalized)) return "partner_venue";
+  if (/(private talent|specialist|freelancer|special skill|ทักษะพิเศษ|ล่าม|ภาษา|performance|creative|business presence)/i.test(normalized)) return "private_talent";
+  if (/(dinner|dining|drinks|event|appearance|social|ทานข้าว|ดินเนอร์|ดื่ม|อีเวนต์|ออกงาน|จอง|book|booking|คิว|นัด|reserve)/i.test(normalized)) return "mmd_companion";
   if (/(สมัคร|member|สมาชิก|renew|ต่ออายุ|upgrade|อัปเกรด|อัพเกรด)/i.test(normalized)) return "membership";
   if (/(ราคา|price|rate|เรท|promotion|โปร|package|แพ็กเกจ|แพคเกจ|เท่าไร|เท่าไหร่)/i.test(normalized)) {
     return "pricing_review";
@@ -253,11 +256,22 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "talk_to_per_ai") {
-    return `สวัสดีครับ ${prefix}ผมคือ Kenji AI ของ MMD Privé ครับ\n\nผมช่วยรับเรื่อง จัดข้อมูลเบื้องต้น และส่งให้ Per ตรวจสอบเมื่อเป็นเคสที่ต้องดูเป็นพิเศษครับ\n\nตอนนี้อยากให้ผมช่วยเรื่องไหนก่อนครับ\n1) สมัครสมาชิกหรือต่ออายุ\n2) เช็กแพ็กเกจหรือสถานะสมาชิก\n3) สอบถามบริการหรือนายแบบ\n4) ส่งรูปหรือโปรไฟล์ให้ MMD พิจารณา\n5) ให้ Per ดูเป็นเคสส่วนตัว`;
+    return `สวัสดีครับ ${prefix}ผมคือ Kenji AI 2.0 ผู้ช่วยสมาชิกของ MMD Privé ครับ
+
+ผมช่วยดูเส้นทางที่เหมาะกับ request ของคุณก่อนนะครับ บาง request ต้องให้ MMD พิจารณาความเหมาะสมก่อน โดยเฉพาะ Private Talent, MMS Wellness, Partner Venue หรือ access ที่มีรายละเอียดเฉพาะ
+
+ตอนนี้ให้ผมช่วยแยกทางไหนก่อนครับ
+1) MMD Companion — Social / Dining / Drinks / Event
+2) MMS Wellness — Male Massage / Recovery
+3) Partner Venue — Relax Spa by 9
+4) Private Talent & Specialist
+5) Membership / Renewal / Payment Proof`;
   }
 
   if (intent === "payment_slip") {
-    return `รับหลักฐานไว้ให้ระบบตรวจรายการแล้วครับ ${prefix}หลักฐานการชำระเงินเป็นข้อมูลประกอบการตรวจสอบ สถานะจะอัปเดตหลังยอดจริงถูกตรวจสอบเรียบร้อยแล้วครับ`;
+    return `${prefix}ถ้าต้องส่งหลักฐาน ผมจะพาไปหน้า Payment Proof ครับ: https://mmdbkk.com/confirm/payment-proof
+
+MMD จะรับหลักฐานไว้ตรวจยอดจริงก่อนอัปเดตขั้นตอนถัดไป หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request ครับ`;
   }
 
   if (intent === "points") {
@@ -268,8 +282,20 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
     return `รับเรื่องระดับสมาชิกพิเศษแล้วครับ ${prefix}เคสนี้ต้องให้ Per ตรวจสอบเป็นรอบส่วนตัวก่อน ไม่มีการอนุมัติอัตโนมัติจากข้อความในแชตครับ`;
   }
 
-  if (intent === "create_session") {
-    return `รับเรื่องจองงานแล้วครับ ${prefix}ผมช่วยจัดข้อมูลเบื้องต้นให้ได้ แต่ต้องตรวจสถานะสมาชิก เงื่อนไข และความพร้อมของนายแบบก่อนยืนยันทุกครั้งครับ`;
+  if (intent === "mms_wellness") {
+    return `${prefix}ถ้าต้องการ male massage หรือ recovery service ผมจะแยกเป็น MMS Wellness route ให้ครับ เลือกได้ทั้ง hotel / home visit หรือ Partner Venue โดยต้องให้ MMD ตรวจรายละเอียดและความเหมาะสมก่อนครับ`;
+  }
+
+  if (intent === "partner_venue") {
+    return `${prefix}ถ้าไม่มีสถานที่ที่เหมาะสม ผมช่วยแยกไป Partner Venue อย่าง Relax Spa by 9 ซึ่งมีสถานที่และอุปกรณ์พร้อมได้ครับ ขั้นตอนนี้เป็น request เพื่อ review ยังไม่ใช่การยืนยันคิวครับ`;
+  }
+
+  if (intent === "private_talent") {
+    return `${prefix}ผมช่วยรับ Private Talent & Specialist request ได้ครับ เช่น special skills, wellness, creative, performance, language หรือ business presence แล้วส่งเข้า MMD review ก่อนพาไปขั้นตอนที่เหมาะสมครับ`;
+  }
+
+  if (intent === "mmd_companion") {
+    return `${prefix}ผมช่วยรับ MMD Companion request สำหรับ Private Social, Dining, Drinks, Event หรือ Appearance ได้ครับ ส่งวัน เวลา พื้นที่ และรูปแบบงานมาได้เลย แล้ว MMD จะตรวจความเหมาะสมและความพร้อมก่อนยืนยันครับ`;
   }
 
   if (intent === "membership") {
@@ -970,34 +996,8 @@ async function handleLineWebhook(request, env) {
 
   if (!validSignature) return json({ ok: false, error: "invalid_signature" }, 401);
 
-  const upstreamValue = asString(env.LINE_WEBHOOK_UPSTREAM_URL);
-  if (upstreamValue) {
-    let upstream;
-    try {
-      upstream = new URL(upstreamValue);
-    } catch (_) {
-      return json({ ok: false, error: "line_webhook_upstream_invalid" }, 503);
-    }
-    if (upstream.protocol !== "https:") return json({ ok: false, error: "line_webhook_upstream_invalid" }, 503);
-    try {
-      const response = await fetch(upstream, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-line-signature": signature,
-          "x-mmd-forwarded-by": WORKER_NAME,
-        },
-        body: rawBody,
-      });
-      if (!response.ok) return json({ ok: false, error: "line_webhook_upstream_failed" }, 502);
-      return new Response(response.body, {
-        status: response.status,
-        headers: { "content-type": response.headers.get("content-type") || "application/json; charset=utf-8", "cache-control": "no-store", "x-mmd-worker": WORKER_NAME },
-      });
-    } catch (_) {
-      return json({ ok: false, error: "line_webhook_upstream_unavailable" }, 502);
-    }
-  }
+  // Cloudflare-only owner lock: handle LINE directly in this worker.
+  // Never forward signed events to a legacy or external upstream.
 
   let body;
   try {
