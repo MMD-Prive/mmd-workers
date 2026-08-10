@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
-import { inlineButtons } from "../lib/hype-preview.js";
+import { inlineButtons, sanitizeTelegramReplyMarkup } from "../lib/hype-preview.js";
 
 const CODE = "123456";
 const CAMPAIGN = "preview_pride_jun2026";
@@ -58,6 +58,42 @@ describe("HYPE preview inline buttons", () => {
       assert.doesNotMatch(button.url, /line|liff/i);
     }
     assert.doesNotMatch(byLabel(markup, "Our Benefits").url, /\/pay\/membership(?:[/?#]|$)/);
+  });
+
+  it("forces all Open LINE button variants to the official universal LINE OA URL", () => {
+    const markup = sanitizeTelegramReplyMarkup({
+      inline_keyboard: [
+        [
+          { text: "Open LINE", url: ["line", "://ti/p/@mmdprive"].join("") },
+          { text: "เปิด LINE", url: ["intent", "://line.example/#Intent;scheme=line;end"].join("") },
+        ],
+        [
+          { text: "LINE OA", url: `https://${["miniapp", "line", "me"].join(".")}/example` },
+          { text: "Contact LINE", url: ["liff", "://open"].join("") },
+        ],
+      ],
+    });
+
+    for (const label of ["Open LINE", "เปิด LINE", "LINE OA", "Contact LINE"]) {
+      assert.equal(byLabel(markup, label).url, "https://lin.ee/oNaEzZ6", label);
+    }
+    for (const button of flatButtons(markup)) {
+      assert.doesNotMatch(button.url, new RegExp(`^${["line", "://"].join("")}`, "i"));
+      assert.doesNotMatch(button.url, new RegExp(`^${["intent", "://"].join("")}`, "i"));
+      assert.doesNotMatch(button.url, new RegExp(`^${["liff", "://"].join("")}`, "i"));
+      assert.doesNotMatch(button.url, new RegExp(["miniapp", "line", "me"].join("\\."), "i"));
+    }
+  });
+
+  it("leaves the locked HYPE preview action URLs unchanged", () => {
+    const original = inlineButtons(CODE, CAMPAIGN, {});
+    const sanitized = sanitizeTelegramReplyMarkup(original);
+
+    assert.deepEqual(sanitized, original);
+    assert.equal(new URL(byLabel(sanitized, "Preview Models").url).pathname, "/profiles");
+    assert.equal(new URL(byLabel(sanitized, "Booking").url).pathname, "/sigil/booking");
+    assert.equal(new URL(byLabel(sanitized, "Apply for Membership").url).pathname, "/member/apply");
+    assert.equal(byLabel(sanitized, "Back to Preview Channel").url, "https://t.me/MMDPriveTH");
   });
 
   it("honors safe URL env overrides without using legacy benefits URL", () => {
