@@ -26,8 +26,11 @@ const TIER_RANK = {
 };
 
 const MEMBER_STATUS_RESOLVER_PATH = "/__internal/member-status/resolve";
+const MEMBER_PROFILE_RESOLVER_PATH = "/__internal/member-profile/read";
 const LIFF_IDENTITY_RESOLUTION_PURPOSE = "liff_identity_resolution";
+const LIFF_MEMBER_PROFILE_PURPOSE = "liff_member_profile_read";
 const MEMBER_STATUS_RESOLVER_SECRET_HEADER = "x-mmd-member-resolver-secret";
+const MEMBER_HISTORY_MAX_ITEMS = 50;
 
 export default {
   async fetch(request, env, ctx) {
@@ -59,6 +62,10 @@ export default {
 
       if (path === MEMBER_STATUS_RESOLVER_PATH && request.method === "POST") {
         return handleInternalMemberStatusResolve(request, env);
+      }
+
+      if (path === MEMBER_PROFILE_RESOLVER_PATH && request.method === "POST") {
+        return handleInternalMemberProfileRead(request, env);
       }
 
       if (path === "/v1/admin/access/grant" && request.method === "POST") {
@@ -262,6 +269,211 @@ async function handleInternalMemberStatusResolve(request, env) {
   } catch {
     return json(request, env, 503, { ok: false, error: { code: "MEMBER_STATUS_RESOLVER_UNAVAILABLE", message: "Member identity could not be resolved safely." } });
   }
+}
+
+// Server-only LIFF readback. Identity comes from a LINE ID token verified by
+// member-pages-worker and is sent only over the authenticated service binding.
+// The response intentionally excludes email, phone, payment data, notes, risk,
+// raw LINE identity, Airtable record IDs, and history older than one year.
+async function handleInternalMemberProfileRead(request, env) {
+  if (!isInternalMemberStatusResolverRequest(request, env)) {
+    return json(request, env, 404, { ok: false, error: { code: "NOT_FOUND", message: "Route not found" } });
+  }
+
+  const body = await readStrictJsonObject(request);
+  const allowedKeys = new Set(["line_user_id", "purpose"]);
+  if (!body || Object.keys(body).some((key) => !allowedKeys.has(key))) {
+    return json(request, env, 400, { ok: false, error: { code: "INVALID_PROFILE_REQUEST", message: "A valid profile request is required." } });
+  }
+
+  const lineUserId = String(body.line_user_id || "").trim();
+  if (!isCanonicalLineUserId(lineUserId) || body.purpose !== LIFF_MEMBER_PROFILE_PURPOSE) {
+    return json(request, env, 400, { ok: false, error: { code: "INVALID_PROFILE_REQUEST", message: "A valid profile request is required." } });
+  }
+
+  try {
+    const matches = await findMemberRecordsByLineUserId(env, lineUserId);
+    if (matches.length > 1) {
+      return json(request, env, 409, { ok: false, error: { code: "MEMBER_MATCH_AMBIGUOUS", message: "Member identity could not be resolved safely." } });
+    }
+    if (!matches.length) {
+      return json(request, env, 200, { ok: true, data: { member_exists: false } });
+    }
+
+    const memberRecord = { ...matches[0], fields: normalizeMemberRecord(matches[0]) };
+    const data = await buildLiffMemberProfile(env, memberRecord, lineUserId);
+    return json(request, env, 200, { ok: true, data });
+  } catch {
+    return json(request, env, 503, { ok: false, error: { code: "MEMBER_PROFILE_RESOLVER_UNAVAILABLE", message: "Member profile is temporarily unavailable." } });
+  }
+}
+
+async function buildLiffMemberProfile(env, memberRecord, lineUserId) {
+  const fields = memberRecord.fields || {};
+  const email = normalizeEmail(fields.email || fields[env.AIRTABLE_MEMBERS_EMAIL_FIELD || "Contact Email"] || "");
+  const memberId = String(fields.member_id || "").trim();
+  const cutoff = memberHistoryCutoff();
+  const [sessions, packages, points] = await Promise.all([
+    listMemberServiceHistory(env, { lineUserId, email, cutoff }),
+    listMemberPackageHistory(env, { email, cutoff }),
+    listMemberPointsHistory(env, { email, cutoff }),
+  ]);
+  const history = [...sessions, ...packages, ...points]
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    .slice(0, MEMBER_HISTORY_MAX_ITEMS);
+
+  return {
+    member_exists: true,
+    member_id: memberId,
+    profile: {
+      display_name: safeCustomerText(
+        fields[env.AIRTABLE_MEMBERS_DISPLAY_NAME_FIELD || "Full Name (Display)"]
+          || fields[env.AIRTABLE_MEMBERS_NAME_FIELD || "Full Name"]
+          || fields.name,
+        120,
+      ) || "สมาชิก MMD",
+      tier: normalizeCustomerTier(fields[env.AIRTABLE_MEMBERS_TIER_FIELD || "Membership Tier"]),
+      membership_status: normalizeCustomerMembershipStatus(fields[env.AIRTABLE_MEMBERS_STATUS_FIELD || "Membership Status"]),
+      points: nonNegativeInteger(fields[env.AIRTABLE_MEMBERS_POINTS_FIELD || "Points Balance"]),
+      history_window: { from: cutoff, to: bangkokCalendarDate(), timezone: "Asia/Bangkok" },
+      history,
+    },
+  };
+}
+
+async function listMemberServiceHistory(env, { lineUserId, email, cutoff }) {
+  const lineField = env.AIRTABLE_SESSIONS_LINE_USER_ID_FIELD || "line_user_id";
+  const emailField = env.AIRTABLE_SESSIONS_EMAIL_FIELD || "email";
+  const identity = [
+    lineUserId ? `{${lineField}}=${formulaString(lineUserId)}` : "",
+    email ? `LOWER({${emailField}})=${formulaString(email)}` : "",
+  ].filter(Boolean);
+  if (!identity.length) return [];
+  const records = await airtableList(env, table(env, "SESSIONS"), {
+    filterByFormula: identity.length === 1 ? identity[0] : `OR(${identity.join(",")})`,
+    sort: [{ field: env.AIRTABLE_SESSIONS_HISTORY_DATE_FIELD || "job_date", direction: "desc" }],
+    maxRecords: 100,
+  });
+  return records.map((record) => {
+    const f = record.fields || {};
+    const date = safeHistoryDate(f[env.AIRTABLE_SESSIONS_HISTORY_DATE_FIELD || "job_date"] || f["Session Date"] || f.start_time);
+    const status = String(f[env.AIRTABLE_SESSIONS_STATUS_FIELD || "Session Status"] || f.status || "").trim().toLowerCase();
+    if (!date || date < cutoff || status !== "completed") return null;
+    return {
+      type: "service",
+      date,
+      title: safeCustomerText(f[env.AIRTABLE_SESSIONS_SERVICE_TYPE_FIELD || "job_type"] || f["Session Type"] || "MMD Service", 80),
+      status: "completed",
+    };
+  }).filter(Boolean);
+}
+
+async function listMemberPackageHistory(env, { email, cutoff }) {
+  if (!email) return [];
+  const records = await airtableList(env, table(env, "MEMBER_PACKAGES"), {
+    filterByFormula: `LOWER({${env.AIRTABLE_MEMBER_PACKAGES_EMAIL_FIELD || "member_email"}})=${formulaString(email)}`,
+    sort: [{ field: env.AIRTABLE_MEMBER_PACKAGES_CREATED_FIELD || "created_at", direction: "desc" }],
+    maxRecords: 50,
+  });
+  return records.map((record) => {
+    const f = record.fields || {};
+    const date = safeHistoryDate(f.start_date || f.created_at || f.end_date);
+    const status = String(f.status || "").trim().toLowerCase();
+    if (!date || date < cutoff || !["active", "expired"].includes(status)) return null;
+    return {
+      type: "membership",
+      date,
+      title: safePackageLabel(f.package_code),
+      status,
+    };
+  }).filter(Boolean);
+}
+
+async function listMemberPointsHistory(env, { email, cutoff }) {
+  if (!email) return [];
+  const records = await airtableList(env, table(env, "POINTS_LEDGER"), {
+    filterByFormula: `LOWER({${env.AIRTABLE_POINTS_EMAIL_FIELD || "member_email"}})=${formulaString(email)}`,
+    sort: [{ field: env.AIRTABLE_POINTS_HISTORY_DATE_FIELD || "created_at", direction: "desc" }],
+    maxRecords: 100,
+  });
+  return records.map((record) => {
+    const f = record.fields || {};
+    const date = safeHistoryDate(f.posted_at || f.created_at);
+    const status = String(f.transaction_status || "").trim().toLowerCase();
+    const delta = signedInteger(f.points);
+    if (!date || date < cutoff || status !== "posted" || delta === null) return null;
+    return {
+      type: "points",
+      date,
+      title: delta >= 0 ? "Points added" : "Points adjusted",
+      points_delta: delta,
+      status: "posted",
+    };
+  }).filter(Boolean);
+}
+
+function memberHistoryCutoff(now = new Date()) {
+  const current = bangkokCalendarDate(now);
+  const previousYear = Number(current.slice(0, 4)) - 1;
+  const candidate = `${previousYear}${current.slice(4)}`;
+  const parsed = new Date(`${candidate}T00:00:00Z`);
+  if (!Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === candidate) return candidate;
+  return `${previousYear}-02-28`;
+}
+
+function bangkokCalendarDate(now = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now).map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function safeHistoryDate(value) {
+  const text = String(value || "").trim();
+  if (!text || Number.isNaN(Date.parse(text))) return "";
+  return new Date(text).toISOString().slice(0, 10);
+}
+
+function safeCustomerText(value, maxLength) {
+  return String(value || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function normalizeCustomerTier(value) {
+  const tier = String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, "_");
+  if (tier === "black_card" || tier === "blackcard") return "Black Card";
+  if (tier === "premium") return "Premium";
+  if (tier === "standard") return "Standard";
+  return "Member";
+}
+
+function normalizeCustomerMembershipStatus(value) {
+  const status = String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, "_");
+  if (status === "active") return "active";
+  if (status === "grace_period" || status === "grace") return "grace";
+  if (status === "expired") return "expired";
+  return "under_review";
+}
+
+function safePackageLabel(value) {
+  const packageCode = String(value || "").trim().toLowerCase();
+  if (packageCode.includes("black")) return "Black Card";
+  if (packageCode.includes("premium")) return "Premium Membership";
+  if (packageCode.includes("standard") || packageCode.includes("lite")) return "Standard Membership";
+  if (packageCode.includes("guest") || packageCode.includes("7")) return "7 Days Guest Pass";
+  return "MMD Membership";
+}
+
+function signedInteger(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.trunc(number) : null;
+}
+
+function nonNegativeInteger(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? Math.trunc(number) : Math.max(0, Math.trunc(Number(fallback) || 0));
 }
 
 async function handleAdminGrant(request, env) {

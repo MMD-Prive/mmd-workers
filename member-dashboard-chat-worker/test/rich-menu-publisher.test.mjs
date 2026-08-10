@@ -82,9 +82,9 @@ test("service-bound private-member draft returns canonical mapping", async () =>
   assert.equal(payload.rich_menu_type, "private_member");
   assert.equal(payload.rich_menu.name, "MMD Private Member");
   assert.equal(payload.rich_menu.areas.length, 6);
-  assert.equal(payload.rich_menu.areas[0].action.uri, "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=member_status");
-  assert.equal(payload.rich_menu.areas[1].action.uri, "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=points");
-  assert.equal(payload.rich_menu.areas[2].action.uri, "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=renewal");
+  assert.equal(payload.rich_menu.areas[0].action.uri, "https://liff.line.me/2010298002-mbx9kqQn?intent=status&view=profile");
+  assert.equal(payload.rich_menu.areas[1].action.uri, "https://liff.line.me/2010298002-mbx9kqQn?intent=status&view=points");
+  assert.equal(payload.rich_menu.areas[2].action.uri, "https://liff.line.me/2010298002-mbx9kqQn?intent=renew&view=profile");
   assert.deepEqual(payload.rich_menu.areas[3].action, {
     type: "postback",
     data: "mmd_action=private_support&source=private_rich_menu",

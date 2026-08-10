@@ -15,6 +15,22 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/member/api/liff/*"
 zone_name = "mmdbkk.com"
 
+[[routes]]
+pattern = "mmdbkk.com/member/liff"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/member/liff/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/liff"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/liff/"
+zone_name = "mmdbkk.com"
+
 [observability]
 enabled = true
 

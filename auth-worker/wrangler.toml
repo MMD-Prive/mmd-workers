@@ -30,7 +30,25 @@ AIRTABLE_TABLE_AUTH_SESSIONS = "MMD — Auth Sessions"
 
 # Read-only LINE subject resolver mapping. This is used only by the internal
 # MEMBER_STATUS_RESOLVER service-binding contract.
-AIRTABLE_MEMBERS_LINE_USER_ID_FIELD = "line_user_id"
+AIRTABLE_MEMBERS_LINE_USER_ID_FIELD = "line_id"
+AIRTABLE_MEMBERS_DISPLAY_NAME_FIELD = "Full Name (Display)"
+AIRTABLE_MEMBERS_NAME_FIELD = "Full Name"
+AIRTABLE_MEMBERS_EMAIL_FIELD = "Contact Email"
+AIRTABLE_MEMBERS_TIER_FIELD = "Membership Tier"
+AIRTABLE_MEMBERS_STATUS_FIELD = "Membership Status"
+AIRTABLE_MEMBERS_POINTS_FIELD = "Points Balance"
+
+# Customer-safe LIFF history readback. The API enforces a one-calendar-year
+# window and never returns payment details, notes, risk, contact data, or raw IDs.
+AIRTABLE_SESSIONS_LINE_USER_ID_FIELD = "line_user_id"
+AIRTABLE_SESSIONS_EMAIL_FIELD = "email"
+AIRTABLE_SESSIONS_HISTORY_DATE_FIELD = "job_date"
+AIRTABLE_SESSIONS_STATUS_FIELD = "Session Status"
+AIRTABLE_SESSIONS_SERVICE_TYPE_FIELD = "job_type"
+AIRTABLE_MEMBER_PACKAGES_EMAIL_FIELD = "member_email"
+AIRTABLE_MEMBER_PACKAGES_CREATED_FIELD = "created_at"
+AIRTABLE_POINTS_EMAIL_FIELD = "member_email"
+AIRTABLE_POINTS_HISTORY_DATE_FIELD = "created_at"
 
 # MMD — Member Entitlements mapping.
 # The current table does not expose the old auth MVP member_id field.

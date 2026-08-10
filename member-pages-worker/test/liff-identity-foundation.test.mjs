@@ -57,10 +57,31 @@ function resolver(payload = { member_exists: false }, status = 200) {
   return {
     calls,
     fetch: async (request) => {
+      const path = new URL(request.url).pathname;
+      const requestBody = await request.json();
       calls.push({
-        ...(await request.json()),
+        ...requestBody,
+        _path: path,
         _resolver_secret: request.headers.get("x-mmd-member-resolver-secret"),
       });
+      if (path === "/__internal/member-profile/read") {
+        const profilePayload = payload.profile || {
+          display_name: "สมาชิก MMD",
+          tier: "Standard",
+          membership_status: "active",
+          points: 120,
+          history_window: { from: "2025-08-10", to: "2026-08-10", timezone: "Asia/Bangkok" },
+          history: [],
+        };
+        return new Response(JSON.stringify({ ok: status < 400, data: {
+          member_exists: payload.member_exists === true,
+          member_id: payload.mmd_member_id || "MMD-TEST",
+          profile: profilePayload,
+        } }), {
+          status,
+          headers: { "content-type": "application/json" },
+        });
+      }
       return new Response(JSON.stringify({ ok: status < 400, data: payload }), {
         status,
         headers: { "content-type": "application/json" },
@@ -177,6 +198,73 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.deepEqual(payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
     assertHostCookie(cookie, "__Host-mmd_liff_session", 900);
     assertNoSensitive(JSON.stringify(payload));
+  });
+
+  it("returns the bounded member profile and issues CARE BACK code only from the verified session", async () => {
+    const careCalls = [];
+    const memberResolver = resolver({
+      member_exists: true,
+      mmd_member_id: "MMD-PER-01",
+      profile: {
+        display_name: "เปอร์",
+        tier: "Premium",
+        membership_status: "active",
+        points: 345,
+        history_window: { from: "2025-08-10", to: "2026-08-10", timezone: "Asia/Bangkok" },
+        history: [{ type: "points", date: "2026-08-01", title: "Points added", status: "posted", points_delta: 25, private_note: "hidden" }],
+      },
+    });
+    const runtime = env({
+      MEMBER_STATUS_RESOLVER: memberResolver,
+      CARE_BACK_STORE: {
+        async openOrResume(input) {
+          careCalls.push(input);
+          return {
+            claim_reference: "CB6-2026-ABCDEF12345678",
+            claim_status: "identity_verified",
+            review_status: "pending",
+            personal_code: "ABC234",
+            code_status: "draft",
+            resumed: false,
+          };
+        },
+      },
+    });
+    const started = await start(runtime, { id_token: "valid", liff_intent: "status" });
+    const startCookie = cookiePair(findCookie(started.response, "__Host-mmd_liff_session"));
+
+    const profile = await request("/member/api/liff/profile", { method: "GET", cookie: startCookie }, runtime);
+    const profileCookie = cookiePair(findCookie(profile.response, "__Host-mmd_liff_session"));
+    assert.equal(profile.response.status, 200);
+    assert.deepEqual(profile.payload.data, {
+      display_name: "เปอร์",
+      tier: "Premium",
+      membership_status: "active",
+      points: 345,
+      history_window: { from: "2025-08-10", to: "2026-08-10", timezone: "Asia/Bangkok" },
+      history: [{ type: "points", date: "2026-08-01", title: "Points added", status: "posted", points_delta: 25 }],
+    });
+    assert.doesNotMatch(JSON.stringify(profile.payload), /MMD-PER-01|private_note|line_user_id/i);
+
+    const claim = await request("/member/api/liff/care-back/claim", { body: {}, cookie: profileCookie }, runtime);
+    assert.equal(claim.response.status, 200);
+    assert.equal(claim.payload.data.personal_code, "ABC234");
+    assert.equal(claim.payload.data.code_status, "draft");
+    assert.equal(claim.payload.data.benefit_state, "pending_official_review");
+    assert.equal(careCalls.length, 1);
+    assert.equal(careCalls[0].memberId, "MMD-PER-01");
+    assert.match(careCalls[0].identityHash, /^[a-f0-9]{64}$/);
+    assert.equal(runtime.LIFF_GATEWAY_STORE.records.length, 1);
+    assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].campaign_code, "6-years-care-back");
+    assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].campaign_claim_id, "CB6-2026-ABCDEF12345678");
+    assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].promo_code, "ABC234");
+    assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].promo_status, "draft");
+    assert.equal("identity_key" in runtime.LIFF_GATEWAY_STORE.records[0], false);
+
+    const spoof = await request("/member/api/liff/care-back/claim", { body: { member_id: "MMD-OTHER" }, cookie: profileCookie }, runtime);
+    assert.equal(spoof.response.status, 400);
+    assert.equal(spoof.payload.error.code, "BROWSER_IDENTITY_REJECTED");
+    assert.equal(careCalls.length, 1);
   });
 
   it("writes only the bounded LIFF session memory through the mock gateway store", async () => {
