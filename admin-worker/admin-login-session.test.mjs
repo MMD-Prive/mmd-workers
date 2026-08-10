@@ -8,6 +8,7 @@ import worker from "./src/dashboard-worker.js";
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
 const LOGIN = "/internal/admin/login";
+const SIGIL_LOGIN = "/sigil/internal/admin/login";
 const SESSION = "/internal/admin/login/session";
 const KENJI = "/internal/admin/kenji-knowledge";
 const LEGACY_SIGIL_KENJI = "/sigil/internal/admin/kenji-knowledge";
@@ -37,6 +38,15 @@ function cookiePair(response) {
 function cookieValue(cookie) {
   return decodeURIComponent(String(cookie || "").split("=", 2)[1] || "");
 }
+
+test("SIGIL login is served by admin-worker while using the canonical session endpoint", async () => {
+  const response = await request(SIGIL_LOGIN);
+  const html = await response.text();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("location"), null);
+  assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker");
+  assert.match(html, /form method="post" action="\/internal\/admin\/login\/session"/);
+});
 
 function decodeCookiePayload(cookie) {
   const [payloadPart] = cookieValue(cookie).split(".");
