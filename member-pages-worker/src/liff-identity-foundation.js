@@ -16,6 +16,7 @@ const MEMBER_RESOLVER_PURPOSE = "liff_identity_resolution";
 const MEMBER_PROFILE_RESOLVER_PURPOSE = "liff_member_profile_read";
 const MEMBER_RESOLVER_SECRET_HEADER = "x-mmd-member-resolver-secret";
 const PAYMENT_BINDING_STATUS = "contract_unavailable";
+const CANONICAL_MEMBER_ROUTE = "/sigil/member/membership";
 
 const LEGACY_IDENTIFY_PATHS = new Set(["/member/api/liff/identify", "/member/api/liff/identify/"]);
 const START_PATHS = new Set(["/member/api/liff/start", "/member/api/liff/start/"]);
@@ -815,7 +816,7 @@ function applyGatewayIntent(session, intent) {
   session.hype_decision_status = "decided";
   session.next_screen_key = nextScreenForIntent(intent, session.member_exists === true);
   session.route_after_liff = intent === "renew" && session.member_exists === true
-    ? "/member/membership"
+    ? CANONICAL_MEMBER_ROUTE
     : intent === "continue_payment" && session.member_exists === true
       ? "/member/payments"
       : null;
@@ -833,7 +834,7 @@ function applyAudience(session, audience) {
     session.route_after_liff = "/member/promotion";
     session.next_screen_key = "signup_package";
   } else {
-    session.route_after_liff = "/member/membership";
+    session.route_after_liff = CANONICAL_MEMBER_ROUTE;
     session.next_screen_key = "signup_package";
   }
 }
