@@ -10,7 +10,7 @@
     "test:telegram": "node --test telegram-worker/test/*.test.mjs",
     "test:blackcard-confirm": "node --test webflow/blackcard/confirm/confirm-contract.test.mjs",
     "test:auth-liff-profile": "node --test auth-worker/test/member-status-resolver.test.mjs auth-worker/test/member-profile-resolver.test.mjs",
-    "test:member-pages-liff": "node --test member-pages-worker/test/liff-gateway-airtable.test.mjs member-pages-worker/test/liff-member-shell.test.mjs member-pages-worker/test/liff-identity-foundation.test.mjs member-pages-worker/test/care-back-claim-store.test.mjs",
+    "test:member-pages-liff": "node --experimental-global-webcrypto --test member-pages-worker/test/liff-gateway-airtable.test.mjs member-pages-worker/test/liff-member-shell.test.mjs member-pages-worker/test/liff-identity-foundation.test.mjs member-pages-worker/test/care-back-claim-store.test.mjs",
     "test:member-dashboard-liff": "node --test member-dashboard-chat-worker/test/liff-front-gate.test.mjs member-dashboard-chat-worker/test/rich-menu-publisher.test.mjs",
     "deploy:payments": "wrangler deploy --config workers/payments-worker/wrangler.toml",
     "deploy:admin": "npm run test:admin-login && npm run test:studio-real-worker && wrangler deploy --config admin-worker/wrangler.toml",
