@@ -67,7 +67,6 @@ test("legacy sigil internal admin route redirects to canonical with query preser
     [`${LEGACY_SIGIL}/`, `https://mmdbkk.com${CANONICAL}/`],
     [`${LEGACY_SIGIL}?abc=123`, `https://mmdbkk.com${CANONICAL}?abc=123`],
     [`${LEGACY_SIGIL}/foo?source=legacy-test`, `https://mmdbkk.com${CANONICAL}/foo?source=legacy-test`],
-    ["/sigil/internal/admin/login?next=/internal/admin/kenji-knowledge", "https://mmdbkk.com/internal/admin/login?next=/internal/admin/kenji-knowledge"],
     ["/sigil/internal/admin/console?x=1", "https://mmdbkk.com/internal/admin/console?x=1"],
   ]) {
     const response = await request(path);
@@ -77,6 +76,13 @@ test("legacy sigil internal admin route redirects to canonical with query preser
     assert.equal(response.headers.get("x-mmd-route-canonical"), location.replace("https://mmdbkk.com", ""), path);
     assert.equal(await response.text(), "");
   }
+});
+
+test("SIGIL login is the one legacy namespace exception and renders directly", async () => {
+  const response = await request("/sigil/internal/admin/login?next=/internal/admin/kenji-knowledge");
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("location"), null);
+  assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker");
 });
 
 test("canonical query request serves without redirecting or changing its URL", async () => {
