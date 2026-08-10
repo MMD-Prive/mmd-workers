@@ -27,6 +27,21 @@ test("request body uses canonical t and fails closed without it", () => {
   assert.match(source, /function draftStorageKey\(\)\{var raw=correlation\(\);if\(!raw\)return"";/);
 });
 
+test("raw correlation validation rejects normalization and overlength input", () => {
+  const isOpaque = runInNewContext(
+    "(function(){" + helperSource("isOpaque") + ";return isOpaque;})()",
+  );
+
+  assert.equal(isOpaque("abc_123", 512), true);
+  assert.equal(isOpaque("\tabc", 512), false);
+  assert.equal(isOpaque("abc\n", 512), false);
+  assert.equal(isOpaque(" abc", 512), false);
+  assert.equal(isOpaque("abc ", 512), false);
+  assert.equal(isOpaque("a".repeat(512), 512), true);
+  assert.equal(isOpaque("a".repeat(513), 512), false);
+  assert.match(source, /function correlation\(\)\{var value=param\("t"\);return isOpaque\(value,512\)\?value:""\}/);
+});
+
 test("success overlay remains scrollable on short screens", () => {
   assert.match(css, /\.bc-success\{[^\n}]*overflow-y:auto[^\n}]*overscroll-behavior:contain/);
   assert.match(css, /\.bc-success\{[^\n}]*place-items:stretch[^\n}]*align-content:start/);
