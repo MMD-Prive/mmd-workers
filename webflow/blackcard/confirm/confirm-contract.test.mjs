@@ -4,6 +4,7 @@ import { Script, runInNewContext } from "node:vm";
 import test from "node:test";
 
 const source = readFileSync(new URL("./confirm.js", import.meta.url), "utf8");
+const css = readFileSync(new URL("./confirm.css", import.meta.url), "utf8");
 const script = source
   .replace(/^<script>\s*/, "")
   .replace(/\s*<\/script>\s*$/, "");
@@ -23,6 +24,12 @@ test("request body uses canonical t and fails closed without it", () => {
   assert.doesNotMatch(source, /\btoken\s*:/);
   assert.match(source, /function validate\(\)[^\n]+if\(!correlation\(\)\)return fail/);
   assert.match(source, /function send\(\)[^\n]+if\(!correlation\(\)\)return show/);
+  assert.match(source, /function draftStorageKey\(\)\{var raw=correlation\(\);if\(!raw\)return"";/);
+});
+
+test("success overlay remains scrollable on short screens", () => {
+  assert.match(css, /\.bc-success\{[^\n}]*overflow-y:auto[^\n}]*overscroll-behavior:contain/);
+  assert.match(css, /\.bc-success\{[^\n}]*place-items:stretch[^\n}]*align-content:start/);
 });
 
 test("success requires the exact 202 pending_review contract", () => {
