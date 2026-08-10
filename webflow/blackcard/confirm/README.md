@@ -13,8 +13,8 @@ Canonical source-control handoff for the customer-facing Black Card Companion Pr
 - Mobile-first Companion Preference flow with expanded desktop briefing.
 - Ewvon voice: receives context, organizes the request, and passes it to MMD for official review.
 - A submitted preference is not a booking confirmation, availability guarantee, Black Card approval, membership grant, payment confirmation, or points award.
-- Query parameter `t` is preserved for the request payload and success return.
-- Local draft expires after seven days, is scoped by a one-way hash of `t`, and is disabled when `t` is absent.
+- Canonical query/body field `t` is required for submission, preserved in the request payload and success return, and used only as opaque correlation—not authentication or authorization.
+- Local draft expires after seven days, is scoped by a one-way hash of `t`, and is disabled when `t` is absent or invalid.
 - Legacy unscoped draft data is removed on initialization.
 - Success return is `/blackcard/black-card`.
 - Companion assets map to Hito, Hima, Hiro, and Hiei.
@@ -22,7 +22,11 @@ Canonical source-control handoff for the customer-facing Black Card Companion Pr
 
 ## Release gate
 
-`data-submit-endpoint` is intentionally empty. The page must fail closed and must not display success until a reviewed same-origin endpoint returns a successful response. The client rejects a configured endpoint whose origin differs from the page origin.
+`data-submit-endpoint` is intentionally empty. The page fails closed unless a bounded printable `t` correlation value is present and a reviewed same-origin endpoint accepts the request. The client rejects a configured endpoint whose origin differs from the page origin.
+
+The success view is allowed only when the endpoint returns HTTP `202` with JSON containing `ok: true`, `status: "pending_review"`, a non-empty opaque `request_id`, and a valid server timestamp in `submitted_at`. Every other response keeps the draft and remains in the error path.
+
+The request body uses `t` only. The legacy body field `token` is forbidden.
 
 Before publication or endpoint activation:
 
