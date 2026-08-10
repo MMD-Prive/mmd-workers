@@ -8,6 +8,7 @@ import { handleKenjiKnowledgeRequest, isKenjiKnowledgeRequest } from "./kenji-kn
 import { handleKenjiPublicKnowledgeRequest, isKenjiPublicKnowledgeRequest } from "./kenji-public-knowledge-runtime.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
+export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
 export { ADMIN_LOGIN_SESSION_PATH, APPROVED_ADMIN_LOGIN_HERO };
 
 const ALLOWED_NEXT_PATHS = [
@@ -33,7 +34,10 @@ export default {
       return handleKenjiKnowledgeRequest(request, env, ctx);
     }
 
-    if (path === ADMIN_LOGIN_PAGE_PATH && (method === "GET" || method === "HEAD")) {
+    if (
+      (path === ADMIN_LOGIN_PAGE_PATH || path === SIGIL_ADMIN_LOGIN_PAGE_PATH) &&
+      (method === "GET" || method === "HEAD")
+    ) {
       return renderAdminLogin(request, {
         next: normalizeNext(url.searchParams.get("next")),
       });

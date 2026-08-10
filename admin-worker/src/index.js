@@ -118,6 +118,7 @@ const KENJI_KNOWLEDGE_ALLOWED_AUDIENCE = new Set(["internal", "internal_only", "
 const KENJI_KNOWLEDGE_ALLOWED_SORT = new Set(["updated_at", "created_at", "title", "status", "lane", "language", "audience"]);
 const ADMIN_LOGIN_ROOT_PATH = "/internal/admin";
 const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
+const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
 const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
 const ADMIN_NEXT_INTERNAL_CONTROL_ROOM_PATH = "/internal/admin/control-room";
 const ADMIN_NEXT_CREATE_SESSION_LEGACY_PATH = "/internal/admin/create-session";
@@ -159,7 +160,7 @@ export default {
     const method = req.method.toUpperCase();
     const cors = corsHeaders(req, env);
 
-    if (isLegacySigilInternalAdminPath(path)) {
+    if (isLegacySigilInternalAdminPath(path) && path !== SIGIL_ADMIN_LOGIN_PAGE_PATH) {
       return redirectLegacySigilInternalAdmin(req);
     }
 
@@ -184,6 +185,10 @@ export default {
     }
 
     if (path === ADMIN_LOGIN_PAGE_PATH && (method === "GET" || method === "HEAD")) {
+      return adminLoginPage(req);
+    }
+
+    if (path === SIGIL_ADMIN_LOGIN_PAGE_PATH && (method === "GET" || method === "HEAD")) {
       return adminLoginPage(req);
     }
 

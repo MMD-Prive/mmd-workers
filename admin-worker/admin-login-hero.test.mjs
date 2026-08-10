@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   ADMIN_LOGIN_SESSION_PATH,
   APPROVED_ADMIN_LOGIN_HERO,
+  SIGIL_ADMIN_LOGIN_PAGE_PATH,
   normalizeNext,
   renderAdminLogin,
 } from "./src/admin-login-hero-worker.js";
@@ -49,4 +50,16 @@ test("HEAD returns headers without a response body", async () => {
   const response = renderAdminLogin(request("HEAD"));
   assert.equal(await response.text(), "");
   assert.match(response.headers.get("cache-control") || "", /no-store/);
+});
+
+test("SIGIL admin login renders the approved Worker page without redirecting", async () => {
+  const response = await (await import("./src/admin-login-hero-worker.js")).default.fetch(
+    new Request(`https://www.mmdbkk.com${SIGIL_ADMIN_LOGIN_PAGE_PATH}`),
+    {},
+    {}
+  );
+  const html = await response.text();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("location"), null);
+  assert.match(html, new RegExp(APPROVED_ADMIN_LOGIN_HERO.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
