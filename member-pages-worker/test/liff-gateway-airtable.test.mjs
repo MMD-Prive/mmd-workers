@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 
-import { getLiffGatewayStore, LiffGatewayStorageError } from "../src/liff-gateway-airtable.js";
+import { getLiffGatewayStore, LIFF_GATEWAY_ROUTES, LiffGatewayStorageError } from "../src/liff-gateway-airtable.js";
 
 const realFetch = globalThis.fetch;
 
@@ -49,7 +49,7 @@ describe("LIFF gateway Airtable adapter", () => {
       model_visibility_mode: "hold_until_selected",
       pricing_lane: "unknown",
       payment_intent_session_id: "liffpay_opaque",
-      route_after_liff: "/member/membership",
+      route_after_liff: "/sigil/member/membership",
       signed_route_token_hash: "a".repeat(64),
       campaign_code: "6-years-care-back",
       campaign_claim_id: "CB6-2026-ABCDEF12345678",
@@ -63,7 +63,7 @@ describe("LIFF gateway Airtable adapter", () => {
     assert.deepEqual(result, { record_id: "recLiff1" });
     assert.equal(calls.length, 1);
     assert.equal(calls[0].method, "POST");
-    assert.match(calls[0].url, /MMD%20%E2%80%94%20LIFF%20Renewal%20Sessions/);
+    assert.match(calls[0].url, /tblXjQFwo0A2cHseh/);
     assert.deepEqual(calls[0].body.fields, {
       renewal_session_id: "0a0b0c0d-0e0f-4a0b-8c0d-0e0f0a0b0c0d",
       liff_intent: "signup",
@@ -82,6 +82,53 @@ describe("LIFF gateway Airtable adapter", () => {
     });
     assert.equal("session_id" in calls[0].body.fields, false);
     assert.doesNotMatch(JSON.stringify(calls[0].body), /must-not-leave-worker|Uprivate|never-store-me/);
+    assert.equal(LIFF_GATEWAY_ROUTES.has("/sigil/member/membership"), true);
+    assert.equal(LIFF_GATEWAY_ROUTES.has("/member/membership"), false);
+  });
+
+  it("fails closed before Airtable when a session select option or route is outside the validated schema", async () => {
+    const calls = mockAirtable(async () => {
+      throw new Error("invalid schema values must not reach Airtable");
+    });
+    const store = getLiffGatewayStore(env());
+    const base = {
+      session_id: "2a2b2c2d-2e2f-4a2b-8c2d-2e2f2a2b2c2d",
+      liff_intent: "signup",
+      source_channel: "line_liff",
+      hype_decision_status: "asking_audience",
+      hall_audience_context: "unknown",
+      model_visibility_mode: "hold_until_selected",
+      pricing_lane: "unknown",
+      route_after_liff: null,
+    };
+
+    for (const change of [
+      { liff_intent: "renamed_intent" },
+      { source_channel: "browser_claim" },
+      { model_visibility_mode: "show_everything" },
+      { pricing_lane: "unverified_lane" },
+      { route_after_liff: "/member/membership" },
+    ]) {
+      await assert.rejects(
+        store.upsertSession({ ...base, ...change }),
+        (error) => error instanceof LiffGatewayStorageError && error.code === "LIFF_GATEWAY_SCHEMA_MISMATCH",
+      );
+    }
+    await assert.rejects(
+      store.upsertSession({ ...base, session_id: "" }),
+      (error) => error instanceof LiffGatewayStorageError && error.code === "LIFF_GATEWAY_SESSION_INVALID",
+    );
+    await assert.rejects(
+      store.recordDecision({
+        liff_session_id: base.session_id,
+        hall_audience_context: "unsafe_audience",
+        model_visibility_mode: "hold_until_selected",
+        pricing_lane: "unknown",
+        route_after_liff: null,
+      }),
+      (error) => error instanceof LiffGatewayStorageError && error.code === "LIFF_GATEWAY_SCHEMA_MISMATCH",
+    );
+    assert.equal(calls.length, 0);
   });
 
   it("preserves only approved null clears in an existing production LIFF session PATCH", async () => {
@@ -145,11 +192,13 @@ describe("LIFF gateway Airtable adapter", () => {
 
     assert.equal(calls.length, 2);
     assert.equal(calls[0].method, "GET");
+    assert.match(calls[0].url, /tblXjQFwo0A2cHseh/);
     assert.match(new URL(calls[0].url).searchParams.get("filterByFormula"), /renewal_session_id/);
     assert.equal(calls[1].method, "POST");
+    assert.match(calls[1].url, /tblvUnooDYwVsHY91/);
     assert.deepEqual(calls[1].body.fields["LINE Renewal Session"], ["recRenewal1"]);
     assert.equal(calls[1].body.fields.source_channel, "line_liff");
-    assert.equal(calls[1].body.fields.source_path, "/member/liff");
+    assert.equal(calls[1].body.fields.source_path, "/sigil/member/membership");
     assert.equal(calls[1].body.fields.hall_audience_context, "female_view");
     assert.equal(calls[1].body.fields.model_visibility_mode, "show_female_profiles");
     assert.equal(calls[1].body.fields.package_context, "believe_member_2999");
@@ -189,13 +238,14 @@ describe("LIFF gateway Airtable adapter", () => {
     const screen = await getLiffGatewayStore(env()).loadScreen("start_intent");
     assert.equal(screen, null);
     assert.equal(calls.length, 1);
+    assert.match(calls[0].url, /tbl1g1uRkvLg5NdM1/);
     assert.match(new URL(calls[0].url).searchParams.get("filterByFormula"), /screen_key/);
   });
 
   it("reads package rules using production package_rule_code, price_thb, duration_days, and points_granted fields", async () => {
     const calls = mockAirtable(async (request) => {
       const table = decodeURIComponent(new URL(request.url).pathname.split("/").at(-1));
-      if (table === "MMD — Non-Gay Package Rules") {
+      if (table === "tble4VuGT9gPsJ2Sh") {
         return new Response(JSON.stringify({ records: [{ fields: {
           package_rule_code: "believe_member_2999",
           pricing_lane: "believe_member_2999",
@@ -221,7 +271,9 @@ describe("LIFF gateway Airtable adapter", () => {
     });
     assert.equal(available, true);
     assert.equal(calls.length, 2);
+    assert.match(calls[0].url, /tble4VuGT9gPsJ2Sh/);
     assert.match(new URL(calls[0].url).searchParams.get("filterByFormula"), /package_rule_code/);
+    assert.match(calls[1].url, /tbluxhFpAAu6yY9mp/);
     assert.match(new URL(calls[1].url).searchParams.get("filterByFormula"), /show_profile_to_female/);
   });
 
@@ -236,6 +288,7 @@ describe("LIFF gateway Airtable adapter", () => {
     };
     for (const [field, value] of [
       ["price_thb", 2999.5],
+      ["price_thb", "2999"],
       ["duration_days", 365.5],
       ["points_granted", 250.5],
     ]) {
@@ -246,6 +299,44 @@ describe("LIFF gateway Airtable adapter", () => {
 
       assert.equal(packageRule, null, field);
       assert.equal(calls.length, 1, field);
+    }
+  });
+
+  it("fails closed on mismatched package code, unsupported lane, or non-boolean manual-review metadata", async () => {
+    for (const fields of [
+      {
+        package_rule_code: "different_package",
+        pricing_lane: "believe_member_2999",
+        price_thb: 2999,
+        duration_days: 365,
+        points_granted: 250,
+        requires_manual_review: false,
+      },
+      {
+        package_rule_code: "believe_member_2999",
+        pricing_lane: "standard_1199",
+        price_thb: 1199,
+        duration_days: 30,
+        points_granted: 0,
+        requires_manual_review: false,
+      },
+      {
+        package_rule_code: "believe_member_2999",
+        pricing_lane: "believe_member_2999",
+        price_thb: 2999,
+        duration_days: 365,
+        points_granted: 250,
+        requires_manual_review: "false",
+      },
+    ]) {
+      const calls = mockAirtable(async () => new Response(JSON.stringify({ records: [{ fields }] }), {
+        headers: { "content-type": "application/json" },
+      }));
+      const packageRule = await getLiffGatewayStore(env()).resolvePackage("believe_member_2999");
+
+      assert.equal(packageRule, null);
+      assert.equal(calls.length, 1);
+      assert.match(calls[0].url, /tble4VuGT9gPsJ2Sh/);
     }
   });
 

@@ -2,6 +2,8 @@ const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_AIRTABLE_REQUEST_TIMEOUT_MS = 4000;
 const MIN_AIRTABLE_REQUEST_TIMEOUT_MS = 500;
 const MAX_AIRTABLE_REQUEST_TIMEOUT_MS = 10000;
+const CANONICAL_MEMBER_ROUTE = "/sigil/member/membership";
+const AIRTABLE_MEMBER_ROUTE = "/member/membership";
 
 const CLEARABLE_SESSION_FIELDS = new Set([
   "route_after_liff",
@@ -10,12 +12,18 @@ const CLEARABLE_SESSION_FIELDS = new Set([
 ]);
 
 const TABLE_DEFAULTS = Object.freeze({
-  RENEWAL_SESSIONS: "MMD — LIFF Renewal Sessions",
-  FLOW_SCREENS: "MMD — LIFF Flow Screens",
-  HYPE_LANE_DECISIONS: "MMD — HYPE Lane Decisions",
-  MODEL_SERVICE_AUDIENCE: "MMD — Model Service Audience",
-  NON_GAY_PACKAGE_RULES: "MMD — Non-Gay Package Rules",
+  RENEWAL_SESSIONS: "tblXjQFwo0A2cHseh",
+  FLOW_SCREENS: "tbl1g1uRkvLg5NdM1",
+  HYPE_LANE_DECISIONS: "tblvUnooDYwVsHY91",
+  MODEL_SERVICE_AUDIENCE: "tbluxhFpAAu6yY9mp",
+  NON_GAY_PACKAGE_RULES: "tble4VuGT9gPsJ2Sh",
 });
+
+const LIFF_INTENTS = new Set(["signup", "renew", "status", "promo", "hall", "continue_payment", "unknown"]);
+const SOURCE_CHANNELS = new Set(["telegram_preview", "line_oa", "line_liff", "web_promotion", "member_page", "admin_console", "unknown"]);
+const HYPE_DECISION_STATUSES = new Set(["not_started", "asking_intent", "asking_audience", "decided", "manual_review", "blocked", "completed"]);
+const HALL_AUDIENCES = new Set(["female_view", "lgbt_view", "manual_review", "unknown"]);
+const MODEL_VISIBILITY_MODES = new Set(["show_female_profiles", "show_lgbt_profiles", "manual_review_only", "hold_until_selected"]);
 
 const SCREEN_KEYS = new Set([
   "start_intent",
@@ -51,7 +59,7 @@ const HYPE_ROUTE_TARGETS = new Set([
 ]);
 
 const ROUTES = new Set([
-  "/member/membership",
+  CANONICAL_MEMBER_ROUTE,
   "/member/payments",
   "/member/dashboard",
   "/hall",
@@ -82,16 +90,18 @@ class AirtableLiffGatewayStore {
   }
 
   async upsertSession(session, recordId = "") {
+    const renewalSessionId = String(session.session_id || "").trim();
+    if (!renewalSessionId) throw new LiffGatewayStorageError("LIFF_GATEWAY_SESSION_INVALID");
     const fields = compactFields({
-      renewal_session_id: session.session_id,
-      liff_intent: session.liff_intent,
-      source_channel: session.source_channel,
-      hype_decision_status: session.hype_decision_status,
-      hall_audience_context: session.hall_audience_context,
-      model_visibility_mode: session.model_visibility_mode,
-      pricing_lane: session.pricing_lane,
+      renewal_session_id: renewalSessionId,
+      liff_intent: selectValue(session.liff_intent, LIFF_INTENTS),
+      source_channel: selectValue(session.source_channel, SOURCE_CHANNELS),
+      hype_decision_status: selectValue(session.hype_decision_status, HYPE_DECISION_STATUSES),
+      hall_audience_context: selectValue(session.hall_audience_context, HALL_AUDIENCES),
+      model_visibility_mode: selectValue(session.model_visibility_mode, MODEL_VISIBILITY_MODES),
+      pricing_lane: selectValue(session.pricing_lane, PRICING_LANES),
       payment_intent_session_id: session.payment_intent_session_id,
-      route_after_liff: session.route_after_liff,
+      route_after_liff: airtableSessionRoute(session.route_after_liff),
       signed_route_token_hash: session.signed_route_token_hash,
       campaign_code: session.campaign_code,
       campaign_claim_id: session.campaign_claim_id,
@@ -110,6 +120,10 @@ class AirtableLiffGatewayStore {
   async recordDecision(decision) {
     const renewalSessionId = String(decision.liff_session_id || "").trim();
     if (!renewalSessionId) throw new LiffGatewayStorageError("LIFF_GATEWAY_SESSION_INVALID");
+    const hallAudienceContext = selectValue(decision.hall_audience_context, HALL_AUDIENCES);
+    const modelVisibilityMode = selectValue(decision.model_visibility_mode, MODEL_VISIBILITY_MODES);
+    const pricingLane = selectValue(decision.pricing_lane, PRICING_LANES);
+    const routeAfterLiff = selectValue(decision.route_after_liff, ROUTES);
 
     const sessionRecords = await this.list(tableName(this.env, "LIFF_RENEWAL_SESSIONS"), {
       filterByFormula: `{renewal_session_id}=${formulaString(renewalSessionId)}`,
@@ -119,19 +133,19 @@ class AirtableLiffGatewayStore {
       throw new LiffGatewayStorageError("LIFF_GATEWAY_STORAGE_MALFORMED");
     }
 
-    const packageContext = HYPE_PACKAGE_CONTEXTS.has(String(decision.pricing_lane || "").trim())
-      ? String(decision.pricing_lane).trim()
+    const packageContext = HYPE_PACKAGE_CONTEXTS.has(pricingLane)
+      ? pricingLane
       : undefined;
-    const routeTarget = HYPE_ROUTE_TARGETS.has(String(decision.route_after_liff || "").trim())
-      ? String(decision.route_after_liff).trim()
+    const routeTarget = HYPE_ROUTE_TARGETS.has(routeAfterLiff)
+      ? routeAfterLiff
       : undefined;
     const fields = compactFields({
       decision_id: `hype_lane_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`,
       "LINE Renewal Session": [String(sessionRecords[0].id).trim()],
       source_channel: "line_liff",
-      source_path: "/member/liff",
-      hall_audience_context: decision.hall_audience_context,
-      model_visibility_mode: decision.model_visibility_mode,
+      source_path: CANONICAL_MEMBER_ROUTE,
+      hall_audience_context: hallAudienceContext,
+      model_visibility_mode: modelVisibilityMode,
       package_context: packageContext,
       route_target: routeTarget,
     });
@@ -237,6 +251,18 @@ function compactFields(fields, { preserveNullKeys } = {}) {
   }));
 }
 
+function selectValue(value, allowed) {
+  if (value === undefined || value === null || value === "") return value;
+  const normalized = String(value).trim();
+  if (!allowed.has(normalized)) throw new LiffGatewayStorageError("LIFF_GATEWAY_SCHEMA_MISMATCH");
+  return normalized;
+}
+
+function airtableSessionRoute(value) {
+  const route = selectValue(value, ROUTES);
+  return route === CANONICAL_MEMBER_ROUTE ? AIRTABLE_MEMBER_ROUTE : route;
+}
+
 function airtableRequestTimeoutMs(env) {
   const configured = Number(env.AIRTABLE_REQUEST_TIMEOUT_MS);
   if (!Number.isInteger(configured)) return DEFAULT_AIRTABLE_REQUEST_TIMEOUT_MS;
@@ -266,12 +292,14 @@ function sanitizeScreenRecord(fields, screenKey) {
 
 function sanitizePackageRecord(fields, requestedCode) {
   if (!fields || typeof fields !== "object") return null;
+  if (normalizePackageCode(fields.package_rule_code) !== requestedCode) return null;
   const pricingLane = String(fields.pricing_lane || "").trim();
   const amountThb = numberField(fields.price_thb);
   const durationDays = numberField(fields.duration_days);
   const pointsAfterVerification = numberField(fields.points_granted);
-  const requiresManualReview = Boolean(fields.requires_manual_review) || pricingLane === "blackcard_25000" || requestedCode === "blackcard";
-  if (!PRICING_LANES.has(pricingLane) || !Number.isInteger(amountThb) || amountThb < 0 || amountThb > 250000 || !Number.isInteger(durationDays) || durationDays < 1 || durationDays > 3660 || !Number.isInteger(pointsAfterVerification) || pointsAfterVerification < 0 || pointsAfterVerification > 100000) return null;
+  if (typeof fields.requires_manual_review !== "boolean") return null;
+  const requiresManualReview = fields.requires_manual_review;
+  if (!HYPE_PACKAGE_CONTEXTS.has(pricingLane) || !Number.isInteger(amountThb) || amountThb < 0 || amountThb > 250000 || !Number.isInteger(durationDays) || durationDays < 1 || durationDays > 3660 || !Number.isInteger(pointsAfterVerification) || pointsAfterVerification < 0 || pointsAfterVerification > 100000) return null;
   return {
     package_code: requestedCode,
     pricing_lane: pricingLane,
@@ -283,8 +311,7 @@ function sanitizePackageRecord(fields, requestedCode) {
 }
 
 function numberField(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : NaN;
+  return typeof value === "number" && Number.isFinite(value) ? value : NaN;
 }
 
 export const LIFF_GATEWAY_ROUTES = ROUTES;
