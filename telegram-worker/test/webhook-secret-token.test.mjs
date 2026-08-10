@@ -273,3 +273,63 @@ test("/telegram/preview/post uses configured public and preview channel URLs", a
   assert.deepEqual(body.reply_markup.inline_keyboard, expectedCareBackKeyboard("https://mmd.example", "https://t.me/examplePreview"));
   assert.deepEqual(flattenKeyboardUrls(body.reply_markup).filter((url) => url.includes("/sigil/")), []);
 });
+
+
+test("/start preview requires verification and never issues a code or writes preview KV", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const kvCalls = [];
+  let telegramBody = null;
+
+  globalThis.fetch = async (_url, init = {}) => {
+    telegramBody = JSON.parse(String(init.body || "{}"));
+    return new Response(JSON.stringify({
+      ok: true,
+      result: { message_id: 88, chat: { id: 999 } },
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  const previewKv = {
+    async get(...args) {
+      kvCalls.push(["get", ...args]);
+      return null;
+    },
+    async put(...args) {
+      kvCalls.push(["put", ...args]);
+    },
+  };
+
+  try {
+    const response = await worker.fetch(new Request(WEBHOOK_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": "expected-secret",
+      },
+      body: JSON.stringify({
+        update_id: 2,
+        message: {
+          message_id: 11,
+          text: "/start preview",
+          chat: { id: 999 },
+          from: { id: 111, username: "member" },
+        },
+      }),
+    }), env({ PREVIEW_PROMO_CODES_KV: previewKv }));
+
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.handled, true);
+    assert.equal(body.flow, "preview_start");
+    assert.equal(body.code_status, "verification_required");
+    assert.deepEqual(kvCalls, []);
+    assert.match(telegramBody.text, /ตรวจสอบตัวตนและสิทธิ์ก่อน/);
+    assert.doesNotMatch(telegramBody.text, /เข้าสู่ระบบเรียบร้อย|[A-Z2-9]{6}/);
+    assert.deepEqual(telegramBody.reply_markup.inline_keyboard, expectedCareBackKeyboard());
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

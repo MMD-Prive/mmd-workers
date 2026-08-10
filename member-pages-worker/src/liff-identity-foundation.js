@@ -1,4 +1,5 @@
 import { getLiffGatewayStore, LiffGatewayStorageError } from "./liff-gateway-airtable.js";
+import { CareBackStoreError, getCareBackStore } from "./care-back-claim-store.js";
 import legacyWorker from "./legacy-member-pages.js";
 
 const WORKER = "member-pages-worker";
@@ -10,7 +11,9 @@ const VERIFY_TIMEOUT_MS = 5000;
 const MEMBER_RESOLVER_TIMEOUT_MS = 5000;
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const MEMBER_RESOLVER_PATH = "/__internal/member-status/resolve";
+const MEMBER_PROFILE_RESOLVER_PATH = "/__internal/member-profile/read";
 const MEMBER_RESOLVER_PURPOSE = "liff_identity_resolution";
+const MEMBER_PROFILE_RESOLVER_PURPOSE = "liff_member_profile_read";
 const MEMBER_RESOLVER_SECRET_HEADER = "x-mmd-member-resolver-secret";
 const PAYMENT_BINDING_STATUS = "contract_unavailable";
 
@@ -21,6 +24,8 @@ const AUDIENCE_PATHS = new Set(["/member/api/liff/audience", "/member/api/liff/a
 const PACKAGE_PATHS = new Set(["/member/api/liff/package", "/member/api/liff/package/"]);
 const PAYMENT_INTENT_PATHS = new Set(["/member/api/liff/payment-intent", "/member/api/liff/payment-intent/"]);
 const STATUS_PATHS = new Set(["/member/api/liff/status", "/member/api/liff/status/"]);
+const PROFILE_PATHS = new Set(["/member/api/liff/profile", "/member/api/liff/profile/"]);
+const CARE_BACK_CLAIM_PATHS = new Set(["/member/api/liff/care-back/claim", "/member/api/liff/care-back/claim/"]);
 const HALL_TOKEN_PATHS = new Set(["/member/api/liff/hall-token", "/member/api/liff/hall-token/"]);
 const APPROVED_ORIGINS = new Set([
   "https://mmdbkk.com",
@@ -36,6 +41,7 @@ const AUDIENCE_BODY_KEYS = new Set(["hall_audience_context"]);
 const PACKAGE_BODY_KEYS = new Set(["requested_package_code", "promo_code"]);
 const PAYMENT_INTENT_BODY_KEYS = new Set(["package_code", "payment_stage"]);
 const HALL_BODY_KEYS = new Set();
+const CARE_BACK_BODY_KEYS = new Set();
 const BROWSER_IDENTITY_FIELDS = [
   "line_user_id",
   "lineUserId",
@@ -87,6 +93,10 @@ export default {
         response = await handlePaymentIntent(request, env);
       } else if (STATUS_PATHS.has(path)) {
         response = await handleStatus(request, env);
+      } else if (PROFILE_PATHS.has(path)) {
+        response = await handleMemberProfile(request, env);
+      } else if (CARE_BACK_CLAIM_PATHS.has(path)) {
+        response = await handleCareBackClaim(request, env);
       } else if (HALL_TOKEN_PATHS.has(path)) {
         response = await handleHallToken(request, env);
       } else {
@@ -118,6 +128,10 @@ export async function handleStart(request, env = {}) {
   const identityKey = await keyedDigest(env, `identity:${verified.sub}`);
   const existing = await resolveExistingMember(env, verified.sub);
   if (!existing.ok) return json({ ok: false, error: { code: "MEMBER_RESOLUTION_FAILED", message: "Member identity could not be resolved safely." } }, 503);
+  const memberProfile = existing.exists ? await resolveMemberProfile(env, verified.sub) : null;
+  if (existing.exists && !memberProfile?.ok) {
+    return json({ ok: false, error: { code: "MEMBER_PROFILE_RESOLUTION_FAILED", message: "Member profile could not be resolved safely." } }, 503);
+  }
 
   const pending = existing.exists ? null : await getOrCreatePendingIdentity(env, identityKey);
   const intent = normalizeIntent(body.intent);
@@ -126,6 +140,8 @@ export async function handleStart(request, env = {}) {
   const session = await issueSession(env, {
     identity_key: identityKey,
     member_exists: existing.exists,
+    member_id: memberProfile?.member_id || null,
+    member_profile: memberProfile?.profile || null,
     pending_identity_id: pending?.pending_identity_id || null,
     intent,
     liff_intent: liffIntent,
@@ -346,6 +362,64 @@ export async function handleStatus(request, env = {}) {
   return json({ ok: true, data: await safeSessionView(gatewayStore, auth.session) }, 200, { cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)] });
 }
 
+export async function handleMemberProfile(request, env = {}) {
+  if (request.method !== "GET") return methodNotAllowed("GET");
+  const originFailure = rejectUnapprovedOrigin(request);
+  if (originFailure) return originFailure;
+  if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
+  const auth = await authenticateAndRotate(request, env);
+  if (!auth.ok) return auth.response;
+  if (!auth.session.member_exists || !auth.session.member_id || !auth.session.member_profile) {
+    return saveRotatedError(env, auth, "MEMBER_PROFILE_NOT_FOUND", "No verified member profile is available for this LINE account.", 404);
+  }
+  try {
+    await commitRotatedSession(env, auth);
+  } catch (error) {
+    return gatewayStorageFailure(error);
+  }
+  return json({ ok: true, data: safeMemberProfile(auth.session.member_profile) }, 200, {
+    cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
+  });
+}
+
+export async function handleCareBackClaim(request, env = {}) {
+  if (request.method !== "POST") return methodNotAllowed("POST");
+  const originFailure = requireSameOrigin(request);
+  if (originFailure) return originFailure;
+  if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
+  const body = await readJson(request);
+  if (!body) return invalidInput();
+  if (hasUnexpectedKeys(body, CARE_BACK_BODY_KEYS) || hasBrowserIdentityClaims(body)) return browserIdentityRejected();
+  const auth = await authenticateAndRotate(request, env);
+  if (!auth.ok) return auth.response;
+  if (!auth.session.member_exists || !auth.session.member_id || !auth.session.identity_key) {
+    return saveRotatedError(env, auth, "CARE_BACK_MEMBER_REQUIRED", "CARE BACK is available only after a verified member match.", 409);
+  }
+  const gatewayStore = getLiffGatewayStore(env);
+  if (!gatewayStore) return saveRotatedError(env, auth, "LIFF_GATEWAY_STORAGE_NOT_CONFIGURED", "CARE BACK is temporarily unavailable.", 503);
+  const store = getCareBackStore(env);
+  if (!store) return saveRotatedError(env, auth, "CARE_BACK_STORAGE_NOT_CONFIGURED", "CARE BACK is temporarily unavailable.", 503);
+  try {
+    const result = await store.openOrResume({
+      identityHash: auth.session.identity_key,
+      memberId: auth.session.member_id,
+    });
+    auth.session.campaign_code = "6-years-care-back";
+    auth.session.campaign_claim_id = result.claim_reference;
+    auth.session.promo_code = result.personal_code;
+    auth.session.promo_status = result.code_status;
+    await persistGatewaySession(env, gatewayStore, auth.session);
+    await commitRotatedSession(env, auth);
+    return json({ ok: true, data: safeCareBackClaim(result) }, 200, {
+      cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
+    });
+  } catch (error) {
+    const code = error instanceof CareBackStoreError ? error.code : "CARE_BACK_STORAGE_UNAVAILABLE";
+    const status = code.endsWith("_CONFLICT") ? 409 : 503;
+    return saveRotatedError(env, auth, code, "CARE BACK is temporarily unavailable.", status);
+  }
+}
+
 export async function handleHallToken(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
   const originFailure = requireSameOrigin(request);
@@ -450,6 +524,33 @@ async function resolveExistingMember(env, lineUserId) {
     return { ok: true, exists: data.member_exists };
   } catch {
     return { ok: false, exists: false };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function resolveMemberProfile(env, lineUserId) {
+  const resolver = env.MEMBER_STATUS_RESOLVER;
+  const resolverSecret = String(env.MEMBER_STATUS_RESOLVER_SECRET || "");
+  if (!resolver?.fetch || resolverSecret.length < 32) return { ok: false };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(env.LIFF_MEMBER_RESOLVER_TIMEOUT_MS || MEMBER_RESOLVER_TIMEOUT_MS));
+  try {
+    const response = await resolver.fetch(new Request(`https://mmd-auth-worker.internal${MEMBER_PROFILE_RESOLVER_PATH}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [MEMBER_RESOLVER_SECRET_HEADER]: resolverSecret,
+      },
+      body: JSON.stringify({ line_user_id: lineUserId, purpose: MEMBER_PROFILE_RESOLVER_PURPOSE }),
+      signal: controller.signal,
+    }));
+    const payload = await response.json().catch(() => null);
+    const data = payload?.data && typeof payload.data === "object" ? payload.data : null;
+    if (!response.ok || payload?.ok === false || data?.member_exists !== true || !data.member_id || !data.profile) return { ok: false };
+    return { ok: true, member_id: String(data.member_id).trim().slice(0, 160), profile: safeMemberProfile(data.profile) };
+  } catch {
+    return { ok: false };
   } finally {
     clearTimeout(timeout);
   }
@@ -613,6 +714,10 @@ function gatewaySessionRecord(session) {
     payment_intent_session_id: session.payment_intent_session_id,
     route_after_liff: session.route_after_liff,
     signed_route_token_hash: session.signed_route_token_hash,
+    campaign_code: session.campaign_code,
+    campaign_claim_id: session.campaign_claim_id,
+    promo_code: session.promo_code,
+    promo_status: session.promo_status,
   };
 }
 
@@ -953,6 +1058,48 @@ function normalizeIntent(value) { const intent = String(value || "member_status"
 function cleanContinuity(value) { const token = String(value || "").trim(); return token && token.length <= 2048 && /^[A-Za-z0-9._~-]+$/.test(token) ? token : null; }
 function exactToken(value) { const token = String(value || "").trim(); return token && token.length <= 8192 && /^[A-Za-z0-9._~-]+$/.test(token) ? token : ""; }
 function noGrants() { return { membership: false, points: false, payment_status: false, private_access: false }; }
+
+function safeMemberProfile(input = {}) {
+  const history = Array.isArray(input.history) ? input.history.slice(0, 50).map((item) => {
+    const type = ["service", "membership", "points"].includes(item?.type) ? item.type : "";
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(item?.date || "")) ? String(item.date) : "";
+    if (!type || !date) return null;
+    const safe = {
+      type,
+      date,
+      title: String(item.title || "MMD activity").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 80),
+      status: String(item.status || "").replace(/[^a-z_]/g, "").slice(0, 32),
+    };
+    if (type === "points" && Number.isFinite(Number(item.points_delta))) safe.points_delta = Math.trunc(Number(item.points_delta));
+    return safe;
+  }).filter(Boolean) : [];
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(String(input.history_window?.from || "")) ? String(input.history_window.from) : "";
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(String(input.history_window?.to || "")) ? String(input.history_window.to) : "";
+  return {
+    display_name: String(input.display_name || "สมาชิก MMD").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 120),
+    tier: ["Member", "Standard", "Premium", "Black Card"].includes(input.tier) ? input.tier : "Member",
+    membership_status: ["active", "grace", "expired", "under_review"].includes(input.membership_status) ? input.membership_status : "under_review",
+    points: Number.isFinite(Number(input.points)) && Number(input.points) >= 0 ? Math.trunc(Number(input.points)) : 0,
+    history_window: { from, to, timezone: "Asia/Bangkok" },
+    history,
+  };
+}
+
+function safeCareBackClaim(input = {}) {
+  const code = /^[A-HJ-NP-Z2-9]{6}$/.test(String(input.personal_code || "")) ? String(input.personal_code) : "";
+  return {
+    campaign_id: "6-years-care-back",
+    claim_reference: String(input.claim_reference || "").replace(/[^A-Z0-9-]/gi, "").slice(0, 64),
+    claim_status: String(input.claim_status || "identity_verified").slice(0, 32),
+    review_status: String(input.review_status || "pending").slice(0, 32),
+    personal_code: code,
+    code_status: String(input.code_status || "draft").slice(0, 16),
+    resumed: Boolean(input.resumed),
+    single_use: true,
+    benefit_state: "pending_official_review",
+    message: "โค้ดส่วนตัวถูกออกหลังยืนยัน LINE แล้ว และจะมีผลเมื่อ MMD ตรวจสอบสิทธิ์อย่างเป็นทางการเรียบร้อยครับ",
+  };
+}
 
 async function keyedDigest(env, value) {
   const digest = await crypto.subtle.sign("HMAC", await hmacKey(env), new TextEncoder().encode(String(value)));

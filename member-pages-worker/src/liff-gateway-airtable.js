@@ -38,6 +38,18 @@ const PRICING_LANES = new Set([
   "unknown",
 ]);
 
+const HYPE_PACKAGE_CONTEXTS = new Set([
+  "believe_member_2999",
+  "special_review",
+  "unknown",
+]);
+
+const HYPE_ROUTE_TARGETS = new Set([
+  "/hall",
+  "/believe/inme",
+  "manual_review",
+]);
+
 const ROUTES = new Set([
   "/member/membership",
   "/member/payments",
@@ -71,7 +83,7 @@ class AirtableLiffGatewayStore {
 
   async upsertSession(session, recordId = "") {
     const fields = compactFields({
-      session_id: session.session_id,
+      renewal_session_id: session.session_id,
       liff_intent: session.liff_intent,
       source_channel: session.source_channel,
       hype_decision_status: session.hype_decision_status,
@@ -81,6 +93,10 @@ class AirtableLiffGatewayStore {
       payment_intent_session_id: session.payment_intent_session_id,
       route_after_liff: session.route_after_liff,
       signed_route_token_hash: session.signed_route_token_hash,
+      campaign_code: session.campaign_code,
+      campaign_claim_id: session.campaign_claim_id,
+      promo_code: session.promo_code,
+      promo_status: session.promo_status,
     }, { preserveNullKeys: recordId ? CLEARABLE_SESSION_FIELDS : undefined });
     const table = tableName(this.env, "LIFF_RENEWAL_SESSIONS");
     const record = recordId
@@ -92,13 +108,32 @@ class AirtableLiffGatewayStore {
   }
 
   async recordDecision(decision) {
+    const renewalSessionId = String(decision.liff_session_id || "").trim();
+    if (!renewalSessionId) throw new LiffGatewayStorageError("LIFF_GATEWAY_SESSION_INVALID");
+
+    const sessionRecords = await this.list(tableName(this.env, "LIFF_RENEWAL_SESSIONS"), {
+      filterByFormula: `{renewal_session_id}=${formulaString(renewalSessionId)}`,
+      maxRecords: 2,
+    });
+    if (sessionRecords.length !== 1 || !String(sessionRecords[0]?.id || "").trim()) {
+      throw new LiffGatewayStorageError("LIFF_GATEWAY_STORAGE_MALFORMED");
+    }
+
+    const packageContext = HYPE_PACKAGE_CONTEXTS.has(String(decision.pricing_lane || "").trim())
+      ? String(decision.pricing_lane).trim()
+      : undefined;
+    const routeTarget = HYPE_ROUTE_TARGETS.has(String(decision.route_after_liff || "").trim())
+      ? String(decision.route_after_liff).trim()
+      : undefined;
     const fields = compactFields({
-      liff_session_id: decision.liff_session_id,
-      hype_decision_status: decision.hype_decision_status,
+      decision_id: `hype_lane_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`,
+      "LINE Renewal Session": [String(sessionRecords[0].id).trim()],
+      source_channel: "line_liff",
+      source_path: "/member/liff",
       hall_audience_context: decision.hall_audience_context,
       model_visibility_mode: decision.model_visibility_mode,
-      pricing_lane: decision.pricing_lane,
-      route_after_liff: decision.route_after_liff,
+      package_context: packageContext,
+      route_target: routeTarget,
     });
     await this.write("POST", tableName(this.env, "HYPE_LANE_DECISIONS"), { body: { fields } });
   }
@@ -109,6 +144,9 @@ class AirtableLiffGatewayStore {
       filterByFormula: `{screen_key}=${formulaString(screenKey)}`,
       maxRecords: 1,
     });
+    // Production Flow Screens are metadata/risk-guard records. Customer copy and
+    // button labels remain server-owned, so Airtable text is never returned as a
+    // renderable screen from this adapter.
     return sanitizeScreenRecord(records[0]?.fields, screenKey);
   }
 
@@ -116,7 +154,7 @@ class AirtableLiffGatewayStore {
     const normalized = normalizePackageCode(packageCode);
     if (!normalized) return null;
     const records = await this.list(tableName(this.env, "NON_GAY_PACKAGE_RULES"), {
-      filterByFormula: `{package_code}=${formulaString(normalized)}`,
+      filterByFormula: `{package_rule_code}=${formulaString(normalized)}`,
       maxRecords: 2,
     });
     if (records.length !== 1) return null;
@@ -216,41 +254,22 @@ function normalizePackageCode(value) {
 
 function sanitizeScreenRecord(fields, screenKey) {
   if (!fields || typeof fields !== "object") return null;
-  const copy = firstText(fields.customer_copy, fields.copy, fields.message, fields.screen_copy);
-  if (!copy || copy.length > 1200) return null;
-  const actions = sanitizeActions(fields.allowed_actions ?? fields.actions ?? fields.action_spec);
-  return { key: screenKey, copy, actions };
-}
-
-function sanitizeActions(value) {
-  const parsed = typeof value === "string" ? safeJson(value) : value;
-  if (!Array.isArray(parsed)) return [];
-  return parsed.slice(0, 8).map((action) => {
-    if (!action || typeof action !== "object") return null;
-    const label = firstText(action.label, action.title);
-    const endpoint = String(action.endpoint || action.path || "").trim();
-    const id = String(action.id || action.action || "").trim().replace(/[^a-z0-9_-]/gi, "").slice(0, 64);
-    if (!label || label.length > 160 || !id || !isAllowedActionEndpoint(endpoint)) return null;
-    return { id, label, endpoint, method: "POST" };
-  }).filter(Boolean);
-}
-
-function isAllowedActionEndpoint(value) {
-  return new Set([
-    "/member/api/liff/intent",
-    "/member/api/liff/audience",
-    "/member/api/liff/package",
-    "/member/api/liff/payment-intent",
-    "/member/api/liff/hall-token",
-  ]).has(value);
+  if (String(fields.screen_key || "").trim() !== screenKey) return null;
+  const status = String(fields.status || "").trim().toLowerCase();
+  if (status && status !== "active") return null;
+  // The production schema contains headline/body/button text, backend_action,
+  // next_route_default, and risk_guard. None are trusted as executable or
+  // customer-authoritative output here. The gateway falls back to server-owned
+  // screen copy/actions instead.
+  return null;
 }
 
 function sanitizePackageRecord(fields, requestedCode) {
   if (!fields || typeof fields !== "object") return null;
   const pricingLane = String(fields.pricing_lane || "").trim();
-  const amountThb = numberField(fields.amount_thb ?? fields.price_thb ?? fields.price);
-  const durationDays = numberField(fields.duration_days ?? fields.duration);
-  const pointsAfterVerification = numberField(fields.points_after_verification ?? fields.points);
+  const amountThb = numberField(fields.price_thb);
+  const durationDays = numberField(fields.duration_days);
+  const pointsAfterVerification = numberField(fields.points_granted);
   const requiresManualReview = Boolean(fields.requires_manual_review) || pricingLane === "blackcard_25000" || requestedCode === "blackcard";
   if (!PRICING_LANES.has(pricingLane) || !Number.isInteger(amountThb) || amountThb < 0 || amountThb > 250000 || !Number.isInteger(durationDays) || durationDays < 1 || durationDays > 3660 || !Number.isInteger(pointsAfterVerification) || pointsAfterVerification < 0 || pointsAfterVerification > 100000) return null;
   return {
@@ -266,22 +285,6 @@ function sanitizePackageRecord(fields, requestedCode) {
 function numberField(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : NaN;
-}
-
-function firstText(...values) {
-  for (const value of values) {
-    const text = String(value || "").trim();
-    if (text) return text;
-  }
-  return "";
-}
-
-function safeJson(value) {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
-  }
 }
 
 export const LIFF_GATEWAY_ROUTES = ROUTES;

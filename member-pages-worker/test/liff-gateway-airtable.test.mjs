@@ -28,13 +28,13 @@ function mockAirtable(handler) {
       signal: init.signal,
     };
     calls.push(request);
-    return handler(request);
+    return handler(request, calls.length - 1);
   };
   return calls;
 }
 
 describe("LIFF gateway Airtable adapter", () => {
-  it("writes only the bounded LIFF session fields through a mocked Airtable request", async () => {
+  it("maps the internal session id to the production renewal_session_id field", async () => {
     const calls = mockAirtable(async () => new Response(JSON.stringify({ id: "recLiff1" }), {
       status: 200,
       headers: { "content-type": "application/json" },
@@ -51,6 +51,10 @@ describe("LIFF gateway Airtable adapter", () => {
       payment_intent_session_id: "liffpay_opaque",
       route_after_liff: "/member/membership",
       signed_route_token_hash: "a".repeat(64),
+      campaign_code: "6-years-care-back",
+      campaign_claim_id: "CB6-2026-ABCDEF12345678",
+      promo_code: "ABC234",
+      promo_status: "draft",
       identity_key: "must-not-leave-worker",
       raw_line_subject: "Uprivate",
       raw_signed_token: "never-store-me",
@@ -61,7 +65,7 @@ describe("LIFF gateway Airtable adapter", () => {
     assert.equal(calls[0].method, "POST");
     assert.match(calls[0].url, /MMD%20%E2%80%94%20LIFF%20Renewal%20Sessions/);
     assert.deepEqual(calls[0].body.fields, {
-      session_id: "0a0b0c0d-0e0f-4a0b-8c0d-0e0f0a0b0c0d",
+      renewal_session_id: "0a0b0c0d-0e0f-4a0b-8c0d-0e0f0a0b0c0d",
       liff_intent: "signup",
       source_channel: "line_liff",
       hype_decision_status: "asking_audience",
@@ -71,11 +75,16 @@ describe("LIFF gateway Airtable adapter", () => {
       payment_intent_session_id: "liffpay_opaque",
       route_after_liff: "/member/membership",
       signed_route_token_hash: "a".repeat(64),
+      campaign_code: "6-years-care-back",
+      campaign_claim_id: "CB6-2026-ABCDEF12345678",
+      promo_code: "ABC234",
+      promo_status: "draft",
     });
+    assert.equal("session_id" in calls[0].body.fields, false);
     assert.doesNotMatch(JSON.stringify(calls[0].body), /must-not-leave-worker|Uprivate|never-store-me/);
   });
 
-  it("preserves only approved null clears in an existing LIFF session PATCH", async () => {
+  it("preserves only approved null clears in an existing production LIFF session PATCH", async () => {
     const calls = mockAirtable(async () => new Response(JSON.stringify({ id: "recLiff1" }), {
       status: 200,
       headers: { "content-type": "application/json" },
@@ -97,7 +106,7 @@ describe("LIFF gateway Airtable adapter", () => {
     assert.equal(calls.length, 1);
     assert.equal(calls[0].method, "PATCH");
     assert.deepEqual(calls[0].body.fields, {
-      session_id: "1a1b1c1d-1e1f-4a1b-8c1d-1e1f1a1b1c1d",
+      renewal_session_id: "1a1b1c1d-1e1f-4a1b-8c1d-1e1f1a1b1c1d",
       liff_intent: "signup",
       hall_audience_context: "unknown",
       pricing_lane: "unknown",
@@ -110,49 +119,100 @@ describe("LIFF gateway Airtable adapter", () => {
     assert.equal("model_visibility_mode" in calls[0].body.fields, false);
   });
 
-  it("uses a sanitized Flow Screens spec and strips unknown action endpoints", async () => {
+  it("links HYPE decisions to the production LINE Renewal Session record and omits nonexistent fields", async () => {
+    const calls = mockAirtable(async (request, index) => {
+      if (index === 0) {
+        return new Response(JSON.stringify({ records: [{ id: "recRenewal1", fields: { renewal_session_id: "session-123" } }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ id: "recDecision1" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+
+    const store = getLiffGatewayStore(env());
+    await store.recordDecision({
+      liff_session_id: "session-123",
+      hype_decision_status: "decided",
+      hall_audience_context: "female_view",
+      model_visibility_mode: "show_female_profiles",
+      pricing_lane: "believe_member_2999",
+      route_after_liff: "/hall",
+    });
+
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].method, "GET");
+    assert.match(new URL(calls[0].url).searchParams.get("filterByFormula"), /renewal_session_id/);
+    assert.equal(calls[1].method, "POST");
+    assert.deepEqual(calls[1].body.fields["LINE Renewal Session"], ["recRenewal1"]);
+    assert.equal(calls[1].body.fields.source_channel, "line_liff");
+    assert.equal(calls[1].body.fields.source_path, "/member/liff");
+    assert.equal(calls[1].body.fields.hall_audience_context, "female_view");
+    assert.equal(calls[1].body.fields.model_visibility_mode, "show_female_profiles");
+    assert.equal(calls[1].body.fields.package_context, "believe_member_2999");
+    assert.equal(calls[1].body.fields.route_target, "/hall");
+    assert.match(calls[1].body.fields.decision_id, /^hype_lane_\d+_[0-9a-f-]{8}$/i);
+    assert.equal("liff_session_id" in calls[1].body.fields, false);
+    assert.equal("hype_decision_status" in calls[1].body.fields, false);
+    assert.equal("pricing_lane" in calls[1].body.fields, false);
+    assert.equal("route_after_liff" in calls[1].body.fields, false);
+  });
+
+  it("fails closed when a HYPE decision cannot resolve exactly one renewal-session record", async () => {
+    mockAirtable(async () => new Response(JSON.stringify({ records: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+
+    await assert.rejects(
+      getLiffGatewayStore(env()).recordDecision({ liff_session_id: "missing-session" }),
+      (error) => error instanceof LiffGatewayStorageError && error.code === "LIFF_GATEWAY_STORAGE_MALFORMED",
+    );
+  });
+
+  it("treats production Flow Screen text/actions as metadata only, never customer-authoritative output", async () => {
     const calls = mockAirtable(async () => new Response(JSON.stringify({
       records: [{ fields: {
         screen_key: "start_intent",
-        customer_copy: "ข้อความที่อนุมัติแล้วครับ",
-        actions: JSON.stringify([
-          { id: "signup", label: "สมัคร", endpoint: "/member/api/liff/intent" },
-          { id: "bad", label: "Unsafe", endpoint: "https://example.invalid" },
-        ]),
+        status: "active",
+        headline_th: "HYPE UNSAFE",
+        body_copy_th: "ชำระแล้วและอนุมัติสมาชิกทันที",
+        primary_button_th: "รับสิทธิ์ทันที",
+        backend_action: "unsafe production instruction",
+        next_route_default: "/hall",
       } }],
     }), { status: 200, headers: { "content-type": "application/json" } }));
-    const screen = await getLiffGatewayStore(env()).loadScreen("start_intent");
 
-    assert.deepEqual(screen, {
-      key: "start_intent",
-      copy: "ข้อความที่อนุมัติแล้วครับ",
-      actions: [{ id: "signup", label: "สมัคร", endpoint: "/member/api/liff/intent", method: "POST" }],
-    });
+    const screen = await getLiffGatewayStore(env()).loadScreen("start_intent");
+    assert.equal(screen, null);
     assert.equal(calls.length, 1);
     assert.match(new URL(calls[0].url).searchParams.get("filterByFormula"), /screen_key/);
   });
 
-  it("reads package and public-model availability through mocked Airtable requests only", async () => {
+  it("reads package rules using production package_rule_code, price_thb, duration_days, and points_granted fields", async () => {
     const calls = mockAirtable(async (request) => {
       const table = decodeURIComponent(new URL(request.url).pathname.split("/").at(-1));
       if (table === "MMD — Non-Gay Package Rules") {
         return new Response(JSON.stringify({ records: [{ fields: {
-          package_code: "believe",
+          package_rule_code: "believe_member_2999",
           pricing_lane: "believe_member_2999",
-          amount_thb: 2999,
+          price_thb: 2999,
           duration_days: 365,
-          points_after_verification: 250,
+          points_granted: 250,
           requires_manual_review: false,
         } }] }), { headers: { "content-type": "application/json" } });
       }
       return new Response(JSON.stringify({ records: [{ id: "recModel" }] }), { headers: { "content-type": "application/json" } });
     });
     const store = getLiffGatewayStore(env());
-    const packageRule = await store.resolvePackage("believe");
+    const packageRule = await store.resolvePackage("believe_member_2999");
     const available = await store.hasHallAudienceInventory("female_view");
 
     assert.deepEqual(packageRule, {
-      package_code: "believe",
+      package_code: "believe_member_2999",
       pricing_lane: "believe_member_2999",
       amount_thb: 2999,
       duration_days: 365,
@@ -161,27 +221,28 @@ describe("LIFF gateway Airtable adapter", () => {
     });
     assert.equal(available, true);
     assert.equal(calls.length, 2);
+    assert.match(new URL(calls[0].url).searchParams.get("filterByFormula"), /package_rule_code/);
     assert.match(new URL(calls[1].url).searchParams.get("filterByFormula"), /show_profile_to_female/);
   });
 
-  it("rejects fractional package numeric values instead of truncating them", async () => {
+  it("rejects fractional production package numeric values instead of truncating them", async () => {
     const validFields = {
-      package_code: "standard",
-      pricing_lane: "standard_1199",
-      amount_thb: 1199,
+      package_rule_code: "believe_member_2999",
+      pricing_lane: "believe_member_2999",
+      price_thb: 2999,
       duration_days: 365,
-      points_after_verification: 0,
+      points_granted: 250,
       requires_manual_review: false,
     };
     for (const [field, value] of [
-      ["amount_thb", 1199.5],
+      ["price_thb", 2999.5],
       ["duration_days", 365.5],
-      ["points_after_verification", 0.5],
+      ["points_granted", 250.5],
     ]) {
       const calls = mockAirtable(async () => new Response(JSON.stringify({
         records: [{ fields: { ...validFields, [field]: value } }],
       }), { headers: { "content-type": "application/json" } }));
-      const packageRule = await getLiffGatewayStore(env()).resolvePackage("standard");
+      const packageRule = await getLiffGatewayStore(env()).resolvePackage("believe_member_2999");
 
       assert.equal(packageRule, null, field);
       assert.equal(calls.length, 1, field);

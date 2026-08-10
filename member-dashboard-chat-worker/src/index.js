@@ -8,6 +8,8 @@ const LINE_DEFAULT_RICH_MENU_URL = "https://api.line.me/v2/bot/user/all/richmenu
 const WORKER_NAME = "member-dashboard-chat-worker";
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webhook/line", "/webhook/line/"]);
 const MEMBER_LIFF_PREFIX = "/member/api/liff/";
+const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
+const MEMBER_LIFF_ID = "2010298002-mbx9kqQn";
 const LINE_RICH_MENU_SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const LINE_RICH_MENU_PUBLIC_WORLD_BASE_PATH = "/v1/internal/line/rich-menu/public-world";
 const LINE_RICH_MENU_DEFAULT_PATH = "/v1/internal/line/rich-menu/default";
@@ -559,6 +561,13 @@ function mmdbkkMembershipUrl(entryRoute, extra = "") {
   return `https://mmdbkk.com/sigil/member/membership?source=line&entry_route=${entryRoute}${extra}`;
 }
 
+function memberLiffUrl(intent = "status", view = "profile") {
+  const url = new URL(`https://liff.line.me/${MEMBER_LIFF_ID}`);
+  url.searchParams.set("intent", intent);
+  url.searchParams.set("view", view);
+  return url.toString();
+}
+
 export function createPublicWorldRichMenuDraft() {
   return {
     size: { width: 2500, height: 1686 },
@@ -568,7 +577,7 @@ export function createPublicWorldRichMenuDraft() {
     areas: [
       { bounds: richMenuBounds(0, 0, 833, 843), action: { type: "message", text: "Hi Per" } },
       { bounds: richMenuBounds(834, 0, 833, 843), action: { type: "uri", uri: mmdbkkMembershipUrl("public_membership") } },
-      { bounds: richMenuBounds(1667, 0, 833, 843), action: { type: "uri", uri: mmdbkkMembershipUrl("member_status") } },
+      { bounds: richMenuBounds(1667, 0, 833, 843), action: { type: "uri", uri: memberLiffUrl("status", "profile") } },
       { bounds: richMenuBounds(0, 843, 833, 843), action: { type: "uri", uri: mmdbkkMembershipUrl("booking_request", "&service=dinner_travel") } },
       { bounds: richMenuBounds(834, 843, 833, 843), action: { type: "uri", uri: "https://mmdbkk.com/pay/membership?source=line&entry_route=payment_proof" } },
       { bounds: richMenuBounds(1667, 843, 833, 843), action: { type: "message", text: "Hi MMD" } },
@@ -585,9 +594,9 @@ export function createPrivateMemberRichMenuDraft() {
     name: "MMD Private Member",
     chatBarText: "MMD",
     areas: [
-      { bounds: richMenuBounds(0, 0, 833, 843), action: { type: "uri", uri: mmdbkkMembershipUrl("member_status") } },
-      { bounds: richMenuBounds(834, 0, 833, 843), action: { type: "uri", uri: mmdbkkMembershipUrl("points") } },
-      { bounds: richMenuBounds(1667, 0, 833, 843), action: { type: "uri", uri: mmdbkkMembershipUrl("renewal") } },
+      { bounds: richMenuBounds(0, 0, 833, 843), action: { type: "uri", uri: memberLiffUrl("status", "profile") } },
+      { bounds: richMenuBounds(834, 0, 833, 843), action: { type: "uri", uri: memberLiffUrl("status", "points") } },
+      { bounds: richMenuBounds(1667, 0, 833, 843), action: { type: "uri", uri: memberLiffUrl("renew", "profile") } },
       {
         bounds: richMenuBounds(0, 843, 833, 843),
         action: {
@@ -1061,7 +1070,7 @@ export default {
   async fetch(request, env = {}) {
     const url = new URL(request.url);
 
-    if (url.pathname.startsWith(MEMBER_LIFF_PREFIX)) {
+    if (url.pathname.startsWith(MEMBER_LIFF_PREFIX) || MEMBER_LIFF_SHELL_PATHS.has(url.pathname)) {
       return handleMemberLiffFrontGate(request, env);
     }
 

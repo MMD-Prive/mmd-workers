@@ -7,6 +7,9 @@ workers_dev = true
 LIFF_VERIFY_TIMEOUT_MS = "5000"
 LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "5000"
 LINE_ID_TOKEN_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify"
+LINE_LIFF_ID = "2010298002-mbx9kqQn"
+AIRTABLE_TABLE_CARE_BACK_CLAIMS = "MMD — Campaign Claims"
+AIRTABLE_TABLE_CARE_BACK_PROMO_CODES = "MMD — Promo Codes"
 
 [[kv_namespaces]]
 binding = "LIFF_IDENTITY_KV"
