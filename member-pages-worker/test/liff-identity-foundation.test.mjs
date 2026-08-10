@@ -611,6 +611,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(result.response.status, 200);
     assert.equal(result.payload.data.next_screen_key, "signup_package");
     assert.equal(result.payload.data.screen.key, "signup_package");
+    assert.equal(result.payload.data.route_after_liff, "/sigil/member/membership");
     assert.doesNotMatch(JSON.stringify(result.payload), /female_view|show_female_profiles|believe_member_2999/i);
     const stored = runtime.LIFF_GATEWAY_STORE.records[0];
     assert.equal(stored.hall_audience_context, "female_view");
