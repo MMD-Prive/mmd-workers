@@ -53,7 +53,7 @@
 #mmd-blackcard-confirm .bc-card:before{position:absolute;z-index:4;top:0;right:0;left:0;height:2px;content:"";background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0;transition:opacity .2s ease}
 #mmd-blackcard-confirm .bc-card.is-selected:before{opacity:1}
 #mmd-blackcard-confirm .bc-selected{box-shadow:0 24px 70px rgba(0,0,0,.34),inset 0 1px rgba(255,255,255,.035)}
-#mmd-blackcard-confirm .bc-success{grid-template-columns:1fr;padding:0;text-align:left;background:#050505}
+#mmd-blackcard-confirm .bc-success{grid-template-columns:1fr;padding:0;place-items:stretch;align-content:start;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;text-align:left;background:#050505}
 #mmd-blackcard-confirm .bc-success__visual{position:relative;min-height:40svh;overflow:hidden;background:#090908}
 #mmd-blackcard-confirm .bc-success__visual img{opacity:0;object-position:center 24%;transition:opacity .45s ease}
 #mmd-blackcard-confirm .bc-success__visual img.is-loaded{opacity:.84}
