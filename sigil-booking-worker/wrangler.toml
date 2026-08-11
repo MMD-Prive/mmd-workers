@@ -23,7 +23,7 @@ pattern = "sigil.mmdbkk.com/sigil/api/booking/intake*"
 zone_name = "mmdbkk.com"
 
 [vars]
-ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 WEB_BASE_URL = "https://mmdbkk.com"
 PAY_URL = "/sigil/pay"
