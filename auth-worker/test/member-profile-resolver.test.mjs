@@ -7,8 +7,25 @@ const LINE_ID = `U${"b".repeat(32)}`;
 const SECRET = "test-only-member-status-resolver-secret-1234567890";
 const RESOLVER_URL = "https://mmd-auth-worker.internal/__internal/member-profile/read";
 const realFetch = globalThis.fetch;
+const RealDate = globalThis.Date;
+const FIXED_NOW = "2026-08-11T17:15:00.000Z";
 
-afterEach(() => { globalThis.fetch = realFetch; });
+afterEach(() => {
+  globalThis.fetch = realFetch;
+  globalThis.Date = RealDate;
+});
+
+function useFixedClock() {
+  globalThis.Date = class extends RealDate {
+    constructor(...args) {
+      super(...(args.length ? args : [FIXED_NOW]));
+    }
+
+    static now() {
+      return RealDate.parse(FIXED_NOW);
+    }
+  };
+}
 
 function env() {
   return {
@@ -36,6 +53,7 @@ function dateOffset(days) {
 }
 
 test("LIFF member profile resolver returns only points, tier, and one-year customer-safe history", async () => {
+  useFixedClock();
   const recent = dateOffset(-10);
   const older = dateOffset(-500);
   const calls = [];
@@ -91,7 +109,7 @@ test("LIFF member profile resolver returns only points, tier, and one-year custo
     tier: "Premium",
     membership_status: "active",
     points: 345,
-    history_window: { from: dateOffset(-365), to: dateOffset(0), timezone: "Asia/Bangkok" },
+    history_window: { from: "2025-08-12", to: "2026-08-12", timezone: "Asia/Bangkok" },
     history: [
       { type: "service", date: recent, title: "Dinner", status: "completed" },
       { type: "membership", date: recent, title: "Premium Membership", status: "active" },
