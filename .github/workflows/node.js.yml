@@ -29,6 +29,12 @@ jobs:
     - run: npm ci
     - run: npm run build --if-present
     - run: npm test
+    - if: matrix.node-version == '22.x'
+      run: npm ci --prefix member-pages-worker/test-runtime
+    - if: matrix.node-version == '22.x'
+      run: npm run test:member-pages-runtime
+    - if: matrix.node-version == '22.x'
+      run: npm run check:member-pages-wrangler
     - if: matrix.node-version != '18.x'
       run: npm ci --prefix services/mmd-slip-extractor
     - if: matrix.node-version != '18.x'

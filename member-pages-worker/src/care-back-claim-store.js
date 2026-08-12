@@ -88,6 +88,7 @@ class AirtableCareBackStore {
     const promoFields = promo.fields || {};
     return {
       campaign_id: CAMPAIGN_ID,
+      claim_record_id: String(claim.id || ""),
       claim_reference: String(claimFields.claim_id || derived.claimId),
       claim_status: safeClaimStatus(claimFields.claim_status),
       review_status: safeReviewStatus(claimFields.review_status),

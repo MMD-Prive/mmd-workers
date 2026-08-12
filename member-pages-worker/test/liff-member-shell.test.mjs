@@ -32,9 +32,24 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /"promoCode":"kj-prv-abc123"/);
     assert.match(html, /credentials:\s*"same-origin"/);
     assert.match(html, /window\.liff\.getIDToken\(\)/);
+    assert.match(html, /\/member\/api\/liff\/care-back\/state/);
+    assert.match(html, /\/member\/api\/liff\/care-back\/wish/);
     assert.doesNotMatch(html, /line_user_id|lineUserId|decodedIDToken|getProfile\(/);
     assert.doesNotMatch(html, /must-not-render-secret|must-not-render-airtable-key/);
     assert.doesNotMatch(html, /https:\/\/mmdprive\.webflow\.io/);
+  });
+
+  it("binds the canonical CARE BACK campaign to guarded same-site state and wish APIs", async () => {
+    const response = await shell("/member/liff?intent=promo&campaign=care_back");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /"intent":"promo"/);
+    assert.match(html, /"campaign":"care_back"/);
+    assert.match(html, /body\.campaign = CONFIG\.campaign/);
+    assert.match(html, /crypto\.randomUUID\(\)/);
+    assert.match(html, /final_display/);
+    assert.doesNotMatch(html, /localStorage|sessionStorage|line_user_id|claim_id/);
   });
 
   it("normalizes untrusted query intent and promo values before embedding them", async () => {
@@ -44,6 +59,7 @@ describe("same-site /member/liff shell", () => {
     assert.equal(response.status, 200);
     assert.match(html, /"intent":"unknown"/);
     assert.match(html, /"promoCode":""/);
+    assert.match(html, /"campaign":""/);
     assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
   });
 

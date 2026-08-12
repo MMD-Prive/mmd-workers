@@ -1,0 +1,14 @@
+{
+  "name": "mmd-member-pages-runtime-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --config vitest.config.mjs",
+    "check": "node check-worker.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.21.1",
+    "vitest": "4.1.10",
+    "wrangler": "4.121.0"
+  }
+}

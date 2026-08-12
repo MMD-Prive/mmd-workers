@@ -1,0 +1,11 @@
+name = "member-pages-worker-runtime-test"
+main = "test-runtime/worker.js"
+compatibility_date = "2026-08-11"
+
+[[durable_objects.bindings]]
+name = "CARE_BACK_WISH_COORDINATOR"
+class_name = "CareBackBirthdayWishCoordinator"
+
+[[migrations]]
+tag = "v1-care-back-birthday-wish-runtime-test"
+new_sqlite_classes = ["CareBackBirthdayWishCoordinator"]
