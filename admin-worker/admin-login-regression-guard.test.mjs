@@ -27,7 +27,9 @@ test("core fallback renders the same approved login page", async () => {
   assert.equal(response.headers.get("x-mmd-page"), APPROVED_PAGE_ID);
   assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker");
   assert.match(html, new RegExp(`data-mmd-page="${APPROVED_PAGE_ID}"`));
-  assert.match(html, /Ewvon and Chang in MMD internal administration environment/);
+  assert.match(html, /Internal Admin Chang Ewvon/);
+  assert.match(html, /data-mmd-login21/);
+  assert.match(html, /rel="icon" type="image\/png"/);
   for (const marker of LEGACY_MARKERS) assert.equal(html.includes(marker), false, marker);
 });
 
