@@ -36,6 +36,20 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Normalize Cloudflare credentials
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const clean = (value) => (value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
+          const token = clean(process.env.CLOUDFLARE_API_TOKEN);
+          const accountId = clean(process.env.CLOUDFLARE_ACCOUNT_ID);
+          if (!token || !accountId) {
+            throw new Error("Cloudflare credentials are missing after normalization");
+          }
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\nCLOUDFLARE_ACCOUNT_ID=${accountId}\n`);
+          NODE
+
       - name: Validate production entrypoints
         run: |
           node --check src/admin-login-hero-worker.js
