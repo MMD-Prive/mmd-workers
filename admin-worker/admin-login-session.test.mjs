@@ -73,8 +73,11 @@ test("GET login renders a safe server-side POST form", async () => {
   assert.match(response.headers.get("content-security-policy") || "", /form-action 'self'/);
   assert.match(html, /<title>MMD Privé · Internal Login<\/title>/);
   assert.match(html, /data-mmd-page="admin-login-approved-hero"/);
-  assert.match(html, /Create your/);
-  assert.match(html, /Ewvon and Chang in MMD internal administration environment/);
+  assert.match(html, /Enter the/);
+  assert.match(html, /Internal Admin Chang Ewvon/);
+  assert.match(html, /rel="icon" type="image\/png"/);
+  assert.match(html, /rel="apple-touch-icon"/);
+  assert.match(html, /mmd-login21/);
   assert.match(html, /method="post"/);
   assert.match(html, /action="\/internal\/admin\/login\/session"/);
   assert.match(html, /name="credential"/);
@@ -84,6 +87,7 @@ test("GET login renders a safe server-side POST form", async () => {
   assert.doesNotMatch(html, /admin-worker\.malemodel-bkk\.workers\.dev/);
   assert.doesNotMatch(html, /mmdprive\.webflow\.io\/internal\/admin\/login/);
   assert.doesNotMatch(html, /localStorage|sessionStorage|Internal access\.|sigil-internal-login/);
+  assert.doesNotMatch(html, /access_code|\/v1\/admin\/auth\/login|\/kenji\/access-code\/validate/);
 });
 
 test("apex and www query-bearing login pages render without redirecting", async () => {

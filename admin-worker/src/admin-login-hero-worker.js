@@ -1,7 +1,10 @@
 import worker from "./studio-telegram-worker.js";
 import {
+  APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON,
+  APPROVED_ADMIN_LOGIN_FAVICON,
   ADMIN_LOGIN_SESSION_PATH,
   APPROVED_ADMIN_LOGIN_HERO,
+  APPROVED_ADMIN_LOGIN_LOGO,
   renderApprovedAdminLogin,
 } from "./admin-login-page.js";
 import { handleKenjiKnowledgeRequest, isKenjiKnowledgeRequest } from "./kenji-knowledge-runtime.js";
@@ -9,7 +12,13 @@ import { handleKenjiPublicKnowledgeRequest, isKenjiPublicKnowledgeRequest } from
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
-export { ADMIN_LOGIN_SESSION_PATH, APPROVED_ADMIN_LOGIN_HERO };
+export {
+  ADMIN_LOGIN_SESSION_PATH,
+  APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON,
+  APPROVED_ADMIN_LOGIN_FAVICON,
+  APPROVED_ADMIN_LOGIN_HERO,
+  APPROVED_ADMIN_LOGIN_LOGO,
+};
 
 const ALLOWED_NEXT_PATHS = [
   "/internal/admin",
