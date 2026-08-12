@@ -101,13 +101,13 @@ class AirtableBirthdayWishStore {
   async createOrLoadBirthdayWish(input) {
     const canonical = await this.getBirthdayWishByClaim({ claimId: input.claimId });
     if (canonical) {
-      assertWishOwnership(canonical, input);
+      assertBirthdayWishOwnership(canonical, input);
       return this.ensureCompleted(canonical, input);
     }
 
     const replay = await this.getBirthdayWishByIdempotencyKey({ idempotencyKey: input.idempotencyKey });
     if (replay) {
-      assertWishOwnership(replay, input, "BIRTHDAY_WISH_IDEMPOTENCY_CONFLICT");
+      assertBirthdayWishOwnership(replay, input, "BIRTHDAY_WISH_IDEMPOTENCY_CONFLICT");
       return this.ensureCompleted(replay, input);
     }
 
@@ -229,7 +229,7 @@ function sanitizeWishRecord(record) {
   };
 }
 
-function assertWishOwnership(wish, input, claimConflictCode = "BIRTHDAY_WISH_CLAIM_CONFLICT") {
+export function assertBirthdayWishOwnership(wish, input, claimConflictCode = "BIRTHDAY_WISH_CLAIM_CONFLICT") {
   if (wish.claim_record_id !== requiredRecordId(input.claimRecordId)) {
     throw new BirthdayWishStorageError(claimConflictCode);
   }

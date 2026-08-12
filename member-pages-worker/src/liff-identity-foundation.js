@@ -1,6 +1,6 @@
 import { getLiffGatewayStore, LiffGatewayStorageError } from "./liff-gateway-airtable.js";
 import { CareBackStoreError, getCareBackStore } from "./care-back-claim-store.js";
-import { BirthdayWishStorageError, getBirthdayWishStore } from "./care-back-birthday-wish-store.js";
+import { assertBirthdayWishOwnership, BirthdayWishStorageError, getBirthdayWishStore } from "./care-back-birthday-wish-store.js";
 import { PUBLIC_JSON_BODY_MAX_BYTES, readBoundedJsonObject } from "./bounded-json.js";
 import { createOrLoadBirthdayWishThroughCoordinator, getBirthdayWishCoordinatorState } from "./care-back-birthday-wish-coordinator.js";
 import legacyWorker from "./legacy-member-pages.js";
@@ -464,6 +464,12 @@ export async function handleCareBackState(request, env = {}) {
   if (!store) return saveRotatedError(env, auth, "BIRTHDAY_WISH_STORAGE_NOT_CONFIGURED", "Birthday Wish is temporarily unavailable.", 503);
   try {
     let wish = await store.getBirthdayWishByClaim({ claimId: auth.session.campaign_claim_id });
+    if (wish) {
+      assertBirthdayWishOwnership(wish, {
+        claimRecordId: auth.session.campaign_claim_record_id,
+        verifiedCustomerRefHash: await keyedDigest(env, `wish-customer:${auth.session.identity_key}`),
+      });
+    }
     if (wish?.wish_status === "submitted") {
       wish = await store.completeBirthdayWish({
         recordId: wish.record_id,

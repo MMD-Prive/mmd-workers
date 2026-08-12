@@ -75,6 +75,7 @@ class MemoryBirthdayWishStore {
       claim_record_id: input.claimRecordId,
       claim_id: input.claimId,
       idempotency_key: input.idempotencyKey,
+      verified_customer_ref_hash: input.verifiedCustomerRefHash,
       wish_id: "wish_1234567890abcdef1234567890abcdef",
       campaign_id: "care_back",
       wish_text: input.wishText,
@@ -408,6 +409,59 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     const createCall = runtime.BIRTHDAY_WISH_STORE.calls.find((call) => call.method === "create");
     assert.match(createCall.input.verifiedCustomerRefHash, /^[a-f0-9]{64}$/);
     assert.notEqual(createCall.input.verifiedCustomerRefHash, "U123");
+  });
+
+  it("fails returning Birthday Wish state closed when Airtable ownership differs from the verified session", async () => {
+    const birthdayStore = new MemoryBirthdayWishStore();
+    const runtime = env({
+      BIRTHDAY_WISH_STORE: birthdayStore,
+      MEMBER_STATUS_RESOLVER: resolver({ member_exists: true, mmd_member_id: "MMD-PER-01" }),
+      CARE_BACK_STORE: {
+        async openOrResume() {
+          return {
+            claim_record_id: `rec${"A".repeat(14)}`,
+            claim_reference: "CB6-2026-ABCDEF12345678",
+            claim_status: "identity_verified",
+            review_status: "pending",
+            personal_code: "ABC234",
+            code_status: "draft",
+            resumed: true,
+          };
+        },
+      },
+    });
+    const started = await start(runtime, { id_token: "valid", liff_intent: "promo", campaign: "care_back" });
+    const claimed = await request("/member/api/liff/care-back/claim", {
+      body: {},
+      cookie: cookiePair(findCookie(started.response, "__Host-mmd_liff_session")),
+    }, runtime);
+    birthdayStore.wishes.push({
+      record_id: `rec${"B".repeat(14)}`,
+      claim_record_id: `rec${"C".repeat(14)}`,
+      claim_id: "CB6-2026-ABCDEF12345678",
+      idempotency_key: "req_1234567890abcdef",
+      verified_customer_ref_hash: "b".repeat(64),
+      wish_id: "wish_1234567890abcdef1234567890abcdef",
+      campaign_id: "care_back",
+      wish_text: "must not be disclosed",
+      wish_option: "",
+      wish_status: "completed",
+      submitted_at: "2026-08-10T12:00:00.000Z",
+      completed_at: "2026-08-10T12:00:00.000Z",
+      public_display_text: "must not be disclosed",
+      language: "th",
+      display_version: "care_back_v1",
+    });
+
+    const result = await request("/member/api/liff/care-back/state", {
+      method: "GET",
+      cookie: cookiePair(findCookie(claimed.response, "__Host-mmd_liff_session")),
+    }, runtime);
+
+    assert.equal(result.response.status, 409);
+    assert.equal(result.payload.error.code, "BIRTHDAY_WISH_CLAIM_CONFLICT");
+    assert.doesNotMatch(JSON.stringify(result.payload), /must not be disclosed|rec[A-Za-z0-9]{14}|verified_customer_ref_hash/i);
+    assert.equal(birthdayStore.calls.some((call) => call.method === "complete"), false);
   });
 
   it("fails Birthday Wish closed for missing sessions, wrong campaigns, review states, and hostile bodies", async () => {
