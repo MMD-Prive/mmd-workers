@@ -49,6 +49,8 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /body\.campaign = CONFIG\.campaign/);
     assert.match(html, /crypto\.randomUUID\(\)/);
     assert.match(html, /final_display/);
+    assert.match(html, /CONFIG\.intent === "promo" && CONFIG\.campaign === "care_back"/);
+    assert.match(html, /กำลังตรวจสอบสิทธิ์ CARE BACK อย่างปลอดภัยครับ/);
     assert.doesNotMatch(html, /localStorage|sessionStorage|line_user_id|claim_id/);
   });
 

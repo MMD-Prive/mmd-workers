@@ -149,13 +149,18 @@ async function recoverPendingWish(store, pending) {
   return completeRecoveredWish(store, byIdempotency, pending);
 }
 
-function completeRecoveredWish(store, wish, pending) {
+async function completeRecoveredWish(store, wish, pending) {
   if (wish.wish_status !== "submitted") return wish;
-  return store.completeBirthdayWish({
+  const completed = await store.completeBirthdayWish({
     recordId: wish.record_id,
     publicDisplayText: pending.publicDisplayText,
     completedAt: pending.now,
   });
+  if (completed?.record_id !== wish.record_id) {
+    throw new BirthdayWishStorageError("BIRTHDAY_WISH_STORAGE_MALFORMED");
+  }
+  assertWishOwnership(completed, pending);
+  return completed;
 }
 
 function assertPendingOwnership(pending, input) {

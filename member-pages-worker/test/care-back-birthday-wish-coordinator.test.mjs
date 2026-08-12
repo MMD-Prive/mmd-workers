@@ -122,6 +122,44 @@ describe("CARE BACK Birthday Wish Durable Object coordinator", () => {
     assert.equal(creates, 1);
   });
 
+  it("does not persist a recovered completion whose ownership changed", async () => {
+    let canonical = null;
+    const storage = new MemoryDoStorage();
+    const store = {
+      async getBirthdayWishByClaim() { return canonical; },
+      async getBirthdayWishByIdempotencyKey() { return null; },
+      async createBirthdayWish() { return null; },
+      async completeBirthdayWish() {
+        return { ...canonical, verified_customer_ref_hash: "b".repeat(64), wish_status: "completed" };
+      },
+      async createOrLoadBirthdayWish() { throw new Error("ambiguous upstream timeout"); },
+    };
+    const coordinator = new CareBackBirthdayWishCoordinator({ storage }, { BIRTHDAY_WISH_STORE: store });
+    assert.equal((await coordinator.fetch(internalRequest())).status, 503);
+
+    canonical = {
+      record_id: `rec${"B".repeat(14)}`,
+      claim_record_id: INPUT.claimRecordId,
+      wish_id: "wish_1234567890abcdef1234567890abcdef",
+      campaign_id: "care_back",
+      wish_text: INPUT.wishText,
+      wish_option: INPUT.wishOption,
+      wish_status: "submitted",
+      submitted_at: INPUT.now,
+      completed_at: "",
+      public_display_text: "",
+      language: "th",
+      display_version: "care_back_v1",
+      idempotency_key: INPUT.idempotencyKey,
+      verified_customer_ref_hash: INPUT.verifiedCustomerRefHash,
+    };
+    const recovered = await coordinator.fetch(internalRequest());
+    assert.equal(recovered.status, 409);
+    assert.equal((await recovered.json()).error.code, "BIRTHDAY_WISH_IDENTITY_CONFLICT");
+    assert.equal(await storage.get("canonical_wish"), undefined);
+    assert.ok(await storage.get("pending_wish"));
+  });
+
   it("fails closed without the exact store contract and rejects public routes", async () => {
     const coordinator = new CareBackBirthdayWishCoordinator(state(), {});
     const unavailable = await coordinator.fetch(internalRequest());
@@ -146,6 +184,22 @@ describe("CARE BACK Birthday Wish Durable Object coordinator", () => {
       },
     };
     const coordinator = new CareBackBirthdayWishCoordinator(state(), { BIRTHDAY_WISH_STORE: store });
+    const declaredOversized = await coordinator.fetch(new Request("https://care-back-coordinator.internal/__internal/care-back/birthday-wish", {
+      method: "POST",
+      headers: { "content-type": "application/json", "content-length": String(8 * 1024 + 1) },
+      body: "{}",
+    }));
+    assert.equal(declaredOversized.status, 413);
+    assert.equal((await declaredOversized.json()).error.code, "REQUEST_BODY_TOO_LARGE");
+
+    const invalidJson = await coordinator.fetch(new Request("https://care-back-coordinator.internal/__internal/care-back/birthday-wish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{",
+    }));
+    assert.equal(invalidJson.status, 400);
+    assert.equal((await invalidJson.json()).error.code, "INVALID_INPUT");
+
     const oversized = await coordinator.fetch(internalRequest({ ...INPUT, wishText: "x".repeat(9000) }));
     assert.equal(oversized.status, 413);
     assert.equal((await oversized.json()).error.code, "REQUEST_BODY_TOO_LARGE");

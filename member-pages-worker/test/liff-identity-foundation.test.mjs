@@ -464,6 +464,72 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(birthdayStore.calls.some((call) => call.method === "complete"), false);
   });
 
+  it("fails returning state closed if completion changes Airtable ownership", async () => {
+    const birthdayStore = new MemoryBirthdayWishStore();
+    birthdayStore.completeBirthdayWish = async ({ recordId, publicDisplayText, completedAt }) => {
+      birthdayStore.calls.push({ method: "complete", recordId });
+      const wish = birthdayStore.wishes.find((item) => item.record_id === recordId);
+      return {
+        ...wish,
+        claim_record_id: `rec${"C".repeat(14)}`,
+        wish_status: "completed",
+        completed_at: completedAt,
+        public_display_text: publicDisplayText,
+      };
+    };
+    const runtime = env({
+      BIRTHDAY_WISH_STORE: birthdayStore,
+      MEMBER_STATUS_RESOLVER: resolver({ member_exists: true, mmd_member_id: "MMD-PER-01" }),
+      CARE_BACK_STORE: {
+        async openOrResume() {
+          return {
+            claim_record_id: `rec${"A".repeat(14)}`,
+            claim_reference: "CB6-2026-ABCDEF12345678",
+            claim_status: "identity_verified",
+            review_status: "pending",
+            personal_code: "ABC234",
+            code_status: "draft",
+            resumed: true,
+          };
+        },
+      },
+    });
+    const started = await start(runtime, { id_token: "valid", liff_intent: "promo", campaign: "care_back" });
+    const claimed = await request("/member/api/liff/care-back/claim", {
+      body: {},
+      cookie: cookiePair(findCookie(started.response, "__Host-mmd_liff_session")),
+    }, runtime);
+    const claimedCookie = cookiePair(findCookie(claimed.response, "__Host-mmd_liff_session"));
+    const claimedToken = claimedCookie.slice(claimedCookie.indexOf("=") + 1);
+    const claimedSessionHash = await keyedDigestForTest(runtime.LIFF_SESSION_SECRET, `session:${claimedToken}`);
+    const claimedSession = JSON.parse(runtime.LIFF_IDENTITY_KV.map.get(`liff:session:${claimedSessionHash}`));
+    birthdayStore.wishes.push({
+      record_id: `rec${"B".repeat(14)}`,
+      claim_record_id: `rec${"A".repeat(14)}`,
+      claim_id: "CB6-2026-ABCDEF12345678",
+      idempotency_key: "req_1234567890abcdef",
+      verified_customer_ref_hash: await keyedDigestForTest(runtime.LIFF_SESSION_SECRET, `wish-customer:${claimedSession.identity_key}`),
+      wish_id: "wish_1234567890abcdef1234567890abcdef",
+      campaign_id: "care_back",
+      wish_text: "must not be disclosed",
+      wish_option: "",
+      wish_status: "submitted",
+      submitted_at: "2026-08-10T12:00:00.000Z",
+      completed_at: "",
+      public_display_text: "",
+      language: "th",
+      display_version: "care_back_v1",
+    });
+
+    const result = await request("/member/api/liff/care-back/state", {
+      method: "GET",
+      cookie: claimedCookie,
+    }, runtime);
+    assert.equal(result.response.status, 409);
+    assert.equal(result.payload.error.code, "BIRTHDAY_WISH_CLAIM_CONFLICT");
+    assert.doesNotMatch(JSON.stringify(result.payload), /must not be disclosed|rec[A-Za-z0-9]{14}/i);
+  });
+
   it("fails Birthday Wish closed for missing sessions, wrong campaigns, review states, and hostile bodies", async () => {
     const missing = await request("/member/api/liff/care-back/state", { method: "GET" });
     assert.equal(missing.response.status, 401);
@@ -518,6 +584,20 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     }, runtime);
     assert.equal(oversized.response.status, 413);
     assert.equal(oversized.payload.error.code, "REQUEST_BODY_TOO_LARGE");
+    assert.equal(runtime.BIRTHDAY_WISH_STORE.wishes.length, 0);
+
+    const declaredOversizedResponse = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/care-back/wish", {
+      method: "POST",
+      headers: {
+        origin: "https://mmdbkk.com",
+        cookie: cookiePair(findCookie(state.response, "__Host-mmd_liff_session")),
+        "content-type": "application/json",
+        "content-length": String(16 * 1024 + 1),
+      },
+      body: "{}",
+    }), runtime);
+    assert.equal(declaredOversizedResponse.status, 413);
+    assert.equal((await declaredOversizedResponse.json()).error.code, "REQUEST_BODY_TOO_LARGE");
     assert.equal(runtime.BIRTHDAY_WISH_STORE.wishes.length, 0);
 
     const wrongCampaign = env({

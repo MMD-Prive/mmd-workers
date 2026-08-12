@@ -260,6 +260,11 @@ function renderShell(config, nonce) {
 
   function render(data) {
     const screen = data && typeof data.screen === "object" ? data.screen : {};
+    if (CONFIG.intent === "promo" && CONFIG.campaign === "care_back") {
+      show("กำลังตรวจสอบสิทธิ์ CARE BACK อย่างปลอดภัยครับ");
+      actions.replaceChildren();
+      return;
+    }
     show(screen.copy || "กำลังตรวจสอบข้อมูลให้ครับ");
     actions.replaceChildren();
     const serverActions = Array.isArray(screen.actions) ? screen.actions : [];

@@ -118,11 +118,16 @@ class AirtableBirthdayWishStore {
   async ensureCompleted(wish, input) {
     if (wish.wish_status === "completed" || wish.wish_status === "revoked" || wish.wish_status === "manual_review") return wish;
     if (wish.wish_status !== "submitted") throw new BirthdayWishStorageError("BIRTHDAY_WISH_STORAGE_MALFORMED");
-    return this.completeBirthdayWish({
+    const completed = await this.completeBirthdayWish({
       recordId: wish.record_id,
       publicDisplayText: requiredText(input.publicDisplayText, 1000),
       completedAt: input.now,
     });
+    if (completed.record_id !== wish.record_id) {
+      throw new BirthdayWishStorageError("BIRTHDAY_WISH_STORAGE_MALFORMED");
+    }
+    assertBirthdayWishOwnership(completed, input);
+    return completed;
   }
 
   async list(filterByFormula, maxRecords) {

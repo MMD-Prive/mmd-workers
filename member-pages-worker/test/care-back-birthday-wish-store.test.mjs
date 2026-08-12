@@ -181,6 +181,25 @@ describe("CARE BACK Birthday Wishes Airtable adapter", () => {
     assert.deepEqual(methods, ["GET", "PATCH"]);
   });
 
+  it("fails closed if the completion response changes record ownership", async () => {
+    globalThis.fetch = async (_url, init) => {
+      if (init.method === "GET") {
+        return Response.json({ records: [wishRecord({ fields: { wish_status: "submitted", completed_at: "", public_display_text: "" } })] });
+      }
+      return Response.json(wishRecord({
+        fields: {
+          "Campaign Claim": [OTHER_CLAIM_RECORD_ID],
+          wish_status: "completed",
+        },
+      }));
+    };
+
+    await assert.rejects(
+      getBirthdayWishStore(env()).createOrLoadBirthdayWish(input()),
+      (error) => error?.code === "BIRTHDAY_WISH_CLAIM_CONFLICT",
+    );
+  });
+
   it("fails closed when an idempotency key is already tied to another claim", async () => {
     let reads = 0;
     globalThis.fetch = async () => {

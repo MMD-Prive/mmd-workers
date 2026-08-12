@@ -463,19 +463,23 @@ export async function handleCareBackState(request, env = {}) {
   const store = getBirthdayWishStore(env);
   if (!store) return saveRotatedError(env, auth, "BIRTHDAY_WISH_STORAGE_NOT_CONFIGURED", "Birthday Wish is temporarily unavailable.", 503);
   try {
+    const expectedOwnership = {
+      claimRecordId: auth.session.campaign_claim_record_id,
+      verifiedCustomerRefHash: await keyedDigest(env, `wish-customer:${auth.session.identity_key}`),
+    };
     let wish = await store.getBirthdayWishByClaim({ claimId: auth.session.campaign_claim_id });
-    if (wish) {
-      assertBirthdayWishOwnership(wish, {
-        claimRecordId: auth.session.campaign_claim_record_id,
-        verifiedCustomerRefHash: await keyedDigest(env, `wish-customer:${auth.session.identity_key}`),
-      });
-    }
+    if (wish) assertBirthdayWishOwnership(wish, expectedOwnership);
     if (wish?.wish_status === "submitted") {
+      const expectedRecordId = wish.record_id;
       wish = await store.completeBirthdayWish({
-        recordId: wish.record_id,
+        recordId: expectedRecordId,
         publicDisplayText: birthdayWishDisplay(auth.session.language),
         completedAt: new Date().toISOString(),
       });
+      if (wish?.record_id !== expectedRecordId) {
+        throw new BirthdayWishStorageError("BIRTHDAY_WISH_STORAGE_MALFORMED");
+      }
+      assertBirthdayWishOwnership(wish, expectedOwnership);
     }
     if (!wish) {
       const coordinator = await getBirthdayWishCoordinatorState(env, auth.session.campaign_claim_id);
