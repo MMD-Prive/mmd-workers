@@ -41,6 +41,8 @@
       publishPlan: function (payload) { return post(API.publishPlan, payload); },
       finalLedgerCommit: function (payload) {
         return post(API.finalCommit, withIdempotency(Object.assign({}, payload, {
+          published: false,
+          publish_mode: "ledger_only",
           ledger_commit_confirmed: true,
           ledger_confirmation_phrase: "COMMIT_LEDGER_ONLY"
         })));
@@ -120,9 +122,10 @@
         var action = form.getAttribute("data-mmd-studio-api");
         var endpoint = API[action];
         if (!endpoint) return;
-        var payload = formPayload(form);
-        if (/Commit$/.test(action)) payload = withIdempotency(payload);
-        post(endpoint, payload).then(function (data) {
+        prepareFormPayload(form, action).then(function (payload) {
+          if (/Commit$/.test(action)) payload = withIdempotency(payload);
+          return post(endpoint, payload);
+        }).then(function (data) {
           form.dispatchEvent(new CustomEvent("mmd-studio:result", { detail: data, bubbles: true }));
         }).catch(function (error) {
           form.dispatchEvent(new CustomEvent("mmd-studio:error", { detail: { message: error.message }, bubbles: true }));
@@ -131,12 +134,28 @@
     });
   }
 
+  function prepareFormPayload(form, action) {
+    var payload = formPayload(form);
+    var files = [];
+    new FormData(form).forEach(function (value, key) {
+      if (SECRET_QUERY.test(key) || /^line[_-]?user[_-]?id$/i.test(key)) return;
+      if (value instanceof File && value.name) files.push({ file: value, field: key });
+    });
+    if (!files.length) return Promise.resolve(payload);
+    return Promise.all(files.map(function (entry, index) {
+      return uploadAsset(entry.file, "studio:upload:" + PAGE + ":" + action + ":" + Date.now() + ":" + index + ":" + crypto.randomUUID());
+    })).then(function (assets) {
+      payload.asset_ids = assets.map(function (asset) { return asset.asset_id; }).filter(Boolean);
+      return payload;
+    });
+  }
+
   function formPayload(form) {
     var payload = {};
     new FormData(form).forEach(function (value, key) {
       if (SECRET_QUERY.test(key) || /^line[_-]?user[_-]?id$/i.test(key)) return;
       if (value instanceof File) {
-        if (value.name) payload[key] = { name: value.name, size: value.size, type: value.type };
+        if (value.name) payload.files = (payload.files || []).concat([{ name: value.name, size: value.size, type: value.type }]);
         return;
       }
       payload[key] = String(value || "");

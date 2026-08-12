@@ -11,6 +11,7 @@ const PREVIEW_COMMIT_PATH = `${STUDIO_API_PREFIX}/model-preview/commit`;
 const UPLOAD_PATH = `${STUDIO_API_PREFIX}/upload`;
 const LEDGER_COMMIT_CONFIRMATION = "COMMIT_LEDGER_ONLY";
 const STUDIO_ASSET_PREFIX = "studio-staging/assets/";
+const STUDIO_UPLOAD_SOURCE = "mmd_studio_upload";
 const DEFAULT_UPLOAD_MAX_BYTES = 12 * 1024 * 1024;
 
 const FIELD_SET = new Set(["ST", "GY", "FR", "EN", "EX", "GWs", "EMs"]);
@@ -55,6 +56,8 @@ export async function handleStudioRequest(request, env, path = normalizePathname
 
     const body = await safeJson(request);
     if (containsBrowserLineUserId(body)) return json({ ok: false, error: "line_user_id_not_allowed" }, 400);
+    const forbidden = findForbiddenStudioInput(body);
+    if (forbidden) return json({ ok: false, error: "raw_storage_field_not_allowed", field: forbidden }, 400);
 
     if (path === INTAKE_VALIDATE_PATH) {
       const normalized = normalizeStudioIntake(body);
@@ -167,9 +170,6 @@ export function normalizeStudioReview(body = {}) {
 }
 
 export function normalizeStudioPreview(body = {}) {
-  const rawR2Keys = normalizeStringArray(body.r2_required_keys || body.r2_keys || body.required_r2_keys);
-  if (rawR2Keys.length) throw badRequest("raw_r2_keys_not_allowed");
-
   const field = normalizeField(body.field || body.field_code);
   const layer = normalizeLayer(body.layer);
   const runNumber = clean(body.run_number || body.runNumber);
@@ -239,9 +239,12 @@ export function buildPublishPlan(normalized) {
 async function handleStudioUpload(request, env) {
   const idempotencyKey = requireHeaderIdempotencyKey(request, "idempotency_key_required");
   if (!env.MMD_MODEL_ASSETS || typeof env.MMD_MODEL_ASSETS.put !== "function") throw serverError("missing_r2_binding");
+  requireAssetSigningSecret(env);
 
   const contentType = clean(request.headers.get("content-type")).toLowerCase();
   if (!contentType.includes("multipart/form-data")) throw badRequest("multipart_required");
+  const maxBytes = uploadMaxBytes(env);
+  assertDeclaredContentLength(request, maxBytes);
 
   const form = await request.formData().catch(() => {
     throw badRequest("invalid_multipart");
@@ -253,7 +256,6 @@ async function handleStudioUpload(request, env) {
   if (files.length !== 1) throw badRequest(files.length > 1 ? "one_file_only" : "file_required");
 
   const file = files[0];
-  const maxBytes = uploadMaxBytes(env);
   if (!Number.isFinite(file.size) || file.size <= 0) throw badRequest("empty_file");
   if (file.size > maxBytes) throw badRequest("file_too_large");
 
@@ -266,26 +268,31 @@ async function handleStudioUpload(request, env) {
   const sha256 = await sha256Hex(bytes);
   const assetId = await studioAssetId(env, idempotencyKey);
   const key = studioAssetKey(assetId);
+  const expected = {
+    asset_id: assetId,
+    sha256,
+    size: String(file.size),
+    content_type: mime,
+    source: STUDIO_UPLOAD_SOURCE,
+  };
   const putResult = await env.MMD_MODEL_ASSETS.put(key, bytes, {
     onlyIf: new Headers({ "If-None-Match": "*" }),
     httpMetadata: { contentType: mime },
     customMetadata: {
-      asset_id: assetId,
-      sha256,
-      source: "mmd_studio_upload",
+      ...expected,
+      created_at: new Date().toISOString(),
       staging_prefix: STUDIO_ASSET_PREFIX.replace(/\/$/, ""),
     },
-    checksums: { sha256: hexToArrayBuffer(sha256) },
+    sha256: hexToArrayBuffer(sha256),
   });
-  if (!putResult) throw conflict("duplicate_upload");
+  if (!putResult) {
+    const replay = await resolveUploadReplay(env, key, expected);
+    if (replay.ok) return uploadResponse(assetId, mime, file.size, true);
+    if (replay.conflict) throw conflict("idempotency_conflict");
+    throw serverError("upload_replay_verification_failed");
+  }
 
-  return json({
-    ok: true,
-    asset_id: assetId,
-    content_type: mime,
-    size: file.size,
-    sha256,
-  });
+  return uploadResponse(assetId, mime, file.size, false);
 }
 
 async function commitStudioIntake(env, normalized, rawBody) {
@@ -478,7 +485,7 @@ async function verifyStudioAssets(env, assetIds) {
       continue;
     }
     const meta = await env.MMD_MODEL_ASSETS.head(studioAssetKey(assetId)).catch(() => null);
-    if (!meta) missing.push(assetId);
+    if (!isValidStudioAssetObject(meta, assetId)) missing.push(assetId);
   }
   return { ok: missing.length === 0, missing_asset_ids: missing };
 }
@@ -541,7 +548,7 @@ function normalizeFileList(value) {
     name: clean(file?.name).slice(0, 240),
     size: Number.isFinite(Number(file?.size)) ? Number(file.size) : 0,
     type: clean(file?.type).slice(0, 120),
-    r2_key: clean(file?.r2_key || file?.key).slice(0, 600),
+    asset_id: clean(file?.asset_id || file?.assetId).slice(0, 80),
   }));
 }
 
@@ -568,6 +575,14 @@ function uploadMaxBytes(env) {
   return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_UPLOAD_MAX_BYTES;
 }
 
+function assertDeclaredContentLength(request, maxBytes) {
+  const raw = clean(request.headers.get("content-length"));
+  if (!raw) return;
+  const declared = Number.parseInt(raw, 10);
+  if (!Number.isFinite(declared) || declared < 0) throw badRequest("invalid_content_length");
+  if (declared > maxBytes) throw badRequest("file_too_large");
+}
+
 function isAllowedImageMime(mime) {
   return mime === "image/jpeg" || mime === "image/png" || mime === "image/webp";
 }
@@ -586,7 +601,7 @@ function detectImageMime(bytes) {
     bytes[7] === 0x0a
   ) return "image/png";
   if (
-    bytes.length >= 12 &&
+    bytes.length >= 16 &&
     bytes[0] === 0x52 &&
     bytes[1] === 0x49 &&
     bytes[2] === 0x46 &&
@@ -594,15 +609,26 @@ function detectImageMime(bytes) {
     bytes[8] === 0x57 &&
     bytes[9] === 0x45 &&
     bytes[10] === 0x42 &&
-    bytes[11] === 0x50
+    bytes[11] === 0x50 &&
+    isWebpChunk(bytes.slice(12, 16))
   ) return "image/webp";
   return "";
 }
 
 async function studioAssetId(env, idempotencyKey) {
-  const secret = clean(env.ADMIN_BEARER || env.INTERNAL_API_TOKEN || env.CONFIRM_KEY);
-  if (!secret) throw serverError("missing_asset_signing_secret");
+  const secret = requireAssetSigningSecret(env);
   return `studio_${await hmacHex(secret, `studio-upload:${idempotencyKey}`)}`;
+}
+
+function requireAssetSigningSecret(env) {
+  const secret = clean(env.STUDIO_ASSET_SIGNING_SECRET);
+  if (!secret) throw serverError("missing_asset_signing_secret");
+  return secret;
+}
+
+function isWebpChunk(bytes) {
+  const chunk = String.fromCharCode(...bytes);
+  return chunk === "VP8 " || chunk === "VP8L" || chunk === "VP8X";
 }
 
 function isStudioAssetId(value) {
@@ -658,6 +684,29 @@ function containsBrowserLineUserId(value) {
   return false;
 }
 
+function findForbiddenStudioInput(value) {
+  const forbidden = new Set(["r2_key", "key", "storage_key", "bucket_name", "public_url", "r2_required_keys", "r2_keys", "required_r2_keys"]);
+  return findForbiddenObjectKey(value, forbidden);
+}
+
+function findForbiddenObjectKey(value, forbidden) {
+  if (!value || typeof value !== "object") return "";
+  if (Array.isArray(value)) {
+    for (const child of value) {
+      const found = findForbiddenObjectKey(child, forbidden);
+      if (found) return found;
+    }
+    return "";
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const normalizedKey = clean(key);
+    if (forbidden.has(normalizedKey)) return normalizedKey;
+    const found = findForbiddenObjectKey(child, forbidden);
+    if (found) return found;
+  }
+  return "";
+}
+
 async function safeJson(request) {
   try {
     const data = await request.json();
@@ -668,14 +717,14 @@ async function safeJson(request) {
 }
 
 function isAllowedOrigin(request, env) {
-  const origin = clean(request.headers.get("origin"));
-  if (!origin) return true;
+  const origin = parseOrigin(request.headers.get("origin"));
+  if (!origin) return false;
+  if (origin !== new URL(request.url).origin) return false;
   const allowed = new Set(String(env.ALLOWED_ORIGINS || "").split(",").map(clean).filter(Boolean));
-  return allowed.size === 0 || allowed.has(origin);
+  return allowed.size > 0 && allowed.has(origin);
 }
 
 function corsHeaders(request, env) {
-  const origin = clean(request.headers.get("origin"));
   const headers = new Headers({
     "access-control-allow-methods": "POST, OPTIONS",
     "access-control-allow-headers": "Content-Type, Idempotency-Key",
@@ -683,8 +732,66 @@ function corsHeaders(request, env) {
     "access-control-max-age": "86400",
     vary: "Origin",
   });
+  const origin = parseOrigin(request.headers.get("origin"));
   if (origin && isAllowedOrigin(request, env)) headers.set("access-control-allow-origin", origin);
   return headers;
+}
+
+function parseOrigin(value) {
+  const origin = clean(value);
+  if (!origin) return "";
+  try {
+    const url = new URL(origin);
+    return url.origin === origin.replace(/\/$/, "") ? url.origin : "";
+  } catch (_) {
+    return "";
+  }
+}
+
+async function resolveUploadReplay(env, key, expected) {
+  if (!env.MMD_MODEL_ASSETS || typeof env.MMD_MODEL_ASSETS.head !== "function") return { ok: false };
+  const existing = await env.MMD_MODEL_ASSETS.head(key).catch(() => null);
+  if (!existing || !existing.customMetadata) return { ok: false };
+  const actual = existing.customMetadata || {};
+  if (!hasCompleteStudioUploadMetadata(actual)) return { ok: false };
+  const matches = actual.asset_id === expected.asset_id &&
+    actual.sha256 === expected.sha256 &&
+    actual.size === expected.size &&
+    actual.content_type === expected.content_type &&
+    actual.source === expected.source;
+  return matches ? { ok: true } : { ok: false, conflict: true };
+}
+
+function uploadResponse(assetId, contentType, size, replayed) {
+  return json({
+    ok: true,
+    asset_id: assetId,
+    content_type: contentType,
+    size,
+    replayed: Boolean(replayed),
+  });
+}
+
+function isValidStudioAssetObject(object, assetId) {
+  if (!object || !object.customMetadata) return false;
+  const meta = object.customMetadata;
+  return hasCompleteStudioUploadMetadata(meta) &&
+    meta.asset_id === assetId &&
+    meta.source === STUDIO_UPLOAD_SOURCE &&
+    isAllowedImageMime(clean(meta.content_type).toLowerCase()) &&
+    /^[a-f0-9]{64}$/.test(clean(meta.sha256)) &&
+    /^[1-9]\d*$/.test(clean(meta.size));
+}
+
+function hasCompleteStudioUploadMetadata(meta) {
+  return Boolean(
+    meta &&
+    clean(meta.asset_id) &&
+    clean(meta.sha256) &&
+    clean(meta.size) &&
+    clean(meta.content_type) &&
+    clean(meta.source)
+  );
 }
 
 function withCors(response, cors) {

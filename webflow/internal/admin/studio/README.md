@@ -14,7 +14,11 @@ They must not redesign the pages or expose admin credentials.
 
 Studio uploads use private R2 staging assets through `/studio/api/upload`.
 The browser receives only opaque `asset_id` values and must never receive R2 bucket
-names, object keys, public URLs, or presigned URLs.
+names, object keys, direct object links, or temporary signed object links.
+
+`STUDIO_ASSET_SIGNING_SECRET` is required in Cloudflare before deploy. It must be
+set with the approved Cloudflare secret mechanism only; do not place a value in
+GitHub, Webflow, URLs, logs, or source files.
 
 R2 lifecycle cleanup for `studio-staging/assets/` is a separate infrastructure
 step and is not mutated by this source patch. Recommended staging retention is

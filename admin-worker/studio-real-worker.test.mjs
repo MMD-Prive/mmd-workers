@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
-import { handleStudioRequest } from "./src/studio-real-worker.js";
+import studioWorker, { handleStudioRequest } from "./src/studio-real-worker.js";
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
@@ -13,13 +13,15 @@ const BASE_ENV = {
   AIRTABLE_API_KEY: "airkey",
   AIRTABLE_TABLE_CONSOLE_INBOX_ID: "tblConsole",
   ALLOWED_ORIGINS: "https://mmdbkk.com",
+  STUDIO_ASSET_SIGNING_SECRET: "studio-asset-secret-test",
 };
 const VALID_ASSET_ID = `studio_${"a".repeat(64)}`;
 
 async function req(path, body = {}, init = {}) {
-  const headers = { "content-type": "application/json", origin: "https://mmdbkk.com", ...(init.headers || {}) };
+  const origin = init.urlOrigin || "https://mmdbkk.com";
+  const headers = { "content-type": "application/json", origin, ...(init.headers || {}) };
   if (init.authed !== false) headers.cookie = await sessionCookie(init.session || {});
-  return new Request(`https://mmdbkk.com${path}`, {
+  return new Request(`${origin}${path}`, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -27,13 +29,14 @@ async function req(path, body = {}, init = {}) {
 }
 
 async function multipartReq(path, fileSpecs = [], init = {}) {
-  const headers = { origin: "https://mmdbkk.com", "Idempotency-Key": init.idempotencyKey || "studio-upload-test-001", ...(init.headers || {}) };
+  const origin = init.urlOrigin || "https://mmdbkk.com";
+  const headers = { origin, "Idempotency-Key": init.idempotencyKey || "studio-upload-test-001", ...(init.headers || {}) };
   if (init.authed !== false) headers.cookie = await sessionCookie(init.session || {});
   const form = new FormData();
   for (const spec of fileSpecs) {
     form.append(spec.field || "file", new Blob([spec.bytes], { type: spec.type }), spec.name || "studio-upload.bin");
   }
-  return new Request(`https://mmdbkk.com${path}`, {
+  return new Request(`${origin}${path}`, {
     method: "POST",
     headers,
     body: form,
@@ -55,18 +58,31 @@ function installAirtableMock({ onCreate } = {}) {
   return calls;
 }
 
-function installR2Mock({ putResult = { key: "stored" }, headResult = { key: "stored" } } = {}) {
+function installR2Mock({ putResult = undefined, headResult = undefined, malformedHead = false } = {}) {
   const calls = [];
+  const objects = new Map();
   return {
     calls,
     binding: {
       async put(key, value, options) {
         calls.push({ op: "put", key, value, options });
-        return putResult;
+        if (putResult !== undefined) return putResult;
+        if (options?.onlyIf?.get?.("If-None-Match") === "*" && objects.has(key)) return null;
+        const object = {
+          key,
+          size: value?.byteLength || value?.size || 0,
+          httpMetadata: options?.httpMetadata || {},
+          customMetadata: options?.customMetadata || {},
+          checksums: options?.sha256 ? { sha256: options.sha256 } : {},
+        };
+        objects.set(key, object);
+        return object;
       },
       async head(key) {
         calls.push({ op: "head", key });
-        return headResult;
+        if (malformedHead) return { key, customMetadata: { source: "broken" } };
+        if (headResult !== undefined) return headResult;
+        return objects.get(key) || null;
       },
     },
   };
@@ -88,6 +104,86 @@ test("upload rejects unapproved origin", async () => {
   }), { ...BASE_ENV, MMD_MODEL_ASSETS: r2.binding });
   assert.equal(res.status, 403);
   assert.equal((await json(res)).error, "origin_not_allowed");
+});
+
+test("upload rejects missing Origin before multipart parsing", async () => {
+  const r2 = installR2Mock();
+  const res = await handleStudioRequest(await multipartReq("/studio/api/upload", [pngFile()], {
+    headers: { origin: "" },
+  }), { ...BASE_ENV, MMD_MODEL_ASSETS: r2.binding });
+  assert.equal(res.status, 403);
+  assert.equal((await json(res)).error, "origin_not_allowed");
+});
+
+test("upload rejects malformed Origin", async () => {
+  const r2 = installR2Mock();
+  const res = await handleStudioRequest(await multipartReq("/studio/api/upload", [pngFile()], {
+    headers: { origin: "https://mmdbkk.com/path" },
+  }), { ...BASE_ENV, MMD_MODEL_ASSETS: r2.binding });
+  assert.equal(res.status, 403);
+  assert.equal((await json(res)).error, "origin_not_allowed");
+});
+
+test("upload rejects empty allowed-origin config", async () => {
+  const r2 = installR2Mock();
+  const res = await handleStudioRequest(await multipartReq("/studio/api/upload", [pngFile()]), {
+    ...BASE_ENV,
+    ALLOWED_ORIGINS: "",
+    MMD_MODEL_ASSETS: r2.binding,
+  });
+  assert.equal(res.status, 403);
+  assert.equal((await json(res)).error, "origin_not_allowed");
+});
+
+test("upload rejects Webflow staging origin for cookie-authenticated Studio", async () => {
+  const r2 = installR2Mock();
+  const res = await handleStudioRequest(await multipartReq("/studio/api/upload", [pngFile()], {
+    urlOrigin: "https://mmdprive.webflow.io",
+  }), {
+    ...BASE_ENV,
+    ALLOWED_ORIGINS: "https://mmdprive.webflow.io",
+    MMD_MODEL_ASSETS: r2.binding,
+  });
+  assert.equal(res.status, 401);
+});
+
+test("upload accepts same-origin www with host-specific session", async () => {
+  const r2 = installR2Mock();
+  const res = await handleStudioRequest(await multipartReq("/studio/api/upload", [pngFile()], {
+    urlOrigin: "https://www.mmdbkk.com",
+    session: { host: "https://www.mmdbkk.com" },
+  }), {
+    ...BASE_ENV,
+    ALLOWED_ORIGINS: "https://www.mmdbkk.com",
+    MMD_MODEL_ASSETS: r2.binding,
+  });
+  assert.equal(res.status, 200);
+});
+
+test("upload rejects cross-host apex Origin on www request", async () => {
+  const r2 = installR2Mock();
+  const res = await handleStudioRequest(await multipartReq("/studio/api/upload", [pngFile()], {
+    urlOrigin: "https://www.mmdbkk.com",
+    headers: { origin: "https://mmdbkk.com" },
+    session: { host: "https://www.mmdbkk.com" },
+  }), {
+    ...BASE_ENV,
+    ALLOWED_ORIGINS: "https://mmdbkk.com,https://www.mmdbkk.com",
+    MMD_MODEL_ASSETS: r2.binding,
+  });
+  assert.equal(res.status, 403);
+});
+
+test("unapproved OPTIONS preflight does not return permissive CORS origin", async () => {
+  const res = await studioWorker.fetch(new Request("https://mmdbkk.com/studio/api/upload", {
+    method: "OPTIONS",
+    headers: {
+      origin: "https://evil.example",
+      "Access-Control-Request-Method": "POST",
+    },
+  }), BASE_ENV, {});
+  assert.equal(res.status, 204);
+  assert.equal(res.headers.get("access-control-allow-origin"), null);
 });
 
 test("upload requires Idempotency-Key header", async () => {
@@ -143,6 +239,19 @@ test("upload rejects oversized files", async () => {
   assert.equal((await json(res)).error, "file_too_large");
 });
 
+test("upload rejects oversized declared Content-Length before multipart parsing", async () => {
+  const r2 = installR2Mock();
+  const res = await handleStudioRequest(await multipartReq("/studio/api/upload", [pngFile()], {
+    headers: { "content-length": "999" },
+  }), {
+    ...BASE_ENV,
+    STUDIO_UPLOAD_MAX_BYTES: "4",
+    MMD_MODEL_ASSETS: r2.binding,
+  });
+  assert.equal(res.status, 400);
+  assert.equal((await json(res)).error, "file_too_large");
+});
+
 test("upload rejects unsupported MIME types", async () => {
   const r2 = installR2Mock();
   const res = await handleStudioRequest(await multipartReq("/studio/api/upload", [{ ...pngFile("studio.txt"), type: "text/plain" }]), {
@@ -178,11 +287,20 @@ test("upload accepts JPEG and returns opaque asset_id only", async () => {
   assert.equal(data.key, undefined);
   assert.equal(data.bucket, undefined);
   assert.equal(data.public_url, undefined);
+  assert.equal(data.sha256, undefined);
   assert.equal(r2.calls.filter((call) => call.op === "put").length, 1);
   const put = r2.calls.find((call) => call.op === "put");
   assert.match(put.key, /^studio-staging\/assets\/studio_[a-f0-9]{64}$/);
   assert.equal(put.options.onlyIf.get("If-None-Match"), "*");
   assert.equal(put.options.httpMetadata.contentType, "image/jpeg");
+  assert.ok(put.options.sha256);
+  assert.equal(put.options.checksums, undefined);
+  assert.equal(arrayBufferToHex(put.options.sha256), await sha256Hex(jpegBytes()));
+  assert.equal(put.options.customMetadata.asset_id, data.asset_id);
+  assert.equal(put.options.customMetadata.sha256, await sha256Hex(jpegBytes()));
+  assert.equal(put.options.customMetadata.size, String(jpegBytes().byteLength));
+  assert.equal(put.options.customMetadata.content_type, "image/jpeg");
+  assert.equal(put.options.customMetadata.source, "mmd_studio_upload");
 });
 
 test("upload accepts PNG", async () => {
@@ -195,7 +313,7 @@ test("upload accepts PNG", async () => {
   assert.equal((await json(res)).content_type, "image/png");
 });
 
-test("upload accepts WebP", async () => {
+test("upload accepts WebP with valid RIFF WEBP chunk marker", async () => {
   const r2 = installR2Mock();
   const res = await handleStudioRequest(await multipartReq("/studio/api/upload", [webpFile()]), {
     ...BASE_ENV,
@@ -205,15 +323,113 @@ test("upload accepts WebP", async () => {
   assert.equal((await json(res)).content_type, "image/webp");
 });
 
-test("duplicate upload idempotency does not create a duplicate R2 object", async () => {
-  const r2 = installR2Mock({ putResult: null });
+test("identical upload replay returns the same asset_id without duplicate write", async () => {
+  const r2 = installR2Mock();
+  const first = await handleStudioRequest(await multipartReq("/studio/api/upload", [pngFile()], {
+    idempotencyKey: "studio-upload-replay-001",
+  }), {
+    ...BASE_ENV,
+    MMD_MODEL_ASSETS: r2.binding,
+  });
+  const replay = await handleStudioRequest(await multipartReq("/studio/api/upload", [pngFile()], {
+    idempotencyKey: "studio-upload-replay-001",
+  }), {
+    ...BASE_ENV,
+    MMD_MODEL_ASSETS: r2.binding,
+  });
+  assert.equal(first.status, 200);
+  assert.equal(replay.status, 200);
+  const firstData = await json(first);
+  const replayData = await json(replay);
+  assert.equal(replayData.asset_id, firstData.asset_id);
+  assert.equal(replayData.replayed, true);
+  assert.equal(r2.calls.filter((call) => call.op === "put").length, 2);
+});
+
+test("conflicting upload replay returns idempotency_conflict without overwrite", async () => {
+  const r2 = installR2Mock();
+  const first = await handleStudioRequest(await multipartReq("/studio/api/upload", [pngFile()], {
+    idempotencyKey: "studio-upload-conflict-001",
+  }), { ...BASE_ENV, MMD_MODEL_ASSETS: r2.binding });
+  const conflict = await handleStudioRequest(await multipartReq("/studio/api/upload", [jpegFile()], {
+    idempotencyKey: "studio-upload-conflict-001",
+  }), { ...BASE_ENV, MMD_MODEL_ASSETS: r2.binding });
+  assert.equal(first.status, 200);
+  assert.equal(conflict.status, 409);
+  assert.equal((await json(conflict)).error, "idempotency_conflict");
+  assert.equal(r2.calls.filter((call) => call.op === "put").length, 2);
+});
+
+test("concurrent conditional failure with same payload resolves to replay success", async () => {
+  const sha = await sha256Hex(pngBytes());
+  const assetId = await expectedAssetId("studio-upload-race-same");
+  const r2 = installR2Mock({
+    putResult: null,
+    headResult: {
+      key: `studio-staging/assets/${assetId}`,
+      customMetadata: {
+        asset_id: assetId,
+        sha256: sha,
+        size: String(pngBytes().byteLength),
+        content_type: "image/png",
+        source: "mmd_studio_upload",
+      },
+    },
+  });
+  const res = await handleStudioRequest(await multipartReq("/studio/api/upload", [pngFile()], {
+    idempotencyKey: "studio-upload-race-same",
+  }), { ...BASE_ENV, MMD_MODEL_ASSETS: r2.binding });
+  assert.equal(res.status, 200);
+  assert.equal((await json(res)).replayed, true);
+});
+
+test("concurrent conditional failure with different payload returns conflict", async () => {
+  const assetId = await expectedAssetId("studio-upload-race-diff");
+  const r2 = installR2Mock({
+    putResult: null,
+    headResult: {
+      key: `studio-staging/assets/${assetId}`,
+      customMetadata: {
+        asset_id: assetId,
+        sha256: await sha256Hex(jpegBytes()),
+        size: String(jpegBytes().byteLength),
+        content_type: "image/jpeg",
+        source: "mmd_studio_upload",
+      },
+    },
+  });
+  const res = await handleStudioRequest(await multipartReq("/studio/api/upload", [pngFile()], {
+    idempotencyKey: "studio-upload-race-diff",
+  }), { ...BASE_ENV, MMD_MODEL_ASSETS: r2.binding });
+  assert.equal(res.status, 409);
+  assert.equal((await json(res)).error, "idempotency_conflict");
+});
+
+test("conditional failure with missing metadata fails closed", async () => {
+  const r2 = installR2Mock({ putResult: null, malformedHead: true });
   const res = await handleStudioRequest(await multipartReq("/studio/api/upload", [pngFile()]), {
     ...BASE_ENV,
     MMD_MODEL_ASSETS: r2.binding,
   });
-  assert.equal(res.status, 409);
-  assert.equal((await json(res)).error, "duplicate_upload");
-  assert.equal(r2.calls.filter((call) => call.op === "put").length, 1);
+  assert.equal(res.status, 500);
+  assert.equal((await json(res)).error, "upload_replay_verification_failed");
+});
+
+test("upload fails closed when R2 binding is missing", async () => {
+  const res = await handleStudioRequest(await multipartReq("/studio/api/upload", [pngFile()]), BASE_ENV);
+  assert.equal(res.status, 500);
+  assert.equal((await json(res)).error, "missing_r2_binding");
+});
+
+test("upload fails closed when dedicated asset signing secret is missing", async () => {
+  const r2 = installR2Mock();
+  const { STUDIO_ASSET_SIGNING_SECRET: _secret, ...env } = BASE_ENV;
+  const res = await handleStudioRequest(await multipartReq("/studio/api/upload", [pngFile()]), {
+    ...env,
+    MMD_MODEL_ASSETS: r2.binding,
+  });
+  assert.equal(res.status, 500);
+  assert.equal((await json(res)).error, "missing_asset_signing_secret");
 });
 
 test("intake validate success", async () => {
@@ -423,12 +639,23 @@ test("publish commit rejects raw R2 keys from browser", async () => {
     ledger_confirmation_phrase: "COMMIT_LEDGER_ONLY",
   }), BASE_ENV);
   assert.equal(res.status, 400);
-  assert.equal((await json(res)).error, "raw_r2_keys_not_allowed");
+  assert.equal((await json(res)).error, "raw_storage_field_not_allowed");
 });
 
 test("publish commit resolves asset_ids server-side before R2 head and remains ledger-only", async () => {
   const calls = installAirtableMock();
-  const r2 = installR2Mock({ headResult: { key: "stored" } });
+  const r2 = installR2Mock({
+    headResult: {
+      key: `studio-staging/assets/${VALID_ASSET_ID}`,
+      customMetadata: {
+        asset_id: VALID_ASSET_ID,
+        sha256: "b".repeat(64),
+        size: "12",
+        content_type: "image/webp",
+        source: "mmd_studio_upload",
+      },
+    },
+  });
   const res = await handleStudioRequest(await req("/studio/api/model-preview/commit", {
     model_name: "Preview Model",
     field: "ST",
@@ -447,6 +674,53 @@ test("publish commit resolves asset_ids server-side before R2 head and remains l
   assert.equal(r2.calls.filter((call) => call.op === "head").length, 1);
   assert.equal(r2.calls.find((call) => call.op === "head").key, `studio-staging/assets/${VALID_ASSET_ID}`);
   assert.equal(calls.filter((call) => call.init.method === "POST").length, 1);
+});
+
+test("publish commit fail-closes when asset metadata is invalid", async () => {
+  const calls = installAirtableMock();
+  const r2 = installR2Mock({ malformedHead: true });
+  const res = await handleStudioRequest(await req("/studio/api/model-preview/commit", {
+    model_name: "Preview Model",
+    field: "ST",
+    layer: "Private / SIGIL",
+    studio_review_id: "recReview1",
+    idempotency_key: "publish_commit_bad_meta",
+    asset_ids: [VALID_ASSET_ID],
+    checklist: { safe: true },
+    ledger_commit_confirmed: true,
+    ledger_confirmation_phrase: "COMMIT_LEDGER_ONLY",
+  }), { ...BASE_ENV, MMD_MODEL_ASSETS: r2.binding });
+  assert.equal(res.status, 409);
+  assert.equal((await json(res)).error, "r2_verification_failed");
+  assert.equal(calls.filter((call) => call.init.method === "POST").length, 0);
+});
+
+for (const field of ["r2_key", "key", "storage_key", "bucket_name", "public_url", "r2_required_keys"]) {
+  test(`intake rejects raw storage field alias: ${field}`, async () => {
+    const res = await handleStudioRequest(await req("/studio/api/intake/validate", {
+      model_name: "Raw Key Model",
+      field: "ST",
+      layer: "Private / SIGIL",
+      template_hint: "MMD Compcard",
+      files: [{ name: "a.webp", [field]: "studio-staging/assets/x" }],
+    }), BASE_ENV);
+    assert.equal(res.status, 400);
+    const data = await json(res);
+    assert.equal(data.error, "raw_storage_field_not_allowed");
+    assert.equal(data.field, field);
+  });
+}
+
+test("review rejects nested raw storage key aliases", async () => {
+  const res = await handleStudioRequest(await req("/studio/api/review/validate", {
+    model_name: "Nested Raw Key Model",
+    field: "ST",
+    layer: "Private / SIGIL",
+    decision: "Needs Review",
+    seed: { media: { storage_key: "studio-staging/assets/x" } },
+  }), BASE_ENV);
+  assert.equal(res.status, 400);
+  assert.equal((await json(res)).field, "storage_key");
 });
 
 test("token query is not accepted as Studio admin auth", async () => {
@@ -527,7 +801,7 @@ function pngBytes() {
 }
 
 function webpBytes() {
-  return new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50]);
+  return new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20]);
 }
 
 function jpegFile(name = "studio.jpg") {
@@ -540,4 +814,24 @@ function pngFile(name = "studio.png") {
 
 function webpFile(name = "studio.webp") {
   return { bytes: webpBytes(), type: "image/webp", name };
+}
+
+async function sha256Hex(bytes) {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return arrayBufferToHex(digest);
+}
+
+async function expectedAssetId(idempotencyKey) {
+  return `studio_${await hmacHex(BASE_ENV.STUDIO_ASSET_SIGNING_SECRET, `studio-upload:${idempotencyKey}`)}`;
+}
+
+async function hmacHex(secret, message) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
+  return arrayBufferToHex(signature);
+}
+
+function arrayBufferToHex(value) {
+  return [...new Uint8Array(value)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
