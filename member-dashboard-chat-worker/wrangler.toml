@@ -57,3 +57,16 @@ zone_name = "mmdbkk.com"
 # Runtime flags are configured in Cloudflare, not committed here:
 # LINE_AUTO_REPLY_ENABLED=true
 # LINE_KENJI_AI_ENABLED=true
+
+# Full CARE BACK staging front gate. No production routes are inherited into
+# named environments; this Worker is reachable only on its workers.dev URL.
+[env.staging]
+name = "member-dashboard-chat-worker-staging"
+workers_dev = true
+
+[[env.staging.services]]
+binding = "MEMBER_PAGES_WORKER"
+service = "member-pages-worker-staging"
+
+[env.staging.observability]
+enabled = true

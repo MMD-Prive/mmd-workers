@@ -27,6 +27,7 @@ export function handleLiffMemberShell(request, env = {}) {
     careBackEndpoint: "/member/api/liff/care-back/claim",
     careBackStateEndpoint: "/member/api/liff/care-back/state",
     careBackWishEndpoint: "/member/api/liff/care-back/wish",
+    stagingScenario: stagingScenario(env, url),
   };
   const nonce = crypto.randomUUID().replace(/-/g, "");
   const html = renderShell(config, nonce);
@@ -288,6 +289,22 @@ function renderShell(config, nonce) {
   }
 
   async function boot() {
+    if (CONFIG.stagingScenario) {
+      try {
+        show("STAGING · กำลังทดสอบสถานะ " + CONFIG.stagingScenario + " โดยไม่ใช้ข้อมูลสมาชิกจริงครับ");
+        const body = {
+          id_token: "care-back-staging-" + CONFIG.stagingScenario,
+          liff_intent: CONFIG.intent,
+        };
+        if (CONFIG.promoCode) body.promo_code = CONFIG.promoCode;
+        if (CONFIG.campaign) body.campaign = CONFIG.campaign;
+        const started = await call(CONFIG.startEndpoint, body);
+        if (started && started.member_resolved) await readProfile();
+      } catch {
+        show("STAGING · ระบบจำลองยังไม่พร้อมครับ");
+      }
+      return;
+    }
     if (!CONFIG.liffId || !window.liff) {
       show("ช่องทางนี้ยังไม่พร้อมใช้งานครับ กรุณากลับมาเปิดผ่าน LINE ของ MMD อีกครั้ง");
       return;
@@ -320,6 +337,13 @@ function renderShell(config, nonce) {
 </script>
 </body>
 </html>`;
+}
+
+function stagingScenario(env, url) {
+  if (String(env.CARE_BACK_STAGING_MODE || "") !== "synthetic") return "";
+  if (!url.hostname.endsWith(".workers.dev")) return "";
+  const scenario = String(url.searchParams.get("scenario") || "").trim().toLowerCase();
+  return new Set(["current", "returning", "new"]).has(scenario) ? scenario : "";
 }
 
 function publicLiffId(env) {

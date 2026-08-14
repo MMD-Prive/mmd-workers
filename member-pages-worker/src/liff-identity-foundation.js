@@ -115,7 +115,7 @@ export default {
       } else {
         response = json({ ok: false, error: { code: "LIFF_ROUTE_NOT_FOUND", message: "Unknown LIFF identity route." } }, 404);
       }
-      return withLiffCors(request, response);
+      return withLiffCors(request, response, env);
     }
     if (CLOSED_LEGACY_CARE_BACK_WISH_PATHS.has(path)) {
       return json({ ok: false, error: { code: "NOT_FOUND", message: "Not found." } }, 404);
@@ -126,7 +126,7 @@ export default {
 
 export async function handleStart(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
@@ -189,7 +189,7 @@ export async function handleStart(request, env = {}) {
 
 export async function handleIntent(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
@@ -218,7 +218,7 @@ export async function handleIntent(request, env = {}) {
 
 export async function handleAudience(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
@@ -258,7 +258,7 @@ export async function handleAudience(request, env = {}) {
 
 export async function handlePackage(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
@@ -319,7 +319,7 @@ export async function handlePackage(request, env = {}) {
 
 export async function handlePaymentIntent(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
@@ -366,7 +366,7 @@ export async function handlePaymentIntent(request, env = {}) {
 
 export async function handleStatus(request, env = {}) {
   if (request.method !== "GET") return methodNotAllowed("GET");
-  const originFailure = rejectUnapprovedOrigin(request);
+  const originFailure = rejectUnapprovedOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
@@ -387,7 +387,7 @@ export async function handleStatus(request, env = {}) {
 
 export async function handleMemberProfile(request, env = {}) {
   if (request.method !== "GET") return methodNotAllowed("GET");
-  const originFailure = rejectUnapprovedOrigin(request);
+  const originFailure = rejectUnapprovedOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const auth = await authenticateAndRotate(request, env);
@@ -407,7 +407,7 @@ export async function handleMemberProfile(request, env = {}) {
 
 export async function handleCareBackClaim(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const parsed = await readJson(request);
@@ -449,7 +449,7 @@ export async function handleCareBackClaim(request, env = {}) {
 
 export async function handleCareBackState(request, env = {}) {
   if (request.method !== "GET") return methodNotAllowed("GET");
-  const originFailure = rejectUnapprovedOrigin(request);
+  const originFailure = rejectUnapprovedOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const auth = await authenticateAndRotate(request, env);
@@ -499,7 +499,7 @@ export async function handleCareBackState(request, env = {}) {
 
 export async function handleCareBackWish(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const parsed = await readJson(request);
@@ -553,7 +553,7 @@ export async function handleCareBackWish(request, env = {}) {
 
 export async function handleHallToken(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
@@ -612,12 +612,16 @@ async function verifyLineIdToken(idToken, env) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Number(env.LIFF_VERIFY_TIMEOUT_MS || VERIFY_TIMEOUT_MS));
   try {
-    const response = await fetch(env.LINE_ID_TOKEN_VERIFY_URL || LINE_VERIFY_URL, {
+    const verifyUrl = env.LINE_ID_TOKEN_VERIFY_URL || LINE_VERIFY_URL;
+    const verifyInit = {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ id_token: idToken, client_id: channelId }),
       signal: controller.signal,
-    });
+    };
+    const response = env.LINE_ID_TOKEN_VERIFIER?.fetch
+      ? await env.LINE_ID_TOKEN_VERIFIER.fetch(new Request(verifyUrl, verifyInit))
+      : await fetch(verifyUrl, verifyInit);
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || typeof payload !== "object") return { ok: false, status: 401, code: "LINE_ID_TOKEN_INVALID", message: "LINE identity verification failed." };
     const sub = String(payload.sub || "").trim();
@@ -1131,27 +1135,31 @@ async function resolveScreen(gatewayStore, screenKey) {
   return fallbackScreen(screenKey);
 }
 
-function requireSameOrigin(request) {
-  if (!isApprovedOrigin(request)) return json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "Same-origin request required." } }, 403);
+function requireSameOrigin(request, env) {
+  if (!isApprovedOrigin(request, env)) return json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "Same-origin request required." } }, 403);
   return null;
 }
 
-function rejectUnapprovedOrigin(request) {
+function rejectUnapprovedOrigin(request, env) {
   const origin = request.headers.get("origin") || "";
-  if (origin && !APPROVED_ORIGINS.has(origin)) {
+  if (origin && !isApprovedOrigin(request, env)) {
     return json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "Same-origin request required." } }, 403);
   }
   return null;
 }
 
-function isApprovedOrigin(request) {
-  return APPROVED_ORIGINS.has(request.headers.get("origin") || "");
+function isApprovedOrigin(request, env) {
+  const origin = request.headers.get("origin") || "";
+  if (APPROVED_ORIGINS.has(origin)) return true;
+  if (String(env?.CARE_BACK_STAGING_MODE || "") !== "synthetic") return false;
+  const url = new URL(request.url);
+  return url.hostname.endsWith(".workers.dev") && origin === url.origin;
 }
 
-function withLiffCors(request, response) {
+function withLiffCors(request, response, env) {
   const headers = new Headers(response.headers);
   const origin = request.headers.get("origin") || "";
-  if (APPROVED_ORIGINS.has(origin)) headers.set("access-control-allow-origin", origin);
+  if (isApprovedOrigin(request, env)) headers.set("access-control-allow-origin", origin);
   else headers.delete("access-control-allow-origin");
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }

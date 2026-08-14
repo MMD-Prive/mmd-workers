@@ -252,6 +252,41 @@ async function keyedDigestForTest(secret, value) {
 }
 
 describe("Phase 1 LIFF identity foundation security correction", () => {
+  it("can verify a bounded staging token through a service binding without external LINE fetch", async () => {
+    const calls = [];
+    const runtime = env({
+      LINE_LOGIN_CHANNEL_ID: "care-back-staging-channel",
+      LINE_ID_TOKEN_VERIFIER: {
+        async fetch(request) {
+          const form = await request.formData();
+          calls.push({
+            path: new URL(request.url).pathname,
+            idToken: form.get("id_token"),
+            clientId: form.get("client_id"),
+          });
+          return Response.json({
+            sub: "U00000000000000000000000000000001",
+            aud: "care-back-staging-channel",
+            exp: Math.floor(Date.now() / 1000) + 600,
+          });
+        },
+      },
+    });
+    globalThis.fetch = async () => { throw new Error("external fetch must not run"); };
+
+    const result = await request("/member/api/liff/start", {
+      body: { id_token: "care-back-staging-current", liff_intent: "promo", campaign: "care_back" },
+    }, runtime);
+
+    assert.equal(result.response.status, 200);
+    assert.deepEqual(calls, [{
+      path: "/oauth2/v2.1/verify",
+      idToken: "care-back-staging-current",
+      clientId: "care-back-staging-channel",
+    }]);
+    assert.deepEqual(result.payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
+  });
+
   it("valid LINE token succeeds, sets secure session cookie, and returns no raw token", async () => {
     const { response, payload } = await start();
     const cookie = findCookie(response, "__Host-mmd_liff_session");
@@ -746,6 +781,31 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     const payload = await status.json();
     assert.equal(status.status, 401);
     assert.equal(payload.error.code, "LIFF_SESSION_REQUIRED");
+  });
+
+  it("accepts a same-origin workers.dev request only in bounded synthetic staging mode", async () => {
+    const runtime = env({ CARE_BACK_STAGING_MODE: "synthetic" });
+    lineVerify();
+    const allowed = await worker.fetch(new Request("https://member-dashboard-chat-worker-staging.example.workers.dev/member/api/liff/start", {
+      method: "POST",
+      headers: {
+        origin: "https://member-dashboard-chat-worker-staging.example.workers.dev",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ id_token: "valid-token", liff_intent: "promo", campaign: "care_back" }),
+    }), runtime);
+    const rejectedWithoutMode = await worker.fetch(new Request("https://member-dashboard-chat-worker-staging.example.workers.dev/member/api/liff/start", {
+      method: "POST",
+      headers: {
+        origin: "https://member-dashboard-chat-worker-staging.example.workers.dev",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ id_token: "valid-token", liff_intent: "promo", campaign: "care_back" }),
+    }), env());
+
+    assert.equal(allowed.status, 200);
+    assert.equal(rejectedWithoutMode.status, 403);
+    assert.equal((await rejectedWithoutMode.json()).error.code, "ORIGIN_NOT_ALLOWED");
   });
 
   it("existing member resolves safely without returning tier, points, payment, or entitlement details", async () => {

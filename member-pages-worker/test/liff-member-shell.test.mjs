@@ -16,6 +16,10 @@ async function shell(path = "/member/liff", { method = "GET", runtime = env() } 
   return worker.fetch(new Request(`https://mmdbkk.com${path}`, { method }), runtime);
 }
 
+async function stagingShell(hostname, path, runtime) {
+  return worker.fetch(new Request(`https://${hostname}${path}`), runtime);
+}
+
 describe("same-site /member/liff shell", () => {
   it("serves a no-store same-site LIFF shell that bootstraps only through the LIFF start API", async () => {
     const response = await shell("/member/liff?intent=renew&code=KJ-PRV-ABC123");
@@ -93,5 +97,28 @@ describe("same-site /member/liff shell", () => {
 
     assert.equal(response.status, 404);
     assert.equal(payload.error.code, "LIFF_ROUTE_NOT_FOUND");
+  });
+
+  it("enables bounded synthetic scenarios only on the staging workers.dev host", async () => {
+    const runtime = env({ CARE_BACK_STAGING_MODE: "synthetic" });
+    const staging = await stagingShell(
+      "member-dashboard-chat-worker-staging.example.workers.dev",
+      "/member/liff?intent=promo&campaign=care_back&scenario=current",
+      runtime,
+    );
+    const production = await stagingShell(
+      "mmdbkk.com",
+      "/member/liff?intent=promo&campaign=care_back&scenario=current",
+      runtime,
+    );
+    const invalid = await stagingShell(
+      "member-dashboard-chat-worker-staging.example.workers.dev",
+      "/member/liff?intent=promo&campaign=care_back&scenario=admin",
+      runtime,
+    );
+
+    assert.match(await staging.text(), /"stagingScenario":"current"/);
+    assert.match(await production.text(), /"stagingScenario":""/);
+    assert.match(await invalid.text(), /"stagingScenario":""/);
   });
 });
