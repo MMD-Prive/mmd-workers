@@ -19,11 +19,15 @@ export function handleLiffMemberShell(request, env = {}) {
   const config = {
     liffId: publicLiffId(env),
     intent: normalizeIntent(url.searchParams.get("intent") || url.searchParams.get("liff_intent")),
+    campaign: normalizeCampaign(url.searchParams.get("campaign")),
     view: normalizeView(url.searchParams.get("view")),
     promoCode: normalizePromoCode(url.searchParams.get("promo_code") || url.searchParams.get("code")),
     startEndpoint: "/member/api/liff/start",
     profileEndpoint: "/member/api/liff/profile",
     careBackEndpoint: "/member/api/liff/care-back/claim",
+    careBackStateEndpoint: "/member/api/liff/care-back/state",
+    careBackWishEndpoint: "/member/api/liff/care-back/wish",
+    stagingScenario: stagingScenario(env, url),
   };
   const nonce = crypto.randomUUID().replace(/-/g, "");
   const html = renderShell(config, nonce);
@@ -49,7 +53,7 @@ function renderShell(config, nonce) {
     main{width:min(100%,560px);margin:0 auto;padding:28px 20px;border:1px solid rgba(212,181,123,.22);border-radius:28px;background:rgba(16,16,16,.91);box-shadow:0 28px 80px rgba(0,0,0,.45)}
     .mark{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#d7bd8a}.title{margin:10px 0 8px;font-size:30px;line-height:1.08;font-weight:650}.sub{margin:0;color:#aaa29a;font-size:14px;line-height:1.55}
     #message{white-space:pre-line;margin:30px 0 0;font-size:18px;line-height:1.65}.actions{display:grid;gap:10px;margin-top:24px}.actions:empty{display:none}
-    button{width:100%;border:1px solid rgba(216,189,137,.28);border-radius:16px;padding:14px 16px;background:#171511;color:#f7f3eb;font:inherit;text-align:left;cursor:pointer}button:disabled{opacity:.55;cursor:default}
+    button,textarea{width:100%;border:1px solid rgba(216,189,137,.28);border-radius:16px;padding:14px 16px;background:#171511;color:#f7f3eb;font:inherit;text-align:left}button{cursor:pointer}button:disabled{opacity:.55;cursor:default}textarea{min-height:124px;resize:vertical;line-height:1.55}.wish{display:grid;gap:12px;margin-top:16px}.wish-result{white-space:pre-line;color:#e7d5ad;line-height:1.65}
     .profile{display:grid;gap:12px;margin-top:22px}.summary{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.card{border:1px solid rgba(216,189,137,.18);border-radius:20px;padding:17px;background:rgba(8,8,8,.72)}.label{color:#948c82;font-size:11px;letter-spacing:.12em;text-transform:uppercase}.value{display:block;margin-top:6px;font-size:22px;line-height:1.15}.points{font-size:34px;color:#e6cb91}.history{display:grid;gap:9px;margin-top:12px}.event{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.07);font-size:13px}.event:first-child{border-top:0}.event-date,.event-status{color:#8f8880}.event-delta{color:#d9bd82}.care{margin-top:14px;border-color:rgba(225,193,126,.38);background:linear-gradient(145deg,rgba(45,35,19,.78),rgba(10,10,10,.86))}.care h2{margin:8px 0;font-size:21px}.care p{margin:0;color:#b7afa4;font-size:13px;line-height:1.6}.care-code{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;padding:13px 14px;border-radius:14px;background:#080807}.care-code strong{font-size:24px;letter-spacing:.15em;color:#ecd18f}.care button{margin-top:14px;text-align:center;background:linear-gradient(135deg,#f0d892,#b98b35);color:#181207;font-weight:700}
     .status{margin-top:22px;color:#7f7972;font-size:12px;line-height:1.5}.hidden{display:none!important}@media(max-width:390px){main{padding:24px 16px}.summary{grid-template-columns:1fr}.event{grid-template-columns:66px 1fr}.event-status{grid-column:2}}
   </style>
@@ -73,6 +77,12 @@ function renderShell(config, nonce) {
       <p id="care-message">ตรวจสอบผ่าน LINE ก่อนออกโค้ดส่วนตัว โค้ดจะมีผลหลัง MMD ตรวจสอบสิทธิ์อย่างเป็นทางการครับ</p>
       <div id="care-code" class="care-code hidden"><span class="label">Personal Code</span><strong id="care-code-value"></strong></div>
       <button id="care-button" type="button">รับโค้ดส่วนตัว</button>
+      <div id="wish" class="wish hidden">
+        <label for="wish-text" class="label">Birthday Wish</label>
+        <textarea id="wish-text" maxlength="600" placeholder="ฝากคำอวยพรวันเกิดให้ MMD ได้ที่นี่ครับ"></textarea>
+        <button id="wish-submit" type="button">ส่งคำอวยพรให้ MMD</button>
+        <div id="wish-result" class="wish-result hidden" role="status" aria-live="polite"></div>
+      </div>
     </div>
   </section>
   <div id="status" class="status">Secure same-site session · mmdbkk.com</div>
@@ -86,6 +96,10 @@ function renderShell(config, nonce) {
   const actions = document.getElementById("actions");
   const profile = document.getElementById("profile");
   const careButton = document.getElementById("care-button");
+  const wishPanel = document.getElementById("wish");
+  const wishText = document.getElementById("wish-text");
+  const wishSubmit = document.getElementById("wish-submit");
+  const wishResult = document.getElementById("wish-result");
   const allowedIntentIds = new Set(["signup", "renew", "status"]);
   let busy = false;
 
@@ -121,7 +135,59 @@ function renderShell(config, nonce) {
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || payload.ok !== true) return null;
     renderProfile(payload.data || {});
+    if (CONFIG.intent === "promo" && CONFIG.campaign === "care_back") await readCareBackState();
     return payload.data || {};
+  }
+
+  async function readCareBackState() {
+    const response = await fetch(CONFIG.careBackStateEndpoint, { method:"GET",credentials:"same-origin",headers:{"accept":"application/json"} });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload || payload.ok !== true) return null;
+    renderCareBackState(payload);
+    return payload;
+  }
+
+  function renderCareBackState(data) {
+    const state = String(data && data.state || "");
+    if (state === "claim_required") {
+      wishPanel.classList.add("hidden");
+      careButton.classList.remove("hidden");
+      return;
+    }
+    if (state === "wish_available") {
+      careButton.classList.add("hidden");
+      wishPanel.classList.remove("hidden");
+      wishText.classList.remove("hidden");
+      wishSubmit.classList.remove("hidden");
+      wishResult.classList.add("hidden");
+      return;
+    }
+    if (state === "submitted" || state === "completed") {
+      careButton.classList.add("hidden");
+      wishPanel.classList.remove("hidden");
+      wishText.classList.add("hidden");
+      wishSubmit.classList.add("hidden");
+      wishResult.textContent = String(data.final_display && data.final_display.message || "MMD ได้รับคำอวยพรของคุณแล้วครับ");
+      wishResult.classList.remove("hidden");
+      return;
+    }
+    if (state === "write_pending") {
+      careButton.classList.add("hidden");
+      wishPanel.classList.remove("hidden");
+      wishText.classList.add("hidden");
+      wishSubmit.classList.add("hidden");
+      wishResult.textContent = "ระบบกำลังยืนยันการบันทึกคำอวยพรเดิมอย่างปลอดภัย กรุณากลับมาตรวจสอบอีกครั้งครับ";
+      wishResult.classList.remove("hidden");
+      return;
+    }
+    if (state === "reconciliation_required" || state === "manual_review" || state === "not_eligible") {
+      careButton.classList.add("hidden");
+      wishPanel.classList.remove("hidden");
+      wishText.classList.add("hidden");
+      wishSubmit.classList.add("hidden");
+      wishResult.textContent = "ข้อมูลนี้ยังต้องตรวจสอบก่อนครับ ระบบจะเก็บเส้นทางของคุณไว้อย่างปลอดภัย";
+      wishResult.classList.remove("hidden");
+    }
   }
 
   function renderProfile(data) {
@@ -166,14 +232,40 @@ function renderShell(config, nonce) {
       document.getElementById("care-code").classList.remove("hidden");
       document.getElementById("care-message").textContent = String(data.message || "โค้ดจะมีผลหลัง MMD ตรวจสอบสิทธิ์อย่างเป็นทางการครับ");
       careButton.textContent = data.resumed ? "เปิดโค้ดเดิมแล้ว" : "ออกโค้ดส่วนตัวแล้ว";
+      await readCareBackState();
     } catch {
       document.getElementById("care-message").textContent = "ตอนนี้ยังออกโค้ดไม่ได้ครับ กรุณาลองใหม่อีกครั้งหรือติดต่อ HYPE";
       careButton.disabled = false; careButton.textContent = "ลองตรวจสอบอีกครั้ง";
     } finally { setBusy(false); }
   }
 
+  async function submitBirthdayWish() {
+    if (busy) return;
+    const text = String(wishText.value || "").trim();
+    if (!text) { wishResult.textContent = "กรุณาเขียนคำอวยพรก่อนส่งครับ"; wishResult.classList.remove("hidden"); return; }
+    setBusy(true); wishSubmit.disabled = true; wishSubmit.textContent = "กำลังเก็บคำอวยพร";
+    try {
+      const response = await fetch(CONFIG.careBackWishEndpoint, {
+        method:"POST",credentials:"same-origin",headers:{"content-type":"application/json","accept":"application/json"},
+        body:JSON.stringify({wish_text:text,request_id:crypto.randomUUID()}),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload || payload.ok !== true) throw new Error("wish_unavailable");
+      renderCareBackState(payload);
+    } catch {
+      wishResult.textContent = "ตอนนี้ยังเก็บคำอวยพรไม่ได้ครับ กรุณาลองใหม่อีกครั้ง";
+      wishResult.classList.remove("hidden");
+      wishSubmit.disabled = false; wishSubmit.textContent = "ลองส่งอีกครั้ง";
+    } finally { setBusy(false); }
+  }
+
   function render(data) {
     const screen = data && typeof data.screen === "object" ? data.screen : {};
+    if (CONFIG.intent === "promo" && CONFIG.campaign === "care_back") {
+      show("กำลังตรวจสอบสิทธิ์ CARE BACK อย่างปลอดภัยครับ");
+      actions.replaceChildren();
+      return;
+    }
     show(screen.copy || "กำลังตรวจสอบข้อมูลให้ครับ");
     actions.replaceChildren();
     const serverActions = Array.isArray(screen.actions) ? screen.actions : [];
@@ -197,6 +289,22 @@ function renderShell(config, nonce) {
   }
 
   async function boot() {
+    if (CONFIG.stagingScenario) {
+      try {
+        show("STAGING · กำลังทดสอบสถานะ " + CONFIG.stagingScenario + " โดยไม่ใช้ข้อมูลสมาชิกจริงครับ");
+        const body = {
+          id_token: "care-back-staging-" + CONFIG.stagingScenario,
+          liff_intent: CONFIG.intent,
+        };
+        if (CONFIG.promoCode) body.promo_code = CONFIG.promoCode;
+        if (CONFIG.campaign) body.campaign = CONFIG.campaign;
+        const started = await call(CONFIG.startEndpoint, body);
+        if (started && started.member_resolved) await readProfile();
+      } catch {
+        show("STAGING · ระบบจำลองยังไม่พร้อมครับ");
+      }
+      return;
+    }
     if (!CONFIG.liffId || !window.liff) {
       show("ช่องทางนี้ยังไม่พร้อมใช้งานครับ กรุณากลับมาเปิดผ่าน LINE ของ MMD อีกครั้ง");
       return;
@@ -214,6 +322,7 @@ function renderShell(config, nonce) {
       }
       const body = { id_token: idToken, liff_intent: CONFIG.intent };
       if (CONFIG.promoCode) body.promo_code = CONFIG.promoCode;
+      if (CONFIG.campaign) body.campaign = CONFIG.campaign;
       const started = await call(CONFIG.startEndpoint, body);
       if (started && started.member_resolved) await readProfile();
     } catch {
@@ -222,11 +331,19 @@ function renderShell(config, nonce) {
   }
 
   careButton.addEventListener("click", claimCareBack);
+  wishSubmit.addEventListener("click", submitBirthdayWish);
   boot();
 })();
 </script>
 </body>
 </html>`;
+}
+
+function stagingScenario(env, url) {
+  if (String(env.CARE_BACK_STAGING_MODE || "") !== "synthetic") return "";
+  if (!url.hostname.endsWith(".workers.dev")) return "";
+  const scenario = String(url.searchParams.get("scenario") || "").trim().toLowerCase();
+  return new Set(["current", "returning", "new"]).has(scenario) ? scenario : "";
 }
 
 function publicLiffId(env) {
@@ -242,6 +359,10 @@ function normalizeIntent(value) {
 function normalizePromoCode(value) {
   const code = String(value || "").trim().toLowerCase();
   return /^[a-z0-9][a-z0-9_-]{0,62}$/.test(code) ? code : "";
+}
+
+function normalizeCampaign(value) {
+  return String(value || "").trim().toLowerCase() === "care_back" ? "care_back" : "";
 }
 
 function normalizeView(value) {

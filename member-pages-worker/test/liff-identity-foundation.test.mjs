@@ -52,6 +52,67 @@ class MemoryGatewayStore {
   async hasHallAudienceInventory(audience) { return this.inventory.has(audience); }
 }
 
+class MemoryBirthdayWishStore {
+  constructor() {
+    this.wishes = [];
+    this.calls = [];
+  }
+
+  async getBirthdayWishByClaim({ claimId }) {
+    this.calls.push({ method: "getByClaim", claimId });
+    return this.wishes.find((wish) => wish.claim_id === claimId) || null;
+  }
+
+  async getBirthdayWishByIdempotencyKey({ idempotencyKey }) {
+    this.calls.push({ method: "getByIdempotency", idempotencyKey });
+    return this.wishes.find((wish) => wish.idempotency_key === idempotencyKey) || null;
+  }
+
+  async createBirthdayWish(input) {
+    this.calls.push({ method: "create", input: { ...input } });
+    const wish = {
+      record_id: `rec${"B".repeat(14)}`,
+      claim_record_id: input.claimRecordId,
+      claim_id: input.claimId,
+      idempotency_key: input.idempotencyKey,
+      verified_customer_ref_hash: input.verifiedCustomerRefHash,
+      wish_id: "wish_1234567890abcdef1234567890abcdef",
+      campaign_id: "care_back",
+      wish_text: input.wishText,
+      wish_option: input.wishOption,
+      wish_status: "submitted",
+      submitted_at: input.now,
+      completed_at: "",
+      public_display_text: "",
+      language: input.language,
+      display_version: "care_back_v1",
+    };
+    this.wishes.push(wish);
+    return wish;
+  }
+
+  async completeBirthdayWish({ recordId, publicDisplayText, completedAt }) {
+    this.calls.push({ method: "complete", recordId });
+    const wish = this.wishes.find((item) => item.record_id === recordId);
+    if (!wish) throw new Error("missing_wish");
+    wish.wish_status = "completed";
+    wish.completed_at = completedAt;
+    wish.public_display_text = publicDisplayText;
+    return wish;
+  }
+
+  async createOrLoadBirthdayWish(input) {
+    const existing = await this.getBirthdayWishByClaim({ claimId: input.claimId });
+    if (existing) return existing.wish_status === "submitted"
+      ? this.completeBirthdayWish({ recordId: existing.record_id, publicDisplayText: input.publicDisplayText, completedAt: input.now })
+      : existing;
+    const replay = await this.getBirthdayWishByIdempotencyKey({ idempotencyKey: input.idempotencyKey });
+    if (replay) return replay;
+    const created = await this.createBirthdayWish(input);
+    return this.completeBirthdayWish({ recordId: created.record_id, publicDisplayText: input.publicDisplayText, completedAt: input.now });
+  }
+}
+
 function resolver(payload = { member_exists: false }, status = 200) {
   const calls = [];
   return {
@@ -105,15 +166,21 @@ function paymentsWorker(status = 200, payload = { ok: true }) {
 }
 
 function env(overrides = {}) {
-  return {
+  const birthdayStore = overrides.BIRTHDAY_WISH_STORE || new MemoryBirthdayWishStore();
+  const runtime = {
     LINE_LOGIN_CHANNEL_ID: "2000000000",
     LIFF_SESSION_SECRET: "test-only-session-secret-not-production",
     MEMBER_STATUS_RESOLVER_SECRET: "test-only-member-status-resolver-secret-1234567890",
     LIFF_IDENTITY_KV: new MemoryKv(),
     MEMBER_STATUS_RESOLVER: resolver(),
     LIFF_GATEWAY_STORE: new MemoryGatewayStore(),
+    BIRTHDAY_WISH_STORE: birthdayStore,
+    CARE_BACK_WISH_COORDINATOR: {
+      async createOrLoad(input) { return birthdayStore.createOrLoadBirthdayWish(input); },
+    },
     ...overrides,
   };
+  return runtime;
 }
 
 function lineVerify({ sub = "U123", aud = "2000000000", exp = Math.floor(Date.now() / 1000) + 600, status = 200, malformed = false } = {}) {
@@ -185,6 +252,41 @@ async function keyedDigestForTest(secret, value) {
 }
 
 describe("Phase 1 LIFF identity foundation security correction", () => {
+  it("can verify a bounded staging token through a service binding without external LINE fetch", async () => {
+    const calls = [];
+    const runtime = env({
+      LINE_LOGIN_CHANNEL_ID: "care-back-staging-channel",
+      LINE_ID_TOKEN_VERIFIER: {
+        async fetch(request) {
+          const form = await request.formData();
+          calls.push({
+            path: new URL(request.url).pathname,
+            idToken: form.get("id_token"),
+            clientId: form.get("client_id"),
+          });
+          return Response.json({
+            sub: "U00000000000000000000000000000001",
+            aud: "care-back-staging-channel",
+            exp: Math.floor(Date.now() / 1000) + 600,
+          });
+        },
+      },
+    });
+    globalThis.fetch = async () => { throw new Error("external fetch must not run"); };
+
+    const result = await request("/member/api/liff/start", {
+      body: { id_token: "care-back-staging-current", liff_intent: "promo", campaign: "care_back" },
+    }, runtime);
+
+    assert.equal(result.response.status, 200);
+    assert.deepEqual(calls, [{
+      path: "/oauth2/v2.1/verify",
+      idToken: "care-back-staging-current",
+      clientId: "care-back-staging-channel",
+    }]);
+    assert.deepEqual(result.payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
+  });
+
   it("valid LINE token succeeds, sets secure session cookie, and returns no raw token", async () => {
     const { response, payload } = await start();
     const cookie = findCookie(response, "__Host-mmd_liff_session");
@@ -220,6 +322,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
         async openOrResume(input) {
           careCalls.push(input);
           return {
+            claim_record_id: `rec${"A".repeat(14)}`,
             claim_reference: "CB6-2026-ABCDEF12345678",
             claim_status: "identity_verified",
             review_status: "pending",
@@ -265,6 +368,288 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(spoof.response.status, 400);
     assert.equal(spoof.payload.error.code, "BROWSER_IDENTITY_REJECTED");
     assert.equal(careCalls.length, 1);
+  });
+
+  it("persists, replays, and reloads one canonical Birthday Wish without exposing storage identity", async () => {
+    const runtime = env({
+      MEMBER_STATUS_RESOLVER: resolver({ member_exists: true, mmd_member_id: "MMD-PER-01" }),
+      CARE_BACK_STORE: {
+        async openOrResume() {
+          return {
+            claim_record_id: `rec${"A".repeat(14)}`,
+            claim_reference: "CB6-2026-ABCDEF12345678",
+            claim_status: "identity_verified",
+            review_status: "pending",
+            personal_code: "ABC234",
+            code_status: "draft",
+            resumed: false,
+          };
+        },
+      },
+    });
+    const started = await start(runtime, {
+      id_token: "valid",
+      liff_intent: "promo",
+      campaign: "care_back",
+    });
+    const claimed = await request("/member/api/liff/care-back/claim", {
+      body: {},
+      cookie: cookiePair(findCookie(started.response, "__Host-mmd_liff_session")),
+    }, runtime);
+    const before = await request("/member/api/liff/care-back/state", {
+      method: "GET",
+      cookie: cookiePair(findCookie(claimed.response, "__Host-mmd_liff_session")),
+    }, runtime);
+
+    assert.equal(before.response.status, 200);
+    assert.equal(before.payload.state, "wish_available");
+    assert.deepEqual(before.payload.grants, {
+      payment: false,
+      membership: false,
+      points: false,
+      hall: false,
+      black_card: false,
+      svip: false,
+      booking: false,
+      access: false,
+    });
+
+    const first = await request("/member/api/liff/care-back/wish", {
+      body: { wish_text: "ขอให้ MMD เติบโตอย่างอบอุ่นต่อไปครับ", request_id: "req_1234567890abcdef" },
+      cookie: cookiePair(findCookie(before.response, "__Host-mmd_liff_session")),
+    }, runtime);
+    assert.equal(first.response.status, 200);
+    assert.equal(first.payload.state, "completed");
+    assert.equal(first.payload.wish.text, "ขอให้ MMD เติบโตอย่างอบอุ่นต่อไปครับ");
+    assert.match(first.payload.final_display.message, /MMD ได้รับคำอวยพรของคุณแล้วครับ/);
+
+    const replay = await request("/member/api/liff/care-back/wish", {
+      body: { wish_text: "ข้อความที่ไม่ควรแทนของเดิม", request_id: "different_1234567890" },
+      cookie: cookiePair(findCookie(first.response, "__Host-mmd_liff_session")),
+    }, runtime);
+    assert.equal(replay.response.status, 200);
+    assert.equal(replay.payload.wish.text, first.payload.wish.text);
+    assert.equal(runtime.BIRTHDAY_WISH_STORE.wishes.length, 1);
+
+    const returned = await request("/member/api/liff/care-back/state", {
+      method: "GET",
+      cookie: cookiePair(findCookie(replay.response, "__Host-mmd_liff_session")),
+    }, runtime);
+    assert.equal(returned.response.status, 200);
+    assert.deepEqual(returned.payload.wish, first.payload.wish);
+    assert.deepEqual(returned.payload.final_display, first.payload.final_display);
+
+    const rendered = JSON.stringify([first.payload, replay.payload, returned.payload]);
+    assert.doesNotMatch(rendered, /rec[A-Za-z0-9]{14}|verified_customer_ref_hash|identity_key|request_id|idempotency|session_id|token/i);
+    const createCall = runtime.BIRTHDAY_WISH_STORE.calls.find((call) => call.method === "create");
+    assert.match(createCall.input.verifiedCustomerRefHash, /^[a-f0-9]{64}$/);
+    assert.notEqual(createCall.input.verifiedCustomerRefHash, "U123");
+  });
+
+  it("fails returning Birthday Wish state closed when Airtable ownership differs from the verified session", async () => {
+    const birthdayStore = new MemoryBirthdayWishStore();
+    const runtime = env({
+      BIRTHDAY_WISH_STORE: birthdayStore,
+      MEMBER_STATUS_RESOLVER: resolver({ member_exists: true, mmd_member_id: "MMD-PER-01" }),
+      CARE_BACK_STORE: {
+        async openOrResume() {
+          return {
+            claim_record_id: `rec${"A".repeat(14)}`,
+            claim_reference: "CB6-2026-ABCDEF12345678",
+            claim_status: "identity_verified",
+            review_status: "pending",
+            personal_code: "ABC234",
+            code_status: "draft",
+            resumed: true,
+          };
+        },
+      },
+    });
+    const started = await start(runtime, { id_token: "valid", liff_intent: "promo", campaign: "care_back" });
+    const claimed = await request("/member/api/liff/care-back/claim", {
+      body: {},
+      cookie: cookiePair(findCookie(started.response, "__Host-mmd_liff_session")),
+    }, runtime);
+    birthdayStore.wishes.push({
+      record_id: `rec${"B".repeat(14)}`,
+      claim_record_id: `rec${"C".repeat(14)}`,
+      claim_id: "CB6-2026-ABCDEF12345678",
+      idempotency_key: "req_1234567890abcdef",
+      verified_customer_ref_hash: "b".repeat(64),
+      wish_id: "wish_1234567890abcdef1234567890abcdef",
+      campaign_id: "care_back",
+      wish_text: "must not be disclosed",
+      wish_option: "",
+      wish_status: "completed",
+      submitted_at: "2026-08-10T12:00:00.000Z",
+      completed_at: "2026-08-10T12:00:00.000Z",
+      public_display_text: "must not be disclosed",
+      language: "th",
+      display_version: "care_back_v1",
+    });
+
+    const result = await request("/member/api/liff/care-back/state", {
+      method: "GET",
+      cookie: cookiePair(findCookie(claimed.response, "__Host-mmd_liff_session")),
+    }, runtime);
+
+    assert.equal(result.response.status, 409);
+    assert.equal(result.payload.error.code, "BIRTHDAY_WISH_CLAIM_CONFLICT");
+    assert.doesNotMatch(JSON.stringify(result.payload), /must not be disclosed|rec[A-Za-z0-9]{14}|verified_customer_ref_hash/i);
+    assert.equal(birthdayStore.calls.some((call) => call.method === "complete"), false);
+  });
+
+  it("fails returning state closed if completion changes Airtable ownership", async () => {
+    const birthdayStore = new MemoryBirthdayWishStore();
+    birthdayStore.completeBirthdayWish = async ({ recordId, publicDisplayText, completedAt }) => {
+      birthdayStore.calls.push({ method: "complete", recordId });
+      const wish = birthdayStore.wishes.find((item) => item.record_id === recordId);
+      return {
+        ...wish,
+        claim_record_id: `rec${"C".repeat(14)}`,
+        wish_status: "completed",
+        completed_at: completedAt,
+        public_display_text: publicDisplayText,
+      };
+    };
+    const runtime = env({
+      BIRTHDAY_WISH_STORE: birthdayStore,
+      MEMBER_STATUS_RESOLVER: resolver({ member_exists: true, mmd_member_id: "MMD-PER-01" }),
+      CARE_BACK_STORE: {
+        async openOrResume() {
+          return {
+            claim_record_id: `rec${"A".repeat(14)}`,
+            claim_reference: "CB6-2026-ABCDEF12345678",
+            claim_status: "identity_verified",
+            review_status: "pending",
+            personal_code: "ABC234",
+            code_status: "draft",
+            resumed: true,
+          };
+        },
+      },
+    });
+    const started = await start(runtime, { id_token: "valid", liff_intent: "promo", campaign: "care_back" });
+    const claimed = await request("/member/api/liff/care-back/claim", {
+      body: {},
+      cookie: cookiePair(findCookie(started.response, "__Host-mmd_liff_session")),
+    }, runtime);
+    const claimedCookie = cookiePair(findCookie(claimed.response, "__Host-mmd_liff_session"));
+    const claimedToken = claimedCookie.slice(claimedCookie.indexOf("=") + 1);
+    const claimedSessionHash = await keyedDigestForTest(runtime.LIFF_SESSION_SECRET, `session:${claimedToken}`);
+    const claimedSession = JSON.parse(runtime.LIFF_IDENTITY_KV.map.get(`liff:session:${claimedSessionHash}`));
+    birthdayStore.wishes.push({
+      record_id: `rec${"B".repeat(14)}`,
+      claim_record_id: `rec${"A".repeat(14)}`,
+      claim_id: "CB6-2026-ABCDEF12345678",
+      idempotency_key: "req_1234567890abcdef",
+      verified_customer_ref_hash: await keyedDigestForTest(runtime.LIFF_SESSION_SECRET, `wish-customer:${claimedSession.identity_key}`),
+      wish_id: "wish_1234567890abcdef1234567890abcdef",
+      campaign_id: "care_back",
+      wish_text: "must not be disclosed",
+      wish_option: "",
+      wish_status: "submitted",
+      submitted_at: "2026-08-10T12:00:00.000Z",
+      completed_at: "",
+      public_display_text: "",
+      language: "th",
+      display_version: "care_back_v1",
+    });
+
+    const result = await request("/member/api/liff/care-back/state", {
+      method: "GET",
+      cookie: claimedCookie,
+    }, runtime);
+    assert.equal(result.response.status, 409);
+    assert.equal(result.payload.error.code, "BIRTHDAY_WISH_CLAIM_CONFLICT");
+    assert.doesNotMatch(JSON.stringify(result.payload), /must not be disclosed|rec[A-Za-z0-9]{14}/i);
+  });
+
+  it("fails Birthday Wish closed for missing sessions, wrong campaigns, review states, and hostile bodies", async () => {
+    const missing = await request("/member/api/liff/care-back/state", { method: "GET" });
+    assert.equal(missing.response.status, 401);
+    assert.equal(missing.payload.error.code, "LIFF_SESSION_REQUIRED");
+
+    const runtime = env({
+      MEMBER_STATUS_RESOLVER: resolver({ member_exists: true, mmd_member_id: "MMD-PER-01" }),
+      CARE_BACK_STORE: {
+        async openOrResume() {
+          return {
+            claim_record_id: `rec${"A".repeat(14)}`,
+            claim_reference: "CB6-2026-ABCDEF12345678",
+            claim_status: "identity_verified",
+            review_status: "manual_review",
+            personal_code: "ABC234",
+            code_status: "draft",
+            resumed: false,
+          };
+        },
+      },
+    });
+    const started = await start(runtime, { id_token: "valid", liff_intent: "promo", campaign: "care_back" });
+    const claimed = await request("/member/api/liff/care-back/claim", {
+      body: {},
+      cookie: cookiePair(findCookie(started.response, "__Host-mmd_liff_session")),
+    }, runtime);
+    const state = await request("/member/api/liff/care-back/state", {
+      method: "GET",
+      cookie: cookiePair(findCookie(claimed.response, "__Host-mmd_liff_session")),
+    }, runtime);
+    assert.equal(state.payload.state, "manual_review");
+    assert.equal(runtime.BIRTHDAY_WISH_STORE.wishes.length, 0);
+
+    for (const body of [
+      { wish_text: "<img src=x onerror=alert(1)>", request_id: "req_1234567890abcdef" },
+      { wish_text: "x".repeat(601), request_id: "req_1234567890abcdef" },
+      { wish_text: "hello", request_id: "short" },
+      { wish_text: "hello", request_id: "req_1234567890abcdef", claim_id: "browser-claim" },
+      { wish_text: "hello", request_id: "req_1234567890abcdef", completed: true },
+    ]) {
+      const rejected = await request("/member/api/liff/care-back/wish", {
+        body,
+        cookie: cookiePair(findCookie(state.response, "__Host-mmd_liff_session")),
+      }, runtime);
+      assert.equal(rejected.response.status, 400);
+    }
+    assert.equal(runtime.BIRTHDAY_WISH_STORE.wishes.length, 0);
+
+    const oversized = await request("/member/api/liff/care-back/wish", {
+      body: { wish_text: "x".repeat(17 * 1024), request_id: "req_1234567890abcdef" },
+      cookie: cookiePair(findCookie(state.response, "__Host-mmd_liff_session")),
+    }, runtime);
+    assert.equal(oversized.response.status, 413);
+    assert.equal(oversized.payload.error.code, "REQUEST_BODY_TOO_LARGE");
+    assert.equal(runtime.BIRTHDAY_WISH_STORE.wishes.length, 0);
+
+    const declaredOversizedResponse = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/care-back/wish", {
+      method: "POST",
+      headers: {
+        origin: "https://mmdbkk.com",
+        cookie: cookiePair(findCookie(state.response, "__Host-mmd_liff_session")),
+        "content-type": "application/json",
+        "content-length": String(16 * 1024 + 1),
+      },
+      body: "{}",
+    }), runtime);
+    assert.equal(declaredOversizedResponse.status, 413);
+    assert.equal((await declaredOversizedResponse.json()).error.code, "REQUEST_BODY_TOO_LARGE");
+    assert.equal(runtime.BIRTHDAY_WISH_STORE.wishes.length, 0);
+
+    const wrongCampaign = env({
+      MEMBER_STATUS_RESOLVER: resolver({ member_exists: true, mmd_member_id: "MMD-PER-02" }),
+      CARE_BACK_STORE: runtime.CARE_BACK_STORE,
+    });
+    const wrongStart = await start(wrongCampaign, { id_token: "valid", liff_intent: "promo" });
+    const wrongClaim = await request("/member/api/liff/care-back/claim", {
+      body: {},
+      cookie: cookiePair(findCookie(wrongStart.response, "__Host-mmd_liff_session")),
+    }, wrongCampaign);
+    const blocked = await request("/member/api/liff/care-back/wish", {
+      body: { wish_text: "hello", request_id: "req_1234567890abcdef" },
+      cookie: cookiePair(findCookie(wrongClaim.response, "__Host-mmd_liff_session")),
+    }, wrongCampaign);
+    assert.equal(blocked.response.status, 409);
+    assert.equal(blocked.payload.error.code, "CARE_BACK_WISH_NOT_AVAILABLE");
   });
 
   it("writes only the bounded LIFF session memory through the mock gateway store", async () => {
@@ -396,6 +781,31 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     const payload = await status.json();
     assert.equal(status.status, 401);
     assert.equal(payload.error.code, "LIFF_SESSION_REQUIRED");
+  });
+
+  it("accepts a same-origin workers.dev request only in bounded synthetic staging mode", async () => {
+    const runtime = env({ CARE_BACK_STAGING_MODE: "synthetic" });
+    lineVerify();
+    const allowed = await worker.fetch(new Request("https://member-dashboard-chat-worker-staging.example.workers.dev/member/api/liff/start", {
+      method: "POST",
+      headers: {
+        origin: "https://member-dashboard-chat-worker-staging.example.workers.dev",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ id_token: "valid-token", liff_intent: "promo", campaign: "care_back" }),
+    }), runtime);
+    const rejectedWithoutMode = await worker.fetch(new Request("https://member-dashboard-chat-worker-staging.example.workers.dev/member/api/liff/start", {
+      method: "POST",
+      headers: {
+        origin: "https://member-dashboard-chat-worker-staging.example.workers.dev",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ id_token: "valid-token", liff_intent: "promo", campaign: "care_back" }),
+    }), env());
+
+    assert.equal(allowed.status, 200);
+    assert.equal(rejectedWithoutMode.status, 403);
+    assert.equal((await rejectedWithoutMode.json()).error.code, "ORIGIN_NOT_ALLOWED");
   });
 
   it("existing member resolves safely without returning tier, points, payment, or entitlement details", async () => {
@@ -1278,6 +1688,11 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     const unknown = await request("/member/api/liff/unknown", { body: { id_token: "valid" } });
     assert.equal(unknown.response.status, 404);
     assert.equal(unknown.payload.error.code, "LIFF_ROUTE_NOT_FOUND");
+
+    for (const method of ["GET", "POST"]) {
+      const legacyWish = await worker.fetch(new Request("https://mmdbkk.com/api/care-back-wish", { method }), {});
+      assert.equal(legacyWish.status, 404);
+    }
   });
 
   it("existing member pages, renewal, payment, and dashboard behavior remain delegated unchanged", async () => {

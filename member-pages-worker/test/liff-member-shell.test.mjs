@@ -16,6 +16,10 @@ async function shell(path = "/member/liff", { method = "GET", runtime = env() } 
   return worker.fetch(new Request(`https://mmdbkk.com${path}`, { method }), runtime);
 }
 
+async function stagingShell(hostname, path, runtime) {
+  return worker.fetch(new Request(`https://${hostname}${path}`), runtime);
+}
+
 describe("same-site /member/liff shell", () => {
   it("serves a no-store same-site LIFF shell that bootstraps only through the LIFF start API", async () => {
     const response = await shell("/member/liff?intent=renew&code=KJ-PRV-ABC123");
@@ -32,9 +36,26 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /"promoCode":"kj-prv-abc123"/);
     assert.match(html, /credentials:\s*"same-origin"/);
     assert.match(html, /window\.liff\.getIDToken\(\)/);
+    assert.match(html, /\/member\/api\/liff\/care-back\/state/);
+    assert.match(html, /\/member\/api\/liff\/care-back\/wish/);
     assert.doesNotMatch(html, /line_user_id|lineUserId|decodedIDToken|getProfile\(/);
     assert.doesNotMatch(html, /must-not-render-secret|must-not-render-airtable-key/);
     assert.doesNotMatch(html, /https:\/\/mmdprive\.webflow\.io/);
+  });
+
+  it("binds the canonical CARE BACK campaign to guarded same-site state and wish APIs", async () => {
+    const response = await shell("/member/liff?intent=promo&campaign=care_back");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /"intent":"promo"/);
+    assert.match(html, /"campaign":"care_back"/);
+    assert.match(html, /body\.campaign = CONFIG\.campaign/);
+    assert.match(html, /crypto\.randomUUID\(\)/);
+    assert.match(html, /final_display/);
+    assert.match(html, /CONFIG\.intent === "promo" && CONFIG\.campaign === "care_back"/);
+    assert.match(html, /กำลังตรวจสอบสิทธิ์ CARE BACK อย่างปลอดภัยครับ/);
+    assert.doesNotMatch(html, /localStorage|sessionStorage|line_user_id|claim_id/);
   });
 
   it("normalizes untrusted query intent and promo values before embedding them", async () => {
@@ -44,6 +65,7 @@ describe("same-site /member/liff shell", () => {
     assert.equal(response.status, 200);
     assert.match(html, /"intent":"unknown"/);
     assert.match(html, /"promoCode":""/);
+    assert.match(html, /"campaign":""/);
     assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
   });
 
@@ -75,5 +97,28 @@ describe("same-site /member/liff shell", () => {
 
     assert.equal(response.status, 404);
     assert.equal(payload.error.code, "LIFF_ROUTE_NOT_FOUND");
+  });
+
+  it("enables bounded synthetic scenarios only on the staging workers.dev host", async () => {
+    const runtime = env({ CARE_BACK_STAGING_MODE: "synthetic" });
+    const staging = await stagingShell(
+      "member-dashboard-chat-worker-staging.example.workers.dev",
+      "/member/liff?intent=promo&campaign=care_back&scenario=current",
+      runtime,
+    );
+    const production = await stagingShell(
+      "mmdbkk.com",
+      "/member/liff?intent=promo&campaign=care_back&scenario=current",
+      runtime,
+    );
+    const invalid = await stagingShell(
+      "member-dashboard-chat-worker-staging.example.workers.dev",
+      "/member/liff?intent=promo&campaign=care_back&scenario=admin",
+      runtime,
+    );
+
+    assert.match(await staging.text(), /"stagingScenario":"current"/);
+    assert.match(await production.text(), /"stagingScenario":""/);
+    assert.match(await invalid.text(), /"stagingScenario":""/);
   });
 });

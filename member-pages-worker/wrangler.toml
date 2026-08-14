@@ -1,5 +1,5 @@
 name = "member-pages-worker"
-main = "src/index.js"
+main = "src/runtime-index.js"
 compatibility_date = "2026-06-20"
 workers_dev = true
 
@@ -10,6 +10,7 @@ LINE_ID_TOKEN_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify"
 LINE_LIFF_ID = "2010298002-mbx9kqQn"
 AIRTABLE_TABLE_CARE_BACK_CLAIMS = "MMD — Campaign Claims"
 AIRTABLE_TABLE_CARE_BACK_PROMO_CODES = "MMD — Promo Codes"
+AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES = "tblvMJjYXy29mgDLb"
 
 [[kv_namespaces]]
 binding = "LIFF_IDENTITY_KV"
@@ -18,6 +19,14 @@ id = "12f4c4e7357d4019b5e0951be0b984f5"
 [[services]]
 binding = "MEMBER_STATUS_RESOLVER"
 service = "mmd-auth-worker"
+
+[[durable_objects.bindings]]
+name = "CARE_BACK_WISH_COORDINATOR"
+class_name = "CareBackBirthdayWishCoordinator"
+
+[[migrations]]
+tag = "v1-care-back-birthday-wish"
+new_sqlite_classes = ["CareBackBirthdayWishCoordinator"]
 
 # Required before deployment:
 # - secret LINE_LOGIN_CHANNEL_ID
@@ -31,5 +40,47 @@ service = "mmd-auth-worker"
 # worker directly to mmdbkk.com.
 
 [observability]
+enabled = true
+head_sampling_rate = 1
+
+# Full CARE BACK staging is isolated on workers.dev and intentionally has no
+# mmdbkk.com route. The zero KV id is a CI placeholder and must be replaced by
+# the deploy workflow from CARE_BACK_STAGING_KV_NAMESPACE_ID.
+[env.staging]
+name = "member-pages-worker-staging"
+workers_dev = true
+preview_urls = true
+
+[env.staging.vars]
+CARE_BACK_STAGING_MODE = "synthetic"
+LIFF_VERIFY_TIMEOUT_MS = "5000"
+LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "5000"
+LINE_LOGIN_CHANNEL_ID = "care-back-staging-channel"
+AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+AIRTABLE_TABLE_CARE_BACK_CLAIMS = "MMD — Campaign Claims"
+AIRTABLE_TABLE_CARE_BACK_PROMO_CODES = "MMD — Promo Codes"
+AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES = "tblvMJjYXy29mgDLb"
+
+[[env.staging.kv_namespaces]]
+binding = "LIFF_IDENTITY_KV"
+id = "00000000000000000000000000000000"
+
+[[env.staging.services]]
+binding = "MEMBER_STATUS_RESOLVER"
+service = "care-back-staging-fixtures-worker-staging"
+
+[[env.staging.services]]
+binding = "LINE_ID_TOKEN_VERIFIER"
+service = "care-back-staging-fixtures-worker-staging"
+
+[[env.staging.durable_objects.bindings]]
+name = "CARE_BACK_WISH_COORDINATOR"
+class_name = "CareBackBirthdayWishCoordinator"
+
+[[env.staging.migrations]]
+tag = "v1-care-back-birthday-wish-staging"
+new_sqlite_classes = ["CareBackBirthdayWishCoordinator"]
+
+[env.staging.observability]
 enabled = true
 head_sampling_rate = 1

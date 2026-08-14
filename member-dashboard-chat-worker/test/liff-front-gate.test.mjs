@@ -80,7 +80,45 @@ test("same-site LIFF shell is owned by the front gate and proxied only on the ex
   assert.equal(nearby.status, 404);
 });
 
-test("Care Back stays outside the LIFF front gate until its API contract is ready", async () => {
+test("guarded CARE BACK state and wish APIs remain service-bound through the LIFF front gate", async () => {
+  const calls = [];
+  const env = {
+    MEMBER_PAGES_WORKER: {
+      async fetch(request) {
+        calls.push({
+          path: new URL(request.url).pathname,
+          method: request.method,
+          cookie: request.headers.get("cookie"),
+          body: request.method === "POST" ? await request.json() : null,
+        });
+        return Response.json({ ok: true }, {
+          headers: { "set-cookie": "__Host-mmd_liff_session=rotated; Secure; HttpOnly; Path=/; SameSite=Strict" },
+        });
+      },
+    },
+  };
+  const cookie = "__Host-mmd_liff_session=current";
+  const state = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/care-back/state", {
+    method: "GET",
+    headers: { cookie },
+  }), env);
+  const wish = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/care-back/wish", {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ wish_text: "สุขสันต์ปีที่หกครับ", request_id: "req_1234567890abcdef" }),
+  }), env);
+
+  assert.deepEqual(calls, [
+    { path: "/member/api/liff/care-back/state", method: "GET", cookie, body: null },
+    { path: "/member/api/liff/care-back/wish", method: "POST", cookie, body: { wish_text: "สุขสันต์ปีที่หกครับ", request_id: "req_1234567890abcdef" } },
+  ]);
+  assert.equal(state.status, 200);
+  assert.equal(wish.status, 200);
+  assert.match(wish.headers.get("set-cookie") || "", /SameSite=Strict/);
+  assert.equal(wish.headers.get("x-mmd-route-owner"), "member-dashboard-chat-worker");
+});
+
+test("legacy Care Back stays outside the LIFF front gate", async () => {
   let calls = 0;
   const env = {
     MEMBER_PAGES_WORKER: {

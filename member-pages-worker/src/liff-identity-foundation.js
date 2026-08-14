@@ -1,9 +1,12 @@
 import { getLiffGatewayStore, LiffGatewayStorageError } from "./liff-gateway-airtable.js";
 import { CareBackStoreError, getCareBackStore } from "./care-back-claim-store.js";
+import { assertBirthdayWishOwnership, BirthdayWishStorageError, getBirthdayWishStore } from "./care-back-birthday-wish-store.js";
+import { PUBLIC_JSON_BODY_MAX_BYTES, readBoundedJsonObject } from "./bounded-json.js";
+import { createOrLoadBirthdayWishThroughCoordinator, getBirthdayWishCoordinatorState } from "./care-back-birthday-wish-coordinator.js";
 import legacyWorker from "./legacy-member-pages.js";
 
 const WORKER = "member-pages-worker";
-const VERSION = "20260804-liff-membership-gateway-start";
+const VERSION = "20260810-care-back-birthday-wish-persistence";
 const LINE_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify";
 const SESSION_TTL_SECONDS = 15 * 60;
 const HALL_TOKEN_TTL_SECONDS = 5 * 60;
@@ -27,6 +30,9 @@ const PAYMENT_INTENT_PATHS = new Set(["/member/api/liff/payment-intent", "/membe
 const STATUS_PATHS = new Set(["/member/api/liff/status", "/member/api/liff/status/"]);
 const PROFILE_PATHS = new Set(["/member/api/liff/profile", "/member/api/liff/profile/"]);
 const CARE_BACK_CLAIM_PATHS = new Set(["/member/api/liff/care-back/claim", "/member/api/liff/care-back/claim/"]);
+const CARE_BACK_STATE_PATHS = new Set(["/member/api/liff/care-back/state", "/member/api/liff/care-back/state/"]);
+const CARE_BACK_WISH_PATHS = new Set(["/member/api/liff/care-back/wish", "/member/api/liff/care-back/wish/"]);
+const CLOSED_LEGACY_CARE_BACK_WISH_PATHS = new Set(["/api/care-back-wish", "/api/care-back-wish/"]);
 const HALL_TOKEN_PATHS = new Set(["/member/api/liff/hall-token", "/member/api/liff/hall-token/"]);
 const APPROVED_ORIGINS = new Set([
   "https://mmdbkk.com",
@@ -36,13 +42,15 @@ const APPROVED_ORIGINS = new Set([
 ]);
 const LIFF_INTENTS = new Set(["signup", "renew", "status", "promo", "hall", "continue_payment", "unknown"]);
 const HALL_AUDIENCES = new Set(["female_view", "lgbt_view", "manual_review", "unknown"]);
-const START_BODY_KEYS = new Set(["id_token", "line_id_token", "intent", "liff_intent", "promo_code"]);
+const START_BODY_KEYS = new Set(["id_token", "line_id_token", "intent", "liff_intent", "promo_code", "campaign"]);
 const INTENT_BODY_KEYS = new Set(["intent", "liff_intent"]);
 const AUDIENCE_BODY_KEYS = new Set(["hall_audience_context"]);
 const PACKAGE_BODY_KEYS = new Set(["requested_package_code", "promo_code"]);
 const PAYMENT_INTENT_BODY_KEYS = new Set(["package_code", "payment_stage"]);
 const HALL_BODY_KEYS = new Set();
 const CARE_BACK_BODY_KEYS = new Set();
+const CARE_BACK_WISH_BODY_KEYS = new Set(["wish_text", "wish_option", "request_id"]);
+const CARE_BACK_CAMPAIGN = "care_back";
 const BROWSER_IDENTITY_FIELDS = [
   "line_user_id",
   "lineUserId",
@@ -98,12 +106,19 @@ export default {
         response = await handleMemberProfile(request, env);
       } else if (CARE_BACK_CLAIM_PATHS.has(path)) {
         response = await handleCareBackClaim(request, env);
+      } else if (CARE_BACK_STATE_PATHS.has(path)) {
+        response = await handleCareBackState(request, env);
+      } else if (CARE_BACK_WISH_PATHS.has(path)) {
+        response = await handleCareBackWish(request, env);
       } else if (HALL_TOKEN_PATHS.has(path)) {
         response = await handleHallToken(request, env);
       } else {
         response = json({ ok: false, error: { code: "LIFF_ROUTE_NOT_FOUND", message: "Unknown LIFF identity route." } }, 404);
       }
-      return withLiffCors(request, response);
+      return withLiffCors(request, response, env);
+    }
+    if (CLOSED_LEGACY_CARE_BACK_WISH_PATHS.has(path)) {
+      return json({ ok: false, error: { code: "NOT_FOUND", message: "Not found." } }, 404);
     }
     return legacyWorker.fetch(request, env, ctx);
   },
@@ -111,13 +126,14 @@ export default {
 
 export async function handleStart(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
   if (!gatewayStore) return unavailable("LIFF_GATEWAY_STORAGE_NOT_CONFIGURED");
-  const body = await readJson(request);
-  if (!body) return invalidInput();
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   if (hasUnexpectedKeys(body, START_BODY_KEYS) || hasBrowserIdentityClaims(body)) return browserIdentityRejected();
 
   const idToken = singleIdToken(body);
@@ -147,11 +163,13 @@ export async function handleStart(request, env = {}) {
     intent,
     liff_intent: liffIntent,
     source_channel: "line_liff",
+    language: "th",
     hype_decision_status: liffIntent === "unknown" ? "asking_intent" : "not_started",
     hall_audience_context: "unknown",
     model_visibility_mode: "hold_until_selected",
     pricing_lane: "unknown",
     promo_code: normalizePromoCode(body.promo_code),
+    promotion_campaign: normalizeCampaign(body.campaign),
     route_after_liff: null,
     next_screen_key: liffIntent === "unknown" ? "start_intent" : nextScreenForIntent(liffIntent, existing.exists),
     continuity,
@@ -171,13 +189,14 @@ export async function handleStart(request, env = {}) {
 
 export async function handleIntent(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
   if (!gatewayStore) return unavailable("LIFF_GATEWAY_STORAGE_NOT_CONFIGURED");
-  const body = await readJson(request);
-  if (!body) return invalidInput();
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   if (hasUnexpectedKeys(body, INTENT_BODY_KEYS) || hasBrowserIdentityClaims(body)) return browserIdentityRejected();
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
@@ -199,13 +218,14 @@ export async function handleIntent(request, env = {}) {
 
 export async function handleAudience(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
   if (!gatewayStore) return unavailable("LIFF_GATEWAY_STORAGE_NOT_CONFIGURED");
-  const body = await readJson(request);
-  if (!body) return invalidInput();
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   if (hasUnexpectedKeys(body, AUDIENCE_BODY_KEYS) || hasBrowserIdentityClaims(body)) return browserIdentityRejected();
   const audience = normalizeAudience(body.hall_audience_context);
   if (!audience) return json({ ok: false, error: { code: "INVALID_AUDIENCE_CONTEXT", message: "A valid audience selection is required." } }, 400);
@@ -238,13 +258,14 @@ export async function handleAudience(request, env = {}) {
 
 export async function handlePackage(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
   if (!gatewayStore) return unavailable("LIFF_GATEWAY_STORAGE_NOT_CONFIGURED");
-  const body = await readJson(request);
-  if (!body) return invalidInput();
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   if (hasUnexpectedKeys(body, PACKAGE_BODY_KEYS) || hasBrowserIdentityClaims(body)) return browserIdentityRejected();
   const requestedPackage = normalizePackageCode(body.requested_package_code);
   if (!requestedPackage) return json({ ok: false, error: { code: "PACKAGE_REQUIRED", message: "A package selection is required." } }, 400);
@@ -298,13 +319,14 @@ export async function handlePackage(request, env = {}) {
 
 export async function handlePaymentIntent(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
   if (!gatewayStore) return unavailable("LIFF_GATEWAY_STORAGE_NOT_CONFIGURED");
-  const body = await readJson(request);
-  if (!body) return invalidInput();
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   if (hasUnexpectedKeys(body, PAYMENT_INTENT_BODY_KEYS) || hasBrowserIdentityClaims(body)) return browserIdentityRejected();
   const packageCode = normalizePackageCode(body.package_code);
   if (!packageCode || !normalizePaymentStage(body.payment_stage)) return json({ ok: false, error: { code: "PAYMENT_INTENT_INVALID", message: "A selected package and payment stage are required." } }, 400);
@@ -344,7 +366,7 @@ export async function handlePaymentIntent(request, env = {}) {
 
 export async function handleStatus(request, env = {}) {
   if (request.method !== "GET") return methodNotAllowed("GET");
-  const originFailure = rejectUnapprovedOrigin(request);
+  const originFailure = rejectUnapprovedOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
@@ -365,7 +387,7 @@ export async function handleStatus(request, env = {}) {
 
 export async function handleMemberProfile(request, env = {}) {
   if (request.method !== "GET") return methodNotAllowed("GET");
-  const originFailure = rejectUnapprovedOrigin(request);
+  const originFailure = rejectUnapprovedOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const auth = await authenticateAndRotate(request, env);
@@ -385,11 +407,12 @@ export async function handleMemberProfile(request, env = {}) {
 
 export async function handleCareBackClaim(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
-  const body = await readJson(request);
-  if (!body) return invalidInput();
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   if (hasUnexpectedKeys(body, CARE_BACK_BODY_KEYS) || hasBrowserIdentityClaims(body)) return browserIdentityRejected();
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
@@ -407,6 +430,9 @@ export async function handleCareBackClaim(request, env = {}) {
     });
     auth.session.campaign_code = "6-years-care-back";
     auth.session.campaign_claim_id = result.claim_reference;
+    auth.session.campaign_claim_record_id = validAirtableRecordId(result.claim_record_id);
+    auth.session.campaign_claim_status = result.claim_status;
+    auth.session.campaign_review_status = result.review_status;
     auth.session.promo_code = result.personal_code;
     auth.session.promo_status = result.code_status;
     await persistGatewaySession(env, gatewayStore, auth.session);
@@ -421,15 +447,120 @@ export async function handleCareBackClaim(request, env = {}) {
   }
 }
 
+export async function handleCareBackState(request, env = {}) {
+  if (request.method !== "GET") return methodNotAllowed("GET");
+  const originFailure = rejectUnapprovedOrigin(request, env);
+  if (originFailure) return originFailure;
+  if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
+  const auth = await authenticateAndRotate(request, env);
+  if (!auth.ok) return auth.response;
+
+  const eligibility = careBackWishEligibility(auth.session);
+  if (eligibility !== "wish_available") {
+    return saveCareBackState(env, auth, eligibility, null);
+  }
+
+  const store = getBirthdayWishStore(env);
+  if (!store) return saveRotatedError(env, auth, "BIRTHDAY_WISH_STORAGE_NOT_CONFIGURED", "Birthday Wish is temporarily unavailable.", 503);
+  try {
+    const expectedOwnership = {
+      claimRecordId: auth.session.campaign_claim_record_id,
+      verifiedCustomerRefHash: await keyedDigest(env, `wish-customer:${auth.session.identity_key}`),
+    };
+    let wish = await store.getBirthdayWishByClaim({ claimId: auth.session.campaign_claim_id });
+    if (wish) assertBirthdayWishOwnership(wish, expectedOwnership);
+    if (wish?.wish_status === "submitted") {
+      const expectedRecordId = wish.record_id;
+      wish = await store.completeBirthdayWish({
+        recordId: expectedRecordId,
+        publicDisplayText: birthdayWishDisplay(auth.session.language),
+        completedAt: new Date().toISOString(),
+      });
+      if (wish?.record_id !== expectedRecordId) {
+        throw new BirthdayWishStorageError("BIRTHDAY_WISH_STORAGE_MALFORMED");
+      }
+      assertBirthdayWishOwnership(wish, expectedOwnership);
+    }
+    if (!wish) {
+      const coordinator = await getBirthdayWishCoordinatorState(env, auth.session.campaign_claim_id);
+      if (coordinator.state === "pending_recovery") {
+        return saveCareBackState(env, auth, "write_pending", null);
+      }
+      if (coordinator.state === "reconciliation_required") {
+        return saveCareBackState(env, auth, "reconciliation_required", null);
+      }
+    }
+    const state = birthdayWishState(wish);
+    return saveCareBackState(env, auth, state, wish);
+  } catch (error) {
+    return saveBirthdayWishError(env, auth, error);
+  }
+}
+
+export async function handleCareBackWish(request, env = {}) {
+  if (request.method !== "POST") return methodNotAllowed("POST");
+  const originFailure = requireSameOrigin(request, env);
+  if (originFailure) return originFailure;
+  if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
+  if (hasUnexpectedKeys(body, CARE_BACK_WISH_BODY_KEYS) || hasBrowserIdentityClaims(body)) return browserIdentityRejected();
+  const input = normalizeBirthdayWishInput(body);
+  if (!input.ok) return json({ ok: false, error: { code: input.code, message: input.message } }, 400);
+
+  const auth = await authenticateAndRotate(request, env);
+  if (!auth.ok) return auth.response;
+  const eligibility = careBackWishEligibility(auth.session);
+  if (eligibility !== "wish_available") {
+    const code = eligibility === "verification_required"
+      ? "CARE_BACK_MEMBER_REQUIRED"
+      : eligibility === "claim_required"
+        ? "CARE_BACK_CLAIM_REQUIRED"
+        : eligibility === "manual_review"
+          ? "CARE_BACK_REVIEW_REQUIRED"
+          : "CARE_BACK_WISH_NOT_AVAILABLE";
+    return saveRotatedError(env, auth, code, "Birthday Wish is not available for this verified campaign state.", 409);
+  }
+
+  try {
+    const wish = await createOrLoadBirthdayWishThroughCoordinator(
+      env,
+      auth.session.campaign_claim_id,
+      {
+        claimId: auth.session.campaign_claim_id,
+        claimRecordId: auth.session.campaign_claim_record_id,
+        idempotencyKey: input.requestId,
+        verifiedCustomerRefHash: await keyedDigest(env, `wish-customer:${auth.session.identity_key}`),
+        wishText: input.wishText,
+        wishOption: input.wishOption,
+        language: auth.session.language === "en" ? "en" : "th",
+        publicDisplayText: birthdayWishDisplay(auth.session.language),
+        now: new Date().toISOString(),
+      },
+    );
+    if (wish?.wish_status === "revoked" || wish?.wish_status === "manual_review") {
+      return saveRotatedError(env, auth, "CARE_BACK_REVIEW_REQUIRED", "Birthday Wish is under private review.", 409);
+    }
+    await commitRotatedSession(env, auth);
+    return json(careBackWishResponse(birthdayWishState(wish), wish), 200, {
+      cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
+    });
+  } catch (error) {
+    return saveBirthdayWishError(env, auth, error);
+  }
+}
+
 export async function handleHallToken(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
   if (!gatewayStore) return unavailable("LIFF_GATEWAY_STORAGE_NOT_CONFIGURED");
-  const body = await readJson(request);
-  if (!body) return invalidInput();
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   if (hasUnexpectedKeys(body, HALL_BODY_KEYS) || hasBrowserIdentityClaims(body)) return browserIdentityRejected();
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
@@ -481,12 +612,16 @@ async function verifyLineIdToken(idToken, env) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Number(env.LIFF_VERIFY_TIMEOUT_MS || VERIFY_TIMEOUT_MS));
   try {
-    const response = await fetch(env.LINE_ID_TOKEN_VERIFY_URL || LINE_VERIFY_URL, {
+    const verifyUrl = env.LINE_ID_TOKEN_VERIFY_URL || LINE_VERIFY_URL;
+    const verifyInit = {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ id_token: idToken, client_id: channelId }),
       signal: controller.signal,
-    });
+    };
+    const response = env.LINE_ID_TOKEN_VERIFIER?.fetch
+      ? await env.LINE_ID_TOKEN_VERIFIER.fetch(new Request(verifyUrl, verifyInit))
+      : await fetch(verifyUrl, verifyInit);
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || typeof payload !== "object") return { ok: false, status: 401, code: "LINE_ID_TOKEN_INVALID", message: "LINE identity verification failed." };
     const sub = String(payload.sub || "").trim();
@@ -1000,27 +1135,31 @@ async function resolveScreen(gatewayStore, screenKey) {
   return fallbackScreen(screenKey);
 }
 
-function requireSameOrigin(request) {
-  if (!isApprovedOrigin(request)) return json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "Same-origin request required." } }, 403);
+function requireSameOrigin(request, env) {
+  if (!isApprovedOrigin(request, env)) return json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "Same-origin request required." } }, 403);
   return null;
 }
 
-function rejectUnapprovedOrigin(request) {
+function rejectUnapprovedOrigin(request, env) {
   const origin = request.headers.get("origin") || "";
-  if (origin && !APPROVED_ORIGINS.has(origin)) {
+  if (origin && !isApprovedOrigin(request, env)) {
     return json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "Same-origin request required." } }, 403);
   }
   return null;
 }
 
-function isApprovedOrigin(request) {
-  return APPROVED_ORIGINS.has(request.headers.get("origin") || "");
+function isApprovedOrigin(request, env) {
+  const origin = request.headers.get("origin") || "";
+  if (APPROVED_ORIGINS.has(origin)) return true;
+  if (String(env?.CARE_BACK_STAGING_MODE || "") !== "synthetic") return false;
+  const url = new URL(request.url);
+  return url.hostname.endsWith(".workers.dev") && origin === url.origin;
 }
 
-function withLiffCors(request, response) {
+function withLiffCors(request, response, env) {
   const headers = new Headers(response.headers);
   const origin = request.headers.get("origin") || "";
-  if (APPROVED_ORIGINS.has(origin)) headers.set("access-control-allow-origin", origin);
+  if (isApprovedOrigin(request, env)) headers.set("access-control-allow-origin", origin);
   else headers.delete("access-control-allow-origin");
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
@@ -1048,6 +1187,7 @@ function isLiffPrefix(path) { return path === "/member/api/liff" || path.startsW
 function hasBrowserIdentityClaims(body) { return BROWSER_IDENTITY_FIELDS.some((key) => Object.prototype.hasOwnProperty.call(body, key)); }
 function hasUnexpectedKeys(body, allowed) { return Object.keys(body || {}).some((key) => !allowed.has(key)); }
 function normalizeLiffIntent(value) { const intent = String(value || "unknown").trim().toLowerCase(); return LIFF_INTENTS.has(intent) ? intent : "unknown"; }
+function normalizeCampaign(value) { return String(value || "").trim().toLowerCase() === CARE_BACK_CAMPAIGN ? CARE_BACK_CAMPAIGN : ""; }
 function normalizeAudience(value) { const audience = String(value || "").trim().toLowerCase(); return HALL_AUDIENCES.has(audience) ? audience : ""; }
 function normalizePackageCode(value) { const code = String(value || "").trim().toLowerCase(); return /^[a-z0-9][a-z0-9_-]{1,62}$/.test(code) ? code : ""; }
 function normalizePromoCode(value) { const code = String(value || "").trim().toLowerCase(); return /^[a-z0-9][a-z0-9_-]{0,62}$/.test(code) ? code : ""; }
@@ -1059,6 +1199,87 @@ function normalizeIntent(value) { const intent = String(value || "member_status"
 function cleanContinuity(value) { const token = String(value || "").trim(); return token && token.length <= 2048 && /^[A-Za-z0-9._~-]+$/.test(token) ? token : null; }
 function exactToken(value) { const token = String(value || "").trim(); return token && token.length <= 8192 && /^[A-Za-z0-9._~-]+$/.test(token) ? token : ""; }
 function noGrants() { return { membership: false, points: false, payment_status: false, private_access: false }; }
+
+function careBackNoGrants() {
+  return {
+    payment: false,
+    membership: false,
+    points: false,
+    hall: false,
+    black_card: false,
+    svip: false,
+    booking: false,
+    access: false,
+  };
+}
+
+function validAirtableRecordId(value) {
+  const recordId = String(value || "").trim();
+  return /^rec[A-Za-z0-9]{14}$/.test(recordId) ? recordId : "";
+}
+
+function careBackWishEligibility(session = {}) {
+  if (!session.member_exists || !session.member_id || !session.identity_key) return "verification_required";
+  if (session.liff_intent !== "promo" || session.promotion_campaign !== CARE_BACK_CAMPAIGN) return "not_eligible";
+  if (!session.campaign_claim_id || !validAirtableRecordId(session.campaign_claim_record_id)) return "claim_required";
+  if (["blocked", "rejected"].includes(session.campaign_claim_status)) return "not_eligible";
+  if (["manual_review", "in_review", "blocked"].includes(session.campaign_review_status)) return "manual_review";
+  return "wish_available";
+}
+
+function normalizeBirthdayWishInput(body) {
+  const requestId = String(body.request_id || "").trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._~-]{15,127}$/.test(requestId)) {
+    return { ok: false, code: "BIRTHDAY_WISH_REQUEST_ID_INVALID", message: "A bounded request_id is required." };
+  }
+  const wishText = normalizeCustomerText(body.wish_text, 600);
+  const wishOption = normalizeCustomerText(body.wish_option, 120);
+  if (wishText === null || wishOption === null) {
+    return { ok: false, code: "BIRTHDAY_WISH_CONTENT_INVALID", message: "Birthday Wish content is invalid." };
+  }
+  if (!wishText && !wishOption) {
+    return { ok: false, code: "BIRTHDAY_WISH_CONTENT_REQUIRED", message: "Birthday Wish content is required." };
+  }
+  return { ok: true, requestId, wishText, wishOption };
+}
+
+function normalizeCustomerText(value, maxLength) {
+  if (value === undefined || value === null || value === "") return "";
+  const text = String(value).replace(/\r\n?/g, "\n").trim();
+  if (!text || [...text].length > maxLength || /[<>]/.test(text) || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) return null;
+  return text;
+}
+
+function birthdayWishDisplay(language) {
+  return language === "en"
+    ? "MMD has received your birthday wish. Your message is saved privately and will be here when you return."
+    : "MMD ได้รับคำอวยพรของคุณแล้วครับ ข้อความนี้ถูกเก็บไว้อย่างเป็นส่วนตัว และจะยังอยู่เมื่อคุณกลับมาอีกครั้ง";
+}
+
+function birthdayWishState(wish) {
+  if (!wish) return "wish_available";
+  if (wish.wish_status === "completed") return "completed";
+  if (wish.wish_status === "submitted") return "submitted";
+  return "manual_review";
+}
+
+function careBackWishResponse(state, wish) {
+  const response = { ok: true, state, grants: careBackNoGrants() };
+  if (wish) {
+    response.wish = {
+      text: String(wish.wish_text || ""),
+      option: String(wish.wish_option || ""),
+      submitted_at: String(wish.submitted_at || ""),
+    };
+  }
+  if (state === "completed") {
+    response.final_display = {
+      message: String(wish?.public_display_text || birthdayWishDisplay(wish?.language)),
+      next_action: "return_to_care_back",
+    };
+  }
+  return response;
+}
 
 function safeMemberProfile(input = {}) {
   const history = Array.isArray(input.history) ? input.history.slice(0, 50).map((item) => {
@@ -1111,12 +1332,14 @@ async function hmacKey(env) {
 }
 function randomToken(bytes = 32) { const out = new Uint8Array(bytes); crypto.getRandomValues(out); return [...out].map((byte) => byte.toString(16).padStart(2, "0")).join(""); }
 async function readJson(request) {
-  if (!/^application\/json(?:;|$)/i.test(request.headers.get("content-type") || "")) return null;
-  const body = await request.json().catch(() => null);
-  return body && typeof body === "object" && !Array.isArray(body) ? body : null;
+  const parsed = await readBoundedJsonObject(request, PUBLIC_JSON_BODY_MAX_BYTES);
+  if (parsed.ok) return { ok: true, body: parsed.value };
+  return {
+    ok: false,
+    response: json({ ok: false, error: { code: parsed.code, message: parsed.message } }, parsed.status),
+  };
 }
 function normalizePath(pathname) { return pathname.toLowerCase().replace(/\/{2,}/g, "/"); }
-function invalidInput() { return json({ ok: false, error: { code: "INVALID_INPUT", message: "A valid JSON object is required." } }, 400); }
 function browserIdentityRejected() { return json({ ok: false, error: { code: "BROWSER_IDENTITY_REJECTED", message: "Browser-supplied identity fields are not accepted." } }, 400); }
 function unavailable(code) { return json({ ok: false, error: { code, message: "LIFF identity foundation is not configured." } }, 503); }
 function gatewayStorageFailure(error) {
@@ -1144,6 +1367,23 @@ async function saveGatewayStateError(env, gatewayStore, auth, code, message, sta
     data: await safeSessionView(gatewayStore, auth.session),
     error: { code, message },
   }, status, { cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)] });
+}
+async function saveCareBackState(env, auth, state, wish) {
+  try {
+    await commitRotatedSession(env, auth);
+  } catch (error) {
+    return gatewayStorageFailure(error);
+  }
+  return json(careBackWishResponse(state, wish), 200, {
+    cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
+  });
+}
+async function saveBirthdayWishError(env, auth, error) {
+  const code = error instanceof BirthdayWishStorageError
+    ? error.code
+    : "BIRTHDAY_WISH_STORAGE_UNAVAILABLE";
+  const status = code.endsWith("_CONFLICT") ? 409 : code.endsWith("_INVALID") || code === "BIRTHDAY_WISH_CONTENT_REQUIRED" ? 400 : 503;
+  return saveRotatedError(env, auth, code, "Birthday Wish is temporarily unavailable.", status);
 }
 function methodNotAllowed(methods) { return json({ ok: false, error: { code: "METHOD_NOT_ALLOWED", message: `${methods} required` } }, 405, { headers: { allow: methods } }); }
 function authFailure(code, message) { return { ok: false, response: json({ ok: false, error: { code, message } }, 401, { cookies: [clearCookie(SESSION_COOKIE)] }) }; }
