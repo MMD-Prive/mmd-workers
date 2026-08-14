@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import worker from "../src/index.js";
+import worker from "../src/index.mjs";
 
 const secret = "staging-resolver-secret-1234567890abcdef";
 
