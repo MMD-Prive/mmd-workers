@@ -27,6 +27,7 @@ const frontStaging = section(frontGate, "env.staging");
 assert.match(frontStaging, /name\s*=\s*"member-dashboard-chat-worker-staging"/);
 assert.match(frontStaging, /service\s*=\s*"member-pages-worker-staging"/);
 assert.match(frontStaging, /workers_dev\s*=\s*true/);
+assert.match(frontStaging, /^routes\s*=\s*\[\s*\]\s*$/m);
 assert.doesNotMatch(frontStaging, /\[\[env\.staging\.routes\]\]/);
 
 const fixtureStaging = section(fixtures, "env.staging");

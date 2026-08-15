@@ -63,6 +63,7 @@ zone_name = "mmdbkk.com"
 [env.staging]
 name = "member-dashboard-chat-worker-staging"
 workers_dev = true
+routes = []
 
 [[env.staging.services]]
 binding = "MEMBER_PAGES_WORKER"
