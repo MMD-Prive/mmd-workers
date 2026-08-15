@@ -2251,16 +2251,18 @@ async function handleModelSessionCurrent(req, env) {
   });
 }
 
-async function verifyStartWorkPaymentTruth(env, session) {
+export async function verifyStartWorkPaymentTruth(env, session) {
   const truthUrl = str(env.MODEL_SESSION_PAYMENT_TRUTH_URL || env.PAYMENTS_WORKER_FINAL_PAYMENT_STATUS_URL);
   // Runtime V1a must fail closed until payments-worker exposes a stable final-payment truth endpoint.
   if (!truthUrl) return { ok: false, error: "payment_gate_not_ready" };
+  const serviceToken = str(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
+  if (!serviceToken) return { ok: false, error: "payment_service_auth_not_ready" };
 
   const res = await fetch(truthUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(env.CONFIRM_KEY ? { "X-Confirm-Key": env.CONFIRM_KEY } : {}),
+      "X-Internal-Token": serviceToken,
     },
     body: JSON.stringify({
       session_id: session.session_id,
@@ -4716,16 +4718,18 @@ async function createAdminJob(env, body) {
   };
 }
 
-async function callPaymentsCreateLink(env, payload) {
-  const base = str(env.PAYMENTS_WORKER_BASE_URL || "").replace(/\/+$/, "");
+export async function callPaymentsCreateLink(env, payload) {
+  const base = str(env.PAYMENTS_WORKER_BASE_URL || env.PAYMENTS_BASE_URL || "").replace(/\/+$/, "");
   if (!base) throw new Error("missing_PAYMENTS_WORKER_BASE_URL");
+  const serviceToken = str(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
+  if (!serviceToken) throw new Error("missing_AUTH_SERVICE_ADMIN_TO_PAYMENTS");
 
   const res = await fetch(`${base}/v1/confirm/link`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
-      ...(env.CONFIRM_KEY ? { "X-Confirm-Key": env.CONFIRM_KEY } : {}),
+      "X-Internal-Token": serviceToken,
     },
     body: JSON.stringify(payload),
   });

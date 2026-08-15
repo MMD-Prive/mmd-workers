@@ -14,6 +14,7 @@ export interface Env {
   ENABLE_AIRTABLE_SYNC?: string;
   JOBS_WORKER_BASE_URL?: string;
   CREATE_LINKS_URL?: string;
+  AUTH_SERVICE_IMMIGRATE_TO_PAYMENTS?: string;
   REALTIME_SESSIONS_URL?: string;
   PUBLIC_WEB_BASE_URL?: string;
   PUBLIC_ALLOWED_ORIGINS?: string;

@@ -95,14 +95,8 @@ function getBearerToken(request = null) {
 
 function hasInternalAuth(request = null, env = {}) {
   const bearer = getBearerToken(request);
-  const confirmKey = asString(request?.headers?.get("X-Confirm-Key"));
   const expectedInternalToken = asString(env.INTERNAL_TOKEN);
-  const expectedConfirmKey = asString(env.CONFIRM_KEY);
-
-  return Boolean(
-    (expectedInternalToken && bearer && bearer === expectedInternalToken) ||
-      (expectedConfirmKey && confirmKey && confirmKey === expectedConfirmKey),
-  );
+  return Boolean(expectedInternalToken && bearer && bearer === expectedInternalToken);
 }
 
 function hasBearerInternalAuth(request = null, env = {}) {

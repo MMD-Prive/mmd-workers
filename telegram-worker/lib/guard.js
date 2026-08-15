@@ -8,12 +8,14 @@ export function requireConfirmKey(req, env) {
   }
 }
 
-export function requireInternalToken(req, env, { allowBookingService = false } = {}) {
+export function requireInternalToken(req, env, { allowServiceSecrets = [] } = {}) {
   const acceptedTokens = [
     env.INTERNAL_API_TOKEN,
-    allowBookingService ? env.AUTH_SERVICE_BOOKING_TO_TELEGRAM : "",
+    ...allowServiceSecrets.map((secretName) => env[secretName]),
   ].filter(Boolean);
-  if (!acceptedTokens.length) return;
+  if (!acceptedTokens.length) {
+    throw new HttpError(403, { ok: false, error: "internal_token_required" });
+  }
 
   const direct = req.headers.get("X-Internal-Token") || "";
   const authorization = req.headers.get("Authorization") || "";

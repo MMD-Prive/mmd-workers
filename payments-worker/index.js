@@ -91,6 +91,21 @@ function isInternalAuthed(req, env) {
   return !!env.INTERNAL_TOKEN && headerToken === env.INTERNAL_TOKEN;
 }
 
+function isServiceAuthed(req, env, secretNames) {
+  const expected = (Array.isArray(secretNames) ? secretNames : [secretNames])
+    .map((secretName) => toStr(env[secretName]))
+    .filter(Boolean);
+  if (!expected.length) return false;
+  const direct = toStr(req.headers.get("X-Internal-Token"));
+  const bearer = toStr(req.headers.get("Authorization")).replace(/^Bearer\s+/i, "");
+  return expected.includes(direct || bearer);
+}
+
+function serviceAuthRequired(req, env, secretNames) {
+  if (isServiceAuthed(req, env, secretNames)) return null;
+  return withCors(req, env, jsonResponse({ ok: false, error: "service_auth_required" }, 401));
+}
+
 function assertRequired(value, field) {
   if (!toStr(value)) throw new Error(`${field}_required`);
   return value;
@@ -1063,7 +1078,18 @@ export default {
     }
 
     if (method === "POST" && path === "/v1/confirm/link") {
+      const denied = serviceAuthRequired(req, env, [
+        "AUTH_SERVICE_ADMIN_TO_PAYMENTS",
+        "AUTH_SERVICE_IMMIGRATE_TO_PAYMENTS",
+      ]);
+      if (denied) return denied;
       return handleConfirmLink(req, env);
+    }
+
+    if (method === "POST" && path === "/v1/internal/pay/verify") {
+      const denied = serviceAuthRequired(req, env, "AUTH_SERVICE_EVENTS_TO_PAYMENTS");
+      if (denied) return denied;
+      return handleVerify(req, env);
     }
 
     if (method === "POST" && path === "/v1/pay/verify") {

@@ -99,7 +99,7 @@ function corsHeaders(origin, allowedCsv) {
 
 function requireInternal(req, env) {
   const tok = (req.headers.get("X-Internal-Token") || "").trim();
-  return tok && tok === (env.INTERNAL_TOKEN || "");
+  return tok && tok === (env.AUTH_SERVICE_EVENTS_TO_REALTIME || "");
 }
 
 export default {

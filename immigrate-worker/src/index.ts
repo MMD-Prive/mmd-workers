@@ -2067,10 +2067,17 @@ async function handleCreateLinks(request: Request, env: Env): Promise<Response> 
   });
 
   if (upstreamUrl) {
+      const serviceToken = toStr(env.AUTH_SERVICE_IMMIGRATE_TO_PAYMENTS);
+      if (!serviceToken) {
+        return badRequest("create-links service auth is not configured", meta, {
+          field: "AUTH_SERVICE_IMMIGRATE_TO_PAYMENTS",
+        });
+      }
       const upstream = await fetch(upstreamUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Internal-Token": serviceToken,
         },
         body: JSON.stringify(upstreamPayload),
       });

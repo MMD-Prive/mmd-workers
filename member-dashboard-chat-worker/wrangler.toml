@@ -51,7 +51,7 @@ pattern = "www.mmdbkk.com/webhooks/line/"
 zone_name = "mmdbkk.com"
 
 # Cloudflare-only LINE runtime.
-# Bind LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, INTERNAL_TOKEN, and CONFIRM_KEY as Cloudflare secrets only.
+# Bind LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, and INTERNAL_TOKEN as Cloudflare secrets only.
 # LINE_WEBHOOK_UPSTREAM_URL is retired and must remain unset.
 #
 # Runtime flags are configured in Cloudflare, not committed here:

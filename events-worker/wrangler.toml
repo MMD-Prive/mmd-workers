@@ -11,6 +11,10 @@ crons = ["*/15 * * * *"] # run every 15 minutes
 TELEGRAM_WORKER_BASE = "https://telegram-worker.malemodel-bkk.workers.dev"
 PAYMENTS_WORKER_BASE = "https://payments-worker.malemodel-bkk.workers.dev"
 ADMIN_WORKER_BASE = "https://admin-worker.malemodel-bkk.workers.dev"
+RT_BASE_URL = "https://realtime-worker.malemodel-bkk.workers.dev"
+
+# Secrets: AUTH_SERVICE_EVENTS_TO_PAYMENTS, AUTH_SERVICE_EVENTS_TO_REALTIME,
+# AUTH_SERVICE_EVENTS_TO_TELEGRAM
 
 # Airtable/other env names should be set in dashboard or wrangler environment
 # e.g. AIRTABLE_API_KEY, AIRTABLE_BASE_ID, AIRTABLE_TABLE_SESSIONS, AIRTABLE_TABLE_MODELS, AIRTABLE_TABLE_CLIENTS, AIRTABLE_TABLE_ACTIVITY_LOGS
