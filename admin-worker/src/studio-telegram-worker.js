@@ -32,7 +32,7 @@ export default {
   },
 };
 
-async function notifyStudioTelegram(env, { path, body, result }) {
+export async function notifyStudioTelegram(env, { path, body, result }) {
   if (token(env.TELEGRAM_STUDIO_NOTIFY_ENABLED || env.TELEGRAM_NOTIFY_ENABLED || "true") === "false") {
     return { ok: false, skipped: true, reason: "disabled" };
   }
@@ -61,10 +61,9 @@ async function notifyStudioTelegram(env, { path, body, result }) {
   });
 
   const headers = { "Content-Type": "application/json" };
-  const internalHeader = clean(env.AUTH_SERVICE_STUDIO_TO_TELEGRAM || env.INTERNAL_API_TOKEN);
-  if (internalHeader) headers["X-Internal-Token"] = internalHeader;
-  if (env.INTERNAL_TOKEN) headers.Authorization = `Bearer ${env.INTERNAL_TOKEN}`;
-  if (env.CONFIRM_KEY) headers["X-Confirm-Key"] = env.CONFIRM_KEY;
+  const internalHeader = clean(env.AUTH_SERVICE_STUDIO_TO_TELEGRAM);
+  if (!internalHeader) return { ok: false, skipped: true, reason: "missing_studio_telegram_service_auth" };
+  headers["X-Internal-Token"] = internalHeader;
 
   try {
     const response = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(payload) });

@@ -23,6 +23,8 @@ CONFIRM_BASE_URL = "https://mmdprive.webflow.io"
 
 ROOM_TTL_SECONDS = "7200"
 
+# Secret: AUTH_SERVICE_EVENTS_TO_REALTIME
+
 # live chat / video call policy
 VIDEO_PROVIDER = "daily"
 VIDEO_MAX_CALLS = "2"

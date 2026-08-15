@@ -13,6 +13,8 @@ function env(overrides = {}) {
     TELEGRAM_WEBHOOK_SECRET_TOKEN: "expected-secret",
     INTERNAL_API_TOKEN: "internal-secret",
     AUTH_SERVICE_BOOKING_TO_TELEGRAM: "booking-service-secret",
+    AUTH_SERVICE_EVENTS_TO_TELEGRAM: "events-service-secret",
+    AUTH_SERVICE_STUDIO_TO_TELEGRAM: "studio-service-secret",
     TELEGRAM_BOT_TOKEN: "telegram-token",
     TELEGRAM_PREVIEW_CHANNEL_ID: "-100123",
     TELEGRAM_BOT_USERNAME: "mmdprivebot",
@@ -158,6 +160,22 @@ test("/telegram/internal/send rejects missing internal token", async () => {
   assert.equal(body.error, "internal_token_required");
 });
 
+test("/telegram/internal/send fails closed when no internal credentials are configured", async () => {
+  const response = await worker.fetch(new Request(INTERNAL_SEND_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text: "must not send" }),
+  }), env({
+    INTERNAL_API_TOKEN: "",
+    AUTH_SERVICE_BOOKING_TO_TELEGRAM: "",
+    AUTH_SERVICE_EVENTS_TO_TELEGRAM: "",
+    AUTH_SERVICE_STUDIO_TO_TELEGRAM: "",
+  }));
+
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).error, "internal_token_required");
+});
+
 test("/telegram/internal/send rejects an invalid internal token", async () => {
   const response = await worker.fetch(internalSendRequest(bookingPayload(), {
     authorization: "Bearer wrong-secret",
@@ -277,6 +295,38 @@ test("dedicated Booking auth does not unlock preview route", async () => {
   assert.equal(response.status, 403);
   assert.equal(body.error, "internal_token_required");
 });
+
+for (const [service, secret] of [
+  ["Events", "events-service-secret"],
+  ["Studio", "studio-service-secret"],
+]) {
+  test(`dedicated ${service} auth is scoped to the canonical internal send route`, { concurrency: false }, async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => Response.json({
+      ok: true,
+      result: { message_id: 80, chat: { id: -1003546439681 } },
+    });
+
+    try {
+      const send = await worker.fetch(internalSendRequest({ text: `${service} notification` }, {
+        authorization: "",
+        "X-Internal-Token": secret,
+      }), env());
+      assert.equal(send.status, 200);
+
+      for (const url of [COMPLAINT_URL, PREVIEW_POST_URL]) {
+        const denied = await worker.fetch(new Request(url, {
+          method: "POST",
+          headers: { "content-type": "application/json", "X-Internal-Token": secret },
+          body: "{}",
+        }), env());
+        assert.equal(denied.status, 403);
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+}
 
 test("/telegram/internal/send fails closed when Telegram rejects direct topic delivery", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;

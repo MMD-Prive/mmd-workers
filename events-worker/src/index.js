@@ -77,19 +77,18 @@ function rtOpenUrl(env){
   if (!base) return "";
   return `${base.replace(/\/+$/,"")}/v1/rt/room/open`;
 }
-async function rtRoomOpen(env, payload){
+export async function rtRoomOpen(env, payload){
   const url = rtOpenUrl(env);
   if (!url) throw new HttpError(500, { ok:false, error:"missing_rt_base_url" });
 
-  // default: reuse CONFIRM_KEY for internal-to-internal
-  const key = str(env.RT_CONFIRM_KEY || env.CONFIRM_KEY);
-  if (!key) throw new HttpError(500, { ok:false, error:"missing_rt_confirm_key" });
+  const key = str(env.AUTH_SERVICE_EVENTS_TO_REALTIME);
+  if (!key) throw new HttpError(500, { ok:false, error:"missing_events_to_realtime_auth" });
 
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Confirm-Key": key,
+      "X-Internal-Token": key,
     },
     body: JSON.stringify(payload || {}),
   });
@@ -215,22 +214,22 @@ function hasFinalPaymentConfirmed(events){
    Telegram-worker internal notify (optional)
 ------------------------- */
 function tgInternalSendUrl(env){
-  const base = str(env.TELEGRAM_WORKER_BASE_URL);
+  const base = str(env.TELEGRAM_WORKER_BASE_URL || env.TELEGRAM_WORKER_BASE);
   if (!base) return "";
   return `${base.replace(/\/+$/, "")}/telegram/internal/send`;
 }
-async function tgInternalSend(env, payload){
+export async function tgInternalSend(env, payload){
   const url = tgInternalSendUrl(env);
   if (!url) return { ok:false, skipped:true, reason:"missing_telegram_worker_base_url" };
 
-  const token = str(env.INTERNAL_TOKEN);
-  if (!token) return { ok:false, skipped:true, reason:"missing_internal_token" };
+  const token = str(env.AUTH_SERVICE_EVENTS_TO_TELEGRAM);
+  if (!token) return { ok:false, skipped:true, reason:"missing_events_to_telegram_auth" };
 
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}`,
+      "X-Internal-Token": token,
     },
     body: JSON.stringify(payload || {}),
   });
@@ -589,16 +588,18 @@ async function handleTipsSummary(req, body, env, cors) {
   }, 200, corsHeaders(cors));
 }
 
-async function callPaymentsVerify(payload, env) {
-  const base = str(env.PAYMENTS_WORKER_BASE_URL || "");
+export async function callPaymentsVerify(payload, env) {
+  const base = str(env.PAYMENTS_WORKER_BASE_URL || env.PAYMENTS_WORKER_BASE || "");
   if (!base) throw new HttpError(500, { ok: false, error: "missing_PAYMENTS_WORKER_BASE_URL" });
+  const serviceToken = str(env.AUTH_SERVICE_EVENTS_TO_PAYMENTS);
+  if (!serviceToken) throw new HttpError(500, { ok: false, error: "missing_AUTH_SERVICE_EVENTS_TO_PAYMENTS" });
 
-  const url = base.replace(/\/+$/,"") + "/v1/pay/verify";
+  const url = base.replace(/\/+$/,"") + "/v1/internal/pay/verify";
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Confirm-Key": str(env.CONFIRM_KEY || ""),
+      "X-Internal-Token": serviceToken,
     },
     body: JSON.stringify(payload),
   });

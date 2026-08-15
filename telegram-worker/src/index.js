@@ -40,7 +40,15 @@ export default {
       }
 
       if (isInternalSendPath(path) && req.method === "POST") {
-        requireInternalToken(req, env, { allowBookingService: path === "/telegram/internal/send" });
+        requireInternalToken(req, env, {
+          allowServiceSecrets: path === "/telegram/internal/send"
+            ? [
+                "AUTH_SERVICE_BOOKING_TO_TELEGRAM",
+                "AUTH_SERVICE_EVENTS_TO_TELEGRAM",
+                "AUTH_SERVICE_STUDIO_TO_TELEGRAM",
+              ]
+            : [],
+        });
         const body = await safeJson(req);
         if (!body) return json({ ok: false, error: "invalid_json" }, 400);
         const tg = await telegramNotify(body, env);

@@ -16,6 +16,8 @@ AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
 ENABLE_AIRTABLE_SYNC = "true"
 JOBS_WORKER_BASE_URL = ""
 CREATE_LINKS_URL = "https://payments-worker.malemodel-bkk.workers.dev/v1/confirm/link"
+
+# Secret: AUTH_SERVICE_IMMIGRATE_TO_PAYMENTS
 REALTIME_SESSIONS_URL = ""
 PUBLIC_WEB_BASE_URL = "https://www.mmdbkk.com"
 PUBLIC_ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
