@@ -5,12 +5,14 @@ import worker from "../src/index.js";
 
 const WEBHOOK_URL = "https://telegram-worker.mmd.test/telegram/webhook";
 const INTERNAL_SEND_URL = "https://telegram-worker.mmd.test/telegram/internal/send";
+const COMPLAINT_URL = "https://telegram-worker.mmd.test/telegram/internal/complaint";
 const PREVIEW_POST_URL = "https://telegram-worker.mmd.test/telegram/preview/post";
 
 function env(overrides = {}) {
   return {
     TELEGRAM_WEBHOOK_SECRET_TOKEN: "expected-secret",
     INTERNAL_API_TOKEN: "internal-secret",
+    AUTH_SERVICE_BOOKING_TO_TELEGRAM: "booking-service-secret",
     TELEGRAM_BOT_TOKEN: "telegram-token",
     TELEGRAM_PREVIEW_CHANNEL_ID: "-100123",
     TELEGRAM_BOT_USERNAME: "mmdprivebot",
@@ -156,6 +158,16 @@ test("/telegram/internal/send rejects missing internal token", async () => {
   assert.equal(body.error, "internal_token_required");
 });
 
+test("/telegram/internal/send rejects an invalid internal token", async () => {
+  const response = await worker.fetch(internalSendRequest(bookingPayload(), {
+    authorization: "Bearer wrong-secret",
+  }), env());
+  const body = await response.json();
+
+  assert.equal(response.status, 403);
+  assert.equal(body.error, "internal_token_required");
+});
+
 test("/telegram/internal/send accepts bearer auth and preserves explicit booking topic", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   let telegramRequest = null;
@@ -199,6 +211,71 @@ test("/telegram/internal/send accepts bearer auth and preserves explicit booking
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("/telegram/internal/send accepts dedicated Booking service auth", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let telegramRequest = null;
+
+  globalThis.fetch = async (_url, init = {}) => {
+    telegramRequest = JSON.parse(String(init.body || "{}"));
+    return new Response(JSON.stringify({
+      ok: true,
+      result: {
+        message_id: 78,
+        chat: { id: -1003546439681 },
+        message_thread_id: 1399,
+      },
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  try {
+    const response = await worker.fetch(internalSendRequest(bookingPayload(), {
+      authorization: "",
+      "X-Internal-Token": "booking-service-secret",
+    }), env());
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.telegram.ok, true);
+    assert.equal(telegramRequest.message_thread_id, 1399);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("dedicated Booking auth does not unlock complaint route", async () => {
+  const response = await worker.fetch(new Request(COMPLAINT_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "X-Internal-Token": "booking-service-secret",
+    },
+    body: JSON.stringify({ complaint_id: "test-complaint" }),
+  }), env());
+  const body = await response.json();
+
+  assert.equal(response.status, 403);
+  assert.equal(body.error, "internal_token_required");
+});
+
+test("dedicated Booking auth does not unlock preview route", async () => {
+  const response = await worker.fetch(new Request(PREVIEW_POST_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "X-Internal-Token": "booking-service-secret",
+    },
+    body: JSON.stringify({ dry_run: true }),
+  }), env());
+  const body = await response.json();
+
+  assert.equal(response.status, 403);
+  assert.equal(body.error, "internal_token_required");
 });
 
 test("/telegram/internal/send fails closed when Telegram rejects direct topic delivery", { concurrency: false }, async () => {
