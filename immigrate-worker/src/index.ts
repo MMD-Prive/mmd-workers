@@ -12,7 +12,13 @@ import {
   syncRecordsToAirtable,
   writeLinkAuditRecord,
 } from "./lib/airtable";
-import { buildAbsoluteUrl, generateInviteLink, parseInviteIdentity, verifyInviteToken } from "./lib/invite";
+import {
+  buildAbsoluteUrl,
+  generateInviteLink,
+  getConfirmSecret,
+  parseInviteIdentity,
+  verifyInviteToken,
+} from "./lib/invite";
 import { badRequest, internalError, json, makeMeta, redirect, unauthorized } from "./lib/response";
 import { seedLineInboxRecords, seedLogs, seedSessions } from "./lib/seed";
 import type {
@@ -2268,7 +2274,7 @@ async function handleResolveInvite(request: Request, env: Env): Promise<Response
   const meta = makeMeta(request);
   try {
     const token = requiredString(new URL(request.url).searchParams.get("t"), "t");
-    const invite = await verifyInviteToken(token, String(env.CONFIRM_KEY || env.INTERNAL_TOKEN || ""));
+    const invite = await verifyInviteToken(token, getConfirmSecret(env));
     const prefill: InvitePrefill = {
       username: invite.username,
       nickname: invite.nickname,
