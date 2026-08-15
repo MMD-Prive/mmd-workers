@@ -8,6 +8,7 @@ directory = "./public"
 binding = "ASSETS"
 
 [vars]
+# Secret: LINK_SIGNING_SECRET
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_TABLE_LINE_INBOX = "Line Inbox"
 AIRTABLE_TABLE_CLIENTS = "Clients"
