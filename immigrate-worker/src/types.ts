@@ -4,6 +4,7 @@ export interface Env {
   BROWSER_GATE_PASSWORD?: string;
   BROWSER_GATE_USERNAME?: string;
   CONFIRM_KEY?: string;
+  LINK_SIGNING_SECRET?: string;
   AIRTABLE_API_KEY?: string;
   AIRTABLE_BASE_ID: string;
   AIRTABLE_TABLE_LINE_INBOX: string;

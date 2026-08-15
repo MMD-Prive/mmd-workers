@@ -12,7 +12,13 @@ import {
   syncRecordsToAirtable,
   writeLinkAuditRecord,
 } from "./lib/airtable";
-import { buildAbsoluteUrl, generateInviteLink, parseInviteIdentity, verifyInviteToken } from "./lib/invite";
+import {
+  buildAbsoluteUrl,
+  generateInviteLink,
+  getConfirmSecret,
+  parseInviteIdentity,
+  verifyInviteToken,
+} from "./lib/invite";
 import { badRequest, internalError, json, makeMeta, redirect, unauthorized } from "./lib/response";
 import { seedLineInboxRecords, seedLogs, seedSessions } from "./lib/seed";
 import type {
@@ -126,7 +132,6 @@ const PUBLIC = {
 } as const;
 
 const ADMIN_GATE_SESSION_KEY = "mmd_admin_gate_v1";
-const ADMIN_GATE_TTL_MS = 8 * 60 * 60 * 1000;
 const ADMIN_GATE_DEFAULT_NEXT = SIGIL_ADMIN.dashboard;
 const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
   "https://mmdbkk.com",
@@ -141,8 +146,6 @@ type AdminGateSession = {
   ok: true;
   at: number;
   baseUrl: string;
-  bearer?: string;
-  confirmKey?: string;
 };
 
 function readSeedRecords(): MigrationRecord[] {
@@ -2278,7 +2281,7 @@ async function handleResolveInvite(request: Request, env: Env): Promise<Response
   const meta = makeMeta(request);
   try {
     const token = requiredString(new URL(request.url).searchParams.get("t"), "t");
-    const invite = await verifyInviteToken(token, String(env.CONFIRM_KEY || env.INTERNAL_TOKEN || ""));
+    const invite = await verifyInviteToken(token, getConfirmSecret(env));
     const prefill: InvitePrefill = {
       username: invite.username,
       nickname: invite.nickname,
@@ -2373,20 +2376,6 @@ function isSessionsRoute(pathname: string): boolean {
   return pathname === CONTROL_ROOM.sessions || pathname === CONTROL_ROOM.sessionRefresh;
 }
 
-function parseCookieMap(request: Request): Map<string, string> {
-  const raw = request.headers.get("cookie") || "";
-  const map = new Map<string, string>();
-
-  for (const part of raw.split(";")) {
-    const [name, ...rest] = part.split("=");
-    const key = name.trim();
-    if (!key) continue;
-    map.set(key, rest.join("=").trim());
-  }
-
-  return map;
-}
-
 function isProtectedBrowserRoute(pathname: string): boolean {
   // This worker only gates the immigration control-room surface, not the separate admin console.
   if (pathname === "/internal/admin/console" || pathname.startsWith("/internal/admin/console/")) {
@@ -2452,22 +2441,9 @@ function makeRequestWithPath(request: Request, pathname: string): Request {
 function makeLoginRedirect(request: Request, pathname: string): Response {
   const url = new URL(request.url);
   const next = pathname + url.search;
-  const loginUrl = new URL(SIGIL_ADMIN.login, url.origin);
-  loginUrl.searchParams.set("next", normalizeSigilAdminNextPath(next));
+  const loginUrl = new URL(CONTROL_ROOM.login, "https://mmdbkk.com");
+  loginUrl.searchParams.set("next", normalizeAdminNextPath(next));
   return redirect(loginUrl.toString(), 302);
-}
-
-function encodeGateSession(session: AdminGateSession): string {
-  return btoa(JSON.stringify(session));
-}
-
-function decodeGateSession(value: string): AdminGateSession | null {
-  try {
-    const parsed = JSON.parse(atob(value)) as AdminGateSession;
-    return parsed && parsed.ok === true ? parsed : null;
-  } catch {
-    return null;
-  }
 }
 
 function normalizeAdminBaseUrl(value: unknown, request: Request): string {
@@ -2537,19 +2513,6 @@ async function verifyAdminAuthority(
   return false;
 }
 
-function makeGateSessionCookie(request: Request, session: AdminGateSession): string {
-  const parts = [
-    `${ADMIN_GATE_SESSION_KEY}=${encodeURIComponent(encodeGateSession(session))}`,
-    "Path=/",
-    "HttpOnly",
-    "Secure",
-    "SameSite=Lax",
-    `Max-Age=${Math.floor(ADMIN_GATE_TTL_MS / 1000)}`,
-  ];
-
-  return parts.join("; ");
-}
-
 function clearGateSessionCookie(request: Request): string {
   const parts = [
     `${ADMIN_GATE_SESSION_KEY}=`,
@@ -2601,26 +2564,6 @@ function normalizeAdminNextPath(value: unknown): string {
   } catch {
     return CONTROL_ROOM.root;
   }
-}
-
-function readGateSession(request: Request): AdminGateSession | null {
-  const cookieValue = parseCookieMap(request).get(ADMIN_GATE_SESSION_KEY);
-  if (!cookieValue) return null;
-  return decodeGateSession(decodeURIComponent(cookieValue));
-}
-
-function isGateSessionValid(session: AdminGateSession | null): session is AdminGateSession {
-  if (!session || session.ok !== true) return false;
-  if (!session.baseUrl || !ADMIN_GATE_ALLOWED_BASE_URLS.has(session.baseUrl)) return false;
-  if (!session.bearer && !session.confirmKey) return false;
-  if (!Number.isFinite(session.at)) return false;
-  if (Date.now() - session.at > ADMIN_GATE_TTL_MS) return false;
-  return true;
-}
-
-function getValidatedGateSession(request: Request): AdminGateSession | null {
-  const session = readGateSession(request);
-  return isGateSessionValid(session) ? session : null;
 }
 
 function escapeHtml(value: string): string {
@@ -4110,141 +4053,46 @@ function renderCreateJobPage(request: Request, session: AdminGateSession): Respo
   });
 }
 
-async function handleAdminLoginSession(request: Request, env: Env): Promise<Response> {
+async function handleAdminLoginSession(request: Request, _env: Env): Promise<Response> {
   const meta = makeMeta(request);
-
-  if (request.method === "DELETE") {
-    return json(
-      { ok: true, data: { cleared: true, redirect_to: CONTROL_ROOM.login }, meta },
-      { headers: { "set-cookie": clearGateSessionCookie(request) } },
-    );
-  }
-
-  const body = (await request.json().catch(() => null)) as {
-    baseUrl?: string;
-    accessCode?: string;
-    bearer?: string;
-    confirmKey?: string;
-    next?: string;
-  } | null;
-  const accessCode = toStr(body?.accessCode);
-  const bearer = toStr(body?.bearer) || accessCode;
-  const confirmKey = toStr(body?.confirmKey);
-  const next = normalizeAdminNextPath(body?.next);
-  let baseUrl = "";
-
-  try {
-    baseUrl = normalizeAdminBaseUrl(body?.baseUrl, request);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "invalid_base_url";
-    return badRequest(message, meta, { field: "baseUrl" });
-  }
-
-  if (!bearer && !confirmKey) {
-    return badRequest("accessCode, bearer, or confirmKey is required", meta, {
-      field: "accessCode",
-    });
-  }
-
-  const headers = new Headers();
-  if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
-  if (confirmKey) headers.set("X-Confirm-Key", confirmKey);
-
-  const verified = await verifyAdminAuthority(baseUrl, request, env, headers);
-
-  if (!verified) {
-    return json(
-      {
-        ok: false,
-        error: { code: "ADMIN_VERIFY_FAILED", message: "Admin verification failed" },
-        meta,
-      },
-      { status: 401 },
-    );
-  }
-
-  const session: AdminGateSession = {
-    ok: true,
-    at: Date.now(),
-    baseUrl,
-    ...(bearer ? { bearer } : {}),
-    ...(confirmKey ? { confirmKey } : {}),
-  };
-
   return json(
-    { ok: true, data: { unlocked: true, redirect_to: next, session }, meta },
-    { headers: { "set-cookie": makeGateSessionCookie(request, session) } },
+    {
+      ok: false,
+      error: {
+        code: "LEGACY_ADMIN_SESSION_RETIRED",
+        message: "Use the canonical admin login session.",
+      },
+      canonical_login: CONTROL_ROOM.login,
+      meta,
+    },
+    {
+      status: request.method === "DELETE" ? 200 : 410,
+      headers: {
+        "cache-control": "no-store",
+        "set-cookie": clearGateSessionCookie(request),
+      },
+    },
   );
 }
 
-async function handleSigilAdminLogin(request: Request, env: Env): Promise<Response> {
-  const body = await readSigilLoginBody(request);
-  const gateCode = toStr(body?.gate_code || body?.otp);
-  const password = toStr(body?.password || body?.accessCode);
-  const bearer = toStr(body?.bearer) || gateCode || password;
-  const confirmKey = toStr(body?.confirmKey);
-  const next = normalizeSigilAdminNextPath(body?.next);
-  let baseUrl = "";
-
-  try {
-    baseUrl = normalizeAdminBaseUrl(body?.baseUrl, request);
-  } catch {
-    return renderSigilAdminLoginPage(request, {
-      status: 401,
-      error: "Unable to verify SIGIL admin access.",
-    });
-  }
-
-  if (!bearer && !confirmKey) {
-    return renderSigilAdminLoginPage(request, {
-      status: 401,
-      error: "Gate Code / OTP is required.",
-    });
-  }
-
-  const headers = new Headers();
-  if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
-  if (confirmKey) headers.set("X-Confirm-Key", confirmKey);
-
-  const verified = await verifyAdminAuthority(baseUrl, request, env, headers);
-  if (!verified) {
-    return renderSigilAdminLoginPage(request, {
-      status: 401,
-      error: "Unable to verify SIGIL admin access.",
-    });
-  }
-
-  const session: AdminGateSession = {
-    ok: true,
-    at: Date.now(),
-    baseUrl,
-    ...(bearer ? { bearer } : {}),
-    ...(confirmKey ? { confirmKey } : {}),
-  };
-
-  return redirect(next, 302, {
-    "set-cookie": makeGateSessionCookie(request, session),
-    "cache-control": "no-store",
-  });
-}
-
 function handleSigilAdminMe(request: Request): Response {
-  const session = getValidatedGateSession(request);
-  if (!session) {
-    return json(
-      { ok: false, error: { code: "ADMIN_SESSION_REQUIRED", message: "Admin session required" } },
-      { status: 401, headers: { "cache-control": "no-store" } },
-    );
-  }
-
   return json(
-    { ok: true, data: { authenticated: true, baseUrl: session.baseUrl } },
-    { headers: { "cache-control": "no-store" } },
+    {
+      ok: false,
+      error: { code: "LEGACY_ADMIN_SESSION_RETIRED", message: "Use the canonical admin session." },
+    },
+    {
+      status: 401,
+      headers: {
+        "cache-control": "no-store",
+        "set-cookie": clearGateSessionCookie(request),
+      },
+    },
   );
 }
 
 function handleSigilAdminLogout(request: Request): Response {
-  return redirect(SIGIL_ADMIN.login, 302, {
+  return redirect("https://mmdbkk.com/internal/admin/login", 302, {
     "set-cookie": clearGateSessionCookie(request),
     "cache-control": "no-store",
   });
@@ -4252,16 +4100,17 @@ function handleSigilAdminLogout(request: Request): Response {
 
 function makeLegacyAdminRedirect(request: Request): Response | null {
   const url = new URL(request.url);
-  if (url.pathname === "/admin/login" || url.pathname === CONTROL_ROOM.login) {
-    const target = new URL(SIGIL_ADMIN.login, url.origin);
-    target.searchParams.set("next", normalizeSigilAdminNextPath(url.searchParams.get("next")));
-    return redirect(target.toString(), 302);
+  if (url.pathname === "/admin/login" || url.pathname === CONTROL_ROOM.login || url.pathname === SIGIL_ADMIN.login) {
+    const target = new URL(CONTROL_ROOM.login, "https://mmdbkk.com");
+    const next = normalizeAdminNextPath(url.searchParams.get("next"));
+    const nextUrl = new URL(next, "https://mmdbkk.com");
+    nextUrl.pathname = toInternalAdminPath(nextUrl.pathname);
+    target.searchParams.set("next", `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+    return redirect(target.toString(), 308);
   }
 
   if (url.pathname === CONTROL_ROOM.root || url.pathname.startsWith(`${CONTROL_ROOM.root}/`)) {
-    const target = new URL(request.url);
-    target.pathname = SIGIL_ADMIN.controlRoom + url.pathname.slice(CONTROL_ROOM.root.length);
-    return redirect(target.toString(), 302);
+    return null;
   }
 
   return null;
@@ -4354,22 +4203,6 @@ export default {
         return legacyAdminRedirect;
       }
 
-      if ((request.method === "GET" || request.method === "HEAD") && url.pathname === SIGIL_ADMIN.login) {
-        if (request.method === "HEAD") {
-          return new Response(null, {
-            status: 200,
-            headers: {
-              "content-type": "text/html; charset=utf-8",
-              "cache-control": "no-store",
-              "x-mmd-worker": "immigrate-worker",
-              "x-mmd-page": "sigil-admin-login",
-            },
-          });
-        }
-
-        return renderSigilAdminLoginPage(request);
-      }
-
       if ((request.method === "GET" || request.method === "HEAD") && isMemberDashboardAlias(url.pathname)) {
         return renderMemberDashboardPage(request);
       }
@@ -4379,7 +4212,22 @@ export default {
       }
 
       if (request.method === "POST" && url.pathname === SIGIL_ADMIN.login) {
-        return await handleSigilAdminLogin(request, env);
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: "legacy_admin_login_method_not_allowed",
+            canonical_login: CONTROL_ROOM.login,
+          }),
+          {
+            status: 405,
+            headers: {
+              allow: "GET, HEAD",
+              "content-type": "application/json; charset=utf-8",
+              "cache-control": "no-store",
+              "set-cookie": clearGateSessionCookie(request),
+            },
+          },
+        );
       }
 
       if (request.method === "GET" && url.pathname === SIGIL_ADMIN.authMe) {
@@ -4417,19 +4265,15 @@ export default {
           });
         }
 
-        const gateSession = getValidatedGateSession(request);
-        if (!gateSession && !isAuthorized(request, env)) {
+        if (!isAuthorized(request, env)) {
           return makeLoginRedirect(request, url.pathname);
         }
 
-        const session =
-          gateSession ||
-          ({
-            ok: true,
-            at: Date.now(),
-            baseUrl: new URL(request.url).origin,
-            bearer: readInternalToken(request) || env.INTERNAL_TOKEN,
-          } satisfies AdminGateSession);
+        const session = {
+          ok: true,
+          at: Date.now(),
+          baseUrl: new URL(request.url).origin,
+        } satisfies AdminGateSession;
 
         return renderCreateSessionPage(request, session);
       }
@@ -4445,19 +4289,15 @@ export default {
           });
         }
 
-        const gateSession = getValidatedGateSession(request);
-        if (!gateSession && !isAuthorized(request, env)) {
+        if (!isAuthorized(request, env)) {
           return makeLoginRedirect(request, url.pathname);
         }
 
-        const session =
-          gateSession ||
-          ({
-            ok: true,
-            at: Date.now(),
-            baseUrl: new URL(request.url).origin,
-            bearer: readInternalToken(request) || env.INTERNAL_TOKEN,
-          } satisfies AdminGateSession);
+        const session = {
+          ok: true,
+          at: Date.now(),
+          baseUrl: new URL(request.url).origin,
+        } satisfies AdminGateSession;
 
         return renderCreateJobPage(request, session);
       }
@@ -4467,8 +4307,7 @@ export default {
           return fetch(request);
         }
 
-        const gateSession = getValidatedGateSession(request);
-        if (!gateSession) {
+        if (!isAuthorized(request, env)) {
           return makeLoginRedirect(request, url.pathname);
         }
 
@@ -4477,7 +4316,11 @@ export default {
           return upstream;
         }
 
-        return await withInjectedAdminBootstrap(request, upstream, gateSession);
+        return await withInjectedAdminBootstrap(request, upstream, {
+          ok: true,
+          at: Date.now(),
+          baseUrl: new URL(request.url).origin,
+        });
       }
 
       if ((request.method === "GET" || request.method === "HEAD") && isSigilProtectedBrowserRoute(url.pathname)) {
@@ -4485,8 +4328,7 @@ export default {
           return fetch(makeRequestWithPath(request, toInternalAdminPath(url.pathname)));
         }
 
-        const gateSession = getValidatedGateSession(request);
-        if (!gateSession) {
+        if (!isAuthorized(request, env)) {
           return makeLoginRedirect(request, url.pathname);
         }
 
@@ -4496,7 +4338,11 @@ export default {
           return upstream;
         }
 
-        return await withInjectedAdminBootstrap(upstreamRequest, upstream, gateSession);
+        return await withInjectedAdminBootstrap(upstreamRequest, upstream, {
+          ok: true,
+          at: Date.now(),
+          baseUrl: new URL(request.url).origin,
+        });
       }
 
       if (!isAuthorized(request, env)) {

@@ -30,6 +30,9 @@ CONFIRM_BASE_URL = "https://mmdprive.webflow.io"
 PAY_SESSIONS_TTL_DAYS = "30"
 PAY_TOKEN_TTL_SECONDS = "2592000"
 
+# Secret: PAYMENT_CONFIRMATION_SIGNING_SECRET
+# CONFIRM_KEY remains a temporary migration fallback until the dedicated secret is active.
+
 # LOCK: 100 THB = 1 point
 POINTS_RATE = "100"
 

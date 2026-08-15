@@ -76,7 +76,9 @@ function rewriteLegacyAdminLoginRedirect(request: Request, response: Response): 
 
   const requestUrl = new URL(request.url);
   const redirectUrl = new URL(rawLocation, requestUrl.origin);
-  if (!isLegacyAdminLoginPath(redirectUrl.pathname)) return response;
+  if (!isLegacyAdminLoginPath(redirectUrl.pathname) && redirectUrl.pathname !== CANONICAL_ADMIN_LOGIN_PATH) {
+    return response;
+  }
 
   redirectUrl.pathname = CANONICAL_ADMIN_LOGIN_PATH;
 

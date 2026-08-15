@@ -2000,15 +2000,22 @@ function isModelSessionPayload(payload) {
   return false;
 }
 
+function modelSessionVerificationSecret(payload, env) {
+  if (payload?.kind === "model_confirm") {
+    return str(env.PAYMENT_CONFIRMATION_SIGNING_SECRET || env.CONFIRM_KEY || env.INTERNAL_TOKEN);
+  }
+  if (payload?.kind === "customer_invite" && payload?.lane === "model_console") {
+    return str(env.LINK_SIGNING_SECRET || env.CONFIRM_KEY || env.INTERNAL_TOKEN);
+  }
+  return str(env.MODEL_SESSION_SIGNING_SECRET || env.CONFIRM_KEY || env.INTERNAL_TOKEN);
+}
+
 async function verifyModelSessionT(t, env) {
-  const secret = str(env.CONFIRM_KEY || env.INTERNAL_TOKEN);
-  if (!secret || !t) return null;
+  if (!t) return null;
   const parts = String(t).split(".");
   if (parts.length !== 2) return null;
   const [encoded, signature] = parts;
   if (!encoded || !signature) return null;
-  const expected = await hmacSha256Hex(encoded, secret);
-  if (signature !== expected) return null;
 
   let payload = null;
   try {
@@ -2017,9 +2024,14 @@ async function verifyModelSessionT(t, env) {
     return null;
   }
 
+  if (!isModelSessionPayload(payload)) return null;
+  const secret = modelSessionVerificationSecret(payload, env);
+  if (!secret) return null;
+  const expected = await hmacSha256Hex(encoded, secret);
+  if (!(await constantTimeEqual(signature, expected))) return null;
+
   const exp = Number(payload?.exp || 0);
   if (exp && exp <= Math.floor(Date.now() / 1000)) return null;
-  if (!isModelSessionPayload(payload)) return null;
   return payload;
 }
 
@@ -2079,7 +2091,7 @@ function modelSessionOwnsRecord(env, payload, record) {
   if (sessionValues.length && !sessionValues.some((value) => assignmentKeys.has(value))) return false;
 
   const payloadModelId = str(payload?.model_record_id || payload?.model_id);
-  const recordModelIds = modelSessionFieldValues(fields, [names.modelRecordId, "Model Record ID", "model_id", "Model"]);
+  const recordModelIds = modelSessionFieldValues(fields, [names.modelRecordId, "Model Record ID", "model_record_id", "model_id", "Model"]);
   if (payloadModelId && recordModelIds.length && !recordModelIds.includes(payloadModelId)) return false;
 
   const payloadModelName = str(payload?.model_name).toLowerCase();
@@ -2159,7 +2171,7 @@ function modelSessionResponseSession(tables, record) {
 }
 
 async function signModelSessionPayload(payload, env) {
-  const secret = str(env.CONFIRM_KEY || env.INTERNAL_TOKEN);
+  const secret = str(env.MODEL_SESSION_SIGNING_SECRET || env.CONFIRM_KEY || env.INTERNAL_TOKEN);
   if (!secret) return "";
   const encoded = base64UrlEncodeUtf8(JSON.stringify(payload));
   return `${encoded}.${await hmacSha256Hex(encoded, secret)}`;
