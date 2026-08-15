@@ -788,6 +788,12 @@ async function handleNotify(req, env) {
 }
 
 async function handleConfirmLink(req, env) {
+  const denied = serviceAuthRequired(req, env, [
+    "AUTH_SERVICE_ADMIN_TO_PAYMENTS",
+    "AUTH_SERVICE_IMMIGRATE_TO_PAYMENTS",
+  ]);
+  if (denied) return denied;
+
   const body = await readJson(req);
 
   try {
@@ -1077,19 +1083,14 @@ export default {
       return handleInternalPay(req, env);
     }
 
-    if (method === "POST" && path === "/v1/confirm/link") {
-      const denied = serviceAuthRequired(req, env, [
-        "AUTH_SERVICE_ADMIN_TO_PAYMENTS",
-        "AUTH_SERVICE_IMMIGRATE_TO_PAYMENTS",
-      ]);
-      if (denied) return denied;
-      return handleConfirmLink(req, env);
-    }
-
     if (method === "POST" && path === "/v1/internal/pay/verify") {
       const denied = serviceAuthRequired(req, env, "AUTH_SERVICE_EVENTS_TO_PAYMENTS");
       if (denied) return denied;
       return handleVerify(req, env);
+    }
+
+    if (method === "POST" && path === "/v1/confirm/link") {
+      return handleConfirmLink(req, env);
     }
 
     if (method === "POST" && path === "/v1/pay/verify") {
