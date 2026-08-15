@@ -42,7 +42,7 @@ async function hmacSha256Hex(message, secret) {
   return bytesToHex(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message)));
 }
 
-async function signedModelT(overrides = {}) {
+async function signedModelT(overrides = {}, secret = CONFIRM_KEY) {
   const encoded = base64UrlEncode(JSON.stringify({
     kind: "model_confirm",
     role: "model",
@@ -52,7 +52,7 @@ async function signedModelT(overrides = {}) {
     exp: Math.floor(Date.now() / 1000) + 3600,
     ...overrides,
   }));
-  return `${encoded}.${await hmacSha256Hex(encoded, CONFIRM_KEY)}`;
+  return `${encoded}.${await hmacSha256Hex(encoded, secret)}`;
 }
 
 function makeSession(state) {
@@ -152,6 +152,52 @@ test("invalid signed t returns 401 before Airtable access", async () => {
   const mock = installRuntimeFetchMock();
   try {
     const { response, body } = await getCurrent("bad.access.value");
+    assert.equal(response.status, 401);
+    assert.equal(body.error, "unauthorized");
+    assert.equal(mock.calls.length, 0);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("dedicated model-session signing secret rejects the legacy fallback key", async () => {
+  const dedicated = "test_dedicated_model_session_secret";
+  const env = { ...BASE_ENV, MODEL_SESSION_SIGNING_SECRET: dedicated };
+  const legacyT = await signedModelT({ kind: "model_session" });
+  const dedicatedT = await signedModelT({ kind: "model_session" }, dedicated);
+  const mock = installRuntimeFetchMock({ initialState: "confirmed" });
+  try {
+    const rejected = await getCurrent(legacyT, env);
+    assert.equal(rejected.response.status, 401);
+    assert.equal(rejected.body.error, "unauthorized");
+
+    const accepted = await getCurrent(dedicatedT, env);
+    assert.equal(accepted.response.status, 200);
+    assert.equal(accepted.body.ok, true);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("payment confirmation tokens use their own verifier secret when configured", async () => {
+  const paymentSecret = "test_payment_confirmation_signing_secret";
+  const env = { ...BASE_ENV, PAYMENT_CONFIRMATION_SIGNING_SECRET: paymentSecret };
+  const legacyT = await signedModelT({ kind: "model_confirm" });
+  const paymentT = await signedModelT({ kind: "model_confirm" }, paymentSecret);
+  const mock = installRuntimeFetchMock({ initialState: "confirmed" });
+  try {
+    assert.equal((await getCurrent(legacyT, env)).response.status, 401);
+    assert.equal((await getCurrent(paymentT, env)).response.status, 200);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("expired signed t is rejected before Airtable access", async () => {
+  const t = await signedModelT({ exp: Math.floor(Date.now() / 1000) - 1 });
+  const mock = installRuntimeFetchMock();
+  try {
+    const { response, body } = await getCurrent(t);
     assert.equal(response.status, 401);
     assert.equal(body.error, "unauthorized");
     assert.equal(mock.calls.length, 0);
