@@ -6,8 +6,10 @@ import test from "node:test";
 import worker from "./src/index.js";
 
 const CONFIRM_KEY = "test_confirm_key_runtime_v1a";
+const AUTH_SERVICE_ADMIN_TO_PAYMENTS = "test_admin_to_payments_runtime_v1a";
 const BASE_ENV = {
   CONFIRM_KEY,
+  AUTH_SERVICE_ADMIN_TO_PAYMENTS,
   AIRTABLE_API_KEY: "test_airtable_key",
   AIRTABLE_BASE_ID: "appRuntime",
   AIRTABLE_TABLE_SESSIONS: "sessions",
@@ -67,7 +69,11 @@ function makeSession(state) {
   };
 }
 
-function installRuntimeFetchMock({ initialState = "offered", paymentTruth = null } = {}) {
+function installRuntimeFetchMock({
+  initialState = "offered",
+  paymentTruth = null,
+  expectedPaymentServiceToken = AUTH_SERVICE_ADMIN_TO_PAYMENTS,
+} = {}) {
   const previousFetch = globalThis.fetch;
   const calls = [];
   let session = makeSession(initialState);
@@ -76,9 +82,16 @@ function installRuntimeFetchMock({ initialState = "offered", paymentTruth = null
     const request = input instanceof Request ? input : new Request(String(input), init);
     const url = new URL(request.url);
     const method = request.method.toUpperCase();
-    calls.push({ method, url: request.url });
+    calls.push({
+      method,
+      url: request.url,
+      headers: Object.fromEntries(request.headers.entries()),
+    });
 
     if (url.hostname === "payments.test") {
+      if (request.headers.get("X-Internal-Token") !== expectedPaymentServiceToken) {
+        return jsonResponse({ ok: false, error: "service_auth_required" }, 401);
+      }
       if (paymentTruth instanceof Response) return paymentTruth;
       return jsonResponse(paymentTruth || { ok: true, final_payment_confirmed: false });
     }
@@ -367,6 +380,72 @@ test("start_work is rejected when live payment truth is not confirmed", async ()
     assert.equal(response.status, 403);
     assert.equal(body.error, "payment_not_confirmed");
     assert.equal(mock.session.fields.state, "final_payment_confirmed");
+
+    const withoutDedicatedServiceAuth = { ...BASE_ENV };
+    delete withoutDedicatedServiceAuth.AUTH_SERVICE_ADMIN_TO_PAYMENTS;
+    const paymentCallsBeforeMissing = mock.calls.filter(
+      (call) => call.url === "https://payments.test/final-payment/status",
+    ).length;
+    const missing = await postAction(t, "start_work", {
+      env: {
+        ...withoutDedicatedServiceAuth,
+        MODEL_SESSION_PAYMENT_TRUTH_URL: "https://payments.test/final-payment/status",
+      },
+    });
+    assert.equal(missing.response.status, 403);
+    assert.equal(missing.body.error, "payment_service_auth_not_ready");
+    assert.equal(
+      mock.calls.filter((call) => call.url === "https://payments.test/final-payment/status").length,
+      paymentCallsBeforeMissing,
+    );
+
+    const wrong = await postAction(t, "start_work", {
+      env: {
+        ...BASE_ENV,
+        AUTH_SERVICE_ADMIN_TO_PAYMENTS: "wrong_synthetic_service_credential",
+        MODEL_SESSION_PAYMENT_TRUTH_URL: "https://payments.test/final-payment/status",
+      },
+    });
+    assert.equal(wrong.response.status, 403);
+    assert.equal(wrong.body.error, "payment_not_confirmed");
+    const wrongPaymentCall = mock.calls.find(
+      (call) => call.headers["x-internal-token"] === "wrong_synthetic_service_credential",
+    );
+    assert.ok(wrongPaymentCall, "receiver must observe and reject the wrong dedicated credential");
+
+    const paymentCallsBeforeConfirmKeyOnly = mock.calls.filter(
+      (call) => call.url === "https://payments.test/final-payment/status",
+    ).length;
+    const confirmKeyOnly = await postAction(t, "start_work", {
+      env: {
+        ...withoutDedicatedServiceAuth,
+        MODEL_SESSION_PAYMENT_TRUTH_URL: "https://payments.test/final-payment/status",
+      },
+    });
+    assert.equal(confirmKeyOnly.response.status, 403);
+    assert.equal(confirmKeyOnly.body.error, "payment_service_auth_not_ready");
+    assert.equal(
+      mock.calls.filter((call) => call.url === "https://payments.test/final-payment/status").length,
+      paymentCallsBeforeConfirmKeyOnly,
+    );
+    const paymentCallsBeforeAdminBearer = mock.calls.filter(
+      (call) => call.url === "https://payments.test/final-payment/status",
+    ).length;
+
+    const adminBearerOnly = await postAction(t, "start_work", {
+      env: {
+        ...withoutDedicatedServiceAuth,
+        ADMIN_BEARER: "synthetic_admin_bearer_only",
+        MODEL_SESSION_PAYMENT_TRUTH_URL: "https://payments.test/final-payment/status",
+      },
+    });
+    assert.equal(adminBearerOnly.response.status, 403);
+    assert.equal(adminBearerOnly.body.error, "payment_service_auth_not_ready");
+    assert.equal(
+      mock.calls.filter((call) => call.url === "https://payments.test/final-payment/status").length,
+      paymentCallsBeforeAdminBearer,
+    );
+    assert.equal(mock.session.fields.state, "final_payment_confirmed");
   } finally {
     mock.restore();
   }
@@ -392,6 +471,10 @@ test("start_work succeeds after live payment truth confirms final payment", asyn
     assert.notEqual(paymentCallIndex, -1);
     assert.notEqual(patchCallIndex, -1);
     assert(paymentCallIndex < patchCallIndex);
+    const paymentCall = mock.calls[paymentCallIndex];
+    assert.equal(paymentCall.headers["x-internal-token"], AUTH_SERVICE_ADMIN_TO_PAYMENTS);
+    assert.equal("x-confirm-key" in paymentCall.headers, false);
+    assert.equal("authorization" in paymentCall.headers, false);
   } finally {
     mock.restore();
   }
