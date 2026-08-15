@@ -266,6 +266,8 @@ binding = "MMD_MODEL_ASSETS"
 bucket_name = "mmd-models"
 
 # ---- Secrets (set via wrangler secret) ----
+# ADMIN_LOGIN_CREDENTIAL
+# ADMIN_SESSION_SECRET
 # ADMIN_BEARER
 # CONFIRM_KEY
 # MODEL_SESSION_SIGNING_SECRET

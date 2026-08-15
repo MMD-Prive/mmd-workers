@@ -178,6 +178,25 @@ test("dedicated login credential is isolated from API bearer credentials", async
   }
 });
 
+test("dedicated admin session secret rejects cookies signed by the legacy bearer", async () => {
+  const env = {
+    ...ENV,
+    ADMIN_LOGIN_CREDENTIAL: "focused_dedicated_admin_login_credential",
+    ADMIN_SESSION_SECRET: "focused_dedicated_admin_session_secret",
+  };
+  const issued = await login(env.ADMIN_LOGIN_CREDENTIAL, { env });
+  const valid = await request("/v1/admin/auth/me", {
+    headers: { Origin: "https://mmdbkk.com", Cookie: cookiePair(issued) },
+  }, "mmdbkk.com", env);
+  assert.equal(valid.status, 200);
+
+  const legacyCookie = await sessionCookie({}, ENV.ADMIN_BEARER);
+  const rejected = await request("/v1/admin/auth/me", {
+    headers: { Origin: "https://mmdbkk.com", Cookie: legacyCookie },
+  }, "mmdbkk.com", env);
+  assert.equal(rejected.status, 401);
+});
+
 test("issued apex cookie authenticates auth/me and Kenji readiness APIs", async () => {
   const response = await login();
   const Cookie = cookiePair(response);
@@ -430,7 +449,7 @@ test("login ownership routes are query-safe, narrow, unique, and absent from oth
 
 const ADMIN_GATE_TTL_MS = 8 * 60 * 60 * 1000;
 
-async function sessionCookie(overrides = {}) {
+async function sessionCookie(overrides = {}, secret = ENV.ADMIN_BEARER) {
   const now = Date.now();
   const session = {
     version: 1,
@@ -443,7 +462,7 @@ async function sessionCookie(overrides = {}) {
     ...overrides,
   };
   const payload = base64UrlEncode(JSON.stringify(session));
-  const signature = await signPayload(payload);
+  const signature = await signPayload(payload, secret);
   return `mmd_admin_gate_v1=${encodeURIComponent(`${payload}.${signature}`)}`;
 }
 
@@ -460,11 +479,11 @@ function tamperCookieSignature(cookie) {
   return `mmd_admin_gate_v1=${encodeURIComponent(`${payloadPart}.${signaturePart.slice(0, -1)}${replacement}`)}`;
 }
 
-async function signPayload(payload) {
+async function signPayload(payload, secret = ENV.ADMIN_BEARER) {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw",
-    encoder.encode(ENV.ADMIN_BEARER),
+    encoder.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
