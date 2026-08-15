@@ -234,7 +234,7 @@ async function airtableList(env, table, formula, pageSize) {
 }
 
 async function signPayload(payload, env) {
-  const secret = clean(env.CONFIRM_KEY || env.INTERNAL_TOKEN);
+  const secret = clean(env.MODEL_SESSION_SIGNING_SECRET || env.CONFIRM_KEY || env.INTERNAL_TOKEN);
   if (!secret) return "";
   const encoded = base64UrlEncode(JSON.stringify(payload));
   const signature = await hmacHex(encoded, secret);
