@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import worker from "../src/index.js";
@@ -60,7 +61,7 @@ test("LIFF front gate fails closed when the service binding is missing", async (
   assert.equal((await response.json()).error.code, "LIFF_UPSTREAM_NOT_CONFIGURED");
 });
 
-test("same-site LIFF shell is owned by the front gate and proxied only on the exact path", async () => {
+test("same-site LIFF shell is owned by the front gate on apex and www", async () => {
   const calls = [];
   const env = {
     MEMBER_PAGES_WORKER: {
@@ -70,14 +71,35 @@ test("same-site LIFF shell is owned by the front gate and proxied only on the ex
       },
     },
   };
+  const shellUrls = [
+    "https://mmdbkk.com/member/liff?intent=status&view=points",
+    "https://www.mmdbkk.com/member/liff?intent=promo&campaign=care_back&view=care_back",
+  ];
 
-  const shell = await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=status&view=points"), env);
+  const shells = await Promise.all(shellUrls.map((url) => worker.fetch(new Request(url), env)));
   const nearby = await worker.fetch(new Request("https://mmdbkk.com/member/liff-admin"), env);
 
-  assert.equal(shell.status, 200);
-  assert.match(shell.headers.get("content-type") || "", /^text\/html/);
-  assert.deepEqual(calls, ["https://mmdbkk.com/member/liff?intent=status&view=points"]);
+  for (const shell of shells) {
+    assert.equal(shell.status, 200);
+    assert.match(shell.headers.get("content-type") || "", /^text\/html/);
+    assert.equal(shell.headers.get("x-mmd-route-owner"), "member-dashboard-chat-worker");
+  }
+  assert.deepEqual(calls, shellUrls);
   assert.equal(nearby.status, 404);
+});
+
+test("wrangler claims the exact LIFF shell routes on apex and www", async () => {
+  const wrangler = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");
+  const routes = [
+    "mmdbkk.com/member/liff",
+    "mmdbkk.com/member/liff/",
+    "www.mmdbkk.com/member/liff",
+    "www.mmdbkk.com/member/liff/",
+  ];
+
+  for (const route of routes) {
+    assert.ok(wrangler.includes(`pattern = "${route}"`), `missing Worker route: ${route}`);
+  }
 });
 
 test("guarded CARE BACK state and wish APIs remain service-bound through the LIFF front gate", async () => {
