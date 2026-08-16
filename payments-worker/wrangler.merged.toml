@@ -18,7 +18,7 @@ routes = [
 ]
 
 kv_namespaces = [
-  { binding = "PAY_SESSIONS_KV", id = "a9b6e92309024aa8a7ed1869d2c80afd" }
+  { binding = "PAY_SESSIONS_KV", id = "e0c6b8a0785e462dad6d01f61a893e87" }
 ]
 
 [vars]
