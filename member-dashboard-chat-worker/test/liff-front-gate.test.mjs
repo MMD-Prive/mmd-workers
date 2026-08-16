@@ -88,13 +88,11 @@ test("same-site LIFF shell is owned by the front gate on apex and www", async ()
   assert.equal(nearby.status, 404);
 });
 
-test("wrangler claims the exact LIFF shell routes on apex and www", async () => {
+test("wrangler claims query-capable LIFF shell routes on apex and www", async () => {
   const wrangler = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");
   const routes = [
-    "mmdbkk.com/member/liff",
-    "mmdbkk.com/member/liff/",
-    "www.mmdbkk.com/member/liff",
-    "www.mmdbkk.com/member/liff/",
+    "mmdbkk.com/member/liff*",
+    "www.mmdbkk.com/member/liff*",
   ];
 
   for (const route of routes) {
