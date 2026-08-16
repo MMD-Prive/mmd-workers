@@ -10,6 +10,9 @@ const DEC = new TextDecoder();
 
 const DEFAULT_CAMPAIGN = "preview_pride_jun2026";
 const DEFAULT_PROMO_KIND = "new_member_points_bonus";
+const LINE_OA_UNIVERSAL_URL = "https://lin.ee/oNaEzZ6";
+const FORBIDDEN_LINE_URL_RE = /^(?:line|intent|liff):|(?:https?:)?\/\/(?:miniapp|liff)\.line\.me(?:[/?#]|$)/i;
+const OPEN_LINE_LABEL_RE = /(?:open|contact)\s*line|เปิด\s*line|line\s*oa/i;
 
 const ALLOWED_PACKAGES = new Set(["standard", "premium", "blackcard"]);
 
@@ -182,6 +185,27 @@ async function telegramApi(method, payload, env) {
   return { ok: true, result: data.result };
 }
 
+function shouldUseLineUniversalUrl(button) {
+  const text = str(button?.text);
+  const url = str(button?.url);
+  return Boolean(url && (FORBIDDEN_LINE_URL_RE.test(url) || OPEN_LINE_LABEL_RE.test(text)));
+}
+
+export function sanitizeTelegramReplyMarkup(replyMarkup) {
+  if (!replyMarkup?.inline_keyboard || !Array.isArray(replyMarkup.inline_keyboard)) return replyMarkup;
+  return {
+    ...replyMarkup,
+    inline_keyboard: replyMarkup.inline_keyboard.map((row) => {
+      if (!Array.isArray(row)) return row;
+      return row.map((button) => {
+        if (!button || typeof button !== "object" || !("url" in button)) return button;
+        if (!shouldUseLineUniversalUrl(button)) return button;
+        return { ...button, url: LINE_OA_UNIVERSAL_URL };
+      });
+    }),
+  };
+}
+
 async function sendMessage(chatId, text, env, replyMarkup = null) {
   const payload = {
     chat_id: chatId,
@@ -189,7 +213,7 @@ async function sendMessage(chatId, text, env, replyMarkup = null) {
     parse_mode: "HTML",
     disable_web_page_preview: true,
   };
-  if (replyMarkup) payload.reply_markup = replyMarkup;
+  if (replyMarkup) payload.reply_markup = sanitizeTelegramReplyMarkup(replyMarkup);
   return telegramApi("sendMessage", payload, env);
 }
 
