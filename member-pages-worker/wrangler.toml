@@ -2,6 +2,9 @@ name = "member-pages-worker"
 main = "src/runtime-index.js"
 compatibility_date = "2026-06-20"
 workers_dev = true
+# Explicitly keep this implementation Worker service-only in production.
+# This also prevents stale mmdbkk.com routes from returning on future deploys.
+routes = []
 
 [vars]
 LIFF_VERIFY_TIMEOUT_MS = "5000"
