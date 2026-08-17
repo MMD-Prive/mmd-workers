@@ -336,6 +336,19 @@ async function getPublishedPerVoiceReply(env = {}, intent = "") {
   return isSafePerVoiceKnowledge(answer) ? answer : "";
 }
 
+// The webhook must answer LINE before doing any network work other than the
+// reply itself. A warm, shared knowledge cache is safe to use here because it
+// has no request- or customer-specific state. On a cold cache we deliberately
+// use the reviewed local Per Voice fallback and refresh Airtable afterwards.
+function getCachedPublishedPerVoiceReply(env = {}, intent = "") {
+  const knowledgeId = LINE_KNOWLEDGE_CARD_BY_INTENT[intent];
+  const key = `${asString(env.AIRTABLE_BASE_ID)}:${getKenjiKnowledgeTable(env)}`;
+  if (!knowledgeId || lineKnowledgeCache.key !== key || lineKnowledgeCache.expiresAt <= Date.now()) return "";
+  const card = lineKnowledgeCache.cards.find((item) => asString(item.knowledge_id) === knowledgeId);
+  const answer = asString(card?.customer_answer);
+  return isSafePerVoiceKnowledge(answer) ? answer : "";
+}
+
 function buildGenericAck(prefix = "") {
   return `รับข้อความแล้วครับ ${prefix}เดี๋ยวเปอร์ขอตรวจรายละเอียดให้ก่อนนะครับ แล้วจะกลับมาช่วยดูขั้นตอนที่เหมาะให้ครับ`;
 }
@@ -418,6 +431,12 @@ export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env
   return answer || fallback;
 }
 
+function buildImmediateKenjiLineReply(event = {}, env = {}, options = {}) {
+  const fallback = buildKenjiLineReply(event, {}, options);
+  if (!isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)) return fallback;
+  return getCachedPublishedPerVoiceReply(env, inferLineIntent(getLineEventText(event), event)) || fallback;
+}
+
 export async function deliverLineText(env = {}, lineUserId, text, options = {}) {
   const token = asString(env.LINE_CHANNEL_ACCESS_TOKEN);
   const to = asString(lineUserId);
@@ -461,17 +480,22 @@ async function sendLineReply(env = {}, replyToken, text, options = {}) {
   if (!reply) return { ok: false, error: "reply_token_missing" };
   if (!safeText) return { ok: false, error: "line_text_missing" };
 
-  const response = await fetch(LINE_REPLY_URL, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      replyToken: reply,
-      messages: [{ type: "text", text: safeText }],
-    }),
-  });
+  let response;
+  try {
+    response = await fetch(LINE_REPLY_URL, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        replyToken: reply,
+        messages: [{ type: "text", text: safeText }],
+      }),
+    });
+  } catch (_) {
+    return { ok: false, error: "line_reply_request_failed" };
+  }
 
   if (!response.ok) return { ok: false, error: "line_reply_failed", status: response.status };
   return { ok: true, status: response.status };
@@ -1100,7 +1124,16 @@ async function handleServiceBoundRichMenuRoute(request, env, path) {
   return json({ ok: false, error: "not_found" }, 404);
 }
 
-async function handleLineWebhook(request, env) {
+async function syncLineEventAfterReply(env, event, intent, autoReplyEnabled, kenjiEnabled) {
+  const lineUserId = getLineUserId({ event });
+  const shouldFetchProfile = Boolean(autoReplyEnabled && lineUserId && event?.source?.type === "user" && asString(env.LINE_CHANNEL_ACCESS_TOKEN));
+  const profilePromise = shouldFetchProfile ? fetchLineProfile(env, lineUserId) : Promise.resolve(null);
+  const knowledgePromise = kenjiEnabled ? fetchPublishedLineKnowledge(env) : Promise.resolve([]);
+  const [profile] = await Promise.all([profilePromise, knowledgePromise]);
+  return writeLineEventToConsoleInbox(env, event, profile, intent);
+}
+
+async function handleLineWebhook(request, env, ctx = null) {
   const rawBody = await request.text();
   const signature = getHeader(request.headers, "x-line-signature");
   const validSignature = await verifyLineSignature(rawBody, signature, env.LINE_CHANNEL_SECRET);
@@ -1126,18 +1159,37 @@ async function handleLineWebhook(request, env) {
     const text = getLineEventText(event);
     const lineUserId = getLineUserId({ event });
     const intent = inferLineIntent(text, event);
-    const shouldFetchProfile = Boolean(autoReplyEnabled && lineUserId && event?.source?.type === "user" && asString(env.LINE_CHANNEL_ACCESS_TOKEN));
-    const profile = shouldFetchProfile ? await fetchLineProfile(env, lineUserId) : null;
-    const record = await writeLineEventToConsoleInbox(env, event, profile, intent);
-    const replyText = kenjiEnabled ? await buildKenjiKnowledgeLineReply(event, profile, env, { forceReply: autoReplyEnabled }) : "";
-    const shouldReply = Boolean(autoReplyEnabled && !record?.deduped && replyText && getReplyToken(event));
+    const eventMode = asString(event?.mode).toLowerCase() || "unknown";
+    const replyText = kenjiEnabled ? buildImmediateKenjiLineReply(event, env, { forceReply: autoReplyEnabled }) : "";
+    const shouldReply = Boolean(autoReplyEnabled && eventMode !== "standby" && replyText && getReplyToken(event));
     const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
+
+    const afterReply = syncLineEventAfterReply(env, event, intent, autoReplyEnabled, kenjiEnabled);
+    const canDefer = typeof ctx?.waitUntil === "function";
+    let record = { pending: canDefer, deduped: false };
+    if (canDefer) {
+      ctx.waitUntil(afterReply.catch(() => {
+        console.log(JSON.stringify({
+          line_webhook: "background_sync_failed",
+          event_type: asString(event?.type) || "unknown",
+          intent,
+        }));
+      }));
+    } else {
+      try {
+        record = await afterReply;
+      } catch (_) {
+        record = { skipped: true, reason: "airtable_sync_failed", deduped: false };
+      }
+    }
 
     // Safe operational telemetry: never log message text, user IDs, reply tokens, or secrets.
     // This makes a silent LINE reply diagnosable from `wrangler tail` without exposing customer data.
     console.log(JSON.stringify({
       line_webhook: "reply_diagnostics",
       event_type: asString(event?.type) || "unknown",
+      event_mode: eventMode,
+      redelivered: Boolean(event?.deliveryContext?.isRedelivery),
       intent,
       auto_reply_enabled: autoReplyEnabled,
       per_voice_enabled: kenjiEnabled,
@@ -1156,6 +1208,7 @@ async function handleLineWebhook(request, env) {
       intent,
       deduped: Boolean(record?.deduped),
       recorded: Boolean(record?.id),
+      record_pending: Boolean(record?.pending),
       record_skipped: Boolean(record?.skipped),
       replied: Boolean(replyResult?.ok),
       line_user: Boolean(lineUserId),
@@ -1167,7 +1220,7 @@ async function handleLineWebhook(request, env) {
 }
 
 export default {
-  async fetch(request, env = {}) {
+  async fetch(request, env = {}, ctx) {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith(MEMBER_LIFF_PREFIX) || MEMBER_LIFF_SHELL_PATHS.has(url.pathname)) {
@@ -1183,7 +1236,7 @@ export default {
     }
 
     if (request.method === "POST" && LINE_WEBHOOK_PATHS.has(url.pathname)) {
-      return handleLineWebhook(request, env);
+      return handleLineWebhook(request, env, ctx);
     }
 
     if (
