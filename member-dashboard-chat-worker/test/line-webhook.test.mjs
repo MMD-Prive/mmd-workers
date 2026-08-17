@@ -165,7 +165,7 @@ test("published Per Voice knowledge overrides the fallback only when it is LINE-
   }
 });
 
-test("deduped LINE events do not reply twice", async () => {
+test("existing LINE inbox records remain deduped after the immediate reply", async () => {
   const calls = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
@@ -204,8 +204,55 @@ test("deduped LINE events do not reply twice", async () => {
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.equal(payload.saved[0].deduped, true);
-    assert.equal(payload.saved[0].replied, false);
-    assert.equal(calls.filter((call) => call.url.includes("/message/reply")).length, 0);
+    assert.equal(payload.saved[0].replied, true);
+    assert.equal(calls.filter((call) => call.url.includes("/message/reply")).length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("LINE replies before slow profile, Airtable, and knowledge work", async () => {
+  const calls = [];
+  const deferred = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const href = String(url);
+    calls.push({ url: href, init });
+
+    if (href.includes("/message/reply")) {
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }
+
+    if (href.includes("/profile/") || href.includes("api.airtable.com")) {
+      return new Promise(() => {});
+    }
+
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+
+  const ctx = {
+    waitUntil(promise) {
+      deferred.push(promise);
+    },
+  };
+
+  try {
+    const response = await Promise.race([
+      worker.fetch(await signedLineRequest({ events: [lineTextEvent("Hi Per")] }), {
+        ...BASE_ENV,
+        AIRTABLE_API_KEY: "airtable-key",
+        AIRTABLE_BASE_ID: "base-id",
+        LINE_KENJI_KNOWLEDGE_ENABLED: "true",
+      }, ctx),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("LINE reply was blocked by background work")), 100)),
+    ]);
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.saved[0].replied, true);
+    assert.equal(payload.saved[0].record_pending, true);
+    assert.equal(calls.filter((call) => call.url.includes("/message/reply")).length, 1);
+    assert.equal(deferred.length, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }
