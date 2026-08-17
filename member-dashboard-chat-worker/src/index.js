@@ -261,8 +261,101 @@ export function inferLineIntent(text = "", event = {}) {
   return "note_only";
 }
 
+const KENJI_KNOWLEDGE_TABLE_FALLBACK = "tblsLd1uVOtG2kHoU";
+const LINE_KNOWLEDGE_CHANNEL = "LINE_OFC";
+const LINE_KNOWLEDGE_TTL_MS = 60_000;
+const LINE_KNOWLEDGE_CARD_BY_INTENT = Object.freeze({
+  talk_to_per_ai: "kenji_per_voice_line_entry_v1",
+  payment_slip: "kenji_20_006_payment_proof",
+  membership: "kenji_20_008_membership_intake_catalog",
+  mmd_companion: "kenji_20_002_route_map",
+  mms_wellness: "kenji_20_002_route_map",
+  partner_venue: "kenji_20_002_route_map",
+  private_talent: "kenji_20_002_route_map",
+});
+
+let lineKnowledgeCache = { key: "", expiresAt: 0, cards: [] };
+
+function getKenjiKnowledgeTable(env = {}) {
+  return asString(env.AIRTABLE_KENJI_KNOWLEDGE_TABLE_ID || KENJI_KNOWLEDGE_TABLE_FALLBACK);
+}
+
+function hasLineKnowledgeChannel(value) {
+  const channels = Array.isArray(value) ? value : [value];
+  return channels.map((channel) => asString(channel)).includes(LINE_KNOWLEDGE_CHANNEL);
+}
+
+function isSafePerVoiceKnowledge(value) {
+  const text = asString(value);
+  if (!text || text.length > 1600) return false;
+  return !/(?:\bkenji\b|เคนจิ|ทีม(?:งาน)?|ระบบ|ชำระ(?:เงิน)?สำเร็จ(?:แล้ว)?|ยืนยัน(?:การ)?ชำระ(?:เงิน)?(?:แล้ว)?|เปิดสมาชิก(?:แล้ว)?|ยืนยัน(?:การ)?จอง(?:แล้ว)?|ได้รับสิทธิ์(?:แล้ว)?)/i.test(text);
+}
+
+async function fetchPublishedLineKnowledge(env = {}) {
+  const apiKey = asString(env.AIRTABLE_API_KEY);
+  const baseId = asString(env.AIRTABLE_BASE_ID);
+  const table = getKenjiKnowledgeTable(env);
+  if (!apiKey || !baseId || !table) return [];
+
+  const key = `${baseId}:${table}`;
+  if (lineKnowledgeCache.key === key && lineKnowledgeCache.expiresAt > Date.now()) {
+    return lineKnowledgeCache.cards;
+  }
+
+  try {
+    const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
+    url.searchParams.set("pageSize", "100");
+    url.searchParams.set("filterByFormula", 'AND({status}="active",{response_mode}="auto_reply_allowed")');
+    ["knowledge_id", "customer_answer", "allowed_channels", "status", "response_mode"].forEach((field) => {
+      url.searchParams.append("fields[]", field);
+    });
+
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: { authorization: `Bearer ${apiKey}` },
+    });
+    if (!response.ok) return [];
+
+    const payload = await response.json().catch(() => ({}));
+    const cards = (Array.isArray(payload?.records) ? payload.records : [])
+      .map((record) => record?.fields || {})
+      .filter((fields) => (
+        asString(fields.status).toLowerCase() === "active" &&
+        asString(fields.response_mode).toLowerCase() === "auto_reply_allowed" &&
+        hasLineKnowledgeChannel(fields.allowed_channels)
+      ));
+
+    lineKnowledgeCache = { key, expiresAt: Date.now() + LINE_KNOWLEDGE_TTL_MS, cards };
+    return cards;
+  } catch (_) {
+    return [];
+  }
+}
+
+async function getPublishedPerVoiceReply(env = {}, intent = "") {
+  const knowledgeId = LINE_KNOWLEDGE_CARD_BY_INTENT[intent];
+  if (!knowledgeId) return "";
+  const cards = await fetchPublishedLineKnowledge(env);
+  const card = cards.find((item) => asString(item.knowledge_id) === knowledgeId);
+  const answer = asString(card?.customer_answer);
+  return isSafePerVoiceKnowledge(answer) ? answer : "";
+}
+
+// The webhook must answer LINE before doing any network work other than the
+// reply itself. A warm, shared knowledge cache is safe to use here because it
+// has no request- or customer-specific state. On a cold cache we deliberately
+// use the reviewed local Per Voice fallback and refresh Airtable afterwards.
+function getCachedPublishedPerVoiceReply(env = {}, intent = "") {
+  const knowledgeId = LINE_KNOWLEDGE_CARD_BY_INTENT[intent];
+  const key = `${asString(env.AIRTABLE_BASE_ID)}:${getKenjiKnowledgeTable(env)}`;
+  if (!knowledgeId || lineKnowledgeCache.key !== key || lineKnowledgeCache.expiresAt <= Date.now()) return "";
+  const card = lineKnowledgeCache.cards.find((item) => asString(item.knowledge_id) === knowledgeId);
+  const answer = asString(card?.customer_answer);
+  return isSafePerVoiceKnowledge(answer) ? answer : "";
+}
+
 function buildGenericAck(prefix = "") {
-  return `รับข้อความแล้วครับ ${prefix}Kenji ส่งเข้าระบบ MMD แล้วครับ เดี๋ยวทีมงานตรวจสอบและตอบกลับให้นะครับ`;
+  return `รับข้อความแล้วครับ ${prefix}เดี๋ยวเปอร์ขอตรวจรายละเอียดให้ก่อนนะครับ แล้วจะกลับมาช่วยดูขั้นตอนที่เหมาะให้ครับ`;
 }
 
 export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
@@ -272,58 +365,60 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   const prefix = name ? `คุณ${name} ` : "";
 
   if (event?.type === "follow") {
-    return `สวัสดีครับ ${prefix}ยินดีต้อนรับสู่ MMD Privé พิมพ์เรื่องที่ต้องการให้ช่วยได้เลยครับ เช่น จองงาน เช็กราคา เช็กนายแบบ หรือเรื่องสมาชิก`;
+    return `สวัสดีครับ ${prefix}ยินดีต้อนรับสู่ MMD Privé พิมพ์เรื่องที่อยากให้ช่วยได้เลยครับ เช่น จองงาน เช็กราคา เช็กนายแบบ หรือเรื่องสมาชิก`;
   }
 
   if (intent === "talk_to_per_ai") {
-    return `สวัสดีครับ ${prefix}ผมคือ Kenji AI 2.0 ผู้ช่วยสมาชิกของ MMD Privé ครับ
+    return `สวัสดีครับ ${prefix}ยินดีต้อนรับสู่ MMD Privé นะครับ
 
-ผมช่วยดูเส้นทางที่เหมาะกับ request ของคุณก่อนนะครับ บาง request ต้องให้ MMD พิจารณาความเหมาะสมก่อน โดยเฉพาะ Private Talent, MMS Wellness, Partner Venue หรือ access ที่มีรายละเอียดเฉพาะ
+อยากสมัครสมาชิก / ต่ออายุ เช็กสถานะ สอบถามบริการ หรือมีเคสส่วนตัวให้เปอร์ช่วยดู พิมพ์มาได้เลยครับ
 
-ตอนนี้ให้ผมช่วยแยกทางไหนก่อนครับ
-1) MMD Companion — Social / Dining / Drinks / Event
-2) MMS Wellness — Male Massage / Recovery
-3) Partner Venue — Relax Spa by 9
-4) Private Talent & Specialist
-5) Membership / Renewal / Payment Proof`;
+ตอนนี้อยากให้ช่วยเรื่องไหนก่อนครับ
+1) สมัครสมาชิก / ต่ออายุ
+2) เช็กแพ็กเกจหรือสถานะสมาชิก
+3) สอบถามบริการหรือ Companion
+4) ส่งรูปหรือโปรไฟล์ที่อยากให้ MMD พิจารณา
+5) ให้เปอร์ดูเป็นเคสส่วนตัว
+
+เล่าได้เลยครับ เดี๋ยวเปอร์ช่วยแยกขั้นตอนที่เหมาะให้ครับ`;
   }
 
   if (intent === "payment_slip") {
-    return `${prefix}ถ้าต้องส่งหลักฐาน ผมจะพาไปหน้า Payment Proof ครับ: https://mmdbkk.com/confirm/payment-proof
+    return `${prefix}ส่งหลักฐานเข้ามาได้ครับ: https://mmdbkk.com/confirm/payment-proof
 
-MMD จะรับหลักฐานไว้ตรวจยอดจริงก่อนอัปเดตขั้นตอนถัดไป หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request ครับ`;
+เดี๋ยว MMD ตรวจยอดและจับคู่รายการให้ก่อนนะครับ หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request ครับ`;
   }
 
   if (intent === "points") {
-    return `รับเรื่องคะแนนสมาชิกแล้วครับ ${prefix}เดี๋ยวส่งให้ระบบตรวจยอดและประวัติที่เกี่ยวข้องก่อนแจ้งสถานะที่ถูกต้องครับ`;
+    return `รับเรื่องคะแนนสมาชิกแล้วครับ ${prefix}เดี๋ยวเปอร์ขอตรวจยอดและประวัติที่เกี่ยวข้องก่อน แล้วจะแจ้งสถานะที่ตรวจได้ครับ`;
   }
 
   if (intent === "vip" || intent === "svip" || intent === "black_card") {
-    return `รับเรื่องระดับสมาชิกพิเศษแล้วครับ ${prefix}เคสนี้ต้องให้ Per ตรวจสอบเป็นรอบส่วนตัวก่อน ไม่มีการอนุมัติอัตโนมัติจากข้อความในแชตครับ`;
+    return `รับเรื่องระดับสมาชิกพิเศษแล้วครับ ${prefix}เคสนี้เปอร์ขอดูเป็นรอบส่วนตัวก่อนนะครับ ข้อความในแชตยังไม่ถือว่าอนุมัติสิทธิ์ครับ`;
   }
 
   if (intent === "mms_wellness") {
-    return `${prefix}ถ้าต้องการ male massage หรือ recovery service ผมจะแยกเป็น MMS Wellness route ให้ครับ เลือกได้ทั้ง hotel / home visit หรือ Partner Venue โดยต้องให้ MMD ตรวจรายละเอียดและความเหมาะสมก่อนครับ`;
+    return `${prefix}ถ้าต้องการ male massage หรือ recovery service เดี๋ยวเปอร์ช่วยแยกเป็น MMS Wellness ให้ครับ เลือกได้ทั้ง hotel / home visit หรือ Partner Venue โดย MMD ต้องตรวจรายละเอียดและความเหมาะสมก่อนครับ`;
   }
 
   if (intent === "partner_venue") {
-    return `${prefix}ถ้าไม่มีสถานที่ที่เหมาะสม ผมช่วยแยกไป Partner Venue อย่าง Relax Spa by 9 ซึ่งมีสถานที่และอุปกรณ์พร้อมได้ครับ ขั้นตอนนี้เป็น request เพื่อ review ยังไม่ใช่การยืนยันคิวครับ`;
+    return `${prefix}ถ้ายังไม่มีสถานที่ที่เหมาะสม เดี๋ยวเปอร์ช่วยดู Partner Venue อย่าง Relax Spa by 9 ให้ได้ครับ ขั้นตอนนี้เป็น request เพื่อรอตรวจ ยังไม่ใช่การยืนยันคิวครับ`;
   }
 
   if (intent === "private_talent") {
-    return `${prefix}ผมช่วยรับ Private Talent & Specialist request ได้ครับ เช่น special skills, wellness, creative, performance, language หรือ business presence แล้วส่งเข้า MMD review ก่อนพาไปขั้นตอนที่เหมาะสมครับ`;
+    return `${prefix}รับ Private Talent & Specialist request ได้ครับ เช่น special skills, wellness, creative, performance, language หรือ business presence แล้วเปอร์จะดูรายละเอียดก่อนพาไปขั้นตอนที่เหมาะครับ`;
   }
 
   if (intent === "mmd_companion") {
-    return `${prefix}ผมช่วยรับ MMD Companion request สำหรับ Private Social, Dining, Drinks, Event หรือ Appearance ได้ครับ ส่งวัน เวลา พื้นที่ และรูปแบบงานมาได้เลย แล้ว MMD จะตรวจความเหมาะสมและความพร้อมก่อนยืนยันครับ`;
+    return `${prefix}รับ MMD Companion request สำหรับ Private Social, Dining, Drinks, Event หรือ Appearance ได้ครับ ส่งวัน เวลา พื้นที่ และรูปแบบงานมาได้เลย แล้ว MMD จะตรวจความเหมาะสมและความพร้อมก่อนยืนยันครับ`;
   }
 
   if (intent === "membership") {
-    return `รับเรื่องสมาชิกแล้วครับ ${prefix}เดี๋ยวช่วยจัดข้อมูลให้ระบบตรวจสอบก่อนแจ้งขั้นตอนที่เหมาะสมต่อไปครับ`;
+    return `รับเรื่องสมาชิกแล้วครับ ${prefix}เดี๋ยวเปอร์ช่วยดูข้อมูลก่อน แล้วจะแนะนำขั้นตอนที่เหมาะให้ครับ`;
   }
 
   if (intent === "pricing_review") {
-    return `สอบถามเรทกับผมตรงนี้ได้เลยครับ ${prefix}เดี๋ยวส่งให้ทีมตรวจสอบรายละเอียดที่เหมาะสมก่อนแจ้งกลับนะครับ ถ้าสะดวก แจ้งวัน เวลา โซน และระยะเวลาที่ต้องการไว้ได้เลยครับ`;
+    return `${prefix}เรื่องราคา เดี๋ยวเปอร์ขอดูรายละเอียดที่เหมาะก่อนนะครับ ถ้าสะดวก แจ้งวัน เวลา โซน และระยะเวลาที่ต้องการไว้ได้เลยครับ`;
   }
 
   if (intent === "greeting") {
@@ -332,6 +427,19 @@ MMD จะรับหลักฐานไว้ตรวจยอดจริ�
 
   if (options.forceReply || text) return buildGenericAck(prefix);
   return "";
+}
+
+export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env = {}, options = {}) {
+  const fallback = buildKenjiLineReply(event, profile, options);
+  if (!isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)) return fallback;
+  const answer = await getPublishedPerVoiceReply(env, inferLineIntent(getLineEventText(event), event));
+  return answer || fallback;
+}
+
+function buildImmediateKenjiLineReply(event = {}, env = {}, options = {}) {
+  const fallback = buildKenjiLineReply(event, {}, options);
+  if (!isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)) return fallback;
+  return getCachedPublishedPerVoiceReply(env, inferLineIntent(getLineEventText(event), event)) || fallback;
 }
 
 export async function deliverLineText(env = {}, lineUserId, text, options = {}) {
@@ -377,17 +485,22 @@ async function sendLineReply(env = {}, replyToken, text, options = {}) {
   if (!reply) return { ok: false, error: "reply_token_missing" };
   if (!safeText) return { ok: false, error: "line_text_missing" };
 
-  const response = await fetch(LINE_REPLY_URL, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      replyToken: reply,
-      messages: [{ type: "text", text: safeText }],
-    }),
-  });
+  let response;
+  try {
+    response = await fetch(LINE_REPLY_URL, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        replyToken: reply,
+        messages: [{ type: "text", text: safeText }],
+      }),
+    });
+  } catch (_) {
+    return { ok: false, error: "line_reply_request_failed" };
+  }
 
   if (!response.ok) return { ok: false, error: "line_reply_failed", status: response.status };
   return { ok: true, status: response.status };
@@ -1016,7 +1129,16 @@ async function handleServiceBoundRichMenuRoute(request, env, path) {
   return json({ ok: false, error: "not_found" }, 404);
 }
 
-async function handleLineWebhook(request, env) {
+async function syncLineEventAfterReply(env, event, intent, autoReplyEnabled, kenjiEnabled) {
+  const lineUserId = getLineUserId({ event });
+  const shouldFetchProfile = Boolean(autoReplyEnabled && lineUserId && event?.source?.type === "user" && asString(env.LINE_CHANNEL_ACCESS_TOKEN));
+  const profilePromise = shouldFetchProfile ? fetchLineProfile(env, lineUserId) : Promise.resolve(null);
+  const knowledgePromise = kenjiEnabled ? fetchPublishedLineKnowledge(env) : Promise.resolve([]);
+  const [profile] = await Promise.all([profilePromise, knowledgePromise]);
+  return writeLineEventToConsoleInbox(env, event, profile, intent);
+}
+
+async function handleLineWebhook(request, env, ctx = null) {
   const rawBody = await request.text();
   const signature = getHeader(request.headers, "x-line-signature");
   const validSignature = await verifyLineSignature(rawBody, signature, env.LINE_CHANNEL_SECRET);
@@ -1042,12 +1164,48 @@ async function handleLineWebhook(request, env) {
     const text = getLineEventText(event);
     const lineUserId = getLineUserId({ event });
     const intent = inferLineIntent(text, event);
-    const shouldFetchProfile = Boolean(autoReplyEnabled && lineUserId && event?.source?.type === "user" && asString(env.LINE_CHANNEL_ACCESS_TOKEN));
-    const profile = shouldFetchProfile ? await fetchLineProfile(env, lineUserId) : null;
-    const record = await writeLineEventToConsoleInbox(env, event, profile, intent);
-    const replyText = kenjiEnabled ? buildKenjiLineReply(event, profile, { forceReply: autoReplyEnabled }) : "";
-    const shouldReply = Boolean(autoReplyEnabled && !record?.deduped && replyText && getReplyToken(event));
+    const eventMode = asString(event?.mode).toLowerCase() || "unknown";
+    const replyText = kenjiEnabled ? buildImmediateKenjiLineReply(event, env, { forceReply: autoReplyEnabled }) : "";
+    const shouldReply = Boolean(autoReplyEnabled && eventMode !== "standby" && replyText && getReplyToken(event));
     const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
+
+    const afterReply = syncLineEventAfterReply(env, event, intent, autoReplyEnabled, kenjiEnabled);
+    const canDefer = typeof ctx?.waitUntil === "function";
+    let record = { pending: canDefer, deduped: false };
+    if (canDefer) {
+      ctx.waitUntil(afterReply.catch(() => {
+        console.log(JSON.stringify({
+          line_webhook: "background_sync_failed",
+          event_type: asString(event?.type) || "unknown",
+          intent,
+        }));
+      }));
+    } else {
+      try {
+        record = await afterReply;
+      } catch (_) {
+        record = { skipped: true, reason: "airtable_sync_failed", deduped: false };
+      }
+    }
+
+    // Safe operational telemetry: never log message text, user IDs, reply tokens, or secrets.
+    // This makes a silent LINE reply diagnosable from `wrangler tail` without exposing customer data.
+    console.log(JSON.stringify({
+      line_webhook: "reply_diagnostics",
+      event_type: asString(event?.type) || "unknown",
+      event_mode: eventMode,
+      redelivered: Boolean(event?.deliveryContext?.isRedelivery),
+      intent,
+      auto_reply_enabled: autoReplyEnabled,
+      per_voice_enabled: kenjiEnabled,
+      reply_token_present: Boolean(getReplyToken(event)),
+      inbox_deduped: Boolean(record?.deduped),
+      reply_candidate: Boolean(replyText),
+      reply_attempted: shouldReply,
+      reply_sent: Boolean(replyResult?.ok),
+      reply_status: Number.isInteger(replyResult?.status) ? replyResult.status : null,
+      reply_error: asString(replyResult?.error) || null,
+    }));
 
     saved.push({
       ok: true,
@@ -1055,6 +1213,7 @@ async function handleLineWebhook(request, env) {
       intent,
       deduped: Boolean(record?.deduped),
       recorded: Boolean(record?.id),
+      record_pending: Boolean(record?.pending),
       record_skipped: Boolean(record?.skipped),
       replied: Boolean(replyResult?.ok),
       line_user: Boolean(lineUserId),
@@ -1066,7 +1225,7 @@ async function handleLineWebhook(request, env) {
 }
 
 export default {
-  async fetch(request, env = {}) {
+  async fetch(request, env = {}, ctx) {
     const url = new URL(request.url);
 
     if (isRenewalRoute(url.pathname)) {
@@ -1086,7 +1245,7 @@ export default {
     }
 
     if (request.method === "POST" && LINE_WEBHOOK_PATHS.has(url.pathname)) {
-      return handleLineWebhook(request, env);
+      return handleLineWebhook(request, env, ctx);
     }
 
     if (
