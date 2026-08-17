@@ -2,151 +2,95 @@
 
 ## Deployment status
 
-Deployment is pending. This PR does not deploy, publish, merge, change routes, create an R2 bucket, or configure secrets.
+Cloudflare staging implementation is prepared under `services/mmd-slip-extractor/cloudflare`. Production remains unchanged and deployment approval remains PENDING.
 
-The existing production route remains owned by `member-dashboard-chat-worker`. Configure its `LINE_WEBHOOK_UPSTREAM_URL` to the HTTPS URL of the authoritative Netlify webhook function. The Worker verifies the LINE signature before forwarding the unchanged body and signature; invalid, unavailable, or non-HTTPS upstreams fail closed. No Cloudflare route change is required.
+The production LINE webhook stays on `member-dashboard-chat-worker`. Do not set `LINE_WEBHOOK_UPSTREAM_URL`, do not create a second production webhook, and do not point LINE at the extractor workers.dev URL.
 
-## Required environment
+## Preview scope
 
-Existing LINE/Airtable configuration:
+- Dedicated Cloudflare staging Worker and Container only.
+- Synthetic or redacted images only.
+- No production LINE traffic or customer slip data.
+- No production routes.
+- One staging Container instance.
+- Container outbound internet disabled.
+- Extraction evidence remains pending/review-only.
 
-```text
-LINE_CHANNEL_SECRET
-LINE_CHANNEL_ACCESS_TOKEN
-AIRTABLE_API_KEY (or AIRTABLE_TOKEN)
-AIRTABLE_BASE_ID
-AIRTABLE_SYNC_TABLE
-```
+## Prerequisites
 
-P0 evidence configuration:
+1. Cloudflare Workers Paid plan with Containers available.
+2. Wrangler v4 and Docker or a compatible container engine.
+3. A new staging-only `MMD_SLIP_EXTRACTOR_TOKEN`.
+4. No production, LINE, Airtable, Telegram, or internal-worker secret reused.
 
-```text
-AIRTABLE_TABLE_PAYMENT_PROOFS=MMD — Payment Proofs
-AIRTABLE_TABLE_MEMBERS=Members
-AIRTABLE_TABLE_SESSIONS=Sessions
-AIRTABLE_TABLE_PAYMENTS=Payments
-AIRTABLE_TABLE_LIFF_RENEWAL_SESSIONS=MMD — LIFF Renewal Sessions
-LINE_SLIP_MAX_IMAGE_BYTES=10485760
-LINE_SLIP_MAX_AMOUNT_THB=10000000
-LINE_SLIP_CONFIDENCE_THRESHOLD=0.85
-```
-
-Private R2 S3 configuration for the Netlify Function:
-
-```text
-CLOUDFLARE_ACCOUNT_ID
-LINE_SLIP_R2_ACCESS_KEY_ID
-LINE_SLIP_R2_SECRET_ACCESS_KEY
-LINE_SLIP_R2_BUCKET
-```
-
-Use bucket-scoped credentials with object read/write limited to the private slip-evidence bucket. Do not configure a public bucket domain.
-
-Replaceable extraction adapters:
-
-```text
-LINE_SLIP_QR_EXTRACTOR_URL
-LINE_SLIP_OCR_EXTRACTOR_URL
-LINE_SLIP_EXTRACTOR_TOKEN
-```
-
-QR is always attempted first. OCR runs unless QR returns a genuine transaction reference; PromptPay recipient proxies and requested amounts are not transaction evidence. If either adapter is missing or confidence is below the threshold, the proof remains review-only.
-
-The MMD-controlled implementation lives at `services/mmd-slip-extractor`. Deploy it as a separate Netlify project with that directory as the project base. Configure only:
-
-```text
-MMD_SLIP_EXTRACTOR_TOKEN
-MMD_SLIP_EXTRACTOR_MAX_BYTES=4194304
-```
-
-Use distinct production and preview tokens. Configure the webhook adapter URLs as the separate extractor project's `/v1/extract/qr` and `/v1/extract/ocr` routes. The service performs local QR and Thai/English OCR without runtime image persistence or third-party OCR submission. Complete the external DPA/processor acceptance recorded in its privacy review before production use.
-
-Telegram Ops:
-
-```text
-TELEGRAM_BOT_TOKEN
-TELEGRAM_OPS_CHAT_ID
-```
-
-## Pre-deployment checks
-
-1. Confirm the LINE webhook still targets the existing authoritative Netlify function through the established route.
-2. Confirm all required secret names exist without printing values.
-3. Confirm the R2 bucket is private and the credentials are bucket-scoped.
-4. Confirm `MMD — Payment Proofs` retains the documented fields and `pending` status choice.
-   Confirm `channel` accepts the intake-source value `line_ofc`; provider and sender/receiver bank details remain inside internal `note` metadata.
-5. Confirm QR/OCR adapters accept only authenticated server-side requests.
-6. Confirm the extractor deploy log applies the in-code 30-request-per-minute, per-IP-and-domain rate limit.
-7. Run:
+## Local validation
 
 ```sh
-node --test immigrate-worker/netlify/tests/webhook-slip-intake.test.mjs
-node immigrate-worker/netlify/tests/webhook-faq-intent.test.mjs
-node --check immigrate-worker/netlify/functions/webhook.js
-node --check immigrate-worker/netlify/functions/line-payment-slip-intake.mjs
-git diff --check
+cd services/mmd-slip-extractor/cloudflare
+npm ci
+node --test test/*.test.mjs
+node --check worker.mjs
+node --check worker-core.mjs
+node --check container-server.mjs
+npx wrangler types --config wrangler.jsonc
+npx wrangler deploy --dry-run --config wrangler.jsonc
 ```
 
-## Manual review
+The existing extraction library tests must also pass from `services/mmd-slip-extractor` before review.
 
-Review is mandatory when download/storage fails, extraction is unavailable or low-confidence, SHA/payment reference is duplicated, or deterministic links are absent/ambiguous. Compare the private original against official bank/payment truth. Do not use OCR text as approval evidence.
+## Configure the staging secret
 
-The recent-context lookup requires no Airtable migration. It uses the existing `line_user_id` field and Airtable `CREATED_TIME()` to bound the query to 20 records from the preceding 15 minutes, then orders valid nested `payload_json.received_at` timestamps with record `createdTime` as fallback.
+Run from `services/mmd-slip-extractor/cloudflare`:
 
-`LINE_SLIP_MAX_AMOUNT_THB` defaults to `10000000`. Amounts must be finite, greater than zero, no higher than that limit, and are rounded to two decimal places. Invalid amounts become `null`, are omitted from Airtable amount fields and amount-based matching, and keep the proof review-required.
+```sh
+npx wrangler whoami
+npx wrangler secret put MMD_SLIP_EXTRACTOR_TOKEN --config wrangler.jsonc
+```
 
-An acknowledgement is classified only after the required evidence state is known:
+Wrangler prompts for the value. Do not place the secret on the command line or in shell history.
 
-1. First durable evidence that is unlinked, ambiguous, low-confidence, duplicated, or otherwise review-required sends `MANUAL_SLIP_ACK`:
+## Deploy staging
+
+```sh
+cd services/mmd-slip-extractor/cloudflare
+npx wrangler deploy --config wrangler.jsonc
+npx wrangler containers list
+npx wrangler containers images list
+```
+
+The first Container deployment can require several minutes before it is ready. Wait for Container readiness before smoke testing.
+
+## Synthetic smoke
+
+1. Confirm `GET /health` returns 200 from the staging workers.dev hostname.
+2. Send a generated PromptPay/EMV QR image to `POST /v1/extract/qr`.
+3. Send a synthetic Thai/English slip fixture to `POST /v1/extract/ocr`.
+4. Confirm the bearer token is required.
+5. Confirm an oversized request fails with 413.
+6. Confirm responses contain no `paid`, `verified`, membership, points, session, or entitlement field.
+7. Confirm logs contain only request ID, route, and stable status.
+
+Record the staging base URL for:
 
 ```text
-ได้รับหลักฐานการชำระเงินแล้วครับ แต่รายละเอียดต้องให้ทาง MMD ตรวจสอบด้วยตนเอง กรุณารอสักครู่ก่อนนะครับ
+LINE_SLIP_QR_EXTRACTOR_URL=<staging-base>/v1/extract/qr
+LINE_SLIP_OCR_EXTRACTOR_URL=<staging-base>/v1/extract/ocr
 ```
 
-2. Evidence safely accepted into the normal pending flow, or an idempotent replay where the durable proof already exists, sends `SAFE_SLIP_ACK`:
+Do not wire these URLs into the production LINE webhook owner. They are inputs for a later isolated staging-intake integration.
 
-```text
-ได้รับหลักฐานการชำระเงินแล้วครับ ผมกำลังส่งรายละเอียดให้ทางระบบตรวจสอบ กรุณารอสักครู่ก่อนนะครับ
-```
+## Dev R2 and Telegram
 
-3. Download, private R2 storage, Payment Proof persistence, or another pre-durable failure sends `RETRY_SLIP_ACK`:
-
-```text
-ขณะนี้ระบบยังบันทึกหลักฐานการชำระเงินไม่สำเร็จครับ กรุณาเก็บสลิปไว้ก่อน ทาง MMD จะตรวจสอบและแจ้งให้ทราบอีกครั้งครับ
-```
-
-`MANUAL_SLIP_ACK` confirms evidence receipt without implying deterministic payment/session linking. `SAFE_SLIP_ACK` confirms durable pending processing only. `RETRY_SLIP_ACK` never claims durable receipt. All created evidence remains `status=pending`; no acknowledgement means paid or verified, and `payments-worker` remains Money Truth.
-
-The LINE reply is attempted only after private R2 and Payment Proof persistence succeed, or an existing durable proof is confirmed idempotently. Telegram Ops is notified when configured, but Telegram failure cannot change acknowledgement classification. A LINE reply failure returns a retryable webhook error and emits only redacted operational metadata.
-
-P0 writes a pending-only handoff contract inside the Payment Proof note. It does not call the paid/verified payments endpoint. A later authorized phase must define an authenticated pending-evidence endpoint or callback before automatic verification delivery is enabled.
-
-The Payment Proof `channel` records intake source, so LINE OA evidence uses `line_ofc`. Payment provider and sender/receiver bank details remain internal `note` metadata. The entire `note` is internal-only and must never be serialized by customer-facing or frontend APIs.
-
-## Replay behavior
-
-- Replayed `webhookEventId` with the same image message returns the existing deterministic proof.
-- Replayed `message.id` never downloads or writes the evidence again.
-- An idempotent replay of an existing durable proof may receive `SAFE_SLIP_ACK` because persistence has already been established.
-- Duplicate SHA or payment reference creates a separate pending evidence record flagged for review; it never patches the earlier proof/payment.
-
-## Telegram failure
-
-Telegram delivery is best effort. Failure is returned in the internal intake result but cannot alter pending evidence or trigger payment, membership, points, entitlement, or session changes.
+The extractor itself intentionally has no R2 or Telegram binding. The later staging-intake layer must use a dedicated private dev R2 bucket and redacted Telegram notifications. It must never serialize private R2 keys or internal Airtable metadata to LINE or browsers.
 
 ## Rollback
 
-Rollback the Netlify function to the previous known-good version if recent-context lookup, acknowledgement gating, or amount normalization regresses. Existing pending Payment Proof rows and private R2 objects are evidence and must not be deleted automatically. If only the upstream application is unhealthy, remove `LINE_WEBHOOK_UPSTREAM_URL` from the route owner to restore its existing local generic webhook behavior, then verify the Worker health route and a signed synthetic webhook. Disable automatic classification by unsetting the extraction adapter URLs while retaining the existing generic image path. No Airtable schema rollback is required.
+If staging is unhealthy:
 
-## Deployment command
+1. Stop using the staging URL.
+2. Rotate or delete the staging extractor secret.
+3. Roll back the staging Worker to a known-good version with Wrangler.
+4. Preserve synthetic smoke artifacts only when they contain no customer data.
+5. Do not change the production LINE route.
 
-After separate production approval and environment verification:
-
-```sh
-cd immigrate-worker && npx netlify deploy --prod
-npx wrangler deploy --config member-dashboard-chat-worker/wrangler.toml
-```
-
-Deploy the Netlify application first, verify its health, configure `LINE_WEBHOOK_UPSTREAM_URL`, and deploy the existing route owner last. Do not change its routes. Do not run these commands as part of this PR.
-
-Deploy the extractor independently from `services/mmd-slip-extractor`; do not point the LINE webhook at a preview URL. A deploy preview must use its own bearer token and synthetic images only.
+Production evidence, payment, membership, points, session, and entitlement records must not be changed or deleted as part of extractor rollback.
