@@ -1,5 +1,6 @@
 import modelLiffWorker from "./model-liff-worker.js";
 import { isAuthed as isCoreAuthed } from "./index.js";
+import { handleCareBackRequest, isCareBackPath } from "./care-back-worker.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const STUDIO_API_PREFIX = "/studio/api";
@@ -44,9 +45,12 @@ export default {
 
 export async function handleStudioRequest(request, env, path = normalizePathname(new URL(request.url).pathname), method = request.method.toUpperCase()) {
   if (!isAllowedOrigin(request, env)) return json({ ok: false, error: "origin_not_allowed" }, 403);
-  if (method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
   if (!(await isStudioAuthed(request, env))) return json({ ok: false, error: "unauthorized" }, 401);
 
+  // Care Back shares Studio auth but supports safe GET/PATCH/PUT contracts.
+  if (isCareBackPath(path)) return handleCareBackRequest(request, env, path, method);
+
+  if (method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
   const body = await safeJson(request);
   if (containsBrowserLineUserId(body)) return json({ ok: false, error: "line_user_id_not_allowed" }, 400);
 

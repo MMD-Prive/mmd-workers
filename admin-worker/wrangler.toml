@@ -243,6 +243,8 @@ AIRTABLE_TABLE_STUDIO_PUBLISH = "Studio_Publish"
 # Optional table names (ถ้าคุณใช้ name-based endpoints)
 AIRTABLE_TABLE_DEMO_LINKS = "Demo Links"
 AIRTABLE_TABLE_MEMBERS = "members"
+AIRTABLE_TABLE_CLIENTS_ID = "tblVv58TCbwh5j1fS"
+AIRTABLE_CLIENT_NAME_FIELD = "Client Name"
 AIRTABLE_TABLE_MODELS = "models"
 AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
 AT_SESSIONS__SESSION_ID = "session_id"
