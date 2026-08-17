@@ -1,0 +1,207 @@
+<!-- MMD Studio production bridge source for studio, pageId: 6a6e22f9f96d8a3a8fd56969 -->
+<script data-mmd-studio-page="studio">
+(function () {
+  "use strict";
+
+  var PAGE = (document.currentScript && document.currentScript.getAttribute("data-mmd-studio-page")) || "studio";
+  var API = {
+    intakeValidate: "/studio/api/intake/validate",
+    intakeCommit: "/studio/api/intake/commit",
+    reviewValidate: "/studio/api/review/validate",
+    reviewCommit: "/studio/api/review/commit",
+    publishPlan: "/studio/api/model-preview/publish-plan",
+    finalCommit: "/studio/api/model-preview/commit",
+    upload: "/studio/api/upload"
+  };
+  var SAFE_QUERY = {
+    source: true,
+    seed: true,
+    run: true,
+    run_number: true,
+    model_id: true,
+    review_id: true,
+    studio_intake_id: true,
+    studio_review_id: true,
+    draft_id: true,
+    view: true
+  };
+  var SECRET_QUERY = /token|secret|password|credential|cookie|authorization|bearer|confirm|line_user_id|^t$/i;
+
+  if (PAGE !== "studio") ensureNoIndex();
+  sanitizeUrl();
+  purgeStoredPhotos();
+  gate().then(function (ok) {
+    if (!ok) return;
+    bindStudioForms();
+    window.MMDStudioBridge = {
+      api: API,
+      validateIntake: function (payload) { return post(API.intakeValidate, payload); },
+      commitIntake: function (payload) { return post(API.intakeCommit, withIdempotency(payload)); },
+      uploadAsset: function (file, idempotencyKey) { return uploadAsset(file, idempotencyKey); },
+      validateReview: function (payload) { return post(API.reviewValidate, payload); },
+      commitReview: function (payload) { return post(API.reviewCommit, withIdempotency(payload)); },
+      publishPlan: function (payload) { return post(API.publishPlan, payload); },
+      finalLedgerCommit: function (payload) {
+        return post(API.finalCommit, withIdempotency(Object.assign({}, payload, {
+          published: false,
+          publish_mode: "ledger_only",
+          ledger_commit_confirmed: true,
+          ledger_confirmation_phrase: "COMMIT_LEDGER_ONLY"
+        })));
+      }
+    };
+  });
+
+  function ensureNoIndex() {
+    var existing = document.querySelector('meta[name="robots"]');
+    if (!existing) {
+      existing = document.createElement("meta");
+      existing.setAttribute("name", "robots");
+      document.head.appendChild(existing);
+    }
+    existing.setAttribute("content", "noindex,nofollow");
+  }
+
+  function sanitizeUrl() {
+    var url = new URL(window.location.href);
+    var safe = new URLSearchParams();
+    url.searchParams.forEach(function (value, key) {
+      if (SAFE_QUERY[key.toLowerCase()] && !SECRET_QUERY.test(key)) safe.append(key, value);
+    });
+    var cleanPath = url.pathname + (safe.toString() ? "?" + safe.toString() : "") + url.hash;
+    if (cleanPath !== window.location.pathname + window.location.search + window.location.hash) {
+      window.history.replaceState(null, "", cleanPath);
+    }
+  }
+
+  function safeNext() {
+    var url = new URL(window.location.href);
+    var safe = new URLSearchParams();
+    url.searchParams.forEach(function (value, key) {
+      if (SAFE_QUERY[key.toLowerCase()] && !SECRET_QUERY.test(key)) safe.append(key, value);
+    });
+    return url.pathname + (safe.toString() ? "?" + safe.toString() : "");
+  }
+
+  function gate() {
+    return fetch("/v1/admin/auth/me", {
+      method: "GET",
+      credentials: "include",
+      headers: { accept: "application/json" }
+    }).then(function (response) {
+      if (response.ok) return true;
+      redirectToLogin();
+      return false;
+    }).catch(function () {
+      redirectToLogin();
+      return false;
+    });
+  }
+
+  function redirectToLogin() {
+    var login = new URL("/internal/admin/login", window.location.origin);
+    login.searchParams.set("next", safeNext());
+    window.location.replace(login.toString());
+  }
+
+  function purgeStoredPhotos() {
+    try {
+      Object.keys(window.localStorage || {}).forEach(function (key) {
+        var value = String(window.localStorage.getItem(key) || "");
+        if (/mmdStudio|studio/i.test(key) && (/data:image\//i.test(value) || value.length > 200000)) {
+          window.localStorage.removeItem(key);
+        }
+      });
+    } catch (_) {}
+  }
+
+  function bindStudioForms() {
+    document.querySelectorAll("[data-mmd-studio-api]").forEach(function (form) {
+      if (form.__mmdStudioBound) return;
+      form.__mmdStudioBound = true;
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        var action = form.getAttribute("data-mmd-studio-api");
+        var endpoint = API[action];
+        if (!endpoint) return;
+        prepareFormPayload(form, action).then(function (payload) {
+          if (/Commit$/.test(action)) payload = withIdempotency(payload);
+          return post(endpoint, payload);
+        }).then(function (data) {
+          form.dispatchEvent(new CustomEvent("mmd-studio:result", { detail: data, bubbles: true }));
+        }).catch(function (error) {
+          form.dispatchEvent(new CustomEvent("mmd-studio:error", { detail: { message: error.message }, bubbles: true }));
+        });
+      });
+    });
+  }
+
+  function prepareFormPayload(form, action) {
+    var payload = formPayload(form);
+    var files = [];
+    new FormData(form).forEach(function (value, key) {
+      if (SECRET_QUERY.test(key) || /^line[_-]?user[_-]?id$/i.test(key)) return;
+      if (value instanceof File && value.name) files.push({ file: value, field: key });
+    });
+    if (!files.length) return Promise.resolve(payload);
+    return Promise.all(files.map(function (entry, index) {
+      return uploadAsset(entry.file, "studio:upload:" + PAGE + ":" + action + ":" + Date.now() + ":" + index + ":" + crypto.randomUUID());
+    })).then(function (assets) {
+      payload.asset_ids = assets.map(function (asset) { return asset.asset_id; }).filter(Boolean);
+      return payload;
+    });
+  }
+
+  function formPayload(form) {
+    var payload = {};
+    new FormData(form).forEach(function (value, key) {
+      if (SECRET_QUERY.test(key) || /^line[_-]?user[_-]?id$/i.test(key)) return;
+      if (value instanceof File) {
+        if (value.name) payload.files = (payload.files || []).concat([{ name: value.name, size: value.size, type: value.type }]);
+        return;
+      }
+      payload[key] = String(value || "");
+    });
+    return payload;
+  }
+
+  function withIdempotency(payload) {
+    var copy = Object.assign({}, payload || {});
+    if (!copy.idempotency_key) copy.idempotency_key = "studio:" + PAGE + ":" + Date.now() + ":" + crypto.randomUUID();
+    return copy;
+  }
+
+  function post(endpoint, payload) {
+    return fetch(endpoint, {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify(payload || {})
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (data) {
+        if (!response.ok) throw new Error(data.error || "studio_request_failed");
+        return data;
+      });
+    });
+  }
+
+  function uploadAsset(file, idempotencyKey) {
+    if (!(file instanceof File) || !file.name) return Promise.reject(new Error("file_required"));
+    var key = idempotencyKey || "studio:upload:" + PAGE + ":" + Date.now() + ":" + crypto.randomUUID();
+    var form = new FormData();
+    form.append("file", file, file.name);
+    return fetch(API.upload, {
+      method: "POST",
+      credentials: "include",
+      headers: { accept: "application/json", "Idempotency-Key": key },
+      body: form
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (data) {
+        if (!response.ok) throw new Error(data.error || "studio_upload_failed");
+        return data;
+      });
+    });
+  }
+})();
+
+</script>
