@@ -1133,6 +1133,23 @@ async function handleLineWebhook(request, env) {
     const shouldReply = Boolean(autoReplyEnabled && !record?.deduped && replyText && getReplyToken(event));
     const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
 
+    // Safe operational telemetry: never log message text, user IDs, reply tokens, or secrets.
+    // This makes a silent LINE reply diagnosable from `wrangler tail` without exposing customer data.
+    console.log(JSON.stringify({
+      line_webhook: "reply_diagnostics",
+      event_type: asString(event?.type) || "unknown",
+      intent,
+      auto_reply_enabled: autoReplyEnabled,
+      per_voice_enabled: kenjiEnabled,
+      reply_token_present: Boolean(getReplyToken(event)),
+      inbox_deduped: Boolean(record?.deduped),
+      reply_candidate: Boolean(replyText),
+      reply_attempted: shouldReply,
+      reply_sent: Boolean(replyResult?.ok),
+      reply_status: Number.isInteger(replyResult?.status) ? replyResult.status : null,
+      reply_error: asString(replyResult?.error) || null,
+    }));
+
     saved.push({
       ok: true,
       type: event?.type || "",
