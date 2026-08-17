@@ -7,6 +7,32 @@ workers_dev = false
 binding = "MEMBER_PAGES_WORKER"
 service = "member-pages-worker"
 
+# Canonical renewal page. These specific routes win before the generic front
+# gate and keep the full query string available to the local renderer.
+[[routes]]
+pattern = "mmdbkk.com/pay/renewal*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/pay/renewal*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/pay/renewal*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/sigil/pay/renewal*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/pay/renewal*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/sigil/pay/renewal*"
+zone_name = "mmdbkk.com"
+
 [[routes]]
 pattern = "mmdbkk.com/member/api/liff/*"
 zone_name = "mmdbkk.com"
