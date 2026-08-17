@@ -4,7 +4,7 @@
   "scripts": {
     "check": "node --check chat-worker/src/index.js && node --check scripts/smoke-chat-worker.js && node --check admin-worker/src/studio-real-worker.js",
     "smoke": "node scripts/smoke-chat-worker.js",
-    "test": "npm run check && npm run smoke && npm run test:admin-login && npm run test:studio-real-worker && npm run test:telegram && npm run test:blackcard-confirm && npm run test:auth-liff-profile && npm run check:care-back-staging && npm run test:care-back-staging-fixtures && npm run test:member-pages-liff && npm run test:member-dashboard-liff",
+    "test": "npm run check && npm run smoke && npm run test:admin-login && npm run test:studio-real-worker && npm run test:telegram && npm run test:blackcard-confirm && npm run test:auth-liff-profile && npm run check:care-back-staging && npm run test:care-back-staging-fixtures && npm run test:member-pages-liff && npm run test:member-dashboard-liff && npm run test:member-dashboard-line",
     "test:admin-login": "node --test admin-worker/admin-login-hero.test.mjs admin-worker/admin-login-session.test.mjs admin-worker/admin-login-regression-guard.test.mjs",
     "test:studio-real-worker": "node --test admin-worker/studio-real-worker.test.mjs",
     "test:telegram": "node --test telegram-worker/test/*.test.mjs",
@@ -14,6 +14,7 @@
     "test:member-pages-runtime": "npm test --prefix member-pages-worker/test-runtime",
     "check:member-pages-wrangler": "npm run check --prefix member-pages-worker/test-runtime",
     "test:member-dashboard-liff": "node --test member-dashboard-chat-worker/test/liff-front-gate.test.mjs member-dashboard-chat-worker/test/rich-menu-publisher.test.mjs",
+    "test:member-dashboard-line": "node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/line-webhook.test.mjs",
     "test:care-back-staging-fixtures": "node --test care-back-staging-fixtures-worker/test/*.test.mjs",
     "check:care-back-staging": "node scripts/check-care-back-staging-config.mjs",
     "smoke:care-back-staging": "node scripts/smoke-care-back-staging.mjs",
