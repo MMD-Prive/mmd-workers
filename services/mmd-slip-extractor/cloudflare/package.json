@@ -1,0 +1,19 @@
+{
+  "name": "mmd-slip-extractor-cloudflare",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check worker.mjs && node --check worker-core.mjs && node --check container-server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "types": "wrangler types --config wrangler.jsonc",
+    "deploy:dry-run": "wrangler deploy --dry-run --config wrangler.jsonc",
+    "deploy:staging": "wrangler deploy --config wrangler.jsonc"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "0.3.7"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
