@@ -3,6 +3,7 @@ import test from "node:test";
 
 import worker, {
   buildKenjiLineReply,
+  buildKenjiKnowledgeLineReply,
   createLineSignature,
   inferLineIntent,
   isKenjiLineCandidate,
@@ -128,10 +129,40 @@ test("Kenji trigger phrases route to talk_to_per_ai intent", async () => {
   }
 });
 
-test("Kenji replies do not expose internal markers", () => {
+test("Per Voice replies do not expose internal markers or the hidden Kenji identity", () => {
   const reply = buildKenjiLineReply(lineTextEvent("Hi Per"), { displayName: "Test User" });
-  assert.match(reply, /Kenji AI|MMD Privé/);
-  assert.doesNotMatch(reply, /airtable|record_id|secret|token|authorization|bearer|telegram|gmail|r2|kv/i);
+  assert.match(reply, /MMD Privé/);
+  assert.doesNotMatch(reply, /kenji|เคนจิ|ทีม(?:งาน)?|ระบบ|airtable|record_id|secret|token|authorization|bearer|telegram|gmail|r2|kv/i);
+});
+
+test("published Per Voice knowledge overrides the fallback only when it is LINE-approved and safe", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    assert.match(String(url), /api\.airtable\.com\/v0\/base-id\/tblsLd1uVOtG2kHoU/);
+    return new Response(JSON.stringify({
+      records: [{
+        fields: {
+          knowledge_id: "kenji_per_voice_line_entry_v1",
+          customer_answer: "สวัสดีครับ ยินดีต้อนรับสู่ MMD Privé นะครับ",
+          allowed_channels: ["LINE_OFC"],
+          status: "active",
+          response_mode: "auto_reply_allowed",
+        },
+      }],
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+
+  try {
+    const reply = await buildKenjiKnowledgeLineReply(lineTextEvent("Hi Per"), {}, {
+      ...BASE_ENV,
+      LINE_KENJI_KNOWLEDGE_ENABLED: "true",
+      AIRTABLE_API_KEY: "airtable-key",
+      AIRTABLE_BASE_ID: "base-id",
+    });
+    assert.equal(reply, "สวัสดีครับ ยินดีต้อนรับสู่ MMD Privé นะครับ");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("deduped LINE events do not reply twice", async () => {
