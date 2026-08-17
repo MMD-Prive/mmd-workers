@@ -6,13 +6,19 @@ on:
       - "services/mmd-slip-extractor/**"
       - ".github/workflows/mmd-slip-extractor-cloudflare.yml"
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy the isolated workers.dev staging extractor after validation
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
   group: slip-extractor-cloudflare-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   validate:
@@ -56,6 +62,19 @@ jobs:
           node --check services/mmd-slip-extractor/cloudflare/worker.mjs
           node --check services/mmd-slip-extractor/cloudflare/container-server.mjs
 
+      - name: Lock staging-only Wrangler boundary
+        working-directory: services/mmd-slip-extractor/cloudflare
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const config = JSON.parse(fs.readFileSync("wrangler.jsonc", "utf8"));
+          if (config.name !== "mmd-slip-extractor-staging") throw new Error("staging worker name required");
+          if (config.workers_dev !== true) throw new Error("workers_dev must remain true");
+          if (config.preview_urls !== false) throw new Error("preview_urls must remain false");
+          if (!Array.isArray(config.routes) || config.routes.length !== 0) throw new Error("custom routes are forbidden");
+          if (config.vars?.MMD_RUNTIME_SCOPE !== "staging") throw new Error("staging runtime scope required");
+          NODE
+
       - name: Build Cloudflare Container image
         working-directory: services/mmd-slip-extractor
         run: docker build --file cloudflare/Dockerfile --tag mmd-slip-extractor-staging:ci .
@@ -63,3 +82,140 @@ jobs:
       - name: Validate Wrangler staging bundle without deployment
         working-directory: services/mmd-slip-extractor/cloudflare
         run: npx wrangler deploy --dry-run --config wrangler.jsonc
+
+  deploy:
+    name: Deploy and smoke isolated staging
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy == true
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: mmd-slip-extractor-staging
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      MMD_SLIP_EXTRACTOR_TOKEN: ${{ secrets.MMD_SLIP_EXTRACTOR_TOKEN }}
+      WRANGLER_SEND_METRICS: "false"
+      NO_COLOR: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            services/mmd-slip-extractor/package-lock.json
+            services/mmd-slip-extractor/cloudflare/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci --prefix services/mmd-slip-extractor
+          npm ci --prefix services/mmd-slip-extractor/cloudflare
+
+      - name: Validate and stage secrets
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const required = ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "MMD_SLIP_EXTRACTOR_TOKEN"];
+          const values = Object.fromEntries(required.map((key) => [
+            key,
+            String(process.env[key] || "").replace(/[\r\n\u2028\u2029]/g, "").trim()
+          ]));
+          for (const key of required) {
+            if (!values[key]) throw new Error(key + " is required");
+            console.log("::add-mask::" + values[key]);
+          }
+          if (!/^[A-Za-z0-9_-]{32,}$/.test(values.MMD_SLIP_EXTRACTOR_TOKEN)) {
+            throw new Error("MMD_SLIP_EXTRACTOR_TOKEN must be a new base64url-safe staging token of at least 32 characters");
+          }
+          fs.writeFileSync(
+            process.env.RUNNER_TEMP + "/extractor.env",
+            "MMD_SLIP_EXTRACTOR_TOKEN=" + values.MMD_SLIP_EXTRACTOR_TOKEN + "\n",
+            { mode: 0o600 }
+          );
+          NODE
+
+      - name: Reconfirm staging-only boundary
+        working-directory: services/mmd-slip-extractor/cloudflare
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const config = JSON.parse(fs.readFileSync("wrangler.jsonc", "utf8"));
+          if (config.name !== "mmd-slip-extractor-staging") throw new Error("staging worker name required");
+          if (config.workers_dev !== true || config.preview_urls !== false) throw new Error("workers.dev staging boundary required");
+          if (!Array.isArray(config.routes) || config.routes.length !== 0) throw new Error("custom routes are forbidden");
+          if (config.vars?.MMD_RUNTIME_SCOPE !== "staging") throw new Error("staging runtime scope required");
+          NODE
+
+      - name: Deploy Cloudflare staging Container
+        id: deploy
+        working-directory: services/mmd-slip-extractor/cloudflare
+        shell: bash
+        run: |
+          npx wrangler deploy --config wrangler.jsonc --keep-vars --secrets-file "$RUNNER_TEMP/extractor.env" 2>&1 | tee "$RUNNER_TEMP/deploy.log"
+          url="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' "$RUNNER_TEMP/deploy.log" | tail -n 1)"
+          test -n "$url"
+          case "$url" in
+            https://mmd-slip-extractor-staging.*.workers.dev) ;;
+            *) echo "Unexpected staging URL: $url" >&2; exit 1 ;;
+          esac
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for Container health
+        shell: bash
+        run: |
+          url="${{ steps.deploy.outputs.url }}"
+          for attempt in $(seq 1 30); do
+            code="$(curl --silent --show-error --output "$RUNNER_TEMP/health.json" --write-out '%{http_code}' "$url/health" || true)"
+            if [ "$code" = "200" ]; then
+              node -e 'const fs=require("node:fs"); const body=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); if (!body.ok) process.exit(1)' "$RUNNER_TEMP/health.json"
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "Container did not become healthy in time" >&2
+          exit 1
+
+      - name: Create synthetic QR and OCR fixtures
+        working-directory: services/mmd-slip-extractor
+        env:
+          FIXTURE_DIR: ${{ runner.temp }}
+        run: |
+          node --input-type=module <<'NODE'
+          import QRCode from "qrcode";
+          import sharp from "sharp";
+          const dir = process.env.FIXTURE_DIR;
+          const emv = "00020101021229370016A0000006770101110113006681234567853037645406100.005802TH6304ABCD";
+          await QRCode.toFile(dir + "/synthetic-qr.png", emv, { errorCorrectionLevel: "M", margin: 4, width: 500 });
+          const svg = '<svg width="1200" height="500" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><text x="60" y="130" font-family="Arial" font-size="58" fill="black">Amount: THB 500.00</text><text x="60" y="230" font-family="Arial" font-size="58" fill="black">Transaction ID: SYNTHETIC-OCR-123456</text><text x="60" y="330" font-family="Arial" font-size="58" fill="black">Sender: TEST CUSTOMER</text></svg>';
+          await sharp(Buffer.from(svg)).png().toFile(dir + "/synthetic-ocr.png");
+          NODE
+
+      - name: Smoke authentication and synthetic extraction
+        shell: bash
+        run: |
+          url="${{ steps.deploy.outputs.url }}"
+          unauthorized="$(curl --silent --show-error --output "$RUNNER_TEMP/unauthorized.json" --write-out '%{http_code}'             --request POST --header 'content-type: image/png'             --data-binary "@$RUNNER_TEMP/synthetic-qr.png" "$url/v1/extract/qr")"
+          test "$unauthorized" = "401"
+
+          curl --fail --silent --show-error             --request POST             --header "authorization: Bearer $MMD_SLIP_EXTRACTOR_TOKEN"             --header 'content-type: image/png'             --data-binary "@$RUNNER_TEMP/synthetic-qr.png"             "$url/v1/extract/qr" > "$RUNNER_TEMP/qr.json"
+
+          curl --fail --silent --show-error             --request POST             --header "authorization: Bearer $MMD_SLIP_EXTRACTOR_TOKEN"             --header 'content-type: image/png'             --data-binary "@$RUNNER_TEMP/synthetic-ocr.png"             "$url/v1/extract/ocr" > "$RUNNER_TEMP/ocr.json"
+
+          node <<'NODE'
+          const fs = require("node:fs");
+          for (const name of ["qr", "ocr"]) {
+            const payload = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/" + name + ".json", "utf8"));
+            if (!payload.result || typeof payload.result !== "object") throw new Error(name + " result missing");
+            for (const forbidden of ["paid", "verified", "status", "membership", "points", "session_confirmed"]) {
+              if (Object.hasOwn(payload.result, forbidden)) throw new Error(name + " exposed forbidden truth field: " + forbidden);
+            }
+          }
+          NODE
+
+      - name: Record staging result
+        run: |
+          echo "Cloudflare staging extractor passed synthetic smoke at ${{ steps.deploy.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
