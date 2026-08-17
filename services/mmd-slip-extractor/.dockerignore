@@ -1,0 +1,6 @@
+node_modules
+cloudflare/node_modules
+cloudflare/.wrangler
+netlify
+test
+*.log
