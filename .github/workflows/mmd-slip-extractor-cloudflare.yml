@@ -1,0 +1,65 @@
+name: Slip Extractor Cloudflare
+
+on:
+  pull_request:
+    paths:
+      - "services/mmd-slip-extractor/**"
+      - ".github/workflows/mmd-slip-extractor-cloudflare.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: slip-extractor-cloudflare-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Test and build staging container
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            services/mmd-slip-extractor/package-lock.json
+            services/mmd-slip-extractor/cloudflare/package-lock.json
+
+      - name: Install extractor dependencies
+        working-directory: services/mmd-slip-extractor
+        run: npm ci
+
+      - name: Test extractor
+        working-directory: services/mmd-slip-extractor
+        run: node --test test/*.test.mjs
+
+      - name: Install Cloudflare adapter dependencies
+        working-directory: services/mmd-slip-extractor/cloudflare
+        run: npm ci
+
+      - name: Test Cloudflare adapter
+        working-directory: services/mmd-slip-extractor/cloudflare
+        run: node --test test/*.test.mjs
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check services/mmd-slip-extractor/cloudflare/worker-core.mjs
+          node --check services/mmd-slip-extractor/cloudflare/worker.mjs
+          node --check services/mmd-slip-extractor/cloudflare/container-server.mjs
+
+      - name: Build Cloudflare Container image
+        working-directory: services/mmd-slip-extractor
+        run: docker build --file cloudflare/Dockerfile --tag mmd-slip-extractor-staging:ci .
+
+      - name: Validate Wrangler staging bundle without deployment
+        working-directory: services/mmd-slip-extractor/cloudflare
+        run: npx wrangler deploy --dry-run --config wrangler.jsonc
