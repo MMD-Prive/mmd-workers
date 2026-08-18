@@ -1,3 +1,8 @@
+import {
+  isRenewalRoute,
+  renderRenewalResponse,
+} from "./renderers/single-renewal-renderer.js";
+
 const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const LINE_PROFILE_BASE_URL = "https://api.line.me/v2/bot/profile";
@@ -1222,6 +1227,10 @@ async function handleLineWebhook(request, env, ctx = null) {
 export default {
   async fetch(request, env = {}, ctx) {
     const url = new URL(request.url);
+
+    if (isRenewalRoute(url.pathname)) {
+      return renderRenewalResponse(request, env);
+    }
 
     if (url.pathname.startsWith(MEMBER_LIFF_PREFIX) || MEMBER_LIFF_SHELL_PATHS.has(url.pathname)) {
       return handleMemberLiffFrontGate(request, env);
