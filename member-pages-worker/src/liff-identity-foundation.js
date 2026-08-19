@@ -6,7 +6,7 @@ import { createOrLoadBirthdayWishThroughCoordinator, getBirthdayWishCoordinatorS
 import legacyWorker from "./legacy-member-pages.js";
 
 const WORKER = "member-pages-worker";
-const VERSION = "20260810-care-back-birthday-wish-persistence";
+const VERSION = "20260819-care-back-wish-gate";
 const LINE_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify";
 const SESSION_TTL_SECONDS = 15 * 60;
 const HALL_TOKEN_TTL_SECONDS = 5 * 60;
@@ -427,14 +427,9 @@ export async function handleCareBackClaim(request, env = {}) {
     const result = await store.openOrResume({
       identityHash: auth.session.identity_key,
       memberId: auth.session.member_id,
+      memberProfile: auth.session.member_profile,
     });
-    auth.session.campaign_code = "6-years-care-back";
-    auth.session.campaign_claim_id = result.claim_reference;
-    auth.session.campaign_claim_record_id = validAirtableRecordId(result.claim_record_id);
-    auth.session.campaign_claim_status = result.claim_status;
-    auth.session.campaign_review_status = result.review_status;
-    auth.session.promo_code = result.personal_code;
-    auth.session.promo_status = result.code_status;
+    applyCareBackClaimToSession(auth.session, result);
     await persistGatewaySession(env, gatewayStore, auth.session);
     await commitRotatedSession(env, auth);
     return json({ ok: true, data: safeCareBackClaim(result) }, 200, {
@@ -442,8 +437,12 @@ export async function handleCareBackClaim(request, env = {}) {
     });
   } catch (error) {
     const code = error instanceof CareBackStoreError ? error.code : "CARE_BACK_STORAGE_UNAVAILABLE";
-    const status = code.endsWith("_CONFLICT") ? 409 : 503;
-    return saveRotatedError(env, auth, code, "CARE BACK is temporarily unavailable.", status);
+    const campaignClosed = code === "CARE_BACK_CAMPAIGN_CLOSED";
+    const status = code.endsWith("_CONFLICT") || campaignClosed ? 409 : 503;
+    const message = campaignClosed
+      ? "The CARE BACK campaign period is closed."
+      : "CARE BACK is temporarily unavailable.";
+    return saveRotatedError(env, auth, code, message, status);
   }
 }
 
@@ -523,6 +522,11 @@ export async function handleCareBackWish(request, env = {}) {
     return saveRotatedError(env, auth, code, "Birthday Wish is not available for this verified campaign state.", 409);
   }
 
+  const gatewayStore = getLiffGatewayStore(env);
+  if (!gatewayStore) return saveRotatedError(env, auth, "LIFF_GATEWAY_STORAGE_NOT_CONFIGURED", "CARE BACK is temporarily unavailable.", 503);
+  const careBackStore = getCareBackStore(env);
+  if (!careBackStore) return saveRotatedError(env, auth, "CARE_BACK_STORAGE_NOT_CONFIGURED", "CARE BACK is temporarily unavailable.", 503);
+
   try {
     const wish = await createOrLoadBirthdayWishThroughCoordinator(
       env,
@@ -542,8 +546,16 @@ export async function handleCareBackWish(request, env = {}) {
     if (wish?.wish_status === "revoked" || wish?.wish_status === "manual_review") {
       return saveRotatedError(env, auth, "CARE_BACK_REVIEW_REQUIRED", "Birthday Wish is under private review.", 409);
     }
+    const claim = await careBackStore.openOrResume({
+      identityHash: auth.session.identity_key,
+      memberId: auth.session.member_id,
+      memberProfile: auth.session.member_profile,
+      wishSubmitted: true,
+    });
+    applyCareBackClaimToSession(auth.session, claim);
+    await persistGatewaySession(env, gatewayStore, auth.session);
     await commitRotatedSession(env, auth);
-    return json(careBackWishResponse(birthdayWishState(wish), wish), 200, {
+    return json(careBackWishResponse(birthdayWishState(wish), wish, claim), 200, {
       cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
     });
   } catch (error) {
@@ -1218,6 +1230,16 @@ function validAirtableRecordId(value) {
   return /^rec[A-Za-z0-9]{14}$/.test(recordId) ? recordId : "";
 }
 
+function applyCareBackClaimToSession(session, result = {}) {
+  session.campaign_code = "6-years-care-back";
+  session.campaign_claim_id = String(result.claim_reference || "");
+  session.campaign_claim_record_id = validAirtableRecordId(result.claim_record_id);
+  session.campaign_claim_status = String(result.claim_status || "identity_verified");
+  session.campaign_review_status = String(result.review_status || "pending");
+  session.promo_code = String(result.personal_code || "");
+  session.promo_status = String(result.code_status || "draft");
+}
+
 function careBackWishEligibility(session = {}) {
   if (!session.member_exists || !session.member_id || !session.identity_key) return "verification_required";
   if (session.liff_intent !== "promo" || session.promotion_campaign !== CARE_BACK_CAMPAIGN) return "not_eligible";
@@ -1263,7 +1285,7 @@ function birthdayWishState(wish) {
   return "manual_review";
 }
 
-function careBackWishResponse(state, wish) {
+function careBackWishResponse(state, wish, claim) {
   const response = { ok: true, state, grants: careBackNoGrants() };
   if (wish) {
     response.wish = {
@@ -1278,6 +1300,7 @@ function careBackWishResponse(state, wish) {
       next_action: "return_to_care_back",
     };
   }
+  if (claim) response.claim = safeCareBackClaim(claim);
   return response;
 }
 
@@ -1309,18 +1332,70 @@ function safeMemberProfile(input = {}) {
 
 function safeCareBackClaim(input = {}) {
   const code = /^[A-HJ-NP-Z2-9]{6}$/.test(String(input.personal_code || "")) ? String(input.personal_code) : "";
+  const codeStatus = ["draft", "active", "expired", "used", "revoked", "invalid"].includes(String(input.code_status))
+    ? String(input.code_status)
+    : "draft";
+  const expiresAt = safeCustomerTimestamp(input.expires_at);
+  const discountPercent = Number(input.discount_percent);
+  const membershipBenefit = input.membership_benefit?.type === "membership_extension"
+    && Number.isInteger(input.membership_benefit?.days)
+    && input.membership_benefit.days > 0
+    ? {
+        type: "membership_extension",
+        days: input.membership_benefit.days,
+        state: ["pending_application", "renewal_required"].includes(String(input.membership_benefit.state))
+          ? String(input.membership_benefit.state)
+          : "pending_application",
+      }
+    : null;
+  const pointsPolicy = Number.isInteger(input.points_policy?.rate_thb_per_point)
+    && input.points_policy.rate_thb_per_point > 0
+    && Number.isInteger(input.points_policy?.renewal_bonus_points)
+    && input.points_policy.renewal_bonus_points >= 0
+    ? {
+        reconciliation_state: ["pending", "manual_review", "verified", "reconciliation_required"].includes(String(input.points_policy.reconciliation_state))
+          ? String(input.points_policy.reconciliation_state)
+          : "pending",
+        rate_thb_per_point: input.points_policy.rate_thb_per_point,
+        renewal_bonus_points: input.points_policy.renewal_bonus_points,
+        renewal_bonus_state: ["not_offered", "renewal_required", "pending_application", "applied"].includes(String(input.points_policy.renewal_bonus_state))
+          ? String(input.points_policy.renewal_bonus_state)
+          : "not_offered",
+      }
+    : null;
   return {
     campaign_id: "6-years-care-back",
     claim_reference: String(input.claim_reference || "").replace(/[^A-Z0-9-]/gi, "").slice(0, 64),
     claim_status: String(input.claim_status || "identity_verified").slice(0, 32),
     review_status: String(input.review_status || "pending").slice(0, 32),
     personal_code: code,
-    code_status: String(input.code_status || "draft").slice(0, 16),
+    code_status: codeStatus,
+    expires_at: expiresAt || null,
+    discount_percent: Number.isFinite(discountPercent) && discountPercent > 0 && discountPercent <= 100 ? discountPercent : 0,
+    coupon_state: ["ready", "wish_required", "renewal_required", "verification_required", "expired", "used", "revoked", "invalid"].includes(String(input.coupon_state))
+      ? String(input.coupon_state)
+      : "verification_required",
+    coupon_message: normalizeCustomerText(input.coupon_message, 220) || "คูปองส่วนตัวจะพร้อมใช้หลัง MMD ยืนยันสิทธิ์เรียบร้อยแล้วครับ",
+    membership_benefit: membershipBenefit,
+    points_policy: pointsPolicy,
+    wish_submitted: Boolean(input.wish_submitted),
+    campaign_phase: ["birthday", "continuation", "legacy"].includes(String(input.campaign_phase))
+      ? String(input.campaign_phase)
+      : null,
+    campaign_phase_ends_at: safeCustomerTimestamp(input.campaign_phase_ends_at) || null,
     resumed: Boolean(input.resumed),
     single_use: true,
-    benefit_state: "pending_official_review",
-    message: "โค้ดส่วนตัวถูกออกหลังยืนยัน LINE แล้ว และจะมีผลเมื่อ MMD ตรวจสอบสิทธิ์อย่างเป็นทางการเรียบร้อยครับ",
+    benefit_state: codeStatus === "active" ? "coupon_ready" : "benefit_pending",
+    message: codeStatus === "active"
+      ? "คูปองส่วนตัวพร้อมใช้กับบริการที่ร่วมรายการ 1 ครั้ง ภายในระยะเวลาที่ระบุครับ"
+      : "MMD จะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ",
   };
+}
+
+function safeCustomerTimestamp(value) {
+  const raw = String(value || "").trim();
+  const parsed = Date.parse(raw);
+  return raw && Number.isFinite(parsed) ? new Date(parsed).toISOString() : "";
 }
 
 async function keyedDigest(env, value) {
