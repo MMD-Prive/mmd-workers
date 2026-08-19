@@ -104,6 +104,18 @@ const STATIC_PUBLIC_CARDS = Object.freeze([
     customer_answer:
       "ผมจะใช้ถ้อยคำที่ปลอดภัยและให้ MMD ตรวจสอบก่อนเสมอครับ ถ้ามีเรื่องชำระเงินหรือ access ผมจะพาไปหน้าที่ถูกต้องและใช้คำว่า รับหลักฐานแล้ว / รอตรวจยอดจริง / MMD ตรวจยอดจริง เท่านั้น",
   },
+  {
+    id: "kenji_20_011_care_back_2026",
+    title: "Kenji AI 2.0 — CARE BACK 2026 Final Lock",
+    category: "promotion",
+    language: "th",
+    status: "active",
+    response_mode: "auto_reply_allowed",
+    risk_level: "critical",
+    source_path: "/promotion/6-years-care-back",
+    customer_answer:
+      "CARE BACK เป็นสิทธิ์ดูแลกลับที่ MMD ตรวจจากสถานะและประวัติจริงครับ เริ่มจากยืนยันผ่าน LINE แล้วส่ง Birthday Wish ให้บันทึกสำเร็จก่อน คูปองส่วนตัว 10% จึงจะเปิดได้ 1 ครั้งและมีอายุ 30 วันหลัง activation ส่วน Membership และ Points จะมีผลหลัง MMD ตรวจข้อมูล การสมัคร หรือการชำระเงินที่เกี่ยวข้องเรียบร้อยแล้วเท่านั้นครับ",
+  },
 ]);
 
 const HIDDEN_PUBLIC_CARD_RE = /\b(cloudflare|deploy|deployment|smoke|wrangler|worker|version id|route trigger|auth header|admin cookie|internal_token|confirm_key|secret)\b/i;
