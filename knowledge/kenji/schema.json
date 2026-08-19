@@ -25,7 +25,7 @@
     "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$" },
     "version": { "type": "integer", "minimum": 1 },
     "status": { "enum": ["draft", "review", "published", "archived"] },
-    "lane": { "enum": ["membership", "renewal", "payment", "booking", "guide", "travel", "support", "apply-routing", "privacy", "rules", "escalation"] },
+    "lane": { "enum": ["membership", "renewal", "payment", "promotion", "booking", "guide", "travel", "support", "apply-routing", "privacy", "rules", "escalation"] },
     "audience": {
       "type": "array",
       "minItems": 1,
