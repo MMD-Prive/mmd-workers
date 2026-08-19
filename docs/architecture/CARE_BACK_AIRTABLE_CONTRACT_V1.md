@@ -1,9 +1,11 @@
 # CARE BACK Airtable Contract V1
 
-Status: DRAFT / NOT READY TO DEPLOY  
+Status: SUPERSEDED IN PART / NOT READY TO DEPLOY
 Campaign ID: `6-years-care-back`  
 Public route: `/promotion/6-years-care-back`  
 LIFF ID: `2010298002-mbx9kqQn`
+
+Policy precedence: `docs/knowledge/CARE_BACK_2026_FINAL_LOCK.md` is authoritative for campaign eligibility, Birthday Wish, coupon, Membership, Points, and lifecycle rules. If this architecture draft conflicts with that lock, the final lock wins.
 
 ## Locked customer flow
 
@@ -11,9 +13,10 @@ LIFF ID: `2010298002-mbx9kqQn`
 2. The preview explains CARE BACK without revealing a discount amount or personal code.
 3. The primary CTA starts LIFF identity verification.
 4. A Worker verifies identity and eligibility.
-5. Only after successful verification may HYPE issue or reveal a six-character personal code.
-6. A code is personal, single-use, and subject to MMD verification.
-7. Approval and benefit application remain Worker/admin actions. The browser never writes to Airtable directly.
+5. The canonical Birthday Wish service must confirm that the member's Wish was saved successfully.
+6. Only after the Wish is saved may the Worker activate or reveal a personal coupon code. Identity verification alone must never issue or reveal one.
+7. A code is personal, single-use, gives 10% off an eligible participating service, and expires 30 days after activation.
+8. Approval and benefit application remain canonical owner actions. The browser never writes to Airtable directly.
 
 Telegram `/start preview` is an entry point only. It must not issue a code, claim eligibility, or write a campaign claim before LIFF verification.
 
@@ -68,7 +71,7 @@ Opening the preview or LIFF alone must not materialize membership, points, histo
 
 Table ID: `tblPLRsw2Rl0mXfTW`
 
-Personal codes are promotion codes, not login/security codes. Create a code only after successful verification and claim creation.
+Personal codes are promotion codes, not login/security codes. Create or activate a code only after successful verification, idempotent claim creation, and a successfully saved canonical Birthday Wish.
 
 Required fields:
 
@@ -122,21 +125,25 @@ preview
   -> verification_required
   -> identity_verified
   -> eligibility_pending
+  -> wish_required
+  -> wish_saved
   -> review_required | eligible
   -> approved
-  -> code_issued
+  -> coupon_active
   -> benefit_applied
 ```
 
-Blocked, unmatched, expired, rejected, and error states must not issue a code or apply a benefit.
+Blocked, unmatched, expired, rejected, revoked, invalid, and error states must not issue a code or apply a benefit. Coupon lifecycle must distinguish `draft`, `active`, `used`, `expired`, `revoked`, and `invalid`.
 
 ## Deployment gate
 
 This contract does not authorize production deployment. Before merge/deploy:
 
 - tests prove Telegram cannot issue a pre-verification code
+- tests prove identity verification without a saved Birthday Wish cannot issue or reveal a code
+- the canonical Birthday Wish owner is connected and can authoritatively confirm `wish_saved`
 - the verified LIFF endpoint has a canonical Worker owner
 - Airtable select option names are validated against live schema
-- campaign benefit amount/type and validity are explicitly approved
+- campaign benefit amount/type and validity match `CARE_BACK_2026_FINAL_LOCK.md`
 - preview and verified states are visually distinct
 - live smoke tests prove single-use and idempotent behavior
