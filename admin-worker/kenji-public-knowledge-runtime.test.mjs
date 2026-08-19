@@ -93,6 +93,10 @@ test("public published runtime falls back to static public cards without Airtabl
   assert.equal(body.storage.persisted, false);
   assert.ok(body.cards.length >= 6);
   assert.equal(body.cards.some((card) => Object.hasOwn(card, "internal_instruction")), false);
+  const careBack = body.cards.find((card) => card.knowledge_id === "kenji_20_011_care_back_2026");
+  assert.ok(careBack);
+  assert.match(careBack.customer_answer, /Birthday Wish/);
+  assert.match(careBack.customer_answer, /10%/);
 });
 
 test("public endpoint supports HEAD without exposing a body", async () => {

@@ -131,20 +131,38 @@ VIP ไม่ใช่แพ็กเกจที่ซื้อได้ แล
 
 โค้ดรูปแบบ `KJ-PRV-XXXXXX` ต้องผ่านการตรวจจริง ห้ามเดาความหมายจากตัวอักษรในโค้ด
 
-## 10. 6th Anniversary / Care Back Promotion
+## 10. CARE BACK 2026 — Final Lock (19 August 2026)
 
-หลักตอบเฉพาะแคมเปญ:
+CARE BACK เป็นสิทธิ์ดูแลกลับ ไม่ใช่ mass discount, membership package หรือ automatic approval เส้นทาง canonical คือ `/promotion/6-years-care-back` และใช้ policy เดียวกันตลอด Birthday window ถึง 31 สิงหาคมและ CARE BACK CONTINUES ตั้งแต่ 1–30 กันยายน 2026 หลัง 30 กันยายนห้ามสร้าง claim ใหม่ แต่ claim เดิมที่ตรวจสอบแล้ว resume ต่อได้
 
-- แยกลูกค้าใหม่ สมาชิกปัจจุบัน และสมาชิกเก่าโดยดูจากข้อมูลจริง
-- ยังไม่บอกสิทธิ์เฉพาะบุคคลหากไม่มี offer record หรือผลตรวจสถานะ
-- ลูกค้าใหม่เริ่มที่ `/promotion/new-client-preview`
-- ผู้มี Promotion Code เริ่มตรวจที่ `/member/promotion?code=...`
-- การเลือกแพ็กเกจเกิดที่ `/member/membership` หลัง code/status step
-- การส่งสลิปเกิดที่ `/member/payments` เท่านั้น
+ลำดับที่ Kenji ต้องอธิบาย:
 
-คำตอบเมื่อถามว่า “ได้สิทธิ์อะไร” แต่ยังไม่มี record:
+1. ยืนยันตัวตนผ่าน LINE/LIFF
+2. MMD ตรวจ Member Passport, สถานะสมาชิก, ประวัติที่เชื่อมได้ และ Points ที่ตรวจสอบได้
+3. สร้างหรือ resume CARE BACK claim เดียวแบบ idempotent
+4. ส่ง Birthday Wish และต้องบันทึกสำเร็จ
+5. หลัง Wish saved เท่านั้นจึงเปิดคูปองส่วนตัว 10% ใช้ได้ 1 ครั้ง ภายใน 30 วันหลัง activation
+6. Membership และ Points มีผลหลัง canonical owner ตรวจและ apply สำเร็จเท่านั้น
 
-> แคมเปญนี้สิทธิ์จะต่างกันตามสถานะและโค้ดที่ได้รับครับ ส่งโค้ดหรือข้อมูลเดิมที่ใช้สมัครไว้ได้เลย เดี๋ยวเปอร์ขอตรวจให้ก่อนนะครับ จะได้ไม่แจ้งสิทธิ์ผิดคน
+ห้ามออกคูปองหรือเพิ่ม Points จากการเปิดหน้า, login หรือ identity verification อย่างเดียว ห้ามใช้ copy เดิมที่บอกว่าจะออกโค้ดทันทีหลัง login
+
+Benefit lock:
+
+- Current member active/grace: เพิ่ม 180 วันจากวันหมดอายุจริง ไม่มี CARE BACK point bonus อัตโนมัติ
+- Former/expired: ต้องตรวจ renewal/payment และกลับเป็น active/grace ก่อน จึง eligible สำหรับ +90 วันและ +150 Points
+- New Standard: +150 Welcome Points หลังตรวจ membership/payment
+- New Premium: +250 Welcome Points หลังตรวจ membership/payment
+- Approved special campaign selection: สูงสุด +350 Points หลังตรวจ membership/payment ใช้เป็นสัญญาณประกอบ Black Card review เท่านั้น
+- Trial / Guest Pass: ไม่มี Welcome Points อัตโนมัติ เว้นแต่ MMD เผยแพร่กฎเพิ่ม
+- Points reconciliation: verified payment เท่านั้น อัตรา 100 บาท = 1 Point
+
+Payment proof เป็น evidence เท่านั้น Browser/Chat ห้าม activate coupon, apply Points, extend membership, approve payment, approve Black Card หรือ infer SVIP. VIP ไม่ใช่ package และ SVIP เป็น private consideration ของเปอร์เท่านั้น
+
+คำตอบมาตรฐาน:
+
+> CARE BACK เป็นสิทธิ์ดูแลกลับที่ MMD ตรวจจากสถานะและประวัติจริงครับ เริ่มจากยืนยันผ่าน LINE แล้วส่ง Birthday Wish ให้บันทึกสำเร็จก่อน คูปองส่วนตัว 10% จึงจะเปิดได้ 1 ครั้งและมีอายุ 30 วันหลัง activation ส่วน Membership และ Points จะมีผลหลัง MMD ตรวจข้อมูล การสมัคร หรือการชำระเงินที่เกี่ยวข้องเรียบร้อยแล้วเท่านั้นครับ
+
+รายละเอียด canonical ทั้งหมดอยู่ที่ `docs/knowledge/CARE_BACK_2026_FINAL_LOCK.md`
 
 ## 11. HYPE แจกโชคเช่นเคย
 
@@ -213,7 +231,7 @@ HYPE แจกโชคเป็นกิจกรรมลุ้นของข
 
 ## 16. Minimum acceptance tests
 
-1. ลูกค้าใหม่ถามโปร → ไป `/promotion/new-client-preview`
+1. ลูกค้าถาม CARE BACK → อธิบาย Wish-saved gate และไป `/promotion/6-years-care-back`
 2. สมาชิกมีโค้ด → ไป `/member/promotion?code=...`
 3. ลูกค้าคิดว่าโค้ดยืนยันสิทธิ์ → ระบบอธิบายว่าต้องตรวจ
 4. ลูกค้าส่งสลิป → รับหลักฐานแต่ไม่ยืนยันการชำระ
@@ -225,10 +243,11 @@ HYPE แจกโชคเป็นกิจกรรมลุ้นของข
 10. ระบบไม่พบข้อมูล → ส่งต่อเปอร์
 11. ทุกข้อความ LINE OA ไม่แนะนำตัวว่า Kenji และไม่ใช้คำว่า “ทีม”
 12. Handoff payload มีข้อมูลขั้นต่ำครบและไม่เปิดเผย internal data
+13. Login/identity verification อย่างเดียวไม่ออก CARE BACK coupon หรือ Points
+14. Current member extension เริ่มจาก expiry จริง; expired/new benefits รอ verification ที่เกี่ยวข้อง
 
 ## 17. Source references reviewed
 
 - GitHub `MMD-Prive/mmd-workers`: issues #46, #47, #56, #134, #138
 - Airtable `MMD Commerce Operating System`: SIGIL — Knowledge Board, Members schema, Points Ledger schema, packages, MMD — Promo Codes, HYPE lane structures
 - Google Drive: Kenji Knowledge Seed Sources V1; Kenji LINE Knowledge Adapter — Live Test Passed
-

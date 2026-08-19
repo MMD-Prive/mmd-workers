@@ -123,6 +123,20 @@ const STATIC_CANONICAL_CARDS = Object.freeze([
     internal_instruction:
       "Forbidden customer-facing examples: Payment Successful, Paid, Verified, Approved, ชำระเงินสำเร็จแล้ว, อนุมัติแล้ว, ยืนยันแล้ว, จ่ายแล้ว, ระบบ, ทีม, Admin, Staff, Operator, Handler, MMD Assistant, MMS Assistant, Chang, Ewvon, Ops Owner, Sales Owner. Preferred: MMD, Companion, รับหลักฐานแล้ว, รอตรวจยอดจริง, MMD ตรวจยอดจริง, ส่งหลักฐานให้ MMD ตรวจสอบ.",
   },
+  {
+    id: "kenji_20_011_care_back_2026",
+    title: "Kenji AI 2.0 — CARE BACK 2026 Final Lock",
+    category: "promotion",
+    language: "th",
+    status: "active",
+    response_mode: "auto_reply_allowed",
+    risk_level: "critical",
+    source_path: "/promotion/6-years-care-back",
+    customer_answer:
+      "CARE BACK เป็นสิทธิ์ดูแลกลับที่ MMD ตรวจจากสถานะและประวัติจริงครับ เริ่มจากยืนยันผ่าน LINE แล้วส่ง Birthday Wish ให้บันทึกสำเร็จก่อน คูปองส่วนตัว 10% จึงจะเปิดได้ 1 ครั้งและมีอายุ 30 วันหลัง activation ส่วน Membership และ Points จะมีผลหลัง MMD ตรวจข้อมูล การสมัคร หรือการชำระเงินที่เกี่ยวข้องเรียบร้อยแล้วเท่านั้นครับ",
+    internal_instruction:
+      "Final lock 2026-08-19. One idempotent claim only. Login/identity alone never issues a coupon or points. Wish saved is mandatory before coupon activation. Current active/grace: +180 days from real expiry, no automatic bonus. Expired: verified renewal/payment and restored active/grace before +90 days and +150 points. New Standard +150, New Premium +250, approved special selection up to +350 after verified membership/payment. Trial/Guest Pass has no automatic welcome points. Reconcile only verified payments at 100 THB = 1 Point. Proof is evidence only. Black Card is review only; VIP is not a package; SVIP is private Per review. Reject new claims after 2026-09-30 while allowing existing verified claims to resume. Never mutate payment, membership, points, coupon, Black Card, or SVIP from browser/chat.",
+  },
 ]);
 
 export function isKenjiKnowledgeRequest(path, method = "GET") {

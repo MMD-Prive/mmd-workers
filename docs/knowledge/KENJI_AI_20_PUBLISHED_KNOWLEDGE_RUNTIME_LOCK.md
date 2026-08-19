@@ -1,7 +1,7 @@
 # Kenji AI 2.0 Published Knowledge Runtime Lock
 
 Status: active implementation lock
-Date: 2026-08-09
+Date: 2026-08-19
 Owner surface: `/member/kenji-ai-20`
 Runtime source endpoint: `/v1/internal/kenji/knowledge/published`
 Admin namespace: `/v1/admin/kenji/knowledge/*`
@@ -24,12 +24,14 @@ The following cards are treated as the current active card set for Kenji AI 2.0:
 8. `kenji_20_008_membership_intake_catalog` — Membership Intake service catalog.
 9. `kenji_20_009_web_forbidden_terms` — Web forbidden terms guard.
 10. `kenji_20_010_cloudflare_deploy_gate` — Cloudflare deploy gate.
+11. `kenji_20_011_care_back_2026` — CARE BACK 2026 final policy, Wish-saved coupon gate, status benefits, and owner boundaries.
 
 ## Route map
 
 - `/member/kenji-ai-20` — Kenji AI 2.0 page/chat runtime.
 - `/confirm/payment-proof` — only customer route for sending payment evidence to MMD for review.
 - `/member/membership` — Membership Intake / Reviewed Access entry, not instant access and not a payment-success page.
+- `/promotion/6-years-care-back` — CARE BACK 2026 canonical customer route; login/identity alone never issues coupon or Points.
 - `/v1/internal/kenji/knowledge/published` — published cards runtime source.
 - `/v1/admin/kenji/knowledge/list` — admin list source.
 - `/v1/admin/kenji/knowledge/draft` — admin draft intake source.

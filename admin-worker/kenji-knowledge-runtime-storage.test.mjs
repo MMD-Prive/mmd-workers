@@ -114,4 +114,10 @@ test("static fallback still prevents empty published cards when Airtable env is 
   assert.equal(body.ok, true);
   assert.equal(body.storage.persisted, false);
   assert.ok(body.cards.length >= 6);
+  const careBack = body.cards.find((card) => card.knowledge_id === "kenji_20_011_care_back_2026");
+  assert.ok(careBack);
+  assert.match(careBack.customer_answer, /Birthday Wish/);
+  assert.match(careBack.customer_answer, /10%/);
+  assert.match(careBack.internal_instruction, /2026-09-30/);
+  assert.match(careBack.internal_instruction, /\+180 days/);
 });

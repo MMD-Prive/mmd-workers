@@ -244,6 +244,7 @@ export function inferLineIntent(text = "", event = {}) {
   }
 
   if (isKenjiLineCandidate(text)) return "talk_to_per_ai";
+  if (/(care\s*back|แคร์\s*แบ็ก|แคร์แบ็ก|6\s*years?|6th\s*anniversary|birthday\s*wish|คำอวยพร|คูปองวันเกิด)/i.test(normalized)) return "care_back";
   if (/(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
   if (/(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
   if (/(svip|s vip|super\s*vip)/i.test(normalized)) return "svip";
@@ -266,6 +267,7 @@ const LINE_KNOWLEDGE_CHANNEL = "LINE_OFC";
 const LINE_KNOWLEDGE_TTL_MS = 60_000;
 const LINE_KNOWLEDGE_CARD_BY_INTENT = Object.freeze({
   talk_to_per_ai: "kenji_per_voice_line_entry_v1",
+  care_back: "kenji_20_011_care_back_2026",
   payment_slip: "kenji_20_006_payment_proof",
   membership: "kenji_20_008_membership_intake_catalog",
   mmd_companion: "kenji_20_002_route_map",
@@ -381,6 +383,10 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
 5) ให้เปอร์ดูเป็นเคสส่วนตัว
 
 เล่าได้เลยครับ เดี๋ยวเปอร์ช่วยแยกขั้นตอนที่เหมาะให้ครับ`;
+  }
+
+  if (intent === "care_back") {
+    return `${prefix}CARE BACK เป็นสิทธิ์ดูแลกลับที่ MMD ตรวจจากสถานะและประวัติจริงครับ เริ่มจากยืนยันผ่าน LINE แล้วส่ง Birthday Wish ให้บันทึกสำเร็จก่อน คูปองส่วนตัว 10% จึงจะเปิดได้ 1 ครั้งและมีอายุ 30 วันหลัง activation ส่วน Membership และ Points จะมีผลหลัง MMD ตรวจข้อมูล การสมัคร หรือการชำระเงินที่เกี่ยวข้องเรียบร้อยแล้วเท่านั้นครับ`;
   }
 
   if (intent === "payment_slip") {
