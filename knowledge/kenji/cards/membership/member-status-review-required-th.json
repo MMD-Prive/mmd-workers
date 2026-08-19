@@ -1,0 +1,33 @@
+{
+  "id": "member-status-review-required-th",
+  "version": 1,
+  "status": "published",
+  "lane": "membership",
+  "audience": ["member"],
+  "language": "th",
+  "title": "สมาชิกถามว่าสถานะ active หรือยัง",
+  "questions": [
+    "สมาชิก active หรือยัง",
+    "เข้า dashboard ได้ไหม"
+  ],
+  "safe_answer": "ผมยังยืนยันสถานะสมาชิกจากข้อความนี้ไม่ได้ครับ กรุณาเปิด Member Dashboard เพื่อตรวจสถานะที่ระบบอนุญาตให้แสดง หากยังขึ้นว่าต้องตรวจเพิ่มเติม ผมจะส่งเรื่องให้ MMD ตรวจต่อครับ",
+  "allowed_actions": [
+    "explain_safe_status",
+    "route_to_member_dashboard",
+    "escalate_identity_mismatch"
+  ],
+  "forbidden_actions": [
+    "unlock_membership",
+    "set_member_active",
+    "infer_identity_from_chat"
+  ],
+  "escalate_when": [
+    "unclear_identity",
+    "account_mismatch",
+    "manual_review"
+  ],
+  "safe_routes": ["/member/dashboard"],
+  "owner": "Ewvon",
+  "final_reviewer": "Boss Per",
+  "change_reason": "ใช้ตอบเมื่อยังไม่มี authoritative member status ที่ยืนยันได้"
+}
