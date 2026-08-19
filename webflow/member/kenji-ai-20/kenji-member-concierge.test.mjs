@@ -48,6 +48,15 @@ test("payment and slip intent includes official verification safety copy", () =>
   assert.match(reply, /ยังไม่ถือว่ายืนยันยอด/);
 });
 
+test("CARE BACK intent wins over payment terms and keeps the Wish gate", () => {
+  const reply = concierge.buildKenjiReply("CARE BACK ส่งสลิปแล้ว");
+  assert.equal(concierge.classifyIntent("CARE BACK ส่งสลิปแล้ว").intent, "care_back");
+  assert.match(reply, /Birthday Wish/);
+  assert.match(reply, /10%/);
+  assert.match(reply, /30 วัน/);
+  assert.doesNotMatch(reply, /คูปองอัตโนมัติ|Points อัตโนมัติ/);
+});
+
 test("points intent shows points summary", () => {
   const reply = concierge.buildKenjiReply("แต้ม", { points_balance: 875 });
   assert.equal(concierge.classifyIntent("แต้ม", { points_balance: 875 }).intent, "points");
