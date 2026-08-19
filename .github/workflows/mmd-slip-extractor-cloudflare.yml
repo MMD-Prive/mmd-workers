@@ -81,7 +81,7 @@ jobs:
 
       - name: Validate Wrangler staging bundle without deployment
         working-directory: services/mmd-slip-extractor/cloudflare
-        run: npx wrangler deploy --dry-run --config wrangler.jsonc
+        run: npx --yes wrangler@4.124.0 deploy --dry-run --config wrangler.jsonc
 
   deploy:
     name: Deploy and smoke isolated staging
@@ -155,7 +155,43 @@ jobs:
         working-directory: services/mmd-slip-extractor/cloudflare
         shell: bash
         run: |
-          npx wrangler deploy --config wrangler.jsonc --keep-vars --secrets-file "$RUNNER_TEMP/extractor.env" 2>&1 | tee "$RUNNER_TEMP/deploy.log"
+          set +e
+          WRANGLER_LOG=debug npx --yes wrangler@4.124.0 deploy \
+            --config wrangler.jsonc \
+            --keep-vars \
+            --secrets-file "$RUNNER_TEMP/extractor.env" \
+            > "$RUNNER_TEMP/deploy.raw.log" 2>&1
+          deploy_status=$?
+          set -e
+
+          node <<'NODE'
+          const fs = require("node:fs");
+          const rawPath = process.env.RUNNER_TEMP + "/deploy.raw.log";
+          const safePath = process.env.RUNNER_TEMP + "/deploy.log";
+          let output = fs.readFileSync(rawPath, "utf8");
+          for (const key of ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "MMD_SLIP_EXTRACTOR_TOKEN"]) {
+            const value = String(process.env[key] || "");
+            if (value) output = output.split(value).join("[REDACTED]");
+          }
+          output = output
+            .replace(/(authorization\s*[:=]\s*)[^\r\n]+/gi, "$1[REDACTED]")
+            .replace(/(cookie\s*[:=]\s*)[^\r\n]+/gi, "$1[REDACTED]")
+            .replace(/\b(?:cfut|cfat|cfk)_[A-Za-z0-9._~-]+\b/g, "[REDACTED_CLOUDFLARE_TOKEN]")
+            .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, "$1[REDACTED]");
+          fs.writeFileSync(safePath, output);
+          process.stdout.write(output);
+          NODE
+
+          if [ "$deploy_status" -ne 0 ]; then
+            {
+              echo "### Cloudflare staging deploy diagnostic"
+              echo
+              echo "Wrangler 4.124.0 failed after secret validation and staging-boundary checks."
+              echo "Inspect the sanitized API request/response lines in this job log."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit "$deploy_status"
+          fi
+
           url="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' "$RUNNER_TEMP/deploy.log" | tail -n 1)"
           test -n "$url"
           case "$url" in
