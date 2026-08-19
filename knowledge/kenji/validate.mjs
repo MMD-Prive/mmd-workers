@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const cardsRoot = path.join(here, "cards");
 const routes = JSON.parse(fs.readFileSync(path.join(here, "routes.json"), "utf8"));
+const schema = JSON.parse(fs.readFileSync(path.join(here, "schema.json"), "utf8"));
 const safeRoutes = new Set(Object.keys(routes.public_and_member_safe_routes || {}));
+const allowedLanes = new Set(schema.properties?.lane?.enum || []);
 const allowedOwners = new Set(["Boss Per", "Ewvon", "Chang"]);
 const allowedStatuses = new Set(["draft", "review", "published", "archived"]);
 const forbiddenPatterns = [
@@ -59,6 +61,7 @@ for (const file of walk(cardsRoot)) {
   if (!/^[a-z0-9][a-z0-9-]+$/.test(card.id || "")) fail(file, "invalid id");
   if (!Number.isInteger(card.version) || card.version < 1) fail(file, "version must be a positive integer");
   if (!allowedStatuses.has(card.status)) fail(file, `invalid status ${card.status}`);
+  if (!allowedLanes.has(card.lane)) fail(file, `invalid lane ${card.lane}`);
   if (!allowedOwners.has(card.owner)) fail(file, `invalid owner ${card.owner}`);
   if (card.final_reviewer !== "Boss Per") fail(file, "final_reviewer must be Boss Per");
 
