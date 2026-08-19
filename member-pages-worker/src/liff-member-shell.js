@@ -74,9 +74,9 @@ function renderShell(config, nonce) {
     <div class="card"><span class="label">History · Last 1 Year</span><div id="history" class="history"></div></div>
     <div id="care" class="card care">
       <span class="label">6 Years · Care Back</span><h2>Personal Care-Back Privilege</h2>
-      <p id="care-message">ตรวจสอบผ่าน LINE ก่อนออกโค้ดส่วนตัว โค้ดจะมีผลหลัง MMD ตรวจสอบสิทธิ์อย่างเป็นทางการครับ</p>
+      <p id="care-message">ตรวจสอบผ่าน LINE เพื่อเปิดสิทธิ์ CARE BACK ก่อน คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จครับ</p>
       <div id="care-code" class="care-code hidden"><span class="label">Personal Code</span><strong id="care-code-value"></strong></div>
-      <button id="care-button" type="button">รับโค้ดส่วนตัว</button>
+      <button id="care-button" type="button">ตรวจสิทธิ์ CARE BACK</button>
       <div id="wish" class="wish hidden">
         <label for="wish-text" class="label">Birthday Wish</label>
         <textarea id="wish-text" maxlength="600" placeholder="ฝากคำอวยพรวันเกิดให้ MMD ได้ที่นี่ครับ"></textarea>
@@ -157,6 +157,7 @@ function renderShell(config, nonce) {
     if (state === "wish_available") {
       careButton.classList.add("hidden");
       wishPanel.classList.remove("hidden");
+      document.getElementById("care-message").textContent = "สิทธิ์ CARE BACK ของคุณถูกตรวจแล้ว ส่งคำอวยพรถึง MMD สำเร็จเพื่อเปิดคูปองส่วนตัว 10% ครับ";
       wishText.classList.remove("hidden");
       wishSubmit.classList.remove("hidden");
       wishResult.classList.add("hidden");
@@ -227,11 +228,7 @@ function renderShell(config, nonce) {
       const response = await fetch(CONFIG.careBackEndpoint, { method:"POST",credentials:"same-origin",headers:{"content-type":"application/json","accept":"application/json"},body:"{}" });
       const payload = await response.json().catch(() => null);
       if (!response.ok || !payload || payload.ok !== true) throw new Error("care_back_unavailable");
-      const data = payload.data || {};
-      document.getElementById("care-code-value").textContent = String(data.personal_code || "");
-      document.getElementById("care-code").classList.remove("hidden");
-      document.getElementById("care-message").textContent = String(data.message || "โค้ดจะมีผลหลัง MMD ตรวจสอบสิทธิ์อย่างเป็นทางการครับ");
-      careButton.textContent = data.resumed ? "เปิดโค้ดเดิมแล้ว" : "ออกโค้ดส่วนตัวแล้ว";
+      renderCareBackClaim(payload.data || {});
       await readCareBackState();
     } catch {
       document.getElementById("care-message").textContent = "ตอนนี้ยังออกโค้ดไม่ได้ครับ กรุณาลองใหม่อีกครั้งหรือติดต่อ HYPE";
@@ -251,12 +248,24 @@ function renderShell(config, nonce) {
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok || !payload || payload.ok !== true) throw new Error("wish_unavailable");
+      if (payload.claim) renderCareBackClaim(payload.claim);
       renderCareBackState(payload);
     } catch {
       wishResult.textContent = "ตอนนี้ยังเก็บคำอวยพรไม่ได้ครับ กรุณาลองใหม่อีกครั้ง";
       wishResult.classList.remove("hidden");
       wishSubmit.disabled = false; wishSubmit.textContent = "ลองส่งอีกครั้ง";
     } finally { setBusy(false); }
+  }
+
+  function renderCareBackClaim(data) {
+    const code = String(data.personal_code || "");
+    const codeWrap = document.getElementById("care-code");
+    const couponState = String(data.coupon_state || "");
+    document.getElementById("care-code-value").textContent = code;
+    codeWrap.classList.toggle("hidden", !code);
+    document.getElementById("care-message").textContent = String(data.coupon_message || data.message || "MMD จะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ");
+    careButton.textContent = data.resumed ? "อัปเดตสิทธิ์ CARE BACK แล้ว" : "ตรวจสิทธิ์ CARE BACK แล้ว";
+    if (couponState === "wish_required") careButton.textContent = "ส่งคำอวยพรเพื่อเปิดคูปอง";
   }
 
   function render(data) {

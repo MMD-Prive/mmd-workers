@@ -302,7 +302,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assertNoSensitive(JSON.stringify(payload));
   });
 
-  it("returns the bounded member profile and issues CARE BACK code only from the verified session", async () => {
+  it("returns the bounded member profile and holds the CARE BACK coupon for a Birthday Wish from the verified session", async () => {
     const careCalls = [];
     const memberResolver = resolver({
       member_exists: true,
@@ -326,8 +326,13 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
             claim_reference: "CB6-2026-ABCDEF12345678",
             claim_status: "identity_verified",
             review_status: "pending",
-            personal_code: "ABC234",
+            personal_code: "",
             code_status: "draft",
+            expires_at: null,
+            discount_percent: 0,
+            coupon_state: "wish_required",
+            coupon_message: "ส่งคำอวยพรวันเกิดถึง MMD สำเร็จก่อน จึงจะเปิดคูปองส่วนตัวได้",
+            membership_benefit: { type: "membership_extension", days: 180, state: "pending_application" },
             resumed: false,
           };
         },
@@ -351,16 +356,19 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
 
     const claim = await request("/member/api/liff/care-back/claim", { body: {}, cookie: profileCookie }, runtime);
     assert.equal(claim.response.status, 200);
-    assert.equal(claim.payload.data.personal_code, "ABC234");
+    assert.equal(claim.payload.data.personal_code, "");
     assert.equal(claim.payload.data.code_status, "draft");
-    assert.equal(claim.payload.data.benefit_state, "pending_official_review");
+    assert.equal(claim.payload.data.benefit_state, "benefit_pending");
+    assert.equal(claim.payload.data.discount_percent, 0);
+    assert.equal(claim.payload.data.coupon_state, "wish_required");
     assert.equal(careCalls.length, 1);
     assert.equal(careCalls[0].memberId, "MMD-PER-01");
+    assert.deepEqual(careCalls[0].memberProfile, { display_name: "เปอร์", tier: "Premium", membership_status: "active", points: 345, history_window: { from: "2025-08-10", to: "2026-08-10", timezone: "Asia/Bangkok" }, history: [{ type: "points", date: "2026-08-01", title: "Points added", status: "posted", points_delta: 25 }] });
     assert.match(careCalls[0].identityHash, /^[a-f0-9]{64}$/);
     assert.equal(runtime.LIFF_GATEWAY_STORE.records.length, 1);
     assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].campaign_code, "6-years-care-back");
     assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].campaign_claim_id, "CB6-2026-ABCDEF12345678");
-    assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].promo_code, "ABC234");
+    assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].promo_code, "");
     assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].promo_status, "draft");
     assert.equal("identity_key" in runtime.LIFF_GATEWAY_STORE.records[0], false);
 
@@ -371,17 +379,23 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
   });
 
   it("persists, replays, and reloads one canonical Birthday Wish without exposing storage identity", async () => {
+    const careCalls = [];
     const runtime = env({
       MEMBER_STATUS_RESOLVER: resolver({ member_exists: true, mmd_member_id: "MMD-PER-01" }),
       CARE_BACK_STORE: {
-        async openOrResume() {
+        async openOrResume(input) {
+          careCalls.push(input);
+          const wishSubmitted = input.wishSubmitted === true;
           return {
             claim_record_id: `rec${"A".repeat(14)}`,
             claim_reference: "CB6-2026-ABCDEF12345678",
             claim_status: "identity_verified",
             review_status: "pending",
-            personal_code: "ABC234",
-            code_status: "draft",
+            personal_code: wishSubmitted ? "ABC234" : "",
+            code_status: wishSubmitted ? "active" : "draft",
+            discount_percent: wishSubmitted ? 10 : 0,
+            coupon_state: wishSubmitted ? "ready" : "wish_required",
+            coupon_message: wishSubmitted ? "คูปองส่วนตัวของคุณพร้อมใช้แล้ว" : "ส่งคำอวยพรวันเกิดถึง MMD สำเร็จก่อน จึงจะเปิดคูปองส่วนตัวได้",
             resumed: false,
           };
         },
@@ -422,6 +436,11 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(first.payload.state, "completed");
     assert.equal(first.payload.wish.text, "ขอให้ MMD เติบโตอย่างอบอุ่นต่อไปครับ");
     assert.match(first.payload.final_display.message, /MMD ได้รับคำอวยพรของคุณแล้วครับ/);
+    assert.equal(first.payload.claim.personal_code, "ABC234");
+    assert.equal(first.payload.claim.discount_percent, 10);
+    assert.equal(first.payload.claim.coupon_state, "ready");
+    assert.equal(careCalls.length, 2);
+    assert.equal(careCalls[1].wishSubmitted, true);
 
     const replay = await request("/member/api/liff/care-back/wish", {
       body: { wish_text: "ข้อความที่ไม่ควรแทนของเดิม", request_id: "different_1234567890" },
