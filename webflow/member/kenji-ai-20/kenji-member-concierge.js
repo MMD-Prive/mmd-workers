@@ -16,6 +16,7 @@
     PARTNER_VENUE: "partner_venue",
     PRIVATE_TALENT: "private_talent",
     PAYMENT: "payment_slip",
+    CARE_BACK: "care_back",
     POINTS: "points",
     VIP: "vip",
     SVIP: "svip",
@@ -103,6 +104,10 @@
       return { intent: INTENTS.MMD_COMPANION, priority: 90, confidence: 0.95 };
     }
 
+    if (includesAny(text, ["care back", "careback", "แคร์แบ็ก", "แคร์ แบ็ก", "6 years", "6th anniversary", "birthday wish", "คำอวยพร", "คูปองวันเกิด"])) {
+      return { intent: INTENTS.CARE_BACK, priority: 89, confidence: 0.95 };
+    }
+
     if (includesAny(text, ["ส่งสลิป", "สลิป", "slip", "payment", "paid", "โอน", "ชำระ", "จ่าย"])) {
       return { intent: INTENTS.PAYMENT, priority: 88, confidence: 0.95 };
     }
@@ -168,6 +173,8 @@
         return `ผมช่วยรับ MMD Companion request สำหรับ Private Social, Dining, Drinks, Event หรือ Appearance ได้ครับ${statusLine} MMD จะตรวจความเหมาะสมและความพร้อมก่อนยืนยัน`;
       case INTENTS.PAYMENT:
         return "ถ้าต้องส่งหลักฐาน ผมจะพาไป /confirm/payment-proof ครับ MMD จะตรวจยอดจริงก่อนอัปเดตขั้นตอนถัดไป หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request";
+      case INTENTS.CARE_BACK:
+        return "CARE BACK เป็นสิทธิ์ดูแลกลับที่ MMD ตรวจจากสถานะและประวัติจริงครับ เริ่มจากยืนยันผ่าน LINE แล้วส่ง Birthday Wish ให้บันทึกสำเร็จก่อน คูปองส่วนตัว 10% จึงจะเปิดได้ 1 ครั้งและมีอายุ 30 วันหลัง activation ส่วน Membership และ Points จะมีผลหลัง MMD ตรวจข้อมูล การสมัคร หรือการชำระเงินที่เกี่ยวข้องเรียบร้อยแล้วเท่านั้นครับ";
       case INTENTS.POINTS:
         return `Your points summary is ${formatPoints(summary.points_balance)} points. Points can guide the next step, but they must not override booking, payment, SVIP, Black Card, or membership intent.`;
       case INTENTS.VIP:
