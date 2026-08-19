@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "public_and_member_safe_routes": {
     "/sigil/inme": "Client entry and orientation",
     "/sigil/start": "Guided start",
@@ -8,7 +8,8 @@
     "/sigil/pay": "Payment and renewal guidance",
     "/member/dashboard": "Member home and safe status surface",
     "/sigil/member/account": "Member account surface",
-    "/sigil/apply": "Model and applicant routing only"
+    "/sigil/apply": "Model and applicant routing only",
+    "/promotion/6-years-care-back": "CARE BACK 2026 campaign entry and Birthday Wish flow"
   },
   "forbidden_route_classes": [
     "internal_admin",
