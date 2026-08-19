@@ -43,6 +43,20 @@ describe("same-site /member/liff shell", () => {
     assert.doesNotMatch(html, /https:\/\/mmdprive\.webflow\.io/);
   });
 
+  it("checks the existing same-site member session before any LIFF init or login", async () => {
+    const response = await shell("/member/liff?intent=promo&campaign=care_back&view=care_back");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    const sessionCheck = html.indexOf("const existingProfile = await readProfile()");
+    const liffInit = html.indexOf("await window.liff.init({ liffId: CONFIG.liffId })");
+    const liffLogin = html.indexOf("window.liff.login({ redirectUri: window.location.href })");
+    assert.ok(sessionCheck >= 0, "same-site session check must be rendered");
+    assert.ok(liffInit > sessionCheck, "LIFF init must happen only after same-site session check");
+    assert.ok(liffLogin > liffInit, "LIFF login must remain a fallback after LIFF init");
+    assert.match(html, /if \(existingProfile\) return/);
+  });
+
   it("binds the canonical CARE BACK campaign to guarded same-site state and wish APIs", async () => {
     const response = await shell("/member/liff?intent=promo&campaign=care_back");
     const html = await response.text();
@@ -97,6 +111,25 @@ describe("same-site /member/liff shell", () => {
 
     assert.equal(response.status, 404);
     assert.equal(payload.error.code, "LIFF_ROUTE_NOT_FOUND");
+  });
+
+  it("renders bounded current-member and returning-member synthetic launch cases without requiring real customer data", async () => {
+    const runtime = env({ CARE_BACK_STAGING_MODE: "synthetic" });
+    const current = await stagingShell(
+      "member-dashboard-chat-worker-staging.example.workers.dev",
+      "/member/liff?intent=promo&campaign=care_back&scenario=current",
+      runtime,
+    );
+    const returning = await stagingShell(
+      "member-dashboard-chat-worker-staging.example.workers.dev",
+      "/member/liff?intent=promo&campaign=care_back&scenario=returning",
+      runtime,
+    );
+
+    assert.equal(current.status, 200);
+    assert.equal(returning.status, 200);
+    assert.match(await current.text(), /"stagingScenario":"current"/);
+    assert.match(await returning.text(), /"stagingScenario":"returning"/);
   });
 
   it("enables bounded synthetic scenarios only on the staging workers.dev host", async () => {
