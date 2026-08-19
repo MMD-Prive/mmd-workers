@@ -1,0 +1,74 @@
+name: Deploy member-dashboard-chat-worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "member-dashboard-chat-worker/**"
+      - ".github/workflows/deploy-member-dashboard-chat-worker.yml"
+
+concurrency:
+  group: deploy-member-dashboard-chat-worker-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      NO_COLOR: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Normalize Cloudflare credentials
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const clean = (value) => (value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
+          const token = clean(process.env.CLOUDFLARE_API_TOKEN);
+          const accountId = clean(process.env.CLOUDFLARE_ACCOUNT_ID);
+          if (!token || !accountId) throw new Error("Cloudflare credentials are missing after normalization");
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\nCLOUDFLARE_ACCOUNT_ID=${accountId}\n`);
+          NODE
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate LINE, LIFF, and CARE BACK runtime
+        run: |
+          node --check member-dashboard-chat-worker/src/index.js
+          npm run test:member-dashboard-liff
+          npm run test:member-dashboard-line
+
+      - name: Validate Cloudflare deployment
+        run: npx --yes wrangler@4 deploy --dry-run --keep-vars --config member-dashboard-chat-worker/wrangler.toml
+
+      - name: Deploy member-dashboard-chat-worker
+        run: npx --yes wrangler@4 deploy --keep-vars --config member-dashboard-chat-worker/wrangler.toml
+
+      - name: Smoke production LINE route
+        shell: bash
+        run: |
+          response="$(curl --fail-with-body --silent --show-error https://www.mmdbkk.com/webhooks/line)"
+          node -e '
+            const body = JSON.parse(process.argv[1]);
+            if (body.ok !== true || body.worker !== "member-dashboard-chat-worker" || body.route !== "line_webhook") {
+              throw new Error(`Unexpected production smoke response: ${process.argv[1]}`);
+            }
+          ' "$response"
