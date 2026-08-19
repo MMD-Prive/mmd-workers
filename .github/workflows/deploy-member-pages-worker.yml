@@ -1,0 +1,62 @@
+name: Deploy member-pages-worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "member-pages-worker/**"
+      - ".github/workflows/deploy-member-pages-worker.yml"
+
+concurrency:
+  group: deploy-member-pages-worker-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      NO_COLOR: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Normalize Cloudflare credentials
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const clean = (value) => (value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
+          const token = clean(process.env.CLOUDFLARE_API_TOKEN);
+          const accountId = clean(process.env.CLOUDFLARE_ACCOUNT_ID);
+          if (!token || !accountId) throw new Error("Cloudflare credentials are missing after normalization");
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\nCLOUDFLARE_ACCOUNT_ID=${accountId}\n`);
+          NODE
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run focused LIFF and CARE BACK tests
+        run: |
+          npm run test:member-pages-liff
+          npm run check:member-pages-wrangler
+
+      - name: Validate Cloudflare deployment
+        run: npx --yes wrangler@4 deploy --dry-run --keep-vars --config member-pages-worker/wrangler.toml
+
+      - name: Deploy member-pages-worker
+        run: npx --yes wrangler@4 deploy --keep-vars --config member-pages-worker/wrangler.toml
