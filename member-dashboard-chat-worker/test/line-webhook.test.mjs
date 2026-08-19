@@ -111,6 +111,19 @@ test("payment proof routes safely without confirming funds", () => {
   assert.doesNotMatch(reply, /ชำระเงินสำเร็จ|approved/i);
 });
 
+test("CARE BACK requires a saved Birthday Wish before the personal coupon opens", () => {
+  const phrases = ["CARE BACK", "แคร์แบ็ก", "Birthday Wish", "CARE BACK ส่งสลิปแล้ว"];
+  for (const phrase of phrases) {
+    const event = lineTextEvent(phrase);
+    assert.equal(inferLineIntent(phrase, event), "care_back", phrase);
+    const reply = buildKenjiLineReply(event);
+    assert.match(reply, /Birthday Wish/);
+    assert.match(reply, /10%/);
+    assert.match(reply, /30 วัน/);
+    assert.doesNotMatch(reply, /ยืนยันตัวตนแล้ว(?:รับ|ได้)คูปอง|คูปองอัตโนมัติ|Points อัตโนมัติ/);
+  }
+});
+
 test("Kenji trigger phrases route to talk_to_per_ai intent", async () => {
   const phrases = ["Hi Per", "Per AI", "Kenji AI", "เปอร์ ai", "เปอร์เอไอ"];
 
