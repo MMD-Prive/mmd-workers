@@ -314,6 +314,12 @@ function renderShell(config, nonce) {
       }
       return;
     }
+    try {
+      const existingProfile = await readProfile();
+      if (existingProfile) return;
+    } catch {
+      // No valid same-site session yet. Fall through to the one-time LIFF handshake.
+    }
     if (!CONFIG.liffId || !window.liff) {
       show("ช่องทางนี้ยังไม่พร้อมใช้งานครับ กรุณากลับมาเปิดผ่าน LINE ของ MMD อีกครั้ง");
       return;
