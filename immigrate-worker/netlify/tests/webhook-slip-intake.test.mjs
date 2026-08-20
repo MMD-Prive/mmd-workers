@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { handler } from "../functions/webhook.js";
 import { processLineSlipIntakeWebhook } from "../../src/line-slip-intake-orchestration.mjs";
@@ -19,8 +22,9 @@ import {
   normalizeAmountThb,
   processPaymentSlipImage,
   putPrivateR2Object,
-} from "../functions/line-payment-slip-intake.mjs";
+} from "../../src/line-payment-slip-intake.mjs";
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const LINE_USER_ID = "U1234567890abcdef1234567890abcdef";
 const imageEvent = (overrides = {}) => ({
   type: "message",
@@ -359,6 +363,21 @@ test("acknowledgement contract never claims paid or verified", () => {
   const paidOrVerified = /\b(?:paid|verified)\b|ชำระเงินเรียบร้อย|ยืนยันการชำระเงิน/i;
   for (const acknowledgement of [MANUAL_SLIP_ACK, SAFE_SLIP_ACK, RETRY_SLIP_ACK]) {
     assert.doesNotMatch(acknowledgement, paidOrVerified);
+  }
+});
+
+test("provider-neutral slip modules do not import retired Netlify function paths", () => {
+  const srcDir = resolve(__dirname, "../../src");
+  const files = [
+    "line-slip-intake-orchestration.mjs",
+    "line-payment-slip-intake.mjs",
+    "line-webhook-reply-core.mjs",
+    "kenji-member-memory-context.mjs",
+  ];
+  for (const file of files) {
+    const source = readFileSync(resolve(srcDir, file), "utf8");
+    assert.doesNotMatch(source, /netlify\/functions/i, file);
+    assert.doesNotMatch(source, /netlify-line-webhook/i, file);
   }
 });
 

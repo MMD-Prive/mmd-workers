@@ -37,7 +37,7 @@
     "test:sigil-board-webflow": "node --test webflow/sigil/board/kenji-board-v70-gate.test.mjs",
     "check:sigil-booking-proxy": "node --check workers/sigil-booking-proxy-worker/src/index.js",
     "test:sigil-booking-proxy": "node --test workers/sigil-booking-proxy-worker/test/index.test.mjs",
-    "check:kenji-member-memory": "node --check shared/kenji-member-memory-snapshot.mjs && node --check immigrate-worker/netlify/functions/kenji-member-memory-context.mjs",
+    "check:kenji-member-memory": "node --check shared/kenji-member-memory-snapshot.mjs && node --check immigrate-worker/src/kenji-member-memory-context.mjs",
     "test:kenji-line": "node --test shared/kenji-member-concierge-core.test.mjs",
     "test:kenji-member-memory": "node --test shared/kenji-member-memory-snapshot.test.mjs"
   }

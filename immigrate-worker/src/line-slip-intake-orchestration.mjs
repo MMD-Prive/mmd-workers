@@ -1,17 +1,20 @@
 import crypto from "node:crypto";
 
+// Migration preservation only. This provider-neutral orchestration is retained
+// for future Cloudflare migration and is not a production webhook owner.
+
 import {
   buildAutoReplyMessage,
   getLineEventTextForIntent,
   inferIntent,
-} from "../netlify/functions/webhook.js";
+} from "./line-webhook-reply-core.mjs";
 import {
   RETRY_SLIP_ACK,
   isImageMessage,
   loadRecentPaymentContext,
   looksLikePaymentSlipContext,
   processPaymentSlipImage,
-} from "../netlify/functions/line-payment-slip-intake.mjs";
+} from "./line-payment-slip-intake.mjs";
 
 const DEFAULT_SYNC_TABLE = "MMD — Console Inbox";
 const LINE_API_BASE = "https://api.line.me/v2/bot";

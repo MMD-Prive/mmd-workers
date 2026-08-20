@@ -35,13 +35,19 @@ The current shell does not contain the production LINE webhook, Kenji reply, inb
 - patch only the real production entrypoint
 - if the real production entrypoint is unclear, stop and report candidate files instead of creating a new entrypoint
 
-## Evidence from current LINE implementation candidate
+## Historical LINE implementation candidate
 
-The strongest current implementation candidate is:
+This note captured a July 2026 migration investigation. The historical implementation candidate was:
 
 `immigrate-worker/netlify/functions/webhook.js`
 
-It contains production LINE behavior that the current `member-dashboard-chat-worker` shell does not contain:
+The behavior has since been preserved outside the retired Netlify handler for migration/reference purposes:
+
+`immigrate-worker/src/line-slip-intake-orchestration.mjs`
+
+At the current architecture lock, `member-dashboard-chat-worker` is the sole production LINE webhook owner and Netlify is not an upstream, fallback, or route owner. The retired Netlify handler must return HTTP 410.
+
+The preserved migration code covers:
 
 - LINE request signature verification
 - inbound LINE event parsing
@@ -59,11 +65,11 @@ It contains production LINE behavior that the current `member-dashboard-chat-wor
 
 `https://mmdbkk.com/webhooks/line`
 
-It also says the public route is owned at the `mmd-redirect-worker` front gate and can bridge to the configured webhook implementation upstream. Therefore, the current safest interpretation is:
+That older bridge interpretation is no longer current. The current route lock is:
 
-- `mmd-redirect-worker` owns the stable public LINE URL on `mmdbkk.com`
-- `immigrate-worker/netlify/functions/webhook.js` is the active compatibility upstream implementation
-- `member-dashboard-chat-worker` is not yet proven to be the live LINE webhook implementation on main after PR #131
+- `member-dashboard-chat-worker` owns the stable public LINE URL on `mmdbkk.com`.
+- `mmd-redirect-worker` must fail closed if it catches LINE webhook paths.
+- Netlify and `immigrate-worker/netlify/functions/webhook.js` are retired legacy evidence only.
 
 ## Route decision
 
@@ -77,13 +83,13 @@ Do not move LINE OA directly to a new Worker URL. The public LINE OA webhook URL
 
 ### Option A: keep production route on existing bridge
 
-If the current bridge is still live, do not deploy `member-dashboard-chat-worker` as a traffic target yet. Confirm the front gate bridge setting and smoke test the stable public LINE route.
+This option is retired. Do not restore a bridge or upstream fallback.
 
 ### Option B: migrate LINE implementation into `member-dashboard-chat-worker`
 
 Only if MMD decides to make `member-dashboard-chat-worker` the canonical LINE implementation:
 
-1. Port or wrap the proven LINE/Kenji implementation from `immigrate-worker/netlify/functions/webhook.js` into a Cloudflare Worker-compatible module.
+1. Use provider-neutral preserved code under `immigrate-worker/src` only as migration evidence for a separately approved Cloudflare owner.
 2. Preserve the PR #131 fallback endpoint and guard.
 3. Add LINE signature tests.
 4. Add Kenji trigger tests.
