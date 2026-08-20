@@ -445,6 +445,8 @@ function normalizeCustomerTier(value) {
   const tier = String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, "_");
   if (tier === "black_card" || tier === "blackcard") return "Black Card";
   if (tier === "premium") return "Premium";
+  if (tier === "vip") return "VIP";
+  if (tier === "svip") return "SVIP";
   if (tier === "standard") return "Standard";
   return "Member";
 }
