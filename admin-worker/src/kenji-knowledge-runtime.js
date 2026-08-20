@@ -69,17 +69,17 @@ const STATIC_CANONICAL_CARDS = Object.freeze([
   },
   {
     id: "kenji_20_008_membership_intake_catalog",
-    title: "Kenji AI 2.0 — Membership Intake Service Catalog",
+    title: "Kenji AI 2.0 — MY MMD Canonical Route Map",
     category: "membership",
     language: "th",
     status: "active",
-    response_mode: "handoff_required",
-    risk_level: "high",
-    source_path: "/member/membership",
+    response_mode: "auto_reply_allowed",
+    risk_level: "medium",
+    source_path: "/sigil/member/membership",
     customer_answer:
-      "ถ้าคุณสนใจ Membership Access ผมช่วยรับความสนใจและแยกเส้นทางให้ MMD review ก่อนครับ เส้นนี้เหมาะกับคนที่ต้องการ access ระดับพิเศษ เช่น Companion, high-discretion entertainment, public figure / influencer / model lane หรือ potential curated access ขั้นตอนนี้เป็น intake และ review เท่านั้น ยังไม่ใช่การยืนยัน membership, talent availability, ราคา, booking หรือ access ครับ",
+      "ถ้าต้องการจัดการ MY MMD ผมพาไปหน้าที่ตรงกับเรื่องได้ครับ: MY MMD Home /member/dashboard สำหรับดูสถานะและทางเข้าหลัก, Membership /sigil/member/membership สำหรับเลือกแพ็กเกจ สมัคร ต่ออายุ อัปเกรด หรือไปต่อเรื่องการชำระเงิน, Renewal / Access Conditions /sigil/membership สำหรับอ่านเงื่อนไขการต่ออายุและสิทธิ์, Renewal payment /sigil/pay/renewal สำหรับขั้นตอนชำระต่ออายุ, Booking Request /sigil/booking สำหรับส่งคำขอจอง และ Payment Proof /confirm/payment-proof สำหรับส่งหลักฐานการชำระเงินครับ การชำระเงิน สิทธิ์สมาชิก การจอง และ access จะยืนยันได้หลัง MMD ตรวจสอบจากข้อมูลทางการแล้วเท่านั้นครับ",
     internal_instruction:
-      "Use /member/membership as Membership Intake / service catalog / access request page. Existing-member status remains /sigil/member/membership or /member/dashboard. Do not promise celebrity/influencer/model access.",
+      "Canonical MY MMD route map: /member/dashboard = MY MMD Home / member status hub; /sigil/member/membership = canonical member package selection and member-facing membership actions; /sigil/membership = renewal/access conditions page, not checkout; /sigil/pay/renewal = renewal payment flow; /sigil/booking = booking request gate; /confirm/payment-proof = payment evidence submission; /sigil/onboarding = onboarding entry when a flow explicitly requires onboarding. /member/membership is legacy compatibility and must not be recommended in new replies. Preserve query params t, code, promo, session_id, package when present. Never confirm payment, membership, booking, availability, Black Card, VIP, SVIP, or access from chat alone.",
   },
   {
     id: "kenji_20_007_drop_690_guard",
@@ -389,7 +389,7 @@ function normalizeStaticCard(card) {
     ...card,
     knowledge_id: card.id,
     allowed_channels: ["LINE_OFC", "Webflow", "SIGIL Board", "Admin Console"],
-    effective_from: "2026-08-09",
+    effective_from: "2026-08-20",
     owner: "Boss Per",
     reviewed_by: "Boss Per",
     payload_json: {},
