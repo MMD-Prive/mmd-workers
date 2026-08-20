@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 20
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
       NO_COLOR: "1"
 
     steps:
