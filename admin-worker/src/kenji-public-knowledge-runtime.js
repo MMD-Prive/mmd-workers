@@ -58,15 +58,15 @@ const STATIC_PUBLIC_CARDS = Object.freeze([
   },
   {
     id: "kenji_20_008_membership_intake_catalog",
-    title: "Kenji AI 2.0 — Membership Intake Service Catalog",
+    title: "Kenji AI 2.0 — MY MMD Canonical Route Map",
     category: "membership",
     language: "th",
     status: "active",
-    response_mode: "handoff_required",
-    risk_level: "high",
-    source_path: "/member/membership",
+    response_mode: "auto_reply_allowed",
+    risk_level: "medium",
+    source_path: "/sigil/member/membership",
     customer_answer:
-      "ถ้าคุณสนใจ Membership Access ผมช่วยรับความสนใจและแยกเส้นทางให้ MMD review ก่อนครับ ขั้นตอนนี้เป็น intake และ review เท่านั้น ยังไม่ใช่การยืนยัน membership, talent availability, ราคา, booking หรือ access ครับ",
+      "ถ้าต้องการจัดการ MY MMD ผมพาไปหน้าที่ตรงกับเรื่องได้ครับ: MY MMD Home /member/dashboard สำหรับดูสถานะและทางเข้าหลัก, Membership /sigil/member/membership สำหรับเลือกแพ็กเกจ สมัคร ต่ออายุ อัปเกรด หรือไปต่อเรื่องการชำระเงิน, Renewal / Access Conditions /sigil/membership สำหรับอ่านเงื่อนไขการต่ออายุและสิทธิ์, Renewal payment /sigil/pay/renewal สำหรับขั้นตอนชำระต่ออายุ, Booking Request /sigil/booking สำหรับส่งคำขอจอง และ Payment Proof /confirm/payment-proof สำหรับส่งหลักฐานการชำระเงินครับ การชำระเงิน สิทธิ์สมาชิก การจอง และ access จะยืนยันได้หลัง MMD ตรวจสอบจากข้อมูลทางการแล้วเท่านั้นครับ",
   },
   {
     id: "kenji_20_007_drop_690_guard",
@@ -268,7 +268,7 @@ function normalizeStaticCard(card) {
     ...card,
     knowledge_id: card.id,
     allowed_channels: ["Webflow", "LINE_OFC"],
-    effective_from: "2026-08-09",
+    effective_from: "2026-08-20",
     payload_json: {},
   });
 }
