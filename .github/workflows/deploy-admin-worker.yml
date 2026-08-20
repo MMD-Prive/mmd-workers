@@ -27,7 +27,6 @@ jobs:
         working-directory: admin-worker
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       ADMIN_DASHBOARD_PRODUCTION_URL: https://admin-worker.malemodel-bkk.workers.dev/v1/admin/dashboard
 
     steps:
@@ -39,7 +38,7 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Normalize Cloudflare credentials
+      - name: Normalize Cloudflare token
         id: credentials
         shell: bash
         run: |
@@ -47,12 +46,14 @@ jobs:
           const fs = require("node:fs");
           const clean = (value) => (value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
           const token = clean(process.env.CLOUDFLARE_API_TOKEN);
-          const accountId = clean(process.env.CLOUDFLARE_ACCOUNT_ID);
-          if (!token || !accountId) {
-            throw new Error("Cloudflare credentials are missing after normalization");
-          }
-          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\nCLOUDFLARE_ACCOUNT_ID=${accountId}\n`);
+          if (!token) throw new Error("Cloudflare API token is missing after normalization");
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\n`);
           NODE
+
+      - name: Verify Cloudflare token account
+        id: whoami
+        shell: bash
+        run: npx --yes wrangler@4 whoami
 
       - name: Run tests and source validation
         id: tests
@@ -102,6 +103,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CREDENTIALS_OUTCOME: ${{ steps.credentials.outcome }}
+          WHOAMI_OUTCOME: ${{ steps.whoami.outcome }}
           TESTS_OUTCOME: ${{ steps.tests.outcome }}
           DRY_RUN_OUTCOME: ${{ steps.wrangler_dry_run.outcome }}
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
@@ -110,7 +112,9 @@ jobs:
           set -euo pipefail
           checked_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           if [ "$CREDENTIALS_OUTCOME" != "success" ]; then
-            stopped="cloudflare credentials preflight"
+            stopped="cloudflare token normalization"
+          elif [ "$WHOAMI_OUTCOME" != "success" ]; then
+            stopped="cloudflare token account preflight"
           elif [ "$TESTS_OUTCOME" != "success" ]; then
             stopped="tests"
           elif [ "$DRY_RUN_OUTCOME" != "success" ]; then
@@ -137,7 +141,8 @@ jobs:
 
           - source_sha: \`${GITHUB_SHA}\`
           - checked_at: \`${checked_at}\`
-          - credentials: \`${CREDENTIALS_OUTCOME}\`
+          - token normalization: \`${CREDENTIALS_OUTCOME}\`
+          - wrangler whoami: \`${WHOAMI_OUTCOME}\`
           - tests: \`${TESTS_OUTCOME}\`
           - wrangler dry-run: \`${DRY_RUN_OUTCOME}\`
           - wrangler deploy: \`${DEPLOY_OUTCOME}\`
