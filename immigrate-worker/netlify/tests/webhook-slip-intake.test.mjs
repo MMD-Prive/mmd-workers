@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import test from "node:test";
 
 import { handler } from "../functions/webhook.js";
+import { processLineSlipIntakeWebhook } from "../../src/line-slip-intake-orchestration.mjs";
 import {
   DEFAULT_MAX_AMOUNT_THB,
   MANUAL_SLIP_ACK,
@@ -65,6 +66,12 @@ function signedNetlifyEvent(body, secret = BASE_ENV.LINE_CHANNEL_SECRET, signatu
   const raw = JSON.stringify(body);
   const signature = signatureOverride || crypto.createHmac("sha256", secret).update(raw).digest("base64");
   return { httpMethod: "POST", headers: { "x-line-signature": signature }, body: raw, isBase64Encoded: false };
+}
+
+function signedCoreInput(body, env = BASE_ENV, signatureOverride = "") {
+  const rawBody = JSON.stringify(body);
+  const signature = signatureOverride || crypto.createHmac("sha256", env.LINE_CHANNEL_SECRET).update(rawBody).digest("base64");
+  return { rawBody, signature, env };
 }
 
 function jsonResponse(value, status = 200) {
@@ -353,6 +360,171 @@ test("acknowledgement contract never claims paid or verified", () => {
   for (const acknowledgement of [MANUAL_SLIP_ACK, SAFE_SLIP_ACK, RETRY_SLIP_ACK]) {
     assert.doesNotMatch(acknowledgement, paidOrVerified);
   }
+});
+
+test("provider-neutral orchestration preserves invalid signature rejection", async () => {
+  const response = await processLineSlipIntakeWebhook(signedCoreInput({ events: [] }, BASE_ENV, "invalid"));
+  assert.equal(response.statusCode, 401);
+  assert.deepEqual(JSON.parse(response.body), { ok: false, error: "invalid_signature" });
+});
+
+test("provider-neutral payment-context text uses an Airtable-compatible Console Inbox intent", async () => {
+  const env = { ...BASE_ENV, LINE_AUTO_REPLY_ENABLED: "false", LINE_KENJI_AI_ENABLED: "false" };
+  let consoleFields;
+  const fetchImpl = async (url, init = {}) => {
+    const href = String(url);
+    if (href.includes("api.airtable.com") && init.method === "POST") {
+      consoleFields = JSON.parse(init.body).fields;
+      return jsonResponse({ id: "recConsole" });
+    }
+    if (href.includes("api.airtable.com")) return jsonResponse({ records: [] });
+    throw new Error(`unexpected fetch: ${href}`);
+  };
+  const event = {
+    type: "message",
+    webhookEventId: "webhook-payment-context-1",
+    source: { type: "user", userId: LINE_USER_ID },
+    message: { type: "text", id: "line-payment-context-1", text: "ส่งสลิปชำระเงิน" },
+  };
+  const response = await processLineSlipIntakeWebhook({ ...signedCoreInput({ events: [event] }, env), fetchImpl });
+  assert.equal(response.statusCode, 200);
+  assert.equal(consoleFields.intent, "note_only");
+  assert.equal(JSON.parse(consoleFields.payload_json).parsed_intent, "payment_slip");
+});
+
+test("provider-neutral orchestration performs the narrow image-slip intake and safe reply", async () => {
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    const href = String(url);
+    calls.push({ href, init });
+    if (href.includes("/profile/")) return jsonResponse({ displayName: "Test Client" });
+    if (href.includes("api-data.line.me")) return new Response(Buffer.from("image-bytes"), { status: 200, headers: { "content-type": "image/jpeg" } });
+    if (href.includes("r2.cloudflarestorage.com")) return new Response("", { status: 200 });
+    if (href === BASE_ENV.LINE_SLIP_QR_EXTRACTOR_URL) return jsonResponse({ payment_ref: "PAY-HANDLER", amount_thb: 500, provider: "promptpay", confidence_score: 0.99 });
+    if (href.includes("api.telegram.org")) return jsonResponse({ ok: true });
+    if (href.includes("api.line.me/v2/bot/message/reply")) return jsonResponse({ ok: true });
+    if (href.includes("api.airtable.com")) {
+      const parsed = new URL(href);
+      const formula = parsed.searchParams.get("filterByFormula") || "";
+      if (init.method === "POST") {
+        return href.includes(encodeURIComponent("MMD — Payment Proofs"))
+          ? jsonResponse({ id: "recProof" })
+          : jsonResponse({ id: "recConsole" });
+      }
+      if (formula.includes("{line_user_id}")) {
+        const receivedAt = new Date().toISOString();
+        return jsonResponse({ records: [{ id: "recContext", createdTime: receivedAt, fields: { payload_json: JSON.stringify({ raw_text: "ส่งสลิปการโอนครับ", received_at: receivedAt }) } }] });
+      }
+      if (href.includes("/Members?") && formula.includes("{line_id}")) return jsonResponse({ records: [{ id: "recMember" }] });
+      return jsonResponse({ records: [] });
+    }
+    throw new Error(`unexpected fetch: ${href}`);
+  };
+  const response = await processLineSlipIntakeWebhook({ ...signedCoreInput({ events: [imageEvent()] }), fetchImpl });
+  assert.equal(response.statusCode, 200);
+  const payload = JSON.parse(response.body);
+  assert.equal(payload.saved[0].payment_slip_intake.ok, true);
+  assert.equal(payload.saved[0].payment_slip_intake.state, "pending");
+  assert.equal(payload.saved[0].replied, true);
+  assert.equal(calls.filter((call) => call.href.includes("api-data.line.me")).length, 1);
+  assert.equal(calls.filter((call) => call.href.includes("r2.cloudflarestorage.com")).length, 1);
+  assert.equal(calls.some((call) => call.href.includes("payments-worker")), false);
+  const replyCall = calls.find((call) => call.href.includes("/message/reply"));
+  assert.equal(JSON.parse(replyCall.init.body).messages[0].text, SAFE_SLIP_ACK);
+  const proofCreateIndex = calls.findIndex((call) => call.href.includes(encodeURIComponent("MMD — Payment Proofs")) && call.init.method === "POST");
+  const replyIndex = calls.findIndex((call) => call.href.includes("/message/reply"));
+  assert.ok(proofCreateIndex >= 0 && proofCreateIndex < replyIndex);
+});
+
+test("provider-neutral LINE reply failure is redacted and returns a retryable webhook error", async () => {
+  const originalError = console.error;
+  const logs = [];
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    const href = String(url);
+    calls.push({ href, init });
+    if (href.includes("/profile/")) return jsonResponse({ displayName: "Test Client" });
+    if (href.includes("api-data.line.me")) return new Response(Buffer.from("image-bytes"), { status: 200, headers: { "content-type": "image/jpeg" } });
+    if (href.includes("r2.cloudflarestorage.com")) return new Response("", { status: 200 });
+    if (href === BASE_ENV.LINE_SLIP_QR_EXTRACTOR_URL) return jsonResponse({ payment_ref: "PAY-REPLY-FAIL", amount_thb: 500, confidence_score: 0.99 });
+    if (href.includes("api.telegram.org")) return jsonResponse({ ok: true });
+    if (href.includes("api.line.me/v2/bot/message/reply")) return jsonResponse({}, 500);
+    if (href.includes("api.airtable.com")) {
+      const formula = new URL(href).searchParams.get("filterByFormula") || "";
+      if (init.method === "POST") return href.includes(encodeURIComponent("MMD — Payment Proofs")) ? jsonResponse({ id: "recProof" }) : jsonResponse({ id: "recConsole" });
+      if (formula.includes("CREATED_TIME()")) return jsonResponse({ records: [{ id: "recContext", createdTime: new Date().toISOString(), fields: { payload_json: JSON.stringify({ raw_text: "ส่งสลิป", received_at: new Date().toISOString() }) } }] });
+      if (href.includes("/Members?") && formula.includes("{line_id}")) return jsonResponse({ records: [{ id: "recMember" }] });
+      return jsonResponse({ records: [] });
+    }
+    throw new Error(`unexpected fetch: ${href}`);
+  };
+  console.error = (value) => logs.push(String(value));
+  try {
+    const response = await processLineSlipIntakeWebhook({ ...signedCoreInput({ events: [imageEvent()] }), fetchImpl });
+    assert.equal(response.statusCode, 502);
+    assert.deepEqual(JSON.parse(response.body), { ok: false, error: "line_payment_slip_reply_failed", processed: 0 });
+    assert.equal(logs.length, 1);
+    assert.match(logs[0], /line_payment_slip_reply_failed/);
+    assert.doesNotMatch(logs[0], /telegram-token|r2-secret-key|PAY-REPLY-FAIL|line-message-1/);
+    assert.equal(calls.some((call) => call.href.includes("api.line.me/v2/bot/message/reply")), true);
+    const proofCreateIndex = calls.findIndex((call) => call.href.includes(encodeURIComponent("MMD — Payment Proofs")) && call.init.method === "POST");
+    const replyIndex = calls.findIndex((call) => call.href.includes("api.line.me/v2/bot/message/reply"));
+    assert.ok(proofCreateIndex >= 0 && proofCreateIndex < replyIndex);
+  } finally {
+    console.error = originalError;
+  }
+});
+
+test("provider-neutral LINE redelivery can acknowledge an idempotently existing durable proof", async () => {
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    const href = String(url);
+    calls.push({ href, init });
+    if (href.includes("/profile/")) return jsonResponse({ displayName: "Test Client" });
+    if (href.includes("api.line.me/v2/bot/message/reply")) return jsonResponse({ ok: true });
+    if (href.includes("api.airtable.com")) {
+      const formula = new URL(href).searchParams.get("filterByFormula") || "";
+      if (formula.includes("CREATED_TIME()")) {
+        const receivedAt = new Date().toISOString();
+        return jsonResponse({ records: [{ id: "recContext", createdTime: receivedAt, fields: { payload_json: JSON.stringify({ raw_text: "ส่งสลิป", received_at: receivedAt }) } }] });
+      }
+      if (formula.includes("{proof_id}=")) return jsonResponse({ records: [{ id: "recExistingProof" }] });
+      if (formula.includes("{inbox_id}")) return jsonResponse({ records: [{ id: "recExistingInbox" }] });
+      return jsonResponse({ records: [] });
+    }
+    throw new Error(`unexpected fetch: ${href}`);
+  };
+  const event = imageEvent({ deliveryContext: { isRedelivery: true } });
+  const response = await processLineSlipIntakeWebhook({ ...signedCoreInput({ events: [event] }), fetchImpl });
+  assert.equal(response.statusCode, 200);
+  const payload = JSON.parse(response.body);
+  assert.equal(payload.saved[0].payment_slip_intake.deduped, true);
+  assert.equal(payload.saved[0].replied, true);
+  assert.equal(calls.some((call) => call.href.includes("api-data.line.me")), false);
+  const replyCall = calls.find((call) => call.href.includes("/message/reply"));
+  assert.equal(JSON.parse(replyCall.init.body).messages[0].text, SAFE_SLIP_ACK);
+});
+
+test("provider-neutral orchestration preserves non-slip image fallback with an Airtable-compatible intent", async () => {
+  const calls = [];
+  let consoleFields;
+  const fetchImpl = async (url, init = {}) => {
+    const href = String(url);
+    calls.push(href);
+    if (href.includes("api.airtable.com") && init.method === "POST") {
+      consoleFields = JSON.parse(init.body).fields;
+      return jsonResponse({ id: "recConsole" });
+    }
+    if (href.includes("api.airtable.com")) return jsonResponse({ records: [] });
+    if (href.includes("api.line.me/v2/bot/message/reply")) return jsonResponse({ ok: true });
+    return jsonResponse({ ok: true });
+  };
+  const response = await processLineSlipIntakeWebhook({ ...signedCoreInput({ events: [imageEvent()] }), fetchImpl });
+  assert.equal(response.statusCode, 200);
+  const payload = JSON.parse(response.body);
+  assert.equal(payload.saved[0].payment_slip_intake, null);
+  assert.equal(calls.some((url) => url.includes("api-data.line.me")), false);
+  assert.equal(consoleFields.intent, "note_only");
 });
 
 test("retired Netlify handler returns 410 before signature or env processing", async () => {
