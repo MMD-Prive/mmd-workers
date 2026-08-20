@@ -15,7 +15,8 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
+  issues: write
 
 jobs:
   validate-and-deploy:
@@ -88,29 +89,12 @@ jobs:
           test "$http_code" = "401"
           grep -q '"error":"unauthorized"' "$body_file"
 
-      - name: Record verified live deployment
+      - name: Record verified live receipt on launch issue
         shell: bash
         working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p deployments
           deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          cat > deployments/admin-worker-live.json <<EOF
-          {
-            "worker": "admin-worker",
-            "status": "live_verified",
-            "source_sha": "${GITHUB_SHA}",
-            "deployed_at": "${deployed_at}",
-            "endpoint": "${ADMIN_DASHBOARD_PRODUCTION_URL}",
-            "smoke_expected_status": 401,
-            "smoke_expected_error": "unauthorized"
-          }
-          EOF
-          git config user.name "mmd-deploy-bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add deployments/admin-worker-live.json
-          if git diff --cached --quiet; then
-            exit 0
-          fi
-          git commit -m "ci: record verified admin-worker live ${GITHUB_SHA::12}"
-          git push
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ admin-worker LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- endpoint: \`${ADMIN_DASHBOARD_PRODUCTION_URL}\`\n- production smoke: \`401 unauthorized\`\n\nThis receipt is written only after Wrangler deploy succeeds and the production Worker returns the expected auth-guard response."
