@@ -48,7 +48,9 @@ jobs:
           NODE
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci
+          npm ci --prefix member-pages-worker/test-runtime
 
       - name: Run focused LIFF and CARE BACK tests
         run: |
