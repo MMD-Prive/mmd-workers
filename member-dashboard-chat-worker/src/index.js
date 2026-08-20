@@ -244,6 +244,7 @@ export function inferLineIntent(text = "", event = {}) {
   }
 
   if (isKenjiLineCandidate(text)) return "talk_to_per_ai";
+  if (/(ขอให้เปอร์ตรวจ|ให้เปอร์ดู|ให้ per ดู|manual review|ตรวจเอง|คุยกับเปอร์เอง)/i.test(normalized)) return "manual_review";
   if (/(care\s*back|แคร์\s*แบ็ก|แคร์แบ็ก|6\s*years?|6th\s*anniversary|birthday\s*wish|คำอวยพร|คูปองวันเกิด)/i.test(normalized)) return "care_back";
   if (/(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
   if (/(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
@@ -258,6 +259,9 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(ราคา|price|rate|เรท|promotion|โปร|package|แพ็กเกจ|แพคเกจ|เท่าไร|เท่าไหร่)/i.test(normalized)) {
     return "pricing_review";
   }
+  if (/(ใช้บริการยังไง|ใช้บริการอย่างไร|เริ่มยังไง|เริ่มอย่างไร|ขั้นตอน|บริการมีอะไร|how\s+to\s+use|how\s+does\s+it\s+work)/i.test(normalized)) {
+    return "service_guidance";
+  }
   if (/(สวัสดี|hello|hi|hey)/i.test(normalized)) return "greeting";
   return "note_only";
 }
@@ -265,6 +269,8 @@ export function inferLineIntent(text = "", event = {}) {
 const KENJI_KNOWLEDGE_TABLE_FALLBACK = "tblsLd1uVOtG2kHoU";
 const LINE_KNOWLEDGE_CHANNEL = "LINE_OFC";
 const LINE_KNOWLEDGE_TTL_MS = 60_000;
+const LINE_FAILURE_FALLBACK = "ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ";
+const LINE_FAILURE_FALLBACK_COOLDOWN_SECONDS = 10 * 60;
 const LINE_KNOWLEDGE_CARD_BY_INTENT = Object.freeze({
   talk_to_per_ai: "kenji_per_voice_line_entry_v1",
   care_back: "kenji_20_011_care_back_2026",
@@ -343,10 +349,6 @@ async function getPublishedPerVoiceReply(env = {}, intent = "") {
   return isSafePerVoiceKnowledge(answer) ? answer : "";
 }
 
-// The webhook must answer LINE before doing any network work other than the
-// reply itself. A warm, shared knowledge cache is safe to use here because it
-// has no request- or customer-specific state. On a cold cache we deliberately
-// use the reviewed local Per Voice fallback and refresh Airtable afterwards.
 function getCachedPublishedPerVoiceReply(env = {}, intent = "") {
   const knowledgeId = LINE_KNOWLEDGE_CARD_BY_INTENT[intent];
   const key = `${asString(env.AIRTABLE_BASE_ID)}:${getKenjiKnowledgeTable(env)}`;
@@ -354,10 +356,6 @@ function getCachedPublishedPerVoiceReply(env = {}, intent = "") {
   const card = lineKnowledgeCache.cards.find((item) => asString(item.knowledge_id) === knowledgeId);
   const answer = asString(card?.customer_answer);
   return isSafePerVoiceKnowledge(answer) ? answer : "";
-}
-
-function buildGenericAck(prefix = "") {
-  return `รับข้อความแล้วครับ ${prefix}เดี๋ยวเปอร์ขอตรวจรายละเอียดให้ก่อนนะครับ แล้วจะกลับมาช่วยดูขั้นตอนที่เหมาะให้ครับ`;
 }
 
 export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
@@ -427,11 +425,15 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
     return `${prefix}เรื่องราคา เดี๋ยวเปอร์ขอดูรายละเอียดที่เหมาะก่อนนะครับ ถ้าสะดวก แจ้งวัน เวลา โซน และระยะเวลาที่ต้องการไว้ได้เลยครับ`;
   }
 
+  if (intent === "service_guidance") {
+    return `${prefix}เริ่มได้ง่ายครับ บอกผมก่อนว่าอยากดูเรื่องสมาชิก ราคา หรือใช้บริการแบบไหน พร้อมวัน เวลา และพื้นที่คร่าว ๆ แล้วผมจะช่วยแยกขั้นตอนที่เหมาะให้ครับ`;
+  }
+
   if (intent === "greeting") {
     return `สวัสดีครับ ${prefix}ต้องการสอบถามเรื่องจองงาน ราคา เช็กนายแบบ หรือสมาชิก พิมพ์มาได้เลยนะครับ`;
   }
 
-  if (options.forceReply || text) return buildGenericAck(prefix);
+  if (intent === "manual_review") return LINE_FAILURE_FALLBACK;
   return "";
 }
 
@@ -442,10 +444,46 @@ export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env
   return answer || fallback;
 }
 
-function buildImmediateKenjiLineReply(event = {}, env = {}, options = {}) {
-  const fallback = buildKenjiLineReply(event, {}, options);
-  if (!isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)) return fallback;
-  return getCachedPublishedPerVoiceReply(env, inferLineIntent(getLineEventText(event), event)) || fallback;
+async function getFailureFallbackCooldownRequest(event = {}) {
+  const lineUserId = getLineUserId({ event });
+  if (!lineUserId) return null;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(lineUserId));
+  const key = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return new Request(`https://line-fallback-cooldown.mmd.invalid/${key}`, { method: "GET" });
+}
+
+async function claimFailureFallbackWindow(event = {}) {
+  // Best-effort anti-spam only: Cache API entries are not persistent and may
+  // disappear after eviction or across colos. Never use this as authorization,
+  // dedupe correctness, or payment/session/member state; the fallback may
+  // occasionally reappear when the cache entry is unavailable.
+  try {
+    const cache = globalThis.caches?.default;
+    if (!cache) return true;
+    const request = await getFailureFallbackCooldownRequest(event);
+    if (!request) return true;
+    if (await cache.match(request)) return false;
+    await cache.put(request, new Response("1", {
+      headers: { "cache-control": `max-age=${LINE_FAILURE_FALLBACK_COOLDOWN_SECONDS}` },
+    }));
+    return true;
+  } catch (_) {
+    return true;
+  }
+}
+
+export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, options = {}) {
+  const intent = inferLineIntent(getLineEventText(event), event);
+  const cachedKnowledge = isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)
+    ? getCachedPublishedPerVoiceReply(env, intent)
+    : "";
+  const generated = cachedKnowledge || buildKenjiLineReply(event, profile, options);
+  if (generated && intent !== "manual_review") return { text: generated, fallback: false };
+
+  const needsFallback = intent === "manual_review" || Boolean(getLineEventText(event));
+  if (!needsFallback) return { text: "", fallback: false };
+  const allowed = await claimFailureFallbackWindow(event);
+  return { text: allowed ? LINE_FAILURE_FALLBACK : "", fallback: true };
 }
 
 export async function deliverLineText(env = {}, lineUserId, text, options = {}) {
@@ -1171,7 +1209,10 @@ async function handleLineWebhook(request, env, ctx = null) {
     const lineUserId = getLineUserId({ event });
     const intent = inferLineIntent(text, event);
     const eventMode = asString(event?.mode).toLowerCase() || "unknown";
-    const replyText = kenjiEnabled ? buildImmediateKenjiLineReply(event, env, { forceReply: autoReplyEnabled }) : "";
+    const replyDecision = kenjiEnabled
+      ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled })
+      : { text: "", fallback: false };
+    const replyText = replyDecision.text;
     const shouldReply = Boolean(autoReplyEnabled && eventMode !== "standby" && replyText && getReplyToken(event));
     const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
 
