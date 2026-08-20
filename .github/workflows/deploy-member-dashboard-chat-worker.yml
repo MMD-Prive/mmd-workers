@@ -158,6 +158,16 @@ jobs:
             stopped="none — live verified"
           fi
 
+          detail=""
+          for log in "$RUNNER_TEMP/member-dashboard-chat-worker-upload.log" "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log"; do
+            if [ -f "$log" ]; then
+              detail="${detail}$(grep -Ei 'error|failed|permission|binding|service|route|conflict|workers.dev|code:|code |version|secret|var' "$log" | tail -n 40 || true)\n"
+            fi
+          done
+          if [ -z "${detail//\\n/}" ]; then
+            detail="No focused Wrangler error lines captured."
+          fi
+
           body_file="$(mktemp)"
           cat > "$body_file" <<EOF
           ### member-dashboard-chat-worker deploy diagnosis
@@ -173,6 +183,11 @@ jobs:
           - versions deploy: \`${DEPLOY_OUTCOME}\`
           - production smoke: \`${SMOKE_OUTCOME}\`
           - **stopped_at: \`${stopped}\`**
+
+          Wrangler detail:
+          \`\`\`text
+          ${detail}
+          \`\`\`
           EOF
           gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body-file "$body_file"
 
