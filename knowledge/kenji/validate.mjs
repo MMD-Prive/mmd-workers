@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const cardsRoot = path.join(here, "cards");
+const manifest = JSON.parse(fs.readFileSync(path.join(here, "manifest.json"), "utf8"));
 const routes = JSON.parse(fs.readFileSync(path.join(here, "routes.json"), "utf8"));
 const schema = JSON.parse(fs.readFileSync(path.join(here, "schema.json"), "utf8"));
 const safeRoutes = new Set(Object.keys(routes.public_and_member_safe_routes || {}));
@@ -23,6 +24,13 @@ const forbiddenPatterns = [
   /mark\s*paid/i,
   /unlock(?:ed)?\s*membership/i
 ];
+
+if (manifest.source_of_truth !== "git") fail(path.join(here, "manifest.json"), "source_of_truth must be git");
+if (manifest.review_gate !== "pull_request") fail(path.join(here, "manifest.json"), "review_gate must be pull_request");
+if (manifest.final_reviewer !== "Boss Per") fail(path.join(here, "manifest.json"), "final_reviewer must be Boss Per");
+if (!['draft', 'published', 'archived'].includes(manifest.status)) {
+  fail(path.join(here, "manifest.json"), `invalid manifest status ${manifest.status}`);
+}
 
 function walk(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -83,6 +91,15 @@ for (const file of walk(cardsRoot)) {
   }
 
   console.log(`OK   ${path.relative(here, file)}`);
+}
+
+if (manifest.status === "published") {
+  for (const file of walk(cardsRoot)) {
+    const card = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (!['published', 'archived'].includes(card.status)) {
+      fail(file, `manifest is published but card status is ${card.status}`);
+    }
+  }
 }
 
 if (process.exitCode) process.exit(process.exitCode);
