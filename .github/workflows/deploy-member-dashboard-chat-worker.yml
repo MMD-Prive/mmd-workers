@@ -47,11 +47,30 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\n`);
           NODE
 
+      - name: Verify Cloudflare API token status
+        id: token_verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl --fail-with-body --silent --show-error \
+            https://api.cloudflare.com/client/v4/user/tokens/verify \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")"
+          printf '%s\n' "$response" | tee "$RUNNER_TEMP/cloudflare-token-verify.json"
+          node -e '
+            const body = JSON.parse(process.argv[1]);
+            const status = body?.result?.status;
+            if (body?.success !== true || status !== "active") {
+              throw new Error(`Cloudflare API token is not active: ${JSON.stringify({ success: body?.success, status, errors: body?.errors || [] })}`);
+            }
+          ' "$response"
+
       - name: Verify Cloudflare token account
         id: whoami
         shell: bash
         working-directory: member-dashboard-chat-worker
-        run: npx --yes wrangler@4 whoami
+        run: |
+          set -o pipefail
+          npx --yes wrangler@4 whoami 2>&1 | tee "$RUNNER_TEMP/cloudflare-whoami.log"
 
       - name: Install dependencies
         run: npm ci
@@ -128,6 +147,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CREDENTIALS_OUTCOME: ${{ steps.credentials.outcome }}
+          TOKEN_VERIFY_OUTCOME: ${{ steps.token_verify.outcome }}
           WHOAMI_OUTCOME: ${{ steps.whoami.outcome }}
           TESTS_OUTCOME: ${{ steps.tests.outcome }}
           DRY_RUN_OUTCOME: ${{ steps.wrangler_dry_run.outcome }}
@@ -140,6 +160,8 @@ jobs:
           checked_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           if [ "$CREDENTIALS_OUTCOME" != "success" ]; then
             stopped="cloudflare token normalization"
+          elif [ "$TOKEN_VERIFY_OUTCOME" != "success" ]; then
+            stopped="cloudflare token verification"
           elif [ "$WHOAMI_OUTCOME" != "success" ]; then
             stopped="cloudflare token account preflight"
           elif [ "$TESTS_OUTCOME" != "success" ]; then
@@ -159,13 +181,17 @@ jobs:
           fi
 
           detail=""
-          for log in "$RUNNER_TEMP/member-dashboard-chat-worker-upload.log" "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log"; do
+          for log in \
+            "$RUNNER_TEMP/cloudflare-token-verify.json" \
+            "$RUNNER_TEMP/cloudflare-whoami.log" \
+            "$RUNNER_TEMP/member-dashboard-chat-worker-upload.log" \
+            "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log"; do
             if [ -f "$log" ]; then
-              detail="${detail}$(grep -Ei 'error|failed|permission|binding|service|route|conflict|workers.dev|code:|code |version|secret|var' "$log" | tail -n 40 || true)\n"
+              detail="${detail}$(grep -Ei 'active|disabled|expired|error|failed|permission|account|binding|service|route|conflict|workers.dev|code:|code |version|secret|var' "$log" | tail -n 50 || true)\n"
             fi
           done
           if [ -z "${detail//\\n/}" ]; then
-            detail="No focused Wrangler error lines captured."
+            detail="No focused Cloudflare/Wrangler diagnostic lines captured."
           fi
 
           body_file="$(mktemp)"
@@ -175,6 +201,7 @@ jobs:
           - source_sha: \`${GITHUB_SHA}\`
           - checked_at: \`${checked_at}\`
           - token normalization: \`${CREDENTIALS_OUTCOME}\`
+          - token verification: \`${TOKEN_VERIFY_OUTCOME}\`
           - wrangler whoami: \`${WHOAMI_OUTCOME}\`
           - tests: \`${TESTS_OUTCOME}\`
           - versions dry-run: \`${DRY_RUN_OUTCOME}\`
@@ -184,7 +211,7 @@ jobs:
           - production smoke: \`${SMOKE_OUTCOME}\`
           - **stopped_at: \`${stopped}\`**
 
-          Wrangler detail:
+          Cloudflare/Wrangler detail:
           \`\`\`text
           ${detail}
           \`\`\`
