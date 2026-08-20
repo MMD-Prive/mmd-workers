@@ -1,0 +1,77 @@
+name: Kenji membership local fallback patch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/kenji-membership-local-fallback-patch.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    if: github.event.head_commit.message == 'chore: apply Kenji membership fallback patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Patch Kenji local membership fallback
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('member-dashboard-chat-worker/src/index.js')
+          text = path.read_text()
+          old = '''  if (intent === "membership") {
+            return `รับเรื่องสมาชิกแล้วครับ ${prefix}เดี๋ยวเปอร์ช่วยดูข้อมูลก่อน แล้วจะแนะนำขั้นตอนที่เหมาะให้ครับ`;
+          }
+          '''
+          new = '''  if (intent === "membership") {
+            return `รับเรื่องสมาชิกแล้วครับ ${prefix}จัดการ MY MMD ได้ที่ https://mmdbkk.com/sigil/member/membership ครับ หน้านี้ใช้สำหรับดูแพ็กเกจ สมัคร ต่ออายุ หรืออัปเกรดสมาชิกได้ โดยสถานะสมาชิกและการชำระเงินจะยืนยันหลัง MMD ตรวจสอบข้อมูลทางการแล้วครับ`;
+          }
+          '''
+          if new not in text:
+              if old not in text:
+                  raise SystemExit('membership fallback block not found')
+              text = text.replace(old, new, 1)
+              path.write_text(text)
+
+          test_path = Path('member-dashboard-chat-worker/test/line-webhook.test.mjs')
+          test_text = test_path.read_text()
+          marker = 'test("local membership fallback routes to canonical MY MMD membership page"'
+          if marker not in test_text:
+              addition = '''\n\ntest("local membership fallback routes to canonical MY MMD membership page", () => {
+            const reply = buildKenjiLineReply(lineTextEvent("ต่ออายุสมาชิก"));
+            assert.match(reply, /https:\\/\\/mmdbkk\\.com\\/sigil\\/member\\/membership/);
+            assert.doesNotMatch(reply, /https:\\/\\/mmdbkk\\.com\\/member\\/membership(?:[/?\\s]|$)/);
+            assert.match(reply, /MMD ตรวจสอบข้อมูลทางการ/);
+          });\n'''
+              test_path.write_text(test_text + addition)
+          PY
+
+      - name: Validate
+        shell: bash
+        run: |
+          node --check member-dashboard-chat-worker/src/index.js
+          node --test member-dashboard-chat-worker/test/line-webhook.test.mjs
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "MMD Privé"
+          git config user.email "malemodel.bkk@gmail.com"
+          git add member-dashboard-chat-worker/src/index.js member-dashboard-chat-worker/test/line-webhook.test.mjs
+          if git diff --cached --quiet; then
+            echo "No changes needed"
+            exit 0
+          fi
+          git commit -m "fix(line): route membership fallback to MY MMD"
+          git push origin HEAD:main
