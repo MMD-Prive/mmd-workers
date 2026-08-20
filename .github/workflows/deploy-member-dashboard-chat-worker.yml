@@ -23,7 +23,6 @@ jobs:
     timeout-minutes: 20
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: "322b0461a6484c19579f25769aa27979"
       NO_COLOR: "1"
 
     steps:
@@ -51,6 +50,7 @@ jobs:
       - name: Verify Cloudflare token account
         id: whoami
         shell: bash
+        working-directory: member-dashboard-chat-worker
         run: npx --yes wrangler@4 whoami
 
       - name: Install dependencies
@@ -66,18 +66,19 @@ jobs:
 
       - name: Validate Cloudflare version upload
         id: wrangler_dry_run
-        run: npx --yes wrangler@4 versions upload --dry-run --keep-vars --config member-dashboard-chat-worker/wrangler.toml
+        working-directory: member-dashboard-chat-worker
+        run: npx --yes wrangler@4 versions upload --dry-run --keep-vars
 
       - name: Upload member-dashboard-chat-worker version
         id: upload
         continue-on-error: true
         shell: bash
+        working-directory: member-dashboard-chat-worker
         run: |
           set -euo pipefail
           tag="gha-${GITHUB_SHA:0:12}"
           npx --yes wrangler@4 versions upload \
             --keep-vars \
-            --config member-dashboard-chat-worker/wrangler.toml \
             --tag "$tag" \
             --message "GitHub Actions ${GITHUB_SHA}" \
             2>&1 | tee "$RUNNER_TEMP/member-dashboard-chat-worker-upload.log"
@@ -102,10 +103,10 @@ jobs:
         if: steps.resolve_version.outcome == 'success'
         continue-on-error: true
         shell: bash
+        working-directory: member-dashboard-chat-worker
         run: |
           set -o pipefail
           npx --yes wrangler@4 versions deploy "${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}@100%" -y \
-            --config member-dashboard-chat-worker/wrangler.toml \
             2>&1 | tee "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log"
 
       - name: Smoke production LINE route
