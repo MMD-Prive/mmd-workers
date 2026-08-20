@@ -40,6 +40,7 @@ jobs:
           node-version: "22"
 
       - name: Normalize Cloudflare credentials
+        id: credentials
         shell: bash
         run: |
           node <<'NODE'
@@ -53,33 +54,33 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\nCLOUDFLARE_ACCOUNT_ID=${accountId}\n`);
           NODE
 
-      - name: Validate production entrypoints
+      - name: Run tests and source validation
+        id: tests
+        shell: bash
         run: |
+          set -euo pipefail
           node --check src/admin-login-hero-worker.js
           node --check src/admin-login-page.js
           node --check src/dashboard-worker.js
-
-      - name: Run focused admin login tests
-        run: |
           node --test \
             admin-login-hero.test.mjs \
             admin-login-regression-guard.test.mjs \
             admin-login-session.test.mjs
-
-      - name: Validate Kenji knowledge source and public runtime
-        run: |
           node ../knowledge/kenji/validate.mjs
           node --test \
             kenji-knowledge-runtime-storage.test.mjs \
             kenji-public-knowledge-runtime.test.mjs
 
       - name: Validate Cloudflare deployment
+        id: wrangler_dry_run
         run: npx --yes wrangler@4 deploy --dry-run --keep-vars
 
       - name: Deploy admin-worker
+        id: deploy
         run: npx --yes wrangler@4 deploy --keep-vars
 
       - name: Verify production dashboard route
+        id: smoke
         shell: bash
         run: |
           set -euo pipefail
@@ -89,7 +90,37 @@ jobs:
           test "$http_code" = "401"
           grep -q '"error":"unauthorized"' "$body_file"
 
+      - name: Report deploy stage diagnosis
+        if: always()
+        shell: bash
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CREDENTIALS_OUTCOME: ${{ steps.credentials.outcome }}
+          TESTS_OUTCOME: ${{ steps.tests.outcome }}
+          DRY_RUN_OUTCOME: ${{ steps.wrangler_dry_run.outcome }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+        run: |
+          set -euo pipefail
+          checked_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          if [ "$CREDENTIALS_OUTCOME" != "success" ]; then
+            stopped="cloudflare credentials preflight"
+          elif [ "$TESTS_OUTCOME" != "success" ]; then
+            stopped="tests"
+          elif [ "$DRY_RUN_OUTCOME" != "success" ]; then
+            stopped="wrangler dry-run"
+          elif [ "$DEPLOY_OUTCOME" != "success" ]; then
+            stopped="wrangler deploy"
+          elif [ "$SMOKE_OUTCOME" != "success" ]; then
+            stopped="production smoke"
+          else
+            stopped="none — live verified"
+          fi
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "### admin-worker deploy diagnosis\n\n- source_sha: \`${GITHUB_SHA}\`\n- checked_at: \`${checked_at}\`\n- credentials: \`${CREDENTIALS_OUTCOME}\`\n- tests: \`${TESTS_OUTCOME}\`\n- wrangler dry-run: \`${DRY_RUN_OUTCOME}\`\n- wrangler deploy: \`${DEPLOY_OUTCOME}\`\n- production smoke: \`${SMOKE_OUTCOME}\`\n- **stopped_at: \`${stopped}\`**"
+
       - name: Record verified live receipt on launch issue
+        if: steps.smoke.outcome == 'success'
         shell: bash
         working-directory: .
         env:
