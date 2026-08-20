@@ -12,6 +12,7 @@ import coreWorker, { isAuthed as isCoreAuthed } from "./index.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DASHBOARD_PATH = "/v1/admin/dashboard";
+const DEFAULT_MEMBERS_TABLE_ID = "tblgWc5VRon5o8Mhk";
 
 export default {
   async fetch(req, env, ctx) {
@@ -50,7 +51,7 @@ async function buildAdminDashboard(env) {
   const [proofsResult, sessionsResult, membersResult] = await Promise.allSettled([
     airtableList(env, env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || "tblfJfM4Sqag9zrLi", 30),
     airtableList(env, env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX", 30),
-    airtableList(env, env.AIRTABLE_TABLE_MEMBERS || "members", 30),
+    airtableList(env, env.AIRTABLE_TABLE_MEMBERS_ID || DEFAULT_MEMBERS_TABLE_ID, 30),
   ]);
 
   const proofRecords = settledRecords(proofsResult);
@@ -215,14 +216,14 @@ function buildJobList(records, now) {
     .map((record, index) => {
       const fields = record.fields || {};
       const sessionId = firstText(fields.session_id, fields.sid, fields.job_id, record.id);
-      const model = firstText(fields.model_name, fields["Model Name"], fields.model, fields.assigned_model, "ยังไม่ระบุ model");
-      const customer = firstText(fields.member_name, fields.customer_name, fields.client_name, fields.name, "ลูกค้า");
-      const status = firstText(fields.session_state, fields.status, fields.job_status, "กำลังดำเนินการ");
-      const time = timeLabel(fields.start_time || fields.start_at || fields.scheduled_at || fields.date_time, now, index);
+      const model = firstText(fields.model_name, fields["Assigned Model"], fields["Model Name"], fields.model, fields.assigned_model, "ยังไม่ระบุ model");
+      const customer = firstText(fields.client_name, fields.member_name, fields.customer_name, fields.name, "ลูกค้า");
+      const status = firstText(fields.session_state, fields.status, fields["Session Status"], fields.job_status, "กำลังดำเนินการ");
+      const time = timeLabel(fields.start_time || fields["Start Time"] || fields.start_at || fields.scheduled_at || fields.date_time, now, index);
       return {
         id: sessionId,
         title: `${model} · ${customer}`,
-        text: compactJoin([status, firstText(fields.service_type, fields.package_code, fields.work_type, "")], " · "),
+        text: compactJoin([status, firstText(fields.service_type, fields.package_code, fields["Session Type"], fields.work_type, "")], " · "),
         time,
         status: thaiStatus(status),
         progress: progressFromStatus(status),
@@ -235,17 +236,17 @@ function buildMemberList(records, now) {
   return records
     .filter((record) => {
       const fields = record.fields || {};
-      const status = lower(fields.status || fields.member_status || fields.membership_status);
-      const expiry = parseDate(fields.expire_at || fields.expiry || fields.end_date || fields.expires_at);
+      const status = lower(firstText(fields["Membership Status"], fields["Verification Status"], fields.status, fields.member_status, fields.membership_status));
+      const expiry = parseDate(firstText(fields["Membership Expiry"], fields["Membership End Date"], fields["Expire At"], fields.expire_at, fields.expiry, fields.end_date, fields.expires_at));
       const nearExpiry = expiry ? expiry.getTime() - now.getTime() < 1000 * 60 * 60 * 24 * 30 : false;
       return /expired|pending|hold|รอ|หมด/.test(status) || nearExpiry;
     })
     .slice(0, 6)
     .map((record) => {
       const fields = record.fields || {};
-      const name = firstText(fields.name, fields.mmd_client_name, fields.nickname, fields.email, "สมาชิก");
-      const tier = firstText(fields.tier, fields.package_code, fields.member_tier, "Member");
-      const status = firstText(fields.status, fields.member_status, fields.membership_status, "ควรตรวจ");
+      const name = firstText(fields["Full Name (Display)"], fields["Full Name"], fields.mmd_client_name, fields.name, fields.nickname, fields.email, "สมาชิก");
+      const tier = firstText(fields["Membership Tier"], fields.tier, fields.package_code, fields.member_tier, "Member");
+      const status = firstText(fields["Membership Status"], fields["Verification Status"], fields.status, fields.member_status, fields.membership_status, "ควรตรวจ");
       return {
         title: name,
         text: `${tier} · ${thaiStatus(status)}`,
@@ -262,7 +263,7 @@ function buildBossList({ money, jobs, members, proofRecords, sessionRecords, mem
   if (blackCardMember) {
     const fields = blackCardMember.fields || {};
     out.push({
-      title: `Black Card Review · ${firstText(fields.name, fields.mmd_client_name, fields.email, "สมาชิก")}`,
+      title: `Black Card Review · ${firstText(fields["Full Name (Display)"], fields["Full Name"], fields.name, fields.mmd_client_name, fields.email, "สมาชิก")}`,
       text: "มีข้อมูลระดับ VIP / Black Card ควรให้ Boss Per ตรวจเอง",
       href: "/internal/admin/black-card-review",
     });
