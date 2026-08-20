@@ -15,6 +15,7 @@ concurrency:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   validate-and-deploy:
@@ -36,6 +37,7 @@ jobs:
           cache: npm
 
       - name: Normalize Cloudflare credentials
+        id: credentials
         shell: bash
         run: |
           node <<'NODE'
@@ -47,28 +49,138 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\nCLOUDFLARE_ACCOUNT_ID=${accountId}\n`);
           NODE
 
+      - name: Verify Cloudflare token account
+        id: whoami
+        shell: bash
+        run: npx --yes wrangler@4 whoami
+
       - name: Install dependencies
         run: npm ci
 
       - name: Validate LINE, LIFF, and CARE BACK runtime
+        id: tests
         run: |
           node --check member-dashboard-chat-worker/src/index.js
           npm run test:member-dashboard-liff
           npm run test:member-dashboard-line
+          node --test member-dashboard-chat-worker/test/line-membership-fallback.test.mjs
 
-      - name: Validate Cloudflare deployment
-        run: npx --yes wrangler@4 deploy --dry-run --keep-vars --config member-dashboard-chat-worker/wrangler.toml
+      - name: Validate Cloudflare version upload
+        id: wrangler_dry_run
+        run: npx --yes wrangler@4 versions upload --dry-run --keep-vars --config member-dashboard-chat-worker/wrangler.toml
 
-      - name: Deploy member-dashboard-chat-worker
-        run: npx --yes wrangler@4 deploy --keep-vars --config member-dashboard-chat-worker/wrangler.toml
-
-      - name: Smoke production LINE route
+      - name: Upload member-dashboard-chat-worker version
+        id: upload
+        continue-on-error: true
         shell: bash
         run: |
-          response="$(curl --fail-with-body --silent --show-error https://www.mmdbkk.com/webhooks/line)"
+          set -euo pipefail
+          tag="gha-${GITHUB_SHA:0:12}"
+          npx --yes wrangler@4 versions upload \
+            --keep-vars \
+            --config member-dashboard-chat-worker/wrangler.toml \
+            --tag "$tag" \
+            --message "GitHub Actions ${GITHUB_SHA}" \
+            2>&1 | tee "$RUNNER_TEMP/member-dashboard-chat-worker-upload.log"
+
+      - name: Resolve uploaded version ID
+        id: resolve_version
+        if: steps.upload.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/member-dashboard-chat-worker-upload.log" | tail -n 1)"
+          if [ -z "$version_id" ]; then
+            echo "Unable to parse Worker Version ID from upload output" >&2
+            cat "$RUNNER_TEMP/member-dashboard-chat-worker-upload.log" >&2
+            exit 2
+          fi
+          echo "MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID=${version_id}" >> "$GITHUB_ENV"
+          echo "Resolved version ${version_id}"
+
+      - name: Deploy uploaded member-dashboard-chat-worker version
+        id: deploy
+        if: steps.resolve_version.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npx --yes wrangler@4 versions deploy "${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}@100%" -y \
+            --config member-dashboard-chat-worker/wrangler.toml \
+            2>&1 | tee "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log"
+
+      - name: Smoke production LINE route
+        id: smoke
+        if: steps.deploy.outcome == 'success'
+        shell: bash
+        run: |
+          response="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error https://www.mmdbkk.com/webhooks/line)"
           node -e '
             const body = JSON.parse(process.argv[1]);
             if (body.ok !== true || body.worker !== "member-dashboard-chat-worker" || body.route !== "line_webhook") {
               throw new Error(`Unexpected production smoke response: ${process.argv[1]}`);
             }
           ' "$response"
+
+      - name: Report deploy stage diagnosis
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CREDENTIALS_OUTCOME: ${{ steps.credentials.outcome }}
+          WHOAMI_OUTCOME: ${{ steps.whoami.outcome }}
+          TESTS_OUTCOME: ${{ steps.tests.outcome }}
+          DRY_RUN_OUTCOME: ${{ steps.wrangler_dry_run.outcome }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          RESOLVE_OUTCOME: ${{ steps.resolve_version.outcome }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+        run: |
+          set -euo pipefail
+          checked_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          if [ "$CREDENTIALS_OUTCOME" != "success" ]; then
+            stopped="cloudflare credential normalization"
+          elif [ "$WHOAMI_OUTCOME" != "success" ]; then
+            stopped="cloudflare token account preflight"
+          elif [ "$TESTS_OUTCOME" != "success" ]; then
+            stopped="tests"
+          elif [ "$DRY_RUN_OUTCOME" != "success" ]; then
+            stopped="versions dry-run"
+          elif [ "$UPLOAD_OUTCOME" != "success" ]; then
+            stopped="versions upload"
+          elif [ "$RESOLVE_OUTCOME" != "success" ]; then
+            stopped="resolve uploaded version"
+          elif [ "$DEPLOY_OUTCOME" != "success" ]; then
+            stopped="versions deploy"
+          elif [ "$SMOKE_OUTCOME" != "success" ]; then
+            stopped="production smoke"
+          else
+            stopped="none — live verified"
+          fi
+
+          body_file="$(mktemp)"
+          cat > "$body_file" <<EOF
+          ### member-dashboard-chat-worker deploy diagnosis
+
+          - source_sha: \`${GITHUB_SHA}\`
+          - checked_at: \`${checked_at}\`
+          - token normalization: \`${CREDENTIALS_OUTCOME}\`
+          - wrangler whoami: \`${WHOAMI_OUTCOME}\`
+          - tests: \`${TESTS_OUTCOME}\`
+          - versions dry-run: \`${DRY_RUN_OUTCOME}\`
+          - versions upload: \`${UPLOAD_OUTCOME}\`
+          - resolve version: \`${RESOLVE_OUTCOME}\`
+          - versions deploy: \`${DEPLOY_OUTCOME}\`
+          - production smoke: \`${SMOKE_OUTCOME}\`
+          - **stopped_at: \`${stopped}\`**
+          EOF
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body-file "$body_file"
+
+      - name: Record verified live receipt
+        if: steps.smoke.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ member-dashboard-chat-worker LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- version_id: \`${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}\`\n- endpoint: \`https://www.mmdbkk.com/webhooks/line\`\n- production smoke: \`ok=true, worker=member-dashboard-chat-worker, route=line_webhook\`\n- route mutation: \`none\`"
