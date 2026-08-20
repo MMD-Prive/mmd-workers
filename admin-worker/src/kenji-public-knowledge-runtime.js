@@ -142,7 +142,9 @@ export async function handleKenjiPublicKnowledgeRequest(request, env = {}) {
 
   const result = await loadPublicKnowledgeCards(env, { publishedOnly: true, limit: 100 });
   const publicCards = result.cards.map(toPublicCard).filter(isPublicCard);
-  const cards = publicCards.length ? publicCards : STATIC_PUBLIC_CARDS.map(toPublicCard);
+  const canonicalCards = STATIC_PUBLIC_CARDS.map(toPublicCard).filter(isPublicCard);
+  const liveCards = mergePublicCards(publicCards);
+  const cards = mergePublicCards(liveCards, canonicalCards);
   const dataStatus = publicCards.length ? result.data_status : "static_fallback";
 
   return withCors(jsonForMethod(request, {
@@ -151,12 +153,30 @@ export async function handleKenjiPublicKnowledgeRequest(request, env = {}) {
     mode: "public_published_runtime",
     data_status: dataStatus,
     storage: publicStorageStatus(result.storage),
+    coverage: {
+      airtable_count: liveCards.length,
+      canonical_fallback_count: Math.max(0, cards.length - liveCards.length),
+    },
     cards,
     items: cards,
     count: cards.length,
     total: cards.length,
     has_more: false,
   }, result.status || 200), cors);
+}
+
+function mergePublicCards(...groups) {
+  const merged = [];
+  const seen = new Set();
+  for (const group of groups) {
+    for (const card of Array.isArray(group) ? group : []) {
+      const id = clean(card.id || card.knowledge_id).toLowerCase();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      merged.push(card);
+    }
+  }
+  return merged;
 }
 
 async function loadPublicKnowledgeCards(env, query = {}) {
