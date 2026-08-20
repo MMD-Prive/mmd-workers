@@ -2573,7 +2573,7 @@
       "visibility": "webhook/internal",
       "auth_requirement": "LINE signature, internal token/confirm key",
       "source_of_truth": "LINE event and trusted Worker state after exact binding proof",
-      "temporary_proxy": "mmd-redirect-worker webhook bridge legacy",
+      "temporary_proxy": "none; mmd-redirect-worker fails closed if it catches LINE webhook paths",
       "known_overlap": [
         "admin-worker rich-menu proxy",
         "rich-menu/internal APIs require exact route or service binding proof"

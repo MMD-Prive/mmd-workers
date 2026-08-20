@@ -73,7 +73,7 @@ zone_name = "mmdbkk.com"
 
 # Cloudflare-only LINE runtime.
 # Bind LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, and INTERNAL_TOKEN as Cloudflare secrets only.
-# LINE_WEBHOOK_UPSTREAM_URL is retired and must remain unset.
+# No upstream webhook fallback is supported. Signed LINE events are handled locally by this Worker.
 #
 # Production intake must stay available during ad campaigns. Keep these
 # non-secret switches in version control so deploys cannot preserve an old
