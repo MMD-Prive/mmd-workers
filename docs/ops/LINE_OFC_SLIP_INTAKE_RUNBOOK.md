@@ -4,7 +4,7 @@
 
 Cloudflare staging implementation is prepared under `services/mmd-slip-extractor/cloudflare`. Production remains unchanged and deployment approval remains PENDING.
 
-The production LINE webhook stays on `member-dashboard-chat-worker`. Do not set `LINE_WEBHOOK_UPSTREAM_URL`, do not create a second production webhook, and do not point LINE at the extractor workers.dev URL.
+The production LINE webhook stays on `member-dashboard-chat-worker`. Do not create a second production webhook, do not add an upstream fallback, and do not point LINE at the extractor workers.dev URL.
 
 ## Preview scope
 

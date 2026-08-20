@@ -1,6 +1,5 @@
 [build]
-command = "echo \"No build\""
-functions = "netlify/functions"
+command = "echo \"Netlify LINE runtime retired; no production functions are deployed from immigrate-worker.\""
 
-[functions]
-node_bundler = "esbuild"
+# No functions directory is configured. Source under netlify/functions is
+# retained only as historical migration evidence and returns HTTP 410.

@@ -17,9 +17,7 @@ LINE Official uses the stable MMD domain route:
 https://mmdbkk.com/webhooks/line
 \`\`\`
 
-The Cloudflare owner is \`member-dashboard-chat-worker\`, which handles the signed LINE event directly. The public MMD URL remains stable, and no Netlify or legacy upstream is used.
-
-\`LINE_WEBHOOK_UPSTREAM_URL\` is retired and must remain unset. \`immigrate-worker\` is not a LINE upstream and must remain migration-only.
+The Cloudflare owner is \`member-dashboard-chat-worker\`, which handles the signed LINE event directly. The public MMD URL remains stable, and no Netlify or legacy upstream is used. \`immigrate-worker\` is not a LINE upstream and must remain migration-only.
 
 ## Required Env
 
@@ -75,7 +73,7 @@ Expected behavior:
 
 - No secrets in Webflow or frontend code.
 - No allowlist user ID, probe flag, or diagnostic user identifier is used by the webhook.
-- The route is Cloudflare-only: do not set \`LINE_WEBHOOK_UPSTREAM_URL\` and do not reintroduce Netlify or \`immigrate-worker\` as a LINE upstream.
+- The route is Cloudflare-only: do not reintroduce Netlify or \`immigrate-worker\` as a LINE upstream.
 - LINE customer copy must use Per Voice and must not introduce Kenji, reveal internal identifiers, or use “ทีม”.
 - Payment slips/proof are supporting evidence only.
 - Payment confirmation requires official verification and fund matching.

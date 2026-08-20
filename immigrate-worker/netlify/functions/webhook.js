@@ -993,9 +993,12 @@ async function writeEventToAirtable({ baseId, apiKey, tableName, event, profile 
 }
 
 export async function handler(event) {
-  if (event.httpMethod === "GET") {
-    return json(200, { ok: true, service: "line-webhook-netlify" });
-  }
+  return json(410, {
+    ok: false,
+    error: "netlify_line_webhook_retired",
+    owner: "member-dashboard-chat-worker",
+    endpoint: "https://mmdbkk.com/webhooks/line",
+  });
 
   if (event.httpMethod !== "POST") {
     return json(405, { ok: false, error: "method_not_allowed" });

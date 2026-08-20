@@ -211,20 +211,10 @@ AIRTABLE_TABLE_MEMBERS
 - test preview before intake against known LINE legacy records
 - verify the inbox trace and canonical member/client result
 
-## Netlify LINE webhook
+## Retired Netlify LINE webhook
 
-- scaffolded function: `netlify/functions/webhook.js`
-- target URL after Netlify deploy: `https://<your-site>.netlify.app/.netlify/functions/webhook`
-- required Netlify environment variables:
-- `LINE_CHANNEL_SECRET`
-- `AIRTABLE_API_KEY`
-- `AIRTABLE_BASE_ID`
-- optional: `AIRTABLE_SYNC_TABLE` defaults to `MMD — Console Inbox`
-- optional: `LINE_CHANNEL_ACCESS_TOKEN` required for auto-reply and fetching LINE profile names
-- optional: `LINE_AUTO_REPLY_ENABLED` defaults to `false`
-- optional: `ADMIN_WORKER_BASE_URL` plus one admin auth secret, `CONFIRM_KEY`, `ADMIN_BEARER`, or `INTERNAL_TOKEN`, for model lookup
-- optional: `LINE_MODEL_LOOKUP_DEBUG=true` to log safe model lookup metadata only
-- the function verifies `x-line-signature` and writes each LINE event into Airtable as a new inbox record
-- only messages tagged with `#client` are marked as manual immigrate candidates and eligible for profile lookup / optional auto-reply
-- model availability messages first query `admin-worker /v1/admin/models/list`; if Airtable has no match, the webhook calls `admin-worker /v1/admin/models/resolve-source` with `source_owner=lonelysomething`
-- R2 fallback replies are preliminary source matches only: they do not expose URLs/media/private notes and never confirm availability
+- `netlify/functions/webhook.js` is retained only as historical migration evidence.
+- it is not a production LINE webhook owner, deployment target, bridge, or fallback.
+- the retained function returns HTTP 410 with `netlify_line_webhook_retired`.
+- do not configure production LINE secrets in Netlify for this retired runtime.
+- the canonical production LINE owner is `member-dashboard-chat-worker` at `/webhooks/line`.

@@ -778,7 +778,7 @@ describe("MMD permanent redirect guard", () => {
       { url: `https://www.mmdbkk.com/sigil/member/membership?${PRESERVED_QUERY}`, expectedStatus: 209 },
       { url: `https://www.mmdbkk.com/pay/membership?${PRESERVED_QUERY}`, expectedStatus: 209 },
       { url: `https://www.mmdbkk.com/pay/pending-verification?${PRESERVED_QUERY}`, expectedStatus: 209 },
-      { url: `https://www.mmdbkk.com/webhooks/line?${PRESERVED_QUERY}`, expectedStatus: 209 },
+      { url: `https://www.mmdbkk.com/webhooks/line?${PRESERVED_QUERY}`, expectedStatus: 421 },
       { url: `https://www.mmdbkk.com/sigil/start?${PRESERVED_QUERY}`, expectedStatus: 209 },
       { url: `https://www.mmdbkk.com/sigil/membership?${PRESERVED_QUERY}`, expectedStatus: 209 },
       { url: `https://www.mmdbkk.com/sigil/apply?${PRESERVED_QUERY}`, expectedStatus: 209 },
@@ -883,8 +883,6 @@ describe("MMD permanent redirect guard", () => {
     const paths = [
       "/api/member",
       "/api/health",
-      "/webhook/line",
-      "/webhooks/line",
       "/payments/checkout",
       "/payments/test",
       "/payment/review",
@@ -905,6 +903,21 @@ describe("MMD permanent redirect guard", () => {
     }
 
     assert.equal(passThroughRequests.length, paths.length);
+  });
+
+  it("fails closed for LINE webhook paths if they ever reach the front gate", async () => {
+    for (const path of ["/webhook/line", "/webhooks/line"]) {
+      const response = await request(`https://www.mmdbkk.com${path}?t=abc`);
+      assert.equal(response.status, 421, path);
+      assert.equal(response.headers.get("location"), null, path);
+      assert.equal(response.headers.get("x-mmd-front-gate"), "mmd-redirect-worker", path);
+      assert.deepEqual(await response.json(), {
+        ok: false,
+        error: "line_webhook_owner_mismatch",
+        owner: "member-dashboard-chat-worker",
+        route: "/webhooks/line",
+      });
+    }
   });
 
   it("passes through never-touch hosts", async () => {

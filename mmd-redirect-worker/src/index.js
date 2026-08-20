@@ -24,7 +24,7 @@ export const STUDIO_WEBFLOW_ROUTE_REWRITES = new Map([
 
 export const REDIRECT_HOSTS = new Set(["www.mmdbkk.com", "mmdbkk.com", "mmdprive.com", "www.mmdprive.com", "malemodel-bkk.workers.dev"]);
 export const NEVER_TOUCH_HOSTS = new Set(["sigil.mmdbkk.com"]);
-export const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webhook/line", "/webhook/line/"]);
+export const PROTECTED_LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webhook/line", "/webhook/line/"]);
 export const PUBLIC_BLACKCARD_PATHS = new Set(["/blackcard", "/blackcard/", "/blackcard/black-card", "/blackcard/black-card/"]);
 export const WEBFLOW_MEMBER_PAGE_PATHS = new Set([CANONICAL_MEMBERSHIP_PATH, `${CANONICAL_MEMBERSHIP_PATH}/`, "/member/promotion", "/member/promotion/", "/member/apply", "/member/apply/"]);
 export const WEBFLOW_PAY_MEMBERSHIP_PATHS = new Set(["/pay/membership", "/pay/membership/"]);
@@ -127,7 +127,7 @@ async function fetchWebflowOriginPage(request, env = {}, url = new URL(request.u
   return withWebflowOriginHeaders(await fetch(new Request(target.toString(), request)));
 }
 
-function isLineWebhookPath(url) { return LINE_WEBHOOK_PATHS.has(url.pathname.toLowerCase()); }
+function isProtectedLineWebhookPath(url) { return PROTECTED_LINE_WEBHOOK_PATHS.has(url.pathname.toLowerCase()); }
 function isBlackcardPublicPath(url) { return PUBLIC_BLACKCARD_PATHS.has(url.pathname.toLowerCase()); }
 function isWebflowMemberPagePath(url) { return WEBFLOW_MEMBER_PAGE_PATHS.has(url.pathname.toLowerCase()); }
 function isWebflowPayMembershipPath(url) { return WEBFLOW_PAY_MEMBERSHIP_PATHS.has(url.pathname.toLowerCase()); }
@@ -145,12 +145,20 @@ function isKenjiKnowledgeAdminPath(url) { return KENJI_KNOWLEDGE_ADMIN_PATHS.has
 function isMemberPath(url) { const p = url.pathname.toLowerCase(); return p === "/member" || p === "/member/" || p.startsWith("/member/"); }
 function isKnownLegacyMemberRedirect(url) { return Boolean(EXACT_PATH_REDIRECTS[normalizePath(url.pathname).toLowerCase()]); }
 
-async function fetchLineWebhook(request, env = {}, url) {
-  const upstream = String(env?.LINE_WEBHOOK_UPSTREAM_URL || "").trim();
-  if (!upstream) return fetchPassThrough(request);
-  const target = new URL(upstream);
-  target.search = url.search;
-  return withFrontGateHeaders(await fetch(new Request(target.toString(), request)));
+function lineWebhookOwnerMismatchResponse() {
+  return withFrontGateHeaders(new Response(JSON.stringify({
+    ok: false,
+    error: "line_webhook_owner_mismatch",
+    owner: "member-dashboard-chat-worker",
+    route: "/webhooks/line",
+  }), {
+    status: 421,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+      "x-content-type-options": "nosniff",
+    },
+  }));
 }
 
 async function fetchMemberFrontend(request, env, url) {
@@ -247,7 +255,7 @@ function liffRouteNotFound() {
 export default {
   async fetch(request, env = {}) {
     const url = new URL(request.url);
-    if (isLineWebhookPath(url)) return fetchLineWebhook(request, env, url);
+    if (isProtectedLineWebhookPath(url)) return lineWebhookOwnerMismatchResponse();
     if (isSigilPrivateModelApplyApiPath(url)) return fetchSigilWorkerRoute(request, env, url, "sigil-private-model-apply-api");
     if (isLiffApiPath(url)) return isMemberApiPath(url)
       ? fetchMemberPage(request, env, url)

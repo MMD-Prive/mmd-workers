@@ -2,7 +2,7 @@
 
 ## Authority and current state
 
-The production LINE route remains owned by the Cloudflare `member-dashboard-chat-worker` at `/webhooks/line`. `LINE_WEBHOOK_UPSTREAM_URL` is retired and must remain unset. Netlify functions and configuration in older commits are historical only and are not deployment targets.
+The production LINE route remains owned by the Cloudflare `member-dashboard-chat-worker` at `/webhooks/line`. Netlify functions and configuration in older commits are historical only and are not deployment targets.
 
 `payments-worker` remains Money Truth. A slip is supporting evidence only. QR/OCR extraction cannot mark paid or verified, award points, extend membership, confirm sessions, or grant entitlements.
 

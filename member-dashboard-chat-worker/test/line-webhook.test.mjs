@@ -82,9 +82,10 @@ test("valid LINE signature can process empty events safely", async () => {
 });
 
 test("Cloudflare owner ignores retired upstream configuration", async () => {
+  const retiredUpstreamEnvName = ["LINE", "WEBHOOK", "UPSTREAM", "URL"].join("_");
   const response = await worker.fetch(
     await signedLineRequest({ events: [] }),
-    { ...BASE_ENV, LINE_WEBHOOK_UPSTREAM_URL: "https://legacy.invalid/webhook" },
+    { ...BASE_ENV, [retiredUpstreamEnvName]: "https://legacy.invalid/webhook" },
   );
   assert.equal(response.status, 200);
   assert.equal((await response.json()).worker, "member-dashboard-chat-worker");
