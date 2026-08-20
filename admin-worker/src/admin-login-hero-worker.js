@@ -1,4 +1,5 @@
 import worker from "./studio-telegram-worker.js";
+import dashboardWorker from "./dashboard-worker.js";
 import {
   APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON,
   APPROVED_ADMIN_LOGIN_FAVICON,
@@ -12,6 +13,7 @@ import { handleKenjiPublicKnowledgeRequest, isKenjiPublicKnowledgeRequest } from
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
+export const ADMIN_DASHBOARD_API_PATH = "/v1/admin/dashboard";
 export {
   ADMIN_LOGIN_SESSION_PATH,
   APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON,
@@ -23,6 +25,7 @@ export {
 const ALLOWED_NEXT_PATHS = [
   "/internal/admin",
   "/internal/admin/control-room",
+  "/internal/admin/dashboard",
   "/internal/admin/jobs/create-session",
   "/internal/admin/create-session",
   "/internal/admin/kenji-knowledge",
@@ -34,6 +37,12 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+
+    // Per-side MMD Console read API. The dashboard worker is read-only,
+    // uses the canonical admin auth helper, and loads operational Airtable data.
+    if (path === ADMIN_DASHBOARD_API_PATH) {
+      return dashboardWorker.fetch(request, env, ctx);
+    }
 
     if (isKenjiPublicKnowledgeRequest(path, method)) {
       return handleKenjiPublicKnowledgeRequest(request, env, ctx);
