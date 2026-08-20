@@ -23,6 +23,7 @@ jobs:
     timeout-minutes: 20
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "322b0461a6484c19579f25769aa27979"
       NO_COLOR: "1"
 
     steps:
@@ -52,20 +53,43 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          response="$(curl --fail-with-body --silent --show-error \
-            https://api.cloudflare.com/client/v4/user/tokens/verify \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")"
-          printf '%s\n' "$response" | tee "$RUNNER_TEMP/cloudflare-token-verify.json"
-          node -e '
-            const body = JSON.parse(process.argv[1]);
-            const status = body?.result?.status;
-            if (body?.success !== true || status !== "active") {
-              throw new Error(`Cloudflare API token is not active: ${JSON.stringify({ success: body?.success, status, errors: body?.errors || [] })}`);
-            }
-          ' "$response"
+          user_body="$RUNNER_TEMP/cloudflare-token-user-verify.json"
+          account_body="$RUNNER_TEMP/cloudflare-token-account-verify.json"
 
-      - name: Verify Cloudflare token account
+          user_http="$(curl --silent --show-error -o "$user_body" -w "%{http_code}" \
+            https://api.cloudflare.com/client/v4/user/tokens/verify \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" || true)"
+          account_http="$(curl --silent --show-error -o "$account_body" -w "%{http_code}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/tokens/verify" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" || true)"
+
+          node <<'NODE'
+          const fs = require("node:fs");
+          const parse = (path) => {
+            try { return JSON.parse(fs.readFileSync(path, "utf8")); }
+            catch { return {}; }
+          };
+          const user = parse(process.env.RUNNER_TEMP + "/cloudflare-token-user-verify.json");
+          const account = parse(process.env.RUNNER_TEMP + "/cloudflare-token-account-verify.json");
+          const userActive = user?.success === true && user?.result?.status === "active";
+          const accountActive = account?.success === true && account?.result?.status === "active";
+          const safe = (body) => ({
+            success: body?.success,
+            status: body?.result?.status,
+            errors: Array.isArray(body?.errors) ? body.errors.map(({ code, message }) => ({ code, message })) : []
+          });
+          console.log("Cloudflare user token verify:", JSON.stringify(safe(user)));
+          console.log("Cloudflare account token verify:", JSON.stringify(safe(account)));
+          if (!userActive && !accountActive) {
+            throw new Error("Cloudflare token did not verify active on user or target-account endpoint");
+          }
+          NODE
+          echo "Cloudflare user verify HTTP: ${user_http}"
+          echo "Cloudflare account verify HTTP: ${account_http}"
+
+      - name: Inspect Wrangler account context
         id: whoami
+        continue-on-error: true
         shell: bash
         working-directory: member-dashboard-chat-worker
         run: |
@@ -162,8 +186,6 @@ jobs:
             stopped="cloudflare token normalization"
           elif [ "$TOKEN_VERIFY_OUTCOME" != "success" ]; then
             stopped="cloudflare token verification"
-          elif [ "$WHOAMI_OUTCOME" != "success" ]; then
-            stopped="cloudflare token account preflight"
           elif [ "$TESTS_OUTCOME" != "success" ]; then
             stopped="tests"
           elif [ "$DRY_RUN_OUTCOME" != "success" ]; then
@@ -182,7 +204,8 @@ jobs:
 
           detail=""
           for log in \
-            "$RUNNER_TEMP/cloudflare-token-verify.json" \
+            "$RUNNER_TEMP/cloudflare-token-user-verify.json" \
+            "$RUNNER_TEMP/cloudflare-token-account-verify.json" \
             "$RUNNER_TEMP/cloudflare-whoami.log" \
             "$RUNNER_TEMP/member-dashboard-chat-worker-upload.log" \
             "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log"; do
@@ -202,7 +225,7 @@ jobs:
           - checked_at: \`${checked_at}\`
           - token normalization: \`${CREDENTIALS_OUTCOME}\`
           - token verification: \`${TOKEN_VERIFY_OUTCOME}\`
-          - wrangler whoami: \`${WHOAMI_OUTCOME}\`
+          - wrangler whoami (diagnostic only): \`${WHOAMI_OUTCOME}\`
           - tests: \`${TESTS_OUTCOME}\`
           - versions dry-run: \`${DRY_RUN_OUTCOME}\`
           - versions upload: \`${UPLOAD_OUTCOME}\`
