@@ -154,8 +154,8 @@ async function fetchLineWebhook(request, env = {}, url) {
 }
 
 async function fetchMemberFrontend(request, env, url) {
-  if (env?.IMMIGRATE_WORKER?.fetch) return withFrontGateHeaders(await env.IMMIGRATE_WORKER.fetch(request));
-  const target = new URL(MEMBER_DASHBOARD_UPSTREAM);
+  if (env?.MEMBER_PAGES_WORKER?.fetch) return withFrontGateHeaders(await env.MEMBER_PAGES_WORKER.fetch(request));
+  const target = new URL(MEMBER_PAGES_UPSTREAM);
   target.pathname = url.pathname;
   target.search = url.search;
   return withFrontGateHeaders(await fetch(new Request(target.toString(), request)));
