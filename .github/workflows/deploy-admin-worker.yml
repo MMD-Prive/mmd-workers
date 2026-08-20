@@ -77,10 +77,15 @@ jobs:
 
       - name: Deploy admin-worker
         id: deploy
-        run: npx --yes wrangler@4 deploy --keep-vars
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npx --yes wrangler@4 deploy --keep-vars 2>&1 | tee "$RUNNER_TEMP/admin-worker-deploy.log"
 
       - name: Verify production dashboard route
         id: smoke
+        if: steps.deploy.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
@@ -117,7 +122,34 @@ jobs:
           else
             stopped="none — live verified"
           fi
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "### admin-worker deploy diagnosis\n\n- source_sha: \`${GITHUB_SHA}\`\n- checked_at: \`${checked_at}\`\n- credentials: \`${CREDENTIALS_OUTCOME}\`\n- tests: \`${TESTS_OUTCOME}\`\n- wrangler dry-run: \`${DRY_RUN_OUTCOME}\`\n- wrangler deploy: \`${DEPLOY_OUTCOME}\`\n- production smoke: \`${SMOKE_OUTCOME}\`\n- **stopped_at: \`${stopped}\`**"
+
+          deploy_detail=""
+          if [ -f "$RUNNER_TEMP/admin-worker-deploy.log" ]; then
+            deploy_detail="$(grep -Ei 'error|failed|permission|route|conflict|workers.dev|code:|code ' "$RUNNER_TEMP/admin-worker-deploy.log" | tail -n 30 || true)"
+          fi
+          if [ -z "$deploy_detail" ]; then
+            deploy_detail="No focused Wrangler error lines captured."
+          fi
+
+          body_file="$(mktemp)"
+          cat > "$body_file" <<EOF
+          ### admin-worker deploy diagnosis
+
+          - source_sha: \`${GITHUB_SHA}\`
+          - checked_at: \`${checked_at}\`
+          - credentials: \`${CREDENTIALS_OUTCOME}\`
+          - tests: \`${TESTS_OUTCOME}\`
+          - wrangler dry-run: \`${DRY_RUN_OUTCOME}\`
+          - wrangler deploy: \`${DEPLOY_OUTCOME}\`
+          - production smoke: \`${SMOKE_OUTCOME}\`
+          - **stopped_at: \`${stopped}\`**
+
+          Wrangler deploy detail:
+          \`\`\`text
+          ${deploy_detail}
+          \`\`\`
+          EOF
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body-file "$body_file"
 
       - name: Record verified live receipt on launch issue
         if: steps.smoke.outcome == 'success'
