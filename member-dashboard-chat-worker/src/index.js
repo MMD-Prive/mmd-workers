@@ -420,7 +420,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "membership") {
-    return `รับเรื่องสมาชิกแล้วครับ ${prefix}เดี๋ยวเปอร์ช่วยดูข้อมูลก่อน แล้วจะแนะนำขั้นตอนที่เหมาะให้ครับ`;
+    return `รับเรื่องสมาชิกแล้วครับ ${prefix}จัดการ MY MMD ได้ที่ https://mmdbkk.com/sigil/member/membership ครับ หน้านี้ใช้สำหรับดูแพ็กเกจ สมัคร ต่ออายุ หรืออัปเกรดสมาชิกได้ โดยสถานะสมาชิกและการชำระเงินจะยืนยันหลัง MMD ตรวจสอบข้อมูลทางการแล้วครับ`;
   }
 
   if (intent === "pricing_review") {
