@@ -72,17 +72,55 @@ jobs:
             kenji-knowledge-runtime-storage.test.mjs \
             kenji-public-knowledge-runtime.test.mjs
 
-      - name: Validate Cloudflare deployment
+      - name: Validate Cloudflare version upload
         id: wrangler_dry_run
-        run: npx --yes wrangler@4 deploy --dry-run --keep-vars
+        run: npx --yes wrangler@4 versions upload --dry-run --keep-vars
 
-      - name: Deploy admin-worker
+      - name: Upload admin-worker version
+        id: upload
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="gha-${GITHUB_SHA:0:12}"
+          echo "ADMIN_WORKER_VERSION_TAG=${tag}" >> "$GITHUB_ENV"
+          npx --yes wrangler@4 versions upload \
+            --keep-vars \
+            --tag "$tag" \
+            --message "GitHub Actions ${GITHUB_SHA}" \
+            2>&1 | tee "$RUNNER_TEMP/admin-worker-upload.log"
+
+      - name: Resolve uploaded version ID
+        id: resolve_version
+        if: steps.upload.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 versions list --json > "$RUNNER_TEMP/admin-worker-versions.json"
+          version_id="$(node - "$RUNNER_TEMP/admin-worker-versions.json" "$ADMIN_WORKER_VERSION_TAG" <<'NODE'
+          const fs = require('node:fs');
+          const [file, tag] = process.argv.slice(2);
+          const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+          const list = Array.isArray(data) ? data : (data.items || data.versions || []);
+          const item = list.find((entry) => entry?.tag === tag || entry?.metadata?.tag === tag);
+          const id = item?.id || item?.version_id || item?.versionId;
+          if (!id) process.exit(2);
+          process.stdout.write(String(id));
+          NODE
+          )"
+          test -n "$version_id"
+          echo "ADMIN_WORKER_VERSION_ID=${version_id}" >> "$GITHUB_ENV"
+          echo "Resolved version ${version_id} for tag ${ADMIN_WORKER_VERSION_TAG}"
+
+      - name: Deploy uploaded admin-worker version
         id: deploy
+        if: steps.resolve_version.outcome == 'success'
         continue-on-error: true
         shell: bash
         run: |
           set -o pipefail
-          npx --yes wrangler@4 deploy --keep-vars 2>&1 | tee "$RUNNER_TEMP/admin-worker-deploy.log"
+          npx --yes wrangler@4 versions deploy "${ADMIN_WORKER_VERSION_ID}@100%" -y \
+            2>&1 | tee "$RUNNER_TEMP/admin-worker-deploy.log"
 
       - name: Verify production dashboard route
         id: smoke
@@ -106,6 +144,8 @@ jobs:
           WHOAMI_OUTCOME: ${{ steps.whoami.outcome }}
           TESTS_OUTCOME: ${{ steps.tests.outcome }}
           DRY_RUN_OUTCOME: ${{ steps.wrangler_dry_run.outcome }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          RESOLVE_OUTCOME: ${{ steps.resolve_version.outcome }}
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
         run: |
@@ -118,9 +158,13 @@ jobs:
           elif [ "$TESTS_OUTCOME" != "success" ]; then
             stopped="tests"
           elif [ "$DRY_RUN_OUTCOME" != "success" ]; then
-            stopped="wrangler dry-run"
+            stopped="wrangler versions dry-run"
+          elif [ "$UPLOAD_OUTCOME" != "success" ]; then
+            stopped="wrangler versions upload"
+          elif [ "$RESOLVE_OUTCOME" != "success" ]; then
+            stopped="resolve uploaded version"
           elif [ "$DEPLOY_OUTCOME" != "success" ]; then
-            stopped="wrangler deploy"
+            stopped="wrangler versions deploy"
           elif [ "$SMOKE_OUTCOME" != "success" ]; then
             stopped="production smoke"
           else
@@ -128,10 +172,12 @@ jobs:
           fi
 
           deploy_detail=""
-          if [ -f "$RUNNER_TEMP/admin-worker-deploy.log" ]; then
-            deploy_detail="$(grep -Ei 'error|failed|permission|route|conflict|workers.dev|code:|code ' "$RUNNER_TEMP/admin-worker-deploy.log" | tail -n 30 || true)"
-          fi
-          if [ -z "$deploy_detail" ]; then
+          for log in "$RUNNER_TEMP/admin-worker-upload.log" "$RUNNER_TEMP/admin-worker-deploy.log"; do
+            if [ -f "$log" ]; then
+              deploy_detail="${deploy_detail}$(grep -Ei 'error|failed|permission|route|conflict|workers.dev|code:|code |version' "$log" | tail -n 30 || true)\n"
+            fi
+          done
+          if [ -z "${deploy_detail//\\n/}" ]; then
             deploy_detail="No focused Wrangler error lines captured."
           fi
 
@@ -144,12 +190,14 @@ jobs:
           - token normalization: \`${CREDENTIALS_OUTCOME}\`
           - wrangler whoami: \`${WHOAMI_OUTCOME}\`
           - tests: \`${TESTS_OUTCOME}\`
-          - wrangler dry-run: \`${DRY_RUN_OUTCOME}\`
-          - wrangler deploy: \`${DEPLOY_OUTCOME}\`
+          - versions dry-run: \`${DRY_RUN_OUTCOME}\`
+          - versions upload: \`${UPLOAD_OUTCOME}\`
+          - resolve version: \`${RESOLVE_OUTCOME}\`
+          - versions deploy: \`${DEPLOY_OUTCOME}\`
           - production smoke: \`${SMOKE_OUTCOME}\`
           - **stopped_at: \`${stopped}\`**
 
-          Wrangler deploy detail:
+          Wrangler detail:
           \`\`\`text
           ${deploy_detail}
           \`\`\`
@@ -165,4 +213,4 @@ jobs:
         run: |
           set -euo pipefail
           deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ admin-worker LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- endpoint: \`${ADMIN_DASHBOARD_PRODUCTION_URL}\`\n- production smoke: \`401 unauthorized\`\n\nThis receipt is written only after Wrangler deploy succeeds and the production Worker returns the expected auth-guard response."
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ admin-worker LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- version_id: \`${ADMIN_WORKER_VERSION_ID}\`\n- endpoint: \`${ADMIN_DASHBOARD_PRODUCTION_URL}\`\n- production smoke: \`401 unauthorized\`\n- route mutation: \`none\`\n\nThis receipt is written only after a version-only deploy succeeds and the production Worker returns the expected auth-guard response."
