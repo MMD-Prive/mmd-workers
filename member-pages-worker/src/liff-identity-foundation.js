@@ -1322,7 +1322,7 @@ function safeMemberProfile(input = {}) {
   const to = /^\d{4}-\d{2}-\d{2}$/.test(String(input.history_window?.to || "")) ? String(input.history_window.to) : "";
   return {
     display_name: String(input.display_name || "สมาชิก MMD").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 120),
-    tier: ["Member", "Standard", "Premium", "Black Card"].includes(input.tier) ? input.tier : "Member",
+    tier: ["Member", "Standard", "Premium", "VIP", "SVIP", "Black Card"].includes(input.tier) ? input.tier : "Member",
     membership_status: ["active", "grace", "expired", "under_review"].includes(input.membership_status) ? input.membership_status : "under_review",
     points: Number.isFinite(Number(input.points)) && Number(input.points) >= 0 ? Math.trunc(Number(input.points)) : 0,
     history_window: { from, to, timezone: "Asia/Bangkok" },
