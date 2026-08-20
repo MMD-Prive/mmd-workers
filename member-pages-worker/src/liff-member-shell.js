@@ -327,7 +327,11 @@ function renderShell(config, nonce) {
     try {
       await window.liff.init({ liffId: CONFIG.liffId });
       if (!window.liff.isLoggedIn()) {
-        window.liff.login({ redirectUri: window.location.href });
+        if (!window.liff.isInClient()) {
+          show("กรุณาเปิดหน้านี้จาก LINE Mini App ของ MMD เพื่อยืนยันตัวตนครับ");
+          return;
+        }
+        window.liff.login();
         return;
       }
       const idToken = window.liff.getIDToken();
