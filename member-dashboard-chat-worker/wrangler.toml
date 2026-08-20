@@ -75,9 +75,14 @@ zone_name = "mmdbkk.com"
 # Bind LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, and INTERNAL_TOKEN as Cloudflare secrets only.
 # LINE_WEBHOOK_UPSTREAM_URL is retired and must remain unset.
 #
-# Runtime flags are configured in Cloudflare, not committed here:
-# LINE_AUTO_REPLY_ENABLED=true
-# LINE_KENJI_AI_ENABLED=true
+# Production intake must stay available during ad campaigns. Keep these
+# non-secret switches in version control so deploys cannot preserve an old
+# muted/disabled runtime value by accident. An intentional emergency mute can
+# still be made by changing this config and redeploying.
+[vars]
+LINE_AUTO_REPLY_ENABLED = "true"
+LINE_KENJI_AI_ENABLED = "true"
+LINE_KENJI_KNOWLEDGE_ENABLED = "true"
 
 # Full CARE BACK staging front gate. No production routes are inherited into
 # named environments; this Worker is reachable only on its workers.dev URL.
