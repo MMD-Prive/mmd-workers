@@ -11,6 +11,6 @@
     "deploy": "wrangler deploy --keep-vars"
   },
   "devDependencies": {
-    "wrangler": "4.96.0"
+    "wrangler": "4.125.0"
   }
 }

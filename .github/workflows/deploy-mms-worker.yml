@@ -29,12 +29,12 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: "24"
 
       - name: Normalize Cloudflare credentials
         shell: bash
@@ -73,15 +73,6 @@ jobs:
       - name: Validate Cloudflare bundle
         working-directory: mms-worker
         run: npx wrangler deploy --dry-run
-
-      - name: Ensure private MMS R2 bucket exists
-        working-directory: mms-worker
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! npx wrangler r2 bucket info mms-private-uploads >/dev/null 2>&1; then
-            npx wrangler r2 bucket create mms-private-uploads
-          fi
 
       - name: Prepare optional Airtable secret
         id: airtable
