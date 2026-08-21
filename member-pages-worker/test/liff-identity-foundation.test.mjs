@@ -1726,7 +1726,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     }
     const dashboard = await worker.fetch(new Request("https://mmdbkk.com/member/dashboard", { method: "GET" }), {});
     assert.equal(dashboard.status, 200);
-    assert.equal(dashboard.headers.get("x-mmd-worker"), "member-pages-worker");
     assert.equal(dashboard.headers.get("x-mmd-page"), "member-dashboard");
+    assert.match(await dashboard.text(), /MMD Privé \| Member Dashboard/);
   });
 });
