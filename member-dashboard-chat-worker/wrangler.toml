@@ -83,6 +83,11 @@ zone_name = "mmdbkk.com"
 LINE_AUTO_REPLY_ENABLED = "true"
 LINE_KENJI_AI_ENABLED = "true"
 LINE_KENJI_KNOWLEDGE_ENABLED = "true"
+# Model generation is a separate, production-gated capability. Keep it off in
+# committed configuration until an explicitly approved deployment enables it.
+LINE_KENJI_MODEL_ENABLED = "false"
+OPENAI_MODEL = "gpt-5.6"
+KENJI_MODEL_TIMEOUT_MS = "3500"
 
 # Full CARE BACK staging front gate. No production routes are inherited into
 # named environments; this Worker is reachable only on its workers.dev URL.
