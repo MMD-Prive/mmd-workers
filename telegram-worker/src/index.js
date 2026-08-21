@@ -84,10 +84,13 @@ async function handleTelegramWebhook(update, env) {
   const message = update.message || update.edited_message || null;
   if (!message) return { handled: false, reason: "unsupported_update" };
 
-  const text = clean(message.text || "");
   const chatId = clean(message.chat?.id);
   if (!chatId) return { handled: false, reason: "missing_chat_id" };
 
+  const joinCleanup = await cleanupStandardGroupJoinMessage(message, env);
+  if (joinCleanup) return joinCleanup;
+
+  const text = clean(message.text || "");
   const startArg = parseStartArg(text);
   if (startArg === PREVIEW_START) {
     const telegram = await sendTelegramMessage({
@@ -117,6 +120,58 @@ async function handleTelegramWebhook(update, env) {
   }
 
   return { handled: false, reason: "no_matching_command" };
+}
+
+async function cleanupStandardGroupJoinMessage(message, env) {
+  if (!Array.isArray(message.new_chat_members) || message.new_chat_members.length === 0) return null;
+
+  const standardGroupId = clean(env.TELEGRAM_STANDARD_GROUP_ID);
+  if (!standardGroupId) {
+    return { handled: false, reason: "standard_group_cleanup_not_configured" };
+  }
+
+  const chatId = clean(message.chat?.id);
+  if (chatId !== standardGroupId) {
+    return { handled: false, reason: "join_message_outside_standard_group" };
+  }
+
+  const messageId = Number(message.message_id);
+  if (!Number.isInteger(messageId) || messageId <= 0) {
+    return { handled: false, reason: "missing_join_message_id" };
+  }
+
+  const deletion = await deleteTelegramMessage({ chat_id: chatId, message_id: messageId }, env);
+  return {
+    handled: true,
+    flow: "standard_group_join_cleanup",
+    deleted: deletion.ok === true,
+    telegram: deletion,
+  };
+}
+
+async function deleteTelegramMessage(payload, env) {
+  const botToken = clean(env.TELEGRAM_BOT_TOKEN);
+  if (!botToken) return { ok: false, skipped: true, reason: "missing_telegram_bot_token" };
+
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: clean(payload.chat_id),
+      message_id: Number(payload.message_id),
+    }),
+  });
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok || data?.ok === false) {
+    return {
+      ok: false,
+      status: res.status,
+      error: data || null,
+    };
+  }
+
+  return { ok: true, result: data?.result ?? true };
 }
 
 async function postComplaintNotification(body, env) {
