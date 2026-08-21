@@ -87,6 +87,12 @@ LINE_KENJI_KNOWLEDGE_ENABLED = "true"
 # committed configuration until an explicitly approved deployment enables it.
 LINE_KENJI_MODEL_ENABLED = "false"
 OPENAI_MODEL = "gpt-5.6"
+# Safe defaults: model-on still reaches nobody until approved SHA-256 tester
+# hashes and approved grounding card IDs are supplied as production config.
+LINE_KENJI_MODEL_CANARY_HASHES = ""
+LINE_KENJI_MODEL_KNOWLEDGE_IDS = ""
+LINE_KENJI_MODEL_MAX_ATTEMPTS_PER_WINDOW = "3"
+LINE_KENJI_MODEL_QUOTA_WINDOW_SECONDS = "900"
 
 [[durable_objects.bindings]]
 name = "KENJI_MODEL_DEDUPE"

@@ -5,6 +5,7 @@ import {
 import { KenjiModelIdempotency } from "./kenji-model-idempotency.js";
 import { generateKenjiModelReply, KENJI_TOTAL_DEADLINE_MS } from "./kenji-model-policy.js";
 import { buildProtectedCapabilityReply, decideKenjiCapability, KENJI_CAPABILITIES } from "./kenji-capability-policy.js";
+import { selectApprovedLineModelKnowledge } from "./kenji-knowledge-policy.js";
 
 export { KenjiModelIdempotency };
 
@@ -29,6 +30,9 @@ const SERVICE_LINE_RICH_MENU_PRIVATE_MEMBER_BASE_PATH = "/__internal/line/rich-m
 const SERVICE_LINE_RICH_MENU_DEFAULT_PATH = "/__internal/line/rich-menu/default";
 const SERVICE_LINE_RICH_MENU_LIST_PATH = "/__internal/line/rich-menu/list";
 const DEFAULT_SYNC_TABLE = "MMD — Console Inbox";
+const KENJI_MODEL_DEDUPE_TIMEOUT_MS = 300;
+const KENJI_MODEL_QUOTA_DEFAULT_LIMIT = 3;
+const KENJI_MODEL_QUOTA_DEFAULT_WINDOW_SECONDS = 15 * 60;
 
 const PUBLIC_MENU_TEXT = [
   "MMD Member Help",
@@ -86,6 +90,19 @@ function asString(value) {
 
 function isEnabled(value) {
   return ["1", "true", "yes", "on"].includes(asString(value).toLowerCase());
+}
+
+function parseHashAllowlist(value) {
+  const raw = asString(value);
+  if (!raw) return { valid: true, hashes: new Set() };
+  const values = raw.split(/[\s,]+/).filter(Boolean);
+  if (!values.length || values.some((item) => !/^[a-f0-9]{64}$/.test(item))) return { valid: false, hashes: new Set() };
+  return { valid: true, hashes: new Set(values) };
+}
+
+function boundedInteger(value, fallback, min, max) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
 }
 
 function getHeader(headers, name) {
@@ -368,7 +385,7 @@ async function fetchPublishedLineKnowledge(env = {}, options = {}) {
     const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
     url.searchParams.set("pageSize", "100");
     url.searchParams.set("filterByFormula", 'AND({status}="active",{response_mode}="auto_reply_allowed")');
-    ["knowledge_id", "title", "category", "language", "customer_answer", "allowed_channels", "status", "response_mode", "risk_level", "effective_from"].forEach((field) => {
+    ["knowledge_id", "title", "category", "language", "customer_answer", "allowed_channels", "status", "response_mode", "risk_level", "effective_from", "payload_json", "source_path", "source_ref", "internal_instruction", "review_note"].forEach((field) => {
       url.searchParams.append("fields[]", field);
     });
 
@@ -412,10 +429,14 @@ function rankPublishedKnowledge(cards = [], text = "") {
     .map((item) => item.card);
 }
 
+function approvedModelKnowledgeIds(env = {}) {
+  return asString(env.LINE_KENJI_MODEL_KNOWLEDGE_IDS).split(/[\s,]+/).filter(Boolean);
+}
+
 async function getModelGrounding(env = {}, text = "", deadlineAt = 0) {
   const key = `${asString(env.AIRTABLE_BASE_ID)}:${getKenjiKnowledgeTable(env)}`;
   if (lineKnowledgeCache.key === key && lineKnowledgeCache.expiresAt > Date.now()) {
-    return rankPublishedKnowledge(lineKnowledgeCache.cards, text);
+    return rankPublishedKnowledge(selectApprovedLineModelKnowledge(lineKnowledgeCache.cards, { approvedIds: approvedModelKnowledgeIds(env) }), text);
   }
   if (!isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)) return [];
   const remainingMs = Number(deadlineAt) - Date.now();
@@ -424,7 +445,7 @@ async function getModelGrounding(env = {}, text = "", deadlineAt = 0) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort("kenji_knowledge_timeout"), timeoutMs);
   try {
-    return rankPublishedKnowledge(await fetchPublishedLineKnowledge(env, { signal: controller.signal }), text);
+    return rankPublishedKnowledge(selectApprovedLineModelKnowledge(await fetchPublishedLineKnowledge(env, { signal: controller.signal }), { approvedIds: approvedModelKnowledgeIds(env) }), text);
   } finally {
     clearTimeout(timer);
   }
@@ -642,19 +663,21 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
   const eventText = getLineEventText(event);
   const intent = inferLineIntent(eventText, event);
   const capabilityDecision = decideKenjiCapability({ text: eventText, intent });
+  const deterministicReply = buildKenjiLineReply(event, profile, options);
+  const deterministicFirst = capabilityDecision.capability !== KENJI_CAPABILITIES.APPROVED_PUBLIC_KNOWLEDGE && capabilityDecision.capability !== KENJI_CAPABILITIES.SAFE_CONVERSATION;
   const cachedKnowledge = isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)
     ? getCachedPublishedPerVoiceReply(env, intent)
     : "";
-  const generated = cachedKnowledge || buildKenjiLineReply(event, profile, options);
+  const generated = deterministicFirst ? deterministicReply : (cachedKnowledge || deterministicReply);
   if (generated && intent !== "manual_review") {
     return {
       text: generated,
       fallback: false,
-      reply_source: cachedKnowledge ? "knowledge" : "system_truth",
+      reply_source: (!deterministicFirst && cachedKnowledge) ? "knowledge" : "system_truth",
       model_attempted: false,
       model_success: false,
       model_latency_ms: 0,
-      knowledge_hits: cachedKnowledge ? 1 : 0,
+      knowledge_hits: (!deterministicFirst && cachedKnowledge) ? 1 : 0,
       guard_blocked: false,
       guard_reason: "",
     };
@@ -677,7 +700,7 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
   let model = {};
   let knowledgeHits = 0;
   if (capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && eventText && isEnabled(env.LINE_KENJI_MODEL_ENABLED) && options.modelEligible !== false) {
-    const deadlineAt = Date.now() + KENJI_TOTAL_DEADLINE_MS;
+    const deadlineAt = Number(options.deadlineAt) || (Date.now() + KENJI_TOTAL_DEADLINE_MS);
     const grounding = await getModelGrounding(env, eventText, deadlineAt);
     knowledgeHits = grounding.length;
     model = await generateKenjiModelReply({
@@ -857,23 +880,45 @@ async function claimKenjiModelEvent(env = {}, event = {}) {
   if (event?.deliveryContext?.isRedelivery === true) return { eligible: false, deduped: true, reason: "line_redelivery" };
   const eventId = getStableLineMessageId(event);
   if (!eventId) return { eligible: false, deduped: false, reason: "stable_message_id_missing" };
+  const lineUserId = getLineUserId({ event });
+  if (!lineUserId) return { eligible: false, deduped: false, reason: "model_canary_user_missing", canary_eligible: false, rate_limited: false };
+  const cohort = parseHashAllowlist(env.LINE_KENJI_MODEL_CANARY_HASHES);
+  if (!cohort.valid) return { eligible: false, deduped: false, reason: "model_canary_config_malformed", canary_eligible: false, rate_limited: false };
+  const userHash = await sha256Hex(lineUserId);
+  if (!cohort.hashes.has(userHash)) return { eligible: false, deduped: false, reason: "model_canary_not_eligible", canary_eligible: false, rate_limited: false };
   if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) {
-    return { eligible: false, deduped: false, reason: "model_dedupe_binding_missing" };
+    return { eligible: false, deduped: false, reason: "model_dedupe_binding_missing", canary_eligible: true, rate_limited: false };
   }
 
   const key = await sha256Hex(eventId);
+  const quotaLimit = boundedInteger(env.LINE_KENJI_MODEL_MAX_ATTEMPTS_PER_WINDOW, KENJI_MODEL_QUOTA_DEFAULT_LIMIT, 1, 20);
+  const quotaWindowSeconds = boundedInteger(env.LINE_KENJI_MODEL_QUOTA_WINDOW_SECONDS, KENJI_MODEL_QUOTA_DEFAULT_WINDOW_SECONDS, 60, 86400);
+  const quotaWindow = Math.floor(Date.now() / (quotaWindowSeconds * 1000));
+  const dedupeController = new AbortController();
+  const timeout = new Promise((_, reject) => {
+    const timer = setTimeout(() => {
+      dedupeController.abort("kenji_model_dedupe_timeout");
+      reject(Object.assign(new Error("model_dedupe_timeout"), { code: "MODEL_DEDUPE_TIMEOUT" }));
+    }, KENJI_MODEL_DEDUPE_TIMEOUT_MS);
+    dedupeController.signal.addEventListener("abort", () => clearTimeout(timer), { once: true });
+  });
   try {
     const objectId = env.KENJI_MODEL_DEDUPE.idFromName("kenji-line-model-idempotency-v1");
-    const response = await env.KENJI_MODEL_DEDUPE.get(objectId).fetch("https://kenji-model-dedupe.internal/claim", {
+    const request = env.KENJI_MODEL_DEDUPE.get(objectId).fetch("https://kenji-model-dedupe.internal/claim", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ key }),
+      body: JSON.stringify({ key, quota_key: userHash, quota_limit: quotaLimit, quota_window: quotaWindow, quota_window_seconds: quotaWindowSeconds }),
+      signal: dedupeController.signal,
     });
+    const response = await Promise.race([request, timeout]);
+    dedupeController.abort("kenji_model_dedupe_complete");
     const result = await response.json().catch(() => ({}));
-    if (!response.ok || result?.ok !== true) return { eligible: false, deduped: false, reason: "model_dedupe_unavailable" };
-    if (result.claimed !== true) return { eligible: false, deduped: true, reason: "message_id_claimed" };
-  } catch (_) {
-    return { eligible: false, deduped: false, reason: "model_dedupe_unavailable" };
+    if (!response.ok || result?.ok !== true) return { eligible: false, deduped: false, reason: "model_dedupe_unavailable", canary_eligible: true, rate_limited: false, quota_window: quotaWindowSeconds };
+    if (result.claimed !== true) return { eligible: false, deduped: true, reason: "message_id_claimed", canary_eligible: true, rate_limited: false, quota_window: quotaWindowSeconds };
+    if (result.quota_allowed !== true) return { eligible: false, deduped: false, reason: "model_quota_exceeded", canary_eligible: true, rate_limited: true, quota_window: quotaWindowSeconds };
+  } catch (error) {
+    dedupeController.abort("kenji_model_dedupe_failed");
+    return { eligible: false, deduped: false, reason: error?.code === "MODEL_DEDUPE_TIMEOUT" ? "model_dedupe_timeout" : "model_dedupe_unavailable", canary_eligible: true, rate_limited: false, quota_window: quotaWindowSeconds };
   }
 
   const controller = new AbortController();
@@ -884,7 +929,7 @@ async function claimKenjiModelEvent(env = {}, event = {}) {
       throwOnUnavailable: true,
     });
     if (existing?.id) return { eligible: false, deduped: true, reason: "message_id_processed" };
-    return { eligible: true, deduped: false, reason: "" };
+    return { eligible: true, deduped: false, reason: "", canary_eligible: true, rate_limited: false, quota_window: quotaWindowSeconds };
   } catch (_) {
     return { eligible: false, deduped: false, reason: "line_inbox_dedupe_unavailable" };
   } finally {
@@ -1505,11 +1550,12 @@ async function handleLineWebhook(request, env, ctx = null) {
     const canGenerateReply = Boolean(autoReplyEnabled && kenjiEnabled && eventMode !== "standby" && getReplyToken(event));
     const capabilityDecision = decideKenjiCapability({ text, intent });
     const needsModelPreflight = Boolean(canGenerateReply && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
+    const modelDeadlineAt = needsModelPreflight ? Date.now() + KENJI_TOTAL_DEADLINE_MS : 0;
     const modelPreflight = needsModelPreflight
       ? await claimKenjiModelEvent(env, event)
-      : { eligible: true, deduped: false, reason: "" };
+      : { eligible: true, deduped: false, reason: "", canary_eligible: false, rate_limited: false, quota_window: 0 };
     const replyDecision = canGenerateReply && !modelPreflight.deduped
-      ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled, modelEligible: modelPreflight.eligible })
+      ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled, modelEligible: modelPreflight.eligible, deadlineAt: modelDeadlineAt })
       : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" };
     const replyText = replyDecision.text;
     const shouldReply = Boolean(autoReplyEnabled && eventMode !== "standby" && replyText && getReplyToken(event));
@@ -1564,6 +1610,9 @@ async function handleLineWebhook(request, env, ctx = null) {
       model_output_guard_reason: replyDecision.model_attempted ? (asString(replyDecision.guard_reason) || null) : null,
       model_deduped: Boolean(modelPreflight.deduped),
       model_dedupe_reason: asString(modelPreflight.reason) || null,
+      model_canary_eligible: Boolean(modelPreflight.canary_eligible),
+      model_rate_limited: Boolean(modelPreflight.rate_limited),
+      model_quota_window: Number(modelPreflight.quota_window) || 0,
     }));
 
     saved.push({

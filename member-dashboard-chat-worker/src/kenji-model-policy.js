@@ -1,6 +1,6 @@
 import { KENJI_CAPABILITIES, KENJI_PROTECTED_DOMAINS } from "./kenji-capability-policy.js";
 
-export const KENJI_MODEL_POLICY_VERSION = "kenji-line-production-v3-semantic-authority";
+export const KENJI_MODEL_POLICY_VERSION = "kenji-line-production-v4-compositional-authority";
 export const DEFAULT_KENJI_MODEL = "gpt-5.6";
 export const KENJI_TOTAL_DEADLINE_MS = 3500;
 export const KENJI_MODEL_REASONING_EFFORT = "low";
@@ -40,6 +40,9 @@ const THAI_AUTHORITY_RESULT_RE = /(?:เสร็จ|จัดการ|ดำ�
 const THAI_FINAL_STATE_RE = /(?:แล้ว|ให้แล้ว|เสร็จแล้ว|เรียบร้อย|ได้เลย|ต่อได้เลย|ฝั่งเรา|พร้อมใช้|พร้อมใช้งาน|สำเร็จ)/i;
 const ENGLISH_AUTHORITY_FINALITY_RE = /(?:\ball\s*set\b|\bconfirm(?:ed)?\b|\bapprov(?:ed|al)\b|\bverif(?:ied|ication)\b|\bactivat(?:ed|ion)\b|\bcredit(?:ed)?\b|\bcomplet(?:ed|ion)\b|\bprocessed\b|\bsuccessfully\s+processed\b|\bdone(?:\s+on\s+our\s+side)?\b|\bclear(?:ed)?\b|\bready(?:\s+to\s+use)?\b|\beverything\s+is\s+ready\b|\bit\s+went\s+through\b|\byou(?:'|’)?re\s+(?:good\s+now|cleared)\b|\bgood\s+to\s+go\b|\bbooked\b|\bavailable\b|\brenewed\b|\bunlocked\b|\baccepted\b|\bescalated\b|\bnotified\b|\bper\s+has\s+it\s+now\b|\bthe\s+team\s+has\s+been\s+notified\b|\bi\s+escalated\s+this\b)/i;
 const HANDOFF_FINALITY_RE = /(?:ส่งให้เปอร์แล้ว|ส่งต่อ(?:เคส|เรื่อง)?แล้ว|แจ้ง(?:ทีม|เปอร์)แล้ว|รับเรื่องแล้ว|เคส(?:ถูก)?ส่งต่อแล้ว|per\s+has\s+it\s+now|i\s+escalated\s+this|the\s+team\s+has\s+been\s+notified)/i;
+const SAFE_CONVERSATION_CONTINUATION_RE = /(?:เล่า(?:ต่อ|เพิ่ม)|อธิบาย(?:ต่อ|เพิ่ม)|บอก(?:ต่อ|เพิ่ม)|แชร์(?:ต่อ|เพิ่ม)|คุยต่อ|ถามต่อ|อยากฟังต่อ|tell\s+me\s+more|keep\s+(?:telling|talking|sharing)|continue\s+(?:telling|explaining|sharing|the\s+story|our\s+conversation)|feel\s+free\s+to\s+(?:tell|explain|share)|talk\s+it\s+through)/i;
+const THAI_PROCESS_PROGRESSION_RE = /(?:ไปต่อ|ดำเนินการต่อ|ทำขั้นตอนต่อไป|ไปขั้น(?:ตอน)?(?:ถัดไป|ต่อไป)|ผ่านไปขั้น(?:ตอน)?(?:ถัดไป|ต่อไป)|เดินหน้าต่อ|ใช้(?:งาน)?ต่อ|เริ่มใช้|เข้าใช้งาน|ทำรายการต่อ|กดต่อ|ยื่นต่อ)(?:ได้|ได้เลย|ตอนนี้|แล้ว|นะ|ครับ|ค่ะ|ทันที)?/i;
+const ENGLISH_PROCESS_PROGRESSION_RE = /(?:\b(?:you\s+)?may\s+proceed\b|\b(?:you\s+can|you(?:'|’)re\s+(?:clear|good)\s+to)\s+(?:proceed|move\s+forward|go\s+ahead|continue)\b|\b(?:proceed|continue)\s+(?:now|to\s+the\s+next\s+(?:step|stage))\b|\bmove\s+forward\s+now\b|\bgo\s+ahead\s+now\b|\beverything\s+is\s+(?:fine|okay|ok)[,;:]?\s*(?:so\s+)?(?:you\s+can\s+)?continue\b)/i;
 const ALLOWED_RESPONSE_KINDS = Object.freeze(["conversation", "public_explanation", "clarification"]);
 
 function clean(value) {
@@ -62,8 +65,13 @@ export function guardKenjiModelOutput(value, options = {}) {
   if (!text) return { ok: false, reason: "empty_model_response", text: "" };
   if (text.length > 1200) return { ok: false, reason: "model_response_too_long", text: "" };
   if (INTERNAL_OUTPUT_RE.test(text)) return { ok: false, reason: "internal_detail", text: "" };
-  const thaiAuthorityFinality = THAI_AUTHORITY_RESULT_RE.test(text) && THAI_FINAL_STATE_RE.test(text);
-  const semanticFinality = thaiAuthorityFinality || ENGLISH_AUTHORITY_FINALITY_RE.test(text);
+  // Remove only the bounded conversation-continuation phrase, then inspect any
+  // remaining clause. This keeps "เล่าต่อ" safe without allowing it to mask a
+  // second process/eligibility claim in the same answer.
+  const authoritySurface = text.replace(SAFE_CONVERSATION_CONTINUATION_RE, " ");
+  const thaiAuthorityFinality = THAI_AUTHORITY_RESULT_RE.test(authoritySurface) && THAI_FINAL_STATE_RE.test(authoritySurface);
+  const processProgression = THAI_PROCESS_PROGRESSION_RE.test(authoritySurface) || ENGLISH_PROCESS_PROGRESSION_RE.test(authoritySurface);
+  const semanticFinality = thaiAuthorityFinality || ENGLISH_AUTHORITY_FINALITY_RE.test(authoritySurface) || processProgression;
   if (HANDOFF_FINALITY_RE.test(text) && !trustedDomains.has("human_handoff")) return { ok: false, reason: "untrusted_handoff_finality", text: "" };
   if (semanticFinality && options.protected_context === true && trustedDomains.size === 0) return { ok: false, reason: "protected_context_finality", text: "" };
   if (semanticFinality && trustedDomains.size === 0) return { ok: false, reason: "untrusted_semantic_finality", text: "" };
