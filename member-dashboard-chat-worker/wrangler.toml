@@ -87,7 +87,14 @@ LINE_KENJI_KNOWLEDGE_ENABLED = "true"
 # committed configuration until an explicitly approved deployment enables it.
 LINE_KENJI_MODEL_ENABLED = "false"
 OPENAI_MODEL = "gpt-5.6"
-KENJI_MODEL_TIMEOUT_MS = "3500"
+
+[[durable_objects.bindings]]
+name = "KENJI_MODEL_DEDUPE"
+class_name = "KenjiModelIdempotency"
+
+[[migrations]]
+tag = "v1-kenji-model-idempotency"
+new_sqlite_classes = ["KenjiModelIdempotency"]
 
 # Full CARE BACK staging front gate. No production routes are inherited into
 # named environments; this Worker is reachable only on its workers.dev URL.

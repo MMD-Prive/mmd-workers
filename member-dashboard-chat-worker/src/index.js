@@ -2,7 +2,10 @@ import {
   isRenewalRoute,
   renderRenewalResponse,
 } from "./renderers/single-renewal-renderer.js";
-import { generateKenjiModelReply } from "./kenji-model-policy.js";
+import { KenjiModelIdempotency } from "./kenji-model-idempotency.js";
+import { generateKenjiModelReply, KENJI_TOTAL_DEADLINE_MS } from "./kenji-model-policy.js";
+
+export { KenjiModelIdempotency };
 
 const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
@@ -244,8 +247,14 @@ export function inferLineIntent(text = "", event = {}) {
     return "line_event";
   }
 
+  if (/(ขอคุยกับเปอร์|คุยกับเปอร์เอง|ติดต่อเปอร์|ขอสายเปอร์|human handoff|human agent|คุยกับคน|เจ้าหน้าที่)/i.test(normalized)) return "human_handoff";
+  if (/(ข้อมูล|ประวัติ|เบอร์|ไลน์|ชื่อ|โปรไฟล์|payment|สมาชิก).{0,24}(?:ลูกค้าคนอื่น|คนอื่น|สมาชิกคนอื่น)|(?:ลูกค้าคนอื่น|ข้อมูลส่วนตัว|private data|other customer)/i.test(normalized)) return "privacy_request";
+  if (/(?:หา|เช็ก|ดู|ขอ).{0,16}(?:model|นายแบบ).{0,20}(?:คืนนี้|วันนี้|พรุ่งนี้|ว่าง|คิว|ตาราง)|(?:model|นายแบบ).{0,20}(?:ว่าง|พร้อม|availability|schedule|ตารางงาน)|(?:ว่างไหม|เช็กคิว|ดูคิว)/i.test(normalized)) return "availability_request";
+  if (/(ร้องเรียน|complaint|ไม่พอใจ|บริการแย่|แย่มาก|มีปัญหา|เรื่องด่วน|escalat|กู้คืน|recover account|บัญชีหาย|เข้าไม่ได้)/i.test(normalized)) return "complaint_escalation";
+  if (/(ระบบหลังบ้าน|internal|admin|แอดมิน|สิทธิ์เข้าถึง|ขอ access|access request|token|secret|api key|ฐานข้อมูล|airtable|cloudflare|worker|prompt|คำสั่งระบบ)/i.test(normalized)) return "internal_access";
+  if (/(เมื่อกี้|ก่อนหน้านี้|ที่คุยมา|อันแรก|อันนั้น|เรื่องนั้น|เหมือนเดิม|ต่อจากเดิม|ต่อจากเมื่อกี้|as before|the first one|what we discussed)/i.test(normalized)) return "context_clarification";
+  if (/(ขอให้เปอร์ตรวจ|ให้เปอร์ดู|ให้ per ดู|manual review|ตรวจเอง)/i.test(normalized)) return "manual_review";
   if (isKenjiLineCandidate(text)) return "talk_to_per_ai";
-  if (/(ขอให้เปอร์ตรวจ|ให้เปอร์ดู|ให้ per ดู|manual review|ตรวจเอง|คุยกับเปอร์เอง)/i.test(normalized)) return "manual_review";
   if (/(care\s*back|แคร์\s*แบ็ก|แคร์แบ็ก|6\s*years?|6th\s*anniversary|birthday\s*wish|คำอวยพร|คูปองวันเกิด)/i.test(normalized)) return "care_back";
   if (/(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
   if (/(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
@@ -256,7 +265,7 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(relax spa|partner venue|ไม่มีสถานที่|ไม่มีที่|สถานที่พร้อมอุปกรณ์|ใช้ร้าน)/i.test(normalized)) return "partner_venue";
   if (/(private talent|specialist|freelancer|special skill|ทักษะพิเศษ|ล่าม|ภาษา|performance|creative|business presence)/i.test(normalized)) return "private_talent";
   if (/(dinner|dining|drinks|event|appearance|social|ทานข้าว|ดินเนอร์|ดื่ม|อีเวนต์|ออกงาน|จอง|book|booking|คิว|นัด|reserve)/i.test(normalized)) return "mmd_companion";
-  if (/(สมัคร|member|สมาชิก|renew|ต่ออายุ|upgrade|อัปเกรด|อัพเกรด)/i.test(normalized)) return "membership";
+  if (/(สมัคร|member|สมาชิก|renew|ต่ออายุ|upgrade|อัปเกรด|อัพเกรด|standard|premium)/i.test(normalized)) return "membership";
   if (/(ราคา|price|rate|เรท|promotion|โปร|package|แพ็กเกจ|แพคเกจ|เท่าไร|เท่าไหร่)/i.test(normalized)) {
     return "pricing_review";
   }
@@ -271,6 +280,7 @@ const KENJI_KNOWLEDGE_TABLE_FALLBACK = "tblsLd1uVOtG2kHoU";
 const LINE_KNOWLEDGE_CHANNEL = "LINE_OFC";
 const LINE_KNOWLEDGE_TTL_MS = 60_000;
 const LINE_KNOWLEDGE_REPLY_TIMEOUT_MS = 900;
+const LINE_MODEL_DEDUPE_LOOKUP_TIMEOUT_MS = 500;
 const LINE_FAILURE_FALLBACK = "ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ";
 const LINE_FAILURE_FALLBACK_COOLDOWN_SECONDS = 10 * 60;
 const LINE_KNOWLEDGE_CARD_BY_INTENT = Object.freeze({
@@ -360,14 +370,17 @@ function rankPublishedKnowledge(cards = [], text = "") {
     .map((item) => item.card);
 }
 
-async function getModelGrounding(env = {}, text = "") {
+async function getModelGrounding(env = {}, text = "", deadlineAt = 0) {
   const key = `${asString(env.AIRTABLE_BASE_ID)}:${getKenjiKnowledgeTable(env)}`;
   if (lineKnowledgeCache.key === key && lineKnowledgeCache.expiresAt > Date.now()) {
     return rankPublishedKnowledge(lineKnowledgeCache.cards, text);
   }
   if (!isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)) return [];
+  const remainingMs = Number(deadlineAt) - Date.now();
+  if (Number.isFinite(remainingMs) && remainingMs <= 0) return [];
+  const timeoutMs = Math.max(1, Math.min(LINE_KNOWLEDGE_REPLY_TIMEOUT_MS, Number.isFinite(remainingMs) ? remainingMs : LINE_KNOWLEDGE_REPLY_TIMEOUT_MS));
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort("kenji_knowledge_timeout"), LINE_KNOWLEDGE_REPLY_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort("kenji_knowledge_timeout"), timeoutMs);
   try {
     return rankPublishedKnowledge(await fetchPublishedLineKnowledge(env, { signal: controller.signal }), text);
   } finally {
@@ -416,6 +429,30 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
 5) ให้เปอร์ดูเป็นเคสส่วนตัว
 
 เล่าได้เลยครับ เดี๋ยวเปอร์ช่วยแยกขั้นตอนที่เหมาะให้ครับ`;
+  }
+
+  if (intent === "privacy_request") {
+    return "ผมไม่สามารถเปิดเผยหรือค้นข้อมูลส่วนตัวของลูกค้าคนอื่นได้ครับ ถ้าต้องการดูข้อมูลของคุณเอง กรุณาใช้ช่องทางยืนยันตัวตนของ MMD ครับ";
+  }
+
+  if (intent === "availability_request") {
+    return "ผมยังยืนยันคิวหรือความพร้อมของ Companion จากข้อความนี้ไม่ได้ครับ ส่งวัน เวลา พื้นที่ และรูปแบบงานมาได้ แล้ว MMD จะตรวจความพร้อมก่อนยืนยันครับ";
+  }
+
+  if (intent === "complaint_escalation") {
+    return "รับเรื่องให้เปอร์ดูต่อครับ ส่งรายละเอียดสำคัญและสิ่งที่ต้องการให้ช่วยแก้ไว้ได้เลยครับ";
+  }
+
+  if (intent === "internal_access") {
+    return "ผมช่วยได้เฉพาะข้อมูลและขั้นตอนสำหรับลูกค้าครับ ไม่สามารถเปิดเผยหรือให้สิทธิ์เข้าถึงระบบภายในได้ครับ";
+  }
+
+  if (intent === "human_handoff") {
+    return "รับเรื่องให้เปอร์ดูต่อครับ ถ้ามีรายละเอียดสำคัญส่งไว้ได้เลยครับ";
+  }
+
+  if (intent === "context_clarification") {
+    return "ผมยังไม่มีบริบทก่อนหน้าในรอบนี้ครับ หมายถึงเรื่องสมาชิก ราคา หรือบริการส่วนไหนครับ";
   }
 
   if (intent === "care_back") {
@@ -469,6 +506,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "manual_review") return LINE_FAILURE_FALLBACK;
+
   return "";
 }
 
@@ -530,10 +568,11 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
 
   let model = {};
   let knowledgeHits = 0;
-  if (intent === "note_only" && eventText && isEnabled(env.LINE_KENJI_MODEL_ENABLED)) {
-    const grounding = await getModelGrounding(env, eventText);
+  if (intent === "note_only" && eventText && isEnabled(env.LINE_KENJI_MODEL_ENABLED) && options.modelEligible !== false) {
+    const deadlineAt = Date.now() + KENJI_TOTAL_DEADLINE_MS;
+    const grounding = await getModelGrounding(env, eventText, deadlineAt);
     knowledgeHits = grounding.length;
-    model = await generateKenjiModelReply({ text: eventText, knowledge: grounding, env });
+    model = await generateKenjiModelReply({ text: eventText, knowledge: grounding, env, deadline_at: deadlineAt });
     if (model.success && model.text) {
       return {
         text: model.text,
@@ -655,11 +694,14 @@ function encodeFormulaValue(value) {
   return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
-async function findExistingLineEvent(env = {}, eventId = "", inboxId = "") {
+async function findExistingLineEvent(env = {}, eventId = "", inboxId = "", options = {}) {
   const apiKey = asString(env.AIRTABLE_API_KEY);
   const baseId = asString(env.AIRTABLE_BASE_ID);
   const table = getAirtableTable(env);
-  if (!apiKey || !baseId || !table || (!eventId && !inboxId)) return null;
+  if (!apiKey || !baseId || !table || (!eventId && !inboxId)) {
+    if (options.throwOnUnavailable) throw new Error("line_inbox_lookup_unconfigured");
+    return null;
+  }
 
   const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
   url.searchParams.set("pageSize", "1");
@@ -671,11 +713,63 @@ async function findExistingLineEvent(env = {}, eventId = "", inboxId = "") {
   const response = await fetch(url.toString(), {
     method: "GET",
     headers: { authorization: `Bearer ${apiKey}` },
+    signal: options.signal,
   });
 
-  if (!response.ok) return null;
+  if (!response.ok) {
+    if (options.throwOnUnavailable) throw new Error("line_inbox_lookup_failed");
+    return null;
+  }
   const payload = await response.json().catch(() => ({}));
   return Array.isArray(payload?.records) ? payload.records[0] || null : null;
+}
+
+function getStableLineMessageId(event = {}) {
+  return asString(event?.message?.id || event?.webhookEventId);
+}
+
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(value || "")));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function claimKenjiModelEvent(env = {}, event = {}) {
+  if (event?.deliveryContext?.isRedelivery === true) return { eligible: false, deduped: true, reason: "line_redelivery" };
+  const eventId = getStableLineMessageId(event);
+  if (!eventId) return { eligible: false, deduped: false, reason: "stable_message_id_missing" };
+  if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) {
+    return { eligible: false, deduped: false, reason: "model_dedupe_binding_missing" };
+  }
+
+  const key = await sha256Hex(eventId);
+  try {
+    const objectId = env.KENJI_MODEL_DEDUPE.idFromName("kenji-line-model-idempotency-v1");
+    const response = await env.KENJI_MODEL_DEDUPE.get(objectId).fetch("https://kenji-model-dedupe.internal/claim", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result?.ok !== true) return { eligible: false, deduped: false, reason: "model_dedupe_unavailable" };
+    if (result.claimed !== true) return { eligible: false, deduped: true, reason: "message_id_claimed" };
+  } catch (_) {
+    return { eligible: false, deduped: false, reason: "model_dedupe_unavailable" };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("line_inbox_dedupe_timeout"), LINE_MODEL_DEDUPE_LOOKUP_TIMEOUT_MS);
+  try {
+    const existing = await findExistingLineEvent(env, eventId, `line_${eventId}`, {
+      signal: controller.signal,
+      throwOnUnavailable: true,
+    });
+    if (existing?.id) return { eligible: false, deduped: true, reason: "message_id_processed" };
+    return { eligible: true, deduped: false, reason: "" };
+  } catch (_) {
+    return { eligible: false, deduped: false, reason: "line_inbox_dedupe_unavailable" };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function buildConsoleInboxRecord(event = {}, profile = null, intent = "") {
@@ -1289,8 +1383,12 @@ async function handleLineWebhook(request, env, ctx = null) {
     const intent = inferLineIntent(text, event);
     const eventMode = asString(event?.mode).toLowerCase() || "unknown";
     const canGenerateReply = Boolean(autoReplyEnabled && kenjiEnabled && eventMode !== "standby" && getReplyToken(event));
-    const replyDecision = canGenerateReply
-      ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled })
+    const needsModelPreflight = Boolean(canGenerateReply && intent === "note_only" && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
+    const modelPreflight = needsModelPreflight
+      ? await claimKenjiModelEvent(env, event)
+      : { eligible: true, deduped: false, reason: "" };
+    const replyDecision = canGenerateReply && !modelPreflight.deduped
+      ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled, modelEligible: modelPreflight.eligible })
       : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" };
     const replyText = replyDecision.text;
     const shouldReply = Boolean(autoReplyEnabled && eventMode !== "standby" && replyText && getReplyToken(event));
@@ -1339,6 +1437,8 @@ async function handleLineWebhook(request, env, ctx = null) {
       knowledge_hits: Number(replyDecision.knowledge_hits) || 0,
       guard_blocked: Boolean(replyDecision.guard_blocked),
       guard_reason: asString(replyDecision.guard_reason) || null,
+      model_deduped: Boolean(modelPreflight.deduped),
+      model_dedupe_reason: asString(modelPreflight.reason) || null,
     }));
 
     saved.push({
