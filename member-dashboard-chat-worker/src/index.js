@@ -4,6 +4,7 @@ import {
 } from "./renderers/single-renewal-renderer.js";
 import { KenjiModelIdempotency } from "./kenji-model-idempotency.js";
 import { generateKenjiModelReply, KENJI_TOTAL_DEADLINE_MS } from "./kenji-model-policy.js";
+import { buildProtectedCapabilityReply, decideKenjiCapability, KENJI_CAPABILITIES } from "./kenji-capability-policy.js";
 
 export { KenjiModelIdempotency };
 
@@ -621,6 +622,7 @@ async function claimFailureFallbackWindow(event = {}) {
 export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, options = {}) {
   const eventText = getLineEventText(event);
   const intent = inferLineIntent(eventText, event);
+  const capabilityDecision = decideKenjiCapability({ text: eventText, intent });
   const cachedKnowledge = isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)
     ? getCachedPublishedPerVoiceReply(env, intent)
     : "";
@@ -639,9 +641,23 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     };
   }
 
+  if (capabilityDecision.capability === KENJI_CAPABILITIES.PROTECTED_AUTHORITY) {
+    return {
+      text: buildProtectedCapabilityReply(capabilityDecision),
+      fallback: false,
+      reply_source: "system_truth",
+      model_attempted: false,
+      model_success: false,
+      model_latency_ms: 0,
+      knowledge_hits: 0,
+      guard_blocked: true,
+      guard_reason: `protected_authority_${capabilityDecision.requested_domain}`,
+    };
+  }
+
   let model = {};
   let knowledgeHits = 0;
-  if (intent === "note_only" && eventText && isEnabled(env.LINE_KENJI_MODEL_ENABLED) && options.modelEligible !== false) {
+  if (capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && eventText && isEnabled(env.LINE_KENJI_MODEL_ENABLED) && options.modelEligible !== false) {
     const deadlineAt = Date.now() + KENJI_TOTAL_DEADLINE_MS;
     const grounding = await getModelGrounding(env, eventText, deadlineAt);
     knowledgeHits = grounding.length;
@@ -1456,7 +1472,8 @@ async function handleLineWebhook(request, env, ctx = null) {
     const intent = inferLineIntent(text, event);
     const eventMode = asString(event?.mode).toLowerCase() || "unknown";
     const canGenerateReply = Boolean(autoReplyEnabled && kenjiEnabled && eventMode !== "standby" && getReplyToken(event));
-    const needsModelPreflight = Boolean(canGenerateReply && intent === "note_only" && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
+    const capabilityDecision = decideKenjiCapability({ text, intent });
+    const needsModelPreflight = Boolean(canGenerateReply && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
     const modelPreflight = needsModelPreflight
       ? await claimKenjiModelEvent(env, event)
       : { eligible: true, deduped: false, reason: "" };

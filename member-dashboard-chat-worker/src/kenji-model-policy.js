@@ -1,4 +1,6 @@
-export const KENJI_MODEL_POLICY_VERSION = "kenji-line-production-v2";
+import { KENJI_CAPABILITIES, KENJI_PROTECTED_DOMAINS } from "./kenji-capability-policy.js";
+
+export const KENJI_MODEL_POLICY_VERSION = "kenji-line-production-v3-semantic-authority";
 export const DEFAULT_KENJI_MODEL = "gpt-5.6";
 export const KENJI_TOTAL_DEADLINE_MS = 3500;
 export const KENJI_MODEL_REASONING_EFFORT = "low";
@@ -31,6 +33,8 @@ const AUTHORITY_DOMAIN_PATTERNS = Object.freeze({
   booking: /(?:จอง|booking|reservation|คิว|นัด)/i,
   availability: /(?:ว่าง|พร้อม|availability|available|ตารางงาน|schedule|นายแบบ|companion|\bmodel\b)/i,
 });
+const SEMANTIC_FINALITY_RE = /(?:เรียบร้อยแล้ว(?:ครับ|ค่ะ)?|ผ่านแล้ว(?:ครับ|ค่ะ)?|อนุมัติแล้ว(?:ครับ|ค่ะ)?|ใช้งานได้แล้ว(?:ครับ|ค่ะ)?|เปิดให้แล้ว(?:ครับ|ค่ะ)?|ล็อกให้แล้ว(?:ครับ|ค่ะ)?|เพิ่มให้แล้ว(?:ครับ|ค่ะ)?|เข้าแล้ว(?:ครับ|ค่ะ)?|ยืนยันแล้ว(?:ครับ|ค่ะ)?|ได้สิทธิ์แล้ว(?:ครับ|ค่ะ)?|all\s*set|confirmed|approved|verified|activated|credited|completed|good\s*to\s*go)/i;
+const ALLOWED_RESPONSE_KINDS = Object.freeze(["conversation", "public_explanation", "clarification"]);
 
 function clean(value) {
   return String(value == null ? "" : value).trim();
@@ -52,6 +56,7 @@ export function guardKenjiModelOutput(value, options = {}) {
   if (!text) return { ok: false, reason: "empty_model_response", text: "" };
   if (text.length > 1200) return { ok: false, reason: "model_response_too_long", text: "" };
   if (INTERNAL_OUTPUT_RE.test(text)) return { ok: false, reason: "internal_detail", text: "" };
+  if (SEMANTIC_FINALITY_RE.test(text) && trustedDomains.size === 0) return { ok: false, reason: "untrusted_semantic_finality", text: "" };
   for (const [domain, pattern] of Object.entries(AUTHORITY_DOMAIN_PATTERNS)) {
     if (!trustedDomains.has(domain) && pattern.test(text)) {
       return { ok: false, reason: `untrusted_authority_domain_${domain}`, text: "" };
@@ -60,11 +65,14 @@ export function guardKenjiModelOutput(value, options = {}) {
   return { ok: true, reason: "", text };
 }
 
-export async function generateKenjiModelReply({ text, knowledge = [], env = {}, fetchImpl = fetch, deadline_at = 0, trusted_authority_domains = [] } = {}) {
+export async function generateKenjiModelReply({ text, knowledge = [], env = {}, fetchImpl = fetch, deadline_at = 0, trusted_authority_domains = [], capability = KENJI_CAPABILITIES.SAFE_CONVERSATION } = {}) {
   const startedAt = Date.now();
   const apiKey = clean(env.OPENAI_API_KEY);
   if (!apiKey) {
     return { text: "", attempted: false, success: false, latency_ms: 0, guard_blocked: false, guard_reason: "model_unconfigured" };
+  }
+  if (capability !== KENJI_CAPABILITIES.SAFE_CONVERSATION) {
+    return { text: "", attempted: false, success: false, latency_ms: 0, guard_blocked: true, guard_reason: "model_capability_not_allowed" };
   }
 
   const suppliedDeadline = Number(deadline_at);
@@ -99,16 +107,17 @@ export async function generateKenjiModelReply({ text, knowledge = [], env = {}, 
         schema: {
           type: "object",
           properties: {
-            answer: { type: "string" },
-            needs_clarification: { type: "boolean" },
-            response_kind: { type: "string", enum: ["general_conversation", "clarification", "safe_guidance"] },
+            response_kind: { type: "string", enum: ALLOWED_RESPONSE_KINDS },
+            capability: { type: "string", enum: [KENJI_CAPABILITIES.SAFE_CONVERSATION] },
+            requested_domain: { type: "string", enum: ["none", ...KENJI_PROTECTED_DOMAINS] },
             authority_domains: {
               type: "array",
-              items: { type: "string", enum: ["payment", "membership", "points", "booking", "availability"] },
-              maxItems: 0,
+              items: { type: "string", enum: KENJI_PROTECTED_DOMAINS },
             },
+            requires_truth: { type: "boolean" },
+            answer: { type: "string" },
           },
-          required: ["answer", "needs_clarification", "response_kind", "authority_domains"],
+          required: ["response_kind", "capability", "requested_domain", "authority_domains", "requires_truth", "answer"],
           additionalProperties: false,
         },
       },
@@ -143,12 +152,19 @@ export async function generateKenjiModelReply({ text, knowledge = [], env = {}, 
     }
     if (
       typeof parsed?.answer !== "string" ||
-      typeof parsed?.needs_clarification !== "boolean" ||
-      !["general_conversation", "clarification", "safe_guidance"].includes(parsed?.response_kind) ||
+      !ALLOWED_RESPONSE_KINDS.includes(parsed?.response_kind) ||
+      parsed?.capability !== KENJI_CAPABILITIES.SAFE_CONVERSATION ||
+      typeof parsed?.requested_domain !== "string" ||
       !Array.isArray(parsed?.authority_domains) ||
-      parsed.authority_domains.length !== 0
+      typeof parsed?.requires_truth !== "boolean"
     ) {
       return { text: "", attempted: true, success: false, latency_ms: latencyMs, guard_blocked: false, guard_reason: "malformed_model_response" };
+    }
+    const trusted = new Set(Array.isArray(trusted_authority_domains) ? trusted_authority_domains : []);
+    const requestedProtected = parsed.requested_domain !== "none";
+    const untrustedDomains = parsed.authority_domains.filter((domain) => !trusted.has(domain));
+    if (parsed.requires_truth || requestedProtected || untrustedDomains.length > 0) {
+      return { text: "", attempted: true, success: false, latency_ms: latencyMs, guard_blocked: true, guard_reason: "untrusted_structured_authority" };
     }
     const guarded = guardKenjiModelOutput(parsed.answer, { trusted_authority_domains });
     return {
