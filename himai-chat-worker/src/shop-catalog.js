@@ -33,7 +33,7 @@ async function listProducts(env, shopKey) {
   if (!shop) return json({ ok: false, error: "Unknown shop" }, 400);
 
   const tableId = env.SHARED_SHOP_PRODUCTS_TABLE_ID || "tblzsmNLfP6J0kQ90";
-  const fields = ["Product Name", "Product Ref", "Supplier", shop.priceField];
+  const fields = ["Product Name", "SKU", "Supplier", shop.priceField];
   const params = new URLSearchParams();
   params.set("pageSize", "100");
   for (const field of fields) params.append("fields[]", field);
@@ -43,7 +43,7 @@ async function listProducts(env, shopKey) {
     .map((record) => ({
       id: record.id,
       product_name: record.fields?.["Product Name"] || "",
-      product_ref: record.fields?.["Product Ref"] || "",
+      sku: record.fields?.["SKU"] || "",
       supplier: record.fields?.["Supplier"] || null,
       selling_price_thb: numberOrNull(record.fields?.[shop.priceField])
     }))
