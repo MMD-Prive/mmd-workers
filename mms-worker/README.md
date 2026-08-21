@@ -34,14 +34,15 @@ Call these through a Cloudflare Service Binding with the URL host `mms.internal`
 
 Do not add a public custom route for the internal endpoints.
 
-## Required Cloudflare secret
+## GitHub Actions secrets
 
-- `AIRTABLE_API_TOKEN`
+- `MMS_CLOUDFLARE_API_TOKEN`: Cloudflare account token with Workers Scripts Edit and Workers R2 Storage Edit
+- `MMS_AIRTABLE_API_TOKEN`: Airtable PAT used as the runtime `AIRTABLE_API_TOKEN`
 
 ## Required Cloudflare resource
 
 - private R2 bucket `mms-private-uploads`
 
-The bucket is provisioned once at the account level. The deploy token only needs to publish the Worker and bind the existing bucket; routine deployments do not create or inspect R2 buckets.
+The production workflow creates the bucket once when needed and reuses it on later deployments.
 
 If the Airtable secret is temporarily unavailable, applications and pre-bookings remain durable in their coordinator objects with a pending sync status. The internal application sync endpoint can retry after the secret is configured.
