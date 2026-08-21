@@ -398,7 +398,7 @@ async function fetchPublishedLineKnowledge(env = {}, options = {}) {
 
     const payload = await response.json().catch(() => ({}));
     const cards = (Array.isArray(payload?.records) ? payload.records : [])
-      .map((record) => record?.fields || {})
+      .map((record) => withKnowledgeLifecycleMetadata(record?.fields || {}))
       .filter((fields) => (
         asString(fields.status).toLowerCase() === "active" &&
         asString(fields.response_mode).toLowerCase() === "auto_reply_allowed" &&
@@ -431,6 +431,24 @@ function rankPublishedKnowledge(cards = [], text = "") {
 
 function approvedModelKnowledgeIds(env = {}) {
   return asString(env.LINE_KENJI_MODEL_KNOWLEDGE_IDS).split(/[\s,]+/).filter(Boolean);
+}
+
+function withKnowledgeLifecycleMetadata(fields = {}) {
+  let payload = {};
+  try {
+    payload = typeof fields.payload_json === "string" ? JSON.parse(fields.payload_json) : (fields.payload_json || {});
+  } catch (_) {
+    // Malformed lifecycle metadata is retained as an invalid date marker so
+    // the grounding policy fails closed rather than silently ignoring it.
+    payload = { effective_to: "invalid_payload_json" };
+  }
+  return {
+    ...fields,
+    effective_to: payload.effective_to,
+    expires_at: payload.expires_at,
+    superseded: payload.superseded,
+    superseded_by: payload.superseded_by,
+  };
 }
 
 async function getModelGrounding(env = {}, text = "", deadlineAt = 0) {
