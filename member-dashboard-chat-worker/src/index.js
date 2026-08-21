@@ -2,6 +2,7 @@ import {
   isRenewalRoute,
   renderRenewalResponse,
 } from "./renderers/single-renewal-renderer.js";
+import { generateKenjiModelReply } from "./kenji-model-policy.js";
 
 const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
@@ -269,6 +270,7 @@ export function inferLineIntent(text = "", event = {}) {
 const KENJI_KNOWLEDGE_TABLE_FALLBACK = "tblsLd1uVOtG2kHoU";
 const LINE_KNOWLEDGE_CHANNEL = "LINE_OFC";
 const LINE_KNOWLEDGE_TTL_MS = 60_000;
+const LINE_KNOWLEDGE_REPLY_TIMEOUT_MS = 900;
 const LINE_FAILURE_FALLBACK = "ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ";
 const LINE_FAILURE_FALLBACK_COOLDOWN_SECONDS = 10 * 60;
 const LINE_KNOWLEDGE_CARD_BY_INTENT = Object.freeze({
@@ -299,7 +301,7 @@ function isSafePerVoiceKnowledge(value) {
   return !/(?:\bkenji\b|เคนจิ|ทีม(?:งาน)?|ระบบ|ชำระ(?:เงิน)?สำเร็จ(?:แล้ว)?|ยืนยัน(?:การ)?ชำระ(?:เงิน)?(?:แล้ว)?|เปิดสมาชิก(?:แล้ว)?|ยืนยัน(?:การ)?จอง(?:แล้ว)?|ได้รับสิทธิ์(?:แล้ว)?)/i.test(text);
 }
 
-async function fetchPublishedLineKnowledge(env = {}) {
+async function fetchPublishedLineKnowledge(env = {}, options = {}) {
   const apiKey = asString(env.AIRTABLE_API_KEY);
   const baseId = asString(env.AIRTABLE_BASE_ID);
   const table = getKenjiKnowledgeTable(env);
@@ -314,13 +316,14 @@ async function fetchPublishedLineKnowledge(env = {}) {
     const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
     url.searchParams.set("pageSize", "100");
     url.searchParams.set("filterByFormula", 'AND({status}="active",{response_mode}="auto_reply_allowed")');
-    ["knowledge_id", "customer_answer", "allowed_channels", "status", "response_mode"].forEach((field) => {
+    ["knowledge_id", "title", "category", "language", "customer_answer", "allowed_channels", "status", "response_mode", "risk_level", "effective_from"].forEach((field) => {
       url.searchParams.append("fields[]", field);
     });
 
     const response = await fetch(url.toString(), {
       method: "GET",
       headers: { authorization: `Bearer ${apiKey}` },
+      signal: options.signal,
     });
     if (!response.ok) return [];
 
@@ -337,6 +340,38 @@ async function fetchPublishedLineKnowledge(env = {}) {
     return cards;
   } catch (_) {
     return [];
+  }
+}
+
+function rankPublishedKnowledge(cards = [], text = "") {
+  const normalized = normalizeLookup(text);
+  const terms = normalized.split(/\s+/).filter((term) => term.length >= 2);
+  if (!terms.length) return [];
+  return cards
+    .filter((card) => isSafePerVoiceKnowledge(card?.customer_answer))
+    .map((card) => {
+      const searchable = normalizeLookup([card.title, card.category, card.customer_answer].filter(Boolean).join(" "));
+      const score = terms.reduce((total, term) => total + (searchable.includes(term) ? 1 : 0), 0);
+      return { card, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 3)
+    .map((item) => item.card);
+}
+
+async function getModelGrounding(env = {}, text = "") {
+  const key = `${asString(env.AIRTABLE_BASE_ID)}:${getKenjiKnowledgeTable(env)}`;
+  if (lineKnowledgeCache.key === key && lineKnowledgeCache.expiresAt > Date.now()) {
+    return rankPublishedKnowledge(lineKnowledgeCache.cards, text);
+  }
+  if (!isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)) return [];
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("kenji_knowledge_timeout"), LINE_KNOWLEDGE_REPLY_TIMEOUT_MS);
+  try {
+    return rankPublishedKnowledge(await fetchPublishedLineKnowledge(env, { signal: controller.signal }), text);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -473,17 +508,61 @@ async function claimFailureFallbackWindow(event = {}) {
 }
 
 export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, options = {}) {
-  const intent = inferLineIntent(getLineEventText(event), event);
+  const eventText = getLineEventText(event);
+  const intent = inferLineIntent(eventText, event);
   const cachedKnowledge = isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)
     ? getCachedPublishedPerVoiceReply(env, intent)
     : "";
   const generated = cachedKnowledge || buildKenjiLineReply(event, profile, options);
-  if (generated && intent !== "manual_review") return { text: generated, fallback: false };
+  if (generated && intent !== "manual_review") {
+    return {
+      text: generated,
+      fallback: false,
+      reply_source: cachedKnowledge ? "knowledge" : "system_truth",
+      model_attempted: false,
+      model_success: false,
+      model_latency_ms: 0,
+      knowledge_hits: cachedKnowledge ? 1 : 0,
+      guard_blocked: false,
+      guard_reason: "",
+    };
+  }
+
+  let model = {};
+  let knowledgeHits = 0;
+  if (intent === "note_only" && eventText && isEnabled(env.LINE_KENJI_MODEL_ENABLED)) {
+    const grounding = await getModelGrounding(env, eventText);
+    knowledgeHits = grounding.length;
+    model = await generateKenjiModelReply({ text: eventText, knowledge: grounding, env });
+    if (model.success && model.text) {
+      return {
+        text: model.text,
+        fallback: false,
+        reply_source: "model",
+        model_attempted: model.attempted,
+        model_success: model.success,
+        model_latency_ms: model.latency_ms,
+        knowledge_hits: grounding.length,
+        guard_blocked: model.guard_blocked,
+        guard_reason: model.guard_reason,
+      };
+    }
+  }
 
   const needsFallback = intent === "manual_review" || Boolean(getLineEventText(event));
-  if (!needsFallback) return { text: "", fallback: false };
+  if (!needsFallback) return { text: "", fallback: false, reply_source: "system_truth", model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" };
   const allowed = await claimFailureFallbackWindow(event);
-  return { text: allowed ? LINE_FAILURE_FALLBACK : "", fallback: true };
+  return {
+    text: allowed ? LINE_FAILURE_FALLBACK : "",
+    fallback: true,
+    reply_source: intent === "manual_review" ? "manual_review" : "fallback",
+    model_attempted: Boolean(model.attempted),
+    model_success: Boolean(model.success),
+    model_latency_ms: Number(model.latency_ms) || 0,
+    knowledge_hits: knowledgeHits,
+    guard_blocked: Boolean(model.guard_blocked),
+    guard_reason: asString(model.guard_reason),
+  };
 }
 
 export async function deliverLineText(env = {}, lineUserId, text, options = {}) {
@@ -1209,9 +1288,10 @@ async function handleLineWebhook(request, env, ctx = null) {
     const lineUserId = getLineUserId({ event });
     const intent = inferLineIntent(text, event);
     const eventMode = asString(event?.mode).toLowerCase() || "unknown";
-    const replyDecision = kenjiEnabled
+    const canGenerateReply = Boolean(autoReplyEnabled && kenjiEnabled && eventMode !== "standby" && getReplyToken(event));
+    const replyDecision = canGenerateReply
       ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled })
-      : { text: "", fallback: false };
+      : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" };
     const replyText = replyDecision.text;
     const shouldReply = Boolean(autoReplyEnabled && eventMode !== "standby" && replyText && getReplyToken(event));
     const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
@@ -1252,6 +1332,13 @@ async function handleLineWebhook(request, env, ctx = null) {
       reply_sent: Boolean(replyResult?.ok),
       reply_status: Number.isInteger(replyResult?.status) ? replyResult.status : null,
       reply_error: asString(replyResult?.error) || null,
+      reply_source: replyDecision.reply_source || null,
+      model_attempted: Boolean(replyDecision.model_attempted),
+      model_success: Boolean(replyDecision.model_success),
+      model_latency_ms: Number(replyDecision.model_latency_ms) || 0,
+      knowledge_hits: Number(replyDecision.knowledge_hits) || 0,
+      guard_blocked: Boolean(replyDecision.guard_blocked),
+      guard_reason: asString(replyDecision.guard_reason) || null,
     }));
 
     saved.push({
