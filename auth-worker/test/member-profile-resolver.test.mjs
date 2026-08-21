@@ -34,6 +34,7 @@ function env() {
     AIRTABLE_TABLE_MEMBERS: "Members",
     AIRTABLE_TABLE_SESSIONS: "Sessions",
     AIRTABLE_TABLE_MEMBER_PACKAGES: "member_packages",
+    AIRTABLE_TABLE_PAYMENTS: "Payments",
     AIRTABLE_TABLE_POINTS_LEDGER: "MMD — Points Ledger",
     AIRTABLE_MEMBERS_LINE_USER_ID_FIELD: "line_id",
     MEMBER_STATUS_RESOLVER_SECRET: SECRET,
@@ -83,9 +84,18 @@ test("LIFF member profile resolver returns only points, tier, and one-year custo
     }
     if (table === "member_packages") {
       return Response.json({ records: [
-        { fields: { member_email: "per@example.com", package_code: "premium", status: "active", start_date: recent, amount: 2999 } },
+        { fields: { member_email: "per@example.com", package_code: "premium", status: "active", start_date: recent, end_date: "2027-08-31", amount: 2999 } },
         { fields: { member_email: "per@example.com", package_code: "standard", status: "expired", start_date: older } },
       ] });
+    }
+    if (table === "Payments") {
+      return Response.json({ records: [{ fields: {
+        member_email: "per@example.com",
+        "Payment Status": "paid",
+        "Verification Status": "verified",
+        "Created At": `${recent}T03:00:00.000Z`,
+        payment_ref: "private-payment-ref",
+      } }] });
     }
     if (table === "MMD — Points Ledger") {
       return Response.json({ records: [
@@ -109,6 +119,8 @@ test("LIFF member profile resolver returns only points, tier, and one-year custo
     tier: "Premium",
     membership_status: "active",
     points: 345,
+    payment_status: "verified",
+    membership_expires_at: "2027-08-31",
     history_window: { from: "2025-08-12", to: "2026-08-12", timezone: "Asia/Bangkok" },
     history: [
       { type: "service", date: recent, title: "Dinner", status: "completed" },
@@ -116,9 +128,68 @@ test("LIFF member profile resolver returns only points, tier, and one-year custo
       { type: "points", date: recent, title: "Points added", points_delta: 25, status: "posted" },
     ],
   });
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 5);
   assert.match(calls[0].searchParams.get("filterByFormula") || "", /\{line_id\}/);
   assert.doesNotMatch(JSON.stringify(payload), /private|Risk|Internal Notes|payment_ref|amount|per@example\.com|rec_private/i);
+});
+
+test("LIFF payment status requires authoritative verification and otherwise fails closed", async () => {
+  useFixedClock();
+  const cases = [
+    [{ "Payment Status": "paid", "Verification Status": "verified" }, "verified"],
+    [{ "Payment Status": "success", "Verification Status": "verified" }, "unavailable"],
+    [{ "Payment Status": "verified", "Verification Status": "verified" }, "unavailable"],
+    [{ "Payment Status": "full_payment" }, "unavailable"],
+    [{ "Payment Status": "paid" }, "unavailable"],
+    [{ "Payment Status": "pending", "Verification Status": "pending" }, "pending_review"],
+    [{ "Payment Status": "paid", "Verification Status": "rejected" }, "unavailable"],
+    [{ "Payment Status": "refunded", "Verification Status": "verified" }, "unavailable"],
+    [{ "Payment Status": { malformed: true }, "Verification Status": [] }, "unavailable"],
+    [{}, "unavailable"],
+  ];
+
+  for (const [paymentFields, expected] of cases) {
+    globalThis.fetch = async (input) => {
+      const table = decodeURIComponent(new URL(String(input)).pathname.split("/").at(-1));
+      if (table === "Members") return Response.json({ records: [{ id: "rec_member", fields: { line_id: LINE_ID, "Contact Email": "per@example.com" } }] });
+      if (table === "Sessions" || table === "member_packages" || table === "MMD — Points Ledger") return Response.json({ records: [] });
+      if (table === "Payments") return Response.json({ records: [{ fields: { member_email: "per@example.com", ...paymentFields } }] });
+      throw new Error(`Unexpected Airtable table: ${table}`);
+    };
+    const response = await worker.fetch(request({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }), env());
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).data.profile.payment_status, expected, JSON.stringify(paymentFields));
+  }
+});
+
+test("LIFF profile omits unproven expiry and fails payment lookup closed", async () => {
+  globalThis.fetch = async (input) => {
+    const table = decodeURIComponent(new URL(String(input)).pathname.split("/").at(-1));
+    if (table === "Members") return Response.json({ records: [{ id: "rec_member", fields: { line_id: LINE_ID, "Contact Email": "per@example.com", "Membership Expiry": "2099-01-01" } }] });
+    if (table === "Sessions" || table === "MMD — Points Ledger") return Response.json({ records: [] });
+    if (table === "member_packages") return Response.json({ records: [{ fields: { member_email: "per@example.com", status: "active", end_date: "not-a-date" } }] });
+    if (table === "Payments") throw new Error("payment source unavailable");
+    throw new Error(`Unexpected Airtable table: ${table}`);
+  };
+  const response = await worker.fetch(request({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }), env());
+  const profile = (await response.json()).data.profile;
+  assert.equal(profile.payment_status, "unavailable");
+  assert.equal("membership_expires_at" in profile, false);
+});
+
+test("LIFF payment status does not skip an unknown latest record to expose stale verified state", async () => {
+  globalThis.fetch = async (input) => {
+    const table = decodeURIComponent(new URL(String(input)).pathname.split("/").at(-1));
+    if (table === "Members") return Response.json({ records: [{ id: "rec_member", fields: { line_id: LINE_ID, "Contact Email": "per@example.com" } }] });
+    if (table === "Sessions" || table === "member_packages" || table === "MMD — Points Ledger") return Response.json({ records: [] });
+    if (table === "Payments") return Response.json({ records: [
+      { fields: { member_email: "per@example.com", "Payment Status": "mystery", "Verification Status": "mystery" } },
+      { fields: { member_email: "per@example.com", "Payment Status": "paid", "Verification Status": "verified" } },
+    ] });
+    throw new Error(`Unexpected Airtable table: ${table}`);
+  };
+  const response = await worker.fetch(request({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }), env());
+  assert.equal((await response.json()).data.profile.payment_status, "unavailable");
 });
 
 test("LIFF member profile resolver rejects public calls and browser-selected history scope", async () => {

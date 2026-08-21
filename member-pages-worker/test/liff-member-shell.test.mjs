@@ -92,6 +92,20 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /ช่องทางนี้ยังไม่พร้อมใช้งานครับ/);
   });
 
+  it("renders only bounded member expiry and payment states", async () => {
+    const response = await shell("/member/liff?intent=status");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /id="profile-expiry"/);
+    assert.match(html, /id="profile-payment"/);
+    assert.match(html, /verified:"Verified"/);
+    assert.match(html, /pending_review:"Pending review"/);
+    assert.match(html, /unavailable:"Unavailable"/);
+    assert.match(html, /function safeDate\(value\)/);
+    assert.doesNotMatch(html, /payment_ref|receipt_url|member_email|Verification Status/);
+  });
+
   it("supports HEAD without a response body and rejects mutating shell methods", async () => {
     const head = await shell("/member/liff", { method: "HEAD" });
     assert.equal(head.status, 200);

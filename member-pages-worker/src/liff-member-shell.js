@@ -54,7 +54,7 @@ function renderShell(config, nonce) {
     .mark{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#d7bd8a}.title{margin:10px 0 8px;font-size:30px;line-height:1.08;font-weight:650}.sub{margin:0;color:#aaa29a;font-size:14px;line-height:1.55}
     #message{white-space:pre-line;margin:30px 0 0;font-size:18px;line-height:1.65}.actions{display:grid;gap:10px;margin-top:24px}.actions:empty{display:none}
     button,textarea{width:100%;border:1px solid rgba(216,189,137,.28);border-radius:16px;padding:14px 16px;background:#171511;color:#f7f3eb;font:inherit;text-align:left}button{cursor:pointer}button:disabled{opacity:.55;cursor:default}textarea{min-height:124px;resize:vertical;line-height:1.55}.wish{display:grid;gap:12px;margin-top:16px}.wish-result{white-space:pre-line;color:#e7d5ad;line-height:1.65}
-    .profile{display:grid;gap:12px;margin-top:22px}.summary{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.card{border:1px solid rgba(216,189,137,.18);border-radius:20px;padding:17px;background:rgba(8,8,8,.72)}.label{color:#948c82;font-size:11px;letter-spacing:.12em;text-transform:uppercase}.value{display:block;margin-top:6px;font-size:22px;line-height:1.15}.points{font-size:34px;color:#e6cb91}.history{display:grid;gap:9px;margin-top:12px}.event{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.07);font-size:13px}.event:first-child{border-top:0}.event-date,.event-status{color:#8f8880}.event-delta{color:#d9bd82}.care{margin-top:14px;border-color:rgba(225,193,126,.38);background:linear-gradient(145deg,rgba(45,35,19,.78),rgba(10,10,10,.86))}.care h2{margin:8px 0;font-size:21px}.care p{margin:0;color:#b7afa4;font-size:13px;line-height:1.6}.care-code{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;padding:13px 14px;border-radius:14px;background:#080807}.care-code strong{font-size:24px;letter-spacing:.15em;color:#ecd18f}.care button{margin-top:14px;text-align:center;background:linear-gradient(135deg,#f0d892,#b98b35);color:#181207;font-weight:700}
+    .profile{display:grid;gap:12px;margin-top:22px}.summary,.member-details{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.card{border:1px solid rgba(216,189,137,.18);border-radius:20px;padding:17px;background:rgba(8,8,8,.72)}.label{color:#948c82;font-size:11px;letter-spacing:.12em;text-transform:uppercase}.value{display:block;margin-top:6px;font-size:22px;line-height:1.15}.points{font-size:34px;color:#e6cb91}.history{display:grid;gap:9px;margin-top:12px}.event{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.07);font-size:13px}.event:first-child{border-top:0}.event-date,.event-status{color:#8f8880}.event-delta{color:#d9bd82}.care{margin-top:14px;border-color:rgba(225,193,126,.38);background:linear-gradient(145deg,rgba(45,35,19,.78),rgba(10,10,10,.86))}.care h2{margin:8px 0;font-size:21px}.care p{margin:0;color:#b7afa4;font-size:13px;line-height:1.6}.care-code{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;padding:13px 14px;border-radius:14px;background:#080807}.care-code strong{font-size:24px;letter-spacing:.15em;color:#ecd18f}.care button{margin-top:14px;text-align:center;background:linear-gradient(135deg,#f0d892,#b98b35);color:#181207;font-weight:700}
     .status{margin-top:22px;color:#7f7972;font-size:12px;line-height:1.5}.hidden{display:none!important}@media(max-width:390px){main{padding:24px 16px}.summary{grid-template-columns:1fr}.event{grid-template-columns:66px 1fr}.event-status{grid-column:2}}
   </style>
 </head>
@@ -70,6 +70,10 @@ function renderShell(config, nonce) {
     <div class="summary">
       <div class="card"><span class="label">Tier</span><strong id="profile-tier" class="value">Member</strong></div>
       <div id="points-card" class="card"><span class="label">Active Points</span><strong id="profile-points" class="value points">0</strong></div>
+    </div>
+    <div id="member-details" class="member-details">
+      <div id="expiry-card" class="card hidden"><span class="label">Membership valid until</span><strong id="profile-expiry" class="value">—</strong></div>
+      <div id="payment-card" class="card"><span class="label">Payment status</span><strong id="profile-payment" class="value">Unavailable</strong></div>
     </div>
     <div class="card"><span class="label">History · Last 1 Year</span><div id="history" class="history"></div></div>
     <div id="care" class="card care">
@@ -197,6 +201,10 @@ function renderShell(config, nonce) {
     document.getElementById("profile-tier").textContent = String(data.tier || "Member");
     document.getElementById("profile-points").textContent = new Intl.NumberFormat("th-TH").format(Number(data.points || 0));
     document.getElementById("profile-status").textContent = membershipStatus(data.membership_status);
+    const expiry = safeDate(data.membership_expires_at);
+    document.getElementById("expiry-card").classList.toggle("hidden", !expiry);
+    if (expiry) document.getElementById("profile-expiry").textContent = shortDate(expiry);
+    document.getElementById("profile-payment").textContent = paymentStatus(data.payment_status);
     const history = document.getElementById("history");
     history.replaceChildren();
     const items = Array.isArray(data.history) ? data.history : [];
@@ -217,6 +225,8 @@ function renderShell(config, nonce) {
   }
 
   function membershipStatus(value) { return ({ active:"Active member",grace:"Grace period",expired:"Expired",under_review:"Under review" })[value] || "Under review"; }
+  function paymentStatus(value) { return ({ verified:"Verified",pending_review:"Pending review",unavailable:"Unavailable" })[String(value || "")] || "Unavailable"; }
+  function safeDate(value) { return /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")) ? String(value) : ""; }
   function safeStatus(value) { return ({completed:"Completed",active:"Active",expired:"Expired",posted:"Posted"})[value] || "Recorded"; }
   function signedPoints(value) { const number = Number(value || 0); return (number >= 0 ? "+" : "") + new Intl.NumberFormat("th-TH").format(number) + " pts"; }
   function shortDate(value) { const date = new Date(String(value || "") + "T00:00:00+07:00"); return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("th-TH",{day:"numeric",month:"short",year:"2-digit"}).format(date); }

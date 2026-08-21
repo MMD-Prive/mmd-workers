@@ -313,32 +313,52 @@ async function buildLiffMemberProfile(env, memberRecord, lineUserId) {
   const email = normalizeEmail(fields.email || fields[env.AIRTABLE_MEMBERS_EMAIL_FIELD || "Contact Email"] || "");
   const memberId = String(fields.member_id || "").trim();
   const cutoff = memberHistoryCutoff();
-  const [sessions, packages, points] = await Promise.all([
+  const [sessions, packageResult, points, payment] = await Promise.all([
     listMemberServiceHistory(env, { lineUserId, email, cutoff }),
     listMemberPackageHistory(env, { email, cutoff }),
     listMemberPointsHistory(env, { email, cutoff }),
+    listMemberPaymentStatus(env, { email }),
   ]);
-  const history = [...sessions, ...packages, ...points]
+  const history = [...sessions, ...packageResult.history, ...points]
     .sort((a, b) => String(b.date).localeCompare(String(a.date)))
     .slice(0, MEMBER_HISTORY_MAX_ITEMS);
+
+  const profile = {
+    display_name: safeCustomerText(
+      fields[env.AIRTABLE_MEMBERS_DISPLAY_NAME_FIELD || "Full Name (Display)"]
+        || fields[env.AIRTABLE_MEMBERS_NAME_FIELD || "Full Name"]
+        || fields.name,
+      120,
+    ) || "สมาชิก MMD",
+    tier: normalizeCustomerTier(fields[env.AIRTABLE_MEMBERS_TIER_FIELD || "Membership Tier"]),
+    membership_status: normalizeCustomerMembershipStatus(fields[env.AIRTABLE_MEMBERS_STATUS_FIELD || "Membership Status"]),
+    points: nonNegativeInteger(fields[env.AIRTABLE_MEMBERS_POINTS_FIELD || "Points Balance"]),
+    payment_status: payment.status,
+    history_window: { from: cutoff, to: bangkokCalendarDate(), timezone: "Asia/Bangkok" },
+    history,
+  };
+  if (packageResult.membership_expires_at) profile.membership_expires_at = packageResult.membership_expires_at;
 
   return {
     member_exists: true,
     member_id: memberId,
-    profile: {
-      display_name: safeCustomerText(
-        fields[env.AIRTABLE_MEMBERS_DISPLAY_NAME_FIELD || "Full Name (Display)"]
-          || fields[env.AIRTABLE_MEMBERS_NAME_FIELD || "Full Name"]
-          || fields.name,
-        120,
-      ) || "สมาชิก MMD",
-      tier: normalizeCustomerTier(fields[env.AIRTABLE_MEMBERS_TIER_FIELD || "Membership Tier"]),
-      membership_status: normalizeCustomerMembershipStatus(fields[env.AIRTABLE_MEMBERS_STATUS_FIELD || "Membership Status"]),
-      points: nonNegativeInteger(fields[env.AIRTABLE_MEMBERS_POINTS_FIELD || "Points Balance"]),
-      history_window: { from: cutoff, to: bangkokCalendarDate(), timezone: "Asia/Bangkok" },
-      history,
-    },
+    profile,
   };
+}
+
+async function listMemberPaymentStatus(env, { email }) {
+  if (!email) return { status: "unavailable" };
+  try {
+    const records = await airtableList(env, table(env, "PAYMENTS"), {
+      filterByFormula: `LOWER({member_email})=${formulaString(email)}`,
+      sort: [{ field: "Created At", direction: "desc" }],
+      maxRecords: 20,
+    });
+    const fields = records[0]?.fields || {};
+    return { status: normalizeCustomerPaymentStatus(fields["Payment Status"], fields["Verification Status"]) };
+  } catch {
+    return { status: "unavailable" };
+  }
 }
 
 async function listMemberServiceHistory(env, { lineUserId, email, cutoff }) {
@@ -369,16 +389,19 @@ async function listMemberServiceHistory(env, { lineUserId, email, cutoff }) {
 }
 
 async function listMemberPackageHistory(env, { email, cutoff }) {
-  if (!email) return [];
+  if (!email) return { history: [], membership_expires_at: "" };
   const records = await airtableList(env, table(env, "MEMBER_PACKAGES"), {
     filterByFormula: `LOWER({${env.AIRTABLE_MEMBER_PACKAGES_EMAIL_FIELD || "member_email"}})=${formulaString(email)}`,
     sort: [{ field: env.AIRTABLE_MEMBER_PACKAGES_CREATED_FIELD || "created_at", direction: "desc" }],
     maxRecords: 50,
   });
-  return records.map((record) => {
+  let membershipExpiresAt = "";
+  const history = records.map((record) => {
     const f = record.fields || {};
     const date = safeHistoryDate(f.start_date || f.created_at || f.end_date);
     const status = String(f.status || "").trim().toLowerCase();
+    const endDate = safeHistoryDate(f.end_date);
+    if (status === "active" && endDate && endDate > membershipExpiresAt) membershipExpiresAt = endDate;
     if (!date || date < cutoff || !["active", "expired"].includes(status)) return null;
     return {
       type: "membership",
@@ -387,6 +410,7 @@ async function listMemberPackageHistory(env, { email, cutoff }) {
       status,
     };
   }).filter(Boolean);
+  return { history, membership_expires_at: membershipExpiresAt };
 }
 
 async function listMemberPointsHistory(env, { email, cutoff }) {
@@ -457,6 +481,14 @@ function normalizeCustomerMembershipStatus(value) {
   if (status === "grace_period" || status === "grace") return "grace";
   if (status === "expired") return "expired";
   return "under_review";
+}
+
+function normalizeCustomerPaymentStatus(paymentValue, verificationValue) {
+  const payment = String(paymentValue || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const verification = String(verificationValue || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (verification === "verified" && payment === "paid") return "verified";
+  if (verification === "pending") return "pending_review";
+  return "unavailable";
 }
 
 function safePackageLabel(value) {

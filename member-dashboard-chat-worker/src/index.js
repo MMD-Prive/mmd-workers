@@ -21,6 +21,7 @@ const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webho
 const MEMBER_LIFF_PREFIX = "/member/api/liff/";
 const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const MEMBER_LIFF_ID = "2010298002-mbx9kqQn";
+const MEMBER_LIFF_DASHBOARD_URL = "https://member-pages-worker.malemodel-bkk.workers.dev/member/liff";
 const LINE_RICH_MENU_SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const LINE_RICH_MENU_PUBLIC_WORLD_BASE_PATH = "/v1/internal/line/rich-menu/public-world";
 const LINE_RICH_MENU_DEFAULT_PATH = "/v1/internal/line/rich-menu/default";
@@ -316,6 +317,9 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(?:กันยายน|september|sep).{0,16}(?:โปร|promotion)|โปร.{0,16}(?:ถึงวันไหน|หมดเมื่อไหร่|หมดเขต)/i.test(normalized)) return "care_back_dates";
   if (/(?:เข้าเพจ|เปิดเพจ|เปิดหน้า|เข้า\s*page|open\s*page).{0,20}(?:คูปอง|coupon)|(?:wish|คำอวยพร).{0,20}(?:10(?:\s*%)?|คูปอง|coupon).{0,12}(?:ได้เลย|ได้ไหม|หรือยัง|เปิด)/i.test(normalized)) return "care_back_coupon_wish";
   if (/(?:\d[\d,\s]*\s*(?:บาท|thb).{0,16}(?:กี่แต้ม|กี่คะแนน|กี่\s*points?)|(?:กี่แต้ม|กี่คะแนน).{0,16}\d[\d,\s]*\s*(?:บาท|thb))/i.test(normalized)) return "care_back_historical_points";
+  if (/^(?:ผม|ฉัน|หนู|เรา)?\s*(?:จ่าย|ชำระ|โอน)(?:เงิน)?\s*(?:แล้ว|เรียบร้อยแล้ว)(?:ครับ|ค่ะ|นะ)?$/i.test(normalized)) return "payment_status";
+  if (/^(?:สถานะ(?:สมาชิก)?(?:ของ)?ผม|สถานะ(?:สมาชิก)?(?:ของ)?ฉัน|สถานะ(?:สมาชิก)?(?:ของ)?หนู)(?:เป็นยังไง|เป็นอย่างไร|ตอนนี้)?(?:ครับ|ค่ะ)?$/i.test(normalized)) return "membership_status";
+  if (/^(?:แต้ม|คะแนน|points?)(?:ของ)?(?:ผม|ฉัน|หนู)?\s*(?:เข้า|เพิ่ม|มา)(?:แล้ว)?(?:หรือยัง|ไหม|หรือเปล่า)?(?:ครับ|ค่ะ)?$/i.test(normalized)) return "points_status";
   if (/(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
   if (/(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
   if (/(svip|s vip|super\s*vip)/i.test(normalized)) return "svip";
@@ -593,6 +597,18 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
     return `${prefix}ส่งหลักฐานเข้ามาได้ครับ: https://mmdbkk.com/confirm/payment-proof
 
 เดี๋ยว MMD ตรวจยอดและจับคู่รายการให้ก่อนนะครับ หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request ครับ`;
+  }
+
+  if (intent === "payment_status") {
+    return `ได้ครับ แต่ผมจะไม่ยืนยันจากข้อความอย่างเดียว เช็กสถานะรายการจริงใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → ${MEMBER_LIFF_DASHBOARD_URL}`;
+  }
+
+  if (intent === "membership_status") {
+    return `เช็กสถานะสมาชิกของคุณใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → ${MEMBER_LIFF_DASHBOARD_URL}`;
+  }
+
+  if (intent === "points_status") {
+    return `เช็กแต้มกับประวัติรายการของคุณใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → ${MEMBER_LIFF_DASHBOARD_URL}`;
   }
 
   if (intent === "points") {
