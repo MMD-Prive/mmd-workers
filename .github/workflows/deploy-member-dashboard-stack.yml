@@ -5,9 +5,7 @@ on:
     branches:
       - main
     paths:
-      - "member-pages-worker/**"
       - "auth-worker/**"
-      - ".github/workflows/deploy-member-dashboard-stack.yml"
   workflow_dispatch:
 
 concurrency:
@@ -60,12 +58,6 @@ jobs:
         run: |
           node --check member-pages-worker/src/runtime-index.js
           node --check auth-worker/src/index.js
-
-      - name: Dry run member-pages-worker
-        run: npx --yes wrangler@4 deploy --dry-run --keep-vars --config member-pages-worker/wrangler.toml
-
-      - name: Deploy member-pages-worker
-        run: npx --yes wrangler@4 deploy --keep-vars --config member-pages-worker/wrangler.toml
 
       - name: Dry run mmd-auth-worker
         run: npx --yes wrangler@4 deploy --dry-run --keep-vars --config auth-worker/wrangler.toml
