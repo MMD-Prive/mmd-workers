@@ -256,13 +256,15 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(ขอให้เปอร์ตรวจ|ให้เปอร์ดู|ให้ per ดู|manual review|ตรวจเอง)/i.test(normalized)) return "manual_review";
   if (isKenjiLineCandidate(text)) return "talk_to_per_ai";
   const isCareBack = /(care\s*back|แคร์\s*แบ็ก|แคร์แบ็ก|6\s*years?|6th\s*anniversary|โปร(?:โมชัน|โมชั่น)?\s*6\s*ปี|phase\s*[12])/i.test(normalized);
+  const isPersonalCareBackStatus = /(?:ผม|หนู|ฉัน|ของผม|ของหนู|ของฉัน).{0,16}(?:ได้|มี|เข้า|อยู่).{0,16}(?:180\s*วัน|90\s*วัน|150\s*(?:แต้ม|คะแนน|points?)|250\s*(?:แต้ม|คะแนน|points?)|350\s*(?:แต้ม|คะแนน|points?)|กี่วัน|กี่แต้ม|กี่คะแนน|เท่าไหร่|เท่าไร|กลุ่มไหน|สิทธิ์)|^(?:ผม|หนู|ฉัน)\s*(?:ได้|มี)\s*(?:อะไร|เท่าไหร่|เท่าไร)$|^(?:ของผม|ของหนู|ของฉัน).{0,12}(?:เข้าไหม|ได้ไหม|ได้หรือยัง|อยู่กลุ่มไหน)$/i.test(normalized);
   if (
-    isCareBack &&
+    (isCareBack || isPersonalCareBackStatus) &&
     /(?:ผม|หนู|ฉัน|เรา|ของผม|ของหนู|ของฉัน).{0,20}(?:ได้อะไร|ได้ไหม|ได้กี่|สถานะ|สิทธิ์|เข้าเกณฑ์|กลุ่มไหน)|(?:เช็ก|ตรวจ|ดู).{0,16}(?:สิทธิ์|สถานะ|คะแนน|แต้ม).{0,24}(?:ผม|หนู|ฉัน|ให้หน่อย)|(?:ผม|หนู|ฉัน).{0,12}(?:อยู่กลุ่ม|เป็นกลุ่ม)/i.test(normalized)
   ) return "care_back_personal_status";
+  if (isPersonalCareBackStatus) return "care_back_personal_status";
   if (isCareBack && /(?:black\s*card|แบล็คการ์ด|บัตรด[ำํา]|350\s*(?:แต้ม|คะแนน|points?))/i.test(normalized)) return "care_back_black_card";
   if (isCareBack && /(?:จ่าย|ชำระ|โอน|สลิป|payment|paid|แต้ม.{0,12}(?:เข้า|ได้|มา|เมื่อไหร่|ตอนไหน)|points?.{0,12}(?:credit|add|receive|เมื่อไหร่|ตอนไหน))/i.test(normalized)) return "care_back_payment_points";
-  if (/(birthday\s*wish|คำอวยพร|คูปองวันเกิด|คูปอง|coupon)/i.test(normalized) && (isCareBack || /(?:birthday|วันเกิด|wish|10\s*%|30\s*วัน)/i.test(normalized))) return "care_back_coupon_wish";
+  if (/(birthday\s*wish|คำอวยพร|คูปองวันเกิด|คูปอง|coupon)/i.test(normalized) && (isCareBack || /(?:birthday|วันเกิด|wish|10(?:\s*%)?|30\s*วัน)/i.test(normalized))) return "care_back_coupon_wish";
   if (isCareBack && /(?:สมาชิกปัจจุบัน|สมาชิกเดิมที่ยัง|current member|active|grace|ยังไม่หมดอายุ|ต่อวัน|เพิ่มวัน|180\s*วัน)/i.test(normalized)) return "care_back_current_member";
   if (isCareBack && /(?:สมาชิกเดิม|อดีตสมาชิก|former|expired|หมดอายุ|ขาดอายุ|inactive|ต่ออายุ|renew)/i.test(normalized)) return "care_back_expired_member";
   if (isCareBack && /(?:new\s*premium|premium\s*ใหม่|สมาชิกใหม่.{0,12}premium|พรีเมียม.{0,12}(?:ใหม่|กี่แต้ม)|250\s*(?:welcome\s*)?(?:points?|แต้ม|คะแนน))/i.test(normalized)) return "care_back_new_premium";
@@ -271,6 +273,16 @@ export function inferLineIntent(text = "", event = {}) {
   if ((isCareBack || /(?:แต้ม|คะแนน|points?)/i.test(normalized)) && /(?:ย้อนหลัง|ประวัติ|historical|ยอดใช้บริการ|ทุก\s*100|100\s*(?:บาท|thb)|คิดแต้ม|คำนวณแต้ม)/i.test(normalized)) return "care_back_historical_points";
   if (isCareBack && /(?:phase|เฟส|ช่วง|วันไหน|เมื่อไหร่|เริ่ม|สิ้นสุด|หมดเขต|31\s*(?:ส\.?ค\.?|aug)|(?:1|30)\s*(?:ก\.?ย\.?|sep)|สิงหาคม|กันยายน)/i.test(normalized)) return "care_back_dates";
   if (isCareBack) return "care_back_overview";
+  if (/(?:ส่ง\s*)?สลิป.{0,20}(?:แต้ม|คะแนน|points?).{0,16}(?:ไม่เข้า|เข้าไหม|เข้าเมื่อไหร่|ตอนไหน)|(?:จ่าย|ชำระ|payment|paid).{0,20}(?:แต้ม|คะแนน|points?).{0,16}(?:ไม่เข้า|เข้าไหม|เข้าเมื่อไหร่|ตอนไหน)/i.test(normalized)) return "care_back_payment_points";
+  if (/(?:350\s*(?:แต้ม|คะแนน|points?).{0,20}(?:black\s*card|แบล็คการ์ด|บัตรด[ำํา])|(?:black\s*card|แบล็คการ์ด|บัตรด[ำํา]).{0,20}350\s*(?:แต้ม|คะแนน|points?))/i.test(normalized)) return "care_back_black_card";
+  if (/(?:guest\s*pass|เกสต์\s*พาส).{0,20}(?:แต้ม|คะแนน|points?)/i.test(normalized)) return "care_back_new_member";
+  if (/(?:หมดอายุ|expired).{0,24}(?:150\s*(?:แต้ม|คะแนน|points?)|ได้อะไร)/i.test(normalized)) return "care_back_expired_member";
+  if (/(?:สมัคร\s*)?(?:standard|สแตนดาร์ด).{0,24}(?:ใหม่|วันนี้|150\s*(?:แต้ม|คะแนน|points?)|แต้ม.{0,8}เข้า|ได้อะไร)/i.test(normalized)) return "care_back_new_standard";
+  if (/(?:สมัคร\s*)?(?:premium|พรีเมียม|พรีเมี่ยม).{0,24}(?:ใหม่|วันนี้|250\s*(?:แต้ม|คะแนน|points?)|แต้ม.{0,8}เข้า|ได้อะไร)|(?:premium|พรีเมียม|พรีเมี่ยม).{0,12}(?:ได้\s*)?250/i.test(normalized)) return "care_back_new_premium";
+  if (/(?:สมาชิกปัจจุบัน|current\s*member).{0,16}(?:ได้อะไร|180\s*วัน|เพิ่มวัน)/i.test(normalized)) return "care_back_current_member";
+  if (/(?:กันยายน|september|sep).{0,16}(?:โปร|promotion)|โปร.{0,16}(?:ถึงวันไหน|หมดเมื่อไหร่|หมดเขต)/i.test(normalized)) return "care_back_dates";
+  if (/(?:เข้าเพจ|เปิดเพจ|เปิดหน้า|เข้า\s*page|open\s*page).{0,20}(?:คูปอง|coupon)|(?:wish|คำอวยพร).{0,20}(?:10(?:\s*%)?|คูปอง|coupon).{0,12}(?:ได้เลย|ได้ไหม|หรือยัง|เปิด)/i.test(normalized)) return "care_back_coupon_wish";
+  if (/(?:\d[\d,\s]*\s*(?:บาท|thb).{0,16}(?:กี่แต้ม|กี่คะแนน|กี่\s*points?)|(?:กี่แต้ม|กี่คะแนน).{0,16}\d[\d,\s]*\s*(?:บาท|thb))/i.test(normalized)) return "care_back_historical_points";
   if (/(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
   if (/(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
   if (/(svip|s vip|super\s*vip)/i.test(normalized)) return "svip";
@@ -502,6 +514,9 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "care_back_historical_points") {
+    if (/10\s*[,\s]?\s*000\s*(?:บาท|thb)/i.test(text)) {
+      return `${prefix}ตามอัตรา CARE BACK ยอดใช้บริการย้อนหลัง 10,000 บาทจะเทียบได้ 100 Points เฉพาะเมื่อ MMD ตรวจแล้วว่าเป็นยอดบริการย้อนหลังที่เข้าเกณฑ์ครับ ข้อความนี้เป็นการอธิบายอัตรา 100 บาทต่อ 1 Point ยังไม่ใช่การยืนยันว่าคุณมี 100 Points`;
+    }
     return `${prefix}ยอดใช้บริการย้อนหลังที่เข้าเกณฑ์และ MMD ตรวจสอบได้ คิดในอัตรา 100 บาทเท่ากับ 1 Point ครับ คะแนนจะอ้างอิงเฉพาะรายการที่ตรวจสอบได้ และข้อความนี้ยังไม่ใช่การยืนยันยอดคะแนนส่วนตัว`;
   }
 
