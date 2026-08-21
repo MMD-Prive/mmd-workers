@@ -67,12 +67,12 @@ async function signedLineRequest(events) {
 function modelResponse(answer = "ได้ครับ ผมช่วยดูให้ตรงเรื่องได้เลย อยากเริ่มจากส่วนไหนครับ") {
   return new Response(JSON.stringify({
     status: "completed",
-    output_text: JSON.stringify({ answer, needs_clarification: true, response_kind: "clarification", authority_domains: [] }),
+    output_text: JSON.stringify({ response_kind: "clarification", capability: "safe_conversation", requested_domain: "none", authority_domains: [], requires_truth: false, answer }),
   }), { status: 200, headers: { "content-type": "application/json" } });
 }
 
 test("versioned production prompt contains Per Voice and authority boundaries", () => {
-  assert.equal(KENJI_MODEL_POLICY_VERSION, "kenji-line-production-v2");
+  assert.equal(KENJI_MODEL_POLICY_VERSION, "kenji-line-production-v3-semantic-authority");
   assert.match(KENJI_SYSTEM_PROMPT_V2, /Per Voice/);
   assert.match(KENJI_SYSTEM_PROMPT_V2, /Speak as "ผม"/);
   assert.match(KENJI_SYSTEM_PROMPT_V2, /Never claim that payment is paid/);
@@ -109,6 +109,7 @@ test("model request injects only bounded customer text and approved answer groun
   const calls = [];
   const longText = `คุยเล่นหน่อย ${"ก".repeat(900)}`;
   const result = await generateKenjiModelReply({
+    capability: "safe_conversation",
     text: longText,
     knowledge: [{
       knowledge_id: "tblInternalMustNotLeave",
@@ -132,11 +133,13 @@ test("model request injects only bounded customer text and approved answer groun
   assert.equal(calls[0].body.text.format.type, "json_schema");
   assert.equal(calls[0].body.text.format.strict, true);
   assert.deepEqual(calls[0].body.reasoning, { effort: "low" });
-  assert.equal(calls[0].body.text.format.schema.properties.authority_domains.maxItems, 0);
+  assert.deepEqual(calls[0].body.text.format.schema.properties.capability.enum, ["safe_conversation"]);
+  assert.ok(calls[0].body.text.format.schema.required.includes("requires_truth"));
 });
 
 test("model timeout fails safely", async () => {
   const result = await generateKenjiModelReply({
+    capability: "safe_conversation",
     text: "คุยเล่นหน่อย",
     env: { ...BASE_ENV, KENJI_MODEL_TIMEOUT_MS: "8000" },
     deadline_at: Date.now() + 100,
@@ -152,6 +155,7 @@ test("model timeout fails safely", async () => {
 test("an exhausted shared deadline prevents the OpenAI request entirely", async () => {
   let calls = 0;
   const result = await generateKenjiModelReply({
+    capability: "safe_conversation",
     text: "คุยเล่นหน่อย",
     env: { ...BASE_ENV, KENJI_MODEL_TIMEOUT_MS: "8000" },
     deadline_at: Date.now() - 1,
@@ -168,6 +172,7 @@ test("an exhausted shared deadline prevents the OpenAI request entirely", async 
 for (const status of [400, 429, 500, 503]) {
   test(`model HTTP ${status} fails safely without consuming provider error text`, async () => {
     const result = await generateKenjiModelReply({
+      capability: "safe_conversation",
       text: "คุยเล่นหน่อย",
       env: BASE_ENV,
       fetchImpl: async () => new Response("private provider error", { status }),
@@ -187,6 +192,7 @@ for (const payload of [
 ]) {
   test(`malformed or empty model response fails safely: ${JSON.stringify(payload)}`, async () => {
     const result = await generateKenjiModelReply({
+      capability: "safe_conversation",
       text: "คุยเล่นหน่อย",
       env: BASE_ENV,
       fetchImpl: async () => new Response(payload === null ? "null" : JSON.stringify(payload), {
