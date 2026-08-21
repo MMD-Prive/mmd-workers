@@ -701,7 +701,7 @@ test("DO timeout exception and malformed responses fail closed before OpenAI", a
   }
 });
 
-test("per-user quota permits exact limit, blocks over limit, and duplicate does not consume again", async () => {
+test("per-user quota permits exact limit under concurrency, blocks over limit, and duplicate does not consume again", async () => {
   const claims = new Set();
   let quota = 0;
   const dedupe = {
@@ -727,11 +727,10 @@ test("per-user quota permits exact limit, blocks over limit, and duplicate does 
   };
   try {
     const env = { ...BASE_ENV, LINE_KENJI_MODEL_MAX_ATTEMPTS_PER_WINDOW: "3", KENJI_MODEL_DEDUPE: dedupe };
-    for (let index = 0; index < 4; index += 1) {
-      await worker.fetch(await signedLineRequest([lineTextEvent("วันนี้เหนื่อยนิดหน่อย", {
+    const requests = await Promise.all(Array.from({ length: 4 }, async (_, index) => signedLineRequest([lineTextEvent("วันนี้เหนื่อยนิดหน่อย", {
         message: { id: `quota-${index}`, type: "text", text: "วันนี้เหนื่อยนิดหน่อย" },
-      })]), env);
-    }
+      })])));
+    await Promise.all(requests.map((request) => worker.fetch(request, env)));
     await worker.fetch(await signedLineRequest([lineTextEvent("วันนี้เหนื่อยนิดหน่อย", {
       message: { id: "quota-0", type: "text", text: "วันนี้เหนื่อยนิดหน่อย" },
     })]), env);
