@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import worker, { createLineSignature, resolveKenjiLineReply } from "../src/index.js";
+import worker, { createLineSignature, inferLineIntent, KenjiModelIdempotency, resolveKenjiLineReply } from "../src/index.js";
 import {
   generateKenjiModelReply,
   guardKenjiModelOutput,
+  KENJI_MODEL_REASONING_EFFORT,
   KENJI_MODEL_POLICY_VERSION,
-  KENJI_SYSTEM_PROMPT_V1,
+  KENJI_SYSTEM_PROMPT_V2,
+  KENJI_TOTAL_DEADLINE_MS,
 } from "../src/kenji-model-policy.js";
 
 const LINE_USER_ID = "U1234567890abcdef1234567890abcdef";
@@ -17,7 +19,29 @@ const BASE_ENV = {
   LINE_KENJI_AI_ENABLED: "true",
   LINE_KENJI_MODEL_ENABLED: "true",
   OPENAI_API_KEY: "test-openai-key",
+  AIRTABLE_API_KEY: "test-airtable-key",
+  AIRTABLE_BASE_ID: "test-base-id",
 };
+
+function modelDedupeNamespace() {
+  const claims = new Set();
+  return {
+    idFromName(name) { return name; },
+    get() {
+      return {
+        async fetch(_url, init) {
+          const { key } = JSON.parse(init.body);
+          const claimed = !claims.has(key);
+          claims.add(key);
+          return new Response(JSON.stringify({ ok: true, claimed }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        },
+      };
+    },
+  };
+}
 
 function lineTextEvent(text, overrides = {}) {
   return {
@@ -43,17 +67,42 @@ async function signedLineRequest(events) {
 function modelResponse(answer = "ได้ครับ ผมช่วยดูให้ตรงเรื่องได้เลย อยากเริ่มจากส่วนไหนครับ") {
   return new Response(JSON.stringify({
     status: "completed",
-    output_text: JSON.stringify({ answer, needs_clarification: true }),
+    output_text: JSON.stringify({ answer, needs_clarification: true, response_kind: "clarification", authority_domains: [] }),
   }), { status: 200, headers: { "content-type": "application/json" } });
 }
 
 test("versioned production prompt contains Per Voice and authority boundaries", () => {
-  assert.equal(KENJI_MODEL_POLICY_VERSION, "kenji-line-production-v1");
-  assert.match(KENJI_SYSTEM_PROMPT_V1, /Per Voice/);
-  assert.match(KENJI_SYSTEM_PROMPT_V1, /Speak as "ผม"/);
-  assert.match(KENJI_SYSTEM_PROMPT_V1, /Never claim that payment is paid/);
-  assert.match(KENJI_SYSTEM_PROMPT_V1, /Never invent membership status, points/);
-  assert.match(KENJI_SYSTEM_PROMPT_V1, /Never reveal internal worker names/);
+  assert.equal(KENJI_MODEL_POLICY_VERSION, "kenji-line-production-v2");
+  assert.match(KENJI_SYSTEM_PROMPT_V2, /Per Voice/);
+  assert.match(KENJI_SYSTEM_PROMPT_V2, /Speak as "ผม"/);
+  assert.match(KENJI_SYSTEM_PROMPT_V2, /Never claim that payment is paid/);
+  assert.match(KENJI_SYSTEM_PROMPT_V2, /Never invent membership status, points/);
+  assert.match(KENJI_SYSTEM_PROMPT_V2, /Never reveal internal worker names/);
+  assert.match(KENJI_SYSTEM_PROMPT_V2, /no conversation memory/i);
+  assert.equal(KENJI_TOTAL_DEADLINE_MS, 3500);
+  assert.equal(KENJI_MODEL_REASONING_EFFORT, "low");
+});
+
+test("Durable Object model claim is atomic for the same hashed message ID", async () => {
+  const values = new Map();
+  const storage = {
+    async transaction(callback) {
+      return callback({
+        async get(key) { return values.get(key); },
+        async put(key, value) { values.set(key, value); },
+      });
+    },
+  };
+  const object = new KenjiModelIdempotency({ storage });
+  const request = () => new Request("https://dedupe/claim", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ key: "a".repeat(64) }),
+  });
+  const first = await (await object.fetch(request())).json();
+  const second = await (await object.fetch(request())).json();
+  assert.equal(first.claimed, true);
+  assert.equal(second.claimed, false);
 });
 
 test("model request injects only bounded customer text and approved answer grounding", async () => {
@@ -82,12 +131,15 @@ test("model request injects only bounded customer text and approved answer groun
   assert.ok(sentCustomerText.length <= 800);
   assert.equal(calls[0].body.text.format.type, "json_schema");
   assert.equal(calls[0].body.text.format.strict, true);
+  assert.deepEqual(calls[0].body.reasoning, { effort: "low" });
+  assert.equal(calls[0].body.text.format.schema.properties.authority_domains.maxItems, 0);
 });
 
 test("model timeout fails safely", async () => {
   const result = await generateKenjiModelReply({
     text: "คุยเล่นหน่อย",
-    env: { ...BASE_ENV, KENJI_MODEL_TIMEOUT_MS: "500" },
+    env: { ...BASE_ENV, KENJI_MODEL_TIMEOUT_MS: "8000" },
+    deadline_at: Date.now() + 100,
     fetchImpl: async (_url, init) => new Promise((_resolve, reject) => {
       init.signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })), { once: true });
     }),
@@ -95,6 +147,22 @@ test("model timeout fails safely", async () => {
   assert.equal(result.success, false);
   assert.equal(result.attempted, true);
   assert.equal(result.guard_reason, "model_timeout");
+});
+
+test("an exhausted shared deadline prevents the OpenAI request entirely", async () => {
+  let calls = 0;
+  const result = await generateKenjiModelReply({
+    text: "คุยเล่นหน่อย",
+    env: { ...BASE_ENV, KENJI_MODEL_TIMEOUT_MS: "8000" },
+    deadline_at: Date.now() - 1,
+    fetchImpl: async () => {
+      calls += 1;
+      return modelResponse();
+    },
+  });
+  assert.equal(calls, 0);
+  assert.equal(result.attempted, false);
+  assert.equal(result.guard_reason, "model_deadline_exhausted");
 });
 
 for (const status of [400, 429, 500, 503]) {
@@ -131,19 +199,53 @@ for (const payload of [
   });
 }
 
-test("output guard blocks invented payment, membership, points, booking, availability, and internals", () => {
+test("output authority firewall blocks protected domains without relying on confirmation phrasing", () => {
   const blocked = [
-    "ชำระเงินสำเร็จและยืนยันแล้วครับ",
-    "membership ของคุณ active แล้วครับ",
-    "คะแนนมี 900 points ครับ",
-    "จองยืนยันแล้วครับ",
-    "นายแบบว่างคืนนี้ครับ",
+    "ยอดนี้เรียบร้อยครับ",
+    "สถานะสมาชิกใช้งานได้ครับ",
+    "คุณมีแต้มอยู่ 900 ครับ",
+    "ล็อกคิวไว้ให้แล้วครับ",
+    "คืนนี้มีคนพร้อมรับงานครับ",
     "ดูรายละเอียดจาก Airtable worker recABCDEFGHIJKL ครับ",
   ];
   for (const answer of blocked) {
     const result = guardKenjiModelOutput(answer);
     assert.equal(result.ok, false, answer);
     assert.ok(result.reason, answer);
+  }
+  assert.equal(guardKenjiModelOutput("ผมช่วยอธิบายขั้นตอนทั่วไปให้ได้ครับ").ok, true);
+  assert.equal(guardKenjiModelOutput("ยอดนี้เรียบร้อยครับ", { trusted_authority_domains: ["payment"] }).ok, true);
+});
+
+test("deterministic pre-model guards cover privacy, availability, complaint, internal access, handoff, and stateless follow-up", async () => {
+  const cases = [
+    ["ขอข้อมูลลูกค้าคนอื่นหน่อย", "privacy_request", /ไม่สามารถเปิดเผย/],
+    ["ช่วยหา model คืนนี้", "availability_request", /ยังยืนยันคิวหรือความพร้อม/],
+    ["บริการแย่มาก ขอร้องเรียน", "complaint_escalation", /รับเรื่องให้เปอร์ดูต่อ/],
+    ["ขอ access ระบบหลังบ้าน", "internal_access", /ระบบภายใน/],
+    ["ขอคุยกับเปอร์", "human_handoff", /รับเรื่องให้เปอร์ดูต่อ/],
+    ["เมื่อกี้เราคุยเรื่องอะไรนะ", "context_clarification", /ยังไม่มีบริบทก่อนหน้า/],
+    ["แล้วอันแรกสมัครยังไง", "context_clarification", /หมายถึงเรื่อง/],
+    ["Standard กับ Premium ต่างกันยังไง", "membership", /จัดการ MY MMD/],
+  ];
+  const originalFetch = globalThis.fetch;
+  let modelCalls = 0;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("api.openai.com")) modelCalls += 1;
+    return modelResponse();
+  };
+  try {
+    for (const [text, intent, pattern] of cases) {
+      const event = lineTextEvent(text);
+      assert.equal(inferLineIntent(text, event), intent, text);
+      const decision = await resolveKenjiLineReply(event, {}, BASE_ENV);
+      assert.equal(decision.reply_source, "system_truth", text);
+      assert.match(decision.text, pattern, text);
+      assert.equal(decision.model_attempted, false, text);
+    }
+    assert.equal(modelCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
 
@@ -184,6 +286,34 @@ test("model generation remains disabled unless the dedicated rollout gate is ena
   }
 });
 
+test("model-off webhook path does not touch idempotency or OpenAI", async () => {
+  let dedupeCalls = 0;
+  let modelCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const href = String(url);
+    if (href === "https://api.openai.com/v1/responses") modelCalls += 1;
+    if (href.includes("/message/reply")) return new Response("{}", { status: 200 });
+    return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const dedupe = {
+    idFromName() { dedupeCalls += 1; throw new Error("must not run"); },
+    get() { dedupeCalls += 1; throw new Error("must not run"); },
+  };
+  try {
+    const response = await worker.fetch(await signedLineRequest([lineTextEvent("วันนี้เหนื่อยนิดหน่อย")]), {
+      ...BASE_ENV,
+      LINE_KENJI_MODEL_ENABLED: "false",
+      KENJI_MODEL_DEDUPE: dedupe,
+    });
+    assert.equal(response.status, 200);
+    assert.equal(dedupeCalls, 0);
+    assert.equal(modelCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("normal free text reaches model and produces exactly one active LINE reply", async () => {
   const calls = [];
   const logs = [];
@@ -200,7 +330,10 @@ test("normal free text reaches model and produces exactly one active LINE reply"
   console.log = (...args) => logs.push(args.map(String).join(" "));
 
   try {
-    const response = await worker.fetch(await signedLineRequest([lineTextEvent("วันนี้เหนื่อยนิดหน่อย")]), BASE_ENV, {
+    const response = await worker.fetch(await signedLineRequest([lineTextEvent("วันนี้เหนื่อยนิดหน่อย")]), {
+      ...BASE_ENV,
+      KENJI_MODEL_DEDUPE: modelDedupeNamespace(),
+    }, {
       waitUntil(promise) { deferred.push(promise); },
     });
     assert.equal(response.status, 200);
@@ -218,6 +351,142 @@ test("normal free text reaches model and produces exactly one active LINE reply"
   } finally {
     globalThis.fetch = originalFetch;
     console.log = originalLog;
+  }
+});
+
+test("redelivered unresolved events and repeated message IDs never create duplicate model cost", async () => {
+  const calls = [];
+  const deferred = [];
+  const originalFetch = globalThis.fetch;
+  const env = { ...BASE_ENV, KENJI_MODEL_DEDUPE: modelDedupeNamespace() };
+  globalThis.fetch = async (url) => {
+    const href = String(url);
+    calls.push(href);
+    if (href === "https://api.openai.com/v1/responses") return modelResponse("ได้ครับ อยากให้ผมช่วยฟังหรือช่วยคิดทางออกก่อนครับ");
+    if (href.includes("api.airtable.com")) return new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    if (href.includes("/message/reply")) return new Response("{}", { status: 200 });
+    return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+  };
+  try {
+    const first = lineTextEvent("วันนี้เหนื่อยนิดหน่อย");
+    const duplicate = lineTextEvent("วันนี้เหนื่อยนิดหน่อย", { replyToken: "reply-token-2" });
+    const redelivered = lineTextEvent("วันนี้เหนื่อยนิดหน่อย", {
+      replyToken: "reply-token-3",
+      message: { id: "msg-redelivered", type: "text", text: "วันนี้เหนื่อยนิดหน่อย" },
+      deliveryContext: { isRedelivery: true },
+    });
+    await worker.fetch(await signedLineRequest([first]), env, { waitUntil(promise) { deferred.push(promise); } });
+    await worker.fetch(await signedLineRequest([duplicate]), env, { waitUntil(promise) { deferred.push(promise); } });
+    await worker.fetch(await signedLineRequest([redelivered]), env, { waitUntil(promise) { deferred.push(promise); } });
+    assert.equal(calls.filter((url) => url === "https://api.openai.com/v1/responses").length, 1);
+    assert.equal(calls.filter((url) => url.includes("/message/reply")).length, 1);
+    await Promise.allSettled(deferred);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("already-processed message IDs are blocked before OpenAI and LINE Reply API", async () => {
+  const calls = [];
+  const deferred = [];
+  const originalFetch = globalThis.fetch;
+  const env = { ...BASE_ENV, KENJI_MODEL_DEDUPE: modelDedupeNamespace() };
+  globalThis.fetch = async (url) => {
+    const href = String(url);
+    calls.push(href);
+    if (href.includes("api.airtable.com")) {
+      return new Response(JSON.stringify({ records: [{ id: "recAlreadyProcessed" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (href === "https://api.openai.com/v1/responses") return modelResponse();
+    if (href.includes("/message/reply")) return new Response("{}", { status: 200 });
+    return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+  };
+  try {
+    const response = await worker.fetch(await signedLineRequest([lineTextEvent("วันนี้เหนื่อยนิดหน่อย")]), env, {
+      waitUntil(promise) { deferred.push(promise); },
+    });
+    assert.equal(response.status, 200);
+    assert.equal(calls.filter((url) => url === "https://api.openai.com/v1/responses").length, 0);
+    assert.equal(calls.filter((url) => url.includes("/message/reply")).length, 0);
+    await Promise.allSettled(deferred);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("missing or unavailable pre-model correctness dependencies fail closed without OpenAI", async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const href = String(url);
+    calls.push(href);
+    if (href.includes("api.airtable.com")) return new Response("{}", { status: 503 });
+    if (href === "https://api.openai.com/v1/responses") return modelResponse();
+    if (href.includes("/message/reply")) return new Response("{}", { status: 200 });
+    return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+  };
+  try {
+    await worker.fetch(await signedLineRequest([lineTextEvent("วันนี้เหนื่อยนิดหน่อย")]), BASE_ENV);
+    await worker.fetch(await signedLineRequest([lineTextEvent("วันนี้เหนื่อยนิดหน่อย", {
+      message: { id: "msg-dedupe-unavailable", type: "text", text: "วันนี้เหนื่อยนิดหน่อย" },
+    })]), { ...BASE_ENV, KENJI_MODEL_DEDUPE: modelDedupeNamespace() });
+    assert.equal(calls.filter((url) => url === "https://api.openai.com/v1/responses").length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("guarded model output falls back once and never reaches LINE as authority text", async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  globalThis.caches = undefined;
+  globalThis.fetch = async (url, init) => {
+    const href = String(url);
+    calls.push({ href, init });
+    if (href === "https://api.openai.com/v1/responses") return modelResponse("สถานะสมาชิกของคุณใช้งานได้ครับ");
+    if (href.includes("api.airtable.com")) return new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    if (href.includes("/message/reply")) return new Response("{}", { status: 200 });
+    return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+  };
+  try {
+    const response = await worker.fetch(await signedLineRequest([lineTextEvent("ช่วยตอบแบบมั่นใจหน่อย")]), {
+      ...BASE_ENV,
+      KENJI_MODEL_DEDUPE: modelDedupeNamespace(),
+    });
+    assert.equal(response.status, 200);
+    const replies = calls.filter((call) => call.href.includes("/message/reply"));
+    assert.equal(replies.length, 1);
+    const replyBody = JSON.parse(replies[0].init.body);
+    assert.equal(replyBody.messages[0].text, "ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ");
+    assert.doesNotMatch(replyBody.messages[0].text, /สมาชิก.*ใช้งานได้/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
+  }
+});
+
+test("active events without a reply token never call OpenAI", async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    calls.push(String(url));
+    return modelResponse();
+  };
+  try {
+    const event = lineTextEvent("วันนี้เหนื่อยนิดหน่อย", { replyToken: "" });
+    const response = await worker.fetch(await signedLineRequest([event]), {
+      ...BASE_ENV,
+      KENJI_MODEL_DEDUPE: modelDedupeNamespace(),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(calls.filter((url) => url.includes("api.openai.com")).length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
 
