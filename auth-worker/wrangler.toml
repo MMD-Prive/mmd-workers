@@ -37,6 +37,9 @@ AIRTABLE_MEMBERS_EMAIL_FIELD = "Contact Email"
 AIRTABLE_MEMBERS_TIER_FIELD = "Membership Tier"
 AIRTABLE_MEMBERS_STATUS_FIELD = "Membership Status"
 AIRTABLE_MEMBERS_POINTS_FIELD = "Points Balance"
+AIRTABLE_MEMBERS_EXPIRY_FIELD = "Membership Expiry"
+AIRTABLE_MEMBERS_END_DATE_FIELD = "Membership End Date"
+AIRTABLE_MEMBERS_EXPIRE_AT_FIELD = "Expire At"
 
 # Customer-safe LIFF history readback. The API enforces a one-calendar-year
 # window and never returns payment details, notes, risk, contact data, or raw IDs.
@@ -49,6 +52,13 @@ AIRTABLE_MEMBER_PACKAGES_EMAIL_FIELD = "member_email"
 AIRTABLE_MEMBER_PACKAGES_CREATED_FIELD = "created_at"
 AIRTABLE_POINTS_EMAIL_FIELD = "member_email"
 AIRTABLE_POINTS_HISTORY_DATE_FIELD = "created_at"
+AIRTABLE_PAYMENTS_EMAIL_FIELD = "Member Email"
+AIRTABLE_PAYMENTS_STATUS_FIELD = "Payment Status"
+AIRTABLE_PAYMENTS_INTENT_FIELD = "Payment Intent Status"
+AIRTABLE_PAYMENTS_VERIFICATION_FIELD = "Verification Status"
+AIRTABLE_PAYMENTS_DATE_FIELD = "Payment Date"
+AIRTABLE_PAYMENTS_CREATED_FIELD = "Created At"
+AIRTABLE_PAYMENTS_UPDATED_FIELD = "Updated At"
 
 # MMD — Member Entitlements mapping.
 # The current table does not expose the old auth MVP member_id field.

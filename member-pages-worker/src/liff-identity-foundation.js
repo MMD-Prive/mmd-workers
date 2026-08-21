@@ -1320,6 +1320,10 @@ function safeMemberProfile(input = {}) {
   }).filter(Boolean) : [];
   const from = /^\d{4}-\d{2}-\d{2}$/.test(String(input.history_window?.from || "")) ? String(input.history_window.from) : "";
   const to = /^\d{4}-\d{2}-\d{2}$/.test(String(input.history_window?.to || "")) ? String(input.history_window.to) : "";
+  const safeExpiry = safeCustomerDate(input.membership_expires_at);
+  const safePaymentStatus = ["verified", "pending_review", "failed", "not_found"].includes(input.payment_status)
+    ? input.payment_status
+    : "";
   return {
     display_name: String(input.display_name || "สมาชิก MMD").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 120),
     tier: ["Member", "Standard", "Premium", "VIP", "SVIP", "Black Card"].includes(input.tier) ? input.tier : "Member",
@@ -1327,7 +1331,22 @@ function safeMemberProfile(input = {}) {
     points: Number.isFinite(Number(input.points)) && Number(input.points) >= 0 ? Math.trunc(Number(input.points)) : 0,
     history_window: { from, to, timezone: "Asia/Bangkok" },
     history,
+    ...(safeExpiry ? { membership_expires_at: safeExpiry } : {}),
+    ...(safePaymentStatus ? {
+      payment_status: safePaymentStatus,
+      ...(safeCustomerTimestamp(input.payment_status_updated_at) ? { payment_status_updated_at: safeCustomerTimestamp(input.payment_status_updated_at) } : {}),
+    } : {}),
   };
+}
+
+function safeCustomerDate(value) {
+  const text = String(value || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : "";
+}
+
+function safeCustomerTimestamp(value) {
+  const text = String(value || "").trim();
+  return text && !Number.isNaN(Date.parse(text)) ? new Date(text).toISOString() : "";
 }
 
 function safeCareBackClaim(input = {}) {
@@ -1390,12 +1409,6 @@ function safeCareBackClaim(input = {}) {
       ? "คูปองส่วนตัวพร้อมใช้กับบริการที่ร่วมรายการ 1 ครั้ง ภายในระยะเวลาที่ระบุครับ"
       : "MMD จะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ",
   };
-}
-
-function safeCustomerTimestamp(value) {
-  const raw = String(value || "").trim();
-  const parsed = Date.parse(raw);
-  return raw && Number.isFinite(parsed) ? new Date(parsed).toISOString() : "";
 }
 
 async function keyedDigest(env, value) {

@@ -313,32 +313,73 @@ async function buildLiffMemberProfile(env, memberRecord, lineUserId) {
   const email = normalizeEmail(fields.email || fields[env.AIRTABLE_MEMBERS_EMAIL_FIELD || "Contact Email"] || "");
   const memberId = String(fields.member_id || "").trim();
   const cutoff = memberHistoryCutoff();
-  const [sessions, packages, points] = await Promise.all([
+  const [sessions, packages, points, payment] = await Promise.all([
     listMemberServiceHistory(env, { lineUserId, email, cutoff }),
     listMemberPackageHistory(env, { email, cutoff }),
     listMemberPointsHistory(env, { email, cutoff }),
+    listMemberPaymentStatus(env, { email }),
   ]);
   const history = [...sessions, ...packages, ...points]
     .sort((a, b) => String(b.date).localeCompare(String(a.date)))
     .slice(0, MEMBER_HISTORY_MAX_ITEMS);
 
+  const membershipExpiresAt = firstSafeDate(
+    fields[env.AIRTABLE_MEMBERS_EXPIRY_FIELD || "Membership Expiry"],
+    fields[env.AIRTABLE_MEMBERS_END_DATE_FIELD || "Membership End Date"],
+    fields[env.AIRTABLE_MEMBERS_EXPIRE_AT_FIELD || "Expire At"],
+  );
+  const profile = {
+    display_name: safeCustomerText(
+      fields[env.AIRTABLE_MEMBERS_DISPLAY_NAME_FIELD || "Full Name (Display)"]
+        || fields[env.AIRTABLE_MEMBERS_NAME_FIELD || "Full Name"]
+        || fields.name,
+      120,
+    ) || "สมาชิก MMD",
+    tier: normalizeCustomerTier(fields[env.AIRTABLE_MEMBERS_TIER_FIELD || "Membership Tier"]),
+    membership_status: normalizeCustomerMembershipStatus(fields[env.AIRTABLE_MEMBERS_STATUS_FIELD || "Membership Status"]),
+    points: nonNegativeInteger(fields[env.AIRTABLE_MEMBERS_POINTS_FIELD || "Points Balance"]),
+    history_window: { from: cutoff, to: bangkokCalendarDate(), timezone: "Asia/Bangkok" },
+    history,
+  };
+  if (membershipExpiresAt) profile.membership_expires_at = membershipExpiresAt;
+  if (payment?.status) {
+    profile.payment_status = payment.status;
+    if (payment.updated_at) profile.payment_status_updated_at = payment.updated_at;
+  }
+
   return {
     member_exists: true,
     member_id: memberId,
-    profile: {
-      display_name: safeCustomerText(
-        fields[env.AIRTABLE_MEMBERS_DISPLAY_NAME_FIELD || "Full Name (Display)"]
-          || fields[env.AIRTABLE_MEMBERS_NAME_FIELD || "Full Name"]
-          || fields.name,
-        120,
-      ) || "สมาชิก MMD",
-      tier: normalizeCustomerTier(fields[env.AIRTABLE_MEMBERS_TIER_FIELD || "Membership Tier"]),
-      membership_status: normalizeCustomerMembershipStatus(fields[env.AIRTABLE_MEMBERS_STATUS_FIELD || "Membership Status"]),
-      points: nonNegativeInteger(fields[env.AIRTABLE_MEMBERS_POINTS_FIELD || "Points Balance"]),
-      history_window: { from: cutoff, to: bangkokCalendarDate(), timezone: "Asia/Bangkok" },
-      history,
-    },
+    profile,
   };
+}
+
+async function listMemberPaymentStatus(env, { email }) {
+  if (!email || !env.AIRTABLE_PAYMENTS_EMAIL_FIELD) return null;
+  let records;
+  try {
+    records = await airtableList(env, table(env, "PAYMENTS"), {
+      filterByFormula: `LOWER({${env.AIRTABLE_PAYMENTS_EMAIL_FIELD || "Member Email"}})=${formulaString(email)}`,
+      sort: [{ field: env.AIRTABLE_PAYMENTS_UPDATED_FIELD || "Created At", direction: "desc" }],
+      maxRecords: 20,
+    });
+  } catch {
+    return null;
+  }
+  for (const record of records) {
+    const f = record.fields || {};
+    const status = normalizeCustomerPaymentStatus(
+      f[env.AIRTABLE_PAYMENTS_VERIFICATION_FIELD || "Verification Status"],
+      f[env.AIRTABLE_PAYMENTS_INTENT_FIELD || "Payment Intent Status"],
+      f[env.AIRTABLE_PAYMENTS_STATUS_FIELD || "Payment Status"],
+    );
+    if (!status) continue;
+    return {
+      status,
+      updated_at: safeCustomerTimestamp(f[env.AIRTABLE_PAYMENTS_UPDATED_FIELD || "Updated At"] || f[env.AIRTABLE_PAYMENTS_CREATED_FIELD || "Created At"] || f[env.AIRTABLE_PAYMENTS_DATE_FIELD || "Payment Date"]),
+    };
+  }
+  return { status: "not_found" };
 }
 
 async function listMemberServiceHistory(env, { lineUserId, email, cutoff }) {
@@ -437,6 +478,20 @@ function safeHistoryDate(value) {
   return new Date(text).toISOString().slice(0, 10);
 }
 
+function firstSafeDate(...values) {
+  for (const value of values) {
+    const date = safeHistoryDate(value);
+    if (date) return date;
+  }
+  return "";
+}
+
+function safeCustomerTimestamp(value) {
+  const text = String(value || "").trim();
+  if (!text || Number.isNaN(Date.parse(text))) return "";
+  return new Date(text).toISOString();
+}
+
 function safeCustomerText(value, maxLength) {
   return String(value || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, maxLength);
 }
@@ -457,6 +512,14 @@ function normalizeCustomerMembershipStatus(value) {
   if (status === "grace_period" || status === "grace") return "grace";
   if (status === "expired") return "expired";
   return "under_review";
+}
+
+function normalizeCustomerPaymentStatus(...values) {
+  const normalized = values.map((value) => String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_"));
+  if (normalized.some((value) => ["verified", "confirmed", "paid", "full_payment"].includes(value))) return "verified";
+  if (normalized.some((value) => ["failed", "refunded", "cancelled", "canceled"].includes(value))) return "failed";
+  if (normalized.some((value) => ["pending", "pending_review", "pending_confirmation", "intent_created", "notified", "deposit", "partial_payment"].includes(value))) return "pending_review";
+  return "";
 }
 
 function safePackageLabel(value) {
