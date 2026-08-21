@@ -7,6 +7,7 @@ import worker, {
   createLineSignature,
   inferLineIntent,
   isKenjiLineCandidate,
+  resolveKenjiLineReply,
 } from "../src/index.js";
 
 const LINE_USER_ID = "U1234567890abcdef1234567890abcdef";
@@ -37,6 +38,25 @@ function lineTextEvent(text, overrides = {}) {
     source: { type: "user", userId: LINE_USER_ID },
     message: { id: "msg-1", type: "text", text },
     ...overrides,
+  };
+}
+
+function installMemoryCache() {
+  const originalCaches = globalThis.caches;
+  const entries = new Map();
+  globalThis.caches = {
+    default: {
+      async match(request) {
+        return entries.has(request.url) ? new Response(entries.get(request.url)) : undefined;
+      },
+      async put(request, response) {
+        entries.set(request.url, await response.text());
+      },
+    },
+  };
+  return () => {
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
   };
 }
 
@@ -300,5 +320,137 @@ test("valid LINE event can auto reply through reply API when not deduped", async
     assert.equal(calls.filter((call) => call.url.includes("/message/reply")).length, 1);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test("safe local responses do not use the failure fallback", async () => {
+  for (const text of [
+    "สวัสดี",
+    "สมาชิกมีอะไรบ้าง",
+    "ราคาเท่าไหร่",
+    "ใช้บริการยังไง",
+    "ส่งสลิปแล้วต้องทำอะไรต่อ",
+    "เคนจิช่วยอะไรได้บ้าง",
+  ]) {
+    const decision = await resolveKenjiLineReply(lineTextEvent(text), {}, BASE_ENV);
+    assert.ok(decision.text, text);
+    assert.equal(decision.fallback, false, text);
+    assert.doesNotMatch(decision.text, /รับข้อความแล้วครับ|ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ/, text);
+  }
+});
+
+test("successful knowledge-assisted response sends exactly one LINE reply", async () => {
+  const calls = [];
+  const deferred = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const href = String(url);
+    calls.push({ url: href, init });
+    if (href.includes("api.airtable.com")) {
+      return new Response(JSON.stringify({
+        records: [{
+          fields: {
+            knowledge_id: "kenji_20_008_membership_intake_catalog",
+            customer_answer: "ดูรายละเอียดสมาชิกและเลือกขั้นตอนที่เหมาะได้ที่ MY MMD ครับ",
+            allowed_channels: ["LINE_OFC"],
+            status: "active",
+            response_mode: "auto_reply_allowed",
+          },
+        }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (href.includes("/message/reply")) return new Response("{}", { status: 200 });
+    if (href.includes("/profile/")) return new Response("{}", { status: 200 });
+    return new Response("{}", { status: 200 });
+  };
+
+  try {
+    const env = {
+      ...BASE_ENV,
+      LINE_KENJI_KNOWLEDGE_ENABLED: "true",
+      AIRTABLE_API_KEY: "airtable-key",
+      AIRTABLE_BASE_ID: "priority-base",
+    };
+    await buildKenjiKnowledgeLineReply(lineTextEvent("สมาชิกมีอะไรบ้าง"), {}, env);
+    calls.length = 0;
+    const response = await worker.fetch(
+      await signedLineRequest({ events: [lineTextEvent("สมาชิกมีอะไรบ้าง")] }),
+      env,
+      { waitUntil(promise) { deferred.push(promise); } },
+    );
+    assert.equal(response.status, 200);
+    assert.equal(calls.filter((call) => call.url.includes("/message/reply")).length, 1);
+    const replyCall = calls.find((call) => call.url.includes("/message/reply"));
+    const body = JSON.parse(replyCall.init.body);
+    assert.equal(body.messages.length, 1);
+    assert.doesNotMatch(body.messages[0].text, /รับข้อความแล้วครับ|ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ/);
+    await Promise.allSettled(deferred);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("no safe local or knowledge response may use the short fallback", async () => {
+  const originalFetch = globalThis.fetch;
+  const restoreCache = installMemoryCache();
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("api.airtable.com")) throw new Error("temporary knowledge failure");
+    return new Response("{}", { status: 200 });
+  };
+
+  try {
+    const decision = await resolveKenjiLineReply(lineTextEvent("ช่วยดูเรื่องนี้ให้หน่อย"), {}, {
+      ...BASE_ENV,
+      LINE_KENJI_KNOWLEDGE_ENABLED: "true",
+      AIRTABLE_API_KEY: "airtable-key",
+      AIRTABLE_BASE_ID: "base-id",
+    });
+    assert.equal(decision.text, "ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ");
+    assert.equal(decision.fallback, true);
+  } finally {
+    restoreCache();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("repeated unresolved messages do not spam the failure fallback", async () => {
+  // The Cache API mock proves best-effort UX suppression only. Production cache
+  // is not persistent state, authorization, dedupe correctness, or
+  // payment/session/member state, and eviction or another colo may allow the
+  // fallback to appear again.
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  const restoreCache = installMemoryCache();
+  globalThis.fetch = async (url) => {
+    const href = String(url);
+    calls.push(href);
+    if (href.includes("/message/reply")) return new Response("{}", { status: 200 });
+    return new Response("{}", { status: 503 });
+  };
+
+  try {
+    const first = lineTextEvent("ช่วยดูเรื่องนี้ให้หน่อย", { message: { id: "msg-fallback-1", type: "text", text: "ช่วยดูเรื่องนี้ให้หน่อย" } });
+    const second = lineTextEvent("ยังอยู่ไหม", { replyToken: "reply-token-2", message: { id: "msg-fallback-2", type: "text", text: "ยังอยู่ไหม" } });
+    const firstResponse = await worker.fetch(await signedLineRequest({ events: [first] }), BASE_ENV);
+    const secondResponse = await worker.fetch(await signedLineRequest({ events: [second] }), BASE_ENV);
+    assert.equal(firstResponse.status, 200);
+    assert.equal(secondResponse.status, 200);
+    assert.equal(calls.filter((url) => url.includes("/message/reply")).length, 1);
+  } finally {
+    restoreCache();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("manual-review intent may use the short fallback", async () => {
+  const restoreCache = installMemoryCache();
+  try {
+    const event = lineTextEvent("ขอให้เปอร์ตรวจเอง");
+    assert.equal(inferLineIntent(event.message.text, event), "manual_review");
+    const decision = await resolveKenjiLineReply(event, {}, BASE_ENV);
+    assert.equal(decision.text, "ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ");
+    assert.equal(decision.fallback, true);
+  } finally {
+    restoreCache();
   }
 });
