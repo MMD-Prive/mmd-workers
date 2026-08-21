@@ -7,7 +7,6 @@ on:
     paths:
       - "member-pages-worker/**"
       - "auth-worker/**"
-      - "mmd-redirect-worker/**"
       - ".github/workflows/deploy-member-dashboard-stack.yml"
   workflow_dispatch:
 
@@ -61,7 +60,6 @@ jobs:
         run: |
           node --check member-pages-worker/src/runtime-index.js
           node --check auth-worker/src/index.js
-          node --check mmd-redirect-worker/src/index.js
 
       - name: Dry run member-pages-worker
         run: npx --yes wrangler@4 deploy --dry-run --keep-vars --config member-pages-worker/wrangler.toml
@@ -74,9 +72,3 @@ jobs:
 
       - name: Deploy mmd-auth-worker
         run: npx --yes wrangler@4 deploy --keep-vars --config auth-worker/wrangler.toml
-
-      - name: Dry run mmd-redirect-worker
-        run: npx --yes wrangler@4 deploy --dry-run --keep-vars --config mmd-redirect-worker/wrangler.toml
-
-      - name: Deploy mmd-redirect-worker
-        run: npx --yes wrangler@4 deploy --keep-vars --config mmd-redirect-worker/wrangler.toml
