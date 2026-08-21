@@ -9,12 +9,21 @@ class MemoryKv {
   async delete() {}
 }
 
+class MemoryGatewayStore {
+  async upsertSession() { return { record_id: "rec_liff_status" }; }
+  async recordDecision() {}
+  async loadScreen() { return null; }
+  async resolvePackage() { return null; }
+  async hasHallAudienceInventory() { return false; }
+}
+
 function env() {
   return {
     LINE_LOGIN_CHANNEL_ID: "2000000000",
     LIFF_SESSION_SECRET: "test-only-session-secret-not-production",
     MEMBER_STATUS_RESOLVER_SECRET: "test-only-member-status-resolver-secret-1234567890",
     LIFF_IDENTITY_KV: new MemoryKv(),
+    LIFF_GATEWAY_STORE: new MemoryGatewayStore(),
     MEMBER_STATUS_RESOLVER: { fetch: async () => new Response(JSON.stringify({ ok: true, data: { member_exists: false } })) },
   };
 }
@@ -22,7 +31,7 @@ function env() {
 describe("member-pages LIFF status route", () => {
   it("delegates an unauthenticated status request to the LIFF foundation", async () => {
     const response = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/status", {
-      headers: { accept: "application/json" },
+      headers: { accept: "application/json", origin: "https://mmdbkk.com" },
     }), env());
 
     assert.equal(response.status, 401);
@@ -33,10 +42,11 @@ describe("member-pages LIFF status route", () => {
   it("keeps OPTIONS preflight on the entrypoint CORS response", async () => {
     const response = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/status", {
       method: "OPTIONS",
-      headers: { origin: "https://liff.line.me" },
+      headers: { origin: "https://mmdbkk.com" },
     }), env());
 
     assert.equal(response.status, 204);
+    assert.equal(response.headers.get("access-control-allow-origin"), "https://mmdbkk.com");
   });
 
 });
