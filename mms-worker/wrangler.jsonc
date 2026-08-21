@@ -1,0 +1,45 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "mms-worker",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "MMS_RUNTIME_SCOPE": "production",
+    "MMS_INTERNAL_HOST": "mms.internal",
+    "MMS_PUBLIC_BASE_URL": "https://mms-worker.malemodel-bkk.workers.dev",
+    "MMS_UPLOAD_MAX_BYTES": "10485760",
+    "ALLOWED_ORIGINS": "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io",
+    "AIRTABLE_BASE_ID": "appsV1ILPRfIjkaYg",
+    "AIRTABLE_APPLICATIONS_TABLE_ID": "tblogwnxtIG19I2WB",
+    "AIRTABLE_THERAPISTS_TABLE_ID": "tblTC9ZHQa4hAUwLu",
+    "AIRTABLE_PREBOOKINGS_TABLE_ID": "tblnSw3MY79MwWONe",
+    "AIRTABLE_SENSITIVE_PROFILES_TABLE_ID": "tblihsaMw06mkjaat"
+  },
+  "r2_buckets": [
+    {
+      "binding": "MMS_PRIVATE_UPLOADS",
+      "bucket_name": "mms-private-uploads"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "MMS_COORDINATOR",
+        "class_name": "MmsCoordinator"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["MmsCoordinator"]
+    }
+  ]
+}

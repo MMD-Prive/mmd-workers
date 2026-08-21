@@ -1,0 +1,16 @@
+{
+  "name": "mms-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check src/index.js && node --check src/core.mjs",
+    "test": "npm run check && node --test test/*.test.mjs",
+    "types": "wrangler types",
+    "dry-run": "wrangler deploy --dry-run",
+    "deploy": "wrangler deploy --keep-vars"
+  },
+  "devDependencies": {
+    "wrangler": "4.96.0"
+  }
+}
