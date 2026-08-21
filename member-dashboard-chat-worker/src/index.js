@@ -5,7 +5,7 @@ import {
 import { KenjiModelIdempotency } from "./kenji-model-idempotency.js";
 import { generateKenjiModelReply, KENJI_TOTAL_DEADLINE_MS } from "./kenji-model-policy.js";
 import { buildProtectedCapabilityReply, decideKenjiCapability, KENJI_CAPABILITIES } from "./kenji-capability-policy.js";
-import { selectApprovedLineModelKnowledge } from "./kenji-knowledge-policy.js";
+import { parseModelKnowledgeIdAllowlist, selectApprovedLineModelKnowledge } from "./kenji-knowledge-policy.js";
 
 export { KenjiModelIdempotency };
 
@@ -429,10 +429,6 @@ function rankPublishedKnowledge(cards = [], text = "") {
     .map((item) => item.card);
 }
 
-function approvedModelKnowledgeIds(env = {}) {
-  return asString(env.LINE_KENJI_MODEL_KNOWLEDGE_IDS).split(/[\s,]+/).filter(Boolean);
-}
-
 function withKnowledgeLifecycleMetadata(fields = {}) {
   let payload = {};
   try {
@@ -452,9 +448,11 @@ function withKnowledgeLifecycleMetadata(fields = {}) {
 }
 
 async function getModelGrounding(env = {}, text = "", deadlineAt = 0) {
+  const allowlist = parseModelKnowledgeIdAllowlist(env.LINE_KENJI_MODEL_KNOWLEDGE_IDS);
+  if (!allowlist.valid || !allowlist.ids.length) return [];
   const key = `${asString(env.AIRTABLE_BASE_ID)}:${getKenjiKnowledgeTable(env)}`;
   if (lineKnowledgeCache.key === key && lineKnowledgeCache.expiresAt > Date.now()) {
-    return rankPublishedKnowledge(selectApprovedLineModelKnowledge(lineKnowledgeCache.cards, { approvedIds: approvedModelKnowledgeIds(env) }), text);
+    return rankPublishedKnowledge(selectApprovedLineModelKnowledge(lineKnowledgeCache.cards, { approvedIds: allowlist.ids }), text);
   }
   if (!isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)) return [];
   const remainingMs = Number(deadlineAt) - Date.now();
@@ -463,7 +461,7 @@ async function getModelGrounding(env = {}, text = "", deadlineAt = 0) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort("kenji_knowledge_timeout"), timeoutMs);
   try {
-    return rankPublishedKnowledge(selectApprovedLineModelKnowledge(await fetchPublishedLineKnowledge(env, { signal: controller.signal }), { approvedIds: approvedModelKnowledgeIds(env) }), text);
+    return rankPublishedKnowledge(selectApprovedLineModelKnowledge(await fetchPublishedLineKnowledge(env, { signal: controller.signal }), { approvedIds: allowlist.ids }), text);
   } finally {
     clearTimeout(timer);
   }
@@ -904,6 +902,24 @@ async function claimKenjiModelEvent(env = {}, event = {}) {
   if (!cohort.valid) return { eligible: false, deduped: false, reason: "model_canary_config_malformed", canary_eligible: false, rate_limited: false };
   const userHash = await sha256Hex(lineUserId);
   if (!cohort.hashes.has(userHash)) return { eligible: false, deduped: false, reason: "model_canary_not_eligible", canary_eligible: false, rate_limited: false };
+
+  // Console Inbox eligibility is resolved before the atomic DO claim so an
+  // event rejected before model eligibility does not consume model quota.
+  // The DO remains the race-safe message-id and quota correctness gate.
+  const inboxController = new AbortController();
+  const inboxTimer = setTimeout(() => inboxController.abort("line_inbox_dedupe_timeout"), LINE_MODEL_DEDUPE_LOOKUP_TIMEOUT_MS);
+  try {
+    const existing = await findExistingLineEvent(env, eventId, `line_${eventId}`, {
+      signal: inboxController.signal,
+      throwOnUnavailable: true,
+    });
+    if (existing?.id) return { eligible: false, deduped: true, reason: "message_id_processed", canary_eligible: true, rate_limited: false };
+  } catch (_) {
+    return { eligible: false, deduped: false, reason: "line_inbox_dedupe_unavailable", canary_eligible: true, rate_limited: false };
+  } finally {
+    clearTimeout(inboxTimer);
+  }
+
   if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) {
     return { eligible: false, deduped: false, reason: "model_dedupe_binding_missing", canary_eligible: true, rate_limited: false };
   }
@@ -939,20 +955,7 @@ async function claimKenjiModelEvent(env = {}, event = {}) {
     return { eligible: false, deduped: false, reason: error?.code === "MODEL_DEDUPE_TIMEOUT" ? "model_dedupe_timeout" : "model_dedupe_unavailable", canary_eligible: true, rate_limited: false, quota_window: quotaWindowSeconds };
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort("line_inbox_dedupe_timeout"), LINE_MODEL_DEDUPE_LOOKUP_TIMEOUT_MS);
-  try {
-    const existing = await findExistingLineEvent(env, eventId, `line_${eventId}`, {
-      signal: controller.signal,
-      throwOnUnavailable: true,
-    });
-    if (existing?.id) return { eligible: false, deduped: true, reason: "message_id_processed" };
-    return { eligible: true, deduped: false, reason: "", canary_eligible: true, rate_limited: false, quota_window: quotaWindowSeconds };
-  } catch (_) {
-    return { eligible: false, deduped: false, reason: "line_inbox_dedupe_unavailable" };
-  } finally {
-    clearTimeout(timer);
-  }
+  return { eligible: true, deduped: false, reason: "", canary_eligible: true, rate_limited: false, quota_window: quotaWindowSeconds };
 }
 
 function buildConsoleInboxRecord(event = {}, profile = null, intent = "") {

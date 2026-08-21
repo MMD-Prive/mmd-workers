@@ -24,13 +24,14 @@ const BASE_ENV = {
   AIRTABLE_BASE_ID: "test-base-id",
 };
 
-function modelDedupeNamespace() {
+function modelDedupeNamespace(onClaim = () => {}) {
   const claims = new Set();
   return {
     idFromName(name) { return name; },
     get() {
       return {
         async fetch(_url, init) {
+          onClaim();
           const { key } = JSON.parse(init.body);
           const claimed = !claims.has(key);
           claims.add(key);
@@ -471,9 +472,16 @@ test("redelivered unresolved events and repeated message IDs never create duplic
 
 test("already-processed message IDs are blocked before OpenAI and LINE Reply API", async () => {
   const calls = [];
+  let quotaClaims = 0;
   const deferred = [];
   const originalFetch = globalThis.fetch;
-  const env = { ...BASE_ENV, KENJI_MODEL_DEDUPE: modelDedupeNamespace() };
+  const env = {
+    ...BASE_ENV,
+    KENJI_MODEL_DEDUPE: {
+      idFromName() { quotaClaims += 1; return "must-not-be-called"; },
+      get() { quotaClaims += 1; throw new Error("Console Inbox rejection must precede quota"); },
+    },
+  };
   globalThis.fetch = async (url) => {
     const href = String(url);
     calls.push(href);
@@ -494,7 +502,36 @@ test("already-processed message IDs are blocked before OpenAI and LINE Reply API
     assert.equal(response.status, 200);
     assert.equal(calls.filter((url) => url === "https://api.openai.com/v1/responses").length, 0);
     assert.equal(calls.filter((url) => url.includes("/message/reply")).length, 0);
+    assert.equal(quotaClaims, 0);
     await Promise.allSettled(deferred);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Console Inbox lookup failure fails closed before model quota consumption", async () => {
+  let quotaClaims = 0;
+  let openaiCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const href = String(url);
+    if (href.includes("api.airtable.com")) return new Response("{}", { status: 503 });
+    if (href === "https://api.openai.com/v1/responses") openaiCalls += 1;
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    const response = await worker.fetch(await signedLineRequest([lineTextEvent("วันนี้เหนื่อยนิดหน่อย", {
+      message: { id: "msg-inbox-failure-no-quota", type: "text", text: "วันนี้เหนื่อยนิดหน่อย" },
+    })]), {
+      ...BASE_ENV,
+      KENJI_MODEL_DEDUPE: {
+        idFromName() { quotaClaims += 1; return "must-not-be-called"; },
+        get() { quotaClaims += 1; throw new Error("Console Inbox failure must precede quota"); },
+      },
+    });
+    assert.equal(response.status, 200);
+    assert.equal(quotaClaims, 0);
+    assert.equal(openaiCalls, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -524,6 +561,7 @@ test("missing or unavailable pre-model correctness dependencies fail closed with
 
 test("guarded model output falls back once and never reaches LINE as authority text", async () => {
   const calls = [];
+  let quotaClaims = 0;
   const originalFetch = globalThis.fetch;
   const originalCaches = globalThis.caches;
   globalThis.caches = undefined;
@@ -538,11 +576,12 @@ test("guarded model output falls back once and never reaches LINE as authority t
   try {
     const response = await worker.fetch(await signedLineRequest([lineTextEvent("ช่วยตอบแบบมั่นใจหน่อย")]), {
       ...BASE_ENV,
-      KENJI_MODEL_DEDUPE: modelDedupeNamespace(),
+      KENJI_MODEL_DEDUPE: modelDedupeNamespace(() => { quotaClaims += 1; }),
     });
     assert.equal(response.status, 200);
     const replies = calls.filter((call) => call.href.includes("/message/reply"));
     assert.equal(replies.length, 1);
+    assert.equal(quotaClaims, 1, "post-model guard rejection intentionally consumes one eligible attempt");
     const replyBody = JSON.parse(replies[0].init.body);
     assert.equal(replyBody.messages[0].text, "ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ");
     assert.doesNotMatch(replyBody.messages[0].text, /สมาชิก.*ใช้งานได้/);
@@ -550,6 +589,31 @@ test("guarded model output falls back once and never reaches LINE as authority t
     globalThis.fetch = originalFetch;
     if (originalCaches === undefined) delete globalThis.caches;
     else globalThis.caches = originalCaches;
+  }
+});
+
+test("provider failure after valid eligibility intentionally consumes one quota attempt", async () => {
+  let quotaClaims = 0;
+  let modelCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const href = String(url);
+    if (href.includes("api.airtable.com")) return new Response(JSON.stringify({ records: [] }), { status: 200 });
+    if (href === "https://api.openai.com/v1/responses") { modelCalls += 1; return new Response("{}", { status: 503 }); }
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    const response = await worker.fetch(await signedLineRequest([lineTextEvent("วันนี้เหนื่อยนิดหน่อย", {
+      message: { id: "msg-provider-failure-quota", type: "text", text: "วันนี้เหนื่อยนิดหน่อย" },
+    })]), {
+      ...BASE_ENV,
+      KENJI_MODEL_DEDUPE: modelDedupeNamespace(() => { quotaClaims += 1; }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(quotaClaims, 1);
+    assert.equal(modelCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
 

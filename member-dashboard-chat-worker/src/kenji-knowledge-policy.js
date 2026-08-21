@@ -1,4 +1,7 @@
-const MODEL_SAFE_RISK_LEVELS = new Set(["low", "medium"]);
+// Repository-owned Kenji knowledge sources currently define only medium and
+// critical. Grounding admits medium only; critical, unknown, and missing fail closed.
+const MODEL_SAFE_RISK_LEVELS = new Set(["medium"]);
+export const KENJI_KNOWLEDGE_ID_RE = /^[a-z0-9][a-z0-9_-]{2,79}$/;
 const INTERNAL_TEXT_RE = /(?:\badmin\b|internal|private|secret|token|cloudflare|worker|wrangler|airtable|ระบบหลังบ้าน|ข้อมูลภายใน|คำสั่งภายใน)/i;
 const clean = (value) => String(value == null ? "" : value).trim();
 const parseDate = (value) => {
@@ -7,6 +10,18 @@ const parseDate = (value) => {
   const parsed = Date.parse(raw);
   return Number.isFinite(parsed) ? parsed : NaN;
 };
+
+// Knowledge runtime IDs are 3-80 characters drawn from lowercase ASCII,
+// digits, underscore, and hyphen. Matching remains exact and case-sensitive.
+export function parseModelKnowledgeIdAllowlist(value) {
+  const raw = clean(value);
+  if (!raw) return { valid: true, ids: [] };
+  const entries = raw.split(/[\s,]+/).filter(Boolean);
+  if (!entries.length || entries.some((entry) => !KENJI_KNOWLEDGE_ID_RE.test(entry))) {
+    return { valid: false, ids: [] };
+  }
+  return { valid: true, ids: [...new Set(entries)] };
+}
 
 export function isApprovedLineModelKnowledge(card = {}, now = Date.now(), approvedIds = new Set()) {
   const answer = clean(card.customer_answer);
