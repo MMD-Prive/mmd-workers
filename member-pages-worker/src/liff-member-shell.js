@@ -21,6 +21,7 @@ export function handleLiffMemberShell(request, env = {}) {
     intent: normalizeIntent(url.searchParams.get("intent") || url.searchParams.get("liff_intent")),
     campaign: normalizeCampaign(url.searchParams.get("campaign")),
     view: normalizeView(url.searchParams.get("view")),
+    language: normalizeLanguage(url.searchParams.get("lang") || url.searchParams.get("locale")),
     promoCode: normalizePromoCode(url.searchParams.get("promo_code") || url.searchParams.get("code")),
     startEndpoint: "/member/api/liff/start",
     profileEndpoint: "/member/api/liff/profile",
@@ -55,25 +56,30 @@ function renderShell(config, nonce) {
     #message{white-space:pre-line;margin:30px 0 0;font-size:18px;line-height:1.65}.actions{display:grid;gap:10px;margin-top:24px}.actions:empty{display:none}
     button,textarea{width:100%;border:1px solid rgba(216,189,137,.28);border-radius:16px;padding:14px 16px;background:#171511;color:#f7f3eb;font:inherit;text-align:left}button{cursor:pointer}button:disabled{opacity:.55;cursor:default}textarea{min-height:124px;resize:vertical;line-height:1.55}.wish{display:grid;gap:12px;margin-top:16px}.wish-result{white-space:pre-line;color:#e7d5ad;line-height:1.65}
     .profile{display:grid;gap:12px;margin-top:22px}.summary{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.card{border:1px solid rgba(216,189,137,.18);border-radius:20px;padding:17px;background:rgba(8,8,8,.72)}.label{color:#948c82;font-size:11px;letter-spacing:.12em;text-transform:uppercase}.value{display:block;margin-top:6px;font-size:22px;line-height:1.15}.points{font-size:34px;color:#e6cb91}.history{display:grid;gap:9px;margin-top:12px}.event{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.07);font-size:13px}.event:first-child{border-top:0}.event-date,.event-status{color:#8f8880}.event-delta{color:#d9bd82}.care{margin-top:14px;border-color:rgba(225,193,126,.38);background:linear-gradient(145deg,rgba(45,35,19,.78),rgba(10,10,10,.86))}.care h2{margin:8px 0;font-size:21px}.care p{margin:0;color:#b7afa4;font-size:13px;line-height:1.6}.care-code{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;padding:13px 14px;border-radius:14px;background:#080807}.care-code strong{font-size:24px;letter-spacing:.15em;color:#ecd18f}.care button{margin-top:14px;text-align:center;background:linear-gradient(135deg,#f0d892,#b98b35);color:#181207;font-weight:700}
-    .status{margin-top:22px;color:#7f7972;font-size:12px;line-height:1.5}.hidden{display:none!important}@media(max-width:390px){main{padding:24px 16px}.summary{grid-template-columns:1fr}.event{grid-template-columns:66px 1fr}.event-status{grid-column:2}}
+    .member-nav{display:flex;gap:8px;margin:22px 0 0;padding:4px;border:1px solid rgba(216,189,137,.18);border-radius:999px;background:rgba(0,0,0,.22)}.member-nav button{border:0;border-radius:999px;padding:10px 12px;background:transparent;color:#aaa29a;font-size:12px;text-align:center}.member-nav button[aria-current="true"]{background:#f0d892;color:#181207;font-weight:800}.status{margin-top:22px;color:#7f7972;font-size:12px;line-height:1.5}.hidden{display:none!important}@media(max-width:390px){main{padding:24px 16px}.summary{grid-template-columns:1fr}.event{grid-template-columns:66px 1fr}.event-status{grid-column:2}}
   </style>
 </head>
 <body>
 <main>
-  <div class="mark">MMD Privé · Member Access</div>
-  <h1 class="title">Private Member Gateway</h1>
-  <p class="sub">LINE identity is checked securely before member information is shown.</p>
+  <div class="mark" data-copy="mark">MMD Privé · Member Access</div>
+  <h1 class="title" data-copy="title">My MMD</h1>
+  <p class="sub" data-copy="subtitle">ดูสถานะสมาชิก คะแนน และสิทธิ์ของคุณได้ใน LINE ที่เดียว</p>
   <div id="message" role="status" aria-live="polite">กำลังเปิดการเชื่อมต่อกับ MMD ครับ</div>
   <div id="actions" class="actions" aria-label="ตัวเลือก"></div>
+  <nav class="member-nav" aria-label="Member sections">
+    <button type="button" data-view="profile" aria-current="true" data-copy="navProfile">ภาพรวม</button>
+    <button type="button" data-view="points" aria-current="false" data-copy="navPoints">Points</button>
+    <button type="button" data-view="care_back" aria-current="false" data-copy="navCare">CARE BACK</button>
+  </nav>
   <section id="profile" class="profile hidden" aria-label="Member profile">
-    <div class="card"><span class="label">Member</span><strong id="profile-name" class="value">สมาชิก MMD</strong><span id="profile-status" class="sub"></span></div>
+    <div class="card"><span class="label" data-copy="memberLabel">Member</span><strong id="profile-name" class="value">สมาชิก MMD</strong><span id="profile-status" class="sub"></span></div>
     <div class="summary">
-      <div class="card"><span class="label">Tier</span><strong id="profile-tier" class="value">Member</strong></div>
-      <div id="points-card" class="card"><span class="label">Active Points</span><strong id="profile-points" class="value points">0</strong></div>
+      <div class="card"><span class="label" data-copy="tierLabel">Tier</span><strong id="profile-tier" class="value">Member</strong></div>
+      <div id="points-card" class="card"><span class="label" data-copy="pointsLabel">Active Points</span><strong id="profile-points" class="value points">0</strong></div>
     </div>
-    <div class="card"><span class="label">History · Last 1 Year</span><div id="history" class="history"></div></div>
+    <div class="card"><span class="label" data-copy="historyLabel">History · Last 1 Year</span><div id="history" class="history"></div></div>
     <div id="care" class="card care">
-      <span class="label">6 Years · Care Back</span><h2>Personal Care-Back Privilege</h2>
+      <span class="label" data-copy="careLabel">6 Years · Care Back</span><h2 data-copy="careTitle">Personal Care-Back Privilege</h2>
       <p id="care-message">ตรวจสอบผ่าน LINE เพื่อเปิดสิทธิ์ CARE BACK ก่อน คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จครับ</p>
       <div id="care-code" class="care-code hidden"><span class="label">Personal Code</span><strong id="care-code-value"></strong></div>
       <button id="care-button" type="button">ตรวจสิทธิ์ CARE BACK</button>
@@ -100,8 +106,28 @@ function renderShell(config, nonce) {
   const wishText = document.getElementById("wish-text");
   const wishSubmit = document.getElementById("wish-submit");
   const wishResult = document.getElementById("wish-result");
+  const locale = CONFIG.language || "th";
+  const copy = {
+    th: { mark:"MMD Privé · Member Access", title:"My MMD", subtitle:"ดูสถานะสมาชิก คะแนน และสิทธิ์ของคุณได้ใน LINE ที่เดียว", navProfile:"ภาพรวม", navPoints:"Points", navCare:"CARE BACK", memberLabel:"Member", tierLabel:"Tier", pointsLabel:"Active Points", historyLabel:"History · Last 1 Year", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", ready:"ข้อมูลสมาชิกของคุณพร้อมแล้วครับ", empty:"ยังไม่มีรายการในช่วง 1 ปีล่าสุดครับ" },
+    en: { mark:"MMD Privé · Member Access", title:"My MMD", subtitle:"Your membership, points and privileges — all in LINE.", navProfile:"Overview", navPoints:"Points", navCare:"CARE BACK", memberLabel:"Member", tierLabel:"Tier", pointsLabel:"Active Points", historyLabel:"History · Last 1 Year", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", ready:"Your member information is ready.", empty:"No activity in the last year." },
+    zh: { mark:"MMD Privé · Member Access", title:"我的 MMD", subtitle:"在 LINE 内查看会员状态、积分与专属权益。", navProfile:"概览", navPoints:"积分", navCare:"CARE BACK", memberLabel:"会员", tierLabel:"等级", pointsLabel:"当前积分", historyLabel:"最近一年记录", careLabel:"6 Years · Care Back", careTitle:"专属 Care Back 礼遇", ready:"会员信息已准备好。", empty:"最近一年暂无记录。" },
+  }[locale] || {};
   const allowedIntentIds = new Set(["signup", "renew", "status"]);
   let busy = false;
+
+  document.documentElement.lang = locale === "zh" ? "zh-CN" : locale;
+  for (const element of document.querySelectorAll("[data-copy]")) {
+    const key = element.getAttribute("data-copy");
+    if (copy[key]) element.textContent = copy[key];
+  }
+  for (const button of document.querySelectorAll("[data-view]")) {
+    button.addEventListener("click", () => {
+      const view = button.getAttribute("data-view");
+      for (const item of document.querySelectorAll("[data-view]")) item.setAttribute("aria-current", String(item === button));
+      const target = view === "points" ? document.getElementById("points-card") : view === "care_back" ? document.getElementById("care") : document.getElementById("profile");
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }
 
   function show(text) {
     message.textContent = String(text || "ไม่สามารถดำเนินการต่อได้ครับ กรุณากลับมาเปิดผ่าน LINE ของ MMD อีกครั้ง");
@@ -201,7 +227,7 @@ function renderShell(config, nonce) {
     history.replaceChildren();
     const items = Array.isArray(data.history) ? data.history : [];
     if (!items.length) {
-      const empty = document.createElement("p"); empty.className = "sub"; empty.textContent = "ยังไม่มีรายการ customer-safe ในช่วง 1 ปีล่าสุดครับ"; history.append(empty);
+      const empty = document.createElement("p"); empty.className = "sub"; empty.textContent = copy.empty || "ยังไม่มีรายการในช่วง 1 ปีล่าสุดครับ"; history.append(empty);
     }
     for (const item of items) {
       const row = document.createElement("div"); row.className = "event";
@@ -211,15 +237,15 @@ function renderShell(config, nonce) {
       state.textContent = item.type === "points" ? signedPoints(item.points_delta) : safeStatus(item.status);
       row.append(date, title, state); history.append(row);
     }
-    show("ข้อมูลสมาชิกของคุณพร้อมแล้วครับ");
+    show(copy.ready || "ข้อมูลสมาชิกของคุณพร้อมแล้วครับ");
     if (CONFIG.view === "points") document.getElementById("points-card").scrollIntoView({ behavior: "smooth", block: "center" });
     if (CONFIG.view === "care_back" || CONFIG.intent === "promo") document.getElementById("care").scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
-  function membershipStatus(value) { return ({ active:"Active member",grace:"Grace period",expired:"Expired",under_review:"Under review" })[value] || "Under review"; }
-  function safeStatus(value) { return ({completed:"Completed",active:"Active",expired:"Expired",posted:"Posted"})[value] || "Recorded"; }
-  function signedPoints(value) { const number = Number(value || 0); return (number >= 0 ? "+" : "") + new Intl.NumberFormat("th-TH").format(number) + " pts"; }
-  function shortDate(value) { const date = new Date(String(value || "") + "T00:00:00+07:00"); return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("th-TH",{day:"numeric",month:"short",year:"2-digit"}).format(date); }
+  function membershipStatus(value) { const labels = { th:{active:"สมาชิกใช้งานอยู่",grace:"อยู่ในช่วงผ่อนผัน",expired:"สมาชิกหมดอายุ",under_review:"อยู่ระหว่างตรวจสอบ"}, en:{active:"Active member",grace:"Grace period",expired:"Expired",under_review:"Under review"}, zh:{active:"会员有效",grace:"宽限期",expired:"会员已过期",under_review:"审核中"} }; return (labels[locale] || labels.th)[value] || (labels[locale] || labels.th).under_review; }
+  function safeStatus(value) { const labels = { th:{completed:"เสร็จสิ้น",active:"ใช้งานอยู่",expired:"หมดอายุ",posted:"บันทึกแล้ว"}, en:{completed:"Completed",active:"Active",expired:"Expired",posted:"Posted"}, zh:{completed:"已完成",active:"有效",expired:"已过期",posted:"已记录"} }; return (labels[locale] || labels.th)[value] || "Recorded"; }
+  function signedPoints(value) { const number = Number(value || 0); return (number >= 0 ? "+" : "") + new Intl.NumberFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-US" : "th-TH").format(number) + " pts"; }
+  function shortDate(value) { const date = new Date(String(value || "") + "T00:00:00+07:00"); return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-GB" : "th-TH",{day:"numeric",month:"short",year:"2-digit"}).format(date); }
 
   async function claimCareBack() {
     if (busy) return;
@@ -327,11 +353,7 @@ function renderShell(config, nonce) {
     try {
       await window.liff.init({ liffId: CONFIG.liffId });
       if (!window.liff.isLoggedIn()) {
-        if (!window.liff.isInClient()) {
-          show("กรุณาเปิดหน้านี้จาก LINE Mini App ของ MMD เพื่อยืนยันตัวตนครับ");
-          return;
-        }
-        window.liff.login();
+        window.liff.login({ redirectUri: window.location.href });
         return;
       }
       const idToken = window.liff.getIDToken();
@@ -387,6 +409,11 @@ function normalizeCampaign(value) {
 function normalizeView(value) {
   const view = String(value || "profile").trim().toLowerCase();
   return new Set(["profile", "points", "care_back"]).has(view) ? view : "profile";
+}
+
+function normalizeLanguage(value) {
+  const language = String(value || "th").trim().toLowerCase().split(/[-_]/)[0];
+  return new Set(["th", "en", "zh"]).has(language) ? language : "th";
 }
 
 function jsonForInlineScript(value) {
