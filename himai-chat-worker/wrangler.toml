@@ -15,6 +15,7 @@ REGISTER_PREFIX = "REGISTER HIMAI"
 HIMAI_CUSTOMERS_TABLE_ID = "tblmNV3LP9kvXOzcU"
 CONSOLE_INBOX_TABLE_ID = "tblFHmfpB2TTrzO2e"
 SHARED_SHOP_PRODUCTS_TABLE_ID = "tblzsmNLfP6J0kQ90"
+HIMAI_STOCK_MOVEMENTS_TABLE_ID = "tbl2GMPrDr6sBW997"
 
 # ---- Secrets (set via: wrangler secret put <NAME>) ----
 # AIRTABLE_TOKEN            - Airtable API authentication
