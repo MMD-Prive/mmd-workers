@@ -169,6 +169,7 @@ function env(overrides = {}) {
   const birthdayStore = overrides.BIRTHDAY_WISH_STORE || new MemoryBirthdayWishStore();
   const runtime = {
     LINE_LOGIN_CHANNEL_ID: "2000000000",
+    LINE_DASHBOARD_CHANNEL_ID: "2010862595",
     LIFF_SESSION_SECRET: "test-only-session-secret-not-production",
     MEMBER_STATUS_RESOLVER_SECRET: "test-only-member-status-resolver-secret-1234567890",
     LIFF_IDENTITY_KV: new MemoryKv(),
@@ -186,7 +187,7 @@ function env(overrides = {}) {
 function lineVerify({ sub = "U123", aud = "2000000000", exp = Math.floor(Date.now() / 1000) + 600, status = 200, malformed = false } = {}) {
   globalThis.fetch = async (_url, init) => {
     const params = new URLSearchParams(init.body);
-    assert.equal(params.get("client_id"), "2000000000");
+    assert.ok(["2000000000", "2010862595"].includes(params.get("client_id")));
     assert.ok(params.get("id_token"));
     if (malformed) return new Response("{not-json", { status, headers: { "content-type": "application/json" } });
     return new Response(JSON.stringify({ sub, aud, exp }), {
@@ -252,6 +253,76 @@ async function keyedDigestForTest(secret, value) {
 }
 
 describe("Phase 1 LIFF identity foundation security correction", () => {
+  it("verifies CARE BACK and Dashboard tokens only against the fixed server-owned audiences", async () => {
+    const clients = [];
+    const runtime = env({
+      LINE_LOGIN_CHANNEL_ID: "2010298002",
+      LINE_DASHBOARD_CHANNEL_ID: "2010862595",
+    });
+    globalThis.fetch = async (_url, init) => {
+      const params = new URLSearchParams(init.body);
+      const token = params.get("id_token");
+      const clientId = params.get("client_id");
+      clients.push({ token, clientId });
+      const expected = token === "care-back-token" ? "2010298002"
+        : token === "dashboard-token" ? "2010862595"
+          : "";
+      if (!expected || clientId !== expected) {
+        return Response.json({ error: "invalid_token" }, { status: 400 });
+      }
+      return Response.json({
+        sub: "U00000000000000000000000000000001",
+        aud: expected,
+        exp: Math.floor(Date.now() / 1000) + 600,
+      });
+    };
+
+    assert.equal((await request("/member/api/liff/start", { body: { id_token: "care-back-token" } }, runtime)).response.status, 200);
+    assert.deepEqual(clients.splice(0), [{ token: "care-back-token", clientId: "2010298002" }]);
+
+    assert.equal((await request("/member/api/liff/start", { body: { id_token: "dashboard-token" } }, runtime)).response.status, 200);
+    assert.deepEqual(clients.splice(0), [
+      { token: "dashboard-token", clientId: "2010298002" },
+      { token: "dashboard-token", clientId: "2010862595" },
+    ]);
+
+    const unknown = await request("/member/api/liff/start", { body: { id_token: "unknown-token" } }, runtime);
+    assert.equal(unknown.response.status, 401);
+    assert.equal(unknown.payload.error.code, "LINE_ID_TOKEN_INVALID");
+    assert.deepEqual(clients.splice(0), [
+      { token: "unknown-token", clientId: "2010298002" },
+      { token: "unknown-token", clientId: "2010862595" },
+    ]);
+  });
+
+  it("rejects cross-channel verification results and attacker-selected audiences", async () => {
+    const runtime = env({
+      LINE_LOGIN_CHANNEL_ID: "2010298002",
+      LINE_DASHBOARD_CHANNEL_ID: "2010862595",
+    });
+    globalThis.fetch = async (_url, init) => {
+      const clientId = new URLSearchParams(init.body).get("client_id");
+      const otherAudience = clientId === "2010298002" ? "2010862595" : "2010298002";
+      return Response.json({
+        sub: "U00000000000000000000000000000001",
+        aud: otherAudience,
+        exp: Math.floor(Date.now() / 1000) + 600,
+      });
+    };
+
+    const crossChannel = await request("/member/api/liff/start", { body: { id_token: "cross-channel-token" } }, runtime);
+    assert.equal(crossChannel.response.status, 401);
+    assert.equal(crossChannel.payload.error.code, "LINE_ID_TOKEN_INVALID");
+
+    for (const key of ["audience", "channel_id", "client_id", "liff_id"]) {
+      const selected = await request("/member/api/liff/start", {
+        body: { id_token: "dashboard-token", [key]: "2010862595" },
+      }, runtime);
+      assert.equal(selected.response.status, 400, key);
+      assert.equal(selected.payload.error.code, "BROWSER_IDENTITY_REJECTED", key);
+    }
+  });
+
   it("can verify a bounded staging token through a service binding without external LINE fetch", async () => {
     const calls = [];
     const runtime = env({

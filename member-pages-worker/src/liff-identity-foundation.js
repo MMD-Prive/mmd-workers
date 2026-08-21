@@ -619,34 +619,45 @@ export async function handleHallToken(request, env = {}) {
 }
 
 async function verifyLineIdToken(idToken, env) {
-  const channelId = String(env.LINE_LOGIN_CHANNEL_ID || "").trim();
-  if (!channelId) return { ok: false, status: 503, code: "LINE_CHANNEL_NOT_CONFIGURED", message: "LINE verification is not configured." };
+  const channelIds = approvedLineChannelIds(env);
+  if (!channelIds.length) return { ok: false, status: 503, code: "LINE_CHANNEL_NOT_CONFIGURED", message: "LINE verification is not configured." };
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Number(env.LIFF_VERIFY_TIMEOUT_MS || VERIFY_TIMEOUT_MS));
   try {
     const verifyUrl = env.LINE_ID_TOKEN_VERIFY_URL || LINE_VERIFY_URL;
-    const verifyInit = {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ id_token: idToken, client_id: channelId }),
-      signal: controller.signal,
-    };
-    const response = env.LINE_ID_TOKEN_VERIFIER?.fetch
-      ? await env.LINE_ID_TOKEN_VERIFIER.fetch(new Request(verifyUrl, verifyInit))
-      : await fetch(verifyUrl, verifyInit);
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || !payload || typeof payload !== "object") return { ok: false, status: 401, code: "LINE_ID_TOKEN_INVALID", message: "LINE identity verification failed." };
-    const sub = String(payload.sub || "").trim();
-    const aud = String(payload.aud || "").trim();
-    const exp = Number(payload.exp || 0);
-    if (!sub || aud !== channelId || !Number.isFinite(exp) || exp * 1000 <= Date.now()) return { ok: false, status: 401, code: "LINE_ID_TOKEN_INVALID", message: "LINE identity verification failed." };
-    return { ok: true, sub };
+    // Audience selection is server-owned. The browser supplies only the opaque
+    // ID token; it cannot name, add, or reorder verification audiences.
+    for (const channelId of channelIds) {
+      const verifyInit = {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ id_token: idToken, client_id: channelId }),
+        signal: controller.signal,
+      };
+      const response = env.LINE_ID_TOKEN_VERIFIER?.fetch
+        ? await env.LINE_ID_TOKEN_VERIFIER.fetch(new Request(verifyUrl, verifyInit))
+        : await fetch(verifyUrl, verifyInit);
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload || typeof payload !== "object") continue;
+      const sub = String(payload.sub || "").trim();
+      const aud = String(payload.aud || "").trim();
+      const exp = Number(payload.exp || 0);
+      if (sub && aud === channelId && Number.isFinite(exp) && exp * 1000 > Date.now()) return { ok: true, sub };
+    }
+    return { ok: false, status: 401, code: "LINE_ID_TOKEN_INVALID", message: "LINE identity verification failed." };
   } catch (error) {
     if (error?.name === "AbortError") return { ok: false, status: 504, code: "LINE_VERIFY_TIMEOUT", message: "LINE identity verification timed out." };
     return { ok: false, status: 502, code: "LINE_VERIFY_FAILED", message: "LINE identity verification failed." };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function approvedLineChannelIds(env) {
+  const values = [env.LINE_LOGIN_CHANNEL_ID, env.LINE_DASHBOARD_CHANNEL_ID]
+    .map((value) => String(value || "").trim())
+    .filter((value) => /^[A-Za-z0-9_-]{6,160}$/.test(value));
+  return [...new Set(values)].slice(0, 2);
 }
 
 async function resolveExistingMember(env, lineUserId) {
