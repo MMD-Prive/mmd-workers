@@ -135,12 +135,73 @@ test("CARE BACK requires a saved Birthday Wish before the personal coupon opens"
   const phrases = ["CARE BACK", "แคร์แบ็ก", "Birthday Wish", "CARE BACK ส่งสลิปแล้ว"];
   for (const phrase of phrases) {
     const event = lineTextEvent(phrase);
-    assert.equal(inferLineIntent(phrase, event), "care_back", phrase);
+    const expectedIntent = phrase === "CARE BACK ส่งสลิปแล้ว" ? "care_back_payment_points" : phrase === "Birthday Wish" ? "care_back_coupon_wish" : "care_back_overview";
+    assert.equal(inferLineIntent(phrase, event), expectedIntent, phrase);
     const reply = buildKenjiLineReply(event);
-    assert.match(reply, /Birthday Wish/);
-    assert.match(reply, /10%/);
-    assert.match(reply, /30 วัน/);
+    if (expectedIntent !== "care_back_payment_points") {
+      assert.match(reply, /Birthday Wish/);
+      assert.match(reply, /10%/);
+      assert.match(reply, /30 วัน/);
+    }
     assert.doesNotMatch(reply, /ยืนยันตัวตนแล้ว(?:รับ|ได้)คูปอง|คูปองอัตโนมัติ|Points อัตโนมัติ/);
+  }
+});
+
+test("CARE BACK model-off sub-intents answer at least 40 adversarial LINE cases deterministically", () => {
+  const cases = [
+    ["CARE BACK คืออะไร", "care_back_overview", /สิทธิ์ดูแลกลับ/],
+    ["แคร์แบ็กทำงานยังไง", "care_back_overview", /Birthday Wish/],
+    ["โปร 6 ปีมีอะไรบ้าง", "care_back_overview", /10%/],
+    ["6th anniversary", "care_back_overview", /30 วัน/],
+    ["CARE BACK มีกี่ phase", "care_back_dates", /31 สิงหาคม 2026/],
+    ["โปร 6 ปีหมดเขตเมื่อไหร่", "care_back_dates", /1–30 กันยายน 2026/],
+    ["Phase 2 เริ่มวันไหน", "care_back_dates", /1–30 กันยายน 2026/],
+    ["CARE BACK กันยายนได้สิทธิ์ซ้ำไหม", "care_back_dates", /ไม่สร้างสิทธิ์ซ้ำ/],
+    ["CARE BACK สมาชิกปัจจุบันได้อะไร", "care_back_current_member", /180 วัน/],
+    ["สมาชิก active โปร 6 ปีต่อวันยังไง", "care_back_current_member", /วันหมดอายุจริง/],
+    ["แคร์แบ็ก grace member", "care_back_current_member", /active หรือ grace/],
+    ["CARE BACK ยังไม่หมดอายุเพิ่มกี่วัน", "care_back_current_member", /180 วัน/],
+    ["CARE BACK สมาชิกหมดอายุได้อะไร", "care_back_expired_member", /90 วันและ 150 Points/],
+    ["former member โปร 6 ปี", "care_back_expired_member", /กลับเป็น active หรือ grace/],
+    ["แคร์แบ็กต่ออายุแล้วได้กี่แต้ม", "care_back_expired_member", /150 Points/],
+    ["expired CARE BACK ต้องทำอะไร", "care_back_expired_member", /ต่ออายุหรือชำระ/],
+    ["CARE BACK สมาชิกใหม่ Standard", "care_back_new_standard", /150 Welcome Points/],
+    ["standard ใหม่โปร 6 ปีได้กี่แต้ม", "care_back_new_standard", /150 Welcome Points/],
+    ["CARE BACK new standard 150 points", "care_back_new_standard", /ตรวจการสมัคร/],
+    ["แคร์แบ็ก สแตนดาร์ดใหม่", "care_back_new_standard", /ยังไม่ใช่การยืนยัน/],
+    ["CARE BACK สมาชิกใหม่ Premium", "care_back_new_premium", /250 Welcome Points/],
+    ["premium ใหม่โปร 6 ปีได้กี่แต้ม", "care_back_new_premium", /250 Welcome Points/],
+    ["CARE BACK new premium 250 points", "care_back_new_premium", /ตรวจการสมัคร/],
+    ["แคร์แบ็ก พรีเมียมใหม่", "care_back_new_premium", /ยังไม่ใช่การยืนยัน/],
+    ["CARE BACK สมาชิกใหม่เลือกอะไร", "care_back_new_member", /Standard.*150.*Premium.*250/],
+    ["Guest Pass ได้ CARE BACK Welcome Points ไหม", "care_back_new_member", /ไม่มี CARE BACK Welcome Points อัตโนมัติ/],
+    ["CARE BACK standard กับ premium", "care_back_new_member", /150 Welcome Points.*250 Welcome Points/],
+    ["CARE BACK birthday wish ต้องส่งก่อนหรือเปล่า", "care_back_coupon_wish", /ต้องส่ง Birthday Wish/],
+    ["คูปองวันเกิด 10% ใช้กี่ครั้ง", "care_back_coupon_wish", /1 ครั้ง/],
+    ["CARE BACK coupon หมดอายุกี่วัน", "care_back_coupon_wish", /30 วันหลัง activation/],
+    ["ยืนยันตัวตนแล้วคูปองเปิดเลยไหม birthday wish", "care_back_coupon_wish", /ยังไม่เปิดคูปอง/],
+    ["CARE BACK ยอดย้อนหลังคิดแต้มยังไง", "care_back_historical_points", /100 บาทเท่ากับ 1 Point/],
+    ["100 บาทกี่แต้ม", "care_back_historical_points", /1 Point/],
+    ["historical points ทุก 100 THB", "care_back_historical_points", /ตรวจสอบได้/],
+    ["CARE BACK จ่ายแล้วแต้มเข้าเลยไหม", "care_back_payment_points", /หลัง MMD ตรวจยอด/],
+    ["แคร์แบ็กส่งสลิปแล้วได้ 150 แต้มเลยไหม", "care_back_payment_points", /สลิปเป็นหลักฐานประกอบ/],
+    ["CARE BACK points เข้าเมื่อไหร่หลัง payment", "care_back_payment_points", /อัปเดตสถานะทางการ/],
+    ["CARE BACK 350 แต้มได้ Black Card เลยไหม", "care_back_black_card", /ไม่ได้รับ Black Card อัตโนมัติ/],
+    ["แคร์แบ็ก special selection ได้กี่แต้ม Black Card", "care_back_black_card", /สูงสุด 350 Points/],
+    ["CARE BACK บัตรดำอนุมัติแล้วใช่ไหม", "care_back_black_card", /ยังไม่ใช่การอนุมัติสิทธิ์/],
+    ["CARE BACK ผมได้อะไร", "care_back_personal_status", /ยังยืนยันจากข้อความนี้ไม่ได้/],
+    ["เช็กสิทธิ์ CARE BACK ให้ผมหน่อย", "care_back_personal_status", /ต้องตรวจสถานะสมาชิก/],
+    ["โปร 6 ปีผมอยู่กลุ่มไหน", "care_back_personal_status", /วันหมดอายุ/],
+    ["CARE BACK คะแนนของฉันได้กี่แต้ม", "care_back_personal_status", /มียอดเท่าไร/],
+  ];
+
+  assert.ok(cases.length >= 40);
+  for (const [text, expectedIntent, expectedReply] of cases) {
+    const event = lineTextEvent(text);
+    assert.equal(inferLineIntent(text, event), expectedIntent, text);
+    const reply = buildKenjiLineReply(event);
+    assert.match(reply, expectedReply, text);
+    assert.doesNotMatch(reply, /Welcome 66|365\s*วัน|1,?200|2,?500|1,?499|1,?500|1,?800|2,?000/i, text);
   }
 });
 
