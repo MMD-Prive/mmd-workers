@@ -50,7 +50,7 @@ describe("same-site /member/liff shell", () => {
     assert.equal(response.status, 200);
     const sessionCheck = html.indexOf("const existingProfile = await readProfile()");
     const liffInit = html.indexOf("await window.liff.init({ liffId: CONFIG.liffId })");
-    const liffLogin = html.indexOf("window.liff.login()");
+    const liffLogin = html.indexOf("window.liff.login({ redirectUri: window.location.href })");
     assert.ok(sessionCheck >= 0, "same-site session check must be rendered");
     assert.ok(liffInit > sessionCheck, "LIFF init must happen only after same-site session check");
     assert.ok(liffLogin > liffInit, "LIFF login must remain a fallback after LIFF init");
@@ -81,6 +81,19 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /"promoCode":""/);
     assert.match(html, /"campaign":""/);
     assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
+  });
+
+  it("renders the member dashboard navigation and bounded language variants inside LIFF", async () => {
+    const response = await shell("/member/liff?intent=status&view=points&lang=zh-CN");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /我的 MMD/);
+    assert.match(html, /data-view="profile"/);
+    assert.match(html, /data-view="points"/);
+    assert.match(html, /data-view="care_back"/);
+    assert.match(html, /"language":"zh"/);
+    assert.match(html, /会员信息已准备好/);
   });
 
   it("fails safely in rendered copy when the public LIFF id is not configured", async () => {
