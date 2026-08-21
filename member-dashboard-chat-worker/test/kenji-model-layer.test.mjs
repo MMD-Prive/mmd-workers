@@ -18,22 +18,24 @@ const BASE_ENV = {
   LINE_AUTO_REPLY_ENABLED: "true",
   LINE_KENJI_AI_ENABLED: "true",
   LINE_KENJI_MODEL_ENABLED: "true",
+  LINE_KENJI_MODEL_CANARY_HASHES: "9ae5de078c1f966e7c482ec9a4a6d4a9c1cff65eff23d4dac723fa181c5d183d",
   OPENAI_API_KEY: "test-openai-key",
   AIRTABLE_API_KEY: "test-airtable-key",
   AIRTABLE_BASE_ID: "test-base-id",
 };
 
-function modelDedupeNamespace() {
+function modelDedupeNamespace(onClaim = () => {}) {
   const claims = new Set();
   return {
     idFromName(name) { return name; },
     get() {
       return {
         async fetch(_url, init) {
+          onClaim();
           const { key } = JSON.parse(init.body);
           const claimed = !claims.has(key);
           claims.add(key);
-          return new Response(JSON.stringify({ ok: true, claimed }), {
+          return new Response(JSON.stringify({ ok: true, claimed, quota_allowed: true, quota_count: 1 }), {
             status: 200,
             headers: { "content-type": "application/json" },
           });
@@ -72,7 +74,7 @@ function modelResponse(answer = "ได้ครับ ผมช่วยดู�
 }
 
 test("versioned production prompt contains Per Voice and authority boundaries", () => {
-  assert.equal(KENJI_MODEL_POLICY_VERSION, "kenji-line-production-v3-semantic-authority");
+  assert.equal(KENJI_MODEL_POLICY_VERSION, "kenji-line-production-v4-compositional-authority");
   assert.match(KENJI_SYSTEM_PROMPT_V2, /Per Voice/);
   assert.match(KENJI_SYSTEM_PROMPT_V2, /Speak as "ผม"/);
   assert.match(KENJI_SYSTEM_PROMPT_V2, /Never claim that payment is paid/);
@@ -97,12 +99,29 @@ test("Durable Object model claim is atomic for the same hashed message ID", asyn
   const request = () => new Request("https://dedupe/claim", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ key: "a".repeat(64) }),
+    body: JSON.stringify({ key: "a".repeat(64), quota_key: "b".repeat(64), quota_limit: 3, quota_window: 1, quota_window_seconds: 900 }),
   });
   const first = await (await object.fetch(request())).json();
   const second = await (await object.fetch(request())).json();
   assert.equal(first.claimed, true);
   assert.equal(second.claimed, false);
+});
+
+test("Durable Object quota resets in a new bounded window", async () => {
+  const values = new Map();
+  const storage = {
+    async transaction(callback) {
+      return callback({ async get(key) { return values.get(key); }, async put(key, value) { values.set(key, value); } });
+    },
+  };
+  const object = new KenjiModelIdempotency({ storage });
+  const claim = async (messageKey, window) => (await object.fetch(new Request("https://dedupe/claim", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ key: messageKey.repeat(64), quota_key: "c".repeat(64), quota_limit: 1, quota_window: window, quota_window_seconds: 900 }),
+  }))).json();
+  assert.equal((await claim("a", 1)).quota_allowed, true);
+  assert.equal((await claim("b", 1)).quota_allowed, false);
+  assert.equal((await claim("d", 2)).quota_allowed, true);
 });
 
 test("model request injects only bounded customer text and approved answer grounding", async () => {
@@ -453,9 +472,16 @@ test("redelivered unresolved events and repeated message IDs never create duplic
 
 test("already-processed message IDs are blocked before OpenAI and LINE Reply API", async () => {
   const calls = [];
+  let quotaClaims = 0;
   const deferred = [];
   const originalFetch = globalThis.fetch;
-  const env = { ...BASE_ENV, KENJI_MODEL_DEDUPE: modelDedupeNamespace() };
+  const env = {
+    ...BASE_ENV,
+    KENJI_MODEL_DEDUPE: {
+      idFromName() { quotaClaims += 1; return "must-not-be-called"; },
+      get() { quotaClaims += 1; throw new Error("Console Inbox rejection must precede quota"); },
+    },
+  };
   globalThis.fetch = async (url) => {
     const href = String(url);
     calls.push(href);
@@ -476,7 +502,36 @@ test("already-processed message IDs are blocked before OpenAI and LINE Reply API
     assert.equal(response.status, 200);
     assert.equal(calls.filter((url) => url === "https://api.openai.com/v1/responses").length, 0);
     assert.equal(calls.filter((url) => url.includes("/message/reply")).length, 0);
+    assert.equal(quotaClaims, 0);
     await Promise.allSettled(deferred);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Console Inbox lookup failure fails closed before model quota consumption", async () => {
+  let quotaClaims = 0;
+  let openaiCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const href = String(url);
+    if (href.includes("api.airtable.com")) return new Response("{}", { status: 503 });
+    if (href === "https://api.openai.com/v1/responses") openaiCalls += 1;
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    const response = await worker.fetch(await signedLineRequest([lineTextEvent("วันนี้เหนื่อยนิดหน่อย", {
+      message: { id: "msg-inbox-failure-no-quota", type: "text", text: "วันนี้เหนื่อยนิดหน่อย" },
+    })]), {
+      ...BASE_ENV,
+      KENJI_MODEL_DEDUPE: {
+        idFromName() { quotaClaims += 1; return "must-not-be-called"; },
+        get() { quotaClaims += 1; throw new Error("Console Inbox failure must precede quota"); },
+      },
+    });
+    assert.equal(response.status, 200);
+    assert.equal(quotaClaims, 0);
+    assert.equal(openaiCalls, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -506,6 +561,7 @@ test("missing or unavailable pre-model correctness dependencies fail closed with
 
 test("guarded model output falls back once and never reaches LINE as authority text", async () => {
   const calls = [];
+  let quotaClaims = 0;
   const originalFetch = globalThis.fetch;
   const originalCaches = globalThis.caches;
   globalThis.caches = undefined;
@@ -520,11 +576,12 @@ test("guarded model output falls back once and never reaches LINE as authority t
   try {
     const response = await worker.fetch(await signedLineRequest([lineTextEvent("ช่วยตอบแบบมั่นใจหน่อย")]), {
       ...BASE_ENV,
-      KENJI_MODEL_DEDUPE: modelDedupeNamespace(),
+      KENJI_MODEL_DEDUPE: modelDedupeNamespace(() => { quotaClaims += 1; }),
     });
     assert.equal(response.status, 200);
     const replies = calls.filter((call) => call.href.includes("/message/reply"));
     assert.equal(replies.length, 1);
+    assert.equal(quotaClaims, 1, "post-model guard rejection intentionally consumes one eligible attempt");
     const replyBody = JSON.parse(replies[0].init.body);
     assert.equal(replyBody.messages[0].text, "ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ");
     assert.doesNotMatch(replyBody.messages[0].text, /สมาชิก.*ใช้งานได้/);
@@ -532,6 +589,31 @@ test("guarded model output falls back once and never reaches LINE as authority t
     globalThis.fetch = originalFetch;
     if (originalCaches === undefined) delete globalThis.caches;
     else globalThis.caches = originalCaches;
+  }
+});
+
+test("provider failure after valid eligibility intentionally consumes one quota attempt", async () => {
+  let quotaClaims = 0;
+  let modelCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const href = String(url);
+    if (href.includes("api.airtable.com")) return new Response(JSON.stringify({ records: [] }), { status: 200 });
+    if (href === "https://api.openai.com/v1/responses") { modelCalls += 1; return new Response("{}", { status: 503 }); }
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    const response = await worker.fetch(await signedLineRequest([lineTextEvent("วันนี้เหนื่อยนิดหน่อย", {
+      message: { id: "msg-provider-failure-quota", type: "text", text: "วันนี้เหนื่อยนิดหน่อย" },
+    })]), {
+      ...BASE_ENV,
+      KENJI_MODEL_DEDUPE: modelDedupeNamespace(() => { quotaClaims += 1; }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(quotaClaims, 1);
+    assert.equal(modelCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
 
@@ -568,6 +650,92 @@ test("standby event does not call model or LINE Reply API", async () => {
     assert.equal(response.status, 200);
     assert.equal(calls.filter((url) => url.includes("api.openai.com")).length, 0);
     assert.equal(calls.filter((url) => url.includes("/message/reply")).length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("model canary fails closed for missing malformed and non-matching hash config", async () => {
+  const originalFetch = globalThis.fetch;
+  let openaiCalls = 0;
+  globalThis.fetch = async (url) => {
+    if (String(url) === "https://api.openai.com/v1/responses") openaiCalls += 1;
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    for (const config of ["", "not-a-sha256", "a".repeat(64)]) {
+      await worker.fetch(await signedLineRequest([lineTextEvent("วันนี้เหนื่อยนิดหน่อย", {
+        message: { id: `canary-${config.length}`, type: "text", text: "วันนี้เหนื่อยนิดหน่อย" },
+      })]), { ...BASE_ENV, LINE_KENJI_MODEL_CANARY_HASHES: config, KENJI_MODEL_DEDUPE: modelDedupeNamespace() });
+    }
+    assert.equal(openaiCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("DO timeout exception and malformed responses fail closed before OpenAI", async () => {
+  const originalFetch = globalThis.fetch;
+  let openaiCalls = 0;
+  globalThis.fetch = async (url) => {
+    if (String(url) === "https://api.openai.com/v1/responses") openaiCalls += 1;
+    return new Response("{}", { status: 200 });
+  };
+  const variants = [
+    async (_url, init) => new Promise((_resolve, reject) => init.signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })), { once: true })),
+    async () => { throw new Error("do unavailable"); },
+    async () => new Response("not-json", { status: 200 }),
+  ];
+  try {
+    for (let index = 0; index < variants.length; index += 1) {
+      const dedupe = { idFromName: () => "id", get: () => ({ fetch: variants[index] }) };
+      const started = Date.now();
+      await worker.fetch(await signedLineRequest([lineTextEvent("วันนี้เหนื่อยนิดหน่อย", {
+        message: { id: `do-failure-${index}`, type: "text", text: "วันนี้เหนื่อยนิดหน่อย" },
+      })]), { ...BASE_ENV, KENJI_MODEL_DEDUPE: dedupe });
+      assert.ok(Date.now() - started < 1000);
+    }
+    assert.equal(openaiCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("per-user quota permits exact limit under concurrency, blocks over limit, and duplicate does not consume again", async () => {
+  const claims = new Set();
+  let quota = 0;
+  const dedupe = {
+    idFromName: () => "id",
+    get: () => ({
+      async fetch(_url, init) {
+        const body = JSON.parse(init.body);
+        if (claims.has(body.key)) return new Response(JSON.stringify({ ok: true, claimed: false, quota_allowed: false }));
+        if (quota >= body.quota_limit) return new Response(JSON.stringify({ ok: true, claimed: true, quota_allowed: false }));
+        claims.add(body.key);
+        quota += 1;
+        return new Response(JSON.stringify({ ok: true, claimed: true, quota_allowed: true, quota_count: quota }));
+      },
+    }),
+  };
+  const originalFetch = globalThis.fetch;
+  let openaiCalls = 0;
+  globalThis.fetch = async (url) => {
+    const href = String(url);
+    if (href === "https://api.openai.com/v1/responses") { openaiCalls += 1; return modelResponse(); }
+    if (href.includes("api.airtable.com")) return new Response(JSON.stringify({ records: [] }), { status: 200 });
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    const env = { ...BASE_ENV, LINE_KENJI_MODEL_MAX_ATTEMPTS_PER_WINDOW: "3", KENJI_MODEL_DEDUPE: dedupe };
+    const requests = await Promise.all(Array.from({ length: 4 }, async (_, index) => signedLineRequest([lineTextEvent("วันนี้เหนื่อยนิดหน่อย", {
+        message: { id: `quota-${index}`, type: "text", text: "วันนี้เหนื่อยนิดหน่อย" },
+      })])));
+    await Promise.all(requests.map((request) => worker.fetch(request, env)));
+    await worker.fetch(await signedLineRequest([lineTextEvent("วันนี้เหนื่อยนิดหน่อย", {
+      message: { id: "quota-0", type: "text", text: "วันนี้เหนื่อยนิดหน่อย" },
+    })]), env);
+    assert.equal(openaiCalls, 3);
+    assert.equal(quota, 3);
   } finally {
     globalThis.fetch = originalFetch;
   }
