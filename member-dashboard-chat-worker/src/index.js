@@ -661,7 +661,19 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     const deadlineAt = Date.now() + KENJI_TOTAL_DEADLINE_MS;
     const grounding = await getModelGrounding(env, eventText, deadlineAt);
     knowledgeHits = grounding.length;
-    model = await generateKenjiModelReply({ text: eventText, knowledge: grounding, env, deadline_at: deadlineAt });
+    model = await generateKenjiModelReply({
+      text: eventText,
+      knowledge: grounding,
+      env,
+      deadline_at: deadlineAt,
+      capability: capabilityDecision.capability,
+      validation_context: {
+        inferred_capability: capabilityDecision.capability,
+        requested_domain: capabilityDecision.requested_domain,
+        deterministic_intent: intent,
+        protected_context: capabilityDecision.capability === KENJI_CAPABILITIES.PROTECTED_AUTHORITY || capabilityDecision.capability === KENJI_CAPABILITIES.HUMAN_HANDOFF,
+      },
+    });
     if (model.success && model.text) {
       return {
         text: model.text,
@@ -1527,6 +1539,10 @@ async function handleLineWebhook(request, env, ctx = null) {
       knowledge_hits: Number(replyDecision.knowledge_hits) || 0,
       guard_blocked: Boolean(replyDecision.guard_blocked),
       guard_reason: asString(replyDecision.guard_reason) || null,
+      capability: capabilityDecision.capability,
+      requested_domain: capabilityDecision.requested_domain,
+      protected_context: capabilityDecision.capability === KENJI_CAPABILITIES.PROTECTED_AUTHORITY || capabilityDecision.capability === KENJI_CAPABILITIES.HUMAN_HANDOFF,
+      model_output_guard_reason: replyDecision.model_attempted ? (asString(replyDecision.guard_reason) || null) : null,
       model_deduped: Boolean(modelPreflight.deduped),
       model_dedupe_reason: asString(modelPreflight.reason) || null,
     }));

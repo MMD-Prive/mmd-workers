@@ -109,6 +109,7 @@ test("model request injects only bounded customer text and approved answer groun
   const calls = [];
   const longText = `คุยเล่นหน่อย ${"ก".repeat(900)}`;
   const result = await generateKenjiModelReply({
+    capability: "safe_conversation",
     text: longText,
     knowledge: [{
       knowledge_id: "tblInternalMustNotLeave",
@@ -138,6 +139,7 @@ test("model request injects only bounded customer text and approved answer groun
 
 test("model timeout fails safely", async () => {
   const result = await generateKenjiModelReply({
+    capability: "safe_conversation",
     text: "คุยเล่นหน่อย",
     env: { ...BASE_ENV, KENJI_MODEL_TIMEOUT_MS: "8000" },
     deadline_at: Date.now() + 100,
@@ -153,6 +155,7 @@ test("model timeout fails safely", async () => {
 test("an exhausted shared deadline prevents the OpenAI request entirely", async () => {
   let calls = 0;
   const result = await generateKenjiModelReply({
+    capability: "safe_conversation",
     text: "คุยเล่นหน่อย",
     env: { ...BASE_ENV, KENJI_MODEL_TIMEOUT_MS: "8000" },
     deadline_at: Date.now() - 1,
@@ -169,6 +172,7 @@ test("an exhausted shared deadline prevents the OpenAI request entirely", async 
 for (const status of [400, 429, 500, 503]) {
   test(`model HTTP ${status} fails safely without consuming provider error text`, async () => {
     const result = await generateKenjiModelReply({
+      capability: "safe_conversation",
       text: "คุยเล่นหน่อย",
       env: BASE_ENV,
       fetchImpl: async () => new Response("private provider error", { status }),
@@ -188,6 +192,7 @@ for (const payload of [
 ]) {
   test(`malformed or empty model response fails safely: ${JSON.stringify(payload)}`, async () => {
     const result = await generateKenjiModelReply({
+      capability: "safe_conversation",
       text: "คุยเล่นหน่อย",
       env: BASE_ENV,
       fetchImpl: async () => new Response(payload === null ? "null" : JSON.stringify(payload), {
