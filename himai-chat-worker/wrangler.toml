@@ -1,5 +1,5 @@
 name = "himai-chat-worker"
-main = "src/index.js"
+main = "src/entry.js"
 compatibility_date = "2026-04-11"
 
 [vars]
@@ -14,9 +14,10 @@ REGISTER_PREFIX = "REGISTER HIMAI"
 # Airtable table IDs (configurable per environment)
 HIMAI_CUSTOMERS_TABLE_ID = "tblmNV3LP9kvXOzcU"
 CONSOLE_INBOX_TABLE_ID = "tblFHmfpB2TTrzO2e"
+SHARED_SHOP_PRODUCTS_TABLE_ID = "tblzsmNLfP6J0kQ90"
 
 # ---- Secrets (set via: wrangler secret put <NAME>) ----
-# AIRTABLE_TOKEN           - Airtable API authentication
-# LINE_CHANNEL_SECRET      - LINE webhook signature verification
+# AIRTABLE_TOKEN            - Airtable API authentication
+# LINE_CHANNEL_SECRET       - LINE webhook signature verification
 # LINE_CHANNEL_ACCESS_TOKEN - LINE Bot API token
-# INTERNAL_TOKEN           - Internal endpoint authorization
+# INTERNAL_TOKEN            - Internal endpoint authorization
