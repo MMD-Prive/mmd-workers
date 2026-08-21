@@ -110,9 +110,9 @@ export function buildProtectedCapabilityReply(decision = {}) {
   if (domain === "internal_access") return "ผมไม่สามารถเปิดหรือให้สิทธิ์เข้าถึง dashboard ระบบหลังบ้าน หรือข้อมูลภายในได้ครับ";
   if (domain === "availability") return "ผมยังยืนยันว่าใครว่างหรือพร้อมรับงานไม่ได้ครับ ส่งวัน เวลา พื้นที่ และรูปแบบงานมาได้ แล้ว MMD จะตรวจความพร้อมก่อนยืนยันครับ";
   if (domain === "booking") return "ผมยังล็อกเวลาหรือยืนยันการจองจากข้อความนี้ไม่ได้ครับ ส่งวัน เวลา พื้นที่ และรายละเอียดงานมาได้ แล้ว MMD จะตรวจและยืนยันอย่างเป็นทางการครับ";
-  if (domain === "payment") return "ได้ครับ แต่ผมจะไม่ยืนยันจากข้อความอย่างเดียว เช็กสถานะรายการจริงใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → https://member-pages-worker.malemodel-bkk.workers.dev/member/liff";
-  if (domain === "membership") return "เช็กสถานะสมาชิกของคุณใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → https://member-pages-worker.malemodel-bkk.workers.dev/member/liff";
-  if (domain === "points") return "เช็กแต้มกับประวัติรายการของคุณใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → https://member-pages-worker.malemodel-bkk.workers.dev/member/liff";
+  if (domain === "payment") return "ได้ครับ แต่ผมจะไม่ยืนยันจากข้อความอย่างเดียว เช็กสถานะรายการจริงใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → https://miniapp.line.me/2010862595-yT4DCEMc?intent=status&view=profile";
+  if (domain === "membership") return "เช็กสถานะสมาชิกของคุณใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → https://miniapp.line.me/2010862595-yT4DCEMc?intent=status&view=profile";
+  if (domain === "points") return "เช็กแต้มกับประวัติรายการของคุณใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → https://miniapp.line.me/2010862595-yT4DCEMc?intent=status&view=points";
   if (domain === "campaign_entitlement" || domain === "coupon_activation") return "ผมยังยืนยันสิทธิ์หรือการเปิดใช้งานจากข้อความนี้ไม่ได้ครับ ต้องตรวจสถานะและเงื่อนไขที่บันทึกสำเร็จก่อนครับ";
   return "ผมยังยืนยันหรืออนุมัติสถานะนี้จากข้อความอย่างเดียวไม่ได้ครับ ต้องให้ MMD ตรวจข้อมูลทางการก่อนครับ";
 }

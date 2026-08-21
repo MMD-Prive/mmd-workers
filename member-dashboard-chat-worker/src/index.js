@@ -20,8 +20,9 @@ const WORKER_NAME = "member-dashboard-chat-worker";
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webhook/line", "/webhook/line/"]);
 const MEMBER_LIFF_PREFIX = "/member/api/liff/";
 const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
-const MEMBER_LIFF_ID = "2010298002-mbx9kqQn";
-const MEMBER_LIFF_DASHBOARD_URL = "https://member-pages-worker.malemodel-bkk.workers.dev/member/liff";
+const MEMBER_LIFF_ID = "2010862595-yT4DCEMc";
+const MEMBER_LIFF_PROFILE_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}?intent=status&view=profile`;
+const MEMBER_LIFF_POINTS_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}?intent=status&view=points`;
 const LINE_RICH_MENU_SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const LINE_RICH_MENU_PUBLIC_WORLD_BASE_PATH = "/v1/internal/line/rich-menu/public-world";
 const LINE_RICH_MENU_DEFAULT_PATH = "/v1/internal/line/rich-menu/default";
@@ -600,15 +601,15 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "payment_status") {
-    return `ได้ครับ แต่ผมจะไม่ยืนยันจากข้อความอย่างเดียว เช็กสถานะรายการจริงใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → ${MEMBER_LIFF_DASHBOARD_URL}`;
+    return `ได้ครับ แต่ผมจะไม่ยืนยันจากข้อความอย่างเดียว เช็กสถานะรายการจริงใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → ${MEMBER_LIFF_PROFILE_URL}`;
   }
 
   if (intent === "membership_status") {
-    return `เช็กสถานะสมาชิกของคุณใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → ${MEMBER_LIFF_DASHBOARD_URL}`;
+    return `เช็กสถานะสมาชิกของคุณใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → ${MEMBER_LIFF_PROFILE_URL}`;
   }
 
   if (intent === "points_status") {
-    return `เช็กแต้มกับประวัติรายการของคุณใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → ${MEMBER_LIFF_DASHBOARD_URL}`;
+    return `เช็กแต้มกับประวัติรายการของคุณใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → ${MEMBER_LIFF_POINTS_URL}`;
   }
 
   if (intent === "points") {
@@ -1093,7 +1094,7 @@ function mmdbkkMembershipUrl(entryRoute, extra = "") {
 }
 
 function memberLiffUrl(intent = "status", view = "profile") {
-  const url = new URL(`https://liff.line.me/${MEMBER_LIFF_ID}`);
+  const url = new URL(`https://miniapp.line.me/${MEMBER_LIFF_ID}`);
   url.searchParams.set("intent", intent);
   url.searchParams.set("view", view);
   return url.toString();

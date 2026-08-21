@@ -147,7 +147,9 @@ test("canonical personal payment, membership, and points status route to LIFF de
       LINE_KENJI_KNOWLEDGE_ENABLED: "false",
     });
     assert.match(decision.text, replyPattern, text);
-    assert.match(decision.text, /https:\/\/member-pages-worker\.malemodel-bkk\.workers\.dev\/member\/liff/, text);
+    const expectedView = domain === "points" ? "points" : "profile";
+    assert.match(decision.text, new RegExp(`https://miniapp\\.line\\.me/2010862595-yT4DCEMc\\?intent=status&view=${expectedView}`), text);
+    assert.doesNotMatch(decision.text, /workers\.dev|2010298002-mbx9kqQn/, text);
     assert.doesNotMatch(decision.text, /ชำระสำเร็จ|แต้มเข้าแล้ว|สมาชิก(?:ของคุณ)?ใช้งานอยู่/i, text);
     assert.equal(decision.reply_source, "system_truth", text);
     assert.equal(decision.model_attempted, false, text);

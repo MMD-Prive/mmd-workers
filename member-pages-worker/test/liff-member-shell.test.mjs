@@ -21,6 +21,17 @@ async function stagingShell(hostname, path, runtime) {
 }
 
 describe("same-site /member/liff shell", () => {
+  it("renders the dedicated published Member Dashboard LIFF ID", async () => {
+    const response = await shell("/member/liff?intent=status&view=profile", {
+      runtime: env({ LINE_LIFF_ID: "2010862595-yT4DCEMc" }),
+    });
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /"liffId":"2010862595-yT4DCEMc"/);
+    assert.doesNotMatch(html, /2010298002-mbx9kqQn/);
+  });
+
   it("serves a no-store same-site LIFF shell that bootstraps only through the LIFF start API", async () => {
     const response = await shell("/member/liff?intent=renew&code=KJ-PRV-ABC123");
     const html = await response.text();
