@@ -313,9 +313,10 @@ async function buildLiffMemberProfile(env, memberRecord, lineUserId) {
   const email = normalizeEmail(fields.email || fields[env.AIRTABLE_MEMBERS_EMAIL_FIELD || "Contact Email"] || "");
   const memberId = String(fields.member_id || "").trim();
   const cutoff = memberHistoryCutoff();
+  const membershipStatus = normalizeCustomerMembershipStatus(fields[env.AIRTABLE_MEMBERS_STATUS_FIELD || "Membership Status"]);
   const [sessions, packageResult, points, payment] = await Promise.all([
     listMemberServiceHistory(env, { lineUserId, email, cutoff }),
-    listMemberPackageHistory(env, { email, cutoff }),
+    listMemberPackageHistory(env, { email, cutoff, membershipStatus }),
     listMemberPointsHistory(env, { email, cutoff }),
     listMemberPaymentStatus(env, { email }),
   ]);
@@ -331,7 +332,7 @@ async function buildLiffMemberProfile(env, memberRecord, lineUserId) {
       120,
     ) || "สมาชิก MMD",
     tier: normalizeCustomerTier(fields[env.AIRTABLE_MEMBERS_TIER_FIELD || "Membership Tier"]),
-    membership_status: normalizeCustomerMembershipStatus(fields[env.AIRTABLE_MEMBERS_STATUS_FIELD || "Membership Status"]),
+    membership_status: membershipStatus,
     points: nonNegativeInteger(fields[env.AIRTABLE_MEMBERS_POINTS_FIELD || "Points Balance"]),
     payment_status: payment.status,
     history_window: { from: cutoff, to: bangkokCalendarDate(), timezone: "Asia/Bangkok" },
@@ -388,20 +389,17 @@ async function listMemberServiceHistory(env, { lineUserId, email, cutoff }) {
   }).filter(Boolean);
 }
 
-async function listMemberPackageHistory(env, { email, cutoff }) {
+async function listMemberPackageHistory(env, { email, cutoff, membershipStatus }) {
   if (!email) return { history: [], membership_expires_at: "" };
   const records = await airtableList(env, table(env, "MEMBER_PACKAGES"), {
     filterByFormula: `LOWER({${env.AIRTABLE_MEMBER_PACKAGES_EMAIL_FIELD || "member_email"}})=${formulaString(email)}`,
     sort: [{ field: env.AIRTABLE_MEMBER_PACKAGES_CREATED_FIELD || "created_at", direction: "desc" }],
     maxRecords: 50,
   });
-  let membershipExpiresAt = "";
   const history = records.map((record) => {
     const f = record.fields || {};
     const date = safeHistoryDate(f.start_date || f.created_at || f.end_date);
     const status = String(f.status || "").trim().toLowerCase();
-    const endDate = safeHistoryDate(f.end_date);
-    if (status === "active" && endDate && endDate > membershipExpiresAt) membershipExpiresAt = endDate;
     if (!date || date < cutoff || !["active", "expired"].includes(status)) return null;
     return {
       type: "membership",
@@ -410,7 +408,34 @@ async function listMemberPackageHistory(env, { email, cutoff }) {
       status,
     };
   }).filter(Boolean);
-  return { history, membership_expires_at: membershipExpiresAt };
+  return {
+    history,
+    membership_expires_at: currentMembershipExpiry(records, membershipStatus, env.AIRTABLE_MEMBER_PACKAGES_CREATED_FIELD || "created_at"),
+  };
+}
+
+function currentMembershipExpiry(records, membershipStatus, createdField) {
+  if (!Array.isArray(records) || !records.length || !["active", "grace"].includes(membershipStatus)) return "";
+
+  let current = records[0];
+  if (records.length > 1) {
+    const dated = records.map((record) => ({
+      record,
+      createdAt: strictTimestamp(record?.fields?.[createdField]),
+    }));
+    // Legacy or tied rows do not establish a unique current package. An older
+    // row must never win merely because it carries a later end_date.
+    if (dated.some((item) => item.createdAt === null)) return "";
+    const newest = Math.max(...dated.map((item) => item.createdAt));
+    const winners = dated.filter((item) => item.createdAt === newest);
+    if (winners.length !== 1) return "";
+    current = winners[0].record;
+  }
+
+  const fields = current?.fields || {};
+  const packageStatus = String(fields.status || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (!["active", "grace", "grace_period"].includes(packageStatus)) return "";
+  return strictCalendarDate(fields.end_date);
 }
 
 async function listMemberPointsHistory(env, { email, cutoff }) {
@@ -461,6 +486,24 @@ function safeHistoryDate(value) {
   return new Date(text).toISOString().slice(0, 10);
 }
 
+function strictCalendarDate(value) {
+  const text = String(value || "").trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return "";
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? text : "";
+}
+
+function strictTimestamp(value) {
+  const text = String(value || "").trim();
+  if (!text || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(text)) return null;
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function safeCustomerText(value, maxLength) {
   return String(value || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, maxLength);
 }
@@ -487,7 +530,9 @@ function normalizeCustomerPaymentStatus(paymentValue, verificationValue) {
   const payment = String(paymentValue || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
   const verification = String(verificationValue || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
   if (verification === "verified" && payment === "paid") return "verified";
-  if (verification === "pending") return "pending_review";
+  // Production writers create pending+pending evidence and paid+verified truth.
+  // No authoritative writer currently establishes paid+pending as a public state.
+  if (verification === "pending" && payment === "pending") return "pending_review";
   return "unavailable";
 }
 
