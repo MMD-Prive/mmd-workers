@@ -1,0 +1,148 @@
+name: Deploy mms-worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "mms-worker/**"
+      - ".github/workflows/deploy-mms-worker.yml"
+
+concurrency:
+  group: deploy-mms-worker-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      AIRTABLE_API_TOKEN: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      NO_COLOR: "1"
+      WRANGLER_SEND_METRICS: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Normalize Cloudflare credentials
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const clean = (value) => String(value || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
+          const token = clean(process.env.CLOUDFLARE_API_TOKEN);
+          const accountId = clean(process.env.CLOUDFLARE_ACCOUNT_ID);
+          if (!token || !accountId) throw new Error("Cloudflare credentials are missing after normalization");
+          console.log(`::add-mask::${token}`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\nCLOUDFLARE_ACCOUNT_ID=${accountId}\n`);
+          NODE
+
+      - name: Install mms-worker dependencies
+        run: npm install --prefix mms-worker --ignore-scripts
+
+      - name: Test MMS contracts and privacy boundary
+        run: npm test --prefix mms-worker
+
+      - name: Validate route-free production boundary
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const config = JSON.parse(fs.readFileSync("mms-worker/wrangler.jsonc", "utf8"));
+          if (config.name !== "mms-worker") throw new Error("mms-worker name is required");
+          if (config.workers_dev !== true) throw new Error("workers.dev endpoint must remain enabled");
+          if (config.preview_urls !== false) throw new Error("preview URLs must remain disabled");
+          if (Array.isArray(config.routes) && config.routes.length) throw new Error("custom routes are forbidden in v1");
+          if (config.vars?.MMS_INTERNAL_HOST !== "mms.internal") throw new Error("service-binding internal host is required");
+          if (!config.r2_buckets?.some((binding) => binding.binding === "MMS_PRIVATE_UPLOADS")) throw new Error("private R2 binding is required");
+          if (!config.durable_objects?.bindings?.some((binding) => binding.name === "MMS_COORDINATOR")) throw new Error("coordinator Durable Object is required");
+          NODE
+
+      - name: Validate Cloudflare bundle
+        working-directory: mms-worker
+        run: npx wrangler deploy --dry-run
+
+      - name: Ensure private MMS R2 bucket exists
+        working-directory: mms-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! npx wrangler r2 bucket info mms-private-uploads >/dev/null 2>&1; then
+            npx wrangler r2 bucket create mms-private-uploads
+          fi
+
+      - name: Prepare optional Airtable secret
+        id: airtable
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const token = String(process.env.AIRTABLE_API_TOKEN || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
+          const path = process.env.RUNNER_TEMP + "/mms-worker.env";
+          if (token) {
+            console.log(`::add-mask::${token}`);
+            fs.writeFileSync(path, `AIRTABLE_API_TOKEN=${token}\n`, { mode: 0o600 });
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, "configured=true\n");
+          } else {
+            fs.writeFileSync(path, "", { mode: 0o600 });
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, "configured=false\n");
+          }
+          NODE
+
+      - name: Deploy mms-worker
+        id: deploy
+        working-directory: mms-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(deploy --keep-vars)
+          if [ "${{ steps.airtable.outputs.configured }}" = "true" ]; then
+            args+=(--secrets-file "$RUNNER_TEMP/mms-worker.env")
+          fi
+          npx wrangler "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/mms-worker-deploy.log"
+          url="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' "$RUNNER_TEMP/mms-worker-deploy.log" | tail -n 1)"
+          if [ -z "$url" ]; then url="https://mms-worker.malemodel-bkk.workers.dev"; fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Verify production health and catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="${{ steps.deploy.outputs.url }}"
+          for attempt in $(seq 1 12); do
+            code="$(curl --silent --show-error --output "$RUNNER_TEMP/mms-health.json" --write-out '%{http_code}' "$url/health" || true)"
+            if [ "$code" = "200" ]; then break; fi
+            sleep 5
+          done
+          test "${code:-}" = "200"
+          curl --fail --silent --show-error "$url/mms/api/catalog" > "$RUNNER_TEMP/mms-catalog.json"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const health = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/mms-health.json", "utf8"));
+          const catalog = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/mms-catalog.json", "utf8"));
+          if (!health.ok || health.worker !== "mms-worker") throw new Error("mms-worker health identity failed");
+          if (!health.bindings?.coordinator || !health.bindings?.private_uploads) throw new Error("required production bindings are missing");
+          if (!catalog.ok || catalog.data?.skills?.length !== 8) throw new Error("MMS skill catalog failed");
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
+            "## mms-worker live",
+            "",
+            `- URL: ${{ steps.deploy.outputs.url }}`,
+            `- Durable Object: ${health.bindings.coordinator ? "ready" : "missing"}`,
+            `- Private R2: ${health.bindings.private_uploads ? "ready" : "missing"}`,
+            `- Airtable runtime secret: ${health.bindings.airtable ? "ready" : "pending"}`,
+            `- Skill catalog: ${catalog.data.skills.length}/8`,
+            "",
+          ].join("\n"));
+          NODE
