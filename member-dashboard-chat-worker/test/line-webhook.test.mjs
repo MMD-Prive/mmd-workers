@@ -135,12 +135,207 @@ test("CARE BACK requires a saved Birthday Wish before the personal coupon opens"
   const phrases = ["CARE BACK", "แคร์แบ็ก", "Birthday Wish", "CARE BACK ส่งสลิปแล้ว"];
   for (const phrase of phrases) {
     const event = lineTextEvent(phrase);
-    assert.equal(inferLineIntent(phrase, event), "care_back", phrase);
+    const expectedIntent = phrase === "CARE BACK ส่งสลิปแล้ว" ? "care_back_payment_points" : phrase === "Birthday Wish" ? "care_back_coupon_wish" : "care_back_overview";
+    assert.equal(inferLineIntent(phrase, event), expectedIntent, phrase);
     const reply = buildKenjiLineReply(event);
-    assert.match(reply, /Birthday Wish/);
-    assert.match(reply, /10%/);
-    assert.match(reply, /30 วัน/);
+    if (expectedIntent !== "care_back_payment_points") {
+      assert.match(reply, /Birthday Wish/);
+      assert.match(reply, /10%/);
+      assert.match(reply, /30 วัน/);
+    }
     assert.doesNotMatch(reply, /ยืนยันตัวตนแล้ว(?:รับ|ได้)คูปอง|คูปองอัตโนมัติ|Points อัตโนมัติ/);
+  }
+});
+
+test("CARE BACK model-off sub-intents answer at least 40 adversarial LINE cases deterministically", () => {
+  const cases = [
+    ["CARE BACK คืออะไร", "care_back_overview", /สิทธิ์ดูแลกลับ/],
+    ["แคร์แบ็กทำงานยังไง", "care_back_overview", /Birthday Wish/],
+    ["โปร 6 ปีมีอะไรบ้าง", "care_back_overview", /10%/],
+    ["6th anniversary", "care_back_overview", /30 วัน/],
+    ["CARE BACK มีกี่ phase", "care_back_dates", /31 สิงหาคม 2026/],
+    ["โปร 6 ปีหมดเขตเมื่อไหร่", "care_back_dates", /1–30 กันยายน 2026/],
+    ["Phase 2 เริ่มวันไหน", "care_back_dates", /1–30 กันยายน 2026/],
+    ["CARE BACK กันยายนได้สิทธิ์ซ้ำไหม", "care_back_dates", /ไม่สร้างสิทธิ์ซ้ำ/],
+    ["CARE BACK สมาชิกปัจจุบันได้อะไร", "care_back_current_member", /180 วัน/],
+    ["สมาชิก active โปร 6 ปีต่อวันยังไง", "care_back_current_member", /วันหมดอายุจริง/],
+    ["แคร์แบ็ก grace member", "care_back_current_member", /active หรือ grace/],
+    ["CARE BACK ยังไม่หมดอายุเพิ่มกี่วัน", "care_back_current_member", /180 วัน/],
+    ["CARE BACK สมาชิกหมดอายุได้อะไร", "care_back_expired_member", /90 วันและ 150 Points/],
+    ["former member โปร 6 ปี", "care_back_expired_member", /กลับเป็น active หรือ grace/],
+    ["แคร์แบ็กต่ออายุแล้วได้กี่แต้ม", "care_back_expired_member", /150 Points/],
+    ["expired CARE BACK ต้องทำอะไร", "care_back_expired_member", /ต่ออายุหรือชำระ/],
+    ["CARE BACK สมาชิกใหม่ Standard", "care_back_new_standard", /150 Welcome Points/],
+    ["standard ใหม่โปร 6 ปีได้กี่แต้ม", "care_back_new_standard", /150 Welcome Points/],
+    ["CARE BACK new standard 150 points", "care_back_new_standard", /ตรวจการสมัคร/],
+    ["แคร์แบ็ก สแตนดาร์ดใหม่", "care_back_new_standard", /ยังไม่ใช่การยืนยัน/],
+    ["CARE BACK สมาชิกใหม่ Premium", "care_back_new_premium", /250 Welcome Points/],
+    ["premium ใหม่โปร 6 ปีได้กี่แต้ม", "care_back_new_premium", /250 Welcome Points/],
+    ["CARE BACK new premium 250 points", "care_back_new_premium", /ตรวจการสมัคร/],
+    ["แคร์แบ็ก พรีเมียมใหม่", "care_back_new_premium", /ยังไม่ใช่การยืนยัน/],
+    ["CARE BACK สมาชิกใหม่เลือกอะไร", "care_back_new_member", /Standard.*150.*Premium.*250/],
+    ["Guest Pass ได้ CARE BACK Welcome Points ไหม", "care_back_new_member", /ไม่มี CARE BACK Welcome Points อัตโนมัติ/],
+    ["CARE BACK standard กับ premium", "care_back_new_member", /150 Welcome Points.*250 Welcome Points/],
+    ["CARE BACK birthday wish ต้องส่งก่อนหรือเปล่า", "care_back_coupon_wish", /ต้องส่ง Birthday Wish/],
+    ["คูปองวันเกิด 10% ใช้กี่ครั้ง", "care_back_coupon_wish", /1 ครั้ง/],
+    ["CARE BACK coupon หมดอายุกี่วัน", "care_back_coupon_wish", /30 วันหลัง activation/],
+    ["ยืนยันตัวตนแล้วคูปองเปิดเลยไหม birthday wish", "care_back_coupon_wish", /ยังไม่เปิดคูปอง/],
+    ["CARE BACK ยอดย้อนหลังคิดแต้มยังไง", "care_back_historical_points", /100 บาทเท่ากับ 1 Point/],
+    ["100 บาทกี่แต้ม", "care_back_historical_points", /1 Point/],
+    ["historical points ทุก 100 THB", "care_back_historical_points", /ตรวจสอบได้/],
+    ["CARE BACK จ่ายแล้วแต้มเข้าเลยไหม", "care_back_payment_points", /หลัง MMD ตรวจยอด/],
+    ["แคร์แบ็กส่งสลิปแล้วได้ 150 แต้มเลยไหม", "care_back_payment_points", /สลิปเป็นหลักฐานประกอบ/],
+    ["CARE BACK points เข้าเมื่อไหร่หลัง payment", "care_back_payment_points", /อัปเดตสถานะทางการ/],
+    ["CARE BACK 350 แต้มได้ Black Card เลยไหม", "care_back_black_card", /ไม่ได้รับ Black Card อัตโนมัติ/],
+    ["แคร์แบ็ก special selection ได้กี่แต้ม Black Card", "care_back_black_card", /สูงสุด 350 Points/],
+    ["CARE BACK บัตรดำอนุมัติแล้วใช่ไหม", "care_back_black_card", /ยังไม่ใช่การอนุมัติสิทธิ์/],
+    ["CARE BACK ผมได้อะไร", "care_back_personal_status", /ยังยืนยันจากข้อความนี้ไม่ได้/],
+    ["เช็กสิทธิ์ CARE BACK ให้ผมหน่อย", "care_back_personal_status", /ต้องตรวจสถานะสมาชิก/],
+    ["โปร 6 ปีผมอยู่กลุ่มไหน", "care_back_personal_status", /วันหมดอายุ/],
+    ["CARE BACK คะแนนของฉันได้กี่แต้ม", "care_back_personal_status", /มียอดเท่าไร/],
+  ];
+
+  assert.ok(cases.length >= 40);
+  for (const [text, expectedIntent, expectedReply] of cases) {
+    const event = lineTextEvent(text);
+    assert.equal(inferLineIntent(text, event), expectedIntent, text);
+    const reply = buildKenjiLineReply(event);
+    assert.match(reply, expectedReply, text);
+    assert.doesNotMatch(reply, /Welcome 66|365\s*วัน|1,?200|2,?500|1,?499|1,?500|1,?800|2,?000/i, text);
+  }
+});
+
+test("context-free CARE BACK minimum and production-smoke phrases stay deterministic and non-authoritative", async () => {
+  const minimumCases = [
+    ["ผมได้ 180 วันแล้วใช่ไหม", "care_back_personal_status", /ยังยืนยันจากข้อความนี้ไม่ได้/],
+    ["หมดอายุแล้วได้ 150 แต้มเลยไหม", "care_back_expired_member", /กลับเป็น active หรือ grace ก่อน/],
+    ["สมัคร Standard วันนี้แต้มเข้าเลยไหม", "care_back_new_standard", /150 Welcome Points/],
+    ["Premium ได้ 250 แล้วใช่ไหม", "care_back_new_premium", /250 Welcome Points/],
+    ["350 แต้มคือ Black Card ใช่ไหม", "care_back_black_card", /ไม่ได้รับ Black Card อัตโนมัติ/],
+    ["Guest Pass ได้แต้มไหม", "care_back_new_member", /ไม่มี CARE BACK Welcome Points อัตโนมัติ/],
+    ["10000 บาทได้กี่แต้ม", "care_back_historical_points", /10,000 บาทจะเทียบได้ 100 Points เฉพาะเมื่อ/],
+    ["ผมมีเท่าไหร่", "care_back_personal_status", /ยังยืนยันจากข้อความนี้ไม่ได้/],
+    ["ส่งสลิปแล้วทำไมแต้มไม่เข้า", "care_back_payment_points", /สลิปเป็นหลักฐานประกอบเท่านั้น/],
+    ["กันยายนยังมีโปรไหม", "care_back_dates", /1–30 กันยายน 2026/],
+    ["เข้าเพจแล้วคูปองได้เลยไหม", "care_back_coupon_wish", /เข้าเพจอย่างเดียวยังไม่เปิดคูปอง/],
+    ["wish แล้วได้ 10% เลยหรือยัง", "care_back_coupon_wish", /ต้องส่ง Birthday Wish ให้บันทึกสำเร็จก่อน/],
+  ];
+  const smokeCases = [
+    ["โปร 6 ปีคืออะไร", "care_back_overview", /สิทธิ์ดูแลกลับ/],
+    ["โปรถึงวันไหน", "care_back_dates", /31 สิงหาคม 2026/],
+    ["สมาชิกปัจจุบันได้อะไร", "care_back_current_member", /180 วัน/],
+    ["หมดอายุแล้วได้อะไร", "care_back_expired_member", /90 วันและ 150 Points/],
+    ["Standard ใหม่ได้อะไร", "care_back_new_standard", /150 Welcome Points/],
+    ["Premium ใหม่ได้อะไร", "care_back_new_premium", /250 Welcome Points/],
+    ["Guest Pass ได้แต้มไหม", "care_back_new_member", /ไม่มี CARE BACK Welcome Points อัตโนมัติ/],
+    ["100 บาทกี่แต้ม", "care_back_historical_points", /100 บาทเท่ากับ 1 Point/],
+    ["ผมมีแต้มเท่าไหร่", "care_back_personal_status", /ยังยืนยันจากข้อความนี้ไม่ได้/],
+    ["ส่งสลิปแล้ว แต้มเข้าไหม", "care_back_payment_points", /ยังไม่ใช่การยืนยันการชำระ/],
+    ["350 แต้มได้ Black Card ไหม", "care_back_black_card", /พิจารณา Black Card/],
+    ["wish แล้วคูปองได้เลยไหม", "care_back_coupon_wish", /ยังไม่เปิดคูปอง/],
+  ];
+  const forbidden = /Welcome 66|365\s*วัน|1,?200|2,?500|1,?499|1,?500|1,?800|2,?000/i;
+
+  for (const [text, expectedIntent, expectedReply] of [...minimumCases, ...smokeCases]) {
+    const event = lineTextEvent(text);
+    assert.equal(inferLineIntent(text, event), expectedIntent, text);
+    const directReply = buildKenjiLineReply(event);
+    assert.ok(directReply, text);
+    assert.match(directReply, expectedReply, text);
+    assert.doesNotMatch(directReply, forbidden, text);
+
+    const decision = await resolveKenjiLineReply(event, {}, {
+      ...BASE_ENV,
+      LINE_KENJI_MODEL_ENABLED: "false",
+      LINE_KENJI_KNOWLEDGE_ENABLED: "true",
+    });
+    assert.equal(decision.text, directReply, text);
+    assert.equal(decision.reply_source, "system_truth", text);
+    assert.equal(decision.model_attempted, false, text);
+    assert.equal(decision.model_latency_ms, 0, text);
+    assert.equal(decision.knowledge_hits, 0, text);
+    assert.equal(decision.fallback, false, text);
+  }
+});
+
+test("context-free CARE BACK routing accepts narrow typo and mixed variants without hijacking general intents", () => {
+  const positiveCases = [
+    ["ผมได้อะไร", "care_back_personal_status"],
+    ["ของผมเข้าไหม", "care_back_personal_status"],
+    ["ผมอยู่กลุ่มไหน", "care_back_personal_status"],
+    ["ผมได้กี่วัน", "care_back_personal_status"],
+    ["ผมได้กี่แต้ม", "care_back_personal_status"],
+    ["guestpass มี points ไหม", "care_back_new_member"],
+    ["สแตนดาร์ดใหม่ 150 points เข้าเลยมั้ย", "care_back_new_standard"],
+    ["พรีเมี่ยมใหม่ได้ 250 แต้มไหม", "care_back_new_premium"],
+    ["350 points = black card ไหม", "care_back_black_card"],
+    ["payment แล้ว points ยังไม่เข้า", "care_back_payment_points"],
+    ["เข้า page แล้ว coupon เปิดเลยมั้ย", "care_back_coupon_wish"],
+    ["September ยังมี promotion ไหม", "care_back_dates"],
+    ["10,000 THB ได้กี่ points", "care_back_historical_points"],
+  ];
+  for (const [text, intent] of positiveCases) assert.equal(inferLineIntent(text, lineTextEvent(text)), intent, text);
+
+  const negativeCases = [
+    ["ราคาเท่าไหร่", "pricing_review"],
+    ["สมาชิกมีอะไรบ้าง", "membership"],
+    ["คะแนนสะสมใช้ยังไง", "points"],
+    ["ผมจะไปเที่ยวญี่ปุ่นเดือนกันยายน", "note_only"],
+    ["Standard กับ Premium ต่างกันยังไง", "membership"],
+  ];
+  for (const [text, intent] of negativeCases) assert.equal(inferLineIntent(text, lineTextEvent(text)), intent, text);
+});
+
+test("representative context-free CARE BACK webhooks make one LINE reply and zero OpenAI calls", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalLog = console.log;
+  const calls = [];
+  const diagnostics = [];
+  globalThis.fetch = async (url, init) => {
+    const href = String(url);
+    calls.push({ url: href, init });
+    if (href.includes("/message/reply")) return new Response("{}", { status: 200 });
+    if (href.includes("/profile/")) return new Response("{}", { status: 200 });
+    return new Response("{}", { status: 200 });
+  };
+  console.log = (value) => {
+    try {
+      const parsed = JSON.parse(String(value));
+      if (parsed.line_webhook === "reply_diagnostics") diagnostics.push(parsed);
+    } catch (_) {}
+  };
+
+  try {
+    const cases = [
+      ["ผมได้ 180 วันแล้วใช่ไหม", "care_back_personal_status"],
+      ["ส่งสลิปแล้วทำไมแต้มไม่เข้า", "care_back_payment_points"],
+      ["350 แต้มคือ Black Card ใช่ไหม", "care_back_black_card"],
+      ["wish แล้วได้ 10% เลยหรือยัง", "care_back_coupon_wish"],
+    ];
+    for (const [text, intent] of cases) {
+      calls.length = 0;
+      diagnostics.length = 0;
+      const event = lineTextEvent(text, { mode: "active" });
+      const response = await worker.fetch(await signedLineRequest({ events: [event] }), {
+        ...BASE_ENV,
+        LINE_KENJI_MODEL_ENABLED: "false",
+        LINE_KENJI_KNOWLEDGE_ENABLED: "false",
+      });
+      assert.equal(response.status, 200, text);
+      assert.equal(calls.filter((call) => call.url.includes("/message/reply")).length, 1, text);
+      assert.equal(calls.filter((call) => call.url.includes("api.openai.com")).length, 0, text);
+      assert.equal(diagnostics.length, 1, text);
+      assert.equal(diagnostics[0].intent, intent, text);
+      assert.equal(diagnostics[0].reply_source, "system_truth", text);
+      assert.equal(diagnostics[0].reply_attempted, true, text);
+      assert.equal(diagnostics[0].reply_sent, true, text);
+      assert.equal(diagnostics[0].reply_status, 200, text);
+      assert.equal(diagnostics[0].model_attempted, false, text);
+      assert.equal(diagnostics[0].model_latency_ms, 0, text);
+    }
+  } finally {
+    console.log = originalLog;
+    globalThis.fetch = originalFetch;
   }
 });
 
