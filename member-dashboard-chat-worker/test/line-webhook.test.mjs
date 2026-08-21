@@ -9,6 +9,7 @@ import worker, {
   isKenjiLineCandidate,
   resolveKenjiLineReply,
 } from "../src/index.js";
+import { decideKenjiCapability } from "../src/kenji-capability-policy.js";
 
 const LINE_USER_ID = "U1234567890abcdef1234567890abcdef";
 const BASE_ENV = {
@@ -129,6 +130,60 @@ test("payment proof routes safely without confirming funds", () => {
   assert.match(reply, /\/confirm\/payment-proof/);
   assert.match(reply, /ยังไม่ถือว่ายืนยันยอด/);
   assert.doesNotMatch(reply, /ชำระเงินสำเร็จ|approved/i);
+});
+
+test("canonical personal payment, membership, and points status route to LIFF deterministically", async () => {
+  const cases = [
+    ["ผมจ่ายแล้ว", "payment_status", "payment", /ไม่ยืนยันจากข้อความอย่างเดียว/],
+    ["สถานะผมเป็นยังไง", "membership_status", "membership", /เช็กสถานะสมาชิกของคุณ/],
+    ["แต้มเข้าไหม", "points_status", "points", /เช็กแต้มกับประวัติรายการของคุณ/],
+  ];
+  for (const [text, intent, domain, replyPattern] of cases) {
+    const event = lineTextEvent(text);
+    assert.equal(inferLineIntent(text, event), intent, text);
+    const decision = await resolveKenjiLineReply(event, {}, {
+      ...BASE_ENV,
+      LINE_KENJI_MODEL_ENABLED: "false",
+      LINE_KENJI_KNOWLEDGE_ENABLED: "false",
+    });
+    assert.match(decision.text, replyPattern, text);
+    assert.match(decision.text, /https:\/\/member-pages-worker\.malemodel-bkk\.workers\.dev\/member\/liff/, text);
+    assert.doesNotMatch(decision.text, /ชำระสำเร็จ|แต้มเข้าแล้ว|สมาชิก(?:ของคุณ)?ใช้งานอยู่/i, text);
+    assert.equal(decision.reply_source, "system_truth", text);
+    assert.equal(decision.model_attempted, false, text);
+    const capability = decideKenjiCapability({ text, intent });
+    assert.equal(capability.capability, "protected_authority", text);
+    assert.equal(capability.requested_domain, domain, text);
+    assert.equal(capability.requires_truth, true, text);
+  }
+});
+
+test("canonical status webhooks make one LINE reply and zero OpenAI calls", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), init });
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    for (const text of ["ผมจ่ายแล้ว", "สถานะผมเป็นยังไง", "แต้มเข้าไหม"]) {
+      calls.length = 0;
+      const event = lineTextEvent(text, { mode: "active", message: { id: `msg-${text}`, type: "text", text } });
+      const response = await worker.fetch(await signedLineRequest({ events: [event] }), {
+        ...BASE_ENV,
+        LINE_KENJI_MODEL_ENABLED: "false",
+        LINE_KENJI_KNOWLEDGE_ENABLED: "false",
+      });
+      assert.equal(response.status, 200, text);
+      assert.equal(calls.filter((call) => call.url.includes("/message/reply")).length, 1, text);
+      assert.equal(calls.filter((call) => call.url.includes("api.openai.com")).length, 0, text);
+      const replyBody = JSON.parse(calls.find((call) => call.url.includes("/message/reply")).init.body);
+      assert.equal(replyBody.messages.length, 1, text);
+      assert.ok(replyBody.messages[0].text, text);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("CARE BACK requires a saved Birthday Wish before the personal coupon opens", () => {
