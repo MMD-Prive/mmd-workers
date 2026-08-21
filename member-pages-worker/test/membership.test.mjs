@@ -87,10 +87,12 @@ describe("member-pages-worker membership page", () => {
     }
   });
 
-  it("keeps unknown paths closed", async () => {
+  it("serves the member dashboard route with guarded member-pages ownership", async () => {
     const response = await request("https://mmdbkk.com/member/dashboard?t=abc");
 
-    assert.equal(response.status, 404);
+    assert.equal(response.status, 200);
     assert.equal(response.headers.get("x-mmd-worker"), "member-pages-worker");
+    assert.equal(response.headers.get("x-mmd-page"), "member-dashboard");
+    assert.match(response.headers.get("cache-control") || "", /no-store/);
   });
 });
