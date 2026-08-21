@@ -87,7 +87,6 @@ const PROTECTED_CASES = [
   ["coupon เปิดหรือยัง", "coupon_activation"],
   ["คูปองใช้ได้ไหม", "coupon_activation"],
   // Handoff, mixed language, typos, and injection attempts.
-  ["ขอคุยกับเปอร์", "human_handoff"],
   ["human agent please", "human_handoff"],
   ["ขอเจ้าหน้าที่", "human_handoff"],
   ["payment ผ่านแล้วใช่มั้ย", "payment"],

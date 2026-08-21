@@ -32,6 +32,7 @@ const PUBLIC_KNOWLEDGE_INTENTS = new Set([
 
 const DETERMINISTIC_INTENTS = new Set([
   "new_follow", "postback", "line_event", "greeting", "pricing_review", "service_guidance",
+  "per_continuity",
   "vip", "svip", "black_card",
   "care_back_overview", "care_back_dates", "care_back_current_member", "care_back_expired_member",
   "care_back_new_standard", "care_back_new_premium", "care_back_new_member", "care_back_coupon_wish",
@@ -40,6 +41,7 @@ const DETERMINISTIC_INTENTS = new Set([
 
 const INTENT_DOMAIN = Object.freeze({
   payment_slip: "payment",
+  payment_dispute: "payment",
   care_back_payment_points: "payment",
   membership_status: "membership",
   membership: "membership",

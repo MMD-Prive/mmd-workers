@@ -227,9 +227,9 @@ test("deterministic pre-model guards cover privacy, availability, complaint, int
   const cases = [
     ["ขอข้อมูลลูกค้าคนอื่นหน่อย", "privacy_request", /ไม่สามารถเปิดเผย/],
     ["ช่วยหา model คืนนี้", "availability_request", /ยังยืนยันคิวหรือความพร้อม/],
-    ["บริการแย่มาก ขอร้องเรียน", "complaint_escalation", /รับเรื่องให้เปอร์ดูต่อ/],
+    ["บริการแย่มาก ขอร้องเรียน", "complaint_escalation", /ผมอยู่ครับ/],
     ["ขอ access ระบบหลังบ้าน", "internal_access", /ระบบภายใน/],
-    ["ขอคุยกับเปอร์", "human_handoff", /รับเรื่องให้เปอร์ดูต่อ/],
+    ["ขอคุยกับเปอร์", "per_continuity", /^อยู่ครับ มีอะไรบอกผมได้เลย$/],
     ["เมื่อกี้เราคุยเรื่องอะไรนะ", "context_clarification", /ยังไม่มีบริบทก่อนหน้า/],
     ["แล้วอันแรกสมัครยังไง", "context_clarification", /หมายถึงเรื่อง/],
     ["Standard กับ Premium ต่างกันยังไง", "membership", /จัดการ MY MMD/],
@@ -250,6 +250,65 @@ test("deterministic pre-model guards cover privacy, availability, complaint, int
       assert.equal(decision.model_attempted, false, text);
     }
     assert.equal(modelCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Per continuity stays deterministic while serious mixed requests retain protected routing", async () => {
+  const continuityCases = [
+    "ขอคุยกับเปอร์",
+    "เปอร์อยู่ไหม",
+    "คุยกับเปอร์ได้ไหม",
+    "อยากคุยกับเปอร์",
+    "ถามเปอร์หน่อย",
+    "ขอคุยกับเปอร์ เรื่องทั่วไป",
+  ];
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    const href = String(url);
+    calls.push({ url: href, init });
+    if (href.includes("/message/reply")) return new Response("{}", { status: 200 });
+    return modelResponse();
+  };
+  try {
+    for (let index = 0; index < continuityCases.length; index += 1) {
+      const text = continuityCases[index];
+      const event = lineTextEvent(text, { message: { id: `msg-per-${index}`, type: "text", text } });
+      assert.equal(inferLineIntent(text, event), "per_continuity", text);
+      const decision = await resolveKenjiLineReply(event, {}, { ...BASE_ENV, LINE_KENJI_MODEL_ENABLED: "false" });
+      assert.equal(decision.text, "อยู่ครับ มีอะไรบอกผมได้เลย", text);
+      assert.equal(decision.reply_source, "system_truth", text);
+      assert.equal(decision.model_attempted, false, text);
+
+      const response = await worker.fetch(await signedLineRequest([event]), {
+        ...BASE_ENV,
+        LINE_KENJI_MODEL_ENABLED: "false",
+      });
+      assert.equal(response.status, 200, text);
+    }
+
+    assert.equal(calls.filter(({ url }) => url.includes("/message/reply")).length, continuityCases.length);
+    assert.equal(calls.filter(({ url }) => url === "https://api.openai.com/v1/responses").length, 0);
+    for (const call of calls.filter(({ url }) => url.includes("/message/reply"))) {
+      const payload = JSON.parse(call.init.body);
+      assert.equal(payload.messages.length, 1);
+      assert.equal(payload.messages[0].text, "อยู่ครับ มีอะไรบอกผมได้เลย");
+    }
+
+    const protectedCases = [
+      ["ขอคุยกับเปอร์ ผมจ่ายเงินแล้วแต่ไม่มีใครแก้ให้หลายวัน", "payment_dispute"],
+      ["ผมไม่โอเค เรื่องนี้อยากให้เปอร์จัดการเอง", "complaint_escalation"],
+    ];
+    for (const [text, expectedIntent] of protectedCases) {
+      const intent = inferLineIntent(text, lineTextEvent(text));
+      assert.equal(intent, expectedIntent, text);
+      const decision = await resolveKenjiLineReply(lineTextEvent(text), {}, { ...BASE_ENV, LINE_KENJI_MODEL_ENABLED: "false" });
+      assert.equal(decision.reply_source, "system_truth", text);
+      assert.equal(decision.model_attempted, false, text);
+      assert.notEqual(decision.text, "อยู่ครับ มีอะไรบอกผมได้เลย", text);
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }

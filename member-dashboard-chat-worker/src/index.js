@@ -240,6 +240,17 @@ export function isKenjiLineCandidate(text = "") {
   );
 }
 
+function isPerContinuityRequest(text = "") {
+  const compact = compactLookup(text);
+  return [
+    "ขอคุยกับเปอร์",
+    "เปอร์อยู่ไหม",
+    "คุยกับเปอร์ได้ไหม",
+    "อยากคุยกับเปอร์",
+    "ถามเปอร์หน่อย",
+  ].some((phrase) => compact.includes(phrase));
+}
+
 export function inferLineIntent(text = "", event = {}) {
   const normalized = normalizeLookup(text);
   if (!normalized) {
@@ -248,13 +259,17 @@ export function inferLineIntent(text = "", event = {}) {
     return "line_event";
   }
 
-  if (/(ขอคุยกับเปอร์|คุยกับเปอร์เอง|ติดต่อเปอร์|ขอสายเปอร์|human handoff|human agent|คุยกับคน|เจ้าหน้าที่)/i.test(normalized)) return "human_handoff";
+  if (/(human handoff|human agent|คุยกับคน|เจ้าหน้าที่)/i.test(normalized)) return "human_handoff";
   if (/(ข้อมูล|ประวัติ|เบอร์|ไลน์|ชื่อ|โปรไฟล์|payment|สมาชิก).{0,24}(?:ลูกค้าคนอื่น|คนอื่น|สมาชิกคนอื่น)|(?:ลูกค้าคนอื่น|ข้อมูลส่วนตัว|private data|other customer)/i.test(normalized)) return "privacy_request";
   if (/(?:หา|เช็ก|ดู|ขอ).{0,16}(?:model|นายแบบ).{0,20}(?:คืนนี้|วันนี้|พรุ่งนี้|ว่าง|คิว|ตาราง)|(?:model|นายแบบ).{0,20}(?:ว่าง|พร้อม|availability|schedule|ตารางงาน)|(?:ว่างไหม|เช็กคิว|ดูคิว)/i.test(normalized)) return "availability_request";
-  if (/(ร้องเรียน|complaint|ไม่พอใจ|บริการแย่|แย่มาก|มีปัญหา|เรื่องด่วน|escalat|กู้คืน|recover account|บัญชีหาย|เข้าไม่ได้)/i.test(normalized)) return "complaint_escalation";
+  if (/(?:จ่าย|ชำระ|โอน|ยอด|เงิน|สลิป|payment|paid).{0,40}(?:ไม่มีใครแก้|ยังไม่แก้|หลายวัน|โต้แย้ง|dispute)|(?:ไม่มีใครแก้|ยังไม่แก้|หลายวัน|โต้แย้ง|dispute).{0,40}(?:จ่าย|ชำระ|โอน|ยอด|เงิน|สลิป|payment|paid)/i.test(normalized)) return "payment_dispute";
+  if (/(ร้องเรียน|complaint|ไม่พอใจ|ไม่โอเค|บริการแย่|แย่มาก|มีปัญหา|เรื่องด่วน|อยากให้เปอร์จัดการเอง|escalat|กู้คืน|recover account|บัญชีหาย|เข้าไม่ได้)/i.test(normalized)) return "complaint_escalation";
   if (/(ระบบหลังบ้าน|internal|admin|แอดมิน|สิทธิ์เข้าถึง|ขอ access|access request|token|secret|api key|ฐานข้อมูล|airtable|cloudflare|worker|prompt|คำสั่งระบบ)/i.test(normalized)) return "internal_access";
   if (/(เมื่อกี้|ก่อนหน้านี้|ที่คุยมา|อันแรก|อันนั้น|เรื่องนั้น|เหมือนเดิม|ต่อจากเดิม|ต่อจากเมื่อกี้|as before|the first one|what we discussed)/i.test(normalized)) return "context_clarification";
   if (/(ขอให้เปอร์ตรวจ|ให้เปอร์ดู|ให้ per ดู|manual review|ตรวจเอง)/i.test(normalized)) return "manual_review";
+  if (isPerContinuityRequest(text) && /(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
+  if (isPerContinuityRequest(text) && /(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
+  if (isPerContinuityRequest(text)) return "per_continuity";
   if (isKenjiLineCandidate(text)) return "talk_to_per_ai";
   const isCareBack = /(care\s*back|แคร์\s*แบ็ก|แคร์แบ็ก|6\s*years?|6th\s*anniversary|โปร(?:โมชัน|โมชั่น)?\s*6\s*ปี|phase\s*[12])/i.test(normalized);
   const isPersonalCareBackStatus = /(?:ผม|หนู|ฉัน|ของผม|ของหนู|ของฉัน).{0,16}(?:ได้|มี|เข้า|อยู่).{0,16}(?:180\s*วัน|90\s*วัน|150\s*(?:แต้ม|คะแนน|points?)|250\s*(?:แต้ม|คะแนน|points?)|350\s*(?:แต้ม|คะแนน|points?)|กี่วัน|กี่แต้ม|กี่คะแนน|เท่าไหร่|เท่าไร|กลุ่มไหน|สิทธิ์)|^(?:ผม|หนู|ฉัน)\s*(?:ได้|มี)\s*(?:อะไร|เท่าไหร่|เท่าไร)$|^(?:ของผม|ของหนู|ของฉัน).{0,12}(?:เข้าไหม|ได้ไหม|ได้หรือยัง|อยู่กลุ่มไหน)$/i.test(normalized);
@@ -443,6 +458,10 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
     return `สวัสดีครับ ${prefix}ยินดีต้อนรับสู่ MMD Privé พิมพ์เรื่องที่อยากให้ช่วยได้เลยครับ เช่น จองงาน เช็กราคา เช็กนายแบบ หรือเรื่องสมาชิก`;
   }
 
+  if (intent === "per_continuity") {
+    return "อยู่ครับ มีอะไรบอกผมได้เลย";
+  }
+
   if (intent === "talk_to_per_ai") {
     return `สวัสดีครับ ${prefix}ยินดีต้อนรับสู่ MMD Privé นะครับ
 
@@ -467,7 +486,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "complaint_escalation") {
-    return "รับเรื่องให้เปอร์ดูต่อครับ ส่งรายละเอียดสำคัญและสิ่งที่ต้องการให้ช่วยแก้ไว้ได้เลยครับ";
+    return "ผมอยู่ครับ เล่ารายละเอียดสำคัญและสิ่งที่อยากให้ผมช่วยจัดการได้เลยครับ";
   }
 
   if (intent === "internal_access") {
@@ -475,7 +494,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "human_handoff") {
-    return "รับเรื่องให้เปอร์ดูต่อครับ ถ้ามีรายละเอียดสำคัญส่งไว้ได้เลยครับ";
+    return "ผมอยู่ครับ ส่งรายละเอียดสำคัญและสิ่งที่ต้องการให้ช่วยไว้ได้เลยครับ";
   }
 
   if (intent === "context_clarification") {
