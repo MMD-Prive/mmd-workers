@@ -49,9 +49,10 @@ async function listProducts(env, shopKey) {
   params.set("pageSize", "100");
   for (const field of fields) params.append("fields[]", field);
 
-  const [result, stockByProduct] = await Promise.all([
+  const [result, stockByProduct, supplierNames] = await Promise.all([
     airtableRequest(env, `${tableId}?${params.toString()}`),
-    shopKey === "shop" ? loadHimaiStockByProduct(env) : Promise.resolve(new Map())
+    shopKey === "shop" ? loadHimaiStockByProduct(env) : Promise.resolve(new Map()),
+    loadSupplierNames(env)
   ]);
 
   const products = (result.records || [])
@@ -68,6 +69,9 @@ async function listProducts(env, shopKey) {
       if (!shouldShow) return null;
 
       const stock = stockByProduct.get(record.id) || { available: null, low: false };
+      const sellingPrice = numberOrNull(recordFields[shop.priceField]);
+      const supplierIds = Array.isArray(recordFields["Supplier"]) ? recordFields["Supplier"] : [];
+      const supplier = supplierIds.map((id) => supplierNames.get(id) || id);
 
       return {
         id: record.id,
@@ -76,8 +80,9 @@ async function listProducts(env, shopKey) {
         category: selectName(recordFields["Category"]) || "Selected",
         status: selectName(recordFields["Status"]) || "",
         curation_label: selectName(recordFields["Curation Label"]) || "",
-        supplier: recordFields["Supplier"] || null,
-        selling_price_thb: numberOrNull(recordFields[shop.priceField]),
+        supplier,
+        selling_price_thb: sellingPrice,
+        price_status: sellingPrice === null || sellingPrice <= 0 ? "ask_shop" : "priced",
         description: recordFields["Product Note"] || "",
         curator_note: recordFields["Product Note"] || "",
         available: stock.available,
@@ -85,8 +90,7 @@ async function listProducts(env, shopKey) {
         image_url: ""
       };
     })
-    .filter(Boolean)
-    .filter((product) => product.selling_price_thb !== null);
+    .filter(Boolean);
 
   return json({
     ok: true,
@@ -126,6 +130,20 @@ async function loadHimaiStockByProduct(env) {
   }
 
   return stockByProduct;
+}
+
+async function loadSupplierNames(env) {
+  const tableId = env.SHARED_SUPPLIERS_TABLE_ID || "tbl81bnFyASeXCj9x";
+  const params = new URLSearchParams();
+  params.set("pageSize", "100");
+  params.append("fields[]", "Supplier Name");
+
+  const result = await airtableRequest(env, `${tableId}?${params.toString()}`);
+  const names = new Map();
+  for (const record of result.records || []) {
+    names.set(record.id, record.fields?.["Supplier Name"] || record.id);
+  }
+  return names;
 }
 
 function selectName(value) {
