@@ -33,20 +33,59 @@ async function listProducts(env, shopKey) {
   if (!shop) return json({ ok: false, error: "Unknown shop" }, 400);
 
   const tableId = env.SHARED_SHOP_PRODUCTS_TABLE_ID || "tblzsmNLfP6J0kQ90";
-  const fields = ["Product Name", "SKU", "Supplier", shop.priceField];
+  const fields = [
+    "Product Name",
+    "SKU",
+    "Brand Availability",
+    "Category",
+    "Status",
+    "Curation Label",
+    "Supplier",
+    "Product Note",
+    shop.priceField
+  ];
+
   const params = new URLSearchParams();
   params.set("pageSize", "100");
   for (const field of fields) params.append("fields[]", field);
 
-  const result = await airtableRequest(env, `${tableId}?${params.toString()}`);
+  const [result, stockByProduct] = await Promise.all([
+    airtableRequest(env, `${tableId}?${params.toString()}`),
+    shopKey === "shop" ? loadHimaiStockByProduct(env) : Promise.resolve(new Map())
+  ]);
+
   const products = (result.records || [])
-    .map((record) => ({
-      id: record.id,
-      product_name: record.fields?.["Product Name"] || "",
-      sku: record.fields?.["SKU"] || "",
-      supplier: record.fields?.["Supplier"] || null,
-      selling_price_thb: numberOrNull(record.fields?.[shop.priceField])
-    }))
+    .map((record) => {
+      const recordFields = record.fields || {};
+      const brandAvailability = normalizeSelectList(recordFields["Brand Availability"]);
+      const shouldShow = brandAvailability.length === 0 || brandAvailability.some((value) => {
+        const normalized = value.toLowerCase();
+        return shopKey === "shop"
+          ? normalized.includes("himai") || normalized === "shop" || normalized.includes("both")
+          : normalized.includes("mmd") || normalized === "mmd-shop" || normalized.includes("both");
+      });
+
+      if (!shouldShow) return null;
+
+      const stock = stockByProduct.get(record.id) || { available: null, low: false };
+
+      return {
+        id: record.id,
+        product_name: recordFields["Product Name"] || "",
+        sku: recordFields["SKU"] || "",
+        category: selectName(recordFields["Category"]) || "Selected",
+        status: selectName(recordFields["Status"]) || "",
+        curation_label: selectName(recordFields["Curation Label"]) || "",
+        supplier: recordFields["Supplier"] || null,
+        selling_price_thb: numberOrNull(recordFields[shop.priceField]),
+        description: recordFields["Product Note"] || "",
+        curator_note: recordFields["Product Note"] || "",
+        available: stock.available,
+        low_stock: stock.low,
+        image_url: ""
+      };
+    })
+    .filter(Boolean)
     .filter((product) => product.selling_price_thb !== null);
 
   return json({
@@ -54,8 +93,52 @@ async function listProducts(env, shopKey) {
     shop: shopKey,
     shop_name: shop.publicName,
     pricing_source: shop.priceField,
+    source_table: tableId,
     products
   });
+}
+
+async function loadHimaiStockByProduct(env) {
+  const tableId = env.HIMAI_INVENTORY_BATCHES_TABLE_ID || "tblbTrOVfIc9s2E0k";
+  const fields = ["Product", "Quantity Remaining", "Low Stock Flag", "Batch Status"];
+  const params = new URLSearchParams();
+  params.set("pageSize", "100");
+  for (const field of fields) params.append("fields[]", field);
+
+  const result = await airtableRequest(env, `${tableId}?${params.toString()}`);
+  const stockByProduct = new Map();
+
+  for (const record of result.records || []) {
+    const fields = record.fields || {};
+    const productIds = Array.isArray(fields["Product"]) ? fields["Product"] : [];
+    const remaining = numberOrNull(fields["Quantity Remaining"]);
+    const batchStatus = (selectName(fields["Batch Status"]) || "").toLowerCase();
+    const lowFlag = (selectName(fields["Low Stock Flag"]) || "").toLowerCase();
+
+    if (batchStatus.includes("archiv") || batchStatus.includes("closed")) continue;
+
+    for (const productId of productIds) {
+      const current = stockByProduct.get(productId) || { available: 0, low: false };
+      current.available += remaining || 0;
+      current.low = current.low || lowFlag.includes("low") || lowFlag.includes("yes") || lowFlag.includes("true");
+      stockByProduct.set(productId, current);
+    }
+  }
+
+  return stockByProduct;
+}
+
+function selectName(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && typeof value.name === "string") return value.name;
+  return String(value);
+}
+
+function normalizeSelectList(value) {
+  if (!value) return [];
+  if (!Array.isArray(value)) return [selectName(value)].filter(Boolean);
+  return value.map(selectName).filter(Boolean);
 }
 
 function numberOrNull(value) {
@@ -65,8 +148,11 @@ function numberOrNull(value) {
 }
 
 async function airtableRequest(env, path) {
+  const token = env.AIRTABLE_TOKEN || env.AIRTABLE_API_KEY;
+  if (!token) throw new Error("Airtable token is not configured");
+
   const response = await fetch(`https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${path}`, {
-    headers: { Authorization: `Bearer ${env.AIRTABLE_TOKEN}` }
+    headers: { Authorization: `Bearer ${token}` }
   });
   if (!response.ok) {
     throw new Error(`Airtable error: ${response.status} ${await response.text()}`);
