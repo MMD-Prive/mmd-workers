@@ -1,0 +1,61 @@
+name: Deploy himai-chat-worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "himai-chat-worker/**"
+      - ".github/workflows/deploy-himai-chat-worker.yml"
+
+concurrency:
+  group: deploy-himai-chat-worker-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: himai-chat-worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify Cloudflare token
+        run: npx --yes wrangler@4 whoami
+
+      - name: Validate source
+        run: |
+          set -euo pipefail
+          node --check src/entry.js
+          node --check src/index.js
+          node --check src/shop-catalog.js
+          node --check src/shop-movements.js
+          if ls test/*.test.mjs >/dev/null 2>&1; then node --test test/*.test.mjs; fi
+
+      - name: Validate deployment
+        run: npx --yes wrangler@4 deploy --dry-run --keep-vars
+
+      - name: Deploy himai-chat-worker
+        run: npx --yes wrangler@4 deploy --keep-vars
+
+      - name: Verify production health
+        run: |
+          set -euo pipefail
+          body="$(curl --retry 6 --retry-delay 2 --retry-all-errors -fsS https://himai-chat-worker.malemodel-bkk.workers.dev/health)"
+          echo "$body"
+          printf '%s' "$body" | grep -q '"ok":true'
