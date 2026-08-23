@@ -1331,14 +1331,31 @@ function safeMemberProfile(input = {}) {
   }).filter(Boolean) : [];
   const from = /^\d{4}-\d{2}-\d{2}$/.test(String(input.history_window?.from || "")) ? String(input.history_window.from) : "";
   const to = /^\d{4}-\d{2}-\d{2}$/.test(String(input.history_window?.to || "")) ? String(input.history_window.to) : "";
-  return {
+  const profile = {
     display_name: String(input.display_name || "สมาชิก MMD").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 120),
     tier: ["Member", "Standard", "Premium", "VIP", "SVIP", "Black Card"].includes(input.tier) ? input.tier : "Member",
     membership_status: ["active", "grace", "expired", "under_review"].includes(input.membership_status) ? input.membership_status : "under_review",
+    payment_status: ["verified", "pending_review", "unavailable"].includes(input.payment_status) ? input.payment_status : "unavailable",
     points: Number.isFinite(Number(input.points)) && Number(input.points) >= 0 ? Math.trunc(Number(input.points)) : 0,
     history_window: { from, to, timezone: "Asia/Bangkok" },
     history,
   };
+  const membershipExpiresAt = strictMemberCalendarDate(input.membership_expires_at);
+  if (["active", "grace"].includes(profile.membership_status) && membershipExpiresAt) {
+    profile.membership_expires_at = membershipExpiresAt;
+  }
+  return profile;
+}
+
+function strictMemberCalendarDate(value) {
+  const text = String(value || "").trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return "";
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? text : "";
 }
 
 function safeCareBackClaim(input = {}) {

@@ -110,9 +110,12 @@ describe("same-site /member/liff shell", () => {
     assert.equal(response.status, 200);
     assert.match(html, /id="profile-expiry"/);
     assert.match(html, /id="profile-payment"/);
+    assert.match(html, /id="expiry-card" class="card hidden"/);
+    assert.match(html, /classList\.toggle\("hidden", !expiry\)/);
     assert.match(html, /verified:"Verified"/);
     assert.match(html, /pending_review:"Pending review"/);
     assert.match(html, /unavailable:"Unavailable"/);
+    assert.match(html, /\|\| "Unavailable"/);
     assert.match(html, /function safeDate\(value\)/);
     assert.doesNotMatch(html, /payment_ref|receipt_url|member_email|Verification Status/);
   });

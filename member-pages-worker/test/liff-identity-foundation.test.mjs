@@ -382,6 +382,8 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
         display_name: "เปอร์",
         tier: "Premium",
         membership_status: "active",
+        membership_expires_at: "2027-08-31",
+        payment_status: "verified",
         points: 345,
         history_window: { from: "2025-08-10", to: "2026-08-10", timezone: "Asia/Bangkok" },
         history: [{ type: "points", date: "2026-08-01", title: "Points added", status: "posted", points_delta: 25, private_note: "hidden" }],
@@ -419,6 +421,8 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
       display_name: "เปอร์",
       tier: "Premium",
       membership_status: "active",
+      membership_expires_at: "2027-08-31",
+      payment_status: "verified",
       points: 345,
       history_window: { from: "2025-08-10", to: "2026-08-10", timezone: "Asia/Bangkok" },
       history: [{ type: "points", date: "2026-08-01", title: "Points added", status: "posted", points_delta: 25 }],
@@ -434,7 +438,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(claim.payload.data.coupon_state, "wish_required");
     assert.equal(careCalls.length, 1);
     assert.equal(careCalls[0].memberId, "MMD-PER-01");
-    assert.deepEqual(careCalls[0].memberProfile, { display_name: "เปอร์", tier: "Premium", membership_status: "active", points: 345, history_window: { from: "2025-08-10", to: "2026-08-10", timezone: "Asia/Bangkok" }, history: [{ type: "points", date: "2026-08-01", title: "Points added", status: "posted", points_delta: 25 }] });
+    assert.deepEqual(careCalls[0].memberProfile, { display_name: "เปอร์", tier: "Premium", membership_status: "active", membership_expires_at: "2027-08-31", payment_status: "verified", points: 345, history_window: { from: "2025-08-10", to: "2026-08-10", timezone: "Asia/Bangkok" }, history: [{ type: "points", date: "2026-08-01", title: "Points added", status: "posted", points_delta: 25 }] });
     assert.match(careCalls[0].identityHash, /^[a-f0-9]{64}$/);
     assert.equal(runtime.LIFF_GATEWAY_STORE.records.length, 1);
     assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].campaign_code, "6-years-care-back");
@@ -447,6 +451,45 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(spoof.response.status, 400);
     assert.equal(spoof.payload.error.code, "BROWSER_IDENTITY_REJECTED");
     assert.equal(careCalls.length, 1);
+  });
+
+  it("normalizes the public payment enum and omits unproven member expiry", async () => {
+    const cases = [
+      { membership_status: "active", membership_expires_at: "2027-08-31", payment_status: "verified", expiry: "2027-08-31", payment: "verified" },
+      { membership_status: "grace", membership_expires_at: "2028-02-29", payment_status: "pending_review", expiry: "2028-02-29", payment: "pending_review" },
+      { membership_status: "active", membership_expires_at: "2026-02-30", payment_status: "paid", expiry: "", payment: "unavailable" },
+      { membership_status: "active", membership_expires_at: "2027-08-31T00:00:00Z", payment_status: "refunded", expiry: "", payment: "unavailable" },
+      { membership_status: "expired", membership_expires_at: "2027-08-31", payment_status: "unavailable", expiry: "", payment: "unavailable" },
+    ];
+
+    for (const scenario of cases) {
+      const runtime = env({
+        MEMBER_STATUS_RESOLVER: resolver({
+          member_exists: true,
+          mmd_member_id: "MMD-PER-01",
+          profile: {
+            display_name: "เปอร์",
+            tier: "Premium",
+            membership_status: scenario.membership_status,
+            membership_expires_at: scenario.membership_expires_at,
+            payment_status: scenario.payment_status,
+            points: 1,
+            history_window: { from: "2025-08-10", to: "2026-08-10", timezone: "Asia/Bangkok" },
+            history: [],
+            payment_ref: "pay_private",
+            member_email: "private@example.com",
+            receipt_url: "https://private.example/receipt",
+            verification_notes: "private",
+          },
+        }),
+      });
+      const started = await start(runtime, { id_token: "valid", liff_intent: "status" });
+      const cookie = cookiePair(findCookie(started.response, "__Host-mmd_liff_session"));
+      const profile = await request("/member/api/liff/profile", { method: "GET", cookie }, runtime);
+      assert.equal(profile.payload.data.payment_status, scenario.payment);
+      assert.equal(profile.payload.data.membership_expires_at || "", scenario.expiry);
+      assert.doesNotMatch(JSON.stringify(profile.payload), /pay_private|private@example|receipt|verification_notes/i);
+    }
   });
 
   it("persists, replays, and reloads one canonical Birthday Wish without exposing storage identity", async () => {
