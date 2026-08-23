@@ -18,7 +18,10 @@ SHARED_SHOP_PRODUCTS_TABLE_ID = "tblzsmNLfP6J0kQ90"
 HIMAI_STOCK_MOVEMENTS_TABLE_ID = "tbl2GMPrDr6sBW997"
 
 # ---- Secrets (set via: wrangler secret put <NAME>) ----
-# AIRTABLE_TOKEN            - Airtable API authentication
-# LINE_CHANNEL_SECRET       - LINE webhook signature verification
-# LINE_CHANNEL_ACCESS_TOKEN - LINE Bot API token
-# INTERNAL_TOKEN            - Internal endpoint authorization
+# AIRTABLE_TOKEN                      - Airtable API authentication
+# LINE_CHANNEL_SECRET                 - LINE webhook signature verification
+# LINE_CHANNEL_ACCESS_TOKEN           - LINE Bot API token
+# INTERNAL_TOKEN                      - Internal endpoint authorization
+# TELEGRAM_BOT_TOKEN                  - HYPE Telegram bot token used for shop alerts
+# TELEGRAM_MMD_SHOP_ALERTS_CHAT_ID     - Target chat ID for MMD Shop Alerts
+# TELEGRAM_HIMAI_SHOP_ALERTS_CHAT_ID   - Target chat ID for Himai Shop Alerts
