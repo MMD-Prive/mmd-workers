@@ -147,8 +147,6 @@ export default {
 
 async function handleMmsCatalog(request, env) {
   if (request.method !== "GET") return methodNotAllowed("GET");
-  const originFailure = requireSameOrigin(request, env);
-  if (originFailure) return originFailure;
   return forwardMmsResponse(await callMmsService(env, "/mms/api/catalog", { method: "GET" }));
 }
 
