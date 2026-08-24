@@ -79,6 +79,21 @@ describe("MMS member API facade", () => {
     assert.equal(seen[0].pathname, "/mms/api/catalog");
   });
 
+  it("serves the public catalog when a same-origin browser GET omits Origin", async () => {
+    const response = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/mms/catalog", {
+      headers: { accept: "application/json" },
+    }), {
+      MMS_WORKER: {
+        async fetch() {
+          return Response.json({ ok: true, data: { skills: [], zones: [], max_selected_skills: 6 } });
+        },
+      },
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).ok, true);
+  });
+
   it("requires a verified LIFF member before matching", async () => {
     const response = await worker.fetch(request("/member/api/liff/mms/match", "", {
       recipient_gender: "male",
