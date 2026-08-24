@@ -152,19 +152,9 @@ jobs:
           npx --yes wrangler@4 versions deploy "${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}@100%" -y \
             2>&1 | tee "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log"
 
-      - name: Apply member-dashboard-chat-worker routes and triggers
-        id: triggers
-        if: steps.deploy.outcome == 'success'
-        shell: bash
-        working-directory: member-dashboard-chat-worker
-        run: |
-          set -o pipefail
-          npx --yes wrangler@4 triggers deploy \
-            2>&1 | tee "$RUNNER_TEMP/member-dashboard-chat-worker-triggers.log"
-
       - name: Smoke production LINE route
         id: smoke
-        if: steps.triggers.outcome == 'success'
+        if: steps.deploy.outcome == 'success'
         shell: bash
         run: |
           response="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error https://www.mmdbkk.com/webhooks/line)"
@@ -177,7 +167,7 @@ jobs:
 
           catalog="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error \
             -H 'Origin: https://www.mmdbkk.com' \
-            https://www.mmdbkk.com/member/api/mms/catalog)"
+            https://www.mmdbkk.com/member/api/liff/mms/catalog)"
           node -e '
             const body = JSON.parse(process.argv[1]);
             if (body.ok !== true || body.data?.skills?.length !== 8) {
@@ -198,7 +188,6 @@ jobs:
           UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
           RESOLVE_OUTCOME: ${{ steps.resolve_version.outcome }}
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
-          TRIGGERS_OUTCOME: ${{ steps.triggers.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
         run: |
           set -euo pipefail
@@ -217,8 +206,6 @@ jobs:
             stopped="resolve uploaded version"
           elif [ "$DEPLOY_OUTCOME" != "success" ]; then
             stopped="versions deploy"
-          elif [ "$TRIGGERS_OUTCOME" != "success" ]; then
-            stopped="routes and triggers deploy"
           elif [ "$SMOKE_OUTCOME" != "success" ]; then
             stopped="production smoke"
           else
@@ -231,8 +218,7 @@ jobs:
             "$RUNNER_TEMP/cloudflare-token-account-verify.json" \
             "$RUNNER_TEMP/cloudflare-whoami.log" \
             "$RUNNER_TEMP/member-dashboard-chat-worker-upload.log" \
-            "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log" \
-            "$RUNNER_TEMP/member-dashboard-chat-worker-triggers.log"; do
+            "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log"; do
             if [ -f "$log" ]; then
               detail="${detail}$(grep -Ei 'active|disabled|expired|error|failed|permission|account|binding|service|route|conflict|workers.dev|code:|code |version|secret|var' "$log" | tail -n 50 || true)\n"
             fi
@@ -255,7 +241,6 @@ jobs:
           - versions upload: \`${UPLOAD_OUTCOME}\`
           - resolve version: \`${RESOLVE_OUTCOME}\`
           - versions deploy: \`${DEPLOY_OUTCOME}\`
-          - routes and triggers deploy: \`${TRIGGERS_OUTCOME}\`
           - production smoke: \`${SMOKE_OUTCOME}\`
           - **stopped_at: \`${stopped}\`**
 

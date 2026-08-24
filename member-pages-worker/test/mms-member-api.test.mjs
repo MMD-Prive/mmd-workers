@@ -65,7 +65,7 @@ function request(path, token, body) {
 describe("MMS member API facade", () => {
   it("proxies the public catalog through the service binding", async () => {
     const seen = [];
-    const response = await worker.fetch(request("/member/api/mms/catalog"), {
+    const response = await worker.fetch(request("/member/api/liff/mms/catalog"), {
       MMS_WORKER: {
         async fetch(upstream) {
           seen.push(new URL(upstream.url));
@@ -80,7 +80,7 @@ describe("MMS member API facade", () => {
   });
 
   it("requires a verified LIFF member before matching", async () => {
-    const response = await worker.fetch(request("/member/api/mms/match", "", {
+    const response = await worker.fetch(request("/member/api/liff/mms/match", "", {
       recipient_gender: "male",
       zone: "sukhumvit",
       skills: ["thai_massage"],
@@ -97,7 +97,7 @@ describe("MMS member API facade", () => {
       assert.equal(new URL(upstream.url).hostname, "mms.internal");
       return Response.json({ ok: true, data: { requires_manual_coordination: false, matches: [] } });
     });
-    const response = await worker.fetch(request("/member/api/mms/match", token, {
+    const response = await worker.fetch(request("/member/api/liff/mms/match", token, {
       recipient_gender: "female",
       zone: "sukhumvit",
       skills: ["aroma_therapy_oil", "women_massage"],
@@ -118,7 +118,7 @@ describe("MMS member API facade", () => {
       upstreamBody = await upstream.json();
       return Response.json({ ok: true, prebooking: { prebooking_id: "mmspre_123" } }, { status: 201 });
     });
-    const response = await worker.fetch(request("/member/api/mms/prebookings", token, {
+    const response = await worker.fetch(request("/member/api/liff/mms/prebookings", token, {
       idempotency_key: "mms-prebooking-request-001",
       recipient_gender: "male",
       zone: "sathorn_silom",
@@ -138,7 +138,7 @@ describe("MMS member API facade", () => {
 
   it("rejects browser-supplied member identity", async () => {
     const { token, env } = await memberEnv(async () => Response.json({ ok: true }));
-    const response = await worker.fetch(request("/member/api/mms/prebookings", token, {
+    const response = await worker.fetch(request("/member/api/liff/mms/prebookings", token, {
       idempotency_key: "mms-prebooking-request-002",
       member_ref: "spoofed_member",
     }), env);

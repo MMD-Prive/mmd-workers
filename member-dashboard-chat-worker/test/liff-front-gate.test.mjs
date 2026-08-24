@@ -66,14 +66,14 @@ test("MMS member API uses the same trusted member-pages front gate", async () =>
       },
     },
   };
-  const response = await worker.fetch(new Request("https://mmdbkk.com/member/api/mms/match", {
+  const response = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/mms/match", {
     method: "POST",
     headers: { cookie: "__Host-mmd_liff_session=current", "content-type": "application/json" },
     body: JSON.stringify({ recipient_gender: "male", zone: "sukhumvit", skills: ["thai_massage"] }),
   }), env);
 
   assert.equal(response.status, 200);
-  assert.equal(calls[0].url, "https://mmdbkk.com/member/api/mms/match");
+  assert.equal(calls[0].url, "https://mmdbkk.com/member/api/liff/mms/match");
   assert.equal(calls[0].cookie, "__Host-mmd_liff_session=current");
   assert.equal(response.headers.get("x-mmd-upstream-service"), "member-pages-worker");
   assert.match(response.headers.get("set-cookie") || "", /rotated/);

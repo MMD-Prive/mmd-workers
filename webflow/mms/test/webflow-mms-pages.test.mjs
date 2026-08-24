@@ -9,9 +9,9 @@ const therapistsBase = new URL("../therapists/", import.meta.url);
 test("member booking uses the authenticated facade and never browser-supplies member identity", async () => {
   const html = await readFile(new URL("member-booking.html", bookingBase), "utf8");
   const js = await readFile(new URL("member-booking.js", bookingBase), "utf8");
-  assert.match(html, /\/member\/api\/mms\/catalog/);
-  assert.match(html, /\/member\/api\/mms\/match/);
-  assert.match(html, /\/member\/api\/mms\/prebookings/);
+  assert.match(html, /\/member\/api\/liff\/mms\/catalog/);
+  assert.match(html, /\/member\/api\/liff\/mms\/match/);
+  assert.match(html, /\/member\/api\/liff\/mms\/prebookings/);
   assert.doesNotMatch(html + js, /mms\.internal/);
   assert.doesNotMatch(js, /member_ref\s*:/);
   assert.match(js, /slice\(0,6\)/);
