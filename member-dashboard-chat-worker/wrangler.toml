@@ -41,14 +41,6 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/member/api/liff/*"
 zone_name = "mmdbkk.com"
 
-[[routes]]
-pattern = "mmdbkk.com/member/api/mms/*"
-zone_name = "mmdbkk.com"
-
-[[routes]]
-pattern = "www.mmdbkk.com/member/api/mms/*"
-zone_name = "mmdbkk.com"
-
 # Cloudflare route matching includes the query string. The trailing wildcard
 # is required for CARE BACK URLs such as /member/liff?intent=promo.
 # Runtime routing still accepts only /member/liff and /member/liff/.

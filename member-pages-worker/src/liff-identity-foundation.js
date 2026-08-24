@@ -29,9 +29,9 @@ const PACKAGE_PATHS = new Set(["/member/api/liff/package", "/member/api/liff/pac
 const PAYMENT_INTENT_PATHS = new Set(["/member/api/liff/payment-intent", "/member/api/liff/payment-intent/"]);
 const STATUS_PATHS = new Set(["/member/api/liff/status", "/member/api/liff/status/"]);
 const PROFILE_PATHS = new Set(["/member/api/liff/profile", "/member/api/liff/profile/"]);
-const MMS_CATALOG_PATHS = new Set(["/member/api/mms/catalog", "/member/api/mms/catalog/"]);
-const MMS_MATCH_PATHS = new Set(["/member/api/mms/match", "/member/api/mms/match/"]);
-const MMS_PREBOOKING_PATHS = new Set(["/member/api/mms/prebookings", "/member/api/mms/prebookings/"]);
+const MMS_CATALOG_PATHS = new Set(["/member/api/mms/catalog", "/member/api/mms/catalog/", "/member/api/liff/mms/catalog", "/member/api/liff/mms/catalog/"]);
+const MMS_MATCH_PATHS = new Set(["/member/api/mms/match", "/member/api/mms/match/", "/member/api/liff/mms/match", "/member/api/liff/mms/match/"]);
+const MMS_PREBOOKING_PATHS = new Set(["/member/api/mms/prebookings", "/member/api/mms/prebookings/", "/member/api/liff/mms/prebookings", "/member/api/liff/mms/prebookings/"]);
 const CARE_BACK_CLAIM_PATHS = new Set(["/member/api/liff/care-back/claim", "/member/api/liff/care-back/claim/"]);
 const CARE_BACK_STATE_PATHS = new Set(["/member/api/liff/care-back/state", "/member/api/liff/care-back/state/"]);
 const CARE_BACK_WISH_PATHS = new Set(["/member/api/liff/care-back/wish", "/member/api/liff/care-back/wish/"]);
@@ -1342,7 +1342,7 @@ function hasAtomicSessionReplayGuard(_env) {
   return false;
 }
 function isLiffPrefix(path) { return path === "/member/api/liff" || path.startsWith("/member/api/liff/"); }
-function isMmsMemberPrefix(path) { return path === "/member/api/mms" || path.startsWith("/member/api/mms/"); }
+function isMmsMemberPrefix(path) { return path === "/member/api/mms" || path.startsWith("/member/api/mms/") || path === "/member/api/liff/mms" || path.startsWith("/member/api/liff/mms/"); }
 function hasBrowserIdentityClaims(body) { return BROWSER_IDENTITY_FIELDS.some((key) => Object.prototype.hasOwnProperty.call(body, key)); }
 function hasUnexpectedKeys(body, allowed) { return Object.keys(body || {}).some((key) => !allowed.has(key)); }
 function normalizeLiffIntent(value) { const intent = String(value || "unknown").trim().toLowerCase(); return LIFF_INTENTS.has(intent) ? intent : "unknown"; }
