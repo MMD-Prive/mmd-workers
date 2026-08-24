@@ -38,5 +38,5 @@ test('member dashboard ownership lock rejects the retired redirect-worker chain'
 
   assert.match(doc, /MUST NOT be owned by `admin-worker`/);
   assert.match(doc, /mmd-redirect-worker` is retired\/hard-disabled/);
-  assert.match(doc, /No public `\/api\/member\/dashboard` route is considered canonical until it is explicitly implemented/);
+  assert.match(doc, /\/api\/member\/dashboard -> member-dashboard-chat-worker -> MEMBER_PAGES_WORKER -> member-pages-worker -> MEMBER_STATUS_RESOLVER -> mmd-auth-worker/);
 });

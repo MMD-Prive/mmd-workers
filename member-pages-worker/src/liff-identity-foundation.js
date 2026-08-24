@@ -29,6 +29,7 @@ const PACKAGE_PATHS = new Set(["/member/api/liff/package", "/member/api/liff/pac
 const PAYMENT_INTENT_PATHS = new Set(["/member/api/liff/payment-intent", "/member/api/liff/payment-intent/"]);
 const STATUS_PATHS = new Set(["/member/api/liff/status", "/member/api/liff/status/"]);
 const PROFILE_PATHS = new Set(["/member/api/liff/profile", "/member/api/liff/profile/"]);
+const DASHBOARD_PATHS = new Set(["/api/member/dashboard", "/api/member/dashboard/"]);
 const MMS_CATALOG_PATHS = new Set(["/member/api/mms/catalog", "/member/api/mms/catalog/", "/member/api/liff/mms/catalog", "/member/api/liff/mms/catalog/"]);
 const MMS_MATCH_PATHS = new Set(["/member/api/mms/match", "/member/api/mms/match/", "/member/api/liff/mms/match", "/member/api/liff/mms/match/"]);
 const MMS_PREBOOKING_PATHS = new Set(["/member/api/mms/prebookings", "/member/api/mms/prebookings/", "/member/api/liff/mms/prebookings", "/member/api/liff/mms/prebookings/"]);
@@ -135,6 +136,17 @@ export default {
         response = await handleHallToken(request, env);
       } else {
         response = json({ ok: false, error: { code: "LIFF_ROUTE_NOT_FOUND", message: "Unknown LIFF identity route." } }, 404);
+      }
+      return withLiffCors(request, response, env);
+    }
+    if (DASHBOARD_PATHS.has(path)) {
+      let response;
+      if (request.method === "OPTIONS") {
+        response = isApprovedOrigin(request)
+          ? new Response(null, { status: 204, headers: apiHeaders("GET,OPTIONS") })
+          : json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "Same-origin request required." } }, 403);
+      } else {
+        response = await handleMemberDashboard(request, env);
       }
       return withLiffCors(request, response, env);
     }
@@ -538,6 +550,231 @@ export async function handleMemberProfile(request, env = {}) {
   return json({ ok: true, data: safeMemberProfile(auth.session.member_profile) }, 200, {
     cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
   });
+}
+
+export async function handleMemberDashboard(request, env = {}) {
+  if (request.method !== "GET") return methodNotAllowed("GET");
+  const originFailure = rejectUnapprovedOrigin(request, env);
+  if (originFailure) return originFailure;
+  if (!hasFoundationBindings(env)) return dashboardError("checking", 503);
+
+  const auth = await authenticateAndRotate(request, env);
+  if (!auth.ok) return dashboardError("checking", 401);
+  if (!auth.session.member_exists || !auth.session.member_id || !auth.session.member_profile) {
+    try {
+      await commitRotatedSession(env, auth);
+    } catch {
+      return dashboardError("checking", 503);
+    }
+    return json(buildCheckingDashboard(request, "member_checking"), 200, {
+      cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
+    });
+  }
+
+  try {
+    await commitRotatedSession(env, auth);
+  } catch {
+    return dashboardError("checking", 503);
+  }
+
+  return json({ ok: true, data: buildMemberDashboardData(auth.session.member_profile, request) }, 200, {
+    cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
+  });
+}
+
+function dashboardError(state, status) {
+  return json({
+    ok: false,
+    state,
+    message: "กำลังตรวจสอบข้อมูล",
+    error: "checking",
+  }, status);
+}
+
+function buildCheckingDashboard(request, code = "checking") {
+  return {
+    ok: true,
+    data: {
+      dashboard_state: "checking",
+      data_status: "checking",
+      member: {
+        display_name: "สมาชิก MMD",
+        tier: checkingField("member_profile"),
+        membership_status: checkingField("member_profile"),
+      },
+      points: {
+        value: null,
+        status: "checking",
+        source: "points_ledger",
+        records_count: null,
+      },
+      history: {
+        status: "checking",
+        range_days: 365,
+        events: [],
+        payment_history_status: "checking",
+      },
+      payment_history: {
+        status: "checking",
+        records: [],
+        note: "Payment records are historical only and do not represent current payment status.",
+      },
+      actions: dashboardActions(request),
+      messages: [{ code, text: "กำลังตรวจสอบข้อมูล" }],
+    },
+  };
+}
+
+function buildMemberDashboardData(profile = {}, request) {
+  const tier = dashboardTier(profile);
+  const membershipStatus = dashboardMembershipStatus(profile);
+  const points = dashboardPoints(profile);
+  const history = dashboardHistory(profile);
+  const paymentHistory = dashboardPaymentHistory(profile);
+  const fieldStatuses = [
+    tier.status,
+    membershipStatus.status,
+    points.status,
+    history.status,
+    paymentHistory.status === "verified_history" || paymentHistory.status === "empty" ? "verified" : "checking",
+  ];
+  const dataStatus = fieldStatuses.every((status) => status === "verified" || status === "empty") ? "complete" : "partial";
+
+  return {
+    dashboard_state: dataStatus === "complete" ? "ready" : "partial",
+    data_status: dataStatus,
+    member: {
+      display_name: dashboardDisplayName(profile.display_name),
+      tier,
+      membership_status: membershipStatus,
+    },
+    points,
+    history,
+    payment_history: paymentHistory,
+    actions: dashboardActions(request),
+    messages: dataStatus === "complete" ? [] : [{ code: "partial_data", text: "กำลังตรวจสอบข้อมูล" }],
+  };
+}
+
+function checkingField(source) {
+  return { value: null, status: "checking", source };
+}
+
+function verifiedField(value, source) {
+  return { value, status: "verified", source };
+}
+
+function dashboardDisplayName(value) {
+  return normalizeCustomerText(value, 120) || "สมาชิก MMD";
+}
+
+function dashboardTier(profile = {}) {
+  const value = String(profile.tier || "").trim();
+  if (!value || /^svip$/i.test(value)) return checkingField("member_profile");
+  if (!["Member", "Standard", "Premium", "VIP", "Black Card"].includes(value)) return checkingField("member_profile");
+  return verifiedField(value, "member_profile_resolver");
+}
+
+function dashboardMembershipStatus(profile = {}) {
+  const status = String(profile.membership_status || "").trim().toLowerCase();
+  if (status === "active" || status === "grace") return verifiedField("active", "member_profile_resolver");
+  if (status === "expired") return verifiedField("expired", "member_profile_resolver");
+  if (status === "under_review") return verifiedField("pending", "member_profile_resolver");
+  return checkingField("member_profile_resolver");
+}
+
+function dashboardPoints(profile = {}) {
+  const value = Number(profile.points);
+  const recordsCount = profile.points_records_count === null || profile.points_records_count === undefined
+    ? NaN
+    : Number(profile.points_records_count);
+  const hasVerifiedCount = Number.isInteger(recordsCount) && recordsCount >= 0;
+  if (!Number.isFinite(value) || value < 0 || !hasVerifiedCount) {
+    return { value: null, status: "checking", source: "points_ledger", records_count: null };
+  }
+  return {
+    value: Math.trunc(value),
+    status: "verified",
+    source: "points_ledger",
+    records_count: recordsCount,
+  };
+}
+
+function dashboardHistory(profile = {}) {
+  const events = Array.isArray(profile.history)
+    ? profile.history.map(dashboardHistoryEvent).filter(Boolean).slice(0, 50)
+    : [];
+  const status = events.length ? "verified" : "empty";
+  const paymentHistoryStatus = dashboardPaymentHistory(profile).status;
+  return {
+    status,
+    range_days: 365,
+    events,
+    payment_history_status: paymentHistoryStatus,
+  };
+}
+
+function dashboardHistoryEvent(item = {}) {
+  const type = String(item.type || "");
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(item.date || "")) ? String(item.date) : "";
+  if (!["service", "membership", "points"].includes(type) || !date) return null;
+  const title = normalizeCustomerText(item.title, 80) || "MMD activity";
+  const event = {
+    type,
+    occurred_at: `${date}T00:00:00.000Z`,
+    title,
+    summary: "รายการนี้ยืนยันแล้ว",
+  };
+  if (type === "points" && Number.isFinite(Number(item.points_delta))) {
+    event.points_delta = Math.trunc(Number(item.points_delta));
+  }
+  return event;
+}
+
+function dashboardPaymentHistory(profile = {}) {
+  const records = Array.isArray(profile.payment_history)
+    ? profile.payment_history.map(dashboardPaymentRecord).filter(Boolean).slice(0, 20)
+    : [];
+  return {
+    status: records.length ? "verified_history" : "empty",
+    records,
+    note: "Payment records are historical only and do not represent current payment status.",
+  };
+}
+
+function dashboardPaymentRecord(item = {}) {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(item.date || "")) ? String(item.date) : "";
+  const status = String(item.status || "").trim().toLowerCase();
+  if (!date || !["verified", "settled", "completed"].includes(status)) return null;
+  return {
+    occurred_at: `${date}T00:00:00.000Z`,
+    title: normalizeCustomerText(item.title, 80) || "Payment history",
+    summary: "รายการชำระเงินที่ยืนยันแล้ว",
+  };
+}
+
+function dashboardActions(request) {
+  const query = safeDashboardQuery(new URL(request.url).searchParams);
+  return {
+    dashboard_url: appendDashboardQuery("/member/dashboard", query),
+    requests_url: appendDashboardQuery("/sigil/booking", query),
+    membership_url: appendDashboardQuery(CANONICAL_MEMBER_ROUTE, query),
+    payments_url: appendDashboardQuery("/member/payments", query),
+  };
+}
+
+function safeDashboardQuery(searchParams) {
+  const safe = new URLSearchParams();
+  for (const key of ["t", "code", "promo", "source", "invite"]) {
+    const value = String(searchParams.get(key) || "").trim();
+    if (value && value.length <= 2048 && /^[A-Za-z0-9._~-]+$/.test(value)) safe.set(key, value);
+  }
+  return safe;
+}
+
+function appendDashboardQuery(path, query) {
+  const suffix = query.toString();
+  return suffix ? `${path}?${suffix}` : path;
 }
 
 export async function handleCareBackClaim(request, env = {}) {
@@ -1467,12 +1704,25 @@ function safeMemberProfile(input = {}) {
   }).filter(Boolean) : [];
   const from = /^\d{4}-\d{2}-\d{2}$/.test(String(input.history_window?.from || "")) ? String(input.history_window.from) : "";
   const to = /^\d{4}-\d{2}-\d{2}$/.test(String(input.history_window?.to || "")) ? String(input.history_window.to) : "";
+  const paymentHistory = Array.isArray(input.payment_history) ? input.payment_history.slice(0, 20).map((item) => {
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(item?.date || "")) ? String(item.date) : "";
+    const status = ["verified", "settled", "completed"].includes(String(item?.status || "")) ? String(item.status) : "";
+    if (!date || !status) return null;
+    return {
+      date,
+      title: String(item.title || "Payment history").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 80),
+      status,
+    };
+  }).filter(Boolean) : [];
+  const pointsRecordsCount = Number(input.points_records_count);
   const profile = {
     display_name: String(input.display_name || "สมาชิก MMD").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 120),
     tier: ["Member", "Standard", "Premium", "VIP", "SVIP", "Black Card"].includes(input.tier) ? input.tier : "Member",
     membership_status: ["active", "grace", "expired", "under_review"].includes(input.membership_status) ? input.membership_status : "under_review",
     payment_status: ["verified", "pending_review", "unavailable"].includes(input.payment_status) ? input.payment_status : "unavailable",
     points: Number.isFinite(Number(input.points)) && Number(input.points) >= 0 ? Math.trunc(Number(input.points)) : 0,
+    points_records_count: Number.isInteger(pointsRecordsCount) && pointsRecordsCount >= 0 ? pointsRecordsCount : null,
+    payment_history: paymentHistory,
     history_window: { from, to, timezone: "Asia/Bangkok" },
     history,
   };

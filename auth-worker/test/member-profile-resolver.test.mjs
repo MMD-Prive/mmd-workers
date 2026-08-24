@@ -118,8 +118,12 @@ test("LIFF member profile resolver returns only points, tier, and one-year custo
     display_name: "เปอร์",
     tier: "Premium",
     membership_status: "active",
-    points: 345,
+    points: 25,
+    points_records_count: 1,
     payment_status: "verified",
+    payment_history: [
+      { date: recent, title: "Membership payment", status: "verified" },
+    ],
     membership_expires_at: "2027-08-31",
     history_window: { from: "2025-08-12", to: "2026-08-12", timezone: "Asia/Bangkok" },
     history: [
@@ -163,6 +167,52 @@ test("LIFF payment status requires authoritative verification and otherwise fail
     assert.equal(response.status, 200);
     assert.equal((await response.json()).data.profile.payment_status, expected, JSON.stringify(paymentFields));
   }
+});
+
+test("LIFF points come from posted ledger records, not member summary balance", async () => {
+  useFixedClock();
+  globalThis.fetch = async (input) => {
+    const table = decodeURIComponent(new URL(String(input)).pathname.split("/").at(-1));
+    if (table === "Members") return Response.json({ records: [{ id: "rec_member", fields: {
+      line_id: LINE_ID,
+      "Contact Email": "per@example.com",
+      "Points Balance": 9999,
+    } }] });
+    if (table === "Sessions" || table === "member_packages" || table === "Payments") return Response.json({ records: [] });
+    if (table === "MMD — Points Ledger") return Response.json({ records: [
+      { fields: { member_email: "per@example.com", points: 10, transaction_status: "posted", posted_at: "2026-08-10T02:00:00.000Z" } },
+      { fields: { member_email: "per@example.com", points: 20, transaction_status: "pending", posted_at: "2026-08-10T02:00:00.000Z" } },
+    ] });
+    throw new Error(`Unexpected Airtable table: ${table}`);
+  };
+
+  const response = await worker.fetch(request({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }), env());
+  const profile = (await response.json()).data.profile;
+
+  assert.equal(profile.points, 10);
+  assert.equal(profile.points_records_count, 1);
+});
+
+test("LIFF points return genuine zero after the points ledger resolves empty", async () => {
+  useFixedClock();
+  globalThis.fetch = async (input) => {
+    const table = decodeURIComponent(new URL(String(input)).pathname.split("/").at(-1));
+    if (table === "Members") return Response.json({ records: [{ id: "rec_member", fields: {
+      line_id: LINE_ID,
+      "Contact Email": "per@example.com",
+      "Points Balance": 9999,
+    } }] });
+    if (table === "Sessions" || table === "member_packages" || table === "Payments" || table === "MMD — Points Ledger") {
+      return Response.json({ records: [] });
+    }
+    throw new Error(`Unexpected Airtable table: ${table}`);
+  };
+
+  const response = await worker.fetch(request({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }), env());
+  const profile = (await response.json()).data.profile;
+
+  assert.equal(profile.points, 0);
+  assert.equal(profile.points_records_count, 0);
 });
 
 test("LIFF profile omits unproven expiry and fails payment lookup closed", async () => {
