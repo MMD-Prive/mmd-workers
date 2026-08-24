@@ -22,9 +22,11 @@ Member-facing dashboard data belongs in the active member runtime stack:
 
 `Webflow / LIFF member shell -> active member runtime -> MEMBER_STATUS_RESOLVER / mmd-auth-worker -> verified production data`
 
-Current source evidence places member runtime ownership in `member-pages-worker`, optionally fronted by `member-dashboard-chat-worker` where an explicit active public route/service binding is required.
+Current source evidence places member runtime ownership in `member-pages-worker`, fronted by `member-dashboard-chat-worker` only for the explicit public `/api/member/dashboard` route because `member-pages-worker` remains service-only in production.
 
-No public `/api/member/dashboard` route is considered canonical until it is explicitly implemented and tested in an active member worker. Do not infer ownership from historical redirect-worker documentation or tests.
+Do not infer ownership from historical redirect-worker documentation or tests. The canonical Phase 1 dashboard data route is:
+
+`/api/member/dashboard -> member-dashboard-chat-worker -> MEMBER_PAGES_WORKER -> member-pages-worker -> MEMBER_STATUS_RESOLVER -> mmd-auth-worker`
 
 ## Phase 1 contract constraints
 
