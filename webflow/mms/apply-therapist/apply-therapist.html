@@ -1,0 +1,80 @@
+<main id="mta2" class="mta-page" data-application-endpoint="https://mms-worker.malemodel-bkk.workers.dev/mms/api/applications" data-upload-endpoint="https://mms-worker.malemodel-bkk.workers.dev/mms/api/uploads/presign">
+  <header class="mta-hero">
+    <div class="mta-hero__copy">
+      <p class="mta-kicker">MMS · MALE THERAPIST APPLICATION</p>
+      <h1>สมัครเป็น<br><em>Male Therapist</em></h1>
+      <p>ร่วมงานกับ MMS ในรูปแบบ Online Male Therapist Delivery — ไม่มีหน้าร้าน พนักงานเตรียมตัวจากพื้นที่ส่วนตัวและเดินทางไปยังสถานที่นัดหมายของลูกค้า</p>
+      <a class="mta-button mta-button--light" href="#mta-form">เริ่มสมัคร <span aria-hidden="true">↓</span></a>
+    </div>
+    <figure class="mta-hero__media"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a88a228c7e7fcd7f766431b_MMS%20-%2001%20Therapists.webp" alt="พนักงานชายกำลังตรวจอุปกรณ์ก่อนรับงานกับ MMS" loading="eager"></figure>
+  </header>
+
+  <nav class="mta-steps" aria-label="ขั้นตอนใบสมัคร">
+    <button type="button" data-step-link="1" aria-current="step"><b>01</b><span>ข้อมูลติดต่อ</span></button>
+    <button type="button" data-step-link="2"><b>02</b><span>ตัวตน</span></button>
+    <button type="button" data-step-link="3"><b>03</b><span>Skills &amp; Zone</span></button>
+    <button type="button" data-step-link="4"><b>04</b><span>ประสบการณ์</span></button>
+    <button type="button" data-step-link="5"><b>05</b><span>ไฟล์ &amp; ยืนยัน</span></button>
+  </nav>
+
+  <section class="mta-intro" aria-labelledby="mta-intro-title">
+    <p class="mta-kicker">HOW MMS WORKS</p>
+    <h2 id="mta-intro-title">คัดเลือก เตรียมพร้อม<br>และประสานงานออนไลน์</h2>
+    <p>MMS คัดเลือกและประสานงานผ่านระบบออนไลน์ พนักงานเดินทางไปยังบ้าน คอนโด โรงแรม หรือพื้นที่ส่วนตัวที่เหมาะสมตามนัดหมาย</p>
+    <div class="mta-story" aria-label="ขั้นตอนการทำงานกับ MMS">
+      <figure><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a88a228c7e7fcd7f766431b_MMS%20-%2001%20Therapists.webp" alt="การคัดเลือกพนักงานโดย MMS" loading="lazy"><figcaption>01 · SELECTED BY MMS</figcaption></figure>
+      <figure><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a88a228d37e61b8c9b596dd_MMS%20-%2002%20Therapists.webp" alt="พนักงานเดินทางถึงสถานที่ของลูกค้า" loading="lazy"><figcaption>02 · AT YOUR PLACE</figcaption></figure>
+      <figure><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a88a22874ce4075cf76f66c_MMS%20-%2003%20Therapists.webp" alt="พนักงานให้บริการตามรูปแบบที่ลูกค้าเลือก" loading="lazy"><figcaption>03 · SESSION STYLE</figcaption></figure>
+      <figure><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a88a228c5ec5a31274e0d97_MMS%20-%2004%20Therapists.webp" alt="MMS ประสานรายละเอียดงานให้พนักงาน" loading="lazy"><figcaption>04 · COORDINATED BY MMS</figcaption></figure>
+    </div>
+  </section>
+
+  <section id="mta-form" class="mta-form-shell" aria-labelledby="mta-form-title">
+    <div class="mta-form-head"><p class="mta-kicker">APPLICATION</p><h2 id="mta-form-title">เล่าให้เรารู้จักคุณ</h2><p>ใช้เวลาประมาณ 6–8 นาที ข้อมูลจะถูกใช้เพื่อพิจารณาการร่วมงานและประสานงานเท่านั้น</p></div>
+    <form novalidate>
+      <section class="mta-panel" data-step="1">
+        <div class="mta-panel__head"><span>01</span><div><h3>ข้อมูลติดต่อ</h3><p>ข้อมูลสำหรับติดต่อกลับและนัดหมายสัมภาษณ์</p></div></div>
+        <div class="mta-grid">
+          <label class="mta-field mta-span-2"><span>ชื่อ–นามสกุล *</span><input name="applicant_name" autocomplete="name" required maxlength="160"></label>
+          <label class="mta-field"><span>ชื่อเล่น</span><input name="nickname" maxlength="80"></label>
+          <label class="mta-field"><span>เบอร์โทร</span><input name="phone" type="tel" autocomplete="tel" maxlength="40"></label>
+          <label class="mta-field mta-span-2"><span>LINE ID</span><input name="line_id" maxlength="100"><small>กรุณาระบุเบอร์โทรหรือ LINE ID อย่างน้อยหนึ่งอย่าง</small></label>
+        </div>
+        <p class="mta-error" role="alert" aria-live="polite"></p><div class="mta-actions"><span></span><button class="mta-button" type="button" data-next>ถัดไป</button></div>
+      </section>
+
+      <section class="mta-panel" data-step="2" hidden>
+        <div class="mta-panel__head"><span>02</span><div><h3>ตัวตนและขอบเขตงาน</h3><p>เพศผู้สมัครกับรสนิยมทางเพศเป็นคนละข้อมูล และจัดเก็บแยกกัน</p></div></div>
+        <fieldset><legend>เพศของผู้สมัคร *</legend><div class="mta-options"><label><input type="radio" name="gender_identity" value="male" required><span>ชาย</span></label><label><input type="radio" name="gender_identity" value="prefer_not_to_say"><span>ไม่ประสงค์ระบุ</span></label></div></fieldset>
+        <fieldset><legend>ลูกค้าที่สะดวกรับบริการ *</legend><div class="mta-options mta-options--3"><label><input type="radio" name="customer_gender_scope" value="male" required><span>ผู้ชาย</span></label><label><input type="radio" name="customer_gender_scope" value="female"><span>ผู้หญิง</span></label><label><input type="radio" name="customer_gender_scope" value="both"><span>ได้ทั้งคู่</span></label></div></fieldset>
+        <fieldset class="mta-sensitive"><legend>รสนิยมทางเพศ <small>ไม่บังคับ</small></legend><p>ข้อมูลอ่อนไหวนี้เก็บในตารางแยก ไม่แสดงต่อลูกค้า และไม่ใช้ในการ Match งาน</p><div class="mta-options mta-options--4"><label><input type="radio" name="sexual_orientation" value="straight"><span>ชายแท้</span></label><label><input type="radio" name="sexual_orientation" value="gay"><span>เกย์</span></label><label><input type="radio" name="sexual_orientation" value="bi"><span>ไบ</span></label><label><input type="radio" name="sexual_orientation" value=""><span>ไม่เก็บข้อมูลนี้</span></label></div><label class="mta-consent" data-sensitive-consent hidden><input type="checkbox" name="sensitive_consent"><span>ยินยอมให้ MMS จัดเก็บข้อมูลรสนิยมทางเพศตามวัตถุประสงค์ที่แจ้งไว้</span></label></fieldset>
+        <p class="mta-error" role="alert" aria-live="polite"></p><div class="mta-actions"><button class="mta-button mta-button--ghost" type="button" data-back>ย้อนกลับ</button><button class="mta-button" type="button" data-next>ถัดไป</button></div>
+      </section>
+
+      <section class="mta-panel" data-step="3" hidden>
+        <div class="mta-panel__head"><span>03</span><div><h3>Skills และโซนรับงาน</h3><p>เลือกทักษะที่ทำได้จริงอย่างน้อย 1 รายการ</p></div></div>
+        <fieldset><legend>ทักษะการให้บริการ * <small data-skill-count>0 / 8</small></legend><div class="mta-skill-grid" data-skills></div></fieldset>
+        <div class="mta-grid"><label class="mta-field"><span>โซนหลัก *</span><select name="base_zone" required><option value="">เลือกโซน</option></select></label><fieldset class="mta-span-2"><legend>โซนที่เดินทางไปได้ *</legend><div class="mta-zone-grid" data-zones></div></fieldset></div>
+        <p class="mta-error" role="alert" aria-live="polite"></p><div class="mta-actions"><button class="mta-button mta-button--ghost" type="button" data-back>ย้อนกลับ</button><button class="mta-button" type="button" data-next>ถัดไป</button></div>
+      </section>
+
+      <section class="mta-panel" data-step="4" hidden>
+        <div class="mta-panel__head"><span>04</span><div><h3>ประสบการณ์</h3><p>ประสบการณ์ไม่จำเป็นต้องมาจากหน้าร้านเท่านั้น</p></div></div>
+        <div class="mta-grid"><label class="mta-field"><span>ประสบการณ์ (ปี)</span><input name="experience_years" type="number" min="0" max="60" value="0"></label><label class="mta-field"><span>เพิ่มเติม (เดือน)</span><input name="experience_months" type="number" min="0" max="11" value="0"></label><label class="mta-field mta-span-2"><span>จุดแข็งและรายละเอียดประสบการณ์</span><textarea name="strengths" rows="5" maxlength="3000"></textarea></label></div>
+        <fieldset><legend>เคยทำงานร้านหรือสปาหรือไม่</legend><div class="mta-options"><label><input type="radio" name="worked_at_spa_before" value="yes"><span>เคย</span></label><label><input type="radio" name="worked_at_spa_before" value="no" checked><span>ไม่เคย</span></label></div><label class="mta-field" data-spa-name hidden><span>ชื่อร้านหรือสปา *</span><input name="spa_name" maxlength="160"></label></fieldset>
+        <fieldset><legend>เคยรับงานนวดด้วยตัวเองหรือไม่</legend><div class="mta-options"><label><input type="radio" name="worked_independently_before" value="yes"><span>เคย</span></label><label><input type="radio" name="worked_independently_before" value="no" checked><span>ไม่เคย</span></label></div><label class="mta-field" data-social hidden><span>Social Media หรือช่องทางอ้างอิง *</span><input name="independent_social" maxlength="240"></label></fieldset>
+        <p class="mta-error" role="alert" aria-live="polite"></p><div class="mta-actions"><button class="mta-button mta-button--ghost" type="button" data-back>ย้อนกลับ</button><button class="mta-button" type="button" data-next>ถัดไป</button></div>
+      </section>
+
+      <section class="mta-panel" data-step="5" hidden>
+        <div class="mta-panel__head"><span>05</span><div><h3>รูป เอกสาร และการยืนยัน</h3><p>ไฟล์เป็นตัวเลือกและเก็บใน Private R2 ไม่ใช้ public URL</p></div></div>
+        <div class="mta-grid"><label class="mta-upload"><span>รูปโปรไฟล์ <small>ไม่บังคับ</small></span><input name="profile_photo" type="file" accept="image/jpeg,image/png,image/webp"><small>JPG, PNG หรือ WebP ไม่เกิน 10 MB</small></label><label class="mta-upload"><span>ใบ Certificate <small>ไม่บังคับ</small></span><input name="certificates" type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf"><small>รูปหรือ PDF ไม่เกิน 10 MB ต่อไฟล์</small></label></div>
+        <div class="mta-review" data-review></div>
+        <label class="mta-consent"><input type="checkbox" name="general_consent" required><span>ยืนยันว่าข้อมูลเป็นความจริง และยินยอมให้ MMS ใช้ข้อมูลเพื่อพิจารณา คัดเลือก และประสานงาน *</span></label>
+        <p class="mta-error" role="alert" aria-live="polite"></p>
+        <div class="mta-actions"><button class="mta-button mta-button--ghost" type="button" data-back>ย้อนกลับ</button><button class="mta-button" type="submit">ส่งใบสมัคร</button></div>
+      </section>
+    </form>
+    <section class="mta-success" tabindex="-1" hidden><p class="mta-kicker">APPLICATION RECEIVED</p><h2>รับใบสมัครแล้วครับ</h2><p>ทีม MMS จะตรวจข้อมูลและติดต่อกลับตามช่องทางที่ให้ไว้</p><strong data-reference></strong><p data-upload-status></p><a class="mta-button" href="https://lin.ee/FetWiEZ">ติดต่อ MMS ทาง LINE</a></section>
+  </section>
+</main>
