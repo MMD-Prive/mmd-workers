@@ -29,6 +29,9 @@ const PACKAGE_PATHS = new Set(["/member/api/liff/package", "/member/api/liff/pac
 const PAYMENT_INTENT_PATHS = new Set(["/member/api/liff/payment-intent", "/member/api/liff/payment-intent/"]);
 const STATUS_PATHS = new Set(["/member/api/liff/status", "/member/api/liff/status/"]);
 const PROFILE_PATHS = new Set(["/member/api/liff/profile", "/member/api/liff/profile/"]);
+const MMS_CATALOG_PATHS = new Set(["/member/api/mms/catalog", "/member/api/mms/catalog/"]);
+const MMS_MATCH_PATHS = new Set(["/member/api/mms/match", "/member/api/mms/match/"]);
+const MMS_PREBOOKING_PATHS = new Set(["/member/api/mms/prebookings", "/member/api/mms/prebookings/"]);
 const CARE_BACK_CLAIM_PATHS = new Set(["/member/api/liff/care-back/claim", "/member/api/liff/care-back/claim/"]);
 const CARE_BACK_STATE_PATHS = new Set(["/member/api/liff/care-back/state", "/member/api/liff/care-back/state/"]);
 const CARE_BACK_WISH_PATHS = new Set(["/member/api/liff/care-back/wish", "/member/api/liff/care-back/wish/"]);
@@ -40,7 +43,7 @@ const APPROVED_ORIGINS = new Set([
   "https://mmdprive.webflow.io",
   "https://mmdprive.com",
 ]);
-const LIFF_INTENTS = new Set(["signup", "renew", "status", "promo", "hall", "continue_payment", "unknown"]);
+const LIFF_INTENTS = new Set(["signup", "renew", "status", "promo", "hall", "continue_payment", "mms_booking", "unknown"]);
 const HALL_AUDIENCES = new Set(["female_view", "lgbt_view", "manual_review", "unknown"]);
 const START_BODY_KEYS = new Set(["id_token", "line_id_token", "intent", "liff_intent", "promo_code", "campaign"]);
 const INTENT_BODY_KEYS = new Set(["intent", "liff_intent"]);
@@ -64,6 +67,7 @@ const BROWSER_IDENTITY_FIELDS = [
   "line_profile",
   "user",
   "member_id",
+  "member_ref",
   "mmd_member_id",
   "tier",
   "points",
@@ -82,6 +86,23 @@ const BROWSER_IDENTITY_FIELDS = [
 export default {
   async fetch(request, env = {}, ctx) {
     const path = normalizePath(new URL(request.url).pathname);
+    if (isMmsMemberPrefix(path)) {
+      let response;
+      if (request.method === "OPTIONS") {
+        response = isApprovedOrigin(request, env)
+          ? new Response(null, { status: 204, headers: apiHeaders("POST,GET,OPTIONS") })
+          : json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "Same-origin request required." } }, 403);
+      } else if (MMS_CATALOG_PATHS.has(path)) {
+        response = await handleMmsCatalog(request, env);
+      } else if (MMS_MATCH_PATHS.has(path)) {
+        response = await handleMmsMatch(request, env);
+      } else if (MMS_PREBOOKING_PATHS.has(path)) {
+        response = await handleMmsPrebooking(request, env);
+      } else {
+        response = json({ ok: false, error: { code: "MMS_ROUTE_NOT_FOUND", message: "Unknown MMS member route." } }, 404);
+      }
+      return withLiffCors(request, response, env);
+    }
     if (isLiffPrefix(path)) {
       let response;
       if (request.method === "OPTIONS") {
@@ -123,6 +144,120 @@ export default {
     return legacyWorker.fetch(request, env, ctx);
   },
 };
+
+async function handleMmsCatalog(request, env) {
+  if (request.method !== "GET") return methodNotAllowed("GET");
+  const originFailure = requireSameOrigin(request, env);
+  if (originFailure) return originFailure;
+  return forwardMmsResponse(await callMmsService(env, "/mms/api/catalog", { method: "GET" }));
+}
+
+async function handleMmsMatch(request, env) {
+  if (request.method !== "POST") return methodNotAllowed("POST");
+  const originFailure = requireSameOrigin(request, env);
+  if (originFailure) return originFailure;
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const allowed = new Set(["recipient_gender", "zone", "skills"]);
+  if (hasUnexpectedKeys(parsed.body, allowed) || hasBrowserIdentityClaims(parsed.body)) return browserIdentityRejected();
+  const auth = await authenticateMmsMember(request, env);
+  if (!auth.ok) return auth.response;
+  const upstream = await callMmsService(env, "/mms/api/therapists/match", {
+    method: "POST",
+    body: parsed.body,
+  });
+  return commitMmsResponse(env, auth, upstream);
+}
+
+async function handleMmsPrebooking(request, env) {
+  if (request.method !== "POST") return methodNotAllowed("POST");
+  const originFailure = requireSameOrigin(request, env);
+  if (originFailure) return originFailure;
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const allowed = new Set([
+    "idempotency_key",
+    "recipient_gender",
+    "zone",
+    "service_date",
+    "service_time",
+    "duration_minutes",
+    "skills",
+    "requested_therapist_ids",
+    "note",
+    "language",
+  ]);
+  if (hasUnexpectedKeys(parsed.body, allowed) || hasBrowserIdentityClaims(parsed.body)) return browserIdentityRejected();
+  const auth = await authenticateMmsMember(request, env);
+  if (!auth.ok) return auth.response;
+  const upstream = await callMmsService(env, "/mms/api/prebookings", {
+    method: "POST",
+    body: { ...parsed.body, member_ref: auth.session.member_id },
+  });
+  return commitMmsResponse(env, auth, upstream);
+}
+
+async function authenticateMmsMember(request, env) {
+  if (!env.LIFF_IDENTITY_KV || !env.LIFF_SESSION_SECRET) {
+    return { ok: false, response: unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED") };
+  }
+  const auth = await authenticateAndRotate(request, env);
+  if (!auth.ok) return auth;
+  if (!auth.session.member_exists || !auth.session.member_id) {
+    return {
+      ok: false,
+      response: await saveRotatedError(env, auth, "MMS_MEMBER_REQUIRED", "Verified MMD membership is required.", 403),
+    };
+  }
+  return auth;
+}
+
+async function callMmsService(env, path, options = {}) {
+  if (!env.MMS_WORKER?.fetch) {
+    return { ok: false, status: 503, payload: { ok: false, error: { code: "MMS_UPSTREAM_NOT_CONFIGURED", message: "MMS service is temporarily unavailable." } } };
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const headers = new Headers({ accept: "application/json" });
+    const init = { method: options.method || "GET", headers, signal: controller.signal };
+    if (options.body) {
+      headers.set("content-type", "application/json");
+      init.body = JSON.stringify(options.body);
+    }
+    const response = await env.MMS_WORKER.fetch(new Request(`https://mms.internal${path}`, init));
+    const payload = await response.json().catch(() => null);
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return { ok: false, status: 502, payload: { ok: false, error: { code: "MMS_UPSTREAM_INVALID", message: "MMS service returned an invalid response." } } };
+    }
+    return { ok: response.ok && payload.ok === true, status: response.status, payload };
+  } catch (error) {
+    return {
+      ok: false,
+      status: error?.name === "AbortError" ? 504 : 502,
+      payload: { ok: false, error: { code: error?.name === "AbortError" ? "MMS_UPSTREAM_TIMEOUT" : "MMS_UPSTREAM_UNAVAILABLE", message: "MMS service is temporarily unavailable." } },
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function commitMmsResponse(env, auth, upstream) {
+  try {
+    await commitRotatedSession(env, auth);
+  } catch (error) {
+    return gatewayStorageFailure(error);
+  }
+  return forwardMmsResponse(upstream, [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)]);
+}
+
+function forwardMmsResponse(upstream, cookies = []) {
+  const status = Number.isInteger(upstream?.status) && upstream.status >= 200 && upstream.status <= 599 ? upstream.status : 502;
+  const payload = upstream?.payload && typeof upstream.payload === "object"
+    ? upstream.payload
+    : { ok: false, error: { code: "MMS_UPSTREAM_INVALID", message: "MMS service returned an invalid response." } };
+  return json(payload, status, { cookies });
+}
 
 export async function handleStart(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
@@ -1207,6 +1342,7 @@ function hasAtomicSessionReplayGuard(_env) {
   return false;
 }
 function isLiffPrefix(path) { return path === "/member/api/liff" || path.startsWith("/member/api/liff/"); }
+function isMmsMemberPrefix(path) { return path === "/member/api/mms" || path.startsWith("/member/api/mms/"); }
 function hasBrowserIdentityClaims(body) { return BROWSER_IDENTITY_FIELDS.some((key) => Object.prototype.hasOwnProperty.call(body, key)); }
 function hasUnexpectedKeys(body, allowed) { return Object.keys(body || {}).some((key) => !allowed.has(key)); }
 function normalizeLiffIntent(value) { const intent = String(value || "unknown").trim().toLowerCase(); return LIFF_INTENTS.has(intent) ? intent : "unknown"; }

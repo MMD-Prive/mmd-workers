@@ -54,6 +54,31 @@ test("LIFF front gate transparently forwards the request through the service bin
   assert.equal(response.headers.get("x-mmd-upstream-service"), "member-pages-worker");
 });
 
+test("MMS member API uses the same trusted member-pages front gate", async () => {
+  const calls = [];
+  const env = {
+    MEMBER_PAGES_WORKER: {
+      async fetch(request) {
+        calls.push({ url: request.url, method: request.method, cookie: request.headers.get("cookie") });
+        return Response.json({ ok: true, data: { matches: [] } }, {
+          headers: { "set-cookie": "__Host-mmd_liff_session=rotated; Secure; HttpOnly; Path=/" },
+        });
+      },
+    },
+  };
+  const response = await worker.fetch(new Request("https://mmdbkk.com/member/api/mms/match", {
+    method: "POST",
+    headers: { cookie: "__Host-mmd_liff_session=current", "content-type": "application/json" },
+    body: JSON.stringify({ recipient_gender: "male", zone: "sukhumvit", skills: ["thai_massage"] }),
+  }), env);
+
+  assert.equal(response.status, 200);
+  assert.equal(calls[0].url, "https://mmdbkk.com/member/api/mms/match");
+  assert.equal(calls[0].cookie, "__Host-mmd_liff_session=current");
+  assert.equal(response.headers.get("x-mmd-upstream-service"), "member-pages-worker");
+  assert.match(response.headers.get("set-cookie") || "", /rotated/);
+});
+
 test("LIFF front gate fails closed when the service binding is missing", async () => {
   const response = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/status"), {});
 

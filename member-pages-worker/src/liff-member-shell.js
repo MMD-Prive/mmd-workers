@@ -1,5 +1,5 @@
 const LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
-const LIFF_INTENTS = new Set(["signup", "renew", "status", "promo", "hall", "continue_payment", "unknown"]);
+const LIFF_INTENTS = new Set(["signup", "renew", "status", "promo", "hall", "continue_payment", "mms_booking", "unknown"]);
 const LIFF_SDK_URL = "https://static.line-scdn.net/liff/edge/2/sdk.js";
 
 export function isLiffMemberShellPath(url) {
@@ -139,6 +139,10 @@ function renderShell(config, nonce) {
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || payload.ok !== true) return null;
     renderProfile(payload.data || {});
+    if (CONFIG.intent === "mms_booking") {
+      window.location.replace("/member/mms-booking");
+      return payload.data || {};
+    }
     if (CONFIG.intent === "promo" && CONFIG.campaign === "care_back") await readCareBackState();
     return payload.data || {};
   }

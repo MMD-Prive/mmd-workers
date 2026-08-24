@@ -24,6 +24,10 @@ id = "12f4c4e7357d4019b5e0951be0b984f5"
 binding = "MEMBER_STATUS_RESOLVER"
 service = "mmd-auth-worker"
 
+[[services]]
+binding = "MMS_WORKER"
+service = "mms-worker"
+
 [[durable_objects.bindings]]
 name = "CARE_BACK_WISH_COORDINATOR"
 class_name = "CareBackBirthdayWishCoordinator"

@@ -1,0 +1,115 @@
+<main id="mmb1" class="mmb-page" data-catalog-endpoint="/member/api/mms/catalog" data-profile-endpoint="/member/api/liff/profile" data-match-endpoint="/member/api/mms/match" data-prebook-endpoint="/member/api/mms/prebookings">
+  <header class="mmb-hero" id="mmb-overview">
+    <nav class="mmb-top" aria-label="MMS Pre-booking">
+      <a class="mmb-brand" href="/therapists"><strong>MMS</strong><span>MALE THERAPIST DELIVERY</span></a>
+      <a class="mmb-back" href="/member/dashboard">My MMD →</a>
+    </nav>
+    <div class="mmb-hero-grid">
+      <div class="mmb-hero-copy">
+        <p class="mmb-kicker">MY MMD · PRE-BOOKING</p>
+        <h1>เลือกสิ่งที่ต้องการ<br><em>แล้วให้ MMS ช่วยเช็กคิว</em></h1>
+        <p>ระบุเพศผู้รับบริการ โซน วัน เวลา และ Skills ที่ต้องการ ระบบจะแสดงเฉพาะ Male Therapist ที่มีความสามารถตรงกับเงื่อนไขเบื้องต้นครับ</p>
+        <div class="mmb-member-pill" id="mmb-member-pill" role="status">กำลังตรวจสอบ Member Access</div>
+      </div>
+      <figure class="mmb-hero-media">
+        <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a88a228d37e61b8c9b596dd_MMS%20-%2002%20Therapists.webp" alt="MMS Male Therapist เดินทางไปยังสถานที่ของลูกค้าตามนัด" loading="eager" decoding="async">
+        <figcaption>MMS · AT YOUR PLACE</figcaption>
+      </figure>
+    </div>
+  </header>
+
+  <section class="mmb-gate" id="mmb-gate" hidden aria-labelledby="mmb-gate-title">
+    <p class="mmb-kicker">MEMBER ACCESS</p>
+    <h2 id="mmb-gate-title">เปิดผ่าน LINE ของ MMD ก่อนครับ</h2>
+    <p>ระบบต้องยืนยัน Member จาก LINE ก่อนแสดงรายชื่อ Therapist และส่ง Pre-booking ข้อมูลตัวตนจะไม่รับจากช่องกรอกใน browser ครับ</p>
+    <a class="mmb-button mmb-button-primary" href="/member/liff?intent=mms_booking">ยืนยันผ่าน LINE Member →</a>
+  </section>
+
+  <section class="mmb-booking" id="mmb-booking" aria-labelledby="mmb-form-title">
+    <div class="mmb-wrap">
+      <header class="mmb-section-head">
+        <p class="mmb-kicker">REQUEST · NOT YET CONFIRMED</p>
+        <h2 id="mmb-form-title">MMS Pre-booking</h2>
+        <p>รายการนี้เป็นคำขอให้ MMS ตรวจคิว ความพร้อม สถานที่ และรายละเอียดอีกครั้ง ยังไม่ใช่การยืนยันงานจนกว่า MMS จะตอบกลับครับ</p>
+      </header>
+
+      <nav class="mmb-step-nav" aria-label="ขั้นตอน Pre-booking">
+        <a href="#mmb-details"><b>01</b><span>นัดของคุณ</span></a>
+        <a href="#mmb-skills"><b>02</b><span>Skills</span></a>
+        <a href="#mmb-options"><b>03</b><span>Therapists</span></a>
+        <a href="#mmb-review"><b>04</b><span>ตรวจและส่ง</span></a>
+      </nav>
+
+      <form id="mmb-form" novalidate>
+        <section class="mmb-panel" id="mmb-details" aria-labelledby="mmb-details-title">
+          <div class="mmb-panel-number">01</div>
+          <div class="mmb-panel-content">
+            <p class="mmb-kicker">APPOINTMENT</p>
+            <h3 id="mmb-details-title">รายละเอียดนัด</h3>
+            <div class="mmb-field-grid">
+              <fieldset class="mmb-field mmb-field-wide">
+                <legend>เพศของผู้รับบริการ *</legend>
+                <div class="mmb-choice-grid mmb-choice-grid-three">
+                  <label><input type="radio" name="recipient_gender" value="male" required><span><b>ผู้ชาย</b><small>Male</small></span></label>
+                  <label><input type="radio" name="recipient_gender" value="female"><span><b>ผู้หญิง</b><small>Female</small></span></label>
+                  <label><input type="radio" name="recipient_gender" value="manual"><span><b>ให้ MMS ช่วยดู</b><small>Manual coordination</small></span></label>
+                </div>
+              </fieldset>
+              <label class="mmb-field"><span>โซนของสถานที่ *</span><select id="mmb-zone" required><option value="">กำลังโหลดโซน…</option></select></label>
+              <label class="mmb-field"><span>วันที่ *</span><input id="mmb-date" type="date" required></label>
+              <label class="mmb-field"><span>เวลา *</span><input id="mmb-time" type="time" required></label>
+              <label class="mmb-field"><span>ระยะเวลา *</span><select id="mmb-duration" required><option value="60">60 นาที</option><option value="90" selected>90 นาที</option><option value="120">120 นาที</option><option value="180">180 นาที</option></select></label>
+              <label class="mmb-field mmb-field-wide"><span>สถานที่หรือจุดนัดหมาย</span><input id="mmb-location-note" maxlength="360" placeholder="เช่น ชื่อคอนโด โรงแรม หรือบริเวณใกล้เคียง (ยังไม่ต้องใส่เลขห้อง)"></label>
+            </div>
+          </div>
+        </section>
+
+        <section class="mmb-panel mmb-panel-dark" id="mmb-skills" aria-labelledby="mmb-skills-title">
+          <div class="mmb-panel-number">02</div>
+          <div class="mmb-panel-content">
+            <p class="mmb-kicker">CHOOSE 1–6 OF 8</p>
+            <h3 id="mmb-skills-title">เลือกรูปแบบการให้บริการ</h3>
+            <p class="mmb-panel-lead">กดเลือกได้สูงสุด 6 Skills ปุ่มที่เลือกจะค้างเป็นสีเขียว และใช้ค้นหา Therapist ที่มี Skills ครบตามที่เลือกครับ</p>
+            <div class="mmb-skill-grid" id="mmb-skill-grid" aria-live="polite"></div>
+            <div class="mmb-skill-count"><strong id="mmb-skill-count">0</strong> / 6 selected</div>
+          </div>
+        </section>
+
+        <section class="mmb-panel" id="mmb-options" aria-labelledby="mmb-options-title">
+          <div class="mmb-panel-number">03</div>
+          <div class="mmb-panel-content">
+            <p class="mmb-kicker">MATCHED OPTIONS</p>
+            <h3 id="mmb-options-title">ดู Therapist ที่ตรงเบื้องต้น</h3>
+            <p class="mmb-panel-lead">ผลลัพธ์อิงจากเพศผู้รับบริการ โซน และ Skills ที่ยืนยันแล้ว แต่รายชื่อและเวลาว่างอาจเปลี่ยนได้ในแต่ละวันครับ</p>
+            <button class="mmb-button mmb-button-primary" id="mmb-match" type="button">เช็ก Therapist ที่เหมาะ →</button>
+            <div class="mmb-results" id="mmb-results" aria-live="polite"></div>
+            <label class="mmb-field mmb-preferred-name"><span>ชื่อ Male Therapist ที่สนใจเพิ่มเติม</span><input id="mmb-preferred-name" maxlength="200" placeholder="ถ้าจำชื่อจาก MMS ได้ สามารถพิมพ์เพิ่มไว้ให้ประสานได้ครับ"></label>
+          </div>
+        </section>
+
+        <section class="mmb-panel mmb-review-panel" id="mmb-review" aria-labelledby="mmb-review-title">
+          <div class="mmb-panel-number">04</div>
+          <div class="mmb-panel-content">
+            <p class="mmb-kicker">REVIEW & SEND</p>
+            <h3 id="mmb-review-title">ตรวจคำขอก่อนส่ง</h3>
+            <div class="mmb-summary" id="mmb-summary"></div>
+            <label class="mmb-field"><span>รายละเอียดเพิ่มเติม</span><textarea id="mmb-note" maxlength="1200" rows="4" placeholder="แรงกด บริเวณที่อยากดูแล ข้อจำกัด หรือรายละเอียดที่ MMS ควรรู้"></textarea></label>
+            <label class="mmb-consent"><input id="mmb-consent" type="checkbox" required><span>ผมเข้าใจว่านี่คือ Pre-booking request และยังไม่ใช่การยืนยัน Therapist เวลา สถานที่ หรือยอด จนกว่า MMS จะประสานและตอบกลับครับ *</span></label>
+            <p class="mmb-error" id="mmb-error" role="alert"></p>
+            <button class="mmb-button mmb-button-accent" id="mmb-submit" type="submit">ส่ง Pre-booking ให้ MMS</button>
+          </div>
+        </section>
+      </form>
+
+      <section class="mmb-success" id="mmb-success" hidden tabindex="-1" aria-live="polite">
+        <p class="mmb-kicker">REQUEST RECEIVED</p>
+        <h2>MMS ได้รับ Pre-booking แล้วครับ</h2>
+        <p>MMD กำลังตรวจสอบคำขอและประสาน Therapist ที่เหมาะ รายการนี้ยังอยู่ในสถานะรอตรวจจนกว่า MMS จะตอบกลับครับ</p>
+        <strong id="mmb-reference"></strong>
+        <div><a class="mmb-button mmb-button-primary" href="/member/requests">ดูคำขอของฉัน →</a><a class="mmb-button mmb-button-outline" href="https://lin.ee/NKTBsql" target="_blank" rel="noopener">LINE @malemassage ↗</a></div>
+      </section>
+    </div>
+  </section>
+
+  <footer class="mmb-footer"><strong>MMS · MALE THERAPIST DELIVERY</strong><span>Managed by MMD · Bangkok</span></footer>
+</main>
