@@ -121,7 +121,7 @@ function html(value) {
   return new Response(value, { status: 200, headers: {
     "content-type": "text/html; charset=utf-8",
     "cache-control": "private, no-store",
-    "content-security-policy": "default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+    "content-security-policy": "default-src 'self'; img-src 'self' data: https://s3.amazonaws.com; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
     "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY",
