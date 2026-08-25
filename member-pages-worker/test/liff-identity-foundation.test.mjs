@@ -963,6 +963,33 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(result.payload.error.code, "LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   });
 
+  it("aborts a slow member resolver at the bounded outer deadline without creating identity state", async () => {
+    let aborted = false;
+    const slowResolver = {
+      fetch: async (resolverRequest) => new Promise((_resolve, reject) => {
+        const signal = resolverRequest.signal;
+        if (signal.aborted) {
+          aborted = true;
+          reject(new DOMException("Aborted", "AbortError"));
+          return;
+        }
+        signal.addEventListener("abort", () => {
+          aborted = true;
+          reject(new DOMException("Aborted", "AbortError"));
+        }, { once: true });
+      }),
+    };
+    const runtime = env({ MEMBER_STATUS_RESOLVER: slowResolver, LIFF_MEMBER_RESOLVER_TIMEOUT_MS: "20" });
+    lineVerify();
+    const startedAt = Date.now();
+    const result = await request("/member/api/liff/start", { body: { id_token: "valid" } }, runtime);
+    assert.equal(result.response.status, 503);
+    assert.equal(result.payload.error.code, "MEMBER_RESOLUTION_FAILED");
+    assert.equal(aborted, true);
+    assert.ok(Date.now() - startedAt < 500);
+    assert.equal([...runtime.LIFF_IDENTITY_KV.map.keys()].filter((key) => key.startsWith("liff:pending:")).length, 0);
+  });
+
   it("unknown verified identity creates only one idempotent pending identity and resolver failure creates none", async () => {
     const runtime = env();
     lineVerify();

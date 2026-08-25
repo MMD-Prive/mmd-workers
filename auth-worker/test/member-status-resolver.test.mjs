@@ -108,3 +108,78 @@ test("member status resolver distinguishes no match from ambiguous or unavailabl
   assert.equal(unavailablePayload.error.code, "MEMBER_STATUS_RESOLVER_UNAVAILABLE");
   assert.doesNotMatch(JSON.stringify(unavailablePayload), /private Airtable diagnostic/);
 });
+
+test("member status resolver fails closed for Airtable auth/rate/server failures, malformed success, and timeout", async () => {
+  for (const responseFactory of [
+    () => new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: { "content-type": "application/json" } }),
+    () => new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } }),
+    () => new Response(JSON.stringify({ error: "rate_limited" }), { status: 429, headers: { "content-type": "application/json" } }),
+    () => new Response(JSON.stringify({ error: "unavailable" }), { status: 503, headers: { "content-type": "application/json" } }),
+    () => new Response(JSON.stringify({ unexpected: [] }), { status: 200, headers: { "content-type": "application/json" } }),
+  ]) {
+    globalThis.fetch = async () => responseFactory();
+    const response = await worker.fetch(resolverRequest({ line_user_id: LINE_ID, purpose: "liff_identity_resolution" }), env());
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error.code, "MEMBER_STATUS_RESOLVER_UNAVAILABLE");
+  }
+
+  let aborted = false;
+  globalThis.fetch = async (_input, init = {}) => new Promise((_resolve, reject) => {
+    init.signal.addEventListener("abort", () => {
+      aborted = true;
+      reject(new DOMException("Aborted", "AbortError"));
+    }, { once: true });
+  });
+  const startedAt = Date.now();
+  const response = await worker.fetch(
+    resolverRequest({ line_user_id: LINE_ID, purpose: "liff_identity_resolution" }),
+    env({ MEMBER_STATUS_AIRTABLE_TIMEOUT_MS: "50" }),
+  );
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error.code, "MEMBER_STATUS_RESOLVER_UNAVAILABLE");
+  assert.equal(aborted, true);
+  assert.ok(Date.now() - startedAt < 500, "internal resolver timeout remains bounded below the outer budget");
+});
+
+test("member status resolver permits a bounded slow Airtable response below its deadline", async () => {
+  globalThis.fetch = async (_input, init = {}) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(Response.json({ records: [] })), 25);
+    init.signal.addEventListener("abort", () => {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    }, { once: true });
+  });
+  const response = await worker.fetch(
+    resolverRequest({ line_user_id: LINE_ID, purpose: "liff_identity_resolution" }),
+    env({ MEMBER_STATUS_AIRTABLE_TIMEOUT_MS: "50" }),
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, data: { member_exists: false } });
+});
+
+test("member status resolver propagates caller cancellation to the Airtable lookup and fails closed", async () => {
+  let aborted = false;
+  globalThis.fetch = async (_input, init = {}) => new Promise((_resolve, reject) => {
+    if (init.signal.aborted) {
+      aborted = true;
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    init.signal.addEventListener("abort", () => {
+      aborted = true;
+      reject(new DOMException("Aborted", "AbortError"));
+    }, { once: true });
+  });
+  const controller = new AbortController();
+  const pending = worker.fetch(new Request(RESOLVER_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-mmd-member-resolver-secret": RESOLVER_SECRET },
+    body: JSON.stringify({ line_user_id: LINE_ID, purpose: "liff_identity_resolution" }),
+    signal: controller.signal,
+  }), env());
+  controller.abort();
+  const response = await pending;
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error.code, "MEMBER_STATUS_RESOLVER_UNAVAILABLE");
+  assert.equal(aborted, true);
+});

@@ -31,6 +31,8 @@ const LIFF_IDENTITY_RESOLUTION_PURPOSE = "liff_identity_resolution";
 const LIFF_MEMBER_PROFILE_PURPOSE = "liff_member_profile_read";
 const MEMBER_STATUS_RESOLVER_SECRET_HEADER = "x-mmd-member-resolver-secret";
 const MEMBER_HISTORY_MAX_ITEMS = 50;
+const MEMBER_STATUS_AIRTABLE_TIMEOUT_MS = 4000;
+const MEMBER_STATUS_AIRTABLE_TIMEOUT_MIN_MS = 50;
 
 export default {
   async fetch(request, env, ctx) {
@@ -261,7 +263,7 @@ async function handleInternalMemberStatusResolve(request, env) {
   }
 
   try {
-    const matches = await findMemberRecordsByLineUserId(env, lineUserId);
+    const matches = await withMemberStatusAirtableDeadline(request, env, (signal) => findMemberRecordsByLineUserId(env, lineUserId, signal));
     if (matches.length > 1) {
       return json(request, env, 409, { ok: false, error: { code: "MEMBER_MATCH_AMBIGUOUS", message: "Member identity could not be resolved safely." } });
     }
@@ -817,13 +819,35 @@ async function findMemberById(env, memberId) {
   return record ? { ...record, fields: normalizeMemberRecord(record) } : null;
 }
 
-async function findMemberRecordsByLineUserId(env, lineUserId) {
+async function findMemberRecordsByLineUserId(env, lineUserId, signal) {
   const field = String(env.AIRTABLE_MEMBERS_LINE_USER_ID_FIELD || "line_user_id").trim();
   if (!field) throw new Error("AIRTABLE_MEMBERS_LINE_USER_ID_FIELD is required.");
   return airtableList(env, table(env, "MEMBERS"), {
     filterByFormula: `{${field}}=${formulaString(lineUserId)}`,
     maxRecords: 2,
+    signal,
+    requireRecordsArray: true,
   });
+}
+
+async function withMemberStatusAirtableDeadline(request, env, operation) {
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort();
+  if (request.signal?.aborted) controller.abort();
+  else request.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timeout = setTimeout(() => controller.abort(), memberStatusAirtableTimeoutMs(env));
+  try {
+    return await operation(controller.signal);
+  } finally {
+    clearTimeout(timeout);
+    request.signal?.removeEventListener("abort", abortFromCaller);
+  }
+}
+
+function memberStatusAirtableTimeoutMs(env) {
+  const configured = Number(env.MEMBER_STATUS_AIRTABLE_TIMEOUT_MS);
+  if (!Number.isInteger(configured)) return MEMBER_STATUS_AIRTABLE_TIMEOUT_MS;
+  return Math.min(MEMBER_STATUS_AIRTABLE_TIMEOUT_MS, Math.max(MEMBER_STATUS_AIRTABLE_TIMEOUT_MIN_MS, configured));
 }
 
 function normalizeMemberRecord(record) {
@@ -960,9 +984,11 @@ async function airtableList(env, tableName, params = {}) {
 
   const response = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` },
+    signal: params.signal,
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`Airtable list failed: ${response.status} ${JSON.stringify(data)}`);
+  if (params.requireRecordsArray && !Array.isArray(data.records)) throw new Error("Airtable list response is malformed");
   return data.records || [];
 }
 
