@@ -113,9 +113,9 @@ function renderShell(config, nonce) {
   const wishResult = document.getElementById("wish-result");
   const locale = CONFIG.language || "th";
   const copy = {
-    th: { mark:"MMD Privé · Member Access", title:"My MMD", subtitle:"ดูสถานะสมาชิก คะแนน และสิทธิ์ของคุณได้ใน LINE ที่เดียว", navProfile:"ภาพรวม", navPoints:"Points", navCare:"CARE BACK", memberLabel:"Member", tierLabel:"Tier", pointsLabel:"Active Points", expiryLabel:"สมาชิกใช้ได้ถึง", paymentLabel:"สถานะการชำระ", historyLabel:"History · Last 1 Year", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", ready:"ข้อมูลสมาชิกของคุณพร้อมแล้วครับ", empty:"ยังไม่มีรายการในช่วง 1 ปีล่าสุดครับ" },
-    en: { mark:"MMD Privé · Member Access", title:"My MMD", subtitle:"Your membership, points and privileges — all in LINE.", navProfile:"Overview", navPoints:"Points", navCare:"CARE BACK", memberLabel:"Member", tierLabel:"Tier", pointsLabel:"Active Points", expiryLabel:"Membership valid until", paymentLabel:"Payment status", historyLabel:"History · Last 1 Year", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", ready:"Your member information is ready.", empty:"No activity in the last year." },
-    zh: { mark:"MMD Privé · Member Access", title:"我的 MMD", subtitle:"在 LINE 内查看会员状态、积分与专属权益。", navProfile:"概览", navPoints:"积分", navCare:"CARE BACK", memberLabel:"会员", tierLabel:"等级", pointsLabel:"当前积分", expiryLabel:"会员有效期至", paymentLabel:"付款状态", historyLabel:"最近一年记录", careLabel:"6 Years · Care Back", careTitle:"专属 Care Back 礼遇", ready:"会员信息已准备好。", empty:"最近一年暂无记录。" },
+    th: { mark:"MMD Privé · Member Access", title:"My MMD", subtitle:"ดูสถานะสมาชิก คะแนน และสิทธิ์ของคุณได้ใน LINE ที่เดียว", navProfile:"ภาพรวม", navPoints:"Points", navCare:"CARE BACK", memberLabel:"Member", tierLabel:"Tier", pointsLabel:"Active Points", expiryLabel:"สมาชิกใช้ได้ถึง", paymentLabel:"สถานะการชำระ", historyLabel:"History · Last 1 Year", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"ตรวจสอบผ่าน LINE เพื่อเปิดสิทธิ์ CARE BACK ก่อน คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จครับ", careButton:"ตรวจสิทธิ์ CARE BACK", wishPlaceholder:"ฝากคำอวยพรวันเกิดให้ MMD ได้ที่นี่ครับ", wishSubmit:"ส่งคำอวยพรให้ MMD", ready:"ข้อมูลสมาชิกของคุณพร้อมแล้วครับ", empty:"ยังไม่มีรายการในช่วง 1 ปีล่าสุดครับ", careLoading:copy.careLoading || "กำลังตรวจสอบสิทธิ์", careRetry:copy.careRetry || "ลองตรวจสอบอีกครั้ง", wishEmpty:copy.wishEmpty || "กรุณาเขียนคำอวยพรก่อนส่งครับ", wishSaving:copy.wishSaving || "กำลังเก็บคำอวยพร", wishError:copy.wishError || "ตอนนี้ยังเก็บคำอวยพรไม่ได้ครับ กรุณาลองใหม่อีกครั้ง", wishRetry:copy.wishRetry || "ลองส่งอีกครั้ง", careChecked:copy.careChecked || "สิทธิ์ CARE BACK ของคุณถูกตรวจแล้ว ส่งคำอวยพรถึง MMD สำเร็จเพื่อเปิดคูปองส่วนตัว 10% ครับ", wishDone:"MMD ได้รับคำอวยพรของคุณแล้วครับ", wishPending:copy.wishPending || "ระบบกำลังยืนยันการบันทึกคำอวยพรเดิมอย่างปลอดภัย กรุณากลับมาตรวจสอบอีกครั้งครับ", wishReview:copy.wishReview || "ข้อมูลนี้ยังต้องตรวจสอบก่อนครับ ระบบจะเก็บเส้นทางของคุณไว้อย่างปลอดภัย", couponReady:copy.couponReady || "ส่งคำอวยพรเพื่อเปิดคูปอง" },
+    en: { mark:"MMD Privé · Member Access", title:"My MMD", subtitle:"Your membership, points and privileges — all in LINE.", navProfile:"Overview", navPoints:"Points", navCare:"CARE BACK", memberLabel:"Member", tierLabel:"Tier", pointsLabel:"Active Points", expiryLabel:"Membership valid until", paymentLabel:"Payment status", historyLabel:"History · Last 1 Year", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"Verify through LINE to open CARE BACK. Your personal coupon becomes available after your wish is submitted successfully.", careButton:"Check CARE BACK", wishPlaceholder:"Leave a birthday wish for MMD here.", wishSubmit:"Send wish to MMD", ready:"Your member information is ready.", empty:"No activity in the last year.", careLoading:"Checking eligibility", careRetry:"Try checking again", wishEmpty:"Please write a wish before sending.", wishSaving:"Saving your wish", wishError:"Your wish could not be saved. Please try again.", wishRetry:"Try sending again", careChecked:"Your CARE BACK eligibility is checked. Submit a wish to unlock your personal 10% coupon.", wishDone:"MMD has received your wish.", wishPending:"We are securely confirming your previous wish. Please check again later.", wishReview:"This request needs further review. We have kept your route secure.", couponReady:"Send a wish to unlock the coupon" },
+    zh: { mark:"MMD Privé · Member Access", title:"我的 MMD", subtitle:"在 LINE 内查看会员状态、积分与专属权益。", navProfile:"概览", navPoints:"积分", navCare:"CARE BACK", memberLabel:"会员", tierLabel:"等级", pointsLabel:"当前积分", expiryLabel:"会员有效期至", paymentLabel:"付款状态", historyLabel:"最近一年记录", careLabel:"6 Years · Care Back", careTitle:"专属 Care Back 礼遇", careIntro:"请通过 LINE 验证 CARE BACK。成功提交祝福后，您的专属优惠券将会开启。", careButton:"检查 CARE BACK", wishPlaceholder:"在这里留下给 MMD 的生日祝福。", wishSubmit:"向 MMD 发送祝福", ready:"会员信息已准备好。", empty:"最近一年暂无记录。", careLoading:"正在检查资格", careRetry:"再次检查", wishEmpty:"请先写下祝福再发送。", wishSaving:"正在保存祝福", wishError:"祝福暂时无法保存，请稍后再试。", wishRetry:"再次发送", careChecked:"您的 CARE BACK 资格已检查。成功提交祝福后即可开启专属 10% 优惠券。", wishDone:"MMD 已收到您的祝福。", wishPending:"系统正在安全确认您之前提交的祝福，请稍后再查看。", wishReview:"此请求仍需进一步审核，我们已安全保留您的流程。", couponReady:"发送祝福以开启优惠券" },
   }[locale] || {};
   const allowedIntentIds = new Set(["signup", "renew", "status"]);
   let busy = false;
@@ -125,6 +125,12 @@ function renderShell(config, nonce) {
     const key = element.getAttribute("data-copy");
     if (copy[key]) element.textContent = copy[key];
   }
+  document.getElementById("care-message").textContent = copy.careIntro || document.getElementById("care-message").textContent;
+  careButton.textContent = copy.careButton || careButton.textContent;
+  wishText.placeholder = copy.wishPlaceholder || wishText.placeholder;
+  wishSubmit.textContent = copy.wishSubmit || wishSubmit.textContent;
+  const initialView = CONFIG.view === "points" ? "points" : (CONFIG.view === "care_back" || CONFIG.intent === "promo" ? "care_back" : "profile");
+  for (const item of document.querySelectorAll("[data-view]")) item.setAttribute("aria-current", String(item.getAttribute("data-view") === initialView));
   for (const button of document.querySelectorAll("[data-view]")) {
     button.addEventListener("click", () => {
       const view = button.getAttribute("data-view");
@@ -188,7 +194,7 @@ function renderShell(config, nonce) {
     if (state === "wish_available") {
       careButton.classList.add("hidden");
       wishPanel.classList.remove("hidden");
-      document.getElementById("care-message").textContent = "สิทธิ์ CARE BACK ของคุณถูกตรวจแล้ว ส่งคำอวยพรถึง MMD สำเร็จเพื่อเปิดคูปองส่วนตัว 10% ครับ";
+      document.getElementById("care-message").textContent = copy.careChecked || "สิทธิ์ CARE BACK ของคุณถูกตรวจแล้ว ส่งคำอวยพรถึง MMD สำเร็จเพื่อเปิดคูปองส่วนตัว 10% ครับ";
       wishText.classList.remove("hidden");
       wishSubmit.classList.remove("hidden");
       wishResult.classList.add("hidden");
@@ -199,7 +205,7 @@ function renderShell(config, nonce) {
       wishPanel.classList.remove("hidden");
       wishText.classList.add("hidden");
       wishSubmit.classList.add("hidden");
-      wishResult.textContent = String(data.final_display && data.final_display.message || "MMD ได้รับคำอวยพรของคุณแล้วครับ");
+      wishResult.textContent = String(data.final_display && data.final_display.message || copy.wishDone || "MMD ได้รับคำอวยพรของคุณแล้วครับ");
       wishResult.classList.remove("hidden");
       return;
     }
@@ -208,7 +214,7 @@ function renderShell(config, nonce) {
       wishPanel.classList.remove("hidden");
       wishText.classList.add("hidden");
       wishSubmit.classList.add("hidden");
-      wishResult.textContent = "ระบบกำลังยืนยันการบันทึกคำอวยพรเดิมอย่างปลอดภัย กรุณากลับมาตรวจสอบอีกครั้งครับ";
+      wishResult.textContent = copy.wishPending || "ระบบกำลังยืนยันการบันทึกคำอวยพรเดิมอย่างปลอดภัย กรุณากลับมาตรวจสอบอีกครั้งครับ";
       wishResult.classList.remove("hidden");
       return;
     }
@@ -217,7 +223,7 @@ function renderShell(config, nonce) {
       wishPanel.classList.remove("hidden");
       wishText.classList.add("hidden");
       wishSubmit.classList.add("hidden");
-      wishResult.textContent = "ข้อมูลนี้ยังต้องตรวจสอบก่อนครับ ระบบจะเก็บเส้นทางของคุณไว้อย่างปลอดภัย";
+      wishResult.textContent = copy.wishReview || "ข้อมูลนี้ยังต้องตรวจสอบก่อนครับ ระบบจะเก็บเส้นทางของคุณไว้อย่างปลอดภัย";
       wishResult.classList.remove("hidden");
     }
   }
@@ -264,7 +270,7 @@ function renderShell(config, nonce) {
 
   async function claimCareBack() {
     if (busy) return;
-    setBusy(true); careButton.disabled = true; careButton.textContent = "กำลังตรวจสอบสิทธิ์";
+    setBusy(true); careButton.disabled = true; careButton.textContent = copy.careLoading || "กำลังตรวจสอบสิทธิ์";
     try {
       const response = await fetch(CONFIG.careBackEndpoint, { method:"POST",credentials:"same-origin",headers:{"content-type":"application/json","accept":"application/json"},body:"{}" });
       const payload = await response.json().catch(() => null);
@@ -273,15 +279,15 @@ function renderShell(config, nonce) {
       await readCareBackState();
     } catch {
       document.getElementById("care-message").textContent = "ตอนนี้ยังออกโค้ดไม่ได้ครับ กรุณาลองใหม่อีกครั้งหรือติดต่อ HYPE";
-      careButton.disabled = false; careButton.textContent = "ลองตรวจสอบอีกครั้ง";
+      careButton.disabled = false; careButton.textContent = copy.careRetry || "ลองตรวจสอบอีกครั้ง";
     } finally { setBusy(false); }
   }
 
   async function submitBirthdayWish() {
     if (busy) return;
     const text = String(wishText.value || "").trim();
-    if (!text) { wishResult.textContent = "กรุณาเขียนคำอวยพรก่อนส่งครับ"; wishResult.classList.remove("hidden"); return; }
-    setBusy(true); wishSubmit.disabled = true; wishSubmit.textContent = "กำลังเก็บคำอวยพร";
+    if (!text) { wishResult.textContent = copy.wishEmpty || "กรุณาเขียนคำอวยพรก่อนส่งครับ"; wishResult.classList.remove("hidden"); return; }
+    setBusy(true); wishSubmit.disabled = true; wishSubmit.textContent = copy.wishSaving || "กำลังเก็บคำอวยพร";
     try {
       const response = await fetch(CONFIG.careBackWishEndpoint, {
         method:"POST",credentials:"same-origin",headers:{"content-type":"application/json","accept":"application/json"},
@@ -292,9 +298,9 @@ function renderShell(config, nonce) {
       if (payload.claim) renderCareBackClaim(payload.claim);
       renderCareBackState(payload);
     } catch {
-      wishResult.textContent = "ตอนนี้ยังเก็บคำอวยพรไม่ได้ครับ กรุณาลองใหม่อีกครั้ง";
+      wishResult.textContent = copy.wishError || "ตอนนี้ยังเก็บคำอวยพรไม่ได้ครับ กรุณาลองใหม่อีกครั้ง";
       wishResult.classList.remove("hidden");
-      wishSubmit.disabled = false; wishSubmit.textContent = "ลองส่งอีกครั้ง";
+      wishSubmit.disabled = false; wishSubmit.textContent = copy.wishRetry || "ลองส่งอีกครั้ง";
     } finally { setBusy(false); }
   }
 
@@ -306,7 +312,7 @@ function renderShell(config, nonce) {
     codeWrap.classList.toggle("hidden", !code);
     document.getElementById("care-message").textContent = String(data.coupon_message || data.message || "MMD จะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ");
     careButton.textContent = data.resumed ? "อัปเดตสิทธิ์ CARE BACK แล้ว" : "ตรวจสิทธิ์ CARE BACK แล้ว";
-    if (couponState === "wish_required") careButton.textContent = "ส่งคำอวยพรเพื่อเปิดคูปอง";
+    if (couponState === "wish_required") careButton.textContent = copy.couponReady || "ส่งคำอวยพรเพื่อเปิดคูปอง";
   }
 
   function render(data) {
