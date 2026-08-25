@@ -18,6 +18,8 @@ export const CARE_BACK_COPY = Object.freeze({
     wish_retry: "ลองส่งอีกครั้ง", checked: "ตรวจสิทธิ์ CARE BACK แล้ว",
     checked_updated: "อัปเดตสิทธิ์ CARE BACK แล้ว", wish_to_coupon: "ส่งคำอวยพรเพื่อเปิดคูปอง",
     safe_check: "กำลังตรวจสอบสิทธิ์ CARE BACK อย่างปลอดภัยครับ",
+    unavailable: "ตอนนี้ระบบตรวจสอบ CARE BACK ยังไม่พร้อมครับ กรุณาลองใหม่อีกครั้ง",
+    default_status: "MMD จะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ",
   }),
   en: Object.freeze({
     tab_profile: "Profile", tab_points: "Points", tab_care_back: "CARE BACK",
@@ -36,6 +38,8 @@ export const CARE_BACK_COPY = Object.freeze({
     wish_retry: "Try sending again", checked: "CARE BACK eligibility checked",
     checked_updated: "CARE BACK eligibility updated", wish_to_coupon: "Send wish to activate coupon",
     safe_check: "Checking CARE BACK eligibility securely.",
+    unavailable: "CARE BACK verification is temporarily unavailable. Please try again.",
+    default_status: "MMD will update your privilege after the relevant membership and verification checks.",
   }),
   zh: Object.freeze({
     tab_profile: "会员", tab_points: "积分", tab_care_back: "CARE BACK",
@@ -54,6 +58,8 @@ export const CARE_BACK_COPY = Object.freeze({
     wish_retry: "重新发送", checked: "CARE BACK 资格已检查",
     checked_updated: "CARE BACK 资格已更新", wish_to_coupon: "发送祝福以启用优惠券",
     safe_check: "正在安全检查 CARE BACK 资格。",
+    unavailable: "CARE BACK 核验暂时不可用，请稍后重试。",
+    default_status: "MMD 将在完成相关会员状态及核验后更新您的礼遇。",
   }),
 });
 

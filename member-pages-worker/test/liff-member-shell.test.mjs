@@ -20,6 +20,21 @@ async function stagingShell(hostname, path, runtime) {
   return worker.fetch(new Request(`https://${hostname}${path}`), runtime);
 }
 
+function exerciseRenderedViewController(html, initialView, actions = []) {
+  const match = html.match(/  function activateView[\s\S]*?\n  }\n\n  function renderMembershipFlow/);
+  assert.ok(match, "rendered activateView controller must exist");
+  const source = match[0].replace(/\n\n  function renderMembershipFlow$/, "");
+  const tabs = ["profile", "points", "care_back"].map((view) => ({ dataset: { viewTab: view }, selected: "false", setAttribute(_name, value) { this.selected = value; } }));
+  const panels = ["profile", "points", "care_back"].map((view) => ({ dataset: { viewPanel: view }, hidden: false }));
+  const document = { querySelectorAll(selector) { return selector === "[data-view-tab]" ? tabs : panels; } };
+  const location = { href: `https://mmdbkk.com/member/liff?view=${initialView}` };
+  const history = { pushed: [], pushState(state, _title, url) { this.pushed.push({ state, url: String(url) }); } };
+  const activate = Function("document", "window", "location", `let currentView=${JSON.stringify(initialView)}; ${source}; return { activateView, current: () => currentView };`)(document, { history }, location);
+  activate.activateView(initialView);
+  for (const action of actions) activate.activateView(action, true);
+  return { tabs, panels, history, currentView: activate.current() };
+}
+
 describe("same-site /member/liff shell", () => {
   it("renders the dedicated published Member Dashboard LIFF ID", async () => {
     const response = await shell("/member/liff?intent=status&view=profile", {
@@ -130,7 +145,12 @@ describe("same-site /member/liff shell", () => {
       assert.match(html, /data-view-tab="care_back"/);
       assert.match(html, /tab\.setAttribute\("aria-selected"/);
       assert.match(html, /panel\.hidden = panel\.dataset\.viewPanel !== view/);
-      assert.match(html, /activateView\(CONFIG\.intent === "promo" \? "care_back" : CONFIG\.view\)/);
+      assert.match(html, /let currentView = \["profile", "points", "care_back"\]\.includes/);
+      assert.match(html, /activateView\(currentView\)/);
+      const state = exerciseRenderedViewController(html, expectedPanel);
+      assert.equal(state.currentView, expectedPanel);
+      assert.deepEqual(state.tabs.filter((tab) => tab.selected === "true").map((tab) => tab.dataset.viewTab), [expectedPanel]);
+      assert.deepEqual(state.panels.filter((panel) => !panel.hidden).map((panel) => panel.dataset.viewPanel), [expectedPanel]);
     });
   }
 
@@ -138,8 +158,28 @@ describe("same-site /member/liff shell", () => {
     const html = await (await shell("/member/liff?view=points")).text();
     assert.match(html, /tab\.addEventListener\("click", \(\) => activateView\(tab\.dataset\.viewTab, true\)\)/);
     assert.match(html, /url\.searchParams\.set\("view", view\)/);
-    assert.match(html, /window\.history\.replaceState/);
+    assert.match(html, /currentView = view/);
+    assert.match(html, /window\.history\.pushState\(\{ view \}/);
+    assert.match(html, /window\.addEventListener\("popstate"/);
+    assert.match(html, /activateView\(currentView\)/);
+    assert.doesNotMatch(html, /renderProfile[\s\S]*activateView\(CONFIG\.intent === "promo" \? "care_back" : CONFIG\.view\)/);
+    const state = exerciseRenderedViewController(html, "profile", ["points", "care_back"]);
+    assert.equal(state.currentView, "care_back");
+    assert.equal(state.history.pushed.length, 2);
+    assert.deepEqual(state.tabs.filter((tab) => tab.selected === "true").map((tab) => tab.dataset.viewTab), ["care_back"]);
+    assert.deepEqual(state.panels.filter((panel) => !panel.hidden).map((panel) => panel.dataset.viewPanel), ["care_back"]);
   });
+
+  for (const [intent, label] of [["signup", "ไปที่ขั้นตอนสมัครสมาชิก"], ["renew", "ไปที่ขั้นตอนต่ออายุ"]]) {
+    it(`renders a real ${intent} membership-flow action instead of a status-only panel`, async () => {
+      const html = await (await shell(`/member/liff?intent=${intent}&view=profile`)).text();
+      assert.match(html, /id="membership-flow"/);
+      assert.match(html, /new URL\("\/sigil\/member\/membership", location\.origin\)/);
+      assert.match(html, new RegExp(label));
+      assert.match(html, /target\.searchParams\.set\("intent", CONFIG\.intent\)/);
+      assert.doesNotMatch(html, /intent=status/);
+    });
+  }
 
   it("supports HEAD without a response body and rejects mutating shell methods", async () => {
     const head = await shell("/member/liff", { method: "HEAD" });

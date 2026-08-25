@@ -58,6 +58,7 @@ function renderShell(config, nonce) {
     #message{white-space:pre-line;margin:30px 0 0;font-size:18px;line-height:1.65}.actions{display:grid;gap:10px;margin-top:24px}.actions:empty{display:none}
     button,textarea{width:100%;border:1px solid rgba(216,189,137,.28);border-radius:16px;padding:14px 16px;background:#171511;color:#f7f3eb;font:inherit;text-align:left}button{cursor:pointer}button:disabled{opacity:.55;cursor:default}textarea{min-height:124px;resize:vertical;line-height:1.55}.wish{display:grid;gap:12px;margin-top:16px}.wish-result{white-space:pre-line;color:#e7d5ad;line-height:1.65}
     .profile{display:grid;gap:12px;margin-top:22px}.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.tab{text-align:center;padding:10px}.tab[aria-selected="true"]{border-color:#d8bc83;background:#2a2114;color:#f0d892}.tab-panel{display:grid;gap:12px}.summary,.member-details{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.card{border:1px solid rgba(216,189,137,.18);border-radius:20px;padding:17px;background:rgba(8,8,8,.72)}.label{color:#948c82;font-size:11px;letter-spacing:.12em;text-transform:uppercase}.value{display:block;margin-top:6px;font-size:22px;line-height:1.15}.points{font-size:34px;color:#e6cb91}.history{display:grid;gap:9px;margin-top:12px}.event{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.07);font-size:13px}.event:first-child{border-top:0}.event-date,.event-status{color:#8f8880}.event-delta{color:#d9bd82}.care{border-color:rgba(225,193,126,.38);background:linear-gradient(145deg,rgba(45,35,19,.78),rgba(10,10,10,.86))}.care h2{margin:8px 0;font-size:21px}.care p{margin:0;color:#b7afa4;font-size:13px;line-height:1.6}.care-code{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;padding:13px 14px;border-radius:14px;background:#080807}.care-code strong{font-size:24px;letter-spacing:.15em;color:#ecd18f}.care button{margin-top:14px;text-align:center;background:linear-gradient(135deg,#f0d892,#b98b35);color:#181207;font-weight:700}
+    .membership-flow{display:grid;gap:10px}.membership-flow a{display:block;border-radius:16px;padding:14px 16px;text-align:center;text-decoration:none;background:linear-gradient(135deg,#f0d892,#b98b35);color:#181207;font-weight:700}
     .status{margin-top:22px;color:#7f7972;font-size:12px;line-height:1.5}.hidden{display:none!important}@media(max-width:390px){main{padding:24px 16px}.summary{grid-template-columns:1fr}.event{grid-template-columns:66px 1fr}.event-status{grid-column:2}}
   </style>
 </head>
@@ -75,6 +76,7 @@ function renderShell(config, nonce) {
       <button class="tab" type="button" role="tab" data-view-tab="care_back" aria-selected="false">CARE BACK</button>
     </div>
     <section class="tab-panel" data-view-panel="profile">
+      <div id="membership-flow" class="card membership-flow hidden"><span class="label">Membership</span><strong id="membership-flow-title" class="value"></strong><p id="membership-flow-copy" class="sub"></p><a id="membership-flow-link" href="/sigil/member/membership"></a></div>
       <div class="card"><span class="label">Member</span><strong id="profile-name" class="value">สมาชิก MMD</strong><span id="profile-status" class="sub"></span></div>
       <div id="member-details" class="member-details">
         <div id="expiry-card" class="card hidden"><span class="label">Membership valid until</span><strong id="profile-expiry" class="value">—</strong></div>
@@ -122,12 +124,28 @@ function renderShell(config, nonce) {
   const wishResult = document.getElementById("wish-result");
   const allowedIntentIds = new Set(["signup", "renew", "status"]);
   let busy = false;
+  let currentView = ["profile", "points", "care_back"].includes(CONFIG.intent === "promo" ? "care_back" : CONFIG.view) ? (CONFIG.intent === "promo" ? "care_back" : CONFIG.view) : "profile";
 
   function activateView(value, updateUrl = false) {
     const view = ["profile", "points", "care_back"].includes(value) ? value : "profile";
+    currentView = view;
     for (const tab of document.querySelectorAll("[data-view-tab]")) tab.setAttribute("aria-selected", String(tab.dataset.viewTab === view));
     for (const panel of document.querySelectorAll("[data-view-panel]")) panel.hidden = panel.dataset.viewPanel !== view;
-    if (updateUrl) { const url = new URL(location.href); url.searchParams.set("view", view); window.history.replaceState(null, "", url); }
+    if (updateUrl) { const url = new URL(location.href); url.searchParams.set("view", view); window.history.pushState({ view }, "", url); }
+  }
+
+  function renderMembershipFlow() {
+    if (!allowedIntentIds.has(CONFIG.intent) || CONFIG.intent === "status") return;
+    const signup = CONFIG.intent === "signup";
+    const panel = document.getElementById("membership-flow");
+    const link = document.getElementById("membership-flow-link");
+    document.getElementById("membership-flow-title").textContent = signup ? "สมัครสมาชิก MMD" : "ต่ออายุสมาชิก MMD";
+    document.getElementById("membership-flow-copy").textContent = signup ? "เลือกแพ็กเกจและเริ่มขั้นตอนสมัครสมาชิกจากหน้าสมาชิกทางการครับ" : "เลือกแพ็กเกจและส่งหลักฐานเพื่อตรวจสอบการต่ออายุจากหน้าสมาชิกทางการครับ";
+    link.textContent = signup ? "ไปที่ขั้นตอนสมัครสมาชิก" : "ไปที่ขั้นตอนต่ออายุ";
+    const target = new URL("/sigil/member/membership", location.origin);
+    target.searchParams.set("source", "line"); target.searchParams.set("intent", CONFIG.intent);
+    link.href = target.pathname + target.search;
+    panel.classList.remove("hidden");
   }
 
   function localizeCareBack() {
@@ -257,7 +275,7 @@ function renderShell(config, nonce) {
       row.append(date, title, state); history.append(row);
     }
     show("ข้อมูลสมาชิกของคุณพร้อมแล้วครับ");
-    activateView(CONFIG.intent === "promo" ? "care_back" : CONFIG.view);
+    activateView(currentView);
   }
 
   function membershipStatus(value) { return ({ active:"Active member",grace:"Grace period",expired:"Expired",under_review:"Under review" })[value] || "Under review"; }
@@ -309,7 +327,7 @@ function renderShell(config, nonce) {
     const couponState = String(data.coupon_state || "");
     document.getElementById("care-code-value").textContent = code;
     codeWrap.classList.toggle("hidden", !code);
-    document.getElementById("care-message").textContent = String(data.coupon_message || data.message || "MMD จะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ");
+    document.getElementById("care-message").textContent = locale === "th" ? String(data.coupon_message || data.message || COPY.default_status) : COPY.default_status;
     careButton.textContent = data.resumed ? COPY.checked_updated : COPY.checked;
     if (couponState === "wish_required") careButton.textContent = COPY.wish_to_coupon;
   }
@@ -396,8 +414,10 @@ function renderShell(config, nonce) {
   }
 
   localizeCareBack();
-  activateView(CONFIG.intent === "promo" ? "care_back" : CONFIG.view);
+  renderMembershipFlow();
+  activateView(currentView);
   for (const tab of document.querySelectorAll("[data-view-tab]")) tab.addEventListener("click", () => activateView(tab.dataset.viewTab, true));
+  window.addEventListener("popstate", () => activateView(new URL(location.href).searchParams.get("view") || "profile"));
   careButton.addEventListener("click", claimCareBack);
   wishSubmit.addEventListener("click", submitBirthdayWish);
   boot();

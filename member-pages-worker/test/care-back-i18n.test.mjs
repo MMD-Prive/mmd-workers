@@ -11,6 +11,8 @@ test("CARE BACK required customer copy is complete in TH EN and ZH", () => {
   }
   for (const value of Object.values(CARE_BACK_COPY.en)) assert.doesNotMatch(value, /[ก-๙]/);
   for (const value of Object.values(CARE_BACK_COPY.zh)) assert.doesNotMatch(value, /[ก-๙]/);
+  assert.match(CARE_BACK_COPY.en.default_status, /MMD/);
+  assert.match(CARE_BACK_COPY.zh.default_status, /MMD/);
 });
 
 test("CARE BACK locale selection is bounded and deterministic", () => {

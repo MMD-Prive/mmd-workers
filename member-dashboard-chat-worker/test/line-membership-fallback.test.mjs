@@ -15,7 +15,9 @@ function lineTextEvent(text) {
 for (const [text, intent, liffIntent] of [
   ["สมัครสมาชิก", "membership_signup", "signup"],
   ["อยากสมัครสมาชิก", "membership_signup", "signup"],
+  ["ขอสมัครสมาชิก", "membership_signup", "signup"],
   ["ต่ออายุ", "membership_renewal", "renew"],
+  ["ต่ออายุสมาชิก", "membership_renewal", "renew"],
   ["ขอต่ออายุสมาชิก", "membership_renewal", "renew"],
 ]) {
   test(`${text} routes to the dedicated membership flow`, () => {
