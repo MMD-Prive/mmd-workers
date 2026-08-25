@@ -555,14 +555,22 @@ function normalizeCustomerMembershipStatus(value) {
   return "under_review";
 }
 
-function normalizeCustomerPaymentStatus(paymentValue, verificationValue) {
-  const payment = String(paymentValue || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
-  const verification = String(verificationValue || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
-  if (verification === "verified" && payment === "paid") return "verified";
-  // Production writers create pending+pending evidence and paid+verified truth.
-  // No authoritative writer currently establishes paid+pending as a public state.
-  if (verification === "pending" && payment === "pending") return "pending_review";
-  return "unavailable";
+function normalizeCustomerPaymentStatus(verificationValue, intentValue, paymentValue) {
+  const normalize = (value) => String(value || "").trim().toLowerCase().replace(/[\\s-]+/g, "_");
+  const verification = normalize(verificationValue);
+  const intent = normalize(intentValue);
+  const payment = normalize(paymentValue);
+  const verifiedValues = new Set(["verified", "confirmed", "full_payment"]);
+  const failedValues = new Set(["failed", "refunded", "cancelled", "canceled"]);
+  const pendingValues = new Set(["pending", "pending_review", "pending_confirmation", "intent_created", "notified", "deposit", "partial_payment"]);
+  if (verifiedValues.has(verification)) return "verified";
+  if (failedValues.has(verification)) return "failed";
+  if (pendingValues.has(verification)) return "pending_review";
+  if (failedValues.has(intent)) return "failed";
+  if (pendingValues.has(intent)) return "pending_review";
+  if (failedValues.has(payment)) return "failed";
+  if (pendingValues.has(payment)) return "pending_review";
+  return "";
 }
 
 function safePackageLabel(value) {
