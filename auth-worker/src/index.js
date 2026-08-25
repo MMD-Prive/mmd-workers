@@ -263,7 +263,10 @@ async function handleInternalMemberStatusResolve(request, env) {
   }
 
   try {
-    const matches = await withMemberStatusAirtableDeadline(request, env, (signal) => findMemberRecordsByLineUserId(env, lineUserId, signal));
+    const matches = await withMemberStatusAirtableDeadline(request, env, (signal) => findMemberRecordsByLineUserId(env, lineUserId, {
+      signal,
+      requireRecordsArray: true,
+    }));
     if (matches.length > 1) {
       return json(request, env, 409, { ok: false, error: { code: "MEMBER_MATCH_AMBIGUOUS", message: "Member identity could not be resolved safely." } });
     }
@@ -819,14 +822,14 @@ async function findMemberById(env, memberId) {
   return record ? { ...record, fields: normalizeMemberRecord(record) } : null;
 }
 
-async function findMemberRecordsByLineUserId(env, lineUserId, signal) {
+async function findMemberRecordsByLineUserId(env, lineUserId, options = {}) {
   const field = String(env.AIRTABLE_MEMBERS_LINE_USER_ID_FIELD || "line_user_id").trim();
   if (!field) throw new Error("AIRTABLE_MEMBERS_LINE_USER_ID_FIELD is required.");
   return airtableList(env, table(env, "MEMBERS"), {
     filterByFormula: `{${field}}=${formulaString(lineUserId)}`,
     maxRecords: 2,
-    signal,
-    requireRecordsArray: true,
+    signal: options.signal,
+    requireRecordsArray: options.requireRecordsArray === true,
   });
 }
 
@@ -982,10 +985,9 @@ async function airtableList(env, tableName, params = {}) {
     });
   }
 
-  const response = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` },
-    signal: params.signal,
-  });
+  const fetchOptions = { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } };
+  if (params.signal) fetchOptions.signal = params.signal;
+  const response = await fetch(url.toString(), fetchOptions);
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`Airtable list failed: ${response.status} ${JSON.stringify(data)}`);
   if (params.requireRecordsArray && !Array.isArray(data.records)) throw new Error("Airtable list response is malformed");

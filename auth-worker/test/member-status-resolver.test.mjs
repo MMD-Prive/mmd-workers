@@ -6,6 +6,7 @@ import worker from "../src/index.js";
 const LINE_ID = `U${"a".repeat(32)}`;
 const RESOLVER_SECRET = "test-only-member-status-resolver-secret-1234567890";
 const RESOLVER_URL = "https://mmd-auth-worker.internal/__internal/member-status/resolve";
+const PROFILE_URL = "https://mmd-auth-worker.internal/__internal/member-profile/read";
 const realFetch = globalThis.fetch;
 
 afterEach(() => {
@@ -115,13 +116,21 @@ test("member status resolver fails closed for Airtable auth/rate/server failures
     () => new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } }),
     () => new Response(JSON.stringify({ error: "rate_limited" }), { status: 429, headers: { "content-type": "application/json" } }),
     () => new Response(JSON.stringify({ error: "unavailable" }), { status: 503, headers: { "content-type": "application/json" } }),
-    () => new Response(JSON.stringify({ unexpected: [] }), { status: 200, headers: { "content-type": "application/json" } }),
+    () => Response.json({}),
+    () => Response.json({ records: null }),
+    () => Response.json({ records: {} }),
+    () => Response.json({ records: "invalid" }),
   ]) {
     globalThis.fetch = async () => responseFactory();
     const response = await worker.fetch(resolverRequest({ line_user_id: LINE_ID, purpose: "liff_identity_resolution" }), env());
     assert.equal(response.status, 503);
     assert.equal((await response.json()).error.code, "MEMBER_STATUS_RESOLVER_UNAVAILABLE");
   }
+
+  globalThis.fetch = async () => Response.json({ records: [] });
+  const legitimateEmpty = await worker.fetch(resolverRequest({ line_user_id: LINE_ID, purpose: "liff_identity_resolution" }), env());
+  assert.equal(legitimateEmpty.status, 200);
+  assert.deepEqual(await legitimateEmpty.json(), { ok: true, data: { member_exists: false } });
 
   let aborted = false;
   globalThis.fetch = async (_input, init = {}) => new Promise((_resolve, reject) => {
@@ -153,6 +162,17 @@ test("member status resolver permits a bounded slow Airtable response below its 
     resolverRequest({ line_user_id: LINE_ID, purpose: "liff_identity_resolution" }),
     env({ MEMBER_STATUS_AIRTABLE_TIMEOUT_MS: "50" }),
   );
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, data: { member_exists: false } });
+});
+
+test("member profile preserves its prior non-strict malformed-list behavior", async () => {
+  globalThis.fetch = async () => Response.json({ records: null });
+  const response = await worker.fetch(new Request(PROFILE_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-mmd-member-resolver-secret": RESOLVER_SECRET },
+    body: JSON.stringify({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }),
+  }), env());
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { ok: true, data: { member_exists: false } });
 });
