@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "mms-worker",
-  "main": "src/index.js",
+  "main": "src/runtime-index.js",
   "compatibility_date": "2026-08-21",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
