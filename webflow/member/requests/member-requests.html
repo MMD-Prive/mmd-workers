@@ -1,0 +1,182 @@
+<main id="mrq1" class="mrq-page" data-profile-endpoint="/member/api/liff/profile" data-requests-endpoint="" data-dashboard-url="/member/dashboard" data-find-url="/find" data-mms-booking-url="/member/mms-booking" data-line-url="https://lin.ee/xRqsALs">
+  <header class="mrq-topbar">
+    <a class="mrq-brand" href="/" aria-label="MMD Privé home">
+      <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a843e6e1b6e6b6177b5706d_MMD%20Prive%20Trans.webp" alt="MMD Privé" loading="eager" decoding="async">
+    </a>
+    <a class="mrq-toplink" data-mrq-route="dashboard" href="/member/dashboard">My MMD <span aria-hidden="true">↗</span></a>
+  </header>
+
+  <section class="mrq-hero" aria-labelledby="mrq-title">
+    <div class="mrq-hero-copy">
+      <p class="mrq-kicker">MY MMD · REQUESTS</p>
+      <h1 id="mrq-title">คำขอของคุณ<br><em>ผมวางไว้ตรงนี้ให้แล้วครับ</em></h1>
+      <p>ดูว่าตอนนี้รายการอยู่ตรงไหน MMD กำลังทำอะไร และมีอะไรที่คุณต้องทำต่อ ถ้ายังไม่มีข้อมูลที่ยืนยัน ผมจะไม่สร้างสถานะขึ้นมาให้คุณต้องเดาครับ</p>
+      <div class="mrq-hero-actions">
+        <a class="mrq-button mrq-button-light" data-mrq-route="find" href="/find">ส่งคำขอใหม่ <span aria-hidden="true">＋</span></a>
+        <a class="mrq-button mrq-button-ghost" data-mrq-route="mms" href="/member/mms-booking">MMS Pre-booking <span aria-hidden="true">→</span></a>
+      </div>
+    </div>
+    <figure class="mrq-hero-media">
+      <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8cf30a394297ff68529d44_01%20Member%20Request%20-%20Kenji.webp" alt="Kenji กำลังตรวจและจัดลำดับคำขอของสมาชิก MMD Privé" loading="eager" decoding="async">
+      <figcaption>KENJI · PRIVATE CONTINUITY</figcaption>
+    </figure>
+  </section>
+
+  <section class="mrq-access mrq-shell" id="mrq-access" aria-live="polite">
+    <div>
+      <p class="mrq-kicker">MEMBER ACCESS</p>
+      <h2 id="mrq-member-heading">กำลังตรวจสอบข้อมูลของคุณครับ</h2>
+      <p id="mrq-member-copy">ระบบกำลังยืนยัน Member และอ่านเฉพาะข้อมูลที่เกี่ยวข้องกับคุณ</p>
+    </div>
+    <span class="mrq-access-pill" id="mrq-access-pill">CHECKING</span>
+  </section>
+
+  <section class="mrq-workspace mrq-shell" data-mrq-reveal aria-labelledby="mrq-workspace-title">
+    <header class="mrq-section-head">
+      <div>
+        <p class="mrq-kicker">YOUR REQUESTS</p>
+        <h2 id="mrq-workspace-title">ตอนนี้อยู่ตรงไหน</h2>
+      </div>
+      <p>เลือกดูทั้งหมด หรือแยกเฉพาะ MMS, บริการ MMD และเรื่องสมาชิกได้ครับ</p>
+    </header>
+
+    <div class="mrq-stats" aria-label="สรุปคำขอ">
+      <article><span>กำลังดำเนินการ</span><strong id="mrq-count-active">—</strong></article>
+      <article><span>รอข้อมูลจากคุณ</span><strong id="mrq-count-action">—</strong></article>
+      <article><span>ยืนยันแล้ว</span><strong id="mrq-count-confirmed">—</strong></article>
+    </div>
+
+    <div class="mrq-filter" id="mrq-filter" role="group" aria-label="กรองประเภทคำขอ" hidden>
+      <button type="button" data-filter="all" class="is-active" aria-pressed="true">ทั้งหมด</button>
+      <button type="button" data-filter="mmd" aria-pressed="false">MMD</button>
+      <button type="button" data-filter="mms" aria-pressed="false">MMS</button>
+      <button type="button" data-filter="membership" aria-pressed="false">สมาชิก</button>
+    </div>
+
+    <div class="mrq-loading" id="mrq-loading" role="status">
+      <span></span><span></span><span></span>
+      <p>กำลังอ่านรายการที่ยืนยันแล้วครับ</p>
+    </div>
+
+    <section class="mrq-state mrq-state-gate" id="mrq-gate" hidden aria-labelledby="mrq-gate-title">
+      <span class="mrq-state-mark" aria-hidden="true">M</span>
+      <div>
+        <p class="mrq-kicker">MEMBER VERIFICATION</p>
+        <h3 id="mrq-gate-title">เปิดผ่าน LINE ของ MMD ก่อนนะครับ</h3>
+        <p>ผมต้องยืนยันว่าคำขอเหล่านี้เป็นของคุณจริงก่อน จึงจะเปิดรายละเอียดส่วนตัวให้ดูได้ครับ</p>
+        <a class="mrq-button mrq-button-dark" href="/member/liff?intent=status">ยืนยันผ่าน LINE Member <span aria-hidden="true">→</span></a>
+      </div>
+    </section>
+
+    <section class="mrq-state" id="mrq-error" hidden aria-labelledby="mrq-error-title">
+      <span class="mrq-state-mark" aria-hidden="true">!</span>
+      <div>
+        <p class="mrq-kicker">TRY AGAIN</p>
+        <h3 id="mrq-error-title">ตอนนี้อ่านรายการไม่สำเร็จครับ</h3>
+        <p id="mrq-error-copy">ข้อมูลของคุณยังไม่ถูกเปลี่ยน ลองใหม่อีกครั้งได้เลยครับ</p>
+        <button class="mrq-button mrq-button-dark" id="mrq-retry" type="button">ลองอีกครั้ง <span aria-hidden="true">↻</span></button>
+      </div>
+    </section>
+
+    <section class="mrq-state mrq-state-empty" id="mrq-empty" hidden aria-labelledby="mrq-empty-title">
+      <span class="mrq-state-mark" aria-hidden="true">01</span>
+      <div>
+        <p class="mrq-kicker">NOTHING CONFIRMED TO SHOW</p>
+        <h3 id="mrq-empty-title">ยังไม่มีรายการที่ยืนยันให้แสดงครับ</h3>
+        <p id="mrq-empty-copy">ถ้าคุณเพิ่งส่งข้อมูลให้ MMD หรือ MMS ผมจะรอให้ระบบรับและยืนยันก่อน แล้วค่อยนำสถานะจริงมาแสดงตรงนี้ครับ</p>
+        <div class="mrq-state-actions">
+          <a class="mrq-button mrq-button-dark" data-mrq-route="find" href="/find">ส่งคำขอใหม่ <span aria-hidden="true">＋</span></a>
+          <a class="mrq-text-link" data-mrq-route="mms" href="/member/mms-booking">ไป MMS Pre-booking →</a>
+        </div>
+      </div>
+    </section>
+
+    <div class="mrq-list" id="mrq-list" hidden aria-live="polite"></div>
+    <p class="mrq-filter-empty" id="mrq-filter-empty" hidden>ยังไม่มีคำขอประเภทนี้ครับ</p>
+  </section>
+
+  <section class="mrq-journey mrq-shell" data-mrq-reveal aria-labelledby="mrq-journey-title">
+    <header class="mrq-section-head">
+      <div>
+        <p class="mrq-kicker">ONE REQUEST · FOUR RESPONSIBILITIES</p>
+        <h2 id="mrq-journey-title">แต่ละคำขอ มีคนดูอยู่ครับ</h2>
+      </div>
+      <p>บนมือถือปัดดูแต่ละช่วงได้ครับ ภาพช่วยเล่าว่าใครกำลังดูอะไร โดยสถานะจริงยังยึดข้อมูลจาก Production เท่านั้น</p>
+    </header>
+    <div class="mrq-story-track" id="mrq-story-track" aria-label="การดูแลคำขอของ MMD">
+      <article class="mrq-story-card">
+        <figure><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8cf30a68fd3218b6211a12_02%20Member%20Request%20-%20Hito.webp" alt="Hito กำลังติดตามเส้นทางและสถานะของคำขอ" loading="lazy" decoding="async"></figure>
+        <div><span>01 · HITO · STATUS</span><h3>คำขออยู่ตรงไหน</h3><p>ดูว่าระบบได้รับรายการแล้วหรือยัง และตอนนี้กำลังเดินไปถึงขั้นตอนไหนครับ</p></div>
+      </article>
+      <article class="mrq-story-card mrq-story-mms">
+        <figure><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8cf30a6f75e5e157bc1edd_03%20Member%20Request%20-%20Hima.webp" alt="Hima กำลังตรวจ MMS Pre-booking และเตรียมอุปกรณ์ตามรายละเอียดนัด" loading="lazy" decoding="async"></figure>
+        <div><span>02 · HIMA · MMS</span><h3>MMS กำลังประสาน</h3><p>วัน เวลา โซน Skills และคนที่เหมาะจะถูกตรวจให้ตรงกับนัดก่อนยืนยันครับ</p></div>
+      </article>
+      <article class="mrq-story-card">
+        <figure><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8cf30a08479ce19960b235_04%20Member%20Request%20-%20Hiro.webp" alt="Hiro กำลังตรวจรายละเอียดของคำขอก่อนตอบกลับสมาชิก" loading="lazy" decoding="async"></figure>
+        <div><span>03 · HIRO · REVIEW</span><h3>MMD กำลังตรวจอะไร</h3><p>รายละเอียดที่เกี่ยวข้องจะถูกเทียบให้ครบก่อน เพื่อไม่ส่งคำตอบที่ยังไม่แน่นอนครับ</p></div>
+      </article>
+      <article class="mrq-story-card mrq-story-per">
+        <figure><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8cf30a08479ce19960b249_05%20Member%20Request%20-%20Boss%20Per.webp" alt="Boss Per กำลังพิจารณาขั้นตอนถัดไปของคำขอที่ต้องรับผิดชอบ" loading="lazy" decoding="async"></figure>
+        <div><span>04 · BOSS PER · NEXT STEP</span><h3>คุณต้องทำอะไรต่อ</h3><p>ถ้ามีขั้นตอนจริง ผมจะวางไว้ในรายการนั้น ถ้ายังไม่มี ผมจะไม่เร่งให้คุณทำอะไรครับ</p></div>
+      </article>
+    </div>
+    <div class="mrq-swipe-hint" aria-hidden="true"><span></span><span></span><span></span><span></span><b>ปัดดู →</b></div>
+    <div class="mrq-status-strip" aria-label="ความหมายของสถานะ">
+      <div><b>01</b><span>ได้รับแล้ว</span></div><div><b>02</b><span>กำลังประสาน</span></div><div><b>03</b><span>รอคุณ</span></div><div><b>04</b><span>ยืนยันแล้ว</span></div><div><b>05</b><span>ปิดรายการ</span></div>
+    </div>
+  </section>
+
+  <section class="mrq-routes mrq-shell" data-mrq-reveal aria-labelledby="mrq-routes-title">
+    <header class="mrq-section-head">
+      <div>
+        <p class="mrq-kicker">START SOMETHING NEW</p>
+        <h2 id="mrq-routes-title">มีเรื่องใหม่ให้ช่วยไหมครับ</h2>
+      </div>
+      <p>เรื่องเดิมกับเรื่องใหม่จะแยกจากกันชัดเจน คุณจึงไม่ต้องส่งข้อมูลซ้ำในรายการเดิมครับ</p>
+    </header>
+    <div class="mrq-route-grid">
+      <a class="mrq-route-card mrq-route-mmd" data-mrq-route="find" href="/find">
+        <span>01 · MMD PRIVÉ</span>
+        <h3>เริ่มจากสิ่งที่คุณต้องการ</h3>
+        <p>บริการ, Model, Membership หรือเรื่องที่อยากให้ MMD ช่วยดู</p>
+        <b>เปิด Find Your MMD →</b>
+      </a>
+      <a class="mrq-route-card mrq-route-mms" data-mrq-route="mms" href="/member/mms-booking">
+        <span>02 · MMS PRE-BOOKING</span>
+        <h3>ให้ Male Therapist ไปถึงคุณ</h3>
+        <p>ระบุวัน เวลา โซน และ Skills แล้วให้ MMS ช่วยเช็กคนที่เหมาะ</p>
+        <b>เริ่ม Pre-booking →</b>
+      </a>
+    </div>
+  </section>
+
+  <section class="mrq-faq mrq-shell" data-mrq-reveal aria-labelledby="mrq-faq-title">
+    <header>
+      <p class="mrq-kicker">A LITTLE MORE</p>
+      <h2 id="mrq-faq-title">เรื่องที่ควรรู้ไว้ครับ</h2>
+    </header>
+    <div>
+      <details class="mrq-detail"><summary><span>ส่งคำขอแล้ว ถือว่ายืนยันหรือยัง</span><b aria-hidden="true">＋</b></summary><p>ยังครับ คำขอหรือ Pre-booking จะถือว่ายืนยันเมื่อ MMD ประสานรายละเอียดที่จำเป็นและตอบกลับอย่างชัดเจนแล้วเท่านั้น</p></details>
+      <details class="mrq-detail"><summary><span>ทำไมบางรายการยังไม่ขึ้นทันที</span><b aria-hidden="true">＋</b></summary><p>ผมจะแสดงเมื่อระบบ Production เชื่อมคำขอกับ Member ของคุณได้แล้ว เพื่อไม่ให้ข้อมูลผิดคนหรือแสดงสถานะที่ยังตรวจสอบไม่ได้ครับ</p></details>
+      <details class="mrq-detail"><summary><span>ถ้าต้องแก้วัน เวลา หรือรายละเอียด</span><b aria-hidden="true">＋</b></summary><p>หากรายการมีปุ่มแก้ไขหรือส่งข้อมูลเพิ่ม ให้ใช้ปุ่มในรายการนั้นได้เลย ถ้ายังไม่มีปุ่ม กรุณาติดต่อ LINE และแจ้งเลขอ้างอิงครับ</p></details>
+      <details class="mrq-detail"><summary><span>เลขอ้างอิงใช้ทำอะไร</span><b aria-hidden="true">＋</b></summary><p>ใช้ให้ MMD ค้นหารายการได้ถูกต้องและเร็วขึ้น กรุณาเก็บเลขอ้างอิงไว้จนกว่ารายการจะจบครับ</p></details>
+    </div>
+  </section>
+
+  <aside class="mrq-note mrq-shell" data-mrq-reveal aria-label="ข้อความจากเปอร์">
+    <span aria-hidden="true">P</span>
+    <div><p class="mrq-kicker">A NOTE FROM PER</p><p>ผมอยากให้หน้านี้เปิดมาแล้วรู้เรื่องเลยครับ ถ้ายังไม่มีอะไรต้องทำ ผมจะไม่สร้างขั้นตอนเพิ่มให้คุณ แต่ถ้ามี ผมจะวางไว้ตรงหน้าและบอกให้ชัดว่าต้องทำอะไรต่อครับ</p></div>
+  </aside>
+
+  <footer class="mrq-footer mrq-shell">
+    <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a843e6e1b6e6b6177b5706d_MMD%20Prive%20Trans.webp" alt="MMD Privé" loading="lazy" decoding="async">
+    <span>MY MMD · PRIVATE CONTINUITY</span>
+  </footer>
+
+  <nav class="mrq-sticky" aria-label="ทางลัดบนมือถือ">
+    <a data-mrq-route="dashboard" href="/member/dashboard">My MMD</a>
+    <a data-mrq-route="mms" href="/member/mms-booking">MMS Booking</a>
+    <a data-mrq-route="find" href="/find">คำขอใหม่</a>
+  </nav>
+</main>
