@@ -2,7 +2,7 @@
 # LOCK v2026-LOCK-01
 
 name = "admin-worker"
-main = "src/admin-login-hero-worker.js"
+main = "src/runtime-index.js"
 compatibility_date = "2026-01-01"
 workers_dev = true
 
@@ -73,6 +73,23 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/internal/admin/login/session"
+zone_name = "mmdbkk.com"
+
+# MMS team operations console. Keep this namespace exact and narrow.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/mms"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/mms"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/mms/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/mms/*"
 zone_name = "mmdbkk.com"
 
 # Legacy SIGIL internal admin redirect only. Keep these patterns narrow; do not
@@ -202,6 +219,11 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/kenji/knowledge/draft"
 zone_name = "mmdbkk.com"
+
+# Service-only MMS backend. Browser requests stay on admin-worker and never receive credentials.
+[[services]]
+binding = "MMS_WORKER"
+service = "mms-worker"
 
 # ใช้สำหรับ CORS (browser calls)
 [vars]
