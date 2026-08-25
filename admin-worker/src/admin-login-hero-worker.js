@@ -10,6 +10,7 @@ import {
 } from "./admin-login-page.js";
 import { handleKenjiKnowledgeRequest, isKenjiKnowledgeRequest } from "./kenji-knowledge-runtime.js";
 import { handleKenjiPublicKnowledgeRequest, isKenjiPublicKnowledgeRequest } from "./kenji-public-knowledge-runtime.js";
+import { handleMmsAdminRequest, isMmsAdminRequest } from "./mms-admin-runtime.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
@@ -38,6 +39,10 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+
+    if (isMmsAdminRequest(path)) {
+      return handleMmsAdminRequest(request, env, ctx);
+    }
 
     // Per-side MMD Console read API. The dashboard worker is read-only,
     // uses the canonical admin auth helper, and loads operational Airtable data.
