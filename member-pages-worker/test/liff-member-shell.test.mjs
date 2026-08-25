@@ -61,7 +61,7 @@ describe("same-site /member/liff shell", () => {
     assert.equal(response.status, 200);
     const sessionCheck = html.indexOf("const existingProfile = await readProfile()");
     const liffInit = html.indexOf("await window.liff.init({ liffId: CONFIG.liffId })");
-    const liffLogin = html.indexOf("window.liff.login()");
+    const liffLogin = html.indexOf("window.liff.login({ redirectUri: window.location.href })");
     assert.ok(sessionCheck >= 0, "same-site session check must be rendered");
     assert.ok(liffInit > sessionCheck, "LIFF init must happen only after same-site session check");
     assert.ok(liffLogin > liffInit, "LIFF login must remain a fallback after LIFF init");
