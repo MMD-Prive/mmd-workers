@@ -26,6 +26,7 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/admin",
   "/internal/admin/control-room",
   "/internal/admin/dashboard",
+  "/internal/admin/mms",
   "/internal/admin/jobs/create-session",
   "/internal/admin/create-session",
   "/internal/admin/kenji-knowledge",
