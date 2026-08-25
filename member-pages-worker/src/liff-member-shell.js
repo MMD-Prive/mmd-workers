@@ -1,3 +1,5 @@
+import { CARE_BACK_COPY } from "./care-back-i18n.js";
+
 const LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const LIFF_INTENTS = new Set(["signup", "renew", "status", "promo", "hall", "continue_payment", "mms_booking", "unknown"]);
 const LIFF_SDK_URL = "https://static.line-scdn.net/liff/edge/2/sdk.js";
@@ -28,6 +30,7 @@ export function handleLiffMemberShell(request, env = {}) {
     careBackStateEndpoint: "/member/api/liff/care-back/state",
     careBackWishEndpoint: "/member/api/liff/care-back/wish",
     stagingScenario: stagingScenario(env, url),
+    careBackCopy: CARE_BACK_COPY,
   };
   const nonce = crypto.randomUUID().replace(/-/g, "");
   const html = renderShell(config, nonce);
@@ -54,7 +57,7 @@ function renderShell(config, nonce) {
     .mark{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#d7bd8a}.title{margin:10px 0 8px;font-size:30px;line-height:1.08;font-weight:650}.sub{margin:0;color:#aaa29a;font-size:14px;line-height:1.55}
     #message{white-space:pre-line;margin:30px 0 0;font-size:18px;line-height:1.65}.actions{display:grid;gap:10px;margin-top:24px}.actions:empty{display:none}
     button,textarea{width:100%;border:1px solid rgba(216,189,137,.28);border-radius:16px;padding:14px 16px;background:#171511;color:#f7f3eb;font:inherit;text-align:left}button{cursor:pointer}button:disabled{opacity:.55;cursor:default}textarea{min-height:124px;resize:vertical;line-height:1.55}.wish{display:grid;gap:12px;margin-top:16px}.wish-result{white-space:pre-line;color:#e7d5ad;line-height:1.65}
-    .profile{display:grid;gap:12px;margin-top:22px}.summary,.member-details{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.card{border:1px solid rgba(216,189,137,.18);border-radius:20px;padding:17px;background:rgba(8,8,8,.72)}.label{color:#948c82;font-size:11px;letter-spacing:.12em;text-transform:uppercase}.value{display:block;margin-top:6px;font-size:22px;line-height:1.15}.points{font-size:34px;color:#e6cb91}.history{display:grid;gap:9px;margin-top:12px}.event{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.07);font-size:13px}.event:first-child{border-top:0}.event-date,.event-status{color:#8f8880}.event-delta{color:#d9bd82}.care{margin-top:14px;border-color:rgba(225,193,126,.38);background:linear-gradient(145deg,rgba(45,35,19,.78),rgba(10,10,10,.86))}.care h2{margin:8px 0;font-size:21px}.care p{margin:0;color:#b7afa4;font-size:13px;line-height:1.6}.care-code{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;padding:13px 14px;border-radius:14px;background:#080807}.care-code strong{font-size:24px;letter-spacing:.15em;color:#ecd18f}.care button{margin-top:14px;text-align:center;background:linear-gradient(135deg,#f0d892,#b98b35);color:#181207;font-weight:700}
+    .profile{display:grid;gap:12px;margin-top:22px}.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.tab{text-align:center;padding:10px}.tab[aria-selected="true"]{border-color:#d8bc83;background:#2a2114;color:#f0d892}.tab-panel{display:grid;gap:12px}.summary,.member-details{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.card{border:1px solid rgba(216,189,137,.18);border-radius:20px;padding:17px;background:rgba(8,8,8,.72)}.label{color:#948c82;font-size:11px;letter-spacing:.12em;text-transform:uppercase}.value{display:block;margin-top:6px;font-size:22px;line-height:1.15}.points{font-size:34px;color:#e6cb91}.history{display:grid;gap:9px;margin-top:12px}.event{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.07);font-size:13px}.event:first-child{border-top:0}.event-date,.event-status{color:#8f8880}.event-delta{color:#d9bd82}.care{border-color:rgba(225,193,126,.38);background:linear-gradient(145deg,rgba(45,35,19,.78),rgba(10,10,10,.86))}.care h2{margin:8px 0;font-size:21px}.care p{margin:0;color:#b7afa4;font-size:13px;line-height:1.6}.care-code{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;padding:13px 14px;border-radius:14px;background:#080807}.care-code strong{font-size:24px;letter-spacing:.15em;color:#ecd18f}.care button{margin-top:14px;text-align:center;background:linear-gradient(135deg,#f0d892,#b98b35);color:#181207;font-weight:700}
     .status{margin-top:22px;color:#7f7972;font-size:12px;line-height:1.5}.hidden{display:none!important}@media(max-width:390px){main{padding:24px 16px}.summary{grid-template-columns:1fr}.event{grid-template-columns:66px 1fr}.event-status{grid-column:2}}
   </style>
 </head>
@@ -66,16 +69,26 @@ function renderShell(config, nonce) {
   <div id="message" role="status" aria-live="polite">กำลังเปิดการเชื่อมต่อกับ MMD ครับ</div>
   <div id="actions" class="actions" aria-label="ตัวเลือก"></div>
   <section id="profile" class="profile hidden" aria-label="Member profile">
-    <div class="card"><span class="label">Member</span><strong id="profile-name" class="value">สมาชิก MMD</strong><span id="profile-status" class="sub"></span></div>
-    <div class="summary">
+    <div class="tabs" role="tablist" aria-label="Member dashboard views">
+      <button class="tab" type="button" role="tab" data-view-tab="profile" aria-selected="false">สมาชิก</button>
+      <button class="tab" type="button" role="tab" data-view-tab="points" aria-selected="false">คะแนน</button>
+      <button class="tab" type="button" role="tab" data-view-tab="care_back" aria-selected="false">CARE BACK</button>
+    </div>
+    <section class="tab-panel" data-view-panel="profile">
+      <div class="card"><span class="label">Member</span><strong id="profile-name" class="value">สมาชิก MMD</strong><span id="profile-status" class="sub"></span></div>
+      <div id="member-details" class="member-details">
+        <div id="expiry-card" class="card hidden"><span class="label">Membership valid until</span><strong id="profile-expiry" class="value">—</strong></div>
+        <div id="payment-card" class="card"><span class="label">Payment status</span><strong id="profile-payment" class="value">Unavailable</strong></div>
+      </div>
+    </section>
+    <section class="tab-panel" data-view-panel="points" hidden>
+      <div class="summary">
       <div class="card"><span class="label">Tier</span><strong id="profile-tier" class="value">Member</strong></div>
       <div id="points-card" class="card"><span class="label">Active Points</span><strong id="profile-points" class="value points">0</strong></div>
-    </div>
-    <div id="member-details" class="member-details">
-      <div id="expiry-card" class="card hidden"><span class="label">Membership valid until</span><strong id="profile-expiry" class="value">—</strong></div>
-      <div id="payment-card" class="card"><span class="label">Payment status</span><strong id="profile-payment" class="value">Unavailable</strong></div>
-    </div>
-    <div class="card"><span class="label">History · Last 1 Year</span><div id="history" class="history"></div></div>
+      </div>
+      <div class="card"><span class="label">History · Last 1 Year</span><div id="history" class="history"></div></div>
+    </section>
+    <section class="tab-panel" data-view-panel="care_back" hidden>
     <div id="care" class="card care">
       <span class="label">6 Years · Care Back</span><h2>Personal Care-Back Privilege</h2>
       <p id="care-message">ตรวจสอบผ่าน LINE เพื่อเปิดสิทธิ์ CARE BACK ก่อน คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จครับ</p>
@@ -88,6 +101,7 @@ function renderShell(config, nonce) {
         <div id="wish-result" class="wish-result hidden" role="status" aria-live="polite"></div>
       </div>
     </div>
+    </section>
   </section>
   <div id="status" class="status">Secure same-site session · mmdbkk.com</div>
 </main>
@@ -96,6 +110,8 @@ function renderShell(config, nonce) {
 (() => {
   "use strict";
   const CONFIG = ${safeConfig};
+  const locale = String(navigator.language || "th").toLowerCase().startsWith("zh") ? "zh" : String(navigator.language || "th").toLowerCase().startsWith("en") ? "en" : "th";
+  const COPY = CONFIG.careBackCopy[locale] || CONFIG.careBackCopy.th;
   const message = document.getElementById("message");
   const actions = document.getElementById("actions");
   const profile = document.getElementById("profile");
@@ -106,6 +122,23 @@ function renderShell(config, nonce) {
   const wishResult = document.getElementById("wish-result");
   const allowedIntentIds = new Set(["signup", "renew", "status"]);
   let busy = false;
+
+  function activateView(value, updateUrl = false) {
+    const view = ["profile", "points", "care_back"].includes(value) ? value : "profile";
+    for (const tab of document.querySelectorAll("[data-view-tab]")) tab.setAttribute("aria-selected", String(tab.dataset.viewTab === view));
+    for (const panel of document.querySelectorAll("[data-view-panel]")) panel.hidden = panel.dataset.viewPanel !== view;
+    if (updateUrl) { const url = new URL(location.href); url.searchParams.set("view", view); window.history.replaceState(null, "", url); }
+  }
+
+  function localizeCareBack() {
+    const tabs = document.querySelectorAll("[data-view-tab]");
+    tabs[0].textContent = COPY.tab_profile; tabs[1].textContent = COPY.tab_points; tabs[2].textContent = COPY.tab_care_back;
+    document.querySelector("#care .label").textContent = COPY.label;
+    document.querySelector("#care h2").textContent = COPY.title;
+    document.getElementById("care-message").textContent = COPY.intro;
+    careButton.textContent = COPY.check; document.querySelector('label[for="wish-text"]').textContent = COPY.wish_label;
+    wishText.placeholder = COPY.wish_placeholder; wishSubmit.textContent = COPY.wish_submit;
+  }
 
   function show(text) {
     message.textContent = String(text || "ไม่สามารถดำเนินการต่อได้ครับ กรุณากลับมาเปิดผ่าน LINE ของ MMD อีกครั้ง");
@@ -165,7 +198,7 @@ function renderShell(config, nonce) {
     if (state === "wish_available") {
       careButton.classList.add("hidden");
       wishPanel.classList.remove("hidden");
-      document.getElementById("care-message").textContent = "สิทธิ์ CARE BACK ของคุณถูกตรวจแล้ว ส่งคำอวยพรถึง MMD สำเร็จเพื่อเปิดคูปองส่วนตัว 10% ครับ";
+      document.getElementById("care-message").textContent = COPY.wish_required;
       wishText.classList.remove("hidden");
       wishSubmit.classList.remove("hidden");
       wishResult.classList.add("hidden");
@@ -176,7 +209,7 @@ function renderShell(config, nonce) {
       wishPanel.classList.remove("hidden");
       wishText.classList.add("hidden");
       wishSubmit.classList.add("hidden");
-      wishResult.textContent = String(data.final_display && data.final_display.message || "MMD ได้รับคำอวยพรของคุณแล้วครับ");
+      wishResult.textContent = String(locale === "th" && data.final_display && data.final_display.message || COPY.wish_received);
       wishResult.classList.remove("hidden");
       return;
     }
@@ -185,7 +218,7 @@ function renderShell(config, nonce) {
       wishPanel.classList.remove("hidden");
       wishText.classList.add("hidden");
       wishSubmit.classList.add("hidden");
-      wishResult.textContent = "ระบบกำลังยืนยันการบันทึกคำอวยพรเดิมอย่างปลอดภัย กรุณากลับมาตรวจสอบอีกครั้งครับ";
+      wishResult.textContent = COPY.write_pending;
       wishResult.classList.remove("hidden");
       return;
     }
@@ -194,7 +227,7 @@ function renderShell(config, nonce) {
       wishPanel.classList.remove("hidden");
       wishText.classList.add("hidden");
       wishSubmit.classList.add("hidden");
-      wishResult.textContent = "ข้อมูลนี้ยังต้องตรวจสอบก่อนครับ ระบบจะเก็บเส้นทางของคุณไว้อย่างปลอดภัย";
+      wishResult.textContent = COPY.manual_review;
       wishResult.classList.remove("hidden");
     }
   }
@@ -224,8 +257,7 @@ function renderShell(config, nonce) {
       row.append(date, title, state); history.append(row);
     }
     show("ข้อมูลสมาชิกของคุณพร้อมแล้วครับ");
-    if (CONFIG.view === "points") document.getElementById("points-card").scrollIntoView({ behavior: "smooth", block: "center" });
-    if (CONFIG.view === "care_back" || CONFIG.intent === "promo") document.getElementById("care").scrollIntoView({ behavior: "smooth", block: "center" });
+    activateView(CONFIG.intent === "promo" ? "care_back" : CONFIG.view);
   }
 
   function membershipStatus(value) { return ({ active:"Active member",grace:"Grace period",expired:"Expired",under_review:"Under review" })[value] || "Under review"; }
@@ -237,7 +269,7 @@ function renderShell(config, nonce) {
 
   async function claimCareBack() {
     if (busy) return;
-    setBusy(true); careButton.disabled = true; careButton.textContent = "กำลังตรวจสอบสิทธิ์";
+    setBusy(true); careButton.disabled = true; careButton.textContent = COPY.checking;
     try {
       const response = await fetch(CONFIG.careBackEndpoint, { method:"POST",credentials:"same-origin",headers:{"content-type":"application/json","accept":"application/json"},body:"{}" });
       const payload = await response.json().catch(() => null);
@@ -245,16 +277,16 @@ function renderShell(config, nonce) {
       renderCareBackClaim(payload.data || {});
       await readCareBackState();
     } catch {
-      document.getElementById("care-message").textContent = "ตอนนี้ยังออกโค้ดไม่ได้ครับ กรุณาลองใหม่อีกครั้งหรือติดต่อ HYPE";
-      careButton.disabled = false; careButton.textContent = "ลองตรวจสอบอีกครั้ง";
+      document.getElementById("care-message").textContent = COPY.claim_error;
+      careButton.disabled = false; careButton.textContent = COPY.retry;
     } finally { setBusy(false); }
   }
 
   async function submitBirthdayWish() {
     if (busy) return;
     const text = String(wishText.value || "").trim();
-    if (!text) { wishResult.textContent = "กรุณาเขียนคำอวยพรก่อนส่งครับ"; wishResult.classList.remove("hidden"); return; }
-    setBusy(true); wishSubmit.disabled = true; wishSubmit.textContent = "กำลังเก็บคำอวยพร";
+    if (!text) { wishResult.textContent = COPY.wish_empty; wishResult.classList.remove("hidden"); return; }
+    setBusy(true); wishSubmit.disabled = true; wishSubmit.textContent = COPY.wish_saving;
     try {
       const response = await fetch(CONFIG.careBackWishEndpoint, {
         method:"POST",credentials:"same-origin",headers:{"content-type":"application/json","accept":"application/json"},
@@ -265,9 +297,9 @@ function renderShell(config, nonce) {
       if (payload.claim) renderCareBackClaim(payload.claim);
       renderCareBackState(payload);
     } catch {
-      wishResult.textContent = "ตอนนี้ยังเก็บคำอวยพรไม่ได้ครับ กรุณาลองใหม่อีกครั้ง";
+      wishResult.textContent = COPY.wish_error;
       wishResult.classList.remove("hidden");
-      wishSubmit.disabled = false; wishSubmit.textContent = "ลองส่งอีกครั้ง";
+      wishSubmit.disabled = false; wishSubmit.textContent = COPY.wish_retry;
     } finally { setBusy(false); }
   }
 
@@ -278,14 +310,14 @@ function renderShell(config, nonce) {
     document.getElementById("care-code-value").textContent = code;
     codeWrap.classList.toggle("hidden", !code);
     document.getElementById("care-message").textContent = String(data.coupon_message || data.message || "MMD จะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ");
-    careButton.textContent = data.resumed ? "อัปเดตสิทธิ์ CARE BACK แล้ว" : "ตรวจสิทธิ์ CARE BACK แล้ว";
-    if (couponState === "wish_required") careButton.textContent = "ส่งคำอวยพรเพื่อเปิดคูปอง";
+    careButton.textContent = data.resumed ? COPY.checked_updated : COPY.checked;
+    if (couponState === "wish_required") careButton.textContent = COPY.wish_to_coupon;
   }
 
   function render(data) {
     const screen = data && typeof data.screen === "object" ? data.screen : {};
     if (CONFIG.intent === "promo" && CONFIG.campaign === "care_back") {
-      show("กำลังตรวจสอบสิทธิ์ CARE BACK อย่างปลอดภัยครับ");
+      show(COPY.safe_check);
       actions.replaceChildren();
       return;
     }
@@ -363,6 +395,9 @@ function renderShell(config, nonce) {
     }
   }
 
+  localizeCareBack();
+  activateView(CONFIG.intent === "promo" ? "care_back" : CONFIG.view);
+  for (const tab of document.querySelectorAll("[data-view-tab]")) tab.addEventListener("click", () => activateView(tab.dataset.viewTab, true));
   careButton.addEventListener("click", claimCareBack);
   wishSubmit.addEventListener("click", submitBirthdayWish);
   boot();

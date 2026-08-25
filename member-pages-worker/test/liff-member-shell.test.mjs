@@ -120,6 +120,27 @@ describe("same-site /member/liff shell", () => {
     assert.doesNotMatch(html, /payment_ref|receipt_url|member_email|Verification Status/);
   });
 
+  for (const [view, expectedPanel] of [["points", "points"], ["care_back", "care_back"], ["profile", "profile"], ["unknown", "profile"]]) {
+    it(`initializes ${view} to the safe ${expectedPanel} tab`, async () => {
+      const response = await shell(`/member/liff?view=${view}`);
+      const html = await response.text();
+      assert.match(html, new RegExp(`"view":"${expectedPanel}"`));
+      assert.match(html, /role="tablist"/);
+      assert.match(html, /data-view-tab="points"/);
+      assert.match(html, /data-view-tab="care_back"/);
+      assert.match(html, /tab\.setAttribute\("aria-selected"/);
+      assert.match(html, /panel\.hidden = panel\.dataset\.viewPanel !== view/);
+      assert.match(html, /activateView\(CONFIG\.intent === "promo" \? "care_back" : CONFIG\.view\)/);
+    });
+  }
+
+  it("switches tabs interactively while preserving a bounded view URL", async () => {
+    const html = await (await shell("/member/liff?view=points")).text();
+    assert.match(html, /tab\.addEventListener\("click", \(\) => activateView\(tab\.dataset\.viewTab, true\)\)/);
+    assert.match(html, /url\.searchParams\.set\("view", view\)/);
+    assert.match(html, /window\.history\.replaceState/);
+  });
+
   it("supports HEAD without a response body and rejects mutating shell methods", async () => {
     const head = await shell("/member/liff", { method: "HEAD" });
     assert.equal(head.status, 200);

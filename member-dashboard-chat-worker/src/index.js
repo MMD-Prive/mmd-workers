@@ -22,6 +22,7 @@ const MEMBER_LIFF_PREFIX = "/member/api/liff/";
 const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const MEMBER_DASHBOARD_API_PATHS = new Set(["/api/member/dashboard", "/api/member/dashboard/"]);
 const MEMBER_LIFF_ID = "2010298002-mbx9kqQn";
+const MEMBER_DASHBOARD_LIFF_ID = "2010862595-yT4DCEMc";
 const MEMBER_LIFF_DASHBOARD_URL = "https://member-pages-worker.malemodel-bkk.workers.dev/member/liff";
 const LINE_RICH_MENU_SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const LINE_RICH_MENU_PUBLIC_WORLD_BASE_PATH = "/v1/internal/line/rich-menu/public-world";
@@ -290,6 +291,8 @@ export function inferLineIntent(text = "", event = {}) {
   if (isPerContinuityRequest(text) && /(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
   if (isPerContinuityRequest(text)) return "per_continuity";
   if (isKenjiLineCandidate(text)) return "talk_to_per_ai";
+  if (/^(?:ขอ|อยาก)?\s*ต่ออายุ(?:สมาชิก)?(?:ครับ|ค่ะ)?$|^renew(?:al)?\s*(?:membership|member)?$/i.test(normalized)) return "membership_renewal";
+  if (/^(?:ขอ|อยาก)?\s*สมัคร(?:เป็น)?สมาชิก(?:ครับ|ค่ะ)?$|^membership\s*(?:signup|application)$|^join\s*(?:mmd|membership)$/i.test(normalized)) return "membership_signup";
   const isCareBack = /(care\s*back|แคร์\s*แบ็ก|แคร์แบ็ก|6\s*years?|6th\s*anniversary|โปร(?:โมชัน|โมชั่น)?\s*6\s*ปี|phase\s*[12])/i.test(normalized);
   const isPersonalCareBackStatus = /(?:ผม|หนู|ฉัน|ของผม|ของหนู|ของฉัน).{0,16}(?:ได้|มี|เข้า|อยู่).{0,16}(?:180\s*วัน|90\s*วัน|150\s*(?:แต้ม|คะแนน|points?)|250\s*(?:แต้ม|คะแนน|points?)|350\s*(?:แต้ม|คะแนน|points?)|กี่วัน|กี่แต้ม|กี่คะแนน|เท่าไหร่|เท่าไร|กลุ่มไหน|สิทธิ์)|^(?:ผม|หนู|ฉัน)\s*(?:ได้|มี)\s*(?:อะไร|เท่าไหร่|เท่าไร)$|^(?:ของผม|ของหนู|ของฉัน).{0,12}(?:เข้าไหม|ได้ไหม|ได้หรือยัง|อยู่กลุ่มไหน)$/i.test(normalized);
   if (
@@ -638,6 +641,15 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
 
   if (intent === "membership") {
     return `รับเรื่องสมาชิกแล้วครับ ${prefix}จัดการ MY MMD ได้ที่ https://mmdbkk.com/sigil/member/membership ครับ หน้านี้ใช้สำหรับดูแพ็กเกจ สมัคร ต่ออายุ หรืออัปเกรดสมาชิกได้ โดยสถานะสมาชิกและการชำระเงินจะยืนยันหลัง MMD ตรวจสอบข้อมูลทางการแล้วครับ`;
+  }
+
+  if (intent === "membership_signup" || intent === "membership_renewal") {
+    const liffIntent = intent === "membership_signup" ? "signup" : "renew";
+    const label = liffIntent === "signup" ? "สมัครสมาชิก" : "ต่ออายุสมาชิก";
+    const url = new URL(`https://miniapp.line.me/${MEMBER_DASHBOARD_LIFF_ID}`);
+    url.searchParams.set("intent", liffIntent);
+    url.searchParams.set("view", "profile");
+    return `${label}ผ่าน My MMD ใน LINE ได้ตรงนี้ครับ → ${url.toString()} สถานะจะเปลี่ยนเมื่อข้อมูลทางการได้รับการตรวจสอบแล้วเท่านั้นครับ`;
   }
 
   if (intent === "pricing_review") {

@@ -33,6 +33,7 @@ const PUBLIC_KNOWLEDGE_INTENTS = new Set([
 const DETERMINISTIC_INTENTS = new Set([
   "new_follow", "postback", "line_event", "greeting", "pricing_review", "service_guidance",
   "per_continuity",
+  "membership_signup", "membership_renewal",
   "vip", "svip", "black_card",
   "care_back_overview", "care_back_dates", "care_back_current_member", "care_back_expired_member",
   "care_back_new_standard", "care_back_new_premium", "care_back_new_member", "care_back_coupon_wish",
