@@ -2,6 +2,12 @@ import {
   isRenewalRoute,
   renderRenewalResponse,
 } from "./renderers/single-renewal-renderer.js";
+import { KenjiModelIdempotency } from "./kenji-model-idempotency.js";
+import { generateKenjiModelReply, KENJI_TOTAL_DEADLINE_MS } from "./kenji-model-policy.js";
+import { buildProtectedCapabilityReply, decideKenjiCapability, KENJI_CAPABILITIES } from "./kenji-capability-policy.js";
+import { parseModelKnowledgeIdAllowlist, selectApprovedLineModelKnowledge } from "./kenji-knowledge-policy.js";
+
+export { KenjiModelIdempotency };
 
 const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
@@ -14,7 +20,9 @@ const WORKER_NAME = "member-dashboard-chat-worker";
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webhook/line", "/webhook/line/"]);
 const MEMBER_LIFF_PREFIX = "/member/api/liff/";
 const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
+const MEMBER_DASHBOARD_API_PATHS = new Set(["/api/member/dashboard", "/api/member/dashboard/"]);
 const MEMBER_LIFF_ID = "2010298002-mbx9kqQn";
+const MEMBER_LIFF_DASHBOARD_URL = "https://member-pages-worker.malemodel-bkk.workers.dev/member/liff";
 const LINE_RICH_MENU_SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const LINE_RICH_MENU_PUBLIC_WORLD_BASE_PATH = "/v1/internal/line/rich-menu/public-world";
 const LINE_RICH_MENU_DEFAULT_PATH = "/v1/internal/line/rich-menu/default";
@@ -24,6 +32,9 @@ const SERVICE_LINE_RICH_MENU_PRIVATE_MEMBER_BASE_PATH = "/__internal/line/rich-m
 const SERVICE_LINE_RICH_MENU_DEFAULT_PATH = "/__internal/line/rich-menu/default";
 const SERVICE_LINE_RICH_MENU_LIST_PATH = "/__internal/line/rich-menu/list";
 const DEFAULT_SYNC_TABLE = "MMD — Console Inbox";
+const KENJI_MODEL_DEDUPE_TIMEOUT_MS = 300;
+const KENJI_MODEL_QUOTA_DEFAULT_LIMIT = 3;
+const KENJI_MODEL_QUOTA_DEFAULT_WINDOW_SECONDS = 15 * 60;
 
 const PUBLIC_MENU_TEXT = [
   "MMD Member Help",
@@ -81,6 +92,19 @@ function asString(value) {
 
 function isEnabled(value) {
   return ["1", "true", "yes", "on"].includes(asString(value).toLowerCase());
+}
+
+function parseHashAllowlist(value) {
+  const raw = asString(value);
+  if (!raw) return { valid: true, hashes: new Set() };
+  const values = raw.split(/[\s,]+/).filter(Boolean);
+  if (!values.length || values.some((item) => !/^[a-f0-9]{64}$/.test(item))) return { valid: false, hashes: new Set() };
+  return { valid: true, hashes: new Set(values) };
+}
+
+function boundedInteger(value, fallback, min, max) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
 }
 
 function getHeader(headers, name) {
@@ -235,6 +259,17 @@ export function isKenjiLineCandidate(text = "") {
   );
 }
 
+function isPerContinuityRequest(text = "") {
+  const compact = compactLookup(text);
+  return [
+    "ขอคุยกับเปอร์",
+    "เปอร์อยู่ไหม",
+    "คุยกับเปอร์ได้ไหม",
+    "อยากคุยกับเปอร์",
+    "ถามเปอร์หน่อย",
+  ].some((phrase) => compact.includes(phrase));
+}
+
 export function inferLineIntent(text = "", event = {}) {
   const normalized = normalizeLookup(text);
   if (!normalized) {
@@ -243,9 +278,49 @@ export function inferLineIntent(text = "", event = {}) {
     return "line_event";
   }
 
+  if (/(human handoff|human agent|คุยกับคน|เจ้าหน้าที่)/i.test(normalized)) return "human_handoff";
+  if (/(ข้อมูล|ประวัติ|เบอร์|ไลน์|ชื่อ|โปรไฟล์|payment|สมาชิก).{0,24}(?:ลูกค้าคนอื่น|คนอื่น|สมาชิกคนอื่น)|(?:ลูกค้าคนอื่น|ข้อมูลส่วนตัว|private data|other customer)/i.test(normalized)) return "privacy_request";
+  if (/(?:หา|เช็ก|ดู|ขอ).{0,16}(?:model|นายแบบ).{0,20}(?:คืนนี้|วันนี้|พรุ่งนี้|ว่าง|คิว|ตาราง)|(?:model|นายแบบ).{0,20}(?:ว่าง|พร้อม|availability|schedule|ตารางงาน)|(?:ว่างไหม|เช็กคิว|ดูคิว)/i.test(normalized)) return "availability_request";
+  if (/(?:จ่าย|ชำระ|โอน|ยอด|เงิน|สลิป|payment|paid).{0,40}(?:ไม่มีใครแก้|ยังไม่แก้|หลายวัน|โต้แย้ง|dispute)|(?:ไม่มีใครแก้|ยังไม่แก้|หลายวัน|โต้แย้ง|dispute).{0,40}(?:จ่าย|ชำระ|โอน|ยอด|เงิน|สลิป|payment|paid)/i.test(normalized)) return "payment_dispute";
+  if (/(ร้องเรียน|complaint|ไม่พอใจ|ไม่โอเค|บริการแย่|แย่มาก|มีปัญหา|เรื่องด่วน|อยากให้เปอร์จัดการเอง|escalat|กู้คืน|recover account|บัญชีหาย|เข้าไม่ได้)/i.test(normalized)) return "complaint_escalation";
+  if (/(ระบบหลังบ้าน|internal|admin|แอดมิน|สิทธิ์เข้าถึง|ขอ access|access request|token|secret|api key|ฐานข้อมูล|airtable|cloudflare|worker|prompt|คำสั่งระบบ)/i.test(normalized)) return "internal_access";
+  if (/(เมื่อกี้|ก่อนหน้านี้|ที่คุยมา|อันแรก|อันนั้น|เรื่องนั้น|เหมือนเดิม|ต่อจากเดิม|ต่อจากเมื่อกี้|as before|the first one|what we discussed)/i.test(normalized)) return "context_clarification";
+  if (/(ขอให้เปอร์ตรวจ|ให้เปอร์ดู|ให้ per ดู|manual review|ตรวจเอง)/i.test(normalized)) return "manual_review";
+  if (isPerContinuityRequest(text) && /(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
+  if (isPerContinuityRequest(text) && /(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
+  if (isPerContinuityRequest(text)) return "per_continuity";
   if (isKenjiLineCandidate(text)) return "talk_to_per_ai";
-  if (/(care\s*back|แคร์\s*แบ็ก|แคร์แบ็ก|6\s*years?|6th\s*anniversary|birthday\s*wish|คำอวยพร|คูปองวันเกิด)/i.test(normalized)) return "care_back";
-  if (/(เช็ก|เช็ค|ตรวจสอบ|สถานะ).*(ชำระ|payment|โอน|จ่าย)/i.test(normalized)) return "payment_status";
+  const isCareBack = /(care\s*back|แคร์\s*แบ็ก|แคร์แบ็ก|6\s*years?|6th\s*anniversary|โปร(?:โมชัน|โมชั่น)?\s*6\s*ปี|phase\s*[12])/i.test(normalized);
+  const isPersonalCareBackStatus = /(?:ผม|หนู|ฉัน|ของผม|ของหนู|ของฉัน).{0,16}(?:ได้|มี|เข้า|อยู่).{0,16}(?:180\s*วัน|90\s*วัน|150\s*(?:แต้ม|คะแนน|points?)|250\s*(?:แต้ม|คะแนน|points?)|350\s*(?:แต้ม|คะแนน|points?)|กี่วัน|กี่แต้ม|กี่คะแนน|เท่าไหร่|เท่าไร|กลุ่มไหน|สิทธิ์)|^(?:ผม|หนู|ฉัน)\s*(?:ได้|มี)\s*(?:อะไร|เท่าไหร่|เท่าไร)$|^(?:ของผม|ของหนู|ของฉัน).{0,12}(?:เข้าไหม|ได้ไหม|ได้หรือยัง|อยู่กลุ่มไหน)$/i.test(normalized);
+  if (
+    (isCareBack || isPersonalCareBackStatus) &&
+    /(?:ผม|หนู|ฉัน|เรา|ของผม|ของหนู|ของฉัน).{0,20}(?:ได้อะไร|ได้ไหม|ได้กี่|สถานะ|สิทธิ์|เข้าเกณฑ์|กลุ่มไหน)|(?:เช็ก|ตรวจ|ดู).{0,16}(?:สิทธิ์|สถานะ|คะแนน|แต้ม).{0,24}(?:ผม|หนู|ฉัน|ให้หน่อย)|(?:ผม|หนู|ฉัน).{0,12}(?:อยู่กลุ่ม|เป็นกลุ่ม)/i.test(normalized)
+  ) return "care_back_personal_status";
+  if (isPersonalCareBackStatus) return "care_back_personal_status";
+  if (isCareBack && /(?:black\s*card|แบล็คการ์ด|บัตรด[ำํา]|350\s*(?:แต้ม|คะแนน|points?))/i.test(normalized)) return "care_back_black_card";
+  if (isCareBack && /(?:จ่าย|ชำระ|โอน|สลิป|payment|paid|แต้ม.{0,12}(?:เข้า|ได้|มา|เมื่อไหร่|ตอนไหน)|points?.{0,12}(?:credit|add|receive|เมื่อไหร่|ตอนไหน))/i.test(normalized)) return "care_back_payment_points";
+  if (/(birthday\s*wish|คำอวยพร|คูปองวันเกิด|คูปอง|coupon)/i.test(normalized) && (isCareBack || /(?:birthday|วันเกิด|wish|10(?:\s*%)?|30\s*วัน)/i.test(normalized))) return "care_back_coupon_wish";
+  if (isCareBack && /(?:สมาชิกปัจจุบัน|สมาชิกเดิมที่ยัง|current member|active|grace|ยังไม่หมดอายุ|ต่อวัน|เพิ่มวัน|180\s*วัน)/i.test(normalized)) return "care_back_current_member";
+  if (isCareBack && /(?:สมาชิกเดิม|อดีตสมาชิก|former|expired|หมดอายุ|ขาดอายุ|inactive|ต่ออายุ|renew)/i.test(normalized)) return "care_back_expired_member";
+  if (isCareBack && /(?:new\s*premium|premium\s*ใหม่|สมาชิกใหม่.{0,12}premium|พรีเมียม.{0,12}(?:ใหม่|กี่แต้ม)|250\s*(?:welcome\s*)?(?:points?|แต้ม|คะแนน))/i.test(normalized)) return "care_back_new_premium";
+  if (isCareBack && /(?:new\s*standard|standard\s*ใหม่|สมาชิกใหม่.{0,12}standard|สแตนดาร์ด.{0,12}(?:ใหม่|กี่แต้ม)|150\s*(?:welcome\s*)?(?:points?|แต้ม|คะแนน))/i.test(normalized)) return "care_back_new_standard";
+  if (isCareBack && /(?:สมาชิกใหม่|new member|standard|premium|guest\s*pass|เกสต์พาส)/i.test(normalized)) return "care_back_new_member";
+  if ((isCareBack || /(?:แต้ม|คะแนน|points?)/i.test(normalized)) && /(?:ย้อนหลัง|ประวัติ|historical|ยอดใช้บริการ|ทุก\s*100|100\s*(?:บาท|thb)|คิดแต้ม|คำนวณแต้ม)/i.test(normalized)) return "care_back_historical_points";
+  if (isCareBack && /(?:phase|เฟส|ช่วง|วันไหน|เมื่อไหร่|เริ่ม|สิ้นสุด|หมดเขต|31\s*(?:ส\.?ค\.?|aug)|(?:1|30)\s*(?:ก\.?ย\.?|sep)|สิงหาคม|กันยายน)/i.test(normalized)) return "care_back_dates";
+  if (isCareBack) return "care_back_overview";
+  if (/(?:ส่ง\s*)?สลิป.{0,20}(?:แต้ม|คะแนน|points?).{0,16}(?:ไม่เข้า|เข้าไหม|เข้าเมื่อไหร่|ตอนไหน)|(?:จ่าย|ชำระ|payment|paid).{0,20}(?:แต้ม|คะแนน|points?).{0,16}(?:ไม่เข้า|เข้าไหม|เข้าเมื่อไหร่|ตอนไหน)/i.test(normalized)) return "care_back_payment_points";
+  if (/(?:350\s*(?:แต้ม|คะแนน|points?).{0,20}(?:black\s*card|แบล็คการ์ด|บัตรด[ำํา])|(?:black\s*card|แบล็คการ์ด|บัตรด[ำํา]).{0,20}350\s*(?:แต้ม|คะแนน|points?))/i.test(normalized)) return "care_back_black_card";
+  if (/(?:guest\s*pass|เกสต์\s*พาส).{0,20}(?:แต้ม|คะแนน|points?)/i.test(normalized)) return "care_back_new_member";
+  if (/(?:หมดอายุ|expired).{0,24}(?:150\s*(?:แต้ม|คะแนน|points?)|ได้อะไร)/i.test(normalized)) return "care_back_expired_member";
+  if (/(?:สมัคร\s*)?(?:standard|สแตนดาร์ด).{0,24}(?:ใหม่|วันนี้|150\s*(?:แต้ม|คะแนน|points?)|แต้ม.{0,8}เข้า|ได้อะไร)/i.test(normalized)) return "care_back_new_standard";
+  if (/(?:สมัคร\s*)?(?:premium|พรีเมียม|พรีเมี่ยม).{0,24}(?:ใหม่|วันนี้|250\s*(?:แต้ม|คะแนน|points?)|แต้ม.{0,8}เข้า|ได้อะไร)|(?:premium|พรีเมียม|พรีเมี่ยม).{0,12}(?:ได้\s*)?250/i.test(normalized)) return "care_back_new_premium";
+  if (/(?:สมาชิกปัจจุบัน|current\s*member).{0,16}(?:ได้อะไร|180\s*วัน|เพิ่มวัน)/i.test(normalized)) return "care_back_current_member";
+  if (/(?:กันยายน|september|sep).{0,16}(?:โปร|promotion)|โปร.{0,16}(?:ถึงวันไหน|หมดเมื่อไหร่|หมดเขต)/i.test(normalized)) return "care_back_dates";
+  if (/(?:เข้าเพจ|เปิดเพจ|เปิดหน้า|เข้า\s*page|open\s*page).{0,20}(?:คูปอง|coupon)|(?:wish|คำอวยพร).{0,20}(?:10(?:\s*%)?|คูปอง|coupon).{0,12}(?:ได้เลย|ได้ไหม|หรือยัง|เปิด)/i.test(normalized)) return "care_back_coupon_wish";
+  if (/(?:\d[\d,\s]*\s*(?:บาท|thb).{0,16}(?:กี่แต้ม|กี่คะแนน|กี่\s*points?)|(?:กี่แต้ม|กี่คะแนน).{0,16}\d[\d,\s]*\s*(?:บาท|thb))/i.test(normalized)) return "care_back_historical_points";
+  if (/^(?:ผม|ฉัน|หนู|เรา)?\s*(?:จ่าย|ชำระ|โอน)(?:เงิน)?\s*(?:แล้ว|เรียบร้อยแล้ว)(?:ครับ|ค่ะ|นะ)?$/i.test(normalized)) return "payment_status";
+  if (/^(?:สถานะ(?:สมาชิก)?(?:ของ)?ผม|สถานะ(?:สมาชิก)?(?:ของ)?ฉัน|สถานะ(?:สมาชิก)?(?:ของ)?หนู)(?:เป็นยังไง|เป็นอย่างไร|ตอนนี้)?(?:ครับ|ค่ะ)?$/i.test(normalized)) return "membership_status";
+  if (/^(?:แต้ม|คะแนน|points?)(?:ของ)?(?:ผม|ฉัน|หนู)?\s*(?:เข้า|เพิ่ม|มา)(?:แล้ว)?(?:หรือยัง|ไหม|หรือเปล่า)?(?:ครับ|ค่ะ)?$/i.test(normalized)) return "points_status";
   if (/(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
   if (/(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
   if (/(svip|s vip|super\s*vip)/i.test(normalized)) return "svip";
@@ -255,9 +330,12 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(relax spa|partner venue|ไม่มีสถานที่|ไม่มีที่|สถานที่พร้อมอุปกรณ์|ใช้ร้าน)/i.test(normalized)) return "partner_venue";
   if (/(private talent|specialist|freelancer|special skill|ทักษะพิเศษ|ล่าม|ภาษา|performance|creative|business presence)/i.test(normalized)) return "private_talent";
   if (/(dinner|dining|drinks|event|appearance|social|ทานข้าว|ดินเนอร์|ดื่ม|อีเวนต์|ออกงาน|จอง|book|booking|คิว|นัด|reserve)/i.test(normalized)) return "mmd_companion";
-  if (/(สมัคร|member|สมาชิก|renew|ต่ออายุ|upgrade|อัปเกรด|อัพเกรด)/i.test(normalized)) return "membership";
+  if (/(สมัคร|member|สมาชิก|renew|ต่ออายุ|upgrade|อัปเกรด|อัพเกรด|standard|premium)/i.test(normalized)) return "membership";
   if (/(ราคา|price|rate|เรท|promotion|โปร|package|แพ็กเกจ|แพคเกจ|เท่าไร|เท่าไหร่)/i.test(normalized)) {
     return "pricing_review";
+  }
+  if (/(ใช้บริการยังไง|ใช้บริการอย่างไร|เริ่มยังไง|เริ่มอย่างไร|ขั้นตอน|บริการมีอะไร|how\s+to\s+use|how\s+does\s+it\s+work)/i.test(normalized)) {
+    return "service_guidance";
   }
   if (/(สวัสดี|hello|hi|hey)/i.test(normalized)) return "greeting";
   return "note_only";
@@ -266,9 +344,12 @@ export function inferLineIntent(text = "", event = {}) {
 const KENJI_KNOWLEDGE_TABLE_FALLBACK = "tblsLd1uVOtG2kHoU";
 const LINE_KNOWLEDGE_CHANNEL = "LINE_OFC";
 const LINE_KNOWLEDGE_TTL_MS = 60_000;
+const LINE_KNOWLEDGE_REPLY_TIMEOUT_MS = 900;
+const LINE_MODEL_DEDUPE_LOOKUP_TIMEOUT_MS = 500;
+const LINE_FAILURE_FALLBACK = "ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ";
+const LINE_FAILURE_FALLBACK_COOLDOWN_SECONDS = 10 * 60;
 const LINE_KNOWLEDGE_CARD_BY_INTENT = Object.freeze({
   talk_to_per_ai: "kenji_per_voice_line_entry_v1",
-  care_back: "kenji_20_011_care_back_2026",
   payment_slip: "kenji_20_006_payment_proof",
   membership: "kenji_20_008_membership_intake_catalog",
   mmd_companion: "kenji_20_002_route_map",
@@ -294,7 +375,7 @@ function isSafePerVoiceKnowledge(value) {
   return !/(?:\bkenji\b|เคนจิ|ทีม(?:งาน)?|ระบบ|ชำระ(?:เงิน)?สำเร็จ(?:แล้ว)?|ยืนยัน(?:การ)?ชำระ(?:เงิน)?(?:แล้ว)?|เปิดสมาชิก(?:แล้ว)?|ยืนยัน(?:การ)?จอง(?:แล้ว)?|ได้รับสิทธิ์(?:แล้ว)?)/i.test(text);
 }
 
-async function fetchPublishedLineKnowledge(env = {}) {
+async function fetchPublishedLineKnowledge(env = {}, options = {}) {
   const apiKey = asString(env.AIRTABLE_API_KEY);
   const baseId = asString(env.AIRTABLE_BASE_ID);
   const table = getKenjiKnowledgeTable(env);
@@ -309,19 +390,20 @@ async function fetchPublishedLineKnowledge(env = {}) {
     const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
     url.searchParams.set("pageSize", "100");
     url.searchParams.set("filterByFormula", 'AND({status}="active",{response_mode}="auto_reply_allowed")');
-    ["knowledge_id", "customer_answer", "allowed_channels", "status", "response_mode"].forEach((field) => {
+    ["knowledge_id", "title", "category", "language", "customer_answer", "allowed_channels", "status", "response_mode", "risk_level", "effective_from", "payload_json", "source_path", "source_ref", "internal_instruction", "review_note"].forEach((field) => {
       url.searchParams.append("fields[]", field);
     });
 
     const response = await fetch(url.toString(), {
       method: "GET",
       headers: { authorization: `Bearer ${apiKey}` },
+      signal: options.signal,
     });
     if (!response.ok) return [];
 
     const payload = await response.json().catch(() => ({}));
     const cards = (Array.isArray(payload?.records) ? payload.records : [])
-      .map((record) => record?.fields || {})
+      .map((record) => withKnowledgeLifecycleMetadata(record?.fields || {}))
       .filter((fields) => (
         asString(fields.status).toLowerCase() === "active" &&
         asString(fields.response_mode).toLowerCase() === "auto_reply_allowed" &&
@@ -335,6 +417,61 @@ async function fetchPublishedLineKnowledge(env = {}) {
   }
 }
 
+function rankPublishedKnowledge(cards = [], text = "") {
+  const normalized = normalizeLookup(text);
+  const terms = normalized.split(/\s+/).filter((term) => term.length >= 2);
+  if (!terms.length) return [];
+  return cards
+    .filter((card) => isSafePerVoiceKnowledge(card?.customer_answer))
+    .map((card) => {
+      const searchable = normalizeLookup([card.title, card.category, card.customer_answer].filter(Boolean).join(" "));
+      const score = terms.reduce((total, term) => total + (searchable.includes(term) ? 1 : 0), 0);
+      return { card, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 3)
+    .map((item) => item.card);
+}
+
+function withKnowledgeLifecycleMetadata(fields = {}) {
+  let payload = {};
+  try {
+    payload = typeof fields.payload_json === "string" ? JSON.parse(fields.payload_json) : (fields.payload_json || {});
+  } catch (_) {
+    // Malformed lifecycle metadata is retained as an invalid date marker so
+    // the grounding policy fails closed rather than silently ignoring it.
+    payload = { effective_to: "invalid_payload_json" };
+  }
+  return {
+    ...fields,
+    effective_to: payload.effective_to,
+    expires_at: payload.expires_at,
+    superseded: payload.superseded,
+    superseded_by: payload.superseded_by,
+  };
+}
+
+async function getModelGrounding(env = {}, text = "", deadlineAt = 0) {
+  const allowlist = parseModelKnowledgeIdAllowlist(env.LINE_KENJI_MODEL_KNOWLEDGE_IDS);
+  if (!allowlist.valid || !allowlist.ids.length) return [];
+  const key = `${asString(env.AIRTABLE_BASE_ID)}:${getKenjiKnowledgeTable(env)}`;
+  if (lineKnowledgeCache.key === key && lineKnowledgeCache.expiresAt > Date.now()) {
+    return rankPublishedKnowledge(selectApprovedLineModelKnowledge(lineKnowledgeCache.cards, { approvedIds: allowlist.ids }), text);
+  }
+  if (!isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)) return [];
+  const remainingMs = Number(deadlineAt) - Date.now();
+  if (Number.isFinite(remainingMs) && remainingMs <= 0) return [];
+  const timeoutMs = Math.max(1, Math.min(LINE_KNOWLEDGE_REPLY_TIMEOUT_MS, Number.isFinite(remainingMs) ? remainingMs : LINE_KNOWLEDGE_REPLY_TIMEOUT_MS));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("kenji_knowledge_timeout"), timeoutMs);
+  try {
+    return rankPublishedKnowledge(selectApprovedLineModelKnowledge(await fetchPublishedLineKnowledge(env, { signal: controller.signal }), { approvedIds: allowlist.ids }), text);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function getPublishedPerVoiceReply(env = {}, intent = "") {
   const knowledgeId = LINE_KNOWLEDGE_CARD_BY_INTENT[intent];
   if (!knowledgeId) return "";
@@ -344,10 +481,6 @@ async function getPublishedPerVoiceReply(env = {}, intent = "") {
   return isSafePerVoiceKnowledge(answer) ? answer : "";
 }
 
-// The webhook must answer LINE before doing any network work other than the
-// reply itself. A warm, shared knowledge cache is safe to use here because it
-// has no request- or customer-specific state. On a cold cache we deliberately
-// use the reviewed local Per Voice fallback and refresh Airtable afterwards.
 function getCachedPublishedPerVoiceReply(env = {}, intent = "") {
   const knowledgeId = LINE_KNOWLEDGE_CARD_BY_INTENT[intent];
   const key = `${asString(env.AIRTABLE_BASE_ID)}:${getKenjiKnowledgeTable(env)}`;
@@ -355,10 +488,6 @@ function getCachedPublishedPerVoiceReply(env = {}, intent = "") {
   const card = lineKnowledgeCache.cards.find((item) => asString(item.knowledge_id) === knowledgeId);
   const answer = asString(card?.customer_answer);
   return isSafePerVoiceKnowledge(answer) ? answer : "";
-}
-
-function buildGenericAck(prefix = "") {
-  return `รับข้อความแล้วครับ ${prefix}เดี๋ยวเปอร์ขอตรวจรายละเอียดให้ก่อนนะครับ แล้วจะกลับมาช่วยดูขั้นตอนที่เหมาะให้ครับ`;
 }
 
 export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
@@ -369,6 +498,10 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
 
   if (event?.type === "follow") {
     return `สวัสดีครับ ${prefix}ยินดีต้อนรับสู่ MMD Privé พิมพ์เรื่องที่อยากให้ช่วยได้เลยครับ เช่น จองงาน เช็กราคา เช็กนายแบบ หรือเรื่องสมาชิก`;
+  }
+
+  if (intent === "per_continuity") {
+    return "อยู่ครับ มีอะไรบอกผมได้เลย";
   }
 
   if (intent === "talk_to_per_ai") {
@@ -386,24 +519,101 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
 เล่าได้เลยครับ เดี๋ยวเปอร์ช่วยแยกขั้นตอนที่เหมาะให้ครับ`;
   }
 
-  if (intent === "care_back") {
+  if (intent === "privacy_request") {
+    return "ผมไม่สามารถเปิดเผยหรือค้นข้อมูลส่วนตัวของลูกค้าคนอื่นได้ครับ ถ้าต้องการดูข้อมูลของคุณเอง กรุณาใช้ช่องทางยืนยันตัวตนของ MMD ครับ";
+  }
+
+  if (intent === "availability_request") {
+    return "ผมยังยืนยันคิวหรือความพร้อมของ Companion จากข้อความนี้ไม่ได้ครับ ส่งวัน เวลา พื้นที่ และรูปแบบงานมาได้ แล้ว MMD จะตรวจความพร้อมก่อนยืนยันครับ";
+  }
+
+  if (intent === "complaint_escalation") {
+    return "ผมอยู่ครับ เล่ารายละเอียดสำคัญและสิ่งที่อยากให้ผมช่วยจัดการได้เลยครับ";
+  }
+
+  if (intent === "internal_access") {
+    return "ผมช่วยได้เฉพาะข้อมูลและขั้นตอนสำหรับลูกค้าครับ ไม่สามารถเปิดเผยหรือให้สิทธิ์เข้าถึงระบบภายในได้ครับ";
+  }
+
+  if (intent === "human_handoff") {
+    return "ผมอยู่ครับ ส่งรายละเอียดสำคัญและสิ่งที่ต้องการให้ช่วยไว้ได้เลยครับ";
+  }
+
+  if (intent === "context_clarification") {
+    return "ผมยังไม่มีบริบทก่อนหน้าในรอบนี้ครับ หมายถึงเรื่องสมาชิก ราคา หรือบริการส่วนไหนครับ";
+  }
+
+  if (intent === "care_back_overview") {
     return `${prefix}CARE BACK เป็นสิทธิ์ดูแลกลับที่ MMD ตรวจจากสถานะและประวัติจริงครับ เริ่มจากยืนยันผ่าน LINE แล้วส่ง Birthday Wish ให้บันทึกสำเร็จก่อน คูปองส่วนตัว 10% จึงจะเปิดได้ 1 ครั้งและมีอายุ 30 วันหลัง activation ส่วน Membership และ Points จะมีผลหลัง MMD ตรวจข้อมูล การสมัคร หรือการชำระเงินที่เกี่ยวข้องเรียบร้อยแล้วเท่านั้นครับ`;
   }
 
-  if (intent === "payment_slip") {
-    return `${prefix}ถ้าต้องการเช็กสถานะสมาชิกและการชำระ เปิดหน้านี้ใน LINE ได้เลยครับ: ${memberLiffUrl("status", "profile")}
+  if (intent === "care_back_dates") {
+    return `${prefix}CARE BACK Phase 1 สิ้นสุดวันที่ 31 สิงหาคม 2026 และ Phase 2 เปิดวันที่ 1–30 กันยายน 2026 ครับ ทั้งสองช่วงใช้นโยบายสิทธิ์เดียวกัน และการเข้าร่วมในเดือนกันยายนไม่สร้างสิทธิ์ซ้ำครับ`;
+  }
 
-ถ้าต้องการส่งสลิปใหม่โดยเฉพาะ ใช้ช่องทางส่งหลักฐานแยกได้ที่ https://mmdbkk.com/confirm/payment-proof ครับ หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรือเปิดสิทธิ์ครับ`;
+  if (intent === "care_back_current_member") {
+    return `${prefix}สมาชิกที่มีสถานะ active หรือ grace เมื่อ MMD ตรวจสถานะและวันหมดอายุจริงแล้ว นโยบาย CARE BACK คือขยายอายุสมาชิก 180 วันจากวันหมดอายุจริงครับ ข้อความนี้ยังไม่ใช่การยืนยันว่าได้เพิ่มวันแล้ว`;
+  }
+
+  if (intent === "care_back_expired_member") {
+    return `${prefix}สมาชิกเดิมที่หมดอายุต้องต่ออายุหรือชำระ และให้ MMD ยืนยันจนสถานะกลับเป็น active หรือ grace ก่อนครับ จากนั้นจึงเข้าเกณฑ์ CARE BACK เพิ่มอายุ 90 วันและ 150 Points ข้อความนี้ยังไม่ใช่การยืนยันสิทธิ์หรือยอดชำระครับ`;
+  }
+
+  if (intent === "care_back_new_standard") {
+    return `${prefix}สมาชิกใหม่ Standard เข้าเกณฑ์รับ 150 Welcome Points หลัง MMD ตรวจการสมัคร การชำระ และสถานะสมาชิกเรียบร้อยแล้วครับ ข้อความนี้ยังไม่ใช่การยืนยันว่าแต้มเข้าบัญชีแล้ว`;
+  }
+
+  if (intent === "care_back_new_premium") {
+    return `${prefix}สมาชิกใหม่ Premium เข้าเกณฑ์รับ 250 Welcome Points หลัง MMD ตรวจการสมัคร การชำระ และสถานะสมาชิกเรียบร้อยแล้วครับ ข้อความนี้ยังไม่ใช่การยืนยันว่าแต้มเข้าบัญชีแล้ว`;
+  }
+
+  if (intent === "care_back_new_member") {
+    return `${prefix}สมาชิกใหม่ Standard เข้าเกณฑ์ 150 Welcome Points และสมาชิกใหม่ Premium เข้าเกณฑ์ 250 Welcome Points หลัง MMD ตรวจการสมัคร การชำระ และสถานะเรียบร้อยแล้วครับ Guest Pass ไม่มี CARE BACK Welcome Points อัตโนมัติ เว้นแต่ MMD จะประกาศกติกาแยก`;
+  }
+
+  if (intent === "care_back_coupon_wish") {
+    return `${prefix}ต้องส่ง Birthday Wish ให้บันทึกสำเร็จก่อน คูปอง CARE BACK 10% จึงจะพร้อมใช้ครับ คูปองใช้กับรายการที่เข้าเกณฑ์ได้ 1 ครั้ง และมีอายุ 30 วันหลัง activation การยืนยันตัวตนหรือเข้าเพจอย่างเดียวยังไม่เปิดคูปองครับ`;
+  }
+
+  if (intent === "care_back_historical_points") {
+    if (/10\s*[,\s]?\s*000\s*(?:บาท|thb)/i.test(text)) {
+      return `${prefix}ตามอัตรา CARE BACK ยอดใช้บริการย้อนหลัง 10,000 บาทจะเทียบได้ 100 Points เฉพาะเมื่อ MMD ตรวจแล้วว่าเป็นยอดบริการย้อนหลังที่เข้าเกณฑ์ครับ ข้อความนี้เป็นการอธิบายอัตรา 100 บาทต่อ 1 Point ยังไม่ใช่การยืนยันว่าคุณมี 100 Points`;
+    }
+    return `${prefix}ยอดใช้บริการย้อนหลังที่เข้าเกณฑ์และ MMD ตรวจสอบได้ คิดในอัตรา 100 บาทเท่ากับ 1 Point ครับ คะแนนจะอ้างอิงเฉพาะรายการที่ตรวจสอบได้ และข้อความนี้ยังไม่ใช่การยืนยันยอดคะแนนส่วนตัว`;
+  }
+
+  if (intent === "care_back_payment_points") {
+    return `${prefix}สลิปเป็นหลักฐานประกอบเท่านั้น ยังไม่ใช่การยืนยันการชำระครับ อายุสมาชิก สิทธิ์ และ Points จะมีผลหลัง MMD ตรวจยอด จับคู่รายการ และอัปเดตสถานะทางการเรียบร้อยแล้ว`;
+  }
+
+  if (intent === "care_back_black_card") {
+    return `${prefix}คะแนนพิเศษสูงสุด 350 Points ใช้ได้เฉพาะเคสที่ผ่านการคัดเลือกพิเศษที่อนุมัติแล้ว และเป็นเพียงข้อมูลประกอบการพิจารณา Black Card ครับ ไม่ได้รับ Black Card อัตโนมัติ และข้อความนี้ยังไม่ใช่การอนุมัติสิทธิ์`;
+  }
+
+  if (intent === "care_back_personal_status") {
+    return `${prefix}ผมยังยืนยันจากข้อความนี้ไม่ได้ว่าคุณอยู่กลุ่มไหน ได้สิทธิ์ใด หรือมียอดเท่าไรครับ ต้องตรวจสถานะสมาชิก วันหมดอายุ ประวัติบริการ และรายการชำระที่ยืนยันแล้วของคุณก่อน`;
+  }
+
+  if (intent === "payment_slip") {
+    return `${prefix}ส่งหลักฐานเข้ามาได้ครับ: https://mmdbkk.com/confirm/payment-proof
+
+เดี๋ยว MMD ตรวจยอดและจับคู่รายการให้ก่อนนะครับ หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request ครับ`;
   }
 
   if (intent === "payment_status") {
-    return `${prefix}เช็กสถานะสมาชิกและการชำระผ่าน LINE ได้เลยครับ: ${memberLiffUrl("status", "profile")}
+    return `ได้ครับ แต่ผมจะไม่ยืนยันจากข้อความอย่างเดียว เช็กสถานะรายการจริงใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → ${MEMBER_LIFF_DASHBOARD_URL}`;
+  }
 
-ระบบจะแสดงเฉพาะสถานะที่ตรวจพบจริง ถ้ายังไม่มีรายการหรืออยู่ระหว่างตรวจสอบจะแจ้งตามนั้นครับ`;
+  if (intent === "membership_status") {
+    return `เช็กสถานะสมาชิกของคุณใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → ${MEMBER_LIFF_DASHBOARD_URL}`;
+  }
+
+  if (intent === "points_status") {
+    return `เช็กแต้มกับประวัติรายการของคุณใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → ${MEMBER_LIFF_DASHBOARD_URL}`;
   }
 
   if (intent === "points") {
-    return `ดู Points balance และประวัติผ่าน LINE ได้เลยครับ ${prefix}: ${memberLiffUrl("status", "points")}`;
+    return `รับเรื่องคะแนนสมาชิกแล้วครับ ${prefix}เดี๋ยวเปอร์ขอตรวจยอดและประวัติที่เกี่ยวข้องก่อน แล้วจะแจ้งสถานะที่ตรวจได้ครับ`;
   }
 
   if (intent === "vip" || intent === "svip" || intent === "black_card") {
@@ -427,18 +637,23 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "membership") {
-    return `ดูสถานะ Tier วันหมดอายุ และสถานะการชำระผ่าน LINE ได้เลยครับ ${prefix}: ${memberLiffUrl("status", "profile")}`;
+    return `รับเรื่องสมาชิกแล้วครับ ${prefix}จัดการ MY MMD ได้ที่ https://mmdbkk.com/sigil/member/membership ครับ หน้านี้ใช้สำหรับดูแพ็กเกจ สมัคร ต่ออายุ หรืออัปเกรดสมาชิกได้ โดยสถานะสมาชิกและการชำระเงินจะยืนยันหลัง MMD ตรวจสอบข้อมูลทางการแล้วครับ`;
   }
 
   if (intent === "pricing_review") {
     return `${prefix}เรื่องราคา เดี๋ยวเปอร์ขอดูรายละเอียดที่เหมาะก่อนนะครับ ถ้าสะดวก แจ้งวัน เวลา โซน และระยะเวลาที่ต้องการไว้ได้เลยครับ`;
   }
 
+  if (intent === "service_guidance") {
+    return `${prefix}เริ่มได้ง่ายครับ บอกผมก่อนว่าอยากดูเรื่องสมาชิก ราคา หรือใช้บริการแบบไหน พร้อมวัน เวลา และพื้นที่คร่าว ๆ แล้วผมจะช่วยแยกขั้นตอนที่เหมาะให้ครับ`;
+  }
+
   if (intent === "greeting") {
     return `สวัสดีครับ ${prefix}ต้องการสอบถามเรื่องจองงาน ราคา เช็กนายแบบ หรือสมาชิก พิมพ์มาได้เลยนะครับ`;
   }
 
-  if (options.forceReply || text) return buildGenericAck(prefix);
+  if (intent === "manual_review") return LINE_FAILURE_FALLBACK;
+
   return "";
 }
 
@@ -449,10 +664,120 @@ export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env
   return answer || fallback;
 }
 
-function buildImmediateKenjiLineReply(event = {}, env = {}, options = {}) {
-  const fallback = buildKenjiLineReply(event, {}, options);
-  if (!isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)) return fallback;
-  return getCachedPublishedPerVoiceReply(env, inferLineIntent(getLineEventText(event), event)) || fallback;
+async function getFailureFallbackCooldownRequest(event = {}) {
+  const lineUserId = getLineUserId({ event });
+  if (!lineUserId) return null;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(lineUserId));
+  const key = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return new Request(`https://line-fallback-cooldown.mmd.invalid/${key}`, { method: "GET" });
+}
+
+async function claimFailureFallbackWindow(event = {}) {
+  // Best-effort anti-spam only: Cache API entries are not persistent and may
+  // disappear after eviction or across colos. Never use this as authorization,
+  // dedupe correctness, or payment/session/member state; the fallback may
+  // occasionally reappear when the cache entry is unavailable.
+  try {
+    const cache = globalThis.caches?.default;
+    if (!cache) return true;
+    const request = await getFailureFallbackCooldownRequest(event);
+    if (!request) return true;
+    if (await cache.match(request)) return false;
+    await cache.put(request, new Response("1", {
+      headers: { "cache-control": `max-age=${LINE_FAILURE_FALLBACK_COOLDOWN_SECONDS}` },
+    }));
+    return true;
+  } catch (_) {
+    return true;
+  }
+}
+
+export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, options = {}) {
+  const eventText = getLineEventText(event);
+  const intent = inferLineIntent(eventText, event);
+  const capabilityDecision = decideKenjiCapability({ text: eventText, intent });
+  const deterministicReply = buildKenjiLineReply(event, profile, options);
+  const deterministicFirst = capabilityDecision.capability !== KENJI_CAPABILITIES.APPROVED_PUBLIC_KNOWLEDGE && capabilityDecision.capability !== KENJI_CAPABILITIES.SAFE_CONVERSATION;
+  const cachedKnowledge = isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)
+    ? getCachedPublishedPerVoiceReply(env, intent)
+    : "";
+  const generated = deterministicFirst ? deterministicReply : (cachedKnowledge || deterministicReply);
+  if (generated && intent !== "manual_review") {
+    return {
+      text: generated,
+      fallback: false,
+      reply_source: (!deterministicFirst && cachedKnowledge) ? "knowledge" : "system_truth",
+      model_attempted: false,
+      model_success: false,
+      model_latency_ms: 0,
+      knowledge_hits: (!deterministicFirst && cachedKnowledge) ? 1 : 0,
+      guard_blocked: false,
+      guard_reason: "",
+    };
+  }
+
+  if (capabilityDecision.capability === KENJI_CAPABILITIES.PROTECTED_AUTHORITY) {
+    return {
+      text: buildProtectedCapabilityReply(capabilityDecision),
+      fallback: false,
+      reply_source: "system_truth",
+      model_attempted: false,
+      model_success: false,
+      model_latency_ms: 0,
+      knowledge_hits: 0,
+      guard_blocked: true,
+      guard_reason: `protected_authority_${capabilityDecision.requested_domain}`,
+    };
+  }
+
+  let model = {};
+  let knowledgeHits = 0;
+  if (capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && eventText && isEnabled(env.LINE_KENJI_MODEL_ENABLED) && options.modelEligible !== false) {
+    const deadlineAt = Number(options.deadlineAt) || (Date.now() + KENJI_TOTAL_DEADLINE_MS);
+    const grounding = await getModelGrounding(env, eventText, deadlineAt);
+    knowledgeHits = grounding.length;
+    model = await generateKenjiModelReply({
+      text: eventText,
+      knowledge: grounding,
+      env,
+      deadline_at: deadlineAt,
+      capability: capabilityDecision.capability,
+      validation_context: {
+        inferred_capability: capabilityDecision.capability,
+        requested_domain: capabilityDecision.requested_domain,
+        deterministic_intent: intent,
+        protected_context: capabilityDecision.capability === KENJI_CAPABILITIES.PROTECTED_AUTHORITY || capabilityDecision.capability === KENJI_CAPABILITIES.HUMAN_HANDOFF,
+      },
+    });
+    if (model.success && model.text) {
+      return {
+        text: model.text,
+        fallback: false,
+        reply_source: "model",
+        model_attempted: model.attempted,
+        model_success: model.success,
+        model_latency_ms: model.latency_ms,
+        knowledge_hits: grounding.length,
+        guard_blocked: model.guard_blocked,
+        guard_reason: model.guard_reason,
+      };
+    }
+  }
+
+  const needsFallback = intent === "manual_review" || Boolean(getLineEventText(event));
+  if (!needsFallback) return { text: "", fallback: false, reply_source: "system_truth", model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" };
+  const allowed = await claimFailureFallbackWindow(event);
+  return {
+    text: allowed ? LINE_FAILURE_FALLBACK : "",
+    fallback: true,
+    reply_source: intent === "manual_review" ? "manual_review" : "fallback",
+    model_attempted: Boolean(model.attempted),
+    model_success: Boolean(model.success),
+    model_latency_ms: Number(model.latency_ms) || 0,
+    knowledge_hits: knowledgeHits,
+    guard_blocked: Boolean(model.guard_blocked),
+    guard_reason: asString(model.guard_reason),
+  };
 }
 
 export async function deliverLineText(env = {}, lineUserId, text, options = {}) {
@@ -545,11 +870,14 @@ function encodeFormulaValue(value) {
   return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
-async function findExistingLineEvent(env = {}, eventId = "", inboxId = "") {
+async function findExistingLineEvent(env = {}, eventId = "", inboxId = "", options = {}) {
   const apiKey = asString(env.AIRTABLE_API_KEY);
   const baseId = asString(env.AIRTABLE_BASE_ID);
   const table = getAirtableTable(env);
-  if (!apiKey || !baseId || !table || (!eventId && !inboxId)) return null;
+  if (!apiKey || !baseId || !table || (!eventId && !inboxId)) {
+    if (options.throwOnUnavailable) throw new Error("line_inbox_lookup_unconfigured");
+    return null;
+  }
 
   const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
   url.searchParams.set("pageSize", "1");
@@ -561,11 +889,90 @@ async function findExistingLineEvent(env = {}, eventId = "", inboxId = "") {
   const response = await fetch(url.toString(), {
     method: "GET",
     headers: { authorization: `Bearer ${apiKey}` },
+    signal: options.signal,
   });
 
-  if (!response.ok) return null;
+  if (!response.ok) {
+    if (options.throwOnUnavailable) throw new Error("line_inbox_lookup_failed");
+    return null;
+  }
   const payload = await response.json().catch(() => ({}));
   return Array.isArray(payload?.records) ? payload.records[0] || null : null;
+}
+
+function getStableLineMessageId(event = {}) {
+  return asString(event?.message?.id || event?.webhookEventId);
+}
+
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(value || "")));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function claimKenjiModelEvent(env = {}, event = {}) {
+  if (event?.deliveryContext?.isRedelivery === true) return { eligible: false, deduped: true, reason: "line_redelivery" };
+  const eventId = getStableLineMessageId(event);
+  if (!eventId) return { eligible: false, deduped: false, reason: "stable_message_id_missing" };
+  const lineUserId = getLineUserId({ event });
+  if (!lineUserId) return { eligible: false, deduped: false, reason: "model_canary_user_missing", canary_eligible: false, rate_limited: false };
+  const cohort = parseHashAllowlist(env.LINE_KENJI_MODEL_CANARY_HASHES);
+  if (!cohort.valid) return { eligible: false, deduped: false, reason: "model_canary_config_malformed", canary_eligible: false, rate_limited: false };
+  const userHash = await sha256Hex(lineUserId);
+  if (!cohort.hashes.has(userHash)) return { eligible: false, deduped: false, reason: "model_canary_not_eligible", canary_eligible: false, rate_limited: false };
+
+  // Console Inbox eligibility is resolved before the atomic DO claim so an
+  // event rejected before model eligibility does not consume model quota.
+  // The DO remains the race-safe message-id and quota correctness gate.
+  const inboxController = new AbortController();
+  const inboxTimer = setTimeout(() => inboxController.abort("line_inbox_dedupe_timeout"), LINE_MODEL_DEDUPE_LOOKUP_TIMEOUT_MS);
+  try {
+    const existing = await findExistingLineEvent(env, eventId, `line_${eventId}`, {
+      signal: inboxController.signal,
+      throwOnUnavailable: true,
+    });
+    if (existing?.id) return { eligible: false, deduped: true, reason: "message_id_processed", canary_eligible: true, rate_limited: false };
+  } catch (_) {
+    return { eligible: false, deduped: false, reason: "line_inbox_dedupe_unavailable", canary_eligible: true, rate_limited: false };
+  } finally {
+    clearTimeout(inboxTimer);
+  }
+
+  if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) {
+    return { eligible: false, deduped: false, reason: "model_dedupe_binding_missing", canary_eligible: true, rate_limited: false };
+  }
+
+  const key = await sha256Hex(eventId);
+  const quotaLimit = boundedInteger(env.LINE_KENJI_MODEL_MAX_ATTEMPTS_PER_WINDOW, KENJI_MODEL_QUOTA_DEFAULT_LIMIT, 1, 20);
+  const quotaWindowSeconds = boundedInteger(env.LINE_KENJI_MODEL_QUOTA_WINDOW_SECONDS, KENJI_MODEL_QUOTA_DEFAULT_WINDOW_SECONDS, 60, 86400);
+  const quotaWindow = Math.floor(Date.now() / (quotaWindowSeconds * 1000));
+  const dedupeController = new AbortController();
+  const timeout = new Promise((_, reject) => {
+    const timer = setTimeout(() => {
+      dedupeController.abort("kenji_model_dedupe_timeout");
+      reject(Object.assign(new Error("model_dedupe_timeout"), { code: "MODEL_DEDUPE_TIMEOUT" }));
+    }, KENJI_MODEL_DEDUPE_TIMEOUT_MS);
+    dedupeController.signal.addEventListener("abort", () => clearTimeout(timer), { once: true });
+  });
+  try {
+    const objectId = env.KENJI_MODEL_DEDUPE.idFromName("kenji-line-model-idempotency-v1");
+    const request = env.KENJI_MODEL_DEDUPE.get(objectId).fetch("https://kenji-model-dedupe.internal/claim", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key, quota_key: userHash, quota_limit: quotaLimit, quota_window: quotaWindow, quota_window_seconds: quotaWindowSeconds }),
+      signal: dedupeController.signal,
+    });
+    const response = await Promise.race([request, timeout]);
+    dedupeController.abort("kenji_model_dedupe_complete");
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result?.ok !== true) return { eligible: false, deduped: false, reason: "model_dedupe_unavailable", canary_eligible: true, rate_limited: false, quota_window: quotaWindowSeconds };
+    if (result.claimed !== true) return { eligible: false, deduped: true, reason: "message_id_claimed", canary_eligible: true, rate_limited: false, quota_window: quotaWindowSeconds };
+    if (result.quota_allowed !== true) return { eligible: false, deduped: false, reason: "model_quota_exceeded", canary_eligible: true, rate_limited: true, quota_window: quotaWindowSeconds };
+  } catch (error) {
+    dedupeController.abort("kenji_model_dedupe_failed");
+    return { eligible: false, deduped: false, reason: error?.code === "MODEL_DEDUPE_TIMEOUT" ? "model_dedupe_timeout" : "model_dedupe_unavailable", canary_eligible: true, rate_limited: false, quota_window: quotaWindowSeconds };
+  }
+
+  return { eligible: true, deduped: false, reason: "", canary_eligible: true, rate_limited: false, quota_window: quotaWindowSeconds };
 }
 
 function buildConsoleInboxRecord(event = {}, profile = null, intent = "") {
@@ -1178,7 +1585,17 @@ async function handleLineWebhook(request, env, ctx = null) {
     const lineUserId = getLineUserId({ event });
     const intent = inferLineIntent(text, event);
     const eventMode = asString(event?.mode).toLowerCase() || "unknown";
-    const replyText = kenjiEnabled ? buildImmediateKenjiLineReply(event, env, { forceReply: autoReplyEnabled }) : "";
+    const canGenerateReply = Boolean(autoReplyEnabled && kenjiEnabled && eventMode !== "standby" && getReplyToken(event));
+    const capabilityDecision = decideKenjiCapability({ text, intent });
+    const needsModelPreflight = Boolean(canGenerateReply && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
+    const modelDeadlineAt = needsModelPreflight ? Date.now() + KENJI_TOTAL_DEADLINE_MS : 0;
+    const modelPreflight = needsModelPreflight
+      ? await claimKenjiModelEvent(env, event)
+      : { eligible: true, deduped: false, reason: "", canary_eligible: false, rate_limited: false, quota_window: 0 };
+    const replyDecision = canGenerateReply && !modelPreflight.deduped
+      ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled, modelEligible: modelPreflight.eligible, deadlineAt: modelDeadlineAt })
+      : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" };
+    const replyText = replyDecision.text;
     const shouldReply = Boolean(autoReplyEnabled && eventMode !== "standby" && replyText && getReplyToken(event));
     const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
 
@@ -1218,6 +1635,22 @@ async function handleLineWebhook(request, env, ctx = null) {
       reply_sent: Boolean(replyResult?.ok),
       reply_status: Number.isInteger(replyResult?.status) ? replyResult.status : null,
       reply_error: asString(replyResult?.error) || null,
+      reply_source: replyDecision.reply_source || null,
+      model_attempted: Boolean(replyDecision.model_attempted),
+      model_success: Boolean(replyDecision.model_success),
+      model_latency_ms: Number(replyDecision.model_latency_ms) || 0,
+      knowledge_hits: Number(replyDecision.knowledge_hits) || 0,
+      guard_blocked: Boolean(replyDecision.guard_blocked),
+      guard_reason: asString(replyDecision.guard_reason) || null,
+      capability: capabilityDecision.capability,
+      requested_domain: capabilityDecision.requested_domain,
+      protected_context: capabilityDecision.capability === KENJI_CAPABILITIES.PROTECTED_AUTHORITY || capabilityDecision.capability === KENJI_CAPABILITIES.HUMAN_HANDOFF,
+      model_output_guard_reason: replyDecision.model_attempted ? (asString(replyDecision.guard_reason) || null) : null,
+      model_deduped: Boolean(modelPreflight.deduped),
+      model_dedupe_reason: asString(modelPreflight.reason) || null,
+      model_canary_eligible: Boolean(modelPreflight.canary_eligible),
+      model_rate_limited: Boolean(modelPreflight.rate_limited),
+      model_quota_window: Number(modelPreflight.quota_window) || 0,
     }));
 
     saved.push({
@@ -1245,7 +1678,7 @@ export default {
       return renderRenewalResponse(request, env);
     }
 
-    if (url.pathname.startsWith(MEMBER_LIFF_PREFIX) || MEMBER_LIFF_SHELL_PATHS.has(url.pathname)) {
+    if (url.pathname.startsWith(MEMBER_LIFF_PREFIX) || MEMBER_LIFF_SHELL_PATHS.has(url.pathname) || MEMBER_DASHBOARD_API_PATHS.has(url.pathname)) {
       return handleMemberLiffFrontGate(request, env);
     }
 
