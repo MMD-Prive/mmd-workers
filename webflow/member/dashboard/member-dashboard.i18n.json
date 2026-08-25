@@ -1,0 +1,26 @@
+{
+  "th": {
+    "loading": "กำลังตรวจสอบข้อมูล",
+    "unavailable": "ยังโหลดข้อมูลไม่ได้ครับ",
+    "invalid": "ลิงก์นี้ยังตรวจสอบข้อมูลสมาชิกไม่ได้ครับ",
+    "unknown": "กำลังตรวจสอบข้อมูล",
+    "noHistory": "ยังไม่มีประวัติที่ยืนยันแล้วใน 365 วันล่าสุด",
+    "partial": "ข้อมูลบางส่วนกำลังตรวจสอบอยู่ครับ",
+    "tierPrefix": "Tier",
+    "statusPrefix": "สถานะ",
+    "pointsSuffix": "แต้ม",
+    "historySuffix": "รายการยืนยันแล้ว"
+  },
+  "en": {
+    "loading": "Checking member data",
+    "unavailable": "Member data is temporarily unavailable.",
+    "invalid": "This link cannot verify member data yet.",
+    "unknown": "Checking member data",
+    "noHistory": "No verified history in the last 365 days.",
+    "partial": "Some fields are still being checked.",
+    "tierPrefix": "Tier",
+    "statusPrefix": "Status",
+    "pointsSuffix": "points",
+    "historySuffix": "verified events"
+  }
+}

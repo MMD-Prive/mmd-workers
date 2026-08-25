@@ -319,13 +319,13 @@ async function buildLiffMemberProfile(env, memberRecord, lineUserId) {
   const memberId = String(fields.member_id || "").trim();
   const cutoff = memberHistoryCutoff();
   const membershipStatus = normalizeCustomerMembershipStatus(fields[env.AIRTABLE_MEMBERS_STATUS_FIELD || "Membership Status"]);
-  const [sessions, packageResult, points, payment] = await Promise.all([
+  const [sessions, packageResult, pointsResult, payment] = await Promise.all([
     listMemberServiceHistory(env, { lineUserId, email, cutoff }),
     listMemberPackageHistory(env, { email, cutoff, membershipStatus }),
-    listMemberPointsHistory(env, { email, cutoff }),
-    listMemberPaymentStatus(env, { email }),
+    listMemberPointsLedger(env, { email, cutoff }),
+    listMemberPaymentHistory(env, { email, cutoff }),
   ]);
-  const history = [...sessions, ...packageResult.history, ...points]
+  const history = [...sessions, ...packageResult.history, ...pointsResult.history]
     .sort((a, b) => String(b.date).localeCompare(String(a.date)))
     .slice(0, MEMBER_HISTORY_MAX_ITEMS);
 
@@ -338,8 +338,10 @@ async function buildLiffMemberProfile(env, memberRecord, lineUserId) {
     ) || "สมาชิก MMD",
     tier: normalizeCustomerTier(fields[env.AIRTABLE_MEMBERS_TIER_FIELD || "Membership Tier"]),
     membership_status: membershipStatus,
-    points: nonNegativeInteger(fields[env.AIRTABLE_MEMBERS_POINTS_FIELD || "Points Balance"]),
+    points: pointsResult.total,
+    points_records_count: pointsResult.records_count,
     payment_status: payment.status,
+    payment_history: payment.history,
     history_window: { from: cutoff, to: bangkokCalendarDate(), timezone: "Asia/Bangkok" },
     history,
   };
@@ -352,8 +354,8 @@ async function buildLiffMemberProfile(env, memberRecord, lineUserId) {
   };
 }
 
-async function listMemberPaymentStatus(env, { email }) {
-  if (!email) return { status: "unavailable" };
+async function listMemberPaymentHistory(env, { email, cutoff }) {
+  if (!email) return { status: "unavailable", history: [] };
   try {
     const records = await airtableList(env, table(env, "PAYMENTS"), {
       filterByFormula: `LOWER({member_email})=${formulaString(email)}`,
@@ -361,9 +363,22 @@ async function listMemberPaymentStatus(env, { email }) {
       maxRecords: 20,
     });
     const fields = records[0]?.fields || {};
-    return { status: normalizeCustomerPaymentStatus(fields["Payment Status"], fields["Verification Status"]) };
+    return {
+      status: normalizeCustomerPaymentStatus(fields["Payment Status"], fields["Verification Status"]),
+      history: records.map((record) => {
+        const f = record.fields || {};
+        const date = safeHistoryDate(f[env.AIRTABLE_PAYMENTS_HISTORY_DATE_FIELD || "Created At"] || f.created_at || f.paid_at);
+        const status = normalizeCustomerPaymentStatus(f["Payment Status"], f["Verification Status"]);
+        if (!date || date < cutoff || status !== "verified") return null;
+        return {
+          date,
+          title: "Membership payment",
+          status: "verified",
+        };
+      }).filter(Boolean),
+    };
   } catch {
-    return { status: "unavailable" };
+    return { status: "unavailable", history: [] };
   }
 }
 
@@ -443,19 +458,23 @@ function currentMembershipExpiry(records, membershipStatus, createdField) {
   return strictCalendarDate(fields.end_date);
 }
 
-async function listMemberPointsHistory(env, { email, cutoff }) {
-  if (!email) return [];
+async function listMemberPointsLedger(env, { email, cutoff }) {
+  if (!email) return { total: null, records_count: null, history: [] };
   const records = await airtableList(env, table(env, "POINTS_LEDGER"), {
     filterByFormula: `LOWER({${env.AIRTABLE_POINTS_EMAIL_FIELD || "member_email"}})=${formulaString(email)}`,
     sort: [{ field: env.AIRTABLE_POINTS_HISTORY_DATE_FIELD || "created_at", direction: "desc" }],
     maxRecords: 100,
   });
-  return records.map((record) => {
+  let total = 0;
+  let recordsCount = 0;
+  const history = records.map((record) => {
     const f = record.fields || {};
     const date = safeHistoryDate(f.posted_at || f.created_at);
     const status = String(f.transaction_status || "").trim().toLowerCase();
     const delta = signedInteger(f.points);
     if (!date || date < cutoff || status !== "posted" || delta === null) return null;
+    total += delta;
+    recordsCount += 1;
     return {
       type: "points",
       date,
@@ -464,6 +483,11 @@ async function listMemberPointsHistory(env, { email, cutoff }) {
       status: "posted",
     };
   }).filter(Boolean);
+  return {
+    total: Math.max(0, total),
+    records_count: recordsCount,
+    history,
+  };
 }
 
 function memberHistoryCutoff(now = new Date()) {
