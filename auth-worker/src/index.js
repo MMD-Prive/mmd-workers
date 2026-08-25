@@ -514,11 +514,28 @@ function normalizeCustomerMembershipStatus(value) {
   return "under_review";
 }
 
-function normalizeCustomerPaymentStatus(...values) {
-  const normalized = values.map((value) => String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_"));
-  if (normalized.some((value) => ["verified", "confirmed", "paid", "full_payment"].includes(value))) return "verified";
-  if (normalized.some((value) => ["failed", "refunded", "cancelled", "canceled"].includes(value))) return "failed";
-  if (normalized.some((value) => ["pending", "pending_review", "pending_confirmation", "intent_created", "notified", "deposit", "partial_payment"].includes(value))) return "pending_review";
+function normalizeCustomerPaymentStatus(verificationValue, intentValue, paymentValue) {
+  const normalize = (value) => String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const verification = normalize(verificationValue);
+  const intent = normalize(intentValue);
+  const payment = normalize(paymentValue);
+  const verifiedValues = new Set(["verified", "confirmed", "full_payment"]);
+  const failedValues = new Set(["failed", "refunded", "cancelled", "canceled"]);
+  const pendingValues = new Set(["pending", "pending_review", "pending_confirmation", "intent_created", "notified", "deposit", "partial_payment"]);
+
+  // Verification Status is authoritative. A loose Payment Status of "paid"
+  // must never promote a pending or failed verification into "verified".
+  if (verifiedValues.has(verification)) return "verified";
+  if (failedValues.has(verification)) return "failed";
+  if (pendingValues.has(verification)) return "pending_review";
+
+  // If verification is not populated, preserve an explicit intent state.
+  if (failedValues.has(intent)) return "failed";
+  if (pendingValues.has(intent)) return "pending_review";
+
+  // Plain payment status is evidence only; "paid" is not customer verification.
+  if (failedValues.has(payment)) return "failed";
+  if (pendingValues.has(payment)) return "pending_review";
   return "";
 }
 
