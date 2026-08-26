@@ -115,10 +115,48 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /verified:"Verified"/);
     assert.match(html, /pending_review:"Pending review"/);
     assert.match(html, /unavailable:"Unavailable"/);
-    assert.match(html, /\|\| "Unavailable"/);
+    assert.match(html, /unavailable:"ยังไม่พร้อมยืนยัน"/);
+    assert.match(html, /unavailable:"暂不可确认"/);
+    assert.match(html, /status === "verified" \|\| status === "pending_review" \? status : "unavailable"/);
+    assert.doesNotMatch(html, /failed:"Not verified"|not_found:"No payment record found"|ยังไม่มีสถานะที่ยืนยันได้|暂无可验证状态/);
     assert.match(html, /function safeDate\(value\)/);
     assert.doesNotMatch(html, /payment_ref|receipt_url|member_email|Verification Status/);
   });
+
+  for (const [view, expected] of [["profile", "profile"], ["points", "points"], ["care_back", "care_back"], ["unknown", "profile"]]) {
+    it(`normalizes ${view} to the ${expected} tab and synchronizes view state`, async () => {
+      const html = await (await shell(`/member/liff?view=${view}`)).text();
+      assert.match(html, new RegExp(`"view":"${expected}"`));
+      assert.match(html, /role="tablist"/);
+      assert.match(html, /data-view-tab="profile"/);
+      assert.match(html, /data-view-panel="care_back"/);
+      assert.match(html, /tab\.setAttribute\("aria-selected"/);
+      assert.match(html, /panel\.hidden = inactive/);
+      assert.match(html, /window\.history\.pushState\(\{ view \}/);
+      assert.match(html, /window\.addEventListener\("popstate"/);
+      assert.match(html, /activateView\(currentView\)/);
+    });
+  }
+
+  for (const [intent, label] of [["signup", "ไปที่ขั้นตอนสมัครสมาชิก"], ["renew", "ไปที่ขั้นตอนต่ออายุ"]]) {
+    it(`renders a real ${intent} membership action`, async () => {
+      const html = await (await shell(`/member/liff?intent=${intent}&view=profile`)).text();
+      assert.match(html, /new URL\("\/sigil\/member\/membership", location\.origin\)/);
+      assert.match(html, /target\.searchParams\.set\("source", "line"\)/);
+      assert.match(html, new RegExp(label));
+      assert.doesNotMatch(html, /intent=status/);
+    });
+  }
+
+  for (const locale of ["en", "zh"]) {
+    it(`localizes required ${locale} recovery copy without consuming server Thai status`, async () => {
+      const html = await (await shell(`/member/liff?lang=${locale}&intent=promo&campaign=care_back`)).text();
+      assert.match(html, /locale === "th" \? String\(data\.coupon_message/);
+      assert.match(html, /show\(copy\.channelUnavailable\)/);
+      assert.match(html, /show\(copy\.identityUnavailable\)/);
+      assert.match(html, /show\(copy\.unavailable\)/);
+    });
+  }
 
   it("supports HEAD without a response body and rejects mutating shell methods", async () => {
     const head = await shell("/member/liff", { method: "HEAD" });
