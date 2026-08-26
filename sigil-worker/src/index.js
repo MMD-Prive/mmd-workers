@@ -2,6 +2,18 @@ const WORKER_NAME_FALLBACK = "sigil-worker";
 const MODE = "read_only";
 const SOURCE = "worker";
 
+const PUBLIC_MODEL_APPLY_PATH = "/v1/public-model/apply";
+const PUBLIC_MODEL_SERVICE = "mmd_public_model_apply";
+const PUBLIC_MODEL_ALLOWED_WORK_TYPES = new Set([
+  "Modeling",
+  "Public Events",
+  "Brand Appearance",
+  "Fitness / Body Profile",
+  "Travel / On-location",
+  "Conversation / Hosting",
+  "Private Review Only",
+]);
+
 const BOARD_STATUS_PATH = "/v1/sigil/board/status";
 const BOARD_QUEUE_PATH = "/v1/sigil/board/queue";
 const BOARD_CARDS_KV_KEY = "sigil:board:v1:cards";
@@ -64,6 +76,10 @@ export default {
     const corsHeaders = corsFor(request, env);
 
     try {
+      if (url.pathname === PUBLIC_MODEL_APPLY_PATH) {
+        return handlePublicModelApply(request, env, corsHeaders);
+      }
+
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
 
       if (url.pathname === "/health" || url.pathname === "/ping") {
@@ -119,6 +135,82 @@ function queueResponse(cards, limit = DEFAULT_QUEUE_LIMIT) {
     limit,
     cards: returnedCards,
   };
+}
+
+async function handlePublicModelApply(request, env, corsHeaders) {
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
+  if (request.method !== "POST") return methodNotAllowed(corsHeaders, "POST, OPTIONS");
+
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return json(
+      { ok: false, error: "invalid_json", service: PUBLIC_MODEL_SERVICE, message: "valid JSON payload is required" },
+      400,
+      corsHeaders,
+    );
+  }
+
+  const validation = validatePublicModelPayload(body);
+  if (!validation.ok) {
+    return json(
+      {
+        ok: false,
+        error: "invalid_payload",
+        service: PUBLIC_MODEL_SERVICE,
+        fields: validation.fields,
+      },
+      400,
+      corsHeaders,
+    );
+  }
+
+  return json(
+    {
+      ok: false,
+      error: "persistence_not_configured",
+      service: PUBLIC_MODEL_SERVICE,
+      mode: "readiness_only",
+      accepted: false,
+      received: false,
+      storage: {
+        persisted: false,
+        reason: "persistence_disabled",
+      },
+      board_card: {
+        persisted: false,
+        reason: "persistence_disabled",
+      },
+    },
+    503,
+    corsHeaders,
+  );
+}
+
+function validatePublicModelPayload(body) {
+  const fields = {};
+  if (body.application_type !== undefined && safeText(body.application_type, "", 40) !== "public_model") {
+    fields.application_type = "must be public_model when provided";
+  }
+  if (!safeText(body.nickname, "", 120)) fields.nickname = "required";
+  if (body.consent !== true) fields.consent = "must be true";
+  if (!hasPublicModelContact(body)) fields.contact = "one contact channel is required";
+  const workTypeError = validatePublicModelWorkTypes(body.work_types ?? body.interested_work_types ?? body.workTypes);
+  if (workTypeError) fields.work_types = workTypeError;
+  return { ok: Object.keys(fields).length === 0, fields };
+}
+
+function hasPublicModelContact(body) {
+  return ["phone", "email", "line", "line_id", "telegram", "social_url", "instagram"].some((field) => safeText(body[field], "", 260));
+}
+
+function validatePublicModelWorkTypes(value) {
+  if (value === undefined || value === null || value === "") return "";
+  if (!Array.isArray(value)) return "must be an array";
+  if (value.length > 10) return "too many selected work types";
+  for (const item of value) {
+    if (!PUBLIC_MODEL_ALLOWED_WORK_TYPES.has(safeText(item, "", 80))) return "contains unsupported work type";
+  }
+  return "";
 }
 
 async function handleRecoveryCouponRequest(request, env, corsHeaders) {
@@ -841,6 +933,7 @@ function queueLimitFrom(url) {
 }
 
 function corsFor(request, env) {
+  const pathname = new URL(request.url).pathname;
   const origin = request.headers.get("origin") || "";
   const allowed = (env?.ALLOWED_ORIGINS || "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.webflow.io")
     .split(",")
@@ -849,7 +942,7 @@ function corsFor(request, env) {
   const headers = new Headers();
   headers.set("content-type", "application/json; charset=utf-8");
   headers.set("vary", "Origin");
-  headers.set("access-control-allow-methods", "GET,POST,OPTIONS");
+  headers.set("access-control-allow-methods", corsMethodsForPath(pathname));
   headers.set("access-control-allow-headers", "content-type,x-request-id,x-mmd-client,x-mmd-proxy,x-mmd-route");
   headers.set("access-control-max-age", "86400");
   if (origin && allowed.includes(origin)) {
@@ -857,6 +950,12 @@ function corsFor(request, env) {
     headers.set("access-control-allow-credentials", "true");
   }
   return headers;
+}
+
+function corsMethodsForPath(pathname) {
+  if (pathname === BOARD_STATUS_PATH || pathname === BOARD_QUEUE_PATH) return "GET,OPTIONS";
+  if (pathname === PUBLIC_MODEL_APPLY_PATH) return "POST,OPTIONS";
+  return "GET,POST,OPTIONS";
 }
 
 function json(body, status = 200, headers = new Headers()) {
@@ -874,6 +973,9 @@ function errorMessage(error) {
 }
 
 export const testInternals = {
+  PUBLIC_MODEL_APPLY_PATH,
+  PUBLIC_MODEL_SERVICE,
+  PUBLIC_MODEL_ALLOWED_WORK_TYPES,
   BOARD_STATUS_PATH,
   BOARD_QUEUE_PATH,
   BOARD_CARDS_KV_KEY,
@@ -895,4 +997,5 @@ export const testInternals = {
   normalizeComplaintLane,
   evidenceFileMeta,
   complaintLookupKeys,
+  corsMethodsForPath,
 };
