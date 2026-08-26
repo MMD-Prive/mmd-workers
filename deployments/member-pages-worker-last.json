@@ -1,7 +1,7 @@
 {
   "worker": "member-pages-worker",
   "status": "deployed",
-  "source_sha": "d7cef36ff78c82ab9321e3e9c09ae468e760e9d6",
-  "workflow_run_id": "32843096964",
-  "deployed_at_utc": "2026-08-25T11:36:00Z"
+  "source_sha": "9035d2edcdbfe24c048fb74fbc0a9d7f9fabf6c8",
+  "workflow_run_id": "32938430605",
+  "deployed_at_utc": "2026-08-26T06:30:44Z"
 }
