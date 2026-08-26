@@ -423,8 +423,8 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
       membership_status: "active",
       membership_expires_at: "2027-08-31",
       payment_status: "verified",
-      points: 345,
-      points_records_count: 0,
+      points: null,
+      points_records_count: null,
       payment_history: [],
       history_window: { from: "2025-08-10", to: "2026-08-10", timezone: "Asia/Bangkok" },
       history: [{ type: "points", date: "2026-08-01", title: "Points added", status: "posted", points_delta: 25 }],
@@ -440,7 +440,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(claim.payload.data.coupon_state, "wish_required");
     assert.equal(careCalls.length, 1);
     assert.equal(careCalls[0].memberId, "MMD-PER-01");
-    assert.deepEqual(careCalls[0].memberProfile, { display_name: "เปอร์", tier: "Premium", membership_status: "active", membership_expires_at: "2027-08-31", payment_status: "verified", points: 345, points_records_count: null, payment_history: [], history_window: { from: "2025-08-10", to: "2026-08-10", timezone: "Asia/Bangkok" }, history: [{ type: "points", date: "2026-08-01", title: "Points added", status: "posted", points_delta: 25 }] });
+    assert.deepEqual(careCalls[0].memberProfile, { display_name: "เปอร์", tier: "Premium", membership_status: "active", membership_expires_at: "2027-08-31", payment_status: "verified", points: null, points_records_count: null, payment_history: [], history_window: { from: "2025-08-10", to: "2026-08-10", timezone: "Asia/Bangkok" }, history: [{ type: "points", date: "2026-08-01", title: "Points added", status: "posted", points_delta: 25 }] });
     assert.match(careCalls[0].identityHash, /^[a-f0-9]{64}$/);
     assert.equal(runtime.LIFF_GATEWAY_STORE.records.length, 1);
     assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].campaign_code, "6-years-care-back");

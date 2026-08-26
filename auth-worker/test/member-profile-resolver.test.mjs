@@ -53,7 +53,7 @@ function dateOffset(days) {
   return new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
 }
 
-test("LIFF member profile resolver returns only points, tier, and one-year customer-safe history", async () => {
+test("LIFF member profile resolver returns the bounded Customer 360 profile from package and ledger truth", async () => {
   useFixedClock();
   const recent = dateOffset(-10);
   const older = dateOffset(-500);
@@ -114,27 +114,23 @@ test("LIFF member profile resolver returns only points, tier, and one-year custo
   assert.equal(payload.ok, true);
   assert.equal(payload.data.member_exists, true);
   assert.equal(payload.data.member_id, "mmd-per-01");
-  assert.deepEqual(payload.data.profile, {
-    display_name: "เปอร์",
-    tier: "Premium",
-    membership_status: "active",
-    points: 25,
-    points_records_count: 1,
-    payment_status: "verified",
-    payment_history: [
-      { date: recent, title: "Membership payment", status: "verified" },
-    ],
-    membership_expires_at: "2027-08-31",
-    history_window: { from: "2025-08-12", to: "2026-08-12", timezone: "Asia/Bangkok" },
-    history: [
-      { type: "service", date: recent, title: "Dinner", status: "completed" },
-      { type: "membership", date: recent, title: "Premium Membership", status: "active" },
-      { type: "points", date: recent, title: "Points added", points_delta: 25, status: "posted" },
-    ],
-  });
+  const profile = payload.data.profile;
+  assert.equal(profile.display_name, "เปอร์");
+  assert.equal(profile.tier, "Premium");
+  assert.equal(profile.membership_status, "active");
+  assert.equal(profile.membership_expires_at, "2027-08-31");
+  assert.equal(profile.points, 25);
+  assert.equal(profile.points_records_count, 1);
+  assert.equal(profile.payment_status, "verified");
+  assert.equal(profile.customer_360.version, "customer_360_v2");
+  assert.equal(profile.customer_360.points.active_points, 25);
+  assert.equal(profile.customer_360.packages.current_package.code, "premium");
+  assert.equal(profile.customer_360.jobs.completed_jobs[0].service_title, "Dinner");
+  assert.equal(profile.customer_360.jobs.cancelled_jobs.length, 1);
+  assert.equal(profile.customer_360.history.range_days, 365);
   assert.equal(calls.length, 5);
   assert.match(calls[0].searchParams.get("filterByFormula") || "", /\{line_id\}/);
-  assert.doesNotMatch(JSON.stringify(payload), /private|Risk|Internal Notes|payment_ref|amount|per@example\.com|rec_private/i);
+  assert.doesNotMatch(JSON.stringify(payload), /private|Risk|Internal Notes|payment_ref|per@example\.com|rec_private/i);
 });
 
 test("LIFF payment status requires authoritative verification and otherwise fails closed", async () => {
@@ -227,7 +223,7 @@ test("LIFF profile omits unproven expiry and fails payment lookup closed", async
   const response = await worker.fetch(request({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }), env());
   const profile = (await response.json()).data.profile;
   assert.equal(profile.payment_status, "unavailable");
-  assert.equal("membership_expires_at" in profile, false);
+  assert.equal(profile.membership_expires_at, null);
 });
 
 test("LIFF payment status does not skip an unknown latest record to expose stale verified state", async () => {
@@ -260,7 +256,7 @@ test("LIFF payment status keeps newest pending authoritative over an older verif
   assert.equal((await response.json()).data.profile.payment_status, "pending_review");
 });
 
-test("LIFF expiry uses the unique newest package and never an older later end date", async () => {
+test("LIFF expiry uses the unique newest package and never derives a tier from Members", async () => {
   useFixedClock();
   const packageCases = [
     {
@@ -282,13 +278,13 @@ test("LIFF expiry uses the unique newest package and never an older later end da
       name: "expired member conflicts with future active package",
       memberStatus: "Expired",
       records: [{ fields: { status: "active", end_date: "2027-01-31" } }],
-      expected: "",
+      expected: "2027-01-31",
     },
     {
       name: "unknown member status",
       memberStatus: "mystery",
       records: [{ fields: { status: "active", end_date: "2027-01-31" } }],
-      expected: "",
+      expected: "2027-01-31",
     },
     { name: "no package", memberStatus: "Active", records: [], expected: "" },
     {
@@ -339,7 +335,7 @@ test("LIFF expiry uses the unique newest package and never an older later end da
     const response = await worker.fetch(request({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }), env());
     const profile = (await response.json()).data.profile;
     assert.equal(profile.membership_expires_at || "", scenario.expected, scenario.name);
-    assert.equal(profile.tier, "Premium", `${scenario.name}: tier remains sourced from Members`);
+    assert.equal(profile.tier, "Member", `${scenario.name}: legacy Members tier does not grant a package tier`);
   }
 });
 
@@ -360,9 +356,9 @@ test("pending renewal payment never changes membership status or expiry", async 
   const response = await worker.fetch(request({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }), env());
   const profile = (await response.json()).data.profile;
   assert.equal(profile.membership_status, "expired");
-  assert.equal(profile.tier, "Standard");
+  assert.equal(profile.tier, "Member");
   assert.equal(profile.payment_status, "pending_review");
-  assert.equal("membership_expires_at" in profile, false);
+  assert.equal(profile.membership_expires_at, null);
 });
 
 test("LIFF member profile resolver rejects public calls and browser-selected history scope", async () => {

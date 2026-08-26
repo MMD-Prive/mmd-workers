@@ -173,23 +173,28 @@ test("partner-present massage transaction preserves manual deposit and lifecycle
   assert.equal(cancelled.points, 0);
 });
 
-test("confirmed partner-present session before slip verification creates no dashboard points", async () => {
+test("confirmed partner-present session remains an upcoming customer-safe job with no points", async () => {
   const profile = await readProfile({ sessions: [partnerPresentSession()] });
 
   assert.equal(profile.points, 0);
   assert.equal(profile.points_records_count, 0);
-  assert.deepEqual(profile.history, []);
+  assert.deepEqual(profile.history, [
+    { type: "service", date: RECENT_DATE, title: "Partner-Present Massage Session", status: "upcoming" },
+  ]);
+  assert.equal(profile.customer_360.jobs.upcoming_jobs.length, 1);
   assert.doesNotMatch(JSON.stringify(profile), /22500|20000|7000|13000|bank|slip|payment_ref|private/i);
 });
 
-test("deposit verified partner-present session still creates no dashboard points", async () => {
+test("deposit verified partner-present session still creates no points", async () => {
   const profile = await readProfile({
     sessions: [partnerPresentSession({ payment_status: "deposit_verified", deposit_verified_amount: 7000 })],
   });
 
   assert.equal(profile.points, 0);
   assert.equal(profile.points_records_count, 0);
-  assert.deepEqual(profile.history, []);
+  assert.deepEqual(profile.history, [
+    { type: "service", date: RECENT_DATE, title: "Partner-Present Massage Session", status: "upcoming" },
+  ]);
   assert.doesNotMatch(JSON.stringify(profile), /22500|20000|7000|13000|bank|slip|payment_ref|private/i);
 });
 
@@ -214,7 +219,7 @@ test("completed full-payment partner-present session returns customer-safe event
   assert.doesNotMatch(serialized, /PN|22500|20000|7000|13000|bank|slip|payment_ref|private|SIGIL|SVIP|Black Card|test_partner_member_001@example\.test/i);
 });
 
-test("cancelled partner-present session creates zero eligible customer points", async () => {
+test("cancelled partner-present session creates zero eligible customer points and remains safely historical", async () => {
   const profile = await readProfile({
     sessions: [partnerPresentSession({
       "Session Status": "cancelled",
@@ -225,6 +230,8 @@ test("cancelled partner-present session creates zero eligible customer points", 
 
   assert.equal(profile.points, 0);
   assert.equal(profile.points_records_count, 0);
-  assert.deepEqual(profile.history, []);
+  assert.deepEqual(profile.history, [
+    { type: "service", date: RECENT_DATE, title: "Partner-Present Massage Session", status: "cancelled" },
+  ]);
   assert.doesNotMatch(JSON.stringify(profile), /22500|20000|7000|13000|bank|slip|payment_ref|private/i);
 });

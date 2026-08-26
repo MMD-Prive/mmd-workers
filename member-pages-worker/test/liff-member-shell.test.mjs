@@ -120,6 +120,33 @@ describe("same-site /member/liff shell", () => {
     assert.doesNotMatch(html, /payment_ref|receipt_url|member_email|Verification Status/);
   });
 
+  it("renders the Customer 360 six-section mobile shell with TH, EN, and ZH fallbacks", async () => {
+    const response = await shell("/member/liff?intent=status&view=jobs&lang=th");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    for (const section of ["home", "points", "package", "jobs", "history-panel", "care"]) {
+      assert.match(html, new RegExp(`id="${section}"`));
+    }
+    for (const view of ["home", "points", "package", "jobs", "history", "care"]) {
+      assert.match(html, new RegExp(`data-view="${view}"`));
+    }
+    assert.match(html, /scroll-snap-type:x mandatory/);
+    assert.match(html, /prefers-reduced-motion/);
+    assert.match(html, /"LINE Seed Sans TH"/);
+    assert.match(html, /customer_360/);
+    assert.match(html, /points\.status === "verified"/);
+    assert.match(html, /navHome:"👤 HOME"/);
+    assert.match(html, /navHome:"👤 HOME"[\s\S]*navPackage:"📦 PACKAGE"/);
+    assert.match(html, /pointsTitle:"⭐ 积分"/);
+    assert.doesNotMatch(html, /payment_ref|provider_transaction_id|line_user_id|telegram_user_id|Airtable|R2 key|slip_url/i);
+    const scriptStart = html.lastIndexOf("<script nonce=");
+    const scriptBodyStart = html.indexOf(">", scriptStart) + 1;
+    const scriptBodyEnd = html.indexOf("</script>", scriptBodyStart);
+    assert.ok(scriptStart >= 0 && scriptBodyStart > scriptStart && scriptBodyEnd > scriptBodyStart);
+    assert.doesNotThrow(() => new Function(html.slice(scriptBodyStart, scriptBodyEnd)));
+  });
+
   it("supports HEAD without a response body and rejects mutating shell methods", async () => {
     const head = await shell("/member/liff", { method: "HEAD" });
     assert.equal(head.status, 200);
