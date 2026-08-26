@@ -1,6 +1,6 @@
 # LINE OFC Client Import
 
-This importer stages LINE Official rename/tag evidence before any Client or entitlement update.
+This importer stages LINE Official rename/tag and historical-note evidence before any Client, entitlement, payment, or points update.
 
 ## Source Of Truth
 
@@ -36,13 +36,69 @@ Staging schema notes:
 - `parsed_client_level`: canonical single-select level parsed from LINE OFC rename/tag evidence.
 - `membership_parse_json.client_level`, `client_level_raw`, and `client_level_tokens`: evidence payload for review UI and audit.
 - `parsed_membership_tier` / `parsed_membership_package`: legacy compatibility fields, not the canonical level.
+- `reconciled_service_amount`: review-safe historical service spend proposal after payment reconciliation.
+- `reconciliation_basis`: explains whether the amount came from explicit final total, deposit plus balance, a single service amount, cancellation, or review-required ambiguity.
+- `historical_service_status`: `completed`, `cancelled`, `unknown`, or `review_required`.
+- `cancellation_evidence`: normalized cancellation wording while `raw_note` remains preserved separately.
 
-Historical notes are parsed into staged points reconstruction evidence on the same staging table only. The importer does not write `MMD — Points Ledger`, `Payments`, `Members`, `Clients`, or `MMD — Member Entitlements`.
+Historical notes are parsed into staged service-history and points reconstruction evidence on the same staging table only. The importer does not write `MMD — Points Ledger`, `Payments`, `Members`, `Clients`, or `MMD — Member Entitlements`.
 
-Points policy:
+## Historical Service Reconciliation
+
+The importer must not add every monetary token in a confirmation note together.
+
+Priority:
+
+1. Explicit final/net total such as `ยอดรวม`, `ยอดสุทธิ`, `final total`, or `net total`.
+2. If no final total exists, one deposit plus one remaining balance may form the reconciled total.
+3. A single clear service amount may be used when there is no conflicting payment breakdown.
+4. Gross/original price, final total, deposit, balance, and internal MMD outstanding amounts must never be counted as separate customer spend for the same job.
+5. Conflicting or multiple unresolved totals become `review_required` rather than creating points.
+
+Example:
+
+```text
+ยอดรวม 22,500
+Discount 10% From 25,000
+มัดจำ 6,750
+ชำระหน้างาน 15,750
+```
+
+The reconciled service spend is `22,500`, not the sum of all four numbers.
+
+## Cancelled Jobs
+
+Cancellation language such as:
+
+```text
+ยกเลิกงาน
+งานยกเลิก
+ขอยกเลิกงานค่ะ
+ลูกค้ายกเลิก
+ไม่ได้เกิดงาน
+งานไม่เกิด
+ไม่ได้ไปงาน
+ไม่ได้รับงาน
+cancelled / canceled
+```
+
+must be staged as:
+
+```text
+historical_service_status = cancelled
+reconciliation_basis = cancelled_zero
+reconciled_service_amount = 0
+points_eligible_amount = 0
+proposed_points = 0
+```
+
+Cancellation status wins even if an old note also contains price, deposit, or balance figures. Those figures remain audit evidence only and do not generate service spend or points unless a later human review explicitly creates a separate approved fee policy.
+
+## Points Policy
 
 - Locked rate: `100 THB = 1 point`.
-- Service purchase through MMD can generate `proposed_points`.
+- Only reconciled completed service purchase through MMD can generate `proposed_points`.
+- Cancelled jobs generate zero service points.
 - Tips through MMD are stored as customer detail/generosity signal and do not generate points.
 - Direct hand tips never count as points.
 - Membership fees and renewal fees are review-required and do not auto-count.
