@@ -289,6 +289,8 @@ export function inferLineIntent(text = "", event = {}) {
   if (isPerContinuityRequest(text) && /(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
   if (isPerContinuityRequest(text) && /(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
   if (isPerContinuityRequest(text)) return "per_continuity";
+  if (/^(?:ขอ|อยาก)?\s*ต่ออายุ(?:สมาชิก)?(?:ครับ|ค่ะ)?$|^renew(?:al)?\s*(?:membership|member)?$/i.test(normalized)) return "membership_renewal";
+  if (/^(?:ขอ|อยาก)?\s*สมัคร(?:เป็น)?สมาชิก(?:ครับ|ค่ะ)?$|^membership\s*(?:signup|application)$|^join\s*(?:mmd|membership)$/i.test(normalized)) return "membership_signup";
   if (isKenjiLineCandidate(text)) return "talk_to_per_ai";
   const isCareBack = /(care\s*back|แคร์\s*แบ็ก|แคร์แบ็ก|6\s*years?|6th\s*anniversary|โปร(?:โมชัน|โมชั่น)?\s*6\s*ปี|phase\s*[12])/i.test(normalized);
   const isPersonalCareBackStatus = /(?:ผม|หนู|ฉัน|ของผม|ของหนู|ของฉัน).{0,16}(?:ได้|มี|เข้า|อยู่).{0,16}(?:180\s*วัน|90\s*วัน|150\s*(?:แต้ม|คะแนน|points?)|250\s*(?:แต้ม|คะแนน|points?)|350\s*(?:แต้ม|คะแนน|points?)|กี่วัน|กี่แต้ม|กี่คะแนน|เท่าไหร่|เท่าไร|กลุ่มไหน|สิทธิ์)|^(?:ผม|หนู|ฉัน)\s*(?:ได้|มี)\s*(?:อะไร|เท่าไหร่|เท่าไร)$|^(?:ของผม|ของหนู|ของฉัน).{0,12}(?:เข้าไหม|ได้ไหม|ได้หรือยัง|อยู่กลุ่มไหน)$/i.test(normalized);
@@ -638,6 +640,12 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
 
   if (intent === "membership") {
     return `รับเรื่องสมาชิกแล้วครับ ${prefix}จัดการ MY MMD ได้ที่ https://mmdbkk.com/sigil/member/membership ครับ หน้านี้ใช้สำหรับดูแพ็กเกจ สมัคร ต่ออายุ หรืออัปเกรดสมาชิกได้ โดยสถานะสมาชิกและการชำระเงินจะยืนยันหลัง MMD ตรวจสอบข้อมูลทางการแล้วครับ`;
+  }
+
+  if (intent === "membership_signup" || intent === "membership_renewal") {
+    const membershipIntent = intent === "membership_signup" ? "signup" : "renew";
+    const label = membershipIntent === "signup" ? "สมัครสมาชิก" : "ต่ออายุสมาชิก";
+    return `${label}ผ่านขั้นตอนทางการของ MMD ได้ตรงนี้ครับ → https://mmdbkk.com/sigil/member/membership?source=line&intent=${membershipIntent} สถานะจะเปลี่ยนเมื่อข้อมูลทางการได้รับการตรวจสอบแล้วเท่านั้นครับ`;
   }
 
   if (intent === "pricing_review") {

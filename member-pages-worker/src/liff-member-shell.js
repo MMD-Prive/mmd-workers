@@ -55,8 +55,8 @@ function renderShell(config, nonce) {
     .mark{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#d7bd8a}.title{margin:10px 0 8px;font-size:30px;line-height:1.08;font-weight:650}.sub{margin:0;color:#aaa29a;font-size:14px;line-height:1.55}
     #message{white-space:pre-line;margin:30px 0 0;font-size:18px;line-height:1.65}.actions{display:grid;gap:10px;margin-top:24px}.actions:empty{display:none}
     button,textarea{width:100%;border:1px solid rgba(216,189,137,.28);border-radius:16px;padding:14px 16px;background:#171511;color:#f7f3eb;font:inherit;text-align:left}button{cursor:pointer}button:disabled{opacity:.55;cursor:default}textarea{min-height:124px;resize:vertical;line-height:1.55}.wish{display:grid;gap:12px;margin-top:16px}.wish-result{white-space:pre-line;color:#e7d5ad;line-height:1.65}
-    .profile{display:grid;gap:12px;margin-top:22px}.summary{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.card{border:1px solid rgba(216,189,137,.18);border-radius:20px;padding:17px;background:rgba(8,8,8,.72)}.label{color:#948c82;font-size:11px;letter-spacing:.12em;text-transform:uppercase}.value{display:block;margin-top:6px;font-size:22px;line-height:1.15}.points{font-size:34px;color:#e6cb91}.history{display:grid;gap:9px;margin-top:12px}.event{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.07);font-size:13px}.event:first-child{border-top:0}.event-date,.event-status{color:#8f8880}.event-delta{color:#d9bd82}.care{margin-top:14px;border-color:rgba(225,193,126,.38);background:linear-gradient(145deg,rgba(45,35,19,.78),rgba(10,10,10,.86))}.care h2{margin:8px 0;font-size:21px}.care p{margin:0;color:#b7afa4;font-size:13px;line-height:1.6}.care-code{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;padding:13px 14px;border-radius:14px;background:#080807}.care-code strong{font-size:24px;letter-spacing:.15em;color:#ecd18f}.care button{margin-top:14px;text-align:center;background:linear-gradient(135deg,#f0d892,#b98b35);color:#181207;font-weight:700}
-    .member-nav{display:flex;gap:8px;margin:22px 0 0;padding:4px;border:1px solid rgba(216,189,137,.18);border-radius:999px;background:rgba(0,0,0,.22)}.member-nav button{border:0;border-radius:999px;padding:10px 12px;background:transparent;color:#aaa29a;font-size:12px;text-align:center}.member-nav button[aria-current="true"]{background:#f0d892;color:#181207;font-weight:800}.status{margin-top:22px;color:#7f7972;font-size:12px;line-height:1.5}.hidden{display:none!important}@media(max-width:390px){main{padding:24px 16px}.summary{grid-template-columns:1fr}.event{grid-template-columns:66px 1fr}.event-status{grid-column:2}}
+    .profile{display:grid;gap:12px;margin-top:22px}.tab-panel{display:grid;gap:12px}.summary{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.card{border:1px solid rgba(216,189,137,.18);border-radius:20px;padding:17px;background:rgba(8,8,8,.72)}.label{color:#948c82;font-size:11px;letter-spacing:.12em;text-transform:uppercase}.value{display:block;margin-top:6px;font-size:22px;line-height:1.15}.points{font-size:34px;color:#e6cb91}.history{display:grid;gap:9px;margin-top:12px}.event{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.07);font-size:13px}.event:first-child{border-top:0}.event-date,.event-status{color:#8f8880}.event-delta{color:#d9bd82}.care{border-color:rgba(225,193,126,.38);background:linear-gradient(145deg,rgba(45,35,19,.78),rgba(10,10,10,.86))}.care h2{margin:8px 0;font-size:21px}.care p{margin:0;color:#b7afa4;font-size:13px;line-height:1.6}.care-code{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;padding:13px 14px;border-radius:14px;background:#080807}.care-code strong{font-size:24px;letter-spacing:.15em;color:#ecd18f}.care button{margin-top:14px;text-align:center;background:linear-gradient(135deg,#f0d892,#b98b35);color:#181207;font-weight:700}
+    .member-nav{display:flex;gap:8px;margin:22px 0 0;padding:4px;border:1px solid rgba(216,189,137,.18);border-radius:999px;background:rgba(0,0,0,.22)}.member-nav button{border:0;border-radius:999px;padding:10px 12px;background:transparent;color:#aaa29a;font-size:12px;text-align:center}.member-nav button[aria-selected="true"]{background:#f0d892;color:#181207;font-weight:800}.membership-flow a{display:block;margin-top:12px;padding:13px 14px;border-radius:14px;background:#f0d892;color:#181207;text-align:center;text-decoration:none;font-weight:800}.status{margin-top:22px;color:#7f7972;font-size:12px;line-height:1.5}.hidden{display:none!important}@media(max-width:390px){main{padding:24px 16px}.summary{grid-template-columns:1fr}.event{grid-template-columns:66px 1fr}.event-status{grid-column:2}}
     .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.detail-grid .value{font-size:17px}.payment-status{color:#e6cb91}
   </style>
 </head>
@@ -67,23 +67,26 @@ function renderShell(config, nonce) {
   <p class="sub" data-copy="subtitle">ดูสถานะสมาชิก คะแนน และสิทธิ์ของคุณได้ใน LINE ที่เดียว</p>
   <div id="message" role="status" aria-live="polite">กำลังเปิดการเชื่อมต่อกับ MMD ครับ</div>
   <div id="actions" class="actions" aria-label="ตัวเลือก"></div>
-  <nav class="member-nav" aria-label="Member sections">
-    <button type="button" data-view="profile" aria-current="true" data-copy="navProfile">ภาพรวม</button>
-    <button type="button" data-view="points" aria-current="false" data-copy="navPoints">Points</button>
-    <button type="button" data-view="care_back" aria-current="false" data-copy="navCare">CARE BACK</button>
+  <nav class="member-nav" role="tablist" aria-label="Member sections">
+    <button type="button" role="tab" data-view-tab="profile" aria-selected="true" data-copy="navProfile">ภาพรวม</button>
+    <button type="button" role="tab" data-view-tab="points" aria-selected="false" data-copy="navPoints">Points</button>
+    <button type="button" role="tab" data-view-tab="care_back" aria-selected="false" data-copy="navCare">CARE BACK</button>
   </nav>
   <section id="profile" class="profile hidden" aria-label="Member profile">
+    <div id="profile-panel" class="tab-panel" role="tabpanel" data-view-panel="profile">
     <div class="card"><span class="label" data-copy="memberLabel">Member</span><strong id="profile-name" class="value">สมาชิก MMD</strong><span id="profile-status" class="sub"></span></div>
-    <div class="summary">
-      <div class="card"><span class="label" data-copy="tierLabel">Tier</span><strong id="profile-tier" class="value">Member</strong></div>
-      <div id="points-card" class="card"><span class="label" data-copy="pointsLabel">Active Points</span><strong id="profile-points" class="value points">0</strong></div>
-    </div>
+    <div class="card"><span class="label" data-copy="tierLabel">Tier</span><strong id="profile-tier" class="value">Member</strong></div>
     <div id="member-details" class="detail-grid hidden">
       <div id="expiry-card" class="card hidden"><span class="label" data-copy="expiryLabel">Membership valid until</span><strong id="profile-expiry" class="value">—</strong></div>
       <div id="payment-card" class="card hidden"><span class="label" data-copy="paymentLabel">Payment status</span><strong id="profile-payment" class="value payment-status">—</strong></div>
     </div>
+    <div id="membership-flow" class="card membership-flow hidden"><span class="label" data-copy="membershipActionLabel">Membership</span><p id="membership-flow-copy" class="sub"></p><a id="membership-flow-link" href="/sigil/member/membership"></a></div>
+    </div>
+    <div id="points-panel" class="tab-panel hidden" role="tabpanel" data-view-panel="points" hidden>
+    <div id="points-card" class="card"><span class="label" data-copy="pointsLabel">Active Points</span><strong id="profile-points" class="value points">0</strong></div>
     <div class="card"><span class="label" data-copy="historyLabel">History · Last 1 Year</span><div id="history" class="history"></div></div>
-    <div id="care" class="card care">
+    </div>
+    <div id="care" class="card care tab-panel hidden" role="tabpanel" data-view-panel="care_back" hidden>
       <span class="label" data-copy="careLabel">6 Years · Care Back</span><h2 data-copy="careTitle">Personal Care-Back Privilege</h2>
       <p id="care-message">ตรวจสอบผ่าน LINE เพื่อเปิดสิทธิ์ CARE BACK ก่อน คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จครับ</p>
       <div id="care-code" class="care-code hidden"><span class="label">Personal Code</span><strong id="care-code-value"></strong></div>
@@ -113,10 +116,15 @@ function renderShell(config, nonce) {
   const wishResult = document.getElementById("wish-result");
   const locale = CONFIG.language || "th";
   const copy = {
-    th: { mark:"MMD Privé · Member Access", title:"My MMD", subtitle:"ดูสถานะสมาชิก คะแนน และสิทธิ์ของคุณได้ใน LINE ที่เดียว", navProfile:"ภาพรวม", navPoints:"Points", navCare:"CARE BACK", memberLabel:"Member", tierLabel:"Tier", pointsLabel:"Active Points", expiryLabel:"สมาชิกใช้ได้ถึง", paymentLabel:"สถานะการชำระ", historyLabel:"History · Last 1 Year", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"ตรวจสอบผ่าน LINE เพื่อเปิดสิทธิ์ CARE BACK ก่อน คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จครับ", careButton:"ตรวจสิทธิ์ CARE BACK", wishPlaceholder:"ฝากคำอวยพรวันเกิดให้ MMD ได้ที่นี่ครับ", wishSubmit:"ส่งคำอวยพรให้ MMD", ready:"ข้อมูลสมาชิกของคุณพร้อมแล้วครับ", empty:"ยังไม่มีรายการในช่วง 1 ปีล่าสุดครับ", careLoading:"กำลังตรวจสอบสิทธิ์", careRetry:"ลองตรวจสอบอีกครั้ง", wishEmpty:"กรุณาเขียนคำอวยพรก่อนส่งครับ", wishSaving:"กำลังเก็บคำอวยพร", wishError:"ตอนนี้ยังเก็บคำอวยพรไม่ได้ครับ กรุณาลองใหม่อีกครั้ง", wishRetry:"ลองส่งอีกครั้ง", careChecked:"สิทธิ์ CARE BACK ของคุณถูกตรวจแล้ว ส่งคำอวยพรถึง MMD สำเร็จเพื่อเปิดคูปองส่วนตัว 10% ครับ", wishDone:"MMD ได้รับคำอวยพรของคุณแล้วครับ", wishPending:"ระบบกำลังยืนยันการบันทึกคำอวยพรเดิมอย่างปลอดภัย กรุณากลับมาตรวจสอบอีกครั้งครับ", wishReview:"ข้อมูลนี้ยังต้องตรวจสอบก่อนครับ ระบบจะเก็บเส้นทางของคุณไว้อย่างปลอดภัย", couponReady:"ส่งคำอวยพรเพื่อเปิดคูปอง", claimMessage:"MMD จะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ", careCheckedButton:"ตรวจสิทธิ์ CARE BACK แล้ว", careResumedButton:"อัปเดตสิทธิ์ CARE BACK แล้ว", promoLoading:"กำลังตรวจสอบสิทธิ์ CARE BACK อย่างปลอดภัยครับ" },
-    en: { mark:"MMD Privé · Member Access", title:"My MMD", subtitle:"Your membership, points and privileges — all in LINE.", navProfile:"Overview", navPoints:"Points", navCare:"CARE BACK", memberLabel:"Member", tierLabel:"Tier", pointsLabel:"Active Points", expiryLabel:"Membership valid until", paymentLabel:"Payment status", historyLabel:"History · Last 1 Year", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"Verify through LINE to open CARE BACK. Your personal coupon becomes available after your wish is submitted successfully.", careButton:"Check CARE BACK", wishPlaceholder:"Leave a birthday wish for MMD here.", wishSubmit:"Send wish to MMD", ready:"Your member information is ready.", empty:"No activity in the last year.", careLoading:"Checking eligibility", careRetry:"Try checking again", wishEmpty:"Please write a wish before sending.", wishSaving:"Saving your wish", wishError:"Your wish could not be saved. Please try again.", wishRetry:"Try sending again", careChecked:"Your CARE BACK eligibility is checked. Submit a wish to unlock your personal 10% coupon.", wishDone:"MMD has received your wish.", wishPending:"We are securely confirming your previous wish. Please check again later.", wishReview:"This request needs further review. We have kept your route secure.", couponReady:"Send a wish to unlock the coupon", claimMessage:"MMD will update your privilege after the required membership and verification checks.", careCheckedButton:"CARE BACK checked", careResumedButton:"CARE BACK updated", promoLoading:"Checking your CARE BACK eligibility securely" },
-    zh: { mark:"MMD Privé · Member Access", title:"我的 MMD", subtitle:"在 LINE 内查看会员状态、积分与专属权益。", navProfile:"概览", navPoints:"积分", navCare:"CARE BACK", memberLabel:"会员", tierLabel:"等级", pointsLabel:"当前积分", expiryLabel:"会员有效期至", paymentLabel:"付款状态", historyLabel:"最近一年记录", careLabel:"6 Years · Care Back", careTitle:"专属 Care Back 礼遇", careIntro:"请通过 LINE 验证 CARE BACK。成功提交祝福后，您的专属优惠券将会开启。", careButton:"检查 CARE BACK", wishPlaceholder:"在这里留下给 MMD 的生日祝福。", wishSubmit:"向 MMD 发送祝福", ready:"会员信息已准备好。", empty:"最近一年暂无记录。", careLoading:"正在检查资格", careRetry:"再次检查", wishEmpty:"请先写下祝福再发送。", wishSaving:"正在保存祝福", wishError:"祝福暂时无法保存，请稍后再试。", wishRetry:"再次发送", careChecked:"您的 CARE BACK 资格已检查。成功提交祝福后即可开启专属 10% 优惠券。", wishDone:"MMD 已收到您的祝福。", wishPending:"系统正在安全确认您之前提交的祝福，请稍后再查看。", wishReview:"此请求仍需进一步审核，我们已安全保留您的流程。", couponReady:"发送祝福以开启优惠券", claimMessage:"MMD 将在完成会员与验证检查后更新您的礼遇。", careCheckedButton:"CARE BACK 已检查", careResumedButton:"CARE BACK 已更新", promoLoading:"正在安全检查 CARE BACK 资格" },
+    th: { mark:"MMD Privé · Member Access", title:"My MMD", subtitle:"ดูสถานะสมาชิก คะแนน และสิทธิ์ของคุณได้ใน LINE ที่เดียว", navProfile:"ภาพรวม", navPoints:"Points", navCare:"CARE BACK", memberLabel:"Member", tierLabel:"Tier", pointsLabel:"Active Points", expiryLabel:"สมาชิกใช้ได้ถึง", paymentLabel:"สถานะการชำระ", historyLabel:"History · Last 1 Year", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"ตรวจสอบผ่าน LINE เพื่อเปิดสิทธิ์ CARE BACK ก่อน คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จครับ", careButton:"ตรวจสิทธิ์ CARE BACK", wishPlaceholder:"ฝากคำอวยพรวันเกิดให้ MMD ได้ที่นี่ครับ", wishSubmit:"ส่งคำอวยพรให้ MMD", ready:"ข้อมูลสมาชิกของคุณพร้อมแล้วครับ", empty:"ยังไม่มีรายการในช่วง 1 ปีล่าสุดครับ", careLoading:"กำลังตรวจสอบสิทธิ์", careRetry:"ลองตรวจสอบอีกครั้ง", wishEmpty:"กรุณาเขียนคำอวยพรก่อนส่งครับ", wishSaving:"กำลังเก็บคำอวยพร", wishError:"ตอนนี้ยังเก็บคำอวยพรไม่ได้ครับ กรุณาลองใหม่อีกครั้ง", wishRetry:"ลองส่งอีกครั้ง", careChecked:"สิทธิ์ CARE BACK ของคุณถูกตรวจแล้ว ส่งคำอวยพรถึง MMD สำเร็จเพื่อเปิดคูปองส่วนตัว 10% ครับ", wishDone:"MMD ได้รับคำอวยพรของคุณแล้วครับ", wishPending:"ระบบกำลังยืนยันการบันทึกคำอวยพรเดิมอย่างปลอดภัย กรุณากลับมาตรวจสอบอีกครั้งครับ", wishReview:"ข้อมูลนี้ยังต้องตรวจสอบก่อนครับ ระบบจะเก็บเส้นทางของคุณไว้อย่างปลอดภัย", couponReady:"ส่งคำอวยพรเพื่อเปิดคูปอง", claimMessage:"MMD จะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ", claimError:"ตอนนี้ยังตรวจสิทธิ์ไม่ได้ครับ กรุณาลองใหม่อีกครั้ง", unavailable:"ตอนนี้ระบบตรวจสอบข้อมูลชั่วคราวยังไม่พร้อมครับ กรุณาลองใหม่อีกครั้ง", signupCopy:"เริ่มสมัครสมาชิกจากขั้นตอนทางการของ MMD ครับ", signupAction:"ไปที่ขั้นตอนสมัครสมาชิก", renewCopy:"เริ่มต่ออายุจากขั้นตอนทางการของ MMD ครับ", renewAction:"ไปที่ขั้นตอนต่ออายุ", careCheckedButton:"ตรวจสิทธิ์ CARE BACK แล้ว", careResumedButton:"อัปเดตสิทธิ์ CARE BACK แล้ว", promoLoading:"กำลังตรวจสอบสิทธิ์ CARE BACK อย่างปลอดภัยครับ" },
+    en: { mark:"MMD Privé · Member Access", title:"My MMD", subtitle:"Your membership, points and privileges — all in LINE.", navProfile:"Overview", navPoints:"Points", navCare:"CARE BACK", memberLabel:"Member", tierLabel:"Tier", pointsLabel:"Active Points", expiryLabel:"Membership valid until", paymentLabel:"Payment status", historyLabel:"History · Last 1 Year", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"Verify through LINE to open CARE BACK. Your personal coupon becomes available after your wish is submitted successfully.", careButton:"Check CARE BACK", wishPlaceholder:"Leave a birthday wish for MMD here.", wishSubmit:"Send wish to MMD", ready:"Your member information is ready.", empty:"No activity in the last year.", careLoading:"Checking eligibility", careRetry:"Try checking again", wishEmpty:"Please write a wish before sending.", wishSaving:"Saving your wish", wishError:"Your wish could not be saved. Please try again.", wishRetry:"Try sending again", careChecked:"Your CARE BACK eligibility is checked. Submit a wish to unlock your personal 10% coupon.", wishDone:"MMD has received your wish.", wishPending:"We are securely confirming your previous wish. Please check again later.", wishReview:"This request needs further review. We have kept your route secure.", couponReady:"Send a wish to unlock the coupon", claimMessage:"MMD will update your privilege after the required membership and verification checks.", claimError:"CARE BACK cannot be checked right now. Please try again.", unavailable:"Member verification is temporarily unavailable. Please try again.", signupCopy:"Continue to MMD's official membership signup.", signupAction:"Continue to membership signup", renewCopy:"Continue to MMD's official membership renewal.", renewAction:"Continue to membership renewal", careCheckedButton:"CARE BACK checked", careResumedButton:"CARE BACK updated", promoLoading:"Checking your CARE BACK eligibility securely" },
+    zh: { mark:"MMD Privé · Member Access", title:"我的 MMD", subtitle:"在 LINE 内查看会员状态、积分与专属权益。", navProfile:"概览", navPoints:"积分", navCare:"CARE BACK", memberLabel:"会员", tierLabel:"等级", pointsLabel:"当前积分", expiryLabel:"会员有效期至", paymentLabel:"付款状态", historyLabel:"最近一年记录", careLabel:"6 Years · Care Back", careTitle:"专属 Care Back 礼遇", careIntro:"请通过 LINE 验证 CARE BACK。成功提交祝福后，您的专属优惠券将会开启。", careButton:"检查 CARE BACK", wishPlaceholder:"在这里留下给 MMD 的生日祝福。", wishSubmit:"向 MMD 发送祝福", ready:"会员信息已准备好。", empty:"最近一年暂无记录。", careLoading:"正在检查资格", careRetry:"再次检查", wishEmpty:"请先写下祝福再发送。", wishSaving:"正在保存祝福", wishError:"祝福暂时无法保存，请稍后再试。", wishRetry:"再次发送", careChecked:"您的 CARE BACK 资格已检查。成功提交祝福后即可开启专属 10% 优惠券。", wishDone:"MMD 已收到您的祝福。", wishPending:"系统正在安全确认您之前提交的祝福，请稍后再查看。", wishReview:"此请求仍需进一步审核，我们已安全保留您的流程。", couponReady:"发送祝福以开启优惠券", claimMessage:"MMD 将在完成会员与验证检查后更新您的礼遇。", claimError:"目前无法检查 CARE BACK，请稍后重试。", unavailable:"会员验证暂时不可用，请稍后重试。", signupCopy:"继续前往 MMD 官方会员注册流程。", signupAction:"前往会员注册", renewCopy:"继续前往 MMD 官方会员续费流程。", renewAction:"前往会员续费", careCheckedButton:"CARE BACK 已检查", careResumedButton:"CARE BACK 已更新", promoLoading:"正在安全检查 CARE BACK 资格" },
   }[locale] || {};
+  Object.assign(copy, ({
+    th: { fallback:"ไม่สามารถดำเนินการต่อได้ครับ กรุณากลับมาเปิดผ่าน LINE ของ MMD อีกครั้ง", channelUnavailable:"ช่องทางนี้ยังไม่พร้อมใช้งานครับ กรุณากลับมาเปิดผ่าน LINE ของ MMD อีกครั้ง", identityUnavailable:"ไม่สามารถยืนยัน LINE ได้ในตอนนี้ครับ กรุณาเปิดใหม่ผ่าน LINE ของ MMD" },
+    en: { fallback:"Unable to continue. Please reopen this page through MMD on LINE.", channelUnavailable:"This channel is not available yet. Please reopen it through MMD on LINE.", identityUnavailable:"LINE identity cannot be verified right now. Please reopen through MMD on LINE." },
+    zh: { fallback:"暂时无法继续，请通过 MMD 的 LINE 重新打开此页面。", channelUnavailable:"此渠道暂时不可用，请通过 MMD 的 LINE 重新打开。", identityUnavailable:"目前无法验证 LINE 身份，请通过 MMD 的 LINE 重新打开。" },
+  })[locale] || {});
   const allowedIntentIds = new Set(["signup", "renew", "status"]);
   let busy = false;
 
@@ -129,19 +137,39 @@ function renderShell(config, nonce) {
   careButton.textContent = copy.careButton || careButton.textContent;
   wishText.placeholder = copy.wishPlaceholder || wishText.placeholder;
   wishSubmit.textContent = copy.wishSubmit || wishSubmit.textContent;
-  const initialView = CONFIG.view === "points" ? "points" : (CONFIG.view === "care_back" || CONFIG.intent === "promo" ? "care_back" : "profile");
-  for (const item of document.querySelectorAll("[data-view]")) item.setAttribute("aria-current", String(item.getAttribute("data-view") === initialView));
-  for (const button of document.querySelectorAll("[data-view]")) {
-    button.addEventListener("click", () => {
-      const view = button.getAttribute("data-view");
-      for (const item of document.querySelectorAll("[data-view]")) item.setAttribute("aria-current", String(item === button));
-      const target = view === "points" ? document.getElementById("points-card") : view === "care_back" ? document.getElementById("care") : document.getElementById("profile");
-      target?.scrollIntoView({ behavior: "smooth", block: "center" });
-    });
+  let currentView = CONFIG.intent === "promo" ? "care_back" : CONFIG.view;
+
+  function activateView(value, push = false) {
+    const view = ["profile", "points", "care_back"].includes(value) ? value : "profile";
+    currentView = view;
+    for (const tab of document.querySelectorAll("[data-view-tab]")) tab.setAttribute("aria-selected", String(tab.dataset.viewTab === view));
+    for (const panel of document.querySelectorAll("[data-view-panel]")) {
+      const inactive = panel.dataset.viewPanel !== view;
+      panel.hidden = inactive;
+      panel.classList.toggle("hidden", inactive);
+    }
+    if (push) {
+      const url = new URL(location.href);
+      url.searchParams.set("view", view);
+      window.history.pushState({ view }, "", url);
+    }
+  }
+
+  function renderMembershipFlow() {
+    if (CONFIG.intent !== "signup" && CONFIG.intent !== "renew") return;
+    const flow = document.getElementById("membership-flow");
+    const target = new URL("/sigil/member/membership", location.origin);
+    target.searchParams.set("source", "line");
+    target.searchParams.set("intent", CONFIG.intent);
+    document.getElementById("membership-flow-copy").textContent = CONFIG.intent === "signup" ? copy.signupCopy : copy.renewCopy;
+    const link = document.getElementById("membership-flow-link");
+    link.href = target.toString();
+    link.textContent = CONFIG.intent === "signup" ? copy.signupAction : copy.renewAction;
+    flow.classList.remove("hidden");
   }
 
   function show(text) {
-    message.textContent = String(text || "ไม่สามารถดำเนินการต่อได้ครับ กรุณากลับมาเปิดผ่าน LINE ของ MMD อีกครั้ง");
+    message.textContent = String(text || copy.fallback);
   }
 
   function setBusy(value) {
@@ -160,7 +188,7 @@ function renderShell(config, nonce) {
     if (!payload || typeof payload !== "object") throw new Error("invalid_response");
     if (!response.ok || payload.ok !== true) {
       if (payload.data) render(payload.data);
-      else show("ตอนนี้ระบบตรวจสอบข้อมูลชั่วคราวยังไม่พร้อมครับ กรุณาลองใหม่อีกครั้ง");
+      else show(copy.unavailable);
       return null;
     }
     render(payload.data || {});
@@ -235,7 +263,7 @@ function renderShell(config, nonce) {
     document.getElementById("profile-points").textContent = new Intl.NumberFormat("th-TH").format(Number(data.points || 0));
     document.getElementById("profile-status").textContent = membershipStatus(data.membership_status);
     const expiry = safeDate(data.membership_expires_at);
-    const payment = safePaymentStatus(data.payment_status);
+    const payment = normalizePaymentStatus(data.payment_status);
     document.getElementById("member-details").classList.toggle("hidden", !expiry && !payment);
     document.getElementById("expiry-card").classList.toggle("hidden", !expiry);
     document.getElementById("payment-card").classList.toggle("hidden", !payment);
@@ -256,8 +284,7 @@ function renderShell(config, nonce) {
       row.append(date, title, state); history.append(row);
     }
     show(copy.ready || "ข้อมูลสมาชิกของคุณพร้อมแล้วครับ");
-    if (CONFIG.view === "points") document.getElementById("points-card").scrollIntoView({ behavior: "smooth", block: "center" });
-    if (CONFIG.view === "care_back" || CONFIG.intent === "promo") document.getElementById("care").scrollIntoView({ behavior: "smooth", block: "center" });
+    activateView(currentView);
   }
 
   function membershipStatus(value) { const labels = { th:{active:"สมาชิกใช้งานอยู่",grace:"อยู่ในช่วงผ่อนผัน",expired:"สมาชิกหมดอายุ",under_review:"อยู่ระหว่างตรวจสอบ"}, en:{active:"Active member",grace:"Grace period",expired:"Expired",under_review:"Under review"}, zh:{active:"会员有效",grace:"宽限期",expired:"会员已过期",under_review:"审核中"} }; return (labels[locale] || labels.th)[value] || (labels[locale] || labels.th).under_review; }
@@ -265,8 +292,8 @@ function renderShell(config, nonce) {
   function signedPoints(value) { const number = Number(value || 0); return (number >= 0 ? "+" : "") + new Intl.NumberFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-US" : "th-TH").format(number) + " pts"; }
   function shortDate(value) { const date = new Date(String(value || "") + "T00:00:00+07:00"); return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-GB" : "th-TH",{day:"numeric",month:"short",year:"2-digit"}).format(date); }
   function safeDate(value) { return /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")) ? String(value) : ""; }
-  function safePaymentStatus(value) { return ["verified","pending_review","failed","not_found"].includes(String(value || "")) ? String(value) : ""; }
-  function paymentStatus(value) { const labels = { th:{verified:"ตรวจสอบแล้ว",pending_review:"รอตรวจสอบ",unavailable:"ยังไม่พร้อมยืนยัน"}, en:{verified:"Verified",pending_review:"Pending review",unavailable:"Unavailable"}, zh:{verified:"已验证",pending_review:"待审核",unavailable:"暂不可确认"} }; return (labels[locale] || labels.th)[value] || "Unavailable"; }
+  function normalizePaymentStatus(value) { const status = String(value || ""); return status === "verified" || status === "pending_review" ? status : "unavailable"; }
+  function paymentStatus(value) { const labels = { th:{verified:"ตรวจสอบแล้ว",pending_review:"รอตรวจสอบ",unavailable:"ยังไม่พร้อมยืนยัน"}, en:{verified:"Verified",pending_review:"Pending review",unavailable:"Unavailable"}, zh:{verified:"已验证",pending_review:"待审核",unavailable:"暂不可确认"} }; return (labels[locale] || labels.th)[value] || (labels[locale] || labels.th).unavailable; }
 
   async function claimCareBack() {
     if (busy) return;
@@ -278,7 +305,7 @@ function renderShell(config, nonce) {
       renderCareBackClaim(payload.data || {});
       await readCareBackState();
     } catch {
-      document.getElementById("care-message").textContent = copy.claimMessage || "ตอนนี้ยังออกโค้ดไม่ได้ครับ กรุณาลองใหม่อีกครั้งหรือติดต่อ HYPE";
+      document.getElementById("care-message").textContent = copy.claimError;
       careButton.disabled = false; careButton.textContent = copy.careRetry || "ลองตรวจสอบอีกครั้ง";
     } finally { setBusy(false); }
   }
@@ -310,7 +337,7 @@ function renderShell(config, nonce) {
     const couponState = String(data.coupon_state || "");
     document.getElementById("care-code-value").textContent = code;
     codeWrap.classList.toggle("hidden", !code);
-    document.getElementById("care-message").textContent = String(data.coupon_message || data.message || copy.claimMessage || "MMD จะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ");
+    document.getElementById("care-message").textContent = locale === "th" ? String(data.coupon_message || data.message || copy.claimMessage) : copy.claimMessage;
     careButton.textContent = data.resumed ? (copy.careResumedButton || "อัปเดตสิทธิ์ CARE BACK แล้ว") : (copy.careCheckedButton || "ตรวจสิทธิ์ CARE BACK แล้ว");
     if (couponState === "wish_required") careButton.textContent = copy.couponReady || "ส่งคำอวยพรเพื่อเปิดคูปอง";
   }
@@ -368,7 +395,7 @@ function renderShell(config, nonce) {
       // No valid same-site session yet. Fall through to the one-time LIFF handshake.
     }
     if (!CONFIG.liffId || !window.liff) {
-      show("ช่องทางนี้ยังไม่พร้อมใช้งานครับ กรุณากลับมาเปิดผ่าน LINE ของ MMD อีกครั้ง");
+      show(copy.channelUnavailable);
       return;
     }
     try {
@@ -379,7 +406,7 @@ function renderShell(config, nonce) {
       }
       const idToken = window.liff.getIDToken();
       if (!idToken) {
-        show("ไม่สามารถยืนยัน LINE ได้ในตอนนี้ครับ กรุณาเปิดใหม่ผ่าน LINE ของ MMD");
+        show(copy.identityUnavailable);
         return;
       }
       const body = { id_token: idToken, liff_intent: CONFIG.intent };
@@ -388,10 +415,14 @@ function renderShell(config, nonce) {
       const started = await call(CONFIG.startEndpoint, body);
       if (started && started.member_resolved) await readProfile();
     } catch {
-      show("ตอนนี้ระบบตรวจสอบข้อมูลชั่วคราวยังไม่พร้อมครับ กรุณาลองใหม่อีกครั้ง");
+      show(copy.unavailable);
     }
   }
 
+  renderMembershipFlow();
+  activateView(currentView);
+  for (const tab of document.querySelectorAll("[data-view-tab]")) tab.addEventListener("click", () => activateView(tab.dataset.viewTab, true));
+  window.addEventListener("popstate", () => activateView(new URL(location.href).searchParams.get("view") || "profile"));
   careButton.addEventListener("click", claimCareBack);
   wishSubmit.addEventListener("click", submitBirthdayWish);
   boot();
