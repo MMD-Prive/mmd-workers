@@ -114,11 +114,14 @@ describe("member dashboard Phase 1 API", () => {
     assert.equal(payload.ok, true);
     assert.equal(payload.data.dashboard_state, "ready");
     assert.deepEqual(payload.data.member.tier, { value: "Premium", status: "verified", source: "member_profile_resolver" });
+    assert.deepEqual(payload.data.member.identity_status, { value: "verified", status: "verified", source: "line_session" });
+    assert.deepEqual(payload.data.member.membership_expires_at, { value: "2099-01-01", status: "verified", source: "member_profile_resolver" });
+    assert.deepEqual(payload.data.payment, { value: "verified", status: "verified", source: "payment_resolver" });
     assert.deepEqual(payload.data.points, { value: 125, status: "verified", source: "points_ledger", records_count: 2 });
     assert.equal(payload.data.history.status, "verified");
     assert.equal(payload.data.payment_history.status, "verified_history");
     assert.equal(payload.data.actions.dashboard_url, "/member/dashboard?t=abc&code=c&promo=p&source=line&invite=i");
-    assert.doesNotMatch(JSON.stringify(payload), /unsafe|evil|payment_status|membership_expires_at|payment_ref|grants|SVIP|svip|internal_note/i);
+    assert.doesNotMatch(JSON.stringify(payload), /unsafe|evil|payment_ref|grants|SVIP|svip|internal_note/i);
   });
 
   it("returns genuine zero points only when the ledger count is resolved", async () => {
@@ -163,7 +166,7 @@ describe("member dashboard Phase 1 API", () => {
     assert.equal(payload.message, "กำลังตรวจสอบข้อมูล");
   });
 
-  it("keeps payment history historical and never returns current payment status", async () => {
+  it("keeps payment history historical while exposing only the normalized current payment status", async () => {
     const runtime = env({ MEMBER_STATUS_RESOLVER: resolver({ profile: profileFixture({ history: [], points: 0, points_records_count: 0 }) }) });
     const cookie = await startSession(runtime);
     const { payload } = await dashboard(runtime, cookie);
@@ -171,7 +174,17 @@ describe("member dashboard Phase 1 API", () => {
     assert.equal(payload.data.payment_history.status, "verified_history");
     assert.equal(payload.data.payment_history.records.length, 1);
     assert.match(payload.data.payment_history.note, /historical only/);
+    assert.deepEqual(payload.data.payment, { value: "verified", status: "verified", source: "payment_resolver" });
     assert.equal("payment_status" in payload.data, false);
+  });
+
+  it("fails malformed expiry and payment states closed without exposing internals", async () => {
+    const runtime = env({ MEMBER_STATUS_RESOLVER: resolver({ profile: profileFixture({ membership_expires_at: "2026-02-30", payment_status: "paid" }) }) });
+    const cookie = await startSession(runtime);
+    const { payload } = await dashboard(runtime, cookie);
+    assert.deepEqual(payload.data.member.membership_expires_at, { value: null, status: "unavailable", source: "member_profile_resolver" });
+    assert.deepEqual(payload.data.payment, { value: "unavailable", status: "unavailable", source: "payment_resolver" });
+    assert.doesNotMatch(JSON.stringify(payload), /paid|verification status|airtable|record[_ -]?id/i);
   });
 
   it("does not expose SVIP as an automatic dashboard tier", async () => {

@@ -251,7 +251,7 @@ function renderCss() {
 
 function renderJs() {
   return `(() => {
-  const DECISIONS = ["", "ignore", "link_existing_client", "create_new_client", "needs_human", "do_not_import"];
+  const DECISIONS = ["", "ignore", "link_existing_client", "create_new_client", "approve_materialization", "reject_materialization", "needs_human", "do_not_import"];
   const DECISION_SOURCE = "manual_review";
   const root = document.querySelector("[data-line-ofc-review-root]");
   const dataNode = document.getElementById("line-ofc-review-data");
@@ -309,6 +309,7 @@ function renderJs() {
       reviewed_at: "",
       review_note: "",
       matched_client_id: "",
+      member_id_candidate: "",
       decision_source: DECISION_SOURCE,
     };
   }
@@ -322,6 +323,7 @@ function renderJs() {
       reviewed_at: text(patch.reviewed_at ?? previous.reviewed_at),
       review_note: text(patch.review_note ?? previous.review_note),
       matched_client_id: text(patch.matched_client_id ?? previous.matched_client_id),
+      member_id_candidate: text(patch.member_id_candidate ?? previous.member_id_candidate),
       decision_source: DECISION_SOURCE,
     };
     if (next.review_decision && !next.reviewed_at) next.reviewed_at = new Date().toISOString();
@@ -353,6 +355,7 @@ function renderJs() {
         reviewed_at: item.reviewed_at,
         review_note: item.review_note,
         matched_client_id: item.matched_client_id,
+        member_id_candidate: item.member_id_candidate,
         decision_source: DECISION_SOURCE,
       }));
   }
@@ -386,7 +389,7 @@ function renderJs() {
   }
 
   function exportCsv() {
-    const headers = ["import_id", "decision", "reviewed_by", "reviewed_at", "review_note", "matched_client_id", "decision_source"];
+    const headers = ["import_id", "decision", "reviewed_by", "reviewed_at", "review_note", "matched_client_id", "member_id_candidate", "decision_source"];
     const lines = [headers.join(",")].concat(exportableDecisions().map((item) => headers.map((key) => csvEscape(item[key])).join(",")));
     download(summary.batch_id + "-manual-review-decisions.csv", lines.join("\\n") + "\\n", "text/csv");
   }
@@ -399,7 +402,7 @@ function renderJs() {
     return '<article class="line-ofc-review-card" data-import-id="' + escapeHtml(row.import_id) + '">'
       + '<div class="line-ofc-review-card-head"><div><div class="line-ofc-review-name">' + escapeHtml(row.line_display_name || row.line_renamed_name || "Unnamed LINE row") + '</div><div class="line-ofc-review-muted">Rename: ' + escapeHtml(row.line_renamed_name || "") + '</div><div class="line-ofc-review-muted">Import: ' + escapeHtml(row.import_id) + '</div></div><div>' + badge(safety, safetyClass) + '</div></div>'
       + '<div class="line-ofc-review-badges">' + [row.review_status, row.match_type, row.parsed_client_level, row.parsed_membership_status, row.parsed_membership_tier, row.parsed_membership_package].map((item) => badge(item)).join("") + '</div>'
-      + '<div class="line-ofc-review-decision"><label><span>Decision</span><select data-decision-field="review_decision">' + decisionOptions + '</select></label><label><span>Reviewed by</span><input data-decision-field="reviewed_by" value="' + escapeHtml(decision.reviewed_by) + '" placeholder="reviewer name"></label><label><span>Matched client id</span><input data-decision-field="matched_client_id" value="' + escapeHtml(decision.matched_client_id) + '" placeholder="rec..."></label><label><span>Review note</span><textarea data-decision-field="review_note" rows="2" placeholder="local note">' + escapeHtml(decision.review_note) + '</textarea></label><div class="line-ofc-review-muted">reviewed_at: ' + escapeHtml(decision.reviewed_at || "set when decision is chosen") + ' · decision_source: manual_review</div></div>'
+      + '<div class="line-ofc-review-decision"><label><span>Decision</span><select data-decision-field="review_decision">' + decisionOptions + '</select></label><label><span>Reviewed by</span><input data-decision-field="reviewed_by" value="' + escapeHtml(decision.reviewed_by) + '" placeholder="reviewer name"></label><label><span>Matched client id</span><input data-decision-field="matched_client_id" value="' + escapeHtml(decision.matched_client_id) + '" placeholder="rec..."></label><label><span>Member id candidate</span><input data-decision-field="member_id_candidate" value="' + escapeHtml(decision.member_id_candidate) + '" placeholder="MMD member id"></label><label><span>Review note</span><textarea data-decision-field="review_note" rows="2" placeholder="local note">' + escapeHtml(decision.review_note) + '</textarea></label><div class="line-ofc-review-muted">reviewed_at: ' + escapeHtml(decision.reviewed_at || "set when decision is chosen") + ' · decision_source: manual_review</div></div>'
       + '<div class="line-ofc-review-grid">' + [["Client level", row.parsed_client_level], ["Status", row.parsed_membership_status], ["Tier", row.parsed_membership_tier], ["Package", row.parsed_membership_package], ["Member since", row.parsed_member_since], ["Since raw", row.parsed_member_since_raw], ["Purchased", row.has_purchased ? "yes" : "no"], ["Review", row.review_status], ["Match", row.match_type], ["Match conf", percent(row.match_confidence)], ["Parse conf", percent(row.parse_confidence)], ["Chosen member evidence", row.chosen_member_since_token], ["Member evidence list", (row.all_member_tokens || []).join(", ")]].map((pair) => '<div class="line-ofc-review-field"><span>' + escapeHtml(pair[0]) + '</span><b>' + escapeHtml(pair[1] || "") + '</b></div>').join("") + '</div>'
       + '<div class="line-ofc-review-field"><span>LINE tags raw</span><b class="line-ofc-review-tags">' + escapeHtml(row.line_tags_raw) + '</b></div>'
       + '<div class="line-ofc-review-field"><span>Proposed entitlement summary</span><b>' + escapeHtml(JSON.stringify(row.proposed_entitlement_summary)) + '</b></div>'

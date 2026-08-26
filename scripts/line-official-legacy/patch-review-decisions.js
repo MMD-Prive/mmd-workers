@@ -9,6 +9,8 @@ const ALLOWED_DECISIONS = new Set([
   "ignore",
   "link_existing_client",
   "create_new_client",
+  "approve_materialization",
+  "reject_materialization",
   "needs_human",
   "do_not_import",
 ]);
@@ -18,6 +20,7 @@ const ALLOWED_FIELDS = [
   "reviewed_at",
   "review_note",
   "matched_client_id",
+  "member_id_candidate",
   "decision_source",
 ];
 
@@ -98,11 +101,15 @@ function normalizeDecision(input) {
     reviewed_at: clean(input.reviewed_at) || new Date().toISOString(),
     review_note: clean(input.review_note),
     matched_client_id: clean(input.matched_client_id),
+    member_id_candidate: clean(input.member_id_candidate),
     decision_source: DECISION_SOURCE,
   };
 
   if (reviewDecision === "link_existing_client" && !fields.matched_client_id) {
     throw new Error(`matched_client_id_required:${importId}`);
+  }
+  if (reviewDecision === "approve_materialization" && (!fields.matched_client_id || !fields.member_id_candidate)) {
+    throw new Error(`materialization_identity_required:${importId}`);
   }
 
   return { import_id: importId, fields };
