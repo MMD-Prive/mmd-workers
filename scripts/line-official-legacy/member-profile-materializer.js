@@ -123,21 +123,31 @@ async function materializeMemberProfile({ store, importId, memberId, trigger }) 
   const plan = buildMaterializationPlan({ stagingRecord, member: member || {}, trigger });
   if (!plan.ok) return { ok: false, reason: plan.reason, wrote: [] };
 
+  if (typeof store.authorizeMaterialization === "function") {
+    await store.authorizeMaterialization({ plan, stagingRecord, member: member || {}, memberId, trigger });
+  }
+
+  // Resolve every idempotency cardinality before the first write. A duplicate
+  // conflict in a later operation must not allow an earlier operation to start.
+  const sessionExists = plan.writes.session ? await store.hasSession(plan.idempotency.session) : true;
+  const pointsExists = plan.writes.points ? await store.hasPoints(plan.idempotency.points) : true;
+  const auditExists = await store.hasAudit(plan.idempotency.audit);
+
   const wrote = [];
-  if (plan.writes.session && !await store.hasSession(plan.idempotency.session)) {
+  if (plan.writes.session && !sessionExists) {
     await store.createSession(plan.writes.session);
     wrote.push("session");
   }
-  if (plan.writes.points && !await store.hasPoints(plan.idempotency.points)) {
+  if (plan.writes.points && !pointsExists) {
     await store.createPoints(plan.writes.points);
     wrote.push("points");
   }
-  if (!await store.hasAudit(plan.idempotency.audit)) {
+  if (!auditExists) {
     await store.createAudit(plan.writes.audit);
     wrote.push("audit");
   }
   await store.markStagingMaterialized(stagingRecord.id, { committed_at: new Date().toISOString(), committed_by: `trigger:${trigger}` });
-  return { ok: true, reason: plan.reason || "materialized", wrote };
+  return { ok: true, dry_run: store.dryRun === true, reason: plan.reason || "materialized", wrote };
 }
 
 module.exports = {
