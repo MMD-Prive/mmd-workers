@@ -555,9 +555,10 @@ function normalizeServiceStatus(value) {
 
 function normalizeServicePaymentStatus(value) {
   const status = String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
-  if (["full_payment_verified", "fully_paid", "paid_verified", "verified"].includes(status)) return "full_payment_verified";
+  if (["full_payment_verified", "fully_paid", "paid_verified"].includes(status)) return "full_payment_verified";
   if (["deposit_verified", "deposit_paid_verified"].includes(status)) return "deposit_verified";
   if (["pending_verification", "pending", "awaiting_verification"].includes(status)) return "pending_verification";
+  if (status === "verified") return "review_required";
   return status || "review_required";
 }
 

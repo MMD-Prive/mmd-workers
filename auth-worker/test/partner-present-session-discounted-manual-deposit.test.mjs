@@ -139,6 +139,18 @@ test("partner-present massage transaction preserves manual deposit and lifecycle
   assert.equal(depositVerified.eligible_service_spend, 0);
   assert.equal(depositVerified.points, 0);
 
+  const genericVerified = testInternals.normalizeMemberServiceTransaction(partnerPresentSession({
+    "Session Status": "completed",
+    payment_status: "",
+    verification_status: "verified",
+    deposit_verified_amount: 7000,
+    paid_total: "",
+  }));
+  assert.equal(genericVerified.payment_status, "review_required");
+  assert.equal(genericVerified.deposit_verified_amount, 7000);
+  assert.equal(genericVerified.eligible_service_spend, 0);
+  assert.equal(genericVerified.points, 0);
+
   const completed = testInternals.normalizeMemberServiceTransaction(partnerPresentSession({
     "Session Status": "completed",
     payment_status: "full_payment_verified",
