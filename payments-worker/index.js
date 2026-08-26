@@ -4,6 +4,13 @@
  * =========================================================
  */
 
+import {
+  floorMembershipPoints,
+  getPublicCompanionMembershipPackage,
+  membershipPointsLedgerReasons,
+  verifiedMembershipPaymentMetadata,
+} from "../shared/public-companion-membership-packages.mjs";
+
 const LOCK = "payments-production-v10-clean";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
@@ -149,9 +156,22 @@ function paymentStatusFromStage(stage) {
   return "paid";
 }
 
-function computePoints(env, amountThb) {
+export function computePoints(env, amountThb) {
   const rate = toNum(env.POINTS_RATE) || 100;
+  if (rate === 100) return floorMembershipPoints(amountThb);
   return Math.max(0, Math.floor(Number(amountThb || 0) / rate));
+}
+
+export function shouldAwardPointsForVerifiedPayment(payload = {}) {
+  return String(payload.verification_status || "").trim().toLowerCase() === "verified";
+}
+
+export function buildPublicCompanionPaymentMetadata(input = {}) {
+  const definition = getPublicCompanionMembershipPackage(input.package_id);
+  if (!definition) return null;
+  const amountThb = Number(input.amount_thb);
+  if (!Number.isFinite(amountThb) || amountThb !== definition.price_thb) return null;
+  return verifiedMembershipPaymentMetadata(input);
 }
 
 function stageEligibleForPoints(stage) {
@@ -548,6 +568,15 @@ async function createOrUpdatePaymentIntent(env, payload) {
     "Pay Model": payload.pay_model_thb,
     member_email: payload.member_email || "",
     package_code: payload.package_code || "",
+    package_id: payload.package_metadata?.package_id,
+    package_label: payload.package_metadata?.package_label,
+    term_months: payload.package_metadata?.term_months,
+    points_policy: payload.package_metadata?.points_policy,
+    points_awarded: payload.package_metadata?.points_awarded,
+    source_route: payload.package_metadata?.source_route,
+    entry_context: payload.package_metadata?.entry_context,
+    requires_manual_review: payload.package_metadata?.requires_manual_review,
+    visibility_lane: payload.package_metadata?.visibility_lane,
     notes: payload.notes || "",
     receipt_url: payload.receipt_url || "",
     "Receipt Photo": payload.receipt_url || "",
@@ -588,6 +617,10 @@ async function updateSessionFromPayment(env, payload) {
     receipt_url: payload.receipt_url || "",
     member_email: payload.member_email || "",
     package_code: payload.package_code || "",
+    package_id: payload.package_metadata?.package_id,
+    package_label: payload.package_metadata?.package_label,
+    term_months: payload.package_metadata?.term_months,
+    requires_manual_review: payload.package_metadata?.requires_manual_review,
     deposit_paid_at: payload.stage === "deposit" ? (payload.paid_at || nowIso()) : undefined,
     final_paid_at: payload.stage === "final" || payload.stage === "full" ? (payload.paid_at || nowIso()) : undefined,
     tips_paid_at: payload.stage === "tips" ? (payload.paid_at || nowIso()) : undefined,
@@ -603,6 +636,9 @@ async function updateSessionFromPayment(env, payload) {
 }
 
 async function awardPointsIfEligible(env, payload) {
+  if (payload.package_metadata && !shouldAwardPointsForVerifiedPayment(payload)) {
+    return { ok: true, skipped: true, reason: "payment_not_verified", awarded: false, points: 0 };
+  }
   if (!stageEligibleForPoints(payload.stage)) {
     return { ok: true, skipped: true, reason: "stage_not_eligible" };
   }
@@ -612,7 +648,7 @@ async function awardPointsIfEligible(env, payload) {
     return { ok: true, duplicate: true, awarded: false, record_id: existing.id, points: 0 };
   }
 
-  const points = computePoints(env, payload.amount_thb);
+  const points = payload.package_metadata?.points_awarded ?? computePoints(env, payload.amount_thb);
   if (points <= 0) {
     return { ok: true, skipped: true, reason: "points_zero", awarded: false, points: 0 };
   }
@@ -622,10 +658,17 @@ async function awardPointsIfEligible(env, payload) {
     session_id: payload.session_id || "",
     member_email: payload.member_email || "",
     package_code: payload.package_code || "",
+    package_id: payload.package_metadata?.package_id,
+    package_label: payload.package_metadata?.package_label,
     amount_thb: payload.amount_thb,
     points,
     type: "earn",
     payment_type: payload.stage,
+    reason: payload.package_metadata ? "membership_package_payment" : undefined,
+    reason_detail: payload.package_metadata
+      ? membershipPointsLedgerReasons(payload.package_metadata.package_id)[1]
+      : undefined,
+    points_policy: payload.package_metadata?.points_policy,
     created_at: nowIso(),
   });
 

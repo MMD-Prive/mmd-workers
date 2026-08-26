@@ -183,4 +183,54 @@ describe("member dashboard Phase 1 API", () => {
     assert.equal(payload.data.member.tier.value, null);
     assert.doesNotMatch(JSON.stringify(payload), /SVIP|svip/);
   });
+
+  it("returns only verified package readback and strips private package logic", async () => {
+    const runtime = env({ MEMBER_STATUS_RESOLVER: resolver({ profile: profileFixture({
+      membership_package: {
+        package_label: "Red Card Dining Access",
+        status: "pending_review",
+        expiry_date: "2029-08-26",
+        points_awarded: 149,
+        points_verified: true,
+        next_action: "await_review",
+        visibility_lane: "red_card_dining_review",
+        hidden_ranking: 99,
+        private_category_logic: "never-return",
+        talent_names: ["private"],
+        approval_criteria: "never-return",
+      },
+    }) }) });
+    const cookie = await startSession(runtime);
+    const { payload } = await dashboard(runtime, cookie);
+
+    assert.deepEqual(payload.data.member.membership_package, {
+      value: {
+        package_label: "Red Card Dining Access",
+        status: "pending_review",
+        expiry_date: "2029-08-26",
+        points_awarded: 149,
+        next_action: "await_review",
+      },
+      status: "verified",
+      source: "member_profile_resolver",
+    });
+    assert.doesNotMatch(JSON.stringify(payload), /visibility_lane|hidden_ranking|private_category|talent_names|approval_criteria|never-return/i);
+  });
+
+  it("does not expose package points until the resolver marks them verified", async () => {
+    const runtime = env({ MEMBER_STATUS_RESOLVER: resolver({ profile: profileFixture({
+      membership_package: {
+        package_label: "Public Info Member",
+        status: "active",
+        expiry_date: "2027-08-26",
+        points_awarded: 6,
+        points_verified: false,
+        next_action: "none",
+      },
+    }) }) });
+    const cookie = await startSession(runtime);
+    const { payload } = await dashboard(runtime, cookie);
+
+    assert.equal(payload.data.member.membership_package.value.points_awarded, null);
+  });
 });

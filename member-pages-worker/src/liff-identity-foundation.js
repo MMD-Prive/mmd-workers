@@ -599,6 +599,7 @@ function buildCheckingDashboard(request, code = "checking") {
         display_name: "สมาชิก MMD",
         tier: checkingField("member_profile"),
         membership_status: checkingField("member_profile"),
+        membership_package: checkingField("member_profile_resolver"),
       },
       points: {
         value: null,
@@ -626,6 +627,7 @@ function buildCheckingDashboard(request, code = "checking") {
 function buildMemberDashboardData(profile = {}, request) {
   const tier = dashboardTier(profile);
   const membershipStatus = dashboardMembershipStatus(profile);
+  const membershipPackage = dashboardMembershipPackage(profile);
   const points = dashboardPoints(profile);
   const history = dashboardHistory(profile);
   const paymentHistory = dashboardPaymentHistory(profile);
@@ -645,6 +647,7 @@ function buildMemberDashboardData(profile = {}, request) {
       display_name: dashboardDisplayName(profile.display_name),
       tier,
       membership_status: membershipStatus,
+      membership_package: membershipPackage,
     },
     points,
     history,
@@ -677,8 +680,39 @@ function dashboardMembershipStatus(profile = {}) {
   const status = String(profile.membership_status || "").trim().toLowerCase();
   if (status === "active" || status === "grace") return verifiedField("active", "member_profile_resolver");
   if (status === "expired") return verifiedField("expired", "member_profile_resolver");
-  if (status === "under_review") return verifiedField("pending", "member_profile_resolver");
+  if (status === "under_review" || status === "pending_review") return verifiedField("pending_review", "member_profile_resolver");
+  if (status === "revoked") return verifiedField("revoked", "member_profile_resolver");
   return checkingField("member_profile_resolver");
+}
+
+export function dashboardMembershipPackage(profile = {}) {
+  const input = profile.membership_package;
+  if (!input || typeof input !== "object") return checkingField("member_profile_resolver");
+  const label = normalizeCustomerText(input.package_label, 80);
+  const status = String(input.status || "").trim().toLowerCase();
+  if (!label || !["active", "pending_review", "expired", "revoked"].includes(status)) {
+    return checkingField("member_profile_resolver");
+  }
+  const value = {
+    package_label: label,
+    status,
+    expiry_date: strictMemberCalendarDate(input.expiry_date) || null,
+    points_awarded: input.points_verified === true && Number.isInteger(Number(input.points_awarded))
+      ? Math.max(0, Number(input.points_awarded))
+      : null,
+    next_action: normalizeDashboardNextAction(input.next_action, status),
+  };
+  return verifiedField(value, "member_profile_resolver");
+}
+
+function normalizeDashboardNextAction(value, status) {
+  const action = String(value || "").trim().toLowerCase();
+  const allowed = new Set(["none", "await_review", "renew_membership", "contact_mmd"]);
+  if (allowed.has(action)) return action;
+  if (status === "pending_review") return "await_review";
+  if (status === "expired") return "renew_membership";
+  if (status === "revoked") return "contact_mmd";
+  return "none";
 }
 
 function dashboardPoints(profile = {}) {
@@ -1724,6 +1758,13 @@ function safeMemberProfile(input = {}) {
     history_window: { from, to, timezone: "Asia/Bangkok" },
     history,
   };
+  const packageReadback = dashboardMembershipPackage(input);
+  if (packageReadback.status === "verified") {
+    profile.membership_package = {
+      ...packageReadback.value,
+      points_verified: packageReadback.value.points_awarded !== null,
+    };
+  }
   const membershipExpiresAt = strictMemberCalendarDate(input.membership_expires_at);
   if (["active", "grace"].includes(profile.membership_status) && membershipExpiresAt) {
     profile.membership_expires_at = membershipExpiresAt;
