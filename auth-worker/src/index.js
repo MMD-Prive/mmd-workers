@@ -555,11 +555,11 @@ function normalizeCustomerMembershipStatus(value) {
   return "under_review";
 }
 
-function normalizeCustomerPaymentStatus(verificationValue, intentValue, paymentValue) {
+function normalizeCustomerPaymentStatus(paymentValue, verificationValue, intentValue = "") {
   const normalize = (value) => String(value || "").trim().toLowerCase().replace(/[\\s-]+/g, "_");
+  const payment = normalize(paymentValue);
   const verification = normalize(verificationValue);
   const intent = normalize(intentValue);
-  const payment = normalize(paymentValue);
   const verifiedValues = new Set(["verified", "confirmed", "full_payment"]);
   const failedValues = new Set(["failed", "refunded", "cancelled", "canceled"]);
   const pendingValues = new Set(["pending", "pending_review", "pending_confirmation", "intent_created", "notified", "deposit", "partial_payment"]);
@@ -570,7 +570,7 @@ function normalizeCustomerPaymentStatus(verificationValue, intentValue, paymentV
   if (pendingValues.has(intent)) return "pending_review";
   if (failedValues.has(payment)) return "failed";
   if (pendingValues.has(payment)) return "pending_review";
-  return "";
+  return "unavailable";
 }
 
 function safePackageLabel(value) {
