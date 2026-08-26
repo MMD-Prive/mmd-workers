@@ -33,6 +33,9 @@ const MEMBER_STATUS_RESOLVER_SECRET_HEADER = "x-mmd-member-resolver-secret";
 const MEMBER_HISTORY_MAX_ITEMS = 50;
 const MEMBER_STATUS_AIRTABLE_TIMEOUT_MS = 4000;
 const MEMBER_STATUS_AIRTABLE_TIMEOUT_MIN_MS = 50;
+const POINTS_THB_PER_POINT = 100;
+const PARTNER_PRESENT_MASSAGE_SESSION = "partner_present_massage_session";
+const PARTNER_PRESENT_MASSAGE_SESSION_LABEL = "Partner-Present Massage Session";
 
 export default {
   async fetch(request, env, ctx) {
@@ -398,12 +401,13 @@ async function listMemberServiceHistory(env, { lineUserId, email, cutoff }) {
   return records.map((record) => {
     const f = record.fields || {};
     const date = safeHistoryDate(f[env.AIRTABLE_SESSIONS_HISTORY_DATE_FIELD || "job_date"] || f["Session Date"] || f.start_time);
-    const status = String(f[env.AIRTABLE_SESSIONS_STATUS_FIELD || "Session Status"] || f.status || "").trim().toLowerCase();
+    const transaction = normalizeMemberServiceTransaction(f, env);
+    const status = transaction.service_status;
     if (!date || date < cutoff || status !== "completed") return null;
     return {
       type: "service",
       date,
-      title: safeCustomerText(f[env.AIRTABLE_SESSIONS_SERVICE_TYPE_FIELD || "job_type"] || f["Session Type"] || "MMD Service", 80),
+      title: transaction.customer_title,
       status: "completed",
     };
   }).filter(Boolean);
@@ -467,12 +471,18 @@ async function listMemberPointsLedger(env, { email, cutoff }) {
   });
   let total = 0;
   let recordsCount = 0;
+  const seen = new Set();
   const history = records.map((record) => {
     const f = record.fields || {};
     const date = safeHistoryDate(f.posted_at || f.created_at);
     const status = String(f.transaction_status || "").trim().toLowerCase();
     const delta = signedInteger(f.points);
     if (!date || date < cutoff || status !== "posted" || delta === null) return null;
+    const dedupeKey = pointsLedgerDedupeKey(f);
+    if (dedupeKey) {
+      if (seen.has(dedupeKey)) return null;
+      seen.add(dedupeKey);
+    }
     total += delta;
     recordsCount += 1;
     return {
@@ -488,6 +498,113 @@ async function listMemberPointsLedger(env, { email, cutoff }) {
     records_count: recordsCount,
     history,
   };
+}
+
+function normalizeMemberServiceTransaction(fields = {}, env = {}) {
+  const serviceStatus = normalizeServiceStatus(readServiceField(fields, env.AIRTABLE_SESSIONS_STATUS_FIELD || "Session Status", ["status", "service_status"]));
+  const paymentStatus = normalizeServicePaymentStatus(readServiceField(fields, "payment_status", ["Payment Status", "verification_status", "Verification Status"]));
+  const workType = normalizeServiceWorkType(readServiceField(fields, env.AIRTABLE_SESSIONS_SERVICE_TYPE_FIELD || "job_type", ["Session Type", "work_type"]));
+  const addon = safeServiceAddon(readServiceField(fields, "service_addon", ["work_variant", "addon", "Service Addon", "Work Variant"]));
+  const quotedPrice = moneyAmount(readServiceField(fields, "quoted_price", ["quotedPrice", "Quoted Price", "gross_amount", "Gross Amount"]));
+  const agreedFinalPrice = moneyAmount(readServiceField(fields, "agreed_final_price", ["final_price", "finalPrice", "Final Price", "Agreed Final Price", "net_total", "Net Total"]));
+  const depositRequested = moneyAmount(readServiceField(fields, "deposit_requested", ["deposit", "Deposit", "Deposit Requested"]));
+  const depositVerifiedAmount = moneyAmount(readServiceField(fields, "deposit_verified_amount", ["deposit_verified", "Deposit Verified", "verified_deposit_amount"]));
+  const paidTotal = moneyAmount(readServiceField(fields, "paid_total", ["Paid Total", "total_paid", "verified_paid_total"]));
+  const explicitBalance = moneyAmount(readServiceField(fields, "remaining_balance", ["balance", "Remaining Balance"]));
+  const remainingBalance = explicitBalance ?? (
+    agreedFinalPrice !== null && (depositVerifiedAmount ?? depositRequested) !== null
+      ? Math.max(0, agreedFinalPrice - (depositVerifiedAmount ?? depositRequested))
+      : null
+  );
+  const eligibleServiceSpend = serviceEligibleSpend({ serviceStatus, paymentStatus, agreedFinalPrice, paidTotal });
+  const points = Math.floor(eligibleServiceSpend / POINTS_THB_PER_POINT);
+  const warnings = depositMismatchWarnings({ fields, quotedPrice, agreedFinalPrice, depositRequested });
+
+  return {
+    work_type: workType.normalized,
+    customer_title: workType.label,
+    service_addon: addon,
+    service_status: serviceStatus,
+    payment_status: paymentStatus,
+    quoted_price: quotedPrice,
+    agreed_final_price: agreedFinalPrice,
+    deposit_requested: depositRequested,
+    deposit_verified_amount: depositVerifiedAmount ?? 0,
+    remaining_balance: remainingBalance,
+    paid_total: paidTotal,
+    eligible_service_spend: eligibleServiceSpend,
+    points,
+    warnings,
+  };
+}
+
+function readServiceField(fields, primary, aliases = []) {
+  for (const key of [primary, ...aliases]) {
+    if (fields[key] !== undefined && fields[key] !== null && fields[key] !== "") return fields[key];
+  }
+  return "";
+}
+
+function normalizeServiceStatus(value) {
+  const status = String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (["completed", "complete", "done"].includes(status)) return "completed";
+  if (["cancelled", "canceled"].includes(status)) return "cancelled";
+  if (["confirmed", "upcoming", "scheduled"].includes(status)) return "confirmed";
+  return status || "review_required";
+}
+
+function normalizeServicePaymentStatus(value) {
+  const status = String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (["full_payment_verified", "fully_paid", "paid_verified", "verified"].includes(status)) return "full_payment_verified";
+  if (["deposit_verified", "deposit_paid_verified"].includes(status)) return "deposit_verified";
+  if (["pending_verification", "pending", "awaiting_verification"].includes(status)) return "pending_verification";
+  return status || "review_required";
+}
+
+function normalizeServiceWorkType(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (normalized === PARTNER_PRESENT_MASSAGE_SESSION) {
+    return { normalized: PARTNER_PRESENT_MASSAGE_SESSION, label: PARTNER_PRESENT_MASSAGE_SESSION_LABEL };
+  }
+  return {
+    normalized: normalized || "mmd_service",
+    label: safeCustomerText(value || "MMD Service", 80) || "MMD Service",
+  };
+}
+
+function safeServiceAddon(value) {
+  return safeCustomerText(value, 40);
+}
+
+function moneyAmount(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const number = Number(String(value).replace(/,/g, "").trim());
+  return Number.isFinite(number) && number >= 0 ? Math.trunc(number) : null;
+}
+
+function serviceEligibleSpend({ serviceStatus, paymentStatus, agreedFinalPrice, paidTotal }) {
+  if (serviceStatus !== "completed") return 0;
+  if (paymentStatus !== "full_payment_verified") return 0;
+  const authoritativeTotal = paidTotal ?? agreedFinalPrice;
+  return authoritativeTotal !== null && authoritativeTotal > 0 ? authoritativeTotal : 0;
+}
+
+function depositMismatchWarnings({ fields, quotedPrice, agreedFinalPrice, depositRequested }) {
+  const basis = String(readServiceField(fields, "deposit_percentage_text", ["deposit_terms", "Deposit Terms", "confirmation_text"]));
+  if (depositRequested === null || !/%/.test(basis)) return [];
+  const match = basis.match(/(\d+(?:\.\d+)?)\s*%/);
+  if (!match) return [];
+  const percent = Number(match[1]);
+  if (!Number.isFinite(percent) || percent <= 0) return [];
+  const candidates = [quotedPrice, agreedFinalPrice].filter((amount) => amount !== null);
+  if (candidates.some((amount) => Math.round((amount * percent) / 100) === depositRequested)) return ["manual_deposit_amount"];
+  return ["manual_deposit_amount", "deposit_percentage_mismatch"];
+}
+
+function pointsLedgerDedupeKey(fields = {}) {
+  const key = readServiceField(fields, "idempotency_key", ["transaction_id", "source_event_id", "service_event_id", "session_id"]);
+  const text = String(key || "").trim();
+  return text ? text.slice(0, 160) : "";
 }
 
 function memberHistoryCutoff(now = new Date()) {
@@ -1247,3 +1364,12 @@ function safeAirtableReadDebug(tableName, error) {
     message: message.slice(0, 300),
   };
 }
+
+export const testInternals = {
+  PARTNER_PRESENT_MASSAGE_SESSION,
+  PARTNER_PRESENT_MASSAGE_SESSION_LABEL,
+  POINTS_THB_PER_POINT,
+  normalizeMemberServiceTransaction,
+  normalizeServiceWorkType,
+  pointsLedgerDedupeKey,
+};
