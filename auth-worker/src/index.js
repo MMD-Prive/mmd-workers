@@ -560,16 +560,10 @@ function normalizeCustomerPaymentStatus(paymentValue, verificationValue, intentV
   const payment = normalize(paymentValue);
   const verification = normalize(verificationValue);
   const intent = normalize(intentValue);
-  const verifiedValues = new Set(["verified", "confirmed", "full_payment"]);
-  const failedValues = new Set(["failed", "refunded", "cancelled", "canceled"]);
-  const pendingValues = new Set(["pending", "pending_review", "pending_confirmation", "intent_created", "notified", "deposit", "partial_payment"]);
-  if (verifiedValues.has(verification)) return "verified";
-  if (failedValues.has(verification)) return "failed";
-  if (pendingValues.has(verification)) return "pending_review";
-  if (failedValues.has(intent)) return "failed";
-  if (pendingValues.has(intent)) return "pending_review";
-  if (failedValues.has(payment)) return "failed";
-  if (pendingValues.has(payment)) return "pending_review";
+  if (payment === "paid" && verification === "verified") return "verified";
+  if (payment === "pending" && verification === "pending") return "pending_review";
+  // Payment evidence, intent, or verification alone never grants customer status.
+  void intent;
   return "unavailable";
 }
 
