@@ -266,7 +266,7 @@ function renderShell(config, nonce) {
   function shortDate(value) { const date = new Date(String(value || "") + "T00:00:00+07:00"); return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-GB" : "th-TH",{day:"numeric",month:"short",year:"2-digit"}).format(date); }
   function safeDate(value) { return /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")) ? String(value) : ""; }
   function safePaymentStatus(value) { return ["verified","pending_review","failed","not_found"].includes(String(value || "")) ? String(value) : ""; }
-  function paymentStatus(value) { const labels = { th:{verified:"ตรวจสอบแล้ว",pending_review:"รอตรวจสอบ",failed:"ไม่ผ่านการตรวจสอบ",not_found:"ยังไม่พบรายการชำระ"}, en:{verified:"Verified",pending_review:"Pending review",failed:"Not verified",not_found:"No payment record found"}, zh:{verified:"已验证",pending_review:"待审核",failed:"未通过验证",not_found:"未找到付款记录"} }; return (labels[locale] || labels.th)[value] || "—"; }
+  function paymentStatus(value) { const labels = { th:{verified:"ตรวจสอบแล้ว",pending_review:"รอตรวจสอบ",unavailable:"ยังไม่พร้อมยืนยัน"}, en:{verified:"Verified",pending_review:"Pending review",unavailable:"Unavailable"}, zh:{verified:"已验证",pending_review:"待审核",unavailable:"暂不可确认"} }; return (labels[locale] || labels.th)[value] || "Unavailable"; }
 
   async function claimCareBack() {
     if (busy) return;
