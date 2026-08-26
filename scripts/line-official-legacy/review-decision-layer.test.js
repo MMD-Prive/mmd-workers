@@ -86,6 +86,7 @@ test("review decision apply patches only staging decision fields", async () => {
     "decision",
     "decision_source",
     "matched_client_id",
+    "member_id_candidate",
     "review_note",
     "reviewed_at",
     "reviewed_by",
@@ -128,6 +129,7 @@ test("review decision layer accepts requested input alias and decision field", (
     "reviewed_at",
     "review_note",
     "matched_client_id",
+    "member_id_candidate",
     "decision_source",
   ]);
   assert.deepEqual(parseArgs(["--input", "decisions.json"]), { apply: false, file: "decisions.json" });
@@ -139,6 +141,24 @@ test("review decision layer accepts requested input alias and decision field", (
   });
   assert.equal(normalized.fields.decision, "do_not_import");
   assert.equal(Object.prototype.hasOwnProperty.call(normalized.fields, "review_decision"), false);
+});
+
+test("materialization approval requires both client and canonical member links", () => {
+  assert.throws(() => normalizeDecision({
+    import_id: "line_ofc_console_materialize_missing",
+    decision: "approve_materialization",
+    reviewed_by: "Per",
+    matched_client_id: "recClient1",
+  }), /materialization_identity_required/);
+  const normalized = normalizeDecision({
+    import_id: "line_ofc_console_materialize_ready",
+    decision: "approve_materialization",
+    reviewed_by: "Per",
+    matched_client_id: "recClient1",
+    member_id_candidate: "MMD-001",
+  });
+  assert.equal(normalized.fields.decision, "approve_materialization");
+  assert.equal(normalized.fields.member_id_candidate, "MMD-001");
 });
 
 test("commit refuses when unsafe_to_commit is greater than zero", () => {

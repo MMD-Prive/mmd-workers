@@ -627,9 +627,11 @@ function buildCheckingDashboard(request, code = "checking") {
 function buildMemberDashboardData(profile = {}, request) {
   const tier = dashboardTier(profile);
   const membershipStatus = dashboardMembershipStatus(profile);
+  const membershipExpiry = dashboardMembershipExpiry(profile);
   const points = dashboardPoints(profile);
   const history = dashboardHistory(profile);
   const paymentHistory = dashboardPaymentHistory(profile);
+  const payment = dashboardPaymentStatus(profile);
   const fieldStatuses = [
     tier.status,
     membershipStatus.status,
@@ -644,10 +646,13 @@ function buildMemberDashboardData(profile = {}, request) {
     data_status: dataStatus,
     member: {
       display_name: dashboardDisplayName(profile.display_name),
+      identity_status: verifiedField("verified", "line_session"),
       tier,
       membership_status: membershipStatus,
+      membership_expires_at: membershipExpiry,
     },
     points,
+    payment,
     history,
     payment_history: paymentHistory,
     actions: dashboardActions(request),
@@ -680,6 +685,22 @@ function dashboardMembershipStatus(profile = {}) {
   if (status === "expired") return verifiedField("expired", "member_profile_resolver");
   if (status === "under_review") return verifiedField("pending", "member_profile_resolver");
   return checkingField("member_profile_resolver");
+}
+
+function dashboardMembershipExpiry(profile = {}) {
+  const value = String(profile.membership_expires_at || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return { value: null, status: "unavailable", source: "member_profile_resolver" };
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+    return { value: null, status: "unavailable", source: "member_profile_resolver" };
+  }
+  return verifiedField(value, "member_profile_resolver");
+}
+
+function dashboardPaymentStatus(profile = {}) {
+  const value = String(profile.payment_status || "").trim().toLowerCase();
+  if (value === "verified" || value === "pending_review") return verifiedField(value, "payment_resolver");
+  return { value: "unavailable", status: "unavailable", source: "payment_resolver" };
 }
 
 function dashboardPoints(profile = {}) {
