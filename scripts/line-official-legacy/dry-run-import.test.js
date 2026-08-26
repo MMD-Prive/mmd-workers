@@ -165,6 +165,10 @@ test("dry-run stages historical note points evidence only", async () => {
   const stagingCall = calls.find((call) => call.table === "tbl1u0foFBvgFpT9G" && call.init?.method === "POST");
   assert.equal(stagingCall.init.body.fields.raw_note, "Booking service 12,000 THB plus MMD tip 1,000 THB");
   assert.equal(stagingCall.init.body.fields.service_amount, 12000);
+  assert.equal(stagingCall.init.body.fields.reconciled_service_amount, 12000);
+  assert.equal(stagingCall.init.body.fields.reconciliation_basis, "single_service_amount");
+  assert.equal(stagingCall.init.body.fields.historical_service_status, "completed");
+  assert.equal(stagingCall.init.body.fields.cancellation_evidence, "");
   assert.equal(stagingCall.init.body.fields.tip_amount_mmd, 1000);
   assert.equal(stagingCall.init.body.fields.points_eligible_amount, 12000);
   assert.equal(stagingCall.init.body.fields.proposed_points, 120);

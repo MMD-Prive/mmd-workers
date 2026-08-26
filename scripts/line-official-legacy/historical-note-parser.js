@@ -29,11 +29,13 @@ const THAI_MONTH_PATTERN = [
 ].map((month) => month.replace(/\./g, "\\.")).join("|");
 
 const CANCEL_PATTERNS = [
+  /ยกเลิก/gi,
   /ยกเลิกงาน/gi,
   /งานยกเลิก/gi,
   /ขอยกเลิก/gi,
   /ลูกค้ายกเลิก/gi,
   /ไม่ได้เกิดงาน/gi,
+  /ไม่เกิดงาน/gi,
   /งานไม่เกิด/gi,
   /ไม่ได้ไปงาน/gi,
   /ไม่ได้รับงาน/gi,
@@ -140,8 +142,10 @@ function detectCancellation(note) {
     const matches = raw.match(pattern) || [];
     evidence.push(...matches);
   }
+  const ambiguous = /(?:อาจ(?:จะ)?ยกเลิก|ยังไม่แน่ใจ[^\n]{0,40}ยกเลิก|ยกเลิก(?:งาน)?(?:ไหม|หรือไม่)|ไม่ยกเลิก|maybe\s+cancel|may\s+cancel|might\s+cancel|cancel\?)/i.test(raw);
   return {
-    cancelled: evidence.length > 0,
+    cancelled: evidence.length > 0 && !ambiguous,
+    ambiguous: evidence.length > 0 && ambiguous,
     evidence: unique(evidence),
   };
 }
@@ -169,12 +173,26 @@ function classifyAmount(amountItem) {
 }
 
 function classifyServiceRole(amountItem) {
-  const local = `${amountItem.pre || ""} ${amountItem.post || ""} ${amountItem.context || ""}`.toLowerCase();
-  if (hasAny(local, [/ยอดรวม/, /ยอดสุทธิ/, /สุทธิ/, /net\s+total/, /final\s+total/, /total\s+due/, /amount\s+due/])) return "final_total";
-  if (hasAny(local, [/discount\s*\d*%?\s*from/, /ก่อนลด/, /ราคาเต็ม/, /gross/, /original\s+price/, /full\s+price/])) return "gross_total";
-  if (hasAny(local, [/มัดจำ/, /deposit/])) return "deposit";
-  if (hasAny(local, [/ชำระหน้างาน/, /จ่ายหน้างาน/, /คงเหลือ/, /ยอดคงเหลือ/, /balance\s+due/, /remaining/])) return "balance";
-  if (hasAny(local, [/เราค้าง/, /mmd\s+owes/, /we\s+owe/, /ค้างโมเดล/, /ค้างให้/])) return "internal_balance";
+  // Money labels belong to the closest preceding phrase on the same line.
+  // A wider context window can contain final, gross, deposit and balance labels
+  // together and must never cause every amount to inherit every role.
+  const linePrefix = String(amountItem.pre || "").split(/\r?\n/).pop().toLowerCase();
+  const roles = [
+    ["final_total", [/ยอดรวม/g, /ยอดสุทธิ/g, /สุทธิ/g, /net\s+total/g, /final\s+total/g, /total\s+due/g, /amount\s+due/g]],
+    ["gross_total", [/discount\s*\d*%?\s*from/g, /ก่อนลด/g, /ราคาเต็ม/g, /gross/g, /original\s+price/g, /full\s+price/g]],
+    ["deposit", [/มัดจำ/g, /deposit/g]],
+    ["balance", [/ชำระหน้างาน/g, /จ่ายหน้างาน/g, /คงเหลือ/g, /ยอดคงเหลือ/g, /balance\s+due/g, /remaining/g]],
+    ["internal_balance", [/เราค้าง/g, /mmd\s+owes/g, /we\s+owe/g, /ค้างโมเดล/g, /ค้างให้/g]],
+  ];
+  let closest = { role: "", index: -1 };
+  for (const [role, patterns] of roles) {
+    for (const pattern of patterns) {
+      for (const match of linePrefix.matchAll(pattern)) {
+        if (match.index > closest.index) closest = { role, index: match.index };
+      }
+    }
+  }
+  if (closest.role) return closest.role;
   return "service_amount";
 }
 
@@ -273,9 +291,10 @@ function parseHistoricalNote(note) {
   const serviceAmount = cancellation.cancelled ? 0 : reconciliation.amount;
   const pointsEligibleAmount = serviceAmount;
   const pointsIneligibleAmount = tipAmountMmd + tipAmountDirect + membershipFeeAmount + renewalFeeAmount + unknownAmount;
-  const proposedPoints = pointsEligibleAmount / POINT_RATE_THB;
+  const proposedPoints = Math.floor(pointsEligibleAmount / POINT_RATE_THB);
 
   if (unknownAmount > 0 && !cancellation.cancelled) warnings.push("ambiguous_amount_requires_review");
+  if (cancellation.ambiguous) warnings.push("cancellation_status_review_required");
   if (reconciliation.reviewRequired) warnings.push("service_amount_reconciliation_required");
   if (membershipFeeAmount > 0) warnings.push("membership_fee_not_auto_counted");
   if (renewalFeeAmount > 0) warnings.push("renewal_fee_not_auto_counted");
@@ -286,7 +305,7 @@ function parseHistoricalNote(note) {
   const pointsReviewRequired = warnings.length > 0;
   const historicalServiceStatus = cancellation.cancelled
     ? "cancelled"
-    : reconciliation.reviewRequired
+    : cancellation.ambiguous || reconciliation.reviewRequired
       ? "review_required"
       : serviceAmount > 0
         ? "completed"
@@ -308,6 +327,7 @@ function parseHistoricalNote(note) {
     promotion_bonus_candidate: promotionBonusCandidate,
     cancellation: {
       cancelled: cancellation.cancelled,
+      ambiguous: cancellation.ambiguous,
       evidence: cancellation.evidence,
     },
     reconciliation: {

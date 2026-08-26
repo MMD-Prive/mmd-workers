@@ -156,7 +156,9 @@ function redactDebugFieldValue(key, value) {
   if (value === null || value === "") return value;
   if (typeof value === "boolean" || typeof value === "number") return value;
   if (Array.isArray(value)) return value.length ? `[redacted_array:${value.length}]` : [];
-  if (lowerKey.endsWith("_json") || lowerKey.includes("raw") || lowerKey.includes("note")) return "[redacted]";
+  if (lowerKey.endsWith("_json") || lowerKey.includes("raw") || lowerKey.includes("note")) {
+    return "[redacted]";
+  }
   if (
     lowerKey.includes("email") ||
     lowerKey.includes("phone") ||
@@ -164,13 +166,17 @@ function redactDebugFieldValue(key, value) {
     lowerKey.includes("user") ||
     lowerKey.includes("client") ||
     lowerKey.includes("customer")
-  ) return "[redacted]";
+  ) {
+    return "[redacted]";
+  }
   return clean(value).slice(0, 120);
 }
 
 function redactDebugFields(fields) {
   const out = {};
-  for (const [key, value] of Object.entries(fields || {})) out[key] = redactDebugFieldValue(key, value);
+  for (const [key, value] of Object.entries(fields || {})) {
+    out[key] = redactDebugFieldValue(key, value);
+  }
   return out;
 }
 
@@ -203,7 +209,10 @@ function safeImportToken(value) {
 }
 
 function deriveLegacyTagsLabel(legacyTags) {
-  return clean(legacyTags).replace(/#[a-z0-9_ก-๙]+/gi, " ").replace(/\s+/g, " ").trim();
+  return clean(legacyTags)
+    .replace(/#[a-z0-9_ก-๙]+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function encodeFormulaValue(value) {
@@ -281,7 +290,10 @@ class AirtableClient {
 
   async requestBatchWithFieldFallback(table, init) {
     const body = { ...(init.body || {}) };
-    const records = (body.records || []).map((record) => ({ ...(record.id ? { id: record.id } : {}), fields: { ...(record.fields || {}) } }));
+    const records = (body.records || []).map((record) => ({
+      ...(record.id ? { id: record.id } : {}),
+      fields: { ...(record.fields || {}) },
+    }));
     while (true) {
       try {
         return await this.request(table, { ...init, body: { ...body, records } });
@@ -320,7 +332,13 @@ class AirtableClient {
     const records = [];
     let offset = "";
     do {
-      const data = await this.request(table, { query: { pageSize: "100", ...query, ...(offset ? { offset } : {}) } });
+      const data = await this.request(table, {
+        query: {
+          pageSize: "100",
+          ...query,
+          ...(offset ? { offset } : {}),
+        },
+      });
       records.push(...(data.records || []));
       offset = data.offset || "";
     } while (offset);
@@ -337,7 +355,9 @@ async function matchClients(airtable, parsed, rawRow, { allowUsernameExact = tru
   const candidates = [];
   const add = (records, reason) => {
     for (const record of records) {
-      if (!candidates.some((item) => item.record.id === record.id && item.reason === reason)) candidates.push({ reason, record });
+      if (!candidates.some((item) => item.record.id === record.id && item.reason === reason)) {
+        candidates.push({ reason, record });
+      }
     }
   };
 
@@ -351,19 +371,24 @@ async function matchClients(airtable, parsed, rawRow, { allowUsernameExact = tru
   const phone = normalizePhone(pick(rawRow, ["phone", "Phone Number", "phone_number", "tel", "member_phone"]));
   if (phone) {
     if (!cache.clientsForPhoneMatch) cache.clientsForPhoneMatch = cache.clientsAll || await airtable.list(CLIENTS_TABLE);
-    add(cache.clientsForPhoneMatch.filter((record) => normalizePhone(record.fields?.["Phone Number"] || record.fields?.phone) === phone), "phone");
+    const all = cache.clientsForPhoneMatch;
+    add(all.filter((record) => normalizePhone(record.fields?.["Phone Number"] || record.fields?.phone) === phone), "phone");
   }
 
   const email = normalizeEmail(pick(rawRow, ["email", "Contact Email", "primary_email", "member_email"]));
   if (email) {
-    add(cache.clientsAll ? cache.clientsAll.filter((record) => normalizeEmail(record.fields?.["Contact Email"] || record.fields?.email) === email) : await airtable.list(CLIENTS_TABLE, {
+    add(cache.clientsAll ? cache.clientsAll.filter((record) => {
+      return normalizeEmail(record.fields?.["Contact Email"] || record.fields?.email) === email;
+    }) : await airtable.list(CLIENTS_TABLE, {
       filterByFormula: `OR(LOWER({Contact Email})="${encodeFormulaValue(email)}",LOWER({email})="${encodeFormulaValue(email)}")`,
     }).catch(() => []), "email");
   }
 
   const username = clean(parsed.username_candidate);
   if (allowUsernameExact && username) {
-    add(cache.clientsAll ? cache.clientsAll.filter((record) => normalizeEmail(record.fields?.line_id || record.fields?.username) === username.toLowerCase()) : await airtable.list(CLIENTS_TABLE, {
+    add(cache.clientsAll ? cache.clientsAll.filter((record) => {
+      return normalizeEmail(record.fields?.line_id || record.fields?.username) === username.toLowerCase();
+    }) : await airtable.list(CLIENTS_TABLE, {
       filterByFormula: `OR(LOWER({line_id}&"")="${encodeFormulaValue(username.toLowerCase())}",LOWER({username}&"")="${encodeFormulaValue(username.toLowerCase())}")`,
     }).catch(() => []), "username");
   }
@@ -372,7 +397,11 @@ async function matchClients(airtable, parsed, rawRow, { allowUsernameExact = tru
     const name = encodeFormulaValue(parsed.normalized_name.toLowerCase());
     add(cache.clientsAll ? cache.clientsAll.filter((record) => {
       const fields = record.fields || {};
-      return [fields["Client Name"], fields.nickname, fields.line_display_name].some((value) => normalizeEmail(value).includes(name));
+      return [
+        fields["Client Name"],
+        fields.nickname,
+        fields.line_display_name,
+      ].some((value) => normalizeEmail(value).includes(name));
     }) : await airtable.list(CLIENTS_TABLE, {
       maxRecords: "10",
       filterByFormula: `OR(FIND("${name}",LOWER({Client Name}&""))>0,FIND("${name}",LOWER({nickname}&""))>0,FIND("${name}",LOWER({line_display_name}&""))>0)`,
@@ -382,7 +411,9 @@ async function matchClients(airtable, parsed, rawRow, { allowUsernameExact = tru
   const strong = candidates.filter((item) => ["line_user_id", "phone", "email", "username"].includes(item.reason));
   const uniqueStrongIds = Array.from(new Set(strong.map((item) => item.record.id)));
   const uniqueCandidateIds = Array.from(new Set(candidates.map((item) => item.record.id)));
-  if (uniqueCandidateIds.length > 1) return { matchedClient: "", matchType: "multiple_candidates", matchConfidence: 0.5, reviewStatus: "review_required", candidates };
+  if (uniqueCandidateIds.length > 1) {
+    return { matchedClient: "", matchType: "multiple_candidates", matchConfidence: 0.5, reviewStatus: "review_required", candidates };
+  }
   if (uniqueStrongIds.length === 1) {
     const selected = strong.find((item) => item.record.id === uniqueStrongIds[0]);
     return {
@@ -393,8 +424,12 @@ async function matchClients(airtable, parsed, rawRow, { allowUsernameExact = tru
       candidates,
     };
   }
-  if (uniqueStrongIds.length > 1) return { matchedClient: "", matchType: "multiple_candidates", matchConfidence: 0.5, reviewStatus: "review_required", candidates };
-  if (candidates.length) return { matchedClient: "", matchType: "fuzzy_name", matchConfidence: 0.35, reviewStatus: "review_required", candidates };
+  if (uniqueStrongIds.length > 1) {
+    return { matchedClient: "", matchType: "multiple_candidates", matchConfidence: 0.5, reviewStatus: "review_required", candidates };
+  }
+  if (candidates.length) {
+    return { matchedClient: "", matchType: "fuzzy_name", matchConfidence: 0.35, reviewStatus: "review_required", candidates };
+  }
   return { matchedClient: "", matchType: "no_match", matchConfidence: 0, reviewStatus: "staging_only", candidates };
 }
 
@@ -490,9 +525,16 @@ function buildStagingFields({ row, rowIndex, sourceFile, batchId, parsed, match 
 async function writeStaging(airtable, fields) {
   const existing = await airtable.findOne(STAGING_TABLE, `{import_id}="${encodeFormulaValue(fields.import_id)}"`);
   if (existing?.id) {
-    return airtable.requestWithFieldFallback(STAGING_TABLE, { method: "PATCH", recordId: existing.id, body: { fields } });
+    return airtable.requestWithFieldFallback(STAGING_TABLE, {
+      method: "PATCH",
+      recordId: existing.id,
+      body: { fields },
+    });
   }
-  return airtable.requestWithFieldFallback(STAGING_TABLE, { method: "POST", body: { fields } });
+  return airtable.requestWithFieldFallback(STAGING_TABLE, {
+    method: "POST",
+    body: { fields },
+  });
 }
 
 function chunks(items, size) {
@@ -527,7 +569,9 @@ async function writeStagingRows(airtable, fieldsList, batchId) {
     return written;
   }
 
-  const existing = await airtable.list(STAGING_TABLE, { filterByFormula: `{import_batch_id}="${encodeFormulaValue(batchId)}"` });
+  const existing = await airtable.list(STAGING_TABLE, {
+    filterByFormula: `{import_batch_id}="${encodeFormulaValue(batchId)}"`,
+  });
   const existingByImportId = new Map(existing.map((record) => [clean(record.fields?.import_id), record.id]));
   const written = Array(fieldsList.length);
   const creates = [];
@@ -539,71 +583,171 @@ async function writeStagingRows(airtable, fieldsList, batchId) {
   });
 
   for (const group of chunks(creates, 10)) {
-    const data = await airtable.requestBatchWithFieldFallback(STAGING_TABLE, { method: "POST", body: { records: group.map((item) => ({ fields: item.fields })) } });
-    (data.records || []).forEach((record, index) => { written[group[index].index] = record; });
+    const data = await airtable.requestBatchWithFieldFallback(STAGING_TABLE, {
+      method: "POST",
+      body: { records: group.map((item) => ({ fields: item.fields })) },
+    });
+    (data.records || []).forEach((record, index) => {
+      written[group[index].index] = record;
+    });
   }
 
   for (const group of chunks(updates, 10)) {
-    const data = await airtable.requestBatchWithFieldFallback(STAGING_TABLE, { method: "PATCH", body: { records: group.map((item) => ({ id: item.id, fields: item.fields })) } });
-    (data.records || []).forEach((record, index) => { written[group[index].index] = record; });
+    const data = await airtable.requestBatchWithFieldFallback(STAGING_TABLE, {
+      method: "PATCH",
+      body: { records: group.map((item) => ({ id: item.id, fields: item.fields })) },
+    });
+    (data.records || []).forEach((record, index) => {
+      written[group[index].index] = record;
+    });
   }
 
   return written;
 }
 
 function normalizeConsoleInboxRecord(record, index) {
-  const fields = record.fields || {};
-  const inboxId = clean(fields.inbox_id || record.id || `row_${index + 1}`);
-  const rawAdminNote = String(fields.admin_note == null ? "" : fields.admin_note);
-  const rawPayload = String(fields.payload_json == null ? "" : fields.payload_json);
-  return {
+  const fields = record?.fields ? record.fields : record;
+  const inboxId = pick(fields, ["inbox_id"]) || record?.id || `${index + 1}`;
+  const legacyTags = pick(fields, ["legacy_tags"]);
+  const memberName = pick(fields, ["member_name"]);
+  const explicitRenamedName = pick(fields, ["line_renamed_name"]);
+  const legacyLabel = deriveLegacyTagsLabel(legacyTags);
+  const lineRenamedName = explicitRenamedName || memberName || legacyLabel;
+  const row = {
     __row: index + 1,
-    __import_id: `line_ofc_console_${safeImportToken(inboxId)}`,
+    __record_id: record?.id || "",
+    __source: "console-inbox",
     __source_file_title: CONSOLE_INBOX_SOURCE_TITLE,
-    __raw_row_redacted: {
-      inbox_id: inboxId,
-      source: clean(fields.source),
-      intent: clean(fields.intent),
-      member_name: clean(fields.member_name),
-      member_email: fields.member_email ? "[redacted]" : "",
-      member_phone: fields.member_phone ? "[redacted]" : "",
-      memberstack_id: clean(fields.memberstack_id),
-      telegram_id: clean(fields.telegram_id),
-      telegram_username: clean(fields.telegram_username),
-      line_user_id: clean(fields.line_user_id),
-      line_id: clean(fields.line_id),
-      legacy_tags: clean(fields.legacy_tags),
-      admin_note: rawAdminNote,
-      payload_json: rawPayload ? "[redacted_payload_json]" : "",
-      status: clean(fields.status),
-    },
-    line_user_id: clean(fields.line_user_id),
-    line_display_name: clean(fields.member_name || deriveLegacyTagsLabel(fields.legacy_tags)),
-    line_renamed_name: clean(fields.member_name || deriveLegacyTagsLabel(fields.legacy_tags)),
-    tags: clean(fields.legacy_tags),
-    member_email: clean(fields.member_email),
-    member_phone: clean(fields.member_phone),
-    line_id: clean(fields.line_id),
-    raw_note: rawAdminNote,
+    __import_id: `line_ofc_console_${safeImportToken(inboxId)}`,
+    __line_renamed_name_source: explicitRenamedName ? "line_renamed_name" : memberName ? "member_name" : legacyLabel ? "legacy_tags" : "missing",
+    inbox_id: inboxId,
+    member_name: memberName,
+    member_email: pick(fields, ["member_email"]),
+    member_phone: pick(fields, ["member_phone"]),
+    line_user_id: pick(fields, ["line_user_id"]),
+    line_id: pick(fields, ["line_id"]),
+    legacy_tags: legacyTags,
+    admin_note: pick(fields, ["admin_note"]),
+    payload_json: pick(fields, ["payload_json"]),
+    canonical_client: pick(fields, ["Canonical Client", "canonical_client"]),
+    line_display_name: memberName,
+    line_renamed_name: lineRenamedName,
+    line_tags_raw: legacyTags,
+    username: pick(fields, ["line_id"]),
+    email: pick(fields, ["member_email"]),
+    phone: pick(fields, ["member_phone"]),
   };
+  row.__raw_row_redacted = redactSourceRow({
+    inbox_id: row.inbox_id,
+    record_id: row.__record_id,
+    member_name: row.member_name,
+    member_email: row.member_email,
+    member_phone: row.member_phone,
+    line_user_id: row.line_user_id,
+    line_id: row.line_id,
+    legacy_tags: row.legacy_tags,
+    admin_note: row.admin_note,
+    payload_json: row.payload_json,
+    canonical_client: row.canonical_client,
+    line_renamed_name_source: row.__line_renamed_name_source,
+  });
+  return row;
 }
 
-async function loadConsoleInboxRows(airtable) {
+async function readConsoleInboxRows(airtable) {
   const records = await airtable.list(CONSOLE_INBOX_TABLE);
   return records.map(normalizeConsoleInboxRecord);
 }
 
-async function importRows({ rows, sourceFile = CONSOLE_INBOX_SOURCE_TITLE, batchId, airtable = new AirtableClient() }) {
-  const resolvedBatchId = batchId || `line_ofc_${new Date().toISOString().slice(0, 10).replace(/-/g, "")}`;
-  const cache = { clientsAll: await airtable.list(CLIENTS_TABLE) };
-  const stagedFields = [];
+function applyConsoleInboxParseGuard(parsed, row) {
+  if (row.__source !== "console-inbox" || row.__line_renamed_name_source === "line_renamed_name") return parsed;
+  const warnings = [...(parsed.parse_warnings || []), `line_renamed_name_fallback:${row.__line_renamed_name_source}`];
+  const confidenceCap = row.__line_renamed_name_source === "member_name" ? 0.72 : 0.45;
+  return {
+    ...parsed,
+    parse_confidence: Math.min(parsed.parse_confidence, confidenceCap),
+    parse_warnings: Array.from(new Set(warnings)),
+  };
+}
+
+async function loadRows({ source, file, airtable }) {
+  if (source === "console-inbox") return readConsoleInboxRows(airtable);
+  if (!file) throw new Error("missing_file");
+  return readRows(file);
+}
+
+async function runDryRunImport({
+  file,
+  source = "file",
+  batchId = `line_ofc_${source === "console-inbox" ? "console_" : ""}${Date.now().toString(36)}`,
+  airtable = new AirtableClient(),
+}) {
+  if (!["file", "console-inbox"].includes(source)) throw new Error(`unsupported_source:${source}`);
+  const rows = await loadRows({ source, file, airtable });
+  const matchCache = {};
+  if (source === "console-inbox") {
+    matchCache.clientsAll = await airtable.list(CLIENTS_TABLE);
+    matchCache.clientsForPhoneMatch = matchCache.clientsAll;
+  }
+  const pending = [];
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
-    const parsed = parseCanonicalLineOfc(row);
-    const match = await matchClients(airtable, parsed, row, { cache });
-    stagedFields.push(buildStagingFields({ row, rowIndex: index, sourceFile, batchId: resolvedBatchId, parsed, match }));
+    if (process.env.LINE_OFC_PROGRESS === "1") {
+      console.error(JSON.stringify({
+        progress: "line_ofc_console_dry_run",
+        row: index + 1,
+        total: rows.length,
+        import_id: row.__import_id || `line_ofc_${batchId}_${row.__row || index + 1}`,
+      }));
+    }
+    const parsed = applyConsoleInboxParseGuard(parseCanonicalLineOfc({
+      nickname: pick(row, ["nickname", "label", "display_label", "rename", "name", "display name", "customer"]),
+      line_renamed_name: pick(row, ["line_renamed_name", "rename", "label", "display_label", "nickname"]),
+      line_display_name: pick(row, ["line_display_name", "display_name", "display name"]),
+      line_user_id: pick(row, ["line_user_id", "line user id", "userId", "user_id"]),
+      username: pick(row, ["username", "line_id", "line id", "handle"]),
+      email: pick(row, ["email", "Contact Email", "primary_email", "member_email"]),
+      phone: pick(row, ["phone", "Phone Number", "phone_number", "tel", "member_phone"]),
+      tags: pick(row, ["line_tags_raw", "tags", "tag", "hashtags", "legacy_tags"]),
+      note: pick(row, ["note", "notes", "memo", "description"]),
+      raw_note: pick(row, ["raw_note", "note", "notes", "memo", "description", "admin_note"]),
+    }), row);
+    const match = await matchClients(airtable, parsed, row, {
+      allowUsernameExact: source !== "console-inbox",
+      cache: matchCache,
+    });
+    const fields = buildStagingFields({ row, rowIndex: index, sourceFile: file, batchId, parsed, match });
+    pending.push({
+      fields,
+      match,
+      parsed,
+    });
   }
-  return writeStagingRows(airtable, stagedFields, resolvedBatchId);
+
+  let stagingRows;
+  try {
+    stagingRows = await writeStagingRows(airtable, pending.map((item) => item.fields), batchId);
+  } catch (error) {
+    error.stagingRowsWrittenBeforeFailure = 0;
+    error.failingImportId = pending[0]?.fields?.import_id || "";
+    error.failingFields = pending[0]?.fields || {};
+    throw error;
+  }
+
+  const results = pending.map((item, index) => {
+    const staging = stagingRows[index] || {};
+    return {
+      import_id: item.fields.import_id,
+      staging_record_id: staging.id,
+      match_type: item.match.matchType,
+      review_status: item.match.reviewStatus,
+      parsed_membership_status: item.parsed.membership_status,
+      parsed_client_level: item.parsed.client_level,
+      parsed_membership_tier: item.parsed.membership_tier,
+      parsed_membership_package: item.parsed.membership_package,
+    };
+  });
+  return { ok: true, mode: "line_ofc_dry_run_import", source, batch_id: batchId, count: rows.length, results };
 }
 
 async function main() {
@@ -613,21 +757,17 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  const airtable = new AirtableClient();
-  const rows = args.source === "console-inbox" ? await loadConsoleInboxRows(airtable) : readRows(args.file);
-  const sourceFile = args.source === "console-inbox" ? CONSOLE_INBOX_SOURCE_TITLE : args.file;
-  try {
-    const written = await importRows({ rows, sourceFile, batchId: args.batchId, airtable });
-    process.stdout.write(`${JSON.stringify({ mode: "dry_run", source: sourceFile, rows: rows.length, staged: written.length }, null, 2)}\n`);
-  } catch (error) {
-    process.stderr.write(`${JSON.stringify(buildDebugError(error), null, 2)}\n`);
-    process.exitCode = 1;
-  }
+  const result = await runDryRunImport({ file: args.file, source: args.source || "file", batchId: args.batchId });
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
 if (require.main === module) {
   main().catch((error) => {
-    process.stderr.write(`${JSON.stringify(buildDebugError(error), null, 2)}\n`);
+    if (process.env.LINE_OFC_DEBUG_AIRTABLE_ERROR === "1") {
+      console.error(JSON.stringify(buildDebugError(error), null, 2));
+    } else {
+      console.error(error instanceof Error ? error.message : String(error));
+    }
     process.exitCode = 1;
   });
 }
@@ -635,19 +775,15 @@ if (require.main === module) {
 module.exports = {
   AirtableClient,
   BLOCKED_FIELDS,
-  CONSOLE_INBOX_SOURCE_TITLE,
-  buildDebugError,
+  CONSOLE_INBOX_TABLE,
   buildStagingFields,
+  buildDebugError,
   duplicateImportIds,
-  importRows,
-  loadConsoleInboxRows,
   matchClients,
   normalizeConsoleInboxRecord,
   normalizeEmail,
   normalizePhone,
   parseArgs,
-  parseCsv,
   readRows,
-  redactSourceRow,
-  writeStagingRows,
+  runDryRunImport,
 };

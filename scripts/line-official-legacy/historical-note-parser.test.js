@@ -84,6 +84,43 @@ test("English cancellation wording records cancelled", () => {
   assert.equal(parsed.proposed_points, 0);
 });
 
+test("all locked cancellation variants exclude service spend", () => {
+  for (const wording of [
+    "Cancel",
+    "Cancelled",
+    "Canceled",
+    "ยกเลิก",
+    "ยกเลิกงาน",
+    "งานยกเลิก",
+    "ขอยกเลิกงาน",
+    "ลูกค้ายกเลิก",
+    "ไม่เกิดงาน",
+    "ไม่ได้เกิดงาน",
+    "ไม่ได้รับงาน",
+  ]) {
+    const parsed = parseHistoricalNote(`Booking service 25,000 THB มัดจำ 7,500 THB balance 17,500 THB ${wording}`);
+    assert.equal(parsed.historical_service_status, "cancelled", wording);
+    assert.equal(parsed.reconciled_service_amount, 0, wording);
+    assert.equal(parsed.points_eligible_amount, 0, wording);
+    assert.equal(parsed.proposed_points, 0, wording);
+    assert.equal(parsed.reconciliation_basis, "cancelled_zero", wording);
+  }
+});
+
+test("ambiguous cancellation wording fails closed to review", () => {
+  const parsed = parseHistoricalNote("Booking service 10,000 THB ยังไม่แน่ใจว่าจะยกเลิกงานไหม");
+  assert.equal(parsed.historical_service_status, "review_required");
+  assert.equal(parsed.points_review_required, true);
+  assert.ok(parsed.points_parse_warnings.includes("cancellation_status_review_required"));
+});
+
+test("points use floor rounding at locked 100 THB rate", () => {
+  for (const [amount, expected] of [[690, 6], [1499, 14], [14999, 149], [22500, 225]]) {
+    const parsed = parseHistoricalNote(`Booking service ${amount.toLocaleString("en-US")} THB`);
+    assert.equal(parsed.proposed_points, expected, String(amount));
+  }
+});
+
 test("renewal fee note is review-required and creates no points", () => {
   const parsed = parseHistoricalNote("Renewal fee 3,000 THB paid");
   assert.equal(parsed.renewal_fee_amount, 3000);
