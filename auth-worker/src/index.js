@@ -8,6 +8,8 @@
 //   POST /v1/auth/logout
 //   POST /v1/admin/access/grant
 
+import { buildCustomer360MemberProfile } from "./customer-360-resolver.js";
+
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://mmdbkk.com",
   "https://mmdprive.webflow.io",
@@ -318,41 +320,15 @@ async function handleInternalMemberProfileRead(request, env) {
 
 async function buildLiffMemberProfile(env, memberRecord, lineUserId) {
   const fields = memberRecord.fields || {};
-  const email = normalizeEmail(fields.email || fields[env.AIRTABLE_MEMBERS_EMAIL_FIELD || "Contact Email"] || "");
-  const memberId = String(fields.member_id || "").trim();
-  const cutoff = memberHistoryCutoff();
-  const membershipStatus = normalizeCustomerMembershipStatus(fields[env.AIRTABLE_MEMBERS_STATUS_FIELD || "Membership Status"]);
-  const [sessions, packageResult, pointsResult, payment] = await Promise.all([
-    listMemberServiceHistory(env, { lineUserId, email, cutoff }),
-    listMemberPackageHistory(env, { email, cutoff, membershipStatus }),
-    listMemberPointsLedger(env, { email, cutoff }),
-    listMemberPaymentHistory(env, { email, cutoff }),
-  ]);
-  const history = [...sessions, ...packageResult.history, ...pointsResult.history]
-    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
-    .slice(0, MEMBER_HISTORY_MAX_ITEMS);
-
-  const profile = {
-    display_name: safeCustomerText(
-      fields[env.AIRTABLE_MEMBERS_DISPLAY_NAME_FIELD || "Full Name (Display)"]
-        || fields[env.AIRTABLE_MEMBERS_NAME_FIELD || "Full Name"]
-        || fields.name,
-      120,
-    ) || "สมาชิก MMD",
-    tier: normalizeCustomerTier(fields[env.AIRTABLE_MEMBERS_TIER_FIELD || "Membership Tier"]),
-    membership_status: membershipStatus,
-    points: pointsResult.total,
-    points_records_count: pointsResult.records_count,
-    payment_status: payment.status,
-    payment_history: payment.history,
-    history_window: { from: cutoff, to: bangkokCalendarDate(), timezone: "Asia/Bangkok" },
-    history,
-  };
-  if (packageResult.membership_expires_at) profile.membership_expires_at = packageResult.membership_expires_at;
-
+  const profile = await buildCustomer360MemberProfile({
+    env,
+    memberFields: fields,
+    lineUserId,
+    listRecords: (key, params) => airtableList(env, table(env, key), params),
+  });
   return {
     member_exists: true,
-    member_id: memberId,
+    member_id: String(fields.member_id || "").trim(),
     profile,
   };
 }

@@ -3,6 +3,7 @@ import { CareBackStoreError, getCareBackStore } from "./care-back-claim-store.js
 import { assertBirthdayWishOwnership, BirthdayWishStorageError, getBirthdayWishStore } from "./care-back-birthday-wish-store.js";
 import { PUBLIC_JSON_BODY_MAX_BYTES, readBoundedJsonObject } from "./bounded-json.js";
 import { createOrLoadBirthdayWishThroughCoordinator, getBirthdayWishCoordinatorState } from "./care-back-birthday-wish-coordinator.js";
+import { serializeCustomer360Profile } from "./customer-360-serializer.js";
 import legacyWorker from "./legacy-member-pages.js";
 
 const WORKER = "member-pages-worker";
@@ -1686,50 +1687,7 @@ function careBackWishResponse(state, wish, claim) {
   return response;
 }
 
-function safeMemberProfile(input = {}) {
-  const history = Array.isArray(input.history) ? input.history.slice(0, 50).map((item) => {
-    const type = ["service", "membership", "points"].includes(item?.type) ? item.type : "";
-    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(item?.date || "")) ? String(item.date) : "";
-    if (!type || !date) return null;
-    const safe = {
-      type,
-      date,
-      title: String(item.title || "MMD activity").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 80),
-      status: String(item.status || "").replace(/[^a-z_]/g, "").slice(0, 32),
-    };
-    if (type === "points" && Number.isFinite(Number(item.points_delta))) safe.points_delta = Math.trunc(Number(item.points_delta));
-    return safe;
-  }).filter(Boolean) : [];
-  const from = /^\d{4}-\d{2}-\d{2}$/.test(String(input.history_window?.from || "")) ? String(input.history_window.from) : "";
-  const to = /^\d{4}-\d{2}-\d{2}$/.test(String(input.history_window?.to || "")) ? String(input.history_window.to) : "";
-  const paymentHistory = Array.isArray(input.payment_history) ? input.payment_history.slice(0, 20).map((item) => {
-    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(item?.date || "")) ? String(item.date) : "";
-    const status = ["verified", "settled", "completed"].includes(String(item?.status || "")) ? String(item.status) : "";
-    if (!date || !status) return null;
-    return {
-      date,
-      title: String(item.title || "Payment history").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 80),
-      status,
-    };
-  }).filter(Boolean) : [];
-  const pointsRecordsCount = Number(input.points_records_count);
-  const profile = {
-    display_name: String(input.display_name || "สมาชิก MMD").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 120),
-    tier: ["Member", "Standard", "Premium", "VIP", "SVIP", "Black Card"].includes(input.tier) ? input.tier : "Member",
-    membership_status: ["active", "grace", "expired", "under_review"].includes(input.membership_status) ? input.membership_status : "under_review",
-    payment_status: ["verified", "pending_review", "unavailable"].includes(input.payment_status) ? input.payment_status : "unavailable",
-    points: Number.isFinite(Number(input.points)) && Number(input.points) >= 0 ? Math.trunc(Number(input.points)) : 0,
-    points_records_count: Number.isInteger(pointsRecordsCount) && pointsRecordsCount >= 0 ? pointsRecordsCount : null,
-    payment_history: paymentHistory,
-    history_window: { from, to, timezone: "Asia/Bangkok" },
-    history,
-  };
-  const membershipExpiresAt = strictMemberCalendarDate(input.membership_expires_at);
-  if (["active", "grace"].includes(profile.membership_status) && membershipExpiresAt) {
-    profile.membership_expires_at = membershipExpiresAt;
-  }
-  return profile;
-}
+function safeMemberProfile(input = {}) { return serializeCustomer360Profile(input); }
 
 function strictMemberCalendarDate(value) {
   const text = String(value || "").trim();
