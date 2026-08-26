@@ -6,6 +6,9 @@ const { parseHistoricalNote } = require("./historical-note-parser.js");
 test("service purchase amount creates proposed_points", () => {
   const parsed = parseHistoricalNote("Service purchase 12,000 THB on 12/05/2024 ref ABCD1234");
   assert.equal(parsed.service_amount, 12000);
+  assert.equal(parsed.reconciled_service_amount, 12000);
+  assert.equal(parsed.reconciliation_basis, "single_service_amount");
+  assert.equal(parsed.historical_service_status, "completed");
   assert.equal(parsed.points_eligible_amount, 12000);
   assert.equal(parsed.proposed_points, 120);
   assert.equal(parsed.points_review_required, false);
@@ -32,6 +35,53 @@ test("service plus tip counts only service amount", () => {
   assert.equal(parsed.tip_amount_mmd, 1000);
   assert.equal(parsed.points_eligible_amount, 10000);
   assert.equal(parsed.proposed_points, 100);
+});
+
+test("explicit final total wins over gross price, deposit and balance", () => {
+  const parsed = parseHistoricalNote([
+    "🎯 MMD Confirmation",
+    "💵 ยอดรวม: 22,500฿",
+    "• Discount 10% From 25,000฿",
+    "• มัดจำ 6,750฿ เราค้าง3,000฿",
+    "• ชำระหน้างาน 15,750฿",
+  ].join("\n"));
+  assert.equal(parsed.reconciled_service_amount, 22500);
+  assert.equal(parsed.service_amount, 22500);
+  assert.equal(parsed.reconciliation_basis, "explicit_final_total");
+  assert.equal(parsed.proposed_points, 225);
+  assert.equal(parsed.historical_service_status, "completed");
+});
+
+test("deposit plus remaining balance is used only when no final total exists", () => {
+  const parsed = parseHistoricalNote("Booking service มัดจำ 6,750 บาท และชำระหน้างาน 15,750 บาท");
+  assert.equal(parsed.reconciled_service_amount, 22500);
+  assert.equal(parsed.reconciliation_basis, "deposit_plus_balance");
+  assert.equal(parsed.proposed_points, 225);
+});
+
+test("Thai cancellation wording records cancelled and zero points", () => {
+  const parsed = parseHistoricalNote("ไม่ได้รับงานค่ะ ขอยกเลิกงานค่ะ");
+  assert.equal(parsed.historical_service_status, "cancelled");
+  assert.equal(parsed.reconciled_service_amount, 0);
+  assert.equal(parsed.service_amount, 0);
+  assert.equal(parsed.proposed_points, 0);
+  assert.equal(parsed.reconciliation_basis, "cancelled_zero");
+  assert.match(parsed.cancellation_evidence, /ยกเลิกงาน/);
+  assert.equal(parsed.points_review_required, false);
+});
+
+test("cancellation wins even when payment amounts appear in the note", () => {
+  const parsed = parseHistoricalNote("Booking service 10,000 THB deposit 3,000 THB ลูกค้ายกเลิกงาน");
+  assert.equal(parsed.historical_service_status, "cancelled");
+  assert.equal(parsed.reconciled_service_amount, 0);
+  assert.equal(parsed.points_eligible_amount, 0);
+  assert.equal(parsed.proposed_points, 0);
+});
+
+test("English cancellation wording records cancelled", () => {
+  const parsed = parseHistoricalNote("Job cancelled by customer");
+  assert.equal(parsed.historical_service_status, "cancelled");
+  assert.equal(parsed.proposed_points, 0);
 });
 
 test("renewal fee note is review-required and creates no points", () => {
