@@ -22,7 +22,8 @@ const MEMBER_LIFF_PREFIX = "/member/api/liff/";
 const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const MEMBER_DASHBOARD_API_PATHS = new Set(["/api/member/dashboard", "/api/member/dashboard/"]);
 const MEMBER_LIFF_ID = "2010298002-mbx9kqQn";
-const MEMBER_LIFF_DASHBOARD_URL = "https://member-pages-worker.malemodel-bkk.workers.dev/member/liff";
+const MEMBER_SIGNUP_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup";
+const MEMBER_RENEWAL_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew";
 const LINE_RICH_MENU_SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const LINE_RICH_MENU_PUBLIC_WORLD_BASE_PATH = "/v1/internal/line/rich-menu/public-world";
 const LINE_RICH_MENU_DEFAULT_PATH = "/v1/internal/line/rich-menu/default";
@@ -289,6 +290,8 @@ export function inferLineIntent(text = "", event = {}) {
   if (isPerContinuityRequest(text) && /(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
   if (isPerContinuityRequest(text) && /(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
   if (isPerContinuityRequest(text)) return "per_continuity";
+  if (/^(?:อยาก|ขอ)?\s*สมัครสมาชิก(?:ครับ|ค่ะ|นะ)?$/i.test(normalized)) return "membership_signup";
+  if (/^(?:ขอ)?\s*ต่ออายุ(?:สมาชิก)?(?:ครับ|ค่ะ|นะ)?$/i.test(normalized)) return "membership_renewal";
   if (isKenjiLineCandidate(text)) return "talk_to_per_ai";
   const isCareBack = /(care\s*back|แคร์\s*แบ็ก|แคร์แบ็ก|6\s*years?|6th\s*anniversary|โปร(?:โมชัน|โมชั่น)?\s*6\s*ปี|phase\s*[12])/i.test(normalized);
   const isPersonalCareBackStatus = /(?:ผม|หนู|ฉัน|ของผม|ของหนู|ของฉัน).{0,16}(?:ได้|มี|เข้า|อยู่).{0,16}(?:180\s*วัน|90\s*วัน|150\s*(?:แต้ม|คะแนน|points?)|250\s*(?:แต้ม|คะแนน|points?)|350\s*(?:แต้ม|คะแนน|points?)|กี่วัน|กี่แต้ม|กี่คะแนน|เท่าไหร่|เท่าไร|กลุ่มไหน|สิทธิ์)|^(?:ผม|หนู|ฉัน)\s*(?:ได้|มี)\s*(?:อะไร|เท่าไหร่|เท่าไร)$|^(?:ของผม|ของหนู|ของฉัน).{0,12}(?:เข้าไหม|ได้ไหม|ได้หรือยัง|อยู่กลุ่มไหน)$/i.test(normalized);
@@ -601,15 +604,23 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "payment_status") {
-    return `ได้ครับ แต่ผมจะไม่ยืนยันจากข้อความอย่างเดียว เช็กสถานะรายการจริงใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → ${MEMBER_LIFF_DASHBOARD_URL}`;
+    return "ได้ครับ แต่ผมจะไม่ยืนยันการชำระจากข้อความหรือสลิปอย่างเดียว รายการต้องผ่านการตรวจสอบอย่างเป็นทางการของ MMD ก่อนครับ";
   }
 
   if (intent === "membership_status") {
-    return `เช็กสถานะสมาชิกของคุณใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → ${MEMBER_LIFF_DASHBOARD_URL}`;
+    return "ผมยังยืนยันสถานะ ระดับสมาชิก หรือวันหมดอายุจากข้อความนี้ไม่ได้ครับ ข้อมูลส่วนตัวต้องตรวจผ่าน My MMD ที่ยืนยันตัวตนสำเร็จก่อนครับ";
   }
 
   if (intent === "points_status") {
-    return `เช็กแต้มกับประวัติรายการของคุณใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → ${MEMBER_LIFF_DASHBOARD_URL}`;
+    return "ผมยังยืนยันยอดแต้มและประวัติรายการจากข้อความนี้ไม่ได้ครับ ต้องตรวจจากข้อมูลสมาชิกที่ยืนยันตัวตนและ Points Ledger ทางการก่อนครับ";
+  }
+
+  if (intent === "membership_signup") {
+    return `สมัครสมาชิกได้ที่นี่ครับ → ${MEMBER_SIGNUP_URL}`;
+  }
+
+  if (intent === "membership_renewal") {
+    return `เริ่มขั้นตอนต่ออายุสมาชิกได้ที่นี่ครับ → ${MEMBER_RENEWAL_URL}\n\nการต่ออายุและสถานะสมาชิกจะมีผลหลัง MMD ตรวจสอบการชำระและข้อมูลทางการเรียบร้อยแล้วครับ`;
   }
 
   if (intent === "points") {
