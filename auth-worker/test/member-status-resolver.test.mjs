@@ -8,9 +8,11 @@ const RESOLVER_SECRET = "test-only-member-status-resolver-secret-1234567890";
 const RESOLVER_URL = "https://mmd-auth-worker.internal/__internal/member-status/resolve";
 const PROFILE_URL = "https://mmd-auth-worker.internal/__internal/member-profile/read";
 const realFetch = globalThis.fetch;
+const realConsoleWarn = console.warn;
 
 afterEach(() => {
   globalThis.fetch = realFetch;
+  console.warn = realConsoleWarn;
 });
 
 function env(overrides = {}) {
@@ -29,6 +31,21 @@ function resolverRequest(body, { secret = RESOLVER_SECRET, contentType = "applic
   if (contentType) headers["content-type"] = contentType;
   if (secret) headers["x-mmd-member-resolver-secret"] = secret;
   return new Request(RESOLVER_URL, { method: "POST", headers, body: JSON.stringify(body) });
+}
+
+async function captureResolverFailure(run) {
+  const warnings = [];
+  console.warn = (...args) => warnings.push(args);
+  const response = await run();
+  const payload = await response.json();
+  assert.equal(response.status, 503);
+  assert.equal(payload.error.code, "MEMBER_STATUS_RESOLVER_UNAVAILABLE");
+  assert.equal(warnings.length, 1);
+  assert.equal(warnings[0].length, 1);
+  assert.equal(warnings[0][0].event, "member_status_resolver_failure");
+  assert.equal(warnings[0][0].stage, "airtable_members_lookup");
+  assert.deepEqual(Object.keys(warnings[0][0]).sort(), ["event", "failure_class", "stage"]);
+  return { payload, warning: warnings[0][0] };
 }
 
 test("member status resolver is not publicly callable", async () => {
@@ -202,4 +219,79 @@ test("member status resolver propagates caller cancellation to the Airtable look
   assert.equal(response.status, 503);
   assert.equal((await response.json()).error.code, "MEMBER_STATUS_RESOLVER_UNAVAILABLE");
   assert.equal(aborted, true);
+});
+
+test("member status resolver emits only allowlisted dependency failure classes", async () => {
+  const sensitive = "sensitive-line-query-token-base-record-member-data";
+  const cases = [
+    {
+      name: "missing config",
+      expected: "airtable_config_missing",
+      environment: env({ AIRTABLE_API_KEY: "" }),
+      fetch: async () => { throw new Error("fetch must not run"); },
+    },
+    ...[
+      [401, "airtable_http_401"],
+      [403, "airtable_http_403"],
+      [404, "airtable_http_404"],
+      [422, "airtable_http_422"],
+      [429, "airtable_http_429"],
+      [500, "airtable_http_5xx"],
+    ].map(([status, expected]) => ({
+      name: `Airtable HTTP ${status}`,
+      expected,
+      environment: env(),
+      fetch: async () => new Response(JSON.stringify({ error: sensitive }), { status }),
+    })),
+    {
+      name: "malformed Airtable response",
+      expected: "airtable_malformed",
+      environment: env(),
+      fetch: async () => Response.json({ records: sensitive }),
+    },
+    {
+      name: "fetch rejection",
+      expected: "airtable_fetch_error",
+      environment: env(),
+      fetch: async () => { throw new Error(sensitive); },
+    },
+  ];
+
+  for (const testCase of cases) {
+    globalThis.fetch = testCase.fetch;
+    const { payload, warning } = await captureResolverFailure(() => worker.fetch(
+      resolverRequest({ line_user_id: LINE_ID, purpose: "liff_identity_resolution" }),
+      testCase.environment,
+    ));
+    assert.equal(warning.failure_class, testCase.expected, testCase.name);
+    assert.doesNotMatch(JSON.stringify({ payload, warning }), new RegExp(sensitive));
+    assert.doesNotMatch(JSON.stringify({ payload, warning }), /Uaaaaaaaa|app_test|filterByFormula|Authorization/i);
+  }
+});
+
+test("member status resolver distinguishes internal timeout from caller abort without leaking request data", async () => {
+  globalThis.fetch = async (_input, init = {}) => new Promise((_resolve, reject) => {
+    if (init.signal.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    init.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+  });
+  let captured = await captureResolverFailure(() => worker.fetch(
+    resolverRequest({ line_user_id: LINE_ID, purpose: "liff_identity_resolution" }),
+    env({ MEMBER_STATUS_AIRTABLE_TIMEOUT_MS: "50" }),
+  ));
+  assert.equal(captured.warning.failure_class, "airtable_timeout");
+
+  const controller = new AbortController();
+  const pending = captureResolverFailure(() => worker.fetch(new Request(RESOLVER_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-mmd-member-resolver-secret": RESOLVER_SECRET },
+    body: JSON.stringify({ line_user_id: LINE_ID, purpose: "liff_identity_resolution" }),
+    signal: controller.signal,
+  }), env()));
+  controller.abort();
+  captured = await pending;
+  assert.equal(captured.warning.failure_class, "caller_abort");
+  assert.doesNotMatch(JSON.stringify(captured), /Uaaaaaaaa|test-only-member-status-resolver-secret|app_test/i);
 });
