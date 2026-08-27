@@ -132,11 +132,11 @@ test("payment proof routes safely without confirming funds", () => {
   assert.doesNotMatch(reply, /ชำระเงินสำเร็จ|approved/i);
 });
 
-test("canonical personal payment, membership, and points status route to LIFF deterministically", async () => {
+test("canonical personal payment, membership, and points status fail closed deterministically", async () => {
   const cases = [
-    ["ผมจ่ายแล้ว", "payment_status", "payment", /ไม่ยืนยันจากข้อความอย่างเดียว/],
-    ["สถานะผมเป็นยังไง", "membership_status", "membership", /เช็กสถานะสมาชิกของคุณ/],
-    ["แต้มเข้าไหม", "points_status", "points", /เช็กแต้มกับประวัติรายการของคุณ/],
+    ["ผมจ่ายแล้ว", "payment_status", "payment", /ไม่ยืนยันการชำระ/],
+    ["สถานะผมเป็นยังไง", "membership_status", "membership", /ยังยืนยันสถานะ/],
+    ["แต้มเข้าไหม", "points_status", "points", /ยังยืนยันยอดแต้ม/],
   ];
   for (const [text, intent, domain, replyPattern] of cases) {
     const event = lineTextEvent(text);
@@ -147,7 +147,7 @@ test("canonical personal payment, membership, and points status route to LIFF de
       LINE_KENJI_KNOWLEDGE_ENABLED: "false",
     });
     assert.match(decision.text, replyPattern, text);
-    assert.match(decision.text, /https:\/\/member-pages-worker\.malemodel-bkk\.workers\.dev\/member\/liff/, text);
+    assert.doesNotMatch(decision.text, /workers\.dev\/member\/liff/, text);
     assert.doesNotMatch(decision.text, /ชำระสำเร็จ|แต้มเข้าแล้ว|สมาชิก(?:ของคุณ)?ใช้งานอยู่/i, text);
     assert.equal(decision.reply_source, "system_truth", text);
     assert.equal(decision.model_attempted, false, text);
@@ -155,6 +155,43 @@ test("canonical personal payment, membership, and points status route to LIFF de
     assert.equal(capability.capability, "protected_authority", text);
     assert.equal(capability.requested_domain, domain, text);
     assert.equal(capability.requires_truth, true, text);
+  }
+});
+
+test("membership signup and renewal webhooks reply once without model use", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), init });
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    const cases = [
+      ["สมัครสมาชิก", "membership_signup", "intent=signup"],
+      ["อยากสมัครสมาชิก", "membership_signup", "intent=signup"],
+      ["ขอสมัครสมาชิก", "membership_signup", "intent=signup"],
+      ["ต่ออายุ", "membership_renewal", "intent=renew"],
+      ["ต่ออายุสมาชิก", "membership_renewal", "intent=renew"],
+      ["ขอต่ออายุสมาชิก", "membership_renewal", "intent=renew"],
+    ];
+    for (const [text, intent, query] of cases) {
+      calls.length = 0;
+      const event = lineTextEvent(text, { mode: "active", message: { id: `msg-${text}`, type: "text", text } });
+      assert.equal(inferLineIntent(text, event), intent, text);
+      const response = await worker.fetch(await signedLineRequest({ events: [event] }), {
+        ...BASE_ENV,
+        LINE_KENJI_MODEL_ENABLED: "false",
+        LINE_KENJI_KNOWLEDGE_ENABLED: "false",
+      });
+      assert.equal(response.status, 200, text);
+      assert.equal(calls.filter((call) => call.url.includes("/message/reply")).length, 1, text);
+      assert.equal(calls.filter((call) => call.url.includes("api.openai.com")).length, 0, text);
+      const replyBody = JSON.parse(calls.find((call) => call.url.includes("/message/reply")).init.body);
+      assert.equal(replyBody.messages.length, 1, text);
+      assert.match(replyBody.messages[0].text, new RegExp(`https://mmdbkk\\.com/sigil/member/membership\\?source=line&${query}`), text);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
 

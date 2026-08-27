@@ -32,7 +32,7 @@ const PUBLIC_KNOWLEDGE_INTENTS = new Set([
 
 const DETERMINISTIC_INTENTS = new Set([
   "new_follow", "postback", "line_event", "greeting", "pricing_review", "service_guidance",
-  "per_continuity",
+  "per_continuity", "membership_signup", "membership_renewal",
   "vip", "svip", "black_card",
   "care_back_overview", "care_back_dates", "care_back_current_member", "care_back_expired_member",
   "care_back_new_standard", "care_back_new_premium", "care_back_new_member", "care_back_coupon_wish",
@@ -110,9 +110,9 @@ export function buildProtectedCapabilityReply(decision = {}) {
   if (domain === "internal_access") return "ผมไม่สามารถเปิดหรือให้สิทธิ์เข้าถึง dashboard ระบบหลังบ้าน หรือข้อมูลภายในได้ครับ";
   if (domain === "availability") return "ผมยังยืนยันว่าใครว่างหรือพร้อมรับงานไม่ได้ครับ ส่งวัน เวลา พื้นที่ และรูปแบบงานมาได้ แล้ว MMD จะตรวจความพร้อมก่อนยืนยันครับ";
   if (domain === "booking") return "ผมยังล็อกเวลาหรือยืนยันการจองจากข้อความนี้ไม่ได้ครับ ส่งวัน เวลา พื้นที่ และรายละเอียดงานมาได้ แล้ว MMD จะตรวจและยืนยันอย่างเป็นทางการครับ";
-  if (domain === "payment") return "ได้ครับ แต่ผมจะไม่ยืนยันจากข้อความอย่างเดียว เช็กสถานะรายการจริงใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → https://member-pages-worker.malemodel-bkk.workers.dev/member/liff";
-  if (domain === "membership") return "เช็กสถานะสมาชิกของคุณใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → https://member-pages-worker.malemodel-bkk.workers.dev/member/liff";
-  if (domain === "points") return "เช็กแต้มกับประวัติรายการของคุณใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → https://member-pages-worker.malemodel-bkk.workers.dev/member/liff";
+  if (domain === "payment") return "ผมจะไม่ยืนยันการชำระจากข้อความหรือสลิปอย่างเดียวครับ รายการต้องผ่านการตรวจสอบอย่างเป็นทางการของ MMD ก่อน";
+  if (domain === "membership") return "ผมยังยืนยันสถานะ ระดับสมาชิก หรือวันหมดอายุจากข้อความนี้ไม่ได้ครับ ข้อมูลส่วนตัวต้องตรวจผ่าน My MMD ที่ยืนยันตัวตนสำเร็จก่อน";
+  if (domain === "points") return "ผมยังยืนยันยอดแต้มและประวัติรายการจากข้อความนี้ไม่ได้ครับ ต้องตรวจจากข้อมูลสมาชิกและ Points Ledger ทางการก่อน";
   if (domain === "campaign_entitlement" || domain === "coupon_activation") return "ผมยังยืนยันสิทธิ์หรือการเปิดใช้งานจากข้อความนี้ไม่ได้ครับ ต้องตรวจสถานะและเงื่อนไขที่บันทึกสำเร็จก่อนครับ";
   return "ผมยังยืนยันหรืออนุมัติสถานะนี้จากข้อความอย่างเดียวไม่ได้ครับ ต้องให้ MMD ตรวจข้อมูลทางการก่อนครับ";
 }
