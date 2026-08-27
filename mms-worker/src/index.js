@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import {
   applicationAirtableFields,
   applicationPayload,
+  applicationTelegramMessage,
   catalog,
   matchTherapists,
   prebookingAirtableFields,
@@ -219,6 +220,7 @@ export default {
             coordinator: Boolean(env.MMS_COORDINATOR),
             private_uploads: Boolean(env.MMS_PRIVATE_UPLOADS),
             airtable: Boolean(env.AIRTABLE_API_TOKEN),
+            telegram: telegramConfigured(env),
           },
           time: new Date().toISOString(),
         }, 200, cors, requestId);
@@ -318,7 +320,7 @@ async function handleApplication(request, env, cors, requestId) {
     application_id: applicationId,
     application_token: applicationToken,
     status: sync.sync_status === "synced" ? "submitted" : "received_pending_sync",
-    storage: { coordinator: "persisted", airtable: sync.sync_status },
+    storage: { coordinator: "persisted", airtable: sync.sync_status, telegram: sync.telegram_notify_status },
     upload: { next: "/mms/api/uploads/presign", token_returned_once: true },
   }, status, cors, requestId);
 }
@@ -499,15 +501,71 @@ async function syncApplication(env, applicationId, payload, submittedAt) {
       await airtableUpdate(env, tableId(env, "APPLICATIONS"), applicationRecord.id, { "Sensitive Profile Ref": sensitiveRecordId });
     }
 
+    const telegram = await syncApplicationTelegram(env, applicationRecord, payload, applicationId);
+
     return {
       sync_status: "synced",
       airtable_record_id: applicationRecord.id,
       sensitive_record_id: sensitiveRecordId,
+      telegram_notify_status: telegram.status,
     };
   } catch (error) {
     console.error(JSON.stringify({ event: "mms_airtable_application_sync_failed", application_id: applicationId, code: error?.code || "AIRTABLE_ERROR" }));
-    return { sync_status: "pending_airtable_retry", airtable_record_id: "", sensitive_record_id: "" };
+    return { sync_status: "pending_airtable_retry", airtable_record_id: "", sensitive_record_id: "", telegram_notify_status: "pending" };
   }
+}
+
+async function syncApplicationTelegram(env, applicationRecord, payload, applicationId) {
+  const previousStatus = selectName(applicationRecord.fields?.["Telegram Notify Status"]);
+  if (previousStatus === "Sent") return { status: "sent" };
+  if (!telegramConfigured(env)) {
+    await airtableUpdate(env, tableId(env, "APPLICATIONS"), applicationRecord.id, {
+      "Telegram Notify Status": "Skipped",
+      "Telegram Notify Error": "Telegram secret or chat id is not configured",
+    });
+    return { status: "skipped" };
+  }
+
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${String(env.TELEGRAM_BOT_TOKEN).trim()}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: String(env.MMS_TELEGRAM_CHAT_ID).trim(),
+        text: applicationTelegramMessage(payload, { application_id: applicationId }),
+        disable_web_page_preview: true,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok !== true) {
+      const error = new Error(`TELEGRAM_HTTP_${response.status}`);
+      error.code = `TELEGRAM_HTTP_${response.status}`;
+      throw error;
+    }
+    const notifiedAt = new Date().toISOString();
+    await airtableUpdate(env, tableId(env, "APPLICATIONS"), applicationRecord.id, {
+      "Telegram Notify Status": "Sent",
+      "Telegram Notified At": notifiedAt,
+      "Telegram Notify Error": "",
+    });
+    return { status: "sent", notified_at: notifiedAt };
+  } catch (error) {
+    const code = String(error?.code || error?.name || "TELEGRAM_ERROR").slice(0, 120);
+    console.error(JSON.stringify({ event: "mms_telegram_application_notify_failed", application_id: applicationId, code }));
+    await airtableUpdate(env, tableId(env, "APPLICATIONS"), applicationRecord.id, {
+      "Telegram Notify Status": "Failed",
+      "Telegram Notify Error": code,
+    });
+    return { status: "failed" };
+  }
+}
+
+function telegramConfigured(env) {
+  return Boolean(String(env.TELEGRAM_BOT_TOKEN || "").trim() && String(env.MMS_TELEGRAM_CHAT_ID || "").trim());
+}
+
+function selectName(value) {
+  return value && typeof value === "object" && typeof value.name === "string" ? value.name : String(value || "");
 }
 
 async function attachUploadToApplication(env, applicationId, grant) {
