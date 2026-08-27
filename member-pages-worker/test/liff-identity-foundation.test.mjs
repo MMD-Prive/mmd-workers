@@ -50,6 +50,9 @@ class MemoryGatewayStore {
   async loadScreen(key) { return this.screens.get(key) || null; }
   async resolvePackage(code) { return this.packages.get(code) || null; }
   async hasHallAudienceInventory(audience) { return this.inventory.has(audience); }
+  async resolveMembershipReview() {
+    return { membership_review: { exists: false, state: "none", authoritative: true }, source_state: "none" };
+  }
 }
 
 class MemoryBirthdayWishStore {
@@ -359,7 +362,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
   });
 
   it("valid LINE token succeeds, sets secure session cookie, and returns no raw token", async () => {
-    const { response, payload } = await start();
+    const { response, payload, runtime } = await start();
     const cookie = findCookie(response, "__Host-mmd_liff_session");
     assert.equal(response.status, 200);
     assert.equal(payload.ok, true);
@@ -371,6 +374,10 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.deepEqual(payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
     assertHostCookie(cookie, "__Host-mmd_liff_session", 900);
     assertNoSensitive(JSON.stringify(payload));
+    assert.equal(payload.data.line_user_id, undefined);
+    assert.equal(payload.data.renewal_flow_status, undefined);
+    assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].line_user_id, "U123");
+    assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].renewal_flow_status, "identity_linked");
   });
 
   it("returns the bounded member profile and holds the CARE BACK coupon for a Birthday Wish from the verified session", async () => {
@@ -787,7 +794,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(blocked.payload.error.code, "CARE_BACK_WISH_NOT_AVAILABLE");
   });
 
-  it("writes only the bounded LIFF session memory through the mock gateway store", async () => {
+  it("writes the verified LINE subject only to the bounded server-side renewal session", async () => {
     const runtime = env();
     lineVerify({ sub: "Uprivate-line-sub" });
     const result = await request("/member/api/liff/start?t=private-signed-t", {
@@ -799,7 +806,10 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     const stored = JSON.stringify(runtime.LIFF_GATEWAY_STORE.records[0]);
     assert.match(stored, /"source_channel":"line_liff"/);
     assert.match(stored, /"liff_intent":"signup"/);
-    assert.doesNotMatch(stored, /Uprivate-line-sub|private-id-token|private-signed-t|identity_key|pending_identity_id|tier|points|payment_status/i);
+    assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].line_user_id, "Uprivate-line-sub");
+    assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].renewal_flow_status, "identity_linked");
+    assert.doesNotMatch(stored, /private-id-token|private-signed-t|identity_key|pending_identity_id|tier|points|payment_status/i);
+    assert.doesNotMatch(JSON.stringify(result.payload), /Uprivate-line-sub|private-id-token|private-signed-t/i);
   });
 
   it("prefers a bounded mock flow-screen spec over the fallback copy", async () => {

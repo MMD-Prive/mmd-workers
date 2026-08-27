@@ -301,6 +301,9 @@ export async function handleStart(request, env = {}) {
   const liffIntent = normalizeLiffIntent(body.liff_intent ?? body.intent);
   const continuity = cleanContinuity(new URL(request.url).searchParams.get("t"));
   const session = await issueSession(env, {
+    line_user_id: verified.sub,
+    verified_at: new Date().toISOString(),
+    renewal_flow_status: "identity_linked",
     identity_key: identityKey,
     member_exists: existing.exists,
     member_id: memberProfile?.member_id || null,
@@ -1235,6 +1238,9 @@ async function recordGatewayDecision(gatewayStore, session) {
 function gatewaySessionRecord(session) {
   return {
     session_id: session.session_id,
+    line_user_id: session.line_user_id,
+    verified_at: session.verified_at,
+    renewal_flow_status: session.renewal_flow_status,
     liff_intent: session.liff_intent,
     source_channel: session.source_channel,
     hype_decision_status: session.hype_decision_status,
