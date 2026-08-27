@@ -25,6 +25,7 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
       AIRTABLE_API_TOKEN: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.MMS_TELEGRAM_BOT_TOKEN || secrets.TELEGRAM_BOT_TOKEN }}
+      MMS_TELEGRAM_CHAT_ID: ${{ secrets.MMS_TELEGRAM_CHAT_ID || secrets.TELEGRAM_CHAT_ID }}
       NO_COLOR: "1"
       WRANGLER_SEND_METRICS: "false"
 
@@ -92,10 +93,15 @@ jobs:
           const fs = require("node:fs");
           const token = String(process.env.AIRTABLE_API_TOKEN || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
           const telegramToken = String(process.env.TELEGRAM_BOT_TOKEN || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
+          const telegramChatId = String(process.env.MMS_TELEGRAM_CHAT_ID || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
           const path = process.env.RUNNER_TEMP + "/mms-worker.env";
           const lines = [];
           if (token) { console.log(`::add-mask::${token}`); lines.push(`AIRTABLE_API_TOKEN=${token}`); }
-          if (telegramToken) { console.log(`::add-mask::${telegramToken}`); lines.push(`TELEGRAM_BOT_TOKEN=${telegramToken}`); }
+          if (telegramToken && telegramChatId) {
+            console.log(`::add-mask::${telegramToken}`);
+            console.log(`::add-mask::${telegramChatId}`);
+            lines.push(`TELEGRAM_BOT_TOKEN=${telegramToken}`, `MMS_TELEGRAM_CHAT_ID=${telegramChatId}`);
+          }
           fs.writeFileSync(path, lines.length ? `${lines.join("\n")}\n` : "", { mode: 0o600 });
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `configured=${lines.length ? "true" : "false"}\n`);
           NODE
