@@ -27,6 +27,7 @@ jobs:
         working-directory: admin-worker
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.MMS_CLOUDFLARE_API_TOKEN }}
       ADMIN_DASHBOARD_PRODUCTION_URL: https://admin-worker.malemodel-bkk.workers.dev/v1/admin/dashboard
 
     steps:
@@ -38,16 +39,19 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Normalize Cloudflare token
+      - name: Normalize Cloudflare tokens
         id: credentials
         shell: bash
         run: |
           node <<'NODE'
           const fs = require("node:fs");
           const clean = (value) => (value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
-          const token = clean(process.env.CLOUDFLARE_API_TOKEN);
-          if (!token) throw new Error("Cloudflare API token is missing after normalization");
-          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\n`);
+          const deployToken = clean(process.env.CLOUDFLARE_API_TOKEN);
+          const routesToken = clean(process.env.CLOUDFLARE_ROUTES_API_TOKEN);
+          if (!deployToken) throw new Error("Cloudflare deploy API token is missing after normalization");
+          if (!routesToken) throw new Error("Cloudflare routes API token is missing after normalization");
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${deployToken}\n`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ROUTES_API_TOKEN=${routesToken}\n`);
           NODE
 
       - name: Verify Cloudflare token account
@@ -119,14 +123,27 @@ jobs:
         id: triggers_dry_run
         if: steps.deploy.outcome == 'success'
         shell: bash
-        run: npx --yes wrangler@4 triggers deploy --dry-run
+        run: |
+          set -euo pipefail
+          export CLOUDFLARE_API_TOKEN="$CLOUDFLARE_ROUTES_API_TOKEN"
+          npx --yes wrangler@4 triggers deploy --dry-run
 
-      - name: Sync admin-worker routes and triggers
-        id: triggers
+      - name: Verify Cloudflare routes token account
+        id: routes_whoami
         if: steps.triggers_dry_run.outcome == 'success'
         shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
+          export CLOUDFLARE_API_TOKEN="$CLOUDFLARE_ROUTES_API_TOKEN"
+          npx --yes wrangler@4 whoami
+
+      - name: Sync admin-worker routes and triggers
+        id: triggers
+        if: steps.routes_whoami.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CLOUDFLARE_API_TOKEN="$CLOUDFLARE_ROUTES_API_TOKEN"
           npx --yes wrangler@4 triggers deploy \
             2>&1 | tee "$RUNNER_TEMP/admin-worker-triggers.log"
 
@@ -176,6 +193,7 @@ jobs:
           RESOLVE_OUTCOME: ${{ steps.resolve_version.outcome }}
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
           TRIGGERS_DRY_RUN_OUTCOME: ${{ steps.triggers_dry_run.outcome }}
+          ROUTES_WHOAMI_OUTCOME: ${{ steps.routes_whoami.outcome }}
           TRIGGERS_OUTCOME: ${{ steps.triggers.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
         run: |
@@ -197,6 +215,8 @@ jobs:
             stopped="wrangler versions deploy"
           elif [ "$TRIGGERS_DRY_RUN_OUTCOME" != "success" ]; then
             stopped="wrangler triggers dry-run"
+          elif [ "$ROUTES_WHOAMI_OUTCOME" != "success" ]; then
+            stopped="cloudflare routes token account preflight"
           elif [ "$TRIGGERS_OUTCOME" != "success" ]; then
             stopped="wrangler triggers deploy"
           elif [ "$SMOKE_OUTCOME" != "success" ]; then
@@ -229,6 +249,7 @@ jobs:
           - resolve version: \`${RESOLVE_OUTCOME}\`
           - versions deploy: \`${DEPLOY_OUTCOME}\`
           - triggers dry-run: \`${TRIGGERS_DRY_RUN_OUTCOME}\`
+          - routes-token whoami: \`${ROUTES_WHOAMI_OUTCOME}\`
           - triggers deploy: \`${TRIGGERS_OUTCOME}\`
           - production smoke: \`${SMOKE_OUTCOME}\`
           - **stopped_at: \`${stopped}\`**
