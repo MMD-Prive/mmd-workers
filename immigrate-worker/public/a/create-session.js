@@ -128,6 +128,7 @@
     outModelMessage: $("[data-op-out-model-message]"),
     copyCustomerLink: $("[data-op-copy-customer-link]"),
     copyModelLink: $("[data-op-copy-model-link]"),
+    copyBothLinks: $("[data-op-copy-both-links]"),
     copyCustomerMsg: $("[data-op-copy-customer-msg]"),
     copyModelMsg: $("[data-op-copy-model-msg]"),
     pushLine: $("[data-op-push-line]"),
@@ -345,6 +346,15 @@
       if (data && data[key] != null && String(data[key]) !== "") return data[key];
     }
     return "";
+  }
+
+  function adminErrorMessage(data, fallback) {
+    const error = data?.error;
+    if (typeof error === "string" && error) return error;
+    if (error?.message) return error.message;
+    if (error?.code) return error.code;
+    if (data?.message) return data.message;
+    return fallback || "Create job failed.";
   }
 
   function normalizeClients(data) {
@@ -1154,6 +1164,74 @@
     };
   }
 
+  function isCompletePrivateGatePayload(payload) {
+    if (!payload || payload.work?.job_visibility !== "private") return false;
+    const access = payload.private_access || {};
+    const model = payload.model || {};
+    const gate = payload.telegram_gate || {};
+    return Boolean(
+      access.eligibility_checked &&
+        access.eligibility_result === "allowed" &&
+        access.private_access_level &&
+        Array.isArray(access.allowed_private_folders) &&
+        access.allowed_private_folders.length &&
+        access.selected_orientation &&
+        access.selected_private_folder &&
+        (model.model_id || model.model_record_id || model.model_lookup_key) &&
+        statusOk(gate.customer_telegram_status) &&
+        statusOk(gate.model_telegram_status)
+    );
+  }
+
+  function buildCreateJobPayload(payload) {
+    const isPrivate = payload.work?.job_visibility === "private";
+    const privateGateReady = isCompletePrivateGatePayload(payload);
+    const jobType = isPrivate
+      ? (payload.private_access?.selected_private_folder || payload.work?.model_folder || "pn")
+      : (payload.work?.model_folder || payload.work?.work_type || "public_work");
+    const out = {
+      client_name: payload.client_lineage?.client_name || "",
+      model_name: payload.model?.model_name || "",
+      job_type: jobType,
+      job_date: payload.job_details?.job_date || "",
+      start_time: payload.job_details?.start_time || "",
+      end_time: payload.job_details?.end_time || "",
+      location_name: payload.job_details?.location_name || "",
+      google_map_url: payload.job_details?.google_map_url || "",
+      amount_thb: payload.payment?.amount_thb || 0,
+      payment_type: payload.payment?.payment_type || "full",
+      payment_method: payload.payment?.payment_method || "promptpay",
+      note: payload.notes?.operation_note || payload.notes?.handling_note || "",
+      confirm_page: "/confirm/job-confirmation",
+      model_confirm_page: "/confirm/job-model",
+      source: payload.source || "sigil_admin_create_job",
+      frontend_surface: payload.frontend_surface || "operator_only",
+      return_link_policy: {
+        token_param: "t",
+        links_must_come_from_backend: true
+      },
+      requested_outputs: [
+        "session_id",
+        "payment_ref",
+        "customer_confirmation_url",
+        "model_confirmation_url"
+      ]
+    };
+    if (payload.model?.model_id) out.model_id = payload.model.model_id;
+    if (payload.model?.model_lookup_key) out.model_lookup_key = payload.model.model_lookup_key;
+    if (payload.client_lineage) out.client_lineage = payload.client_lineage;
+    if (payload.line_identity) out.line_identity = payload.line_identity;
+    if (privateGateReady) {
+      out.job_visibility = "private";
+      out.booking_visibility = "private";
+      out.model = payload.model;
+      out.work = payload.work;
+      out.private_access = payload.private_access;
+      out.telegram_gate = payload.telegram_gate;
+    }
+    return out;
+  }
+
   async function saveDraft() {
     if (!state.selectedClient) {
       setStatus("เลือก client ก่อนบันทึก draft", "bad");
@@ -1234,11 +1312,12 @@
       return;
     }
     const payload = getPayload();
-    state.lastPayload = payload;
-    if (el.payload) el.payload.textContent = JSON.stringify(payload, null, 2);
+    const createPayload = buildCreateJobPayload(payload);
+    state.lastPayload = createPayload;
+    if (el.payload) el.payload.textContent = JSON.stringify(createPayload, null, 2);
     if (el.create) el.create.disabled = true;
     text(el.statStatus, "Creating");
-    setStatus("กำลังสร้าง session...", "");
+    setStatus("กำลังสร้าง actual job...", "");
     try {
       let data;
       if (config.mock) {
@@ -1246,9 +1325,9 @@
       } else {
         const result = await requestJson(api(config.endpoints.createSession), {
           method: "POST",
-          body: JSON.stringify(payload)
+          body: JSON.stringify(createPayload)
         });
-        if (!result.ok || result.data?.ok === false) throw new Error(result.data?.error || result.data?.message || `HTTP ${result.status}`);
+        if (!result.ok || result.data?.ok === false) throw new Error(adminErrorMessage(result.data, `HTTP ${result.status}`));
         data = result.data || {};
       }
       setHook("create", "ok");
@@ -1257,11 +1336,11 @@
       if (el.output) el.output.hidden = false;
       setActiveStep("output");
       updateStats();
-      setStatus("Session created. Links are ready.", "ok");
+      setStatus("Actual job created. Links are ready.", "ok");
       scrollToNode(el.output);
-    } catch {
+    } catch (error) {
       setHook("create", "bad");
-      setStatus("ยังสร้าง session ไม่สำเร็จ กรุณาตรวจ backend endpoint หรือ payload", "bad");
+      setStatus(`Create job failed: ${error?.message || error || "unknown_error"}`, "bad");
       text(el.statStatus, "Failed");
       updateAll();
     } finally {
@@ -1396,6 +1475,16 @@
     }
   }
 
+  function ensureCopyBothLinksButton() {
+    if (el.copyBothLinks || !el.copyCustomerLink || !el.copyModelLink) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Copy Both Links";
+    button.setAttribute("data-op-copy-both-links", "");
+    el.copyModelLink.insertAdjacentElement("afterend", button);
+    el.copyBothLinks = button;
+  }
+
   function resetAll() {
     state.clients = [];
     state.selectedClient = null;
@@ -1517,11 +1606,22 @@
     });
     el.saveDraft?.addEventListener("click", saveDraft);
     el.fillDemoJob?.addEventListener("click", fillDemoJob);
+    text(el.create, "Create Actual Job");
     el.create?.addEventListener("click", createSession);
     el.pushLine?.addEventListener("click", pushLine);
     el.newSession?.addEventListener("click", resetAll);
+    text(el.copyCustomerLink, "Copy Member Link");
+    text(el.copyModelLink, "Copy Model Link");
     el.copyCustomerLink?.addEventListener("click", () => copyText(val(el.outCustomerUrl)));
     el.copyModelLink?.addEventListener("click", () => copyText(val(el.outModelUrl)));
+    ensureCopyBothLinksButton();
+    el.copyBothLinks?.addEventListener("click", () => copyText([
+      "Member Link:",
+      val(el.outCustomerUrl),
+      "",
+      "Model Link:",
+      val(el.outModelUrl)
+    ].join("\n")));
     el.copyCustomerMsg?.addEventListener("click", () => copyText(val(el.outCustomerMessage)));
     el.copyModelMsg?.addEventListener("click", () => copyText(val(el.outModelMessage)));
     if (el.debugToggle && config.debug) {
