@@ -24,6 +24,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.MMS_CLOUDFLARE_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
       AIRTABLE_API_TOKEN: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.MMS_TELEGRAM_BOT_TOKEN || secrets.TELEGRAM_BOT_TOKEN }}
       NO_COLOR: "1"
       WRANGLER_SEND_METRICS: "false"
 
@@ -83,22 +84,20 @@ jobs:
             npx wrangler r2 bucket create mms-private-uploads
           fi
 
-      - name: Prepare optional Airtable secret
-        id: airtable
+      - name: Prepare optional runtime secrets
+        id: runtime-secrets
         shell: bash
         run: |
           node <<'NODE'
           const fs = require("node:fs");
           const token = String(process.env.AIRTABLE_API_TOKEN || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
+          const telegramToken = String(process.env.TELEGRAM_BOT_TOKEN || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
           const path = process.env.RUNNER_TEMP + "/mms-worker.env";
-          if (token) {
-            console.log(`::add-mask::${token}`);
-            fs.writeFileSync(path, `AIRTABLE_API_TOKEN=${token}\n`, { mode: 0o600 });
-            fs.appendFileSync(process.env.GITHUB_OUTPUT, "configured=true\n");
-          } else {
-            fs.writeFileSync(path, "", { mode: 0o600 });
-            fs.appendFileSync(process.env.GITHUB_OUTPUT, "configured=false\n");
-          }
+          const lines = [];
+          if (token) { console.log(`::add-mask::${token}`); lines.push(`AIRTABLE_API_TOKEN=${token}`); }
+          if (telegramToken) { console.log(`::add-mask::${telegramToken}`); lines.push(`TELEGRAM_BOT_TOKEN=${telegramToken}`); }
+          fs.writeFileSync(path, lines.length ? `${lines.join("\n")}\n` : "", { mode: 0o600 });
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `configured=${lines.length ? "true" : "false"}\n`);
           NODE
 
       - name: Deploy mms-worker
@@ -108,7 +107,7 @@ jobs:
         run: |
           set -euo pipefail
           args=(deploy --keep-vars)
-          if [ "${{ steps.airtable.outputs.configured }}" = "true" ]; then
+          if [ "${{ steps.runtime-secrets.outputs.configured }}" = "true" ]; then
             args+=(--secrets-file "$RUNNER_TEMP/mms-worker.env")
           fi
           npx wrangler "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/mms-worker-deploy.log"
@@ -142,6 +141,7 @@ jobs:
             `- Durable Object: ${health.bindings.coordinator ? "ready" : "missing"}`,
             `- Private R2: ${health.bindings.private_uploads ? "ready" : "missing"}`,
             `- Airtable runtime secret: ${health.bindings.airtable ? "ready" : "pending"}`,
+            `- Telegram notification: ${health.bindings.telegram ? "ready" : "pending"}`,
             `- Skill catalog: ${catalog.data.skills.length}/8`,
             "",
           ].join("\n"));
