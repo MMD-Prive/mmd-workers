@@ -94,7 +94,7 @@ test("active admin entrypoint forwards Model Console V16 schema-patch routes to 
     {}
   );
   assert.equal(rate.status, 401);
-  assert.equal((await rate.json()).error, "unauthorized");
+  assert.equal((await rate.json()).error, "signed_t_required");
 });
 
 test("wrangler claims only the exact Model Console V16 additive routes on apex and www", () => {
