@@ -1,5 +1,6 @@
 import worker from "./studio-telegram-worker.js";
 import dashboardWorker from "./dashboard-worker.js";
+import coreWorker, { MODEL_SCHEMA_PATCH_V1_ROUTES } from "./index.js";
 import {
   APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON,
   APPROVED_ADMIN_LOGIN_FAVICON,
@@ -23,6 +24,8 @@ export {
   APPROVED_ADMIN_LOGIN_LOGO,
 };
 
+const MODEL_SCHEMA_PATCH_V1_ROUTE_SET = new Set(Object.values(MODEL_SCHEMA_PATCH_V1_ROUTES));
+
 const ALLOWED_NEXT_PATHS = [
   "/internal/admin",
   "/internal/admin/control-room",
@@ -39,6 +42,14 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+
+    // Model Console V16 schema-patch routes live in the legacy core runtime,
+    // but admin-worker's active entrypoint is this composed worker. Forward only
+    // the exact additive route set so the patch remains reachable without
+    // broadening admin-worker ownership over /v1/model/*.
+    if (MODEL_SCHEMA_PATCH_V1_ROUTE_SET.has(path)) {
+      return coreWorker.fetch(request, env, ctx);
+    }
 
     if (isMmsAdminRequest(path)) {
       return handleMmsAdminRequest(request, env, ctx);

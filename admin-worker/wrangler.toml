@@ -32,6 +32,72 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/model/session/action"
 zone_name = "mmdbkk.com"
 
+# Model Console V16 additive write/review routes. Keep these exact and narrow;
+# do not claim broad /v1/model/* ownership.
+[[routes]]
+pattern = "mmdbkk.com/v1/model/visibility/update"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/visibility/update"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/model/rate/request"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/rate/request"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/model/media/upload-init"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/media/upload-init"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/model/media/upload-complete"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/media/upload-complete"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/model/media/review-request"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/media/review-request"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/model/private-gallery/request"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/private-gallery/request"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/model/private-flash/request"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/private-flash/request"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/model/private-flash/authorize"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/private-flash/authorize"
+zone_name = "mmdbkk.com"
+
 # Studio real assistant APIs. Keep these narrow so /studio remains Webflow-owned.
 [[routes]]
 pattern = "mmdbkk.com/studio/api/*"
