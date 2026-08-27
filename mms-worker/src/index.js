@@ -305,6 +305,7 @@ async function handleApplication(request, env, cors, requestId) {
     return json({
       ok: true,
       duplicate: true,
+      application_ref: applicationId,
       application_id: applicationId,
       status: "already_received",
       storage: saved.record.sync_status,
@@ -317,9 +318,10 @@ async function handleApplication(request, env, cors, requestId) {
   const status = sync.sync_status === "synced" ? 201 : 202;
   return json({
     ok: true,
+    application_ref: applicationId,
     application_id: applicationId,
     application_token: applicationToken,
-    status: sync.sync_status === "synced" ? "submitted" : "received_pending_sync",
+    status: sync.sync_status === "synced" ? "accepted" : "pending_airtable_retry",
     storage: { coordinator: "persisted", airtable: sync.sync_status, telegram: sync.telegram_notify_status },
     upload: { next: "/mms/api/uploads/presign", token_returned_once: true },
   }, status, cors, requestId);
@@ -391,9 +393,9 @@ async function handleUpload(request, env, cors, requestId, applicationId, upload
     const airtable = await attachUploadToApplication(env, applicationId, grant).catch(() => ({ status: "pending" }));
     return json({
       ok: true,
+      application_ref: applicationId,
       application_id: applicationId,
       kind: grant.kind,
-      object_key: grant.r2_key,
       storage: { r2: "stored", airtable: airtable.status },
     }, 201, cors, requestId);
   } catch (error) {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   applicationAirtableFields,
@@ -108,6 +109,18 @@ test("application rejects orientation without separate consent", () => {
   );
 });
 
+test("application requires contact, one to eight skills, and conditional references", () => {
+  assert.throws(() => applicationPayload({ ...applicationInput, phone: "", line_id: "" }), /phone or line_id is required/);
+  assert.throws(() => applicationPayload({ ...applicationInput, skills: [] }), /skills must contain 1-8/);
+  assert.throws(() => applicationPayload({ ...applicationInput, skills: [...applicationInput.skills, "sport_massage", "office_syndrome", "health_fitness_advisor", "thai_herbal_compress", "partner_present", "women_massage", "thai_massage"] }), /skills must contain 1-8/);
+  assert.throws(() => applicationPayload({ ...applicationInput, spa_name: "" }), /spa_name is required/);
+  assert.throws(() => applicationPayload({ ...applicationInput, worked_at_spa_before: false, worked_independently_before: true, independent_social: "" }), /independent_social is required/);
+});
+
+test("application rejects every unrecognized field", () => {
+  assert.throws(() => applicationPayload({ ...applicationInput, private_note: "do not accept" }), /unsupported fields: private_note/);
+});
+
 test("prebooking accepts one to six skills and requires recipient gender", () => {
   const payload = prebookingPayload({
     idempotency_key: "prebook-001",
@@ -204,4 +217,14 @@ test("upload grant accepts private image and certificate types only", () => {
     filename: "profile.pdf",
     content_type: "application/pdf",
   }), /profile_photo must be an image/);
+});
+
+test("public route source keeps canonical statuses, CORS origins, and private object keys internal", async () => {
+  const source = await readFile(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(source, /application_ref: applicationId/);
+  assert.match(source, /sync\.sync_status === "synced" \? "accepted" : "pending_airtable_retry"/);
+  assert.match(source, /status: "already_received"/);
+  assert.match(source, /https:\/\/mmdbkk\.com,https:\/\/www\.mmdbkk\.com,https:\/\/mmdprive\.webflow\.io/);
+  const publicUploadResponse = source.slice(source.indexOf("async function handleUpload("), source.indexOf("async function handleMatching("));
+  assert.doesNotMatch(publicUploadResponse, /object_key:/);
 });

@@ -32,6 +32,11 @@ test("therapist application contains eight skills and private upload flow", asyn
   assert.match(html, /name="certificates"/);
   assert.match(html, /Private R2/);
   assert.match(html + js, /mms\/api\/uploads\/presign/);
+  assert.match(js, /draft\.application_token/);
+  assert.match(js, /persistDraft\(\)/);
+  assert.match(js, /if\(uploadResult\.failed\)throw/);
+  assert.match(js, /allowedFile/);
+  assert.doesNotMatch(js, /localStorage\.removeItem\(storageKey\).*uploadFiles/);
   assert.doesNotMatch(html, /Inside MMS|MMS shop|หน้าร้าน MMS/i);
 });
 

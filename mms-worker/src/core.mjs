@@ -441,7 +441,7 @@ function normalizeOrientation(value) {
 function normalizeCatalogValues(value, lookup, min, max, field) {
   if (!Array.isArray(value)) throw validationError([`${field} must be an array`]);
   const values = [...new Set(value.map((item) => lookup.get(normalized(item))).filter(Boolean))];
-  if (values.length < min || values.length > max || values.length !== new Set(value.map(normalized)).size) {
+  if (values.length < min || values.length > max || values.length !== value.length) {
     throw validationError([`${field} must contain ${min}-${max} supported unique values`]);
   }
   return values;
