@@ -129,18 +129,31 @@ jobs:
           export CLOUDFLARE_API_TOKEN="$CLOUDFLARE_ROUTES_API_TOKEN"
           npx --yes wrangler@4 triggers deploy --dry-run
 
-      - name: Verify Cloudflare routes token account
-        id: routes_whoami
+      - name: Verify Cloudflare routes token
+        id: routes_token
         if: steps.triggers_dry_run.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
-          export CLOUDFLARE_API_TOKEN="$CLOUDFLARE_ROUTES_API_TOKEN"
-          npx --yes wrangler@4 whoami
+          response_file="$(mktemp)"
+          http_code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS \
+            -o "$response_file" \
+            -w "%{http_code}" \
+            -H "Authorization: Bearer $CLOUDFLARE_ROUTES_API_TOKEN" \
+            https://api.cloudflare.com/client/v4/user/tokens/verify)"
+          test "$http_code" = "200"
+          node - "$response_file" <<'NODE'
+          const fs = require("node:fs");
+          const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          if (payload.success !== true || payload.result?.status !== "active") {
+            throw new Error("Cloudflare routes token is not active");
+          }
+          console.log("Cloudflare routes token is active");
+          NODE
 
       - name: Sync admin-worker routes and triggers
         id: triggers
-        if: steps.routes_whoami.outcome == 'success'
+        if: steps.routes_token.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
@@ -194,7 +207,7 @@ jobs:
           RESOLVE_OUTCOME: ${{ steps.resolve_version.outcome }}
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
           TRIGGERS_DRY_RUN_OUTCOME: ${{ steps.triggers_dry_run.outcome }}
-          ROUTES_WHOAMI_OUTCOME: ${{ steps.routes_whoami.outcome }}
+          ROUTES_TOKEN_OUTCOME: ${{ steps.routes_token.outcome }}
           TRIGGERS_OUTCOME: ${{ steps.triggers.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
         run: |
@@ -216,8 +229,8 @@ jobs:
             stopped="wrangler versions deploy"
           elif [ "$TRIGGERS_DRY_RUN_OUTCOME" != "success" ]; then
             stopped="wrangler triggers dry-run"
-          elif [ "$ROUTES_WHOAMI_OUTCOME" != "success" ]; then
-            stopped="cloudflare routes token account preflight"
+          elif [ "$ROUTES_TOKEN_OUTCOME" != "success" ]; then
+            stopped="cloudflare routes token verification"
           elif [ "$TRIGGERS_OUTCOME" != "success" ]; then
             stopped="wrangler triggers deploy"
           elif [ "$SMOKE_OUTCOME" != "success" ]; then
@@ -250,7 +263,7 @@ jobs:
           - resolve version: \`${RESOLVE_OUTCOME}\`
           - versions deploy: \`${DEPLOY_OUTCOME}\`
           - triggers dry-run: \`${TRIGGERS_DRY_RUN_OUTCOME}\`
-          - routes-token whoami: \`${ROUTES_WHOAMI_OUTCOME}\`
+          - routes-token verification: \`${ROUTES_TOKEN_OUTCOME}\`
           - triggers deploy: \`${TRIGGERS_OUTCOME}\`
           - production smoke: \`${SMOKE_OUTCOME}\`
           - **stopped_at: \`${stopped}\`**
