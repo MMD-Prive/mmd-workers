@@ -311,18 +311,10 @@ export function applicationAirtableFields(application, meta) {
 }
 
 export function applicationTelegramMessage(application, meta) {
-  const nickname = application.nickname ? ` (${application.nickname})` : "";
-  const experience = `${application.experience_years} ปี ${application.experience_months} เดือน`;
   return [
     "🔔 MMS มีใบสมัคร Therapist ใหม่",
     `Reference: ${meta.application_id}`,
-    `ผู้สมัคร: ${application.applicant_name}${nickname}`,
-    `อาชีพปัจจุบัน: ${application.current_profession}`,
-    `พื้นที่ฐาน: ${application.work_base_area}`,
-    `การเดินทาง: ${application.mobility_scope}`,
-    `ประสบการณ์: ${experience}`,
-    `Skills: ${application.skills.map(catalogLabel).join(", ")}`,
-    "เปิด Airtable > MMS Therapist Applications เพื่อตรวจข้อมูลและช่องทางติดต่อ",
+    "เปิด Airtable > MMS Therapist Applications เพื่อตรวจสอบข้อมูล",
   ].join("\n");
 }
 
