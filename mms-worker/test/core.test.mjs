@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   applicationAirtableFields,
   applicationPayload,
+  applicationTelegramMessage,
   catalog,
   matchTherapists,
   prebookingPayload,
@@ -26,6 +27,11 @@ const applicationInput = {
   spa_name: "Example Spa",
   worked_independently_before: false,
   independent_social: "",
+  current_profession: "Personal Trainer",
+  qualification_note: "Thai massage certificate",
+  work_base_area: "เชียงใหม่ เมืองเชียงใหม่",
+  mobility_scope: "nationwide",
+  coverage_area_note: "เชียงใหม่ ลำพูน และกรุงเทพฯ ตามตกลง",
   base_zone: "sukhumvit",
   coverage_zones: ["sukhumvit", "sathorn_silom"],
   general_consent: true,
@@ -63,11 +69,36 @@ test("application keeps orientation only in the sensitive record", () => {
   });
 
   assert.equal(applicationFields["Customer Gender Scope"], "ได้ทั้งคู่");
+  assert.equal(applicationFields["Current Profession"], "Personal Trainer");
+  assert.equal(applicationFields["Work Base Area"], "เชียงใหม่ เมืองเชียงใหม่");
+  assert.equal(applicationFields["Mobility Scope"], "ทั่วประเทศตามตกลง");
   assert.equal(Object.hasOwn(applicationFields, "Sexual Orientation"), false);
   assert.equal(applicationFields["Payload JSON"].includes("sexual_orientation"), false);
   assert.equal(sensitiveFields["Sexual Orientation"], "ชายรักชาย — Gay");
   assert.equal(sensitiveFields["Customer Visible"], false);
   assert.equal(sensitiveFields["Booking API Allowed"], false);
+});
+
+test("nationwide intake does not require legacy Bangkok matching zones", () => {
+  const payload = applicationPayload({
+    ...applicationInput,
+    base_zone: undefined,
+    coverage_zones: undefined,
+  });
+  assert.equal(payload.base_zone, "");
+  assert.deepEqual(payload.coverage_zones, []);
+  assert.equal(payload.mobility_scope, "ทั่วประเทศตามตกลง");
+});
+
+test("Telegram notification contains only a non-sensitive application reference", () => {
+  const payload = applicationPayload(applicationInput);
+  const message = applicationTelegramMessage(payload, { application_id: "mmsapp_1234567890abcdef12345678" });
+  assert.match(message, /mmsapp_1234567890abcdef12345678/);
+  assert.equal(message.includes(payload.applicant_name), false);
+  assert.equal(message.includes(payload.work_base_area), false);
+  assert.equal(message.includes(payload.phone), false);
+  assert.equal(message.includes(payload.line_id), false);
+  assert.equal(message.includes(payload.sexual_orientation), false);
 });
 
 test("application rejects orientation without separate consent", () => {
