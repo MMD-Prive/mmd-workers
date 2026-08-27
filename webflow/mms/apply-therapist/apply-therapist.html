@@ -12,7 +12,7 @@
   <nav class="mta-steps" aria-label="ขั้นตอนใบสมัคร">
     <button type="button" data-step-link="1" aria-current="step"><b>01</b><span>ข้อมูลติดต่อ</span></button>
     <button type="button" data-step-link="2"><b>02</b><span>ตัวตน</span></button>
-    <button type="button" data-step-link="3"><b>03</b><span>Skills &amp; Zone</span></button>
+    <button type="button" data-step-link="3"><b>03</b><span>Skills &amp; พื้นที่</span></button>
     <button type="button" data-step-link="4"><b>04</b><span>ประสบการณ์</span></button>
     <button type="button" data-step-link="5"><b>05</b><span>ไฟล์ &amp; ยืนยัน</span></button>
   </nav>
@@ -39,6 +39,8 @@
           <label class="mta-field"><span>ชื่อเล่น</span><input name="nickname" maxlength="80"></label>
           <label class="mta-field"><span>เบอร์โทร</span><input name="phone" type="tel" autocomplete="tel" maxlength="40"></label>
           <label class="mta-field mta-span-2"><span>LINE ID</span><input name="line_id" maxlength="100"><small>กรุณาระบุเบอร์โทรหรือ LINE ID อย่างน้อยหนึ่งอย่าง</small></label>
+          <label class="mta-field mta-span-2"><span>อาชีพปัจจุบัน *</span><input name="current_profession" required maxlength="200" placeholder="เช่น นักกายภาพบำบัด, Personal Trainer, พนักงานประจำ"></label>
+          <label class="mta-field mta-span-2"><span>วุฒิ ใบอนุญาต หรือหลักสูตรที่เกี่ยวข้อง</span><textarea name="qualification_note" rows="3" maxlength="1200" placeholder="ระบุชื่อหลักสูตรหรือ Certificate ที่มี (ถ้ามี)"></textarea></label>
         </div>
         <p class="mta-error" role="alert" aria-live="polite"></p><div class="mta-actions"><span></span><button class="mta-button" type="button" data-next>ถัดไป</button></div>
       </section>
@@ -52,9 +54,13 @@
       </section>
 
       <section class="mta-panel" data-step="3" hidden>
-        <div class="mta-panel__head"><span>03</span><div><h3>Skills และโซนรับงาน</h3><p>เลือกทักษะที่ทำได้จริงอย่างน้อย 1 รายการ</p></div></div>
+        <div class="mta-panel__head"><span>03</span><div><h3>Skills และพื้นที่รับงาน</h3><p>รับสมัครทั่วประเทศ เลือกทักษะที่ทำได้จริงอย่างน้อย 1 รายการ</p></div></div>
         <fieldset><legend>ทักษะการให้บริการ * <small data-skill-count>0 / 8</small></legend><div class="mta-skill-grid" data-skills></div></fieldset>
-        <div class="mta-grid"><label class="mta-field"><span>โซนหลัก *</span><select name="base_zone" required><option value="">เลือกโซน</option></select></label><fieldset class="mta-span-2"><legend>โซนที่เดินทางไปได้ *</legend><div class="mta-zone-grid" data-zones></div></fieldset></div>
+        <div class="mta-grid">
+          <label class="mta-field mta-span-2"><span>จังหวัด / อำเภอ / พื้นที่ฐาน *</span><input name="work_base_area" required maxlength="240" placeholder="เช่น เมืองเชียงใหม่, เชียงใหม่"></label>
+          <fieldset class="mta-span-2"><legend>ขอบเขตการเดินทางรับงาน *</legend><div class="mta-options mta-options--3"><label><input type="radio" name="mobility_scope" value="local" required><span>พื้นที่ฐานเป็นหลัก</span></label><label><input type="radio" name="mobility_scope" value="nearby"><span>จังหวัดใกล้เคียง</span></label><label><input type="radio" name="mobility_scope" value="nationwide"><span>ทั่วประเทศตามตกลง</span></label></div></fieldset>
+          <label class="mta-field mta-span-2"><span>พื้นที่อื่นที่สะดวกเดินทาง</span><textarea name="coverage_area_note" rows="3" maxlength="1200" placeholder="เช่น ลำพูน ลำปาง กรุงเทพฯ หรือพื้นที่ที่รับได้ตามตกลง"></textarea></label>
+        </div>
         <p class="mta-error" role="alert" aria-live="polite"></p><div class="mta-actions"><button class="mta-button mta-button--ghost" type="button" data-back>ย้อนกลับ</button><button class="mta-button" type="button" data-next>ถัดไป</button></div>
       </section>
 
