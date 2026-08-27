@@ -24,6 +24,22 @@ const SOURCE_CHANNELS = new Set(["telegram_preview", "line_oa", "line_liff", "we
 const HYPE_DECISION_STATUSES = new Set(["not_started", "asking_intent", "asking_audience", "decided", "manual_review", "blocked", "completed"]);
 const HALL_AUDIENCES = new Set(["female_view", "lgbt_view", "manual_review", "unknown"]);
 const MODEL_VISIBILITY_MODES = new Set(["show_female_profiles", "show_lgbt_profiles", "manual_review_only", "hold_until_selected"]);
+const RENEWAL_FLOW_STATUSES = new Set([
+  "started",
+  "identity_linked",
+  "legacy_match_found",
+  "legacy_match_needs_review",
+  "member_id_pending",
+  "profile_preview_ready",
+  "renewal_pending_payment",
+  "payment_proof_uploaded",
+  "renewal_pending_review",
+  "renewal_verified",
+  "materialized",
+  "blocked",
+  "cancelled",
+  "error",
+]);
 
 const SCREEN_KEYS = new Set([
   "start_intent",
@@ -94,6 +110,11 @@ class AirtableLiffGatewayStore {
     if (!renewalSessionId) throw new LiffGatewayStorageError("LIFF_GATEWAY_SESSION_INVALID");
     const fields = compactFields({
       renewal_session_id: renewalSessionId,
+      ...(recordId ? {} : {
+        line_user_id: lineSubject(session.line_user_id),
+        renewal_flow_status: selectValue(session.renewal_flow_status, RENEWAL_FLOW_STATUSES),
+        verified_at: verifiedTimestamp(session.verified_at),
+      }),
       liff_intent: selectValue(session.liff_intent, LIFF_INTENTS),
       source_channel: selectValue(session.source_channel, SOURCE_CHANNELS),
       hype_decision_status: selectValue(session.hype_decision_status, HYPE_DECISION_STATUSES),
@@ -115,6 +136,25 @@ class AirtableLiffGatewayStore {
     const resolvedId = String(record?.id || "").trim();
     if (!resolvedId) throw new LiffGatewayStorageError("LIFF_GATEWAY_STORAGE_MALFORMED");
     return { record_id: resolvedId };
+  }
+
+  async resolveMembershipReview(lineUserId) {
+    const subject = lineSubject(lineUserId);
+    if (!subject) throw new LiffGatewayStorageError("LIFF_MEMBERSHIP_REVIEW_IDENTITY_INVALID");
+    const records = await this.list(tableName(this.env, "LIFF_RENEWAL_SESSIONS"), {
+      filterByFormula: `{line_user_id}=${formulaString(subject)}`,
+      maxRecords: 2,
+      sort: [{ field: "verified_at", direction: "desc" }],
+    });
+    if (!records.length) return membershipReview(false, "none", "none");
+    const latest = records[0]?.fields;
+    if (!latest || typeof latest !== "object") throw new LiffGatewayStorageError("LIFF_MEMBERSHIP_REVIEW_MALFORMED");
+    const latestVerifiedAt = verifiedTimestamp(latest.verified_at);
+    if (!latestVerifiedAt || (records.length > 1 && latestVerifiedAt === verifiedTimestamp(records[1]?.fields?.verified_at))) {
+      throw new LiffGatewayStorageError("LIFF_MEMBERSHIP_REVIEW_AMBIGUOUS");
+    }
+    const sourceState = String(latest.renewal_flow_status || "").trim();
+    return normalizeMembershipReview(sourceState);
   }
 
   async recordDecision(decision) {
@@ -189,8 +229,8 @@ class AirtableLiffGatewayStore {
     return records.length === 1;
   }
 
-  async list(table, { filterByFormula, maxRecords } = {}) {
-    const record = await this.write("GET", table, { query: { filterByFormula, maxRecords } });
+  async list(table, { filterByFormula, maxRecords, sort } = {}) {
+    const record = await this.write("GET", table, { query: { filterByFormula, maxRecords, sort } });
     return Array.isArray(record?.records) ? record.records : [];
   }
 
@@ -198,6 +238,10 @@ class AirtableLiffGatewayStore {
     const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(String(this.env.AIRTABLE_BASE_ID))}/${encodeURIComponent(table)}${recordId ? `/${encodeURIComponent(recordId)}` : ""}`);
     if (query?.filterByFormula) url.searchParams.set("filterByFormula", query.filterByFormula);
     if (query?.maxRecords) url.searchParams.set("maxRecords", String(query.maxRecords));
+    for (const [index, item] of (Array.isArray(query?.sort) ? query.sort : []).entries()) {
+      url.searchParams.set(`sort[${index}][field]`, String(item?.field || ""));
+      url.searchParams.set(`sort[${index}][direction]`, item?.direction === "asc" ? "asc" : "desc");
+    }
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), airtableRequestTimeoutMs(this.env));
@@ -276,6 +320,36 @@ function formulaString(value) {
 function normalizePackageCode(value) {
   const code = String(value || "").trim().toLowerCase();
   return /^[a-z0-9][a-z0-9_-]{1,62}$/.test(code) ? code : "";
+}
+
+function lineSubject(value) {
+  const subject = String(value || "").trim();
+  return /^U[0-9A-Za-z_-]{8,159}$/.test(subject) ? subject : "";
+}
+
+function verifiedTimestamp(value) {
+  const timestamp = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(timestamp)) return "";
+  return Number.isFinite(Date.parse(timestamp)) ? timestamp : "";
+}
+
+function membershipReview(exists, state, sourceState) {
+  return {
+    membership_review: { exists, state, authoritative: true },
+    source_state: sourceState,
+  };
+}
+
+function normalizeMembershipReview(sourceState) {
+  if (!RENEWAL_FLOW_STATUSES.has(sourceState)) return membershipReview(true, "incomplete", sourceState || "unknown");
+  if (sourceState === "legacy_match_needs_review") return membershipReview(true, "pending_application", sourceState);
+  if (sourceState === "member_id_pending") return membershipReview(true, "approved_awaiting_member_creation", sourceState);
+  if (["renewal_pending_payment", "payment_proof_uploaded", "renewal_pending_review"].includes(sourceState)) {
+    return membershipReview(true, "pending_payment_review", sourceState);
+  }
+  if (["blocked", "cancelled"].includes(sourceState)) return membershipReview(true, "rejected", sourceState);
+  if (sourceState === "error") return membershipReview(true, "incomplete", sourceState);
+  return membershipReview(true, "none", sourceState);
 }
 
 function sanitizeScreenRecord(fields, screenKey) {
