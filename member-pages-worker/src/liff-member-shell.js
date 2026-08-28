@@ -27,6 +27,7 @@ export function handleLiffMemberShell(request, env = {}) {
     profileEndpoint: "/member/api/liff/profile",
     careBackEndpoint: "/member/api/liff/care-back/claim",
     careBackStateEndpoint: "/member/api/liff/care-back/state",
+    couponWalletEndpoint: "/member/api/liff/care-back/wallet",
     careBackWishEndpoint: "/member/api/liff/care-back/wish",
     stagingScenario: stagingScenario(env, url),
   };
@@ -57,7 +58,7 @@ function renderShell(config, nonce) {
     button,textarea{width:100%;border:1px solid rgba(216,189,137,.28);border-radius:16px;padding:14px 16px;background:#171511;color:#f7f3eb;font:inherit;text-align:left}button{cursor:pointer}button:disabled{opacity:.55;cursor:default}textarea{min-height:124px;resize:vertical;line-height:1.55}.wish{display:grid;gap:12px;margin-top:16px}.wish-result{white-space:pre-line;color:#e7d5ad;line-height:1.65}
     .profile{display:block;margin-top:14px}.section-rail{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;overscroll-behavior-x:contain;padding:0 2px 12px;scrollbar-width:none}.section-rail::-webkit-scrollbar{display:none}.panel{display:flex;flex:0 0 100%;min-height:430px;flex-direction:column;gap:12px;scroll-snap-align:start;scroll-snap-stop:always}.summary{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.card{border:1px solid rgba(216,189,137,.18);border-radius:8px;padding:17px;background:#080809}.label{color:#948c82;font-size:11px;letter-spacing:.12em;text-transform:uppercase}.value{display:block;margin-top:6px;font-size:22px;line-height:1.15}.points{font-size:34px;color:#e6cb91}.history,.stack{display:grid;gap:9px;margin-top:12px}.event{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.07);font-size:13px}.event:first-child{border-top:0}.event-date,.event-status{color:#8f8880}.event-delta{color:#d9bd82}.care{border-color:rgba(225,193,126,.38);background:#15120f}.care h2{margin:8px 0;font-size:21px}.care p{margin:0;color:#b7afa4;font-size:13px;line-height:1.6}.care-code{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;padding:13px 14px;border-radius:8px;background:#080807}.care-code strong{font-size:24px;letter-spacing:.15em;color:#ecd18f}.care button{margin-top:14px;text-align:center;background:#f0d892;color:#181207;font-weight:700}.details{border-top:1px solid rgba(255,255,255,.08);padding-top:12px}.details summary{cursor:pointer;color:#e7e2d8;font-size:14px}.details[open] summary{margin-bottom:10px}.group-title{margin:4px 0;font-size:14px;color:#e7e2d8}.empty{margin:0;color:#aaa29a;font-size:14px;line-height:1.55}
     .member-nav{display:flex;gap:8px;overflow-x:auto;margin:22px 0 0;padding:4px;border:1px solid rgba(216,189,137,.18);border-radius:8px;background:rgba(0,0,0,.22);scrollbar-width:none}.member-nav::-webkit-scrollbar{display:none}.member-nav button{width:auto;white-space:nowrap;border:0;border-radius:999px;padding:10px 12px;background:transparent;color:#aaa29a;font-size:12px;text-align:center}.member-nav button[aria-current="true"]{background:#f0d892;color:#181207;font-weight:800}.status{margin-top:22px;color:#7f7972;font-size:12px;line-height:1.5}.hidden{display:none!important}@media(max-width:390px){main{padding:24px 16px}.summary,.detail-grid{grid-template-columns:1fr}.event{grid-template-columns:66px 1fr}.event-status{grid-column:2}}@media(min-width:700px){.panel{flex-basis:calc(50% - 6px)}.section-rail{flex-wrap:wrap;overflow:visible;scroll-snap-type:none}}@media(prefers-reduced-motion:reduce){.section-rail{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
-    .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.detail-grid .value{font-size:17px}.payment-status{color:#e6cb91}
+    .detail-grid,.benefit-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.detail-grid .value{font-size:17px}.payment-status{color:#e6cb91}.benefit-grid{margin:14px 0}.benefit-card{padding:14px;border:1px solid rgba(216,189,137,.18);border-radius:14px;background:rgba(255,255,255,.025)}.benefit-card strong{display:block;margin-top:6px;color:#f0d892;font-size:20px}.wallet-code{letter-spacing:.16em}.wallet-state{color:#d9c18d}
   </style>
 </head>
 <body>
@@ -74,6 +75,7 @@ function renderShell(config, nonce) {
     <button type="button" data-view="jobs" aria-current="false" data-copy="navJobs">💼 JOBS</button>
     <button type="button" data-view="history" aria-current="false" data-copy="navHistory">🧾 HISTORY</button>
     <button type="button" data-view="care" aria-current="false" data-copy="navCare">🎁 CARE</button>
+    <button type="button" data-view="coupons" aria-current="false" data-copy="navCoupons">🎟 COUPONS</button>
   </nav>
   <section id="profile" class="profile hidden" aria-label="Member profile">
     <div class="section-rail">
@@ -111,6 +113,7 @@ function renderShell(config, nonce) {
     <section id="care" class="panel" aria-label="Care"><div class="card care">
       <span class="label" data-copy="careLabel">6 Years · Care Back</span><h2 data-copy="careTitle">Personal Care-Back Privilege</h2>
       <p id="care-message">ตรวจสอบผ่าน LINE เพื่อเปิดสิทธิ์ CARE BACK ก่อน คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จครับ</p>
+      <div id="care-benefits" class="benefit-grid hidden" aria-label="Personalized benefits"></div>
       <div id="care-code" class="care-code hidden"><span class="label">Personal Code</span><strong id="care-code-value"></strong></div>
       <button id="care-button" type="button">ตรวจสิทธิ์ CARE BACK</button>
       <div id="wish" class="wish hidden">
@@ -119,6 +122,10 @@ function renderShell(config, nonce) {
         <button id="wish-submit" type="button">ส่งคำอวยพรให้ MMD</button>
         <div id="wish-result" class="wish-result hidden" role="status" aria-live="polite"></div>
       </div>
+    </div></section>
+    <section id="coupons" class="panel" aria-label="Coupon Wallet"><div class="card">
+      <span class="label" data-copy="couponWalletLabel">Member LIFF</span><h2 data-copy="couponWalletTitle">🎟 คูปองของฉัน</h2>
+      <div id="coupon-wallet" class="stack"><p class="empty" data-copy="couponWalletEmpty">ยังไม่มีคูปองที่ออกให้กับบัญชีนี้ครับ</p></div>
     </div></section>
     </div>
   </section>
@@ -143,6 +150,11 @@ function renderShell(config, nonce) {
     en: { mark:"MMD Privé · Member Dashboard", title:"My MMD", subtitle:"Your member information in LINE, simply and privately.", navProfile:"Overview", navHome:"👤 HOME", navPoints:"⭐ POINTS", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"Member", tierLabel:"Member tier", pointsLabel:"Active points", expiryLabel:"Membership valid until", paymentLabel:"Payment status", historyLabel:"History · Last 1 Year", pointsTitle:"⭐ Points", pointsHistoryLabel:"Points history", packageTitle:"📦 Package", packageHistoryLabel:"Package history", jobsTitle:"💼 Jobs", requestsLabel:"Recent requests", mmsLabel:"MMS prebookings", historyTitle:"🧾 History", paymentHistoryLabel:"Payment history", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"We will check CARE BACK first. Your personal coupon becomes available after your wish is submitted successfully.", careButton:"Check CARE BACK", wishPlaceholder:"Leave a birthday wish for MMD here.", wishSubmit:"Send wish to MMD", ready:"Your confirmed information is ready.", checking:"We are checking your information.", checkingPoints:"Your points are being checked.", pointsRate:"Every THB 100 = 1 point", expiring:"Points expiring soon", empty:"No confirmed activity is available here yet.", careLoading:"Checking eligibility", careRetry:"Try checking again", wishEmpty:"Please write a wish before sending.", wishSaving:"Saving your wish", wishError:"Your wish could not be saved. Please try again.", wishRetry:"Try sending again", careChecked:"Your CARE BACK eligibility is checked. Submit a wish to unlock your personal 10% coupon.", wishDone:"MMD has received your wish.", wishPending:"We are securely confirming your previous wish. Please check again later.", wishReview:"This request needs further review. We have kept your route secure.", couponReady:"Send a wish to unlock the coupon", claimMessage:"MMD will update your privilege after the required membership and verification checks.", careCheckedButton:"CARE BACK checked", careResumedButton:"CARE BACK updated", promoLoading:"Checking your CARE BACK eligibility securely" },
     zh: { mark:"MMD Privé · Member Dashboard", title:"我的 MMD", subtitle:"在 LINE 内简单、私密地查看您的会员信息。", navProfile:"概览", navHome:"👤 HOME", navPoints:"⭐ POINTS", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"会员", tierLabel:"会员等级", pointsLabel:"可用积分", expiryLabel:"会员有效期至", paymentLabel:"付款状态", historyLabel:"最近一年记录", pointsTitle:"⭐ 积分", pointsHistoryLabel:"积分记录", packageTitle:"📦 套餐", packageHistoryLabel:"套餐记录", jobsTitle:"💼 服务", requestsLabel:"最近请求", mmsLabel:"MMS 预订", historyTitle:"🧾 记录", paymentHistoryLabel:"付款记录", careLabel:"6 Years · Care Back", careTitle:"专属 Care Back 礼遇", careIntro:"请先检查 CARE BACK。成功提交祝福后，您的专属优惠券将会开启。", careButton:"检查 CARE BACK", wishPlaceholder:"在这里留下给 MMD 的生日祝福。", wishSubmit:"向 MMD 发送祝福", ready:"您的已确认信息已准备好。", checking:"正在检查您的信息。", checkingPoints:"正在检查您的积分。", pointsRate:"每 THB 100 = 1 积分", expiring:"即将到期的积分", empty:"目前没有可显示的已确认记录。", careLoading:"正在检查资格", careRetry:"再次检查", wishEmpty:"请先写下祝福再发送。", wishSaving:"正在保存祝福", wishError:"祝福暂时无法保存，请稍后再试。", wishRetry:"再次发送", careChecked:"您的 CARE BACK 资格已检查。成功提交祝福后即可开启专属 10% 优惠券。", wishDone:"MMD 已收到您的祝福。", wishPending:"系统正在安全确认您之前提交的祝福，请稍后再查看。", wishReview:"此请求仍需进一步审核，我们已安全保留您的流程。", couponReady:"发送祝福以开启优惠券", claimMessage:"MMD 将在完成会员与验证检查后更新您的礼遇。", careCheckedButton:"CARE BACK 已检查", careResumedButton:"CARE BACK 已更新", promoLoading:"正在安全检查 CARE BACK 资格" },
   }[locale] || {};
+  Object.assign(copy, ({
+    th:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 คูปองของฉัน",couponWalletEmpty:"ยังไม่มีคูปองที่ออกให้กับบัญชีนี้ครับ"},
+    en:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 My coupons",couponWalletEmpty:"No coupon has been issued to this account yet."},
+    zh:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 我的优惠券",couponWalletEmpty:"此账户暂未获发优惠券。"},
+  })[locale] || {});
   const allowedIntentIds = new Set(["signup", "renew", "status"]);
   let busy = false;
 
@@ -198,8 +210,17 @@ function renderShell(config, nonce) {
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || payload.ok !== true) return null;
     renderProfile(payload.data || {});
+    await readCouponWallet();
     if (CONFIG.intent === "promo" && CONFIG.campaign === "care_back") await readCareBackState();
     return payload.data || {};
+  }
+
+  async function readCouponWallet() {
+    const response = await fetch(CONFIG.couponWalletEndpoint, { method:"GET",credentials:"same-origin",headers:{"accept":"application/json"} });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload || payload.ok !== true) return null;
+    renderCouponWallet(payload.wallet || {});
+    return payload.wallet || {};
   }
 
   async function readCareBackState() {
@@ -211,6 +232,7 @@ function renderShell(config, nonce) {
   }
 
   function renderCareBackState(data) {
+    if (data && data.claim) renderCareBackClaim(data.claim);
     const state = String(data && data.state || "");
     if (state === "claim_required") {
       wishPanel.classList.add("hidden");
@@ -413,9 +435,49 @@ function renderShell(config, nonce) {
     document.getElementById("care-code-value").textContent = code;
     codeWrap.classList.toggle("hidden", !code);
     document.getElementById("care-message").textContent = String(data.coupon_message || data.message || copy.claimMessage || "MMD จะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ");
+    renderPersonalizedBenefits(data.personalized_benefits);
+    renderCouponWallet(data.coupon_wallet);
     careButton.textContent = data.resumed ? (copy.careResumedButton || "อัปเดตสิทธิ์ CARE BACK แล้ว") : (copy.careCheckedButton || "ตรวจสิทธิ์ CARE BACK แล้ว");
     if (couponState === "wish_required") careButton.textContent = copy.couponReady || "ส่งคำอวยพรเพื่อเปิดคูปอง";
   }
+
+  function renderPersonalizedBenefits(items) {
+    const container = document.getElementById("care-benefits");
+    container.replaceChildren();
+    const benefits = safeList(items).slice(0, 4);
+    container.classList.toggle("hidden", benefits.length === 0);
+    for (const benefit of benefits) {
+      const type = String(benefit && benefit.type || "");
+      const value = Number(benefit && benefit.value);
+      if (!Number.isInteger(value) || value <= 0) continue;
+      const card = document.createElement("div"); card.className = "benefit-card";
+      const label = document.createElement("span"); label.className = "label"; label.textContent = benefitLabel(type);
+      const amount = document.createElement("strong"); amount.textContent = benefitValue(type, value);
+      const state = document.createElement("span"); state.className = "sub"; state.textContent = benefitState(benefit.state);
+      card.append(label, amount, state); container.append(card);
+    }
+    container.classList.toggle("hidden", container.childElementCount === 0);
+  }
+
+  function renderCouponWallet(wallet) {
+    const container = document.getElementById("coupon-wallet");
+    container.replaceChildren();
+    const code = String(wallet && wallet.code || "");
+    const status = String(wallet && wallet.status || "verification_required");
+    if (!/^[A-HJ-NP-Z2-9]{6}$/.test(code)) return appendEmpty(container, couponStateLabel(status));
+    const card = document.createElement("div"); card.className = "benefit-card";
+    const label = document.createElement("span"); label.className = "label"; label.textContent = "CARE BACK · 10%";
+    const value = document.createElement("strong"); value.className = "wallet-code"; value.textContent = code;
+    const state = document.createElement("span"); state.className = "wallet-state"; state.textContent = couponStateLabel(status);
+    card.append(label, value, state);
+    if (wallet.expires_at) { const expiry = document.createElement("span"); expiry.className = "sub"; expiry.textContent = String(wallet.expires_at).slice(0, 10); card.append(expiry); }
+    container.append(card);
+  }
+
+  function benefitLabel(type) { const labels = {th:{membership_extension:"ขยายเวลาสมาชิก",points_bonus:"คะแนนพิเศษ",personal_coupon:"คูปองส่วนตัว"},en:{membership_extension:"Membership extension",points_bonus:"Bonus points",personal_coupon:"Personal coupon"},zh:{membership_extension:"会员延期",points_bonus:"奖励积分",personal_coupon:"专属优惠券"}}; return (labels[locale] || labels.th)[type] || "CARE BACK"; }
+  function benefitValue(type, value) { if (type === "membership_extension") return value + (locale === "en" ? " days" : locale === "zh" ? " 天" : " วัน"); if (type === "points_bonus") return "+" + value + " Points"; return value + "%"; }
+  function benefitState(value) { const state = String(value || "pending"); const labels = {th:{ready:"พร้อมใช้",wish_required:"รอคำอวยพร",renewal_required:"รอต่ออายุ",payment_required:"รอยืนยันการชำระเงิน",verification_required:"รอตรวจสอบ",pending_application:"กำลังดำเนินการ",applied:"ได้รับแล้ว",used:"ใช้แล้ว",expired:"หมดอายุ"},en:{ready:"Ready",wish_required:"Wish required",renewal_required:"Renewal required",payment_required:"Payment verification required",verification_required:"Verification required",pending_application:"Processing",applied:"Applied",used:"Used",expired:"Expired"},zh:{ready:"可使用",wish_required:"等待祝福",renewal_required:"等待续费",payment_required:"等待付款验证",verification_required:"等待验证",pending_application:"处理中",applied:"已获得",used:"已使用",expired:"已过期"}}; return (labels[locale] || labels.th)[state] || (locale === "en" ? "Pending" : locale === "zh" ? "处理中" : "กำลังตรวจสอบ"); }
+  function couponStateLabel(value) { return benefitState(value); }
 
   function render(data) {
     const screen = data && typeof data.screen === "object" ? data.screen : {};
@@ -533,7 +595,7 @@ function normalizeView(value) {
   const view = String(value || "home").trim().toLowerCase();
   if (view === "profile") return "home";
   if (view === "care_back") return "care";
-  return new Set(["home", "points", "package", "jobs", "history", "care"]).has(view) ? view : "home";
+  return new Set(["home", "points", "package", "jobs", "history", "care", "coupons"]).has(view) ? view : "home";
 }
 
 function normalizeLanguage(value) {
