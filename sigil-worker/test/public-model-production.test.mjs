@@ -223,6 +223,23 @@ test("production apply persists once and returns an idempotent duplicate respons
   assert.equal(env.__airtable.applications.length, 1);
 });
 
+test("a fresh coordinator adopts the persisted application ID for pre-migration retries", async () => {
+  const env = makeEnv();
+  const payload = validApplication({ nickname: "Migration Retry" });
+  const first = await post(APPLY_URL, payload, env);
+  const firstBody = await first.json();
+  assert.equal(first.status, 200);
+
+  env.PUBLIC_MODEL_COORDINATOR = makeCoordinatorNamespace(env);
+  const retry = await post(APPLY_URL, payload, env);
+  const retryBody = await retry.json();
+
+  assert.equal(retry.status, 200);
+  assert.equal(retryBody.duplicate, true);
+  assert.equal(retryBody.application_id, firstBody.application_id);
+  assert.equal(env.__airtable.applications.length, 1);
+});
+
 test("concurrent production apply creates exactly one Airtable application", async () => {
   const env = makeEnv();
   const [first, second] = await Promise.all([
@@ -400,6 +417,40 @@ test("repeated upload PUT is idempotent and does not duplicate Airtable metadata
   assert.equal(retryBody.duplicate, true);
   assert.equal(env.__airtable.uploads.length, 1);
   assert.equal(env.PUBLIC_MODEL_UPLOADS_R2.objects.size, 1);
+});
+
+test("a fresh coordinator bootstraps attachment state for a pre-migration upload", async () => {
+  const env = makeEnv();
+  const authorization = await post(UPLOAD_URL, {
+    application_type: "public_model",
+    consent: true,
+    kind: "photo",
+    role: "front_face",
+    file_name: "front.jpg",
+    content_type: "image/jpeg",
+    file_size: 4,
+  }, env);
+  const authBody = await authorization.json();
+  const upload = await worker.fetch(new Request(authBody.upload_url, {
+    method: "PUT",
+    headers: { origin: ORIGIN, "content-type": "image/jpeg", "content-length": "4" },
+    body: new Uint8Array([1, 2, 3, 4]),
+    duplex: "half",
+  }), env);
+  assert.equal(upload.status, 200);
+
+  env.PUBLIC_MODEL_COORDINATOR = makeCoordinatorNamespace(env);
+  const apply = await post(APPLY_URL, validApplication({
+    nickname: "Migration Upload",
+    upload_session_id: authBody.upload_session_id,
+    uploads: [{ upload_ref: authBody.upload_ref, kind: "photo", role: "front_face" }],
+  }), env);
+  const applyBody = await apply.json();
+
+  assert.equal(apply.status, 200);
+  assert.equal(applyBody.ok, true);
+  assert.equal(env.__airtable.applications.length, 1);
+  assert.equal(env.__airtable.uploads[0].fields[publicModelTestInternals.UPLOAD_FIELDS.applicationId], applyBody.application_id);
 });
 
 test("production apply rejects an upload already attached to another application", async () => {

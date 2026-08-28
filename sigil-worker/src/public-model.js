@@ -252,7 +252,17 @@ export class PublicModelCoordinator {
       const applicationId = boundedString(body.application_id, 120);
       if (!validRef(applicationId, "pma")) return Response.json({ ok: false, error: "invalid_request" }, { status: 400 });
       const result = await this.state.storage.transaction(async (transaction) => {
-        const current = await transaction.get("upload");
+        let current = await transaction.get("upload");
+        if (!current && body.bootstrap_status === "uploaded") {
+          current = { status: "complete", completedAt: Date.now() };
+        } else if (!current && body.bootstrap_status === "attached" && validRef(body.bootstrap_application_id, "pma")) {
+          current = {
+            status: "complete",
+            completedAt: Date.now(),
+            applicationId: body.bootstrap_application_id,
+            attachmentStatus: "attached",
+          };
+        }
         if (current?.status !== "complete") return { state: "unavailable" };
         if (current.applicationId && current.applicationId !== applicationId) return { state: "conflict" };
         if (current.applicationId === applicationId) return { state: current.attachmentStatus === "attached" ? "attached" : "reserved" };
@@ -364,7 +374,11 @@ async function handleProductionApply(request, body, env, corsHeaders) {
     const normalized = normalizeApplication(body);
     const payloadHash = await sha256Hex(stableJson(normalized));
     const duplicateKey = await sha256Hex(CONTACT_FIELDS.map((field) => normalizeContact(body[field])).filter(Boolean).sort().join("|"));
-    const proposedApplicationId = `pma_${compactUtcDate(new Date())}_${randomId(12)}`;
+    const persistedApplication = await findApplicationByHash(env, payloadHash);
+    const persistedApplicationId = boundedString(persistedApplication?.fields?.[APPLICATION_FIELDS.applicationId], 120);
+    const proposedApplicationId = validRef(persistedApplicationId, "pma")
+      ? persistedApplicationId
+      : `pma_${compactUtcDate(new Date())}_${randomId(12)}`;
     const idempotencyScope = `idempotency:${payloadHash}`;
     const prepared = await coordinatorRequest(env, idempotencyScope, "/idempotency/prepare", { application_id: proposedApplicationId });
     const applicationId = prepared.application_id;
@@ -632,7 +646,11 @@ async function verifyUploads(body, env, applicationId) {
   const reserved = [];
   try {
     for (const item of items) {
-      const result = await coordinatorRequest(env, `upload:${item.uploadRef}`, "/upload/reserve-attachment", { application_id: applicationId });
+      const result = await coordinatorRequest(env, `upload:${item.uploadRef}`, "/upload/reserve-attachment", {
+        application_id: applicationId,
+        bootstrap_status: item.status,
+        bootstrap_application_id: item.applicationId,
+      });
       if (!["reserved", "attached"].includes(result.state)) {
         await releaseUploadReservations(env, reserved, applicationId);
         return { ok: false, error: "contains upload_ref reserved by another application" };
