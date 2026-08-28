@@ -227,6 +227,16 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/auth/me"
 zone_name = "mmdbkk.com"
 
+# Create Job Link Issuer API. Exact route only so Webflow-owned admin pages stay
+# untouched while Create Actual Job POST reaches admin-worker JSON handlers.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/job/create"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/job/create"
+zone_name = "mmdbkk.com"
+
 [[routes]]
 pattern = "mmdbkk.com/v1/internal/kenji/knowledge/published"
 zone_name = "mmdbkk.com"
