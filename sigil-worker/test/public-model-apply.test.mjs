@@ -192,6 +192,33 @@ test("public model upload-url validates kind, role, MIME, and size", async () =>
   }
 });
 
+test("public model upload-url rejects structured metadata and camelCase server fields", async () => {
+  const cases = [
+    [{ kind: {} }, "kind"],
+    [{ role: [] }, "role"],
+    [{ content_type: {} }, "content_type"],
+    [{ file_name: [] }, "file_name"],
+    [{ file_size: "1048576" }, "file_size"],
+    [{ upload_session_id: {} }, "upload_session_id"],
+    [{ source_path: [] }, "source_path"],
+    [{ objectKey: "public-model/private.jpg" }, "upload_payload"],
+    [{ publicFileUrl: "https://cdn.example/private.jpg" }, "upload_payload"],
+    [{ reviewStatus: "approved" }, "upload_payload"],
+  ];
+
+  for (const [overrides, field] of cases) {
+    const response = await call(testInternals.PUBLIC_MODEL_UPLOAD_URL_PATH, {
+      method: "POST",
+      headers: { origin: ORIGIN, "content-type": "application/json" },
+      body: JSON.stringify(validUploadPayload(overrides)),
+    });
+    const body = await response.json();
+    assert.equal(response.status, 400, JSON.stringify(overrides));
+    assert.equal(body.error, "invalid_payload");
+    assert.equal(Object.hasOwn(body.fields, field), true, field);
+  }
+});
+
 test("unknown routes still return not_found", async () => {
   const response = await call("/v1/public-model/apply/extra", { method: "POST" });
   const body = await response.json();
@@ -256,6 +283,17 @@ test("POST rejects structured nickname and contact values", async () => {
     assert.equal(body.error, "invalid_payload", field);
     assert.equal(Object.hasOwn(body.fields, field), true, field);
   }
+});
+
+test("POST permits blank optional contact fields when another contact is valid", async () => {
+  const response = await call(testInternals.PUBLIC_MODEL_APPLY_PATH, {
+    method: "POST",
+    headers: { origin: ORIGIN, "content-type": "application/json" },
+    body: JSON.stringify(validPayload({ email: "", instagram: "", social_url: "" })),
+  });
+  const body = await response.json();
+  assert.equal(response.status, 503);
+  assert.equal(body.error, "persistence_not_configured");
 });
 
 test("POST valid payload fails closed and does not mutate without approved persistence", async () => {
@@ -336,6 +374,11 @@ test("POST rejects upload object keys, URLs, raw data, and browser statuses", as
     { uploads: [validUploadRef({ public_file_url: "https://cdn.example/private.jpg" })] },
     { uploads: [validUploadRef({ upload_status: "uploaded" })] },
     { uploads: [validUploadRef({ review_status: "approved" })] },
+    { uploads: [validUploadRef({ objectKey: "public-model/private.jpg" })] },
+    { uploads: [validUploadRef({ publicFileUrl: "https://cdn.example/private.jpg" })] },
+    { uploads: [validUploadRef({ reviewStatus: "approved" })] },
+    { uploads: [validUploadRef({ kind: {} })] },
+    { uploads: [validUploadRef({ role: [] })] },
     { upload_refs: [validUploadRef({ upload_ref: "bad" })] },
     { files: ["raw-file"] },
     { base64: "data:image/jpeg;base64,aaaa" },

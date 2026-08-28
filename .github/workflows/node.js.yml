@@ -35,6 +35,13 @@ jobs:
       run: npm run test:member-pages-runtime
     - if: matrix.node-version == '22.x'
       run: npm run check:member-pages-wrangler
+    - if: matrix.node-version == '22.x'
+      run: npm ci --prefix sigil-worker --ignore-scripts
+    - if: matrix.node-version == '22.x'
+      run: npm test --prefix sigil-worker
+    - if: matrix.node-version == '22.x'
+      working-directory: sigil-worker
+      run: npx wrangler deploy --dry-run
     - if: matrix.node-version != '18.x'
       run: npm ci --prefix services/mmd-slip-extractor
     - if: matrix.node-version != '18.x'

@@ -78,6 +78,9 @@ jobs:
             'binding = "PUBLIC_MODEL_UPLOADS_R2"',
             'bucket_name = "mmd-private-public-model-uploads"',
             'binding = "SIGIL_BOARD_KV"',
+            'name = "PUBLIC_MODEL_COORDINATOR"',
+            'class_name = "PublicModelCoordinator"',
+            'new_sqlite_classes = ["PublicModelCoordinator"]',
           ];
           for (const marker of required) {
             if (!config.includes(marker)) throw new Error(`Missing required configuration: ${marker}`);
@@ -100,15 +103,36 @@ jobs:
             npx wrangler r2 bucket create mmd-private-public-model-uploads
           fi
 
+      - name: Ensure stable Public Model upload signing secret exists
+        working-directory: sigil-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          secrets_json="$(npx wrangler secret list --format json)"
+          secret_state="$(printf '%s' "$secrets_json" | node -e '
+            let input = "";
+            process.stdin.setEncoding("utf8");
+            process.stdin.on("data", (chunk) => { input += chunk; });
+            process.stdin.on("end", () => {
+              const secrets = JSON.parse(input);
+              process.stdout.write(secrets.some((secret) => secret.name === "PUBLIC_MODEL_UPLOAD_SIGNING_SECRET") ? "present" : "absent");
+            });
+          ')"
+          if [ "$secret_state" = "present" ]; then
+            echo "Stable Public Model signing secret already exists"
+          elif [ "$secret_state" = "absent" ]; then
+            openssl rand -hex 48 | npx wrangler secret put PUBLIC_MODEL_UPLOAD_SIGNING_SECRET
+          else
+            echo "Unable to determine Public Model signing secret state" >&2
+            exit 1
+          fi
+
       - name: Prepare production secrets
         shell: bash
         run: |
           set -euo pipefail
-          signing_secret="$(openssl rand -hex 48)"
-          echo "::add-mask::$signing_secret"
           {
             printf 'AIRTABLE_API_TOKEN=%s\n' "$AIRTABLE_API_TOKEN"
-            printf 'PUBLIC_MODEL_UPLOAD_SIGNING_SECRET=%s\n' "$signing_secret"
           } > "$RUNNER_TEMP/sigil-worker.env"
           chmod 600 "$RUNNER_TEMP/sigil-worker.env"
 
