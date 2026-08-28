@@ -1,6 +1,6 @@
 import worker from "./studio-telegram-worker.js";
 import dashboardWorker from "./dashboard-worker.js";
-import coreWorker, { MODEL_SCHEMA_PATCH_V1_ROUTES } from "./index.js";
+import coreWorker, { isAdminGateSessionAuthed, MODEL_SCHEMA_PATCH_V1_ROUTES } from "./index.js";
 import {
   APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON,
   APPROVED_ADMIN_LOGIN_FAVICON,
@@ -16,6 +16,7 @@ import { handleMmsAdminRequest, isMmsAdminRequest } from "./mms-admin-runtime.js
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
 export const ADMIN_DASHBOARD_API_PATH = "/v1/admin/dashboard";
+export const MEMBER_RESOLVER_DIAGNOSTIC_TRIGGER_PATH = "/internal/admin";
 export {
   ADMIN_LOGIN_SESSION_PATH,
   APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON,
@@ -93,9 +94,44 @@ export default {
       return response;
     }
 
+    if (path === MEMBER_RESOLVER_DIAGNOSTIC_TRIGGER_PATH && method === "POST") {
+      return handleMemberResolverDiagnosticTrigger(request, env, url);
+    }
+
     return worker.fetch(request, env, ctx);
   },
 };
+
+async function handleMemberResolverDiagnosticTrigger(request, env, url) {
+  const origin = request.headers.get("Origin") || "";
+  if (
+    origin !== url.origin ||
+    url.search !== "" ||
+    request.body !== null ||
+    !(await isAdminGateSessionAuthed(request, env))
+  ) {
+    return new Response(null, { status: 404 });
+  }
+
+  try {
+    const result = await env.MEMBER_PAGES_RESOLVER_DIAGNOSTIC?.runMemberResolverDiagnostic();
+    if (result === "healthy_zero_match") return boundedDiagnosticResponse(result, 200);
+  } catch {
+    // Preserve the bounded result contract for every downstream failure.
+  }
+  return boundedDiagnosticResponse("generic_failure", 503);
+}
+
+function boundedDiagnosticResponse(result, status) {
+  return new Response(result, {
+    status,
+    headers: {
+      "Cache-Control": "no-store, private",
+      "Content-Type": "text/plain; charset=utf-8",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
 
 export function renderAdminLogin(request, { status = 200, error = "", next = "/internal/admin/control-room" } = {}) {
   return renderApprovedAdminLogin(request, {

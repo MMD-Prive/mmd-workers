@@ -291,6 +291,11 @@ zone_name = "mmdbkk.com"
 binding = "MMS_WORKER"
 service = "mms-worker"
 
+[[services]]
+binding = "MEMBER_PAGES_RESOLVER_DIAGNOSTIC"
+service = "member-pages-worker"
+entrypoint = "MemberResolverDiagnosticEntrypoint"
+
 # ใช้สำหรับ CORS (browser calls)
 [vars]
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com"
