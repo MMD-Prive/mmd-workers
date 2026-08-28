@@ -22,6 +22,9 @@ head_sampling_rate = 1
 [vars]
 WORKER_NAME = "sigil-worker"
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.webflow.io"
+PUBLIC_MODEL_ENABLED = "true"
+PUBLIC_MODEL_UPLOAD_ENABLED = "true"
+PUBLIC_MODEL_UPLOAD_REQUIRED = "false"
 
 # Do not put secrets here.
 # Board queue reads are read-only:
@@ -38,3 +41,7 @@ ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbk
 binding = "SIGIL_BOARD_KV"
 id = "7922350083a644db8a48c16c7e48fca7"
 preview_id = "f673c4ab6e4f456baefeab032564db72"
+
+[[r2_buckets]]
+binding = "PUBLIC_MODEL_UPLOADS_R2"
+bucket_name = "mmd-private-public-model-uploads"

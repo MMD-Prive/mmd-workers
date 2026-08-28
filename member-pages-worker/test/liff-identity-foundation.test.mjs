@@ -32,6 +32,9 @@ class MemoryGatewayStore {
     this.inventory = new Set();
     this.packages = new Map();
     this.screens = new Map();
+    this.reviewResult = { membership_review: { exists: false, state: "none", authoritative: true }, source_state: "none" };
+    this.reviewError = null;
+    this.reviewCalls = [];
   }
 
   async upsertSession(session, recordId = "") {
@@ -50,6 +53,11 @@ class MemoryGatewayStore {
   async loadScreen(key) { return this.screens.get(key) || null; }
   async resolvePackage(code) { return this.packages.get(code) || null; }
   async hasHallAudienceInventory(audience) { return this.inventory.has(audience); }
+  async resolveMembershipReview(lineUserId) {
+    this.reviewCalls.push(lineUserId);
+    if (this.reviewError) throw this.reviewError;
+    return this.reviewResult;
+  }
 }
 
 class MemoryBirthdayWishStore {
@@ -216,6 +224,17 @@ async function start(runtime = env(), body = { id_token: "valid-token" }, path =
   return request(path, { body }, runtime);
 }
 
+async function startAndRoute(runtime, routePath = "/member/api/liff/membership-route", beforeRoute = null) {
+  lineVerify({ sub: "U1234567890abcdef" });
+  const started = await request("/member/api/liff/start", { body: { id_token: "valid-token", liff_intent: "status" } }, runtime);
+  assert.equal(started.response.status, 200);
+  if (beforeRoute) await beforeRoute(runtime);
+  return request(routePath, {
+    method: "GET",
+    cookie: cookiePair(findCookie(started.response, "__Host-mmd_liff_session")),
+  }, runtime);
+}
+
 function setCookies(response) {
   if (typeof response.headers.getSetCookie === "function") return response.headers.getSetCookie();
   const cookie = response.headers.get("set-cookie");
@@ -359,7 +378,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
   });
 
   it("valid LINE token succeeds, sets secure session cookie, and returns no raw token", async () => {
-    const { response, payload } = await start();
+    const { response, payload, runtime } = await start();
     const cookie = findCookie(response, "__Host-mmd_liff_session");
     assert.equal(response.status, 200);
     assert.equal(payload.ok, true);
@@ -371,6 +390,10 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.deepEqual(payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
     assertHostCookie(cookie, "__Host-mmd_liff_session", 900);
     assertNoSensitive(JSON.stringify(payload));
+    assert.equal(payload.data.line_user_id, undefined);
+    assert.equal(payload.data.renewal_flow_status, undefined);
+    assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].line_user_id, "U123");
+    assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].renewal_flow_status, "identity_linked");
   });
 
   it("returns the bounded member profile and holds the CARE BACK coupon for a Birthday Wish from the verified session", async () => {
@@ -787,7 +810,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(blocked.payload.error.code, "CARE_BACK_WISH_NOT_AVAILABLE");
   });
 
-  it("writes only the bounded LIFF session memory through the mock gateway store", async () => {
+  it("writes the verified LINE subject only to the bounded server-side renewal session", async () => {
     const runtime = env();
     lineVerify({ sub: "Uprivate-line-sub" });
     const result = await request("/member/api/liff/start?t=private-signed-t", {
@@ -799,7 +822,10 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     const stored = JSON.stringify(runtime.LIFF_GATEWAY_STORE.records[0]);
     assert.match(stored, /"source_channel":"line_liff"/);
     assert.match(stored, /"liff_intent":"signup"/);
-    assert.doesNotMatch(stored, /Uprivate-line-sub|private-id-token|private-signed-t|identity_key|pending_identity_id|tier|points|payment_status/i);
+    assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].line_user_id, "Uprivate-line-sub");
+    assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].renewal_flow_status, "identity_linked");
+    assert.doesNotMatch(stored, /private-id-token|private-signed-t|identity_key|pending_identity_id|tier|points|payment_status/i);
+    assert.doesNotMatch(JSON.stringify(result.payload), /Uprivate-line-sub|private-id-token|private-signed-t/i);
   });
 
   it("prefers a bounded mock flow-screen spec over the fallback copy", async () => {
@@ -1813,6 +1839,184 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
       body: {},
     }, runtime);
     assertNoSensitive(`${JSON.stringify(started.payload)}\n${JSON.stringify(hall.payload)}\n${logs.join("\n")}`);
+  });
+
+  describe("authenticated membership router", () => {
+    const profile = (membershipStatus) => ({
+      display_name: "Member",
+      tier: "Standard",
+      membership_status: membershipStatus,
+      points: 0,
+      history_window: { from: "2025-08-27", to: "2026-08-27", timezone: "Asia/Bangkok" },
+      history: [],
+    });
+
+    it("fails closed without an authenticated LIFF session", async () => {
+      const result = await request("/member/api/liff/membership-route", { method: "GET" }, env());
+      assert.equal(result.response.status, 401);
+      assert.deepEqual(result.payload, { decision: "fail_closed", destination: null, reason_code: "session_invalid" });
+    });
+
+    it("fails closed when the member resolver becomes unavailable or ambiguous", async () => {
+      for (const resolverPayload of [
+        resolver({ member_exists: false }, 503),
+        resolver({ member_exists: false, ambiguous: true }, 409),
+      ]) {
+        const runtime = env();
+        const result = await startAndRoute(runtime, "/member/api/liff/membership-route", () => {
+          runtime.MEMBER_STATUS_RESOLVER = resolverPayload;
+        });
+        assert.equal(result.response.status, 503);
+        assert.deepEqual(result.payload, { decision: "fail_closed", destination: null, reason_code: "resolver_unavailable" });
+      }
+    });
+
+    it("routes active and grace members to the canonical dashboard", async () => {
+      for (const status of ["active", "grace"]) {
+        const runtime = env({ MEMBER_STATUS_RESOLVER: resolver({ member_exists: true, profile: profile(status) }) });
+        const result = await startAndRoute(runtime);
+        assert.deepEqual(result.payload, {
+          decision: "dashboard",
+          destination: "https://mmdbkk.com/member/dashboard",
+          reason_code: `${status}_member`,
+        });
+        assert.equal(runtime.LIFF_GATEWAY_STORE.reviewCalls.length, 0);
+      }
+    });
+
+    it("routes an expired member to the canonical renewal page", async () => {
+      const runtime = env({ MEMBER_STATUS_RESOLVER: resolver({ member_exists: true, profile: profile("expired") }) });
+      const result = await startAndRoute(runtime);
+      assert.deepEqual(result.payload, {
+        decision: "renew",
+        destination: "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew",
+        reason_code: "expired_member",
+      });
+      assert.equal(runtime.LIFF_GATEWAY_STORE.reviewCalls.length, 0);
+    });
+
+    it("fails closed for missing, unknown, malformed, or conflicting member package state", async () => {
+      for (const status of ["", "unknown", "under_review"]) {
+        const runtime = env({ MEMBER_STATUS_RESOLVER: resolver({ member_exists: true, profile: profile(status) }) });
+        const result = await startAndRoute(runtime);
+        assert.equal(result.payload.decision, "fail_closed", status || "missing");
+        assert.equal(result.payload.destination, null, status || "missing");
+        assert.equal(result.payload.reason_code, "member_state_unavailable", status || "missing");
+      }
+
+      const runtime = env({ MEMBER_STATUS_RESOLVER: resolver({ member_exists: true, profile: profile("active") }) });
+      const conflicting = await startAndRoute(runtime, "/member/api/liff/membership-route", () => {
+        runtime.MEMBER_STATUS_RESOLVER = resolver({ member_exists: true }, 409);
+      });
+      assert.equal(conflicting.payload.decision, "fail_closed");
+      assert.equal(conflicting.payload.reason_code, "resolver_unavailable");
+    });
+
+    it("normalizes every approved zero-member pending source to pending_review", async () => {
+      const cases = [
+        ["legacy_match_needs_review", "pending_application"],
+        ["member_id_pending", "approved_awaiting_member_creation"],
+        ["renewal_pending_payment", "pending_payment_review"],
+        ["payment_proof_uploaded", "pending_payment_review"],
+        ["renewal_pending_review", "pending_payment_review"],
+      ];
+      for (const [sourceState, state] of cases) {
+        const runtime = env();
+        runtime.LIFF_GATEWAY_STORE.reviewResult = {
+          membership_review: { exists: true, state, authoritative: true },
+          source_state: sourceState,
+          record_id: "must-not-leak",
+          line_user_id: "must-not-leak",
+        };
+        const result = await startAndRoute(runtime);
+        assert.deepEqual(result.payload, {
+          decision: "pending_review",
+          destination: null,
+          reason_code: "authoritative_review_pending",
+        }, sourceState);
+        assert.doesNotMatch(JSON.stringify(result.payload), /must-not-leak|line_user_id|record_id/i);
+      }
+    });
+
+    it("allows signup only for a healthy zero-member result with no pending state", async () => {
+      for (const sourceState of ["started", "identity_linked", "none"]) {
+        const runtime = env();
+        runtime.LIFF_GATEWAY_STORE.reviewResult = {
+          membership_review: { exists: sourceState !== "none", state: "none", authoritative: true },
+          source_state: sourceState,
+        };
+        const result = await startAndRoute(runtime);
+        assert.deepEqual(result.payload, {
+          decision: "signup",
+          destination: "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup",
+          reason_code: "no_member_or_pending_review",
+        }, sourceState);
+      }
+    });
+
+    it("fails closed for blocked, cancelled, error, and unknown review states", async () => {
+      for (const [sourceState, state] of [
+        ["blocked", "rejected"],
+        ["cancelled", "rejected"],
+        ["error", "incomplete"],
+        ["unknown", "incomplete"],
+      ]) {
+        const runtime = env();
+        runtime.LIFF_GATEWAY_STORE.reviewResult = {
+          membership_review: { exists: true, state, authoritative: true },
+          source_state: sourceState,
+        };
+        const result = await startAndRoute(runtime);
+        assert.deepEqual(result.payload, { decision: "fail_closed", destination: null, reason_code: "review_state_unavailable" }, sourceState);
+      }
+    });
+
+    it("fails closed when review lookup fails, is ambiguous, or is not authoritative", async () => {
+      for (const mode of ["lookup_failure", "ambiguous", "not_authoritative"]) {
+        const runtime = env();
+        if (mode === "not_authoritative") {
+          runtime.LIFF_GATEWAY_STORE.reviewResult = { membership_review: { exists: false, state: "none", authoritative: false } };
+        } else {
+          runtime.LIFF_GATEWAY_STORE.reviewError = new Error(mode);
+        }
+        const result = await startAndRoute(runtime);
+        assert.equal(result.response.status, 503, mode);
+        assert.deepEqual(result.payload, { decision: "fail_closed", destination: null, reason_code: "review_unavailable" }, mode);
+      }
+    });
+
+    it("rejects every browser authority override and never returns private fields", async () => {
+      for (const query of [
+        "tier=active",
+        "status=expired",
+        "line_user_id=Uattacker",
+        "destination=https%3A%2F%2Fevil.example",
+        "decision=dashboard",
+      ]) {
+        const runtime = env();
+        const result = await startAndRoute(runtime, `/member/api/liff/membership-route?${query}`);
+        assert.equal(result.response.status, 400, query);
+        assert.deepEqual(result.payload, { decision: "fail_closed", destination: null, reason_code: "browser_authority_rejected" }, query);
+        assert.doesNotMatch(JSON.stringify(result.payload), /U1234567890abcdef|Airtable|record_id|member_id|payment_ref/i);
+      }
+    });
+
+    it("uses only the member resolver and mock review store with zero model or production Airtable calls", async () => {
+      let unexpectedFetches = 0;
+      const runtime = env();
+      const started = await start(runtime, { id_token: "valid-token", liff_intent: "status" });
+      globalThis.fetch = async () => {
+        unexpectedFetches += 1;
+        throw new Error("router must not call external services");
+      };
+      const result = await request("/member/api/liff/membership-route", {
+        method: "GET",
+        cookie: cookiePair(findCookie(started.response, "__Host-mmd_liff_session")),
+      }, runtime);
+      assert.equal(result.payload.decision, "signup");
+      assert.equal(unexpectedFetches, 0);
+      assert.equal("OPENAI_API_KEY" in runtime, false);
+    });
   });
 
   it("legacy and unknown LIFF routes fail closed", async () => {

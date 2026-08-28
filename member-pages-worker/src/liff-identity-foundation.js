@@ -21,6 +21,9 @@ const MEMBER_PROFILE_RESOLVER_PURPOSE = "liff_member_profile_read";
 const MEMBER_RESOLVER_SECRET_HEADER = "x-mmd-member-resolver-secret";
 const PAYMENT_BINDING_STATUS = "contract_unavailable";
 const CANONICAL_MEMBER_ROUTE = "/sigil/member/membership";
+const MEMBERSHIP_SIGNUP_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup";
+const MEMBERSHIP_RENEW_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew";
+const MEMBER_DASHBOARD_URL = "https://mmdbkk.com/member/dashboard";
 
 const LEGACY_IDENTIFY_PATHS = new Set(["/member/api/liff/identify", "/member/api/liff/identify/"]);
 const START_PATHS = new Set(["/member/api/liff/start", "/member/api/liff/start/"]);
@@ -30,6 +33,7 @@ const PACKAGE_PATHS = new Set(["/member/api/liff/package", "/member/api/liff/pac
 const PAYMENT_INTENT_PATHS = new Set(["/member/api/liff/payment-intent", "/member/api/liff/payment-intent/"]);
 const STATUS_PATHS = new Set(["/member/api/liff/status", "/member/api/liff/status/"]);
 const PROFILE_PATHS = new Set(["/member/api/liff/profile", "/member/api/liff/profile/"]);
+const MEMBERSHIP_ROUTE_PATHS = new Set(["/member/api/liff/membership-route", "/member/api/liff/membership-route/"]);
 const DASHBOARD_PATHS = new Set(["/api/member/dashboard", "/api/member/dashboard/"]);
 const MMS_CATALOG_PATHS = new Set(["/member/api/mms/catalog", "/member/api/mms/catalog/", "/member/api/liff/mms/catalog", "/member/api/liff/mms/catalog/"]);
 const MMS_MATCH_PATHS = new Set(["/member/api/mms/match", "/member/api/mms/match/", "/member/api/liff/mms/match", "/member/api/liff/mms/match/"]);
@@ -127,6 +131,8 @@ export default {
         response = await handleStatus(request, env);
       } else if (PROFILE_PATHS.has(path)) {
         response = await handleMemberProfile(request, env);
+      } else if (MEMBERSHIP_ROUTE_PATHS.has(path)) {
+        response = await handleMembershipRoute(request, env);
       } else if (CARE_BACK_CLAIM_PATHS.has(path)) {
         response = await handleCareBackClaim(request, env);
       } else if (CARE_BACK_STATE_PATHS.has(path)) {
@@ -301,6 +307,9 @@ export async function handleStart(request, env = {}) {
   const liffIntent = normalizeLiffIntent(body.liff_intent ?? body.intent);
   const continuity = cleanContinuity(new URL(request.url).searchParams.get("t"));
   const session = await issueSession(env, {
+    line_user_id: verified.sub,
+    verified_at: new Date().toISOString(),
+    renewal_flow_status: "identity_linked",
     identity_key: identityKey,
     member_exists: existing.exists,
     member_id: memberProfile?.member_id || null,
@@ -549,6 +558,51 @@ export async function handleMemberProfile(request, env = {}) {
   return json({ ok: true, data: safeMemberProfile(auth.session.member_profile) }, 200, {
     cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
   });
+}
+
+export async function handleMembershipRoute(request, env = {}) {
+  if (request.method !== "GET") return membershipRouteResponse("fail_closed", null, "method_not_allowed", 405);
+  if (rejectUnapprovedOrigin(request, env)) return membershipRouteResponse("fail_closed", null, "origin_not_allowed", 403);
+  if (new URL(request.url).search) return membershipRouteResponse("fail_closed", null, "browser_authority_rejected", 400);
+  if (!hasFoundationBindings(env)) return membershipRouteResponse("fail_closed", null, "resolver_unavailable", 503);
+  const gatewayStore = getLiffGatewayStore(env);
+  if (!gatewayStore || typeof gatewayStore.resolveMembershipReview !== "function") {
+    return membershipRouteResponse("fail_closed", null, "review_unavailable", 503);
+  }
+
+  const auth = await authenticateAndRotate(request, env);
+  if (!auth.ok) return membershipRouteResponse("fail_closed", null, "session_invalid", 401, [clearCookie(SESSION_COOKIE)]);
+  const lineUserId = String(auth.session.line_user_id || "").trim();
+  if (!lineUserId) return commitMembershipRoute(env, auth, "fail_closed", null, "identity_unavailable", 503);
+
+  const member = await resolveExistingMember(env, lineUserId);
+  if (!member.ok) return commitMembershipRoute(env, auth, "fail_closed", null, "resolver_unavailable", 503);
+  if (member.exists) {
+    const profile = await resolveMemberProfile(env, lineUserId);
+    if (!profile?.ok) return commitMembershipRoute(env, auth, "fail_closed", null, "member_state_unavailable", 503);
+    const status = String(profile.profile?.membership_status || "").trim().toLowerCase();
+    if (status === "active" || status === "grace") {
+      return commitMembershipRoute(env, auth, "dashboard", MEMBER_DASHBOARD_URL, `${status}_member`, 200);
+    }
+    if (status === "expired") return commitMembershipRoute(env, auth, "renew", MEMBERSHIP_RENEW_URL, "expired_member", 200);
+    return commitMembershipRoute(env, auth, "fail_closed", null, "member_state_unavailable", 200);
+  }
+
+  let review;
+  try {
+    review = await gatewayStore.resolveMembershipReview(lineUserId);
+  } catch {
+    return commitMembershipRoute(env, auth, "fail_closed", null, "review_unavailable", 503);
+  }
+  if (review?.membership_review?.authoritative !== true) {
+    return commitMembershipRoute(env, auth, "fail_closed", null, "review_unavailable", 503);
+  }
+  const state = String(review.membership_review.state || "");
+  if (["pending_application", "pending_payment_review", "approved_awaiting_member_creation"].includes(state)) {
+    return commitMembershipRoute(env, auth, "pending_review", null, "authoritative_review_pending", 200);
+  }
+  if (state === "none") return commitMembershipRoute(env, auth, "signup", MEMBERSHIP_SIGNUP_URL, "no_member_or_pending_review", 200);
+  return commitMembershipRoute(env, auth, "fail_closed", null, "review_state_unavailable", 200);
 }
 
 export async function handleMemberDashboard(request, env = {}) {
@@ -1235,6 +1289,9 @@ async function recordGatewayDecision(gatewayStore, session) {
 function gatewaySessionRecord(session) {
   return {
     session_id: session.session_id,
+    line_user_id: session.line_user_id,
+    verified_at: session.verified_at,
+    renewal_flow_status: session.renewal_flow_status,
     liff_intent: session.liff_intent,
     source_channel: session.source_channel,
     hype_decision_status: session.hype_decision_status,
@@ -1790,6 +1847,17 @@ function unavailable(code) { return json({ ok: false, error: { code, message: "L
 function gatewayStorageFailure(error) {
   const code = error instanceof LiffGatewayStorageError ? error.code : "LIFF_GATEWAY_STORAGE_UNAVAILABLE";
   return json({ ok: false, error: { code, message: "LIFF session storage is temporarily unavailable." } }, 503);
+}
+function membershipRouteResponse(decision, destination, reasonCode, status = 200, cookies = []) {
+  return json({ decision, destination, reason_code: reasonCode }, status, { cookies });
+}
+async function commitMembershipRoute(env, auth, decision, destination, reasonCode, status) {
+  try {
+    await commitRotatedSession(env, auth);
+  } catch {
+    return membershipRouteResponse("fail_closed", null, "session_commit_failed", 503);
+  }
+  return membershipRouteResponse(decision, destination, reasonCode, status, [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)]);
 }
 async function saveRotatedError(env, auth, code, message, status) {
   try {

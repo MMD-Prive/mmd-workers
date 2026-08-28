@@ -1,0 +1,172 @@
+name: Deploy sigil-worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "sigil-worker/**"
+      - ".github/workflows/deploy-sigil-worker.yml"
+
+concurrency:
+  group: deploy-sigil-worker-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.MMS_CLOUDFLARE_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      AIRTABLE_API_TOKEN: ${{ secrets.SIGIL_AIRTABLE_API_TOKEN || secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      NO_COLOR: "1"
+      WRANGLER_SEND_METRICS: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+
+      - name: Normalize required credentials
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const clean = (value) => String(value || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
+          const cloudflareToken = clean(process.env.CLOUDFLARE_API_TOKEN);
+          const accountId = clean(process.env.CLOUDFLARE_ACCOUNT_ID);
+          const airtableToken = clean(process.env.AIRTABLE_API_TOKEN);
+          if (!cloudflareToken || !accountId) throw new Error("Cloudflare deployment credentials are missing");
+          if (!airtableToken) throw new Error("SIGIL Airtable production credential is missing");
+          console.log(`::add-mask::${cloudflareToken}`);
+          console.log(`::add-mask::${airtableToken}`);
+          fs.appendFileSync(process.env.GITHUB_ENV, [
+            `CLOUDFLARE_API_TOKEN=${cloudflareToken}`,
+            `CLOUDFLARE_ACCOUNT_ID=${accountId}`,
+            `AIRTABLE_API_TOKEN=${airtableToken}`,
+            "",
+          ].join("\n"));
+          NODE
+
+      - name: Install sigil-worker dependencies
+        run: npm install --prefix sigil-worker --ignore-scripts
+
+      - name: Test sigil-worker
+        run: npm test --prefix sigil-worker
+
+      - name: Validate production configuration
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const config = fs.readFileSync("sigil-worker/wrangler.toml", "utf8");
+          const required = [
+            'name = "sigil-worker"',
+            'workers_dev = true',
+            'PUBLIC_MODEL_ENABLED = "true"',
+            'PUBLIC_MODEL_UPLOAD_ENABLED = "true"',
+            'PUBLIC_MODEL_UPLOAD_REQUIRED = "false"',
+            'binding = "PUBLIC_MODEL_UPLOADS_R2"',
+            'bucket_name = "mmd-private-public-model-uploads"',
+            'binding = "SIGIL_BOARD_KV"',
+          ];
+          for (const marker of required) {
+            if (!config.includes(marker)) throw new Error(`Missing required configuration: ${marker}`);
+          }
+          if (/^\s*routes\s*=/m.test(config) || /^\s*\[\[routes\]\]/m.test(config)) {
+            throw new Error("Custom routes remain forbidden for this production release");
+          }
+          NODE
+
+      - name: Validate Cloudflare bundle
+        working-directory: sigil-worker
+        run: npx wrangler deploy --dry-run
+
+      - name: Ensure private Public Model R2 bucket exists
+        working-directory: sigil-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! npx wrangler r2 bucket info mmd-private-public-model-uploads >/dev/null 2>&1; then
+            npx wrangler r2 bucket create mmd-private-public-model-uploads
+          fi
+
+      - name: Prepare production secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          signing_secret="$(openssl rand -hex 48)"
+          echo "::add-mask::$signing_secret"
+          {
+            printf 'AIRTABLE_API_TOKEN=%s\n' "$AIRTABLE_API_TOKEN"
+            printf 'PUBLIC_MODEL_UPLOAD_SIGNING_SECRET=%s\n' "$signing_secret"
+          } > "$RUNNER_TEMP/sigil-worker.env"
+          chmod 600 "$RUNNER_TEMP/sigil-worker.env"
+
+      - name: Deploy sigil-worker
+        id: deploy
+        working-directory: sigil-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --keep-vars --secrets-file "$RUNNER_TEMP/sigil-worker.env" 2>&1 | tee "$RUNNER_TEMP/sigil-worker-deploy.log"
+          url="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' "$RUNNER_TEMP/sigil-worker-deploy.log" | tail -n 1)"
+          if [ -z "$url" ]; then url="https://sigil-worker.malemodel-bkk.workers.dev"; fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Verify production readiness
+        env:
+          DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="$DEPLOY_URL"
+          for attempt in $(seq 1 12); do
+            code="$(curl --silent --show-error --output "$RUNNER_TEMP/sigil-health.json" --write-out '%{http_code}' "$url/health" || true)"
+            if [ "$code" = "200" ]; then break; fi
+            sleep 5
+          done
+          test "${code:-}" = "200"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const health = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/sigil-health.json", "utf8"));
+          if (!health.ok || health.worker !== "sigil-worker") throw new Error("sigil-worker health identity failed");
+          if (!health.capabilities?.public_model_apply) throw new Error("Public Model persistence capability is missing");
+          if (!health.capabilities?.public_model_upload) throw new Error("Public Model upload capability is missing");
+          NODE
+
+          preflight="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' -X OPTIONS -H 'Origin: https://www.mmdbkk.com' -H 'Access-Control-Request-Method: POST' "$url/v1/public-model/apply")"
+          test "$preflight" = "204"
+
+          invalid_apply="$(curl --silent --show-error --output "$RUNNER_TEMP/invalid-apply.json" --write-out '%{http_code}' -X POST -H 'Origin: https://www.mmdbkk.com' -H 'Content-Type: application/json' --data '{"application_type":"public_model","consent":false}' "$url/v1/public-model/apply")"
+          test "$invalid_apply" = "400"
+
+          invalid_upload="$(curl --silent --show-error --output "$RUNNER_TEMP/invalid-upload.json" --write-out '%{http_code}' -X POST -H 'Origin: https://www.mmdbkk.com' -H 'Content-Type: application/json' --data '{"application_type":"public_model","consent":true}' "$url/v1/public-model/upload-url")"
+          test "$invalid_upload" = "400"
+
+          node <<'NODE'
+          const fs = require("node:fs");
+          for (const name of ["invalid-apply.json", "invalid-upload.json"]) {
+            const body = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/" + name, "utf8"));
+            if (body.ok !== false || body.error !== "invalid_payload") throw new Error(`Unexpected ${name} contract`);
+          }
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
+            "## sigil-worker Public Model production",
+            "",
+            `- URL: ${process.env.DEPLOY_URL}`,
+            "- Airtable persistence: ready",
+            "- Private R2 upload: ready",
+            "- CORS preflight: verified",
+            "- Invalid apply/upload contracts: verified",
+            "",
+          ].join("\n"));
+          NODE

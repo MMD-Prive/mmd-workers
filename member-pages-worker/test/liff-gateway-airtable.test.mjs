@@ -42,6 +42,9 @@ describe("LIFF gateway Airtable adapter", () => {
     const store = getLiffGatewayStore(env());
     const result = await store.upsertSession({
       session_id: "0a0b0c0d-0e0f-4a0b-8c0d-0e0f0a0b0c0d",
+      line_user_id: "U1234567890abcdef",
+      renewal_flow_status: "identity_linked",
+      verified_at: "2026-08-27T05:00:00.000Z",
       liff_intent: "signup",
       source_channel: "line_liff",
       hype_decision_status: "asking_audience",
@@ -66,6 +69,9 @@ describe("LIFF gateway Airtable adapter", () => {
     assert.match(calls[0].url, /tblXjQFwo0A2cHseh/);
     assert.deepEqual(calls[0].body.fields, {
       renewal_session_id: "0a0b0c0d-0e0f-4a0b-8c0d-0e0f0a0b0c0d",
+      line_user_id: "U1234567890abcdef",
+      renewal_flow_status: "identity_linked",
+      verified_at: "2026-08-27T05:00:00.000Z",
       liff_intent: "signup",
       source_channel: "line_liff",
       hype_decision_status: "asking_audience",
@@ -84,6 +90,68 @@ describe("LIFF gateway Airtable adapter", () => {
     assert.doesNotMatch(JSON.stringify(calls[0].body), /must-not-leave-worker|Uprivate|never-store-me/);
     assert.equal(LIFF_GATEWAY_ROUTES.has("/sigil/member/membership"), true);
     assert.equal(LIFF_GATEWAY_ROUTES.has("/member/membership"), false);
+  });
+
+  it("resolves the latest server-linked renewal session into the bounded membership-review contract", async () => {
+    const calls = mockAirtable(async () => new Response(JSON.stringify({ records: [{ fields: {
+      line_user_id: "U1234567890abcdef",
+      renewal_flow_status: "renewal_pending_review",
+      verified_at: "2026-08-27T05:00:00.000Z",
+      member_id_canonical: "must-not-leak",
+      payment_reference: "must-not-leak",
+    } }] }), { status: 200, headers: { "content-type": "application/json" } }));
+
+    const result = await getLiffGatewayStore(env()).resolveMembershipReview("U1234567890abcdef");
+    assert.deepEqual(result, {
+      membership_review: { exists: true, state: "pending_payment_review", authoritative: true },
+      source_state: "renewal_pending_review",
+    });
+    const query = new URL(calls[0].url).searchParams;
+    assert.equal(query.get("filterByFormula"), "{line_user_id}='U1234567890abcdef'");
+    assert.equal(query.get("maxRecords"), "2");
+    assert.equal(query.get("sort[0][field]"), "verified_at");
+    assert.equal(query.get("sort[0][direction]"), "desc");
+    assert.doesNotMatch(JSON.stringify(result), /must-not-leak/);
+  });
+
+  it("normalizes review states without treating identity start as pending review", async () => {
+    const cases = new Map([
+      ["started", "none"],
+      ["identity_linked", "none"],
+      ["legacy_match_needs_review", "pending_application"],
+      ["member_id_pending", "approved_awaiting_member_creation"],
+      ["renewal_pending_payment", "pending_payment_review"],
+      ["payment_proof_uploaded", "pending_payment_review"],
+      ["renewal_pending_review", "pending_payment_review"],
+      ["renewal_verified", "none"],
+      ["materialized", "none"],
+      ["blocked", "rejected"],
+      ["cancelled", "rejected"],
+      ["error", "incomplete"],
+      ["unexpected", "incomplete"],
+    ]);
+    for (const [sourceState, expected] of cases) {
+      mockAirtable(async () => Response.json({ records: [{ fields: {
+        renewal_flow_status: sourceState,
+        verified_at: "2026-08-27T05:00:00.000Z",
+      } }] }));
+      const result = await getLiffGatewayStore(env()).resolveMembershipReview("U1234567890abcdef");
+      assert.equal(result.membership_review.state, expected, sourceState);
+    }
+  });
+
+  it("fails closed for invalid identity, malformed records, and ambiguous newest sessions", async () => {
+    const store = getLiffGatewayStore(env());
+    await assert.rejects(store.resolveMembershipReview("browser-value"), /LIFF_MEMBERSHIP_REVIEW_IDENTITY_INVALID/);
+
+    mockAirtable(async () => Response.json({ records: [{ fields: {} }] }));
+    await assert.rejects(store.resolveMembershipReview("U1234567890abcdef"), /LIFF_MEMBERSHIP_REVIEW_AMBIGUOUS/);
+
+    mockAirtable(async () => Response.json({ records: [
+      { fields: { renewal_flow_status: "renewal_pending_review", verified_at: "2026-08-27T05:00:00.000Z" } },
+      { fields: { renewal_flow_status: "identity_linked", verified_at: "2026-08-27T05:00:00.000Z" } },
+    ] }));
+    await assert.rejects(store.resolveMembershipReview("U1234567890abcdef"), /LIFF_MEMBERSHIP_REVIEW_AMBIGUOUS/);
   });
 
   it("fails closed before Airtable when a session select option or route is outside the validated schema", async () => {
@@ -164,6 +232,9 @@ describe("LIFF gateway Airtable adapter", () => {
     assert.equal("source_channel" in calls[0].body.fields, false);
     assert.equal("hype_decision_status" in calls[0].body.fields, false);
     assert.equal("model_visibility_mode" in calls[0].body.fields, false);
+    assert.equal("line_user_id" in calls[0].body.fields, false);
+    assert.equal("renewal_flow_status" in calls[0].body.fields, false);
+    assert.equal("verified_at" in calls[0].body.fields, false);
   });
 
   it("links HYPE decisions to the production LINE Renewal Session record and omits nonexistent fields", async () => {
