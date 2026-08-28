@@ -108,18 +108,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if npx wrangler secret list --format json | node -e '
+          secrets_json="$(npx wrangler secret list --format json)"
+          secret_state="$(printf '%s' "$secrets_json" | node -e '
             let input = "";
             process.stdin.setEncoding("utf8");
             process.stdin.on("data", (chunk) => { input += chunk; });
             process.stdin.on("end", () => {
               const secrets = JSON.parse(input);
-              process.exit(secrets.some((secret) => secret.name === "PUBLIC_MODEL_UPLOAD_SIGNING_SECRET") ? 0 : 1);
+              process.stdout.write(secrets.some((secret) => secret.name === "PUBLIC_MODEL_UPLOAD_SIGNING_SECRET") ? "present" : "absent");
             });
-          '; then
+          ')"
+          if [ "$secret_state" = "present" ]; then
             echo "Stable Public Model signing secret already exists"
-          else
+          elif [ "$secret_state" = "absent" ]; then
             openssl rand -hex 48 | npx wrangler secret put PUBLIC_MODEL_UPLOAD_SIGNING_SECRET
+          else
+            echo "Unable to determine Public Model signing secret state" >&2
+            exit 1
           fi
 
       - name: Prepare production secrets

@@ -53,6 +53,7 @@ function makeCoordinatorNamespace(env) {
         const values = new Map();
         let transactionQueue = Promise.resolve();
         const storage = {
+          alarmAt: null,
           async get(key) {
             return values.get(key);
           },
@@ -61,6 +62,12 @@ function makeCoordinatorNamespace(env) {
           },
           async delete(key) {
             values.delete(key);
+          },
+          async deleteAll() {
+            values.clear();
+          },
+          async setAlarm(timestamp) {
+            this.alarmAt = timestamp;
           },
           transaction(callback) {
             const run = transactionQueue.then(() => callback({
@@ -283,6 +290,32 @@ test("atomic rate limiting rejects one of six concurrent apply requests", async 
   assert.equal(responses.filter((response) => response.status === 200).length, 5);
   assert.equal(responses.filter((response) => response.status === 429).length, 1);
   assert.equal(env.__airtable.applications.length, 5);
+});
+
+test("Durable Object rate counters schedule expiry and delete inactive storage", async () => {
+  const values = new Map();
+  let alarmAt = null;
+  const storage = {
+    async get(key) { return values.get(key); },
+    async put(key, value) { values.set(key, value); },
+    async deleteAll() { values.clear(); },
+    async setAlarm(timestamp) { alarmAt = timestamp; },
+    async transaction(callback) { return callback(this); },
+  };
+  const coordinator = new PublicModelCoordinator({
+    storage,
+    async blockConcurrencyWhile(callback) { return callback(); },
+  }, {});
+  const response = await coordinator.fetch(new Request("https://coordinator/rate-limit", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ limit: 5, window_seconds: 60 }),
+  }));
+  assert.equal(response.status, 200);
+  assert.equal(values.size, 1);
+  assert.equal(alarmAt > Date.now(), true);
+  await coordinator.alarm();
+  assert.equal(values.size, 0);
 });
 
 test("production upload issues a signed opaque URL, stores R2 privately, and attaches metadata", async () => {

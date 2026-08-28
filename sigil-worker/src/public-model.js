@@ -182,6 +182,7 @@ export class PublicModelCoordinator {
         await transaction.put("rate", { bucket, count: next });
         return next;
       });
+      await this.state.storage.setAlarm((bucket + 1) * windowSeconds * 1000 + 60_000);
       return Response.json({ ok: true, limited: count > limit });
     }
 
@@ -285,6 +286,10 @@ export class PublicModelCoordinator {
     }
 
     return Response.json({ ok: false, error: "not_found" }, { status: 404 });
+  }
+
+  async alarm() {
+    await this.state.storage.deleteAll();
   }
 }
 
