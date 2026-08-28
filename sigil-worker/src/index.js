@@ -1,70 +1,20 @@
+import {
+  handlePublicModelRequest,
+  PUBLIC_MODEL_ALLOWED_WORK_TYPES,
+  PUBLIC_MODEL_APPLY_PATH,
+  PUBLIC_MODEL_DOCUMENT_MIME_TYPES,
+  PUBLIC_MODEL_DOCUMENT_ROLES,
+  PUBLIC_MODEL_MAX_UPLOAD_BYTES,
+  PUBLIC_MODEL_PHOTO_MIME_TYPES,
+  PUBLIC_MODEL_PHOTO_ROLES,
+  PUBLIC_MODEL_SERVICE,
+  PUBLIC_MODEL_UPLOAD_SERVICE,
+  PUBLIC_MODEL_UPLOAD_URL_PATH,
+} from "./public-model.js";
+
 const WORKER_NAME_FALLBACK = "sigil-worker";
 const MODE = "read_only";
 const SOURCE = "worker";
-
-const PUBLIC_MODEL_APPLY_PATH = "/v1/public-model/apply";
-const PUBLIC_MODEL_UPLOAD_URL_PATH = "/v1/public-model/upload-url";
-const PUBLIC_MODEL_SERVICE = "mmd_public_model_apply";
-const PUBLIC_MODEL_UPLOAD_SERVICE = "mmd_public_model_upload_url";
-const PUBLIC_MODEL_ALLOWED_WORK_TYPES = new Set([
-  "Modeling",
-  "Public Events",
-  "Brand Appearance",
-  "Fitness / Body Profile",
-  "Travel / On-location",
-  "Conversation / Hosting",
-  "Private Review Only",
-]);
-const PUBLIC_MODEL_UPLOAD_KINDS = new Set(["photo", "document"]);
-const PUBLIC_MODEL_PHOTO_ROLES = new Set([
-  "front_face",
-  "half_body",
-  "full_body",
-  "lifestyle",
-  "sport_activity",
-  "body_presentation",
-  "other_photo",
-]);
-const PUBLIC_MODEL_DOCUMENT_ROLES = new Set([
-  "trainer_certificate",
-  "medical_or_therapeutic_license",
-  "massage_training_certificate",
-  "scuba_instructor_certificate",
-  "sport_health_certificate",
-  "professional_certificate",
-  "other_document",
-]);
-const PUBLIC_MODEL_PHOTO_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-const PUBLIC_MODEL_DOCUMENT_MIME_TYPES = new Set(["application/pdf", ...PUBLIC_MODEL_PHOTO_MIME_TYPES]);
-const PUBLIC_MODEL_MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
-const PUBLIC_MODEL_FORBIDDEN_UPLOAD_KEYS = new Set([
-  "base64",
-  "blob",
-  "file",
-  "files",
-  "image",
-  "images",
-  "photo",
-  "photos",
-  "document",
-  "documents",
-  "object_key",
-  "r2_object_key",
-  "public_file_url",
-  "permanent_file_url",
-  "file_url",
-  "photo_url",
-  "document_url",
-  "upload_url",
-  "asset_url",
-  "upload_status",
-  "review_status",
-  "internal_review_status",
-  "airtable_record_id",
-  "record_id",
-  "internal_notes",
-  "review_notes",
-]);
 
 const BOARD_STATUS_PATH = "/v1/sigil/board/status";
 const BOARD_QUEUE_PATH = "/v1/sigil/board/queue";
@@ -129,18 +79,28 @@ export default {
 
     try {
       if (url.pathname === PUBLIC_MODEL_APPLY_PATH) {
-        return handlePublicModelApply(request, env, corsHeaders);
+        return handlePublicModelRequest(request, env, corsHeaders);
       }
 
       if (url.pathname === PUBLIC_MODEL_UPLOAD_URL_PATH) {
-        return handlePublicModelUploadUrl(request, env, corsHeaders);
+        return handlePublicModelRequest(request, env, corsHeaders);
       }
 
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
 
       if (url.pathname === "/health" || url.pathname === "/ping") {
         if (request.method !== "GET") return methodNotAllowed(corsHeaders);
-        return json({ ok: true, worker: workerName(env), mode: MODE }, 200, corsHeaders);
+        return json({
+          ok: true,
+          worker: workerName(env),
+          mode: MODE,
+          capabilities: {
+            public_model_apply: String(env?.PUBLIC_MODEL_ENABLED || "").toLowerCase() === "true" && Boolean(env?.AIRTABLE_API_TOKEN && env?.SIGIL_BOARD_KV),
+            public_model_upload:
+              String(env?.PUBLIC_MODEL_UPLOAD_ENABLED || "").toLowerCase() === "true" &&
+              Boolean(env?.AIRTABLE_API_TOKEN && env?.SIGIL_BOARD_KV && env?.PUBLIC_MODEL_UPLOADS_R2 && env?.PUBLIC_MODEL_UPLOAD_SIGNING_SECRET),
+          },
+        }, 200, corsHeaders);
       }
 
       if (isRecoveryCouponPath(url.pathname)) {
@@ -191,235 +151,6 @@ function queueResponse(cards, limit = DEFAULT_QUEUE_LIMIT) {
     limit,
     cards: returnedCards,
   };
-}
-
-async function handlePublicModelApply(request, env, corsHeaders) {
-  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
-  if (request.method !== "POST") return methodNotAllowed(corsHeaders, "POST, OPTIONS");
-
-  const body = await request.json().catch(() => null);
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    return json(
-      { ok: false, error: "invalid_json", service: PUBLIC_MODEL_SERVICE, message: "valid JSON payload is required" },
-      400,
-      corsHeaders,
-    );
-  }
-
-  const validation = validatePublicModelPayload(body);
-  if (!validation.ok) {
-    return json(
-      {
-        ok: false,
-        error: "invalid_payload",
-        service: PUBLIC_MODEL_SERVICE,
-        fields: validation.fields,
-      },
-      400,
-      corsHeaders,
-    );
-  }
-
-  return json(
-    {
-      ok: false,
-      error: "persistence_not_configured",
-      service: PUBLIC_MODEL_SERVICE,
-      mode: "readiness_only",
-      accepted: false,
-      received: false,
-      storage: {
-        persisted: false,
-        reason: "persistence_disabled",
-      },
-      board_card: {
-        persisted: false,
-        reason: "persistence_disabled",
-      },
-    },
-    503,
-    corsHeaders,
-  );
-}
-
-async function handlePublicModelUploadUrl(request, env, corsHeaders) {
-  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
-  if (request.method !== "POST") return methodNotAllowed(corsHeaders, "POST, OPTIONS");
-
-  const body = await request.json().catch(() => null);
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    return json(
-      { ok: false, error: "invalid_json", service: PUBLIC_MODEL_UPLOAD_SERVICE, message: "valid JSON payload is required" },
-      400,
-      corsHeaders,
-    );
-  }
-
-  const validation = validatePublicModelUploadPayload(body);
-  if (!validation.ok) {
-    return json(
-      {
-        ok: false,
-        error: "invalid_payload",
-        service: PUBLIC_MODEL_UPLOAD_SERVICE,
-        fields: validation.fields,
-      },
-      400,
-      corsHeaders,
-    );
-  }
-
-  return json(
-    {
-      ok: false,
-      error: "upload_not_configured",
-      service: PUBLIC_MODEL_UPLOAD_SERVICE,
-      mode: "readiness_only",
-      upload_enabled: false,
-    },
-    503,
-    corsHeaders,
-  );
-}
-
-function validatePublicModelPayload(body) {
-  const fields = {};
-  if (body.application_type !== undefined && safeText(body.application_type, "", 40) !== "public_model") {
-    fields.application_type = "must be public_model when provided";
-  }
-  if (!isNonEmptyPublicModelString(body.nickname, 120)) fields.nickname = "required";
-  if (body.consent !== true) fields.consent = "must be true";
-  if (!hasPublicModelContact(body)) fields.contact = "one contact channel is required";
-  const workTypeError = validatePublicModelWorkTypes(body.work_types ?? body.interested_work_types ?? body.workTypes);
-  if (workTypeError) fields.work_types = workTypeError;
-  const forbiddenPayloadError = validateNoPublicModelUploadPayload(body);
-  if (forbiddenPayloadError) fields.upload_payload = forbiddenPayloadError;
-  const uploadRefError = validatePublicModelUploadRefs(body);
-  if (uploadRefError) fields.upload_refs = uploadRefError;
-  return { ok: Object.keys(fields).length === 0, fields };
-}
-
-function validatePublicModelUploadPayload(body) {
-  const fields = {};
-  if (safeText(body.application_type, "", 40) !== "public_model") fields.application_type = "must be public_model";
-  if (body.consent !== true) fields.consent = "must be true";
-
-  const kind = normalizePublicModelUploadKind(body.kind);
-  const role = normalizePublicModelUploadRole(body.role);
-  const contentType = normalizePublicModelMimeType(body.content_type || body.contentType || body.mime_type);
-  const fileSize = Number(body.file_size ?? body.fileSize);
-  const fileName = String(body.file_name ?? body.fileName ?? "").trim();
-
-  if (!kind) fields.kind = "unsupported kind";
-  if (!role || !publicModelRoleAllowed(kind, role)) fields.role = "unsupported role for kind";
-  if (!contentType || !publicModelMimeAllowed(kind, contentType)) fields.content_type = "unsupported content type for kind";
-  if (!Number.isFinite(fileSize) || fileSize <= 0 || fileSize > PUBLIC_MODEL_MAX_UPLOAD_BYTES) {
-    fields.file_size = "must be positive and within the approved size limit";
-  }
-  if (!fileName || /[/\\]/.test(fileName) || fileName === "." || fileName === "..") fields.file_name = "plain filename is required";
-
-  const forbiddenPayloadError = validateNoPublicModelUploadPayload(body, { allowFileName: true });
-  if (forbiddenPayloadError) fields.upload_payload = forbiddenPayloadError;
-
-  return { ok: Object.keys(fields).length === 0, fields };
-}
-
-function validatePublicModelUploadRefs(body) {
-  const uploadSessionId = body.upload_session_id;
-  const refs = body.uploads ?? body.upload_refs ?? body.uploadRefs;
-  if (uploadSessionId === undefined && refs === undefined) return "";
-  if (uploadSessionId !== undefined && !validPublicModelRefId(uploadSessionId, "pmu")) return "invalid upload_session_id";
-  if (refs === undefined) return "";
-  if (!Array.isArray(refs)) return "must be an array";
-  if (refs.length > 12) return "too many upload refs";
-  for (const item of refs) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return "contains invalid upload ref";
-    const forbiddenPayloadError = validateNoPublicModelUploadPayload(item);
-    if (forbiddenPayloadError) return forbiddenPayloadError;
-    const uploadRef = item.upload_ref ?? item.uploadRef;
-    const kind = normalizePublicModelUploadKind(item.kind);
-    const role = normalizePublicModelUploadRole(item.role);
-    if (!validPublicModelRefId(uploadRef, "pmu_ref")) return "contains invalid upload_ref";
-    if (!kind || !role || !publicModelRoleAllowed(kind, role)) return "contains unsupported kind or role";
-  }
-  return "";
-}
-
-function validateNoPublicModelUploadPayload(value, options = {}) {
-  const stack = [value];
-  while (stack.length) {
-    const current = stack.pop();
-    if (!current || typeof current !== "object") continue;
-    if (Array.isArray(current)) {
-      stack.push(...current);
-      continue;
-    }
-    for (const [key, item] of Object.entries(current)) {
-      const normalizedKey = String(key || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
-      if (!(options.allowFileName && normalizedKey === "file_name") && PUBLIC_MODEL_FORBIDDEN_UPLOAD_KEYS.has(normalizedKey)) {
-        return "contains unsupported upload field";
-      }
-      if (typeof item === "string" && /\b(data:|blob:)/i.test(item)) return "contains raw upload data";
-      if (isPublicModelFileProofKey(normalizedKey) && typeof item === "string" && /^https?:\/\//i.test(item.trim())) {
-        return "contains unsupported public file URL";
-      }
-      if (item && typeof item === "object") stack.push(item);
-    }
-  }
-  return "";
-}
-
-function isPublicModelFileProofKey(key) {
-  return /(^|_)(file|photo|document|upload|asset)_(url|proof)$/.test(key) || key === "public_url";
-}
-
-function normalizePublicModelUploadKind(value) {
-  const kind = String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
-  return PUBLIC_MODEL_UPLOAD_KINDS.has(kind) ? kind : "";
-}
-
-function normalizePublicModelUploadRole(value) {
-  return String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
-}
-
-function normalizePublicModelMimeType(value) {
-  return String(value || "").trim().toLowerCase();
-}
-
-function publicModelRoleAllowed(kind, role) {
-  if (kind === "photo") return PUBLIC_MODEL_PHOTO_ROLES.has(role);
-  if (kind === "document") return PUBLIC_MODEL_DOCUMENT_ROLES.has(role);
-  return false;
-}
-
-function publicModelMimeAllowed(kind, contentType) {
-  if (kind === "photo") return PUBLIC_MODEL_PHOTO_MIME_TYPES.has(contentType);
-  if (kind === "document") return PUBLIC_MODEL_DOCUMENT_MIME_TYPES.has(contentType);
-  return false;
-}
-
-function validPublicModelRefId(value, prefix) {
-  return new RegExp(`^${prefix}_[A-Za-z0-9_-]{6,80}$`).test(String(value || ""));
-}
-
-function hasPublicModelContact(body) {
-  return ["phone", "email", "line", "line_id", "telegram", "social_url", "instagram"].some((field) =>
-    isNonEmptyPublicModelString(body[field], 260),
-  );
-}
-
-function isNonEmptyPublicModelString(value, maxLength) {
-  return typeof value === "string" && Boolean(safeText(value, "", maxLength));
-}
-
-function validatePublicModelWorkTypes(value) {
-  if (value === undefined || value === null || value === "") return "";
-  if (!Array.isArray(value)) return "must be an array";
-  if (value.length > 10) return "too many selected work types";
-  for (const item of value) {
-    if (!PUBLIC_MODEL_ALLOWED_WORK_TYPES.has(safeText(item, "", 80))) return "contains unsupported work type";
-  }
-  return "";
 }
 
 async function handleRecoveryCouponRequest(request, env, corsHeaders) {
@@ -1163,7 +894,8 @@ function corsFor(request, env) {
 
 function corsMethodsForPath(pathname) {
   if (pathname === BOARD_STATUS_PATH || pathname === BOARD_QUEUE_PATH) return "GET,OPTIONS";
-  if (pathname === PUBLIC_MODEL_APPLY_PATH || pathname === PUBLIC_MODEL_UPLOAD_URL_PATH) return "POST,OPTIONS";
+  if (pathname === PUBLIC_MODEL_APPLY_PATH) return "POST,OPTIONS";
+  if (pathname === PUBLIC_MODEL_UPLOAD_URL_PATH) return "POST,PUT,OPTIONS";
   return "GET,POST,OPTIONS";
 }
 
