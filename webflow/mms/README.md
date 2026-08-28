@@ -24,3 +24,18 @@ Repository-backed source for the MMS customer and therapist journeys embedded in
 4. Publish the staged Webflow pages only after the Workers health and route checks pass.
 
 Pre-booking is request-only. The interface must not imply confirmed availability, payment, or appointment status before MMS coordination.
+
+## `/apply/mms-therapist` canonical source
+
+The application page has one repository-backed implementation. Do not reintroduce the live `mta4a`–`mta4f`, `mta4inject`, or `mta4h1`–`mta4h3` script chain.
+
+| Webflow placement | Canonical file |
+| --- | --- |
+| Page HTML Embed | `apply-therapist/apply-therapist.html` |
+| Page head custom code | `apply-therapist/apply-therapist.css` |
+| Before `</body>` custom code | `apply-therapist/apply-therapist.js` |
+| Site footer custom code | `../global/mmd-global-typography-voice-contrast.html` |
+
+The global footer file contains the corrected background-color counter. It replaces the malformed live postfix expression and must remain the only active Global Voice/Contrast runtime. World-gradient headings opt out with `data-mmd-contrast-skip="world-headline"`.
+
+For a production release, deploy and verify the Worker contract first, stage the three page files and corrected global footer in Webflow, remove the obsolete `mta4*` loader, then run read-only browser checks before publishing. A real application, Airtable write, R2 upload, or Telegram notification requires separate approval.

@@ -40,6 +40,11 @@ const APPLICATION_KEYS = new Set([
   "spa_name",
   "worked_independently_before",
   "independent_social",
+  "current_profession",
+  "qualification_note",
+  "work_base_area",
+  "mobility_scope",
+  "coverage_area_note",
   "base_zone",
   "coverage_zones",
   "general_consent",
@@ -87,8 +92,22 @@ export function applicationPayload(input) {
     "ได้ทั้งคู่": "ได้ทั้งคู่",
   });
   const skills = normalizeCatalogValues(body.skills, SKILL_LOOKUP, 1, 8, "skills");
-  const baseZone = normalizeCatalogValue(body.base_zone, ZONE_LOOKUP, "base_zone");
-  const coverageZones = normalizeCatalogValues(body.coverage_zones, ZONE_LOOKUP, 1, MMS_ZONES.length, "coverage_zones");
+  const currentProfession = text(body.current_profession, 200);
+  const qualificationNote = text(body.qualification_note, 1200);
+  const baseZone = body.base_zone ? normalizeCatalogValue(body.base_zone, ZONE_LOOKUP, "base_zone") : "";
+  const coverageZones = body.coverage_zones == null
+    ? []
+    : normalizeCatalogValues(body.coverage_zones, ZONE_LOOKUP, 0, MMS_ZONES.length, "coverage_zones");
+  const workBaseArea = text(body.work_base_area, 240) || (baseZone ? catalogLabel(baseZone) : "");
+  const mobilityScope = normalizeChoice(body.mobility_scope, {
+    local: "พื้นที่ฐานเป็นหลัก",
+    "พื้นที่ฐานเป็นหลัก": "พื้นที่ฐานเป็นหลัก",
+    nearby: "จังหวัดใกล้เคียง",
+    "จังหวัดใกล้เคียง": "จังหวัดใกล้เคียง",
+    nationwide: "ทั่วประเทศตามตกลง",
+    "ทั่วประเทศตามตกลง": "ทั่วประเทศตามตกลง",
+  });
+  const coverageAreaNote = text(body.coverage_area_note, 1200);
   const experienceYears = integer(body.experience_years, 0, 60, "experience_years");
   const experienceMonths = integer(body.experience_months, 0, 11, "experience_months");
   const workedAtSpaBefore = boolean(body.worked_at_spa_before);
@@ -103,7 +122,9 @@ export function applicationPayload(input) {
   if (!phone && !lineId) errors.push("phone or line_id is required");
   if (!genderIdentity) errors.push("gender_identity is required");
   if (!customerGenderScope) errors.push("customer_gender_scope is required");
-  if (!baseZone) errors.push("base_zone is required");
+  if (!currentProfession) errors.push("current_profession is required");
+  if (!workBaseArea) errors.push("work_base_area is required");
+  if (!mobilityScope) errors.push("mobility_scope is required");
   if (!generalConsent) errors.push("general_consent is required");
   if (workedAtSpaBefore && !text(body.spa_name, 160)) errors.push("spa_name is required when worked_at_spa_before is true");
   if (workedIndependentlyBefore && !text(body.independent_social, 240)) errors.push("independent_social is required when worked_independently_before is true");
@@ -127,6 +148,11 @@ export function applicationPayload(input) {
     spa_name: workedAtSpaBefore ? text(body.spa_name, 160) : "",
     worked_independently_before: workedIndependentlyBefore,
     independent_social: workedIndependentlyBefore ? text(body.independent_social, 240) : "",
+    current_profession: currentProfession,
+    qualification_note: qualificationNote,
+    work_base_area: workBaseArea,
+    mobility_scope: mobilityScope,
+    coverage_area_note: coverageAreaNote,
     base_zone: baseZone,
     coverage_zones: coverageZones,
     general_consent: true,
@@ -245,6 +271,10 @@ export function applicationAirtableFields(application, meta) {
     skills: application.skills,
     experience_years: application.experience_years,
     experience_months: application.experience_months,
+    current_profession: application.current_profession,
+    work_base_area: application.work_base_area,
+    mobility_scope: application.mobility_scope,
+    coverage_area_note: application.coverage_area_note,
     base_zone: application.base_zone,
     coverage_zones: application.coverage_zones,
     language: application.language,
@@ -265,6 +295,11 @@ export function applicationAirtableFields(application, meta) {
     "Spa Name": application.spa_name,
     "Worked Independently Before": application.worked_independently_before,
     "Independent Social": application.independent_social,
+    "Current Profession": application.current_profession,
+    "Qualification Note": application.qualification_note,
+    "Work Base Area": application.work_base_area,
+    "Mobility Scope": application.mobility_scope,
+    "Coverage Area Note": application.coverage_area_note,
     "Base Zone": catalogLabel(application.base_zone),
     "Coverage Zones": application.coverage_zones.map(catalogLabel),
     "General Consent": true,
@@ -273,6 +308,14 @@ export function applicationAirtableFields(application, meta) {
     "Submitted At": meta.submitted_at,
     "Payload JSON": JSON.stringify(redacted),
   });
+}
+
+export function applicationTelegramMessage(application, meta) {
+  return [
+    "🔔 MMS มีใบสมัคร Therapist ใหม่",
+    `Reference: ${meta.application_id}`,
+    "เปิด Airtable > MMS Therapist Applications เพื่อตรวจสอบข้อมูล",
+  ].join("\n");
 }
 
 export function sensitiveAirtableFields(application, meta) {
@@ -398,7 +441,7 @@ function normalizeOrientation(value) {
 function normalizeCatalogValues(value, lookup, min, max, field) {
   if (!Array.isArray(value)) throw validationError([`${field} must be an array`]);
   const values = [...new Set(value.map((item) => lookup.get(normalized(item))).filter(Boolean))];
-  if (values.length < min || values.length > max || values.length !== new Set(value.map(normalized)).size) {
+  if (values.length < min || values.length > max || values.length !== value.length) {
     throw validationError([`${field} must contain ${min}-${max} supported unique values`]);
   }
   return values;
