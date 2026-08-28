@@ -28,6 +28,7 @@ const TIER_RANK = {
 };
 
 const MEMBER_STATUS_RESOLVER_PATH = "/__internal/member-status/resolve";
+const MEMBER_STATUS_RESOLVER_DIAGNOSTIC_PATH = "/__internal/member-status/diagnostic";
 const MEMBER_PROFILE_RESOLVER_PATH = "/__internal/member-profile/read";
 const LIFF_IDENTITY_RESOLUTION_PURPOSE = "liff_identity_resolution";
 const LIFF_MEMBER_PROFILE_PURPOSE = "liff_member_profile_read";
@@ -35,6 +36,7 @@ const MEMBER_STATUS_RESOLVER_SECRET_HEADER = "x-mmd-member-resolver-secret";
 const MEMBER_HISTORY_MAX_ITEMS = 50;
 const MEMBER_STATUS_AIRTABLE_TIMEOUT_MS = 4000;
 const MEMBER_STATUS_AIRTABLE_TIMEOUT_MIN_MS = 50;
+const MEMBER_STATUS_RESOLVER_DIAGNOSTIC_SENTINEL = "mmd_internal_noncustomer_resolver_diagnostic_v1";
 const POINTS_THB_PER_POINT = 100;
 const PARTNER_PRESENT_MASSAGE_SESSION = "partner_present_massage_session";
 const PARTNER_PRESENT_MASSAGE_SESSION_LABEL = "Partner-Present Massage Session";
@@ -69,6 +71,10 @@ export default {
 
       if (path === MEMBER_STATUS_RESOLVER_PATH && request.method === "POST") {
         return handleInternalMemberStatusResolve(request, env);
+      }
+
+      if (path === MEMBER_STATUS_RESOLVER_DIAGNOSTIC_PATH && request.method === "POST") {
+        return handleInternalMemberStatusDiagnostic(request, env);
       }
 
       if (path === MEMBER_PROFILE_RESOLVER_PATH && request.method === "POST") {
@@ -286,6 +292,52 @@ async function handleInternalMemberStatusResolve(request, env) {
       duration_ms: Math.max(0, Date.now() - startedAt),
     });
     return json(request, env, 503, { ok: false, error: { code: "MEMBER_STATUS_RESOLVER_UNAVAILABLE", message: "Member identity could not be resolved safely." } });
+  }
+}
+
+// Service-authenticated, read-only dependency probe. The lookup value is fixed
+// server-side so callers cannot submit customer identity. Responses and logs
+// intentionally expose no lookup, provider, schema, or credential details.
+async function handleInternalMemberStatusDiagnostic(request, env) {
+  if (!isInternalMemberStatusResolverRequest(request, env)) {
+    return json(request, env, 404, { ok: false, error: { code: "NOT_FOUND", message: "Route not found" } });
+  }
+
+  const startedAt = Date.now();
+  try {
+    const matches = await withMemberStatusAirtableDeadline(request, env, (signal) => findMemberRecordsByLineUserId(
+      env,
+      MEMBER_STATUS_RESOLVER_DIAGNOSTIC_SENTINEL,
+      {
+        signal,
+        requireRecordsArray: true,
+        classifyResolverFailures: true,
+      },
+    ));
+    if (matches.length !== 0) {
+      console.warn({
+        event: "member_status_resolver_diagnostic",
+        stage: "airtable_members_lookup",
+        failure_class: "unknown_provider_failure",
+        duration_ms: Math.max(0, Date.now() - startedAt),
+      });
+      return json(request, env, 503, { ok: false, result: "generic_failure" });
+    }
+    console.info({
+      event: "member_status_resolver_diagnostic",
+      stage: "airtable_members_lookup",
+      failure_class: "none",
+      duration_ms: Math.max(0, Date.now() - startedAt),
+    });
+    return json(request, env, 200, { ok: true, result: "healthy_zero_match" });
+  } catch (error) {
+    console.warn({
+      event: "member_status_resolver_diagnostic",
+      stage: "airtable_members_lookup",
+      failure_class: memberStatusResolverFailureClass(error),
+      duration_ms: Math.max(0, Date.now() - startedAt),
+    });
+    return json(request, env, 503, { ok: false, result: "generic_failure" });
   }
 }
 
