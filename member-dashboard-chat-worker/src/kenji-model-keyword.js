@@ -181,7 +181,7 @@ function normalizeScope(value) {
 }
 
 function accessScopes(records) {
-  const text = fieldValues(records.flatMap((record) => [recordFields(record)]), [
+  const text = records.flatMap((record) => fieldValues(recordFields(record), [
     'Membership Tier',
     'VIP Eligible?',
     'SVIP Eligible?',
