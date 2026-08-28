@@ -235,6 +235,29 @@ test("POST rejects invalid payload without persistence", async () => {
   assert.deepEqual(kv.writes, []);
 });
 
+test("POST rejects structured nickname and contact values", async () => {
+  const cases = [
+    [validPayload({ nickname: {} }), "nickname"],
+    [validPayload({ nickname: [] }), "nickname"],
+    [validPayload({ phone: {}, telegram: undefined }), "contact"],
+    [validPayload({ phone: [], telegram: undefined }), "contact"],
+  ];
+
+  for (const [payload, field] of cases) {
+    const response = await call(testInternals.PUBLIC_MODEL_APPLY_PATH, {
+      method: "POST",
+      headers: { origin: ORIGIN, "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 400, field);
+    assert.equal(body.ok, false, field);
+    assert.equal(body.error, "invalid_payload", field);
+    assert.equal(Object.hasOwn(body.fields, field), true, field);
+  }
+});
+
 test("POST valid payload fails closed and does not mutate without approved persistence", async () => {
   const publicModelKv = makeKv();
   const boardKv = makeKv();

@@ -287,7 +287,7 @@ function validatePublicModelPayload(body) {
   if (body.application_type !== undefined && safeText(body.application_type, "", 40) !== "public_model") {
     fields.application_type = "must be public_model when provided";
   }
-  if (!safeText(body.nickname, "", 120)) fields.nickname = "required";
+  if (!isNonEmptyPublicModelString(body.nickname, 120)) fields.nickname = "required";
   if (body.consent !== true) fields.consent = "must be true";
   if (!hasPublicModelContact(body)) fields.contact = "one contact channel is required";
   const workTypeError = validatePublicModelWorkTypes(body.work_types ?? body.interested_work_types ?? body.workTypes);
@@ -403,7 +403,13 @@ function validPublicModelRefId(value, prefix) {
 }
 
 function hasPublicModelContact(body) {
-  return ["phone", "email", "line", "line_id", "telegram", "social_url", "instagram"].some((field) => safeText(body[field], "", 260));
+  return ["phone", "email", "line", "line_id", "telegram", "social_url", "instagram"].some((field) =>
+    isNonEmptyPublicModelString(body[field], 260),
+  );
+}
+
+function isNonEmptyPublicModelString(value, maxLength) {
+  return typeof value === "string" && Boolean(safeText(value, "", maxLength));
 }
 
 function validatePublicModelWorkTypes(value) {
