@@ -94,6 +94,13 @@ LINE_KENJI_KNOWLEDGE_ENABLED = "true"
 # Model generation is a separate, production-gated capability. Keep it off in
 # committed configuration until an explicitly approved deployment enables it.
 LINE_KENJI_MODEL_ENABLED = "false"
+# Model Keyword stays off until the Airtable profile and an approved deployment are ready.
+LINE_KENJI_MODEL_KEYWORD_ENABLED = "false"
+AIRTABLE_MODEL_KEYWORD_PROFILES_TABLE_ID = "tblk0NqOj3NM5tEjs"
+AIRTABLE_MODEL_OFFER_RULES_TABLE_ID = "tblSbxUGTFqd2CgPy"
+AIRTABLE_MODELS_TABLE_ID = "tblI4B0bI446vp9GX"
+AIRTABLE_MEMBERS_TABLE_ID = "tblgWc5VRon5o8Mhk"
+AIRTABLE_CLIENTS_TABLE_ID = "tblVv58TCbwh5j1fS"
 OPENAI_MODEL = "gpt-5.6"
 # Safe defaults: model-on still reaches nobody until approved SHA-256 tester
 # hashes and approved grounding card IDs are supplied as production config.
