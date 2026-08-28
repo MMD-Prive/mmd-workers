@@ -74,8 +74,8 @@ function normalizeLookup(value) {
     .toLowerCase()
     .normalize('NFKC')
     .replace(/[._-]+/g, ' ')
-    .replace(/[^a-z0-9ก-๙\\s]/gi, ' ')
-    .replace(/\\s+/g, ' ')
+    .replace(/[^a-z0-9ก-๙\s]/gi, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
@@ -90,7 +90,7 @@ function fieldValues(fields, names) {
 
 function splitAliases(value) {
   return valuesFrom(value)
-    .flatMap((item) => item.split(/[\\n,|]+/))
+    .flatMap((item) => item.split(/[\n,|]+/))
     .map((item) => item.trim())
     .filter(Boolean);
 }
@@ -105,9 +105,8 @@ function profileName(profile) {
 }
 
 function escapedFormulaValue(value) {
-  return asString(value).replace(/\\\\/g, '\\\\\\\\').replace(/"/g, '\\\\"');
+  return JSON.stringify(asString(value)).slice(1, -1);
 }
-
 function tableId(env, key) {
   const envKey = {
     profiles: 'AIRTABLE_MODEL_KEYWORD_PROFILES_TABLE_ID',
@@ -192,10 +191,10 @@ function accessScopes(records) {
     ]))
     .join(' ');
   const scopes = [];
-  if (/black\\s*card|blackcard|แบล็คการ์ด/i.test(text)) scopes.push('Black Card');
-  if (/\\bsvip\\b/i.test(text)) scopes.push('SVIP');
-  if (/(?<!s)\\bvip\\b/i.test(text)) scopes.push('VIP');
-  if (/#potential\\b/i.test(text)) scopes.push('#Potential');
+  if (/black\s*card|blackcard|แบล็คการ์ด/i.test(text)) scopes.push('Black Card');
+  if (/\bsvip\b/i.test(text)) scopes.push('SVIP');
+  if (/(?<!s)\bvip\b/i.test(text)) scopes.push('VIP');
+  if (/#potential\b/i.test(text)) scopes.push('#Potential');
   return [...new Set(scopes)];
 }
 function isTruthy(value) {
@@ -345,10 +344,10 @@ export function buildModelKeywordReply({
 
   const text = [safeInfo, safeRemark]
     .filter(Boolean)
-    .join('\\n\\n')
+    .join('\n\n')
     .concat(
       priceRequested
-        ? '\\n\\nเรื่องเรท ผมขอให้เปอร์ตรวจเป็นเคสส่วนตัวก่อนนะครับ เพราะเรทขึ้นกับสถานะและรายละเอียดของแต่ละเคสครับ'
+        ? '\n\nเรื่องเรท ผมขอให้เปอร์ตรวจเป็นเคสส่วนตัวก่อนนะครับ เพราะเรทขึ้นกับสถานะและรายละเอียดของแต่ละเคสครับ'
         : ''
     )
     .trim();
