@@ -152,7 +152,7 @@ jobs:
           console.log("Cloudflare routes token is active");
           NODE
 
-      - name: Sync exact Model Console routes
+      - name: Sync exact admin-worker routes
         id: triggers
         if: steps.routes_token.outcome == 'success'
         shell: bash
@@ -163,6 +163,7 @@ jobs:
           const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
           const worker = "admin-worker";
           const paths = [
+            "/v1/admin/job/create",
             "/v1/model/visibility/update",
             "/v1/model/rate/request",
             "/v1/model/media/upload-init",
@@ -223,7 +224,7 @@ jobs:
           if (unresolved.length) {
             throw new Error(`Route verification failed: ${unresolved.join(", ")}`);
           }
-          console.log(`Verified ${desired.length}/${desired.length} exact Model Console routes for ${worker}; created ${missing.length}`);
+          console.log(`Verified ${desired.length}/${desired.length} exact admin-worker routes for ${worker}; created ${missing.length}`);
           NODE
 
       - name: Verify production dashboard route
@@ -297,7 +298,7 @@ jobs:
           elif [ "$ROUTES_TOKEN_OUTCOME" != "success" ]; then
             stopped="cloudflare routes token verification"
           elif [ "$TRIGGERS_OUTCOME" != "success" ]; then
-            stopped="Cloudflare Model Console route sync"
+            stopped="Cloudflare admin-worker route sync"
           elif [ "$SMOKE_OUTCOME" != "success" ]; then
             stopped="production smoke"
           else
@@ -329,7 +330,7 @@ jobs:
           - versions deploy: \`${DEPLOY_OUTCOME}\`
           - triggers dry-run: \`${TRIGGERS_DRY_RUN_OUTCOME}\`
           - routes-token verification: \`${ROUTES_TOKEN_OUTCOME}\`
-          - Model Console route sync: \`${TRIGGERS_OUTCOME}\`
+          - admin-worker route sync: \`${TRIGGERS_OUTCOME}\`
           - production smoke: \`${SMOKE_OUTCOME}\`
           - **stopped_at: \`${stopped}\`**
 
@@ -349,4 +350,4 @@ jobs:
         run: |
           set -euo pipefail
           deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ admin-worker LIVE + ROUTES VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- version_id: \`${ADMIN_WORKER_VERSION_ID}\`\n- endpoint: \`${ADMIN_DASHBOARD_PRODUCTION_URL}\`\n- production smoke: \`dashboard + apex/www Model Console auth guards passed\`\n- route mutation: \`16 exact Model Console routes verified via Zone Workers Routes API\`\n\nThis receipt is written only after the version deploy, route/trigger sync, and production auth-guard smoke tests all succeed."
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ admin-worker LIVE + ROUTES VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- version_id: \`${ADMIN_WORKER_VERSION_ID}\`\n- endpoint: \`${ADMIN_DASHBOARD_PRODUCTION_URL}\`\n- production smoke: \`dashboard + apex/www Model Console auth guards passed\`\n- route mutation: \`18 exact admin-worker routes verified via Zone Workers Routes API\`\n\nThis receipt is written only after the version deploy, route/trigger sync, and production auth-guard smoke tests all succeed."
