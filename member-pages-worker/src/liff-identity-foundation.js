@@ -7,7 +7,7 @@ import { serializeCustomer360Profile } from "./customer-360-serializer.js";
 import legacyWorker from "./legacy-member-pages.js";
 
 const WORKER = "member-pages-worker";
-const VERSION = "20260819-care-back-wish-gate";
+const VERSION = "20260828-care-back-benefits-wallet";
 const LINE_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify";
 const SESSION_TTL_SECONDS = 15 * 60;
 const HALL_TOKEN_TTL_SECONDS = 5 * 60;
@@ -40,6 +40,7 @@ const MMS_MATCH_PATHS = new Set(["/member/api/mms/match", "/member/api/mms/match
 const MMS_PREBOOKING_PATHS = new Set(["/member/api/mms/prebookings", "/member/api/mms/prebookings/", "/member/api/liff/mms/prebookings", "/member/api/liff/mms/prebookings/"]);
 const CARE_BACK_CLAIM_PATHS = new Set(["/member/api/liff/care-back/claim", "/member/api/liff/care-back/claim/"]);
 const CARE_BACK_STATE_PATHS = new Set(["/member/api/liff/care-back/state", "/member/api/liff/care-back/state/"]);
+const CARE_BACK_WALLET_PATHS = new Set(["/member/api/liff/care-back/wallet", "/member/api/liff/care-back/wallet/"]);
 const CARE_BACK_WISH_PATHS = new Set(["/member/api/liff/care-back/wish", "/member/api/liff/care-back/wish/"]);
 const CLOSED_LEGACY_CARE_BACK_WISH_PATHS = new Set(["/api/care-back-wish", "/api/care-back-wish/"]);
 const HALL_TOKEN_PATHS = new Set(["/member/api/liff/hall-token", "/member/api/liff/hall-token/"]);
@@ -137,6 +138,8 @@ export default {
         response = await handleCareBackClaim(request, env);
       } else if (CARE_BACK_STATE_PATHS.has(path)) {
         response = await handleCareBackState(request, env);
+      } else if (CARE_BACK_WALLET_PATHS.has(path)) {
+        response = await handleCareBackWallet(request, env);
       } else if (CARE_BACK_WISH_PATHS.has(path)) {
         response = await handleCareBackWish(request, env);
       } else if (HALL_TOKEN_PATHS.has(path)) {
@@ -915,9 +918,58 @@ export async function handleCareBackState(request, env = {}) {
       }
     }
     const state = birthdayWishState(wish);
-    return saveCareBackState(env, auth, state, wish);
+    let claim = null;
+    if (state === "completed") {
+      const careBackStore = getCareBackStore(env);
+      const gatewayStore = getLiffGatewayStore(env);
+      if (!careBackStore || !gatewayStore) {
+        return saveRotatedError(env, auth, "CARE_BACK_STORAGE_NOT_CONFIGURED", "CARE BACK is temporarily unavailable.", 503);
+      }
+      claim = await careBackStore.openOrResume({
+        identityHash: auth.session.identity_key,
+        memberId: auth.session.member_id,
+        memberProfile: auth.session.member_profile,
+        wishSubmitted: true,
+      });
+      applyCareBackClaimToSession(auth.session, claim);
+      await persistGatewaySession(env, gatewayStore, auth.session);
+    }
+    return saveCareBackState(env, auth, state, wish, claim);
   } catch (error) {
+    if (error instanceof CareBackStoreError) {
+      const status = error.code.endsWith("_CONFLICT") ? 409 : 503;
+      return saveRotatedError(env, auth, error.code, "CARE BACK is temporarily unavailable.", status);
+    }
     return saveBirthdayWishError(env, auth, error);
+  }
+}
+
+export async function handleCareBackWallet(request, env = {}) {
+  if (request.method !== "GET") return methodNotAllowed("GET");
+  const originFailure = rejectUnapprovedOrigin(request, env);
+  if (originFailure) return originFailure;
+  if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
+  const auth = await authenticateAndRotate(request, env);
+  if (!auth.ok) return auth.response;
+  if (!auth.session.member_exists || !auth.session.member_id || !auth.session.identity_key) {
+    return saveRotatedError(env, auth, "CARE_BACK_MEMBER_REQUIRED", "Coupon Wallet requires a verified member match.", 409);
+  }
+  const store = getCareBackStore(env);
+  if (!store || typeof store.readCouponWallet !== "function") {
+    return saveRotatedError(env, auth, "CARE_BACK_STORAGE_NOT_CONFIGURED", "Coupon Wallet is temporarily unavailable.", 503);
+  }
+  try {
+    const wallet = await store.readCouponWallet({
+      identityHash: auth.session.identity_key,
+      memberId: auth.session.member_id,
+    });
+    await commitRotatedSession(env, auth);
+    return json({ ok: true, wallet: safeCouponWallet(wallet) }, 200, {
+      cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
+    });
+  } catch (error) {
+    const code = error instanceof CareBackStoreError ? error.code : "CARE_BACK_STORAGE_UNAVAILABLE";
+    return saveRotatedError(env, auth, code, "Coupon Wallet is temporarily unavailable.", code.endsWith("_CONFLICT") ? 409 : 503);
   }
 }
 
@@ -1785,11 +1837,15 @@ function safeCareBackClaim(input = {}) {
           : "pending",
         rate_thb_per_point: input.points_policy.rate_thb_per_point,
         renewal_bonus_points: input.points_policy.renewal_bonus_points,
-        renewal_bonus_state: ["not_offered", "renewal_required", "pending_application", "applied"].includes(String(input.points_policy.renewal_bonus_state))
+        renewal_bonus_state: ["not_offered", "renewal_required", "payment_required", "pending_application", "applied"].includes(String(input.points_policy.renewal_bonus_state))
           ? String(input.points_policy.renewal_bonus_state)
           : "not_offered",
       }
     : null;
+  const personalizedBenefits = Array.isArray(input.personalized_benefits)
+    ? input.personalized_benefits.map(safePersonalizedBenefit).filter(Boolean).slice(0, 4)
+    : [];
+  const couponWallet = safeCouponWallet(input.coupon_wallet);
   return {
     campaign_id: "6-years-care-back",
     claim_reference: String(input.claim_reference || "").replace(/[^A-Z0-9-]/gi, "").slice(0, 64),
@@ -1805,6 +1861,8 @@ function safeCareBackClaim(input = {}) {
     coupon_message: normalizeCustomerText(input.coupon_message, 220) || "คูปองส่วนตัวจะพร้อมใช้หลัง MMD ยืนยันสิทธิ์เรียบร้อยแล้วครับ",
     membership_benefit: membershipBenefit,
     points_policy: pointsPolicy,
+    personalized_benefits: personalizedBenefits,
+    coupon_wallet: couponWallet,
     wish_submitted: Boolean(input.wish_submitted),
     campaign_phase: ["birthday", "continuation", "legacy"].includes(String(input.campaign_phase))
       ? String(input.campaign_phase)
@@ -1816,6 +1874,33 @@ function safeCareBackClaim(input = {}) {
     message: codeStatus === "active"
       ? "คูปองส่วนตัวพร้อมใช้กับบริการที่ร่วมรายการ 1 ครั้ง ภายในระยะเวลาที่ระบุครับ"
       : "MMD จะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ",
+  };
+}
+
+function safePersonalizedBenefit(input = {}) {
+  const type = String(input.type || "");
+  const unit = String(input.unit || "");
+  const value = Number(input.value);
+  const allowed = {
+    membership_extension: "days",
+    points_bonus: "points",
+    personal_coupon: "percent",
+  };
+  if (!allowed[type] || allowed[type] !== unit || !Number.isInteger(value) || value <= 0 || value > 10000) return null;
+  return { type, value, unit, state: String(input.state || "pending").replace(/[^a-z_]/g, "").slice(0, 32) || "pending" };
+}
+
+function safeCouponWallet(input = {}) {
+  const status = ["ready", "wish_required", "renewal_required", "verification_required", "expired", "used", "revoked", "invalid"]
+    .includes(String(input.status)) ? String(input.status) : "verification_required";
+  const code = /^[A-HJ-NP-Z2-9]{6}$/.test(String(input.code || "")) ? String(input.code) : "";
+  const percent = Number(input.discount_percent);
+  return {
+    status,
+    code,
+    discount_percent: code && Number.isFinite(percent) && percent > 0 && percent <= 100 ? percent : 0,
+    expires_at: code ? safeCustomerTimestamp(input.expires_at) || null : null,
+    single_use: true,
   };
 }
 
@@ -1881,13 +1966,13 @@ async function saveGatewayStateError(env, gatewayStore, auth, code, message, sta
     error: { code, message },
   }, status, { cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)] });
 }
-async function saveCareBackState(env, auth, state, wish) {
+async function saveCareBackState(env, auth, state, wish, claim = null) {
   try {
     await commitRotatedSession(env, auth);
   } catch (error) {
     return gatewayStorageFailure(error);
   }
-  return json(careBackWishResponse(state, wish), 200, {
+  return json(careBackWishResponse(state, wish, claim), 200, {
     cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
   });
 }

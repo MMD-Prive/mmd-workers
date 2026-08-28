@@ -8,6 +8,7 @@ const COUPON_DISCOUNT_PERCENT = 10;
 const CURRENT_MEMBER_EXTENSION_DAYS = 180;
 const RENEWED_MEMBER_EXTENSION_DAYS = 90;
 const RENEWED_MEMBER_BONUS_POINTS = 150;
+const NEW_MEMBER_WELCOME_POINTS = 66;
 const POINTS_RATE_THB = 100;
 const BIRTHDAY_PHASE_END_AT = "2026-08-31T16:59:59.999Z";
 const CONTINUATION_PHASE_END_AT = "2026-09-30T16:59:59.999Z";
@@ -33,6 +34,39 @@ export function getCareBackStore(env = {}) {
 
 class AirtableCareBackStore {
   constructor(env) { this.env = env; }
+
+  async readCouponWallet({ identityHash, memberId, now = new Date() }) {
+    const identity = requiredHash(identityHash);
+    const member = requiredMemberId(memberId);
+    const secret = String(this.env.CARE_BACK_CODE_SECRET || this.env.LIFF_SESSION_SECRET || "");
+    if (secret.length < 32) throw new CareBackStoreError("CARE_BACK_CODE_SECRET_MISSING");
+    const derived = await deriveClaimAndCode(identity, secret);
+    const claims = await this.list(tableName(this.env, "CLAIMS"), `AND({campaign_id}=${formulaString(CAMPAIGN_ID)},{line_user_id_hash}=${formulaString(identity)})`, 2);
+    if (claims.length > 1) throw new CareBackStoreError("CARE_BACK_CLAIM_CONFLICT");
+    if (!claims.length) return couponWallet({}, customerCoupon("draft", "", "verification_required", "ยังไม่มีคูปองที่ออกให้กับบัญชีนี้"));
+    const claimFields = claims[0].fields || {};
+    if (String(claimFields.matched_member_id || "") !== member) throw new CareBackStoreError("CARE_BACK_MEMBER_CONFLICT");
+    const codes = await this.list(tableName(this.env, "PROMO_CODES"), `{code}=${formulaString(derived.code)}`, 2);
+    if (codes.length > 1) throw new CareBackStoreError("CARE_BACK_CODE_CONFLICT");
+    const promoFields = codes[0]?.fields || {};
+    if (codes[0] && (String(promoFields.campaign_code || "") !== CAMPAIGN_ID || promoClaimId(promoFields.payload_json) !== derived.claimId)) {
+      throw new CareBackStoreError("CARE_BACK_CODE_CONFLICT");
+    }
+    const clock = requiredClock(now);
+    const status = safeCodeStatus(promoFields.status);
+    const expiresAt = safeTimestamp(promoFields.expires_at);
+    const walletState = normalizedUseCount(promoFields.used_count) >= 1 || status === "used"
+      ? "used"
+      : ["revoked", "invalid"].includes(status)
+        ? status
+        : expiresAt && Date.parse(expiresAt) <= clock.getTime()
+          ? "expired"
+          : status === "active"
+            ? "ready"
+            : "verification_required";
+    const coupon = customerCoupon(status, expiresAt, walletState, "");
+    return couponWallet(promoFields, coupon);
+  }
 
   async openOrResume({ identityHash, memberId, memberProfile, wishSubmitted = false, now = new Date() }) {
     const identity = requiredHash(identityHash);
@@ -101,7 +135,7 @@ class AirtableCareBackStore {
       if (String(fields.campaign_code || "") !== CAMPAIGN_ID || linkedClaimId !== derived.claimId) {
         throw new CareBackStoreError("CARE_BACK_CODE_CONFLICT");
       }
-    } else {
+    } else if (couponIssuanceGatePassed(claimPolicy, observed, wishSubmitted)) {
       const coupon = couponStateFor(claimPolicy, observed, {}, clock, wishSubmitted);
       promo = await this.create(tableName(this.env, "PROMO_CODES"), compactFields({
         code: derived.code,
@@ -129,10 +163,12 @@ class AirtableCareBackStore {
       resumed = false;
     }
 
-    const normalizedPromo = await this.ensurePromoPolicy(promo, claimPolicy, observed, wishSubmitted, clock);
-    promo = normalizedPromo.record;
+    if (promo) {
+      const normalizedPromo = await this.ensurePromoPolicy(promo, claimPolicy, observed, wishSubmitted, clock);
+      promo = normalizedPromo.record;
+    }
     const finalClaimFields = claim.fields || {};
-    const promoFields = promo.fields || {};
+    const promoFields = promo?.fields || {};
     const effectiveWishSubmitted = Boolean(wishSubmitted) || promoWishSubmitted(promoFields.payload_json);
     const coupon = couponStateFor(claimPolicy, observed, promoFields, clock, effectiveWishSubmitted);
 
@@ -152,7 +188,10 @@ class AirtableCareBackStore {
       claim_reference: String(finalClaimFields.claim_id || derived.claimId),
       claim_status: safeClaimStatus(finalClaimFields.claim_status),
       review_status: safeReviewStatus(finalClaimFields.review_status),
-      personal_code: effectiveWishSubmitted ? String(promoFields.code || derived.code) : "",
+      classification_group: safeClassificationGroup(finalClaimFields.classification_group),
+      payment_status: safePaymentStatus(finalClaimFields.payment_status),
+      payment_required: Boolean(finalClaimFields.payment_required),
+      personal_code: promo ? String(promoFields.code || derived.code) : "",
       code_status: safeCodeStatus(promoFields.status),
       expires_at: safeTimestamp(promoFields.expires_at),
       discount_percent: effectiveWishSubmitted ? safeDiscountPercent(promoFields.benefit_type, promoFields.benefit_value) : 0,
@@ -160,6 +199,8 @@ class AirtableCareBackStore {
       coupon_message: coupon.customer_message,
       membership_benefit: safeMembershipBenefit(claimPolicy.membership_benefit),
       points_policy: safePointsPolicy(claimPolicy.points_policy),
+      personalized_benefits: personalizedBenefits(claimPolicy, coupon),
+      coupon_wallet: couponWallet(promoFields, coupon),
       campaign_phase: safeCampaignPhase(campaignPhase?.id),
       campaign_phase_ends_at: safeTimestamp(campaignPhase?.ends_at),
       wish_submitted: effectiveWishSubmitted,
@@ -438,6 +479,28 @@ function resolvedClaimPolicy(fields, observed) {
       },
     };
   }
+  if (existingGroup === "new_member") {
+    const paymentVerified = String(fields.payment_status || "") === "verified";
+    const reviewApproved = String(fields.review_status || "") === "approved";
+    const membershipActivated = observed.status === "active" || observed.status === "grace";
+    const approved = paymentVerified && reviewApproved && membershipActivated;
+    return {
+      match_status: "matched",
+      classification_group: "new_member",
+      default_months: Number(fields.default_months) || 6,
+      payment_status: paymentVerified ? "verified" : "pending",
+      payment_required: true,
+      review_status: reviewApproved ? "approved" : "pending",
+      claim_status: approved ? "benefit_approved" : (paymentVerified ? "manual_review" : "payment_pending"),
+      membership_benefit: null,
+      points_policy: {
+        reconciliation_state: approved ? "pending" : "manual_review",
+        rate_thb_per_point: POINTS_RATE_THB,
+        renewal_bonus_points: NEW_MEMBER_WELCOME_POINTS,
+        renewal_bonus_state: approved ? "pending_application" : "payment_required",
+      },
+    };
+  }
   return initialClaimPolicy(observed);
 }
 
@@ -445,7 +508,7 @@ function couponStateFor(claimPolicy, observed, promoFields, now = new Date(), wi
   const currentStatus = safeCodeStatus(promoFields.status);
   const used = normalizedUseCount(promoFields.used_count) >= 1 || currentStatus === "used";
   const terminal = used ? "used" : (["revoked", "invalid"].includes(currentStatus) ? currentStatus : "");
-  const isEligibleNow = (observed.status === "active" || observed.status === "grace") && claimPolicy.membership_benefit?.state !== "renewal_required";
+  const isEligibleNow = couponIssuanceGatePassed(claimPolicy, observed, wishSubmitted);
   const rawExpiresAt = safeTimestamp(promoFields.expires_at);
   const expired = rawExpiresAt && Date.parse(rawExpiresAt) <= now.getTime();
 
@@ -464,6 +527,44 @@ function couponStateFor(claimPolicy, observed, promoFields, now = new Date(), wi
     return customerCoupon("draft", "", "renewal_required", "คูปองจะพร้อมใช้หลังต่ออายุสมาชิกและระบบยืนยันเรียบร้อยแล้ว");
   }
   return customerCoupon("draft", "", "verification_required", "คูปองจะพร้อมใช้หลัง MMD ยืนยันสถานะสมาชิกเรียบร้อยแล้ว");
+}
+
+function couponIssuanceGatePassed(claimPolicy, observed, wishSubmitted) {
+  if (!wishSubmitted) return false;
+  const membershipVerified = observed.status === "active" || observed.status === "grace";
+  const paymentVerified = claimPolicy.payment_required
+    ? claimPolicy.payment_status === "verified"
+    : claimPolicy.payment_status === "not_required";
+  const reviewVerified = claimPolicy.review_status === "approved" || claimPolicy.review_status === "not_required";
+  const claimApproved = ["benefit_approved", "applying", "benefit_applied"].includes(String(claimPolicy.claim_status || ""));
+  return membershipVerified
+    && paymentVerified
+    && reviewVerified
+    && claimApproved
+    && claimPolicy.membership_benefit?.state !== "renewal_required";
+}
+
+function personalizedBenefits(claimPolicy, coupon) {
+  const benefits = [];
+  const membership = safeMembershipBenefit(claimPolicy?.membership_benefit);
+  if (membership) benefits.push({ type: "membership_extension", value: membership.days, unit: "days", state: membership.state });
+  const points = safePointsPolicy(claimPolicy?.points_policy);
+  if (points?.renewal_bonus_points > 0) {
+    benefits.push({ type: "points_bonus", value: points.renewal_bonus_points, unit: "points", state: points.renewal_bonus_state });
+  }
+  benefits.push({ type: "personal_coupon", value: COUPON_DISCOUNT_PERCENT, unit: "percent", state: coupon.customer_state });
+  return benefits;
+}
+
+function couponWallet(promoFields, coupon) {
+  const code = /^[A-HJ-NP-Z2-9]{6}$/.test(String(promoFields?.code || "")) ? String(promoFields.code) : "";
+  return {
+    status: coupon.customer_state,
+    code,
+    discount_percent: code ? safeDiscountPercent(promoFields?.benefit_type, promoFields?.benefit_value) : 0,
+    expires_at: code ? safeTimestamp(promoFields?.expires_at) || null : null,
+    single_use: true,
+  };
 }
 
 function customerCoupon(status, expiresAt, customerState, message) {
@@ -532,7 +633,7 @@ function safePointsPolicy(value) {
   const bonusState = String(value?.renewal_bonus_state || "");
   if (!Number.isInteger(rate) || rate <= 0 || !Number.isInteger(points) || points < 0) return null;
   if (!["pending", "manual_review", "verified", "reconciliation_required"].includes(reconciliationState)) return null;
-  if (!["not_offered", "renewal_required", "pending_application", "applied"].includes(bonusState)) return null;
+  if (!["not_offered", "renewal_required", "payment_required", "pending_application", "applied"].includes(bonusState)) return null;
   return {
     reconciliation_state: reconciliationState,
     rate_thb_per_point: rate,
@@ -545,4 +646,6 @@ function safeCampaignPhase(value) { return ["birthday", "continuation", "legacy"
 
 function safeClaimStatus(value) { return ["identity_verified", "matched", "manual_review", "payment_pending", "benefit_approved", "applying", "benefit_applied", "blocked", "rejected"].includes(String(value)) ? String(value) : "identity_verified"; }
 function safeReviewStatus(value) { return ["pending", "in_review", "approved", "blocked", "not_required"].includes(String(value)) ? String(value) : "pending"; }
+function safePaymentStatus(value) { return ["pending", "verified", "not_required", "rejected"].includes(String(value)) ? String(value) : "pending"; }
+function safeClassificationGroup(value) { return ["current_member", "recently_expired", "inactive_expired", "former_member", "new_member", "manual_review"].includes(String(value)) ? String(value) : "manual_review"; }
 function safeCodeStatus(value) { return ["draft", "active", "expired", "used", "revoked", "invalid"].includes(String(value)) ? String(value) : "draft"; }
