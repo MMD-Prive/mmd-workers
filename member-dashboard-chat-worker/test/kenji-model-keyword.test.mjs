@@ -60,7 +60,8 @@ test('customer-safe reply never exposes rate, private note, or image URL', () =>
   assert.equal(reply.send_price, false);
   assert.match(reply.text, /ศิลปิน/);
   assert.match(reply.text, /ให้เปอร์ตรวจ/);
-  assert.doesNotMatch(reply.text, /17500|17,500|PRIVATE|https?:\\/\\//);
+  assert.equal(reply.text.includes('http'), false);
+  assert.doesNotMatch(reply.text, /17500|17,500|PRIVATE/);
 });
 
 test('third model query becomes a burst handoff without exposing model data', () => {
