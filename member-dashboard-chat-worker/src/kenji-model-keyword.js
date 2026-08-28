@@ -435,7 +435,6 @@ export async function resolveModelKeywordRequest({
         formula: '{line_user_id}="' + formulaValue + '"',
         fields: CLIENT_FIELDS,
         fetchImpl,
-        signal,
         signal: signalState.controller.signal
       })
     ]);
