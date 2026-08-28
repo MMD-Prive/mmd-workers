@@ -24,7 +24,6 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.MMS_CLOUDFLARE_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
       AIRTABLE_API_TOKEN: ${{ secrets.SIGIL_AIRTABLE_API_TOKEN || secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
-      PUBLIC_MODEL_UPLOAD_SIGNING_SECRET: ${{ secrets.PUBLIC_MODEL_UPLOAD_SIGNING_SECRET }}
       NO_COLOR: "1"
       WRANGLER_SEND_METRICS: "false"
 
@@ -46,18 +45,14 @@ jobs:
           const cloudflareToken = clean(process.env.CLOUDFLARE_API_TOKEN);
           const accountId = clean(process.env.CLOUDFLARE_ACCOUNT_ID);
           const airtableToken = clean(process.env.AIRTABLE_API_TOKEN);
-          const signingSecret = clean(process.env.PUBLIC_MODEL_UPLOAD_SIGNING_SECRET);
           if (!cloudflareToken || !accountId) throw new Error("Cloudflare deployment credentials are missing");
           if (!airtableToken) throw new Error("SIGIL Airtable production credential is missing");
-          if (signingSecret.length < 32) throw new Error("Stable Public Model upload signing secret is missing or too short");
           console.log(`::add-mask::${cloudflareToken}`);
           console.log(`::add-mask::${airtableToken}`);
-          console.log(`::add-mask::${signingSecret}`);
           fs.appendFileSync(process.env.GITHUB_ENV, [
             `CLOUDFLARE_API_TOKEN=${cloudflareToken}`,
             `CLOUDFLARE_ACCOUNT_ID=${accountId}`,
             `AIRTABLE_API_TOKEN=${airtableToken}`,
-            `PUBLIC_MODEL_UPLOAD_SIGNING_SECRET=${signingSecret}`,
             "",
           ].join("\n"));
           NODE
@@ -108,13 +103,31 @@ jobs:
             npx wrangler r2 bucket create mmd-private-public-model-uploads
           fi
 
+      - name: Ensure stable Public Model upload signing secret exists
+        working-directory: sigil-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          if npx wrangler secret list --format json | node -e '
+            let input = "";
+            process.stdin.setEncoding("utf8");
+            process.stdin.on("data", (chunk) => { input += chunk; });
+            process.stdin.on("end", () => {
+              const secrets = JSON.parse(input);
+              process.exit(secrets.some((secret) => secret.name === "PUBLIC_MODEL_UPLOAD_SIGNING_SECRET") ? 0 : 1);
+            });
+          '; then
+            echo "Stable Public Model signing secret already exists"
+          else
+            openssl rand -hex 48 | npx wrangler secret put PUBLIC_MODEL_UPLOAD_SIGNING_SECRET
+          fi
+
       - name: Prepare production secrets
         shell: bash
         run: |
           set -euo pipefail
           {
             printf 'AIRTABLE_API_TOKEN=%s\n' "$AIRTABLE_API_TOKEN"
-            printf 'PUBLIC_MODEL_UPLOAD_SIGNING_SECRET=%s\n' "$PUBLIC_MODEL_UPLOAD_SIGNING_SECRET"
           } > "$RUNNER_TEMP/sigil-worker.env"
           chmod 600 "$RUNNER_TEMP/sigil-worker.env"
 
