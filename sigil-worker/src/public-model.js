@@ -9,7 +9,7 @@ export const PUBLIC_MODEL_MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 const UPLOAD_TTL_SECONDS = 15 * 60;
 const UPLOAD_SESSION_TTL_SECONDS = 60 * 60;
 const UPLOAD_STATE_PREFIX = "sigil:public-model:upload:v1:";
-const RATE_LIMIT_PREFIX = "sigil:public-model:rate:v1:";
+const IDEMPOTENCY_LEASE_SECONDS = 60;
 const AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg";
 const AIRTABLE_APPLICATION_TABLE_ID = "tblwUa8ySWln8OfaJ";
 const AIRTABLE_UPLOAD_TABLE_ID = "tblEhg3dsFzPERpNQ";
@@ -157,52 +157,229 @@ export async function handlePublicModelRequest(request, env, corsHeaders) {
   return handleProductionUploadUrl(request, parsed.value, env, corsHeaders);
 }
 
+export class PublicModelCoordinator {
+  constructor(state) {
+    this.state = state;
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+    const body = request.method === "POST" ? await request.json().catch(() => null) : null;
+    if (url.pathname === "/health") return Response.json({ ok: true });
+    if (!body || typeof body !== "object" || Array.isArray(body)) return Response.json({ ok: false, error: "invalid_request" }, { status: 400 });
+
+    if (url.pathname === "/rate-limit") {
+      const limit = Number(body.limit);
+      const windowSeconds = Number(body.window_seconds);
+      if (!Number.isInteger(limit) || limit < 1 || !Number.isInteger(windowSeconds) || windowSeconds < 1) {
+        return Response.json({ ok: false, error: "invalid_request" }, { status: 400 });
+      }
+      const bucket = Math.floor(Date.now() / (windowSeconds * 1000));
+      const count = await this.state.storage.transaction(async (transaction) => {
+        const stored = await transaction.get("rate");
+        const current = stored?.bucket === bucket ? Number(stored.count) || 0 : 0;
+        const next = current + 1;
+        await transaction.put("rate", { bucket, count: next });
+        return next;
+      });
+      return Response.json({ ok: true, limited: count > limit });
+    }
+
+    if (url.pathname === "/idempotency/begin") {
+      const applicationId = boundedString(body.application_id, 120);
+      if (!validRef(applicationId, "pma")) return Response.json({ ok: false, error: "invalid_request" }, { status: 400 });
+      const now = Date.now();
+      const result = await this.state.storage.transaction(async (transaction) => {
+        const current = await transaction.get("idempotency");
+        if (current?.status === "complete") return { state: "complete", application_id: current.applicationId };
+        if (current?.status === "pending" && now - current.updatedAt < IDEMPOTENCY_LEASE_SECONDS * 1000) {
+          return { state: "pending", application_id: current.applicationId };
+        }
+        const next = { status: "pending", applicationId, updatedAt: now };
+        await transaction.put("idempotency", next);
+        return { state: "acquired", application_id: applicationId };
+      });
+      return Response.json({ ok: true, ...result });
+    }
+
+    if (url.pathname === "/idempotency/complete") {
+      const applicationId = boundedString(body.application_id, 120);
+      if (!validRef(applicationId, "pma")) return Response.json({ ok: false, error: "invalid_request" }, { status: 400 });
+      await this.state.storage.put("idempotency", { status: "complete", applicationId, updatedAt: Date.now() });
+      return Response.json({ ok: true });
+    }
+
+    if (url.pathname === "/idempotency/release") {
+      const applicationId = boundedString(body.application_id, 120);
+      await this.state.storage.transaction(async (transaction) => {
+        const current = await transaction.get("idempotency");
+        if (current?.status === "pending" && current.applicationId === applicationId) await transaction.delete("idempotency");
+      });
+      return Response.json({ ok: true });
+    }
+
+    if (url.pathname === "/upload/claim") {
+      const expires = Number(body.expires);
+      const now = Math.floor(Date.now() / 1000);
+      const result = await this.state.storage.transaction(async (transaction) => {
+        const current = await transaction.get("upload");
+        if (current?.status === "complete") return { state: "complete" };
+        if (current?.status === "claimed" && current.expires >= now) return { state: "claimed" };
+        await transaction.put("upload", { status: "claimed", expires });
+        return { state: "acquired" };
+      });
+      return Response.json({ ok: true, ...result });
+    }
+
+    if (url.pathname === "/upload/complete") {
+      await this.state.storage.put("upload", { status: "complete", completedAt: Date.now() });
+      return Response.json({ ok: true });
+    }
+
+    if (url.pathname === "/upload/release") {
+      await this.state.storage.delete("upload");
+      return Response.json({ ok: true });
+    }
+
+    return Response.json({ ok: false, error: "not_found" }, { status: 404 });
+  }
+}
+
+export async function probePublicModelReadiness(env) {
+  const applyEnabled = flagEnabled(env?.PUBLIC_MODEL_ENABLED);
+  const uploadEnabled = flagEnabled(env?.PUBLIC_MODEL_UPLOAD_ENABLED);
+  const dependencies = {
+    airtable: false,
+    kv: false,
+    coordinator: false,
+    r2: false,
+    signing_secret: Boolean(env?.PUBLIC_MODEL_UPLOAD_SIGNING_SECRET),
+  };
+
+  if (!applyEnabled && !uploadEnabled) {
+    return { public_model_apply: false, public_model_upload: false, dependencies };
+  }
+
+  const probes = await Promise.allSettled([
+    probeAirtable(env),
+    probeKv(env),
+    probeCoordinator(env),
+    uploadEnabled ? probeR2(env) : Promise.resolve(false),
+  ]);
+  dependencies.airtable = probes[0].status === "fulfilled" && probes[0].value === true;
+  dependencies.kv = probes[1].status === "fulfilled" && probes[1].value === true;
+  dependencies.coordinator = probes[2].status === "fulfilled" && probes[2].value === true;
+  dependencies.r2 = probes[3].status === "fulfilled" && probes[3].value === true;
+
+  const coreReady = dependencies.airtable && dependencies.kv && dependencies.coordinator;
+  return {
+    public_model_apply: applyEnabled && coreReady,
+    public_model_upload: uploadEnabled && coreReady && dependencies.r2 && dependencies.signing_secret,
+    dependencies,
+  };
+}
+
+async function probeAirtable(env) {
+  if (!env?.AIRTABLE_API_TOKEN) return false;
+  await airtableRequest(env, `${AIRTABLE_APPLICATION_TABLE_ID}?maxRecords=1&pageSize=1&returnFieldsByFieldId=true`);
+  return true;
+}
+
+async function probeKv(env) {
+  if (!env?.SIGIL_BOARD_KV) return false;
+  await env.SIGIL_BOARD_KV.get("sigil:public-model:health:v1");
+  return true;
+}
+
+async function probeCoordinator(env) {
+  if (!env?.PUBLIC_MODEL_COORDINATOR) return false;
+  const result = await coordinatorRequest(env, "health", "/health", {});
+  return result.ok === true;
+}
+
+async function probeR2(env) {
+  if (!env?.PUBLIC_MODEL_UPLOADS_R2) return false;
+  await env.PUBLIC_MODEL_UPLOADS_R2.list({ limit: 1, prefix: "public-model/v1/" });
+  return true;
+}
+
 async function handleProductionApply(request, body, env, corsHeaders) {
   if (!env.AIRTABLE_API_TOKEN) return unavailable("persistence_not_configured", PUBLIC_MODEL_SERVICE, corsHeaders);
-  const kv = env.SIGIL_BOARD_KV;
-  if (!kv) return unavailable("persistence_not_configured", PUBLIC_MODEL_SERVICE, corsHeaders);
+  if (!env.SIGIL_BOARD_KV || !env.PUBLIC_MODEL_COORDINATOR) return unavailable("persistence_not_configured", PUBLIC_MODEL_SERVICE, corsHeaders);
 
+  let reservation;
+  let airtableCreated = false;
+  let idempotencyScope = "";
   try {
     const fingerprint = await requestFingerprint(request, env);
-    const limited = await rateLimited(kv, `apply:${fingerprint}`, 5, 60 * 60);
+    const limited = await rateLimited(env, `apply:${fingerprint}`, 5, 60 * 60);
     if (limited) return errorResponse("rate_limited", 429, corsHeaders);
-
-    const uploads = await verifyUploads(body, env);
-    if (!uploads.ok) return invalidPayload(PUBLIC_MODEL_SERVICE, { upload_refs: uploads.error }, corsHeaders);
 
     const now = new Date().toISOString();
     const normalized = normalizeApplication(body);
     const payloadHash = await sha256Hex(stableJson(normalized));
     const duplicateKey = await sha256Hex(CONTACT_FIELDS.map((field) => normalizeContact(body[field])).filter(Boolean).sort().join("|"));
-    const duplicate = await findApplicationByHash(env, payloadHash);
-    if (duplicate) {
-      return successResponse(duplicate.fields?.[APPLICATION_FIELDS.applicationId] || "pma_received", true, corsHeaders);
+    const proposedApplicationId = `pma_${compactUtcDate(new Date())}_${randomId(12)}`;
+    idempotencyScope = `idempotency:${payloadHash}`;
+    reservation = await coordinatorRequest(env, idempotencyScope, "/idempotency/begin", { application_id: proposedApplicationId });
+    let applicationId = reservation.application_id;
+    let duplicate = reservation.state === "complete";
+
+    if (reservation.state === "pending") {
+      const existing = await findApplicationByHash(env, payloadHash);
+      if (!existing) return errorResponse("request_in_progress", 409, corsHeaders);
+      applicationId = existing.fields?.[APPLICATION_FIELDS.applicationId];
+      if (!validRef(applicationId, "pma")) throw new Error("invalid_existing_application_id");
+      duplicate = true;
+    } else if (reservation.state === "complete") {
+      const existing = await findApplicationByHash(env, payloadHash);
+      if (existing?.fields?.[APPLICATION_FIELDS.applicationId]) applicationId = existing.fields[APPLICATION_FIELDS.applicationId];
+    } else {
+      const existing = await findApplicationByHash(env, payloadHash);
+      if (existing) {
+        applicationId = existing.fields?.[APPLICATION_FIELDS.applicationId];
+        if (!validRef(applicationId, "pma")) throw new Error("invalid_existing_application_id");
+        duplicate = true;
+      }
     }
 
-    const applicationId = `pma_${compactUtcDate(new Date())}_${randomId(12)}`;
-    const fields = applicationAirtableFields(body, normalized, uploads.items, {
-      applicationId,
-      duplicateKey,
-      fingerprint,
-      now,
-      payloadHash,
-    });
-    await createAirtableRecord(env, AIRTABLE_APPLICATION_TABLE_ID, fields);
+    const uploads = await verifyUploads(body, env, applicationId);
+    if (!uploads.ok) {
+      if (reservation.state === "acquired") await coordinatorRequest(env, idempotencyScope, "/idempotency/release", { application_id: applicationId });
+      return invalidPayload(PUBLIC_MODEL_SERVICE, { upload_refs: uploads.error }, corsHeaders);
+    }
+
+    if (reservation.state === "acquired" && !duplicate) {
+      const fields = applicationAirtableFields(body, normalized, uploads.items, {
+        applicationId,
+        duplicateKey,
+        fingerprint,
+        now,
+        payloadHash,
+      });
+      await createAirtableRecord(env, AIRTABLE_APPLICATION_TABLE_ID, fields);
+      airtableCreated = true;
+    }
+
     await attachUploads(env, uploads.items, applicationId);
-    return successResponse(applicationId, false, corsHeaders);
+    await coordinatorRequest(env, idempotencyScope, "/idempotency/complete", { application_id: applicationId });
+    return successResponse(applicationId, duplicate, corsHeaders);
   } catch (error) {
+    if (reservation?.state === "acquired" && !airtableCreated) {
+      await coordinatorRequest(env, idempotencyScope, "/idempotency/release", { application_id: reservation.application_id }).catch(() => {});
+    }
     console.error(JSON.stringify({ event: "public_model_apply_failed", error: safeError(error) }));
     return unavailable("persistence_failed", PUBLIC_MODEL_SERVICE, corsHeaders);
   }
 }
 
 async function handleProductionUploadUrl(request, body, env, corsHeaders) {
-  if (!env.PUBLIC_MODEL_UPLOADS_R2 || !env.SIGIL_BOARD_KV || !env.PUBLIC_MODEL_UPLOAD_SIGNING_SECRET || !env.AIRTABLE_API_TOKEN) {
+  if (!env.PUBLIC_MODEL_UPLOADS_R2 || !env.SIGIL_BOARD_KV || !env.PUBLIC_MODEL_COORDINATOR || !env.PUBLIC_MODEL_UPLOAD_SIGNING_SECRET || !env.AIRTABLE_API_TOKEN) {
     return unavailable("upload_not_configured", PUBLIC_MODEL_UPLOAD_SERVICE, corsHeaders);
   }
   try {
     const fingerprint = await requestFingerprint(request, env);
-    if (await rateLimited(env.SIGIL_BOARD_KV, `upload:${fingerprint}`, 30, 60 * 60)) {
+    if (await rateLimited(env, `upload:${fingerprint}`, 30, 60 * 60)) {
       return errorResponse("rate_limited", 429, corsHeaders);
     }
 
@@ -255,7 +432,7 @@ async function handleProductionUploadUrl(request, body, env, corsHeaders) {
 }
 
 async function handleUploadPut(request, env, corsHeaders) {
-  if (!flagEnabled(env.PUBLIC_MODEL_UPLOAD_ENABLED) || !env.PUBLIC_MODEL_UPLOADS_R2 || !env.SIGIL_BOARD_KV || !env.PUBLIC_MODEL_UPLOAD_SIGNING_SECRET || !env.AIRTABLE_API_TOKEN) {
+  if (!flagEnabled(env.PUBLIC_MODEL_UPLOAD_ENABLED) || !env.PUBLIC_MODEL_UPLOADS_R2 || !env.SIGIL_BOARD_KV || !env.PUBLIC_MODEL_COORDINATOR || !env.PUBLIC_MODEL_UPLOAD_SIGNING_SECRET || !env.AIRTABLE_API_TOKEN) {
     return unavailable("upload_not_configured", PUBLIC_MODEL_UPLOAD_SERVICE, corsHeaders);
   }
   const url = new URL(request.url);
@@ -269,7 +446,7 @@ async function handleUploadPut(request, env, corsHeaders) {
 
   const raw = await env.SIGIL_BOARD_KV.get(uploadStateKey(uploadRef));
   const metadata = parseObject(raw);
-  if (!metadata || metadata.sessionId !== sessionId || metadata.uploadRef !== uploadRef || metadata.status !== "issued" || metadata.expires !== expires) {
+  if (!metadata || metadata.sessionId !== sessionId || metadata.uploadRef !== uploadRef || !["issued", "uploaded"].includes(metadata.status) || metadata.expires !== expires) {
     return errorResponse("invalid_upload_authorization", 403, corsHeaders);
   }
   const expected = await uploadSignature(env, metadata);
@@ -281,42 +458,53 @@ async function handleUploadPut(request, env, corsHeaders) {
     return errorResponse("upload_metadata_mismatch", 400, corsHeaders);
   }
 
-  await env.PUBLIC_MODEL_UPLOADS_R2.put(metadata.objectKey, request.body, {
-    httpMetadata: { contentType: metadata.contentType },
-    customMetadata: { upload_session_id: metadata.sessionId, upload_ref: metadata.uploadRef, kind: metadata.kind, role: metadata.role },
-  });
+  const uploadScope = `upload:${uploadRef}`;
+  const claim = await coordinatorRequest(env, uploadScope, "/upload/claim", { expires });
+  if (claim.state === "complete") {
+    return json({ ok: true, service: PUBLIC_MODEL_UPLOAD_SERVICE, upload_ref: uploadRef, uploaded: true, duplicate: true }, 200, corsHeaders);
+  }
+  if (claim.state !== "acquired") return errorResponse("upload_in_progress", 409, corsHeaders);
 
-  const uploadedAt = new Date().toISOString();
-  let airtableRecord;
+  let persistedUpload = null;
   try {
-    airtableRecord = await createAirtableRecord(env, AIRTABLE_UPLOAD_TABLE_ID, {
-      [UPLOAD_FIELDS.assetId]: `pmua_${randomId(20)}`,
-      [UPLOAD_FIELDS.sessionId]: metadata.sessionId,
-      [UPLOAD_FIELDS.uploadRef]: metadata.uploadRef,
-      [UPLOAD_FIELDS.kind]: metadata.kind,
-      [UPLOAD_FIELDS.role]: metadata.role,
-      [UPLOAD_FIELDS.fileName]: metadata.fileName,
-      [UPLOAD_FIELDS.contentType]: metadata.contentType,
-      [UPLOAD_FIELDS.fileSize]: metadata.fileSize,
-      [UPLOAD_FIELDS.bucket]: R2_BUCKET_NAME,
-      [UPLOAD_FIELDS.objectKey]: metadata.objectKey,
-      [UPLOAD_FIELDS.uploadStatus]: "uploaded",
-      [UPLOAD_FIELDS.reviewStatus]: "pending_review",
-      [UPLOAD_FIELDS.sourcePath]: metadata.sourcePath,
-      [UPLOAD_FIELDS.uploadedAt]: uploadedAt,
-      [UPLOAD_FIELDS.expiresAt]: new Date(metadata.expires * 1000).toISOString(),
-      [UPLOAD_FIELDS.payloadJson]: JSON.stringify({ kind: metadata.kind, role: metadata.role, content_type: metadata.contentType, file_size_bytes: metadata.fileSize }),
-      [UPLOAD_FIELDS.worker]: "sigil-worker",
+    await env.PUBLIC_MODEL_UPLOADS_R2.put(metadata.objectKey, request.body, {
+      httpMetadata: { contentType: metadata.contentType },
+      customMetadata: { upload_session_id: metadata.sessionId, upload_ref: metadata.uploadRef, kind: metadata.kind, role: metadata.role },
     });
+
+    const uploadedAt = new Date().toISOString();
+    persistedUpload = await findUploadByRef(env, uploadRef);
+    if (!persistedUpload) {
+      persistedUpload = await createAirtableRecord(env, AIRTABLE_UPLOAD_TABLE_ID, {
+        [UPLOAD_FIELDS.assetId]: `pmua_${randomId(20)}`,
+        [UPLOAD_FIELDS.sessionId]: metadata.sessionId,
+        [UPLOAD_FIELDS.uploadRef]: metadata.uploadRef,
+        [UPLOAD_FIELDS.kind]: metadata.kind,
+        [UPLOAD_FIELDS.role]: metadata.role,
+        [UPLOAD_FIELDS.fileName]: metadata.fileName,
+        [UPLOAD_FIELDS.contentType]: metadata.contentType,
+        [UPLOAD_FIELDS.fileSize]: metadata.fileSize,
+        [UPLOAD_FIELDS.bucket]: R2_BUCKET_NAME,
+        [UPLOAD_FIELDS.objectKey]: metadata.objectKey,
+        [UPLOAD_FIELDS.uploadStatus]: "uploaded",
+        [UPLOAD_FIELDS.reviewStatus]: "pending_review",
+        [UPLOAD_FIELDS.sourcePath]: metadata.sourcePath,
+        [UPLOAD_FIELDS.uploadedAt]: uploadedAt,
+        [UPLOAD_FIELDS.expiresAt]: new Date(metadata.expires * 1000).toISOString(),
+        [UPLOAD_FIELDS.payloadJson]: JSON.stringify({ kind: metadata.kind, role: metadata.role, content_type: metadata.contentType, file_size_bytes: metadata.fileSize }),
+        [UPLOAD_FIELDS.worker]: "sigil-worker",
+      });
+    }
+    const next = { ...metadata, status: "uploaded", uploadedAt, airtableRecordId: persistedUpload.id };
+    await env.SIGIL_BOARD_KV.put(uploadStateKey(uploadRef), JSON.stringify(next), { expirationTtl: UPLOAD_SESSION_TTL_SECONDS });
+    await coordinatorRequest(env, uploadScope, "/upload/complete", {});
+    return json({ ok: true, service: PUBLIC_MODEL_UPLOAD_SERVICE, upload_ref: uploadRef, uploaded: true }, 200, corsHeaders);
   } catch (error) {
-    await env.PUBLIC_MODEL_UPLOADS_R2.delete(metadata.objectKey);
+    if (!persistedUpload) await env.PUBLIC_MODEL_UPLOADS_R2.delete(metadata.objectKey);
+    await coordinatorRequest(env, uploadScope, "/upload/release", {}).catch(() => {});
     console.error(JSON.stringify({ event: "public_model_upload_airtable_failed", error: safeError(error) }));
     return errorResponse("upload_persistence_failed", 503, corsHeaders);
   }
-
-  const next = { ...metadata, status: "uploaded", uploadedAt, airtableRecordId: airtableRecord.id };
-  await env.SIGIL_BOARD_KV.put(uploadStateKey(uploadRef), JSON.stringify(next), { expirationTtl: UPLOAD_SESSION_TTL_SECONDS });
-  return json({ ok: true, service: PUBLIC_MODEL_UPLOAD_SERVICE, upload_ref: uploadRef, uploaded: true }, 200, corsHeaders);
 }
 
 function validateApplicationPayload(body) {
@@ -324,6 +512,9 @@ function validateApplicationPayload(body) {
   if (body.application_type !== undefined && body.application_type !== "public_model") fields.application_type = "must be public_model";
   if (!nonEmptyString(body.nickname, 120)) fields.nickname = "required";
   if (body.consent !== true) fields.consent = "must be true";
+  for (const field of CONTACT_FIELDS) {
+    if (body[field] !== undefined && body[field] !== null && body[field] !== "" && !nonEmptyString(body[field], 500)) fields[field] = "must be a nonempty string";
+  }
   if (!CONTACT_FIELDS.some((field) => nonEmptyString(body[field], 500))) fields.contact = "one contact channel is required";
   if (body.form_version !== undefined && body.form_version !== "public-model-apply-v8") fields.form_version = "unsupported form version";
   if (nonEmptyString(body.company, 200)) fields.company = "must be empty";
@@ -341,11 +532,20 @@ function validateUploadMetadata(body) {
   const fields = {};
   if (body.application_type !== "public_model") fields.application_type = "must be public_model";
   if (body.consent !== true) fields.consent = "must be true";
+  const rawMime = body.content_type ?? body.contentType ?? body.mime_type;
+  const rawSize = body.file_size ?? body.fileSize;
+  const rawName = body.file_name ?? body.fileName;
   const kind = normalizeToken(body.kind);
   const role = normalizeToken(body.role);
-  const mime = normalizeMime(body.content_type ?? body.contentType ?? body.mime_type);
-  const size = Number(body.file_size ?? body.fileSize);
-  const name = boundedString(body.file_name ?? body.fileName, 240);
+  const mime = normalizeMime(rawMime);
+  const size = typeof rawSize === "number" ? rawSize : Number.NaN;
+  const name = boundedString(rawName, 240);
+  if (typeof body.kind !== "string") fields.kind = "must be a string";
+  if (typeof body.role !== "string") fields.role = "must be a string";
+  if (typeof rawMime !== "string") fields.content_type = "must be a string";
+  if (typeof rawName !== "string") fields.file_name = "must be a string";
+  if (body.upload_session_id !== undefined && typeof body.upload_session_id !== "string") fields.upload_session_id = "must be a string";
+  if (body.source_path !== undefined && typeof body.source_path !== "string") fields.source_path = "must be a string";
   if (!["photo", "document"].includes(kind)) fields.kind = "unsupported kind";
   if (!roleAllowed(kind, role)) fields.role = "unsupported role for kind";
   if (!mimeAllowed(kind, mime)) fields.content_type = "unsupported content type for kind";
@@ -365,8 +565,9 @@ function validateUploadRefs(body) {
   if (refs.length > 12) return "too many upload refs";
   for (const item of refs) {
     if (!item || typeof item !== "object" || Array.isArray(item)) return "contains invalid upload ref";
-    if (!validRef(item.upload_ref ?? item.uploadRef, "pmu_ref")) return "contains invalid upload_ref";
-    if (!roleAllowed(normalizeToken(item.kind), normalizeToken(item.role))) return "contains unsupported kind or role";
+    const uploadRef = item.upload_ref ?? item.uploadRef;
+    if (typeof uploadRef !== "string" || !validRef(uploadRef, "pmu_ref")) return "contains invalid upload_ref";
+    if (typeof item.kind !== "string" || typeof item.role !== "string" || !roleAllowed(normalizeToken(item.kind), normalizeToken(item.role))) return "contains unsupported kind or role";
     if (findForbiddenField(item)) return "contains unsupported upload field";
   }
   return "";
@@ -382,7 +583,7 @@ function validateWorkTypes(value) {
   return "";
 }
 
-async function verifyUploads(body, env) {
+async function verifyUploads(body, env, applicationId) {
   const refs = body.uploads ?? body.upload_refs ?? body.uploadRefs ?? [];
   const required = flagEnabled(env.PUBLIC_MODEL_UPLOAD_REQUIRED);
   if (!refs.length) return required ? { ok: false, error: "at least 7 verified applicant photos are required" } : { ok: true, items: [] };
@@ -395,6 +596,7 @@ async function verifyUploads(body, env) {
     if (!metadata || metadata.sessionId !== sessionId || metadata.uploadRef !== uploadRef || !["uploaded", "attached"].includes(metadata.status)) {
       return { ok: false, error: "contains unknown or incomplete upload_ref" };
     }
+    if (metadata.status === "attached" && metadata.applicationId !== applicationId) return { ok: false, error: "contains upload_ref attached to another application" };
     if (metadata.kind !== normalizeToken(ref.kind) || metadata.role !== normalizeToken(ref.role)) return { ok: false, error: "contains mismatched upload metadata" };
     const object = await env.PUBLIC_MODEL_UPLOADS_R2.head(metadata.objectKey);
     if (!object || object.size !== metadata.fileSize || (object.httpMetadata?.contentType && object.httpMetadata.contentType !== metadata.contentType)) {
@@ -411,18 +613,15 @@ async function verifyUploads(body, env) {
 
 async function attachUploads(env, uploads, applicationId) {
   for (const item of uploads) {
+    if (item.status === "attached" && item.applicationId !== applicationId) throw new Error("upload_ownership_mismatch");
     const next = { ...item, status: "attached", applicationId };
-    await env.SIGIL_BOARD_KV.put(uploadStateKey(item.uploadRef), JSON.stringify(next), { expirationTtl: 7 * 24 * 60 * 60 });
     if (item.airtableRecordId) {
-      try {
-        await updateAirtableRecord(env, AIRTABLE_UPLOAD_TABLE_ID, item.airtableRecordId, {
-          [UPLOAD_FIELDS.applicationId]: applicationId,
-          [UPLOAD_FIELDS.uploadStatus]: "attached",
-        });
-      } catch (error) {
-        console.error(JSON.stringify({ event: "public_model_upload_attach_failed", upload_ref: item.uploadRef, error: safeError(error) }));
-      }
+      await updateAirtableRecord(env, AIRTABLE_UPLOAD_TABLE_ID, item.airtableRecordId, {
+        [UPLOAD_FIELDS.applicationId]: applicationId,
+        [UPLOAD_FIELDS.uploadStatus]: "attached",
+      });
     }
+    await env.SIGIL_BOARD_KV.put(uploadStateKey(item.uploadRef), JSON.stringify(next), { expirationTtl: 7 * 24 * 60 * 60 });
   }
 }
 
@@ -501,6 +700,17 @@ async function findApplicationByHash(env, payloadHash) {
   return data.records?.[0] || null;
 }
 
+async function findUploadByRef(env, uploadRef) {
+  const escaped = uploadRef.replace(/'/g, "\\'");
+  const params = new URLSearchParams({
+    maxRecords: "1",
+    filterByFormula: `{upload_ref}='${escaped}'`,
+    returnFieldsByFieldId: "true",
+  });
+  const data = await airtableRequest(env, `${AIRTABLE_UPLOAD_TABLE_ID}?${params}`);
+  return data.records?.[0] || null;
+}
+
 async function createAirtableRecord(env, tableId, fields) {
   const data = await airtableRequest(env, `${tableId}?returnFieldsByFieldId=true`, {
     method: "POST",
@@ -531,13 +741,23 @@ async function airtableRequest(env, path, init = {}) {
   return response.json();
 }
 
-async function rateLimited(kv, suffix, limit, windowSeconds) {
-  const bucket = Math.floor(Date.now() / (windowSeconds * 1000));
-  const key = `${RATE_LIMIT_PREFIX}${suffix}:${bucket}`;
-  const count = Number(await kv.get(key)) || 0;
-  if (count >= limit) return true;
-  await kv.put(key, String(count + 1), { expirationTtl: windowSeconds + 60 });
-  return false;
+async function rateLimited(env, suffix, limit, windowSeconds) {
+  const result = await coordinatorRequest(env, `rate:${suffix}`, "/rate-limit", { limit, window_seconds: windowSeconds });
+  return result.limited === true;
+}
+
+async function coordinatorRequest(env, scope, path, body) {
+  if (!env.PUBLIC_MODEL_COORDINATOR) throw new Error("public_model_coordinator_missing");
+  const id = env.PUBLIC_MODEL_COORDINATOR.idFromName(scope);
+  const response = await env.PUBLIC_MODEL_COORDINATOR.get(id).fetch(`https://public-model-coordinator${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(`public_model_coordinator_${response.status}`);
+  const result = await response.json();
+  if (!result?.ok) throw new Error("public_model_coordinator_failed");
+  return result;
 }
 
 async function requestFingerprint(request, env) {
@@ -583,7 +803,7 @@ function findForbiddenField(value, allowed = new Set()) {
       continue;
     }
     for (const [key, item] of Object.entries(current)) {
-      const normalized = normalizeToken(key);
+      const normalized = normalizeFieldName(key);
       if (!allowed.has(normalized) && FORBIDDEN_FIELDS.has(normalized)) return normalized;
       if (typeof item === "string" && /^(data:|blob:)/i.test(item.trim())) return normalized;
       if (item && typeof item === "object") stack.push(item);
@@ -637,6 +857,10 @@ function normalizeContact(value) {
 
 function normalizeToken(value) {
   return String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+function normalizeFieldName(value) {
+  return normalizeToken(String(value || "").replace(/([a-z0-9])([A-Z])/g, "$1_$2"));
 }
 
 function normalizeMime(value) {

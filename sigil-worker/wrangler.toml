@@ -45,3 +45,11 @@ preview_id = "f673c4ab6e4f456baefeab032564db72"
 [[r2_buckets]]
 binding = "PUBLIC_MODEL_UPLOADS_R2"
 bucket_name = "mmd-private-public-model-uploads"
+
+[[durable_objects.bindings]]
+name = "PUBLIC_MODEL_COORDINATOR"
+class_name = "PublicModelCoordinator"
+
+[[migrations]]
+tag = "public-model-coordinator-v1"
+new_sqlite_classes = ["PublicModelCoordinator"]

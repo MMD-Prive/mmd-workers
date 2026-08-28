@@ -10,7 +10,11 @@ import {
   PUBLIC_MODEL_SERVICE,
   PUBLIC_MODEL_UPLOAD_SERVICE,
   PUBLIC_MODEL_UPLOAD_URL_PATH,
+  PublicModelCoordinator,
+  probePublicModelReadiness,
 } from "./public-model.js";
+
+export { PublicModelCoordinator };
 
 const WORKER_NAME_FALLBACK = "sigil-worker";
 const MODE = "read_only";
@@ -90,15 +94,14 @@ export default {
 
       if (url.pathname === "/health" || url.pathname === "/ping") {
         if (request.method !== "GET") return methodNotAllowed(corsHeaders);
+        const publicModel = await probePublicModelReadiness(env);
         return json({
           ok: true,
           worker: workerName(env),
           mode: MODE,
           capabilities: {
-            public_model_apply: String(env?.PUBLIC_MODEL_ENABLED || "").toLowerCase() === "true" && Boolean(env?.AIRTABLE_API_TOKEN && env?.SIGIL_BOARD_KV),
-            public_model_upload:
-              String(env?.PUBLIC_MODEL_UPLOAD_ENABLED || "").toLowerCase() === "true" &&
-              Boolean(env?.AIRTABLE_API_TOKEN && env?.SIGIL_BOARD_KV && env?.PUBLIC_MODEL_UPLOADS_R2 && env?.PUBLIC_MODEL_UPLOAD_SIGNING_SECRET),
+            public_model_apply: publicModel.public_model_apply,
+            public_model_upload: publicModel.public_model_upload,
           },
         }, 200, corsHeaders);
       }
