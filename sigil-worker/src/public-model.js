@@ -9,7 +9,6 @@ export const PUBLIC_MODEL_MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 const UPLOAD_TTL_SECONDS = 15 * 60;
 const UPLOAD_SESSION_TTL_SECONDS = 60 * 60;
 const UPLOAD_STATE_PREFIX = "sigil:public-model:upload:v1:";
-const IDEMPOTENCY_LEASE_SECONDS = 60;
 const AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg";
 const AIRTABLE_APPLICATION_TABLE_ID = "tblwUa8ySWln8OfaJ";
 const AIRTABLE_UPLOAD_TABLE_ID = "tblEhg3dsFzPERpNQ";
@@ -158,8 +157,9 @@ export async function handlePublicModelRequest(request, env, corsHeaders) {
 }
 
 export class PublicModelCoordinator {
-  constructor(state) {
+  constructor(state, env) {
     this.state = state;
+    this.env = env;
   }
 
   async fetch(request) {
@@ -185,37 +185,43 @@ export class PublicModelCoordinator {
       return Response.json({ ok: true, limited: count > limit });
     }
 
-    if (url.pathname === "/idempotency/begin") {
+    if (url.pathname === "/idempotency/prepare") {
       const applicationId = boundedString(body.application_id, 120);
       if (!validRef(applicationId, "pma")) return Response.json({ ok: false, error: "invalid_request" }, { status: 400 });
-      const now = Date.now();
       const result = await this.state.storage.transaction(async (transaction) => {
-        const current = await transaction.get("idempotency");
-        if (current?.status === "complete") return { state: "complete", application_id: current.applicationId };
-        if (current?.status === "pending" && now - current.updatedAt < IDEMPOTENCY_LEASE_SECONDS * 1000) {
-          return { state: "pending", application_id: current.applicationId };
-        }
-        const next = { status: "pending", applicationId, updatedAt: now };
-        await transaction.put("idempotency", next);
-        return { state: "acquired", application_id: applicationId };
+        const current = await transaction.get("application");
+        if (current?.applicationId) return { application_id: current.applicationId, complete: current.status === "complete" };
+        await transaction.put("application", { status: "prepared", applicationId, updatedAt: Date.now() });
+        return { application_id: applicationId, complete: false };
       });
       return Response.json({ ok: true, ...result });
     }
 
-    if (url.pathname === "/idempotency/complete") {
+    if (url.pathname === "/idempotency/commit") {
       const applicationId = boundedString(body.application_id, 120);
-      if (!validRef(applicationId, "pma")) return Response.json({ ok: false, error: "invalid_request" }, { status: 400 });
-      await this.state.storage.put("idempotency", { status: "complete", applicationId, updatedAt: Date.now() });
-      return Response.json({ ok: true });
-    }
+      const payloadHash = boundedString(body.payload_hash, 64);
+      const fields = body.fields;
+      if (!validRef(applicationId, "pma") || !/^[a-f0-9]{64}$/.test(payloadHash) || !fields || typeof fields !== "object" || Array.isArray(fields)) {
+        return Response.json({ ok: false, error: "invalid_request" }, { status: 400 });
+      }
+      const result = await this.state.blockConcurrencyWhile(async () => {
+        const current = await this.state.storage.get("application");
+        if (!current || current.applicationId !== applicationId) throw new Error("idempotency_application_mismatch");
+        if (current.status === "complete") return { application_id: applicationId, duplicate: true };
 
-    if (url.pathname === "/idempotency/release") {
-      const applicationId = boundedString(body.application_id, 120);
-      await this.state.storage.transaction(async (transaction) => {
-        const current = await transaction.get("idempotency");
-        if (current?.status === "pending" && current.applicationId === applicationId) await transaction.delete("idempotency");
+        const existing = await findApplicationByHash(this.env, payloadHash);
+        let persistedApplicationId = existing?.fields?.[APPLICATION_FIELDS.applicationId];
+        let duplicate = Boolean(existing);
+        if (existing && persistedApplicationId !== applicationId) throw new Error("idempotency_airtable_mismatch");
+        if (!existing) {
+          await createAirtableRecord(this.env, AIRTABLE_APPLICATION_TABLE_ID, fields);
+          persistedApplicationId = applicationId;
+          duplicate = false;
+        }
+        await this.state.storage.put("application", { status: "complete", applicationId: persistedApplicationId, updatedAt: Date.now() });
+        return { application_id: persistedApplicationId, duplicate };
       });
-      return Response.json({ ok: true });
+      return Response.json({ ok: true, ...result });
     }
 
     if (url.pathname === "/upload/claim") {
@@ -238,6 +244,43 @@ export class PublicModelCoordinator {
 
     if (url.pathname === "/upload/release") {
       await this.state.storage.delete("upload");
+      return Response.json({ ok: true });
+    }
+
+    if (url.pathname === "/upload/reserve-attachment") {
+      const applicationId = boundedString(body.application_id, 120);
+      if (!validRef(applicationId, "pma")) return Response.json({ ok: false, error: "invalid_request" }, { status: 400 });
+      const result = await this.state.storage.transaction(async (transaction) => {
+        const current = await transaction.get("upload");
+        if (current?.status !== "complete") return { state: "unavailable" };
+        if (current.applicationId && current.applicationId !== applicationId) return { state: "conflict" };
+        if (current.applicationId === applicationId) return { state: current.attachmentStatus === "attached" ? "attached" : "reserved" };
+        await transaction.put("upload", { ...current, applicationId, attachmentStatus: "reserved" });
+        return { state: "reserved" };
+      });
+      return Response.json({ ok: true, ...result });
+    }
+
+    if (url.pathname === "/upload/complete-attachment") {
+      const applicationId = boundedString(body.application_id, 120);
+      const result = await this.state.storage.transaction(async (transaction) => {
+        const current = await transaction.get("upload");
+        if (current?.applicationId !== applicationId) return false;
+        await transaction.put("upload", { ...current, attachmentStatus: "attached" });
+        return true;
+      });
+      return Response.json(result ? { ok: true } : { ok: false, error: "attachment_owner_mismatch" }, { status: result ? 200 : 409 });
+    }
+
+    if (url.pathname === "/upload/release-attachment") {
+      const applicationId = boundedString(body.application_id, 120);
+      await this.state.storage.transaction(async (transaction) => {
+        const current = await transaction.get("upload");
+        if (current?.applicationId === applicationId && current.attachmentStatus === "reserved") {
+          const { applicationId: ignoredApplicationId, attachmentStatus: ignoredStatus, ...released } = current;
+          await transaction.put("upload", released);
+        }
+      });
       return Response.json({ ok: true });
     }
 
@@ -307,9 +350,6 @@ async function handleProductionApply(request, body, env, corsHeaders) {
   if (!env.AIRTABLE_API_TOKEN) return unavailable("persistence_not_configured", PUBLIC_MODEL_SERVICE, corsHeaders);
   if (!env.SIGIL_BOARD_KV || !env.PUBLIC_MODEL_COORDINATOR) return unavailable("persistence_not_configured", PUBLIC_MODEL_SERVICE, corsHeaders);
 
-  let reservation;
-  let airtableCreated = false;
-  let idempotencyScope = "";
   try {
     const fingerprint = await requestFingerprint(request, env);
     const limited = await rateLimited(env, `apply:${fingerprint}`, 5, 60 * 60);
@@ -320,54 +360,29 @@ async function handleProductionApply(request, body, env, corsHeaders) {
     const payloadHash = await sha256Hex(stableJson(normalized));
     const duplicateKey = await sha256Hex(CONTACT_FIELDS.map((field) => normalizeContact(body[field])).filter(Boolean).sort().join("|"));
     const proposedApplicationId = `pma_${compactUtcDate(new Date())}_${randomId(12)}`;
-    idempotencyScope = `idempotency:${payloadHash}`;
-    reservation = await coordinatorRequest(env, idempotencyScope, "/idempotency/begin", { application_id: proposedApplicationId });
-    let applicationId = reservation.application_id;
-    let duplicate = reservation.state === "complete";
-
-    if (reservation.state === "pending") {
-      const existing = await findApplicationByHash(env, payloadHash);
-      if (!existing) return errorResponse("request_in_progress", 409, corsHeaders);
-      applicationId = existing.fields?.[APPLICATION_FIELDS.applicationId];
-      if (!validRef(applicationId, "pma")) throw new Error("invalid_existing_application_id");
-      duplicate = true;
-    } else if (reservation.state === "complete") {
-      const existing = await findApplicationByHash(env, payloadHash);
-      if (existing?.fields?.[APPLICATION_FIELDS.applicationId]) applicationId = existing.fields[APPLICATION_FIELDS.applicationId];
-    } else {
-      const existing = await findApplicationByHash(env, payloadHash);
-      if (existing) {
-        applicationId = existing.fields?.[APPLICATION_FIELDS.applicationId];
-        if (!validRef(applicationId, "pma")) throw new Error("invalid_existing_application_id");
-        duplicate = true;
-      }
-    }
+    const idempotencyScope = `idempotency:${payloadHash}`;
+    const prepared = await coordinatorRequest(env, idempotencyScope, "/idempotency/prepare", { application_id: proposedApplicationId });
+    const applicationId = prepared.application_id;
 
     const uploads = await verifyUploads(body, env, applicationId);
-    if (!uploads.ok) {
-      if (reservation.state === "acquired") await coordinatorRequest(env, idempotencyScope, "/idempotency/release", { application_id: applicationId });
-      return invalidPayload(PUBLIC_MODEL_SERVICE, { upload_refs: uploads.error }, corsHeaders);
-    }
+    if (!uploads.ok) return invalidPayload(PUBLIC_MODEL_SERVICE, { upload_refs: uploads.error }, corsHeaders);
 
-    if (reservation.state === "acquired" && !duplicate) {
-      const fields = applicationAirtableFields(body, normalized, uploads.items, {
-        applicationId,
-        duplicateKey,
-        fingerprint,
-        now,
-        payloadHash,
-      });
-      await createAirtableRecord(env, AIRTABLE_APPLICATION_TABLE_ID, fields);
-      airtableCreated = true;
-    }
+    const fields = applicationAirtableFields(body, normalized, uploads.items, {
+      applicationId,
+      duplicateKey,
+      fingerprint,
+      now,
+      payloadHash,
+    });
+    const committed = await coordinatorRequest(env, idempotencyScope, "/idempotency/commit", {
+      application_id: applicationId,
+      payload_hash: payloadHash,
+      fields,
+    });
 
     await attachUploads(env, uploads.items, applicationId);
-    await coordinatorRequest(env, idempotencyScope, "/idempotency/complete", { application_id: applicationId });
-    return successResponse(applicationId, duplicate, corsHeaders);
+    return successResponse(applicationId, committed.duplicate, corsHeaders);
   } catch (error) {
-    if (reservation?.state === "acquired" && !airtableCreated) {
-      await coordinatorRequest(env, idempotencyScope, "/idempotency/release", { application_id: reservation.application_id }).catch(() => {});
-    }
     console.error(JSON.stringify({ event: "public_model_apply_failed", error: safeError(error) }));
     return unavailable("persistence_failed", PUBLIC_MODEL_SERVICE, corsHeaders);
   }
@@ -587,7 +602,7 @@ async function verifyUploads(body, env, applicationId) {
   const refs = body.uploads ?? body.upload_refs ?? body.uploadRefs ?? [];
   const required = flagEnabled(env.PUBLIC_MODEL_UPLOAD_REQUIRED);
   if (!refs.length) return required ? { ok: false, error: "at least 7 verified applicant photos are required" } : { ok: true, items: [] };
-  if (!env.PUBLIC_MODEL_UPLOADS_R2 || !env.SIGIL_BOARD_KV) return { ok: false, error: "upload verification is not configured" };
+  if (!env.PUBLIC_MODEL_UPLOADS_R2 || !env.SIGIL_BOARD_KV || !env.PUBLIC_MODEL_COORDINATOR) return { ok: false, error: "upload verification is not configured" };
   const sessionId = body.upload_session_id;
   const items = [];
   for (const ref of refs) {
@@ -608,7 +623,28 @@ async function verifyUploads(body, env, applicationId) {
   const bodyPhotos = photos.filter((item) => item.role === "body_presentation");
   if (required && (photos.length < 7 || photos.length > 10)) return { ok: false, error: "requires 7 to 10 verified applicant photos" };
   if (bodyPhotos.length > 3) return { ok: false, error: "too many body presentation photos" };
+
+  const reserved = [];
+  try {
+    for (const item of items) {
+      const result = await coordinatorRequest(env, `upload:${item.uploadRef}`, "/upload/reserve-attachment", { application_id: applicationId });
+      if (!["reserved", "attached"].includes(result.state)) {
+        await releaseUploadReservations(env, reserved, applicationId);
+        return { ok: false, error: "contains upload_ref reserved by another application" };
+      }
+      reserved.push(item);
+    }
+  } catch (error) {
+    await releaseUploadReservations(env, reserved, applicationId);
+    throw error;
+  }
   return { ok: true, items };
+}
+
+async function releaseUploadReservations(env, uploads, applicationId) {
+  await Promise.allSettled(uploads.map((item) => (
+    coordinatorRequest(env, `upload:${item.uploadRef}`, "/upload/release-attachment", { application_id: applicationId })
+  )));
 }
 
 async function attachUploads(env, uploads, applicationId) {
@@ -622,6 +658,7 @@ async function attachUploads(env, uploads, applicationId) {
       });
     }
     await env.SIGIL_BOARD_KV.put(uploadStateKey(item.uploadRef), JSON.stringify(next), { expirationTtl: 7 * 24 * 60 * 60 });
+    await coordinatorRequest(env, `upload:${item.uploadRef}`, "/upload/complete-attachment", { application_id: applicationId });
   }
 }
 

@@ -42,7 +42,7 @@ function makeR2() {
   };
 }
 
-function makeCoordinatorNamespace() {
+function makeCoordinatorNamespace(env) {
   const instances = new Map();
   return {
     idFromName(name) {
@@ -72,11 +72,25 @@ function makeCoordinatorNamespace() {
             return run;
           },
         };
-        instances.set(id, new PublicModelCoordinator({ storage }));
+        let eventQueue = Promise.resolve();
+        const state = {
+          storage,
+          blockConcurrencyWhile(callback) {
+            return callback();
+          },
+        };
+        instances.set(id, {
+          coordinator: new PublicModelCoordinator(state, env),
+          enqueue(request) {
+            const run = eventQueue.then(() => this.coordinator.fetch(request));
+            eventQueue = run.catch(() => {});
+            return run;
+          },
+        });
       }
       return {
         fetch(input, init) {
-          return instances.get(id).fetch(new Request(input, init));
+          return instances.get(id).enqueue(new Request(input, init));
         },
       };
     },
@@ -131,7 +145,7 @@ function makeAirtable() {
 
 function makeEnv(overrides = {}) {
   const airtable = overrides.airtable || makeAirtable();
-  return {
+  const env = {
     WORKER_NAME: "sigil-worker-test",
     ALLOWED_ORIGINS: "https://mmdbkk.com,https://www.mmdbkk.com",
     PUBLIC_MODEL_ENABLED: "true",
@@ -141,11 +155,12 @@ function makeEnv(overrides = {}) {
     AIRTABLE_API_TOKEN: "test-token",
     SIGIL_BOARD_KV: makeKv(),
     PUBLIC_MODEL_UPLOADS_R2: makeR2(),
-    PUBLIC_MODEL_COORDINATOR: makeCoordinatorNamespace(),
     AIRTABLE_FETCH: airtable.fetch,
     __airtable: airtable,
     ...overrides,
   };
+  if (!env.PUBLIC_MODEL_COORDINATOR) env.PUBLIC_MODEL_COORDINATOR = makeCoordinatorNamespace(env);
+  return env;
 }
 
 function validApplication(overrides = {}) {
@@ -213,6 +228,27 @@ test("concurrent production apply creates exactly one Airtable application", asy
   assert.equal(results.filter((body) => body.ok).length >= 1, true);
   assert.equal([200, 409].includes(first.status), true);
   assert.equal([200, 409].includes(second.status), true);
+});
+
+test("slow Airtable persistence remains serialized without an idempotency lease takeover", async () => {
+  const env = makeEnv();
+  const realFetch = env.AIRTABLE_FETCH;
+  env.AIRTABLE_FETCH = async (url, init = {}) => {
+    const tableId = new URL(url).pathname.split("/").at(-1);
+    if ((init.method || "GET") === "POST" && tableId === publicModelTestInternals.AIRTABLE_APPLICATION_TABLE_ID) {
+      await new Promise((resolve) => setTimeout(resolve, 75));
+    }
+    return realFetch(url, init);
+  };
+
+  const responses = await Promise.all([
+    post(APPLY_URL, validApplication({ nickname: "Slow Serialized" }), env),
+    post(APPLY_URL, validApplication({ nickname: "Slow Serialized" }), env),
+  ]);
+  const bodies = await Promise.all(responses.map((response) => response.json()));
+  assert.deepEqual(responses.map((response) => response.status), [200, 200]);
+  assert.equal(bodies.filter((body) => body.duplicate).length, 1);
+  assert.equal(env.__airtable.applications.length, 1);
 });
 
 test("production apply enforces origin, body size, and rate limits", async () => {
@@ -367,6 +403,39 @@ test("production apply rejects an upload already attached to another application
   }), env);
   assert.equal(second.status, 400);
   assert.match((await second.json()).fields.upload_refs, /another application/);
+  assert.equal(env.__airtable.applications.length, 1);
+});
+
+test("concurrent applications cannot both claim the same uploaded asset", async () => {
+  const env = makeEnv();
+  const authorization = await post(UPLOAD_URL, {
+    application_type: "public_model",
+    consent: true,
+    kind: "photo",
+    role: "front_face",
+    file_name: "front.jpg",
+    content_type: "image/jpeg",
+    file_size: 4,
+  }, env);
+  const authBody = await authorization.json();
+  const upload = await worker.fetch(new Request(authBody.upload_url, {
+    method: "PUT",
+    headers: { origin: ORIGIN, "content-type": "image/jpeg", "content-length": "4" },
+    body: new Uint8Array([1, 2, 3, 4]),
+    duplex: "half",
+  }), env);
+  assert.equal(upload.status, 200);
+
+  const uploadFields = {
+    upload_session_id: authBody.upload_session_id,
+    uploads: [{ upload_ref: authBody.upload_ref, kind: "photo", role: "front_face" }],
+  };
+  const responses = await Promise.all([
+    post(APPLY_URL, validApplication({ ...uploadFields, nickname: "Concurrent Owner A" }), env),
+    post(APPLY_URL, validApplication({ ...uploadFields, nickname: "Concurrent Owner B" }), env),
+  ]);
+  assert.equal(responses.filter((response) => response.status === 200).length, 1);
+  assert.equal(responses.filter((response) => response.status === 400).length, 1);
   assert.equal(env.__airtable.applications.length, 1);
 });
 
