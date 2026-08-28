@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   applicationAirtableFields,
   applicationPayload,
+  applicationTelegramMessage,
   catalog,
   matchTherapists,
   prebookingPayload,
@@ -26,6 +28,11 @@ const applicationInput = {
   spa_name: "Example Spa",
   worked_independently_before: false,
   independent_social: "",
+  current_profession: "Personal Trainer",
+  qualification_note: "Thai massage certificate",
+  work_base_area: "เชียงใหม่ เมืองเชียงใหม่",
+  mobility_scope: "nationwide",
+  coverage_area_note: "เชียงใหม่ ลำพูน และกรุงเทพฯ ตามตกลง",
   base_zone: "sukhumvit",
   coverage_zones: ["sukhumvit", "sathorn_silom"],
   general_consent: true,
@@ -63,6 +70,9 @@ test("application keeps orientation only in the sensitive record", () => {
   });
 
   assert.equal(applicationFields["Customer Gender Scope"], "ได้ทั้งคู่");
+  assert.equal(applicationFields["Current Profession"], "Personal Trainer");
+  assert.equal(applicationFields["Work Base Area"], "เชียงใหม่ เมืองเชียงใหม่");
+  assert.equal(applicationFields["Mobility Scope"], "ทั่วประเทศตามตกลง");
   assert.equal(Object.hasOwn(applicationFields, "Sexual Orientation"), false);
   assert.equal(applicationFields["Payload JSON"].includes("sexual_orientation"), false);
   assert.equal(sensitiveFields["Sexual Orientation"], "ชายรักชาย — Gay");
@@ -70,11 +80,45 @@ test("application keeps orientation only in the sensitive record", () => {
   assert.equal(sensitiveFields["Booking API Allowed"], false);
 });
 
+test("nationwide intake does not require legacy Bangkok matching zones", () => {
+  const payload = applicationPayload({
+    ...applicationInput,
+    base_zone: undefined,
+    coverage_zones: undefined,
+  });
+  assert.equal(payload.base_zone, "");
+  assert.deepEqual(payload.coverage_zones, []);
+  assert.equal(payload.mobility_scope, "ทั่วประเทศตามตกลง");
+});
+
+test("Telegram notification contains only a non-sensitive application reference", () => {
+  const payload = applicationPayload(applicationInput);
+  const message = applicationTelegramMessage(payload, { application_id: "mmsapp_1234567890abcdef12345678" });
+  assert.match(message, /mmsapp_1234567890abcdef12345678/);
+  assert.equal(message.includes(payload.applicant_name), false);
+  assert.equal(message.includes(payload.work_base_area), false);
+  assert.equal(message.includes(payload.phone), false);
+  assert.equal(message.includes(payload.line_id), false);
+  assert.equal(message.includes(payload.sexual_orientation), false);
+});
+
 test("application rejects orientation without separate consent", () => {
   assert.throws(
     () => applicationPayload({ ...applicationInput, sensitive_consent: false }),
     /sensitive_consent is required/,
   );
+});
+
+test("application requires contact, one to eight skills, and conditional references", () => {
+  assert.throws(() => applicationPayload({ ...applicationInput, phone: "", line_id: "" }), /phone or line_id is required/);
+  assert.throws(() => applicationPayload({ ...applicationInput, skills: [] }), /skills must contain 1-8/);
+  assert.throws(() => applicationPayload({ ...applicationInput, skills: [...applicationInput.skills, "sport_massage", "office_syndrome", "health_fitness_advisor", "thai_herbal_compress", "partner_present", "women_massage", "thai_massage"] }), /skills must contain 1-8/);
+  assert.throws(() => applicationPayload({ ...applicationInput, spa_name: "" }), /spa_name is required/);
+  assert.throws(() => applicationPayload({ ...applicationInput, worked_at_spa_before: false, worked_independently_before: true, independent_social: "" }), /independent_social is required/);
+});
+
+test("application rejects every unrecognized field", () => {
+  assert.throws(() => applicationPayload({ ...applicationInput, private_note: "do not accept" }), /unsupported fields: private_note/);
 });
 
 test("prebooking accepts one to six skills and requires recipient gender", () => {
@@ -173,4 +217,14 @@ test("upload grant accepts private image and certificate types only", () => {
     filename: "profile.pdf",
     content_type: "application/pdf",
   }), /profile_photo must be an image/);
+});
+
+test("public route source keeps canonical statuses, CORS origins, and private object keys internal", async () => {
+  const source = await readFile(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(source, /application_ref: applicationId/);
+  assert.match(source, /sync\.sync_status === "synced" \? "accepted" : "pending_airtable_retry"/);
+  assert.match(source, /status: "already_received"/);
+  assert.match(source, /https:\/\/mmdbkk\.com,https:\/\/www\.mmdbkk\.com,https:\/\/mmdprive\.webflow\.io/);
+  const publicUploadResponse = source.slice(source.indexOf("async function handleUpload("), source.indexOf("async function handleMatching("));
+  assert.doesNotMatch(publicUploadResponse, /object_key:/);
 });
