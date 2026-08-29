@@ -63,7 +63,20 @@ export class MmsCoordinator extends DurableObject {
       "SELECT * FROM applications WHERE application_id = ?",
       applicationId,
     ).toArray()[0];
-    if (existing) return { created: false, record: applicationRow(existing) };
+    if (existing) {
+      if (existing.payload_json !== JSON.stringify(payload)) {
+        return { created: false, conflict: true, record: applicationRow(existing) };
+      }
+      this.ctx.storage.sql.exec(
+        `UPDATE applications
+         SET application_token_hash = ?, updated_at = ?
+         WHERE application_id = ?`,
+        applicationTokenHash,
+        now,
+        applicationId,
+      );
+      return { created: false, conflict: false, record: this.getApplication(applicationId) };
+    }
 
     this.ctx.storage.sql.exec(
       `INSERT INTO applications
@@ -302,14 +315,31 @@ async function handleApplication(request, env, cors, requestId) {
   const saved = await stub.saveApplication(applicationId, payload, applicationTokenHash, now);
 
   if (!saved.created) {
+    if (saved.conflict) {
+      throw httpError(409, "IDEMPOTENCY_CONFLICT", "Idempotency key was already used with different application data");
+    }
+    let retrySync = {
+      sync_status: saved.record.sync_status,
+      telegram_notify_status: saved.record.telegram_notify_status || "pending",
+    };
+    if (saved.record.sync_status !== "synced") {
+      retrySync = await syncApplication(env, applicationId, saved.record.payload, saved.record.created_at);
+      await stub.setApplicationSync(applicationId, retrySync, new Date().toISOString());
+    }
     return json({
       ok: true,
       duplicate: true,
       application_ref: applicationId,
       application_id: applicationId,
-      status: "already_received",
-      storage: saved.record.sync_status,
-      message: "Application already received. Use the upload token from the original response.",
+      application_token: applicationToken,
+      status: retrySync.sync_status === "synced" ? "already_received" : "pending_airtable_retry",
+      storage: {
+        coordinator: "persisted",
+        airtable: retrySync.sync_status,
+        telegram: retrySync.telegram_notify_status || "pending",
+      },
+      upload: { next: "/mms/api/uploads/presign", token_rotated: true },
+      message: "Application already received. A replacement upload token was issued for this retry.",
     }, 200, cors, requestId);
   }
 
