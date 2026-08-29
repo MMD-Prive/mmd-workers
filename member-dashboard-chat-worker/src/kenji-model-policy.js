@@ -13,6 +13,8 @@ Voice:
 - Speak as "ผม". Never call yourself Kenji, a bot, a team, staff, or a system.
 - Keep LINE answers concise. Ask at most one useful clarification.
 - You have no conversation memory. Never imply that you remember earlier messages. If a referent is missing, ask one concise clarification.
+- Never send acknowledgement-only, holding, waiting, or status-placeholder messages.
+- If you have no real answer, no necessary clarification, or the message must wait for Per or MMD review, return an empty answer string. Never paraphrase a holding message.
 
 Authority and privacy:
 - You are guidance only. Never claim that payment is paid, verified, confirmed, or matched.
@@ -26,6 +28,7 @@ Authority and privacy:
 Return only the requested JSON object.`;
 
 const INTERNAL_OUTPUT_RE = /(?:\bkenji\b|เคนจิ|\b(?:cloudflare|worker|airtable|wrangler|internal[_\s-]?token|openai_api_key|authorization|bearer|system prompt|admin route|risk[_\s-]?label)\b|\b(?:rec|tbl|app)[a-zA-Z0-9]{10,})/i;
+const AUTOMATED_HOLDING_OUTPUT_RE = /(?:ขอ(?:เวลา)?(?:ผม|เปอร์)?\s*(?:เช็ก|ตรวจ(?:สอบ)?|ดู)(?:ข้อมูล|รายละเอียด|เรื่องนี้)?(?:ก่อน)?|เดี๋ยว(?:ผม|เปอร์|mmd)?\s*(?:ขอ)?\s*(?:เช็ก|ตรวจ(?:สอบ)?|ดู)|(?:ผม|เปอร์|mmd)?\s*กำลัง(?:เช็ก|ตรวจ(?:สอบ)?|ดู)|รอ(?:สัก)?(?:ครู่|แป๊บ|แปบ)|(?:ผม|เปอร์)(?:จะ)?กลับมาแจ้ง|รับทราบ(?:ครับ|ค่ะ)?|รับข้อความ(?:แล้ว)?(?:ครับ|ค่ะ)?|รับเรื่อง(?:แล้ว)?(?:ครับ|ค่ะ)?|ขอบคุณสำหรับ(?:ข้อความ|ข้อมูล)|(?:let\s+me|i(?:'|’)ll)\s+(?:check|review|look\s+into)|please\s+wait|one\s+moment|i(?:'|’)ll\s+get\s+back\s+to\s+you|looking\s+into\s+this|message\s+received)/i;
 const AUTHORITY_DOMAIN_PATTERNS = Object.freeze({
   payment: /(?:ชำระ|จ่าย|โอน|ยอด|เงิน|สลิป|payment|paid|slip)/i,
   membership: /(?:สมาชิก|membership|member\s*status|สิทธิ์|entitlement|แพ็กเกจ|แพคเกจ|standard|premium|vip)/i,
@@ -65,6 +68,7 @@ export function guardKenjiModelOutput(value, options = {}) {
   if (!text) return { ok: false, reason: "empty_model_response", text: "" };
   if (text.length > 1200) return { ok: false, reason: "model_response_too_long", text: "" };
   if (INTERNAL_OUTPUT_RE.test(text)) return { ok: false, reason: "internal_detail", text: "" };
+  if (AUTOMATED_HOLDING_OUTPUT_RE.test(text)) return { ok: false, reason: "automated_holding_reply", text: "" };
   // Remove only the bounded conversation-continuation phrase, then inspect any
   // remaining clause. This keeps "เล่าต่อ" safe without allowing it to mask a
   // second process/eligibility claim in the same answer.

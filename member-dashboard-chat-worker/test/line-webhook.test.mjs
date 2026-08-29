@@ -42,25 +42,6 @@ function lineTextEvent(text, overrides = {}) {
   };
 }
 
-function installMemoryCache() {
-  const originalCaches = globalThis.caches;
-  const entries = new Map();
-  globalThis.caches = {
-    default: {
-      async match(request) {
-        return entries.has(request.url) ? new Response(entries.get(request.url)) : undefined;
-      },
-      async put(request, response) {
-        entries.set(request.url, await response.text());
-      },
-    },
-  };
-  return () => {
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
-  };
-}
-
 test("health route works", async () => {
   const response = await worker.fetch(new Request("https://worker/health"), {});
   assert.equal(response.status, 200);
@@ -677,9 +658,8 @@ test("successful knowledge-assisted response sends exactly one LINE reply", asyn
   }
 });
 
-test("no safe local or knowledge response may use the short fallback", async () => {
+test("unresolved messages stay silent when local and knowledge answers are unavailable", async () => {
   const originalFetch = globalThis.fetch;
-  const restoreCache = installMemoryCache();
   globalThis.fetch = async (url) => {
     if (String(url).includes("api.airtable.com")) throw new Error("temporary knowledge failure");
     return new Response("{}", { status: 200 });
@@ -692,22 +672,17 @@ test("no safe local or knowledge response may use the short fallback", async () 
       AIRTABLE_API_KEY: "airtable-key",
       AIRTABLE_BASE_ID: "base-id",
     });
-    assert.equal(decision.text, "ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ");
-    assert.equal(decision.fallback, true);
+    assert.equal(decision.text, "");
+    assert.equal(decision.fallback, false);
+    assert.equal(decision.reply_source, "silent");
   } finally {
-    restoreCache();
     globalThis.fetch = originalFetch;
   }
 });
 
-test("repeated unresolved messages do not spam the failure fallback", async () => {
-  // The Cache API mock proves best-effort UX suppression only. Production cache
-  // is not persistent state, authorization, dedupe correctness, or
-  // payment/session/member state, and eviction or another colo may allow the
-  // fallback to appear again.
+test("repeated unresolved messages return 200 without calling LINE Reply API", async () => {
   const calls = [];
   const originalFetch = globalThis.fetch;
-  const restoreCache = installMemoryCache();
   globalThis.fetch = async (url) => {
     const href = String(url);
     calls.push(href);
@@ -722,22 +697,35 @@ test("repeated unresolved messages do not spam the failure fallback", async () =
     const secondResponse = await worker.fetch(await signedLineRequest({ events: [second] }), BASE_ENV);
     assert.equal(firstResponse.status, 200);
     assert.equal(secondResponse.status, 200);
-    assert.equal(calls.filter((url) => url.includes("/message/reply")).length, 1);
+    assert.equal(calls.filter((url) => url.includes("/message/reply")).length, 0);
+    assert.equal((await firstResponse.json()).saved[0].replied, false);
+    assert.equal((await secondResponse.json()).saved[0].replied, false);
   } finally {
-    restoreCache();
     globalThis.fetch = originalFetch;
   }
 });
 
-test("manual-review intent may use the short fallback", async () => {
-  const restoreCache = installMemoryCache();
+test("manual-review and human-handoff intents stay silent for Per or MMD", async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    calls.push(String(url));
+    return new Response("{}", { status: 200 });
+  };
   try {
-    const event = lineTextEvent("ขอให้เปอร์ตรวจเอง");
-    assert.equal(inferLineIntent(event.message.text, event), "manual_review");
-    const decision = await resolveKenjiLineReply(event, {}, BASE_ENV);
-    assert.equal(decision.text, "ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ");
-    assert.equal(decision.fallback, true);
+    for (const [text, intent] of [["ขอให้เปอร์ตรวจเอง", "manual_review"], ["ขอคุยกับเจ้าหน้าที่", "human_handoff"]]) {
+      const event = lineTextEvent(text, { message: { id: `msg-${intent}`, type: "text", text } });
+      assert.equal(inferLineIntent(event.message.text, event), intent);
+      const decision = await resolveKenjiLineReply(event, {}, BASE_ENV);
+      assert.equal(decision.text, "");
+      assert.equal(decision.fallback, false);
+      assert.equal(decision.reply_source, "silent");
+      const response = await worker.fetch(await signedLineRequest({ events: [event] }), BASE_ENV);
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).saved[0].replied, false);
+    }
+    assert.equal(calls.filter((url) => url.includes("/message/reply")).length, 0);
   } finally {
-    restoreCache();
+    globalThis.fetch = originalFetch;
   }
 });

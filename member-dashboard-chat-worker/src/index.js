@@ -349,8 +349,6 @@ const LINE_KNOWLEDGE_CHANNEL = "LINE_OFC";
 const LINE_KNOWLEDGE_TTL_MS = 60_000;
 const LINE_KNOWLEDGE_REPLY_TIMEOUT_MS = 900;
 const LINE_MODEL_DEDUPE_LOOKUP_TIMEOUT_MS = 500;
-const LINE_FAILURE_FALLBACK = "ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ";
-const LINE_FAILURE_FALLBACK_COOLDOWN_SECONDS = 10 * 60;
 const LINE_KNOWLEDGE_CARD_BY_INTENT = Object.freeze({
   talk_to_per_ai: "kenji_per_voice_line_entry_v1",
   payment_slip: "kenji_20_006_payment_proof",
@@ -539,7 +537,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "human_handoff") {
-    return "ผมอยู่ครับ ส่งรายละเอียดสำคัญและสิ่งที่ต้องการให้ช่วยไว้ได้เลยครับ";
+    return "";
   }
 
   if (intent === "context_clarification") {
@@ -624,11 +622,11 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "points") {
-    return `รับเรื่องคะแนนสมาชิกแล้วครับ ${prefix}เดี๋ยวเปอร์ขอตรวจยอดและประวัติที่เกี่ยวข้องก่อน แล้วจะแจ้งสถานะที่ตรวจได้ครับ`;
+    return `${prefix}อยากดูวิธีสะสมและใช้ Points หรืออยากตรวจยอดคะแนนส่วนตัวครับ`;
   }
 
   if (intent === "vip" || intent === "svip" || intent === "black_card") {
-    return `รับเรื่องระดับสมาชิกพิเศษแล้วครับ ${prefix}เคสนี้เปอร์ขอดูเป็นรอบส่วนตัวก่อนนะครับ ข้อความในแชตยังไม่ถือว่าอนุมัติสิทธิ์ครับ`;
+    return `${prefix}อยากดูข้อมูลทั่วไปของระดับสมาชิก หรือให้ตรวจสถานะส่วนตัวครับ`;
   }
 
   if (intent === "mms_wellness") {
@@ -663,8 +661,6 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
     return `สวัสดีครับ ${prefix}ต้องการสอบถามเรื่องจองงาน ราคา เช็กนายแบบ หรือสมาชิก พิมพ์มาได้เลยนะครับ`;
   }
 
-  if (intent === "manual_review") return LINE_FAILURE_FALLBACK;
-
   return "";
 }
 
@@ -673,34 +669,6 @@ export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env
   if (!isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)) return fallback;
   const answer = await getPublishedPerVoiceReply(env, inferLineIntent(getLineEventText(event), event));
   return answer || fallback;
-}
-
-async function getFailureFallbackCooldownRequest(event = {}) {
-  const lineUserId = getLineUserId({ event });
-  if (!lineUserId) return null;
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(lineUserId));
-  const key = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-  return new Request(`https://line-fallback-cooldown.mmd.invalid/${key}`, { method: "GET" });
-}
-
-async function claimFailureFallbackWindow(event = {}) {
-  // Best-effort anti-spam only: Cache API entries are not persistent and may
-  // disappear after eviction or across colos. Never use this as authorization,
-  // dedupe correctness, or payment/session/member state; the fallback may
-  // occasionally reappear when the cache entry is unavailable.
-  try {
-    const cache = globalThis.caches?.default;
-    if (!cache) return true;
-    const request = await getFailureFallbackCooldownRequest(event);
-    if (!request) return true;
-    if (await cache.match(request)) return false;
-    await cache.put(request, new Response("1", {
-      headers: { "cache-control": `max-age=${LINE_FAILURE_FALLBACK_COOLDOWN_SECONDS}` },
-    }));
-    return true;
-  } catch (_) {
-    return true;
-  }
 }
 
 export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, options = {}) {
@@ -713,7 +681,7 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     ? getCachedPublishedPerVoiceReply(env, intent)
     : "";
   const generated = deterministicFirst ? deterministicReply : (cachedKnowledge || deterministicReply);
-  if (generated && intent !== "manual_review") {
+  if (generated) {
     return {
       text: generated,
       fallback: false,
@@ -775,13 +743,13 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     }
   }
 
-  const needsFallback = intent === "manual_review" || Boolean(getLineEventText(event));
-  if (!needsFallback) return { text: "", fallback: false, reply_source: "system_truth", model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" };
-  const allowed = await claimFailureFallbackWindow(event);
+  // Silence is intentional. If there is no real answer, no necessary
+  // clarification, or the message requires Per/MMD review, acknowledge the
+  // webhook with HTTP 200 but never call LINE Reply or Push APIs.
   return {
-    text: allowed ? LINE_FAILURE_FALLBACK : "",
-    fallback: true,
-    reply_source: intent === "manual_review" ? "manual_review" : "fallback",
+    text: "",
+    fallback: false,
+    reply_source: "silent",
     model_attempted: Boolean(model.attempted),
     model_success: Boolean(model.success),
     model_latency_ms: Number(model.latency_ms) || 0,
