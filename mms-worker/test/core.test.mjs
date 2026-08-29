@@ -222,8 +222,12 @@ test("upload grant accepts private image and certificate types only", () => {
 test("public route source keeps canonical statuses, CORS origins, and private object keys internal", async () => {
   const source = await readFile(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(source, /application_ref: applicationId/);
+  assert.match(source, /application_token: applicationToken/);
+  assert.match(source, /token_rotated: true/);
+  assert.match(source, /IDEMPOTENCY_CONFLICT/);
+  assert.match(source, /saved\.record\.sync_status !== "synced"/);
   assert.match(source, /sync\.sync_status === "synced" \? "accepted" : "pending_airtable_retry"/);
-  assert.match(source, /status: "already_received"/);
+  assert.match(source, /retrySync\.sync_status === "synced" \? "already_received" : "pending_airtable_retry"/);
   assert.match(source, /https:\/\/mmdbkk\.com,https:\/\/www\.mmdbkk\.com,https:\/\/mmdprive\.webflow\.io/);
   const publicUploadResponse = source.slice(source.indexOf("async function handleUpload("), source.indexOf("async function handleMatching("));
   assert.doesNotMatch(publicUploadResponse, /object_key:/);

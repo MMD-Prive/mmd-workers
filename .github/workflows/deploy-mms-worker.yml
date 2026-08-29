@@ -76,6 +76,27 @@ jobs:
         working-directory: mms-worker
         run: npx wrangler deploy --dry-run
 
+      - name: Validate Airtable production access
+        shell: bash
+        run: |
+          node <<'NODE'
+          const token = String(process.env.AIRTABLE_API_TOKEN || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
+          if (!token) throw new Error("MMS Airtable runtime token is missing");
+          const base = "appsV1ILPRfIjkaYg";
+          const tables = ["tblogwnxtIG19I2WB", "tblihsaMw06mkjaat"];
+          for (const table of tables) {
+            const response = await fetch(`https://api.airtable.com/v0/${base}/${table}?maxRecords=1`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!response.ok) {
+              const payload = await response.json().catch(() => ({}));
+              const type = String(payload?.error?.type || `HTTP_${response.status}`).slice(0, 120);
+              throw new Error(`MMS Airtable preflight failed for ${table}: ${type}`);
+            }
+          }
+          console.log("MMS Airtable read preflight passed for Applications and Sensitive Profiles");
+          NODE
+
       - name: Ensure private MMS R2 bucket exists
         working-directory: mms-worker
         shell: bash
