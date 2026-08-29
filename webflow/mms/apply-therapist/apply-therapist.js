@@ -301,7 +301,14 @@
   }
 
   function queueFiles(files){
-    draft.pending_uploads=Array.isArray(draft.pending_uploads)?draft.pending_uploads:[];
+    var seen={};
+    draft.pending_uploads=(Array.isArray(draft.pending_uploads)?draft.pending_uploads:[]).filter(function(entry){
+      var normalizedKey=fileKey({kind:entry.kind,file:{name:entry.name,size:entry.size,type:entry.type}});
+      if(seen[normalizedKey])return false;
+      seen[normalizedKey]=true;
+      entry.key=normalizedKey;
+      return true;
+    });
     draft.uploaded=draft.uploaded&&typeof draft.uploaded==="object"?draft.uploaded:{};
     files.forEach(function(item){
       var key=fileKey(item);
@@ -348,7 +355,7 @@
   }
 
   function fileKey(item){
-    return [item.kind,item.file.name,item.file.size,item.file.type,item.file.lastModified||0].join(":");
+    return [item.kind,item.file.name,item.file.size,item.file.type].join(":");
   }
 
   function allowedFile(item){
@@ -367,7 +374,7 @@
 
   async function readJson(url,init){
     var controller=new AbortController();
-    var timeout=setTimeout(function(){controller.abort()},15000);
+    var timeout=setTimeout(function(){controller.abort()},45000);
     var options=Object.assign({},init||{},{signal:controller.signal});
     try{
       var response=await fetch(url,options);
