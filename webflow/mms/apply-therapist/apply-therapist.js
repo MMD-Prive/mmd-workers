@@ -156,7 +156,7 @@
     if(number===1&&!value("phone")&&!value("line_id")){message="กรุณาระบุเบอร์โทรหรือ LINE ID อย่างน้อยหนึ่งช่องครับ";valid=false}
     if(number===2){
       var orientation=checked("sexual_orientation");
-      if(orientation&&!form.elements.sensitive_consent.checked){message="กรุณาให้ความยินยอมสำหรับข้อมูลอ่อนไหว หรือเลือกไม่เก็บข้อมูลนี้ครับ";valid=false}
+      if(orientation&&!field("sensitive_consent").checked){message="กรุณาให้ความยินยอมสำหรับข้อมูลอ่อนไหว หรือเลือกไม่เก็บข้อมูลนี้ครับ";valid=false}
     }
     if(number===3){
       var count=selected("skills").length;
@@ -177,7 +177,7 @@
   function toggleSensitive(){
     var enabled=Boolean(checked("sexual_orientation"));
     sensitiveWrap.hidden=!enabled;
-    if(!enabled)form.elements.sensitive_consent.checked=false;
+    if(!enabled)field("sensitive_consent").checked=false;
   }
 
   function toggleConditional(){
@@ -284,9 +284,9 @@
       spa_name:value("spa_name"),
       worked_independently_before:boolRadio("worked_independently_before"),
       independent_social:value("independent_social"),
-      general_consent:form.elements.general_consent.checked,
+      general_consent:field("general_consent").checked,
       sexual_orientation:orientation,
-      sensitive_consent:Boolean(orientation&&form.elements.sensitive_consent.checked),
+      sensitive_consent:Boolean(orientation&&field("sensitive_consent").checked),
       consent_notice_version:"mms-applicant-th-v3-2026-08-27",
       language:"th"
     };
@@ -294,9 +294,9 @@
 
   function collectFiles(){
     var result=[];
-    var photo=form.elements.profile_photo.files[0];
+    var photo=field("profile_photo").files[0];
     if(photo)result.push({kind:"profile_photo",file:photo});
-    [].slice.call(form.elements.certificates.files||[]).forEach(function(file){result.push({kind:"certificate",file:file})});
+    [].slice.call(field("certificates").files||[]).forEach(function(file){result.push({kind:"certificate",file:file})});
     return result;
   }
 
@@ -462,7 +462,8 @@
   function selected(name){return[].slice.call(form.querySelectorAll('input[name="'+name+'"]:checked')).map(function(input){return input.value}).filter(Boolean)}
   function checked(name){var input=form.querySelector('input[name="'+name+'"]:checked');return input?input.value:""}
   function boolRadio(name){return checked(name)==="yes"}
-  function value(name){return String(form.elements[name]&&form.elements[name].value||"").trim()}
+  function field(name){return form.elements.namedItem(name)}
+  function value(name){var control=field(name);return String(control&&control.value||"").trim()}
   function skillLabel(code){var item=skills.find(function(skill){return skill[0]===code});return item?item[1]:code}
   function labelOf(name,code){var labels={customer_gender_scope:{male:"ผู้ชาย",female:"ผู้หญิง",both:"ได้ทั้งคู่"},mobility_scope:{local:"พื้นที่ฐานเป็นหลัก",nearby:"จังหวัดใกล้เคียง",nationwide:"ทั่วประเทศตามตกลง"}};return labels[name]&&labels[name][code]||code}
   function setError(text){var box=root.querySelector('[data-step="'+currentStep+'"] .mta-error');if(!box)return;box.textContent=String(text||"");if(text)box.scrollIntoView({behavior:motion(),block:"center"})}
@@ -511,7 +512,7 @@
       }else{
         var radio=form.querySelector('input[name="'+name+'"][value="'+cssEscape(val)+'"]');
         if(radio)radio.checked=true;
-        else if(form.elements[name]&&typeof form.elements[name].value!=="undefined")form.elements[name].value=val;
+        else{var control=field(name);if(control&&typeof control.value!=="undefined")control.value=val}
       }
     });
     toggleSensitive();
