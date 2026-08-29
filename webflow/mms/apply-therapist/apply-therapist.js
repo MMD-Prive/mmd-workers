@@ -15,17 +15,21 @@
   var branchTrigger=root.querySelector("[data-branch-open]");
   var currentLabel=root.querySelector("[data-current-label]");
   var branchProgress=root.querySelector("[data-branch-progress]");
+  var menuMain=root.querySelector("[data-menu-main]");
+  var menuApplication=root.querySelector("[data-menu-application]");
   var currentStep=1;
   var currentSection=0;
   var submitting=false;
   var lastFocus=null;
   var previousBodyOverflow="";
+  var sheetTouchStartX=0;
+  var sheetTouchStartY=0;
   var storageKey="mms_therapist_application_v3";
   var draft=loadDraft();
   var sectionMap=[
     {id:"mta3-overview",label:"เริ่มต้น"},
-    {id:"mta3-model",label:"Model Therapist"},
-    {id:"mta3-clients",label:"ลูกค้า"},
+    {id:"mta3-model",label:"เหมาะกับใคร"},
+    {id:"mta3-clients",label:"ลูกค้าและขอบเขต"},
     {id:"mta3-services",label:"8 Skills"},
     {id:"mta3-apply",label:"ใบสมัคร"}
   ];
@@ -107,10 +111,18 @@
       });
     });
     root.querySelectorAll("[data-branch-close]").forEach(function(button){button.addEventListener("click",closeBranch)});
+    root.querySelectorAll("[data-menu-branch]").forEach(function(button){
+      button.addEventListener("click",function(){showBranchLayer(button.dataset.menuBranch)});
+    });
+    root.querySelectorAll("[data-branch-back]").forEach(function(button){
+      button.addEventListener("click",function(){showBranchLayer("main")});
+    });
     branchTrigger.addEventListener("click",openBranch);
     root.querySelector("[data-branch-current]").addEventListener("click",openBranch);
     root.querySelector("[data-branch-next]").addEventListener("click",goToNextSection);
     branchSheet.addEventListener("keydown",trapBranchFocus);
+    branchPanel.addEventListener("touchstart",startSheetSwipe,{passive:true});
+    branchPanel.addEventListener("touchend",endSheetSwipe,{passive:true});
     window.addEventListener("hashchange",syncFromHash);
     window.addEventListener("scroll",throttle(updateSectionFromViewport,100),{passive:true});
     window.addEventListener("resize",throttle(updateSectionFromViewport,120),{passive:true});
@@ -393,6 +405,7 @@
     lastFocus=document.activeElement;
     previousBodyOverflow=document.body.style.overflow;
     document.body.style.overflow="hidden";
+    showBranchLayer("main",true);
     branchSheet.hidden=false;
     branchTrigger.setAttribute("aria-expanded","true");
     branchPanel.focus();
@@ -403,13 +416,38 @@
     branchSheet.hidden=true;
     document.body.style.overflow=previousBodyOverflow;
     branchTrigger.setAttribute("aria-expanded","false");
+    showBranchLayer("main",true);
     if(lastFocus&&typeof lastFocus.focus==="function")lastFocus.focus();
+  }
+
+  function showBranchLayer(name,skipFocus){
+    var showApplication=name==="application";
+    menuMain.hidden=showApplication;
+    menuApplication.hidden=!showApplication;
+    if(skipFocus)return;
+    var first=(showApplication?menuApplication:menuMain).querySelector("button");
+    if(first)first.focus();
+  }
+
+  function startSheetSwipe(event){
+    var touch=event.changedTouches&&event.changedTouches[0];
+    if(!touch)return;
+    sheetTouchStartX=touch.clientX;
+    sheetTouchStartY=touch.clientY;
+  }
+
+  function endSheetSwipe(event){
+    var touch=event.changedTouches&&event.changedTouches[0];
+    if(!touch)return;
+    var deltaX=touch.clientX-sheetTouchStartX;
+    var deltaY=touch.clientY-sheetTouchStartY;
+    if(deltaY>72&&Math.abs(deltaY)>Math.abs(deltaX)*1.2)closeBranch();
   }
 
   function trapBranchFocus(event){
     if(event.key==="Escape"){event.preventDefault();closeBranch();return}
     if(event.key!=="Tab")return;
-    var focusable=[].slice.call(branchSheet.querySelectorAll('button:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])')).filter(function(item){return !item.hidden});
+    var focusable=[].slice.call(branchSheet.querySelectorAll('button:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])')).filter(function(item){return !item.hidden&&!item.closest("[hidden]")});
     if(!focusable.length)return;
     var first=focusable[0],last=focusable[focusable.length-1];
     if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}
@@ -525,3 +563,4 @@
     return String(value).replace(/["\\]/g,"\\$&");
   }
 })();
+
