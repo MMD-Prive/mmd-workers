@@ -25,8 +25,14 @@ export {
 };
 
 const MODEL_SCHEMA_PATCH_V1_ROUTE_SET = new Set(Object.values(MODEL_SCHEMA_PATCH_V1_ROUTES));
+const ADMIN_LOGIN_DEBUG_PATH = "/internal/admin/login/debug";
 const ADMIN_GATE_SESSION_COOKIE = "mmd_admin_gate_v1";
 const ADMIN_GATE_TTL_MS = 8 * 60 * 60 * 1000;
+const ADMIN_LOGIN_DEBUG_BUILD_MARKER = "admin-login-credential-debug-v1-2026-08-29";
+const ADMIN_LOGIN_CREDENTIAL_MISMATCH_MESSAGE = "รหัสยังไม่ถูกต้องครับ ลองตรวจอีกครั้ง";
+const ADMIN_LOGIN_SECRET_NOT_READY_MESSAGE = "Admin login secret is not ready.";
+const ADMIN_SESSION_SECRET_NOT_READY_MESSAGE = "Admin session secret is not ready.";
+const ADMIN_ORIGIN_FAILED_MESSAGE = "Admin origin check failed.";
 const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
   "https://mmdbkk.com",
   "https://www.mmdbkk.com",
@@ -58,6 +64,11 @@ export default {
     // broadening admin-worker ownership over /v1/model/*.
     if (MODEL_SCHEMA_PATCH_V1_ROUTE_SET.has(path)) {
       return coreWorker.fetch(request, env, ctx);
+    }
+
+    if (path === ADMIN_LOGIN_DEBUG_PATH) {
+      if (method === "GET" || method === "POST") return handleCredentialBoundAdminLoginDebug(request, env);
+      return strictJson(request, env, { ok: false, error: "method_not_allowed" }, 405);
     }
 
     if (path === ADMIN_LOGIN_SESSION_PATH && method === "POST") {
@@ -112,30 +123,43 @@ export function renderAdminLogin(request, { status = 200, error = "", next = "/i
 }
 
 async function handleCredentialBoundAdminLogin(request, env) {
-  const origin = request.headers.get("Origin") || "";
   const requestOrigin = new URL(request.url).origin;
-  if (origin !== requestOrigin || !ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin)) {
-    return renderAdminLogin(request, { status: 403, error: "รหัสยังไม่ถูกต้องครับ ลองตรวจอีกครั้ง" });
+  if (!isAdminLoginOriginOk(request)) {
+    return renderAdminLogin(request, { status: 403, error: ADMIN_ORIGIN_FAILED_MESSAGE });
   }
 
-  const contentType = (request.headers.get("Content-Type") || "").split(";", 1)[0].trim().toLowerCase();
-  if (contentType !== "application/x-www-form-urlencoded") {
-    return renderAdminLogin(request, { status: 400, error: "รหัสยังไม่ถูกต้องครับ ลองตรวจอีกครั้ง" });
+  if (!isAdminLoginFormContentType(request)) {
+    return renderAdminLogin(request, { status: 400, error: ADMIN_LOGIN_CREDENTIAL_MISMATCH_MESSAGE });
   }
 
   let form;
   try {
     form = new URLSearchParams(await request.text());
   } catch {
-    return renderAdminLogin(request, { status: 400, error: "รหัสยังไม่ถูกต้องครับ ลองตรวจอีกครั้ง" });
+    return renderAdminLogin(request, { status: 400, error: ADMIN_LOGIN_CREDENTIAL_MISMATCH_MESSAGE });
   }
 
   const credential = clean(form.get("credential"));
-  const activeCredential = clean(env.ADMIN_LOGIN_CREDENTIAL);
-  if (!activeCredential || !credential || !(await constantTimeEqual(credential, activeCredential))) {
+  const activeCredential = getCredentialBoundLoginCredential(env);
+  if (!activeCredential) {
+    return renderAdminLogin(request, {
+      status: 503,
+      error: ADMIN_LOGIN_SECRET_NOT_READY_MESSAGE,
+      next: normalizeNext(form.get("next")),
+    });
+  }
+  if (!credential || !(await constantTimeEqual(credential, activeCredential))) {
     return renderAdminLogin(request, {
       status: 401,
-      error: "รหัสยังไม่ถูกต้องครับ ลองตรวจอีกครั้ง",
+      error: ADMIN_LOGIN_CREDENTIAL_MISMATCH_MESSAGE,
+      next: normalizeNext(form.get("next")),
+    });
+  }
+
+  if (!getCredentialBoundSessionSecret(env)) {
+    return renderAdminLogin(request, {
+      status: 503,
+      error: ADMIN_SESSION_SECRET_NOT_READY_MESSAGE,
       next: normalizeNext(form.get("next")),
     });
   }
@@ -154,7 +178,7 @@ async function handleCredentialBoundAdminLogin(request, env) {
   if (!cookie) {
     return renderAdminLogin(request, {
       status: 503,
-      error: "รหัสยังไม่พร้อมครับ ลองใหม่อีกครั้ง",
+      error: ADMIN_SESSION_SECRET_NOT_READY_MESSAGE,
       next: normalizeNext(form.get("next")),
     });
   }
@@ -167,6 +191,86 @@ async function handleCredentialBoundAdminLogin(request, env) {
       "Set-Cookie": cookie,
     },
   });
+}
+
+async function handleCredentialBoundAdminLoginDebug(request, env) {
+  const contentTypeOk = isAdminLoginFormContentType(request);
+  const body = buildCredentialBoundAdminLoginDebugMetadata(request, env);
+
+  if (request.method.toUpperCase() === "POST") {
+    let input = "";
+    if (contentTypeOk) {
+      try {
+        input = new URLSearchParams(await request.text()).get("credential") || "";
+      } catch {
+        input = "";
+      }
+    }
+    const trimmedInput = clean(input);
+    const envCredential = getCredentialBoundLoginCredential(env);
+    body.input_length = String(input || "").length;
+    body.input_trimmed_length = trimmedInput.length;
+    body.env_credential_length = envCredential.length;
+    body.credential_match = Boolean(
+      trimmedInput &&
+      envCredential &&
+      (await constantTimeEqual(trimmedInput, envCredential))
+    );
+    body.origin_ok = isAdminLoginOriginOk(request);
+    body.content_type_ok = contentTypeOk;
+  }
+
+  return strictJson(request, env, body);
+}
+
+function buildCredentialBoundAdminLoginDebugMetadata(request, env) {
+  const url = new URL(request.url);
+  const loginCredential = getCredentialBoundLoginCredential(env);
+  const sessionSecret = getCredentialBoundSessionSecret(env);
+  const cookieMap = parseCookieMap(request);
+  return {
+    ok: true,
+    worker: "admin-worker",
+    route_owner: "admin-worker",
+    build_marker: ADMIN_LOGIN_DEBUG_BUILD_MARKER,
+    path: normalizePath(url.pathname),
+    method: request.method.toUpperCase(),
+    origin_seen: request.headers.get("Origin") || "",
+    content_type_seen: request.headers.get("Content-Type") || "",
+    has_ADMIN_LOGIN_CREDENTIAL: Boolean(loginCredential),
+    admin_login_credential_trimmed_length: loginCredential.length,
+    has_ADMIN_SESSION_SECRET: Boolean(sessionSecret),
+    admin_session_secret_trimmed_length: sessionSecret.length,
+    has_internal_bridge_token: Boolean(clean(env.INTERNAL_TOKEN || env.ADMIN_BEARER || env.CONFIRM_KEY)),
+    cookie_present: cookieMap.has(ADMIN_GATE_SESSION_COOKIE),
+    session_cookie_version_if_decodable: readCredentialBoundSessionCookieVersionIfDecodable(cookieMap),
+  };
+}
+
+function readCredentialBoundSessionCookieVersionIfDecodable(cookieMap) {
+  const raw = cookieMap.get(ADMIN_GATE_SESSION_COOKIE);
+  if (!raw) return null;
+  try {
+    const decoded = decodeURIComponent(raw);
+    const [payloadPart] = decoded.includes(".") ? decoded.split(".") : [decoded];
+    if (!payloadPart) return null;
+    const parsed = JSON.parse(base64UrlDecode(payloadPart));
+    const version = Number(parsed?.version);
+    return Number.isFinite(version) ? version : null;
+  } catch {
+    return null;
+  }
+}
+
+function isAdminLoginOriginOk(request) {
+  const origin = request.headers.get("Origin") || "";
+  const requestOrigin = new URL(request.url).origin;
+  return Boolean(origin && origin === requestOrigin && ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin));
+}
+
+function isAdminLoginFormContentType(request) {
+  const contentType = (request.headers.get("Content-Type") || "").split(";", 1)[0].trim().toLowerCase();
+  return contentType === "application/x-www-form-urlencoded";
 }
 
 function handleCredentialBoundAdminLogout(request) {
@@ -276,10 +380,18 @@ async function signCredentialBoundPayload(payload, env) {
 }
 
 function getCredentialBoundSigningSecret(env = {}) {
-  const sessionSecret = clean(env.ADMIN_SESSION_SECRET);
-  const loginCredential = clean(env.ADMIN_LOGIN_CREDENTIAL);
+  const sessionSecret = getCredentialBoundSessionSecret(env);
+  const loginCredential = getCredentialBoundLoginCredential(env);
   if (!sessionSecret || !loginCredential) return "";
   return `${sessionSecret}.${loginCredential}`;
+}
+
+function getCredentialBoundLoginCredential(env = {}) {
+  return clean(env.ADMIN_LOGIN_CREDENTIAL);
+}
+
+function getCredentialBoundSessionSecret(env = {}) {
+  return clean(env.ADMIN_SESSION_SECRET);
 }
 
 function parseCookieMap(request) {
@@ -297,7 +409,11 @@ function parseCookieMap(request) {
 function strictJson(request, env, data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: strictCorsHeaders(request, env),
+    headers: {
+      ...Object.fromEntries(strictCorsHeaders(request, env)),
+      "X-MMD-Route-Owner": "admin-worker",
+      "X-MMD-Worker": "admin-worker",
+    },
   });
 }
 

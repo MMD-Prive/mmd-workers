@@ -7,6 +7,8 @@ import worker from "./src/dashboard-worker.js";
 const ADMIN_BEARER = "test_browser_admin_bearer";
 const CONFIRM_KEY = "test_browser_confirm_key";
 const BASE_ENV = {
+  ADMIN_LOGIN_CREDENTIAL: "test_browser_admin_login",
+  ADMIN_SESSION_SECRET: "test_browser_admin_session_secret",
   ADMIN_BEARER,
   CONFIRM_KEY,
   ALLOWED_ORIGINS: "https://mmdbkk.com,https://www.mmdbkk.com",
@@ -25,7 +27,7 @@ async function jsonRequest(path, init = {}, env = BASE_ENV, host = "mmdbkk.com")
 async function adminGateCookie(overrides = {}) {
   const now = Date.now();
   const session = {
-    version: 1,
+    version: 2,
     scope: "internal_admin",
     host: "https://mmdbkk.com",
     iat: now,
@@ -218,7 +220,7 @@ async function signPayload(payload) {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw",
-    encoder.encode(ADMIN_BEARER),
+    encoder.encode(`${BASE_ENV.ADMIN_SESSION_SECRET}.${BASE_ENV.ADMIN_LOGIN_CREDENTIAL}`),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]

@@ -14,6 +14,7 @@ import {
 } from "./src/admin-login-hero-worker.js";
 
 const request = (method = "GET") => new Request("https://www.mmdbkk.com/internal/admin/login", { method });
+const activeWorker = (await import("./src/admin-login-hero-worker.js")).default;
 
 test("admin login renders the approved Webflow visual assets and responsive image treatment", async () => {
   const response = renderAdminLogin(request());
@@ -62,7 +63,7 @@ test("HEAD returns headers without a response body", async () => {
 });
 
 test("SIGIL admin login renders the approved Worker page without redirecting", async () => {
-  const response = await (await import("./src/admin-login-hero-worker.js")).default.fetch(
+  const response = await activeWorker.fetch(
     new Request(`https://www.mmdbkk.com${SIGIL_ADMIN_LOGIN_PAGE_PATH}`),
     {},
     {}
@@ -74,8 +75,6 @@ test("SIGIL admin login renders the approved Worker page without redirecting", a
 });
 
 test("active admin entrypoint forwards Model Console V16 schema-patch routes to core", async () => {
-  const activeWorker = (await import("./src/admin-login-hero-worker.js")).default;
-
   const flash = await activeWorker.fetch(
     new Request("https://mmdbkk.com/v1/model/private-flash/authorize", { method: "GET" }),
     {},
@@ -96,6 +95,167 @@ test("active admin entrypoint forwards Model Console V16 schema-patch routes to 
   assert.equal(rate.status, 401);
   assert.equal((await rate.json()).error, "signed_t_required");
 });
+
+test("active login returns safe diagnostics for missing secrets and wrong credentials", async () => {
+  const missingLogin = await loginRequest("anything", {
+    ADMIN_SESSION_SECRET: "session-secret",
+    ALLOWED_ORIGINS: "https://mmdbkk.com",
+  });
+  assert.equal(missingLogin.status, 503);
+  assert.equal(missingLogin.headers.get("set-cookie"), null);
+  assert.match(await missingLogin.text(), /Admin login secret is not ready\./);
+
+  const missingSession = await loginRequest("hero-login-credential", {
+    ADMIN_LOGIN_CREDENTIAL: "hero-login-credential",
+    ALLOWED_ORIGINS: "https://mmdbkk.com",
+  });
+  assert.equal(missingSession.status, 503);
+  assert.equal(missingSession.headers.get("set-cookie"), null);
+  assert.match(await missingSession.text(), /Admin session secret is not ready\./);
+
+  const wrong = await loginRequest("wrong", {
+    ADMIN_LOGIN_CREDENTIAL: "hero-login-credential",
+    ADMIN_SESSION_SECRET: "session-secret",
+    ALLOWED_ORIGINS: "https://mmdbkk.com",
+  });
+  assert.equal(wrong.status, 401);
+  assert.equal(wrong.headers.get("set-cookie"), null);
+  assert.match(await wrong.text(), /รหัสยังไม่ถูกต้องครับ/);
+
+  const origin = await loginRequest("hero-login-credential", {
+    ADMIN_LOGIN_CREDENTIAL: "hero-login-credential",
+    ADMIN_SESSION_SECRET: "session-secret",
+    ALLOWED_ORIGINS: "https://mmdbkk.com",
+  }, { origin: "https://evil.example" });
+  assert.equal(origin.status, 403);
+  assert.equal(origin.headers.get("set-cookie"), null);
+  assert.match(await origin.text(), /Admin origin check failed\./);
+});
+
+test("active login debug endpoint reports safe metadata only", async () => {
+  const env = {
+    ADMIN_LOGIN_CREDENTIAL: "hero-login-credential",
+    ADMIN_SESSION_SECRET: "hero-session-secret",
+    ADMIN_BEARER: "hero-api-bearer",
+    ALLOWED_ORIGINS: "https://mmdbkk.com",
+  };
+  const login = await loginRequest(env.ADMIN_LOGIN_CREDENTIAL, env);
+  const cookie = (login.headers.get("set-cookie") || "").split(";", 1)[0];
+
+  const getResponse = await activeWorker.fetch(
+    new Request("https://mmdbkk.com/internal/admin/login/debug", {
+      headers: { Cookie: cookie },
+    }),
+    env,
+    {}
+  );
+  const getBody = await getResponse.json();
+
+  assert.equal(getResponse.status, 200);
+  assert.equal(getResponse.headers.get("x-mmd-route-owner"), "admin-worker");
+  assert.equal(getBody.worker, "admin-worker");
+  assert.equal(getBody.route_owner, "admin-worker");
+  assert.equal(getBody.path, "/internal/admin/login/debug");
+  assert.equal(getBody.method, "GET");
+  assert.equal(getBody.has_ADMIN_LOGIN_CREDENTIAL, true);
+  assert.equal(getBody.admin_login_credential_trimmed_length, env.ADMIN_LOGIN_CREDENTIAL.length);
+  assert.equal(getBody.has_ADMIN_SESSION_SECRET, true);
+  assert.equal(getBody.admin_session_secret_trimmed_length, env.ADMIN_SESSION_SECRET.length);
+  assert.equal(getBody.has_internal_bridge_token, true);
+  assert.equal(getBody.cookie_present, true);
+  assert.equal(getBody.session_cookie_version_if_decodable, 2);
+  assert.equal(JSON.stringify(getBody).includes(env.ADMIN_LOGIN_CREDENTIAL), false);
+  assert.equal(JSON.stringify(getBody).includes(env.ADMIN_SESSION_SECRET), false);
+
+  const postResponse = await activeWorker.fetch(
+    new Request("https://mmdbkk.com/internal/admin/login/debug", {
+      method: "POST",
+      headers: {
+        Origin: "https://mmdbkk.com",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ credential: ` ${env.ADMIN_LOGIN_CREDENTIAL} ` }).toString(),
+    }),
+    env,
+    {}
+  );
+  const postBody = await postResponse.json();
+
+  assert.equal(postResponse.status, 200);
+  assert.equal(postBody.input_length, env.ADMIN_LOGIN_CREDENTIAL.length + 2);
+  assert.equal(postBody.input_trimmed_length, env.ADMIN_LOGIN_CREDENTIAL.length);
+  assert.equal(postBody.env_credential_length, env.ADMIN_LOGIN_CREDENTIAL.length);
+  assert.equal(postBody.credential_match, true);
+  assert.equal(postBody.origin_ok, true);
+  assert.equal(postBody.content_type_ok, true);
+  assert.equal(JSON.stringify(postBody).includes(env.ADMIN_LOGIN_CREDENTIAL), false);
+  assert.equal(JSON.stringify(postBody).includes(env.ADMIN_SESSION_SECRET), false);
+});
+
+test("active browser login never accepts API bearer or confirm-key credentials", async () => {
+  const env = {
+    ADMIN_LOGIN_CREDENTIAL: "hero-login-credential",
+    ADMIN_SESSION_SECRET: "hero-session-secret",
+    ADMIN_BEARER: "hero-api-bearer",
+    INTERNAL_TOKEN: "hero-internal-token",
+    CONFIRM_KEY: "hero-confirm-key",
+    ALLOWED_ORIGINS: "https://mmdbkk.com",
+  };
+
+  const valid = await loginRequest(env.ADMIN_LOGIN_CREDENTIAL, env);
+  assert.equal(valid.status, 303);
+  assert.match(valid.headers.get("set-cookie") || "", /^mmd_admin_gate_v1=/);
+
+  for (const credential of [env.ADMIN_BEARER, env.INTERNAL_TOKEN, env.CONFIRM_KEY]) {
+    const rejected = await loginRequest(credential, env);
+    assert.equal(rejected.status, 401);
+    assert.equal(rejected.headers.get("set-cookie"), null);
+  }
+});
+
+test("active login cookie authenticates auth/me without exposing cookie values", async () => {
+  const env = {
+    ADMIN_LOGIN_CREDENTIAL: "hero-login-credential",
+    ADMIN_SESSION_SECRET: "hero-session-secret",
+    INTERNAL_TOKEN: "hero-internal-token",
+    ALLOWED_ORIGINS: "https://mmdbkk.com",
+  };
+  const login = await loginRequest(env.ADMIN_LOGIN_CREDENTIAL, env);
+  const cookie = (login.headers.get("set-cookie") || "").split(";", 1)[0];
+
+  const me = await activeWorker.fetch(
+    new Request("https://mmdbkk.com/v1/admin/auth/me", {
+      headers: {
+        Origin: "https://mmdbkk.com",
+        Cookie: cookie,
+      },
+    }),
+    env,
+    {}
+  );
+  const body = await me.json();
+
+  assert.equal(login.status, 303);
+  assert.match(cookie, /^mmd_admin_gate_v1=/);
+  assert.equal(me.status, 200);
+  assert.equal(body.authenticated, true);
+  assert.equal(JSON.stringify(body).includes(cookie), false);
+});
+
+function loginRequest(credential, env, { origin = "https://mmdbkk.com", next = "/internal/admin/control-room" } = {}) {
+  return activeWorker.fetch(
+    new Request(`https://mmdbkk.com${ADMIN_LOGIN_SESSION_PATH}`, {
+      method: "POST",
+      headers: {
+        Origin: origin,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ credential, next }).toString(),
+    }),
+    env,
+    {}
+  );
+}
 
 test("wrangler claims only the exact Model Console V16 additive routes on apex and www", () => {
   const wrangler = readFileSync(new URL("./wrangler.toml", import.meta.url), "utf8");

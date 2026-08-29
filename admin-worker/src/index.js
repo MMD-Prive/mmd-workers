@@ -126,6 +126,10 @@ const ADMIN_NEXT_CREATE_SESSION_PATH = "/internal/admin/jobs/create-session";
 const ADMIN_NEXT_CREATE_JOB_PATH = "/internal/jobs/create-job";
 const ADMIN_GATE_SESSION_COOKIE = "mmd_admin_gate_v1";
 const ADMIN_GATE_TTL_MS = 8 * 60 * 60 * 1000;
+const ADMIN_LOGIN_CREDENTIAL_MISMATCH_MESSAGE = "รหัสยังไม่ถูกต้องครับ ลองตรวจอีกครั้ง";
+const ADMIN_LOGIN_SECRET_NOT_READY_MESSAGE = "Admin login secret is not ready.";
+const ADMIN_SESSION_SECRET_NOT_READY_MESSAGE = "Admin session secret is not ready.";
+const ADMIN_ORIGIN_FAILED_MESSAGE = "Admin origin check failed.";
 const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
   "https://mmdbkk.com",
   "https://www.mmdbkk.com",
@@ -847,7 +851,7 @@ function isConfirmKeyAuthed(req, env) {
 
 async function isAdminGateSessionAuthed(req, env) {
   const session = await readAdminGateSession(req, env);
-  if (!session || session.version !== 1) return false;
+  if (!session || session.version !== 2) return false;
   if (session.scope !== "internal_admin") return false;
   if (!session.host || !ADMIN_GATE_ALLOWED_BASE_URLS.has(session.host)) return false;
   if (session.host !== new URL(req.url).origin) return false;
@@ -889,15 +893,18 @@ function parseCookieMap(req) {
 }
 
 async function handleAdminLogin(req, env) {
-  const origin = req.headers.get("Origin") || "";
   const requestOrigin = new URL(req.url).origin;
-  if (origin !== requestOrigin || !ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin)) {
-    return adminLoginPage(req, { status: 403, error: "Unable to sign in." });
+  if (!isAdminLoginOriginOk(req)) {
+    return adminLoginPage(req, { status: 403, error: ADMIN_ORIGIN_FAILED_MESSAGE });
   }
 
-  const contentType = (req.headers.get("Content-Type") || "").split(";", 1)[0].trim().toLowerCase();
-  if (contentType !== "application/x-www-form-urlencoded") {
+  if (!isAdminLoginFormContentType(req)) {
     return adminLoginPage(req, { status: 400, error: "Unable to sign in." });
+  }
+
+  const loginCredential = getAdminLoginCredential(env);
+  if (!loginCredential) {
+    return adminLoginPage(req, { status: 503, error: ADMIN_LOGIN_SECRET_NOT_READY_MESSAGE });
   }
 
   let form;
@@ -909,12 +916,16 @@ async function handleAdminLogin(req, env) {
 
   const credential = str(form.get("credential") || "");
   const proof = await resolveAdminSessionProof(credential, env);
-  if (!proof) return adminLoginPage(req, { status: 401, error: "Unable to sign in." });
+  if (!proof) return adminLoginPage(req, { status: 401, error: ADMIN_LOGIN_CREDENTIAL_MISMATCH_MESSAGE });
+
+  if (!getAdminSessionSecret(env)) {
+    return adminLoginPage(req, { status: 503, error: ADMIN_SESSION_SECRET_NOT_READY_MESSAGE });
+  }
 
   const next = normalizeAdminLoginNext(form.get("next"), requestOrigin);
   const now = Date.now();
   const session = {
-    version: 1,
+    version: 2,
     scope: "internal_admin",
     host: requestOrigin,
     iat: now,
@@ -948,19 +959,10 @@ function handleAdminLogout(req) {
 
 async function resolveAdminSessionProof(credential, env) {
   if (!credential) return null;
-  const loginCredential = str(env.ADMIN_LOGIN_CREDENTIAL || "");
-  const candidates = loginCredential
-    ? [["login", loginCredential]]
-    : [
-        ["bearer", str(env.ADMIN_BEARER || "")],
-        ["bearer", str(env.INTERNAL_TOKEN || "")],
-        ["confirmKey", str(env.CONFIRM_KEY || "")],
-      ];
-  let match = null;
-  for (const [kind, value] of candidates) {
-    if (value && (await constantTimeEqual(credential, value)) && !match) match = { kind, value };
-  }
-  return match;
+  const loginCredential = getAdminLoginCredential(env);
+  if (!loginCredential) return null;
+  if (await constantTimeEqual(credential, loginCredential)) return { kind: "login" };
+  return null;
 }
 
 async function constantTimeEqual(left, right) {
@@ -984,8 +986,30 @@ async function makeAdminGateCookie(session, env) {
   return `${ADMIN_GATE_SESSION_COOKIE}=${value}; Path=/; Max-Age=${Math.floor(ADMIN_GATE_TTL_MS / 1000)}; HttpOnly; Secure; SameSite=Lax`;
 }
 
+function isAdminLoginOriginOk(req) {
+  const origin = req.headers.get("Origin") || "";
+  const requestOrigin = new URL(req.url).origin;
+  return Boolean(origin && origin === requestOrigin && ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin));
+}
+
+function isAdminLoginFormContentType(req) {
+  const contentType = (req.headers.get("Content-Type") || "").split(";", 1)[0].trim().toLowerCase();
+  return contentType === "application/x-www-form-urlencoded";
+}
+
+function getAdminLoginCredential(env) {
+  return str(env.ADMIN_LOGIN_CREDENTIAL || "");
+}
+
+function getAdminSessionSecret(env) {
+  return str(env.ADMIN_SESSION_SECRET || "");
+}
+
 function getAdminSessionSigningSecret(env) {
-  return str(env.ADMIN_SESSION_SECRET || env.ADMIN_BEARER || env.INTERNAL_TOKEN || env.CONFIRM_KEY || "");
+  const sessionSecret = getAdminSessionSecret(env);
+  const loginCredential = getAdminLoginCredential(env);
+  if (!sessionSecret || !loginCredential) return "";
+  return `${sessionSecret}.${loginCredential}`;
 }
 
 async function signAdminGatePayload(payload, env) {

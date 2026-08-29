@@ -108,7 +108,7 @@ export function renderApprovedAdminLogin(
   return new Response(request.method.toUpperCase() === "HEAD" ? null : html, {
     status,
     headers: {
-      "cache-control": "no-store, private, max-age=0",
+      "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
       "content-security-policy": "default-src 'none'; img-src https://cdn.prod.website-files.com; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
       "content-type": "text/html; charset=utf-8",
       "referrer-policy": "no-referrer",

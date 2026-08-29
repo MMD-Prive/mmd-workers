@@ -13,7 +13,9 @@ const SESSION = "/internal/admin/login/session";
 const KENJI = "/internal/admin/kenji-knowledge";
 const LEGACY_SIGIL_KENJI = "/sigil/internal/admin/kenji-knowledge";
 const ENV = {
-  ADMIN_BEARER: "focused_admin_login_test_credential",
+  ADMIN_LOGIN_CREDENTIAL: "focused_admin_login_test_credential",
+  ADMIN_SESSION_SECRET: "focused_admin_session_secret",
+  ADMIN_BEARER: "focused_admin_api_bearer",
   INTERNAL_TOKEN: "focused_admin_login_test_internal_token",
   CONFIRM_KEY: "focused_admin_login_test_confirm_key",
   ALLOWED_ORIGINS: "https://mmdbkk.com,https://www.mmdbkk.com",
@@ -23,7 +25,7 @@ function request(path, init = {}, host = "mmdbkk.com", env = ENV) {
   return worker.fetch(new Request(`https://${host}${path}`, init), env, {});
 }
 
-function login(credential = ENV.ADMIN_BEARER, { host = "mmdbkk.com", next = KENJI, origin = `https://${host}`, contentType = "application/x-www-form-urlencoded", env = ENV } = {}) {
+function login(credential = ENV.ADMIN_LOGIN_CREDENTIAL, { host = "mmdbkk.com", next = KENJI, origin = `https://${host}`, contentType = "application/x-www-form-urlencoded", env = ENV } = {}) {
   return request(SESSION, {
     method: "POST",
     headers: { Origin: origin, "Content-Type": contentType },
@@ -143,15 +145,21 @@ test("valid login issues a fresh secure host-only cookie and redirects", async (
     assert.equal(body, "");
     assert.equal(body.includes(cookiePair(first)), false);
     assert.equal(logs.length, 0);
+    assert.equal(logs.flat().join(" ").includes(ENV.ADMIN_LOGIN_CREDENTIAL), false);
     assert.equal(logs.flat().join(" ").includes(ENV.ADMIN_BEARER), false);
+    assert.equal(header.includes(ENV.ADMIN_LOGIN_CREDENTIAL), false);
+    assert.equal(header.includes(ENV.ADMIN_SESSION_SECRET), false);
     assert.equal(header.includes(ENV.ADMIN_BEARER), false);
     assert.equal(header.includes(ENV.INTERNAL_TOKEN), false);
     assert.equal(header.includes(ENV.CONFIRM_KEY), false);
     assert.equal(header.includes("focused_admin_login_test_credential"), false);
     const payload = decodeCookiePayload(cookiePair(first));
     assert.deepEqual(Object.keys(payload).sort(), ["auth_method", "exp", "host", "iat", "nonce", "scope", "version"]);
+    assert.equal(payload.version, 2);
     assert.equal(payload.scope, "internal_admin");
     assert.equal(payload.host, "https://mmdbkk.com");
+    assert.equal(JSON.stringify(payload).includes(ENV.ADMIN_LOGIN_CREDENTIAL), false);
+    assert.equal(JSON.stringify(payload).includes(ENV.ADMIN_SESSION_SECRET), false);
     assert.equal(JSON.stringify(payload).includes(ENV.ADMIN_BEARER), false);
     assert.equal(JSON.stringify(payload).includes(ENV.INTERNAL_TOKEN), false);
     assert.equal(JSON.stringify(payload).includes(ENV.CONFIRM_KEY), false);
@@ -176,6 +184,26 @@ test("dedicated login credential is isolated from API bearer credentials", async
     assert.equal(rejected.status, 401);
     assert.equal(rejected.headers.get("set-cookie"), null);
   }
+});
+
+test("missing admin login credential returns a secret-not-ready login page", async () => {
+  const { ADMIN_LOGIN_CREDENTIAL: _credential, ...env } = ENV;
+  const response = await login("any-admin-input", { env });
+  const html = await response.text();
+
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get("set-cookie"), null);
+  assert.match(html, /Admin login secret is not ready\./);
+});
+
+test("missing admin session secret returns a session-not-ready login page after a valid credential", async () => {
+  const { ADMIN_SESSION_SECRET: _secret, ...env } = ENV;
+  const response = await login(ENV.ADMIN_LOGIN_CREDENTIAL, { env });
+  const html = await response.text();
+
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get("set-cookie"), null);
+  assert.match(html, /Admin session secret is not ready\./);
 });
 
 test("dedicated admin session secret rejects cookies signed by the legacy bearer", async () => {
@@ -228,17 +256,19 @@ test("issued apex cookie authenticates dashboard wrapper entrypoint", async () =
 
 test("invalid, empty, malformed, and cross-origin login never set a cookie", async () => {
   const cases = [
-    await login("invalid"),
-    await login(""),
-    await login(ENV.ADMIN_BEARER, { contentType: "application/json" }),
-    await login(ENV.ADMIN_BEARER, { origin: "https://evil.example" }),
+    [await login("invalid"), /รหัสยังไม่ถูกต้องครับ/],
+    [await login(""), /รหัสยังไม่ถูกต้องครับ/],
+    [await login(ENV.ADMIN_LOGIN_CREDENTIAL, { contentType: "application/json" }), /Unable to sign in\./],
+    [await login(ENV.ADMIN_LOGIN_CREDENTIAL, { origin: "https://evil.example" }), /Admin origin check failed\./],
   ];
 
-  for (const response of cases) {
+  for (const [response, message] of cases) {
     assert.ok([400, 401, 403].includes(response.status));
     assert.equal(response.headers.get("set-cookie"), null);
     const body = await response.text();
-    assert.match(body, /Unable to sign in\./);
+    assert.match(body, message);
+    assert.equal(body.includes(ENV.ADMIN_LOGIN_CREDENTIAL), false);
+    assert.equal(body.includes(ENV.ADMIN_SESSION_SECRET), false);
     assert.equal(body.includes(ENV.ADMIN_BEARER), false);
     assert.equal(body.includes(ENV.CONFIRM_KEY), false);
   }
@@ -267,7 +297,7 @@ test("apex and www sessions are independently host-bound", async () => {
   }, "www.mmdbkk.com");
   assert.equal(apexOnWww.status, 401);
 
-  const wwwCookie = cookiePair(await login(ENV.ADMIN_BEARER, { host: "www.mmdbkk.com" }));
+  const wwwCookie = cookiePair(await login(ENV.ADMIN_LOGIN_CREDENTIAL, { host: "www.mmdbkk.com" }));
   const wwwMe = await request("/v1/admin/auth/me", {
     headers: { Origin: "https://www.mmdbkk.com", Cookie: wwwCookie },
   }, "www.mmdbkk.com");
@@ -306,7 +336,7 @@ test("next redirects are allowlisted and external targets fall back to canonical
     "/internal/jobs/create-job?session=sess_public_safe",
   ];
   for (const next of allowedTargets) {
-    const allowed = await login(ENV.ADMIN_BEARER, { next });
+    const allowed = await login(ENV.ADMIN_LOGIN_CREDENTIAL, { next });
     assert.equal(allowed.headers.get("location"), next === LEGACY_SIGIL_KENJI ? KENJI : next);
   }
 
@@ -322,7 +352,7 @@ test("next redirects are allowlisted and external targets fall back to canonical
     "/internal/admin/control-room?token=secret",
     "/internal/jobs/create-job?credential=secret",
   ]) {
-    const response = await login(ENV.ADMIN_BEARER, { next });
+    const response = await login(ENV.ADMIN_LOGIN_CREDENTIAL, { next });
     assert.equal(response.headers.get("location"), KENJI);
   }
 });
@@ -449,16 +479,16 @@ test("login ownership routes are query-safe, narrow, unique, and absent from oth
 
 const ADMIN_GATE_TTL_MS = 8 * 60 * 60 * 1000;
 
-async function sessionCookie(overrides = {}, secret = ENV.ADMIN_BEARER) {
+async function sessionCookie(overrides = {}, secret = adminSessionSigningSecret()) {
   const now = Date.now();
   const session = {
-    version: 1,
+    version: 2,
     scope: "internal_admin",
     host: "https://mmdbkk.com",
     iat: now,
     exp: now + ADMIN_GATE_TTL_MS,
     nonce: crypto.randomUUID(),
-    auth_method: "bearer",
+    auth_method: "login",
     ...overrides,
   };
   const payload = base64UrlEncode(JSON.stringify(session));
@@ -479,7 +509,7 @@ function tamperCookieSignature(cookie) {
   return `mmd_admin_gate_v1=${encodeURIComponent(`${payloadPart}.${signaturePart.slice(0, -1)}${replacement}`)}`;
 }
 
-async function signPayload(payload, secret = ENV.ADMIN_BEARER) {
+async function signPayload(payload, secret = adminSessionSigningSecret()) {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw",
@@ -490,6 +520,10 @@ async function signPayload(payload, secret = ENV.ADMIN_BEARER) {
   );
   const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
   return base64UrlEncodeBytes(new Uint8Array(signature));
+}
+
+function adminSessionSigningSecret(env = ENV) {
+  return `${env.ADMIN_SESSION_SECRET}.${env.ADMIN_LOGIN_CREDENTIAL}`;
 }
 
 function base64UrlEncode(value) {

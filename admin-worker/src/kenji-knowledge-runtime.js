@@ -175,7 +175,7 @@ export async function handleKenjiKnowledgeRequest(request, env = {}) {
     return withCors(json({ ok: false, error: "not_found" }, 404, request), cors);
   }
 
-  const authed = isAuthed(request, env);
+  const authed = await isAuthed(request, env);
   if (!authed) {
     return withCors(json({ ok: false, authenticated: false, error: "unauthorized" }, 401, request), cors);
   }
@@ -512,7 +512,7 @@ function isAllowedOrigin(request, env = {}) {
   return allowed.includes(origin);
 }
 
-function isAuthed(request, env = {}) {
+async function isAuthed(request, env = {}) {
   const authorization = request.headers.get("Authorization") || "";
   const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || "";
   if (bearer && ((env.ADMIN_BEARER && bearer === env.ADMIN_BEARER) || (env.INTERNAL_TOKEN && bearer === env.INTERNAL_TOKEN))) return true;
@@ -520,25 +520,83 @@ function isAuthed(request, env = {}) {
   const confirmKey = request.headers.get("X-Confirm-Key") || "";
   if (confirmKey && env.CONFIRM_KEY && confirmKey === env.CONFIRM_KEY) return true;
 
-  const session = readAdminGateSession(request);
-  if (!session || session.ok !== true) return false;
-  if (!session.baseUrl || !ADMIN_GATE_ALLOWED_BASE_URLS.has(session.baseUrl)) return false;
-  if (!Number.isFinite(session.at) || Date.now() - session.at > ADMIN_GATE_TTL_MS) return false;
-  const sessionBearer = clean(session.bearer);
-  if (sessionBearer && ((env.ADMIN_BEARER && sessionBearer === env.ADMIN_BEARER) || (env.INTERNAL_TOKEN && sessionBearer === env.INTERNAL_TOKEN))) return true;
-  const sessionConfirmKey = clean(session.confirmKey);
-  if (sessionConfirmKey && env.CONFIRM_KEY && sessionConfirmKey === env.CONFIRM_KEY) return true;
-  return false;
+  const session = await readAdminGateSession(request, env);
+  if (!session || session.version !== 2) return false;
+  if (session.scope !== "internal_admin") return false;
+  if (!session.host || !ADMIN_GATE_ALLOWED_BASE_URLS.has(session.host)) return false;
+  if (session.host !== new URL(request.url).origin) return false;
+  if (!Number.isFinite(session.iat) || !Number.isFinite(session.exp)) return false;
+  const now = Date.now();
+  if (session.iat > now || session.exp <= now || session.exp - session.iat > ADMIN_GATE_TTL_MS) return false;
+  if (!session.nonce || typeof session.nonce !== "string") return false;
+  return true;
 }
 
-function readAdminGateSession(request) {
+async function readAdminGateSession(request, env = {}) {
   const raw = parseCookieMap(request.headers.get("Cookie") || "").get(ADMIN_GATE_SESSION_COOKIE);
   if (!raw) return null;
   try {
-    return JSON.parse(atob(decodeURIComponent(raw)));
+    const decoded = decodeURIComponent(raw);
+    const [payloadPart, signaturePart] = decoded.split(".");
+    if (!payloadPart || !signaturePart) return null;
+    const expected = await signAdminGatePayload(payloadPart, env);
+    if (!expected || !(await constantTimeEqual(signaturePart, expected))) return null;
+    const parsed = JSON.parse(base64UrlDecode(payloadPart));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    return parsed;
   } catch (_) {
     return null;
   }
+}
+
+function getAdminSessionSigningSecret(env = {}) {
+  const sessionSecret = clean(env.ADMIN_SESSION_SECRET);
+  const loginCredential = clean(env.ADMIN_LOGIN_CREDENTIAL);
+  if (!sessionSecret || !loginCredential) return "";
+  return `${sessionSecret}.${loginCredential}`;
+}
+
+async function signAdminGatePayload(payload, env = {}) {
+  const secret = getAdminSessionSigningSecret(env);
+  if (!secret) return "";
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+  return base64UrlEncodeBytes(new Uint8Array(signature));
+}
+
+async function constantTimeEqual(left, right) {
+  const encoder = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(left)),
+    crypto.subtle.digest("SHA-256", encoder.encode(right)),
+  ]);
+  const aa = new Uint8Array(a);
+  const bb = new Uint8Array(b);
+  let difference = 0;
+  for (let i = 0; i < aa.length; i += 1) difference |= aa[i] ^ bb[i];
+  return difference === 0;
+}
+
+function base64UrlEncodeBytes(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlDecode(value) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
 }
 
 function parseCookieMap(header = "") {
