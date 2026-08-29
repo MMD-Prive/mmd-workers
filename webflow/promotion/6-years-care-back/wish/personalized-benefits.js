@@ -7,6 +7,7 @@
 
   host.classList.add("mmd-care-personal");
   host.replaceChildren(sectionHeading(), benefitsPanel(), walletPanel());
+  document.addEventListener("mmd:care-back:wish-completed", () => void loadPersonalState());
   void loadPersonalState();
 
   async function loadPersonalState() {
