@@ -25,6 +25,14 @@ export {
 };
 
 const MODEL_SCHEMA_PATCH_V1_ROUTE_SET = new Set(Object.values(MODEL_SCHEMA_PATCH_V1_ROUTES));
+const ADMIN_GATE_SESSION_COOKIE = "mmd_admin_gate_v1";
+const ADMIN_GATE_TTL_MS = 8 * 60 * 60 * 1000;
+const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
+  "https://mmdbkk.com",
+  "https://www.mmdbkk.com",
+  "https://mmdprive.webflow.io",
+  "https://mmdprive.com",
+]);
 
 const ALLOWED_NEXT_PATHS = [
   "/internal/admin",
@@ -32,6 +40,7 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/admin/dashboard",
   "/internal/admin/mms",
   "/internal/admin/jobs/create-session",
+  "/internal/admin/jobs/create-job",
   "/internal/admin/create-session",
   "/internal/admin/kenji-knowledge",
   "/internal/jobs/create-job",
@@ -50,6 +59,18 @@ export default {
     if (MODEL_SCHEMA_PATCH_V1_ROUTE_SET.has(path)) {
       return coreWorker.fetch(request, env, ctx);
     }
+
+    if (path === ADMIN_LOGIN_SESSION_PATH && method === "POST") {
+      return handleCredentialBoundAdminLogin(request, env);
+    }
+
+    if (path === ADMIN_LOGIN_SESSION_PATH && method === "DELETE") {
+      return handleCredentialBoundAdminLogout(request);
+    }
+
+    const strictGate = await applyCredentialBoundAdminGate(request, env, path, method);
+    if (strictGate.response) return strictGate.response;
+    request = strictGate.request || request;
 
     if (isMmsAdminRequest(path)) {
       return handleMmsAdminRequest(request, env, ctx);
@@ -78,21 +99,6 @@ export default {
       });
     }
 
-    if (path === ADMIN_LOGIN_SESSION_PATH && method === "POST") {
-      const formTextPromise = request.clone().text().catch(() => "");
-      const response = await worker.fetch(request, env, ctx);
-      const contentType = response.headers.get("content-type") || "";
-      if (response.status >= 400 && contentType.includes("text/html")) {
-        const form = new URLSearchParams(await formTextPromise);
-        return renderAdminLogin(request, {
-          status: response.status,
-          error: "รหัสยังไม่ถูกต้องครับ ลองตรวจอีกครั้ง",
-          next: normalizeNext(form.get("next")),
-        });
-      }
-      return response;
-    }
-
     return worker.fetch(request, env, ctx);
   },
 };
@@ -103,6 +109,247 @@ export function renderAdminLogin(request, { status = 200, error = "", next = "/i
     error,
     next: normalizeNext(next),
   });
+}
+
+async function handleCredentialBoundAdminLogin(request, env) {
+  const origin = request.headers.get("Origin") || "";
+  const requestOrigin = new URL(request.url).origin;
+  if (origin !== requestOrigin || !ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin)) {
+    return renderAdminLogin(request, { status: 403, error: "รหัสยังไม่ถูกต้องครับ ลองตรวจอีกครั้ง" });
+  }
+
+  const contentType = (request.headers.get("Content-Type") || "").split(";", 1)[0].trim().toLowerCase();
+  if (contentType !== "application/x-www-form-urlencoded") {
+    return renderAdminLogin(request, { status: 400, error: "รหัสยังไม่ถูกต้องครับ ลองตรวจอีกครั้ง" });
+  }
+
+  let form;
+  try {
+    form = new URLSearchParams(await request.text());
+  } catch {
+    return renderAdminLogin(request, { status: 400, error: "รหัสยังไม่ถูกต้องครับ ลองตรวจอีกครั้ง" });
+  }
+
+  const credential = clean(form.get("credential"));
+  const activeCredential = clean(env.ADMIN_LOGIN_CREDENTIAL);
+  if (!activeCredential || !credential || !(await constantTimeEqual(credential, activeCredential))) {
+    return renderAdminLogin(request, {
+      status: 401,
+      error: "รหัสยังไม่ถูกต้องครับ ลองตรวจอีกครั้ง",
+      next: normalizeNext(form.get("next")),
+    });
+  }
+
+  const now = Date.now();
+  const session = {
+    version: 2,
+    scope: "internal_admin",
+    host: requestOrigin,
+    iat: now,
+    exp: now + ADMIN_GATE_TTL_MS,
+    nonce: crypto.randomUUID(),
+    auth_method: "login",
+  };
+  const cookie = await makeCredentialBoundAdminCookie(session, env);
+  if (!cookie) {
+    return renderAdminLogin(request, {
+      status: 503,
+      error: "รหัสยังไม่พร้อมครับ ลองใหม่อีกครั้ง",
+      next: normalizeNext(form.get("next")),
+    });
+  }
+
+  return new Response(null, {
+    status: 303,
+    headers: {
+      "Cache-Control": "no-store, private",
+      Location: normalizeNext(form.get("next")),
+      "Set-Cookie": cookie,
+    },
+  });
+}
+
+function handleCredentialBoundAdminLogout(request) {
+  const requestOrigin = new URL(request.url).origin;
+  const origin = request.headers.get("Origin") || "";
+  if (origin !== requestOrigin || !ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin)) {
+    return strictJson(request, {}, { ok: false, error: "forbidden" }, 403);
+  }
+  return new Response(null, {
+    status: 303,
+    headers: {
+      "Cache-Control": "no-store, private",
+      Location: ADMIN_LOGIN_PAGE_PATH,
+      "Set-Cookie": `${ADMIN_GATE_SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+    },
+  });
+}
+
+async function applyCredentialBoundAdminGate(request, env, path, method) {
+  if (method === "OPTIONS" || !isCredentialBoundAdminPath(path)) return { request };
+  if (hasServiceAuthHeader(request)) return { request };
+
+  const session = await readCredentialBoundAdminSession(request, env);
+  if (!isValidCredentialBoundAdminSession(session, request)) {
+    return { response: strictJson(request, env, { ok: false, authenticated: false, error: "unauthorized" }, 401) };
+  }
+
+  const bypass = clean(env.INTERNAL_TOKEN || env.ADMIN_BEARER || env.CONFIRM_KEY);
+  if (!bypass) {
+    return { response: strictJson(request, env, { ok: false, authenticated: false, error: "admin_auth_bridge_not_ready" }, 503) };
+  }
+
+  return { request: withInternalAuthorization(request, bypass) };
+}
+
+function isCredentialBoundAdminPath(path) {
+  return (
+    path === ADMIN_DASHBOARD_API_PATH ||
+    path === "/v1/internal/kenji/knowledge/published" ||
+    path.startsWith("/v1/admin/") ||
+    path.startsWith("/studio/api/")
+  );
+}
+
+function hasServiceAuthHeader(request) {
+  const auth = clean(request.headers.get("Authorization"));
+  const confirm = clean(request.headers.get("X-Confirm-Key"));
+  return Boolean(auth || confirm);
+}
+
+function withInternalAuthorization(request, token) {
+  const headers = new Headers(request.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+  return new Request(request, { headers });
+}
+
+async function readCredentialBoundAdminSession(request, env) {
+  const raw = parseCookieMap(request).get(ADMIN_GATE_SESSION_COOKIE);
+  if (!raw) return null;
+  try {
+    const decoded = decodeURIComponent(raw);
+    const [payloadPart, signaturePart] = decoded.split(".");
+    if (!payloadPart || !signaturePart) return null;
+    const expected = await signCredentialBoundPayload(payloadPart, env);
+    if (!expected || !(await constantTimeEqual(signaturePart, expected))) return null;
+    const parsed = JSON.parse(base64UrlDecode(payloadPart));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function isValidCredentialBoundAdminSession(session, request) {
+  if (!session || session.version !== 2) return false;
+  if (session.scope !== "internal_admin") return false;
+  if (!session.host || !ADMIN_GATE_ALLOWED_BASE_URLS.has(session.host)) return false;
+  if (session.host !== new URL(request.url).origin) return false;
+  if (!Number.isFinite(session.iat) || !Number.isFinite(session.exp)) return false;
+  const now = Date.now();
+  if (session.iat > now || session.exp <= now || session.exp - session.iat > ADMIN_GATE_TTL_MS) return false;
+  if (!session.nonce || typeof session.nonce !== "string") return false;
+  return true;
+}
+
+async function makeCredentialBoundAdminCookie(session, env) {
+  const payload = base64UrlEncode(JSON.stringify(session));
+  const signature = await signCredentialBoundPayload(payload, env);
+  if (!signature) return "";
+  const value = encodeURIComponent(`${payload}.${signature}`);
+  return `${ADMIN_GATE_SESSION_COOKIE}=${value}; Path=/; Max-Age=${Math.floor(ADMIN_GATE_TTL_MS / 1000)}; HttpOnly; Secure; SameSite=Lax`;
+}
+
+async function signCredentialBoundPayload(payload, env) {
+  const secret = getCredentialBoundSigningSecret(env);
+  if (!secret) return "";
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+  return base64UrlEncodeBytes(new Uint8Array(signature));
+}
+
+function getCredentialBoundSigningSecret(env = {}) {
+  const sessionSecret = clean(env.ADMIN_SESSION_SECRET);
+  const loginCredential = clean(env.ADMIN_LOGIN_CREDENTIAL);
+  if (!sessionSecret || !loginCredential) return "";
+  return `${sessionSecret}.${loginCredential}`;
+}
+
+function parseCookieMap(request) {
+  const map = new Map();
+  const raw = request.headers.get("Cookie") || "";
+  for (const part of raw.split(";")) {
+    const [name, ...rest] = part.split("=");
+    const key = clean(name);
+    if (!key) continue;
+    map.set(key, rest.join("=").trim());
+  }
+  return map;
+}
+
+function strictJson(request, env, data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: strictCorsHeaders(request, env),
+  });
+}
+
+function strictCorsHeaders(request, env) {
+  const origin = request.headers.get("Origin") || "";
+  const allowed = clean(env.ALLOWED_ORIGINS)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const headers = new Headers({
+    "Cache-Control": "no-store, private",
+    "Content-Type": "application/json; charset=utf-8",
+  });
+  if (origin && (!allowed.length || allowed.includes(origin))) {
+    headers.set("Access-Control-Allow-Origin", origin);
+    headers.set("Vary", "Origin");
+  }
+  headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS,DELETE");
+  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Confirm-Key");
+  return headers;
+}
+
+async function constantTimeEqual(left, right) {
+  const encoder = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(clean(left))),
+    crypto.subtle.digest("SHA-256", encoder.encode(clean(right))),
+  ]);
+  const aa = new Uint8Array(a);
+  const bb = new Uint8Array(b);
+  let difference = 0;
+  for (let i = 0; i < aa.length; i += 1) difference |= aa[i] ^ bb[i];
+  return difference === 0;
+}
+
+function base64UrlEncode(value) {
+  return base64UrlEncodeBytes(new TextEncoder().encode(value));
+}
+
+function base64UrlEncodeBytes(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlDecode(value) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
 }
 
 export function normalizeNext(value = "") {
@@ -120,6 +367,10 @@ export function normalizeNext(value = "") {
     if (/token|secret|password|credential|cookie|authorization|bearer|confirm_key/i.test(key)) return "/internal/admin/control-room";
   }
   return `${parsed.pathname}${parsed.search}`;
+}
+
+function clean(value) {
+  return String(value ?? "").trim();
 }
 
 function normalizePath(pathname = "") {
