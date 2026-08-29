@@ -26,6 +26,9 @@ test("therapist application is the single canonical five-step source", async () 
 
   assert.equal((html.match(/id="mta3"/g) || []).length, 1);
   assert.equal((html.match(/data-step="[1-5]"/g) || []).length, 5);
+  for (const imageIndex of ["01", "02", "03", "04", "05", "06", "07", "08", "09"]) {
+    assert.match(html, new RegExp(`HIMA%20Apply%20Mod%20${imageIndex}\\.webp`));
+  }
   assert.match(html, /data-branch-open/);
   assert.match(html, /data-application-step="5"/);
   assert.match(css, /^#mta3/m);
