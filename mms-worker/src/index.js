@@ -404,14 +404,19 @@ async function handleUpload(request, env, cors, requestId, applicationId, upload
 
   try {
     const grant = claim.grant;
-    const contentLength = strictContentLength(request);
+    if (!request.body) throw httpError(400, "UPLOAD_BODY_REQUIRED", "Upload body is required");
+    var uploadBody = request.body;
+    var contentLength = optionalContentLength(request);
+    if (contentLength === null) {
+      uploadBody = await request.arrayBuffer();
+      contentLength = uploadBody.byteLength;
+    }
     const contentType = String(request.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
     if (contentLength !== grant.expected_bytes) throw httpError(400, "UPLOAD_SIZE_MISMATCH", "Upload size does not match the grant");
     if (contentLength > uploadMaxBytes(env)) throw httpError(413, "UPLOAD_TOO_LARGE", "Upload is too large");
     if (contentType !== grant.content_type) throw httpError(400, "UPLOAD_TYPE_MISMATCH", "Upload content type does not match the grant");
-    if (!request.body) throw httpError(400, "UPLOAD_BODY_REQUIRED", "Upload body is required");
 
-    await env.MMS_PRIVATE_UPLOADS.put(grant.r2_key, request.body, {
+    await env.MMS_PRIVATE_UPLOADS.put(grant.r2_key, uploadBody, {
       httpMetadata: { contentType: grant.content_type },
       customMetadata: {
         application_id: applicationId,
@@ -737,9 +742,10 @@ async function readJsonLimited(request) {
   }
 }
 
-function strictContentLength(request) {
+function optionalContentLength(request) {
   const value = String(request.headers.get("content-length") || "");
-  if (!/^\d+$/.test(value)) throw httpError(411, "CONTENT_LENGTH_REQUIRED", "Content-Length is required");
+  if (!value) return null;
+  if (!/^\d+$/.test(value)) throw httpError(400, "INVALID_CONTENT_LENGTH", "Content-Length is invalid");
   return Number(value);
 }
 
