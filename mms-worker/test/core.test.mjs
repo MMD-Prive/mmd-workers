@@ -229,6 +229,8 @@ test("public route source keeps canonical statuses, CORS origins, and private ob
   assert.match(source, /sync\.sync_status === "synced" \? "accepted" : "pending_airtable_retry"/);
   assert.match(source, /retrySync\.sync_status === "synced" \? "already_received" : "pending_airtable_retry"/);
   assert.match(source, /https:\/\/mmdbkk\.com,https:\/\/www\.mmdbkk\.com,https:\/\/mmdprive\.webflow\.io/);
+  assert.match(source, /uploadBody = await request\.arrayBuffer\(\)/);
+  assert.doesNotMatch(source, /CONTENT_LENGTH_REQUIRED/);
   const publicUploadResponse = source.slice(source.indexOf("async function handleUpload("), source.indexOf("async function handleMatching("));
   assert.doesNotMatch(publicUploadResponse, /object_key:/);
 });
