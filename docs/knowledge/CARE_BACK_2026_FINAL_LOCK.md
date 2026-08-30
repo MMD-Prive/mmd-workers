@@ -1,7 +1,8 @@
 # MMD Privé — CARE BACK 2026 Final Lock
 
 Status: final rules for implementation  
-Effective date: 2026-08-30 (Asia/Bangkok)
+Effective date: 2026-08-31 (Asia/Bangkok)  
+Coupon Validity Canon: **V2.2**
 
 Owner: Boss Per / MMD  
 Canonical route: `/promotion/6-years-care-back`
@@ -10,7 +11,7 @@ Canonical route: `/promotion/6-years-care-back`
 
 CARE BACK is a สิทธิ์ดูแลกลับ for people MMD has previously cared for and verified new members entering through the campaign. It is not a mass discount, membership package, automatic approval, VIP package, Black Card grant, or SVIP threshold.
 
-This document supersedes earlier CARE BACK guidance where it conflicts, including any copy or implementation that issues a personal code immediately after login or identity verification, or requires old customers to reproduce historical slips in order to recover their legacy status or Points.
+This document supersedes earlier CARE BACK guidance where it conflicts, including any earlier lock that treated 10% as a fixed guaranteed discount, any 30-day coupon validity rule, any copy or implementation that issues a personal code immediately after login or identity verification, or any flow that requires old customers to reproduce historical slips in order to recover legacy status or Points.
 
 ## Campaign calendar
 
@@ -26,7 +27,7 @@ This document supersedes earlier CARE BACK guidance where it conflicts, includin
 3. Create or resume one CARE BACK claim idempotently.
 4. Save a Birthday Wish through the canonical Wish owner.
 5. Only a successfully saved Wish can unlock the personal coupon.
-6. Apply membership, payment, and Points benefits only after each canonical owner completes verification or approved historical reconstruction.
+6. Apply membership, payment, Points, and approved coupon benefits only after each canonical owner completes verification or approved historical reconstruction.
 
 Identity verification starts review only. Opening the page, logging in, or submitting identity must never issue a coupon, add Points, approve payment, or create a membership term.
 
@@ -46,18 +47,23 @@ Historical identity and membership reconstruction uses MMD-owned legacy evidence
 
 For historical Points specifically, **Per's original customer note is the primary reconstruction source**. The historical-note parser may extract service amounts, dates, packages, tips, membership/renewal entries, promo/referral signals, and warnings. It produces staged/reviewable Points evidence rather than inventing missing history.
 
-## Personal coupon
+## Personal coupon — Canon V2.2
 
-- Customer-facing benefit copy: **UP TO 10% OFF** / **ส่วนลดสูงสุด 10%**.
-- The approved discount is determined by **Model level × job format**:
+- Customer-facing copy before verified entitlement: **UP TO 10% OFF** / **ส่วนลดสูงสุด 10%** only.
+- **10% is the campaign ceiling, not a guaranteed discount for every booking.**
+- Public work should normally start around **5%** where the model/job combination allows it, while Public Models remain within the approved **3–5%** band.
+- The base discount matrix is determined by **Model level × job format**:
 
 | Model level | PN job format | VIP job format |
 | --- | ---: | ---: |
 | Public Models | 3–5% | 3–5% |
 | Standard Models | 5% | 7% |
-| Premium / EMs / GWs Models | 7% | 10% |
+| Premium / EMs / GWs Models | 5% | 10% |
 
-- `PN` and `VIP` in this matrix are **job formats**, not customer membership status.
+- `PN` and `VIP` in this matrix are **job formats**, not customer membership status or customer tier.
+- Customer eligibility is an additional gate. The authoritative rate returned to the customer must be the verified `approved_discount_percent` after Model level × job format has been checked against customer eligibility.
+- Browser/public surfaces must never calculate or invent the approved discount.
+- Before verification, Public pages may display only **“สูงสุด 10%” / “UP TO 10% OFF”**.
 - Coupon card color identifies membership status only and must never determine the discount:
 
 | Card color | Membership status |
@@ -68,10 +74,17 @@ For historical Points specifically, **Per's original customer note is the primar
 | Black | Black Card holder + VIP customer status |
 | Gold | SVIP customer status |
 
+- All five card colors may share the same campaign design language, but the card must **not print a fixed discount by color**. A generic `UP TO 10% OFF` label is allowed before the approved rate is resolved.
+- Backend/API must return `approved_discount_percent` only after verification. That field is the source of truth for the actual coupon rate shown in verified member surfaces and booking confirmation.
 - One use, one coupon per booking, for an eligible participating service only.
-- Valid for **2 months from activation**. The customer must redeem the coupon and confirm a booking before it expires.
-- After a valid booking is confirmed, the service date may be scheduled up to **90 days from the original booking date**, even when that service date falls after the coupon expiry date.
-- Rescheduling must not extend the service date beyond 90 days from the original booking date.
+
+### Coupon validity
+
+- Valid for **2 months from activation**.
+- The coupon must be used to confirm a booking before the coupon expiry date.
+- Once a valid booking has been confirmed within the coupon validity period, the actual service date may be scheduled up to **90 days from the original booking date**, even when the service date is after coupon expiry.
+- Rescheduling must not move the service date beyond **90 days from the original booking date**.
+- Example: card activated **1 September** → booking may be confirmed through **31 October** → if booked on **20 October**, the service date may be selected within 90 days from 20 October.
 - Wish saved is mandatory before activation or display.
 - One coupon per CARE BACK claim; viewing or copying never consumes it.
 - Used, expired, revoked, or invalid codes cannot be reactivated by the customer.
@@ -89,7 +102,7 @@ For historical Points specifically, **Per's original customer note is the primar
 
 Trial / Guest Pass receives no automatic CARE BACK Welcome Points unless MMD publishes a separate rule.
 
-## Money, membership, and Points truth
+## Money, membership, Points, and coupon truth
 
 - Current/new transactions: payment confirmation belongs to the official payment-verification owner.
 - Historical customer status and Points: MMD may reconstruct from LINE Official legacy evidence without requiring a historical slip.
@@ -100,9 +113,11 @@ Trial / Guest Pass receives no automatic CARE BACK Welcome Points unless MMD pub
 - Ambiguous amounts, referral bonuses, and promotion bonuses remain review-required.
 - Membership extensions belong to the canonical membership owner.
 - Points belong to the canonical Points Ledger owner after approved reconstruction/application.
+- Coupon discount authority belongs to the backend verification path; verified responses expose `approved_discount_percent`.
+- Card color, browser copy, customer-entered values, or visual tier styling must never override the approved discount.
 - Every claim, coupon, extension, and Points application must be idempotent.
 - Black Card remains private review; Points never auto-approve it.
-- VIP is not a customer-facing package.
+- VIP is not a customer-facing membership package.
 - SVIP is not point-based, purchasable, or automatic. It is privately considered by Per.
 
 ## Required states
@@ -136,11 +151,11 @@ Historical reconstruction should additionally distinguish operational review sta
 
 ## Kenji behavior
 
-Kenji may explain, classify, route, and summarize safe verified or approved reconstructed status. Kenji must not create or mutate claims, activate coupons, apply Points, extend membership, approve payment, approve Black Card, infer SVIP, or expose internal identifiers.
+Kenji may explain, classify, route, and summarize safe verified or approved reconstructed status. Kenji must not create or mutate claims, activate coupons, calculate an authoritative coupon rate in the browser, apply Points, extend membership, approve payment, approve Black Card, infer SVIP, or expose internal identifiers.
 
 Customer-facing answer:
 
-> CARE BACK เป็นสิทธิ์ดูแลกลับที่ MMD ตรวจจากสถานะและประวัติจริงครับ เริ่มจากยืนยันผ่าน LINE แล้วส่ง Birthday Wish ให้บันทึกสำเร็จก่อน จึงจะเปิดคูปองส่วนตัวส่วนลดสูงสุด 10% ได้ 1 ครั้ง โดยอัตราจริงขึ้นอยู่กับระดับนายแบบและรูปแบบงาน คูปองมีอายุใช้งาน 2 เดือนหลัง activation และเมื่อใช้จองภายในอายุคูปองแล้ว สามารถเลือกวันรับบริการล่วงหน้าได้ไม่เกิน 90 วันนับจากวันที่จอง ส่วนประวัติสมาชิกและ Points เดิม MMD จะตรวจจากข้อมูลที่เคยบันทึกไว้ รวมถึง LINE Official และ Note เดิมของ MMD โดยไม่จำเป็นต้องให้คุณหาสลิปเก่าครบทุกครั้งครับ
+> CARE BACK เป็นสิทธิ์ดูแลกลับที่ MMD ตรวจจากสถานะและประวัติจริงครับ เริ่มจากยืนยันผ่าน LINE แล้วส่ง Birthday Wish ให้บันทึกสำเร็จก่อน จึงจะเปิดคูปองส่วนตัวได้ หน้า Public จะแสดงเพียง “ส่วนลดสูงสุด 10%” ก่อนนะครับ เพราะส่วนลดจริงขึ้นอยู่กับระดับนายแบบและรูปแบบงาน รวมถึงสิทธิ์ที่ตรวจสอบได้ของคุณ เมื่อยืนยันครบระบบจะใช้ `approved_discount_percent` ที่ผ่านการตรวจแล้ว คูปองใช้ได้ 1 ครั้ง ต้องใช้จองภายใน 2 เดือนหลังเปิดใช้ และเมื่อจองทันอายุคูปองแล้ว สามารถเลือกวันรับบริการได้ไม่เกิน 90 วันนับจากวันที่จองครับ
 
 Safety copy:
 
@@ -148,13 +163,15 @@ Safety copy:
 
 > การยืนยันตัวตนช่วยให้ MMD ตรวจสถานะ ประวัติที่เชื่อมได้ และ Points ที่ตรวจสอบหรือกู้คืนจากข้อมูลเดิมได้ แต่ไม่ได้หมายความว่าได้รับคูปองหรือ Points อัตโนมัติ
 
-> คูปองส่วนตัวส่วนลดสูงสุด 10% จะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จ ใช้ได้ 1 ครั้งกับบริการที่ร่วมรายการ โดยอัตราจริงขึ้นอยู่กับระดับนายแบบและรูปแบบงาน ต้องใช้จองภายใน 2 เดือนหลัง activation และเลือกวันรับบริการได้ไม่เกิน 90 วันนับจากวันที่จอง
+> คูปองส่วนตัวแสดง “ส่วนลดสูงสุด 10%” ก่อนยืนยันสิทธิ์ ส่วนลดจริงคำนวณจากระดับนายแบบ × รูปแบบงาน และสิทธิ์ที่ตรวจสอบได้ ใช้ได้ 1 ครั้ง ต้องใช้ยืนยันการจองภายใน 2 เดือนหลังเปิดใช้ และเมื่อจองแล้วสามารถเลือกวันรับบริการได้ไม่เกิน 90 วันนับจากวันที่จองครั้งแรก
 
 ## Implementation gate
 
 - LINE/LIFF session verification is the customer identity boundary.
 - The canonical Birthday Wish service is the only authority that can mark a Wish saved.
 - `immigrate-worker` may normalize/infer legacy LINE evidence and historical note data, but canonical entitlement still requires safe match and canonical/admin approval/application.
+- Historical Points reconstruction must use preserved Per Notes / LINE Official evidence first; do not require missing historical slips as a prerequisite.
+- Backend coupon verification must expose `approved_discount_percent`; no browser code may derive the authoritative percentage from card color or customer-visible tier labels.
 - Historical Points reconstruction must use preserved Per Notes / LINE Official evidence first; do not require missing historical slips as a prerequisite.
 - Browser code never writes claim, coupon, Points, membership, payment, Black Card, or SVIP truth.
 - Production deployment, Airtable mutation, Knowledge Board publication, and Webflow publication require separate explicit approval.
