@@ -14,4 +14,4 @@ ENV PORT=8080
 USER node
 EXPOSE 8080
 
-CMD ["node", "container-server.mjs"]
+ENTRYPOINT ["/usr/local/bin/node", "/app/container-server.mjs"]
