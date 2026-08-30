@@ -110,3 +110,27 @@ test("CARE BACK main visual patch uses approved artwork and wider memory framing
   assert.match(visualCss, /aspect-ratio:\s*4\s*\/\s*3/);
   assert.match(visualCss, /object-position:\s*50%\s*46%/);
 });
+
+test("CARE BACK Per Voice mobile patch uses the real member shell and requested layout", async () => {
+  const patchScript = await readFile(new URL("../main/care-back-per-voice-v2.js", import.meta.url), "utf8");
+  const patchCss = await readFile(new URL("../main/care-back-per-voice-v2.css", import.meta.url), "utf8");
+  const benefitsScript = await readFile(new URL("./personalized-benefits.js", import.meta.url), "utf8");
+
+  assert.match(patchScript, /https:\/\/mmdbkk\.com\/member\/liff\?intent=status/);
+  assert.match(benefitsScript, /https:\/\/mmdbkk\.com\/member\/liff\?intent=status/);
+  assert.doesNotMatch(patchScript, /liff\.state=.*member%2Fliff/);
+  assert.doesNotMatch(benefitsScript, /liff\.state=.*member%2Fliff/);
+  assert.match(patchScript, /\.mx-hero \[data-wish-link\]/);
+  assert.match(patchScript, /\.mx-benefit-track/);
+  assert.match(patchScript, /\.mx-final__hype/);
+  assert.match(patchScript, /HYPE_Footer\.webp/);
+  assert.match(patchScript, /ยืนยันการเป็นสมาชิกเพื่อรับสิทธิพิเศษมากมาย/);
+  assert.doesNotMatch(patchScript, /fetch\(/);
+  assert.doesNotThrow(() => new Function(patchScript));
+
+  assert.match(patchCss, /grid-template-columns:\s*repeat\(2/);
+  assert.match(patchCss, /\.mx-hero \.mx-actions \[data-wish-link\]\s*\{\s*display:\s*none/);
+  assert.match(patchCss, /background:\s*#292826/);
+  assert.match(patchCss, /--pv-gold:\s*#f0cf72/);
+  assert.match(patchCss, /\.mx-final \.mx-actions\s*\{\s*display:\s*none/);
+});
