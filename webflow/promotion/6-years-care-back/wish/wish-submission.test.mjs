@@ -70,6 +70,8 @@ test("Wish completion trusts only a safe bounded server message", () => {
 test("Browser bridge posts Public Wish and keeps benefit linking separate", () => {
   assert.match(source, /\/member\/api\/care-back\/public-wish/);
   assert.match(source, /\/member\/api\/care-back\/link-wish/);
+  assert.doesNotMatch(source, /\/member\/api\/liff\/care-back\/wish/);
+  assert.match(source, /fetch\(ENDPOINT,/);
   assert.match(source, /credentials:\s*"same-origin"/);
   assert.match(source, /payload\?\.state\s*!==\s*"completed"/);
   assert.match(source, /mmd:care-back:wish-completed/);
