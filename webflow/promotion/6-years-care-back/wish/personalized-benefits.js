@@ -1,7 +1,8 @@
 (() => {
   "use strict";
 
-  const LIFF_URL = "https://liff.line.me/2010862595-yT4DCEMc?intent=promo&campaign=care_back&view=care_back";
+  const MEMBER_STATUS_URL = "https://miniapp.line.me/2010862595-yT4DCEMc?liff.state=%2Fmember%2Fliff%3Fintent%3Dstatus";
+  const MEMBER_STATUS_CTA = "ตรวจสิทธิ์ของฉันผ่าน LINE";
   const host = document.querySelector("[data-mmd-care-back-personalized]") || createHost();
   if (!host) return;
 
@@ -82,7 +83,7 @@
   function renderSignIn() {
     const panel = document.getElementById("mmd-care-personal-wallet"); panel.replaceChildren();
     panel.append(empty("เปิดผ่าน LINE เพื่อดู Benefits และคูปองเฉพาะของคุณครับ"));
-    const link = document.createElement("a"); link.href = LIFF_URL; link.textContent = "เปิด CARE BACK ใน LINE"; link.rel = "noopener";
+    const link = document.createElement("a"); link.href = MEMBER_STATUS_URL; link.textContent = MEMBER_STATUS_CTA; link.rel = "noopener";
     panel.append(link);
   }
 
