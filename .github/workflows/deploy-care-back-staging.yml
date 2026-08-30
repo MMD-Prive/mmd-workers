@@ -8,6 +8,11 @@ on:
         required: true
         type: boolean
         default: false
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/deploy-care-back-staging.yml"
 
 concurrency:
   group: care-back-full-staging
@@ -30,13 +35,13 @@ jobs:
       - run: npm run check:care-back-staging
       - run: npm run test:care-back-staging-fixtures
       - run: npm run test:member-pages-liff
-      - run: npm run test:member-dashboard-liff
+      - run: npm run test:care-back-wish-frontend
       - run: npx --yes wrangler@4 deploy --dry-run --env staging --config care-back-staging-fixtures-worker/wrangler.toml
       - run: npx --yes wrangler@4 deploy --dry-run --env staging --config member-pages-worker/wrangler.toml
       - run: npx --yes wrangler@4 deploy --dry-run --env staging --config member-dashboard-chat-worker/wrangler.toml
 
   deploy:
-    if: inputs.deploy == true
+    if: github.event_name == 'push' || inputs.deploy == true
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -103,7 +108,40 @@ jobs:
           url="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' "$RUNNER_TEMP/front-gate-deploy.log" | tail -n 1)"
           test -n "$url"
           echo "url=$url" >> "$GITHUB_OUTPUT"
-      - name: Smoke current, returning, and new member states
-        run: node scripts/smoke-care-back-staging.mjs "${{ steps.front_gate.outputs.url }}"
+      - name: Smoke public Wish split
+        env:
+          BASE_URL: ${{ steps.front_gate.outputs.url }}
+        run: |
+          node <<'NODE'
+          import assert from "node:assert/strict";
+          const base = process.env.BASE_URL;
+          const requestId = `wish-v7-staging-${Date.now()}`;
+          async function post(body) {
+            const response = await fetch(`${base}/member/api/care-back/public-wish`, {
+              method: "POST",
+              headers: { origin: base, "content-type": "application/json", accept: "application/json" },
+              body: JSON.stringify(body),
+            });
+            return { response, payload: await response.json() };
+          }
+          const first = await post({ wish_text: "V7 staging smoke wish", request_id: requestId, language: "en" });
+          assert.equal(first.response.status, 200, JSON.stringify(first.payload));
+          assert.equal(first.payload.ok, true);
+          assert.equal(first.payload.state, "completed");
+          assert.equal(first.payload.benefits.verification_required, true);
+          assert.equal(first.payload.benefits.coupon, false);
+          assert.equal(first.payload.benefits.membership_extension, false);
+          assert.equal(first.payload.benefits.points, false);
+          assert.equal(first.payload.grants.membership, false);
+          assert.equal(first.payload.grants.points, false);
+          assert.match(first.payload.wish_link_token, /^pw_[A-Za-z0-9_-]+$/);
+          const replay = await post({ wish_text: "V7 staging smoke wish", request_id: requestId, language: "en" });
+          assert.equal(replay.response.status, 200, JSON.stringify(replay.payload));
+          assert.equal(replay.payload.wish_link_token, first.payload.wish_link_token);
+          const forged = await post({ wish_text: "forged identity smoke", request_id: `${requestId}-forged`, member_id: "mem_fake" });
+          assert.equal(forged.response.status, 400, JSON.stringify(forged.payload));
+          assert.equal(forged.payload.error.code, "BROWSER_IDENTITY_REJECTED");
+          console.log("PUBLIC_WISH_STAGING_SMOKE_PASS", JSON.stringify({ base, anonymous: true, idempotent: true, forged_identity_rejected: true }));
+          NODE
       - name: Record staging URL
-        run: echo "CARE BACK staging passed at ${{ steps.front_gate.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
+        run: echo "CARE BACK public Wish staging passed at ${{ steps.front_gate.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
