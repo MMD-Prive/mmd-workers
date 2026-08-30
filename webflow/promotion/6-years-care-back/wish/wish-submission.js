@@ -1,9 +1,10 @@
 (() => {
   "use strict";
 
-  const ENDPOINT = "/member/api/liff/care-back/wish";
-  const LIFF_URL = "https://liff.line.me/2010862595-yT4DCEMc?intent=promo&campaign=care_back&view=care_back&return_to=%2Fpromotion%2F6-years-care-back%2Fwish";
+  const ENDPOINT = "/member/api/care-back/public-wish";
+  const LINK_ENDPOINT = "/member/api/care-back/link-wish";
   const MAX_WISH = 600;
+  const LINK_TOKEN_KEY = "mmd-care-back-wish-link-token";
   const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._~-]{15,127}$/;
   const COPY = Object.freeze({
     th: {
@@ -14,9 +15,9 @@
       empty: "เขียนคำอวยพรก่อนส่งนะครับ",
       tooLong: "คำอวยพรยาวเกิน 600 ตัวอักษรครับ",
       invalid: "มีอักขระที่ใช้ไม่ได้ครับ ลองปรับข้อความอีกครั้ง",
-      unavailable: "ตอนนี้ยังส่งคำอวยพรไม่ได้ครับ ลองใหม่อีกครั้งในอีกสักครู่",
-      review: "ผมรับข้อมูลไว้แล้วครับ และจะตรวจสอบสิทธิ์ที่เกี่ยวข้องให้ต่อไป",
-      signIn: "เปิดผ่าน LINE ก่อนนะครับ แล้วกลับมาส่งคำอวยพรได้ทันที",
+      unavailable: "ตอนนี้ยังส่งไม่ได้ครับ ลองใหม่อีกครั้งในอีกสักครู่",
+      success: "MMD ได้รับคำอวยพรของคุณแล้วครับ",
+      benefit: "คูปอง วันสมาชิก และ Points จะตรวจแยกผ่าน LINE ตามสิทธิ์ของคุณครับ",
       counter: "ตัวอักษร",
     },
     en: {
@@ -28,8 +29,8 @@
       tooLong: "Please keep your wish within 600 characters.",
       invalid: "Some characters cannot be used. Please revise your wish.",
       unavailable: "Your wish cannot be sent right now. Please try again shortly.",
-      review: "Your wish is saved. I’ll check the benefits that apply to you next.",
-      signIn: "Please open this page through LINE, then return to send your wish.",
+      success: "MMD has received your wish.",
+      benefit: "Coupon, membership extension and Points are checked separately through LINE.",
       counter: "characters",
     },
     zh: {
@@ -41,8 +42,8 @@
       tooLong: "祝福内容请勿超过 600 个字符。",
       invalid: "内容含有无法使用的字符，请修改后重试。",
       unavailable: "暂时无法发送祝福，请稍后再试。",
-      review: "祝福已保存，我会继续为您核对适用权益。",
-      signIn: "请先通过 LINE 打开此页面，再返回发送祝福。",
+      success: "MMD 已收到您的祝福。",
+      benefit: "优惠券、会员期限和积分将通过 LINE 另行核验。",
       counter: "字符",
     },
   });
@@ -51,8 +52,8 @@
   else boot();
 
   function boot() {
-    const starts = [...document.querySelectorAll("[data-start]")];
-    for (const start of starts) bindStart(start);
+    for (const start of document.querySelectorAll("[data-start]")) bindStart(start);
+    void tryLinkStoredWish();
   }
 
   function bindStart(start) {
@@ -122,20 +123,19 @@
         body: JSON.stringify(buildPayload(validation.value)),
       });
       const payload = await response.json().catch(() => null);
-      if (isAuthFailure(response, payload)) {
-        setStatus(form, form.copy.signIn, "error");
-        window.location.assign(LIFF_URL);
-        return;
-      }
       if (!response.ok || payload?.ok !== true || payload?.state !== "completed") {
         setStatus(form, safeFailureMessage(payload, form.copy), "error");
         return;
       }
-      const message = safeServerMessage(payload) || form.copy.review;
+      if (validLinkToken(payload?.wish_link_token)) {
+        rememberLinkToken(payload.wish_link_token);
+        void tryLinkStoredWish();
+      }
+      const message = safeServerMessage(payload) || `${form.copy.success} ${form.copy.benefit}`;
       setStatus(form, message, "success");
       form.textarea.disabled = true;
       form.submit.hidden = true;
-      document.dispatchEvent(new CustomEvent("mmd:care-back:wish-completed", { detail: { state: "completed" } }));
+      document.dispatchEvent(new CustomEvent("mmd:care-back:wish-completed", { detail: { state: "completed", benefitVerificationRequired: true } }));
     } catch {
       setStatus(form, form.copy.unavailable, "error");
     } finally {
@@ -144,11 +144,28 @@
     }
   }
 
+  async function tryLinkStoredWish() {
+    const token = rememberedLinkToken();
+    if (!token) return;
+    try {
+      const response = await fetch(LINK_ENDPOINT, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { accept: "application/json", "content-type": "application/json" },
+        body: JSON.stringify({ wish_link_token: token }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (response.ok && payload?.ok === true && payload?.linked === true) forgetLinkToken();
+    } catch {
+      // Linking benefits is best-effort and must never block the public Wish.
+    }
+  }
+
   function endpointFromPage() {
     const raw = document.querySelector("[data-wish-endpoint]")?.getAttribute("data-wish-endpoint") || ENDPOINT;
     try {
       const url = new URL(raw, window.location.origin);
-      return url.origin === window.location.origin && url.pathname === ENDPOINT ? `${url.pathname}${url.search}` : ENDPOINT;
+      return url.origin === window.location.origin && [ENDPOINT, "/member/api/liff/care-back/wish"].includes(url.pathname) ? ENDPOINT : ENDPOINT;
     } catch {
       return ENDPOINT;
     }
@@ -163,7 +180,7 @@
   }
 
   function buildPayload(wishText) {
-    return { wish_text: wishText, request_id: requestId() };
+    return { wish_text: wishText, request_id: requestId(), language: currentLanguage() };
   }
 
   function requestId() {
@@ -175,56 +192,42 @@
 
   function safeServerMessage(payload) {
     const value = String(payload?.final_display?.message || "").trim();
-    return value && value.length <= 240 && !/[<>\u0000-\u001F\u007F]/.test(value) ? value : "";
+    return value && value.length <= 300 && !/[<>\u0000-\u001F\u007F]/.test(value) ? value : "";
   }
 
   function safeFailureMessage(payload, copy) {
     const code = String(payload?.error?.code || "");
     if (/INVALID|CONTENT|TOO_LONG/.test(code)) return copy.invalid;
-    if (/REVIEW|MEMBER_REQUIRED|CLAIM_REQUIRED|NOT_ELIGIBLE/.test(code)) return copy.review;
     return copy.unavailable;
   }
 
-  function isAuthFailure(response, payload) {
-    const code = String(payload?.error?.code || "");
-    return response.status === 401 || response.status === 403 || /AUTH|SESSION|LIFF_TOKEN/.test(code);
+  function validLinkToken(value) {
+    return /^pw_[A-Za-z0-9_-]{40,100}$/.test(String(value || ""));
   }
 
-  function updateCount(form) {
-    form.count.textContent = `${form.textarea.value.length} / ${MAX_WISH} ${form.copy.counter}`;
+  function rememberLinkToken(token) {
+    try { localStorage.setItem(LINK_TOKEN_KEY, token); } catch {}
   }
 
-  function setStatus(form, message, state) {
-    form.status.textContent = message;
-    form.status.dataset.state = state;
+  function rememberedLinkToken() {
+    try {
+      const token = localStorage.getItem(LINK_TOKEN_KEY) || "";
+      return validLinkToken(token) ? token : "";
+    } catch { return ""; }
   }
 
-  function currentCopy() {
-    const language = String(document.documentElement.lang || "th").toLowerCase();
-    if (language.startsWith("zh")) return COPY.zh;
-    if (language.startsWith("en")) return COPY.en;
-    return COPY.th;
+  function forgetLinkToken() {
+    try { localStorage.removeItem(LINK_TOKEN_KEY); } catch {}
   }
 
-  function element(tag, className, text) {
-    const node = document.createElement(tag);
-    node.className = className;
-    if (text) node.textContent = text;
-    return node;
-  }
-
-  function prefersReducedMotion() {
-    return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
-  }
+  function updateCount(form) { form.count.textContent = `${form.textarea.value.length} / ${MAX_WISH} ${form.copy.counter}`; }
+  function setStatus(form, message, state) { form.status.textContent = message; form.status.dataset.state = state; }
+  function currentLanguage() { const language = String(document.documentElement.lang || "th").toLowerCase(); return language.startsWith("zh") ? "zh" : language.startsWith("en") ? "en" : "th"; }
+  function currentCopy() { return COPY[currentLanguage()] || COPY.th; }
+  function element(tag, className, text) { const node = document.createElement(tag); node.className = className; if (text) node.textContent = text; return node; }
+  function prefersReducedMotion() { return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true; }
 
   if (globalThis.__MMD_WISH_TEST_MODE__ === true) {
-    globalThis.__MMD_WISH_TEST__ = Object.freeze({
-      validateWish,
-      buildPayload,
-      requestId,
-      safeServerMessage,
-      safeFailureMessage,
-      submitWish,
-    });
+    globalThis.__MMD_WISH_TEST__ = Object.freeze({ validateWish, buildPayload, requestId, safeServerMessage, safeFailureMessage, validLinkToken });
   }
 })();
