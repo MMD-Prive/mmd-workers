@@ -2,13 +2,16 @@
 
 **Promotion, Points & Operational Rules — Final working summary**  
 **Status:** Final rules for implementation  
-**Last updated:** 30 August 2026 (Asia/Bangkok)
+**Last updated:** 31 August 2026 (Asia/Bangkok)  
+**Coupon Validity Canon:** V2.2
 
 ## 1. Purpose
 
 CARE BACK is a **สิทธิ์ดูแลกลับ** for people MMD has previously cared for, and for verified new members entering through the campaign. It is not a mass discount, a membership package, or an automatic approval.
 
 Every benefit is determined from the member status and records MMD can verify or safely reconstruct from MMD-owned legacy evidence. Opening the campaign page or submitting an identity form alone does not create a coupon, points, payment approval, or a new membership term.
+
+Coupon Canon V2.2 supersedes earlier rules that treated 10% as a fixed guaranteed discount or used a 30-day coupon lifetime.
 
 ## 2. Campaign calendar
 
@@ -28,7 +31,7 @@ After 30 September 2026, the system must not create a new CARE BACK claim. A ver
 3. System creates or resumes one CARE BACK claim only.
 4. Customer sends a Birthday Wish to MMD through the canonical Wish flow.
 5. Only a successfully saved Wish can unlock a personal coupon.
-6. Membership, payment, and Points benefits are applied only after the relevant MMD verification or approved historical reconstruction is complete.
+6. Membership, payment, Points, and approved coupon benefits are applied only after the relevant MMD verification or approved historical reconstruction is complete.
 
 ## 4. Universal rules
 
@@ -54,24 +57,42 @@ After 30 September 2026, the system must not create a new CARE BACK claim. A ver
 - Membership extensions are applied by the canonical membership owner, not by the browser.
 - Points are applied by the canonical Points Ledger owner, not by the browser.
 
-### Personal coupon
+### Personal coupon — Canon V2.2
 
 - A personal coupon is available only after the customer’s Birthday Wish is successfully saved.
-- Customer-facing benefit: **UP TO 10% OFF** / **ส่วนลดสูงสุด 10%**.
-- The approved discount is determined by **Model level × job format**:
+- Customer-facing benefit before verification: **UP TO 10% OFF** / **ส่วนลดสูงสุด 10%** only.
+- **10% is the campaign maximum, not a guaranteed discount for every job.**
+- Public work should normally begin around **5%** where the applicable model/job combination permits it, while Public Models remain inside the approved 3–5% band.
+- The base discount matrix is determined by **Model level × job format**:
 
 | Model level | PN job format | VIP job format |
 | --- | ---: | ---: |
 | Public Models | 3–5% | 3–5% |
 | Standard Models | 5% | 7% |
-| Premium / EMs / GWs Models | 7% | 10% |
+| Premium / EMs / GWs Models | 5% | 10% |
 
-- `PN` and `VIP` in this matrix are job formats, not customer membership status.
-- Coupon color identifies membership status only: Blue = Standard, Silver = Premium, Red = Red Card, Black = Black Card + VIP customer status, and Gold = SVIP. Color must not determine the discount.
+- `PN` and `VIP` in this matrix are **job formats**, not customer membership status or tier.
+- Customer eligibility is an additional gate. The authoritative verified result must be returned as `approved_discount_percent` after the Model level × job format result has been checked against customer eligibility.
+- Browser/public code must never calculate or invent the approved percentage.
+- Before verified entitlement, Public surfaces may display only **“สูงสุด 10%” / “UP TO 10% OFF”**.
+- Coupon color identifies membership status only:
+
+| Card color | Membership status |
+| --- | --- |
+| Blue | Standard |
+| Silver | Premium |
+| Red | Red Card holder |
+| Black | Black Card holder + VIP customer status |
+| Gold | SVIP customer status |
+
+- Card color must never determine the discount.
+- Coupon Cards in all five colors may use status-specific visual design, but must not print a fixed rate by color. `UP TO 10% OFF` may be used as generic pre-verification campaign copy.
+- Backend must return `approved_discount_percent` as the authoritative actual discount after verification.
 - The coupon is single-use and limited to one coupon per booking for an eligible participating service.
 - Validity: **2 months from activation**. Redemption and booking confirmation must occur before expiry.
-- After a valid booking is confirmed, the service date may be scheduled up to **90 days from the original booking date**, including a date after coupon expiry.
+- After a valid booking is confirmed within coupon validity, the service date may be scheduled up to **90 days from the original booking date**, including a date after coupon expiry.
 - Rescheduling must remain within 90 days from the original booking date.
+- Example: activation on **1 September** → booking may be confirmed through **31 October** → if booked on **20 October**, service may be scheduled within 90 days from 20 October.
 - A personal code must not be displayed before the Wish is saved.
 - The code is personal, single-use, and cannot be issued repeatedly for the same CARE BACK claim.
 - The coupon is not cash and cannot be used for membership fees, renewal fees, tips, payment verification, Black Card approval, or SVIP access.
@@ -129,7 +150,7 @@ After 30 September 2026, the system must not create a new CARE BACK claim. A ver
 
 > สำหรับประวัติเก่า MMD จะตรวจจากข้อมูลที่เคยบันทึกไว้ เช่น LINE Official และ Note เดิมของ MMD โดยไม่จำเป็นต้องให้ลูกค้าหาสลิปเก่าครบทุกครั้ง
 
-> คูปองส่วนตัวส่วนลดสูงสุด 10% จะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จ ใช้ได้ 1 ครั้งกับบริการที่ร่วมรายการ โดยอัตราจริงขึ้นอยู่กับระดับนายแบบและรูปแบบงาน ต้องใช้จองภายใน 2 เดือนหลัง activation และเลือกวันรับบริการได้ไม่เกิน 90 วันนับจากวันที่จอง
+> คูปองส่วนตัวจะแสดงเพียง “ส่วนลดสูงสุด 10%” ก่อนยืนยันสิทธิ์ ส่วนลดจริงขึ้นอยู่กับระดับนายแบบ × รูปแบบงาน และสิทธิ์ที่ตรวจสอบได้ของลูกค้า ใช้ได้ 1 ครั้ง ต้องใช้ยืนยันการจองภายใน 2 เดือนหลังเปิดใช้ และเมื่อจองทันอายุคูปองแล้วสามารถเลือกวันรับบริการได้ไม่เกิน 90 วันนับจากวันที่จองครั้งแรก
 
 ## 8. Worker and data rules
 
@@ -137,7 +158,8 @@ After 30 September 2026, the system must not create a new CARE BACK claim. A ver
 - `immigrate-worker` owns legacy normalization/inference and preserved migration trace, not final entitlement mutation.
 - Per Notes are the primary historical Points reconstruction source.
 - The canonical Birthday Wish service is the only authority that can mark a Wish as saved.
-- Browser code must not write campaign claims, activate a coupon, apply Points, extend membership, approve payment, approve Black Card, or infer SVIP.
+- Backend coupon verification must return `approved_discount_percent`; card color and browser-visible tier styling are not discount authority.
+- Browser code must not write campaign claims, activate a coupon, calculate an authoritative discount, apply Points, extend membership, approve payment, approve Black Card, or infer SVIP.
 - Promotion states must distinguish at least: `wish_required`, `renewal_required`, `ready`, `used`, `expired`, `revoked`, and `invalid`.
 - Historical review states should distinguish at least: `legacy_found`, `legacy_review_required`, `historical_points_proposed`, `historical_points_approved`, and `historical_points_applied`.
 
@@ -150,6 +172,7 @@ After 30 September 2026, the system must not create a new CARE BACK claim. A ver
 - [ ] Historical customers are not blocked because old slips are missing.
 - [ ] Current/new payment verification remains separate from legacy reconstruction.
 - [ ] Existing claims remain idempotent and do not create duplicate codes, extensions, or Points.
+- [ ] Coupon verification returns `approved_discount_percent` and no client surface derives a fixed rate from card color.
 - [ ] Coupon redemption is connected to the official booking/service transaction owner before any live “use coupon” claim is made.
 - [ ] Production deployment and Webflow publication are separately approved and recorded.
 
@@ -160,7 +183,8 @@ After 30 September 2026, the system must not create a new CARE BACK claim. A ver
 1. Fix Wish login/resume loop.
 2. Confirm legacy LINE OA safe-match path is callable for CARE BACK review.
 3. Confirm Per Notes historical parser output can be reviewed/applied without requiring old slips.
-4. Keep all browser surfaces read-only for entitlement truth.
+4. Confirm `approved_discount_percent` is generated by the trusted backend path from verified booking context.
+5. Keep all browser surfaces read-only for entitlement truth.
 
 **Not a launch blocker**
 
@@ -170,7 +194,7 @@ After 30 September 2026, the system must not create a new CARE BACK claim. A ver
 - migrating every legacy record before launch
 - fully automatic Black Card or SVIP logic
 
-## 11. Final lock
+## 11. Final lock — Coupon Canon V2.2
 
 ```text
 Current member = verified identity + linked legacy history → +180 days from real existing expiry
@@ -178,7 +202,17 @@ Expired member = verified current renewal/payment/active status → +90 days +15
 New Standard = verified membership/payment → +150 Welcome Points
 New Premium = verified membership/payment → +250 Welcome Points
 Approved special campaign selection = verified membership/payment → up to +350 Points for Black Card review consideration only
-Personal coupon = Birthday Wish saved → up to 10% by model level × job format, one use, one coupon per booking, book within 2 months from activation, service date within 90 days from original booking date
+Personal coupon public copy = UP TO 10% OFF only
+Actual coupon rate = verified Model level × job format, constrained by customer eligibility → approved_discount_percent
+Public Models = PN 3–5%, VIP 3–5%
+Standard Models = PN 5%, VIP 7%
+Premium / EMs / GWs Models = PN 5%, VIP 10%
+PN / VIP = job formats, not customer tiers
+Coupon color = membership status only, never discount authority
+Coupon validity = 2 months from activation; one use; one coupon per booking
+Booking = must be confirmed before coupon expiry
+Service date = within 90 days from original booking date, even if after coupon expiry
+Reschedule = must remain within the same 90-day window from original booking date
 Historical Points = Per Notes / LINE Official legacy evidence first, 100 THB = 1 Point for supported service amounts
 Old slips = optional supporting evidence, not required for historical reconstruction
 ```
