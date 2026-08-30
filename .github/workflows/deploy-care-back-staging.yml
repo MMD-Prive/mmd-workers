@@ -8,6 +8,11 @@ on:
         required: true
         type: boolean
         default: false
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/deploy-care-back-staging.yml"
 
 concurrency:
   group: care-back-full-staging
@@ -36,7 +41,7 @@ jobs:
       - run: npx --yes wrangler@4 deploy --dry-run --env staging --config member-dashboard-chat-worker/wrangler.toml
 
   deploy:
-    if: inputs.deploy == true
+    if: github.event_name == 'push' || inputs.deploy == true
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 20
