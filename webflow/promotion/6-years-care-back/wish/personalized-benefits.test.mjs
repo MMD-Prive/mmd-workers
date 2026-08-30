@@ -22,3 +22,9 @@ test("wish bridge renders customer text without innerHTML", () => {
   assert.doesNotMatch(source, /innerHTML|insertAdjacentHTML|document\.write/);
   assert.doesNotThrow(() => new Function(source));
 });
+
+test("Wish completion refreshes Benefits and Wallet through the existing sequential loader", () => {
+  assert.match(source, /mmd:care-back:wish-completed/);
+  assert.match(source, /loadPersonalState\(\)/);
+  assert.doesNotMatch(source, /Promise\.all/);
+});
