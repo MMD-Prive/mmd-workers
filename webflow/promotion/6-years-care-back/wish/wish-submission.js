@@ -116,7 +116,7 @@
     form.submit.disabled = true;
     setStatus(form, form.copy.pending, "pending");
     try {
-      const response = await fetch(endpointFromPage(), {
+      const response = await fetch(ENDPOINT, {
         method: "POST",
         credentials: "same-origin",
         headers: { accept: "application/json", "content-type": "application/json" },
@@ -158,16 +158,6 @@
       if (response.ok && payload?.ok === true && payload?.linked === true) forgetLinkToken();
     } catch {
       // Linking benefits is best-effort and must never block the public Wish.
-    }
-  }
-
-  function endpointFromPage() {
-    const raw = document.querySelector("[data-wish-endpoint]")?.getAttribute("data-wish-endpoint") || ENDPOINT;
-    try {
-      const url = new URL(raw, window.location.origin);
-      return url.origin === window.location.origin && [ENDPOINT, "/member/api/liff/care-back/wish"].includes(url.pathname) ? ENDPOINT : ENDPOINT;
-    } catch {
-      return ENDPOINT;
     }
   }
 
