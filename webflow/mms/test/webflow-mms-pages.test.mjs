@@ -57,6 +57,12 @@ test("therapist application is the single canonical five-step source", async () 
   assert.match(js, /allowedFile/);
   assert.match(js, /controller\.abort\(\)},45000\)/);
   assert.match(js, /form\.elements\.namedItem\(name\)/);
+  assert.equal((html.match(/data-swipe-rail/g) || []).length, 5);
+  assert.equal((html.match(/class="mta-accordion/g) || []).length, 4);
+  assert.match(css, /scroll-snap-type:x mandatory/);
+  assert.match(css, /mta-motion-ready/);
+  assert.match(js, /IntersectionObserver/);
+  assert.match(js, /initAccordions/);
   assert.doesNotMatch(js, /form\.elements\[/);
   assert.doesNotMatch(js, /file\.lastModified/);
   assert.doesNotMatch(js, /localStorage\.removeItem\(storageKey\).*uploadFiles/);
