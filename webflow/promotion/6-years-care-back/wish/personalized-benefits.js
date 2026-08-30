@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const MEMBER_STATUS_URL = "https://miniapp.line.me/2010862595-yT4DCEMc?liff.state=%2Fmember%2Fliff%3Fintent%3Dstatus";
+  const MEMBER_STATUS_URL = "https://mmdbkk.com/member/liff?intent=status";
   const MEMBER_STATUS_CTA = "ตรวจสิทธิ์ของฉันผ่าน LINE";
   const host = document.querySelector("[data-mmd-care-back-personalized]") || createHost();
   if (!host) return;
@@ -42,18 +42,18 @@
     const wrap = document.createElement("div"); wrap.className = "mmd-care-personal__heading";
     const eyebrow = document.createElement("span"); eyebrow.textContent = "6 YEARS · YOUR CARE BACK";
     const title = document.createElement("h2"); title.textContent = "สิทธิ์ที่เตรียมไว้สำหรับคุณ";
-    const body = document.createElement("p"); body.textContent = "ข้อมูลส่วนนี้แสดงจากสถานะสมาชิกที่ MMD ยืนยันแล้วเท่านั้นครับ";
+    const body = document.createElement("p"); body.textContent = "ตรงนี้จะแสดงจากข้อมูลสมาชิกที่ MMD ยืนยันแล้วนะครับ จะได้ไม่ให้สิทธิ์ผิดคน";
     wrap.append(eyebrow, title, body); return wrap;
   }
 
   function benefitsPanel() {
     const panel = document.createElement("div"); panel.id = "mmd-care-personal-benefits"; panel.className = "mmd-care-personal__grid";
-    panel.append(empty("กำลังตรวจสอบ Benefits ของคุณครับ")); return panel;
+    panel.append(empty("เดี๋ยวเปอร์เช็กสิทธิ์ให้แป๊บนึงครับ")); return panel;
   }
 
   function walletPanel() {
     const panel = document.createElement("div"); panel.id = "mmd-care-personal-wallet"; panel.className = "mmd-care-personal__wallet";
-    panel.append(empty("กำลังตรวจสอบคูปองของคุณครับ")); return panel;
+    panel.append(empty("กำลังดูคูปองของคุณให้อยู่ครับ")); return panel;
   }
 
   function renderBenefits(items) {
@@ -63,30 +63,30 @@
       const type = String(item?.type || ""); const value = Number(item?.value);
       if (!Number.isInteger(value) || value <= 0) continue;
       const card = document.createElement("article");
-      const label = document.createElement("span"); label.textContent = ({ membership_extension:"ขยายเวลาสมาชิก", points_bonus:"คะแนนพิเศษ", personal_coupon:"คูปองส่วนตัว" })[type] || "CARE BACK";
+      const label = document.createElement("span"); label.textContent = ({ membership_extension:"เพิ่มวันสมาชิก", points_bonus:"Points พิเศษ", personal_coupon:"คูปองส่วนตัว" })[type] || "CARE BACK";
       const amount = document.createElement("strong"); amount.textContent = type === "membership_extension" ? `${value} วัน` : type === "points_bonus" ? `+${value} Points` : `${value}%`;
       const status = document.createElement("small"); status.textContent = stateLabel(item?.state);
       card.append(label, amount, status); panel.append(card);
     }
-    if (!panel.childElementCount) panel.append(empty("Benefits กำลังรอการตรวจสอบจาก MMD ครับ"));
+    if (!panel.childElementCount) panel.append(empty("ตอนนี้ยังไม่มีสิทธิ์ที่พร้อมใช้ เดี๋ยว MMD เช็กต่อให้นะครับ"));
   }
 
   function renderWallet(wallet) {
     const panel = document.getElementById("mmd-care-personal-wallet"); panel.replaceChildren();
     const code = String(wallet?.code || ""); const status = String(wallet?.status || "verification_required");
-    const label = document.createElement("span"); label.textContent = "คูปองของฉัน · Member LIFF";
+    const label = document.createElement("span"); label.textContent = "คูปองของฉัน";
     const value = document.createElement("strong"); value.textContent = /^[A-HJ-NP-Z2-9]{6}$/.test(code) ? code : stateLabel(status);
-    const note = document.createElement("small"); note.textContent = /^[A-HJ-NP-Z2-9]{6}$/.test(code) ? `${stateLabel(status)}${wallet?.expires_at ? ` · ถึง ${String(wallet.expires_at).slice(0, 10)}` : ""}` : "คูปองจะออกหลังส่งคำอวยพรและผ่าน payment/review gate ของคุณแล้วครับ";
+    const note = document.createElement("small"); note.textContent = /^[A-HJ-NP-Z2-9]{6}$/.test(code) ? `${stateLabel(status)}${wallet?.expires_at ? ` · ถึง ${String(wallet.expires_at).slice(0, 10)}` : ""}` : "คูปองจะขึ้นหลังส่งคำอวยพรและยืนยันเงื่อนไขที่เกี่ยวข้องครบครับ";
     panel.append(label, value, note);
   }
 
   function renderSignIn() {
     const panel = document.getElementById("mmd-care-personal-wallet"); panel.replaceChildren();
-    panel.append(empty("เปิดผ่าน LINE เพื่อดู Benefits และคูปองเฉพาะของคุณครับ"));
+    panel.append(empty("ถ้าอยากดูสิทธิ์เฉพาะของคุณ เปิดผ่าน LINE แล้วเดี๋ยวเปอร์พาเช็กให้ครับ"));
     const link = document.createElement("a"); link.href = MEMBER_STATUS_URL; link.textContent = MEMBER_STATUS_CTA; link.rel = "noopener";
     panel.append(link);
   }
 
   function empty(text) { const p = document.createElement("p"); p.textContent = text; return p; }
-  function stateLabel(value) { return ({ready:"พร้อมใช้",wish_required:"รอคำอวยพร",renewal_required:"รอต่ออายุ",payment_required:"รอยืนยันการชำระเงิน",verification_required:"รอตรวจสอบ",pending_application:"กำลังดำเนินการ",applied:"ได้รับแล้ว",used:"ใช้แล้ว",expired:"หมดอายุ",revoked:"ไม่พร้อมใช้งาน",invalid:"ไม่พร้อมใช้งาน"})[String(value || "")] || "กำลังตรวจสอบ"; }
+  function stateLabel(value) { return ({ready:"พร้อมใช้",wish_required:"รอคำอวยพร",renewal_required:"รอต่อสมาชิก",payment_required:"รอยืนยันยอด",verification_required:"กำลังเช็ก",pending_application:"กำลังดำเนินการ",applied:"ได้รับแล้ว",used:"ใช้แล้ว",expired:"หมดอายุ",revoked:"ยังใช้ไม่ได้",invalid:"ยังใช้ไม่ได้"})[String(value || "")] || "กำลังเช็ก"; }
 })();
