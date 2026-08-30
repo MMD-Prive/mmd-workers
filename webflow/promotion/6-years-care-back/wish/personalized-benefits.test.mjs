@@ -12,8 +12,11 @@ test("wish bridge reads only trusted same-site CARE BACK contracts", () => {
   assert.doesNotMatch(source, /line_user_id|member_id|localStorage|sessionStorage|getProfile\(/);
 });
 
-test("wish bridge points sign-in to the canonical Member Dashboard LIFF", () => {
-  assert.match(source, /2010862595-yT4DCEMc/);
+test("wish bridge points sign-in to the canonical Member Status Mini App CTA", () => {
+  assert.match(source, /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\?liff\.state=%2Fmember%2Fliff%3Fintent%3Dstatus/);
+  assert.match(source, /ตรวจสิทธิ์ของฉันผ่าน LINE/);
+  assert.doesNotMatch(source, /https:\/\/liff\.line\.me\/2010862595-yT4DCEMc\?intent=promo&campaign=care_back/);
+  assert.doesNotMatch(source, /เปิด CARE BACK ใน LINE/);
   assert.doesNotMatch(source, /2010298002-mbx9kqQn/);
 });
 
