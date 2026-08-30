@@ -86,6 +86,7 @@ test("GET login renders a safe server-side POST form", async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") || "", /^text\/html\b/);
   assert.match(response.headers.get("cache-control") || "", /no-store/);
+  assert.match(response.headers.get("content-security-policy") || "", /connect-src 'self'/);
   assert.match(response.headers.get("content-security-policy") || "", /form-action 'self'/);
   assert.match(html, /<title>MMD Privé · Internal Login<\/title>/);
   assert.match(html, /data-mmd-page="admin-login-approved-hero"/);
@@ -96,6 +97,8 @@ test("GET login renders a safe server-side POST form", async () => {
   assert.match(html, /mmd-login21/);
   assert.match(html, /method="post"/);
   assert.match(html, /action="\/internal\/admin\/login\/session"/);
+  assert.match(html, /data-mmd-login-form/);
+  assert.match(html, /fetch\(form\.action/);
   assert.match(html, /name="credential"/);
   assert.match(html, /name="next" value="\/internal\/admin\/kenji-knowledge"/);
   assert.match(html, /type="password"/);

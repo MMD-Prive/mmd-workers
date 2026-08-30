@@ -84,7 +84,7 @@ export function renderApprovedAdminLogin(
           <h1>Enter the<br>control room.</h1>
           <p>ใส่ access code ที่ได้รับอนุมัติ ระบบจะพาไปหน้าที่ตั้งไว้ต่อทันที ไม่ใช่หน้า setup account แล้วครับ</p>
           <div class="mmd-login21__chips"><span>Approved access</span><span>Secure session</span><span>Admin route</span></div>
-          <form method="post" action="${ADMIN_LOGIN_SESSION_PATH}" autocomplete="on">
+          <form method="post" action="${ADMIN_LOGIN_SESSION_PATH}" autocomplete="on" data-mmd-login-form>
             <input type="hidden" name="next" value="${escapeAttribute(next)}">
             <label for="adminCredential">Access Code
               <span class="mmd-login21__input"><input id="adminCredential" name="credential" type="password" required autocomplete="current-password" autofocus><button class="mmd-login21__toggle" type="button" aria-controls="adminCredential" aria-pressed="false">SHOW</button></span>
@@ -101,7 +101,7 @@ export function renderApprovedAdminLogin(
       </section>
     </main>
   </section>
-  <script>document.querySelector('.mmd-login21__toggle')?.addEventListener('click',function(){const i=document.getElementById('adminCredential');const show=i.type==='password';i.type=show?'text':'password';this.textContent=show?'HIDE':'SHOW';this.setAttribute('aria-pressed',String(show));});</script>
+  <script>(()=>{const form=document.querySelector('[data-mmd-login-form]');const input=document.getElementById('adminCredential');const message=document.querySelector('.mmd-login21__message');const submit=form?.querySelector('[type="submit"]');document.querySelector('.mmd-login21__toggle')?.addEventListener('click',function(){const show=input?.type==='password';if(!input)return;input.type=show?'text':'password';this.textContent=show?'HIDE':'SHOW';this.setAttribute('aria-pressed',String(show));});form?.addEventListener('submit',async(event)=>{if(!window.fetch||!window.URLSearchParams)return;event.preventDefault();if(message){message.textContent='Checking access...';message.classList.remove('is-error');message.setAttribute('role','status');}if(submit)submit.disabled=true;try{const response=await fetch(form.action,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(new FormData(form))});if(response.redirected&&response.ok){window.location.assign(response.url);return;}const html=await response.text();document.open();document.write(html);document.close();}catch{HTMLFormElement.prototype.submit.call(form);}});})();</script>
 </body>
 </html>`;
 
@@ -109,7 +109,7 @@ export function renderApprovedAdminLogin(
     status,
     headers: {
       "cache-control": "no-store, private, max-age=0",
-      "content-security-policy": "default-src 'none'; img-src https://cdn.prod.website-files.com; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
+      "content-security-policy": "default-src 'none'; img-src https://cdn.prod.website-files.com; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
       "content-type": "text/html; charset=utf-8",
       "referrer-policy": "no-referrer",
       "x-content-type-options": "nosniff",

@@ -41,9 +41,12 @@ test("admin login preserves the canonical secure form contract", async () => {
   assert.match(html, /name="next" value="\/internal\/admin\/control-room\?tab=queue"/);
   assert.match(response.headers.get("cache-control") || "", /no-store/);
   assert.match(response.headers.get("content-security-policy") || "", /img-src https:\/\/cdn\.prod\.website-files\.com/);
+  assert.match(response.headers.get("content-security-policy") || "", /connect-src 'self'/);
   assert.match(response.headers.get("content-security-policy") || "", /form-action 'self'/);
   assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker");
   assert.equal(response.headers.get("x-mmd-page"), "admin-login-approved-hero");
+  assert.match(html, /data-mmd-login-form/);
+  assert.match(html, /fetch\(form\.action/);
   assert.doesNotMatch(html, /access_code|\/v1\/admin\/auth\/login|\/kenji\/access-code\/validate/);
 });
 
