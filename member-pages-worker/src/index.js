@@ -1,5 +1,6 @@
 import liffFoundation from "./liff-identity-foundation.js";
 import { handleLiffMemberShell, isLiffMemberShellPath } from "./liff-member-shell.js";
+import { handlePublicCareBackWishRoute, isPublicCareBackWishPath } from "./public-care-back-wish.js";
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-coordinator.js";
@@ -7,6 +8,7 @@ export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-coord
 export default {
   async fetch(request, env = {}, ctx) {
     const url = new URL(request.url);
+    if (isPublicCareBackWishPath(url)) return handlePublicCareBackWishRoute(request, env);
     if (isLiffMemberShellPath(url)) return handleLiffMemberShell(request, env);
     return liffFoundation.fetch(request, env, ctx);
   },
