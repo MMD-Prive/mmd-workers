@@ -195,6 +195,8 @@ class AirtablePublicWishStore {
         "Campaign Claim": [input.claimRecordId],
         verified_customer_ref_hash: input.verifiedCustomerRefHash,
         source: "line_liff",
+        source_path: "/member/liff",
+        display_version: "care_back_v1",
         payload_json: JSON.stringify({ schema_version: 2, campaign_id: CAMPAIGN_ID, claim_id: input.claimId, wish_kind: "verified_linked" }),
         updated_at: input.now,
       }, typecast: false },
