@@ -81,6 +81,40 @@ test("public Wish rejects browser-supplied member or claim authority", async () 
   }
 });
 
+test("Airtable public Wish uses the existing member_page source choice with strict typecasting off", async () => {
+  const originalFetch = globalThis.fetch;
+  let postBody = null;
+  globalThis.fetch = async (url, init = {}) => {
+    const method = init.method || "GET";
+    if (method === "GET") return Response.json({ records: [] });
+    if (method === "POST") {
+      postBody = JSON.parse(init.body);
+      const fields = postBody.fields;
+      return Response.json({ id: "recABCDEFGHIJKLMN", fields });
+    }
+    throw new Error(`unexpected Airtable method ${method} for ${url}`);
+  };
+  try {
+    const env = {
+      LIFF_SESSION_SECRET: SECRET,
+      AIRTABLE_API_KEY: "pat_test",
+      AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg",
+      AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES: "tblvMJjYXy29mgDLb",
+    };
+    const response = await handlePublicWish(request("/member/api/care-back/public-wish", {
+      wish_text: "ขอบคุณสำหรับ 6 ปีครับ",
+      request_id: "wish-airtable-source-0001",
+      language: "th",
+    }), env);
+    assert.equal(response.status, 200, await response.text());
+    assert.equal(postBody.typecast, false);
+    assert.equal(postBody.fields.source, "member_page");
+    assert.equal(postBody.fields.source_path, "/promotion/6-years-care-back/wish");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("verified LIFF session can link an existing public Wish and start benefit evaluation", async () => {
   const store = publicStore();
   const env = {

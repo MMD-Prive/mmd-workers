@@ -174,7 +174,7 @@ class AirtablePublicWishStore {
       submitted_at: input.now,
       completed_at: input.now,
       public_display_text: input.language === "en" ? "MMD has received your birthday wish." : "MMD ได้รับคำอวยพรของคุณแล้วครับ",
-      source: "public_web",
+      source: "member_page",
       source_path: "/promotion/6-years-care-back/wish",
       language: input.language,
       display_version: "care_back_public_v1",
