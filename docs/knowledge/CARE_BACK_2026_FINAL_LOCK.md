@@ -1,7 +1,8 @@
 # MMD Privé — CARE BACK 2026 Final Lock
 
 Status: final rules for implementation  
-Effective date: 2026-08-20 (Asia/Bangkok)  
+Effective date: 2026-08-30 (Asia/Bangkok)
+
 Owner: Boss Per / MMD  
 Canonical route: `/promotion/6-years-care-back`
 
@@ -47,8 +48,30 @@ For historical Points specifically, **Per's original customer note is the primar
 
 ## Personal coupon
 
-- 10% discount, one use, eligible participating service only.
-- Valid 30 days from activation.
+- Customer-facing benefit copy: **UP TO 10% OFF** / **ส่วนลดสูงสุด 10%**.
+- The approved discount is determined by **Model level × job format**:
+
+| Model level | PN job format | VIP job format |
+| --- | ---: | ---: |
+| Public Models | 3–5% | 3–5% |
+| Standard Models | 5% | 7% |
+| Premium / EMs / GWs Models | 7% | 10% |
+
+- `PN` and `VIP` in this matrix are **job formats**, not customer membership status.
+- Coupon card color identifies membership status only and must never determine the discount:
+
+| Card color | Membership status |
+| --- | --- |
+| Blue | Standard |
+| Silver | Premium |
+| Red | Red Card holder |
+| Black | Black Card holder + VIP customer status |
+| Gold | SVIP customer status |
+
+- One use, one coupon per booking, for an eligible participating service only.
+- Valid for **2 months from activation**. The customer must redeem the coupon and confirm a booking before it expires.
+- After a valid booking is confirmed, the service date may be scheduled up to **90 days from the original booking date**, even when that service date falls after the coupon expiry date.
+- Rescheduling must not extend the service date beyond 90 days from the original booking date.
 - Wish saved is mandatory before activation or display.
 - One coupon per CARE BACK claim; viewing or copying never consumes it.
 - Used, expired, revoked, or invalid codes cannot be reactivated by the customer.
@@ -117,7 +140,7 @@ Kenji may explain, classify, route, and summarize safe verified or approved reco
 
 Customer-facing answer:
 
-> CARE BACK เป็นสิทธิ์ดูแลกลับที่ MMD ตรวจจากสถานะและประวัติจริงครับ เริ่มจากยืนยันผ่าน LINE แล้วส่ง Birthday Wish ให้บันทึกสำเร็จก่อน คูปองส่วนตัว 10% จึงจะเปิดได้ 1 ครั้งและมีอายุ 30 วันหลัง activation ส่วนประวัติสมาชิกและ Points เดิม MMD จะตรวจจากข้อมูลที่เคยบันทึกไว้ รวมถึง LINE Official และ Note เดิมของ MMD โดยไม่จำเป็นต้องให้คุณหาสลิปเก่าครบทุกครั้งครับ
+> CARE BACK เป็นสิทธิ์ดูแลกลับที่ MMD ตรวจจากสถานะและประวัติจริงครับ เริ่มจากยืนยันผ่าน LINE แล้วส่ง Birthday Wish ให้บันทึกสำเร็จก่อน จึงจะเปิดคูปองส่วนตัวส่วนลดสูงสุด 10% ได้ 1 ครั้ง โดยอัตราจริงขึ้นอยู่กับระดับนายแบบและรูปแบบงาน คูปองมีอายุใช้งาน 2 เดือนหลัง activation และเมื่อใช้จองภายในอายุคูปองแล้ว สามารถเลือกวันรับบริการล่วงหน้าได้ไม่เกิน 90 วันนับจากวันที่จอง ส่วนประวัติสมาชิกและ Points เดิม MMD จะตรวจจากข้อมูลที่เคยบันทึกไว้ รวมถึง LINE Official และ Note เดิมของ MMD โดยไม่จำเป็นต้องให้คุณหาสลิปเก่าครบทุกครั้งครับ
 
 Safety copy:
 
@@ -125,7 +148,7 @@ Safety copy:
 
 > การยืนยันตัวตนช่วยให้ MMD ตรวจสถานะ ประวัติที่เชื่อมได้ และ Points ที่ตรวจสอบหรือกู้คืนจากข้อมูลเดิมได้ แต่ไม่ได้หมายความว่าได้รับคูปองหรือ Points อัตโนมัติ
 
-> คูปองส่วนตัว 10% จะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จ ใช้ได้ 1 ครั้งกับบริการที่ร่วมรายการ ภายในระยะเวลาที่ระบบระบุ
+> คูปองส่วนตัวส่วนลดสูงสุด 10% จะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จ ใช้ได้ 1 ครั้งกับบริการที่ร่วมรายการ โดยอัตราจริงขึ้นอยู่กับระดับนายแบบและรูปแบบงาน ต้องใช้จองภายใน 2 เดือนหลัง activation และเลือกวันรับบริการได้ไม่เกิน 90 วันนับจากวันที่จอง
 
 ## Implementation gate
 

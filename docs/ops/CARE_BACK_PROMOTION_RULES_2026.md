@@ -2,7 +2,7 @@
 
 **Promotion, Points & Operational Rules — Final working summary**  
 **Status:** Final rules for implementation  
-**Last updated:** 20 August 2026 (Asia/Bangkok)
+**Last updated:** 30 August 2026 (Asia/Bangkok)
 
 ## 1. Purpose
 
@@ -57,8 +57,21 @@ After 30 September 2026, the system must not create a new CARE BACK claim. A ver
 ### Personal coupon
 
 - A personal coupon is available only after the customer’s Birthday Wish is successfully saved.
-- Benefit: **10% discount**, one use, for an eligible participating service.
-- Validity: **30 days from activation**.
+- Customer-facing benefit: **UP TO 10% OFF** / **ส่วนลดสูงสุด 10%**.
+- The approved discount is determined by **Model level × job format**:
+
+| Model level | PN job format | VIP job format |
+| --- | ---: | ---: |
+| Public Models | 3–5% | 3–5% |
+| Standard Models | 5% | 7% |
+| Premium / EMs / GWs Models | 7% | 10% |
+
+- `PN` and `VIP` in this matrix are job formats, not customer membership status.
+- Coupon color identifies membership status only: Blue = Standard, Silver = Premium, Red = Red Card, Black = Black Card + VIP customer status, and Gold = SVIP. Color must not determine the discount.
+- The coupon is single-use and limited to one coupon per booking for an eligible participating service.
+- Validity: **2 months from activation**. Redemption and booking confirmation must occur before expiry.
+- After a valid booking is confirmed, the service date may be scheduled up to **90 days from the original booking date**, including a date after coupon expiry.
+- Rescheduling must remain within 90 days from the original booking date.
 - A personal code must not be displayed before the Wish is saved.
 - The code is personal, single-use, and cannot be issued repeatedly for the same CARE BACK claim.
 - The coupon is not cash and cannot be used for membership fees, renewal fees, tips, payment verification, Black Card approval, or SVIP access.
@@ -116,7 +129,7 @@ After 30 September 2026, the system must not create a new CARE BACK claim. A ver
 
 > สำหรับประวัติเก่า MMD จะตรวจจากข้อมูลที่เคยบันทึกไว้ เช่น LINE Official และ Note เดิมของ MMD โดยไม่จำเป็นต้องให้ลูกค้าหาสลิปเก่าครบทุกครั้ง
 
-> คูปองส่วนตัว 10% จะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จ ใช้ได้ 1 ครั้งกับบริการที่ร่วมรายการ ภายในระยะเวลาที่ระบบระบุ
+> คูปองส่วนตัวส่วนลดสูงสุด 10% จะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จ ใช้ได้ 1 ครั้งกับบริการที่ร่วมรายการ โดยอัตราจริงขึ้นอยู่กับระดับนายแบบและรูปแบบงาน ต้องใช้จองภายใน 2 เดือนหลัง activation และเลือกวันรับบริการได้ไม่เกิน 90 วันนับจากวันที่จอง
 
 ## 8. Worker and data rules
 
@@ -165,7 +178,7 @@ Expired member = verified current renewal/payment/active status → +90 days +15
 New Standard = verified membership/payment → +150 Welcome Points
 New Premium = verified membership/payment → +250 Welcome Points
 Approved special campaign selection = verified membership/payment → up to +350 Points for Black Card review consideration only
-Personal coupon = Birthday Wish saved → 10%, one use, eligible service, 30 days from activation
+Personal coupon = Birthday Wish saved → up to 10% by model level × job format, one use, one coupon per booking, book within 2 months from activation, service date within 90 days from original booking date
 Historical Points = Per Notes / LINE Official legacy evidence first, 100 THB = 1 Point for supported service amounts
 Old slips = optional supporting evidence, not required for historical reconstruction
 ```
