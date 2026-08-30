@@ -1,5 +1,5 @@
 name = "member-dashboard-chat-worker"
-main = "src/index.js"
+main = "src/front-gate-index.js"
 compatibility_date = "2026-07-02"
 workers_dev = false
 
@@ -39,6 +39,25 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/member/api/liff/*"
+zone_name = "mmdbkk.com"
+
+# Public Birthday Wish is intentionally outside the LIFF prefix. The public
+# front gate owns these routes and delegates to member-pages-worker through the
+# service binding. Benefits remain separately verified through LINE/LIFF.
+[[routes]]
+pattern = "mmdbkk.com/member/api/care-back/public-wish*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/api/care-back/public-wish*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/member/api/care-back/link-wish*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/api/care-back/link-wish*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
