@@ -69,10 +69,12 @@ jobs:
           node --check src/admin-login-hero-worker.js
           node --check src/admin-login-page.js
           node --check src/dashboard-worker.js
+          node --check src/kenji-model-access-rpc.js
           node --test \
             admin-login-hero.test.mjs \
             admin-login-regression-guard.test.mjs \
-            admin-login-session.test.mjs
+            admin-login-session.test.mjs \
+            kenji-model-access-rpc.test.mjs
           node ../knowledge/kenji/validate.mjs
           node --test \
             kenji-knowledge-runtime-storage.test.mjs \

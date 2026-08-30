@@ -7,6 +7,10 @@ workers_dev = false
 binding = "MEMBER_PAGES_WORKER"
 service = "member-pages-worker"
 
+[[services]]
+binding = "ADMIN_WORKER"
+service = "admin-worker"
+
 # Canonical renewal page. These specific routes win before the generic front
 # gate and keep the full query string available to the local renderer.
 [[routes]]
@@ -113,6 +117,10 @@ LINE_KENJI_KNOWLEDGE_ENABLED = "true"
 # Model generation is a separate, production-gated capability. Keep it off in
 # committed configuration until an explicitly approved deployment enables it.
 LINE_KENJI_MODEL_ENABLED = "false"
+# Deterministic membership-gated model code/name lookup. This rollout switch
+# is independent from LLM generation and must remain off until the V1 privacy
+# review, synthetic smoke, and explicit Production approval are complete.
+LINE_KENJI_MODEL_ACCESS_ENABLED = "false"
 OPENAI_MODEL = "gpt-5.6"
 # Safe defaults: model-on still reaches nobody until approved SHA-256 tester
 # hashes and approved grounding card IDs are supplied as production config.

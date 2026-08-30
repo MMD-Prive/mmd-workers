@@ -36,6 +36,9 @@ const DEFAULT_SYNC_TABLE = "MMD — Console Inbox";
 const KENJI_MODEL_DEDUPE_TIMEOUT_MS = 300;
 const KENJI_MODEL_QUOTA_DEFAULT_LIMIT = 3;
 const KENJI_MODEL_QUOTA_DEFAULT_WINDOW_SECONDS = 15 * 60;
+const KENJI_MODEL_ACCESS_RPC_URL = "https://admin-worker.local/v1/internal/kenji/model-access";
+const KENJI_MODEL_ACCESS_TIMEOUT_MS = 900;
+const KENJI_MODEL_ACCESS_PENDING_TIMEOUT_MS = 500;
 
 const PUBLIC_MENU_TEXT = [
   "MMD Member Help",
@@ -240,6 +243,23 @@ function compactLookup(value) {
   return normalizeLookup(value).replace(/\s+/g, "");
 }
 
+export function extractKenjiModelLookupQuery(text = "") {
+  const raw = asString(text).normalize("NFKC").replace(/\s+/g, " ").trim();
+  if (!raw || raw.length > 100) return "";
+  const withoutPolite = raw.replace(/(?:ครับ|ค่ะ|คะ|นะครับ|หน่อยครับ|please)\s*$/i, "").trim();
+  const exactCode = withoutPolite.match(/^([A-Za-z]{2,8}(?:[-_]?\d{1,4}))$/);
+  if (exactCode) return exactCode[1];
+  const explicit = withoutPolite.match(/^(?:model|นายแบบ|รหัส(?:\s*model)?|model\s*code|code|ชื่อ(?:\s*model|\s*นายแบบ)?)\s*[:#-]?\s*(.{2,48})$/i);
+  if (!explicit) return "";
+  const query = asString(explicit[1]).replace(/^["'“”‘’]+|["'“”‘’?.!]+$/g, "").trim();
+  return query && query.length <= 48 ? query : "";
+}
+
+export function extractKenjiModelVerificationEmail(text = "") {
+  const value = asString(text).trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254 ? value : "";
+}
+
 export function isKenjiLineCandidate(text = "") {
   const compact = compactLookup(text);
   const spaced = normalizeLookup(text);
@@ -278,6 +298,8 @@ export function inferLineIntent(text = "", event = {}) {
     if (event?.type === "postback") return "postback";
     return "line_event";
   }
+
+  if (extractKenjiModelVerificationEmail(text)) return "model_access_verification";
 
   if (/(human handoff|human agent|คุยกับคน|เจ้าหน้าที่)/i.test(normalized)) return "human_handoff";
   if (/(ข้อมูล|ประวัติ|เบอร์|ไลน์|ชื่อ|โปรไฟล์|payment|สมาชิก).{0,24}(?:ลูกค้าคนอื่น|คนอื่น|สมาชิกคนอื่น)|(?:ลูกค้าคนอื่น|ข้อมูลส่วนตัว|private data|other customer)/i.test(normalized)) return "privacy_request";
@@ -337,6 +359,7 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(ราคา|price|rate|เรท|promotion|โปร|package|แพ็กเกจ|แพคเกจ|เท่าไร|เท่าไหร่)/i.test(normalized)) {
     return "pricing_review";
   }
+  if (extractKenjiModelLookupQuery(text)) return "model_lookup";
   if (/(ใช้บริการยังไง|ใช้บริการอย่างไร|เริ่มยังไง|เริ่มอย่างไร|ขั้นตอน|บริการมีอะไร|how\s+to\s+use|how\s+does\s+it\s+work)/i.test(normalized)) {
     return "service_guidance";
   }
@@ -480,6 +503,125 @@ async function getPublishedPerVoiceReply(env = {}, intent = "") {
   const card = cards.find((item) => asString(item.knowledge_id) === knowledgeId);
   const answer = asString(card?.customer_answer);
   return isSafePerVoiceKnowledge(answer) ? answer : "";
+}
+
+async function modelAccessPending(env = {}, lineUserId = "", action = "get", query = "") {
+  if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get || !asString(lineUserId)) return { ok: false };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("kenji_model_access_pending_timeout"), KENJI_MODEL_ACCESS_PENDING_TIMEOUT_MS);
+  try {
+    const userHash = await sha256Hex(lineUserId);
+    const objectId = env.KENJI_MODEL_DEDUPE.idFromName(`kenji-line-model-access-v1:${userHash}`);
+    const response = await env.KENJI_MODEL_DEDUPE.get(objectId).fetch("https://kenji-model-dedupe.internal/model-access/pending", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action, ...(action === "put" ? { query: asString(query).slice(0, 80) } : {}) }),
+      signal: controller.signal,
+    });
+    if (!response.ok) return { ok: false };
+    const payload = await response.json().catch(() => ({}));
+    return payload?.ok === true ? payload : { ok: false };
+  } catch (_) {
+    return { ok: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function requestKenjiModelAccess(env = {}, lineUserId = "", query = "", verificationEmail = "") {
+  if (!isEnabled(env.LINE_KENJI_MODEL_ACCESS_ENABLED)) return { status: "silent" };
+  if (!env.ADMIN_WORKER?.fetch || !asString(env.INTERNAL_TOKEN) || !asString(lineUserId) || !asString(query)) return { status: "silent" };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("kenji_model_access_timeout"), KENJI_MODEL_ACCESS_TIMEOUT_MS);
+  try {
+    const request = new Request(KENJI_MODEL_ACCESS_RPC_URL, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${asString(env.INTERNAL_TOKEN)}`,
+        "content-type": "application/json",
+        "x-mmd-internal-call": "true",
+        "x-mmd-service-binding": "member-dashboard-chat-worker",
+      },
+      body: JSON.stringify({
+        line_user_id: asString(lineUserId),
+        query: asString(query),
+        ...(verificationEmail ? { verification_email: asString(verificationEmail).toLowerCase() } : {}),
+      }),
+      signal: controller.signal,
+    });
+    const response = await env.ADMIN_WORKER.fetch(request);
+    if (!response.ok) return { status: "silent" };
+    const payload = await response.json().catch(() => ({}));
+    if (payload?.status === "clarification") return { status: "clarification" };
+    if (payload?.status === "verification_required") return { status: "verification_required" };
+    if (payload?.status === "renewal") return { status: "renewal" };
+    if (payload?.status !== "match" || !payload?.model || typeof payload.model !== "object") return { status: "silent" };
+    const modelCode = asString(payload.model.model_code).slice(0, 80);
+    const workingName = asString(payload.model.working_name).slice(0, 120);
+    const rawSummary = asString(payload.model.summary).slice(0, 500);
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$/.test(modelCode) || !isSafeKenjiModelCustomerText(workingName, 120)) return { status: "silent" };
+    const summary = isSafeKenjiModelCustomerText(rawSummary, 500) ? rawSummary : "";
+    return { status: "match", model: { model_code: modelCode, working_name: workingName, summary } };
+  } catch (_) {
+    return { status: "silent" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function isSafeKenjiModelCustomerText(value, max = 500) {
+  const text = asString(value);
+  if (!text || text.length > max) return false;
+  return !(
+    /(?:\b0\d{8,9}\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|https?:\/\/|line\s*(?:id|oa)|telegram|เบอร์(?:โทร)?|อีเมล|ไลน์ส่วนตัว)/i.test(text) ||
+    /(?:availability|available|schedule|ตาราง(?:งาน|คิว)|ว่าง(?:วันนี้|คืนนี้|พรุ่งนี้|ไหม)?|เช็กคิว)/i.test(text) ||
+    /(?:airtable|record[_\s-]?id|admin[_\s-]?note|internal|secret|token|authorization|bearer)/i.test(text)
+  );
+}
+
+function buildKenjiModelAccessReply(model = {}) {
+  const modelCode = asString(model.model_code);
+  const workingName = asString(model.working_name);
+  const summary = asString(model.summary);
+  if (!modelCode || !workingName) return "";
+  return `ชื่อที่ยืนยันได้คือ ${workingName} รหัส ${modelCode} ครับ${summary ? `\n\n${summary}` : ""}`;
+}
+
+function buildKenjiModelAccessDecision(access = {}, options = {}) {
+  const base = {
+    fallback: false,
+    model_attempted: false,
+    model_success: false,
+    model_latency_ms: 0,
+    knowledge_hits: 0,
+  };
+  if (access.status === "match") {
+    const answer = buildKenjiModelAccessReply(access.model);
+    if (answer) return { ...base, text: answer, reply_source: "model_access", guard_blocked: false, guard_reason: "" };
+  }
+  if (access.status === "clarification") {
+    return { ...base, text: "ขอชื่อที่ใช้ทำงานหรือรหัส Model ให้ครบอีกนิดครับ", reply_source: "model_access_clarification", guard_blocked: false, guard_reason: "" };
+  }
+  if (access.status === "verification_required" && options.pendingStored === true) {
+    return {
+      ...base,
+      text: "ขออีเมล Google ที่เคยแจ้งเปอร์ไว้สำหรับเข้าถึงแฟ้ม Premium Model หรือ Standard Models ครับ",
+      reply_source: "model_access_verification",
+      guard_blocked: false,
+      guard_reason: "",
+    };
+  }
+  if (access.status === "renewal") {
+    return {
+      ...base,
+      text: `สมาชิกของคุณหมดอายุหรือยังไม่ active ครับ จึงยังเปิดชื่อหรือรหัส Private Model ไม่ได้\n\nต่ออายุได้ที่นี่ครับ → ${MEMBER_RENEWAL_URL}`,
+      reply_source: "model_access_renewal",
+      guard_blocked: false,
+      guard_reason: "",
+    };
+  }
+  return { ...base, text: "", reply_source: "silent", guard_blocked: true, guard_reason: "model_access_silent" };
 }
 
 function getCachedPublishedPerVoiceReply(env = {}, intent = "") {
@@ -675,6 +817,26 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
   const eventText = getLineEventText(event);
   const intent = inferLineIntent(eventText, event);
   const capabilityDecision = decideKenjiCapability({ text: eventText, intent });
+
+  if (intent === "model_access_verification") {
+    const lineUserId = getLineUserId({ event });
+    const verificationEmail = extractKenjiModelVerificationEmail(eventText);
+    const pending = await modelAccessPending(env, lineUserId, "get");
+    if (!pending.ok || pending.found !== true || !asString(pending.query)) return buildKenjiModelAccessDecision({ status: "silent" });
+    const access = await requestKenjiModelAccess(env, lineUserId, pending.query, verificationEmail);
+    await modelAccessPending(env, lineUserId, "delete");
+    return buildKenjiModelAccessDecision(access);
+  }
+
+  if (intent === "model_lookup") {
+    const query = extractKenjiModelLookupQuery(eventText);
+    const lineUserId = getLineUserId({ event });
+    const access = await requestKenjiModelAccess(env, lineUserId, query);
+    if (access.status !== "verification_required") return buildKenjiModelAccessDecision(access);
+    const pending = await modelAccessPending(env, lineUserId, "put", query);
+    return buildKenjiModelAccessDecision(access, { pendingStored: pending.ok === true && pending.stored === true });
+  }
+
   const deterministicReply = buildKenjiLineReply(event, profile, options);
   const deterministicFirst = capabilityDecision.capability !== KENJI_CAPABILITIES.APPROVED_PUBLIC_KNOWLEDGE && capabilityDecision.capability !== KENJI_CAPABILITIES.SAFE_CONVERSATION;
   const cachedKnowledge = isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)

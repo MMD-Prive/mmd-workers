@@ -12,6 +12,10 @@ import {
 import { handleKenjiKnowledgeRequest, isKenjiKnowledgeRequest } from "./kenji-knowledge-runtime.js";
 import { handleKenjiPublicKnowledgeRequest, isKenjiPublicKnowledgeRequest } from "./kenji-public-knowledge-runtime.js";
 import { handleMmsAdminRequest, isMmsAdminRequest } from "./mms-admin-runtime.js";
+import {
+  handleKenjiModelAccessRpc,
+  KENJI_MODEL_ACCESS_RPC_PATH,
+} from "./kenji-model-access-rpc.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
@@ -58,6 +62,13 @@ export default {
     // broadening admin-worker ownership over /v1/model/*.
     if (MODEL_SCHEMA_PATCH_V1_ROUTE_SET.has(path)) {
       return coreWorker.fetch(request, env, ctx);
+    }
+
+    // Service-binding-only Kenji lookup. The handler also verifies the local
+    // service hostname, caller marker, and shared internal bearer before it
+    // reads membership or model data.
+    if (path === KENJI_MODEL_ACCESS_RPC_PATH) {
+      return handleKenjiModelAccessRpc(request, env);
     }
 
     if (path === ADMIN_LOGIN_SESSION_PATH && method === "POST") {
