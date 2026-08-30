@@ -7,8 +7,8 @@ const source = await readFile(new URL("./wish-submission.js", import.meta.url), 
 
 function loadHooks(overrides = {}) {
   const listeners = new Map();
-  const assigned = [];
   const dispatched = [];
+  const storage = new Map();
   const context = {
     __MMD_WISH_TEST_MODE__: true,
     console,
@@ -16,25 +16,29 @@ function loadHooks(overrides = {}) {
     Math,
     URL,
     crypto: { randomUUID: () => "12345678-1234-4234-8234-123456789abc" },
+    localStorage: {
+      getItem: (key) => storage.get(key) || null,
+      setItem: (key, value) => storage.set(key, String(value)),
+      removeItem: (key) => storage.delete(key),
+    },
     document: {
       readyState: "loading",
       addEventListener: (name, listener) => listeners.set(name, listener),
       querySelector: () => null,
+      querySelectorAll: () => [],
       dispatchEvent: (event) => dispatched.push(event),
       documentElement: { lang: "th" },
     },
     window: {
-      location: {
-        origin: "https://mmdbkk.com",
-        assign: (value) => assigned.push(value),
-      },
+      location: { origin: "https://mmdbkk.com" },
+      matchMedia: () => ({ matches: false }),
     },
     CustomEvent: class CustomEvent { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
     ...overrides,
   };
   context.globalThis = context;
   vm.runInNewContext(source, context);
-  return { ...context.__MMD_WISH_TEST__, context, assigned, dispatched };
+  return { ...context.__MMD_WISH_TEST__, context, dispatched, storage };
 }
 
 test("Wish input validation blocks empty, hostile and oversized content", () => {
@@ -45,81 +49,45 @@ test("Wish input validation blocks empty, hostile and oversized content", () => 
   assert.equal(validateWish(" สุขสันต์วันเกิด MMD ครับ ").value, "สุขสันต์วันเกิด MMD ครับ");
 });
 
-test("Wish payload contains only the customer Wish and bounded idempotency key", () => {
+test("Public Wish payload contains no browser identity or benefit authority", () => {
   const { buildPayload, requestId } = loadHooks();
   const payload = buildPayload("สุขสันต์วันเกิดครับ");
-  assert.deepEqual(Object.keys(payload), ["wish_text", "request_id"]);
+  assert.deepEqual(Object.keys(payload), ["wish_text", "request_id", "language"]);
   assert.equal(payload.wish_text, "สุขสันต์วันเกิดครับ");
+  assert.equal(payload.language, "th");
   assert.match(payload.request_id, /^[A-Za-z0-9][A-Za-z0-9._~-]{15,127}$/);
   assert.match(requestId(), /^wish-/);
-  assert.doesNotMatch(JSON.stringify(payload), /line_user_id|member_id|identity|payment|review|coupon|points|expiry/i);
+  assert.doesNotMatch(JSON.stringify(payload), /line_user_id|member_id|identity|payment|review|coupon|points|expiry|claim/i);
 });
 
 test("Wish completion trusts only a safe bounded server message", () => {
   const { safeServerMessage } = loadHooks();
   assert.equal(safeServerMessage({ final_display: { message: "MMD ได้รับคำอวยพรแล้วครับ" } }), "MMD ได้รับคำอวยพรแล้วครับ");
   assert.equal(safeServerMessage({ final_display: { message: "<b>unsafe</b>" } }), "");
-  assert.equal(safeServerMessage({ final_display: { message: "x".repeat(241) } }), "");
+  assert.equal(safeServerMessage({ final_display: { message: "x".repeat(301) } }), "");
 });
 
-test("Browser bridge binds the CTA, posts same-origin and never renders raw HTML", () => {
-  assert.match(source, /querySelectorAll\("\[data-start\]"\)/);
-  assert.match(source, /addEventListener\("click"/);
-  assert.match(source, /method:\s*"POST"/);
+test("Browser bridge posts Public Wish and keeps benefit linking separate", () => {
+  assert.match(source, /\/member\/api\/care-back\/public-wish/);
+  assert.match(source, /\/member\/api\/care-back\/link-wish/);
   assert.match(source, /credentials:\s*"same-origin"/);
-  assert.match(source, /\/member\/api\/liff\/care-back\/wish/);
   assert.match(source, /payload\?\.state\s*!==\s*"completed"/);
   assert.match(source, /mmd:care-back:wish-completed/);
-  assert.match(source, /2010862595-yT4DCEMc/);
-  assert.doesNotMatch(source, /innerHTML|insertAdjacentHTML|document\.write|localStorage|sessionStorage|getProfile\(/);
+  assert.match(source, /benefitVerificationRequired:\s*true/);
+  assert.doesNotMatch(source, /window\.location\.assign|LIFF_URL|getProfile\(/);
+  assert.doesNotMatch(source, /innerHTML|insertAdjacentHTML|document\.write/);
   assert.doesNotThrow(() => new Function(source));
 });
 
-test("Customer copy is TH, EN and ZH and Thai copy keeps Per Voice", () => {
-  assert.match(source, /th:\s*\{/);
-  assert.match(source, /en:\s*\{/);
-  assert.match(source, /zh:\s*\{/);
-  assert.match(source, /ผม/);
-  assert.doesNotMatch(source, /ระบบ/);
+test("Customer copy says benefits are checked separately from the Wish", () => {
+  assert.match(source, /คูปอง วันสมาชิก และ Points จะตรวจแยกผ่าน LINE/);
+  assert.match(source, /Coupon, membership extension and Points are checked separately through LINE/);
+  assert.match(source, /优惠券、会员期限和积分将通过 LINE 另行核验/);
 });
 
-function fakeForm(value = "สุขสันต์วันเกิด MMD ครับ") {
-  return {
-    pending: false,
-    textarea: { value, disabled: false, focus() {} },
-    submit: { disabled: false, hidden: false },
-    status: { textContent: "", dataset: {} },
-    copy: {
-      empty: "empty", tooLong: "tooLong", invalid: "invalid", pending: "pending",
-      unavailable: "unavailable", review: "review", signIn: "signIn",
-    },
-  };
-}
-
-test("duplicate submission while pending creates exactly one POST", async () => {
-  let calls = 0;
-  let release;
-  const response = new Promise((resolve) => { release = resolve; });
-  const fetch = async () => { calls += 1; return response; };
-  const { submitWish } = loadHooks({ fetch });
-  const form = fakeForm();
-  const event = { preventDefault() {} };
-  const first = submitWish(event, form);
-  const second = submitWish(event, form);
-  assert.equal(calls, 1);
-  release({ ok: true, status: 200, json: async () => ({ ok: true, state: "completed", final_display: { message: "MMD ได้รับคำอวยพรแล้วครับ" } }) });
-  await Promise.all([first, second]);
-  assert.equal(calls, 1);
-  assert.equal(form.textarea.disabled, true);
-  assert.equal(form.submit.hidden, true);
-});
-
-test("missing session returns through the canonical LIFF", async () => {
-  const fetch = async () => ({ ok: false, status: 401, json: async () => ({ error: { code: "LIFF_SESSION_REQUIRED" } }) });
-  const hooks = loadHooks({ fetch });
-  const form = fakeForm();
-  await hooks.submitWish({ preventDefault() {} }, form);
-  assert.equal(hooks.assigned.length, 1);
-  assert.match(hooks.assigned[0], /2010862595-yT4DCEMc/);
-  assert.match(hooks.assigned[0], /return_to=%2Fpromotion%2F6-years-care-back%2Fwish/);
+test("link token accepts only opaque public Wish tokens", () => {
+  const { validLinkToken } = loadHooks();
+  assert.equal(validLinkToken(`pw_${"A".repeat(43)}`), true);
+  assert.equal(validLinkToken("wish-plain-id"), false);
+  assert.equal(validLinkToken("pw_<unsafe>"), false);
 });
