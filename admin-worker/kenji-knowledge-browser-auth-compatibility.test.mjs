@@ -4,9 +4,13 @@ import test from "node:test";
 
 import worker from "./src/dashboard-worker.js";
 
+const ADMIN_LOGIN_CREDENTIAL = "test_browser_admin_login_credential";
+const ADMIN_SESSION_SECRET = "test_browser_admin_session_secret";
 const ADMIN_BEARER = "test_browser_admin_bearer";
 const CONFIRM_KEY = "test_browser_confirm_key";
 const BASE_ENV = {
+  ADMIN_LOGIN_CREDENTIAL,
+  ADMIN_SESSION_SECRET,
   ADMIN_BEARER,
   CONFIRM_KEY,
   ALLOWED_ORIGINS: "https://mmdbkk.com,https://www.mmdbkk.com",
@@ -25,7 +29,7 @@ async function jsonRequest(path, init = {}, env = BASE_ENV, host = "mmdbkk.com")
 async function adminGateCookie(overrides = {}) {
   const now = Date.now();
   const session = {
-    version: 1,
+    version: 2,
     scope: "internal_admin",
     host: "https://mmdbkk.com",
     iat: now,
@@ -201,6 +205,8 @@ test("responses do not expose browser cookie or server secrets", async () => {
   });
   const serialized = JSON.stringify(body);
 
+  assert.equal(serialized.includes(ADMIN_LOGIN_CREDENTIAL), false);
+  assert.equal(serialized.includes(ADMIN_SESSION_SECRET), false);
   assert.equal(serialized.includes(ADMIN_BEARER), false);
   assert.equal(serialized.includes(CONFIRM_KEY), false);
   assert.equal(serialized.includes(ADMIN_COOKIE_NAME), false);
@@ -218,7 +224,7 @@ async function signPayload(payload) {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw",
-    encoder.encode(ADMIN_BEARER),
+    encoder.encode(`${ADMIN_SESSION_SECRET}.${ADMIN_LOGIN_CREDENTIAL}`),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]

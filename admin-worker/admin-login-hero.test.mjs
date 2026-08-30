@@ -97,6 +97,64 @@ test("active admin entrypoint forwards Model Console V16 schema-patch routes to 
   assert.equal((await rate.json()).error, "signed_t_required");
 });
 
+test("active browser login accepts missing-origin safe browser posts only on allowed hosts", async () => {
+  const env = {
+    ADMIN_LOGIN_CREDENTIAL: "hero-login-credential",
+    ADMIN_SESSION_SECRET: "hero-session-secret",
+    ADMIN_BEARER: "hero-api-bearer",
+    INTERNAL_TOKEN: "hero-internal-token",
+    CONFIRM_KEY: "hero-confirm-key",
+    ALLOWED_ORIGINS: "https://mmdbkk.com",
+  };
+
+  for (const secFetchSite of [undefined, "same-origin", "none"]) {
+    const accepted = await loginRequest(env.ADMIN_LOGIN_CREDENTIAL, env, {
+      origin: null,
+      secFetchSite,
+    });
+    assert.equal(accepted.status, 303, `Sec-Fetch-Site ${secFetchSite || "absent"}`);
+    assert.match(accepted.headers.get("set-cookie") || "", /^mmd_admin_gate_v1=/);
+  }
+
+  for (const secFetchSite of ["cross-site", "same-site"]) {
+    const rejected = await loginRequest(env.ADMIN_LOGIN_CREDENTIAL, env, {
+      origin: null,
+      secFetchSite,
+    });
+    assert.equal(rejected.status, 403, `Sec-Fetch-Site ${secFetchSite}`);
+    assert.equal(rejected.headers.get("set-cookie"), null);
+  }
+
+  const disallowedHost = await loginRequest(env.ADMIN_LOGIN_CREDENTIAL, env, {
+    host: "evil.example",
+    origin: null,
+    secFetchSite: "same-origin",
+  });
+  assert.equal(disallowedHost.status, 403);
+  assert.equal(disallowedHost.headers.get("set-cookie"), null);
+});
+
+test("active browser login stays bound to ADMIN_LOGIN_CREDENTIAL only", async () => {
+  const env = {
+    ADMIN_LOGIN_CREDENTIAL: "hero-login-credential",
+    ADMIN_SESSION_SECRET: "hero-session-secret",
+    ADMIN_BEARER: "hero-api-bearer",
+    INTERNAL_TOKEN: "hero-internal-token",
+    CONFIRM_KEY: "hero-confirm-key",
+    ALLOWED_ORIGINS: "https://mmdbkk.com",
+  };
+
+  const valid = await loginRequest(env.ADMIN_LOGIN_CREDENTIAL, env);
+  assert.equal(valid.status, 303);
+  assert.match(valid.headers.get("set-cookie") || "", /^mmd_admin_gate_v1=/);
+
+  for (const credential of [env.ADMIN_BEARER, env.INTERNAL_TOKEN, env.CONFIRM_KEY]) {
+    const rejected = await loginRequest(credential, env);
+    assert.equal(rejected.status, 401);
+    assert.equal(rejected.headers.get("set-cookie"), null);
+  }
+});
+
 test("wrangler claims only the exact Model Console V16 additive routes on apex and www", () => {
   const wrangler = readFileSync(new URL("./wrangler.toml", import.meta.url), "utf8");
   const routes = [
@@ -116,3 +174,26 @@ test("wrangler claims only the exact Model Console V16 additive routes on apex a
   }
   assert.doesNotMatch(wrangler, /pattern = "(?:www\.)?mmdbkk\.com\/v1\/model\/\*"/);
 });
+
+async function loginRequest(
+  credential,
+  env,
+  { host = "mmdbkk.com", origin = `https://${host}`, next = "/internal/admin/control-room", secFetchSite } = {}
+) {
+  const activeWorker = (await import("./src/admin-login-hero-worker.js")).default;
+  const headers = {
+    "Content-Type": "application/x-www-form-urlencoded",
+  };
+  if (origin !== null) headers.Origin = origin;
+  if (secFetchSite !== undefined) headers["Sec-Fetch-Site"] = secFetchSite;
+
+  return activeWorker.fetch(
+    new Request(`https://${host}${ADMIN_LOGIN_SESSION_PATH}`, {
+      method: "POST",
+      headers,
+      body: new URLSearchParams({ credential, next }).toString(),
+    }),
+    env,
+    {}
+  );
+}

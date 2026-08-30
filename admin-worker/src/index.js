@@ -847,7 +847,7 @@ function isConfirmKeyAuthed(req, env) {
 
 async function isAdminGateSessionAuthed(req, env) {
   const session = await readAdminGateSession(req, env);
-  if (!session || session.version !== 1) return false;
+  if (!session || session.version !== 2) return false;
   if (session.scope !== "internal_admin") return false;
   if (!session.host || !ADMIN_GATE_ALLOWED_BASE_URLS.has(session.host)) return false;
   if (session.host !== new URL(req.url).origin) return false;
@@ -889,9 +889,8 @@ function parseCookieMap(req) {
 }
 
 async function handleAdminLogin(req, env) {
-  const origin = req.headers.get("Origin") || "";
   const requestOrigin = new URL(req.url).origin;
-  if (origin !== requestOrigin || !ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin)) {
+  if (!isAdminLoginOriginOk(req)) {
     return adminLoginPage(req, { status: 403, error: "Unable to sign in." });
   }
 
@@ -914,7 +913,7 @@ async function handleAdminLogin(req, env) {
   const next = normalizeAdminLoginNext(form.get("next"), requestOrigin);
   const now = Date.now();
   const session = {
-    version: 1,
+    version: 2,
     scope: "internal_admin",
     host: requestOrigin,
     iat: now,
@@ -948,19 +947,10 @@ function handleAdminLogout(req) {
 
 async function resolveAdminSessionProof(credential, env) {
   if (!credential) return null;
-  const loginCredential = str(env.ADMIN_LOGIN_CREDENTIAL || "");
-  const candidates = loginCredential
-    ? [["login", loginCredential]]
-    : [
-        ["bearer", str(env.ADMIN_BEARER || "")],
-        ["bearer", str(env.INTERNAL_TOKEN || "")],
-        ["confirmKey", str(env.CONFIRM_KEY || "")],
-      ];
-  let match = null;
-  for (const [kind, value] of candidates) {
-    if (value && (await constantTimeEqual(credential, value)) && !match) match = { kind, value };
-  }
-  return match;
+  const loginCredential = getAdminLoginCredential(env);
+  if (!loginCredential) return null;
+  if (await constantTimeEqual(credential, loginCredential)) return { kind: "login" };
+  return null;
 }
 
 async function constantTimeEqual(left, right) {
@@ -985,7 +975,29 @@ async function makeAdminGateCookie(session, env) {
 }
 
 function getAdminSessionSigningSecret(env) {
-  return str(env.ADMIN_SESSION_SECRET || env.ADMIN_BEARER || env.INTERNAL_TOKEN || env.CONFIRM_KEY || "");
+  const sessionSecret = getAdminSessionSecret(env);
+  const loginCredential = getAdminLoginCredential(env);
+  if (!sessionSecret || !loginCredential) return "";
+  return `${sessionSecret}.${loginCredential}`;
+}
+
+function isAdminLoginOriginOk(req) {
+  const requestOrigin = new URL(req.url).origin;
+  if (!ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin)) return false;
+
+  const origin = req.headers.get("Origin") || "";
+  if (origin) return origin === requestOrigin;
+
+  const fetchSite = (req.headers.get("Sec-Fetch-Site") || "").trim().toLowerCase();
+  return fetchSite === "" || fetchSite === "same-origin" || fetchSite === "none";
+}
+
+function getAdminLoginCredential(env) {
+  return str(env.ADMIN_LOGIN_CREDENTIAL || "");
+}
+
+function getAdminSessionSecret(env) {
+  return str(env.ADMIN_SESSION_SECRET || "");
 }
 
 async function signAdminGatePayload(payload, env) {

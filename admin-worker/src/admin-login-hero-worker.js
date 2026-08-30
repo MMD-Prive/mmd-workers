@@ -123,9 +123,8 @@ export function renderAdminLogin(request, { status = 200, error = "", next = "/i
 }
 
 async function handleCredentialBoundAdminLogin(request, env) {
-  const origin = request.headers.get("Origin") || "";
   const requestOrigin = new URL(request.url).origin;
-  if (origin !== requestOrigin || !ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin)) {
+  if (!isAdminLoginOriginOk(request)) {
     return renderAdminLogin(request, { status: 403, error: "รหัสยังไม่ถูกต้องครับ ลองตรวจอีกครั้ง" });
   }
 
@@ -194,6 +193,17 @@ function handleCredentialBoundAdminLogout(request) {
       "Set-Cookie": `${ADMIN_GATE_SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
     },
   });
+}
+
+function isAdminLoginOriginOk(request) {
+  const requestOrigin = new URL(request.url).origin;
+  if (!ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin)) return false;
+
+  const origin = request.headers.get("Origin") || "";
+  if (origin) return origin === requestOrigin;
+
+  const fetchSite = (request.headers.get("Sec-Fetch-Site") || "").trim().toLowerCase();
+  return fetchSite === "" || fetchSite === "same-origin" || fetchSite === "none";
 }
 
 async function applyCredentialBoundAdminGate(request, env, path, method) {
