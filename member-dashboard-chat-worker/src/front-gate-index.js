@@ -1,4 +1,5 @@
 import worker from "./index.js";
+export { KenjiModelIdempotency } from "./index.js";
 
 const WORKER_NAME = "member-dashboard-chat-worker";
 const PUBLIC_CARE_BACK_PATHS = new Set([
