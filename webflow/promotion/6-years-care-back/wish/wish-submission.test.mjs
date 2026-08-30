@@ -93,3 +93,20 @@ test("link token accepts only opaque public Wish tokens", () => {
   assert.equal(validLinkToken("wish-plain-id"), false);
   assert.equal(validLinkToken("pw_<unsafe>"), false);
 });
+
+test("CARE BACK main visual patch uses approved artwork and wider memory framing", async () => {
+  const visualScript = await readFile(new URL("../main/care-back-visual-patch.js", import.meta.url), "utf8");
+  const visualCss = await readFile(new URL("../main/care-back-visual-patch.css", import.meta.url), "utf8");
+
+  assert.match(visualScript, /6a945475d69ecb5bcd8a4c05_Boss%20Per%20beside\.webp/);
+  assert.match(visualScript, /6a929ff50646bb6234f57e1a_MMD%206%20Y%20Mob\.webp/);
+  assert.match(visualScript, /\.mx-letter__portrait img/);
+  assert.match(visualScript, /\.mx-wish__visual img/);
+  assert.doesNotMatch(visualScript, /\/member\/api\/|fetch\(/);
+  assert.doesNotThrow(() => new Function(visualScript));
+
+  assert.match(visualCss, /\.mx-memory-card:nth-child\(2\)/);
+  assert.match(visualCss, /\.mx-memory-card:nth-child\(3\)/);
+  assert.match(visualCss, /aspect-ratio:\s*4\s*\/\s*3/);
+  assert.match(visualCss, /object-position:\s*50%\s*46%/);
+});
