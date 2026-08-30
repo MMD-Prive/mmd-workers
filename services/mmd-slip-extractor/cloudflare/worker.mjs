@@ -10,7 +10,7 @@ export class SlipExtractorContainer extends Container {
     PORT: "8080",
     MMD_SLIP_EXTRACTOR_MAX_BYTES: "4194304"
   };
-  entrypoint = ["/usr/local/bin/node", "/app/container-server.mjs"];
+  entrypoint = ["/usr/local/bin/node", "/app/cloudflare/container-server.mjs"];
   enableInternet = false;
 
   onStart() {

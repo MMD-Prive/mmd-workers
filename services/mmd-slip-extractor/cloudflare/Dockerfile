@@ -6,7 +6,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY lib ./lib
-COPY cloudflare/container-server.mjs ./container-server.mjs
+COPY cloudflare/container-server.mjs ./cloudflare/container-server.mjs
 
 ENV NODE_ENV=production
 ENV PORT=8080
@@ -14,4 +14,4 @@ ENV PORT=8080
 USER node
 EXPOSE 8080
 
-ENTRYPOINT ["/usr/local/bin/node", "/app/container-server.mjs"]
+ENTRYPOINT ["/usr/local/bin/node", "/app/cloudflare/container-server.mjs"]

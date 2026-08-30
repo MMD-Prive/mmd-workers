@@ -28,9 +28,10 @@ test("container image and Worker use an explicit absolute startup contract", asy
     readFile(resolve(cloudflareDir, "worker.mjs"), "utf8")
   ]);
 
-  assert.match(dockerfile, /ENTRYPOINT \["\/usr\/local\/bin\/node", "\/app\/container-server\.mjs"\]/);
+  assert.match(dockerfile, /COPY cloudflare\/container-server\.mjs \.\/cloudflare\/container-server\.mjs/);
+  assert.match(dockerfile, /ENTRYPOINT \["\/usr\/local\/bin\/node", "\/app\/cloudflare\/container-server\.mjs"\]/);
   assert.match(worker, /defaultPort = 8080/);
-  assert.match(worker, /entrypoint = \["\/usr\/local\/bin\/node", "\/app\/container-server\.mjs"\]/);
+  assert.match(worker, /entrypoint = \["\/usr\/local\/bin\/node", "\/app\/cloudflare\/container-server\.mjs"\]/);
 });
 
 test("container server binds on PORT and serves health", async (t) => {
