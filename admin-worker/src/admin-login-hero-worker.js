@@ -263,9 +263,14 @@ function readCredentialBoundSessionCookieVersionIfDecodable(cookieMap) {
 }
 
 function isAdminLoginOriginOk(request) {
-  const origin = request.headers.get("Origin") || "";
   const requestOrigin = new URL(request.url).origin;
-  return Boolean(origin && origin === requestOrigin && ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin));
+  if (!ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin)) return false;
+
+  const origin = request.headers.get("Origin") || "";
+  if (origin) return origin === requestOrigin;
+
+  const fetchSite = (request.headers.get("Sec-Fetch-Site") || "").trim().toLowerCase();
+  return fetchSite === "" || fetchSite === "same-origin" || fetchSite === "none";
 }
 
 function isAdminLoginFormContentType(request) {

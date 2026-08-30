@@ -25,10 +25,24 @@ function request(path, init = {}, host = "mmdbkk.com", env = ENV) {
   return worker.fetch(new Request(`https://${host}${path}`, init), env, {});
 }
 
-function login(credential = ENV.ADMIN_LOGIN_CREDENTIAL, { host = "mmdbkk.com", next = KENJI, origin = `https://${host}`, contentType = "application/x-www-form-urlencoded", env = ENV } = {}) {
+function login(
+  credential = ENV.ADMIN_LOGIN_CREDENTIAL,
+  {
+    host = "mmdbkk.com",
+    next = KENJI,
+    origin = `https://${host}`,
+    contentType = "application/x-www-form-urlencoded",
+    secFetchSite,
+    env = ENV,
+  } = {}
+) {
+  const headers = { "Content-Type": contentType };
+  if (origin !== null) headers.Origin = origin;
+  if (secFetchSite !== undefined) headers["Sec-Fetch-Site"] = secFetchSite;
+
   return request(SESSION, {
     method: "POST",
-    headers: { Origin: origin, "Content-Type": contentType },
+    headers,
     body: new URLSearchParams({ credential, next }).toString(),
   }, host, env);
 }
@@ -169,6 +183,35 @@ test("valid login issues a fresh secure host-only cookie and redirects", async (
   } finally {
     console.log = originalLog;
   }
+});
+
+test("missing-origin browser posts are accepted only with safe fetch metadata and allowed host", async () => {
+  for (const secFetchSite of [undefined, "same-origin", "none"]) {
+    const accepted = await login(ENV.ADMIN_LOGIN_CREDENTIAL, {
+      origin: null,
+      secFetchSite,
+    });
+    assert.equal(accepted.status, 303, `Sec-Fetch-Site ${secFetchSite || "absent"}`);
+    assert.match(accepted.headers.get("set-cookie") || "", /^mmd_admin_gate_v1=/);
+  }
+
+  for (const secFetchSite of ["cross-site", "same-site"]) {
+    const rejected = await login(ENV.ADMIN_LOGIN_CREDENTIAL, {
+      origin: null,
+      secFetchSite,
+    });
+    assert.equal(rejected.status, 403, `Sec-Fetch-Site ${secFetchSite}`);
+    assert.equal(rejected.headers.get("set-cookie"), null);
+    assert.match(await rejected.text(), /Admin origin check failed\./);
+  }
+
+  const disallowedHost = await login(ENV.ADMIN_LOGIN_CREDENTIAL, {
+    host: "evil.example",
+    origin: null,
+    secFetchSite: "same-origin",
+  });
+  assert.equal(disallowedHost.status, 403);
+  assert.equal(disallowedHost.headers.get("set-cookie"), null);
 });
 
 test("dedicated login credential is isolated from API bearer credentials", async () => {

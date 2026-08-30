@@ -987,9 +987,14 @@ async function makeAdminGateCookie(session, env) {
 }
 
 function isAdminLoginOriginOk(req) {
-  const origin = req.headers.get("Origin") || "";
   const requestOrigin = new URL(req.url).origin;
-  return Boolean(origin && origin === requestOrigin && ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin));
+  if (!ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin)) return false;
+
+  const origin = req.headers.get("Origin") || "";
+  if (origin) return origin === requestOrigin;
+
+  const fetchSite = (req.headers.get("Sec-Fetch-Site") || "").trim().toLowerCase();
+  return fetchSite === "" || fetchSite === "same-origin" || fetchSite === "none";
 }
 
 function isAdminLoginFormContentType(req) {

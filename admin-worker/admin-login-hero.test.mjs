@@ -213,6 +213,41 @@ test("active browser login never accepts API bearer or confirm-key credentials",
   }
 });
 
+test("active login accepts missing-origin same-site browser posts only on allowed hosts", async () => {
+  const env = {
+    ADMIN_LOGIN_CREDENTIAL: "hero-login-credential",
+    ADMIN_SESSION_SECRET: "hero-session-secret",
+    ALLOWED_ORIGINS: "https://mmdbkk.com",
+  };
+
+  for (const secFetchSite of [undefined, "same-origin", "none"]) {
+    const accepted = await loginRequest(env.ADMIN_LOGIN_CREDENTIAL, env, {
+      origin: null,
+      secFetchSite,
+    });
+    assert.equal(accepted.status, 303, `Sec-Fetch-Site ${secFetchSite || "absent"}`);
+    assert.match(accepted.headers.get("set-cookie") || "", /^mmd_admin_gate_v1=/);
+  }
+
+  for (const secFetchSite of ["cross-site", "same-site"]) {
+    const rejected = await loginRequest(env.ADMIN_LOGIN_CREDENTIAL, env, {
+      origin: null,
+      secFetchSite,
+    });
+    assert.equal(rejected.status, 403, `Sec-Fetch-Site ${secFetchSite}`);
+    assert.equal(rejected.headers.get("set-cookie"), null);
+    assert.match(await rejected.text(), /Admin origin check failed\./);
+  }
+
+  const disallowedHost = await loginRequest(env.ADMIN_LOGIN_CREDENTIAL, env, {
+    host: "evil.example",
+    origin: null,
+    secFetchSite: "same-origin",
+  });
+  assert.equal(disallowedHost.status, 403);
+  assert.equal(disallowedHost.headers.get("set-cookie"), null);
+});
+
 test("active login cookie authenticates auth/me without exposing cookie values", async () => {
   const env = {
     ADMIN_LOGIN_CREDENTIAL: "hero-login-credential",
@@ -242,14 +277,21 @@ test("active login cookie authenticates auth/me without exposing cookie values",
   assert.equal(JSON.stringify(body).includes(cookie), false);
 });
 
-function loginRequest(credential, env, { origin = "https://mmdbkk.com", next = "/internal/admin/control-room" } = {}) {
+function loginRequest(
+  credential,
+  env,
+  { host = "mmdbkk.com", origin = "https://mmdbkk.com", next = "/internal/admin/control-room", secFetchSite } = {}
+) {
+  const headers = {
+    "Content-Type": "application/x-www-form-urlencoded",
+  };
+  if (origin !== null) headers.Origin = origin;
+  if (secFetchSite !== undefined) headers["Sec-Fetch-Site"] = secFetchSite;
+
   return activeWorker.fetch(
-    new Request(`https://mmdbkk.com${ADMIN_LOGIN_SESSION_PATH}`, {
+    new Request(`https://${host}${ADMIN_LOGIN_SESSION_PATH}`, {
       method: "POST",
-      headers: {
-        Origin: origin,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
+      headers,
       body: new URLSearchParams({ credential, next }).toString(),
     }),
     env,
