@@ -8,6 +8,16 @@ on:
         required: true
         type: boolean
         default: false
+  push:
+    branches:
+      - codex/care-back-v7-staging-smoke
+    paths:
+      - "member-pages-worker/**"
+      - "member-dashboard-chat-worker/**"
+      - "care-back-staging-fixtures-worker/**"
+      - "scripts/smoke-care-back-staging.mjs"
+      - "webflow/promotion/6-years-care-back/wish/**"
+      - ".github/workflows/deploy-care-back-staging.yml"
 
 concurrency:
   group: care-back-full-staging
@@ -36,7 +46,7 @@ jobs:
       - run: npx --yes wrangler@4 deploy --dry-run --env staging --config member-dashboard-chat-worker/wrangler.toml
 
   deploy:
-    if: inputs.deploy == true
+    if: github.event_name == 'push' || inputs.deploy == true
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 20
