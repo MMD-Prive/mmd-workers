@@ -1,5 +1,5 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
-const DEFAULT_AIRTABLE_REQUEST_TIMEOUT_MS = 4000;
+const DEFAULT_AIRTABLE_REQUEST_TIMEOUT_MS = 7000;
 const MIN_AIRTABLE_REQUEST_TIMEOUT_MS = 500;
 const MAX_AIRTABLE_REQUEST_TIMEOUT_MS = 10000;
 const CANONICAL_MEMBER_ROUTE = "/sigil/member/membership";
@@ -244,7 +244,8 @@ class AirtableLiffGatewayStore {
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), airtableRequestTimeoutMs(this.env));
+    const startedAt = Date.now();
+    const timeout = setTimeout(() => controller.abort(), liffGatewayAirtableTimeoutMs(this.env));
     try {
       const response = await fetch(url.toString(), {
         method,
@@ -261,6 +262,13 @@ class AirtableLiffGatewayStore {
       }
       return payload;
     } catch (error) {
+      const code = error instanceof LiffGatewayStorageError ? error.code : "LIFF_GATEWAY_STORAGE_UNAVAILABLE";
+      console.warn({
+        event: "liff_gateway_airtable_failure",
+        operation: method,
+        failure_class: error?.name === "AbortError" ? "timeout" : code === "LIFF_GATEWAY_STORAGE_FORBIDDEN" ? "forbidden" : "storage_unavailable",
+        duration_ms: Math.max(0, Date.now() - startedAt),
+      });
       if (error instanceof LiffGatewayStorageError) throw error;
       throw new LiffGatewayStorageError();
     } finally {
@@ -307,7 +315,7 @@ function airtableSessionRoute(value) {
   return route === CANONICAL_MEMBER_ROUTE ? AIRTABLE_MEMBER_ROUTE : route;
 }
 
-function airtableRequestTimeoutMs(env) {
+export function liffGatewayAirtableTimeoutMs(env = {}) {
   const configured = Number(env.AIRTABLE_REQUEST_TIMEOUT_MS);
   if (!Number.isInteger(configured)) return DEFAULT_AIRTABLE_REQUEST_TIMEOUT_MS;
   return Math.min(MAX_AIRTABLE_REQUEST_TIMEOUT_MS, Math.max(MIN_AIRTABLE_REQUEST_TIMEOUT_MS, configured));
