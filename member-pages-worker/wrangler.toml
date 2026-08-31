@@ -16,6 +16,7 @@ LINE_DASHBOARD_CHANNEL_ID = "2010862595"
 DRIVE_MEMBERSHIP_OWNER_EMAIL = "malemodel.bkk@gmail.com"
 DRIVE_PREMIUM_PACKAGE_FOLDER_ID = "16DfhOo-DwJedBaTi_pvkxGEnPjWGdxxD"
 DRIVE_STANDARD_PACKAGE_FOLDER_ID = "1Snw1gTJNzkMxHlH-Nt2g1-6mt_3GNkT8"
+DRIVE_FALLBACK_MEMBERSHIP_OWNER_EMAIL = "mmdprive@gmail.com"
 AIRTABLE_TABLE_CARE_BACK_CLAIMS = "MMD — Campaign Claims"
 AIRTABLE_TABLE_CARE_BACK_PROMO_CODES = "MMD — Promo Codes"
 AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES = "tblvMJjYXy29mgDLb"
@@ -52,10 +53,27 @@ new_sqlite_classes = ["CareBackBirthdayWishCoordinator"]
 #   with Google Drive metadata read access. The runtime verifies the authorized
 #   Drive account before trusting package-folder permissions.
 #
-# Google Drive membership source of truth:
+# Optional legacy fallback Drive (checked only after the main Drive returns a
+# definitive no-access result for the verified LINE email):
+# - DRIVE_FALLBACK_MEMBERSHIP_OWNER_EMAIL = mmdprive@gmail.com
+# - DRIVE_FALLBACK_PREMIUM_PACKAGE_FOLDER_ID = verified Premium Package folder ID
+# - DRIVE_FALLBACK_STANDARD_PACKAGE_FOLDER_ID = verified Standard Package folder ID
+# - optional secret GOOGLE_DRIVE_FALLBACK_REFRESH_TOKEN authorized by
+#   mmdprive@gmail.com. GOOGLE_DRIVE_FALLBACK_CLIENT_ID / CLIENT_SECRET may also
+#   be set; when omitted the primary OAuth client id/secret are reused.
+# - if no fallback refresh token is set, the primary malemodel.bkk@gmail.com
+#   token may inspect the fallback folders only when that account can read them.
+# - the runtime verifies each configured fallback folder is actually owned by
+#   mmdprive@gmail.com before trusting its permissions.
+#
+# Google Drive membership source priority:
+# 1. malemodel.bkk@gmail.com (main)
+# 2. mmdprive@gmail.com (fallback only when main has no package permission)
+#
+# Package hierarchy:
 # - Premium Package grants standard + premium model access.
 # - Standard Package grants standard model access only.
-# - Model inventory/archive folders are never member identity evidence.
+# - Model inventory/archive/compcard folders are never member identity evidence.
 #
 # No public custom route is attached here. member-dashboard-chat-worker owns the
 # public member front gate and delegates LIFF identity calls through a service
