@@ -12,7 +12,7 @@ const LINE_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify";
 const SESSION_TTL_SECONDS = 15 * 60;
 const HALL_TOKEN_TTL_SECONDS = 5 * 60;
 const VERIFY_TIMEOUT_MS = 5000;
-const MEMBER_RESOLVER_TIMEOUT_MS = 5000;
+const MEMBER_RESOLVER_TIMEOUT_MS = 8000;
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const MEMBER_RESOLVER_PATH = "/__internal/member-status/resolve";
 const MEMBER_PROFILE_RESOLVER_PATH = "/__internal/member-profile/read";
@@ -298,14 +298,12 @@ export async function handleStart(request, env = {}) {
   if (!verified.ok) return json({ ok: false, error: { code: verified.code, message: verified.message } }, verified.status);
 
   const identityKey = await keyedDigest(env, `identity:${verified.sub}`);
-  const existing = await resolveExistingMember(env, verified.sub);
-  if (!existing.ok) return json({ ok: false, error: { code: "MEMBER_RESOLUTION_FAILED", message: "Member identity could not be resolved safely." } }, 503);
-  const memberProfile = existing.exists ? await resolveMemberProfile(env, verified.sub) : null;
-  if (existing.exists && !memberProfile?.ok) {
-    return json({ ok: false, error: { code: "MEMBER_PROFILE_RESOLUTION_FAILED", message: "Member profile could not be resolved safely." } }, 503);
+  const memberState = await resolveMemberIdentity(env, verified.sub);
+  if (!memberState.ok) {
+    return json({ ok: false, error: { code: "MEMBER_RESOLUTION_FAILED", message: "Member identity could not be resolved safely." } }, 503);
   }
 
-  const pending = existing.exists ? null : await getOrCreatePendingIdentity(env, identityKey);
+  const pending = memberState.exists ? null : await getOrCreatePendingIdentity(env, identityKey);
   const intent = normalizeIntent(body.intent);
   const liffIntent = normalizeLiffIntent(body.liff_intent ?? body.intent);
   const continuity = cleanContinuity(new URL(request.url).searchParams.get("t"));
@@ -314,9 +312,9 @@ export async function handleStart(request, env = {}) {
     verified_at: new Date().toISOString(),
     renewal_flow_status: "identity_linked",
     identity_key: identityKey,
-    member_exists: existing.exists,
-    member_id: memberProfile?.member_id || null,
-    member_profile: memberProfile?.profile || null,
+    member_exists: memberState.exists,
+    member_id: memberState.member_id || null,
+    member_profile: memberState.profile || null,
     pending_identity_id: pending?.pending_identity_id || null,
     intent,
     liff_intent: liffIntent,
@@ -329,7 +327,7 @@ export async function handleStart(request, env = {}) {
     promo_code: normalizePromoCode(body.promo_code),
     promotion_campaign: normalizeCampaign(body.campaign),
     route_after_liff: null,
-    next_screen_key: liffIntent === "unknown" ? "start_intent" : nextScreenForIntent(liffIntent, existing.exists),
+    next_screen_key: liffIntent === "unknown" ? "start_intent" : nextScreenForIntent(liffIntent, memberState.exists),
     continuity,
   });
   try {
@@ -1137,6 +1135,65 @@ function approvedLineChannelIds(env) {
   return [...new Set(values)].slice(0, 2);
 }
 
+async function resolveMemberIdentity(env, lineUserId) {
+  const resolver = env.MEMBER_STATUS_RESOLVER;
+  const resolverSecret = String(env.MEMBER_STATUS_RESOLVER_SECRET || "");
+  if (!resolver?.fetch || resolverSecret.length < 32) return { ok: false, exists: false };
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(env.LIFF_MEMBER_RESOLVER_TIMEOUT_MS || MEMBER_RESOLVER_TIMEOUT_MS));
+  try {
+    const response = await resolver.fetch(new Request(`https://mmd-auth-worker.internal${MEMBER_PROFILE_RESOLVER_PATH}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [MEMBER_RESOLVER_SECRET_HEADER]: resolverSecret,
+      },
+      body: JSON.stringify({ line_user_id: lineUserId, purpose: MEMBER_PROFILE_RESOLVER_PURPOSE }),
+      signal: controller.signal,
+    }));
+    const payload = await response.json().catch(() => null);
+    const data = payload?.data && typeof payload.data === "object" ? payload.data : null;
+    if (!response.ok || payload?.ok === false || !data || typeof data.member_exists !== "boolean") {
+      console.warn({
+        event: "member_profile_resolver_failure",
+        stage: "member_profile_read",
+        failure_class: response.status >= 500 ? "upstream_5xx" : "invalid_response",
+        status: response.status,
+        duration_ms: Math.max(0, Date.now() - startedAt),
+      });
+      return { ok: false, exists: false };
+    }
+    if (data.member_exists !== true) return { ok: true, exists: false, member_id: null, profile: null };
+    if (!data.member_id || !data.profile) {
+      console.warn({
+        event: "member_profile_resolver_failure",
+        stage: "member_profile_read",
+        failure_class: "malformed_member_profile",
+        status: response.status,
+        duration_ms: Math.max(0, Date.now() - startedAt),
+      });
+      return { ok: false, exists: false };
+    }
+    return {
+      ok: true,
+      exists: true,
+      member_id: String(data.member_id).trim().slice(0, 160),
+      profile: safeMemberProfile(data.profile),
+    };
+  } catch (error) {
+    console.warn({
+      event: "member_profile_resolver_failure",
+      stage: "member_profile_read",
+      failure_class: error?.name === "AbortError" ? "timeout" : "request_failure",
+      status: null,
+      duration_ms: Math.max(0, Date.now() - startedAt),
+    });
+    return { ok: false, exists: false };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 async function resolveExistingMember(env, lineUserId) {
   const resolver = env.MEMBER_STATUS_RESOLVER;
   const resolverSecret = String(env.MEMBER_STATUS_RESOLVER_SECRET || "");

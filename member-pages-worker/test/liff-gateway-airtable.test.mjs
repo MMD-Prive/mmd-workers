@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 
-import { getLiffGatewayStore, LIFF_GATEWAY_ROUTES, LiffGatewayStorageError } from "../src/liff-gateway-airtable.js";
+import { getLiffGatewayStore, LIFF_GATEWAY_ROUTES, LiffGatewayStorageError, liffGatewayAirtableTimeoutMs } from "../src/liff-gateway-airtable.js";
 
 const realFetch = globalThis.fetch;
 
@@ -34,6 +34,13 @@ function mockAirtable(handler) {
 }
 
 describe("LIFF gateway Airtable adapter", () => {
+  it("uses a bounded seven-second gateway timeout by default and clamps explicit overrides", () => {
+    assert.equal(liffGatewayAirtableTimeoutMs(env()), 7000);
+    assert.equal(liffGatewayAirtableTimeoutMs(env({ AIRTABLE_REQUEST_TIMEOUT_MS: 8500 })), 8500);
+    assert.equal(liffGatewayAirtableTimeoutMs(env({ AIRTABLE_REQUEST_TIMEOUT_MS: 100 })), 500);
+    assert.equal(liffGatewayAirtableTimeoutMs(env({ AIRTABLE_REQUEST_TIMEOUT_MS: 20000 })), 10000);
+  });
+
   it("maps the internal session id to the production renewal_session_id field", async () => {
     const calls = mockAirtable(async () => new Response(JSON.stringify({ id: "recLiff1" }), {
       status: 200,
