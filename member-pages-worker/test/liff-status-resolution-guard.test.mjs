@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { driveBootstrapDiagnosticRef, withDriveBootstrapDiagnostic } from "../src/drive-bootstrap-debug.js";
 import { rewritePendingStatusStartResponse } from "../src/liff-status-resolution-guard.js";
 import { withStatusFirstMemberResolver } from "../src/liff-status-first-member-resolver.js";
 
@@ -34,6 +35,63 @@ test("rewrites unresolved status start into explicit final state", async () => {
     label: "ยังไม่เคยเป็นสมาชิก · สมัครสมาชิก",
     endpoint: "/member/api/liff/intent",
   }]);
+});
+
+test("debug unresolved status renders only the bounded Drive bootstrap reference", async () => {
+  const request = new Request("https://mmdbkk.com/member/api/liff/start?debug=1", { method: "POST" });
+  const firstPayload = {
+    ok: true,
+    data: {
+      member_resolved: false,
+      pending_identity: true,
+      next_screen_key: "status_result",
+      screen: { key: "status_result", copy: "status", actions: [] },
+    },
+  };
+  const diagnostic = withDriveBootstrapDiagnostic(
+    request,
+    jsonResponse(firstPayload),
+    firstPayload,
+    { mapped: false, reason: "line_email_claim_missing" },
+  );
+  const rewritten = await rewritePendingStatusStartResponse(request, diagnostic);
+  const payload = await rewritten.json();
+  assert.equal(payload.data.drive_bootstrap_diagnostic_ref, "DRIVE_BOOTSTRAP_LINE_EMAIL_CLAIM_MISSING");
+  assert.match(payload.data.screen.copy, /Ref: DRIVE_BOOTSTRAP_LINE_EMAIL_CLAIM_MISSING$/);
+  assert.equal(payload.data.screen.copy.includes("member@example.com"), false);
+});
+
+test("normal unresolved status never renders a Drive bootstrap reference", async () => {
+  const request = new Request("https://mmdbkk.com/member/api/liff/start", { method: "POST" });
+  const response = jsonResponse({
+    ok: true,
+    data: {
+      member_resolved: false,
+      pending_identity: true,
+      drive_bootstrap_diagnostic_ref: "DRIVE_BOOTSTRAP_DRIVE_NOT_CONFIGURED",
+      next_screen_key: "status_result",
+      screen: { key: "status_result", copy: "status", actions: [] },
+    },
+  });
+  const rewritten = await rewritePendingStatusStartResponse(request, response);
+  const payload = await rewritten.json();
+  assert.equal(payload.data.screen.copy.includes("Ref:"), false);
+});
+
+test("Drive bootstrap diagnostic allowlists known reasons and collapses unknown upstream codes", () => {
+  const request = new Request("https://mmdbkk.com/member/api/liff/start?debug=1", { method: "POST" });
+  assert.equal(
+    driveBootstrapDiagnosticRef(request, { mapped: false, reason: "drive_not_configured" }),
+    "DRIVE_BOOTSTRAP_DRIVE_NOT_CONFIGURED",
+  );
+  assert.equal(
+    driveBootstrapDiagnosticRef(request, { mapped: false, reason: "SOME_PRIVATE_UPSTREAM_CODE" }),
+    "DRIVE_BOOTSTRAP_OTHER",
+  );
+  assert.equal(
+    driveBootstrapDiagnosticRef(new Request("https://mmdbkk.com/member/api/liff/start", { method: "POST" }), { mapped: false, reason: "drive_not_configured" }),
+    "",
+  );
 });
 
 test("keeps resolved status response unchanged", async () => {
