@@ -17,7 +17,7 @@ const replacement = `  function isDiagnosticMode() {
 
   function showTemporaryError(ref) {
     let message = "ตอนนี้ระบบตรวจสอบข้อมูลชั่วคราวยังไม่พร้อมครับ กรุณาลองใหม่อีกครั้ง";
-    if (isDiagnosticMode() && ref) message += "\\nRef: " + ref;
+    if (isDiagnosticMode() && ref) message += "\\\\nRef: " + ref;
     show(message);
   }
 
