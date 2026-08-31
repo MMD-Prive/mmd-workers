@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { rewritePendingStatusStartResponse } from "../src/liff-status-resolution-guard.js";
-import { withStatusFirstMemberResolver } from "../src/runtime-index.js";
+import { withStatusFirstMemberResolver } from "../src/liff-status-first-member-resolver.js";
 
 function jsonResponse(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
