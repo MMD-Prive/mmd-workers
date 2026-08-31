@@ -1,0 +1,298 @@
+name: Temporary apply auth profile deadline hotfix
+
+on:
+  push:
+    branches:
+      - hotfix/auth-profile-airtable-deadline-v7-2
+    paths:
+      - ".github/workflows/temp-apply-auth-profile-deadline-hotfix.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hotfix/auth-profile-airtable-deadline-v7-2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Apply resolver and staging hotfix
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          function replaceOnce(path, from, to) {
+            let text = fs.readFileSync(path, "utf8");
+            if (!text.includes(from)) throw new Error(`Missing patch anchor in ${path}: ${from.slice(0, 100)}`);
+            text = text.replace(from, to);
+            fs.writeFileSync(path, text);
+          }
+          function appendOnce(path, marker, content) {
+            let text = fs.readFileSync(path, "utf8");
+            if (!text.includes(marker)) {
+              if (!text.endsWith("\n")) text += "\n";
+              text += `\n${content.trim()}\n`;
+              fs.writeFileSync(path, text);
+            }
+          }
+
+          const auth = "auth-worker/src/index.js";
+          replaceOnce(auth,
+            'const MEMBER_STATUS_AIRTABLE_TIMEOUT_MS = 4000;',
+            'const MEMBER_STATUS_AIRTABLE_TIMEOUT_MS = 10000;');
+
+          replaceOnce(auth,
+`  try {
+    const matches = await findMemberRecordsByLineUserId(env, lineUserId);
+    if (matches.length > 1) {
+      return json(request, env, 409, { ok: false, error: { code: "MEMBER_MATCH_AMBIGUOUS", message: "Member identity could not be resolved safely." } });
+    }
+    if (!matches.length) {
+      return json(request, env, 200, { ok: true, data: { member_exists: false } });
+    }
+
+    const memberRecord = { ...matches[0], fields: normalizeMemberRecord(matches[0]) };
+    const data = await buildLiffMemberProfile(env, memberRecord, lineUserId);
+    return json(request, env, 200, { ok: true, data });
+  } catch {
+    return json(request, env, 503, { ok: false, error: { code: "MEMBER_PROFILE_RESOLVER_UNAVAILABLE", message: "Member profile is temporarily unavailable." } });
+  }
+}
+
+async function buildLiffMemberProfile(env, memberRecord, lineUserId) {
+  const fields = memberRecord.fields || {};
+  const profile = await buildCustomer360MemberProfile({
+    env,
+    memberFields: fields,
+    lineUserId,
+    listRecords: (key, params) => airtableList(env, table(env, key), params),
+  });`,
+`  const startedAt = Date.now();
+  try {
+    const data = await withMemberStatusAirtableDeadline(request, env, async (signal) => {
+      const matches = await findMemberRecordsByLineUserId(env, lineUserId, { signal });
+      if (matches.length > 1) return { member_exists: false, ambiguous: true };
+      if (!matches.length) return { member_exists: false };
+
+      const memberRecord = { ...matches[0], fields: normalizeMemberRecord(matches[0]) };
+      return buildLiffMemberProfile(env, memberRecord, lineUserId, signal);
+    });
+    if (data.ambiguous) {
+      return json(request, env, 409, { ok: false, error: { code: "MEMBER_MATCH_AMBIGUOUS", message: "Member identity could not be resolved safely." } });
+    }
+    return json(request, env, 200, { ok: true, data });
+  } catch (error) {
+    console.warn({
+      event: "member_profile_resolver_failure",
+      stage: "customer_360_read",
+      failure_class: memberStatusResolverFailureClass(error),
+      duration_ms: Math.max(0, Date.now() - startedAt),
+    });
+    return json(request, env, 503, { ok: false, error: { code: "MEMBER_PROFILE_RESOLVER_UNAVAILABLE", message: "Member profile is temporarily unavailable." } });
+  }
+}
+
+async function buildLiffMemberProfile(env, memberRecord, lineUserId, signal) {
+  const fields = memberRecord.fields || {};
+  const profile = await buildCustomer360MemberProfile({
+    env,
+    memberFields: fields,
+    lineUserId,
+    listRecords: (key, params = {}) => airtableList(env, table(env, key), { ...params, signal }),
+  });`);
+
+          replaceOnce(auth,
+`  try {
+    response = await fetch(url.toString(), fetchOptions);
+  } catch (error) {`,
+`  try {
+    response = await airtableReadFetch(env, url.toString(), fetchOptions);
+  } catch (error) {`);
+
+          replaceOnce(auth,
+`async function airtableFirst(env, tableName, formula) {
+  const records = await airtableList(env, tableName, { filterByFormula: formula, maxRecords: 1 });`,
+`async function airtableReadFetch(env, url, init) {
+  if (env.AIRTABLE_HTTP?.fetch) return env.AIRTABLE_HTTP.fetch(new Request(url, init));
+  return fetch(url, init);
+}
+
+async function airtableFirst(env, tableName, formula) {
+  const records = await airtableList(env, tableName, { filterByFormula: formula, maxRecords: 1 });`);
+
+          const authWrangler = "auth-worker/wrangler.toml";
+          replaceOnce(authWrangler,
+            'MMD_AUTH_DEV_MODE = "false"',
+            'MMD_AUTH_DEV_MODE = "false"\nMEMBER_STATUS_AIRTABLE_TIMEOUT_MS = "10000"');
+          let authToml = fs.readFileSync(authWrangler, "utf8");
+          if (!authToml.includes('[env.staging]\nname = "mmd-auth-worker-staging"')) {
+            authToml += `
+
+# Isolated CARE BACK auth staging. Airtable reads are provided only by the
+# synthetic service binding below; no production Airtable records are used.
+[env.staging]
+name = "mmd-auth-worker-staging"
+workers_dev = false
+
+[env.staging.vars]
+AIRTABLE_API_KEY = "synthetic-staging-only"
+AIRTABLE_BASE_ID = "app_auth_staging_fixture"
+AIRTABLE_TABLE_MEMBERS = "Members"
+AIRTABLE_TABLE_MEMBER_PACKAGES = "member_packages"
+AIRTABLE_TABLE_PAYMENTS = "Payments"
+AIRTABLE_TABLE_SESSIONS = "Sessions"
+AIRTABLE_TABLE_POINTS_LEDGER = "MMD — Points Ledger"
+AIRTABLE_MEMBERS_LINE_USER_ID_FIELD = "line_id"
+AIRTABLE_MEMBERS_DISPLAY_NAME_FIELD = "Full Name (Display)"
+AIRTABLE_MEMBERS_EMAIL_FIELD = "Contact Email"
+AIRTABLE_SESSIONS_LINE_USER_ID_FIELD = "line_user_id"
+AIRTABLE_SESSIONS_EMAIL_FIELD = "email"
+AIRTABLE_SESSIONS_HISTORY_DATE_FIELD = "job_date"
+AIRTABLE_SESSIONS_STATUS_FIELD = "Session Status"
+AIRTABLE_SESSIONS_SERVICE_TYPE_FIELD = "job_type"
+AIRTABLE_MEMBER_PACKAGES_EMAIL_FIELD = "member_email"
+AIRTABLE_MEMBER_PACKAGES_CREATED_FIELD = "created_at"
+AIRTABLE_POINTS_EMAIL_FIELD = "member_email"
+AIRTABLE_POINTS_HISTORY_DATE_FIELD = "created_at"
+AIRTABLE_PAYMENTS_EMAIL_FIELD = "Member Email"
+AIRTABLE_PAYMENTS_STATUS_FIELD = "Payment Status"
+AIRTABLE_PAYMENTS_VERIFICATION_FIELD = "Verification Status"
+AIRTABLE_PAYMENTS_DATE_FIELD = "Payment Date"
+AIRTABLE_PAYMENTS_CREATED_FIELD = "Created At"
+AIRTABLE_PAYMENTS_UPDATED_FIELD = "Updated At"
+MEMBER_STATUS_AIRTABLE_TIMEOUT_MS = "10000"
+
+[[env.staging.services]]
+binding = "AIRTABLE_HTTP"
+service = "auth-staging-airtable-fixtures-worker-staging"
+`;
+            fs.writeFileSync(authWrangler, authToml);
+          }
+
+          const memberSource = "member-pages-worker/src/liff-identity-foundation.js";
+          replaceOnce(memberSource,
+            'const MEMBER_RESOLVER_TIMEOUT_MS = 8000;',
+            'const MEMBER_RESOLVER_TIMEOUT_MS = 12000;');
+
+          const memberWrangler = "member-pages-worker/wrangler.toml";
+          let memberToml = fs.readFileSync(memberWrangler, "utf8");
+          memberToml = memberToml.replaceAll('LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "8000"', 'LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "12000"');
+          memberToml = memberToml.replace(
+            'binding = "MEMBER_STATUS_RESOLVER"\nservice = "care-back-staging-fixtures-worker-staging"',
+            'binding = "MEMBER_STATUS_RESOLVER"\nservice = "mmd-auth-worker-staging"');
+          fs.writeFileSync(memberWrangler, memberToml);
+
+          const stagingWorkflow = ".github/workflows/deploy-care-back-staging.yml";
+          let staging = fs.readFileSync(stagingWorkflow, "utf8");
+          staging = staging.replace(
+            '      - run: npm run test:care-back-staging-fixtures\n',
+            '      - run: npm run test:care-back-staging-fixtures\n      - run: node --test auth-staging-airtable-fixtures-worker/test/*.test.mjs\n');
+          staging = staging.replace(
+            '      - run: npx --yes wrangler@4 deploy --dry-run --env staging --config care-back-staging-fixtures-worker/wrangler.toml\n',
+            '      - run: npx --yes wrangler@4 deploy --dry-run --env staging --config care-back-staging-fixtures-worker/wrangler.toml\n      - run: npx --yes wrangler@4 deploy --dry-run --env staging --config auth-staging-airtable-fixtures-worker/wrangler.toml\n      - run: npx --yes wrangler@4 deploy --dry-run --env staging --config auth-worker/wrangler.toml\n');
+          staging = staging.replace(
+            '          fs.writeFileSync(`${process.env.RUNNER_TEMP}/fixture.env`, `MEMBER_STATUS_RESOLVER_SECRET=${values.CARE_BACK_STAGING_RESOLVER_SECRET}\\n`, { mode: 0o600 });\n',
+            '          fs.writeFileSync(`${process.env.RUNNER_TEMP}/fixture.env`, `MEMBER_STATUS_RESOLVER_SECRET=${values.CARE_BACK_STAGING_RESOLVER_SECRET}\\n`, { mode: 0o600 });\n          fs.writeFileSync(`${process.env.RUNNER_TEMP}/auth.env`, `MEMBER_STATUS_RESOLVER_SECRET=${values.CARE_BACK_STAGING_RESOLVER_SECRET}\\n`, { mode: 0o600 });\n');
+          staging = staging.replace(
+            '      - name: Deploy service-bound CARE BACK implementation\n        run: npx --yes wrangler@4 deploy --env staging --config member-pages-worker/wrangler.toml --keep-vars --secrets-file "$RUNNER_TEMP/member.env"\n',
+            '      - name: Deploy synthetic Airtable service for auth staging\n        run: npx --yes wrangler@4 deploy --env staging --config auth-staging-airtable-fixtures-worker/wrangler.toml --keep-vars\n      - name: Deploy service-bound auth staging\n        run: npx --yes wrangler@4 deploy --env staging --config auth-worker/wrangler.toml --keep-vars --secrets-file "$RUNNER_TEMP/auth.env"\n      - name: Deploy service-bound CARE BACK implementation\n        run: npx --yes wrangler@4 deploy --env staging --config member-pages-worker/wrangler.toml --keep-vars --secrets-file "$RUNNER_TEMP/member.env"\n');
+          fs.writeFileSync(stagingWorkflow, staging);
+
+          const profileTests = "auth-worker/test/member-profile-resolver.test.mjs";
+          appendOnce(profileTests, 'partial-safe Customer 360 when ancillary reads hit the shared deadline', String.raw`
+test("LIFF member profile returns partial-safe Customer 360 when ancillary reads hit the shared deadline", async () => {
+  let abortedReads = 0;
+  globalThis.fetch = async (input, init = {}) => {
+    const table = decodeURIComponent(new URL(String(input)).pathname.split("/").at(-1));
+    if (table === "Members") {
+      return Response.json({ records: [{ id: "rec_member", fields: {
+        line_id: LINE_ID,
+        member_id: "mmd-stage-timeout",
+        "Full Name (Display)": "Deadline Test",
+        "Contact Email": "deadline@example.invalid",
+      } }] });
+    }
+    return new Promise((_resolve, reject) => {
+      const fail = () => {
+        abortedReads += 1;
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+      if (init.signal?.aborted) return fail();
+      init.signal?.addEventListener("abort", fail, { once: true });
+    });
+  };
+
+  const startedAt = Date.now();
+  const response = await worker.fetch(
+    request({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }),
+    env({ MEMBER_STATUS_AIRTABLE_TIMEOUT_MS: "50" }),
+  );
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.data.member_exists, true);
+  assert.equal(payload.data.member_id, "mmd-stage-timeout");
+  assert.equal(payload.data.profile.customer_360.packages.status, "checking");
+  assert.equal(payload.data.profile.customer_360.points.status, "checking");
+  assert.equal(payload.data.profile.customer_360.jobs.status, "checking");
+  assert.ok(abortedReads >= 3);
+  assert.ok(Date.now() - startedAt < 500);
+});
+
+test("LIFF member profile fails closed when the authoritative Members lookup exceeds the shared deadline", async () => {
+  let aborted = false;
+  globalThis.fetch = async (_input, init = {}) => new Promise((_resolve, reject) => {
+    const fail = () => {
+      aborted = true;
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    if (init.signal?.aborted) return fail();
+    init.signal?.addEventListener("abort", fail, { once: true });
+  });
+
+  const response = await worker.fetch(
+    request({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }),
+    env({ MEMBER_STATUS_AIRTABLE_TIMEOUT_MS: "50" }),
+  );
+  const payload = await response.json();
+  assert.equal(response.status, 503);
+  assert.equal(payload.error.code, "MEMBER_PROFILE_RESOLVER_UNAVAILABLE");
+  assert.equal(aborted, true);
+});
+`);
+          NODE
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run focused regression
+        run: |
+          node --check auth-worker/src/index.js
+          node --check auth-worker/src/customer-360-resolver.js
+          node --check member-pages-worker/src/liff-identity-foundation.js
+          npm run test:auth-liff-profile
+          npm run test:member-pages-liff
+          npm run test:care-back-staging-fixtures
+          node --test auth-staging-airtable-fixtures-worker/test/*.test.mjs
+          npm run check:care-back-staging
+          npx --yes wrangler@4 deploy --dry-run --config auth-worker/wrangler.toml
+          npx --yes wrangler@4 deploy --dry-run --env staging --config auth-worker/wrangler.toml
+          npx --yes wrangler@4 deploy --dry-run --env staging --config auth-staging-airtable-fixtures-worker/wrangler.toml
+          npx --yes wrangler@4 deploy --dry-run --env staging --config member-pages-worker/wrangler.toml
+
+      - name: Commit tested hotfix and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/temp-apply-auth-profile-deadline-hotfix.yml
+          git add auth-worker member-pages-worker auth-staging-airtable-fixtures-worker .github/workflows/deploy-care-back-staging.yml
+          git commit -m "fix(liff): bound auth profile reads and stage real resolver path"
+          git push origin HEAD:hotfix/auth-profile-airtable-deadline-v7-2
