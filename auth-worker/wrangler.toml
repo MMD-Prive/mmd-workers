@@ -1,5 +1,5 @@
 name = "mmd-auth-worker"
-main = "src/index.js"
+main = "src/runtime-index.js"
 compatibility_date = "2026-01-20"
 
 [vars]
@@ -15,7 +15,6 @@ AUTH_CODE_LENGTH = "6"
 AUTH_MAX_CODE_ATTEMPTS = "5"
 
 # Airtable table names in the existing MMD Commerce Operating System base.
-# You can replace these with Airtable table IDs later.
 AIRTABLE_TABLE_MEMBERS = "Members"
 AIRTABLE_TABLE_MEMBER_PACKAGES = "member_packages"
 AIRTABLE_TABLE_PACKAGES = "packages"
@@ -28,8 +27,8 @@ AIRTABLE_TABLE_AUTH_IDENTITIES = "MMD — Auth Identities"
 AIRTABLE_TABLE_AUTH_LOGIN_CODES = "MMD — Auth Login Codes"
 AIRTABLE_TABLE_AUTH_SESSIONS = "MMD — Auth Sessions"
 
-# Read-only LINE subject resolver mapping. This is used only by the internal
-# MEMBER_STATUS_RESOLVER service-binding contract.
+# Read-only LINE subject resolver mapping. Drive-verified legacy bootstrap writes
+# the canonical LINE subject into this same field after email/package proof.
 AIRTABLE_MEMBERS_LINE_USER_ID_FIELD = "line_id"
 AIRTABLE_MEMBERS_DISPLAY_NAME_FIELD = "Full Name (Display)"
 AIRTABLE_MEMBERS_NAME_FIELD = "Full Name"
@@ -61,9 +60,6 @@ AIRTABLE_PAYMENTS_CREATED_FIELD = "Created At"
 AIRTABLE_PAYMENTS_UPDATED_FIELD = "Updated At"
 
 # MMD — Member Entitlements mapping.
-# The current table does not expose the old auth MVP member_id field.
-# Entitlement reads are fail-safe: if the identity/status fields are missing or unmapped,
-# /v1/auth/me returns an empty grants array instead of failing login/gate checks.
 AIRTABLE_ENTITLEMENT_MEMBERSTACK_ID_FIELD = "memberstack_id"
 AIRTABLE_ENTITLEMENT_MEMBER_EMAIL_FIELD = "member_email"
 AIRTABLE_ENTITLEMENT_TELEGRAM_USER_ID_FIELD = "telegram_user_id"
@@ -78,8 +74,6 @@ AIRTABLE_ENTITLEMENT_TIER_FIELDS = "min_tier,tier,package_code"
 AIRTABLE_ENTITLEMENT_EXPIRES_AT_FIELDS = "expire_at"
 
 # System — Access Log mapping.
-# Result is normalized to success/fail. Other log fields are optional and should be
-# mapped here only after the corresponding Airtable fields exist.
 AIRTABLE_ACCESS_LOG_EVENT_ID_FIELD = "Event ID"
 AIRTABLE_ACCESS_LOG_ACTION_FIELD = "Action"
 AIRTABLE_ACCESS_LOG_RESULT_FIELD = "Result"
@@ -104,7 +98,6 @@ MEMBER_STATUS_AIRTABLE_TIMEOUT_MS = "10000"
 # AUTH_HMAC_SECRET
 # ADMIN_BEARER
 # MEMBER_STATUS_RESOLVER_SECRET
-
 
 # Isolated CARE BACK auth staging. Airtable reads are provided only by the
 # synthetic service binding below; no production Airtable records are used.
