@@ -16,19 +16,24 @@ jobs:
     timeout-minutes: 10
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
     steps:
       - name: Query recent production LIFF diagnostic events
         shell: bash
         run: |
           node <<'NODE'
-          const token = String(process.env.CLOUDFLARE_API_TOKEN || '').replace(/[\r\n\u2028\u2029]/g, '').trim();
-          const account = String(process.env.CLOUDFLARE_ACCOUNT_ID || '').trim();
-          if (!token || !account) throw new Error('Cloudflare observability credentials missing');
-          console.log(`::add-mask::${token}`);
+          const clean = (value) => String(value || '').replace(/[\r\n\u2028\u2029]/g, '').trim();
+          const tokens = [
+            ['deploy', clean(process.env.CLOUDFLARE_API_TOKEN)],
+            ['routes', clean(process.env.CLOUDFLARE_ROUTES_API_TOKEN)],
+          ].filter(([, token]) => token);
+          const account = clean(process.env.CLOUDFLARE_ACCOUNT_ID);
+          if (!tokens.length || !account) throw new Error('Cloudflare observability credentials missing');
+          for (const [, token] of tokens) console.log(`::add-mask::${token}`);
 
           const to = Date.now();
-          const from = to - 45 * 60 * 1000;
+          const from = to - 60 * 60 * 1000;
           const endpoint = `https://api.cloudflare.com/client/v4/accounts/${account}/workers/observability/telemetry/query`;
           const diagnostics = [
             'member_status_resolver_failure',
@@ -46,20 +51,28 @@ jobs:
               matchCase: false,
             },
           };
-          const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              authorization: `Bearer ${token}`,
-              'content-type': 'application/json',
-            },
-            body: JSON.stringify(body),
-          });
-          const payload = await response.json().catch(() => null);
-          if (!response.ok || !payload) {
-            console.error(`observability_query_failed status=${response.status}`);
-            if (payload?.errors) console.error(JSON.stringify(payload.errors));
-            process.exit(1);
+
+          let payload = null;
+          let used = '';
+          for (const [label, token] of tokens) {
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: {
+                authorization: `Bearer ${token}`,
+                'content-type': 'application/json',
+              },
+              body: JSON.stringify(body),
+            });
+            const candidate = await response.json().catch(() => null);
+            if (response.ok && candidate) {
+              payload = candidate;
+              used = label;
+              break;
+            }
+            const code = Array.isArray(candidate?.errors) ? candidate.errors.map((item) => item?.code).filter(Boolean).join(',') : '';
+            console.log(`token_${label}_observability_status=${response.status}${code ? ` error_codes=${code}` : ''}`);
           }
+          if (!payload) throw new Error('No configured Cloudflare token can query Workers observability');
 
           const root = payload.result || payload;
           const events = Array.isArray(root?.events?.events) ? root.events.events : [];
@@ -82,8 +95,6 @@ jobs:
               error: meta?.error || null,
             });
           }
-          console.log(JSON.stringify({ window: { from, to }, total_events: events.length, diagnostic_rows: rows }, null, 2));
-          if (!rows.length) {
-            console.log('No whitelisted diagnostic event found in the last 45 minutes.');
-          }
+          console.log(JSON.stringify({ token_class: used, window: { from, to }, total_events: events.length, diagnostic_rows: rows }, null, 2));
+          if (!rows.length) console.log('No whitelisted diagnostic event found in the last 60 minutes.');
           NODE
