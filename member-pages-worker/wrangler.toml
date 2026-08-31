@@ -13,6 +13,9 @@ AIRTABLE_REQUEST_TIMEOUT_MS = "10000"
 LINE_ID_TOKEN_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify"
 LINE_LIFF_ID = "2010862595-yT4DCEMc"
 LINE_DASHBOARD_CHANNEL_ID = "2010862595"
+DRIVE_MEMBERSHIP_OWNER_EMAIL = "malemodel.bkk@gmail.com"
+DRIVE_PREMIUM_PACKAGE_FOLDER_ID = "16DfhOo-DwJedBaTi_pvkxGEnPjWGdxxD"
+DRIVE_STANDARD_PACKAGE_FOLDER_ID = "1Snw1gTJNzkMxHlH-Nt2g1-6mt_3GNkT8"
 AIRTABLE_TABLE_CARE_BACK_CLAIMS = "MMD — Campaign Claims"
 AIRTABLE_TABLE_CARE_BACK_PROMO_CODES = "MMD — Promo Codes"
 AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES = "tblvMJjYXy29mgDLb"
@@ -43,6 +46,16 @@ new_sqlite_classes = ["CareBackBirthdayWishCoordinator"]
 # - secret LIFF_SESSION_SECRET
 # - secret MEMBER_STATUS_RESOLVER_SECRET (same value in mmd-auth-worker)
 # - service binding MEMBER_STATUS_RESOLVER -> mmd-auth-worker
+# - secret GOOGLE_DRIVE_CLIENT_ID
+# - secret GOOGLE_DRIVE_CLIENT_SECRET
+# - secret GOOGLE_DRIVE_REFRESH_TOKEN authorized by malemodel.bkk@gmail.com
+#   with Google Drive metadata read access. The runtime verifies the authorized
+#   Drive account before trusting package-folder permissions.
+#
+# Google Drive membership source of truth:
+# - Premium Package grants standard + premium model access.
+# - Standard Package grants standard model access only.
+# - Model inventory/archive folders are never member identity evidence.
 #
 # No public custom route is attached here. member-dashboard-chat-worker owns the
 # public member front gate and delegates LIFF identity calls through a service
