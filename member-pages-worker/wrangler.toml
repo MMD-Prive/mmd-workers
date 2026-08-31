@@ -8,7 +8,7 @@ routes = []
 
 [vars]
 LIFF_VERIFY_TIMEOUT_MS = "5000"
-LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "8000"
+LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "12000"
 AIRTABLE_REQUEST_TIMEOUT_MS = "7000"
 LINE_ID_TOKEN_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify"
 LINE_LIFF_ID = "2010862595-yT4DCEMc"
@@ -64,7 +64,7 @@ preview_urls = true
 [env.staging.vars]
 CARE_BACK_STAGING_MODE = "synthetic"
 LIFF_VERIFY_TIMEOUT_MS = "5000"
-LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "8000"
+LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "12000"
 AIRTABLE_REQUEST_TIMEOUT_MS = "7000"
 LINE_LOGIN_CHANNEL_ID = "care-back-staging-channel"
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
@@ -78,7 +78,7 @@ id = "00000000000000000000000000000000"
 
 [[env.staging.services]]
 binding = "MEMBER_STATUS_RESOLVER"
-service = "care-back-staging-fixtures-worker-staging"
+service = "mmd-auth-worker-staging"
 
 [[env.staging.services]]
 binding = "LINE_ID_TOKEN_VERIFIER"
