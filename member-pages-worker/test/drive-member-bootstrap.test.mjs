@@ -28,23 +28,21 @@ test("only unresolved LIFF start responses are Drive bootstrap candidates", () =
   }), false);
 });
 
-test("Drive permission resolver checks Premium first and returns Premium", async () => {
+test("primary Drive checks Premium first and stops after Premium match", async () => {
   const originalFetch = globalThis.fetch;
   const seen = [];
   globalThis.fetch = async (input, init = {}) => {
     const url = String(input instanceof Request ? input.url : input);
     seen.push(url);
-    if (url === "https://oauth2.googleapis.com/token") {
-      return json({ access_token: "access-token" });
-    }
+    if (url === "https://oauth2.googleapis.com/token") return json({ access_token: "primary-token" });
     if (url.startsWith("https://www.googleapis.com/drive/v3/about")) {
       return json({ user: { emailAddress: "malemodel.bkk@gmail.com" } });
     }
+    if (isFolderMetadata(url, "premium-folder")) {
+      return json({ owners: [{ emailAddress: "malemodel.bkk@gmail.com" }] });
+    }
     if (url.includes("/files/premium-folder/permissions")) {
       return json({ permissions: [{ type: "user", emailAddress: "member@example.com", role: "reader", deleted: false }] });
-    }
-    if (url.includes("/files/standard-folder/permissions")) {
-      throw new Error("standard should not be queried after premium match");
     }
     throw new Error(`unexpected fetch ${url} ${init.method || "GET"}`);
   };
@@ -52,18 +50,22 @@ test("Drive permission resolver checks Premium first and returns Premium", async
     const result = await resolveDrivePackageForEmail("MEMBER@example.com", env());
     assert.deepEqual(result, { package_code: "premium", folder_id: "premium-folder" });
     assert.equal(seen.some((url) => url.includes("standard-folder")), false);
+    assert.equal(seen.some((url) => url.includes("fallback-")), false);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test("Drive permission resolver falls back to Standard only", async () => {
+test("primary Drive falls back from Premium to Standard", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = String(input instanceof Request ? input.url : input);
-    if (url === "https://oauth2.googleapis.com/token") return json({ access_token: "access-token" });
+    if (url === "https://oauth2.googleapis.com/token") return json({ access_token: "primary-token" });
     if (url.startsWith("https://www.googleapis.com/drive/v3/about")) {
       return json({ user: { emailAddress: "malemodel.bkk@gmail.com" } });
+    }
+    if (isFolderMetadata(url, "premium-folder") || isFolderMetadata(url, "standard-folder")) {
+      return json({ owners: [{ emailAddress: "malemodel.bkk@gmail.com" }] });
     }
     if (url.includes("/files/premium-folder/permissions")) return json({ permissions: [] });
     if (url.includes("/files/standard-folder/permissions")) {
@@ -79,7 +81,71 @@ test("Drive permission resolver falls back to Standard only", async () => {
   }
 });
 
-test("Drive OAuth identity must be malemodel.bkk@gmail.com", async () => {
+test("verified email checks mmdprive fallback only after primary has no access", async () => {
+  const originalFetch = globalThis.fetch;
+  const seen = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input instanceof Request ? input.url : input);
+    seen.push(url);
+    if (url === "https://oauth2.googleapis.com/token") return json({ access_token: "primary-token" });
+    if (url.startsWith("https://www.googleapis.com/drive/v3/about")) {
+      return json({ user: { emailAddress: "malemodel.bkk@gmail.com" } });
+    }
+    if (isFolderMetadata(url, "premium-folder") || isFolderMetadata(url, "standard-folder")) {
+      return json({ owners: [{ emailAddress: "malemodel.bkk@gmail.com" }] });
+    }
+    if (url.includes("/files/premium-folder/permissions") || url.includes("/files/standard-folder/permissions")) {
+      return json({ permissions: [] });
+    }
+    if (isFolderMetadata(url, "fallback-premium")) {
+      return json({ owners: [{ emailAddress: "mmdprive@gmail.com" }] });
+    }
+    if (url.includes("/files/fallback-premium/permissions")) {
+      return json({ permissions: [{ type: "user", emailAddress: "member@example.com", role: "reader" }] });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  try {
+    const result = await resolveDrivePackageForEmail("member@example.com", env({
+      DRIVE_FALLBACK_PREMIUM_PACKAGE_FOLDER_ID: "fallback-premium",
+      DRIVE_FALLBACK_STANDARD_PACKAGE_FOLDER_ID: "fallback-standard",
+    }));
+    assert.deepEqual(result, { package_code: "premium", folder_id: "fallback-premium" });
+    assert.ok(seen.findIndex((url) => url.includes("standard-folder/permissions")) < seen.findIndex((url) => url.includes("fallback-premium/permissions")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("fallback folder must actually be owned by mmdprive@gmail.com", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (url === "https://oauth2.googleapis.com/token") return json({ access_token: "primary-token" });
+    if (url.startsWith("https://www.googleapis.com/drive/v3/about")) {
+      return json({ user: { emailAddress: "malemodel.bkk@gmail.com" } });
+    }
+    if (isFolderMetadata(url, "premium-folder") || isFolderMetadata(url, "standard-folder")) {
+      return json({ owners: [{ emailAddress: "malemodel.bkk@gmail.com" }] });
+    }
+    if (url.includes("/files/premium-folder/permissions") || url.includes("/files/standard-folder/permissions")) {
+      return json({ permissions: [] });
+    }
+    if (isFolderMetadata(url, "fallback-premium")) {
+      return json({ owners: [{ emailAddress: "someone-else@example.com" }] });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  try {
+    await assert.rejects(() => resolveDrivePackageForEmail("member@example.com", env({
+      DRIVE_FALLBACK_PREMIUM_PACKAGE_FOLDER_ID: "fallback-premium",
+    })), /drive_folder_owner_mismatch/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("primary Drive OAuth identity must be malemodel.bkk@gmail.com", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = String(input instanceof Request ? input.url : input);
@@ -96,7 +162,7 @@ test("Drive OAuth identity must be malemodel.bkk@gmail.com", async () => {
   }
 });
 
-function env() {
+function env(overrides = {}) {
   return {
     GOOGLE_DRIVE_CLIENT_ID: "client",
     GOOGLE_DRIVE_CLIENT_SECRET: "secret",
@@ -104,7 +170,13 @@ function env() {
     DRIVE_MEMBERSHIP_OWNER_EMAIL: "malemodel.bkk@gmail.com",
     DRIVE_PREMIUM_PACKAGE_FOLDER_ID: "premium-folder",
     DRIVE_STANDARD_PACKAGE_FOLDER_ID: "standard-folder",
+    DRIVE_FALLBACK_MEMBERSHIP_OWNER_EMAIL: "mmdprive@gmail.com",
+    ...overrides,
   };
+}
+
+function isFolderMetadata(url, folderId) {
+  return url.includes(`/files/${folderId}?`) && !url.includes("/permissions");
 }
 
 function json(payload, status = 200) {
