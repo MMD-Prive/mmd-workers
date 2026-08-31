@@ -1,21 +1,23 @@
 import worker from "./index.js";
 import { rewritePendingStatusStartResponse } from "./liff-status-resolution-guard.js";
 import { isDriveBootstrapCandidate, tryDriveMemberBootstrap } from "./drive-member-bootstrap.js";
+import { withStatusFirstMemberResolver } from "./liff-status-first-member-resolver.js";
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-durable-object.js";
 
 export default {
   async fetch(request, env, ctx) {
+    const runtimeEnv = withStatusFirstMemberResolver(request, env);
     const firstRequest = request.clone();
     const bootstrapRequest = request.clone();
-    const firstResponse = await worker.fetch(firstRequest, env, ctx);
+    const firstResponse = await worker.fetch(firstRequest, runtimeEnv, ctx);
     const firstPayload = await jsonPayload(firstResponse);
 
     if (isDriveBootstrapCandidate(request, firstPayload)) {
       const bootstrap = await tryDriveMemberBootstrap(bootstrapRequest, env);
       if (bootstrap.mapped) {
-        const retriedResponse = await worker.fetch(request, env, ctx);
+        const retriedResponse = await worker.fetch(request, runtimeEnv, ctx);
         return rewritePendingStatusStartResponse(request, retriedResponse);
       }
     }
