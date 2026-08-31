@@ -1,6 +1,7 @@
 import worker from "./index.js";
 import { rewritePendingStatusStartResponse } from "./liff-status-resolution-guard.js";
 import { isDriveBootstrapCandidate, tryDriveMemberBootstrap } from "./drive-member-bootstrap.js";
+import { withDriveBootstrapDiagnostic } from "./drive-bootstrap-debug.js";
 import { withStatusFirstMemberResolver } from "./liff-status-first-member-resolver.js";
 
 export * from "./legacy-member-pages.js";
@@ -20,6 +21,8 @@ export default {
         const retriedResponse = await worker.fetch(request, runtimeEnv, ctx);
         return rewritePendingStatusStartResponse(request, retriedResponse);
       }
+      const diagnosticResponse = withDriveBootstrapDiagnostic(request, firstResponse, firstPayload, bootstrap);
+      return rewritePendingStatusStartResponse(request, diagnosticResponse);
     }
 
     return rewritePendingStatusStartResponse(request, firstResponse);
