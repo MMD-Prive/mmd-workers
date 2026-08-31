@@ -1,0 +1,89 @@
+name: Temporary production LIFF V8 observability
+
+on:
+  push:
+    branches:
+      - diag/prod-liff-v8-observability
+    paths:
+      - ".github/workflows/temp-prod-liff-v8-observability.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  query:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+    steps:
+      - name: Query recent production LIFF diagnostic events
+        shell: bash
+        run: |
+          node <<'NODE'
+          const token = String(process.env.CLOUDFLARE_API_TOKEN || '').replace(/[\r\n\u2028\u2029]/g, '').trim();
+          const account = String(process.env.CLOUDFLARE_ACCOUNT_ID || '').trim();
+          if (!token || !account) throw new Error('Cloudflare observability credentials missing');
+          console.log(`::add-mask::${token}`);
+
+          const to = Date.now();
+          const from = to - 45 * 60 * 1000;
+          const endpoint = `https://api.cloudflare.com/client/v4/accounts/${account}/workers/observability/telemetry/query`;
+          const diagnostics = [
+            'member_status_resolver_failure',
+            'member_profile_resolver_failure',
+            'liff_gateway_airtable_failure',
+          ];
+          const body = {
+            queryId: `adhoc-prod-liff-v8-${to}`,
+            timeframe: { from, to },
+            view: 'events',
+            limit: 500,
+            needle: {
+              value: diagnostics.join('|'),
+              isRegex: true,
+              matchCase: false,
+            },
+          };
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${token}`,
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify(body),
+          });
+          const payload = await response.json().catch(() => null);
+          if (!response.ok || !payload) {
+            console.error(`observability_query_failed status=${response.status}`);
+            if (payload?.errors) console.error(JSON.stringify(payload.errors));
+            process.exit(1);
+          }
+
+          const root = payload.result || payload;
+          const events = Array.isArray(root?.events?.events) ? root.events.events : [];
+          const rows = [];
+          for (const item of events) {
+            const meta = item?.$metadata || {};
+            const eventName = typeof item?.event === 'string' ? item.event : '';
+            const message = typeof meta?.message === 'string' ? meta.message : '';
+            const matched = diagnostics.includes(eventName) || diagnostics.some((name) => message.includes(name));
+            if (!matched) continue;
+            rows.push({
+              timestamp: item?.timestamp || meta?.timestamp || meta?.startTime || meta?.endTime || null,
+              service: meta?.service || meta?.scriptName || meta?.script || meta?.origin || null,
+              event: eventName || diagnostics.find((name) => message.includes(name)) || null,
+              stage: typeof item?.stage === 'string' ? item.stage : null,
+              operation: typeof item?.operation === 'string' ? item.operation : null,
+              failure_class: typeof item?.failure_class === 'string' ? item.failure_class : null,
+              duration_ms: Number.isFinite(item?.duration_ms) ? item.duration_ms : null,
+              level: meta?.level || null,
+              error: meta?.error || null,
+            });
+          }
+          console.log(JSON.stringify({ window: { from, to }, total_events: events.length, diagnostic_rows: rows }, null, 2));
+          if (!rows.length) {
+            console.log('No whitelisted diagnostic event found in the last 45 minutes.');
+          }
+          NODE
