@@ -1206,7 +1206,6 @@ async function issueSession(env, data) {
   const hash = await keyedDigest(env, `session:${token}`);
   const now = Date.now();
   const session = { ...data, session_id: crypto.randomUUID(), issued_at: now, expires_at: now + SESSION_TTL_SECONDS * 1000, rotation: 0 };
-  await saveSession(env, hash, session, SESSION_TTL_SECONDS);
   return { token, hash, session };
 }
 
