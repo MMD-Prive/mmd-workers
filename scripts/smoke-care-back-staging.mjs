@@ -87,6 +87,21 @@ async function startScenario(scenario) {
   return { jar, started };
 }
 
+function assertClaimState(scenario, payload) {
+  const data = payload?.data || {};
+  assert.equal(data.single_use, true);
+  if (data.benefit_state === "benefit_pending") {
+    assert.equal(data.code_status, "draft");
+    return;
+  }
+  assert.equal(data.benefit_state, "coupon_ready", `${scenario} unexpected benefit state`);
+  assert.equal(data.resumed, true, `${scenario} coupon_ready must come from a resumed staging claim`);
+  assert.equal(data.code_status, "active");
+  assert.equal(data.wish_submitted, true, `${scenario} resumed coupon must retain a completed Wish gate`);
+  assert.equal(typeof data.personal_code, "string");
+  assert.ok(data.personal_code.length > 0, `${scenario} resumed coupon must retain its code`);
+}
+
 async function verifyMemberScenario(scenario, expectedStatus) {
   const { jar, started } = await startScenario(scenario);
   assert.equal(started.payload.data.member_resolved, true);
@@ -100,9 +115,7 @@ async function verifyMemberScenario(scenario, expectedStatus) {
   if (before.payload.state === "claim_required") {
     const claim = await call(jar, "/member/api/liff/care-back/claim", { method: "POST", body: {} });
     assert.equal(claim.response.status, 200, `${scenario} claim failed: ${JSON.stringify(claim.payload)}`);
-    assert.equal(claim.payload.data.benefit_state, "benefit_pending");
-    assert.equal(claim.payload.data.code_status, "draft");
-    assert.equal(claim.payload.data.single_use, true);
+    assertClaimState(scenario, claim.payload);
     assertCareBackSafe(claim.payload);
   }
 
