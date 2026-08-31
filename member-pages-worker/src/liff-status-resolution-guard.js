@@ -12,7 +12,7 @@ const STATUS_UNRESOLVED_SCREEN = Object.freeze({
   ],
 });
 
-export async function rewritePendingStatusStartResponse(request, response) {
+export async function rewritePendingStatusStartResponse(request, response, traceId = "") {
   if (!(request instanceof Request) || !(response instanceof Response)) return response;
   if (request.method !== "POST") return response;
 
@@ -42,11 +42,12 @@ export async function rewritePendingStatusStartResponse(request, response) {
     return response;
   }
 
-  const diagnosticRef = url.searchParams.get("debug") === "1"
-    ? safeDriveBootstrapDiagnosticRef(data?.drive_bootstrap_diagnostic_ref)
-    : "";
-  const unresolvedScreen = diagnosticRef
-    ? { ...STATUS_UNRESOLVED_SCREEN, copy: `${STATUS_UNRESOLVED_SCREEN.copy}\nRef: ${diagnosticRef}` }
+  const debug = isSameOriginDiagnosticRequest(request);
+  const diagnosticRef = debug ? safeDriveBootstrapDiagnosticRef(data?.drive_bootstrap_diagnostic_ref) : "";
+  const safeTrace = debug ? safeLiffTraceId(traceId) : "";
+  const refs = [safeTrace, diagnosticRef].filter(Boolean).join(" · ");
+  const unresolvedScreen = refs
+    ? { ...STATUS_UNRESOLVED_SCREEN, copy: `${STATUS_UNRESOLVED_SCREEN.copy}\nRef: ${refs}` }
     : STATUS_UNRESOLVED_SCREEN;
 
   const headers = new Headers(response.headers);
@@ -55,6 +56,7 @@ export async function rewritePendingStatusStartResponse(request, response) {
     ...payload,
     data: {
       ...data,
+      ...(safeTrace ? { liff_trace_id: safeTrace } : {}),
       next_screen_key: unresolvedScreen.key,
       screen: unresolvedScreen,
     },
@@ -65,7 +67,25 @@ export async function rewritePendingStatusStartResponse(request, response) {
   });
 }
 
+function isSameOriginDiagnosticRequest(request) {
+  try {
+    const requestUrl = new URL(request.url);
+    if (requestUrl.searchParams.get("debug") === "1") return true;
+    const refererValue = String(request.headers.get("referer") || "").trim();
+    if (!refererValue) return false;
+    const referer = new URL(refererValue);
+    return referer.origin === requestUrl.origin && referer.searchParams.get("debug") === "1";
+  } catch {
+    return false;
+  }
+}
+
 function safeDriveBootstrapDiagnosticRef(value) {
   const ref = String(value || "").trim();
   return /^DRIVE_BOOTSTRAP_[A-Z0-9_]{3,64}$/.test(ref) ? ref : "";
+}
+
+function safeLiffTraceId(value) {
+  const ref = String(value || "").trim().toUpperCase();
+  return /^LIFF-[A-F0-9]{12}$/.test(ref) ? ref : "";
 }
