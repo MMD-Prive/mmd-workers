@@ -1,0 +1,196 @@
+name: Apply CARE BACK resolver hotfix
+
+on:
+  push:
+    branches:
+      - hotfix/care-back-member-resolver-v7-1
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hotfix/care-back-member-resolver-v7-1
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Apply bounded resolver hotfix
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          source = Path("member-pages-worker/src/liff-identity-foundation.js")
+          s = source.read_text()
+
+          s = s.replace('const MEMBER_RESOLVER_TIMEOUT_MS = 5000;', 'const MEMBER_RESOLVER_TIMEOUT_MS = 8000;', 1)
+
+          old = '''  const identityKey = await keyedDigest(env, `identity:${verified.sub}`);
+          const existing = await resolveExistingMember(env, verified.sub);
+          if (!existing.ok) return json({ ok: false, error: { code: "MEMBER_RESOLUTION_FAILED", message: "Member identity could not be resolved safely." } }, 503);
+          const memberProfile = existing.exists ? await resolveMemberProfile(env, verified.sub) : null;
+          if (existing.exists && !memberProfile?.ok) {
+            return json({ ok: false, error: { code: "MEMBER_PROFILE_RESOLUTION_FAILED", message: "Member profile could not be resolved safely." } }, 503);
+          }
+
+          const pending = existing.exists ? null : await getOrCreatePendingIdentity(env, identityKey);'''
+
+          new = '''  const identityKey = await keyedDigest(env, `identity:${verified.sub}`);
+          const memberState = await resolveMemberIdentity(env, verified.sub);
+          if (!memberState.ok) {
+            return json({ ok: false, error: { code: "MEMBER_RESOLUTION_FAILED", message: "Member identity could not be resolved safely." } }, 503);
+          }
+
+          const pending = memberState.exists ? null : await getOrCreatePendingIdentity(env, identityKey);'''
+
+          if old not in s:
+            raise SystemExit("handleStart resolver block changed unexpectedly")
+          s = s.replace(old, new, 1)
+          s = s.replace('member_exists: existing.exists,', 'member_exists: memberState.exists,', 1)
+          s = s.replace('member_id: memberProfile?.member_id || null,', 'member_id: memberState.member_id || null,', 1)
+          s = s.replace('member_profile: memberProfile?.profile || null,', 'member_profile: memberState.profile || null,', 1)
+          s = s.replace('next_screen_key: liffIntent === "unknown" ? "start_intent" : nextScreenForIntent(liffIntent, existing.exists),', 'next_screen_key: liffIntent === "unknown" ? "start_intent" : nextScreenForIntent(liffIntent, memberState.exists),', 1)
+
+          marker = '''async function resolveExistingMember(env, lineUserId) {'''
+          helper = '''async function resolveMemberIdentity(env, lineUserId) {
+            const resolver = env.MEMBER_STATUS_RESOLVER;
+            const resolverSecret = String(env.MEMBER_STATUS_RESOLVER_SECRET || "");
+            if (!resolver?.fetch || resolverSecret.length < 32) return { ok: false, exists: false };
+            const startedAt = Date.now();
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), Number(env.LIFF_MEMBER_RESOLVER_TIMEOUT_MS || MEMBER_RESOLVER_TIMEOUT_MS));
+            try {
+              const response = await resolver.fetch(new Request(`https://mmd-auth-worker.internal${MEMBER_PROFILE_RESOLVER_PATH}`, {
+                method: "POST",
+                headers: {
+                  "content-type": "application/json",
+                  [MEMBER_RESOLVER_SECRET_HEADER]: resolverSecret,
+                },
+                body: JSON.stringify({ line_user_id: lineUserId, purpose: MEMBER_PROFILE_RESOLVER_PURPOSE }),
+                signal: controller.signal,
+              }));
+              const payload = await response.json().catch(() => null);
+              const data = payload?.data && typeof payload.data === "object" ? payload.data : null;
+              if (!response.ok || payload?.ok === false || !data || typeof data.member_exists !== "boolean") {
+                console.warn({
+                  event: "member_profile_resolver_failure",
+                  stage: "member_profile_read",
+                  failure_class: response.status >= 500 ? "upstream_5xx" : "invalid_response",
+                  status: response.status,
+                  duration_ms: Math.max(0, Date.now() - startedAt),
+                });
+                return { ok: false, exists: false };
+              }
+              if (data.member_exists !== true) return { ok: true, exists: false, member_id: null, profile: null };
+              if (!data.member_id || !data.profile) {
+                console.warn({
+                  event: "member_profile_resolver_failure",
+                  stage: "member_profile_read",
+                  failure_class: "malformed_member_profile",
+                  status: response.status,
+                  duration_ms: Math.max(0, Date.now() - startedAt),
+                });
+                return { ok: false, exists: false };
+              }
+              return {
+                ok: true,
+                exists: true,
+                member_id: String(data.member_id).trim().slice(0, 160),
+                profile: safeMemberProfile(data.profile),
+              };
+            } catch (error) {
+              console.warn({
+                event: "member_profile_resolver_failure",
+                stage: "member_profile_read",
+                failure_class: error?.name === "AbortError" ? "timeout" : "request_failure",
+                status: null,
+                duration_ms: Math.max(0, Date.now() - startedAt),
+              });
+              return { ok: false, exists: false };
+            } finally {
+              clearTimeout(timeout);
+            }
+          }
+
+          '''
+
+          if marker not in s:
+            raise SystemExit("resolveExistingMember marker missing")
+          s = s.replace(marker, helper + marker, 1)
+          source.write_text(s)
+
+          wrangler = Path("member-pages-worker/wrangler.toml")
+          w = wrangler.read_text()
+          if w.count('LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "5000"') != 2:
+            raise SystemExit("unexpected member resolver timeout config count")
+          w = w.replace('LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "5000"', 'LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "8000"')
+          wrangler.write_text(w)
+
+          test = Path("member-pages-worker/test/liff-identity-foundation.test.mjs")
+          t = test.read_text()
+          marker = '''  it("valid LINE token succeeds, sets secure session cookie, and returns no raw token", async () => {'''
+          addition = '''  it("resolves LIFF start with one member-profile resolver call and no duplicate status lookup", async () => {
+            const memberResolver = resolver({
+              member_exists: true,
+              mmd_member_id: "MMD-SINGLE-LOOKUP",
+              profile: {
+                display_name: "Single Lookup Member",
+                tier: "Standard",
+                membership_status: "active",
+                points: 120,
+                history_window: { from: "2025-08-10", to: "2026-08-10", timezone: "Asia/Bangkok" },
+                history: [],
+              },
+            });
+            const runtime = env({ MEMBER_STATUS_RESOLVER: memberResolver });
+            const started = await start(runtime);
+            assert.equal(started.response.status, 200);
+            assert.equal(memberResolver.calls.length, 1);
+            assert.equal(memberResolver.calls[0]._path, "/__internal/member-profile/read");
+            assert.equal(memberResolver.calls[0].purpose, "liff_member_profile_read");
+          });
+
+          it("uses the same single profile contract for an unknown LINE identity", async () => {
+            const memberResolver = resolver({ member_exists: false });
+            const runtime = env({ MEMBER_STATUS_RESOLVER: memberResolver });
+            const started = await start(runtime);
+            assert.equal(started.response.status, 200);
+            assert.equal(started.payload.data.identity_state, "pending_identity");
+            assert.equal(memberResolver.calls.length, 1);
+            assert.equal(memberResolver.calls[0]._path, "/__internal/member-profile/read");
+          });
+
+          '''
+          if marker not in t:
+            raise SystemExit("test insertion marker missing")
+          t = t.replace(marker, addition + marker, 1)
+          test.write_text(t)
+          PY
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix member-pages-worker/test-runtime
+      - name: Run focused regression
+        run: |
+          npm run test:member-pages-liff
+          npm run test:member-dashboard-liff
+          npm run check:care-back-staging
+          npm run test:care-back-staging-fixtures
+          git diff --check
+      - name: Commit hotfix and remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/apply-care-back-resolver-hotfix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(liff): remove duplicate member lookup on start"
+          git push origin HEAD:hotfix/care-back-member-resolver-v7-1
