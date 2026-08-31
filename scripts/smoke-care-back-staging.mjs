@@ -100,7 +100,7 @@ async function verifyMemberScenario(scenario, expectedStatus) {
   if (before.payload.state === "claim_required") {
     const claim = await call(jar, "/member/api/liff/care-back/claim", { method: "POST", body: {} });
     assert.equal(claim.response.status, 200, `${scenario} claim failed: ${JSON.stringify(claim.payload)}`);
-    assert.equal(claim.payload.data.benefit_state, "pending_official_review");
+    assert.equal(claim.payload.data.benefit_state, "benefit_pending");
     assert.equal(claim.payload.data.code_status, "draft");
     assert.equal(claim.payload.data.single_use, true);
     assertCareBackSafe(claim.payload);
@@ -145,6 +145,24 @@ async function verifyNewScenario() {
   assertCareBackSafe(blocked.payload);
 }
 
+async function verifyPublicWishBridge() {
+  const publicWish = await call(new CookieJar(), "/member/api/care-back/public-wish", {
+    method: "POST",
+    body: {
+      wish_text: "STAGING public Wish bridge V7",
+      request_id: `staging-public-wish-${randomUUID()}`,
+      language: "th",
+    },
+  });
+  assert.equal(publicWish.response.status, 200, `public Wish failed: ${JSON.stringify(publicWish.payload)}`);
+  assert.equal(publicWish.payload.ok, true);
+  assert.equal(publicWish.payload.state, "completed");
+  assert.equal(publicWish.payload.benefits?.verification_required, true);
+  assert.deepEqual(publicWish.payload.grants, NO_GRANTS);
+  assert.match(publicWish.payload.wish_link_token || "", /^pw_[A-Za-z0-9_-]+$/);
+  assert.match(publicWish.payload.final_display?.message || "", /MMD/);
+}
+
 const shell = await fetch(new URL("/member/liff?intent=promo&campaign=care_back&scenario=current", base));
 assert.equal(shell.status, 200);
 assert.equal(shell.headers.get("x-mmd-route-owner"), "member-dashboard-chat-worker");
@@ -153,6 +171,7 @@ assert.match(await shell.text(), /"stagingScenario":"current"/);
 await verifyMemberScenario("current", "active");
 await verifyMemberScenario("returning", "expired");
 await verifyNewScenario();
+await verifyPublicWishBridge();
 
 const legacy = await fetch(new URL("/api/care-back-wish", base), {
   method: "POST",
