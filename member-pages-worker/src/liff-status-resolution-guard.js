@@ -16,13 +16,13 @@ export async function rewritePendingStatusStartResponse(request, response) {
   if (!(request instanceof Request) || !(response instanceof Response)) return response;
   if (request.method !== "POST") return response;
 
-  let path = "";
+  let url;
   try {
-    path = new URL(request.url).pathname;
+    url = new URL(request.url);
   } catch {
     return response;
   }
-  if (!START_PATHS.has(path)) return response;
+  if (!START_PATHS.has(url.pathname)) return response;
   if (!response.ok || !String(response.headers.get("content-type") || "").toLowerCase().includes("application/json")) {
     return response;
   }
@@ -42,18 +42,30 @@ export async function rewritePendingStatusStartResponse(request, response) {
     return response;
   }
 
+  const diagnosticRef = url.searchParams.get("debug") === "1"
+    ? safeDriveBootstrapDiagnosticRef(data?.drive_bootstrap_diagnostic_ref)
+    : "";
+  const unresolvedScreen = diagnosticRef
+    ? { ...STATUS_UNRESOLVED_SCREEN, copy: `${STATUS_UNRESOLVED_SCREEN.copy}\nRef: ${diagnosticRef}` }
+    : STATUS_UNRESOLVED_SCREEN;
+
   const headers = new Headers(response.headers);
   headers.delete("content-length");
   return new Response(JSON.stringify({
     ...payload,
     data: {
       ...data,
-      next_screen_key: STATUS_UNRESOLVED_SCREEN.key,
-      screen: STATUS_UNRESOLVED_SCREEN,
+      next_screen_key: unresolvedScreen.key,
+      screen: unresolvedScreen,
     },
   }), {
     status: response.status,
     statusText: response.statusText,
     headers,
   });
+}
+
+function safeDriveBootstrapDiagnosticRef(value) {
+  const ref = String(value || "").trim();
+  return /^DRIVE_BOOTSTRAP_[A-Z0-9_]{3,64}$/.test(ref) ? ref : "";
 }
