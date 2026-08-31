@@ -49,6 +49,15 @@ test("Wish input validation blocks empty, hostile and oversized content", () => 
   assert.equal(validateWish(" สุขสันต์วันเกิด MMD ครับ ").value, "สุขสันต์วันเกิด MMD ครับ");
 });
 
+test("Existing Webflow textarea keeps its stricter visible character limit", () => {
+  const { effectiveLimit, validateWish } = loadHooks();
+  assert.equal(effectiveLimit({ maxLength: 280 }), 280);
+  assert.equal(effectiveLimit({ maxLength: 900 }), 600);
+  assert.equal(effectiveLimit({ maxLength: -1 }), 600);
+  assert.equal(validateWish("x".repeat(281), 280).reason, "tooLong");
+  assert.equal(validateWish("x".repeat(280), 280).ok, true);
+});
+
 test("Public Wish payload contains no browser identity or benefit authority", () => {
   const { buildPayload, requestId } = loadHooks();
   const payload = buildPayload("สุขสันต์วันเกิดครับ");
@@ -58,6 +67,14 @@ test("Public Wish payload contains no browser identity or benefit authority", ()
   assert.match(payload.request_id, /^[A-Za-z0-9][A-Za-z0-9._~-]{15,127}$/);
   assert.match(requestId(), /^wish-/);
   assert.doesNotMatch(JSON.stringify(payload), /line_user_id|member_id|identity|payment|review|coupon|points|expiry|claim/i);
+});
+
+test("Wish completion accepts only explicit ok + completed state", () => {
+  const { isCompletedPayload } = loadHooks();
+  assert.equal(isCompletedPayload({ ok: true, state: "completed" }), true);
+  assert.equal(isCompletedPayload({ ok: true, state: "pending" }), false);
+  assert.equal(isCompletedPayload({ ok: false, state: "completed" }), false);
+  assert.equal(isCompletedPayload(null), false);
 });
 
 test("Wish completion trusts only a safe bounded server message", () => {
@@ -73,12 +90,23 @@ test("Browser bridge posts Public Wish and keeps benefit linking separate", () =
   assert.doesNotMatch(source, /\/member\/api\/liff\/care-back\/wish/);
   assert.match(source, /fetch\(ENDPOINT,/);
   assert.match(source, /credentials:\s*"same-origin"/);
-  assert.match(source, /payload\?\.state\s*!==\s*"completed"/);
+  assert.match(source, /payload\?\.ok\s*===\s*true\s*&&\s*payload\?\.state\s*===\s*"completed"/);
   assert.match(source, /mmd:care-back:wish-completed/);
   assert.match(source, /benefitVerificationRequired:\s*true/);
   assert.doesNotMatch(source, /window\.location\.assign|LIFF_URL|getProfile\(/);
   assert.doesNotMatch(source, /innerHTML|insertAdjacentHTML|document\.write/);
   assert.doesNotThrow(() => new Function(source));
+});
+
+test("Existing Webflow Wish form is reused instead of always generating a second form", () => {
+  assert.match(source, /findExistingForm\(root\)/);
+  assert.match(source, /root\.querySelector\("\[data-message\]"\)/);
+  assert.match(source, /root\.querySelector\("\[data-consent\]"\)/);
+  assert.match(source, /root\.querySelector\("\[data-submit\]"\)/);
+  assert.match(source, /if \(existing\) bindExistingForm\(root, starts, existing\)/);
+  assert.match(source, /#wish-flow/);
+  assert.match(source, /https:\/\/mmdbkk\.com\/member\/liff\?intent=status/);
+  assert.doesNotMatch(source, /miniapp\.line\.me\/2010862595-yT4DCEMc\?liff\.state/);
 });
 
 test("Customer copy says benefits are checked separately from the Wish", () => {
