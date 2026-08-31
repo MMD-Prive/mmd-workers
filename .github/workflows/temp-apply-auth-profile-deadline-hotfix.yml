@@ -23,7 +23,9 @@ jobs:
           node-version: "22"
           cache: npm
       - name: Apply deterministic patch
-        run: node scripts/temp-apply-auth-profile-deadline-hotfix.mjs
+        run: |
+          node scripts/temp-apply-auth-profile-deadline-hotfix.mjs
+          node scripts/temp-fix-profile-test-env.mjs
       - name: Install dependencies
         run: npm ci
       - name: Run focused regression
@@ -44,7 +46,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/workflows/temp-apply-auth-profile-deadline-hotfix.yml scripts/temp-apply-auth-profile-deadline-hotfix.mjs
+          git rm .github/workflows/temp-apply-auth-profile-deadline-hotfix.yml scripts/temp-apply-auth-profile-deadline-hotfix.mjs scripts/temp-fix-profile-test-env.mjs
           git add auth-worker member-pages-worker auth-staging-airtable-fixtures-worker .github/workflows/deploy-care-back-staging.yml
           git commit -m "fix(liff): bound auth profile reads and stage real resolver path"
           git push origin HEAD:hotfix/auth-profile-airtable-deadline-v7-2
