@@ -1,0 +1,40 @@
+name: Temporary auth resolver diagnostics
+
+on:
+  push:
+    branches:
+      - hotfix/auth-profile-airtable-deadline-v7-2
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      NO_COLOR: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hotfix/auth-profile-airtable-deadline-v7-2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Inspect current auth-worker deployments
+        shell: bash
+        run: |
+          echo "=== deployments ==="
+          npx --yes wrangler@4 deployments list --config auth-worker/wrangler.toml || true
+          echo "=== versions ==="
+          npx --yes wrangler@4 versions list --config auth-worker/wrangler.toml || true
+      - name: Remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/temp-auth-resolver-diagnostics.yml
+          git commit -m "chore(ci): remove temporary auth diagnostics"
+          git push origin HEAD:hotfix/auth-profile-airtable-deadline-v7-2
