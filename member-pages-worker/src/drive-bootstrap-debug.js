@@ -14,18 +14,27 @@ const SAFE_BOOTSTRAP_REASONS = new Set([
 
 export function driveBootstrapDiagnosticRef(request, bootstrap = {}) {
   if (!(request instanceof Request) || bootstrap?.mapped === true) return "";
-  let debug = false;
-  try {
-    debug = new URL(request.url).searchParams.get("debug") === "1";
-  } catch {
-    return "";
-  }
-  if (!debug) return "";
+  if (!isDebugRequest(request)) return "";
 
   const reason = String(bootstrap?.reason || "").trim().toLowerCase();
   if (!reason) return "DRIVE_BOOTSTRAP_OTHER";
   if (!SAFE_BOOTSTRAP_REASONS.has(reason)) return "DRIVE_BOOTSTRAP_OTHER";
   return `DRIVE_BOOTSTRAP_${reason.toUpperCase()}`;
+}
+
+function isDebugRequest(request) {
+  try {
+    const requestUrl = new URL(request.url);
+    if (requestUrl.searchParams.get("debug") === "1") return true;
+
+    const referer = String(request.headers.get("referer") || "").trim();
+    if (!referer) return false;
+    const refererUrl = new URL(referer);
+    if (refererUrl.origin !== requestUrl.origin) return false;
+    return refererUrl.searchParams.get("debug") === "1";
+  } catch {
+    return false;
+  }
 }
 
 export function withDriveBootstrapDiagnostic(request, response, payload, bootstrap = {}) {
