@@ -17,6 +17,8 @@ DRIVE_MEMBERSHIP_OWNER_EMAIL = "malemodel.bkk@gmail.com"
 DRIVE_PREMIUM_PACKAGE_FOLDER_ID = "16DfhOo-DwJedBaTi_pvkxGEnPjWGdxxD"
 DRIVE_STANDARD_PACKAGE_FOLDER_ID = "1Snw1gTJNzkMxHlH-Nt2g1-6mt_3GNkT8"
 DRIVE_FALLBACK_MEMBERSHIP_OWNER_EMAIL = "mmdprive@gmail.com"
+DRIVE_FALLBACK_PREMIUM_PACKAGE_FOLDER_ID = "1ecvIZUYdjHAsZ-ujDbb1d76MXzx5BseN"
+DRIVE_FALLBACK_STANDARD_PACKAGE_FOLDER_ID = "141CGk8114pC2EGxTwEdVUWlzmKKG4n9w"
 AIRTABLE_TABLE_CARE_BACK_CLAIMS = "MMD — Campaign Claims"
 AIRTABLE_TABLE_CARE_BACK_PROMO_CODES = "MMD — Promo Codes"
 AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES = "tblvMJjYXy29mgDLb"
@@ -53,11 +55,13 @@ new_sqlite_classes = ["CareBackBirthdayWishCoordinator"]
 #   with Google Drive metadata read access. The runtime verifies the authorized
 #   Drive account before trusting package-folder permissions.
 #
-# Optional legacy fallback Drive (checked only after the main Drive returns a
-# definitive no-access result for the verified LINE email):
-# - DRIVE_FALLBACK_MEMBERSHIP_OWNER_EMAIL = mmdprive@gmail.com
-# - DRIVE_FALLBACK_PREMIUM_PACKAGE_FOLDER_ID = verified Premium Package folder ID
-# - DRIVE_FALLBACK_STANDARD_PACKAGE_FOLDER_ID = verified Standard Package folder ID
+# Legacy fallback Drive (checked only after the main Drive returns a definitive
+# no-access result for the verified LINE email):
+# - owner: mmdprive@gmail.com
+# - Premium mapping: MMD Private Models -> Premium Models + Standard Models
+#   folder id: 1ecvIZUYdjHAsZ-ujDbb1d76MXzx5BseN
+# - Standard mapping: Public Models -> Travel + Extreme
+#   folder id: 141CGk8114pC2EGxTwEdVUWlzmKKG4n9w
 # - optional secret GOOGLE_DRIVE_FALLBACK_REFRESH_TOKEN authorized by
 #   mmdprive@gmail.com. GOOGLE_DRIVE_FALLBACK_CLIENT_ID / CLIENT_SECRET may also
 #   be set; when omitted the primary OAuth client id/secret are reused.
