@@ -1,0 +1,59 @@
+const START_PATHS = new Set(["/member/api/liff/start", "/member/api/liff/start/"]);
+
+const STATUS_UNRESOLVED_SCREEN = Object.freeze({
+  key: "status_unresolved",
+  copy: "ยังไม่พบข้อมูลสมาชิกที่เชื่อมกับ LINE นี้ครับ หากเคยเป็นสมาชิก กรุณาติดต่อ HYPE เพื่อเชื่อมข้อมูลก่อนใช้งาน My MMD หากยังไม่เคยเป็นสมาชิก สามารถเริ่มสมัครสมาชิกได้ด้านล่างครับ",
+  actions: [
+    {
+      id: "signup",
+      label: "ยังไม่เคยเป็นสมาชิก · สมัครสมาชิก",
+      endpoint: "/member/api/liff/intent",
+    },
+  ],
+});
+
+export async function rewritePendingStatusStartResponse(request, response) {
+  if (!(request instanceof Request) || !(response instanceof Response)) return response;
+  if (request.method !== "POST") return response;
+
+  let path = "";
+  try {
+    path = new URL(request.url).pathname;
+  } catch {
+    return response;
+  }
+  if (!START_PATHS.has(path)) return response;
+  if (!response.ok || !String(response.headers.get("content-type") || "").toLowerCase().includes("application/json")) {
+    return response;
+  }
+
+  const payload = await response.clone().json().catch(() => null);
+  const data = payload && typeof payload === "object" ? payload.data : null;
+  const screen = data && typeof data === "object" && data.screen && typeof data.screen === "object"
+    ? data.screen
+    : null;
+
+  if (
+    payload?.ok !== true
+    || data?.member_resolved !== false
+    || data?.pending_identity !== true
+    || (data?.next_screen_key !== "status_result" && screen?.key !== "status_result")
+  ) {
+    return response;
+  }
+
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  return new Response(JSON.stringify({
+    ...payload,
+    data: {
+      ...data,
+      next_screen_key: STATUS_UNRESOLVED_SCREEN.key,
+      screen: STATUS_UNRESOLVED_SCREEN,
+    },
+  }), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
