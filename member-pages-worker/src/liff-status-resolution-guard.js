@@ -42,11 +42,9 @@ export async function rewritePendingStatusStartResponse(request, response, trace
     return response;
   }
 
-  // drive_bootstrap_diagnostic_ref is injected only by the bounded debug gate.
-  // Do not re-check the API URL here because the LIFF shell POST does not carry
-  // its page query string; the backend has already validated same-origin debug.
-  const diagnosticRef = safeDriveBootstrapDiagnosticRef(data?.drive_bootstrap_diagnostic_ref);
-  const safeTrace = safeLiffTraceId(traceId);
+  const debug = isSameOriginDiagnosticRequest(request);
+  const diagnosticRef = debug ? safeDriveBootstrapDiagnosticRef(data?.drive_bootstrap_diagnostic_ref) : "";
+  const safeTrace = debug ? safeLiffTraceId(traceId) : "";
   const refs = [safeTrace, diagnosticRef].filter(Boolean).join(" · ");
   const unresolvedScreen = refs
     ? { ...STATUS_UNRESOLVED_SCREEN, copy: `${STATUS_UNRESOLVED_SCREEN.copy}\nRef: ${refs}` }
@@ -58,7 +56,7 @@ export async function rewritePendingStatusStartResponse(request, response, trace
     ...payload,
     data: {
       ...data,
-      liff_trace_id: safeTrace || undefined,
+      ...(safeTrace ? { liff_trace_id: safeTrace } : {}),
       next_screen_key: unresolvedScreen.key,
       screen: unresolvedScreen,
     },
@@ -67,6 +65,19 @@ export async function rewritePendingStatusStartResponse(request, response, trace
     statusText: response.statusText,
     headers,
   });
+}
+
+function isSameOriginDiagnosticRequest(request) {
+  try {
+    const requestUrl = new URL(request.url);
+    if (requestUrl.searchParams.get("debug") === "1") return true;
+    const refererValue = String(request.headers.get("referer") || "").trim();
+    if (!refererValue) return false;
+    const referer = new URL(refererValue);
+    return referer.origin === requestUrl.origin && referer.searchParams.get("debug") === "1";
+  } catch {
+    return false;
+  }
 }
 
 function safeDriveBootstrapDiagnosticRef(value) {
