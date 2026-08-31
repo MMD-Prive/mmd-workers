@@ -34,8 +34,8 @@ function mockAirtable(handler) {
 }
 
 describe("LIFF gateway Airtable adapter", () => {
-  it("uses a bounded seven-second gateway timeout by default and clamps explicit overrides", () => {
-    assert.equal(liffGatewayAirtableTimeoutMs(env()), 7000);
+  it("uses a bounded ten-second gateway timeout by default and clamps explicit overrides", () => {
+    assert.equal(liffGatewayAirtableTimeoutMs(env()), 10000);
     assert.equal(liffGatewayAirtableTimeoutMs(env({ AIRTABLE_REQUEST_TIMEOUT_MS: 8500 })), 8500);
     assert.equal(liffGatewayAirtableTimeoutMs(env({ AIRTABLE_REQUEST_TIMEOUT_MS: 100 })), 500);
     assert.equal(liffGatewayAirtableTimeoutMs(env({ AIRTABLE_REQUEST_TIMEOUT_MS: 20000 })), 10000);

@@ -96,6 +96,7 @@ EXPIRED_PATH = "/membership/renewal"
 
 # DEV ONLY. Set to "true" only while testing so the API returns the login code.
 MMD_AUTH_DEV_MODE = "false"
+MEMBER_STATUS_AIRTABLE_TIMEOUT_MS = "10000"
 
 # Required secrets to set with wrangler secret put:
 # AIRTABLE_API_KEY
@@ -103,3 +104,42 @@ MMD_AUTH_DEV_MODE = "false"
 # AUTH_HMAC_SECRET
 # ADMIN_BEARER
 # MEMBER_STATUS_RESOLVER_SECRET
+
+
+# Isolated CARE BACK auth staging. Airtable reads are provided only by the
+# synthetic service binding below; no production Airtable records are used.
+[env.staging]
+name = "mmd-auth-worker-staging"
+workers_dev = false
+
+[env.staging.vars]
+AIRTABLE_API_KEY = "synthetic-staging-only"
+AIRTABLE_BASE_ID = "app_auth_staging_fixture"
+AIRTABLE_TABLE_MEMBERS = "Members"
+AIRTABLE_TABLE_MEMBER_PACKAGES = "member_packages"
+AIRTABLE_TABLE_PAYMENTS = "Payments"
+AIRTABLE_TABLE_SESSIONS = "Sessions"
+AIRTABLE_TABLE_POINTS_LEDGER = "MMD — Points Ledger"
+AIRTABLE_MEMBERS_LINE_USER_ID_FIELD = "line_id"
+AIRTABLE_MEMBERS_DISPLAY_NAME_FIELD = "Full Name (Display)"
+AIRTABLE_MEMBERS_EMAIL_FIELD = "Contact Email"
+AIRTABLE_SESSIONS_LINE_USER_ID_FIELD = "line_user_id"
+AIRTABLE_SESSIONS_EMAIL_FIELD = "email"
+AIRTABLE_SESSIONS_HISTORY_DATE_FIELD = "job_date"
+AIRTABLE_SESSIONS_STATUS_FIELD = "Session Status"
+AIRTABLE_SESSIONS_SERVICE_TYPE_FIELD = "job_type"
+AIRTABLE_MEMBER_PACKAGES_EMAIL_FIELD = "member_email"
+AIRTABLE_MEMBER_PACKAGES_CREATED_FIELD = "created_at"
+AIRTABLE_POINTS_EMAIL_FIELD = "member_email"
+AIRTABLE_POINTS_HISTORY_DATE_FIELD = "created_at"
+AIRTABLE_PAYMENTS_EMAIL_FIELD = "Member Email"
+AIRTABLE_PAYMENTS_STATUS_FIELD = "Payment Status"
+AIRTABLE_PAYMENTS_VERIFICATION_FIELD = "Verification Status"
+AIRTABLE_PAYMENTS_DATE_FIELD = "Payment Date"
+AIRTABLE_PAYMENTS_CREATED_FIELD = "Created At"
+AIRTABLE_PAYMENTS_UPDATED_FIELD = "Updated At"
+MEMBER_STATUS_AIRTABLE_TIMEOUT_MS = "10000"
+
+[[env.staging.services]]
+binding = "AIRTABLE_HTTP"
+service = "auth-staging-airtable-fixtures-worker-staging"
