@@ -10,6 +10,7 @@ import {
   renderApprovedAdminLogin,
 } from "./admin-login-page.js";
 import { handleKenjiKnowledgeRequest, isKenjiKnowledgeRequest } from "./kenji-knowledge-runtime.js";
+export { KenjiKnowledgeCoordinator } from "./kenji-knowledge-airtable-adapter.js";
 import { handleKenjiPublicKnowledgeRequest, isKenjiPublicKnowledgeRequest } from "./kenji-public-knowledge-runtime.js";
 import { handleMmsAdminRequest, isMmsAdminRequest } from "./mms-admin-runtime.js";
 import {
@@ -98,7 +99,9 @@ export default {
     }
 
     if (isKenjiKnowledgeRequest(path, method)) {
-      return handleKenjiKnowledgeRequest(request, env, ctx);
+      return handleKenjiKnowledgeRequest(request, env, {
+        actor: strictGate.actor,
+      });
     }
 
     if (
@@ -160,6 +163,8 @@ async function handleCredentialBoundAdminLogin(request, env) {
     exp: now + ADMIN_GATE_TTL_MS,
     nonce: crypto.randomUUID(),
     auth_method: "login",
+    actor_id: "boss-per",
+    actor_role: "owner",
   };
   const cookie = await makeCredentialBoundAdminCookie(session, env);
   if (!cookie) {
@@ -197,8 +202,11 @@ function handleCredentialBoundAdminLogout(request) {
 }
 
 async function applyCredentialBoundAdminGate(request, env, path, method) {
-  if (method === "OPTIONS" || !isCredentialBoundAdminPath(path)) return { request };
-  if (hasServiceAuthHeader(request)) return { request };
+  if (method === "OPTIONS" || !isCredentialBoundAdminPath(path)) return { request, actor: null };
+  if (hasServiceAuthHeader(request)) {
+    // Service credentials may submit Review/QA work, but can never Publish.
+    return { request, actor: { id: "service-admin", role: "reviewer" } };
+  }
 
   const session = await readCredentialBoundAdminSession(request, env);
   if (!isValidCredentialBoundAdminSession(session, request)) {
@@ -210,7 +218,13 @@ async function applyCredentialBoundAdminGate(request, env, path, method) {
     return { response: strictJson(request, env, { ok: false, authenticated: false, error: "admin_auth_bridge_not_ready" }, 503) };
   }
 
-  return { request: withInternalAuthorization(request, bypass) };
+  return {
+    request: withInternalAuthorization(request, bypass),
+    actor: {
+      id: clean(session.actor_id || "boss-per"),
+      role: clean(session.actor_role || "owner"),
+    },
+  };
 }
 
 function isCredentialBoundAdminPath(path) {
@@ -327,7 +341,7 @@ function strictCorsHeaders(request, env) {
     headers.set("Vary", "Origin");
   }
   headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS,DELETE");
-  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Confirm-Key");
+  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Confirm-Key, Idempotency-Key");
   return headers;
 }
 
