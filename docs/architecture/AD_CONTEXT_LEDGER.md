@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The Ad Context Ledger captures safe context around LINE OA pricing inquiries so Per/Ewvon can price from the most likely ad, catalogue, member history, and request details without asking the customer to identify the model first.
+The Ad Context Ledger captures safe context around LINE OA pricing inquiries so Per can price from the most likely ad, catalogue, member history, and request details without asking the customer to identify the model first.
 
 This is not a model immigration pipeline. It does not create Airtable `Models` records, does not confirm availability, and does not send final prices automatically.
 
@@ -13,8 +13,8 @@ This is not a model immigration pipeline. It does not create Airtable `Models` r
 3. The webhook writes the event to `MMD — Console Inbox`.
 4. The webhook calls `POST /v1/admin/pricing/reviews/create`.
 5. `admin-worker` builds safe member context and ad context.
-6. `admin-worker` sends `[Pricing Review: Ad/Member Context]` to Per/Ewvon through Telegram.
-7. Per/Ewvon approves or edits the final price.
+6. `admin-worker` sends `[Pricing Review: Ad/Member Context]` to Per through Telegram.
+7. Per approves or edits the final price.
 8. Only the approval endpoint may send a final customer price, and it still must not confirm booking or model availability.
 
 ## Ledger Fields
@@ -66,7 +66,7 @@ If ad context exists, the acknowledgement says Kenji will check the item the cus
 
 If catalogue context exists, the acknowledgement references the catalogue.
 
-If no context exists, the acknowledgement says Kenji will send the pricing request to Per/Ewvon and asks for date, time, zone, and duration.
+If no context exists, the acknowledgement says the pricing request will be sent to Per and asks for date, time, zone, and duration.
 
 None of these replies quote a final price.
 
@@ -74,7 +74,7 @@ None of these replies quote a final price.
 
 `PRICING_TIMEOUT_MINUTES=10` controls the timeout window.
 
-`PRICING_TIMEOUT_SEND_TO_CUSTOMER=false` is the required default. On timeout, the system may calculate an internal provisional range and notify Per/Ewvon again. It must not send that range to the customer unless this flag is explicitly set to true and the guardrails pass.
+`PRICING_TIMEOUT_SEND_TO_CUSTOMER=false` is the required default. On timeout, the system may calculate an internal provisional range and notify Per again. It must not send that range to the customer unless this flag is explicitly set to true and the guardrails pass.
 
 Auto-send is blocked when:
 
@@ -92,7 +92,7 @@ Auto-send is blocked when:
 - `PRICING_REVIEW_TELEGRAM_EWVON_ID`
 - `TG_THREAD_PRICING_REVIEW`
 
-If direct Per/Ewvon chat IDs are not configured, the worker falls back to the internal Telegram thread.
+If Per's direct review chat ID is not configured, the worker falls back to the internal Telegram thread.
 
 ## Non-Goals
 

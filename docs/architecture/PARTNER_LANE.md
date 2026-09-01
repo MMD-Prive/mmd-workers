@@ -66,27 +66,18 @@ Important:
 
 Yuki belongs to the partner-facing gatekeeping layer, not the Black Card authority layer.
 
-### Ewvon
-Ewvon should align with:
-- Black Card authority
-- elite access privilege
-- high-level approval tied to Black Card power
-- the right to grant, hold, or embody that specific level of authority
-
-Important:
-
-**Ewvon, not Yuki, should be treated as the stronger holder of Black Card-linked authority.**
-
-This is a canonical separation that protects role clarity:
-- Yuki = partner gatekeeping and controlled relationship boundary
-- Ewvon = Black Card-level authority
-
 ### Boss Per
 Boss Per should align with:
 - system ownership
 - overarching authority
 - high-level approval energy
 - premium standards
+- direct Black Card authority
+
+Important:
+
+**Black Card authority belongs directly to Per. Ewvon and Chang are removed from
+the active MMD character and authority system.**
 
 ### Kenji
 Kenji is not the main face of the Partner Lane by default.

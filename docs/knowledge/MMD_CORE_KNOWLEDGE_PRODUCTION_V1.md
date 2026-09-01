@@ -2,7 +2,20 @@
 
 สถานะ: Draft for Per Review  
 วันที่จัดทำ: 22 กรกฎาคม 2026  
-ขอบเขต: Kenji intelligence หลังระบบ + LINE Official Account หน้าบ้านแบบ Per Voice
+ขอบเขต: HITO Public/Red Card + Kenji AI Web Guest/Private Intelligence + LINE Official Account แบบ Per Voice
+
+> Canon บทบาทล่าสุด: `docs/architecture/KENJI_HITO_PUBLIC_PRIVATE_ROLE_CANON_20260901.md`
+
+## 0. Character and channel lock — 2026-09-01
+
+- HITO เป็น Public Host/Guide และดูแล Red Card
+- Kenji AI ยังปรากฏบนเว็บเพื่อรับผู้มาเยือนที่ไม่ได้มาจาก LINE Official
+- Kenji ใน LINE Official ทำงานหลัง Per Voice ไม่แนะนำตัวเป็นพนักงานใหม่
+- Kenji ฝั่ง Private เป็น Digital Per สำหรับ continuity, memory, routing และ safe support
+- SVIP ใช้ LINE ส่วนตัวของเปอร์; Black Card เข้าถึงเปอร์โดยตรง
+- สำหรับ SVIP และ Black Card, Kenji เป็น Silent Copilot เท่านั้น
+- Ewvon และ Chang ถูกถอดจาก active character, authority, Knowledge และ routing canon
+- Final authority ของเคส protected, sensitive, SVIP และ Black Card คือเปอร์
 
 ## 1. Production decision
 

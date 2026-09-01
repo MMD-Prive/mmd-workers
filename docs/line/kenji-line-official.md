@@ -1,13 +1,18 @@
-# Kenji AI In LINE Official
+# Kenji Intelligence in LINE Official
 
-Kenji LINE OA is the member-facing concierge entry for MMD Privé. It is not the admin board, not Worker Control Console, and not a production write surface beyond the existing safe Console Inbox / Airtable inbound logging already present in the LINE webhook.
+LINE Official is an established Per-facing relationship channel. Customer copy stays in Per Voice; Kenji is the intelligence and continuity layer behind that relationship, not a separate employee customers must learn to trust. Kenji may still be visible as the Public Web Guest Concierge outside LINE OA.
+
+This surface is not the admin board, not Worker Control Console, and not a production write surface beyond the existing safe Console Inbox / Airtable inbound logging already present in the LINE webhook.
+
+Canonical role lock: `docs/architecture/KENJI_HITO_PUBLIC_PRIVATE_ROLE_CANON_20260901.md`.
 
 ## Surface Map
 
 - `/member/dashboard`: Member Home / Status Hub
-- `/member/kenji-ai-20`: Kenji AI member-facing concierge surface
+- `/kenji`: Public Web Guest Concierge for visitors outside LINE OA
+- `/member/kenji-ai-20`: canonical Private member/LIFF continuity surface
 - `/sigil/board`: internal system/admin/rules/control layer
-- LINE OA Kenji: member-facing conversational entry
+- LINE OA: Per-facing conversational entry with Kenji intelligence behind it
 
 ## Production Webhook Route
 
