@@ -47,6 +47,7 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/admin/jobs/create-session",
   "/internal/admin/jobs/create-job",
   "/internal/admin/create-session",
+  "/internal/admin/kenji",
   "/internal/admin/kenji-knowledge",
   "/internal/jobs/create-job",
 ];
@@ -210,6 +211,11 @@ async function applyCredentialBoundAdminGate(request, env, path, method) {
 
   const session = await readCredentialBoundAdminSession(request, env);
   if (!isValidCredentialBoundAdminSession(session, request)) {
+    if ((method === "GET" || method === "HEAD") && path === "/internal/admin/kenji") {
+      const login = new URL(ADMIN_LOGIN_PAGE_PATH, request.url);
+      login.searchParams.set("next", path);
+      return { response: new Response(null, { status: 303, headers: { Location: login.pathname + login.search, "Cache-Control": "no-store" } }) };
+    }
     return { response: strictJson(request, env, { ok: false, authenticated: false, error: "unauthorized" }, 401) };
   }
 
@@ -229,6 +235,7 @@ async function applyCredentialBoundAdminGate(request, env, path, method) {
 
 function isCredentialBoundAdminPath(path) {
   return (
+    path === "/internal/admin/kenji" ||
     path === ADMIN_DASHBOARD_API_PATH ||
     path === "/v1/internal/kenji/knowledge/published" ||
     path.startsWith("/v1/admin/") ||
