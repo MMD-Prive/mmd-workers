@@ -21,6 +21,21 @@ const MOVEMENT_FIELDS = [
   "Reference Type"
 ];
 
+const PRODUCT_ALIAS_RULES = Object.freeze([
+  {
+    triggers: ["pod plus", "podplus", "pod premium plus", "premium plus"],
+    aliases: ["pod plus", "podplus", "pod premium plus", "premium plus", "pod premium", "pod"]
+  },
+  {
+    triggers: ["glenburgie", "glenburgies", "pop plus", "popplus"],
+    aliases: ["glenburgie", "glenburgies", "pop plus", "popplus"]
+  },
+  {
+    triggers: ["gg water", "ggwater"],
+    aliases: ["gg water", "ggwater", "gg-water"]
+  }
+]);
+
 export async function handleSupplierPortal(request, env) {
   const url = new URL(request.url);
   const method = request.method.toUpperCase();
@@ -149,11 +164,14 @@ function parseSupplierTokenConfig(raw) {
 }
 
 function normalizeAccessItem(token, item) {
+  const productKeywords = normalizeStringList(item.product_keywords || item.products || item.product_names);
+  const supplierNames = normalizeStringList(item.supplier_names || item.supplier_name || item.name);
+
   return {
     ...item,
     token_label: item.token_label || item.label || token,
-    product_keywords: normalizeStringList(item.product_keywords || item.products || item.product_names),
-    supplier_names: normalizeStringList(item.supplier_names || item.supplier_name || item.name)
+    product_keywords: expandMatchTerms(productKeywords),
+    supplier_names: expandMatchTerms(supplierNames)
   };
 }
 
@@ -263,23 +281,62 @@ async function loadMovements(env) {
 }
 
 function canSeeProduct(access, product) {
-  const haystack = [
+  const haystack = normalizeMatchText([
     product.product_name,
     product.sku,
     product.category,
+    product.curation_label,
     product.description,
     ...(Array.isArray(product.supplier) ? product.supplier : [])
-  ].join(" ").toLowerCase();
+  ].join(" "));
 
-  const productOk = access.product_keywords.length === 0 || access.product_keywords.some((keyword) => haystack.includes(keyword.toLowerCase()));
-  const supplierOk = access.supplier_names.length === 0 || access.supplier_names.some((name) => haystack.includes(name.toLowerCase()));
-  return productOk && supplierOk;
+  const compactHaystack = compactMatchText(haystack);
+  const productOk = access.product_keywords.length === 0 || hasAnyMatch(haystack, compactHaystack, access.product_keywords);
+  const supplierOk = access.supplier_names.length > 0 && hasAnyMatch(haystack, compactHaystack, access.supplier_names);
+
+  if (access.product_keywords.length > 0) return productOk || supplierOk;
+  return supplierOk;
+}
+
+function hasAnyMatch(haystack, compactHaystack, terms) {
+  return terms.some((term) => {
+    const normalized = normalizeMatchText(term);
+    if (!normalized) return false;
+    const compact = compactMatchText(normalized);
+    return haystack.includes(normalized) || (compact.length >= 4 && compactHaystack.includes(compact));
+  });
+}
+
+function expandMatchTerms(values) {
+  const set = new Set();
+  for (const value of normalizeStringList(values)) {
+    const normalized = normalizeMatchText(value);
+    if (!normalized) continue;
+    set.add(normalized);
+    set.add(compactMatchText(normalized));
+
+    for (const rule of PRODUCT_ALIAS_RULES) {
+      const matchesRule = rule.triggers.some((trigger) => {
+        const normalizedTrigger = normalizeMatchText(trigger);
+        return normalized.includes(normalizedTrigger) || compactMatchText(normalized).includes(compactMatchText(normalizedTrigger));
+      });
+      if (!matchesRule) continue;
+      for (const alias of rule.aliases) {
+        const normalizedAlias = normalizeMatchText(alias);
+        set.add(normalizedAlias);
+        set.add(compactMatchText(normalizedAlias));
+      }
+    }
+  }
+  return [...set].filter(Boolean);
 }
 
 function movementMatchesProduct(movement, product) {
   if (movement.product_id && movement.product_id === product.id) return true;
-  const haystack = `${movement.product_name} ${movement.movement_name}`.toLowerCase();
-  return Boolean(product.product_name && haystack.includes(product.product_name.toLowerCase()));
+  const haystack = normalizeMatchText(`${movement.product_name} ${movement.movement_name}`);
+  const compactHaystack = compactMatchText(haystack);
+  const productTerms = expandMatchTerms([product.product_name, product.sku]);
+  return hasAnyMatch(haystack, compactHaystack, productTerms);
 }
 
 function summarizeMovements(movements) {
@@ -340,6 +397,22 @@ function normalizeStringList(value) {
   if (!value) return [];
   if (Array.isArray(value)) return value.map(String).filter(Boolean);
   return [String(value)].filter(Boolean);
+}
+
+function normalizeMatchText(value) {
+  return String(value || "")
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[’']/g, "")
+    .replace(/&/g, " and ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compactMatchText(value) {
+  return normalizeMatchText(value).replace(/\s+/g, "");
 }
 
 function numberOrNull(value) {
