@@ -87,7 +87,7 @@ async function handleTelegramWebhook(update, env) {
   const chatId = clean(message.chat?.id);
   if (!chatId) return { handled: false, reason: "missing_chat_id" };
 
-  const joinCleanup = await cleanupStandardGroupJoinMessage(message, env);
+  const joinCleanup = await cleanupConfiguredGroupJoinMessage(message, env);
   if (joinCleanup) return joinCleanup;
 
   const text = clean(message.text || "");
@@ -122,17 +122,18 @@ async function handleTelegramWebhook(update, env) {
   return { handled: false, reason: "no_matching_command" };
 }
 
-async function cleanupStandardGroupJoinMessage(message, env) {
+async function cleanupConfiguredGroupJoinMessage(message, env) {
   if (!Array.isArray(message.new_chat_members) || message.new_chat_members.length === 0) return null;
 
-  const standardGroupId = clean(env.TELEGRAM_STANDARD_GROUP_ID);
-  if (!standardGroupId) {
-    return { handled: false, reason: "standard_group_cleanup_not_configured" };
+  const cleanupChats = configuredJoinCleanupChats(env);
+  if (cleanupChats.size === 0) {
+    return { handled: false, reason: "join_cleanup_not_configured" };
   }
 
   const chatId = clean(message.chat?.id);
-  if (chatId !== standardGroupId) {
-    return { handled: false, reason: "join_message_outside_standard_group" };
+  const surface = cleanupChats.get(chatId);
+  if (!surface) {
+    return { handled: false, reason: "join_message_outside_cleanup_groups" };
   }
 
   const messageId = Number(message.message_id);
@@ -143,10 +144,27 @@ async function cleanupStandardGroupJoinMessage(message, env) {
   const deletion = await deleteTelegramMessage({ chat_id: chatId, message_id: messageId }, env);
   return {
     handled: true,
-    flow: "standard_group_join_cleanup",
+    flow: "telegram_group_join_cleanup",
+    surface,
     deleted: deletion.ok === true,
     telegram: deletion,
   };
+}
+
+function configuredJoinCleanupChats(env) {
+  const chats = new Map();
+  const add = (value, surface) => {
+    const chatId = clean(value);
+    if (chatId) chats.set(chatId, surface);
+  };
+
+  // Keep the legacy Standard Group binding while naming the two current
+  // surfaces explicitly. A duplicate ID is harmless and resolves to the
+  // more specific surface label below.
+  add(env.TELEGRAM_STANDARD_GROUP_ID, "standard_group");
+  add(env.TELEGRAM_MMD_CHAT_GROUP_ID, "mmd_chat");
+  add(env.TELEGRAM_PREVIEW_GROUP_ID || env.TELEGRAM_PREVIEW_CHANNEL_ID, "telegram_preview");
+  return chats;
 }
 
 async function deleteTelegramMessage(payload, env) {
