@@ -363,6 +363,17 @@ PRICING_REVIEW_TELEGRAM_PER_ID = ""
 PRICING_REVIEW_TELEGRAM_EWVON_ID = ""
 TG_THREAD_PRICING_REVIEW = "61"
 
+# Serializes all Kenji Knowledge workflow mutations through one Worker-owned
+# coordinator. Airtable status, version, command ID, QA snapshot and audit log
+# are then written in one record PATCH.
+[[durable_objects.bindings]]
+name = "KENJI_KNOWLEDGE_COORDINATOR"
+class_name = "KenjiKnowledgeCoordinator"
+
+[[migrations]]
+tag = "v2026-09-01-kenji-knowledge-coordinator"
+new_sqlite_classes = ["KenjiKnowledgeCoordinator"]
+
 [[r2_buckets]]
 binding = "MMD_MODEL_ASSETS"
 bucket_name = "mmd-models"
