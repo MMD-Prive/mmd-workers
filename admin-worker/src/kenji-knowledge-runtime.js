@@ -1,3 +1,8 @@
+import {
+  handleKenjiKnowledgeWorkflowRequest,
+  isKenjiKnowledgeWorkflowRequest,
+} from "./kenji-knowledge-airtable-adapter.js";
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
 export const KENJI_KNOWLEDGE_AUTH_ME_PATH = "/v1/admin/auth/me";
@@ -36,6 +41,11 @@ const FIELD = Object.freeze({
   reviewedBy: "reviewed_by",
   reviewNote: "review_note",
   payloadJson: "payload_json",
+  allowedAudience: "allowed_audience",
+  workflowStage: "workflow_stage",
+  workflowVersion: "workflow_version",
+  lastCommandId: "last_command_id",
+  workflowUpdatedAt: "workflow_updated_at",
 });
 
 const STATIC_CANONICAL_CARDS = Object.freeze([
@@ -147,6 +157,7 @@ export function isKenjiKnowledgeRequest(path, method = "GET") {
   if ((normalizedMethod === "GET" || normalizedMethod === "HEAD") && path === KENJI_KNOWLEDGE_LIST_PATH) return true;
   if ((normalizedMethod === "GET" || normalizedMethod === "HEAD") && path === KENJI_KNOWLEDGE_PUBLISHED_PATH) return true;
   if ((normalizedMethod === "POST" || normalizedMethod === "HEAD") && path === KENJI_KNOWLEDGE_DRAFT_PATH) return true;
+  if (isKenjiKnowledgeWorkflowRequest(path, normalizedMethod)) return true;
   if ((normalizedMethod === "GET" || normalizedMethod === "HEAD") && isKnowledgeDetailPath(path)) return true;
   return false;
 }
@@ -157,6 +168,8 @@ export function isKenjiKnowledgePath(path) {
     path === KENJI_KNOWLEDGE_LIST_PATH ||
     path === KENJI_KNOWLEDGE_DRAFT_PATH ||
     path === KENJI_KNOWLEDGE_PUBLISHED_PATH ||
+    isKenjiKnowledgeWorkflowRequest(path, "GET") ||
+    isKenjiKnowledgeWorkflowRequest(path, "POST") ||
     isKnowledgeDetailPath(path);
 }
 
@@ -178,6 +191,13 @@ export async function handleKenjiKnowledgeRequest(request, env = {}, options = {
   const authed = await resolveAuthorization(request, env, options);
   if (!authed) {
     return withCors(json({ ok: false, authenticated: false, error: "unauthorized" }, 401, request), cors);
+  }
+
+  if (isKenjiKnowledgeWorkflowRequest(path, method)) {
+    const workflowResponse = await handleKenjiKnowledgeWorkflowRequest(request, env, {
+      actor: options.actor,
+    });
+    return withCors(workflowResponse, cors);
   }
 
   if (path === KENJI_KNOWLEDGE_AUTH_ME_PATH) {
@@ -370,6 +390,7 @@ function recordToCard(record = {}) {
     answer: clean(fields[FIELD.customerAnswer]) || payload.customer_answer,
     internal_instruction: clean(fields[FIELD.internalInstruction]) || payload.internal_instruction,
     allowed_channels: arrayValue(fields[FIELD.allowedChannels]),
+    allowed_audience: arrayValue(fields[FIELD.allowedAudience]),
     response_mode: clean(fields[FIELD.responseMode]) || payload.response_mode,
     risk_level: clean(fields[FIELD.riskLevel]) || payload.risk_level,
     status: clean(fields[FIELD.status]) || payload.status,
@@ -380,7 +401,11 @@ function recordToCard(record = {}) {
     reviewed_by: clean(fields[FIELD.reviewedBy]) || payload.reviewed_by,
     review_note: clean(fields[FIELD.reviewNote]) || payload.review_note,
     payload_json: payload,
-    updated_at: record.createdTime || clean(fields.updated_at),
+    workflow_stage: clean(fields[FIELD.workflowStage]) || payload.workflow?.stage,
+    workflow_version: Number(fields[FIELD.workflowVersion] || payload.workflow?.version || 1),
+    last_command_id: clean(fields[FIELD.lastCommandId]),
+    workflow_updated_at: clean(fields[FIELD.workflowUpdatedAt]),
+    updated_at: clean(fields[FIELD.workflowUpdatedAt]) || record.createdTime || clean(fields.updated_at),
   });
 }
 
@@ -412,6 +437,7 @@ function normalizeDraft(body = {}) {
     answer: clean(body.customer_answer || body.answer || body.copy || body.content || ""),
     internal_instruction: clean(body.internal_instruction || body.instruction || body.note || ""),
     allowed_channels: arrayValue(body.allowed_channels || body.channels || ["Admin Console"]),
+    allowed_audience: arrayValue(body.allowed_audience || body.audience || []),
     response_mode: clean(body.response_mode || "draft_only"),
     risk_level: clean(body.risk_level || "medium"),
     status,
@@ -421,7 +447,18 @@ function normalizeDraft(body = {}) {
     owner: clean(body.owner || "Boss Per"),
     reviewed_by: clean(body.reviewed_by || ""),
     review_note: clean(body.review_note || "Created through Kenji Knowledge runtime draft endpoint."),
-    payload_json: body.payload_json && typeof body.payload_json === "object" ? body.payload_json : {},
+    payload_json: {
+      ...(body.payload_json && typeof body.payload_json === "object" ? body.payload_json : {}),
+      workflow: {
+        stage: "draft",
+        version: 1,
+        qa_snapshot: null,
+        audit_log: [],
+      },
+    },
+    workflow_stage: "draft",
+    workflow_version: 1,
+    workflow_updated_at: new Date().toISOString(),
   });
 }
 
@@ -434,6 +471,7 @@ function cardToAirtableFields(card) {
     [FIELD.customerAnswer]: card.customer_answer,
     [FIELD.internalInstruction]: card.internal_instruction,
     [FIELD.allowedChannels]: card.allowed_channels,
+    [FIELD.allowedAudience]: card.allowed_audience,
     [FIELD.responseMode]: card.response_mode,
     [FIELD.riskLevel]: card.risk_level,
     [FIELD.status]: card.status,
@@ -444,6 +482,9 @@ function cardToAirtableFields(card) {
     [FIELD.reviewedBy]: card.reviewed_by,
     [FIELD.reviewNote]: card.review_note,
     [FIELD.payloadJson]: JSON.stringify(card.payload_json || {}, null, 2),
+    [FIELD.workflowStage]: card.workflow_stage,
+    [FIELD.workflowVersion]: card.workflow_version,
+    [FIELD.workflowUpdatedAt]: card.workflow_updated_at,
   });
 }
 
@@ -574,7 +615,7 @@ function corsHeaders(request, env = {}) {
   }
   headers.set("Access-Control-Allow-Credentials", "true");
   headers.set("Access-Control-Allow-Methods", "GET,POST,HEAD,OPTIONS");
-  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Confirm-Key");
+  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Confirm-Key, Idempotency-Key");
   headers.set("Access-Control-Max-Age", "86400");
   return headers;
 }
