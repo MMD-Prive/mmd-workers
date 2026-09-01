@@ -192,7 +192,24 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/sigil/internal/admin/kenji-knowledge*"
 zone_name = "mmdbkk.com"
 
-# Kenji Knowledge canonical admin namespace.
+# Kenji Admin canonical control centre.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/kenji"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/kenji/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/kenji"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/kenji/"
+zone_name = "mmdbkk.com"
+
+# Legacy Kenji Knowledge route remains Worker-owned for a 308 redirect only.
 [[routes]]
 pattern = "mmdbkk.com/internal/admin/kenji-knowledge"
 zone_name = "mmdbkk.com"
