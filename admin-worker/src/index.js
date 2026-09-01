@@ -25,6 +25,7 @@
 // ==========================================================
 
 import { demoLinksCreate, demoLinksGet } from "./routes/demo-links.js";
+import { handleKenjiKnowledgeRequest as handleKenjiKnowledgeRuntimeRequest } from "./kenji-knowledge-runtime.js";
 import { renderApprovedAdminLogin } from "./admin-login-page.js";
 import {
   getAllowedModelSessionActions,
@@ -206,6 +207,9 @@ export default {
     }
 
     if (isKenjiKnowledgeReadinessRoute(path, method)) {
+      if (String(env.KENJI_KNOWLEDGE_RUNTIME_V2_ENABLED || "").toLowerCase() === "true") {
+        return handleKenjiKnowledgeRuntimeRequest(req, env, { isAuthed });
+      }
       return withCors(await handleKenjiKnowledgeReadinessRoute(req, env, path, method), cors);
     }
 
