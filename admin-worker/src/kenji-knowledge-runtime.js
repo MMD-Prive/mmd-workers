@@ -160,7 +160,7 @@ export function isKenjiKnowledgePath(path) {
     isKnowledgeDetailPath(path);
 }
 
-export async function handleKenjiKnowledgeRequest(request, env = {}) {
+export async function handleKenjiKnowledgeRequest(request, env = {}, options = {}) {
   const url = new URL(request.url);
   const path = normalizePath(url.pathname);
   const method = request.method.toUpperCase();
@@ -175,7 +175,7 @@ export async function handleKenjiKnowledgeRequest(request, env = {}) {
     return withCors(json({ ok: false, error: "not_found" }, 404, request), cors);
   }
 
-  const authed = isAuthed(request, env);
+  const authed = await resolveAuthorization(request, env, options);
   if (!authed) {
     return withCors(json({ ok: false, authenticated: false, error: "unauthorized" }, 401, request), cors);
   }
@@ -399,7 +399,9 @@ function normalizeStaticCard(card) {
 function normalizeDraft(body = {}) {
   const title = clean(body.title || body.name || "Kenji Knowledge Draft").slice(0, 180);
   const id = sanitizeId(body.knowledge_id || body.id || `kenji_draft_${Date.now().toString(36)}`);
-  const status = clean(body.status || (body.publish === true ? "active" : "draft"));
+  // Draft intake is intentionally incapable of changing Production behavior.
+  // Review and Publish require separate explicit endpoints and audit policy.
+  const status = "draft";
   return compact({
     id,
     knowledge_id: id,
@@ -510,6 +512,17 @@ function isAllowedOrigin(request, env = {}) {
     .filter(Boolean);
   if (!allowed.length) return true;
   return allowed.includes(origin);
+}
+
+async function resolveAuthorization(request, env = {}, options = {}) {
+  if (typeof options.isAuthed === "function") {
+    try {
+      return Boolean(await options.isAuthed(request, env));
+    } catch (_) {
+      return false;
+    }
+  }
+  return isAuthed(request, env);
 }
 
 function isAuthed(request, env = {}) {
