@@ -109,9 +109,30 @@ jobs:
             cat "$RUNNER_TEMP/admin-worker-upload.log" >&2
             exit 1
           fi
-          echo "Cloudflare requires a non-versioned deployment to apply the Durable Object migration; applying the migration now."
+          echo "Cloudflare requires a non-versioned deployment to apply the Durable Object migration; applying the migration without mutating routes."
           echo "ADMIN_WORKER_VERSION_ID=direct-deploy-${GITHUB_SHA:0:12}" >> "$GITHUB_ENV"
-          npx --yes wrangler@4 deploy --keep-vars \
+          migration_config=".wrangler-migration-no-routes.toml"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const input = fs.readFileSync("wrangler.toml", "utf8").split(/\r?\n/);
+          const output = [];
+          let skippingRoute = false;
+          for (const line of input) {
+            if (/^\s*\[\[routes\]\]\s*$/.test(line)) {
+              skippingRoute = true;
+              continue;
+            }
+            if (skippingRoute && /^\s*\[/.test(line)) skippingRoute = false;
+            if (!skippingRoute) output.push(line);
+          }
+          fs.writeFileSync(".wrangler-migration-no-routes.toml", `${output.join("\n")}\n`);
+          NODE
+          trap 'rm -f "$migration_config"' EXIT
+          if grep -q '^\s*\[\[routes\]\]' "$migration_config"; then
+            echo "Migration-only Wrangler config still contains routes; refusing deploy." >&2
+            exit 1
+          fi
+          npx --yes wrangler@4 deploy --keep-vars --config "$migration_config" \
             2>&1 | tee "$RUNNER_TEMP/admin-worker-deploy.log"
 
       - name: Resolve uploaded version ID
