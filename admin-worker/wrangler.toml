@@ -192,7 +192,24 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/sigil/internal/admin/kenji-knowledge*"
 zone_name = "mmdbkk.com"
 
-# Kenji Knowledge canonical admin namespace.
+# Kenji Admin canonical control centre.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/kenji"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/kenji/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/kenji"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/kenji/"
+zone_name = "mmdbkk.com"
+
+# Legacy Kenji Knowledge route remains Worker-owned for a 308 redirect only.
 [[routes]]
 pattern = "mmdbkk.com/internal/admin/kenji-knowledge"
 zone_name = "mmdbkk.com"
@@ -362,6 +379,17 @@ LINE_WEBHOOK_DEBUG = "false"
 PRICING_REVIEW_TELEGRAM_PER_ID = ""
 PRICING_REVIEW_TELEGRAM_EWVON_ID = ""
 TG_THREAD_PRICING_REVIEW = "61"
+
+# Serializes all Kenji Knowledge workflow mutations through one Worker-owned
+# coordinator. Airtable status, version, command ID, QA snapshot and audit log
+# are then written in one record PATCH.
+[[durable_objects.bindings]]
+name = "KENJI_KNOWLEDGE_COORDINATOR"
+class_name = "KenjiKnowledgeCoordinator"
+
+[[migrations]]
+tag = "v2026-09-01-kenji-knowledge-coordinator"
+new_sqlite_classes = ["KenjiKnowledgeCoordinator"]
 
 [[r2_buckets]]
 binding = "MMD_MODEL_ASSETS"

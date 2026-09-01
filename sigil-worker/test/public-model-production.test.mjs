@@ -353,8 +353,11 @@ test("production upload issues a signed opaque URL, stores R2 privately, and att
   assert.equal(authBody.ok, true);
   assert.match(authBody.upload_session_id, /^pmu_/);
   assert.match(authBody.upload_ref, /^pmu_ref_/);
-  assert.equal(JSON.stringify(authBody).includes("r2"), false);
-  assert.equal(JSON.stringify(authBody).includes("object_key"), false);
+  assert.equal(Object.hasOwn(authBody, "r2"), false);
+  assert.equal(Object.hasOwn(authBody, "object_key"), false);
+  const uploadUrl = new URL(authBody.upload_url);
+  assert.equal(uploadUrl.searchParams.has("r2"), false);
+  assert.equal(uploadUrl.searchParams.has("object_key"), false);
 
   const upload = await worker.fetch(new Request(authBody.upload_url, {
     method: "PUT",

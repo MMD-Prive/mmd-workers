@@ -10,7 +10,7 @@ if (!globalThis.crypto) globalThis.crypto = webcrypto;
 const LOGIN = "/internal/admin/login";
 const SIGIL_LOGIN = "/sigil/internal/admin/login";
 const SESSION = "/internal/admin/login/session";
-const KENJI = "/internal/admin/kenji-knowledge";
+const KENJI = "/internal/admin/kenji";
 const LEGACY_SIGIL_KENJI = "/sigil/internal/admin/kenji-knowledge";
 const ENV = {
   ADMIN_BEARER: "focused_admin_login_test_credential",
@@ -81,7 +81,7 @@ test("GET login renders a safe server-side POST form", async () => {
   assert.match(html, /method="post"/);
   assert.match(html, /action="\/internal\/admin\/login\/session"/);
   assert.match(html, /name="credential"/);
-  assert.match(html, /name="next" value="\/internal\/admin\/kenji-knowledge"/);
+  assert.match(html, /name="next" value="\/internal\/admin\/kenji"/);
   assert.match(html, /type="password"/);
   assert.doesNotMatch(html, /MMD Admin Sign In/);
   assert.doesNotMatch(html, /admin-worker\.malemodel-bkk\.workers\.dev/);
@@ -99,7 +99,7 @@ test("apex and www query-bearing login pages render without redirecting", async 
     assert.equal(response.status, 200, host);
     assert.equal(response.headers.get("location"), null, host);
     assert.match(html, /action="\/internal\/admin\/login\/session"/, host);
-    assert.match(html, /name="next" value="\/internal\/admin\/kenji-knowledge\?source=query-login"/, host);
+    assert.match(html, /name="next" value="\/internal\/admin\/kenji\?source=query-login"/, host);
   }
 });
 
@@ -108,7 +108,7 @@ test("query login sanitizes external, protocol-relative, and unapproved next val
     const response = await request(`${LOGIN}?next=${encodeURIComponent(next)}`);
     const html = await response.text();
     assert.equal(response.status, 200);
-    assert.match(html, /name="next" value="\/internal\/admin\/kenji-knowledge"/);
+    assert.match(html, /name="next" value="\/internal\/admin\/kenji"/);
     assert.equal(html.includes("evil.example"), false);
     assert.equal(html.includes("/unapproved"), false);
   }
