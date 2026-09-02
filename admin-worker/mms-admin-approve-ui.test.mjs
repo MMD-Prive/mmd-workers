@@ -45,7 +45,9 @@ test('system check proves backend read paths without mutating bookings or therap
   assert.ok(runtimeSource.includes('`${INTERNAL_BASE}/health`'));
   assert.match(runtimeSource, /internal\/mms\/admin\/snapshot/);
   assert.match(runtimeSource, /mms\/api\/therapists\/match/);
-  assert.match(runtimeSource, /body: "\{\}"/);
+  assert.match(runtimeSource, /recipient_gender: "ผู้ชาย"/);
+  assert.match(runtimeSource, /zone: "sukhumvit"/);
+  assert.match(runtimeSource, /skills: \["aroma_therapy_oil"\]/);
   assert.match(runtimeSource, /airtable: Boolean\(health\?\.bindings\?\.airtable && snapshotReady\)/);
   assert.match(runtimeSource, /r2: Boolean\(health\?\.bindings\?\.private_uploads\)/);
 });
