@@ -12,6 +12,7 @@ import worker, {
 } from "../src/index.js";
 
 const LINE_USER_ID = "U1234567890abcdef1234567890abcdef";
+const RUNTIME_STATUS_PATH = "/v1/internal/kenji/control/runtime/status";
 const BASE_ENV = {
   INTERNAL_TOKEN: "internal-token",
   LINE_CHANNEL_SECRET: "line-secret",
@@ -22,6 +23,17 @@ const BASE_ENV = {
   LINE_KENJI_MODEL_ENABLED: "false",
   LINE_KENJI_MODEL_ACCESS_ENABLED: "true",
 };
+
+function healthyRuntimeResponse() {
+  return new Response(JSON.stringify({
+    ok: true,
+    controls: {
+      line_oa_auto_reply: false,
+      model_keyword_auto_reply: false,
+      all_kenji_mutations: false,
+    },
+  }), { status: 200, headers: { "content-type": "application/json" } });
+}
 
 function lineEvent(text, overrides = {}) {
   return {
@@ -37,6 +49,7 @@ function lineEvent(text, overrides = {}) {
 function adminBinding(payload, status = 200, calls = []) {
   return {
     async fetch(request) {
+      if (new URL(request.url).pathname === RUNTIME_STATUS_PATH) return healthyRuntimeResponse();
       calls.push(request);
       return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
     },
