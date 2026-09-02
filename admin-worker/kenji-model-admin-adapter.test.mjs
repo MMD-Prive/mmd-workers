@@ -58,6 +58,7 @@ test("projects canonical Models identity without private notes, contacts, rates,
 
   assert.equal(projected.model_key, "ems07-demo");
   assert.equal(projected.working_name, "EMs07 Demo");
+  assert.equal(projected.identity_tier, "premium");
   assert.equal(projected.model_status, "active");
   assert.equal(projected.booking_visibility, "premium");
   for (const forbidden of ["admin_note", "telegram_id", "line_user_id", "minimum_rate_90m", "private_original_key"]) {
@@ -69,21 +70,21 @@ test("projects existing Model Keyword Profiles and excludes private_admin_note",
   const profile = projectKenjiKeywordProfileRecord({
     id: "recKeyword12345678",
     fields: {
-      model_key: "ems07-demo",
+      model_key: "ems04-sin-m",
       Model: ["rec12345678901234"],
-      folder_name: "Premium Package",
-      working_name: "EMs07 Demo",
-      search_aliases: ["Demo", "EMs07"],
+      folder_name: "EMs04 - Sin M",
+      working_name: "Sin M",
+      search_aliases: ["Sin", "EMs04"],
       customer_safe_info: "สุขุม คุยง่าย และผ่านการ review แล้ว",
       positive_sensitive_description: "คาแรกเตอร์ชัด แต่ใช้เมื่อ policy อนุญาต",
       customer_safe_remark: "ข้อมูลสำหรับตอบลูกค้าเท่านั้น",
-      model_tier: "premium",
-      allowed_customer_scope: ["standard", "premium"],
-      photo_visibility_policy: "review_required",
-      deposit_preview_gate: "required",
-      status: "draft",
-      include_in_public_kenji: false,
-      source_ref: "legacy-keyword-profile",
+      model_tier: "EMs",
+      allowed_customer_scope: ["VIP", "SVIP", "Black Card", "#Potential"],
+      photo_visibility_policy: "VIP/SVIP/Black Card only",
+      deposit_preview_gate: "Verified deposit + Per approval",
+      status: "Review",
+      include_in_public_kenji: "No",
+      source_ref: "Per brief / Model Keyword Studio / 2026-08-28",
       version: 7,
       reviewed_at: "2026-09-01T12:00:00.000Z",
       private_admin_note: "must never leave Airtable",
@@ -92,8 +93,10 @@ test("projects existing Model Keyword Profiles and excludes private_admin_note",
 
   assert.equal(profile.keyword_profile_id, "recKeyword12345678");
   assert.deepEqual(profile.linked_model_ids, ["rec12345678901234"]);
-  assert.deepEqual(profile.search_aliases, ["Demo", "EMs07"]);
-  assert.equal(profile.customer_safe_info.includes("review"), true);
+  assert.deepEqual(profile.search_aliases, ["Sin", "EMs04"]);
+  assert.equal(profile.model_tier, "EMs");
+  assert.deepEqual(profile.allowed_customer_scope, ["VIP", "SVIP", "Black Card", "#Potential"]);
+  assert.equal(profile.include_in_public_kenji, false);
   assert.equal(profile.profile_version, 7);
   assert.equal(Object.hasOwn(profile, "private_admin_note"), false);
 });
@@ -108,8 +111,8 @@ test("list joins Models identity with the existing Keyword Profiles content", as
         records: [{
           id: "rec12345678901234",
           fields: {
-            unique_key: "gws12-north",
-            working_name: "GWs12 North Source",
+            unique_key: "ems04-sin-m",
+            working_name: "Sin M Source",
             model_tier: "premium",
             status: "active",
             approved_client_visibility: "premium",
@@ -124,15 +127,17 @@ test("list joins Models identity with the existing Keyword Profiles content", as
         records: [{
           id: "recKeyword12345678",
           fields: {
-            model_key: "gws12-north",
+            model_key: "ems04-sin-m",
             Model: ["rec12345678901234"],
-            working_name: "GWs12 North",
-            search_aliases: ["North", "GWs12"],
+            working_name: "Sin M",
+            search_aliases: ["Sin", "EMs04"],
             customer_safe_info: "สุภาพและคุยง่าย",
             customer_safe_remark: "ตอบได้หลังผ่าน policy",
-            model_tier: "premium",
-            allowed_customer_scope: ["standard", "premium"],
-            status: "published",
+            model_tier: "EMs",
+            allowed_customer_scope: ["VIP", "SVIP", "Black Card", "#Potential"],
+            photo_visibility_policy: "VIP/SVIP/Black Card only",
+            deposit_preview_gate: "Verified deposit + Per approval",
+            status: "Review",
             version: 3,
             private_admin_note: "private profile note",
           },
@@ -143,7 +148,7 @@ test("list joins Models identity with the existing Keyword Profiles content", as
   };
 
   const result = await handleKenjiModelAdminRequest(
-    new Request("https://mmdbkk.com/v1/admin/kenji/models?q=GWs12&limit=20"),
+    new Request("https://mmdbkk.com/v1/admin/kenji/models?q=EMs04&limit=20"),
     ENV,
     { fetchImpl }
   );
@@ -152,10 +157,12 @@ test("list joins Models identity with the existing Keyword Profiles content", as
   assert.equal(result.status, 200);
   assert.equal(body.ok, true);
   assert.equal(body.count, 1);
-  assert.equal(body.items[0].model_key, "gws12-north");
-  assert.equal(body.items[0].working_name, "GWs12 North");
+  assert.equal(body.items[0].model_key, "ems04-sin-m");
+  assert.equal(body.items[0].working_name, "Sin M");
   assert.equal(body.items[0].customer_safe_info, "สุภาพและคุยง่าย");
-  assert.equal(body.items[0].profile_status, "published");
+  assert.equal(body.items[0].model_tier, "EMs");
+  assert.equal(body.items[0].identity_tier, "premium");
+  assert.equal(body.items[0].profile_status, "Review");
   assert.equal(body.items[0].profile_version, 3);
   assert.equal(Object.hasOwn(body.items[0], "admin_note"), false);
   assert.equal(Object.hasOwn(body.items[0], "minimum_rate_90m"), false);
@@ -185,7 +192,7 @@ test("draft write requires an idempotency key", async () => {
     new Request("https://mmdbkk.com/v1/admin/kenji/models/draft", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model_key: "ems07-demo", working_name: "EMs07 Demo" }),
+      body: JSON.stringify({ model_key: "ems04-sin-m", working_name: "Sin M" }),
     }),
     ENV,
     { fetchImpl: async () => response({ records: [] }) }
@@ -203,7 +210,7 @@ test("draft blocks rate and availability claims from customer-safe copy", async 
           "Content-Type": "application/json",
           "Idempotency-Key": "adapter-guard-test-1234",
         },
-        body: JSON.stringify({ model_key: "ems07-demo", working_name: "EMs07 Demo", customer_safe_info }),
+        body: JSON.stringify({ model_key: "ems04-sin-m", working_name: "Sin M", customer_safe_info }),
       }),
       ENV,
       { fetchImpl: async () => response({ records: [] }) }
@@ -213,8 +220,8 @@ test("draft blocks rate and availability claims from customer-safe copy", async 
   }
 });
 
-test("vip and exclusive tiers default proposed visibility to curated", async () => {
-  for (const model_tier of ["vip", "exclusive"]) {
+test("profile tier choices map safely to proposed visibility defaults", async () => {
+  for (const [model_tier, expectedVisibility] of [["Public", "public"], ["GWs", "curated"], ["EMs", "curated"], ["Private", "curated"]]) {
     const calls = [];
     const fetchImpl = async (url, init = {}) => {
       calls.push({ url, init });
@@ -225,18 +232,18 @@ test("vip and exclusive tiers default proposed visibility to curated", async () 
       new Request("https://mmdbkk.com/v1/admin/kenji/models/draft", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Idempotency-Key": `tier-${model_tier}-12345` },
-        body: JSON.stringify({ model_key: `${model_tier}-demo`, working_name: "Tier Demo", model_tier }),
+        body: JSON.stringify({ model_key: "tier-demo", working_name: "Tier Demo", model_tier }),
       }),
       ENV,
       { actor: { id: "boss-per", role: "owner" }, fetchImpl }
     );
     assert.equal(result.status, 201);
     const createPayload = JSON.parse(calls[1].init.body);
-    assert.equal(createPayload.records[0].fields.requested_visibility, "curated");
+    assert.equal(createPayload.records[0].fields.requested_visibility, expectedVisibility);
   }
 });
 
-test("draft writes only to existing Model Review Requests and targets Keyword Profiles", async () => {
+test("draft accepts only canonical keyword-profile choice values", async () => {
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
     calls.push({ url, init });
@@ -248,28 +255,27 @@ test("draft writes only to existing Model Review Requests and targets Keyword Pr
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Idempotency-Key": "kenji-model-draft-ems07-v2",
+      "Idempotency-Key": "kenji-model-draft-ems04-v2",
     },
     body: JSON.stringify({
       model_id: "rec12345678901234",
       keyword_profile_id: "recKeyword12345678",
       expected_profile_version: 7,
-      model_key: "ems07-demo",
-      folder_name: "Premium Package",
-      working_name: "EMs07 Demo",
-      search_aliases: ["Demo", "EMs07"],
+      model_key: "ems04-sin-m",
+      folder_name: "EMs04 - Sin M",
+      working_name: "Sin M",
+      search_aliases: ["Sin", "EMs04"],
       customer_safe_info: "สุขุม คุยง่าย และสุภาพ",
       positive_sensitive_description: "คาแรกเตอร์ชัด ใช้เมื่อ policy อนุญาต",
       customer_safe_remark: "ใช้เฉพาะข้อมูลที่ review แล้ว",
-      model_tier: "premium",
-      proposed_visibility: "premium",
-      allowed_customer_scope: ["standard", "premium"],
-      restricted_scope: ["review"],
-      photo_visibility_policy: "review_required",
-      deposit_preview_gate: "required",
-      profile_status: "draft",
+      model_tier: "EMs",
+      proposed_visibility: "curated",
+      allowed_customer_scope: ["VIP", "SVIP", "Black Card", "#Potential"],
+      photo_visibility_policy: "VIP/SVIP/Black Card only",
+      deposit_preview_gate: "Verified deposit + Per approval",
+      profile_status: "Review",
       include_in_public_kenji: false,
-      source_ref: "legacy-keyword-profile",
+      source_ref: "Per brief / Model Keyword Studio / 2026-08-28",
     }),
   });
 
@@ -297,8 +303,40 @@ test("draft writes only to existing Model Review Requests and targets Keyword Pr
   assert.equal(savedDraft.target, "model_keyword_profile");
   assert.equal(savedDraft.keyword_profile_id, "recKeyword12345678");
   assert.equal(savedDraft.expected_profile_version, 7);
-  assert.equal(savedDraft.model_key, "ems07-demo");
+  assert.equal(savedDraft.model_key, "ems04-sin-m");
+  assert.equal(savedDraft.model_tier, "EMs");
+  assert.deepEqual(savedDraft.allowed_customer_scope, ["VIP", "SVIP", "Black Card", "#Potential"]);
+  assert.equal(savedDraft.photo_visibility_policy, "VIP/SVIP/Black Card only");
+  assert.equal(savedDraft.deposit_preview_gate, "Verified deposit + Per approval");
+  assert.equal(savedDraft.current_profile_status, "Review");
+  assert.equal(savedDraft.proposed_profile_status, "Review");
   assert.equal(savedDraft.requires_per_approval, true);
   assert.equal(Object.hasOwn(savedDraft, "rate"), false);
   assert.equal(Object.hasOwn(savedDraft, "availability"), false);
+});
+
+test("draft rejects values outside the Airtable keyword-profile choice contract", async () => {
+  const base = {
+    model_key: "ems04-sin-m",
+    working_name: "Sin M",
+    model_tier: "EMs",
+  };
+  for (const [field, value, expected] of [
+    ["model_tier", "premium", "invalid_model_tier"],
+    ["allowed_customer_scope", ["Premium"], "invalid_allowed_customer_scope"],
+    ["photo_visibility_policy", "everyone", "invalid_photo_visibility_policy"],
+    ["deposit_preview_gate", "auto", "invalid_deposit_preview_gate"],
+  ]) {
+    const result = await handleKenjiModelAdminRequest(
+      new Request("https://mmdbkk.com/v1/admin/kenji/models/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": `bad-${field}-12345` },
+        body: JSON.stringify({ ...base, [field]: value }),
+      }),
+      ENV,
+      { fetchImpl: async () => response({ records: [] }) }
+    );
+    assert.equal(result.status, 400);
+    assert.equal((await bodyOf(result)).error, expected);
+  }
 });
