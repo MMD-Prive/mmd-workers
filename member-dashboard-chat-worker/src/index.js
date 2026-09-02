@@ -1809,14 +1809,17 @@ async function handleLineWebhook(request, env, ctx = null) {
       reason: canDefer ? "assessment_pending" : "assessment_not_run",
     };
     if (canDefer) {
-      ctx.waitUntil(afterReply.catch(() => {
-        console.log(JSON.stringify({
-          line_webhook: "background_sync_failed",
-          event_type: asString(event?.type) || "unknown",
-          intent,
-        }));
-      }));
-      ctx.waitUntil(historyAssessmentPromise);
+      const backgroundWork = Promise.all([
+        afterReply.catch(() => {
+          console.log(JSON.stringify({
+            line_webhook: "background_sync_failed",
+            event_type: asString(event?.type) || "unknown",
+            intent,
+          }));
+        }),
+        historyAssessmentPromise,
+      ]);
+      ctx.waitUntil(backgroundWork);
     } else {
       try {
         record = await afterReply;
