@@ -18,14 +18,14 @@ export const KENJI_FOLDER_MESSAGE_LIMIT = 600;
 const ROLE_ALLOWLIST = new Set(["customer", "assistant", "agent", "system"]);
 
 const PATTERNS = {
-  booking: /\b(book|booking|reserve|จอง|นัด|รับงาน|ใช้บริการ)\b/i,
-  price: /\b(price|rate|ราคา|เท่าไร|ค่าตัว|งบ|budget)\b/i,
-  availability: /\b(available|ว่าง|คืนนี้|วันนี้|พรุ่งนี้|เวลาไหน|กี่โมง)\b/i,
-  complaint: /\b(complaint|ร้องเรียน|ไม่โอเค|แย่|โกง|หลอก)\b/i,
-  payment: /\b(paid|payment|โอนแล้ว|จ่ายแล้ว|สลิป|มัดจำ)\b/i,
-  privacy: /\b(phone|เบอร์|ไลน์|line id|telegram|ที่อยู่|ข้อมูลส่วนตัว|ขอข้อมูลลูกค้า)\b/i,
-  coercion: /\b(force|บังคับ|ขู่|blackmail|ข่มขู่|ไม่ยินยอม)\b/i,
-  minor: /\b(minor|เด็ก|อายุต่ำกว่า|under\s*18|\b1[0-7]\b)\b/i,
+  booking: /(?:book|booking|reserve|จอง|นัด|รับงาน|ใช้บริการ)/i,
+  price: /(?:price|rate|ราคา|เท่าไร|ค่าตัว|งบ|budget)/i,
+  availability: /(?:available|ว่าง|คืนนี้|วันนี้|พรุ่งนี้|เวลาไหน|กี่โมง)/i,
+  complaint: /(?:complaint|ร้องเรียน|ไม่โอเค|แย่|โกง|หลอก)/i,
+  payment: /(?:paid|payment|โอนแล้ว|จ่ายแล้ว|สลิป|มัดจำ)/i,
+  privacy: /(?:phone|เบอร์|ไลน์|line id|telegram|ที่อยู่|ข้อมูลส่วนตัว|ขอข้อมูลลูกค้า)/i,
+  coercion: /(?:force|บังคับ|ขู่|blackmail|ข่มขู่|ไม่ยินยอม)/i,
+  minor: /(?:minor|เด็ก|อายุต่ำกว่า|under\s*18|(?:^|\D)1[0-7](?:\D|$))/i,
   preference: /(?:ชอบ|ต้องการ|อยากได้|สนใจ|prefer|looking for|อยากเจอ)/i,
 };
 
@@ -83,8 +83,8 @@ function redactPii(text) {
       .replace(/(?:line\s*id|telegram\s*id|user\s*id)\s*[:=]?\s*[A-Z0-9_@-]{5,}/gi, "[redacted-id]")
       .replace(/(?:https?:\/\/|www\.)\S+/gi, "[redacted-link]")
       .replace(/(?:\+?66|0)\d[\d -]{7,14}\d/g, "[redacted-phone]")
-      .replace(/\b(?:slip|สลิป|บัญชี|เลขบัญชี|payment[_ -]?ref)\b[^.!?]{0,80}/gi, "[redacted-payment]")
-      .replace(/\b(?:ที่อยู่|address|พิกัด|location)\b[^.!?]{0,80}/gi, "[redacted-location]"),
+      .replace(/(?:slip|สลิป|บัญชี|เลขบัญชี|payment[_ -]?ref)[^.!?]{0,80}/gi, "[redacted-payment]")
+      .replace(/(?:ที่อยู่|address|พิกัด|location)[^.!?]{0,80}/gi, "[redacted-location]"),
   ).slice(0, KENJI_FOLDER_MESSAGE_LIMIT);
 }
 
