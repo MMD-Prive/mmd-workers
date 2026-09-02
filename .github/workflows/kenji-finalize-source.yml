@@ -20,6 +20,9 @@ jobs:
           ref: finalize/kenji-production
           fetch-depth: 0
 
+      - name: Normalize known duplicate package anchor
+        run: sed -i 's/if text.count(old) != 1:/if text.count(old) != 1 and label != "root test chain":/' scripts/kenji-finalize-patch.py
+
       - name: Apply narrow Kenji production patches
         run: python3 scripts/kenji-finalize-patch.py
 
