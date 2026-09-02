@@ -56,8 +56,6 @@ async function handleCanonicalBookingIntake(request, env, ctx) {
   const parsed = parseJson(stored?.fields?.resolver_payload_json);
   const snapshot = parsed?.entitlement_snapshot;
 
-  // Browser intake may add booking details, but it must never replace or invent
-  // the server-generated entitlement decision created during client resolve.
   const safeBody = { ...body };
   if (snapshot?.schema_version === "my_mmd_entitlement_resolver_v1") {
     const access = accessFromSnapshot(snapshot);
@@ -92,8 +90,6 @@ async function handleTrustedBookingConfirm(request, env) {
   if (!row?.id) return json({ ok: false, error: "booking_not_found" }, 404);
   const fields = row.fields || {};
 
-  // Re-resolve from canonical Airtable entitlements at the moment of confirmation.
-  // Never trust a browser-supplied membership/tier value.
   const canonical = await resolveCanonicalAccess(env, {
     client_contact: fields.client_contact || fields["Contact Value"],
     line_or_member_id: fields.line_or_member_id,
@@ -236,7 +232,7 @@ async function canonicalStoredPrivateAccess(env, request, url) {
 }
 
 async function verifyBookingPayment(env, { paymentRef, sessionId, bookingRef }) {
-  const table = env.AIRTABLE_TABLE_PAYMENTS_ID || "Payments";
+  const table = env.AIRTABLE_TABLE_PAYMENTS_ID || env.AIRTABLE_TABLE_PAYMENTS || "Payments";
   const candidates = [];
   if (paymentRef) candidates.push(`{payment_ref}=${formulaText(paymentRef)}`, `{Payment Reference}=${formulaText(paymentRef)}`);
   if (sessionId) candidates.push(`{session_id}=${formulaText(sessionId)}`, `{Session ID}=${formulaText(sessionId)}`);
@@ -252,9 +248,7 @@ async function verifyBookingPayment(env, { paymentRef, sessionId, bookingRef }) 
           return { verified: true, payment_ref: clean(f.payment_ref || f["Payment Reference"] || paymentRef), status };
         }
       }
-    } catch {
-      // Try the next known field shape; unknown schema remains fail-closed.
-    }
+    } catch {}
   }
   return { verified: false, reason: "verified_payment_not_found" };
 }
