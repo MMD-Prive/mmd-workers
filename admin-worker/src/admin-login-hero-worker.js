@@ -1,6 +1,6 @@
 import worker from "./studio-telegram-worker.js";
 import dashboardWorker from "./dashboard-worker.js";
-import coreWorker, { MODEL_SCHEMA_PATCH_V1_ROUTES } from "./index.js";
+import coreWorker, { MODEL_SCHEMA_PATCH_V1_ROUTES, isAuthed as isCoreAdminAuthed } from "./index.js";
 import {
   APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON,
   APPROVED_ADMIN_LOGIN_FAVICON,
@@ -90,6 +90,12 @@ export default {
     request = strictGate.request || request;
 
     if (isKenjiModelAdminRequest(path, method)) {
+      // applyCredentialBoundAdminGate accepts service-shaped headers so legacy
+      // admin handlers can validate them themselves. This adapter owns Airtable
+      // reads/writes directly, so it must verify the actual credential here too.
+      if (!(await isCoreAdminAuthed(request, env))) {
+        return strictJson(request, env, { ok: false, authenticated: false, error: "unauthorized" }, 401);
+      }
       return handleKenjiModelAdminRequest(request, env, {
         actor: strictGate.actor,
       });
