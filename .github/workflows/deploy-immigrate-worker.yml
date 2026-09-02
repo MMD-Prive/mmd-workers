@@ -25,7 +25,10 @@ jobs:
         working-directory: immigrate-worker
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+      CLOUDFLARE_ZONE_ID: 2d62396174fa2ddadbbcd0e8cf0f3367
+      WORKER_NAME: immigrate-worker
 
     steps:
       - name: Check out repository
@@ -38,15 +41,18 @@ jobs:
           cache: npm
           cache-dependency-path: immigrate-worker/package-lock.json
 
-      - name: Normalize Cloudflare token
+      - name: Normalize Cloudflare tokens
         shell: bash
         run: |
           node <<'NODE'
           const fs = require("node:fs");
           const clean = (value) => (value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
-          const token = clean(process.env.CLOUDFLARE_API_TOKEN);
-          if (!token) throw new Error("Cloudflare deploy API token is missing after normalization");
-          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\n`);
+          const deployToken = clean(process.env.CLOUDFLARE_API_TOKEN);
+          const routesToken = clean(process.env.CLOUDFLARE_ROUTES_API_TOKEN);
+          if (!deployToken) throw new Error("Cloudflare deploy API token is missing after normalization");
+          if (!routesToken) throw new Error("Cloudflare routes API token is missing after normalization");
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${deployToken}\n`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ROUTES_API_TOKEN=${routesToken}\n`);
           NODE
 
       - name: Install dependencies
@@ -97,6 +103,49 @@ jobs:
           set -euo pipefail
           npx --yes wrangler@4.128.0 versions deploy "${IMMIGRATE_WORKER_VERSION_ID}@100%" -y
 
+      - name: Sync exact Focus Flow controller routes
+        shell: bash
+        working-directory: .
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
+          const zoneId = process.env.CLOUDFLARE_ZONE_ID;
+          const worker = process.env.WORKER_NAME;
+          const desired = [
+            "mmdbkk.com/a/create-session-focus-flow-v2.js",
+            "www.mmdbkk.com/a/create-session-focus-flow-v2.js",
+          ];
+          async function cf(path, options = {}) {
+            const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+              ...options,
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+                ...(options.headers || {}),
+              },
+            });
+            const body = await response.json();
+            if (!response.ok || body.success !== true) throw new Error(JSON.stringify(body.errors || body));
+            return body.result;
+          }
+          const routePath = `/zones/${zoneId}/workers/routes`;
+          const existing = await cf(routePath);
+          for (const pattern of desired) {
+            const conflict = existing.find((route) => route.pattern === pattern && route.script !== worker);
+            if (conflict) throw new Error(`route conflict ${pattern} -> ${conflict.script || "none"}`);
+          }
+          for (const pattern of desired) {
+            if (existing.some((route) => route.pattern === pattern && route.script === worker)) continue;
+            await cf(routePath, { method: "POST", body: JSON.stringify({ pattern, script: worker }) });
+            console.log(`created ${pattern} -> ${worker}`);
+          }
+          const verified = await cf(routePath);
+          const missing = desired.filter((pattern) => !verified.some((route) => route.pattern === pattern && route.script === worker));
+          if (missing.length) throw new Error(`missing routes: ${missing.join(", ")}`);
+          console.log(`verified ${desired.length}/${desired.length} Focus Flow controller routes`);
+          NODE
+
       - name: Verify latest Control Room in production
         shell: bash
         run: |
@@ -141,7 +190,8 @@ jobs:
           set -euo pipefail
           headers="$(mktemp)"
           body="$(mktemp)"
-          trap 'rm -f "$headers" "$body"' EXIT
+          controller="$(mktemp)"
+          trap 'rm -f "$headers" "$body" "$controller"' EXIT
 
           verified=0
           for attempt in 1 2 3 4 5 6 7 8; do
@@ -157,6 +207,7 @@ jobs:
               && grep -q 'Create Session · Focus Flow v2' "$body" \
               && grep -q 'data-focus-section="review"' "$body" \
               && grep -q '/a/create-session.js?v=focus-flow-v2-core' "$body" \
+              && grep -q '/a/create-session-focus-flow-v2.js?v=2' "$body" \
               && ! grep -q 'Find client. Verify lineage. Create session.' "$body"; then
               echo "Production Create Session Focus Flow v2 verified on attempt ${attempt}"
               verified=1
@@ -172,3 +223,11 @@ jobs:
             grep -Ei '^(x-mmd-create-session-ui|x-mmd-create-session-authority|server|cf-ray):' "$headers" || true
             exit 1
           fi
+
+          controller_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$controller" -w '%{http_code}' \
+            "https://mmdbkk.com/a/create-session-focus-flow-v2.js?deploy=${GITHUB_SHA}")"
+          test "$controller_code" = "200"
+          grep -q 'data-focus-server-gate' "$controller"
+          grep -q 'Secure Session' "$controller"
+          grep -q 'Session Verified' "$controller"
+          echo "Production Focus Flow controller route verified"
