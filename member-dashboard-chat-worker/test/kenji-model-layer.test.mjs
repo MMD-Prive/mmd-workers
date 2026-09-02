@@ -12,7 +12,32 @@ import {
 } from "../src/kenji-model-policy.js";
 
 const LINE_USER_ID = "U1234567890abcdef1234567890abcdef";
+const RUNTIME_STATUS_PATH = "/v1/internal/kenji/control/runtime/status";
+
+function healthyRuntimeBinding() {
+  return {
+    async fetch(request) {
+      if (new URL(request.url).pathname === RUNTIME_STATUS_PATH) {
+        return new Response(JSON.stringify({
+          ok: true,
+          controls: {
+            line_oa_auto_reply: false,
+            model_keyword_auto_reply: false,
+            all_kenji_mutations: false,
+          },
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ ok: false, error: "unexpected_test_rpc" }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  };
+}
+
 const BASE_ENV = {
+  INTERNAL_TOKEN: "internal-token",
+  ADMIN_WORKER: healthyRuntimeBinding(),
   LINE_CHANNEL_SECRET: "line-secret",
   LINE_CHANNEL_ACCESS_TOKEN: "line-token",
   LINE_AUTO_REPLY_ENABLED: "true",
