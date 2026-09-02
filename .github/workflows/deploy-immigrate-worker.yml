@@ -103,7 +103,7 @@ jobs:
           set -euo pipefail
           npx --yes wrangler@4.128.0 versions deploy "${IMMIGRATE_WORKER_VERSION_ID}@100%" -y
 
-      - name: Sync exact Focus Flow controller routes
+      - name: Sync exact Create Session asset routes
         shell: bash
         working-directory: .
         run: |
@@ -113,6 +113,14 @@ jobs:
           const zoneId = process.env.CLOUDFLARE_ZONE_ID;
           const worker = process.env.WORKER_NAME;
           const desired = [
+            "mmdbkk.com/a/create-session.js*",
+            "www.mmdbkk.com/a/create-session.js*",
+            "mmdbkk.com/a/create-session-focus-flow-v2.js*",
+            "www.mmdbkk.com/a/create-session-focus-flow-v2.js*",
+          ];
+          const obsolete = [
+            "mmdbkk.com/a/create-session.js",
+            "www.mmdbkk.com/a/create-session.js",
             "mmdbkk.com/a/create-session-focus-flow-v2.js",
             "www.mmdbkk.com/a/create-session-focus-flow-v2.js",
           ];
@@ -130,11 +138,18 @@ jobs:
             return body.result;
           }
           const routePath = `/zones/${zoneId}/workers/routes`;
-          const existing = await cf(routePath);
+          let existing = await cf(routePath);
           for (const pattern of desired) {
             const conflict = existing.find((route) => route.pattern === pattern && route.script !== worker);
             if (conflict) throw new Error(`route conflict ${pattern} -> ${conflict.script || "none"}`);
           }
+          for (const pattern of obsolete) {
+            const route = existing.find((item) => item.pattern === pattern && item.script === worker);
+            if (!route) continue;
+            await cf(`${routePath}/${route.id}`, { method: "DELETE" });
+            console.log(`removed obsolete ${pattern} -> ${worker}`);
+          }
+          existing = await cf(routePath);
           for (const pattern of desired) {
             if (existing.some((route) => route.pattern === pattern && route.script === worker)) continue;
             await cf(routePath, { method: "POST", body: JSON.stringify({ pattern, script: worker }) });
@@ -142,8 +157,10 @@ jobs:
           }
           const verified = await cf(routePath);
           const missing = desired.filter((pattern) => !verified.some((route) => route.pattern === pattern && route.script === worker));
+          const stale = obsolete.filter((pattern) => verified.some((route) => route.pattern === pattern && route.script === worker));
           if (missing.length) throw new Error(`missing routes: ${missing.join(", ")}`);
-          console.log(`verified ${desired.length}/${desired.length} Focus Flow controller routes`);
+          if (stale.length) throw new Error(`obsolete routes still present: ${stale.join(", ")}`);
+          console.log(`verified ${desired.length}/${desired.length} versioned Create Session asset routes`);
           NODE
 
       - name: Verify latest Control Room in production
@@ -190,8 +207,7 @@ jobs:
           set -euo pipefail
           headers="$(mktemp)"
           body="$(mktemp)"
-          controller="$(mktemp)"
-          trap 'rm -f "$headers" "$body" "$controller"' EXIT
+          trap 'rm -f "$headers" "$body"' EXIT
 
           verified=0
           for attempt in 1 2 3 4 5 6 7 8; do
@@ -224,10 +240,34 @@ jobs:
             exit 1
           fi
 
-          controller_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$controller" -w '%{http_code}' \
-            "https://mmdbkk.com/a/create-session-focus-flow-v2.js?deploy=${GITHUB_SHA}")"
-          test "$controller_code" = "200"
-          grep -q 'data-focus-server-gate' "$controller"
-          grep -q 'Secure Session' "$controller"
-          grep -q 'Session Verified' "$controller"
-          echo "Production Focus Flow controller route verified"
+      - name: Verify versioned Create Session assets in production
+        shell: bash
+        working-directory: .
+        run: |
+          set -euo pipefail
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            core="$(mktemp)"
+            controller="$(mktemp)"
+            verified=0
+            for attempt in 1 2 3 4 5 6 7 8; do
+              core_code="$(curl -sS -o "$core" -w '%{http_code}' "$origin/a/create-session.js?v=focus-flow-v2-core&deploy=${GITHUB_SHA}&attempt=${attempt}")"
+              controller_code="$(curl -sS -o "$controller" -w '%{http_code}' "$origin/a/create-session-focus-flow-v2.js?v=2&deploy=${GITHUB_SHA}&attempt=${attempt}")"
+              if [ "$core_code" = "200" ] \
+                && [ "$controller_code" = "200" ] \
+                && grep -q 'mmd_sigil_create_session_external_js_v3' "$core" \
+                && grep -q 'data-focus-server-gate' "$controller" \
+                && grep -q 'Secure Session' "$controller" \
+                && grep -q 'Session Verified' "$controller"; then
+                echo "Versioned Create Session assets verified for ${origin} on attempt ${attempt}"
+                verified=1
+                break
+              fi
+              echo "Asset routes not ready for ${origin} (attempt ${attempt}, core=${core_code}, controller=${controller_code}); retrying..."
+              sleep 2
+            done
+            rm -f "$core" "$controller"
+            if [ "$verified" != "1" ]; then
+              echo "Versioned Create Session asset verification failed for ${origin}" >&2
+              exit 1
+            fi
+          done
