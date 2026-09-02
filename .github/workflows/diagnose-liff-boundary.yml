@@ -68,6 +68,22 @@ jobs:
           echo "http_status=${http_status}"
           echo "shell_current=${shell_current}"
 
+          client_key="liff_client_runtime_latest:${boundary_id}"
+          client_encoded_key="$(jq -rn --arg v "${client_key}" '$v|@uri')"
+          client_file="$(mktemp)"
+          client_code="$(curl -sS -o "${client_file}" -w '%{http_code}' "${auth[@]}" "${api}/values/${client_encoded_key}")"
+          if [[ "${client_code}" == "200" ]]; then
+            client_stage="$(jq -r '.stage // empty' "${client_file}")"
+            client_observed_at="$(jq -r '.observed_at // empty' "${client_file}")"
+            echo "client_runtime_stage=${client_stage}"
+            echo "client_runtime_observed_at=${client_observed_at}"
+          elif [[ "${client_code}" == "404" ]]; then
+            echo "client_runtime_stage=absent"
+          else
+            echo "client_runtime_stage=readback_unavailable"
+            echo "client_runtime_http_status=${client_code}"
+          fi
+
           keys_file="$(mktemp)"
           keys_code="$(curl -sS -o "${keys_file}" -w '%{http_code}' "${auth[@]}" "${api}/keys?prefix=liff_resolution_trace%3A&limit=1000")"
           if [[ "${keys_code}" != "200" ]]; then
