@@ -1,0 +1,108 @@
+name: Diagnose LIFF boundary
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/diagnose-liff-boundary.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  read-bounded-trace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      LIFF_IDENTITY_KV_NAMESPACE_ID: "12f4c4e7357d4019b5e0951be0b984f5"
+    steps:
+      - name: Read latest safe LIFF boundary and correlated POST trace
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${LIFF_IDENTITY_KV_NAMESPACE_ID}"
+          auth=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+
+          latest_file="$(mktemp)"
+          latest_code="$(curl -sS -o "${latest_file}" -w '%{http_code}' "${auth[@]}" "${api}/values/liff_shell_boundary%3Alatest")"
+
+          if [[ "${latest_code}" == "404" ]]; then
+            echo "classification=A_GET_ABSENT"
+            echo "reason=no_liff_shell_boundary_latest_key"
+            exit 0
+          fi
+          if [[ "${latest_code}" != "200" ]]; then
+            echo "classification=READBACK_UNAVAILABLE"
+            echo "latest_http_status=${latest_code}"
+            exit 1
+          fi
+
+          boundary_id="$(jq -r '.boundary_id // empty' "${latest_file}")"
+          observed_at="$(jq -r '.observed_at // empty' "${latest_file}")"
+          hostname="$(jq -r '.hostname // empty' "${latest_file}")"
+          ua_class="$(jq -r '.ua_class // empty' "${latest_file}")"
+          http_status="$(jq -r '.http_status // empty' "${latest_file}")"
+          shell_current="$(jq -r '.shell_current // false' "${latest_file}")"
+
+          if [[ ! "${boundary_id}" =~ ^LIFFGET-[A-F0-9]{12}$ ]]; then
+            echo "classification=READBACK_UNAVAILABLE"
+            echo "reason=invalid_boundary_id"
+            exit 1
+          fi
+
+          echo "boundary_id=${boundary_id}"
+          echo "observed_at=${observed_at}"
+          echo "hostname=${hostname}"
+          echo "ua_class=${ua_class}"
+          echo "http_status=${http_status}"
+          echo "shell_current=${shell_current}"
+
+          keys_file="$(mktemp)"
+          keys_code="$(curl -sS -o "${keys_file}" -w '%{http_code}' "${auth[@]}" "${api}/keys?prefix=liff_resolution_trace%3A&limit=1000")"
+          if [[ "${keys_code}" != "200" ]]; then
+            echo "classification=READBACK_UNAVAILABLE"
+            echo "keys_http_status=${keys_code}"
+            exit 1
+          fi
+
+          matched="false"
+          while IFS= read -r key; do
+            [[ -n "${key}" ]] || continue
+            value_file="$(mktemp)"
+            encoded_key="$(jq -rn --arg v "${key}" '$v|@uri')"
+            code="$(curl -sS -o "${value_file}" -w '%{http_code}' "${auth[@]}" "${api}/values/${encoded_key}")"
+            [[ "${code}" == "200" ]] || continue
+            trace_boundary="$(jq -r '.shell_boundary_id // empty' "${value_file}" 2>/dev/null || true)"
+            if [[ "${trace_boundary}" != "${boundary_id}" ]]; then
+              continue
+            fi
+
+            matched="true"
+            trace_id="$(jq -r '.trace_id // empty' "${value_file}")"
+            started_at="$(jq -r '.started_at // empty' "${value_file}")"
+            final_status="$(jq -r '.final_status // empty' "${value_file}")"
+            final_reason="$(jq -r '.final_reason // empty' "${value_file}")"
+            member_status="$(jq -r '[.steps[]? | select(.stage == "member_status") | .status] | last // empty' "${value_file}")"
+            drive_status="$(jq -r '[.steps[]? | select(.stage == "drive_bootstrap") | .status] | last // empty' "${value_file}")"
+            retry_status="$(jq -r '[.steps[]? | select(.stage == "member_retry") | .status] | last // empty' "${value_file}")"
+
+            echo "classification=C_GET_AND_POST"
+            echo "trace_id=${trace_id}"
+            echo "started_at=${started_at}"
+            echo "member_status=${member_status}"
+            echo "drive_bootstrap=${drive_status}"
+            echo "member_retry=${retry_status}"
+            echo "final_status=${final_status}"
+            echo "final_reason=${final_reason}"
+            break
+          done < <(jq -r '.result[]?.name // empty' "${keys_file}")
+
+          if [[ "${matched}" != "true" ]]; then
+            echo "classification=B_GET_PRESENT_POST_ABSENT"
+          fi
