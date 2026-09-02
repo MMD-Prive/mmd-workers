@@ -1,6 +1,7 @@
 import runtime from "./runtime-index.js";
 import { resolveMemberEntitlements } from "./member-entitlement-resolver.js";
 import { planDownstreamAccess } from "./member-downstream-access-reconciler.js";
+import { runLifecycleReconciliation } from "./member-lifecycle-reconciliation.js";
 
 const AUTH_ME_PATH = "/v1/auth/me";
 const MEMBER_PROFILE_PATH = "/__internal/member-profile/read";
@@ -40,7 +41,50 @@ export default {
     headers.set("cache-control", "no-store");
     return new Response(JSON.stringify(payload), { status: response.status, headers });
   },
+
+  async scheduled(controller, env, ctx) {
+    const job = runLifecycleReconciliation(env, {
+      now: Number(controller?.scheduledTime || Date.now()),
+      reconcileMember: (identity) => reconcileLifecycleMember(env, identity),
+    }).then((summary) => {
+      console.log({
+        event: "my_mmd_lifecycle_reconciliation_complete",
+        authority: summary.authority,
+        evaluated_at: summary.evaluated_at,
+        total_members: summary.total_members,
+        reconciled: summary.reconciled,
+        failed: summary.failed,
+        skipped: summary.skipped,
+      });
+      if (summary.failed > 0) throw new Error(`lifecycle_reconciliation_failed_${summary.failed}`);
+      return summary;
+    }).catch((error) => {
+      console.error({ event: "my_mmd_lifecycle_reconciliation_failed", failure_class: safeFailure(error) });
+      throw error;
+    });
+    ctx.waitUntil(job);
+  },
 };
+
+async function reconcileLifecycleMember(env, identity) {
+  const secret = String(env.AUTH_RECONCILE_SECRET || "").trim();
+  if (!secret) return { ok: false, error: "auth_reconcile_secret_missing" };
+  const response = await handleAccessReconcile(new Request("https://mmd-auth-worker.internal/__internal/member-access/reconcile", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mmd-access-reconcile-secret": secret,
+    },
+    body: JSON.stringify(identity),
+  }), env);
+  const payload = await response.clone().json().catch(() => null);
+  return {
+    ok: response.ok && payload?.ok === true,
+    http_status: response.status,
+    payload,
+    error: payload?.error || "",
+  };
+}
 
 async function handleAccessReconcile(request, env) {
   if (!internalAuthorized(request, env)) return json({ ok: false, error: "unauthorized" }, 401);
@@ -72,7 +116,9 @@ async function handleAccessReconcile(request, env) {
   if (identity.email) applied.drive = await downstream(env.DRIVE_ACCESS_RECONCILER, "https://member-pages-worker.internal/__internal/member-drive/reconcile", env.AUTH_SERVICE_AUTH_TO_MEMBER_PAGES, { member_email: identity.email, actions: plan.drive });
   if (/^\d{5,20}$/.test(telegramUserId)) applied.telegram = await downstream(env.TELEGRAM_ACCESS_RECONCILER, "https://telegram-worker.internal/telegram/internal/access/reconcile", env.AUTH_SERVICE_AUTH_TO_TELEGRAM, { telegram_user_id: telegramUserId, actions: plan.telegram });
 
-  const ok = Object.values(applied).every((item) => item?.ok === true);
+  const appliedItems = Object.values(applied);
+  if (!appliedItems.length) return json({ ok: false, error: "no_actionable_downstream_identity", entitlement_snapshot: snapshot, reconciliation_plan: plan, observations, applied }, 409);
+  const ok = appliedItems.every((item) => item?.ok === true);
   return json({ ok, authority: "my_mmd_entitlement_resolver_v1", entitlement_snapshot: snapshot, reconciliation_plan: plan, observations, applied }, ok ? 200 : 409);
 }
 

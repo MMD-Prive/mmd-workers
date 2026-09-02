@@ -6,9 +6,11 @@ on:
       - "auth-worker/src/my-mmd-runtime-index.js"
       - "auth-worker/src/member-entitlement-resolver.js"
       - "auth-worker/src/member-downstream-access-reconciler.js"
+      - "auth-worker/src/member-lifecycle-reconciliation.js"
       - "auth-worker/wrangler.toml"
       - "auth-worker/test/member-entitlement-resolver.test.mjs"
       - "auth-worker/test/member-downstream-access-reconciler.test.mjs"
+      - "auth-worker/test/member-lifecycle-reconciliation.test.mjs"
       - "member-pages-worker/src/runtime-index.js"
       - "member-pages-worker/src/drive-member-bootstrap-runtime.js"
       - "member-pages-worker/src/drive-access-reconcile.js"
@@ -37,6 +39,7 @@ jobs:
           node --check auth-worker/src/my-mmd-runtime-index.js
           node --check auth-worker/src/member-entitlement-resolver.js
           node --check auth-worker/src/member-downstream-access-reconciler.js
+          node --check auth-worker/src/member-lifecycle-reconciliation.js
           node --check member-pages-worker/src/runtime-index.js
           node --check member-pages-worker/src/drive-member-bootstrap-runtime.js
           node --check member-pages-worker/src/drive-access-reconcile.js
@@ -47,14 +50,18 @@ jobs:
         run: |
           node --test auth-worker/test/member-entitlement-resolver.test.mjs
           node --test auth-worker/test/member-downstream-access-reconciler.test.mjs
+          node --test auth-worker/test/member-lifecycle-reconciliation.test.mjs
       - name: Wrangler entrypoint contract
         run: |
           grep -F 'main = "src/my-mmd-runtime-index.js"' auth-worker/wrangler.toml
+          grep -F 'crons = ["7 * * * *"]' auth-worker/wrangler.toml
+          grep -F 'LIFECYCLE_RECONCILIATION_ENABLED = "true"' auth-worker/wrangler.toml
           grep -F 'main = "src/access-runtime.js"' telegram-worker/wrangler.toml
           grep -F 'main = "src/runtime-index.js"' sigil-booking-worker/wrangler.toml
       - name: Downstream authority contract
         run: |
           grep -F 'authority: "my_mmd_entitlement_resolver_v1"' auth-worker/src/member-downstream-access-reconciler.js
+          grep -F 'schema_version: "my_mmd_lifecycle_reconciliation_v1"' auth-worker/src/member-lifecycle-reconciliation.js
           grep -F 'legacy_drive_source_disabled' auth-worker/src/my-mmd-runtime-index.js
           grep -F 'legacy_drive_source_disabled' member-pages-worker/src/drive-member-bootstrap-runtime.js
           grep -F 'AUTH_SERVICE_AUTH_TO_TELEGRAM' telegram-worker/src/access-runtime.js
