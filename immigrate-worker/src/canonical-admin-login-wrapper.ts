@@ -1,9 +1,7 @@
 import worker from "./index";
-import { renderOwnerCreateSessionPage, type OwnerCreateSessionEnv } from "./create-session-owner-ui";
 import type { Env } from "./types";
 
 const CANONICAL_ADMIN_LOGIN_PATH = "/internal/admin/login";
-const CANONICAL_CREATE_SESSION_PATH = "/internal/admin/jobs/create-session";
 const LEGACY_ADMIN_LOGIN_PATHS = new Set([
   "/sigil/admin/login",
   "/sigil/internal/admin/login",
@@ -96,24 +94,6 @@ function rewriteLegacyAdminLoginRedirect(request: Request, response: Response): 
   });
 }
 
-async function maybeRestoreOwnerCreateSession(
-  request: Request,
-  env: Env,
-  response: Response,
-): Promise<Response> {
-  if (request.method !== "GET") return response;
-  const url = new URL(request.url);
-  if (url.pathname !== CANONICAL_CREATE_SESSION_PATH) return response;
-
-  // The canonical worker must approve the request first. A login redirect,
-  // auth failure, or non-HTML response is preserved exactly and never replaced.
-  if (!response.ok || !(response.headers.get("content-type") || "").includes("text/html")) {
-    return response;
-  }
-
-  return renderOwnerCreateSessionPage(request, env as unknown as OwnerCreateSessionEnv);
-}
-
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -136,7 +116,6 @@ export default {
     }
 
     const response = await worker.fetch(request, env);
-    const canonicalResponse = rewriteLegacyAdminLoginRedirect(request, response);
-    return maybeRestoreOwnerCreateSession(request, env, canonicalResponse);
+    return rewriteLegacyAdminLoginRedirect(request, response);
   },
 };
