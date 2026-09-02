@@ -1,6 +1,6 @@
 import worker from "./index.js";
 import { rewritePendingStatusStartResponse } from "./liff-status-resolution-guard.js";
-import { isDriveBootstrapCandidate, tryDriveMemberBootstrap } from "./drive-member-bootstrap.js";
+import { isDriveBootstrapCandidate, tryDriveMemberBootstrap } from "./drive-member-bootstrap-cutover.js";
 import { withDriveBootstrapDiagnostic } from "./drive-bootstrap-debug.js";
 import { withStatusFirstMemberResolver } from "./liff-status-first-member-resolver.js";
 import { attachTraceId, createLiffResolutionTrace, createLiffShellBoundaryTrace } from "./liff-resolution-trace.js";
@@ -32,7 +32,7 @@ export default {
       });
     }
 
-    if (isDriveBootstrapCandidate(request, firstPayload)) {
+    if (isDriveBootstrapCandidate(request, firstPayload, env)) {
       trace?.event("drive_bootstrap", "candidate", "", { candidate: true });
       const bootstrap = await tryDriveMemberBootstrap(bootstrapRequest, env);
       trace?.event("drive_bootstrap", bootstrap.mapped ? "mapped" : "unresolved", bootstrap.reason || "", {
