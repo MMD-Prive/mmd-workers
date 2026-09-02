@@ -5,14 +5,16 @@ import { planDownstreamAccess } from "./member-downstream-access-reconciler.js";
 const AUTH_ME_PATH = "/v1/auth/me";
 const MEMBER_PROFILE_PATH = "/__internal/member-profile/read";
 const ACCESS_RECONCILE_PATH = "/__internal/member-access/reconcile";
+const LEGACY_DRIVE_BOOTSTRAP_PATH = "/__internal/member-drive/bootstrap";
 const ENTITLEMENT_TABLE = "MMD — Member Entitlements";
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (request.method === "POST" && url.pathname === ACCESS_RECONCILE_PATH) {
-      return handleAccessReconcile(request, env);
+    if (request.method === "POST" && url.pathname === LEGACY_DRIVE_BOOTSTRAP_PATH && String(env.DRIVE_LEGACY_BOOTSTRAP_ENABLED || "").toLowerCase() !== "true") {
+      return json({ ok: false, error: "legacy_drive_source_disabled", authority: "my_mmd_entitlement_resolver_v1" }, 410);
     }
+    if (request.method === "POST" && url.pathname === ACCESS_RECONCILE_PATH) return handleAccessReconcile(request, env);
 
     const shouldEnrich = request.method === "GET" && url.pathname === AUTH_ME_PATH
       || request.method === "POST" && url.pathname === MEMBER_PROFILE_PATH;
@@ -54,33 +56,21 @@ async function handleAccessReconcile(request, env) {
   const observations = {};
 
   if (identity.email) {
-    observations.drive = await downstream(env.DRIVE_ACCESS_RECONCILER, "https://member-pages-worker.internal/__internal/member-drive/reconcile", env.AUTH_SERVICE_AUTH_TO_MEMBER_PAGES, {
-      mode: "inspect", member_email: identity.email,
-    });
+    observations.drive = await downstream(env.DRIVE_ACCESS_RECONCILER, "https://member-pages-worker.internal/__internal/member-drive/reconcile", env.AUTH_SERVICE_AUTH_TO_MEMBER_PAGES, { mode: "inspect", member_email: identity.email });
     if (observations.drive.ok) current.drive_layers = observations.drive.payload?.drive_layers || [];
     else return json({ ok: false, error: "drive_observation_failed", observations }, 503);
   }
 
   if (/^\d{5,20}$/.test(telegramUserId)) {
-    observations.telegram = await downstream(env.TELEGRAM_ACCESS_RECONCILER, "https://telegram-worker.internal/telegram/internal/access/reconcile", env.AUTH_SERVICE_AUTH_TO_TELEGRAM, {
-      mode: "inspect", telegram_user_id: telegramUserId,
-    });
+    observations.telegram = await downstream(env.TELEGRAM_ACCESS_RECONCILER, "https://telegram-worker.internal/telegram/internal/access/reconcile", env.AUTH_SERVICE_AUTH_TO_TELEGRAM, { mode: "inspect", telegram_user_id: telegramUserId });
     if (observations.telegram.ok) current.telegram_rooms = observations.telegram.payload?.telegram_rooms || [];
     else return json({ ok: false, error: "telegram_observation_failed", observations }, 503);
   }
 
   const plan = planDownstreamAccess(snapshot, current);
   const applied = {};
-  if (identity.email) {
-    applied.drive = await downstream(env.DRIVE_ACCESS_RECONCILER, "https://member-pages-worker.internal/__internal/member-drive/reconcile", env.AUTH_SERVICE_AUTH_TO_MEMBER_PAGES, {
-      member_email: identity.email, actions: plan.drive,
-    });
-  }
-  if (/^\d{5,20}$/.test(telegramUserId)) {
-    applied.telegram = await downstream(env.TELEGRAM_ACCESS_RECONCILER, "https://telegram-worker.internal/telegram/internal/access/reconcile", env.AUTH_SERVICE_AUTH_TO_TELEGRAM, {
-      telegram_user_id: telegramUserId, actions: plan.telegram,
-    });
-  }
+  if (identity.email) applied.drive = await downstream(env.DRIVE_ACCESS_RECONCILER, "https://member-pages-worker.internal/__internal/member-drive/reconcile", env.AUTH_SERVICE_AUTH_TO_MEMBER_PAGES, { member_email: identity.email, actions: plan.drive });
+  if (/^\d{5,20}$/.test(telegramUserId)) applied.telegram = await downstream(env.TELEGRAM_ACCESS_RECONCILER, "https://telegram-worker.internal/telegram/internal/access/reconcile", env.AUTH_SERVICE_AUTH_TO_TELEGRAM, { telegram_user_id: telegramUserId, actions: plan.telegram });
 
   const ok = Object.values(applied).every((item) => item?.ok === true);
   return json({ ok, authority: "my_mmd_entitlement_resolver_v1", entitlement_snapshot: snapshot, reconciliation_plan: plan, observations, applied }, ok ? 200 : 409);
@@ -89,16 +79,10 @@ async function handleAccessReconcile(request, env) {
 async function downstream(binding, url, secret, body) {
   if (!binding?.fetch || !String(secret || "").trim()) return { ok: false, error: "downstream_binding_unavailable" };
   try {
-    const response = await binding.fetch(new Request(url, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-mmd-auth-reconcile-secret": String(secret) },
-      body: JSON.stringify(body),
-    }));
+    const response = await binding.fetch(new Request(url, { method: "POST", headers: { "content-type": "application/json", "x-mmd-auth-reconcile-secret": String(secret) }, body: JSON.stringify(body) }));
     const payload = await response.json().catch(() => null);
     return { ok: response.ok && payload?.ok === true, http_status: response.status, payload };
-  } catch {
-    return { ok: false, error: "downstream_unavailable" };
-  }
+  } catch { return { ok: false, error: "downstream_unavailable" }; }
 }
 
 async function resolveIdentity(path, request, payload) {
