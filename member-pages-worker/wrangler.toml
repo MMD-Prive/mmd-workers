@@ -10,6 +10,7 @@ routes = []
 LIFF_VERIFY_TIMEOUT_MS = "5000"
 LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "12000"
 AIRTABLE_REQUEST_TIMEOUT_MS = "10000"
+AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 LINE_ID_TOKEN_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify"
 LINE_LIFF_ID = "2010862595-yT4DCEMc"
 LINE_DASHBOARD_CHANNEL_ID = "2010862595"
@@ -49,6 +50,8 @@ new_sqlite_classes = ["CareBackBirthdayWishCoordinator"]
 # - secret LIFF_SESSION_SECRET
 # - secret MEMBER_STATUS_RESOLVER_SECRET (same value in mmd-auth-worker)
 # - service binding MEMBER_STATUS_RESOLVER -> mmd-auth-worker
+# - secret AIRTABLE_API_KEY
+# - var AIRTABLE_BASE_ID = appsV1ILPRfIjkaYg
 # - secret GOOGLE_DRIVE_CLIENT_ID
 # - secret GOOGLE_DRIVE_CLIENT_SECRET
 # - secret GOOGLE_DRIVE_REFRESH_TOKEN authorized by malemodel.bkk@gmail.com
