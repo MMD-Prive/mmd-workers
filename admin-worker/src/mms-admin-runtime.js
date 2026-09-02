@@ -105,7 +105,11 @@ async function runMmsSystemCheck(env) {
     const response = await env.MMS_WORKER.fetch(new Request(`${INTERNAL_BASE}/mms/api/therapists/match`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: "{}",
+      body: JSON.stringify({
+        recipient_gender: "ผู้ชาย",
+        zone: "sukhumvit",
+        skills: ["aroma_therapy_oil"],
+      }),
     }));
     matching = await response.json().catch(() => null);
     if (!response.ok || !matching?.ok) errors.push("matching_probe_failed");
