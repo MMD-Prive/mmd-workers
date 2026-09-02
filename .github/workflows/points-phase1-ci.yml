@@ -1,0 +1,36 @@
+name: Points Phase 1 CI
+
+on:
+  pull_request:
+    paths:
+      - "payments-worker/index.phase1.js"
+      - "payments-worker/points-phase1.js"
+      - "payments-worker/points-phase1.test.mjs"
+      - "payments-worker/wrangler.merged.toml"
+      - ".github/workflows/points-phase1-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Syntax
+        run: |
+          node --check payments-worker/index.phase1.js
+          node --check payments-worker/points-phase1.js
+      - name: Phase 1 math
+        run: node --test payments-worker/points-phase1.test.mjs
+      - name: Production entrypoint contract
+        run: grep -F 'main = "index.phase1.js"' payments-worker/wrangler.merged.toml
+      - name: Non-expiring base ledger contract
+        run: |
+          grep -F 'points_bucket: "base_phase1"' payments-worker/points-phase1.js
+          grep -F 'expires_at intentionally unset' payments-worker/points-phase1.js
+          grep -F 'remainder_after_thb' payments-worker/points-phase1.js
