@@ -1,0 +1,41 @@
+name: Reconciliation Audit CI
+
+on:
+  pull_request:
+    paths:
+      - "auth-worker/src/my-mmd-runtime-index.js"
+      - "auth-worker/src/member-reconciliation-audit.js"
+      - "auth-worker/src/member-lifecycle-reconciliation.js"
+      - "auth-worker/test/member-reconciliation-audit.test.mjs"
+      - "auth-worker/wrangler.toml"
+      - ".github/workflows/reconciliation-audit-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Syntax
+        run: |
+          node --check auth-worker/src/my-mmd-runtime-index.js
+          node --check auth-worker/src/member-reconciliation-audit.js
+      - name: Audit tests
+        run: node --test auth-worker/test/member-reconciliation-audit.test.mjs
+      - name: Canonical audit contract
+        run: |
+          grep -F 'AIRTABLE_TABLE_ACCESS_LOG = "System — Access Log"' auth-worker/wrangler.toml
+          grep -F 'writeReconciliationAudit' auth-worker/src/my-mmd-runtime-index.js
+          grep -F 'actor: "lifecycle_cron"' auth-worker/src/my-mmd-runtime-index.js
+          grep -F 'reconciliation_audit_write_failed' auth-worker/src/my-mmd-runtime-index.js
+          grep -F '"Before JSON"' auth-worker/src/member-reconciliation-audit.js
+          grep -F '"After JSON"' auth-worker/src/member-reconciliation-audit.js
+          grep -F '"Snapshot JSON"' auth-worker/src/member-reconciliation-audit.js
+          grep -F '"Source Ref"' auth-worker/src/member-reconciliation-audit.js
+          grep -F '"Identity Ref"' auth-worker/src/member-reconciliation-audit.js
