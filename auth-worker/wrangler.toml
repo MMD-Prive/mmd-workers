@@ -1,5 +1,5 @@
 name = "mmd-auth-worker"
-main = "src/runtime-index.js"
+main = "src/my-mmd-runtime-index.js"
 compatibility_date = "2026-01-20"
 
 [vars]
@@ -64,18 +64,19 @@ AIRTABLE_PAYMENTS_DATE_FIELD = "Payment Date"
 AIRTABLE_PAYMENTS_CREATED_FIELD = "Created At"
 AIRTABLE_PAYMENTS_UPDATED_FIELD = "Updated At"
 
-# MMD — Member Entitlements mapping.
+# MMD — Member Entitlements mapping. Canonical fields are preferred; legacy
+# fields remain as compatibility evidence during migration.
 AIRTABLE_ENTITLEMENT_MEMBERSTACK_ID_FIELD = "memberstack_id"
 AIRTABLE_ENTITLEMENT_MEMBER_EMAIL_FIELD = "member_email"
 AIRTABLE_ENTITLEMENT_TELEGRAM_USER_ID_FIELD = "telegram_user_id"
 AIRTABLE_ENTITLEMENT_TELEGRAM_USERNAME_FIELD = "telegram_username"
 AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD = "line_user_id"
 AIRTABLE_ENTITLEMENT_ACCESS_STATUS_FIELDS = "access_status"
-AIRTABLE_ENTITLEMENT_MEMBER_STATUS_FIELDS = "member_status"
+AIRTABLE_ENTITLEMENT_MEMBER_STATUS_FIELDS = "member_lifecycle_status,member_status"
 AIRTABLE_ENTITLEMENT_ACTIVE_VALUES = "active,grace"
-AIRTABLE_ENTITLEMENT_BLOCKED_MEMBER_STATUS_VALUES = "inactive,blocked"
-AIRTABLE_ENTITLEMENT_RESOURCE_FIELDS = "resource_key,access_key,package_code"
-AIRTABLE_ENTITLEMENT_TIER_FIELDS = "min_tier,tier,package_code"
+AIRTABLE_ENTITLEMENT_BLOCKED_MEMBER_STATUS_VALUES = "inactive,blocked,suspended,revoked"
+AIRTABLE_ENTITLEMENT_RESOURCE_FIELDS = "resource_key,access_key,capability,package_code"
+AIRTABLE_ENTITLEMENT_TIER_FIELDS = "capability,min_tier,tier,package_code"
 AIRTABLE_ENTITLEMENT_EXPIRES_AT_FIELDS = "expire_at"
 
 # System — Access Log mapping.
@@ -118,6 +119,7 @@ AIRTABLE_TABLE_MEMBER_PACKAGES = "member_packages"
 AIRTABLE_TABLE_PAYMENTS = "Payments"
 AIRTABLE_TABLE_SESSIONS = "Sessions"
 AIRTABLE_TABLE_POINTS_LEDGER = "MMD — Points Ledger"
+AIRTABLE_TABLE_MEMBER_ENTITLEMENTS = "MMD — Member Entitlements"
 AIRTABLE_MEMBERS_LINE_USER_ID_FIELD = "line_id"
 AIRTABLE_MEMBERS_DISPLAY_NAME_FIELD = "Full Name (Display)"
 AIRTABLE_MEMBERS_EMAIL_FIELD = "Contact Email"
@@ -138,6 +140,9 @@ AIRTABLE_PAYMENTS_VERIFICATION_FIELD = "Verification Status"
 AIRTABLE_PAYMENTS_DATE_FIELD = "Payment Date"
 AIRTABLE_PAYMENTS_CREATED_FIELD = "Created At"
 AIRTABLE_PAYMENTS_UPDATED_FIELD = "Updated At"
+AIRTABLE_ENTITLEMENT_MEMBER_EMAIL_FIELD = "member_email"
+AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD = "line_user_id"
+AIRTABLE_ENTITLEMENT_MEMBER_STATUS_FIELDS = "member_lifecycle_status,member_status"
 MEMBER_STATUS_AIRTABLE_TIMEOUT_MS = "10000"
 
 [[env.staging.services]]
