@@ -18,11 +18,13 @@ test("booking fails closed for blocked member", () => {
   assert.equal(snapshot.member_blocked, true);
 });
 
-test("booking grace does not create new downstream grants", () => {
+test("booking grace preserves historical grant state but blocks new model visibility", () => {
   const snapshot = resolveMemberEntitlements([
     { fields: { capability: "private_premium", member_status: "grace", access_status: "grace", grace_until: "2026-09-05T00:00:00Z" } },
   ], { now: "2026-09-03T00:00:00Z" });
-  assert.equal(snapshot.access.private_visibility_envelope, "premium");
+  assert.equal(snapshot.access.private_visibility_envelope, "none");
+  assert.equal(snapshot.access.grace_private_history_envelope, "premium");
+  assert.equal(snapshot.access.new_model_reveals_allowed, false);
   assert.equal(snapshot.access.new_drive_grants_allowed, false);
   assert.equal(snapshot.access.new_telegram_grants_allowed, false);
 });
