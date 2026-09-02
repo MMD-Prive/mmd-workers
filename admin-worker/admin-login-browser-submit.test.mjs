@@ -16,7 +16,7 @@ function render() {
 test("admin login keeps password managers away from the operator access-code field", async () => {
   const html = await (await render()).text();
 
-  assert.match(html, /<form id="adminLoginForm"[^>]*autocomplete="off"/);
+  assert.match(html, /<form[^>]*id="adminLoginForm"[^>]*autocomplete="off"/);
   assert.match(html, /id="adminCredential" type="text"/);
   assert.match(html, /id="adminCredential"[^>]*autocomplete="off"/);
   assert.match(html, /id="adminCredential"[^>]*data-1p-ignore="true"/);
@@ -24,11 +24,11 @@ test("admin login keeps password managers away from the operator access-code fie
   assert.doesNotMatch(html, /id="adminCredential"[^>]*autocomplete="current-password"/);
 });
 
-test("admin login submits only the synchronized hidden credential field", async () => {
+test("admin login submits only the synchronized hidden canonical credential field", async () => {
   const html = await (await render()).text();
 
   assert.match(html, new RegExp(`action="${ADMIN_LOGIN_SESSION_PATH.replaceAll("/", "\\/")}"`));
-  assert.match(html, /<input id="adminCredentialSubmit" type="hidden" name="credential" value="">/);
+  assert.match(html, /<input id="adminCredentialSubmit" name="credential" type="password" hidden[^>]*value="">/);
   assert.doesNotMatch(html, /id="adminCredential"[^>]*name="credential"/);
   assert.match(html, /submitValue\.value=input\.value/);
   assert.match(html, /form\.addEventListener\('submit'/);
