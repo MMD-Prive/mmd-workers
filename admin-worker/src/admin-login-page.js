@@ -87,7 +87,7 @@ export function renderApprovedAdminLogin(
           <form method="post" action="${ADMIN_LOGIN_SESSION_PATH}" id="adminLoginForm" autocomplete="off">
             <input type="hidden" name="next" value="${escapeAttribute(next)}">
             <label for="adminCredential">Access Code
-              <span class="mmd-login21__input"><input id="adminCredential" name="credential" type="password" required autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" autofocus><button class="mmd-login21__toggle" type="button" aria-controls="adminCredential" aria-pressed="false">SHOW</button></span>
+              <span class="mmd-login21__input"><input id="adminCredential" name="credential" type="password" required readonly autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" aria-autocomplete="none" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" data-form-type="other"><button class="mmd-login21__toggle" type="button" aria-controls="adminCredential" aria-pressed="false">SHOW</button></span>
             </label>
             <p class="mmd-login21__message${error ? " is-error" : ""}" role="${error ? "alert" : "status"}">${error ? escapeHtml(error) : `Next: ${escapeHtml(next)}`}</p>
             <button class="mmd-login21__go" type="submit">Enter Admin</button>
@@ -101,7 +101,7 @@ export function renderApprovedAdminLogin(
       </section>
     </main>
   </section>
-  <script>(()=>{const form=document.getElementById('adminLoginForm');const input=document.getElementById('adminCredential');const toggle=document.querySelector('.mmd-login21__toggle');if(!form||!input||!toggle)return;form.addEventListener('submit',(event)=>{if(!input.value){event.preventDefault();input.focus();return;}input.readOnly=true;});toggle.addEventListener('click',function(){const show=this.getAttribute('aria-pressed')!=='true';input.type=show?'text':'password';this.textContent=show?'HIDE':'SHOW';this.setAttribute('aria-pressed',String(show));});})();</script>
+  <script>(()=>{const form=document.getElementById('adminLoginForm');const input=document.getElementById('adminCredential');const toggle=document.querySelector('.mmd-login21__toggle');if(!form||!input||!toggle)return;const unlock=()=>{input.readOnly=false;};input.value='';input.addEventListener('pointerdown',unlock,{once:true});input.addEventListener('focus',unlock,{once:true});input.addEventListener('keydown',unlock,{once:true});window.addEventListener('pageshow',()=>{if(input.readOnly)input.value='';});form.addEventListener('submit',(event)=>{if(!input.value){event.preventDefault();input.focus();return;}input.readOnly=true;});toggle.addEventListener('click',function(){const show=this.getAttribute('aria-pressed')!=='true';input.type=show?'text':'password';this.textContent=show?'HIDE':'SHOW';this.setAttribute('aria-pressed',String(show));});})();</script>
 </body>
 </html>`;
 
@@ -113,6 +113,7 @@ export function renderApprovedAdminLogin(
       "content-type": "text/html; charset=utf-8",
       "referrer-policy": "no-referrer",
       "x-content-type-options": "nosniff",
+      "x-mmd-login-ui": "password-no-autofill-v3",
       "x-mmd-page": APPROVED_ADMIN_LOGIN_PAGE_ID,
       "x-mmd-route-owner": "admin-worker",
     },
