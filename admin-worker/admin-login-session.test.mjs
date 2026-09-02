@@ -63,7 +63,7 @@ async function withOriginFetchMock(mock, run) {
   }
 }
 
-test("GET login renders a safe server-side POST form", async () => {
+test("GET login renders a safe deterministic browser login form", async () => {
   const response = await request(`${LOGIN}?next=${encodeURIComponent(KENJI)}`);
   const html = await response.text();
 
@@ -71,18 +71,24 @@ test("GET login renders a safe server-side POST form", async () => {
   assert.match(response.headers.get("content-type") || "", /^text\/html\b/);
   assert.match(response.headers.get("cache-control") || "", /no-store/);
   assert.match(response.headers.get("content-security-policy") || "", /form-action 'self'/);
+  assert.match(response.headers.get("content-security-policy") || "", /connect-src 'self'/);
+  assert.equal(response.headers.get("x-mmd-login-ui"), "browser-fetch-v5");
   assert.match(html, /<title>MMD Privé · Internal Login<\/title>/);
   assert.match(html, /data-mmd-page="admin-login-approved-hero"/);
   assert.match(html, /Enter the/);
-  assert.match(html, /Internal Admin Chang Ewvon/);
+  assert.match(html, /MMD SIGIL Internal Admin/);
+  assert.doesNotMatch(html, /Internal Admin Chang Ewvon/);
   assert.match(html, /rel="icon" type="image\/png"/);
   assert.match(html, /rel="apple-touch-icon"/);
   assert.match(html, /mmd-login21/);
   assert.match(html, /method="post"/);
   assert.match(html, /action="\/internal\/admin\/login\/session"/);
-  assert.match(html, /name="credential"/);
+  assert.doesNotMatch(html, /id="adminCredential"[^>]*name="credential"/);
+  assert.match(html, /body\.set\('credential',credential\)/);
   assert.match(html, /name="next" value="\/internal\/admin\/kenji"/);
-  assert.match(html, /type="password"/);
+  assert.match(html, /id="adminCredential" type="text" required readonly/);
+  assert.match(html, /id="adminCredential"[^>]*data-mask="true"/);
+  assert.doesNotMatch(html, /id="adminCredential"[^>]*type="password"/);
   assert.doesNotMatch(html, /MMD Admin Sign In/);
   assert.doesNotMatch(html, /admin-worker\.malemodel-bkk\.workers\.dev/);
   assert.doesNotMatch(html, /mmdprive\.webflow\.io\/internal\/admin\/login/);
