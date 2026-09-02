@@ -84,11 +84,11 @@ export async function handleKenjiControlAction(request, env, actor = {}) {
       return json({ ok: false, error: "kill_switch_active" }, 423);
     }
 
-    if (operation === "approval_decision") return approvalDecision(request, env, actor, idempotencyKey, payloadHash, path);
-    if (operation === "conversation_takeover") return conversationTakeover(request, env, actor, idempotencyKey, payloadHash, path);
-    if (operation === "message_draft") return createMessageDraft(request, env, actor, idempotencyKey, payloadHash);
+    if (operation === "approval_decision") return await approvalDecision(request, env, actor, idempotencyKey, payloadHash, path);
+    if (operation === "conversation_takeover") return await conversationTakeover(request, env, actor, idempotencyKey, payloadHash, path);
+    if (operation === "message_draft") return await createMessageDraft(request, env, actor, idempotencyKey, payloadHash);
     if (operation === "message_send") return json({ ok: false, error: "mutation_not_ready", detail: "delivery_adapter_not_connected" }, 503);
-    return updateKillSwitch(request, env, actor, idempotencyKey, payloadHash);
+    return await updateKillSwitch(request, env, actor, idempotencyKey, payloadHash);
   } catch (error) {
     const code = clean(error && error.message);
     if (code === "invalid_request") return json({ ok: false, error: code }, 400);

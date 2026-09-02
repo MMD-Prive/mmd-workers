@@ -22,6 +22,12 @@ import {
   isKenjiModelAdminRequest,
 } from "./kenji-model-admin-adapter.js";
 import { handleKenjiControlRequest, isKenjiControlRequest } from "./kenji-control-endpoints.js";
+import {
+  handleKenjiControlAction,
+  handleKenjiRuntimeStatusRpc,
+  isKenjiControlActionRequest,
+  isKenjiRuntimeStatusRpcRequest,
+} from "./kenji-control-actions.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
@@ -78,6 +84,12 @@ export default {
       return handleKenjiModelAccessRpc(request, env);
     }
 
+    // Service-binding-only runtime controls. This is intentionally handled
+    // before the browser admin gate and performs its own strict service auth.
+    if (isKenjiRuntimeStatusRpcRequest(path, method)) {
+      return handleKenjiRuntimeStatusRpc(request, env);
+    }
+
     if (path === ADMIN_LOGIN_SESSION_PATH && method === "POST") {
       return handleCredentialBoundAdminLogin(request, env);
     }
@@ -89,6 +101,10 @@ export default {
     const strictGate = await applyCredentialBoundAdminGate(request, env, path, method);
     if (strictGate.response) return strictGate.response;
     request = strictGate.request || request;
+
+    if (isKenjiControlActionRequest(path, method)) {
+      return handleKenjiControlAction(request, env, strictGate.actor);
+    }
 
     if (isKenjiControlRequest(path, method)) {
       return handleKenjiControlRequest(request, env);

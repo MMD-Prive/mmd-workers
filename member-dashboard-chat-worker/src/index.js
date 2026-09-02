@@ -38,6 +38,8 @@ const KENJI_MODEL_QUOTA_DEFAULT_LIMIT = 3;
 const KENJI_MODEL_QUOTA_DEFAULT_WINDOW_SECONDS = 15 * 60;
 const KENJI_MODEL_ACCESS_RPC_URL = "https://admin-worker.local/v1/internal/kenji/model-access";
 const KENJI_MODEL_ACCESS_TIMEOUT_MS = 900;
+const KENJI_RUNTIME_STATUS_RPC_URL = "https://admin-worker.local/v1/internal/kenji/control/runtime/status";
+const KENJI_RUNTIME_STATUS_TIMEOUT_MS = 700;
 const KENJI_MODEL_ACCESS_PENDING_TIMEOUT_MS = 500;
 
 const PUBLIC_MENU_TEXT = [
@@ -528,6 +530,46 @@ async function modelAccessPending(env = {}, lineUserId = "", action = "get", que
   }
 }
 
+export async function requestKenjiRuntimeStatus(env = {}) {
+  const closed = {
+    ok: false,
+    controls: { line_oa_auto_reply: false, model_keyword_auto_reply: false, all_kenji_mutations: false },
+  };
+  if (!env.ADMIN_WORKER?.fetch || !asString(env.INTERNAL_TOKEN)) return closed;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("kenji_runtime_status_timeout"), KENJI_RUNTIME_STATUS_TIMEOUT_MS);
+  try {
+    const request = new Request(KENJI_RUNTIME_STATUS_RPC_URL, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${asString(env.INTERNAL_TOKEN)}`,
+        "content-type": "application/json",
+        "x-mmd-internal-call": "true",
+        "x-mmd-service-binding": "member-dashboard-chat-worker",
+      },
+      body: "{}",
+      signal: controller.signal,
+    });
+    const response = await env.ADMIN_WORKER.fetch(request);
+    if (!response.ok) return closed;
+    const payload = await response.json().catch(() => null);
+    if (!payload || payload.ok !== true || !payload.controls || typeof payload.controls !== "object") return closed;
+    return {
+      ok: true,
+      controls: {
+        line_oa_auto_reply: payload.controls.line_oa_auto_reply === true,
+        model_keyword_auto_reply: payload.controls.model_keyword_auto_reply === true,
+        all_kenji_mutations: payload.controls.all_kenji_mutations === true,
+      },
+    };
+  } catch (_) {
+    return closed;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function requestKenjiModelAccess(env = {}, lineUserId = "", query = "", verificationEmail = "") {
   if (!isEnabled(env.LINE_KENJI_MODEL_ACCESS_ENABLED)) return { status: "silent" };
   if (!env.ADMIN_WORKER?.fetch || !asString(env.INTERNAL_TOKEN) || !asString(lineUserId) || !asString(query)) return { status: "silent" };
@@ -817,6 +859,11 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
   const eventText = getLineEventText(event);
   const intent = inferLineIntent(eventText, event);
   const capabilityDecision = decideKenjiCapability({ text: eventText, intent });
+  const modelAccessAllowed = options.modelAccessAllowed !== false;
+
+  if (!modelAccessAllowed && (intent === "model_access_verification" || intent === "model_lookup")) {
+    return buildKenjiModelAccessDecision({ status: "silent" });
+  }
 
   if (intent === "model_access_verification") {
     const lineUserId = getLineUserId({ event });
@@ -1717,7 +1764,12 @@ async function handleLineWebhook(request, env, ctx = null) {
   }
 
   const events = Array.isArray(body.events) ? body.events : [];
-  const autoReplyEnabled = isEnabled(env.LINE_AUTO_REPLY_ENABLED);
+  const runtimeStatus = await requestKenjiRuntimeStatus(env);
+  const runtimeControls = runtimeStatus.controls || {};
+  const runtimeAllKill = !runtimeStatus.ok || runtimeControls.all_kenji_mutations === true;
+  const runtimeLineKill = runtimeAllKill || runtimeControls.line_oa_auto_reply === true;
+  const runtimeModelKill = runtimeAllKill || runtimeControls.model_keyword_auto_reply === true;
+  const autoReplyEnabled = isEnabled(env.LINE_AUTO_REPLY_ENABLED) && !runtimeLineKill;
   const kenjiEnabled = isEnabled(env.LINE_KENJI_AI_ENABLED);
   const saved = [];
 
@@ -1728,13 +1780,13 @@ async function handleLineWebhook(request, env, ctx = null) {
     const eventMode = asString(event?.mode).toLowerCase() || "unknown";
     const canGenerateReply = Boolean(autoReplyEnabled && kenjiEnabled && eventMode !== "standby" && getReplyToken(event));
     const capabilityDecision = decideKenjiCapability({ text, intent });
-    const needsModelPreflight = Boolean(canGenerateReply && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
+    const needsModelPreflight = Boolean(canGenerateReply && !runtimeModelKill && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
     const modelDeadlineAt = needsModelPreflight ? Date.now() + KENJI_TOTAL_DEADLINE_MS : 0;
     const modelPreflight = needsModelPreflight
       ? await claimKenjiModelEvent(env, event)
       : { eligible: true, deduped: false, reason: "", canary_eligible: false, rate_limited: false, quota_window: 0 };
     const replyDecision = canGenerateReply && !modelPreflight.deduped
-      ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled, modelEligible: modelPreflight.eligible, deadlineAt: modelDeadlineAt })
+      ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled, modelEligible: modelPreflight.eligible, modelAccessAllowed: !runtimeModelKill, deadlineAt: modelDeadlineAt })
       : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" };
     const replyText = replyDecision.text;
     const shouldReply = Boolean(autoReplyEnabled && eventMode !== "standby" && replyText && getReplyToken(event));
@@ -1769,6 +1821,10 @@ async function handleLineWebhook(request, env, ctx = null) {
       intent,
       auto_reply_enabled: autoReplyEnabled,
       per_voice_enabled: kenjiEnabled,
+      runtime_control_ok: runtimeStatus.ok === true,
+      runtime_line_kill: runtimeLineKill,
+      runtime_model_kill: runtimeModelKill,
+      runtime_all_kill: runtimeAllKill,
       reply_token_present: Boolean(getReplyToken(event)),
       inbox_deduped: Boolean(record?.deduped),
       reply_candidate: Boolean(replyText),
@@ -1803,6 +1859,10 @@ async function handleLineWebhook(request, env, ctx = null) {
       record_pending: Boolean(record?.pending),
       record_skipped: Boolean(record?.skipped),
       replied: Boolean(replyResult?.ok),
+      runtime_control_ok: runtimeStatus.ok === true,
+      runtime_line_kill: runtimeLineKill,
+      runtime_model_kill: runtimeModelKill,
+      runtime_all_kill: runtimeAllKill,
       line_user: Boolean(lineUserId),
       message_id: getLineEventId(event),
     });
