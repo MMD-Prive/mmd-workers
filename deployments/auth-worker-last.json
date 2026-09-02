@@ -1,7 +1,7 @@
 {
   "worker": "mmd-auth-worker",
   "status": "deployed",
-  "source_sha": "b7039da2c1f1d980976b08ec9894ac3bc892df9f",
-  "workflow_run_id": "33626238360",
-  "deployed_at_utc": "2026-09-02T11:45:36Z"
+  "source_sha": "4a20a6f9a71cc470568338b0fb60459c71df6b14",
+  "workflow_run_id": "33656388336",
+  "deployed_at_utc": "2026-09-02T16:41:08Z"
 }
