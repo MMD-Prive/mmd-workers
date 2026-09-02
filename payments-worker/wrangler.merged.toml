@@ -1,16 +1,13 @@
 name = "payments-worker"
-main = "index.with-slip-evidence.js"
+main = "index.phase1.js"
 compatibility_date = "2026-01-20"
 
 # Production entrypoint:
-# - index.with-slip-evidence.js handles /v1/pay/slip/evidence first.
-# - All other payment routes are delegated back to index.js.
-#
-# This mirrors wrangler 2.toml so deploys using wrangler.merged.toml do not
-# fall back to src/index.js and return 404 for the slip evidence route.
+# - index.phase1.js owns verified Base Points Phase 1 awards.
+# - index.with-slip-evidence.js still handles /v1/pay/slip/evidence.
+# - all other payment/session handling delegates to index.js.
+# Base Points use a 100 THB pool with remainder carry and do not expire with membership.
 
-# Production API routes for SIGIL payment flows.
-# These prevent sigil.mmdbkk.com/v1/* payment requests from falling through to origin and returning Cloudflare 522.
 routes = [
   { pattern = "sigil.mmdbkk.com/v1/pay/*", zone_name = "mmdbkk.com" },
   { pattern = "sigil.mmdbkk.com/v1/payments/*", zone_name = "mmdbkk.com" },
@@ -20,6 +17,14 @@ routes = [
 kv_namespaces = [
   { binding = "PAY_SESSIONS_KV", id = "e0c6b8a0785e462dad6d01f61a893e87" }
 ]
+
+[[durable_objects.bindings]]
+name = "POINTS_PHASE1_COORDINATOR"
+class_name = "PointsPhase1Coordinator"
+
+[[migrations]]
+tag = "points-phase1-v1"
+new_sqlite_classes = ["PointsPhase1Coordinator"]
 
 [vars]
 ALLOWED_ORIGINS = "\"https://mmdprive.com,https://mmdprive.webflow.io,https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com\""
@@ -33,7 +38,8 @@ PAY_TOKEN_TTL_SECONDS = "2592000"
 # Secret: PAYMENT_CONFIRMATION_SIGNING_SECRET
 # CONFIRM_KEY remains a temporary migration fallback until the dedicated secret is active.
 
-# LOCK: 100 THB = 1 point
+# Legacy base-worker award is suppressed by index.phase1.js on trusted notify;
+# canonical Phase 1 conversion is fixed at 100 THB = 1 Point in points-phase1.js.
 POINTS_RATE = "100"
 
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
@@ -43,7 +49,7 @@ AIRTABLE_TABLE_MEMBERSHIP_APPLICATIONS = "tbl8z2MQpIqcdylim"
 AIRTABLE_TABLE_MEMBERS                 = "tblgWc5VRon5o8Mhk"
 AIRTABLE_TABLE_BOOKINGS                = "tbl8no0NkZ3LDgCXK"
 AIRTABLE_TABLE_PAYMENTS                = "tblWGGJJOx5eBvBZJ"
-AIRTABLE_TABLE_MEMBER_PACKAGES          = "member_packages"
+AIRTABLE_TABLE_MEMBER_PACKAGES         = "member_packages"
 AIRTABLE_TABLE_SESSIONS                = "tblC98mKWbzmPuNzX"
 AIRTABLE_TABLE_POINTS_LEDGER           = "points_ledger"
 AIRTABLE_TABLE_PACKAGES                = "packages"
