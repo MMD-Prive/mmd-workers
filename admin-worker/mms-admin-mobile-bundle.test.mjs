@@ -7,6 +7,7 @@ import { wireMmsAdminMobileBundle, MMS_ADMIN_MB_MARKER } from './src/mms-admin-m
 import { renderMmsAdminPage } from './src/mms-admin-page.js';
 
 const runtimeSource = readFileSync(new URL('./src/mms-admin-runtime.js', import.meta.url), 'utf8');
+const mobileSource = readFileSync(new URL('./src/mms-admin-mobile-bundle.js', import.meta.url), 'utf8');
 
 function rendered() {
   return wireMmsAdminMobileBundle(wireMmsApproveUi(renderMmsAdminPage()));
@@ -57,6 +58,14 @@ test('mobile bundle exposes one-tap refresh and production health check', () => 
   assert.match(html, /window\.location\.reload\(\)/);
   assert.match(html, /id="mmsMbHealth"/);
   assert.match(html, /document\.getElementById\('mmsDiagDock'\)/);
+});
+
+test('mobile observers watch only source counters and tab state without self-observing generated UI', () => {
+  assert.doesNotMatch(mobileSource, /observe\(document\.body/);
+  assert.match(mobileSource, /\['pendingApps','therCount','openPrebookings'\]/);
+  assert.match(mobileSource, /countObserver\.observe\(source,\{subtree:true,childList:true,characterData:true\}\)/);
+  assert.match(mobileSource, /tabObserver\.observe\(source,\{attributes:true,attributeFilter:\['aria-current'\]\}\)/);
+  assert.match(mobileSource, /if\(el\.textContent!==next\)el\.textContent=next/);
 });
 
 test('mobile bundle respects reduced motion and is idempotent', () => {
