@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 10
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: 783a1f0ffe97b7ecb05355730773a9fa
+      CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
       R2_BUCKET: mmd-models
       ASSET_PREFIX: webflow/internal/admin/kenji
       LIVE_BASE: https://models.mmdbkk.com/webflow/internal/admin/kenji
