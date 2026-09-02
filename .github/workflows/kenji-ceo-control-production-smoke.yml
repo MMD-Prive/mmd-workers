@@ -42,7 +42,7 @@ jobs:
           }
           NODE
 
-      - name: Sync exact Kenji CEO control routes
+      - name: Sync query-safe Kenji CEO control routes
         shell: bash
         run: |
           set -euo pipefail
@@ -50,14 +50,17 @@ jobs:
           const zoneId = process.env.CLOUDFLARE_ZONE_ID;
           const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
           const worker = "admin-worker";
-          const paths = [
-            "/v1/admin/kenji/control/memory",
-            "/v1/admin/kenji/control/conversations",
-            "/v1/admin/kenji/control/approvals",
+          // Cloudflare route matching includes the query string. These APIs
+          // require query parameters, so a trailing wildcard is required while
+          // the Worker itself still enforces the exact pathname.
+          const patterns = [
+            "/v1/admin/kenji/control/memory*",
+            "/v1/admin/kenji/control/conversations*",
+            "/v1/admin/kenji/control/approvals*",
           ];
-          const desired = paths.flatMap((path) => [
-            `mmdbkk.com${path}`,
-            `www.mmdbkk.com${path}`,
+          const desired = patterns.flatMap((pattern) => [
+            `mmdbkk.com${pattern}`,
+            `www.mmdbkk.com${pattern}`,
           ]);
 
           async function cloudflare(path, options = {}) {
@@ -106,7 +109,7 @@ jobs:
           if (unresolved.length) {
             throw new Error(`Route verification failed: ${unresolved.join(", ")}`);
           }
-          console.log(`Verified ${desired.length}/${desired.length} Kenji CEO control routes; created ${missing.length}`);
+          console.log(`Verified ${desired.length}/${desired.length} query-safe Kenji CEO control routes; created ${missing.length}`);
           NODE
 
       - name: Smoke unauthenticated CEO control endpoints
