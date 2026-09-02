@@ -1,7 +1,9 @@
 import worker from "./index";
+import { renderCreateSessionFocusFlowV2 } from "./create-session-focus-flow-v2";
 import type { Env } from "./types";
 
 const CANONICAL_ADMIN_LOGIN_PATH = "/internal/admin/login";
+const CANONICAL_CREATE_SESSION_PATH = "/internal/admin/jobs/create-session";
 const LEGACY_ADMIN_LOGIN_PATHS = new Set([
   "/sigil/admin/login",
   "/sigil/internal/admin/login",
@@ -94,6 +96,20 @@ function rewriteLegacyAdminLoginRedirect(request: Request, response: Response): 
   });
 }
 
+function maybeRenderCreateSessionFocusFlow(request: Request, response: Response): Response {
+  if (request.method !== "GET") return response;
+  const url = new URL(request.url);
+  if (url.pathname !== CANONICAL_CREATE_SESSION_PATH) return response;
+
+  // Preserve the current canonical admin gate. The focus UI is swapped in only
+  // after the protected route has already returned an allowed HTML response.
+  if (!response.ok || !(response.headers.get("content-type") || "").includes("text/html")) {
+    return response;
+  }
+
+  return renderCreateSessionFocusFlowV2();
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -116,6 +132,7 @@ export default {
     }
 
     const response = await worker.fetch(request, env);
-    return rewriteLegacyAdminLoginRedirect(request, response);
+    const canonicalResponse = rewriteLegacyAdminLoginRedirect(request, response);
+    return maybeRenderCreateSessionFocusFlow(request, canonicalResponse);
   },
 };
