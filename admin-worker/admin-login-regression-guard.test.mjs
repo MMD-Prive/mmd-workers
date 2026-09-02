@@ -9,6 +9,7 @@ const LEGACY_MARKERS = [
   "Internal access.",
   "sigil-internal-login",
   "MMD Admin Sign In",
+  "Internal Admin Chang Ewvon",
 ];
 
 test("admin-worker production entrypoint is permanently pinned to the approved login wrapper", async () => {
@@ -27,7 +28,8 @@ test("core fallback renders the same approved login page", async () => {
   assert.equal(response.headers.get("x-mmd-page"), APPROVED_PAGE_ID);
   assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker");
   assert.match(html, new RegExp(`data-mmd-page="${APPROVED_PAGE_ID}"`));
-  assert.match(html, /Internal Admin Chang Ewvon/);
+  assert.match(html, /MMD SIGIL Internal Admin/);
+  assert.doesNotMatch(html, /Internal Admin Chang Ewvon/);
   assert.match(html, /data-mmd-login21/);
   assert.match(html, /rel="icon" type="image\/png"/);
   for (const marker of LEGACY_MARKERS) assert.equal(html.includes(marker), false, marker);
