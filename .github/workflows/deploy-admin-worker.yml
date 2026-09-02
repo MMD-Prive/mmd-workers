@@ -205,6 +205,21 @@ jobs:
           const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
           const worker = "admin-worker";
           const paths = [
+            "/internal/admin/kenji",
+            "/internal/admin/kenji/",
+            "/internal/admin/kenji-knowledge",
+            "/internal/admin/kenji-knowledge/",
+            "/internal/admin/kenji-knowledge*",
+            "/v1/admin/auth/me",
+            "/v1/admin/kenji/models",
+            "/v1/admin/kenji/models/draft",
+            "/v1/admin/kenji/knowledge/meta",
+            "/v1/admin/kenji/knowledge/list",
+            "/v1/admin/kenji/knowledge/draft",
+            "/v1/admin/kenji/knowledge/*",
+            "/v1/internal/kenji/knowledge/published",
+            "/v1/public/kenji/knowledge/published",
+            "/v1/public/kenji/knowledge/published*",
             "/v1/admin/job/create",
             "/v1/admin/kenji/control/memory*",
             "/v1/admin/kenji/control/conversations*",
