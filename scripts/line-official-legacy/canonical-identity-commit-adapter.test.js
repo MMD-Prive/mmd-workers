@@ -14,8 +14,9 @@ const IMPORT_ID = "line_ofc_console_line_123456789";
 const NOW = "2026-09-02T12:00:00.000Z";
 
 function reviewedStage(overrides = {}) {
+  const { id = "recStageReviewed", ...fieldOverrides } = overrides;
   return {
-    id: "recStageReviewed",
+    id,
     fields: {
       import_id: IMPORT_ID,
       line_user_id: LINE_ID,
@@ -26,7 +27,7 @@ function reviewedStage(overrides = {}) {
       review_status: "review_required",
       matched_client_id: CLIENT_ID,
       dry_run_only: true,
-      ...overrides,
+      ...fieldOverrides,
     },
   };
 }
@@ -189,6 +190,7 @@ test("adapter blocks conflicting reviewed links for the same LINE id", async () 
     staging: [
       reviewedStage(),
       reviewedStage({
+        id: "recStageOtherReviewed",
         import_id: "line_ofc_console_line_other",
         matched_client_id: OTHER_CLIENT_ID,
       }),
@@ -219,7 +221,7 @@ test("LINE-id lookup refuses multiple reviewed staging links instead of choosing
     clients: [canonicalClient()],
     staging: [
       reviewedStage(),
-      reviewedStage({ import_id: "line_ofc_console_line_duplicate" }),
+      reviewedStage({ id: "recStageDuplicate", import_id: "line_ofc_console_line_duplicate" }),
     ],
   });
 
