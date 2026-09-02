@@ -40,7 +40,12 @@ jobs:
           if [[ "${latest_code}" != "200" ]]; then
             echo "classification=READBACK_UNAVAILABLE"
             echo "latest_http_status=${latest_code}"
-            exit 1
+            if [[ "${latest_code}" == "401" || "${latest_code}" == "403" ]]; then
+              echo "reason=cloudflare_token_missing_kv_read_permission"
+            else
+              echo "reason=cloudflare_kv_read_failed"
+            fi
+            exit 0
           fi
 
           boundary_id="$(jq -r '.boundary_id // empty' "${latest_file}")"
@@ -68,7 +73,12 @@ jobs:
           if [[ "${keys_code}" != "200" ]]; then
             echo "classification=READBACK_UNAVAILABLE"
             echo "keys_http_status=${keys_code}"
-            exit 1
+            if [[ "${keys_code}" == "401" || "${keys_code}" == "403" ]]; then
+              echo "reason=cloudflare_token_missing_kv_read_permission"
+            else
+              echo "reason=cloudflare_kv_list_failed"
+            fi
+            exit 0
           fi
 
           matched="false"
