@@ -1,5 +1,6 @@
 # admin-worker/wrangler.toml
 # LOCK v2026-LOCK-01
+# Production deploy request: Kenji Admin gated rollout 2026-09-02
 
 name = "admin-worker"
 main = "src/admin-login-hero-worker.js"
