@@ -3,18 +3,25 @@ import { rewritePendingStatusStartResponse } from "./liff-status-resolution-guar
 import { isDriveBootstrapCandidate, tryDriveMemberBootstrap } from "./drive-member-bootstrap.js";
 import { withDriveBootstrapDiagnostic } from "./drive-bootstrap-debug.js";
 import { withStatusFirstMemberResolver } from "./liff-status-first-member-resolver.js";
-import { attachTraceId, createLiffResolutionTrace } from "./liff-resolution-trace.js";
+import { attachTraceId, createLiffResolutionTrace, createLiffShellBoundaryTrace } from "./liff-resolution-trace.js";
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-durable-object.js";
 
 export default {
   async fetch(request, env, ctx) {
+    const shellBoundary = createLiffShellBoundaryTrace(request, env, ctx);
     const trace = createLiffResolutionTrace(request, env, ctx);
     const runtimeEnv = withStatusFirstMemberResolver(request, env);
     const firstRequest = request.clone();
     const bootstrapRequest = request.clone();
-    const firstResponse = await worker.fetch(firstRequest, runtimeEnv, ctx);
+    let firstResponse = await worker.fetch(firstRequest, runtimeEnv, ctx);
+
+    if (shellBoundary) {
+      shellBoundary.finish(firstResponse);
+      firstResponse = shellBoundary.attach(firstResponse);
+    }
+
     const firstPayload = await jsonPayload(firstResponse);
 
     if (trace) {
