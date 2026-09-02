@@ -1,5 +1,4 @@
-import test from "node:test";
-import assert from "node:assert/strict";
+import { expect, test } from "vitest";
 import {
   decorateLiffShellWithClientDiagnostic,
   handleLiffClientDiagnostic,
@@ -7,9 +6,9 @@ import {
 } from "../src/liff-client-runtime-diagnostic.js";
 
 test("recognizes only bounded LIFF client diagnostic paths", () => {
-  assert.equal(isLiffClientDiagnosticPath(new URL("https://www.mmdbkk.com/member/liff-client-diag.js")), true);
-  assert.equal(isLiffClientDiagnosticPath(new URL("https://www.mmdbkk.com/member/api/liff/client-diag")), true);
-  assert.equal(isLiffClientDiagnosticPath(new URL("https://www.mmdbkk.com/member/api/liff/start")), false);
+  expect(isLiffClientDiagnosticPath(new URL("https://www.mmdbkk.com/member/liff-client-diag.js"))).toBe(true);
+  expect(isLiffClientDiagnosticPath(new URL("https://www.mmdbkk.com/member/api/liff/client-diag"))).toBe(true);
+  expect(isLiffClientDiagnosticPath(new URL("https://www.mmdbkk.com/member/api/liff/start"))).toBe(false);
 });
 
 test("decorates LIFF shell before LINE SDK without weakening CSP", async () => {
@@ -22,9 +21,9 @@ test("decorates LIFF shell before LINE SDK without weakening CSP", async () => {
   });
   const decorated = await decorateLiffShellWithClientDiagnostic(response);
   const html = await decorated.text();
-  assert.match(html, /\/member\/liff-client-diag\.js/);
-  assert.ok(html.indexOf("/member/liff-client-diag.js") < html.indexOf("static.line-scdn.net/liff/edge/2/sdk.js"));
-  assert.match(decorated.headers.get("content-security-policy"), /script-src 'self'/);
+  expect(html).toMatch(/\/member\/liff-client-diag\.js/);
+  expect(html.indexOf("/member/liff-client-diag.js")).toBeLessThan(html.indexOf("static.line-scdn.net/liff/edge/2/sdk.js"));
+  expect(decorated.headers.get("content-security-policy")).toMatch(/script-src 'self'/);
 });
 
 test("persists only approved stage with boundary id from HttpOnly cookie", async () => {
@@ -40,11 +39,11 @@ test("persists only approved stage with boundary id from HttpOnly cookie", async
     body: "liff_init_ok",
   });
   const response = await handleLiffClientDiagnostic(request, env);
-  assert.equal(response.status, 204);
-  assert.equal(writes.length, 2);
-  assert.equal(writes[0].value.boundary_id, "LIFFGET-ABCDEF123456");
-  assert.equal(writes[0].value.stage, "liff_init_ok");
-  assert.deepEqual(Object.keys(writes[0].value).sort(), ["boundary_id", "observed_at", "stage"]);
+  expect(response.status).toBe(204);
+  expect(writes).toHaveLength(2);
+  expect(writes[0].value.boundary_id).toBe("LIFFGET-ABCDEF123456");
+  expect(writes[0].value.stage).toBe("liff_init_ok");
+  expect(Object.keys(writes[0].value).sort()).toEqual(["boundary_id", "observed_at", "stage"]);
 });
 
 test("drops unknown stages and never persists request body details", async () => {
@@ -56,6 +55,6 @@ test("drops unknown stages and never persists request body details", async () =>
     body: "token=secret@example.com",
   });
   const response = await handleLiffClientDiagnostic(request, env);
-  assert.equal(response.status, 204);
-  assert.equal(writes, 0);
+  expect(response.status).toBe(204);
+  expect(writes).toBe(0);
 });
