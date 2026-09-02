@@ -6,7 +6,7 @@ import {
 } from "../src/liff-client-runtime-diagnostic.js";
 
 test("recognizes only bounded LIFF client diagnostic paths", () => {
-  expect(isLiffClientDiagnosticPath(new URL("https://www.mmdbkk.com/member/liff-client-diag.js"))).toBe(true);
+  expect(isLiffClientDiagnosticPath(new URL("https://www.mmdbkk.com/member/api/liff/client-diag.js"))).toBe(true);
   expect(isLiffClientDiagnosticPath(new URL("https://www.mmdbkk.com/member/api/liff/client-diag"))).toBe(true);
   expect(isLiffClientDiagnosticPath(new URL("https://www.mmdbkk.com/member/api/liff/start"))).toBe(false);
 });
@@ -21,8 +21,8 @@ test("decorates LIFF shell before LINE SDK without weakening CSP", async () => {
   });
   const decorated = await decorateLiffShellWithClientDiagnostic(response);
   const html = await decorated.text();
-  expect(html).toMatch(/\/member\/liff-client-diag\.js/);
-  expect(html.indexOf("/member/liff-client-diag.js")).toBeLessThan(html.indexOf("static.line-scdn.net/liff/edge/2/sdk.js"));
+  expect(html).toMatch(/\/member\/api\/liff\/client-diag\.js/);
+  expect(html.indexOf("/member/api/liff/client-diag.js")).toBeLessThan(html.indexOf("static.line-scdn.net/liff/edge/2/sdk.js"));
   expect(decorated.headers.get("content-security-policy")).toMatch(/script-src 'self'/);
 });
 
