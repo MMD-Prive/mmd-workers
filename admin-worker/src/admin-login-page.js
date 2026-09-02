@@ -1,7 +1,7 @@
 export const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
 export const APPROVED_ADMIN_LOGIN_PAGE_ID = "admin-login-approved-hero";
 export const APPROVED_ADMIN_LOGIN_HERO =
-  "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a6e0fdcffc6750baeb8b2bf_Internal%20Admin%20Chang%20Ewvon.webp";
+  "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e34c91250ec9f6ee29d319_MMD%20SIGIL%20Logo.png";
 export const APPROVED_ADMIN_LOGIN_LOGO =
   "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0f2cbc7e26b6735aee4cb2_SIGIL%20LOGO%20Transp.webp";
 export const APPROVED_ADMIN_LOGIN_FAVICON =
@@ -61,9 +61,11 @@ export function renderApprovedAdminLogin(
     .mmd-login21__message.is-error{color:#ffb2b7!important}
     .mmd-login21__go{min-height:54px;border:1px solid rgba(255,229,170,.3)!important;border-radius:16px;font-size:12px;letter-spacing:.08em;text-transform:uppercase}
     .mmd-login21__privacy{font-size:10px}
-    .mmd-login21__visual{position:relative;min-height:520px;overflow:hidden}
+    .mmd-login21__visual{position:relative;min-height:520px;overflow:hidden;background:radial-gradient(circle at 50% 36%,rgba(216,173,92,.22),transparent 28%),radial-gradient(circle at 78% 18%,rgba(255,231,179,.06),transparent 22%),linear-gradient(145deg,#17100a,#080605 55%,#030303)}
     .mmd-login21__visual img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;filter:brightness(.78) contrast(1.05)}
-    .mmd-login21__visual:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 35%,rgba(0,0,0,.72))}
+    .mmd-login21__visual .mmd-login21__sigil{inset:43% auto auto 50%;width:min(48%,230px);height:auto;transform:translate(-50%,-50%);object-fit:contain;filter:drop-shadow(0 22px 60px rgba(0,0,0,.7));opacity:.92}
+    .mmd-login21__visual:before{content:"";position:absolute;inset:8%;border:1px solid rgba(216,173,92,.12);border-radius:50%;box-shadow:0 0 80px rgba(216,173,92,.07) inset}
+    .mmd-login21__visual:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.02) 35%,rgba(0,0,0,.72))}
     .mmd-login21__note{position:absolute;z-index:1;left:18px;right:18px;bottom:18px;border:1px solid rgba(255,229,170,.16);border-radius:20px;background:rgba(0,0,0,.48);backdrop-filter:blur(12px);padding:16px}
     .mmd-login21__note b{display:block;font-size:22px}
     .mmd-login21__note p{margin-top:6px}
@@ -97,9 +99,9 @@ export function renderApprovedAdminLogin(
             <p class="mmd-login21__privacy">ระบบจะไม่เก็บรหัสไว้ในหน้าเว็บ และ session ที่อนุมัติจะถูกออกเป็น Secure HttpOnly cookie เท่านั้น</p>
           </form>
         </article>
-        <aside class="mmd-login21__visual" aria-label="Chang and Ewvon in the MMD internal administration environment">
-          <img src="${APPROVED_ADMIN_LOGIN_HERO}" alt="Internal Admin Chang Ewvon" width="1600" height="1200" fetchpriority="high">
-          <div class="mmd-login21__note"><b>Access first. Work after.</b><p>เข้าให้ได้ก่อน แล้วค่อยไป Create Session / Create Job ตาม route ที่ส่งมา</p></div>
+        <aside class="mmd-login21__visual" aria-label="SIGIL internal administration environment">
+          <img class="mmd-login21__sigil" src="${APPROVED_ADMIN_LOGIN_HERO}" alt="Internal Admin Chang Ewvon" aria-hidden="true" width="512" height="512" fetchpriority="high">
+          <div class="mmd-login21__note"><b>Private access. Quiet control.</b><p>เข้าสู่พื้นที่ทำงานภายใน แล้วไปต่อยัง Control Room ตาม route ที่กำหนด</p></div>
         </aside>
       </section>
     </main>
