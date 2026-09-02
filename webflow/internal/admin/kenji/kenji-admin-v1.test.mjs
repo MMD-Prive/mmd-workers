@@ -22,28 +22,48 @@ test("Models tab migrates legacy keyword editing through the dedicated Worker ad
   assert.match(js, /\/v1\/admin\/kenji\/models/);
   for (const field of [
     "model_key",
+    "keyword_profile_id",
+    "expected_profile_version",
+    "folder_name",
     "working_name",
     "search_aliases",
     "customer_safe_info",
+    "positive_sensitive_description",
     "customer_safe_remark",
     "model_tier",
     "proposed_visibility",
     "allowed_customer_scope",
     "restricted_scope",
+    "photo_visibility_policy",
+    "deposit_preview_gate",
+    "include_in_public_kenji",
+    "source_ref",
   ]) assert.match(js, new RegExp(field));
 
+  assert.match(js, /Models \+ Keyword Profiles/);
   assert.match(js, /Save Draft → Review/);
   assert.match(js, /Idempotency-Key/);
-  assert.match(js, /kenji-model-keyword-copy/);
+  assert.match(js, /Legacy Backup · \/kenji-model-keyword-copy/);
+  assert.doesNotMatch(js, /href="\/kenji-model-keyword-copy"/);
   assert.doesNotMatch(js, /Save Draft · รอ Model adapter/);
   assert.doesNotMatch(js, /\/v1\/admin\/models\/upsert/);
   assert.doesNotMatch(js, /api\.airtable\.com|AIRTABLE_API_KEY|MMD_MODEL_ASSETS\.put/);
 });
 
-test("Models tab keeps rate, availability and private media outside the editor", () => {
+test("Models tab keeps operational truth and private media outside the editor", () => {
   assert.match(js, /ไม่รับราคา, availability\/คิว/);
   assert.match(js, /Model Console media review/);
-  assert.doesNotMatch(js, /minimum_rate_90m|standard_rate_thb|private_original_key|signed_url/);
+  assert.match(js, /Production Profile ยังไม่ถูกแก้ไข|Production ยังไม่ถูกแก้ไข/);
+  assert.doesNotMatch(js, /minimum_rate_90m|standard_rate_thb|private_original_key|signed_url|private_admin_note/);
+});
+
+test("safe preview excludes the positive-sensitive review-only field", () => {
+  const previewStart = js.indexOf("function previewModelDraft");
+  const saveStart = js.indexOf("function saveModelDraft");
+  const preview = js.slice(previewStart, saveStart);
+  assert.match(preview, /customer_safe_info/);
+  assert.match(preview, /customer_safe_remark/);
+  assert.doesNotMatch(preview, /positive_sensitive_description/);
 });
 
 test("mobile admin layout stays compact with horizontal layers", () => {
