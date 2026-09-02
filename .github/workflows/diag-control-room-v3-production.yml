@@ -1,0 +1,43 @@
+name: Diagnose Control Room v3 production
+
+on:
+  push:
+    branches:
+      - diag/control-room-v3-production
+    paths:
+      - ".github/workflows/diag-control-room-v3-production.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify apex Control Room v3
+        shell: bash
+        run: |
+          set -euo pipefail
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          trap 'rm -f "$headers" "$body"' EXIT
+          code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+            -D "$headers" -o "$body" -w '%{http_code}' \
+            "https://mmdbkk.com/internal/admin/control-room?mock=1&diag=${GITHUB_SHA}")"
+          echo "HTTP=$code"
+          grep -Ei '^(x-mmd-control-room-ui|x-mmd-control-room-authority|server|cf-ray):' "$headers" || true
+          echo "BODY_MARKERS:"
+          grep -Eo 'data-control-room-v3|MMD PRIVÉ · OWNER CONTROL ROOM V3|My MMD Entitlement Resolver|Telegram / Google Drive|WORKER-RENDERED INTERNAL PAGES' "$body" | sort -u || true
+          test "$code" = "200"
+          grep -Eiq '^x-mmd-control-room-ui:[[:space:]]*owner-desktop-v3-latest' "$headers"
+          grep -Eiq '^x-mmd-control-room-authority:[[:space:]]*canonical-backend' "$headers"
+          grep -q 'data-control-room-v3' "$body"
+          grep -q 'MMD PRIVÉ · OWNER CONTROL ROOM V3' "$body"
+          grep -q 'My MMD Entitlement Resolver' "$body"
+          grep -q 'Telegram / Google Drive' "$body"
+          if grep -q 'WORKER-RENDERED INTERNAL PAGES' "$body"; then
+            echo "Legacy stripped Control Room shell is still live" >&2
+            exit 1
+          fi
+          echo "Production Control Room v3 verified"
