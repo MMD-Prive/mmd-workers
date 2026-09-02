@@ -262,6 +262,31 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/kenji/models/draft"
 zone_name = "mmdbkk.com"
 
+# Kenji CEO Control read APIs. Exact routes only; no broad /v1/admin/kenji/control/* ownership.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/control/memory"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/control/memory"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/control/conversations"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/control/conversations"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/control/approvals"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/control/approvals"
+zone_name = "mmdbkk.com"
+
 # Create Job Link Issuer API. Exact route only so Webflow-owned admin pages stay
 # untouched while Create Actual Job POST reaches admin-worker JSON handlers.
 [[routes]]
@@ -377,6 +402,10 @@ AIRTABLE_TABLE_STUDIO_PUBLISH = "Studio_Publish"
 AIRTABLE_TABLE_DEMO_LINKS = "Demo Links"
 AIRTABLE_TABLE_MEMBERS = "members"
 AIRTABLE_TABLE_CLIENTS_ID = "tblVv58TCbwh5j1fS"
+AIRTABLE_TABLE_MEMBERS_ID = "tblgWc5VRon5o8Mhk"
+AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID = "tblNImdF9PKAxhXGi"
+AIRTABLE_TABLE_AI_MESSAGE_EVENTS_ID = "tbljCYfYqfm8gBTPq"
+AIRTABLE_TABLE_MODEL_REVIEW_REQUESTS_ID = "tblJ52hVu0f4uhEmS"
 AIRTABLE_CLIENT_NAME_FIELD = "Client Name"
 AIRTABLE_TABLE_MODELS = "models"
 AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"

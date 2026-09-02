@@ -21,6 +21,7 @@ import {
   handleKenjiModelAdminRequest,
   isKenjiModelAdminRequest,
 } from "./kenji-model-admin-adapter.js";
+import { handleKenjiControlRequest, isKenjiControlRequest } from "./kenji-control-endpoints.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
@@ -89,10 +90,13 @@ export default {
     if (strictGate.response) return strictGate.response;
     request = strictGate.request || request;
 
+    if (isKenjiControlRequest(path, method)) {
+      return handleKenjiControlRequest(request, env);
+    }
+
     if (isKenjiModelAdminRequest(path, method)) {
-      // applyCredentialBoundAdminGate accepts service-shaped headers so legacy
-      // admin handlers can validate them themselves. This adapter owns Airtable
-      // reads/writes directly, so it must verify the actual credential here too.
+      // Defense in depth: the credential-bound gate validates service credentials,
+      // while the Model adapter keeps its canonical core-admin auth check too.
       if (!(await isCoreAdminAuthed(request, env))) {
         return strictJson(request, env, { ok: false, authenticated: false, error: "unauthorized" }, 401);
       }
@@ -220,7 +224,7 @@ function handleCredentialBoundAdminLogout(request) {
 
 async function applyCredentialBoundAdminGate(request, env, path, method) {
   if (method === "OPTIONS" || !isCredentialBoundAdminPath(path)) return { request, actor: null };
-  if (hasServiceAuthHeader(request)) {
+  if (await hasValidServiceAuth(request, env)) {
     // Service credentials may submit Review/QA work, but can never Publish.
     return { request, actor: { id: "service-admin", role: "reviewer" } };
   }
@@ -259,10 +263,23 @@ function isCredentialBoundAdminPath(path) {
   );
 }
 
-function hasServiceAuthHeader(request) {
+async function hasValidServiceAuth(request, env) {
   const auth = clean(request.headers.get("Authorization"));
   const confirm = clean(request.headers.get("X-Confirm-Key"));
-  return Boolean(auth || confirm);
+  const bearer = auth.replace(/^Bearer\s+/i, "").trim();
+  const expectedBearers = [clean(env.INTERNAL_TOKEN), clean(env.ADMIN_BEARER)].filter(Boolean);
+
+  let bearerOk = false;
+  if (bearer && expectedBearers.length) {
+    const checks = await Promise.all(expectedBearers.map((expected) => constantTimeEqual(bearer, expected)));
+    bearerOk = checks.some(Boolean);
+  }
+
+  const expectedConfirm = clean(env.CONFIRM_KEY);
+  const confirmOk = Boolean(
+    expectedConfirm && confirm && (await constantTimeEqual(confirm, expectedConfirm))
+  );
+  return bearerOk || confirmOk;
 }
 
 function withInternalAuthorization(request, token) {
