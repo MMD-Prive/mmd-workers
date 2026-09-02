@@ -1,5 +1,5 @@
 name = "telegram-worker"
-main = "src/index.js"
+main = "src/access-runtime.js"
 compatibility_date = "2026-01-20"
 
 [vars]
@@ -17,6 +17,11 @@ AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_TABLE_PAYMENTS = "payments"
 AIRTABLE_TABLE_POINTS_LEDGER = "points_ledger"
 
+# Protected room IDs are downstream enforcement configuration only.
+# Do not infer membership/entitlement from room membership.
+# TELEGRAM_BLACK_ROOM_ID and TELEGRAM_SVIP_ROOM_ID must be configured before grants.
+# TELEGRAM_VIP_ROOM_ID intentionally remains unset until the VIP room canon is approved.
+
 # Do not put secrets here.
 # Configure these with wrangler secret put:
 # TELEGRAM_BOT_TOKEN
@@ -26,6 +31,7 @@ AIRTABLE_TABLE_POINTS_LEDGER = "points_ledger"
 # AUTH_SERVICE_BOOKING_TO_TELEGRAM
 # AUTH_SERVICE_EVENTS_TO_TELEGRAM
 # AUTH_SERVICE_STUDIO_TO_TELEGRAM
+# AUTH_SERVICE_AUTH_TO_TELEGRAM
 #
 # Optional persistent promo-code ledger:
 # [[kv_namespaces]]

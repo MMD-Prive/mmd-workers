@@ -5,8 +5,15 @@ on:
     paths:
       - "auth-worker/src/my-mmd-runtime-index.js"
       - "auth-worker/src/member-entitlement-resolver.js"
+      - "auth-worker/src/member-downstream-access-reconciler.js"
       - "auth-worker/wrangler.toml"
       - "auth-worker/test/member-entitlement-resolver.test.mjs"
+      - "auth-worker/test/member-downstream-access-reconciler.test.mjs"
+      - "member-pages-worker/src/runtime-index.js"
+      - "member-pages-worker/src/drive-member-bootstrap-runtime.js"
+      - "member-pages-worker/src/drive-access-reconcile.js"
+      - "telegram-worker/src/access-runtime.js"
+      - "telegram-worker/wrangler.toml"
       - "sigil-booking-worker/src/runtime-index.js"
       - "sigil-booking-worker/src/entitlement-runtime-worker.js"
       - "sigil-booking-worker/wrangler.toml"
@@ -29,14 +36,29 @@ jobs:
         run: |
           node --check auth-worker/src/my-mmd-runtime-index.js
           node --check auth-worker/src/member-entitlement-resolver.js
+          node --check auth-worker/src/member-downstream-access-reconciler.js
+          node --check member-pages-worker/src/runtime-index.js
+          node --check member-pages-worker/src/drive-member-bootstrap-runtime.js
+          node --check member-pages-worker/src/drive-access-reconcile.js
+          node --check telegram-worker/src/access-runtime.js
           node --check sigil-booking-worker/src/runtime-index.js
           node --check sigil-booking-worker/src/entitlement-runtime-worker.js
-      - name: Resolver tests
-        run: node --test auth-worker/test/member-entitlement-resolver.test.mjs
+      - name: Resolver and downstream policy tests
+        run: |
+          node --test auth-worker/test/member-entitlement-resolver.test.mjs
+          node --test auth-worker/test/member-downstream-access-reconciler.test.mjs
       - name: Wrangler entrypoint contract
         run: |
           grep -F 'main = "src/my-mmd-runtime-index.js"' auth-worker/wrangler.toml
+          grep -F 'main = "src/access-runtime.js"' telegram-worker/wrangler.toml
           grep -F 'main = "src/runtime-index.js"' sigil-booking-worker/wrangler.toml
+      - name: Downstream authority contract
+        run: |
+          grep -F 'authority: "my_mmd_entitlement_resolver_v1"' auth-worker/src/member-downstream-access-reconciler.js
+          grep -F 'legacy_drive_source_disabled' auth-worker/src/my-mmd-runtime-index.js
+          grep -F 'legacy_drive_source_disabled' member-pages-worker/src/drive-member-bootstrap-runtime.js
+          grep -F 'AUTH_SERVICE_AUTH_TO_TELEGRAM' telegram-worker/src/access-runtime.js
+          grep -F 'AUTH_SERVICE_AUTH_TO_MEMBER_PAGES' member-pages-worker/src/drive-access-reconcile.js
       - name: Booking snapshot contract
         run: |
           grep -F 'entitlement_snapshot_at_confirm' sigil-booking-worker/src/entitlement-runtime-worker.js

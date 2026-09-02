@@ -1,6 +1,7 @@
 import worker from "./index.js";
 import { rewritePendingStatusStartResponse } from "./liff-status-resolution-guard.js";
-import { isDriveBootstrapCandidate, tryDriveMemberBootstrap } from "./drive-member-bootstrap.js";
+import { isDriveBootstrapCandidate, tryDriveMemberBootstrap } from "./drive-member-bootstrap-runtime.js";
+import { isDriveReconcileRequest, handleDriveReconcile } from "./drive-access-reconcile.js";
 import { withDriveBootstrapDiagnostic } from "./drive-bootstrap-debug.js";
 import { withStatusFirstMemberResolver } from "./liff-status-first-member-resolver.js";
 import { attachTraceId, createLiffResolutionTrace, createLiffShellBoundaryTrace } from "./liff-resolution-trace.js";
@@ -10,6 +11,8 @@ export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-durab
 
 export default {
   async fetch(request, env, ctx) {
+    if (isDriveReconcileRequest(request)) return handleDriveReconcile(request, env);
+
     const shellBoundary = createLiffShellBoundaryTrace(request, env, ctx);
     const trace = createLiffResolutionTrace(request, env, ctx);
     const runtimeEnv = withStatusFirstMemberResolver(request, env);
@@ -41,9 +44,7 @@ export default {
       });
       if (bootstrap.mapped) {
         const retriedResponse = await worker.fetch(request, runtimeEnv, ctx);
-        trace?.event("member_retry", retriedResponse.ok ? "complete" : "failed", "", {
-          http_status: retriedResponse.status,
-        });
+        trace?.event("member_retry", retriedResponse.ok ? "complete" : "failed", "", { http_status: retriedResponse.status });
         trace?.finish(retriedResponse.ok ? "resolved" : "failed", retriedResponse.ok ? "drive_bootstrap_mapped" : "member_retry_failed");
         const rewritten = await rewritePendingStatusStartResponse(request, retriedResponse, trace?.traceId || "");
         return attachTraceId(rewritten, trace?.traceId || "");

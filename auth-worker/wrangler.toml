@@ -3,18 +3,15 @@ main = "src/my-mmd-runtime-index.js"
 compatibility_date = "2026-01-20"
 
 [vars]
-# Comma-separated origins that may call the auth API.
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://mmdprive.webflow.io,https://mmdprive.com"
 WEB_BASE_URL = "https://mmdbkk.com"
 COOKIE_DOMAIN = ".mmdbkk.com"
-
 AUTH_COOKIE_NAME = "mmd_auth"
 AUTH_SESSION_TTL_DAYS = "30"
 AUTH_CODE_TTL_MINUTES = "10"
 AUTH_CODE_LENGTH = "6"
 AUTH_MAX_CODE_ATTEMPTS = "5"
 
-# Airtable table names in the existing MMD Commerce Operating System base.
 AIRTABLE_TABLE_MEMBERS = "Members"
 AIRTABLE_TABLE_MEMBER_PACKAGES = "member_packages"
 AIRTABLE_TABLE_PACKAGES = "packages"
@@ -27,8 +24,8 @@ AIRTABLE_TABLE_AUTH_IDENTITIES = "MMD — Auth Identities"
 AIRTABLE_TABLE_AUTH_LOGIN_CODES = "MMD — Auth Login Codes"
 AIRTABLE_TABLE_AUTH_SESSIONS = "MMD — Auth Sessions"
 
-# Read-only LINE subject resolver mapping. Drive-verified legacy bootstrap writes
-# the canonical LINE subject into this same field after email/package proof.
+# Members summary is compatibility/readback only. Entitlement decisions come from
+# MMD — Member Entitlements through my_mmd_entitlement_resolver_v1.
 AIRTABLE_MEMBERS_LINE_USER_ID_FIELD = "line_id"
 AIRTABLE_MEMBERS_DISPLAY_NAME_FIELD = "Full Name (Display)"
 AIRTABLE_MEMBERS_NAME_FIELD = "Full Name"
@@ -40,13 +37,8 @@ AIRTABLE_MEMBERS_EXPIRY_FIELD = "Membership Expiry"
 AIRTABLE_MEMBERS_END_DATE_FIELD = "Membership End Date"
 AIRTABLE_MEMBERS_EXPIRE_AT_FIELD = "Expire At"
 
-# Trusted server-only legacy identity recovery used only when a verified LINE ID
-# token omits the optional email claim. Conflicting canonical emails fail closed.
 AIRTABLE_CLIENTS_LINE_USER_ID_FIELD = "line_user_id"
 AIRTABLE_CLIENTS_EMAIL_FIELDS = "Contact Email,email"
-
-# Customer-safe LIFF history readback. The API enforces a one-calendar-year
-# window and never returns payment details, notes, risk, contact data, or raw IDs.
 AIRTABLE_SESSIONS_LINE_USER_ID_FIELD = "line_user_id"
 AIRTABLE_SESSIONS_EMAIL_FIELD = "email"
 AIRTABLE_SESSIONS_HISTORY_DATE_FIELD = "job_date"
@@ -64,8 +56,6 @@ AIRTABLE_PAYMENTS_DATE_FIELD = "Payment Date"
 AIRTABLE_PAYMENTS_CREATED_FIELD = "Created At"
 AIRTABLE_PAYMENTS_UPDATED_FIELD = "Updated At"
 
-# MMD — Member Entitlements mapping. Canonical fields are preferred; legacy
-# fields remain as compatibility evidence during migration.
 AIRTABLE_ENTITLEMENT_MEMBERSTACK_ID_FIELD = "memberstack_id"
 AIRTABLE_ENTITLEMENT_MEMBER_EMAIL_FIELD = "member_email"
 AIRTABLE_ENTITLEMENT_TELEGRAM_USER_ID_FIELD = "telegram_user_id"
@@ -79,7 +69,6 @@ AIRTABLE_ENTITLEMENT_RESOURCE_FIELDS = "resource_key,access_key,capability,packa
 AIRTABLE_ENTITLEMENT_TIER_FIELDS = "capability,min_tier,tier,package_code"
 AIRTABLE_ENTITLEMENT_EXPIRES_AT_FIELDS = "expire_at"
 
-# System — Access Log mapping.
 AIRTABLE_ACCESS_LOG_EVENT_ID_FIELD = "Event ID"
 AIRTABLE_ACCESS_LOG_ACTION_FIELD = "Action"
 AIRTABLE_ACCESS_LOG_RESULT_FIELD = "Result"
@@ -89,24 +78,30 @@ AIRTABLE_ACCESS_LOG_IP_HASH_FIELD = ""
 AIRTABLE_ACCESS_LOG_USER_AGENT_FIELD = ""
 AIRTABLE_ACCESS_LOG_CREATED_AT_FIELD = ""
 
-# Default paths used by Webflow pages.
 LOGIN_PATH = "/login"
 DENIED_PATH = "/membership/upgrade-required"
 EXPIRED_PATH = "/membership/renewal"
-
-# DEV ONLY. Set to "true" only while testing so the API returns the login code.
 MMD_AUTH_DEV_MODE = "false"
 MEMBER_STATUS_AIRTABLE_TIMEOUT_MS = "10000"
 
-# Required secrets to set with wrangler secret put:
+# Required secrets:
 # AIRTABLE_API_KEY
 # AIRTABLE_BASE_ID
 # AUTH_HMAC_SECRET
 # ADMIN_BEARER
 # MEMBER_STATUS_RESOLVER_SECRET
+# AUTH_RECONCILE_SECRET
+# AUTH_SERVICE_AUTH_TO_TELEGRAM
+# AUTH_SERVICE_AUTH_TO_MEMBER_PAGES
 
-# Isolated CARE BACK auth staging. Airtable reads are provided only by the
-# synthetic service binding below; no production Airtable records are used.
+[[services]]
+binding = "TELEGRAM_ACCESS_RECONCILER"
+service = "telegram-worker"
+
+[[services]]
+binding = "DRIVE_ACCESS_RECONCILER"
+service = "member-pages-worker"
+
 [env.staging]
 name = "mmd-auth-worker-staging"
 workers_dev = false
