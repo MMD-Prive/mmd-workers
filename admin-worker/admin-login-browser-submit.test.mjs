@@ -26,7 +26,7 @@ test("admin login exposes one canonical password field for secure browser submis
 test("admin login submits the canonical credential field without a client-side mirror", async () => {
   const html = await (await render()).text();
 
-  assert.match(html, new RegExp(`action="${ADMIN_LOGIN_SESSION_PATH.replaceAll("/", "\\\\/")}"`));
+  assert.match(html, new RegExp(`action="${ADMIN_LOGIN_SESSION_PATH}"`));
   assert.match(html, /id="adminCredential" name="credential" type="password" required/);
   assert.match(html, /form\.addEventListener\('submit'/);
   assert.match(html, /input\.readOnly=true/);
