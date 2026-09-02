@@ -3,17 +3,46 @@ export const KENJI_MODEL_ADMIN_DRAFT_PATH = `${KENJI_MODEL_ADMIN_BASE_PATH}/draf
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MAX_LIST_SCAN = 500;
-const ALLOWED_TIERS = new Set(["public", "standard", "premium", "vip", "exclusive", "curated"]);
 const ALLOWED_VISIBILITY = new Set(["public", "standard", "premium", "curated", "hidden", "internal"]);
-const ALLOWED_CUSTOMER_SCOPE = new Set(["standard", "premium"]);
-const ALLOWED_RESTRICTED_SCOPE = new Set(["potential", "review", "no_detail"]);
+
+const PROFILE_TIER_CHOICES = new Map([
+  ["public", "Public"],
+  ["gws", "GWs"],
+  ["ems", "EMs"],
+  ["private", "Private"],
+]);
+const CUSTOMER_SCOPE_CHOICES = new Map([
+  ["all_active_members", "All Active Members"],
+  ["vip", "VIP"],
+  ["svip", "SVIP"],
+  ["black_card", "Black Card"],
+  ["potential", "#Potential"],
+  ["per_review", "Per Review"],
+]);
+const PHOTO_VISIBILITY_CHOICES = new Map([
+  ["active_eligible_only", "Active eligible only"],
+  ["vip_svip_black_card_only", "VIP/SVIP/Black Card only"],
+  ["no_photo", "No photo"],
+  ["per_review", "Per review"],
+]);
+const DEPOSIT_GATE_CHOICES = new Map([
+  ["none", "None"],
+  ["verified_deposit_per_approval", "Verified deposit + Per approval"],
+  ["per_approval", "Per approval"],
+]);
+const PROFILE_STATUS_CHOICES = new Map([
+  ["draft", "Draft"],
+  ["review", "Review"],
+  ["active", "Active"],
+  ["archived", "Archived"],
+]);
 
 function clean(value, max = 500) {
   return String(value == null ? "" : value).trim().slice(0, max);
 }
 
 function normalizeToken(value) {
-  return clean(value, 80)
+  return clean(value, 120)
     .toLowerCase()
     .normalize("NFKC")
     .replace(/[^a-z0-9]+/g, "_")
@@ -145,7 +174,7 @@ export function projectKenjiAdminModelRecord(record = {}) {
     model_id: clean(record.id, 80),
     model_key: clean(firstField(fields, ["unique_key", "model_code", "model_lookup_key"]), 80),
     working_name: clean(firstField(fields, ["working_name", "Working Name", "display_name", "Display Name", "name", "Name"]), 120),
-    model_tier: clean(firstField(fields, ["model_tier", "tier"]), 40),
+    identity_tier: clean(firstField(fields, ["model_tier", "tier"]), 40),
     model_status: clean(firstField(fields, ["status", "model_status"]), 40),
     booking_visibility: clean(firstField(fields, ["approved_client_visibility", "visibility", "client_visibility_status"]), 40),
     folder_name: clean(firstField(fields, ["folder_name", "access_folder", "model_folder"]), 120),
@@ -167,7 +196,7 @@ export function projectKenjiKeywordProfileRecord(record = {}) {
     positive_sensitive_description: clean(firstField(fields, ["positive_sensitive_description"]), 800),
     customer_safe_remark: clean(firstField(fields, ["customer_safe_remark"]), 500),
     model_tier: clean(firstField(fields, ["model_tier"]), 40),
-    allowed_customer_scope: uniqueList(firstField(fields, ["allowed_customer_scope"]), 6, 40),
+    allowed_customer_scope: uniqueList(firstField(fields, ["allowed_customer_scope"]), 8, 60),
     photo_visibility_policy: clean(firstField(fields, ["photo_visibility_policy"]), 80),
     deposit_preview_gate: clean(firstField(fields, ["deposit_preview_gate"]), 80),
     profile_status: clean(firstField(fields, ["status"]), 40),
@@ -176,6 +205,13 @@ export function projectKenjiKeywordProfileRecord(record = {}) {
     profile_version: numberValue(firstField(fields, ["version"]), 1),
     reviewed_at: clean(firstField(fields, ["reviewed_at"]), 80),
   };
+}
+
+function defaultProfileTier(identity = {}) {
+  const identityTier = normalizeToken(identity.identity_tier);
+  const visibility = normalizeToken(identity.booking_visibility);
+  if (identityTier === "public" || visibility === "public") return "Public";
+  return "Private";
 }
 
 function mergeIdentityAndProfile(identity = {}, profile = null) {
@@ -191,15 +227,17 @@ function mergeIdentityAndProfile(identity = {}, profile = null) {
     customer_safe_info: profile?.customer_safe_info || "",
     positive_sensitive_description: profile?.positive_sensitive_description || "",
     customer_safe_remark: profile?.customer_safe_remark || "",
-    model_tier: profile?.model_tier || identity.model_tier || "public",
+    model_tier: profile?.model_tier || defaultProfileTier(identity),
+    identity_tier: identity.identity_tier || "",
     model_status: identity.model_status || "",
+    status: identity.model_status || "",
     profile_status: profile?.profile_status || "missing_profile",
     booking_visibility: identity.booking_visibility || "",
     folder_name: profile?.folder_name || identity.folder_name || "",
     access_folder: profile?.folder_name || identity.folder_name || "",
     allowed_customer_scope: profile?.allowed_customer_scope || [],
-    photo_visibility_policy: profile?.photo_visibility_policy || "",
-    deposit_preview_gate: profile?.deposit_preview_gate || "",
+    photo_visibility_policy: profile?.photo_visibility_policy || "Per review",
+    deposit_preview_gate: profile?.deposit_preview_gate || "Per approval",
     include_in_public_kenji: Boolean(profile?.include_in_public_kenji),
     source_ref: profile?.source_ref || "",
     requires_per_approval: Boolean(identity.requires_per_approval),
@@ -302,22 +340,30 @@ function isCustomerSafeText(value, max) {
   return Boolean(text) && text.length <= max && !containsForbiddenOperationalText(text);
 }
 
-function parseEnum(value, allowed, fallback, error) {
-  const normalized = normalizeToken(value);
-  if (!normalized) return { ok: true, value: fallback };
-  if (!allowed.has(normalized)) return { ok: false, error };
-  return { ok: true, value: normalized };
+function canonicalChoice(value, choices, fallback, error) {
+  const token = normalizeToken(value);
+  if (!token) return { ok: true, value: fallback };
+  const canonical = choices.get(token);
+  return canonical ? { ok: true, value: canonical } : { ok: false, error };
 }
 
-function defaultVisibilityForTier(tier) {
-  if (tier === "public" || tier === "standard" || tier === "premium") return tier;
-  return "curated";
+function parseVisibility(value, profileTier) {
+  const token = normalizeToken(value);
+  if (!token) return { ok: true, value: profileTier === "Public" ? "public" : "curated" };
+  return ALLOWED_VISIBILITY.has(token)
+    ? { ok: true, value: token }
+    : { ok: false, error: "invalid_proposed_visibility" };
 }
 
-function validateScopedTokens(value, allowed, maxItems, error) {
-  const items = uniqueList(value, maxItems, 30).map(normalizeToken).filter(Boolean);
-  if (items.some((item) => !allowed.has(item))) return { ok: false, error };
-  return { ok: true, value: items };
+function canonicalCustomerScopes(value) {
+  const raw = uniqueList(value, 8, 60);
+  const output = [];
+  for (const item of raw) {
+    const canonical = CUSTOMER_SCOPE_CHOICES.get(normalizeToken(item));
+    if (!canonical) return { ok: false, error: "invalid_allowed_customer_scope" };
+    if (!output.includes(canonical)) output.push(canonical);
+  }
+  return { ok: true, value: output };
 }
 
 function parseDraft(body = {}) {
@@ -331,10 +377,8 @@ function parseDraft(body = {}) {
   const positiveSensitiveDescription = clean(body.positive_sensitive_description, 800);
   const customerSafeRemark = clean(body.customer_safe_remark, 500);
   const folderName = clean(body.folder_name || body.access_folder, 120);
-  const photoVisibilityPolicy = clean(body.photo_visibility_policy, 80);
-  const depositPreviewGate = clean(body.deposit_preview_gate, 80);
   const sourceRef = clean(body.source_ref, 240);
-  const profileStatus = clean(body.profile_status || "draft", 40) || "draft";
+  const currentProfileStatus = clean(body.profile_status, 40);
   const expectedProfileVersion = body.expected_profile_version == null || body.expected_profile_version === ""
     ? null
     : numberValue(body.expected_profile_version, 0);
@@ -347,19 +391,20 @@ function parseDraft(body = {}) {
     return { ok: false, error: "invalid_expected_profile_version" };
   }
 
-  const tierResult = parseEnum(body.model_tier, ALLOWED_TIERS, "public", "invalid_model_tier");
+  const tierResult = canonicalChoice(body.model_tier, PROFILE_TIER_CHOICES, "Private", "invalid_model_tier");
   if (!tierResult.ok) return tierResult;
-  const visibilityResult = parseEnum(
-    body.proposed_visibility || body.booking_visibility,
-    ALLOWED_VISIBILITY,
-    defaultVisibilityForTier(tierResult.value),
-    "invalid_proposed_visibility"
-  );
+  const visibilityResult = parseVisibility(body.proposed_visibility || body.booking_visibility, tierResult.value);
   if (!visibilityResult.ok) return visibilityResult;
-  const scopeResult = validateScopedTokens(body.allowed_customer_scope, ALLOWED_CUSTOMER_SCOPE, 4, "invalid_allowed_customer_scope");
+  const scopeResult = canonicalCustomerScopes(body.allowed_customer_scope);
   if (!scopeResult.ok) return scopeResult;
-  const restrictedResult = validateScopedTokens(body.restricted_scope, ALLOWED_RESTRICTED_SCOPE, 6, "invalid_restricted_scope");
-  if (!restrictedResult.ok) return restrictedResult;
+  const photoResult = canonicalChoice(body.photo_visibility_policy, PHOTO_VISIBILITY_CHOICES, "Per review", "invalid_photo_visibility_policy");
+  if (!photoResult.ok) return photoResult;
+  const depositResult = canonicalChoice(body.deposit_preview_gate, DEPOSIT_GATE_CHOICES, "Per approval", "invalid_deposit_preview_gate");
+  if (!depositResult.ok) return depositResult;
+  const currentStatusResult = currentProfileStatus
+    ? canonicalChoice(currentProfileStatus, PROFILE_STATUS_CHOICES, "Draft", "invalid_profile_status")
+    : { ok: true, value: "Draft" };
+  if (!currentStatusResult.ok) return currentStatusResult;
 
   if (customerSafeInfo && !isCustomerSafeText(customerSafeInfo, 800)) return { ok: false, error: "customer_safe_info_failed_guard" };
   if (customerSafeRemark && !isCustomerSafeText(customerSafeRemark, 500)) return { ok: false, error: "customer_safe_remark_failed_guard" };
@@ -387,10 +432,10 @@ function parseDraft(body = {}) {
       model_tier: tierResult.value,
       proposed_visibility: visibilityResult.value,
       allowed_customer_scope: scopeResult.value,
-      restricted_scope: restrictedResult.value,
-      photo_visibility_policy: photoVisibilityPolicy,
-      deposit_preview_gate: depositPreviewGate,
-      profile_status: profileStatus,
+      photo_visibility_policy: photoResult.value,
+      deposit_preview_gate: depositResult.value,
+      current_profile_status: currentStatusResult.value,
+      proposed_profile_status: "Review",
       include_in_public_kenji: booleanValue(body.include_in_public_kenji),
       source_ref: sourceRef,
       requires_per_approval: true,
