@@ -52,6 +52,8 @@ export function renderApprovedAdminLogin(
     .mmd-login21 label{display:grid;gap:8px;margin-top:10px;color:#d8ad5c;font-size:11px;font-weight:950;letter-spacing:.14em;text-transform:uppercase}
     .mmd-login21__input{display:grid;grid-template-columns:1fr auto;border:1px solid rgba(255,229,170,.18);border-radius:18px;overflow:hidden;background:rgba(0,0,0,.42)}
     .mmd-login21 input{width:100%;min-height:58px;border:0;background:transparent;color:#fff8ef;padding:0 16px;outline:0;font:inherit}
+    .mmd-login21__credential{-webkit-text-security:disc}
+    .mmd-login21__credential.is-visible{-webkit-text-security:none}
     .mmd-login21 button{border:0;background:#d8ad5c;color:#140f08;font-weight:950;padding:0 18px;cursor:pointer}
     .mmd-login21__toggle{border-left:1px solid rgba(255,229,170,.18)!important;background:transparent!important;color:#ffe4a3!important;font-size:11px}
     .mmd-login21__message{min-height:22px;color:rgba(255,248,239,.64)!important;font-size:13px}
@@ -84,10 +86,11 @@ export function renderApprovedAdminLogin(
           <h1>Enter the<br>control room.</h1>
           <p>ใส่ access code ที่ได้รับอนุมัติ ระบบจะพาไปหน้าที่ตั้งไว้ต่อทันที ไม่ใช่หน้า setup account แล้วครับ</p>
           <div class="mmd-login21__chips"><span>Approved access</span><span>Secure session</span><span>Admin route</span></div>
-          <form method="post" action="${ADMIN_LOGIN_SESSION_PATH}" autocomplete="on">
+          <form id="adminLoginForm" method="post" action="${ADMIN_LOGIN_SESSION_PATH}" autocomplete="off">
             <input type="hidden" name="next" value="${escapeAttribute(next)}">
+            <input id="adminCredentialSubmit" type="hidden" name="credential" value="">
             <label for="adminCredential">Access Code
-              <span class="mmd-login21__input"><input id="adminCredential" name="credential" type="password" required autocomplete="current-password" autofocus><button class="mmd-login21__toggle" type="button" aria-controls="adminCredential" aria-pressed="false">SHOW</button></span>
+              <span class="mmd-login21__input"><input class="mmd-login21__credential" id="adminCredential" type="text" required autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" autofocus><button class="mmd-login21__toggle" type="button" aria-controls="adminCredential" aria-pressed="false">SHOW</button></span>
             </label>
             <p class="mmd-login21__message${error ? " is-error" : ""}" role="${error ? "alert" : "status"}">${error ? escapeHtml(error) : `Next: ${escapeHtml(next)}`}</p>
             <button class="mmd-login21__go" type="submit">Enter Admin</button>
@@ -101,7 +104,7 @@ export function renderApprovedAdminLogin(
       </section>
     </main>
   </section>
-  <script>document.querySelector('.mmd-login21__toggle')?.addEventListener('click',function(){const i=document.getElementById('adminCredential');const show=i.type==='password';i.type=show?'text':'password';this.textContent=show?'HIDE':'SHOW';this.setAttribute('aria-pressed',String(show));});</script>
+  <script>(()=>{const form=document.getElementById('adminLoginForm');const input=document.getElementById('adminCredential');const submitValue=document.getElementById('adminCredentialSubmit');const toggle=document.querySelector('.mmd-login21__toggle');if(!form||!input||!submitValue||!toggle)return;const supportsTextSecurity=Boolean(window.CSS&&CSS.supports&&CSS.supports('-webkit-text-security','disc'));if(!supportsTextSecurity)input.type='password';const sync=()=>{submitValue.value=input.value;};input.addEventListener('input',sync);input.addEventListener('paste',()=>queueMicrotask(sync));form.addEventListener('submit',(event)=>{if(!submitValue.value)sync();if(!submitValue.value){event.preventDefault();input.focus();return;}input.disabled=true;});toggle.addEventListener('click',function(){const show=this.getAttribute('aria-pressed')!=='true';if(supportsTextSecurity){input.classList.toggle('is-visible',show);}else{input.type=show?'text':'password';}this.textContent=show?'HIDE':'SHOW';this.setAttribute('aria-pressed',String(show));});})();</script>
 </body>
 </html>`;
 
