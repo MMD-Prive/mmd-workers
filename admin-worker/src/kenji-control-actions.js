@@ -87,7 +87,7 @@ async function approvalDecision(request, env, actor, idem, path) {
   const nextStatus = { approve: "approved", reject: "rejected", request_changes: "changes_requested", escalate: "escalated" }[decision];
   const audit = await createActionAudit(env, { idem, operation: "approval_decision", target: recordId, actor, expected, actual, result: "accepted", reason, summary: nextStatus });
   try {
-    await airtableUpdate(env, TABLES.modelReviews, recordId, { request_status: nextStatus, decision_note: reason, version: actual + 1 });
+    await airtableUpdate(env, TABLES.modelReviews, recordId, { request_status: nextStatus, decision_note: reason, decision_by: actor.id, decision_at: new Date().toISOString(), version: actual + 1 });
     await completeAudit(env, audit.id, { actual_version: actual + 1, result: "accepted", summary: nextStatus });
   } catch (error) {
     await completeAudit(env, audit.id, { result: "failed", summary: "source_update_failed" });
@@ -192,9 +192,9 @@ async function airtableGet(env, table, recordId) {
   return response.json();
 }
 
-async function airtableList(env, table, field, value, limit, fields = []) {
+async function airtableList(env, table, field, value, limit, fields = [], sortField = "") {
   const query = new URLSearchParams({ pageSize: String(limit), maxRecords: String(limit), filterByFormula: "{" + field + "}=\"" + escapeFormula(value) + "\"" });
-  for (const name of fields) query.append("fields[]", name);
+  if (sortField) { query.set("sort[0][field]", sortField); query.set("sort[0][direction]", "desc"); }\n  for (const name of fields) query.append("fields[]", name);
   const config = airtableConfig(env);
   const response = await fetch("https://api.airtable.com/v0/" + config.base + "/" + table + "?" + query.toString(), { headers: { Authorization: "Bearer " + config.token } });
   if (!response.ok) throw new Error("airtable_" + response.status);
@@ -203,7 +203,7 @@ async function airtableList(env, table, field, value, limit, fields = []) {
 }
 
 async function latestByField(env, table, field, value, sortField) {
-  const rows = await airtableList(env, table, field, value, 1, [field, "version", "updated_at"]);
+  const rows = await airtableList(env, table, field, value, 1, [field, "version", "updated_at"], sortField);
   if (!rows.length) return null;
   return rows[0];
 }
