@@ -134,24 +134,25 @@ async function patchApplication(request, env, applicationId) {
 
 async function promoteApplicationToTherapist(env, application, adminNote = "") {
   const source = application.fields || {};
-  const therapistId = await therapistIdFor(String(source["Application ID"] || ""));
+  const applicationId = clean(source["Application ID"], 80);
+  const therapistId = await therapistIdFor(applicationId);
   const existing = await findAirtableRecord(env, tableId(env, "THERAPISTS"), "Therapist ID", therapistId);
 
   const fields = compact({
     "Therapist ID": therapistId,
-    "Application Ref": [application.id],
+    "Application Ref": applicationId,
     "Display Name": clean(source.Nickname || source["Applicant Name"], 120),
     "Gender Identity": clean(source["Gender Identity"], 40),
     "Customer Gender Scope": CUSTOMER_GENDER_SCOPES.has(source["Customer Gender Scope"]) ? source["Customer Gender Scope"] : undefined,
     "Verified Skills": cleanSupportedArray(source["Skills Claimed"], SKILLS),
     "Base Zone": ZONES.has(source["Base Zone"]) ? source["Base Zone"] : undefined,
     "Coverage Zones": cleanSupportedArray(source["Coverage Zones"], ZONES),
-    "Availability Status": existing?.fields?.["Availability Status"] || "Available",
-    "Matching Enabled": existing?.fields?.["Matching Enabled"] ?? true,
-    "Manual Review Only": existing?.fields?.["Manual Review Only"] ?? false,
+    "Availability Status": existing?.fields?.["Availability Status"] || "Paused",
+    "Matching Enabled": existing?.fields?.["Matching Enabled"] ?? false,
+    "Manual Review Only": existing?.fields?.["Manual Review Only"] ?? true,
     "Profile Photo R2 Key": clean(source["Profile Photo R2 Key"], 500),
-    Status: "Active",
-    "Verified At": new Date().toISOString(),
+    Status: existing?.fields?.Status || "Review",
+    "Verified At": clean(existing?.fields?.["Verified At"], 80) || undefined,
     "Internal Notes": adminNote || clean(existing?.fields?.["Internal Notes"], 4000),
   });
 
@@ -203,6 +204,17 @@ async function patchTherapist(request, env, therapistId) {
     fields.Status = body.status;
   }
   if (body.internal_notes !== undefined) fields["Internal Notes"] = clean(body.internal_notes, 4000);
+
+  const nextStatus = fields.Status ?? clean(record.fields?.Status, 40);
+  const nextManualReview = fields["Manual Review Only"] ?? Boolean(record.fields?.["Manual Review Only"]);
+  if (fields["Matching Enabled"] === true && nextStatus !== "Active") {
+    throw httpError(409, "MATCHING_REQUIRES_ACTIVE", "Therapist must be Active before matching can be enabled");
+  }
+  if (fields["Matching Enabled"] === true && nextManualReview) {
+    throw httpError(409, "MATCHING_BLOCKED_BY_MANUAL_REVIEW", "Disable Manual Review Only before enabling matching");
+  }
+  if (fields.Status && fields.Status !== "Active") fields["Matching Enabled"] = false;
+  if (fields.Status === "Active" && !clean(record.fields?.["Verified At"], 80)) fields["Verified At"] = new Date().toISOString();
 
   const updated = Object.keys(fields).length
     ? await airtableUpdate(env, tableId(env, "THERAPISTS"), record.id, fields)
