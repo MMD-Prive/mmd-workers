@@ -25,7 +25,7 @@ test("admin login renders the approved Webflow visual assets and responsive imag
   for (const asset of [APPROVED_ADMIN_LOGIN_HERO, APPROVED_ADMIN_LOGIN_LOGO, APPROVED_ADMIN_LOGIN_FAVICON, APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON]) {
     assert.match(html, new RegExp(asset.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
-  assert.match(html, /alt="Internal Admin Chang Ewvon"/);
+  assert.match(html, /alt="MMD SIGIL Internal Admin"/);
   assert.match(html, /\.mmd-login21__visual img\{[^}]*object-fit:cover;[^}]*object-position:center;/);
   assert.match(html, /class="mmd-login21" data-mmd-login21/);
   assert.doesNotMatch(html, /placeholder|default[-_ ]hero/i);
@@ -38,10 +38,12 @@ test("admin login preserves the canonical secure form contract", async () => {
   const html = await response.text();
 
   assert.match(html, new RegExp(`form method="post" action="${ADMIN_LOGIN_SESSION_PATH.replaceAll("/", "\\/")}"`));
-  assert.match(html, /name="credential" type="password"/);
+  assert.match(html, /id="adminCredential" type="text" required readonly/);
+  assert.doesNotMatch(html, /id="adminCredential"[^>]*name="credential"/);
   assert.match(html, /name="next" value="\/internal\/admin\/control-room\?tab=queue"/);
   assert.match(response.headers.get("cache-control") || "", /no-store/);
   assert.match(response.headers.get("content-security-policy") || "", /img-src https:\/\/cdn\.prod\.website-files\.com/);
+  assert.match(response.headers.get("content-security-policy") || "", /connect-src 'self'/);
   assert.match(response.headers.get("content-security-policy") || "", /form-action 'self'/);
   assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker");
   assert.equal(response.headers.get("x-mmd-page"), "admin-login-approved-hero");
