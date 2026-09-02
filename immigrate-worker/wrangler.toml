@@ -68,6 +68,14 @@ pattern = "www.mmdbkk.com/a/create-session.js"
 zone_name = "mmdbkk.com"
 
 [[routes]]
+pattern = "mmdbkk.com/a/create-session-focus-flow-v2.js"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/a/create-session-focus-flow-v2.js"
+zone_name = "mmdbkk.com"
+
+[[routes]]
 pattern = "mmdbkk.com/v1/admin/ping*"
 zone_name = "mmdbkk.com"
 

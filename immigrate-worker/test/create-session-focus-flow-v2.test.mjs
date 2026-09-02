@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -24,6 +24,8 @@ const { renderCreateSessionFocusFlowV2 } = await import(pathToFileURL(outfile).h
 try {
   const response = renderCreateSessionFocusFlowV2();
   const html = await response.text();
+  const controller = await readFile(join(workerRoot, "public/a/create-session-focus-flow-v2.js"), "utf8");
+  const wrangler = await readFile(join(workerRoot, "wrangler.toml"), "utf8");
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-mmd-create-session-ui"), "focus-flow-v2-latest");
@@ -50,6 +52,14 @@ try {
   assert.match(html, /\/a\/create-session\.js\?v=focus-flow-v2-core/);
   assert.match(html, /\/a\/create-session-focus-flow-v2\.js\?v=2/);
   assert.doesNotMatch(html, /Find client\. Verify lineage\. Create session\./);
+
+  assert.match(controller, /data-focus-server-gate/);
+  assert.match(controller, /Secure Session/);
+  assert.match(controller, /Session Verified/);
+  assert.match(controller, /source\.replaceWith\(visible\)/);
+
+  assert.match(wrangler, /pattern = "mmdbkk\.com\/a\/create-session-focus-flow-v2\.js"/);
+  assert.match(wrangler, /pattern = "www\.mmdbkk\.com\/a\/create-session-focus-flow-v2\.js"/);
 } finally {
   await rm(tmp, { recursive: true, force: true });
 }

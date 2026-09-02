@@ -12,6 +12,40 @@
     return Boolean(v && v !== "-" && v.toLowerCase() !== "not selected" && v.toLowerCase() !== "not ready");
   };
 
+  function lockServerGateIndicator() {
+    const source = $("[data-op-connection]");
+    if (!source) return;
+
+    // Focus Flow is rendered only after the canonical server-side admin gate
+    // has already returned an authorized HTML response. Keep that fact visible
+    // instead of leaving a redundant client-side probe stuck on "Checking".
+    const visible = source.cloneNode(true);
+    visible.removeAttribute("data-op-connection");
+    visible.setAttribute("data-focus-server-gate", "verified");
+    visible.classList.remove("is-warn", "is-bad");
+    visible.classList.add("is-ok");
+    visible.style.color = "var(--ok)";
+    const dot = visible.querySelector("i");
+    if (dot) {
+      dot.style.background = "var(--ok)";
+      dot.style.boxShadow = "0 0 12px rgba(121,215,162,.55)";
+    }
+    const label = visible.querySelector("span");
+    if (label) label.textContent = "Secure Session";
+    source.replaceWith(visible);
+
+    // The server gate already verified this page request. Disable the redundant
+    // browser auth-check button so it cannot reintroduce a misleading state.
+    const checkButton = $("[data-op-check-session]");
+    if (checkButton) {
+      checkButton.textContent = "Session Verified";
+      checkButton.disabled = true;
+      checkButton.setAttribute("aria-disabled", "true");
+    }
+  }
+
+  lockServerGateIndicator();
+
   const stats = {
     client: $("[data-op-stat-client]"),
     package: $("[data-op-stat-package]"),
