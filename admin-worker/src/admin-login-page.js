@@ -8,6 +8,7 @@ export const APPROVED_ADMIN_LOGIN_FAVICON =
   "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e34d70142723ec97768bc2_Only%20logo.png";
 export const APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON =
   "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e34c91250ec9f6ee29d319_MMD%20SIGIL%20Logo.png";
+export const ADMIN_CANONICAL_ORIGIN = "https://mmdbkk.com";
 
 // This is the only renderer for /internal/admin/login. Both the production
 // entrypoint and the core worker import it so an entrypoint rollback cannot
@@ -23,7 +24,9 @@ export function renderApprovedAdminLogin(
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
   <meta name="theme-color" content="#050403">
+  <script>(()=>{if(location.protocol==='https:'&&location.hostname==='www.mmdbkk.com'){const path=(location.pathname.replace(/\\/+$/,'')||'/');if(path==='/internal/admin/login'){const canonical=new URL(location.href);canonical.hostname='mmdbkk.com';location.replace(canonical.toString());}}})();</script>
   <title>MMD Privé · Internal Login</title>
+  <link rel="canonical" href="${ADMIN_CANONICAL_ORIGIN}/internal/admin/login">
   <link rel="icon" type="image/png" sizes="32x32" href="${APPROVED_ADMIN_LOGIN_FAVICON}">
   <link rel="apple-touch-icon" href="${APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON}">
   <style>
@@ -113,7 +116,8 @@ export function renderApprovedAdminLogin(
       "content-type": "text/html; charset=utf-8",
       "referrer-policy": "no-referrer",
       "x-content-type-options": "nosniff",
-      "x-mmd-login-ui": "password-no-autofill-v3",
+      "x-mmd-login-ui": "canonical-apex-v4",
+      "x-mmd-admin-origin": ADMIN_CANONICAL_ORIGIN,
       "x-mmd-page": APPROVED_ADMIN_LOGIN_PAGE_ID,
       "x-mmd-route-owner": "admin-worker",
     },
