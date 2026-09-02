@@ -9,9 +9,13 @@ const PREMIUM = "premium";
 const STANDARD = "standard";
 const MEMBER_TABLE = "Members";
 const CLIENT_TABLE = "Clients";
+const LINE_OFC_STAGING_TABLE = "LINE OFC Client Import Staging";
 const PACKAGE_TABLE = "member_packages";
 const ENTITLEMENT_TABLE = "MMD — Member Entitlements";
 const DRIVE_MARKER = "drive_access_sync";
+const COMMITTED_LINE_MATCH_TYPE = "line_user_id_exact";
+const COMMITTED_LINE_DECISION = "link_existing_client";
+const COMMITTED_LINE_REVIEW_STATUS = "committed";
 
 export function packageAccessLayers(packageCode) {
   const normalized = normalizePackage(packageCode);
@@ -94,7 +98,60 @@ async function resolveTrustedDriveEmail(env, lineUserId) {
   for (const entitlement of entitlements) addEmail(emails, entitlement?.fields?.[entitlementEmailField]);
 
   if (emails.size > 1) throw coded("DRIVE_IDENTITY_AMBIGUOUS");
+  if (emails.size === 1) return emails.values().next().value;
+
+  return resolveCommittedLineClientEmail(env, lineUserId, {
+    clientEmailFields,
+    directClientRecordId: String(clients[0]?.id || "").trim(),
+  });
+}
+
+async function resolveCommittedLineClientEmail(env, lineUserId, { clientEmailFields, directClientRecordId = "" }) {
+  const records = await airtableList(env, LINE_OFC_STAGING_TABLE, {
+    filterByFormula: `AND({line_user_id}=${formulaString(lineUserId)},{match_type}=${formulaString(COMMITTED_LINE_MATCH_TYPE)},{decision}=${formulaString(COMMITTED_LINE_DECISION)},{review_status}=${formulaString(COMMITTED_LINE_REVIEW_STATUS)})`,
+    maxRecords: 3,
+  });
+
+  if (records.length >= 3) throw coded("DRIVE_IDENTITY_AMBIGUOUS");
+
+  const clientRecordIds = new Set();
+  for (const record of records) {
+    const fields = record?.fields || {};
+    if (!isCommittedExactLineLink(fields, lineUserId)) continue;
+    const linked = Array.isArray(fields.matched_client) ? fields.matched_client : [];
+    if (linked.length > 1) throw coded("DRIVE_IDENTITY_AMBIGUOUS");
+    const clientRecordId = safeRecordId(linked[0]);
+    if (clientRecordId) clientRecordIds.add(clientRecordId);
+  }
+
+  if (clientRecordIds.size > 1) throw coded("DRIVE_IDENTITY_AMBIGUOUS");
+  const clientRecordId = clientRecordIds.values().next().value || "";
+  if (!clientRecordId) return "";
+  if (directClientRecordId && directClientRecordId !== clientRecordId) throw coded("DRIVE_IDENTITY_AMBIGUOUS");
+
+  const linkedClients = await airtableList(env, CLIENT_TABLE, {
+    filterByFormula: `RECORD_ID()=${formulaString(clientRecordId)}`,
+    maxRecords: 2,
+  });
+  if (linkedClients.length > 1) throw coded("DRIVE_IDENTITY_AMBIGUOUS");
+  if (linkedClients.length !== 1 || String(linkedClients[0]?.id || "").trim() !== clientRecordId) return "";
+
+  const linkedFields = linkedClients[0]?.fields || {};
+  const linkedLineUserId = String(linkedFields.line_user_id || "").trim();
+  if (linkedLineUserId && linkedLineUserId !== lineUserId) throw coded("DRIVE_IDENTITY_AMBIGUOUS");
+
+  const emails = new Set();
+  for (const field of clientEmailFields) addEmail(emails, linkedFields[field]);
+  if (emails.size > 1) throw coded("DRIVE_IDENTITY_AMBIGUOUS");
   return emails.values().next().value || "";
+}
+
+function isCommittedExactLineLink(fields, lineUserId) {
+  return String(fields.line_user_id || "").trim() === lineUserId
+    && String(fields.match_type || "").trim() === COMMITTED_LINE_MATCH_TYPE
+    && String(fields.decision || "").trim() === COMMITTED_LINE_DECISION
+    && String(fields.review_status || "").trim() === COMMITTED_LINE_REVIEW_STATUS
+    && fields.dry_run_only !== true;
 }
 
 async function handleDriveBootstrap(request, env) {
@@ -135,7 +192,14 @@ async function handleDriveBootstrap(request, env) {
     }, 200);
   } catch (error) {
     const code = String(error?.code || "DRIVE_BOOTSTRAP_FAILED");
-    const status = code === "MEMBER_EMAIL_AMBIGUOUS" || code === "LINE_ID_CONFLICT" ? 409 : 503;
+    const conflicts = new Set([
+      "MEMBER_EMAIL_AMBIGUOUS",
+      "LINE_ID_AMBIGUOUS",
+      "MEMBER_IDENTITY_CONFLICT",
+      "MEMBER_EMAIL_CONFLICT",
+      "LINE_ID_CONFLICT",
+    ]);
+    const status = conflicts.has(code) ? 409 : 503;
     console.warn({ event: "member_drive_bootstrap_failure", failure_class: code.toLowerCase() });
     return json({ ok: false, error: { code, message: "Drive-verified member mapping could not be materialized safely." } }, status);
   }
@@ -144,18 +208,31 @@ async function handleDriveBootstrap(request, env) {
 async function upsertMemberMapping(env, { lineUserId, email, displayName, packageCode }) {
   const emailField = String(env.AIRTABLE_MEMBERS_EMAIL_FIELD || "Contact Email");
   const lineField = String(env.AIRTABLE_MEMBERS_LINE_USER_ID_FIELD || "line_id");
-  const matches = await airtableList(env, MEMBER_TABLE, {
-    filterByFormula: `LOWER({${emailField}})=${formulaString(email)}`,
-    maxRecords: 2,
-  });
-  if (matches.length > 1) throw coded("MEMBER_EMAIL_AMBIGUOUS");
+  const [emailMatches, lineMatches] = await Promise.all([
+    airtableList(env, MEMBER_TABLE, {
+      filterByFormula: `LOWER({${emailField}})=${formulaString(email)}`,
+      maxRecords: 2,
+    }),
+    airtableList(env, MEMBER_TABLE, {
+      filterByFormula: `{${lineField}}=${formulaString(lineUserId)}`,
+      maxRecords: 2,
+    }),
+  ]);
+  if (emailMatches.length > 1) throw coded("MEMBER_EMAIL_AMBIGUOUS");
+  if (lineMatches.length > 1) throw coded("LINE_ID_AMBIGUOUS");
+
+  const emailRecord = emailMatches[0] || null;
+  const lineRecord = lineMatches[0] || null;
+  if (emailRecord && lineRecord && emailRecord.id !== lineRecord.id) throw coded("MEMBER_IDENTITY_CONFLICT");
 
   const tierLabel = packageCode === PREMIUM ? "Premium" : "Standard";
-  if (matches.length === 1) {
-    const record = matches[0];
+  const record = lineRecord || emailRecord;
+  if (record) {
     const fields = record.fields || {};
     const existingLine = String(fields[lineField] || fields.line_id || fields.line_user_id || "").trim();
+    const existingEmail = normalizeEmail(fields[emailField] || fields.email);
     if (existingLine && existingLine !== lineUserId) throw coded("LINE_ID_CONFLICT");
+    if (existingEmail && existingEmail !== email) throw coded("MEMBER_EMAIL_CONFLICT");
     const updates = {
       [lineField]: lineUserId,
       [emailField]: email,
@@ -179,8 +256,8 @@ async function upsertMemberMapping(env, { lineUserId, email, displayName, packag
     "Membership Status": "Active",
     "Verification Status": "Verified",
   };
-  const record = await airtableCreate(env, MEMBER_TABLE, fields);
-  return { recordId: record.id };
+  const created = await airtableCreate(env, MEMBER_TABLE, fields);
+  return { recordId: created.id };
 }
 
 async function syncCurrentPackage(env, { email, packageCode, driveFolderId }) {
@@ -306,6 +383,11 @@ function addEmail(emails, value) {
 
 function formulaString(value) {
   return `"${String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+function safeRecordId(value) {
+  const recordId = String(value || "").trim();
+  return /^rec[A-Za-z0-9]{10,30}$/.test(recordId) ? recordId : "";
 }
 
 function normalizeEmail(value) {
