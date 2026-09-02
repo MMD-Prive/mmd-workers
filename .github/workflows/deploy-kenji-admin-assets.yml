@@ -86,5 +86,5 @@ jobs:
           grep -q 'modelDraftFingerprint' "$js_file"
           grep -q 'encodeURIComponent(q)' "$js_file"
           grep -q 'Idempotency-Key' "$js_file"
-          grep -q 'ka__model-layout' "$css_file"
+          grep -q 'ka__modelGrid' "$css_file"
           echo "Kenji admin R2 assets published and public markers verified"
