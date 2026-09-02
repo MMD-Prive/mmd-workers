@@ -22,6 +22,7 @@ import {
   isKenjiModelAdminRequest,
 } from "./kenji-model-admin-adapter.js";
 import { handleKenjiControlRequest, isKenjiControlRequest } from "./kenji-control-endpoints.js";
+import { handleKenjiControlAction, isKenjiControlActionRequest } from "./kenji-control-actions.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
@@ -89,6 +90,10 @@ export default {
     const strictGate = await applyCredentialBoundAdminGate(request, env, path, method);
     if (strictGate.response) return strictGate.response;
     request = strictGate.request || request;
+
+    if (isKenjiControlActionRequest(path, method)) {
+      return handleKenjiControlAction(request, env, strictGate.actor);
+    }
 
     if (isKenjiControlRequest(path, method)) {
       return handleKenjiControlRequest(request, env);
