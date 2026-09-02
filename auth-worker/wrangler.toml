@@ -2,6 +2,9 @@ name = "mmd-auth-worker"
 main = "src/my-mmd-runtime-index.js"
 compatibility_date = "2026-01-20"
 
+[triggers]
+crons = ["7 * * * *"]
+
 [vars]
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://mmdprive.webflow.io,https://mmdprive.com"
 WEB_BASE_URL = "https://mmdbkk.com"
@@ -11,6 +14,8 @@ AUTH_SESSION_TTL_DAYS = "30"
 AUTH_CODE_TTL_MINUTES = "10"
 AUTH_CODE_LENGTH = "6"
 AUTH_MAX_CODE_ATTEMPTS = "5"
+LIFECYCLE_RECONCILIATION_ENABLED = "true"
+LIFECYCLE_RECONCILIATION_MAX_MEMBERS = "500"
 
 AIRTABLE_TABLE_MEMBERS = "Members"
 AIRTABLE_TABLE_MEMBER_PACKAGES = "member_packages"
@@ -139,6 +144,7 @@ AIRTABLE_ENTITLEMENT_MEMBER_EMAIL_FIELD = "member_email"
 AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD = "line_user_id"
 AIRTABLE_ENTITLEMENT_MEMBER_STATUS_FIELDS = "member_lifecycle_status,member_status"
 MEMBER_STATUS_AIRTABLE_TIMEOUT_MS = "10000"
+LIFECYCLE_RECONCILIATION_ENABLED = "false"
 
 [[env.staging.services]]
 binding = "AIRTABLE_HTTP"
