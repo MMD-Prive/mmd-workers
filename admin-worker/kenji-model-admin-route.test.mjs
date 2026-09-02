@@ -15,6 +15,7 @@ const PATHS = [
 test("active admin entrypoint mounts the Kenji model adapter after the credential gate", () => {
   assert.match(entry, /handleKenjiModelAdminRequest/);
   assert.match(entry, /isKenjiModelAdminRequest/);
+  assert.match(entry, /isCoreAdminAuthed/);
   const gateIndex = entry.indexOf("applyCredentialBoundAdminGate");
   const modelIndex = entry.indexOf("if (isKenjiModelAdminRequest(path, method))");
   assert.ok(gateIndex >= 0);
@@ -32,6 +33,22 @@ test("unauthenticated browser requests cannot read or write the Models adapter",
     const body = await response.json();
     assert.equal(body.error, "unauthorized", path);
   }
+});
+
+test("a forged service-shaped Authorization header is still rejected", async () => {
+  const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/kenji/models", {
+    headers: { Authorization: "Bearer definitely-wrong" },
+  }), { INTERNAL_TOKEN: "real-service-token" }, {});
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).error, "unauthorized");
+});
+
+test("a valid internal bearer passes auth and reaches the adapter", async () => {
+  const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/kenji/models", {
+    headers: { Authorization: "Bearer real-service-token" },
+  }), { INTERNAL_TOKEN: "real-service-token" }, {});
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error, "model_source_unavailable");
 });
 
 test("wrangler owns only exact apex and www routes for the Kenji Models adapter", () => {
