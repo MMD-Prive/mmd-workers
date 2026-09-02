@@ -1,0 +1,47 @@
+name: Kenji CEO actions v2 patch
+
+on:
+  push:
+    branches:
+      - feature/kenji-control-actions-v2
+    paths:
+      - ".github/workflows/kenji-control-actions-v2-patch.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/kenji-control-actions-v2
+          fetch-depth: 0
+
+      - name: Apply integration patch
+        run: python3 scripts/patch-kenji-control-actions-v2.py
+
+      - name: Validate CEO actions and LINE runtime consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check admin-worker/src/kenji-control-actions.js
+          node --check admin-worker/src/admin-login-hero-worker.js
+          node --check member-dashboard-chat-worker/src/index.js
+          node --test admin-worker/kenji-control-actions.test.mjs
+          node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/line-webhook.test.mjs
+          node --experimental-global-webcrypto --test admin-worker/admin-login-hero.test.mjs admin-worker/admin-login-session.test.mjs admin-worker/admin-login-regression-guard.test.mjs
+          git diff --check
+
+      - name: Commit source patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm scripts/patch-kenji-control-actions-v2.py
+          git config user.name "MMD Privé"
+          git config user.email "malemodel.bkk@gmail.com"
+          git add -A
+          git commit -m "feat(kenji): enforce CEO control actions and runtime kills"
+          git push origin HEAD:feature/kenji-control-actions-v2
