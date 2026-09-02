@@ -60,10 +60,10 @@ jobs:
           node test/internal-admin-gate-bridge.test.mjs
 
       - name: Verify Cloudflare token account
-        run: npx --yes wrangler@4 whoami
+        run: npx --yes wrangler@4.128.0 whoami
 
       - name: Validate version upload
-        run: npx --yes wrangler@4 versions upload --dry-run --keep-vars
+        run: npx --yes wrangler@4.128.0 versions upload --dry-run --keep-vars
 
       - name: Upload immigrate-worker version
         id: upload
@@ -71,7 +71,7 @@ jobs:
         run: |
           set -euo pipefail
           tag="gha-${GITHUB_SHA:0:12}"
-          npx --yes wrangler@4 versions upload \
+          npx --yes wrangler@4.128.0 versions upload \
             --keep-vars \
             --tag "$tag" \
             --message "GitHub Actions ${GITHUB_SHA}" \
@@ -95,7 +95,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes wrangler@4 versions deploy "${IMMIGRATE_WORKER_VERSION_ID}@100%" -y
+          npx --yes wrangler@4.128.0 versions deploy "${IMMIGRATE_WORKER_VERSION_ID}@100%" -y
 
       - name: Verify restored Control Room in production
         shell: bash
