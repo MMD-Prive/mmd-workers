@@ -1,5 +1,6 @@
 import { isAuthed } from "./index.js";
 import { wireMmsApproveUi } from "./mms-admin-approve-ui.js";
+import { wireMmsAdminMobileBundle } from "./mms-admin-mobile-bundle.js";
 import { renderMmsAdminPage } from "./mms-admin-page.js";
 
 const PAGE_PATH = "/internal/admin/mms";
@@ -26,7 +27,8 @@ export async function handleMmsAdminRequest(request, env = {}) {
 
   if (path === PAGE_PATH) {
     if (method !== "GET" && method !== "HEAD") return methodNotAllowed(["GET", "HEAD"]);
-    const response = html(wireMmsApproveUi(renderMmsAdminPage()));
+    const page = wireMmsAdminMobileBundle(wireMmsApproveUi(renderMmsAdminPage()));
+    const response = html(page);
     return method === "HEAD" ? new Response(null, { status: 200, headers: response.headers }) : response;
   }
 
