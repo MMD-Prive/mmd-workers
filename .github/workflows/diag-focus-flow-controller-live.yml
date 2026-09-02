@@ -1,0 +1,37 @@
+name: Diagnose Focus Flow controller live
+
+on:
+  push:
+    branches:
+      - diag/focus-flow-controller-live
+    paths:
+      - ".github/workflows/diag-focus-flow-controller-live.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Inspect apex and www controller
+        shell: bash
+        run: |
+          set -euo pipefail
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            headers="$(mktemp)"
+            body="$(mktemp)"
+            code="$(curl -sS -D "$headers" -o "$body" -w '%{http_code}' "$origin/a/create-session-focus-flow-v2.js?diag=${GITHUB_SHA}")"
+            echo "=== $origin ==="
+            echo "HTTP=$code"
+            grep -Ei '^(content-type|content-length|cache-control|server|cf-ray|location):' "$headers" || true
+            echo "BYTES=$(wc -c < "$body" | tr -d ' ')"
+            echo "MARKER_SERVER_GATE=$(grep -c 'data-focus-server-gate' "$body" || true)"
+            echo "MARKER_SECURE_SESSION=$(grep -c 'Secure Session' "$body" || true)"
+            echo "MARKER_SESSION_VERIFIED=$(grep -c 'Session Verified' "$body" || true)"
+            echo "BODY_HEAD:"
+            head -c 300 "$body" | sed 's/[^[:print:]\t]/?/g' || true
+            echo
+            rm -f "$headers" "$body"
+          done
