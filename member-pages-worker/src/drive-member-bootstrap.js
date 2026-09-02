@@ -1,5 +1,6 @@
 const START_PATHS = new Set(["/member/api/liff/start", "/member/api/liff/start/"]);
 const PURPOSE = "liff_drive_member_bootstrap";
+const IDENTITY_PURPOSE = "liff_drive_identity_resolution";
 const PREMIUM = "premium";
 const STANDARD = "standard";
 const PRIMARY_OWNER = "malemodel.bkk@gmail.com";
@@ -35,14 +36,20 @@ export async function tryDriveMemberBootstrap(request, env = {}) {
 
   const verified = await verifyLineIdentityForDrive(idToken, env);
   if (!verified.ok) return { mapped: false, reason: verified.reason || "line_verify_failed" };
-  if (!verified.email) {
-    console.warn({ event: "drive_member_bootstrap_skipped", reason: "line_email_claim_missing" });
-    return { mapped: false, reason: "line_email_claim_missing" };
+
+  let bootstrapEmail = verified.email;
+  if (!bootstrapEmail) {
+    const trustedIdentity = await resolveTrustedBootstrapEmail(verified.sub, env);
+    if (!trustedIdentity.ok) {
+      console.warn({ event: "drive_member_bootstrap_skipped", reason: trustedIdentity.reason });
+      return { mapped: false, reason: trustedIdentity.reason };
+    }
+    bootstrapEmail = trustedIdentity.email;
   }
 
   let drivePackage;
   try {
-    drivePackage = await resolveDrivePackageForEmail(verified.email, env);
+    drivePackage = await resolveDrivePackageForEmail(bootstrapEmail, env);
   } catch (error) {
     console.warn({ event: "drive_member_bootstrap_failure", stage: "drive_permission_read", failure_class: safeFailureClass(error) });
     return { mapped: false, reason: "drive_unavailable" };
@@ -52,7 +59,7 @@ export async function tryDriveMemberBootstrap(request, env = {}) {
   const bootstrap = await callMemberBootstrap(env, {
     purpose: PURPOSE,
     line_user_id: verified.sub,
-    email: verified.email,
+    email: bootstrapEmail,
     display_name: verified.name || "",
     package_code: drivePackage.package_code,
     drive_folder_id: drivePackage.folder_id,
@@ -64,6 +71,40 @@ export async function tryDriveMemberBootstrap(request, env = {}) {
   }
 
   return { mapped: true, package_code: drivePackage.package_code };
+}
+
+export async function resolveTrustedBootstrapEmail(lineUserId, env = {}) {
+  const subject = String(lineUserId || "").trim();
+  if (!/^U[0-9a-f]{32}$/i.test(subject)) return { ok: false, reason: "trusted_email_identity_invalid" };
+  if (!env.MEMBER_STATUS_RESOLVER?.fetch || !String(env.MEMBER_STATUS_RESOLVER_SECRET || "")) {
+    return { ok: false, reason: "trusted_email_resolver_unavailable" };
+  }
+
+  try {
+    const response = await env.MEMBER_STATUS_RESOLVER.fetch(new Request("https://mmd-auth-worker.internal/__internal/member-drive/identity", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-member-resolver-secret": String(env.MEMBER_STATUS_RESOLVER_SECRET || ""),
+      },
+      body: JSON.stringify({
+        purpose: IDENTITY_PURPOSE,
+        line_user_id: subject,
+      }),
+    }));
+    const payload = await response.json().catch(() => null);
+    if (response.ok && payload?.ok === true) {
+      const email = normalizeEmail(payload?.data?.email);
+      if (payload?.data?.resolved === true && email) return { ok: true, email };
+      return { ok: false, reason: "trusted_email_unresolved" };
+    }
+    if (response.status === 409 || payload?.error?.code === "DRIVE_IDENTITY_AMBIGUOUS") {
+      return { ok: false, reason: "trusted_email_ambiguous" };
+    }
+    return { ok: false, reason: "trusted_email_resolver_unavailable" };
+  } catch {
+    return { ok: false, reason: "trusted_email_resolver_unavailable" };
+  }
 }
 
 function driveBootstrapConfigured(env) {

@@ -58,6 +58,64 @@ test("Standard revokes an active Premium entitlement and grants Standard only", 
   assert.deepEqual(createdLayers, ["standard"]);
 });
 
+test("trusted identity resolves a unique Client email when LINE email claim is absent", async () => {
+  const response = await runtime.fetch(identityRequest(), fakeEnv({
+    identityMembers: [],
+    clients: [{ id: "recClient", fields: { line_user_id: LINE_ID, "Contact Email": "Member@Example.com" } }],
+    entitlements: [],
+  }), {});
+  const payload = await response.json();
+  assert.equal(response.status, 200);
+  assert.deepEqual(payload, { ok: true, data: { resolved: true, email: "member@example.com" } });
+});
+
+test("trusted identity accepts corroborating Client and Entitlement emails", async () => {
+  const response = await runtime.fetch(identityRequest(), fakeEnv({
+    identityMembers: [],
+    clients: [{ id: "recClient", fields: { line_user_id: LINE_ID, email: "member@example.com" } }],
+    entitlements: [
+      { id: "recEntStandard", fields: { line_user_id: LINE_ID, member_email: "MEMBER@example.com" } },
+      { id: "recEntPremium", fields: { line_user_id: LINE_ID, member_email: "member@example.com" } },
+    ],
+  }), {});
+  const payload = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(payload.data.resolved, true);
+  assert.equal(payload.data.email, "member@example.com");
+});
+
+test("trusted identity fails closed when canonical sources disagree", async () => {
+  const response = await runtime.fetch(identityRequest(), fakeEnv({
+    identityMembers: [{ id: "recMember", fields: { line_id: LINE_ID, "Contact Email": "member@example.com" } }],
+    clients: [{ id: "recClient", fields: { line_user_id: LINE_ID, "Contact Email": "other@example.com" } }],
+    entitlements: [],
+  }), {});
+  const payload = await response.json();
+  assert.equal(response.status, 409);
+  assert.equal(payload.error.code, "DRIVE_IDENTITY_AMBIGUOUS");
+});
+
+test("trusted identity returns unresolved when no trusted source has email", async () => {
+  const response = await runtime.fetch(identityRequest(), fakeEnv({
+    identityMembers: [],
+    clients: [],
+    entitlements: [],
+  }), {});
+  const payload = await response.json();
+  assert.equal(response.status, 200);
+  assert.deepEqual(payload, { ok: true, data: { resolved: false } });
+});
+
+test("trusted identity rejects a browser-like call without the internal resolver secret", async () => {
+  const request = new Request("https://mmd-auth-worker.internal/__internal/member-drive/identity", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ purpose: "liff_drive_identity_resolution", line_user_id: LINE_ID }),
+  });
+  const response = await runtime.fetch(request, fakeEnv({}), {});
+  assert.equal(response.status, 404);
+});
+
 test("bootstrap rejects a browser-like call without the internal resolver secret", async () => {
   const request = new Request("https://mmd-auth-worker.internal/__internal/member-drive/bootstrap", {
     method: "POST",
@@ -105,7 +163,22 @@ function bootstrapRequest(overrides = {}) {
   });
 }
 
-function fakeEnv({ writes = [], entitlements = [] } = {}) {
+function identityRequest(overrides = {}) {
+  return new Request("https://mmd-auth-worker.internal/__internal/member-drive/identity", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mmd-member-resolver-secret": SECRET,
+    },
+    body: JSON.stringify({
+      purpose: "liff_drive_identity_resolution",
+      line_user_id: LINE_ID,
+      ...overrides,
+    }),
+  });
+}
+
+function fakeEnv({ writes = [], entitlements = [], identityMembers, clients = [] } = {}) {
   let memberCreated = false;
   return {
     MEMBER_STATUS_RESOLVER_SECRET: SECRET,
@@ -113,6 +186,10 @@ function fakeEnv({ writes = [], entitlements = [] } = {}) {
     AIRTABLE_API_KEY: "patTest",
     AIRTABLE_MEMBERS_EMAIL_FIELD: "Contact Email",
     AIRTABLE_MEMBERS_LINE_USER_ID_FIELD: "line_id",
+    AIRTABLE_CLIENTS_LINE_USER_ID_FIELD: "line_user_id",
+    AIRTABLE_CLIENTS_EMAIL_FIELDS: "Contact Email,email",
+    AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD: "line_user_id",
+    AIRTABLE_ENTITLEMENT_MEMBER_EMAIL_FIELD: "member_email",
     AIRTABLE_HTTP: {
       async fetch(request) {
         const url = new URL(request.url);
@@ -122,8 +199,10 @@ function fakeEnv({ writes = [], entitlements = [] } = {}) {
         if (body) writes.push({ table, method, body });
 
         if (method === "GET" && table === "Members") {
+          if (identityMembers !== undefined) return json({ records: identityMembers });
           return json({ records: memberCreated ? [{ id: "recMember", fields: { "Contact Email": "member@example.com", line_id: LINE_ID } }] : [] });
         }
+        if (method === "GET" && table === "Clients") return json({ records: clients });
         if (method === "POST" && table === "Members") {
           memberCreated = true;
           return json({ records: [{ id: "recMember", fields: body.records[0].fields }] });

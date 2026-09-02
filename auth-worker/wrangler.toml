@@ -40,6 +40,11 @@ AIRTABLE_MEMBERS_EXPIRY_FIELD = "Membership Expiry"
 AIRTABLE_MEMBERS_END_DATE_FIELD = "Membership End Date"
 AIRTABLE_MEMBERS_EXPIRE_AT_FIELD = "Expire At"
 
+# Trusted server-only legacy identity recovery used only when a verified LINE ID
+# token omits the optional email claim. Conflicting canonical emails fail closed.
+AIRTABLE_CLIENTS_LINE_USER_ID_FIELD = "line_user_id"
+AIRTABLE_CLIENTS_EMAIL_FIELDS = "Contact Email,email"
+
 # Customer-safe LIFF history readback. The API enforces a one-calendar-year
 # window and never returns payment details, notes, risk, contact data, or raw IDs.
 AIRTABLE_SESSIONS_LINE_USER_ID_FIELD = "line_user_id"
@@ -116,6 +121,8 @@ AIRTABLE_TABLE_POINTS_LEDGER = "MMD — Points Ledger"
 AIRTABLE_MEMBERS_LINE_USER_ID_FIELD = "line_id"
 AIRTABLE_MEMBERS_DISPLAY_NAME_FIELD = "Full Name (Display)"
 AIRTABLE_MEMBERS_EMAIL_FIELD = "Contact Email"
+AIRTABLE_CLIENTS_LINE_USER_ID_FIELD = "line_user_id"
+AIRTABLE_CLIENTS_EMAIL_FIELDS = "Contact Email,email"
 AIRTABLE_SESSIONS_LINE_USER_ID_FIELD = "line_user_id"
 AIRTABLE_SESSIONS_EMAIL_FIELD = "email"
 AIRTABLE_SESSIONS_HISTORY_DATE_FIELD = "job_date"

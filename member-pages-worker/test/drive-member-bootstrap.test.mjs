@@ -5,7 +5,11 @@ import {
   isDriveBootstrapCandidate,
   packageAccessLayers,
   resolveDrivePackageForEmail,
+  resolveTrustedBootstrapEmail,
 } from "../src/drive-member-bootstrap.js";
+
+const LINE_ID = "U5107dbdc87dbdd985ef5516b7f208fc3";
+const SECRET = "0123456789abcdef0123456789abcdef";
 
 test("Premium package inherits Standard access", () => {
   assert.deepEqual(packageAccessLayers("premium"), ["standard", "premium"]);
@@ -26,6 +30,53 @@ test("only unresolved LIFF start responses are Drive bootstrap candidates", () =
     ok: true,
     data: { member_resolved: true, pending_identity: false },
   }), false);
+});
+
+test("trusted email fallback accepts only service-resolved canonical email", async () => {
+  const seen = [];
+  const result = await resolveTrustedBootstrapEmail(LINE_ID, {
+    MEMBER_STATUS_RESOLVER_SECRET: SECRET,
+    MEMBER_STATUS_RESOLVER: {
+      async fetch(request) {
+        seen.push({ url: request.url, body: await request.clone().json() });
+        return json({ ok: true, data: { resolved: true, email: "Member@Example.com" } });
+      },
+    },
+  });
+  assert.deepEqual(result, { ok: true, email: "member@example.com" });
+  assert.equal(seen[0].url, "https://mmd-auth-worker.internal/__internal/member-drive/identity");
+  assert.deepEqual(seen[0].body, {
+    purpose: "liff_drive_identity_resolution",
+    line_user_id: LINE_ID,
+  });
+});
+
+test("trusted email fallback fails closed on canonical ambiguity", async () => {
+  const result = await resolveTrustedBootstrapEmail(LINE_ID, {
+    MEMBER_STATUS_RESOLVER_SECRET: SECRET,
+    MEMBER_STATUS_RESOLVER: {
+      async fetch() {
+        return json({ ok: false, error: { code: "DRIVE_IDENTITY_AMBIGUOUS" } }, 409);
+      },
+    },
+  });
+  assert.deepEqual(result, { ok: false, reason: "trusted_email_ambiguous" });
+});
+
+test("trusted email fallback does not accept unresolved or malformed identity", async () => {
+  const unresolved = await resolveTrustedBootstrapEmail(LINE_ID, {
+    MEMBER_STATUS_RESOLVER_SECRET: SECRET,
+    MEMBER_STATUS_RESOLVER: {
+      async fetch() {
+        return json({ ok: true, data: { resolved: false } });
+      },
+    },
+  });
+  assert.deepEqual(unresolved, { ok: false, reason: "trusted_email_unresolved" });
+  assert.deepEqual(await resolveTrustedBootstrapEmail("not-a-line-id", {}), {
+    ok: false,
+    reason: "trusted_email_identity_invalid",
+  });
 });
 
 test("primary Drive checks Premium first and stops after Premium match", async () => {

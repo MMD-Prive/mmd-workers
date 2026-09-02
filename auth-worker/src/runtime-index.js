@@ -2,10 +2,13 @@ import core from "./index.js";
 
 const DRIVE_BOOTSTRAP_PATH = "/__internal/member-drive/bootstrap";
 const DRIVE_BOOTSTRAP_PURPOSE = "liff_drive_member_bootstrap";
+const DRIVE_IDENTITY_PATH = "/__internal/member-drive/identity";
+const DRIVE_IDENTITY_PURPOSE = "liff_drive_identity_resolution";
 const SECRET_HEADER = "x-mmd-member-resolver-secret";
 const PREMIUM = "premium";
 const STANDARD = "standard";
 const MEMBER_TABLE = "Members";
+const CLIENT_TABLE = "Clients";
 const PACKAGE_TABLE = "member_packages";
 const ENTITLEMENT_TABLE = "MMD — Member Entitlements";
 const DRIVE_MARKER = "drive_access_sync";
@@ -20,12 +23,79 @@ export function packageAccessLayers(packageCode) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === DRIVE_IDENTITY_PATH && request.method === "POST") {
+      return handleDriveIdentityResolve(request, env);
+    }
     if (url.pathname === DRIVE_BOOTSTRAP_PATH && request.method === "POST") {
       return handleDriveBootstrap(request, env);
     }
     return core.fetch(request, env, ctx);
   },
 };
+
+async function handleDriveIdentityResolve(request, env) {
+  if (!authorizedInternalRequest(request, env)) return notFound();
+  const body = await request.json().catch(() => null);
+  const allowedKeys = new Set(["purpose", "line_user_id"]);
+  if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some((key) => !allowedKeys.has(key))) {
+    return json({ ok: false, error: { code: "INVALID_DRIVE_IDENTITY", message: "A valid Drive identity request is required." } }, 400);
+  }
+  if (body.purpose !== DRIVE_IDENTITY_PURPOSE) return notFound();
+
+  const lineUserId = String(body.line_user_id || "").trim();
+  if (!/^U[0-9a-f]{32}$/i.test(lineUserId)) {
+    return json({ ok: false, error: { code: "INVALID_DRIVE_IDENTITY", message: "Drive identity is invalid." } }, 400);
+  }
+
+  try {
+    const email = await resolveTrustedDriveEmail(env, lineUserId);
+    return json({
+      ok: true,
+      data: email ? { resolved: true, email } : { resolved: false },
+    }, 200);
+  } catch (error) {
+    const code = String(error?.code || "DRIVE_IDENTITY_RESOLUTION_FAILED");
+    const status = code === "DRIVE_IDENTITY_AMBIGUOUS" ? 409 : 503;
+    console.warn({ event: "member_drive_identity_failure", failure_class: code.toLowerCase() });
+    return json({ ok: false, error: { code, message: "Drive bootstrap identity could not be resolved safely." } }, status);
+  }
+}
+
+async function resolveTrustedDriveEmail(env, lineUserId) {
+  const memberLineField = String(env.AIRTABLE_MEMBERS_LINE_USER_ID_FIELD || "line_id").trim();
+  const memberEmailField = String(env.AIRTABLE_MEMBERS_EMAIL_FIELD || "Contact Email").trim();
+  const clientLineField = String(env.AIRTABLE_CLIENTS_LINE_USER_ID_FIELD || "line_user_id").trim();
+  const clientEmailFields = csvFields(env.AIRTABLE_CLIENTS_EMAIL_FIELDS || "Contact Email,email");
+  const entitlementLineField = String(env.AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD || "line_user_id").trim();
+  const entitlementEmailField = String(env.AIRTABLE_ENTITLEMENT_MEMBER_EMAIL_FIELD || "member_email").trim();
+
+  const [members, clients, entitlements] = await Promise.all([
+    airtableList(env, MEMBER_TABLE, {
+      filterByFormula: `{${memberLineField}}=${formulaString(lineUserId)}`,
+      maxRecords: 2,
+    }),
+    airtableList(env, CLIENT_TABLE, {
+      filterByFormula: `{${clientLineField}}=${formulaString(lineUserId)}`,
+      maxRecords: 2,
+    }),
+    airtableList(env, ENTITLEMENT_TABLE, {
+      filterByFormula: `{${entitlementLineField}}=${formulaString(lineUserId)}`,
+      maxRecords: 100,
+    }),
+  ]);
+
+  if (members.length > 1 || clients.length > 1) throw coded("DRIVE_IDENTITY_AMBIGUOUS");
+
+  const emails = new Set();
+  if (members.length === 1) addEmail(emails, members[0]?.fields?.[memberEmailField]);
+  if (clients.length === 1) {
+    for (const field of clientEmailFields) addEmail(emails, clients[0]?.fields?.[field]);
+  }
+  for (const entitlement of entitlements) addEmail(emails, entitlement?.fields?.[entitlementEmailField]);
+
+  if (emails.size > 1) throw coded("DRIVE_IDENTITY_AMBIGUOUS");
+  return emails.values().next().value || "";
+}
 
 async function handleDriveBootstrap(request, env) {
   if (!authorizedInternalRequest(request, env)) return notFound();
@@ -220,6 +290,18 @@ async function airtableRequest(env, method, tableName, suffix = "", body = null)
   const payload = await response.json().catch(() => null);
   if (!response.ok || !payload || typeof payload !== "object") throw coded(`AIRTABLE_${response.status || "FAILED"}`);
   return payload;
+}
+
+function csvFields(value) {
+  return String(value || "")
+    .split(",")
+    .map((field) => field.trim())
+    .filter((field, index, fields) => field && fields.indexOf(field) === index);
+}
+
+function addEmail(emails, value) {
+  const email = normalizeEmail(value);
+  if (email) emails.add(email);
 }
 
 function formulaString(value) {
