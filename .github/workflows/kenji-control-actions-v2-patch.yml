@@ -20,6 +20,9 @@ jobs:
           ref: feature/kenji-control-actions-v2
           fetch-depth: 0
 
+      - name: Repair async action dispatch
+        run: python3 scripts/patch-kenji-control-await.py
+
       - name: Apply integration patch
         run: python3 scripts/patch-kenji-control-actions-v2.py
 
@@ -39,7 +42,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm scripts/patch-kenji-control-actions-v2.py
+          rm scripts/patch-kenji-control-actions-v2.py scripts/patch-kenji-control-await.py
           git config user.name "MMD Privé"
           git config user.email "malemodel.bkk@gmail.com"
           git add -A
