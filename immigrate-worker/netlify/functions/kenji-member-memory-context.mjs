@@ -5,6 +5,10 @@ import {
   buildMmdClientId,
   parseLatestSignupFromRenamedName,
 } from "../../../shared/kenji-member-memory-snapshot.mjs";
+import {
+  buildKenjiEntitlementSnapshot,
+  projectKenjiAccess,
+} from "./kenji-entitlement-runtime-contract.mjs";
 
 const TABLES = Object.freeze({
   CLIENTS: "Clients",
@@ -33,9 +37,17 @@ const F = Object.freeze({
   ENT_LINE_USER_ID: "line_user_id",
   ENT_CLIENT: "client",
   ENT_MEMBER_STATUS: "member_status",
+  ENT_LIFECYCLE_STATUS: "member_lifecycle_status",
   ENT_ACCESS_STATUS: "access_status",
+  ENT_CAPABILITY: "capability",
+  ENT_LEVEL: "entitlement_level",
   ENT_PACKAGE_CODE: "package_code",
+  ENT_RELATIONSHIP_TIER: "relationship_tier",
+  ENT_START_AT: "start_at",
   ENT_EXPIRE_AT: "expire_at",
+  ENT_GRACE_UNTIL: "grace_until",
+  ENT_SOURCE: "source",
+  ENT_SOURCE_REF: "source_ref",
 });
 
 function text(value) {
@@ -89,17 +101,16 @@ async function findLegacyByLineIdentity(options, { lineUserId, lineDisplayName }
   return rows[0] || null;
 }
 
-async function findEntitlement(options, { lineUserId, clientRecordId }) {
+async function findEntitlements(options, { lineUserId, clientRecordId }) {
   const filters = [];
   if (lineUserId) filters.push(formulaEq(F.ENT_LINE_USER_ID, lineUserId));
   if (clientRecordId) filters.push(`FIND("${esc(clientRecordId)}", ARRAYJOIN({${F.ENT_CLIENT}}))`);
-  if (!filters.length) return null;
-  const rows = await airtableList({
+  if (!filters.length) return [];
+  return airtableList({
     ...options,
     tableName: TABLES.MEMBER_ENTITLEMENTS,
-    params: { maxRecords: 1, filterByFormula: filters.length === 1 ? filters[0] : `OR(${filters.join(",")})` },
+    params: { maxRecords: 100, filterByFormula: filters.length === 1 ? filters[0] : `OR(${filters.join(",")})` },
   });
-  return rows[0] || null;
 }
 
 function mapClient(row, { lineUserId, lineDisplayName }) {
@@ -141,11 +152,33 @@ function mapLegacy(row) {
   };
 }
 
-function mapEntitlement(row) {
+function mapEntitlementRow(row) {
   const x = row?.fields || {};
   return {
     id: row?.id,
-    member_status: x[F.ENT_MEMBER_STATUS],
+    fields: {
+      entitlement_id: row?.id,
+      capability: x[F.ENT_CAPABILITY],
+      entitlement_level: x[F.ENT_LEVEL],
+      member_status: x[F.ENT_LIFECYCLE_STATUS] || x[F.ENT_MEMBER_STATUS],
+      access_status: x[F.ENT_ACCESS_STATUS],
+      package_code: x[F.ENT_PACKAGE_CODE],
+      relationship_tier: x[F.ENT_RELATIONSHIP_TIER],
+      start_at: x[F.ENT_START_AT],
+      expire_at: x[F.ENT_EXPIRE_AT],
+      grace_until: x[F.ENT_GRACE_UNTIL],
+      source: x[F.ENT_SOURCE],
+      source_ref: x[F.ENT_SOURCE_REF] || row?.id,
+    },
+  };
+}
+
+function legacyEntitlementForMemory(entitlementRows = []) {
+  const row = entitlementRows[0];
+  const x = row?.fields || {};
+  return {
+    id: row?.id,
+    member_status: x[F.ENT_LIFECYCLE_STATUS] || x[F.ENT_MEMBER_STATUS],
     access_status: x[F.ENT_ACCESS_STATUS],
     package_code: x[F.ENT_PACKAGE_CODE],
     expire_at: x[F.ENT_EXPIRE_AT],
@@ -160,10 +193,12 @@ export async function loadKenjiMemberMemoryForLine(options = {}) {
   const airtable = { baseId: options.baseId, apiKey: options.apiKey };
   const clientRow = await findClientByLineUserId(airtable, lineUserId);
   const legacyRow = await findLegacyByLineIdentity(airtable, { lineUserId, lineDisplayName });
-  const entitlementRow = await findEntitlement(airtable, { lineUserId, clientRecordId: clientRow?.id });
+  const entitlementRows = await findEntitlements(airtable, { lineUserId, clientRecordId: clientRow?.id });
+  const entitlementSnapshot = buildKenjiEntitlementSnapshot(entitlementRows.map(mapEntitlementRow));
+  const kenjiAccess = projectKenjiAccess(entitlementSnapshot);
 
   const legacy = mapLegacy(legacyRow);
-  const entitlement = mapEntitlement(entitlementRow);
+  const entitlement = legacyEntitlementForMemory(entitlementRows);
   const client = clientRow ? mapClient(clientRow, { lineUserId, lineDisplayName }) : {
     line_user_id: lineUserId,
     line_display_name: lineDisplayName,
@@ -190,12 +225,18 @@ export async function loadKenjiMemberMemoryForLine(options = {}) {
 
   return {
     snapshot,
-    kenji_safe_context: buildKenjiSafeContext(snapshot),
+    entitlement_snapshot: entitlementSnapshot,
+    kenji_access: kenjiAccess,
+    kenji_safe_context: {
+      ...buildKenjiSafeContext(snapshot),
+      entitlement_access: kenjiAccess,
+    },
     customer_visible_profile: buildCustomerVisibleProfile(snapshot),
     found: {
       client: Boolean(clientRow?.id),
       legacy: Boolean(legacyRow?.id),
-      entitlement: Boolean(entitlementRow?.id),
+      entitlement: entitlementRows.length > 0,
+      entitlement_count: entitlementRows.length,
     },
   };
 }
