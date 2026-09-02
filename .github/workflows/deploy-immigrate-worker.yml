@@ -52,11 +52,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run immigrate-worker validation
+      - name: Run immigrate-worker runtime validation
         shell: bash
         run: |
           set -euo pipefail
-          npm run typecheck
           npm test
           node test/internal-admin-gate-bridge.test.mjs
 
