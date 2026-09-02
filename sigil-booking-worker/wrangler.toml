@@ -2,7 +2,7 @@
 # MMD Booking / SIGIL public booking resolver
 
 name = "sigil-booking-worker"
-main = "src/model-image-policy-worker.js"
+main = "src/runtime-index.js"
 compatibility_date = "2026-01-01"
 workers_dev = true
 
