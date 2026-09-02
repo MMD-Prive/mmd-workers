@@ -26,6 +26,8 @@ jobs:
       AIRTABLE_API_TOKEN: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.MMS_TELEGRAM_BOT_TOKEN || secrets.TELEGRAM_BOT_TOKEN }}
       MMS_TELEGRAM_CHAT_ID: ${{ secrets.MMS_TELEGRAM_CHAT_ID || secrets.TELEGRAM_CHAT_ID }}
+      LINE_CHANNEL_SECRET: ${{ secrets.MMS_LINE_CHANNEL_SECRET }}
+      LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.MMS_LINE_CHANNEL_ACCESS_TOKEN }}
       NO_COLOR: "1"
       WRANGLER_SEND_METRICS: "false"
 
@@ -115,6 +117,8 @@ jobs:
           const token = String(process.env.AIRTABLE_API_TOKEN || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
           const telegramToken = String(process.env.TELEGRAM_BOT_TOKEN || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
           const telegramChatId = String(process.env.MMS_TELEGRAM_CHAT_ID || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
+          const lineChannelSecret = String(process.env.LINE_CHANNEL_SECRET || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
+          const lineChannelAccessToken = String(process.env.LINE_CHANNEL_ACCESS_TOKEN || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
           const path = process.env.RUNNER_TEMP + "/mms-worker.env";
           const lines = [];
           if (token) { console.log(`::add-mask::${token}`); lines.push(`AIRTABLE_API_TOKEN=${token}`); }
@@ -122,6 +126,11 @@ jobs:
             console.log(`::add-mask::${telegramToken}`);
             console.log(`::add-mask::${telegramChatId}`);
             lines.push(`TELEGRAM_BOT_TOKEN=${telegramToken}`, `MMS_TELEGRAM_CHAT_ID=${telegramChatId}`);
+          }
+          if (lineChannelSecret && lineChannelAccessToken) {
+            console.log(`::add-mask::${lineChannelSecret}`);
+            console.log(`::add-mask::${lineChannelAccessToken}`);
+            lines.push(`LINE_CHANNEL_SECRET=${lineChannelSecret}`, `LINE_CHANNEL_ACCESS_TOKEN=${lineChannelAccessToken}`);
           }
           fs.writeFileSync(path, lines.length ? `${lines.join("\n")}\n` : "", { mode: 0o600 });
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `configured=${lines.length ? "true" : "false"}\n`);
@@ -169,6 +178,9 @@ jobs:
             `- Private R2: ${health.bindings.private_uploads ? "ready" : "missing"}`,
             `- Airtable runtime secret: ${health.bindings.airtable ? "ready" : "pending"}`,
             `- Telegram notification: ${health.bindings.telegram ? "ready" : "pending"}`,
+            `- HENNA LINE channel: ${health.bindings.line?.configured ? "ready" : "pending secrets"}`,
+            `- HENNA LINE channel ID: ${health.bindings.line?.channel_id || "missing"}`,
+            `- HENNA auto reply: ${health.bindings.line?.auto_reply_enabled ? "enabled" : "disabled (safe default)"}`,
             `- Skill catalog: ${catalog.data.skills.length}/8`,
             "",
           ].join("\n"));
