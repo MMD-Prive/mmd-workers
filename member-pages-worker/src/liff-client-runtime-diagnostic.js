@@ -1,4 +1,4 @@
-const CLIENT_SCRIPT_PATH = "/member/liff-client-diag.js";
+const CLIENT_SCRIPT_PATH = "/member/api/liff/client-diag.js";
 const CLIENT_DIAG_PATH = "/member/api/liff/client-diag";
 const TRACE_TTL_SECONDS = 60 * 60 * 48;
 const BOUNDARY_COOKIE = "mmd_liff_boundary";
