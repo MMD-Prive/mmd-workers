@@ -1,0 +1,90 @@
+name: Deploy Kenji admin assets
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "webflow/internal/admin/kenji/**"
+      - ".github/workflows/deploy-kenji-admin-assets.yml"
+
+concurrency:
+  group: deploy-kenji-admin-assets
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 783a1f0ffe97b7ecb05355730773a9fa
+      R2_BUCKET: mmd-models
+      ASSET_PREFIX: webflow/internal/admin/kenji
+      LIVE_BASE: https://models.mmdbkk.com/webflow/internal/admin/kenji
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate source assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s webflow/internal/admin/kenji/kenji-admin-v1.js
+          test -s webflow/internal/admin/kenji/kenji-admin-v1.css
+          node --check webflow/internal/admin/kenji/kenji-admin-v1.js
+          node --test webflow/internal/admin/kenji/kenji-admin-v1.test.mjs
+
+      - name: Verify R2 access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          npx --yes wrangler@4 r2 bucket list >/tmp/r2-buckets.txt
+          grep -q 'mmd-models' /tmp/r2-buckets.txt
+
+      - name: Upload Kenji admin JS and CSS
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 r2 object put "$R2_BUCKET/$ASSET_PREFIX/kenji-admin-v1.js" \
+            --file webflow/internal/admin/kenji/kenji-admin-v1.js \
+            --content-type 'application/javascript; charset=utf-8' \
+            --cache-control 'no-cache, max-age=0, must-revalidate' \
+            --remote --force
+          npx --yes wrangler@4 r2 object put "$R2_BUCKET/$ASSET_PREFIX/kenji-admin-v1.css" \
+            --file webflow/internal/admin/kenji/kenji-admin-v1.css \
+            --content-type 'text/css; charset=utf-8' \
+            --cache-control 'no-cache, max-age=0, must-revalidate' \
+            --remote --force
+
+      - name: Verify R2 readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 r2 object get "$R2_BUCKET/$ASSET_PREFIX/kenji-admin-v1.js" --file /tmp/kenji-admin-live.js --remote
+          npx --yes wrangler@4 r2 object get "$R2_BUCKET/$ASSET_PREFIX/kenji-admin-v1.css" --file /tmp/kenji-admin-live.css --remote
+          cmp webflow/internal/admin/kenji/kenji-admin-v1.js /tmp/kenji-admin-live.js
+          cmp webflow/internal/admin/kenji/kenji-admin-v1.css /tmp/kenji-admin-live.css
+
+      - name: Verify public CDN asset markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          js_file="$(mktemp)"
+          css_file="$(mktemp)"
+          curl --retry 6 --retry-delay 2 --retry-all-errors -fsS \
+            -H 'Cache-Control: no-cache' \
+            "$LIVE_BASE/kenji-admin-v1.js?v=$GITHUB_SHA" -o "$js_file"
+          curl --retry 6 --retry-delay 2 --retry-all-errors -fsS \
+            -H 'Cache-Control: no-cache' \
+            "$LIVE_BASE/kenji-admin-v1.css?v=$GITHUB_SHA" -o "$css_file"
+          grep -q 'modelSearchSeq' "$js_file"
+          grep -q 'modelDraftFingerprint' "$js_file"
+          grep -q 'encodeURIComponent(q)' "$js_file"
+          grep -q 'Idempotency-Key' "$js_file"
+          grep -q 'ka__model-layout' "$css_file"
+          echo "Kenji admin R2 assets published and public markers verified"
