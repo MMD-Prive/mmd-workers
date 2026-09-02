@@ -55,7 +55,9 @@ export function renderApprovedAdminLogin(
     .mmd-login21 label{display:grid;gap:8px;margin-top:10px;color:#d8ad5c;font-size:11px;font-weight:950;letter-spacing:.14em;text-transform:uppercase}
     .mmd-login21__input{display:grid;grid-template-columns:1fr auto;border:1px solid rgba(255,229,170,.18);border-radius:18px;overflow:hidden;background:rgba(0,0,0,.42)}
     .mmd-login21 input{width:100%;min-height:58px;border:0;background:transparent;color:#fff8ef;padding:0 16px;outline:0;font:inherit}
+    .mmd-login21 input[data-mask="true"]{-webkit-text-security:disc}
     .mmd-login21 button{border:0;background:#d8ad5c;color:#140f08;font-weight:950;padding:0 18px;cursor:pointer}
+    .mmd-login21 button:disabled{opacity:.55;cursor:wait}
     .mmd-login21__toggle{border-left:1px solid rgba(255,229,170,.18)!important;background:transparent!important;color:#ffe4a3!important;font-size:11px}
     .mmd-login21__message{min-height:22px;color:rgba(255,248,239,.64)!important;font-size:13px}
     .mmd-login21__message.is-error{color:#ffb2b7!important}
@@ -90,9 +92,9 @@ export function renderApprovedAdminLogin(
           <p>ใส่ access code ที่ได้รับอนุมัติ ระบบจะพาไปหน้าที่ตั้งไว้ต่อทันที ไม่ใช่หน้า setup account แล้วครับ</p>
           <div class="mmd-login21__chips"><span>Approved access</span><span>Secure session</span><span>Admin route</span></div>
           <form method="post" action="${ADMIN_LOGIN_SESSION_PATH}" id="adminLoginForm" autocomplete="off">
-            <input type="hidden" name="next" value="${escapeAttribute(next)}">
+            <input id="adminNext" type="hidden" name="next" value="${escapeAttribute(next)}">
             <label for="adminCredential">Access Code
-              <span class="mmd-login21__input"><input id="adminCredential" name="credential" type="password" required readonly autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" aria-autocomplete="none" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" data-form-type="other"><button class="mmd-login21__toggle" type="button" aria-controls="adminCredential" aria-pressed="false">SHOW</button></span>
+              <span class="mmd-login21__input"><input id="adminCredential" type="text" required readonly autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" aria-autocomplete="none" data-mask="true" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" data-form-type="other"><button class="mmd-login21__toggle" type="button" aria-controls="adminCredential" aria-pressed="false">SHOW</button></span>
             </label>
             <p class="mmd-login21__message${error ? " is-error" : ""}" role="${error ? "alert" : "status"}">${error ? escapeHtml(error) : `Next: ${escapeHtml(next)}`}</p>
             <button class="mmd-login21__go" type="submit">Enter Admin</button>
@@ -100,13 +102,13 @@ export function renderApprovedAdminLogin(
           </form>
         </article>
         <aside class="mmd-login21__visual" aria-label="SIGIL internal administration environment">
-          <img class="mmd-login21__sigil" src="${APPROVED_ADMIN_LOGIN_HERO}" alt="Internal Admin Chang Ewvon" aria-hidden="true" width="512" height="512" fetchpriority="high">
+          <img class="mmd-login21__sigil" src="${APPROVED_ADMIN_LOGIN_HERO}" alt="MMD SIGIL Internal Admin" aria-hidden="true" width="512" height="512" fetchpriority="high">
           <div class="mmd-login21__note"><b>Private access. Quiet control.</b><p>เข้าสู่พื้นที่ทำงานภายใน แล้วไปต่อยัง Control Room ตาม route ที่กำหนด</p></div>
         </aside>
       </section>
     </main>
   </section>
-  <script>(()=>{const form=document.getElementById('adminLoginForm');const input=document.getElementById('adminCredential');const toggle=document.querySelector('.mmd-login21__toggle');if(!form||!input||!toggle)return;const unlock=()=>{input.readOnly=false;};input.value='';input.addEventListener('pointerdown',unlock,{once:true});input.addEventListener('focus',unlock,{once:true});input.addEventListener('keydown',unlock,{once:true});window.addEventListener('pageshow',()=>{if(input.readOnly)input.value='';});form.addEventListener('submit',(event)=>{if(!input.value){event.preventDefault();input.focus();return;}input.readOnly=true;});toggle.addEventListener('click',function(){const show=this.getAttribute('aria-pressed')!=='true';input.type=show?'text':'password';this.textContent=show?'HIDE':'SHOW';this.setAttribute('aria-pressed',String(show));});})();</script>
+  <script>(()=>{const form=document.getElementById('adminLoginForm');const input=document.getElementById('adminCredential');const nextInput=document.getElementById('adminNext');const toggle=document.querySelector('.mmd-login21__toggle');const message=document.querySelector('.mmd-login21__message');const submit=document.querySelector('.mmd-login21__go');if(!form||!input||!nextInput||!toggle||!message||!submit)return;const unlock=()=>{input.readOnly=false;};input.value='';input.addEventListener('pointerdown',unlock,{once:true});input.addEventListener('focus',unlock,{once:true});input.addEventListener('keydown',unlock,{once:true});window.addEventListener('pageshow',()=>{if(input.readOnly)input.value='';});toggle.addEventListener('click',function(){const show=this.getAttribute('aria-pressed')!=='true';if(show)input.removeAttribute('data-mask');else input.setAttribute('data-mask','true');this.textContent=show?'HIDE':'SHOW';this.setAttribute('aria-pressed',String(show));});form.addEventListener('submit',async(event)=>{event.preventDefault();const credential=input.value;if(!credential){input.readOnly=false;input.focus();return;}input.readOnly=true;toggle.disabled=true;submit.disabled=true;message.classList.remove('is-error');message.setAttribute('role','status');message.textContent='Checking access…';try{const body=new URLSearchParams();body.set('credential',credential);body.set('next',nextInput.value||'/internal/admin/control-room');const response=await fetch('${ADMIN_LOGIN_SESSION_PATH}',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},credentials:'same-origin',redirect:'follow',cache:'no-store',body:body.toString()});if(response.ok&&response.redirected){location.assign(response.url);return;}const code=response.status;let detail='Login failed (HTTP '+code+')';if(code===401)detail='Browser POST ถึง Worker แล้ว แต่ Access Code ที่ส่งไม่ตรงกับ Production secret (HTTP 401)';else if(code===403)detail='Browser POST ถึง Worker แล้ว แต่ Origin/Host ไม่ตรงกับ Worker (HTTP 403)';else if(code===400)detail='Browser POST ถึง Worker แล้ว แต่รูปแบบ request ไม่ถูกต้อง (HTTP 400)';else if(code===503)detail='Worker รับ request แล้ว แต่ Admin credential/session config ยังไม่พร้อม (HTTP 503)';message.classList.add('is-error');message.setAttribute('role','alert');message.textContent=detail;}catch{message.classList.add('is-error');message.setAttribute('role','alert');message.textContent='Browser ติดต่อ Admin Worker ไม่สำเร็จ กรุณารีเฟรชแล้วลองอีกครั้ง';}finally{input.readOnly=false;toggle.disabled=false;submit.disabled=false;}});})();</script>
 </body>
 </html>`;
 
@@ -114,11 +116,11 @@ export function renderApprovedAdminLogin(
     status,
     headers: {
       "cache-control": "no-store, private, max-age=0",
-      "content-security-policy": "default-src 'none'; img-src https://cdn.prod.website-files.com; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
+      "content-security-policy": "default-src 'none'; img-src https://cdn.prod.website-files.com; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
       "content-type": "text/html; charset=utf-8",
       "referrer-policy": "no-referrer",
       "x-content-type-options": "nosniff",
-      "x-mmd-login-ui": "canonical-apex-v4",
+      "x-mmd-login-ui": "browser-fetch-v5",
       "x-mmd-admin-origin": ADMIN_CANONICAL_ORIGIN,
       "x-mmd-page": APPROVED_ADMIN_LOGIN_PAGE_ID,
       "x-mmd-route-owner": "admin-worker",
