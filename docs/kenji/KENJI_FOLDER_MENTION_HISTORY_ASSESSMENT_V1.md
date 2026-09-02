@@ -123,4 +123,4 @@ Do not store raw message text in this table. Do not store raw customer IDs or mo
 4. Human review of false positives/negatives.
 5. Enable customer-facing general replies only after the above gates pass.
 
-Current change implements only the pure policy module and unit tests. It does **not** wire an automatic history read, create Airtable tables, or change live LINE behavior.
+Current change includes the pure policy module, Airtable schema, adapter, canary gates, and unit tests. The LINE worker invokes the adapter only as a background shadow operation. With the feature flag absent/false (the default), it performs no history read, no Airtable assessment write, and no customer-facing behavior change. Even when canary-enabled, it never grants membership/payment/availability/access and does not alter the reply.
