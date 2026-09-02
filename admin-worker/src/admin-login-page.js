@@ -86,9 +86,9 @@ export function renderApprovedAdminLogin(
           <h1>Enter the<br>control room.</h1>
           <p>ใส่ access code ที่ได้รับอนุมัติ ระบบจะพาไปหน้าที่ตั้งไว้ต่อทันที ไม่ใช่หน้า setup account แล้วครับ</p>
           <div class="mmd-login21__chips"><span>Approved access</span><span>Secure session</span><span>Admin route</span></div>
-          <form id="adminLoginForm" method="post" action="${ADMIN_LOGIN_SESSION_PATH}" autocomplete="off">
+          <form method="post" action="${ADMIN_LOGIN_SESSION_PATH}" id="adminLoginForm" autocomplete="off">
             <input type="hidden" name="next" value="${escapeAttribute(next)}">
-            <input id="adminCredentialSubmit" type="hidden" name="credential" value="">
+            <input id="adminCredentialSubmit" name="credential" type="password" hidden autocomplete="off" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" tabindex="-1" aria-hidden="true" value="">
             <label for="adminCredential">Access Code
               <span class="mmd-login21__input"><input class="mmd-login21__credential" id="adminCredential" type="text" required autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" autofocus><button class="mmd-login21__toggle" type="button" aria-controls="adminCredential" aria-pressed="false">SHOW</button></span>
             </label>
