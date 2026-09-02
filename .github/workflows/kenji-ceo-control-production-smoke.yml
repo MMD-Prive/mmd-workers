@@ -42,7 +42,7 @@ jobs:
           }
           NODE
 
-      - name: Sync query-safe Kenji CEO control routes
+      - name: Sync and inspect query-safe Kenji CEO control routes
         shell: bash
         run: |
           set -euo pipefail
@@ -50,9 +50,6 @@ jobs:
           const zoneId = process.env.CLOUDFLARE_ZONE_ID;
           const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
           const worker = "admin-worker";
-          // Cloudflare route matching includes the query string. These APIs
-          // require query parameters, so a trailing wildcard is required while
-          // the Worker itself still enforces the exact pathname.
           const patterns = [
             "/v1/admin/kenji/control/memory*",
             "/v1/admin/kenji/control/conversations*",
@@ -110,24 +107,42 @@ jobs:
             throw new Error(`Route verification failed: ${unresolved.join(", ")}`);
           }
           console.log(`Verified ${desired.length}/${desired.length} query-safe Kenji CEO control routes; created ${missing.length}`);
+
+          const relevant = verified
+            .filter((route) => /mmdbkk\.com/.test(route.pattern || "") && (/kenji\/control/.test(route.pattern || "") || /\/v1\/admin\/.*\*/.test(route.pattern || "")))
+            .map((route) => ({ pattern: route.pattern, script: route.script || null }))
+            .sort((a, b) => b.pattern.length - a.pattern.length);
+          console.log("Relevant Cloudflare route candidates:");
+          for (const route of relevant) console.log(`${route.pattern} -> ${route.script || "<no script>"}`);
           NODE
 
-      - name: Smoke unauthenticated CEO control endpoints
+      - name: Smoke unauthenticated CEO control endpoints with diagnostics
         shell: bash
         run: |
-          set -euo pipefail
-          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+          set -uo pipefail
+          failed=0
+          for origin in https://www.mmdbkk.com https://mmdbkk.com; do
             for endpoint in \
               "/v1/admin/kenji/control/memory?client_id=smoke" \
               "/v1/admin/kenji/control/conversations?client_id=smoke" \
               "/v1/admin/kenji/control/approvals?status=pending"
             do
               body_file="$(mktemp)"
-              http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
-                -o "$body_file" -w "%{http_code}" "$origin$endpoint")"
+              headers_file="$(mktemp)"
+              http_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+                -D "$headers_file" -o "$body_file" -w "%{http_code}" "$origin$endpoint" || true)"
+              echo "=== $origin$endpoint ==="
+              echo "HTTP $http_code"
+              grep -Ei '^(HTTP/|location:|server:|cf-ray:|content-type:|x-mmd-|x-powered-by:)' "$headers_file" || true
               cat "$body_file"
-              test "$http_code" = "401"
-              grep -q '"error":"unauthorized"' "$body_file"
+              echo
+              if [ "$http_code" != "401" ] || ! grep -q '"error":"unauthorized"' "$body_file"; then
+                failed=1
+              fi
             done
           done
+          if [ "$failed" -ne 0 ]; then
+            echo "Kenji CEO Control production smoke failed; diagnostics printed above" >&2
+            exit 1
+          fi
           echo "Kenji CEO Control production smoke passed on apex and www"
