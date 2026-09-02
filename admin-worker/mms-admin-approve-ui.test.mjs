@@ -41,8 +41,8 @@ test('admin includes one-tap production diagnostics and recent approval receipt'
 });
 
 test('system check proves backend read paths without mutating bookings or therapist state', () => {
-  assert.match(runtimeSource, /API_PREFIX}\/system-check/);
-  assert.match(runtimeSource, /INTERNAL_BASE}\/health/);
+  assert.ok(runtimeSource.includes('`${API_PREFIX}/system-check`'));
+  assert.ok(runtimeSource.includes('`${INTERNAL_BASE}/health`'));
   assert.match(runtimeSource, /internal\/mms\/admin\/snapshot/);
   assert.match(runtimeSource, /mms\/api\/therapists\/match/);
   assert.match(runtimeSource, /body: "\{\}"/);
