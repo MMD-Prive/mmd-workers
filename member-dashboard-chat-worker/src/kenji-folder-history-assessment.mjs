@@ -38,10 +38,9 @@ function normalizeSpaces(value) {
 }
 
 export function normalizeFolderMention(value) {
+  const normalized = asString(value).normalize("NFKC").toLowerCase().trim();
   return normalizeSpaces(
-    asString(value)
-      .normalize("NFKC")
-      .toLowerCase()
+    normalized
       .replace(/^#+/, "")
       .replace(/[_-]+/g, " "),
   );
@@ -164,7 +163,7 @@ export function evaluateCustomerHistory(input = {}) {
   const readiness = classifyReadiness({ folderStatus, text, signals });
   let decision = "safe_general_reply";
   let nextAction = "reply_with_general_next_step";
-  if (folderStatus === "missing" || folderStatus === "not_found" || folderStatus === "ambiguous") {
+  if (folderStatus === "missing" || folderStatus === "not_found" || folderStatus === "ambiguous" || folderStatus === "not_resolved") {
     decision = "clarify_model";
     nextAction = "ask_for_exact_folder_name";
   } else if (signals.includes("safety_concern") || signals.includes("complaint")) {
