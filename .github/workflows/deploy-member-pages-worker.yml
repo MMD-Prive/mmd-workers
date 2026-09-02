@@ -37,7 +37,7 @@ jobs:
           node-version: "22"
           cache: npm
 
-      - name: Normalize Cloudflare and Airtable credentials
+      - name: Normalize Cloudflare and Airtable configuration
         shell: bash
         run: |
           node <<'NODE'
@@ -48,9 +48,15 @@ jobs:
           const airtableApiKey = clean(process.env.AIRTABLE_API_KEY);
           const airtableBaseId = clean(process.env.AIRTABLE_BASE_ID);
           if (!token || !accountId) throw new Error("Cloudflare credentials are missing after normalization");
-          if (!airtableApiKey) throw new Error("GitHub secret AIRTABLE_API_KEY is missing after normalization");
           if (airtableBaseId !== "appsV1ILPRfIjkaYg") throw new Error("Unexpected AIRTABLE_BASE_ID for member-pages-worker");
-          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\nCLOUDFLARE_ACCOUNT_ID=${accountId}\nAIRTABLE_API_KEY=${airtableApiKey}\nAIRTABLE_BASE_ID=${airtableBaseId}\n`);
+          if (airtableApiKey) console.log(`::add-mask::${airtableApiKey}`);
+          const lines = [
+            `CLOUDFLARE_API_TOKEN=${token}`,
+            `CLOUDFLARE_ACCOUNT_ID=${accountId}`,
+            `AIRTABLE_BASE_ID=${airtableBaseId}`,
+          ];
+          if (airtableApiKey) lines.push(`AIRTABLE_API_KEY=${airtableApiKey}`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `${lines.join("\n")}\n`);
           NODE
 
       - name: Install dependencies
@@ -66,12 +72,30 @@ jobs:
       - name: Validate Cloudflare deployment
         run: npx --yes wrangler@4 deploy --dry-run --keep-vars --config member-pages-worker/wrangler.toml
 
-      - name: Provision Airtable API secret
+      - name: Ensure Airtable API secret exists
         shell: bash
         run: |
           set -euo pipefail
           set +x
-          printf '%s' "$AIRTABLE_API_KEY" | npx --yes wrangler@4 secret put AIRTABLE_API_KEY --config member-pages-worker/wrangler.toml
+          secrets_json="$(npx --yes wrangler@4 secret list --format json --config member-pages-worker/wrangler.toml)"
+          secret_state="$(printf '%s' "$secrets_json" | node -e '
+            let input = "";
+            process.stdin.setEncoding("utf8");
+            process.stdin.on("data", (chunk) => { input += chunk; });
+            process.stdin.on("end", () => {
+              const secrets = JSON.parse(input);
+              process.stdout.write(secrets.some((secret) => secret.name === "AIRTABLE_API_KEY") ? "present" : "absent");
+            });
+          ')"
+          if [ "$secret_state" = "present" ]; then
+            echo "Airtable API secret already exists in member-pages-worker"
+          elif [ "$secret_state" = "absent" ] && [ -n "${AIRTABLE_API_KEY:-}" ]; then
+            printf '%s' "$AIRTABLE_API_KEY" | npx --yes wrangler@4 secret put AIRTABLE_API_KEY --config member-pages-worker/wrangler.toml
+            echo "Airtable API secret provisioned from GitHub Actions secret"
+          else
+            echo "AIRTABLE_API_KEY is absent from both member-pages-worker and GitHub Actions" >&2
+            exit 1
+          fi
 
       - name: Deploy member-pages-worker
         run: npx --yes wrangler@4 deploy --keep-vars --config member-pages-worker/wrangler.toml
