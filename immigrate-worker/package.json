@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "node test/canonical-admin-login-wrapper.test.mjs && node test/sigil-admin-login.test.mjs && node test/invite-signing.test.mjs",
+    "test": "node test/canonical-admin-login-wrapper.test.mjs && node test/create-session-owner-ui.test.mjs && node test/sigil-admin-login.test.mjs && node test/invite-signing.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
