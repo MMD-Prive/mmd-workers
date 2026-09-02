@@ -48,19 +48,58 @@ test("premium establishes only a premium private envelope and never auto-grants 
   assert.equal(result.access.protected_allowlist_required, false);
 });
 
-test("grace preserves existing access state but forbids new protected and downstream grants", () => {
+test("entitlement automatically enters expiring soon during the final seven days", () => {
   const result = resolveMemberEntitlements([
-    row({ entitlement_id: "vip", entitlement_level: "vip", access_status: "grace", expire_at: "2026-09-01T00:00:00Z", grace_until: "2026-09-07T00:00:00Z" }),
+    row({ entitlement_id: "premium", package_code: "private_premium", access_status: "active", expire_at: "2026-09-06T12:00:00Z" }),
+  ], { now: NOW });
+
+  assert.deepEqual(result.capability_state.active, [CAPABILITIES.PRIVATE_PREMIUM]);
+  assert.deepEqual(result.capability_state.expiring_soon, [CAPABILITIES.PRIVATE_PREMIUM]);
+  assert.equal(result.entitlements[0].lifecycle, "expiring_soon");
+  assert.equal(result.access.private_visibility_envelope, "premium");
+  assert.equal(result.access.new_model_reveals_allowed, true);
+});
+
+test("canonical member_lifecycle_status is preferred over legacy member_status", () => {
+  const normalized = normalizeEntitlement({
+    entitlement_id: "canonical",
+    capability: "private_standard",
+    member_lifecycle_status: "suspended",
+    member_status: "active",
+    access_status: "active",
+    expire_at: "2027-01-01T00:00:00Z",
+  }, 0, Date.parse(NOW));
+
+  assert.equal(normalized.lifecycle, "blocked");
+  assert.equal(normalized.member_status, "suspended");
+});
+
+test("grace is derived automatically for seven days after expiry and blocks new model reveal", () => {
+  const result = resolveMemberEntitlements([
+    row({ entitlement_id: "vip", entitlement_level: "vip", access_status: "active", expire_at: "2026-09-01T12:00:00Z" }),
   ], { now: NOW });
 
   assert.deepEqual(result.capability_state.active, []);
   assert.deepEqual(result.capability_state.grace, [CAPABILITIES.VIP]);
-  assert.equal(result.access.private_visibility_envelope, "vip");
+  assert.equal(result.entitlements[0].grace_until, "2026-09-08T12:00:00.000Z");
+  assert.equal(result.access.private_visibility_envelope, "none");
+  assert.equal(result.access.grace_private_history_envelope, "vip");
+  assert.equal(result.access.new_model_reveals_allowed, false);
   assert.equal(result.access.protected_allowlist_required, true);
   assert.equal(result.access.new_protected_grants_allowed, false);
   assert.equal(result.access.new_drive_grants_allowed, false);
   assert.equal(result.access.new_telegram_grants_allowed, false);
   assert.equal(result.access.existing_grants_may_continue_in_grace, true);
+});
+
+test("grace expires after the seven day window", () => {
+  const result = resolveMemberEntitlements([
+    row({ entitlement_id: "premium", package_code: "private_premium", access_status: "active", expire_at: "2026-08-25T11:59:59Z" }),
+  ], { now: NOW });
+
+  assert.equal(result.entitlements[0].lifecycle, "expired");
+  assert.equal(result.access.private_visibility_envelope, "none");
+  assert.equal(result.access.new_model_reveals_allowed, false);
 });
 
 test("guest pass never receives grace even if grace_until is populated", () => {

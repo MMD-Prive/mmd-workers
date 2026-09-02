@@ -26,22 +26,30 @@ const PRIVATE = new Set([
 const HARD_BLOCK_STATUSES = new Set(["blocked", "suspended"]);
 const REVOKED_STATUSES = new Set(["revoked"]);
 const ACTIVE_STATUSES = new Set(["active"]);
+const EXPIRING_SOON_STATUSES = new Set(["expiring_soon", "expiringsoon"]);
 const GRACE_STATUSES = new Set(["grace", "grace_period"]);
+const DEFAULT_EXPIRING_SOON_DAYS = 7;
+const GRACE_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-export { CAPABILITIES };
+export { CAPABILITIES, DEFAULT_EXPIRING_SOON_DAYS, GRACE_DAYS };
 
 export function resolveMemberEntitlements(records = [], options = {}) {
   const now = parseNow(options.now);
+  const expiringSoonDays = positiveDays(options.expiringSoonDays, DEFAULT_EXPIRING_SOON_DAYS);
   const normalized = Array.isArray(records)
-    ? records.map((record, index) => normalizeEntitlement(record, index, now)).filter(Boolean)
+    ? records.map((record, index) => normalizeEntitlement(record, index, now, { expiringSoonDays })).filter(Boolean)
     : [];
 
   const memberHardBlocked = normalized.some((item) => HARD_BLOCK_STATUSES.has(item.member_status));
   const active = normalized.filter((item) => item.lifecycle === "active");
+  const expiringSoon = normalized.filter((item) => item.lifecycle === "expiring_soon");
   const grace = normalized.filter((item) => item.lifecycle === "grace");
-  const inactive = normalized.filter((item) => !["active", "grace"].includes(item.lifecycle));
+  const inactive = normalized.filter((item) => !["active", "expiring_soon", "grace"].includes(item.lifecycle));
 
-  const effective = memberHardBlocked ? [] : unique(active.map((item) => item.capability));
+  const currentlyValid = [...active, ...expiringSoon];
+  const effective = memberHardBlocked ? [] : unique(currentlyValid.map((item) => item.capability));
+  const expiringSoonCapabilities = memberHardBlocked ? [] : unique(expiringSoon.map((item) => item.capability));
   const graceCapabilities = memberHardBlocked ? [] : unique(grace.map((item) => item.capability));
   const allRecognized = unique(normalized.map((item) => item.capability));
 
@@ -50,9 +58,15 @@ export function resolveMemberEntitlements(records = [], options = {}) {
   const protectedActive = effective.filter((capability) => PROTECTED.has(capability));
   const protectedGrace = graceCapabilities.filter((capability) => PROTECTED.has(capability));
 
+  // New model visibility is authorized only by currently-valid entitlements.
+  // Grace may preserve an already-existing downstream grant, but must never
+  // create a new reveal or widen the visibility envelope.
   const privateVisibilityEnvelope = memberHardBlocked
     ? "none"
-    : highestPrivateEnvelope([...privateActive, ...privateGrace]);
+    : highestPrivateEnvelope(privateActive);
+  const gracePrivateHistoryEnvelope = memberHardBlocked
+    ? "none"
+    : highestPrivateEnvelope(privateGrace);
 
   const hasPublicMember = effective.includes(CAPABILITIES.PUBLIC_MEMBER);
   const hasGuestPass = effective.includes(CAPABILITIES.GUEST_PASS);
@@ -66,11 +80,17 @@ export function resolveMemberEntitlements(records = [], options = {}) {
   return {
     schema_version: "my_mmd_entitlement_resolver_v1",
     evaluated_at: new Date(now).toISOString(),
+    lifecycle_policy: {
+      flow: ["active", "expiring_soon", "grace", "expired"],
+      expiring_soon_days: expiringSoonDays,
+      grace_days: GRACE_DAYS,
+    },
     fail_closed: true,
     member_blocked: memberHardBlocked,
     entitlements: normalized,
     capability_state: {
       active: effective,
+      expiring_soon: expiringSoonCapabilities,
       grace: graceCapabilities,
       inactive: unique(inactive.map((item) => item.capability)),
       recognized: allRecognized,
@@ -80,12 +100,14 @@ export function resolveMemberEntitlements(records = [], options = {}) {
       guest_pass_access: !memberHardBlocked && hasGuestPass,
       red_card_request_lane: redCardRequestLane,
       private_visibility_envelope: privateVisibilityEnvelope,
+      grace_private_history_envelope: gracePrivateHistoryEnvelope,
       protected_allowlist_required: protectedActive.length > 0 || protectedGrace.length > 0,
       protected_capabilities_active: protectedActive,
       protected_capabilities_grace: protectedGrace,
+      new_model_reveals_allowed: !memberHardBlocked && privateActive.length > 0,
       new_protected_grants_allowed: !memberHardBlocked && protectedActive.length > 0,
-      new_drive_grants_allowed: !memberHardBlocked && active.length > 0 && grace.length === 0,
-      new_telegram_grants_allowed: !memberHardBlocked && active.length > 0 && grace.length === 0,
+      new_drive_grants_allowed: !memberHardBlocked && currentlyValid.length > 0 && grace.length === 0,
+      new_telegram_grants_allowed: !memberHardBlocked && currentlyValid.length > 0 && grace.length === 0,
       existing_grants_may_continue_in_grace: !memberHardBlocked && grace.length > 0,
     },
     review: {
@@ -96,17 +118,21 @@ export function resolveMemberEntitlements(records = [], options = {}) {
   };
 }
 
-export function normalizeEntitlement(record, index = 0, now = Date.now()) {
+export function normalizeEntitlement(record, index = 0, now = Date.now(), options = {}) {
   const fields = record?.fields || record || {};
   if (!fields || typeof fields !== "object" || Array.isArray(fields)) return null;
 
+  const expiringSoonDays = positiveDays(options.expiringSoonDays, DEFAULT_EXPIRING_SOON_DAYS);
   const capability = capabilityFromFields(fields);
-  const memberStatus = token(fields.member_status || fields["Membership Status"]);
+  const memberStatus = token(fields.member_lifecycle_status || fields.member_status || fields["Membership Status"]);
   const accessStatus = token(fields.access_status || fields.status);
   const startAt = timestamp(fields.start_at || fields.start_date);
   const expireAt = timestamp(fields.expire_at || fields.end_date || fields["Membership Expiry"]);
-  const graceUntil = timestamp(fields.grace_until);
+  const explicitGraceUntil = timestamp(fields.grace_until);
   const isGuestPass = capability === CAPABILITIES.GUEST_PASS;
+  const derivedGraceUntil = !isGuestPass && expireAt ? expireAt + (GRACE_DAYS * DAY_MS) : null;
+  const graceUntil = explicitGraceUntil || derivedGraceUntil;
+  const expiringSoonAt = expireAt ? expireAt - (expiringSoonDays * DAY_MS) : null;
 
   let lifecycle = "inactive";
   if (HARD_BLOCK_STATUSES.has(memberStatus) || HARD_BLOCK_STATUSES.has(accessStatus)) {
@@ -115,11 +141,15 @@ export function normalizeEntitlement(record, index = 0, now = Date.now()) {
     lifecycle = "revoked";
   } else if (startAt && startAt > now) {
     lifecycle = "pending";
-  } else if (expireAt && expireAt < now) {
-    if (!isGuestPass && graceUntil && graceUntil >= now) lifecycle = "grace";
+  } else if (expireAt && now > expireAt) {
+    if (!isGuestPass && graceUntil && now <= graceUntil) lifecycle = "grace";
     else lifecycle = "expired";
   } else if (!isGuestPass && (GRACE_STATUSES.has(accessStatus) || GRACE_STATUSES.has(memberStatus))) {
-    lifecycle = graceUntil && graceUntil < now ? "expired" : "grace";
+    lifecycle = graceUntil && now <= graceUntil ? "grace" : "expired";
+  } else if (EXPIRING_SOON_STATUSES.has(memberStatus) || EXPIRING_SOON_STATUSES.has(accessStatus)) {
+    lifecycle = expireAt && now <= expireAt ? "expiring_soon" : "expired";
+  } else if (expireAt && expiringSoonAt && now >= expiringSoonAt && now <= expireAt) {
+    lifecycle = "expiring_soon";
   } else if (ACTIVE_STATUSES.has(accessStatus) || ACTIVE_STATUSES.has(memberStatus)) {
     lifecycle = "active";
   } else if (!accessStatus && !memberStatus && expireAt && expireAt >= now) {
@@ -134,6 +164,7 @@ export function normalizeEntitlement(record, index = 0, now = Date.now()) {
     member_status: memberStatus,
     start_at: isoOrBlank(startAt),
     expire_at: isoOrBlank(expireAt),
+    expiring_soon_at: isoOrBlank(expiringSoonAt),
     grace_until: isGuestPass ? "" : isoOrBlank(graceUntil),
     source: text(fields.source),
     source_ref: text(fields.source_ref || fields.entitlement_id),
@@ -213,6 +244,12 @@ function parseNow(value) {
   const parsed = Date.parse(String(value));
   if (!Number.isFinite(parsed)) throw new TypeError("options.now must be a valid timestamp");
   return parsed;
+}
+
+function positiveDays(value, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return fallback;
+  return number;
 }
 
 function unique(values) {
