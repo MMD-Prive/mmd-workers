@@ -122,7 +122,7 @@ test("canary adapter reads same-customer history and persists only redacted asse
     now: new Date("2026-09-02T12:00:00.000Z"),
   });
 
-  assert.equal(result.persisted, true);
+  assert.equal(result.persisted, true, JSON.stringify(result));
   assert.equal(result.folder_status, "matched");
   assert.equal(result.model_key, "kenji-01");
   assert.equal(result.decision, "backend_check_required");
