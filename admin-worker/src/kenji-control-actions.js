@@ -194,7 +194,8 @@ async function airtableGet(env, table, recordId) {
 
 async function airtableList(env, table, field, value, limit, fields = [], sortField = "") {
   const query = new URLSearchParams({ pageSize: String(limit), maxRecords: String(limit), filterByFormula: "{" + field + "}=\"" + escapeFormula(value) + "\"" });
-  if (sortField) { query.set("sort[0][field]", sortField); query.set("sort[0][direction]", "desc"); }\n  for (const name of fields) query.append("fields[]", name);
+  if (sortField) { query.set("sort[0][field]", sortField); query.set("sort[0][direction]", "desc"); }
+  for (const name of fields) query.append("fields[]", name);
   const config = airtableConfig(env);
   const response = await fetch("https://api.airtable.com/v0/" + config.base + "/" + table + "?" + query.toString(), { headers: { Authorization: "Bearer " + config.token } });
   if (!response.ok) throw new Error("airtable_" + response.status);
