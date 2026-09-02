@@ -33,7 +33,6 @@ test("Models tab migrates legacy keyword editing through the dedicated Worker ad
     "model_tier",
     "proposed_visibility",
     "allowed_customer_scope",
-    "restricted_scope",
     "photo_visibility_policy",
     "deposit_preview_gate",
     "include_in_public_kenji",
@@ -50,10 +49,20 @@ test("Models tab migrates legacy keyword editing through the dedicated Worker ad
   assert.doesNotMatch(js, /api\.airtable\.com|AIRTABLE_API_KEY|MMD_MODEL_ASSETS\.put/);
 });
 
+test("Models tab uses the real Keyword Profile choice contract", () => {
+  for (const value of ["Public", "GWs", "EMs", "Private"]) assert.match(js, new RegExp(`option\\(\\"${value}`));
+  for (const value of ["All Active Members", "VIP", "SVIP", "Black Card", "#Potential", "Per Review"]) assert.match(js, new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  for (const value of ["Active eligible only", "VIP/SVIP/Black Card only", "No photo", "Per review"]) assert.match(js, new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  for (const value of ["None", "Verified deposit + Per approval", "Per approval"]) assert.match(js, new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(js, /identity_tier/);
+  assert.match(js, /Keyword Profile Tier/);
+  assert.match(js, /Proposed Access Visibility/);
+});
+
 test("Models tab keeps operational truth and private media outside the editor", () => {
   assert.match(js, /ไม่รับราคา, availability\/คิว/);
   assert.match(js, /Model Console media review/);
-  assert.match(js, /Production Profile ยังไม่ถูกแก้ไข|Production ยังไม่ถูกแก้ไข/);
+  assert.match(js, /Production ยังไม่ถูกแก้ไข/);
   assert.doesNotMatch(js, /minimum_rate_90m|standard_rate_thb|private_original_key|signed_url|private_admin_note/);
 });
 
