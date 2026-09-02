@@ -262,7 +262,7 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/kenji/models/draft"
 zone_name = "mmdbkk.com"
 
-# Kenji CEO Control read APIs. Exact routes only; no broad /v1/admin/kenji/control/* ownership.
+# Kenji CEO Control read APIs. Keep exact routes plus narrow query-safe companions; no broad /v1/admin/kenji/control/* ownership.
 [[routes]]
 pattern = "mmdbkk.com/v1/admin/kenji/control/memory"
 zone_name = "mmdbkk.com"
@@ -285,6 +285,32 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/kenji/control/approvals"
+zone_name = "mmdbkk.com"
+
+# Query-safe companions are required because Cloudflare route matching includes the query string.
+# Runtime pathname matching remains exact inside admin-worker.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/control/memory*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/control/memory*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/control/conversations*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/control/conversations*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/control/approvals*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/control/approvals*"
 zone_name = "mmdbkk.com"
 
 # Create Job Link Issuer API. Exact route only so Webflow-owned admin pages stay
