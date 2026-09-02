@@ -1,5 +1,5 @@
 name = "telegram-worker"
-main = "src/index.js"
+main = "src/runtime-index.js"
 compatibility_date = "2026-01-20"
 
 [vars]
@@ -26,6 +26,7 @@ AIRTABLE_TABLE_POINTS_LEDGER = "points_ledger"
 # AUTH_SERVICE_BOOKING_TO_TELEGRAM
 # AUTH_SERVICE_EVENTS_TO_TELEGRAM
 # AUTH_SERVICE_STUDIO_TO_TELEGRAM
+# AUTH_SERVICE_AUTH_TO_TELEGRAM
 #
 # Optional persistent promo-code ledger:
 # [[kv_namespaces]]
