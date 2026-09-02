@@ -1,0 +1,32 @@
+name: Full Entitlement E2E Smoke
+
+on:
+  pull_request:
+    paths:
+      - "test/full-entitlement-e2e-smoke.test.mjs"
+      - "auth-worker/src/member-entitlement-resolver.js"
+      - "auth-worker/src/member-downstream-access-reconciler.js"
+      - "auth-worker/src/member-lifecycle-reconciliation.js"
+      - "auth-worker/src/my-mmd-runtime-index.js"
+      - "payments-worker/points-phase1.js"
+      - "sigil-booking-worker/src/runtime-index.js"
+      - "sigil-booking-worker/src/entitlement-runtime-worker.js"
+      - "telegram-worker/src/access-runtime.js"
+      - "member-pages-worker/src/drive-access-reconcile.js"
+      - "docs/architecture/MY_MMD_ENTITLEMENT_CONSUMER_CONTRACT_V1.md"
+      - ".github/workflows/full-entitlement-e2e-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Full entitlement E2E smoke
+        run: node --test test/full-entitlement-e2e-smoke.test.mjs
