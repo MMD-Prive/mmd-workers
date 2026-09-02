@@ -6,6 +6,7 @@ export async function writeReconciliationAudit(env = {}, input = {}) {
   const createdAt = iso(input.created_at || Date.now());
   const eventId = safeEventId(input.event_id) || makeEventId(createdAt);
   const memberEmail = normalizeEmail(input.member_email);
+  const identityRef = canonicalIdentityRef(input);
   const plan = input.plan && typeof input.plan === "object" ? input.plan : {};
   const observations = input.observations && typeof input.observations === "object" ? input.observations : {};
   const applied = input.applied && typeof input.applied === "object" ? input.applied : {};
@@ -16,6 +17,7 @@ export async function writeReconciliationAudit(env = {}, input = {}) {
 
   const fields = compact({
     "Member Email": memberEmail,
+    "Identity Ref": identityRef,
     Action: "member_access_reconcile",
     Target: target,
     Result: result,
@@ -51,6 +53,7 @@ export function buildReconciliationAuditPreview(input = {}) {
   const observations = input.observations && typeof input.observations === "object" ? input.observations : {};
   const applied = input.applied && typeof input.applied === "object" ? input.applied : {};
   return {
+    identity_ref: canonicalIdentityRef(input),
     before: observedState(observations),
     after: afterState(plan, applied),
     snapshot: snapshotSubset(input.snapshot),
@@ -129,6 +132,16 @@ function targetSummary(plan = {}, applied = {}, observations = {}) {
   return [...targets].sort().join(",") || "none";
 }
 
+function canonicalIdentityRef(input = {}) {
+  const email = normalizeEmail(input.member_email);
+  if (email) return `email:${email}`;
+  const line = canonicalLineId(input.line_user_id);
+  if (line) return `line:${line}`;
+  const telegram = canonicalTelegramUserId(input.telegram_user_id);
+  if (telegram) return `telegram:${telegram}`;
+  return "unknown";
+}
+
 function firstAppliedError(applied = {}) {
   for (const value of Object.values(applied)) {
     if (value?.ok !== true) return value?.error || value?.payload?.error || "downstream_apply_failed";
@@ -153,6 +166,8 @@ function requireAirtable(env) {
 function iso(value) { const parsed = typeof value === "number" ? value : Date.parse(String(value)); return new Date(Number.isFinite(parsed) ? parsed : Date.now()).toISOString(); }
 function finiteStatus(value) { const number = Number(value); return Number.isInteger(number) && number >= 100 && number <= 599 ? number : undefined; }
 function unique(values) { return [...new Set((Array.isArray(values) ? values : []).map((value) => String(value || "").trim().toLowerCase()).filter(Boolean))]; }
+function canonicalLineId(value) { const id = String(value || "").trim(); return /^U[0-9a-f]{32}$/i.test(id) ? id : ""; }
+function canonicalTelegramUserId(value) { const id = String(value || "").trim(); return /^\d{5,20}$/.test(id) ? id : ""; }
 function normalizeEmail(value) { const email = String(value || "").trim().toLowerCase(); return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : ""; }
 function safeEventId(value) { return String(value || "").trim().replace(/[^a-zA-Z0-9_:\-.]/g, "_").slice(0, 180); }
 function safeActor(value) { return safeCode(value || "trusted_internal_request") || "trusted_internal_request"; }
