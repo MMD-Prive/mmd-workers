@@ -75,12 +75,12 @@ var current=document.getElementById('mmsMbCurrent');
 var refreshButton=document.getElementById('mmsMbRefresh');
 var healthButton=document.getElementById('mmsMbHealth');
 function activeTab(){var active=document.querySelector('[data-branch-tab][aria-current="true"]');return active&&active.dataset?active.dataset.branchTab:'overview'}
-function updateCurrent(){var id=activeTab();if(current)current.textContent=labels[id]||id;var rail=document.getElementById('mmsMbRail');if(rail){rail.querySelectorAll('[data-mb-jump]').forEach(function(b){b.setAttribute('aria-current',b.dataset.mbJump===id?'true':'false')})}}
+function updateCurrent(){var id=activeTab();if(current&&current.textContent!==(labels[id]||id))current.textContent=labels[id]||id;var rail=document.getElementById('mmsMbRail');if(rail){rail.querySelectorAll('[data-mb-jump]').forEach(function(b){var next=b.dataset.mbJump===id?'true':'false';if(b.getAttribute('aria-current')!==next)b.setAttribute('aria-current',next)})}}
 function jump(id){var target=document.querySelector('[data-branch-tab="'+id+'"]');if(target)target.click()}
 function count(id){var el=document.getElementById(id),n=parseInt(el&&el.textContent||'0',10);return Number.isFinite(n)?n:0}
 function lane(id,kicker,title,countId,alert){return '<button class="mms-mb-lane'+(alert?' is-alert':'')+'" type="button" data-mb-jump="'+id+'"><span><small>'+kicker+'</small><strong>'+title+'</strong></span><b data-mb-count="'+countId+'">'+count(countId)+'</b></button>'}
 function installRail(){if(document.getElementById('mmsMbRail'))return;var anchor=document.querySelector('.stats');if(!anchor)return;var wrap=document.createElement('div');wrap.innerHTML='<div class="mms-mb-rail" id="mmsMbRail" aria-label="ทางลัดงาน MMS">'+lane('applications','REVIEW QUEUE','ใบสมัครที่ต้องตรวจ','pendingApps',count('pendingApps')>0)+lane('therapists','THERAPISTS','Therapist ทั้งหมด','therCount',false)+lane('prebookings','COORDINATION','Pre-booking ที่ยังเปิด','openPrebookings',count('openPrebookings')>0)+'</div><div class="mms-mb-swipe-hint">ปัดซ้าย–ขวาเพื่อดูงานแต่ละชั้น · แตะการ์ดเพื่อเปิดส่วนนั้น</div>';var rail=wrap.firstElementChild,hint=wrap.lastElementChild;anchor.insertAdjacentElement('afterend',hint);anchor.insertAdjacentElement('afterend',rail);rail.querySelectorAll('[data-mb-jump]').forEach(function(b){b.addEventListener('click',function(){jump(b.dataset.mbJump)})});updateCurrent()}
-function updateCounts(){document.querySelectorAll('[data-mb-count]').forEach(function(el){el.textContent=String(count(el.dataset.mbCount));var laneEl=el.closest('.mms-mb-lane');if(laneEl&&(el.dataset.mbCount==='pendingApps'||el.dataset.mbCount==='openPrebookings'))laneEl.classList.toggle('is-alert',count(el.dataset.mbCount)>0)})}
+function updateCounts(){document.querySelectorAll('[data-mb-count]').forEach(function(el){var next=String(count(el.dataset.mbCount));if(el.textContent!==next)el.textContent=next;var laneEl=el.closest('.mms-mb-lane');if(laneEl&&(el.dataset.mbCount==='pendingApps'||el.dataset.mbCount==='openPrebookings'))laneEl.classList.toggle('is-alert',Number(next)>0)})}
 function move(delta){var id=activeTab(),i=order.indexOf(id);if(i<0)i=0;var next=order[(i+delta+order.length)%order.length];jump(next)}
 function interactive(target){return !!(target&&target.closest&&target.closest('button,a,input,select,textarea,summary,details,.stats,.mms-mb-rail,.filter-bar,.branch-sheet,.mms-diag-sheet'))}
 var touch=null;
@@ -89,8 +89,10 @@ document.addEventListener('touchend',function(e){if(!touch||window.innerWidth>=7
 if(refreshButton)refreshButton.addEventListener('click',function(){refreshButton.disabled=true;refreshButton.textContent='…';window.location.reload()});
 if(healthButton)healthButton.addEventListener('click',function(){var dock=document.getElementById('mmsDiagDock');if(dock)dock.click()});
 document.addEventListener('click',function(e){if(e.target&&e.target.closest&&e.target.closest('[data-branch-tab],.desktop-tab,[data-go],#branchNext,#branchPrev,#branchSheetNext'))setTimeout(updateCurrent,0)});
-var observer=new MutationObserver(function(){updateCounts();updateCurrent()});
-observer.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['aria-current','class']});
+var countObserver=new MutationObserver(function(){updateCounts()});
+['pendingApps','therCount','openPrebookings'].forEach(function(id){var source=document.getElementById(id);if(source)countObserver.observe(source,{subtree:true,childList:true,characterData:true})});
+var tabObserver=new MutationObserver(function(){updateCurrent()});
+document.querySelectorAll('[data-branch-tab]').forEach(function(source){tabObserver.observe(source,{attributes:true,attributeFilter:['aria-current']})});
 installRail();updateCounts();updateCurrent();
 })();</script>`;
 
