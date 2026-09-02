@@ -6,6 +6,18 @@ import lineWorker, { createLineSignature, KenjiModelIdempotency } from "../src/i
 
 const LINE_USER_ID = "U1234567890abcdef1234567890abcdef";
 const INTERNAL_TOKEN = "synthetic-internal-token";
+const RUNTIME_STATUS_PATH = "/v1/internal/kenji/control/runtime/status";
+
+function healthyRuntimeResponse() {
+  return new Response(JSON.stringify({
+    ok: true,
+    controls: {
+      line_oa_auto_reply: false,
+      model_keyword_auto_reply: false,
+      all_kenji_mutations: false,
+    },
+  }), { status: 200, headers: { "content-type": "application/json" } });
+}
 
 function syntheticData({ packageCode = "Black Card", expiresAt = "2099-12-31T23:59:59.000Z", model = true, linked = true } = {}) {
   return {
@@ -95,6 +107,7 @@ function environments(data, rpcCalls) {
     KENJI_MODEL_DEDUPE: durableBinding(),
     ADMIN_WORKER: {
       async fetch(request) {
+        if (new URL(request.url).pathname === RUNTIME_STATUS_PATH) return healthyRuntimeResponse();
         rpcCalls.push(request);
         return adminWorker.fetch(request, adminEnv);
       },

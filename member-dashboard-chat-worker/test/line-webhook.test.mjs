@@ -17,6 +17,13 @@ const BASE_ENV = {
   LINE_CHANNEL_ACCESS_TOKEN: "line-token",
   LINE_AUTO_REPLY_ENABLED: "true",
   LINE_KENJI_AI_ENABLED: "true",
+  INTERNAL_TOKEN: "runtime-token",
+  ADMIN_WORKER: {
+    fetch: async () => new Response(JSON.stringify({
+      ok: true,
+      controls: { line_oa_auto_reply: false, model_keyword_auto_reply: false, all_kenji_mutations: false },
+    }), { status: 200, headers: { "content-type": "application/json" } }),
+  },
 };
 
 async function signedLineRequest(body, env = BASE_ENV) {
@@ -725,6 +732,65 @@ test("manual-review and human-handoff intents stay silent for Per or MMD", async
       assert.equal((await response.json()).saved[0].replied, false);
     }
     assert.equal(calls.filter((url) => url.includes("/message/reply")).length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("runtime kill switch suppresses LINE replies", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), init });
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    const event = lineTextEvent("สวัสดี", { mode: "active" });
+    const response = await worker.fetch(await signedLineRequest({ events: [event] }), {
+      ...BASE_ENV,
+      LINE_KENJI_MODEL_ENABLED: "false",
+      LINE_KENJI_KNOWLEDGE_ENABLED: "false",
+      ADMIN_WORKER: {
+        fetch: async () => new Response(JSON.stringify({
+          ok: true,
+          controls: { line_oa_auto_reply: true, model_keyword_auto_reply: false, all_kenji_mutations: false },
+        }), { status: 200, headers: { "content-type": "application/json" } }),
+      },
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.saved[0].runtime_control_ok, true);
+    assert.equal(payload.saved[0].runtime_line_kill, true);
+    assert.equal(payload.saved[0].replied, false);
+    assert.equal(calls.filter((call) => call.url.includes("/message/reply")).length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("runtime control RPC failure fails LINE auto reply closed", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), init });
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    const event = lineTextEvent("สวัสดี", { mode: "active" });
+    const response = await worker.fetch(await signedLineRequest({ events: [event] }), {
+      ...BASE_ENV,
+      LINE_KENJI_MODEL_ENABLED: "false",
+      LINE_KENJI_KNOWLEDGE_ENABLED: "false",
+      ADMIN_WORKER: { fetch: async () => { throw new Error("admin unavailable"); } },
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.saved[0].runtime_control_ok, false);
+    assert.equal(payload.saved[0].runtime_line_kill, true);
+    assert.equal(payload.saved[0].runtime_all_kill, true);
+    assert.equal(payload.saved[0].replied, false);
+    assert.equal(calls.filter((call) => call.url.includes("/message/reply")).length, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }

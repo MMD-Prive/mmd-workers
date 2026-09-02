@@ -1,0 +1,107 @@
+name: Kenji CEO actions production smoke
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Deploy admin-worker
+    types:
+      - completed
+    branches:
+      - main
+
+concurrency:
+  group: kenji-ceo-actions-production-smoke
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync-and-smoke:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
+      CLOUDFLARE_ZONE_ID: 2d62396174fa2ddadbbcd0e8cf0f3367
+    steps:
+      - name: Verify route token
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_ROUTES_API_TOKEN:-}"
+          response_file="$(mktemp)"
+          http_code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS \
+            -o "$response_file" -w "%{http_code}" \
+            -H "Authorization: Bearer $CLOUDFLARE_ROUTES_API_TOKEN" \
+            https://api.cloudflare.com/client/v4/user/tokens/verify)"
+          test "$http_code" = "200"
+          node - "$response_file" <<'NODE'
+          const fs = require("node:fs");
+          const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          if (payload.success !== true || payload.result?.status !== "active") throw new Error("Cloudflare routes token is not active");
+          NODE
+
+      - name: Sync narrow CEO action routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const zoneId = process.env.CLOUDFLARE_ZONE_ID;
+          const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
+          const worker = "admin-worker";
+          const paths = [
+            "/v1/admin/kenji/control/approvals*",
+            "/v1/admin/kenji/control/conversations*",
+            "/v1/admin/kenji/control/messages*",
+            "/v1/admin/kenji/control/runtime/kill-switch*",
+          ];
+          const desired = paths.flatMap((path) => [`mmdbkk.com${path}`, `www.mmdbkk.com${path}`]);
+          async function cloudflare(path, options = {}) {
+            const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+              ...options,
+              headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(options.headers || {}) },
+            });
+            const payload = await response.json();
+            if (!response.ok || payload.success !== true) throw new Error(`Cloudflare ${options.method || "GET"} ${path} failed (${response.status})`);
+            return payload.result;
+          }
+          const routePath = `/zones/${zoneId}/workers/routes`;
+          const existing = await cloudflare(routePath);
+          const conflicts = desired.flatMap((pattern) => existing.filter((route) => route.pattern === pattern && route.script !== worker));
+          if (conflicts.length) throw new Error(`Refusing conflicting route owners: ${conflicts.map((r) => `${r.pattern}->${r.script || "none"}`).join(",")}`);
+          const missing = desired.filter((pattern) => !existing.some((route) => route.pattern === pattern && route.script === worker));
+          for (const pattern of missing) {
+            await cloudflare(routePath, { method: "POST", body: JSON.stringify({ pattern, script: worker }) });
+            console.log(`Created ${pattern} -> ${worker}`);
+          }
+          const verified = await cloudflare(routePath);
+          const unresolved = desired.filter((pattern) => !verified.some((route) => route.pattern === pattern && route.script === worker));
+          if (unresolved.length) throw new Error(`Route verification failed: ${unresolved.join(",")}`);
+          console.log(`Verified ${desired.length}/${desired.length} Kenji CEO action routes; created ${missing.length}`);
+          NODE
+
+      - name: Smoke unauthenticated CEO action endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            for endpoint in \
+              "/v1/admin/kenji/control/approvals/recSmoke/decision" \
+              "/v1/admin/kenji/control/conversations/smoke/takeover" \
+              "/v1/admin/kenji/control/messages/draft" \
+              "/v1/admin/kenji/control/messages/draftSmoke/send" \
+              "/v1/admin/kenji/control/runtime/kill-switch"
+            do
+              body_file="$(mktemp)"
+              http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+                -o "$body_file" -w "%{http_code}" \
+                -H 'Content-Type: application/json' \
+                --data '{}' "$origin$endpoint")"
+              cat "$body_file"
+              test "$http_code" = "401"
+              grep -q '"error":"unauthorized"' "$body_file"
+            done
+          done
+          echo "Kenji CEO action production smoke passed on apex and www without mutations"

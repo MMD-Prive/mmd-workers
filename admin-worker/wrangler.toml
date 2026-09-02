@@ -313,6 +313,24 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/kenji/control/approvals*"
 zone_name = "mmdbkk.com"
 
+# Kenji CEO Control mutation routes not covered by the approval/conversation read companions.
+# Worker handlers remain method/path exact and all browser mutations stay behind admin auth.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/control/messages*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/control/messages*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/control/runtime/kill-switch*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/control/runtime/kill-switch*"
+zone_name = "mmdbkk.com"
+
 # Create Job Link Issuer API. Exact route only so Webflow-owned admin pages stay
 # untouched while Create Actual Job POST reaches admin-worker JSON handlers.
 [[routes]]
