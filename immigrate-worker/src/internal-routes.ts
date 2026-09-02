@@ -1,9 +1,9 @@
 import {
-  renderControlRoomPage,
   renderCreateJobPage,
   renderCreateSessionPage,
   type InternalPageEnv,
 } from "./internal-pages";
+import { renderOwnerControlRoomPage } from "./control-room-owner-ui";
 
 export interface InternalRoutesEnv extends InternalPageEnv {
   ADMIN_WORKER?: Fetcher;
@@ -249,7 +249,7 @@ export async function handleInternalRoutes(request: Request, env: InternalRoutes
   if (pathname === "/internal/admin/control-room") {
     const gate = await requireAdminGate(request, env);
     if (gate) return gate;
-    return renderControlRoomPage();
+    return renderOwnerControlRoomPage();
   }
 
   if (pathname === "/internal/admin/jobs/create-session") {
