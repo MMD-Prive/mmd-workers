@@ -148,7 +148,7 @@ async function airtableList(env, table, params = {}, fetchImpl = fetch) {
   const baseId = asString(env.AIRTABLE_BASE_ID);
   const apiKey = asString(env.AIRTABLE_API_KEY);
   if (!baseId || !apiKey || !table) return [];
-  const url = new URL(\`https://api.airtable.com/v0/\${encodeURIComponent(baseId)}/\${encodeURIComponent(table)}\`);
+  const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
   for (const [key, value] of Object.entries(params)) {
     if (Array.isArray(value)) {
       for (const item of value) url.searchParams.append(key, String(item));
@@ -161,7 +161,7 @@ async function airtableList(env, table, params = {}, fetchImpl = fetch) {
   try {
     response = await fetchImpl(url.toString(), {
       method: "GET",
-      headers: { authorization: \`Bearer \${apiKey}\` },
+      headers: { authorization: `Bearer ${apiKey}` },
     });
   } catch (_) {
     return [];
@@ -201,7 +201,7 @@ export async function fetchSameCustomerLineHistory({
   const userId = asString(customerLineUserId);
   if (!/^U[a-f0-9]{32}$/i.test(userId)) return [];
   const table = asString(env.AIRTABLE_CONSOLE_INBOX_TABLE || KENJI_CONSOLE_INBOX_TABLE);
-  const formula = \`AND({line_user_id}="\${escapeFormula(userId)}",{source}="line")\`;
+  const formula = `AND({line_user_id}="${escapeFormula(userId)}",{source}="line")`;
   const records = await airtableList(env, table, {
     pageSize: 50,
     filterByFormula: formula,
@@ -222,10 +222,10 @@ async function persistAssessment({ env = {}, record = {}, fetchImpl = fetch } = 
 
   let response;
   try {
-    response = await fetchImpl(\`https://api.airtable.com/v0/\${encodeURIComponent(baseId)}/\${encodeURIComponent(table)}\`, {
+    response = await fetchImpl(`https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`, {
       method: "POST",
       headers: {
-        authorization: \`Bearer \${apiKey}\`,
+        authorization: `Bearer ${apiKey}`,
         "content-type": "application/json",
       },
       body: JSON.stringify({ records: [{ fields: record }] }),
@@ -288,9 +288,9 @@ export async function runKenjiFolderHistoryAssessment({
     customerContext: { history_window: "same_customer_same_channel_50" },
   });
   const assessment = evaluateCustomerHistory(input);
-  const conversationHash = await sha256Hex(\`\${customerLineId}:line\`);
-  const sourceHash = await sha256Hex(eventId(event) || \`\${customerLineId}:\${now.toISOString()}\`);
-  const assessmentId = \`kha_\${await sha256Hex(\`\${customerLineId}:\${eventId(event)}:\${now.toISOString()}\`).then((value) => value.slice(0, 48))}\`;
+  const conversationHash = await sha256Hex(`${customerLineId}:line`);
+  const sourceHash = await sha256Hex(eventId(event) || `${customerLineId}:${now.toISOString()}`);
+  const assessmentId = `kha_${await sha256Hex(`${customerLineId}:${eventId(event)}:${now.toISOString()}`).then((value) => value.slice(0, 48))}`;
   const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
   const record = {
