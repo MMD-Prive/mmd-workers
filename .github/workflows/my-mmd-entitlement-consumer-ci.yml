@@ -7,6 +7,9 @@ on:
       - "auth-worker/src/member-entitlement-resolver.js"
       - "auth-worker/wrangler.toml"
       - "auth-worker/test/member-entitlement-resolver.test.mjs"
+      - "sigil-booking-worker/src/runtime-index.js"
+      - "sigil-booking-worker/src/entitlement-runtime-worker.js"
+      - "sigil-booking-worker/wrangler.toml"
       - "docs/architecture/MY_MMD_ENTITLEMENT_CONSUMER_CONTRACT_V1.md"
       - ".github/workflows/my-mmd-entitlement-consumer-ci.yml"
   workflow_dispatch:
@@ -26,7 +29,16 @@ jobs:
         run: |
           node --check auth-worker/src/my-mmd-runtime-index.js
           node --check auth-worker/src/member-entitlement-resolver.js
+          node --check sigil-booking-worker/src/runtime-index.js
+          node --check sigil-booking-worker/src/entitlement-runtime-worker.js
       - name: Resolver tests
         run: node --test auth-worker/test/member-entitlement-resolver.test.mjs
       - name: Wrangler entrypoint contract
-        run: grep -F 'main = "src/my-mmd-runtime-index.js"' auth-worker/wrangler.toml
+        run: |
+          grep -F 'main = "src/my-mmd-runtime-index.js"' auth-worker/wrangler.toml
+          grep -F 'main = "src/runtime-index.js"' sigil-booking-worker/wrangler.toml
+      - name: Booking snapshot contract
+        run: |
+          grep -F 'entitlement_snapshot_at_confirm' sigil-booking-worker/src/entitlement-runtime-worker.js
+          grep -F 'honor_after_expiry' sigil-booking-worker/src/runtime-index.js
+          grep -F 'payment_verified_at_confirm' sigil-booking-worker/src/entitlement-runtime-worker.js

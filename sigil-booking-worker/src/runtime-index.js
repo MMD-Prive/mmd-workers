@@ -3,6 +3,8 @@ import modelImagePolicyWorker from "./model-image-policy-worker.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const CLIENT_RESOLVE_PATH = "/sigil/api/client/resolve";
+const BOOKING_INTAKE_PATH = "/sigil/api/booking/intake";
+const BOOKING_CONFIRM_PATH = "/__internal/booking/confirm";
 const MODEL_SEARCH_PATH = "/sigil/api/models/search";
 
 export default {
@@ -11,7 +13,7 @@ export default {
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
 
-    if (method === "POST" && path === CLIENT_RESOLVE_PATH) {
+    if (method === "POST" && [CLIENT_RESOLVE_PATH, BOOKING_INTAKE_PATH, BOOKING_CONFIRM_PATH].includes(path)) {
       return entitlementRuntime.fetch(request, env, ctx);
     }
 
@@ -57,8 +59,16 @@ async function canonicalStoredPrivateAccess(env, request, url) {
   if (!response.ok) return false;
   const data = await response.json().catch(() => ({}));
   const fields = data.records?.[0]?.fields || {};
-  const raw = fields.resolver_payload_json;
-  const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+
+  // Confirmed bookings lock the entitlement decision that was valid when the
+  // booking and payment/deposit were verified. Later membership expiry must not
+  // invalidate that already-confirmed booking.
+  if (fields.honor_after_expiry === true && fields.entitlement_valid_at_confirm === true && fields.payment_verified_at_confirm === true) {
+    const locked = parseJson(fields.entitlement_snapshot_at_confirm);
+    if (locked?.booking_access?.private_booking === true && locked?.entitlement_snapshot?.member_blocked !== true) return true;
+  }
+
+  const parsed = parseJson(fields.resolver_payload_json);
   const snapshot = parsed?.entitlement_snapshot;
   if (!snapshot || snapshot.schema_version !== "my_mmd_entitlement_resolver_v1") return false;
   return !snapshot.member_blocked && String(snapshot.access?.private_visibility_envelope || "none") !== "none";
@@ -71,6 +81,11 @@ async function requestedScope(request, url) {
   return clean(body.scope || body.model_scope).toLowerCase() === "private" ? "private" : "public";
 }
 
+function parseJson(value) {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  try { return JSON.parse(String(value)); } catch { return null; }
+}
 function formulaText(value) {
   return `"${clean(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
