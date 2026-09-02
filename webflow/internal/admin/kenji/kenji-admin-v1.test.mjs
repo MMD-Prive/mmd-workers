@@ -81,3 +81,20 @@ test("mobile admin layout stays compact with horizontal layers", () => {
   assert.match(css, /min-width:92vw/);
   assert.match(css, /\.ka__modelGrid\{grid-template-columns:1fr\}/);
 });
+
+
+test("Models search delegates query to the Worker and ignores stale responses", () => {
+  assert.match(js, /modelSearchTimer/);
+  assert.match(js, /modelSearchSeq/);
+  assert.match(js, /encodeURIComponent\(q\)/);
+  assert.match(js, /MODEL_API\+"\?limit=120"/);
+  assert.doesNotMatch(js, /addEventListener\("input", renderModelList\)/);
+});
+
+test("Model draft retries reuse one idempotency key until edit or success", () => {
+  assert.match(js, /modelDraftFingerprint/);
+  assert.match(js, /modelDraftKey/);
+  assert.match(js, /"Idempotency-Key":idempotencyKey/);
+  assert.match(js, /state\.modelDraftKey=""/);
+  assert.match(js, /state\.modelDraftFingerprint=""/);
+});

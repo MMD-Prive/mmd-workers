@@ -17,6 +17,10 @@
     tab: "overview",
     busy: false,
     modelBusy: false,
+    modelSearchTimer: null,
+    modelSearchSeq: 0,
+    modelDraftKey: "",
+    modelDraftFingerprint: "",
   };
   root.innerHTML = shell();
   bind();
@@ -80,7 +84,10 @@
     var search = root.querySelector("#kaSearch");
     if (search) search.addEventListener("input", renderList);
     var modelSearch = root.querySelector("#kaModelSearch");
-    if (modelSearch) modelSearch.addEventListener("input", renderModelList);
+    if (modelSearch) modelSearch.addEventListener("input", function () {
+      clearTimeout(state.modelSearchTimer);
+      state.modelSearchTimer = setTimeout(function () { loadModels(modelSearch.value.trim(), true); }, 250);
+    });
   }
 
   function boot() {
@@ -138,20 +145,25 @@
   function loadAudit(){if(!state.selected)return;var id=state.selected.knowledge_id||state.selected.id;return request(API+"/"+encodeURIComponent(id)+"/audit").then(function(data){var n=document.getElementById("kaAudit");if(n)n.innerHTML=audit(data.events||[]);});}
   function audit(events){return events.length?events.slice().reverse().map(function(e){return '<article><b>'+esc(e.action||e.type||"event")+'</b><span>'+esc(e.actor_id||e.actor||"")+' · '+esc(e.at||e.timestamp||"")+'</span></article>';}).join(""):'<div class="ka__empty">ยังไม่มี Audit event</div>';}
 
-  function loadModels() {
-    if(state.modelsLoading)return;
+  function loadModels(query, fromSearch) {
+    var search=document.getElementById("kaModelSearch");
+    var q=String(query==null?((search&&search.value)||""):query).trim();
+    var seq=++state.modelSearchSeq;
     state.modelsLoading=true;
     var list=document.getElementById("kaModelList");
-    if(list)list.innerHTML='<p>กำลังโหลด Models + Keyword Profiles…</p>';
-    return request(MODEL_API+"?limit=120").then(function(data){
+    if(list&&!fromSearch)list.innerHTML='<p>กำลังโหลด Models + Keyword Profiles…</p>';
+    var url=MODEL_API+"?limit=120"+(q?"&q="+encodeURIComponent(q):"");
+    return request(url).then(function(data){
+      if(seq!==state.modelSearchSeq)return;
       state.models=data.items||[];
       state.modelsLoaded=true;
       renderModelList();
       var sync=document.getElementById("kaSync");
-      if(sync)sync.textContent="เชื่อม Worker แล้ว · Knowledge "+state.cards.length+" · Models "+state.models.length;
+      if(sync)sync.textContent="เชื่อม Worker แล้ว · Knowledge "+state.cards.length+" · Models "+state.models.length+(q?" matching":"");
     }).catch(function(error){
+      if(seq!==state.modelSearchSeq)return;
       if(list)list.innerHTML='<div class="ka__empty">Models ยังโหลดไม่ได้ · '+esc(error.message||"model_source_unavailable")+'<br><button data-model-action="reload">ลองใหม่</button></div>';
-    }).finally(function(){state.modelsLoading=false;});
+    }).finally(function(){if(seq===state.modelSearchSeq)state.modelsLoading=false;});
   }
 
   function setModelFilter(value, button) {
@@ -320,14 +332,22 @@
   function saveModelDraft() {
     if(state.modelBusy||!state.selectedModel)return;
     var payload=modelDraftPayload();
+    var fingerprint=JSON.stringify(payload);
+    if(!state.modelDraftKey||state.modelDraftFingerprint!==fingerprint){
+      state.modelDraftKey=crypto.randomUUID();
+      state.modelDraftFingerprint=fingerprint;
+    }
+    var idempotencyKey=state.modelDraftKey;
     state.modelBusy=true;
     setModelActionsDisabled(true);
     toast("กำลังส่ง Model Keyword Draft เข้า Review…");
     return request(MODEL_API+"/draft",{
       method:"POST",
-      headers:{"Content-Type":"application/json","Idempotency-Key":crypto.randomUUID()},
+      headers:{"Content-Type":"application/json","Idempotency-Key":idempotencyKey},
       body:JSON.stringify(payload),
     }).then(function(data){
+      state.modelDraftKey="";
+      state.modelDraftFingerprint="";
       toast("Model Keyword Draft เข้า Review แล้ว · "+(data.request_id||"pending_review"));
       var node=document.getElementById("kaModelPreview");
       if(node)node.innerHTML='<span>REVIEW QUEUE</span><h4>Pending Review</h4><p>'+esc(data.request_id||"")+'</p><small>Model และ Model Keyword Profile ใน Production ยังไม่ถูกแก้ไข</small>';

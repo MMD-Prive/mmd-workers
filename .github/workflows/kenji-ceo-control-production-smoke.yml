@@ -6,6 +6,8 @@ on:
     branches:
       - main
     paths:
+      - "admin-worker/**"
+      - ".github/workflows/deploy-admin-worker.yml"
       - ".github/workflows/kenji-ceo-control-production-smoke.yml"
 
 concurrency:
