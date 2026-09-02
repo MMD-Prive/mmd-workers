@@ -4,6 +4,7 @@ import {
 } from "./renderers/single-renewal-renderer.js";
 import { KenjiModelIdempotency } from "./kenji-model-idempotency.js";
 import { generateKenjiModelReply, KENJI_TOTAL_DEADLINE_MS } from "./kenji-model-policy.js";
+import { runKenjiFolderHistoryAssessment } from "./kenji-folder-history-adapter.mjs";
 import { buildProtectedCapabilityReply, decideKenjiCapability, KENJI_CAPABILITIES } from "./kenji-capability-policy.js";
 import { parseModelKnowledgeIdAllowlist, selectApprovedLineModelKnowledge } from "./kenji-knowledge-policy.js";
 
@@ -1793,8 +1794,20 @@ async function handleLineWebhook(request, env, ctx = null) {
     const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
 
     const afterReply = syncLineEventAfterReply(env, event, intent, autoReplyEnabled, kenjiEnabled);
+    const historyAssessmentPromise = runKenjiFolderHistoryAssessment({ env, event }).catch(() => ({
+      enabled: false,
+      eligible: false,
+      persisted: false,
+      reason: "assessment_runtime_error",
+    }));
     const canDefer = typeof ctx?.waitUntil === "function";
     let record = { pending: canDefer, deduped: false };
+    let historyAssessmentResult = {
+      enabled: false,
+      eligible: false,
+      persisted: false,
+      reason: canDefer ? "assessment_pending" : "assessment_not_run",
+    };
     if (canDefer) {
       ctx.waitUntil(afterReply.catch(() => {
         console.log(JSON.stringify({
@@ -1803,12 +1816,14 @@ async function handleLineWebhook(request, env, ctx = null) {
           intent,
         }));
       }));
+      ctx.waitUntil(historyAssessmentPromise);
     } else {
       try {
         record = await afterReply;
       } catch (_) {
         record = { skipped: true, reason: "airtable_sync_failed", deduped: false };
       }
+      historyAssessmentResult = await historyAssessmentPromise;
     }
 
     // Safe operational telemetry: never log message text, user IDs, reply tokens, or secrets.
@@ -1848,6 +1863,10 @@ async function handleLineWebhook(request, env, ctx = null) {
       model_canary_eligible: Boolean(modelPreflight.canary_eligible),
       model_rate_limited: Boolean(modelPreflight.rate_limited),
       model_quota_window: Number(modelPreflight.quota_window) || 0,
+      history_assessment_enabled: historyAssessmentResult.enabled === true,
+      history_assessment_eligible: historyAssessmentResult.eligible === true,
+      history_assessment_persisted: historyAssessmentResult.persisted === true,
+      history_assessment_reason: asString(historyAssessmentResult.reason).slice(0, 80) || null,
     }));
 
     saved.push({
@@ -1865,6 +1884,12 @@ async function handleLineWebhook(request, env, ctx = null) {
       runtime_all_kill: runtimeAllKill,
       line_user: Boolean(lineUserId),
       message_id: getLineEventId(event),
+      history_assessment: {
+        enabled: historyAssessmentResult.enabled === true,
+        eligible: historyAssessmentResult.eligible === true,
+        persisted: historyAssessmentResult.persisted === true,
+        reason: asString(historyAssessmentResult.reason).slice(0, 80),
+      },
     });
   }
 
