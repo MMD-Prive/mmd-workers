@@ -36,13 +36,17 @@ jobs:
           node --experimental-global-webcrypto --test admin-worker/admin-login-hero.test.mjs admin-worker/admin-login-session.test.mjs admin-worker/admin-login-regression-guard.test.mjs
           git diff --check
 
-      - name: Commit patch and remove temporary files
+      - name: Stage workflow outputs and commit non-workflow source
         shell: bash
         run: |
           set -euo pipefail
-          rm .github/workflows/kenji-finalize-source.yml scripts/kenji-finalize-patch.py
+          mkdir -p tmp/kenji-finalize
+          cp .github/workflows/deploy-admin-worker.yml tmp/kenji-finalize/deploy-admin-worker.yml
+          cp .github/workflows/kenji-ceo-control-production-smoke.yml tmp/kenji-finalize/kenji-ceo-control-production-smoke.yml
+          git checkout -- .github/workflows/deploy-admin-worker.yml .github/workflows/kenji-ceo-control-production-smoke.yml
+          rm scripts/kenji-finalize-patch.py
           git config user.name "MMD Privé"
           git config user.email "malemodel.bkk@gmail.com"
           git add -A
-          git commit -m "fix(kenji): finalize admin production gates"
+          git commit -m "fix(kenji): finalize admin source and route contract"
           git push origin HEAD:finalize/kenji-production
