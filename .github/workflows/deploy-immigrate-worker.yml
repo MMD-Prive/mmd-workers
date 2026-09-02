@@ -97,7 +97,7 @@ jobs:
           set -euo pipefail
           npx --yes wrangler@4.128.0 versions deploy "${IMMIGRATE_WORKER_VERSION_ID}@100%" -y
 
-      - name: Verify restored Control Room in production
+      - name: Verify latest Control Room in production
         shell: bash
         run: |
           set -euo pipefail
@@ -108,11 +108,14 @@ jobs:
             -D "$headers" \
             -o "$body" \
             "https://mmdbkk.com/internal/admin/control-room?mock=1&deploy=${GITHUB_SHA}"
-          grep -Eiq '^x-mmd-control-room-ui:[[:space:]]*owner-desktop-v2-restored' "$headers"
-          grep -q 'data-control-room' "$body"
-          grep -q 'MMD PRIVÉ · OPERATOR HOME' "$body"
+          grep -Eiq '^x-mmd-control-room-ui:[[:space:]]*owner-desktop-v3-latest' "$headers"
+          grep -Eiq '^x-mmd-control-room-authority:[[:space:]]*canonical-backend' "$headers"
+          grep -q 'data-control-room-v3' "$body"
+          grep -q 'MMD PRIVÉ · OWNER CONTROL ROOM V3' "$body"
+          grep -q 'My MMD Entitlement Resolver' "$body"
+          grep -q 'Telegram / Google Drive' "$body"
           if grep -q 'WORKER-RENDERED INTERNAL PAGES' "$body"; then
             echo "Legacy stripped Control Room shell is still live" >&2
             exit 1
           fi
-          echo "Production Control Room owner UI verified"
+          echo "Production Control Room owner v3 verified"
