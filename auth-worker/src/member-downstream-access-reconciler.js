@@ -30,18 +30,16 @@ export function planDownstreamAccess(snapshot, current = {}) {
   const grace = new Set(snapshot?.capability_state?.grace || []);
   const access = snapshot?.access || {};
 
-  if (blocked) {
-    return plan([], [], currentDrive, currentTelegram, "fail_closed");
-  }
+  if (blocked) return plan([], [], currentDrive, currentTelegram, "fail_closed");
 
-  const desiredDrive = [];
-  if ([...active].some((cap) => PRIVATE_DRIVE.has(cap))) desiredDrive.push("standard");
-  if ([...active].some((cap) => PREMIUM_DRIVE.has(cap))) desiredDrive.push("premium");
+  const activeDrive = [];
+  if ([...active].some((cap) => PRIVATE_DRIVE.has(cap))) activeDrive.push("standard");
+  if ([...active].some((cap) => PREMIUM_DRIVE.has(cap))) activeDrive.push("premium");
 
-  const desiredTelegram = [];
+  const activeTelegram = [];
   for (const cap of active) {
     const room = TELEGRAM_ROOM_BY_CAPABILITY[cap];
-    if (room) desiredTelegram.push(room);
+    if (room) activeTelegram.push(room);
   }
 
   const graceDrive = [];
@@ -55,10 +53,10 @@ export function planDownstreamAccess(snapshot, current = {}) {
   }
 
   const targetDrive = access.new_drive_grants_allowed === true
-    ? unique(desiredDrive)
+    ? unique(activeDrive)
     : currentDrive.filter((layer) => graceDrive.includes(layer));
   const targetTelegram = access.new_telegram_grants_allowed === true && access.new_protected_grants_allowed === true
-    ? unique(desiredTelegram)
+    ? unique(activeTelegram)
     : currentTelegram.filter((room) => graceTelegram.includes(room));
 
   return plan(targetDrive, targetTelegram, currentDrive, currentTelegram, grace.size ? "grace_no_new_grants" : "resolver_authoritative");
@@ -68,6 +66,10 @@ function plan(targetDrive, targetTelegram, currentDrive, currentTelegram, reason
   return {
     schema_version: "my_mmd_downstream_reconciliation_v1",
     authority: "my_mmd_entitlement_resolver_v1",
+    desired: {
+      drive_layers: [...targetDrive],
+      telegram_rooms: [...targetTelegram],
+    },
     drive: diff(targetDrive, currentDrive),
     telegram: diff(targetTelegram, currentTelegram),
     reason,
