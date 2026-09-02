@@ -34,6 +34,9 @@ export async function handleMmsAdminRequest(request, env = {}) {
     return json({ ok: false, error: "mms_service_unavailable" }, 503);
   }
 
+  if (path === `${API_PREFIX}/system-check` && method === "GET") {
+    return json(await runMmsSystemCheck(env));
+  }
   if (path === `${API_PREFIX}/catalog` && method === "GET") {
     return proxyJson(request, env, "/mms/api/catalog", { origin: true });
   }
@@ -73,6 +76,69 @@ export async function handleMmsAdminRequest(request, env = {}) {
   }
 
   return json({ ok: false, error: "not_found" }, 404);
+}
+
+async function runMmsSystemCheck(env) {
+  const checkedAt = new Date().toISOString();
+  let health = null;
+  let snapshot = null;
+  let matching = null;
+  const errors = [];
+
+  try {
+    const response = await env.MMS_WORKER.fetch(new Request(`${INTERNAL_BASE}/health`, { method: "GET" }));
+    health = await response.json().catch(() => null);
+    if (!response.ok || !health?.ok) errors.push("worker_health_failed");
+  } catch {
+    errors.push("worker_health_failed");
+  }
+
+  try {
+    const response = await env.MMS_WORKER.fetch(new Request(`${INTERNAL_BASE}/internal/mms/admin/snapshot`, { method: "GET" }));
+    snapshot = await response.json().catch(() => null);
+    if (!response.ok || !snapshot?.ok) errors.push("airtable_snapshot_failed");
+  } catch {
+    errors.push("airtable_snapshot_failed");
+  }
+
+  try {
+    const response = await env.MMS_WORKER.fetch(new Request(`${INTERNAL_BASE}/mms/api/therapists/match`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    }));
+    matching = await response.json().catch(() => null);
+    if (!response.ok || !matching?.ok) errors.push("matching_probe_failed");
+  } catch {
+    errors.push("matching_probe_failed");
+  }
+
+  const snapshotReady = Boolean(snapshot?.ok);
+  const checks = {
+    worker: Boolean(health?.ok && health?.worker === "mms-worker"),
+    applications: Boolean(snapshotReady && Array.isArray(snapshot?.applications)),
+    therapists: Boolean(snapshotReady && Array.isArray(snapshot?.therapists)),
+    airtable: Boolean(health?.bindings?.airtable && snapshotReady),
+    r2: Boolean(health?.bindings?.private_uploads),
+    matching: Boolean(matching?.ok && matching?.data),
+  };
+
+  return {
+    ok: Object.values(checks).every(Boolean),
+    checked_at: checkedAt,
+    checks,
+    counts: {
+      applications: Number(snapshot?.counts?.applications || 0),
+      therapists: Number(snapshot?.counts?.therapists || 0),
+      prebookings: Number(snapshot?.counts?.prebookings || 0),
+      matching_candidates: Array.isArray(matching?.data?.matches) ? matching.data.matches.length : 0,
+    },
+    notes: {
+      r2: checks.r2 ? "binding_ready" : "binding_missing",
+      matching: checks.matching ? "read_only_probe_passed" : "probe_failed",
+    },
+    errors: [...new Set(errors)],
+  };
 }
 
 async function proxyJson(request, env, targetPath, { origin = false } = {}) {
