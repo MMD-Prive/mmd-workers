@@ -1,0 +1,32 @@
+name: My MMD Entitlement Consumer CI
+
+on:
+  pull_request:
+    paths:
+      - "auth-worker/src/my-mmd-runtime-index.js"
+      - "auth-worker/src/member-entitlement-resolver.js"
+      - "auth-worker/wrangler.toml"
+      - "auth-worker/test/member-entitlement-resolver.test.mjs"
+      - "docs/architecture/MY_MMD_ENTITLEMENT_CONSUMER_CONTRACT_V1.md"
+      - ".github/workflows/my-mmd-entitlement-consumer-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Syntax
+        run: |
+          node --check auth-worker/src/my-mmd-runtime-index.js
+          node --check auth-worker/src/member-entitlement-resolver.js
+      - name: Resolver tests
+        run: node --test auth-worker/test/member-entitlement-resolver.test.mjs
+      - name: Wrangler entrypoint contract
+        run: grep -F 'main = "src/my-mmd-runtime-index.js"' auth-worker/wrangler.toml
