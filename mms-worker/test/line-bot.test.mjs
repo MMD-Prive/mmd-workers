@@ -11,12 +11,14 @@ import {
 const ENV = {
   LINE_CHANNEL_SECRET: "mms-line-secret",
   LINE_CHANNEL_ACCESS_TOKEN: "mms-line-token",
+  MMS_LINE_CHANNEL_ID: "2011386859",
   LINE_AUTO_REPLY_ENABLED: "false",
 };
 
 test("HENNA exposes fail-closed configuration status", () => {
   assert.deepEqual(lineBotStatus(ENV), {
     configured: true,
+    channel_id: "2011386859",
     auto_reply_enabled: false,
     persona: "HENNA",
   });

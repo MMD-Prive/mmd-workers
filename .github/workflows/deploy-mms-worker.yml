@@ -179,6 +179,7 @@ jobs:
             `- Airtable runtime secret: ${health.bindings.airtable ? "ready" : "pending"}`,
             `- Telegram notification: ${health.bindings.telegram ? "ready" : "pending"}`,
             `- HENNA LINE channel: ${health.bindings.line?.configured ? "ready" : "pending secrets"}`,
+            `- HENNA LINE channel ID: ${health.bindings.line?.channel_id || "missing"}`,
             `- HENNA auto reply: ${health.bindings.line?.auto_reply_enabled ? "enabled" : "disabled (safe default)"}`,
             `- Skill catalog: ${catalog.data.skills.length}/8`,
             "",

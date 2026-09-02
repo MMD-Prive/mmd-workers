@@ -13,6 +13,7 @@ export function lineBotStatus(env) {
   const accessToken = clean(env.LINE_CHANNEL_ACCESS_TOKEN);
   return {
     configured: Boolean(channelSecret && accessToken),
+    channel_id: clean(env.MMS_LINE_CHANNEL_ID),
     auto_reply_enabled: enabled(env.LINE_AUTO_REPLY_ENABLED),
     persona: "HENNA",
   };
