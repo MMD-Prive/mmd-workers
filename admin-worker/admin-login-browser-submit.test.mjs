@@ -50,7 +50,7 @@ test("admin login posts the exact visible credential with an explicit same-origi
   assert.match(html, /const body=new URLSearchParams\(\)/);
   assert.match(html, /body\.set\('credential',credential\)/);
   assert.match(html, /body\.set\('next',nextInput\.value\|\|'\/internal\/admin\/control-room'\)/);
-  assert.match(html, new RegExp(`fetch\('${ADMIN_LOGIN_SESSION_PATH.replaceAll("/", "\\/")}'`));
+  assert.ok(html.includes(`fetch('${ADMIN_LOGIN_SESSION_PATH}',`));
   assert.match(html, /'Content-Type':'application\/x-www-form-urlencoded;charset=UTF-8'/);
   assert.match(html, /credentials:'same-origin'/);
   assert.match(html, /redirect:'follow'/);
