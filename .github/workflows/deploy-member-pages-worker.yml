@@ -23,6 +23,8 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg"
       NO_COLOR: "1"
 
     steps:
@@ -35,7 +37,7 @@ jobs:
           node-version: "22"
           cache: npm
 
-      - name: Normalize Cloudflare credentials
+      - name: Normalize Cloudflare and Airtable credentials
         shell: bash
         run: |
           node <<'NODE'
@@ -43,8 +45,12 @@ jobs:
           const clean = (value) => (value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
           const token = clean(process.env.CLOUDFLARE_API_TOKEN);
           const accountId = clean(process.env.CLOUDFLARE_ACCOUNT_ID);
+          const airtableApiKey = clean(process.env.AIRTABLE_API_KEY);
+          const airtableBaseId = clean(process.env.AIRTABLE_BASE_ID);
           if (!token || !accountId) throw new Error("Cloudflare credentials are missing after normalization");
-          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\nCLOUDFLARE_ACCOUNT_ID=${accountId}\n`);
+          if (!airtableApiKey) throw new Error("GitHub secret AIRTABLE_API_KEY is missing after normalization");
+          if (airtableBaseId !== "appsV1ILPRfIjkaYg") throw new Error("Unexpected AIRTABLE_BASE_ID for member-pages-worker");
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\nCLOUDFLARE_ACCOUNT_ID=${accountId}\nAIRTABLE_API_KEY=${airtableApiKey}\nAIRTABLE_BASE_ID=${airtableBaseId}\n`);
           NODE
 
       - name: Install dependencies
@@ -59,6 +65,13 @@ jobs:
 
       - name: Validate Cloudflare deployment
         run: npx --yes wrangler@4 deploy --dry-run --keep-vars --config member-pages-worker/wrangler.toml
+
+      - name: Provision Airtable API secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          printf '%s' "$AIRTABLE_API_KEY" | npx --yes wrangler@4 secret put AIRTABLE_API_KEY --config member-pages-worker/wrangler.toml
 
       - name: Deploy member-pages-worker
         run: npx --yes wrangler@4 deploy --keep-vars --config member-pages-worker/wrangler.toml
