@@ -182,8 +182,15 @@ async function handleCredentialBoundAdminLogin(request, env) {
   }
 
   const credential = clean(form.get("credential"));
-  const activeCredential = clean(env.ADMIN_LOGIN_CREDENTIAL);
-  if (!activeCredential || !credential || !(await constantTimeEqual(credential, activeCredential))) {
+  const browserCredential = resolveBrowserLoginCredential(env);
+  if (!browserCredential.value) {
+    return renderAdminLogin(request, {
+      status: 503,
+      error: "ระบบรหัส Admin ยังไม่พร้อมครับ กรุณาลองใหม่อีกครั้ง",
+      next: normalizeNext(form.get("next")),
+    });
+  }
+  if (!credential || !(await constantTimeEqual(credential, browserCredential.value))) {
     return renderAdminLogin(request, {
       status: 401,
       error: "รหัสยังไม่ถูกต้องครับ ลองตรวจอีกครั้ง",
@@ -199,7 +206,7 @@ async function handleCredentialBoundAdminLogin(request, env) {
     iat: now,
     exp: now + ADMIN_GATE_TTL_MS,
     nonce: crypto.randomUUID(),
-    auth_method: "login",
+    auth_method: browserCredential.mode,
     actor_id: "boss-per",
     actor_role: "owner",
   };
@@ -207,7 +214,7 @@ async function handleCredentialBoundAdminLogin(request, env) {
   if (!cookie) {
     return renderAdminLogin(request, {
       status: 503,
-      error: "รหัสยังไม่พร้อมครับ ลองใหม่อีกครั้ง",
+      error: "ระบบ session Admin ยังไม่พร้อมครับ กรุณาลองใหม่อีกครั้ง",
       next: normalizeNext(form.get("next")),
     });
   }
@@ -220,6 +227,19 @@ async function handleCredentialBoundAdminLogin(request, env) {
       "Set-Cookie": cookie,
     },
   });
+}
+
+function resolveBrowserLoginCredential(env = {}) {
+  const dedicated = clean(env.ADMIN_LOGIN_CREDENTIAL);
+  if (dedicated) return { value: dedicated, mode: "login" };
+
+  // Compatibility recovery for the established owner credential only. Service
+  // secrets (INTERNAL_TOKEN / CONFIRM_KEY) remain service-only and are never
+  // accepted by the browser login form.
+  const adminBearer = clean(env.ADMIN_BEARER);
+  if (adminBearer) return { value: adminBearer, mode: "legacy_admin_bearer" };
+
+  return { value: "", mode: "unavailable" };
 }
 
 function handleCredentialBoundAdminLogout(request) {
@@ -357,10 +377,17 @@ async function signCredentialBoundPayload(payload, env) {
 }
 
 function getCredentialBoundSigningSecret(env = {}) {
+  const browserCredential = resolveBrowserLoginCredential(env);
+  if (!browserCredential.value) return "";
+
   const sessionSecret = clean(env.ADMIN_SESSION_SECRET);
-  const loginCredential = clean(env.ADMIN_LOGIN_CREDENTIAL);
-  if (!sessionSecret || !loginCredential) return "";
-  return `${sessionSecret}.${loginCredential}`;
+  if (sessionSecret) return `${sessionSecret}.${browserCredential.value}`;
+
+  // Legacy recovery is allowed only when the dedicated browser credential is
+  // not configured. This preserves the pre-dedicated owner login without ever
+  // falling back to INTERNAL_TOKEN or CONFIRM_KEY.
+  if (browserCredential.mode === "legacy_admin_bearer") return browserCredential.value;
+  return "";
 }
 
 function parseCookieMap(request) {
