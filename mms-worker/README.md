@@ -9,6 +9,7 @@ Cloudflare Worker for MMS Male Therapist Delivery.
 - verified therapist matching by recipient gender, zone, and 1-6 selected skills
 - idempotent pre-booking coordination with a SQLite-backed Durable Object
 - restricted Airtable synchronization
+- HENNA LINE Official Account webhook with fail-closed signature verification
 
 Sexual orientation is written only to `MMS Therapist Sensitive Profiles` after explicit consent. It is never returned by matching, booking, catalog, or public application responses.
 
@@ -19,6 +20,18 @@ Sexual orientation is written only to `MMS Therapist Sensitive Profiles` after e
 - `POST /mms/api/applications`
 - `POST /mms/api/uploads/presign`
 - `PUT /mms/api/uploads/:applicationRef/:uploadToken`
+- `POST /mms/webhooks/line`
+
+## HENNA LINE bot
+
+Set these as Cloudflare secrets for the Male Massage LINE Messaging API channel only:
+
+- `LINE_CHANNEL_SECRET`
+- `LINE_CHANNEL_ACCESS_TOKEN`
+
+`LINE_AUTO_REPLY_ENABLED` defaults to `false`. In this state, the webhook verifies and classifies events but sends no automatic LINE replies. Set it to `true` only after the LINE Console webhook verification and production smoke pass.
+
+HENNA answers only stable MMS information (booking intake, service categories, how-to, and therapist applications). Price, live availability, explicit human requests, and unknown questions are routed to the existing MMS Telegram operations chat without copying customer message content.
 
 Public write routes accept only configured MMD/Webflow origins. Add Turnstile before advertising the application endpoint broadly.
 
