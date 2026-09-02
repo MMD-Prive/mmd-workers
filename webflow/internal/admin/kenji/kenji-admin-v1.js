@@ -45,9 +45,9 @@
   }
 
   function models() {
-    return '<div class="ka__title"><span>MODELS</span><h2>Model Keyword Studio</h2><p>ย้ายจาก /kenji-model-keyword-copy เข้ามาในศูนย์เดียว · อ่าน Models จริง และ Save Draft เข้า Review เท่านั้น</p></div>'
+    return '<div class="ka__title"><span>MODELS</span><h2>Model Keyword Studio</h2><p>ย้ายจาก /kenji-model-keyword-copy เข้ามาในศูนย์เดียว · Models = identity, Model Keyword Profiles = content, Review Requests = approval queue</p></div>'
       + '<div class="ka__split">'
-      + '<aside class="ka__card"><div class="ka__subhead"><div><span>MODEL SOURCE</span><h3>Models</h3></div><button data-model-new>+ New</button></div><label>ค้นหา Model<input id="kaModelSearch" placeholder="ชื่อ, model key หรือ alias" autocomplete="off"></label><div class="ka__filterRow"><button data-model-filter="all" class="is-active">All</button><button data-model-filter="public">Public</button><button data-model-filter="standard">Standard</button><button data-model-filter="premium">Premium</button><button data-model-filter="curated">Curated</button></div><div id="kaModelList" class="ka__list"><p>กำลังโหลด Models…</p></div></aside>'
+      + '<aside class="ka__card"><div class="ka__subhead"><div><span>MODEL SOURCE</span><h3>Models + Keyword Profiles</h3></div><button data-model-new>+ New</button></div><label>ค้นหา Model<input id="kaModelSearch" placeholder="ชื่อ, model key หรือ alias" autocomplete="off"></label><div class="ka__filterRow"><button data-model-filter="all" class="is-active">All</button><button data-model-filter="public">Public</button><button data-model-filter="standard">Standard</button><button data-model-filter="premium">Premium</button><button data-model-filter="curated">Curated</button></div><div id="kaModelList" class="ka__list"><p>กำลังโหลด Models…</p></div></aside>'
       + '<article class="ka__card ka__form" id="kaModelEditor"><div class="ka__empty">เลือก Model ทางซ้าย หรือกด + New เพื่อเตรียม Draft</div></article>'
       + '</div>';
   }
@@ -142,7 +142,7 @@
     if(state.modelsLoading)return;
     state.modelsLoading=true;
     var list=document.getElementById("kaModelList");
-    if(list)list.innerHTML='<p>กำลังโหลด Models…</p>';
+    if(list)list.innerHTML='<p>กำลังโหลด Models + Keyword Profiles…</p>';
     return request(MODEL_API+"?limit=120").then(function(data){
       state.models=data.items||[];
       state.modelsLoaded=true;
@@ -162,11 +162,11 @@
 
   function modelTierForFilter(model) {
     var tier=(model.model_tier||"").toLowerCase();
-    var folder=(model.access_folder||"").toLowerCase();
+    var folder=(model.access_folder||model.folder_name||"").toLowerCase();
     var visibility=(model.booking_visibility||"").toLowerCase();
     if(visibility==="public"||tier==="public")return "public";
-    if(folder==="standard"||tier==="standard")return "standard";
-    if(folder==="premium"||tier==="premium")return "premium";
+    if(folder.includes("standard")||tier==="standard")return "standard";
+    if(folder.includes("premium")||tier==="premium")return "premium";
     return "curated";
   }
 
@@ -180,14 +180,15 @@
       return (!q||hay.includes(q))&&(filter==="all"||modelTierForFilter(model)===filter);
     });
     node.innerHTML=models.length?models.map(function(model){
-      var id=model.model_id||model.model_key;
-      var active=state.selectedModel&&id===(state.selectedModel.model_id||state.selectedModel.model_key);
-      return '<button data-model-id="'+esc(id)+'" class="'+(active?'is-active':'')+'"><b>'+esc(model.working_name||model.model_key||"Untitled")+'</b><span>'+esc(model.model_key||"no-key")+' · '+esc(modelTierForFilter(model))+' · '+esc(model.status||"unknown")+'</span></button>';
+      var id=model.model_id||model.keyword_profile_id||model.model_key;
+      var active=state.selectedModel&&id===(state.selectedModel.model_id||state.selectedModel.keyword_profile_id||state.selectedModel.model_key);
+      var profileState=model.profile_status||"missing_profile";
+      return '<button data-model-id="'+esc(id)+'" class="'+(active?'is-active':'')+'"><b>'+esc(model.working_name||model.model_key||"Untitled")+'</b><span>'+esc(model.model_key||"no-key")+' · '+esc(modelTierForFilter(model))+' · '+esc(profileState)+' · v'+esc(model.profile_version||1)+'</span></button>';
     }).join(""):'<div class="ka__empty">'+(state.modelsLoaded?'ไม่พบ Model ที่ตรงกัน':'ยังไม่ได้โหลด Models')+'</div>';
   }
 
   function selectModel(id) {
-    state.selectedModel=state.models.find(function(model){return (model.model_id||model.model_key)===id;})||null;
+    state.selectedModel=state.models.find(function(model){return (model.model_id||model.keyword_profile_id||model.model_key)===id;})||null;
     renderModelList();
     renderModelEditor();
   }
@@ -195,15 +196,25 @@
   function newModel() {
     state.selectedModel={
       model_id:"",
+      keyword_profile_id:"",
+      profile_version:1,
       model_key:"",
+      folder_name:"",
       working_name:"",
       search_aliases:[],
       customer_safe_info:"",
+      positive_sensitive_description:"",
       customer_safe_remark:"",
       model_tier:"public",
-      status:"new",
+      model_status:"new",
+      profile_status:"draft",
       booking_visibility:"public",
       access_folder:"",
+      allowed_customer_scope:[],
+      photo_visibility_policy:"",
+      deposit_preview_gate:"",
+      include_in_public_kenji:false,
+      source_ref:"",
       requires_per_approval:true,
     };
     renderModelList();
@@ -213,19 +224,20 @@
 
   function visibilityFromModel(model) {
     var visibility=(model.booking_visibility||"").toLowerCase();
-    var folder=(model.access_folder||"").toLowerCase();
+    var folder=(model.access_folder||model.folder_name||"").toLowerCase();
     if(visibility==="public")return "public";
-    if(folder==="standard")return "standard";
-    if(folder==="premium")return "premium";
-    if(["vip","exclusive"].includes(folder))return "curated";
+    if(folder.includes("standard"))return "standard";
+    if(folder.includes("premium"))return "premium";
+    if(folder.includes("vip")||folder.includes("exclusive"))return "curated";
     if(["public","standard","premium","curated","hidden","internal"].includes(visibility))return visibility;
     return modelTierForFilter(model)==="curated"?"curated":modelTierForFilter(model);
   }
 
   function scopesFromModel(model) {
-    var folder=(model.access_folder||"").toLowerCase();
-    if(folder==="premium")return ["standard","premium"];
-    if(folder==="standard")return ["standard"];
+    if(Array.isArray(model.allowed_customer_scope)&&model.allowed_customer_scope.length)return model.allowed_customer_scope.map(function(value){return String(value).toLowerCase();});
+    var folder=(model.access_folder||model.folder_name||"").toLowerCase();
+    if(folder.includes("premium"))return ["standard","premium"];
+    if(folder.includes("standard"))return ["standard"];
     return [];
   }
 
@@ -239,18 +251,23 @@
     if(!["public","standard","premium","vip","exclusive","curated"].includes(tier))tier=modelTierForFilter(model);
     var visibility=visibilityFromModel(model);
     var scopes=scopesFromModel(model);
-    node.innerHTML='<div class="ka__recordHead"><span>MODEL KEYWORD</span><h3>'+esc(model.working_name||"New Model Draft")+'</h3><p>'+(model.model_id?esc(model.model_id)+' · ':'')+'Current: '+esc(model.status||"new")+' · ทุกการแก้ไขจะเข้า Review ก่อน</p></div>'
+    var profileState=model.profile_status||"missing_profile";
+    node.innerHTML='<div class="ka__recordHead"><span>MODEL KEYWORD PROFILE</span><h3>'+esc(model.working_name||"New Model Draft")+'</h3><p>'+(model.keyword_profile_id?'Profile '+esc(model.keyword_profile_id)+' · ':'')+(model.model_id?'Model '+esc(model.model_id)+' · ':'')+esc(profileState)+' · v'+esc(model.profile_version||1)+' · ทุกการแก้ไขจะเข้า Review ก่อน</p></div>'
       +'<div class="ka__modelGrid"><label>Model Key<input id="kaModelKey" value="'+attr(model.model_key)+'" placeholder="ems04-sin-m" autocomplete="off"></label><label>Working Name<input id="kaModelName" value="'+attr(model.working_name)+'" placeholder="ชื่อที่ใช้ภายใน"></label></div>'
+      +'<label>Folder Name<input id="kaModelFolder" value="'+attr(model.folder_name||model.access_folder)+'" placeholder="Standard Package / Premium Package / Exclusive"></label>'
       +'<label>Search Aliases<textarea id="kaModelAliases" placeholder="ชื่อเรียกอื่น, keyword, alias — 1 บรรทัดหรือคั่นด้วย comma">'+esc((model.search_aliases||[]).join("\n"))+'</textarea></label>'
       +'<label>Customer-safe Info<textarea id="kaModelSafeInfo" placeholder="ข้อมูลที่ Kenji พูดกับลูกค้าได้หลังผ่าน Review">'+esc(model.customer_safe_info||"")+'</textarea></label>'
+      +'<label>Positive Sensitive Description<textarea id="kaModelPositiveSensitive" placeholder="ข้อมูลเชิงบวกที่ยังต้องผ่าน policy ก่อนใช้ — ไม่ใช่ข้อความ public อัตโนมัติ">'+esc(model.positive_sensitive_description||"")+'</textarea></label>'
       +'<label>Customer-safe Remark<textarea id="kaModelSafeRemark" placeholder="หมายเหตุที่ปลอดภัยต่อการตอบลูกค้า — ห้ามราคา/คิว/ข้อมูลติดต่อ">'+esc(model.customer_safe_remark||"")+'</textarea></label>'
       +'<div class="ka__modelGrid"><label>Model Tier<select id="kaModelTier">'+option("public","Public",tier)+option("standard","Standard",tier)+option("premium","Premium",tier)+option("vip","VIP",tier)+option("exclusive","Exclusive",tier)+option("curated","Curated",tier)+'</select></label><label>Proposed Visibility<select id="kaModelVisibility">'+option("public","Public",visibility)+option("standard","Standard",visibility)+option("premium","Premium",visibility)+option("curated","Curated Approval",visibility)+option("hidden","Hidden",visibility)+option("internal","Internal only",visibility)+'</select></label></div>'
       +'<div class="ka__scopeBlock"><b>Allowed customer scope</b><div class="ka__chips">'+chip("kaModelScope","standard","Standard",scopes.includes("standard"))+chip("kaModelScope","premium","Premium",scopes.includes("premium"))+'</div></div>'
       +'<div class="ka__scopeBlock"><b>Restricted / Review labels</b><div class="ka__chips">'+chip("kaModelRestricted","potential","#Potential",false)+chip("kaModelRestricted","review","#Review",false)+chip("kaModelRestricted","no_detail","#No-Detail",false)+'</div></div>'
-      +'<div class="ka__notice"><b>Safety lock</b><br>หน้านี้ไม่รับราคา, availability/คิว, เบอร์ติดต่อ, LINE/Telegram, private asset หรือ R2 key. Visibility เป็นเพียงข้อเสนอสำหรับ Review และยังไม่เปลี่ยน Production Model.</div>'
-      +'<div class="ka__notice"><b>Media / Compcard</b><br>ภาพและ Comcard ยังใช้ Model Console media review เดิม ไม่อัปโหลดตรงจาก browser ใน Model Keyword Studio.</div>'
-      +'<div class="ka__modelPreview" id="kaModelPreview"><span>SAFE PREVIEW</span><p>กด Preview เพื่อดูข้อความที่กำลังเตรียมส่งเข้า Review</p></div>'
-      +'<div class="ka__actions"><button data-model-action="preview">Preview Safe Reply</button><a class="ka__button" href="/kenji-model-keyword-copy" target="_blank" rel="noopener">Legacy Backup</a><button class="is-primary" data-model-action="save-draft">Save Draft → Review</button></div>';
+      +'<div class="ka__modelGrid"><label>Photo Visibility Policy<input id="kaModelPhotoPolicy" value="'+attr(model.photo_visibility_policy)+'" placeholder="policy value จาก Keyword Profile"></label><label>Deposit Preview Gate<input id="kaModelDepositGate" value="'+attr(model.deposit_preview_gate)+'" placeholder="gate value จาก Keyword Profile"></label></div>'
+      +'<div class="ka__modelGrid"><label>Source Ref<input id="kaModelSourceRef" value="'+attr(model.source_ref)+'" placeholder="internal source reference"></label><div class="ka__scopeBlock"><b>Public Kenji eligibility</b><div class="ka__chips">'+chip("kaModelPublicKenji","include","Include in public Kenji",!!model.include_in_public_kenji)+'</div></div></div>'
+      +'<div class="ka__notice"><b>Safety lock</b><br>หน้านี้ไม่รับราคา, availability/คิว, เบอร์ติดต่อ, LINE/Telegram, private asset หรือ R2 key. Visibility และ Public Kenji เป็นเพียง proposal สำหรับ Review และยังไม่เปลี่ยน Production Profile.</div>'
+      +'<div class="ka__notice"><b>Media / Compcard</b><br>ภาพและ Compcard ยังใช้ Model Console media review เดิม ไม่อัปโหลดตรงจาก browser ใน Model Keyword Studio.</div>'
+      +'<div class="ka__modelPreview" id="kaModelPreview"><span>SAFE PREVIEW</span><p>กด Preview เพื่อดูเฉพาะ Customer-safe Info/Remark ที่กำลังเตรียมส่งเข้า Review</p></div>'
+      +'<div class="ka__actions"><button data-model-action="preview">Preview Safe Reply</button><span class="ka__button" title="เก็บหน้าเดิมไว้ใน Webflow โดยไม่ลิงก์จาก Production">Legacy Backup · /kenji-model-keyword-copy</span><button class="is-primary" data-model-action="save-draft">Save Draft → Review</button></div>';
   }
 
   function checkedValues(name) {
@@ -264,16 +281,25 @@
     var model=state.selectedModel||{};
     return {
       model_id:model.model_id||null,
+      keyword_profile_id:model.keyword_profile_id||null,
+      expected_profile_version:model.keyword_profile_id?Number(model.profile_version||1):null,
       model_key:valueOf("kaModelKey"),
+      folder_name:valueOf("kaModelFolder"),
       working_name:valueOf("kaModelName"),
       search_aliases:splitAliases(valueOf("kaModelAliases")),
       customer_safe_info:valueOf("kaModelSafeInfo"),
+      positive_sensitive_description:valueOf("kaModelPositiveSensitive"),
       customer_safe_remark:valueOf("kaModelSafeRemark"),
       model_tier:valueOf("kaModelTier"),
-      status:model.status||"new",
+      model_status:model.model_status||"new",
+      profile_status:model.profile_status==="missing_profile"?"draft":(model.profile_status||"draft"),
       proposed_visibility:valueOf("kaModelVisibility"),
       allowed_customer_scope:checkedValues("kaModelScope"),
       restricted_scope:checkedValues("kaModelRestricted"),
+      photo_visibility_policy:valueOf("kaModelPhotoPolicy"),
+      deposit_preview_gate:valueOf("kaModelDepositGate"),
+      include_in_public_kenji:checkedValues("kaModelPublicKenji").includes("include"),
+      source_ref:valueOf("kaModelSourceRef"),
     };
   }
 
@@ -286,7 +312,7 @@
   function previewModelDraft() {
     var node=document.getElementById("kaModelPreview"); if(!node)return;
     var payload=modelDraftPayload();
-    node.innerHTML='<span>SAFE PREVIEW</span><h4>'+esc(payload.working_name||payload.model_key||"Untitled")+'</h4><p>'+esc(payload.customer_safe_info||"ยังไม่มี Customer-safe Info")+'</p>'+(payload.customer_safe_remark?'<small>'+esc(payload.customer_safe_remark)+'</small>':'')+'<div class="ka__previewMeta">'+esc(payload.model_tier)+' · '+esc(payload.proposed_visibility)+' · aliases '+payload.search_aliases.length+'</div>';
+    node.innerHTML='<span>SAFE PREVIEW</span><h4>'+esc(payload.working_name||payload.model_key||"Untitled")+'</h4><p>'+esc(payload.customer_safe_info||"ยังไม่มี Customer-safe Info")+'</p>'+(payload.customer_safe_remark?'<small>'+esc(payload.customer_safe_remark)+'</small>':'')+'<div class="ka__previewMeta">'+esc(payload.model_tier)+' · '+esc(payload.proposed_visibility)+' · aliases '+payload.search_aliases.length+' · base v'+esc(payload.expected_profile_version||"new")+'</div>';
   }
 
   function saveModelDraft() {
@@ -294,15 +320,15 @@
     var payload=modelDraftPayload();
     state.modelBusy=true;
     setModelActionsDisabled(true);
-    toast("กำลังส่ง Model Draft เข้า Review…");
+    toast("กำลังส่ง Model Keyword Draft เข้า Review…");
     return request(MODEL_API+"/draft",{
       method:"POST",
       headers:{"Content-Type":"application/json","Idempotency-Key":crypto.randomUUID()},
       body:JSON.stringify(payload),
     }).then(function(data){
-      toast("Model Draft เข้า Review แล้ว · "+(data.request_id||"pending_review"));
+      toast("Model Keyword Draft เข้า Review แล้ว · "+(data.request_id||"pending_review"));
       var node=document.getElementById("kaModelPreview");
-      if(node)node.innerHTML='<span>REVIEW QUEUE</span><h4>Pending Review</h4><p>'+esc(data.request_id||"")+'</p><small>Production Model ยังไม่ถูกแก้ไข</small>';
+      if(node)node.innerHTML='<span>REVIEW QUEUE</span><h4>Pending Review</h4><p>'+esc(data.request_id||"")+'</p><small>Model และ Model Keyword Profile ใน Production ยังไม่ถูกแก้ไข</small>';
     }).catch(handleError).finally(function(){state.modelBusy=false;setModelActionsDisabled(false);});
   }
 
