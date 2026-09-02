@@ -13,26 +13,24 @@ function render() {
   );
 }
 
-test("admin login keeps password managers away from the operator access-code field", async () => {
+test("admin login exposes one canonical password field for secure browser submission", async () => {
   const html = await (await render()).text();
 
   assert.match(html, /<form[^>]*id="adminLoginForm"[^>]*autocomplete="off"/);
-  assert.match(html, /id="adminCredential" type="text"/);
-  assert.match(html, /id="adminCredential"[^>]*autocomplete="off"/);
-  assert.match(html, /id="adminCredential"[^>]*data-1p-ignore="true"/);
-  assert.match(html, /id="adminCredential"[^>]*data-lpignore="true"/);
-  assert.doesNotMatch(html, /id="adminCredential"[^>]*autocomplete="current-password"/);
+  assert.match(html, /id="adminCredential" name="credential" type="password"/);
+  assert.match(html, /id="adminCredential"[^>]*autocomplete="current-password"/);
+  assert.doesNotMatch(html, /adminCredentialSubmit/);
+  assert.doesNotMatch(html, /type="hidden" name="credential"/);
 });
 
-test("admin login submits only the synchronized hidden canonical credential field", async () => {
+test("admin login submits the canonical credential field without a client-side mirror", async () => {
   const html = await (await render()).text();
 
-  assert.match(html, new RegExp(`action="${ADMIN_LOGIN_SESSION_PATH.replaceAll("/", "\\/")}"`));
-  assert.match(html, /<input id="adminCredentialSubmit" name="credential" type="password" hidden[^>]*value="">/);
-  assert.doesNotMatch(html, /id="adminCredential"[^>]*name="credential"/);
-  assert.match(html, /submitValue\.value=input\.value/);
+  assert.match(html, new RegExp(`action="${ADMIN_LOGIN_SESSION_PATH.replaceAll("/", "\\\\/")}"`));
+  assert.match(html, /id="adminCredential" name="credential" type="password" required/);
   assert.match(html, /form\.addEventListener\('submit'/);
-  assert.match(html, /input\.disabled=true/);
+  assert.match(html, /input\.readOnly=true/);
+  assert.doesNotMatch(html, /submitValue\.value=input\.value/);
 });
 
 test("admin login preserves the canonical next route and secure server-side session flow", async () => {
