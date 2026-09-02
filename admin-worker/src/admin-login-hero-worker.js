@@ -17,6 +17,10 @@ import {
   handleKenjiModelAccessRpc,
   KENJI_MODEL_ACCESS_RPC_PATH,
 } from "./kenji-model-access-rpc.js";
+import {
+  handleKenjiModelAdminRequest,
+  isKenjiModelAdminRequest,
+} from "./kenji-model-admin-adapter.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
@@ -84,6 +88,12 @@ export default {
     const strictGate = await applyCredentialBoundAdminGate(request, env, path, method);
     if (strictGate.response) return strictGate.response;
     request = strictGate.request || request;
+
+    if (isKenjiModelAdminRequest(path, method)) {
+      return handleKenjiModelAdminRequest(request, env, {
+        actor: strictGate.actor,
+      });
+    }
 
     if (isMmsAdminRequest(path)) {
       return handleMmsAdminRequest(request, env, ctx);
