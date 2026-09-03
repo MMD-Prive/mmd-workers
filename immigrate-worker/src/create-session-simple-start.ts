@@ -235,7 +235,7 @@ const SIMPLE_START_SCRIPT = `
 
   function hasSelectedClient(value) {
     var content = String(value || "").trim().toLowerCase();
-    return Boolean(content && content !== "-" && content !== "no client" && content !== "not selected");
+    return Boolean(content && content !== "-" && !content.startsWith("no client") && content !== "not selected");
   }
 
   function boot() {
@@ -250,6 +250,7 @@ const SIMPLE_START_SCRIPT = `
     var search = root.querySelector("[data-op-search-client]");
     var recent = root.querySelector("[data-op-load-recent]");
     var selectedName = root.querySelector("[data-op-selected-client-name]");
+    var canonicalClientName = root.querySelector("[data-op-client-name]");
     var results = root.querySelector("[data-op-client-results]");
     var workButtons = Array.prototype.slice.call(root.querySelectorAll("[data-op-work-type]"));
     var laneGrid = root.querySelector("[data-op-folder-grid]");
@@ -373,6 +374,11 @@ const SIMPLE_START_SCRIPT = `
       node.setAttribute("aria-hidden", visible ? "false" : "true");
     }
 
+    function hasCanonicalClient() {
+      if (canonicalClientName) return Boolean(String(canonicalClientName.value || "").trim());
+      return hasSelectedClient(selectedName && selectedName.textContent);
+    }
+
     function updateFlow(hasClient, hasWork, hasLane, hasModel) {
       var order = ["client", "work", "lane", "model", "details", "review"];
       var done = { client: hasClient, work: hasWork, lane: hasLane, model: hasModel, details: false, review: false };
@@ -393,7 +399,7 @@ const SIMPLE_START_SCRIPT = `
     function sync() {
       hideManualFallbackCards();
 
-      var hasClient = hasSelectedClient(selectedName && selectedName.textContent);
+      var hasClient = hasCanonicalClient();
       var selectedWork = root.querySelector("[data-op-work-type].is-selected");
       var hasWork = hasClient && Boolean(selectedWork);
       var folderStat = root.querySelector("[data-op-stat-folder]");
@@ -452,8 +458,7 @@ const SIMPLE_START_SCRIPT = `
     sync();
 
     window.setTimeout(function () {
-      var picked = selectedName && String(selectedName.textContent || "").trim();
-      if (!hasSelectedClient(picked) && recent) recent.click();
+      if (!hasCanonicalClient() && recent) recent.click();
     }, 180);
   }
 
