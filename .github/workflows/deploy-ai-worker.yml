@@ -33,8 +33,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: ai-worker/package-lock.json
 
       - name: Normalize Cloudflare token
         shell: bash
@@ -46,9 +44,6 @@ jobs:
           if (!token) throw new Error("Cloudflare API token is missing after normalization");
           fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\n`);
           NODE
-
-      - name: Install ai-worker dependencies
-        run: npm ci --prefix ai-worker
 
       - name: Test ai-worker
         run: npm test --prefix ai-worker
@@ -78,7 +73,6 @@ jobs:
         run: npx --yes wrangler@4 versions upload --dry-run --keep-vars
 
       - name: Upload ai-worker version
-        id: upload
         shell: bash
         working-directory: ai-worker
         run: |
