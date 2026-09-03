@@ -10,6 +10,7 @@ const COMMIT_PATHS = new Set([
   `${STUDIO_API_PREFIX}/review/commit`,
   `${STUDIO_API_PREFIX}/model-preview/commit`,
 ]);
+const CREATE_SESSION_MANUAL_FALLBACK_MARKER = "canonical-v1";
 
 export default {
   async fetch(request, env, ctx) {
@@ -23,7 +24,14 @@ export default {
     // ingress bridge terminates on a real canonical backend instead of falling
     // through to a 404 in the legacy core router.
     if (isCreateSessionClientLineageRequest(path, method)) {
-      return handleCreateSessionClientLineageRequest(request, env);
+      const response = await handleCreateSessionClientLineageRequest(request, env);
+      const headers = new Headers(response.headers);
+      headers.set("X-MMD-Manual-Public-Fallback", CREATE_SESSION_MANUAL_FALLBACK_MARKER);
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
     }
 
     const bodyPromise = method === "POST" && COMMIT_PATHS.has(path)
