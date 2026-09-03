@@ -21,8 +21,8 @@ await build({
 
 const worker = (await import(pathToFileURL(outfile).href)).default;
 
-async function call(path, init, host = "mmdbkk.com") {
-  return worker.fetch(new Request(`https://${host}${path}`, init), {});
+async function call(path, init, host = "mmdbkk.com", env = {}) {
+  return worker.fetch(new Request(`https://${host}${path}`, init), env);
 }
 
 try {
@@ -91,6 +91,43 @@ try {
   const distinctSigilControlRoom = await call("/sigil/control-room");
   assert.notEqual(distinctSigilControlRoom.status, 308);
   assert.notEqual(distinctSigilControlRoom.headers.get("x-mmd-admin-canonical"), "/internal/admin/control-room");
+
+  const assetEnv = {
+    ASSETS: {
+      async fetch(request) {
+        const url = new URL(request.url);
+        assert.equal(url.pathname, "/a/create-session.js");
+        assert.equal(url.search, "");
+        return new Response('const flow_version = "mmd_sigil_create_session_external_js_v3";', {
+          status: 200,
+          headers: { "content-type": "application/javascript" },
+        });
+      },
+    },
+  };
+
+  const core = await call("/internal/admin/jobs/create-session.js", undefined, "mmdbkk.com", assetEnv);
+  assert.equal(core.status, 200);
+  assert.equal(core.headers.get("content-type"), "application/javascript; charset=utf-8");
+  assert.equal(core.headers.get("cache-control"), "no-store");
+  assert.equal(core.headers.get("x-mmd-create-session-core"), "worker-owned");
+  assert.equal(core.headers.get("x-mmd-create-session-business"), "mmd");
+  assert.match(await core.text(), /mmd_sigil_create_session_external_js_v3/);
+
+  const coreHead = await call("/internal/admin/jobs/create-session.js", { method: "HEAD" }, "www.mmdbkk.com", assetEnv);
+  assert.equal(coreHead.status, 200);
+  assert.equal(coreHead.headers.get("x-mmd-create-session-core"), "worker-owned");
+  assert.equal(await coreHead.text(), "");
+
+  const corePost = await call(
+    "/internal/admin/jobs/create-session.js",
+    { method: "POST", body: "nope=1" },
+    "mmdbkk.com",
+    assetEnv,
+  );
+  assert.equal(corePost.status, 405);
+  assert.equal(corePost.headers.get("allow"), "GET, HEAD");
+  assert.equal(corePost.headers.get("x-mmd-create-session-business"), "mmd");
 } finally {
   await rm(tmp, { recursive: true, force: true });
 }
