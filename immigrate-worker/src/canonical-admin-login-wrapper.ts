@@ -5,6 +5,8 @@ import type { Env } from "./types";
 
 const CANONICAL_ADMIN_LOGIN_PATH = "/internal/admin/login";
 const CANONICAL_CREATE_SESSION_PATH = "/internal/admin/jobs/create-session";
+const CANONICAL_CREATE_SESSION_CORE_ASSET_PATH = "/internal/admin/jobs/create-session.js";
+const BUNDLED_CREATE_SESSION_CORE_ASSET_PATH = "/a/create-session.js";
 const LEGACY_ADMIN_LOGIN_PATHS = new Set([
   "/sigil/admin/login",
   "/sigil/internal/admin/login",
@@ -71,6 +73,57 @@ function legacyAdminBrowserMethodNotAllowed(canonicalPath: string): Response {
   );
 }
 
+function createSessionCoreMethodNotAllowed(): Response {
+  return new Response(
+    JSON.stringify({
+      ok: false,
+      error: "create_session_core_method_not_allowed",
+    }),
+    {
+      status: 405,
+      headers: {
+        allow: "GET, HEAD",
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+        "x-mmd-create-session-business": "mmd",
+      },
+    },
+  );
+}
+
+async function serveCreateSessionCoreAsset(request: Request, env: Env): Promise<Response> {
+  const ownerEnv = env as unknown as OwnerCreateSessionEnv;
+  if (!ownerEnv.ASSETS) {
+    return new Response("Create Session core asset unavailable", {
+      status: 503,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+        "x-mmd-create-session-core": "worker-owned-unavailable",
+        "x-mmd-create-session-business": "mmd",
+      },
+    });
+  }
+
+  const assetUrl = new URL(request.url);
+  assetUrl.pathname = BUNDLED_CREATE_SESSION_CORE_ASSET_PATH;
+  assetUrl.search = "";
+
+  const asset = await ownerEnv.ASSETS.fetch(new Request(assetUrl.toString(), { method: "GET" }));
+  const headers = new Headers(asset.headers);
+  headers.set("content-type", "application/javascript; charset=utf-8");
+  headers.set("cache-control", "no-store");
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("x-mmd-create-session-core", "worker-owned");
+  headers.set("x-mmd-create-session-business", "mmd");
+
+  return new Response(request.method === "HEAD" ? null : asset.body, {
+    status: asset.status,
+    statusText: asset.statusText,
+    headers,
+  });
+}
+
 function rewriteLegacyAdminLoginRedirect(request: Request, response: Response): Response {
   if (response.status < 300 || response.status >= 400) return response;
 
@@ -115,18 +168,29 @@ async function maybeRestoreOwnerCreateSession(
   const owner = await renderOwnerCreateSessionPage(request, env as unknown as OwnerCreateSessionEnv);
   if (!owner.ok || !(owner.headers.get("content-type") || "").includes("text/html")) return owner;
 
-  // These Worker asset routes are exact. Keep the runtime script queryless so
-  // it cannot fall through to the Webflow origin while preserving Owner v14 UI.
+  // MMD Create Session now loads its core JS from the same Worker-owned route
+  // family as the protected page. This avoids origin ambiguity on /a/* while
+  // preserving the bundled asset as the single implementation source.
   const headers = new Headers(owner.headers);
   headers.set("x-mmd-create-session-authority", "canonical-backend");
-  headers.set("x-mmd-create-session-assets", "queryless-exact-routes");
+  headers.set("x-mmd-create-session-assets", "worker-owned-core-route");
   headers.set("x-mmd-create-session-gate-ui", "server-verified");
   headers.set("x-mmd-create-session-mode", CREATE_SESSION_SIMPLE_START_MODE);
+  headers.set("x-mmd-create-session-business", "mmd-only");
 
-  let html = (await owner.text()).replace(
-    "/a/create-session.js?v=owner-v14-vnext2",
-    "/a/create-session.js",
-  );
+  let html = (await owner.text())
+    .replace(
+      "/a/create-session.js?v=owner-v14-vnext2",
+      CANONICAL_CREATE_SESSION_CORE_ASSET_PATH,
+    )
+    .replace(
+      'src="/a/create-session.js"',
+      `src="${CANONICAL_CREATE_SESSION_CORE_ASSET_PATH}"`,
+    )
+    .replace(
+      "data-mmd-create-session-pro",
+      'data-mmd-create-session-pro data-business-context="mmd"',
+    );
   html = applyCreateSessionSimpleStart(html);
 
   return new Response(html, {
@@ -139,6 +203,13 @@ async function maybeRestoreOwnerCreateSession(
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname === CANONICAL_CREATE_SESSION_CORE_ASSET_PATH) {
+      if (request.method === "GET" || request.method === "HEAD") {
+        return serveCreateSessionCoreAsset(request, env);
+      }
+      return createSessionCoreMethodNotAllowed();
+    }
 
     if (isLegacyAdminLoginPath(url.pathname)) {
       if (request.method === "GET" || request.method === "HEAD") {
