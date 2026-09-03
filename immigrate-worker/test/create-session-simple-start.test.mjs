@@ -25,9 +25,9 @@ const page = `<!doctype html><html><head></head><body>${ownerHtml}<script src="/
 try {
   const body = applyCreateSessionSimpleStart(page);
 
-  assert.equal(CREATE_SESSION_SIMPLE_START_MODE, "kenji-airtable-v3");
-  assert.match(body, /data-simple-start-style="kenji-airtable-v3"/);
-  assert.match(body, /data-simple-start-script="kenji-airtable-v3"/);
+  assert.equal(CREATE_SESSION_SIMPLE_START_MODE, "kenji-airtable-v4");
+  assert.match(body, /data-simple-start-style="kenji-airtable-v4"/);
+  assert.match(body, /data-simple-start-script="kenji-airtable-v4"/);
   assert.match(body, /query\.setAttribute\("placeholder", "LINE \/ โทร \/ Email \/ Member ID \/ Client ID"\)/);
   assert.match(body, /search\.textContent = "ค้นหา Client"/);
   assert.match(body, /recent\.textContent = "ลูกค้าล่าสุด"/);
@@ -45,7 +45,14 @@ try {
   assert.match(body, /manual_name_pending_reconcile/);
   assert.match(body, /identity_pending_reconcile/);
   assert.match(body, /guest_public_only/);
-  assert.match(body, /ยังไม่มี canonical Client สำหรับรายการนี้/);
+  assert.match(body, /ยังไม่มี canonical Client สำหรับ/);
+  assert.match(body, /ข้อมูลที่กรอกในช่องสมาชิก \/ tier ด้านล่างยังไม่ใช่ Client identity/);
+  assert.match(body, /function buildIntakeHref\(value\)/);
+  assert.match(body, /params\.set\("display_name", name\)/);
+  assert.match(body, /params\.set\("return_to", CREATE_SESSION_PATH\)/);
+  assert.match(body, /เพิ่ม \/ ผูก/);
+  assert.match(body, /link\.href = buildIntakeHref\(requestedName\)/);
+  assert.match(body, /\.mmd-cs-v14:not\(\.is-simple-has-client\) \.mmd-cs-v14__advanced/);
   assert.match(body, /recent\.click\(\)/);
   assert.match(body, /data-op-work-type/);
   assert.match(body, /is-simple-has-client/);
