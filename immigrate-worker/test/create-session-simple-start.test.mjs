@@ -55,12 +55,15 @@ try {
   assert.match(body, /hideUntil\(dock, hasModel\)/);
 
   assert.match(body, /function hasSelectedClient\(value\)/);
-  assert.match(body, /content !== "no client"/);
-  assert.match(body, /var hasClient = hasSelectedClient\(selectedName && selectedName\.textContent\)/);
+  assert.match(body, /!content\.startsWith\("no client"\)/);
+  assert.match(body, /var canonicalClientName = root\.querySelector\("\[data-op-client-name\]"\)/);
+  assert.match(body, /function hasCanonicalClient\(\)/);
+  assert.match(body, /canonicalClientName\.value/);
+  assert.match(body, /var hasClient = hasCanonicalClient\(\)/);
   assert.match(body, /var hasWork = hasClient && Boolean\(selectedWork\)/);
   assert.match(body, /var hasLane = hasWork && isChosen\(folderStat && folderStat\.textContent\)/);
   assert.match(body, /var hasModel = hasLane && isChosen\(modelStat && modelStat\.textContent\)/);
-  assert.match(body, /if \(!hasSelectedClient\(picked\) && recent\) recent\.click\(\)/);
+  assert.match(body, /if \(!hasCanonicalClient\(\) && recent\) recent\.click\(\)/);
 
   assert.doesNotMatch(body, /Public Ready/);
   assert.doesNotMatch(body, /Ready for Public/);
