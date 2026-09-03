@@ -45,6 +45,7 @@ const MEMBER_FIELDS = [
   "Membership Expiry",
   "Membership End Date",
   "Expire At",
+  "Clients",
 ];
 
 const ENTITLEMENT_FIELDS = [
@@ -87,6 +88,9 @@ const LINE_STAGING_FIELDS = [
   "created_at",
 ];
 
+const RETRYABLE_AIRTABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+const RETRY_DELAYS_MS = [320, 760, 1600];
+
 export function isCreateSessionClientLineageRequest(path, method) {
   const p = normalizePath(path);
   const m = String(method || "GET").toUpperCase();
@@ -120,7 +124,7 @@ export async function handleCreateSessionClientLineageRequest(request, env = {})
   }
 
   try {
-    const records = await buildClientLineageRecords(env, {
+    const snapshot = await buildClientLineageRecords(env, {
       query,
       limit: path === CREATE_SESSION_CLIENT_RECENT_PATH ? 24 : 40,
       recent: path === CREATE_SESSION_CLIENT_RECENT_PATH || !query,
@@ -131,8 +135,9 @@ export async function handleCreateSessionClientLineageRequest(request, env = {})
       source: "canonical_client_lineage",
       authority: "airtable_operational_records",
       entitlement_policy: "display_snapshot_only_backend_rechecks",
-      records,
-      count: records.length,
+      records: snapshot.records,
+      count: snapshot.records.length,
+      lineage_warnings: snapshot.warnings,
     });
   } catch (error) {
     return json(
@@ -148,12 +153,27 @@ export async function handleCreateSessionClientLineageRequest(request, env = {})
 
 async function buildClientLineageRecords(env, { query = "", limit = 40, recent = false } = {}) {
   const tables = tableNames(env);
-  const [clients, members, entitlements, staging] = await Promise.all([
-    airtableList(env, tables.clients, CLIENT_FIELDS, 220),
-    airtableList(env, tables.members, MEMBER_FIELDS, 220),
-    airtableList(env, tables.entitlements, ENTITLEMENT_FIELDS, 320),
-    airtableList(env, tables.lineStaging, LINE_STAGING_FIELDS, 260),
-  ]);
+  const warnings = [];
+
+  // Clients are the canonical selectable inventory and are the only required read.
+  // Enrichment must never make Find Client unavailable.
+  const clients = await airtableList(env, tables.clients, CLIENT_FIELDS, 500);
+  const members = await optionalAirtableList(env, tables.members, MEMBER_FIELDS, 160, warnings, "members");
+  const entitlements = await optionalAirtableList(env, tables.entitlements, ENTITLEMENT_FIELDS, 240, warnings, "entitlements");
+
+  // LINE staging is large and evidence-only. Never scan hundreds of staging rows
+  // for every lookup. Search it server-side only when the operator entered a query.
+  const staging = query
+    ? await optionalAirtableList(
+        env,
+        tables.lineStaging,
+        LINE_STAGING_FIELDS,
+        80,
+        warnings,
+        "line_staging",
+        { filterByFormula: stagingSearchFormula(query) },
+      )
+    : [];
 
   const memberIndexes = buildMemberIndexes(members);
   const entitlementIndexes = buildEntitlementIndexes(entitlements);
@@ -184,7 +204,16 @@ async function buildClientLineageRecords(env, { query = "", limit = 40, recent =
     .slice(0, Math.max(1, Math.min(Number(limit) || 40, 60)))
     .map((item) => item.record);
 
-  return rows;
+  return { records: rows, warnings };
+}
+
+async function optionalAirtableList(env, tableName, fields, maxRecords, warnings, label, options = {}) {
+  try {
+    return await airtableList(env, tableName, fields, maxRecords, options);
+  } catch (error) {
+    warnings.push(`${label}:${safeError(error)}`);
+    return [];
+  }
 }
 
 function toClientLineageRecord(clientRecord, memberRecord, entitlementRecord, stagingRecords, score) {
@@ -254,6 +283,9 @@ function buildLineageSummary(member, entitlement) {
 }
 
 function resolveRelatedMember(client, memberIndexes, entitlementIndexes, clientRecordId) {
+  const directlyLinked = memberIndexes.byClientRecordId.get(clientRecordId);
+  if (directlyLinked) return directlyLinked;
+
   const directEntitlements = entitlementIndexes.byClientRecordId.get(clientRecordId) || [];
   for (const entitlement of directEntitlements) {
     for (const memberId of linkIds(entitlement.fields?.member)) {
@@ -298,9 +330,7 @@ function resolveRelatedEntitlements(client, memberRecord, indexes, clientRecordI
 
 function chooseDisplayEntitlement(records) {
   if (!Array.isArray(records) || !records.length) return null;
-  return records
-    .slice()
-    .sort((a, b) => entitlementRank(b) - entitlementRank(a))[0] || null;
+  return records.slice().sort((a, b) => entitlementRank(b) - entitlementRank(a))[0] || null;
 }
 
 function entitlementRank(record) {
@@ -338,10 +368,7 @@ function resolveRelatedStaging(client, indexes, clientRecordId) {
 }
 
 function stagingIsReviewSafe(fields, clientRecordId) {
-  const linked = new Set([
-    ...linkIds(fields.matched_client),
-    clean(fields.matched_client_id),
-  ].filter(Boolean));
+  const linked = new Set([...linkIds(fields.matched_client), clean(fields.matched_client_id)].filter(Boolean));
   if (linked.has(clientRecordId)) return true;
   const status = normalizeSearch(firstText(fields.review_status, fields.decision));
   return /approved|reviewed|committed|matched/.test(status);
@@ -350,6 +377,7 @@ function stagingIsReviewSafe(fields, clientRecordId) {
 function buildMemberIndexes(records) {
   const indexes = {
     byRecordId: new Map(),
+    byClientRecordId: new Map(),
     byEmail: new Map(),
     byLine: new Map(),
     byUsername: new Map(),
@@ -357,6 +385,7 @@ function buildMemberIndexes(records) {
   for (const record of records) {
     const fields = record.fields || {};
     indexes.byRecordId.set(record.id, record);
+    for (const clientId of linkIds(fields.Clients)) setFirst(indexes.byClientRecordId, clientId, record);
     setFirst(indexes.byEmail, normalizeSearch(fields["Contact Email"]), record);
     setFirst(indexes.byLine, normalizeSearch(fields.line_id), record);
     setFirst(indexes.byUsername, normalizeSearch(fields.username), record);
@@ -464,7 +493,26 @@ function normalizeTelegramStatus(value) {
   return "missing";
 }
 
-async function airtableList(env, tableName, fields, maxRecords) {
+function stagingSearchFormula(query) {
+  const needle = airtableFormulaString(normalizeSearch(query));
+  if (!needle) return "FALSE()";
+  const fields = [
+    "line_display_name",
+    "line_renamed_name",
+    "line_tags_raw",
+    "normalized_name",
+    "line_user_id",
+    "matched_client_id",
+  ];
+  const checks = fields.map((field) => `IFERROR(SEARCH(\"${needle}\",LOWER({${field}}&\"\")),0)>0`);
+  return `OR(${checks.join(",")})`;
+}
+
+function airtableFormulaString(value) {
+  return clean(value).replace(/\\/g, "\\\\").replace(/\"/g, '\\"');
+}
+
+async function airtableList(env, tableName, fields, maxRecords, options = {}) {
   const output = [];
   let offset = "";
   const cap = Math.max(1, Math.min(Number(maxRecords) || 100, 500));
@@ -473,17 +521,11 @@ async function airtableList(env, tableName, fields, maxRecords) {
     const params = new URLSearchParams();
     params.set("pageSize", String(Math.min(100, cap - output.length)));
     if (offset) params.set("offset", offset);
+    if (clean(options.filterByFormula)) params.set("filterByFormula", clean(options.filterByFormula));
     for (const field of fields || []) params.append("fields[]", field);
 
-    const response = await fetch(
-      `${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(tableName)}?${params.toString()}`,
-      {
-        headers: {
-          Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
-          Accept: "application/json",
-        },
-      },
-    );
+    const requestUrl = `${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(tableName)}?${params.toString()}`;
+    const response = await airtableFetchWithRetry(requestUrl, env);
 
     if (!response.ok) {
       throw new Error(`airtable_${tableName}_${response.status}`);
@@ -497,6 +539,33 @@ async function airtableList(env, tableName, fields, maxRecords) {
   }
 
   return output.slice(0, cap);
+}
+
+async function airtableFetchWithRetry(url, env) {
+  let response = null;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+    response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
+        Accept: "application/json",
+      },
+    });
+
+    if (response.ok || !RETRYABLE_AIRTABLE_STATUS.has(response.status) || attempt >= RETRY_DELAYS_MS.length) {
+      return response;
+    }
+
+    const retryAfterSeconds = Number(response.headers.get("Retry-After"));
+    const retryAfterMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+      ? Math.min(4000, retryAfterSeconds * 1000)
+      : RETRY_DELAYS_MS[attempt];
+    await sleep(retryAfterMs);
+  }
+  return response;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
 }
 
 function tableNames(env) {
@@ -585,7 +654,7 @@ function json(data, status = 200) {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": "no-store, private, max-age=0",
-      "X-MMD-Client-Lineage": "canonical-v1",
+      "X-MMD-Client-Lineage": "canonical-v2",
     },
   });
 }
