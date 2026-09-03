@@ -117,7 +117,9 @@ async function maybeRestoreOwnerCreateSession(
   // These Worker asset routes are exact. Keep the runtime script queryless so
   // it cannot fall through to the Webflow origin while preserving Owner v14 UI.
   const headers = new Headers(owner.headers);
+  headers.set("x-mmd-create-session-authority", "canonical-backend");
   headers.set("x-mmd-create-session-assets", "queryless-exact-routes");
+  headers.set("x-mmd-create-session-gate-ui", "server-verified");
   const html = (await owner.text()).replace(
     "/a/create-session.js?v=owner-v14-vnext2",
     "/a/create-session.js",
