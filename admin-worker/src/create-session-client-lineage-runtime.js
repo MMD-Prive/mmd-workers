@@ -147,6 +147,18 @@ export async function handleCreateSessionClientLineageRequest(request, env = {})
       recent: path === CREATE_SESSION_CLIENT_RECENT_PATH || !query,
     });
 
+    const useManualFallback = Boolean(
+      path === CREATE_SESSION_CLIENT_LINEAGE_LOOKUP_PATH &&
+      query &&
+      snapshot.records.length === 0,
+    );
+    const records = useManualFallback
+      ? [buildManualPublicClient(query)]
+      : snapshot.records;
+    const lineageWarnings = useManualFallback
+      ? [...snapshot.warnings, "manual_public_only_pending_reconcile"]
+      : snapshot.warnings;
+
     return json({
       ok: true,
       source: "canonical_client_lineage",
@@ -154,9 +166,10 @@ export async function handleCreateSessionClientLineageRequest(request, env = {})
       entitlement_policy: "display_snapshot_only_backend_rechecks",
       lookup_chain: CUSTOMER_LOOKUP_CHAIN,
       lookup_priority: CUSTOMER_LOOKUP_PRIORITY,
-      records: snapshot.records,
-      count: snapshot.records.length,
-      lineage_warnings: snapshot.warnings,
+      records,
+      count: records.length,
+      lineage_warnings: lineageWarnings,
+      manual_fallback: useManualFallback,
     });
   } catch (error) {
     return json({
@@ -165,6 +178,39 @@ export async function handleCreateSessionClientLineageRequest(request, env = {})
       detail: safeError(error),
     }, 503);
   }
+}
+
+function buildManualPublicClient(query) {
+  const name = clean(query).slice(0, 160);
+  return {
+    client_id: "",
+    member_id: "",
+    member_email: "",
+    remembered_name: name,
+    canonical_name: "",
+    client_name: name,
+    aliases: [name],
+    matched_on: "manual_name_pending_reconcile",
+    matched_value: name,
+    lookup_chain: ["owner_manual_name", "identity_pending_reconcile"],
+    username: "",
+    phone: "",
+    package_code: "",
+    tier: "",
+    membership_status: "guest_public_only",
+    purchased_history: "Public only · identity pending reconciliation",
+    line_record_id: "",
+    line_user_id: "",
+    line_display_name: "",
+    legacy_tags: ["manual_name", "identity_pending_reconcile", "public_only"],
+    customer_telegram_username: "",
+    customer_telegram_status: "missing",
+    confidence: 1,
+    lineage_source: "owner_manual_name_pending_reconcile",
+    entitlement_snapshot_source: "none",
+    identity_status: "pending_reconcile",
+    manual_public_only: true,
+  };
 }
 
 async function buildClientLineageRecords(env, { query = "", limit = 40, recent = false } = {}) {
