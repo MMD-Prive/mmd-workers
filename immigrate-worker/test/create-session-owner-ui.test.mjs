@@ -22,6 +22,7 @@ await build({
 const { renderOwnerCreateSessionPage } = await import(pathToFileURL(outfile).href);
 const htmlAsset = await readFile(join(workerRoot, "public/a/create-sessions-owner-v14.html"), "utf8");
 const cssAsset = await readFile(join(workerRoot, "public/a/create-sessions-owner-v14.css"), "utf8");
+const coreJsAsset = await readFile(join(workerRoot, "public/a/create-session.js"), "utf8");
 
 const ASSETS = {
   async fetch(request) {
@@ -70,6 +71,9 @@ try {
   assert.doesNotMatch(body, /Chang/);
   assert.doesNotMatch(body, /Find client\. Verify lineage\. Create session\./);
   assert.doesNotMatch(body, /create-sessions\.js/);
+
+  assert.match(coreJsAsset, /assigned_assistant:\s*String\(val\(el\.humanAssistant\)\s*\|\|\s*"Boss Per"\)/);
+  assert.doesNotMatch(coreJsAsset, /assigned_assistant:\s*String\(val\(el\.humanAssistant\)\s*\|\|\s*"Ewvon"\)/);
 } finally {
   await rm(tmp, { recursive: true, force: true });
 }
