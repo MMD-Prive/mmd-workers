@@ -43,6 +43,19 @@ try {
   assert.match(body, /Private/);
   assert.match(body, /Public/);
 
+  assert.match(body, /is-manual-client/);
+  assert.match(body, /data-manual-card-polished/);
+  assert.match(body, /ชื่อที่เปอร์จำ/);
+  assert.match(body, /Public Ready/);
+  assert.match(body, /รอผูกประวัติ/);
+  assert.match(body, /ยังไม่ผูก Member \/ LINE — ใช้สร้าง Public Session ได้เลย/);
+  assert.match(body, /Ready for Public/);
+  assert.match(body, /รอผูก Member \/ LINE และประวัติภายหลัง/);
+  assert.match(body, /manual_name_pending_reconcile/);
+  assert.match(body, /identity_pending_reconcile/);
+  assert.match(body, /polishManualClientCards\(\)/);
+  assert.match(body, /polishManualSelection\(\)/);
+
   const twice = applyCreateSessionSimpleStart(body);
   assert.equal(twice, body, "simple start injection must be idempotent");
 } finally {
