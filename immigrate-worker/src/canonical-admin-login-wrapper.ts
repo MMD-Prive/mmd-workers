@@ -111,7 +111,23 @@ async function maybeRestoreOwnerCreateSession(
     return response;
   }
 
-  return renderOwnerCreateSessionPage(request, env as unknown as OwnerCreateSessionEnv);
+  const owner = await renderOwnerCreateSessionPage(request, env as unknown as OwnerCreateSessionEnv);
+  if (!owner.ok || !(owner.headers.get("content-type") || "").includes("text/html")) return owner;
+
+  // These Worker asset routes are exact. Keep the runtime script queryless so
+  // it cannot fall through to the Webflow origin while preserving Owner v14 UI.
+  const headers = new Headers(owner.headers);
+  headers.set("x-mmd-create-session-assets", "queryless-exact-routes");
+  const html = (await owner.text()).replace(
+    "/a/create-session.js?v=owner-v14-vnext2",
+    "/a/create-session.js",
+  );
+
+  return new Response(html, {
+    status: owner.status,
+    statusText: owner.statusText,
+    headers,
+  });
 }
 
 export default {
