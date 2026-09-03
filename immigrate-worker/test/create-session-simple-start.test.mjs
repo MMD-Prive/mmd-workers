@@ -63,9 +63,11 @@ try {
 
   assert.match(body, /function hasSelectedClient\(value\)/);
   assert.match(body, /!content\.startsWith\("no client"\)/);
-  assert.match(body, /var canonicalClientName = root\.querySelector\("\[data-op-client-name\]"\)/);
+  assert.match(body, /var selectedName = root\.querySelector\("\[data-op-selected-client-name\]"\)/);
   assert.match(body, /function hasCanonicalClient\(\)/);
-  assert.match(body, /canonicalClientName\.value/);
+  assert.match(body, /return hasSelectedClient\(selectedName && selectedName\.textContent\)/);
+  assert.doesNotMatch(body, /canonicalClientName/);
+  assert.doesNotMatch(body, /canonicalClientName\.value/);
   assert.match(body, /var hasClient = hasCanonicalClient\(\)/);
   assert.match(body, /var hasWork = hasClient && Boolean\(selectedWork\)/);
   assert.match(body, /var hasLane = hasWork && isChosen\(folderStat && folderStat\.textContent\)/);
