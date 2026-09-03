@@ -7,6 +7,7 @@ import { handleMmsAdminRequest } from './src/mms-admin-runtime.js';
 const env = {
   ADMIN_LOGIN_CREDENTIAL: 'owner-code',
   ADMIN_SESSION_SECRET: 'session-secret',
+  ADMIN_WORKER_BUILD_SHA: 'test-build-sha',
 };
 
 function base64Url(value) {
@@ -44,7 +45,21 @@ test('valid credential-bound browser cookie remains accepted on MMS admin page',
 
   const response = await handleMmsAdminRequest(request, env);
   assert.equal(response.status, 200);
-  assert.match(await response.text(), /MMS · Internal Operations/);
+  assert.equal(response.headers.get('x-mmd-admin-build'), 'test-build-sha');
+  assert.equal(response.headers.get('x-mmd-admin-surface'), 'mms-admin');
+  const body = await response.text();
+  assert.match(body, /MMS · Internal Operations/);
+  assert.match(body, /<meta name="mmd-admin-build" content="test-build-sha">/);
+  assert.match(body, /data-mmd-admin-build="test-build-sha"/);
+});
+
+test('HEAD exposes the MMS production build marker without a body', async () => {
+  const cookie = await signedCookie();
+  const request = new Request('https://mmdbkk.com/internal/admin/mms', { method: 'HEAD', headers: { cookie } });
+  const response = await handleMmsAdminRequest(request, env);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('x-mmd-admin-build'), 'test-build-sha');
+  assert.equal(await response.text(), '');
 });
 
 test('valid browser cookie also keeps MMS admin API in-session instead of returning 401', async () => {
