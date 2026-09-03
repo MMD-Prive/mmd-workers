@@ -60,19 +60,19 @@ pattern = "www.mmdbkk.com/internal/jobs/create-job*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
-pattern = "mmdbkk.com/a/create-session.js"
+pattern = "mmdbkk.com/a/create-session.js*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
-pattern = "www.mmdbkk.com/a/create-session.js"
+pattern = "www.mmdbkk.com/a/create-session.js*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
-pattern = "mmdbkk.com/a/create-session-focus-flow-v2.js"
+pattern = "mmdbkk.com/a/create-session-focus-flow-v2.js*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
-pattern = "www.mmdbkk.com/a/create-session-focus-flow-v2.js"
+pattern = "www.mmdbkk.com/a/create-session-focus-flow-v2.js*"
 zone_name = "mmdbkk.com"
 
 [[routes]]

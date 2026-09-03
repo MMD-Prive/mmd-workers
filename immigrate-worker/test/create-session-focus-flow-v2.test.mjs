@@ -58,8 +58,12 @@ try {
   assert.match(controller, /Session Verified/);
   assert.match(controller, /source\.replaceWith\(visible\)/);
 
-  assert.match(wrangler, /pattern = "mmdbkk\.com\/a\/create-session-focus-flow-v2\.js"/);
-  assert.match(wrangler, /pattern = "www\.mmdbkk\.com\/a\/create-session-focus-flow-v2\.js"/);
+  assert.match(wrangler, /pattern = "mmdbkk\.com\/a\/create-session\.js\*"/);
+  assert.match(wrangler, /pattern = "www\.mmdbkk\.com\/a\/create-session\.js\*"/);
+  assert.match(wrangler, /pattern = "mmdbkk\.com\/a\/create-session-focus-flow-v2\.js\*"/);
+  assert.match(wrangler, /pattern = "www\.mmdbkk\.com\/a\/create-session-focus-flow-v2\.js\*"/);
+  assert.doesNotMatch(wrangler, /pattern = "mmdbkk\.com\/a\/create-session\.js"\n/);
+  assert.doesNotMatch(wrangler, /pattern = "www\.mmdbkk\.com\/a\/create-session\.js"\n/);
 } finally {
   await rm(tmp, { recursive: true, force: true });
 }
