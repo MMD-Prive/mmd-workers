@@ -103,7 +103,7 @@ jobs:
           set -euo pipefail
           npx --yes wrangler@4.128.0 versions deploy "${IMMIGRATE_WORKER_VERSION_ID}@100%" -y
 
-      - name: Sync exact Create Session core asset routes
+      - name: Sync exact MMD Create Session core routes
         shell: bash
         working-directory: .
         run: |
@@ -113,6 +113,8 @@ jobs:
           const zoneId = process.env.CLOUDFLARE_ZONE_ID;
           const worker = process.env.WORKER_NAME;
           const desired = [
+            "mmdbkk.com/internal/admin/jobs/create-session.js",
+            "www.mmdbkk.com/internal/admin/jobs/create-session.js",
             "mmdbkk.com/a/create-session.js",
             "www.mmdbkk.com/a/create-session.js",
           ];
@@ -160,7 +162,7 @@ jobs:
           const stale = obsolete.filter((pattern) => verified.some((route) => route.pattern === pattern && route.script === worker));
           if (missing.length) throw new Error(`missing routes: ${missing.join(", ")}`);
           if (stale.length) throw new Error(`obsolete routes still present: ${stale.join(", ")}`);
-          console.log(`verified ${desired.length}/${desired.length} exact queryless Create Session core routes`);
+          console.log(`verified ${desired.length}/${desired.length} exact MMD Create Session core routes`);
           NODE
 
       - name: Verify latest Control Room in production
