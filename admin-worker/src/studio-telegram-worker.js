@@ -1,4 +1,8 @@
 import studioWorker from "./studio-real-worker.js";
+import {
+  handleCreateSessionClientLineageRequest,
+  isCreateSessionClientLineageRequest,
+} from "./create-session-client-lineage-runtime.js";
 
 const STUDIO_API_PREFIX = "/studio/api";
 const COMMIT_PATHS = new Set([
@@ -12,6 +16,16 @@ export default {
     const url = new URL(request.url);
     const path = normalizePathname(url.pathname);
     const method = request.method.toUpperCase();
+
+    // The credential-bound admin wrapper has already authenticated /v1/admin/*
+    // and injected the internal authorization bridge before requests reach this
+    // composed worker. Handle Create Session lineage here so the historical
+    // ingress bridge terminates on a real canonical backend instead of falling
+    // through to a 404 in the legacy core router.
+    if (isCreateSessionClientLineageRequest(path, method)) {
+      return handleCreateSessionClientLineageRequest(request, env);
+    }
+
     const bodyPromise = method === "POST" && COMMIT_PATHS.has(path)
       ? request.clone().json().catch(() => ({}))
       : Promise.resolve({});
