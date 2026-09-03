@@ -52,6 +52,7 @@ jobs:
           set -euo pipefail
           node --check src/create-session-client-lineage-runtime.js
           node --check src/studio-telegram-worker.js
+          node --check src/admin-live-marker-wrapper.js
           node --test \
             create-session-client-lineage-runtime.test.mjs \
             create-session-manual-public-fallback.test.mjs
@@ -73,12 +74,16 @@ jobs:
             if (skippingRoute && /^\s*\[/.test(line)) skippingRoute = false;
             if (!skippingRoute) output.push(line);
           }
-          fs.writeFileSync(".wrangler-direct-no-routes.toml", `${output.join("\n")}\n`);
+          const configured = output
+            .join("\n")
+            .replace(/^main\s*=\s*"[^"]+"/m, 'main = "src/admin-live-marker-wrapper.js"');
+          fs.writeFileSync(".wrangler-direct-no-routes.toml", `${configured}\n`);
           NODE
           if grep -q '^\s*\[\[routes\]\]' .wrangler-direct-no-routes.toml; then
             echo "No-routes deploy config still contains routes; refusing deploy." >&2
             exit 1
           fi
+          grep -q '^main = "src/admin-live-marker-wrapper.js"$' .wrangler-direct-no-routes.toml
 
       - name: Direct deploy exact main source without route mutation
         shell: bash
