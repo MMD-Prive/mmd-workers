@@ -59,6 +59,20 @@ try {
   assert.match(controller, /Session Verified/);
   assert.match(controller, /source\.replaceWith\(visible\)/);
 
+  // Client-first UX: recent clients are an obvious primary action and autoload,
+  // production Demo is removed, filters are secondary, and lineage failures tell
+  // the operator what to do instead of asking them to test the UI.
+  assert.match(controller, /installClientFirstUx/);
+  assert.match(controller, /autoLoadRecentClients/);
+  assert.match(controller, /recent\.click\(\)/);
+  assert.match(controller, /ลูกค้าล่าสุด/);
+  assert.match(controller, /ตัวกรองเพิ่มเติม/);
+  assert.match(controller, /demo\.remove\(\)/);
+  assert.match(controller, /เชื่อม Client Lineage ไม่สำเร็จ/);
+  assert.match(controller, /ff2--awaiting-client/);
+  assert.match(controller, /● Connected/);
+  assert.match(controller, /ชื่อ \/ LINE \/ เบอร์ \/ Package/);
+
   assert.match(wrangler, /pattern = "mmdbkk\.com\/a\/create-session\.js"/);
   assert.match(wrangler, /pattern = "www\.mmdbkk\.com\/a\/create-session\.js"/);
   assert.match(wrangler, /pattern = "mmdbkk\.com\/a\/create-session-focus-flow-v2\.js"/);
