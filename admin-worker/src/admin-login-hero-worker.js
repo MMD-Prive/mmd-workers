@@ -267,7 +267,10 @@ async function applyCredentialBoundAdminGate(request, env, path, method) {
 
   const session = await readCredentialBoundAdminSession(request, env);
   if (!isValidCredentialBoundAdminSession(session, request)) {
-    if ((method === "GET" || method === "HEAD") && path === "/internal/admin/kenji") {
+    if (
+      (method === "GET" || method === "HEAD") &&
+      (path === "/internal/admin/kenji" || path === "/internal/admin/mms")
+    ) {
       const login = new URL(ADMIN_LOGIN_PAGE_PATH, request.url);
       login.searchParams.set("next", path);
       return { response: new Response(null, { status: 303, headers: { Location: login.pathname + login.search, "Cache-Control": "no-store" } }) };
@@ -292,6 +295,7 @@ async function applyCredentialBoundAdminGate(request, env, path, method) {
 function isCredentialBoundAdminPath(path) {
   return (
     path === "/internal/admin/kenji" ||
+    path === "/internal/admin/mms" ||
     path === ADMIN_DASHBOARD_API_PATH ||
     path === "/v1/internal/kenji/knowledge/published" ||
     path.startsWith("/v1/admin/") ||

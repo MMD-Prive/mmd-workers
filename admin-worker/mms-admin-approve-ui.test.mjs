@@ -6,6 +6,7 @@ import { wireMmsApproveUi, MMS_APPROVE_UI_MARKER } from './src/mms-admin-approve
 import { renderMmsAdminPage } from './src/mms-admin-page.js';
 
 const runtimeSource = readFileSync(new URL('./src/mms-admin-runtime.js', import.meta.url), 'utf8');
+const loginWrapperSource = readFileSync(new URL('./src/admin-login-hero-worker.js', import.meta.url), 'utf8');
 
 test('MMS admin exposes the real approve action for therapist applications', () => {
   const source = renderMmsAdminPage();
@@ -50,6 +51,20 @@ test('system check proves backend read paths without mutating bookings or therap
   assert.match(runtimeSource, /skills: \["aroma_therapy_oil"\]/);
   assert.match(runtimeSource, /airtable: Boolean\(health\?\.bindings\?\.airtable && snapshotReady\)/);
   assert.match(runtimeSource, /r2: Boolean\(health\?\.bindings\?\.private_uploads\)/);
+});
+
+test('MMS browser page participates in the credential-bound admin session gate', () => {
+  const gateStart = loginWrapperSource.indexOf('function isCredentialBoundAdminPath(path)');
+  const gateEnd = loginWrapperSource.indexOf('async function hasValidServiceAuth', gateStart);
+  assert.ok(gateStart >= 0 && gateEnd > gateStart);
+  const gateSource = loginWrapperSource.slice(gateStart, gateEnd);
+  assert.match(gateSource, /path === "\/internal\/admin\/mms"/);
+
+  const redirectStart = loginWrapperSource.indexOf('const session = await readCredentialBoundAdminSession');
+  const redirectEnd = loginWrapperSource.indexOf('const bypass = clean', redirectStart);
+  assert.ok(redirectStart >= 0 && redirectEnd > redirectStart);
+  const redirectSource = loginWrapperSource.slice(redirectStart, redirectEnd);
+  assert.match(redirectSource, /path === "\/internal\/admin\/mms"/);
 });
 
 test('approve wiring is idempotent and preserves ordinary application save behavior', () => {
