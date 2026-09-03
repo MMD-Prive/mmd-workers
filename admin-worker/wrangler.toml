@@ -343,6 +343,16 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/kenji/control/runtime/kill-switch*"
 zone_name = "mmdbkk.com"
 
+# Kenji Client Intake is a manual operator mutation that creates or links one
+# canonical Airtable Client before Create Session. Exact route only.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/control/clients/intake"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/control/clients/intake"
+zone_name = "mmdbkk.com"
+
 # Create Job Link Issuer API. Exact route only so Webflow-owned admin pages stay
 # untouched while Create Actual Job POST reaches admin-worker JSON handlers.
 [[routes]]
