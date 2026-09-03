@@ -71,7 +71,7 @@ try {
   assert.match(wrapper, /\/a\/create-session\.js\?v=focus-flow-v2-core/);
   assert.match(wrapper, /\/a\/create-session-focus-flow-v2\.js\?v=2/);
   assert.match(wrapper, /Session Verified/);
-  assert.match(wrapper, /data-focus-server-gate=\\"verified\\"/);
+  assert.match(wrapper, /data-focus-server-gate="verified"/);
   assert.match(wrapper, /Secure Session/);
 } finally {
   await rm(tmp, { recursive: true, force: true });
