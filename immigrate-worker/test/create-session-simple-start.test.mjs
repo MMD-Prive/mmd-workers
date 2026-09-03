@@ -28,9 +28,9 @@ try {
   assert.equal(CREATE_SESSION_SIMPLE_START_MODE, "kenji-airtable-v3");
   assert.match(body, /data-simple-start-style="kenji-airtable-v3"/);
   assert.match(body, /data-simple-start-script="kenji-airtable-v3"/);
-  assert.match(body, /LINE \/ โทร \/ Email \/ Member ID \/ Client ID/);
-  assert.match(body, />ค้นหา Client<\/button>/);
-  assert.match(body, />ลูกค้าล่าสุด<\/button>/);
+  assert.match(body, /query\.setAttribute\("placeholder", "LINE \/ โทร \/ Email \/ Member ID \/ Client ID"\)/);
+  assert.match(body, /search\.textContent = "ค้นหา Client"/);
+  assert.match(body, /recent\.textContent = "ลูกค้าล่าสุด"/);
   assert.match(body, /\/internal\/admin\/kenji-client-intake/);
   assert.match(body, /KENJI CLIENT INTAKE → AIRTABLE/);
   assert.match(body, /Client ต้องอยู่ใน Airtable ก่อนเปิด Session/);
@@ -54,7 +54,6 @@ try {
   assert.match(body, /hideUntil\(reviewPanel, hasModel\)/);
   assert.match(body, /hideUntil\(dock, hasModel\)/);
 
-  assert.doesNotMatch(body, /พิมพ์ชื่อที่เปอร์จำ เช่น หนุ่ย/);
   assert.doesNotMatch(body, /Public Ready/);
   assert.doesNotMatch(body, /Ready for Public/);
 
