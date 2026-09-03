@@ -1,7 +1,7 @@
-export const CREATE_SESSION_SIMPLE_START_MODE = "kenji-airtable-v3";
+export const CREATE_SESSION_SIMPLE_START_MODE = "kenji-airtable-v4";
 
 const SIMPLE_START_CSS = `
-/* Kenji Airtable Create Session v3 — presentation only. Backend gates remain authoritative. */
+/* Kenji Airtable Create Session v4 — presentation only. Backend gates remain authoritative. */
 .mmd-cs-v14__heroArt,
 .mmd-cs-v14__thumb,
 .mmd-cs-v14 [data-cs-media],
@@ -28,6 +28,10 @@ const SIMPLE_START_CSS = `
 
 .mmd-cs-v14:not(.is-simple-has-client) #work-panel [data-op-work-type] {
   pointer-events: none;
+}
+
+.mmd-cs-v14:not(.is-simple-has-client) .mmd-cs-v14__advanced {
+  display: none !important;
 }
 
 .mmd-cs-v14__kenjiGate {
@@ -166,6 +170,13 @@ const SIMPLE_START_CSS = `
 .mmd-cs-v14__noClient a {
   display: inline-flex;
   margin-top: 12px;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  border: 1px solid rgba(212,181,106,.34);
+  border-radius: 999px;
+  background: rgba(212,181,106,.08);
   color: #f2dfaa;
   font-size: 11px;
   font-weight: 850;
@@ -205,6 +216,7 @@ const SIMPLE_START_SCRIPT = `
   "use strict";
 
   var KENJI_INTAKE_PATH = "/internal/admin/kenji-client-intake";
+  var CREATE_SESSION_PATH = "/internal/admin/jobs/create-session";
   var IMG_KENJI = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a53f69aac6671f077397a31_Kenji%20know4.webp";
   var IMG_MEMBER = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a548060e5132b9ba40ef0aa_Member%20Account.webp";
   var IMG_FLOW = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a56c6f3a5c0c136eb7cbd7b_Wall%20a%20Long.webp";
@@ -238,19 +250,26 @@ const SIMPLE_START_SCRIPT = `
     return Boolean(content && content !== "-" && !content.startsWith("no client") && content !== "not selected");
   }
 
+  function buildIntakeHref(value) {
+    var params = new URLSearchParams();
+    var name = String(value || "").trim();
+    if (name) params.set("display_name", name);
+    params.set("return_to", CREATE_SESSION_PATH);
+    return KENJI_INTAKE_PATH + "?" + params.toString();
+  }
+
   function boot() {
     var root = document.querySelector("[data-mmd-create-session-pro]");
     if (!root || root.getAttribute("data-simple-start-bound") === "1") return;
 
     root.setAttribute("data-simple-start-bound", "1");
-    root.setAttribute("data-simple-start-mode", "kenji-airtable-v3");
+    root.setAttribute("data-simple-start-mode", "kenji-airtable-v4");
     root.setAttribute("data-client-source", "airtable-canonical");
 
     var query = root.querySelector("[data-op-client-query]");
     var search = root.querySelector("[data-op-search-client]");
     var recent = root.querySelector("[data-op-load-recent]");
     var selectedName = root.querySelector("[data-op-selected-client-name]");
-    var canonicalClientName = root.querySelector("[data-op-client-name]");
     var results = root.querySelector("[data-op-client-results]");
     var workButtons = Array.prototype.slice.call(root.querySelectorAll("[data-op-work-type]"));
     var laneGrid = root.querySelector("[data-op-folder-grid]");
@@ -302,7 +321,7 @@ const SIMPLE_START_SCRIPT = `
       body.appendChild(make("p", "mmd-cs-v14__kenjiCopy", "ถ้ายังไม่มี Client ให้ Kenji หา record เดิมจาก LINE / โทร / Email ก่อน แล้วค่อยสร้างใหม่เมื่อหาไม่เจอจริง Create Session จะใช้ canonical Client record เท่านั้น"));
 
       var action = make("a", "mmd-cs-v14__kenjiBtn", "+ เพิ่ม / ผูก Client");
-      action.href = KENJI_INTAKE_PATH;
+      action.href = buildIntakeHref(query && query.value);
       top.appendChild(body);
       top.appendChild(action);
       gate.appendChild(top);
@@ -354,12 +373,13 @@ const SIMPLE_START_SCRIPT = `
       var empty = results.querySelector("[data-kenji-no-client]");
       if (cards.length && visible === 0) {
         if (!empty) {
+          var requestedName = String(query && query.value || "").trim();
           empty = make("div", "mmd-cs-v14__noClient");
           empty.setAttribute("data-kenji-no-client", "");
-          empty.appendChild(make("strong", "", "ยังไม่มี canonical Client สำหรับรายการนี้"));
-          empty.appendChild(make("span", "", "ให้ Kenji เพิ่มหรือผูก Client ใน Airtable ก่อน แล้วกลับมารีโหลด Client"));
-          var link = make("a", "", "ไป Kenji Client Intake →");
-          link.href = KENJI_INTAKE_PATH;
+          empty.appendChild(make("strong", "", requestedName ? "ยังไม่มี canonical Client สำหรับ “" + requestedName + "”" : "ยังไม่มี canonical Client สำหรับรายการนี้"));
+          empty.appendChild(make("span", "", "ข้อมูลที่กรอกในช่องสมาชิก / tier ด้านล่างยังไม่ใช่ Client identity และใช้เปิด Session ไม่ได้"));
+          var link = make("a", "", requestedName ? "เพิ่ม / ผูก “" + requestedName + "” เป็น Client →" : "ไป Kenji Client Intake →");
+          link.href = buildIntakeHref(requestedName);
           empty.appendChild(link);
           results.appendChild(empty);
         }
@@ -375,7 +395,6 @@ const SIMPLE_START_SCRIPT = `
     }
 
     function hasCanonicalClient() {
-      if (canonicalClientName) return Boolean(String(canonicalClientName.value || "").trim());
       return hasSelectedClient(selectedName && selectedName.textContent);
     }
 
