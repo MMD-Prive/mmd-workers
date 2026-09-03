@@ -178,7 +178,8 @@ async function buildClientLineageRecords(env, { query = "", limit = 40, recent =
   const entitlements = await optionalAirtableList(env, tables.entitlements, ENTITLEMENT_FIELDS, 240, warnings, "entitlements");
 
   // LINE staging contains Per's remembered/manual rename and historical aliases.
-  // It is identity evidence only and never an entitlement source.
+  // It is identity evidence only and never an entitlement source. Recent cards
+  // deliberately enrich only the candidate clients that can actually render.
   const staging = query
     ? await optionalAirtableList(
         env,
@@ -189,7 +190,17 @@ async function buildClientLineageRecords(env, { query = "", limit = 40, recent =
         "line_staging",
         { filterByFormula: stagingSearchFormula(query) },
       )
-    : [];
+    : recent
+      ? await optionalAirtableList(
+          env,
+          tables.lineStaging,
+          LINE_STAGING_FIELDS,
+          160,
+          warnings,
+          "line_staging_recent",
+          { filterByFormula: stagingRecentFormula(clients, limit) },
+        )
+      : [];
 
   const memberIndexes = buildMemberIndexes(members);
   const entitlementIndexes = buildEntitlementIndexes(entitlements);
@@ -690,6 +701,24 @@ function normalizeTelegramStatus(value) {
   if (/active|granted|linked|member|joined/.test(status)) return "linked";
   if (/invited|pending/.test(status)) return "invited";
   return "missing";
+}
+
+function stagingRecentFormula(clientRecords, limit = 24) {
+  const candidates = (Array.isArray(clientRecords) ? clientRecords : [])
+    .slice()
+    .sort((a, b) => String(b?.createdTime || "").localeCompare(String(a?.createdTime || "")))
+    .slice(0, Math.max(1, Math.min(Number(limit) || 24, 60)));
+  const checks = [];
+
+  for (const record of candidates) {
+    const clientId = airtableFormulaString(clean(record?.id));
+    if (clientId) checks.push(`{matched_client_id}=\"${clientId}\"`);
+
+    const lineId = airtableFormulaString(normalizeSearch(record?.fields?.line_user_id));
+    if (lineId) checks.push(`LOWER({line_user_id}&\"\")=\"${lineId}\"`);
+  }
+
+  return checks.length ? `OR(${checks.join(",")})` : "FALSE()";
 }
 
 function stagingSearchFormula(query) {
