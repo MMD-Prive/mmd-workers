@@ -96,26 +96,21 @@ jobs:
           echo "ADMIN_WORKER_DIRECT_VERSION_ID=${version_id}" >> "$GITHUB_ENV"
           echo "Direct-deployed admin-worker version ${version_id} from ${GITHUB_SHA}"
 
-      - name: Verify deployed version exists in Cloudflare
+      - name: Verify live Worker script contains manual fallback
         shell: bash
         run: |
           set -euo pipefail
-          response_file="$(mktemp)"
-          http_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS \
-            -o "$response_file" \
+          script_file="$(mktemp)"
+          http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+            -o "$script_file" \
             -w "%{http_code}" \
             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/admin-worker/versions/$ADMIN_WORKER_DIRECT_VERSION_ID")"
-          cat "$response_file"
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/admin-worker/content")"
           test "$http_code" = "200"
-          node - "$response_file" "$ADMIN_WORKER_DIRECT_VERSION_ID" <<'NODE'
-          const fs = require("node:fs");
-          const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-          const expected = process.argv[3];
-          if (payload.success !== true) throw new Error("Cloudflare version lookup was not successful");
-          if ((payload.result?.id || "") !== expected) throw new Error("Cloudflare returned a different Worker version");
-          console.log(`Verified deployed Worker version ${expected} exists in Cloudflare`);
-          NODE
+          grep -a -q 'manual_public_only_pending_reconcile' "$script_file"
+          grep -a -q 'manual_name_pending_reconcile' "$script_file"
+          grep -a -q 'owner_manual_name_pending_reconcile' "$script_file"
+          echo "Verified live admin-worker script content contains canonical manual Public fallback markers."
 
       - name: Verify live admin-worker route responds
         shell: bash
