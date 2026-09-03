@@ -1,5 +1,5 @@
 name = "mmd-auth-worker"
-main = "src/my-mmd-runtime-index.js"
+main = "src/operator-payment-runtime-index.js"
 compatibility_date = "2026-01-20"
 
 [triggers]
@@ -98,6 +98,7 @@ MEMBER_STATUS_AIRTABLE_TIMEOUT_MS = "10000"
 # AUTH_RECONCILE_SECRET
 # AUTH_SERVICE_AUTH_TO_TELEGRAM
 # AUTH_SERVICE_AUTH_TO_MEMBER_PAGES
+# AUTH_SERVICE_LOVABLE_TO_AUTH
 
 [[services]]
 binding = "TELEGRAM_ACCESS_RECONCILER"
