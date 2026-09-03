@@ -180,7 +180,7 @@ test("lineage lookup returns canonical client enriched by member, entitlement an
   }
 });
 
-test("recent lineage returns canonical clients without scanning LINE staging", async () => {
+test("recent lineage enriches cards with Per manual rename before canonical name", async () => {
   const restore = installAirtableMock();
   try {
     const response = await handleCreateSessionClientLineageRequest(
@@ -191,8 +191,13 @@ test("recent lineage returns canonical clients without scanning LINE staging", a
     assert.equal(response.status, 200);
     assert.equal(body.records.length, 1);
     assert.equal(body.records[0].client_id, "recClient1");
+    assert.equal(body.records[0].remembered_name, "Per Premium");
+    assert.equal(body.records[0].canonical_name, "Per Client");
+    assert.equal(body.records[0].client_name, "Per Premium");
     const calls = restore();
-    assert.equal(calls.some((url) => decodeURIComponent(url.pathname).endsWith("/staging")), false);
+    const stagingCall = calls.find((url) => decodeURIComponent(url.pathname).endsWith("/staging"));
+    assert.ok(stagingCall, "recent clients must read LINE staging for Per remembered names");
+    assert.match(stagingCall.searchParams.get("filterByFormula") || "", /recClient1|u123/i);
   } catch (error) {
     restore();
     throw error;
