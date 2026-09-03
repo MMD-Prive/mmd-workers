@@ -106,21 +106,22 @@ try {
     },
   };
 
-  const core = await call("/internal/admin/jobs/create-session.js", undefined, "mmdbkk.com", assetEnv);
+  const core = await call("/internal/admin/jobs/create-session/core", undefined, "mmdbkk.com", assetEnv);
   assert.equal(core.status, 200);
   assert.equal(core.headers.get("content-type"), "application/javascript; charset=utf-8");
   assert.equal(core.headers.get("cache-control"), "no-store");
   assert.equal(core.headers.get("x-mmd-create-session-core"), "worker-owned");
+  assert.equal(core.headers.get("x-mmd-create-session-core-route"), "extensionless-v1");
   assert.equal(core.headers.get("x-mmd-create-session-business"), "mmd");
   assert.match(await core.text(), /mmd_sigil_create_session_external_js_v3/);
 
-  const coreHead = await call("/internal/admin/jobs/create-session.js", { method: "HEAD" }, "www.mmdbkk.com", assetEnv);
+  const coreHead = await call("/internal/admin/jobs/create-session/core", { method: "HEAD" }, "www.mmdbkk.com", assetEnv);
   assert.equal(coreHead.status, 200);
   assert.equal(coreHead.headers.get("x-mmd-create-session-core"), "worker-owned");
   assert.equal(await coreHead.text(), "");
 
   const corePost = await call(
-    "/internal/admin/jobs/create-session.js",
+    "/internal/admin/jobs/create-session/core",
     { method: "POST", body: "nope=1" },
     "mmdbkk.com",
     assetEnv,
