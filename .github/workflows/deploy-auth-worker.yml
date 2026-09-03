@@ -22,7 +22,10 @@ jobs:
     timeout-minutes: 20
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      CLOUDFLARE_ZONE_ID: "2d62396174fa2ddadbbcd0e8cf0f3367"
+      WORKER_NAME: "mmd-auth-worker"
       NO_COLOR: "1"
 
     steps:
@@ -38,13 +41,21 @@ jobs:
       - name: Normalize Cloudflare credentials
         shell: bash
         run: |
+          set -euo pipefail
           node <<'NODE'
           const fs = require("node:fs");
           const clean = (value) => (value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
-          const token = clean(process.env.CLOUDFLARE_API_TOKEN);
+          const deployToken = clean(process.env.CLOUDFLARE_API_TOKEN);
+          const routesToken = clean(process.env.CLOUDFLARE_ROUTES_API_TOKEN);
           const accountId = clean(process.env.CLOUDFLARE_ACCOUNT_ID);
-          if (!token || !accountId) throw new Error("Cloudflare credentials are missing after normalization");
-          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\nCLOUDFLARE_ACCOUNT_ID=${accountId}\n`);
+          const zoneId = clean(process.env.CLOUDFLARE_ZONE_ID);
+          if (!deployToken || !routesToken || !accountId || !zoneId) {
+            throw new Error("Cloudflare deploy/routes credentials are missing after normalization");
+          }
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${deployToken}\n`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ROUTES_API_TOKEN=${routesToken}\n`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ACCOUNT_ID=${accountId}\n`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ZONE_ID=${zoneId}\n`);
           NODE
 
       - name: Install dependencies
@@ -59,8 +70,87 @@ jobs:
       - name: Validate Cloudflare deployment
         run: npx --yes wrangler@4 deploy --dry-run --keep-vars --config auth-worker/wrangler.toml
 
-      - name: Deploy mmd-auth-worker
-        run: npx --yes wrangler@4 deploy --keep-vars --config auth-worker/wrangler.toml
+      - name: Upload auth worker version
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 versions upload \
+            --config auth-worker/wrangler.toml \
+            --keep-vars \
+            --tag "gha-${GITHUB_SHA:0:12}" \
+            --message "GitHub Actions ${GITHUB_SHA}" \
+            2>&1 | tee "$RUNNER_TEMP/auth-worker-upload.log"
+          version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/auth-worker-upload.log" | tail -n 1)"
+          test -n "$version_id"
+          echo "AUTH_WORKER_VERSION_ID=$version_id" >> "$GITHUB_ENV"
+
+      - name: Deploy uploaded auth worker version
+        shell: bash
+        working-directory: auth-worker
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 versions deploy "${AUTH_WORKER_VERSION_ID}@100%" -y
+
+      - name: Sync narrow production operator routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
+          const zoneId = process.env.CLOUDFLARE_ZONE_ID;
+          const worker = process.env.WORKER_NAME;
+          const desired = [
+            "mmdbkk.com/member/api/operator/*",
+            "www.mmdbkk.com/member/api/operator/*",
+          ];
+          async function cf(path, options = {}) {
+            const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+              ...options,
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+                ...(options.headers || {}),
+              },
+            });
+            const body = await response.json();
+            if (!response.ok || body.success !== true) {
+              throw new Error(JSON.stringify(body.errors || body));
+            }
+            return body.result;
+          }
+          const routePath = `/zones/${zoneId}/workers/routes`;
+          const existing = await cf(routePath);
+          for (const pattern of desired) {
+            const conflict = existing.find((route) => route.pattern === pattern && route.script !== worker);
+            if (conflict) throw new Error(`route conflict ${pattern} -> ${conflict.script || "none"}`);
+          }
+          for (const pattern of desired) {
+            if (existing.some((route) => route.pattern === pattern && route.script === worker)) continue;
+            await cf(routePath, { method: "POST", body: JSON.stringify({ pattern, script: worker }) });
+            console.log(`created ${pattern} -> ${worker}`);
+          }
+          const verified = await cf(routePath);
+          const missing = desired.filter((pattern) => !verified.some((route) => route.pattern === pattern && route.script === worker));
+          if (missing.length) throw new Error(`missing routes: ${missing.join(", ")}`);
+          console.log(`verified ${desired.length}/${desired.length} operator routes`);
+          NODE
+
+      - name: Smoke operator route ownership without audit mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          for host in mmdbkk.com www.mmdbkk.com; do
+            body="$(mktemp)"
+            headers="$(mktemp)"
+            code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS -D "$headers" -o "$body" -w "%{http_code}" \
+              -X GET "https://${host}/member/api/operator/membership/payment-event" \
+              -H 'accept: application/json')"
+            cat "$headers"
+            cat "$body"
+            test "$code" = "405"
+            grep -qi '^content-type: application/json' "$headers"
+            grep -q '"error":"method_not_allowed"' "$body"
+          done
 
       - name: Record deployment receipt
         shell: bash
