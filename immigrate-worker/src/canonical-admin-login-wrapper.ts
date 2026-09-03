@@ -1,5 +1,6 @@
 import worker from "./index";
 import { renderOwnerCreateSessionPage, type OwnerCreateSessionEnv } from "./create-session-owner-ui";
+import { applyCreateSessionSimpleStart, CREATE_SESSION_SIMPLE_START_MODE } from "./create-session-simple-start";
 import type { Env } from "./types";
 
 const CANONICAL_ADMIN_LOGIN_PATH = "/internal/admin/login";
@@ -120,10 +121,13 @@ async function maybeRestoreOwnerCreateSession(
   headers.set("x-mmd-create-session-authority", "canonical-backend");
   headers.set("x-mmd-create-session-assets", "queryless-exact-routes");
   headers.set("x-mmd-create-session-gate-ui", "server-verified");
-  const html = (await owner.text()).replace(
+  headers.set("x-mmd-create-session-mode", CREATE_SESSION_SIMPLE_START_MODE);
+
+  let html = (await owner.text()).replace(
     "/a/create-session.js?v=owner-v14-vnext2",
     "/a/create-session.js",
   );
+  html = applyCreateSessionSimpleStart(html);
 
   return new Response(html, {
     status: owner.status,
