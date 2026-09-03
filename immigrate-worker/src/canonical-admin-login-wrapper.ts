@@ -5,7 +5,7 @@ import type { Env } from "./types";
 
 const CANONICAL_ADMIN_LOGIN_PATH = "/internal/admin/login";
 const CANONICAL_CREATE_SESSION_PATH = "/internal/admin/jobs/create-session";
-const CANONICAL_CREATE_SESSION_CORE_ASSET_PATH = "/internal/admin/jobs/create-session.js";
+const CANONICAL_CREATE_SESSION_CORE_ASSET_PATH = "/internal/admin/jobs/create-session/core";
 const BUNDLED_CREATE_SESSION_CORE_ASSET_PATH = "/a/create-session.js";
 const LEGACY_ADMIN_LOGIN_PATHS = new Set([
   "/sigil/admin/login",
@@ -115,6 +115,7 @@ async function serveCreateSessionCoreAsset(request: Request, env: Env): Promise<
   headers.set("cache-control", "no-store");
   headers.set("x-content-type-options", "nosniff");
   headers.set("x-mmd-create-session-core", "worker-owned");
+  headers.set("x-mmd-create-session-core-route", "extensionless-v1");
   headers.set("x-mmd-create-session-business", "mmd");
 
   return new Response(request.method === "HEAD" ? null : asset.body, {
@@ -168,12 +169,12 @@ async function maybeRestoreOwnerCreateSession(
   const owner = await renderOwnerCreateSessionPage(request, env as unknown as OwnerCreateSessionEnv);
   if (!owner.ok || !(owner.headers.get("content-type") || "").includes("text/html")) return owner;
 
-  // MMD Create Session now loads its core JS from the same Worker-owned route
-  // family as the protected page. This avoids origin ambiguity on /a/* while
+  // Keep the browser core inside the already-proven MMD Create Session route
+  // family. An extensionless subroute avoids static/origin .js handling while
   // preserving the bundled asset as the single implementation source.
   const headers = new Headers(owner.headers);
   headers.set("x-mmd-create-session-authority", "canonical-backend");
-  headers.set("x-mmd-create-session-assets", "worker-owned-core-route");
+  headers.set("x-mmd-create-session-assets", "worker-owned-core-subroute");
   headers.set("x-mmd-create-session-gate-ui", "server-verified");
   headers.set("x-mmd-create-session-mode", CREATE_SESSION_SIMPLE_START_MODE);
   headers.set("x-mmd-create-session-business", "mmd-only");
