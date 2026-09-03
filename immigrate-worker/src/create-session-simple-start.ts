@@ -52,6 +52,122 @@ const SIMPLE_START_CSS = `
   color: #f2dfaa;
 }
 
+.mmd-cs-v14 .mmdop__clientCard.is-manual-client {
+  position: relative;
+  grid-template-columns: 60px minmax(0,1fr) 40px;
+  min-height: 122px;
+  padding: 18px;
+  overflow: hidden;
+  border-color: rgba(212,181,106,.38);
+  background:
+    radial-gradient(circle at 92% 5%, rgba(212,181,106,.16), transparent 34%),
+    linear-gradient(135deg, rgba(212,181,106,.11), rgba(8,8,13,.76) 46%, rgba(116,215,160,.035));
+  box-shadow: 0 18px 42px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.035);
+  transition: transform .22s ease, border-color .22s ease, background .22s ease, box-shadow .22s ease;
+}
+
+.mmd-cs-v14 .mmdop__clientCard.is-manual-client:hover {
+  transform: translateY(-2px);
+  border-color: rgba(212,181,106,.62);
+  box-shadow: 0 22px 52px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.05);
+}
+
+.mmd-cs-v14 .mmdop__clientCard.is-manual-client.is-selected {
+  border-color: rgba(212,181,106,.82);
+  background:
+    radial-gradient(circle at 92% 5%, rgba(212,181,106,.22), transparent 35%),
+    linear-gradient(135deg, rgba(212,181,106,.16), rgba(8,8,13,.78) 48%, rgba(116,215,160,.055));
+  box-shadow: 0 20px 50px rgba(0,0,0,.3), 0 0 0 1px rgba(212,181,106,.12) inset;
+}
+
+.mmd-cs-v14 .mmdop__manualAvatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 20px;
+  border-color: rgba(242,223,170,.34);
+  background: linear-gradient(145deg, rgba(212,181,106,.2), rgba(212,181,106,.065));
+  color: #f6e6b8;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 8px 24px rgba(0,0,0,.18);
+  font-size: 21px;
+}
+
+.mmd-cs-v14 .mmdop__manualBody {
+  display: block;
+  min-width: 0;
+}
+
+.mmd-cs-v14 .mmdop__manualEyebrow {
+  display: block;
+  margin: 0 0 5px;
+  color: rgba(242,223,170,.72);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+
+.mmd-cs-v14 .mmdop__manualTitle {
+  display: block;
+  color: #fffdf8;
+  font-size: clamp(20px, 3vw, 25px);
+  line-height: 1.05;
+  letter-spacing: -.02em;
+}
+
+.mmd-cs-v14 .mmdop__manualCopy {
+  display: block;
+  margin-top: 7px;
+  color: rgba(248,243,235,.64);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.mmd-cs-v14 .mmdop__manualMeta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 11px;
+}
+
+.mmd-cs-v14 .mmdop__manualPill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  padding: 0 9px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 999px;
+  background: rgba(255,255,255,.035);
+  color: rgba(248,243,235,.62);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .02em;
+}
+
+.mmd-cs-v14 .mmdop__manualPill--ready {
+  border-color: rgba(116,215,160,.23);
+  background: rgba(116,215,160,.075);
+  color: #dff8e8;
+}
+
+.mmd-cs-v14 .mmdop__manualGo {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  align-self: center;
+  border: 1px solid rgba(212,181,106,.22);
+  border-radius: 50%;
+  background: rgba(212,181,106,.065);
+  color: #f2dfaa;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.mmd-cs-v14 .mmd-cs-v14__pickedCard.is-manual-client {
+  border-color: rgba(212,181,106,.32);
+  background: linear-gradient(135deg, rgba(212,181,106,.085), rgba(255,255,255,.018));
+}
+
 @media (max-width: 719px) {
   .mmd-cs-v14__toolbarActions {
     display: grid !important;
@@ -65,6 +181,33 @@ const SIMPLE_START_CSS = `
 
   .mmd-cs-v14__toolbarActions a.mmd-cs-v14__btn {
     grid-column: 1 / -1;
+  }
+
+  .mmd-cs-v14 .mmdop__clientCard.is-manual-client {
+    grid-template-columns: 54px minmax(0,1fr) 34px;
+    gap: 12px;
+    min-height: 116px;
+    padding: 16px;
+    border-radius: 22px;
+  }
+
+  .mmd-cs-v14 .mmdop__manualAvatar {
+    width: 54px;
+    height: 54px;
+    border-radius: 18px;
+    font-size: 19px;
+  }
+
+  .mmd-cs-v14 .mmdop__manualGo {
+    width: 32px;
+    height: 32px;
+    font-size: 19px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mmd-cs-v14 .mmdop__clientCard.is-manual-client {
+    transition: none;
   }
 }
 `;
@@ -142,6 +285,82 @@ const SIMPLE_START_SCRIPT = `
       return Boolean(content && content !== "-");
     }
 
+    function makeTextNode(tag, className, value) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      node.textContent = String(value == null ? "" : value);
+      return node;
+    }
+
+    function polishManualClientCards() {
+      var cards = Array.prototype.slice.call(root.querySelectorAll("[data-op-client-results] .mmdop__clientCard"));
+      cards.forEach(function (card) {
+        if (card.getAttribute("data-manual-card-polished") === "1") return;
+        var raw = String(card.textContent || "");
+        var isManual = raw.indexOf("manual_name_pending_reconcile") !== -1 ||
+          raw.indexOf("identity_pending_reconcile") !== -1 ||
+          raw.indexOf("guest_public_only") !== -1;
+        if (!isManual) return;
+
+        var sourceTitle = card.querySelector(".mmdop__clientMain strong");
+        var name = sourceTitle ? String(sourceTitle.textContent || "").trim() : "ลูกค้าคนนี้";
+        if (!name) name = "ลูกค้าคนนี้";
+
+        card.classList.add("is-manual-client");
+        card.setAttribute("data-manual-card-polished", "1");
+        card.setAttribute("aria-label", "ใช้ชื่อ " + name + " ต่อสำหรับ Public Session");
+
+        while (card.firstChild) card.removeChild(card.firstChild);
+
+        var avatar = makeTextNode("span", "mmdop__clientAvatar mmdop__manualAvatar", name.charAt(0).toUpperCase() || "C");
+        var body = document.createElement("span");
+        body.className = "mmdop__manualBody";
+        body.appendChild(makeTextNode("span", "mmdop__manualEyebrow", "ชื่อที่เปอร์จำ"));
+        body.appendChild(makeTextNode("strong", "mmdop__manualTitle", name));
+        body.appendChild(makeTextNode("span", "mmdop__manualCopy", "ยังไม่ผูก Member / LINE — ใช้สร้าง Public Session ได้เลย"));
+
+        var meta = document.createElement("span");
+        meta.className = "mmdop__manualMeta";
+        meta.appendChild(makeTextNode("span", "mmdop__manualPill mmdop__manualPill--ready", "Public Ready"));
+        meta.appendChild(makeTextNode("span", "mmdop__manualPill", "รอผูกประวัติ"));
+        body.appendChild(meta);
+
+        var go = makeTextNode("span", "mmdop__manualGo", "›");
+        go.setAttribute("aria-hidden", "true");
+
+        card.appendChild(avatar);
+        card.appendChild(body);
+        card.appendChild(go);
+      });
+    }
+
+    function polishManualSelection() {
+      var selectedManual = root.querySelector("[data-op-client-results] .mmdop__clientCard.is-manual-client.is-selected");
+      var pickedCard = root.querySelector(".mmd-cs-v14__pickedCard");
+      var pickedEyebrow = root.querySelector(".mmd-cs-v14__pickedEyebrow");
+
+      if (!selectedManual) {
+        root.removeAttribute("data-simple-manual-client");
+        if (pickedCard) pickedCard.classList.remove("is-manual-client");
+        if (pickedEyebrow) pickedEyebrow.textContent = "Selected client";
+        return;
+      }
+
+      root.setAttribute("data-simple-manual-client", "true");
+      if (pickedCard) pickedCard.classList.add("is-manual-client");
+      if (pickedEyebrow) pickedEyebrow.textContent = "Ready for Public";
+
+      var title = selectedManual.querySelector(".mmdop__manualTitle");
+      var name = title ? String(title.textContent || "").trim() : String(selectedName && selectedName.textContent || "").trim();
+      var selectedMeta = root.querySelector("[data-op-selected-client-meta]");
+      var selectedConfidence = root.querySelector("[data-op-selected-confidence]");
+      var lineageNotice = root.querySelector("[data-op-lineage-notice]");
+
+      if (selectedMeta) selectedMeta.textContent = "ชื่อที่เปอร์จำ · Public Session";
+      if (selectedConfidence) selectedConfidence.textContent = "รอผูก Member / LINE และประวัติภายหลัง";
+      if (lineageNotice) lineageNotice.textContent = "ใช้ชื่อ “" + (name || "ลูกค้าคนนี้") + "” ต่อได้เลยสำหรับ Public — ระบบจะผูก identity และประวัติให้ทีหลัง";
+    }
+
     function hideUntil(node, visible) {
       if (!node) return;
       node.setAttribute("data-simple-hidden", visible ? "false" : "true");
@@ -174,6 +393,8 @@ const SIMPLE_START_SCRIPT = `
     }
 
     function sync() {
+      polishManualClientCards();
+
       var hasClient = isChosen(selectedName && selectedName.textContent);
       var selectedWork = root.querySelector("[data-op-work-type].is-selected");
       var hasWork = Boolean(selectedWork);
@@ -192,6 +413,7 @@ const SIMPLE_START_SCRIPT = `
         button.tabIndex = hasClient ? 0 : -1;
       });
 
+      polishManualSelection();
       hideUntil(lanePanel, hasWork);
       hideUntil(modelPanel, hasLane);
       hideUntil(gatePanel, hasModel);
