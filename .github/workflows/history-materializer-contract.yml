@@ -1,0 +1,33 @@
+name: History Materializer Contract
+
+on:
+  pull_request:
+    paths:
+      - "scripts/line-official-legacy/history-materializer.js"
+      - "scripts/line-official-legacy/history-materializer.test.js"
+      - "scripts/line-official-legacy/history-evidence-intake.js"
+      - "scripts/line-official-legacy/dry-run-import.js"
+      - "auth-worker/src/member-entitlement-resolver.js"
+      - "docs/ops/HISTORY_MATERIALIZER_V1.md"
+      - ".github/workflows/history-materializer-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: node --check scripts/line-official-legacy/history-materializer.js
+      - run: node --test scripts/line-official-legacy/history-materializer.test.js
