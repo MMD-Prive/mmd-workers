@@ -2,6 +2,14 @@ export const CREATE_SESSION_SIMPLE_START_MODE = "simple-start-v2";
 
 const SIMPLE_START_CSS = `
 /* Per Owner Simple Start v2 — presentation only. Backend gates remain authoritative. */
+/* Emergency visual scrub: Create Session must not render the portrait media set. */
+.mmd-cs-v14__heroArt,
+.mmd-cs-v14__thumb,
+.mmd-cs-v14 [data-cs-media],
+.mmd-cs-v14 [data-cs-lane-image] {
+  display: none !important;
+}
+
 .mmd-cs-v14__lights,
 .mmd-cs-v14__quickRow,
 .mmd-cs-v14 [data-op-check-session],
