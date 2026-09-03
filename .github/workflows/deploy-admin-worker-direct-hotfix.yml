@@ -51,6 +51,7 @@ jobs:
         run: |
           set -euo pipefail
           node --check src/create-session-client-lineage-runtime.js
+          node --check src/studio-telegram-worker.js
           node --test \
             create-session-client-lineage-runtime.test.mjs \
             create-session-manual-public-fallback.test.mjs
@@ -96,38 +97,26 @@ jobs:
           echo "ADMIN_WORKER_DIRECT_VERSION_ID=${version_id}" >> "$GITHUB_ENV"
           echo "Direct-deployed admin-worker version ${version_id} from ${GITHUB_SHA}"
 
-      - name: Verify live Worker script contains manual fallback
+      - name: Verify live lineage route carries manual fallback marker
         shell: bash
         run: |
           set -euo pipefail
-          script_file="$(mktemp)"
-          http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
-            -o "$script_file" \
-            -w "%{http_code}" \
-            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/admin-worker/content")"
-          test "$http_code" = "200"
-          grep -a -q 'manual_public_only_pending_reconcile' "$script_file"
-          grep -a -q 'manual_name_pending_reconcile' "$script_file"
-          grep -a -q 'owner_manual_name_pending_reconcile' "$script_file"
-          echo "Verified live admin-worker script content contains canonical manual Public fallback markers."
-
-      - name: Verify live admin-worker route responds
-        shell: bash
-        run: |
-          set -euo pipefail
+          headers_file="$(mktemp)"
           body_file="$(mktemp)"
           http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+            -D "$headers_file" \
             -o "$body_file" \
             -w "%{http_code}" \
             -X POST \
             -H "Content-Type: application/json" \
             --data '{"query":"__mmd_manual_fallback_live_smoke__"}' \
             "$ADMIN_WORKER_URL/v1/admin/clients/lineage-lookup")"
+          cat "$headers_file"
           cat "$body_file"
           test "$http_code" = "401"
           grep -q '"error":"unauthorized"' "$body_file"
-          echo "Live admin-worker route responds after direct deployment; focused fallback tests passed on the exact deployed source."
+          tr -d '\r' < "$headers_file" | grep -i -q '^x-mmd-manual-public-fallback:[[:space:]]*canonical-v1$'
+          echo "Verified live lineage route is running the canonical manual Public fallback build marker."
 
       - name: Clean temporary config
         if: always()
