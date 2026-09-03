@@ -1,4 +1,5 @@
 import coreWorker, { isAuthed } from "./index.js";
+import { hasValidAdminBrowserSession } from "./admin-browser-session.js";
 import { wireMmsApproveUi } from "./mms-admin-approve-ui.js";
 import { wireMmsAdminMobileBundle } from "./mms-admin-mobile-bundle.js";
 import { wireMmsJobsUi } from "./mms-admin-jobs-ui.js";
@@ -27,7 +28,8 @@ export async function handleMmsAdminRequest(request, env = {}) {
   const path = normalizePath(url.pathname);
   const method = request.method.toUpperCase();
 
-  if (!(await isAuthed(request, env))) {
+  const adminAuthenticated = (await isAuthed(request, env)) || (await hasValidAdminBrowserSession(request, env));
+  if (!adminAuthenticated) {
     if (path === PAGE_PATH && (method === "GET" || method === "HEAD")) {
       return Response.redirect(`${url.origin}/internal/admin/login?next=${encodeURIComponent(PAGE_PATH)}`, 303);
     }
