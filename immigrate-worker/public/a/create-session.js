@@ -278,361 +278,241 @@
     if (node) node.textContent = value == null ? "" : String(value);
   };
   const esc = (value) =>
-    String(value || "")
+    String(value == null ? "" : value)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
-      .replace(/\"/g, "&quot;");
-  const first = (value, fallback = "C") => (String(value || fallback).trim().charAt(0) || fallback).toUpperCase();
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#039;");
 
-  function stateClass(node, type) {
+  function setStatus(message, tone) {
+    text(el.status, message);
+    if (!el.connection) return;
+    el.connection.classList.remove("is-ok", "is-warn", "is-bad");
+    el.connection.classList.add(tone === "ok" ? "is-ok" : tone === "warn" ? "is-warn" : "is-bad");
+    const label = el.connection.querySelector("span");
+    text(label, tone === "ok" ? "Connected" : tone === "warn" ? "Review" : "Unavailable");
+  }
+
+  function setHook(name, state) {
+    const hook = root.querySelector(`[data-op-hook="${name}"]`);
+    if (!hook) return;
+    hook.classList.remove("is-ok", "is-warn", "is-bad");
+    hook.classList.add(state === "ok" ? "is-ok" : state === "warn" ? "is-warn" : "is-bad");
+  }
+
+  function scrollToNode(node) {
     if (!node) return;
-    node.classList.remove("is-ok", "is-warn", "is-bad");
-    if (type) node.classList.add(`is-${type}`);
+    node.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  function setStatus(message, type) {
-    text(el.status, message || "");
-    stateClass(el.status, type);
-  }
-
-  function setConnection(type, label) {
-    stateClass(el.connection, type);
-    text(el.connection && el.connection.querySelector("span"), label || "Ready");
-  }
-
-  function setHook(name, type) {
-    stateClass(root.querySelector(`[data-op-hook="${name}"]`), type);
-  }
-
-  function readAdminGate() {
+  function hasAdminGateSession() {
     try {
-      const raw = sessionStorage.getItem(ADMIN_GATE_SESSION_KEY);
-      const gate = raw ? JSON.parse(raw) : null;
-      return gate && gate.ok ? gate : {};
-    } catch {
-      return {};
+      return window.sessionStorage.getItem(ADMIN_GATE_SESSION_KEY) === "1";
+    } catch (_error) {
+      return false;
     }
   }
 
-  function adminHeaders() {
-    const gate = readAdminGate();
-    const headers = { Accept: "application/json", "Content-Type": "application/json" };
-    if (gate.bearer) headers.Authorization = "Bearer " + gate.bearer;
-    if (gate.confirmKey) headers["X-Confirm-Key"] = gate.confirmKey;
+  function adminRequestHeaders(includeJson) {
+    const headers = {};
+    if (includeJson) headers["Content-Type"] = "application/json";
     return headers;
   }
 
-  async function requestJson(url, options = {}) {
-    const res = await fetch(url, {
-      credentials: "include",
+  async function apiFetch(path, options) {
+    const opts = options || {};
+    const method = String(opts.method || "GET").toUpperCase();
+    const headers = {
+      ...adminRequestHeaders(Boolean(opts.body)),
+      ...(opts.headers || {})
+    };
+    return fetch(api(path), {
+      credentials: "same-origin",
       cache: "no-store",
-      ...options,
-      headers: { ...adminHeaders(), ...(options.headers || {}) }
+      ...opts,
+      method,
+      headers
     });
-    const raw = await res.text();
-    let data = null;
-    try {
-      data = raw ? JSON.parse(raw) : null;
-    } catch {
-      data = { raw };
-    }
-    return { ok: res.ok, status: res.status, data };
   }
 
-  function pick(data, ...keys) {
-    for (const key of keys) {
-      if (data && data[key] != null && String(data[key]) !== "") return data[key];
-    }
-    return "";
-  }
-
-  function normalizeClients(data) {
-    return (data?.records || data?.items || data?.data || []).map((item, index) => ({
-      client_id: item.client_id || item.id || `client_${index}`,
-      member_id: item.member_id || "",
-      member_email: item.member_email || item.contact_email || item.email || "",
-      memberstack_id: item.memberstack_id || "",
-      client_name: item.client_name || item.clientName || item.name || item.nickname || "",
-      username: item.username || item.member_username || "",
-      phone: item.phone || item.member_phone || "",
-      package_code: item.package_code || item.package || item.tier || "",
-      tier: item.tier || item.mmd_tier || "",
-      membership_status: item.membership_status || item.mmd_status || "",
-      purchased_history: item.purchased_history || item.purchase_history || "",
-      line_record_id: item.line_record_id || item.line_record || item.record_id || "",
-      line_user_id: item.line_user_id || item.lineUserId || "",
-      line_display_name: item.line_display_name || item.displayName || item.line_name || "",
-      legacy_tags: Array.isArray(item.legacy_tags) ? item.legacy_tags : Array.isArray(item.tags) ? item.tags : [],
-      last_line_message: item.last_line_message || item.last_message || "",
-      customer_telegram_username: item.customer_telegram_username || item.telegram_username || "",
-      customer_telegram_status: item.customer_telegram_status || item.telegram_status || "missing",
-      confidence: Number(item.confidence || item.match_confidence || 70)
-    }));
-  }
-
-  function normalizeModels(data) {
-    return (data?.records || data?.items || data?.data || []).map((item, index) => ({
-      model_id: item.model_id || item.id || `model_${index}`,
-      model_name: item.model_name || item.name || item.display_name || "",
-      lookup_key: item.lookup_key || item.model_lookup_key || "",
-      telegram_username: item.telegram_username || item.model_telegram_username || "",
-      telegram_status: item.telegram_status || "missing",
-      folders: Array.isArray(item.folders) ? item.folders : [],
-      orientation: normalizeOrientation(item.orientation || item.model_orientation || item.private_orientation || item.booking_orientation),
-      status: item.status || "available",
-      note: item.note || item.description || ""
-    }));
-  }
-
-  function normalizeToken(value) {
-    return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-  }
-
-  function normalizeOrientation(value) {
-    const token = normalizeToken(value);
-    if (token === "gay") return "gay";
-    if (token === "both" || token === "bi" || token === "all") return "both";
-    if (token === "straight") return "straight";
-    return "";
-  }
-
-  function selectedClientSnapshot() {
-    const client = state.selectedClient || {};
+  function normalizeClient(record) {
     return {
-      package_code: String(val(el.package) || client.package_code || ""),
-      tier: String(client.tier || ""),
-      membership_status: String(val(el.membershipStatus) || client.membership_status || "")
+      client_id: String(record.client_id || record.id || ""),
+      member_id: String(record.member_id || ""),
+      member_email: String(record.member_email || record.email || ""),
+      remembered_name: String(record.remembered_name || ""),
+      canonical_name: String(record.canonical_name || ""),
+      aliases: Array.isArray(record.aliases) ? record.aliases.filter(Boolean) : [],
+      matched_on: String(record.matched_on || ""),
+      matched_value: String(record.matched_value || ""),
+      lookup_chain: Array.isArray(record.lookup_chain) ? record.lookup_chain.filter(Boolean) : [],
+      client_name: String(record.remembered_name || record.client_name || record.canonical_name || record.name || "Unknown client"),
+      username: String(record.username || ""),
+      phone: String(record.phone || ""),
+      package_code: String(record.package_code || record.package || ""),
+      tier: String(record.tier || ""),
+      membership_status: String(record.membership_status || ""),
+      purchased_history: String(record.purchased_history || record.history || ""),
+      line_record_id: String(record.line_record_id || ""),
+      line_user_id: String(record.line_user_id || ""),
+      line_display_name: String(record.line_display_name || record.line_name || ""),
+      legacy_tags: Array.isArray(record.legacy_tags)
+        ? record.legacy_tags
+        : String(record.legacy_tags || "")
+            .split(/[\n,|]+/)
+            .map((item) => item.trim())
+            .filter(Boolean),
+      last_line_message: String(record.last_line_message || record.last_message || ""),
+      customer_telegram_username: String(record.customer_telegram_username || record.telegram_username || ""),
+      customer_telegram_status: String(record.customer_telegram_status || "missing"),
+      confidence: Number(record.confidence || 0)
     };
   }
 
-  const privateAccessFolders = {
-    standard: ["standard"],
-    premium: ["standard", "premium"],
-    vip: ["standard", "premium", "vip"],
-    black_card: ["standard", "premium", "vip", "exclusive"]
-  };
-
-  const privateAccessLabels = {
-    standard: "Standard",
-    premium: "Premium",
-    vip: "VIP",
-    black_card: "Black Card"
-  };
-
-  function membershipAccessLevel(tierText) {
-    // legacy SVIP normalizes to Black Card access; check before "vip" (substring)
-    if (tierText.includes("black") || tierText.includes("svip")) return "black_card";
-    if (tierText.includes("vip")) return "vip";
-    if (tierText.includes("premium")) return "premium";
-    if (tierText.includes("standard")) return "standard";
-    return "";
+  function lineageLabel(client) {
+    if (!client) return "";
+    const remembered = String(client.remembered_name || "").trim();
+    const canonical = String(client.canonical_name || "").trim();
+    if (remembered && canonical && remembered.toLowerCase() !== canonical.toLowerCase()) {
+      return `${remembered} · canonical ${canonical}`;
+    }
+    return remembered || canonical || client.client_name || "";
   }
 
-  function privateEligibility() {
-    const client = selectedClientSnapshot();
-    const status = normalizeToken(client.membership_status);
-    const tierText = normalizeToken([client.package_code, client.tier].filter(Boolean).join(" "));
-    const active = status === "active";
-    const level = active ? membershipAccessLevel(tierText) : "";
-    if (!state.selectedClient || !active || !level) {
-      return {
-        eligibility_checked: Boolean(state.selectedClient),
-        eligibility_result: "blocked",
-        private_access_level: "blocked",
-        allowed_private_folders: []
-      };
-    }
-    return {
-      eligibility_checked: true,
-      eligibility_result: "allowed",
-      private_access_level: level,
-      allowed_private_folders: privateAccessFolders[level].slice()
-    };
-  }
-
-  function privateAccessPayload() {
-    const access = privateEligibility();
-    return {
-      ...access,
-      selected_orientation: state.workType === "private" ? state.privateOrientation : "",
-      selected_private_folder: state.workType === "private" ? state.modelFolder : ""
-    };
-  }
-
-  async function checkSession() {
-    if (config.mock) {
-      setConnection("ok", "Demo Mode");
-      setHook("auth", "ok");
-      return true;
-    }
-    setConnection("warn", "Checking");
-    try {
-      let result = await requestJson(api(config.endpoints.authMe));
-      if (!result.ok && result.status === 404) result = await requestJson(api(config.endpoints.ping));
-      if (result.ok) {
-        setConnection("ok", "Connected");
-        setHook("auth", "ok");
-        setStatus("Admin session verified.", "ok");
-        return true;
-      }
-      setConnection("warn", "Login needed");
-      setHook("auth", "warn");
-      setStatus("Admin session ยังไม่ผ่าน หรือ cookie หมดอายุ", "bad");
-      return false;
-    } catch {
-      setConnection("bad", "Worker blocked");
-      setHook("auth", "bad");
-      setStatus("เชื่อมต่อ admin-worker ไม่สำเร็จ ตรวจ CORS / domain / endpoint", "bad");
-      return false;
-    }
-  }
-
-  async function searchClients(useDemo = false) {
-    const query = String(val(el.query)).trim();
-    if (useDemo || config.mock) {
-      const q = query.toLowerCase();
-      state.clients = demoClients.filter((client) => {
-        if (!q) return true;
-        return [
-          client.client_name,
-          client.username,
-          client.phone,
-          client.package_code,
-          client.tier,
-          client.membership_status,
-          client.line_user_id,
-          client.line_display_name,
-          (client.legacy_tags || []).join(" "),
-          client.last_line_message
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(q);
-      });
-      text(el.searchMode, "Demo");
-      setHook("lineage", "ok");
-      renderClients();
-      setStatus("Demo lineage loaded.", "ok");
-      return;
-    }
-    setStatus("กำลังค้น Client Lineage...", "");
-    try {
-      const result = await requestJson(api(config.endpoints.clientLookup), {
-        method: "POST",
-        body: JSON.stringify({
-          query,
-          search_scope: ["package_signup", "members", "clients", "line_identity", "legacy_tags", "purchase_history"]
-        })
-      });
-      if (!result.ok) throw new Error(`HTTP ${result.status}`);
-      state.clients = normalizeClients(result.data);
-      text(el.searchMode, "Cloud");
-      setHook("lineage", "ok");
-      renderClients();
-      setStatus("Client lineage loaded.", "ok");
-    } catch {
-      setHook("lineage", "bad");
-      renderClients();
-      setStatus("ยังเชื่อมต่อ lineage จริงไม่ได้ กด Demo เพื่อทดสอบ UI ได้", "bad");
-    }
-  }
-
-  async function loadRecentClients() {
-    if (config.mock) {
-      state.clients = demoClients.slice();
-      renderClients();
-      setHook("lineage", "ok");
-      setStatus("Recent demo clients loaded.", "ok");
-      return;
-    }
-    setStatus("กำลังโหลด recent clients...", "");
-    try {
-      const result = await requestJson(api(config.endpoints.recentClients));
-      if (!result.ok) throw new Error(`HTTP ${result.status}`);
-      state.clients = normalizeClients(result.data);
-      renderClients();
-      setHook("lineage", "ok");
-      setStatus("Recent clients loaded.", "ok");
-    } catch {
-      setHook("lineage", "bad");
-      setStatus("โหลด recent clients ไม่สำเร็จ", "bad");
-    }
-  }
-
-  function renderClients() {
+  function renderClients(records) {
+    state.clients = records.map(normalizeClient);
     if (!el.clientResults) return;
     if (!state.clients.length) {
-      el.clientResults.innerHTML = '<div class="mmdop__empty">ไม่พบลูกค้าที่ตรงกัน ลองค้นจากชื่อเล่น / username / package / LINE display / tag อีกครั้ง</div>';
+      el.clientResults.innerHTML = '<div class="mmdop__empty">No client lineage matched this search.</div>';
       return;
     }
     el.clientResults.innerHTML = state.clients
-      .map((client) => {
-        const selected = state.selectedClient?.client_id === client.client_id;
-        const tags = []
-          .concat(client.tier ? [client.tier] : [])
-          .concat(client.membership_status ? [client.membership_status] : [])
-          .concat(client.legacy_tags || [])
-          .slice(0, 7)
-          .map((tag) => {
-            const gold = /vip|svip|black/i.test(String(tag));
-            return `<span class="mmdop__tag${gold ? " mmdop__tag--gold" : ""}">${esc(tag)}</span>`;
-          })
-          .join("");
+      .map((client, index) => {
+        const tags = (client.legacy_tags || []).slice(0, 4).map((tag) => `<span class="mmdop__tag">${esc(tag)}</span>`).join("");
+        const packageTag = client.package_code
+          ? `<span class="mmdop__tag mmdop__tag--gold">${esc(client.package_code)}</span>`
+          : "";
+        const membershipTag = client.membership_status
+          ? `<span class="mmdop__tag mmdop__tag--green">${esc(client.membership_status)}</span>`
+          : "";
+        const selected = state.selectedClient && state.selectedClient.client_id === client.client_id;
+        const source = client.matched_on ? `match ${esc(client.matched_on)}` : "canonical lineage";
         return `
-          <button class="mmdop__clientCard${selected ? " is-selected" : ""}" type="button" data-op-select-client="${esc(client.client_id)}">
-            <div class="mmdop__clientAvatar">${esc(first(client.client_name || client.line_display_name))}</div>
-            <div class="mmdop__clientMain">
-              <strong>${esc(client.client_name || client.line_display_name || "Unknown Client")}</strong>
-              <span>${esc(client.package_code || "-")} · ${esc(client.purchased_history || "no purchase summary")}</span>
-              <span>LINE: ${esc(client.line_display_name || "-")} · ${esc(client.line_user_id || "-")}</span>
-            </div>
-            <div class="mmdop__tags">
-              <span class="mmdop__tag mmdop__tag--green">${esc(client.confidence || 0)}% match</span>
-              ${tags}
-            </div>
+          <button type="button" class="mmdop__clientCard${selected ? " is-selected" : ""}" data-op-client-index="${index}">
+            <span class="mmdop__clientAvatar">${esc((client.client_name || "C").charAt(0).toUpperCase())}</span>
+            <span class="mmdop__clientMain">
+              <strong>${esc(lineageLabel(client) || client.client_name)}</strong>
+              <span>${esc(client.username || client.line_display_name || client.phone || "No public alias")}</span>
+              <span>${esc(source)} · ${(client.confidence || 0)}% confidence</span>
+            </span>
+            <span class="mmdop__tags">${packageTag}${membershipTag}${tags}</span>
           </button>`;
       })
       .join("");
-    $$('[data-op-select-client]').forEach((button) => {
-      button.addEventListener("click", () => selectClient(button.dataset.opSelectClient));
+
+    $$("[data-op-client-index]").forEach((button) => {
+      button.addEventListener("click", () => {
+        selectClient(state.clients[Number(button.dataset.opClientIndex)] || null);
+      });
     });
   }
 
-  function selectClient(id) {
-    const client = state.clients.find((item) => item.client_id === id);
-    if (!client) {
-      setStatus("ไม่พบ client record นี้", "bad");
+  function renderSelectedClient() {
+    const client = state.selectedClient;
+    const name = client ? client.client_name || "Selected client" : "No client selected";
+    text(el.selectedClientName, name);
+    text(el.clientInitial, name.charAt(0).toUpperCase() || "C");
+    text(el.selectedClientMeta, client
+      ? [client.username, client.member_email, client.line_display_name].filter(Boolean).join(" · ") || "Canonical client lineage"
+      : "Select a client from canonical lineage results.");
+    text(el.selectedConfidence, client
+      ? `${client.confidence || 0}% confidence${client.matched_on ? ` · ${client.matched_on}` : ""}`
+      : "");
+    text(el.lineageBadge, client ? "Canonical lineage" : "Not selected");
+    text(el.lineageNotice, client
+      ? `Selected ${name}. ${client.purchased_history || "No purchase summary exposed."}`
+      : "Search and select a client before choosing a work type.");
+    setVal(el.clientName, client?.client_name || "");
+    setVal(el.username, client?.username || "");
+    setVal(el.package, client?.package_code || "");
+    setVal(el.membershipStatus, client?.membership_status || "");
+    setVal(el.lineDisplay, client?.line_display_name || "");
+    setVal(el.lineUserId, client?.line_user_id || "");
+    setVal(el.lineRecordId, client?.line_record_id || "");
+    setVal(el.legacyTags, (client?.legacy_tags || []).join(", "));
+    setVal(el.customerTelegram, client?.customer_telegram_username || "");
+    setVal(el.customerTelegramStatus, client?.customer_telegram_status || "missing");
+  }
+
+  async function loadRecentClients() {
+    setStatus("Loading recent canonical clients…", "warn");
+    setHook("lineage", "warn");
+    if (config.mock) {
+      renderClients(demoClients);
+      setStatus("Demo clients loaded.", "ok");
+      setHook("lineage", "ok");
       return;
     }
-    state.selectedClient = client;
-    text(el.clientInitial, first(client.client_name || client.line_display_name));
-    text(el.selectedClientName, client.client_name || client.line_display_name || "-");
-    text(
-      el.selectedClientMeta,
-      [client.username, client.package_code, client.membership_status, client.line_display_name].filter(Boolean).join(" · ")
-    );
-    text(el.selectedConfidence, `${client.confidence || 0}% MATCH`);
-    setVal(el.clientName, client.client_name || "");
-    setVal(el.username, client.username || "");
-    setVal(el.package, [client.package_code, client.tier].filter(Boolean).join(" / "));
-    setVal(el.membershipStatus, client.membership_status || "");
-    setVal(el.lineDisplay, client.line_display_name || "");
-    setVal(el.lineUserId, client.line_user_id || "");
-    setVal(el.lineRecordId, client.line_record_id || "");
-    setVal(el.legacyTags, (client.legacy_tags || []).join(", "));
-    setVal(el.customerTelegram, client.customer_telegram_username || "");
-    setVal(el.customerTelegramStatus, client.customer_telegram_status || "missing");
-    if (el.lineageBadge) {
-      text(el.lineageBadge, "Verified lineage");
-      el.lineageBadge.classList.add("is-ok");
+    try {
+      const response = await apiFetch(config.endpoints.recentClients);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+      renderClients(Array.isArray(data.records) ? data.records : []);
+      setStatus(`Loaded ${state.clients.length} recent canonical clients.`, "ok");
+      setHook("lineage", "ok");
+    } catch (error) {
+      renderClients([]);
+      setStatus(`Recent clients unavailable: ${error.message}`, "bad");
+      setHook("lineage", "bad");
     }
-    if (el.lineageNotice) {
-      text(el.lineageNotice, "Lineage verified from package / member / client / LINE identity. ตรวจชื่อและ LINE ให้ตรงก่อนสร้าง session.");
-      el.lineageNotice.classList.remove("is-bad");
-      el.lineageNotice.classList.add("is-ok");
+  }
+
+  async function searchClients() {
+    const query = val(el.query).trim();
+    if (!query) {
+      await loadRecentClients();
+      return;
     }
-    renderClients();
+    setStatus("Searching canonical client lineage…", "warn");
+    setHook("lineage", "warn");
+    if (config.mock) {
+      const needle = query.toLowerCase();
+      const filtered = demoClients.filter((client) =>
+        JSON.stringify(client).toLowerCase().includes(needle)
+      );
+      renderClients(filtered.length ? filtered : demoClients);
+      setStatus("Demo lineage search complete.", "ok");
+      setHook("lineage", "ok");
+      return;
+    }
+    try {
+      const response = await apiFetch(config.endpoints.clientLookup, {
+        method: "POST",
+        body: JSON.stringify({ query })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+      renderClients(Array.isArray(data.records) ? data.records : []);
+      setStatus(`Found ${state.clients.length} canonical client match${state.clients.length === 1 ? "" : "es"}.`, "ok");
+      setHook("lineage", "ok");
+    } catch (error) {
+      renderClients([]);
+      setStatus(`Client lookup unavailable: ${error.message}`, "bad");
+      setHook("lineage", "bad");
+    }
+  }
+
+  function selectClient(client) {
+    if (!client) return;
+    state.selectedClient = normalizeClient(client);
+    state.workType = "";
+    state.privateOrientation = "";
+    state.modelFolder = "";
+    state.models = [];
+    state.selectedModel = null;
+    renderClients(state.clients);
+    renderSelectedClient();
     renderFolders();
     renderModels();
     updateAll();
@@ -642,35 +522,12 @@
 
   function clearClient() {
     state.selectedClient = null;
-    [
-      el.clientName,
-      el.username,
-      el.package,
-      el.membershipStatus,
-      el.lineDisplay,
-      el.lineUserId,
-      el.lineRecordId,
-      el.legacyTags,
-      el.customerTelegram
-    ].forEach((node) => setVal(node, ""));
-    setVal(el.customerTelegramStatus, "missing");
+    state.workType = "";
     state.privateOrientation = "";
     state.modelFolder = "";
     state.models = [];
     state.selectedModel = null;
-    text(el.clientInitial, "C");
-    text(el.selectedClientName, "-");
-    text(el.selectedClientMeta, "-");
-    text(el.selectedConfidence, "-");
-    if (el.lineageBadge) {
-      text(el.lineageBadge, "Not selected");
-      el.lineageBadge.classList.remove("is-ok");
-    }
-    if (el.lineageNotice) {
-      text(el.lineageNotice, "ยังไม่ได้เลือกลูกค้า");
-      el.lineageNotice.classList.remove("is-ok", "is-bad");
-    }
-    renderClients();
+    renderSelectedClient();
     renderFolders();
     renderModels();
     updateAll();
@@ -678,726 +535,504 @@
   }
 
   function selectWorkType(type) {
+    if (!state.selectedClient) {
+      setStatus("Select a client before choosing a work type.", "warn");
+      return;
+    }
     state.workType = type;
     state.privateOrientation = "";
     state.modelFolder = "";
     state.models = [];
     state.selectedModel = null;
-    $$('[data-op-work-type]').forEach((button) => {
+    $$(`[data-op-work-type]`).forEach((button) => {
       button.classList.toggle("is-selected", button.dataset.opWorkType === type);
     });
     renderFolders();
     renderModels();
-    text(el.folderHelper, type === "public" ? "Public Work: เลือกแฟ้ม Travel Model หรือ Extreme Model" : "Private Work: ตรวจ eligibility ก่อน แล้วเลือก Straight หรือ Gay");
-    setStatus(type === "public" ? "Public Work selected." : "Private Work selected.", "ok");
     updateAll();
-    scrollToNode($("#model-panel"));
-  }
-
-  function folderLabel(folderId) {
-    const all = [...folders.public, ...folders.private];
-    return all.find(([id]) => id === folderId)?.[1] || "-";
+    scrollToNode(el.folderGrid);
   }
 
   function renderFolders() {
     if (!el.folderGrid) return;
-    let rows = folders[state.workType] || [];
-    if (!rows.length) {
-      el.folderGrid.innerHTML = '<div class="mmdop__empty">เลือก Public Work หรือ Private Work ก่อน</div>';
+    const type = state.workType;
+    if (!type) {
+      el.folderGrid.innerHTML = '<div class="mmdop__empty">Select Public or Private after choosing a client.</div>';
+      text(el.folderHelper, "Client first → work type → folder → model.");
       return;
     }
-    if (state.workType === "private") {
-      const access = privateEligibility();
-      if (access.eligibility_result !== "allowed") {
-        el.folderGrid.innerHTML = '<div class="mmdop__empty">Private create ถูกบล็อกสำหรับ inactive / expired / guest / unknown ให้บันทึก draft หรือ pending review เท่านั้น</div>';
-        return;
-      }
-      if (!state.privateOrientation) {
-        el.folderGrid.innerHTML = `
-        <button class="mmdop__folder" type="button" data-op-private-orientation="straight">
-          <span>PRIVATE ORIENTATION</span>
-          <strong>Straight</strong>
-          <p>Eligibility ผ่านแล้ว เลือก orientation ก่อนแสดงแฟ้ม Private</p>
-          <em>Choose Straight</em>
-        </button>
-        <button class="mmdop__folder" type="button" data-op-private-orientation="gay">
-          <span>PRIVATE ORIENTATION</span>
-          <strong>Gay</strong>
-          <p>Eligibility ผ่านแล้ว เลือก orientation ก่อนแสดงแฟ้ม Private</p>
-          <em>Choose Gay</em>
-        </button>`;
-        $$('[data-op-private-orientation]').forEach((button) => {
-          button.addEventListener("click", () => selectPrivateOrientation(button.dataset.opPrivateOrientation));
-        });
-        return;
-      }
-      rows = rows.filter(([id]) => access.allowed_private_folders.includes(id));
-    }
-    el.folderGrid.innerHTML = rows
-      .map(([id, title, copy, cta]) => `
-        <button class="mmdop__folder${state.modelFolder === id ? " is-selected" : ""}" type="button" data-op-folder="${esc(id)}">
-          <span>${esc(state.workType === "public" ? "PUBLIC MODEL FOLDER" : "PRIVATE MODEL FOLDER")}</span>
-          <strong>${esc(title)}</strong>
+    const items = folders[type] || [];
+    el.folderGrid.innerHTML = items
+      .map(([key, label, copy, cta]) => `
+        <button type="button" class="mmdop__folder${state.modelFolder === key ? " is-selected" : ""}" data-op-folder="${esc(key)}">
+          <span>${type === "private" ? "private lane" : "public lane"}</span>
+          <strong>${esc(label)}</strong>
           <p>${esc(copy)}</p>
           <em>${esc(cta)}</em>
         </button>`)
       .join("");
-    $$('[data-op-folder]').forEach((button) => {
-      button.addEventListener("click", () => selectFolder(button.dataset.opFolder));
+    text(el.folderHelper, type === "private"
+      ? "Private folders are shown only after a canonical client is selected. Backend eligibility still decides access."
+      : "Public folders are available after client selection. Backend still validates model visibility.");
+    $$("[data-op-folder]").forEach((button) => {
+      button.addEventListener("click", () => selectFolder(button.dataset.opFolder || ""));
     });
   }
 
-  function selectPrivateOrientation(orientation) {
-    state.privateOrientation = normalizeOrientation(orientation);
-    state.modelFolder = "";
+  async function selectFolder(folder) {
+    state.modelFolder = folder;
+    state.selectedModel = null;
     state.models = [];
-    state.selectedModel = null;
     renderFolders();
-    renderModels();
     updateAll();
-  }
-
-  async function selectFolder(folderId) {
-    state.modelFolder = folderId;
-    state.selectedModel = null;
-    renderFolders();
     await loadModels();
-    setStatus(`${folderLabel(folderId)} selected.`, "ok");
-    updateAll();
+    scrollToNode($("#model-panel"));
   }
 
-  function demoModelsForFolder(folderId) {
-    const allowedByFolder = (model) => model.folders.includes(folderId);
-    const allowedByOrientation = (model) => {
-      if (state.workType !== "private") return true;
-      const orientation = normalizeOrientation(model.orientation);
-      return orientation === state.privateOrientation || orientation === "both";
+  function normalizeModel(record) {
+    return {
+      model_id: String(record.model_id || record.id || record.code || ""),
+      model_name: String(record.model_name || record.name || record.code || "Unknown model"),
+      lookup_key: String(record.lookup_key || record.code || record.model_id || ""),
+      telegram_username: String(record.telegram_username || ""),
+      telegram_status: String(record.telegram_status || "missing"),
+      folders: Array.isArray(record.folders) ? record.folders : [],
+      orientation: String(record.orientation || record.lane || "both"),
+      status: String(record.status || "unknown"),
+      note: String(record.note || record.operator_note || "")
     };
-    return demoModels.filter((model) => allowedByFolder(model) && allowedByOrientation(model));
-  }
-
-  async function loadModels() {
-    if (!state.modelFolder) {
-      state.models = [];
-      renderModels();
-      return;
-    }
-    if (config.mock) {
-      state.models = demoModelsForFolder(state.modelFolder);
-      setHook("models", "ok");
-      renderModels();
-      return;
-    }
-    setStatus("กำลังโหลด Model Pool...", "");
-    try {
-      const params = new URLSearchParams({
-        work_type: state.workType,
-        selected_access_folder: state.modelFolder
-      });
-      if (state.workType === "private") {
-        // entitlement is resolved server-side from the client identifier;
-        // frontend eligibility fields are advisory UX only
-        params.set("booking_visibility", "private");
-        params.set("customer_lane", state.privateOrientation);
-        const client = state.selectedClient || {};
-        if (client.client_id) params.set("client_id", client.client_id);
-        if (client.member_id) params.set("member_id", client.member_id);
-        if (client.memberstack_id) params.set("memberstack_id", client.memberstack_id);
-        if (client.member_email) params.set("member_email", client.member_email);
-        if (client.line_record_id) params.set("line_record_id", client.line_record_id);
-        if (client.line_user_id) params.set("line_user_id", client.line_user_id);
-        if (client.customer_telegram_username) params.set("customer_telegram_username", client.customer_telegram_username);
-      }
-      const url = `${api(config.endpoints.modelSearch)}?${params.toString()}`;
-      const result = await requestJson(url);
-      if (!result.ok) throw new Error(`HTTP ${result.status}`);
-      state.models = normalizeModels(result.data);
-      setHook("models", "ok");
-      renderModels();
-      setStatus("Model pool loaded.", "ok");
-    } catch {
-      state.models = [];
-      setHook("models", "bad");
-      renderModels();
-      setStatus("โหลด Model Pool ไม่สำเร็จ กด mock=1 หรือเช็ก endpoint", "bad");
-    }
   }
 
   function renderModels() {
-    if (!el.modelSelect) return;
-    if (!state.modelFolder) {
-      el.modelSelect.innerHTML = '<option value="">เลือกแฟ้ม Model ก่อน</option>';
-      setVal(el.modelLookupKey, "");
-      setVal(el.modelPool, "");
-      text(el.modelRule, "-");
-      renderModelPreview();
-      return;
+    if (el.modelSelect) {
+      if (!state.modelFolder) {
+        el.modelSelect.innerHTML = '<option value="">เลือกกลุ่มก่อน</option>';
+        el.modelSelect.disabled = true;
+      } else if (!state.models.length) {
+        el.modelSelect.innerHTML = '<option value="">No models loaded</option>';
+        el.modelSelect.disabled = true;
+      } else {
+        el.modelSelect.disabled = false;
+        el.modelSelect.innerHTML = '<option value="">Select model</option>' + state.models
+          .map((model, index) => `<option value="${index}"${state.selectedModel && state.selectedModel.model_id === model.model_id ? " selected" : ""}>${esc(model.model_name)} · ${esc(model.lookup_key)}</option>`)
+          .join("");
+      }
     }
-    if (!state.models.length) {
-      el.modelSelect.innerHTML = '<option value="">ยังไม่มี Model ในแฟ้มนี้</option>';
-      setVal(el.modelLookupKey, "");
-      setVal(el.modelPool, folderLabel(state.modelFolder));
-      text(el.modelRule, "No model");
-      renderModelPreview();
-      return;
-    }
-    el.modelSelect.innerHTML =
-      '<option value="">เลือก Model</option>' +
-      state.models
-        .map((model) => `<option value="${esc(model.model_id)}">${esc(model.model_name)}</option>`)
-        .join("");
-    text(el.modelRule, folderLabel(state.modelFolder));
+    text(el.modelRule, state.modelFolder
+      ? `Folder ${state.modelFolder} · backend eligibility enforced`
+      : "Select a folder first");
     renderModelPreview();
   }
 
-  function selectModel(modelId) {
-    const model = state.models.find((item) => item.model_id === modelId) || null;
-    state.selectedModel = model;
-    if (!model) {
-      setVal(el.modelLookupKey, "");
-      setVal(el.modelPool, state.modelFolder ? folderLabel(state.modelFolder) : "");
-      setVal(el.modelTelegram, "");
-      renderModelPreview();
-      updateAll();
+  async function loadModels() {
+    if (!state.selectedClient || !state.modelFolder) return;
+    setStatus("Loading entitlement-aware model pool…", "warn");
+    setHook("models", "warn");
+    if (config.mock) {
+      state.models = demoModels.filter((model) => model.folders.includes(state.modelFolder));
+      renderModels();
+      setStatus(`Loaded ${state.models.length} demo models.`, "ok");
+      setHook("models", "ok");
       return;
     }
-    setVal(el.modelLookupKey, model.lookup_key || "");
-    setVal(el.modelPool, folderLabel(state.modelFolder));
-    setVal(el.modelTelegram, model.telegram_username || "");
-    setVal(el.modelTelegramStatus, model.telegram_status || "missing");
+    try {
+      const url = new URL(api(config.endpoints.modelSearch));
+      url.searchParams.set("client_id", state.selectedClient.client_id || "");
+      if (state.selectedClient.member_id) url.searchParams.set("member_id", state.selectedClient.member_id);
+      url.searchParams.set("work_type", state.workType);
+      url.searchParams.set("folder", state.modelFolder);
+      const lookupKey = val(el.modelLookupKey).trim();
+      if (lookupKey) url.searchParams.set("q", lookupKey);
+      const response = await fetch(url.toString(), { credentials: "same-origin", cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+      state.models = (Array.isArray(data.models) ? data.models : Array.isArray(data.records) ? data.records : []).map(normalizeModel);
+      renderModels();
+      setStatus(`Loaded ${state.models.length} eligible model${state.models.length === 1 ? "" : "s"}.`, "ok");
+      setHook("models", "ok");
+    } catch (error) {
+      state.models = [];
+      renderModels();
+      setStatus(`Model pool unavailable: ${error.message}`, "bad");
+      setHook("models", "bad");
+    }
+  }
+
+  function selectModel(model) {
+    if (!model) return;
+    state.selectedModel = normalizeModel(model);
+    setVal(el.modelTelegram, state.selectedModel.telegram_username);
+    setVal(el.modelTelegramStatus, state.selectedModel.telegram_status || "missing");
     renderModelPreview();
     updateAll();
     scrollToNode($("#gate-panel"));
   }
 
   function renderModelPreview() {
-    if (!el.modelPreview) return;
     const model = state.selectedModel;
+    if (!el.modelPreview) return;
     if (!model) {
-      el.modelPreview.innerHTML = '<div class="mmdop__empty mmdop__empty--small">ยังไม่ได้เลือก Model</div>';
+      el.modelPreview.innerHTML = '<div class="mmdop__empty">No model selected yet.</div>';
       return;
     }
     el.modelPreview.innerHTML = `
       <div class="mmdop__modelCard">
-        <div class="mmdop__modelIcon">${esc(first(model.model_name, "M"))}</div>
-        <div>
-          <strong>${esc(model.model_name || "-")}</strong>
-          <span>${esc(model.lookup_key || "-")} · ${esc(model.telegram_username || "telegram missing")}</span>
-          <span>${esc(model.note || "")}</span>
-        </div>
-        <b>${esc(model.status || "-")}</b>
+        <span class="mmdop__modelIcon">${esc(model.model_name.charAt(0).toUpperCase())}</span>
+        <div><strong>${esc(model.model_name)}</strong><span>${esc(model.lookup_key)} · ${esc(model.note || "backend selected")}</span></div>
+        <b>${esc(model.status)}</b>
       </div>`;
   }
 
-  function statusOk(status) {
-    return status === "linked" || status === "verified";
+  function deriveGate() {
+    if (state.workType !== "private") {
+      return {
+        ok: Boolean(state.selectedClient && state.modelFolder && state.selectedModel),
+        label: state.selectedModel ? "Public ready" : "Public pending",
+        copy: "Public work skips the private Telegram gate. Backend create still validates the payload."
+      };
+    }
+    const clientTelegram = val(el.customerTelegram).trim();
+    const modelTelegram = val(el.modelTelegram).trim();
+    const clientStatus = val(el.customerTelegramStatus);
+    const modelStatus = val(el.modelTelegramStatus);
+    const clientOk = Boolean(clientTelegram) && ["linked", "verified"].includes(clientStatus);
+    const modelOk = Boolean(modelTelegram) && ["linked", "verified"].includes(modelStatus);
+    return {
+      ok: clientOk && modelOk,
+      label: clientOk && modelOk ? "Private Telegram gate ready" : "Private Telegram gate pending",
+      copy: clientOk && modelOk
+        ? "Customer and model Telegram status are linked/verified. Backend remains authoritative."
+        : "Private create stays blocked until both customer and model Telegram statuses are linked/verified."
+    };
   }
 
-  function updateGate() {
-    const customer = String(val(el.customerTelegramStatus) || "missing");
-    const model = String(val(el.modelTelegramStatus) || "missing");
-    let label = "Waiting";
-    let message = "เลือกประเภทงานก่อน ระบบจะประเมิน Telegram Gate ให้";
-    let type = "";
-    if (state.workType === "public") {
-      const ok = statusOk(customer) || customer === "invited";
-      label = ok ? "Ready" : "Pending";
-      message = ok ? "Public Work ไปต่อได้ แต่ก่อน final readiness ควร linked/verified" : "Public Work ยังพักเป็น telegram_pending ได้";
-      type = ok ? "ok" : "";
-    }
-    if (state.workType === "private") {
-      const ok = statusOk(customer) && statusOk(model);
-      label = ok ? "Verified" : "Required";
-      message = ok ? "Private Work ผ่าน Telegram hard gate แล้ว" : "Private Work ต้องให้ client และ model linked/verified ก่อน activate งานจริง";
-      type = ok ? "ok" : "bad";
-    }
-    text(el.gateLabel, label);
-    stateClass(el.gateLabel, type);
-    text(el.gateNotice, message);
-    stateClass(el.gateNotice, type);
-    text(el.statGate, label);
-    return { label, customer, model };
-  }
-
-  function addMinutes(hhmm, minutesToAdd) {
-    const parts = String(hhmm || "").split(":");
-    if (parts.length !== 2) return "";
-    const h = Number(parts[0]);
-    const m = Number(parts[1]);
-    if (!Number.isFinite(h) || !Number.isFinite(m)) return "";
-    const safe = (((h * 60 + m + minutesToAdd) % 1440) + 1440) % 1440;
-    return `${String(Math.floor(safe / 60)).padStart(2, "0")}:${String(safe % 60).padStart(2, "0")}`;
+  function requiredReady() {
+    const gate = deriveGate();
+    return Boolean(
+      state.selectedClient &&
+      state.workType &&
+      state.modelFolder &&
+      state.selectedModel &&
+      val(el.date) &&
+      val(el.start) &&
+      val(el.duration) &&
+      val(el.location) &&
+      Number(val(el.amount)) > 0 &&
+      gate.ok
+    );
   }
 
   function computeEndTime() {
-    const start = String(val(el.start) || "");
-    const duration = String(val(el.duration) || "");
-    if (!start) return "";
-    if (duration === "06:00+") return "more_than_6h";
-    const [h, m] = duration.split(":");
-    return addMinutes(start, Number(h) * 60 + Number(m));
-  }
-
-  function amountNumber() {
-    const n = Number(val(el.amount) || 0);
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  function getMissingFields() {
-    const missing = [];
-    if (!state.selectedClient) missing.push("Find Client");
-    if (!String(val(el.clientName) || "").trim()) missing.push("Client Name");
-    if (!String(val(el.lineUserId) || "").trim()) missing.push("LINE User ID");
-    if (!state.workType) missing.push("Work Type");
-    if (state.workType === "private") {
-      const access = privateEligibility();
-      if (access.eligibility_result !== "allowed") missing.push("Private Eligibility");
-      if (!state.privateOrientation) missing.push("Private Orientation");
-    }
-    if (!state.modelFolder) missing.push("Model Folder");
-    if (!state.selectedModel) missing.push("Model");
-    if (!String(val(el.date) || "").trim()) missing.push("Date");
-    if (!String(val(el.start) || "").trim()) missing.push("Start Time");
-    if (!String(val(el.duration) || "").trim()) missing.push("Duration");
-    if (!String(val(el.location) || "").trim()) missing.push("Location");
-    if (!amountNumber() || amountNumber() <= 0) missing.push("Amount");
-    if (state.workType === "private") {
-      const gate = updateGate();
-      if (!statusOk(gate.customer)) missing.push("Customer Telegram");
-      if (!statusOk(gate.model)) missing.push("Model Telegram");
-      if (!String(val(el.handlingNote) || "").trim()) missing.push("Handling Note");
-    }
-    return missing;
-  }
-
-  function setActiveStep(step) {
-    $$('[data-op-step]').forEach((node) => node.classList.toggle("is-active", node.dataset.opStep === step));
-    const map = {
-      client: ["client", "lineage"],
-      work: ["work", "folder"],
-      model: ["model"],
-      gate: ["gate"],
-      create: ["details", "output"]
-    };
-    $$('[data-op-mini]').forEach((node) => node.classList.toggle("is-active", (map[node.dataset.opMini] || []).includes(step)));
-  }
-
-  function setNext(title, copy) {
-    text(el.nextAction, title);
-    text(el.nextCopy, copy);
-  }
-
-  function updateNextAction() {
-    const missing = getMissingFields();
-    if (!state.selectedClient) {
-      setNext("Find Client", "ค้นจาก package / member / LINE lineage ก่อน");
-      setActiveStep("client");
+    if (!el.start || !el.duration || !el.end) return;
+    const start = val(el.start);
+    const duration = val(el.duration);
+    if (!start || !duration || duration.endsWith("+")) {
+      setVal(el.end, "");
       return;
     }
-    if (!state.workType) {
-      setNext("เลือก Work Type", "เลือก Public Work หรือ Private Work");
-      setActiveStep("work");
-      return;
-    }
-    if (!state.modelFolder) {
-      if (state.workType === "private" && privateEligibility().eligibility_result !== "allowed") {
-        setNext("Private Pending Review", "บันทึก draft เท่านั้น ลูกค้ายังไม่ active eligible");
-      } else if (state.workType === "private" && !state.privateOrientation) {
-        setNext("เลือก Orientation", "Straight หรือ Gay ก่อนเลือกแฟ้ม Private");
-      } else {
-        setNext("เลือก Model Folder", state.workType === "public" ? "Travel หรือ Extreme" : "แฟ้ม Private ที่ eligibility อนุญาต");
-      }
-      setActiveStep("folder");
-      return;
-    }
-    if (!state.selectedModel) {
-      setNext("เลือก Model", "เลือก Model จากแฟ้มที่ถูกต้อง");
-      setActiveStep("model");
-      return;
-    }
-    const gate = updateGate();
-    if (state.workType === "private" && gate.label !== "Verified") {
-      setNext("ตรวจ Telegram Gate", "Private Work ต้อง verified ทั้ง client และ model");
-      setActiveStep("gate");
-      return;
-    }
-    if (missing.length) {
-      setNext("กรอกข้อมูลให้ครบ", missing.slice(0, 2).join(" / "));
-      setActiveStep("details");
-      return;
-    }
-    setNext("พร้อมสร้าง Session", "ตรวจข้อมูลแล้วกด Create Session");
-    setActiveStep("details");
+    const [sh, sm] = start.split(":").map(Number);
+    const [dh, dm] = duration.split(":").map(Number);
+    if ([sh, sm, dh, dm].some((n) => Number.isNaN(n))) return;
+    const minutes = sh * 60 + sm + dh * 60 + dm;
+    const hh = String(Math.floor((minutes / 60) % 24)).padStart(2, "0");
+    const mm = String(minutes % 60).padStart(2, "0");
+    setVal(el.end, `${hh}:${mm}`);
   }
 
-  function updateStats() {
-    text(el.statClient, state.selectedClient ? state.selectedClient.client_name || "-" : "-");
-    text(el.statPackage, state.selectedClient ? state.selectedClient.package_code || "-" : "-");
-    text(el.statWork, state.workType ? (state.workType === "public" ? "Public Work" : "Private Work") : "-");
-    text(el.statFolder, state.modelFolder ? folderLabel(state.modelFolder) : "-");
-    text(el.statModel, state.selectedModel ? state.selectedModel.model_name : "-");
-    text(el.statStatus, getMissingFields().length ? "Not ready" : "Ready");
-    text(el.railFolder, state.modelFolder ? folderLabel(state.modelFolder) : "Not selected");
-    if (state.workType === "public") text(el.railFolderCopy, "Public Work ใช้ Travel Model หรือ Extreme Model");
-    else if (state.workType === "private") {
-      const access = privateEligibility();
-      text(el.railFolderCopy, access.eligibility_result === "allowed"
-        ? `Private ${privateAccessLabels[access.private_access_level] || access.private_access_level}: ${access.allowed_private_folders.map(folderLabel).join(" / ")} · ${state.privateOrientation || "เลือก orientation"}`
-        : "Private create blocked: draft / pending review only");
-    }
-    else text(el.railFolderCopy, "Public = Travel / Extreme · Private = Standard / Premium / VIP / Exclusive");
-  }
-
-  function updateReadyState() {
-    setVal(el.end, computeEndTime());
-    updateGate();
-    const missing = getMissingFields();
-    if (el.create) el.create.disabled = missing.length > 0;
-    text(el.readyLabel, missing.length ? `ยังขาด: ${missing.slice(0, 3).join(" / ")}${missing.length > 3 ? " ..." : ""}` : "Ready to create");
-    text(el.readyCopy, missing.length ? "ระบบยังไม่ส่ง create จนกว่าข้อมูลจำเป็นจะครบ" : "ข้อมูลครบแล้ว กด Create Session เพื่อให้ backend คืนลิงก์");
-    updateStats();
-    updateNextAction();
-    if (el.payload && config.debug) el.payload.textContent = JSON.stringify(getPayload(), null, 2);
-  }
-
-  function getPayload() {
-    const client = state.selectedClient || {};
-    const model = state.selectedModel || {};
-    const gate = updateGate();
-    return {
-      flow_version: "mmd_sigil_create_session_external_js_v3",
-      source: "sigil_admin_create_session_client_lineage",
-      frontend_surface: "operator_only",
-      backend_authority: "admin-worker",
-      source_of_truth: "airtable_cloud",
-      client_lineage: {
-        client_id: client.client_id || "",
-        client_name: String(val(el.clientName) || client.client_name || ""),
-        username: client.username || "",
-        phone: client.phone || "",
-        package_code: client.package_code || "",
-        tier: client.tier || "",
-        membership_status: client.membership_status || "",
-        purchased_history: client.purchased_history || "",
-        legacy_tags: client.legacy_tags || [],
-        match_confidence: client.confidence || null
+  function buildPayload() {
+    computeEndTime();
+    const gate = deriveGate();
+    const payload = {
+      client: {
+        client_id: state.selectedClient?.client_id || "",
+        member_id: state.selectedClient?.member_id || "",
+        email: state.selectedClient?.member_email || "",
+        name: val(el.clientName),
+        username: val(el.username),
+        package_code: val(el.package),
+        membership_status: val(el.membershipStatus),
+        lineage: {
+          remembered_name: state.selectedClient?.remembered_name || "",
+          canonical_name: state.selectedClient?.canonical_name || "",
+          aliases: state.selectedClient?.aliases || [],
+          matched_on: state.selectedClient?.matched_on || "",
+          matched_value: state.selectedClient?.matched_value || "",
+          lookup_chain: state.selectedClient?.lookup_chain || []
+        },
+        line: {
+          display_name: val(el.lineDisplay),
+          user_id: val(el.lineUserId),
+          record_id: val(el.lineRecordId),
+          legacy_tags: String(val(el.legacyTags) || "")
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean)
+        },
+        telegram: {
+          username: val(el.customerTelegram),
+          status: val(el.customerTelegramStatus)
+        }
       },
-      line_identity: {
-        line_record_id: String(val(el.lineRecordId) || client.line_record_id || ""),
-        line_user_id: String(val(el.lineUserId) || client.line_user_id || ""),
-        line_display_name: String(val(el.lineDisplay) || client.line_display_name || "")
-      },
-      work: {
-        work_type: state.workType,
-        job_visibility: state.workType === "private" ? "private" : "public",
-        job_lane: state.workType === "private" ? "private_work" : "public_work",
-        model_folder: state.modelFolder,
-        model_folder_label: folderLabel(state.modelFolder),
-        privacy_level: state.workType === "private" ? "restricted" : "standard"
-      },
-      private_access: privateAccessPayload(),
+      work_type: state.workType,
+      job_visibility: state.workType === "private" ? "private" : state.workType === "public" ? "public" : "",
+      private_orientation: state.privateOrientation,
+      model_folder: state.modelFolder,
       model: {
-        model_id: model.model_id || "",
-        model_name: model.model_name || "",
-        model_lookup_key: model.lookup_key || "",
-        model_pool: state.modelFolder,
-        selected_orientation: state.workType === "private" ? state.privateOrientation : "",
-        model_pool_rule: "strict_folder_match"
+        model_id: state.selectedModel?.model_id || "",
+        model_name: state.selectedModel?.model_name || "",
+        lookup_key: state.selectedModel?.lookup_key || "",
+        telegram_username: val(el.modelTelegram),
+        telegram_status: val(el.modelTelegramStatus)
       },
-      telegram_gate: {
-        telegram_required: true,
-        customer_telegram_username: String(val(el.customerTelegram) || ""),
-        customer_telegram_status: gate.customer,
-        model_telegram_username: String(val(el.modelTelegram) || ""),
-        model_telegram_status: gate.model,
-        requires_customer_telegram: state.workType === "private",
-        requires_model_telegram: state.workType === "private",
-        block_activation_until_verified: state.workType === "private",
-        current_gate_status: gate.label
+      schedule: {
+        date: val(el.date),
+        start: val(el.start),
+        duration: val(el.duration),
+        end: val(el.end)
       },
-      job_details: {
-        job_date: String(val(el.date) || ""),
-        start_time: String(val(el.start) || ""),
-        end_time: computeEndTime(),
-        work_duration: String(val(el.duration) || ""),
-        location_name: String(val(el.location) || ""),
-        google_map_url: String(val(el.map) || "")
+      location: {
+        text: val(el.location),
+        map_url: val(el.map)
       },
       payment: {
-        amount_thb: amountNumber(),
+        amount_thb: Number(val(el.amount)) || 0,
         payment_type: String(val(el.paymentType) || "full"),
         payment_method: String(val(el.paymentMethod) || "promptpay"),
         points_mode: String(val(el.pointsMode) || "auto")
       },
       human_support: {
-        assigned_assistant: String(val(el.humanAssistant) || "Ewvon"),
+        assigned_assistant: String(val(el.humanAssistant) || "Boss Per"),
         escalation_owner: String(val(el.escalationOwner) || "Boss Per")
       },
       notes: {
-        handling_note: String(val(el.handlingNote) || ""),
-        operation_note: String(val(el.note) || "")
+        handling: val(el.handlingNote),
+        internal: val(el.note)
       },
-      return_link_policy: {
-        token_param: "t",
-        links_must_come_from_backend: true
+      gates: {
+        private_telegram_ready: gate.ok,
+        private_telegram_label: gate.label
       },
-      requested_outputs: [
-        "session_id",
-        "payment_ref",
-        "customer_confirmation_url",
-        "model_confirmation_url",
-        "member_return_url",
-        "model_return_url",
-        "line_push_status",
-        "telegram_notify_status"
-      ]
+      source: "mmd-internal-create-session-v2"
     };
+    state.lastPayload = payload;
+    if (el.payload) el.payload.textContent = JSON.stringify(payload, null, 2);
+    return payload;
+  }
+
+  function updateStats() {
+    text(el.statClient, state.selectedClient?.client_name || "No client");
+    text(el.statPackage, state.selectedClient?.package_code || "-");
+    text(el.statWork, state.workType || "-");
+    text(el.statFolder, state.modelFolder || "-");
+    text(el.railFolder, state.modelFolder || "No folder selected");
+    text(el.railFolderCopy, state.modelFolder ? `Folder ${state.modelFolder}` : "Select public/private folder after client selection.");
+    text(el.statModel, state.selectedModel?.model_name || "-");
+    const gate = deriveGate();
+    text(el.statGate, gate.ok ? "Ready" : "Pending");
+    text(el.statStatus, requiredReady() ? "Ready" : "Not ready");
+  }
+
+  function updateNextAction() {
+    const gate = deriveGate();
+    let next = "Find client";
+    let copy = "Search a canonical client lineage record before doing anything else.";
+    if (state.selectedClient && !state.workType) {
+      next = "Choose Public or Private";
+      copy = "Client selected. Choose the work type next.";
+    } else if (state.workType && !state.modelFolder) {
+      next = "Choose model folder";
+      copy = "Pick Travel / Extreme or the allowed Private folder.";
+    } else if (state.modelFolder && !state.selectedModel) {
+      next = "Select model";
+      copy = "Choose one model from the entitlement-aware pool.";
+    } else if (state.selectedModel && state.workType === "private" && !gate.ok) {
+      next = "Complete Telegram gate";
+      copy = "Private create remains blocked until customer + model Telegram are linked/verified.";
+    } else if (!requiredReady()) {
+      next = "Complete job details";
+      copy = "Add schedule, location and amount before create.";
+    } else {
+      next = "Create session";
+      copy = "Required data is complete. Backend will re-validate on create.";
+    }
+    text(el.nextAction, next);
+    text(el.nextCopy, copy);
+  }
+
+  function updateReadiness() {
+    const gate = deriveGate();
+    if (el.gateLabel) {
+      el.gateLabel.classList.remove("is-ok", "is-warn", "is-bad");
+      el.gateLabel.classList.add(gate.ok ? "is-ok" : "is-warn");
+      text(el.gateLabel, gate.label);
+    }
+    text(el.gateNotice, gate.copy);
+    const ready = requiredReady();
+    text(el.readyLabel, ready ? "Ready to create" : "Not ready yet");
+    text(el.readyCopy, ready
+      ? "Frontend requirements are complete. Backend remains authoritative on create."
+      : "Complete the next action shown above. Private work also requires the Telegram gate.");
+    if (el.create) el.create.disabled = !ready;
+  }
+
+  function updateAll() {
+    computeEndTime();
+    updateStats();
+    updateNextAction();
+    updateReadiness();
+    buildPayload();
+  }
+
+  async function checkSession() {
+    setStatus("Checking admin session…", "warn");
+    setHook("auth", "warn");
+    if (config.mock) {
+      setStatus("Mock mode · admin session accepted locally.", "ok");
+      setHook("auth", "ok");
+      return true;
+    }
+    if (!hasAdminGateSession()) {
+      setStatus("Admin gate session is missing in this tab. Sign in again.", "bad");
+      setHook("auth", "bad");
+      return false;
+    }
+    try {
+      const response = await apiFetch(config.endpoints.authMe);
+      if (response.status === 404) {
+        const fallback = await apiFetch(config.endpoints.ping);
+        if (!fallback.ok) throw new Error(`HTTP ${fallback.status}`);
+        setStatus("Admin session accepted by current runtime.", "ok");
+        setHook("auth", "ok");
+        return true;
+      }
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+      setStatus("Admin session verified.", "ok");
+      setHook("auth", "ok");
+      return true;
+    } catch (error) {
+      setStatus(`Admin session check failed: ${error.message}`, "bad");
+      setHook("auth", "bad");
+      return false;
+    }
   }
 
   async function saveDraft() {
-    if (!state.selectedClient) {
-      setStatus("เลือก client ก่อนบันทึก draft", "bad");
-      return;
-    }
-    const payload = getPayload();
+    const payload = buildPayload();
+    setStatus("Saving draft…", "warn");
     if (config.mock) {
-      state.draftId = `draft_demo_${Date.now()}`;
-      setStatus(`Demo cloud draft saved: ${state.draftId}`, "ok");
+      state.draftId = `draft_${Date.now()}`;
+      setStatus(`Mock draft saved · ${state.draftId}`, "ok");
       return;
     }
-    setStatus("กำลังบันทึก cloud draft...", "");
     try {
-      const result = await requestJson(api(config.endpoints.saveDraft), {
+      const response = await apiFetch(config.endpoints.saveDraft, {
         method: "POST",
-        body: JSON.stringify({ draft_id: state.draftId || "", payload })
+        body: JSON.stringify(payload)
       });
-      if (!result.ok || result.data?.ok === false) throw new Error(result.data?.error || result.data?.message || `HTTP ${result.status}`);
-      state.draftId = pick(result.data, "draft_id", "id") || state.draftId;
-      setStatus("Cloud draft saved.", "ok");
-    } catch {
-      setStatus("บันทึก cloud draft ไม่สำเร็จ", "bad");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+      state.draftId = data.draft_id || data.id || "saved";
+      setStatus(`Draft saved · ${state.draftId}`, "ok");
+    } catch (error) {
+      setStatus(`Draft failed: ${error.message}`, "bad");
     }
-  }
-
-  async function fillDemoJob() {
-    if (!state.selectedClient) {
-      state.clients = demoClients.slice();
-      renderClients();
-      selectClient(state.clients[0].client_id);
-    }
-    if (!state.workType) selectWorkType("public");
-    if (state.workType === "private" && !state.privateOrientation) selectPrivateOrientation("straight");
-    if (!state.modelFolder) {
-      const access = privateEligibility();
-      await selectFolder(state.workType === "private" ? access.allowed_private_folders[0] || "standard" : "travel");
-    }
-    if (!state.selectedModel) {
-      const firstModel = state.models[0] || demoModelsForFolder(state.modelFolder)[0];
-      if (firstModel && el.modelSelect) {
-        if (!state.models.length) {
-          state.models = demoModelsForFolder(state.modelFolder);
-          renderModels();
-        }
-        el.modelSelect.value = firstModel.model_id;
-        selectModel(firstModel.model_id);
-      }
-    }
-    if (state.workType === "private") {
-      setVal(el.customerTelegramStatus, statusOk(val(el.customerTelegramStatus)) ? val(el.customerTelegramStatus) : "verified");
-      setVal(el.modelTelegramStatus, "verified");
-      setVal(el.handlingNote, "Private Work handling. Ewvon follows up if needed. Escalate to Boss Per for exceptions.");
-    } else {
-      setVal(el.modelTelegramStatus, "linked");
-      setVal(el.handlingNote, "");
-    }
-    setVal(el.date, "2026-05-03");
-    setVal(el.start, "20:00");
-    setVal(el.duration, "01:30");
-    setVal(el.location, "SAM E. Hotel Bangkok Sathorn");
-    setVal(el.map, "https://maps.app.goo.gl/DUCVVE7utkxFmmtt7");
-    setVal(el.amount, state.workType === "private" ? "18000" : "8000");
-    setVal(el.paymentType, "full");
-    setVal(el.paymentMethod, "promptpay");
-    setVal(el.pointsMode, "auto");
-    setVal(el.humanAssistant, "Ewvon");
-    setVal(el.escalationOwner, "Boss Per");
-    setVal(el.note, "Created from Client Lineage flow.");
-    updateAll();
-    setStatus("Demo job data filled.", "ok");
   }
 
   async function createSession() {
-    const missing = getMissingFields();
-    if (missing.length) {
-      setStatus(`ยังกรอกไม่ครบ: ${missing.join(" / ")}`, "bad");
-      updateAll();
+    updateAll();
+    if (!requiredReady()) {
+      setStatus("Create blocked. Complete the next action first.", "warn");
       return;
     }
-    const payload = getPayload();
-    state.lastPayload = payload;
-    if (el.payload) el.payload.textContent = JSON.stringify(payload, null, 2);
-    if (el.create) el.create.disabled = true;
-    text(el.statStatus, "Creating");
-    setStatus("กำลังสร้าง session...", "");
-    try {
-      let data;
-      if (config.mock) {
-        data = mockCreateResponse(payload);
-      } else {
-        const result = await requestJson(api(config.endpoints.createSession), {
-          method: "POST",
-          body: JSON.stringify(payload)
-        });
-        if (!result.ok || result.data?.ok === false) throw new Error(result.data?.error || result.data?.message || `HTTP ${result.status}`);
-        data = result.data || {};
-      }
+    const payload = buildPayload();
+    setStatus("Creating session…", "warn");
+    setHook("create", "warn");
+    if (config.mock) {
+      const now = Date.now().toString(36).toUpperCase();
+      renderCreated({
+        ok: true,
+        session_id: `SES-${now}`,
+        payment_ref: `MMD-${now.slice(-6)}`,
+        line_notification: "ready",
+        telegram_dm: state.workType === "private" ? "ready" : "skipped",
+        customer_confirmation_url: `/confirm/mmd-confirmation?session=SES-${now}`,
+        model_confirmation_url: `/sigil/confirm/job-model?session=SES-${now}`,
+        customer_message: `MMD session SES-${now} is ready for confirmation.`,
+        model_message: `New MMD session SES-${now} is ready for model confirmation.`
+      });
+      setStatus("Mock session created.", "ok");
       setHook("create", "ok");
-      fillOutput(payload, data);
-      state.created = data;
-      if (el.output) el.output.hidden = false;
-      setActiveStep("output");
-      updateStats();
-      setStatus("Session created. Links are ready.", "ok");
-      scrollToNode(el.output);
-    } catch {
+      return;
+    }
+    try {
+      const response = await apiFetch(config.endpoints.createSession, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+      renderCreated(data);
+      setStatus("Session created.", "ok");
+      setHook("create", "ok");
+    } catch (error) {
+      setStatus(`Create failed: ${error.message}`, "bad");
       setHook("create", "bad");
-      setStatus("ยังสร้าง session ไม่สำเร็จ กรุณาตรวจ backend endpoint หรือ payload", "bad");
-      text(el.statStatus, "Failed");
-      updateAll();
-    } finally {
-      if (el.create) el.create.disabled = false;
     }
   }
 
-  function mockCreateResponse(payload) {
-    const token = `demo_t_${Math.random().toString(36).slice(2, 12)}`;
-    return {
-      ok: true,
-      session_id: `sess_demo_${Date.now()}`,
-      payment_ref: `PAY-DEMO-${String(Date.now()).slice(-6)}`,
-      customer_confirmation_url: `https://mmdbkk.com/confirm/job-confirmation?t=${token}_c`,
-      model_confirmation_url: `https://mmdbkk.com/confirm/job-confirmation?t=${token}_m`,
-      member_return_url: `https://mmdbkk.com/sigil/member/account?t=${token}_r`,
-      model_return_url: `https://mmdbkk.com/sigil/model/dashboard?t=${token}_mr`,
-      line_push_status: "not_sent",
-      telegram_notify_status: payload.work.job_visibility === "private" ? "private_gate_checked" : "pending"
-    };
+  function renderCreated(data) {
+    state.created = data;
+    if (el.output) el.output.hidden = false;
+    text(el.outSessionId, data.session_id || data.id || "-");
+    text(el.outPaymentRef, data.payment_ref || data.payment_reference || "-");
+    text(el.outLineStatus, data.line_notification || data.line_status || "not sent");
+    text(el.outTelegramStatus, data.telegram_dm || data.telegram_status || "not sent");
+    setVal(el.outCustomerUrl, data.customer_confirmation_url || data.customer_url || "");
+    setVal(el.outModelUrl, data.model_confirmation_url || data.model_url || "");
+    setVal(el.outMemberUrl, data.member_return_url || "/member/dashboard");
+    setVal(el.outModelReturnUrl, data.model_return_url || "/model/dashboard");
+    setVal(el.outCustomerMessage, data.customer_message || "");
+    setVal(el.outModelMessage, data.model_message || "");
+    scrollToNode(el.output);
   }
 
-  function fillOutput(payload, data) {
-    const out = {
-      session_id: pick(data, "session_id", "sessionId", "id"),
-      payment_ref: pick(data, "payment_ref", "paymentRef"),
-      customer_confirmation_url: pick(data, "customer_confirmation_url", "customer_confirm_url", "customer_url"),
-      model_confirmation_url: pick(data, "model_confirmation_url", "model_confirm_url", "model_url"),
-      member_return_url: pick(data, "member_return_url", "member_dashboard_url"),
-      model_return_url: pick(data, "model_return_url", "model_dashboard_url"),
-      line_push_status: pick(data, "line_push_status") || "not_sent",
-      telegram_notify_status: pick(data, "telegram_notify_status") || "pending"
-    };
-    text(el.outSessionId, out.session_id || "-");
-    text(el.outPaymentRef, out.payment_ref || "-");
-    text(el.outLineStatus, out.line_push_status || "not_sent");
-    text(el.outTelegramStatus, out.telegram_notify_status || "pending");
-    setVal(el.outCustomerUrl, out.customer_confirmation_url || "");
-    setVal(el.outModelUrl, out.model_confirmation_url || "");
-    setVal(el.outMemberUrl, out.member_return_url || "");
-    setVal(el.outModelReturnUrl, out.model_return_url || "");
-    setVal(el.outCustomerMessage, customerMessage(payload, out));
-    setVal(el.outModelMessage, modelMessage(payload, out));
+  async function copy(textValue) {
+    const value = String(textValue || "");
+    if (!value) return;
+    await navigator.clipboard.writeText(value);
+    setStatus("Copied.", "ok");
   }
 
-  function customerMessage(payload, out) {
-    return [
-      `${payload.client_lineage.client_name || "คุณ"} ครับ`,
-      "",
-      "ขอส่งลิงก์ยืนยัน session ของ MMD SĪGIL ให้ทางนี้นะครับ",
-      out.customer_confirmation_url || "",
-      "",
-      payload.job_details.job_date || payload.job_details.start_time
-        ? `วันเวลา: ${[payload.job_details.job_date, payload.job_details.start_time].filter(Boolean).join(" · ")}`
-        : "",
-      payload.job_details.location_name ? `สถานที่: ${payload.job_details.location_name}` : "",
-      payload.payment.amount_thb ? `ยอดรวม: ${Number(payload.payment.amount_thb).toLocaleString("th-TH")} THB` : "",
-      "",
-      "หากต้องมีขั้นตอนเพิ่มเติม เดี๋ยวระบบจะพาไปหน้าที่ถูกต้องครับ"
-    ]
-      .filter((line) => line !== "")
-      .join("\n");
-  }
-
-  function modelMessage(payload, out) {
-    return [
-      `${payload.model.model_name || "Model"} ครับ`,
-      "",
-      "ขอส่งลิงก์ยืนยันงานจาก MMD SĪGIL:",
-      out.model_confirmation_url || "",
-      "",
-      payload.job_details.job_date || payload.job_details.start_time
-        ? `วันเวลา: ${[payload.job_details.job_date, payload.job_details.start_time].filter(Boolean).join(" · ")}`
-        : "",
-      payload.job_details.location_name ? `สถานที่: ${payload.job_details.location_name}` : "",
-      payload.job_details.work_duration ? `ระยะเวลา: ${payload.job_details.work_duration}` : "",
-      "",
-      "กรุณาตรวจ brief และยืนยัน readiness ผ่านลิงก์นี้ครับ"
-    ]
-      .filter((line) => line !== "")
-      .join("\n");
-  }
-
-  async function pushLine() {
-    if (!state.lastPayload || !state.created) {
-      setStatus("ยังไม่มี session ที่สร้างแล้วสำหรับ push LINE", "bad");
+  async function pushCustomerLine() {
+    if (!state.created || !state.selectedClient?.line_user_id) {
+      setStatus("Customer LINE push is not ready.", "warn");
       return;
     }
-    const message = val(el.outCustomerMessage);
-    if (!message) {
-      setStatus("Customer message is empty.", "bad");
-      return;
-    }
-    setStatus("กำลังส่ง LINE message...", "");
-    if (el.pushLine) el.pushLine.disabled = true;
+    setStatus("Pushing customer LINE message…", "warn");
+    setHook("push", "warn");
     try {
-      let data;
-      if (config.mock) {
-        data = { ok: true, line_push_status: "sent_demo" };
-      } else {
-        const result = await requestJson(api(config.endpoints.pushLine), {
-          method: "POST",
-          body: JSON.stringify({
-            line_record_id: state.lastPayload.line_identity.line_record_id,
-            line_user_id: state.lastPayload.line_identity.line_user_id,
-            session_id: pick(state.created, "session_id", "sessionId", "id"),
-            message,
-            source: "sigil_create_session_external_js"
-          })
-        });
-        if (!result.ok || result.data?.ok === false) throw new Error(result.data?.error || result.data?.message || `HTTP ${result.status}`);
-        data = result.data || {};
-      }
+      const response = config.mock
+        ? new Response(JSON.stringify({ ok: true }), { status: 200 })
+        : await apiFetch(config.endpoints.pushLine, {
+            method: "POST",
+            body: JSON.stringify({
+              to: state.selectedClient.line_user_id,
+              message: val(el.outCustomerMessage),
+              session_id: state.created.session_id || state.created.id || ""
+            })
+          });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+      setStatus("Customer LINE message sent.", "ok");
       setHook("push", "ok");
-      text(el.outLineStatus, data.line_push_status || "sent");
-      setStatus("LINE message sent.", "ok");
-    } catch {
+    } catch (error) {
+      setStatus(`LINE push failed: ${error.message}`, "bad");
       setHook("push", "bad");
-      text(el.outLineStatus, "failed");
-      setStatus("ยังส่ง LINE ไม่สำเร็จ ตอนนี้ copy message ไปส่งเองก่อนได้", "bad");
-    } finally {
-      if (el.pushLine) el.pushLine.disabled = false;
-    }
-  }
-
-  async function copyText(value) {
-    try {
-      await navigator.clipboard.writeText(String(value || ""));
-      setStatus("Copied.", "ok");
-    } catch {
-      setStatus("Copy failed.", "bad");
     }
   }
 
   function resetAll() {
-    state.clients = [];
     state.selectedClient = null;
     state.workType = "";
     state.privateOrientation = "";
@@ -1407,93 +1042,92 @@
     state.draftId = "";
     state.created = null;
     state.lastPayload = null;
-    [
-      el.query,
-      el.clientName,
-      el.username,
-      el.package,
-      el.membershipStatus,
-      el.lineDisplay,
-      el.lineUserId,
-      el.lineRecordId,
-      el.legacyTags,
-      el.customerTelegram,
-      el.modelTelegram,
-      el.modelLookupKey,
-      el.modelPool,
-      el.date,
-      el.start,
-      el.end,
-      el.location,
-      el.map,
-      el.amount,
-      el.handlingNote,
-      el.note
-    ].forEach((node) => setVal(node, ""));
-    setVal(el.customerTelegramStatus, "missing");
-    setVal(el.modelTelegramStatus, "missing");
-    setVal(el.paymentType, "full");
-    setVal(el.paymentMethod, "promptpay");
-    setVal(el.pointsMode, "auto");
-    setVal(el.duration, "01:30");
-    setVal(el.humanAssistant, "Ewvon");
-    setVal(el.escalationOwner, "Boss Per");
-    text(el.clientInitial, "C");
-    text(el.selectedClientName, "-");
-    text(el.selectedClientMeta, "-");
-    text(el.selectedConfidence, "-");
-    if (el.lineageBadge) {
-      text(el.lineageBadge, "Not selected");
-      el.lineageBadge.classList.remove("is-ok");
-    }
-    if (el.lineageNotice) {
-      text(el.lineageNotice, "ยังไม่ได้เลือกลูกค้า");
-      el.lineageNotice.classList.remove("is-ok", "is-bad");
-    }
     if (el.output) el.output.hidden = true;
-    if (el.payload) el.payload.textContent = "{}";
-    $$('[data-op-work-type]').forEach((button) => button.classList.remove("is-selected"));
-    renderClients();
+    setVal(el.query, "");
+    setVal(el.clientName, "");
+    setVal(el.username, "");
+    setVal(el.package, "");
+    setVal(el.membershipStatus, "");
+    setVal(el.lineDisplay, "");
+    setVal(el.lineUserId, "");
+    setVal(el.lineRecordId, "");
+    setVal(el.legacyTags, "");
+    setVal(el.customerTelegram, "");
+    setVal(el.customerTelegramStatus, "missing");
+    setVal(el.modelTelegram, "");
+    setVal(el.modelTelegramStatus, "missing");
+    setVal(el.date, "");
+    setVal(el.start, "");
+    setVal(el.end, "");
+    setVal(el.location, "");
+    setVal(el.map, "");
+    setVal(el.amount, "");
+    setVal(el.handlingNote, "");
+    setVal(el.note, "");
+    renderSelectedClient();
+    renderClients(state.clients);
     renderFolders();
     renderModels();
-    renderModelPreview();
     updateAll();
-    setStatus("Ready.", "");
-    scrollToNode(root);
+    setStatus("Reset complete.", "ok");
+    scrollToNode($("#client-search"));
   }
 
-  function renderDurations() {
-    if (!el.duration) return;
-    el.duration.innerHTML = durations.map(([value, label]) => `<option value="${esc(value)}">${esc(label)}</option>`).join("");
-    el.duration.value = "01:30";
+  function fillDemoJob() {
+    if (!config.mock) return;
+    if (!state.selectedClient) selectClient(demoClients[0]);
+    state.workType = "private";
+    state.modelFolder = "vip";
+    state.models = demoModels.filter((model) => model.folders.includes("vip"));
+    state.selectedModel = state.models[0] || demoModels[0];
+    setVal(el.modelTelegram, state.selectedModel.telegram_username);
+    setVal(el.modelTelegramStatus, "linked");
+    setVal(el.customerTelegram, state.selectedClient.customer_telegram_username || "@demo_client");
+    setVal(el.customerTelegramStatus, "linked");
+    setVal(el.date, new Date(Date.now() + 86400000).toISOString().slice(0, 10));
+    setVal(el.start, "19:30");
+    setVal(el.duration, "02:00");
+    setVal(el.location, "Bangkok · Sathorn");
+    setVal(el.map, "https://maps.google.com/");
+    setVal(el.amount, "5900");
+    setVal(el.humanAssistant, "Boss Per");
+    renderFolders();
+    renderModels();
+    updateAll();
+    setStatus("Demo job filled. Review gate and create.", "ok");
   }
 
-  function updateAll() {
-    updateReadyState();
-  }
-
-  function bindEvents() {
+  function bind() {
     el.checkSession?.addEventListener("click", checkSession);
-    el.searchClient?.addEventListener("click", () => searchClients(false));
-    el.demoClient?.addEventListener("click", () => searchClients(true));
+    el.searchClient?.addEventListener("click", searchClients);
+    el.demoClient?.addEventListener("click", () => {
+      if (!config.mock) return;
+      renderClients(demoClients);
+      selectClient(demoClients[0]);
+      setStatus("Demo client selected.", "ok");
+    });
     el.loadRecent?.addEventListener("click", loadRecentClients);
     el.clearClient?.addEventListener("click", clearClient);
     el.query?.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") searchClients(false);
+      if (event.key === "Enter") searchClients();
     });
-    $$('[data-op-quick-query]').forEach((button) => {
-      button.addEventListener("click", () => {
-        setVal(el.query, button.dataset.opQuickQuery || "");
-        searchClients(false);
-      });
-    });
-    $$('[data-op-work-type]').forEach((button) => {
+    $$(`[data-op-work-type]`).forEach((button) => {
       button.addEventListener("click", () => selectWorkType(button.dataset.opWorkType));
     });
     el.refreshModels?.addEventListener("click", loadModels);
-    el.modelSelect?.addEventListener("change", () => selectModel(el.modelSelect.value));
+    el.modelLookupKey?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") loadModels();
+    });
+    el.modelSelect?.addEventListener("change", () => {
+      const index = Number(val(el.modelSelect));
+      if (Number.isInteger(index) && state.models[index]) selectModel(state.models[index]);
+      else {
+        state.selectedModel = null;
+        renderModelPreview();
+        updateAll();
+      }
+    });
     [
-      el.clientName,
       el.customerTelegram,
       el.customerTelegramStatus,
       el.modelTelegram,
@@ -1518,43 +1152,38 @@
     el.saveDraft?.addEventListener("click", saveDraft);
     el.fillDemoJob?.addEventListener("click", fillDemoJob);
     el.create?.addEventListener("click", createSession);
-    el.pushLine?.addEventListener("click", pushLine);
     el.newSession?.addEventListener("click", resetAll);
-    el.copyCustomerLink?.addEventListener("click", () => copyText(val(el.outCustomerUrl)));
-    el.copyModelLink?.addEventListener("click", () => copyText(val(el.outModelUrl)));
-    el.copyCustomerMsg?.addEventListener("click", () => copyText(val(el.outCustomerMessage)));
-    el.copyModelMsg?.addEventListener("click", () => copyText(val(el.outModelMessage)));
-    if (el.debugToggle && config.debug) {
-      el.debugToggle.hidden = false;
-      if (el.debugPanel) el.debugPanel.hidden = false;
-      el.debugToggle.addEventListener("click", () => {
-        if (!el.debugPanel) return;
-        el.debugPanel.open = !el.debugPanel.open;
-        if (el.payload) el.payload.textContent = JSON.stringify(getPayload(), null, 2);
-      });
-    }
+    el.debugToggle?.addEventListener("click", () => {
+      if (!el.debugPanel) return;
+      el.debugPanel.hidden = !el.debugPanel.hidden;
+      if (!el.debugPanel.hidden) buildPayload();
+    });
+    el.copyCustomerLink?.addEventListener("click", () => copy(val(el.outCustomerUrl)));
+    el.copyModelLink?.addEventListener("click", () => copy(val(el.outModelUrl)));
+    el.copyCustomerMsg?.addEventListener("click", () => copy(val(el.outCustomerMessage)));
+    el.copyModelMsg?.addEventListener("click", () => copy(val(el.outModelMessage)));
+    el.pushLine?.addEventListener("click", pushCustomerLine);
   }
 
-  function init() {
-    renderDurations();
+  function boot() {
+    if (el.duration && !val(el.duration)) {
+      el.duration.innerHTML = durations.map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
+      setVal(el.duration, "02:00");
+    }
+    bind();
+    renderSelectedClient();
     renderFolders();
     renderModels();
-    bindEvents();
-    setVal(el.humanAssistant, "Ewvon");
-    setVal(el.escalationOwner, "Boss Per");
-    setVal(el.paymentMethod, "promptpay");
-    setVal(el.pointsMode, "auto");
     updateAll();
-    setStatus("ค้นหาลูกค้าก่อนสร้าง session", "");
     if (config.mock) {
-      setConnection("ok", "Demo Mode");
+      setStatus("Mock mode active. Backend writes are disabled.", "ok");
       setHook("auth", "ok");
-      state.clients = demoClients.slice();
-      renderClients();
-      return;
+      renderClients(demoClients);
+    } else {
+      checkSession();
+      loadRecentClients();
     }
-    checkSession();
   }
 
-  init();
+  boot();
 })();

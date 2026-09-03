@@ -25,9 +25,9 @@ const page = `<!doctype html><html><head></head><body>${ownerHtml}<script src="/
 try {
   const body = applyCreateSessionSimpleStart(page);
 
-  assert.equal(CREATE_SESSION_SIMPLE_START_MODE, "simple-start-v1");
-  assert.match(body, /data-simple-start-style="simple-start-v1"/);
-  assert.match(body, /data-simple-start-script="simple-start-v1"/);
+  assert.equal(CREATE_SESSION_SIMPLE_START_MODE, "simple-start-v2");
+  assert.match(body, /data-simple-start-style="simple-start-v2"/);
+  assert.match(body, /data-simple-start-script="simple-start-v2"/);
   assert.match(body, /พิมพ์ชื่อที่เปอร์จำ เช่น หนุ่ย/);
   assert.match(body, />ค้นหา<\/button>/);
   assert.match(body, />ล่าสุด<\/button>/);
@@ -37,6 +37,9 @@ try {
   assert.match(body, /value\.length < 2/);
   assert.match(body, /search\.click\(\)/);
   assert.match(body, /ชื่อที่เปอร์ Rename/);
+  assert.match(body, /data-simple-current-step/);
+  assert.match(body, /hideUntil\(reviewPanel, hasModel\)/);
+  assert.match(body, /hideUntil\(dock, hasModel\)/);
   assert.match(body, /Private/);
   assert.match(body, /Public/);
 
