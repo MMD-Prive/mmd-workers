@@ -7,13 +7,17 @@ export class AppError extends Error {
 }
 
 export function badRequest(message) {
-  return new AppError(400, 'INVALID_INPUT', message);
+  return new AppError(400, "INVALID_INPUT", message);
 }
 
-export function unauthorized(message = 'Unauthorized') {
-  return new AppError(401, 'UNAUTHORIZED', message);
+export function unauthorized(message = "Unauthorized") {
+  return new AppError(401, "UNAUTHORIZED", message);
 }
 
-export function forbidden(message = 'Access denied') {
-  return new AppError(403, 'ACCESS_DENIED', message);
+export function forbidden(message = "Access denied") {
+  return new AppError(403, "ACCESS_DENIED", message);
+}
+
+export function serviceUnavailable(message = "Required canonical upstream is unavailable") {
+  return new AppError(503, "UPSTREAM_UNAVAILABLE", message);
 }
