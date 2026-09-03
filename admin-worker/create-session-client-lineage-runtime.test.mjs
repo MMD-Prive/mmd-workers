@@ -155,13 +155,17 @@ test("lineage lookup returns canonical client enriched by member, entitlement an
       env,
     );
     assert.equal(response.status, 200);
-    assert.equal(response.headers.get("x-mmd-client-lineage"), "canonical-v2");
+    assert.equal(response.headers.get("x-mmd-client-lineage"), "canonical-v3-remembered-name-first");
     const body = await response.json();
     assert.equal(body.ok, true);
     assert.equal(body.records.length, 1);
     const record = body.records[0];
     assert.equal(record.client_id, "recClient1");
     assert.equal(record.member_id, "perpm");
+    assert.equal(record.remembered_name, "Per Premium");
+    assert.equal(record.canonical_name, "Per Client");
+    assert.equal(record.client_name, "Per Premium");
+    assert.equal(record.matched_on, "per_manual_rename");
     assert.equal(record.line_user_id, "U123");
     assert.equal(record.package_code, "Premium");
     assert.equal(record.tier, "premium");

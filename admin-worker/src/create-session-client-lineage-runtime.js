@@ -2,6 +2,25 @@ const AIRTABLE_API = "https://api.airtable.com/v0";
 
 export const CREATE_SESSION_CLIENT_LINEAGE_LOOKUP_PATH = "/v1/admin/clients/lineage-lookup";
 export const CREATE_SESSION_CLIENT_RECENT_PATH = "/v1/admin/clients/recent";
+export const CUSTOMER_LOOKUP_CHAIN = Object.freeze([
+  "per_manual_rename",
+  "canonical_client",
+  "aliases",
+  "application",
+  "earliest_verified_session",
+  "full_history",
+]);
+
+export const CUSTOMER_LOOKUP_PRIORITY = Object.freeze([
+  "per_manual_rename",
+  "historical_name",
+  "line_display_name",
+  "phone",
+  "email",
+  "line_user_id",
+  "telegram_identity",
+  "member_or_legacy_id",
+]);
 
 const DEFAULT_TABLES = Object.freeze({
   clients: "tblVv58TCbwh5j1fS",
@@ -108,11 +127,9 @@ export async function handleCreateSessionClientLineageRequest(request, env = {})
   if (!isCreateSessionClientLineageRequest(path, method)) {
     return json({ ok: false, error: "not_found" }, 404);
   }
-
   if (!(await isLineageAuthed(request, env))) {
     return json({ ok: false, error: "unauthorized" }, 401);
   }
-
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) {
     return json({ ok: false, error: "lineage_storage_not_ready" }, 503);
   }
@@ -135,19 +152,18 @@ export async function handleCreateSessionClientLineageRequest(request, env = {})
       source: "canonical_client_lineage",
       authority: "airtable_operational_records",
       entitlement_policy: "display_snapshot_only_backend_rechecks",
+      lookup_chain: CUSTOMER_LOOKUP_CHAIN,
+      lookup_priority: CUSTOMER_LOOKUP_PRIORITY,
       records: snapshot.records,
       count: snapshot.records.length,
       lineage_warnings: snapshot.warnings,
     });
   } catch (error) {
-    return json(
-      {
-        ok: false,
-        error: "lineage_lookup_failed",
-        detail: safeError(error),
-      },
-      503,
-    );
+    return json({
+      ok: false,
+      error: "lineage_lookup_failed",
+      detail: safeError(error),
+    }, 503);
   }
 }
 
@@ -161,8 +177,8 @@ async function buildClientLineageRecords(env, { query = "", limit = 40, recent =
   const members = await optionalAirtableList(env, tables.members, MEMBER_FIELDS, 160, warnings, "members");
   const entitlements = await optionalAirtableList(env, tables.entitlements, ENTITLEMENT_FIELDS, 240, warnings, "entitlements");
 
-  // LINE staging is large and evidence-only. Never scan hundreds of staging rows
-  // for every lookup. Search it server-side only when the operator entered a query.
+  // LINE staging contains Per's remembered/manual rename and historical aliases.
+  // It is identity evidence only and never an entitlement source.
   const staging = query
     ? await optionalAirtableList(
         env,
@@ -187,17 +203,35 @@ async function buildClientLineageRecords(env, { query = "", limit = 40, recent =
       const relatedEntitlements = resolveRelatedEntitlements(fields, relatedMember, entitlementIndexes, record.id);
       const entitlement = chooseDisplayEntitlement(relatedEntitlements);
       const relatedStaging = resolveRelatedStaging(fields, stagingIndexes, record.id);
-      const searchValues = lineageSearchValues(fields, relatedMember?.fields || {}, entitlement?.fields || {}, relatedStaging);
-      const score = recent ? recentScore(record, relatedMember, entitlement, relatedStaging) : matchScore(needle, searchValues);
-      if (!recent && needle && score <= 0) return null;
+      const searchEntries = lineageSearchEntries(
+        fields,
+        relatedMember?.fields || {},
+        entitlement?.fields || {},
+        relatedStaging,
+      );
+      const match = recent
+        ? {
+            score: recentScore(record, relatedMember, entitlement, relatedStaging),
+            priority: 0,
+            matched_on: "recent",
+            matched_value: "",
+          }
+        : bestLineageMatch(needle, searchEntries);
+
+      if (!recent && needle && match.score <= 0) return null;
       return {
-        score,
+        score: match.score,
+        priority: match.priority,
         createdTime: record.createdTime || "",
-        record: toClientLineageRecord(record, relatedMember, entitlement, relatedStaging, score),
+        record: toClientLineageRecord(record, relatedMember, entitlement, relatedStaging, match),
       };
     })
     .filter(Boolean)
     .sort((a, b) => {
+      // Canon: source class wins before fuzzy-match quality. This makes a valid
+      // Per manual rename deterministic priority #1 even if another Client has
+      // an exact canonical-name collision.
+      if (!recent && b.priority !== a.priority) return b.priority - a.priority;
       if (!recent && b.score !== a.score) return b.score - a.score;
       return String(b.createdTime || "").localeCompare(String(a.createdTime || ""));
     })
@@ -216,13 +250,14 @@ async function optionalAirtableList(env, tableName, fields, maxRecords, warnings
   }
 }
 
-function toClientLineageRecord(clientRecord, memberRecord, entitlementRecord, stagingRecords, score) {
+function toClientLineageRecord(clientRecord, memberRecord, entitlementRecord, stagingRecords, match) {
   const client = clientRecord.fields || {};
   const member = memberRecord?.fields || {};
   const entitlement = entitlementRecord?.fields || {};
   const staging = stagingRecords?.[0]?.fields || {};
 
-  const clientName = firstText(
+  const rememberedName = firstText(...(stagingRecords || []).map((record) => record.fields?.line_renamed_name));
+  const canonicalName = firstText(
     client["Client Name (Display)"],
     client["Client Name"],
     client.mmd_client_name,
@@ -230,13 +265,14 @@ function toClientLineageRecord(clientRecord, memberRecord, entitlementRecord, st
     member["Full Name (Display)"],
     member["Full Name"],
     member.mmd_client_name,
-    staging.line_renamed_name,
     staging.line_display_name,
   );
+  const clientName = firstText(rememberedName, canonicalName);
 
   const lineUserId = firstText(client.line_user_id, entitlement.line_user_id, staging.line_user_id);
-  const lineDisplayName = firstText(client.line_display_name, staging.line_renamed_name, staging.line_display_name);
+  const lineDisplayName = firstText(client.line_display_name, staging.line_display_name, rememberedName);
   const memberEmail = firstText(member["Contact Email"], entitlement.member_email, client.email, client["Contact Email"]);
+  const phone = firstText(client["Phone Number"], member["Phone Number"]);
   const packageCode = firstText(entitlement.package_code, member["Membership Tier"], staging.parsed_membership_package);
   const tier = firstText(entitlement.entitlement_level, member["Membership Tier"], staging.parsed_membership_tier);
   const membershipStatus = firstText(
@@ -246,15 +282,23 @@ function toClientLineageRecord(clientRecord, memberRecord, entitlementRecord, st
     member["Verification Status"],
   );
   const telegramUsername = firstText(client.telegram_username, member.telegram_username, entitlement.telegram_username);
+  const aliases = collectAliases(client, member, stagingRecords, rememberedName, canonicalName);
+  const score = Number(match?.score) || 70;
 
   return compact({
     client_id: clientRecord.id,
     member_id: firstText(member.member_id),
     member_email: memberEmail,
     memberstack_id: firstText(member.memberstack_id, entitlement.memberstack_id),
+    remembered_name: rememberedName,
+    canonical_name: canonicalName,
     client_name: clientName,
+    aliases,
+    matched_on: firstText(match?.matched_on),
+    matched_value: firstText(match?.matched_value),
+    lookup_chain: CUSTOMER_LOOKUP_CHAIN,
     username: firstText(client.username, member.username),
-    phone: "",
+    phone,
     package_code: packageCode,
     tier,
     membership_status: membershipStatus,
@@ -265,19 +309,67 @@ function toClientLineageRecord(clientRecord, memberRecord, entitlementRecord, st
     legacy_tags: mergeLegacyTags(stagingRecords),
     customer_telegram_username: telegramUsername,
     customer_telegram_status: normalizeTelegramStatus(entitlement.telegram_access_status),
-    confidence: Math.max(1, Math.min(100, Math.round(Number(score) || 70))),
+    confidence: Math.max(1, Math.min(100, Math.round(score))),
     lineage_source: "canonical_client",
-    entitlement_snapshot_source: entitlementRecord ? "member_entitlements_display_only" : memberRecord ? "members_display_only" : "none",
+    entitlement_snapshot_source: entitlementRecord
+      ? "member_entitlements_display_only"
+      : memberRecord
+        ? "members_display_only"
+        : "none",
   });
+}
+
+function collectAliases(client, member, stagingRecords, rememberedName, canonicalName) {
+  const values = [
+    rememberedName,
+    canonicalName,
+    client["Client Name"],
+    client["Client Name (Display)"],
+    client.mmd_client_name,
+    client.nickname,
+    client.username,
+    client.line_display_name,
+    member["Full Name"],
+    member["Full Name (Display)"],
+    member.mmd_client_name,
+    member.username,
+  ];
+  for (const record of stagingRecords || []) {
+    const fields = record.fields || {};
+    values.push(fields.line_renamed_name, fields.line_display_name, fields.normalized_name);
+  }
+
+  const seen = new Set();
+  const output = [];
+  for (const value of values) {
+    const text = clean(value);
+    const key = normalizeSearch(text);
+    if (!text || !key || seen.has(key)) continue;
+    seen.add(key);
+    output.push(text);
+    if (output.length >= 16) break;
+  }
+  return output;
 }
 
 function buildLineageSummary(member, entitlement) {
   const pieces = [];
   const access = firstText(entitlement.access_status);
-  const lifecycle = firstText(entitlement.member_lifecycle_status, entitlement.member_status, member["Membership Status"]);
-  const expiry = firstText(entitlement.expire_at, member["Membership Expiry"], member["Membership End Date"], member["Expire At"]);
+  const lifecycle = firstText(
+    entitlement.member_lifecycle_status,
+    entitlement.member_status,
+    member["Membership Status"],
+  );
+  const expiry = firstText(
+    entitlement.expire_at,
+    member["Membership Expiry"],
+    member["Membership End Date"],
+    member["Expire At"],
+  );
   if (access) pieces.push(access);
-  if (lifecycle && !pieces.some((value) => normalizeSearch(value) === normalizeSearch(lifecycle))) pieces.push(lifecycle);
+  if (lifecycle && !pieces.some((value) => normalizeSearch(value) === normalizeSearch(lifecycle))) {
+    pieces.push(lifecycle);
+  }
   if (expiry) pieces.push(`exp ${String(expiry).slice(0, 10)}`);
   return pieces.join(" · ");
 }
@@ -319,7 +411,9 @@ function resolveRelatedEntitlements(client, memberRecord, indexes, clientRecordI
     for (const record of indexes.byMemberRecordId.get(memberRecord.id) || []) add(record);
   }
 
-  const email = normalizeSearch(firstText(memberRecord?.fields?.["Contact Email"], client.email, client["Contact Email"]));
+  const email = normalizeSearch(
+    firstText(memberRecord?.fields?.["Contact Email"], client.email, client["Contact Email"]),
+  );
   if (email) for (const record of indexes.byEmail.get(email) || []) add(record);
 
   const line = normalizeSearch(firstText(client.line_user_id, memberRecord?.fields?.line_id));
@@ -357,9 +451,18 @@ function resolveRelatedStaging(client, indexes, clientRecordId) {
   };
 
   for (const record of indexes.byClientRecordId.get(clientRecordId) || []) add(record);
+
   const line = normalizeSearch(client.line_user_id);
   if (line) for (const record of indexes.byLine.get(line) || []) add(record);
-  const name = normalizeSearch(firstText(client["Client Name"], client["Client Name (Display)"], client.mmd_client_name, client.nickname));
+
+  const name = normalizeSearch(
+    firstText(
+      client["Client Name"],
+      client["Client Name (Display)"],
+      client.mmd_client_name,
+      client.nickname,
+    ),
+  );
   if (name) for (const record of indexes.byName.get(name) || []) add(record);
 
   return out
@@ -368,8 +471,16 @@ function resolveRelatedStaging(client, indexes, clientRecordId) {
 }
 
 function stagingIsReviewSafe(fields, clientRecordId) {
-  const linked = new Set([...linkIds(fields.matched_client), clean(fields.matched_client_id)].filter(Boolean));
-  if (linked.has(clientRecordId)) return true;
+  const linked = new Set([
+    ...linkIds(fields.matched_client),
+    clean(fields.matched_client_id),
+  ].filter(Boolean));
+
+  // An explicit reconciliation link is authoritative for identity attachment.
+  // Never let a reviewed staging row leak onto a different Client merely because
+  // its renamed/display name collides with that Client's canonical name.
+  if (linked.size > 0) return linked.has(clientRecordId);
+
   const status = normalizeSearch(firstText(fields.review_status, fields.decision));
   return /approved|reviewed|committed|matched/.test(status);
 }
@@ -385,7 +496,9 @@ function buildMemberIndexes(records) {
   for (const record of records) {
     const fields = record.fields || {};
     indexes.byRecordId.set(record.id, record);
-    for (const clientId of linkIds(fields.Clients)) setFirst(indexes.byClientRecordId, clientId, record);
+    for (const clientId of linkIds(fields.Clients)) {
+      setFirst(indexes.byClientRecordId, clientId, record);
+    }
     setFirst(indexes.byEmail, normalizeSearch(fields["Contact Email"]), record);
     setFirst(indexes.byLine, normalizeSearch(fields.line_id), record);
     setFirst(indexes.byUsername, normalizeSearch(fields.username), record);
@@ -418,42 +531,120 @@ function buildStagingIndexes(records) {
   };
   for (const record of records) {
     const fields = record.fields || {};
-    for (const id of linkIds(fields.matched_client)) pushMap(indexes.byClientRecordId, id, record);
-    if (clean(fields.matched_client_id)) pushMap(indexes.byClientRecordId, clean(fields.matched_client_id), record);
+    for (const id of linkIds(fields.matched_client)) {
+      pushMap(indexes.byClientRecordId, id, record);
+    }
+    if (clean(fields.matched_client_id)) {
+      pushMap(indexes.byClientRecordId, clean(fields.matched_client_id), record);
+    }
     pushMap(indexes.byLine, normalizeSearch(fields.line_user_id), record);
-    for (const value of [fields.normalized_name, fields.line_renamed_name, fields.line_display_name]) {
+    for (const value of [
+      fields.normalized_name,
+      fields.line_renamed_name,
+      fields.line_display_name,
+    ]) {
       pushMap(indexes.byName, normalizeSearch(value), record);
     }
   }
   return indexes;
 }
 
-function lineageSearchValues(client, member, entitlement, stagingRecords) {
-  const values = [
-    client["Client Name"], client["Client Name (Display)"], client.username, client.mmd_client_name, client.nickname,
-    client.line_user_id, client.line_display_name, client.telegram_username, client.email, client["Contact Email"], client["Phone Number"],
-    member["Full Name"], member["Full Name (Display)"], member.username, member.mmd_client_name, member.line_id,
-    member.telegram_username, member["Contact Email"], member["Phone Number"], member.member_id, member["Membership Tier"], member["Membership Status"],
-    entitlement.member_email, entitlement.line_user_id, entitlement.telegram_username, entitlement.entitlement_level,
-    entitlement.package_code, entitlement.target_package_label, entitlement.member_status, entitlement.member_lifecycle_status,
-  ];
+function lineageSearchEntries(client, member, entitlement, stagingRecords) {
+  const entries = [];
+  const add = (source, value, priority = 0) => {
+    const text = clean(value);
+    if (text) entries.push({ source, value: text, priority });
+  };
+
+  // Canon lock: the name Per manually renamed in LINE OFC is source priority #1.
   for (const record of stagingRecords || []) {
-    const fields = record.fields || {};
-    values.push(fields.line_user_id, fields.line_display_name, fields.line_renamed_name, fields.line_tags_raw, fields.normalized_name);
+    add("per_manual_rename", record.fields?.line_renamed_name, 1000);
   }
-  return values.filter((value) => value !== undefined && value !== null && value !== "").map((value) => String(value));
+
+  for (const value of [
+    client.mmd_client_name,
+    client.nickname,
+    client["Client Name (Display)"],
+    client["Client Name"],
+    member.mmd_client_name,
+    member["Full Name (Display)"],
+    member["Full Name"],
+  ]) {
+    add("historical_name", value, 700);
+  }
+  for (const record of stagingRecords || []) {
+    add("historical_name", record.fields?.normalized_name, 690);
+    add("line_display_name", record.fields?.line_display_name, 650);
+  }
+
+  add("line_display_name", client.line_display_name, 650);
+  add("phone", client["Phone Number"], 600);
+  add("phone", member["Phone Number"], 600);
+  add("email", client.email, 550);
+  add("email", client["Contact Email"], 550);
+  add("email", member["Contact Email"], 550);
+  add("email", entitlement.member_email, 550);
+  add("line_user_id", client.line_user_id, 500);
+  add("line_user_id", member.line_id, 500);
+  add("line_user_id", entitlement.line_user_id, 500);
+  for (const record of stagingRecords || []) {
+    add("line_user_id", record.fields?.line_user_id, 500);
+  }
+  add("telegram_identity", client.telegram_username, 450);
+  add("telegram_identity", member.telegram_username, 450);
+  add("telegram_identity", entitlement.telegram_username, 450);
+  add("member_or_legacy_id", member.member_id, 400);
+  add("member_or_legacy_id", member.memberstack_id, 400);
+  add("member_or_legacy_id", entitlement.memberstack_id, 400);
+  add("member_or_legacy_id", client.username, 390);
+  add("member_or_legacy_id", member.username, 390);
+  for (const record of stagingRecords || []) {
+    add("member_or_legacy_id", record.fields?.matched_client_id, 380);
+    add("legacy_tag", record.fields?.line_tags_raw, 200);
+  }
+
+  // Membership fields are display/search hints only. They never grant or widen access.
+  add("membership_hint", member["Membership Tier"], 100);
+  add("membership_hint", member["Membership Status"], 100);
+  add("membership_hint", entitlement.entitlement_level, 100);
+  add("membership_hint", entitlement.package_code, 100);
+  add("membership_hint", entitlement.target_package_label, 100);
+  add("membership_hint", entitlement.member_status, 100);
+  add("membership_hint", entitlement.member_lifecycle_status, 100);
+  return entries;
 }
 
-function matchScore(needle, values) {
-  if (!needle) return 70;
-  let best = 0;
-  for (const raw of values) {
-    const value = normalizeSearch(raw);
+function bestLineageMatch(needle, entries) {
+  if (!needle) {
+    return { score: 70, priority: 0, matched_on: "", matched_value: "" };
+  }
+
+  let best = { score: 0, priority: 0, matched_on: "", matched_value: "" };
+  for (const entry of entries || []) {
+    const value = normalizeSearch(entry?.value);
     if (!value) continue;
-    if (value === needle) best = Math.max(best, 100);
-    else if (value.startsWith(needle)) best = Math.max(best, 94);
-    else if (value.includes(needle)) best = Math.max(best, 88);
-    else if (needle.length >= 4 && needle.includes(value)) best = Math.max(best, 82);
+
+    let quality = 0;
+    if (value === needle) quality = 100;
+    else if (value.startsWith(needle)) quality = 94;
+    else if (value.includes(needle)) quality = 88;
+    else if (needle.length >= 4 && needle.includes(value)) quality = 82;
+    if (!quality) continue;
+
+    const priority = Number(entry.priority) || 0;
+    // Source priority is the primary ordering key. Match quality only breaks ties
+    // inside the same source class, preserving the explicit Per-rename-first canon.
+    if (
+      priority > best.priority ||
+      (priority === best.priority && quality > best.score)
+    ) {
+      best = {
+        score: quality,
+        priority,
+        matched_on: clean(entry.source),
+        matched_value: clean(entry.value),
+      };
+    }
   }
   return best;
 }
@@ -463,7 +654,15 @@ function recentScore(clientRecord, memberRecord, entitlementRecord, stagingRecor
   if (memberRecord) score += 8;
   if (entitlementRecord) score += 8;
   if (stagingRecords?.length) score += 4;
-  if (firstText(clientRecord.fields?.line_user_id, entitlementRecord?.fields?.line_user_id, stagingRecords?.[0]?.fields?.line_user_id)) score += 5;
+  if (
+    firstText(
+      clientRecord.fields?.line_user_id,
+      entitlementRecord?.fields?.line_user_id,
+      stagingRecords?.[0]?.fields?.line_user_id,
+    )
+  ) {
+    score += 5;
+  }
   return Math.min(99, score);
 }
 
@@ -496,15 +695,20 @@ function normalizeTelegramStatus(value) {
 function stagingSearchFormula(query) {
   const needle = airtableFormulaString(normalizeSearch(query));
   if (!needle) return "FALSE()";
+
+  // Keep this list restricted to fields present in the verified staging schema.
+  // Referencing an unknown Airtable field makes the entire staging enrichment fail.
   const fields = [
-    "line_display_name",
     "line_renamed_name",
-    "line_tags_raw",
     "normalized_name",
+    "line_display_name",
+    "line_tags_raw",
     "line_user_id",
     "matched_client_id",
   ];
-  const checks = fields.map((field) => `IFERROR(SEARCH(\"${needle}\",LOWER({${field}}&\"\")),0)>0`);
+  const checks = fields.map(
+    (field) => `IFERROR(SEARCH(\"${needle}\",LOWER({${field}}&\"\")),0)>0`,
+  );
   return `OR(${checks.join(",")})`;
 }
 
@@ -521,12 +725,13 @@ async function airtableList(env, tableName, fields, maxRecords, options = {}) {
     const params = new URLSearchParams();
     params.set("pageSize", String(Math.min(100, cap - output.length)));
     if (offset) params.set("offset", offset);
-    if (clean(options.filterByFormula)) params.set("filterByFormula", clean(options.filterByFormula));
+    if (clean(options.filterByFormula)) {
+      params.set("filterByFormula", clean(options.filterByFormula));
+    }
     for (const field of fields || []) params.append("fields[]", field);
 
     const requestUrl = `${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(tableName)}?${params.toString()}`;
     const response = await airtableFetchWithRetry(requestUrl, env);
-
     if (!response.ok) {
       throw new Error(`airtable_${tableName}_${response.status}`);
     }
@@ -551,7 +756,11 @@ async function airtableFetchWithRetry(url, env) {
       },
     });
 
-    if (response.ok || !RETRYABLE_AIRTABLE_STATUS.has(response.status) || attempt >= RETRY_DELAYS_MS.length) {
+    if (
+      response.ok ||
+      !RETRYABLE_AIRTABLE_STATUS.has(response.status) ||
+      attempt >= RETRY_DELAYS_MS.length
+    ) {
       return response;
     }
 
@@ -572,8 +781,13 @@ function tableNames(env) {
   return {
     clients: clean(env.AIRTABLE_TABLE_CLIENTS_ID || env.AIRTABLE_TABLE_CLIENTS) || DEFAULT_TABLES.clients,
     members: clean(env.AIRTABLE_TABLE_MEMBERS_ID || env.AIRTABLE_TABLE_MEMBERS) || DEFAULT_TABLES.members,
-    entitlements: clean(env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID || env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS) || DEFAULT_TABLES.entitlements,
-    lineStaging: clean(env.AIRTABLE_TABLE_LINE_OFC_CLIENT_IMPORT_STAGING_ID || env.AIRTABLE_TABLE_LINE_OFC_CLIENT_IMPORT_STAGING) || DEFAULT_TABLES.lineStaging,
+    entitlements: clean(
+      env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID || env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS,
+    ) || DEFAULT_TABLES.entitlements,
+    lineStaging: clean(
+      env.AIRTABLE_TABLE_LINE_OFC_CLIENT_IMPORT_STAGING_ID ||
+      env.AIRTABLE_TABLE_LINE_OFC_CLIENT_IMPORT_STAGING,
+    ) || DEFAULT_TABLES.lineStaging,
   };
 }
 
@@ -587,7 +801,9 @@ async function isLineageAuthed(request, env) {
     if (bearer && (await constantTimeEqual(bearer, expected))) return true;
   }
   const expectedConfirm = clean(env.CONFIRM_KEY);
-  return Boolean(expectedConfirm && confirm && (await constantTimeEqual(confirm, expectedConfirm)));
+  return Boolean(
+    expectedConfirm && confirm && (await constantTimeEqual(confirm, expectedConfirm)),
+  );
 }
 
 async function constantTimeEqual(a, b) {
@@ -628,7 +844,9 @@ function firstText(...values) {
 }
 
 function compact(object) {
-  return Object.fromEntries(Object.entries(object || {}).filter(([, value]) => value !== undefined && value !== null));
+  return Object.fromEntries(
+    Object.entries(object || {}).filter(([, value]) => value !== undefined && value !== null),
+  );
 }
 
 function normalizeSearch(value) {
@@ -654,7 +872,7 @@ function json(data, status = 200) {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": "no-store, private, max-age=0",
-      "X-MMD-Client-Lineage": "canonical-v2",
+      "X-MMD-Client-Lineage": "canonical-v3-remembered-name-first",
     },
   });
 }
