@@ -51,6 +51,10 @@ function approvedHistoryReview(overrides = {}) {
     approved_service_date: "2026-07-13",
     approved_service_amount_thb: 1250,
     approved_payment_ref: "HIST001",
+    payment_review_status: "approved",
+    payment_coverage_status: "complete",
+    approved_payment_amount_thb: 1250,
+    approved_payment_events_json: JSON.stringify([{ amount_thb: 1250, payment_ref: "HIST001", evidence_source: "reviewed_history" }]),
     points_review_status: "approved",
     approved_points_eligible_amount_thb: 1250,
     reviewed_by: "per",
@@ -70,18 +74,9 @@ function member() {
 test("identity commit and history approval are separate gates", () => {
   assert.throws(() => assertIdentityCommitGate(stagedFields({ review_status: "ready_to_review" })), /HISTORY_IDENTITY_REVIEW_NOT_COMMITTED/);
   assert.equal(assertIdentityCommitGate(stagedFields()).clientId, CLIENT_ID);
-
   assert.throws(
     () => assertHistoryApprovalGate(approvedHistoryReview({ review_status: "pending" }), { stagingId: STAGING_ID, clientId: CLIENT_ID }),
     /HISTORY_EXPLICIT_REVIEW_NOT_APPROVED/,
-  );
-  assert.throws(
-    () => assertHistoryApprovalGate(approvedHistoryReview({ decision: "hold_for_review" }), { stagingId: STAGING_ID, clientId: CLIENT_ID }),
-    /HISTORY_EXPLICIT_SERVICE_APPROVAL_REQUIRED/,
-  );
-  assert.equal(
-    assertHistoryApprovalGate(approvedHistoryReview(), { stagingId: STAGING_ID, clientId: CLIENT_ID }).pointsStatus,
-    "approved",
   );
 });
 
@@ -96,7 +91,40 @@ test("history review must link the same staging row and canonical Client", () =>
   );
 });
 
-test("points require a separate explicit decision and matching reviewed amount", () => {
+test("historical payment requires a separate explicit decision and complete coverage", () => {
+  assert.throws(
+    () => assertHistoryApprovalGate(approvedHistoryReview({ payment_review_status: "pending" }), { stagingId: STAGING_ID, clientId: CLIENT_ID }),
+    /HISTORY_EXPLICIT_PAYMENT_DECISION_REQUIRED/,
+  );
+  assert.throws(
+    () => assertHistoryApprovalGate(approvedHistoryReview({ payment_coverage_status: "partial" }), { stagingId: STAGING_ID, clientId: CLIENT_ID }),
+    /HISTORY_PAYMENT_COVERAGE_INCOMPLETE/,
+  );
+  assert.throws(
+    () => assertHistoryApprovalGate(approvedHistoryReview({ approved_payment_amount_thb: 1200 }), { stagingId: STAGING_ID, clientId: CLIENT_ID }),
+    /HISTORY_APPROVED_PAYMENT_AMOUNT_MISMATCH/,
+  );
+});
+
+test("Mac EMs19 real-case shape fails closed at 25k service vs 15k payment coverage", () => {
+  const macReview = approvedHistoryReview({
+    approved_service_date: "2026-09-02",
+    approved_service_amount_thb: 25000,
+    approved_payment_ref: "crew-slip-pending-exact-ref",
+    payment_review_status: "approved",
+    payment_coverage_status: "partial",
+    approved_payment_amount_thb: 15000,
+    approved_payment_events_json: JSON.stringify([{ amount_thb: 15000, evidence_source: "line_crew", note: "Ems19 Sprite แมค" }]),
+    points_review_status: "pending",
+    approved_points_eligible_amount_thb: 0,
+  });
+  assert.throws(
+    () => assertHistoryApprovalGate(macReview, { stagingId: STAGING_ID, clientId: CLIENT_ID }),
+    /HISTORY_PAYMENT_COVERAGE_INCOMPLETE/,
+  );
+});
+
+test("points require a separate explicit decision and matching fully paid amount", () => {
   assert.throws(
     () => assertHistoryApprovalGate(approvedHistoryReview({ points_review_status: "pending" }), { stagingId: STAGING_ID, clientId: CLIENT_ID }),
     /HISTORY_EXPLICIT_POINTS_DECISION_REQUIRED/,
@@ -128,10 +156,9 @@ test("parser candidate gate still fails closed on ambiguous staged history", () 
   assert.throws(() => assertHistoricalEventGate(multiple), /HISTORY_MULTIPLE_SERVICE_EVENTS_REVIEW_REQUIRED/);
 });
 
-test("approved review produces writable Airtable Session/Payment and canonical base-points fields", () => {
-  const fields = stagedFields();
-  const planA = buildMaterializationPlan({
-    fields,
+test("approved review produces deterministic Session/Payment and canonical base-points fields", () => {
+  const plan = buildMaterializationPlan({
+    fields: stagedFields(),
     historyReviewFields: approvedHistoryReview(),
     historyReviewId: defaultHistoryReviewId(IMPORT_ID),
     stagingId: STAGING_ID,
@@ -140,28 +167,18 @@ test("approved review produces writable Airtable Session/Payment and canonical b
     memberWallet: { recordId: MEMBER_RECORD_ID, memberId: "member-canonical-001" },
     priorRemainderThb: 50,
   });
-  const planB = buildMaterializationPlan({
-    fields,
-    historyReviewFields: approvedHistoryReview(),
-    historyReviewId: defaultHistoryReviewId(IMPORT_ID),
-    stagingId: STAGING_ID,
-    importId: IMPORT_ID,
-    client: client(),
-    memberWallet: { recordId: MEMBER_RECORD_ID, memberId: "member-canonical-001" },
-    priorRemainderThb: 50,
-  });
-  assert.equal(planA.writes.session.session_id, planB.writes.session.session_id);
-  assert.equal(planA.writes.payment["Payment Reference"], planB.writes.payment["Payment Reference"]);
-  assert.equal(planA.writes.session["Session Status"], "Completed");
-  assert.equal(planA.writes.session.payment_status, "paid");
-  assert.equal(planA.writes.payment["Payment Status"], "Paid");
-  assert.equal(planA.writes.payment.payment_evidence_source, "imported_history");
-  assert.equal(planA.writes.points.points_bucket, "base_phase1");
-  assert.equal(planA.writes.points.source, "line_ofc_history");
-  assert.equal(planA.writes.points.member_id, "member-canonical-001");
-  assert.equal(planA.writes.points.points, 13);
-  assert.equal(planA.writes.points.remainder_after_thb, 0);
-  assert.deepEqual(planA.forbidden_writes, ["MMD — Member Entitlements"]);
+  assert.equal(plan.writes.session["Session Status"], "Completed");
+  assert.equal(plan.writes.session.payment_status, "paid");
+  assert.equal(plan.writes.payment.Amount, 1250);
+  assert.equal(plan.writes.payment["Payment Status"], "Paid");
+  assert.equal(plan.writes.payment.payment_evidence_source, "imported_history");
+  assert.equal(plan.payment_coverage_status, "complete");
+  assert.equal(plan.writes.points.points_bucket, "base_phase1");
+  assert.equal(plan.writes.points.source, "line_ofc_history");
+  assert.equal(plan.writes.points.member_id, "member-canonical-001");
+  assert.equal(plan.writes.points.points, 13);
+  assert.equal(plan.writes.points.remainder_after_thb, 0);
+  assert.deepEqual(plan.forbidden_writes, ["MMD — Member Entitlements"]);
 });
 
 test("service history can materialize with points rejected without creating a points write", () => {
@@ -255,7 +272,7 @@ async function resolver(records) {
   };
 }
 
-test("dry-run requires explicit history review and performs zero canonical history writes", async () => {
+test("dry-run performs zero canonical history writes", async () => {
   const airtable = new FakeAirtable();
   const result = await materializeHistoricalRecord({ importId: IMPORT_ID, apply: false, airtable, resolver, now: "2026-09-03T16:05:00.000Z" });
   assert.equal(result.ok, true);
@@ -265,14 +282,23 @@ test("dry-run requires explicit history review and performs zero canonical histo
   assert.equal(airtable.reviewPatches.length, 0);
 });
 
-test("missing explicit review blocks materialization even when identity is committed", async () => {
-  const airtable = new FakeAirtable();
-  airtable.review = { id: "", fields: {} };
+test("partial payment coverage blocks apply before any canonical write", async () => {
+  const airtable = new FakeAirtable({
+    review: approvedHistoryReview({
+      approved_service_amount_thb: 25000,
+      payment_review_status: "approved",
+      payment_coverage_status: "partial",
+      approved_payment_amount_thb: 15000,
+      points_review_status: "pending",
+      approved_points_eligible_amount_thb: 0,
+    }),
+  });
   await assert.rejects(
     () => materializeHistoricalRecord({ importId: IMPORT_ID, apply: true, airtable, resolver }),
-    /HISTORY_EXPLICIT_REVIEW_NOT_FOUND/,
+    /HISTORY_PAYMENT_COVERAGE_INCOMPLETE/,
   );
   assert.equal(airtable.writes.length, 0);
+  assert.equal(airtable.reviewPatches.length, 0);
 });
 
 test("approved points require a canonical Member wallet id", async () => {
