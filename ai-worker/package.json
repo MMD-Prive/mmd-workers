@@ -1,10 +1,12 @@
 {
   "name": "mmd-ai-worker",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
+    "check": "node --check index.js && node --check src/services/kenji-customer-reasoning.js && node --check src/routes/kenji-customer-reasoning.js && node --check src/connectors/airtable.js",
+    "test": "npm run check && node --experimental-global-webcrypto --test test/*.test.mjs",
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "npm test && wrangler deploy"
   }
 }

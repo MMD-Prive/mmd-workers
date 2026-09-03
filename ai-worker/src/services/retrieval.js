@@ -1,19 +1,9 @@
-import { searchAirtable, getMemberContext as getAirtableMemberContext } from '../connectors/airtable.js';
-import { getMemberstackProfile } from '../connectors/memberstack.js';
+import { searchAirtable, getMemberContext as getCanonicalMemberContext } from "../connectors/airtable.js";
 
-export async function unifiedSearch({ query, scope }) {
-  const airtableResults = await searchAirtable(query, scope);
-  return airtableResults;
+export async function unifiedSearch({ query, scope, env }) {
+  return searchAirtable(query, scope, env);
 }
 
-export async function buildMemberContext(memberId) {
-  const airtable = await getAirtableMemberContext(memberId);
-  const memberstack = await getMemberstackProfile(memberId);
-  return {
-    member: {
-      ...airtable.member,
-      memberstack_status: memberstack.status
-    },
-    context: airtable.context
-  };
+export async function buildMemberContext(memberId, env) {
+  return getCanonicalMemberContext(memberId, env);
 }
