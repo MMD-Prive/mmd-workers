@@ -194,6 +194,18 @@ async function proxyAdminApi(request: Request, env: InternalRoutesEnv): Promise<
   headers.set("x-mmd-auth-bridge", "immigrate-internal-admin-api");
   headers.set("x-mmd-public-host", publicHost);
 
+  const isClientLineageLookup =
+    targetPath === "/v1/admin/clients/lineage-lookup" && request.method === "POST";
+  let manualLookupQuery = "";
+  if (isClientLineageLookup && contentType?.toLowerCase().includes("application/json")) {
+    try {
+      const lookupBody = (await request.clone().json()) as Record<string, unknown>;
+      manualLookupQuery = str(lookupBody.query).slice(0, 160);
+    } catch {
+      manualLookupQuery = "";
+    }
+  }
+
   let body: BodyInit | null | undefined =
     request.method === "GET" || request.method === "HEAD" ? undefined : request.body;
   if (shouldNormalizeAdminJob && contentType?.toLowerCase().includes("application/json")) {
@@ -226,6 +238,58 @@ async function proxyAdminApi(request: Request, env: InternalRoutesEnv): Promise<
   const res = await env.ADMIN_WORKER.fetch(proxied);
   const outHeaders = new Headers(res.headers);
   outHeaders.set("cache-control", "no-store");
+
+  if (isClientLineageLookup && manualLookupQuery && res.ok) {
+    try {
+      const data = (await res.clone().json()) as Record<string, unknown>;
+      const records = Array.isArray(data.records) ? data.records : [];
+      if (data.ok !== false && records.length === 0) {
+        const warnings = Array.isArray(data.lineage_warnings) ? data.lineage_warnings : [];
+        data.records = [
+          {
+            client_id: "",
+            member_id: "",
+            member_email: "",
+            remembered_name: manualLookupQuery,
+            canonical_name: "",
+            client_name: manualLookupQuery,
+            aliases: [manualLookupQuery],
+            matched_on: "manual_name_pending_reconcile",
+            matched_value: manualLookupQuery,
+            lookup_chain: ["owner_manual_name", "identity_pending_reconcile"],
+            username: "",
+            phone: "",
+            package_code: "",
+            tier: "",
+            membership_status: "guest_public_only",
+            purchased_history: "Public only · identity pending reconciliation",
+            line_record_id: "",
+            line_user_id: "",
+            line_display_name: "",
+            legacy_tags: ["manual_name", "identity_pending_reconcile", "public_only"],
+            customer_telegram_username: "",
+            customer_telegram_status: "missing",
+            confidence: 1,
+            lineage_source: "owner_manual_name_pending_reconcile",
+            entitlement_snapshot_source: "none",
+            identity_status: "pending_reconcile",
+            manual_public_only: true,
+          },
+        ];
+        data.count = 1;
+        data.manual_fallback = true;
+        data.lineage_warnings = [...warnings, "manual_public_only_pending_reconcile"];
+        outHeaders.set("content-type", "application/json; charset=utf-8");
+        return new Response(JSON.stringify(data), {
+          status: 200,
+          headers: outHeaders,
+        });
+      }
+    } catch {
+      // Preserve the canonical admin-worker response if it is not JSON.
+    }
+  }
+
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers: outHeaders });
 }
 
