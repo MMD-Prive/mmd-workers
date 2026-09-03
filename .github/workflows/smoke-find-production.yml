@@ -1,0 +1,70 @@
+name: Smoke Find production
+
+on:
+  push:
+    branches:
+      - smoke/find-production-20260903
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Smoke live /find wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          page="$RUNNER_TEMP/find.html"
+          curl --retry 3 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error \
+            https://www.mmdbkk.com/find -o "$page"
+          grep -F 'data-submit-endpoint="/member/api/liff/requests"' "$page"
+          grep -F 'findapibridgev2-1.1.0.js' "$page"
+
+          request_body="$RUNNER_TEMP/find-request.json"
+          request_http="$(curl --retry 3 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -o "$request_body" -w '%{http_code}' \
+            -X POST https://www.mmdbkk.com/member/api/liff/requests \
+            -H 'Origin: https://www.mmdbkk.com' \
+            -H 'Content-Type: application/json' \
+            --data '{"service_intent":"travel","model_preference":"Kenji","request_note":"production smoke","preferred_date":"2026-09-20","preferred_time":"19:30","area":"Sathorn","duration":"half_day","source":"find-your-mmd","promo":"","code":""}')"
+          test "$request_http" = "401"
+          node -e '
+            const fs = require("node:fs");
+            const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (body?.error?.code !== "LIFF_SESSION_REQUIRED") {
+              throw new Error(`Unexpected request response: ${JSON.stringify(body)}`);
+            }
+          ' "$request_body"
+
+          search_body="$RUNNER_TEMP/find-search.json"
+          search_http="$(curl --retry 3 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -o "$search_body" -w '%{http_code}' \
+            'https://www.mmdbkk.com/member/api/liff/find/models/search?q=Kenji' \
+            -H 'Origin: https://www.mmdbkk.com')"
+          test "$search_http" = "401"
+          node -e '
+            const fs = require("node:fs");
+            const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (body?.error?.code !== "LIFF_SESSION_REQUIRED") {
+              throw new Error(`Unexpected search response: ${JSON.stringify(body)}`);
+            }
+          ' "$search_body"
+
+          cors_headers="$RUNNER_TEMP/find-options.headers"
+          options_http="$(curl --retry 3 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -D "$cors_headers" -o /dev/null -w '%{http_code}' \
+            -X OPTIONS https://www.mmdbkk.com/member/api/liff/requests \
+            -H 'Origin: https://www.mmdbkk.com' \
+            -H 'Access-Control-Request-Method: POST')"
+          test "$options_http" = "204"
+          grep -i '^access-control-allow-origin: https://www.mmdbkk.com' "$cors_headers"
+
+          echo 'FIND_PRODUCTION_SMOKE=PASS'
+          echo 'PAGE_WIRING=PASS'
+          echo 'REQUEST_ROUTE_AUTH_GUARD=PASS'
+          echo 'MODEL_SEARCH_ROUTE_AUTH_GUARD=PASS'
+          echo 'CORS_PREFLIGHT=PASS'
