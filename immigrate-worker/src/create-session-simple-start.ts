@@ -233,6 +233,11 @@ const SIMPLE_START_SCRIPT = `
     return Boolean(content && content !== "-");
   }
 
+  function hasSelectedClient(value) {
+    var content = String(value || "").trim().toLowerCase();
+    return Boolean(content && content !== "-" && content !== "no client" && content !== "not selected");
+  }
+
   function boot() {
     var root = document.querySelector("[data-mmd-create-session-pro]");
     if (!root || root.getAttribute("data-simple-start-bound") === "1") return;
@@ -388,13 +393,13 @@ const SIMPLE_START_SCRIPT = `
     function sync() {
       hideManualFallbackCards();
 
-      var hasClient = isChosen(selectedName && selectedName.textContent);
+      var hasClient = hasSelectedClient(selectedName && selectedName.textContent);
       var selectedWork = root.querySelector("[data-op-work-type].is-selected");
-      var hasWork = Boolean(selectedWork);
+      var hasWork = hasClient && Boolean(selectedWork);
       var folderStat = root.querySelector("[data-op-stat-folder]");
       var modelStat = root.querySelector("[data-op-stat-model]");
-      var hasLane = isChosen(folderStat && folderStat.textContent);
-      var hasModel = isChosen(modelStat && modelStat.textContent);
+      var hasLane = hasWork && isChosen(folderStat && folderStat.textContent);
+      var hasModel = hasLane && isChosen(modelStat && modelStat.textContent);
 
       root.classList.toggle("is-simple-has-client", hasClient);
       root.classList.toggle("is-simple-has-work", hasWork);
@@ -448,7 +453,7 @@ const SIMPLE_START_SCRIPT = `
 
     window.setTimeout(function () {
       var picked = selectedName && String(selectedName.textContent || "").trim();
-      if ((!picked || picked === "-") && recent) recent.click();
+      if (!hasSelectedClient(picked) && recent) recent.click();
     }, 180);
   }
 
