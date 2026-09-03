@@ -270,7 +270,6 @@ const SIMPLE_START_SCRIPT = `
     var search = root.querySelector("[data-op-search-client]");
     var recent = root.querySelector("[data-op-load-recent]");
     var selectedName = root.querySelector("[data-op-selected-client-name]");
-    var canonicalClientName = root.querySelector("[data-op-client-name]");
     var results = root.querySelector("[data-op-client-results]");
     var workButtons = Array.prototype.slice.call(root.querySelectorAll("[data-op-work-type]"));
     var laneGrid = root.querySelector("[data-op-folder-grid]");
@@ -396,7 +395,6 @@ const SIMPLE_START_SCRIPT = `
     }
 
     function hasCanonicalClient() {
-      if (canonicalClientName) return Boolean(String(canonicalClientName.value || "").trim());
       return hasSelectedClient(selectedName && selectedName.textContent);
     }
 
