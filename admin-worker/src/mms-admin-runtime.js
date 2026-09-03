@@ -17,6 +17,18 @@ const INTERNAL_BASE = "https://mms.internal";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_SESSIONS_TABLE_ID = "tblC98mKWbzmPuNzX";
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MMS_JOB_LANES = new Set([
+  "mms",
+  "aroma_therapy_oil",
+  "thai_massage",
+  "sport_massage",
+  "office_syndrome",
+  "health_fitness_advisor",
+  "thai_herbal_compress",
+  "partner_present",
+  "partner_present_massage_session",
+  "women_massage",
+]);
 
 export function isMmsAdminRequest(pathname = "") {
   const path = normalizePath(pathname);
@@ -261,7 +273,7 @@ function canonicalJobProjection(record) {
   const lane = clean(fields.job_type || fields.session_type_raw || fields["Session Type"] || fields.model_work_lane || fields.model_work_type).toLowerCase();
   const sessionId = clean(fields.session_id || fields["Session ID"] || fields.session || record?.id);
   const prebookingId = linkedPrebookingFromNotes(note);
-  const isMms = lane === "mms" || lane.includes("male massage") || Boolean(prebookingId) || /^mms_/i.test(sessionId);
+  const isMms = MMS_JOB_LANES.has(lane) || lane.includes("male massage") || Boolean(prebookingId) || /^mms_/i.test(sessionId);
   return {
     is_mms: isMms,
     session_id: sessionId,
