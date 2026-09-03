@@ -3,6 +3,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import { wireMmsApproveUi, MMS_APPROVE_UI_MARKER } from './src/mms-admin-approve-ui.js';
+import { wireMmsJobsUi, MMS_JOBS_UI_MARKER } from './src/mms-admin-jobs-ui.js';
+import {
+  appendMmsJobReceipt,
+  buildMmsCanonicalJobPayload,
+  linkedPrebookingFromNotes,
+  linkedSessionFromNotes,
+} from './src/mms-job-bridge.js';
 import { renderMmsAdminPage } from './src/mms-admin-page.js';
 
 const runtimeSource = readFileSync(new URL('./src/mms-admin-runtime.js', import.meta.url), 'utf8');
@@ -72,4 +79,87 @@ test('approve wiring is idempotent and preserves ordinary application save behav
   const twice = wireMmsApproveUi(once);
   assert.equal(twice, once);
   assert.match(once, /setRuntime\('บันทึกใบสมัครแล้ว','ok'\)/);
+});
+
+test('MMS jobs wiring adds a canonical work lane and explicit create-job action', () => {
+  const once = wireMmsJobsUi(renderMmsAdminPage());
+  const twice = wireMmsJobsUi(once);
+  assert.equal(twice, once);
+  assert.ok(once.includes(MMS_JOBS_UI_MARKER));
+  assert.match(once, /งาน MMS/);
+  assert.match(once, /สร้างงาน MMD/);
+  assert.match(once, /\/v1\/admin\/mms/);
+  assert.match(once, /\/jobs/);
+  assert.match(once, /\/prebookings\/.*\/job/);
+  assert.match(once, /amount_thb:amount/);
+  assert.match(once, /payment_type:payment/);
+  assert.match(once, /Confirmed แล้ว/);
+});
+
+test('MMS confirmed prebooking maps to canonical job contract without inventing payment truth', () => {
+  const payload = buildMmsCanonicalJobPayload({
+    prebooking_id: 'mmspre_0123456789abcdef01234567',
+    member_ref: 'member_demo',
+    matched_therapist_ids: ['ther_01'],
+    selected_skills: ['aroma_therapy_oil'],
+    service_date: '2026-09-03',
+    service_time: '18:30',
+    duration_minutes: 90,
+    zone: 'sukhumvit',
+    status: 'Confirmed',
+  }, [{ therapist_id: 'ther_01', display_name: 'Therapist Demo' }], {
+    amount_thb: 2500,
+    payment_type: 'deposit',
+  });
+
+  assert.equal(payload.client_name, 'member_demo');
+  assert.equal(payload.model_name, 'Therapist Demo');
+  assert.equal(payload.job_type, 'MMS');
+  assert.equal(payload.job_date, '2026-09-03');
+  assert.equal(payload.start_time, '18:30');
+  assert.equal(payload.end_time, '20:00');
+  assert.equal(payload.location_name, 'sukhumvit');
+  assert.equal(payload.amount_thb, 2500);
+  assert.equal(payload.payment_type, 'deposit');
+  assert.match(payload.note, /MMS_PREBOOKING:mmspre_0123456789abcdef01234567/);
+  assert.doesNotMatch(payload.note, /paid|verified/i);
+});
+
+test('MMS job bridge fails closed before canonical creation when required truth is missing', () => {
+  const base = {
+    prebooking_id: 'mmspre_0123456789abcdef01234567',
+    member_ref: 'member_demo',
+    matched_therapist_ids: ['ther_01'],
+    service_date: '2026-09-03',
+    service_time: '18:30',
+    duration_minutes: 90,
+    zone: 'sukhumvit',
+    status: 'Confirmed',
+  };
+  const therapists = [{ therapist_id: 'ther_01', display_name: 'Therapist Demo' }];
+
+  assert.throws(() => buildMmsCanonicalJobPayload(base, therapists, { payment_type: 'full' }), /mms_amount_required/);
+  assert.throws(() => buildMmsCanonicalJobPayload({ ...base, status: 'Matching' }, therapists, { amount_thb: 2500, payment_type: 'full' }), /mms_prebooking_not_confirmed/);
+  assert.throws(() => buildMmsCanonicalJobPayload({ ...base, matched_therapist_ids: [] }, therapists, { amount_thb: 2500, payment_type: 'full' }), /mms_matched_therapist_required/);
+});
+
+test('MMS job receipts preserve a server-side link back to the prebooking', () => {
+  const receipt = appendMmsJobReceipt('operator note', {
+    prebookingId: 'mmspre_0123456789abcdef01234567',
+    sessionId: 'sess_123',
+    paymentRef: 'pay_123',
+  });
+  assert.equal(linkedPrebookingFromNotes(receipt), 'mmspre_0123456789abcdef01234567');
+  assert.equal(linkedSessionFromNotes(receipt), 'sess_123');
+});
+
+test('MMS runtime exposes canonical jobs read and explicit prebooking-to-job bridge', () => {
+  assert.match(runtimeSource, /wireMmsJobsUi/);
+  assert.match(runtimeSource, /`\$\{API_PREFIX\}\/jobs`/);
+  assert.match(runtimeSource, /prebookings\\\/\(mmspre_/);
+  assert.match(runtimeSource, /\/job\$/);
+  assert.match(runtimeSource, /coreWorker\.fetch/);
+  assert.match(runtimeSource, /\/v1\/admin\/job\/create/);
+  assert.match(runtimeSource, /AIRTABLE_TABLE_SESSIONS/);
+  assert.match(runtimeSource, /linkedSessionFromNotes/);
 });
