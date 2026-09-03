@@ -96,7 +96,7 @@ function rewriteLegacyAdminLoginRedirect(request: Request, response: Response): 
   });
 }
 
-function maybeRenderCreateSessionFocusFlow(request: Request, response: Response): Response {
+async function maybeRenderCreateSessionFocusFlow(request: Request, response: Response): Promise<Response> {
   if (request.method !== "GET") return response;
   const url = new URL(request.url);
   if (url.pathname !== CANONICAL_CREATE_SESSION_PATH) return response;
@@ -107,7 +107,33 @@ function maybeRenderCreateSessionFocusFlow(request: Request, response: Response)
     return response;
   }
 
-  return renderCreateSessionFocusFlowV2();
+  const focus = renderCreateSessionFocusFlowV2();
+  const headers = new Headers(focus.headers);
+  let html = await focus.text();
+
+  // The custom-host Worker routes are intentionally exact/narrow. Do not add
+  // cache-busting query strings to these two internal assets or the request can
+  // fall through to the public Webflow origin instead of immigrate-worker.
+  html = html
+    .replace("/a/create-session.js?v=focus-flow-v2-core", "/a/create-session.js")
+    .replace("/a/create-session-focus-flow-v2.js?v=2", "/a/create-session-focus-flow-v2.js")
+    .replace(
+      '<button class="ff2__ghost" type="button" data-op-check-session>Check Session</button>',
+      '<button class="ff2__ghost" type="button" disabled aria-disabled="true">Session Verified</button>',
+    )
+    .replace(
+      '<span class="ff2__connection" data-op-connection><i></i><span>Checking</span></span>',
+      '<span class="ff2__connection is-ok" data-focus-server-gate="verified" style="color:var(--ok)"><i style="background:var(--ok);box-shadow:0 0 12px rgba(121,215,162,.55)"></i><span>Secure Session</span></span>',
+    );
+
+  headers.set("x-mmd-create-session-assets", "queryless-exact-routes");
+  headers.set("x-mmd-create-session-gate-ui", "server-verified");
+
+  return new Response(html, {
+    status: focus.status,
+    statusText: focus.statusText,
+    headers,
+  });
 }
 
 export default {

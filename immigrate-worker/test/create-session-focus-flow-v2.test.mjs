@@ -26,6 +26,7 @@ try {
   const html = await response.text();
   const controller = await readFile(join(workerRoot, "public/a/create-session-focus-flow-v2.js"), "utf8");
   const wrangler = await readFile(join(workerRoot, "wrangler.toml"), "utf8");
+  const wrapper = await readFile(join(workerRoot, "src/canonical-admin-login-wrapper.ts"), "utf8");
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-mmd-create-session-ui"), "focus-flow-v2-latest");
@@ -58,12 +59,20 @@ try {
   assert.match(controller, /Session Verified/);
   assert.match(controller, /source\.replaceWith\(visible\)/);
 
-  assert.match(wrangler, /pattern = "mmdbkk\.com\/a\/create-session\.js\*"/);
-  assert.match(wrangler, /pattern = "www\.mmdbkk\.com\/a\/create-session\.js\*"/);
-  assert.match(wrangler, /pattern = "mmdbkk\.com\/a\/create-session-focus-flow-v2\.js\*"/);
-  assert.match(wrangler, /pattern = "www\.mmdbkk\.com\/a\/create-session-focus-flow-v2\.js\*"/);
-  assert.doesNotMatch(wrangler, /pattern = "mmdbkk\.com\/a\/create-session\.js"\n/);
-  assert.doesNotMatch(wrangler, /pattern = "www\.mmdbkk\.com\/a\/create-session\.js"\n/);
+  assert.match(wrangler, /pattern = "mmdbkk\.com\/a\/create-session\.js"/);
+  assert.match(wrangler, /pattern = "www\.mmdbkk\.com\/a\/create-session\.js"/);
+  assert.match(wrangler, /pattern = "mmdbkk\.com\/a\/create-session-focus-flow-v2\.js"/);
+  assert.match(wrangler, /pattern = "www\.mmdbkk\.com\/a\/create-session-focus-flow-v2\.js"/);
+  assert.doesNotMatch(wrangler, /pattern = "mmdbkk\.com\/a\/create-session\.js\*"/);
+  assert.doesNotMatch(wrangler, /pattern = "www\.mmdbkk\.com\/a\/create-session\.js\*"/);
+
+  assert.match(wrapper, /queryless-exact-routes/);
+  assert.match(wrapper, /server-verified/);
+  assert.match(wrapper, /\/a\/create-session\.js\?v=focus-flow-v2-core/);
+  assert.match(wrapper, /\/a\/create-session-focus-flow-v2\.js\?v=2/);
+  assert.match(wrapper, /Session Verified/);
+  assert.match(wrapper, /data-focus-server-gate=\\"verified\\"/);
+  assert.match(wrapper, /Secure Session/);
 } finally {
   await rm(tmp, { recursive: true, force: true });
 }

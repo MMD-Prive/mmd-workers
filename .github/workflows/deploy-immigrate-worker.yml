@@ -113,16 +113,16 @@ jobs:
           const zoneId = process.env.CLOUDFLARE_ZONE_ID;
           const worker = process.env.WORKER_NAME;
           const desired = [
-            "mmdbkk.com/a/create-session.js*",
-            "www.mmdbkk.com/a/create-session.js*",
-            "mmdbkk.com/a/create-session-focus-flow-v2.js*",
-            "www.mmdbkk.com/a/create-session-focus-flow-v2.js*",
-          ];
-          const obsolete = [
             "mmdbkk.com/a/create-session.js",
             "www.mmdbkk.com/a/create-session.js",
             "mmdbkk.com/a/create-session-focus-flow-v2.js",
             "www.mmdbkk.com/a/create-session-focus-flow-v2.js",
+          ];
+          const obsolete = [
+            "mmdbkk.com/a/create-session.js*",
+            "www.mmdbkk.com/a/create-session.js*",
+            "mmdbkk.com/a/create-session-focus-flow-v2.js*",
+            "www.mmdbkk.com/a/create-session-focus-flow-v2.js*",
           ];
           async function cf(path, options = {}) {
             const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
@@ -160,7 +160,7 @@ jobs:
           const stale = obsolete.filter((pattern) => verified.some((route) => route.pattern === pattern && route.script === worker));
           if (missing.length) throw new Error(`missing routes: ${missing.join(", ")}`);
           if (stale.length) throw new Error(`obsolete routes still present: ${stale.join(", ")}`);
-          console.log(`verified ${desired.length}/${desired.length} versioned Create Session asset routes`);
+          console.log(`verified ${desired.length}/${desired.length} exact queryless Create Session asset routes`);
           NODE
 
       - name: Verify latest Control Room in production
@@ -219,11 +219,19 @@ jobs:
             if [ "$code" = "200" ] \
               && grep -Eiq '^x-mmd-create-session-ui:[[:space:]]*focus-flow-v2-latest' "$headers" \
               && grep -Eiq '^x-mmd-create-session-authority:[[:space:]]*canonical-backend' "$headers" \
+              && grep -Eiq '^x-mmd-create-session-assets:[[:space:]]*queryless-exact-routes' "$headers" \
+              && grep -Eiq '^x-mmd-create-session-gate-ui:[[:space:]]*server-verified' "$headers" \
               && grep -q 'data-focus-flow-v2' "$body" \
               && grep -q 'Create Session · Focus Flow v2' "$body" \
               && grep -q 'data-focus-section="review"' "$body" \
-              && grep -q '/a/create-session.js?v=focus-flow-v2-core' "$body" \
-              && grep -q '/a/create-session-focus-flow-v2.js?v=2' "$body" \
+              && grep -q 'src="/a/create-session.js"' "$body" \
+              && grep -q 'src="/a/create-session-focus-flow-v2.js"' "$body" \
+              && grep -q 'data-focus-server-gate="verified"' "$body" \
+              && grep -q 'Secure Session' "$body" \
+              && grep -q 'Session Verified' "$body" \
+              && ! grep -q 'src="/a/create-session.js?v=' "$body" \
+              && ! grep -q 'src="/a/create-session-focus-flow-v2.js?v=' "$body" \
+              && ! grep -q '>Checking</span>' "$body" \
               && ! grep -q 'Find client. Verify lineage. Create session.' "$body"; then
               echo "Production Create Session Focus Flow v2 verified on attempt ${attempt}"
               verified=1
@@ -236,11 +244,11 @@ jobs:
 
           if [ "$verified" != "1" ]; then
             echo "Create Session Focus Flow v2 production verification failed after bounded propagation retries" >&2
-            grep -Ei '^(x-mmd-create-session-ui|x-mmd-create-session-authority|server|cf-ray):' "$headers" || true
+            grep -Ei '^(x-mmd-create-session-ui|x-mmd-create-session-authority|x-mmd-create-session-assets|x-mmd-create-session-gate-ui|server|cf-ray):' "$headers" || true
             exit 1
           fi
 
-      - name: Verify versioned Create Session assets in production
+      - name: Verify queryless Create Session assets in production
         shell: bash
         working-directory: .
         run: |
@@ -250,24 +258,24 @@ jobs:
             controller="$(mktemp)"
             verified=0
             for attempt in 1 2 3 4 5 6 7 8; do
-              core_code="$(curl -sS -o "$core" -w '%{http_code}' "$origin/a/create-session.js?v=focus-flow-v2-core&deploy=${GITHUB_SHA}&attempt=${attempt}")"
-              controller_code="$(curl -sS -o "$controller" -w '%{http_code}' "$origin/a/create-session-focus-flow-v2.js?v=2&deploy=${GITHUB_SHA}&attempt=${attempt}")"
+              core_code="$(curl -sS -o "$core" -w '%{http_code}' "$origin/a/create-session.js")"
+              controller_code="$(curl -sS -o "$controller" -w '%{http_code}' "$origin/a/create-session-focus-flow-v2.js")"
               if [ "$core_code" = "200" ] \
                 && [ "$controller_code" = "200" ] \
                 && grep -q 'mmd_sigil_create_session_external_js_v3' "$core" \
                 && grep -q 'data-focus-server-gate' "$controller" \
                 && grep -q 'Secure Session' "$controller" \
                 && grep -q 'Session Verified' "$controller"; then
-                echo "Versioned Create Session assets verified for ${origin} on attempt ${attempt}"
+                echo "Queryless Create Session assets verified for ${origin} on attempt ${attempt}"
                 verified=1
                 break
               fi
-              echo "Asset routes not ready for ${origin} (attempt ${attempt}, core=${core_code}, controller=${controller_code}); retrying..."
+              echo "Queryless asset routes not ready for ${origin} (attempt ${attempt}, core=${core_code}, controller=${controller_code}); retrying..."
               sleep 2
             done
             rm -f "$core" "$controller"
             if [ "$verified" != "1" ]; then
-              echo "Versioned Create Session asset verification failed for ${origin}" >&2
+              echo "Queryless Create Session asset verification failed for ${origin}" >&2
               exit 1
             fi
           done
