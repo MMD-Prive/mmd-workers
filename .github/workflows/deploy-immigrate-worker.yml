@@ -268,7 +268,10 @@ jobs:
                 && grep -Eiq '^x-mmd-create-session-core:[[:space:]]*worker-owned' "$headers" \
                 && grep -Eiq '^x-mmd-create-session-core-route:[[:space:]]*extensionless-v1' "$headers" \
                 && grep -Eiq '^x-mmd-create-session-business:[[:space:]]*mmd' "$headers" \
-                && grep -q 'mmd_sigil_create_session_external_js_v3' "$core"; then
+                && grep -q 'data-mmd-create-session-pro' "$core" \
+                && grep -q 'mmd_admin_gate_v1' "$core" \
+                && grep -q 'public: \[' "$core" \
+                && grep -q 'private: \[' "$core"; then
                 echo "Extensionless MMD Create Session core verified for ${origin} on attempt ${attempt}"
                 verified=1
                 break
