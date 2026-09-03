@@ -1,0 +1,121 @@
+name: Deploy ai-worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "ai-worker/**"
+      - ".github/workflows/deploy-ai-worker.yml"
+
+concurrency:
+  group: deploy-ai-worker-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      NO_COLOR: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ai-worker/package-lock.json
+
+      - name: Normalize Cloudflare token
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const clean = (value) => (value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
+          const token = clean(process.env.CLOUDFLARE_API_TOKEN);
+          if (!token) throw new Error("Cloudflare API token is missing after normalization");
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\n`);
+          NODE
+
+      - name: Install ai-worker dependencies
+        run: npm ci --prefix ai-worker
+
+      - name: Test ai-worker
+        run: npm test --prefix ai-worker
+
+      - name: Assert guarded production boundary
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const source = fs.readFileSync("ai-worker/wrangler.toml", "utf8");
+          const must = [
+            /name\s*=\s*"ai-worker"/,
+            /workers_dev\s*=\s*false/,
+            /AI_INTELLIGENCE_MODE\s*=\s*"read_only"/
+          ];
+          for (const re of must) {
+            if (!re.test(source)) throw new Error(`Missing guarded boundary: ${re}`);
+          }
+          if (/^\s*routes?\s*=/m.test(source) || /^\s*\[\[routes\]\]/m.test(source)) {
+            throw new Error("ai-worker deploy must not introduce a public/custom route in this phase");
+          }
+          console.log("Guarded boundary OK: read_only, workers_dev=false, no public/custom route");
+          NODE
+
+      - name: Validate Cloudflare version upload
+        working-directory: ai-worker
+        run: npx --yes wrangler@4 versions upload --dry-run --keep-vars
+
+      - name: Upload ai-worker version
+        id: upload
+        shell: bash
+        working-directory: ai-worker
+        run: |
+          set -euo pipefail
+          tag="gha-${GITHUB_SHA:0:12}"
+          npx --yes wrangler@4 versions upload \
+            --keep-vars \
+            --tag "$tag" \
+            --message "GitHub Actions ${GITHUB_SHA}" \
+            2>&1 | tee "$RUNNER_TEMP/ai-worker-upload.log"
+
+      - name: Resolve uploaded version ID
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/ai-worker-upload.log" | tail -n 1)"
+          if [ -z "$version_id" ]; then
+            echo "Unable to parse Worker Version ID from upload output" >&2
+            cat "$RUNNER_TEMP/ai-worker-upload.log" >&2
+            exit 2
+          fi
+          echo "AI_WORKER_VERSION_ID=${version_id}" >> "$GITHUB_ENV"
+          echo "Resolved version ${version_id}"
+
+      - name: Deploy uploaded ai-worker version
+        shell: bash
+        working-directory: ai-worker
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 versions deploy "${AI_WORKER_VERSION_ID}@100%" -y \
+            2>&1 | tee "$RUNNER_TEMP/ai-worker-deploy.log"
+
+      - name: Verify deployment metadata
+        shell: bash
+        working-directory: ai-worker
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 deployments list 2>&1 | tee "$RUNNER_TEMP/ai-worker-deployments.log"
+          grep -F "${AI_WORKER_VERSION_ID}" "$RUNNER_TEMP/ai-worker-deployments.log" >/dev/null
+          echo "ai-worker deployed version ${AI_WORKER_VERSION_ID}; no public/custom route was introduced"
