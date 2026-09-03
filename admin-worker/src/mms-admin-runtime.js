@@ -50,8 +50,11 @@ export async function handleMmsAdminRequest(request, env = {}) {
 
   if (path === PAGE_PATH) {
     if (method !== "GET" && method !== "HEAD") return methodNotAllowed(["GET", "HEAD"]);
-    const page = wireMmsJobsUi(wireMmsAdminMobileBundle(wireMmsApproveUi(renderMmsAdminPage())));
+    const build = mmsAdminBuild(env);
+    const page = stampMmsAdminBuild(wireMmsJobsUi(wireMmsAdminMobileBundle(wireMmsApproveUi(renderMmsAdminPage()))), build);
     const response = html(page);
+    response.headers.set("x-mmd-admin-build", build);
+    response.headers.set("x-mmd-admin-surface", "mms-admin");
     return method === "HEAD" ? new Response(null, { status: 200, headers: response.headers }) : response;
   }
 
@@ -412,6 +415,20 @@ function numberValue(value) {
 }
 function clean(value) {
   return String(value ?? "").trim();
+}
+function mmsAdminBuild(env = {}) {
+  return clean(env.ADMIN_WORKER_BUILD_SHA).replace(/[^A-Za-z0-9._:-]/g, "") || "unknown";
+}
+function stampMmsAdminBuild(value, build) {
+  const marker = clean(build).replace(/[^A-Za-z0-9._:-]/g, "") || "unknown";
+  let output = String(value ?? "");
+  if (output.includes("<head>")) {
+    output = output.replace("<head>", `<head><meta name="mmd-admin-build" content="${marker}">`);
+  }
+  if (/<body\b/.test(output)) {
+    output = output.replace(/<body\b/, `<body data-mmd-admin-build="${marker}"`);
+  }
+  return output;
 }
 function json(value, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" } });
