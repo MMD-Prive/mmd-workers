@@ -25,39 +25,41 @@ const page = `<!doctype html><html><head></head><body>${ownerHtml}<script src="/
 try {
   const body = applyCreateSessionSimpleStart(page);
 
-  assert.equal(CREATE_SESSION_SIMPLE_START_MODE, "simple-start-v2");
-  assert.match(body, /data-simple-start-style="simple-start-v2"/);
-  assert.match(body, /data-simple-start-script="simple-start-v2"/);
-  assert.match(body, /พิมพ์ชื่อที่เปอร์จำ เช่น หนุ่ย/);
-  assert.match(body, />ค้นหา<\/button>/);
-  assert.match(body, />ล่าสุด<\/button>/);
+  assert.equal(CREATE_SESSION_SIMPLE_START_MODE, "kenji-airtable-v3");
+  assert.match(body, /data-simple-start-style="kenji-airtable-v3"/);
+  assert.match(body, /data-simple-start-script="kenji-airtable-v3"/);
+  assert.match(body, /LINE \/ โทร \/ Email \/ Member ID \/ Client ID/);
+  assert.match(body, />ค้นหา Client<\/button>/);
+  assert.match(body, />ลูกค้าล่าสุด<\/button>/);
+  assert.match(body, /\/internal\/admin\/kenji-client-intake/);
+  assert.match(body, /KENJI CLIENT INTAKE → AIRTABLE/);
+  assert.match(body, /Client ต้องอยู่ใน Airtable ก่อนเปิด Session/);
+  assert.match(body, /Airtable Client only/);
+  assert.match(body, /Kenji%20know4\.webp/);
+  assert.match(body, /Member%20Account\.webp/);
+  assert.match(body, /Wall%20a%20Long\.webp/);
+  assert.match(body, /Pay%20Renewal%20Desk\.webp/);
+  assert.match(body, /Pay%20Renewal%20Mob\.webp/);
+  assert.match(body, /data-client-source/);
+  assert.match(body, /hideManualFallbackCards\(\)/);
+  assert.match(body, /manual_name_pending_reconcile/);
+  assert.match(body, /identity_pending_reconcile/);
+  assert.match(body, /guest_public_only/);
+  assert.match(body, /ยังไม่มี canonical Client สำหรับรายการนี้/);
+  assert.match(body, /recent\.click\(\)/);
   assert.match(body, /data-op-work-type/);
   assert.match(body, /is-simple-has-client/);
   assert.match(body, /data-simple-hidden/);
-  assert.match(body, /value\.length < 2/);
-  assert.match(body, /search\.click\(\)/);
-  assert.match(body, /ชื่อที่เปอร์ Rename/);
   assert.match(body, /data-simple-current-step/);
   assert.match(body, /hideUntil\(reviewPanel, hasModel\)/);
   assert.match(body, /hideUntil\(dock, hasModel\)/);
-  assert.match(body, /Private/);
-  assert.match(body, /Public/);
 
-  assert.match(body, /is-manual-client/);
-  assert.match(body, /data-manual-card-polished/);
-  assert.match(body, /ชื่อที่เปอร์จำ/);
-  assert.match(body, /Public Ready/);
-  assert.match(body, /รอผูกประวัติ/);
-  assert.match(body, /ยังไม่ผูก Member \/ LINE — ใช้สร้าง Public Session ได้เลย/);
-  assert.match(body, /Ready for Public/);
-  assert.match(body, /รอผูก Member \/ LINE และประวัติภายหลัง/);
-  assert.match(body, /manual_name_pending_reconcile/);
-  assert.match(body, /identity_pending_reconcile/);
-  assert.match(body, /polishManualClientCards\(\)/);
-  assert.match(body, /polishManualSelection\(\)/);
+  assert.doesNotMatch(body, /พิมพ์ชื่อที่เปอร์จำ เช่น หนุ่ย/);
+  assert.doesNotMatch(body, /Public Ready/);
+  assert.doesNotMatch(body, /Ready for Public/);
 
   const twice = applyCreateSessionSimpleStart(body);
-  assert.equal(twice, body, "simple start injection must be idempotent");
+  assert.equal(twice, body, "Kenji Airtable injection must be idempotent");
 } finally {
   await rm(tmp, { recursive: true, force: true });
 }
