@@ -50,6 +50,7 @@ const fixtures = {
         member_id: "perpm",
         username: "perclient",
         telegram_username: "@perclient",
+        Clients: ["recClient1"],
       },
     },
   ],
@@ -111,13 +112,19 @@ function authedRequest(path, init = {}) {
   });
 }
 
-function installAirtableMock() {
+function installAirtableMock({ failTable = "" } = {}) {
   const original = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (input) => {
     const url = new URL(typeof input === "string" ? input : input.url);
     calls.push(url);
     const table = decodeURIComponent(url.pathname.split("/").filter(Boolean).at(-1) || "");
+    if (table === failTable) {
+      return new Response(JSON.stringify({ error: "fixture_failure" }), {
+        status: 422,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     const records = fixtures[table] || [];
     return new Response(JSON.stringify({ records }), {
       status: 200,
@@ -148,7 +155,7 @@ test("lineage lookup returns canonical client enriched by member, entitlement an
       env,
     );
     assert.equal(response.status, 200);
-    assert.equal(response.headers.get("x-mmd-client-lineage"), "canonical-v1");
+    assert.equal(response.headers.get("x-mmd-client-lineage"), "canonical-v2");
     const body = await response.json();
     assert.equal(body.ok, true);
     assert.equal(body.records.length, 1);
@@ -163,12 +170,13 @@ test("lineage lookup returns canonical client enriched by member, entitlement an
     assert.deepEqual(record.legacy_tags, ["#purchased", "#mem2026"]);
     assert.equal(record.entitlement_snapshot_source, "member_entitlements_display_only");
     assert.equal(body.records.some((item) => item.client_name === "Staging Only"), false);
+    assert.deepEqual(body.lineage_warnings, []);
   } finally {
     restore();
   }
 });
 
-test("recent lineage returns canonical clients and never materializes staging-only rows", async () => {
+test("recent lineage returns canonical clients without scanning LINE staging", async () => {
   const restore = installAirtableMock();
   try {
     const response = await handleCreateSessionClientLineageRequest(
@@ -179,7 +187,30 @@ test("recent lineage returns canonical clients and never materializes staging-on
     assert.equal(response.status, 200);
     assert.equal(body.records.length, 1);
     assert.equal(body.records[0].client_id, "recClient1");
-    assert.equal(body.records.some((item) => item.line_user_id === "U-stage-only"), false);
+    const calls = restore();
+    assert.equal(calls.some((url) => decodeURIComponent(url.pathname).endsWith("/staging")), false);
+  } catch (error) {
+    restore();
+    throw error;
+  }
+});
+
+test("optional LINE staging failure does not make canonical Find Client fail", async () => {
+  const restore = installAirtableMock({ failTable: "staging" });
+  try {
+    const response = await handleCreateSessionClientLineageRequest(
+      authedRequest(CREATE_SESSION_CLIENT_LINEAGE_LOOKUP_PATH, {
+        method: "POST",
+        body: JSON.stringify({ query: "Per Client" }),
+      }),
+      env,
+    );
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.records.length, 1);
+    assert.equal(body.records[0].client_id, "recClient1");
+    assert.match(body.lineage_warnings.join(" "), /line_staging:airtable_staging_422/);
   } finally {
     restore();
   }
