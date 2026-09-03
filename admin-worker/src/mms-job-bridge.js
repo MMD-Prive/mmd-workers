@@ -87,15 +87,14 @@ export function linkedPrebookingFromNotes(notes = "") {
 }
 
 export function appendMmsJobReceipt(notes = "", { prebookingId = "", sessionId = "", paymentRef = "" } = {}) {
-  const base = clean(notes);
   const markers = [
     prebookingId ? `${LINK_PREFIX}${clean(prebookingId)}` : "",
     sessionId ? `${SESSION_PREFIX}${clean(sessionId)}` : "",
     paymentRef ? `MMS_PAYMENT_REF:${clean(paymentRef)}` : "",
   ].filter(Boolean);
-  const existing = base.split("|").map((part) => clean(part));
-  const additions = markers.filter((marker) => !existing.some((part) => part === marker));
-  return [...existing.filter(Boolean), ...additions].join(" | ").slice(0, 4000);
+  const existing = clean(notes).split("|").map((part) => clean(part)).filter(Boolean);
+  const withoutReceiptMarkers = existing.filter((part) => !/^MMS_(?:PREBOOKING|SESSION|PAYMENT_REF):/i.test(part));
+  return [...markers, ...withoutReceiptMarkers].join(" | ").slice(0, 4000);
 }
 
 export function addMinutesToClock(clock, minutes) {
