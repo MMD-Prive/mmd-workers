@@ -172,7 +172,7 @@ function transformOwnerHtml(source: string): string {
     if (key === "lane") continue;
     html = addImageSource(html, key, src);
   }
-  html = html.replace('data-cs-lane-image alt="lane"', `data-cs-lane-image src="${IMAGE_ASSETS.lane}" alt="lane"`);
+  html = html.replace('data-cs-lane-image alt="เลือก lane"', `data-cs-lane-image src="${IMAGE_ASSETS.lane}" alt="เลือก lane"`);
 
   html = html.replace(
     '<div class="mmd-cs-v14__lights" aria-label="System status">',
@@ -220,13 +220,12 @@ function transformOwnerHtml(source: string): string {
   html = html.replace('<div class="mmd-cs-v14__inlinePicked">', '<div class="mmd-cs-v14__inlinePicked" data-op-model-preview>');
 
   html = html.replace(
-    '<div class="mmd-cs-v14__fields mmd-cs-v14__fields--2">\n            <label class="mmd-cs-v14__field">\n              <span>หมายเหตุการดูแล</span>',
-    `<div class="mmd-cs-v14__fields mmd-cs-v14__fields--4 mmd-cs-v14__compatFields">
-      <label class="mmd-cs-v14__field"><span>Payment type</span><select data-op-payment-type><option value="full">Full</option><option value="deposit">Deposit</option></select></label>
-      <label class="mmd-cs-v14__field"><span>Payment method</span><select data-op-payment-method><option value="promptpay">PromptPay</option><option value="transfer">Transfer</option><option value="cash">Cash</option></select></label>
-      <label class="mmd-cs-v14__field"><span>Points mode</span><select data-op-points-mode><option value="auto">Auto</option><option value="manual">Manual</option><option value="none">None</option></select></label>
-      <label class="mmd-cs-v14__field"><span>Escalation owner</span><select data-op-escalation-owner><option value="Boss Per">Boss Per</option><option value="Ewvon">Ewvon</option></select></label>
-    </div><div class="mmd-cs-v14__fields mmd-cs-v14__fields--2">\n            <label class="mmd-cs-v14__field">\n              <span>หมายเหตุการดูแล</span>`
+    '<div class="mmd-cs-v14__fields mmd-cs-v14__fields--2">\n                <label class="mmd-cs-v14__field">\n                  <span>Google Map URL</span>',
+    `<input type="hidden" data-op-payment-type value="full" />
+      <input type="hidden" data-op-payment-method value="promptpay" />
+      <input type="hidden" data-op-points-mode value="auto" />
+      <input type="hidden" data-op-escalation-owner value="Boss Per" />
+      <div class="mmd-cs-v14__fields mmd-cs-v14__fields--2">\n                <label class="mmd-cs-v14__field">\n                  <span>Google Map URL</span>`
   );
 
   html = html.replace(
@@ -260,7 +259,7 @@ function transformOwnerHtml(source: string): string {
   html = html.replace('class="mmd-cs-v14__section mmd-cs-v14__section--search"', 'id="client-search" class="mmd-cs-v14__section mmd-cs-v14__section--search"');
   html = html.replace('<section class="mmd-cs-v14__section">\n          <div class="mmd-cs-v14__sectionHead">\n            <div class="mmd-cs-v14__sectionCopy">\n              <span>step 02</span>', '<section id="work-panel" class="mmd-cs-v14__section">\n          <div class="mmd-cs-v14__sectionHead">\n            <div class="mmd-cs-v14__sectionCopy">\n              <span>step 02</span>');
   html = html.replace('class="mmd-cs-v14__section mmd-cs-v14__section--models"', 'id="model-panel" class="mmd-cs-v14__section mmd-cs-v14__section--models"');
-  html = html.replace('<section class="mmd-cs-v14__section">\n          <div class="mmd-cs-v14__sectionHead">\n            <div class="mmd-cs-v14__sectionCopy">\n              <span>step 05</span>', '<section id="gate-panel" class="mmd-cs-v14__section">\n          <div class="mmd-cs-v14__sectionHead">\n            <div class="mmd-cs-v14__sectionCopy">\n              <span>step 05</span>');
+  html = html.replace('<section class="mmd-cs-v14__section">\n          <div class="mmd-cs-v14__sectionHead">\n            <div class="mmd-cs-v14__sectionCopy">\n              <span>system check</span>', '<section id="gate-panel" class="mmd-cs-v14__section">\n          <div class="mmd-cs-v14__sectionHead">\n            <div class="mmd-cs-v14__sectionCopy">\n              <span>system check</span>');
 
   return html;
 }
@@ -296,7 +295,7 @@ export async function renderOwnerCreateSessionPage(request: Request, env: OwnerC
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <meta name="robots" content="noindex,nofollow" />
 <meta name="theme-color" content="#06060a" />
-<title>MMD Privé · Create Sessions</title>
+<title>MMD Privé · Create Session</title>
 <style>${sourceCss}\n${COMPAT_CSS}</style>
 </head>
 <body>
@@ -313,6 +312,7 @@ ${body}
       "cache-control": "no-store, private, max-age=0",
       "x-mmd-create-session-ui": "owner-v14-vnext2-restored",
       "x-mmd-create-session-runtime": "current-entitlement-aware",
+      "x-mmd-create-session-interface": "guided-simple-v2",
     },
   });
 }
