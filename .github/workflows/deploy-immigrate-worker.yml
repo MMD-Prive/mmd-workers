@@ -113,12 +113,14 @@ jobs:
           const zoneId = process.env.CLOUDFLARE_ZONE_ID;
           const worker = process.env.WORKER_NAME;
           const desired = [
-            "mmdbkk.com/internal/admin/jobs/create-session.js",
-            "www.mmdbkk.com/internal/admin/jobs/create-session.js",
+            "mmdbkk.com/internal/admin/jobs/create-session/core",
+            "www.mmdbkk.com/internal/admin/jobs/create-session/core",
             "mmdbkk.com/a/create-session.js",
             "www.mmdbkk.com/a/create-session.js",
           ];
           const obsolete = [
+            "mmdbkk.com/internal/admin/jobs/create-session.js",
+            "www.mmdbkk.com/internal/admin/jobs/create-session.js",
             "mmdbkk.com/a/create-session.js*",
             "www.mmdbkk.com/a/create-session.js*",
             "mmdbkk.com/a/create-session-focus-flow-v2.js",
@@ -222,7 +224,7 @@ jobs:
               && grep -Eiq '^x-mmd-create-session-ui:[[:space:]]*owner-v14-vnext2-restored' "$headers" \
               && grep -Eiq '^x-mmd-create-session-runtime:[[:space:]]*current-entitlement-aware' "$headers" \
               && grep -Eiq '^x-mmd-create-session-authority:[[:space:]]*canonical-backend' "$headers" \
-              && grep -Eiq '^x-mmd-create-session-assets:[[:space:]]*worker-owned-core-route' "$headers" \
+              && grep -Eiq '^x-mmd-create-session-assets:[[:space:]]*worker-owned-core-subroute' "$headers" \
               && grep -Eiq '^x-mmd-create-session-gate-ui:[[:space:]]*server-verified' "$headers" \
               && grep -Eiq '^x-mmd-create-session-business:[[:space:]]*mmd-only' "$headers" \
               && grep -q 'class="mmd-cs-v14"' "$body" \
@@ -231,7 +233,7 @@ jobs:
               && grep -q 'data-op-work-type="public"' "$body" \
               && grep -q 'data-op-work-type="private"' "$body" \
               && grep -q 'Admin%20CS%202.webp' "$body" \
-              && grep -q 'src="/internal/admin/jobs/create-session.js"' "$body" \
+              && grep -q 'src="/internal/admin/jobs/create-session/core"' "$body" \
               && ! grep -q 'data-focus-flow-v2' "$body" \
               && ! grep -q 'Create Session · Focus Flow v2' "$body"; then
               echo "Production MMD Create Session Owner v14 verified on attempt ${attempt}"
@@ -249,7 +251,7 @@ jobs:
             exit 1
           fi
 
-      - name: Verify worker-owned MMD Create Session core asset in production
+      - name: Verify extensionless MMD Create Session core in production
         shell: bash
         working-directory: .
         run: |
@@ -261,21 +263,28 @@ jobs:
             for attempt in 1 2 3 4 5 6 7 8; do
               : > "$headers"
               : > "$core"
-              core_code="$(curl -sS -D "$headers" -o "$core" -w '%{http_code}' "$origin/internal/admin/jobs/create-session.js")"
+              core_code="$(curl -sS -D "$headers" -o "$core" -w '%{http_code}' "$origin/internal/admin/jobs/create-session/core?deploy=${GITHUB_SHA}&attempt=${attempt}")"
               if [ "$core_code" = "200" ] \
                 && grep -Eiq '^x-mmd-create-session-core:[[:space:]]*worker-owned' "$headers" \
+                && grep -Eiq '^x-mmd-create-session-core-route:[[:space:]]*extensionless-v1' "$headers" \
                 && grep -Eiq '^x-mmd-create-session-business:[[:space:]]*mmd' "$headers" \
                 && grep -q 'mmd_sigil_create_session_external_js_v3' "$core"; then
-                echo "Worker-owned MMD Create Session core verified for ${origin} on attempt ${attempt}"
+                echo "Extensionless MMD Create Session core verified for ${origin} on attempt ${attempt}"
                 verified=1
                 break
               fi
-              echo "Worker-owned MMD core route not ready for ${origin} (attempt ${attempt}, core=${core_code}); retrying..."
+              echo "Extensionless MMD core not ready for ${origin} (attempt ${attempt}, core=${core_code}); retrying..."
               sleep 2
             done
-            rm -f "$headers" "$core"
             if [ "$verified" != "1" ]; then
-              echo "Worker-owned MMD Create Session core verification failed for ${origin}" >&2
+              echo "Extensionless MMD Create Session core verification failed for ${origin}" >&2
+              echo "--- response headers ---" >&2
+              grep -Ei '^(HTTP/|content-type:|cache-control:|server:|cf-ray:|x-mmd-create-session-|location:)' "$headers" >&2 || true
+              echo "--- first 240 body bytes ---" >&2
+              head -c 240 "$core" >&2 || true
+              echo >&2
+              rm -f "$headers" "$core"
               exit 1
             fi
+            rm -f "$headers" "$core"
           done
