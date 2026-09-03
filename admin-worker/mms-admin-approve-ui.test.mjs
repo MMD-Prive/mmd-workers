@@ -96,6 +96,34 @@ test('MMS jobs wiring adds a canonical work lane and explicit create-job action'
   assert.match(once, /Confirmed แล้ว/);
 });
 
+test('MMS ops home surfaces real applicant, coordination, and canonical work lanes', () => {
+  const wired = wireMmsJobsUi(renderMmsAdminPage());
+  assert.match(wired, /MMS TODAY/);
+  assert.match(wired, /คนสมัครใหม่/);
+  assert.match(wired, /ต้องประสานต่อ/);
+  assert.match(wired, /งาน MMS ล่าสุด/);
+  assert.match(wired, /Promise\.allSettled\(\[api\('\/snapshot'\),api\('\/jobs'\)\]\)/);
+  assert.match(wired, /grid-auto-flow:column/);
+  assert.match(wired, /grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+});
+
+test('MMS canonical job classifier recognizes the public service taxonomy', () => {
+  for (const lane of [
+    'aroma_therapy_oil',
+    'thai_massage',
+    'sport_massage',
+    'office_syndrome',
+    'health_fitness_advisor',
+    'thai_herbal_compress',
+    'partner_present',
+    'partner_present_massage_session',
+    'women_massage',
+  ]) {
+    assert.match(runtimeSource, new RegExp('"' + lane + '"'));
+  }
+  assert.match(runtimeSource, /MMS_JOB_LANES\.has\(lane\)/);
+});
+
 test('MMS confirmed prebooking maps to canonical job contract without inventing payment truth', () => {
   const payload = buildMmsCanonicalJobPayload({
     prebooking_id: 'mmspre_0123456789abcdef01234567',
