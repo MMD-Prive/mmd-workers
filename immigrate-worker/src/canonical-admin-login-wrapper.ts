@@ -1,5 +1,5 @@
 import worker from "./index";
-import { renderCreateSessionFocusFlowV2 } from "./create-session-focus-flow-v2";
+import { renderOwnerCreateSessionPage, type OwnerCreateSessionEnv } from "./create-session-owner-ui";
 import type { Env } from "./types";
 
 const CANONICAL_ADMIN_LOGIN_PATH = "/internal/admin/login";
@@ -96,42 +96,36 @@ function rewriteLegacyAdminLoginRedirect(request: Request, response: Response): 
   });
 }
 
-async function maybeRenderCreateSessionFocusFlow(request: Request, response: Response): Promise<Response> {
+async function maybeRestoreOwnerCreateSession(
+  request: Request,
+  env: Env,
+  response: Response,
+): Promise<Response> {
   if (request.method !== "GET") return response;
   const url = new URL(request.url);
   if (url.pathname !== CANONICAL_CREATE_SESSION_PATH) return response;
 
-  // Preserve the current canonical admin gate. The focus UI is swapped in only
-  // after the protected route has already returned an allowed HTML response.
+  // The canonical worker must approve the request first. A login redirect,
+  // auth failure, or non-HTML response is preserved exactly and never replaced.
   if (!response.ok || !(response.headers.get("content-type") || "").includes("text/html")) {
     return response;
   }
 
-  const focus = renderCreateSessionFocusFlowV2();
-  const headers = new Headers(focus.headers);
-  let html = await focus.text();
+  const owner = await renderOwnerCreateSessionPage(request, env as unknown as OwnerCreateSessionEnv);
+  if (!owner.ok || !(owner.headers.get("content-type") || "").includes("text/html")) return owner;
 
-  // The custom-host Worker routes are intentionally exact/narrow. Do not add
-  // cache-busting query strings to these two internal assets or the request can
-  // fall through to the public Webflow origin instead of immigrate-worker.
-  html = html
-    .replace("/a/create-session.js?v=focus-flow-v2-core", "/a/create-session.js")
-    .replace("/a/create-session-focus-flow-v2.js?v=2", "/a/create-session-focus-flow-v2.js")
-    .replace(
-      '<button class="ff2__ghost" type="button" data-op-check-session>Check Session</button>',
-      '<button class="ff2__ghost" type="button" disabled aria-disabled="true">Session Verified</button>',
-    )
-    .replace(
-      '<span class="ff2__connection" data-op-connection><i></i><span>Checking</span></span>',
-      '<span class="ff2__connection is-ok" data-focus-server-gate="verified" style="color:var(--ok)"><i style="background:var(--ok);box-shadow:0 0 12px rgba(121,215,162,.55)"></i><span>Secure Session</span></span>',
-    );
-
+  // These Worker asset routes are exact. Keep the runtime script queryless so
+  // it cannot fall through to the Webflow origin while preserving Owner v14 UI.
+  const headers = new Headers(owner.headers);
   headers.set("x-mmd-create-session-assets", "queryless-exact-routes");
-  headers.set("x-mmd-create-session-gate-ui", "server-verified");
+  const html = (await owner.text()).replace(
+    "/a/create-session.js?v=owner-v14-vnext2",
+    "/a/create-session.js",
+  );
 
   return new Response(html, {
-    status: focus.status,
-    statusText: focus.statusText,
+    status: owner.status,
+    statusText: owner.statusText,
     headers,
   });
 }
@@ -159,6 +153,6 @@ export default {
 
     const response = await worker.fetch(request, env);
     const canonicalResponse = rewriteLegacyAdminLoginRedirect(request, response);
-    return maybeRenderCreateSessionFocusFlow(request, canonicalResponse);
+    return maybeRestoreOwnerCreateSession(request, env, canonicalResponse);
   },
 };
