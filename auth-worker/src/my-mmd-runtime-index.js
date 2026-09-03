@@ -3,6 +3,7 @@ import { resolveMemberEntitlements } from "./member-entitlement-resolver.js";
 import { planDownstreamAccess } from "./member-downstream-access-reconciler.js";
 import { runLifecycleReconciliation } from "./member-lifecycle-reconciliation.js";
 import { writeReconciliationAudit } from "./member-reconciliation-audit.js";
+import { handleOperatorPaymentEvent, OPERATOR_PAYMENT_EVENT_PATH } from "./operator-payment-event.js";
 
 const AUTH_ME_PATH = "/v1/auth/me";
 const MEMBER_PROFILE_PATH = "/__internal/member-profile/read";
@@ -13,6 +14,10 @@ const ENTITLEMENT_TABLE = "MMD — Member Entitlements";
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === OPERATOR_PAYMENT_EVENT_PATH) {
+      if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+      return handleOperatorPaymentEvent(request, env);
+    }
     if (request.method === "POST" && url.pathname === LEGACY_DRIVE_BOOTSTRAP_PATH && String(env.DRIVE_LEGACY_BOOTSTRAP_ENABLED || "").toLowerCase() !== "true") {
       return json({ ok: false, error: "legacy_drive_source_disabled", authority: "my_mmd_entitlement_resolver_v1" }, 410);
     }
