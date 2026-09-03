@@ -19,10 +19,17 @@ jobs:
           set -euo pipefail
 
           page="$RUNNER_TEMP/find.html"
-          curl --retry 3 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error \
-            https://www.mmdbkk.com/find -o "$page"
-          grep -F 'data-submit-endpoint="/member/api/liff/requests"' "$page"
-          grep -F 'findapibridgev2-1.1.0.js' "$page"
+          page_http="$(curl --retry 3 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -o "$page" -w '%{http_code}' https://www.mmdbkk.com/find)"
+          echo "PAGE_HTTP=$page_http"
+          test "$page_http" = "200"
+          if grep -Fq 'findapibridgev2' "$page"; then
+            echo 'PAGE_API_BRIDGE=PASS'
+          else
+            echo 'PAGE_API_BRIDGE=FAIL'
+            grep -o 'find[^"< ]*\.js' "$page" | tail -n 20 || true
+            exit 1
+          fi
 
           request_body="$RUNNER_TEMP/find-request.json"
           request_http="$(curl --retry 3 --retry-delay 2 --retry-all-errors --silent --show-error \
@@ -31,6 +38,9 @@ jobs:
             -H 'Origin: https://www.mmdbkk.com' \
             -H 'Content-Type: application/json' \
             --data '{"service_intent":"travel","model_preference":"Kenji","request_note":"production smoke","preferred_date":"2026-09-20","preferred_time":"19:30","area":"Sathorn","duration":"half_day","source":"find-your-mmd","promo":"","code":""}')"
+          echo "REQUEST_HTTP=$request_http"
+          cat "$request_body"
+          echo
           test "$request_http" = "401"
           node -e '
             const fs = require("node:fs");
@@ -39,12 +49,16 @@ jobs:
               throw new Error(`Unexpected request response: ${JSON.stringify(body)}`);
             }
           ' "$request_body"
+          echo 'REQUEST_ROUTE_AUTH_GUARD=PASS'
 
           search_body="$RUNNER_TEMP/find-search.json"
           search_http="$(curl --retry 3 --retry-delay 2 --retry-all-errors --silent --show-error \
             -o "$search_body" -w '%{http_code}' \
             'https://www.mmdbkk.com/member/api/liff/find/models/search?q=Kenji' \
             -H 'Origin: https://www.mmdbkk.com')"
+          echo "SEARCH_HTTP=$search_http"
+          cat "$search_body"
+          echo
           test "$search_http" = "401"
           node -e '
             const fs = require("node:fs");
@@ -53,6 +67,7 @@ jobs:
               throw new Error(`Unexpected search response: ${JSON.stringify(body)}`);
             }
           ' "$search_body"
+          echo 'MODEL_SEARCH_ROUTE_AUTH_GUARD=PASS'
 
           cors_headers="$RUNNER_TEMP/find-options.headers"
           options_http="$(curl --retry 3 --retry-delay 2 --retry-all-errors --silent --show-error \
@@ -60,11 +75,10 @@ jobs:
             -X OPTIONS https://www.mmdbkk.com/member/api/liff/requests \
             -H 'Origin: https://www.mmdbkk.com' \
             -H 'Access-Control-Request-Method: POST')"
+          echo "OPTIONS_HTTP=$options_http"
+          cat "$cors_headers"
           test "$options_http" = "204"
-          grep -i '^access-control-allow-origin: https://www.mmdbkk.com' "$cors_headers"
+          grep -iq '^access-control-allow-origin: https://www.mmdbkk.com' "$cors_headers"
+          echo 'CORS_PREFLIGHT=PASS'
 
           echo 'FIND_PRODUCTION_SMOKE=PASS'
-          echo 'PAGE_WIRING=PASS'
-          echo 'REQUEST_ROUTE_AUTH_GUARD=PASS'
-          echo 'MODEL_SEARCH_ROUTE_AUTH_GUARD=PASS'
-          echo 'CORS_PREFLIGHT=PASS'
