@@ -1,15 +1,11 @@
-export const CREATE_SESSION_SIMPLE_START_MODE = "simple-start-v2";
+export const CREATE_SESSION_SIMPLE_START_MODE = "kenji-airtable-v3";
 
 const SIMPLE_START_CSS = `
-/* Per Owner Simple Start v2 — presentation only. Backend gates remain authoritative. */
-/* Emergency visual scrub: Create Session must not render the portrait media set. */
+/* Kenji Airtable Create Session v3 — presentation only. Backend gates remain authoritative. */
 .mmd-cs-v14__heroArt,
 .mmd-cs-v14__thumb,
 .mmd-cs-v14 [data-cs-media],
-.mmd-cs-v14 [data-cs-lane-image] {
-  display: none !important;
-}
-
+.mmd-cs-v14 [data-cs-lane-image],
 .mmd-cs-v14__lights,
 .mmd-cs-v14__quickRow,
 .mmd-cs-v14 [data-op-check-session],
@@ -20,10 +16,7 @@ const SIMPLE_START_CSS = `
 .mmd-cs-v14 [data-op-fill-demo-job],
 .mmd-cs-v14 [data-op-debug-toggle],
 .mmd-cs-v14__compatFields,
-.mmd-cs-v14__compatHidden {
-  display: none !important;
-}
-
+.mmd-cs-v14__compatHidden,
 .mmd-cs-v14 [data-simple-hidden="true"] {
   display: none !important;
 }
@@ -37,178 +30,173 @@ const SIMPLE_START_CSS = `
   pointer-events: none;
 }
 
-.mmd-cs-v14__simpleHint {
+.mmd-cs-v14__kenjiGate {
+  margin: 14px 14px 0;
+  padding: 16px;
+  border: 1px solid rgba(212,181,106,.22);
+  border-radius: 22px;
+  background: linear-gradient(145deg, rgba(212,181,106,.10), rgba(255,255,255,.025));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+.mmd-cs-v14__kenjiGateTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.mmd-cs-v14__kenjiEyebrow {
+  display: block;
+  margin-bottom: 6px;
+  color: rgba(242,223,170,.72);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.mmd-cs-v14__kenjiTitle {
+  margin: 0;
+  color: #fffdf8;
+  font-size: clamp(20px, 3vw, 27px);
+  line-height: 1.08;
+  letter-spacing: -.02em;
+}
+
+.mmd-cs-v14__kenjiCopy {
+  max-width: 760px;
+  margin: 8px 0 0;
+  color: rgba(248,243,235,.66);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.mmd-cs-v14__kenjiBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 15px;
+  border: 1px solid rgba(212,181,106,.36);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(212,181,106,.22), rgba(212,181,106,.10));
+  color: #f5e3ae;
+  font-size: 11px;
+  font-weight: 850;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.mmd-cs-v14__kenjiVisuals {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.mmd-cs-v14__kenjiVisual {
+  width: 100%;
+  height: 190px;
+  display: block;
+  object-fit: cover;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 16px;
+  background: #0b0b10;
+}
+
+.mmd-cs-v14__flowVisual {
+  width: calc(100% - 28px);
+  max-height: 360px;
+  display: block;
+  object-fit: cover;
+  margin: 14px 14px 0;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 20px;
+  background: #0b0b10;
+}
+
+.mmd-cs-v14__paymentVisual {
+  width: 100%;
+  display: block;
+  object-fit: cover;
+  margin-top: 14px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 18px;
+  background: #0b0b10;
+}
+
+.mmd-cs-v14__paymentVisual--mob { display: none; }
+
+.mmd-cs-v14__airtableHint {
   margin: 10px 14px 0;
   padding: 10px 12px;
-  border: 1px solid rgba(212,181,106,.18);
+  border: 1px solid rgba(116,215,160,.16);
   border-radius: 14px;
-  background: rgba(212,181,106,.045);
+  background: rgba(116,215,160,.04);
   color: rgba(248,243,235,.66);
   font-size: 11px;
   line-height: 1.55;
 }
 
-.mmd-cs-v14__simpleHint strong {
-  color: #f2dfaa;
-}
+.mmd-cs-v14__airtableHint strong { color: #dff8e8; }
 
-.mmd-cs-v14 .mmdop__clientCard.is-manual-client {
-  position: relative;
-  grid-template-columns: 60px minmax(0,1fr) 40px;
-  min-height: 122px;
+.mmd-cs-v14__noClient {
+  margin: 12px 0 0;
   padding: 18px;
-  overflow: hidden;
-  border-color: rgba(212,181,106,.38);
-  background:
-    radial-gradient(circle at 92% 5%, rgba(212,181,106,.16), transparent 34%),
-    linear-gradient(135deg, rgba(212,181,106,.11), rgba(8,8,13,.76) 46%, rgba(116,215,160,.035));
-  box-shadow: 0 18px 42px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.035);
-  transition: transform .22s ease, border-color .22s ease, background .22s ease, box-shadow .22s ease;
+  border: 1px dashed rgba(212,181,106,.28);
+  border-radius: 18px;
+  background: rgba(212,181,106,.035);
+  text-align: center;
 }
 
-.mmd-cs-v14 .mmdop__clientCard.is-manual-client:hover {
-  transform: translateY(-2px);
-  border-color: rgba(212,181,106,.62);
-  box-shadow: 0 22px 52px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.05);
-}
-
-.mmd-cs-v14 .mmdop__clientCard.is-manual-client.is-selected {
-  border-color: rgba(212,181,106,.82);
-  background:
-    radial-gradient(circle at 92% 5%, rgba(212,181,106,.22), transparent 35%),
-    linear-gradient(135deg, rgba(212,181,106,.16), rgba(8,8,13,.78) 48%, rgba(116,215,160,.055));
-  box-shadow: 0 20px 50px rgba(0,0,0,.3), 0 0 0 1px rgba(212,181,106,.12) inset;
-}
-
-.mmd-cs-v14 .mmdop__manualAvatar {
-  width: 60px;
-  height: 60px;
-  border-radius: 20px;
-  border-color: rgba(242,223,170,.34);
-  background: linear-gradient(145deg, rgba(212,181,106,.2), rgba(212,181,106,.065));
-  color: #f6e6b8;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 8px 24px rgba(0,0,0,.18);
-  font-size: 21px;
-}
-
-.mmd-cs-v14 .mmdop__manualBody {
-  display: block;
-  min-width: 0;
-}
-
-.mmd-cs-v14 .mmdop__manualEyebrow {
-  display: block;
-  margin: 0 0 5px;
-  color: rgba(242,223,170,.72);
-  font-size: 9px;
-  font-weight: 900;
-  letter-spacing: .13em;
-  text-transform: uppercase;
-}
-
-.mmd-cs-v14 .mmdop__manualTitle {
+.mmd-cs-v14__noClient strong {
   display: block;
   color: #fffdf8;
-  font-size: clamp(20px, 3vw, 25px);
-  line-height: 1.05;
-  letter-spacing: -.02em;
+  font-size: 15px;
 }
 
-.mmd-cs-v14 .mmdop__manualCopy {
+.mmd-cs-v14__noClient span {
   display: block;
-  margin-top: 7px;
-  color: rgba(248,243,235,.64);
+  margin-top: 6px;
+  color: rgba(248,243,235,.58);
   font-size: 11px;
-  line-height: 1.45;
 }
 
-.mmd-cs-v14 .mmdop__manualMeta {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-top: 11px;
-}
-
-.mmd-cs-v14 .mmdop__manualPill {
+.mmd-cs-v14__noClient a {
   display: inline-flex;
-  align-items: center;
-  min-height: 25px;
-  padding: 0 9px;
-  border: 1px solid rgba(255,255,255,.09);
-  border-radius: 999px;
-  background: rgba(255,255,255,.035);
-  color: rgba(248,243,235,.62);
-  font-size: 9px;
-  font-weight: 850;
-  letter-spacing: .02em;
-}
-
-.mmd-cs-v14 .mmdop__manualPill--ready {
-  border-color: rgba(116,215,160,.23);
-  background: rgba(116,215,160,.075);
-  color: #dff8e8;
-}
-
-.mmd-cs-v14 .mmdop__manualGo {
-  width: 38px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  align-self: center;
-  border: 1px solid rgba(212,181,106,.22);
-  border-radius: 50%;
-  background: rgba(212,181,106,.065);
+  margin-top: 12px;
   color: #f2dfaa;
-  font-size: 22px;
-  line-height: 1;
+  font-size: 11px;
+  font-weight: 850;
+  text-decoration: none;
 }
 
-.mmd-cs-v14 .mmd-cs-v14__pickedCard.is-manual-client {
-  border-color: rgba(212,181,106,.32);
-  background: linear-gradient(135deg, rgba(212,181,106,.085), rgba(255,255,255,.018));
+.mmd-cs-v14 .mmdop__clientCard.is-manual-client,
+.mmd-cs-v14 .mmdop__clientCard[data-manual-public-only="true"] {
+  display: none !important;
 }
 
 @media (max-width: 719px) {
   .mmd-cs-v14__toolbarActions {
     display: grid !important;
-    grid-template-columns: minmax(0,1fr) auto auto !important;
+    grid-template-columns: minmax(0,1fr) auto !important;
     width: 100%;
   }
 
-  .mmd-cs-v14__toolbarActions [data-op-search-client] {
-    width: 100%;
-  }
+  .mmd-cs-v14__toolbarActions [data-op-search-client] { width: 100%; }
+  .mmd-cs-v14__toolbarActions a.mmd-cs-v14__btn { grid-column: 1 / -1; }
 
-  .mmd-cs-v14__toolbarActions a.mmd-cs-v14__btn {
-    grid-column: 1 / -1;
-  }
-
-  .mmd-cs-v14 .mmdop__clientCard.is-manual-client {
-    grid-template-columns: 54px minmax(0,1fr) 34px;
-    gap: 12px;
-    min-height: 116px;
-    padding: 16px;
-    border-radius: 22px;
-  }
-
-  .mmd-cs-v14 .mmdop__manualAvatar {
-    width: 54px;
-    height: 54px;
-    border-radius: 18px;
-    font-size: 19px;
-  }
-
-  .mmd-cs-v14 .mmdop__manualGo {
-    width: 32px;
-    height: 32px;
-    font-size: 19px;
-  }
+  .mmd-cs-v14__kenjiGateTop { display: block; }
+  .mmd-cs-v14__kenjiBtn { width: 100%; margin-top: 14px; }
+  .mmd-cs-v14__kenjiVisuals { grid-template-columns: 1fr; }
+  .mmd-cs-v14__kenjiVisual { height: 210px; }
+  .mmd-cs-v14__paymentVisual--desk { display: none; }
+  .mmd-cs-v14__paymentVisual--mob { display: block; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mmd-cs-v14 .mmdop__clientCard.is-manual-client {
-    transition: none;
-  }
+  .mmd-cs-v14 * { scroll-behavior: auto !important; transition: none !important; }
 }
 `;
 
@@ -216,17 +204,48 @@ const SIMPLE_START_SCRIPT = `
 (function () {
   "use strict";
 
+  var KENJI_INTAKE_PATH = "/internal/admin/kenji-client-intake";
+  var IMG_KENJI = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a53f69aac6671f077397a31_Kenji%20know4.webp";
+  var IMG_MEMBER = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a548060e5132b9ba40ef0aa_Member%20Account.webp";
+  var IMG_FLOW = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a56c6f3a5c0c136eb7cbd7b_Wall%20a%20Long.webp";
+  var IMG_PAY_DESK = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a5685444a92de9e30f1ab45_Pay%20Renewal%20Desk.webp";
+  var IMG_PAY_MOB = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a5685441778e55896d23910_Pay%20Renewal%20Mob.webp";
+
+  function make(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null) node.textContent = String(text);
+    return node;
+  }
+
+  function image(src, className, alt) {
+    var img = document.createElement("img");
+    img.src = src;
+    img.className = className;
+    img.alt = alt;
+    img.loading = "lazy";
+    img.decoding = "async";
+    return img;
+  }
+
+  function isChosen(value) {
+    var content = String(value || "").trim();
+    return Boolean(content && content !== "-");
+  }
+
   function boot() {
     var root = document.querySelector("[data-mmd-create-session-pro]");
     if (!root || root.getAttribute("data-simple-start-bound") === "1") return;
 
     root.setAttribute("data-simple-start-bound", "1");
-    root.setAttribute("data-simple-start-mode", "simple-start-v2");
+    root.setAttribute("data-simple-start-mode", "kenji-airtable-v3");
+    root.setAttribute("data-client-source", "airtable-canonical");
 
     var query = root.querySelector("[data-op-client-query]");
     var search = root.querySelector("[data-op-search-client]");
     var recent = root.querySelector("[data-op-load-recent]");
     var selectedName = root.querySelector("[data-op-selected-client-name]");
+    var results = root.querySelector("[data-op-client-results]");
     var workButtons = Array.prototype.slice.call(root.querySelectorAll("[data-op-work-type]"));
     var laneGrid = root.querySelector("[data-op-folder-grid]");
     var lanePanel = laneGrid ? laneGrid.closest("section") : null;
@@ -240,7 +259,7 @@ const SIMPLE_START_SCRIPT = `
     var scheduled = false;
 
     if (query) {
-      query.setAttribute("placeholder", "พิมพ์ชื่อที่เปอร์จำ เช่น หนุ่ย");
+      query.setAttribute("placeholder", "LINE / โทร / Email / Member ID / Client ID");
       query.setAttribute("autocomplete", "off");
       query.setAttribute("autocapitalize", "off");
       query.setAttribute("spellcheck", "false");
@@ -260,105 +279,87 @@ const SIMPLE_START_SCRIPT = `
         clearTimeout(timer);
         if (search) search.click();
       });
-
-      window.setTimeout(function () {
-        var picked = selectedName && String(selectedName.textContent || "").trim();
-        if (!picked || picked === "-") query.focus();
-      }, 100);
     }
 
-    if (search) search.textContent = "ค้นหา";
-    if (recent) recent.textContent = "ล่าสุด";
+    if (search) search.textContent = "ค้นหา Client";
+    if (recent) recent.textContent = "ลูกค้าล่าสุด";
 
     var clientSection = root.querySelector("#client-search");
-    if (clientSection && !clientSection.querySelector("[data-simple-hint]")) {
-      var hint = document.createElement("p");
-      hint.className = "mmd-cs-v14__simpleHint";
-      hint.setAttribute("data-simple-hint", "");
-      hint.innerHTML = "<strong>หาแบบที่เปอร์จำ:</strong> ชื่อที่เปอร์ Rename ไว้เป็น lookup priority #1 แล้วระบบค่อยไล่ canonical client และ aliases ด้านหลัง";
+    if (clientSection && !clientSection.querySelector("[data-kenji-airtable-gate]")) {
+      var gate = make("div", "mmd-cs-v14__kenjiGate");
+      gate.setAttribute("data-kenji-airtable-gate", "");
+
+      var top = make("div", "mmd-cs-v14__kenjiGateTop");
+      var body = make("div", "");
+      body.appendChild(make("span", "mmd-cs-v14__kenjiEyebrow", "01 · KENJI CLIENT INTAKE → AIRTABLE"));
+      body.appendChild(make("h2", "mmd-cs-v14__kenjiTitle", "Client ต้องอยู่ใน Airtable ก่อนเปิด Session"));
+      body.appendChild(make("p", "mmd-cs-v14__kenjiCopy", "ถ้ายังไม่มี Client ให้ Kenji หา record เดิมจาก LINE / โทร / Email ก่อน แล้วค่อยสร้างใหม่เมื่อหาไม่เจอจริง Create Session จะใช้ canonical Client record เท่านั้น"));
+
+      var action = make("a", "mmd-cs-v14__kenjiBtn", "+ เพิ่ม / ผูก Client");
+      action.href = KENJI_INTAKE_PATH;
+      top.appendChild(body);
+      top.appendChild(action);
+      gate.appendChild(top);
+
+      var visuals = make("div", "mmd-cs-v14__kenjiVisuals");
+      visuals.appendChild(image(IMG_KENJI, "mmd-cs-v14__kenjiVisual", "Kenji client intake"));
+      visuals.appendChild(image(IMG_MEMBER, "mmd-cs-v14__kenjiVisual", "Canonical client account"));
+      gate.appendChild(visuals);
+
       var toolbar = clientSection.querySelector(".mmd-cs-v14__toolbar");
+      if (toolbar) toolbar.insertAdjacentElement("beforebegin", gate);
+      else clientSection.insertAdjacentElement("afterbegin", gate);
+
+      var hint = make("p", "mmd-cs-v14__airtableHint");
+      hint.innerHTML = "<strong>Airtable Client only:</strong> ชื่อที่เปอร์เรียกสามารถเก็บเป็น alias ได้ แต่ไม่ใช้สร้าง identity ระหว่างเปิดงาน";
       if (toolbar) toolbar.insertAdjacentElement("afterend", hint);
+
+      clientSection.appendChild(image(IMG_FLOW, "mmd-cs-v14__flowVisual", "Create Session flow overview"));
     }
 
-    function isChosen(value) {
-      var content = String(value || "").trim();
-      return Boolean(content && content !== "-");
+    if (detailsPanel && !detailsPanel.querySelector("[data-payment-visual]")) {
+      var desk = image(IMG_PAY_DESK, "mmd-cs-v14__paymentVisual mmd-cs-v14__paymentVisual--desk", "Session details and payment desktop");
+      desk.setAttribute("data-payment-visual", "desktop");
+      detailsPanel.appendChild(desk);
+      var mob = image(IMG_PAY_MOB, "mmd-cs-v14__paymentVisual mmd-cs-v14__paymentVisual--mob", "Session details and payment mobile");
+      mob.setAttribute("data-payment-visual", "mobile");
+      detailsPanel.appendChild(mob);
     }
 
-    function makeTextNode(tag, className, value) {
-      var node = document.createElement(tag);
-      if (className) node.className = className;
-      node.textContent = String(value == null ? "" : value);
-      return node;
-    }
-
-    function polishManualClientCards() {
-      var cards = Array.prototype.slice.call(root.querySelectorAll("[data-op-client-results] .mmdop__clientCard"));
+    function hideManualFallbackCards() {
+      if (!results) return;
+      var cards = Array.prototype.slice.call(results.querySelectorAll(".mmdop__clientCard"));
+      var visible = 0;
       cards.forEach(function (card) {
-        if (card.getAttribute("data-manual-card-polished") === "1") return;
         var raw = String(card.textContent || "");
-        var isManual = raw.indexOf("manual_name_pending_reconcile") !== -1 ||
+        var manual = raw.indexOf("manual_name_pending_reconcile") !== -1 ||
           raw.indexOf("identity_pending_reconcile") !== -1 ||
-          raw.indexOf("guest_public_only") !== -1;
-        if (!isManual) return;
-
-        var sourceTitle = card.querySelector(".mmdop__clientMain strong");
-        var name = sourceTitle ? String(sourceTitle.textContent || "").trim() : "ลูกค้าคนนี้";
-        if (!name) name = "ลูกค้าคนนี้";
-
-        card.classList.add("is-manual-client");
-        card.setAttribute("data-manual-card-polished", "1");
-        card.setAttribute("aria-label", "ใช้ชื่อ " + name + " ต่อสำหรับ Public Session");
-
-        while (card.firstChild) card.removeChild(card.firstChild);
-
-        var avatar = makeTextNode("span", "mmdop__clientAvatar mmdop__manualAvatar", name.charAt(0).toUpperCase() || "C");
-        var body = document.createElement("span");
-        body.className = "mmdop__manualBody";
-        body.appendChild(makeTextNode("span", "mmdop__manualEyebrow", "ชื่อที่เปอร์จำ"));
-        body.appendChild(makeTextNode("strong", "mmdop__manualTitle", name));
-        body.appendChild(makeTextNode("span", "mmdop__manualCopy", "ยังไม่ผูก Member / LINE — ใช้สร้าง Public Session ได้เลย"));
-
-        var meta = document.createElement("span");
-        meta.className = "mmdop__manualMeta";
-        meta.appendChild(makeTextNode("span", "mmdop__manualPill mmdop__manualPill--ready", "Public Ready"));
-        meta.appendChild(makeTextNode("span", "mmdop__manualPill", "รอผูกประวัติ"));
-        body.appendChild(meta);
-
-        var go = makeTextNode("span", "mmdop__manualGo", "›");
-        go.setAttribute("aria-hidden", "true");
-
-        card.appendChild(avatar);
-        card.appendChild(body);
-        card.appendChild(go);
+          raw.indexOf("guest_public_only") !== -1 ||
+          card.getAttribute("data-manual-public-only") === "true";
+        if (manual) {
+          card.classList.add("is-manual-client");
+          card.setAttribute("aria-hidden", "true");
+          card.tabIndex = -1;
+        } else {
+          visible += 1;
+        }
       });
-    }
 
-    function polishManualSelection() {
-      var selectedManual = root.querySelector("[data-op-client-results] .mmdop__clientCard.is-manual-client.is-selected");
-      var pickedCard = root.querySelector(".mmd-cs-v14__pickedCard");
-      var pickedEyebrow = root.querySelector(".mmd-cs-v14__pickedEyebrow");
-
-      if (!selectedManual) {
-        root.removeAttribute("data-simple-manual-client");
-        if (pickedCard) pickedCard.classList.remove("is-manual-client");
-        if (pickedEyebrow) pickedEyebrow.textContent = "Selected client";
-        return;
+      var empty = results.querySelector("[data-kenji-no-client]");
+      if (cards.length && visible === 0) {
+        if (!empty) {
+          empty = make("div", "mmd-cs-v14__noClient");
+          empty.setAttribute("data-kenji-no-client", "");
+          empty.appendChild(make("strong", "", "ยังไม่มี canonical Client สำหรับรายการนี้"));
+          empty.appendChild(make("span", "", "ให้ Kenji เพิ่มหรือผูก Client ใน Airtable ก่อน แล้วกลับมารีโหลด Client"));
+          var link = make("a", "", "ไป Kenji Client Intake →");
+          link.href = KENJI_INTAKE_PATH;
+          empty.appendChild(link);
+          results.appendChild(empty);
+        }
+      } else if (empty) {
+        empty.remove();
       }
-
-      root.setAttribute("data-simple-manual-client", "true");
-      if (pickedCard) pickedCard.classList.add("is-manual-client");
-      if (pickedEyebrow) pickedEyebrow.textContent = "Ready for Public";
-
-      var title = selectedManual.querySelector(".mmdop__manualTitle");
-      var name = title ? String(title.textContent || "").trim() : String(selectedName && selectedName.textContent || "").trim();
-      var selectedMeta = root.querySelector("[data-op-selected-client-meta]");
-      var selectedConfidence = root.querySelector("[data-op-selected-confidence]");
-      var lineageNotice = root.querySelector("[data-op-lineage-notice]");
-
-      if (selectedMeta) selectedMeta.textContent = "ชื่อที่เปอร์จำ · Public Session";
-      if (selectedConfidence) selectedConfidence.textContent = "รอผูก Member / LINE และประวัติภายหลัง";
-      if (lineageNotice) lineageNotice.textContent = "ใช้ชื่อ “" + (name || "ลูกค้าคนนี้") + "” ต่อได้เลยสำหรับ Public — ระบบจะผูก identity และประวัติให้ทีหลัง";
     }
 
     function hideUntil(node, visible) {
@@ -369,14 +370,7 @@ const SIMPLE_START_SCRIPT = `
 
     function updateFlow(hasClient, hasWork, hasLane, hasModel) {
       var order = ["client", "work", "lane", "model", "details", "review"];
-      var done = {
-        client: hasClient,
-        work: hasWork,
-        lane: hasLane,
-        model: hasModel,
-        details: false,
-        review: false
-      };
+      var done = { client: hasClient, work: hasWork, lane: hasLane, model: hasModel, details: false, review: false };
       var current = !hasClient ? "client" : !hasWork ? "work" : !hasLane ? "lane" : !hasModel ? "model" : "details";
 
       order.forEach(function (name) {
@@ -388,12 +382,11 @@ const SIMPLE_START_SCRIPT = `
         if (isCurrent) node.setAttribute("aria-current", "step");
         else node.removeAttribute("aria-current");
       });
-
       root.setAttribute("data-simple-current-step", current);
     }
 
     function sync() {
-      polishManualClientCards();
+      hideManualFallbackCards();
 
       var hasClient = isChosen(selectedName && selectedName.textContent);
       var selectedWork = root.querySelector("[data-op-work-type].is-selected");
@@ -413,7 +406,6 @@ const SIMPLE_START_SCRIPT = `
         button.tabIndex = hasClient ? 0 : -1;
       });
 
-      polishManualSelection();
       hideUntil(lanePanel, hasWork);
       hideUntil(modelPanel, hasLane);
       hideUntil(gatePanel, hasModel);
@@ -453,6 +445,11 @@ const SIMPLE_START_SCRIPT = `
     });
 
     sync();
+
+    window.setTimeout(function () {
+      var picked = selectedName && String(selectedName.textContent || "").trim();
+      if ((!picked || picked === "-") && recent) recent.click();
+    }, 180);
   }
 
   if (document.readyState === "loading") {
@@ -465,15 +462,15 @@ const SIMPLE_START_SCRIPT = `
 
 export function applyCreateSessionSimpleStart(html: string): string {
   let output = String(html || "");
-  if (!output || output.includes('data-simple-start-style="simple-start-v2"')) return output;
+  if (!output || output.includes(`data-simple-start-style="${CREATE_SESSION_SIMPLE_START_MODE}"`)) return output;
 
   output = output
     .replace(
       'placeholder="พิมพ์ชื่อ username phone line user id หรือ #hashtag"',
-      'placeholder="พิมพ์ชื่อที่เปอร์จำ เช่น หนุ่ย"',
+      'placeholder="LINE / โทร / Email / Member ID / Client ID"',
     )
-    .replace('>search member</button>', '>ค้นหา</button>')
-    .replace('>recent</button>', '>ล่าสุด</button>');
+    .replace('>search member</button>', '>ค้นหา Client</button>')
+    .replace('>recent</button>', '>ลูกค้าล่าสุด</button>');
 
   output = output.replace(
     "</head>",
