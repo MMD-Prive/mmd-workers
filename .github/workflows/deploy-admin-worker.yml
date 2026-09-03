@@ -28,6 +28,7 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
+      ADMIN_MMS_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
       CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
       CLOUDFLARE_ZONE_ID: 2d62396174fa2ddadbbcd0e8cf0f3367
       ADMIN_DASHBOARD_PRODUCTION_URL: https://admin-worker.malemodel-bkk.workers.dev/v1/admin/dashboard
@@ -50,11 +51,15 @@ jobs:
           const clean = (value) => (value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
           const deployToken = clean(process.env.CLOUDFLARE_API_TOKEN);
           const routesToken = clean(process.env.CLOUDFLARE_ROUTES_API_TOKEN);
+          const smokeCredential = clean(process.env.ADMIN_MMS_SMOKE_CREDENTIAL);
           if (!deployToken) throw new Error("Cloudflare deploy API token is missing after normalization");
           if (!routesToken) throw new Error("Cloudflare routes API token is missing after normalization");
+          if (!smokeCredential) throw new Error("ADMIN_LOGIN_CREDENTIAL or ADMIN_BEARER GitHub Actions secret is required for authenticated MMS production smoke");
           fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${deployToken}\n`);
           fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ROUTES_API_TOKEN=${routesToken}\n`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `ADMIN_MMS_SMOKE_CREDENTIAL=${smokeCredential}\n`);
           NODE
+          echo "::add-mask::$ADMIN_MMS_SMOKE_CREDENTIAL"
 
       - name: Verify Cloudflare token account
         id: whoami
@@ -69,6 +74,7 @@ jobs:
           node --check src/admin-login-hero-worker.js
           node --check src/admin-login-page.js
           node --check src/dashboard-worker.js
+          node --check src/mms-admin-runtime.js
           node --check src/kenji-model-access-rpc.js
           node --check src/kenji-control-endpoints.js
           node --check src/payment-entitlement-approval.js
@@ -78,6 +84,7 @@ jobs:
             admin-login-hero.test.mjs \
             admin-login-regression-guard.test.mjs \
             admin-login-session.test.mjs \
+            mms-admin-session-bounce.test.mjs \
             kenji-model-access-rpc.test.mjs \
             payment-entitlement-approval.test.mjs
           node ../knowledge/kenji/validate.mjs
@@ -87,7 +94,10 @@ jobs:
 
       - name: Validate Cloudflare version upload
         id: wrangler_dry_run
-        run: npx --yes wrangler@4 versions upload --dry-run --keep-vars
+        shell: bash
+        run: |
+          npx --yes wrangler@4 versions upload --dry-run --keep-vars \
+            --var "ADMIN_WORKER_BUILD_SHA:${GITHUB_SHA}"
 
       - name: Upload admin-worker version
         id: upload
@@ -99,6 +109,7 @@ jobs:
           echo "ADMIN_WORKER_VERSION_TAG=${tag}" >> "$GITHUB_ENV"
           npx --yes wrangler@4 versions upload \
             --keep-vars \
+            --var "ADMIN_WORKER_BUILD_SHA:${GITHUB_SHA}" \
             --tag "$tag" \
             --message "GitHub Actions ${GITHUB_SHA}" \
             2>&1 | tee "$RUNNER_TEMP/admin-worker-upload.log"
@@ -138,6 +149,7 @@ jobs:
             exit 1
           fi
           npx --yes wrangler@4 deploy --keep-vars --config "$migration_config" \
+            --var "ADMIN_WORKER_BUILD_SHA:${GITHUB_SHA}" \
             2>&1 | tee "$RUNNER_TEMP/admin-worker-deploy.log"
 
       - name: Resolve uploaded version ID
@@ -212,6 +224,8 @@ jobs:
             "/internal/admin/kenji-knowledge",
             "/internal/admin/kenji-knowledge/",
             "/internal/admin/kenji-knowledge*",
+            "/internal/admin/mms",
+            "/v1/admin/mms/*",
             "/v1/admin/auth/me",
             "/v1/admin/membership/payment-entitlement/approve",
             "/v1/admin/kenji/models",
@@ -346,6 +360,70 @@ jobs:
             done
           done
 
+      - name: Verify authenticated MMS production route
+        id: mms_smoke
+        if: steps.smoke.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$ADMIN_MMS_SMOKE_CREDENTIAL"
+
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            cookie_jar="$(mktemp)"
+            login_headers="$(mktemp)"
+            login_body="$(mktemp)"
+            page_headers="$(mktemp)"
+            page_body="$(mktemp)"
+            snapshot_body="$(mktemp)"
+
+            login_code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS \
+              -D "$login_headers" \
+              -c "$cookie_jar" \
+              -o "$login_body" \
+              -w "%{http_code}" \
+              -X POST \
+              -H "Origin: $origin" \
+              -H "Content-Type: application/x-www-form-urlencoded" \
+              --data-urlencode "credential=$ADMIN_MMS_SMOKE_CREDENTIAL" \
+              --data-urlencode "next=/internal/admin/mms" \
+              "$origin/internal/admin/login/session")"
+            test "$login_code" = "303"
+            grep -qi '^location: /internal/admin/mms' "$login_headers"
+            grep -q 'mmd_admin_gate_v1' "$cookie_jar"
+
+            page_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+              -D "$page_headers" \
+              -b "$cookie_jar" \
+              -o "$page_body" \
+              -w "%{http_code}" \
+              "$origin/internal/admin/mms")"
+            test "$page_code" = "200"
+            build_header="$(awk -F': *' 'tolower($1)=="x-mmd-admin-build" {gsub(/\r/,"",$2); print $2}' "$page_headers" | tail -n 1)"
+            test "$build_header" = "$GITHUB_SHA"
+            grep -q "<meta name=\"mmd-admin-build\" content=\"$GITHUB_SHA\">" "$page_body"
+            grep -q 'MMS · Internal Operations' "$page_body"
+            grep -q 'mmsAdminSnapshotPromise' "$page_body"
+            grep -q 'mmsAdminApplySnapshot' "$page_body"
+
+            snapshot_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+              -b "$cookie_jar" \
+              -o "$snapshot_body" \
+              -w "%{http_code}" \
+              "$origin/v1/admin/mms/snapshot")"
+            test "$snapshot_code" = "200"
+            node - "$snapshot_body" "$origin" <<'NODE'
+            const fs = require("node:fs");
+            const file = process.argv[2];
+            const origin = process.argv[3];
+            const payload = JSON.parse(fs.readFileSync(file, "utf8"));
+            if (payload?.ok !== true) throw new Error(`MMS snapshot is not ok on ${origin}`);
+            for (const key of ["applications", "therapists", "prebookings"]) {
+              if (!Array.isArray(payload[key])) throw new Error(`MMS snapshot missing ${key} array on ${origin}`);
+            }
+            console.log(`Authenticated MMS smoke passed on ${origin}: applications=${payload.applications.length}, therapists=${payload.therapists.length}, prebookings=${payload.prebookings.length}`);
+            NODE
+          done
+
       - name: Report deploy stage diagnosis
         if: always()
         shell: bash
@@ -364,11 +442,12 @@ jobs:
           ROUTES_TOKEN_OUTCOME: ${{ steps.routes_token.outcome }}
           TRIGGERS_OUTCOME: ${{ steps.triggers.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+          MMS_SMOKE_OUTCOME: ${{ steps.mms_smoke.outcome }}
         run: |
           set -euo pipefail
           checked_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           if [ "$CREDENTIALS_OUTCOME" != "success" ]; then
-            stopped="cloudflare token normalization"
+            stopped="cloudflare / MMS smoke credential normalization"
           elif [ "$WHOAMI_OUTCOME" != "success" ]; then
             stopped="cloudflare token account preflight"
           elif [ "$TESTS_OUTCOME" != "success" ]; then
@@ -388,7 +467,9 @@ jobs:
           elif [ "$TRIGGERS_OUTCOME" != "success" ]; then
             stopped="Cloudflare admin-worker route sync"
           elif [ "$SMOKE_OUTCOME" != "success" ]; then
-            stopped="production smoke"
+            stopped="production auth-guard smoke"
+          elif [ "$MMS_SMOKE_OUTCOME" != "success" ]; then
+            stopped="authenticated MMS production smoke"
           else
             stopped="none — live verified"
           fi
@@ -420,7 +501,8 @@ jobs:
           - triggers dry-run: \`${TRIGGERS_DRY_RUN_OUTCOME}\`
           - routes-token verification: \`${ROUTES_TOKEN_OUTCOME}\`
           - admin-worker route sync: \`${TRIGGERS_OUTCOME}\`
-          - production smoke: \`${SMOKE_OUTCOME}\`
+          - production auth-guard smoke: \`${SMOKE_OUTCOME}\`
+          - authenticated MMS production smoke: \`${MMS_SMOKE_OUTCOME}\`
           - **stopped_at: \`${stopped}\`**
 
           Wrangler detail:
@@ -431,7 +513,7 @@ jobs:
           gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body-file "$body_file"
 
       - name: Record verified live receipt on launch issue
-        if: steps.smoke.outcome == 'success'
+        if: steps.smoke.outcome == 'success' && steps.mms_smoke.outcome == 'success'
         shell: bash
         working-directory: .
         env:
@@ -439,7 +521,7 @@ jobs:
         run: |
           set -euo pipefail
           deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ admin-worker LIVE + ROUTES VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- deployment_ref: \`${ADMIN_WORKER_VERSION_ID}\`\n- endpoint: \`${ADMIN_DASHBOARD_PRODUCTION_URL}\`\n- production smoke: \`dashboard + apex/www Model Console + Kenji CEO Control + Payment Entitlement approval auth guards passed\`\n- route mutation: \`required exact admin-worker routes verified via Zone Workers Routes API\`\n\nThis receipt is written only after deployment, route/trigger sync, and production auth-guard smoke tests all succeed."
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ admin-worker LIVE + ROUTES + MMS BUILD VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- deployment_ref: \`${ADMIN_WORKER_VERSION_ID}\`\n- endpoint: \`${ADMIN_DASHBOARD_PRODUCTION_URL}\`\n- build marker: \`/internal/admin/mms x-mmd-admin-build == source_sha\`\n- authenticated MMS smoke: \`browser login session + MMS page + snapshot endpoint passed on apex and www\`\n- production auth guards: \`dashboard + Model Console + Kenji CEO Control + Payment Entitlement guards passed\`\n- route mutation: \`required exact admin-worker routes, including MMS, verified via Zone Workers Routes API\`\n\nThis receipt is written only after deployment, route sync, build-marker verification, authenticated MMS page render, snapshot read, and production auth-guard smoke all succeed."
 
       - name: Require verified live deployment
         if: always()
@@ -447,3 +529,4 @@ jobs:
         run: |
           set -euo pipefail
           test "${{ steps.smoke.outcome }}" = "success"
+          test "${{ steps.mms_smoke.outcome }}" = "success"
