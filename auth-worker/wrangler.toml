@@ -2,6 +2,16 @@ name = "mmd-auth-worker"
 main = "src/my-mmd-runtime-index.js"
 compatibility_date = "2026-01-20"
 
+# Narrow production ownership for the server-to-server My MMD operator contract.
+# Keep LIFF/member front-gate routes on member-dashboard-chat-worker.
+[[routes]]
+pattern = "mmdbkk.com/member/api/operator/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/api/operator/*"
+zone_name = "mmdbkk.com"
+
 [triggers]
 crons = ["7 * * * *"]
 
