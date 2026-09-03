@@ -1,4 +1,5 @@
 import worker from "./index.js";
+import { observeKenjiLineWebhook } from "./kenji-ai-worker-line-bridge.mjs";
 export { KenjiModelIdempotency } from "./index.js";
 
 const WORKER_NAME = "member-dashboard-chat-worker";
@@ -8,6 +9,7 @@ const PUBLIC_CARE_BACK_PATHS = new Set([
   "/member/api/care-back/link-wish",
   "/member/api/care-back/link-wish/",
 ]);
+const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webhook/line", "/webhook/line/"]);
 
 function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -37,10 +39,43 @@ async function forwardMemberPages(request, env) {
   });
 }
 
+function recordBridgeTelemetry(result = {}) {
+  console.log(JSON.stringify({
+    kenji_ai_worker_bridge: "line_observation",
+    enabled: result.enabled === true,
+    events: Number(result.events) || 0,
+    observed: Number(result.observed) || 0,
+    succeeded: Number(result.succeeded) || 0,
+    evidence_incomplete: Number(result.evidence_incomplete) || 0,
+    ok: result.ok === true,
+  }));
+}
+
 export default {
   async fetch(request, env = {}, ctx) {
     const path = new URL(request.url).pathname.toLowerCase().replace(/\/{2,}/g, "/");
     if (PUBLIC_CARE_BACK_PATHS.has(path)) return forwardMemberPages(request, env);
-    return worker.fetch(request, env, ctx);
+
+    const shouldObserveLine = request.method === "POST" && LINE_WEBHOOK_PATHS.has(path);
+    const observerRequest = shouldObserveLine ? request.clone() : null;
+    const response = await worker.fetch(request, env, ctx);
+
+    // The core LINE handler owns signature verification. Observe only after it
+    // accepts the signed webhook. This is a read-only shadow call and never
+    // changes customer replies, payment truth, membership, points, or access.
+    if (observerRequest && response.ok) {
+      const observation = observeKenjiLineWebhook({ request: observerRequest, env })
+        .then((result) => {
+          recordBridgeTelemetry(result);
+          return result;
+        })
+        .catch(() => {
+          recordBridgeTelemetry({ ok: false, enabled: true, events: 0, observed: 0, succeeded: 0, evidence_incomplete: 0 });
+        });
+      if (typeof ctx?.waitUntil === "function") ctx.waitUntil(observation);
+      else await observation;
+    }
+
+    return response;
   },
 };

@@ -11,6 +11,10 @@ service = "member-pages-worker"
 binding = "ADMIN_WORKER"
 service = "admin-worker"
 
+[[services]]
+binding = "AI_WORKER"
+service = "ai-worker"
+
 # Canonical renewal page. These specific routes win before the generic front
 # gate and keep the full query string available to the local renderer.
 [[routes]]
@@ -114,6 +118,13 @@ zone_name = "mmdbkk.com"
 LINE_AUTO_REPLY_ENABLED = "true"
 LINE_KENJI_AI_ENABLED = "true"
 LINE_KENJI_KNOWLEDGE_ENABLED = "true"
+# Read-only shadow bridge: every accepted LINE webhook is also observed by
+# ai-worker through a private Cloudflare service binding. It does not affect
+# the LINE reply path or create any domain truth.
+KENJI_AI_WORKER_BRIDGE_ENABLED = "true"
+# Personal/crew LINE source IDs are never guessed. Populate this only when the
+# bot/OA is actually present in a Crew group/room and the source ID is reviewed.
+KENJI_LINE_CREW_SOURCE_IDS = ""
 # Model generation is a separate, production-gated capability. Keep it off in
 # committed configuration until an explicitly approved deployment enables it.
 LINE_KENJI_MODEL_ENABLED = "false"
