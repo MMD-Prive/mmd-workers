@@ -88,8 +88,6 @@ function assertIdentityCommitGate(fields) {
   return { clientId, reviewedBy, reviewedAt };
 }
 
-// Backward-compatible export name. This is identity-link review only, not
-// approval to materialize service/payment/points history.
 const assertReviewGate = assertIdentityCommitGate;
 
 function parseHistoricalDate(value) {
@@ -138,8 +136,6 @@ function uniquePaymentRefs(fields) {
   return [...new Set(refs.map(clean).filter(Boolean))];
 }
 
-// Strict parser candidate gate retained for review tooling/tests. The
-// materializer itself uses the explicit approved values in Customer History Reviews.
 function assertHistoricalEventGate(fields) {
   if (["true", "yes", "1"].includes(clean(fields.points_review_required).toLowerCase())) throw coded("HISTORY_POINTS_REVIEW_REQUIRED");
   if (Number(fields.unknown_amount || 0) > 0) throw coded("HISTORY_UNKNOWN_AMOUNT_REVIEW_REQUIRED");
@@ -162,6 +158,8 @@ function assertHistoricalEventGate(fields) {
 function assertHistoryApprovalGate(reviewFields, { stagingId, clientId }) {
   const reviewStatus = selectName(reviewFields.review_status).toLowerCase();
   const decision = selectName(reviewFields.decision).toLowerCase();
+  const paymentStatus = selectName(reviewFields.payment_review_status).toLowerCase();
+  const paymentCoverage = selectName(reviewFields.payment_coverage_status).toLowerCase();
   const pointsStatus = selectName(reviewFields.points_review_status).toLowerCase();
   const reviewedBy = clean(reviewFields.reviewed_by);
   const reviewedAt = clean(reviewFields.reviewed_at);
@@ -179,11 +177,19 @@ function assertHistoryApprovalGate(reviewFields, { stagingId, clientId }) {
   const amountThb = Math.round(Number(reviewFields.approved_service_amount_thb || 0) * 100) / 100;
   if (!Number.isFinite(amountThb) || amountThb <= 0) throw coded("HISTORY_APPROVED_SERVICE_AMOUNT_REQUIRED");
 
+  if (!["approved", "rejected", "not_applicable"].includes(paymentStatus)) throw coded("HISTORY_EXPLICIT_PAYMENT_DECISION_REQUIRED");
+  if (paymentStatus !== "approved") throw coded("HISTORY_HISTORICAL_PAYMENT_NOT_APPROVED");
+  if (paymentCoverage !== "complete") throw coded("HISTORY_PAYMENT_COVERAGE_INCOMPLETE");
+  const paymentAmountThb = Math.round(Number(reviewFields.approved_payment_amount_thb || 0) * 100) / 100;
+  if (!Number.isFinite(paymentAmountThb) || paymentAmountThb <= 0) throw coded("HISTORY_APPROVED_PAYMENT_AMOUNT_REQUIRED");
+  if (Math.abs(paymentAmountThb - amountThb) > 0.001) throw coded("HISTORY_APPROVED_PAYMENT_AMOUNT_MISMATCH");
+
   if (!["approved", "rejected", "not_applicable"].includes(pointsStatus)) throw coded("HISTORY_EXPLICIT_POINTS_DECISION_REQUIRED");
   const pointsEligibleAmountThb = Math.round(Number(reviewFields.approved_points_eligible_amount_thb || 0) * 100) / 100;
   if (pointsStatus === "approved") {
     if (pointsEligibleAmountThb <= 0) throw coded("HISTORY_APPROVED_POINTS_AMOUNT_REQUIRED");
     if (Math.abs(pointsEligibleAmountThb - amountThb) > 0.001) throw coded("HISTORY_APPROVED_POINTS_AMOUNT_MISMATCH");
+    if (pointsEligibleAmountThb - paymentAmountThb > 0.001) throw coded("HISTORY_APPROVED_POINTS_EXCEED_PAID_AMOUNT");
   } else if (pointsEligibleAmountThb > 0) {
     throw coded("HISTORY_POINTS_AMOUNT_WITHOUT_APPROVAL");
   }
@@ -195,6 +201,9 @@ function assertHistoryApprovalGate(reviewFields, { stagingId, clientId }) {
     paidAt,
     amountThb,
     sourcePaymentRef: clean(reviewFields.approved_payment_ref),
+    paymentStatus,
+    paymentCoverage,
+    paymentAmountThb,
     pointsStatus,
     pointsEligibleAmountThb: pointsStatus === "approved" ? pointsEligibleAmountThb : 0,
   };
@@ -228,7 +237,6 @@ function buildMaterializationPlan({
   const approved = assertHistoryApprovalGate(historyReviewFields, { stagingId, clientId: identityReview.clientId });
   const memberEmail = normalizeEmail(client?.fields?.["Contact Email"] || client?.fields?.email || fields.email_candidate);
   if (!memberEmail) throw coded("HISTORY_CANONICAL_MEMBER_EMAIL_REQUIRED");
-
   if (approved.pointsStatus === "approved" && !clean(memberWallet?.memberId)) throw coded("HISTORY_POINTS_CANONICAL_MEMBER_ID_REQUIRED");
 
   const ids = buildMaterializationIdentity({
@@ -263,6 +271,9 @@ function buildMaterializationPlan({
     paid_at: approved.paidAt,
     amount_thb: approved.amountThb,
     source_payment_ref: approved.sourcePaymentRef,
+    payment_review_status: approved.paymentStatus,
+    payment_coverage_status: approved.paymentCoverage,
+    approved_payment_amount_thb: approved.paymentAmountThb,
     points_review_status: approved.pointsStatus,
     membership_handoff_required: Boolean(clean(fields.note_detected_membership_action) || Number(fields.membership_fee_amount || 0) > 0 || Number(fields.renewal_fee_amount || 0) > 0),
     writes: {
@@ -287,7 +298,7 @@ function buildMaterializationPlan({
       payment: {
         "Payment Reference": ids.paymentRef,
         "Payment Date": jobDate,
-        Amount: approved.amountThb,
+        Amount: approved.paymentAmountThb,
         "Payment Status": "Paid",
         "Payment Method": "Other",
         Client: [identityReview.clientId],
