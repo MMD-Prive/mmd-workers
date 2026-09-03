@@ -3,6 +3,7 @@ import {
   handleCreateSessionClientLineageRequest,
   isCreateSessionClientLineageRequest,
 } from "./create-session-client-lineage-runtime.js";
+import { enrichLineageWithPreSessionIndex } from "./pre-session-client-index.js";
 
 const STUDIO_API_PREFIX = "/studio/api";
 const COMMIT_PATHS = new Set([
@@ -24,12 +25,22 @@ export default {
     // ingress bridge terminates on a real canonical backend instead of falling
     // through to a 404 in the legacy core router.
     if (isCreateSessionClientLineageRequest(path, method)) {
+      // Keep one untouched request body for the optional candidate lookup. The
+      // canonical lineage runtime always runs first; Pre-Session Airtable is only
+      // consulted when that runtime would otherwise return the free-form manual
+      // public-only fallback.
+      const preSessionRequest = request.clone();
       const response = await handleCreateSessionClientLineageRequest(request, env);
-      const headers = new Headers(response.headers);
+      const enrichedResponse = await enrichLineageWithPreSessionIndex(
+        preSessionRequest,
+        response,
+        env,
+      );
+      const headers = new Headers(enrichedResponse.headers);
       headers.set("X-MMD-Manual-Public-Fallback", CREATE_SESSION_MANUAL_FALLBACK_MARKER);
-      return new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
+      return new Response(enrichedResponse.body, {
+        status: enrichedResponse.status,
+        statusText: enrichedResponse.statusText,
         headers,
       });
     }
