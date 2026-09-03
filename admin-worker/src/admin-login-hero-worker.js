@@ -28,6 +28,10 @@ import {
   isKenjiControlActionRequest,
   isKenjiRuntimeStatusRpcRequest,
 } from "./kenji-control-actions.js";
+import {
+  handlePaymentEntitlementApproval,
+  isPaymentEntitlementApprovalRequest,
+} from "./payment-entitlement-approval.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
@@ -101,6 +105,10 @@ export default {
     const strictGate = await applyCredentialBoundAdminGate(request, env, path, method);
     if (strictGate.response) return strictGate.response;
     request = strictGate.request || request;
+
+    if (isPaymentEntitlementApprovalRequest(path, method)) {
+      return handlePaymentEntitlementApproval(request, env, strictGate.actor);
+    }
 
     if (isKenjiControlActionRequest(path, method)) {
       return handleKenjiControlAction(request, env, strictGate.actor);
