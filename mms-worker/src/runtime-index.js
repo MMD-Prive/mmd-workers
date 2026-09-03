@@ -1,11 +1,15 @@
 import worker from "./index.js";
 import { adminRuntimeErrorResponse, handleMmsAdminRuntime, isMmsAdminRuntimeRequest } from "./admin-runtime.mjs";
+import { handleMmsMemberReadRequest, isMmsMemberReadRequest } from "./member-read-runtime.mjs";
 
 export { MmsCoordinator } from "./index.js";
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (isMmsMemberReadRequest(url.pathname)) {
+      return handleMmsMemberReadRequest(request, env);
+    }
     if (isMmsAdminRuntimeRequest(url.pathname)) {
       try {
         return await handleMmsAdminRuntime(request, env, ctx);

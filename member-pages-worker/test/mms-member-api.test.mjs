@@ -44,6 +44,11 @@ async function memberEnv(handler, session = {}) {
     env: {
       LIFF_SESSION_SECRET: secret,
       LIFF_IDENTITY_KV: kv,
+      LINE_LOGIN_CHANNEL_ID: "1234567890",
+      MEMBER_STATUS_RESOLVER_SECRET: "test-member-resolver-secret-12345678901234567890",
+      MEMBER_STATUS_RESOLVER: {
+        async fetch() { throw new Error("resolver should not be called for a hydrated session"); },
+      },
       MMS_WORKER: { fetch: handler },
     },
   };
@@ -149,6 +154,46 @@ describe("MMS member API facade", () => {
     assert.equal(response.status, 201);
     assert.equal(upstreamBody.member_ref, "member_001");
     assert.equal(Object.hasOwn(upstreamBody, "line_user_id"), false);
+  });
+
+  it("reads only the verified member's MMS prebookings and keeps the rotated session", async () => {
+    let upstreamUrl;
+    const { token, env } = await memberEnv(async (upstream) => {
+      upstreamUrl = new URL(upstream.url);
+      return Response.json({
+        ok: true,
+        data: {
+          requests: [{
+            request_id: "mmspre_1234567890abcdef12345678",
+            type: "mms",
+            title: "MMS Pre-booking",
+            status: "coordination_pending",
+            service_date: "2026-09-04",
+            service_time: "19:30",
+            zone: "Sukhumvit",
+            skills: ["Thai Massage"],
+          }],
+        },
+      });
+    }, {
+      member_profile: {
+        display_name: "Member Test",
+        member_id: "member_001",
+        membership_status: "active",
+        points_records_count: 0,
+        points: 0,
+      },
+    });
+
+    const response = await worker.fetch(request("/member/api/liff/mms/prebookings", token), env);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.data.requests[0].request_id, "mmspre_1234567890abcdef12345678");
+    assert.equal(upstreamUrl.hostname, "mms.internal");
+    assert.equal(upstreamUrl.pathname, "/internal/mms/member/prebookings");
+    assert.equal(upstreamUrl.searchParams.get("member_ref"), "member_001");
+    assert.match(response.headers.get("set-cookie") || "", /__Host-mmd_liff_session=/);
   });
 
   it("rejects browser-supplied member identity", async () => {
