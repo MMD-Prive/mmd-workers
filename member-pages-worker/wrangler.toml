@@ -36,6 +36,12 @@ service = "mmd-auth-worker"
 binding = "MMS_WORKER"
 service = "mms-worker"
 
+# Find Your MMD never writes Airtable directly. The verified-member facade
+# delegates request intake and public-safe model search to the canonical owner.
+[[services]]
+binding = "SIGIL_BOOKING_WORKER"
+service = "sigil-booking-worker"
+
 [[durable_objects.bindings]]
 name = "CARE_BACK_WISH_COORDINATOR"
 class_name = "CareBackBirthdayWishCoordinator"
@@ -50,6 +56,7 @@ new_sqlite_classes = ["CareBackBirthdayWishCoordinator"]
 # - secret LIFF_SESSION_SECRET
 # - secret MEMBER_STATUS_RESOLVER_SECRET (same value in mmd-auth-worker)
 # - service binding MEMBER_STATUS_RESOLVER -> mmd-auth-worker
+# - service binding SIGIL_BOOKING_WORKER -> sigil-booking-worker
 # - secret AIRTABLE_API_KEY
 # - var AIRTABLE_BASE_ID = appsV1ILPRfIjkaYg
 # - secret GOOGLE_DRIVE_CLIENT_ID
