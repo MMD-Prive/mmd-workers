@@ -159,6 +159,17 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/mms/*"
 zone_name = "mmdbkk.com"
 
+# Canonical payment evidence -> entitlement approval bridge. Exact route only.
+# The active entrypoint applies the credential-bound admin gate first; service
+# credentials are reviewer-only and cannot approve protected capabilities.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/membership/payment-entitlement/approve"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/membership/payment-entitlement/approve"
+zone_name = "mmdbkk.com"
+
 # Legacy SIGIL internal admin redirect only. Keep these patterns narrow; do not
 # render SIGIL-prefixed admin pages or claim /internal/admin/* or either host catch-all.
 [[routes]]
