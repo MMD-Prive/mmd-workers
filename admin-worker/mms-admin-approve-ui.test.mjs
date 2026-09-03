@@ -102,7 +102,8 @@ test('MMS ops home surfaces real applicant, coordination, and canonical work lan
   assert.match(wired, /คนสมัครใหม่/);
   assert.match(wired, /ต้องประสานต่อ/);
   assert.match(wired, /งาน MMS ล่าสุด/);
-  assert.match(wired, /Promise\.allSettled\(\[api\('\/snapshot'\),api\('\/jobs'\)\]\)/);
+  assert.match(wired, /Promise\.allSettled\(\[snapshotTask,api\('\/jobs'\)\]\)/);
+  assert.match(wired, /window\.mmsAdminApplySnapshot\(lastSnapshot\)/);
   assert.match(wired, /grid-auto-flow:column/);
   assert.match(wired, /grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
 });
