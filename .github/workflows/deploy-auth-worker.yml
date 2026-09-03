@@ -103,20 +103,32 @@ jobs:
             "mmdbkk.com/member/api/operator/*",
             "www.mmdbkk.com/member/api/operator/*",
           ];
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
           async function cf(path, options = {}) {
-            const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
-              ...options,
-              headers: {
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/json",
-                ...(options.headers || {}),
-              },
-            });
-            const body = await response.json();
-            if (!response.ok || body.success !== true) {
-              throw new Error(JSON.stringify(body.errors || body));
+            let lastError;
+            for (let attempt = 1; attempt <= 5; attempt += 1) {
+              try {
+                const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+                  ...options,
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                    ...(options.headers || {}),
+                  },
+                });
+                const text = await response.text();
+                let body = null;
+                try { body = JSON.parse(text); } catch {}
+                if (response.ok && body?.success === true) return body.result;
+                const retryable = response.status === 429 || response.status >= 500 || !body;
+                lastError = new Error(body ? JSON.stringify(body.errors || body) : `cloudflare_non_json_${response.status}:${text.slice(0, 160)}`);
+                if (!retryable) throw lastError;
+              } catch (error) {
+                lastError = error;
+              }
+              if (attempt < 5) await sleep(attempt * 1000);
             }
-            return body.result;
+            throw lastError || new Error("cloudflare_route_api_failed");
           }
           const routePath = `/zones/${zoneId}/workers/routes`;
           const existing = await cf(routePath);
