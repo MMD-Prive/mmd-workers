@@ -197,7 +197,7 @@ async function proxyAdminApi(request: Request, env: InternalRoutesEnv): Promise<
   const isClientLineageLookup =
     targetPath === "/v1/admin/clients/lineage-lookup" && request.method === "POST";
   let manualLookupQuery = "";
-  if (isClientLineageLookup && contentType?.toLowerCase().includes("application/json")) {
+  if (isClientLineageLookup) {
     try {
       const lookupBody = (await request.clone().json()) as Record<string, unknown>;
       manualLookupQuery = str(lookupBody.query).slice(0, 160);
