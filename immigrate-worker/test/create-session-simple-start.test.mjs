@@ -54,6 +54,14 @@ try {
   assert.match(body, /hideUntil\(reviewPanel, hasModel\)/);
   assert.match(body, /hideUntil\(dock, hasModel\)/);
 
+  assert.match(body, /function hasSelectedClient\(value\)/);
+  assert.match(body, /content !== "no client"/);
+  assert.match(body, /var hasClient = hasSelectedClient\(selectedName && selectedName\.textContent\)/);
+  assert.match(body, /var hasWork = hasClient && Boolean\(selectedWork\)/);
+  assert.match(body, /var hasLane = hasWork && isChosen\(folderStat && folderStat\.textContent\)/);
+  assert.match(body, /var hasModel = hasLane && isChosen\(modelStat && modelStat\.textContent\)/);
+  assert.match(body, /if \(!hasSelectedClient\(picked\) && recent\) recent\.click\(\)/);
+
   assert.doesNotMatch(body, /Public Ready/);
   assert.doesNotMatch(body, /Ready for Public/);
 
