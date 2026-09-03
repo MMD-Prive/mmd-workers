@@ -64,6 +64,140 @@
     return clean(stats[name]?.textContent);
   }
 
+  function installClientFirstUx() {
+    const clientStage = $("[data-focus-section=\"client\"]");
+    if (!clientStage) return null;
+
+    if (!document.getElementById("mmd-client-first-ux")) {
+      const style = document.createElement("style");
+      style.id = "mmd-client-first-ux";
+      style.textContent = `
+        .ff2__search{grid-template-columns:minmax(0,1fr) auto auto;align-items:stretch}
+        .ff2__search [data-op-load-recent]{min-width:118px;background:rgba(255,255,255,.045);border-color:rgba(214,183,111,.22)}
+        .ff2__clientMeta{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:10px}
+        .ff2__lineageState{display:inline-flex;align-items:center;min-height:29px;padding:0 10px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:8px;font-weight:850;background:rgba(255,255,255,.018)}
+        .ff2__lineageState.is-connected{border-color:rgba(121,215,162,.24);color:var(--ok);background:rgba(121,215,162,.035)}
+        .ff2__lineageState.is-retry{border-color:rgba(234,145,156,.24);color:var(--bad);background:rgba(234,145,156,.035)}
+        .ff2__clientFilters{position:relative;color:var(--muted)}
+        .ff2__clientFilters summary{list-style:none;cursor:pointer;min-height:29px;padding:0 10px;border:1px solid var(--line);border-radius:999px;display:inline-flex;align-items:center;font-size:8px;font-weight:850;background:rgba(255,255,255,.018)}
+        .ff2__clientFilters summary::-webkit-details-marker{display:none}
+        .ff2__clientFilters[open] summary{border-color:rgba(214,183,111,.28);color:var(--gold2)}
+        .ff2__clientFilters .ff2__chips{margin-top:7px;justify-content:flex-end}
+        .ff2__clientFilters .ff2__chip{color:var(--muted);background:rgba(255,255,255,.018)}
+        .ff2--awaiting-client .ff2__summaryRow:nth-child(n+2){display:none}
+        .ff2--awaiting-client .ff2__summary{opacity:.84}
+        .ff2--awaiting-client .ff2__summaryHead b{font-size:18px}
+        .ff2--awaiting-client [data-focus-section="client"]{box-shadow:0 14px 48px rgba(0,0,0,.14)}
+        .ff2--awaiting-client [data-focus-section="client"] .ff2__stageBody{padding-bottom:24px}
+        @media(max-width:767px){
+          .ff2__search{grid-template-columns:minmax(0,1fr) auto}
+          .ff2__search [data-op-load-recent]{grid-column:1/-1;width:100%}
+          .ff2__clientMeta{align-items:flex-start}
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    const title = clientStage.querySelector(".ff2__stageTitle b");
+    if (title) title.textContent = "เลือกลูกค้า";
+    const stageSummary = clientStage.querySelector('[data-focus-stage-summary="client"]');
+    if (stageSummary) stageSummary.textContent = "ลูกค้าล่าสุดจะแสดงให้อัตโนมัติ หรือค้นหาจากชื่อ / LINE / เบอร์ / Package";
+
+    const query = $("[data-op-client-query]");
+    if (query) {
+      query.placeholder = "ชื่อ / LINE / เบอร์ / Package";
+      query.setAttribute("aria-label", "ค้นหาลูกค้า");
+    }
+
+    const searchButton = $("[data-op-search-client]");
+    if (searchButton) searchButton.textContent = "ค้นหา";
+
+    const searchRow = clientStage.querySelector(".ff2__search");
+    const recent = $("[data-op-load-recent]");
+    if (recent && searchRow) {
+      recent.textContent = "ลูกค้าล่าสุด";
+      recent.className = "ff2__btn ff2__recent";
+      searchRow.appendChild(recent);
+    }
+
+    const demo = $("[data-op-demo-client]");
+    if (demo) demo.remove();
+
+    const chips = clientStage.querySelector(".ff2__chips");
+    const mode = $("[data-op-search-mode]");
+    const quickButtons = $$('[data-op-quick-query]');
+    if (chips) {
+      const meta = document.createElement("div");
+      meta.className = "ff2__clientMeta";
+
+      if (mode) {
+        mode.className = "ff2__lineageState";
+        mode.textContent = "Client Lineage";
+        meta.appendChild(mode);
+      }
+
+      if (quickButtons.length) {
+        const details = document.createElement("details");
+        details.className = "ff2__clientFilters";
+        const summary = document.createElement("summary");
+        summary.textContent = "ตัวกรองเพิ่มเติม";
+        const filterRow = document.createElement("div");
+        filterRow.className = "ff2__chips";
+        quickButtons.forEach((button) => filterRow.appendChild(button));
+        details.append(summary, filterRow);
+        meta.appendChild(details);
+      }
+
+      chips.replaceWith(meta);
+    }
+
+    const results = $("[data-op-client-results]");
+    const status = $("[data-op-status]");
+
+    function setLineageState(kind) {
+      if (!mode) return;
+      mode.classList.toggle("is-connected", kind === "connected");
+      mode.classList.toggle("is-retry", kind === "retry");
+      if (kind === "connected") mode.textContent = "● Connected";
+      else if (kind === "retry") mode.textContent = "● Retry";
+      else mode.textContent = "Client Lineage";
+    }
+
+    function normalizeClientStatus() {
+      if (!status) return;
+      const text = clean(status.textContent);
+      if (!text) return;
+
+      if (/Demo|lineage จริงไม่ได้|lineage_lookup_failed|lineage_storage_not_ready/i.test(text)) {
+        status.textContent = "เชื่อม Client Lineage ไม่สำเร็จ · กด ‘ลูกค้าล่าสุด’ อีกครั้ง หรือค้นหาด้วยชื่อ / LINE / เบอร์";
+        setLineageState("retry");
+        return;
+      }
+
+      if (/lineage loaded|client lineage loaded|canonical_client_lineage|พบลูกค้า|loaded/i.test(text)) {
+        setLineageState("connected");
+      }
+    }
+
+    if (status) {
+      const statusObserver = new MutationObserver(normalizeClientStatus);
+      statusObserver.observe(status, { childList: true, subtree: true, characterData: true });
+      normalizeClientStatus();
+    }
+
+    function autoLoadRecentClients() {
+      if (!recent || recent.dataset.autoloaded === "true") return;
+      if (meaningful(stat("client"))) return;
+      recent.dataset.autoloaded = "true";
+      if (results) results.innerHTML = '<div class="ff2__notice">กำลังโหลดลูกค้าล่าสุด…</div>';
+      window.setTimeout(() => recent.click(), 80);
+    }
+
+    return { autoLoadRecentClients };
+  }
+
+  const clientUx = installClientFirstUx();
+
   function readiness() {
     const client = meaningful(stat("client"));
     const work = meaningful(stat("work"));
@@ -95,7 +229,7 @@
   }
 
   function stageSummary(step) {
-    if (step === "client") return meaningful(stat("client")) ? [stat("client"), stat("package")].filter(meaningful).join(" · ") : "ค้นจากชื่อ / LINE / package / legacy tag";
+    if (step === "client") return meaningful(stat("client")) ? [stat("client"), stat("package")].filter(meaningful).join(" · ") : "ลูกค้าล่าสุดจะแสดงอัตโนมัติ หรือค้นหาจากชื่อ / LINE / เบอร์ / Package";
     if (step === "work") return meaningful(stat("work")) ? [stat("work"), stat("folder")].filter(meaningful).join(" · ") : "เลือก Public หรือ Private แล้วค่อยเลือก lane";
     if (step === "model") return meaningful(stat("model")) ? stat("model") : "ระบบจะแสดงเฉพาะ pool ที่ตรงกับ lane";
     if (step === "details") return readiness().createReady ? "ข้อมูลหลักครบแล้ว พร้อม Review" : "วัน เวลา สถานที่ ราคา — technical gates พับไว้ด้านล่าง";
@@ -128,6 +262,8 @@
   function sync() {
     const unlocked = unlockedSteps();
     const natural = naturalStep();
+    const r = readiness();
+    root.classList.toggle("ff2--awaiting-client", !r.client);
     if (forcedStep && !unlocked[forcedStep]) forcedStep = "";
     const current = forcedStep || natural;
     const order = ["client", "work", "model", "details", "review"];
@@ -198,4 +334,5 @@
   if (output) observer.observe(output, { attributes: true, attributeFilter: ["hidden"] });
 
   sync();
+  clientUx?.autoLoadRecentClients();
 })();
