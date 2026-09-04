@@ -7,6 +7,7 @@ on:
       - fix/slip-staging-acceptance-smoke
     paths:
       - ".github/workflows/diagnose-mmd-line-slip-staging-queue.yml"
+      - "services/mmd-line-slip-intake/cloudflare/worker.mjs"
 
 concurrency:
   group: diagnose-mmd-line-slip-staging-queue
@@ -60,6 +61,7 @@ jobs:
           assert(intake.vars?.MMD_RUNTIME_SCOPE === "staging", "staging runtime required");
           assert(source.includes('audit("queue_received"'), "redacted queue trace missing");
           assert(source.includes('audit("queue_error"'), "redacted queue error trace missing");
+          assert(source.includes("body.slice(0)"), "extractor replay-safe byte clone missing");
           assert(!source.includes("LINE_WEBHOOK_UPSTREAM_URL"), "retired LINE upstream must remain absent");
           NODE
 
@@ -69,6 +71,7 @@ jobs:
           set -euo pipefail
           npm ci --prefix services/mmd-slip-extractor
           npm ci --prefix services/mmd-slip-extractor/cloudflare
+          node --experimental-global-webcrypto --test services/mmd-line-slip-intake/cloudflare/test/*.test.mjs
           node <<'NODE'
           const fs = require("node:fs");
           const crypto = require("node:crypto");
@@ -157,6 +160,7 @@ jobs:
             if (records.length === 1) {
               const fields = records[0].fields || {};
               if (fields.status !== "pending" || fields.source !== "synthetic_isolated") throw new Error("authority boundary changed");
+              fs.writeFileSync(process.env.RUNNER_TEMP + "/airtable-record.json", JSON.stringify({ id: records[0].id, proof_id: proofId }));
               console.log(`Airtable pending PASS: ${proofId}`);
               process.exit(0);
             }
@@ -166,28 +170,77 @@ jobs:
           throw new Error("pending proof not observed");
           NODE
 
-      - name: Print bounded queue trace
+      - name: Replay same evidence and prove idempotency
+        id: replay
+        if: steps.airtable.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error --output "$RUNNER_TEMP/replay.json" --write-out '%{http_code}' \
+            -X POST \
+            -H "Authorization: Bearer ${MMD_SLIP_INTAKE_STAGING_TOKEN}" \
+            -H 'Content-Type: image/png' \
+            -H "x-mmd-run-id: replay-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --data-binary "@$RUNNER_TEMP/synthetic-slip.png" \
+            "$INTAKE_URL/v1/staging/intake" || true)"
+          test "$code" = "202"
+          sleep 12
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const proofId = fs.readFileSync(process.env.RUNNER_TEMP + "/proof-id.txt", "utf8").trim();
+          const formula = `{proof_id}='${proofId.replace(/'/g, "\\'")}'`;
+          const url = `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_STAGING_TABLE_ID}?maxRecords=10&filterByFormula=${encodeURIComponent(formula)}`;
+          const response = await fetch(url, { headers: { Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}` } });
+          if (!response.ok) throw new Error(`Airtable HTTP ${response.status}`);
+          const payload = await response.json();
+          const records = Array.isArray(payload.records) ? payload.records : [];
+          if (records.length !== 1) throw new Error(`replay created ${records.length} records`);
+          const fields = records[0].fields || {};
+          if (fields.status !== "pending" || fields.source !== "synthetic_isolated") throw new Error("replay changed authority boundary");
+          console.log(`Replay idempotency PASS: ${proofId}`);
+          NODE
+
+      - name: Classify HYPE redacted alert gate
+        id: hype
         if: always()
         shell: bash
         run: |
           set -euo pipefail
           sleep 5
+          if grep -q 'queue_telegram_result' "$RUNNER_TEMP/intake-tail.log" && grep -q 'telegram_config_missing' "$RUNNER_TEMP/intake-tail.log"; then
+            echo "status=BLOCKED_CREDENTIAL" >> "$GITHUB_OUTPUT"
+          elif grep -q 'queue_telegram_result' "$RUNNER_TEMP/intake-tail.log" && grep -q '\\"ok\\":true' "$RUNNER_TEMP/intake-tail.log"; then
+            echo "status=PASS" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=UNKNOWN" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Print bounded queue trace
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
           proof_id=""
           if [ -f "$RUNNER_TEMP/proof-id.txt" ]; then proof_id="$(cat "$RUNNER_TEMP/proof-id.txt")"; fi
           echo "--- redacted queue trace (${proof_id}) ---"
           if [ -s "$RUNNER_TEMP/intake-tail.log" ]; then
-            grep -E 'intake_queued|queue_received|queue_dedupe_checked|queue_r2_verified|queue_extracted|queue_airtable_pending|queue_telegram_result|queue_error' "$RUNNER_TEMP/intake-tail.log" | tail -n 80 || true
+            grep -E 'intake_queued|queue_received|queue_dedupe_checked|queue_r2_verified|queue_extracted|queue_airtable_pending|queue_telegram_result|queue_error' "$RUNNER_TEMP/intake-tail.log" | tail -n 100 || true
           else
             echo "tail log empty"
           fi
           echo "--- end trace ---"
 
-      - name: Enforce Airtable acceptance result
+      - name: Enforce synthetic acceptance result
         if: always()
         shell: bash
         run: |
           if [ "${{ steps.airtable.outcome }}" != "success" ]; then
             echo "Queue consumer did not create Airtable pending proof" >&2
+            exit 1
+          fi
+          if [ "${{ steps.replay.outcome }}" != "success" ]; then
+            echo "Replay idempotency not proven" >&2
             exit 1
           fi
 
@@ -200,4 +253,4 @@ jobs:
           set -euo pipefail
           proof_id=""
           if [ -f "$RUNNER_TEMP/proof-id.txt" ]; then proof_id="$(cat "$RUNNER_TEMP/proof-id.txt")"; fi
-          gh issue comment 317 --repo "$GITHUB_REPOSITORY" --body "🧪 Staging Queue diagnostic completed.\n\n- source_sha: \`${GITHUB_SHA}\`\n- workflow_run_id: \`${GITHUB_RUN_ID}\`\n- proof_id: \`${proof_id}\`\n- Airtable pending step outcome: \`${{ steps.airtable.outcome }}\`\n- production LINE route mutation: NONE\n- real-LINE production: NOT TOUCHED\n\nQueue trace is redacted and available in the workflow log. HYPE remains a separate credential gate."
+          gh issue comment 317 --repo "$GITHUB_REPOSITORY" --body "🧪 Staging acceptance diagnostic completed.\n\n- source_sha: \`${GITHUB_SHA}\`\n- workflow_run_id: \`${GITHUB_RUN_ID}\`\n- proof_id: \`${proof_id}\`\n- Queue → extractor → Airtable pending: \`${{ steps.airtable.outcome }}\`\n- replay idempotency: \`${{ steps.replay.outcome }}\`\n- HYPE redacted alert: \`${{ steps.hype.outputs.status }}\`\n- production LINE route mutation: NONE\n- real-LINE production: NOT TOUCHED\n\nSynthetic staging never counts as real-LINE production PASS."
