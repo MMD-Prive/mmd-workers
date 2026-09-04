@@ -23,58 +23,62 @@ jobs:
       ADMIN_LOGIN_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
       MODEL_ID: recBKaHfxUKs8fkMV
       MODEL_NAME: Mek
+      ORIGIN: https://www.mmdbkk.com
     steps:
+      - name: Verify apex canonical redirect
+        shell: bash
+        run: |
+          set -euo pipefail
+          headers="$(mktemp)"
+          code="$(curl -sS -D "$headers" -o /dev/null -w "%{http_code}" 'https://mmdbkk.com/v1/admin/kenji/models?q=Mek&limit=20')"
+          location="$(grep -i '^location:' "$headers" | tail -n 1 | sed -E 's/^[^:]+:[[:space:]]*//; s/\r$//' || true)"
+          echo "apex models=$code location=${location:-none}"
+          test "$code" = "301"
+          test "$location" = "https://www.mmdbkk.com/v1/admin/kenji/models?q=Mek&limit=20"
+
       - name: Verify authenticated Mek admin media preview
         shell: bash
         run: |
           set -euo pipefail
           test -n "${ADMIN_LOGIN_CREDENTIAL:-}"
           echo "::add-mask::$ADMIN_LOGIN_CREDENTIAL"
+          cookie_jar="$(mktemp)"
+          login_headers="$(mktemp)"
+          models_body="$(mktemp)"
+          preview_headers="$(mktemp)"
+          preview_body="$(mktemp)"
 
-          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
-            cookie_jar="$(mktemp)"
-            login_headers="$(mktemp)"
-            models_headers="$(mktemp)"
-            models_body="$(mktemp)"
-            preview_headers="$(mktemp)"
-            preview_body="$(mktemp)"
+          login_code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS \
+            -D "$login_headers" -c "$cookie_jar" -o /dev/null -w "%{http_code}" \
+            -X POST -H "Origin: $ORIGIN" -H "Content-Type: application/x-www-form-urlencoded" \
+            --data-urlencode "credential=$ADMIN_LOGIN_CREDENTIAL" \
+            --data-urlencode "next=/internal/admin/kenji" \
+            "$ORIGIN/internal/admin/login/session")"
+          echo "www login=$login_code"
+          test "$login_code" = "303"
+          grep -qi '^location: /internal/admin/kenji' "$login_headers"
+          grep -q 'mmd_admin_gate_v1' "$cookie_jar"
 
-            login_code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS \
-              -D "$login_headers" \
-              -c "$cookie_jar" \
-              -o /dev/null \
-              -w "%{http_code}" \
-              -X POST \
-              -H "Origin: $origin" \
-              -H "Content-Type: application/x-www-form-urlencoded" \
-              --data-urlencode "credential=$ADMIN_LOGIN_CREDENTIAL" \
-              --data-urlencode "next=/internal/admin/kenji" \
-              "$origin/internal/admin/login/session")"
-            echo "[$origin] login=$login_code"
-            test "$login_code" = "303"
-            grep -qi '^location: /internal/admin/kenji' "$login_headers"
-            grep -q 'mmd_admin_gate_v1' "$cookie_jar"
-            echo "[$origin] session=cookie-issued"
+          shell_code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS \
+            -b "$cookie_jar" -o /dev/null -w "%{http_code}" \
+            "$ORIGIN/internal/admin/kenji")"
+          echo "www shell=$shell_code"
+          test "$shell_code" = "200"
 
-            models_code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS \
-              -D "$models_headers" \
-              -b "$cookie_jar" \
-              -o "$models_body" \
-              -w "%{http_code}" \
-              "$origin/v1/admin/kenji/models?q=Mek&limit=20")"
-            models_location="$(grep -i '^location:' "$models_headers" | tail -n 1 | sed -E 's/^[^:]+:[[:space:]]*//; s/\r$//' || true)"
-            models_server="$(grep -i '^server:' "$models_headers" | tail -n 1 | sed -E 's/^[^:]+:[[:space:]]*//; s/\r$//' || true)"
-            echo "[$origin] models=$models_code location=${models_location:-none} server=${models_server:-none}"
-            test "$models_code" = "200"
+          models_code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS \
+            -b "$cookie_jar" -o "$models_body" -w "%{http_code}" \
+            "$ORIGIN/v1/admin/kenji/models?q=Mek&limit=20")"
+          echo "www models=$models_code"
+          test "$models_code" = "200"
 
-            preview_path="$(node - "$models_body" "$MODEL_ID" "$MODEL_NAME" <<'NODE'
+          preview_path="$(node - "$models_body" "$MODEL_ID" "$MODEL_NAME" <<'NODE'
           const fs = require('node:fs');
           const [file, modelId, modelName] = process.argv.slice(2);
           const raw = fs.readFileSync(file, 'utf8');
           const payload = JSON.parse(raw);
           if (payload?.ok !== true || !Array.isArray(payload.items)) throw new Error('models payload invalid');
           const exact = payload.items.filter((item) => item.model_id === modelId && item.working_name === modelName);
-          if (exact.length !== 1) throw new Error(`expected one exact ${modelName} canonical model; found ${exact.length}`);
+          if (exact.length !== 1) throw new Error(`expected one exact ${modelName}; found ${exact.length}`);
           const model = exact[0];
           if (model.has_admin_preview !== true) throw new Error('Mek admin preview not enabled');
           const expected = `/v1/admin/kenji/models?preview_model_id=${encodeURIComponent(modelId)}`;
@@ -84,34 +88,25 @@ jobs:
           }
           process.stdout.write(model.admin_preview_url);
           NODE
-            )"
-            echo "[$origin] exact-model=ok preview-path=resolved"
+          )"
+          echo "www exact-model=ok preview-path=resolved"
 
-            preview_code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS \
-              -D "$preview_headers" \
-              -b "$cookie_jar" \
-              -o "$preview_body" \
-              -w "%{http_code}" \
-              "$origin$preview_path")"
-            echo "[$origin] preview=$preview_code bytes=$(wc -c < "$preview_body" | tr -d ' ')"
-            test "$preview_code" = "200"
-            test -s "$preview_body"
-            content_type="$(awk -F': *' 'tolower($1)=="content-type" {gsub(/\r/,"",$2); print tolower($2)}' "$preview_headers" | tail -n 1)"
-            cache_control="$(awk -F': *' 'tolower($1)=="cache-control" {gsub(/\r/,"",$2); print tolower($2)}' "$preview_headers" | tail -n 1)"
-            echo "[$origin] content-type=$content_type cache-control=$cache_control"
-            [[ "$content_type" == image/* ]]
-            [[ "$cache_control" == *private* ]]
-            [[ "$cache_control" == *no-store* ]]
+          preview_code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS \
+            -D "$preview_headers" -b "$cookie_jar" -o "$preview_body" -w "%{http_code}" \
+            "$ORIGIN$preview_path")"
+          content_type="$(grep -i '^content-type:' "$preview_headers" | tail -n 1 | sed -E 's/^[^:]+:[[:space:]]*//; s/\r$//' | tr '[:upper:]' '[:lower:]')"
+          cache_control="$(grep -i '^cache-control:' "$preview_headers" | tail -n 1 | sed -E 's/^[^:]+:[[:space:]]*//; s/\r$//' | tr '[:upper:]' '[:lower:]')"
+          echo "www preview=$preview_code bytes=$(wc -c < "$preview_body" | tr -d ' ') content-type=$content_type cache-control=$cache_control"
+          test "$preview_code" = "200"
+          test -s "$preview_body"
+          [[ "$content_type" == image/* ]]
+          [[ "$cache_control" == *private* ]]
+          [[ "$cache_control" == *no-store* ]]
 
-            unauth_code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS \
-              -o /dev/null \
-              -w "%{http_code}" \
-              "$origin$preview_path")"
-            echo "[$origin] unauth-preview=$unauth_code"
-            test "$unauth_code" = "401"
-
-            echo "Mek admin media preview verified on $origin"
-          done
+          unauth_code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS \
+            -o /dev/null -w "%{http_code}" "$ORIGIN$preview_path")"
+          echo "www unauth-preview=$unauth_code"
+          test "$unauth_code" = "401"
 
       - name: Verify Kenji admin CDN UI contains preview renderer
         shell: bash
