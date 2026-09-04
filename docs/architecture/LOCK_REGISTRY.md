@@ -1,8 +1,8 @@
 # MMD Lock Registry (Hard / Soft / Unlocked)
 
-**Date:** 2026-03-13 (Asia/Bangkok)  
+**Date:** 2026-09-04 (Asia/Bangkok)  
 **Owner / Approver:** Per  
-**Scope:** MMD Membership Dashboard + membership/points/add-on policy + updates widget + core system contracts
+**Scope:** MMD Membership Dashboard + membership/points/add-on policy + updates widget + core system contracts + internal admin auth
 
 This document defines what is **Hard Locked**, what is **Soft Locked**, and what is intentionally **Unlocked** so we can move fast without breaking core production contracts.
 
@@ -22,12 +22,12 @@ This document defines what is **Hard Locked**, what is **Soft Locked**, and what
 1) Open a PR that updates this file (`LOCK_REGISTRY.md`)  
 2) Add: reason, risk, migration plan, and affected endpoints/data  
 3) Per approves (explicit)  
-4) Announce in internal Telegram forum: **Membership thread (TG_THREAD_MEMBERSHIP=20)**
+4) Announce in internal Telegram forum: **Membership thread (TG_THREAD_MEMBERSHIP=20)** when the lock affects membership scope.
 
 ### Soft Lock change (fast iteration)
 1) Update this file with: what changed + why + date  
 2) Add a short “Migration note” if breaking UI/fields  
-3) Announce briefly in Membership thread (20)
+3) Announce briefly in Membership thread (20) when relevant.
 
 ### Unlocked area (no formal approval needed)
 - Keep documentation updated if it affects other workstreams.
@@ -118,16 +118,49 @@ These are core production contracts and security boundaries.
 5. **Payments/Webhook spec v2**
    - Verification, auth, audit trails, and idempotency rules stay stable.
 
-6. **Auth separation**
-   - `/login` uses Memberstack public app ID only; server secrets stay server-side only.
+6. **Auth separation — public/member vs internal admin**
+   - Public/member `/login` is **not** the MMD Control Room admin login authority. Existing public/member behavior on `/login` must remain separate and must not be repurposed for internal admin authentication.
+   - Production canonical internal admin login page: `GET /internal/admin/login`.
+   - Production canonical internal admin session issuer: `POST /internal/admin/login/session`.
+   - Default successful admin destination: `/internal/admin/control-room` unless a validated same-origin internal `next` path is provided.
+   - Every protected Control Room/internal-admin module must fail closed and redirect unauthenticated operators to `/internal/admin/login?next=<validated-original-internal-path>`.
+   - `/login` may exist inside a Lovable project only as a **preview/presentation alias**. On a live production origin it must hand off to `/internal/admin/login`; it must never become a second production admin auth namespace.
+   - Admin credentials, role, authorization and entitlement are server-authoritative. Do not store admin auth tokens, roles or entitlement decisions in browser storage.
+   - Server-issued secure cookie/session remains the production admin session mechanism.
 
 7. **Ledger integrity**
    - Do not “edit history” silently; any correction should be an auditable entry (adjust/expire) or logged override.
 
 ---
 
+## 2026-09-04 admin-auth migration note
+
+**Decision:** Per explicitly re-approved `/internal/admin/login` as the production canonical MMD Control Room login authority.
+
+**Reason:** Prevent the Lovable presentation alias `/login` from becoming a parallel internal-admin auth namespace and preserve the existing separation between public/member authentication and internal admin authentication.
+
+**Risk controlled:**
+- accidental reuse of public/member `/login` for admin auth
+- duplicate auth/session implementations
+- browser-owned role or entitlement state
+- inconsistent `next` redirects between Control Room modules
+
+**Migration plan:**
+1. Lovable Control Room modules use `/internal/admin/login?next=...` for live unauthenticated redirects.
+2. Lovable `/login` stays preview-only and redirects to canonical admin login on non-demo/live origins.
+3. GitHub/Cloudflare Workers remain the only production auth/session authority.
+4. Existing public/member `/login` behavior is untouched.
+
+**Affected internal admin contracts:**
+- `GET /internal/admin/login`
+- `POST /internal/admin/login/session`
+- `GET /v1/admin/auth/me`
+- `/internal/admin/control-room`
+- protected `/internal/admin/*` modules
+
+---
+
 ## Announcement procedure (required)
 Whenever a **Hard Lock** changes:
 - Update this file + add a migration note
-- Post a short announcement to internal Telegram forum: **Membership thread (20)**
-
+- Announce to the relevant internal operations channel/thread for the affected scope.
