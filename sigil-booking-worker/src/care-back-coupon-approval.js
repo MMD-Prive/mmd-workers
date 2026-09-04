@@ -51,9 +51,15 @@ export async function approveCareBackCouponForConfirmedBooking({
   const member = await resolveCanonicalMember(env, bookingFields);
   const claim = await resolveCareBackClaim(env, member.member_id);
   const model = await resolveCanonicalModel(env, bookingFields);
-  const modelLevel = detectCareBackModelLevel(model.fields || {});
+  const modelFields = model.fields || {};
+  const modelLevel = detectCareBackModelLevel(modelFields);
   if (!modelLevel) {
     throw new CareBackBookingContextError("CARE_BACK_MODEL_LEVEL_UNRESOLVED");
+  }
+
+  const modelEligibility = resolveModelJobEligibility(modelFields, jobFormat);
+  if (!modelEligibility.eligible) {
+    throw new CareBackBookingContextError("CARE_BACK_MODEL_JOB_FORMAT_NOT_ELIGIBLE");
   }
 
   let publicModelPercent = null;
@@ -82,6 +88,8 @@ export async function approveCareBackCouponForConfirmedBooking({
       member_blocked: false,
       booking_allowed: true,
       payment_verified: true,
+      model_job_eligible: true,
+      model_service_level: modelEligibility.service_level,
     },
   };
 
@@ -110,6 +118,7 @@ export async function approveCareBackCouponForConfirmedBooking({
     state: "approved",
     authority: clean(approved.authority) || "care_back_coupon_v2_2",
     model_level: clean(approved.model_level),
+    model_service_level: clean(approved.model_service_level) || modelEligibility.service_level,
     job_format: clean(approved.job_format),
     approved_discount_percent: percent,
     activated_at: safeTimestamp(approved.activated_at),
@@ -129,6 +138,29 @@ export function trustedPublicModelPercent(value) {
   return Number.isFinite(percent) && percent >= 3 && percent <= 5 ? percent : null;
 }
 
+export function normalizeModelServiceLevel(value) {
+  const level = clean(value).toLowerCase().replace(/[\s_-]+/g, " ");
+  if (["vip", "both", "pn vip", "vip pn"].includes(level)) return "VIP";
+  if (level === "pn") return "PN";
+  if (["none", "no", "not allowed", "not eligible"].includes(level)) return "none";
+  return "";
+}
+
+export function resolveModelJobEligibility(fields = {}, jobFormat) {
+  const format = normalizeTrustedJobFormat(jobFormat);
+  if (!format) return { eligible: false, service_level: "" };
+
+  const canonicalValue = clean(fields.private_service_level || fields["Private Service Level"]);
+  const serviceLevel = canonicalValue
+    ? normalizeModelServiceLevel(canonicalValue)
+    : normalizeModelServiceLevel(fields.private_work_format || fields["Private Work Format"]);
+
+  const eligible = serviceLevel === "VIP"
+    ? true
+    : serviceLevel === "PN" && format === "PN";
+  return { eligible, service_level: serviceLevel };
+}
+
 export function detectCareBackModelLevel(fields = {}) {
   const explicit = [
     fields.care_back_model_level,
@@ -139,6 +171,31 @@ export function detectCareBackModelLevel(fields = {}) {
   for (const value of explicit) {
     const level = normalizeModelLevel(value);
     if (level) return level;
+  }
+
+  const recognitionClass = clean(fields.recognition_class || fields["Recognition Class"]).toUpperCase();
+  if (recognitionClass === "GWS") return "GWs";
+  if (recognitionClass === "EMS") return "EMs";
+
+  const identityText = token([
+    fields.working_name,
+    fields.unique_key,
+    fields.model_key,
+    fields.model_record_id,
+    fields.folder_name,
+    fields.folder_scope_key,
+    fields.r2_prefix,
+  ].map(clean).filter(Boolean).join(" "));
+  if (/(^|_)gws\d*(_|$)/.test(identityText) || identityText.includes("_gws_")) return "GWs";
+  if (/(^|_)ems\d*(_|$)/.test(identityText) || identityText.includes("_ems_")) return "EMs";
+
+  const salesLayer = clean(fields.sales_layer || fields["Sales Layer"]).toLowerCase();
+  if (["public", "public only", "public models"].includes(salesLayer)) return "Public Models";
+
+  const modelClass = clean(fields.model_class || fields["Model Class"]);
+  if (modelClass) {
+    const canonicalClass = normalizeModelLevel(modelClass);
+    if (canonicalClass === "Premium" || canonicalClass === "Standard Models") return canonicalClass;
   }
 
   const text = token([
