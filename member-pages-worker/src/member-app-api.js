@@ -1,6 +1,14 @@
 import liffFoundation from "./liff-identity-foundation.js";
 
 const API_PREFIX = "/api/member/app/";
+const AIRTABLE_API = "https://api.airtable.com/v0";
+const LEGACY_STAGING_TABLE = "tbl1u0foFBvgFpT9G";
+const SESSION_COOKIE = "__Host-mmd_liff_session";
+const MEMBERSHIP_SIGNUP_URL = "/sigil/member/membership?source=line&intent=signup";
+const MEMBERSHIP_RENEW_URL = "/sigil/member/membership?source=line&intent=renew";
+const CARE_BACK_WISH_URL = "/promotion/6-years-care-back/wish";
+const CARE_BACK_CONTINUATION_END_AT = "2026-09-30T16:59:59.999Z";
+
 const ROUTES = new Set([
   `${API_PREFIX}dashboard`,
   `${API_PREFIX}profile`,
@@ -74,6 +82,12 @@ function normalizeStatus(value) {
   return "checking";
 }
 
+function normalizeLegacyStatus(value) {
+  const key = asString(value, 64).toLowerCase().replace(/[\s-]+/g, "_");
+  if (["member", "purchased", "review_required", "none"].includes(key)) return key;
+  return "unknown";
+}
+
 function responseFrom(upstream, data) {
   const headers = new Headers(upstream.headers);
   headers.delete("content-length");
@@ -98,6 +112,91 @@ async function readUpstream(request, env, delegate, pathname) {
     };
   }
   return { ok: true, upstream, payload };
+}
+
+function cookieValue(request, name) {
+  const raw = String(request.headers.get("cookie") || "");
+  for (const part of raw.split(";")) {
+    const index = part.indexOf("=");
+    if (index < 0) continue;
+    if (part.slice(0, index).trim() === name) return part.slice(index + 1).trim();
+  }
+  return "";
+}
+
+async function hmacHex(secret, value) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function readMemberAppSession(request, env = {}) {
+  const store = env.LIFF_IDENTITY_KV;
+  const secret = String(env.LIFF_SESSION_SECRET || "");
+  const token = cookieValue(request, SESSION_COOKIE);
+  if (!store?.get || secret.length < 32 || !token) return null;
+  try {
+    const hash = await hmacHex(secret, `session:${token}`);
+    const session = await store.get(`liff:session:${hash}`, "json");
+    if (!session || Number(session.expires_at || 0) <= Date.now()) return null;
+    const lineUserId = asString(session.line_user_id, 160);
+    if (!/^U[a-f0-9]{32}$/i.test(lineUserId)) return null;
+    return {
+      lineUserId,
+      memberExists: session.member_exists === true,
+      memberId: asString(session.member_id, 160) || null,
+      memberProfile: asObject(session.member_profile),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function formulaString(value) {
+  return `'${String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+}
+
+async function readLegacyDisplay(env = {}, lineUserId = "") {
+  const apiKey = String(env.AIRTABLE_API_KEY || "").trim();
+  const baseId = String(env.AIRTABLE_BASE_ID || "").trim();
+  const table = String(env.AIRTABLE_LINE_OFC_CLIENT_IMPORT_STAGING_TABLE_ID || LEGACY_STAGING_TABLE).trim();
+  if (!apiKey || !baseId || !table || !/^U[a-f0-9]{32}$/i.test(lineUserId)) return null;
+
+  const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
+  url.searchParams.set("filterByFormula", `{line_user_id}=${formulaString(lineUserId)}`);
+  url.searchParams.set("maxRecords", "2");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload || !Array.isArray(payload.records) || payload.records.length !== 1) return null;
+    const fields = asObject(payload.records[0]?.fields);
+    const level = normalizeLevel(fields.parsed_client_level || fields.parsed_membership_tier);
+    const membershipStatus = normalizeLegacyStatus(fields.parsed_membership_status);
+    const parseConfidence = asNumber(fields.parse_confidence);
+    if (level === "unknown" && membershipStatus === "unknown") return null;
+    return {
+      level,
+      membershipStatus,
+      parseConfidence,
+      source: "line_ofc_legacy_display_only",
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function identityFromProfile(profile) {
@@ -151,10 +250,79 @@ function membershipFromDashboard(data) {
     packageLabel: null,
     renewalDueAt: null,
     renewalState: "unknown",
-    // My MMD entitlement remains backend-only. The current dashboard contract
-    // does not expose a resolver authorization snapshot, so the browser must
-    // stay neutral instead of deriving access from tier or lifecycle.
     access: "checking",
+  };
+}
+
+function careBackOpen(now = new Date()) {
+  return now.getTime() <= Date.parse(CARE_BACK_CONTINUATION_END_AT);
+}
+
+function legacyIndicatesPriorMembership(legacy) {
+  if (!legacy) return false;
+  if (["member", "review_required"].includes(legacy.membershipStatus)) return true;
+  return !["unknown", "guest"].includes(legacy.level);
+}
+
+function nextActionFor(lifecycle) {
+  if (lifecycle === "new") {
+    return { kind: "signup", label: "สมัครสมาชิก", url: MEMBERSHIP_SIGNUP_URL };
+  }
+  if (lifecycle === "expired") {
+    return { kind: "renew", label: "ต่ออายุสมาชิก", url: MEMBERSHIP_RENEW_URL };
+  }
+  if (lifecycle === "active" && careBackOpen()) {
+    return { kind: "care_back_wish", label: "อวยพร MMD · รับ CARE BACK", url: CARE_BACK_WISH_URL };
+  }
+  if (lifecycle === "checking") {
+    return { kind: "checking", label: null, url: null };
+  }
+  return { kind: "none", label: null, url: null };
+}
+
+function enrichMembership(baseMembership, session, legacy) {
+  const membership = { ...baseMembership };
+  const canonicalLevel = membership.levelVerified === true && membership.level !== "unknown";
+  const expiry = asString(session?.memberProfile?.membership_expires_at, 40) || null;
+  let displayOnly = false;
+
+  if (!canonicalLevel && legacy && legacy.level !== "unknown") {
+    membership.level = legacy.level;
+    membership.levelVerified = false;
+    displayOnly = true;
+  }
+
+  let lifecycle = "checking";
+  if (session?.memberExists === false) {
+    lifecycle = legacyIndicatesPriorMembership(legacy) ? "checking" : "new";
+  } else if (["active", "grace"].includes(membership.status)) {
+    lifecycle = "active";
+  } else if (membership.status === "expired") {
+    lifecycle = "expired";
+  }
+
+  membership.lifecycle = lifecycle;
+  membership.expiresAt = expiry;
+  membership.renewalDueAt = expiry;
+  membership.displayOnly = displayOnly;
+  membership.displaySource = displayOnly ? legacy.source : null;
+  membership.legacyStatus = legacy?.membershipStatus && legacy.membershipStatus !== "unknown"
+    ? legacy.membershipStatus
+    : null;
+  membership.nextAction = nextActionFor(lifecycle);
+  return membership;
+}
+
+function legacyDisplayPayload(legacy) {
+  if (!legacy) return null;
+  return {
+    source: legacy.source,
+    level: legacy.level,
+    membershipStatus: legacy.membershipStatus,
+    parseConfidence: legacy.parseConfidence,
+    displayOnly: true,
+    grantsEntitlement: false,
+    grantsPoints: false,
   };
 }
 
@@ -239,10 +407,7 @@ function couponsFromWallet(payload) {
   const wallet = asObject(payload.data || payload.wallet || payload);
   const state = couponState(wallet.status || wallet.state || wallet.code_status);
   const code = asString(wallet.code || wallet.personal_code, 64);
-  // CARE BACK claim-store v3 emits discount_percent only as a compatibility
-  // alias of a matrix-validated approved_discount_percent. Prefer the explicit
-  // canonical field, and never fall back to benefit_value or card/tier copy.
-  const approved = asNumber(wallet.approved_discount_percent ?? wallet.discount_percent);
+  const approved = asNumber(wallet.approved_discount_percent);
   const hasSignal = Boolean(code || wallet.status || wallet.state || wallet.code_status || approved !== null);
   if (!hasSignal) return [];
   return [{
@@ -275,14 +440,31 @@ function careFromState(payload) {
   };
 }
 
+async function sessionAndLegacy(request, env, baseMembership) {
+  const session = await readMemberAppSession(request, env);
+  const needsLegacy = Boolean(session?.lineUserId)
+    && (session.memberExists === false || baseMembership.levelVerified !== true || baseMembership.status === "checking");
+  const legacy = needsLegacy ? await readLegacyDisplay(env, session.lineUserId) : null;
+  return { session, legacy };
+}
+
 async function adaptDashboard(request, env, delegate) {
+  const sessionSnapshot = await readMemberAppSession(request, env);
   const result = await readUpstream(request, env, delegate, "/api/member/dashboard");
   if (!result.ok) return result.response;
   const data = asObject(result.payload.data);
+  const baseMembership = membershipFromDashboard(data);
+  const needsLegacy = Boolean(sessionSnapshot?.lineUserId)
+    && (sessionSnapshot.memberExists === false || baseMembership.levelVerified !== true || baseMembership.status === "checking");
+  const legacy = needsLegacy ? await readLegacyDisplay(env, sessionSnapshot.lineUserId) : null;
+  const membership = enrichMembership(baseMembership, sessionSnapshot, legacy);
   return responseFrom(result.upstream, {
     greetingName: asString(asObject(data.member).display_name, 120) || null,
     identity: identityFromDashboard(data),
-    membership: membershipFromDashboard(data),
+    membership,
+    lifecycle: membership.lifecycle,
+    nextAction: membership.nextAction,
+    legacyDisplay: legacyDisplayPayload(legacy),
     points: pointsSummaryFromDashboard(data),
     couponHighlight: null,
   });
@@ -295,9 +477,14 @@ async function adaptProfile(request, env, delegate) {
 }
 
 async function adaptMembership(request, env, delegate) {
+  const sessionSnapshot = await readMemberAppSession(request, env);
   const result = await readUpstream(request, env, delegate, "/api/member/dashboard");
   if (!result.ok) return result.response;
-  return responseFrom(result.upstream, membershipFromDashboard(asObject(result.payload.data)));
+  const baseMembership = membershipFromDashboard(asObject(result.payload.data));
+  const needsLegacy = Boolean(sessionSnapshot?.lineUserId)
+    && (sessionSnapshot.memberExists === false || baseMembership.levelVerified !== true || baseMembership.status === "checking");
+  const legacy = needsLegacy ? await readLegacyDisplay(env, sessionSnapshot.lineUserId) : null;
+  return responseFrom(result.upstream, enrichMembership(baseMembership, sessionSnapshot, legacy));
 }
 
 async function adaptPoints(request, env, delegate) {
