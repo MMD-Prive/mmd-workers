@@ -12,3 +12,30 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/sigil/model/dashboard*"
 zone_name = "mmdbkk.com"
+
+# Compatibility aliases for TanStack/Lovable lazy runtime chunks that may
+# resolve to root-absolute paths after hydration. These paths are presentation
+# runtime only; /v1/model/* remains outside this worker.
+[[routes]]
+pattern = "mmdbkk.com/assets/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/assets/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/_build/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/_build/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/_serverFn/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/_serverFn/*"
+zone_name = "mmdbkk.com"

@@ -3,18 +3,23 @@ import assert from "node:assert/strict";
 import {
   isPresentationUiPath,
   isPresentationAssetPath,
+  isPresentationRootRuntimePath,
   presentationUrlForPage,
   presentationUrlForAsset,
   rewritePresentationHtml,
   rewritePresentationText,
 } from "./src/index.js";
 
-test("matches only Model Dashboard presentation namespace", () => {
+test("matches only Model Dashboard presentation namespace plus explicit runtime aliases", () => {
   assert.equal(isPresentationUiPath("/sigil/model/dashboard"), true);
   assert.equal(isPresentationUiPath("/sigil/model/dashboard/photos"), true);
   assert.equal(isPresentationUiPath("/sigil/model/console"), false);
   assert.equal(isPresentationAssetPath("/sigil/model/dashboard-assets/_build/app.js"), true);
-  assert.equal(isPresentationAssetPath("/v1/model/profile"), false);
+  assert.equal(isPresentationRootRuntimePath("/_build/app.js"), true);
+  assert.equal(isPresentationRootRuntimePath("/_serverFn/abc"), true);
+  assert.equal(isPresentationRootRuntimePath("/assets/routes-123.js"), true);
+  assert.equal(isPresentationRootRuntimePath("/v1/model/profile"), false);
+  assert.equal(isPresentationRootRuntimePath("/favicon.ico"), false);
 });
 
 test("maps canonical dashboard route to Lovable root and preserves LINE callback query", () => {
@@ -35,6 +40,14 @@ test("maps nested dashboard pages and runtime assets to Lovable", () => {
   assert.equal(
     presentationUrlForAsset(new Request("https://mmdbkk.com/sigil/model/dashboard-assets/_build/app.js?v=1")).toString(),
     "https://mmd-model-dashboard.lovable.app/_build/app.js?v=1",
+  );
+  assert.equal(
+    presentationUrlForAsset(new Request("https://mmdbkk.com/assets/routes-123.js?v=2")).toString(),
+    "https://mmd-model-dashboard.lovable.app/assets/routes-123.js?v=2",
+  );
+  assert.equal(
+    presentationUrlForAsset(new Request("https://www.mmdbkk.com/_build/app.js?v=3")).toString(),
+    "https://mmd-model-dashboard.lovable.app/_build/app.js?v=3",
   );
 });
 
