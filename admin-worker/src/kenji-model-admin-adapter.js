@@ -170,14 +170,20 @@ async function fetchAllRecords(env, table, fetchImpl) {
 
 export function projectKenjiAdminModelRecord(record = {}) {
   const fields = record.fields || {};
+  const modelId = clean(record.id, 80);
+  const hasAdminPreview = Boolean(clean(firstField(fields, ["primary_image_key"]), 500));
   return {
-    model_id: clean(record.id, 80),
+    model_id: modelId,
     model_key: clean(firstField(fields, ["unique_key", "model_code", "model_lookup_key"]), 80),
     working_name: clean(firstField(fields, ["working_name", "Working Name", "display_name", "Display Name", "name", "Name"]), 120),
     identity_tier: clean(firstField(fields, ["model_tier", "tier"]), 40),
     model_status: clean(firstField(fields, ["status", "model_status"]), 40),
     booking_visibility: clean(firstField(fields, ["approved_client_visibility", "visibility", "client_visibility_status"]), 40),
     folder_name: clean(firstField(fields, ["folder_name", "access_folder", "model_folder"]), 120),
+    has_admin_preview: hasAdminPreview,
+    admin_preview_url: hasAdminPreview && modelId
+      ? `${KENJI_MODEL_ADMIN_BASE_PATH}?preview_model_id=${encodeURIComponent(modelId)}`
+      : "",
     requires_per_approval: booleanValue(firstField(fields, ["requires_per_approval"])),
     private_review_status: clean(firstField(fields, ["visibility_review_status", "private_review_status"]), 60),
   };
@@ -235,6 +241,8 @@ function mergeIdentityAndProfile(identity = {}, profile = null) {
     booking_visibility: identity.booking_visibility || "",
     folder_name: profile?.folder_name || identity.folder_name || "",
     access_folder: profile?.folder_name || identity.folder_name || "",
+    has_admin_preview: Boolean(identity.has_admin_preview),
+    admin_preview_url: identity.admin_preview_url || "",
     allowed_customer_scope: profile?.allowed_customer_scope || [],
     photo_visibility_policy: profile?.photo_visibility_policy || "Per review",
     deposit_preview_gate: profile?.deposit_preview_gate || "Per approval",
@@ -261,8 +269,67 @@ function rankModel(model, query) {
   return 5;
 }
 
+function primaryImageContentType(key, object) {
+  const metadataType = clean(object?.httpMetadata?.contentType, 100).toLowerCase();
+  if (/^image\/(?:jpeg|png|webp|gif|avif)$/.test(metadataType)) return metadataType;
+  const lower = clean(key, 500).toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".avif")) return "image/avif";
+  return "";
+}
+
+async function streamAdminPrimaryMedia(request, env, fetchImpl) {
+  const url = new URL(request.url);
+  const modelId = clean(url.searchParams.get("preview_model_id"), 80);
+  if (!/^rec[A-Za-z0-9]{14,}$/.test(modelId)) {
+    return json({ ok: false, error: "invalid_preview_model_id" }, 400);
+  }
+  if (!env.MMD_MODEL_ASSETS || typeof env.MMD_MODEL_ASSETS.get !== "function") {
+    return json({ ok: false, error: "model_asset_store_unavailable" }, 503);
+  }
+
+  const config = airtableConfig(env);
+  const modelsResult = await fetchAllRecords(env, config.modelsTable, fetchImpl);
+  if (!modelsResult.ok) {
+    return json({ ok: false, error: "model_source_unavailable" }, 503);
+  }
+  const record = modelsResult.records.find((item) => clean(item?.id, 80) === modelId);
+  if (!record) return json({ ok: false, error: "model_not_found" }, 404);
+
+  const key = clean(firstField(record.fields || {}, ["primary_image_key"]), 500);
+  if (!key) return json({ ok: false, error: "primary_media_not_configured" }, 404);
+
+  let object;
+  try {
+    object = await env.MMD_MODEL_ASSETS.get(key);
+  } catch (_) {
+    return json({ ok: false, error: "model_asset_store_unavailable" }, 503);
+  }
+  if (!object) return json({ ok: false, error: "primary_media_not_found" }, 404);
+
+  const contentType = primaryImageContentType(key, object);
+  if (!contentType) return json({ ok: false, error: "primary_media_type_not_allowed" }, 415);
+
+  return new Response(object.body, {
+    status: 200,
+    headers: {
+      "Cache-Control": "no-store, private",
+      "Content-Type": contentType,
+      "Content-Disposition": "inline",
+      "X-Content-Type-Options": "nosniff",
+      "X-MMD-Media-Scope": "admin-only",
+    },
+  });
+}
+
 async function listModels(request, env, fetchImpl) {
   const url = new URL(request.url);
+  if (url.searchParams.get("preview_model_id")) {
+    return streamAdminPrimaryMedia(request, env, fetchImpl);
+  }
   const q = clean(url.searchParams.get("q"), 120).toLowerCase();
   const requestedLimit = Number(url.searchParams.get("limit") || 60);
   const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(120, Math.floor(requestedLimit))) : 60;
