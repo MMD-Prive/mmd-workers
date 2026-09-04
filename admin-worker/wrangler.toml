@@ -3,7 +3,7 @@
 # Production deploy request: Kenji Admin gated rollout 2026-09-02
 
 name = "admin-worker"
-main = "src/model-dashboard-policy-wrapper.js"
+main = "src/admin-login-hero-worker.js"
 compatibility_date = "2026-01-01"
 workers_dev = true
 
