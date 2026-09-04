@@ -111,12 +111,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for host in mmdbkk.com www.mmdbkk.com; do
+          for host in www.mmdbkk.com mmdbkk.com; do
             headers="$(mktemp)"
             body="$(mktemp)"
-            code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -D "$headers" -o "$body" -w "%{http_code}" \
+            code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sSL -D "$headers" -o "$body" -w "%{http_code}" \
               "https://${host}/member/my-mmd")"
-            echo "${host} /member/my-mmd -> ${code}"
+            echo "${host} /member/my-mmd final -> ${code}"
             test "$code" = "200"
             grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$headers"
             grep -qi '^x-mmd-ui-source: lovable-presentation-proxy' "$headers"
@@ -128,9 +128,9 @@ jobs:
 
             api_headers="$(mktemp)"
             api_body="$(mktemp)"
-            api_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS -D "$api_headers" -o "$api_body" -w "%{http_code}" \
+            api_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sSL -D "$api_headers" -o "$api_body" -w "%{http_code}" \
               -H 'accept: application/json' "https://${host}/api/member/app/dashboard")"
-            echo "${host} /api/member/app/dashboard -> ${api_code}"
+            echo "${host} /api/member/app/dashboard final -> ${api_code}"
             grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$api_headers"
             case "$api_code" in
               200|401|403) ;;
@@ -144,4 +144,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ My MMD CLOUDFLARE ROUTES LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- checked_at: \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\`\n- worker: \`member-dashboard-chat-worker\`\n- routes: \`/member/my-mmd*\`, \`/member/my-mmd-assets/*\`, \`/api/member/app/*\` on apex + www\n- UI smoke: \`x-mmd-route-owner=member-dashboard-chat-worker\` and \`x-mmd-ui-source=lovable-presentation-proxy\`\n- Webflow fallback copy absent from live My MMD response\n- API route ownership verified without creating or widening member authority"
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ My MMD CLOUDFLARE ROUTES LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- checked_at: \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\`\n- worker: \`member-dashboard-chat-worker\`\n- routes: \`/member/my-mmd*\`, \`/member/my-mmd-assets/*\`, \`/api/member/app/*\` on apex + www\n- UI smoke follows canonical host redirects and proves \`x-mmd-route-owner=member-dashboard-chat-worker\` plus \`x-mmd-ui-source=lovable-presentation-proxy\`\n- Webflow fallback copy absent from final My MMD response\n- API route ownership verified without creating or widening member authority"
