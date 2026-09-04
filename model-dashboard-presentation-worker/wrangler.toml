@@ -1,0 +1,14 @@
+name = "model-dashboard-presentation-worker"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+workers_dev = true
+
+# Canonical Model Dashboard presentation only. API authority remains on
+# admin-worker under /v1/model/*.
+[[routes]]
+pattern = "mmdbkk.com/sigil/model/dashboard*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/model/dashboard*"
+zone_name = "mmdbkk.com"
