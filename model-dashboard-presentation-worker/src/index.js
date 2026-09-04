@@ -1,6 +1,7 @@
 const WORKER_NAME = "model-dashboard-presentation-worker";
 const UI_PREFIX = "/sigil/model/dashboard";
 const ASSET_PREFIX = "/sigil/model/dashboard-assets/";
+const ROOT_RUNTIME_PREFIXES = ["/_build/", "/_serverFn/", "/assets/"];
 const PRESENTATION_ORIGIN = "https://mmd-model-dashboard.lovable.app";
 const UI_SOURCE = "lovable-presentation-proxy";
 const APP_MARKER = "lovable-model-dashboard";
@@ -18,6 +19,11 @@ export function isPresentationUiPath(pathname = "") {
 
 export function isPresentationAssetPath(pathname = "") {
   return normalizePath(pathname).startsWith(ASSET_PREFIX);
+}
+
+export function isPresentationRootRuntimePath(pathname = "") {
+  const path = normalizePath(pathname);
+  return ROOT_RUNTIME_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
 
 function presentationRequestHeaders(request, { runtime = false } = {}) {
@@ -45,9 +51,20 @@ export function presentationUrlForPage(request) {
 export function presentationUrlForAsset(request) {
   const source = new URL(request.url);
   const path = normalizePath(source.pathname);
-  const suffix = path.slice(ASSET_PREFIX.length);
   const upstream = new URL(PRESENTATION_ORIGIN);
-  upstream.pathname = suffix ? `/${suffix}` : "/";
+
+  if (isPresentationAssetPath(path)) {
+    const suffix = path.slice(ASSET_PREFIX.length);
+    upstream.pathname = suffix ? `/${suffix}` : "/";
+  } else if (isPresentationRootRuntimePath(path)) {
+    // Compatibility alias for TanStack/Lovable lazy runtime chunks that still
+    // resolve to root-absolute paths after hydration. Keeping these requests
+    // on the MMD host prevents apex -> www redirects from becoming CORS errors.
+    upstream.pathname = path;
+  } else {
+    upstream.pathname = path;
+  }
+
   upstream.search = source.search;
   return upstream;
 }
@@ -189,7 +206,7 @@ function unavailable() {
 export default {
   async fetch(request) {
     const path = normalizePath(new URL(request.url).pathname);
-    if (isPresentationAssetPath(path)) return proxyRuntime(request);
+    if (isPresentationAssetPath(path) || isPresentationRootRuntimePath(path)) return proxyRuntime(request);
     if (isPresentationUiPath(path)) return proxyPage(request);
     return new Response("Not Found", {
       status: 404,
