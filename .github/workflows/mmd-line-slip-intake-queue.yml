@@ -1,0 +1,86 @@
+name: LINE Slip Queue Intake
+
+on:
+  pull_request:
+    paths:
+      - "line-slip-intake-worker/**"
+      - "member-dashboard-chat-worker/src/front-gate-slip-queue-shell.js"
+      - "member-dashboard-chat-worker/test/line-slip-queue-shell.test.mjs"
+      - "member-dashboard-chat-worker/wrangler.toml"
+      - "docs/architecture/LINE_OFC_SLIP_QUEUE_BACKED_INTAKE_V1.md"
+      - "package.json"
+      - ".github/workflows/mmd-line-slip-intake-queue.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: line-slip-queue-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Queue intake staging gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check Queue intake JavaScript
+        run: |
+          node --check line-slip-intake-worker/src/index.js
+          node --check member-dashboard-chat-worker/src/front-gate-slip-queue-shell.js
+
+      - name: Run focused Queue intake tests
+        run: npm run test:line-slip-intake
+
+      - name: Lock production-off and staging-only producer boundary
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const front = fs.readFileSync("member-dashboard-chat-worker/wrangler.toml", "utf8");
+          const intake = fs.readFileSync("line-slip-intake-worker/wrangler.toml", "utf8");
+
+          if (!/^main\s*=\s*"src\/front-gate-slip-queue-shell\.js"/m.test(front)) throw new Error("Queue wrapper must be active entrypoint");
+          if (!/\[vars\][\s\S]*?LINE_SLIP_QUEUE_ENABLED\s*=\s*"false"/.test(front)) throw new Error("Production Queue switch must stay false");
+          if (/^\[\[queues\.producers\]\]/m.test(front)) throw new Error("Production Queue binding is forbidden in V1");
+          if (!/\[\[env\.staging\.queues\.producers\]\][\s\S]*?binding\s*=\s*"LINE_SLIP_INTAKE_QUEUE"[\s\S]*?queue\s*=\s*"mmd-line-slip-intake-staging"/.test(front)) throw new Error("Staging Queue producer binding missing");
+          if (!/\[env\.staging\.vars\][\s\S]*?LINE_SLIP_QUEUE_ENABLED\s*=\s*"true"/.test(front)) throw new Error("Staging Queue switch must be true");
+
+          if (!/^name\s*=\s*"mmd-line-slip-intake-staging"/m.test(intake)) throw new Error("Staging intake worker name required");
+          if (!/^workers_dev\s*=\s*true/m.test(intake)) throw new Error("Staging worker must use workers.dev");
+          if (!/^preview_urls\s*=\s*false/m.test(intake)) throw new Error("Preview URLs must stay disabled");
+          if (!/^routes\s*=\s*\[\]/m.test(intake)) throw new Error("Custom routes are forbidden");
+          if (!/MMD_RUNTIME_SCOPE\s*=\s*"staging"/.test(intake)) throw new Error("Staging runtime scope required");
+          if (!/\[\[queues\.consumers\]\][\s\S]*?queue\s*=\s*"mmd-line-slip-intake-staging"/.test(intake)) throw new Error("Queue consumer missing");
+          if (!/dead_letter_queue\s*=\s*"mmd-line-slip-intake-staging-dlq"/.test(intake)) throw new Error("Staging DLQ missing");
+          if (!/bucket_name\s*=\s*"mmd-line-slip-evidence-staging"/.test(intake)) throw new Error("Private staging R2 binding missing");
+          if (!/service\s*=\s*"mmd-slip-extractor-staging"/.test(intake)) throw new Error("Staging extractor binding missing");
+          NODE
+
+      - name: Wrangler dry-run Queue consumer
+        run: npx --yes wrangler@4.124.0 deploy --dry-run --config line-slip-intake-worker/wrangler.toml
+
+      - name: Wrangler dry-run LINE staging producer
+        run: npx --yes wrangler@4.124.0 deploy --dry-run --config member-dashboard-chat-worker/wrangler.toml --env staging
+
+      - name: Record gate
+        run: |
+          {
+            echo "### LINE Slip Queue staging gate"
+            echo "- focused tests: PASS"
+            echo "- production Queue switch: OFF"
+            echo "- production Queue binding: ABSENT"
+            echo "- staging Queue/R2/extractor/HYPE bindings: configured"
+            echo "- Wrangler dry-runs: PASS"
+            echo "- deployment: NOT PERFORMED"
+          } >> "$GITHUB_STEP_SUMMARY"
