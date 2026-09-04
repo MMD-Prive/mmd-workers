@@ -1,0 +1,107 @@
+name: Fix Kenji model query route
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fix-kenji-model-query-route.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
+      CLOUDFLARE_ZONE_ID: 2d62396174fa2ddadbbcd0e8cf0f3367
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Patch query-safe route source
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'admin-worker/wrangler.toml';
+          let text = fs.readFileSync(path, 'utf8');
+          if (!text.includes('mmdbkk.com/v1/admin/kenji/models*')) {
+            const needle = `# Kenji Models tab adapter. Exact routes only. Reads the canonical Models table\n# through admin-worker and writes drafts to the existing Model Review Requests table.\n[[routes]]\npattern = "mmdbkk.com/v1/admin/kenji/models"\nzone_name = "mmdbkk.com"\n\n[[routes]]\npattern = "www.mmdbkk.com/v1/admin/kenji/models"\nzone_name = "mmdbkk.com"\n`;
+            const replacement = `# Kenji Models tab adapter. Keep exact routes plus query-safe companions because\n# Cloudflare route matching includes the query string. Runtime pathname matching stays exact.\n[[routes]]\npattern = "mmdbkk.com/v1/admin/kenji/models"\nzone_name = "mmdbkk.com"\n\n[[routes]]\npattern = "www.mmdbkk.com/v1/admin/kenji/models"\nzone_name = "mmdbkk.com"\n\n[[routes]]\npattern = "mmdbkk.com/v1/admin/kenji/models*"\nzone_name = "mmdbkk.com"\n\n[[routes]]\npattern = "www.mmdbkk.com/v1/admin/kenji/models*"\nzone_name = "mmdbkk.com"\n`;
+            if (!text.includes(needle)) throw new Error('Kenji models route block not found');
+            text = text.replace(needle, replacement);
+            fs.writeFileSync(path, text);
+          }
+          NODE
+          grep -F 'pattern = "mmdbkk.com/v1/admin/kenji/models*"' admin-worker/wrangler.toml
+          grep -F 'pattern = "www.mmdbkk.com/v1/admin/kenji/models*"' admin-worker/wrangler.toml
+          git diff --check
+
+      - name: Commit route source fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- admin-worker/wrangler.toml; then
+            echo "wrangler route source already query-safe"
+            exit 0
+          fi
+          git config user.name "MMD Route Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add admin-worker/wrangler.toml
+          git commit -m "fix: make Kenji models route query-safe"
+          git push origin HEAD:main
+
+      - name: Apply and verify Cloudflare wildcard routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_ROUTES_API_TOKEN:-}"
+          echo "::add-mask::$CLOUDFLARE_ROUTES_API_TOKEN"
+          node <<'NODE'
+          const zoneId = process.env.CLOUDFLARE_ZONE_ID;
+          const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
+          const desired = [
+            'mmdbkk.com/v1/admin/kenji/models*',
+            'www.mmdbkk.com/v1/admin/kenji/models*',
+          ];
+          const endpoint = `https://api.cloudflare.com/client/v4/zones/${zoneId}/workers/routes`;
+          async function call(options = {}) {
+            const response = await fetch(endpoint, {
+              ...options,
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            });
+            const payload = await response.json();
+            if (!response.ok || payload.success !== true) throw new Error(`Cloudflare routes API failed: ${response.status}`);
+            return payload.result;
+          }
+          const before = await call();
+          for (const pattern of desired) {
+            const conflicts = before.filter((r) => r.pattern === pattern && r.script !== 'admin-worker');
+            if (conflicts.length) throw new Error(`${pattern} is owned by another worker`);
+            if (!before.some((r) => r.pattern === pattern && r.script === 'admin-worker')) {
+              await call({ method: 'POST', body: JSON.stringify({ pattern, script: 'admin-worker' }) });
+              console.log(`Created ${pattern} -> admin-worker`);
+            }
+          }
+          const after = await call();
+          for (const pattern of desired) {
+            if (!after.some((r) => r.pattern === pattern && r.script === 'admin-worker')) throw new Error(`Missing ${pattern}`);
+            console.log(`Verified ${pattern} -> admin-worker`);
+          }
+          NODE
+
+      - name: Verify query request reaches admin-worker auth gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
+            'https://www.mmdbkk.com/v1/admin/kenji/models?q=Mek&limit=20')"
+          echo "www query route status=$code"
+          test "$code" = "401"
+          grep -q '"error":"unauthorized"' "$body"
