@@ -69,10 +69,13 @@ jobs:
           assert(source.includes("source === \"synthetic_isolated\""), "synthetic-only gate missing");
           NODE
 
-      - name: Generate ephemeral staging bearer tokens
+      - name: Prepare ephemeral staging credentials
         shell: bash
         run: |
           set -euo pipefail
+          npm ci --prefix services/mmd-slip-extractor
+          npm ci --prefix services/mmd-slip-extractor/cloudflare
+          node --experimental-global-webcrypto --test services/mmd-line-slip-intake/cloudflare/test/*.test.mjs
           node <<'NODE'
           const fs = require("node:fs");
           const crypto = require("node:crypto");
@@ -81,84 +84,47 @@ jobs:
           const airtable = clean(process.env.AIRTABLE_API_KEY);
           if (!cf) throw new Error("Cloudflare staging credential missing");
           if (!airtable) throw new Error("Airtable staging credential missing");
-          console.log(`::add-mask::${cf}`);
-          console.log(`::add-mask::${airtable}`);
           const extractorToken = crypto.randomBytes(32).toString("base64url");
           const intakeToken = crypto.randomBytes(32).toString("base64url");
-          console.log(`::add-mask::${extractorToken}`);
-          console.log(`::add-mask::${intakeToken}`);
+          for (const value of [cf, airtable, extractorToken, intakeToken]) console.log(`::add-mask::${value}`);
           fs.appendFileSync(process.env.GITHUB_ENV, `MMD_SLIP_EXTRACTOR_TOKEN=${extractorToken}\nMMD_SLIP_INTAKE_STAGING_TOKEN=${intakeToken}\n`);
           fs.writeFileSync(process.env.RUNNER_TEMP + "/extractor.env", `MMD_SLIP_EXTRACTOR_TOKEN=${extractorToken}\n`, { mode: 0o600 });
-          fs.writeFileSync(
-            process.env.RUNNER_TEMP + "/intake.env",
-            [
-              `MMD_SLIP_INTAKE_STAGING_TOKEN=${intakeToken}`,
-              `MMD_SLIP_EXTRACTOR_TOKEN=${extractorToken}`,
-              `AIRTABLE_API_KEY=${airtable}`,
-              "",
-            ].join("\n"),
-            { mode: 0o600 },
-          );
+          fs.writeFileSync(process.env.RUNNER_TEMP + "/intake.env", [
+            `MMD_SLIP_INTAKE_STAGING_TOKEN=${intakeToken}`,
+            `MMD_SLIP_EXTRACTOR_TOKEN=${extractorToken}`,
+            `AIRTABLE_API_KEY=${airtable}`,
+            "",
+          ].join("\n"), { mode: 0o600 });
           NODE
 
-      - name: Verify Cloudflare account
+      - name: Redeploy isolated staging workers with fresh bearers
         shell: bash
         run: |
           set -euo pipefail
           npx --yes wrangler@4.128.0 whoami
-
-      - name: Install fixture dependency and run staging unit tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          npm ci --prefix services/mmd-slip-extractor
-          npm ci --prefix services/mmd-slip-extractor/cloudflare
-          node --test services/mmd-slip-extractor/test/*.test.mjs
-          node --test services/mmd-slip-extractor/cloudflare/test/*.test.mjs
-          node --experimental-global-webcrypto --test services/mmd-line-slip-intake/cloudflare/test/*.test.mjs
-
-      - name: Redeploy isolated staging extractor with fresh bearer
-        shell: bash
-        run: |
-          set -euo pipefail
-          npx --yes wrangler@4.128.0 deploy \
-            --config services/mmd-slip-extractor/cloudflare/wrangler.jsonc \
-            --keep-vars \
-            --secrets-file "$RUNNER_TEMP/extractor.env"
-
-      - name: Redeploy Queue-backed staging intake with fresh bearer
-        shell: bash
-        run: |
-          set -euo pipefail
-          npx --yes wrangler@4.128.0 deploy \
-            --config services/mmd-line-slip-intake/cloudflare/wrangler.jsonc \
-            --keep-vars \
-            --secrets-file "$RUNNER_TEMP/intake.env"
+          npx --yes wrangler@4.128.0 deploy --config services/mmd-slip-extractor/cloudflare/wrangler.jsonc --keep-vars --secrets-file "$RUNNER_TEMP/extractor.env"
+          npx --yes wrangler@4.128.0 deploy --config services/mmd-line-slip-intake/cloudflare/wrangler.jsonc --keep-vars --secrets-file "$RUNNER_TEMP/intake.env"
 
       - name: Wait for staging health
         shell: bash
         run: |
           set -euo pipefail
+          ready=0
           for attempt in $(seq 1 36); do
             extractor_code="$(curl --silent --show-error --output "$RUNNER_TEMP/extractor-health.json" --write-out '%{http_code}' "$EXTRACTOR_URL/health" || true)"
             intake_code="$(curl --silent --show-error --output "$RUNNER_TEMP/intake-health.json" --write-out '%{http_code}' "$INTAKE_URL/health" || true)"
             if [ "$extractor_code" = "200" ] && [ "$intake_code" = "200" ]; then
-              node <<'NODE'
-              const fs = require("node:fs");
-              const extractor = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/extractor-health.json", "utf8"));
-              const intake = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/intake-health.json", "utf8"));
-              if (extractor.ok !== true) process.exit(1);
-              if (intake.ok !== true || intake.worker !== "mmd-line-slip-intake-staging" || intake.runtime_scope !== "staging") process.exit(1);
-              NODE
-              echo "Staging extractor and intake healthy"
-              exit 0
+              if node -e 'const fs=require("node:fs"); const e=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+"/extractor-health.json","utf8")); const i=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+"/intake-health.json","utf8")); if(e.ok!==true||i.ok!==true||i.worker!=="mmd-line-slip-intake-staging"||i.runtime_scope!=="staging") process.exit(1)'; then
+                ready=1
+                break
+              fi
             fi
             sleep 5
           done
-          echo "Staging health timeout" >&2
-          exit 1
+          test "$ready" = "1"
+          echo "Staging extractor and intake healthy"
 
-      - name: Create unique synthetic redacted fixture
+      - name: Create unique synthetic fixture
         shell: bash
         working-directory: services/mmd-slip-extractor
         run: |
@@ -174,31 +140,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          code="$(curl --silent --show-error --output "$RUNNER_TEMP/unauth.json" --write-out '%{http_code}' \
-            -X POST -H 'Content-Type: image/png' --data-binary "@$RUNNER_TEMP/synthetic-slip.png" "$INTAKE_URL/v1/staging/intake" || true)"
+          code="$(curl --silent --show-error --output "$RUNNER_TEMP/unauth.json" --write-out '%{http_code}' -X POST -H 'Content-Type: image/png' --data-binary "@$RUNNER_TEMP/synthetic-slip.png" "$INTAKE_URL/v1/staging/intake" || true)"
           test "$code" = "401"
-          node -e 'const fs=require("node:fs"); const b=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); if (b.error!=="unauthorized") process.exit(1)' "$RUNNER_TEMP/unauth.json"
-          echo "Unauthenticated staging intake fails closed"
+          node -e 'const fs=require("node:fs"); const b=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); if(b.error!=="unauthorized") process.exit(1)' "$RUNNER_TEMP/unauth.json"
 
-      - name: Authorized synthetic intake with deploy-propagation retry
+      - name: Authorized synthetic intake
         shell: bash
         run: |
           set -euo pipefail
-          run_id="gha-accept-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           accepted=0
+          run_id="gha-accept-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           for attempt in $(seq 1 12); do
-            code="$(curl --silent --show-error --output "$RUNNER_TEMP/intake.json" --write-out '%{http_code}' \
-              -X POST \
-              -H "Authorization: Bearer ${MMD_SLIP_INTAKE_STAGING_TOKEN}" \
-              -H 'Content-Type: image/png' \
-              -H "x-mmd-run-id: ${run_id}" \
-              --data-binary "@$RUNNER_TEMP/synthetic-slip.png" \
-              "$INTAKE_URL/v1/staging/intake" || true)"
-            if [ "$code" = "202" ]; then
-              accepted=1
-              break
-            fi
-            safe_error="$(node -e 'const fs=require("node:fs"); try { const b=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(String(b.error||"non_json_error").slice(0,120)); } catch { process.stdout.write("non_json_error"); }' "$RUNNER_TEMP/intake.json")"
+            code="$(curl --silent --show-error --output "$RUNNER_TEMP/intake.json" --write-out '%{http_code}' -X POST -H "Authorization: Bearer ${MMD_SLIP_INTAKE_STAGING_TOKEN}" -H 'Content-Type: image/png' -H "x-mmd-run-id: ${run_id}" --data-binary "@$RUNNER_TEMP/synthetic-slip.png" "$INTAKE_URL/v1/staging/intake" || true)"
+            if [ "$code" = "202" ]; then accepted=1; break; fi
+            safe_error="$(node -e 'const fs=require("node:fs"); try{const b=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(String(b.error||"non_json_error").slice(0,120));}catch{process.stdout.write("non_json_error");}' "$RUNNER_TEMP/intake.json")"
             echo "Authorized intake attempt ${attempt}: HTTP ${code} / ${safe_error}"
             sleep 5
           done
@@ -220,15 +175,12 @@ jobs:
           node <<'NODE'
           const fs = require("node:fs");
           const proofId = fs.readFileSync(process.env.RUNNER_TEMP + "/proof-id.txt", "utf8").trim();
-          const base = process.env.AIRTABLE_BASE_ID;
-          const table = process.env.AIRTABLE_STAGING_TABLE_ID;
-          const token = process.env.AIRTABLE_API_KEY;
           const formula = `{proof_id}='${proofId.replace(/'/g, "\\'")}'`;
-          const url = `https://api.airtable.com/v0/${base}/${table}?maxRecords=10&filterByFormula=${encodeURIComponent(formula)}`;
+          const url = `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_STAGING_TABLE_ID}?maxRecords=10&filterByFormula=${encodeURIComponent(formula)}`;
           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
           let records = [];
           for (let attempt = 1; attempt <= 40; attempt += 1) {
-            const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+            const response = await fetch(url, { headers: { Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}` } });
             if (!response.ok) throw new Error(`Airtable proof read HTTP ${response.status}`);
             const payload = await response.json();
             records = Array.isArray(payload.records) ? payload.records : [];
@@ -240,7 +192,7 @@ jobs:
           const fields = records[0].fields || {};
           if (fields.status !== "pending") throw new Error(`unexpected proof status: ${fields.status}`);
           if (fields.source !== "synthetic_isolated") throw new Error(`unexpected proof source: ${fields.source}`);
-          if (!String(fields.note || "").includes("extraction_")) throw new Error("extraction result metadata missing");
+          if (!String(fields.note || "").includes("extraction_")) throw new Error("extraction metadata missing");
           fs.writeFileSync(process.env.RUNNER_TEMP + "/proof-record.json", JSON.stringify({ proof_id: proofId }));
           console.log(`Queue -> extractor -> Airtable pending PASS: ${proofId}`);
           NODE
@@ -249,24 +201,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          code="$(curl --silent --show-error --output "$RUNNER_TEMP/replay.json" --write-out '%{http_code}' \
-            -X POST \
-            -H "Authorization: Bearer ${MMD_SLIP_INTAKE_STAGING_TOKEN}" \
-            -H 'Content-Type: image/png' \
-            -H "x-mmd-run-id: replay-${GITHUB_RUN_ID}" \
-            --data-binary "@$RUNNER_TEMP/synthetic-slip.png" \
-            "$INTAKE_URL/v1/staging/intake" || true)"
+          code="$(curl --silent --show-error --output "$RUNNER_TEMP/replay.json" --write-out '%{http_code}' -X POST -H "Authorization: Bearer ${MMD_SLIP_INTAKE_STAGING_TOKEN}" -H 'Content-Type: image/png' -H "x-mmd-run-id: replay-${GITHUB_RUN_ID}" --data-binary "@$RUNNER_TEMP/synthetic-slip.png" "$INTAKE_URL/v1/staging/intake" || true)"
           test "$code" = "202"
           sleep 10
           node <<'NODE'
           const fs = require("node:fs");
           const proofId = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/proof-record.json", "utf8")).proof_id;
-          const base = process.env.AIRTABLE_BASE_ID;
-          const table = process.env.AIRTABLE_STAGING_TABLE_ID;
-          const token = process.env.AIRTABLE_API_KEY;
           const formula = `{proof_id}='${proofId.replace(/'/g, "\\'")}'`;
-          const url = `https://api.airtable.com/v0/${base}/${table}?maxRecords=10&filterByFormula=${encodeURIComponent(formula)}`;
-          const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+          const url = `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_STAGING_TABLE_ID}?maxRecords=10&filterByFormula=${encodeURIComponent(formula)}`;
+          const response = await fetch(url, { headers: { Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}` } });
           if (!response.ok) throw new Error(`Airtable replay read HTTP ${response.status}`);
           const payload = await response.json();
           const records = Array.isArray(payload.records) ? payload.records : [];
@@ -286,7 +229,7 @@ jobs:
           proof_id=""
           if [ -f "$RUNNER_TEMP/proof-id.txt" ]; then proof_id="$(cat "$RUNNER_TEMP/proof-id.txt")"; fi
           if [ "${{ job.status }}" = "success" ]; then
-            gh issue comment 317 --repo "$GITHUB_REPOSITORY" --body "✅ Staging acceptance item PASS: authorized synthetic → R2/Queue → extractor → Airtable \`pending / synthetic_isolated\` + replay idempotency.\n\n- source_sha: \`${GITHUB_SHA}\`\n- workflow_run_id: \`${GITHUB_RUN_ID}\`\n- proof_id: \`${proof_id}\`\n- production LINE route mutation: NONE\n- real-LINE production: NOT TOUCHED\n- HYPE redacted alert: still a separate gate; not claimed by this workflow."
+            gh issue comment 317 --repo "$GITHUB_REPOSITORY" --body "✅ Staging acceptance PASS: authorized synthetic → R2/Queue → extractor → Airtable \`pending / synthetic_isolated\` + replay idempotency.\n\n- source_sha: \`${GITHUB_SHA}\`\n- workflow_run_id: \`${GITHUB_RUN_ID}\`\n- proof_id: \`${proof_id}\`\n- production LINE route mutation: NONE\n- real-LINE production: NOT TOUCHED\n- HYPE redacted alert: separate gate; not claimed here."
           else
             gh issue comment 317 --repo "$GITHUB_REPOSITORY" --body "❌ Staging authorized synthetic acceptance smoke failed.\n\n- source_sha: \`${GITHUB_SHA}\`\n- workflow_run_id: \`${GITHUB_RUN_ID}\`\n- production LINE route mutation: NONE\n- real-LINE production: NOT TOUCHED\n\nInspect the failed step; do not promote."
           fi
