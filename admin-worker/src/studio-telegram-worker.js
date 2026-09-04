@@ -14,6 +14,10 @@ import {
   handleModelGpsVisibilityRequest,
   isModelGpsVisibilityRequest,
 } from "./model-gps-visibility.js";
+import {
+  handleModelLocationRequest,
+  isModelLocationRequest,
+} from "./model-location-runtime.js";
 
 const STUDIO_API_PREFIX = "/studio/api";
 const COMMIT_PATHS = new Set([
@@ -28,6 +32,13 @@ export default {
     const url = new URL(request.url);
     const path = normalizePathname(url.pathname);
     const method = request.method.toUpperCase();
+
+    // GPS location collection is a separate, fail-closed channel. The capability
+    // endpoint never requests device location; ingest is disabled by default and
+    // can only write one short-lived point while permission + Active Job are true.
+    if (isModelLocationRequest(path)) {
+      return handleModelLocationRequest(request, env, ctx);
+    }
 
     // Model Dashboard GPS Visibility is a permission preference only. It never
     // accepts or stores coordinates and does not request device location access.

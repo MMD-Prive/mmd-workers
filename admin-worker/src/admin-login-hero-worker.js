@@ -12,6 +12,7 @@ import {
 import { handleKenjiKnowledgeRequest, isKenjiKnowledgeRequest } from "./kenji-knowledge-runtime.js";
 export { KenjiKnowledgeCoordinator } from "./kenji-knowledge-airtable-adapter.js";
 export { ModelActivationCoordinator } from "./model-first-time-activation.js";
+export { ModelLocationCoordinator } from "./model-location-runtime.js";
 import { handleKenjiPublicKnowledgeRequest, isKenjiPublicKnowledgeRequest } from "./kenji-public-knowledge-runtime.js";
 import { handleMmsAdminRequest, isMmsAdminRequest } from "./mms-admin-runtime.js";
 import {
