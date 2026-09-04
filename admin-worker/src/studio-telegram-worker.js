@@ -10,6 +10,10 @@ import {
   activateModelLine,
   issueModelActivation,
 } from "./model-first-time-activation.js";
+import {
+  handleModelGpsVisibilityRequest,
+  isModelGpsVisibilityRequest,
+} from "./model-gps-visibility.js";
 
 const STUDIO_API_PREFIX = "/studio/api";
 const COMMIT_PATHS = new Set([
@@ -24,6 +28,12 @@ export default {
     const url = new URL(request.url);
     const path = normalizePathname(url.pathname);
     const method = request.method.toUpperCase();
+
+    // Model Dashboard GPS Visibility is a permission preference only. It never
+    // accepts or stores coordinates and does not request device location access.
+    if (isModelGpsVisibilityRequest(path)) {
+      return handleModelGpsVisibilityRequest(request, env);
+    }
 
     // Public first-time activation verifies its own signed invite + LINE ID token.
     // The admin issuer reaches this composed worker only after admin-login-hero-worker
