@@ -108,9 +108,14 @@ function rewriteMyMmdJavascript(source) {
     .replace(/(["'`])assets\//g, `$1member/my-mmd-assets/`);
 }
 
-function presentationResponseHeaders(upstreamHeaders, { html = false } = {}) {
+function presentationResponseHeaders(upstreamHeaders, { html = false, rewritten = false } = {}) {
   const headers = new Headers(upstreamHeaders);
   for (const name of ["content-length", "set-cookie", "reporting-endpoints", "report-to", "nel"]) headers.delete(name);
+  if (rewritten) {
+    // The proxy changes HTML/JS bytes. Upstream representation metadata no
+    // longer describes the emitted body and must not survive the rewrite.
+    for (const name of ["content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(name);
+  }
   headers.set("x-mmd-worker", WORKER_NAME);
   headers.set("x-mmd-route-owner", WORKER_NAME);
   headers.set("x-mmd-ui-source", "lovable-presentation-proxy");
@@ -150,7 +155,10 @@ async function proxyMyMmdPresentation(request, { asset = false } = {}) {
   const contentType = String(upstream.headers.get("content-type") || "").toLowerCase();
   const isHtml = !asset && contentType.includes("text/html");
   const isJavascript = asset && (contentType.includes("javascript") || upstreamUrl.pathname.endsWith(".js"));
-  const headers = presentationResponseHeaders(upstream.headers, { html: isHtml });
+  const headers = presentationResponseHeaders(upstream.headers, {
+    html: isHtml,
+    rewritten: isHtml || isJavascript,
+  });
 
   if (request.method === "HEAD") {
     return new Response(null, { status: upstream.status, statusText: upstream.statusText, headers });
