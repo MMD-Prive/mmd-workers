@@ -127,6 +127,12 @@ jobs:
           const desired = [
             "mmdbkk.com/sigil/model/dashboard*",
             "www.mmdbkk.com/sigil/model/dashboard*",
+            "mmdbkk.com/assets/*",
+            "www.mmdbkk.com/assets/*",
+            "mmdbkk.com/_build/*",
+            "www.mmdbkk.com/_build/*",
+            "mmdbkk.com/_serverFn/*",
+            "www.mmdbkk.com/_serverFn/*",
           ];
 
           async function cf(path, options = {}) {
@@ -200,6 +206,18 @@ jobs:
             if [ -n "$asset" ]; then
               asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /dev/null -w "%{http_code}" "$origin$asset")"
               test "$asset_code" = "200"
+
+              root_asset="/${asset#/sigil/model/dashboard-assets/}"
+              root_headers="$(mktemp)"
+              root_asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+                -D "$root_headers" -o /dev/null -w "%{http_code}" "$origin$root_asset")"
+              cat "$root_headers"
+              test "$root_asset_code" = "200"
+              tr -d '\r' < "$root_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+              if tr -d '\r' < "$root_headers" | grep -i -q '^location:'; then
+                echo "Root runtime alias redirected instead of staying same-origin: $origin$root_asset" >&2
+                exit 1
+              fi
             fi
 
             api_body="$(mktemp)"
