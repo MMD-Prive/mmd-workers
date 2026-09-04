@@ -205,7 +205,7 @@ async function notifyOps(env, job, extraction) {
     extraction.payment_ref ? `Ref: ${maskedRef(extraction.payment_ref)}` : "",
     "Status: pending",
   ].filter(Boolean);
-  const response = await env.TELEGRAM_WORKER.fetch(new Request("https://telegram-worker/v1/internal/send", {
+  const response = await env.TELEGRAM_WORKER.fetch(new Request("https://telegram-worker/telegram/internal/send", {
     method: "POST",
     headers: {
       authorization: `Bearer ${token}`,
