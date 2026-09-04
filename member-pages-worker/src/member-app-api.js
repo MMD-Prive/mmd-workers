@@ -239,7 +239,10 @@ function couponsFromWallet(payload) {
   const wallet = asObject(payload.data || payload.wallet || payload);
   const state = couponState(wallet.status || wallet.state || wallet.code_status);
   const code = asString(wallet.code || wallet.personal_code, 64);
-  const approved = asNumber(wallet.approved_discount_percent);
+  // CARE BACK claim-store v3 emits discount_percent only as a compatibility
+  // alias of a matrix-validated approved_discount_percent. Prefer the explicit
+  // canonical field, and never fall back to benefit_value or card/tier copy.
+  const approved = asNumber(wallet.approved_discount_percent ?? wallet.discount_percent);
   const hasSignal = Boolean(code || wallet.status || wallet.state || wallet.code_status || approved !== null);
   if (!hasSignal) return [];
   return [{
@@ -247,8 +250,6 @@ function couponsFromWallet(payload) {
     title: "CARE BACK",
     description: state === "issued" ? "ระบบจะตรวจสอบคูปองอีกครั้งเมื่อจอง" : null,
     state,
-    // Deliberately ignore legacy discount_percent / benefit_value. Only the
-    // explicit canonical field may authorize the customer-visible rate.
     approvedDiscountPercent: approved,
     issuedAt: asString(wallet.activated_at || wallet.issued_at, 40) || null,
     expiresAt: asString(wallet.expires_at, 40) || null,

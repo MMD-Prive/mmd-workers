@@ -3,8 +3,8 @@ const CAMPAIGN_ID = "6-years-care-back";
 const CAMPAIGN_NAME = "6 YEARS CARE BACK";
 const LANDING_PATH = "/promotion/6-years-care-back";
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const COUPON_VALIDITY_DAYS = 30;
-const COUPON_DISCOUNT_PERCENT = 10;
+const COUPON_VALIDITY_MONTHS = 2;
+const COUPON_MAX_DISCOUNT_PERCENT = 10;
 const CURRENT_MEMBER_EXTENSION_DAYS = 180;
 const RENEWED_MEMBER_EXTENSION_DAYS = 90;
 const RENEWED_MEMBER_BONUS_POINTS = 150;
@@ -43,7 +43,7 @@ class AirtableCareBackStore {
     const derived = await deriveClaimAndCode(identity, secret);
     const claims = await this.list(tableName(this.env, "CLAIMS"), `AND({campaign_id}=${formulaString(CAMPAIGN_ID)},{line_user_id_hash}=${formulaString(identity)})`, 2);
     if (claims.length > 1) throw new CareBackStoreError("CARE_BACK_CLAIM_CONFLICT");
-    if (!claims.length) return couponWallet({}, customerCoupon("draft", "", "verification_required", "ยังไม่มีคูปองที่ออกให้กับบัญชีนี้"));
+    if (!claims.length) return couponWallet({}, customerCoupon("draft", "", "", "verification_required", "ยังไม่มีคูปองที่ออกให้กับบัญชีนี้"));
     const claimFields = claims[0].fields || {};
     if (String(claimFields.matched_member_id || "") !== member) throw new CareBackStoreError("CARE_BACK_MEMBER_CONFLICT");
     const codes = await this.list(tableName(this.env, "PROMO_CODES"), `{code}=${formulaString(derived.code)}`, 2);
@@ -54,17 +54,18 @@ class AirtableCareBackStore {
     }
     const clock = requiredClock(now);
     const status = safeCodeStatus(promoFields.status);
+    const activatedAt = safeTimestamp(promoFields.activated_at);
     const expiresAt = safeTimestamp(promoFields.expires_at);
     const walletState = normalizedUseCount(promoFields.used_count) >= 1 || status === "used"
       ? "used"
       : ["revoked", "invalid"].includes(status)
         ? status
-        : expiresAt && Date.parse(expiresAt) <= clock.getTime()
+        : status === "expired" || (expiresAt && Date.parse(expiresAt) <= clock.getTime())
           ? "expired"
           : status === "active"
             ? "ready"
             : "verification_required";
-    const coupon = customerCoupon(status, expiresAt, walletState, "");
+    const coupon = customerCoupon(status, activatedAt, expiresAt, walletState, "");
     return couponWallet(promoFields, coupon);
   }
 
@@ -109,7 +110,7 @@ class AirtableCareBackStore {
         created_at: createdAt,
         updated_at: createdAt,
         payload_json: JSON.stringify({
-          schema_version: 2,
+          schema_version: 3,
           source: "liff_verified",
           observed_membership_status: observed.status,
           coupon_policy: couponPolicySnapshot(),
@@ -144,16 +145,16 @@ class AirtableCareBackStore {
         issued_channel: "line",
         landing_path: LANDING_PATH,
         status: coupon.status,
+        activated_at: coupon.activated_at || undefined,
         expires_at: coupon.expires_at || undefined,
         max_uses: 1,
         used_count: 0,
         package_scope: ["all"],
         benefit_type: "discount_percent",
-        benefit_value: COUPON_DISCOUNT_PERCENT,
         created_by: "member-pages-worker",
         created_at: clock.toISOString(),
         payload_json: JSON.stringify({
-          schema_version: 2,
+          schema_version: 3,
           claim_id: String(claim.fields?.claim_id || derived.claimId),
           policy_state: coupon.policy_state,
           wish_submitted: Boolean(wishSubmitted),
@@ -171,6 +172,7 @@ class AirtableCareBackStore {
     const promoFields = promo?.fields || {};
     const effectiveWishSubmitted = Boolean(wishSubmitted) || promoWishSubmitted(promoFields.payload_json);
     const coupon = couponStateFor(claimPolicy, observed, promoFields, clock, effectiveWishSubmitted);
+    const approvedDiscountPercent = coupon.customer_state === "ready" ? validatedApprovedDiscount(promoFields) : null;
 
     if (claimPolicy.membership_benefit?.kind === "membership_extension"
       && claimPolicy.membership_benefit.state === "pending_application"
@@ -193,18 +195,97 @@ class AirtableCareBackStore {
       payment_required: Boolean(finalClaimFields.payment_required),
       personal_code: promo ? String(promoFields.code || derived.code) : "",
       code_status: safeCodeStatus(promoFields.status),
-      expires_at: safeTimestamp(promoFields.expires_at),
-      discount_percent: effectiveWishSubmitted ? safeDiscountPercent(promoFields.benefit_type, promoFields.benefit_value) : 0,
+      activated_at: safeTimestamp(promoFields.activated_at) || null,
+      expires_at: safeTimestamp(promoFields.expires_at) || null,
+      approved_discount_percent: approvedDiscountPercent,
+      discount_percent: 0,
       coupon_state: coupon.customer_state,
       coupon_message: coupon.customer_message,
       membership_benefit: safeMembershipBenefit(claimPolicy.membership_benefit),
       points_policy: safePointsPolicy(claimPolicy.points_policy),
-      personalized_benefits: personalizedBenefits(claimPolicy, coupon),
+      personalized_benefits: personalizedBenefits(claimPolicy, coupon, approvedDiscountPercent),
       coupon_wallet: couponWallet(promoFields, coupon),
       campaign_phase: safeCampaignPhase(campaignPhase?.id),
       campaign_phase_ends_at: safeTimestamp(campaignPhase?.ends_at),
       wish_submitted: effectiveWishSubmitted,
       resumed,
+    };
+  }
+
+  async approveCouponDiscount({
+    identityHash,
+    memberId,
+    memberProfile,
+    modelLevel,
+    jobFormat,
+    publicModelPercent = null,
+    now = new Date(),
+  }) {
+    const identity = requiredHash(identityHash);
+    const member = requiredMemberId(memberId);
+    const clock = requiredClock(now);
+    const secret = String(this.env.CARE_BACK_CODE_SECRET || this.env.LIFF_SESSION_SECRET || "");
+    if (secret.length < 32) throw new CareBackStoreError("CARE_BACK_CODE_SECRET_MISSING");
+    const derived = await deriveClaimAndCode(identity, secret);
+    const claims = await this.list(tableName(this.env, "CLAIMS"), `AND({campaign_id}=${formulaString(CAMPAIGN_ID)},{line_user_id_hash}=${formulaString(identity)})`, 2);
+    if (claims.length !== 1) throw new CareBackStoreError(claims.length > 1 ? "CARE_BACK_CLAIM_CONFLICT" : "CARE_BACK_CLAIM_REQUIRED");
+    const claim = claims[0];
+    const claimFields = claim.fields || {};
+    if (String(claimFields.matched_member_id || "") !== member) throw new CareBackStoreError("CARE_BACK_MEMBER_CONFLICT");
+    const observed = observedMemberState(memberProfile);
+    const claimPolicy = resolvedClaimPolicy(claimFields, observed);
+
+    const codes = await this.list(tableName(this.env, "PROMO_CODES"), `{code}=${formulaString(derived.code)}`, 2);
+    if (codes.length !== 1) throw new CareBackStoreError(codes.length > 1 ? "CARE_BACK_CODE_CONFLICT" : "CARE_BACK_COUPON_REQUIRED");
+    const promo = codes[0];
+    const fields = promo.fields || {};
+    if (String(fields.campaign_code || "") !== CAMPAIGN_ID || promoClaimId(fields.payload_json) !== derived.claimId) {
+      throw new CareBackStoreError("CARE_BACK_CODE_CONFLICT");
+    }
+    if (!promoWishSubmitted(fields.payload_json)) throw new CareBackStoreError("CARE_BACK_WISH_REQUIRED");
+    if (!couponIssuanceGatePassed(claimPolicy, observed, true)) throw new CareBackStoreError("CARE_BACK_ELIGIBILITY_UNRESOLVED");
+
+    const coupon = couponStateFor(claimPolicy, observed, fields, clock, true);
+    if (coupon.customer_state !== "ready" || safeCodeStatus(fields.status) !== "active") {
+      throw new CareBackStoreError(`CARE_BACK_COUPON_${String(coupon.customer_state || "UNAVAILABLE").toUpperCase()}`);
+    }
+
+    const normalizedModelLevel = normalizeModelLevel(modelLevel);
+    const normalizedJobFormat = normalizeJobFormat(jobFormat);
+    if (!normalizedModelLevel || !normalizedJobFormat) throw new CareBackStoreError("CARE_BACK_DISCOUNT_CONTEXT_UNRESOLVED");
+    const approved = approvedDiscountFor(normalizedModelLevel, normalizedJobFormat, publicModelPercent);
+    if (!approved) throw new CareBackStoreError("CARE_BACK_DISCOUNT_CONTEXT_UNRESOLVED");
+
+    const payload = promoPayload(fields.payload_json);
+    const desired = compactFields({
+      model_level: normalizedModelLevel,
+      job_format: normalizedJobFormat,
+      approved_discount_percent: approved,
+      benefit_type: "discount_percent",
+      benefit_value: null,
+      payload_json: JSON.stringify({
+        ...payload,
+        schema_version: 3,
+        claim_id: derived.claimId,
+        policy_state: "ready",
+        wish_submitted: true,
+        coupon_policy: couponPolicySnapshot(),
+        discount_authority: "backend_verified",
+      }),
+    });
+    const updated = needsPatch(fields, desired)
+      ? await this.patch(tableName(this.env, "PROMO_CODES"), promo.id, desired)
+      : promo;
+    const updatedFields = updated.fields || {};
+    return {
+      code: String(updatedFields.code || derived.code),
+      status: safeCodeStatus(updatedFields.status),
+      model_level: normalizeModelLevel(updatedFields.model_level),
+      job_format: normalizeJobFormat(updatedFields.job_format),
+      approved_discount_percent: validatedApprovedDiscount(updatedFields),
+      activated_at: safeTimestamp(updatedFields.activated_at) || null,
+      expires_at: safeTimestamp(updatedFields.expires_at) || null,
+      single_use: true,
     };
   }
 
@@ -231,16 +312,21 @@ class AirtableCareBackStore {
     const fields = promo.fields || {};
     const effectiveWishSubmitted = Boolean(wishSubmitted) || promoWishSubmitted(fields.payload_json);
     const desiredCoupon = couponStateFor(claimPolicy, observed, fields, now, effectiveWishSubmitted);
+    const existingApproved = validatedApprovedDiscount(fields);
+    const payload = promoPayload(fields.payload_json);
     const desired = compactFields({
       status: desiredCoupon.status,
-      expires_at: desiredCoupon.expires_at,
+      activated_at: desiredCoupon.activated_at || undefined,
+      expires_at: desiredCoupon.expires_at || undefined,
       max_uses: 1,
       used_count: normalizedUseCount(fields.used_count),
       package_scope: ["all"],
       benefit_type: "discount_percent",
-      benefit_value: COUPON_DISCOUNT_PERCENT,
+      benefit_value: null,
+      approved_discount_percent: existingApproved,
       payload_json: JSON.stringify({
-        schema_version: 2,
+        ...payload,
+        schema_version: 3,
         claim_id: promoClaimId(fields.payload_json),
         policy_state: desiredCoupon.policy_state,
         wish_submitted: effectiveWishSubmitted,
@@ -332,6 +418,32 @@ export async function deriveClaimAndCode(identityHash, secret) {
   return { claimId: `CB6-2026-${suffix}`, code };
 }
 
+export function addCalendarMonths(value, months = COUPON_VALIDITY_MONTHS) {
+  const source = requiredClock(value);
+  const amount = Number(months);
+  if (!Number.isInteger(amount) || amount <= 0 || amount > 24) throw new CareBackStoreError("CARE_BACK_VALIDITY_INVALID");
+  const day = source.getUTCDate();
+  const target = new Date(Date.UTC(
+    source.getUTCFullYear(),
+    source.getUTCMonth() + amount,
+    1,
+    source.getUTCHours(),
+    source.getUTCMinutes(),
+    source.getUTCSeconds(),
+    source.getUTCMilliseconds(),
+  ));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(day, lastDay));
+  return target.toISOString();
+}
+
+export function resolveApprovedDiscount({ modelLevel, jobFormat, publicModelPercent = null } = {}) {
+  const level = normalizeModelLevel(modelLevel);
+  const format = normalizeJobFormat(jobFormat);
+  if (!level || !format) return null;
+  return approvedDiscountFor(level, format, publicModelPercent) || null;
+}
+
 async function hmacBytes(secret, value) {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
@@ -353,14 +465,15 @@ function requiredMemberId(value) {
 function tableName(env, key) { return String(env[`AIRTABLE_TABLE_CARE_BACK_${key}`] || TABLE_DEFAULTS[key]).trim(); }
 function formulaString(value) { return `'${String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`; }
 function compactFields(fields) { return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined)); }
-function promoClaimId(value) {
+function promoPayload(value) {
   try {
     const parsed = JSON.parse(String(value || ""));
-    return String(parsed?.claim_id || "");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   } catch {
-    return "";
+    return {};
   }
 }
+function promoClaimId(value) { return String(promoPayload(value)?.claim_id || ""); }
 function observedMemberState(profile) {
   const status = ["active", "grace", "expired", "under_review"].includes(String(profile?.membership_status || ""))
     ? String(profile.membership_status)
@@ -372,7 +485,7 @@ function observedMemberState(profile) {
 }
 
 function requiredClock(value) {
-  const date = value instanceof Date ? value : new Date(value);
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
   if (Number.isNaN(date.getTime())) throw new CareBackStoreError("CARE_BACK_CLOCK_INVALID");
   return date;
 }
@@ -385,14 +498,10 @@ function currentCampaignPhase(now) {
 }
 
 function storedCampaignPhase(value) {
-  try {
-    const parsed = JSON.parse(String(value || ""));
-    const id = safeCampaignPhase(parsed?.campaign_phase);
-    if (!id || id === "legacy") return null;
-    return { id, ends_at: safeTimestamp(parsed?.campaign_phase_end_at) };
-  } catch {
-    return null;
-  }
+  const parsed = promoPayload(value);
+  const id = safeCampaignPhase(parsed?.campaign_phase);
+  if (!id || id === "legacy") return null;
+  return { id, ends_at: safeTimestamp(parsed?.campaign_phase_end_at) };
 }
 
 function legacyCampaignPhase(referenceDate) {
@@ -458,9 +567,7 @@ function initialClaimPolicy(observed) {
 
 function resolvedClaimPolicy(fields, observed) {
   const existingGroup = String(fields.classification_group || "");
-  if (["current_member", "active_member"].includes(existingGroup)) {
-    return initialClaimPolicy(observed);
-  }
+  if (["current_member", "active_member"].includes(existingGroup)) return initialClaimPolicy(observed);
   if (["inactive_expired", "former_member", "recently_expired", "long_expired"].includes(existingGroup)) {
     const policy = initialClaimPolicy({ ...observed, status: "expired" });
     const paymentVerified = String(fields.payment_status || "") === "verified";
@@ -505,28 +612,31 @@ function resolvedClaimPolicy(fields, observed) {
 }
 
 function couponStateFor(claimPolicy, observed, promoFields, now = new Date(), wishSubmitted = false) {
+  const clock = requiredClock(now);
   const currentStatus = safeCodeStatus(promoFields.status);
   const used = normalizedUseCount(promoFields.used_count) >= 1 || currentStatus === "used";
-  const terminal = used ? "used" : (["revoked", "invalid"].includes(currentStatus) ? currentStatus : "");
+  const terminal = used ? "used" : (["revoked", "invalid", "expired"].includes(currentStatus) ? currentStatus : "");
   const isEligibleNow = couponIssuanceGatePassed(claimPolicy, observed, wishSubmitted);
+  const rawActivatedAt = safeTimestamp(promoFields.activated_at);
+  const rawCreatedAt = safeTimestamp(promoFields.created_at);
   const rawExpiresAt = safeTimestamp(promoFields.expires_at);
-  const expired = rawExpiresAt && Date.parse(rawExpiresAt) <= now.getTime();
+  const expired = rawExpiresAt && Date.parse(rawExpiresAt) <= clock.getTime();
 
-  if (terminal === "used") return customerCoupon("used", rawExpiresAt, "used", "ใช้สิทธิ์นี้แล้ว");
-  if (terminal) return customerCoupon(terminal, rawExpiresAt, terminal, "สิทธิ์นี้ไม่พร้อมใช้งาน");
-  if (expired) return customerCoupon("expired", rawExpiresAt, "expired", "สิทธิ์นี้หมดอายุแล้ว");
+  if (terminal === "used") return customerCoupon("used", rawActivatedAt, rawExpiresAt, "used", "ใช้สิทธิ์นี้แล้ว");
+  if (terminal === "expired" || expired) return customerCoupon("expired", rawActivatedAt, rawExpiresAt, "expired", "สิทธิ์นี้หมดอายุแล้ว");
+  if (terminal) return customerCoupon(terminal, rawActivatedAt, rawExpiresAt, terminal, "สิทธิ์นี้ไม่พร้อมใช้งาน");
   if (!wishSubmitted) {
-    return customerCoupon("draft", "", "wish_required", "ส่งคำอวยพรวันเกิดถึง MMD สำเร็จก่อน จึงจะเปิดคูปองส่วนตัวได้");
+    return customerCoupon("draft", "", "", "wish_required", "ส่งคำอวยพรวันเกิดถึง MMD สำเร็จก่อน จึงจะเปิดคูปองส่วนตัวได้");
   }
   if (isEligibleNow) {
-    const activatesNewWindow = currentStatus !== "active" || !rawExpiresAt;
-    const expiresAt = activatesNewWindow ? new Date(now.getTime() + COUPON_VALIDITY_DAYS * 24 * 60 * 60 * 1000).toISOString() : rawExpiresAt;
-    return customerCoupon("active", expiresAt, "ready", "คูปองส่วนตัวของคุณพร้อมใช้แล้ว");
+    const activation = rawActivatedAt || rawCreatedAt || clock.toISOString();
+    const canonicalExpiry = addCalendarMonths(activation, COUPON_VALIDITY_MONTHS);
+    return customerCoupon("active", activation, canonicalExpiry, "ready", "คูปองส่วนตัวของคุณพร้อมใช้แล้ว");
   }
   if (claimPolicy.membership_benefit?.state === "renewal_required") {
-    return customerCoupon("draft", "", "renewal_required", "คูปองจะพร้อมใช้หลังต่ออายุสมาชิกและระบบยืนยันเรียบร้อยแล้ว");
+    return customerCoupon("draft", "", "", "renewal_required", "คูปองจะพร้อมใช้หลังต่ออายุสมาชิกและระบบยืนยันเรียบร้อยแล้ว");
   }
-  return customerCoupon("draft", "", "verification_required", "คูปองจะพร้อมใช้หลัง MMD ยืนยันสถานะสมาชิกเรียบร้อยแล้ว");
+  return customerCoupon("draft", "", "", "verification_required", "คูปองจะพร้อมใช้หลัง MMD ยืนยันสถานะสมาชิกเรียบร้อยแล้ว");
 }
 
 function couponIssuanceGatePassed(claimPolicy, observed, wishSubmitted) {
@@ -544,7 +654,41 @@ function couponIssuanceGatePassed(claimPolicy, observed, wishSubmitted) {
     && claimPolicy.membership_benefit?.state !== "renewal_required";
 }
 
-function personalizedBenefits(claimPolicy, coupon) {
+function normalizeModelLevel(value) {
+  const key = String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, " ");
+  if (["public", "public model", "public models"].includes(key)) return "Public Models";
+  if (["standard", "standard model", "standard models"].includes(key)) return "Standard Models";
+  if (["premium", "premium model", "premium models"].includes(key)) return "Premium";
+  if (["em", "ems", "exclusive model", "exclusive models"].includes(key)) return "EMs";
+  if (["gw", "gws", "gorgeous world", "gorgeous worlds"].includes(key)) return "GWs";
+  return "";
+}
+
+function normalizeJobFormat(value) {
+  const key = String(value || "").trim().toUpperCase();
+  return key === "PN" || key === "VIP" ? key : "";
+}
+
+function approvedDiscountFor(modelLevel, jobFormat, publicModelPercent = null) {
+  if (modelLevel === "Public Models") {
+    const candidate = Number(publicModelPercent);
+    return Number.isFinite(candidate) && candidate >= 3 && candidate <= 5 ? candidate : 0;
+  }
+  if (modelLevel === "Standard Models") return jobFormat === "PN" ? 5 : jobFormat === "VIP" ? 7 : 0;
+  if (["Premium", "EMs", "GWs"].includes(modelLevel)) return jobFormat === "PN" ? 5 : jobFormat === "VIP" ? 10 : 0;
+  return 0;
+}
+
+function validatedApprovedDiscount(fields = {}) {
+  const level = normalizeModelLevel(fields.model_level);
+  const format = normalizeJobFormat(fields.job_format);
+  const stored = Number(fields.approved_discount_percent);
+  if (!level || !format || !Number.isFinite(stored) || stored <= 0 || stored > COUPON_MAX_DISCOUNT_PERCENT) return null;
+  const expected = approvedDiscountFor(level, format, level === "Public Models" ? stored : null);
+  return expected === stored ? stored : null;
+}
+
+function personalizedBenefits(claimPolicy, coupon, approvedDiscountPercent = null) {
   const benefits = [];
   const membership = safeMembershipBenefit(claimPolicy?.membership_benefit);
   if (membership) benefits.push({ type: "membership_extension", value: membership.days, unit: "days", state: membership.state });
@@ -552,30 +696,45 @@ function personalizedBenefits(claimPolicy, coupon) {
   if (points?.renewal_bonus_points > 0) {
     benefits.push({ type: "points_bonus", value: points.renewal_bonus_points, unit: "points", state: points.renewal_bonus_state });
   }
-  benefits.push({ type: "personal_coupon", value: COUPON_DISCOUNT_PERCENT, unit: "percent", state: coupon.customer_state });
+  if (Number.isFinite(approvedDiscountPercent) && approvedDiscountPercent > 0) {
+    benefits.push({ type: "personal_coupon", value: approvedDiscountPercent, unit: "percent", state: coupon.customer_state });
+  }
   return benefits;
 }
 
 function couponWallet(promoFields, coupon) {
   const code = /^[A-HJ-NP-Z2-9]{6}$/.test(String(promoFields?.code || "")) ? String(promoFields.code) : "";
+  const approved = coupon.customer_state === "ready" ? validatedApprovedDiscount(promoFields) : null;
   return {
     status: coupon.customer_state,
     code,
-    discount_percent: code ? safeDiscountPercent(promoFields?.benefit_type, promoFields?.benefit_value) : 0,
+    approved_discount_percent: approved,
+    discount_percent: approved || 0,
+    activated_at: code ? safeTimestamp(promoFields?.activated_at) || null : null,
     expires_at: code ? safeTimestamp(promoFields?.expires_at) || null : null,
     single_use: true,
   };
 }
 
-function customerCoupon(status, expiresAt, customerState, message) {
-  return { status, expires_at: expiresAt || null, customer_state: customerState, customer_message: message, policy_state: customerState };
+function customerCoupon(status, activatedAt, expiresAt, customerState, message) {
+  return {
+    status,
+    activated_at: activatedAt || null,
+    expires_at: expiresAt || null,
+    customer_state: customerState,
+    customer_message: message,
+    policy_state: customerState,
+  };
 }
 
 function couponPolicySnapshot() {
   return {
     benefit_type: "discount_percent",
-    benefit_value: COUPON_DISCOUNT_PERCENT,
-    validity_days: COUPON_VALIDITY_DAYS,
+    max_discount_percent: COUPON_MAX_DISCOUNT_PERCENT,
+    rate_authority: "approved_discount_percent",
+    rate_basis: "model_level_x_job_format_x_customer_eligibility",
+    public_model_discount_band: [3, 5],
+    validity_months: COUPON_VALIDITY_MONTHS,
     single_use: true,
     eligible_service_only: true,
     requires_completed_birthday_wish: true,
@@ -593,39 +752,23 @@ function pointsPolicySnapshot(claimPolicy) {
   };
 }
 
-function promoWishSubmitted(value) {
-  try {
-    return JSON.parse(String(value || ""))?.wish_submitted === true;
-  } catch {
-    return false;
-  }
-}
-
+function promoWishSubmitted(value) { return promoPayload(value)?.wish_submitted === true; }
 function needsPatch(current, desired) {
   return Object.entries(desired).some(([key, value]) => JSON.stringify(current?.[key] ?? null) !== JSON.stringify(value ?? null));
 }
-
 function normalizedUseCount(value) {
   const count = Number(value);
   return Number.isInteger(count) && count >= 0 ? count : 0;
 }
-
 function safeTimestamp(value) {
   const raw = String(value || "").trim();
   const time = Date.parse(raw);
   return raw && Number.isFinite(time) ? new Date(time).toISOString() : "";
 }
-
-function safeDiscountPercent(type, value) {
-  const number = Number(value);
-  return String(type) === "discount_percent" && Number.isFinite(number) && number > 0 && number <= 100 ? number : 0;
-}
-
 function safeMembershipBenefit(value) {
   if (value?.kind !== "membership_extension" || !Number.isInteger(value.days) || value.days <= 0) return null;
   return { type: "membership_extension", days: value.days, state: String(value.state || "pending_application") };
 }
-
 function safePointsPolicy(value) {
   const rate = Number(value?.rate_thb_per_point);
   const points = Number(value?.renewal_bonus_points);
@@ -641,9 +784,7 @@ function safePointsPolicy(value) {
     renewal_bonus_state: bonusState,
   };
 }
-
 function safeCampaignPhase(value) { return ["birthday", "continuation", "legacy"].includes(String(value)) ? String(value) : ""; }
-
 function safeClaimStatus(value) { return ["identity_verified", "matched", "manual_review", "payment_pending", "benefit_approved", "applying", "benefit_applied", "blocked", "rejected"].includes(String(value)) ? String(value) : "identity_verified"; }
 function safeReviewStatus(value) { return ["pending", "in_review", "approved", "blocked", "not_required"].includes(String(value)) ? String(value) : "pending"; }
 function safePaymentStatus(value) { return ["pending", "verified", "not_required", "rejected"].includes(String(value)) ? String(value) : "pending"; }
