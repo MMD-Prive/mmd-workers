@@ -11,12 +11,33 @@ import {
   isMmsTherapistProfileRequest,
   therapistProfileErrorResponse,
 } from "./therapist-profile-runtime.mjs";
+import {
+  handleMmsTherapistGpsVisibilityRequest,
+  isMmsTherapistGpsVisibilityRequest,
+  therapistGpsVisibilityErrorResponse,
+} from "./therapist-gps-visibility-runtime.mjs";
 
 export { MmsCoordinator } from "./index.js";
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (isMmsTherapistGpsVisibilityRequest(url.pathname)) {
+      try {
+        return await handleMmsTherapistGpsVisibilityRequest(request, env);
+      } catch (error) {
+        console.error(JSON.stringify({
+          event: "mms_therapist_gps_visibility_error",
+          path: url.pathname,
+          method: request.method,
+          code: error?.code || "THERAPIST_GPS_VISIBILITY_UNAVAILABLE",
+        }));
+        if (error?.code === "ORIGIN_NOT_ALLOWED") {
+          return Response.json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED" } }, { status: 403, headers: { "Cache-Control": "no-store" } });
+        }
+        return therapistGpsVisibilityErrorResponse(error, request, env);
+      }
+    }
     if (isMmsTherapistProfileRequest(url.pathname)) {
       try {
         return await handleMmsTherapistProfileRequest(request, env);
