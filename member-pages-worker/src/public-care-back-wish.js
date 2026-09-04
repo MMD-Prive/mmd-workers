@@ -47,7 +47,6 @@ export async function handlePublicWish(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
   const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
-  if (!String(env.LIFF_SESSION_SECRET || "").trim()) return unavailable("PUBLIC_WISH_SIGNING_NOT_CONFIGURED");
 
   const parsed = await readJson(request);
   if (!parsed.ok) return parsed.response;
@@ -58,8 +57,8 @@ export async function handlePublicWish(request, env = {}) {
   const store = getPublicWishStore(env);
   if (!store) return unavailable("PUBLIC_WISH_STORAGE_NOT_CONFIGURED");
 
-  const linkToken = await publicWishLinkToken(env, input.requestId);
-  const linkTokenHash = await keyedDigest(env, `public-wish-link:${linkToken}`);
+  const linkToken = await publicWishLinkToken(input.requestId);
+  const linkTokenHash = await publicDigest(`public-wish-link:${linkToken}`);
   try {
     const wish = await store.createOrLoad({
       requestId: input.requestId,
@@ -118,7 +117,7 @@ export async function handleLinkWish(request, env = {}) {
   const store = getPublicWishStore(env);
   const careBackStore = getCareBackStore(env);
   if (!store || !careBackStore) return unavailable("CARE_BACK_STORAGE_NOT_CONFIGURED");
-  const linkTokenHash = await keyedDigest(env, `public-wish-link:${linkToken}`);
+  const linkTokenHash = await publicDigest(`public-wish-link:${linkToken}`);
   const verifiedCustomerRefHash = await keyedDigest(env, `wish-customer:${data.identity_key}`);
   try {
     const wish = await store.linkToClaim({
@@ -290,9 +289,14 @@ function normalizeText(value, maxLength) {
   return text;
 }
 
-async function publicWishLinkToken(env, requestId) {
-  const signature = await crypto.subtle.sign("HMAC", await hmacKey(env), new TextEncoder().encode(`public-wish:${requestId}`));
-  return `pw_${base64Url(new Uint8Array(signature))}`;
+async function publicWishLinkToken(requestId) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`public-wish:${requestId}`));
+  return `pw_${base64Url(new Uint8Array(digest))}`;
+}
+
+async function publicDigest(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(value)));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 async function keyedDigest(env, value) {
