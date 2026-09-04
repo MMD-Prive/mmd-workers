@@ -71,6 +71,16 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/model/media*"
 zone_name = "mmdbkk.com"
 
+# Model Dashboard GPS Visibility is a permission-only setting. It never accepts
+# or stores coordinates; future GPS use must additionally require an Active job.
+[[routes]]
+pattern = "mmdbkk.com/v1/model/settings/gps-visibility"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/settings/gps-visibility"
+zone_name = "mmdbkk.com"
+
 # Model Console V16 additive write/review routes. Keep these exact and narrow;
 # do not claim broad /v1/model/* ownership.
 [[routes]]
