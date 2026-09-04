@@ -1,0 +1,147 @@
+name: Sync My MMD production routes
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/sync-my-mmd-routes.yml"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: sync-my-mmd-production-routes
+  cancel-in-progress: false
+
+jobs:
+  sync-and-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
+      CLOUDFLARE_ZONE_ID: "2d62396174fa2ddadbbcd0e8cf0f3367"
+      WORKER_NAME: "member-dashboard-chat-worker"
+
+    steps:
+      - name: Normalize and verify route token
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const token = String(process.env.CLOUDFLARE_ROUTES_API_TOKEN || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
+          if (!token) throw new Error("CLOUDFLARE_ROUTES_API_TOKEN is missing");
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ROUTES_API_TOKEN=${token}\n`);
+          NODE
+          body="$(mktemp)"
+          code="$(curl --silent --show-error -o "$body" -w "%{http_code}" \
+            "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+            -H "Authorization: Bearer ${CLOUDFLARE_ROUTES_API_TOKEN}" || true)"
+          if [ "$code" != "200" ]; then
+            code="$(curl --silent --show-error -o "$body" -w "%{http_code}" \
+              "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/workers/routes" \
+              -H "Authorization: Bearer ${CLOUDFLARE_ROUTES_API_TOKEN}" || true)"
+          fi
+          node - "$body" <<'NODE'
+          const fs = require("node:fs");
+          const body = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          if (body.success !== true) throw new Error(`Cloudflare route token verification failed: ${JSON.stringify(body.errors || [])}`);
+          NODE
+
+      - name: Sync bounded My MMD routes
+        id: route_sync
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
+          const zoneId = process.env.CLOUDFLARE_ZONE_ID;
+          const worker = process.env.WORKER_NAME;
+          const desired = [
+            "mmdbkk.com/member/my-mmd*",
+            "www.mmdbkk.com/member/my-mmd*",
+            "mmdbkk.com/member/my-mmd-assets/*",
+            "www.mmdbkk.com/member/my-mmd-assets/*",
+            "mmdbkk.com/api/member/app/*",
+            "www.mmdbkk.com/api/member/app/*",
+          ];
+          const endpoint = `https://api.cloudflare.com/client/v4/zones/${zoneId}/workers/routes`;
+          const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+          async function request(options = {}) {
+            let last;
+            for (let attempt = 1; attempt <= 5; attempt += 1) {
+              const response = await fetch(endpoint, { ...options, headers: { ...headers, ...(options.headers || {}) } });
+              const text = await response.text();
+              let body = null;
+              try { body = JSON.parse(text); } catch {}
+              if (response.ok && body?.success === true) return body.result;
+              last = new Error(body ? JSON.stringify(body.errors || body) : `cloudflare_non_json_${response.status}:${text.slice(0, 180)}`);
+              if (!(response.status === 429 || response.status >= 500) || attempt === 5) throw last;
+              await sleep(attempt * 1000);
+            }
+            throw last;
+          }
+
+          const before = await request();
+          for (const pattern of desired) {
+            const conflict = before.find((route) => route.pattern === pattern && route.script !== worker);
+            if (conflict) throw new Error(`route conflict ${pattern} -> ${conflict.script || "none"}`);
+          }
+          for (const pattern of desired) {
+            if (before.some((route) => route.pattern === pattern && route.script === worker)) {
+              console.log(`already owned ${pattern}`);
+              continue;
+            }
+            await request({ method: "POST", body: JSON.stringify({ pattern, script: worker }) });
+            console.log(`created ${pattern} -> ${worker}`);
+          }
+          const after = await request();
+          const missing = desired.filter((pattern) => !after.some((route) => route.pattern === pattern && route.script === worker));
+          if (missing.length) throw new Error(`missing My MMD routes: ${missing.join(", ")}`);
+          console.log(`verified ${desired.length}/${desired.length} My MMD routes`);
+          NODE
+
+      - name: Smoke My MMD route ownership
+        id: mymmd_smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          for host in mmdbkk.com www.mmdbkk.com; do
+            headers="$(mktemp)"
+            body="$(mktemp)"
+            code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -D "$headers" -o "$body" -w "%{http_code}" \
+              "https://${host}/member/my-mmd")"
+            echo "${host} /member/my-mmd -> ${code}"
+            test "$code" = "200"
+            grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$headers"
+            grep -qi '^x-mmd-ui-source: lovable-presentation-proxy' "$headers"
+            if grep -q 'MY MMD · PRIVATE MEMBER SPACE' "$body"; then
+              echo "Webflow fallback still owns ${host}/member/my-mmd" >&2
+              exit 1
+            fi
+            grep -q '/member/my-mmd-assets/' "$body"
+
+            api_headers="$(mktemp)"
+            api_body="$(mktemp)"
+            api_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS -D "$api_headers" -o "$api_body" -w "%{http_code}" \
+              -H 'accept: application/json' "https://${host}/api/member/app/dashboard")"
+            echo "${host} /api/member/app/dashboard -> ${api_code}"
+            grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$api_headers"
+            case "$api_code" in
+              200|401|403) ;;
+              *) cat "$api_body"; exit 1 ;;
+            esac
+          done
+
+      - name: Record route-live receipt
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ My MMD CLOUDFLARE ROUTES LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- checked_at: \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\`\n- worker: \`member-dashboard-chat-worker\`\n- routes: \`/member/my-mmd*\`, \`/member/my-mmd-assets/*\`, \`/api/member/app/*\` on apex + www\n- UI smoke: \`x-mmd-route-owner=member-dashboard-chat-worker\` and \`x-mmd-ui-source=lovable-presentation-proxy\`\n- Webflow fallback copy absent from live My MMD response\n- API route ownership verified without creating or widening member authority"

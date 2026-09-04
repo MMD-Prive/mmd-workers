@@ -1,10 +1,10 @@
-# MMD Memory — My MMD LIFF duplicated-path / return-flow incident — 2026-09-04
+# MMD Memory — My MMD LIFF duplicated-path / return-flow / route-ownership incident — 2026-09-04
 
-Status: ACTIVE HOTFIX / return-flow production smoke pending
+Status: ACTIVE HOTFIX / live route ownership being repaired
 
 ## Incident
 
-Two real mobile symptoms were observed in sequence:
+Three real production symptoms were observed in sequence:
 
 1. A malformed MINI App route:
 
@@ -15,7 +15,9 @@ https://mmdbkk.com/member/liff/member/liff...
 
 2. After the duplicated-path fix, LINE verification reached the LIFF/member bridge but the customer remained on an intermediate/fallback member shell instead of returning to the canonical My MMD application.
 
-These are navigation/orchestration failures. They are not evidence that member identity, entitlement, CARE BACK, or the My MMD read API itself is broken.
+3. Fresh Chrome verification of `https://www.mmdbkk.com/member/my-mmd` still rendered the Webflow fallback page with the heading `MY MMD · PRIVATE MEMBER SPACE` instead of the Lovable presentation proxy.
+
+The third symptom proves that source/deploy success was not the same as live route ownership.
 
 ## Root cause — duplicated path
 
@@ -49,6 +51,27 @@ The correct status flow is:
 
 The return must happen only after the profile endpoint returns `ok=true`. Do not redirect merely because the LIFF page opened, and do not infer member status in the browser.
 
+## Root cause — My MMD routes existed in source but not in live Cloudflare triggers
+
+`member-dashboard-chat-worker/wrangler.toml` contains the canonical My MMD route patterns for apex + www:
+
+```text
+/member/my-mmd*
+/member/my-mmd-assets/*
+/api/member/app/*
+```
+
+However the production deploy workflow intentionally uses `wrangler versions upload` + `wrangler versions deploy`. That promotes Worker code without mutating Cloudflare triggers/routes. The workflow's previous live receipt explicitly reported `route mutation: none`.
+
+Therefore a green Worker deployment could coexist with Webflow still owning `/member/my-mmd` in production. The Chrome screenshot matched the published Webflow page exactly, confirming that this was not a browser cache issue.
+
+Canonical rule:
+
+- `defined in wrangler.toml` != `live Cloudflare route`.
+- `versions deploy` != `triggers/routes deploy`.
+- Any newly introduced customer route must receive a separate bounded route-sync step using `CLOUDFLARE_ROUTES_API_TOKEN` and must be proven by response ownership headers.
+- Never call My MMD live until `/member/my-mmd` returns `x-mmd-route-owner: member-dashboard-chat-worker` and `x-mmd-ui-source: lovable-presentation-proxy` on both apex and www.
+
 ## Canonical permanent-link rule
 
 MMD Privé member MINI App LIFF ID:
@@ -76,11 +99,11 @@ Hard rules:
 ## Runtime ownership
 
 - `/member/my-mmd` — canonical My MMD presentation route, owned by `member-dashboard-chat-worker` presentation proxy.
+- `/member/my-mmd-assets/*` — same-origin presentation assets owned by `member-dashboard-chat-worker`.
 - `/api/member/app/*` — canonical same-origin My MMD read API, forwarded by `member-dashboard-chat-worker` to `member-pages-worker`.
 - `/member/liff` and `/member/api/liff/*` — canonical LIFF/member identity shell and APIs.
 - Existing verified LIFF/member session remains the only browser identity authority.
-
-The LIFF shell is identity/session infrastructure. It is not the canonical final My MMD presentation surface for the status flow.
+- Webflow `/member/my-mmd` is fallback content only and must not be the live custom-domain owner while the Worker route is healthy.
 
 This incident does not widen or alter membership, entitlement, model access, payment, CARE BACK, coupon, or `approved_discount_percent` authority.
 
@@ -94,22 +117,41 @@ This incident does not widen or alter membership, entitlement, model access, pay
 
 Lovable source was also corrected to use the canonical permanent link so the Worker rewrite is defense in depth rather than the long-term source of truth.
 
-### Return-flow follow-up
+### PR #590
 
-- `member-dashboard-chat-worker` injects a nonce-preserving bounded return bridge only into successful HTML responses for `/member/liff?intent=status`;
-- the bridge checks `/member/api/liff/profile` with `credentials: "same-origin"`;
+- injects a nonce-preserving bounded return bridge only into successful HTML responses for `/member/liff?intent=status`;
+- checks `/member/api/liff/profile` with `credentials: "same-origin"`;
 - only `HTTP ok + payload.ok === true` permits `window.location.replace("/member/my-mmd")`;
-- the check is bounded and stops after a short retry window;
-- promo/campaign LIFF routes are explicitly excluded;
-- CSP remains enforced by reusing the existing server-generated nonce.
+- excludes promo/campaign LIFF routes;
+- preserves CSP.
+
+### Route-ownership follow-up
+
+A dedicated route-sync workflow must bind and verify these exact patterns to `member-dashboard-chat-worker` on both apex and www:
+
+```text
+/member/my-mmd*
+/member/my-mmd-assets/*
+/api/member/app/*
+```
+
+The workflow must fail on conflicts rather than stealing a route from another Worker, and its production smoke must prove the My MMD response no longer contains the Webflow fallback copy.
 
 ## Proof gate
 
-Do not label the whole member flow resolved from CI or generic Worker smoke alone.
+Do not label the whole member flow resolved from CI, generic Worker smoke, or source route config alone.
 
-Required fresh real production check after deployment:
+Required fresh real production check after route sync:
 
 ```text
+GET /member/my-mmd
+-> x-mmd-route-owner = member-dashboard-chat-worker
+-> x-mmd-ui-source = lovable-presentation-proxy
+-> Webflow fallback copy absent
+-> app assets load under /member/my-mmd-assets/*
+-> /api/member/app/* is owned by member-dashboard-chat-worker
+
+then real customer flow:
 CARE BACK / My MMD CTA
 -> /member/my-mmd
 -> session-required state (when no session)
