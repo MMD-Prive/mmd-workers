@@ -8,6 +8,8 @@ function int(v) {
 export const TG_THREADS = (env) => ({
   membership: int(env.TG_THREAD_MEMBERSHIP) || 20,
   confirm: int(env.TG_THREAD_CONFIRM) || 21,
+  payment_proof: int(env.TG_THREAD_PAYMENT) || int(env.TG_THREAD_CONFIRM) || 21,
+  payment_verified: int(env.TG_THREAD_PAYMENT) || int(env.TG_THREAD_CONFIRM) || 21,
   points_threshold: int(env.TG_THREAD_POINTS) || 17,
 });
 
@@ -93,6 +95,8 @@ export function formatTelegramMessage(p) {
 
   const isMembership = flow === "membership";
   const isConfirm = flow === "confirm";
+  const isPaymentProof = flow === "payment_proof";
+  const isPaymentVerified = flow === "payment_verified";
   const isPoints = flow === "points_threshold";
 
   if (isPoints) {
@@ -113,6 +117,10 @@ export function formatTelegramMessage(p) {
     ? "🧾 MMD • MEMBERSHIP SUBMIT"
     : isConfirm
     ? "✅ MMD • CONFIRM SUBMIT"
+    : isPaymentProof
+    ? "🧾 MMD • PAYMENT PROOF RECEIVED"
+    : isPaymentVerified
+    ? "✅ MMD • PAYMENT VERIFIED"
     : "🔔 MMD • PAYMENT NOTIFY";
 
   const lines = [];
@@ -122,7 +130,9 @@ export function formatTelegramMessage(p) {
   if (p.tier) lines.push(`<b>Tier:</b> ${escapeHtml(p.tier)}`);
   lines.push(`<b>Amount:</b> ${escapeHtml(String(num(p.amount_thb) || "-"))} ${escapeHtml(p.currency || "THB")}`);
   if (p.payment_method) lines.push(`<b>Method:</b> ${escapeHtml(p.payment_method)}`);
+  if (p.proof_id) lines.push(`<b>Proof:</b> ${escapeHtml(p.proof_id)}`);
   if (p.ref) lines.push(`<b>Ref:</b> ${escapeHtml(p.ref)}`);
+  if (p.status) lines.push(`<b>Status:</b> ${escapeHtml(p.status)}`);
   if (p.page) lines.push(`<b>Page:</b> ${escapeHtml(p.page)}`);
 
   if (isMembership) {
