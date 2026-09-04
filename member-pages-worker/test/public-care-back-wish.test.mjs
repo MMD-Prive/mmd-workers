@@ -48,8 +48,8 @@ function publicStore() {
   };
 }
 
-test("public Wish succeeds without LINE session and grants no benefits", async () => {
-  const env = { LIFF_SESSION_SECRET: SECRET, PUBLIC_CARE_BACK_WISH_STORE: publicStore() };
+test("public Wish succeeds without LINE session or LIFF secret and grants no benefits", async () => {
+  const env = { PUBLIC_CARE_BACK_WISH_STORE: publicStore() };
   const response = await handlePublicWish(request("/member/api/care-back/public-wish", {
     wish_text: "สุขสันต์วันเกิด MMD ครับ",
     request_id: "wish-public-request-0001",
@@ -68,8 +68,25 @@ test("public Wish succeeds without LINE session and grants no benefits", async (
   assert.equal(payload.grants.points, false);
 });
 
+test("public Wish replay remains idempotent without LIFF secret", async () => {
+  const env = { PUBLIC_CARE_BACK_WISH_STORE: publicStore() };
+  const body = {
+    wish_text: "ขอบคุณ MMD สำหรับ 6 ปีครับ",
+    request_id: "wish-public-replay-0001",
+    language: "th",
+  };
+  const first = await handlePublicWish(request("/member/api/care-back/public-wish", body), env);
+  const second = await handlePublicWish(request("/member/api/care-back/public-wish", body), env);
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  const firstPayload = await first.json();
+  const secondPayload = await second.json();
+  assert.equal(firstPayload.wish_link_token, secondPayload.wish_link_token);
+  assert.equal(secondPayload.state, "completed");
+});
+
 test("public Wish rejects browser-supplied member or claim authority", async () => {
-  const env = { LIFF_SESSION_SECRET: SECRET, PUBLIC_CARE_BACK_WISH_STORE: publicStore() };
+  const env = { PUBLIC_CARE_BACK_WISH_STORE: publicStore() };
   for (const extra of [{ member_id: "mem_fake" }, { campaign_claim_id: "claim_fake" }, { points: 999999 }]) {
     const response = await handlePublicWish(request("/member/api/care-back/public-wish", {
       wish_text: "สุขสันต์วันเกิดครับ",
@@ -81,7 +98,7 @@ test("public Wish rejects browser-supplied member or claim authority", async () 
   }
 });
 
-test("Airtable public Wish uses the existing member_page source choice with strict typecasting off", async () => {
+test("Airtable public Wish uses the existing member_page source choice with strict typecasting off and no LIFF secret", async () => {
   const originalFetch = globalThis.fetch;
   let postBody = null;
   globalThis.fetch = async (url, init = {}) => {
@@ -96,7 +113,6 @@ test("Airtable public Wish uses the existing member_page source choice with stri
   };
   try {
     const env = {
-      LIFF_SESSION_SECRET: SECRET,
       AIRTABLE_API_KEY: "pat_test",
       AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg",
       AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES: "tblvMJjYXy29mgDLb",
