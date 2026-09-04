@@ -1,5 +1,5 @@
 name = "member-dashboard-chat-worker"
-main = "src/front-gate-index.js"
+main = "src/front-gate-single-file-shell.js"
 compatibility_date = "2026-07-02"
 workers_dev = false
 
