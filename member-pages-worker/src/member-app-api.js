@@ -50,6 +50,7 @@ function asString(value, max = 240) {
 }
 
 function asNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
@@ -258,7 +259,7 @@ function couponsFromWallet(payload) {
 function careFromState(payload) {
   const data = asObject(payload.data || payload);
   const state = asString(data.state || payload.state, 64).toLowerCase().replace(/[\s-]+/g, "_");
-  const approved = asNumber(data.approved_discount_percent || payload.approved_discount_percent);
+  const approved = asNumber(data.approved_discount_percent ?? payload.approved_discount_percent);
   let stage = "not_started";
   if (["verification_required", "identity_pending"].includes(state)) stage = "identity_pending";
   else if (["eligibility_pending", "review_required", "claim_required", "wish_available"].includes(state)) stage = "eligibility_pending";
