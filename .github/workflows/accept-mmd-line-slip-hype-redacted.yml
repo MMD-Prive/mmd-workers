@@ -18,6 +18,7 @@ jobs:
     environment: mmd-slip-extractor-staging
     env:
       AUTH_SERVICE_LINE_TO_TELEGRAM: ${{ secrets.AUTH_SERVICE_LINE_TO_TELEGRAM || secrets.TELEGRAM_INTERNAL_TOKEN || secrets.INTERNAL_API_TOKEN }}
+      AUTH_SERVICE_AUTH_TO_TELEGRAM: ${{ secrets.AUTH_SERVICE_AUTH_TO_TELEGRAM }}
       TELEGRAM_BOT_TOKEN_GENERIC: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_BOT_TOKEN_MMS: ${{ secrets.MMS_TELEGRAM_BOT_TOKEN }}
       HYPE_CHAT_ID: "-1003546439681"
@@ -29,21 +30,38 @@ jobs:
         run: |
           set -euo pipefail
           text=$'🧪 LINE SLIP STAGING ACCEPTANCE B\nStatus: pending\nSynthetic/redacted only\nNo customer data / no production LINE'
-          service_token="$(printf '%s' "${AUTH_SERVICE_LINE_TO_TELEGRAM:-}" | tr -d '\r\n' | xargs)"
+          line_service_token="$(printf '%s' "${AUTH_SERVICE_LINE_TO_TELEGRAM:-}" | tr -d '\r\n' | xargs)"
+          auth_service_token="$(printf '%s' "${AUTH_SERVICE_AUTH_TO_TELEGRAM:-}" | tr -d '\r\n' | xargs)"
           generic_token="$(printf '%s' "${TELEGRAM_BOT_TOKEN_GENERIC:-}" | tr -d '\r\n' | xargs)"
           mms_token="$(printf '%s' "${TELEGRAM_BOT_TOKEN_MMS:-}" | tr -d '\r\n' | xargs)"
 
           node -e 'const fs=require("node:fs");fs.writeFileSync(process.env.RUNNER_TEMP+"/hype-payload.json",JSON.stringify({chat_id:process.env.HYPE_CHAT_ID,message_thread_id:Number(process.env.HYPE_THREAD_ID),text:"🧪 LINE SLIP STAGING ACCEPTANCE B\nStatus: pending\nSynthetic/redacted only\nNo customer data / no production LINE",disable_notification:true}))'
 
-          if [ -n "$service_token" ]; then
-            echo "::add-mask::${service_token}"
-            service_payload="$(node -e 'process.stdout.write(JSON.stringify({flow:"payment_proof",chat_id:process.env.HYPE_CHAT_ID,message_thread_id:Number(process.env.HYPE_THREAD_ID),text:process.argv[1]}))' "$text")"
-            code="$(curl -sS -o "$RUNNER_TEMP/service.json" -w '%{http_code}' -X POST 'https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send' -H "Authorization: Bearer ${service_token}" -H 'Content-Type: application/json' --data-binary "$service_payload" || true)"
-            if [ "$code" = 200 ] && node -e 'const fs=require("node:fs");const b=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+"/service.json","utf8"));process.exit(b.ok===true&&b.telegram?.ok===true?0:1)'; then
-              echo "mode=service" >> "$GITHUB_OUTPUT"
-              exit 0
+          try_service() {
+            label="$1"
+            token="$2"
+            if [ -z "$token" ]; then
+              echo "${label}: unavailable"
+              return 1
             fi
-            echo "service credential did not deliver; trying bounded bot candidates"
+            echo "::add-mask::${token}"
+            service_payload="$(node -e 'process.stdout.write(JSON.stringify({flow:"payment_proof",chat_id:process.env.HYPE_CHAT_ID,message_thread_id:Number(process.env.HYPE_THREAD_ID),text:process.argv[1]}))' "$text")"
+            code="$(curl -sS -o "$RUNNER_TEMP/${label}.json" -w '%{http_code}' -X POST 'https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send' -H "Authorization: Bearer ${token}" -H 'Content-Type: application/json' --data-binary "$service_payload" || true)"
+            if [ "$code" = 200 ] && node -e 'const fs=require("node:fs");const b=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.exit(b.ok===true&&b.telegram?.ok===true?0:1)' "$RUNNER_TEMP/${label}.json"; then
+              echo "${label}: delivered"
+              return 0
+            fi
+            echo "${label}: did not deliver"
+            return 1
+          }
+
+          if try_service service-line "$line_service_token"; then
+            echo "mode=service-line" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if try_service service-auth "$auth_service_token"; then
+            echo "mode=service-auth" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
           try_bot() {
