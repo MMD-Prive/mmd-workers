@@ -1,0 +1,203 @@
+name: Diagnose MMD LINE Slip Staging Queue
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/slip-staging-acceptance-smoke
+    paths:
+      - ".github/workflows/diagnose-mmd-line-slip-staging-queue.yml"
+
+concurrency:
+  group: diagnose-mmd-line-slip-staging-queue
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  trace-synthetic-queue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg"
+      AIRTABLE_STAGING_TABLE_ID: "tbl9Y6IMM4EWYjIBJ"
+      INTAKE_URL: "https://mmd-line-slip-intake-staging.malemodel-bkk.workers.dev"
+      NO_COLOR: "1"
+      WRANGLER_SEND_METRICS: "false"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            services/mmd-slip-extractor/package-lock.json
+            services/mmd-slip-extractor/cloudflare/package-lock.json
+
+      - name: Lock staging-only boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const extractor = JSON.parse(fs.readFileSync("services/mmd-slip-extractor/cloudflare/wrangler.jsonc", "utf8"));
+          const intake = JSON.parse(fs.readFileSync("services/mmd-line-slip-intake/cloudflare/wrangler.jsonc", "utf8"));
+          const source = fs.readFileSync("services/mmd-line-slip-intake/cloudflare/worker.mjs", "utf8");
+          const assert = (value, message) => { if (!value) throw new Error(message); };
+          assert(extractor.name === "mmd-slip-extractor-staging", "extractor staging name required");
+          assert(extractor.workers_dev === true && extractor.preview_urls === false, "extractor workers.dev-only required");
+          assert(Array.isArray(extractor.routes) && extractor.routes.length === 0, "extractor custom routes forbidden");
+          assert(intake.name === "mmd-line-slip-intake-staging", "intake staging name required");
+          assert(intake.workers_dev === true && intake.preview_urls === false, "intake workers.dev-only required");
+          assert(!intake.routes || intake.routes.length === 0, "intake custom routes forbidden");
+          assert(intake.vars?.MMD_RUNTIME_SCOPE === "staging", "staging runtime required");
+          assert(source.includes('audit("queue_received"'), "redacted queue trace missing");
+          assert(source.includes('audit("queue_error"'), "redacted queue error trace missing");
+          assert(!source.includes("LINE_WEBHOOK_UPSTREAM_URL"), "retired LINE upstream must remain absent");
+          NODE
+
+      - name: Prepare staging-only credentials and fixture dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix services/mmd-slip-extractor
+          npm ci --prefix services/mmd-slip-extractor/cloudflare
+          node <<'NODE'
+          const fs = require("node:fs");
+          const crypto = require("node:crypto");
+          const clean = (value) => String(value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
+          const cf = clean(process.env.CLOUDFLARE_API_TOKEN);
+          const airtable = clean(process.env.AIRTABLE_API_KEY);
+          if (!cf || !airtable) throw new Error("staging credentials missing");
+          const extractorToken = crypto.randomBytes(32).toString("base64url");
+          const intakeToken = crypto.randomBytes(32).toString("base64url");
+          for (const value of [cf, airtable, extractorToken, intakeToken]) console.log(`::add-mask::${value}`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `MMD_SLIP_EXTRACTOR_TOKEN=${extractorToken}\nMMD_SLIP_INTAKE_STAGING_TOKEN=${intakeToken}\n`);
+          fs.writeFileSync(process.env.RUNNER_TEMP + "/extractor.env", `MMD_SLIP_EXTRACTOR_TOKEN=${extractorToken}\n`, { mode: 0o600 });
+          fs.writeFileSync(process.env.RUNNER_TEMP + "/intake.env", [
+            `MMD_SLIP_INTAKE_STAGING_TOKEN=${intakeToken}`,
+            `MMD_SLIP_EXTRACTOR_TOKEN=${extractorToken}`,
+            `AIRTABLE_API_KEY=${airtable}`,
+            "",
+          ].join("\n"), { mode: 0o600 });
+          NODE
+
+      - name: Deploy observable staging workers
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.128.0 whoami
+          npx --yes wrangler@4.128.0 deploy --config services/mmd-slip-extractor/cloudflare/wrangler.jsonc --keep-vars --secrets-file "$RUNNER_TEMP/extractor.env"
+          npx --yes wrangler@4.128.0 deploy --config services/mmd-line-slip-intake/cloudflare/wrangler.jsonc --keep-vars --secrets-file "$RUNNER_TEMP/intake.env"
+
+      - name: Start redacted staging tail
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > "$RUNNER_TEMP/intake-tail.log"
+          (timeout 180s npx --yes wrangler@4.128.0 tail mmd-line-slip-intake-staging --format=json > "$RUNNER_TEMP/intake-tail.log" 2>&1 || true) &
+          echo "$!" > "$RUNNER_TEMP/tail.pid"
+          sleep 8
+
+      - name: Create unique synthetic fixture
+        shell: bash
+        working-directory: services/mmd-slip-extractor
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import sharp from "sharp";
+          const marker = `${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`;
+          const svg = `<svg width="1100" height="420" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><text x="60" y="120" font-family="Arial" font-size="54" fill="black">MMD SYNTHETIC SLIP</text><text x="60" y="220" font-family="Arial" font-size="48" fill="black">Amount: THB 690.00</text><text x="60" y="305" font-family="Arial" font-size="38" fill="black">Transaction ID: SYNTHETIC-${marker}</text></svg>`;
+          await sharp(Buffer.from(svg)).png().toFile(process.env.RUNNER_TEMP + "/synthetic-slip.png");
+          NODE
+
+      - name: Submit authorized synthetic evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error --output "$RUNNER_TEMP/intake.json" --write-out '%{http_code}' \
+            -X POST \
+            -H "Authorization: Bearer ${MMD_SLIP_INTAKE_STAGING_TOKEN}" \
+            -H 'Content-Type: image/png' \
+            -H "x-mmd-run-id: trace-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --data-binary "@$RUNNER_TEMP/synthetic-slip.png" \
+            "$INTAKE_URL/v1/staging/intake" || true)"
+          test "$code" = "202"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const body = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/intake.json", "utf8"));
+          if (body.ok !== true || body.state !== "queued" || !/^syn_[a-f0-9]{24}$/.test(body.proof_id || "")) throw new Error("synthetic intake not queued");
+          fs.writeFileSync(process.env.RUNNER_TEMP + "/proof-id.txt", body.proof_id);
+          console.log(`Queued ${body.proof_id}`);
+          NODE
+
+      - name: Poll Airtable for pending proof
+        id: airtable
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const proofId = fs.readFileSync(process.env.RUNNER_TEMP + "/proof-id.txt", "utf8").trim();
+          const formula = `{proof_id}='${proofId.replace(/'/g, "\\'")}'`;
+          const url = `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_STAGING_TABLE_ID}?maxRecords=10&filterByFormula=${encodeURIComponent(formula)}`;
+          for (let attempt = 1; attempt <= 30; attempt += 1) {
+            const response = await fetch(url, { headers: { Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}` } });
+            if (!response.ok) throw new Error(`Airtable HTTP ${response.status}`);
+            const payload = await response.json();
+            const records = Array.isArray(payload.records) ? payload.records : [];
+            if (records.length === 1) {
+              const fields = records[0].fields || {};
+              if (fields.status !== "pending" || fields.source !== "synthetic_isolated") throw new Error("authority boundary changed");
+              console.log(`Airtable pending PASS: ${proofId}`);
+              process.exit(0);
+            }
+            if (records.length > 1) throw new Error(`duplicate records: ${records.length}`);
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+          }
+          throw new Error("pending proof not observed");
+          NODE
+
+      - name: Print bounded queue trace
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          sleep 5
+          proof_id=""
+          if [ -f "$RUNNER_TEMP/proof-id.txt" ]; then proof_id="$(cat "$RUNNER_TEMP/proof-id.txt")"; fi
+          echo "--- redacted queue trace (${proof_id}) ---"
+          if [ -s "$RUNNER_TEMP/intake-tail.log" ]; then
+            grep -E 'intake_queued|queue_received|queue_dedupe_checked|queue_r2_verified|queue_extracted|queue_airtable_pending|queue_telegram_result|queue_error' "$RUNNER_TEMP/intake-tail.log" | tail -n 80 || true
+          else
+            echo "tail log empty"
+          fi
+          echo "--- end trace ---"
+
+      - name: Enforce Airtable acceptance result
+        if: always()
+        shell: bash
+        run: |
+          if [ "${{ steps.airtable.outcome }}" != "success" ]; then
+            echo "Queue consumer did not create Airtable pending proof" >&2
+            exit 1
+          fi
+
+      - name: Record diagnostic result in issue 317
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          proof_id=""
+          if [ -f "$RUNNER_TEMP/proof-id.txt" ]; then proof_id="$(cat "$RUNNER_TEMP/proof-id.txt")"; fi
+          gh issue comment 317 --repo "$GITHUB_REPOSITORY" --body "🧪 Staging Queue diagnostic completed.\n\n- source_sha: \`${GITHUB_SHA}\`\n- workflow_run_id: \`${GITHUB_RUN_ID}\`\n- proof_id: \`${proof_id}\`\n- Airtable pending step outcome: \`${{ steps.airtable.outcome }}\`\n- production LINE route mutation: NONE\n- real-LINE production: NOT TOUCHED\n\nQueue trace is redacted and available in the workflow log. HYPE remains a separate credential gate."
