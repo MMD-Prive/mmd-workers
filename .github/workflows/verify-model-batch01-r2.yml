@@ -1,0 +1,145 @@
+name: Verify Batch 01 model R2 inventory
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/verify-model-batch01-r2.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-model-batch01-r2
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+      R2_BUCKET: mmd-models
+    steps:
+      - name: Verify exact Batch 01 prefixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          echo "::add-mask::$CLOUDFLARE_API_TOKEN"
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+          const bucket = process.env.R2_BUCKET;
+          const token = process.env.CLOUDFLARE_API_TOKEN;
+          const root = 'private/Premium Package/Premium - VIP Models/Straight/Top';
+          const models = [
+            ['rec0xpNoARWnLmxbF', 'Benz T'],
+            ['rec1PNF4GkkEm18Xw', 'Potae'],
+            ['rec6k8CrsgPuYXPJV', 'Day D'],
+            ['rec8TfDveyyFmt2an', 'Leon B'],
+            ['rec9OBx6L0gXEFNxx', 'EMs02'],
+            ['recG7wadM3extBleb', 'Boizze'],
+            ['recInEW464d83Vrgh', 'Tae S'],
+            ['recTCU0WI4w9VRPxi', 'Shore'],
+            ['recW9SGJmUHoANssj', 'Jay B'],
+            ['recWo70EXKtafLwhT', 'JS'],
+            ['recYgJWtzm4ro803I', 'Best T'],
+            ['reckvGpqbzsbTHk39', 'Plane'],
+            ['recqUSBH4H6LFH7ay', 'Master'],
+            ['recrkiBa5wacU9lMM', 'Pure'],
+            ['recuUAl1PwTtTZ0kS', 'Ohm J'],
+          ];
+
+          function isImage(obj) {
+            const key = String(obj?.key || '').toLowerCase();
+            const type = String(obj?.http_metadata?.contentType || obj?.http_metadata?.content_type || '').toLowerCase();
+            return type.startsWith('image/') || /\.(jpe?g|png|webp|gif|avif)$/i.test(key);
+          }
+
+          function scoreImage(obj) {
+            const key = String(obj?.key || '').toLowerCase();
+            let score = Number(obj?.size || 0);
+            if (/profile|primary|hero|compcard/.test(key)) score += 2_000_000_000;
+            if (/messageimage|img_|dsc_|photo/.test(key)) score += 500_000_000;
+            if (/thumb|thumbnail|qr|logo|icon|screenshot/.test(key)) score -= 2_000_000_000;
+            return score;
+          }
+
+          async function listPrefix(prefix) {
+            const url = new URL(`https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucket)}/objects`);
+            url.searchParams.set('prefix', prefix);
+            url.searchParams.set('per_page', '1000');
+            const response = await fetch(url, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.success !== true) {
+              const errors = Array.isArray(payload.errors) ? payload.errors.map((e) => `${e.code || 'unknown'}:${e.message || 'error'}`).join('; ') : 'unknown';
+              throw new Error(`Cloudflare R2 list failed ${response.status}: ${errors}`);
+            }
+            return Array.isArray(payload.result) ? payload.result : [];
+          }
+
+          const manifest = [];
+          for (const [modelId, folderName] of models) {
+            const prefix = `${root}/${folderName}/`;
+            const objects = await listPrefix(prefix);
+            const images = objects.filter(isImage).sort((a, b) => scoreImage(b) - scoreImage(a));
+            const primaryCandidate = images[0] || null;
+            manifest.push({
+              model_id: modelId,
+              working_name: folderName,
+              r2_prefix: prefix.replace(/\/$/, ''),
+              exists: objects.length > 0,
+              object_count: objects.length,
+              image_count: images.length,
+              primary_candidate_key: primaryCandidate?.key || '',
+              primary_candidate_size: Number(primaryCandidate?.size || 0),
+              primary_candidate_content_type: primaryCandidate?.http_metadata?.contentType || primaryCandidate?.http_metadata?.content_type || '',
+              top_image_candidates: images.slice(0, 5).map((o) => ({
+                key: o.key,
+                size: Number(o.size || 0),
+                content_type: o?.http_metadata?.contentType || o?.http_metadata?.content_type || '',
+                etag: o.etag || '',
+                last_modified: o.last_modified || '',
+              })),
+            });
+            console.log(`${folderName}: objects=${objects.length} images=${images.length} exists=${objects.length > 0 ? 'yes' : 'no'}`);
+          }
+
+          fs.writeFileSync('r2-batch01-manifest.json', JSON.stringify({
+            generated_at: new Date().toISOString(),
+            account_id: accountId,
+            bucket,
+            root_prefix: root,
+            models: manifest,
+          }, null, 2));
+          fs.writeFileSync('r2-batch01-summary.tsv', [
+            'model_id\tworking_name\texists\tobject_count\timage_count\tr2_prefix\tprimary_candidate_key\tprimary_candidate_size',
+            ...manifest.map((m) => [m.model_id, m.working_name, m.exists, m.object_count, m.image_count, m.r2_prefix, m.primary_candidate_key, m.primary_candidate_size].join('\t')),
+          ].join('\n') + '\n');
+
+          const missing = manifest.filter((m) => !m.exists || m.image_count === 0);
+          if (missing.length) {
+            console.error(`R2 verification incomplete for ${missing.length} model(s): ${missing.map((m) => m.working_name).join(', ')}`);
+            process.exitCode = 2;
+          }
+          NODE
+
+      - name: Upload verification manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: batch01-r2-verification
+          path: |
+            r2-batch01-manifest.json
+            r2-batch01-summary.tsv
+          if-no-files-found: error
+          retention-days: 7
