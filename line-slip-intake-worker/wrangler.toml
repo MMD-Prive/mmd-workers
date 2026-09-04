@@ -1,0 +1,51 @@
+name = "mmd-line-slip-intake-staging"
+main = "src/index.js"
+compatibility_date = "2026-09-04"
+workers_dev = true
+preview_urls = false
+routes = []
+
+[vars]
+MMD_RUNTIME_SCOPE = "staging"
+AIRTABLE_SYNC_TABLE = "MMD — Console Inbox"
+AIRTABLE_TABLE_PAYMENT_PROOFS = "MMD — Payment Proofs"
+AIRTABLE_TABLE_MEMBERS = "Members"
+AIRTABLE_TABLE_SESSIONS = "Sessions"
+AIRTABLE_TABLE_PAYMENTS = "Payments"
+AIRTABLE_TABLE_LIFF_RENEWAL_SESSIONS = "MMD — LIFF Renewal Sessions"
+LINE_SLIP_MAX_IMAGE_BYTES = "4194304"
+LINE_SLIP_MAX_AMOUNT_THB = "10000000"
+LINE_SLIP_CONFIDENCE_THRESHOLD = "0.85"
+HYPE_ALERT_REQUIRED = "true"
+TG_THREAD_PAYMENT = "21"
+
+# Staging-only resources. They are intentionally separate from production.
+[[queues.consumers]]
+queue = "mmd-line-slip-intake-staging"
+max_batch_size = 5
+max_batch_timeout = 5
+max_retries = 5
+dead_letter_queue = "mmd-line-slip-intake-staging-dlq"
+
+[[r2_buckets]]
+binding = "SLIP_EVIDENCE_R2"
+bucket_name = "mmd-line-slip-evidence-staging"
+
+[[services]]
+binding = "SLIP_EXTRACTOR"
+service = "mmd-slip-extractor-staging"
+
+[[services]]
+binding = "TELEGRAM_WORKER"
+service = "telegram-worker"
+
+[observability]
+enabled = true
+
+# Required staging secrets (never commit values):
+# - AIRTABLE_BASE_ID
+# - AIRTABLE_API_KEY
+# - LINE_CHANNEL_ACCESS_TOKEN
+# - MMD_SLIP_EXTRACTOR_TOKEN
+# - AUTH_SERVICE_LINE_TO_TELEGRAM
+# - TELEGRAM_OPS_CHAT_ID
