@@ -10,7 +10,7 @@
     "test:admin-login": "node --experimental-global-webcrypto --test admin-worker/admin-login-hero.test.mjs admin-worker/admin-login-session.test.mjs admin-worker/admin-login-browser-submit.test.mjs admin-worker/admin-login-regression-guard.test.mjs admin-worker/kenji-control-actions.test.mjs admin-worker/payment-entitlement-approval.test.mjs",
     "test:client-lineage": "node --test admin-worker/create-session-client-lineage-runtime.test.mjs admin-worker/create-session-remembered-name-priority.test.mjs admin-worker/pre-session-client-index.test.mjs",
     "test:kenji-admin-ui": "node --test webflow/internal/admin/kenji/kenji-admin-v1.test.mjs",
-    "test:mms-admin-ui": "node --experimental-global-webcrypto --test admin-worker/mms-admin-approve-ui.test.mjs admin-worker/mms-admin-mobile-bundle.test.mjs admin-worker/mms-admin-session-bounce.test.mjs",
+    "test:mms-admin-ui": "node --experimental-global-webcrypto --test admin-worker/mms-admin-approve-ui.test.mjs admin-worker/mms-admin-inline-syntax.test.mjs admin-worker/mms-admin-mobile-bundle.test.mjs admin-worker/mms-admin-session-bounce.test.mjs",
     "test:studio-real-worker": "node --test admin-worker/studio-real-worker.test.mjs",
     "test:telegram": "node --test telegram-worker/test/*.test.mjs",
     "test:blackcard-confirm": "node --test webflow/blackcard/confirm/confirm-contract.test.mjs",
