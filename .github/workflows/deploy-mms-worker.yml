@@ -68,6 +68,8 @@ jobs:
           if (config.preview_urls !== false) throw new Error("preview URLs must remain disabled");
           if (Array.isArray(config.routes) && config.routes.length) throw new Error("custom routes are forbidden in v1");
           if (config.vars?.MMS_INTERNAL_HOST !== "mms.internal") throw new Error("service-binding internal host is required");
+          if (config.vars?.MMS_THERAPIST_LINE_CHANNEL_ID !== "2011425652") throw new Error("published MMS Therapist LINE Channel ID is required");
+          if (config.vars?.MMS_THERAPIST_LIFF_ID !== "2011425652-YqK1F6y8") throw new Error("published MMS Therapist LIFF ID is required");
           if (!config.r2_buckets?.some((binding) => binding.binding === "MMS_PRIVATE_UPLOADS")) throw new Error("private R2 binding is required");
           if (!config.durable_objects?.bindings?.some((binding) => binding.name === "MMS_COORDINATOR")) throw new Error("coordinator Durable Object is required");
           NODE
@@ -83,7 +85,7 @@ jobs:
           const token = String(process.env.AIRTABLE_API_TOKEN || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
           if (!token) throw new Error("MMS Airtable runtime token is missing");
           const base = "appsV1ILPRfIjkaYg";
-          const tables = ["tblogwnxtIG19I2WB", "tblihsaMw06mkjaat"];
+          const tables = ["tblogwnxtIG19I2WB", "tblihsaMw06mkjaat", "tblTC9ZHQa4hAUwLu"];
           for (const table of tables) {
             const response = await fetch(`https://api.airtable.com/v0/${base}/${table}?maxRecords=1`, {
               headers: { Authorization: `Bearer ${token}` },
@@ -94,7 +96,7 @@ jobs:
               throw new Error(`MMS Airtable preflight failed for ${table}: ${type}`);
             }
           }
-          console.log("MMS Airtable read preflight passed for Applications and Sensitive Profiles");
+          console.log("MMS Airtable read preflight passed for Applications, Sensitive Profiles, and Therapists");
           NODE
 
       - name: Ensure private MMS R2 bucket exists
@@ -106,15 +108,36 @@ jobs:
             npx wrangler r2 bucket create mms-private-uploads
           fi
 
+      - name: Ensure persistent Therapist auth secrets
+        id: therapist-secrets
+        working-directory: mms-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_list="$(npx wrangler secret list)"
+          ensure_secret() {
+            name="$1"
+            if printf '%s\n' "$secret_list" | grep -Fq "$name"; then
+              echo "$name already configured"
+              return
+            fi
+            node -e 'process.stdout.write(require("node:crypto").randomBytes(48).toString("base64url"))' | npx wrangler secret put "$name"
+            echo "$name created"
+          }
+          ensure_secret MMS_THERAPIST_SESSION_SECRET
+          ensure_secret MMS_THERAPIST_IDENTITY_PEPPER
+          printf 'configured=true\n' >> "$GITHUB_OUTPUT"
+
       - name: Prepare optional runtime secrets
         id: runtime-secrets
         shell: bash
         run: |
           node <<'NODE'
           const fs = require("node:fs");
-          const token = String(process.env.AIRTABLE_API_TOKEN || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
-          const telegramToken = String(process.env.TELEGRAM_BOT_TOKEN || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
-          const telegramChatId = String(process.env.MMS_TELEGRAM_CHAT_ID || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
+          const clean = (value) => String(value || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
+          const token = clean(process.env.AIRTABLE_API_TOKEN);
+          const telegramToken = clean(process.env.TELEGRAM_BOT_TOKEN);
+          const telegramChatId = clean(process.env.MMS_TELEGRAM_CHAT_ID);
           const path = process.env.RUNNER_TEMP + "/mms-worker.env";
           const lines = [];
           if (token) { console.log(`::add-mask::${token}`); lines.push(`AIRTABLE_API_TOKEN=${token}`); }
@@ -169,6 +192,9 @@ jobs:
             `- Private R2: ${health.bindings.private_uploads ? "ready" : "missing"}`,
             `- Airtable runtime secret: ${health.bindings.airtable ? "ready" : "pending"}`,
             `- Telegram notification: ${health.bindings.telegram ? "ready" : "pending"}`,
+            `- Therapist LINE Channel ID: 2011425652`,
+            `- Therapist LIFF ID: 2011425652-YqK1F6y8`,
+            `- Therapist auth secrets: ${{ steps.therapist-secrets.outputs.configured }}`,
             `- Skill catalog: ${catalog.data.skills.length}/8`,
             "",
           ].join("\n"));

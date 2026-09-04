@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check src/index.js && node --check src/runtime-index.js && node --check src/core.mjs && node --check src/admin-runtime.mjs && node --check src/member-read-runtime.mjs",
+    "check": "node --check src/index.js && node --check src/runtime-index.js && node --check src/runtime-index-with-therapist-invite.js && node --check src/therapist-invite-runtime.mjs && node --check src/core.mjs && node --check src/admin-runtime.mjs && node --check src/member-read-runtime.mjs && node --check src/therapist-auth-runtime.mjs",
     "test": "npm run check && node --experimental-global-webcrypto --test test/*.test.mjs",
     "types": "wrangler types",
     "dry-run": "wrangler deploy --dry-run",
