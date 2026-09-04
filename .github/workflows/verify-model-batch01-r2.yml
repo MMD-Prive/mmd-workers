@@ -31,9 +31,8 @@ jobs:
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           echo "::add-mask::$CLOUDFLARE_API_TOKEN"
 
-          node <<'NODE'
-          const fs = require('node:fs');
-          const path = require('node:path');
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
 
           const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
           const bucket = process.env.R2_BUCKET;
