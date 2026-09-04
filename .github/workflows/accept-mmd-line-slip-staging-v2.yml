@@ -76,8 +76,12 @@ jobs:
           fs.writeFileSync(process.env.RUNNER_TEMP+'/intake.env',`MMD_SLIP_INTAKE_STAGING_TOKEN=${intake}\nMMD_SLIP_EXTRACTOR_TOKEN=${extractor}\nAIRTABLE_API_KEY=${airtable}\n`,{mode:0o600});
           NODE
 
-      - name: Install fixture dependency
-        run: npm ci --prefix services/mmd-slip-extractor
+      - name: Install fixture dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix services/mmd-slip-extractor
+          npm ci --prefix services/mmd-slip-extractor/cloudflare
 
       - name: Deploy staging extractor and intake
         shell: bash
@@ -185,7 +189,8 @@ jobs:
 
           if [ -n "$service_token" ]; then
             echo "::add-mask::${service_token}"
-            code="$(curl -sS -o "$RUNNER_TEMP/hype-service.json" -w '%{http_code}' -X POST 'https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send' -H "Authorization: Bearer ${service_token}" -H 'Content-Type: application/json' --data-binary "$(node -e 'process.stdout.write(JSON.stringify({flow:"payment_proof",chat_id:process.env.HYPE_CHAT_ID,message_thread_id:Number(process.env.HYPE_THREAD_ID),text:process.argv[1]}))' "$text")" || true)"
+            service_payload="$(node -e 'process.stdout.write(JSON.stringify({flow:"payment_proof",chat_id:process.env.HYPE_CHAT_ID,message_thread_id:Number(process.env.HYPE_THREAD_ID),text:process.argv[1]}))' "$text")"
+            code="$(curl -sS -o "$RUNNER_TEMP/hype-service.json" -w '%{http_code}' -X POST 'https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send' -H "Authorization: Bearer ${service_token}" -H 'Content-Type: application/json' --data-binary "$service_payload" || true)"
             if [ "$code" = 200 ] && node -e 'const fs=require("node:fs");const b=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+"/hype-service.json","utf8"));process.exit(b.ok===true&&b.telegram?.ok===true?0:1)'; then
               echo "available=true" >> "$GITHUB_OUTPUT"
               echo "mode=service" >> "$GITHUB_OUTPUT"
@@ -195,15 +200,7 @@ jobs:
 
           if [ -n "$bot_token" ]; then
             echo "::add-mask::${bot_token}"
-            node <<'NODE'
-            const fs=require('node:fs');
-            fs.writeFileSync(process.env.RUNNER_TEMP+'/hype-bot-payload.json',JSON.stringify({
-              chat_id: process.env.HYPE_CHAT_ID,
-              message_thread_id: Number(process.env.HYPE_THREAD_ID),
-              text: '🧪 LINE SLIP STAGING ACCEPTANCE V2\nStatus: pending\nSynthetic/redacted only\nNo customer data / no production LINE',
-              disable_notification: true,
-            }));
-            NODE
+            node -e 'const fs=require("node:fs");fs.writeFileSync(process.env.RUNNER_TEMP+"/hype-bot-payload.json",JSON.stringify({chat_id:process.env.HYPE_CHAT_ID,message_thread_id:Number(process.env.HYPE_THREAD_ID),text:"🧪 LINE SLIP STAGING ACCEPTANCE V2\nStatus: pending\nSynthetic/redacted only\nNo customer data / no production LINE",disable_notification:true}))'
             code="$(curl -sS -o "$RUNNER_TEMP/hype-bot.json" -w '%{http_code}' -X POST "https://api.telegram.org/bot${bot_token}/sendMessage" -H 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/hype-bot-payload.json" || true)"
             test "$code" = 200
             node -e 'const fs=require("node:fs");const b=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+"/hype-bot.json","utf8"));if(b.ok!==true)process.exit(1)'
