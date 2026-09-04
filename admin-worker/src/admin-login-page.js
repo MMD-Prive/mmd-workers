@@ -4,10 +4,10 @@ export const APPROVED_ADMIN_LOGIN_HERO =
   "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e34c91250ec9f6ee29d319_MMD%20SIGIL%20Logo.png";
 export const APPROVED_ADMIN_LOGIN_LOGO =
   "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0f2cbc7e26b6735aee4cb2_SIGIL%20LOGO%20Transp.webp";
-export const APPROVED_ADMIN_LOGIN_FAVICON =
-  "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e34d70142723ec97768bc2_Only%20logo.png";
-export const APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON =
-  "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e34c91250ec9f6ee29d319_MMD%20SIGIL%20Logo.png";
+export const MMD_FAVICON_DATA_URI =
+  "data:image/png;base64,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";
+export const APPROVED_ADMIN_LOGIN_FAVICON = MMD_FAVICON_DATA_URI;
+export const APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON = MMD_FAVICON_DATA_URI;
 export const ADMIN_CANONICAL_ORIGIN = "https://mmdbkk.com";
 
 // This is the only renderer for /internal/admin/login. Both the production
@@ -27,7 +27,7 @@ export function renderApprovedAdminLogin(
   <script>(()=>{if(location.protocol==='https:'&&location.hostname==='www.mmdbkk.com'){const path=(location.pathname.replace(/\\/+$/,'')||'/');if(path==='/internal/admin/login'){const canonical=new URL(location.href);canonical.hostname='mmdbkk.com';location.replace(canonical.toString());}}})();</script>
   <title>MMD Privé · Internal Login</title>
   <link rel="canonical" href="${ADMIN_CANONICAL_ORIGIN}/internal/admin/login">
-  <link rel="icon" type="image/png" sizes="32x32" href="${APPROVED_ADMIN_LOGIN_FAVICON}">
+  <link rel="icon" type="image/png" sizes="48x48" href="${APPROVED_ADMIN_LOGIN_FAVICON}">
   <link rel="apple-touch-icon" href="${APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON}">
   <style>
     :root{color-scheme:dark}
@@ -116,7 +116,7 @@ export function renderApprovedAdminLogin(
     status,
     headers: {
       "cache-control": "no-store, private, max-age=0",
-      "content-security-policy": "default-src 'none'; img-src https://cdn.prod.website-files.com; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
+      "content-security-policy": "default-src 'none'; img-src https://cdn.prod.website-files.com data:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
       "content-type": "text/html; charset=utf-8",
       "referrer-policy": "no-referrer",
       "x-content-type-options": "nosniff",
