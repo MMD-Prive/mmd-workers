@@ -12,6 +12,10 @@ import {
   normalizeActivationTtlSeconds,
   validateActivationPayload,
 } from "./src/model-first-time-activation.js";
+import {
+  modelGpsVisibilityContract,
+  normalizeModelGpsVisibilityPatch,
+} from "./src/model-gps-visibility.js";
 
 test("public profile/gallery media is model self-managed", () => {
   for (const media_type of ["profile_photo", "public_gallery", "intro_video"]) {
@@ -108,4 +112,33 @@ test("activation LIFF URL targets the canonical published Model Mini App", () =>
   assert.equal(url.origin, "https://miniapp.line.me");
   assert.equal(url.pathname, "/2010864854-N34SgCqq");
   assert.equal(url.searchParams.get("activation"), "signed.token");
+});
+
+test("Model GPS Visibility defaults OFF and is active-job-only", () => {
+  assert.equal(modelGpsVisibilityContract.path, "/v1/model/settings/gps-visibility");
+  assert.equal(modelGpsVisibilityContract.default_enabled, false);
+  assert.equal(modelGpsVisibilityContract.active_job_only, true);
+  assert.equal(modelGpsVisibilityContract.visibility, "private_customer");
+  assert.equal(modelGpsVisibilityContract.stores_coordinates, false);
+  assert.equal(modelGpsVisibilityContract.requests_device_location, false);
+});
+
+test("Model GPS Visibility accepts only a boolean permission switch", () => {
+  assert.deepEqual(normalizeModelGpsVisibilityPatch({ enabled: true }), { ok: true, enabled: true });
+  assert.deepEqual(normalizeModelGpsVisibilityPatch({ enabled: false }), { ok: true, enabled: false });
+  assert.equal(normalizeModelGpsVisibilityPatch({ enabled: "true" }).error, "gps_visibility_invalid");
+  assert.equal(normalizeModelGpsVisibilityPatch({ enabled: true, note: "x" }).error, "unsupported_fields");
+});
+
+test("Model GPS Visibility endpoint rejects coordinate payloads", () => {
+  for (const payload of [
+    { enabled: true, lat: 13.7 },
+    { enabled: true, lng: 100.5 },
+    { enabled: true, latitude: 13.7 },
+    { enabled: true, longitude: 100.5 },
+    { enabled: true, coords: { latitude: 13.7, longitude: 100.5 } },
+    { enabled: true, location: "private address" },
+  ]) {
+    assert.equal(normalizeModelGpsVisibilityPatch(payload).error, "gps_coordinates_not_accepted");
+  }
 });
