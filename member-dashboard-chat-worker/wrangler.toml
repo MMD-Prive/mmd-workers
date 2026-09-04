@@ -76,6 +76,17 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/api/member/dashboard*"
 zone_name = "mmdbkk.com"
 
+# Customer-facing My MMD app adapter. The app API is same-origin only and
+# delegates through member-pages-worker so it reuses the verified LIFF/member
+# session instead of creating a second browser auth system.
+[[routes]]
+pattern = "mmdbkk.com/api/member/app/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/api/member/app/*"
+zone_name = "mmdbkk.com"
+
 # Cloudflare route matching includes the query string. The trailing wildcard
 # is required for CARE BACK URLs such as /member/liff?intent=promo.
 # Runtime routing still accepts only /member/liff and /member/liff/.
