@@ -81,6 +81,24 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/model/settings/gps-visibility"
 zone_name = "mmdbkk.com"
 
+# Model location capability/current routes. Capability contains no coordinates.
+# Current ingest is separately gated by GPS Visibility + Active Job and defaults OFF.
+[[routes]]
+pattern = "mmdbkk.com/v1/model/location/capability"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/location/capability"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/model/location/current*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/location/current*"
+zone_name = "mmdbkk.com"
+
 # Model Console V16 additive write/review routes. Keep these exact and narrow;
 # do not claim broad /v1/model/* ownership.
 [[routes]]
@@ -558,6 +576,11 @@ AT_SESSIONS__STATE = "session_state"
 AT_SESSIONS__STATUS = "status"
 AT_SESSIONS__MODEL_RECORD_ID = "Assigned Model"
 AT_SESSIONS__MODEL_NAME = "model_name"
+# GPS location remains opt-in and inactive until an explicit production enable.
+# Only the latest point is retained in a Durable Object for a short TTL; no history/Airtable coordinates.
+MODEL_LOCATION_INGEST_ENABLED = "false"
+MODEL_LOCATION_CUSTOMER_READ_ENABLED = "false"
+MODEL_LOCATION_RETENTION_SECONDS = "180"
 MODEL_SOURCE_OWNER_DEFAULT = "lonelysomething"
 MODEL_R2_LOOKUP_ENABLED = "true"
 MODEL_R2_USE_SOURCE_OWNER_AS_PREFIX = "false"
@@ -583,6 +606,11 @@ class_name = "KenjiKnowledgeCoordinator"
 name = "MODEL_ACTIVATION_COORDINATOR"
 class_name = "ModelActivationCoordinator"
 
+# Stores at most one short-lived GPS point per model. Coordinates are never written to Airtable.
+[[durable_objects.bindings]]
+name = "MODEL_LOCATION_COORDINATOR"
+class_name = "ModelLocationCoordinator"
+
 [[migrations]]
 tag = "v2026-09-01-kenji-knowledge-coordinator"
 new_sqlite_classes = ["KenjiKnowledgeCoordinator"]
@@ -590,6 +618,10 @@ new_sqlite_classes = ["KenjiKnowledgeCoordinator"]
 [[migrations]]
 tag = "v2026-09-04-model-first-time-activation"
 new_sqlite_classes = ["ModelActivationCoordinator"]
+
+[[migrations]]
+tag = "v2026-09-05-model-location-coordinator"
+new_sqlite_classes = ["ModelLocationCoordinator"]
 
 [[r2_buckets]]
 binding = "MMD_MODEL_ASSETS"
