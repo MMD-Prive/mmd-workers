@@ -62,8 +62,8 @@ jobs:
               -o "$models_body" \
               -w "%{http_code}" \
               "$origin/v1/admin/kenji/models?q=Mek&limit=20")"
-            models_location="$(awk -F': *' 'tolower($1)=="location" {gsub(/\r/,"",$2); print $2}' "$models_headers" | tail -n 1)"
-            models_server="$(awk -F': *' 'tolower($1)=="server" {gsub(/\r/,"",$2); print $2}' "$models_headers" | tail -n 1)"
+            models_location="$(grep -i '^location:' "$models_headers" | tail -n 1 | sed -E 's/^[^:]+:[[:space:]]*//; s/\r$//' || true)"
+            models_server="$(grep -i '^server:' "$models_headers" | tail -n 1 | sed -E 's/^[^:]+:[[:space:]]*//; s/\r$//' || true)"
             echo "[$origin] models=$models_code location=${models_location:-none} server=${models_server:-none}"
             test "$models_code" = "200"
 
