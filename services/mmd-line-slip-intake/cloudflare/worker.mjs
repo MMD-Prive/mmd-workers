@@ -152,13 +152,13 @@ function normalizedExtraction(payload, method) {
   };
 }
 
-async function callExtractor(env, route, object, job) {
+async function callExtractor(env, route, body, job) {
   if (!env.SLIP_EXTRACTOR || typeof env.SLIP_EXTRACTOR.fetch !== "function") {
     return { ok: false, unavailable: true, error: "extractor_binding_missing" };
   }
   const token = clean(env.MMD_SLIP_EXTRACTOR_TOKEN);
   if (!token) return { ok: false, unavailable: true, error: "extractor_token_missing" };
-  const body = await object.arrayBuffer();
+  const requestBody = body instanceof ArrayBuffer ? body.slice(0) : body;
   const response = await env.SLIP_EXTRACTOR.fetch(new Request(`https://mmd-slip-extractor-staging${route}`, {
     method: "POST",
     headers: {
@@ -167,7 +167,7 @@ async function callExtractor(env, route, object, job) {
       "content-length": String(job.byte_size),
       "x-request-id": clean(job.run_id) || job.proof_id,
     },
-    body,
+    body: requestBody,
   }));
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) return { ok: false, unavailable: false, error: `extractor_${response.status}` };
@@ -175,13 +175,14 @@ async function callExtractor(env, route, object, job) {
 }
 
 async function extractEvidence(env, object, job) {
-  const qr = await callExtractor(env, "/v1/extract/qr", object, job);
+  const body = await object.arrayBuffer();
+  const qr = await callExtractor(env, "/v1/extract/qr", body, job);
   if (qr.ok) {
     const normalized = normalizedExtraction(qr.result, "qr");
     if (normalized.payment_ref) return normalized;
   }
 
-  const ocr = await callExtractor(env, "/v1/extract/ocr", object, job);
+  const ocr = await callExtractor(env, "/v1/extract/ocr", body, job);
   if (ocr.ok) return normalizedExtraction(ocr.result, "ocr");
 
   return {
