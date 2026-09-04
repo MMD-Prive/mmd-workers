@@ -13,9 +13,10 @@ const APPLICATION_ID_RE = /^pma_[A-Za-z0-9_-]{8,120}$/;
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 
 export function shouldAttemptPublicModelNotification({ duplicate, status }) {
-  if (status === "sent") return false;
+  const current = String(status || "").trim().toLowerCase();
+  if (current === "sent" || current === "pending" || current === "skipped") return false;
   if (!duplicate) return true;
-  return status === "failed";
+  return current === "failed" || current === "";
 }
 
 export function publicModelThreadId(env = {}) {
@@ -68,7 +69,8 @@ export async function notifyPublicModelApplication({ env, payload, applicationId
 
   const currentStatus = String(record.fields?.[TELEGRAM_NOTIFY_FIELDS.status] || "").trim().toLowerCase();
   if (!shouldAttemptPublicModelNotification({ duplicate: Boolean(duplicate), status: currentStatus })) {
-    return { ok: true, skipped: true, reason: currentStatus === "sent" ? "already_sent" : "duplicate_not_retryable" };
+    const reason = currentStatus === "sent" ? "already_sent" : currentStatus === "pending" ? "already_pending" : "notification_not_retryable";
+    return { ok: true, skipped: true, reason };
   }
 
   await updateNotificationState(env, record.id, {
@@ -88,7 +90,8 @@ export async function notifyPublicModelApplication({ env, payload, applicationId
     const threadId = publicModelThreadId(env);
     if (threadId) telegramPayload.message_thread_id = threadId;
 
-    const response = await fetch(`${TELEGRAM_API_BASE}/bot${token}/sendMessage`, {
+    const fetcher = typeof env.TELEGRAM_FETCH === "function" ? env.TELEGRAM_FETCH : fetch;
+    const response = await fetcher(`${TELEGRAM_API_BASE}/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(telegramPayload),
@@ -131,7 +134,7 @@ async function findApplicationById(env, applicationId) {
 }
 
 async function updateNotificationState(env, recordId, fields) {
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_APPLICATION_TABLE_ID}/${recordId}?returnFieldsByFieldId=true`;
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_APPLICATION_TABLE_ID}/${encodeURIComponent(recordId)}?returnFieldsByFieldId=true`;
   return airtableRequest(env, url, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
@@ -142,7 +145,8 @@ async function updateNotificationState(env, recordId, fields) {
 async function airtableRequest(env, url, init) {
   const headers = new Headers(init?.headers || {});
   headers.set("authorization", `Bearer ${String(env.AIRTABLE_API_TOKEN || "").trim()}`);
-  const response = await fetch(url, { ...init, headers });
+  const fetcher = typeof env.AIRTABLE_FETCH === "function" ? env.AIRTABLE_FETCH : fetch;
+  const response = await fetcher(url, { ...init, headers });
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     const type = sanitizeErrorText(payload?.error?.type || `HTTP_${response.status}`);
