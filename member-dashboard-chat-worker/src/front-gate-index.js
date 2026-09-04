@@ -133,13 +133,14 @@ async function proxyMyMmdPresentation(request, { asset = false } = {}) {
   }
 
   const upstreamUrl = asset ? presentationUrlForAsset(request) : presentationUrlForPage(request);
+  const upstreamRequest = new Request(upstreamUrl, {
+    method: request.method,
+    headers: presentationRequestHeaders(request),
+    redirect: "follow",
+  });
   let upstream;
   try {
-    upstream = await globalThis.fetch(upstreamUrl, {
-      method: request.method,
-      headers: presentationRequestHeaders(request),
-      redirect: "follow",
-    });
+    upstream = await globalThis.fetch(upstreamRequest);
   } catch (_) {
     return new Response("My MMD is temporarily unavailable.", {
       status: 502,
