@@ -100,6 +100,51 @@ test("My MMD asset proxy repairs stale LINE verify links without encoding the en
   assert.doesNotMatch(javascript, /member\/liff\/member\/liff/);
 });
 
+test("status LIFF shell returns to canonical My MMD only after the same-site profile verifies", async () => {
+  const runtime = {
+    MEMBER_PAGES_WORKER: {
+      fetch: async () => new Response(
+        `<!doctype html><html><body><main>LIFF bridge</main><script nonce="abc123">window.__shell=true;</script></body></html>`,
+        {
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+            "content-security-policy": "default-src 'self'; script-src 'self' 'nonce-abc123'",
+            "cache-control": "no-store",
+          },
+        },
+      ),
+    },
+  };
+
+  const response = await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=status"), runtime);
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-mmd-liff-return-bridge"), "my-mmd-status-v1");
+  assert.match(html, /<script nonce="abc123">[\s\S]*\/member\/api\/liff\/profile/);
+  assert.match(html, /payload && payload\.ok === true/);
+  assert.match(html, /window\.location\.replace\(target\)/);
+  assert.match(html, /const target = "\/member\/my-mmd"/);
+});
+
+test("CARE BACK promo LIFF shell is not auto-returned to My MMD", async () => {
+  const runtime = {
+    MEMBER_PAGES_WORKER: {
+      fetch: async () => new Response(
+        `<!doctype html><html><body><main>CARE bridge</main><script nonce="care123">window.__shell=true;</script></body></html>`,
+        { headers: { "content-type": "text/html; charset=utf-8" } },
+      ),
+    },
+  };
+
+  const response = await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=promo&campaign=care_back"), runtime);
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-mmd-liff-return-bridge"), null);
+  assert.doesNotMatch(html, /window\.location\.replace\(target\)/);
+});
+
 test("My MMD presentation proxy is read-only", async () => {
   let calls = 0;
   globalThis.fetch = async () => {
