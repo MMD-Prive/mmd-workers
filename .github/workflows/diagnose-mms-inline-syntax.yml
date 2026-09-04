@@ -1,0 +1,116 @@
+name: Diagnose MMS inline syntax
+
+on:
+  push:
+    branches:
+      - diagnose/mms-frontend-production-20260904
+    paths:
+      - ".github/workflows/diagnose-mms-inline-syntax.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  parse-production-html:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ADMIN_MMS_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+
+    steps:
+      - name: Normalize smoke credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const clean = (value) => (value || '').replace(/[\u2028\u2029\r\n]/g, '').trim();
+          const credential = clean(process.env.ADMIN_MMS_SMOKE_CREDENTIAL);
+          if (!credential) throw new Error('ADMIN_LOGIN_CREDENTIAL or ADMIN_BEARER is required');
+          fs.appendFileSync(process.env.GITHUB_ENV, `ADMIN_MMS_SMOKE_CREDENTIAL=${credential}\n`);
+          NODE
+          echo "::add-mask::$ADMIN_MMS_SMOKE_CREDENTIAL"
+
+      - name: Fetch authenticated production HTML and parse inline scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for host in mmdbkk.com www.mmdbkk.com; do
+            origin="https://$host"
+            cookie="$(mktemp)"
+            headers="$(mktemp)"
+            page="$(mktemp)"
+
+            code="$(curl -sS -D "$headers" -c "$cookie" -o /dev/null -w '%{http_code}' \
+              -X POST \
+              -H "Origin: $origin" \
+              -H 'Content-Type: application/x-www-form-urlencoded' \
+              --data-urlencode "credential=$ADMIN_MMS_SMOKE_CREDENTIAL" \
+              --data-urlencode 'next=/internal/admin/mms' \
+              "$origin/internal/admin/login/session")"
+            test "$code" = '303'
+            grep -q 'mmd_admin_gate_v1' "$cookie"
+
+            page_code="$(curl -sS -b "$cookie" -o "$page" -w '%{http_code}' "$origin/internal/admin/mms")"
+            test "$page_code" = '200'
+
+            HOST="$host" PAGE_FILE="$page" node <<'NODE'
+          const fs = require('node:fs');
+          const vm = require('node:vm');
+          const host = process.env.HOST;
+          const html = fs.readFileSync(process.env.PAGE_FILE, 'utf8');
+          const scripts = [];
+          const re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+          let match;
+          while ((match = re.exec(html))) {
+            scripts.push({ attrs: match[1] || '', code: match[2] || '' });
+          }
+
+          console.log(`\n=== ${host}: ${scripts.length} script tags ===`);
+          let failures = 0;
+          scripts.forEach((script, index) => {
+            if (/\bsrc\s*=/.test(script.attrs)) {
+              console.log(`SKIP external script #${index}`);
+              return;
+            }
+            const filename = `${host.replace(/\W+/g, '_')}-inline-${index}.js`;
+            try {
+              new vm.Script(script.code, { filename });
+              const marker = script.code.includes('mmsAdminApplySnapshot') ? ' [BASE SNAPSHOT BRIDGE]' : script.code.includes('MMS_ADMIN_MB_V1') ? ' [MOBILE]' : script.attrs.includes('data-mms-jobs-ui-v2') ? ' [JOBS]' : '';
+              console.log(`PASS inline #${index}${marker} bytes=${Buffer.byteLength(script.code)}`);
+            } catch (error) {
+              failures += 1;
+              console.error(`\nFAIL inline #${index} attrs=${JSON.stringify(script.attrs)}`);
+              console.error(error.stack || error.message || String(error));
+              console.error(`markers: bridge=${script.code.includes('mmsAdminApplySnapshot')} jobs=${script.attrs.includes('data-mms-jobs-ui-v2')} mobile=${script.code.includes('MMS_ADMIN_MB_V1')}`);
+
+              const escaped = filename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              const lineMatch = String(error.stack || '').match(new RegExp(escaped + ':(\\d+)'));
+              if (lineMatch) {
+                const lineNo = Number(lineMatch[1]);
+                const lines = script.code.split(/\r?\n/);
+                const start = Math.max(0, lineNo - 4);
+                const end = Math.min(lines.length, lineNo + 3);
+                console.error(`--- context around line ${lineNo} ---`);
+                for (let i = start; i < end; i += 1) {
+                  console.error(`${String(i + 1).padStart(4, ' ')} | ${lines[i]}`);
+                }
+              }
+
+              const bridgeAt = script.code.indexOf('async function boot()');
+              if (bridgeAt >= 0) {
+                console.error('--- boot excerpt ---');
+                console.error(script.code.slice(bridgeAt, Math.min(script.code.length, bridgeAt + 1800)));
+              }
+            }
+          });
+
+          if (failures) {
+            console.error(`\n${host}: ${failures} inline script syntax failure(s)`);
+            process.exitCode = 2;
+          } else {
+            console.log(`${host}: all inline scripts parse`);
+          }
+          NODE
+          done
