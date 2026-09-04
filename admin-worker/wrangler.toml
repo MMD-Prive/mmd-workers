@@ -3,7 +3,7 @@
 # Production deploy request: Kenji Admin gated rollout 2026-09-02
 
 name = "admin-worker"
-main = "src/admin-login-hero-worker.js"
+main = "src/model-dashboard-policy-wrapper.js"
 compatibility_date = "2026-01-01"
 workers_dev = true
 
@@ -31,6 +31,34 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/model/session/action"
+zone_name = "mmdbkk.com"
+
+# Model Dashboard self-service profile routes. Query-safe companion stays on the
+# same Worker; runtime pathname matching remains exact.
+[[routes]]
+pattern = "mmdbkk.com/v1/model/profile"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/profile"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/model/profile*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/profile*"
+zone_name = "mmdbkk.com"
+
+# Model Dashboard media self-service. This includes list/upload/file/set-main/delete
+# while private-gallery/flash authorization remains on the explicit review routes below.
+[[routes]]
+pattern = "mmdbkk.com/v1/model/media*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/media*"
 zone_name = "mmdbkk.com"
 
 # Model Console V16 additive write/review routes. Keep these exact and narrow;
@@ -435,6 +463,12 @@ zone_name = "mmdbkk.com"
 binding = "MMS_WORKER"
 service = "mms-worker"
 
+# ETA durability/timeline is events-worker-owned. Model Dashboard never writes ETA
+# business state directly from the browser.
+[[services]]
+binding = "EVENTS_WORKER"
+service = "events-worker"
+
 # ใช้สำหรับ CORS (browser calls)
 [vars]
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com"
@@ -456,7 +490,8 @@ TELEGRAM_STUDIO_CHAT_ID = "-1003546439681"
 TG_THREAD_ALERTS_EXCEPTIONS = "9"
 TG_THREAD_STUDIO_ALERT = "9"
 
-# Secrets: AUTH_SERVICE_ADMIN_TO_PAYMENTS, AUTH_SERVICE_STUDIO_TO_TELEGRAM
+# Secrets: AUTH_SERVICE_ADMIN_TO_PAYMENTS, AUTH_SERVICE_STUDIO_TO_TELEGRAM,
+# AUTH_SERVICE_ADMIN_TO_EVENTS (optional until provisioned; ETA service auth falls back to CONFIRM_KEY)
 
 # Airtable
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
@@ -480,6 +515,7 @@ AIRTABLE_TABLE_MEMBERS_ID = "tblgWc5VRon5o8Mhk"
 AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID = "tblNImdF9PKAxhXGi"
 AIRTABLE_TABLE_AI_MESSAGE_EVENTS_ID = "tbljCYfYqfm8gBTPq"
 AIRTABLE_TABLE_MODEL_REVIEW_REQUESTS_ID = "tblJ52hVu0f4uhEmS"
+AIRTABLE_TABLE_MODEL_MEDIA = "tblrpQXhHnbTU9RhW"
 AIRTABLE_CLIENT_NAME_FIELD = "Client Name"
 AIRTABLE_TABLE_MODELS = "models"
 AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
@@ -526,3 +562,4 @@ bucket_name = "mmd-models"
 # LINK_SIGNING_SECRET
 # AIRTABLE_API_KEY
 # INTERNAL_TOKEN
+# AUTH_SERVICE_ADMIN_TO_EVENTS
