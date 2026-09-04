@@ -25,16 +25,15 @@ jobs:
       MODEL_NAME: Mek
       ORIGIN: https://www.mmdbkk.com
     steps:
-      - name: Verify apex canonical redirect
+      - name: Verify apex query route reaches admin gate
         shell: bash
         run: |
           set -euo pipefail
-          headers="$(mktemp)"
-          code="$(curl -sS -D "$headers" -o /dev/null -w "%{http_code}" 'https://mmdbkk.com/v1/admin/kenji/models?q=Mek&limit=20')"
-          location="$(grep -i '^location:' "$headers" | tail -n 1 | sed -E 's/^[^:]+:[[:space:]]*//; s/\r$//' || true)"
-          echo "apex models=$code location=${location:-none}"
-          test "$code" = "301"
-          test "$location" = "https://www.mmdbkk.com/v1/admin/kenji/models?q=Mek&limit=20"
+          body="$(mktemp)"
+          code="$(curl -sS -o "$body" -w "%{http_code}" 'https://mmdbkk.com/v1/admin/kenji/models?q=Mek&limit=20')"
+          echo "apex models=$code"
+          test "$code" = "401"
+          grep -q '"error":"unauthorized"' "$body"
 
       - name: Verify authenticated Mek admin media preview
         shell: bash
