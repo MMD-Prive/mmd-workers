@@ -256,14 +256,22 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/auth/me"
 zone_name = "mmdbkk.com"
 
-# Kenji Models tab adapter. Exact routes only. Reads the canonical Models table
-# through admin-worker and writes drafts to the existing Model Review Requests table.
+# Kenji Models tab adapter. Keep exact routes plus query-safe companions because
+# Cloudflare route matching includes the query string. Runtime pathname matching stays exact.
 [[routes]]
 pattern = "mmdbkk.com/v1/admin/kenji/models"
 zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/kenji/models"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/models*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/models*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
