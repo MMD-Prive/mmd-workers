@@ -3,7 +3,7 @@
 # Production deploy request: Kenji Admin gated rollout 2026-09-02
 
 name = "admin-worker"
-main = "src/admin-login-hero-worker.js"
+main = "src/model-activation-entrypoint.js"
 compatibility_date = "2026-01-01"
 workers_dev = true
 
@@ -15,6 +15,16 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/model/liff/exchange"
+zone_name = "mmdbkk.com"
+
+# First-time Model Dashboard activation. A short-lived admin-issued invite plus
+# a real LINE ID token binds the canonical Models.line_user_id exactly once.
+[[routes]]
+pattern = "mmdbkk.com/v1/model/liff/activate"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/liff/activate"
 zone_name = "mmdbkk.com"
 
 [[routes]]
@@ -196,6 +206,16 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/membership/payment-entitlement/approve"
+zone_name = "mmdbkk.com"
+
+# Model Dashboard first-time invite issuer. Browser access is protected by the
+# existing credential-bound internal admin gate; the invite itself carries no admin credential.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/model/activation/issue"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/model/activation/issue"
 zone_name = "mmdbkk.com"
 
 # Legacy SIGIL internal admin redirect only. Keep these patterns narrow; do not
@@ -477,6 +497,9 @@ ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.we
 LINE_MINIAPP_DEV_CHANNEL_ID = "2010864852"
 LINE_MINIAPP_REVIEW_CHANNEL_ID = "2010864853"
 LINE_MINIAPP_PUBLISHED_CHANNEL_ID = "2010864854"
+MODEL_LIFF_DEV_ID = "2010864852-MuzunIKU"
+MODEL_LIFF_REVIEW_ID = "2010864853-7SqCQVxy"
+MODEL_LIFF_PUBLISHED_ID = "2010864854-N34SgCqq"
 MODEL_LIFF_SESSION_TTL_SECONDS = "3600"
 
 # Base URLs (LOCK)
@@ -544,9 +567,19 @@ TG_THREAD_PRICING_REVIEW = "61"
 name = "KENJI_KNOWLEDGE_COORDINATOR"
 class_name = "KenjiKnowledgeCoordinator"
 
+# Serializes first-time LINE binding per Model record. It prevents two different
+# LINE identities from racing to claim the same model and makes same-LINE retry idempotent.
+[[durable_objects.bindings]]
+name = "MODEL_ACTIVATION_COORDINATOR"
+class_name = "ModelActivationCoordinator"
+
 [[migrations]]
 tag = "v2026-09-01-kenji-knowledge-coordinator"
 new_sqlite_classes = ["KenjiKnowledgeCoordinator"]
+
+[[migrations]]
+tag = "v2026-09-04-model-first-time-activation"
+new_sqlite_classes = ["ModelActivationCoordinator"]
 
 [[r2_buckets]]
 binding = "MMD_MODEL_ASSETS"
