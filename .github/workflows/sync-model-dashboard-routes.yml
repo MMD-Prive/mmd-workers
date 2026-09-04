@@ -8,6 +8,7 @@ on:
     paths:
       - "admin-worker/src/model-liff-worker.js"
       - "admin-worker/src/model-gps-visibility.js"
+      - "admin-worker/src/model-location-runtime.js"
       - "admin-worker/src/studio-telegram-worker.js"
       - "admin-worker/wrangler.toml"
       - ".github/workflows/sync-model-dashboard-routes.yml"
@@ -78,6 +79,8 @@ jobs:
             "/v1/model/profile*",
             "/v1/model/media*",
             "/v1/model/settings/gps-visibility",
+            "/v1/model/location/capability",
+            "/v1/model/location/current*",
           ];
           const desired = paths.flatMap((path) => [
             `mmdbkk.com${path}`,
@@ -153,6 +156,20 @@ jobs:
             body="$(mktemp)"
             code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
               "$origin/v1/model/settings/gps-visibility")"
+            cat "$body"
+            test "$code" = "401"
+            grep -q '"error":"model_session_required"' "$body"
+
+            body="$(mktemp)"
+            code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
+              "$origin/v1/model/location/capability")"
+            cat "$body"
+            test "$code" = "401"
+            grep -q '"error":"model_session_required"' "$body"
+
+            body="$(mktemp)"
+            code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
+              "$origin/v1/model/location/current")"
             cat "$body"
             test "$code" = "401"
             grep -q '"error":"model_session_required"' "$body"
