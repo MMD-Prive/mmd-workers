@@ -1,6 +1,15 @@
 const RESOLVER_SCHEMA = "my_mmd_entitlement_resolver_v1";
 const BLOCKED_LIFECYCLES = new Set(["blocked", "suspended", "revoked"]);
 const HIGH_VALUE_RECOGNITION = new Set(["vip", "svip", "black_card"]);
+const CLIENT_LEVEL_RANK = Object.freeze({
+  guest: 0,
+  "7_days": 1,
+  standard: 2,
+  premium: 3,
+  vip: 4,
+  blackcard: 5,
+  svip: 6,
+});
 
 const EVIDENCE_SOURCE_STATES = Object.freeze({
   FOUND: "FOUND",
@@ -228,6 +237,92 @@ function buildRecognition(rename, tags) {
   };
 }
 
+function clientLevelPatterns() {
+  return [
+    { level: "guest", pattern: /#guest\b|\bguest\b|\bvisitor\b|\bno\s+membership\b|\bnon[-\s]?member\b/i },
+    { level: "7_days", pattern: /#?(?:7\s*days?|7days|7[-\s]?day|7d)\b|\btrial\b|7\s*วัน/i },
+    { level: "standard", pattern: /#standard\b|\bstandard\b|\blite\b/i },
+    { level: "premium", pattern: /#premium\b|\bpremium\b/i },
+    { level: "vip", pattern: /-vip-|#vip\b|\bvip\b/i },
+    { level: "blackcard", pattern: /#blackcard\b|\bblack\s*card\b|\bblack-card\b|\bblackcard\b/i },
+    { level: "svip", pattern: /-svip-|#svip\b|\bsvip\b/i },
+  ];
+}
+
+function deriveClientLevel(context, rename, tags) {
+  const evidence = `${text(rename)} ${tags.join(" ")}`.trim();
+  const tokens = [];
+  for (const { level, pattern } of clientLevelPatterns()) {
+    const matches = evidence.match(new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`)) || [];
+    for (const match of matches) tokens.push({ level, token: text(match) });
+  }
+
+  const ambiguous = /\b(?:maybe|possible|possibly|unclear|unknown|review)\b.{0,16}\b(?:guest|visitor|7\s*days?|7days|7d|trial|lite|standard|premium|vip|svip|black\s*card|blackcard)\b/i.test(evidence)
+    || /\b(?:guest|visitor|7\s*days?|7days|7d|trial|lite|standard|premium|vip|svip|black\s*card|blackcard)\b.{0,8}\?/i.test(evidence);
+  if (ambiguous) {
+    return {
+      level: "review_required",
+      source: "line_oa_rename_tags",
+      evidence_tokens: tokens,
+      warning: "ambiguous_client_level_review_required",
+      authority_boundary: "relationship_classification_not_current_access",
+    };
+  }
+
+  if (tokens.length) {
+    const selected = tokens
+      .slice()
+      .sort((a, b) => CLIENT_LEVEL_RANK[a.level] - CLIENT_LEVEL_RANK[b.level])
+      .at(-1);
+    return {
+      level: selected.level,
+      source: "line_oa_rename_tags",
+      evidence_tokens: tokens,
+      warning: "",
+      authority_boundary: "relationship_classification_not_current_access",
+    };
+  }
+
+  const hasMemberSignal = tags.some((tag) => /^#client$/i.test(tag) || /^#mem/i.test(tag));
+  if (hasMemberSignal) {
+    return {
+      level: "premium",
+      source: "line_oa_member_signal_inference",
+      evidence_tokens: [],
+      warning: "inferred_premium_from_member_signal",
+      authority_boundary: "relationship_classification_not_current_access",
+    };
+  }
+
+  const hasContactEvidence = Boolean(first(
+    context.line_user_id,
+    context.email,
+    context.member_email,
+    context.phone,
+    context.member_phone,
+    context.username,
+    context.line_id,
+    context.handle,
+  ));
+  if (hasContactEvidence) {
+    return {
+      level: "guest",
+      source: "contact_identity_without_member_signal",
+      evidence_tokens: [],
+      warning: "",
+      authority_boundary: "relationship_classification_not_current_access",
+    };
+  }
+
+  return {
+    level: "unknown",
+    source: "unknown",
+    evidence_tokens: [],
+    warning: "client_level_unknown",
+    authority_boundary: "relationship_classification_not_current_access",
+  };
+}
+
 function normalizePackage(value) {
   const token = normalize(value);
   if (!token) return "unknown";
@@ -376,6 +471,7 @@ export function reasonKenjiCustomerContext(input = {}, options = {}) {
   const now = options.now || context.evaluated_at || new Date().toISOString();
   const tenure = buildTenure(tags, now);
   const recognition = buildRecognition(rename, tags);
+  const clientLevel = deriveClientLevel(context, rename, tags);
   const packageInfo = derivePackage(context, latestCycle, rename, tags);
   const latestRenewal = first(
     latestCycle.renewed_at,
@@ -405,6 +501,8 @@ export function reasonKenjiCustomerContext(input = {}, options = {}) {
   const warnings = unique([
     identityResolved ? "" : "rename_required_for_identity_resolution",
     packageInfo.warning,
+    clientLevel.level === "review_required" ? clientLevel.warning : "",
+    clientLevel.level === "unknown" ? clientLevel.warning : "",
     currentState.warning,
     !latestRenewal ? "latest_signup_or_renewal_missing" : "",
     !expiry ? "expiry_missing" : "",
@@ -427,6 +525,15 @@ export function reasonKenjiCustomerContext(input = {}, options = {}) {
         phone: Boolean(first(context.phone, context.member_phone)),
       },
     },
+    client_level: {
+      authority: "line_ofc_rename_tag_canonical_parser",
+      level: clientLevel.level,
+      source: clientLevel.source,
+      evidence_tokens: clientLevel.evidence_tokens,
+      warning: clientLevel.warning,
+      is_current_access_authority: false,
+      authority_boundary: clientLevel.authority_boundary,
+    },
     evidence_discovery: evidenceDiscovery,
     tenure,
     historical_recognition: recognition,
@@ -443,6 +550,16 @@ export function reasonKenjiCustomerContext(input = {}, options = {}) {
       member_blocked: currentState.blocked,
       rights: currentState.rights,
     },
+    membership_resolution: {
+      client_level: clientLevel.level,
+      client_level_authority: "line_ofc_rename_tag_canonical_parser",
+      current_access_authority: RESOLVER_SCHEMA,
+      current_access_lifecycle: currentState.lifecycle,
+      current_access_rights: currentState.rights,
+      display_client_level_and_current_access_separately: true,
+      client_level_never_grants_current_access: true,
+      protected_levels_require_current_capability_and_allowlist_review: true,
+    },
     conversation: {
       strategy,
       acknowledge_history_and_tenure: HIGH_VALUE_RECOGNITION.has(recognition.level) || Number(tenure.membership_cycles_observed || 0) > 0,
@@ -457,4 +574,4 @@ export function reasonKenjiCustomerContext(input = {}, options = {}) {
   };
 }
 
-export { RESOLVER_SCHEMA, EVIDENCE_SOURCE_STATES, EXPECTED_EVIDENCE_SOURCES };
+export { RESOLVER_SCHEMA, EVIDENCE_SOURCE_STATES, EXPECTED_EVIDENCE_SOURCES, CLIENT_LEVEL_RANK };
