@@ -15,6 +15,10 @@ service = "admin-worker"
 binding = "AI_WORKER"
 service = "ai-worker"
 
+[[services]]
+binding = "MMS_WORKER"
+service = "mms-worker"
+
 # Canonical renewal page. These specific routes win before the generic front
 # gate and keep the full query string available to the local renderer.
 [[routes]]
@@ -85,6 +89,16 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/api/member/app/*"
+zone_name = "mmdbkk.com"
+
+# MMS Therapist auth is a separate role-scoped identity surface. The public
+# same-origin route is owned by this front gate and delegated only to mms-worker.
+[[routes]]
+pattern = "mmdbkk.com/male-massage/therapists/api/auth/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/therapists/api/auth/*"
 zone_name = "mmdbkk.com"
 
 # Lovable owns presentation pixels; the front gate safely republishes that UI

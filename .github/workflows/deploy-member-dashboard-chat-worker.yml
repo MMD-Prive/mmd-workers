@@ -23,7 +23,10 @@ jobs:
     timeout-minutes: 20
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      CLOUDFLARE_ZONE_ID: "2d62396174fa2ddadbbcd0e8cf0f3367"
+      WORKER_NAME: "member-dashboard-chat-worker"
       NO_COLOR: "1"
 
     steps:
@@ -36,16 +39,24 @@ jobs:
           node-version: "22"
           cache: npm
 
-      - name: Normalize Cloudflare token
+      - name: Normalize Cloudflare tokens
         id: credentials
         shell: bash
         run: |
           node <<'NODE'
           const fs = require("node:fs");
           const clean = (value) => (value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
-          const token = clean(process.env.CLOUDFLARE_API_TOKEN);
-          if (!token) throw new Error("Cloudflare API token is missing after normalization");
-          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\n`);
+          const deployToken = clean(process.env.CLOUDFLARE_API_TOKEN);
+          const routesToken = clean(process.env.CLOUDFLARE_ROUTES_API_TOKEN);
+          const accountId = clean(process.env.CLOUDFLARE_ACCOUNT_ID);
+          const zoneId = clean(process.env.CLOUDFLARE_ZONE_ID);
+          if (!deployToken || !routesToken || !accountId || !zoneId) {
+            throw new Error("Cloudflare deploy/routes credentials are missing after normalization");
+          }
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${deployToken}\n`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ROUTES_API_TOKEN=${routesToken}\n`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ACCOUNT_ID=${accountId}\n`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ZONE_ID=${zoneId}\n`);
           NODE
 
       - name: Verify Cloudflare API token status
@@ -99,13 +110,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate LINE, LIFF, and CARE BACK runtime
+      - name: Validate LINE, LIFF, CARE BACK, and MMS Therapist front gate
         id: tests
         run: |
           node --check member-dashboard-chat-worker/src/index.js
+          node --check member-dashboard-chat-worker/src/front-gate-index.js
           npm run test:member-dashboard-liff
           npm run test:member-dashboard-line
           node --test member-dashboard-chat-worker/test/line-membership-fallback.test.mjs
+          node --test member-dashboard-chat-worker/test/mms-therapist-auth-front-gate.test.mjs
 
       - name: Validate Cloudflare version upload
         id: wrangler_dry_run
@@ -152,9 +165,67 @@ jobs:
           npx --yes wrangler@4 versions deploy "${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}@100%" -y \
             2>&1 | tee "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log"
 
-      - name: Smoke production LINE route
-        id: smoke
+      - name: Sync MMS Therapist auth routes
+        id: route_sync
         if: steps.deploy.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
+          const zoneId = process.env.CLOUDFLARE_ZONE_ID;
+          const worker = process.env.WORKER_NAME;
+          const desired = [
+            "mmdbkk.com/male-massage/therapists/api/auth/*",
+            "www.mmdbkk.com/male-massage/therapists/api/auth/*",
+          ];
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          async function cf(path, options = {}) {
+            let lastError;
+            for (let attempt = 1; attempt <= 5; attempt += 1) {
+              try {
+                const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+                  ...options,
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                    ...(options.headers || {}),
+                  },
+                });
+                const text = await response.text();
+                let body = null;
+                try { body = JSON.parse(text); } catch {}
+                if (response.ok && body?.success === true) return body.result;
+                const retryable = response.status === 429 || response.status >= 500 || !body;
+                lastError = new Error(body ? JSON.stringify(body.errors || body) : `cloudflare_non_json_${response.status}:${text.slice(0, 160)}`);
+                if (!retryable) throw lastError;
+              } catch (error) {
+                lastError = error;
+              }
+              if (attempt < 5) await sleep(attempt * 1000);
+            }
+            throw lastError || new Error("cloudflare_route_api_failed");
+          }
+          const routePath = `/zones/${zoneId}/workers/routes`;
+          const existing = await cf(routePath);
+          for (const pattern of desired) {
+            const conflict = existing.find((route) => route.pattern === pattern && route.script !== worker);
+            if (conflict) throw new Error(`route conflict ${pattern} -> ${conflict.script || "none"}`);
+          }
+          for (const pattern of desired) {
+            if (existing.some((route) => route.pattern === pattern && route.script === worker)) continue;
+            await cf(routePath, { method: "POST", body: JSON.stringify({ pattern, script: worker }) });
+            console.log(`created ${pattern} -> ${worker}`);
+          }
+          const verified = await cf(routePath);
+          const missing = desired.filter((pattern) => !verified.some((route) => route.pattern === pattern && route.script === worker));
+          if (missing.length) throw new Error(`missing routes: ${missing.join(", ")}`);
+          console.log(`verified ${desired.length}/${desired.length} MMS Therapist auth routes`);
+          NODE
+
+      - name: Smoke production LINE and MMS route ownership
+        id: smoke
+        if: steps.route_sync.outcome == 'success'
         shell: bash
         run: |
           response="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error https://www.mmdbkk.com/webhooks/line)"
@@ -175,6 +246,16 @@ jobs:
             }
           ' "$catalog"
 
+          auth_headers="$RUNNER_TEMP/mms-therapist-auth.headers"
+          auth_body="$RUNNER_TEMP/mms-therapist-auth.json"
+          curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -D "$auth_headers" -o "$auth_body" \
+            -H 'Origin: https://www.mmdbkk.com' \
+            https://www.mmdbkk.com/male-massage/therapists/api/auth/me || true
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$auth_headers"
+          grep -qi '^x-mmd-upstream-service: mms-worker' "$auth_headers"
+          grep -qi '^cache-control: .*no-store' "$auth_headers"
+
       - name: Report deploy stage diagnosis
         if: always()
         shell: bash
@@ -188,6 +269,7 @@ jobs:
           UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
           RESOLVE_OUTCOME: ${{ steps.resolve_version.outcome }}
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          ROUTE_SYNC_OUTCOME: ${{ steps.route_sync.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
         run: |
           set -euo pipefail
@@ -206,6 +288,8 @@ jobs:
             stopped="resolve uploaded version"
           elif [ "$DEPLOY_OUTCOME" != "success" ]; then
             stopped="versions deploy"
+          elif [ "$ROUTE_SYNC_OUTCOME" != "success" ]; then
+            stopped="MMS Therapist route sync"
           elif [ "$SMOKE_OUTCOME" != "success" ]; then
             stopped="production smoke"
           else
@@ -218,9 +302,11 @@ jobs:
             "$RUNNER_TEMP/cloudflare-token-account-verify.json" \
             "$RUNNER_TEMP/cloudflare-whoami.log" \
             "$RUNNER_TEMP/member-dashboard-chat-worker-upload.log" \
-            "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log"; do
+            "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log" \
+            "$RUNNER_TEMP/mms-therapist-auth.headers" \
+            "$RUNNER_TEMP/mms-therapist-auth.json"; do
             if [ -f "$log" ]; then
-              detail="${detail}$(grep -Ei 'active|disabled|expired|error|failed|permission|account|binding|service|route|conflict|workers.dev|code:|code |version|secret|var' "$log" | tail -n 50 || true)\n"
+              detail="${detail}$(grep -Ei 'active|disabled|expired|error|failed|permission|account|binding|service|route|conflict|workers.dev|code:|code |version|secret|var|therapist' "$log" | tail -n 50 || true)\n"
             fi
           done
           if [ -z "${detail//\\n/}" ]; then
@@ -241,6 +327,7 @@ jobs:
           - versions upload: \`${UPLOAD_OUTCOME}\`
           - resolve version: \`${RESOLVE_OUTCOME}\`
           - versions deploy: \`${DEPLOY_OUTCOME}\`
+          - Therapist route sync: \`${ROUTE_SYNC_OUTCOME}\`
           - production smoke: \`${SMOKE_OUTCOME}\`
           - **stopped_at: \`${stopped}\`**
 
@@ -258,4 +345,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ member-dashboard-chat-worker LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- version_id: \`${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}\`\n- endpoint: \`https://www.mmdbkk.com/webhooks/line\`\n- production smoke: \`ok=true, worker=member-dashboard-chat-worker, route=line_webhook\`\n- route mutation: \`none\`"
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ member-dashboard-chat-worker LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- version_id: \`${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}\`\n- endpoint: \`https://www.mmdbkk.com/webhooks/line\`\n- MMS Therapist auth route: \`https://www.mmdbkk.com/male-massage/therapists/api/auth/*\`\n- production smoke: front gate + MMS service binding verified\n- route mutation: \`2 narrow MMS Therapist auth routes synced\`"

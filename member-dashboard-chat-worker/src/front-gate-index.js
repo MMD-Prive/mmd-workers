@@ -4,6 +4,7 @@ export { KenjiModelIdempotency } from "./index.js";
 
 const WORKER_NAME = "member-dashboard-chat-worker";
 const MEMBER_APP_API_PREFIX = "/api/member/app/";
+const THERAPIST_AUTH_PREFIX = "/male-massage/therapists/api/auth/";
 const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const MY_MMD_UI_PREFIX = "/member/my-mmd";
 const MY_MMD_ASSET_PREFIX = "/member/my-mmd-assets/";
@@ -47,6 +48,24 @@ async function forwardMemberPages(request, env) {
   headers.set("x-mmd-worker", WORKER_NAME);
   headers.set("x-mmd-route-owner", WORKER_NAME);
   headers.set("x-mmd-upstream-service", "member-pages-worker");
+  return new Response(upstreamResponse.body, {
+    status: upstreamResponse.status,
+    statusText: upstreamResponse.statusText,
+    headers,
+  });
+}
+
+async function forwardMmsTherapistAuth(request, env) {
+  if (!env.MMS_WORKER?.fetch) {
+    return json({ ok: false, error: { code: "MMS_THERAPIST_AUTH_UPSTREAM_NOT_CONFIGURED", message: "Therapist access is unavailable." } }, 503);
+  }
+
+  const upstreamResponse = await env.MMS_WORKER.fetch(new Request(request.url, request));
+  const headers = new Headers(upstreamResponse.headers);
+  headers.set("x-mmd-worker", WORKER_NAME);
+  headers.set("x-mmd-route-owner", WORKER_NAME);
+  headers.set("x-mmd-upstream-service", "mms-worker");
+  headers.set("cache-control", "no-store, private, max-age=0");
   return new Response(upstreamResponse.body, {
     status: upstreamResponse.status,
     statusText: upstreamResponse.statusText,
@@ -329,6 +348,7 @@ function recordBridgeTelemetry(result = {}) {
 export default {
   async fetch(request, env = {}, ctx) {
     const path = new URL(request.url).pathname.toLowerCase().replace(/\/{2,}/g, "/");
+    if (path.startsWith(THERAPIST_AUTH_PREFIX)) return forwardMmsTherapistAuth(request, env);
     if (isMyMmdAssetPath(path)) return proxyMyMmdPresentation(request, { asset: true });
     if (isMyMmdUiPath(path)) return proxyMyMmdPresentation(request);
     if (PUBLIC_CARE_BACK_PATHS.has(path) || path.startsWith(MEMBER_APP_API_PREFIX)) {
