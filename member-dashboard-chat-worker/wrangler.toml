@@ -1,5 +1,5 @@
 name = "member-dashboard-chat-worker"
-main = "src/front-gate-single-file-shell.js"
+main = "src/front-gate-slip-queue-shell.js"
 compatibility_date = "2026-07-02"
 workers_dev = false
 
@@ -148,6 +148,9 @@ zone_name = "mmdbkk.com"
 LINE_AUTO_REPLY_ENABLED = "true"
 LINE_KENJI_AI_ENABLED = "true"
 LINE_KENJI_KNOWLEDGE_ENABLED = "true"
+# Queue-backed slip intake is source-ready but remains disabled in production.
+# The queue binding exists only in the isolated staging environment below.
+LINE_SLIP_QUEUE_ENABLED = "false"
 # Read-only shadow bridge: every accepted LINE webhook is also observed by
 # ai-worker through a private Cloudflare service binding. It does not affect
 # the LINE reply path or create any domain truth.
@@ -185,9 +188,19 @@ name = "member-dashboard-chat-worker-staging"
 workers_dev = true
 routes = []
 
+[env.staging.vars]
+LINE_SLIP_QUEUE_ENABLED = "true"
+
 [[env.staging.services]]
 binding = "MEMBER_PAGES_WORKER"
 service = "member-pages-worker-staging"
+
+# Staging-only producer. Production has no Queue binding and keeps the rollout
+# switch false, so changing the active entrypoint cannot enqueue production
+# customer images by itself.
+[[env.staging.queues.producers]]
+binding = "LINE_SLIP_INTAKE_QUEUE"
+queue = "mmd-line-slip-intake-staging"
 
 [env.staging.observability]
 enabled = true
