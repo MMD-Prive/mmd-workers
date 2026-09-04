@@ -109,8 +109,8 @@ Critical remaining gap:
 - Therefore #584 implementation presence alone still cannot close #583.
 
 CI state at refresh:
-- Node.js CI run `33845856462` for head `9b595d9b5255c5103516c173e5755f0a86684660` is **IN PROGRESS**.
-- Do not merge/deploy from this snapshot until the full CI matrix is green and the invocation contract is explicitly resolved/reviewed.
+- Node.js CI run `33845856462` for head `9b595d9b5255c5103516c173e5755f0a86684660` is **SUCCESS**.
+- CI green clears the code-test gate only. Do not treat it as deploy/live proof and do not close #583 until the invocation contract and real production E2E are complete.
 
 Issue #583 final acceptance remains:
 1. authoritative approval invocation path,
@@ -195,7 +195,7 @@ Production proof required before activation:
 ## 8. Open PR triage snapshot
 
 ### Current high-priority / active review
-- #584 CARE BACK V2.2 — active blocker; CI in progress; approval invocation + real E2E still required.
+- #584 CARE BACK V2.2 — CI green; approval invocation + deploy + real E2E still required.
 - #581 MMS Therapist dedicated LIFF auth — contract exists in branch, but CI red and activation routing/deploy/LINE endpoint gates remain.
 - #574 Kenji Client Level vs Current Access — semantic/access review required; `my_mmd_entitlement_resolver_v1` lock must remain unchanged.
 - #543 Create Session manual client card live lookup — currently non-mergeable; rebase/semantic review before production action.
@@ -239,7 +239,7 @@ Webflow presentation changes do not prove Worker endpoint health and do not auth
 ## 10. Production sequence from this audit
 
 ### CARE BACK
-1. Let #584 CI complete; require full green matrix.
+1. #584 CI is green; keep the production gate separate from CI.
 2. Define/review the bounded authoritative invocation path into `approveCouponDiscount()`.
 3. Merge/deploy only after that contract is explicit and safe.
 4. Run one fresh real-production LINE -> LIFF -> My MMD -> CARE claim -> Wish -> approval -> wallet trace.
