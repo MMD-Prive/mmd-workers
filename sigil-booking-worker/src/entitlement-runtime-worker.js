@@ -1,5 +1,9 @@
 import bookingWorker from "./index.js";
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
+import {
+  approveCareBackCouponForConfirmedBooking,
+  CareBackBookingContextError,
+} from "./care-back-coupon-approval.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const CLIENT_RESOLVE_PATH = "/sigil/api/client/resolve";
@@ -113,6 +117,28 @@ async function handleTrustedBookingConfirm(request, env) {
     }, 409);
   }
 
+  let careBackCoupon;
+  try {
+    careBackCoupon = await approveCareBackCouponForConfirmedBooking({
+      env,
+      body,
+      bookingFields: fields,
+      canonical,
+      bookingAccess,
+      paymentVerified,
+    });
+  } catch (error) {
+    const code = error instanceof CareBackBookingContextError ? error.code : "CARE_BACK_APPROVAL_UNAVAILABLE";
+    const status = error instanceof CareBackBookingContextError ? error.status : 503;
+    return json({
+      ok: false,
+      error: code,
+      care_back_coupon: { requested: true, state: "blocked" },
+      entitlement_valid: true,
+      payment_verified: true,
+    }, status);
+  }
+
   const confirmedAt = new Date().toISOString();
   const locked = {
     schema_version: "booking_entitlement_snapshot_v1",
@@ -122,6 +148,7 @@ async function handleTrustedBookingConfirm(request, env) {
     booking_access: bookingAccess,
     payment_verification: { verified: true, payment_ref: payment.payment_ref || null, status: payment.status || null },
     entitlement_snapshot: canonical.snapshot,
+    care_back_coupon: careBackCoupon,
   };
 
   await airtablePatch(env, env.AIRTABLE_TABLE_BOOKING_REQUESTS_ID || "SIGIL Booking Requests", row.id, {
@@ -140,6 +167,7 @@ async function handleTrustedBookingConfirm(request, env) {
     confirmed_at: confirmedAt,
     honor_after_expiry: true,
     booking_access: bookingAccess,
+    care_back_coupon: careBackCoupon,
   });
 }
 
