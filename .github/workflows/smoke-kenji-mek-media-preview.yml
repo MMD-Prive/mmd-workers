@@ -49,15 +49,18 @@ jobs:
               --data-urlencode "credential=$ADMIN_LOGIN_CREDENTIAL" \
               --data-urlencode "next=/internal/admin/kenji" \
               "$origin/internal/admin/login/session")"
+            echo "[$origin] login=$login_code"
             test "$login_code" = "303"
             grep -qi '^location: /internal/admin/kenji' "$login_headers"
             grep -q 'mmd_admin_gate_v1' "$cookie_jar"
+            echo "[$origin] session=cookie-issued"
 
             models_code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS \
               -b "$cookie_jar" \
               -o "$models_body" \
               -w "%{http_code}" \
               "$origin/v1/admin/kenji/models?q=Mek&limit=20")"
+            echo "[$origin] models=$models_code"
             test "$models_code" = "200"
 
             preview_path="$(node - "$models_body" "$MODEL_ID" "$MODEL_NAME" <<'NODE'
@@ -78,6 +81,7 @@ jobs:
           process.stdout.write(model.admin_preview_url);
           NODE
             )"
+            echo "[$origin] exact-model=ok preview-path=resolved"
 
             preview_code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS \
               -D "$preview_headers" \
@@ -85,10 +89,12 @@ jobs:
               -o "$preview_body" \
               -w "%{http_code}" \
               "$origin$preview_path")"
+            echo "[$origin] preview=$preview_code bytes=$(wc -c < "$preview_body" | tr -d ' ')"
             test "$preview_code" = "200"
             test -s "$preview_body"
             content_type="$(awk -F': *' 'tolower($1)=="content-type" {gsub(/\r/,"",$2); print tolower($2)}' "$preview_headers" | tail -n 1)"
             cache_control="$(awk -F': *' 'tolower($1)=="cache-control" {gsub(/\r/,"",$2); print tolower($2)}' "$preview_headers" | tail -n 1)"
+            echo "[$origin] content-type=$content_type cache-control=$cache_control"
             [[ "$content_type" == image/* ]]
             [[ "$cache_control" == *private* ]]
             [[ "$cache_control" == *no-store* ]]
@@ -97,6 +103,7 @@ jobs:
               -o /dev/null \
               -w "%{http_code}" \
               "$origin$preview_path")"
+            echo "[$origin] unauth-preview=$unauth_code"
             test "$unauth_code" = "401"
 
             echo "Mek admin media preview verified on $origin"
