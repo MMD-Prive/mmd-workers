@@ -411,17 +411,17 @@ jobs:
               -w "%{http_code}" \
               "$origin/v1/admin/mms/snapshot")"
             test "$snapshot_code" = "200"
-            node - "$snapshot_body" "$origin" <<'NODE'
-            const fs = require("node:fs");
-            const file = process.argv[2];
-            const origin = process.argv[3];
-            const payload = JSON.parse(fs.readFileSync(file, "utf8"));
-            if (payload?.ok !== true) throw new Error(`MMS snapshot is not ok on ${origin}`);
-            for (const key of ["applications", "therapists", "prebookings"]) {
-              if (!Array.isArray(payload[key])) throw new Error(`MMS snapshot missing ${key} array on ${origin}`);
-            }
-            console.log(`Authenticated MMS smoke passed on ${origin}: applications=${payload.applications.length}, therapists=${payload.therapists.length}, prebookings=${payload.prebookings.length}`);
-            NODE
+            node -e '
+              const fs = require("node:fs");
+              const file = process.argv[1];
+              const origin = process.argv[2];
+              const payload = JSON.parse(fs.readFileSync(file, "utf8"));
+              if (payload?.ok !== true) throw new Error(`MMS snapshot is not ok on ${origin}`);
+              for (const key of ["applications", "therapists", "prebookings"]) {
+                if (!Array.isArray(payload[key])) throw new Error(`MMS snapshot missing ${key} array on ${origin}`);
+              }
+              console.log(`Authenticated MMS smoke passed on ${origin}: applications=${payload.applications.length}, therapists=${payload.therapists.length}, prebookings=${payload.prebookings.length}`);
+            ' "$snapshot_body" "$origin"
           done
 
       - name: Report deploy stage diagnosis
