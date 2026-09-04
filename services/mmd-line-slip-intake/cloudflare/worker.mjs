@@ -29,6 +29,21 @@ function maxBytes(value) {
   return Math.min(Math.floor(parsed), DEFAULT_MAX_BYTES);
 }
 
+function safeError(error) {
+  const message = clean(error?.message || error || "unknown_error");
+  return message.replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 120) || "unknown_error";
+}
+
+function audit(event, job = {}, extra = {}) {
+  console.log(JSON.stringify({
+    component: WORKER_NAME,
+    event,
+    proof_id: clean(job.proof_id),
+    run_id: clean(job.run_id),
+    ...extra,
+  }));
+}
+
 async function digestHex(value) {
   const bytes = value instanceof ArrayBuffer
     ? value
@@ -238,9 +253,14 @@ function validJob(job) {
 
 export async function processQueueMessage(message, env) {
   const job = message?.body;
-  if (!validJob(job)) return { action: "ack", state: "invalid_job" };
+  audit("queue_received", job, { queue_message_id_present: Boolean(clean(message?.id)) });
+  if (!validJob(job)) {
+    audit("queue_invalid_job", job);
+    return { action: "ack", state: "invalid_job" };
+  }
 
   const existing = await findStagingProof(env, job.proof_id);
+  audit("queue_dedupe_checked", job, { existing: Boolean(existing?.id) });
   if (existing?.id) return { action: "ack", state: "deduped", proof_id: job.proof_id };
 
   if (!env.LINE_SLIP_EVIDENCE || typeof env.LINE_SLIP_EVIDENCE.get !== "function") {
@@ -251,12 +271,25 @@ export async function processQueueMessage(message, env) {
   if (Number(object.size) !== Number(job.byte_size)) throw new Error("r2_size_mismatch");
   const observedSha = await digestHex(await object.arrayBuffer());
   if (observedSha !== job.evidence_sha256) throw new Error("r2_sha256_mismatch");
+  audit("queue_r2_verified", job);
 
   const objectForExtraction = await env.LINE_SLIP_EVIDENCE.get(job.r2_key);
   if (!objectForExtraction) throw new Error("r2_object_missing_for_extraction");
   const extraction = await extractEvidence(env, objectForExtraction, job);
+  audit("queue_extracted", job, {
+    method: clean(extraction.extraction_method) || "none",
+    available: Boolean(extraction.extraction_available),
+    error: safeError(extraction.extraction_error || "none"),
+  });
   await createStagingProof(env, job, extraction, message?.id);
-  const telegram = await notifyOps(env, job, extraction).catch(() => ({ ok: false }));
+  audit("queue_airtable_pending", job);
+  const telegram = await notifyOps(env, job, extraction).catch((error) => ({ ok: false, error: safeError(error) }));
+  audit("queue_telegram_result", job, {
+    ok: Boolean(telegram?.ok),
+    skipped: Boolean(telegram?.skipped),
+    status: Number(telegram?.status) || null,
+    reason: clean(telegram?.reason || telegram?.error) || null,
+  });
   return { action: "ack", state: "pending", proof_id: job.proof_id, telegram };
 }
 
@@ -271,7 +304,9 @@ export async function handleQueue(batch, env) {
       const result = await processQueueMessage(message, env);
       if (result.action === "ack") message.ack?.();
       else message.retry?.();
-    } catch {
+    } catch (error) {
+      const job = message?.body || {};
+      audit("queue_error", job, { error: safeError(error) });
       message.retry?.();
     }
   }
@@ -322,6 +357,7 @@ export async function handleStagingIntake(request, env) {
     queued_at: now.toISOString(),
   };
   await env.LINE_SLIP_QUEUE.send(job);
+  audit("intake_queued", job);
   return json({ ok: true, accepted: true, state: "queued", proof_id: proofId, run_id: runId }, 202);
 }
 
