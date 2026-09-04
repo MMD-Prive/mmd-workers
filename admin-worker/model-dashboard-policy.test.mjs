@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import {
   modelMediaPolicy,
   normalizeEtaMinutes,
-  normalizeProfileLanguages,
-} from "./src/model-dashboard-policy-wrapper.js";
+  normalizeModelProfilePatch,
+} from "./src/model-liff-worker.js";
 
 test("public profile/gallery media is model self-managed", () => {
   for (const media_type of ["profile_photo", "public_gallery", "intro_video"]) {
@@ -35,11 +35,15 @@ test("legacy private_pending_review does not re-lock public profile/gallery afte
   assert.equal(policy.requires_per_approval, false);
 });
 
-test("model profile language projection is Thai and English only", () => {
-  assert.deepEqual(
-    normalizeProfileLanguages(["thai", "english", "chinese", "TH", "EN", "japanese"]),
-    ["thai", "english"],
-  );
+test("model profile writes allow Thai and English only", () => {
+  assert.deepEqual(normalizeModelProfilePatch({ languages: ["thai", "english"] }), {
+    ok: true,
+    patch: { languages: ["thai", "english"] },
+    errors: [],
+  });
+  const invalid = normalizeModelProfilePatch({ languages: ["thai", "chinese"] });
+  assert.equal(invalid.ok, false);
+  assert.deepEqual(invalid.errors, ["languages_invalid"]);
 });
 
 test("ETA accepts whole minutes 1 through 240 only", () => {
