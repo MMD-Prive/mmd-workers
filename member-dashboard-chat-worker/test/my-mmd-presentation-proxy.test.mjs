@@ -85,6 +85,21 @@ test("My MMD asset proxy keeps module graph on the same-origin asset prefix", as
   assert.match(javascript, /import\("\.\/routes-ABC\.js"\)/);
 });
 
+test("My MMD asset proxy repairs stale LINE verify links without encoding the endpoint path in liff.state", async () => {
+  globalThis.fetch = async () => new Response(
+    `const verify="https://miniapp.line.me/2010862595-yT4DCEMc?liff.state=%2Fmember%2Fliff%3Fintent%3Dstatus";`,
+    { headers: { "content-type": "text/javascript; charset=utf-8" } },
+  );
+
+  const response = await worker.fetch(new Request("https://mmdbkk.com/member/my-mmd-assets/index-LIFF.js"), {});
+  const javascript = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(javascript, /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status/);
+  assert.doesNotMatch(javascript, /liff\.state=%2Fmember%2Fliff/);
+  assert.doesNotMatch(javascript, /member\/liff\/member\/liff/);
+});
+
 test("My MMD presentation proxy is read-only", async () => {
   let calls = 0;
   globalThis.fetch = async () => {
