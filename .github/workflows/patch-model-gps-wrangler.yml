@@ -1,0 +1,54 @@
+name: Patch Model GPS wrangler
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/patch-model-gps-wrangler.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Persist exact GPS Visibility routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("admin-worker/wrangler.toml")
+          text = path.read_text()
+          apex = 'pattern = "mmdbkk.com/v1/model/settings/gps-visibility"'
+          www = 'pattern = "www.mmdbkk.com/v1/model/settings/gps-visibility"'
+          if apex in text and www in text:
+              print("GPS Visibility routes already present")
+              raise SystemExit(0)
+
+          marker = "# Model Console V16 additive write/review routes."
+          if marker not in text:
+              raise SystemExit("Insertion marker not found; refusing to rewrite wrangler.toml")
+
+          block = '''# Model Dashboard GPS Visibility is a permission-only setting. It never accepts\n# or stores coordinates; future GPS use must additionally require an Active job.\n[[routes]]\npattern = "mmdbkk.com/v1/model/settings/gps-visibility"\nzone_name = "mmdbkk.com"\n\n[[routes]]\npattern = "www.mmdbkk.com/v1/model/settings/gps-visibility"\nzone_name = "mmdbkk.com"\n\n'''
+          text = text.replace(marker, block + marker, 1)
+          path.write_text(text)
+          PY
+
+          if git diff --quiet -- admin-worker/wrangler.toml; then
+            echo "No wrangler change needed"
+            exit 0
+          fi
+
+          git config user.name "MMD Privé"
+          git config user.email "malemodel.bkk@gmail.com"
+          git add admin-worker/wrangler.toml
+          git commit -m "ops(model): persist GPS visibility routes"
+          git push origin HEAD:main
