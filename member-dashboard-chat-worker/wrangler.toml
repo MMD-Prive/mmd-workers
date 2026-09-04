@@ -87,6 +87,25 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/api/member/app/*"
 zone_name = "mmdbkk.com"
 
+# Lovable owns presentation pixels; the front gate safely republishes that UI
+# under the canonical member origin. Session cookies remain on mmdbkk.com and
+# are never forwarded to the presentation upstream.
+[[routes]]
+pattern = "mmdbkk.com/member/my-mmd*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/my-mmd*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/member/my-mmd-assets/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/my-mmd-assets/*"
+zone_name = "mmdbkk.com"
+
 # Cloudflare route matching includes the query string. The trailing wildcard
 # is required for CARE BACK URLs such as /member/liff?intent=promo.
 # Runtime routing still accepts only /member/liff and /member/liff/.

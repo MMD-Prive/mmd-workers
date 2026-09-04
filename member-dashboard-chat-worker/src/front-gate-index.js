@@ -4,6 +4,9 @@ export { KenjiModelIdempotency } from "./index.js";
 
 const WORKER_NAME = "member-dashboard-chat-worker";
 const MEMBER_APP_API_PREFIX = "/api/member/app/";
+const MY_MMD_UI_PREFIX = "/member/my-mmd";
+const MY_MMD_ASSET_PREFIX = "/member/my-mmd-assets/";
+const MY_MMD_PRESENTATION_ORIGIN = "https://my-mmd-member-profile.lovable.app";
 const PUBLIC_CARE_BACK_PATHS = new Set([
   "/member/api/care-back/public-wish",
   "/member/api/care-back/public-wish/",
@@ -11,6 +14,7 @@ const PUBLIC_CARE_BACK_PATHS = new Set([
   "/member/api/care-back/link-wish/",
 ]);
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webhook/line", "/webhook/line/"]);
+const MY_MMD_ROUTE_SUFFIXES = ["membership", "points", "coupons", "history", "profile"];
 
 function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -40,6 +44,143 @@ async function forwardMemberPages(request, env) {
   });
 }
 
+function isMyMmdUiPath(path) {
+  return path === MY_MMD_UI_PREFIX || path === `${MY_MMD_UI_PREFIX}/` || path.startsWith(`${MY_MMD_UI_PREFIX}/`);
+}
+
+function isMyMmdAssetPath(path) {
+  return path.startsWith(MY_MMD_ASSET_PREFIX);
+}
+
+function presentationRequestHeaders(request) {
+  const headers = new Headers();
+  for (const name of ["accept", "accept-language", "if-none-match", "if-modified-since", "range", "user-agent"]) {
+    const value = request.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  return headers;
+}
+
+function presentationUrlForPage(request) {
+  const source = new URL(request.url);
+  const suffix = source.pathname.slice(MY_MMD_UI_PREFIX.length);
+  const upstream = new URL(MY_MMD_PRESENTATION_ORIGIN);
+  upstream.pathname = suffix || "/";
+  upstream.search = source.search;
+  return upstream;
+}
+
+function presentationUrlForAsset(request) {
+  const source = new URL(request.url);
+  const suffix = source.pathname.slice(MY_MMD_ASSET_PREFIX.length);
+  const upstream = new URL(MY_MMD_PRESENTATION_ORIGIN);
+  upstream.pathname = suffix === "favicon.ico" ? "/favicon.ico" : `/assets/${suffix}`;
+  upstream.search = source.search;
+  return upstream;
+}
+
+function rewriteMyMmdHtml(html) {
+  let output = String(html || "");
+
+  // Lovable remains the presentation source only. Remove its editor badge and
+  // analytics bridge from the customer-facing same-origin shell.
+  output = output.replace(/<aside\b[^>]*id=["']lovable-badge["'][\s\S]*?<\/aside>/gi, "");
+  output = output.replace(/<script\b[^>]*src=["']\/~flock\.js["'][\s\S]*?<\/script>/gi, "");
+
+  // Keep every executable/style asset on mmdbkk.com. ES modules from the
+  // Lovable host do not expose CORS headers, so cross-origin module loading is
+  // intentionally avoided.
+  output = output.replaceAll("/assets/", MY_MMD_ASSET_PREFIX);
+  output = output.replaceAll("/favicon.ico", `${MY_MMD_ASSET_PREFIX}favicon.ico`);
+
+  // Lovable SSR renders root-based links. Rewrite the bounded app routes to
+  // the canonical same-origin base before hydration takes over.
+  output = output.replace(/href=["']\/["']/g, `href="${MY_MMD_UI_PREFIX}"`);
+  for (const suffix of MY_MMD_ROUTE_SUFFIXES) {
+    output = output.replace(new RegExp(`href=["']\\/${suffix}(?:\\/)?["']`, "g"), `href="${MY_MMD_UI_PREFIX}/${suffix}"`);
+  }
+  return output;
+}
+
+function rewriteMyMmdJavascript(source) {
+  return String(source || "")
+    .replace(/(["'`])\/assets\//g, `$1${MY_MMD_ASSET_PREFIX}`)
+    .replace(/(["'`])assets\//g, `$1member/my-mmd-assets/`);
+}
+
+function presentationResponseHeaders(upstreamHeaders, { html = false, rewritten = false } = {}) {
+  const headers = new Headers(upstreamHeaders);
+  for (const name of ["content-length", "set-cookie", "reporting-endpoints", "report-to", "nel"]) headers.delete(name);
+  if (rewritten) {
+    // The proxy changes HTML/JS bytes. Upstream representation metadata no
+    // longer describes the emitted body and must not survive the rewrite.
+    for (const name of ["content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(name);
+  }
+  headers.set("x-mmd-worker", WORKER_NAME);
+  headers.set("x-mmd-route-owner", WORKER_NAME);
+  headers.set("x-mmd-ui-source", "lovable-presentation-proxy");
+  headers.set("x-robots-tag", "noindex, nofollow");
+  if (html) headers.set("cache-control", "no-store");
+  return headers;
+}
+
+async function proxyMyMmdPresentation(request, { asset = false } = {}) {
+  if (!new Set(["GET", "HEAD"]).has(request.method)) {
+    return new Response("Method Not Allowed", {
+      status: 405,
+      headers: { allow: "GET, HEAD", "cache-control": "no-store", "x-mmd-worker": WORKER_NAME },
+    });
+  }
+
+  const upstreamUrl = asset ? presentationUrlForAsset(request) : presentationUrlForPage(request);
+  const upstreamRequest = new Request(upstreamUrl, {
+    method: request.method,
+    headers: presentationRequestHeaders(request),
+    redirect: "follow",
+  });
+  let upstream;
+  try {
+    upstream = await globalThis.fetch(upstreamRequest);
+  } catch (_) {
+    return new Response("My MMD is temporarily unavailable.", {
+      status: 502,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+        "x-mmd-worker": WORKER_NAME,
+        "x-mmd-route-owner": WORKER_NAME,
+      },
+    });
+  }
+
+  const contentType = String(upstream.headers.get("content-type") || "").toLowerCase();
+  const isHtml = !asset && contentType.includes("text/html");
+  const isJavascript = asset && (contentType.includes("javascript") || upstreamUrl.pathname.endsWith(".js"));
+  const headers = presentationResponseHeaders(upstream.headers, {
+    html: isHtml,
+    rewritten: isHtml || isJavascript,
+  });
+
+  if (request.method === "HEAD") {
+    return new Response(null, { status: upstream.status, statusText: upstream.statusText, headers });
+  }
+  if (isHtml) {
+    return new Response(rewriteMyMmdHtml(await upstream.text()), {
+      status: upstream.status,
+      statusText: upstream.statusText,
+      headers,
+    });
+  }
+  if (isJavascript) {
+    return new Response(rewriteMyMmdJavascript(await upstream.text()), {
+      status: upstream.status,
+      statusText: upstream.statusText,
+      headers,
+    });
+  }
+  return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers });
+}
+
 function recordBridgeTelemetry(result = {}) {
   console.log(JSON.stringify({
     kenji_ai_worker_bridge: "line_observation",
@@ -55,6 +196,8 @@ function recordBridgeTelemetry(result = {}) {
 export default {
   async fetch(request, env = {}, ctx) {
     const path = new URL(request.url).pathname.toLowerCase().replace(/\/{2,}/g, "/");
+    if (isMyMmdAssetPath(path)) return proxyMyMmdPresentation(request, { asset: true });
+    if (isMyMmdUiPath(path)) return proxyMyMmdPresentation(request);
     if (PUBLIC_CARE_BACK_PATHS.has(path) || path.startsWith(MEMBER_APP_API_PREFIX)) {
       return forwardMemberPages(request, env);
     }
