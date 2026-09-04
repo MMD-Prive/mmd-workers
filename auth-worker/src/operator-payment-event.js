@@ -4,6 +4,7 @@ const ACTION = "membership_payment_evidence";
 const AUTH_HEADER = "authorization";
 const IDEMPOTENCY_HEADER = "idempotency-key";
 const AUTHORITY = "my_mmd_entitlement_resolver_v1";
+const PAYMENT_VERIFIED_EVENT = "membership_payment_verified";
 
 export const OPERATOR_PAYMENT_EVENT_PATH = "/member/api/operator/membership/payment-event";
 
@@ -62,7 +63,7 @@ export async function handleOperatorPaymentEvent(request, env = {}) {
         resolution: existing.resolution || "pending_canonical_resolution",
         authority: AUTHORITY,
       };
-      return auditedResponse(env, {
+      const response = await auditedResponse(env, {
         status: 200,
         payload: duplicatePayload,
         audit: {
@@ -70,10 +71,16 @@ export async function handleOperatorPaymentEvent(request, env = {}) {
           reason: "duplicate",
           source_ref: `operator-payment-duplicate:${evidence.idempotency_key}:${makeEventId()}`,
           member_email: evidence.payload.member_email,
-          evidence: { idempotency_key: evidence.idempotency_key, payload_hash: payloadHash, original_event_id: existing.event_id },
+          evidence: {
+            idempotency_key: evidence.idempotency_key,
+            payload_hash: payloadHash,
+            original_event_id: existing.event_id,
+            event: evidence.payload.event,
+          },
           actor: evidence.payload.verified_by,
         },
       });
+      return withVerifiedPaymentHypeAlert(env, response, evidence);
     }
 
     return auditedResponse(env, {
@@ -120,7 +127,7 @@ export async function handleOperatorPaymentEvent(request, env = {}) {
     authority: AUTHORITY,
   };
 
-  return auditedResponse(env, {
+  const response = await auditedResponse(env, {
     status: responseStatus,
     payload: responsePayload,
     audit: {
@@ -148,6 +155,7 @@ export async function handleOperatorPaymentEvent(request, env = {}) {
       actor: evidence.payload.verified_by,
     },
   });
+  return withVerifiedPaymentHypeAlert(env, response, evidence);
 }
 
 function authorize(request, env) {
@@ -166,7 +174,7 @@ function validatePaymentEvent(body, headerKey) {
   if (!body || typeof body !== "object" || Array.isArray(body)) return { ok: false, errors: ["body_required"] };
 
   const event = safeCode(body.event);
-  if (!new Set(["membership_payment_verified", "membership_payment_rejected"]).has(event)) errors.push("event_invalid");
+  if (!new Set([PAYMENT_VERIFIED_EVENT, "membership_payment_rejected"]).has(event)) errors.push("event_invalid");
 
   const orderId = safeText(body.order_id, 180);
   if (!orderId) errors.push("order_id_required");
@@ -227,6 +235,74 @@ async function matchCanonicalMember(env, email) {
   const formula = `LOWER({${field}})=${formulaString(email)}`;
   const records = await airtableList(env, table, { filterByFormula: formula, maxRecords: 10 });
   return { matched: records.length > 0, record_ids: records.map((record) => safeText(record.id, 80)).filter(Boolean) };
+}
+
+async function withVerifiedPaymentHypeAlert(env, response, evidence) {
+  const required = String(env.PAYMENT_HYPE_ALERT_REQUIRED || "").trim().toLowerCase() === "true";
+  if (!required || evidence?.payload?.event !== PAYMENT_VERIFIED_EVENT || !response?.ok) return response;
+
+  const body = await response.clone().json().catch(() => null);
+  if (!body?.accepted) return response;
+
+  const alert = await notifyVerifiedPaymentHype(env, evidence).catch((error) => ({
+    ok: false,
+    error: safeFailure(error),
+  }));
+
+  if (alert.ok) {
+    return json({ ...body, hype_alert: "sent" }, response.status);
+  }
+
+  return json({
+    ...body,
+    hype_alert: "retry_required",
+    alert_failure_class: safeFailure(alert.error || alert.reason || "telegram_alert_failed"),
+  }, 503);
+}
+
+async function notifyVerifiedPaymentHype(env, evidence) {
+  const secret = String(env.AUTH_SERVICE_AUTH_TO_TELEGRAM || "").trim();
+  const service = env.TELEGRAM_ACCESS_RECONCILER;
+  if (!secret || !service?.fetch) {
+    return { ok: false, reason: "payment_hype_alert_not_configured" };
+  }
+
+  const payment = evidence.payload || {};
+  const maskedRef = maskPaymentRef(payment.payment_reference || payment.reference_id || payment.order_id);
+  const request = new Request("https://telegram-worker/telegram/internal/send", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${secret}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      flow: "payment_verified",
+      amount_thb: payment.amount_thb,
+      currency: payment.currency || "THB",
+      ref: maskedRef,
+      status: "verified",
+      source: "canonical_payment_verification",
+      ts: payment.verified_at || new Date().toISOString(),
+    }),
+  });
+
+  const response = await service.fetch(request);
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body?.telegram?.ok !== true) {
+    return {
+      ok: false,
+      reason: safeText(body?.error || body?.telegram?.error || `telegram_http_${response.status}`, 160),
+    };
+  }
+  return { ok: true };
+}
+
+function maskPaymentRef(value) {
+  const ref = safeText(value, 240);
+  if (!ref) return "";
+  if (ref.length <= 4) return "••••";
+  if (ref.length <= 8) return `${ref.slice(0, 2)}…${ref.slice(-2)}`;
+  return `${ref.slice(0, 4)}…${ref.slice(-4)}`;
 }
 
 async function auditedResponse(env, { status, payload, audit }) {
