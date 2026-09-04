@@ -10,19 +10,23 @@ const COOKIE_NAME = "mmd_model_session_v1";
 const LINE_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify";
 const MODELS_TABLE_DEFAULT = "Models";
 const MEDIA_TABLE_DEFAULT = "tblrpQXhHnbTU9RhW";
-const REVIEW_TABLE_DEFAULT = "tblJ52hVu0f4uhEmS";
 const MAX_MEDIA_BYTES = 15 * 1024 * 1024;
-const MODEL_LANGUAGE_ALLOWLIST = new Set(["thai", "english", "chinese", "japanese", "korean"]);
+const MODEL_LANGUAGE_ALLOWLIST = new Set(["thai", "english"]);
 const MODEL_AVAILABILITY_ALLOWLIST = new Set(["available", "busy", "vacation"]);
-const MODEL_MEDIA_TYPE_ALLOWLIST = new Set(["profile_photo", "public_gallery"]);
+const MODEL_MEDIA_UPLOAD_TYPES = new Set(["profile_photo", "public_gallery"]);
+const MODEL_MEDIA_PUBLIC_SELF_MANAGED_TYPES = new Set(["profile_photo", "public_gallery", "intro_video"]);
+const MODEL_MEDIA_PER_APPROVAL_TYPES = new Set(["private_gallery", "flash_preview"]);
 const MODEL_IMAGE_MIME_ALLOWLIST = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
 const ACTIVE_SESSION_STATES = new Set([
   "confirmed",
   "accepted",
   "en_route",
   "traveling",
+  "nearby",
   "arrived",
   "met_customer",
+  "final_payment_pending",
+  "final_payment_confirmed",
   "work_started",
   "work_finished",
 ]);
@@ -64,6 +68,11 @@ export default {
       if (mediaRoute.action === "set-main" && method === "POST") return handleMediaSetMain(request, env, mediaRoute.mediaId);
       if (mediaRoute.action === "delete" && method === "DELETE") return handleMediaDelete(request, env, mediaRoute.mediaId);
       return json({ ok: false, error: "method_not_allowed" }, 405, request, env);
+    }
+
+    if (path === ACTION_PATH && method === "POST") {
+      const body = await request.clone().json().catch(() => ({}));
+      if (normalizeWord(body?.action) === "send_eta") return handleSendEta(request, env, ctx, body);
     }
 
     if (path === CURRENT_PATH || path === ACTION_PATH) {
@@ -167,7 +176,41 @@ export function normalizeModelProfilePatch(input = {}) {
 
 export function normalizeModelMediaType(value = "") {
   const normalized = clean(value).toLowerCase();
-  return MODEL_MEDIA_TYPE_ALLOWLIST.has(normalized) ? normalized : "";
+  return MODEL_MEDIA_UPLOAD_TYPES.has(normalized) ? normalized : "";
+}
+
+export function modelMediaPolicy(fields = {}) {
+  const mediaType = normalizeWord(fields.media_type);
+  const role = normalizeWord(fields.asset_role);
+  const visibility = normalizeWord(fields.media_visibility);
+
+  if (MODEL_MEDIA_PER_APPROVAL_TYPES.has(mediaType)) {
+    return { self_managed: false, requires_per_approval: true, policy: "per_approved_private" };
+  }
+
+  if (/private|flash|sensitive/.test(role)) {
+    return { self_managed: false, requires_per_approval: true, policy: "per_approved_private" };
+  }
+
+  if (
+    MODEL_MEDIA_PUBLIC_SELF_MANAGED_TYPES.has(mediaType) &&
+    ["private", "private_candidate", "private_active", "flash", "flash_preview"].includes(visibility)
+  ) {
+    return { self_managed: false, requires_per_approval: true, policy: "per_approved_private" };
+  }
+
+  if (MODEL_MEDIA_PUBLIC_SELF_MANAGED_TYPES.has(mediaType)) {
+    // #597 stored ordinary public candidates as private_pending_review. The new
+    // owner policy supersedes that legacy staging marker for these public types.
+    return { self_managed: true, requires_per_approval: false, policy: "model_self_managed_public" };
+  }
+
+  return { self_managed: false, requires_per_approval: true, policy: "per_approved_private" };
+}
+
+export function normalizeEtaMinutes(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number >= 1 && number <= 240 ? number : 0;
 }
 
 function isModelLiffPath(path) {
@@ -237,7 +280,10 @@ async function handleProfileRead(request, env) {
   if (!model.ok) return json({ ok: false, error: model.status === 404 ? "model_not_found" : "model_lookup_unavailable" }, model.status, request, env);
   if (!isActiveModel(model.record.fields || {}, env)) return json({ ok: false, error: "model_not_active" }, 403, request, env);
 
-  return json({ ok: true, model: safeModelProfile(model.record) }, 200, request, env);
+  const profile = safeModelProfile(model.record);
+  const main = await findOwnedMainMedia(env, auth.payload.model_record_id);
+  if (main?.media_id) profile.current_profile_image_url = `${MEDIA_PATH}/${encodeURIComponent(main.media_id)}/file`;
+  return json({ ok: true, model: profile }, 200, request, env);
 }
 
 async function handleProfileUpdate(request, env) {
@@ -253,7 +299,10 @@ async function handleProfileUpdate(request, env) {
 
   const updated = await airtableUpdateRecord(env, modelsTable(env), auth.payload.model_record_id, normalized.patch, true);
   if (!updated.ok) return json({ ok: false, error: "profile_update_failed" }, updated.status, request, env);
-  return json({ ok: true, model: safeModelProfile(updated.record) }, 200, request, env);
+  const profile = safeModelProfile(updated.record);
+  const main = await findOwnedMainMedia(env, auth.payload.model_record_id);
+  if (main?.media_id) profile.current_profile_image_url = `${MEDIA_PATH}/${encodeURIComponent(main.media_id)}/file`;
+  return json({ ok: true, model: profile }, 200, request, env);
 }
 
 async function handleMediaList(request, env) {
@@ -288,7 +337,11 @@ async function handleMediaUpload(request, env) {
     return json({ ok: false, error: "invalid_multipart" }, 400, request, env);
   }
   const file = form.get("file");
-  const mediaType = normalizeModelMediaType(form.get("media_type"));
+  const rawMediaType = normalizeWord(form.get("media_type"));
+  if (MODEL_MEDIA_PER_APPROVAL_TYPES.has(rawMediaType)) {
+    return json({ ok: false, error: "per_approval_required", policy: "per_approved_private" }, 403, request, env);
+  }
+  const mediaType = normalizeModelMediaType(rawMediaType);
   if (!mediaType) return json({ ok: false, error: "media_type_invalid" }, 400, request, env);
   if (!file || typeof file !== "object" || typeof file.arrayBuffer !== "function") {
     return json({ ok: false, error: "file_required" }, 400, request, env);
@@ -311,6 +364,7 @@ async function handleMediaUpload(request, env) {
         media_id: mediaId,
         model_record_id: auth.payload.model_record_id,
         media_type: mediaType,
+        policy: "model_self_managed_public",
       },
     });
   } catch {
@@ -321,10 +375,10 @@ async function handleMediaUpload(request, env) {
     media_id: mediaId,
     Model: [auth.payload.model_record_id],
     media_type: mediaType,
-    media_visibility: "private_pending_review",
+    media_visibility: "public_candidate",
     asset_role: mediaType === "profile_photo" ? "profile_candidate" : "gallery_candidate",
-    review_status: "pending_review",
-    public_safe: false,
+    review_status: "active",
+    public_safe: true,
     private_safe: false,
     flash_safe: false,
     file_name: clean(file.name).slice(0, 180) || `${mediaId}.${ext}`,
@@ -341,12 +395,12 @@ async function handleMediaUpload(request, env) {
     return json({ ok: false, error: "media_registry_write_failed" }, created.status, request, env);
   }
 
-  const review = await createMediaReviewRequest(env, auth.payload.model_record_id, created.record.id, mediaId, mediaType, uploadedAt, "media_review");
-  if (!review.ok) {
-    return json({ ok: true, media: safeMediaRecord(created.record), warning: "review_queue_write_failed" }, 202, request, env);
-  }
-
-  return json({ ok: true, media: safeMediaRecord(created.record), review_request_id: firstText(review.record.fields || {}, ["request_id"]) }, 201, request, env);
+  return json({
+    ok: true,
+    media: safeMediaRecord(created.record),
+    policy: "model_self_managed_public",
+    review_required: false,
+  }, 201, request, env);
 }
 
 async function handleMediaFile(request, env, mediaId) {
@@ -375,12 +429,36 @@ async function handleMediaSetMain(request, env, mediaId) {
 
   const media = await findOwnedMedia(env, auth.payload.model_record_id, mediaId);
   if (!media.ok) return json({ ok: false, error: media.error }, media.status, request, env);
-  if (!MODEL_MEDIA_TYPE_ALLOWLIST.has(clean(media.record.fields?.media_type))) return json({ ok: false, error: "media_not_eligible" }, 400, request, env);
+  const policy = modelMediaPolicy(media.record.fields || {});
+  if (!policy.self_managed) return json({ ok: false, error: "per_approval_required", policy: policy.policy }, 403, request, env);
 
-  const requestedAt = new Date().toISOString();
-  const review = await createMediaReviewRequest(env, auth.payload.model_record_id, media.record.id, mediaId, clean(media.record.fields?.media_type), requestedAt, "profile_photo_main");
-  if (!review.ok) return json({ ok: false, error: "review_queue_write_failed" }, review.status, request, env);
-  return json({ ok: true, status: "pending_review", request_id: firstText(review.record.fields || {}, ["request_id"]) }, 202, request, env);
+  const all = await listOwnedMedia(env, auth.payload.model_record_id);
+  if (!all.ok) return json({ ok: false, error: "media_lookup_unavailable" }, 503, request, env);
+  for (const record of all.records) {
+    if (record.id === media.record.id) continue;
+    if (normalizeWord(record.fields?.asset_role) !== "profile_main") continue;
+    const otherPolicy = modelMediaPolicy(record.fields || {});
+    if (!otherPolicy.self_managed) continue;
+    await airtableUpdateRecord(env, mediaTable(env), record.id, {
+      asset_role: normalizeWord(record.fields?.media_type) === "profile_photo" ? "profile_candidate" : "gallery_candidate",
+    }, true);
+  }
+
+  const updated = await airtableUpdateRecord(env, mediaTable(env), media.record.id, {
+    asset_role: "profile_main",
+    review_status: "active",
+    public_safe: true,
+    media_visibility: "public_candidate",
+  }, true);
+  if (!updated.ok) return json({ ok: false, error: "media_registry_write_failed" }, updated.status, request, env);
+
+  return json({
+    ok: true,
+    status: "active",
+    media: safeMediaRecord(updated.record),
+    policy: "model_self_managed_public",
+    review_required: false,
+  }, 200, request, env);
 }
 
 async function handleMediaDelete(request, env, mediaId) {
@@ -390,10 +468,8 @@ async function handleMediaDelete(request, env, mediaId) {
 
   const media = await findOwnedMedia(env, auth.payload.model_record_id, mediaId);
   if (!media.ok) return json({ ok: false, error: media.error }, media.status, request, env);
-  const reviewStatus = clean(media.record.fields?.review_status).toLowerCase();
-  if (["approved", "published", "active"].includes(reviewStatus)) {
-    return json({ ok: false, error: "approved_media_requires_review" }, 409, request, env);
-  }
+  const policy = modelMediaPolicy(media.record.fields || {});
+  if (!policy.self_managed) return json({ ok: false, error: "per_approval_required", policy: policy.policy }, 403, request, env);
 
   const key = clean(media.record.fields?.private_original_key);
   const deleted = await airtableDeleteRecord(env, mediaTable(env), media.record.id);
@@ -401,7 +477,55 @@ async function handleMediaDelete(request, env, mediaId) {
   if (key && env.MMD_MODEL_ASSETS && typeof env.MMD_MODEL_ASSETS.delete === "function") {
     await env.MMD_MODEL_ASSETS.delete(key).catch(() => {});
   }
-  return json({ ok: true, media_id: mediaId }, 200, request, env);
+  return json({ ok: true, media_id: mediaId, policy: "model_self_managed_public" }, 200, request, env);
+}
+
+async function handleSendEta(request, env, ctx, body) {
+  const auth = await requireModelSession(request, env);
+  if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status, request, env);
+  if (!isAllowedOrigin(request, env)) return json({ ok: false, error: "origin_not_allowed" }, 403, request, env);
+
+  const etaMinutes = normalizeEtaMinutes(body?.eta_minutes);
+  if (!etaMinutes) return json({ ok: false, error: "eta_minutes_invalid", min: 1, max: 240 }, 400, request, env);
+
+  const token = readCookie(request.headers.get("cookie"), COOKIE_NAME);
+  const currentUrl = new URL(CURRENT_PATH, request.url);
+  currentUrl.searchParams.set("t", token);
+  const currentRequest = new Request(currentUrl.toString(), { method: "GET", headers: request.headers });
+  const currentResponse = await dashboardWorker.fetch(currentRequest, env, ctx);
+  const current = await currentResponse.clone().json().catch(() => ({}));
+  if (!currentResponse.ok) return json(current || { ok: false, error: "session_lookup_failed" }, currentResponse.status, request, env);
+
+  const session = current?.session || {};
+  const allowed = Array.isArray(session.allowed_actions) ? session.allowed_actions.map(normalizeWord) : [];
+  if (!allowed.includes("send_eta")) return json({ ok: false, error: "invalid_transition" }, 409, request, env);
+  const sessionId = clean(session.session_id || auth.payload.session_id);
+  if (!sessionId) return json({ ok: false, error: "active_session_not_found" }, 404, request, env);
+
+  if (!env.EVENTS_WORKER || typeof env.EVENTS_WORKER.fetch !== "function") {
+    return json({ ok: false, error: "eta_service_not_ready" }, 503, request, env);
+  }
+  const serviceToken = clean(env.AUTH_SERVICE_ADMIN_TO_EVENTS || env.CONFIRM_KEY);
+  if (!serviceToken) return json({ ok: false, error: "eta_service_auth_not_ready" }, 503, request, env);
+
+  const upstream = await env.EVENTS_WORKER.fetch(new Request("https://events-worker.internal/__internal/model/session/eta", {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Internal-Token": serviceToken },
+    body: JSON.stringify({
+      session_id: sessionId,
+      eta_minutes: etaMinutes,
+      model_record_id: auth.payload.model_record_id,
+      source: "model_liff",
+    }),
+  }));
+  const eta = await upstream.json().catch(() => ({}));
+  if (!upstream.ok) return json({ ok: false, error: eta.error || "eta_update_failed", detail: eta }, upstream.status, request, env);
+
+  return json({
+    ok: true,
+    session,
+    eta: { owner: "events-worker", eta_minutes: etaMinutes, updated_at: eta.eta_updated_at || null },
+  }, 200, request, env);
 }
 
 function safeModelProfile(record) {
@@ -412,7 +536,7 @@ function safeModelProfile(record) {
     working_name: firstText(fields, ["working_name", "nickname", "display_name"]),
     height_cm: finiteOrNull(fields.height_cm),
     weight_kg: finiteOrNull(fields.weight_kg),
-    languages: arrayText(fields.languages),
+    languages: arrayText(fields.languages).map((value) => clean(value).toLowerCase()).filter((value) => MODEL_LANGUAGE_ALLOWLIST.has(value)),
     skills_summary: clean(fields.skills_summary),
     experience_summary: clean(fields.experience_summary),
     available_now: Boolean(fields.available_now),
@@ -426,7 +550,8 @@ function safeModelProfile(record) {
 function safeMediaRecord(record) {
   const fields = record?.fields || {};
   const mediaId = firstText(fields, ["media_id"]);
-  const reviewStatus = clean(fields.review_status) || "pending_review";
+  const policy = modelMediaPolicy(fields);
+  const reviewStatus = clean(fields.review_status) || (policy.self_managed ? "active" : "pending_review");
   return {
     media_id: mediaId,
     media_type: clean(fields.media_type),
@@ -437,29 +562,32 @@ function safeMediaRecord(record) {
     file_size_bytes: finiteOrNull(fields.file_size_bytes),
     uploaded_at: clean(fields.uploaded_at),
     preview_url: mediaId ? `${MEDIA_PATH}/${encodeURIComponent(mediaId)}/file` : "",
-    can_delete: !["approved", "published", "active"].includes(reviewStatus.toLowerCase()),
-    can_request_main: Boolean(mediaId),
+    can_delete: policy.self_managed,
+    can_request_main: policy.self_managed && Boolean(mediaId),
+    self_managed: policy.self_managed,
+    requires_per_approval: policy.requires_per_approval,
+    policy: policy.policy,
+    main_action: policy.self_managed ? "set_main" : "request_per_approval",
   };
 }
 
-async function createMediaReviewRequest(env, modelRecordId, mediaRecordId, mediaId, mediaType, requestedAt, requestType) {
-  const requestId = `mrr_${crypto.randomUUID().replace(/-/g, "")}`;
-  return airtableCreateRecord(env, reviewTable(env), {
-    request_id: requestId,
-    Model: [modelRecordId],
-    request_type: requestType,
-    request_status: "pending",
-    requested_by: "model_liff",
-    requested_at: requestedAt,
-    linked_media_assets: [mediaRecordId],
-    payload_json: JSON.stringify({ media_id: mediaId, media_type: mediaType, source: "model_dashboard" }),
-    version: 1,
-  }, true);
+async function findOwnedMainMedia(env, modelRecordId) {
+  const formula = `AND(FIND("${escapeFormula(modelRecordId)}",ARRAYJOIN({Model})),{asset_role}="profile_main")`;
+  const result = await airtableList(env, mediaTable(env), formula, 10);
+  if (!result.ok) return null;
+  const record = result.records.find((item) => modelMediaPolicy(item.fields || {}).self_managed);
+  if (!record) return null;
+  return { media_id: firstText(record.fields || {}, ["media_id"]) };
+}
+
+async function listOwnedMedia(env, modelRecordId) {
+  const formula = `FIND("${escapeFormula(modelRecordId)}", ARRAYJOIN({Model}))`;
+  return airtableList(env, mediaTable(env), formula, 100);
 }
 
 async function findOwnedMedia(env, modelRecordId, mediaId) {
   const cleanId = clean(mediaId);
-  if (!cleanId || !/^media_[a-zA-Z0-9]+$/.test(cleanId)) return { ok: false, status: 400, error: "media_id_invalid" };
+  if (!cleanId || !/^media_[a-zA-Z0-9-]+$/.test(cleanId)) return { ok: false, status: 400, error: "media_id_invalid" };
   const formula = `AND({media_id}="${escapeFormula(cleanId)}",FIND("${escapeFormula(modelRecordId)}",ARRAYJOIN({Model})))`;
   const result = await airtableList(env, mediaTable(env), formula, 1);
   if (!result.ok) return { ok: false, status: 503, error: "media_lookup_unavailable" };
@@ -713,6 +841,10 @@ function normalizePath(pathname) {
   return path.length > 1 ? path.replace(/\/+$/g, "") : path;
 }
 
+function normalizeWord(value) {
+  return clean(value).toLowerCase().replace(/[\s-]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
 function firstText(fields, names) {
   for (const name of names) {
     if (!name) continue;
@@ -763,10 +895,6 @@ function modelsTable(env) {
 
 function mediaTable(env) {
   return clean(env.AIRTABLE_TABLE_MODEL_MEDIA || MEDIA_TABLE_DEFAULT);
-}
-
-function reviewTable(env) {
-  return clean(env.AIRTABLE_TABLE_MODEL_REVIEW_REQUESTS || REVIEW_TABLE_DEFAULT);
 }
 
 function clean(value) {
