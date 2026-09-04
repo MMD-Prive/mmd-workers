@@ -104,7 +104,7 @@ test("status LIFF shell returns to canonical My MMD only after the same-site pro
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
-        `<!doctype html><html><body><main>LIFF bridge</main><script nonce="abc123">window.__shell=true;</script></body></html>`,
+        `<!doctype html><html><body><main>LIFF bridge</main><div id="message"></div><div id="actions"></div><script nonce="abc123">window.__shell=true;</script></body></html>`,
         {
           headers: {
             "content-type": "text/html; charset=utf-8",
@@ -125,6 +125,26 @@ test("status LIFF shell returns to canonical My MMD only after the same-site pro
   assert.match(html, /payload && payload\.ok === true/);
   assert.match(html, /window\.location\.replace\(target\)/);
   assert.match(html, /const target = "\/member\/my-mmd"/);
+});
+
+test("status LIFF shell exposes recovery actions instead of ending silently after bounded retries", async () => {
+  const runtime = {
+    MEMBER_PAGES_WORKER: {
+      fetch: async () => new Response(
+        `<!doctype html><html><body><main>LIFF bridge</main><div id="message"></div><div id="actions"></div><script nonce="abc123">window.__shell=true;</script></body></html>`,
+        { headers: { "content-type": "text/html; charset=utf-8" } },
+      ),
+    },
+  };
+
+  const response = await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=status"), runtime);
+  const html = await response.text();
+
+  assert.match(html, /const maxAttempts = 20/);
+  assert.match(html, /ยังยืนยัน Member Session ไม่สำเร็จครับ/);
+  assert.match(html, /ลองยืนยันอีกครั้ง/);
+  assert.match(html, /กลับ My MMD/);
+  assert.match(html, /renderRecovery\(\)/);
 });
 
 test("CARE BACK promo LIFF shell is not auto-returned to My MMD", async () => {
