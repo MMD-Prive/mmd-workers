@@ -3,6 +3,7 @@ import { observeKenjiLineWebhook } from "./kenji-ai-worker-line-bridge.mjs";
 export { KenjiModelIdempotency } from "./index.js";
 
 const WORKER_NAME = "member-dashboard-chat-worker";
+const MEMBER_APP_API_PREFIX = "/api/member/app/";
 const PUBLIC_CARE_BACK_PATHS = new Set([
   "/member/api/care-back/public-wish",
   "/member/api/care-back/public-wish/",
@@ -54,7 +55,9 @@ function recordBridgeTelemetry(result = {}) {
 export default {
   async fetch(request, env = {}, ctx) {
     const path = new URL(request.url).pathname.toLowerCase().replace(/\/{2,}/g, "/");
-    if (PUBLIC_CARE_BACK_PATHS.has(path)) return forwardMemberPages(request, env);
+    if (PUBLIC_CARE_BACK_PATHS.has(path) || path.startsWith(MEMBER_APP_API_PREFIX)) {
+      return forwardMemberPages(request, env);
+    }
 
     const shouldObserveLine = request.method === "POST" && LINE_WEBHOOK_PATHS.has(path);
     const observerRequest = shouldObserveLine ? request.clone() : null;
