@@ -72,13 +72,57 @@ function injectStatusReturnBridge(html) {
   const bridge = `<script nonce="${nonce}">
 (() => {
   const target = "/member/my-mmd";
+  const profileEndpoint = "/member/api/liff/profile";
+  const maxAttempts = 20;
   let attempts = 0;
   let finished = false;
+  let retryTimer = 0;
+
+  function setShellMessage(text) {
+    const message = document.getElementById("message");
+    if (message) message.textContent = text;
+  }
+
+  function clearShellActions() {
+    const actions = document.getElementById("actions");
+    if (actions) actions.replaceChildren();
+    return actions;
+  }
+
+  function renderRecovery() {
+    if (finished) return;
+    finished = true;
+    if (retryTimer) window.clearTimeout(retryTimer);
+    setShellMessage("ยังยืนยัน Member Session ไม่สำเร็จครับ ลองอีกครั้งได้เลย หรือกลับ My MMD ก่อน");
+
+    const actions = clearShellActions();
+    if (!actions) return;
+
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.textContent = "ลองยืนยันอีกครั้ง";
+    retry.addEventListener("click", () => {
+      attempts = 0;
+      finished = false;
+      clearShellActions();
+      setShellMessage("กำลังตรวจสอบ Member Session อีกครั้งครับ");
+      retryTimer = window.setTimeout(verifyAndReturn, 250);
+    });
+
+    const back = document.createElement("button");
+    back.type = "button";
+    back.textContent = "กลับ My MMD";
+    back.addEventListener("click", () => window.location.replace(target));
+
+    actions.append(retry, back);
+  }
+
   async function verifyAndReturn() {
     if (finished) return;
     attempts += 1;
+    setShellMessage(attempts === 1 ? "กำลังตรวจสอบ Member Session ครับ" : "กำลังตรวจสอบ Member Session อีกครั้งครับ");
     try {
-      const response = await fetch("/member/api/liff/profile", {
+      const response = await fetch(profileEndpoint, {
         method: "GET",
         credentials: "same-origin",
         headers: { "accept": "application/json" }
@@ -86,13 +130,21 @@ function injectStatusReturnBridge(html) {
       const payload = await response.json().catch(() => null);
       if (response.ok && payload && payload.ok === true) {
         finished = true;
+        if (retryTimer) window.clearTimeout(retryTimer);
         window.location.replace(target);
         return;
       }
     } catch (_) {}
-    if (!finished && attempts < 20) window.setTimeout(verifyAndReturn, 650);
+
+    if (finished) return;
+    if (attempts < maxAttempts) {
+      retryTimer = window.setTimeout(verifyAndReturn, 650);
+      return;
+    }
+    renderRecovery();
   }
-  window.setTimeout(verifyAndReturn, 250);
+
+  retryTimer = window.setTimeout(verifyAndReturn, 250);
 })();
 </script>`;
 
