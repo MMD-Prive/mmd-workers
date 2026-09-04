@@ -1,0 +1,100 @@
+name: Patch Model Location Readiness
+
+on:
+  push:
+    branches:
+      - feat/model-gps-location-readiness
+    paths:
+      - ".github/workflows/patch-model-location-readiness.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: feat/model-gps-location-readiness
+
+      - name: Wire model location runtime and Cloudflare config
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          # 1) Active composed runtime wiring.
+          path = Path("admin-worker/src/studio-telegram-worker.js")
+          text = path.read_text()
+          if 'from "./model-location-runtime.js"' not in text:
+              marker = '''import {\n  handleModelGpsVisibilityRequest,\n  isModelGpsVisibilityRequest,\n} from "./model-gps-visibility.js";\n'''
+              addition = marker + '''import {\n  handleModelLocationRequest,\n  isModelLocationRequest,\n} from "./model-location-runtime.js";\n'''
+              if marker not in text:
+                  raise SystemExit("studio import marker missing")
+              text = text.replace(marker, addition, 1)
+
+          if 'isModelLocationRequest(path)' not in text:
+              marker = '''    // Model Dashboard GPS Visibility is a permission preference only. It never\n    // accepts or stores coordinates and does not request device location access.\n    if (isModelGpsVisibilityRequest(path)) {\n      return handleModelGpsVisibilityRequest(request, env);\n    }\n'''
+              addition = '''    // GPS location collection is a separate, fail-closed channel. The capability\n    // endpoint never requests device location; ingest is disabled by default and\n    // can only write one short-lived point while permission + Active Job are true.\n    if (isModelLocationRequest(path)) {\n      return handleModelLocationRequest(request, env, ctx);\n    }\n\n''' + marker
+              if marker not in text:
+                  raise SystemExit("studio route marker missing")
+              text = text.replace(marker, addition, 1)
+          path.write_text(text)
+
+          # 2) Durable Object class export from the configured Worker entrypoint.
+          path = Path("admin-worker/src/admin-login-hero-worker.js")
+          text = path.read_text()
+          if 'export { ModelLocationCoordinator } from "./model-location-runtime.js";' not in text:
+              marker = 'export { ModelActivationCoordinator } from "./model-first-time-activation.js";\n'
+              if marker not in text:
+                  raise SystemExit("admin entrypoint export marker missing")
+              text = text.replace(marker, marker + 'export { ModelLocationCoordinator } from "./model-location-runtime.js";\n', 1)
+          path.write_text(text)
+
+          # 3) Persistent exact routes, feature flags, DO binding and migration.
+          path = Path("admin-worker/wrangler.toml")
+          text = path.read_text()
+          if 'mmdbkk.com/v1/model/location/capability' not in text:
+              marker = '''# Model Console V16 additive write/review routes. Keep these exact and narrow;\n'''
+              block = '''# Model location capability/current routes. Capability contains no coordinates.\n# Current ingest is separately gated by GPS Visibility + Active Job and defaults OFF.\n[[routes]]\npattern = "mmdbkk.com/v1/model/location/capability"\nzone_name = "mmdbkk.com"\n\n[[routes]]\npattern = "www.mmdbkk.com/v1/model/location/capability"\nzone_name = "mmdbkk.com"\n\n[[routes]]\npattern = "mmdbkk.com/v1/model/location/current*"\nzone_name = "mmdbkk.com"\n\n[[routes]]\npattern = "www.mmdbkk.com/v1/model/location/current*"\nzone_name = "mmdbkk.com"\n\n'''
+              if marker not in text:
+                  raise SystemExit("wrangler route marker missing")
+              text = text.replace(marker, block + marker, 1)
+
+          if 'MODEL_LOCATION_INGEST_ENABLED = "false"' not in text:
+              marker = 'MODEL_SOURCE_OWNER_DEFAULT = "lonelysomething"\n'
+              block = '''# GPS location remains opt-in and inactive until an explicit production enable.\n# Only the latest point is retained in a Durable Object for a short TTL; no history/Airtable coordinates.\nMODEL_LOCATION_INGEST_ENABLED = "false"\nMODEL_LOCATION_CUSTOMER_READ_ENABLED = "false"\nMODEL_LOCATION_RETENTION_SECONDS = "180"\n'''
+              if marker not in text:
+                  raise SystemExit("wrangler vars marker missing")
+              text = text.replace(marker, block + marker, 1)
+
+          if 'name = "MODEL_LOCATION_COORDINATOR"' not in text:
+              marker = '''[[durable_objects.bindings]]\nname = "MODEL_ACTIVATION_COORDINATOR"\nclass_name = "ModelActivationCoordinator"\n'''
+              block = marker + '''\n# Stores at most one short-lived GPS point per model. Coordinates are never written to Airtable.\n[[durable_objects.bindings]]\nname = "MODEL_LOCATION_COORDINATOR"\nclass_name = "ModelLocationCoordinator"\n'''
+              if marker not in text:
+                  raise SystemExit("wrangler DO marker missing")
+              text = text.replace(marker, block, 1)
+
+          if 'v2026-09-05-model-location-coordinator' not in text:
+              marker = '''[[migrations]]\ntag = "v2026-09-04-model-first-time-activation"\nnew_sqlite_classes = ["ModelActivationCoordinator"]\n'''
+              block = marker + '''\n[[migrations]]\ntag = "v2026-09-05-model-location-coordinator"\nnew_sqlite_classes = ["ModelLocationCoordinator"]\n'''
+              if marker not in text:
+                  raise SystemExit("wrangler migration marker missing")
+              text = text.replace(marker, block, 1)
+          path.write_text(text)
+          PY
+
+          if git diff --quiet -- admin-worker/src/studio-telegram-worker.js admin-worker/src/admin-login-hero-worker.js admin-worker/wrangler.toml; then
+            echo "No wiring changes needed"
+            exit 0
+          fi
+
+          git config user.name "MMD Privé"
+          git config user.email "malemodel.bkk@gmail.com"
+          git add admin-worker/src/studio-telegram-worker.js admin-worker/src/admin-login-hero-worker.js admin-worker/wrangler.toml
+          git commit -m "feat(model): wire privacy-gated location readiness"
+          git push origin HEAD:feat/model-gps-location-readiness
