@@ -44,13 +44,22 @@ export async function handleCareBackBookingApproval(request, env = {}) {
     return json({ ok: false, error: "coupon_code_invalid", authority: AUTHORITY }, 400);
   }
 
-  const eligibilityValid = eligibility.authority === ENTITLEMENT_AUTHORITY
+  const customerEligibilityValid = eligibility.authority === ENTITLEMENT_AUTHORITY
     && eligibility.member_blocked === false
     && eligibility.booking_allowed === true
     && eligibility.payment_verified === true;
   const membershipStatus = clean(memberProfile.membership_status).toLowerCase();
-  if (!eligibilityValid || !["active", "grace"].includes(membershipStatus)) {
+  if (!customerEligibilityValid || !["active", "grace"].includes(membershipStatus)) {
     return json({ ok: false, error: "care_back_customer_eligibility_unresolved", authority: AUTHORITY }, 409);
+  }
+
+  const jobFormat = normalizeJobFormat(body.job_format);
+  const modelServiceLevel = normalizeModelServiceLevel(eligibility.model_service_level);
+  const modelJobEligible = eligibility.model_job_eligible === true
+    && Boolean(jobFormat)
+    && (modelServiceLevel === "VIP" || (modelServiceLevel === "PN" && jobFormat === "PN"));
+  if (!modelJobEligible) {
+    return json({ ok: false, error: "care_back_model_job_format_not_eligible", authority: AUTHORITY }, 409);
   }
 
   const store = getCareBackStore(env);
@@ -64,7 +73,7 @@ export async function handleCareBackBookingApproval(request, env = {}) {
       memberId,
       memberProfile,
       modelLevel: body.model_level,
-      jobFormat: body.job_format,
+      jobFormat,
       publicModelPercent: body.public_model_percent ?? null,
       now: new Date(),
     });
@@ -79,6 +88,7 @@ export async function handleCareBackBookingApproval(request, env = {}) {
         authority: AUTHORITY,
         booking_ref: bookingRef || null,
         model_level: approved.model_level,
+        model_service_level: modelServiceLevel,
         job_format: approved.job_format,
         approved_discount_percent: approved.approved_discount_percent,
         activated_at: approved.activated_at,
@@ -93,6 +103,16 @@ export async function handleCareBackBookingApproval(request, env = {}) {
   }
 }
 
+function normalizeJobFormat(value) {
+  const format = clean(value).toUpperCase();
+  return format === "PN" || format === "VIP" ? format : "";
+}
+function normalizeModelServiceLevel(value) {
+  const level = clean(value).toLowerCase().replace(/[\s_-]+/g, " ");
+  if (["vip", "both", "pn vip", "vip pn"].includes(level)) return "VIP";
+  if (level === "pn") return "PN";
+  return "";
+}
 function careBackErrorStatus(code) {
   if (["CARE_BACK_IDENTITY_INVALID", "CARE_BACK_MEMBER_INVALID", "CARE_BACK_CLOCK_INVALID"].includes(code)) return 400;
   if (code === "CARE_BACK_CODE_SECRET_MISSING" || code === "CARE_BACK_STORAGE_UNAVAILABLE" || code === "CARE_BACK_APPROVAL_UNAVAILABLE") return 503;
