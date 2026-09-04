@@ -1,10 +1,11 @@
 import crypto from "node:crypto";
 
-export const SAFE_SLIP_ACK = "ได้รับหลักฐานการชำระเงินแล้วครับ ผมกำลังส่งรายละเอียดให้ทางระบบตรวจสอบ กรุณารอสักครู่ก่อนนะครับ";
-export const MANUAL_SLIP_ACK = "ได้รับหลักฐานการชำระเงินแล้วครับ แต่รายละเอียดต้องให้ทาง MMD ตรวจสอบด้วยตนเอง กรุณารอสักครู่ก่อนนะครับ";
-export const RETRY_SLIP_ACK = "ขณะนี้ระบบยังบันทึกหลักฐานการชำระเงินไม่สำเร็จครับ กรุณาเก็บสลิปไว้ก่อน ทาง MMD จะตรวจสอบและแจ้งให้ทราบอีกครั้งครับ";
+export const SAFE_SLIP_ACK = "MMD รับหลักฐานการชำระเงินไว้แล้วครับ กำลังตรวจรายละเอียดให้ กรุณารอสักครู่ก่อนนะครับ";
+export const MANUAL_SLIP_ACK = "MMD รับหลักฐานการชำระเงินไว้แล้วครับ แต่รายละเอียดต้องตรวจด้วยตนเองก่อน กรุณารอสักครู่ก่อนนะครับ";
+export const RETRY_SLIP_ACK = "ตอนนี้ MMD ยังบันทึกหลักฐานการชำระเงินไม่สำเร็จครับ กรุณาเก็บสลิปไว้ก่อน แล้ว MMD จะตรวจสอบและแจ้งให้ทราบอีกครั้งครับ";
 
-const SLIP_CONTEXT_RE = /(สลิป|หลักฐาน.{0,12}(ชำระ|โอน|จ่าย)|โอนแล้ว|จ่ายแล้ว|ชำระแล้ว|payment\s*(slip|proof)|transfer\s*(slip|proof)|promptpay)/i;
+const SLIP_CONTEXT_RE = /(สลิป|หลักฐาน.{0,12}(ชำระ|โอน|จ่าย)|โอน(?:เงิน)?(?:แล้ว|เรียบร้อย)?|จ่าย(?:เงิน)?(?:แล้ว|เรียบร้อย)?|ชำระ(?:เงิน)?(?:แล้ว|เรียบร้อย)?|ยอด.{0,18}(?:บาท|thb)|(?:บาท|thb).{0,18}ยอด|payment\s*(slip|proof)|transfer\s*(slip|proof|done|complete|completed)|bank\s*transfer|prompt\s*pay|promptpay|พร้อมเพย์|\bpaid\b)/i;
+const NON_PAYMENT_IMAGE_CONTEXT_RE = /(ส่ง|ขอ|ดู|มี).{0,10}(รูป|รูปภาพ|profile|โปรไฟล์|หน้าสด)|(?:รูป|รูปภาพ|profile|โปรไฟล์|หน้าสด).{0,10}(model|นายแบบ|ems\d+|gws\d+)/i;
 const IMAGE_TYPES = new Map([["image/jpeg", "jpg"], ["image/png", "png"], ["image/webp", "webp"]]);
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const DEFAULT_MAX_AMOUNT_THB = 10_000_000;
@@ -36,8 +37,17 @@ export function isImageMessage(event) {
 export function looksLikePaymentSlipContext(event, recentContext = []) {
   if (!isImageMessage(event)) return false;
   const direct = [event?.message?.fileName, event?.context?.text].map(clean).filter(Boolean);
+  if (direct.some((value) => SLIP_CONTEXT_RE.test(value))) return true;
+  if (direct.some((value) => NON_PAYMENT_IMAGE_CONTEXT_RE.test(value))) return false;
+
   const recent = (Array.isArray(recentContext) ? recentContext : [recentContext]).map(clean).filter(Boolean);
-  return [...direct, ...recent].some((value) => SLIP_CONTEXT_RE.test(value));
+  // Recent context is newest-first. The latest clear image/payment intent wins,
+  // so an older payment chat cannot swallow a later model/profile image.
+  for (const value of recent) {
+    if (SLIP_CONTEXT_RE.test(value)) return true;
+    if (NON_PAYMENT_IMAGE_CONTEXT_RE.test(value)) return false;
+  }
+  return false;
 }
 
 export function buildProofIdentity(event) {
@@ -300,14 +310,45 @@ async function createProof({ env, fields, fetchImpl }) {
 }
 
 export async function notifyOps({ env, kind, proofId, extraction = {}, status = "pending", fetchImpl = fetch }) {
-  const token = clean(env.TELEGRAM_BOT_TOKEN);
-  const chatId = clean(env.TELEGRAM_OPS_CHAT_ID);
-  if (!token || !chatId) return { ok: false, skipped: true, reason: "telegram_config_missing" };
+  const chatId = clean(env.TELEGRAM_OPS_CHAT_ID || env.TELEGRAM_CHAT_ID);
+  if (!chatId) return { ok: false, skipped: true, reason: "telegram_chat_missing" };
+
   const title = kind === "duplicate" ? "⚠️ LINE SLIP DUPLICATE" : kind === "extraction_failed" ? "⚠️ LINE SLIP REVIEW REQUIRED" : "🧾 LINE SLIP RECEIVED";
   const maskedRef = extraction.payment_ref ? `${extraction.payment_ref.slice(0, 4)}…${extraction.payment_ref.slice(-4)}` : "";
   const message = [title, `Proof: ${proofId}`, extraction.amount_thb != null ? `Amount: ${extraction.amount_thb} THB` : "", maskedRef ? `Ref: ${maskedRef}` : "", `Status: ${status}`].filter(Boolean).join("\n");
-  const response = await fetchImpl(`https://api.telegram.org/bot${token}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: chatId, text: message }) });
-  return { ok: response.ok, status: response.status };
+  const threadId = Number(env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || 21) || 21;
+
+  const gatewayUrl = clean(env.TELEGRAM_INTERNAL_SEND_URL);
+  const gatewayToken = clean(env.AUTH_SERVICE_LINE_TO_TELEGRAM || env.TELEGRAM_INTERNAL_TOKEN);
+  if (gatewayUrl && gatewayToken) {
+    try {
+      const gatewayResponse = await fetchImpl(gatewayUrl, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${gatewayToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          flow: "payment_proof",
+          chat_id: chatId,
+          message_thread_id: threadId,
+          text: message,
+        }),
+      });
+      const gatewayBody = await gatewayResponse.json().catch(() => ({}));
+      if (gatewayResponse.ok && gatewayBody?.telegram?.ok === true) {
+        return { ok: true, status: gatewayResponse.status, route: "telegram_worker", message_thread_id: threadId };
+      }
+    } catch {}
+  }
+
+  // Transitional fallback while the LINE/Netlify service credential is rolled out.
+  // It still targets the canonical HYPE payment topic and never mutates payment truth.
+  const token = clean(env.TELEGRAM_BOT_TOKEN);
+  if (!token) return { ok: false, skipped: true, reason: "telegram_gateway_and_bot_missing", message_thread_id: threadId };
+  const response = await fetchImpl(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, message_thread_id: threadId, text: message }),
+  });
+  return { ok: response.ok, status: response.status, route: "direct_hype_thread_fallback", message_thread_id: threadId };
 }
 
 export async function processPaymentSlipImage({ env, event, fetchImpl = fetch, now = new Date() }) {
