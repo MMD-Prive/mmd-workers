@@ -4,6 +4,7 @@ export { KenjiModelIdempotency } from "./index.js";
 
 const WORKER_NAME = "member-dashboard-chat-worker";
 const MEMBER_APP_API_PREFIX = "/api/member/app/";
+const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const MY_MMD_UI_PREFIX = "/member/my-mmd";
 const MY_MMD_ASSET_PREFIX = "/member/my-mmd-assets/";
 const MY_MMD_PRESENTATION_ORIGIN = "https://my-mmd-member-profile.lovable.app";
@@ -49,6 +50,69 @@ async function forwardMemberPages(request, env) {
   return new Response(upstreamResponse.body, {
     status: upstreamResponse.status,
     statusText: upstreamResponse.statusText,
+    headers,
+  });
+}
+
+function isStatusLiffShellRequest(request) {
+  const url = new URL(request.url);
+  const path = url.pathname.toLowerCase().replace(/\/{2,}/g, "/");
+  if (!MEMBER_LIFF_SHELL_PATHS.has(path)) return false;
+  const intent = String(url.searchParams.get("intent") || url.searchParams.get("liff_intent") || "").trim().toLowerCase();
+  const campaign = String(url.searchParams.get("campaign") || "").trim().toLowerCase();
+  return intent === "status" && !campaign;
+}
+
+function injectStatusReturnBridge(html) {
+  const source = String(html || "");
+  const nonceMatch = source.match(/<script\b[^>]*\bnonce=["']([^"']+)["']/i);
+  if (!nonceMatch || !source.includes("</body>")) return source;
+
+  const nonce = nonceMatch[1];
+  const bridge = `<script nonce="${nonce}">
+(() => {
+  const target = "/member/my-mmd";
+  let attempts = 0;
+  let finished = false;
+  async function verifyAndReturn() {
+    if (finished) return;
+    attempts += 1;
+    try {
+      const response = await fetch("/member/api/liff/profile", {
+        method: "GET",
+        credentials: "same-origin",
+        headers: { "accept": "application/json" }
+      });
+      const payload = await response.json().catch(() => null);
+      if (response.ok && payload && payload.ok === true) {
+        finished = true;
+        window.location.replace(target);
+        return;
+      }
+    } catch (_) {}
+    if (!finished && attempts < 20) window.setTimeout(verifyAndReturn, 650);
+  }
+  window.setTimeout(verifyAndReturn, 250);
+})();
+</script>`;
+
+  return source.replace("</body>", `${bridge}</body>`);
+}
+
+async function maybeReturnStatusLiffToMyMmd(request, response) {
+  if (!isStatusLiffShellRequest(request) || request.method === "HEAD" || !response.ok) return response;
+  const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+  if (!contentType.includes("text/html")) return response;
+
+  const html = await response.text();
+  const rewritten = injectStatusReturnBridge(html);
+  const headers = new Headers(response.headers);
+  for (const name of ["content-length", "content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(name);
+  headers.set("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
+  headers.set("x-mmd-liff-return-bridge", "my-mmd-status-v1");
+  return new Response(rewritten, {
+    status: response.status,
+    statusText: response.statusText,
     headers,
   });
 }
@@ -239,6 +303,6 @@ export default {
       else await observation;
     }
 
-    return response;
+    return maybeReturnStatusLiffToMyMmd(request, response);
   },
 };
