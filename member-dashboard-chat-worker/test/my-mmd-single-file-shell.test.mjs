@@ -101,7 +101,8 @@ test("non-My-MMD routes still delegate to the existing front gate", async () => 
   assert.equal(response.headers.get("x-mmd-upstream-service"), "member-pages-worker");
 });
 
-test("wrangler production entrypoint is the single-file shell gate", async () => {
+test("wrangler production entrypoint wraps the single-file shell with the inert Queue gate", async () => {
   const wrangler = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");
-  assert.match(wrangler, /^main = "src\/front-gate-single-file-shell\.js"$/m);
+  assert.match(wrangler, /^main = "src\/front-gate-slip-queue-shell\.js"$/m);
+  assert.match(wrangler, /LINE_SLIP_QUEUE_ENABLED = "false"/);
 });
