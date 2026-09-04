@@ -34,6 +34,7 @@ jobs:
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
             cookie_jar="$(mktemp)"
             login_headers="$(mktemp)"
+            models_headers="$(mktemp)"
             models_body="$(mktemp)"
             preview_headers="$(mktemp)"
             preview_body="$(mktemp)"
@@ -56,11 +57,14 @@ jobs:
             echo "[$origin] session=cookie-issued"
 
             models_code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS \
+              -D "$models_headers" \
               -b "$cookie_jar" \
               -o "$models_body" \
               -w "%{http_code}" \
               "$origin/v1/admin/kenji/models?q=Mek&limit=20")"
-            echo "[$origin] models=$models_code"
+            models_location="$(awk -F': *' 'tolower($1)=="location" {gsub(/\r/,"",$2); print $2}' "$models_headers" | tail -n 1)"
+            models_server="$(awk -F': *' 'tolower($1)=="server" {gsub(/\r/,"",$2); print $2}' "$models_headers" | tail -n 1)"
+            echo "[$origin] models=$models_code location=${models_location:-none} server=${models_server:-none}"
             test "$models_code" = "200"
 
             preview_path="$(node - "$models_body" "$MODEL_ID" "$MODEL_NAME" <<'NODE'
