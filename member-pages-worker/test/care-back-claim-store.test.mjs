@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
-import { deriveClaimAndCode, getCareBackStore } from "../src/care-back-claim-store.js";
+import {
+  deriveClaimAndCode,
+  getCareBackStore,
+  resolveCareBackApprovedDiscount,
+} from "../src/care-back-claim-store.js";
 
 const realFetch = globalThis.fetch;
 const IDENTITY = "a".repeat(64);
@@ -55,6 +59,7 @@ test("CARE BACK verification creates a current-member claim but no Promo Code be
   assert.equal(result.coupon_state, "wish_required");
   assert.equal(result.coupon_wallet.code, "");
   assert.equal(result.coupon_wallet.status, "wish_required");
+  assert.equal(result.approved_discount_percent, null);
   assert.equal(result.discount_percent, 0);
   assert.equal(result.membership_benefit.days, 180);
   assert.equal(result.review_status, "not_required");
@@ -66,10 +71,12 @@ test("CARE BACK verification creates a current-member claim but no Promo Code be
     renewal_bonus_points: 0,
     renewal_bonus_state: "not_offered",
   });
+  assert.match(writes[0].fields.payload_json, /"validity_months":2/);
+  assert.match(writes[0].fields.payload_json, /"actual_discount_field":"approved_discount_percent"/);
   assert.doesNotMatch(JSON.stringify(writes), /raw-token|session-secret|test-only-liff/i);
 });
 
-test("CARE BACK activates a 10 percent personal coupon only after the Birthday Wish is saved", async () => {
+test("CARE BACK activates a personal coupon after Wish without inventing a fixed 10 percent rate", async () => {
   const writes = [];
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
@@ -89,26 +96,58 @@ test("CARE BACK activates a 10 percent personal coupon only after the Birthday W
   });
 
   assert.equal(writes[1].fields.status, "active");
-  assert.equal(writes[1].fields.benefit_value, 10);
-  assert.ok(Date.parse(writes[1].fields.expires_at) > BIRTHDAY_NOW.getTime());
+  assert.equal(writes[1].fields.benefit_value, undefined);
+  assert.equal(writes[1].fields.approved_discount_percent, undefined);
+  assert.equal(writes[1].fields.activated_at, "2026-08-19T00:00:00.000Z");
+  assert.equal(writes[1].fields.expires_at, "2026-10-19T00:00:00.000Z");
   assert.match(writes[1].fields.payload_json, /"wish_submitted":true/);
+  assert.match(writes[1].fields.payload_json, /"max_discount_percent":10/);
   assert.match(result.personal_code, /^[A-HJ-NP-Z2-9]{6}$/);
   assert.equal(result.code_status, "active");
   assert.equal(result.coupon_state, "ready");
-  assert.equal(result.discount_percent, 10);
+  assert.equal(result.approved_discount_percent, null);
+  assert.equal(result.discount_percent, 0);
   assert.equal(result.coupon_wallet.code, result.personal_code);
   assert.equal(result.coupon_wallet.status, "ready");
+  assert.equal(result.coupon_wallet.approved_discount_percent, null);
+  assert.equal(result.coupon_wallet.activated_at, "2026-08-19T00:00:00.000Z");
+  assert.equal(result.coupon_wallet.expires_at, "2026-10-19T00:00:00.000Z");
 });
 
-test("CARE BACK deterministic identifiers make a verified retry resume the same claim and code", async () => {
+test("CARE BACK discount resolver follows Model level × job format and fails closed without customer eligibility", () => {
+  assert.equal(resolveCareBackApprovedDiscount({ modelLevel: "Standard Models", jobFormat: "PN", customerEligible: true }), 5);
+  assert.equal(resolveCareBackApprovedDiscount({ modelLevel: "Standard Models", jobFormat: "VIP", customerEligible: true }), 7);
+  assert.equal(resolveCareBackApprovedDiscount({ modelLevel: "Premium / EMs / GWs Models", jobFormat: "PN", customerEligible: true }), 5);
+  assert.equal(resolveCareBackApprovedDiscount({ modelLevel: "Premium / EMs / GWs Models", jobFormat: "VIP", customerEligible: true }), 10);
+  assert.equal(resolveCareBackApprovedDiscount({ modelLevel: "Public Models", jobFormat: "PN", customerEligible: true, publicRate: 3 }), 3);
+  assert.equal(resolveCareBackApprovedDiscount({ modelLevel: "Public Models", jobFormat: "VIP", customerEligible: true, publicRate: 5 }), 5);
+  assert.equal(resolveCareBackApprovedDiscount({ modelLevel: "Public Models", jobFormat: "PN", customerEligible: true }), null);
+  assert.equal(resolveCareBackApprovedDiscount({ modelLevel: "Standard Models", jobFormat: "VIP", customerEligible: false }), null);
+  assert.equal(resolveCareBackApprovedDiscount({ modelLevel: "Standard Models", jobFormat: "UNKNOWN", customerEligible: true }), null);
+});
+
+test("CARE BACK deterministic identifiers make a V10 retry resume the same claim and code without rewriting", async () => {
   const derived = await deriveClaimAndCode(IDENTITY, SECRET);
   let writes = 0;
   const claimRecordId = `rec${"A".repeat(14)}`;
   const promoRecordId = `rec${"B".repeat(14)}`;
+  const couponPolicy = {
+    benefit_type: "discount_percent",
+    max_discount_percent: 10,
+    actual_discount_field: "approved_discount_percent",
+    validity_months: 2,
+    single_use: true,
+    eligible_service_only: true,
+    requires_completed_birthday_wish: true,
+    requires_model_level: true,
+    requires_job_format: true,
+    requires_customer_eligibility: true,
+    not_applicable_to: ["membership_fee", "renewal_fee", "tips", "payment_verification", "black_card_approval"],
+  };
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
     const table = decodeURIComponent(url.pathname.split("/").at(-1));
-    if ((init.method || "GET") !== "GET") { writes += 1; throw new Error("retry must not create records"); }
+    if ((init.method || "GET") !== "GET") { writes += 1; throw new Error("retry must not mutate V10 records"); }
     if (table === "MMD — Campaign Claims") {
       return Response.json({ records: [{ id: claimRecordId, fields: {
         claim_id: derived.claimId,
@@ -129,13 +168,14 @@ test("CARE BACK deterministic identifiers make a verified retry resume the same 
       code: derived.code,
       campaign_code: "6-years-care-back",
       status: "active",
-      expires_at: new Date(BIRTHDAY_NOW.getTime() + 60 * 60 * 1000).toISOString(),
+      activated_at: "2026-08-19T00:00:00.000Z",
+      expires_at: "2026-10-19T00:00:00.000Z",
       max_uses: 1,
       used_count: 0,
       package_scope: ["all"],
+      approved_discount_percent: 7,
       benefit_type: "discount_percent",
-        benefit_value: 10,
-        payload_json: JSON.stringify({ schema_version: 2, claim_id: derived.claimId, policy_state: "ready", wish_submitted: true, coupon_policy: { benefit_type: "discount_percent", benefit_value: 10, validity_days: 30, single_use: true, eligible_service_only: true, requires_completed_birthday_wish: true, not_applicable_to: ["membership_fee", "renewal_fee", "tips", "payment_verification", "black_card_approval"] } }),
+      payload_json: JSON.stringify({ schema_version: 3, claim_id: derived.claimId, policy_state: "ready", wish_submitted: true, coupon_policy: couponPolicy }),
     } }] });
     return Response.json({ records: [{ id: `rec${"C".repeat(14)}`, fields: { idempotency_key: `6-years-care-back:${derived.claimId}:membership_extension` } }] });
   };
@@ -150,10 +190,11 @@ test("CARE BACK deterministic identifiers make a verified retry resume the same 
   assert.equal(writes, 0);
   assert.equal(result.claim_reference, derived.claimId);
   assert.equal(result.personal_code, derived.code);
+  assert.equal(result.approved_discount_percent, 7);
   assert.equal(result.resumed, true);
 });
 
-test("Coupon Wallet reads an issued coupon without creating or mutating campaign records", async () => {
+test("Coupon Wallet exposes only approved_discount_percent and ignores legacy fixed benefit_value", async () => {
   const derived = await deriveClaimAndCode(IDENTITY, SECRET);
   let writes = 0;
   globalThis.fetch = async (input, init = {}) => {
@@ -169,8 +210,10 @@ test("Coupon Wallet reads an issued coupon without creating or mutating campaign
       code: derived.code,
       campaign_code: "6-years-care-back",
       status: "active",
+      activated_at: "2026-08-19T00:00:00.000Z",
       expires_at: "2026-09-18T00:00:00.000Z",
       used_count: 0,
+      approved_discount_percent: 7,
       benefit_type: "discount_percent",
       benefit_value: 10,
       payload_json: JSON.stringify({ claim_id: derived.claimId, wish_submitted: true }),
@@ -186,7 +229,59 @@ test("Coupon Wallet reads an issued coupon without creating or mutating campaign
   assert.equal(writes, 0);
   assert.equal(wallet.status, "ready");
   assert.equal(wallet.code, derived.code);
-  assert.equal(wallet.discount_percent, 10);
+  assert.equal(wallet.approved_discount_percent, 7);
+  assert.equal(wallet.discount_percent, 0);
+  assert.equal(wallet.activated_at, "2026-08-19T00:00:00.000Z");
+  assert.equal(wallet.expires_at, "2026-10-19T00:00:00.000Z");
+});
+
+test("CARE BACK approveCouponDiscount persists authoritative rate and clears legacy fixed benefit_value", async () => {
+  const derived = await deriveClaimAndCode(IDENTITY, SECRET);
+  const promoRecordId = `rec${"R".repeat(14)}`;
+  let patchBody = null;
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    const table = decodeURIComponent(url.pathname.split("/").at(-1));
+    if ((init.method || "GET") === "GET") {
+      if (table === "MMD — Campaign Claims") return Response.json({ records: [{ id: `rec${"S".repeat(14)}`, fields: {
+        claim_id: derived.claimId,
+        campaign_id: "6-years-care-back",
+        line_user_id_hash: IDENTITY,
+        matched_member_id: "MMD-PER-01",
+      } }] });
+      return Response.json({ records: [{ id: promoRecordId, fields: {
+        code: derived.code,
+        campaign_code: "6-years-care-back",
+        status: "active",
+        activated_at: "2026-08-19T00:00:00.000Z",
+        expires_at: "2026-10-19T00:00:00.000Z",
+        used_count: 0,
+        benefit_type: "discount_percent",
+        benefit_value: 10,
+        payload_json: JSON.stringify({ claim_id: derived.claimId, wish_submitted: true }),
+      } }] });
+    }
+    patchBody = JSON.parse(init.body).fields;
+    return Response.json({ fields: { code: derived.code, status: "active", used_count: 0, ...patchBody } });
+  };
+
+  const wallet = await getCareBackStore(env()).approveCouponDiscount({
+    identityHash: IDENTITY,
+    memberId: "MMD-PER-01",
+    modelLevel: "Premium / EMs / GWs Models",
+    jobFormat: "VIP",
+    customerEligible: true,
+    now: BIRTHDAY_NOW,
+  });
+
+  assert.equal(patchBody.model_level, "Premium / EMs / GWs Models");
+  assert.equal(patchBody.job_format, "VIP");
+  assert.equal(patchBody.approved_discount_percent, 10);
+  assert.equal(patchBody.benefit_value, null);
+  assert.equal(patchBody.activated_at, "2026-08-19T00:00:00.000Z");
+  assert.equal(patchBody.expires_at, "2026-10-19T00:00:00.000Z");
+  assert.equal(wallet.approved_discount_percent, 10);
+  assert.equal(wallet.discount_percent, 0);
 });
 
 test("CARE BACK keeps an expired member coupon inactive until a verified renewal is recorded", async () => {
@@ -306,6 +401,8 @@ test("CARE BACK issues a new-member coupon after wish, payment, review, and memb
   assert.equal(writes.length, 1);
   assert.equal(writes[0].table, "MMD — Promo Codes");
   assert.equal(writes[0].fields.status, "active");
+  assert.equal(writes[0].fields.expires_at, "2026-10-19T00:00:00.000Z");
+  assert.equal(result.approved_discount_percent, null);
   assert.equal(result.coupon_state, "ready");
   assert.equal(result.personalized_benefits.some((item) => item.type === "points_bonus" && item.value === 66), true);
 });
