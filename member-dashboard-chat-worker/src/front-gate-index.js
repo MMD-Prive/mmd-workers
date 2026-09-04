@@ -7,6 +7,15 @@ const MEMBER_APP_API_PREFIX = "/api/member/app/";
 const MY_MMD_UI_PREFIX = "/member/my-mmd";
 const MY_MMD_ASSET_PREFIX = "/member/my-mmd-assets/";
 const MY_MMD_PRESENTATION_ORIGIN = "https://my-mmd-member-profile.lovable.app";
+const MEMBER_LIFF_ID = "2010862595-yT4DCEMc";
+// LINE MINI App permanent links append only the extra path/query after the LIFF URL.
+// Never place /member/liff inside liff.state: the configured Endpoint URL already owns
+// /member/liff and LINE would otherwise produce /member/liff/member/liff.
+const MY_MMD_LINE_VERIFY_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=status`;
+const BROKEN_MY_MMD_LINE_VERIFY_URLS = [
+  `https://miniapp.line.me/${MEMBER_LIFF_ID}?liff.state=%2Fmember%2Fliff%3Fintent%3Dstatus`,
+  `https://miniapp.line.me/${MEMBER_LIFF_ID}/?liff.state=%2Fmember%2Fliff%3Fintent%3Dstatus`,
+];
 const PUBLIC_CARE_BACK_PATHS = new Set([
   "/member/api/care-back/public-wish",
   "/member/api/care-back/public-wish/",
@@ -103,9 +112,17 @@ function rewriteMyMmdHtml(html) {
 }
 
 function rewriteMyMmdJavascript(source) {
-  return String(source || "")
+  let output = String(source || "")
     .replace(/(["'`])\/assets\//g, `$1${MY_MMD_ASSET_PREFIX}`)
     .replace(/(["'`])assets\//g, `$1member/my-mmd-assets/`);
+
+  // Defense in depth for a stale Lovable bundle that encoded the MMD endpoint
+  // path inside liff.state. The MINI App URL must carry only additional path/query
+  // information; LINE combines that with the configured /member/liff endpoint.
+  for (const broken of BROKEN_MY_MMD_LINE_VERIFY_URLS) {
+    output = output.replaceAll(broken, MY_MMD_LINE_VERIFY_URL);
+  }
+  return output;
 }
 
 function presentationResponseHeaders(upstreamHeaders, { html = false, rewritten = false } = {}) {
