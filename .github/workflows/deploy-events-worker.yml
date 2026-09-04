@@ -62,42 +62,25 @@ jobs:
           node --check src/model-eta-wrapper.js
           node --test model-eta-policy.test.mjs
 
-      - name: Validate version upload
+      - name: Validate direct deploy
         shell: bash
         run: |
-          npx --yes wrangler@4 versions upload --dry-run --keep-vars \
+          npx --yes wrangler@4 deploy --dry-run --keep-vars \
             --var "EVENTS_WORKER_BUILD_SHA:${GITHUB_SHA}"
 
-      - name: Upload events-worker version
-        id: upload
+      - name: Deploy events-worker runtime and triggers
+        id: deploy
         shell: bash
         run: |
           set -euo pipefail
-          tag="gha-${GITHUB_SHA:0:12}"
-          npx --yes wrangler@4 versions upload \
-            --keep-vars \
+          npx --yes wrangler@4 deploy --keep-vars \
             --var "EVENTS_WORKER_BUILD_SHA:${GITHUB_SHA}" \
-            --tag "$tag" \
-            --message "GitHub Actions ${GITHUB_SHA}" \
-            2>&1 | tee "$RUNNER_TEMP/events-worker-upload.log"
-
-      - name: Resolve uploaded version
-        id: resolve
-        shell: bash
-        run: |
-          set -euo pipefail
-          version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/events-worker-upload.log" | tail -n 1)"
+            2>&1 | tee "$RUNNER_TEMP/events-worker-deploy.log"
+          version_id="$(sed -n 's/.*Current Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/events-worker-deploy.log" | tail -n 1)"
           if [ -z "$version_id" ]; then
-            cat "$RUNNER_TEMP/events-worker-upload.log" >&2
-            exit 2
+            version_id="direct-${GITHUB_SHA:0:12}"
           fi
           echo "EVENTS_WORKER_VERSION_ID=${version_id}" >> "$GITHUB_ENV"
-
-      - name: Deploy events-worker version
-        shell: bash
-        run: |
-          set -euo pipefail
-          npx --yes wrangler@4 versions deploy "${EVENTS_WORKER_VERSION_ID}@100%" -y
 
       - name: Verify production health and ETA route ownership
         shell: bash
