@@ -1,0 +1,42 @@
+name: MMD LINE Slip Intake Staging
+
+on:
+  pull_request:
+    paths:
+      - "services/mmd-line-slip-intake/cloudflare/**"
+      - "docs/architecture/LINE_OFC_SLIP_INTAKE_CANONICAL.md"
+      - "docs/ops/LINE_OFC_SLIP_INTAKE_RUNBOOK.md"
+      - ".github/workflows/mmd-line-slip-intake-staging.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Queue intake Node ${{ matrix.node-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [18.x, 20.x, 22.x]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Syntax
+        run: node --check services/mmd-line-slip-intake/cloudflare/worker.mjs
+      - name: Unit tests
+        run: node --experimental-global-webcrypto --test services/mmd-line-slip-intake/cloudflare/test/*.test.mjs
+
+  wrangler-dry-run:
+    name: Wrangler staging config dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+      - name: Dry-run bundle and binding validation
+        run: npx --yes wrangler@4 deploy --dry-run --config services/mmd-line-slip-intake/cloudflare/wrangler.jsonc

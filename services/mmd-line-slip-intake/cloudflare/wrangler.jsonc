@@ -1,0 +1,50 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mmd-line-slip-intake-staging",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-09-04",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "MMD_RUNTIME_SCOPE": "staging",
+    "LINE_SLIP_MAX_BYTES": "4194304",
+    "AIRTABLE_BASE_ID": "appsV1ILPRfIjkaYg",
+    "AIRTABLE_PAYMENT_PROOFS_STAGING_TABLE_ID": "tbl9Y6IMM4EWYjIBJ",
+    "TELEGRAM_OPS_CHAT_ID": "-1003546439681",
+    "TG_THREAD_PAYMENT": "21"
+  },
+  "r2_buckets": [
+    {
+      "binding": "LINE_SLIP_EVIDENCE",
+      "bucket_name": "mmd-line-slip-evidence-staging"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "LINE_SLIP_QUEUE",
+        "queue": "mmd-line-slip-intake-staging"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "mmd-line-slip-intake-staging",
+        "max_batch_size": 5,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "mmd-line-slip-intake-staging-dlq",
+        "max_concurrency": 1
+      }
+    ]
+  },
+  "services": [
+    {
+      "binding": "SLIP_EXTRACTOR",
+      "service": "mmd-slip-extractor-staging"
+    },
+    {
+      "binding": "TELEGRAM_WORKER",
+      "service": "telegram-worker"
+    }
+  ]
+}
