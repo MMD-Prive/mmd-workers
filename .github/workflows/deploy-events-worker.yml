@@ -1,0 +1,126 @@
+name: Deploy events-worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "events-worker/**"
+      - ".github/workflows/deploy-events-worker.yml"
+
+concurrency:
+  group: deploy-events-worker-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: events-worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+      EVENTS_WORKER_PRODUCTION_URL: https://events-worker.malemodel-bkk.workers.dev
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Normalize Cloudflare token
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const token = (process.env.CLOUDFLARE_API_TOKEN || "")
+            .replace(/[\u2028\u2029\r\n]/g, "")
+            .trim();
+          if (!token) throw new Error("CLOUDFLARE_API_TOKEN is missing after normalization");
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\n`);
+          NODE
+
+      - name: Verify Cloudflare account
+        shell: bash
+        run: npx --yes wrangler@4 whoami
+
+      - name: Validate ETA owner runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check src/index.js
+          node --check src/model-eta-wrapper.js
+          node --test model-eta-policy.test.mjs
+
+      - name: Validate version upload
+        shell: bash
+        run: |
+          npx --yes wrangler@4 versions upload --dry-run --keep-vars \
+            --var "EVENTS_WORKER_BUILD_SHA:${GITHUB_SHA}"
+
+      - name: Upload events-worker version
+        id: upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="gha-${GITHUB_SHA:0:12}"
+          npx --yes wrangler@4 versions upload \
+            --keep-vars \
+            --var "EVENTS_WORKER_BUILD_SHA:${GITHUB_SHA}" \
+            --tag "$tag" \
+            --message "GitHub Actions ${GITHUB_SHA}" \
+            2>&1 | tee "$RUNNER_TEMP/events-worker-upload.log"
+
+      - name: Resolve uploaded version
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/events-worker-upload.log" | tail -n 1)"
+          if [ -z "$version_id" ]; then
+            cat "$RUNNER_TEMP/events-worker-upload.log" >&2
+            exit 2
+          fi
+          echo "EVENTS_WORKER_VERSION_ID=${version_id}" >> "$GITHUB_ENV"
+
+      - name: Deploy events-worker version
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 versions deploy "${EVENTS_WORKER_VERSION_ID}@100%" -y
+
+      - name: Verify production health and ETA route ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
+            "$EVENTS_WORKER_PRODUCTION_URL/health")"
+          cat "$body"
+          test "$code" = "200"
+          grep -q '"worker":"events-worker"' "$body"
+
+          body="$(mktemp)"
+          code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            --data '{"session_id":"smoke","eta_minutes":15}' \
+            "$EVENTS_WORKER_PRODUCTION_URL/__internal/model/session/eta")"
+          cat "$body"
+          test "$code" = "401"
+          grep -q '"error":"unauthorized"' "$body"
+
+      - name: Deployment receipt
+        shell: bash
+        run: |
+          echo "events-worker live: ${GITHUB_SHA} / ${EVENTS_WORKER_VERSION_ID}"
