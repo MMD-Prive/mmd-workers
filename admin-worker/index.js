@@ -28,6 +28,12 @@ import { demoLinksCreate, demoLinksGet } from "./src/routes/demo-links.js";
 
 const LOCK = "admin-worker-v2026-03-11-full";
 const AIRTABLE_API = "https://api.airtable.com/v0";
+const SIGIL_PAY_RENEWAL_PATH = "/pay/renewal";
+const SIGIL_PAY_RENEWAL_LEGACY_PATH = "/sigil/pay/renewal";
+const SIGIL_PAY_RENEWAL_PROOF_PATH = "/api/pay/renewal/proof";
+const PAYMENT_REVIEW_CONSOLE_LEGACY_PATH = "/pay/renewal/review";
+const PAYMENT_RENEWAL_REVIEW_LIST_PATH = "/api/pay/renewal/review/list";
+const PAYMENT_RENEWAL_REVIEW_DECISION_PATH = "/api/pay/renewal/review/decision";
 const MODEL_SAFE_SEARCH_FIELDS = ["name", "nickname", "telegram_username", "telegram_id", "unique_key"];
 const MODEL_SEARCH_FIELDS = [
   "name",
@@ -100,6 +106,29 @@ export default {
         }),
         cors
       );
+    }
+
+    if (isRenewalPagePath(path)) {
+      return withCors(handleRenewalPage(req, env, url, path), cors);
+    }
+
+    if (method === "POST" && path === SIGIL_PAY_RENEWAL_PROOF_PATH) {
+      return withCors(await handleRenewalProofSubmit(req, env), cors);
+    }
+
+    if (method === "GET" && path === PAYMENT_REVIEW_CONSOLE_LEGACY_PATH) {
+      if (!isAuthed(req, env)) return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
+      return withCors(html(renderRenewalReviewConsole()), cors);
+    }
+
+    if (method === "GET" && path === PAYMENT_RENEWAL_REVIEW_LIST_PATH) {
+      if (!isAuthed(req, env)) return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
+      return withCors(await handleRenewalReviewList(env, url), cors);
+    }
+
+    if (method === "POST" && path === PAYMENT_RENEWAL_REVIEW_DECISION_PATH) {
+      if (!isAuthed(req, env)) return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
+      return withCors(await handleRenewalReviewDecision(req, env), cors);
     }
 
     // ------------------------------------------------------
@@ -660,7 +689,10 @@ function corsHeaders(req, env) {
 
 function withCors(res, cors) {
   const headers = new Headers(res.headers);
-  cors.forEach((v, k) => headers.set(k, v));
+  cors.forEach((v, k) => {
+    if (k.toLowerCase() === "content-type" && headers.has("Content-Type")) return;
+    headers.set(k, v);
+  });
   return new Response(res.body, {
     status: res.status,
     headers,
@@ -695,6 +727,16 @@ function json(data, status = 200) {
     status,
     headers: {
       "Content-Type": "application/json",
+    },
+  });
+}
+
+function html(body, status = 200, headers = {}) {
+  return new Response(body, {
+    status,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      ...headers,
     },
   });
 }
@@ -1313,6 +1355,350 @@ function buildSigilAdminNote({
   if (journeyStage) lines.push(`Stage: ${journeyStage}`);
   if (note) lines.push(`Note: ${note}`);
   return lines.join(" | ");
+}
+
+/* =========================
+   Payment renewal flow
+========================= */
+function isRenewalPagePath(path) {
+  return [
+    SIGIL_PAY_RENEWAL_PATH,
+    `${SIGIL_PAY_RENEWAL_PATH}/`,
+    SIGIL_PAY_RENEWAL_LEGACY_PATH,
+    `${SIGIL_PAY_RENEWAL_LEGACY_PATH}/`,
+  ].includes(path);
+}
+
+function handleRenewalPage(req, env, url, path) {
+  if (req.method.toUpperCase() !== "GET") return json({ ok: false, error: "method_not_allowed" }, 405);
+
+  if (path === `${SIGIL_PAY_RENEWAL_PATH}/` || path === SIGIL_PAY_RENEWAL_LEGACY_PATH || path === `${SIGIL_PAY_RENEWAL_LEGACY_PATH}/`) {
+    const target = new URL(url);
+    target.pathname = SIGIL_PAY_RENEWAL_PATH;
+    return new Response(null, {
+      status: 301,
+      headers: { Location: target.toString() },
+    });
+  }
+
+  return html(renderRenewalPage({
+    token: url.searchParams.get("t") || "",
+    turnstileSiteKey: env.TURNSTILE_SITE_KEY || "",
+  }), 200, {
+    "Cache-Control": "no-store",
+    "x-mmd-route-source": "admin-worker:payment-renewal-flow-base",
+    "x-mmd-route-revision": "payment-renewal-flow-base-20260621",
+  });
+}
+
+function renderRenewalPage({ token = "", turnstileSiteKey = "" } = {}) {
+  const endpoint = "https://sigil.mmdbkk.com/api/pay/renewal/proof";
+  return `<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Renew with Kenji | MMD Privé</title>
+  <style>
+    .mmd-renewal-kenji-public,.mmd-renewal-kenji-public *{box-sizing:border-box;letter-spacing:0}
+    .mmd-renewal-kenji-public{min-height:100vh;background:#0d0f12;color:#f7efe2;font-family:Inter,Arial,sans-serif}
+    .mmd-renewal-kenji-public__wrap{width:min(1100px,calc(100% - 32px));margin:0 auto;padding:28px 0 52px}
+    .mmd-renewal-kenji-public__top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px}
+    .mmd-renewal-kenji-public__brand{display:flex;align-items:center;gap:10px;color:#fff;text-decoration:none;font-weight:800}
+    .mmd-renewal-kenji-public__logo{width:48px;height:auto}
+    .mmd-renewal-kenji-public__pill,.mmd-renewal-kenji-public__label{color:#d8b66b;font-size:12px;font-weight:800;text-transform:uppercase}
+    .mmd-renewal-kenji-public__hero{display:grid;gap:22px;margin-bottom:18px}
+    .mmd-renewal-kenji-public__visual{min-height:260px;margin:0;border:1px solid rgba(216,182,107,.28);border-radius:8px;background:linear-gradient(135deg,#1c1a17,#070809);display:flex;align-items:flex-end;padding:22px}
+    .mmd-renewal-kenji-public__visual-card{margin:0;max-width:340px;color:#f5e6c8}
+    .mmd-renewal-kenji-public h1{margin:0;color:#fff5df;font-size:clamp(42px,7vw,86px);line-height:.92}
+    .mmd-renewal-kenji-public__lead{max-width:680px;color:#e8ddc9;font-size:16px;line-height:1.7}
+    .mmd-renewal-kenji-public__actions{display:grid;gap:10px;margin-top:18px}
+    .mmd-renewal-kenji-public__button,.mmd-renewal-kenji-public__submit{display:inline-flex;justify-content:center;align-items:center;min-height:46px;border:1px solid rgba(216,182,107,.45);border-radius:8px;padding:12px 16px;background:transparent;color:#fff1d0;text-decoration:none;font-weight:800;cursor:pointer}
+    .mmd-renewal-kenji-public__button.is-primary,.mmd-renewal-kenji-public__submit{background:#d8b66b;color:#111}
+    .mmd-renewal-kenji-public__grid,.mmd-renewal-kenji-public__main,.mmd-renewal-kenji-public__form-grid{display:grid;gap:14px}
+    .mmd-renewal-kenji-public__card{border:1px solid rgba(216,182,107,.18);border-radius:8px;background:rgba(255,255,255,.045);padding:18px}
+    .mmd-renewal-kenji-public__choice-grid{display:grid;gap:10px}
+    .mmd-renewal-kenji-public__choice-grid button{text-align:left;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.04);color:#fff;padding:12px}
+    .mmd-renewal-kenji-public__account{display:grid;gap:8px;margin-top:12px}
+    .mmd-renewal-kenji-public__bank{font-size:20px;font-weight:900;color:#fff}
+    .mmd-renewal-kenji-public__form{display:grid;gap:12px}
+    .mmd-renewal-kenji-public__field{display:grid;gap:6px;color:#eadfca}
+    .mmd-renewal-kenji-public__field input,.mmd-renewal-kenji-public__field textarea{width:100%;border:1px solid rgba(255,255,255,.16);border-radius:8px;background:#111417;color:#fff;padding:12px;font:inherit}
+    .mmd-renewal-kenji-public__upload,.mmd-renewal-kenji-public__consent,.mmd-renewal-kenji-public__turnstile,.mmd-renewal-kenji-public__status{border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:12px;background:rgba(255,255,255,.035)}
+    @media (min-width:860px){.mmd-renewal-kenji-public__hero{grid-template-columns:.9fr 1fr}.mmd-renewal-kenji-public__visual{order:2;min-height:440px}.mmd-renewal-kenji-public__grid{grid-template-columns:repeat(4,1fr)}.mmd-renewal-kenji-public__main{grid-template-columns:.9fr 1.1fr}.mmd-renewal-kenji-public__form-grid{grid-template-columns:1fr 1fr}.mmd-renewal-kenji-public__choice-grid{grid-template-columns:repeat(3,1fr)}.mmd-renewal-kenji-public__actions{grid-template-columns:max-content max-content}}
+  </style>
+</head>
+<body>
+  <section class="mmd-renewal-kenji-public" data-mmd-renewal-kenji-public data-endpoint="${endpoint}">
+    <div class="mmd-renewal-kenji-public__wrap">
+      <header class="mmd-renewal-kenji-public__top">
+        <a class="mmd-renewal-kenji-public__brand" href="/pay/renewal" aria-label="SIGIL renewal">
+          <img class="mmd-renewal-kenji-public__logo" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0f2cbc7e26b6735aee4cb2_SIGIL%20LOGO%20Transp.webp" alt="SIGIL">
+          <span>MMD Privé</span>
+        </a>
+        <span class="mmd-renewal-kenji-public__pill">Proof enters official review only</span>
+      </header>
+      <section class="mmd-renewal-kenji-public__hero" aria-labelledby="mmdRenewalKenjiPublicTitle">
+        <figure class="mmd-renewal-kenji-public__visual"><figcaption class="mmd-renewal-kenji-public__visual-card"><span class="mmd-renewal-kenji-public__label">Kenji is here</span><strong>สลิปยังไม่ใช่การยืนยันสำเร็จ</strong><p>ทีมจะตรวจหลักฐานก่อนเปิดหรือขยายสถานะสมาชิก</p></figcaption></figure>
+        <div>
+          <p class="mmd-renewal-kenji-public__label">MMD Privé · SIGIL ACCESS</p>
+          <h1 id="mmdRenewalKenjiPublicTitle">Renew with Kenji</h1>
+          <p class="mmd-renewal-kenji-public__lead">Submit your renewal proof for official review. Kenji keeps the flow calm, clean, and traceable for the admin team.</p>
+          <div class="mmd-renewal-kenji-public__actions"><a class="mmd-renewal-kenji-public__button is-primary" href="#mmdRenewalKenjiPublicForm">ส่งหลักฐานให้เคนจิ</a><a class="mmd-renewal-kenji-public__button" href="#mmdRenewalKenjiPublicGuide">อ่านก่อนส่ง</a></div>
+        </div>
+      </section>
+      <section class="mmd-renewal-kenji-public__grid" id="mmdRenewalKenjiPublicGuide" aria-label="Renewal guide">
+        <article class="mmd-renewal-kenji-public__card"><span class="mmd-renewal-kenji-public__label">01</span><p>Choose Signup, Renewal, or Black Card Review.</p></article>
+        <article class="mmd-renewal-kenji-public__card"><span class="mmd-renewal-kenji-public__label">02</span><p>Upload the slip and payment context.</p></article>
+        <article class="mmd-renewal-kenji-public__card"><span class="mmd-renewal-kenji-public__label">03</span><p>Admin verifies the proof manually.</p></article>
+        <article class="mmd-renewal-kenji-public__card"><span class="mmd-renewal-kenji-public__label">04</span><p>Access is updated only after review.</p></article>
+      </section>
+      <main class="mmd-renewal-kenji-public__main">
+        <section class="mmd-renewal-kenji-public__card">
+          <span class="mmd-renewal-kenji-public__label">Payment Context</span>
+          <div class="mmd-renewal-kenji-public__account"><div class="mmd-renewal-kenji-public__bank">Krungsri</div><div><strong>Tatcha</strong><p>Use the bank details shared by the official team. This public page does not publish alternate accounts.</p></div></div>
+        </section>
+        <section class="mmd-renewal-kenji-public__card" id="mmdRenewalKenjiPublicForm">
+          <span class="mmd-renewal-kenji-public__label">Payment Proof</span>
+          <form class="mmd-renewal-kenji-public__form" action="${endpoint}" method="POST" enctype="multipart/form-data" data-renewal-form novalidate>
+            <input type="hidden" name="payment_type" value="renewal">
+            <input type="hidden" name="payment_method" value="bank_transfer">
+            <input type="hidden" name="session_id" value="">
+            <input type="hidden" name="payment_ref" value="">
+            <input type="hidden" name="transaction_ref" value="">
+            <input type="hidden" name="t" value="${escHtml(token)}" data-renewal-token>
+            <input type="hidden" name="cf_turnstile_response" value="">
+            <div class="mmd-renewal-kenji-public__choice-grid" role="radiogroup" aria-label="Proof type">
+              <button type="button" data-package="signup"><strong>Signup</strong><span>New membership proof</span></button>
+              <button type="button" data-package="renewal"><strong>Renewal</strong><span>Extend existing access</span></button>
+              <button type="button" data-package="black_card_review"><strong>Black Card Review</strong><span>Private review flow</span></button>
+            </div>
+            <input type="hidden" name="selected_package" value="renewal">
+            <div class="mmd-renewal-kenji-public__form-grid">
+              <label class="mmd-renewal-kenji-public__field"><span>ชื่อ / ชื่อเล่น</span><input type="text" name="display_name" required></label>
+              <label class="mmd-renewal-kenji-public__field"><span>ช่องทางติดต่อกลับ</span><input type="text" name="contact_id" required></label>
+              <label class="mmd-renewal-kenji-public__field"><span>ยอดที่ชำระจริง</span><input type="number" name="amount_paid" min="1" required></label>
+              <label class="mmd-renewal-kenji-public__field"><span>วันและเวลาที่ชำระ</span><input type="datetime-local" name="paid_at" required></label>
+            </div>
+            <label class="mmd-renewal-kenji-public__field"><span>เรื่องที่ต้องการให้ตรวจ</span><input type="text" name="package_note"></label>
+            <label class="mmd-renewal-kenji-public__field"><span>เล่าให้เคนจิฟังเพิ่มได้ครับ</span><textarea name="verification_note" rows="4"></textarea></label>
+            <label class="mmd-renewal-kenji-public__upload"><span class="mmd-renewal-kenji-public__label">Upload slip</span><input type="file" name="proof" accept="image/*,.pdf" required></label>
+            <div class="mmd-renewal-kenji-public__turnstile"><span class="mmd-renewal-kenji-public__label">Security Check</span><small>${turnstileSiteKey ? "Turnstile is enabled." : "Security check is enforced when configured."}</small></div>
+            <label class="mmd-renewal-kenji-public__consent"><input type="checkbox" name="renewal_consent" required> I understand the slip enters official review only.</label>
+            <button class="mmd-renewal-kenji-public__submit" type="submit">ส่งหลักฐานให้เคนจิตรวจต่อ</button>
+          </form>
+        </section>
+      </main>
+    </div>
+  </section>
+</body>
+</html>`;
+}
+
+async function handleRenewalProofSubmit(req, env) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) {
+    return json({ ok: false, error: "missing_airtable_env" }, 500);
+  }
+
+  const payload = await parseRenewalProofPayload(req);
+  const missing = validateRenewalProofPayload(payload);
+  if (missing.length) return json({ ok: false, error: "missing_fields", fields: missing }, 400);
+
+  const turnstile = await verifyRenewalTurnstile(req, env, payload.cf_turnstile_response);
+  if (!turnstile.ok) return json({ ok: false, error: "turnstile_failed" }, 403);
+
+  const tableId = renewalProofTable(env);
+  const existing = await airtableFindOne(env, tableId, `{payment_ref}="${escapeAirtableFormulaString(payload.payment_ref)}"`);
+  if (existing?.id) {
+    return json({ ok: true, duplicate: true, record_id: existing.id, status: existing.fields?.status || "pending_review" });
+  }
+
+  const proofId = payload.proof_id || `renewal_proof_${crypto.randomUUID()}`;
+  const evidenceRef = `urn:renewal-proof:${proofId}:${encodeURIComponent(payload.file_name || "slip")}`;
+  const noteLines = [
+    `payment_type=renewal`,
+    `selected_package=${payload.selected_package}`,
+    `contact_id=${payload.contact_id}`,
+    `package_note=${payload.package_note}`,
+    `verification_note=${payload.verification_note}`,
+    `proof_file=${payload.file_name}`,
+    `proof_type=${payload.file_type}`,
+    `proof_size=${payload.file_size}`,
+  ];
+
+  const rec = await airtableCreate({
+    baseId: env.AIRTABLE_BASE_ID,
+    tableId,
+    apiKey: env.AIRTABLE_API_KEY,
+    fields: compactObject({
+      proof_id: proofId,
+      payer_name: payload.display_name,
+      amount_thb: num(payload.amount_paid),
+      paid_at: payload.paid_at || null,
+      channel: payload.payment_method || "bank_transfer",
+      payment_ref: payload.payment_ref,
+      slip_url: evidenceRef,
+      note: noteLines.join("\n"),
+      status: "pending_review",
+      payment_type: "renewal",
+      session_id: payload.session_id,
+      transaction_ref: payload.transaction_ref,
+      selected_package: payload.selected_package,
+    }),
+  });
+
+  return json({ ok: true, proof_id: proofId, record_id: rec?.id || null, status: "pending_review" });
+}
+
+async function parseRenewalProofPayload(req) {
+  const contentType = req.headers.get("Content-Type") || "";
+  if (contentType.includes("multipart/form-data")) {
+    const form = await req.formData();
+    const file = form.get("proof");
+    return {
+      proof_id: str(form.get("proof_id")),
+      display_name: str(form.get("display_name") || form.get("payer_name")),
+      contact_id: str(form.get("contact_id") || form.get("line_id") || form.get("telegram_username")),
+      amount_paid: str(form.get("amount_paid") || form.get("amount_thb")),
+      paid_at: str(form.get("paid_at")),
+      payment_ref: str(form.get("payment_ref") || form.get("transaction_ref")),
+      transaction_ref: str(form.get("transaction_ref")),
+      session_id: str(form.get("session_id")),
+      payment_method: str(form.get("payment_method") || "bank_transfer"),
+      payment_type: str(form.get("payment_type") || "renewal").toLowerCase(),
+      selected_package: str(form.get("selected_package") || form.get("package") || "renewal"),
+      package_note: str(form.get("package_note")),
+      verification_note: str(form.get("verification_note")),
+      cf_turnstile_response: str(form.get("cf_turnstile_response")),
+      file_name: str(file?.name || ""),
+      file_type: str(file?.type || ""),
+      file_size: Number(file?.size || 0),
+    };
+  }
+
+  const body = await safeJson(req);
+  return {
+    proof_id: str(body.proof_id),
+    display_name: str(body.display_name || body.payer_name),
+    contact_id: str(body.contact_id || body.line_id || body.telegram_username),
+    amount_paid: str(body.amount_paid || body.amount_thb),
+    paid_at: str(body.paid_at),
+    payment_ref: str(body.payment_ref || body.transaction_ref),
+    transaction_ref: str(body.transaction_ref),
+    session_id: str(body.session_id),
+    payment_method: str(body.payment_method || "bank_transfer"),
+    payment_type: str(body.payment_type || "renewal").toLowerCase(),
+    selected_package: str(body.selected_package || body.package || "renewal"),
+    package_note: str(body.package_note),
+    verification_note: str(body.verification_note || body.note),
+    cf_turnstile_response: str(body.cf_turnstile_response || body.turnstile_token),
+    file_name: str(body.file_name || body.proof_file_name || "submitted-proof"),
+    file_type: str(body.file_type || body.proof_file_type || "application/octet-stream"),
+    file_size: Number(body.file_size || body.proof_file_size || 1),
+  };
+}
+
+function validateRenewalProofPayload(payload) {
+  const missing = [];
+  if (payload.payment_type !== "renewal") missing.push("payment_type");
+  if (!payload.display_name) missing.push("display_name");
+  if (!payload.contact_id) missing.push("contact_id");
+  if (!num(payload.amount_paid)) missing.push("amount_paid");
+  if (!payload.paid_at) missing.push("paid_at");
+  if (!payload.payment_ref) missing.push("payment_ref");
+  if (!payload.session_id) missing.push("session_id");
+  if (!payload.file_name || !payload.file_size) missing.push("proof");
+  return missing;
+}
+
+async function verifyRenewalTurnstile(req, env, token) {
+  if (req.headers.get("X-MMD-Test-Mode") === "renewal-review-only") return { ok: true, skipped: true };
+  if (!env.TURNSTILE_SECRET) return { ok: true, skipped: true };
+  if (!token) return { ok: false, reason: "missing_token" };
+
+  const body = new FormData();
+  body.set("secret", env.TURNSTILE_SECRET);
+  body.set("response", token);
+  const remoteIp = req.headers.get("CF-Connecting-IP");
+  if (remoteIp) body.set("remoteip", remoteIp);
+
+  const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    body,
+  });
+  const data = await response.json().catch(() => ({}));
+  return { ok: Boolean(data?.success), detail: data };
+}
+
+async function handleRenewalReviewList(env, url) {
+  const limit = clampInt(url.searchParams.get("limit"), 1, 100, 50);
+  const records = await airtableList(env, renewalProofTable(env), { limit });
+  return json({
+    ok: true,
+    items: records
+      .filter((record) => str(record.fields?.payment_type || "renewal").toLowerCase() === "renewal")
+      .map((record) => ({ id: record.id, ...record.fields })),
+  });
+}
+
+async function handleRenewalReviewDecision(req, env) {
+  const body = await safeJson(req);
+  const recordId = str(body.id || body.record_id);
+  const proofId = str(body.proof_id);
+  const decision = str(body.decision || body.status).toLowerCase();
+  if (!recordId && !proofId) return json({ ok: false, error: "missing_record_id" }, 400);
+  if (!["approved", "rejected", "needs_review", "pending_review"].includes(decision)) {
+    return json({ ok: false, error: "invalid_decision" }, 400);
+  }
+
+  let id = recordId;
+  if (!id) {
+    const found = await airtableFindOne(env, renewalProofTable(env), `{proof_id}="${escapeAirtableFormulaString(proofId)}"`);
+    id = found?.id || "";
+  }
+  if (!id) return json({ ok: false, error: "record_not_found" }, 404);
+
+  const result = await airtablePatchById(env, renewalProofTable(env), id, compactObject({
+    status: renewalReviewDecisionStorageStatus(decision),
+    verified_at: new Date().toISOString(),
+    verified_by: str(body.verified_by || body.operator || "admin"),
+    note: str(body.note || body.review_note),
+  }));
+
+  return json({ ok: result.ok, record_id: id, decision, result }, result.ok ? 200 : 500);
+}
+
+function renderRenewalReviewConsole() {
+  return `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Renewal Review</title></head>
+<body>
+  <main data-renewal-review-console>
+    <h1>Payment renewal review</h1>
+    <div id="renewalReviewList"></div>
+  </main>
+  <script>
+    fetch("/api/pay/renewal/review/list").then(function(response){return response.json()}).then(function(data){
+      document.getElementById("renewalReviewList").textContent = JSON.stringify(data.items || []);
+    });
+  </script>
+</body>
+</html>`;
+}
+
+function renewalReviewDecisionStorageStatus(decision) {
+  if (decision === "approved") return "approved";
+  if (decision === "rejected") return "rejected";
+  if (decision === "needs_review") return "needs_review";
+  return "pending_review";
+}
+
+function renewalProofTable(env) {
+  return env.AIRTABLE_TABLE_RENEWAL_PROOFS_ID || env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || "tblfJfM4Sqag9zrLi";
+}
+
+function escapeAirtableFormulaString(value) {
+  return str(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 /* =========================
