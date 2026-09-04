@@ -26,6 +26,8 @@ function validBody(overrides = {}) {
       member_blocked: false,
       booking_allowed: true,
       payment_verified: true,
+      model_job_eligible: true,
+      model_service_level: "VIP",
     },
     ...overrides,
   };
@@ -78,6 +80,7 @@ test("CARE BACK booking approval forwards only canonical eligibility context int
   assert.equal(payload.ok, true);
   assert.equal(payload.data.approved_discount_percent, 7);
   assert.equal(payload.data.model_level, "Standard Models");
+  assert.equal(payload.data.model_service_level, "VIP");
   assert.equal(payload.data.job_format, "VIP");
   assert.equal(received.identityHash, HASH);
   assert.equal(received.memberId, "MMD-PER-01");
@@ -87,7 +90,7 @@ test("CARE BACK booking approval forwards only canonical eligibility context int
   assert.equal(received.memberProfile.membership_status, "active");
 });
 
-test("CARE BACK booking approval fails closed when canonical eligibility is not verified", async () => {
+test("CARE BACK booking approval fails closed when canonical customer eligibility is not verified", async () => {
   let called = false;
   const response = await handleCareBackBookingApproval(request(validBody({
     eligibility: {
@@ -95,6 +98,8 @@ test("CARE BACK booking approval fails closed when canonical eligibility is not 
       member_blocked: false,
       booking_allowed: true,
       payment_verified: false,
+      model_job_eligible: true,
+      model_service_level: "VIP",
     },
   })), {
     CARE_BACK_STORE: {
@@ -104,6 +109,44 @@ test("CARE BACK booking approval fails closed when canonical eligibility is not 
   });
   assert.equal(response.status, 409);
   assert.equal((await response.json()).error, "care_back_customer_eligibility_unresolved");
+  assert.equal(called, false);
+});
+
+test("CARE BACK booking approval fails closed when PN/VIP exceeds canonical Model service level", async () => {
+  let called = false;
+  const response = await handleCareBackBookingApproval(request(validBody({
+    job_format: "VIP",
+    eligibility: {
+      authority: "my_mmd_entitlement_resolver_v1",
+      member_blocked: false,
+      booking_allowed: true,
+      payment_verified: true,
+      model_job_eligible: true,
+      model_service_level: "PN",
+    },
+  })), {
+    CARE_BACK_STORE: {
+      openOrResume() {},
+      async approveCouponDiscount() { called = true; return {}; },
+    },
+  });
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error, "care_back_model_job_format_not_eligible");
+  assert.equal(called, false);
+});
+
+test("CARE BACK booking approval requires explicit model_job_eligible proof", async () => {
+  let called = false;
+  const body = validBody();
+  body.eligibility.model_job_eligible = false;
+  const response = await handleCareBackBookingApproval(request(body), {
+    CARE_BACK_STORE: {
+      openOrResume() {},
+      async approveCouponDiscount() { called = true; return {}; },
+    },
+  });
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error, "care_back_model_job_format_not_eligible");
   assert.equal(called, false);
 });
 
