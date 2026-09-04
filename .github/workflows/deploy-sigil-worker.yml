@@ -25,6 +25,7 @@ jobs:
       FALLBACK_CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
       AIRTABLE_API_TOKEN: ${{ secrets.SIGIL_AIRTABLE_API_TOKEN || secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.MMS_TELEGRAM_BOT_TOKEN || secrets.TELEGRAM_BOT_TOKEN }}
       NO_COLOR: "1"
       WRANGLER_SEND_METRICS: "false"
 
@@ -67,9 +68,7 @@ jobs:
                 break;
               }
             }
-            if (!cloudflareToken) {
-              throw new Error("No configured Cloudflare deployment credential can list R2 buckets for the configured account");
-            }
+            if (!cloudflareToken) throw new Error("No configured Cloudflare deployment credential can list R2 buckets for the configured account");
 
             fs.appendFileSync(process.env.GITHUB_ENV, [
               `CLOUDFLARE_API_TOKEN=${cloudflareToken}`,
@@ -97,10 +96,13 @@ jobs:
           const config = fs.readFileSync("sigil-worker/wrangler.toml", "utf8");
           const required = [
             'name = "sigil-worker"',
+            'main = "src/index-with-public-model-notify.js"',
             'workers_dev = true',
             'PUBLIC_MODEL_ENABLED = "true"',
             'PUBLIC_MODEL_UPLOAD_ENABLED = "true"',
             'PUBLIC_MODEL_UPLOAD_REQUIRED = "false"',
+            'TELEGRAM_CHAT_ID = "-1003546439681"',
+            'TG_THREAD_CONFIRM = "61"',
             'binding = "PUBLIC_MODEL_UPLOADS_R2"',
             'bucket_name = "mmd-private-public-model-uploads"',
             'binding = "SIGIL_BOARD_KV"',
@@ -108,12 +110,8 @@ jobs:
             'class_name = "PublicModelCoordinator"',
             'new_sqlite_classes = ["PublicModelCoordinator"]',
           ];
-          for (const marker of required) {
-            if (!config.includes(marker)) throw new Error(`Missing required configuration: ${marker}`);
-          }
-          if (/^\s*routes\s*=/m.test(config) || /^\s*\[\[routes\]\]/m.test(config)) {
-            throw new Error("Custom routes remain forbidden for this production release");
-          }
+          for (const marker of required) if (!config.includes(marker)) throw new Error(`Missing required configuration: ${marker}`);
+          if (/^\s*routes\s*=/m.test(config) || /^\s*\[\[routes\]\]/m.test(config)) throw new Error("Custom routes remain forbidden for this production release");
           NODE
 
       - name: Validate Cloudflare bundle
@@ -154,13 +152,23 @@ jobs:
           fi
 
       - name: Prepare production secrets
+        id: runtime-secrets
         shell: bash
         run: |
           set -euo pipefail
-          {
-            printf 'AIRTABLE_API_TOKEN=%s\n' "$AIRTABLE_API_TOKEN"
-          } > "$RUNNER_TEMP/sigil-worker.env"
-          chmod 600 "$RUNNER_TEMP/sigil-worker.env"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const clean = (value) => String(value || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
+          const airtableToken = clean(process.env.AIRTABLE_API_TOKEN);
+          const telegramToken = clean(process.env.TELEGRAM_BOT_TOKEN);
+          const lines = [`AIRTABLE_API_TOKEN=${airtableToken}`];
+          if (telegramToken) {
+            console.log(`::add-mask::${telegramToken}`);
+            lines.push(`TELEGRAM_BOT_TOKEN=${telegramToken}`);
+          }
+          fs.writeFileSync(process.env.RUNNER_TEMP + "/sigil-worker.env", `${lines.join("\n")}\n`, { mode: 0o600 });
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `telegram_configured=${telegramToken ? "true" : "false"}\n`);
+          NODE
 
       - name: Deploy sigil-worker
         id: deploy
@@ -176,6 +184,7 @@ jobs:
       - name: Verify production readiness
         env:
           DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+          TELEGRAM_CONFIGURED: ${{ steps.runtime-secrets.outputs.telegram_configured }}
         shell: bash
         run: |
           set -euo pipefail
@@ -217,6 +226,7 @@ jobs:
             "- Private R2 upload: ready",
             "- CORS preflight: verified",
             "- Invalid apply/upload contracts: verified",
+            `- Telegram notification secret: ${process.env.TELEGRAM_CONFIGURED === "true" ? "configured" : "not configured (applications still succeed; Airtable audit records failure)"}`,
             "",
           ].join("\n"));
           NODE
