@@ -128,55 +128,44 @@ jobs:
           console.log(`Verified ${desired.length}/${desired.length}; created ${missing.length}`);
           NODE
 
-      - name: Verify apex redirects to canonical www
+      - name: Smoke fail-closed Model Dashboard routes on apex and www
         shell: bash
         run: |
           set -euo pipefail
-          headers="$(mktemp)"
-          code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -D "$headers" -o /dev/null -w "%{http_code}" \
-            https://mmdbkk.com/v1/model/profile)"
-          cat "$headers"
-          test "$code" = "301" -o "$code" = "302" -o "$code" = "307" -o "$code" = "308"
-          grep -qi '^location: https://www\.mmdbkk\.com/' "$headers"
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            body="$(mktemp)"
+            code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
+              "$origin/v1/model/profile")"
+            cat "$body"
+            test "$code" = "401"
+            grep -q '"error":"model_session_required"' "$body"
 
-      - name: Smoke fail-closed Model Dashboard routes on canonical www
-        shell: bash
-        run: |
-          set -euo pipefail
-          origin="https://www.mmdbkk.com"
+            body="$(mktemp)"
+            code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
+              "$origin/v1/model/media")"
+            cat "$body"
+            test "$code" = "401"
+            grep -q '"error":"model_session_required"' "$body"
 
-          body="$(mktemp)"
-          code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
-            "$origin/v1/model/profile")"
-          cat "$body"
-          test "$code" = "401"
-          grep -q '"error":"model_session_required"' "$body"
+            body="$(mktemp)"
+            code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
+              -X POST \
+              -H "Origin: $origin" \
+              -H "Content-Type: application/json" \
+              --data '{"action":"send_eta","eta_minutes":15}' \
+              "$origin/v1/model/session/action")"
+            cat "$body"
+            test "$code" = "401"
+            grep -q '"error":"model_session_required"' "$body"
 
-          body="$(mktemp)"
-          code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
-            "$origin/v1/model/media")"
-          cat "$body"
-          test "$code" = "401"
-          grep -q '"error":"model_session_required"' "$body"
-
-          body="$(mktemp)"
-          code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
-            -X POST \
-            -H "Origin: $origin" \
-            -H "Content-Type: application/json" \
-            --data '{"action":"send_eta","eta_minutes":15}' \
-            "$origin/v1/model/session/action")"
-          cat "$body"
-          test "$code" = "401"
-          grep -q '"error":"model_session_required"' "$body"
-
-          body="$(mktemp)"
-          code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
-            -X POST \
-            -H "Origin: $origin" \
-            -H "Content-Type: application/json" \
-            --data '{"environment":"published"}' \
-            "$origin/v1/model/liff/exchange")"
-          cat "$body"
-          test "$code" = "400"
-          grep -q '"error":"id_token_required"' "$body"
+            body="$(mktemp)"
+            code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
+              -X POST \
+              -H "Origin: $origin" \
+              -H "Content-Type: application/json" \
+              --data '{"environment":"published"}' \
+              "$origin/v1/model/liff/exchange")"
+            cat "$body"
+            test "$code" = "400"
+            grep -q '"error":"id_token_required"' "$body"
+          done
