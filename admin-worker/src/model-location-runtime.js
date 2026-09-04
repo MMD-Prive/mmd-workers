@@ -184,7 +184,11 @@ export async function handleModelLocationRequest(request, env = {}, ctx) {
     expires_at: new Date(now + retentionSeconds * 1000).toISOString(),
   };
 
-  await writeStoredModelLocation(env, auth.payload.model_record_id, stored);
+  try {
+    await writeStoredModelLocation(env, auth.payload.model_record_id, stored);
+  } catch {
+    return json({ ok: false, error: "model_location_storage_write_failed" }, 503, request, env);
+  }
   return json({ ok: true, data: safeCurrentMetadata(stored, context, env) }, 200, request, env);
 }
 
@@ -313,9 +317,16 @@ async function resolveModelLocationContext(request, env, ctx, providedAuth = nul
   const currentRequest = new Request(currentUrl.toString(), { method: "GET", headers: request.headers });
   const currentResponse = await dashboardWorker.fetch(currentRequest, env, ctx);
   const current = await currentResponse.clone().json().catch(() => ({}));
+  if (!currentResponse.ok) {
+    return {
+      ok: false,
+      status: currentResponse.status || 503,
+      error: clean(current?.error) || "session_lookup_failed",
+    };
+  }
 
   let session = null;
-  if (currentResponse.ok && current?.session && typeof current.session === "object") session = current.session;
+  if (current?.session && typeof current.session === "object") session = current.session;
   const sessionId = clean(session?.session_id);
   return {
     ok: true,

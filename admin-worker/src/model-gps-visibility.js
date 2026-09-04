@@ -110,6 +110,13 @@ export async function handleModelGpsVisibilityRequest(request, env = {}) {
     return json({ ok: false, error: "gps_visibility_update_failed" }, updated.status, request, env);
   }
 
+  // Turning visibility OFF is also a purge signal. If the short-lived location
+  // coordinator exists, delete its current point immediately. This never makes
+  // the permission endpoint accept or store coordinates.
+  if (normalized.enabled === false) {
+    await clearEphemeralLocation(env, auth.payload.model_record_id);
+  }
+
   return json({ ok: true, data: safeSetting(updated.record?.fields || {}, env) }, 200, request, env);
 }
 
@@ -227,6 +234,21 @@ async function readJson(request) {
     return JSON.parse(text);
   } catch {
     return null;
+  }
+}
+
+async function clearEphemeralLocation(env, modelRecordId) {
+  const namespace = env.MODEL_LOCATION_COORDINATOR;
+  const recordId = clean(modelRecordId);
+  if (!recordId || !namespace?.idFromName || !namespace?.get) return false;
+  try {
+    const id = namespace.idFromName(`model:${recordId}`);
+    const response = await namespace.get(id).fetch("https://model-location.internal/clear", { method: "POST" });
+    return response.ok;
+  } catch {
+    // Permission OFF is authoritative even if the ephemeral purge path is
+    // temporarily unavailable; the location read/ingest gates still fail closed.
+    return false;
   }
 }
 
