@@ -3,7 +3,6 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import worker from "../src/index.js";
-import "./my-mmd-presentation-proxy.test.mjs";
 
 test("LIFF front gate transparently forwards the request through the service binding", async () => {
   const calls = [];
