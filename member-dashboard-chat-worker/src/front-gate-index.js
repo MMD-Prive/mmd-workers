@@ -135,7 +135,7 @@ async function proxyMyMmdPresentation(request, { asset = false } = {}) {
   const upstreamUrl = asset ? presentationUrlForAsset(request) : presentationUrlForPage(request);
   let upstream;
   try {
-    upstream = await fetch(upstreamUrl, {
+    upstream = await globalThis.fetch(upstreamUrl, {
       method: request.method,
       headers: presentationRequestHeaders(request),
       redirect: "follow",
