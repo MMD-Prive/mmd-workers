@@ -5,6 +5,13 @@ import {
   normalizeEtaMinutes,
   normalizeModelProfilePatch,
 } from "./src/model-liff-worker.js";
+import {
+  activationLiffUrl,
+  isCanonicalLineUserId,
+  normalizeActivationEnvironment,
+  normalizeActivationTtlSeconds,
+  validateActivationPayload,
+} from "./src/model-first-time-activation.js";
 
 test("public profile/gallery media is model self-managed", () => {
   for (const media_type of ["profile_photo", "public_gallery", "intro_video"]) {
@@ -53,4 +60,52 @@ test("ETA accepts whole minutes 1 through 240 only", () => {
   assert.equal(normalizeEtaMinutes(0), 0);
   assert.equal(normalizeEtaMinutes(241), 0);
   assert.equal(normalizeEtaMinutes(10.5), 0);
+});
+
+test("first-time activation accepts only canonical LINE user subjects", () => {
+  assert.equal(isCanonicalLineUserId(`U${"a".repeat(32)}`), true);
+  assert.equal(isCanonicalLineUserId(`u${"F".repeat(32)}`), true);
+  assert.equal(isCanonicalLineUserId("@modelhandle"), false);
+  assert.equal(isCanonicalLineUserId("U123"), false);
+});
+
+test("first-time activation TTL defaults to 24h and caps at 72h", () => {
+  assert.equal(normalizeActivationTtlSeconds(undefined), 24 * 60 * 60);
+  assert.equal(normalizeActivationTtlSeconds(30), 60 * 60);
+  assert.equal(normalizeActivationTtlSeconds(2 * 60 * 60), 2 * 60 * 60);
+  assert.equal(normalizeActivationTtlSeconds(100 * 60 * 60), 72 * 60 * 60);
+});
+
+test("activation token payload is model-bound, short-lived, and environment-normalized", () => {
+  const now = 1_800_000_000;
+  const valid = validateActivationPayload({
+    version: 1,
+    kind: "model_activation_v1",
+    model_record_id: "rec12345678901234",
+    jti: "invite-1",
+    environment: "dev",
+    iat: now,
+    exp: now + 24 * 60 * 60,
+  }, now);
+  assert.equal(valid.ok, true);
+  assert.equal(valid.payload.environment, "developing");
+
+  const expired = validateActivationPayload({
+    version: 1,
+    kind: "model_activation_v1",
+    model_record_id: "rec12345678901234",
+    jti: "invite-2",
+    environment: "published",
+    iat: now - 100,
+    exp: now - 1,
+  }, now);
+  assert.deepEqual(expired, { ok: false, error: "activation_token_expired" });
+});
+
+test("activation LIFF URL targets the canonical published Model Mini App", () => {
+  assert.equal(normalizeActivationEnvironment("production"), "published");
+  const url = new URL(activationLiffUrl("signed.token", "published"));
+  assert.equal(url.origin, "https://miniapp.line.me");
+  assert.equal(url.pathname, "/2010864854-N34SgCqq");
+  assert.equal(url.searchParams.get("activation"), "signed.token");
 });

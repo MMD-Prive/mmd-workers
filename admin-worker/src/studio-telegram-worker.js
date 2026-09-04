@@ -4,6 +4,12 @@ import {
   isCreateSessionClientLineageRequest,
 } from "./create-session-client-lineage-runtime.js";
 import { enrichLineageWithPreSessionIndex } from "./pre-session-client-index.js";
+import {
+  MODEL_ACTIVATION_ADMIN_PATH,
+  MODEL_ACTIVATION_LIFF_PATH,
+  activateModelLine,
+  issueModelActivation,
+} from "./model-first-time-activation.js";
 
 const STUDIO_API_PREFIX = "/studio/api";
 const COMMIT_PATHS = new Set([
@@ -18,6 +24,16 @@ export default {
     const url = new URL(request.url);
     const path = normalizePathname(url.pathname);
     const method = request.method.toUpperCase();
+
+    // Public first-time activation verifies its own signed invite + LINE ID token.
+    // The admin issuer reaches this composed worker only after admin-login-hero-worker
+    // has applied the canonical credential-bound /v1/admin/* gate.
+    if (path === MODEL_ACTIVATION_LIFF_PATH) {
+      return activateModelLine(request, env, studioWorker);
+    }
+    if (path === MODEL_ACTIVATION_ADMIN_PATH) {
+      return issueModelActivation(request, env);
+    }
 
     // The credential-bound admin wrapper has already authenticated /v1/admin/*
     // and injected the internal authorization bridge before requests reach this
