@@ -1,0 +1,218 @@
+name: Diagnose MMS frontend production v2
+
+on:
+  push:
+    branches:
+      - diagnose/mms-frontend-production-20260904
+    paths:
+      - ".github/workflows/diagnose-mms-frontend-production-v2.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-state:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ADMIN_MMS_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Normalize smoke credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const clean = (value) => (value || '').replace(/[\u2028\u2029\r\n]/g, '').trim();
+          const credential = clean(process.env.ADMIN_MMS_SMOKE_CREDENTIAL);
+          if (!credential) throw new Error('ADMIN_LOGIN_CREDENTIAL or ADMIN_BEARER is required');
+          fs.appendFileSync(process.env.GITHUB_ENV, `ADMIN_MMS_SMOKE_CREDENTIAL=${credential}\n`);
+          NODE
+          echo "::add-mask::$ADMIN_MMS_SMOKE_CREDENTIAL"
+
+      - name: Install browser driver only
+        shell: bash
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund puppeteer-core@24.16.0
+
+      - name: Execute production DOM state diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { execFileSync } = require('node:child_process');
+          const puppeteer = require('puppeteer-core');
+
+          (async () => {
+            function findChrome() {
+              for (const bin of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']) {
+                try {
+                  return execFileSync('which', [bin], { encoding: 'utf8' }).trim();
+                } catch {}
+              }
+              throw new Error('Chrome/Chromium executable not found on runner');
+            }
+
+            const credential = String(process.env.ADMIN_MMS_SMOKE_CREDENTIAL || '').trim();
+            if (!credential) throw new Error('Missing normalized MMS smoke credential');
+
+            const browser = await puppeteer.launch({
+              executablePath: findChrome(),
+              headless: true,
+              args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
+            });
+
+            let failed = false;
+            try {
+              for (const origin of ['https://mmdbkk.com', 'https://www.mmdbkk.com']) {
+                const context = await browser.createBrowserContext();
+                const page = await context.newPage();
+                const consoleErrors = [];
+                const pageErrors = [];
+                const requestFailures = [];
+
+                page.on('console', (msg) => {
+                  if (msg.type() === 'error') consoleErrors.push(msg.text());
+                });
+                page.on('pageerror', (error) => pageErrors.push(error && error.message ? error.message : String(error)));
+                page.on('requestfailed', (request) => {
+                  const url = request.url();
+                  if (url.includes('/v1/admin/mms/') || url.includes('/internal/admin/mms')) {
+                    requestFailures.push(`${request.method()} ${url} :: ${request.failure()?.errorText || 'failed'}`);
+                  }
+                });
+
+                await page.goto(`${origin}/internal/admin/login?next=${encodeURIComponent('/internal/admin/mms')}`, {
+                  waitUntil: 'domcontentloaded',
+                  timeout: 30000,
+                });
+
+                const loginResult = await page.evaluate(async ({ credential }) => {
+                  const body = new URLSearchParams({ credential, next: '/internal/admin/mms' });
+                  const response = await fetch('/internal/admin/login/session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: body.toString(),
+                    credentials: 'include',
+                    redirect: 'manual',
+                  });
+                  return { status: response.status, type: response.type };
+                }, { credential });
+
+                await page.goto(`${origin}/internal/admin/mms`, {
+                  waitUntil: 'domcontentloaded',
+                  timeout: 30000,
+                });
+
+                try {
+                  await page.waitForFunction(() => {
+                    const ops = document.querySelector('#opsAppsCount');
+                    return ops && !['', '–'].includes((ops.textContent || '').trim());
+                  }, { timeout: 15000 });
+                } catch {}
+
+                await new Promise((resolve) => setTimeout(resolve, 800));
+
+                const dom = await page.evaluate(async () => {
+                  const text = (selector) => {
+                    const el = document.querySelector(selector);
+                    return el ? (el.textContent || '').trim() : null;
+                  };
+                  let snapshot = null;
+                  let snapshotError = null;
+                  try {
+                    const response = await fetch('/v1/admin/mms/snapshot', {
+                      credentials: 'same-origin',
+                      headers: { accept: 'application/json' },
+                    });
+                    snapshot = await response.json();
+                    if (!response.ok) snapshotError = `HTTP ${response.status}`;
+                  } catch (error) {
+                    snapshotError = error && error.message ? error.message : String(error);
+                  }
+                  return {
+                    href: location.href,
+                    build: document.querySelector('meta[name="mmd-admin-build"]')?.content || null,
+                    bridgeType: typeof window.mmsAdminApplySnapshot,
+                    promisePresent: Boolean(window.mmsAdminSnapshotPromise),
+                    summary: {
+                      applications: text('#sApps'),
+                      therapists: text('#sTher'),
+                      prebookings: text('#sPre'),
+                    },
+                    nav: {
+                      applications: text('#appCount'),
+                      therapists: text('#therCount'),
+                      prebookings: text('#preCount'),
+                    },
+                    overview: {
+                      pendingApplications: text('#pendingApps'),
+                      readyTherapists: text('#readyTherapists'),
+                      openPrebookings: text('#openPrebookings'),
+                    },
+                    ops: {
+                      applications: text('#opsAppsCount'),
+                      prebookings: text('#opsPreCount'),
+                      jobs: text('#opsJobsCount'),
+                    },
+                    snapshot: snapshot && snapshot.ok === true ? {
+                      ok: true,
+                      applications: Array.isArray(snapshot.applications) ? snapshot.applications.length : null,
+                      therapists: Array.isArray(snapshot.therapists) ? snapshot.therapists.length : null,
+                      prebookings: Array.isArray(snapshot.prebookings) ? snapshot.prebookings.length : null,
+                    } : { ok: false, error: snapshotError || snapshot?.error || 'snapshot_not_ok' },
+                  };
+                });
+
+                const expected = dom.snapshot && dom.snapshot.ok ? dom.snapshot : null;
+                const mismatches = [];
+                if (!expected) {
+                  mismatches.push('snapshot endpoint not ok in browser session');
+                } else {
+                  const checks = [
+                    ['summary.applications', dom.summary.applications, expected.applications],
+                    ['nav.applications', dom.nav.applications, expected.applications],
+                    ['ops.applications', dom.ops.applications, expected.applications],
+                    ['summary.therapists', dom.summary.therapists, expected.therapists],
+                    ['nav.therapists', dom.nav.therapists, expected.therapists],
+                    ['summary.prebookings', dom.summary.prebookings, expected.prebookings],
+                    ['nav.prebookings', dom.nav.prebookings, expected.prebookings],
+                  ];
+                  for (const [label, actual, wanted] of checks) {
+                    if (String(actual) !== String(wanted)) mismatches.push(`${label}: DOM=${actual} API=${wanted}`);
+                  }
+                }
+                if (dom.bridgeType !== 'function') mismatches.push(`mmsAdminApplySnapshot type=${dom.bridgeType}`);
+                if (pageErrors.length) mismatches.push(`pageerror=${pageErrors.join(' | ')}`);
+                if (consoleErrors.length) mismatches.push(`console.error=${consoleErrors.join(' | ')}`);
+                if (requestFailures.length) mismatches.push(`requestfailed=${requestFailures.join(' | ')}`);
+
+                console.log(`\n=== MMS FRONTEND STATE ${origin} ===`);
+                console.log(JSON.stringify({ origin, loginResult, dom, pageErrors, consoleErrors, requestFailures, mismatches }, null, 2));
+
+                if (mismatches.length) failed = true;
+                await context.close();
+              }
+            } finally {
+              await browser.close();
+            }
+
+            if (failed) {
+              console.error('\nMMS production DOM state diagnostic found mismatches.');
+              process.exit(1);
+            }
+            console.log('\nMMS production DOM state diagnostic passed on apex + www.');
+          })().catch((error) => {
+            console.error(error && error.stack ? error.stack : error);
+            process.exit(1);
+          });
+          NODE
