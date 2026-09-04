@@ -1,0 +1,100 @@
+name: Patch MMS admin inline script syntax
+
+on:
+  push:
+    branches:
+      - fix/mms-admin-inline-script-syntax-20260904
+    paths:
+      - ".github/workflows/patch-mms-admin-inline-script.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/mms-admin-inline-script-syntax-20260904
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Apply source patch and regression guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          page = Path('admin-worker/src/mms-admin-page.js')
+          text = page.read_text()
+          old = r"var target=new URL(grant.upload.url),m=target.pathname.match(/\/mms\/api\/uploads\/(.+)$/),suffix=m&&m[1];"
+          new = "var target=new URL(grant.upload.url),uploadMarker='/mms/api/uploads/',markerIndex=target.pathname.indexOf(uploadMarker),suffix=markerIndex>=0?target.pathname.slice(markerIndex+uploadMarker.length):'';"
+          if old not in text:
+              raise SystemExit('expected MMS upload pathname regex not found')
+          page.write_text(text.replace(old, new, 1))
+
+          package = Path('package.json')
+          pkg = package.read_text()
+          old_script = 'admin-worker/mms-admin-approve-ui.test.mjs admin-worker/mms-admin-mobile-bundle.test.mjs admin-worker/mms-admin-session-bounce.test.mjs'
+          new_script = 'admin-worker/mms-admin-approve-ui.test.mjs admin-worker/mms-admin-inline-syntax.test.mjs admin-worker/mms-admin-mobile-bundle.test.mjs admin-worker/mms-admin-session-bounce.test.mjs'
+          if old_script not in pkg:
+              raise SystemExit('expected test:mms-admin-ui script not found')
+          package.write_text(pkg.replace(old_script, new_script, 1))
+          PY
+
+          cat > admin-worker/mms-admin-inline-syntax.test.mjs <<'EOF'
+          import test from 'node:test';
+          import assert from 'node:assert/strict';
+          import { Script } from 'node:vm';
+
+          import { renderMmsAdminPage } from './src/mms-admin-page.js';
+          import { wireMmsApproveUi } from './src/mms-admin-approve-ui.js';
+          import { wireMmsAdminMobileBundle } from './src/mms-admin-mobile-bundle.js';
+          import { wireMmsJobsUi } from './src/mms-admin-jobs-ui.js';
+
+          function productionAssembly() {
+            return wireMmsJobsUi(
+              wireMmsAdminMobileBundle(
+                wireMmsApproveUi(renderMmsAdminPage()),
+              ),
+            );
+          }
+
+          test('MMS admin production assembly emits syntax-valid inline scripts', () => {
+            const html = productionAssembly();
+            const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)]
+              .filter((match) => !/\bsrc\s*=/.test(match[1] || ''))
+              .map((match) => match[2] || '');
+
+            assert.ok(scripts.length >= 3, 'expected MMS admin inline scripts');
+            scripts.forEach((source, index) => {
+              assert.doesNotThrow(
+                () => new Script(source, { filename: `mms-admin-inline-${index}.js` }),
+                `inline script ${index} must parse`,
+              );
+            });
+
+            assert.match(html, /uploadMarker='\/mms\/api\/uploads\/'/);
+            assert.doesNotMatch(html, /pathname\.match\(\/\/mms\/api\/uploads/);
+          });
+          EOF
+
+      - name: Run MMS admin tests
+        run: npm run test:mms-admin-ui
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "MMD Prive"
+          git config user.email "malemodel.bkk@gmail.com"
+          git rm .github/workflows/patch-mms-admin-inline-script.yml
+          git add admin-worker/src/mms-admin-page.js admin-worker/mms-admin-inline-syntax.test.mjs package.json
+          git commit -m "fix(mms-admin): keep rendered inline scripts parseable"
+          git push origin HEAD:fix/mms-admin-inline-script-syntax-20260904
