@@ -60,6 +60,42 @@ test("MY MMD returns canonical customer amount due and drops model/internal fina
   assert.doesNotMatch(json, /17000|25500|7650|13000/);
 });
 
+test("configured customer_amount_due_thb snapshot wins without marking a pending deposit verified", async () => {
+  const profile = await buildCustomer360MemberProfile({
+    env: { AIRTABLE_SESSIONS_AMOUNT_DUE_FIELD: "customer_amount_due_thb" },
+    memberFields: {
+      member_id: "MMD-FIN-REAL-LINE",
+      "Full Name (Display)": "คุณหนุ่ย",
+      "Contact Email": "nuay@example.test",
+    },
+    lineUserId: LINE_ID,
+    listRecords: async (key) => key === "SESSIONS" ? [{
+      fields: {
+        line_user_id: LINE_ID,
+        session_id: "sess_at_20260912_mek_nuay_2100",
+        job_number: "JOB-FIN-REAL-LINE",
+        job_date: "2026-09-12",
+        start_time: "21:00",
+        job_type: "V Top",
+        "Session Status": "confirmed",
+        payment_status: "pending",
+        verification_status: "pending_review",
+        customer_amount_due_thb: 17850,
+        balance_due_calc: 25500,
+        pay_model_thb: 17000,
+      },
+    }] : [],
+    now: NOW,
+  });
+
+  const job = profile.customer_360.jobs.upcoming_jobs[0];
+  assert.equal(job.amount_due_thb, 17850);
+  assert.equal(job.payment_status, "pending_review");
+
+  const json = JSON.stringify(serializeCustomer360Profile(profile));
+  assert.doesNotMatch(json, /pay_model_thb|expected_payout_thb|17000/i);
+});
+
 test("generic remaining_balance is not customer-visible unless explicitly configured", async () => {
   const profile = await buildCustomer360MemberProfile({
     memberFields: { member_id: "MMD-FIN-660", "Contact Email": "customer2@example.test" },
