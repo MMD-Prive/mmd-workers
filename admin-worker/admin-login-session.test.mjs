@@ -78,7 +78,7 @@ test("GET login renders a safe deterministic browser login form", async () => {
   assert.match(html, /Enter the/);
   assert.match(html, /MMD SIGIL Internal Admin/);
   assert.doesNotMatch(html, /Internal Admin Chang Ewvon/);
-  assert.match(html, /rel="icon" type="image\/png"/);
+  assert.match(html, /rel="icon" type="image\/webp"/);
   assert.match(html, /rel="apple-touch-icon"/);
   assert.match(html, /mmd-login21/);
   assert.match(html, /method="post"/);

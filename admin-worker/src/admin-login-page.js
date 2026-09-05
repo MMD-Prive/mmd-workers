@@ -5,7 +5,7 @@ export const APPROVED_ADMIN_LOGIN_HERO =
 export const APPROVED_ADMIN_LOGIN_LOGO =
   "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0f2cbc7e26b6735aee4cb2_SIGIL%20LOGO%20Transp.webp";
 export const APPROVED_ADMIN_LOGIN_FAVICON =
-  "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e34d70142723ec97768bc2_Only%20logo.png";
+  "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo.webp";
 export const APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON =
   "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e34c91250ec9f6ee29d319_MMD%20SIGIL%20Logo.png";
 export const ADMIN_CANONICAL_ORIGIN = "https://mmdbkk.com";
@@ -27,7 +27,7 @@ export function renderApprovedAdminLogin(
   <script>(()=>{if(location.protocol==='https:'&&location.hostname==='www.mmdbkk.com'){const path=(location.pathname.replace(/\\/+$/,'')||'/');if(path==='/internal/admin/login'){const canonical=new URL(location.href);canonical.hostname='mmdbkk.com';location.replace(canonical.toString());}}})();</script>
   <title>MMD Privé · Internal Login</title>
   <link rel="canonical" href="${ADMIN_CANONICAL_ORIGIN}/internal/admin/login">
-  <link rel="icon" type="image/png" sizes="32x32" href="${APPROVED_ADMIN_LOGIN_FAVICON}">
+  <link rel="icon" type="image/webp" href="${APPROVED_ADMIN_LOGIN_FAVICON}">
   <link rel="apple-touch-icon" href="${APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON}">
   <style>
     :root{color-scheme:dark}
