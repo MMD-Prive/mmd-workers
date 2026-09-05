@@ -55,12 +55,15 @@ test("canonical /my-mmd serves the self-contained Lovable incident shell without
   assert.match(html, /data-mmd-shell="lovable-single-file-v1"/);
   assert.match(html, /data-mmd-boot-state="static"/);
   assert.match(html, /กำลังเปิด My MMD/);
+  assert.match(html, /id="mmd-my-mmd-loader"/);
+  assert.match(html, /\/my-mmd-assets\/hype\.webp/);
+  assert.match(html, /mmd-hype-spin 2\.4s/);
   assert.match(html, /\/my-mmd-assets\/favicon\.ico/);
   assert.match(html, /\/my-mmd/);
   assert.doesNotMatch(html, /\/member\/my-mmd/);
 });
 
-test("missing or invalid Lovable incident shell returns a visible fail-closed recovery page instead of a blank response", async () => {
+test("missing or invalid Lovable incident shell returns a visible fail-closed recovery page with HYPE instead of a blank response", async () => {
   globalThis.fetch = async () => new Response("<!doctype html><html><body>wrong artifact</body></html>", {
     headers: { "content-type": "text/html; charset=utf-8" },
   });
@@ -70,8 +73,24 @@ test("missing or invalid Lovable incident shell returns a visible fail-closed re
 
   assert.equal(response.status, 502);
   assert.match(html, /My MMD ยังเปิดไม่สำเร็จครับ/);
+  assert.match(html, /\/my-mmd-assets\/hype\.webp/);
   assert.match(html, /href="\/my-mmd\/"/);
   assert.ok(html.length > 300);
+});
+
+test("HYPE loader asset is republished same-origin from the locked Webflow asset", async () => {
+  const calls = [];
+  globalThis.fetch = async (request) => {
+    calls.push(request.url);
+    return new Response("hype-bytes", { headers: { "content-type": "image/webp" } });
+  };
+
+  const response = await worker.fetch(new Request("https://mmdbkk.com/my-mmd-assets/hype.webp"), {});
+  const body = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(body, "hype-bytes");
+  assert.deepEqual(calls, ["https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a36fa9c99c7e95731eeca5d_HYPE.webp"]);
 });
 
 test("legacy /member/my-mmd route is compatibility-only and redirects to /my-mmd preserving suffix and query", async () => {
@@ -112,11 +131,11 @@ test("My MMD presentation remains read-only while behavior stays on /api/member/
   assert.equal(api.headers.get("x-mmd-upstream-service"), "member-pages-worker");
 });
 
-test("status LIFF bridge returns to /my-mmd/ after the existing same-site verification gate", async () => {
+test("status LIFF is an auth bridge only, shows HYPE, then returns to the single /my-mmd/ surface", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
-        `<!doctype html><html><body><div id="message"></div><div id="actions"></div><script nonce="abc123">window.__shell=true;</script></body></html>`,
+        `<!doctype html><html><head></head><body><main>SECOND DASHBOARD SHOULD BE COVERED</main><div id="message"></div><div id="actions"></div><script nonce="abc123">window.__shell=true;</script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       ),
     },
@@ -127,10 +146,33 @@ test("status LIFF bridge returns to /my-mmd/ after the existing same-site verifi
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
+  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
   assert.match(html, /const target = "\/my-mmd\/"/);
   assert.doesNotMatch(html, /const target = "\/member\/my-mmd"/);
+  assert.match(html, /id="mmd-status-bridge-veil"/);
+  assert.match(html, /กำลังยืนยันสมาชิก…/);
+  assert.match(html, /\/my-mmd-assets\/hype\.webp/);
   assert.match(html, /\/member\/api\/liff\/profile/);
   assert.match(html, /payload && payload\.ok === true/);
+});
+
+test("non-status LIFF intents keep their existing specialized surfaces", async () => {
+  const runtime = {
+    MEMBER_PAGES_WORKER: {
+      fetch: async () => new Response(
+        `<!doctype html><html><head></head><body><main>PROMO SURFACE</main></body></html>`,
+        { headers: { "content-type": "text/html; charset=utf-8" } },
+      ),
+    },
+  };
+
+  const response = await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=promo&campaign=care_back"), runtime);
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), null);
+  assert.match(html, /PROMO SURFACE/);
+  assert.doesNotMatch(html, /mmd-status-bridge-veil/);
 });
 
 test("wrangler keeps canonical My MMD, BFF and legacy redirect routes Worker-owned", async () => {
