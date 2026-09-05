@@ -9,6 +9,8 @@ const PROTOCOL_PATHS = new Set([
 const CONTROL_ROOM_PATH = "/internal/admin/control-room";
 const ADMIN_LOGIN_PATH = "/internal/admin/login";
 const MODEL_SEARCH_PATH = "/v1/admin/models/search";
+const INTERNAL_SIGIL_FAVICON =
+  "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo.webp";
 
 function normalizePath(value: string): string {
   const path = String(value || "/").replace(/\/{2,}/g, "/");
@@ -99,6 +101,32 @@ async function decorateModelSearchResponse(response: Response): Promise<Response
   }
 }
 
+async function decorateInternalHtmlResponse(path: string, response: Response): Promise<Response> {
+  if (!path.startsWith("/internal/")) return response;
+  if (!(response.headers.get("content-type") || "").includes("text/html")) return response;
+  if (!response.body) return response;
+
+  const html = await response.text();
+  const icon = `<link rel="icon" type="image/webp" href="${INTERNAL_SIGIL_FAVICON}">`;
+  const withoutExistingIcons = html.replace(
+    /<link\b[^>]*\brel=["'](?:shortcut\s+)?icon["'][^>]*>/gi,
+    "",
+  );
+  const rewritten = withoutExistingIcons.includes("</head>")
+    ? withoutExistingIcons.replace("</head>", `${icon}</head>`)
+    : withoutExistingIcons;
+
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  headers.set("x-mmd-internal-favicon", "sigil-only-logo-v1");
+
+  return new Response(rewritten, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -110,12 +138,16 @@ export default {
       }
       const gate = await requireProtocolAdminGate(request, env);
       if (gate) return gate;
-      return renderProtocolCenterPage({ headOnly: request.method === "HEAD" });
+      const response = renderProtocolCenterPage({ headOnly: request.method === "HEAD" });
+      return request.method === "GET" ? decorateInternalHtmlResponse(path, response) : response;
     }
 
     const response = await coreWorker.fetch(request, env);
     if (request.method === "GET" && path === MODEL_SEARCH_PATH) {
       return decorateModelSearchResponse(response);
+    }
+    if (request.method === "GET") {
+      return decorateInternalHtmlResponse(path, response);
     }
     return response;
   },
