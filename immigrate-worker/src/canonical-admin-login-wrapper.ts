@@ -107,13 +107,16 @@ async function decorateInternalHtmlResponse(path: string, response: Response): P
   if (!response.body) return response;
 
   const html = await response.text();
-  const icon = `<link rel="icon" type="image/webp" href="${INTERNAL_SIGIL_FAVICON}">`;
-  const withoutExistingIcons = html.replace(
-    /<link\b[^>]*\brel=["'](?:shortcut\s+)?icon["'][^>]*>/gi,
-    "",
-  );
+  const icons = [
+    `<link rel="icon" type="image/webp" href="${INTERNAL_SIGIL_FAVICON}">`,
+    `<link rel="shortcut icon" type="image/webp" href="${INTERNAL_SIGIL_FAVICON}">`,
+    `<link rel="apple-touch-icon" href="${INTERNAL_SIGIL_FAVICON}">`,
+  ].join("");
+  const withoutExistingIcons = html
+    .replace(/<link\b[^>]*\brel=["'](?:shortcut\s+)?icon["'][^>]*>/gi, "")
+    .replace(/<link\b[^>]*\brel=["']apple-touch-icon["'][^>]*>/gi, "");
   const rewritten = withoutExistingIcons.includes("</head>")
-    ? withoutExistingIcons.replace("</head>", `${icon}</head>`)
+    ? withoutExistingIcons.replace("</head>", `${icons}</head>`)
     : withoutExistingIcons;
 
   const headers = new Headers(response.headers);
