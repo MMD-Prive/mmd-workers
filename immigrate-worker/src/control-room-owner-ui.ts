@@ -9,6 +9,28 @@ const LEGACY_MMS_CONTROL_ROOM_ROUTE = "/male-massage/therapists/login";
 const CANONICAL_MMS_CONTROL_ROOM_ROUTE = "/internal/admin/mms";
 const HISTORICAL_SLIP_BACKFILL_ROUTE = "/internal/admin/payments/historical-backfill";
 
+// MMD typography + desktop composition lock.
+// LINE is primary; Noto is the Thai / multilingual fallback.
+// Desktop keeps intentional side breathing room after the fixed owner rail.
+const CONTROL_ROOM_PRESENTATION_TUNE = `<style id="mmd-control-room-presentation-tune">
+.cr4,
+.cr4 button,
+.cr4 input,
+.cr4 select,
+.cr4 textarea{
+  font-family:"LINE Seed Sans TH","Line Seed Sans TH","LINE Seed Sans TH_W_Rg","Noto Sans Thai","Noto Sans","Outfit",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+@media (min-width:900px){
+  .cr4__main{width:min(calc(100% - 64px),1320px);margin-inline:auto;padding-left:0;padding-right:0}
+}
+@media (min-width:1200px){
+  .cr4__main{width:min(calc(100% - 96px),1280px);margin-inline:auto;padding:28px 0 60px}
+}
+@media (min-width:1500px){
+  .cr4__main{width:min(calc(100% - 128px),1320px)}
+}
+</style>`;
+
 // Temporary raw-HTML compatibility markers keep the bounded production deploy verifier
 // compatible while the visible Owner V4 surface and its stronger route audit ship.
 // They are hidden from operators and explicitly mark the old baseline as retired.
@@ -23,6 +45,10 @@ function applyControlRoomCanonicalPatches(html: string): string {
     const anchor = `</main>`;
     const fallback = `<a hidden href="${HISTORICAL_SLIP_BACKFILL_ROUTE}">Historical Slip Backfill</a>`;
     canonicalHtml = canonicalHtml.replace(anchor, `${fallback}${anchor}`);
+  }
+
+  if (!canonicalHtml.includes('id="mmd-control-room-presentation-tune"')) {
+    canonicalHtml = canonicalHtml.replace("</head>", `${CONTROL_ROOM_PRESENTATION_TUNE}</head>`);
   }
 
   if (!canonicalHtml.includes('data-control-room-deploy-compat="v3-verifier"')) {
@@ -67,6 +93,8 @@ export function renderOwnerControlRoomPage(): Response {
   headers.set("x-mmd-control-room-mms-route", CANONICAL_MMS_CONTROL_ROOM_ROUTE);
   headers.set("x-mmd-control-room-slip-backfill-route", HISTORICAL_SLIP_BACKFILL_ROUTE);
   headers.set("x-mmd-control-room-cta-audit", "operator-triggered-head-check");
+  headers.set("x-mmd-control-room-typography", "line-seed-noto");
+  headers.set("x-mmd-control-room-desktop-gutter", "balanced-v1");
 
   return new Response(source.body.pipeThrough(rewrite), {
     status: source.status,
