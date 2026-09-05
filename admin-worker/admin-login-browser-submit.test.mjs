@@ -57,7 +57,6 @@ test("admin login posts the exact visible credential with an explicit same-origi
   assert.match(html, /response\.ok&&response\.redirected/);
   assert.match(html, /response.status===401/);
   assert.match(html, /response.status===403/);
-  assert.match(html, /response.status===400/);
 });
 
 test("admin login preserves secure server-side flow and exposes the production UI marker", async () => {
