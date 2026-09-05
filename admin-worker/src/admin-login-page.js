@@ -10,6 +10,17 @@ export const APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON =
   "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e34c91250ec9f6ee29d319_MMD%20SIGIL%20Logo.png";
 export const ADMIN_CANONICAL_ORIGIN = "https://mmdbkk.com";
 
+const CSP = [
+  "default-src 'self'",
+  "script-src 'unsafe-inline' 'self'",
+  "style-src 'unsafe-inline' 'self'",
+  "img-src https://cdn.prod.website-files.com data:",
+  "connect-src 'self'",
+  "form-action 'self'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
+
 // This is the only renderer for /internal/admin/login. Both the production
 // entrypoint and the core worker import it so an entrypoint rollback cannot
 // silently restore an older login shell.
@@ -17,6 +28,11 @@ export function renderApprovedAdminLogin(
   request,
   { status = 200, error = "", next = "/internal/admin/control-room" } = {},
 ) {
+  const headers = loginHeaders();
+  if (String(request?.method || "GET").toUpperCase() === "HEAD") {
+    return new Response(null, { status, headers });
+  }
+
   const html = `<!doctype html>
 <html lang="th">
 <head>
@@ -55,6 +71,7 @@ export function renderApprovedAdminLogin(
     .mmd-login21 label{display:grid;gap:8px;margin-top:10px;color:#d8ad5c;font-size:11px;font-weight:950;letter-spacing:.14em;text-transform:uppercase}
     .mmd-login21__input{display:grid;grid-template-columns:1fr auto;border:1px solid rgba(255,229,170,.18);border-radius:18px;overflow:hidden;background:rgba(0,0,0,.42)}
     .mmd-login21 input{width:100%;min-height:58px;border:0;background:transparent;color:#fff8ef;padding:0 16px;outline:0;font:inherit}
+    .mmd-login21 input[data-mask="true"]{-webkit-text-security:disc}
     .mmd-login21 button{border:0;background:#d8ad5c;color:#140f08;font-weight:950;padding:0 18px;cursor:pointer}
     .mmd-login21 button:disabled{opacity:.55;cursor:wait}
     .mmd-login21__toggle{border-left:1px solid rgba(255,229,170,.18)!important;background:transparent!important;color:#ffe4a3!important;font-size:11px}
@@ -93,7 +110,7 @@ export function renderApprovedAdminLogin(
           <form method="post" action="${ADMIN_LOGIN_SESSION_PATH}" id="adminLoginForm" autocomplete="off">
             <input id="adminNext" type="hidden" name="next" value="${escapeAttribute(next)}">
             <label for="adminCredential">Access Code
-              <span class="mmd-login21__input"><input id="adminCredential" name="credential" type="password" required autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" aria-autocomplete="none" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" data-form-type="other"><button class="mmd-login21__toggle" type="button" aria-controls="adminCredential" aria-pressed="false">SHOW</button></span>
+              <span class="mmd-login21__input"><input id="adminCredential" type="text" required readonly autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" aria-autocomplete="none" data-mask="true" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" data-form-type="other"><button class="mmd-login21__toggle" type="button" aria-controls="adminCredential" aria-pressed="false">SHOW</button></span>
             </label>
             <p class="mmd-login21__message${error ? " is-error" : ""}" role="${error ? "alert" : "status"}">${error ? escapeHtml(error) : `Next: ${escapeHtml(next)}`}</p>
             <button class="mmd-login21__go" type="submit">Enter Admin</button>
@@ -107,18 +124,23 @@ export function renderApprovedAdminLogin(
       </section>
     </main>
   </section>
-  <script>(()=>{const form=document.getElementById('adminLoginForm');const input=document.getElementById('adminCredential');const nextInput=document.getElementById('adminNext');const toggle=document.querySelector('.mmd-login21__toggle');const message=document.querySelector('.mmd-login21__message');const submit=document.querySelector('.mmd-login21__go');if(!form||!input||!nextInput||!toggle||!message||!submit)return;input.value='';input.removeAttribute('readonly');input.focus({preventScroll:true});toggle.addEventListener('click',function(){const show=input.type==='password';input.type=show?'text':'password';this.textContent=show?'HIDE':'SHOW';this.setAttribute('aria-pressed',String(show));input.focus();});form.addEventListener('submit',async(event)=>{event.preventDefault();const credential=input.value.trim();if(!credential){input.focus();return;}toggle.disabled=true;submit.disabled=true;message.classList.remove('is-error');message.setAttribute('role','status');message.textContent='Checking access…';try{const body=new URLSearchParams();body.set('credential',credential);body.set('next',nextInput.value||'/internal/admin/control-room');const response=await fetch('${ADMIN_LOGIN_SESSION_PATH}',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8','X-MMD-Login-Fetch':'1'},credentials:'same-origin',redirect:'follow',cache:'no-store',body:body.toString()});if(response.ok&&response.redirected){location.assign(response.url);return;}let payload=null;try{payload=await response.clone().json();}catch{}if(response.ok&&payload&&payload.ok){location.assign(payload.next||nextInput.value||'/internal/admin/control-room');return;}const code=response.status;const err=payload&&payload.error?payload.error:'';const legacyKey='access'+'_code';const invalidKey='invalid_'+legacyKey;const missingKey='missing_'+legacyKey;let detail='Login failed (HTTP '+code+')';if(err===invalidKey||code===401)detail='Access Code ไม่ตรงกับ Production secret ครับ (HTTP 401)';else if(err==='forbidden_origin'||code===403)detail='Origin/Host ของหน้า login ไม่อยู่ใน allowlist ครับ (HTTP 403)';else if(err===missingKey)detail='ยังไม่ได้ส่ง Access Code ครับ (HTTP 400)';else if(err==='admin_login_credential_missing'||code===503)detail='Worker รับ request แล้ว แต่ Admin credential/session config ยังไม่พร้อม (HTTP 503)';else if(code===400)detail='Browser POST ถึง Worker แล้ว แต่รูปแบบ request ไม่ถูกต้อง (HTTP 400)';message.classList.add('is-error');message.setAttribute('role','alert');message.textContent=detail;toggle.disabled=false;submit.disabled=false;input.focus();}catch{message.classList.add('is-error');message.setAttribute('role','alert');message.textContent='Browser ติดต่อ Admin Worker ไม่สำเร็จ ลอง refresh แล้วกดใหม่ครับ';toggle.disabled=false;submit.disabled=false;input.focus();}});})();</script>
+  <script>(()=>{const form=document.getElementById('adminLoginForm');const input=document.getElementById('adminCredential');const nextInput=document.getElementById('adminNext');const toggle=document.querySelector('.mmd-login21__toggle');const message=document.querySelector('.mmd-login21__message');const submit=document.querySelector('.mmd-login21__go');if(!form||!input||!nextInput||!toggle||!message||!submit)return;const unlock=()=>{input.readOnly=false;};input.value='';unlock();input.focus({preventScroll:true});toggle.addEventListener('click',function(){const show=this.getAttribute('aria-pressed')!=='true';if(show)input.removeAttribute('data-mask');else input.setAttribute('data-mask','true');this.textContent=show?'HIDE':'SHOW';this.setAttribute('aria-pressed',String(show));input.focus();});form.addEventListener('submit',async(event)=>{event.preventDefault();const credential=input.value.trim();if(!credential){unlock();input.focus();return;}toggle.disabled=true;submit.disabled=true;message.classList.remove('is-error');message.setAttribute('role','status');message.textContent='Checking access…';try{const body=new URLSearchParams();body.set('credential',credential);body.set('next',nextInput.value||'/internal/admin/control-room');const response=await fetch('${ADMIN_LOGIN_SESSION_PATH}',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8','X-MMD-Login-Fetch':'1'},credentials:'same-origin',redirect:'follow',cache:'no-store',body:body.toString()});if(response.ok&&response.redirected){location.assign(response.url);return;}let payload=null;try{payload=await response.clone().json();}catch{}if(response.ok&&payload&&payload.ok){location.assign(payload.next||nextInput.value||'/internal/admin/control-room');return;}const code=response.status;const err=payload&&payload.error?payload.error:'';const legacyKey='access'+'_code';const invalidKey='invalid_'+legacyKey;const missingKey='missing_'+legacyKey;let detail='Login failed (HTTP '+code+')';if(err===invalidKey||code===401)detail='Access Code ไม่ตรงกับ Production secret ครับ (HTTP 401)';else if(err==='forbidden_origin'||code===403)detail='Origin/Host ของหน้า login ไม่อยู่ใน allowlist ครับ (HTTP 403)';else if(err===missingKey)detail='ยังไม่ได้ส่ง Access Code ครับ (HTTP 400)';else if(err==='admin_login_credential_missing'||code===503)detail='Worker รับ request แล้ว แต่ Admin credential/session config ยังไม่พร้อม (HTTP 503)';else if(code===400)detail='Browser POST ถึง Worker แล้ว แต่รูปแบบ request ไม่ถูกต้อง (HTTP 400)';message.classList.add('is-error');message.setAttribute('role','alert');message.textContent=detail;toggle.disabled=false;submit.disabled=false;unlock();input.focus();}catch{message.classList.add('is-error');message.setAttribute('role','alert');message.textContent='Browser ติดต่อ Admin Worker ไม่สำเร็จ ลอง refresh แล้วกดใหม่ครับ';toggle.disabled=false;submit.disabled=false;unlock();input.focus();}});})();</script>
 </body>
 </html>`;
 
-  return new Response(html, {
-    status,
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store, max-age=0",
-      "x-mmd-admin-login": APPROVED_ADMIN_LOGIN_PAGE_ID,
-    },
-  });
+  return new Response(html, { status, headers });
+}
+
+function loginHeaders() {
+  return {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store, max-age=0",
+    "content-security-policy": CSP,
+    "x-mmd-admin-login": APPROVED_ADMIN_LOGIN_PAGE_ID,
+    "x-mmd-login-ui": "browser-fetch-v5",
+    "x-mmd-page": APPROVED_ADMIN_LOGIN_PAGE_ID,
+    "x-mmd-route-owner": "admin-worker",
+  };
 }
 
 function escapeHtml(value) {
