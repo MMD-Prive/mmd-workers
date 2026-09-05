@@ -61,6 +61,10 @@ jobs:
           const zoneId = process.env.CLOUDFLARE_ZONE_ID;
           const worker = process.env.WORKER_NAME;
           const desired = [
+            "mmdbkk.com/my-mmd*",
+            "www.mmdbkk.com/my-mmd*",
+            "mmdbkk.com/my-mmd-assets/*",
+            "www.mmdbkk.com/my-mmd-assets/*",
             "mmdbkk.com/member/my-mmd*",
             "www.mmdbkk.com/member/my-mmd*",
             "mmdbkk.com/member/my-mmd-assets/*",
@@ -106,7 +110,7 @@ jobs:
           console.log(`verified ${desired.length}/${desired.length} My MMD routes`);
           NODE
 
-      - name: Smoke My MMD route ownership
+      - name: Smoke canonical My MMD Lovable app ownership
         id: mymmd_smoke
         shell: bash
         run: |
@@ -115,16 +119,29 @@ jobs:
             headers="$(mktemp)"
             body="$(mktemp)"
             code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sSL -D "$headers" -o "$body" -w "%{http_code}" \
-              "https://${host}/member/my-mmd")"
-            echo "${host} /member/my-mmd final -> ${code}"
+              "https://${host}/my-mmd/")"
+            echo "${host} /my-mmd/ final -> ${code}"
             test "$code" = "200"
             grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$headers"
-            grep -qi '^x-mmd-ui-source: lovable-presentation-proxy' "$headers"
+            grep -qi '^x-mmd-ui-source: lovable-app-proxy' "$headers"
+            grep -qi '^x-mmd-presentation-owner: lovable' "$headers"
+            grep -qi '^x-mmd-behavior-owner: mmd-workers' "$headers"
             if grep -q 'MY MMD · PRIVATE MEMBER SPACE' "$body"; then
-              echo "Webflow fallback still owns ${host}/member/my-mmd" >&2
+              echo "Webflow fallback still owns ${host}/my-mmd/" >&2
               exit 1
             fi
-            grep -q '/member/my-mmd-assets/' "$body"
+            if grep -q 'data-mmd-shell="lovable-single-file-v1"' "$body"; then
+              echo "legacy single-file shell still owns ${host}/my-mmd/" >&2
+              exit 1
+            fi
+            grep -q '/my-mmd-assets/' "$body"
+
+            legacy_headers="$(mktemp)"
+            legacy_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS -D "$legacy_headers" -o /dev/null -w "%{http_code}" \
+              "https://${host}/member/my-mmd")"
+            echo "${host} legacy /member/my-mmd -> ${legacy_code}"
+            test "$legacy_code" = "308"
+            grep -qi '^location: https://.*\/my-mmd/' "$legacy_headers"
 
             api_headers="$(mktemp)"
             api_body="$(mktemp)"
@@ -144,4 +161,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ My MMD CLOUDFLARE ROUTES LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- checked_at: \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\`\n- worker: \`member-dashboard-chat-worker\`\n- routes: \`/member/my-mmd*\`, \`/member/my-mmd-assets/*\`, \`/api/member/app/*\` on apex + www\n- UI smoke follows canonical host redirects and proves \`x-mmd-route-owner=member-dashboard-chat-worker\` plus \`x-mmd-ui-source=lovable-presentation-proxy\`\n- Webflow fallback copy absent from final My MMD response\n- API route ownership verified without creating or widening member authority"
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ MY MMD LOVABLE APP ROUTES LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- checked_at: \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\`\n- canonical app: \`/my-mmd/\` with Lovable presentation through \`member-dashboard-chat-worker\`\n- behavior/data: \`/api/member/app/*\` remains Worker/BFF-owned\n- legacy \`/member/my-mmd\` returns bounded 308 to \`/my-mmd/\`\n- headers prove \`x-mmd-ui-source=lovable-app-proxy\`, \`x-mmd-presentation-owner=lovable\`, \`x-mmd-behavior-owner=mmd-workers\`\n- Webflow fallback and legacy single-file shell are absent from the canonical response\n- unauthenticated API ownership verified without creating or widening member authority"

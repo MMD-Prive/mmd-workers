@@ -1,5 +1,5 @@
 name = "member-dashboard-chat-worker"
-main = "src/front-gate-single-file-shell.js"
+main = "src/my-mmd-lovable-app-front-gate.js"
 compatibility_date = "2026-07-02"
 workers_dev = false
 
@@ -80,9 +80,9 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/api/member/dashboard*"
 zone_name = "mmdbkk.com"
 
-# Customer-facing My MMD app adapter. The app API is same-origin only and
-# delegates through member-pages-worker so it reuses the verified LIFF/member
-# session instead of creating a second browser auth system.
+# My MMD behavior/data BFF. The Lovable app is presentation only; every live
+# member read remains same-origin and delegates through member-pages-worker so
+# points, membership, entitlement and coupon truth never move into the browser.
 [[routes]]
 pattern = "mmdbkk.com/api/member/app/*"
 zone_name = "mmdbkk.com"
@@ -101,9 +101,28 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/male-massage/therapists/api/auth/*"
 zone_name = "mmdbkk.com"
 
-# Lovable owns presentation pixels; the front gate safely republishes that UI
-# under the canonical member origin. Session cookies remain on mmdbkk.com and
-# are never forwarded to the presentation upstream.
+# Canonical My MMD customer application. Lovable owns presentation; this Worker
+# owns the custom-domain route, strips member credentials before fetching the
+# Lovable app, republishes its assets same-origin, and keeps all behavior on the
+# MMD Worker/API stack.
+[[routes]]
+pattern = "mmdbkk.com/my-mmd*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/my-mmd*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/my-mmd-assets/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/my-mmd-assets/*"
+zone_name = "mmdbkk.com"
+
+# Legacy My MMD address remains Worker-owned only to provide a bounded 308
+# compatibility redirect into /my-mmd/. It is no longer a canonical app route.
 [[routes]]
 pattern = "mmdbkk.com/member/my-mmd*"
 zone_name = "mmdbkk.com"
@@ -112,6 +131,8 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/member/my-mmd*"
 zone_name = "mmdbkk.com"
 
+# Legacy asset prefix remains owned during the migration window so stale cached
+# bundles cannot fall through to Webflow. New app HTML never emits this prefix.
 [[routes]]
 pattern = "mmdbkk.com/member/my-mmd-assets/*"
 zone_name = "mmdbkk.com"
