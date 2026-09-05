@@ -28,6 +28,8 @@ import {
 } from "./historical-slip-backfill-runtime.js";
 
 const STUDIO_API_PREFIX = "/studio/api";
+const HISTORICAL_BACKFILL_CANONICAL_API = "/v1/admin/payments/historical-backfill";
+const HISTORICAL_BACKFILL_TRANSPORT_API = `${STUDIO_API_PREFIX}/payments/historical-backfill`;
 const COMMIT_PATHS = new Set([
   `${STUDIO_API_PREFIX}/intake/commit`,
   `${STUDIO_API_PREFIX}/review/commit`,
@@ -40,6 +42,14 @@ export default {
     const url = new URL(request.url);
     const path = normalizePathname(url.pathname);
     const method = request.method.toUpperCase();
+
+    // /studio/api/* is already a credential-bound, explicitly routed admin
+    // transport. Map only this exact payments sub-tree to the canonical API
+    // contract until Cloudflare owns the narrow /v1/admin/payments route.
+    if (isHistoricalBackfillTransport(path)) {
+      const canonicalRequest = rewriteHistoricalBackfillTransport(request, path);
+      return handleHistoricalSlipBackfillRequest(canonicalRequest, env, ctx);
+    }
 
     // Historical payment evidence is an admin review lane only. The runtime can
     // create pending Payment Proof evidence and hand an explicitly reviewed item
@@ -125,6 +135,17 @@ export default {
     return response;
   },
 };
+
+function isHistoricalBackfillTransport(path) {
+  return path === HISTORICAL_BACKFILL_TRANSPORT_API || path.startsWith(`${HISTORICAL_BACKFILL_TRANSPORT_API}/`);
+}
+
+function rewriteHistoricalBackfillTransport(request, path) {
+  const url = new URL(request.url);
+  const suffix = path.slice(HISTORICAL_BACKFILL_TRANSPORT_API.length);
+  url.pathname = `${HISTORICAL_BACKFILL_CANONICAL_API}${suffix}`;
+  return new Request(url, request);
+}
 
 export async function notifyStudioTelegram(env, { path, body, result }) {
   if (token(env.TELEGRAM_STUDIO_NOTIFY_ENABLED || env.TELEGRAM_NOTIFY_ENABLED || "true") === "false") {
