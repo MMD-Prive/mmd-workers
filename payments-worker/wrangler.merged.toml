@@ -5,6 +5,8 @@ compatibility_date = "2026-01-20"
 # Production entrypoint:
 # - index.phase1.js owns verified Base Points Phase 1 awards.
 # - index.with-slip-evidence.js still handles /v1/pay/slip/evidence.
+# - /v1/internal/payments/historical-slip/reviewed validates reviewed historical
+#   Payment Proof evidence before entering the canonical trusted notify path.
 # - all other payment/session handling delegates to index.js.
 # Base Points use a 100 THB pool with remainder carry and do not expire with membership.
 
@@ -49,6 +51,7 @@ AIRTABLE_TABLE_MEMBERSHIP_APPLICATIONS = "tbl8z2MQpIqcdylim"
 AIRTABLE_TABLE_MEMBERS                 = "tblgWc5VRon5o8Mhk"
 AIRTABLE_TABLE_BOOKINGS                = "tbl8no0NkZ3LDgCXK"
 AIRTABLE_TABLE_PAYMENTS                = "tblWGGJJOx5eBvBZJ"
+AIRTABLE_TABLE_PAYMENT_PROOFS          = "tblfJfM4Sqag9zrLi"
 AIRTABLE_TABLE_MEMBER_PACKAGES         = "member_packages"
 AIRTABLE_TABLE_SESSIONS                = "tblC98mKWbzmPuNzX"
 AIRTABLE_TABLE_POINTS_LEDGER           = "points_ledger"
