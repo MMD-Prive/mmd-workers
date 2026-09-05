@@ -39,32 +39,51 @@ jobs:
           node --check payments-worker/index.phase1.js
           node --check payments-worker/confirmation-ack.js
           node payments-worker/payment-confirmation-token.test.mjs
-          npx --yes wrangler@4 versions upload --dry-run --keep-vars --config payments-worker/wrangler.merged.toml
+          npx --yes wrangler@4 deploy --dry-run --keep-vars --config payments-worker/wrangler.merged.toml
 
-      - name: Upload payments-worker version
+      - name: Build route-free deployment config
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes wrangler@4 versions upload --keep-vars --config payments-worker/wrangler.merged.toml \
-            2>&1 | tee "$RUNNER_TEMP/payments-upload.log"
-          version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/payments-upload.log" | tail -n 1)"
-          if [ -z "$version_id" ]; then
-            echo "Unable to resolve payments-worker version id" >&2
-            exit 1
-          fi
-          echo "PAYMENTS_WORKER_VERSION_ID=$version_id" >> "$GITHUB_ENV"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const source = fs.readFileSync('payments-worker/wrangler.merged.toml', 'utf8').split(/\r?\n/);
+          const output = [];
+          let inRoutesArray = false;
+          for (const line of source) {
+            if (/^\s*routes\s*=\s*\[\s*$/.test(line)) {
+              inRoutesArray = true;
+              continue;
+            }
+            if (inRoutesArray) {
+              if (/^\s*\]\s*$/.test(line)) inRoutesArray = false;
+              continue;
+            }
+            if (/^\s*\[\[routes\]\]\s*$/.test(line)) {
+              throw new Error('Unexpected [[routes]] block in payments config; refuse ambiguous route mutation');
+            }
+            output.push(line);
+          }
+          if (inRoutesArray) throw new Error('Unterminated routes array');
+          const result = output.join('\n') + '\n';
+          if (/^\s*routes\s*=/m.test(result) || /^\s*\[\[routes\]\]/m.test(result)) {
+            throw new Error('Route-free config still contains route declarations');
+          }
+          fs.writeFileSync('payments-worker/.wrangler-no-routes.toml', result);
+          NODE
 
-      - name: Deploy uploaded version without changing route ownership
+      - name: Deploy payments-worker without changing custom-host routes
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes wrangler@4 versions deploy "${PAYMENTS_WORKER_VERSION_ID}@100%" -y --config payments-worker/wrangler.merged.toml
+          trap 'rm -f payments-worker/.wrangler-no-routes.toml' EXIT
+          npx --yes wrangler@4 deploy --keep-vars --config payments-worker/.wrangler-no-routes.toml
 
       - name: Smoke signed confirmation routes
         shell: bash
         run: |
           set -euo pipefail
-          for path in /v1/confirm/verify /v1/confirm/ack; do
+          for path in /v1/confirm/verify /v1/confirm/context /v1/confirm/ack; do
             body_file="$(mktemp)"
             code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
               -o "$body_file" -w "%{http_code}" \
@@ -73,6 +92,7 @@ jobs:
               -H 'Content-Type: application/json' \
               --data '{"t":"invalid.invalid","expected_role":"customer"}' \
               "https://sigil.mmdbkk.com${path}")"
+            cat "$body_file"
             test "$code" = "401"
             grep -Eq 'invalid_confirmation_token|invalid_confirmation_token_signature|confirmation_token_not_active' "$body_file"
           done
