@@ -30,11 +30,14 @@ try {
   assert.equal(response.headers.get("x-mmd-control-room-mms-route"), "/internal/admin/mms");
   assert.equal(response.headers.get("x-mmd-control-room-slip-backfill-route"), "/internal/admin/payments/historical-backfill");
   assert.equal(response.headers.get("x-mmd-control-room-cta-audit"), "operator-triggered-head-check");
+  assert.equal(response.headers.get("x-mmd-control-room-telegram-status"), "partial-worker-alerts-no-unified-router");
 
   assert.match(body, /data-control-room-v3/);
   assert.match(body, /OWNER CONTROL · V4/);
   assert.match(body, /MMD PRIVÉ · OWNER CONTROL ROOM · 05 SEP 2026/);
-  assert.match(body, /Boss%20and%20Kenji%20-%20Model%20Keyword%20Hero\.webp/);
+  assert.match(body, /Boss%20Per%20input%20Kenji%20AI\.webp/);
+  assert.match(body, /Working%20Room\.webp/);
+  assert.match(body, /Kenji%20Know02\.webp/);
   assert.match(body, /Wall%20a%20Long\.webp/);
 
   assert.match(body, /\/internal\/admin\/jobs\/create-session/);
@@ -52,7 +55,8 @@ try {
 
   assert.match(body, /payments-worker · Money Truth/);
   assert.match(body, /my_mmd_entitlement_resolver_v1/);
-  assert.match(body, /Telegram \/ Drive/);
+  assert.match(body, /Telegram alerts · Partial \/ Drive observed/);
+  assert.match(body, /Partial Alerts/);
   assert.match(body, /data-audit-cta/);
   assert.match(body, /\/v1\/admin\/auth\/me/);
 
