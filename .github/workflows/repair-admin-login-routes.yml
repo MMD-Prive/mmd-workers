@@ -156,7 +156,9 @@ jobs:
               -w "%{http_code}" \
               "$origin/internal/admin/login?next=/internal/admin/jobs/create-job")"
             if [ "$http_code" != "200" ] || ! grep -Eiq '^x-mmd-route-owner:[[:space:]]*admin-worker' "$headers_file" || ! grep -Eiq '^x-mmd-page:[[:space:]]*admin-login-approved-hero' "$headers_file" || ! grep -q 'Enter the' "$body_file" || ! grep -q 'control room' "$body_file"; then
-              echo "::error title=Admin login GET smoke failed::origin=$origin status=$http_code route_owner=$(tr -d '\r' < "$headers_file" | awk -F': ' ' 'tolower($1)=="x-mmd-route-owner"{print $2}' | tail -1) page=$(tr -d '\r' < "$headers_file" | awk -F': ' ' 'tolower($1)=="x-mmd-page"{print $2}' | tail -1)"
+              route_owner="$(tr -d '\r' < "$headers_file" | awk -F': ' ' 'tolower($1)=="x-mmd-route-owner"{print $2}' | tail -1)"
+              page_id="$(tr -d '\r' < "$headers_file" | awk -F': ' ' 'tolower($1)=="x-mmd-page"{print $2}' | tail -1)"
+              echo "::error title=Admin login GET smoke failed::origin=$origin status=$http_code route_owner=$route_owner page=$page_id"
               exit 1
             fi
 
@@ -172,7 +174,9 @@ jobs:
               --data 'credential=route-smoke-invalid&next=/internal/admin/jobs/create-job' \
               "$origin/internal/admin/login/session")"
             if [ "$http_code" != "401" ] || ! grep -Eiq '^x-mmd-route-owner:[[:space:]]*admin-worker' "$headers_file" || ! grep -q 'รหัสยังไม่ถูกต้องครับ' "$body_file"; then
-              echo "::error title=Admin login invalid-credential smoke failed::origin=$origin status=$http_code route_owner=$(tr -d '\r' < "$headers_file" | awk -F': ' ' 'tolower($1)=="x-mmd-route-owner"{print $2}' | tail -1) page=$(tr -d '\r' < "$headers_file" | awk -F': ' ' 'tolower($1)=="x-mmd-page"{print $2}' | tail -1)"
+              route_owner="$(tr -d '\r' < "$headers_file" | awk -F': ' ' 'tolower($1)=="x-mmd-route-owner"{print $2}' | tail -1)"
+              page_id="$(tr -d '\r' < "$headers_file" | awk -F': ' ' 'tolower($1)=="x-mmd-page"{print $2}' | tail -1)"
+              echo "::error title=Admin login invalid-credential smoke failed::origin=$origin status=$http_code route_owner=$route_owner page=$page_id"
               exit 1
             fi
           done
