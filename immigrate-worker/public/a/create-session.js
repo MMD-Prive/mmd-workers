@@ -131,6 +131,7 @@
     copyCustomerMsg: $("[data-op-copy-customer-msg]"),
     copyModelMsg: $("[data-op-copy-model-msg]"),
     pushLine: $("[data-op-push-line]"),
+    customerSnapshotReviewed: $("[data-op-customer-snapshot-reviewed]"),
     newSession: $("[data-op-new]")
   };
 
@@ -1005,6 +1006,10 @@
   }
 
   async function pushCustomerLine() {
+    if (!el.customerSnapshotReviewed?.checked) {
+      setStatus("Review customer snapshot before sending LINE.", "warn");
+      return;
+    }
     if (!state.created || !state.selectedClient?.line_user_id) {
       setStatus("Customer LINE push is not ready.", "warn");
       return;
@@ -1019,7 +1024,8 @@
             body: JSON.stringify({
               to: state.selectedClient.line_user_id,
               message: val(el.outCustomerMessage),
-              session_id: state.created.session_id || state.created.id || ""
+              session_id: state.created.session_id || state.created.id || "",
+              customer_snapshot_reviewed: true
             })
           });
       const data = await response.json().catch(() => ({}));
@@ -1042,6 +1048,8 @@
     state.draftId = "";
     state.created = null;
     state.lastPayload = null;
+    if (el.customerSnapshotReviewed) el.customerSnapshotReviewed.checked = false;
+    if (el.pushLine) { el.pushLine.disabled = true; el.pushLine.setAttribute("aria-disabled", "true"); }
     if (el.output) el.output.hidden = true;
     setVal(el.query, "");
     setVal(el.clientName, "");
