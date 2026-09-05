@@ -50,11 +50,10 @@ test("LINE slip intake creates a pending Payment Proof visible in the admin revi
 
   const env = {
     LINE_CHANNEL_ACCESS_TOKEN: "line-token",
-    LINE_SLIP_R2: {
-      async put(key, value, options) {
-        r2Writes.push({ key, value, options });
-      },
-    },
+    CLOUDFLARE_ACCOUNT_ID: "account-test",
+    LINE_SLIP_R2_ACCESS_KEY_ID: "r2-access-key",
+    LINE_SLIP_R2_SECRET_ACCESS_KEY: "r2-secret-key",
+    LINE_SLIP_R2_BUCKET: "line-slip-test",
     AIRTABLE_HTTP: { fetch: airtableFetch },
     AIRTABLE_BASE_ID: "app-test",
     AIRTABLE_TOKEN: "pat-test",
@@ -66,8 +65,15 @@ test("LINE slip intake creates a pending Payment Proof visible in the admin revi
     if (url.startsWith("https://api.airtable.com/v0/")) {
       return airtableFetch(request);
     }
+    if (url.startsWith("https://account-test.r2.cloudflarestorage.com/")) {
+      r2Writes.push({ url, method: request.method, headers: request.headers });
+      return new Response(null, { status: 200 });
+    }
     if (url.startsWith("https://api-data.line.me/v2/bot/message/")) {
-      return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 });
+      return new Response(new Uint8Array([1, 2, 3, 4]), {
+        status: 200,
+        headers: { "content-type": "image/png", "content-length": "4" },
+      });
     }
     if (url === "https://ocr.example.test/extract") {
       return Response.json({
@@ -89,7 +95,7 @@ test("LINE slip intake creates a pending Payment Proof visible in the admin revi
     },
     env: {
       ...env,
-      PAYMENT_SLIP_OCR_URL: "https://ocr.example.test/extract",
+      LINE_SLIP_OCR_EXTRACTOR_URL: "https://ocr.example.test/extract",
     },
     fetchImpl,
   });
