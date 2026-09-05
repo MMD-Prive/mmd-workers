@@ -23,6 +23,7 @@ export async function createCredentialBoundAdminSession(request, actor, env = {}
   const payload = {
     version: SESSION_VERSION,
     id: clean(actor?.id) || "per",
+    role: clean(actor?.role) || "admin",
     auth_method: "credential",
     scope: SESSION_SCOPE,
     host,
@@ -52,7 +53,7 @@ export async function readCredentialBoundAdminActor(request, env = {}) {
     const actor = JSON.parse(new TextDecoder().decode(base64UrlDecode(payloadPart)));
     const now = Date.now();
     if (!actor || actor.version !== SESSION_VERSION || actor.scope !== SESSION_SCOPE) return null;
-    if (!actor.id || !actor.nonce || typeof actor.nonce !== "string") return null;
+    if (!actor.id || !actor.role || !actor.nonce || typeof actor.nonce !== "string") return null;
     if (!ALLOWED_ORIGINS.has(actor.host) || actor.host !== new URL(request.url).origin) return null;
     if (!Number.isFinite(actor.iat) || !Number.isFinite(actor.exp)) return null;
     if (actor.iat > now || actor.exp <= now || actor.exp - actor.iat > TTL_MS) return null;
