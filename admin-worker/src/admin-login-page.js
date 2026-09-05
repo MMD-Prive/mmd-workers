@@ -96,7 +96,8 @@ export function renderApprovedAdminLogin(
 function loginHeaders() {
   return {
     "content-type": "text/html; charset=utf-8",
-    "cache-control": "no-store, max-age=0",
+    "cache-control": "no-store, private, max-age=0",
+    "x-mmd-admin-origin": ADMIN_CANONICAL_ORIGIN,
     "content-security-policy": CSP,
     "x-mmd-admin-login": APPROVED_ADMIN_LOGIN_PAGE_ID,
     "x-mmd-login-ui": "browser-fetch-v5",
