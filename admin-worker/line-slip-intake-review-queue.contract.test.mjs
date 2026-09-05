@@ -101,7 +101,7 @@ test("LINE slip intake creates a pending Payment Proof visible in the admin revi
   });
 
   assert.equal(intake.ok, true);
-  assert.equal(intake.status, "pending");
+  assert.equal(intake.state, "pending");
   assert.equal(proofs.length, 1);
   assert.equal(r2Writes.length, 1);
 
@@ -117,7 +117,7 @@ test("LINE slip intake creates a pending Payment Proof visible in the admin revi
   assert.equal(queue.authority, "payments-worker");
   assert.equal(queue.guardrails.browser_can_mark_paid, false);
   assert.equal(queue.items.length, 1);
-  assert.equal(queue.items[0].proof_id, intake.proof_id);
+  assert.equal(queue.items[0].proof_id, intake.proofId);
   assert.equal(queue.items[0].payment_ref, "PAY-001");
   assert.equal(queue.items[0].evidence_amount_thb, 1500);
   assert.equal(queue.items[0].reviewable, true);
