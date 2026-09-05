@@ -71,6 +71,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node --check src/admin-payment-review-entry.js
+          node --check src/payment-review-runtime.js
           node --check src/admin-login-hero-worker.js
           node --check src/admin-login-page.js
           node --check src/dashboard-worker.js
@@ -228,6 +230,8 @@ jobs:
             "/v1/admin/mms/*",
             "/v1/admin/auth/me",
             "/v1/admin/membership/payment-entitlement/approve",
+            "/v1/admin/payments/review-queue*",
+            "/v1/admin/payments/review",
             "/v1/admin/kenji/models",
             "/v1/admin/kenji/models/draft",
             "/v1/admin/kenji/knowledge/meta",
@@ -317,6 +321,25 @@ jobs:
           grep -q '"error":"unauthorized"' "$body_file"
 
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            body_file="$(mktemp)"
+            http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body_file" -w "%{http_code}" \
+              "$origin/v1/admin/payments/review-queue?limit=1")"
+            cat "$body_file"
+            test "$http_code" = "401"
+            grep -q '"error":"unauthorized"' "$body_file"
+
+            body_file="$(mktemp)"
+            http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body_file" -w "%{http_code}" \
+              -X POST \
+              -H "Origin: $origin" \
+              -H "Content-Type: application/json" \
+              -H "Idempotency-Key: smoke-payment-review-no-auth" \
+              --data '{"decision":"reject","proof_id":"smoke","admin_reason":"unauthenticated route ownership smoke"}' \
+              "$origin/v1/admin/payments/review")"
+            cat "$body_file"
+            test "$http_code" = "401"
+            grep -q '"error":"unauthorized"' "$body_file"
+
             body_file="$(mktemp)"
             http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body_file" -w "%{http_code}" \
               "$origin/v1/model/private-flash/authorize")"
@@ -521,7 +544,7 @@ jobs:
         run: |
           set -euo pipefail
           deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ admin-worker LIVE + ROUTES + MMS BUILD VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- deployment_ref: \`${ADMIN_WORKER_VERSION_ID}\`\n- endpoint: \`${ADMIN_DASHBOARD_PRODUCTION_URL}\`\n- build marker: \`/internal/admin/mms x-mmd-admin-build == source_sha\`\n- authenticated MMS smoke: \`browser login session + MMS page + snapshot endpoint passed on apex and www\`\n- production auth guards: \`dashboard + Model Console + Kenji CEO Control + Payment Entitlement guards passed\`\n- route mutation: \`required exact admin-worker routes, including MMS, verified via Zone Workers Routes API\`\n\nThis receipt is written only after deployment, route sync, build-marker verification, authenticated MMS page render, snapshot read, and production auth-guard smoke all succeed."
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ admin-worker LIVE + ROUTES + MMS BUILD VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- deployment_ref: \`${ADMIN_WORKER_VERSION_ID}\`\n- endpoint: \`${ADMIN_DASHBOARD_PRODUCTION_URL}\`\n- build marker: \`/internal/admin/mms x-mmd-admin-build == source_sha\`\n- authenticated MMS smoke: \`browser login session + MMS page + snapshot endpoint passed on apex and www\`\n- production auth guards: \`dashboard + Model Console + Kenji CEO Control + Payment Entitlement + Payment Review guards passed\`\n- route mutation: \`required exact admin-worker routes, including MMS and Payment Review, verified via Zone Workers Routes API\`\n\nThis receipt is written only after deployment, route sync, build-marker verification, authenticated MMS page render, snapshot read, and production auth-guard smoke all succeed."
 
       - name: Require verified live deployment
         if: always()
