@@ -131,7 +131,7 @@ async function airtableListExact(env, table, field, value, limit, fields = []) {
   const query = new URLSearchParams({
     pageSize: String(limit),
     maxRecords: String(limit),
-    filterByFormula: \`{${field}}="${escapeFormula(value)}"\`,
+    filterByFormula: "{" + field + "}=\"" + escapeFormula(value) + "\"",
   });
   for (const name of fields) query.append("fields[]", name);
   const response = await fetch(`${AIRTABLE_API}/${config.base}/${table}?${query.toString()}`, { headers: { Authorization: `Bearer ${config.token}` } });
