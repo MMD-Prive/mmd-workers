@@ -93,26 +93,29 @@ test("Browser bridge posts Public Wish and keeps benefit linking separate", () =
   assert.match(source, /payload\?\.ok\s*===\s*true\s*&&\s*payload\?\.state\s*===\s*"completed"/);
   assert.match(source, /mmd:care-back:wish-completed/);
   assert.match(source, /benefitVerificationRequired:\s*true/);
+  assert.match(source, /next:\s*MEMBER_URL/);
   assert.doesNotMatch(source, /window\.location\.assign|LIFF_URL|getProfile\(/);
   assert.doesNotMatch(source, /innerHTML|insertAdjacentHTML|document\.write/);
   assert.doesNotThrow(() => new Function(source));
 });
 
-test("Existing Webflow Wish form is reused instead of always generating a second form", () => {
+test("Existing Webflow Wish form reuses the canonical My MMD handoff", () => {
   assert.match(source, /findExistingForm\(root\)/);
   assert.match(source, /root\.querySelector\("\[data-message\]"\)/);
   assert.match(source, /root\.querySelector\("\[data-consent\]"\)/);
   assert.match(source, /root\.querySelector\("\[data-submit\]"\)/);
   assert.match(source, /if \(existing\) bindExistingForm\(root, starts, existing\)/);
   assert.match(source, /#wish-flow/);
-  assert.match(source, /https:\/\/mmdbkk\.com\/member\/liff\?intent=status/);
+  assert.match(source, /const MEMBER_URL = "\/member\/my-mmd"/);
+  assert.doesNotMatch(source, /\/member\/liff\?intent=status/);
   assert.doesNotMatch(source, /miniapp\.line\.me\/2010862595-yT4DCEMc\?liff\.state/);
 });
 
-test("Customer copy says benefits are checked separately from the Wish", () => {
-  assert.match(source, /คูปอง วันสมาชิก และ Points จะตรวจแยกผ่าน LINE/);
-  assert.match(source, /Coupon, membership extension and Points are checked separately through LINE/);
-  assert.match(source, /优惠券、会员期限和积分将通过 LINE 另行核验/);
+test("Customer copy keeps Wish separate and continues verified benefits in My MMD", () => {
+  assert.match(source, /คูปอง วันสมาชิก และ Points ที่ตรวจได้จริง ดูต่อใน My MMD/);
+  assert.match(source, /Verified coupon, membership days and Points continue in My MMD/);
+  assert.match(source, /已核实的优惠券、会员天数和 Points 请在 My MMD 继续查看/);
+  assert.match(source, /benefitCta: "เปิด My MMD"/);
 });
 
 test("link token accepts only opaque public Wish tokens", () => {
@@ -139,20 +142,22 @@ test("CARE BACK main visual patch uses approved artwork and wider memory framing
   assert.match(visualCss, /object-position:\s*50%\s*46%/);
 });
 
-test("CARE BACK Per Voice mobile patch uses the real member shell and requested layout", async () => {
+test("CARE BACK Per Voice patch locks all campaign member CTAs to My MMD", async () => {
   const patchScript = await readFile(new URL("../main/care-back-per-voice-v2.js", import.meta.url), "utf8");
   const patchCss = await readFile(new URL("../main/care-back-per-voice-v2.css", import.meta.url), "utf8");
   const benefitsScript = await readFile(new URL("./personalized-benefits.js", import.meta.url), "utf8");
 
-  assert.match(patchScript, /https:\/\/mmdbkk\.com\/member\/liff\?intent=status/);
-  assert.match(benefitsScript, /https:\/\/mmdbkk\.com\/member\/liff\?intent=status/);
-  assert.doesNotMatch(patchScript, /liff\.state=.*member%2Fliff/);
-  assert.doesNotMatch(benefitsScript, /liff\.state=.*member%2Fliff/);
+  assert.match(patchScript, /const MEMBER_URL = "\/member\/my-mmd"/);
+  assert.match(benefitsScript, /const MEMBER_STATUS_URL = "\/member\/my-mmd"/);
+  assert.doesNotMatch(patchScript, /\/member\/liff\?intent=status|miniapp\.line\.me/);
+  assert.doesNotMatch(benefitsScript, /\/member\/liff\?intent=status|miniapp\.line\.me/);
   assert.match(patchScript, /\.mx-hero \[data-wish-link\]/);
   assert.match(patchScript, /\.mx-benefit-track/);
   assert.match(patchScript, /\.mx-final__hype/);
   assert.match(patchScript, /HYPE_Footer\.webp/);
-  assert.match(patchScript, /ยืนยันการเป็นสมาชิกเพื่อรับสิทธิพิเศษมากมาย/);
+  assert.match(patchScript, /เปิด My MMD เพื่อดูสิทธิ์ที่ตรวจได้จริง/);
+  assert.match(patchScript, /checkMain: "เปิด My MMD"/);
+  assert.match(benefitsScript, /MEMBER_STATUS_CTA = "เปิด My MMD"/);
   assert.doesNotMatch(patchScript, /fetch\(/);
   assert.doesNotThrow(() => new Function(patchScript));
 
