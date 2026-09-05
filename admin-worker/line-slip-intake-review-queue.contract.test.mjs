@@ -61,7 +61,11 @@ test("LINE slip intake creates a pending Payment Proof visible in the admin revi
   };
 
   const fetchImpl = async (input, init) => {
-    const url = String(input);
+    const request = input instanceof Request ? input : new Request(input, init);
+    const url = request.url;
+    if (url.startsWith("https://api.airtable.com/v0/")) {
+      return airtableFetch(request);
+    }
     if (url.startsWith("https://api-data.line.me/v2/bot/message/")) {
       return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 });
     }
