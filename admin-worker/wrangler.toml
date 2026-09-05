@@ -560,6 +560,9 @@ service = "events-worker"
 # ใช้สำหรับ CORS (browser calls)
 [vars]
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdmodel.lovable.app"
+# Exact cross-site origin used by the current Lovable Model Hub preview. Its model
+# session is partitioned (not a broadly third-party cookie) and only this origin opts in.
+MODEL_DASHBOARD_ORIGIN = "https://mmdmodel.lovable.app"
 
 # LINE MINI App environment IDs
 LINE_MINIAPP_DEV_CHANNEL_ID = "2010864852"

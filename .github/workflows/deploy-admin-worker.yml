@@ -82,6 +82,7 @@ jobs:
             admin-login-regression-guard.test.mjs \
             admin-login-session.test.mjs \
             mms-admin-session-bounce.test.mjs \
+            model-liff-cross-origin-session.test.mjs \
             kenji-model-access-rpc.test.mjs \
             payment-entitlement-approval.test.mjs \
             line-slip-intake-review-queue.contract.test.mjs \
