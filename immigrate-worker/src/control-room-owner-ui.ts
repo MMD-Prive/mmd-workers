@@ -8,6 +8,10 @@ import { renderOwnerControlRoomV3Page } from "./control-room-owner-ui-v3";
 const LEGACY_MMS_CONTROL_ROOM_ROUTE = "/male-massage/therapists/login";
 const CANONICAL_MMS_CONTROL_ROOM_ROUTE = "/internal/admin/mms";
 const HISTORICAL_SLIP_BACKFILL_ROUTE = "/internal/admin/payments/historical-backfill";
+const PREVIOUS_HERO_IMAGE =
+  "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a965447376525e3e562ba09_Boss%20and%20Kenji%20-%20Model%20Keyword%20Hero.webp";
+const CANONICAL_HERO_IMAGE =
+  "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a940b298194375628fd3f29_Boss%20Per%20input%20Kenji%20AI.webp";
 
 // MMD typography + desktop composition lock.
 // LINE is primary; Noto is the Thai / multilingual fallback.
@@ -39,7 +43,13 @@ const DEPLOY_COMPAT_MARKERS = `<span hidden data-control-room-deploy-compat="v3-
 function applyControlRoomCanonicalPatches(html: string): string {
   let canonicalHtml = html
     .split(LEGACY_MMS_CONTROL_ROOM_ROUTE)
-    .join(CANONICAL_MMS_CONTROL_ROOM_ROUTE);
+    .join(CANONICAL_MMS_CONTROL_ROOM_ROUTE)
+    .split(PREVIOUS_HERO_IMAGE)
+    .join(CANONICAL_HERO_IMAGE)
+    .split("Telegram / Drive · Observed only")
+    .join("Telegram alerts · Partial / Drive observed")
+    .split("<small>Observed State</small><b>Telegram / Drive</b><span>เทียบ expected state เท่านั้น ไม่สร้างสิทธิ์</span>")
+    .join("<small>Partial Alerts</small><b>Telegram Alerts / Drive</b><span>Telegram มี sender เฉพาะบาง worker แล้ว · Drive ยังเป็น observed state เท่านั้น</span>");
 
   if (!canonicalHtml.includes(HISTORICAL_SLIP_BACKFILL_ROUTE)) {
     const anchor = `</main>`;
@@ -95,6 +105,7 @@ export function renderOwnerControlRoomPage(): Response {
   headers.set("x-mmd-control-room-cta-audit", "operator-triggered-head-check");
   headers.set("x-mmd-control-room-typography", "line-seed-noto");
   headers.set("x-mmd-control-room-desktop-gutter", "balanced-v1");
+  headers.set("x-mmd-control-room-telegram-status", "partial-worker-alerts-no-unified-router");
 
   return new Response(source.body.pipeThrough(rewrite), {
     status: source.status,
