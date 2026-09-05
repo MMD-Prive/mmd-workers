@@ -410,8 +410,11 @@ jobs:
               --data-urlencode "credential=$ADMIN_MMS_SMOKE_CREDENTIAL" \
               --data-urlencode "next=/internal/admin/mms" \
               "$origin/internal/admin/login/session")"
-            test "$login_code" = "303"
-            grep -qi '^location: /internal/admin/mms' "$login_headers"
+            # Credential-bound admin login returns JSON and sets the HttpOnly session cookie.
+            # It no longer uses a redirect response; the browser follows `next` after reading ok:true.
+            test "$login_code" = "200"
+            grep -qi '^content-type: application/json' "$login_headers"
+            grep -q '"ok":true' "$login_body"
             grep -q 'mmd_admin_gate_v1' "$cookie_jar"
 
             page_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
