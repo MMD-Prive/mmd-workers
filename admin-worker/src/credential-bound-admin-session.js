@@ -2,9 +2,12 @@ const COOKIE_NAME = "mmd_admin_gate_v1";
 const SESSION_VERSION = 2;
 const SESSION_SCOPE = "internal_admin";
 const TTL_MS = 8 * 60 * 60 * 1000;
-const ALLOWED_ORIGINS = new Set([
+const PROD_MMD_ORIGINS = new Set([
   "https://mmdbkk.com",
   "https://www.mmdbkk.com",
+]);
+const ALLOWED_ORIGINS = new Set([
+  ...PROD_MMD_ORIGINS,
   "https://mmdprive.webflow.io",
   "https://mmdprive.com",
 ]);
@@ -16,8 +19,9 @@ export function getCredentialBoundAdminLoginCredential(env = {}) {
 }
 
 export async function createCredentialBoundAdminSession(request, actor, env = {}) {
-  const host = new URL(request.url).origin;
-  if (!ALLOWED_ORIGINS.has(host)) throw new Error("Admin session host is not allowed");
+  const origin = new URL(request.url).origin;
+  if (!ALLOWED_ORIGINS.has(origin)) throw new Error("Admin session host is not allowed");
+  const host = sessionHost(origin);
 
   const now = Date.now();
   const payload = {
@@ -54,13 +58,17 @@ export async function readCredentialBoundAdminActor(request, env = {}) {
     const now = Date.now();
     if (!actor || actor.version !== SESSION_VERSION || actor.scope !== SESSION_SCOPE) return null;
     if (!actor.id || !actor.role || !actor.nonce || typeof actor.nonce !== "string") return null;
-    if (!ALLOWED_ORIGINS.has(actor.host) || actor.host !== new URL(request.url).origin) return null;
+    if (!ALLOWED_ORIGINS.has(actor.host) || actor.host !== sessionHost(new URL(request.url).origin)) return null;
     if (!Number.isFinite(actor.iat) || !Number.isFinite(actor.exp)) return null;
     if (actor.iat > now || actor.exp <= now || actor.exp - actor.iat > TTL_MS) return null;
     return actor;
   } catch {
     return null;
   }
+}
+
+function sessionHost(origin) {
+  return PROD_MMD_ORIGINS.has(origin) ? "https://mmdbkk.com" : origin;
 }
 
 function resolveSessionSecret(env = {}) {

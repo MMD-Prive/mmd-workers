@@ -28,19 +28,31 @@ test("credential login issues an admin actor usable by the payment review guard"
     {}
   );
 
-  assert.equal(login.status, 303);
-  const cookie = (login.headers.get("set-cookie") || "").split(";", 1)[0];
+  assert.equal(login.status, 200);
+  const setCookie = login.headers.get("set-cookie") || "";
+  const cookie = setCookie.split(";", 1)[0];
   assert.match(cookie, /^mmd_admin_gate_v1=/);
+  assert.match(setCookie, /Domain=mmdbkk\.com/);
 
-  const actor = await readCredentialBoundAdminActor(
-    new Request("https://www.mmdbkk.com/v1/admin/payments/review-queue", {
+  for (const origin of ["https://mmdbkk.com", "https://www.mmdbkk.com"]) {
+    const actor = await readCredentialBoundAdminActor(
+      new Request(`${origin}/v1/admin/payments/review-queue`, {
+        headers: { Cookie: cookie },
+      }),
+      env
+    );
+
+    assert.deepEqual(
+      { id: actor?.id, role: actor?.role },
+      { id: "per", role: "admin" }
+    );
+  }
+
+  const nonProductionActor = await readCredentialBoundAdminActor(
+    new Request("https://mmdprive.webflow.io/v1/admin/payments/review-queue", {
       headers: { Cookie: cookie },
     }),
     env
   );
-
-  assert.deepEqual(
-    { id: actor?.id, role: actor?.role },
-    { id: "per", role: "admin" }
-  );
+  assert.equal(nonProductionActor, null);
 });
