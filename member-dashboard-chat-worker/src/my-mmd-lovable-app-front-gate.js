@@ -6,14 +6,10 @@ const MY_MMD_UI_PREFIX = "/my-mmd";
 const MY_MMD_ASSET_PREFIX = "/my-mmd-assets/";
 const LEGACY_MY_MMD_UI_PREFIX = "/member/my-mmd";
 const MY_MMD_PRESENTATION_ORIGIN = "https://my-mmd-member-profile.lovable.app";
+const MY_MMD_SINGLE_FILE_PATH = "/my-mmd-shell.html";
+const MY_MMD_SINGLE_FILE_MARKER = 'data-mmd-shell="lovable-single-file-v1"';
+const MY_MMD_PRESENTATION_MODE = "single-file-incident-rollback-20260905";
 const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
-const MEMBER_LIFF_ID = "2010862595-yT4DCEMc";
-const MY_MMD_LINE_VERIFY_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=status`;
-const BROKEN_MY_MMD_LINE_VERIFY_URLS = [
-  `https://miniapp.line.me/${MEMBER_LIFF_ID}?liff.state=%2Fmember%2Fliff%3Fintent%3Dstatus`,
-  `https://miniapp.line.me/${MEMBER_LIFF_ID}/?liff.state=%2Fmember%2Fliff%3Fintent%3Dstatus`,
-];
-const MY_MMD_ROUTE_SUFFIXES = ["membership", "points", "coupons", "history", "profile"];
 
 function normalizedPath(request) {
   return new URL(request.url).pathname.toLowerCase().replace(/\/{2,}/g, "/");
@@ -59,65 +55,7 @@ function presentationRequestHeaders(request) {
   return headers;
 }
 
-function presentationUrlForPage(request) {
-  const source = new URL(request.url);
-  const suffix = source.pathname.slice(MY_MMD_UI_PREFIX.length);
-  const upstream = new URL(MY_MMD_PRESENTATION_ORIGIN);
-  upstream.pathname = suffix || "/";
-  upstream.search = source.search;
-  return upstream;
-}
-
-function presentationUrlForAsset(request) {
-  const source = new URL(request.url);
-  const suffix = source.pathname.slice(MY_MMD_ASSET_PREFIX.length);
-  const upstream = new URL(MY_MMD_PRESENTATION_ORIGIN);
-  upstream.pathname = suffix === "favicon.ico" ? "/favicon.ico" : `/assets/${suffix}`;
-  upstream.search = source.search;
-  return upstream;
-}
-
-function rewriteMyMmdHtml(html) {
-  let output = String(html || "");
-
-  // Lovable owns presentation only. The customer shell never receives Lovable
-  // editor/analytics overlays and never receives MMD session credentials.
-  output = output.replace(/<aside\b[^>]*id=["']lovable-badge["'][\s\S]*?<\/aside>/gi, "");
-  output = output.replace(/<script\b[^>]*src=["']\/~flock\.js["'][\s\S]*?<\/script>/gi, "");
-
-  // Keep the entire module/style graph same-origin through the Worker.
-  output = output.replaceAll("/assets/", MY_MMD_ASSET_PREFIX);
-  output = output.replaceAll("/favicon.ico", `${MY_MMD_ASSET_PREFIX}favicon.ico`);
-
-  // SSR may render root links before hydration. Mount them under the canonical app base.
-  output = output.replace(/href=["']\/["']/g, `href="${MY_MMD_UI_PREFIX}/"`);
-  for (const suffix of MY_MMD_ROUTE_SUFFIXES) {
-    output = output.replace(
-      new RegExp(`href=["']\\/${suffix}(?:\\/)?["']`, "g"),
-      `href="${MY_MMD_UI_PREFIX}/${suffix}"`,
-    );
-  }
-
-  // Defense in depth during migration from the former /member/my-mmd base.
-  output = output.replaceAll("/member/my-mmd-assets/", MY_MMD_ASSET_PREFIX);
-  output = output.replaceAll("/member/my-mmd", MY_MMD_UI_PREFIX);
-  return output;
-}
-
-function rewriteMyMmdJavascript(source) {
-  let output = String(source || "")
-    .replace(/(["'`])\/assets\//g, `$1${MY_MMD_ASSET_PREFIX}`)
-    .replace(/(["'`])assets\//g, `$1my-mmd-assets/`)
-    .replaceAll("/member/my-mmd-assets/", MY_MMD_ASSET_PREFIX)
-    .replaceAll("/member/my-mmd", MY_MMD_UI_PREFIX);
-
-  for (const broken of BROKEN_MY_MMD_LINE_VERIFY_URLS) {
-    output = output.replaceAll(broken, MY_MMD_LINE_VERIFY_URL);
-  }
-  return output;
-}
-
-function presentationResponseHeaders(upstreamHeaders, { html = false, rewritten = false } = {}) {
+function presentationResponseHeaders(upstreamHeaders = new Headers(), { html = false, rewritten = false } = {}) {
   const headers = new Headers(upstreamHeaders);
   for (const name of ["content-length", "set-cookie", "reporting-endpoints", "report-to", "nel"]) headers.delete(name);
   if (rewritten) {
@@ -125,15 +63,27 @@ function presentationResponseHeaders(upstreamHeaders, { html = false, rewritten 
   }
   headers.set("x-mmd-worker", WORKER_NAME);
   headers.set("x-mmd-route-owner", WORKER_NAME);
-  headers.set("x-mmd-ui-source", "lovable-app-proxy");
+  headers.set("x-mmd-ui-source", "lovable-single-file-incident-rollback");
+  headers.set("x-mmd-presentation-mode", MY_MMD_PRESENTATION_MODE);
   headers.set("x-mmd-presentation-owner", "lovable");
   headers.set("x-mmd-behavior-owner", "mmd-workers");
   headers.set("x-robots-tag", "noindex, nofollow");
-  if (html) headers.set("cache-control", "no-store");
+  if (html) headers.set("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
   return headers;
 }
 
-async function proxyLovableApp(request, { asset = false } = {}) {
+function recoveryHtml() {
+  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>My MMD</title><style>html,body{margin:0;min-height:100%;background:#fbf9f5;color:#2b2723;font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif}main{min-height:100svh;display:grid;place-items:center;padding:24px;box-sizing:border-box}.card{width:min(100%,420px);padding:24px;border:1px solid #ebe3d7;border-radius:24px;background:#fff;box-sizing:border-box}.eyebrow{font-size:11px;letter-spacing:.16em;color:#a67f3c}.title{font-size:21px;font-weight:650;margin:10px 0 8px}.copy{font-size:14px;line-height:1.7;color:#7a7168}.btn{min-height:48px;margin-top:20px;border-radius:999px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:14px;background:#2b2723;color:#f6f1e8}</style></head><body><main><section class="card"><div class="eyebrow">MMD PRIVÉ · MY MMD</div><div class="title">My MMD ยังเปิดไม่สำเร็จครับ</div><div class="copy">ระบบไม่แสดงข้อมูลสมาชิกที่ยังตรวจสอบไม่ได้ กรุณาลองเปิดอีกครั้ง ข้อมูลสมาชิกและสิทธิ์ยังคงอยู่ที่ระบบหลังบ้านตามเดิมครับ</div><a class="btn" href="/my-mmd/">ลองอีกครั้ง</a></section></main></body></html>`;
+}
+
+function rewriteSingleFileShell(html) {
+  return String(html || "")
+    .replaceAll("/member/my-mmd", MY_MMD_UI_PREFIX)
+    .replaceAll('href="/favicon.ico"', `href="${MY_MMD_ASSET_PREFIX}favicon.ico"`)
+    .replaceAll("href='/favicon.ico'", `href='${MY_MMD_ASSET_PREFIX}favicon.ico'`);
+}
+
+async function proxySingleFileShell(request) {
   if (!new Set(["GET", "HEAD"]).has(request.method)) {
     return new Response("Method Not Allowed", {
       status: 405,
@@ -146,7 +96,7 @@ async function proxyLovableApp(request, { asset = false } = {}) {
     });
   }
 
-  const upstreamUrl = asset ? presentationUrlForAsset(request) : presentationUrlForPage(request);
+  const upstreamUrl = new URL(MY_MMD_SINGLE_FILE_PATH, MY_MMD_PRESENTATION_ORIGIN);
   let upstream;
   try {
     upstream = await globalThis.fetch(new Request(upstreamUrl, {
@@ -155,43 +105,54 @@ async function proxyLovableApp(request, { asset = false } = {}) {
       redirect: "follow",
     }));
   } catch (_) {
-    return new Response("My MMD is temporarily unavailable.", {
+    return new Response(request.method === "HEAD" ? null : recoveryHtml(), {
       status: 502,
-      headers: {
-        "content-type": "text/plain; charset=utf-8",
-        "cache-control": "no-store",
-        "x-mmd-worker": WORKER_NAME,
-        "x-mmd-route-owner": WORKER_NAME,
-      },
+      headers: presentationResponseHeaders(new Headers({ "content-type": "text/html; charset=utf-8" }), { html: true }),
     });
   }
 
   const contentType = String(upstream.headers.get("content-type") || "").toLowerCase();
-  const isHtml = !asset && contentType.includes("text/html");
-  const isJavascript = asset && (contentType.includes("javascript") || upstreamUrl.pathname.endsWith(".js"));
-  const headers = presentationResponseHeaders(upstream.headers, {
-    html: isHtml,
-    rewritten: isHtml || isJavascript,
-  });
+  const headers = presentationResponseHeaders(upstream.headers, { html: true, rewritten: true });
+  headers.set("content-type", "text/html; charset=utf-8");
 
-  if (request.method === "HEAD") {
-    return new Response(null, { status: upstream.status, statusText: upstream.statusText, headers });
+  if (!upstream.ok || !contentType.includes("text/html")) {
+    return new Response(request.method === "HEAD" ? null : recoveryHtml(), { status: 502, headers });
   }
-  if (isHtml) {
-    return new Response(rewriteMyMmdHtml(await upstream.text()), {
-      status: upstream.status,
-      statusText: upstream.statusText,
-      headers,
-    });
+  if (request.method === "HEAD") return new Response(null, { status: 200, headers });
+
+  const rawHtml = await upstream.text();
+  if (!rawHtml.includes(MY_MMD_SINGLE_FILE_MARKER)) {
+    return new Response(recoveryHtml(), { status: 502, headers });
   }
-  if (isJavascript) {
-    return new Response(rewriteMyMmdJavascript(await upstream.text()), {
-      status: upstream.status,
-      statusText: upstream.statusText,
-      headers,
-    });
+
+  return new Response(rewriteSingleFileShell(rawHtml), { status: 200, headers });
+}
+
+async function proxyLovableAsset(request) {
+  if (!new Set(["GET", "HEAD"]).has(request.method)) {
+    return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, HEAD" } });
   }
-  return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers });
+  const source = new URL(request.url);
+  const suffix = source.pathname.slice(MY_MMD_ASSET_PREFIX.length);
+  const upstreamUrl = new URL(MY_MMD_PRESENTATION_ORIGIN);
+  upstreamUrl.pathname = suffix === "favicon.ico" ? "/favicon.ico" : `/assets/${suffix}`;
+  upstreamUrl.search = source.search;
+  let upstream;
+  try {
+    upstream = await globalThis.fetch(new Request(upstreamUrl, {
+      method: request.method,
+      headers: presentationRequestHeaders(request),
+      redirect: "follow",
+    }));
+  } catch (_) {
+    return new Response("My MMD asset unavailable", { status: 502, headers: { "cache-control": "no-store" } });
+  }
+  const headers = presentationResponseHeaders(upstream.headers);
+  return new Response(request.method === "HEAD" ? null : upstream.body, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers,
+  });
 }
 
 function isStatusLiffShellRequest(request) {
@@ -228,11 +189,11 @@ export default {
     const path = normalizedPath(request);
 
     if (isLegacyMyMmdUiPath(path)) return redirectLegacyMyMmd(request);
-    if (isMyMmdAssetPath(path)) return proxyLovableApp(request, { asset: true });
-    if (isMyMmdUiPath(path)) return proxyLovableApp(request);
+    if (isMyMmdAssetPath(path)) return proxyLovableAsset(request);
+    if (isMyMmdUiPath(path)) return proxySingleFileShell(request);
 
-    // All behavior remains on the existing Worker stack: LIFF/session, points,
-    // membership, entitlement, coupons, history, CARE BACK and /api/member/app/*.
+    // Identity, session, points, membership, entitlement, coupons, history,
+    // CARE BACK and every authoritative calculation remain on MMD Workers.
     const response = await currentWorker.fetch(request, env, ctx);
     return rewriteStatusReturnTarget(request, response);
   },
