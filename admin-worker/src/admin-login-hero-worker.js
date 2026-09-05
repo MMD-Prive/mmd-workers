@@ -173,7 +173,10 @@ export default {
     }
 
     if (isKenjiKnowledgeRequest(path, method)) {
-      return handleKenjiKnowledgeRequest(request, env);
+      const knowledgeOptions = strictGate.actor
+        ? { actor: strictGate.actor, isAuthed: () => true }
+        : {};
+      return handleKenjiKnowledgeRequest(request, env, knowledgeOptions);
     }
 
     if (isKenjiPublicKnowledgeRequest(path, method)) {
