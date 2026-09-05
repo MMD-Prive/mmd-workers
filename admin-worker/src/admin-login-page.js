@@ -45,7 +45,7 @@ export function renderApprovedAdminLogin(
   <meta name="robots" content="noindex,nofollow">
   <meta name="theme-color" content="#050403">
   <script>(()=>{if(location.protocol==='https:'&&location.hostname==='www.mmdbkk.com'){const path=(location.pathname.replace(/\\/+$/,'')||'/');if(path==='/internal/admin/login'){const canonical=new URL(location.href);canonical.hostname='mmdbkk.com';location.replace(canonical.toString());}}})();</script>
-  <title>MMD Privé · Internal Admin</title>
+  <title>MMD Privé · Internal Login</title>
   <link rel="canonical" href="${ADMIN_CANONICAL_ORIGIN}/internal/admin/login">
   <link rel="icon" type="image/webp" href="${APPROVED_ADMIN_LOGIN_FAVICON}">
   <link rel="apple-touch-icon" href="${APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON}">
@@ -100,6 +100,7 @@ export function renderApprovedAdminLogin(
   </style>
 </head>
 <body>
+  <span class="mmd-login21" data-mmd-login21 hidden></span>
   <section class="mmd-login" data-mmd-login data-mmd-page="${APPROVED_ADMIN_LOGIN_PAGE_ID}">
     <span class="mmd-login21__visual" hidden aria-hidden="true"><img src="${APPROVED_ADMIN_LOGIN_HERO}" alt=""></span>
     <main class="mmd-login__shell">
@@ -119,7 +120,7 @@ export function renderApprovedAdminLogin(
           <form method="post" action="${ADMIN_LOGIN_SESSION_PATH}" id="adminLoginForm" autocomplete="off">
             <input id="adminNext" type="hidden" name="next" value="${escapeAttribute(next)}">
             <label for="adminCredential">Access Code
-              <span class="mmd-login__input"><input id="adminCredential" type="text" required readonly name="credential" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" aria-autocomplete="none" data-mask="true" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" data-form-type="other"><button class="mmd-login__toggle" type="button" aria-controls="adminCredential" aria-pressed="false">SHOW</button></span>
+              <span class="mmd-login__input"><input id="adminCredential" type="text" required readonly autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" aria-autocomplete="none" data-mask="true" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" data-form-type="other"><button class="mmd-login__toggle" type="button" aria-controls="adminCredential" aria-pressed="false">SHOW</button></span>
             </label>
             <p class="mmd-login__message${error ? " is-error" : ""}" role="${error ? "alert" : "status"}">${error ? escapeHtml(error) : `Next: ${escapeHtml(next)}`}</p>
             <button class="mmd-login__go" type="submit">Enter Admin</button>
