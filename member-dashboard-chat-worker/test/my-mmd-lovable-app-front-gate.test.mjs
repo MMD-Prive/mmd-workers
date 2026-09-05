@@ -10,7 +10,7 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-test("canonical /my-mmd app proxies the Lovable React presentation without forwarding member credentials", async () => {
+test("canonical /my-mmd serves the self-contained Lovable incident shell without forwarding member credentials", async () => {
   const calls = [];
   globalThis.fetch = async (request) => {
     calls.push({
@@ -18,14 +18,11 @@ test("canonical /my-mmd app proxies the Lovable React presentation without forwa
       cookie: request.headers.get("cookie"),
       authorization: request.headers.get("authorization"),
     });
-    return new Response(`<!doctype html><html><head>
-      <link rel="stylesheet" href="/assets/app.css">
-      <link rel="icon" href="/favicon.ico">
-      </head><body>
-      <a href="/">Home</a><a href="/points">Points</a>
-      <aside id="lovable-badge">Edit with Lovable</aside>
-      <script src="/~flock.js"></script>
-      <script type="module" src="/assets/app.js"></script>
+    return new Response(`<!doctype html>
+      <html lang="th" data-mmd-shell="lovable-single-file-v1" data-mmd-boot-state="static">
+      <head><link rel="icon" href="/favicon.ico"></head>
+      <body><main>กำลังเปิด My MMD</main>
+      <script>var p=location.pathname; var i=p.indexOf("/member/my-mmd"); var base="/member/my-mmd";</script>
       </body></html>`, {
       headers: {
         "content-type": "text/html; charset=utf-8",
@@ -44,39 +41,37 @@ test("canonical /my-mmd app proxies the Lovable React presentation without forwa
   const html = await response.text();
 
   assert.deepEqual(calls, [{
-    url: "https://my-mmd-member-profile.lovable.app/points?lang=th",
+    url: "https://my-mmd-member-profile.lovable.app/my-mmd-shell.html",
     cookie: null,
     authorization: null,
   }]);
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("set-cookie"), null);
   assert.equal(response.headers.get("x-mmd-route-owner"), "member-dashboard-chat-worker");
-  assert.equal(response.headers.get("x-mmd-ui-source"), "lovable-app-proxy");
+  assert.equal(response.headers.get("x-mmd-ui-source"), "lovable-single-file-incident-rollback");
+  assert.equal(response.headers.get("x-mmd-presentation-mode"), "single-file-incident-rollback-20260905");
   assert.equal(response.headers.get("x-mmd-presentation-owner"), "lovable");
   assert.equal(response.headers.get("x-mmd-behavior-owner"), "mmd-workers");
-  assert.match(html, /\/my-mmd-assets\/app\.css/);
-  assert.match(html, /\/my-mmd-assets\/app\.js/);
+  assert.match(html, /data-mmd-shell="lovable-single-file-v1"/);
+  assert.match(html, /data-mmd-boot-state="static"/);
+  assert.match(html, /กำลังเปิด My MMD/);
   assert.match(html, /\/my-mmd-assets\/favicon\.ico/);
-  assert.match(html, /href="\/my-mmd\/"/);
-  assert.match(html, /href="\/my-mmd\/points"/);
-  assert.doesNotMatch(html, /lovable-badge|Edit with Lovable|~flock\.js/);
-  assert.doesNotMatch(html, /data-mmd-shell="lovable-single-file-v1"/);
+  assert.match(html, /\/my-mmd/);
+  assert.doesNotMatch(html, /\/member\/my-mmd/);
 });
 
-test("canonical My MMD asset graph stays same-origin and stale old base paths are migrated", async () => {
-  globalThis.fetch = async (request) => new Response(
-    `const a="/assets/chunk.js"; const b="assets/local.js"; const old="/member/my-mmd/points";`,
-    { headers: { "content-type": "text/javascript; charset=utf-8", "x-upstream-url": request.url } },
-  );
+test("missing or invalid Lovable incident shell returns a visible fail-closed recovery page instead of a blank response", async () => {
+  globalThis.fetch = async () => new Response("<!doctype html><html><body>wrong artifact</body></html>", {
+    headers: { "content-type": "text/html; charset=utf-8" },
+  });
 
-  const response = await worker.fetch(new Request("https://mmdbkk.com/my-mmd-assets/app.js"), {});
-  const javascript = await response.text();
+  const response = await worker.fetch(new Request("https://mmdbkk.com/my-mmd/"), {});
+  const html = await response.text();
 
-  assert.equal(response.status, 200);
-  assert.match(javascript, /"\/my-mmd-assets\/chunk\.js"/);
-  assert.match(javascript, /"my-mmd-assets\/local\.js"/);
-  assert.match(javascript, /"\/my-mmd\/points"/);
-  assert.doesNotMatch(javascript, /\/member\/my-mmd/);
+  assert.equal(response.status, 502);
+  assert.match(html, /My MMD ยังเปิดไม่สำเร็จครับ/);
+  assert.match(html, /href="\/my-mmd\/"/);
+  assert.ok(html.length > 300);
 });
 
 test("legacy /member/my-mmd route is compatibility-only and redirects to /my-mmd preserving suffix and query", async () => {
@@ -94,7 +89,7 @@ test("legacy /member/my-mmd route is compatibility-only and redirects to /my-mmd
   assert.equal(calls, 0);
 });
 
-test("My MMD app remains read-only while behavior stays on /api/member/app/*", async () => {
+test("My MMD presentation remains read-only while behavior stays on /api/member/app/*", async () => {
   const appPost = await worker.fetch(new Request("https://mmdbkk.com/my-mmd/", { method: "POST" }), {});
   assert.equal(appPost.status, 405);
   assert.equal(appPost.headers.get("allow"), "GET, HEAD");
@@ -138,7 +133,7 @@ test("status LIFF bridge returns to /my-mmd/ after the existing same-site verifi
   assert.match(html, /payload && payload\.ok === true/);
 });
 
-test("wrangler locks the canonical Lovable app routes and Worker BFF routes on apex and www", async () => {
+test("wrangler keeps canonical My MMD, BFF and legacy redirect routes Worker-owned", async () => {
   const wrangler = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.match(wrangler, /^main = "src\/my-mmd-lovable-app-front-gate\.js"$/m);
   for (const route of [
