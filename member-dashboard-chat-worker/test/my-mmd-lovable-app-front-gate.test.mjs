@@ -93,6 +93,21 @@ test("HYPE loader asset is republished same-origin from the locked Webflow asset
   assert.deepEqual(calls, ["https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a36fa9c99c7e95731eeca5d_HYPE.webp"]);
 });
 
+test("LINE status GIF is republished same-origin from the locked Webflow asset", async () => {
+  const calls = [];
+  globalThis.fetch = async (request) => {
+    calls.push(request.url);
+    return new Response("gif-bytes", { headers: { "content-type": "image/gif" } });
+  };
+
+  const response = await worker.fetch(new Request("https://mmdbkk.com/my-mmd-assets/hype-loading.gif"), {});
+  const body = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(body, "gif-bytes");
+  assert.deepEqual(calls, ["https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9be30ba79b9386ecdbe9ab_HYPE_NOW_LOADING_10FRAMES.gif"]);
+});
+
 test("legacy /member/my-mmd route is compatibility-only and redirects to /my-mmd preserving suffix and query", async () => {
   let calls = 0;
   globalThis.fetch = async () => {
@@ -131,7 +146,7 @@ test("My MMD presentation remains read-only while behavior stays on /api/member/
   assert.equal(api.headers.get("x-mmd-upstream-service"), "member-pages-worker");
 });
 
-test("status LIFF is an auth bridge only, shows HYPE, then returns to the single /my-mmd/ surface", async () => {
+test("status LIFF is an auth bridge only, shows black HYPE GIF, then returns to the single /my-mmd/ surface", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
@@ -150,8 +165,9 @@ test("status LIFF is an auth bridge only, shows HYPE, then returns to the single
   assert.match(html, /const target = "\/my-mmd\/"/);
   assert.doesNotMatch(html, /const target = "\/member\/my-mmd"/);
   assert.match(html, /id="mmd-status-bridge-veil"/);
+  assert.match(html, /html,body\{background:#000!important\}/);
   assert.match(html, /กำลังยืนยันสมาชิก…/);
-  assert.match(html, /\/my-mmd-assets\/hype\.webp/);
+  assert.match(html, /\/my-mmd-assets\/hype-loading\.gif/);
   assert.match(html, /\/member\/api\/liff\/profile/);
   assert.match(html, /payload && payload\.ok === true/);
 });

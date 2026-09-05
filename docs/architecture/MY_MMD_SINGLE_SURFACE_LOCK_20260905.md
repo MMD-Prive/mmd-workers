@@ -31,19 +31,33 @@ Explicit specialized intents such as `promo`, `signup`, `renew`, `hall`, or camp
 
 ## HYPE loading lock
 
-Use the official HYPE asset supplied by Per:
+My MMD boot/recovery keeps the official static HYPE asset:
 
 `https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a36fa9c99c7e95731eeca5d_HYPE.webp`
 
 The Worker republishes it same-origin as `/my-mmd-assets/hype.webp`.
 
-HYPE is the visible loading mark for:
+LINE `intent=status` verification uses the dedicated 10-frame HYPE loading GIF supplied by Per:
+
+`https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9be30ba79b9386ecdbe9ab_HYPE_NOW_LOADING_10FRAMES.gif`
+
+The Worker republishes the GIF same-origin as `/my-mmd-assets/hype-loading.gif`.
+
+The LINE status bridge visual is locked to:
+
+- full black background;
+- centered HYPE loading GIF;
+- the GIF's own looping loading motion (do not rotate the entire GIF container because its text must stay upright);
+- small gold `MMD PRIVÉ · MY MMD` label and concise verification copy only;
+- no second member dashboard/navigation underneath.
+
+HYPE remains the visible loading mark for:
 
 - LINE status verification bridge;
 - My MMD boot/loading state;
 - bounded fail-closed recovery page.
 
-Normal loading may rotate HYPE slowly. `prefers-reduced-motion` must stop rotation. Error/recovery may show HYPE without motion.
+For the static My MMD HYPE mark, normal loading may rotate slowly and `prefers-reduced-motion` must stop CSS motion. Error/recovery may show HYPE without motion.
 
 ## Ownership
 
