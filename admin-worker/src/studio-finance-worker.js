@@ -145,7 +145,7 @@ function sessionIdFromPayload(payload) {
 function isForbiddenModelFinanceKey(key) {
   const normalized = normalizeKey(key);
   if (["amount", "amount_thb", "total", "total_thb", "expected_payout_thb"].includes(normalized)) return true;
-  return /(?:^|_)(?:payment_ref|provider(?:_|$)|slip(?:_|$)|bank(?:_|$)|margin(?:_|$)|commission(?:_|$)|settlement(?:_|$)|payout_evidence(?:_|$)|customer_(?:total|amount|charge|spend)|balance_due|remaining_balance|quoted_price|agreed_final_price|deposit(?:_|$)|pay_model(?:_|$)|model_payout_amount(?:_|$))/.test(normalized);
+  return /(?:^|_)(?:payment_ref|provider(?:_|$)|slip(?:_|$)|bank(?:_|$)|margin(?:_|$)|commission(?:_|$)|settlement(?:_|$)|payout_evidence(?:_|$)|customer_(?:total|amount|charge|spend)|amount_due|balance_due|remaining_balance|quoted_price|agreed_final_price|deposit(?:_|$)|pay_model(?:_|$)|model_payout_amount(?:_|$))/.test(normalized);
 }
 
 function normalizePayoutStatus(value) {
