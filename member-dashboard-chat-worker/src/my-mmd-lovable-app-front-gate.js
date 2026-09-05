@@ -260,8 +260,8 @@ html,body{background:#000!important}
 #mmd-status-bridge-veil .k{margin-top:10px;color:#caa45e;font-size:10px;font-weight:800;letter-spacing:.18em}
 #mmd-status-bridge-veil .t{margin-top:2px;color:#f6f1e8;font-size:16px;font-weight:650}
 body #message{display:none!important}
-body:has(#actions:not(:empty)) #mmd-status-bridge-veil .t{display:none!important}
-body:has(#actions:not(:empty)) #message{display:block!important;position:fixed!important;z-index:2147483002!important;left:24px!important;right:24px!important;top:calc(50% + 154px)!important;margin:0!important;color:#d8d0c5!important;font-size:13px!important;line-height:1.55!important;text-align:center!important}
+body.mmd-status-recovery #mmd-status-bridge-veil .t{display:none!important}
+body.mmd-status-recovery #message{display:block!important;position:fixed!important;z-index:2147483002!important;left:24px!important;right:24px!important;top:calc(50% + 154px)!important;margin:0!important;color:#d8d0c5!important;font-size:13px!important;line-height:1.55!important;text-align:center!important}
 body #actions{position:fixed!important;z-index:2147483003!important;left:50%!important;top:calc(50% + 216px)!important;transform:translateX(-50%)!important;width:min(calc(100% - 48px),360px)!important;margin:0!important;display:grid!important;gap:10px!important}
 body #actions:empty{display:none!important}
 body #actions button{min-height:46px!important;border:1px solid #8f743e!important;border-radius:999px!important;background:#111!important;color:#f6f1e8!important;text-align:center!important;padding:12px 16px!important}
@@ -272,13 +272,32 @@ function statusBridgeMarkup() {
   return `<div id="mmd-status-bridge-veil" role="status" aria-live="polite" aria-label="กำลังยืนยันสมาชิก"><img src="${STATUS_HYPE_LOADING_PATH}" alt="HYPE loading"><div class="k">MMD PRIVÉ · MY MMD</div><div class="t">กำลังยืนยันสมาชิก…</div></div>`;
 }
 
+function statusBridgeRecoveryObserver(nonce) {
+  return `<script nonce="${nonce}" id="mmd-status-bridge-recovery-observer">
+(() => {
+  const body = document.body;
+  const actions = document.getElementById("actions");
+  if (!body || !actions) return;
+  const syncRecoveryState = () => {
+    body.classList.toggle("mmd-status-recovery", actions.childElementCount > 0);
+  };
+  syncRecoveryState();
+  new MutationObserver(syncRecoveryState).observe(actions, { childList: true });
+})();
+</script>`;
+}
+
 function injectStatusBridgeSkin(html) {
   let output = String(html || "");
+  const nonceMatch = output.match(/<script\b[^>]*\bnonce=["']([^"']+)["']/i);
   if (!output.includes('id="mmd-status-bridge-skin"') && output.includes("</head>")) {
     output = output.replace("</head>", `${statusBridgeSkin()}</head>`);
   }
   if (!output.includes('id="mmd-status-bridge-veil"') && output.includes("<body>")) {
     output = output.replace("<body>", `<body>${statusBridgeMarkup()}`);
+  }
+  if (nonceMatch && !output.includes('id="mmd-status-bridge-recovery-observer"') && output.includes("</body>")) {
+    output = output.replace("</body>", `${statusBridgeRecoveryObserver(nonceMatch[1])}</body>`);
   }
   return output;
 }
