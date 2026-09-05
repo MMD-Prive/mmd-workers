@@ -42,25 +42,83 @@ jobs:
           npx --yes wrangler@4 versions upload --dry-run --keep-vars --config payments-worker/wrangler.merged.toml
 
       - name: Upload payments-worker version
+        id: upload
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npx --yes wrangler@4 versions upload --keep-vars --config payments-worker/wrangler.merged.toml \
+            2>&1 | tee "$RUNNER_TEMP/payments-upload.log"
+
+      - name: Resolve uploaded version ID
+        id: resolve_version
+        if: steps.upload.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes wrangler@4 versions upload --keep-vars --config payments-worker/wrangler.merged.toml \
-            2>&1 | tee "$RUNNER_TEMP/payments-upload.log"
           version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/payments-upload.log" | tail -n 1)"
           if [ -z "$version_id" ]; then
             echo "Unable to resolve payments-worker version id" >&2
+            cat "$RUNNER_TEMP/payments-upload.log" >&2
             exit 1
           fi
           echo "PAYMENTS_WORKER_VERSION_ID=$version_id" >> "$GITHUB_ENV"
 
+      - name: Apply Durable Object migration without changing route ownership
+        id: migration_deploy
+        if: steps.upload.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! grep -Eq 'code:[[:space:]]*10211|\[code:[[:space:]]*10211\]' "$RUNNER_TEMP/payments-upload.log"; then
+            echo "Version upload failed for a reason other than Cloudflare Durable Object migration code 10211; refusing direct-deploy fallback." >&2
+            cat "$RUNNER_TEMP/payments-upload.log" >&2
+            exit 1
+          fi
+
+          echo "Cloudflare requires a non-versioned deployment to apply the pending Durable Object migration."
+          migration_config="payments-worker/.wrangler-migration-no-routes.toml"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const source = "payments-worker/wrangler.merged.toml";
+          const target = "payments-worker/.wrangler-migration-no-routes.toml";
+          const input = fs.readFileSync(source, "utf8").split(/\r?\n/);
+          const output = [];
+          let skippingRoutesArray = false;
+          for (const line of input) {
+            if (/^\s*routes\s*=\s*\[/.test(line)) {
+              skippingRoutesArray = true;
+              if (/\]\s*$/.test(line)) skippingRoutesArray = false;
+              continue;
+            }
+            if (skippingRoutesArray) {
+              if (/\]\s*$/.test(line)) skippingRoutesArray = false;
+              continue;
+            }
+            if (/^\s*\[\[routes\]\]\s*$/.test(line)) {
+              throw new Error("Unexpected [[routes]] block in payments config; refusing unsafe fallback");
+            }
+            output.push(line);
+          }
+          const rendered = `${output.join("\n")}\n`;
+          if (/^\s*routes\s*=|^\s*\[\[routes\]\]/m.test(rendered)) {
+            throw new Error("Migration config still contains route declarations");
+          }
+          fs.writeFileSync(target, rendered);
+          NODE
+          trap 'rm -f "$migration_config"' EXIT
+          npx --yes wrangler@4 deploy --keep-vars --config "$migration_config"
+
       - name: Deploy uploaded version without changing route ownership
+        id: deploy_version
+        if: steps.resolve_version.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
           npx --yes wrangler@4 versions deploy "${PAYMENTS_WORKER_VERSION_ID}@100%" -y --config payments-worker/wrangler.merged.toml
 
       - name: Smoke signed confirmation routes
+        if: steps.deploy_version.outcome == 'success' || steps.migration_deploy.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
