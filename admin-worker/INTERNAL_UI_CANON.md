@@ -9,3 +9,5 @@ All MMD internal browser surfaces under `/internal/*` use the canonical SIGIL-on
 This applies to Worker-owned admin surfaces (including Admin Login, Kenji and MMS) and is the expected icon for Webflow-owned internal presentation routes as well.
 
 Public MMD and MMS favicon rules remain separate and must not overwrite `/internal/*`.
+
+Internal HTML responses with Content Security Policy must allow `https://cdn.prod.website-files.com` in `img-src` so the canonical favicon is not blocked by the browser.
