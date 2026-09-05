@@ -37,4 +37,5 @@ jobs:
       - name: Existing Coupon V2.2 regression
         run: node --experimental-global-webcrypto --test member-pages-worker/test/care-back-claim-store.test.mjs
       - name: Wrangler dry-run
+        if: matrix.node == 22
         run: npx --yes wrangler@latest deploy --dry-run --config sigil-booking-worker/wrangler.toml --outdir /tmp/care-back-trusted-caller
