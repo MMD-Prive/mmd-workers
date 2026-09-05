@@ -7,6 +7,7 @@ on:
       - "admin-worker/src/studio-telegram-worker.js"
       - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/historical-slip-backfill-route.test.mjs"
+      - "admin-worker/historical-slip-backfill-handoff-probe.test.mjs"
       - "admin-worker/wrangler.toml"
       - ".github/workflows/historical-backfill-route-gate.yml"
   workflow_run:
@@ -34,7 +35,9 @@ jobs:
           node --check admin-worker/src/admin-login-hero-worker.js
           node --check admin-worker/src/historical-slip-backfill-runtime.js
           node --check admin-worker/src/studio-telegram-worker.js
-          node --experimental-global-webcrypto --test admin-worker/historical-slip-backfill-route.test.mjs
+          node --experimental-global-webcrypto --test \
+            admin-worker/historical-slip-backfill-route.test.mjs \
+            admin-worker/historical-slip-backfill-handoff-probe.test.mjs
       - name: Preserve canonical route and Money Truth separation
         run: |
           set -euo pipefail
@@ -43,6 +46,9 @@ jobs:
           grep -F 'www.mmdbkk.com/v1/admin/payments/historical-backfill*' admin-worker/wrangler.toml
           grep -F 'AUTH_SERVICE_ADMIN_TO_PAYMENTS' admin-worker/src/historical-slip-backfill-runtime.js
           grep -F '/v1/internal/payments/historical-slip/reviewed' admin-worker/src/historical-slip-backfill-runtime.js
+          grep -F 'decision === "validate_handoff"' admin-worker/src/historical-slip-backfill-runtime.js
+          grep -F 'expected_rejection: "historical_proof_sha_mismatch"' admin-worker/src/historical-slip-backfill-runtime.js
+          grep -F 'money_truth_mutated: false' admin-worker/src/historical-slip-backfill-runtime.js
           grep -F 'review_state: "pending"' admin-worker/src/historical-slip-backfill-runtime.js
           grep -F 'status: "pending"' admin-worker/src/historical-slip-backfill-runtime.js
           grep -F 'authority: "payments-worker"' admin-worker/src/historical-slip-backfill-runtime.js
