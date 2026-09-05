@@ -27,7 +27,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
-      AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
       ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
       NO_COLOR: "1"
 
@@ -47,11 +47,17 @@ jobs:
           node <<'NODE'
           const fs = require("node:fs");
           const clean = (value) => (value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
-          for (const key of ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ROUTES_API_TOKEN", "AIRTABLE_API_KEY", "ADMIN_SMOKE_CREDENTIAL"]) {
+          const required = ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ROUTES_API_TOKEN", "AIRTABLE_API_KEY", "ADMIN_SMOKE_CREDENTIAL"];
+          const missing = [];
+          for (const key of required) {
             const value = clean(process.env[key]);
-            if (!value) throw new Error(`${key} is required`);
+            if (!value) {
+              missing.push(key);
+              continue;
+            }
             fs.appendFileSync(process.env.GITHUB_ENV, `${key}=${value}\n`);
           }
+          if (missing.length) throw new Error(`Missing required GitHub Actions secrets: ${missing.join(", ")}`);
           NODE
           echo "::add-mask::$AIRTABLE_API_KEY"
           echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
@@ -96,8 +102,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes wrangler@4 deploy --keep-vars --config .wrangler-no-routes.toml \
-            --var "PROTOCOL_CENTER_BUILD_SHA:${GITHUB_SHA}"
+          npx --yes wrangler@4 deploy --keep-vars --config .wrangler-no-routes.toml
 
       - name: Provision Airtable secret
         shell: bash
