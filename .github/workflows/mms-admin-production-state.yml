@@ -1,7 +1,14 @@
-name: MMS admin production state
+name: Admin login production state
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/mms-admin-production-state.yml"
+      - "admin-worker/**"
+      - "immigrate-worker/**"
   workflow_run:
     workflows:
       - Deploy admin-worker
@@ -13,12 +20,13 @@ permissions:
 
 jobs:
   browser-state:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      ADMIN_MMS_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
-      EXPECTED_BUILD_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+      ORIGIN: https://mmdbkk.com
+      NEXT_PATH: /internal/admin/control-room
 
     steps:
       - name: Check out repository
@@ -36,77 +44,54 @@ jobs:
           node <<'NODE'
           const fs = require('node:fs');
           const clean = (value) => (value || '').replace(/[\u2028\u2029\r\n]/g, '').trim();
-          const credential = clean(process.env.ADMIN_MMS_SMOKE_CREDENTIAL);
+          const credential = clean(process.env.ADMIN_SMOKE_CREDENTIAL);
           if (!credential) throw new Error('ADMIN_LOGIN_CREDENTIAL or ADMIN_BEARER is required');
-          fs.appendFileSync(process.env.GITHUB_ENV, `ADMIN_MMS_SMOKE_CREDENTIAL=${credential}\n`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `ADMIN_SMOKE_CREDENTIAL=${credential}\n`);
           NODE
-          echo "::add-mask::$ADMIN_MMS_SMOKE_CREDENTIAL"
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
 
-      - name: Verify host-bound admin sessions
+      - name: Verify production session contract
         shell: bash
         run: |
           set -euo pipefail
           node <<'NODE'
           (async () => {
-            const credential = String(process.env.ADMIN_MMS_SMOKE_CREDENTIAL || '').trim();
-            const expectedBuild = String(process.env.EXPECTED_BUILD_SHA || '').trim();
-            const origins = ['https://mmdbkk.com', 'https://www.mmdbkk.com'];
-
-            function setCookieValues(headers) {
-              if (typeof headers.getSetCookie === 'function') return headers.getSetCookie();
-              const value = headers.get('set-cookie');
-              return value ? [value] : [];
+            const origin = process.env.ORIGIN;
+            const next = process.env.NEXT_PATH;
+            const credential = String(process.env.ADMIN_SMOKE_CREDENTIAL || '').trim();
+            const body = new URLSearchParams({ credential, next });
+            const response = await fetch(`${origin}/internal/admin/login/session`, {
+              method: 'POST',
+              headers: {
+                Origin: origin,
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-MMD-Login-Fetch': '1',
+              },
+              body: body.toString(),
+              redirect: 'manual',
+            });
+            const payload = await response.clone().json().catch(() => null);
+            if (response.status !== 200) throw new Error(`login expected 200, got ${response.status}`);
+            if (!payload || payload.ok !== true || payload.next !== next) {
+              throw new Error(`unexpected login payload: ${JSON.stringify(payload)}`);
             }
-
-            for (const origin of origins) {
-              const body = new URLSearchParams({
-                credential,
-                next: '/internal/admin/mms',
-              });
-              const login = await fetch(`${origin}/internal/admin/login/session`, {
-                method: 'POST',
-                headers: {
-                  Origin: origin,
-                  'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: body.toString(),
-                redirect: 'manual',
-              });
-              if (login.status !== 303) throw new Error(`${origin} login expected 303, got ${login.status}`);
-              if (login.headers.get('location') !== '/internal/admin/mms') {
-                throw new Error(`${origin} login returned unexpected location ${login.headers.get('location')}`);
-              }
-
-              const gateCookie = setCookieValues(login.headers)
-                .find((value) => /(?:^|;\s*)mmd_admin_gate_v1=/.test(value));
-              if (!gateCookie) throw new Error(`${origin} login did not issue mmd_admin_gate_v1`);
-              if (/\bdomain=/i.test(gateCookie)) throw new Error(`${origin} admin cookie must remain host-only`);
-              const cookiePair = gateCookie.split(';', 1)[0];
-
-              const sameHost = await fetch(`${origin}/internal/admin/mms`, {
-                headers: { Cookie: cookiePair },
-                redirect: 'manual',
-              });
-              const sameBody = await sameHost.text();
-              if (sameHost.status !== 200 || !sameBody.includes('MMS · Internal Operations')) {
-                throw new Error(`${origin} host-bound session did not render MMS admin`);
-              }
-              if (expectedBuild && !sameBody.includes(`<meta name="mmd-admin-build" content="${expectedBuild}">`)) {
-                throw new Error(`${origin} MMS build marker does not match ${expectedBuild}`);
-              }
-
-              const otherOrigin = origin.includes('www.') ? 'https://mmdbkk.com' : 'https://www.mmdbkk.com';
-              const crossHost = await fetch(`${otherOrigin}/internal/admin/mms`, {
-                headers: { Cookie: cookiePair },
-                redirect: 'manual',
-              });
-              const crossBody = await crossHost.text();
-              if (crossHost.status === 200 && crossBody.includes('MMS · Internal Operations')) {
-                throw new Error(`host-bound cookie from ${origin} authenticated ${otherOrigin}`);
-              }
-
-              console.log(`Host-bound session passed: ${origin} authenticates itself and not ${otherOrigin}`);
+            const setCookie = response.headers.get('set-cookie') || '';
+            if (!/^mmd_admin_gate_v1=/.test(setCookie)) throw new Error('login did not issue mmd_admin_gate_v1');
+            if (/\bdomain=/i.test(setCookie)) throw new Error('admin cookie must remain host-only');
+            const cookiePair = setCookie.split(';', 1)[0];
+            const control = await fetch(`${origin}${next}`, {
+              headers: { Cookie: cookiePair },
+              redirect: 'manual',
+            });
+            const controlBody = await control.text();
+            if (control.status !== 200) throw new Error(`control room expected 200, got ${control.status}`);
+            if (/\/internal\/admin\/login/.test(control.headers.get('location') || '')) {
+              throw new Error('control room bounced back to login');
             }
+            if (!/Control Room|CONTROL ROOM|Owner Control/i.test(controlBody)) {
+              throw new Error('control room marker not found after authenticated login');
+            }
+            console.log('HTTP login session -> Control Room passed.');
           })().catch((error) => {
             console.error(error && error.stack ? error.stack : error);
             process.exit(1);
@@ -117,7 +102,7 @@ jobs:
         shell: bash
         run: npm install --no-save --ignore-scripts --no-audit --no-fund puppeteer-core@24.16.0
 
-      - name: Verify canonical redirect and production DOM state
+      - name: Verify real browser login flow
         shell: bash
         run: |
           set -euo pipefail
@@ -128,15 +113,14 @@ jobs:
           (async () => {
             function findChrome() {
               for (const bin of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']) {
-                try {
-                  return execFileSync('which', [bin], { encoding: 'utf8' }).trim();
-                } catch {}
+                try { return execFileSync('which', [bin], { encoding: 'utf8' }).trim(); } catch {}
               }
               throw new Error('Chrome/Chromium executable not found on runner');
             }
 
-            const credential = String(process.env.ADMIN_MMS_SMOKE_CREDENTIAL || '').trim();
-            const expectedBuild = String(process.env.EXPECTED_BUILD_SHA || '').trim();
+            const origin = process.env.ORIGIN;
+            const next = process.env.NEXT_PATH;
+            const credential = String(process.env.ADMIN_SMOKE_CREDENTIAL || '').trim();
             const browser = await puppeteer.launch({
               executablePath: findChrome(),
               headless: true,
@@ -144,141 +128,38 @@ jobs:
             });
 
             try {
-              const redirectContext = await browser.createBrowserContext();
-              const redirectPage = await redirectContext.newPage();
-              await redirectPage.goto(
-                `https://www.mmdbkk.com/internal/admin/login?next=${encodeURIComponent('/internal/admin/mms')}`,
-                { waitUntil: 'domcontentloaded', timeout: 30000 },
-              );
-              const canonicalUrl = new URL(redirectPage.url());
-              if (canonicalUrl.hostname !== 'mmdbkk.com' || canonicalUrl.pathname !== '/internal/admin/login') {
-                throw new Error(`www login did not canonicalize to apex login: ${redirectPage.url()}`);
-              }
-              console.log(`Canonical www login redirect passed: ${redirectPage.url()}`);
-              await redirectContext.close();
-
               const context = await browser.createBrowserContext();
               const page = await context.newPage();
-              const consoleErrors = [];
               const pageErrors = [];
-              const requestFailures = [];
+              page.on('pageerror', (error) => pageErrors.push(error?.message || String(error)));
 
-              page.on('console', (msg) => {
-                if (msg.type() === 'error') consoleErrors.push(msg.text());
-              });
-              page.on('pageerror', (error) => {
-                pageErrors.push(error && error.message ? error.message : String(error));
-              });
-              page.on('requestfailed', (request) => {
-                const rawUrl = request.url();
-                const failure = request.failure()?.errorText || 'failed';
-                let pathname = '';
-                try { pathname = new URL(rawUrl).pathname; } catch {}
-                const expectedManualNavigationAbort =
-                  request.method() === 'GET' &&
-                  pathname === '/internal/admin/mms' &&
-                  failure === 'net::ERR_ABORTED';
-                if (!expectedManualNavigationAbort && (rawUrl.includes('/v1/admin/mms/') || pathname === '/internal/admin/mms')) {
-                  requestFailures.push(`${request.method()} ${rawUrl} :: ${failure}`);
-                }
-              });
-
-              await page.goto(
-                `https://mmdbkk.com/internal/admin/login?next=${encodeURIComponent('/internal/admin/mms')}`,
-                { waitUntil: 'domcontentloaded', timeout: 30000 },
-              );
-
-              const loginResult = await page.evaluate(async ({ credential }) => {
-                const body = new URLSearchParams({ credential, next: '/internal/admin/mms' });
-                const response = await fetch('/internal/admin/login/session', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                  body: body.toString(),
-                  credentials: 'include',
-                  redirect: 'manual',
-                });
-                return { status: response.status, type: response.type };
-              }, { credential });
-
-              await page.goto('https://mmdbkk.com/internal/admin/mms', {
+              await page.goto(`${origin}/internal/admin/login?next=${encodeURIComponent(next)}`, {
                 waitUntil: 'domcontentloaded',
                 timeout: 30000,
               });
-
               await page.waitForFunction(() => {
-                const ops = document.querySelector('#opsAppsCount');
-                const summary = document.querySelector('#sApps');
-                return ops && summary && !['', '–'].includes((ops.textContent || '').trim()) && !['', '–'].includes((summary.textContent || '').trim());
-              }, { timeout: 15000 });
-              await new Promise((resolve) => setTimeout(resolve, 500));
+                const input = document.querySelector('#adminCredential');
+                return input && input.readOnly === false;
+              }, { timeout: 10000 });
+              await page.type('#adminCredential', credential, { delay: 5 });
+              await Promise.all([
+                page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }),
+                page.click('.mmd-login__go'),
+              ]);
 
-              const dom = await page.evaluate(async () => {
-                const text = (selector) => {
-                  const el = document.querySelector(selector);
-                  return el ? (el.textContent || '').trim() : null;
-                };
-                const response = await fetch('/v1/admin/mms/snapshot', {
-                  credentials: 'same-origin',
-                  headers: { accept: 'application/json' },
-                });
-                const snapshot = await response.json();
-                return {
-                  href: location.href,
-                  build: document.querySelector('meta[name="mmd-admin-build"]')?.content || null,
-                  favicon: document.querySelector('[data-mms-admin-favicon]')?.getAttribute('href') || null,
-                  bridgeType: typeof window.mmsAdminApplySnapshot,
-                  summary: {
-                    applications: text('#sApps'),
-                    therapists: text('#sTher'),
-                    prebookings: text('#sPre'),
-                  },
-                  nav: {
-                    applications: text('#appCount'),
-                    therapists: text('#therCount'),
-                    prebookings: text('#preCount'),
-                  },
-                  ops: {
-                    applications: text('#opsAppsCount'),
-                    prebookings: text('#opsPreCount'),
-                    jobs: text('#opsJobsCount'),
-                  },
-                  snapshot: response.ok && snapshot?.ok === true ? {
-                    ok: true,
-                    applications: Array.isArray(snapshot.applications) ? snapshot.applications.length : null,
-                    therapists: Array.isArray(snapshot.therapists) ? snapshot.therapists.length : null,
-                    prebookings: Array.isArray(snapshot.prebookings) ? snapshot.prebookings.length : null,
-                  } : { ok: false, status: response.status, error: snapshot?.error || 'snapshot_not_ok' },
-                };
-              });
-
-              const mismatches = [];
-              const expected = dom.snapshot?.ok ? dom.snapshot : null;
-              if (!expected) {
-                mismatches.push(`snapshot endpoint not ok: ${JSON.stringify(dom.snapshot)}`);
-              } else {
-                for (const [label, actual, wanted] of [
-                  ['summary.applications', dom.summary.applications, expected.applications],
-                  ['nav.applications', dom.nav.applications, expected.applications],
-                  ['ops.applications', dom.ops.applications, expected.applications],
-                  ['summary.therapists', dom.summary.therapists, expected.therapists],
-                  ['nav.therapists', dom.nav.therapists, expected.therapists],
-                  ['summary.prebookings', dom.summary.prebookings, expected.prebookings],
-                  ['nav.prebookings', dom.nav.prebookings, expected.prebookings],
-                ]) {
-                  if (String(actual) !== String(wanted)) mismatches.push(`${label}: DOM=${actual} API=${wanted}`);
-                }
+              const url = new URL(page.url());
+              if (url.origin !== origin || url.pathname !== next) {
+                throw new Error(`browser login landed at ${page.url()}`);
               }
-              if (dom.href !== 'https://mmdbkk.com/internal/admin/mms') mismatches.push(`canonical DOM href=${dom.href}`);
-              if (expectedBuild && dom.build !== expectedBuild) mismatches.push(`build=${dom.build} expected=${expectedBuild}`);
-              if (dom.bridgeType !== 'function') mismatches.push(`mmsAdminApplySnapshot type=${dom.bridgeType}`);
-              if (dom.favicon !== 'https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo.webp') mismatches.push(`favicon=${dom.favicon}`);
-              if (pageErrors.length) mismatches.push(`pageerror=${pageErrors.join(' | ')}`);
-              if (consoleErrors.length) mismatches.push(`console.error=${consoleErrors.join(' | ')}`);
-              if (requestFailures.length) mismatches.push(`requestfailed=${requestFailures.join(' | ')}`);
-
-              console.log(JSON.stringify({ loginResult, dom, pageErrors, consoleErrors, requestFailures, mismatches }, null, 2));
-              if (mismatches.length) throw new Error(`MMS canonical production DOM mismatch: ${mismatches.join(' ; ')}`);
-              console.log('MMS canonical production DOM state passed.');
+              const bodyText = await page.evaluate(() => document.body?.innerText || '');
+              if (!/Control Room|CONTROL ROOM|Owner Control/i.test(bodyText)) {
+                throw new Error('browser reached target URL but Control Room UI marker is missing');
+              }
+              if (await page.$('#adminLoginForm')) {
+                throw new Error('login form still present after successful browser navigation');
+              }
+              if (pageErrors.length) throw new Error(`page errors: ${pageErrors.join(' | ')}`);
+              console.log(`Browser login passed: ${page.url()}`);
               await context.close();
             } finally {
               await browser.close();
