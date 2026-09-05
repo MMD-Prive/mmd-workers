@@ -5,6 +5,10 @@ import {
 } from "./create-session-client-lineage-runtime.js";
 import { enrichLineageWithPreSessionIndex } from "./pre-session-client-index.js";
 import {
+  handleCanonicalLinkedJobCreate,
+  isCanonicalLinkedJobCreate,
+} from "./create-session-canonical-link-runtime.js";
+import {
   MODEL_ACTIVATION_ADMIN_PATH,
   MODEL_ACTIVATION_LIFF_PATH,
   activateModelLine,
@@ -114,6 +118,15 @@ export default {
         statusText: enrichedResponse.statusText,
         headers,
       });
+    }
+
+    // Create Job must resolve to canonical Airtable record identities before the
+    // legacy payment/session creation path runs. Raw LINE names or R2 objects are
+    // not sufficient authority. After creation, reconcile the canonical Client
+    // and Model links into both Sessions and Jobs without removing legacy text
+    // snapshots used by older surfaces.
+    if (isCanonicalLinkedJobCreate(path, method)) {
+      return handleCanonicalLinkedJobCreate(request, env, ctx, studioWorker);
     }
 
     const bodyPromise = method === "POST" && COMMIT_PATHS.has(path)
