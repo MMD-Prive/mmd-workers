@@ -3,35 +3,128 @@ import fs from "node:fs";
 const runtimePath = "admin-worker/src/historical-slip-backfill-runtime.js";
 let runtime = fs.readFileSync(runtimePath, "utf8");
 
-const decisionNeedle = `  const decision = safeCode(body.decision);\n  const reviewReason = safeText(body.review_reason || body.reason, 600);\n  if (!reviewReason || reviewReason.length < 5) throw httpError(400, "review_reason_required");\n\n  if (decision === "reject") {`;
-const decisionReplacement = `  const decision = safeCode(body.decision);\n  const reviewReason = safeText(body.review_reason || body.reason, 600);\n  if (!reviewReason || reviewReason.length < 5) throw httpError(400, "review_reason_required");\n\n  if (decision === "validate_handoff") {\n    return validateHistoricalHandoff(proof, note, body, env, reviewReason);\n  }\n\n  if (decision === "reject") {`;
-if (!runtime.includes(decisionNeedle) && !runtime.includes(`decision === "validate_handoff"`)) {
-  throw new Error("Historical runtime decision insertion point not found");
-}
-if (runtime.includes(decisionNeedle)) runtime = runtime.replace(decisionNeedle, decisionReplacement);
+const decisionNeedle = [
+  '  const decision = safeCode(body.decision);',
+  '  const reviewReason = safeText(body.review_reason || body.reason, 600);',
+  '  if (!reviewReason || reviewReason.length < 5) throw httpError(400, "review_reason_required");',
+  '',
+  '  if (decision === "reject") {',
+].join("\n");
 
-const helperNeedle = `async function extractSlip(env, image) {`;
+const decisionReplacement = [
+  '  const decision = safeCode(body.decision);',
+  '  const reviewReason = safeText(body.review_reason || body.reason, 600);',
+  '  if (!reviewReason || reviewReason.length < 5) throw httpError(400, "review_reason_required");',
+  '',
+  '  if (decision === "validate_handoff") {',
+  '    return validateHistoricalHandoff(proof, note, body, env, reviewReason);',
+  '  }',
+  '',
+  '  if (decision === "reject") {',
+].join("\n");
+
+if (!runtime.includes('decision === "validate_handoff"')) {
+  if (!runtime.includes(decisionNeedle)) throw new Error("Historical runtime decision insertion point not found");
+  runtime = runtime.replace(decisionNeedle, decisionReplacement);
+}
+
 if (!runtime.includes("async function validateHistoricalHandoff(")) {
-  const helper = `async function validateHistoricalHandoff(proof, note, body, env, reviewReason) {\n  const base = clean(env.PAYMENTS_BASE_URL).replace(/\\/+$/, "");\n  const serviceToken = clean(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);\n  if (!base) throw httpError(503, "payments_worker_base_url_missing");\n  if (!serviceToken) throw httpError(503, "payments_worker_service_auth_missing");\n\n  const proofId = safeText(proof.fields?.proof_id || body.proof_id, 120);\n  const evidenceSha256 = safeText(note.evidence_sha256, 64).toLowerCase();\n  if (!proofId) throw httpError(400, "proof_id_required");\n  if (!/^[a-f0-9]{64}$/.test(evidenceSha256)) throw httpError(409, "historical_proof_sha_invalid_for_handoff_probe");\n\n  // Deliberately flip one nibble. payments-worker must re-read the pending proof\n  // and reject this before it can enter trusted notify / Money Truth writes.\n  const mismatchedSha256 = \\`${'${evidenceSha256[0] === "0" ? "1" : "0"}'}${'${evidenceSha256.slice(1)}'}\\`;\n  const handoffProbe = {\n    source: "historical_slip_backfill",\n    decision: "approved",\n    proof_id: proofId,\n    proof_record_id: proof.id,\n    evidence_sha256: mismatchedSha256,\n    payment_ref: safeText(\\`MMD_HANDOFF_PROBE_${'${proofId}'}\\`, 180),\n    amount_thb: 1,\n    payment_stage: "membership",\n    session_id: null,\n    member_email: "historical-handoff-smoke@example.invalid",\n    package_code: null,\n    paid_at: null,\n    review_reason: reviewReason,\n    override_reason: null,\n    review_actor: "internal_admin_owner",\n  };\n\n  const response = await fetch(\\`${'${base}'}/v1/internal/payments/historical-slip/reviewed\\`, {\n    method: "POST",\n    headers: { Authorization: \\`Bearer ${'${serviceToken}'}\\`, "Content-Type": "application/json" },\n    body: JSON.stringify(handoffProbe),\n  });\n  const payload = await response.json().catch(() => ({}));\n  const expectedRejection = response.status === 409 && safeCode(payload?.error) === "historical_proof_sha_mismatch";\n  if (!expectedRejection) {\n    throw httpError(502, \\`handoff_probe_unexpected_${'${response.status}'}_${'${safeCode(payload?.error || "unknown")}'}\\`);\n  }\n\n  return json({\n    ok: true,\n    state: "pending",\n    proof_id: proofId,\n    authority: "payments-worker",\n    handoff_validated: true,\n    expected_rejection: "historical_proof_sha_mismatch",\n    money_truth_mutated: false,\n    guardrails: guardrails(),\n  });\n}\n\nasync function extractSlip(env, image) {`;
+  const helperNeedle = "async function extractSlip(env, image) {";
+  const helper = [
+    'async function validateHistoricalHandoff(proof, note, body, env, reviewReason) {',
+    '  const base = clean(env.PAYMENTS_BASE_URL).replace(/\\/+$/, "");',
+    '  const serviceToken = clean(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);',
+    '  if (!base) throw httpError(503, "payments_worker_base_url_missing");',
+    '  if (!serviceToken) throw httpError(503, "payments_worker_service_auth_missing");',
+    '',
+    '  const proofId = safeText(proof.fields?.proof_id || body.proof_id, 120);',
+    '  const evidenceSha256 = safeText(note.evidence_sha256, 64).toLowerCase();',
+    '  if (!proofId) throw httpError(400, "proof_id_required");',
+    '  if (!/^[a-f0-9]{64}$/.test(evidenceSha256)) throw httpError(409, "historical_proof_sha_invalid_for_handoff_probe");',
+    '',
+    '  // Flip one SHA nibble deliberately. payments-worker must re-read the proof',
+    '  // and reject before trusted notify / Money Truth writes are reachable.',
+    '  const mismatchedSha256 = (evidenceSha256[0] === "0" ? "1" : "0") + evidenceSha256.slice(1);',
+    '  const handoffProbe = {',
+    '    source: "historical_slip_backfill",',
+    '    decision: "approved",',
+    '    proof_id: proofId,',
+    '    proof_record_id: proof.id,',
+    '    evidence_sha256: mismatchedSha256,',
+    '    payment_ref: safeText("MMD_HANDOFF_PROBE_" + proofId, 180),',
+    '    amount_thb: 1,',
+    '    payment_stage: "membership",',
+    '    session_id: null,',
+    '    member_email: "historical-handoff-smoke@example.invalid",',
+    '    package_code: null,',
+    '    paid_at: null,',
+    '    review_reason: reviewReason,',
+    '    override_reason: null,',
+    '    review_actor: "internal_admin_owner",',
+    '  };',
+    '',
+    '  const response = await fetch(base + "/v1/internal/payments/historical-slip/reviewed", {',
+    '    method: "POST",',
+    '    headers: { Authorization: "Bearer " + serviceToken, "Content-Type": "application/json" },',
+    '    body: JSON.stringify(handoffProbe),',
+    '  });',
+    '  const payload = await response.json().catch(() => ({}));',
+    '  const expectedRejection = response.status === 409 && safeCode(payload?.error) === "historical_proof_sha_mismatch";',
+    '  if (!expectedRejection) {',
+    '    throw httpError(502, "handoff_probe_unexpected_" + response.status + "_" + safeCode(payload?.error || "unknown"));',
+    '  }',
+    '',
+    '  return json({',
+    '    ok: true,',
+    '    state: "pending",',
+    '    proof_id: proofId,',
+    '    authority: "payments-worker",',
+    '    handoff_validated: true,',
+    '    expected_rejection: "historical_proof_sha_mismatch",',
+    '    money_truth_mutated: false,',
+    '    guardrails: guardrails(),',
+    '  });',
+    '}',
+    '',
+    helperNeedle,
+  ].join("\n");
   if (!runtime.includes(helperNeedle)) throw new Error("Historical runtime helper insertion point not found");
   runtime = runtime.replace(helperNeedle, helper);
 }
 
-const notifyNeedle = `  const notifyPromise = notifyOps(env, {\n    title: reviewRequired ? "HISTORICAL SLIP REVIEW REQUIRED" : "HISTORICAL SLIP READY FOR REVIEW",\n    proofId,\n    amount: candidate.amount_thb,\n    paymentRef: candidate.payment_ref,\n    sourceRef,\n  });`;
+const notifyNeedle = [
+  '  const notifyPromise = notifyOps(env, {',
+  '    title: reviewRequired ? "HISTORICAL SLIP REVIEW REQUIRED" : "HISTORICAL SLIP READY FOR REVIEW",',
+  '    proofId,',
+  '    amount: candidate.amount_thb,',
+  '    paymentRef: candidate.payment_ref,',
+  '    sourceRef,',
+  '  });',
+].join("\n");
+
 if (runtime.includes(notifyNeedle)) {
-  runtime = runtime.replace(notifyNeedle, `  const notifyPromise = sourceRef.startsWith("github-actions-controlled-smoke:")\n    ? Promise.resolve({ ok: false, skipped: true, reason: "controlled_smoke" })\n    : notifyOps(env, {\n        title: reviewRequired ? "HISTORICAL SLIP REVIEW REQUIRED" : "HISTORICAL SLIP READY FOR REVIEW",\n        proofId,\n        amount: candidate.amount_thb,\n        paymentRef: candidate.payment_ref,\n        sourceRef,\n      });`);
+  const notifyReplacement = [
+    '  const notifyPromise = sourceRef.startsWith("github-actions-controlled-smoke:")',
+    '    ? Promise.resolve({ ok: false, skipped: true, reason: "controlled_smoke" })',
+    '    : notifyOps(env, {',
+    '        title: reviewRequired ? "HISTORICAL SLIP REVIEW REQUIRED" : "HISTORICAL SLIP READY FOR REVIEW",',
+    '        proofId,',
+    '        amount: candidate.amount_thb,',
+    '        paymentRef: candidate.payment_ref,',
+    '        sourceRef,',
+    '      });',
+  ].join("\n");
+  runtime = runtime.replace(notifyNeedle, notifyReplacement);
 }
+
 fs.writeFileSync(runtimePath, runtime);
 
 const deployPath = ".github/workflows/deploy-admin-worker.yml";
 let deploy = fs.readFileSync(deployPath, "utf8");
-const routeNeedle = `            "/v1/admin/payments/review",\n`;
-if (!deploy.includes(`/v1/admin/payments/historical-backfill*`)) {
+const historicalRoute = '            "/v1/admin/payments/historical-backfill*",\n';
+if (!deploy.includes(historicalRoute.trim())) {
+  const routeNeedle = '            "/v1/admin/payments/review",\n';
   if (!deploy.includes(routeNeedle)) throw new Error("Deploy route insertion point not found");
-  deploy = deploy.replace(routeNeedle, `${routeNeedle}            "/v1/admin/payments/historical-backfill*",\n`);
+  deploy = deploy.replace(routeNeedle, routeNeedle + historicalRoute);
 }
 fs.writeFileSync(deployPath, deploy);
-
-fs.writeFileSync("admin-worker/historical-slip-backfill-handoff-probe.test.mjs", `import test from "node:test";\nimport assert from "node:assert/strict";\n\nimport { handleHistoricalSlipBackfillRequest } from "./src/historical-slip-backfill-runtime.js";\n\ntest("validate_handoff reaches payments-worker but cannot mutate Money Truth", async () => {\n  const originalFetch = globalThis.fetch;\n  const evidenceSha256 = "a".repeat(64);\n  const proofId = "hist_controlled_handoff_probe";\n  const proof = {\n    id: "recProofSmoke",\n    fields: {\n      proof_id: proofId,\n      status: "pending",\n      note: JSON.stringify({\n        schema: "mmd_historical_slip_backfill_v1",\n        source_type: "line_archive",\n        source_ref: "github-actions-controlled-smoke:test",\n        evidence_sha256: evidenceSha256,\n        extraction: {},\n        explicit_context: {},\n        review_state: "pending",\n        review_required: true,\n      }),\n    },\n  };\n  const calls = { airtableWrites: 0, payments: 0 };\n\n  globalThis.fetch = async (input, init = {}) => {\n    const url = String(input instanceof Request ? input.url : input);\n    const method = String(init.method || (input instanceof Request ? input.method : "GET")).toUpperCase();\n    if (url.startsWith("https://api.airtable.com/v0/")) {\n      if (method !== "GET") calls.airtableWrites += 1;\n      return Response.json({ records: [proof] }, { status: 200 });\n    }\n    if (url === "https://payments.test/v1/internal/payments/historical-slip/reviewed") {\n      calls.payments += 1;\n      assert.equal(init.headers.Authorization, "Bearer admin-to-payments-secret");\n      const body = JSON.parse(init.body);\n      assert.equal(body.proof_id, proofId);\n      assert.notEqual(body.evidence_sha256, evidenceSha256);\n      assert.match(body.evidence_sha256, /^[a-f0-9]{64}$/);\n      return Response.json({ ok: false, error: "historical_proof_sha_mismatch", authority: "payments-worker" }, { status: 409 });\n    }\n    throw new Error(\\`unexpected fetch ${'${method}'} ${'${url}'}\\`);\n  };\n\n  try {\n    const response = await handleHistoricalSlipBackfillRequest(new Request(\n      "https://mmdbkk.com/v1/admin/payments/historical-backfill/review",\n      {\n        method: "POST",\n        headers: { "Content-Type": "application/json" },\n        body: JSON.stringify({\n          proof_id: proofId,\n          decision: "validate_handoff",\n          review_reason: "controlled handoff contract test",\n        }),\n      },\n    ), {\n      AIRTABLE_BASE_ID: "app-test",\n      AIRTABLE_API_KEY: "airtable-test",\n      AIRTABLE_TABLE_PAYMENT_PROOFS_ID: "tbl-test",\n      PAYMENTS_BASE_URL: "https://payments.test",\n      AUTH_SERVICE_ADMIN_TO_PAYMENTS: "admin-to-payments-secret",\n    });\n    assert.equal(response.status, 200);\n    const payload = await response.json();\n    assert.equal(payload.ok, true);\n    assert.equal(payload.state, "pending");\n    assert.equal(payload.handoff_validated, true);\n    assert.equal(payload.expected_rejection, "historical_proof_sha_mismatch");\n    assert.equal(payload.money_truth_mutated, false);\n    assert.equal(payload.guardrails?.may_mark_paid, false);\n    assert.equal(calls.payments, 1);\n    assert.equal(calls.airtableWrites, 0);\n  } finally {\n    globalThis.fetch = originalFetch;\n  }\n});\n`);
-
-fs.writeFileSync(".github/workflows/historical-backfill-authenticated-controlled-smoke.yml", `name: Historical Backfill Authenticated Controlled Smoke\n\non:\n  workflow_run:\n    workflows:\n      - "Deploy admin-worker"\n    types:\n      - completed\n  workflow_dispatch:\n\npermissions:\n  contents: read\n\njobs:\n  controlled-smoke:\n    if: >-\n      (github.event_name == 'workflow_run' &&\n       github.event.workflow_run.conclusion == 'success' &&\n       github.event.workflow_run.head_branch == 'main') ||\n      github.event_name == 'workflow_dispatch'\n    runs-on: ubuntu-latest\n    timeout-minutes: 8\n    env:\n      ORIGIN: https://www.mmdbkk.com\n      ADMIN_SMOKE_CREDENTIAL: \\${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}\n    steps:\n      - name: Require browser admin credential\n        shell: bash\n        run: |\n          set -euo pipefail\n          test -n "$ADMIN_SMOKE_CREDENTIAL"\n          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"\n\n      - name: Login, create pending proof, validate handoff boundary, and clean up\n        shell: bash\n        run: |\n          set -euo pipefail\n          cookie="$(mktemp)"\n          headers="$(mktemp)"\n          body="$(mktemp)"\n          smoke_file="$(mktemp --suffix=.png)"\n          source_ref="github-actions-controlled-smoke:${'${GITHUB_RUN_ID}'}:${'${GITHUB_RUN_ATTEMPT}'}"\n          printf 'MMD Historical Backfill controlled smoke %s\\n' "$source_ref" > "$smoke_file"\n\n          code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS -D "$headers" -o "$body" -c "$cookie" -w "%{http_code}" -X POST -H "Origin: $ORIGIN" -H "Content-Type: application/x-www-form-urlencoded" --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL" --data-urlencode "next=/internal/admin/payments/historical-backfill" "$ORIGIN/internal/admin/login/session")"\n          test "$code" = "303"\n          grep -qi '^set-cookie: mmd_admin_gate_v1=' "$headers"\n\n          code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS -o "$body" -b "$cookie" -w "%{http_code}" "$ORIGIN/v1/admin/payments/historical-backfill?limit=100")"\n          test "$code" = "200"\n          node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!p.ok||p.authority!=="payments-worker") process.exit(1)' "$body"\n\n          code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS -o "$body" -b "$cookie" -w "%{http_code}" -X POST -H "Origin: $ORIGIN" -F "file=@$smoke_file;type=image/png;filename=controlled-smoke.png" -F "source_type=line_archive" -F "source_ref=$source_ref" -F "context_text=GitHub authenticated controlled smoke; no Money Truth mutation" "$ORIGIN/v1/admin/payments/historical-backfill/intake")"\n          cat "$body"\n          test "$code" = "201"\n          proof_id="$(node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!p.ok||p.state!=="pending"||!p.proof_id||p.guardrails?.may_mark_paid!==false) process.exit(1); process.stdout.write(p.proof_id)' "$body")"\n\n          code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS -o "$body" -b "$cookie" -w "%{http_code}" "$ORIGIN/v1/admin/payments/historical-backfill?limit=100")"\n          test "$code" = "200"\n          PROOF_ID="$proof_id" SOURCE_REF="$source_ref" node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const x=(p.items||[]).find(i=>i.proof_id===process.env.PROOF_ID&&i.source_ref===process.env.SOURCE_REF); if(!x||x.status!=="pending"||x.review_state!=="pending") process.exit(1)' "$body"\n\n          review_json="$(PROOF_ID="$proof_id" node -e 'process.stdout.write(JSON.stringify({proof_id:process.env.PROOF_ID,decision:"validate_handoff",review_reason:"GitHub authenticated controlled handoff smoke"}))')"\n          code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS -o "$body" -b "$cookie" -w "%{http_code}" -X POST -H "Origin: $ORIGIN" -H "Content-Type: application/json" --data "$review_json" "$ORIGIN/v1/admin/payments/historical-backfill/review")"\n          cat "$body"\n          test "$code" = "200"\n          node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!p.ok||p.state!=="pending"||p.handoff_validated!==true||p.money_truth_mutated!==false||p.expected_rejection!=="historical_proof_sha_mismatch") process.exit(1)' "$body"\n\n          code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS -o "$body" -b "$cookie" -w "%{http_code}" "$ORIGIN/v1/admin/payments/historical-backfill?limit=100")"\n          test "$code" = "200"\n          PROOF_ID="$proof_id" node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const x=(p.items||[]).find(i=>i.proof_id===process.env.PROOF_ID); if(!x||x.status!=="pending"||x.review_state!=="pending") process.exit(1)' "$body"\n\n          cleanup_json="$(PROOF_ID="$proof_id" node -e 'process.stdout.write(JSON.stringify({proof_id:process.env.PROOF_ID,decision:"reject",review_reason:"Controlled smoke cleanup after handoff validation"}))')"\n          code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS -o "$body" -b "$cookie" -w "%{http_code}" -X POST -H "Origin: $ORIGIN" -H "Content-Type: application/json" --data "$cleanup_json" "$ORIGIN/v1/admin/payments/historical-backfill/review")"\n          cat "$body"\n          test "$code" = "200"\n          node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!p.ok||p.state!=="rejected"||p.guardrails?.may_mark_paid!==false) process.exit(1)' "$body"\n\n          echo "Authenticated Historical Backfill controlled smoke PASSED: browser session -> pending proof -> payments-worker boundary reject-before-write -> cleanup reject"\n`);
