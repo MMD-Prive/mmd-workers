@@ -1,9 +1,7 @@
 import currentWorker from "./front-gate-index.js";
 export { KenjiModelIdempotency } from "./front-gate-index.js";
 
-const WORKER_NAME = "member-dashboard-chat-worker";
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/"]);
-const DEFAULT_SYNC_TABLE = "MMD — Console Inbox";
 
 function asString(value) {
   return String(value || "").trim();
@@ -45,141 +43,52 @@ async function verifyLineSignature(rawBody, signature, channelSecret) {
   return timingSafeStringEqual(expected, signature);
 }
 
-function getAirtableTable(env = {}) {
-  return asString(env.AIRTABLE_SYNC_TABLE || env.AIRTABLE_TABLE_CONSOLE_INBOX_ID || DEFAULT_SYNC_TABLE);
+function sourceType(event = {}) {
+  const type = asString(event?.source?.type).toLowerCase();
+  return ["user", "group", "room"].includes(type) ? type : "unknown";
 }
 
-function encodeFormulaValue(value) {
-  return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
-function eventId(event = {}) {
-  return asString(event?.message?.id || event?.webhookEventId || event?.replyToken);
-}
-
-function eventText(event = {}) {
-  if (event?.type === "message" && event?.message?.type === "text") return asString(event.message.text);
-  if (event?.type === "postback") return asString(event?.postback?.displayText || event?.postback?.data);
-  return "";
-}
-
-function sourceIdentity(event = {}) {
-  const source = event?.source || {};
-  return {
-    type: asString(source.type) || "unknown",
-    userId: asString(source.userId),
-    groupId: asString(source.groupId),
-    roomId: asString(source.roomId),
-  };
-}
-
-async function findExistingGroupEvent(env = {}, id = "") {
-  const apiKey = asString(env.AIRTABLE_API_KEY);
-  const baseId = asString(env.AIRTABLE_BASE_ID);
-  const table = getAirtableTable(env);
-  if (!apiKey || !baseId || !table || !id) return null;
-
-  const inboxId = `line_${id}`;
-  const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
-  url.searchParams.set("pageSize", "1");
-  url.searchParams.set("filterByFormula", `OR({line_id}=\"${encodeFormulaValue(id)}\",{inbox_id}=\"${encodeFormulaValue(inboxId)}\")`);
-
-  const response = await fetch(url.toString(), {
-    headers: { authorization: `Bearer ${apiKey}` },
-  });
-  if (!response.ok) return null;
-  const payload = await response.json().catch(() => ({}));
-  return Array.isArray(payload?.records) ? payload.records[0] || null : null;
-}
-
-async function persistGroupEvent(env = {}, event = {}) {
-  const id = eventId(event);
-  const source = sourceIdentity(event);
-  if (!id || source.type !== "group" || !source.groupId) return { skipped: true, reason: "not_group_event" };
-
-  const apiKey = asString(env.AIRTABLE_API_KEY);
-  const baseId = asString(env.AIRTABLE_BASE_ID);
-  const table = getAirtableTable(env);
-  if (!apiKey || !baseId || !table) return { skipped: true, reason: "airtable_env_missing" };
-
-  const existing = await findExistingGroupEvent(env, id);
-  if (existing?.id) return { id: existing.id, deduped: true };
-
-  const text = eventText(event);
-  const messageType = asString(event?.message?.type) || "unknown";
-  const sourceId = source.userId || source.groupId;
-  const record = {
-    fields: {
-      inbox_id: `line_${id}`,
-      source: "line",
-      intent: text ? "note_only" : "line_event",
-      member_name: "",
-      line_user_id: sourceId,
-      line_id: id,
-      admin_note: text || `[message:${messageType}] LINE group event`,
-      payload_json: JSON.stringify({
-        source_channel: "line",
-        source_type: "group",
-        source_user_id: source.userId,
-        source_group_id: source.groupId,
-        source_message_id: id,
-        message_type: messageType,
-        received_at: new Date().toISOString(),
-        parsed_intent: text ? "note_only" : "line_event",
-        raw_text: text,
-        evidence_only: messageType === "image",
-      }),
-      status: "new",
-    },
-  };
-
-  const response = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(record),
-  });
-
-  if (!response.ok) {
-    console.log(JSON.stringify({
-      line_group_ingress: "airtable_write_failed",
-      event_type: asString(event?.type) || "unknown",
-      message_type: messageType,
-      status: response.status,
-    }));
-    return { skipped: true, reason: "airtable_write_failed", status: response.status };
-  }
-
-  const payload = await response.json().catch(() => ({}));
-  console.log(JSON.stringify({
-    line_group_ingress: "observed",
-    event_type: asString(event?.type) || "unknown",
-    message_type: messageType,
-    group_source_present: true,
-    user_source_present: Boolean(source.userId),
-  }));
-  return { id: payload?.id || "", deduped: false };
+function messageType(event = {}) {
+  if (event?.type !== "message") return "none";
+  return asString(event?.message?.type).toLowerCase() || "unknown";
 }
 
 async function observeSignedGroupEvents(request, env = {}) {
   const rawBody = await request.text();
   const signature = asString(request.headers.get("x-line-signature"));
   const valid = await verifyLineSignature(rawBody, signature, env.LINE_CHANNEL_SECRET);
-  if (!valid) return;
+  if (!valid) {
+    console.log(JSON.stringify({ line_group_ingress: "signature_rejected" }));
+    return;
+  }
 
   let body;
   try {
     body = JSON.parse(rawBody || "{}");
   } catch (_) {
+    console.log(JSON.stringify({ line_group_ingress: "invalid_json" }));
     return;
   }
 
   const events = Array.isArray(body.events) ? body.events : [];
   for (const event of events) {
-    if (event?.source?.type !== "group") continue;
-    await persistGroupEvent(env, event);
+    if (sourceType(event) !== "group") continue;
+
+    // Diagnostics only. The canonical core LINE handler already owns Console
+    // Inbox persistence for every accepted event. Writing here as well created
+    // a race (lookup-then-create in two independent paths) and produced duplicate
+    // rows for the same stable LINE message id. Keep this gate read-only so the
+    // core handler is the single persistence owner.
+    console.log(JSON.stringify({
+      line_group_ingress: "observed",
+      event_type: asString(event?.type).toLowerCase() || "unknown",
+      message_type: messageType(event),
+      group_source_present: Boolean(asString(event?.source?.groupId)),
+      user_source_present: Boolean(asString(event?.source?.userId)),
+      stable_event_present: Boolean(asString(event?.message?.id || event?.webhookEventId)),
+      redelivered: event?.deliveryContext?.isRedelivery === true,
+      persistence_owner: "core_line_handler",
+    }));
   }
 }
 
