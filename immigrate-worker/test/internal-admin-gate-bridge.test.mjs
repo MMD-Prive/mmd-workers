@@ -415,3 +415,61 @@ test("protected-page login redirects preserve only same-origin internal next pat
     assert.equal(response.headers.get("location").includes("evil.example"), false, path);
   }
 });
+
+
+test("customer LINE push fails closed until the customer snapshot is explicitly reviewed", async () => {
+  const calls = [];
+  const payload = JSON.stringify({ session_id: "sess_review_guard", message: "test" });
+  const { result: response, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/v1/admin/line/push", "mmdbkk.com", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: payload,
+  }), {
+    ADMIN_WORKER: adminWorkerBinding(calls),
+    ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
+  }));
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.equal(publicCalls, 0);
+  assert.equal(calls.length, 0);
+  assert.equal(body.error, "customer_snapshot_review_required");
+});
+
+test("reviewed customer LINE push requires a session and only then forwards through the admin binding", async () => {
+  const missingSessionCalls = [];
+  const missingSession = await handleInternalRoutes(request("/v1/admin/line/push", "mmdbkk.com", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ customer_snapshot_reviewed: true, message: "test" }),
+  }), {
+    ADMIN_WORKER: adminWorkerBinding(missingSessionCalls),
+    ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
+  });
+  assert.equal(missingSession.status, 400);
+  assert.equal(missingSessionCalls.length, 0);
+  assert.equal((await missingSession.json()).error, "session_id_required");
+
+  const calls = [];
+  const payload = JSON.stringify({ session_id: "sess_review_guard", customer_snapshot_reviewed: true, message: "test" });
+  const response = await handleInternalRoutes(request("/v1/admin/line/push", "www.mmdbkk.com", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: payload,
+  }), {
+    ADMIN_WORKER: {
+      fetch: async (input) => {
+        calls.push(input);
+        return Response.json({ ok: true, echoed: await input.text() });
+      },
+    },
+    ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://www.mmdbkk.com/v1/admin/line/push");
+  assert.equal(calls[0].headers.get("x-mmd-customer-snapshot-reviewed"), "true");
+  assert.deepEqual(JSON.parse(body.echoed), JSON.parse(payload));
+});
