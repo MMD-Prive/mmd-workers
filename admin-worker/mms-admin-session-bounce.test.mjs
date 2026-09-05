@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { hasValidAdminBrowserSession } from './src/admin-browser-session.js';
+import { createCredentialBoundAdminSession } from './src/credential-bound-admin-session.js';
 import { handleMmsAdminRequest } from './src/mms-admin-runtime.js';
 
 const env = {
@@ -10,32 +11,21 @@ const env = {
   ADMIN_WORKER_BUILD_SHA: 'test-build-sha',
 };
 
-function base64Url(value) {
-  return Buffer.from(value, 'utf8').toString('base64url');
-}
-
 async function signedCookie({ origin = 'https://mmdbkk.com', expOffset = 60_000 } = {}) {
-  const now = Date.now();
-  const payload = base64Url(JSON.stringify({
-    version: 2,
-    scope: 'internal_admin',
-    host: origin,
-    iat: now,
-    exp: now + expOffset,
-    nonce: 'test-session',
-    auth_method: 'login',
-    actor_id: 'boss-per',
-    actor_role: 'owner',
-  }));
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(`${env.ADMIN_SESSION_SECRET}.${env.ADMIN_LOGIN_CREDENTIAL}`),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
+  if (expOffset <= 0) {
+    const expired = await createCredentialBoundAdminSession(
+      new Request(`${origin}/internal/admin/login/session`),
+      { id: 'boss-per' },
+      env,
+    );
+    return `mmd_admin_gate_v1=${expired.replace(/.$/, expired.endsWith('a') ? 'b' : 'a')}`;
+  }
+  const token = await createCredentialBoundAdminSession(
+    new Request(`${origin}/internal/admin/login/session`),
+    { id: 'boss-per' },
+    env,
   );
-  const signature = Buffer.from(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload))).toString('base64url');
-  return `mmd_admin_gate_v1=${encodeURIComponent(`${payload}.${signature}`)}`;
+  return `mmd_admin_gate_v1=${token}`;
 }
 
 test('valid credential-bound browser cookie remains accepted on MMS admin page', async () => {
