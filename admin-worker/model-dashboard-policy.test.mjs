@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  chooseIdentityCandidate,
   modelMediaPolicy,
   normalizeEtaMinutes,
+  normalizeModelIdentityName,
   normalizeModelProfilePatch,
 } from "./src/model-liff-worker.js";
 import {
@@ -64,6 +66,51 @@ test("ETA accepts whole minutes 1 through 240 only", () => {
   assert.equal(normalizeEtaMinutes(0), 0);
   assert.equal(normalizeEtaMinutes(241), 0);
   assert.equal(normalizeEtaMinutes(10.5), 0);
+});
+
+test("identity-first normalizer stays exact after harmless punctuation and spacing", () => {
+  assert.equal(normalizeModelIdentityName("  Mek  "), "mek");
+  assert.equal(normalizeModelIdentityName("Nhum-K"), "nhum k");
+  assert.equal(normalizeModelIdentityName("K. หนุ่ม"), "k หนุ่ม");
+});
+
+test("identity-first auto-binds Mek only with one exact candidate plus trusted job evidence", () => {
+  const decision = chooseIdentityCandidate("Mek", [{
+    record: { id: "recBKaHfxUKs8fkMV" },
+    aliases: ["Mek", "mdl_private_premium_vip_straight_top_mek"],
+    has_active_session: true,
+    has_source_evidence: false,
+    has_r2_evidence: false,
+  }]);
+  assert.equal(decision.action, "bind");
+  assert.equal(decision.candidate.record.id, "recBKaHfxUKs8fkMV");
+});
+
+test("identity-first auto-binds Nhum K only when exact canonical name has source evidence", () => {
+  const decision = chooseIdentityCandidate("Nhum K", [{
+    record: { id: "recyUWnO9AlW2Q6co" },
+    aliases: ["Nhum K", "mdl_pub_trv_nhum"],
+    has_active_session: false,
+    has_source_evidence: true,
+    has_r2_evidence: false,
+  }]);
+  assert.equal(decision.action, "bind");
+  assert.equal(decision.candidate.record.id, "recyUWnO9AlW2Q6co");
+});
+
+test("identity-first never auto-binds ambiguous or unsupported name matches", () => {
+  const ambiguous = chooseIdentityCandidate("Mek", [
+    { record: { id: "rec1" }, aliases: ["Mek"], has_active_session: true },
+    { record: { id: "rec2" }, aliases: ["Mek"], has_source_evidence: true },
+  ]);
+  assert.equal(ambiguous.action, "review");
+  assert.equal(ambiguous.reason, "identity_candidate_ambiguous");
+
+  const unsupported = chooseIdentityCandidate("Mek", [
+    { record: { id: "rec1" }, aliases: ["Mek"], has_active_session: false, has_source_evidence: false, has_r2_evidence: false },
+  ]);
+  assert.equal(unsupported.action, "review");
+  assert.equal(unsupported.reason, "identity_supporting_evidence_required");
 });
 
 test("first-time activation accepts only canonical LINE user subjects", () => {
