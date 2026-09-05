@@ -40,6 +40,7 @@ import {
   handlePaymentReviewRequest,
   isPaymentReviewRequest,
 } from "./payment-review-runtime.js";
+import { createCredentialBoundAdminSession, getCredentialBoundAdminLoginCredential, readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
@@ -270,7 +271,7 @@ async function handleCredentialBoundAdminLogin(request, env) {
   const next = sanitizeNextPath(payload.next || "");
   if (!code) return strictJson(request, env, { ok: false, error: "missing_access_code" }, 400);
 
-  const secret = getAdminLoginCredential(env);
+  const secret = getCredentialBoundAdminLoginCredential(env);
   if (!secret) {
     return strictJson(request, env, { ok: false, error: "admin_login_credential_missing" }, 503);
   }
@@ -278,14 +279,7 @@ async function handleCredentialBoundAdminLogin(request, env) {
     return strictJson(request, env, { ok: false, error: "invalid_access_code" }, 401);
   }
 
-  const now = Date.now();
-  const actor = {
-    id: "per",
-    scope: "internal-admin",
-    iat: now,
-    exp: now + ADMIN_GATE_TTL_MS,
-  };
-  const cookie = await signAdminActor(actor, env);
+  const cookie = await createCredentialBoundAdminSession(request, { id: "per" }, env);
   return strictJson(
     request,
     env,
@@ -345,11 +339,7 @@ function ensureAllowedOrigin(request) {
 }
 
 async function readAdminGateActor(request, env) {
-  const cookie = parseCookie(request.headers.get("Cookie") || "")[ADMIN_GATE_SESSION_COOKIE];
-  if (!cookie) return null;
-  const actor = await verifyAdminActor(cookie, env);
-  if (!actor || !actor.exp || Date.now() > actor.exp) return null;
-  return actor;
+  return readCredentialBoundAdminActor(request, env);
 }
 
 async function signAdminActor(actor, env) {
