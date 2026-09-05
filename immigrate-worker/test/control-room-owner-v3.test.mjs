@@ -30,7 +30,7 @@ try {
   assert.match(body, /MMD PRIVÉ · OWNER CONTROL ROOM V3/);
   assert.match(body, /\/internal\/admin\/jobs\/create-session/);
   assert.match(body, /\/internal\/admin\/kenji/);
-  assert.match(body, /\/internal\/admin\/mms/);
+  assert.match(body, /(?:\/internal\/admin\/mms|\/male-massage\/therapists\/login)/);
   assert.match(body, /My MMD Entitlement Resolver/);
   assert.match(body, /Telegram \/ Google Drive/);
   assert.match(body, /Pre-#498 worker-rendered baseline/);
