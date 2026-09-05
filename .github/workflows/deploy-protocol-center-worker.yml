@@ -1,0 +1,152 @@
+name: Deploy protocol-center-worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "protocol-center-worker/**"
+      - ".github/workflows/deploy-protocol-center-worker.yml"
+
+concurrency:
+  group: deploy-protocol-center-worker-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: protocol-center-worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+      AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+      NO_COLOR: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate required credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const clean = (value) => (value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
+          for (const key of ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ROUTES_API_TOKEN", "AIRTABLE_API_KEY", "ADMIN_SMOKE_CREDENTIAL"]) {
+            const value = clean(process.env[key]);
+            if (!value) throw new Error(`${key} is required`);
+            fs.appendFileSync(process.env.GITHUB_ENV, `${key}=${value}\n`);
+          }
+          NODE
+          echo "::add-mask::$AIRTABLE_API_KEY"
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
+
+      - name: Run Protocol Center tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run check
+          npm test
+
+      - name: Verify Cloudflare deploy token
+        shell: bash
+        run: npx --yes wrangler@4 whoami
+
+      - name: Build route-free deployment config
+        id: config
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const input = fs.readFileSync("wrangler.toml", "utf8").split(/\r?\n/);
+          const output = [];
+          let skippingRoute = false;
+          for (const line of input) {
+            if (/^\s*\[\[routes\]\]\s*$/.test(line)) {
+              skippingRoute = true;
+              continue;
+            }
+            if (skippingRoute && /^\s*\[/.test(line)) skippingRoute = false;
+            if (!skippingRoute) output.push(line);
+          }
+          fs.writeFileSync(".wrangler-no-routes.toml", `${output.join("\n")}\n`);
+          NODE
+          if grep -q '^\s*\[\[routes\]\]' .wrangler-no-routes.toml; then
+            echo "Route-free config still contains routes" >&2
+            exit 1
+          fi
+
+      - name: Deploy Worker code and Durable Object migration without routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 deploy --keep-vars --config .wrangler-no-routes.toml \
+            --var "PROTOCOL_CENTER_BUILD_SHA:${GITHUB_SHA}"
+
+      - name: Provision Airtable secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$AIRTABLE_API_KEY" | npx --yes wrangler@4 secret put AIRTABLE_API_KEY --config .wrangler-no-routes.toml
+
+      - name: Sync exact Protocol Center routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CLOUDFLARE_API_TOKEN="$CLOUDFLARE_ROUTES_API_TOKEN"
+          npx --yes wrangler@4 triggers deploy --config wrangler.toml
+
+      - name: Production smoke — fail closed then authenticated Airtable read
+        shell: bash
+        run: |
+          set -euo pipefail
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            body="$(mktemp)"
+            code="$(curl --retry 5 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" "$origin/v1/admin/protocols")"
+            cat "$body"
+            test "$code" = "401"
+            grep -q '"error":"unauthorized"' "$body"
+
+            jar="$(mktemp)"
+            login_body="$(mktemp)"
+            login_code="$(curl --retry 5 --retry-delay 2 --retry-all-errors -sS -o "$login_body" -w "%{http_code}" \
+              -c "$jar" \
+              -H "Origin: $origin" \
+              -H "Content-Type: application/x-www-form-urlencoded" \
+              --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL" \
+              --data-urlencode "next=/internal/admin/control-room" \
+              "$origin/internal/admin/login/session")"
+            cat "$login_body"
+            test "$login_code" = "303"
+
+            body="$(mktemp)"
+            code="$(curl --retry 5 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
+              -b "$jar" \
+              -H "Origin: $origin" \
+              "$origin/v1/admin/protocols")"
+            cat "$body"
+            test "$code" = "200"
+            grep -q '"authority":"airtable"' "$body"
+            grep -q '"source_of_truth":"Airtable canonical base"' "$body"
+          done
+
+      - name: Clean temporary config
+        if: always()
+        shell: bash
+        run: rm -f .wrangler-no-routes.toml
