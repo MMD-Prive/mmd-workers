@@ -3,7 +3,7 @@ name: Payment Review Facade CI
 on:
   pull_request:
     paths:
-      - "admin-worker/src/admin-payment-review-entry.js"
+      - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/src/payment-review-runtime.js"
       - "admin-worker/wrangler.toml"
       - "payments-worker/index.review-wrapper.js"
@@ -28,7 +28,7 @@ jobs:
       - name: Syntax
         run: |
           set -euo pipefail
-          node --check admin-worker/src/admin-payment-review-entry.js
+          node --check admin-worker/src/admin-login-hero-worker.js
           node --check admin-worker/src/payment-review-runtime.js
           node --check payments-worker/index.review-wrapper.js
           node --check payments-worker/reviewed-proof.js
@@ -36,8 +36,10 @@ jobs:
       - name: Browser facade guardrails
         run: |
           set -euo pipefail
-          grep -F 'browser_admin_session_required' admin-worker/src/admin-payment-review-entry.js
-          grep -F 'forbidden_origin' admin-worker/src/admin-payment-review-entry.js
+          grep -F 'browser_admin_session_required' admin-worker/src/admin-login-hero-worker.js
+          grep -F 'forbidden_origin' admin-worker/src/admin-login-hero-worker.js
+          grep -F 'isPaymentReviewRequest' admin-worker/src/admin-login-hero-worker.js
+          grep -F 'handlePaymentReviewRequest' admin-worker/src/admin-login-hero-worker.js
           grep -F 'Idempotency-Key' admin-worker/src/payment-review-runtime.js
           grep -F 'browser_can_mark_paid: false' admin-worker/src/payment-review-runtime.js
           grep -F 'browser_can_award_points: false' admin-worker/src/payment-review-runtime.js
@@ -69,7 +71,7 @@ jobs:
       - name: Production entrypoint contracts
         run: |
           set -euo pipefail
-          grep -F 'main = "src/admin-payment-review-entry.js"' admin-worker/wrangler.toml
+          grep -F 'main = "src/admin-login-hero-worker.js"' admin-worker/wrangler.toml
           grep -F 'main = "index.review-wrapper.js"' payments-worker/wrangler.merged.toml
           npx --yes wrangler@4 versions upload --dry-run --keep-vars --config admin-worker/wrangler.toml
           npx --yes wrangler@4 versions upload --dry-run --keep-vars --config payments-worker/wrangler.merged.toml
