@@ -81,6 +81,7 @@ export function renderApprovedAdminLogin(
           </form>
         </article>
         <aside class="mmd-login__visual" aria-label="SIGIL internal administration environment">
+          <img class="mmd-login__logo" src="${APPROVED_ADMIN_LOGIN_LOGO}" alt="MMD SIGIL Internal Admin" width="260" height="260" fetchpriority="high">
           <div class="mmd-login__note"><b>Private access. Quiet control.</b><p>เข้าเฉพาะพื้นที่ทำงานภายใน แล้วไปต่อยัง route ที่กำหนดไว้</p></div>
         </aside>
       </section>
