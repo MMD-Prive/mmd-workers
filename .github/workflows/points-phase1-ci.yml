@@ -3,7 +3,9 @@ name: Points Phase 1 CI
 on:
   pull_request:
     paths:
+      - "payments-worker/index.review-wrapper.js"
       - "payments-worker/index.phase1.js"
+      - "payments-worker/reviewed-proof.js"
       - "payments-worker/points-phase1.js"
       - "payments-worker/points-phase1.test.mjs"
       - "payments-worker/wrangler.merged.toml"
@@ -23,12 +25,19 @@ jobs:
           node-version: "20"
       - name: Syntax
         run: |
+          node --check payments-worker/index.review-wrapper.js
           node --check payments-worker/index.phase1.js
+          node --check payments-worker/reviewed-proof.js
           node --check payments-worker/points-phase1.js
       - name: Phase 1 math
         run: node --test payments-worker/points-phase1.test.mjs
       - name: Production entrypoint contract
-        run: grep -F 'main = "index.phase1.js"' payments-worker/wrangler.merged.toml
+        run: grep -F 'main = "index.review-wrapper.js"' payments-worker/wrangler.merged.toml
+      - name: Reviewed proof contract
+        run: |
+          grep -F '/v1/internal/payments/reviewed-proof' payments-worker/reviewed-proof.js
+          grep -F 'AUTH_SERVICE_ADMIN_TO_PAYMENTS' payments-worker/reviewed-proof.js
+          grep -F 'historical_proof_requires_historical_review_contract' payments-worker/reviewed-proof.js
       - name: Serialized coordinator contract
         run: |
           grep -F 'POINTS_PHASE1_COORDINATOR' payments-worker/points-phase1.js
