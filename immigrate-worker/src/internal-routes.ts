@@ -451,8 +451,23 @@ async function proxyAdminApi(request: Request, env: InternalRoutesEnv): Promise<
   if (contentType) headers.set("content-type", contentType);
   headers.set("x-mmd-auth-bridge", "immigrate-internal-admin-api");
   headers.set("x-mmd-public-host", publicHost);
+  if (isCustomerLinePush) headers.set("x-mmd-customer-snapshot-reviewed", "true");
 
   const isClientLineageLookup = targetPath === "/v1/admin/clients/lineage-lookup" && request.method === "POST";
+  const isCustomerLinePush = targetPath === "/v1/admin/line/push" && request.method === "POST";
+  if (isCustomerLinePush) {
+    const pushBody = await readBodyJson(request.clone());
+    if (pushBody.customer_snapshot_reviewed !== true) {
+      return Response.json({
+        ok: false,
+        error: "customer_snapshot_review_required",
+        message: "Review and explicitly confirm the customer snapshot before sending LINE.",
+      }, { status: 409, headers: { "cache-control": "no-store" } });
+    }
+    if (!str(pushBody.session_id)) {
+      return Response.json({ ok: false, error: "session_id_required" }, { status: 400, headers: { "cache-control": "no-store" } });
+    }
+  }
   let manualLookupQuery = "";
   if (isClientLineageLookup) {
     try {
