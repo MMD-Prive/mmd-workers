@@ -1,5 +1,6 @@
 import workerWithSlipEvidence from "./index.with-slip-evidence.js";
 import { awardBasePointsPhase1 } from "./points-phase1.js";
+import { CONFIRM_ACK_PATH, handleConfirmationAck } from "./confirmation-ack.js";
 export { PointsPhase1Coordinator } from "./points-phase1.js";
 
 const NOTIFY_PATH = "/v1/payments/notify";
@@ -9,6 +10,10 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+
+    if (path === CONFIRM_ACK_PATH && (method === "POST" || method === "OPTIONS")) {
+      return handleConfirmationAck(request, env);
+    }
 
     if (method !== "POST" || path !== NOTIFY_PATH) {
       return workerWithSlipEvidence.fetch(request, env, ctx);
