@@ -9,6 +9,7 @@ if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
 const env = {
   ADMIN_LOGIN_CREDENTIAL: "payment-inbox-admin-session-test",
+  ADMIN_SESSION_SECRET: "payment-inbox-admin-session-secret",
 };
 
 test("credential login issues an admin actor usable by the payment review guard", async () => {
@@ -28,7 +29,7 @@ test("credential login issues an admin actor usable by the payment review guard"
     {}
   );
 
-  assert.equal(login.status, 200);
+  assert.equal(login.status, 303);
   const setCookie = login.headers.get("set-cookie") || "";
   const cookie = setCookie.split(";", 1)[0];
   assert.match(cookie, /^mmd_admin_gate_v1=/);
