@@ -3,7 +3,7 @@
 # Production deploy request: Kenji Admin gated rollout 2026-09-02
 
 name = "admin-worker"
-main = "src/admin-login-hero-worker.js"
+main = "src/admin-payment-review-entry.js"
 compatibility_date = "2026-01-01"
 workers_dev = true
 
@@ -234,6 +234,25 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/membership/payment-entitlement/approve"
+zone_name = "mmdbkk.com"
+
+# Payment Review Console browser facade. These are exact/narrow API routes only;
+# /internal/admin/payments remains Webflow-owned presentation. The wrapper first
+# proves the credential-bound browser session against the existing admin gate.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/payments/review-queue*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/payments/review-queue*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/payments/review"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/payments/review"
 zone_name = "mmdbkk.com"
 
 # Model Dashboard first-time invite issuer. Browser access is protected by the
