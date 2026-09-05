@@ -1,5 +1,5 @@
 name = "member-dashboard-chat-worker"
-main = "src/line-group-ingress-front-gate.js"
+main = "src/my-mmd-lovable-app-front-gate.js"
 compatibility_date = "2026-07-02"
 workers_dev = false
 
