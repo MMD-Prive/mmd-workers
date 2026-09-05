@@ -5,8 +5,9 @@ on:
     paths:
       - "admin-worker/src/historical-slip-backfill-runtime.js"
       - "admin-worker/src/studio-telegram-worker.js"
-      - "admin-worker/src/admin-payment-review-entry.js"
+      - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/historical-slip-backfill-route.test.mjs"
+      - "admin-worker/wrangler.toml"
       - ".github/workflows/historical-backfill-route-gate.yml"
   workflow_run:
     workflows:
@@ -30,12 +31,16 @@ jobs:
       - name: Historical Backfill syntax and fail-closed contract
         run: |
           set -euo pipefail
+          node --check admin-worker/src/admin-login-hero-worker.js
           node --check admin-worker/src/historical-slip-backfill-runtime.js
           node --check admin-worker/src/studio-telegram-worker.js
           node --experimental-global-webcrypto --test admin-worker/historical-slip-backfill-route.test.mjs
-      - name: Preserve Money Truth separation
+      - name: Preserve canonical route and Money Truth separation
         run: |
           set -euo pipefail
+          grep -F 'main = "src/admin-login-hero-worker.js"' admin-worker/wrangler.toml
+          grep -F 'mmdbkk.com/v1/admin/payments/historical-backfill*' admin-worker/wrangler.toml
+          grep -F 'www.mmdbkk.com/v1/admin/payments/historical-backfill*' admin-worker/wrangler.toml
           grep -F 'AUTH_SERVICE_ADMIN_TO_PAYMENTS' admin-worker/src/historical-slip-backfill-runtime.js
           grep -F '/v1/internal/payments/historical-slip/reviewed' admin-worker/src/historical-slip-backfill-runtime.js
           grep -F 'review_state: "pending"' admin-worker/src/historical-slip-backfill-runtime.js
