@@ -308,7 +308,7 @@ async function issueModelSession(request, env, { model, lineUserId, environment 
     },
     session: session ? { session_id: session.sessionId, state: session.state } : null,
   }, 200, request, env);
-  response.headers.append("set-cookie", serializeSessionCookie(token, ttlSeconds));
+  response.headers.append("set-cookie", serializeSessionCookie(token, ttlSeconds, request, env));
   return response;
 }
 
@@ -565,8 +565,17 @@ function base64UrlEncode(value) {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-function serializeSessionCookie(token, maxAge) {
-  return `${COOKIE_NAME}=${encodeURIComponent(token)}; Max-Age=${maxAge}; Path=/v1/model; HttpOnly; Secure; SameSite=Lax`;
+function serializeSessionCookie(token, maxAge, request, env) {
+  const crossSite = usesPartitionedDashboardCookie(request, env);
+  const sameSite = crossSite ? "None; Partitioned" : "Lax";
+  return `${COOKIE_NAME}=${encodeURIComponent(token)}; Max-Age=${maxAge}; Path=/v1/model; HttpOnly; Secure; SameSite=${sameSite}`;
+}
+
+function usesPartitionedDashboardCookie(request, env) {
+  const origin = clean(request.headers.get("origin"));
+  const dashboardOrigin = clean(env.MODEL_DASHBOARD_ORIGIN);
+  if (!origin || !dashboardOrigin || origin !== dashboardOrigin || !isAllowedOrigin(request, env)) return false;
+  return origin !== new URL(request.url).origin;
 }
 
 function isCanonicalLineUserId(value) {
