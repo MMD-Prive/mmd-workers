@@ -201,7 +201,7 @@ async function applyCredentialBoundAdminGate(request, env, path, method) {
   const actor = await readAdminGateActor(request, env);
   if (actor) {
     const headers = new Headers(request.headers);
-    headers.set("x-mmd-admin-actor", actor.id);
+    headers.set("x-mmd-admin-actor", actor.id || "per");
     headers.set("x-mmd-admin-source", "credential-bound-session");
     return {
       request: new Request(request, { headers }),
@@ -270,9 +270,12 @@ async function handleCredentialBoundAdminLogin(request, env) {
   const next = sanitizeNextPath(payload.next || "");
   if (!code) return strictJson(request, env, { ok: false, error: "missing_access_code" }, 400);
 
-  const secret = String(env.ADMIN_ACCESS_CODE || env.SIGIL_ADMIN_ACCESS_CODE || "").trim();
-  if (!secret || code !== secret) {
-    return strictJson(request, env, { ok: false, error: "invalid_access_code" }, 403);
+  const secret = getAdminLoginCredential(env);
+  if (!secret) {
+    return strictJson(request, env, { ok: false, error: "admin_login_credential_missing" }, 503);
+  }
+  if (code !== secret) {
+    return strictJson(request, env, { ok: false, error: "invalid_access_code" }, 401);
   }
 
   const now = Date.now();
@@ -283,17 +286,15 @@ async function handleCredentialBoundAdminLogin(request, env) {
     exp: now + ADMIN_GATE_TTL_MS,
   };
   const cookie = await signAdminActor(actor, env);
-  return strictJson(
-    request,
-    env,
-    { ok: true, next },
-    200,
-    {
+  return new Response(null, {
+    status: 303,
+    headers: adminGateHeaders(request, env, {
+      location: next,
       "set-cookie": `${ADMIN_GATE_SESSION_COOKIE}=${cookie}; Path=/; Max-Age=${Math.floor(ADMIN_GATE_TTL_MS / 1000)}; HttpOnly; Secure; SameSite=Lax`,
       "x-mmd-admin-login": "session-created",
       "x-mmd-admin-next": next,
-    },
-  );
+    }),
+  });
 }
 
 async function handleCredentialBoundAdminLogout(request) {
@@ -328,7 +329,8 @@ function sanitizeNextPath(value) {
 function ensureAllowedOrigin(request) {
   const origin = request.headers.get("Origin");
   if (!origin) return null;
-  if (!ADMIN_GATE_ALLOWED_BASE_URLS.has(origin)) {
+  const requestOrigin = new URL(request.url).origin;
+  if (!ADMIN_GATE_ALLOWED_BASE_URLS.has(origin) || !ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin)) {
     return new Response(JSON.stringify({ ok: false, error: "forbidden_origin" }), {
       status: 403,
       headers: {
@@ -367,8 +369,22 @@ async function verifyAdminActor(token, env) {
   }
 }
 
+function getAdminLoginCredential(env) {
+  const dedicated = String(env.ADMIN_LOGIN_CREDENTIAL || "").trim();
+  if (dedicated) return dedicated;
+  return String(env.ADMIN_ACCESS_CODE || env.SIGIL_ADMIN_ACCESS_CODE || env.ADMIN_BEARER || "").trim();
+}
+
 function getAdminGateSecret(env) {
-  const secret = String(env.ADMIN_ACCESS_CODE || env.SIGIL_ADMIN_ACCESS_CODE || env.SESSION_SECRET || "").trim();
+  const secret = String(
+    env.ADMIN_SESSION_SECRET ||
+      env.SESSION_SECRET ||
+      env.ADMIN_LOGIN_CREDENTIAL ||
+      env.ADMIN_ACCESS_CODE ||
+      env.SIGIL_ADMIN_ACCESS_CODE ||
+      env.ADMIN_BEARER ||
+      ""
+  ).trim();
   if (!secret) throw new Error("Missing admin gate secret");
   return secret;
 }
