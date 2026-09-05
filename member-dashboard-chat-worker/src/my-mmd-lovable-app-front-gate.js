@@ -184,17 +184,48 @@ async function proxyLovableAsset(request) {
   });
 }
 
+function liffStateSearchParams(url) {
+  const raw = String(url.searchParams.get("liff.state") || url.searchParams.get("liff_state") || "").trim();
+  if (!raw) return new URLSearchParams();
+
+  let state = raw;
+  try {
+    state = decodeURIComponent(raw);
+  } catch (_) {}
+
+  const queryIndex = state.indexOf("?");
+  if (queryIndex >= 0) return new URLSearchParams(state.slice(queryIndex + 1));
+  if (state.startsWith("intent=") || state.startsWith("liff_intent=")) return new URLSearchParams(state);
+  return new URLSearchParams();
+}
+
 function isStatusLiffShellRequest(request) {
   const url = new URL(request.url);
   const path = url.pathname.toLowerCase().replace(/\/{2,}/g, "/");
   if (!MEMBER_LIFF_SHELL_PATHS.has(path)) return false;
-  const intent = String(url.searchParams.get("intent") || url.searchParams.get("liff_intent") || "").trim().toLowerCase();
-  const campaign = String(url.searchParams.get("campaign") || "").trim().toLowerCase();
-  return intent === "status" && !campaign;
+
+  const stateParams = liffStateSearchParams(url);
+  const intent = String(
+    url.searchParams.get("intent")
+      || url.searchParams.get("liff_intent")
+      || stateParams.get("intent")
+      || stateParams.get("liff_intent")
+      || "",
+  ).trim().toLowerCase();
+  const campaign = String(
+    url.searchParams.get("campaign")
+      || stateParams.get("campaign")
+      || "",
+  ).trim().toLowerCase();
+
+  if (campaign) return false;
+  if (!intent || intent === "unknown") return true;
+  return intent === "status";
 }
 
 function statusBridgeSkin() {
   return `<style id="mmd-status-bridge-skin">
+html,body{background:#fbf9f5!important}
 #mmd-status-bridge-veil{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:24px;background:#fbf9f5;color:#2b2723;text-align:center;font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif}
 #mmd-status-bridge-veil img{width:96px;height:96px;object-fit:contain;animation:mmd-status-hype-spin 2.4s linear infinite}
 #mmd-status-bridge-veil .k{margin-top:6px;color:#a67f3c;font-size:10px;font-weight:800;letter-spacing:.18em}
