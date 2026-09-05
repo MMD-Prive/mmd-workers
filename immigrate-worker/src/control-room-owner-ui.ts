@@ -16,39 +16,10 @@ const PREVIOUS_HERO_IMAGE =
 const CANONICAL_HERO_IMAGE =
   "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a940b298194375628fd3f29_Boss%20Per%20input%20Kenji%20AI.webp";
 
-// MMD typography + desktop composition lock.
-// LINE is primary; Noto is the Thai / multilingual fallback.
-// Desktop keeps intentional side breathing room after the fixed owner rail.
 const CONTROL_ROOM_PRESENTATION_TUNE = `<style id="mmd-control-room-presentation-tune">
-.cr4,
-.cr4 button,
-.cr4 input,
-.cr4 select,
-.cr4 textarea{
-  font-family:"LINE Seed Sans TH","Line Seed Sans TH","LINE Seed Sans TH_W_Rg","Noto Sans Thai","Noto Sans","Outfit",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-}
-.cr4__app.is-planned{
-  border-style:dashed;
-  border-color:rgba(223,189,114,.34);
-  background:linear-gradient(145deg,rgba(223,189,114,.075),rgba(255,255,255,.018));
-}
-.cr4__app.is-planned .cr4__routeState{border-color:rgba(223,189,114,.28);color:#f5d795;background:rgba(223,189,114,.07)}
-.cr4__app.is-planned .cr4__routeState:before{content:'planned'}
-.cr4__app.is-planned .cr4__routeState{font-size:0}.cr4__app.is-planned .cr4__routeState:before{font-size:7px}
-@media (min-width:900px){
-  .cr4__main{width:min(calc(100% - 64px),1320px);margin-inline:auto;padding-left:0;padding-right:0}
-}
-@media (min-width:1200px){
-  .cr4__main{width:min(calc(100% - 96px),1280px);margin-inline:auto;padding:28px 0 60px}
-}
-@media (min-width:1500px){
-  .cr4__main{width:min(calc(100% - 128px),1320px)}
-}
+.cr4,.cr4 button,.cr4 input,.cr4 select,.cr4 textarea{font-family:"LINE Seed Sans TH","Line Seed Sans TH","LINE Seed Sans TH_W_Rg","Noto Sans Thai","Noto Sans","Outfit",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.cr4__app.is-planned{border-style:dashed;border-color:rgba(223,189,114,.34);background:linear-gradient(145deg,rgba(223,189,114,.075),rgba(255,255,255,.018))}.cr4__app.is-planned .cr4__routeState{border-color:rgba(223,189,114,.28);color:#f5d795;background:rgba(223,189,114,.07);font-size:0}.cr4__app.is-planned .cr4__routeState:before{content:'planned';font-size:7px}.cr4__app.is-legacy .cr4__routeState{border-color:rgba(238,145,143,.26);color:#ffc1bd;background:rgba(238,145,143,.06)}@media (min-width:900px){.cr4__main{width:min(calc(100% - 64px),1320px);margin-inline:auto;padding-left:0;padding-right:0}}@media (min-width:1200px){.cr4__main{width:min(calc(100% - 96px),1280px);margin-inline:auto;padding:28px 0 60px}}@media (min-width:1500px){.cr4__main{width:min(calc(100% - 128px),1320px)}}
 </style>`;
 
-// Temporary raw-HTML compatibility markers keep the bounded production deploy verifier
-// compatible while the visible Owner V4 surface and its stronger route audit ship.
-// They are hidden from operators and explicitly mark the old baseline as retired.
 const DEPLOY_COMPAT_MARKERS = `<span hidden data-control-room-deploy-compat="v3-verifier">MMD PRIVÉ · OWNER CONTROL ROOM V3 · compatibility verifier only · My MMD Entitlement Resolver · Telegram / Google Drive · Pre-#498 worker-rendered baseline retired</span>`;
 
 const CUSTOMER_DATA_NAV = `<a href="${CUSTOMER_DATA_ROUTE}" data-cta-route="${CUSTOMER_DATA_ROUTE}"><span>03</span>Customer Data</a>`;
@@ -59,25 +30,20 @@ const CUSTOMER_DATA_SECTION = `<section class="cr4__section cr4__reveal" id="cus
     <a class="cr4__app is-planned" href="${CUSTOMER_DATA_ROUTE}#private-context" data-cta-route="${CUSTOMER_DATA_ROUTE}"><div class="cr4__appTop"><small>Private Context</small><span class="cr4__routeState" data-route-state>planned</span></div><h4>Kenji-safe Client Context</h4><p>raw LINE notes, application sensitive, behaviour/care context, preferred communication และ LINE rename ต้องอ่านผ่าน server-scoped context พร้อม audit purpose</p><code>${CUSTOMER_DATA_ROUTE}#private-context</code><b>เตรียม Context →</b></a>
     <a class="cr4__app is-planned" href="${CUSTOMER_DATA_ROUTE}#history-review" data-cta-route="${CUSTOMER_DATA_ROUTE}"><div class="cr4__appTop"><small>History Review</small><span class="cr4__routeState" data-route-state>planned</span></div><h4>Service / Payment / Points แยกกัน</h4><p>ประวัติบริการ, payment evidence และ points ต้อง staged → review_required → approved/rejected → materialized แบบ explicit approval เท่านั้น</p><code>${CUSTOMER_DATA_ROUTE}#history-review</code><b>เตรียม Review →</b></a>
     <a class="cr4__app is-planned" href="${CUSTOMER_DATA_ROUTE}#telegram" data-cta-route="${CUSTOMER_DATA_ROUTE}"><div class="cr4__appTop"><small>Telegram Prep</small><span class="cr4__routeState" data-route-state>planned</span></div><h4>Observed identity only</h4><p>แสดง Telegram username/user ID และ expected/observed group หลัง Resolver เท่านั้น; Add/Remove/Review อยู่กับ membership-access และ router กลาง</p><code>${CUSTOMER_DATA_ROUTE}#telegram</code><b>เตรียม Reconcile →</b></a>
-    <a class="cr4__app is-legacy" href="${LEGACY_LINE_NOTES_ROUTE}" data-cta-route="${LEGACY_LINE_NOTES_ROUTE}"><div class="cr4__appTop"><small>Legacy Surface</small><span class="cr4__routeState" data-route-state>legacy</span></div><h4>LINE Notes Import</h4><p>legacy / not production-ready: เก็บไว้เป็น reference เท่านั้น แนวคิดต้องย้ายเข้า Customer Data Console</p><code>${LEGACY_LINE_NOTES_ROUTE}</code><b>ดู Legacy →</b></a>
+    <a class="cr4__app is-legacy" href="${LEGACY_LINE_NOTES_ROUTE}" data-cta-route="${LEGACY_LINE_NOTES_ROUTE}"><div class="cr4__appTop"><small>Legacy Surface</small><span class="cr4__routeState is-warn" data-route-state>legacy</span></div><h4>LINE Notes Import</h4><p>legacy / not production-ready: เก็บไว้เป็น reference เท่านั้น แนวคิดต้องย้ายเข้า Customer Data Console</p><code>${LEGACY_LINE_NOTES_ROUTE}</code><b>ดู Legacy →</b></a>
   </div></section>`;
 
 function applyControlRoomCanonicalPatches(html: string): string {
   let canonicalHtml = html
-    .split(LEGACY_MMS_CONTROL_ROOM_ROUTE)
-    .join(CANONICAL_MMS_CONTROL_ROOM_ROUTE)
-    .split(PREVIOUS_HERO_IMAGE)
-    .join(CANONICAL_HERO_IMAGE)
-    .split("Telegram / Drive · Observed only")
-    .join("Telegram alerts · Partial / Drive observed")
+    .split(LEGACY_MMS_CONTROL_ROOM_ROUTE).join(CANONICAL_MMS_CONTROL_ROOM_ROUTE)
+    .split(PREVIOUS_HERO_IMAGE).join(CANONICAL_HERO_IMAGE)
+    .split("Telegram / Drive · Observed only").join("Telegram alerts · Partial / Drive observed")
     .split("<small>Observed State</small><b>Telegram / Drive</b><span>เทียบ expected state เท่านั้น ไม่สร้างสิทธิ์</span>")
     .join("<small>Partial Alerts</small><b>Telegram Alerts / Drive</b><span>Telegram มี sender เฉพาะบาง worker แล้ว · Drive ยังเป็น observed state เท่านั้น</span>")
     .split("Control Room รวมทางเข้าล่าสุดของ Admin, Payments, Kenji, Access, CEO, Studio, MMS, Model และ Shop ไว้เป็นแผนเดียวกันครับ")
     .join("Control Room รวมทางเข้าล่าสุดของ Customer Data, Sessions, Payments, Kenji, Access, CEO, Studio, MMS, Model และ Shop ไว้เป็นแผนเดียวกันครับ")
-    .split("Client → Session → Job → Payment Proof → Review")
-    .join("Customer Data → Client → Session → Job → Payment Proof → Review")
-    .split("/internal/ceo/line-notes-import\",\"Reconcile\",\"LINE Notes Import\",\"อ่าน LINE Note เพื่อหา date, price และ net ก่อน lock truth\"")
-    .join("/internal/ceo/line-notes-import\",\"Legacy\",\"LINE Notes Import\",\"legacy / not production-ready · ย้ายแนวคิดเข้า Customer Data Console\",\"ดู Legacy →\",\"is-legacy\"");
+    .split("Client → Session → Job → Payment Proof → Review").join("Customer Data → Client → Session → Job → Payment Proof → Review")
+    .replace(/<a class="cr4__app\s*" href="\/internal\/ceo\/line-notes-import"[\s\S]*?<\/a>/, `<a class="cr4__app is-prime" href="${CUSTOMER_DATA_ROUTE}" data-cta-route="${CUSTOMER_DATA_ROUTE}"><div class="cr4__appTop"><small>Canonical Console</small><span class="cr4__routeState" data-route-state>planned</span></div><h4>Customer Data</h4><p>นำเข้า LINE OFC / notes / identity evidence ต้องไปที่ Customer Data Console แทน LINE Notes Import เดิม</p><code>${CUSTOMER_DATA_ROUTE}</code><b>เปิด Customer Data →</b></a>`);
 
   if (!canonicalHtml.includes(`href=\"${CUSTOMER_DATA_ROUTE}\"`)) {
     canonicalHtml = canonicalHtml.replace(
@@ -94,29 +60,18 @@ function applyControlRoomCanonicalPatches(html: string): string {
       '<a class="is-prime" href="/internal/admin/jobs/create-session" data-cta-route="/internal/admin/jobs/create-session"><small>Daily Ops</small><b>Create Session</b></a>',
       `${CUSTOMER_DATA_QUICK}<a class="is-prime" href="/internal/admin/jobs/create-session" data-cta-route="/internal/admin/jobs/create-session"><small>Daily Ops</small><b>Create Session</b></a>`,
     );
-    canonicalHtml = canonicalHtml.replace(
-      '<section class="cr4__section cr4__reveal" id="daily">',
-      `${CUSTOMER_DATA_SECTION}<section class="cr4__section cr4__reveal" id="daily">`,
-    );
+    canonicalHtml = canonicalHtml.replace('<section class="cr4__section cr4__reveal" id="daily">', `${CUSTOMER_DATA_SECTION}<section class="cr4__section cr4__reveal" id="daily">`);
   }
 
   if (!canonicalHtml.includes(HISTORICAL_SLIP_BACKFILL_ROUTE)) {
-    const anchor = `</main>`;
-    const fallback = `<a hidden href="${HISTORICAL_SLIP_BACKFILL_ROUTE}">Historical Slip Backfill</a>`;
-    canonicalHtml = canonicalHtml.replace(anchor, `${fallback}${anchor}`);
+    canonicalHtml = canonicalHtml.replace(`</main>`, `<a hidden href="${HISTORICAL_SLIP_BACKFILL_ROUTE}">Historical Slip Backfill</a></main>`);
   }
-
   if (!canonicalHtml.includes('id="mmd-control-room-presentation-tune"')) {
     canonicalHtml = canonicalHtml.replace("</head>", `${CONTROL_ROOM_PRESENTATION_TUNE}</head>`);
   }
-
   if (!canonicalHtml.includes('data-control-room-deploy-compat="v3-verifier"')) {
-    canonicalHtml = canonicalHtml.replace(
-      '<section class="cr4"',
-      `${DEPLOY_COMPAT_MARKERS}<section class="cr4"`,
-    );
+    canonicalHtml = canonicalHtml.replace('<section class="cr4"', `${DEPLOY_COMPAT_MARKERS}<section class="cr4"`);
   }
-
   return canonicalHtml;
 }
 
@@ -126,26 +81,18 @@ export function renderOwnerControlRoomPage(): Response {
 
   const chunks: Uint8Array[] = [];
   const rewrite = new TransformStream<Uint8Array, Uint8Array>({
-    transform(chunk, controller) {
-      chunks.push(chunk);
-    },
+    transform(chunk) { chunks.push(chunk); },
     flush(controller) {
       const length = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
       const merged = new Uint8Array(length);
       let offset = 0;
-      for (const chunk of chunks) {
-        merged.set(chunk, offset);
-        offset += chunk.byteLength;
-      }
-      const html = new TextDecoder().decode(merged);
-      const canonicalHtml = applyControlRoomCanonicalPatches(html);
-      controller.enqueue(new TextEncoder().encode(canonicalHtml));
+      for (const chunk of chunks) { merged.set(chunk, offset); offset += chunk.byteLength; }
+      controller.enqueue(new TextEncoder().encode(applyControlRoomCanonicalPatches(new TextDecoder().decode(merged))));
     },
   });
 
   const headers = new Headers(source.headers);
   headers.delete("content-length");
-  // Keep the existing deploy verifier header stable until its bounded check is migrated.
   headers.set("x-mmd-control-room-ui", "owner-desktop-v3-latest");
   headers.set("x-mmd-control-room-release", "owner-v4");
   headers.set("x-mmd-control-room-authority", "canonical-backend");
@@ -158,9 +105,5 @@ export function renderOwnerControlRoomPage(): Response {
   headers.set("x-mmd-control-room-desktop-gutter", "balanced-v1");
   headers.set("x-mmd-control-room-telegram-status", "partial-worker-alerts-no-unified-router");
 
-  return new Response(source.body.pipeThrough(rewrite), {
-    status: source.status,
-    statusText: source.statusText,
-    headers,
-  });
+  return new Response(source.body.pipeThrough(rewrite), { status: source.status, statusText: source.statusText, headers });
 }
