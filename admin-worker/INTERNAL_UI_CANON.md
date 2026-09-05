@@ -11,3 +11,5 @@ This applies to Worker-owned admin surfaces (including Admin Login, Kenji and MM
 Public MMD and MMS favicon rules remain separate and must not overwrite `/internal/*`.
 
 Internal HTML responses with Content Security Policy must allow `https://cdn.prod.website-files.com` in `img-src` so the canonical favicon is not blocked by the browser.
+
+Production browser smoke must verify the canonical favicon URL and real admin DOM/API state, while ignoring only the expected `net::ERR_ABORTED` document navigation produced by the manual login redirect handoff.
