@@ -1,5 +1,5 @@
-import currentWorker from "./my-mmd-lovable-app-front-gate.js";
-export { KenjiModelIdempotency } from "./my-mmd-lovable-app-front-gate.js";
+import currentWorker from "./front-gate-index.js";
+export { KenjiModelIdempotency } from "./front-gate-index.js";
 
 const WORKER_NAME = "member-dashboard-chat-worker";
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/"]);
