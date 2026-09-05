@@ -1,4 +1,5 @@
 name: Prepare Historical Backfill Controlled Handoff
+# retry-v2: generator uses string concatenation only
 
 on:
   push:
