@@ -65,6 +65,7 @@ const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
 const ALLOWED_NEXT_PATHS = [
   "/internal/admin",
   "/internal/admin/control-room",
+  "/internal/admin/customer-data",
   "/internal/admin/dashboard",
   "/internal/admin/mms",
   "/internal/admin/payments",
@@ -144,386 +145,276 @@ export default {
       return handleLineOfcConsoleBackfill(request, env, strictGate.actor);
     }
 
+    if (isMmsAdminRequest(path, method)) {
+      return handleMmsAdminRequest(request, env);
+    }
+
+    if (isKenjiModelAdminRequest(path, method)) {
+      return handleKenjiModelAdminRequest(request, env);
+    }
+
     if (isKenjiControlRequest(path, method)) {
       return handleKenjiControlRequest(request, env);
     }
 
-    if (isKenjiModelAdminRequest(path, method)) {
-      // Defense in depth: the credential-bound gate validates service credentials,
-      // while the Model adapter keeps its canonical core-admin auth check too.
-      if (!(await isCoreAdminAuthed(request, env))) {
-        return strictJson(request, env, { ok: false, authenticated: false, error: "unauthorized" }, 401);
-      }
-      return handleKenjiModelAdminRequest(request, env, {
-        actor: strictGate.actor,
-      });
-    }
-
-    if (isMmsAdminRequest(path)) {
-      return handleMmsAdminRequest(request, env, ctx);
-    }
-
-    // Per-side MMD Console read API. The dashboard worker is read-only,
-    // uses the canonical admin auth helper, and loads operational Airtable data.
-    if (path === ADMIN_DASHBOARD_API_PATH) {
-      return dashboardWorker.fetch(request, env, ctx);
+    if (isKenjiKnowledgeRequest(path, method)) {
+      return handleKenjiKnowledgeRequest(request, env);
     }
 
     if (isKenjiPublicKnowledgeRequest(path, method)) {
-      return handleKenjiPublicKnowledgeRequest(request, env, ctx);
-    }
-
-    if (isKenjiKnowledgeRequest(path, method)) {
-      return handleKenjiKnowledgeRequest(request, env, {
-        actor: strictGate.actor,
-      });
-    }
-
-    if (
-      (path === ADMIN_LOGIN_PAGE_PATH || path === SIGIL_ADMIN_LOGIN_PAGE_PATH) &&
-      (method === "GET" || method === "HEAD")
-    ) {
-      return renderAdminLogin(request, {
-        next: normalizeNext(url.searchParams.get("next")),
-      });
+      return handleKenjiPublicKnowledgeRequest(request, env);
     }
 
     return worker.fetch(request, env, ctx);
   },
 };
 
-export function renderAdminLogin(request, { status = 200, error = "", next = "/internal/admin/control-room" } = {}) {
-  return renderApprovedAdminLogin(request, {
-    status,
-    error,
-    next: normalizeNext(next),
+function normalizePath(pathname) {
+  if (!pathname) return "/";
+  const normalized = pathname.replace(/\/+/g, "/");
+  if (normalized.length > 1 && normalized.endsWith("/")) return normalized.slice(0, -1);
+  return normalized;
+}
+
+async function applyCredentialBoundAdminGate(request, env, path, method) {
+  if (isGateBypassedAdminPath(path, method)) return { request };
+  if (path === ADMIN_LOGIN_PAGE_PATH || path === SIGIL_ADMIN_LOGIN_PAGE_PATH) {
+    if (method === "GET" || method === "HEAD") return { response: await renderLoginGate(request, env) };
+  }
+
+  if (!isBrowserAdminPath(path)) return { request };
+
+  const actor = await readAdminGateActor(request, env);
+  if (actor) {
+    const headers = new Headers(request.headers);
+    headers.set("x-mmd-admin-actor", actor.id);
+    headers.set("x-mmd-admin-source", "credential-bound-session");
+    return {
+      request: new Request(request, { headers }),
+      actor,
+    };
+  }
+
+  if (method === "HEAD" || isApiAdminPath(path)) {
+    return { response: strictJson(request, env, { ok: false, error: "unauthorized" }, 401) };
+  }
+
+  const url = new URL(request.url);
+  const loginUrl = new URL(ADMIN_LOGIN_PAGE_PATH, url.origin);
+  loginUrl.searchParams.set("next", sanitizeNextPath(path));
+  return {
+    response: new Response(null, {
+      status: 303,
+      headers: adminGateHeaders(request, env, {
+        location: loginUrl.toString(),
+        "x-mmd-admin-gate": "credential-required",
+      }),
+    }),
+  };
+}
+
+function isGateBypassedAdminPath(path, method) {
+  if (path === ADMIN_LOGIN_SESSION_PATH) return true;
+  if (path === ADMIN_DASHBOARD_API_PATH && (method === "GET" || method === "HEAD")) return true;
+  return false;
+}
+
+function isBrowserAdminPath(path) {
+  return path.startsWith("/internal/admin") || path.startsWith("/sigil/internal/admin") || path.startsWith("/v1/admin");
+}
+
+function isApiAdminPath(path) {
+  return path.startsWith("/v1/admin") || path.startsWith("/studio/api") || path.includes("/api/");
+}
+
+async function renderLoginGate(request, env) {
+  const url = new URL(request.url);
+  const next = sanitizeNextPath(url.searchParams.get("next"));
+  const body = renderApprovedAdminLogin({
+    next,
+    error: url.searchParams.get("error") || "",
+  });
+  return new Response(body, {
+    status: 200,
+    headers: adminGateHeaders(request, env, {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store, max-age=0",
+      "x-mmd-admin-login": "approved-only-gate",
+      "x-mmd-admin-next": next,
+    }),
   });
 }
 
 async function handleCredentialBoundAdminLogin(request, env) {
-  const origin = request.headers.get("Origin") || "";
-  const requestOrigin = new URL(request.url).origin;
-  if (origin !== requestOrigin || !ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin)) {
-    return renderAdminLogin(request, { status: 403, error: "รหัสยังไม่ถูกต้องครับ ลองตรวจอีกครั้ง" });
-  }
+  const originCheck = ensureAllowedOrigin(request);
+  if (originCheck) return originCheck;
 
-  const contentType = (request.headers.get("Content-Type") || "").split(";", 1)[0].trim().toLowerCase();
-  if (contentType !== "application/x-www-form-urlencoded") {
-    return renderAdminLogin(request, { status: 400, error: "รหัสยังไม่ถูกต้องครับ ลองตรวจอีกครั้ง" });
-  }
-
-  let form;
+  let payload = {};
   try {
-    form = new URLSearchParams(await request.text());
+    payload = await request.json();
   } catch {
-    return renderAdminLogin(request, { status: 400, error: "รหัสยังไม่ถูกต้องครับ ลองตรวจอีกครั้ง" });
+    return strictJson(request, env, { ok: false, error: "invalid_json" }, 400);
   }
 
-  const credential = clean(form.get("credential"));
-  const browserCredential = resolveBrowserLoginCredential(env);
-  if (!browserCredential.value) {
-    return renderAdminLogin(request, {
-      status: 503,
-      error: "ระบบรหัส Admin ยังไม่พร้อมครับ กรุณาลองใหม่อีกครั้ง",
-      next: normalizeNext(form.get("next")),
-    });
-  }
-  if (!credential || !(await constantTimeEqual(credential, browserCredential.value))) {
-    return renderAdminLogin(request, {
-      status: 401,
-      error: "รหัสยังไม่ถูกต้องครับ ลองตรวจอีกครั้ง",
-      next: normalizeNext(form.get("next")),
-    });
+  const code = String(payload.access_code || payload.code || "").trim();
+  const next = sanitizeNextPath(payload.next || "");
+  if (!code) return strictJson(request, env, { ok: false, error: "missing_access_code" }, 400);
+
+  const secret = String(env.ADMIN_ACCESS_CODE || env.SIGIL_ADMIN_ACCESS_CODE || "").trim();
+  if (!secret || code !== secret) {
+    return strictJson(request, env, { ok: false, error: "invalid_access_code" }, 403);
   }
 
   const now = Date.now();
-  const session = {
-    version: 2,
-    scope: "internal_admin",
-    host: requestOrigin,
+  const actor = {
+    id: "per",
+    scope: "internal-admin",
     iat: now,
     exp: now + ADMIN_GATE_TTL_MS,
-    nonce: crypto.randomUUID(),
-    auth_method: browserCredential.mode,
-    actor_id: "boss-per",
-    actor_role: "owner",
   };
-  const cookie = await makeCredentialBoundAdminCookie(session, env);
-  if (!cookie) {
-    return renderAdminLogin(request, {
-      status: 503,
-      error: "ระบบ session Admin ยังไม่พร้อมครับ กรุณาลองใหม่อีกครั้ง",
-      next: normalizeNext(form.get("next")),
+  const cookie = await signAdminActor(actor, env);
+  return strictJson(
+    request,
+    env,
+    { ok: true, next },
+    200,
+    {
+      "set-cookie": `${ADMIN_GATE_SESSION_COOKIE}=${cookie}; Path=/; Max-Age=${Math.floor(ADMIN_GATE_TTL_MS / 1000)}; HttpOnly; Secure; SameSite=Lax`,
+      "x-mmd-admin-login": "session-created",
+      "x-mmd-admin-next": next,
+    },
+  );
+}
+
+async function handleCredentialBoundAdminLogout(request) {
+  const headers = new Headers({
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store, max-age=0",
+    "set-cookie": `${ADMIN_GATE_SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+  });
+  return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
+}
+
+function sanitizeNextPath(value) {
+  const fallback = "/internal/admin/control-room";
+  const raw = String(value || "").trim();
+  if (!raw) return fallback;
+  let parsed;
+  try {
+    parsed = new URL(raw, "https://mmdbkk.com");
+  } catch {
+    return fallback;
+  }
+  if (!ADMIN_GATE_ALLOWED_BASE_URLS.has(parsed.origin)) return fallback;
+  const candidate = normalizePath(parsed.pathname);
+  if (!ALLOWED_NEXT_PATHS.includes(candidate)) return fallback;
+  return `${candidate}${parsed.search || ""}${parsed.hash || ""}`;
+}
+
+function ensureAllowedOrigin(request) {
+  const origin = request.headers.get("Origin");
+  if (!origin) return null;
+  if (!ADMIN_GATE_ALLOWED_BASE_URLS.has(origin)) {
+    return new Response(JSON.stringify({ ok: false, error: "forbidden_origin" }), {
+      status: 403,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store, max-age=0",
+      },
     });
   }
-
-  return new Response(null, {
-    status: 303,
-    headers: {
-      "Cache-Control": "no-store, private",
-      Location: normalizeNext(form.get("next")),
-      "Set-Cookie": cookie,
-    },
-  });
+  return null;
 }
 
-function resolveBrowserLoginCredential(env = {}) {
-  const dedicated = clean(env.ADMIN_LOGIN_CREDENTIAL);
-  if (dedicated) return { value: dedicated, mode: "login" };
-
-  // Compatibility recovery for the established owner credential only. Service
-  // secrets (INTERNAL_TOKEN / CONFIRM_KEY) remain service-only and are never
-  // accepted by the browser login form.
-  const adminBearer = clean(env.ADMIN_BEARER);
-  if (adminBearer) return { value: adminBearer, mode: "legacy_admin_bearer" };
-
-  return { value: "", mode: "unavailable" };
+async function readAdminGateActor(request, env) {
+  const cookie = parseCookie(request.headers.get("Cookie") || "")[ADMIN_GATE_SESSION_COOKIE];
+  if (!cookie) return null;
+  const actor = await verifyAdminActor(cookie, env);
+  if (!actor || !actor.exp || Date.now() > actor.exp) return null;
+  return actor;
 }
 
-function handleCredentialBoundAdminLogout(request) {
-  const requestOrigin = new URL(request.url).origin;
-  const origin = request.headers.get("Origin") || "";
-  if (origin !== requestOrigin || !ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin)) {
-    return strictJson(request, {}, { ok: false, error: "forbidden" }, 403);
-  }
-  return new Response(null, {
-    status: 303,
-    headers: {
-      "Cache-Control": "no-store, private",
-      Location: ADMIN_LOGIN_PAGE_PATH,
-      "Set-Cookie": `${ADMIN_GATE_SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
-    },
-  });
+async function signAdminActor(actor, env) {
+  const secret = getAdminGateSecret(env);
+  const payload = base64UrlEncode(new TextEncoder().encode(JSON.stringify(actor)));
+  const signature = await hmacSha256(secret, payload);
+  return `${payload}.${signature}`;
 }
 
-async function applyCredentialBoundAdminGate(request, env, path, method) {
-  if (method === "OPTIONS" || !isCredentialBoundAdminPath(path)) return { request, actor: null };
-  if (await hasValidServiceAuth(request, env)) {
-    // Service credentials may submit Review/QA work, but can never Publish.
-    return { request, actor: { id: "service-admin", role: "reviewer" } };
-  }
-
-  const session = await readCredentialBoundAdminSession(request, env);
-  if (!isValidCredentialBoundAdminSession(session, request)) {
-    if (
-      (method === "GET" || method === "HEAD") &&
-      (path === "/internal/admin/kenji" || path === "/internal/admin/mms")
-    ) {
-      const login = new URL(ADMIN_LOGIN_PAGE_PATH, request.url);
-      login.searchParams.set("next", path);
-      return { response: new Response(null, { status: 303, headers: { Location: login.pathname + login.search, "Cache-Control": "no-store" } }) };
-    }
-    return { response: strictJson(request, env, { ok: false, authenticated: false, error: "unauthorized" }, 401) };
-  }
-
-  const bypass = clean(env.INTERNAL_TOKEN || env.ADMIN_BEARER || env.CONFIRM_KEY);
-  if (!bypass) {
-    return { response: strictJson(request, env, { ok: false, authenticated: false, error: "admin_auth_bridge_not_ready" }, 503) };
-  }
-
-  return {
-    request: withInternalAuthorization(request, bypass),
-    actor: {
-      id: clean(session.actor_id || "boss-per"),
-      role: clean(session.actor_role || "owner"),
-    },
-  };
-}
-
-function isCredentialBoundAdminPath(path) {
-  return (
-    path === "/internal/admin/kenji" ||
-    path === "/internal/admin/mms" ||
-    path === ADMIN_DASHBOARD_API_PATH ||
-    path === "/v1/internal/kenji/knowledge/published" ||
-    path.startsWith("/v1/admin/") ||
-    path.startsWith("/studio/api/")
-  );
-}
-
-async function hasValidServiceAuth(request, env) {
-  const auth = clean(request.headers.get("Authorization"));
-  const confirm = clean(request.headers.get("X-Confirm-Key"));
-  const bearer = auth.replace(/^Bearer\s+/i, "").trim();
-  const expectedBearers = [clean(env.INTERNAL_TOKEN), clean(env.ADMIN_BEARER)].filter(Boolean);
-
-  let bearerOk = false;
-  if (bearer && expectedBearers.length) {
-    const checks = await Promise.all(expectedBearers.map((expected) => constantTimeEqual(bearer, expected)));
-    bearerOk = checks.some(Boolean);
-  }
-
-  const expectedConfirm = clean(env.CONFIRM_KEY);
-  const confirmOk = Boolean(
-    expectedConfirm && confirm && (await constantTimeEqual(confirm, expectedConfirm))
-  );
-  return bearerOk || confirmOk;
-}
-
-function withInternalAuthorization(request, token) {
-  const headers = new Headers(request.headers);
-  headers.set("Authorization", `Bearer ${token}`);
-  return new Request(request, { headers });
-}
-
-async function readCredentialBoundAdminSession(request, env) {
-  const raw = parseCookieMap(request).get(ADMIN_GATE_SESSION_COOKIE);
-  if (!raw) return null;
+async function verifyAdminActor(token, env) {
+  const [payload, signature] = String(token || "").split(".");
+  if (!payload || !signature) return null;
+  const expected = await hmacSha256(getAdminGateSecret(env), payload);
+  if (!timingSafeEqual(signature, expected)) return null;
   try {
-    const decoded = decodeURIComponent(raw);
-    const [payloadPart, signaturePart] = decoded.split(".");
-    if (!payloadPart || !signaturePart) return null;
-    const expected = await signCredentialBoundPayload(payloadPart, env);
-    if (!expected || !(await constantTimeEqual(signaturePart, expected))) return null;
-    const parsed = JSON.parse(base64UrlDecode(payloadPart));
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-    return parsed;
+    return JSON.parse(new TextDecoder().decode(base64UrlDecode(payload)));
   } catch {
     return null;
   }
 }
 
-function isValidCredentialBoundAdminSession(session, request) {
-  if (!session || session.version !== 2) return false;
-  if (session.scope !== "internal_admin") return false;
-  if (!session.host || !ADMIN_GATE_ALLOWED_BASE_URLS.has(session.host)) return false;
-  if (session.host !== new URL(request.url).origin) return false;
-  if (!Number.isFinite(session.iat) || !Number.isFinite(session.exp)) return false;
-  const now = Date.now();
-  if (session.iat > now || session.exp <= now || session.exp - session.iat > ADMIN_GATE_TTL_MS) return false;
-  if (!session.nonce || typeof session.nonce !== "string") return false;
-  return true;
+function getAdminGateSecret(env) {
+  const secret = String(env.ADMIN_ACCESS_CODE || env.SIGIL_ADMIN_ACCESS_CODE || env.SESSION_SECRET || "").trim();
+  if (!secret) throw new Error("Missing admin gate secret");
+  return secret;
 }
 
-async function makeCredentialBoundAdminCookie(session, env) {
-  const payload = base64UrlEncode(JSON.stringify(session));
-  const signature = await signCredentialBoundPayload(payload, env);
-  if (!signature) return "";
-  const value = encodeURIComponent(`${payload}.${signature}`);
-  return `${ADMIN_GATE_SESSION_COOKIE}=${value}; Path=/; Max-Age=${Math.floor(ADMIN_GATE_TTL_MS / 1000)}; HttpOnly; Secure; SameSite=Lax`;
-}
-
-async function signCredentialBoundPayload(payload, env) {
-  const secret = getCredentialBoundSigningSecret(env);
-  if (!secret) return "";
-  const encoder = new TextEncoder();
+async function hmacSha256(secret, payload) {
   const key = await crypto.subtle.importKey(
     "raw",
-    encoder.encode(secret),
+    new TextEncoder().encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"]
+    ["sign"],
   );
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
-  return base64UrlEncodeBytes(new Uint8Array(signature));
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
+  return base64UrlEncode(new Uint8Array(sig));
 }
 
-function getCredentialBoundSigningSecret(env = {}) {
-  const browserCredential = resolveBrowserLoginCredential(env);
-  if (!browserCredential.value) return "";
-
-  const sessionSecret = clean(env.ADMIN_SESSION_SECRET);
-  if (sessionSecret) return `${sessionSecret}.${browserCredential.value}`;
-
-  // Legacy recovery is allowed only when the dedicated browser credential is
-  // not configured. This preserves the pre-dedicated owner login without ever
-  // falling back to INTERNAL_TOKEN or CONFIRM_KEY.
-  if (browserCredential.mode === "legacy_admin_bearer") return browserCredential.value;
-  return "";
-}
-
-function parseCookieMap(request) {
-  const map = new Map();
-  const raw = request.headers.get("Cookie") || "";
-  for (const part of raw.split(";")) {
-    const [name, ...rest] = part.split("=");
-    const key = clean(name);
-    if (!key) continue;
-    map.set(key, rest.join("=").trim());
-  }
-  return map;
-}
-
-function strictJson(request, env, data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: strictCorsHeaders(request, env),
-  });
-}
-
-function strictCorsHeaders(request, env) {
-  const origin = request.headers.get("Origin") || "";
-  const allowed = clean(env.ALLOWED_ORIGINS)
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-  const headers = new Headers({
-    "Cache-Control": "no-store, private",
-    "Content-Type": "application/json; charset=utf-8",
-  });
-  if (origin && (!allowed.length || allowed.includes(origin))) {
-    headers.set("Access-Control-Allow-Origin", origin);
-    headers.set("Vary", "Origin");
-  }
-  headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS,DELETE");
-  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Confirm-Key, Idempotency-Key");
-  return headers;
-}
-
-async function constantTimeEqual(left, right) {
-  const encoder = new TextEncoder();
-  const [a, b] = await Promise.all([
-    crypto.subtle.digest("SHA-256", encoder.encode(clean(left))),
-    crypto.subtle.digest("SHA-256", encoder.encode(clean(right))),
-  ]);
-  const aa = new Uint8Array(a);
-  const bb = new Uint8Array(b);
-  let difference = 0;
-  for (let i = 0; i < aa.length; i += 1) difference |= aa[i] ^ bb[i];
-  return difference === 0;
-}
-
-function base64UrlEncode(value) {
-  return base64UrlEncodeBytes(new TextEncoder().encode(value));
-}
-
-function base64UrlEncodeBytes(bytes) {
+function base64UrlEncode(bytes) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 function base64UrlDecode(value) {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-  const binary = atob(padded);
+  const padded = `${value}${"=".repeat((4 - (value.length % 4)) % 4)}`;
+  const binary = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return new TextDecoder().decode(bytes);
+  return bytes;
 }
 
-export function normalizeNext(value = "") {
-  const raw = String(value || "").trim();
-  if (!raw.startsWith("/") || raw.startsWith("//") || raw.includes("..")) return "/internal/admin/control-room";
-  let parsed;
-  try {
-    parsed = new URL(raw, "https://mmdbkk.com");
-  } catch {
-    return "/internal/admin/control-room";
+function timingSafeEqual(a, b) {
+  if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i += 1) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return mismatch === 0;
+}
+
+function parseCookie(header) {
+  const out = {};
+  for (const part of String(header || "").split(";")) {
+    const index = part.indexOf("=");
+    if (index === -1) continue;
+    out[part.slice(0, index).trim()] = part.slice(index + 1).trim();
   }
-  const allowed = ALLOWED_NEXT_PATHS.some((path) => parsed.pathname === path || (path === "/internal/admin/control-room" && parsed.pathname.startsWith(`${path}/`)));
-  if (!allowed) return "/internal/admin/control-room";
-  for (const key of parsed.searchParams.keys()) {
-    if (/token|secret|password|credential|cookie|authorization|bearer|confirm_key/i.test(key)) return "/internal/admin/control-room";
-  }
-  return `${parsed.pathname}${parsed.search}`;
+  return out;
 }
 
-function clean(value) {
-  return String(value ?? "").trim();
+function strictJson(request, env, payload, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: adminGateHeaders(request, env, {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store, max-age=0",
+      ...extraHeaders,
+    }),
+  });
 }
 
-function normalizePath(pathname = "") {
-  const path = String(pathname || "/").replace(/\/{2,}/g, "/");
-  return path.length > 1 ? path.replace(/\/+$/g, "") : path;
+function adminGateHeaders(request, env, extra = {}) {
+  const headers = new Headers(extra);
+  headers.set("x-mmd-admin-gate-version", "credential-bound-v1");
+  return headers;
 }
