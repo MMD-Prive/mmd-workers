@@ -139,13 +139,6 @@ export default {
       }
     }
 
-    // Kenji CEO control owns its own ADMIN_BEARER / INTERNAL_TOKEN check. Keep it
-    // before the browser cookie gate so service-bearer requests do not get
-    // incorrectly downgraded to a browser-session 401.
-    if (isKenjiControlRequest(path, method)) {
-      return handleKenjiControlRequest(request, env);
-    }
-
     const strictGate = await applyCredentialBoundAdminGate(request, env, path, method);
     if (strictGate.response) return strictGate.response;
     request = strictGate.request || request;
@@ -172,6 +165,10 @@ export default {
 
     if (isKenjiModelAdminRequest(path, method)) {
       return handleKenjiModelAdminRequest(request, env);
+    }
+
+    if (isKenjiControlRequest(path, method)) {
+      return handleKenjiControlRequest(request, env);
     }
 
     if (isKenjiKnowledgeRequest(path, method)) {
