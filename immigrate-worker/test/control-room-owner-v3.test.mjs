@@ -5,8 +5,8 @@ import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 
-const tmp = await mkdtemp(join(tmpdir(), "control-room-v3-"));
-const outfile = join(tmp, "control-room-v3.mjs");
+const tmp = await mkdtemp(join(tmpdir(), "control-room-v4-"));
+const outfile = join(tmp, "control-room-v4.mjs");
 const workerRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 try {
@@ -25,16 +25,38 @@ try {
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-mmd-control-room-ui"), "owner-desktop-v3-latest");
+  assert.equal(response.headers.get("x-mmd-control-room-release"), "owner-v4");
   assert.equal(response.headers.get("x-mmd-control-room-authority"), "canonical-backend");
+  assert.equal(response.headers.get("x-mmd-control-room-mms-route"), "/internal/admin/mms");
+  assert.equal(response.headers.get("x-mmd-control-room-slip-backfill-route"), "/internal/admin/payments/historical-backfill");
+  assert.equal(response.headers.get("x-mmd-control-room-cta-audit"), "operator-triggered-head-check");
+
   assert.match(body, /data-control-room-v3/);
-  assert.match(body, /MMD PRIVÉ · OWNER CONTROL ROOM V3/);
+  assert.match(body, /OWNER CONTROL · V4/);
+  assert.match(body, /MMD PRIVÉ · OWNER CONTROL ROOM · 05 SEP 2026/);
+  assert.match(body, /Boss%20and%20Kenji%20-%20Model%20Keyword%20Hero\.webp/);
+  assert.match(body, /Wall%20a%20Long\.webp/);
+
   assert.match(body, /\/internal\/admin\/jobs\/create-session/);
+  assert.match(body, /\/internal\/admin\/jobs\/create-job/);
+  assert.match(body, /\/internal\/admin\/payments/);
+  assert.match(body, /\/internal\/admin\/payments\/historical-backfill/);
   assert.match(body, /\/internal\/admin\/kenji/);
-  assert.match(body, /(?:\/internal\/admin\/mms|\/male-massage\/therapists\/login)/);
-  assert.match(body, /My MMD Entitlement Resolver/);
-  assert.match(body, /Telegram \/ Google Drive/);
-  assert.match(body, /Pre-#498 worker-rendered baseline/);
+  assert.match(body, /\/internal\/admin\/membership-access/);
+  assert.match(body, /\/internal\/admin\/mms/);
+  assert.match(body, /\/internal\/admin\/studio/);
+  assert.match(body, /\/internal\/ceo\/dashboard/);
+  assert.match(body, /\/sigil\/model\/console/);
+  assert.match(body, /\/shop\/admin\/stock/);
+  assert.match(body, /\/internal\/admin\/control-room\/protocol/);
+
+  assert.match(body, /payments-worker · Money Truth/);
+  assert.match(body, /my_mmd_entitlement_resolver_v1/);
+  assert.match(body, /Telegram \/ Drive/);
+  assert.match(body, /data-audit-cta/);
   assert.match(body, /\/v1\/admin\/auth\/me/);
+
+  assert.doesNotMatch(body, /href="\/male-massage\/therapists\/login"/);
   assert.doesNotMatch(body, /WORKER-RENDERED INTERNAL PAGES/);
   assert.doesNotMatch(body, /owner-desktop-v2-restored/);
 } finally {
