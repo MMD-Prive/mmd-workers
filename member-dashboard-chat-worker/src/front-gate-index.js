@@ -92,7 +92,12 @@ function injectStatusReturnBridge(html) {
 (() => {
   const target = "/member/my-mmd";
   const profileEndpoint = "/member/api/liff/profile";
-  const maxAttempts = 20;
+  // A customer-facing session check must never remain pending indefinitely.
+  // Cap each request and the whole recovery loop so a real next action is
+  // always visible even if an upstream binding stalls.
+  const maxAttempts = 4;
+  const requestTimeoutMs = 3000;
+  const retryDelayMs = 450;
   let attempts = 0;
   let finished = false;
   let retryTimer = 0;
@@ -140,11 +145,15 @@ function injectStatusReturnBridge(html) {
     if (finished) return;
     attempts += 1;
     setShellMessage(attempts === 1 ? "กำลังตรวจสอบ Member Session ครับ" : "กำลังตรวจสอบ Member Session อีกครั้งครับ");
+
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    const timeout = controller ? window.setTimeout(() => controller.abort(), requestTimeoutMs) : 0;
     try {
       const response = await fetch(profileEndpoint, {
         method: "GET",
         credentials: "same-origin",
-        headers: { "accept": "application/json" }
+        headers: { "accept": "application/json" },
+        signal: controller ? controller.signal : undefined
       });
       const payload = await response.json().catch(() => null);
       if (response.ok && payload && payload.ok === true) {
@@ -153,11 +162,15 @@ function injectStatusReturnBridge(html) {
         window.location.replace(target);
         return;
       }
-    } catch (_) {}
+    } catch (_) {
+      // Timeout and network failures follow the same bounded recovery path.
+    } finally {
+      if (timeout) window.clearTimeout(timeout);
+    }
 
     if (finished) return;
     if (attempts < maxAttempts) {
-      retryTimer = window.setTimeout(verifyAndReturn, 650);
+      retryTimer = window.setTimeout(verifyAndReturn, retryDelayMs);
       return;
     }
     renderRecovery();
