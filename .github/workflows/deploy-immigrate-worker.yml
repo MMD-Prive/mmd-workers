@@ -207,7 +207,7 @@ jobs:
             : > "$headers"
             : > "$body"
             code="$(curl -sSL -D "$headers" -o "$body" -w '%{http_code}' \
-              "https://www.mmdbkk.com/internal/admin/customer-data?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
+              "https://mmdbkk.com/internal/admin/customer-data?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
 
             if [ "$code" = "200" ] \
               && grep -Eiq '^x-mmd-customer-data-ui:[[:space:]]*readable-v2' "$headers" \
