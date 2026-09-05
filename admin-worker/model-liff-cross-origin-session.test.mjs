@@ -24,6 +24,6 @@ for (const file of [
     assert.match(text, /origin !== dashboardOrigin/);
     assert.match(text, /origin !== new URL\(request\.url\)\.origin/);
     assert.match(text, /\? "None; Partitioned" : "Lax"/);
-    assert.match(text, /SameSite=\\$\\{sameSite\\}/);
+    assert.match(text, /SameSite=\$\{sameSite\}/);
   });
 }
