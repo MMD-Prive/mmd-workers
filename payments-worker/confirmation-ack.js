@@ -1,5 +1,6 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const CONFIRM_ACK_PATH = "/v1/confirm/ack";
+export const CONFIRM_CONTEXT_PATH = "/v1/confirm/context";
 
 function clean(value, max = 5000) {
   return String(value == null ? "" : value).trim().slice(0, max);
@@ -161,6 +162,21 @@ function airtableConfig(env = {}) {
   return { baseId, tableId, apiKey };
 }
 
+function sessionFields(env = {}) {
+  return {
+    paymentRef: clean(env.AT_SESSIONS__PAYMENT_REF || "fldojgjSQLaO0uQLX", 100),
+    customerAck: clean(env.AT_SESSIONS__CUSTOMER_ACK_AT || "fldJSS5GNN7quJwa8", 100),
+    modelAck: clean(env.AT_SESSIONS__MODEL_ACK_AT || "fldFgkHXivIAThfDz", 100),
+    clientName: clean(env.AT_SESSIONS__CLIENT_NAME || "fldMvnQ0BzDfHUYjT", 100),
+    modelName: clean(env.AT_SESSIONS__MODEL_NAME || "flddVz6eoWRHrzIQr", 100),
+    jobType: clean(env.AT_SESSIONS__JOB_TYPE || "fldjK3U9bghnj7xUe", 100),
+    jobDate: clean(env.AT_SESSIONS__JOB_DATE || "fldpnqoIsUMfN7y3c", 100),
+    startTime: clean(env.AT_SESSIONS__START_TIME || "fldBeG0FkWwa8kgnp", 100),
+    endTime: clean(env.AT_SESSIONS__END_TIME || "fldiDSz0wW9Ct9I3P", 100),
+    locationName: clean(env.AT_SESSIONS__LOCATION_NAME || "fldIiRpaxoafjTkFt", 100),
+  };
+}
+
 function formulaValue(value) {
   return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
@@ -196,11 +212,38 @@ async function findSession(env, sessionId) {
   return data?.records?.[0] || null;
 }
 
+function assertSessionMatchesClaims(env, session, claims) {
+  const fields = sessionFields(env);
+  const sessionPaymentRef = clean(session?.fields?.[fields.paymentRef], 200);
+  if (sessionPaymentRef && sessionPaymentRef !== clean(claims.payment_ref, 200)) {
+    const error = new Error("confirmation_session_mismatch");
+    error.status = 409;
+    throw error;
+  }
+}
+
+function safeConfirmationContext(env, session, role) {
+  const fields = sessionFields(env);
+  const source = session?.fields || {};
+  return {
+    job_type: clean(source[fields.jobType], 120) || null,
+    job_date: clean(source[fields.jobDate], 120) || null,
+    start_time: clean(source[fields.startTime], 120) || null,
+    end_time: clean(source[fields.endTime], 120) || null,
+    location_name: clean(source[fields.locationName], 300) || null,
+    counterpart_name:
+      role === "customer"
+        ? clean(source[fields.modelName], 120) || null
+        : clean(source[fields.clientName], 120) || null,
+    acknowledged_at:
+      clean(source[role === "customer" ? fields.customerAck : fields.modelAck], 200) || null,
+  };
+}
+
 async function patchAcknowledgement(env, session, role) {
   const { tableId } = airtableConfig(env);
-  const fieldId = role === "customer"
-    ? clean(env.AT_SESSIONS__CUSTOMER_ACK_AT || "fldJSS5GNN7quJwa8", 100)
-    : clean(env.AT_SESSIONS__MODEL_ACK_AT || "fldFgkHXivIAThfDz", 100);
+  const fields = sessionFields(env);
+  const fieldId = role === "customer" ? fields.customerAck : fields.modelAck;
   const existing = clean(session?.fields?.[fieldId], 200);
   if (existing) return { acknowledged_at: existing, idempotent: true };
 
@@ -220,41 +263,56 @@ function errorStatus(error) {
   return 401;
 }
 
-export async function handleConfirmationAck(request, env = {}) {
-  if (request.method.toUpperCase() === "OPTIONS") {
-    return withCors(request, env, new Response(null, { status: 204 }));
-  }
-  if (request.method.toUpperCase() !== "POST") {
-    return withCors(request, env, json({ ok: false, error: "method_not_allowed" }, 405));
-  }
-  if (!isAllowedOrigin(request, env)) {
-    return withCors(request, env, json({ ok: false, error: "origin_not_allowed" }, 403));
-  }
-
+async function parseAuthorizedConfirmationRequest(request, env) {
+  if (!isAllowedOrigin(request, env)) return { response: withCors(request, env, json({ ok: false, error: "origin_not_allowed" }, 403)) };
   const body = await request.json().catch(() => null);
   const token = clean(body?.t || body?.token, 12000);
   const expectedRole = clean(body?.expected_role || body?.role, 40).toLowerCase();
-  if (!token) return withCors(request, env, json({ ok: false, error: "confirmation_token_required" }, 400));
+  if (!token) return { response: withCors(request, env, json({ ok: false, error: "confirmation_token_required" }, 400)) };
   if (!["customer", "model"].includes(expectedRole)) {
-    return withCors(request, env, json({ ok: false, error: "expected_role_required" }, 400));
+    return { response: withCors(request, env, json({ ok: false, error: "expected_role_required" }, 400)) };
   }
-
   try {
     const claims = await verifyToken(env, token, expectedRole);
     const session = await findSession(env, claims.session_id);
-    if (!session?.id) return withCors(request, env, json({ ok: false, error: "session_not_found" }, 404));
+    if (!session?.id) return { response: withCors(request, env, json({ ok: false, error: "session_not_found" }, 404)) };
+    assertSessionMatchesClaims(env, session, claims);
+    return { claims, session, expectedRole };
+  } catch (error) {
+    return {
+      response: withCors(request, env, json({ ok: false, error: clean(error?.message || "confirmation_authorization_failed", 200) }, errorStatus(error))),
+    };
+  }
+}
 
-    const paymentRefField = clean(env.AT_SESSIONS__PAYMENT_REF || "fldojgjSQLaO0uQLX", 100);
-    const sessionPaymentRef = clean(session?.fields?.[paymentRefField], 200);
-    if (sessionPaymentRef && sessionPaymentRef !== clean(claims.payment_ref, 200)) {
-      return withCors(request, env, json({ ok: false, error: "confirmation_session_mismatch" }, 409));
-    }
+export async function handleConfirmationContext(request, env = {}) {
+  if (request.method.toUpperCase() === "OPTIONS") return withCors(request, env, new Response(null, { status: 204 }));
+  if (request.method.toUpperCase() !== "POST") return withCors(request, env, json({ ok: false, error: "method_not_allowed" }, 405));
 
-    const ack = await patchAcknowledgement(env, session, expectedRole);
+  const authorized = await parseAuthorizedConfirmationRequest(request, env);
+  if (authorized.response) return authorized.response;
+
+  return withCors(request, env, json({
+    ok: true,
+    role: authorized.expectedRole,
+    session_id: authorized.claims.session_id,
+    confirmation: safeConfirmationContext(env, authorized.session, authorized.expectedRole),
+  }));
+}
+
+export async function handleConfirmationAck(request, env = {}) {
+  if (request.method.toUpperCase() === "OPTIONS") return withCors(request, env, new Response(null, { status: 204 }));
+  if (request.method.toUpperCase() !== "POST") return withCors(request, env, json({ ok: false, error: "method_not_allowed" }, 405));
+
+  const authorized = await parseAuthorizedConfirmationRequest(request, env);
+  if (authorized.response) return authorized.response;
+
+  try {
+    const ack = await patchAcknowledgement(env, authorized.session, authorized.expectedRole);
     return withCors(request, env, json({
       ok: true,
-      role: expectedRole,
-      session_id: claims.session_id,
+      role: authorized.expectedRole,
+      session_id: authorized.claims.session_id,
       acknowledged_at: ack.acknowledged_at,
       idempotent: ack.idempotent,
     }));
