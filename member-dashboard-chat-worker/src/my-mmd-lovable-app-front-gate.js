@@ -12,6 +12,8 @@ const MY_MMD_PRESENTATION_MODE = "single-file-incident-rollback-20260905";
 const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const HYPE_LOADING_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a36fa9c99c7e95731eeca5d_HYPE.webp";
 const HYPE_LOADING_PATH = `${MY_MMD_ASSET_PREFIX}hype.webp`;
+const STATUS_HYPE_LOADING_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9be30ba79b9386ecdbe9ab_HYPE_NOW_LOADING_10FRAMES.gif";
+const STATUS_HYPE_LOADING_PATH = `${MY_MMD_ASSET_PREFIX}hype-loading.gif`;
 
 function normalizedPath(request) {
   return new URL(request.url).pathname.toLowerCase().replace(/\/{2,}/g, "/");
@@ -161,8 +163,13 @@ async function proxyLovableAsset(request) {
   }
   const source = new URL(request.url);
   const suffix = source.pathname.slice(MY_MMD_ASSET_PREFIX.length);
-  const upstreamUrl = suffix === "hype.webp" ? new URL(HYPE_LOADING_URL) : new URL(MY_MMD_PRESENTATION_ORIGIN);
-  if (suffix !== "hype.webp") {
+  let upstreamUrl;
+  if (suffix === "hype.webp") {
+    upstreamUrl = new URL(HYPE_LOADING_URL);
+  } else if (suffix === "hype-loading.gif") {
+    upstreamUrl = new URL(STATUS_HYPE_LOADING_URL);
+  } else {
+    upstreamUrl = new URL(MY_MMD_PRESENTATION_ORIGIN);
     upstreamUrl.pathname = suffix === "favicon.ico" ? "/favicon.ico" : `/assets/${suffix}`;
     upstreamUrl.search = source.search;
   }
@@ -225,22 +232,20 @@ function isStatusLiffShellRequest(request) {
 
 function statusBridgeSkin() {
   return `<style id="mmd-status-bridge-skin">
-html,body{background:#fbf9f5!important}
-#mmd-status-bridge-veil{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:24px;background:#fbf9f5;color:#2b2723;text-align:center;font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif}
-#mmd-status-bridge-veil img{width:96px;height:96px;object-fit:contain;animation:mmd-status-hype-spin 2.4s linear infinite}
-#mmd-status-bridge-veil .k{margin-top:6px;color:#a67f3c;font-size:10px;font-weight:800;letter-spacing:.18em}
-#mmd-status-bridge-veil .t{font-size:17px;font-weight:650}
-body #message{position:fixed!important;z-index:2147483002!important;left:24px!important;right:24px!important;top:calc(50% + 92px)!important;margin:0!important;color:#7a7168!important;font-size:13px!important;line-height:1.55!important;text-align:center!important}
-body #actions{position:fixed!important;z-index:2147483003!important;left:50%!important;top:calc(50% + 148px)!important;transform:translateX(-50%)!important;width:min(calc(100% - 48px),360px)!important;margin:0!important;display:grid!important;gap:10px!important}
+html,body{background:#000!important}
+#mmd-status-bridge-veil{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;padding:24px;background:#000;color:#f6f1e8;text-align:center;font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif}
+#mmd-status-bridge-veil img{display:block;width:min(72vw,280px);height:auto;max-height:52svh;object-fit:contain;filter:drop-shadow(0 18px 42px rgba(203,163,84,.16))}
+#mmd-status-bridge-veil .k{margin-top:10px;color:#caa45e;font-size:10px;font-weight:800;letter-spacing:.18em}
+#mmd-status-bridge-veil .t{color:#f6f1e8;font-size:16px;font-weight:650}
+body #message{position:fixed!important;z-index:2147483002!important;left:24px!important;right:24px!important;top:calc(50% + 168px)!important;margin:0!important;color:#9f978b!important;font-size:13px!important;line-height:1.55!important;text-align:center!important}
+body #actions{position:fixed!important;z-index:2147483003!important;left:50%!important;top:calc(50% + 216px)!important;transform:translateX(-50%)!important;width:min(calc(100% - 48px),360px)!important;margin:0!important;display:grid!important;gap:10px!important}
 body #actions:empty{display:none!important}
-body #actions button{min-height:46px!important;border:1px solid #d9d0c3!important;border-radius:999px!important;background:#fff!important;color:#2b2723!important;text-align:center!important;padding:12px 16px!important}
-@keyframes mmd-status-hype-spin{to{transform:rotate(360deg)}}
-@media(prefers-reduced-motion:reduce){#mmd-status-bridge-veil img{animation:none}}
+body #actions button{min-height:46px!important;border:1px solid #8f743e!important;border-radius:999px!important;background:#111!important;color:#f6f1e8!important;text-align:center!important;padding:12px 16px!important}
 </style>`;
 }
 
 function statusBridgeMarkup() {
-  return `<div id="mmd-status-bridge-veil" role="presentation"><img src="${HYPE_LOADING_PATH}" alt=""><div class="k">MMD PRIVÉ · MY MMD</div><div class="t">กำลังยืนยันสมาชิก…</div></div>`;
+  return `<div id="mmd-status-bridge-veil" role="status" aria-live="polite" aria-label="กำลังยืนยันสมาชิก"><img src="${STATUS_HYPE_LOADING_PATH}" alt="HYPE loading"><div class="k">MMD PRIVÉ · MY MMD</div><div class="t">กำลังยืนยันสมาชิก…</div></div>`;
 }
 
 function injectStatusBridgeSkin(html) {
