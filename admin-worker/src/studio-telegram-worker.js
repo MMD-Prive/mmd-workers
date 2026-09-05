@@ -22,6 +22,10 @@ import {
   handleModelReconfirmRequest,
   isModelReconfirmRequest,
 } from "./model-reconfirm-runtime.js";
+import {
+  handleHistoricalSlipBackfillRequest,
+  isHistoricalSlipBackfillRequest,
+} from "./historical-slip-backfill-runtime.js";
 
 const STUDIO_API_PREFIX = "/studio/api";
 const COMMIT_PATHS = new Set([
@@ -36,6 +40,14 @@ export default {
     const url = new URL(request.url);
     const path = normalizePathname(url.pathname);
     const method = request.method.toUpperCase();
+
+    // Historical payment evidence is an admin review lane only. The runtime can
+    // create pending Payment Proof evidence and hand an explicitly reviewed item
+    // to payments-worker, but it cannot mark paid or mutate points/membership/
+    // entitlement/session state itself.
+    if (isHistoricalSlipBackfillRequest(path, method)) {
+      return handleHistoricalSlipBackfillRequest(request, env, ctx);
+    }
 
     // Pre-job reconfirm stays additive to the canonical job/session runtime:
     // Create Session remains the source of job truth; the wrapper only persists
