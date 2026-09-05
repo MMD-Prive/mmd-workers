@@ -55,6 +55,29 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ROUTES_API_TOKEN=${routesToken}\n`);
           NODE
 
+      - name: Patch Customer Data internal bridge before validation
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const file = "src/index.ts";
+          let source = fs.readFileSync(file, "utf8");
+          const apiNeedle = 'if (pathname.startsWith("/a/")) return true;\n  if (INTERNAL_ROUTES_BRIDGE_ADMIN_API_PATHS.has(pathname)) return true;';
+          const apiPatch = 'if (pathname.startsWith("/a/")) return true;\n  if (pathname.startsWith("/v1/admin/customer-data")) return true;\n  if (INTERNAL_ROUTES_BRIDGE_ADMIN_API_PATHS.has(pathname)) return true;';
+          if (!source.includes('pathname.startsWith("/v1/admin/customer-data")')) {
+            if (!source.includes(apiNeedle)) throw new Error("Unable to locate internal route API bridge guard");
+            source = source.replace(apiNeedle, apiPatch);
+          }
+          const pageNeedle = 'pathname === CONTROL_ROOM.root ||\n    pathname === ADMIN_JOBS.createSession ||';
+          const pagePatch = 'pathname === CONTROL_ROOM.root ||\n    pathname === "/internal/admin/customer-data" ||\n    pathname.startsWith("/internal/admin/customer-data/") ||\n    pathname === ADMIN_JOBS.createSession ||';
+          if (!source.includes('pathname === "/internal/admin/customer-data"')) {
+            if (!source.includes(pageNeedle)) throw new Error("Unable to locate internal route page bridge guard");
+            source = source.replace(pageNeedle, pagePatch);
+          }
+          fs.writeFileSync(file, source);
+          console.log("Patched Customer Data route/API bridge into immigrate-worker src/index.ts for this deployment.");
+          NODE
+
       - name: Install dependencies
         run: npm ci
 
