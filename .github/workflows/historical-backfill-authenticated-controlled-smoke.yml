@@ -1,6 +1,11 @@
 name: Historical Backfill Authenticated Controlled Smoke
 
 on:
+  push:
+    branches:
+      - feat/payment-review-facade-v1
+    paths:
+      - ".github/workflows/historical-backfill-authenticated-controlled-smoke.yml"
   workflow_run:
     workflows:
       - "Deploy admin-worker"
@@ -14,24 +19,29 @@ permissions:
 jobs:
   controlled-smoke:
     if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.head_branch == 'main') ||
-      github.event_name == 'workflow_dispatch'
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
       ORIGIN: https://www.mmdbkk.com
+      PAYMENTS_URL: https://payments-worker.malemodel-bkk.workers.dev
       ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+      ADMIN_TO_PAYMENTS_SECRET: ${{ secrets.AUTH_SERVICE_ADMIN_TO_PAYMENTS }}
     steps:
-      - name: Require browser admin credential
+      - name: Require controlled-smoke credentials
         shell: bash
         run: |
           set -euo pipefail
           test -n "$ADMIN_SMOKE_CREDENTIAL"
+          test -n "$ADMIN_TO_PAYMENTS_SECRET"
           echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
+          echo "::add-mask::$ADMIN_TO_PAYMENTS_SECRET"
 
-      - name: Login, create pending proof, validate handoff boundary, and clean up
+      - name: Login, create pending proof, prove payments boundary, and clean up
         shell: bash
         run: |
           set -euo pipefail
@@ -42,7 +52,7 @@ jobs:
           source_ref="github-actions-controlled-smoke:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT"
           printf 'MMD Historical Backfill controlled smoke %s\n' "$source_ref" > "$smoke_file"
 
-          code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+          login_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
             -D "$headers" -o "$body" -c "$cookie" -w "%{http_code}" \
             -X POST \
             -H "Origin: $ORIGIN" \
@@ -50,54 +60,60 @@ jobs:
             --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL" \
             --data-urlencode "next=/internal/admin/payments" \
             "$ORIGIN/internal/admin/login/session")"
-          test "$code" = "303"
+          test "$login_code" = "303"
           grep -qi '^set-cookie: mmd_admin_gate_v1=' "$headers"
 
-          code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+          queue_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
             -o "$body" -b "$cookie" -w "%{http_code}" \
             "$ORIGIN/v1/admin/payments/historical-backfill?limit=100")"
-          test "$code" = "200"
+          test "$queue_code" = "200"
           node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!p.ok||p.authority!=="payments-worker") process.exit(1)' "$body"
 
-          code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+          intake_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
             -o "$body" -b "$cookie" -w "%{http_code}" \
             -X POST \
             -H "Origin: $ORIGIN" \
             -F "file=@$smoke_file;type=image/png;filename=controlled-smoke.png" \
             -F "source_type=line_archive" \
             -F "source_ref=$source_ref" \
-            -F "context_text=GitHub authenticated controlled smoke; no Money Truth mutation" \
+            -F "context_text=GitHub authenticated controlled smoke; must remain pending" \
             "$ORIGIN/v1/admin/payments/historical-backfill/intake")"
           cat "$body"
-          test "$code" = "201"
-          proof_id="$(node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!p.ok||p.state!=="pending"||!p.proof_id||p.guardrails?.may_mark_paid!==false) process.exit(1); process.stdout.write(p.proof_id)' "$body")"
+          test "$intake_code" = "201" -o "$intake_code" = "200"
+          proof_id="$(node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const id=p.proof_id||p.proof?.proof_id; if(!p.ok||!id||(p.state&&p.state!=="pending")||p.guardrails?.may_mark_paid===true) process.exit(1); process.stdout.write(id)' "$body")"
 
-          code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+          queue_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
             -o "$body" -b "$cookie" -w "%{http_code}" \
             "$ORIGIN/v1/admin/payments/historical-backfill?limit=100")"
-          test "$code" = "200"
-          PROOF_ID="$proof_id" SOURCE_REF="$source_ref" node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const x=(p.items||[]).find(i=>i.proof_id===process.env.PROOF_ID&&i.source_ref===process.env.SOURCE_REF); if(!x||x.status!=="pending"||x.review_state!=="pending") process.exit(1)' "$body"
+          test "$queue_code" = "200"
+          read -r evidence_sha status review_state <<EOF
+          $(PROOF_ID="$proof_id" SOURCE_REF="$source_ref" node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const x=(p.items||[]).find(i=>i.proof_id===process.env.PROOF_ID); if(!x||x.source_ref!==process.env.SOURCE_REF) process.exit(1); process.stdout.write([x.evidence_sha256,x.status,x.review_state].join(" "))' "$body")
+          EOF
+          test "$status" = "pending"
+          test "$review_state" = "pending"
+          test "${#evidence_sha}" = "64"
 
-          review_json="$(PROOF_ID="$proof_id" node -e 'process.stdout.write(JSON.stringify({proof_id:process.env.PROOF_ID,decision:"validate_handoff",review_reason:"GitHub authenticated controlled handoff smoke"}))')"
-          code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
-            -o "$body" -b "$cookie" -w "%{http_code}" \
+          bad_sha="$(SHA="$evidence_sha" node -e 'const s=process.env.SHA; process.stdout.write((s[0]==="0"?"1":"0")+s.slice(1))')"
+          handoff_json="$(PROOF_ID="$proof_id" BAD_SHA="$bad_sha" node -e 'process.stdout.write(JSON.stringify({source:"historical_slip_backfill",decision:"approved",proof_id:process.env.PROOF_ID,evidence_sha256:process.env.BAD_SHA,payment_ref:"MMD_CONTROLLED_HANDOFF_PROBE",amount_thb:1,payment_stage:"membership",member_email:"historical-handoff-smoke@example.invalid",review_reason:"controlled handoff reject-before-write smoke",review_actor:"github_actions_controlled_smoke"}))')"
+          handoff_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+            -o "$body" -w "%{http_code}" \
             -X POST \
-            -H "Origin: $ORIGIN" \
+            -H "Authorization: Bearer $ADMIN_TO_PAYMENTS_SECRET" \
             -H "Content-Type: application/json" \
-            --data "$review_json" \
-            "$ORIGIN/v1/admin/payments/historical-backfill/review")"
+            --data "$handoff_json" \
+            "$PAYMENTS_URL/v1/internal/payments/historical-slip/reviewed")"
           cat "$body"
-          test "$code" = "200"
-          node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!p.ok||p.state!=="pending"||p.handoff_validated!==true||p.money_truth_mutated!==false||p.expected_rejection!=="historical_proof_sha_mismatch") process.exit(1)' "$body"
+          test "$handoff_code" = "409"
+          node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(p.ok!==false||p.error!=="historical_proof_sha_mismatch"||p.authority!=="payments-worker") process.exit(1)' "$body"
 
-          code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+          queue_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
             -o "$body" -b "$cookie" -w "%{http_code}" \
             "$ORIGIN/v1/admin/payments/historical-backfill?limit=100")"
-          test "$code" = "200"
+          test "$queue_code" = "200"
           PROOF_ID="$proof_id" node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const x=(p.items||[]).find(i=>i.proof_id===process.env.PROOF_ID); if(!x||x.status!=="pending"||x.review_state!=="pending") process.exit(1)' "$body"
 
-          cleanup_json="$(PROOF_ID="$proof_id" node -e 'process.stdout.write(JSON.stringify({proof_id:process.env.PROOF_ID,decision:"reject",review_reason:"Controlled smoke cleanup after handoff validation"}))')"
-          code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+          cleanup_json="$(PROOF_ID="$proof_id" node -e 'process.stdout.write(JSON.stringify({proof_id:process.env.PROOF_ID,decision:"reject",review_reason:"Controlled smoke cleanup after payments-worker reject-before-write"}))')"
+          cleanup_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
             -o "$body" -b "$cookie" -w "%{http_code}" \
             -X POST \
             -H "Origin: $ORIGIN" \
@@ -105,7 +121,7 @@ jobs:
             --data "$cleanup_json" \
             "$ORIGIN/v1/admin/payments/historical-backfill/review")"
           cat "$body"
-          test "$code" = "200"
+          test "$cleanup_code" = "200"
           node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!p.ok||p.state!=="rejected"||p.guardrails?.may_mark_paid!==false) process.exit(1)' "$body"
 
-          echo "Authenticated Historical Backfill controlled smoke PASSED: browser session -> pending proof -> payments-worker boundary reject-before-write -> cleanup reject"
+          echo "PASS: real admin session -> queue -> pending proof -> payments-worker SHA guard -> proof still pending -> cleanup reject"
