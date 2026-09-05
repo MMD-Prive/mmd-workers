@@ -5,12 +5,19 @@ import { isDriveReconcileRequest, handleDriveReconcile } from "./drive-access-re
 import { withDriveBootstrapDiagnostic } from "./drive-bootstrap-debug.js";
 import { withStatusFirstMemberResolver } from "./liff-status-first-member-resolver.js";
 import { attachTraceId, createLiffResolutionTrace, createLiffShellBoundaryTrace } from "./liff-resolution-trace.js";
+import {
+  handleTrustedCareBackBookingApproval,
+  isTrustedCareBackBookingApproval,
+} from "./care-back-trusted-booking-approval.js";
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-durable-object.js";
 
 export default {
   async fetch(request, env, ctx) {
+    if (isTrustedCareBackBookingApproval(request)) {
+      return handleTrustedCareBackBookingApproval(request, env);
+    }
     if (isDriveReconcileRequest(request)) return handleDriveReconcile(request, env);
 
     const shellBoundary = createLiffShellBoundaryTrace(request, env, ctx);
