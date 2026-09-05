@@ -1,0 +1,152 @@
+name: Historical Backfill Route Gate
+
+on:
+  pull_request:
+    paths:
+      - "admin-worker/src/historical-slip-backfill-runtime.js"
+      - "admin-worker/src/studio-telegram-worker.js"
+      - "admin-worker/src/admin-payment-review-entry.js"
+      - "admin-worker/historical-slip-backfill-route.test.mjs"
+      - ".github/workflows/historical-backfill-route-gate.yml"
+  workflow_run:
+    workflows:
+      - "Deploy admin-worker"
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    if: github.event_name != 'workflow_run'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Historical Backfill syntax and fail-closed contract
+        run: |
+          set -euo pipefail
+          node --check admin-worker/src/historical-slip-backfill-runtime.js
+          node --check admin-worker/src/studio-telegram-worker.js
+          node --experimental-global-webcrypto --test admin-worker/historical-slip-backfill-route.test.mjs
+      - name: Preserve Money Truth separation
+        run: |
+          set -euo pipefail
+          grep -F 'AUTH_SERVICE_ADMIN_TO_PAYMENTS' admin-worker/src/historical-slip-backfill-runtime.js
+          grep -F '/v1/internal/payments/historical-slip/reviewed' admin-worker/src/historical-slip-backfill-runtime.js
+          grep -F 'review_state: "pending"' admin-worker/src/historical-slip-backfill-runtime.js
+          grep -F 'status: "pending"' admin-worker/src/historical-slip-backfill-runtime.js
+          grep -F 'authority: "payments-worker"' admin-worker/src/historical-slip-backfill-runtime.js
+
+  sync-route-and-smoke:
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main') ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
+      CLOUDFLARE_ZONE_ID: 2d62396174fa2ddadbbcd0e8cf0f3367
+    steps:
+      - name: Require active routes token
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_ROUTES_API_TOKEN"
+          response_file="$(mktemp)"
+          code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS \
+            -o "$response_file" -w "%{http_code}" \
+            -H "Authorization: Bearer $CLOUDFLARE_ROUTES_API_TOKEN" \
+            https://api.cloudflare.com/client/v4/user/tokens/verify)"
+          test "$code" = "200"
+          node - "$response_file" <<'NODE'
+          const fs = require("node:fs");
+          const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          if (payload.success !== true || payload.result?.status !== "active") {
+            throw new Error("Cloudflare routes token is not active");
+          }
+          NODE
+
+      - name: Claim canonical Historical Backfill API route
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const zoneId = process.env.CLOUDFLARE_ZONE_ID;
+          const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
+          const worker = "admin-worker";
+          const desired = [
+            "mmdbkk.com/v1/admin/payments/historical-backfill*",
+            "www.mmdbkk.com/v1/admin/payments/historical-backfill*",
+          ];
+
+          async function cloudflare(path, options = {}) {
+            const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+              ...options,
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+                ...(options.headers || {}),
+              },
+            });
+            const payload = await response.json();
+            if (!response.ok || payload.success !== true) {
+              const detail = (payload.errors || []).map((e) => `${e.code || "unknown"}: ${e.message || "unknown"}`).join("; ");
+              throw new Error(`Cloudflare route call failed (${response.status}): ${detail}`);
+            }
+            return payload.result;
+          }
+
+          const routePath = `/zones/${zoneId}/workers/routes`;
+          const existing = await cloudflare(routePath);
+          const conflicts = desired.flatMap((pattern) =>
+            existing.filter((route) => route.pattern === pattern && route.script !== worker)
+          );
+          if (conflicts.length) {
+            throw new Error(`Refusing to replace existing route owner: ${conflicts.map((r) => `${r.pattern} -> ${r.script || "none"}`).join(", ")}`);
+          }
+
+          for (const pattern of desired) {
+            if (existing.some((route) => route.pattern === pattern && route.script === worker)) continue;
+            await cloudflare(routePath, {
+              method: "POST",
+              body: JSON.stringify({ pattern, script: worker }),
+            });
+            console.log(`Created ${pattern} -> ${worker}`);
+          }
+
+          const verified = await cloudflare(routePath);
+          const missing = desired.filter((pattern) =>
+            !verified.some((route) => route.pattern === pattern && route.script === worker)
+          );
+          if (missing.length) throw new Error(`Historical Backfill route verification failed: ${missing.join(", ")}`);
+          console.log("Historical Backfill canonical API routes verified");
+          NODE
+
+      - name: Production fail-closed smoke
+        run: |
+          set -euo pipefail
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            body_file="$(mktemp)"
+            code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+              -o "$body_file" -w "%{http_code}" \
+              "$origin/v1/admin/payments/historical-backfill?limit=1")"
+            cat "$body_file"
+            test "$code" = "401"
+            grep -q '"error":"unauthorized"' "$body_file"
+
+            body_file="$(mktemp)"
+            code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+              -o "$body_file" -w "%{http_code}" \
+              -X POST \
+              -H "Origin: $origin" \
+              -H "Content-Type: application/json" \
+              --data '{"proof_id":"smoke","decision":"approve","review_reason":"unauthenticated smoke"}' \
+              "$origin/v1/admin/payments/historical-backfill/review")"
+            cat "$body_file"
+            test "$code" = "401"
+            grep -q '"error":"unauthorized"' "$body_file"
+          done
