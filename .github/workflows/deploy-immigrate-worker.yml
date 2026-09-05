@@ -115,6 +115,8 @@ jobs:
           const desired = [
             "mmdbkk.com/internal/admin/customer-data",
             "www.mmdbkk.com/internal/admin/customer-data",
+            "mmdbkk.com/internal/admin/customer-data*",
+            "www.mmdbkk.com/internal/admin/customer-data*",
             "mmdbkk.com/internal/admin/jobs/create-session/core",
             "www.mmdbkk.com/internal/admin/jobs/create-session/core",
             "mmdbkk.com/a/create-session.js",
@@ -181,8 +183,8 @@ jobs:
           for attempt in 1 2 3 4 5 6 7 8; do
             : > "$headers"
             : > "$body"
-            code="$(curl -sS -D "$headers" -o "$body" -w '%{http_code}' \
-              "https://mmdbkk.com/internal/admin/customer-data?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
+            code="$(curl -sSL -D "$headers" -o "$body" -w '%{http_code}' \
+              "https://www.mmdbkk.com/internal/admin/customer-data?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
 
             if [ "$code" = "200" ] \
               && grep -Eiq '^x-mmd-customer-data-ui:[[:space:]]*readable-v2' "$headers" \
@@ -198,13 +200,13 @@ jobs:
             fi
 
             echo "Customer Data readable UI not propagated yet (attempt ${attempt}, HTTP ${code}); retrying..."
-            grep -Ei '^(x-mmd-customer-data-ui|x-mmd-customer-data-authority|server|cf-ray):' "$headers" || true
+            grep -Ei '^(x-mmd-customer-data-ui|x-mmd-customer-data-authority|location:|server|cf-ray):' "$headers" || true
             sleep 2
           done
 
           if [ "$verified" != "1" ]; then
             echo "Customer Data readable UI production verification failed after bounded propagation retries" >&2
-            grep -Ei '^(x-mmd-customer-data-ui|x-mmd-customer-data-authority|server|cf-ray):' "$headers" || true
+            grep -Ei '^(x-mmd-customer-data-ui|x-mmd-customer-data-authority|location:|server|cf-ray):' "$headers" || true
             head -c 320 "$body" >&2 || true
             echo >&2
             exit 1
