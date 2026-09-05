@@ -467,6 +467,16 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/kenji/control/clients/intake"
 zone_name = "mmdbkk.com"
 
+
+# LINE Console Inbox backfill is admin-only; it stages evidence for review and never mutates entitlement.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/control/line-ofc/backfill*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/control/line-ofc/backfill*"
+zone_name = "mmdbkk.com"
+
 # Create Job Link Issuer API. Exact route only so Webflow-owned admin pages stay
 # untouched while Create Actual Job POST reaches admin-worker JSON handlers.
 [[routes]]
@@ -640,6 +650,16 @@ class_name = "ModelActivationCoordinator"
 [[durable_objects.bindings]]
 name = "MODEL_LOCATION_COORDINATOR"
 class_name = "ModelLocationCoordinator"
+
+
+# One durable job serializes Console Inbox pagination and provides resumable progress.
+[[durable_objects.bindings]]
+name = "LINE_OFC_BACKFILL_COORDINATOR"
+class_name = "LineOfcConsoleBackfillCoordinator"
+
+[[migrations]]
+tag = "v2026-09-05-line-ofc-console-backfill"
+new_sqlite_classes = ["LineOfcConsoleBackfillCoordinator"]
 
 [[migrations]]
 tag = "v2026-09-01-kenji-knowledge-coordinator"

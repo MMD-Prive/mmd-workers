@@ -10,9 +10,11 @@ import {
   renderApprovedAdminLogin,
 } from "./admin-login-page.js";
 import { handleKenjiKnowledgeRequest, isKenjiKnowledgeRequest } from "./kenji-knowledge-runtime.js";
+import { handleLineOfcConsoleBackfill, isLineOfcConsoleBackfillRequest } from "./line-ofc-console-backfill.js";
 export { KenjiKnowledgeCoordinator } from "./kenji-knowledge-airtable-adapter.js";
 export { ModelActivationCoordinator } from "./model-first-time-activation.js";
 export { ModelLocationCoordinator } from "./model-location-runtime.js";
+export { LineOfcConsoleBackfillCoordinator } from "./line-ofc-console-backfill.js";
 import { handleKenjiPublicKnowledgeRequest, isKenjiPublicKnowledgeRequest } from "./kenji-public-knowledge-runtime.js";
 import { handleMmsAdminRequest, isMmsAdminRequest } from "./mms-admin-runtime.js";
 import {
@@ -136,6 +138,10 @@ export default {
 
     if (isKenjiControlActionRequest(path, method)) {
       return handleKenjiControlAction(request, env, strictGate.actor);
+    }
+
+    if (isLineOfcConsoleBackfillRequest(path, method)) {
+      return handleLineOfcConsoleBackfill(request, env, strictGate.actor);
     }
 
     if (isKenjiControlRequest(path, method)) {
