@@ -60,10 +60,13 @@ test('valid browser cookie also keeps MMS admin API in-session instead of return
   assert.equal(response.status, 503);
 });
 
-test('host-bound session cannot cross from apex to www', async () => {
+test('production admin session is shared only across apex and www aliases', async () => {
   const cookie = await signedCookie({ origin: 'https://mmdbkk.com' });
   const request = new Request('https://www.mmdbkk.com/internal/admin/mms', { headers: { cookie } });
-  assert.equal(await hasValidAdminBrowserSession(request, env), false);
+  assert.equal(await hasValidAdminBrowserSession(request, env), true);
+
+  const outsideProduction = new Request('https://mmdprive.webflow.io/internal/admin/mms', { headers: { cookie } });
+  assert.equal(await hasValidAdminBrowserSession(outsideProduction, env), false);
 });
 
 test('expired or tampered browser session remains rejected', async () => {
