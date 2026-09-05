@@ -282,7 +282,7 @@ async function handleCredentialBoundAdminLogin(request, env) {
     return strictJson(request, env, { ok: false, error: "invalid_access_code" }, 401);
   }
 
-  const cookie = await createCredentialBoundAdminSession(request, { id: "per" }, env);
+  const cookie = await createCredentialBoundAdminSession(request, { id: "per", role: "admin" }, env);
   return strictJson(
     request,
     env,
