@@ -61,17 +61,18 @@ test('system check proves backend read paths without mutating bookings or therap
 });
 
 test('MMS browser page participates in the credential-bound admin session gate', () => {
-  const gateStart = loginWrapperSource.indexOf('function isCredentialBoundAdminPath(path)');
-  const gateEnd = loginWrapperSource.indexOf('async function hasValidServiceAuth', gateStart);
+  const gateStart = loginWrapperSource.indexOf('async function applyCredentialBoundAdminGate');
+  const gateEnd = loginWrapperSource.indexOf('function isGateBypassedAdminPath', gateStart);
   assert.ok(gateStart >= 0 && gateEnd > gateStart);
   const gateSource = loginWrapperSource.slice(gateStart, gateEnd);
-  assert.match(gateSource, /path === "\/internal\/admin\/mms"/);
+  assert.match(gateSource, /isBrowserAdminPath\(path\)/);
+  assert.match(gateSource, /credential-required/);
 
-  const redirectStart = loginWrapperSource.indexOf('const session = await readCredentialBoundAdminSession');
-  const redirectEnd = loginWrapperSource.indexOf('const bypass = clean', redirectStart);
-  assert.ok(redirectStart >= 0 && redirectEnd > redirectStart);
-  const redirectSource = loginWrapperSource.slice(redirectStart, redirectEnd);
-  assert.match(redirectSource, /path === "\/internal\/admin\/mms"/);
+  const pathStart = loginWrapperSource.indexOf('function isBrowserAdminPath');
+  const pathEnd = loginWrapperSource.indexOf('function isApiAdminPath', pathStart);
+  assert.ok(pathStart >= 0 && pathEnd > pathStart);
+  const pathSource = loginWrapperSource.slice(pathStart, pathEnd);
+  assert.match(pathSource, /path\.startsWith\("\/internal\/admin"\)/);
 });
 
 test('approve wiring is idempotent and preserves ordinary application save behavior', () => {
