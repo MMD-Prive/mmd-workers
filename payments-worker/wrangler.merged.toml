@@ -1,12 +1,15 @@
 name = "payments-worker"
-main = "index.phase1.js"
+main = "index.review-wrapper.js"
 compatibility_date = "2026-01-20"
 
 # Production entrypoint:
+# - index.review-wrapper.js adds the service-authenticated reviewed-proof handoff.
 # - index.phase1.js owns verified Base Points Phase 1 awards.
 # - index.with-slip-evidence.js still handles /v1/pay/slip/evidence.
 # - /v1/internal/payments/historical-slip/reviewed validates reviewed historical
 #   Payment Proof evidence before entering the canonical trusted notify path.
+# - /v1/internal/payments/reviewed-proof re-reads Payment Proof evidence inside
+#   payments-worker before entering the same canonical trusted notify path.
 # - all other payment/session handling delegates to index.js.
 # Base Points use a 100 THB pool with remainder carry and do not expire with membership.
 
