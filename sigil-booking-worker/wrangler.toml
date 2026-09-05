@@ -51,6 +51,13 @@ AIRTABLE_TABLE_MEMBERS_ID = "tblgWc5VRon5o8Mhk"
 AIRTABLE_TABLE_MEMBER_PACKAGES_ID = "tblurt3GuKKiNjQAK"
 AIRTABLE_TABLE_ENTITLEMENTS_ID = "tblNImdF9PKAxhXGi"
 
+# CARE BACK approval remains service-only. The booking confirmer may trigger the
+# call, but member-pages-worker re-resolves canonical member/model context and
+# remains the only owner allowed to write approved_discount_percent.
+[[services]]
+binding = "MEMBER_PAGES_WORKER"
+service = "member-pages-worker"
+
 # Optional R2 lookup for object-exists checks. Public URLs still come from Airtable
 # Public Image URL or MODEL_PUBLIC_ASSET_BASE_URL + primary_image_key.
 [[r2_buckets]]
@@ -61,3 +68,5 @@ bucket_name = "mmd-models"
 # AIRTABLE_API_KEY
 # INTERNAL_TOKEN optional for telegram-worker auth and trusted booking confirmation
 # CONFIRM_KEY optional fallback for trusted booking confirmation / telegram-worker auth
+# AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES must be the same 32+ character
+# service secret configured on member-pages-worker.
