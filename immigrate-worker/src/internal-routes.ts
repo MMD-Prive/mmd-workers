@@ -385,7 +385,7 @@ function addMinutes(time: string, minutes: number): string {
   if (!match) return "";
   const start = Number(match[1]) * 60 + Number(match[2]);
   const next = (start + minutes) % (24 * 60);
-  return `${String(Math.floor(next)).padStart(2, "0")}:${String(next % 60).padStart(2, "0")}`;
+  return `${String(Math.floor(next / 60)).padStart(2, "0")}:${String(next % 60).padStart(2, "0")}`;
 }
 
 function normalizeAdminJobPayload(body: Record<string, unknown>): Record<string, unknown> {
