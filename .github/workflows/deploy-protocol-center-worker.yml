@@ -121,12 +121,51 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          wait_for_unauthenticated_protocol() {
+            origin="$1"
+            for attempt in $(seq 1 15); do
+              body="$(mktemp)"
+              code="$(curl -sS -o "$body" -w "%{http_code}" "$origin/v1/admin/protocols" || true)"
+              if [ "$code" = "401" ] && grep -q '"error":"unauthorized"' "$body"; then
+                echo "Protocol route ready on $origin after attempt $attempt"
+                cat "$body"
+                return 0
+              fi
+              echo "Waiting for Protocol route propagation on $origin (attempt $attempt/15, HTTP ${code:-curl-error})"
+              cat "$body" || true
+              sleep 2
+            done
+            echo "Protocol route never reached expected unauthenticated 401 on $origin" >&2
+            return 1
+          }
+
+          wait_for_authenticated_protocol() {
+            origin="$1"
+            jar="$2"
+            for attempt in $(seq 1 15); do
+              body="$(mktemp)"
+              code="$(curl -sS -o "$body" -w "%{http_code}" \
+                -b "$jar" \
+                -H "Origin: $origin" \
+                "$origin/v1/admin/protocols" || true)"
+              if [ "$code" = "200" ] && \
+                 grep -q '"authority":"airtable"' "$body" && \
+                 grep -q '"source_of_truth":"Airtable canonical base"' "$body"; then
+                echo "Authenticated Airtable protocol read ready on $origin after attempt $attempt"
+                cat "$body"
+                return 0
+              fi
+              echo "Waiting for authenticated Protocol read on $origin (attempt $attempt/15, HTTP ${code:-curl-error})"
+              cat "$body" || true
+              sleep 2
+            done
+            echo "Authenticated Protocol read never reached Airtable-authoritative 200 on $origin" >&2
+            return 1
+          }
+
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
-            body="$(mktemp)"
-            code="$(curl --retry 5 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" "$origin/v1/admin/protocols")"
-            cat "$body"
-            test "$code" = "401"
-            grep -q '"error":"unauthorized"' "$body"
+            wait_for_unauthenticated_protocol "$origin"
 
             jar="$(mktemp)"
             login_body="$(mktemp)"
@@ -140,15 +179,7 @@ jobs:
             cat "$login_body"
             test "$login_code" = "303"
 
-            body="$(mktemp)"
-            code="$(curl --retry 5 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
-              -b "$jar" \
-              -H "Origin: $origin" \
-              "$origin/v1/admin/protocols")"
-            cat "$body"
-            test "$code" = "200"
-            grep -q '"authority":"airtable"' "$body"
-            grep -q '"source_of_truth":"Airtable canonical base"' "$body"
+            wait_for_authenticated_protocol "$origin" "$jar"
           done
 
       - name: Clean temporary config
