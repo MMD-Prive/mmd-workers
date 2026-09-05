@@ -264,7 +264,7 @@ jobs:
               if (dom.href !== 'https://mmdbkk.com/internal/admin/mms') mismatches.push(`canonical DOM href=${dom.href}`);
               if (expectedBuild && dom.build !== expectedBuild) mismatches.push(`build=${dom.build} expected=${expectedBuild}`);
               if (dom.bridgeType !== 'function') mismatches.push(`mmsAdminApplySnapshot type=${dom.bridgeType}`);
-              if (!dom.favicon || !dom.favicon.startsWith('data:image/svg+xml,')) mismatches.push(`favicon=${dom.favicon}`);
+              if (dom.favicon !== 'https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo.webp') mismatches.push(`favicon=${dom.favicon}`);
               if (pageErrors.length) mismatches.push(`pageerror=${pageErrors.join(' | ')}`);
               if (consoleErrors.length) mismatches.push(`console.error=${consoleErrors.join(' | ')}`);
               if (requestFailures.length) mismatches.push(`requestfailed=${requestFailures.join(' | ')}`);
