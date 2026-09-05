@@ -170,9 +170,16 @@ jobs:
                 pageErrors.push(error && error.message ? error.message : String(error));
               });
               page.on('requestfailed', (request) => {
-                const url = request.url();
-                if (url.includes('/v1/admin/mms/') || url.includes('/internal/admin/mms')) {
-                  requestFailures.push(`${request.method()} ${url} :: ${request.failure()?.errorText || 'failed'}`);
+                const rawUrl = request.url();
+                const failure = request.failure()?.errorText || 'failed';
+                let pathname = '';
+                try { pathname = new URL(rawUrl).pathname; } catch {}
+                const expectedManualNavigationAbort =
+                  request.method() === 'GET' &&
+                  pathname === '/internal/admin/mms' &&
+                  failure === 'net::ERR_ABORTED';
+                if (!expectedManualNavigationAbort && (rawUrl.includes('/v1/admin/mms/') || pathname === '/internal/admin/mms')) {
+                  requestFailures.push(`${request.method()} ${rawUrl} :: ${failure}`);
                 }
               });
 
