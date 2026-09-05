@@ -56,6 +56,7 @@ export {
 const MODEL_SCHEMA_PATCH_V1_ROUTE_SET = new Set(Object.values(MODEL_SCHEMA_PATCH_V1_ROUTES));
 const ADMIN_GATE_SESSION_COOKIE = "mmd_admin_gate_v1";
 const ADMIN_GATE_TTL_MS = 8 * 60 * 60 * 1000;
+const ADMIN_GATE_SHARED_COOKIE_DOMAIN = "mmdbkk.com";
 const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
   "https://mmdbkk.com",
   "https://www.mmdbkk.com",
@@ -289,7 +290,7 @@ async function handleCredentialBoundAdminLogin(request, env) {
     { ok: true, next },
     200,
     {
-      "set-cookie": `${ADMIN_GATE_SESSION_COOKIE}=${cookie}; Path=/; Max-Age=${Math.floor(ADMIN_GATE_TTL_MS / 1000)}; HttpOnly; Secure; SameSite=Lax`,
+      "set-cookie": adminSessionCookie(request, cookie, Math.floor(ADMIN_GATE_TTL_MS / 1000)),
       "x-mmd-admin-login": "session-created",
       "x-mmd-admin-next": next,
     },
@@ -300,9 +301,17 @@ async function handleCredentialBoundAdminLogout(request) {
   const headers = new Headers({
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store, max-age=0",
-    "set-cookie": `${ADMIN_GATE_SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+    "set-cookie": adminSessionCookie(request, "", 0),
   });
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
+}
+
+function adminSessionCookie(request, value, maxAge) {
+  const hostname = new URL(request.url).hostname;
+  const sharedDomain = hostname === "mmdbkk.com" || hostname === "www.mmdbkk.com"
+    ? `; Domain=${ADMIN_GATE_SHARED_COOKIE_DOMAIN}`
+    : "";
+  return `${ADMIN_GATE_SESSION_COOKIE}=${value}; Path=/${sharedDomain}; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
 }
 
 function sanitizeNextPath(value) {
