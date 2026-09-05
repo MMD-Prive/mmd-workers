@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import adminEntry from "./src/admin-payment-review-entry.js";
+import adminEntry from "./src/admin-login-hero-worker.js";
 import { isHistoricalSlipBackfillRequest } from "./src/historical-slip-backfill-runtime.js";
 
 test("historical backfill route matcher stays exact inside the canonical subtree", () => {
