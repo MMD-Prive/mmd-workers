@@ -1,0 +1,74 @@
+name: Historical Backfill PR Production Smoke
+
+on:
+  push:
+    branches:
+      - feat/payment-review-facade-v1
+    paths:
+      - ".github/workflows/historical-backfill-pr-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  production-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe canonical and compatibility routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          failed=0
+
+          probe_get() {
+            local url="$1"
+            local label="$2"
+            local body
+            body="$(mktemp)"
+            local code
+            code="$(curl --retry 2 --retry-delay 1 --retry-all-errors -sS -o "$body" -w "%{http_code}" "$url")"
+            echo "[$label] GET $url -> HTTP $code"
+            cat "$body" || true
+            echo
+            if [ "$code" != "401" ]; then
+              echo "[$label] expected HTTP 401 fail-closed" >&2
+              failed=1
+            fi
+          }
+
+          probe_post() {
+            local url="$1"
+            local origin="$2"
+            local label="$3"
+            local body
+            body="$(mktemp)"
+            local code
+            code="$(curl --retry 2 --retry-delay 1 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
+              -X POST \
+              -H "Origin: $origin" \
+              -H "Content-Type: application/json" \
+              --data '{"proof_id":"__smoke_no_auth__","decision":"reject","review_reason":"production smoke only"}' \
+              "$url")"
+            echo "[$label] POST $url -> HTTP $code"
+            cat "$body" || true
+            echo
+            if [ "$code" != "401" ]; then
+              echo "[$label] expected HTTP 401 fail-closed" >&2
+              failed=1
+            fi
+          }
+
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            probe_get "$origin/v1/admin/payments/historical-backfill?limit=1" "canonical"
+            probe_post "$origin/v1/admin/payments/historical-backfill/review" "$origin" "canonical-review"
+            probe_get "$origin/studio/api/payments/historical-backfill?limit=1" "compatibility"
+          done
+
+          if [ "$failed" -ne 0 ]; then
+            echo "Historical Backfill production smoke FAILED" >&2
+            exit 1
+          fi
+
+          echo "Historical Backfill production smoke PASSED"
