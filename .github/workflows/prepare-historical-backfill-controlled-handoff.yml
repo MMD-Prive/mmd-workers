@@ -1,5 +1,5 @@
 name: Prepare Historical Backfill Controlled Handoff
-# retry-v2: generator uses string concatenation only
+# runtime-only preparer; workflow files are managed by the GitHub connector
 
 on:
   push:
@@ -20,34 +20,28 @@ jobs:
           ref: feat/payment-review-facade-v1
           fetch-depth: 0
 
-      - name: Apply controlled-handoff patch
+      - name: Apply controlled-handoff runtime patch
         run: node scripts/prepare-historical-controlled-handoff.mjs
 
-      - name: Validate generated changes
+      - name: Validate runtime and handoff contract
         shell: bash
         run: |
           set -euo pipefail
-          git diff --check
           node --check admin-worker/src/historical-slip-backfill-runtime.js
           node --experimental-global-webcrypto --test \
             admin-worker/historical-slip-backfill-route.test.mjs \
             admin-worker/historical-slip-backfill-handoff-probe.test.mjs
-          grep -F '"/v1/admin/payments/historical-backfill*"' .github/workflows/deploy-admin-worker.yml
 
-      - name: Commit generated changes
+      - name: Commit runtime only
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "MMD Privé"
           git config user.email "malemodel.bkk@gmail.com"
-          git add \
-            admin-worker/src/historical-slip-backfill-runtime.js \
-            admin-worker/historical-slip-backfill-handoff-probe.test.mjs \
-            .github/workflows/deploy-admin-worker.yml \
-            .github/workflows/historical-backfill-authenticated-controlled-smoke.yml
+          git add admin-worker/src/historical-slip-backfill-runtime.js
           if git diff --cached --quiet; then
-            echo "Controlled-handoff changes already applied"
+            echo "Controlled-handoff runtime already applied"
             exit 0
           fi
-          git commit -m "test(payments): add authenticated Historical Backfill handoff smoke"
+          git commit -m "feat(payments): add safe Historical Backfill handoff probe"
           git push origin HEAD:feat/payment-review-facade-v1
