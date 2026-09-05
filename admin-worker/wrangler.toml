@@ -658,10 +658,6 @@ name = "LINE_OFC_BACKFILL_COORDINATOR"
 class_name = "LineOfcConsoleBackfillCoordinator"
 
 [[migrations]]
-tag = "v2026-09-05-line-ofc-console-backfill"
-new_sqlite_classes = ["LineOfcConsoleBackfillCoordinator"]
-
-[[migrations]]
 tag = "v2026-09-01-kenji-knowledge-coordinator"
 new_sqlite_classes = ["KenjiKnowledgeCoordinator"]
 
@@ -672,6 +668,11 @@ new_sqlite_classes = ["ModelActivationCoordinator"]
 [[migrations]]
 tag = "v2026-09-05-model-location-coordinator"
 new_sqlite_classes = ["ModelLocationCoordinator"]
+
+# Must stay after every already-deployed migration. Cloudflare migration tags are append-only.
+[[migrations]]
+tag = "v2026-09-06-line-ofc-console-backfill"
+new_sqlite_classes = ["LineOfcConsoleBackfillCoordinator"]
 
 [[r2_buckets]]
 binding = "MMD_MODEL_ASSETS"
