@@ -88,7 +88,8 @@ jobs:
             admin-login-session.test.mjs \
             mms-admin-session-bounce.test.mjs \
             kenji-model-access-rpc.test.mjs \
-            payment-entitlement-approval.test.mjs
+            payment-entitlement-approval.test.mjs \
+            line-slip-intake-review-queue.contract.test.mjs
           node ../knowledge/kenji/validate.mjs
           node --test \
             kenji-knowledge-runtime-storage.test.mjs \
