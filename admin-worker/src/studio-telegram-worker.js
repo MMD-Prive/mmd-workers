@@ -1,4 +1,4 @@
-import studioWorker from "./studio-real-worker.js";
+import studioWorker from "./studio-finance-worker.js";
 import {
   handleCreateSessionClientLineageRequest,
   isCreateSessionClientLineageRequest,
