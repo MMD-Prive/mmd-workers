@@ -25,18 +25,15 @@ jobs:
           set -euo pipefail
           node <<'NODE'
           const fs = require('node:fs');
-          const path = require('node:path');
 
           const FAVICON = 'https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo.webp';
-
-          function read(file) { return fs.readFileSync(file, 'utf8'); }
-          function write(file, value) { fs.writeFileSync(file, value); }
+          const read = (file) => fs.readFileSync(file, 'utf8');
+          const write = (file, value) => fs.writeFileSync(file, value);
           function replaceRequired(file, from, to) {
             let text = read(file);
             if (text.includes(to)) return;
-            if (!text.includes(from)) throw new Error(`marker not found in ${file}: ${from.slice(0, 90)}`);
-            text = text.replace(from, to);
-            write(file, text);
+            if (!text.includes(from)) throw new Error(`marker not found in ${file}: ${from.slice(0, 100)}`);
+            write(file, text.replace(from, to));
           }
 
           replaceRequired(
@@ -62,25 +59,33 @@ jobs:
             `<title>MMD Admin</title><link rel="icon" type="image/webp" href="${FAVICON}"></head>`,
           );
 
-          const mmsRuntime = 'admin-worker/src/mms-admin-runtime.js';
-          let runtime = read(mmsRuntime);
-          if (!runtime.includes('SIGIL_INTERNAL_FAVICON')) {
-            const anchor = 'const PAGE_PATH = "/internal/admin/mms";';
-            if (!runtime.includes(anchor)) throw new Error('MMS runtime anchor missing');
-            const helper = `const SIGIL_INTERNAL_FAVICON = "${FAVICON}";\n\nfunction withInternalSigilFavicon(page = "") {\n  let html = String(page || "");\n  const icon = \`<link data-mms-admin-favicon rel="icon" type="image/webp" href="\${SIGIL_INTERNAL_FAVICON}">\`;\n  html = html.replace(/<link\\b[^>]*\\bdata-mms-admin-favicon\\b[^>]*>/gi, "");\n  html = html.replace(/<link\\b[^>]*\\brel=["'](?:shortcut\\s+)?icon["'][^>]*>/gi, "");\n  return html.includes("</head>") ? html.replace("</head>", icon + "</head>") : icon + html;\n}\n\n`;
-            runtime = runtime.replace(anchor, helper + anchor);
+          const mobileFile = 'admin-worker/src/mms-admin-mobile-bundle.js';
+          let mobile = read(mobileFile);
+          if (!mobile.includes('INTERNAL_SIGIL_FAVICON')) {
+            mobile = mobile.replace(
+              'const MARKER = "<!-- mms-admin-mobile-bundle:v1 -->";\n',
+              `const MARKER = "<!-- mms-admin-mobile-bundle:v1 -->";\nconst INTERNAL_SIGIL_FAVICON = "${FAVICON}";\n`,
+            );
           }
-          runtime = runtime.replace(
-            'const page = stampMmsAdminBuild(wireMmsJobsUi(wireMmsAdminMobileBundle(wireMmsApproveUi(renderMmsAdminPage()))), build);',
-            'const page = withInternalSigilFavicon(stampMmsAdminBuild(wireMmsJobsUi(wireMmsAdminMobileBundle(wireMmsApproveUi(renderMmsAdminPage()))), build));',
-          );
-          write(mmsRuntime, runtime);
+          const oldHead = `  const headAddon = '<meta name="theme-color" content="#f3f3ec">' + MB_STYLE;`;
+          const newHead = `  html = html.replace(/<link\\b[^>]*\\bdata-mms-admin-favicon\\b[^>]*>/gi, "");\n  html = html.replace(/<link\\b[^>]*\\brel=["'](?:shortcut\\s+)?icon["'][^>]*>/gi, "");\n  const headAddon = '<link data-mms-admin-favicon rel="icon" type="image/webp" href="' + INTERNAL_SIGIL_FAVICON + '">' + '<meta name="theme-color" content="#f3f3ec">' + MB_STYLE;`;
+          if (!mobile.includes(newHead)) {
+            if (!mobile.includes(oldHead)) throw new Error('MMS mobile bundle head marker missing');
+            mobile = mobile.replace(oldHead, newHead);
+          }
+          write(mobileFile, mobile);
+
+          for (const file of ['admin-worker/admin-login-regression-guard.test.mjs','admin-worker/admin-login-session.test.mjs']) {
+            let source = read(file);
+            source = source.replaceAll('image\\/png', 'image\\/webp');
+            write(file, source);
+          }
 
           const mmsTest = 'admin-worker/mms-admin-inline-syntax.test.mjs';
           let test = read(mmsTest);
           test = test.replace(
             /test\('MMS admin favicon is self-contained and does not require a cross-host image request',[\s\S]*?\n\}\);/,
-            `test('MMS admin favicon uses canonical internal SIGIL logo', () => {\n  const html = productionAssembly();\n  assert.match(html, /<link data-mms-admin-favicon rel="icon" type="image\\/webp" href="https:\\/\\/cdn\\.prod\\.website-files\\.com\\/68f879d546d2f4e2ab186e90\\/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo\\.webp">/);\n  assert.equal((html.match(/data-mms-admin-favicon/g) || []).length, 1);\n});`,
+            `test('MMS admin favicon uses canonical internal SIGIL logo', () => {\n  const html = productionAssembly();\n  assert.match(html, /<link data-mms-admin-favicon rel="icon" type="image\\/webp" href="https:\\/\\/cdn\\.prod\\.website-files\\.com\\/68f879d546d2f4e2ab186e90\\/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo\\.webp">/);\n  assert.equal((html.match(/data-mms-admin-favicon/g) || []).length, 1);\n  assert.doesNotMatch(html, /data:image\\/svg\\+xml/);\n});`,
           );
           write(mmsTest, test);
 
@@ -91,14 +96,6 @@ jobs:
             `if (dom.favicon !== '${FAVICON}') mismatches.push(\`favicon=\${dom.favicon}\`);`,
           );
           write(smoke, smokeText);
-
-          for (const file of fs.readdirSync('admin-worker')) {
-            if (!file.endsWith('.test.mjs')) continue;
-            const full = path.join('admin-worker', file);
-            let source = read(full);
-            source = source.replaceAll('rel=\\"icon\\" type=\\"image\\/png\\"', 'rel=\\"icon\\" type=\\"image\\/webp\\"');
-            write(full, source);
-          }
           NODE
 
       - name: Validate targeted internal surfaces
@@ -107,12 +104,13 @@ jobs:
           set -euo pipefail
           node --check admin-worker/src/admin-login-page.js
           node --check admin-worker/src/index.js
-          node --check admin-worker/src/mms-admin-runtime.js
+          node --check admin-worker/src/mms-admin-mobile-bundle.js
           node --test \
             admin-worker/admin-login-regression-guard.test.mjs \
             admin-worker/admin-login-session.test.mjs \
             admin-worker/admin-login-hero.test.mjs \
-            admin-worker/mms-admin-inline-syntax.test.mjs
+            admin-worker/mms-admin-inline-syntax.test.mjs \
+            admin-worker/mms-admin-mobile-bundle.test.mjs
 
       - name: Commit migration
         shell: bash
