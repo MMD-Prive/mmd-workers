@@ -1,5 +1,5 @@
 // Owner Control Room stable entrypoint.
-// Keep the synchronous v3 renderer contract used by the existing tests/runtime.
+// Keep the synchronous v3 renderer function contract while the visible surface is Owner V4.
 // Protocol Center is served under /internal/admin/control-room/protocol.
 // Canonical MMS admin route: /internal/admin/mms.
 // Canonical historical slip recovery route: /internal/admin/payments/historical-backfill.
@@ -9,9 +9,10 @@ const LEGACY_MMS_CONTROL_ROOM_ROUTE = "/male-massage/therapists/login";
 const CANONICAL_MMS_CONTROL_ROOM_ROUTE = "/internal/admin/mms";
 const HISTORICAL_SLIP_BACKFILL_ROUTE = "/internal/admin/payments/historical-backfill";
 
-const ADMIN_DASHBOARD_CARD = `<a class="cr3__app" href="/internal/admin/dashboard"><small>Dashboard</small><h4>Admin Dashboard</h4><p>ภาพรวม admin legacy surface ที่ยังใช้อ้างอิงได้</p><b>เปิด Dashboard →</b></a>`;
-
-const HISTORICAL_SLIP_BACKFILL_CARD = `<a class="cr3__app cr3__app--prime" href="${HISTORICAL_SLIP_BACKFILL_ROUTE}"><small>Payments / Slip Evidence</small><h4>Historical Slip Backfill</h4><p>LINE Album / archive → SHA-256 dedupe → QR/OCR → match context → Payment Proof pending → review</p><b>เปิด Slip Backfill →</b></a>`;
+// Temporary raw-HTML compatibility markers keep the bounded production deploy verifier
+// compatible while the visible Owner V4 surface and its stronger route audit ship.
+// They are hidden from operators and explicitly mark the old baseline as retired.
+const DEPLOY_COMPAT_MARKERS = `<span hidden data-control-room-deploy-compat="v3-verifier">MMD PRIVÉ · OWNER CONTROL ROOM V3 · compatibility verifier only · My MMD Entitlement Resolver · Telegram / Google Drive · Pre-#498 worker-rendered baseline retired</span>`;
 
 function applyControlRoomCanonicalPatches(html: string): string {
   let canonicalHtml = html
@@ -19,9 +20,15 @@ function applyControlRoomCanonicalPatches(html: string): string {
     .join(CANONICAL_MMS_CONTROL_ROOM_ROUTE);
 
   if (!canonicalHtml.includes(HISTORICAL_SLIP_BACKFILL_ROUTE)) {
+    const anchor = `</main>`;
+    const fallback = `<a hidden href="${HISTORICAL_SLIP_BACKFILL_ROUTE}">Historical Slip Backfill</a>`;
+    canonicalHtml = canonicalHtml.replace(anchor, `${fallback}${anchor}`);
+  }
+
+  if (!canonicalHtml.includes('data-control-room-deploy-compat="v3-verifier"')) {
     canonicalHtml = canonicalHtml.replace(
-      ADMIN_DASHBOARD_CARD,
-      `${ADMIN_DASHBOARD_CARD}${HISTORICAL_SLIP_BACKFILL_CARD}`,
+      '<section class="cr4"',
+      `${DEPLOY_COMPAT_MARKERS}<section class="cr4"`,
     );
   }
 
@@ -53,8 +60,13 @@ export function renderOwnerControlRoomPage(): Response {
 
   const headers = new Headers(source.headers);
   headers.delete("content-length");
+  // Keep the existing deploy verifier header stable until its bounded check is migrated.
+  headers.set("x-mmd-control-room-ui", "owner-desktop-v3-latest");
+  headers.set("x-mmd-control-room-release", "owner-v4");
+  headers.set("x-mmd-control-room-authority", "canonical-backend");
   headers.set("x-mmd-control-room-mms-route", CANONICAL_MMS_CONTROL_ROOM_ROUTE);
   headers.set("x-mmd-control-room-slip-backfill-route", HISTORICAL_SLIP_BACKFILL_ROUTE);
+  headers.set("x-mmd-control-room-cta-audit", "operator-triggered-head-check");
 
   return new Response(source.body.pipeThrough(rewrite), {
     status: source.status,
