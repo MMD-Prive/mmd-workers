@@ -1,0 +1,129 @@
+name: Internal SIGIL favicon migration
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/internal-sigil-favicon-migration.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply canonical internal SIGIL favicon
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          const FAVICON = 'https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo.webp';
+
+          function read(file) { return fs.readFileSync(file, 'utf8'); }
+          function write(file, value) { fs.writeFileSync(file, value); }
+          function replaceRequired(file, from, to) {
+            let text = read(file);
+            if (text.includes(to)) return;
+            if (!text.includes(from)) throw new Error(`marker not found in ${file}: ${from.slice(0, 90)}`);
+            text = text.replace(from, to);
+            write(file, text);
+          }
+
+          replaceRequired(
+            'admin-worker/src/admin-login-page.js',
+            'https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e34d70142723ec97768bc2_Only%20logo.png',
+            FAVICON,
+          );
+          replaceRequired(
+            'admin-worker/src/admin-login-page.js',
+            '<link rel="icon" type="image/png" sizes="32x32" href="${APPROVED_ADMIN_LOGIN_FAVICON}">',
+            '<link rel="icon" type="image/webp" href="${APPROVED_ADMIN_LOGIN_FAVICON}">',
+          );
+
+          const indexFile = 'admin-worker/src/index.js';
+          replaceRequired(
+            indexFile,
+            '<title>KENJI ADMIN · MMD</title><style>',
+            `<title>KENJI ADMIN · MMD</title><link rel="icon" type="image/webp" href="${FAVICON}"><style>`,
+          );
+          replaceRequired(
+            indexFile,
+            '<title>MMD Admin</title></head>',
+            `<title>MMD Admin</title><link rel="icon" type="image/webp" href="${FAVICON}"></head>`,
+          );
+
+          const mmsRuntime = 'admin-worker/src/mms-admin-runtime.js';
+          let runtime = read(mmsRuntime);
+          if (!runtime.includes('SIGIL_INTERNAL_FAVICON')) {
+            const anchor = 'const PAGE_PATH = "/internal/admin/mms";';
+            if (!runtime.includes(anchor)) throw new Error('MMS runtime anchor missing');
+            const helper = `const SIGIL_INTERNAL_FAVICON = "${FAVICON}";\n\nfunction withInternalSigilFavicon(page = "") {\n  let html = String(page || "");\n  const icon = \`<link data-mms-admin-favicon rel="icon" type="image/webp" href="\${SIGIL_INTERNAL_FAVICON}">\`;\n  html = html.replace(/<link\\b[^>]*\\bdata-mms-admin-favicon\\b[^>]*>/gi, "");\n  html = html.replace(/<link\\b[^>]*\\brel=["'](?:shortcut\\s+)?icon["'][^>]*>/gi, "");\n  return html.includes("</head>") ? html.replace("</head>", icon + "</head>") : icon + html;\n}\n\n`;
+            runtime = runtime.replace(anchor, helper + anchor);
+          }
+          runtime = runtime.replace(
+            'const page = stampMmsAdminBuild(wireMmsJobsUi(wireMmsAdminMobileBundle(wireMmsApproveUi(renderMmsAdminPage()))), build);',
+            'const page = withInternalSigilFavicon(stampMmsAdminBuild(wireMmsJobsUi(wireMmsAdminMobileBundle(wireMmsApproveUi(renderMmsAdminPage()))), build));',
+          );
+          write(mmsRuntime, runtime);
+
+          const mmsTest = 'admin-worker/mms-admin-inline-syntax.test.mjs';
+          let test = read(mmsTest);
+          test = test.replace(
+            /test\('MMS admin favicon is self-contained and does not require a cross-host image request',[\s\S]*?\n\}\);/,
+            `test('MMS admin favicon uses canonical internal SIGIL logo', () => {\n  const html = productionAssembly();\n  assert.match(html, /<link data-mms-admin-favicon rel="icon" type="image\\/webp" href="https:\\/\\/cdn\\.prod\\.website-files\\.com\\/68f879d546d2f4e2ab186e90\\/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo\\.webp">/);\n  assert.equal((html.match(/data-mms-admin-favicon/g) || []).length, 1);\n});`,
+          );
+          write(mmsTest, test);
+
+          const smoke = '.github/workflows/mms-admin-production-state.yml';
+          let smokeText = read(smoke);
+          smokeText = smokeText.replace(
+            "if (!dom.favicon || !dom.favicon.startsWith('data:image/svg+xml,')) mismatches.push(`favicon=${dom.favicon}`);",
+            `if (dom.favicon !== '${FAVICON}') mismatches.push(\`favicon=\${dom.favicon}\`);`,
+          );
+          write(smoke, smokeText);
+
+          for (const file of fs.readdirSync('admin-worker')) {
+            if (!file.endsWith('.test.mjs')) continue;
+            const full = path.join('admin-worker', file);
+            let source = read(full);
+            source = source.replaceAll('rel=\\"icon\\" type=\\"image\\/png\\"', 'rel=\\"icon\\" type=\\"image\\/webp\\"');
+            write(full, source);
+          }
+          NODE
+
+      - name: Validate targeted internal surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check admin-worker/src/admin-login-page.js
+          node --check admin-worker/src/index.js
+          node --check admin-worker/src/mms-admin-runtime.js
+          node --test \
+            admin-worker/admin-login-regression-guard.test.mjs \
+            admin-worker/admin-login-session.test.mjs \
+            admin-worker/admin-login-hero.test.mjs \
+            admin-worker/mms-admin-inline-syntax.test.mjs
+
+      - name: Commit migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No favicon migration changes required"
+            exit 0
+          fi
+          git config user.name "MMD Privé"
+          git config user.email "malemodel.bkk@gmail.com"
+          git add admin-worker .github/workflows/mms-admin-production-state.yml
+          git commit -m "style(internal): lock SIGIL favicon across admin surfaces"
+          git push origin HEAD:main
