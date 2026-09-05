@@ -23,7 +23,7 @@ for (const file of [
     assert.match(text, /function usesPartitionedDashboardCookie\(request, env\)/);
     assert.match(text, /origin !== dashboardOrigin/);
     assert.match(text, /origin !== new URL\(request\.url\)\.origin/);
-    assert.match(text, /SameSite=None; Partitioned/);
-    assert.match(text, /SameSite=Lax/);
+    assert.match(text, /\? "None; Partitioned" : "Lax"/);
+    assert.match(text, /SameSite=\\$\\{sameSite\\}/);
   });
 }
