@@ -286,15 +286,17 @@ async function handleCredentialBoundAdminLogin(request, env) {
     exp: now + ADMIN_GATE_TTL_MS,
   };
   const cookie = await signAdminActor(actor, env);
-  return new Response(null, {
-    status: 303,
-    headers: adminGateHeaders(request, env, {
-      location: next,
+  return strictJson(
+    request,
+    env,
+    { ok: true, next },
+    200,
+    {
       "set-cookie": `${ADMIN_GATE_SESSION_COOKIE}=${cookie}; Path=/; Max-Age=${Math.floor(ADMIN_GATE_TTL_MS / 1000)}; HttpOnly; Secure; SameSite=Lax`,
       "x-mmd-admin-login": "session-created",
       "x-mmd-admin-next": next,
-    }),
-  });
+    },
+  );
 }
 
 async function handleCredentialBoundAdminLogout(request) {
