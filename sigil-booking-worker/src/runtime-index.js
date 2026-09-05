@@ -1,5 +1,6 @@
 import entitlementRuntime from "./entitlement-runtime-worker.js";
 import modelImagePolicyWorker from "./model-image-policy-worker.js";
+import { attachCareBackApprovalToConfirmedBooking } from "./care-back-trusted-caller.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const CLIENT_RESOLVE_PATH = "/sigil/api/client/resolve";
@@ -13,7 +14,13 @@ export default {
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
 
-    if (method === "POST" && [CLIENT_RESOLVE_PATH, BOOKING_INTAKE_PATH, BOOKING_CONFIRM_PATH].includes(path)) {
+    if (method === "POST" && path === BOOKING_CONFIRM_PATH) {
+      const approvalRequest = request.clone();
+      const response = await entitlementRuntime.fetch(request, env, ctx);
+      return attachCareBackApprovalToConfirmedBooking(approvalRequest, env, response);
+    }
+
+    if (method === "POST" && [CLIENT_RESOLVE_PATH, BOOKING_INTAKE_PATH].includes(path)) {
       return entitlementRuntime.fetch(request, env, ctx);
     }
 
