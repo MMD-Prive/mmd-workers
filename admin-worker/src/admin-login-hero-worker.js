@@ -77,6 +77,20 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/jobs/create-job",
 ];
 
+export function normalizeNext(value) {
+  return sanitizeNextPath(value);
+}
+
+export function renderAdminLogin(request, options = {}) {
+  const url = new URL(request.url);
+  const next = sanitizeNextPath(options.next || url.searchParams.get("next") || "");
+  return renderApprovedAdminLogin(request, {
+    ...options,
+    next,
+    error: options.error || "",
+  });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -179,7 +193,7 @@ function normalizePath(pathname) {
 async function applyCredentialBoundAdminGate(request, env, path, method) {
   if (isGateBypassedAdminPath(path, method)) return { request };
   if (path === ADMIN_LOGIN_PAGE_PATH || path === SIGIL_ADMIN_LOGIN_PAGE_PATH) {
-    if (method === "GET" || method === "HEAD") return { response: await renderLoginGate(request, env) };
+    if (method === "GET" || method === "HEAD") return { response: renderLoginGate(request, env) };
   }
 
   if (!isBrowserAdminPath(path)) return { request };
@@ -227,21 +241,11 @@ function isApiAdminPath(path) {
   return path.startsWith("/v1/admin") || path.startsWith("/studio/api") || path.includes("/api/");
 }
 
-async function renderLoginGate(request, env) {
+function renderLoginGate(request, env) {
   const url = new URL(request.url);
-  const next = sanitizeNextPath(url.searchParams.get("next"));
-  const body = renderApprovedAdminLogin({
-    next,
+  return renderAdminLogin(request, {
+    next: url.searchParams.get("next") || "",
     error: url.searchParams.get("error") || "",
-  });
-  return new Response(body, {
-    status: 200,
-    headers: adminGateHeaders(request, env, {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store, max-age=0",
-      "x-mmd-admin-login": "approved-only-gate",
-      "x-mmd-admin-next": next,
-    }),
   });
 }
 
@@ -250,13 +254,19 @@ async function handleCredentialBoundAdminLogin(request, env) {
   if (originCheck) return originCheck;
 
   let payload = {};
+  const contentType = request.headers.get("content-type") || "";
   try {
-    payload = await request.json();
+    if (contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data")) {
+      const form = await request.formData();
+      payload = Object.fromEntries(form.entries());
+    } else {
+      payload = await request.json();
+    }
   } catch {
     return strictJson(request, env, { ok: false, error: "invalid_json" }, 400);
   }
 
-  const code = String(payload.access_code || payload.code || "").trim();
+  const code = String(payload.access_code || payload.code || payload.credential || "").trim();
   const next = sanitizeNextPath(payload.next || "");
   if (!code) return strictJson(request, env, { ok: false, error: "missing_access_code" }, 400);
 
@@ -308,6 +318,10 @@ function sanitizeNextPath(value) {
   if (!ADMIN_GATE_ALLOWED_BASE_URLS.has(parsed.origin)) return fallback;
   const candidate = normalizePath(parsed.pathname);
   if (!ALLOWED_NEXT_PATHS.includes(candidate)) return fallback;
+  const blockedQueryKeys = new Set(["token", "access_token", "code", "credential", "access_code", "secret", "key", "session"]);
+  for (const key of parsed.searchParams.keys()) {
+    if (blockedQueryKeys.has(String(key || "").toLowerCase())) return fallback;
+  }
   return `${candidate}${parsed.search || ""}${parsed.hash || ""}`;
 }
 
