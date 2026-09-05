@@ -6,6 +6,7 @@ const PAYMENT_STAGES = new Set(["deposit", "final", "tips", "full", "membership"
 const REVIEWABLE_STATES = new Set(["pending", "review", "review_required", "needs_review", "unmatched", "new", "submitted"]);
 const HISTORICAL_SCHEMA = "mmd_historical_slip_backfill_v1";
 const AIRTABLE_API = "https://api.airtable.com/v0";
+const CANONICAL_PAYMENTS_TABLE_ID = "tblWGGJJOx5eBvBZJ";
 
 export const PAYMENT_REVIEW_ROUTES = Object.freeze({
   queue: QUEUE_PATH,
@@ -107,7 +108,7 @@ async function commitReview(request, env, actor) {
       decision,
       proof_id: proofId,
       audit_event_id: audit.event_id,
-      authority: "payments-worker",
+      authority: "admin-worker",
       money_truth_changed: false,
     });
   }
@@ -137,13 +138,19 @@ async function commitReview(request, env, actor) {
     payment_ref: approval.payment_ref,
     amount_thb: approval.amount_thb,
     payment_stage: approval.payment_stage,
-  });
+  }).then((value) => ({ ...value, ok: true })).catch((error) => ({
+    ok: false,
+    event_id: "",
+    error: safeCode(error?.message || error || "payment_review_audit_write_failed"),
+  }));
 
   return json({
     ok: true,
     decision: "approve",
     proof_id: proofId,
-    audit_event_id: audit.event_id,
+    audit_event_id: audit.event_id || null,
+    audit_write_failed: audit.ok === false,
+    manual_audit_required: audit.ok === false,
     authority: "payments-worker",
     payment_ref: safeText(payload.payment_ref || approval.payment_ref, 180),
     payment_stage: safeCode(payload.payment_stage || payload.stage || approval.payment_stage),
@@ -209,6 +216,8 @@ async function sendReviewedProofToPayments(env, body) {
 
 function safeQueueItem(record) {
   const fields = record?.fields || {};
+  const proofId = safeText(fields.proof_id, 120);
+  if (!proofId) return null;
   const note = parseNote(fields.note);
   const historical = note.schema === HISTORICAL_SCHEMA;
   const status = safeCode(fields.status || fields.verification_status || fields.payment_status || "pending");
@@ -216,7 +225,7 @@ function safeQueueItem(record) {
   const paymentRef = safeText(fields.payment_ref || fields.transaction_ref, 180);
   const amountThb = positiveAmount(fields.amount_thb ?? fields.amount ?? fields.total_thb);
   return {
-    proof_id: safeText(fields.proof_id || record.id, 120),
+    proof_id: proofId,
     proof_record_id: safeText(record.id, 120),
     payer_name: safeText(fields.payer_name || fields.member_name || fields.client_name || fields.name, 180),
     payment_ref: paymentRef,
@@ -262,7 +271,7 @@ async function findPaymentByRef(env, paymentRef) {
 
 async function findReviewAudit(env, idempotencyKey) {
   const formula = `AND({Action}='${PAYMENT_REVIEW_ACTION}',{Source Ref}='${formulaValue(`payment-review:${idempotencyKey}`)}')`;
-  const records = await airtableList(env, accessLogTable(env), { filterByFormula: formula, maxRecords: 2 }).catch(() => []);
+  const records = await airtableList(env, accessLogTable(env), { filterByFormula: formula, maxRecords: 2 });
   if (records.length > 1) throw httpError(409, "payment_review_idempotency_ambiguous");
   if (!records[0]) return null;
   const fields = records[0].fields || {};
@@ -349,7 +358,12 @@ function paymentProofTable(env) {
 }
 
 function paymentsTable(env) {
-  return clean(env.AIRTABLE_TABLE_PAYMENTS || env.AT_PAYMENTS_TABLE || "Payments");
+  return clean(
+    env.AIRTABLE_TABLE_PAYMENTS_ID ||
+    env.AIRTABLE_TABLE_PAYMENTS ||
+    env.AT_PAYMENTS_TABLE ||
+    CANONICAL_PAYMENTS_TABLE_ID
+  );
 }
 
 function accessLogTable(env) {
