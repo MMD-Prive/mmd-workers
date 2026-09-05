@@ -68,7 +68,7 @@ export async function readCredentialBoundAdminActor(request, env = {}) {
 }
 
 function sessionHost(origin) {
-  return origin;
+  return PROD_MMD_ORIGINS.has(origin) ? "https://mmdbkk.com" : origin;
 }
 
 function resolveSessionSecret(env = {}) {
