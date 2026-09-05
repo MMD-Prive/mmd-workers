@@ -147,7 +147,7 @@ export function renderOwnerControlRoomPage(): Response {
   headers.delete("content-length");
   // Keep the existing deploy verifier header stable until its bounded check is migrated.
   headers.set("x-mmd-control-room-ui", "owner-desktop-v3-latest");
-  headers.set("x-mmd-control-room-release", "owner-v4-customer-data");
+  headers.set("x-mmd-control-room-release", "owner-v4");
   headers.set("x-mmd-control-room-authority", "canonical-backend");
   headers.set("x-mmd-control-room-mms-route", CANONICAL_MMS_CONTROL_ROOM_ROUTE);
   headers.set("x-mmd-control-room-slip-backfill-route", HISTORICAL_SLIP_BACKFILL_ROUTE);
