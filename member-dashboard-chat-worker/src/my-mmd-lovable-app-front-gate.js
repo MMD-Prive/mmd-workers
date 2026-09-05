@@ -238,6 +238,8 @@ html,body{background:#000!important}
 #mmd-status-bridge-veil .k{margin-top:10px;color:#caa45e;font-size:10px;font-weight:800;letter-spacing:.18em}
 #mmd-status-bridge-veil .t{margin-top:2px;color:#f6f1e8;font-size:16px;font-weight:650}
 body #message{display:none!important}
+body:has(#actions:not(:empty)) #mmd-status-bridge-veil .t{display:none!important}
+body:has(#actions:not(:empty)) #message{display:block!important;position:fixed!important;z-index:2147483002!important;left:24px!important;right:24px!important;top:calc(50% + 154px)!important;margin:0!important;color:#d8d0c5!important;font-size:13px!important;line-height:1.55!important;text-align:center!important}
 body #actions{position:fixed!important;z-index:2147483003!important;left:50%!important;top:calc(50% + 216px)!important;transform:translateX(-50%)!important;width:min(calc(100% - 48px),360px)!important;margin:0!important;display:grid!important;gap:10px!important}
 body #actions:empty{display:none!important}
 body #actions button{min-height:46px!important;border:1px solid #8f743e!important;border-radius:999px!important;background:#111!important;color:#f6f1e8!important;text-align:center!important;padding:12px 16px!important}
