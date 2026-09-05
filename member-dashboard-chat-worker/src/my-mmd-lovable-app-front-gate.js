@@ -236,8 +236,8 @@ html,body{background:#000!important}
 #mmd-status-bridge-veil{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;padding:24px;background:#000;color:#f6f1e8;text-align:center;font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif}
 #mmd-status-bridge-veil img{display:block;width:min(72vw,280px);height:auto;max-height:52svh;object-fit:contain;filter:drop-shadow(0 18px 42px rgba(203,163,84,.16))}
 #mmd-status-bridge-veil .k{margin-top:10px;color:#caa45e;font-size:10px;font-weight:800;letter-spacing:.18em}
-#mmd-status-bridge-veil .t{color:#f6f1e8;font-size:16px;font-weight:650}
-body #message{position:fixed!important;z-index:2147483002!important;left:24px!important;right:24px!important;top:calc(50% + 168px)!important;margin:0!important;color:#9f978b!important;font-size:13px!important;line-height:1.55!important;text-align:center!important}
+#mmd-status-bridge-veil .t{margin-top:2px;color:#f6f1e8;font-size:16px;font-weight:650}
+body #message{display:none!important}
 body #actions{position:fixed!important;z-index:2147483003!important;left:50%!important;top:calc(50% + 216px)!important;transform:translateX(-50%)!important;width:min(calc(100% - 48px),360px)!important;margin:0!important;display:grid!important;gap:10px!important}
 body #actions:empty{display:none!important}
 body #actions button{min-height:46px!important;border:1px solid #8f743e!important;border-radius:999px!important;background:#111!important;color:#f6f1e8!important;text-align:center!important;padding:12px 16px!important}
