@@ -103,7 +103,7 @@ jobs:
           set -euo pipefail
           npx --yes wrangler@4.128.0 versions deploy "${IMMIGRATE_WORKER_VERSION_ID}@100%" -y
 
-      - name: Sync exact MMD Create Session core routes
+      - name: Sync exact MMD internal routes
         shell: bash
         working-directory: .
         run: |
@@ -113,6 +113,8 @@ jobs:
           const zoneId = process.env.CLOUDFLARE_ZONE_ID;
           const worker = process.env.WORKER_NAME;
           const desired = [
+            "mmdbkk.com/internal/admin/customer-data",
+            "www.mmdbkk.com/internal/admin/customer-data",
             "mmdbkk.com/internal/admin/jobs/create-session/core",
             "www.mmdbkk.com/internal/admin/jobs/create-session/core",
             "mmdbkk.com/a/create-session.js",
@@ -164,8 +166,49 @@ jobs:
           const stale = obsolete.filter((pattern) => verified.some((route) => route.pattern === pattern && route.script === worker));
           if (missing.length) throw new Error(`missing routes: ${missing.join(", ")}`);
           if (stale.length) throw new Error(`obsolete routes still present: ${stale.join(", ")}`);
-          console.log(`verified ${desired.length}/${desired.length} exact MMD Create Session core routes`);
+          console.log(`verified ${desired.length}/${desired.length} exact MMD internal routes`);
           NODE
+
+      - name: Verify Customer Data readable UI in production
+        shell: bash
+        run: |
+          set -euo pipefail
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          trap 'rm -f "$headers" "$body"' EXIT
+
+          verified=0
+          for attempt in 1 2 3 4 5 6 7 8; do
+            : > "$headers"
+            : > "$body"
+            code="$(curl -sS -D "$headers" -o "$body" -w '%{http_code}' \
+              "https://mmdbkk.com/internal/admin/customer-data?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
+
+            if [ "$code" = "200" ] \
+              && grep -Eiq '^x-mmd-customer-data-ui:[[:space:]]*readable-v2' "$headers" \
+              && grep -Eiq '^x-mmd-customer-data-authority:[[:space:]]*identity-context-staging-only' "$headers" \
+              && grep -q 'นำเข้าจาก Console Inbox' "$body" \
+              && grep -q 'คิวที่ต้องดู' "$body" \
+              && grep -q 'จับคู่แล้ว' "$body" \
+              && ! grep -q 'Run Console Inbox Backfill' "$body" \
+              && ! grep -q 'Review Queue' "$body"; then
+              echo "Production Customer Data readable UI verified on attempt ${attempt}"
+              verified=1
+              break
+            fi
+
+            echo "Customer Data readable UI not propagated yet (attempt ${attempt}, HTTP ${code}); retrying..."
+            grep -Ei '^(x-mmd-customer-data-ui|x-mmd-customer-data-authority|server|cf-ray):' "$headers" || true
+            sleep 2
+          done
+
+          if [ "$verified" != "1" ]; then
+            echo "Customer Data readable UI production verification failed after bounded propagation retries" >&2
+            grep -Ei '^(x-mmd-customer-data-ui|x-mmd-customer-data-authority|server|cf-ray):' "$headers" || true
+            head -c 320 "$body" >&2 || true
+            echo >&2
+            exit 1
+          fi
 
       - name: Verify latest Control Room in production
         shell: bash
