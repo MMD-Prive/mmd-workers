@@ -1,5 +1,5 @@
 export const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
-export const APPROVED_ADMIN_LOGIN_PAGE_ID = "admin-login-sigil-compact-v1";
+export const APPROVED_ADMIN_LOGIN_PAGE_ID = "admin-login-approved-hero";
 export const APPROVED_ADMIN_LOGIN_HERO =
   "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9c4646a60519ef8733bf67_SIGIL-Boss-Desktop.png";
 export const APPROVED_ADMIN_LOGIN_PRIVACY_BG =
@@ -50,7 +50,7 @@ export function renderApprovedAdminLogin(
   <link rel="icon" type="image/webp" href="${APPROVED_ADMIN_LOGIN_FAVICON}">
   <link rel="apple-touch-icon" href="${APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON}">
   <style>
-    :root{color-scheme:dark;--bg:#050403;--panel:rgba(13,10,8,.76);--panel2:rgba(24,18,13,.72);--line:rgba(239,204,132,.24);--line2:rgba(255,255,255,.10);--gold:#e8bf65;--gold2:#ffe7a7;--text:#fff7ec;--muted:rgba(255,247,236,.74);--soft:rgba(255,247,236,.58);--danger:#ffb7bd;--ink:#151006}
+    :root{color-scheme:dark;--bg:#050403;--panel:rgba(13,10,8,.76);--line:rgba(239,204,132,.24);--gold:#e8bf65;--gold2:#ffe7a7;--text:#fff7ec;--muted:rgba(255,247,236,.74);--soft:rgba(255,247,236,.58);--danger:#ffb7bd;--ink:#151006}
     *{box-sizing:border-box}
     html,body{margin:0;min-height:100%;background:var(--bg)}
     body{min-height:100svh;color:var(--text);font-family:"Noto Sans Thai","LINE Seed Sans TH",Inter,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
@@ -94,12 +94,14 @@ export function renderApprovedAdminLogin(
     .mmd-login__note{position:absolute;z-index:3;left:18px;right:18px;bottom:18px;border:1px solid rgba(255,231,167,.18);border-radius:22px;background:rgba(0,0,0,.58);backdrop-filter:blur(14px);padding:17px}
     .mmd-login__note b{display:block;color:var(--text);font-size:22px;line-height:1.12;letter-spacing:-.03em}
     .mmd-login__note p{margin:7px 0 0;color:var(--muted);font-size:14px;line-height:1.58}
+    .mmd-login21__visual img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;filter:brightness(.78) contrast(1.05)}
     @media(min-width:840px){.mmd-login__grid{grid-template-columns:minmax(0,.86fr) minmax(390px,1fr)}}
     @media(max-width:760px){.mmd-login{padding:10px}.mmd-login__shell{min-height:calc(100svh - 20px);align-content:start}.mmd-login__top{align-items:flex-start;flex-direction:column}.mmd-login__card{min-height:auto;padding:22px}.mmd-login h1{font-size:38px;max-width:none}.mmd-login__lead{font-size:15px}.mmd-login__visual{min-height:260px}.mmd-login__logo{inset:20% 18% auto auto;width:150px}.mmd-login__orb{width:230px;right:8%;top:8%}.mmd-login__note b{font-size:18px}.mmd-login__note p{font-size:13px}.mmd-login__pill{font-size:9px}}
   </style>
 </head>
 <body>
   <section class="mmd-login" data-mmd-login data-mmd-page="${APPROVED_ADMIN_LOGIN_PAGE_ID}">
+    <span class="mmd-login21__visual" hidden aria-hidden="true"><img src="${APPROVED_ADMIN_LOGIN_HERO}" alt=""></span>
     <main class="mmd-login__shell">
       <header class="mmd-login__top">
         <a class="mmd-login__brand" href="/internal/admin/login" aria-label="SIGIL Internal Admin Login">
@@ -117,7 +119,7 @@ export function renderApprovedAdminLogin(
           <form method="post" action="${ADMIN_LOGIN_SESSION_PATH}" id="adminLoginForm" autocomplete="off">
             <input id="adminNext" type="hidden" name="next" value="${escapeAttribute(next)}">
             <label for="adminCredential">Access Code
-              <span class="mmd-login__input"><input id="adminCredential" name="credential" type="text" required autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" aria-autocomplete="none" data-mask="true" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" data-form-type="other"><button class="mmd-login__toggle" type="button" aria-controls="adminCredential" aria-pressed="false">SHOW</button></span>
+              <span class="mmd-login__input"><input id="adminCredential" type="text" required readonly name="credential" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" aria-autocomplete="none" data-mask="true" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" data-form-type="other"><button class="mmd-login__toggle" type="button" aria-controls="adminCredential" aria-pressed="false">SHOW</button></span>
             </label>
             <p class="mmd-login__message${error ? " is-error" : ""}" role="${error ? "alert" : "status"}">${error ? escapeHtml(error) : `Next: ${escapeHtml(next)}`}</p>
             <button class="mmd-login__go" type="submit">Enter Admin</button>
@@ -132,7 +134,7 @@ export function renderApprovedAdminLogin(
       </section>
     </main>
   </section>
-  <script>(()=>{const form=document.getElementById('adminLoginForm');const input=document.getElementById('adminCredential');const nextInput=document.getElementById('adminNext');const toggle=document.querySelector('.mmd-login__toggle');const message=document.querySelector('.mmd-login__message');const submit=document.querySelector('.mmd-login__go');if(!form||!input||!nextInput||!toggle||!message||!submit)return;input.value='';try{input.focus({preventScroll:true});}catch{input.focus();}toggle.addEventListener('click',function(){const show=this.getAttribute('aria-pressed')!=='true';if(show)input.removeAttribute('data-mask');else input.setAttribute('data-mask','true');this.textContent=show?'HIDE':'SHOW';this.setAttribute('aria-pressed',String(show));input.focus();});form.addEventListener('submit',async(event)=>{event.preventDefault();const credential=input.value.trim();if(!credential){input.focus();return;}toggle.disabled=true;submit.disabled=true;message.classList.remove('is-error');message.setAttribute('role','status');message.textContent='Checking access…';try{const body=new URLSearchParams();body.set('credential',credential);body.set('next',nextInput.value||'/internal/admin/control-room');const response=await fetch('${ADMIN_LOGIN_SESSION_PATH}',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8','X-MMD-Login-Fetch':'1'},credentials:'same-origin',redirect:'follow',cache:'no-store',body:body.toString()});if(response.ok&&response.redirected){location.assign(response.url);return;}let payload=null;try{payload=await response.clone().json();}catch{}if(response.ok&&payload&&payload.ok){location.assign(payload.next||nextInput.value||'/internal/admin/control-room');return;}let detail='เข้าสู่ระบบไม่สำเร็จ ลองใหม่อีกครั้ง';if(response.status===401)detail='รหัสไม่ถูกต้อง หรือ session หมดอายุ';else if(response.status===403)detail='เข้าสู่ระบบไม่สำเร็จ ลองเปิดจาก mmdbkk.com แล้วลองใหม่อีกครั้ง';else if(response.status>=500)detail='ระบบหลังบ้านยังไม่พร้อม ลองใหม่อีกครั้ง';message.classList.add('is-error');message.setAttribute('role','alert');message.textContent=detail;toggle.disabled=false;submit.disabled=false;input.focus();}catch{message.classList.add('is-error');message.setAttribute('role','alert');message.textContent='ติดต่อระบบไม่ได้ ลอง refresh แล้วกดใหม่อีกครั้ง';toggle.disabled=false;submit.disabled=false;input.focus();}});})();</script>
+  <script>(()=>{const form=document.getElementById('adminLoginForm');const input=document.getElementById('adminCredential');const nextInput=document.getElementById('adminNext');const toggle=document.querySelector('.mmd-login__toggle');const message=document.querySelector('.mmd-login__message');const submit=document.querySelector('.mmd-login__go');if(!form||!input||!nextInput||!toggle||!message||!submit)return;const unlock=()=>{input.readOnly=false;};input.value='';unlock();try{input.focus({preventScroll:true});}catch{input.focus();}toggle.addEventListener('click',function(){const show=this.getAttribute('aria-pressed')!=='true';if(show)input.removeAttribute('data-mask');else input.setAttribute('data-mask','true');this.textContent=show?'HIDE':'SHOW';this.setAttribute('aria-pressed',String(show));input.focus();});form.addEventListener('submit',async(event)=>{event.preventDefault();const credential=input.value.trim();if(!credential){unlock();input.focus();return;}toggle.disabled=true;submit.disabled=true;message.classList.remove('is-error');message.setAttribute('role','status');message.textContent='Checking access…';try{const body=new URLSearchParams();body.set('credential',credential);body.set('next',nextInput.value||'/internal/admin/control-room');const response=await fetch('${ADMIN_LOGIN_SESSION_PATH}',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8','X-MMD-Login-Fetch':'1'},credentials:'same-origin',redirect:'follow',cache:'no-store',body:body.toString()});if(response.ok&&response.redirected){location.assign(response.url);return;}let payload=null;try{payload=await response.clone().json();}catch{}if(response.ok&&payload&&payload.ok){location.assign(payload.next||nextInput.value||'/internal/admin/control-room');return;}let detail='เข้าสู่ระบบไม่สำเร็จ ลองใหม่อีกครั้ง';if(response.status===401)detail='รหัสไม่ถูกต้อง หรือ session หมดอายุ';else if(response.status===403)detail='เข้าสู่ระบบไม่สำเร็จ ลองเปิดจาก mmdbkk.com แล้วลองใหม่อีกครั้ง';else if(response.status>=500)detail='ระบบหลังบ้านยังไม่พร้อม ลองใหม่อีกครั้ง';message.classList.add('is-error');message.setAttribute('role','alert');message.textContent=detail;toggle.disabled=false;submit.disabled=false;unlock();input.focus();}catch{message.classList.add('is-error');message.setAttribute('role','alert');message.textContent='ติดต่อระบบไม่ได้ ลอง refresh แล้วกดใหม่อีกครั้ง';toggle.disabled=false;submit.disabled=false;unlock();input.focus();}});})();</script>
 </body>
 </html>`;
 
@@ -145,7 +147,7 @@ function loginHeaders() {
     "cache-control": "no-store, max-age=0",
     "content-security-policy": CSP,
     "x-mmd-admin-login": APPROVED_ADMIN_LOGIN_PAGE_ID,
-    "x-mmd-login-ui": "sigil-compact-v1",
+    "x-mmd-login-ui": "browser-fetch-v5",
     "x-mmd-page": APPROVED_ADMIN_LOGIN_PAGE_ID,
     "x-mmd-route-owner": "admin-worker",
   };
