@@ -68,6 +68,22 @@ async function withCreateJobAmountInput(response: Response): Promise<Response> {
   });
 }
 
+function renderCustomerDataPage(): Response {
+  const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>MMD · Customer Data Console</title><style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 8% 0,rgba(223,189,114,.16),transparent 30%),linear-gradient(180deg,#070604,#11100d);color:#fff8ee;font-family:"LINE Seed Sans TH","Noto Sans Thai","Noto Sans",system-ui,sans-serif}.cd{max-width:1180px;margin:0 auto;padding:22px}.hero,.panel{border:1px solid rgba(255,226,163,.18);border-radius:28px;background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.02));box-shadow:0 24px 70px rgba(0,0,0,.28)}.hero{padding:28px;min-height:260px;display:grid;align-content:end}.k{color:#f1d083;font-size:12px;font-weight:950;letter-spacing:.16em;text-transform:uppercase}.hero h1{margin:12px 0 10px;font-size:clamp(42px,8vw,86px);line-height:.9;letter-spacing:-.06em}.hero p{max-width:780px;margin:0;color:rgba(255,248,238,.72);line-height:1.75;font-weight:750}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.btn{min-height:44px;display:inline-flex;align-items:center;justify-content:center;padding:0 16px;border-radius:999px;border:1px solid rgba(255,226,163,.2);color:#fff8ee;text-decoration:none;font-weight:950}.btn.gold{background:linear-gradient(135deg,#fff4bd,#edc66f 54%,#ad7a25);color:#130c05;border:0}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:16px}.panel{padding:18px}.panel h2{margin:8px 0 8px;color:#ffdf91;font-size:24px}.panel p,.panel li{color:rgba(255,248,238,.68);line-height:1.65}.panel ul{padding-left:18px;margin:8px 0 0}.badge{display:inline-flex;align-items:center;min-height:28px;padding:0 10px;border:1px solid rgba(255,226,163,.18);border-radius:999px;color:#f1d083;font-size:11px;font-weight:950;text-transform:uppercase}.warn{border-color:rgba(255,170,150,.25);color:#ffc1bd;background:rgba(255,170,150,.06)}.wide{grid-column:1/-1}.flow{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:12px}.step{padding:12px;border:1px solid rgba(255,226,163,.14);border-radius:16px;background:rgba(0,0,0,.18);font-size:13px;font-weight:950;color:#fff8ee}.muted{color:rgba(255,248,238,.56)!important;font-size:13px}code{color:#f1d083;word-break:break-all}@media(max-width:850px){.grid,.flow{grid-template-columns:1fr}.cd{padding:12px}.hero{padding:22px}.panel{padding:16px}}
+</style></head><body><main class="cd"><section class="hero"><span class="k">CANONICAL INTERNAL OPERATIONS CONSOLE · V1 PLACEHOLDER</span><h1>Customer Data</h1><p>ศูนย์กลางนำเข้าข้อมูลลูกค้า, จับคู่ตัวตน, เก็บบริบทส่วนตัว, review ประวัติ และเตรียม Telegram reconciliation — หน้านี้ไม่ใช่ membership editor, payment verifier, points creator หรือ message sender</p><div class="actions"><a class="btn gold" href="/internal/admin/control-room">กลับ Control Room</a><a class="btn" href="/internal/admin/jobs/create-session">Create Session</a><a class="btn" href="/internal/admin/kenji">Kenji Control</a></div></section><section class="grid"><article class="panel"><span class="badge">01 Overview</span><h2>Backfill readiness</h2><p>Console Inbox / LINE OFC import จะเป็น source ของ evidence เข้าหน้านี้ แต่ batch action ยังต้องทำผ่าน worker contract ที่มี idempotency key</p><ul><li>Run Console Inbox Backfill</li><li>Pause / Resume / Retry failed</li><li>matched / review_required / no_match / failed</li></ul></article><article class="panel" id="identity"><span class="badge">02 Identity Review</span><h2>Link before action</h2><p>ค้นด้วยชื่อ, LINE ID, email, phone, alias, Telegram username แล้วตัดสินใจ link/create candidate/ignore โดยไม่สร้างสิทธิ์หรือ group access</p></article><article class="panel" id="private-context"><span class="badge">03 Private Context</span><h2>Kenji-safe context</h2><p>raw LINE notes, application sensitive, behaviour/care context และ preferred communication ต้องอ่านผ่าน server-scoped context พร้อม audit purpose</p></article><article class="panel" id="history-review"><span class="badge">04 Service History</span><h2>3 approvals, not one</h2><ul><li>Service history</li><li>Payment evidence</li><li>Points</li></ul><p>ทุกอย่างต้อง staged → review_required → approved/rejected → materialized</p></article><article class="panel" id="telegram"><span class="badge">05 Telegram Prep</span><h2>Observed only</h2><p>แสดง Telegram username/user ID และ observed group หลัง identity link + Resolver เท่านั้น ส่วน Add/Remove/Review อยู่กับ membership-access/router กลาง</p></article><article class="panel"><span class="badge warn">Legacy</span><h2>LINE Notes Import</h2><p><code>/internal/ceo/line-notes-import</code> เป็น legacy / not production-ready ใช้ Customer Data เป็น canonical route แทน</p></article><article class="panel wide"><span class="badge">Boundary lock</span><h2>Truth boundaries</h2><div class="flow"><div class="step">LINE Console Inbox</div><div class="step">Batch Backfill</div><div class="step">Client Match</div><div class="step">Private Context</div><div class="step">Review</div><div class="step">Resolver / Telegram Prep</div></div><p class="muted">Airtable = evidence/review/audit · Canonical Client = reviewed identity · Entitlement Resolver = current access truth · Telegram/Drive = downstream observed only · Kenji = server-scoped read with audit</p></article></section></main></body></html>`;
+  return new Response(html, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store, no-cache, must-revalidate",
+      "x-robots-tag": "noindex, nofollow, noarchive",
+      "x-mmd-customer-data-ui": "placeholder-v1",
+      "x-mmd-customer-data-authority": "identity-context-staging-only",
+    },
+  });
+}
+
 async function serveAsset(request: Request, env: InternalRoutesEnv): Promise<Response | null> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/a/")) return null;
@@ -314,6 +330,12 @@ export async function handleInternalRoutes(request: Request, env: InternalRoutes
     const gate = await requireAdminGate(request, env);
     if (gate) return gate;
     return renderOwnerControlRoomPage();
+  }
+
+  if (pathname === "/internal/admin/customer-data") {
+    const gate = await requireAdminGate(request, env);
+    if (gate) return gate;
+    return renderCustomerDataPage();
   }
 
   if (pathname === "/internal/admin/jobs/create-session") {
