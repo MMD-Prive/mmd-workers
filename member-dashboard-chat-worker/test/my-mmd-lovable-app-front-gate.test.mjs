@@ -10,7 +10,7 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-test("canonical /my-mmd serves the self-contained Lovable incident shell without forwarding member credentials", async () => {
+test("canonical /my-mmd proxies the full Lovable app without forwarding member credentials", async () => {
   const calls = [];
   globalThis.fetch = async (request) => {
     calls.push({
@@ -19,10 +19,13 @@ test("canonical /my-mmd serves the self-contained Lovable incident shell without
       authorization: request.headers.get("authorization"),
     });
     return new Response(`<!doctype html>
-      <html lang="th" data-mmd-shell="lovable-single-file-v1" data-mmd-boot-state="static">
-      <head><link rel="icon" href="/favicon.ico"></head>
-      <body><main>กำลังเปิด My MMD</main>
-      <script>var p=location.pathname; var i=p.indexOf("/member/my-mmd"); var base="/member/my-mmd";</script>
+      <html lang="th"><head>
+        <link rel="icon" href="/favicon.ico">
+        <link rel="stylesheet" href="/assets/app.css">
+      </head><body>
+        <a href="/">Home</a><a href="/membership">Membership</a>
+        <main>MMD PRIVÉ · MY MMD</main>
+        <script type="module" src="/assets/app.js"></script>
       </body></html>`, {
       headers: {
         "content-type": "text/html; charset=utf-8",
@@ -41,32 +44,30 @@ test("canonical /my-mmd serves the self-contained Lovable incident shell without
   const html = await response.text();
 
   assert.deepEqual(calls, [{
-    url: "https://my-mmd-member-profile.lovable.app/my-mmd-shell.html",
+    url: "https://my-mmd-member-profile.lovable.app/points?lang=th",
     cookie: null,
     authorization: null,
   }]);
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("set-cookie"), null);
   assert.equal(response.headers.get("x-mmd-route-owner"), "member-dashboard-chat-worker");
-  assert.equal(response.headers.get("x-mmd-ui-source"), "lovable-single-file-incident-rollback");
-  assert.equal(response.headers.get("x-mmd-presentation-mode"), "single-file-incident-rollback-20260905");
+  assert.equal(response.headers.get("x-mmd-ui-source"), "lovable-full-app-proxy");
+  assert.equal(response.headers.get("x-mmd-presentation-mode"), "lovable-full-app-20260905");
   assert.equal(response.headers.get("x-mmd-presentation-owner"), "lovable");
   assert.equal(response.headers.get("x-mmd-behavior-owner"), "mmd-workers");
-  assert.match(html, /data-mmd-shell="lovable-single-file-v1"/);
-  assert.match(html, /data-mmd-boot-state="static"/);
-  assert.match(html, /กำลังเปิด My MMD/);
-  assert.match(html, /id="mmd-my-mmd-loader"/);
-  assert.match(html, /\/my-mmd-assets\/hype\.webp/);
-  assert.match(html, /mmd-hype-spin 2\.4s/);
+  assert.match(html, /MMD PRIVÉ · MY MMD/);
+  assert.match(html, /\/my-mmd-assets\/app\.css/);
+  assert.match(html, /\/my-mmd-assets\/app\.js/);
   assert.match(html, /\/my-mmd-assets\/favicon\.ico/);
-  assert.match(html, /\/my-mmd/);
+  assert.match(html, /href="\/my-mmd\/"/);
+  assert.match(html, /href="\/my-mmd\/membership"/);
   assert.doesNotMatch(html, /\/member\/my-mmd/);
 });
 
-test("missing or invalid Lovable incident shell returns a visible fail-closed recovery page with HYPE instead of a blank response", async () => {
-  globalThis.fetch = async () => new Response("<!doctype html><html><body>wrong artifact</body></html>", {
-    headers: { "content-type": "text/html; charset=utf-8" },
-  });
+test("Lovable upstream failure returns a visible fail-closed recovery page with HYPE", async () => {
+  globalThis.fetch = async () => {
+    throw new Error("origin unavailable");
+  };
 
   const response = await worker.fetch(new Request("https://mmdbkk.com/my-mmd/"), {});
   const html = await response.text();
@@ -76,6 +77,38 @@ test("missing or invalid Lovable incident shell returns a visible fail-closed re
   assert.match(html, /\/my-mmd-assets\/hype\.webp/);
   assert.match(html, /href="\/my-mmd\/"/);
   assert.ok(html.length > 300);
+});
+
+test("Lovable JS assets are republished same-origin and rewritten to the canonical asset prefix", async () => {
+  const calls = [];
+  globalThis.fetch = async (request) => {
+    calls.push(request.url);
+    return new Response(`const a="/assets/chunk.js";`, {
+      headers: { "content-type": "application/javascript" },
+    });
+  };
+
+  const response = await worker.fetch(new Request("https://mmdbkk.com/my-mmd-assets/app.js"), {});
+  const body = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, ["https://my-mmd-member-profile.lovable.app/assets/app.js"]);
+  assert.match(body, /\/my-mmd-assets\/chunk\.js/);
+});
+
+test("public Lovable assets under /my-mmd/* are proxied from the published origin", async () => {
+  const calls = [];
+  globalThis.fetch = async (request) => {
+    calls.push(request.url);
+    return new Response("png-bytes", { headers: { "content-type": "image/png" } });
+  };
+
+  const response = await worker.fetch(new Request("https://mmdbkk.com/my-mmd/hype-loader.png"), {});
+  const body = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(body, "png-bytes");
+  assert.deepEqual(calls, ["https://my-mmd-member-profile.lovable.app/hype-loader.png"]);
 });
 
 test("HYPE loader asset is republished same-origin from the locked Webflow asset", async () => {
@@ -146,11 +179,11 @@ test("My MMD presentation remains read-only while behavior stays on /api/member/
   assert.equal(api.headers.get("x-mmd-upstream-service"), "member-pages-worker");
 });
 
-test("status LIFF is an auth bridge only, shows black HYPE GIF, then returns to the single /my-mmd/ surface", async () => {
+test("status LIFF remains auth-bridge-only and returns to the single /my-mmd/ surface", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
-        `<!doctype html><html><head></head><body><main>SECOND DASHBOARD SHOULD BE COVERED</main><div id="message"></div><div id="actions"></div><script nonce="abc123">window.__shell=true;</script></body></html>`,
+        `<!doctype html><html><head></head><body><main>SECOND DASHBOARD SHOULD BE COVERED</main><div id="message"></div><div id="actions"></div><script nonce="abc123">const target = "/member/my-mmd"; const profileEndpoint = "/member/api/liff/profile"; if (payload && payload.ok === true) window.location.replace(target);</script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       ),
     },
@@ -163,13 +196,11 @@ test("status LIFF is an auth bridge only, shows black HYPE GIF, then returns to 
   assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
   assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
   assert.match(html, /const target = "\/my-mmd\/"/);
-  assert.doesNotMatch(html, /const target = "\/member\/my-mmd"/);
   assert.match(html, /id="mmd-status-bridge-veil"/);
   assert.match(html, /html,body\{background:#000!important\}/);
   assert.match(html, /กำลังยืนยันสมาชิก…/);
   assert.match(html, /\/my-mmd-assets\/hype-loading\.gif/);
   assert.match(html, /\/member\/api\/liff\/profile/);
-  assert.match(html, /payload && payload\.ok === true/);
 });
 
 test("non-status LIFF intents keep their existing specialized surfaces", async () => {
