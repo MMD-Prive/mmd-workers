@@ -1,5 +1,5 @@
-import currentWorker from "./front-gate-index.js";
-export { KenjiModelIdempotency } from "./front-gate-index.js";
+import currentWorker from "./line-group-ingress-front-gate.js";
+export { KenjiModelIdempotency } from "./line-group-ingress-front-gate.js";
 
 const WORKER_NAME = "member-dashboard-chat-worker";
 const MY_MMD_UI_PREFIX = "/my-mmd";
