@@ -34,6 +34,10 @@ import {
   handlePaymentEntitlementApproval,
   isPaymentEntitlementApprovalRequest,
 } from "./payment-entitlement-approval.js";
+import {
+  handlePaymentReviewRequest,
+  isPaymentReviewRequest,
+} from "./payment-review-runtime.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
@@ -61,6 +65,7 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/admin/control-room",
   "/internal/admin/dashboard",
   "/internal/admin/mms",
+  "/internal/admin/payments",
   "/internal/admin/jobs/create-session",
   "/internal/admin/jobs/create-job",
   "/internal/admin/create-session",
@@ -74,6 +79,7 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+    const paymentReviewRequest = isPaymentReviewRequest(path, method);
 
     // Model Console V16 schema-patch routes live in the legacy core runtime,
     // but admin-worker's active entrypoint is this composed worker. Forward only
@@ -104,9 +110,25 @@ export default {
       return handleCredentialBoundAdminLogout(request);
     }
 
+    // Payment Review is deliberately browser-session-only. Never let service
+    // bearer/confirm credentials become an alternate browser path for money review.
+    if (paymentReviewRequest && (request.headers.get("Authorization") || request.headers.get("X-Confirm-Key"))) {
+      return strictJson(request, env, { ok: false, error: "browser_admin_session_required" }, 403);
+    }
+    if (paymentReviewRequest && method === "POST") {
+      const origin = request.headers.get("Origin") || "";
+      if (origin !== url.origin || !ADMIN_GATE_ALLOWED_BASE_URLS.has(origin)) {
+        return strictJson(request, env, { ok: false, error: "forbidden_origin" }, 403);
+      }
+    }
+
     const strictGate = await applyCredentialBoundAdminGate(request, env, path, method);
     if (strictGate.response) return strictGate.response;
     request = strictGate.request || request;
+
+    if (paymentReviewRequest) {
+      return handlePaymentReviewRequest(request, env, strictGate.actor);
+    }
 
     if (isPaymentEntitlementApprovalRequest(path, method)) {
       return handlePaymentEntitlementApproval(request, env, strictGate.actor);

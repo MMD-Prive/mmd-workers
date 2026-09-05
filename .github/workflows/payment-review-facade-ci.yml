@@ -1,0 +1,91 @@
+name: Payment Review Facade CI
+
+on:
+  pull_request:
+    paths:
+      - "admin-worker/src/admin-login-hero-worker.js"
+      - "admin-worker/src/payment-review-runtime.js"
+      - "admin-worker/wrangler.toml"
+      - "payments-worker/index.review-wrapper.js"
+      - "payments-worker/reviewed-proof.js"
+      - "payments-worker/wrangler.merged.toml"
+      - ".github/workflows/deploy-admin-worker.yml"
+      - ".github/workflows/payment-review-facade-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Syntax
+        run: |
+          set -euo pipefail
+          node --check admin-worker/src/admin-login-hero-worker.js
+          node --check admin-worker/src/payment-review-runtime.js
+          node --check payments-worker/index.review-wrapper.js
+          node --check payments-worker/reviewed-proof.js
+
+      - name: Browser facade guardrails
+        run: |
+          set -euo pipefail
+          grep -F 'browser_admin_session_required' admin-worker/src/admin-login-hero-worker.js
+          grep -F 'forbidden_origin' admin-worker/src/admin-login-hero-worker.js
+          grep -F 'isPaymentReviewRequest' admin-worker/src/admin-login-hero-worker.js
+          grep -F 'handlePaymentReviewRequest' admin-worker/src/admin-login-hero-worker.js
+          grep -F 'Idempotency-Key' admin-worker/src/payment-review-runtime.js
+          grep -F 'browser_can_mark_paid: false' admin-worker/src/payment-review-runtime.js
+          grep -F 'browser_can_award_points: false' admin-worker/src/payment-review-runtime.js
+          grep -F 'historical_backfill_separate: true' admin-worker/src/payment-review-runtime.js
+
+      - name: Payment Review fail-closed hardening
+        run: |
+          set -euo pipefail
+          grep -F 'const CANONICAL_PAYMENTS_TABLE_ID = "tblWGGJJOx5eBvBZJ";' admin-worker/src/payment-review-runtime.js
+          grep -F 'env.AIRTABLE_TABLE_PAYMENTS_ID ||' admin-worker/src/payment-review-runtime.js
+          grep -F 'if (!proofId) return null;' admin-worker/src/payment-review-runtime.js
+          grep -F 'authority: "admin-worker"' admin-worker/src/payment-review-runtime.js
+          grep -F 'manual_audit_required: audit.ok === false' admin-worker/src/payment-review-runtime.js
+          grep -F 'audit_write_failed: audit.ok === false' admin-worker/src/payment-review-runtime.js
+          if grep -F 'maxRecords: 2 }).catch(() => [])' admin-worker/src/payment-review-runtime.js; then
+            echo 'audit idempotency lookup must fail closed; swallowed Airtable error found' >&2
+            exit 1
+          fi
+
+      - name: Money Truth separation
+        run: |
+          set -euo pipefail
+          grep -F 'AUTH_SERVICE_ADMIN_TO_PAYMENTS' admin-worker/src/payment-review-runtime.js
+          grep -F '/v1/internal/payments/reviewed-proof' admin-worker/src/payment-review-runtime.js
+          grep -F 'AUTH_SERVICE_ADMIN_TO_PAYMENTS' payments-worker/reviewed-proof.js
+          grep -F 'historical_proof_requires_historical_review_contract' payments-worker/reviewed-proof.js
+          grep -F 'X-MMD-Payment-Authority' payments-worker/reviewed-proof.js
+          if grep -F 'AUTH_SERVICE_ADMIN_TO_PAYMENTS' webflow/internal/admin/payments 2>/dev/null; then
+            echo 'service secret reference found in Webflow payment assets' >&2
+            exit 1
+          fi
+
+      - name: Exact route ownership
+        run: |
+          set -euo pipefail
+          grep -F 'mmdbkk.com/v1/admin/payments/review-queue*' admin-worker/wrangler.toml
+          grep -F 'www.mmdbkk.com/v1/admin/payments/review-queue*' admin-worker/wrangler.toml
+          grep -F 'mmdbkk.com/v1/admin/payments/review"' admin-worker/wrangler.toml
+          grep -F 'www.mmdbkk.com/v1/admin/payments/review"' admin-worker/wrangler.toml
+          grep -F '"/v1/admin/payments/review-queue*"' .github/workflows/deploy-admin-worker.yml
+          grep -F '"/v1/admin/payments/review"' .github/workflows/deploy-admin-worker.yml
+
+      - name: Production entrypoint contracts
+        run: |
+          set -euo pipefail
+          grep -F 'main = "src/admin-login-hero-worker.js"' admin-worker/wrangler.toml
+          grep -F 'main = "index.review-wrapper.js"' payments-worker/wrangler.merged.toml
+          npx --yes wrangler@4 versions upload --dry-run --keep-vars --config admin-worker/wrangler.toml
+          npx --yes wrangler@4 versions upload --dry-run --keep-vars --config payments-worker/wrangler.merged.toml

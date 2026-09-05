@@ -1,0 +1,111 @@
+name: Historical Backfill Authenticated Controlled Smoke
+
+on:
+  workflow_run:
+    workflows:
+      - "Deploy admin-worker"
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  controlled-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORIGIN: https://www.mmdbkk.com
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+    steps:
+      - name: Require browser admin credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ADMIN_SMOKE_CREDENTIAL"
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
+
+      - name: Login, create pending proof, validate handoff, and clean up
+        shell: bash
+        run: |
+          set -euo pipefail
+          cookie="$(mktemp)"
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          smoke_file="$(mktemp --suffix=.png)"
+          source_ref="github-actions-controlled-smoke:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT"
+          printf 'MMD Historical Backfill controlled smoke %s\n' "$source_ref" > "$smoke_file"
+
+          login_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+            -D "$headers" -o "$body" -c "$cookie" -w "%{http_code}" \
+            -X POST \
+            -H "Origin: $ORIGIN" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL" \
+            --data-urlencode "next=/internal/admin/payments" \
+            "$ORIGIN/internal/admin/login/session")"
+          test "$login_code" = "303"
+          grep -qi '^set-cookie: mmd_admin_gate_v1=' "$headers"
+
+          queue_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+            -o "$body" -b "$cookie" -w "%{http_code}" \
+            "$ORIGIN/v1/admin/payments/historical-backfill?limit=100")"
+          test "$queue_code" = "200"
+          node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!p.ok||p.authority!=="payments-worker") process.exit(1)' "$body"
+
+          intake_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+            -o "$body" -b "$cookie" -w "%{http_code}" \
+            -X POST \
+            -H "Origin: $ORIGIN" \
+            -F "file=@$smoke_file;type=image/png;filename=controlled-smoke.png" \
+            -F "source_type=line_archive" \
+            -F "source_ref=$source_ref" \
+            -F "context_text=GitHub authenticated controlled smoke; must remain pending" \
+            "$ORIGIN/v1/admin/payments/historical-backfill/intake")"
+          cat "$body"
+          test "$intake_code" = "201"
+          proof_id="$(node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!p.ok||p.state!=="pending"||!p.proof_id||p.guardrails?.may_mark_paid!==false) process.exit(1); process.stdout.write(p.proof_id)' "$body")"
+
+          queue_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+            -o "$body" -b "$cookie" -w "%{http_code}" \
+            "$ORIGIN/v1/admin/payments/historical-backfill?limit=100")"
+          test "$queue_code" = "200"
+          PROOF_ID="$proof_id" SOURCE_REF="$source_ref" node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const x=(p.items||[]).find(i=>i.proof_id===process.env.PROOF_ID&&i.source_ref===process.env.SOURCE_REF); if(!x||x.status!=="pending"||x.review_state!=="pending") process.exit(1)' "$body"
+
+          review_json="$(PROOF_ID="$proof_id" node -e 'process.stdout.write(JSON.stringify({proof_id:process.env.PROOF_ID,decision:"validate_handoff",review_reason:"GitHub authenticated controlled handoff smoke"}))')"
+          review_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+            -o "$body" -b "$cookie" -w "%{http_code}" \
+            -X POST \
+            -H "Origin: $ORIGIN" \
+            -H "Content-Type: application/json" \
+            --data "$review_json" \
+            "$ORIGIN/v1/admin/payments/historical-backfill/review")"
+          cat "$body"
+          test "$review_code" = "200"
+          node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!p.ok||p.state!=="pending"||p.handoff_validated!==true||p.money_truth_mutated!==false||p.expected_rejection!=="historical_proof_sha_mismatch"||p.guardrails?.may_mark_paid!==false) process.exit(1)' "$body"
+
+          queue_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+            -o "$body" -b "$cookie" -w "%{http_code}" \
+            "$ORIGIN/v1/admin/payments/historical-backfill?limit=100")"
+          test "$queue_code" = "200"
+          PROOF_ID="$proof_id" node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const x=(p.items||[]).find(i=>i.proof_id===process.env.PROOF_ID); if(!x||x.status!=="pending"||x.review_state!=="pending") process.exit(1)' "$body"
+
+          cleanup_json="$(PROOF_ID="$proof_id" node -e 'process.stdout.write(JSON.stringify({proof_id:process.env.PROOF_ID,decision:"reject",review_reason:"Controlled smoke cleanup after handoff validation"}))')"
+          cleanup_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+            -o "$body" -b "$cookie" -w "%{http_code}" \
+            -X POST \
+            -H "Origin: $ORIGIN" \
+            -H "Content-Type: application/json" \
+            --data "$cleanup_json" \
+            "$ORIGIN/v1/admin/payments/historical-backfill/review")"
+          cat "$body"
+          test "$cleanup_code" = "200"
+          node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!p.ok||p.state!=="rejected"||p.guardrails?.may_mark_paid!==false) process.exit(1)' "$body"
+
+          echo "PASS: real admin session -> queue -> pending proof -> admin-worker service handoff -> payments-worker SHA rejection before Money Truth -> proof still pending -> cleanup reject"

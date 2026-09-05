@@ -236,6 +236,36 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/membership/payment-entitlement/approve"
 zone_name = "mmdbkk.com"
 
+# Payment Review Console browser facade. These are exact/narrow API routes only;
+# /internal/admin/payments remains Webflow-owned presentation. The canonical
+# login entrypoint applies the browser-session gate before review handling.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/payments/review-queue*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/payments/review-queue*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/payments/review"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/payments/review"
+zone_name = "mmdbkk.com"
+
+# Historical Backfill canonical API. Query-safe prefix route is intentionally
+# narrow; runtime pathname/method matching accepts only base GET, intake POST,
+# and review POST. Webflow page stays presentation-only/Draft until smoke passes.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/payments/historical-backfill*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/payments/historical-backfill*"
+zone_name = "mmdbkk.com"
+
 # Model Dashboard first-time invite issuer. Browser access is protected by the
 # existing credential-bound internal admin gate; the invite itself carries no admin credential.
 [[routes]]
