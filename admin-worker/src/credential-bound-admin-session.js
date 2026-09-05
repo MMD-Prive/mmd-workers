@@ -1,5 +1,5 @@
 const COOKIE_NAME = "mmd_admin_gate_v1";
-const SESSION_VERSION = 3;
+const SESSION_VERSION = 2;
 const SESSION_SCOPE = "internal_admin";
 const TTL_MS = 8 * 60 * 60 * 1000;
 const ALLOWED_ORIGINS = new Set([
@@ -23,6 +23,7 @@ export async function createCredentialBoundAdminSession(request, actor, env = {}
   const payload = {
     version: SESSION_VERSION,
     id: clean(actor?.id) || "per",
+    auth_method: "credential",
     scope: SESSION_SCOPE,
     host,
     iat: now,
