@@ -12,7 +12,7 @@ afterEach(() => {
 
 const shellHtml = `<!doctype html><html lang="th" data-mmd-shell="lovable-single-file-v1" data-mmd-boot-state="static"><head><meta name="robots" content="noindex,nofollow"></head><body><main id="view">กำลังเปิด My MMD</main><script>fetch('/api/member/app/dashboard',{credentials:'same-origin'});</script></body></html>`;
 
-test("My MMD production route serves the fixed Lovable single-file shell without forwarding member credentials", async () => {
+test("legacy single-file module can still serve its historical fixture without forwarding member credentials", async () => {
   const calls = [];
   globalThis.fetch = async (request) => {
     calls.push({
@@ -55,7 +55,7 @@ test("My MMD production route serves the fixed Lovable single-file shell without
   assert.doesNotMatch(html, /<script[^>]+src=/i);
 });
 
-test("My MMD production route fails visibly instead of returning an unverified or wrong upstream document", async () => {
+test("legacy single-file module fails visibly instead of returning an unverified or wrong upstream document", async () => {
   globalThis.fetch = async () => new Response("<!doctype html><html><body>wrong build</body></html>", {
     headers: { "content-type": "text/html; charset=utf-8" },
   });
@@ -69,7 +69,7 @@ test("My MMD production route fails visibly instead of returning an unverified o
   assert.doesNotMatch(html, /wrong build/);
 });
 
-test("My MMD single-file shell gate stays read-only", async () => {
+test("legacy single-file shell module stays read-only", async () => {
   let calls = 0;
   globalThis.fetch = async () => {
     calls += 1;
@@ -82,7 +82,7 @@ test("My MMD single-file shell gate stays read-only", async () => {
   assert.equal(calls, 0);
 });
 
-test("non-My-MMD routes still delegate to the existing front gate", async () => {
+test("legacy single-file module still delegates non-My-MMD routes to the existing front gate", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(JSON.stringify({ ok: false, error: { code: "LIFF_SESSION_REQUIRED" } }), {
@@ -101,7 +101,8 @@ test("non-My-MMD routes still delegate to the existing front gate", async () => 
   assert.equal(response.headers.get("x-mmd-upstream-service"), "member-pages-worker");
 });
 
-test("wrangler production entrypoint is the single-file shell gate", async () => {
+test("wrangler production entrypoint is the canonical Lovable app front gate, not the legacy single-file shell", async () => {
   const wrangler = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");
-  assert.match(wrangler, /^main = "src\/front-gate-single-file-shell\.js"$/m);
+  assert.match(wrangler, /^main = "src\/my-mmd-lovable-app-front-gate\.js"$/m);
+  assert.doesNotMatch(wrangler, /^main = "src\/front-gate-single-file-shell\.js"$/m);
 });
