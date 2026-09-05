@@ -91,9 +91,7 @@ async function findModelExpectedPayout(env, sessionId) {
     const fields = result.records[0]?.fields || {};
     const expected = firstMoney(fields, unique([
       clean(env.AT_SESSIONS__MODEL_PAYOUT_AMOUNT_THB),
-      "model_payout_amount_thb",
       "pay_model_thb",
-      "Pay Model",
     ]));
     if (expected === null) return { status: "checking" };
 
