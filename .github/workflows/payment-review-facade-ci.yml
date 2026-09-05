@@ -45,6 +45,20 @@ jobs:
           grep -F 'browser_can_award_points: false' admin-worker/src/payment-review-runtime.js
           grep -F 'historical_backfill_separate: true' admin-worker/src/payment-review-runtime.js
 
+      - name: Payment Review fail-closed hardening
+        run: |
+          set -euo pipefail
+          grep -F 'const CANONICAL_PAYMENTS_TABLE_ID = "tblWGGJJOx5eBvBZJ";' admin-worker/src/payment-review-runtime.js
+          grep -F 'env.AIRTABLE_TABLE_PAYMENTS_ID ||' admin-worker/src/payment-review-runtime.js
+          grep -F 'if (!proofId) return null;' admin-worker/src/payment-review-runtime.js
+          grep -F 'authority: "admin-worker"' admin-worker/src/payment-review-runtime.js
+          grep -F 'manual_audit_required: audit.ok === false' admin-worker/src/payment-review-runtime.js
+          grep -F 'audit_write_failed: audit.ok === false' admin-worker/src/payment-review-runtime.js
+          if grep -F 'maxRecords: 2 }).catch(() => [])' admin-worker/src/payment-review-runtime.js; then
+            echo 'audit idempotency lookup must fail closed; swallowed Airtable error found' >&2
+            exit 1
+          fi
+
       - name: Money Truth separation
         run: |
           set -euo pipefail
