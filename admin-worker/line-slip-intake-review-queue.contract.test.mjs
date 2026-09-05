@@ -108,7 +108,7 @@ test("LINE slip intake creates a pending Payment Proof visible in the admin revi
   const queueResponse = await handlePaymentReviewRequest(
     new Request("https://mmdbkk.com/v1/admin/payments/review-queue?limit=10"),
     env,
-    { admin_actor: "ceo@example.test", authenticated: true }
+    { id: "ceo@example.test", role: "owner" }
   );
   const queue = await queueResponse.json();
 
