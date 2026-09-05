@@ -10,9 +10,9 @@ const ALLOWED_ORIGINS = new Set([
 ]);
 
 export function getCredentialBoundAdminLoginCredential(env = {}) {
-  const legacy = clean(env.ADMIN_ACCESS_CODE || env.SIGIL_ADMIN_ACCESS_CODE || env.ADMIN_BEARER);
-  if (legacy) return legacy;
-  return clean(env.ADMIN_LOGIN_CREDENTIAL);
+  const dedicated = clean(env.ADMIN_LOGIN_CREDENTIAL);
+  if (dedicated) return dedicated;
+  return clean(env.ADMIN_ACCESS_CODE || env.SIGIL_ADMIN_ACCESS_CODE || env.ADMIN_BEARER);
 }
 
 export async function createCredentialBoundAdminSession(request, actor, env = {}) {
