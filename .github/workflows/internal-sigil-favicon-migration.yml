@@ -19,88 +19,30 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply canonical internal SIGIL favicon
+      - name: Allow canonical SIGIL favicon in MMS CSP
         shell: bash
         run: |
           set -euo pipefail
           node <<'NODE'
           const fs = require('node:fs');
-
-          const FAVICON = 'https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo.webp';
-          const read = (file) => fs.readFileSync(file, 'utf8');
-          const write = (file, value) => fs.writeFileSync(file, value);
-          function replaceRequired(file, from, to) {
-            let text = read(file);
-            if (text.includes(to)) return;
-            if (!text.includes(from)) throw new Error(`marker not found in ${file}: ${from.slice(0, 100)}`);
-            write(file, text.replace(from, to));
+          const file = 'admin-worker/src/mms-admin-runtime.js';
+          const before = "img-src 'self' data: https://s3.amazonaws.com;";
+          const after = "img-src 'self' data: https://s3.amazonaws.com https://cdn.prod.website-files.com;";
+          let source = fs.readFileSync(file, 'utf8');
+          if (!source.includes(after)) {
+            if (!source.includes(before)) throw new Error('MMS CSP marker not found');
+            source = source.replace(before, after);
+            fs.writeFileSync(file, source);
           }
-
-          replaceRequired(
-            'admin-worker/src/admin-login-page.js',
-            'https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e34d70142723ec97768bc2_Only%20logo.png',
-            FAVICON,
-          );
-          replaceRequired(
-            'admin-worker/src/admin-login-page.js',
-            '<link rel="icon" type="image/png" sizes="32x32" href="${APPROVED_ADMIN_LOGIN_FAVICON}">',
-            '<link rel="icon" type="image/webp" href="${APPROVED_ADMIN_LOGIN_FAVICON}">',
-          );
-
-          const indexFile = 'admin-worker/src/index.js';
-          replaceRequired(
-            indexFile,
-            '<title>KENJI ADMIN · MMD</title><style>',
-            `<title>KENJI ADMIN · MMD</title><link rel="icon" type="image/webp" href="${FAVICON}"><style>`,
-          );
-          replaceRequired(
-            indexFile,
-            '<title>MMD Admin</title></head>',
-            `<title>MMD Admin</title><link rel="icon" type="image/webp" href="${FAVICON}"></head>`,
-          );
-
-          const mobileFile = 'admin-worker/src/mms-admin-mobile-bundle.js';
-          let mobile = read(mobileFile);
-          if (!mobile.includes('INTERNAL_SIGIL_FAVICON')) {
-            mobile = mobile.replace(
-              'const MARKER = "<!-- mms-admin-mobile-bundle:v1 -->";\n',
-              `const MARKER = "<!-- mms-admin-mobile-bundle:v1 -->";\nconst INTERNAL_SIGIL_FAVICON = "${FAVICON}";\n`,
-            );
-          }
-          const oldHead = `  const headAddon = '<meta name="theme-color" content="#f3f3ec">' + MB_STYLE;`;
-          const newHead = `  html = html.replace(/<link\\b[^>]*\\bdata-mms-admin-favicon\\b[^>]*>/gi, "");\n  html = html.replace(/<link\\b[^>]*\\brel=["'](?:shortcut\\s+)?icon["'][^>]*>/gi, "");\n  const headAddon = '<link data-mms-admin-favicon rel="icon" type="image/webp" href="' + INTERNAL_SIGIL_FAVICON + '">' + '<meta name="theme-color" content="#f3f3ec">' + MB_STYLE;`;
-          if (!mobile.includes(newHead)) {
-            if (!mobile.includes(oldHead)) throw new Error('MMS mobile bundle head marker missing');
-            mobile = mobile.replace(oldHead, newHead);
-          }
-          write(mobileFile, mobile);
-
-          for (const file of ['admin-worker/admin-login-regression-guard.test.mjs','admin-worker/admin-login-session.test.mjs']) {
-            let source = read(file);
-            source = source.replaceAll('image\\/png', 'image\\/webp');
-            write(file, source);
-          }
-
-          const mmsTest = 'admin-worker/mms-admin-inline-syntax.test.mjs';
-          let test = read(mmsTest);
-          test = test.replace(
-            /test\('MMS admin favicon is self-contained and does not require a cross-host image request',[\s\S]*?\n\}\);/,
-            `test('MMS admin favicon uses canonical internal SIGIL logo', () => {\n  const html = productionAssembly();\n  assert.match(html, /<link data-mms-admin-favicon rel="icon" type="image\\/webp" href="https:\\/\\/cdn\\.prod\\.website-files\\.com\\/68f879d546d2f4e2ab186e90\\/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo\\.webp">/);\n  assert.equal((html.match(/data-mms-admin-favicon/g) || []).length, 1);\n  assert.doesNotMatch(html, /data:image\\/svg\\+xml/);\n});`,
-          );
-          write(mmsTest, test);
           NODE
 
       - name: Validate targeted internal surfaces
         shell: bash
         run: |
           set -euo pipefail
-          node --check admin-worker/src/admin-login-page.js
-          node --check admin-worker/src/index.js
+          node --check admin-worker/src/mms-admin-runtime.js
           node --check admin-worker/src/mms-admin-mobile-bundle.js
           node --test \
-            admin-worker/admin-login-regression-guard.test.mjs \
-            admin-worker/admin-login-session.test.mjs \
-            admin-worker/admin-login-hero.test.mjs \
             admin-worker/mms-admin-inline-syntax.test.mjs \
             admin-worker/mms-admin-mobile-bundle.test.mjs
 
@@ -109,13 +51,13 @@ jobs:
         run: |
           set -euo pipefail
           if git diff --quiet; then
-            echo "No favicon migration changes required"
+            echo "No CSP migration changes required"
             exit 0
           fi
           git config user.name "MMD Privé"
           git config user.email "malemodel.bkk@gmail.com"
-          git add admin-worker
-          git commit -m "style(internal): lock SIGIL favicon across admin surfaces"
+          git add admin-worker/src/mms-admin-runtime.js
+          git commit -m "fix(mms-admin): allow canonical SIGIL favicon CDN"
           git fetch origin main
           git rebase origin/main
           git push origin HEAD:main
