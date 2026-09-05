@@ -44,11 +44,11 @@ export async function attachCareBackApprovalToConfirmedBooking(request, env, res
   }
 
   const secret = clean(env.AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES);
-  if (secret.length < 32) {
+  if (secret.length < 32 || !env.MEMBER_PAGES_WORKER?.fetch) {
     return merge(response, {
       care_back_approval: {
         status: "review_required",
-        reason: "member_pages_service_auth_not_configured",
+        reason: secret.length < 32 ? "member_pages_service_auth_not_configured" : "member_pages_service_binding_not_configured",
         authority: "booking_confirm_server_only",
       },
     });
@@ -67,18 +67,12 @@ export async function attachCareBackApprovalToConfirmedBooking(request, env, res
   });
 
   try {
-    const upstream = env.MEMBER_PAGES_WORKER?.fetch
-      ? await env.MEMBER_PAGES_WORKER.fetch(upstreamRequest)
-      : await fetch(fallbackMemberPagesUrl(env), {
-          method: "POST",
-          headers: upstreamRequest.headers,
-          body: await upstreamRequest.text(),
-        });
+    const upstream = await env.MEMBER_PAGES_WORKER.fetch(upstreamRequest);
     const approval = await upstream.json().catch(() => ({ ok: false, status: "unavailable", error: "invalid_member_pages_response" }));
     return merge(response, {
       care_back_approval: sanitizeApproval(approval, upstream.status),
     });
-  } catch (error) {
+  } catch {
     return merge(response, {
       care_back_approval: {
         status: "review_required",
@@ -140,10 +134,6 @@ async function merge(response, addition) {
   });
 }
 
-function fallbackMemberPagesUrl(env) {
-  const base = clean(env.MEMBER_PAGES_WORKER_BASE_URL || "https://member-pages-worker.malemodel-bkk.workers.dev").replace(/\/+$/, "");
-  return `${base}${APPROVAL_PATH}`;
-}
 function normalizeJobFormat(value) {
   const key = clean(value).toUpperCase();
   return key === "PN" || key === "VIP" ? key : "";
