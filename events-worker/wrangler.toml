@@ -13,10 +13,16 @@ PAYMENTS_WORKER_BASE = "https://payments-worker.malemodel-bkk.workers.dev"
 ADMIN_WORKER_BASE = "https://admin-worker.malemodel-bkk.workers.dev"
 RT_BASE_URL = "https://realtime-worker.malemodel-bkk.workers.dev"
 
+# Pre-job reconfirm reuses this Worker's existing 15-minute cron, but remains
+# fail-closed until Airtable fields + Model LINE push + Ops Telegram auth are proven.
+MODEL_RECONFIRM_ENABLED = "false"
+
 # Secrets: AUTH_SERVICE_EVENTS_TO_PAYMENTS, AUTH_SERVICE_EVENTS_TO_REALTIME,
 # AUTH_SERVICE_EVENTS_TO_TELEGRAM, AUTH_SERVICE_ADMIN_TO_EVENTS
 # ETA auth falls back to the existing CONFIRM_KEY until the dedicated service
 # secret is provisioned on both admin-worker and events-worker.
+# Reconfirm additionally needs MODEL_LINE_CHANNEL_ACCESS_TOKEN (or LINE_CHANNEL_ACCESS_TOKEN)
+# plus the canonical Airtable Sessions/Models bindings before the flag above is enabled.
 
 # Airtable/other env names should be set in dashboard or wrangler environment
 # e.g. AIRTABLE_API_KEY, AIRTABLE_BASE_ID, AIRTABLE_TABLE_SESSIONS, AIRTABLE_TABLE_MODELS, AIRTABLE_TABLE_CLIENTS, AIRTABLE_TABLE_ACTIVITY_LOGS

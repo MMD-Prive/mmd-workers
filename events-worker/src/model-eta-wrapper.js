@@ -1,4 +1,5 @@
 import baseWorker from "./index.js";
+import { runModelReconfirmSweep } from "../../admin-worker/src/model-reconfirm-runtime.js";
 
 const ETA_PATH = "/__internal/model/session/eta";
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -51,6 +52,19 @@ export default {
       eta_minutes: etaMinutes,
       eta_updated_at: updatedAt,
     }, 200);
+  },
+
+  // events-worker already owns the 15-minute Cloudflare cron. Reuse that clock
+  // for D-1 reconfirm instead of inventing browser timers or a second scheduler.
+  async scheduled(controller, env, ctx) {
+    const scheduledAt = Number(controller?.scheduledTime || Date.now());
+    const reconfirmJob = runModelReconfirmSweep(env, { now: scheduledAt });
+    const legacyJob = typeof baseWorker.scheduled === "function"
+      ? baseWorker.scheduled(controller, env, ctx)
+      : Promise.resolve();
+    const job = Promise.allSettled([reconfirmJob, legacyJob]);
+    if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(job);
+    else await job;
   },
 };
 

@@ -18,6 +18,10 @@ import {
   handleModelLocationRequest,
   isModelLocationRequest,
 } from "./model-location-runtime.js";
+import {
+  handleModelReconfirmRequest,
+  isModelReconfirmRequest,
+} from "./model-reconfirm-runtime.js";
 
 const STUDIO_API_PREFIX = "/studio/api";
 const COMMIT_PATHS = new Set([
@@ -32,6 +36,14 @@ export default {
     const url = new URL(request.url);
     const path = normalizePathname(url.pathname);
     const method = request.method.toUpperCase();
+
+    // Pre-job reconfirm stays additive to the canonical job/session runtime:
+    // Create Session remains the source of job truth; the wrapper only persists
+    // the D-1 schedule, enriches model reads, and handles acknowledgement without
+    // changing the canonical lifecycle state.
+    if (isModelReconfirmRequest(path, method)) {
+      return handleModelReconfirmRequest(request, env, ctx, studioWorker);
+    }
 
     // GPS location collection is a separate, fail-closed channel. The capability
     // endpoint never requests device location; ingest is disabled by default and
