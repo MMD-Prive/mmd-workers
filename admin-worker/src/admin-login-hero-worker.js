@@ -60,8 +60,6 @@ const ADMIN_GATE_SHARED_COOKIE_DOMAIN = "mmdbkk.com";
 const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
   "https://mmdbkk.com",
   "https://www.mmdbkk.com",
-  "https://mmdprive.webflow.io",
-  "https://mmdprive.com",
 ]);
 
 const ALLOWED_NEXT_PATHS = [
@@ -273,28 +271,39 @@ async function handleCredentialBoundAdminLogin(request, env) {
 
   const code = String(payload.access_code || payload.code || payload.credential || "").trim();
   const next = sanitizeNextPath(payload.next || "");
-  if (!code) return strictJson(request, env, { ok: false, error: "missing_access_code" }, 400);
+  const wantsJson = request.headers.get("x-mmd-login-fetch") === "1";
+  if (!code) return adminLoginFailure(request, env, next, "missing_access_code", "กรุณาใส่รหัส Admin", 400, wantsJson);
 
   const secret = getCredentialBoundAdminLoginCredential(env);
   if (!secret) {
-    return strictJson(request, env, { ok: false, error: "admin_login_credential_missing" }, 503);
+    return adminLoginFailure(request, env, next, "admin_login_credential_missing", "ระบบรหัส Admin ยังไม่พร้อม", 503, wantsJson);
   }
   if (code !== secret) {
-    return strictJson(request, env, { ok: false, error: "invalid_access_code" }, 401);
+    return adminLoginFailure(request, env, next, "invalid_access_code", "รหัสยังไม่ถูกต้อง", 401, wantsJson);
+  }
+  if (String(env.ADMIN_LOGIN_CREDENTIAL || "").trim() && !String(env.ADMIN_SESSION_SECRET || env.SESSION_SECRET || "").trim()) {
+    return adminLoginFailure(request, env, next, "admin_session_secret_missing", "ระบบ session Admin ยังไม่พร้อม", 503, wantsJson);
   }
 
-  const cookie = await createCredentialBoundAdminSession(request, { id: "per", role: "admin" }, env);
-  return strictJson(
-    request,
-    env,
-    { ok: true, next },
-    200,
-    {
-      "set-cookie": adminSessionCookie(request, cookie, Math.floor(ADMIN_GATE_TTL_MS / 1000)),
-      "x-mmd-admin-login": "session-created",
-      "x-mmd-admin-next": next,
-    },
-  );
+  let cookie;
+  try {
+    cookie = await createCredentialBoundAdminSession(request, { id: "per", role: "admin" }, env);
+  } catch {
+    return adminLoginFailure(request, env, next, "admin_session_unavailable", "ระบบ session Admin ยังไม่พร้อม", 503, wantsJson);
+  }
+
+  const headers = adminGateHeaders(request, env, {
+    "set-cookie": adminSessionCookie(request, cookie, Math.floor(ADMIN_GATE_TTL_MS / 1000)),
+    "x-mmd-admin-login": "session-created",
+    "x-mmd-admin-next": next,
+  });
+  if (wantsJson) {
+    headers.set("content-type", "application/json; charset=utf-8");
+    headers.set("cache-control", "no-store, max-age=0");
+    return new Response(JSON.stringify({ ok: true, next }), { status: 200, headers });
+  }
+  headers.set("location", next);
+  return new Response(null, { status: 303, headers });
 }
 
 async function handleCredentialBoundAdminLogout(request) {
@@ -304,6 +313,11 @@ async function handleCredentialBoundAdminLogout(request) {
     "set-cookie": adminSessionCookie(request, "", 0),
   });
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
+}
+
+function adminLoginFailure(request, env, next, code, message, status, wantsJson) {
+  if (wantsJson) return strictJson(request, env, { ok: false, error: code }, status);
+  return renderAdminLogin(request, { next, error: message, status });
 }
 
 function adminSessionCookie(request, value, maxAge) {
