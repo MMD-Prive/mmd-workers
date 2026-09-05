@@ -36,13 +36,14 @@ test("LINE slip intake creates a pending Payment Proof visible in the admin revi
       if (request.method === "GET") return Response.json({ records: proofs });
       if (request.method === "POST") {
         const body = await request.json();
+        const fields = body.fields || body.records?.[0]?.fields || {};
         const record = {
           id: `rec-proof-${proofs.length + 1}`,
           createdTime: "2026-09-05T10:00:00.000Z",
-          fields: body.fields,
+          fields,
         };
         proofs.push(record);
-        return Response.json(record, { status: 201 });
+        return Response.json(body.records ? { records: [record] } : record, { status: 201 });
       }
     }
     throw new Error(`Unexpected Airtable request: ${request.method} ${table}`);
@@ -56,7 +57,13 @@ test("LINE slip intake creates a pending Payment Proof visible in the admin revi
     LINE_SLIP_R2_BUCKET: "line-slip-test",
     AIRTABLE_HTTP: { fetch: airtableFetch },
     AIRTABLE_BASE_ID: "app-test",
+    AIRTABLE_API_KEY: "pat-test",
     AIRTABLE_TOKEN: "pat-test",
+    AIRTABLE_TABLE_PAYMENT_PROOFS: "MMD — Payment Proofs",
+    AIRTABLE_TABLE_PAYMENT_PROOFS_ID: "MMD — Payment Proofs",
+    AIRTABLE_TABLE_MEMBERS: "Members",
+    AIRTABLE_TABLE_PAYMENTS: "Payments",
+    AIRTABLE_TABLE_PAYMENTS_ID: "Payments",
   };
 
   const fetchImpl = async (input, init) => {
