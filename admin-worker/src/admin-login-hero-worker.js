@@ -40,6 +40,10 @@ import {
   handlePaymentReviewRequest,
   isPaymentReviewRequest,
 } from "./payment-review-runtime.js";
+import {
+  handlePublicModelApplicationReviewRequest,
+  isPublicModelApplicationReviewRequest,
+} from "./public-model-application-review.js";
 import { createCredentialBoundAdminSession, getCredentialBoundAdminLoginCredential, readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
@@ -67,6 +71,7 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/admin/control-room",
   "/internal/admin/customer-data",
   "/internal/admin/dashboard",
+  "/internal/admin/model-applications",
   "/internal/admin/mms",
   "/internal/admin/payments",
   "/internal/admin/jobs/create-session",
@@ -143,6 +148,10 @@ export default {
     if (strictGate.response) return strictGate.response;
     request = strictGate.request || request;
 
+    if (isPublicModelApplicationReviewRequest(path)) {
+      return handlePublicModelApplicationReviewRequest(request, env, strictGate.actor);
+    }
+
     if (paymentReviewRequest) {
       return handlePaymentReviewRequest(request, env, strictGate.actor);
     }
@@ -218,7 +227,7 @@ async function applyCredentialBoundAdminGate(request, env, path, method) {
 
   const url = new URL(request.url);
   const loginUrl = new URL(ADMIN_LOGIN_PAGE_PATH, url.origin);
-  loginUrl.searchParams.set("next", sanitizeNextPath(path));
+  loginUrl.searchParams.set("next", sanitizeNextPath(`${path}${url.search}`));
   return {
     response: new Response(null, {
       status: 303,
