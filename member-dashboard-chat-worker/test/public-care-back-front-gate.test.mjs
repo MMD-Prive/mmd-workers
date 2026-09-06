@@ -88,5 +88,5 @@ test("wrangler claims the public Wish and link routes on apex and www", async ()
   ]) {
     assert.ok(wrangler.includes(`pattern = "${route}"`), `missing Worker route: ${route}`);
   }
-  assert.match(wrangler, /main = "src\/my-mmd-lovable-app-front-gate\.js"/);
+  assert.match(wrangler, /main = "src\/my-mmd-bounded-status-front-gate\.js"/);
 });
