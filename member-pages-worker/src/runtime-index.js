@@ -4,6 +4,7 @@ import { isDriveBootstrapCandidate, tryDriveMemberBootstrap } from "./drive-memb
 import { isDriveReconcileRequest, handleDriveReconcile } from "./drive-access-reconcile.js";
 import { withDriveBootstrapDiagnostic } from "./drive-bootstrap-debug.js";
 import { withStatusFirstMemberResolver } from "./liff-status-first-member-resolver.js";
+import { applyMyMmdFastTrustResponse } from "./my-mmd-fast-trust-response.js";
 import { attachTraceId, createLiffResolutionTrace, createLiffShellBoundaryTrace } from "./liff-resolution-trace.js";
 import {
   handleTrustedCareBackBookingApproval,
@@ -62,6 +63,7 @@ export default {
     const firstRequest = request.clone();
     const bootstrapRequest = request.clone();
     let firstResponse = await worker.fetch(firstRequest, runtimeEnv, ctx);
+    firstResponse = await applyMyMmdFastTrustResponse(request, firstResponse, env);
 
     if (shellBoundary) {
       shellBoundary.finish(firstResponse);
@@ -86,7 +88,8 @@ export default {
         package_code: bootstrap.package_code || "",
       });
       if (bootstrap.mapped) {
-        const retriedResponse = await worker.fetch(request, runtimeEnv, ctx);
+        let retriedResponse = await worker.fetch(request, runtimeEnv, ctx);
+        retriedResponse = await applyMyMmdFastTrustResponse(request, retriedResponse, env);
         trace?.event("member_retry", retriedResponse.ok ? "complete" : "failed", "", { http_status: retriedResponse.status });
         trace?.finish(retriedResponse.ok ? "resolved" : "failed", retriedResponse.ok ? "drive_bootstrap_mapped" : "member_retry_failed");
         const rewritten = await rewritePendingStatusStartResponse(request, retriedResponse, trace?.traceId || "");
