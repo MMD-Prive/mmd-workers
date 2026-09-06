@@ -125,7 +125,7 @@ export function renderApprovedAdminLogin(
         </section>
       </article>
       <aside class="visual" aria-label="MMD private administration environment">
-        <img class="visual-logo" src="${APPROVED_ADMIN_LOGIN_LOGO}" alt="MMD SIGIL" width="112" height="112" fetchpriority="high">
+        <img class="visual-logo" src="${APPROVED_ADMIN_LOGIN_LOGO}" alt="MMD SIGIL Internal Admin" width="112" height="112" fetchpriority="high">
         <div class="note"><b>Private access. Clear boundaries.</b><p>Owner ดูแลระบบหลัก ส่วน MMS Partner ดูแลงาน Male Massage ในขอบเขตของตัวเอง ไม่แชร์สิทธิ์ข้ามกัน</p></div>
       </aside>
     </section>
