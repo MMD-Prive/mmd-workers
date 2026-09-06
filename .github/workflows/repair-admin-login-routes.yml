@@ -196,7 +196,7 @@ jobs:
               -H "Content-Type: application/x-www-form-urlencoded" \
               --data 'credential=route-smoke-invalid&next=/internal/admin/jobs/create-job' \
               "$origin/internal/admin/login/session")"
-            if [ "$http_code" != "401" ] || ! grep -Eiq '^x-mmd-route-owner:[[:space:]]*admin-worker' "$headers_file" || ! grep -q 'รหัสยังไม่ถูกต้องครับ' "$body_file"; then
+            if [ "$http_code" != "401" ] || ! grep -Eiq '^x-mmd-route-owner:[[:space:]]*admin-worker' "$headers_file" || ! grep -q 'รหัสยังไม่ถูกต้อง' "$body_file"; then
               route_owner=$(grep -Ei '^x-mmd-route-owner:' "$headers_file" | tail -1 | tr -d '\r' | cut -d ':' -f2- | xargs)
               page_id=$(grep -Ei '^x-mmd-page:' "$headers_file" | tail -1 | tr -d '\r' | cut -d ':' -f2- | xargs)
               echo "::error title=Admin login invalid-credential smoke failed::origin=$origin status=$http_code route_owner=$route_owner page=$page_id"
