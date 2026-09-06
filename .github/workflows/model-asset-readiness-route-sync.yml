@@ -2,6 +2,12 @@ name: Sync model asset readiness route
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "admin-worker/src/model-asset-readiness.js"
+      - ".github/workflows/model-asset-readiness-route-sync.yml"
   workflow_run:
     workflows:
       - Deploy admin-worker
@@ -13,7 +19,7 @@ permissions:
 
 jobs:
   sync-route:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -90,7 +96,7 @@ jobs:
           set -euo pipefail
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
             body_file="$(mktemp)"
-            http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+            http_code="$(curl -L --max-redirs 3 --retry 6 --retry-delay 2 --retry-all-errors -sS \
               -o "$body_file" -w "%{http_code}" \
               "$origin/v1/admin/models/resolve-source?q=route-smoke")"
             cat "$body_file"
