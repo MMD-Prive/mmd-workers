@@ -20,7 +20,7 @@ export function shouldAttemptPublicModelNotification({ duplicate, status }) {
 }
 
 export function publicModelChatId(env = {}) {
-  return String(env.TELEGRAM_PUBLIC_MODEL_CHAT_ID || "").trim();
+  return String(env.TELEGRAM_PUBLIC_MODEL_CHAT_ID || env.TELEGRAM_CHAT_ID || "").trim();
 }
 
 export function publicModelThreadId(env = {}) {
@@ -82,7 +82,10 @@ export async function notifyPublicModelApplication({ env, payload, applicationId
   try {
     const token = String(env.TELEGRAM_BOT_TOKEN || "").trim();
     const chatId = publicModelChatId(env);
-    if (!token || !chatId) throw new Error("missing_public_model_telegram_configuration");
+    const threadId = publicModelThreadId(env);
+    const usesSharedChat = !String(env.TELEGRAM_PUBLIC_MODEL_CHAT_ID || "").trim();
+    if (!token || !chatId || (usesSharedChat && !threadId)) throw new Error("missing_public_model_telegram_configuration");
+
     const reviewUrl = buildPublicModelReviewUrl(env, applicationId);
     const telegramPayload = {
       chat_id: chatId,
@@ -93,8 +96,8 @@ export async function notifyPublicModelApplication({ env, payload, applicationId
         inline_keyboard: [[{ text: "เปิดใบสมัคร", url: reviewUrl }]],
       };
     }
-    const threadId = publicModelThreadId(env);
     if (threadId) telegramPayload.message_thread_id = threadId;
+
     const fetcher = typeof env.TELEGRAM_FETCH === "function" ? env.TELEGRAM_FETCH : fetch;
     const response = await fetcher(`${TELEGRAM_API_BASE}/bot${token}/sendMessage`, {
       method: "POST",
