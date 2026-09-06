@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import worker from "../src/my-mmd-bounded-status-front-gate.js";
 
-test("customer status recovery is WebView-safe, hard-stops after 12 seconds, and does not offer an endless reload loop", async () => {
+test("customer status recovery verifies the LINE session, hard-stops after 12 seconds, and does not require an existing Member row", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
@@ -22,6 +22,14 @@ test("customer status recovery is WebView-safe, hard-stops after 12 seconds, and
   assert.equal(response.headers.get("x-mmd-liff-recovery-gate"), "hard-timeout-v2-one-retry");
   assert.equal(response.headers.get("x-mmd-liff-hard-timeout-ms"), "12000");
   assert.equal(response.headers.get("x-mmd-liff-manual-retry-window-ms"), "120000");
+  assert.equal(response.headers.get("x-mmd-liff-session-check"), "status-v1");
+
+  // Production must verify the signed LIFF session, not require a canonical
+  // member profile. lifecycle=new and legacy/checking customers still enter My MMD.
+  assert.match(html, /const statusEndpoint = "\/member\/api\/liff\/status"/);
+  assert.match(html, /fetch\(statusEndpoint,/);
+  assert.doesNotMatch(html, /const profileEndpoint =/);
+  assert.doesNotMatch(html, /\/member\/api\/liff\/profile/);
 
   assert.match(html, /body\.mmd-status-recovery #message\{display:block!important/);
   assert.match(html, /body\.mmd-status-recovery #mmd-status-bridge-veil \.t\{display:none!important/);
@@ -38,6 +46,7 @@ test("customer status recovery is WebView-safe, hard-stops after 12 seconds, and
   assert.match(html, /window\.sessionStorage\.setItem\(RETRY_KEY/);
   assert.match(html, /retryAlreadyUsed/);
   assert.match(html, /ระบบจะไม่วนยืนยันซ้ำเอง/);
+  assert.match(html, /LINE Session/);
   assert.match(html, /ตรวจสถานะอีกครั้ง/);
   assert.match(html, /กลับ My MMD/);
   assert.match(html, /retry\.disabled = true/);
