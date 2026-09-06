@@ -30,6 +30,10 @@ import {
   handleHistoricalSlipBackfillRequest,
   isHistoricalSlipBackfillRequest,
 } from "./historical-slip-backfill-runtime.js";
+import {
+  handleModelAssetReadinessRequest,
+  isModelAssetReadinessRequest,
+} from "./model-asset-readiness.js";
 
 const STUDIO_API_PREFIX = "/studio/api";
 const HISTORICAL_BACKFILL_CANONICAL_API = "/v1/admin/payments/historical-backfill";
@@ -46,6 +50,15 @@ export default {
     const url = new URL(request.url);
     const path = normalizePathname(url.pathname);
     const method = request.method.toUpperCase();
+
+    // CEO Model Asset Console lookup is read-only. The credential-bound admin
+    // wrapper has already authenticated /v1/admin/* before this request reaches
+    // the composed worker. This projection combines canonical Airtable identity,
+    // R2 evidence and public-safe path checks without exposing browser secrets or
+    // creating/publishing any source of truth from Webflow.
+    if (isModelAssetReadinessRequest(path, method)) {
+      return handleModelAssetReadinessRequest(request, env, ctx, studioWorker);
+    }
 
     // /studio/api/* is already a credential-bound, explicitly routed admin
     // transport. Map only this exact payments sub-tree to the canonical API
