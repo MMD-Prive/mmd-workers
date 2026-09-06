@@ -110,11 +110,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate LINE, LIFF, CARE BACK, and MMS Therapist front gate
+      - name: Validate LINE, LIFF, CARE BACK, MMS Therapist, and MMS AI front gate
         id: tests
         run: |
           node --check member-dashboard-chat-worker/src/index.js
           node --check member-dashboard-chat-worker/src/front-gate-index.js
+          node --check member-dashboard-chat-worker/src/mms-ai-knowledge-v4.js
+          node --check member-dashboard-chat-worker/src/mms-ai-line-front-gate.js
           npm run test:member-dashboard-liff
           npm run test:member-dashboard-line
           node --test member-dashboard-chat-worker/test/line-membership-fallback.test.mjs
@@ -165,7 +167,7 @@ jobs:
           npx --yes wrangler@4 versions deploy "${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}@100%" -y \
             2>&1 | tee "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log"
 
-      - name: Sync MMS Therapist auth routes
+      - name: Sync MMS Therapist auth and MMS LINE routes
         id: route_sync
         if: steps.deploy.outcome == 'success'
         shell: bash
@@ -178,6 +180,10 @@ jobs:
           const desired = [
             "mmdbkk.com/male-massage/therapists/api/auth/*",
             "www.mmdbkk.com/male-massage/therapists/api/auth/*",
+            "mmdbkk.com/webhooks/line/mms",
+            "mmdbkk.com/webhooks/line/mms/",
+            "www.mmdbkk.com/webhooks/line/mms",
+            "www.mmdbkk.com/webhooks/line/mms/",
           ];
           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
           async function cf(path, options = {}) {
@@ -220,7 +226,7 @@ jobs:
           const verified = await cf(routePath);
           const missing = desired.filter((pattern) => !verified.some((route) => route.pattern === pattern && route.script === worker));
           if (missing.length) throw new Error(`missing routes: ${missing.join(", ")}`);
-          console.log(`verified ${desired.length}/${desired.length} MMS Therapist auth routes`);
+          console.log(`verified ${desired.length}/${desired.length} MMS routes`);
           NODE
 
       - name: Smoke production LINE and MMS route ownership
@@ -235,6 +241,17 @@ jobs:
               throw new Error(`Unexpected production smoke response: ${process.argv[1]}`);
             }
           ' "$response"
+
+          mms_ai="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error https://www.mmdbkk.com/webhooks/line/mms)"
+          node -e '
+            const body = JSON.parse(process.argv[1]);
+            if (body.ok !== true || body.worker !== "member-dashboard-chat-worker" || body.route !== "mms_line_webhook") {
+              throw new Error(`Unexpected MMS AI smoke response: ${process.argv[1]}`);
+            }
+            if (!String(body.knowledge_version || "").startsWith("mms-ai-knowledge-v4") || body.mutation_allowed !== false) {
+              throw new Error(`Unexpected MMS AI knowledge contract: ${process.argv[1]}`);
+            }
+          ' "$mms_ai"
 
           catalog="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error \
             -H 'Origin: https://www.mmdbkk.com' \
@@ -289,7 +306,7 @@ jobs:
           elif [ "$DEPLOY_OUTCOME" != "success" ]; then
             stopped="versions deploy"
           elif [ "$ROUTE_SYNC_OUTCOME" != "success" ]; then
-            stopped="MMS Therapist route sync"
+            stopped="MMS route sync"
           elif [ "$SMOKE_OUTCOME" != "success" ]; then
             stopped="production smoke"
           else
@@ -306,7 +323,7 @@ jobs:
             "$RUNNER_TEMP/mms-therapist-auth.headers" \
             "$RUNNER_TEMP/mms-therapist-auth.json"; do
             if [ -f "$log" ]; then
-              detail="${detail}$(grep -Ei 'active|disabled|expired|error|failed|permission|account|binding|service|route|conflict|workers.dev|code:|code |version|secret|var|therapist' "$log" | tail -n 50 || true)\n"
+              detail="${detail}$(grep -Ei 'active|disabled|expired|error|failed|permission|account|binding|service|route|conflict|workers.dev|code:|code |version|secret|var|therapist|mms' "$log" | tail -n 50 || true)\n"
             fi
           done
           if [ -z "${detail//\\n/}" ]; then
@@ -327,7 +344,7 @@ jobs:
           - versions upload: \`${UPLOAD_OUTCOME}\`
           - resolve version: \`${RESOLVE_OUTCOME}\`
           - versions deploy: \`${DEPLOY_OUTCOME}\`
-          - Therapist route sync: \`${ROUTE_SYNC_OUTCOME}\`
+          - MMS route sync: \`${ROUTE_SYNC_OUTCOME}\`
           - production smoke: \`${SMOKE_OUTCOME}\`
           - **stopped_at: \`${stopped}\`**
 
@@ -345,4 +362,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ member-dashboard-chat-worker LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- version_id: \`${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}\`\n- endpoint: \`https://www.mmdbkk.com/webhooks/line\`\n- MMS Therapist auth route: \`https://www.mmdbkk.com/male-massage/therapists/api/auth/*\`\n- production smoke: front gate + MMS service binding verified\n- route mutation: \`2 narrow MMS Therapist auth routes synced\`"
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ member-dashboard-chat-worker LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- version_id: \`${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}\`\n- MMD LINE endpoint: \`https://www.mmdbkk.com/webhooks/line\`\n- MMS LINE endpoint: \`https://www.mmdbkk.com/webhooks/line/mms\`\n- MMS Therapist auth route: \`https://www.mmdbkk.com/male-massage/therapists/api/auth/*\`\n- production smoke: MMD LINE + MMS AI V4 + MMS service binding verified\n- route mutation: \`6 narrow MMS routes synced\`"
