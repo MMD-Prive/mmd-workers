@@ -1,0 +1,53 @@
+name: My MMD Fast Trust CI
+
+on:
+  pull_request:
+    paths:
+      - "auth-worker/src/my-mmd-line-identity-bridge.js"
+      - "auth-worker/test/my-mmd-fast-trust.test.mjs"
+      - "member-pages-worker/src/my-mmd-fast-trust-response.js"
+      - "member-pages-worker/src/runtime-index.js"
+      - "member-pages-worker/test/my-mmd-fast-trust-response.test.mjs"
+      - ".github/workflows/my-mmd-fast-trust-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "auth-worker/src/my-mmd-line-identity-bridge.js"
+      - "auth-worker/test/my-mmd-fast-trust.test.mjs"
+      - "member-pages-worker/src/my-mmd-fast-trust-response.js"
+      - "member-pages-worker/src/runtime-index.js"
+      - "member-pages-worker/test/my-mmd-fast-trust-response.test.mjs"
+      - ".github/workflows/my-mmd-fast-trust-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  fast-trust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Syntax
+        run: |
+          node --check auth-worker/src/my-mmd-line-identity-bridge.js
+          node --check member-pages-worker/src/my-mmd-fast-trust-response.js
+          node --check member-pages-worker/src/runtime-index.js
+      - name: Fast Trust tests
+        run: |
+          node --experimental-global-webcrypto --test auth-worker/test/my-mmd-fast-trust.test.mjs
+          node --experimental-global-webcrypto --test member-pages-worker/test/my-mmd-fast-trust-response.test.mjs
+      - name: Existing resolver regressions
+        run: |
+          npm run test:auth-liff-profile
+          npm run test:member-pages-liff
+      - name: Wrangler dry-runs
+        run: |
+          npx --yes wrangler@4 deploy --dry-run --keep-vars --config auth-worker/wrangler.toml
+          npx --yes wrangler@4 deploy --dry-run --keep-vars --config member-pages-worker/wrangler.toml
