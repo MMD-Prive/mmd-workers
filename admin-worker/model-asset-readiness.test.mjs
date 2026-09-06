@@ -3,9 +3,12 @@ import test from "node:test";
 
 import {
   MODEL_ASSET_READINESS_PATH,
+  ROUTES,
+  WORKFLOW_CTA_V3,
   buildModelAssetReadiness,
   handleModelAssetReadinessRequest,
   isModelAssetReadinessRequest,
+  normalizeModelAssetCtaRoute,
   projectModelAssetRecord,
   validatePublicModelAssetPath,
 } from "./src/model-asset-readiness.js";
@@ -14,6 +17,36 @@ test("readiness endpoint is exact GET route", () => {
   assert.equal(isModelAssetReadinessRequest(MODEL_ASSET_READINESS_PATH, "GET"), true);
   assert.equal(isModelAssetReadinessRequest(`${MODEL_ASSET_READINESS_PATH}/extra`, "GET"), false);
   assert.equal(isModelAssetReadinessRequest(MODEL_ASSET_READINESS_PATH, "POST"), false);
+});
+
+test("canonical CTA router v3 normalizes legacy asset routes", () => {
+  assert.equal(normalizeModelAssetCtaRoute("/ceo"), "/internal/ceo");
+  assert.equal(normalizeModelAssetCtaRoute("/ceo/models"), "/internal/ceo/models");
+  assert.equal(normalizeModelAssetCtaRoute("/studio"), "/internal/admin/studio");
+  assert.equal(normalizeModelAssetCtaRoute("/sigil/admin/studio/upload?model=Ewa"), "/internal/admin/studio/upload?model=Ewa");
+  assert.equal(normalizeModelAssetCtaRoute("/sigil/admin/models"), "/internal/ceo/models");
+  assert.equal(normalizeModelAssetCtaRoute("/sigil/admin/jobs/create-session"), "/internal/admin/jobs/create-session");
+  assert.equal(normalizeModelAssetCtaRoute("/internal/ceo/dashboard"), "/internal/ceo");
+});
+
+test("workflow CTA v3 keeps asset work in the asset lane", () => {
+  assert.deepEqual(WORKFLOW_CTA_V3.review.needs_review, {
+    label: "Back to Upload",
+    route: "/internal/admin/studio/upload",
+  });
+  assert.deepEqual(WORKFLOW_CTA_V3.review.approved_for_preview, {
+    label: "Open Preview",
+    route: "/internal/admin/studio/model-preview",
+  });
+  assert.deepEqual(WORKFLOW_CTA_V3.review.hold, {
+    label: "Return to Asset Console",
+    route: "/internal/ceo/models",
+  });
+  assert.equal(WORKFLOW_CTA_V3.preview.back_to_review.route, "/internal/admin/studio/review");
+  assert.equal(WORKFLOW_CTA_V3.preview.asset_console.route, "/internal/ceo/models");
+  assert.equal(WORKFLOW_CTA_V3.upload.asset_console.route, "/internal/ceo/models");
+  assert.equal(WORKFLOW_CTA_V3.studio.asset_console.route, "/internal/ceo/models");
+  assert.equal(JSON.stringify({ ROUTES, WORKFLOW_CTA_V3 }).includes("/sigil/model/console"), false);
 });
 
 test("public model asset path accepts only canonical public asset keys", () => {
@@ -53,6 +86,7 @@ test("six passing checks yield Ready for Review and final preview CTA", () => {
   });
   assert.equal(readiness.score, 6);
   assert.equal(readiness.verdict, "Ready for Review");
+  assert.equal(readiness.next.label, "Open Final Preview");
   assert.equal(readiness.next.route, "/internal/admin/studio/model-preview");
 });
 
@@ -153,9 +187,14 @@ test("handler returns backend-owned safe projection without secret fields", asyn
   assert.equal(body.published, false);
   assert.equal(body.can_publish, false);
   assert.equal(body.demo, false);
+  assert.equal(body.cta_router_version, "v3");
+  assert.equal(body.routes.studio, "/internal/admin/studio");
+  assert.equal(body.workflow_cta.review.needs_review.route, "/internal/admin/studio/upload");
   assert.equal(body.readiness.score, 6);
   assert.deepEqual(body.flow, ["Drive / Intake", "Studio", "R2 + Airtable", "Public Asset"]);
-  assert.equal(JSON.stringify(body).includes("ADMIN_BEARER"), false);
-  assert.equal(JSON.stringify(body).includes("CONFIRM_KEY"), false);
-  assert.equal(JSON.stringify(body).includes("api_base"), false);
+  const serialized = JSON.stringify(body);
+  assert.equal(serialized.includes("ADMIN_BEARER"), false);
+  assert.equal(serialized.includes("CONFIRM_KEY"), false);
+  assert.equal(serialized.includes("api_base"), false);
+  assert.equal(serialized.includes("/sigil/model/console"), false);
 });
