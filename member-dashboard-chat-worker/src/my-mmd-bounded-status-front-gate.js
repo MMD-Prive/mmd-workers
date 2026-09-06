@@ -183,6 +183,43 @@ function hardTimeoutGate(nonce) {
 </script>`;
 }
 
+function singleSurfaceRecoveryFix(nonce) {
+  return `<style id="mmd-status-single-surface-fix">
+body #message{display:none!important}
+body.mmd-status-recovery #message{display:none!important}
+#mmd-status-bridge-veil .t{max-width:min(calc(100vw - 56px),360px);line-height:1.5;text-wrap:pretty}
+body.mmd-status-recovery #mmd-status-bridge-veil{justify-content:center!important;padding:24px 24px 188px!important;box-sizing:border-box!important}
+body.mmd-status-recovery #mmd-status-bridge-veil img{max-height:42svh!important}
+body.mmd-status-recovery #mmd-status-bridge-veil .t{display:block!important;margin-top:8px!important;color:#d8d0c5!important;font-size:14px!important;font-weight:500!important;line-height:1.6!important}
+body #actions{top:auto!important;bottom:max(22px,calc(env(safe-area-inset-bottom) + 16px))!important}
+@media (max-height:700px){body.mmd-status-recovery #mmd-status-bridge-veil{padding-bottom:176px!important}body.mmd-status-recovery #mmd-status-bridge-veil img{max-height:36svh!important}}
+</style>
+<script nonce="${nonce}" id="mmd-status-single-surface-sync">
+(() => {
+  const body = document.body;
+  const actions = document.getElementById("actions");
+  const message = document.getElementById("message");
+  const veil = document.getElementById("mmd-status-bridge-veil");
+  const statusText = veil?.querySelector(".t");
+  if (!body || !actions || !veil || !statusText) return;
+
+  const sync = () => {
+    const recovering = actions.childElementCount > 0 || body.classList.contains("mmd-status-recovery");
+    if (!recovering) return;
+    body.classList.add("mmd-status-recovery");
+    const text = String(message?.textContent || "").trim();
+    statusText.textContent = text || "ยังยืนยัน LINE Session ไม่สำเร็จครับ";
+    veil.setAttribute("role", "alert");
+    veil.setAttribute("aria-label", statusText.textContent);
+  };
+
+  sync();
+  new MutationObserver(sync).observe(actions, { childList: true });
+  if (message) new MutationObserver(sync).observe(message, { childList: true, subtree: true, characterData: true });
+})();
+</script>`;
+}
+
 function rewriteSessionVerificationBridge(html) {
   let output = String(html || "");
 
@@ -226,11 +263,14 @@ async function applyBoundedStatusRecovery(request, response) {
     });
   }
 
-  const rewritten = html.replace("</body>", `${hardTimeoutGate(nonceMatch[1])}</body>`);
+  const rewritten = html.replace(
+    "</body>",
+    `${hardTimeoutGate(nonceMatch[1])}${singleSurfaceRecoveryFix(nonceMatch[1])}</body>`,
+  );
   const headers = new Headers(response.headers);
   for (const name of ["content-length", "content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(name);
   headers.set("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
-  headers.set("x-mmd-liff-recovery-gate", "hard-timeout-v2-one-retry");
+  headers.set("x-mmd-liff-recovery-gate", "hard-timeout-v3-single-surface-one-retry");
   headers.set("x-mmd-liff-hard-timeout-ms", String(HARD_TIMEOUT_MS));
   headers.set("x-mmd-liff-manual-retry-window-ms", String(MANUAL_RETRY_WINDOW_MS));
   headers.set("x-mmd-liff-session-check", "status-v1");
