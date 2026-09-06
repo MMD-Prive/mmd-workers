@@ -1,93 +1,156 @@
 # My MMD Member App API V1
 
-Status: implementation PR / not production-proven
-Owner: `member-pages-worker` behind `member-dashboard-chat-worker`
+Status: CANONICAL ROUTE + API CONTRACT
+Refreshed: 2026-09-06 +07
 
-## Purpose
-
-Provide a bounded, customer-safe, same-origin read API for the My MMD member app UI without creating a second browser authentication system.
-
-The API reuses the verified LIFF/member session and delegates to existing canonical member reads:
+## Ownership
 
 ```text
-My MMD UI on mmdbkk.com
--> /api/member/app/*
+Presentation: Lovable
+Canonical browser route: https://mmdbkk.com/my-mmd/
+Route / API ingress: member-dashboard-chat-worker
+Member data / LIFF session authority: member-pages-worker
+Entitlement authority: my_mmd_entitlement_resolver_v1
+Operational records: canonical MMD backend / Airtable adapters
+```
+
+Lovable owns pixels and interaction only. It must not become a second auth, membership, points, coupon, access or entitlement authority.
+
+## Canonical My MMD browser routes
+
+```text
+GET /my-mmd/
+GET /my-mmd/profile
+GET /my-mmd/membership
+GET /my-mmd/points
+GET /my-mmd/coupons
+GET /my-mmd/history
+```
+
+Legacy browser route:
+
+```text
+GET /member/my-mmd*
+-> 308 to /my-mmd/*
+```
+
+Do not restore `/member/my-mmd` as a second presentation owner.
+
+Current presentation origin used by the MMD proxy:
+
+```text
+https://my-mmd-member-profile.lovable.app
+```
+
+The browser still sees `mmdbkk.com`; executable assets are rewritten to same-origin `/my-mmd-assets/*` by `member-dashboard-chat-worker`.
+
+If the presentation origin is unavailable or returns an invalid build, the Worker must fail closed and show the My MMD recovery screen. That recovery screen is not member-data loss.
+
+## Canonical member app API namespace
+
+The My MMD UI does **not** call `/my-mmd/api/*`.
+
+The canonical same-origin BFF namespace remains:
+
+```text
+/api/member/app/*
+```
+
+All V1 routes are read-only `GET` and return `cache-control: no-store`.
+
+### Read endpoints
+
+```text
+GET /api/member/app/dashboard
+GET /api/member/app/profile
+GET /api/member/app/membership
+GET /api/member/app/points
+GET /api/member/app/coupons
+GET /api/member/app/history
+GET /api/member/app/care
+```
+
+### UI provider mapping
+
+```text
+getDashboard()  -> /api/member/app/dashboard
+getProfile()    -> /api/member/app/profile
+getMembership() -> /api/member/app/membership
+getPoints()     -> /api/member/app/points
+getCoupons()    -> /api/member/app/coupons
+getHistory()    -> /api/member/app/history
+getCareState()  -> /api/member/app/care
+```
+
+Requests must remain same-origin and credentialed. No token, tier, member ID, entitlement, points value, coupon value or secret belongs in frontend code.
+
+## Request flow
+
+```text
+Browser at mmdbkk.com/my-mmd/*
+-> GET /api/member/app/*
 -> member-dashboard-chat-worker
 -> MEMBER_PAGES_WORKER service binding
 -> member-pages-worker
--> existing LIFF/member session
--> existing member profile / dashboard / CARE reads
+-> verified MMD member / LIFF session
+-> bounded canonical member read
 ```
 
-The Lovable-hosted preview is a visual prototype only. A browser on `*.lovable.app` must not become a parallel auth/session owner. The live provider is intended for the My MMD UI once hosted or adapted under the canonical MMD same-origin member runtime.
+A direct browser session on `*.lovable.app` is presentation preview only and must not become a parallel member-session owner.
 
-## Routes
+## Existing LIFF / member identity endpoints
 
-All routes are `GET` only and return `cache-control: no-store`.
+These remain separate from the presentation BFF and are backend/session infrastructure, not replacement UI routes:
 
-- `/api/member/app/dashboard`
-- `/api/member/app/profile`
-- `/api/member/app/membership`
-- `/api/member/app/points`
-- `/api/member/app/coupons`
-- `/api/member/app/history`
-- `/api/member/app/care`
+```text
+POST /member/api/liff/start
+POST /member/api/liff/intent
+GET  /member/api/liff/status
+GET  /member/api/liff/profile
+POST /member/api/liff/hall-token
+```
 
-Production public ingress is claimed on both `mmdbkk.com` and `www.mmdbkk.com` by `member-dashboard-chat-worker`, which forwards only to the `MEMBER_PAGES_WORKER` service binding.
+CARE BACK backend reads/writes remain under the existing LIFF/member backend contract; My MMD consumes only the customer-safe BFF views above.
 
 ## Security and truth boundaries
 
-- Existing LIFF/member session is the only browser identity authority.
-- No browser-supplied tier, member ID, points, entitlement, access or discount values are accepted.
-- Membership Level, lifecycle status and Actual Access remain separate concepts.
-- Actual Access is **not** inferred from tier/status. Until an explicit bounded entitlement snapshot is exposed by the canonical backend resolver, the adapter returns `access: "checking"`.
-- Missing or unverified data stays neutral/checking.
-- Internal Airtable IDs, internal notes, payment refs, proof IDs, model grants, allowlists and secrets are not returned.
-- Membership expiry/renewal date is not exposed by this V1 adapter.
+- Existing verified member / LIFF session is browser identity authority.
+- `my_mmd_entitlement_resolver_v1` remains the authority for Actual Access.
+- Membership Level, lifecycle status and Actual Access are separate concepts.
+- Browser code must never infer access from tier or status.
+- Missing or unverified backend state must render `checking` / recovery, not guessed values.
+- Internal Airtable IDs, notes, payment refs, proof IDs, allowlists, model grants and secrets must not be exposed.
+- Presentation failures do not authorize fallback demo/member data.
 
-## CARE BACK discount rule
+## CARE BACK discount lock
 
-The canonical customer-visible actual rate is `approved_discount_percent` only.
+The only authoritative customer-visible actual coupon rate is:
 
-The adapter deliberately ignores legacy fields such as:
+```text
+approved_discount_percent
+```
 
-- `discount_percent`
-- `benefit_value`
+Legacy fields such as `discount_percent` or `benefit_value` do not authorize the displayed actual percentage.
 
-because current legacy CARE BACK storage still contains historical fixed-10-percent logic. Until the backend produces explicit verified `approved_discount_percent`, the member UI must display only generic pre-verification copy such as `สูงสุด 10% / UP TO 10% OFF`.
+Until the backend returns an explicit verified `approved_discount_percent`, UI copy may say only generic pre-verification language such as `สูงสุด 10% / UP TO 10% OFF`.
 
-`completed` Wish state without `approved_discount_percent` maps to `wish_saved`, not `approved`.
+## Production evidence boundary
 
-## Live provider contract
+The route ownership and My MMD BFF contract are canonical. This does **not** by itself prove every real member record, Points ledger, entitlement or CARE BACK approval is correct for a specific account.
 
-The My MMD UI data models map directly to these routes:
-
-- `getDashboard()` -> `/api/member/app/dashboard`
-- `getProfile()` -> `/api/member/app/profile`
-- `getMembership()` -> `/api/member/app/membership`
-- `getPoints()` -> `/api/member/app/points`
-- `getCoupons()` -> `/api/member/app/coupons`
-- `getHistory()` -> `/api/member/app/history`
-- `getCareState()` -> `/api/member/app/care`
-
-Requests must use same-origin credentials. No token or secret belongs in frontend code.
-
-## Production gate
-
-This implementation does **not** prove the real-LINE path.
-
-Before describing the member app as production-connected, prove a fresh production run:
+The full acceptance chain remains:
 
 ```text
 real LINE
 -> LIFF start
 -> verified member session
+-> /my-mmd/
 -> /api/member/app/profile
 -> /api/member/app/dashboard
--> CARE claim
--> Wish saved
+-> /api/member/app/points
+-> CARE claim / Wish
 -> coupon wallet
 -> explicit approved_discount_percent
 ```
 
-The canonical `real-LINE -> claim -> coupon -> approved_discount_percent` smoke remains **UNPROVEN** until that run is observed and correlated end-to-end.
+A specific member-data claim is production-proven only when that member/session path is observed successfully end-to-end.
