@@ -1,5 +1,5 @@
 name = "member-dashboard-chat-worker"
-main = "src/my-mmd-bounded-status-front-gate.js"
+main = "src/mms-ai-line-front-gate.js"
 compatibility_date = "2026-07-02"
 workers_dev = false
 
@@ -159,6 +159,7 @@ zone_name = "mmdbkk.com"
 [observability]
 enabled = true
 
+# MMD Privé LINE OA. These routes keep the existing Kenji/MMD runtime unchanged.
 [[routes]]
 pattern = "mmdbkk.com/webhooks/line"
 zone_name = "mmdbkk.com"
@@ -173,6 +174,25 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/webhooks/line/"
+zone_name = "mmdbkk.com"
+
+# LINE OA · Male Massage. This is a separate transport/credential boundary.
+# Bind MMS_LINE_CHANNEL_SECRET and MMS_LINE_CHANNEL_ACCESS_TOKEN as Cloudflare
+# secrets. Never reuse LINE_CHANNEL_SECRET / LINE_CHANNEL_ACCESS_TOKEN here.
+[[routes]]
+pattern = "mmdbkk.com/webhooks/line/mms"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/webhooks/line/mms/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/webhooks/line/mms"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/webhooks/line/mms/"
 zone_name = "mmdbkk.com"
 
 # Cloudflare-only LINE runtime.
@@ -213,6 +233,13 @@ LINE_KENJI_MODEL_CANARY_HASHES = ""
 LINE_KENJI_MODEL_KNOWLEDGE_IDS = ""
 LINE_KENJI_MODEL_MAX_ATTEMPTS_PER_WINDOW = "3"
 LINE_KENJI_MODEL_QUOTA_WINDOW_SECONDS = "900"
+
+# MMS AI Knowledge Master V4 runtime. Static/clarification replies can run
+# without model generation; model replies remain read-only and never perform
+# MMS mutations. User-specific live truth must come from mms-worker contracts.
+MMS_LINE_AI_ENABLED = "true"
+MMS_LINE_AI_MODEL_ENABLED = "true"
+MMS_OPENAI_MODEL = "gpt-5.6"
 
 [[durable_objects.bindings]]
 name = "KENJI_MODEL_DEDUPE"
