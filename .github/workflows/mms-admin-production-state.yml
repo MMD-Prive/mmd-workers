@@ -7,7 +7,6 @@ on:
       - main
     paths:
       - ".github/workflows/mms-admin-production-state.yml"
-      - "admin-worker/**"
       - "immigrate-worker/**"
   workflow_run:
     workflows:
@@ -31,6 +30,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -77,7 +78,9 @@ jobs:
             }
             const setCookie = response.headers.get('set-cookie') || '';
             if (!/^mmd_admin_gate_v1=/.test(setCookie)) throw new Error('login did not issue mmd_admin_gate_v1');
-            if (/\bdomain=/i.test(setCookie)) throw new Error('admin cookie must remain host-only');
+            if (!/\bdomain=mmdbkk\.com\b/i.test(setCookie)) {
+              throw new Error('admin cookie must share Domain=mmdbkk.com across apex and www');
+            }
             const cookiePair = setCookie.split(';', 1)[0];
             const control = await fetch(`${origin}${next}`, {
               headers: { Cookie: cookiePair },
