@@ -19,6 +19,10 @@ service = "ai-worker"
 binding = "MMS_WORKER"
 service = "mms-worker"
 
+[[r2_buckets]]
+binding = "LINE_SLIP_EVIDENCE"
+bucket_name = "mmd-line-slip-evidence"
+
 # Canonical renewal page. These specific routes win before the generic front
 # gate and keep the full query string available to the local renderer.
 [[routes]]
@@ -190,6 +194,11 @@ KENJI_AI_WORKER_BRIDGE_ENABLED = "true"
 # Personal/crew LINE source IDs are never guessed. Populate this only when the
 # bot/OA is actually present in a Crew group/room and the source ID is reviewed.
 KENJI_LINE_CREW_SOURCE_IDS = ""
+# Only the reviewed MMD Privé Team group is eligible for payment-image capture.
+# The real LINE group ID is never committed; comparison is against SHA-256 only.
+LINE_PAYMENT_PROOF_GROUP_HASHES = "7cb8cf05c7e2ec9489d6ec9560de60fade231412f9dd82b89a7e51b58eba996f"
+LINE_SLIP_MAX_IMAGE_BYTES = "10485760"
+AIRTABLE_TABLE_PAYMENT_PROOFS_ID = "tblfJfM4Sqag9zrLi"
 # Model generation is a separate, production-gated capability. Keep it off in
 # committed configuration until an explicitly approved deployment enables it.
 LINE_KENJI_MODEL_ENABLED = "false"
