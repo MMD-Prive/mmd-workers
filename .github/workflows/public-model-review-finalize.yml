@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Patch canonical deployment wiring
+      - name: Patch canonical admin-worker config
         shell: bash
         run: |
           set -euo pipefail
@@ -68,30 +68,6 @@ jobs:
                   raise SystemExit("admin R2 insertion marker not found")
               text = text.replace(anchor, anchor + r2_block, 1)
           wrangler.write_text(text)
-
-          deploy = Path(".github/workflows/deploy-admin-worker.yml")
-          text = deploy.read_text()
-          if "node --check src/public-model-application-review.js" not in text:
-              anchor = "          node --check src/mms-admin-runtime.js\n"
-              if anchor not in text:
-                  raise SystemExit("deploy source-check marker not found")
-              text = text.replace(anchor, anchor + "          node --check src/public-model-application-review.js\n", 1)
-          if "public-model-application-review.test.mjs" not in text:
-              anchor = "            mms-admin-session-bounce.test.mjs \\\n"
-              if anchor not in text:
-                  raise SystemExit("deploy test-list marker not found")
-              text = text.replace(anchor, anchor + "            public-model-application-review.test.mjs \\\n", 1)
-          if '"/internal/admin/model-applications*"' not in text:
-              anchor = '            "/internal/admin/mms",\n'
-              if anchor not in text:
-                  raise SystemExit("deploy route-sync page marker not found")
-              text = text.replace(anchor, anchor + '            "/internal/admin/model-applications*",\n', 1)
-          if '"/v1/admin/model-applications*"' not in text:
-              anchor = '            "/v1/admin/mms/*",\n'
-              if anchor not in text:
-                  raise SystemExit("deploy route-sync api marker not found")
-              text = text.replace(anchor, anchor + '            "/v1/admin/model-applications*",\n', 1)
-          deploy.write_text(text)
           PY
 
       - name: Validate focused review flows
@@ -104,17 +80,16 @@ jobs:
           node --test sigil-worker/test/public-model-notify.test.mjs
           git diff --check
 
-      - name: Commit canonical wiring and remove finalizer
+      - name: Commit canonical config
         shell: bash
         run: |
           set -euo pipefail
-          rm -f .github/workflows/public-model-review-finalize.yml
           git config user.name "MMD Review Wiring"
           git config user.email "actions@users.noreply.github.com"
-          git add admin-worker/wrangler.toml .github/workflows/deploy-admin-worker.yml .github/workflows/public-model-review-finalize.yml
+          git add admin-worker/wrangler.toml
           if git diff --cached --quiet; then
-            echo "No wiring changes to commit"
+            echo "No config changes to commit"
             exit 0
           fi
-          git commit -m "chore(admin): wire Public Model review routes and private media"
+          git commit -m "chore(admin): bind Public Model review routes and private media"
           git push origin HEAD:fix/public-model-application-review
