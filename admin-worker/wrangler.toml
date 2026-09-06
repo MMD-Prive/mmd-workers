@@ -208,6 +208,24 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/internal/admin/login/session"
 zone_name = "mmdbkk.com"
 
+# Public Model application review. The page, review API, decision endpoint and
+# private media proxy all stay behind the credential-bound admin gate.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/model-applications*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/model-applications*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/model-applications*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/model-applications*"
+zone_name = "mmdbkk.com"
+
 # MMS team operations console. Keep this namespace exact and narrow.
 [[routes]]
 pattern = "mmdbkk.com/internal/admin/mms"
@@ -680,6 +698,10 @@ new_sqlite_classes = ["LineOfcConsoleBackfillCoordinator"]
 [[r2_buckets]]
 binding = "MMD_MODEL_ASSETS"
 bucket_name = "mmd-models"
+
+[[r2_buckets]]
+binding = "PUBLIC_MODEL_UPLOADS_R2"
+bucket_name = "mmd-private-public-model-uploads"
 
 # ---- Secrets (set via wrangler secret) ----
 # ADMIN_LOGIN_CREDENTIAL

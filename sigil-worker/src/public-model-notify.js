@@ -10,7 +10,7 @@ export const TELEGRAM_NOTIFY_FIELDS = Object.freeze({
 const APPLICATION_ID_FIELD_NAME = "application_id";
 const APPLICATION_ID_RE = /^pma_[A-Za-z0-9_-]{8,120}$/;
 const TELEGRAM_API_BASE = "https://api.telegram.org";
-const DEFAULT_PUBLIC_MODEL_REVIEW_BASE_URL = "https://mmdbkk.com/internal/ceo/models";
+const DEFAULT_PUBLIC_MODEL_REVIEW_BASE_URL = "https://mmdbkk.com/internal/admin/model-applications";
 
 export function shouldAttemptPublicModelNotification({ duplicate, status }) {
   const current = String(status || "").trim().toLowerCase();
@@ -45,20 +45,22 @@ export function buildPublicModelTelegramMessage(payload = {}, applicationId, rev
   const photos = uploads.filter((item) => normalizeToken(item?.kind) === "photo").length;
   const documents = uploads.filter((item) => normalizeToken(item?.kind) === "document").length;
   const workTypes = normalizeList(payload.work_types ?? payload.interested_work_types ?? payload.workTypes, 10);
+  const category = shortText(payload.mmd_public_model_category ?? payload.mmd_public_model_category_label ?? payload.category ?? payload.category_label, 120);
   const lines = [
     "MMD Public Model Application",
     "",
     `Nickname: ${shortText(payload.nickname, 120) || "-"}`,
     `Age: ${numberOrDash(payload.age)}`,
-    `Height: ${numberOrText(payload.height, 40)}`,
+    `Height: ${numberOrText(payload.height_cm ?? payload.height, 40)}`,
     `Location: ${shortText(payload.location ?? payload.talent_location, 160) || "-"}`,
     `Occupation: ${shortText(payload.occupation_detail ?? payload.occupation, 180) || "-"}`,
+    `Category: ${category || "-"}`,
     `Work interests: ${workTypes.join(", ") || "-"}`,
     `Photos: ${photos}`,
     `Documents: ${documents}`,
     `Application ID: ${applicationId}`,
   ];
-  if (reviewUrl) lines.push("", `Open application: ${reviewUrl}`);
+  if (reviewUrl) lines.push("", `Review / Approve: ${reviewUrl}`);
   return lines.join("\n");
 }
 
@@ -93,7 +95,7 @@ export async function notifyPublicModelApplication({ env, payload, applicationId
     };
     if (reviewUrl) {
       telegramPayload.reply_markup = {
-        inline_keyboard: [[{ text: "เปิดใบสมัคร", url: reviewUrl }]],
+        inline_keyboard: [[{ text: "ตรวจ / อนุมัติใบสมัคร", url: reviewUrl }]],
       };
     }
     if (threadId) telegramPayload.message_thread_id = threadId;
