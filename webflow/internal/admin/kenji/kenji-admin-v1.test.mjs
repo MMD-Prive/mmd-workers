@@ -76,10 +76,10 @@ test("safe preview excludes the positive-sensitive review-only field", () => {
 });
 
 test("mobile admin layout stays compact with horizontal layers", () => {
-  assert.match(css, /@media\(max-width:820px\)/);
-  assert.match(css, /scroll-snap-type:x mandatory/);
-  assert.match(css, /min-width:92vw/);
-  assert.match(css, /\.ka__modelGrid\{grid-template-columns:1fr\}/);
+  assert.match(css, /@media\s*\(\s*max-width\s*:\s*820px\s*\)/);
+  assert.match(css, /scroll-snap-type\s*:\s*x\s+mandatory/);
+  assert.match(css, /min-width\s*:\s*92vw/);
+  assert.match(css, /\.ka__modelGrid\s*\{\s*grid-template-columns\s*:\s*1fr\s*;?\s*\}/);
 });
 
 
