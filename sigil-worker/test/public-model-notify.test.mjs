@@ -12,6 +12,7 @@ import {
 
 const APPLICATION_ID = "pma_abcdefgh1234";
 const RECORD_ID = "recABCDEFGHIJKLMN";
+const REVIEW_BASE = "https://mmdbkk.com/internal/admin/model-applications";
 const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 test("retry policy avoids sent/pending duplicates and retries failed or unobserved duplicates", () => {
@@ -29,23 +30,25 @@ test("Public Model uses shared chat with dedicated topic and never falls back to
   assert.equal(publicModelThreadId({ TELEGRAM_ADMIN_THREAD_ID: "77", TG_THREAD_CONFIRM: "61" }), undefined);
 });
 
-test("review URL deep-links to the application", () => {
+test("review URL deep-links to the dedicated admin application review", () => {
   assert.equal(
-    buildPublicModelReviewUrl({ PUBLIC_MODEL_REVIEW_BASE_URL: "https://mmdbkk.com/internal/ceo/models" }, APPLICATION_ID),
-    `https://mmdbkk.com/internal/ceo/models?application_id=${APPLICATION_ID}`,
+    buildPublicModelReviewUrl({ PUBLIC_MODEL_REVIEW_BASE_URL: REVIEW_BASE }, APPLICATION_ID),
+    `${REVIEW_BASE}?application_id=${APPLICATION_ID}`,
   );
 });
 
-test("alert is privacy-light", () => {
-  const reviewUrl = `https://mmdbkk.com/internal/ceo/models?application_id=${APPLICATION_ID}`;
-  const text = buildPublicModelTelegramMessage({ nickname: "Tester", age: 28, height: 181, location: "Bangkok", occupation_detail: "Barista", work_types: ["Public Events"], phone: "0999999999", line_id: "secret-line", email: "private@example.com", why_consider: "private motivation", uploads: [{ kind: "photo" }, { kind: "document" }] }, APPLICATION_ID, reviewUrl);
+test("alert is privacy-light but makes the review action clear", () => {
+  const reviewUrl = `${REVIEW_BASE}?application_id=${APPLICATION_ID}`;
+  const text = buildPublicModelTelegramMessage({ nickname: "Tester", age: 28, height_cm: 181, location: "Bangkok", occupation_detail: "Barista", mmd_public_model_category: "Travel", work_types: ["Public Events"], phone: "0999999999", line_id: "secret-line", email: "private@example.com", why_consider: "private motivation", uploads: [{ kind: "photo" }, { kind: "document" }] }, APPLICATION_ID, reviewUrl);
   assert.match(text, /MMD Public Model Application/);
+  assert.match(text, /Height: 181/);
+  assert.match(text, /Category: Travel/);
   assert.match(text, new RegExp(APPLICATION_ID));
-  assert.match(text, /Open application:/);
+  assert.match(text, /Review \/ Approve:/);
   assert.doesNotMatch(text, /0999999999|secret-line|private@example\.com|private motivation/);
 });
 
-test("success writes pending then sent and routes to dedicated topic with one-tap review button", async () => {
+test("success writes pending then sent and routes to dedicated topic with actionable review button", async () => {
   const writes = [];
   const telegramCalls = [];
   const env = {
@@ -54,7 +57,7 @@ test("success writes pending then sent and routes to dedicated topic with one-ta
     TELEGRAM_CHAT_ID: "-100123",
     TELEGRAM_PUBLIC_MODEL_THREAD_ID: "155",
     TG_THREAD_CONFIRM: "61",
-    PUBLIC_MODEL_REVIEW_BASE_URL: "https://mmdbkk.com/internal/ceo/models",
+    PUBLIC_MODEL_REVIEW_BASE_URL: REVIEW_BASE,
     AIRTABLE_FETCH: async (url, init = {}) => {
       const method = init.method || "GET";
       if (method === "GET") { assert.match(String(url), /filterByFormula/); return jsonResponse({ records: [{ id: RECORD_ID, fields: {} }] }); }
@@ -69,8 +72,8 @@ test("success writes pending then sent and routes to dedicated topic with one-ta
   assert.equal(telegramCalls[0].body.message_thread_id, 155);
   assert.notEqual(telegramCalls[0].body.message_thread_id, 61);
   assert.match(telegramCalls[0].body.text, new RegExp(`application_id=${APPLICATION_ID}`));
-  assert.equal(telegramCalls[0].body.reply_markup.inline_keyboard[0][0].text, "เปิดใบสมัคร");
-  assert.equal(telegramCalls[0].body.reply_markup.inline_keyboard[0][0].url, `https://mmdbkk.com/internal/ceo/models?application_id=${APPLICATION_ID}`);
+  assert.equal(telegramCalls[0].body.reply_markup.inline_keyboard[0][0].text, "ตรวจ / อนุมัติใบสมัคร");
+  assert.equal(telegramCalls[0].body.reply_markup.inline_keyboard[0][0].url, `${REVIEW_BASE}?application_id=${APPLICATION_ID}`);
   assert.equal(writes[0][TELEGRAM_NOTIFY_FIELDS.status], "pending");
   assert.equal(writes[1][TELEGRAM_NOTIFY_FIELDS.status], "sent");
   assert.ok(writes[1][TELEGRAM_NOTIFY_FIELDS.notifiedAt]);
