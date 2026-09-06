@@ -1,3 +1,8 @@
+import {
+  handleKenjiModelWorkflowRequest,
+  isKenjiModelWorkflowRequest,
+} from "./kenji-model-workflow.js";
+
 export const KENJI_MODEL_ADMIN_BASE_PATH = "/v1/admin/kenji/models";
 export const KENJI_MODEL_ADMIN_DRAFT_PATH = `${KENJI_MODEL_ADMIN_BASE_PATH}/draft`;
 
@@ -60,7 +65,7 @@ function firstField(fields = {}, names = []) {
 
 function uniqueList(value, maxItems = 20, maxLen = 80) {
   const raw = Array.isArray(value) ? value : String(value || "").split(/[\n,]/);
-  return [...new Set(raw.map((item) => clean(item, maxLen)).filter(Boolean))].slice(0, maxItems);
+  return [...new Set(raw.map((item) => clean(item?.name || item, maxLen)).filter(Boolean))].slice(0, maxItems);
 }
 
 function booleanValue(value) {
@@ -125,13 +130,9 @@ function reviewFields(env = {}) {
 
 async function airtableFetch(env, table, init = {}, query = null, fetchImpl = fetch) {
   const config = airtableConfig(env);
-  if (!config.apiKey || !config.baseId) {
-    return { ok: false, status: 503, error: "missing_airtable_env" };
-  }
+  if (!config.apiKey || !config.baseId) return { ok: false, status: 503, error: "missing_airtable_env" };
   const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(config.baseId)}/${encodeURIComponent(table)}`);
-  if (query) {
-    for (const [key, value] of query.entries()) url.searchParams.append(key, value);
-  }
+  if (query) for (const [key, value] of query.entries()) url.searchParams.append(key, value);
   let response;
   try {
     response = await fetchImpl(url.toString(), {
@@ -146,9 +147,7 @@ async function airtableFetch(env, table, init = {}, query = null, fetchImpl = fe
     return { ok: false, status: 503, error: "airtable_unreachable" };
   }
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    return { ok: false, status: response.status, error: "airtable_request_failed", detail: data };
-  }
+  if (!response.ok) return { ok: false, status: response.status, error: "airtable_request_failed", detail: data };
   return { ok: true, status: response.status, data };
 }
 
@@ -161,8 +160,7 @@ async function fetchAllRecords(env, table, fetchImpl) {
     if (offset) params.set("offset", offset);
     const result = await airtableFetch(env, table, { method: "GET" }, params, fetchImpl);
     if (!result.ok) return result;
-    const page = Array.isArray(result.data?.records) ? result.data.records : [];
-    records.push(...page);
+    records.push(...(Array.isArray(result.data?.records) ? result.data.records : []));
     offset = clean(result.data?.offset, 200);
   } while (offset && records.length < MAX_LIST_SCAN);
   return { ok: true, records: records.slice(0, MAX_LIST_SCAN) };
@@ -284,35 +282,23 @@ function primaryImageContentType(key, object) {
 async function streamAdminPrimaryMedia(request, env, fetchImpl) {
   const url = new URL(request.url);
   const modelId = clean(url.searchParams.get("preview_model_id"), 80);
-  if (!/^rec[A-Za-z0-9]{14,}$/.test(modelId)) {
-    return json({ ok: false, error: "invalid_preview_model_id" }, 400);
-  }
+  if (!/^rec[A-Za-z0-9]{14,}$/.test(modelId)) return json({ ok: false, error: "invalid_preview_model_id" }, 400);
   if (!env.MMD_MODEL_ASSETS || typeof env.MMD_MODEL_ASSETS.get !== "function") {
     return json({ ok: false, error: "model_asset_store_unavailable" }, 503);
   }
-
   const config = airtableConfig(env);
   const modelsResult = await fetchAllRecords(env, config.modelsTable, fetchImpl);
-  if (!modelsResult.ok) {
-    return json({ ok: false, error: "model_source_unavailable" }, 503);
-  }
+  if (!modelsResult.ok) return json({ ok: false, error: "model_source_unavailable" }, 503);
   const record = modelsResult.records.find((item) => clean(item?.id, 80) === modelId);
   if (!record) return json({ ok: false, error: "model_not_found" }, 404);
-
   const key = clean(firstField(record.fields || {}, ["primary_image_key"]), 500);
   if (!key) return json({ ok: false, error: "primary_media_not_configured" }, 404);
-
   let object;
-  try {
-    object = await env.MMD_MODEL_ASSETS.get(key);
-  } catch (_) {
-    return json({ ok: false, error: "model_asset_store_unavailable" }, 503);
-  }
+  try { object = await env.MMD_MODEL_ASSETS.get(key); }
+  catch (_) { return json({ ok: false, error: "model_asset_store_unavailable" }, 503); }
   if (!object) return json({ ok: false, error: "primary_media_not_found" }, 404);
-
   const contentType = primaryImageContentType(key, object);
   if (!contentType) return json({ ok: false, error: "primary_media_type_not_allowed" }, 415);
-
   return new Response(object.body, {
     status: 200,
     headers: {
@@ -327,64 +313,43 @@ async function streamAdminPrimaryMedia(request, env, fetchImpl) {
 
 async function listModels(request, env, fetchImpl) {
   const url = new URL(request.url);
-  if (url.searchParams.get("preview_model_id")) {
-    return streamAdminPrimaryMedia(request, env, fetchImpl);
-  }
+  if (url.searchParams.get("preview_model_id")) return streamAdminPrimaryMedia(request, env, fetchImpl);
   const q = clean(url.searchParams.get("q"), 120).toLowerCase();
   const requestedLimit = Number(url.searchParams.get("limit") || 60);
   const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(120, Math.floor(requestedLimit))) : 60;
   const config = airtableConfig(env);
-
   const modelsResult = await fetchAllRecords(env, config.modelsTable, fetchImpl);
-  if (!modelsResult.ok) {
-    return json({ ok: false, error: "model_source_unavailable" }, modelsResult.status === 401 || modelsResult.status === 403 ? 502 : 503);
-  }
+  if (!modelsResult.ok) return json({ ok: false, error: "model_source_unavailable" }, modelsResult.status === 401 || modelsResult.status === 403 ? 502 : 503);
   const profilesResult = await fetchAllRecords(env, config.keywordProfilesTable, fetchImpl);
-  if (!profilesResult.ok) {
-    return json({ ok: false, error: "keyword_profile_source_unavailable" }, profilesResult.status === 401 || profilesResult.status === 403 ? 502 : 503);
-  }
+  if (!profilesResult.ok) return json({ ok: false, error: "keyword_profile_source_unavailable" }, profilesResult.status === 401 || profilesResult.status === 403 ? 502 : 503);
 
-  const identities = modelsResult.records
-    .map(projectKenjiAdminModelRecord)
-    .filter((item) => item.model_id && (item.model_key || item.working_name));
-  const profiles = profilesResult.records
-    .map(projectKenjiKeywordProfileRecord)
-    .filter((item) => item.keyword_profile_id && (item.model_key || item.working_name || item.linked_model_ids.length));
-
+  const identities = modelsResult.records.map(projectKenjiAdminModelRecord).filter((item) => item.model_id && (item.model_key || item.working_name));
+  const profiles = profilesResult.records.map(projectKenjiKeywordProfileRecord).filter((item) => item.keyword_profile_id && (item.model_key || item.working_name || item.linked_model_ids.length));
   const profileByModelId = new Map();
   const profileByKey = new Map();
   for (const profile of profiles) {
-    for (const modelId of profile.linked_model_ids) {
-      if (!profileByModelId.has(modelId)) profileByModelId.set(modelId, profile);
-    }
+    for (const modelId of profile.linked_model_ids) if (!profileByModelId.has(modelId)) profileByModelId.set(modelId, profile);
     const key = profile.model_key.toLowerCase();
     if (key && !profileByKey.has(key)) profileByKey.set(key, profile);
   }
-
   const usedProfiles = new Set();
   const rows = identities.map((identity) => {
     const profile = profileByModelId.get(identity.model_id) || profileByKey.get(identity.model_key.toLowerCase()) || null;
     if (profile) usedProfiles.add(profile.keyword_profile_id);
     return mergeIdentityAndProfile(identity, profile);
   });
-
   for (const profile of profiles) {
     if (usedProfiles.has(profile.keyword_profile_id)) continue;
     const linkedIdentity = identities.find((item) => profile.linked_model_ids.includes(item.model_id));
     rows.push(mergeIdentityAndProfile(linkedIdentity || {}, profile));
   }
-
   const items = rows
     .filter((item) => !q || searchableText(item).includes(q))
     .sort((left, right) => rankModel(left, q) - rankModel(right, q) || left.working_name.localeCompare(right.working_name))
     .slice(0, limit);
-
   return json({
     ok: true,
-    source: {
-      identity: "airtable_models",
-      keyword_content: "airtable_model_keyword_profiles",
-    },
+    source: { identity: "airtable_models", keyword_content: "airtable_model_keyword_profiles" },
     policy_version: "KENJI_MODEL_ACCESS_V1",
     legacy_source: "/kenji-model-keyword-copy",
     canonical_surface: "/internal/admin/kenji#models",
@@ -393,11 +358,20 @@ async function listModels(request, env, fetchImpl) {
   });
 }
 
+function stripNegatedPolicyPhrases(value) {
+  return clean(value, 1600)
+    .replace(/(?:ห้าม|ไม่ให้|อย่า|ไม่ควร)\s*(?:เปิดเผย|บอก|แจ้ง|ส่ง)?\s*(?:ราคา|ค่าตัว|เรท|คิว|เบอร์(?:โทร)?|ไลน์|line|telegram|อีเมล|email)/gi, "")
+    .replace(/(?:never|do\s+not|don't)\s*(?:show|share|tell|send)?\s*(?:price|rate|availability|schedule|phone|line|telegram|email)/gi, "")
+    .trim();
+}
+
 function containsForbiddenOperationalText(value) {
-  const text = clean(value, 1200);
+  const text = stripNegatedPolicyPhrases(value);
+  if (!text) return false;
   return Boolean(
     /(?:\b0\d{8,9}\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|https?:\/\/|line\s*(?:id|oa)|telegram|เบอร์(?:โทร)?|อีเมล|ไลน์ส่วนตัว)/i.test(text) ||
-    /(?:availability|available|schedule|ตาราง(?:งาน|คิว)|ว่าง(?:วันนี้|คืนนี้|พรุ่งนี้|ไหม)?|เช็กคิว|ราคา|ค่าตัว|เรท|\brate\b|\bprice\b)/i.test(text) ||
+    /(?:\b(?:THB|บาท)\s*\d|\d[\d,]*(?:\.\d+)?\s*(?:THB|บาท)|(?:ราคา|ค่าตัว|เรท|\brate\b|\bprice\b)\s*[:=]?\s*\d)/i.test(text) ||
+    /(?:availability|available\s+(?:today|tonight|tomorrow)|schedule|ตาราง(?:งาน|คิว)|ว่าง(?:วันนี้|คืนนี้|พรุ่งนี้)|เช็กคิว\s*[:=]?\s*\w+)/i.test(text) ||
     /(?:airtable|record[_\s-]?id|admin[_\s-]?note|internal[_\s-]?token|secret|authorization|bearer|r2[_\s-]?(?:key|url))/i.test(text)
   );
 }
@@ -417,9 +391,7 @@ function canonicalChoice(value, choices, fallback, error) {
 function parseVisibility(value, profileTier) {
   const token = normalizeToken(value);
   if (!token) return { ok: true, value: profileTier === "Public" ? "public" : "curated" };
-  return ALLOWED_VISIBILITY.has(token)
-    ? { ok: true, value: token }
-    : { ok: false, error: "invalid_proposed_visibility" };
+  return ALLOWED_VISIBILITY.has(token) ? { ok: true, value: token } : { ok: false, error: "invalid_proposed_visibility" };
 }
 
 function canonicalCustomerScopes(value) {
@@ -454,9 +426,7 @@ function parseDraft(body = {}) {
   if (keywordProfileId && !/^rec[A-Za-z0-9]{14,}$/.test(keywordProfileId)) return { ok: false, error: "invalid_keyword_profile_id" };
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/.test(modelKey)) return { ok: false, error: "invalid_model_key" };
   if (!workingName) return { ok: false, error: "working_name_required" };
-  if (body.expected_profile_version != null && body.expected_profile_version !== "" && expectedProfileVersion < 1) {
-    return { ok: false, error: "invalid_expected_profile_version" };
-  }
+  if (body.expected_profile_version != null && body.expected_profile_version !== "" && expectedProfileVersion < 1) return { ok: false, error: "invalid_expected_profile_version" };
 
   const tierResult = canonicalChoice(body.model_tier, PROFILE_TIER_CHOICES, "Private", "invalid_model_tier");
   if (!tierResult.ok) return tierResult;
@@ -475,12 +445,8 @@ function parseDraft(body = {}) {
 
   if (customerSafeInfo && !isCustomerSafeText(customerSafeInfo, 800)) return { ok: false, error: "customer_safe_info_failed_guard" };
   if (customerSafeRemark && !isCustomerSafeText(customerSafeRemark, 500)) return { ok: false, error: "customer_safe_remark_failed_guard" };
-  if (positiveSensitiveDescription && containsForbiddenOperationalText(positiveSensitiveDescription)) {
-    return { ok: false, error: "positive_sensitive_description_failed_guard" };
-  }
-  if (sourceRef && /https?:\/\/|authorization|bearer|secret|token/i.test(sourceRef)) {
-    return { ok: false, error: "source_ref_failed_guard" };
-  }
+  if (positiveSensitiveDescription && containsForbiddenOperationalText(positiveSensitiveDescription)) return { ok: false, error: "positive_sensitive_description_failed_guard" };
+  if (sourceRef && /https?:\/\/|authorization|bearer|secret|token/i.test(sourceRef)) return { ok: false, error: "source_ref_failed_guard" };
 
   return {
     ok: true,
@@ -534,16 +500,10 @@ async function findReviewByRequestId(env, requestId, fetchImpl) {
 
 async function createDraft(request, env, options, fetchImpl) {
   const idempotencyKey = clean(request.headers.get("Idempotency-Key"), 180);
-  if (!idempotencyKey || idempotencyKey.length < 8) {
-    return json({ ok: false, error: "idempotency_key_required" }, 400);
-  }
-
+  if (!idempotencyKey || idempotencyKey.length < 8) return json({ ok: false, error: "idempotency_key_required" }, 400);
   let body;
-  try {
-    body = await request.json();
-  } catch (_) {
-    return json({ ok: false, error: "invalid_json" }, 400);
-  }
+  try { body = await request.json(); }
+  catch (_) { return json({ ok: false, error: "invalid_json" }, 400); }
   const parsed = parseDraft(body);
   if (!parsed.ok) return json({ ok: false, error: parsed.error }, 400);
 
@@ -555,16 +515,10 @@ async function createDraft(request, env, options, fetchImpl) {
   const existing = await findReviewByRequestId(env, requestId, fetchImpl);
   if (!existing.ok) return json({ ok: false, error: "review_source_unavailable" }, 503);
   if (existing.record) {
-    return json({
-      ok: true,
-      status: "pending_review",
-      idempotent: true,
-      request_id: requestId,
-      record_id: existing.record.id || "",
-    });
+    return json({ ok: true, status: "pending_review", idempotent: true, request_id: requestId, record_id: existing.record.id || "" });
   }
 
-  const actor = clean(options?.actor?.id || options?.actor || "admin", 100) || "admin";
+  const actor = clean(options?.actor?.id || options?.actor || request.headers.get("x-mmd-admin-actor") || "admin", 100) || "admin";
   const now = new Date().toISOString();
   const draft = parsed.draft;
   const recordFields = {
@@ -579,45 +533,35 @@ async function createDraft(request, env, options, fetchImpl) {
   };
   if (draft.model_id) recordFields[fields.model] = [draft.model_id];
 
-  const result = await airtableFetch(
-    env,
-    config.reviewTable,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ records: [{ fields: recordFields }], typecast: true }),
-    },
-    null,
-    fetchImpl
-  );
+  const result = await airtableFetch(env, config.reviewTable, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ records: [{ fields: recordFields }], typecast: true }),
+  }, null, fetchImpl);
   if (!result.ok) {
     const status = result.status === 422 ? 503 : 502;
-    return json(
-      { ok: false, error: result.status === 422 ? "model_review_schema_not_ready" : "model_review_write_failed" },
-      status
-    );
+    return json({ ok: false, error: result.status === 422 ? "model_review_schema_not_ready" : "model_review_write_failed" }, status);
   }
   const record = result.data?.records?.[0] || {};
-  return json(
-    {
-      ok: true,
-      status: "pending_review",
-      request_id: requestId,
-      record_id: record.id || "",
-      model_id: draft.model_id,
-      keyword_profile_id: draft.keyword_profile_id,
-      model_key: draft.model_key,
-      production_mutated: false,
-    },
-    201
-  );
+  return json({
+    ok: true,
+    status: "pending_review",
+    request_id: requestId,
+    record_id: record.id || "",
+    model_id: draft.model_id,
+    keyword_profile_id: draft.keyword_profile_id,
+    model_key: draft.model_key,
+    production_mutated: false,
+  }, 201);
 }
 
 export function isKenjiModelAdminRequest(path, method = "GET") {
+  const normalized = (clean(path, 500).replace(/\/+$/g, "") || "/");
   const verb = clean(method, 10).toUpperCase();
+  if (isKenjiModelWorkflowRequest(normalized, verb)) return true;
   return (
-    (path === KENJI_MODEL_ADMIN_BASE_PATH && verb === "GET") ||
-    (path === KENJI_MODEL_ADMIN_DRAFT_PATH && verb === "POST")
+    (normalized === KENJI_MODEL_ADMIN_BASE_PATH && verb === "GET") ||
+    (normalized === KENJI_MODEL_ADMIN_DRAFT_PATH && verb === "POST")
   );
 }
 
@@ -625,6 +569,7 @@ export async function handleKenjiModelAdminRequest(request, env = {}, options = 
   const path = new URL(request.url).pathname.replace(/\/+$/g, "") || "/";
   const method = request.method.toUpperCase();
   if (!isKenjiModelAdminRequest(path, method)) return json({ ok: false, error: "not_found" }, 404);
+  if (isKenjiModelWorkflowRequest(path, method)) return handleKenjiModelWorkflowRequest(request, env, options);
   const fetchImpl = options.fetchImpl || fetch;
   if (path === KENJI_MODEL_ADMIN_BASE_PATH) return listModels(request, env, fetchImpl);
   return createDraft(request, env, options, fetchImpl);

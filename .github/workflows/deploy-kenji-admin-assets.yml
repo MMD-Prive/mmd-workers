@@ -31,6 +31,8 @@ jobs:
       LIVE_BASE: https://models.mmdbkk.com/webflow/internal/admin/kenji
       BOARD_1: https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9d12b3e0f4263a60a49a93_Kenji%20AI%20Board%201.webp
       BOARD_2: https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9d12b3919ed96761ee14e7_Kenji%20Ai%20Board%202.webp
+      GLASS_BOARD: https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9d0eb52f159f58a1a1b469_Kenji%20Glass%20board.webp
+      SIGIL_WALL: https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a61b1d19a4570eb40235c4b_SigilWall.webp
     steps:
       - uses: actions/checkout@v4
 
@@ -46,6 +48,10 @@ jobs:
           node --test webflow/internal/admin/kenji/kenji-admin-v1.test.mjs
           grep -q 'kux-board-banner' webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
           grep -q 'panelVisuals' webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
+          grep -q 'MODEL REVIEW QUEUE' webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
+          grep -q 'review-queue?status=all' webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
+          grep -q 'Kenji%20Glass%20board.webp' webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
+          grep -q 'SigilWall.webp' webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
           cat webflow/internal/admin/kenji/kenji-admin-v1.js \
               webflow/internal/admin/kenji/kenji-admin-ux-overlay.js \
               > /tmp/kenji-admin-v1.js
@@ -57,6 +63,8 @@ jobs:
           set -euo pipefail
           curl --retry 6 --retry-delay 2 --retry-all-errors -fsS -o /dev/null "$BOARD_1"
           curl --retry 6 --retry-delay 2 --retry-all-errors -fsS -o /dev/null "$BOARD_2"
+          curl --retry 6 --retry-delay 2 --retry-all-errors -fsS -o /dev/null "$GLASS_BOARD"
+          curl --retry 6 --retry-delay 2 --retry-all-errors -fsS -o /dev/null "$SIGIL_WALL"
 
       - name: Verify R2 access
         shell: bash
@@ -149,6 +157,10 @@ jobs:
           grep -q 'Review Queue' "$js_file"
           grep -q 'kux-board-banner' "$js_file"
           grep -q 'panelVisuals' "$js_file"
+          grep -q 'MODEL REVIEW QUEUE' "$js_file"
+          grep -q 'review-queue?status=all' "$js_file"
+          grep -q 'Kenji%20Glass%20board.webp' "$js_file"
+          grep -q 'SigilWall.webp' "$js_file"
           grep -q 'Kenji%20AI%20Board%201.webp' "$js_file"
           grep -q 'Kenji%20Ai%20Board%202.webp' "$js_file"
           grep -q 'ka__modelGrid' "$css_file"
@@ -162,6 +174,10 @@ jobs:
             curl -fsS -H 'Cache-Control: no-cache' "$LIVE_BASE/kenji-admin-v1.css" -o "$stable_css_file"
             if grep -q 'kux-board-banner' "$stable_js_file" \
               && grep -q 'panelVisuals' "$stable_js_file" \
+              && grep -q 'MODEL REVIEW QUEUE' "$stable_js_file" \
+              && grep -q 'review-queue?status=all' "$stable_js_file" \
+              && grep -q 'Kenji%20Glass%20board.webp' "$stable_js_file" \
+              && grep -q 'SigilWall.webp' "$stable_js_file" \
               && grep -q 'Kenji%20AI%20Board%201.webp' "$stable_js_file" \
               && grep -q 'Kenji%20Ai%20Board%202.webp' "$stable_js_file" \
               && grep -q -- '--font-ui' "$stable_css_file"; then
@@ -171,4 +187,4 @@ jobs:
             sleep 3
           done
           test "$found" = "1"
-          echo "Kenji admin stable CDN assets match the deployed R2 version after purge"
+          echo "Kenji admin stable CDN assets match the deployed R2 review workflow version after purge"
