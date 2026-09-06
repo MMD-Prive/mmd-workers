@@ -95,4 +95,7 @@ jobs:
           grep -q 'uxFriendly' "$js_file"
           grep -q 'Review Queue' "$js_file"
           grep -q 'ka__modelGrid' "$css_file"
-          echo "Kenji admin R2 assets published and user-friendly markers verified"
+          grep -q 'Kenji%20AI%20Board%201.webp' "$css_file"
+          grep -q 'Kenji%20Ai%20Board%202.webp' "$css_file"
+          grep -q -- '--font-ui' "$css_file"
+          echo "Kenji admin R2 assets published with glass-board visuals and normalized typography"
