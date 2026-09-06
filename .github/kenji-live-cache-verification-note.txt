@@ -1,1 +1,0 @@
-Kenji admin deployment must verify the stable CDN JS contains kux-board-banner and panelVisuals before declaring success.
