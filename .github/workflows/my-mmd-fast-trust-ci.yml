@@ -4,7 +4,10 @@ on:
   pull_request:
     paths:
       - "auth-worker/src/my-mmd-line-identity-bridge.js"
+      - "auth-worker/src/my-mmd-fast-trust-entitlement.js"
+      - "auth-worker/src/my-mmd-runtime-index.js"
       - "auth-worker/test/my-mmd-fast-trust.test.mjs"
+      - "auth-worker/test/my-mmd-fast-trust-entitlement.test.mjs"
       - "member-pages-worker/src/my-mmd-fast-trust-response.js"
       - "member-pages-worker/src/runtime-index.js"
       - "member-pages-worker/test/my-mmd-fast-trust-response.test.mjs"
@@ -14,7 +17,10 @@ on:
       - main
     paths:
       - "auth-worker/src/my-mmd-line-identity-bridge.js"
+      - "auth-worker/src/my-mmd-fast-trust-entitlement.js"
+      - "auth-worker/src/my-mmd-runtime-index.js"
       - "auth-worker/test/my-mmd-fast-trust.test.mjs"
+      - "auth-worker/test/my-mmd-fast-trust-entitlement.test.mjs"
       - "member-pages-worker/src/my-mmd-fast-trust-response.js"
       - "member-pages-worker/src/runtime-index.js"
       - "member-pages-worker/test/my-mmd-fast-trust-response.test.mjs"
@@ -37,11 +43,14 @@ jobs:
       - name: Syntax
         run: |
           node --check auth-worker/src/my-mmd-line-identity-bridge.js
+          node --check auth-worker/src/my-mmd-fast-trust-entitlement.js
+          node --check auth-worker/src/my-mmd-runtime-index.js
           node --check member-pages-worker/src/my-mmd-fast-trust-response.js
           node --check member-pages-worker/src/runtime-index.js
       - name: Fast Trust tests
         run: |
           node --experimental-global-webcrypto --test auth-worker/test/my-mmd-fast-trust.test.mjs
+          node --experimental-global-webcrypto --test auth-worker/test/my-mmd-fast-trust-entitlement.test.mjs
           node --experimental-global-webcrypto --test member-pages-worker/test/my-mmd-fast-trust-response.test.mjs
       - name: Existing resolver regressions
         run: |
