@@ -28,6 +28,7 @@ try {
   assert.equal(response.headers.get("x-mmd-control-room-release"), "owner-v4");
   assert.equal(response.headers.get("x-mmd-control-room-authority"), "canonical-backend");
   assert.equal(response.headers.get("x-mmd-control-room-mms-route"), "/internal/admin/mms");
+  assert.equal(response.headers.get("x-mmd-control-room-mms-therapist-app"), "https://miniapp.line.me/2011425652-YqK1F6y8");
   assert.equal(response.headers.get("x-mmd-control-room-slip-backfill-route"), "/internal/admin/payments/historical-backfill");
   assert.equal(response.headers.get("x-mmd-control-room-cta-audit"), "operator-triggered-head-check");
   assert.equal(response.headers.get("x-mmd-control-room-telegram-status"), "partial-worker-alerts-no-unified-router");
@@ -53,6 +54,9 @@ try {
   assert.match(body, /\/shop\/admin\/stock/);
   assert.match(body, /\/internal\/admin\/control-room\/protocol/);
 
+  assert.match(body, /MMS Therapist App/);
+  assert.match(body, /https:\/\/miniapp\.line\.me\/2011425652-YqK1F6y8/);
+  assert.doesNotMatch(body, /href="\/male-massage\/therapists\/me"/);
   assert.match(body, /payments-worker · Money Truth/);
   assert.match(body, /my_mmd_entitlement_resolver_v1/);
   assert.match(body, /Telegram alerts · Partial \/ Drive observed/);
