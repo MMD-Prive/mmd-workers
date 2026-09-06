@@ -25,12 +25,19 @@ ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbk
 PUBLIC_MODEL_ENABLED = "true"
 PUBLIC_MODEL_UPLOAD_ENABLED = "true"
 PUBLIC_MODEL_UPLOAD_REQUIRED = "false"
+PUBLIC_MODEL_REVIEW_BASE_URL = "https://mmdbkk.com/internal/ceo/models"
 TELEGRAM_CHAT_ID = "-1003546439681"
+TELEGRAM_PUBLIC_MODEL_THREAD_ID = "155"
 TG_THREAD_CONFIRM = "61"
 
 # Do not put secrets here.
-# TELEGRAM_BOT_TOKEN remains a Cloudflare Worker secret. Public Model notification routing uses:
-# TELEGRAM_PUBLIC_MODEL_THREAD_ID -> TELEGRAM_ADMIN_THREAD_ID -> TG_THREAD_CONFIRM.
+# TELEGRAM_BOT_TOKEN remains a Cloudflare Worker secret.
+# Public Model notifications use the existing Telegram group TELEGRAM_CHAT_ID and MUST
+# target TELEGRAM_PUBLIC_MODEL_THREAD_ID. Current Public Model topic candidate: 155.
+# There is intentionally no fallback from TELEGRAM_PUBLIC_MODEL_THREAD_ID to
+# TELEGRAM_ADMIN_THREAD_ID or TG_THREAD_CONFIRM, so an application cannot land in
+# Payments (Confirm) by accident. TELEGRAM_PUBLIC_MODEL_CHAT_ID may be set later only
+# if Public Model is moved to a separate Telegram chat.
 # Board queue reads are read-only:
 # - SIGIL_BOARD_QUEUE_JSON as non-secret JSON for smoke/dev only
 # - SIGIL_BOARD_KV production key: sigil:board:v1:cards
