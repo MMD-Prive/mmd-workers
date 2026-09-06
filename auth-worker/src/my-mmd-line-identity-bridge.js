@@ -9,6 +9,9 @@ const ENTITLEMENT_TABLE = "MMD — Member Entitlements";
 const COMMITTED_LINE_MATCH_TYPE = "line_user_id_exact";
 const COMMITTED_LINE_DECISION = "link_existing_client";
 const COMMITTED_LINE_REVIEW_STATUS = "committed";
+const FAST_TRUST_SOURCE = "line_oa_renamed_name_fast_trust";
+const FAST_TRUST_RANK = { vip: 1, svip: 2, black_card: 3 };
+const FAST_TRUST_LABEL = { vip: "VIP", svip: "SVIP", black_card: "Black Card" };
 
 export default {
   async fetch(request, env = {}, ctx) {
@@ -21,11 +24,7 @@ export default {
     const retryRequest = request.clone();
     const firstResponse = await currentWorker.fetch(request, env, ctx);
     const firstPayload = await jsonPayload(firstResponse);
-
-    // Only attempt deterministic recovery after the existing authenticated
-    // resolver explicitly says that this LINE user has no Member row mapping.
-    // Any resolver error, ambiguity or positive match remains authoritative.
-    if (!firstResponse.ok || firstPayload?.ok !== true || firstPayload?.data?.member_exists !== false) {
+    if (!firstResponse.ok || firstPayload?.ok !== true || typeof firstPayload?.data?.member_exists !== "boolean") {
       return firstResponse;
     }
 
@@ -33,8 +32,25 @@ export default {
     const lineUserId = canonicalLineId(body?.line_user_id);
     if (!lineUserId) return withRecoveryHeader(firstResponse, "invalid_line_identity");
 
+    // MMD Fast Trust is deliberately narrow. Only an MMD-controlled LINE OA
+    // renamed name associated with the exact verified LINE user id can trigger
+    // this path. Customer display names, browser claims, tags, email matches,
+    // and generic legacy parsing never enter this branch.
+    const fastTrust = await resolveLineOaFastTrust(env, lineUserId);
+    if (fastTrust.tier) {
+      if (path === STATUS_PATH) {
+        return fastTrustStatusResponse(firstResponse, firstPayload, fastTrust);
+      }
+      return fastTrustProfileResponse(firstResponse, firstPayload, lineUserId, fastTrust);
+    }
+
+    // No Fast Trust marker: retain the deterministic canonical-link recovery.
+    if (firstPayload.data.member_exists !== false) {
+      return firstResponse;
+    }
+
     const recovery = await recoverCanonicalMemberLineLink(env, lineUserId);
-    if (!recovery.linked) return withRecoveryHeader(firstResponse, recovery.reason || "unresolved");
+    if (!recovery.linked) return withRecoveryHeader(firstResponse, recovery.reason || fastTrust.reason || "unresolved");
 
     // Re-read through the normal resolver after writing only the canonical LINE
     // identity field. Membership, tier, points, packages and entitlement remain
@@ -47,6 +63,161 @@ export default {
     if (typeof currentWorker.scheduled === "function") return currentWorker.scheduled(controller, env, ctx);
   },
 };
+
+export function trustedTierFromRenamedName(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return null;
+  if (/(?:^|[^A-Za-z0-9])black\s*card$/i.test(text)) return "black_card";
+  if (/(?:^|[^A-Za-z0-9])svip$/i.test(text)) return "svip";
+  if (/(?:^|[^A-Za-z0-9])vip$/i.test(text)) return "vip";
+  return null;
+}
+
+export function displayNameFromRenamedName(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  const stripped = text
+    .replace(/(?:\s|[-–—|/])*(?:black\s*card|svip|vip)\s*$/i, "")
+    .trim();
+  return stripped.slice(0, 120) || "สมาชิก MMD";
+}
+
+export async function resolveLineOaFastTrust(env = {}, lineUserId) {
+  const lineId = canonicalLineId(lineUserId);
+  if (!lineId) return { tier: null, reason: "invalid_line_identity" };
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return { tier: null, reason: "airtable_unavailable" };
+
+  const stagingTable = String(env.AIRTABLE_TABLE_LINE_OFC_STAGING || env.AIRTABLE_LINE_OFC_CLIENT_IMPORT_STAGING_TABLE_ID || STAGING_TABLE).trim();
+  try {
+    const records = await airtableList(env, stagingTable, {
+      filterByFormula: `{line_user_id}=${formulaString(lineId)}`,
+      maxRecords: 20,
+    });
+    const candidates = records.flatMap((record) => {
+      const renamedName = String(record?.fields?.line_renamed_name || "").trim();
+      const tier = trustedTierFromRenamedName(renamedName);
+      return tier ? [{ tier, renamedName }] : [];
+    });
+    if (!candidates.length) return { tier: null, reason: "fast_trust_marker_missing" };
+
+    // Rename history can contain more than one MMD-authored recognition marker.
+    // Per policy, do not downgrade a trusted holder while history is backfilled;
+    // the strongest MMD-authored marker wins: Black Card > SVIP > VIP.
+    candidates.sort((a, b) => FAST_TRUST_RANK[b.tier] - FAST_TRUST_RANK[a.tier]);
+    const winner = candidates[0];
+    return {
+      tier: winner.tier,
+      label: FAST_TRUST_LABEL[winner.tier],
+      displayName: displayNameFromRenamedName(winner.renamedName),
+      source: FAST_TRUST_SOURCE,
+      evidenceCount: candidates.length,
+      reason: "trusted_line_oa_renamed_name",
+    };
+  } catch (error) {
+    console.warn({ event: "my_mmd_fast_trust_lookup_failed", failure_class: safeFailure(error) });
+    return { tier: null, reason: "fast_trust_lookup_unavailable" };
+  }
+}
+
+async function fastTrustStatusResponse(firstResponse, firstPayload, fastTrust) {
+  const payload = {
+    ...firstPayload,
+    data: {
+      ...firstPayload.data,
+      member_exists: true,
+      fast_trust: true,
+      tier: fastTrust.label,
+      tier_source: FAST_TRUST_SOURCE,
+      history_recovery_state: "pending",
+    },
+  };
+  return replaceJsonResponse(firstResponse, payload, fastTrust);
+}
+
+async function fastTrustProfileResponse(firstResponse, firstPayload, lineUserId, fastTrust) {
+  const existing = firstPayload?.data?.member_exists === true && firstPayload?.data?.profile
+    ? firstPayload.data.profile
+    : null;
+  const memberId = firstPayload?.data?.member_id
+    ? String(firstPayload.data.member_id).trim().slice(0, 160)
+    : await syntheticFastTrustMemberId(lineUserId);
+  const profile = overlayFastTrustProfile(existing, {
+    ...fastTrust,
+    memberId,
+  });
+  const payload = {
+    ...firstPayload,
+    data: {
+      ...firstPayload.data,
+      member_exists: true,
+      member_id: memberId,
+      profile,
+      fast_trust: true,
+      tier_source: FAST_TRUST_SOURCE,
+      history_recovery_state: "pending",
+    },
+  };
+  return replaceJsonResponse(firstResponse, payload, fastTrust);
+}
+
+export function overlayFastTrustProfile(existingProfile, { label, displayName, memberId } = {}) {
+  const existing = existingProfile && typeof existingProfile === "object" && !Array.isArray(existingProfile)
+    ? existingProfile
+    : {};
+  const existing360 = existing.customer_360 && typeof existing.customer_360 === "object" && !Array.isArray(existing.customer_360)
+    ? existing.customer_360
+    : {};
+  const existingMember = existing360.member && typeof existing360.member === "object" && !Array.isArray(existing360.member)
+    ? existing360.member
+    : {};
+  const customer360 = {
+    ...existing360,
+    member: {
+      ...existingMember,
+      display_name: String(existingMember.display_name || existing.display_name || displayName || "สมาชิก MMD").slice(0, 120),
+      member_id: String(existingMember.member_id || existing.member_id || memberId || "").slice(0, 160),
+      tier: label,
+      membership_status: "active",
+      tier_source: FAST_TRUST_SOURCE,
+      history_recovery_state: "pending",
+    },
+  };
+  return {
+    ...existing,
+    display_name: String(existing.display_name || displayName || "สมาชิก MMD").slice(0, 120),
+    member_id: String(existing.member_id || memberId || "").slice(0, 160),
+    tier: label,
+    membership_status: "active",
+    membership_start: existing.membership_start || null,
+    membership_expires_at: existing.membership_expires_at || null,
+    points: Number.isFinite(Number(existing.points)) ? Number(existing.points) : null,
+    points_records_count: Number.isInteger(Number(existing.points_records_count)) ? Number(existing.points_records_count) : null,
+    payment_status: existing.payment_status || "unavailable",
+    payment_history: Array.isArray(existing.payment_history) ? existing.payment_history : [],
+    history: Array.isArray(existing.history) ? existing.history : [],
+    tier_source: FAST_TRUST_SOURCE,
+    fast_trust: true,
+    history_recovery_state: "pending",
+    customer_360: customer360,
+  };
+}
+
+async function syntheticFastTrustMemberId(lineUserId) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`mmd-fast-trust:${lineUserId}`));
+  const hex = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `fasttrust_${hex.slice(0, 24)}`;
+}
+
+function replaceJsonResponse(response, payload, fastTrust) {
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  headers.set("content-type", "application/json; charset=utf-8");
+  headers.set("cache-control", "no-store");
+  headers.set("x-mmd-fast-trust", "true");
+  headers.set("x-mmd-tier-source", FAST_TRUST_SOURCE);
+  headers.set("x-mmd-fast-trust-tier", String(fastTrust?.tier || "").slice(0, 32));
+  headers.set("x-mmd-identity-authority", "mmd-line-oa-renamed-name");
+  return new Response(JSON.stringify(payload), { status: response.status, statusText: response.statusText, headers });
+}
 
 export async function recoverCanonicalMemberLineLink(env = {}, lineUserId) {
   const lineId = canonicalLineId(lineUserId);
