@@ -202,6 +202,8 @@ test("Model workflow is end-to-end Review → QA → Publish → Audit and write
   assert.equal(profiles[0].fields.status, "Active");
   assert.equal(profiles[0].fields.version, 1);
   assert.deepEqual(profiles[0].fields.Model, ["rec12345678901234"]);
+  assert.equal(profiles[0].fields.search_aliases, "GWs21\nEwa");
+  assert.equal(profiles[0].fields.include_in_public_kenji, "No");
   assert.equal(Object.hasOwn(profiles[0].fields, "rate"), false);
   assert.equal(Object.hasOwn(profiles[0].fields, "availability"), false);
   assert.equal(Object.hasOwn(profiles[0].fields, "approved_client_visibility"), false);
