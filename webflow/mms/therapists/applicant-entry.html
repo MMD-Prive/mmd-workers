@@ -1,0 +1,66 @@
+<!-- MMS /therapists applicant-only website entrance.
+     Public-safe guide only until the dedicated Applicant Chat backend is live.
+     Same MMS brain, separate entrances. -->
+<details id="mms-applicant-entry" class="mae">
+  <summary class="mae-summary">
+    <span class="mae-dot"></span>
+    <span class="mae-summary-copy">
+      <b class="mae-summary-title">ถามก่อนสมัคร</b>
+      <small class="mae-summary-sub">Applicant · ไม่ปน LINE ลูกค้า</small>
+    </span>
+    <span class="mae-arrow">↑</span>
+  </summary>
+
+  <div class="mae-panel">
+    <div class="mae-head">
+      <small class="mae-kicker">MMS · APPLICANT ENTRANCE</small>
+      <strong class="mae-title">ยังไม่แน่ใจว่าจะสมัครไหม ถามตัวเองจากตรงนี้ก่อนได้ครับ</strong>
+    </div>
+
+    <p class="mae-copy">
+      ช่องนี้มีไว้สำหรับคนที่สนใจงาน Therapist โดยเฉพาะ แยกจาก LINE OA ลูกค้า
+      ก่อน Applicant Chat เปิดเต็มรูปแบบ เลือกเรื่องที่อยากรู้ต่อได้เลยครับ
+    </p>
+
+    <div class="mae-grid">
+      <a class="mae-card" href="#fit">งานนี้เหมาะกับผมไหม <b class="mae-card-arrow">→</b></a>
+      <a class="mae-card" href="#faq">ยังไม่เก่งมาก สมัครได้ไหม <b class="mae-card-arrow">→</b></a>
+      <a class="mae-card" href="/apply/mms-therapist-benefits">Benefits มีอะไรบ้าง <b class="mae-card-arrow">↗</b></a>
+      <a class="mae-card" href="/male-massage/apply/mms-fast-track">อยากฝึกก่อน เริ่มตรงไหน <b class="mae-card-arrow">↗</b></a>
+    </div>
+
+    <div class="mae-actions">
+      <a class="mae-action mae-primary" href="/apply/mms-therapist">พร้อมแล้ว · สมัครเลย ↗</a>
+      <a class="mae-action" href="/apply/mms-therapist-rules">อ่าน Rules</a>
+      <a class="mae-action" href="/male-massage/therapists/login">ผ่านแล้ว · Login</a>
+    </div>
+
+    <div class="mae-lock">
+      <b class="mae-lock-title">Same MMS brain, separate entrances.</b>
+      <span class="mae-lock-copy">Applicant lane ไม่เปิดข้อมูลลูกค้า สมาชิก หรือหลังบ้าน และไม่ใช้ LINE OA ลูกค้าเป็นทางถามเรื่องสมัครงาน</span>
+    </div>
+  </div>
+</details>
+
+<style>
+.mae{position:fixed;z-index:1240;right:18px;bottom:18px;width:390px;font-family:"LINE Seed Sans TH","Noto Sans Thai","Noto Sans",system-ui,-apple-system,sans-serif;color:#08271a}
+.mae-summary{list-style:none;width:280px;margin-left:auto;min-height:58px;padding:8px 10px 8px 12px;border:1px solid rgba(255,255,255,.72);border-radius:19px;display:grid;grid-template-columns:10px 1fr 30px;gap:10px;align-items:center;background:rgba(4,31,20,.94);box-shadow:0 18px 54px rgba(0,0,0,.24);color:#fff;cursor:pointer}
+.mae-dot{width:8px;height:8px;border-radius:50%;background:#bbdd72}
+.mae-summary-title{display:block;font-size:11px;font-weight:800;line-height:1.35}
+.mae-summary-sub{display:block;margin-top:2px;color:#bdd0c4;font-size:8px;font-weight:700;line-height:1.35}
+.mae-arrow{font-size:17px;text-align:center}
+.mae-panel{margin-bottom:7px;padding:14px;border:1px solid rgba(255,255,255,.72);border-radius:24px;background:#f9fbf7;box-shadow:0 26px 80px rgba(0,0,0,.28)}
+.mae-kicker{display:block;color:#4d8060;font-size:7px;font-weight:800;letter-spacing:.12em}
+.mae-title{display:block;margin-top:5px;font-size:17px;font-weight:800;line-height:1.25;letter-spacing:-.015em}
+.mae-copy{margin:10px 0 0;color:#5e7064;font-size:11px;line-height:1.62}
+.mae-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:12px}
+.mae-card{min-height:54px;padding:10px;border:1px solid rgba(8,39,26,.1);border-radius:14px;display:flex;align-items:flex-end;justify-content:space-between;gap:8px;background:#fff;color:#173d2c;text-decoration:none;font-size:10px;font-weight:800;line-height:1.35}
+.mae-card-arrow{color:#4d8060}
+.mae-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.mae-action{min-height:38px;padding:0 11px;border:1px solid rgba(8,39,26,.12);border-radius:12px;display:inline-flex;align-items:center;background:#fff;color:#173d2c;text-decoration:none;font-size:8px;font-weight:800}
+.mae-primary{border-color:#062d1e;background:#062d1e;color:#fff}
+.mae-lock{margin-top:10px;padding:10px 11px;border-radius:14px;background:#eef3e9}
+.mae-lock-title{display:block;font-size:8px;color:#315642}
+.mae-lock-copy{display:block;margin-top:3px;color:#6c8073;font-size:7px;line-height:1.5}
+@media screen and (max-width:767px){.mae{right:9px;bottom:78px;width:calc(100vw - 18px)}.mae-summary{width:100%;margin-left:0}.mae-title{font-size:16px}.mae-copy{font-size:10px}.mae-card{font-size:9px}}
+</style>
