@@ -50,17 +50,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          list_json="$RUNNER_TEMP/r2-buckets.json"
-          npx --yes wrangler@4 r2 bucket list --json > "$list_json"
-          if node -e '
-            const fs=require("node:fs");
-            const body=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
-            const rows=Array.isArray(body)?body:(Array.isArray(body?.result)?body.result:[]);
-            process.exit(rows.some((row)=>row?.name===process.env.R2_BUCKET)?0:1);
-          ' "$list_json"; then
+          create_log="$RUNNER_TEMP/r2-bucket-create.log"
+          if npx --yes wrangler@4 r2 bucket create "${R2_BUCKET}" >"$create_log" 2>&1; then
+            cat "$create_log"
+            echo "Created R2 bucket: ${R2_BUCKET}"
+          elif grep -Eqi 'already exists|already been taken|already owned|10004' "$create_log"; then
+            cat "$create_log"
             echo "R2 bucket already exists: ${R2_BUCKET}"
           else
-            npx --yes wrangler@4 r2 bucket create "${R2_BUCKET}"
+            cat "$create_log" >&2
+            exit 1
           fi
 
       - name: Deploy member-dashboard-chat-worker
