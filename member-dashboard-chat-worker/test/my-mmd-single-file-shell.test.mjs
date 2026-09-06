@@ -101,8 +101,8 @@ test("legacy single-file module still delegates non-My-MMD routes to the existin
   assert.equal(response.headers.get("x-mmd-upstream-service"), "member-pages-worker");
 });
 
-test("wrangler production entrypoint is the canonical Lovable app front gate, not the legacy single-file shell", async () => {
+test("wrangler production entrypoint is the canonical bounded Lovable app front gate, not the legacy single-file shell", async () => {
   const wrangler = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");
-  assert.match(wrangler, /^main = "src\/my-mmd-lovable-app-front-gate\.js"$/m);
+  assert.match(wrangler, /^main = "src\/my-mmd-bounded-status-front-gate\.js"$/m);
   assert.doesNotMatch(wrangler, /^main = "src\/front-gate-single-file-shell\.js"$/m);
 });
