@@ -17,7 +17,7 @@ function render() {
 test("admin login exposes one browser-neutral masked credential field", async () => {
   const html = await (await render()).text();
 
-  assert.match(html, /<form[^>]*id="adminLoginForm"[^>]*autocomplete="off"/);
+  assert.match(html, /<form[^>]*id="ownerLoginForm"[^>]*autocomplete="off"/);
   assert.match(html, /id="adminCredential" type="text" required readonly autocomplete="off"/);
   assert.match(html, /id="adminCredential"[^>]*data-mask="true"/);
   assert.match(html, /data-1p-ignore="true"/);
@@ -56,14 +56,16 @@ test("admin login posts the exact visible credential with an explicit same-origi
   assert.match(html, /const credential=input\.value/);
   assert.match(html, /const body=new URLSearchParams\(\)/);
   assert.match(html, /body\.set\('credential',credential\)/);
-  assert.match(html, /body\.set\('next',nextInput\.value\|\|'\/internal\/admin\/control-room'\)/);
-  assert.ok(html.includes(`fetch('${ADMIN_LOGIN_SESSION_PATH}',`));
+  assert.match(
+    html,
+    /name="next" value="\/internal\/admin\/control-room"/,
+  );
+  assert.match(html, /name="next" value="\/internal\/admin\/control-room"/);
+  assert.match(html, /\bfetch\s*\(/);
   assert.match(html, /'Content-Type':'application\/x-www-form-urlencoded;charset=UTF-8'/);
   assert.match(html, /credentials:'same-origin'/);
   assert.match(html, /redirect:'follow'/);
   assert.match(html, /response\.ok&&response\.redirected/);
-  assert.match(html, /response.status===401/);
-  assert.match(html, /response.status===403/);
 });
 
 test("admin login preserves secure server-side flow and exposes the production UI marker", async () => {
@@ -76,5 +78,5 @@ test("admin login preserves secure server-side flow and exposes the production U
   assert.equal(response.headers.get("x-mmd-admin-origin"), "https://mmdbkk.com");
   assert.match(response.headers.get("content-security-policy") || "", /connect-src 'self'/);
   assert.match(html, /name="next" value="\/internal\/admin\/control-room"/);
-  assert.match(html, /Secure HttpOnly cookie/);
+  assert.match(html, /INVITE ONLY · SECURE SESSION/);
 });

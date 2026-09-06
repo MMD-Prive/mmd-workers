@@ -57,7 +57,6 @@ export function renderApprovedAdminLogin(
   </style>
 </head>
 <body data-initial-lane="${partnerFirst ? "partner" : "owner"}">
-  <span hidden>Enter the control room.</span>
 <section class="mmd-login" data-mmd-login data-mmd-page="${APPROVED_ADMIN_LOGIN_PAGE_ID}">
   <main class="shell">
     <header class="top">

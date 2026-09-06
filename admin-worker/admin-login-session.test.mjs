@@ -75,12 +75,12 @@ test("GET login renders a safe deterministic browser login form", async () => {
   assert.equal(response.headers.get("x-mmd-login-ui"), "browser-fetch-v5");
   assert.match(html, /<title>MMD Privé · Internal Login<\/title>/);
   assert.match(html, /data-mmd-page="admin-login-approved-hero"/);
-  assert.match(html, /Enter the/);
-  assert.match(html, /MMD SIGIL Internal Admin/);
+  assert.match(html, /data-lane="owner"/);
+  assert.match(html, /data-lane="partner"/);
   assert.doesNotMatch(html, /Internal Admin Chang Ewvon/);
   assert.match(html, /rel="icon" type="image\/webp"/);
   assert.match(html, /rel="apple-touch-icon"/);
-  assert.match(html, /mmd-login21/);
+  assert.match(html, /data-initial-lane="owner"/);
   assert.match(html, /method="post"/);
   assert.match(html, /action="\/internal\/admin\/login\/session"/);
   assert.doesNotMatch(html, /id="adminCredential"[^>]*name="credential"/);
