@@ -13,8 +13,44 @@ import {
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-durable-object.js";
 
+const CARE_BACK_WEBVIEW_PATHS = new Set([
+  "/member/api/care-back/public-wish",
+  "/member/api/care-back/public-wish/",
+  "/member/api/care-back/link-wish",
+  "/member/api/care-back/link-wish/",
+]);
+const CARE_BACK_WEB_ORIGINS = new Set([
+  "https://mmdbkk.com",
+  "https://www.mmdbkk.com",
+]);
+
+export function normalizeCareBackWebViewOrigin(request) {
+  if (!(request instanceof Request) || request.method !== "POST") return request;
+  let url;
+  try { url = new URL(request.url); } catch { return request; }
+  if (!CARE_BACK_WEBVIEW_PATHS.has(url.pathname) || !CARE_BACK_WEB_ORIGINS.has(url.origin)) return request;
+  if (String(request.headers.get("origin") || "").trim()) return request;
+
+  const fetchSite = String(request.headers.get("sec-fetch-site") || "").trim().toLowerCase();
+  const referer = String(request.headers.get("referer") || "").trim();
+  let trustedSameSite = fetchSite === "same-origin" || fetchSite === "same-site";
+  if (!trustedSameSite && referer) {
+    try { trustedSameSite = new URL(referer).origin === url.origin; } catch { trustedSameSite = false; }
+  }
+  if (!trustedSameSite) return request;
+
+  // Some Android/LINE WebViews omit Origin on a same-site POST. Production
+  // member-pages-worker is service-only, so restore only the verified MMD web
+  // origin for the two public CARE BACK endpoints; never relax cross-site calls.
+  const headers = new Headers(request.headers);
+  headers.set("origin", url.origin);
+  headers.set("x-mmd-webview-origin-normalized", "care-back-v1");
+  return new Request(request, { headers });
+}
+
 export default {
   async fetch(request, env, ctx) {
+    request = normalizeCareBackWebViewOrigin(request);
     if (isTrustedCareBackBookingApproval(request)) {
       return handleTrustedCareBackBookingApproval(request, env);
     }
