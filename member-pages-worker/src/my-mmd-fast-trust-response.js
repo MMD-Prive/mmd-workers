@@ -84,7 +84,10 @@ export async function applyMyMmdFastTrustResponse(request, response, env = {}) {
   const isMemberApp = path.startsWith(APP_PREFIX);
   if (!isDashboard && !isMemberApp) return response;
 
-  const session = await readSession(request, env);
+  // Dashboard reads rotate the LIFF cookie. Try the request token first, then
+  // the replacement token emitted by the response so Fast Trust survives the
+  // normal secure session-rotation boundary.
+  const session = await readSessionFromRequestOrResponse(request, response, env);
   if (!session?.lineUserId) return response;
   const fastTrust = await resolveFastTrustForLine(env, session.lineUserId);
   if (!fastTrust?.tier) return response;
@@ -125,6 +128,7 @@ function patchDashboardPayload(payload, fastTrust) {
   }
   return {
     ...payload,
+    state: payload.state === "checking" ? "resolved" : payload.state,
     data: {
       ...data,
       dashboard_state: data.dashboard_state === "checking" ? "partial" : data.dashboard_state,
@@ -151,6 +155,7 @@ function patchMemberAppPayload(path, payload, fastTrust) {
     const membership = patchMembership(asObject(payload.membership), fastTrust);
     return {
       ...payload,
+      state: payload.state === "checking" ? "resolved" : payload.state,
       greetingName: asString(payload.greetingName, 120) || fastTrust.displayName || null,
       membership,
       lifecycle: "active",
@@ -183,6 +188,7 @@ function patchMembership(membership, fastTrust) {
     lifecycle: "active",
     displayOnly: false,
     displaySource: FAST_TRUST_SOURCE,
+    resolution: "resolved",
     nextAction,
     fastTrust: fastTrustMeta(fastTrust),
   };
@@ -197,10 +203,17 @@ function fastTrustMeta(fastTrust) {
   };
 }
 
-async function readSession(request, env) {
+async function readSessionFromRequestOrResponse(request, response, env) {
+  const requestToken = cookieValue(request, SESSION_COOKIE);
+  const requestSession = await readSessionToken(requestToken, env);
+  if (requestSession) return requestSession;
+  const responseToken = setCookieValue(response, SESSION_COOKIE);
+  return readSessionToken(responseToken, env);
+}
+
+async function readSessionToken(token, env) {
   const store = env.LIFF_IDENTITY_KV;
   const secret = String(env.LIFF_SESSION_SECRET || "");
-  const token = cookieValue(request, SESSION_COOKIE);
   if (!store?.get || secret.length < 32 || !token) return null;
   try {
     const hash = await hmacHex(secret, `session:${token}`);
@@ -234,6 +247,11 @@ function cookieValue(request, name) {
     if (part.slice(0, index).trim() === name) return part.slice(index + 1).trim();
   }
   return "";
+}
+function setCookieValue(response, name) {
+  const raw = String(response.headers.get("set-cookie") || "");
+  const match = raw.match(new RegExp(`(?:^|,\\s*|;\\s*)${name}=([^;,\\s]+)`));
+  return match ? match[1] : "";
 }
 async function hmacHex(secret, value) {
   const key = await crypto.subtle.importKey(
