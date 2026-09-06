@@ -154,17 +154,34 @@ jobs:
         run: |
           set -euo pipefail
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
-            headers_file="$(mktemp)"
-            body_file="$(mktemp)"
-            http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
-              -D "$headers_file" \
-              -o "$body_file" \
-              -w "%{http_code}" \
-              "$origin/internal/admin/login?next=/internal/admin/jobs/create-job")"
-            if [ "$http_code" != "200" ] || ! grep -Eiq '^x-mmd-route-owner:[[:space:]]*admin-worker' "$headers_file" || ! grep -Eiq '^x-mmd-page:[[:space:]]*admin-login-approved-hero' "$headers_file" || ! grep -q 'Enter the' "$body_file" || ! grep -q 'control room' "$body_file"; then
-              route_owner=$(grep -Ei '^x-mmd-route-owner:' "$headers_file" | tail -1 | tr -d '\r' | cut -d ':' -f2- | xargs)
-              page_id=$(grep -Ei '^x-mmd-page:' "$headers_file" | tail -1 | tr -d '\r' | cut -d ':' -f2- | xargs)
-              echo "::error title=Admin login GET smoke failed::origin=$origin status=$http_code route_owner=$route_owner page=$page_id"
+            login_ok=0
+            http_code="000"
+            route_owner=""
+            page_id=""
+            for attempt in $(seq 1 12); do
+              headers_file="$(mktemp)"
+              body_file="$(mktemp)"
+              http_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+                -D "$headers_file" \
+                -o "$body_file" \
+                -w "%{http_code}" \
+                "$origin/internal/admin/login?next=/internal/admin/jobs/create-job")"
+              route_owner=$(grep -Ei '^x-mmd-route-owner:' "$headers_file" | tail -1 | tr -d '\r' | cut -d ':' -f2- | xargs || true)
+              page_id=$(grep -Ei '^x-mmd-page:' "$headers_file" | tail -1 | tr -d '\r' | cut -d ':' -f2- | xargs || true)
+              if [ "$http_code" = "200" ] \
+                && grep -Eiq '^x-mmd-route-owner:[[:space:]]*admin-worker' "$headers_file" \
+                && grep -Eiq '^x-mmd-page:[[:space:]]*admin-login-approved-hero' "$headers_file" \
+                && grep -q 'Enter the' "$body_file" \
+                && grep -q 'control room' "$body_file"; then
+                login_ok=1
+                echo "Admin login GET smoke passed: origin=$origin attempt=$attempt"
+                break
+              fi
+              echo "Admin login GET not converged yet: origin=$origin attempt=$attempt status=$http_code route_owner=$route_owner page=$page_id"
+              sleep 5
+            done
+            if [ "$login_ok" != "1" ]; then
+              echo "::error title=Admin login GET smoke failed::origin=$origin status=$http_code route_owner=$route_owner page=$page_id after=12-attempts"
               exit 1
             fi
 
