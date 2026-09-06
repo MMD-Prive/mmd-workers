@@ -22,10 +22,10 @@ test("retry policy avoids sent/pending duplicates and retries failed or unobserv
   assert.equal(shouldAttemptPublicModelNotification({ duplicate: true, status: "sent" }), false);
 });
 
-test("Public Model Telegram routing is dedicated and never falls back to confirm/payments", () => {
+test("Public Model uses shared chat with dedicated topic and never falls back to confirm/payments topic", () => {
+  assert.equal(publicModelChatId({ TELEGRAM_CHAT_ID: "-100123" }), "-100123");
   assert.equal(publicModelChatId({ TELEGRAM_PUBLIC_MODEL_CHAT_ID: "-100999", TELEGRAM_CHAT_ID: "-100123" }), "-100999");
-  assert.equal(publicModelChatId({ TELEGRAM_CHAT_ID: "-100123" }), "");
-  assert.equal(publicModelThreadId({ TELEGRAM_PUBLIC_MODEL_THREAD_ID: "88", TELEGRAM_ADMIN_THREAD_ID: "77", TG_THREAD_CONFIRM: "61" }), 88);
+  assert.equal(publicModelThreadId({ TELEGRAM_PUBLIC_MODEL_THREAD_ID: "155", TELEGRAM_ADMIN_THREAD_ID: "77", TG_THREAD_CONFIRM: "61" }), 155);
   assert.equal(publicModelThreadId({ TELEGRAM_ADMIN_THREAD_ID: "77", TG_THREAD_CONFIRM: "61" }), undefined);
 });
 
@@ -45,14 +45,15 @@ test("alert is privacy-light", () => {
   assert.doesNotMatch(text, /0999999999|secret-line|private@example\.com|private motivation/);
 });
 
-test("success writes pending then sent and includes one-tap review button", async () => {
+test("success writes pending then sent and routes to topic 155 with one-tap review button", async () => {
   const writes = [];
   const telegramCalls = [];
   const env = {
     AIRTABLE_API_TOKEN: "test-airtable-token",
     TELEGRAM_BOT_TOKEN: "test-telegram-token",
-    TELEGRAM_PUBLIC_MODEL_CHAT_ID: "-100999",
-    TELEGRAM_PUBLIC_MODEL_THREAD_ID: "88",
+    TELEGRAM_CHAT_ID: "-100123",
+    TELEGRAM_PUBLIC_MODEL_THREAD_ID: "155",
+    TG_THREAD_CONFIRM: "61",
     PUBLIC_MODEL_REVIEW_BASE_URL: "https://mmdbkk.com/internal/ceo/models",
     AIRTABLE_FETCH: async (url, init = {}) => {
       const method = init.method || "GET";
@@ -64,8 +65,9 @@ test("success writes pending then sent and includes one-tap review button", asyn
   const result = await notifyPublicModelApplication({ env, payload: { nickname: "Tester" }, applicationId: APPLICATION_ID });
   assert.equal(result.ok, true);
   assert.equal(telegramCalls.length, 1);
-  assert.equal(telegramCalls[0].body.chat_id, "-100999");
-  assert.equal(telegramCalls[0].body.message_thread_id, 88);
+  assert.equal(telegramCalls[0].body.chat_id, "-100123");
+  assert.equal(telegramCalls[0].body.message_thread_id, 155);
+  assert.notEqual(telegramCalls[0].body.message_thread_id, 61);
   assert.match(telegramCalls[0].body.text, new RegExp(`application_id=${APPLICATION_ID}`));
   assert.equal(telegramCalls[0].body.reply_markup.inline_keyboard[0][0].text, "เปิดใบสมัคร");
   assert.equal(telegramCalls[0].body.reply_markup.inline_keyboard[0][0].url, `https://mmdbkk.com/internal/ceo/models?application_id=${APPLICATION_ID}`);
@@ -74,7 +76,7 @@ test("success writes pending then sent and includes one-tap review button", asyn
   assert.ok(writes[1][TELEGRAM_NOTIFY_FIELDS.notifiedAt]);
 });
 
-test("missing dedicated Public Model room is audited and never falls back", async () => {
+test("shared chat without dedicated Public Model topic is audited and never falls back to confirm", async () => {
   const writes = [];
   const env = {
     AIRTABLE_API_TOKEN: "test-airtable-token",
