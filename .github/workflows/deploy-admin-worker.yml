@@ -92,6 +92,42 @@ jobs:
             kenji-knowledge-runtime-storage.test.mjs \
             kenji-public-knowledge-runtime.test.mjs
 
+      - name: Pin Kenji admin shell assets to deploy SHA
+        id: kenji_shell_pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const file = "src/index.js";
+          const version = process.env.GITHUB_SHA;
+          if (!version) throw new Error("GITHUB_SHA is unavailable");
+
+          const stableCss = "https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.css";
+          const stableJs = "https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.js";
+          const versionedCss = `${stableCss}?v=${version}`;
+          const versionedJs = `${stableJs}?v=${version}`;
+          const source = fs.readFileSync(file, "utf8");
+
+          if (!source.includes(stableCss) || !source.includes(stableJs)) {
+            throw new Error("Kenji admin stable shell asset markers are missing");
+          }
+
+          const next = source
+            .replace(stableCss, versionedCss)
+            .replace(stableJs, versionedJs);
+
+          if (!next.includes(versionedCss) || !next.includes(versionedJs)) {
+            throw new Error("Failed to pin Kenji admin shell assets to GITHUB_SHA");
+          }
+
+          fs.writeFileSync(file, next);
+          console.log(`Pinned Kenji admin shell JS/CSS to ${version}`);
+          NODE
+          node --check src/index.js
+          grep -Fq "kenji-admin-v1.css?v=${GITHUB_SHA}" src/index.js
+          grep -Fq "kenji-admin-v1.js?v=${GITHUB_SHA}" src/index.js
+
       - name: Validate Cloudflare version upload
         id: wrangler_dry_run
         shell: bash
@@ -317,6 +353,15 @@ jobs:
           cat "$body_file"
           test "$http_code" = "401"
           grep -q '"error":"unauthorized"' "$body_file"
+
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            shell_file="$(mktemp)"
+            http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$shell_file" -w "%{http_code}" \
+              "$origin/internal/admin/kenji")"
+            test "$http_code" = "200"
+            grep -Fq "kenji-admin-v1.css?v=${GITHUB_SHA}" "$shell_file"
+            grep -Fq "kenji-admin-v1.js?v=${GITHUB_SHA}" "$shell_file"
+          done
 
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
             body_file="$(mktemp)"
