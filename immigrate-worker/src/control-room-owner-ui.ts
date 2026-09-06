@@ -8,6 +8,8 @@ import { renderOwnerControlRoomV3Page } from "./control-room-owner-ui-v3";
 
 const LEGACY_MMS_CONTROL_ROOM_ROUTE = "/male-massage/therapists/login";
 const CANONICAL_MMS_CONTROL_ROOM_ROUTE = "/internal/admin/mms";
+const MMS_THERAPIST_APP_WEB_ROUTE = "/male-massage/therapists/me";
+const MMS_THERAPIST_APP_URL = "https://miniapp.line.me/2011425652-YqK1F6y8";
 const HISTORICAL_SLIP_BACKFILL_ROUTE = "/internal/admin/payments/historical-backfill";
 const CUSTOMER_DATA_ROUTE = "/internal/admin/customer-data";
 const LEGACY_LINE_NOTES_ROUTE = "/internal/ceo/line-notes-import";
@@ -33,6 +35,11 @@ const CUSTOMER_DATA_SECTION = `<section class="cr4__section cr4__reveal" id="cus
     <a class="cr4__app is-legacy" href="${LEGACY_LINE_NOTES_ROUTE}" data-cta-route="${LEGACY_LINE_NOTES_ROUTE}"><div class="cr4__appTop"><small>Legacy Surface</small><span class="cr4__routeState is-warn" data-route-state>legacy</span></div><h4>LINE Notes Import</h4><p>legacy / not production-ready: เก็บไว้เป็น reference เท่านั้น แนวคิดต้องย้ายเข้า Customer Data Console</p><code>${LEGACY_LINE_NOTES_ROUTE}</code><b>ดู Legacy →</b></a>
   </div></section>`;
 
+const MMS_THERAPIST_APP_CARD = `<a class="cr4__app is-prime" href="${MMS_THERAPIST_APP_URL}" data-mms-therapist-miniapp="published">
+  <div class="cr4__appTop"><small>Therapist App</small><span class="cr4__routeState is-ready" data-route-state>LINE</span></div>
+  <h4>MMS Therapist App</h4><p>เปิด MMS Therapist Mini App สำหรับ approved therapist เพื่อจัดการ profile, rates, rules และ availability</p><code>${MMS_THERAPIST_APP_URL}</code><b>เปิด MMS Therapist App →</b>
+</a>`;
+
 function applyControlRoomCanonicalPatches(html: string): string {
   let canonicalHtml = html
     .split(LEGACY_MMS_CONTROL_ROOM_ROUTE).join(CANONICAL_MMS_CONTROL_ROOM_ROUTE)
@@ -43,6 +50,10 @@ function applyControlRoomCanonicalPatches(html: string): string {
     .split("Control Room รวมทางเข้าล่าสุดของ Admin, Payments, Kenji, Access, CEO, Studio, MMS, Model และ Shop ไว้เป็นแผนเดียวกันครับ")
     .join("Control Room รวมทางเข้าล่าสุดของ Customer Data, Sessions, Payments, Kenji, Access, CEO, Studio, MMS, Model และ Shop ไว้เป็นแผนเดียวกันครับ")
     .split("Client → Session → Job → Payment Proof → Review").join("Customer Data → Client → Session → Job → Payment Proof → Review")
+    .replace(
+      /<a class="cr4__app\s*" href="\/male-massage\/therapists\/me" data-cta-route="\/male-massage\/therapists\/me">[\s\S]*?<\/a>/,
+      MMS_THERAPIST_APP_CARD,
+    )
     .replace(/<a class="cr4__app\s*" href="\/internal\/ceo\/line-notes-import"[\s\S]*?<\/a>/, `<a class="cr4__app is-prime" href="${CUSTOMER_DATA_ROUTE}" data-cta-route="${CUSTOMER_DATA_ROUTE}"><div class="cr4__appTop"><small>Canonical Console</small><span class="cr4__routeState" data-route-state>planned</span></div><h4>Customer Data</h4><p>นำเข้า LINE OFC / notes / identity evidence ต้องไปที่ Customer Data Console แทน LINE Notes Import เดิม</p><code>${CUSTOMER_DATA_ROUTE}</code><b>เปิด Customer Data →</b></a>`);
 
   if (!canonicalHtml.includes(`href=\"${CUSTOMER_DATA_ROUTE}\"`)) {
@@ -97,6 +108,7 @@ export function renderOwnerControlRoomPage(): Response {
   headers.set("x-mmd-control-room-release", "owner-v4");
   headers.set("x-mmd-control-room-authority", "canonical-backend");
   headers.set("x-mmd-control-room-mms-route", CANONICAL_MMS_CONTROL_ROOM_ROUTE);
+  headers.set("x-mmd-control-room-mms-therapist-app", MMS_THERAPIST_APP_URL);
   headers.set("x-mmd-control-room-slip-backfill-route", HISTORICAL_SLIP_BACKFILL_ROUTE);
   headers.set("x-mmd-control-room-customer-data-route", CUSTOMER_DATA_ROUTE);
   headers.set("x-mmd-control-room-line-notes-import", "legacy-not-production-ready");
