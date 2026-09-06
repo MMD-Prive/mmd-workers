@@ -366,7 +366,7 @@ jobs:
             http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -D "$shell_headers" -o "$shell_file" -w "%{http_code}" \
               "$origin/internal/admin/kenji")"
             test "$http_code" = "303"
-            grep -qi '^location: /internal/admin/login?next=%2Finternal%2Fadmin%2Fkenji' "$shell_headers"
+            grep -Fqi "location: ${origin}/internal/admin/login?next=%2Finternal%2Fadmin%2Fkenji" "$shell_headers"
 
             body_file="$(mktemp)"
             http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body_file" -w "%{http_code}" \
