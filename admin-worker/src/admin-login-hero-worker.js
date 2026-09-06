@@ -65,6 +65,9 @@ const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
   "https://mmdbkk.com",
   "https://www.mmdbkk.com",
 ]);
+const MMS_PARTNER_ROLE = "mms_partner";
+const MMS_PARTNER_PAGE_PATH = "/internal/admin/mms";
+const MMS_PARTNER_API_PREFIX = "/v1/admin/mms";
 
 const ALLOWED_NEXT_PATHS = [
   "/internal/admin",
@@ -72,7 +75,7 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/admin/customer-data",
   "/internal/admin/dashboard",
   "/internal/admin/model-applications",
-  "/internal/admin/mms",
+  MMS_PARTNER_PAGE_PATH,
   "/internal/admin/payments",
   "/internal/admin/jobs/create-session",
   "/internal/admin/jobs/create-job",
@@ -212,8 +215,25 @@ async function applyCredentialBoundAdminGate(request, env, path, method) {
 
   const actor = await readAdminGateActor(request, env);
   if (actor) {
+    if (actor.role === MMS_PARTNER_ROLE && !isMmsPartnerAllowedPath(path)) {
+      if (method === "HEAD" || isApiAdminPath(path)) {
+        return { response: strictJson(request, env, { ok: false, error: "mms_partner_scope_forbidden" }, 403) };
+      }
+      const origin = new URL(request.url).origin;
+      return {
+        response: new Response(null, {
+          status: 303,
+          headers: adminGateHeaders(request, env, {
+            location: `${origin}${MMS_PARTNER_PAGE_PATH}`,
+            "x-mmd-admin-gate": "mms-partner-scope",
+          }),
+        }),
+      };
+    }
+
     const headers = new Headers(request.headers);
     headers.set("x-mmd-admin-actor", actor.id || "per");
+    headers.set("x-mmd-admin-role", actor.role || "admin");
     headers.set("x-mmd-admin-source", "credential-bound-session");
     return {
       request: new Request(request, { headers }),
@@ -243,6 +263,10 @@ function isGateBypassedAdminPath(path, method) {
   if (path === ADMIN_LOGIN_SESSION_PATH) return true;
   if (path === ADMIN_DASHBOARD_API_PATH && (method === "GET" || method === "HEAD")) return true;
   return false;
+}
+
+function isMmsPartnerAllowedPath(path) {
+  return path === MMS_PARTNER_PAGE_PATH || path === MMS_PARTNER_API_PREFIX || path.startsWith(`${MMS_PARTNER_API_PREFIX}/`);
 }
 
 function isBrowserAdminPath(path) {
@@ -279,24 +303,38 @@ async function handleCredentialBoundAdminLogin(request, env) {
   }
 
   const code = String(payload.access_code || payload.code || payload.credential || "").trim();
-  const next = sanitizeNextPath(payload.next || "");
+  const requestedNext = sanitizeNextPath(payload.next || "");
   const wantsJson = request.headers.get("x-mmd-login-fetch") === "1";
-  if (!code) return adminLoginFailure(request, env, next, "missing_access_code", "กรุณาใส่รหัส Admin", 400, wantsJson);
+  if (!code) return adminLoginFailure(request, env, requestedNext, "missing_access_code", "กรุณาใส่รหัสสำหรับเข้าใช้งาน", 400, wantsJson);
 
-  const secret = getCredentialBoundAdminLoginCredential(env);
-  if (!secret) {
-    return adminLoginFailure(request, env, next, "admin_login_credential_missing", "ระบบรหัส Admin ยังไม่พร้อม", 503, wantsJson);
+  const adminSecret = getCredentialBoundAdminLoginCredential(env);
+  if (!adminSecret) {
+    return adminLoginFailure(request, env, requestedNext, "admin_login_credential_missing", "ระบบรหัส Admin ยังไม่พร้อม", 503, wantsJson);
   }
-  if (code !== secret) {
-    return adminLoginFailure(request, env, next, "invalid_access_code", "รหัสยังไม่ถูกต้อง", 401, wantsJson);
+  const partnerSecret = String(env.MMS_PARTNER_ACCESS_CODE || "").trim();
+  if (partnerSecret && partnerSecret === adminSecret) {
+    return adminLoginFailure(request, env, requestedNext, "mms_partner_credential_collision", "รหัส Partner ต้องแยกจากรหัส Owner", 503, wantsJson);
   }
+
+  let actor;
+  let next;
+  if (code === adminSecret) {
+    actor = { id: "per", role: "admin" };
+    next = requestedNext;
+  } else if (partnerSecret && code === partnerSecret) {
+    actor = { id: "mms-partner", role: MMS_PARTNER_ROLE };
+    next = MMS_PARTNER_PAGE_PATH;
+  } else {
+    return adminLoginFailure(request, env, requestedNext, "invalid_access_code", "รหัสยังไม่ถูกต้อง", 401, wantsJson);
+  }
+
   if (String(env.ADMIN_LOGIN_CREDENTIAL || "").trim() && !String(env.ADMIN_SESSION_SECRET || env.SESSION_SECRET || "").trim()) {
     return adminLoginFailure(request, env, next, "admin_session_secret_missing", "ระบบ session Admin ยังไม่พร้อม", 503, wantsJson);
   }
 
   let cookie;
   try {
-    cookie = await createCredentialBoundAdminSession(request, { id: "per", role: "admin" }, env);
+    cookie = await createCredentialBoundAdminSession(request, actor, env);
   } catch {
     return adminLoginFailure(request, env, next, "admin_session_unavailable", "ระบบ session Admin ยังไม่พร้อม", 503, wantsJson);
   }
@@ -304,12 +342,13 @@ async function handleCredentialBoundAdminLogin(request, env) {
   const headers = adminGateHeaders(request, env, {
     "set-cookie": adminSessionCookie(request, cookie, Math.floor(ADMIN_GATE_TTL_MS / 1000)),
     "x-mmd-admin-login": "session-created",
+    "x-mmd-admin-role": actor.role,
     "x-mmd-admin-next": next,
   });
   if (wantsJson) {
     headers.set("content-type", "application/json; charset=utf-8");
     headers.set("cache-control", "no-store, max-age=0");
-    return new Response(JSON.stringify({ ok: true, next }), { status: 200, headers });
+    return new Response(JSON.stringify({ ok: true, next, role: actor.role }), { status: 200, headers });
   }
   headers.set("location", next);
   return new Response(null, { status: 303, headers });
