@@ -45,7 +45,7 @@ test("alert is privacy-light", () => {
   assert.doesNotMatch(text, /0999999999|secret-line|private@example\.com|private motivation/);
 });
 
-test("success writes pending then sent and routes to topic 155 with one-tap review button", async () => {
+test("success writes pending then sent and routes to dedicated topic with one-tap review button", async () => {
   const writes = [];
   const telegramCalls = [];
   const env = {
