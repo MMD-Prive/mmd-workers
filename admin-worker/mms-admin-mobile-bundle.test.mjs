@@ -17,7 +17,7 @@ test('MMS Admin MB V1 is served after the approve layer', () => {
   const html = rendered();
   assert.ok(html.includes(MMS_ADMIN_MB_MARKER));
   assert.match(html, /data-mms-admin-mb="v1"/);
-  assert.match(html, /MMS · MOBILE BUNDLE V1/);
+  assert.match(html, /mms-mb-topbar/);
   assert.match(runtimeSource, /wireMmsAdminMobileBundle\(wireMmsApproveUi\(renderMmsAdminPage\(\)\)\)/);
 });
 
