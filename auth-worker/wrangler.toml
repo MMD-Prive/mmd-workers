@@ -1,5 +1,5 @@
 name = "mmd-auth-worker"
-main = "src/my-mmd-runtime-index.js"
+main = "src/my-mmd-line-identity-bridge.js"
 compatibility_date = "2026-01-20"
 
 # Narrow production ownership for the server-to-server My MMD operator contract.
