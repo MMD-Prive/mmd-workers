@@ -24,7 +24,14 @@ test("admin login exposes one browser-neutral masked credential field", async ()
   assert.match(html, /data-lpignore="true"/);
   assert.match(html, /data-bwignore="true"/);
   assert.match(html, /data-form-type="other"/);
-  assert.doesNotMatch(html, /autocomplete="current-password"/);
+  assert.match(
+    html,
+    /id="partnerPassword"[^>]*type="password"[^>]*autocomplete="current-password"/,
+  );
+  assert.doesNotMatch(
+    html,
+    /id="adminCredential"[^>]*autocomplete="current-password"/,
+  );
   assert.doesNotMatch(html, /id="adminCredential"[^>]*name="credential"/);
   assert.doesNotMatch(html, /id="adminCredential"[^>]*type="password"/);
 });
