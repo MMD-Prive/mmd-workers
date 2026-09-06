@@ -38,7 +38,7 @@ test('valid credential-bound browser cookie remains accepted on MMS admin page',
   assert.equal(response.headers.get('x-mmd-admin-build'), 'test-build-sha');
   assert.equal(response.headers.get('x-mmd-admin-surface'), 'mms-admin');
   const body = await response.text();
-  assert.match(body, /MMS · Internal Operations/);
+  assert.match(body, /MMS · PARTNER OPERATIONS|MMS Partner Operations/);
   assert.match(body, /<meta name="mmd-admin-build" content="test-build-sha">/);
   assert.match(body, /data-mmd-admin-build="test-build-sha"/);
 });
