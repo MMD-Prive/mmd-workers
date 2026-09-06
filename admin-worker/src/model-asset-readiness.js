@@ -11,16 +11,66 @@ const MODEL_LOOKUP_FIELDS = [
   "model_code", "model_lookup_key", "unique_key", "aliases", "alias",
 ];
 const ROUTES = Object.freeze({
+  ceo: "/internal/ceo",
   asset_console: "/internal/ceo/models",
+  studio: "/internal/admin/studio",
   studio_upload: "/internal/admin/studio/upload",
   studio_review: "/internal/admin/studio/review",
   model_preview: "/internal/admin/studio/model-preview",
+  create_session: "/internal/admin/jobs/create-session",
+});
+const LEGACY_ROUTE_MAP = Object.freeze({
+  "/ceo": ROUTES.ceo,
+  "/ceo/models": ROUTES.asset_console,
+  "/studio": ROUTES.studio,
+  "/sigil/admin/studio": ROUTES.studio,
+  "/sigil/admin/studio/upload": ROUTES.studio_upload,
+  "/sigil/admin/studio/review": ROUTES.studio_review,
+  "/sigil/admin/studio/model-preview": ROUTES.model_preview,
+  "/sigil/admin/models": ROUTES.asset_console,
+  "/sigil/admin/jobs/create-session": ROUTES.create_session,
+  "/internal/ceo/dashboard": ROUTES.ceo,
+});
+const WORKFLOW_CTA_V3 = Object.freeze({
+  studio: Object.freeze({
+    asset_console: Object.freeze({ label: "Asset Console", route: ROUTES.asset_console }),
+  }),
+  upload: Object.freeze({
+    asset_console: Object.freeze({ label: "Asset Console", route: ROUTES.asset_console }),
+  }),
+  review: Object.freeze({
+    needs_review: Object.freeze({ label: "Back to Upload", route: ROUTES.studio_upload }),
+    approved_for_preview: Object.freeze({ label: "Open Preview", route: ROUTES.model_preview }),
+    hold: Object.freeze({ label: "Return to Asset Console", route: ROUTES.asset_console }),
+  }),
+  preview: Object.freeze({
+    back_to_review: Object.freeze({ label: "Back to Review", route: ROUTES.studio_review }),
+    asset_console: Object.freeze({ label: "Asset Console", route: ROUTES.asset_console }),
+  }),
 });
 
-export { MODEL_ASSET_READINESS_PATH };
+export { MODEL_ASSET_READINESS_PATH, ROUTES, WORKFLOW_CTA_V3 };
 
 export function isModelAssetReadinessRequest(path, method = "GET") {
   return normalizePath(path) === MODEL_ASSET_READINESS_PATH && String(method || "GET").toUpperCase() === "GET";
+}
+
+export function normalizeModelAssetCtaRoute(value) {
+  const raw = clean(value);
+  if (!raw) return "";
+  let parsed;
+  try {
+    parsed = new URL(raw, "https://mmdbkk.com");
+  } catch {
+    return raw;
+  }
+  if (parsed.origin !== "https://mmdbkk.com" && parsed.origin !== "https://www.mmdbkk.com") return raw;
+  const path = normalizePath(parsed.pathname);
+  let canonical = LEGACY_ROUTE_MAP[path] || path;
+  if (path.startsWith("/sigil/admin/studio/")) {
+    canonical = `${ROUTES.studio}${path.slice("/sigil/admin/studio".length)}`;
+  }
+  return `${canonical}${parsed.search}${parsed.hash}`;
 }
 
 export function validatePublicModelAssetPath(value, { allowPrefix = false } = {}) {
@@ -65,10 +115,10 @@ export function buildModelAssetReadiness(checks = {}) {
   const next = !normalized.canonical_record
     ? { label: "Open Studio Upload", route: ROUTES.studio_upload, reason: "canonical_record_missing" }
     : !normalized.r2_migration
-      ? { label: "Open Model Asset Console", route: ROUTES.asset_console, reason: "r2_migration_missing" }
+      ? { label: "Open Asset Console", route: ROUTES.asset_console, reason: "r2_migration_missing" }
       : score < 6
         ? { label: "Open Studio Review", route: ROUTES.studio_review, reason: "asset_review_required" }
-        : { label: "Open Model Preview", route: ROUTES.model_preview, reason: "final_preview_required" };
+        : { label: "Open Final Preview", route: ROUTES.model_preview, reason: "final_preview_required" };
   return {
     ...normalized,
     score,
@@ -201,6 +251,8 @@ export async function handleModelAssetReadinessRequest(request, env, ctx, coreWo
     matched_name: "",
     model: null,
     readiness,
+    cta_router_version: "v3",
+    workflow_cta: WORKFLOW_CTA_V3,
     routes: ROUTES,
     next_action: readiness.next,
     published: false,
@@ -224,7 +276,8 @@ function assetResponse({ query, source, model, found, legacy = null }) {
     primary_image_key: model.primary_image_key,
     is_migrated_to_r2: model.is_migrated_to_r2,
     readiness,
-    model,
+    cta_router_version: "v3",
+    workflow_cta: WORKFLOW_CTA_V3,
     routes: ROUTES,
     next_action: readiness.next,
     public_preview: model.primary_image_url ? { safe: true, url: model.primary_image_url } : { safe: false, url: "" },
