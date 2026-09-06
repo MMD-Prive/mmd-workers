@@ -45,6 +45,7 @@ import {
   isPublicModelApplicationReviewRequest,
 } from "./public-model-application-review.js";
 import { createCredentialBoundAdminSession, getCredentialBoundAdminLoginCredential, readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
+import { activateMmsPartner, authenticateMmsPartner, recoverMmsPartner } from "./mms-partner-auth-store.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
@@ -302,30 +303,58 @@ async function handleCredentialBoundAdminLogin(request, env) {
     return strictJson(request, env, { ok: false, error: "invalid_json" }, 400);
   }
 
-  const code = String(payload.access_code || payload.code || payload.credential || "").trim();
+  const action = String(payload.action || "owner_login").trim();
   const requestedNext = sanitizeNextPath(payload.next || "");
   const wantsJson = request.headers.get("x-mmd-login-fetch") === "1";
-  if (!code) return adminLoginFailure(request, env, requestedNext, "missing_access_code", "กรุณาใส่รหัสสำหรับเข้าใช้งาน", 400, wantsJson);
 
-  const adminSecret = getCredentialBoundAdminLoginCredential(env);
-  if (!adminSecret) {
-    return adminLoginFailure(request, env, requestedNext, "admin_login_credential_missing", "ระบบรหัส Admin ยังไม่พร้อม", 503, wantsJson);
+  if (action === "partner_signup") {
+    const username = String(payload.username || "").trim();
+    const password = String(payload.password || "");
+    const invite = String(payload.invite_code || "").trim();
+    const inviteSecret = String(env.MMS_PARTNER_ACCESS_CODE || "").trim();
+    const adminSecret = getCredentialBoundAdminLoginCredential(env);
+    if (!inviteSecret) return strictJson(request, env, { ok: false, error: "partner_activation_unavailable" }, 503);
+    if (adminSecret && inviteSecret === adminSecret) {
+      return strictJson(request, env, { ok: false, error: "mms_partner_credential_collision" }, 503);
+    }
+    if (!invite || invite !== inviteSecret) return strictJson(request, env, { ok: false, error: "partner_activation_failed" }, 401);
+    const result = await activateMmsPartner(env, { username, password });
+    if (!result.ok) return strictJson(request, env, { ok: false, error: result.error || "partner_activation_failed" }, result.status || 400);
+    return strictJson(request, env, { ok: true, username: result.username, recovery_code: result.recovery_code }, 201);
   }
-  const partnerSecret = String(env.MMS_PARTNER_ACCESS_CODE || "").trim();
-  if (partnerSecret && partnerSecret === adminSecret) {
-    return adminLoginFailure(request, env, requestedNext, "mms_partner_credential_collision", "รหัส Partner ต้องแยกจากรหัส Owner", 503, wantsJson);
+
+  if (action === "partner_recover") {
+    const result = await recoverMmsPartner(env, {
+      username: payload.username,
+      recovery_code: payload.recovery_code,
+      new_password: payload.new_password,
+    });
+    if (!result.ok) return strictJson(request, env, { ok: false, error: "partner_recovery_failed" }, result.status || 401);
+    return strictJson(request, env, { ok: true, username: result.username, recovery_code: result.recovery_code }, 200);
   }
 
   let actor;
   let next;
-  if (code === adminSecret) {
-    actor = { id: "per", role: "admin" };
-    next = requestedNext;
-  } else if (partnerSecret && code === partnerSecret) {
-    actor = { id: "mms-partner", role: MMS_PARTNER_ROLE };
+  if (action === "partner_login") {
+    const result = await authenticateMmsPartner(env, { username: payload.username, password: payload.password });
+    if (!result.ok) {
+      const status = result.status === 429 ? 429 : result.status >= 500 ? result.status : 401;
+      return adminLoginFailure(request, env, MMS_PARTNER_PAGE_PATH, "partner_login_failed", "เข้าสู่ระบบไม่สำเร็จ", status, wantsJson);
+    }
+    actor = { id: result.actor_id || "mms-partner", role: MMS_PARTNER_ROLE, auth_method: "password" };
     next = MMS_PARTNER_PAGE_PATH;
   } else {
-    return adminLoginFailure(request, env, requestedNext, "invalid_access_code", "รหัสยังไม่ถูกต้อง", 401, wantsJson);
+    const code = String(payload.access_code || payload.code || payload.credential || "").trim();
+    if (!code) return adminLoginFailure(request, env, requestedNext, "missing_access_code", "กรุณาใส่รหัสสำหรับเข้าใช้งาน", 400, wantsJson);
+    const adminSecret = getCredentialBoundAdminLoginCredential(env);
+    if (!adminSecret) return adminLoginFailure(request, env, requestedNext, "admin_login_credential_missing", "ระบบรหัส Admin ยังไม่พร้อม", 503, wantsJson);
+    const inviteSecret = String(env.MMS_PARTNER_ACCESS_CODE || "").trim();
+    if (inviteSecret && inviteSecret === adminSecret) {
+      return adminLoginFailure(request, env, requestedNext, "mms_partner_credential_collision", "รหัส Partner ต้องแยกจากรหัส Owner", 503, wantsJson);
+    }
+    if (code !== adminSecret) return adminLoginFailure(request, env, requestedNext, "invalid_access_code", "รหัสยังไม่ถูกต้อง", 401, wantsJson);
+    actor = { id: "per", role: "admin", auth_method: "credential" };
+    next = requestedNext;
   }
 
   if (String(env.ADMIN_LOGIN_CREDENTIAL || "").trim() && !String(env.ADMIN_SESSION_SECRET || env.SESSION_SECRET || "").trim()) {
@@ -514,3 +543,4 @@ function adminGateHeaders(request, env, extra = {}) {
   headers.set("x-mmd-admin-gate-version", "credential-bound-v1");
   return headers;
 }
+export { MmsPartnerAuthStore } from "./mms-partner-auth-store.js";

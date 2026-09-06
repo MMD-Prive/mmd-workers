@@ -714,3 +714,13 @@ bucket_name = "mmd-private-public-model-uploads"
 # AIRTABLE_API_KEY
 # INTERNAL_TOKEN
 # AUTH_SERVICE_ADMIN_TO_EVENTS
+
+# MMS Partner account credentials and recovery state.
+# Raw password/recovery values are never stored; only salted PBKDF2 hashes live in this DO.
+[[durable_objects.bindings]]
+name = "MMS_PARTNER_AUTH"
+class_name = "MmsPartnerAuthStore"
+
+[[migrations]]
+tag = "v2026-09-06-mms-partner-auth"
+new_sqlite_classes = ["MmsPartnerAuthStore"]
