@@ -72,6 +72,56 @@ jobs:
           console.log("LIFF gateway Airtable read preflight passed");
           NODE
 
+      - name: Verify Birthday Wish Airtable write access
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { createHash, randomUUID } = require("node:crypto");
+          const token = String(process.env.AIRTABLE_API_KEY || "").trim();
+          const base = String(process.env.AIRTABLE_BASE_ID || "").trim();
+          const table = "tblvMJjYXy29mgDLb";
+          const now = new Date().toISOString();
+          const nonce = randomUUID().replace(/-/g, "");
+          const requestId = `gha-wish-preflight-${process.env.GITHUB_RUN_ID}-${nonce.slice(0, 12)}`;
+          const hash = createHash("sha256").update(`gha-wish-preflight:${requestId}`).digest("hex");
+          const fields = {
+            wish_id: `wish_${nonce}`,
+            campaign_id: "care_back",
+            verified_customer_ref_hash: hash,
+            wish_text: "GitHub Birthday Wish storage preflight",
+            wish_status: "completed",
+            idempotency_key: requestId,
+            submitted_at: now,
+            completed_at: now,
+            public_display_text: "MMD has received your birthday wish.",
+            source: "member_page",
+            source_path: "/promotion/6-years-care-back/wish",
+            language: "en",
+            display_version: "care_back_public_v1",
+            payload_json: JSON.stringify({ schema_version: 2, campaign_id: "care_back", wish_kind: "deployment_preflight" }),
+            created_at: now,
+            updated_at: now,
+          };
+          const endpoint = `https://api.airtable.com/v0/${base}/${table}`;
+          const create = await fetch(endpoint, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+            body: JSON.stringify({ fields, typecast: false }),
+          });
+          const created = await create.json().catch(() => ({}));
+          if (!create.ok || !created?.id) {
+            const type = String(created?.error?.type || `HTTP_${create.status}`).slice(0, 120);
+            const message = String(created?.error?.message || "").slice(0, 180);
+            throw new Error(`Birthday Wish Airtable write preflight failed: ${type}${message ? `: ${message}` : ""}`);
+          }
+          const remove = await fetch(`${endpoint}/${encodeURIComponent(created.id)}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!remove.ok) throw new Error(`Birthday Wish Airtable cleanup failed: HTTP_${remove.status}`);
+          console.log("Birthday Wish Airtable write preflight passed and synthetic record was removed");
+          NODE
+
       - name: Install dependencies
         run: |
           npm ci
@@ -94,6 +144,57 @@ jobs:
 
       - name: Deploy member-pages-worker
         run: npx --yes wrangler@4 deploy --keep-vars --config member-pages-worker/wrangler.toml
+
+      - name: Smoke production public Wish endpoint
+        shell: bash
+        run: |
+          node <<'NODE'
+          const token = String(process.env.AIRTABLE_API_KEY || "").trim();
+          const base = String(process.env.AIRTABLE_BASE_ID || "").trim();
+          const table = "tblvMJjYXy29mgDLb";
+          const requestId = `prod-wish-smoke-${process.env.GITHUB_RUN_ID}-${String(process.env.GITHUB_SHA || "").slice(0, 12)}`;
+          const endpoint = "https://mmdbkk.com/member/api/care-back/public-wish";
+          let response;
+          let payload = null;
+          try {
+            response = await fetch(endpoint, {
+              method: "POST",
+              redirect: "manual",
+              headers: {
+                accept: "application/json",
+                "content-type": "application/json",
+                origin: "https://mmdbkk.com",
+                referer: "https://mmdbkk.com/promotion/6-years-care-back/wish",
+              },
+              body: JSON.stringify({
+                wish_text: "Production public Wish route smoke",
+                request_id: requestId,
+                language: "en",
+              }),
+            });
+            payload = await response.json().catch(() => null);
+          } finally {
+            const formula = `AND({campaign_id}='care_back',{idempotency_key}='${requestId}')`;
+            const lookup = new URL(`https://api.airtable.com/v0/${base}/${table}`);
+            lookup.searchParams.set("filterByFormula", formula);
+            lookup.searchParams.set("maxRecords", "2");
+            const foundResponse = await fetch(lookup, { headers: { Authorization: `Bearer ${token}` } });
+            const found = await foundResponse.json().catch(() => ({}));
+            for (const record of Array.isArray(found?.records) ? found.records : []) {
+              if (!record?.id) continue;
+              await fetch(`https://api.airtable.com/v0/${base}/${table}/${encodeURIComponent(record.id)}`, {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${token}` },
+              }).catch(() => null);
+            }
+          }
+          const code = String(payload?.error?.code || "").slice(0, 120);
+          console.log(`Public Wish production smoke: HTTP ${response?.status || 0}; ok=${payload?.ok === true}; state=${String(payload?.state || "")}; code=${code || "none"}`);
+          if (!response || response.status !== 200 || payload?.ok !== true || payload?.state !== "completed") {
+            throw new Error(`Public Wish production smoke failed: HTTP_${response?.status || 0}${code ? ` ${code}` : ""}`);
+          }
+          console.log("Public Wish production endpoint accepted and persisted a synthetic wish; smoke record was removed");
+          NODE
 
       - name: Record deployment receipt
         shell: bash
