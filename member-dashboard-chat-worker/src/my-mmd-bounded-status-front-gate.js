@@ -5,6 +5,7 @@ const STATUS_UI_MODE_HEADER = "x-mmd-liff-ui-mode";
 const STATUS_UI_MODE = "auth-bridge-only";
 const HARD_TIMEOUT_MS = 12_000;
 const MANUAL_RETRY_WINDOW_MS = 120_000;
+const SESSION_STATUS_ENDPOINT = "/member/api/liff/status";
 
 function hardTimeoutGate(nonce) {
   return `<script nonce="${nonce}" id="mmd-status-hard-timeout-gate">
@@ -39,13 +40,13 @@ function hardTimeoutGate(nonce) {
     if (message) {
       message.textContent = retryAlreadyUsed
         ? "การตรวจสอบรอบนี้ยังไม่สำเร็จครับ ระบบจะไม่วนยืนยันซ้ำเอง กลับ My MMD เพื่อดูสถานะล่าสุดได้เลย"
-        : "ยังยืนยันข้อมูลสมาชิกไม่ได้ครับ ตรวจสถานะอีกครั้งได้หนึ่งรอบ หรือกลับ My MMD ก่อน";
+        : "ยังยืนยัน LINE Session ไม่สำเร็จครับ ตรวจสถานะอีกครั้งได้หนึ่งรอบ หรือกลับ My MMD ก่อน";
     }
 
     const veil = document.getElementById("mmd-status-bridge-veil");
     if (veil) {
       veil.setAttribute("role", "alert");
-      veil.setAttribute("aria-label", "ยังยืนยันข้อมูลสมาชิกไม่ได้");
+      veil.setAttribute("aria-label", "ยังยืนยัน LINE Session ไม่สำเร็จ");
     }
 
     const back = document.createElement("button");
@@ -78,6 +79,21 @@ function hardTimeoutGate(nonce) {
 </script>`;
 }
 
+function rewriteSessionVerificationBridge(html) {
+  let output = String(html || "");
+
+  // The auth bridge must verify that the signed LINE session exists, not that a
+  // canonical Member row already exists. New and legacy-only customers are
+  // valid My MMD lifecycle states and must be allowed through after LINE auth.
+  output = output.replace(
+    /const profileEndpoint = ["']\/member\/api\/liff\/profile["'];/,
+    `const statusEndpoint = "${SESSION_STATUS_ENDPOINT}";`,
+  );
+  output = output.replace(/fetch\(profileEndpoint,/g, "fetch(statusEndpoint,");
+  output = output.replaceAll("Member Session", "LINE Session");
+  return output;
+}
+
 async function applyBoundedStatusRecovery(request, response) {
   if (request.method === "HEAD" || !response.ok) return response;
   if (response.headers.get(STATUS_UI_MODE_HEADER) !== STATUS_UI_MODE) return response;
@@ -85,15 +101,24 @@ async function applyBoundedStatusRecovery(request, response) {
   const contentType = String(response.headers.get("content-type") || "").toLowerCase();
   if (!contentType.includes("text/html")) return response;
 
-  const html = await response.text();
-  if (html.includes('id="mmd-status-hard-timeout-gate"')) return response;
-
-  const nonceMatch = html.match(/<script\b[^>]*\bnonce=["']([^"']+)["']/i);
-  if (!nonceMatch || !html.includes("</body>")) {
+  const html = rewriteSessionVerificationBridge(await response.text());
+  if (html.includes('id="mmd-status-hard-timeout-gate"')) {
     return new Response(html, {
       status: response.status,
       statusText: response.statusText,
       headers: response.headers,
+    });
+  }
+
+  const nonceMatch = html.match(/<script\b[^>]*\bnonce=["']([^"']+)["']/i);
+  if (!nonceMatch || !html.includes("</body>")) {
+    const headers = new Headers(response.headers);
+    for (const name of ["content-length", "content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(name);
+    headers.set("x-mmd-liff-session-check", "status-v1");
+    return new Response(html, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
     });
   }
 
@@ -104,6 +129,7 @@ async function applyBoundedStatusRecovery(request, response) {
   headers.set("x-mmd-liff-recovery-gate", "hard-timeout-v2-one-retry");
   headers.set("x-mmd-liff-hard-timeout-ms", String(HARD_TIMEOUT_MS));
   headers.set("x-mmd-liff-manual-retry-window-ms", String(MANUAL_RETRY_WINDOW_MS));
+  headers.set("x-mmd-liff-session-check", "status-v1");
 
   return new Response(rewritten, {
     status: response.status,
