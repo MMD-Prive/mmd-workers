@@ -76,16 +76,16 @@ export function renderApprovedAdminLogin(
     </header>
     <section class="grid">
       <article class="card">
-        <p class="kicker">PRIVATE ACCESS</p>
-        <h1 class="title">เข้าพื้นที่ทำงานของคุณ</h1>
-        <p class="lead">เลือกพื้นที่ให้ตรงกับหน้าที่ของคุณ Owner ใช้ช่องทางเดิม ส่วน MMS Partner เข้าเฉพาะงาน Male Massage ที่ได้รับอนุมัติ</p>
-        <div class="lanes" role="tablist" aria-label="Access type">
-          <button class="lane" type="button" data-lane="owner" role="tab"><b>Owner / Internal Admin</b><small>MMD Privé core administration</small></button>
-          <button class="lane" type="button" data-lane="partner" role="tab"><b>MMS Partner</b><small>Male Massage operations only</small></button>
+        <p class="kicker">BACK OFFICE ACCESS</p>
+        <h1 class="title">Enter your<br>Back Office</h1>
+        <p class="lead">กรุณาเลือกธุรกิจที่ท่านต้องการเข้าถึง</p>
+        <div class="lanes" role="tablist" aria-label="Business access">
+          <button class="lane" type="button" data-lane="owner" role="tab"><b>MMD Privé</b><small>SIGIL System</small></button>
+          <button class="lane" type="button" data-lane="partner" role="tab"><b>MMS</b><small>Male Massage</small></button>
         </div>
 
         <section class="panel" data-panel="owner">
-          <div class="panel-head"><div><strong>Internal Admin</strong><br><span>สำหรับ Per และ Internal Admin</span></div></div>
+          <div class="panel-head"><div><strong>MMD Privé</strong><br><span>SIGIL System · Internal Administration</span></div></div>
           <div class="scope"><span>Approved access</span><span>Secure session</span><span>Private route</span></div>
           <form method="post" action="${ADMIN_LOGIN_SESSION_PATH}" id="ownerLoginForm" autocomplete="off">
             <input id="adminNext" type="hidden" name="next" value="${escapeAttribute(next)}">
@@ -99,14 +99,14 @@ export function renderApprovedAdminLogin(
         </section>
 
         <section class="panel partner-panel" data-panel="partner">
-          <div class="panel-head"><div><strong>MMS Partner</strong><br><span>สำหรับ Partner ที่ดูแลงาน Male Massage เท่านั้น</span></div></div>
+          <div class="panel-head"><div><strong>MMS Partner</strong><br><span>สำหรับ MMS Partner ใช้เข้าสู่ระบบควบคุมการทำงานหลังบ้านของ Male Massage เท่านั้น</span></div></div>
           <div class="scope partner"><span>Applications</span><span>Therapists</span><span>Matching</span><span>MMS only</span></div>
           <form id="partnerLoginForm" autocomplete="on">
             <input type="hidden" name="action" value="partner_login">
             <label for="partnerUsername">Username<span class="field"><input id="partnerUsername" name="username" required autocomplete="username" autocapitalize="none" spellcheck="false"></span></label>
             <label for="partnerPassword">Password<span class="field"><input id="partnerPassword" name="password" type="password" required minlength="12" maxlength="128" autocomplete="current-password"><button class="toggle" type="button" data-toggle="partnerPassword" aria-pressed="false">SHOW</button></span></label>
-            <p class="message" id="partnerMessage" role="status">เข้าแล้วจะไปที่ MMS Partner Operations เท่านั้น</p>
-            <button class="go" type="submit">Enter MMS Operations</button>
+            <p class="message" id="partnerMessage" role="status">เข้าสู่ MMS Partner Operations สำหรับงานหลังบ้าน Male Massage เท่านั้น</p>
+            <button class="go" type="submit">Enter MMS Back Office</button>
           </form>
           <div class="links"><button class="linkbtn" type="button" data-open="signup">สร้างบัญชี Partner</button><button class="linkbtn" type="button" data-open="recover">ลืมรหัสผ่าน?</button></div>
 
@@ -137,7 +137,7 @@ export function renderApprovedAdminLogin(
       </article>
       <aside class="visual" aria-label="MMD private administration environment">
         <img class="visual-logo" src="${APPROVED_ADMIN_LOGIN_LOGO}" alt="MMD SIGIL Internal Admin" width="112" height="112" fetchpriority="high">
-        <div class="note"><b>Private access. Clear boundaries.</b><p>Owner ดูแลระบบหลัก ส่วน MMS Partner ดูแลงาน Male Massage ในขอบเขตของตัวเอง ไม่แชร์สิทธิ์ข้ามกัน</p></div>
+        <div class="note"><b>Private access. Clear boundaries.</b><p>MMD Privé ใช้ SIGIL System ส่วน MMS Partner ใช้ Male Massage Back Office ตามขอบเขตสิทธิ์ของตัวเอง</p></div>
       </aside>
     </section>
   </main>
