@@ -28,7 +28,7 @@ export async function createCredentialBoundAdminSession(request, actor, env = {}
     version: SESSION_VERSION,
     id: clean(actor?.id) || "per",
     role: clean(actor?.role) || "admin",
-    auth_method: "credential",
+    auth_method: clean(actor?.auth_method) || "credential",
     scope: SESSION_SCOPE,
     host,
     iat: now,
