@@ -1,0 +1,52 @@
+name: Diagnose admin login live response
+
+on:
+  push:
+    branches:
+      - diag/admin-login-live-20260906
+    paths:
+      - ".github/workflows/diag-admin-login-live.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Inspect public and direct login responses
+        shell: bash
+        run: |
+          set -euo pipefail
+          for target in \
+            "https://mmdbkk.com/internal/admin/login" \
+            "https://mmdbkk.com/internal/admin/login?next=/internal/admin/jobs/create-job" \
+            "https://www.mmdbkk.com/internal/admin/login" \
+            "https://www.mmdbkk.com/internal/admin/login?next=/internal/admin/jobs/create-job" \
+            "https://admin-worker.malemodel-bkk.workers.dev/internal/admin/login" \
+            "https://admin-worker.malemodel-bkk.workers.dev/internal/admin/login?next=/internal/admin/jobs/create-job"
+          do
+            headers="$(mktemp)"
+            body="$(mktemp)"
+            code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS -D "$headers" -o "$body" -w "%{http_code}" "$target")"
+            echo "===== $target ====="
+            echo "STATUS=$code"
+            sed -n '1,40p' "$headers" | sed -E 's/^(set-cookie:).*/\1 [REDACTED]/I'
+            printf 'BODY_MARKERS='
+            grep -Eo 'admin-login-approved-hero|Enter the|control room|unauthorized|credential-required' "$body" | sort -u | tr '\n' ',' || true
+            echo
+            echo
+          done
+
+          for target in \
+            "https://mmdbkk.com/internal/admin/login?next=/internal/admin/jobs/create-job" \
+            "https://www.mmdbkk.com/internal/admin/login?next=/internal/admin/jobs/create-job"
+          do
+            headers="$(mktemp)"
+            code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS -I -o "$headers" -w "%{http_code}" "$target")"
+            echo "===== HEAD $target ====="
+            echo "STATUS=$code"
+            sed -n '1,40p' "$headers" | sed -E 's/^(set-cookie:).*/\1 [REDACTED]/I'
+            echo
+          done
