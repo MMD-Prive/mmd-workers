@@ -1,0 +1,258 @@
+name: Controlled Kenji Mek publication 2026-09-06
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/controlled-kenji-mek-publication-20260906.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: controlled-kenji-mek-publication-20260906
+  cancel-in-progress: false
+
+jobs:
+  publish-and-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ORIGIN: https://www.mmdbkk.com
+      ADMIN_LOGIN_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+      MODEL_ID: recBKaHfxUKs8fkMV
+      PROFILE_ID: recrZU4BakDXvFyOU
+      MODEL_KEY: mdl_private_premium_vip_straight_top_mek
+      EXPECTED_PROFILE_VERSION: "2"
+      TARGET_PROFILE_VERSION: "3"
+      DRAFT_IDEMPOTENCY_KEY: kenji-real-mek-20260906-v2
+      REVIEW_IDEMPOTENCY_KEY: kenji-real-mek-review-20260906-v2
+      QA_IDEMPOTENCY_KEY: kenji-real-mek-qa-20260906-v2
+      PUBLISH_IDEMPOTENCY_KEY: kenji-real-mek-publish-20260906-v2
+
+    steps:
+      - name: Authenticate canonical owner session
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ADMIN_LOGIN_CREDENTIAL:-}"
+          echo "::add-mask::$ADMIN_LOGIN_CREDENTIAL"
+          cookie_jar="$RUNNER_TEMP/kenji-mek-cookie.jar"
+          login_headers="$RUNNER_TEMP/kenji-mek-login.headers"
+          login_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS \
+            -D "$login_headers" -c "$cookie_jar" -o /dev/null -w "%{http_code}" \
+            -X POST -H "Origin: $ORIGIN" -H "Content-Type: application/x-www-form-urlencoded" \
+            --data-urlencode "credential=$ADMIN_LOGIN_CREDENTIAL" \
+            --data-urlencode "next=/internal/admin/kenji" \
+            "$ORIGIN/internal/admin/login/session")"
+          test "$login_code" = "303"
+          grep -qi '^location: /internal/admin/kenji' "$login_headers"
+          grep -q 'mmd_admin_gate_v1' "$cookie_jar"
+
+          auth_body="$RUNNER_TEMP/kenji-mek-auth.json"
+          auth_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS \
+            -b "$cookie_jar" -o "$auth_body" -w "%{http_code}" \
+            "$ORIGIN/v1/admin/auth/me")"
+          test "$auth_code" = "200"
+          jq -e '.ok == true' "$auth_body" >/dev/null
+          echo "Canonical admin session authenticated."
+
+      - name: Verify Mek production profile is unchanged before controlled publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          cookie_jar="$RUNNER_TEMP/kenji-mek-cookie.jar"
+          body="$RUNNER_TEMP/kenji-mek-preflight.json"
+          code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS \
+            -b "$cookie_jar" -o "$body" -w "%{http_code}" \
+            "$ORIGIN/v1/admin/kenji/models?q=$MODEL_KEY&limit=20")"
+          test "$code" = "200"
+          jq -e --arg model "$MODEL_ID" --arg profile "$PROFILE_ID" --arg key "$MODEL_KEY" \
+            --argjson expected "$EXPECTED_PROFILE_VERSION" --argjson target "$TARGET_PROFILE_VERSION" '
+              .ok == true and
+              ([.items[] | select(.model_id == $model and .keyword_profile_id == $profile and .model_key == $key)] | length == 1) and
+              ([.items[] | select(.model_id == $model and .keyword_profile_id == $profile and .model_key == $key)][0] |
+                (.profile_version == $expected or .profile_version == $target) and
+                .working_name == "Mek" and
+                .folder_name == "Mek" and
+                .model_tier == "Private" and
+                .profile_status == "Active" and
+                .allowed_customer_scope == ["Premium Active"] and
+                .photo_visibility_policy == "Active eligible only" and
+                .deposit_preview_gate == "Per approval" and
+                .include_in_public_kenji == false and
+                .source_ref == "Canonical Model recBKaHfxUKs8fkMV; approved folder Mek; R2 exact prefix verified 2026-09-04"
+              )' "$body" >/dev/null
+          echo "Mek preflight matched the existing production policy exactly."
+
+      - name: Run controlled Draft to Review to QA to Publish to Audit
+        id: controlled_publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          cookie_jar="$RUNNER_TEMP/kenji-mek-cookie.jar"
+
+          post_json() {
+            local path="$1"
+            local key="$2"
+            local payload="$3"
+            local outfile="$4"
+            curl --retry 4 --retry-delay 2 --retry-all-errors -sS \
+              -b "$cookie_jar" \
+              -H "Origin: $ORIGIN" \
+              -H "Content-Type: application/json" \
+              -H "Idempotency-Key: $key" \
+              --data-binary "$payload" \
+              -o "$outfile" -w "%{http_code}" \
+              "$ORIGIN$path"
+          }
+
+          fetch_audit() {
+            local request_id="$1"
+            local outfile="$2"
+            local code
+            code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS \
+              -b "$cookie_jar" -o "$outfile" -w "%{http_code}" \
+              "$ORIGIN/v1/admin/kenji/models/reviews/$request_id/audit")"
+            if [ "$code" != "200" ]; then
+              cat "$outfile" >&2
+              echo "Audit fetch failed with HTTP $code" >&2
+              exit 1
+            fi
+          }
+
+          draft_file="$RUNNER_TEMP/kenji-mek-draft.json"
+          cat > "$draft_file" <<'JSON'
+          {
+            "model_id": "recBKaHfxUKs8fkMV",
+            "keyword_profile_id": "recrZU4BakDXvFyOU",
+            "expected_profile_version": 2,
+            "model_key": "mdl_private_premium_vip_straight_top_mek",
+            "folder_name": "Mek",
+            "working_name": "Mek",
+            "search_aliases": ["Mek", "mdl_private_premium_vip_straight_top_mek"],
+            "customer_safe_info": "",
+            "positive_sensitive_description": "",
+            "customer_safe_remark": "",
+            "model_tier": "Private",
+            "proposed_visibility": "curated",
+            "allowed_customer_scope": ["Premium Active"],
+            "photo_visibility_policy": "Active eligible only",
+            "deposit_preview_gate": "Per approval",
+            "profile_status": "Active",
+            "include_in_public_kenji": false,
+            "source_ref": "Canonical Model recBKaHfxUKs8fkMV; approved folder Mek; R2 exact prefix verified 2026-09-04"
+          }
+          JSON
+
+          draft_body="$RUNNER_TEMP/kenji-mek-draft-response.json"
+          draft_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS \
+            -b "$cookie_jar" \
+            -H "Origin: $ORIGIN" \
+            -H "Content-Type: application/json" \
+            -H "Idempotency-Key: $DRAFT_IDEMPOTENCY_KEY" \
+            --data-binary "@$draft_file" \
+            -o "$draft_body" -w "%{http_code}" \
+            "$ORIGIN/v1/admin/kenji/models/draft")"
+          if [ "$draft_code" != "201" ] && [ "$draft_code" != "200" ]; then
+            cat "$draft_body" >&2
+            echo "Draft failed with HTTP $draft_code" >&2
+            exit 1
+          fi
+          request_id="$(jq -r '.request_id // empty' "$draft_body")"
+          test -n "$request_id"
+          echo "request_id=$request_id" >> "$GITHUB_OUTPUT"
+          echo "Controlled request: $request_id"
+
+          audit="$RUNNER_TEMP/kenji-mek-audit.json"
+          fetch_audit "$request_id" "$audit"
+
+          if jq -e --arg profile "$PROFILE_ID" --argjson target "$TARGET_PROFILE_VERSION" '
+            .stage == "published" and .request_status == "published" and
+            .published_profile_id == $profile and .published_profile_version == $target
+          ' "$audit" >/dev/null; then
+            echo "Controlled request was already published and matches the target receipt."
+          else
+            version="$(jq -r '.workflow_version' "$audit")"
+
+            if ! jq -e 'any(.events[]?; .action == "review_approved")' "$audit" >/dev/null; then
+              review_body="$RUNNER_TEMP/kenji-mek-review-response.json"
+              review_payload="$(jq -cn --argjson version "$version" '{expected_version:$version}')"
+              review_code="$(post_json "/v1/admin/kenji/models/reviews/$request_id/review" "$REVIEW_IDEMPOTENCY_KEY" "$review_payload" "$review_body")"
+              if [ "$review_code" != "200" ]; then
+                cat "$review_body" >&2
+                echo "Review failed with HTTP $review_code" >&2
+                exit 1
+              fi
+              fetch_audit "$request_id" "$audit"
+              version="$(jq -r '.workflow_version' "$audit")"
+            fi
+
+            if ! jq -e 'any(.events[]?; .action == "qa_passed")' "$audit" >/dev/null; then
+              qa_body="$RUNNER_TEMP/kenji-mek-qa-response.json"
+              qa_payload="$(jq -cn --argjson version "$version" '{expected_version:$version,qa:{policy_path_match:true,customer_safe_preview_checked:true,source_checked:true,privacy_checked:true}}')"
+              qa_code="$(post_json "/v1/admin/kenji/models/reviews/$request_id/qa" "$QA_IDEMPOTENCY_KEY" "$qa_payload" "$qa_body")"
+              if [ "$qa_code" != "200" ]; then
+                cat "$qa_body" >&2
+                echo "QA failed with HTTP $qa_code" >&2
+                exit 1
+              fi
+              fetch_audit "$request_id" "$audit"
+              version="$(jq -r '.workflow_version' "$audit")"
+            fi
+
+            jq -e '.stage == "qa_passed" and any(.events[]?; .action == "qa_passed")' "$audit" >/dev/null
+
+            publish_body="$RUNNER_TEMP/kenji-mek-publish-response.json"
+            publish_payload="$(jq -cn --argjson version "$version" '{expected_version:$version}')"
+            publish_code="$(post_json "/v1/admin/kenji/models/reviews/$request_id/publish" "$PUBLISH_IDEMPOTENCY_KEY" "$publish_payload" "$publish_body")"
+            if [ "$publish_code" != "200" ]; then
+              cat "$publish_body" >&2
+              echo "Publish failed with HTTP $publish_code" >&2
+              exit 1
+            fi
+            fetch_audit "$request_id" "$audit"
+          fi
+
+          jq -e --arg profile "$PROFILE_ID" --argjson target "$TARGET_PROFILE_VERSION" '
+            .ok == true and
+            .stage == "published" and
+            .request_status == "published" and
+            .published_profile_id == $profile and
+            .published_profile_version == $target and
+            ([.events[]?.action] | index("submit_review") != null) and
+            ([.events[]?.action] | index("review_approved") != null) and
+            ([.events[]?.action] | index("qa_passed") != null) and
+            ([.events[]?.action] | index("publish") != null)
+          ' "$audit" >/dev/null
+          echo "Controlled Review → QA → Publish → Audit receipt verified."
+
+      - name: Verify production readback after publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          cookie_jar="$RUNNER_TEMP/kenji-mek-cookie.jar"
+          body="$RUNNER_TEMP/kenji-mek-final-readback.json"
+          code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+            -b "$cookie_jar" -o "$body" -w "%{http_code}" \
+            "$ORIGIN/v1/admin/kenji/models?q=$MODEL_KEY&limit=20")"
+          test "$code" = "200"
+          jq -e --arg model "$MODEL_ID" --arg profile "$PROFILE_ID" --arg key "$MODEL_KEY" \
+            --argjson target "$TARGET_PROFILE_VERSION" '
+              .ok == true and
+              ([.items[] | select(.model_id == $model and .keyword_profile_id == $profile and .model_key == $key)] | length == 1) and
+              ([.items[] | select(.model_id == $model and .keyword_profile_id == $profile and .model_key == $key)][0] |
+                .profile_version == $target and
+                .working_name == "Mek" and
+                .folder_name == "Mek" and
+                .search_aliases == ["Mek", "mdl_private_premium_vip_straight_top_mek"] and
+                .model_tier == "Private" and
+                .profile_status == "Active" and
+                .allowed_customer_scope == ["Premium Active"] and
+                .photo_visibility_policy == "Active eligible only" and
+                .deposit_preview_gate == "Per approval" and
+                .include_in_public_kenji == false and
+                .source_ref == "Canonical Model recBKaHfxUKs8fkMV; approved folder Mek; R2 exact prefix verified 2026-09-04"
+              )' "$body" >/dev/null
+          echo "Mek production readback is v${TARGET_PROFILE_VERSION}; business policy fields are unchanged."
