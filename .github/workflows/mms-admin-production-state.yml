@@ -147,7 +147,7 @@ jobs:
               await page.type('#adminCredential', credential, { delay: 5 });
               await Promise.all([
                 page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }),
-                page.click('.mmd-login__go'),
+                page.click('#ownerLoginForm .go'),
               ]);
 
               const url = new URL(page.url());
