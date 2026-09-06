@@ -26,6 +26,8 @@ jobs:
       R2_BUCKET: mmd-models
       ASSET_PREFIX: webflow/internal/admin/kenji
       LIVE_BASE: https://models.mmdbkk.com/webflow/internal/admin/kenji
+      BOARD_1: https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9d12b3e0f4263a60a49a93_Kenji%20AI%20Board%201.webp
+      BOARD_2: https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9d12b3919ed96761ee14e7_Kenji%20Ai%20Board%202.webp
     steps:
       - uses: actions/checkout@v4
 
@@ -39,10 +41,19 @@ jobs:
           node --check webflow/internal/admin/kenji/kenji-admin-v1.js
           node --check webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
           node --test webflow/internal/admin/kenji/kenji-admin-v1.test.mjs
+          grep -q 'kux-board-banner' webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
+          grep -q 'panelVisuals' webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
           cat webflow/internal/admin/kenji/kenji-admin-v1.js \
               webflow/internal/admin/kenji/kenji-admin-ux-overlay.js \
               > /tmp/kenji-admin-v1.js
           node --check /tmp/kenji-admin-v1.js
+
+      - name: Verify board artwork sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --retry 6 --retry-delay 2 --retry-all-errors -fsS -o /dev/null "$BOARD_1"
+          curl --retry 6 --retry-delay 2 --retry-all-errors -fsS -o /dev/null "$BOARD_2"
 
       - name: Verify R2 access
         shell: bash
@@ -59,12 +70,12 @@ jobs:
           npx --yes wrangler@4 r2 object put "$R2_BUCKET/$ASSET_PREFIX/kenji-admin-v1.js" \
             --file /tmp/kenji-admin-v1.js \
             --content-type 'application/javascript; charset=utf-8' \
-            --cache-control 'no-cache, max-age=0, must-revalidate' \
+            --cache-control 'no-store, no-cache, max-age=0, must-revalidate' \
             --remote --force
           npx --yes wrangler@4 r2 object put "$R2_BUCKET/$ASSET_PREFIX/kenji-admin-v1.css" \
             --file webflow/internal/admin/kenji/kenji-admin-v1.css \
             --content-type 'text/css; charset=utf-8' \
-            --cache-control 'no-cache, max-age=0, must-revalidate' \
+            --cache-control 'no-store, no-cache, max-age=0, must-revalidate' \
             --remote --force
 
       - name: Verify R2 readback
@@ -82,6 +93,7 @@ jobs:
           set -euo pipefail
           js_file="$(mktemp)"
           css_file="$(mktemp)"
+          stable_js_file="$(mktemp)"
           curl --retry 6 --retry-delay 2 --retry-all-errors -fsS \
             -H 'Cache-Control: no-cache' \
             "$LIVE_BASE/kenji-admin-v1.js?v=$GITHUB_SHA" -o "$js_file"
@@ -94,8 +106,25 @@ jobs:
           grep -q 'Idempotency-Key' "$js_file"
           grep -q 'uxFriendly' "$js_file"
           grep -q 'Review Queue' "$js_file"
+          grep -q 'kux-board-banner' "$js_file"
+          grep -q 'panelVisuals' "$js_file"
+          grep -q 'Kenji%20AI%20Board%201.webp' "$js_file"
+          grep -q 'Kenji%20Ai%20Board%202.webp' "$js_file"
           grep -q 'ka__modelGrid' "$css_file"
           grep -q 'Kenji%20AI%20Board%201.webp' "$css_file"
           grep -q 'Kenji%20Ai%20Board%202.webp' "$css_file"
           grep -q -- '--font-ui' "$css_file"
-          echo "Kenji admin R2 assets published with glass-board visuals and normalized typography"
+
+          found=0
+          for attempt in 1 2 3 4 5 6; do
+            curl -fsS -H 'Cache-Control: no-cache' "$LIVE_BASE/kenji-admin-v1.js" -o "$stable_js_file"
+            if grep -q 'kux-board-banner' "$stable_js_file" && grep -q 'panelVisuals' "$stable_js_file"; then
+              found=1
+              break
+            fi
+            sleep 2
+          done
+          test "$found" = "1"
+          grep -q 'Kenji%20AI%20Board%201.webp' "$stable_js_file"
+          grep -q 'Kenji%20Ai%20Board%202.webp' "$stable_js_file"
+          echo "Kenji admin stable CDN asset now contains visible board banners"
