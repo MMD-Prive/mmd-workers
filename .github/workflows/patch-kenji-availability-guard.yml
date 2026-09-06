@@ -1,0 +1,59 @@
+name: Patch Kenji availability guard
+
+on:
+  push:
+    branches:
+      - hotfix/kenji-model-availability-guard-20260906
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message != 'fix(kenji): close Thai availability guard gap'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hotfix/kenji-model-availability-guard-20260906
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Patch both draft and publish guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const files = [
+            'admin-worker/src/kenji-model-admin-adapter.js',
+            'admin-worker/src/kenji-model-workflow.js',
+          ];
+          const needle = 'ว่าง(?:วันนี้|คืนนี้|พรุ่งนี้)|เช็กคิว';
+          const replacement = 'ว่าง(?:วันนี้|คืนนี้|พรุ่งนี้)|(?:วันนี้|คืนนี้|พรุ่งนี้)[^.\\n]{0,30}ว่าง|เช็กคิว';
+          for (const file of files) {
+            const source = fs.readFileSync(file, 'utf8');
+            if (!source.includes(needle)) throw new Error(`availability guard marker missing in ${file}`);
+            const next = source.replace(needle, replacement);
+            if (next === source) throw new Error(`availability guard did not change in ${file}`);
+            fs.writeFileSync(file, next);
+          }
+          NODE
+          node --check admin-worker/src/kenji-model-admin-adapter.js
+          node --check admin-worker/src/kenji-model-workflow.js
+          cd admin-worker
+          node --test kenji-model-admin-adapter.test.mjs kenji-model-workflow.test.mjs
+
+      - name: Commit guarded source and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/patch-kenji-availability-guard.yml
+          git config user.name 'MMD GitHub Actions'
+          git config user.email 'actions@users.noreply.github.com'
+          git add admin-worker/src/kenji-model-admin-adapter.js admin-worker/src/kenji-model-workflow.js .github/workflows/patch-kenji-availability-guard.yml
+          git commit -m 'fix(kenji): close Thai availability guard gap'
+          git push origin HEAD:hotfix/kenji-model-availability-guard-20260906
