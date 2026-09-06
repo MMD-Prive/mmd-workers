@@ -20,15 +20,11 @@ export function shouldAttemptPublicModelNotification({ duplicate, status }) {
 }
 
 export function publicModelChatId(env = {}) {
-  return String(env.TELEGRAM_PUBLIC_MODEL_CHAT_ID || env.TELEGRAM_CHAT_ID || "").trim();
+  return String(env.TELEGRAM_PUBLIC_MODEL_CHAT_ID || "").trim();
 }
 
 export function publicModelThreadId(env = {}) {
-  const hasDedicatedChat = Boolean(String(env.TELEGRAM_PUBLIC_MODEL_CHAT_ID || "").trim());
-  const raw = hasDedicatedChat
-    ? env.TELEGRAM_PUBLIC_MODEL_THREAD_ID || ""
-    : env.TELEGRAM_PUBLIC_MODEL_THREAD_ID || env.TELEGRAM_ADMIN_THREAD_ID || env.TG_THREAD_CONFIRM || "";
-  const threadId = Number(raw);
+  const threadId = Number(env.TELEGRAM_PUBLIC_MODEL_THREAD_ID || "");
   return Number.isFinite(threadId) && threadId > 0 ? threadId : undefined;
 }
 
@@ -86,7 +82,7 @@ export async function notifyPublicModelApplication({ env, payload, applicationId
   try {
     const token = String(env.TELEGRAM_BOT_TOKEN || "").trim();
     const chatId = publicModelChatId(env);
-    if (!token || !chatId) throw new Error("missing_telegram_configuration");
+    if (!token || !chatId) throw new Error("missing_public_model_telegram_configuration");
     const reviewUrl = buildPublicModelReviewUrl(env, applicationId);
     const telegramPayload = {
       chat_id: chatId,
