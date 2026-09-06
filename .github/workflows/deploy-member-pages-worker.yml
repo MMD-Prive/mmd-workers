@@ -76,7 +76,7 @@ jobs:
         shell: bash
         run: |
           node <<'NODE'
-          const { createHash, randomUUID } = require("node:crypto");
+          const { createHash, randomUUID } = await import("node:crypto");
           const token = String(process.env.AIRTABLE_API_KEY || "").trim();
           const base = String(process.env.AIRTABLE_BASE_ID || "").trim();
           const table = "tblvMJjYXy29mgDLb";
