@@ -23,6 +23,7 @@ const CUSTOMER_SCOPE_CHOICES = new Map([
   ["black_card", "Black Card"],
   ["potential", "#Potential"],
   ["per_review", "Per Review"],
+  ["premium_active", "Premium Active"],
 ]);
 const PHOTO_VISIBILITY_CHOICES = new Map([
   ["active_eligible_only", "Active eligible only"],
