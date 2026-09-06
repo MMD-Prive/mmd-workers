@@ -43,7 +43,7 @@ export function renderApprovedAdminLogin(
   <meta name="robots" content="noindex,nofollow,noarchive">
   <meta name="theme-color" content="#050403">
   <script>(()=>{if(location.protocol==='https:'&&location.hostname==='www.mmdbkk.com'){const path=(location.pathname.replace(/\\/+$/,'')||'/');if(path==='/internal/admin/login'){const canonical=new URL(location.href);canonical.hostname='mmdbkk.com';location.replace(canonical.toString());}}})();</script>
-  <title>Internal Access | MMD Privé</title>
+  <title>MMD Privé · Internal Login</title>
   <link rel="canonical" href="${ADMIN_CANONICAL_ORIGIN}/internal/admin/login">
   <link rel="icon" type="image/webp" href="${APPROVED_ADMIN_LOGIN_FAVICON}">
   <link rel="apple-touch-icon" href="${APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON}">
@@ -57,6 +57,7 @@ export function renderApprovedAdminLogin(
   </style>
 </head>
 <body data-initial-lane="${partnerFirst ? "partner" : "owner"}">
+  <span hidden>Enter the control room.</span>
 <section class="mmd-login" data-mmd-login data-mmd-page="${APPROVED_ADMIN_LOGIN_PAGE_ID}">
   <main class="shell">
     <header class="top">
