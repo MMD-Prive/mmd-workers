@@ -24,8 +24,6 @@ test("customer status recovery verifies the LINE session, hard-stops after 12 se
   assert.equal(response.headers.get("x-mmd-liff-manual-retry-window-ms"), "120000");
   assert.equal(response.headers.get("x-mmd-liff-session-check"), "status-v1");
 
-  // Production must verify the signed LIFF session, not require a canonical
-  // member profile. lifecycle=new and legacy/checking customers still enter My MMD.
   assert.match(html, /const statusEndpoint = "\/member\/api\/liff\/status"/);
   assert.match(html, /fetch\(statusEndpoint,/);
   assert.doesNotMatch(html, /const profileEndpoint =/);
@@ -52,4 +50,43 @@ test("customer status recovery verifies the LINE session, hard-stops after 12 se
   assert.match(html, /retry\.disabled = true/);
   assert.match(html, /window\.location\.reload\(\)/);
   assert.match(html, /window\.location\.replace\("\/my-mmd\/"\)/);
+});
+
+test("My MMD serves the pending public-Wish coupon bridge as same-origin behavior code", async () => {
+  const response = await worker.fetch(new Request("https://www.mmdbkk.com/my-mmd-assets/care-back-wish-link.js"), {});
+  const js = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") || "", /application\/javascript/);
+  assert.equal(response.headers.get("x-mmd-care-back-wish-bridge"), "verified-coupon-v1");
+  assert.match(js, /mmd_care_back_wish_link/);
+  assert.match(js, /\/member\/api\/care-back\/link-wish/);
+  assert.match(js, /if \(response\.status === 401\) return/);
+  assert.match(js, /mmd:care-back:coupon-linked/);
+  assert.match(js, /window\.location\.reload\(\)/);
+});
+
+test("canonical My MMD HTML receives the pending Wish bridge without moving coupon authority into Lovable", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = typeof input === "string" ? input : input.url;
+    if (String(url).startsWith("https://my-mmd-member-profile.lovable.app")) {
+      return new Response("<!doctype html><html><head><title>My MMD</title></head><body><main>Lovable app</main></body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    }
+    return originalFetch(input);
+  };
+
+  try {
+    const response = await worker.fetch(new Request("https://www.mmdbkk.com/my-mmd/"), {});
+    const html = await response.text();
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-mmd-care-back-wish-bridge"), "verified-coupon-v1");
+    assert.match(html, /<script src="\/my-mmd-assets\/care-back-wish-link\.js" defer><\/script><\/body>/);
+    assert.doesNotMatch(html, /wish_link_token\s*:/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
