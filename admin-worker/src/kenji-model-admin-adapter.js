@@ -371,7 +371,7 @@ function containsForbiddenOperationalText(value) {
   return Boolean(
     /(?:\b0\d{8,9}\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|https?:\/\/|line\s*(?:id|oa)|telegram|เบอร์(?:โทร)?|อีเมล|ไลน์ส่วนตัว)/i.test(text) ||
     /(?:\b(?:THB|บาท)\s*\d|\d[\d,]*(?:\.\d+)?\s*(?:THB|บาท)|(?:ราคา|ค่าตัว|เรท|\brate\b|\bprice\b)\s*[:=]?\s*\d)/i.test(text) ||
-    /(?:availability|available\s+(?:today|tonight|tomorrow)|schedule|ตาราง(?:งาน|คิว)|ว่าง(?:วันนี้|คืนนี้|พรุ่งนี้)|เช็กคิว\s*[:=]?\s*\w+)/i.test(text) ||
+    /(?:availability|available\s+(?:today|tonight|tomorrow)|schedule|ตาราง(?:งาน|คิว)|ว่าง(?:วันนี้|คืนนี้|พรุ่งนี้)|(?:วันนี้|คืนนี้|พรุ่งนี้)[^.\n]{0,30}ว่าง|เช็กคิว\s*[:=]?\s*\w+)/i.test(text) ||
     /(?:airtable|record[_\s-]?id|admin[_\s-]?note|internal[_\s-]?token|secret|authorization|bearer|r2[_\s-]?(?:key|url))/i.test(text)
   );
 }
