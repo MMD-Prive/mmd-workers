@@ -10,6 +10,7 @@ export const TELEGRAM_NOTIFY_FIELDS = Object.freeze({
 const APPLICATION_ID_FIELD_NAME = "application_id";
 const APPLICATION_ID_RE = /^pma_[A-Za-z0-9_-]{8,120}$/;
 const TELEGRAM_API_BASE = "https://api.telegram.org";
+const DEFAULT_PUBLIC_MODEL_REVIEW_BASE_URL = "https://mmdbkk.com/internal/ceo/models";
 
 export function shouldAttemptPublicModelNotification({ duplicate, status }) {
   const current = String(status || "").trim().toLowerCase();
@@ -18,18 +19,37 @@ export function shouldAttemptPublicModelNotification({ duplicate, status }) {
   return current === "failed" || current === "";
 }
 
+export function publicModelChatId(env = {}) {
+  return String(env.TELEGRAM_PUBLIC_MODEL_CHAT_ID || env.TELEGRAM_CHAT_ID || "").trim();
+}
+
 export function publicModelThreadId(env = {}) {
-  const raw = env.TELEGRAM_PUBLIC_MODEL_THREAD_ID || env.TELEGRAM_ADMIN_THREAD_ID || env.TG_THREAD_CONFIRM || "";
+  const hasDedicatedChat = Boolean(String(env.TELEGRAM_PUBLIC_MODEL_CHAT_ID || "").trim());
+  const raw = hasDedicatedChat
+    ? env.TELEGRAM_PUBLIC_MODEL_THREAD_ID || ""
+    : env.TELEGRAM_PUBLIC_MODEL_THREAD_ID || env.TELEGRAM_ADMIN_THREAD_ID || env.TG_THREAD_CONFIRM || "";
   const threadId = Number(raw);
   return Number.isFinite(threadId) && threadId > 0 ? threadId : undefined;
 }
 
-export function buildPublicModelTelegramMessage(payload = {}, applicationId) {
+export function buildPublicModelReviewUrl(env = {}, applicationId) {
+  if (!APPLICATION_ID_RE.test(String(applicationId || ""))) return "";
+  const configured = String(env.PUBLIC_MODEL_REVIEW_BASE_URL || DEFAULT_PUBLIC_MODEL_REVIEW_BASE_URL).trim();
+  try {
+    const url = new URL(configured);
+    url.searchParams.set("application_id", applicationId);
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+export function buildPublicModelTelegramMessage(payload = {}, applicationId, reviewUrl = "") {
   const uploads = Array.isArray(payload.uploads) ? payload.uploads : Array.isArray(payload.upload_refs) ? payload.upload_refs : Array.isArray(payload.uploadRefs) ? payload.uploadRefs : [];
   const photos = uploads.filter((item) => normalizeToken(item?.kind) === "photo").length;
   const documents = uploads.filter((item) => normalizeToken(item?.kind) === "document").length;
   const workTypes = normalizeList(payload.work_types ?? payload.interested_work_types ?? payload.workTypes, 10);
-  return [
+  const lines = [
     "MMD Public Model Application",
     "",
     `Nickname: ${shortText(payload.nickname, 120) || "-"}`,
@@ -41,9 +61,9 @@ export function buildPublicModelTelegramMessage(payload = {}, applicationId) {
     `Photos: ${photos}`,
     `Documents: ${documents}`,
     `Application ID: ${applicationId}`,
-    "",
-    "Review in MMD Model Applications.",
-  ].join("\n");
+  ];
+  if (reviewUrl) lines.push("", `Open application: ${reviewUrl}`);
+  return lines.join("\n");
 }
 
 export async function notifyPublicModelApplication({ env, payload, applicationId, duplicate = false }) {
@@ -65,9 +85,18 @@ export async function notifyPublicModelApplication({ env, payload, applicationId
 
   try {
     const token = String(env.TELEGRAM_BOT_TOKEN || "").trim();
-    const chatId = String(env.TELEGRAM_CHAT_ID || "").trim();
+    const chatId = publicModelChatId(env);
     if (!token || !chatId) throw new Error("missing_telegram_configuration");
-    const telegramPayload = { chat_id: chatId, text: buildPublicModelTelegramMessage(payload, applicationId) };
+    const reviewUrl = buildPublicModelReviewUrl(env, applicationId);
+    const telegramPayload = {
+      chat_id: chatId,
+      text: buildPublicModelTelegramMessage(payload, applicationId, reviewUrl),
+    };
+    if (reviewUrl) {
+      telegramPayload.reply_markup = {
+        inline_keyboard: [[{ text: "เปิดใบสมัคร", url: reviewUrl }]],
+      };
+    }
     const threadId = publicModelThreadId(env);
     if (threadId) telegramPayload.message_thread_id = threadId;
     const fetcher = typeof env.TELEGRAM_FETCH === "function" ? env.TELEGRAM_FETCH : fetch;
