@@ -35,8 +35,14 @@ jobs:
           set -euo pipefail
           test -s webflow/internal/admin/kenji/kenji-admin-v1.js
           test -s webflow/internal/admin/kenji/kenji-admin-v1.css
+          test -s webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
           node --check webflow/internal/admin/kenji/kenji-admin-v1.js
+          node --check webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
           node --test webflow/internal/admin/kenji/kenji-admin-v1.test.mjs
+          cat webflow/internal/admin/kenji/kenji-admin-v1.js \
+              webflow/internal/admin/kenji/kenji-admin-ux-overlay.js \
+              > /tmp/kenji-admin-v1.js
+          node --check /tmp/kenji-admin-v1.js
 
       - name: Verify R2 access
         shell: bash
@@ -51,7 +57,7 @@ jobs:
         run: |
           set -euo pipefail
           npx --yes wrangler@4 r2 object put "$R2_BUCKET/$ASSET_PREFIX/kenji-admin-v1.js" \
-            --file webflow/internal/admin/kenji/kenji-admin-v1.js \
+            --file /tmp/kenji-admin-v1.js \
             --content-type 'application/javascript; charset=utf-8' \
             --cache-control 'no-cache, max-age=0, must-revalidate' \
             --remote --force
@@ -67,7 +73,7 @@ jobs:
           set -euo pipefail
           npx --yes wrangler@4 r2 object get "$R2_BUCKET/$ASSET_PREFIX/kenji-admin-v1.js" --file /tmp/kenji-admin-live.js --remote
           npx --yes wrangler@4 r2 object get "$R2_BUCKET/$ASSET_PREFIX/kenji-admin-v1.css" --file /tmp/kenji-admin-live.css --remote
-          cmp webflow/internal/admin/kenji/kenji-admin-v1.js /tmp/kenji-admin-live.js
+          cmp /tmp/kenji-admin-v1.js /tmp/kenji-admin-live.js
           cmp webflow/internal/admin/kenji/kenji-admin-v1.css /tmp/kenji-admin-live.css
 
       - name: Verify public CDN asset markers
@@ -86,5 +92,7 @@ jobs:
           grep -q 'modelDraftFingerprint' "$js_file"
           grep -q 'encodeURIComponent(q)' "$js_file"
           grep -q 'Idempotency-Key' "$js_file"
+          grep -q 'uxFriendly' "$js_file"
+          grep -q 'Review Queue' "$js_file"
           grep -q 'ka__modelGrid' "$css_file"
-          echo "Kenji admin R2 assets published and public markers verified"
+          echo "Kenji admin R2 assets published and user-friendly markers verified"
