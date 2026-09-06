@@ -29,7 +29,9 @@ LINE OA / Crew / group album export or manifest
 
 - `line_renamed_name` is preserved exactly and remains the primary human-facing legacy identity evidence.
 - LINE display name, LINE user id, email, and phone are matching/confirmation evidence only.
-- Rename/history labels such as VIP, SVIP, and Black Card may prove historical relationship/recognition but do not create current access.
+- Generic rename/history labels are evidence only and do not create current access.
+- **Fast Trust exception:** when the MMD-controlled `line_renamed_name` itself ends with the trusted suffix `VIP`, `SVIP`, `Black Card`, or `BlackCard`, backend may immediately grant the mapped VIP/SVIP/Black Card tier under `docs/architecture/MY_MMD_FAST_TRUST_TIER_V1.md`. This is a narrow operator-controlled exception; it must never be inferred from customer-editable `line_display_name` or browser input.
+- History Intake v1 still does not write entitlement tables. Fast Trust is resolved by the trusted backend read/identity path, while Points / expiry / Sessions / Payments / historical details may be reconstructed later.
 
 ## Points rule
 
@@ -77,7 +79,7 @@ Explicitly forbidden:
 - `Sessions`
 - `Bookings`
 
-Current rights remain authoritative only through `my_mmd_entitlement_resolver_v1`.
+Current rights remain authoritative only through `my_mmd_entitlement_resolver_v1`, except for the narrow MMD-controlled LINE OA Fast Trust tier source defined in `docs/architecture/MY_MMD_FAST_TRUST_TIER_V1.md`; that source must be normalized by backend into trusted current tier state before presentation.
 
 ## CLI
 
@@ -132,4 +134,4 @@ Each input row must include a stable `source_ref`, at least one identity anchor,
 ]
 ```
 
-The first row may produce staged service history / proposed points. The second row remains payment evidence only until verified and reconciled.
+The first row may produce staged service history / proposed points. Separately, because its MMD-controlled renamed name ends in `Blackcard`, the trusted backend may apply the Fast Trust Black Card tier immediately under the dedicated canon. The second row remains payment evidence only until verified and reconciled.
