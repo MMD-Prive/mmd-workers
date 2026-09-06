@@ -117,7 +117,7 @@ body[data-mms-admin-mb="v1"] .mms-admin .mms-ops-go{font-size:11.5px}
 </style>`;
 
 const MB_UI = `<div class="mms-mb-topbar" id="mmsMbTopbar" aria-label="MMS mobile operations">
-  <div class="mms-mb-title"><small>MMS · MOBILE BUNDLE V1</small><strong id="mmsMbCurrent">ภาพรวม</strong></div>
+  <div class="mms-mb-title"><small>MMS · PARTNER OPERATIONS</small><strong id="mmsMbCurrent">ภาพรวม</strong></div>
   <div class="mms-mb-actions">
     <button class="mms-mb-icon" id="mmsMbRefresh" type="button" aria-label="รีเฟรชข้อมูล">↻</button>
     <button class="mms-mb-icon health" id="mmsMbHealth" type="button" aria-label="ตรวจระบบ MMS">✓</button>
@@ -158,6 +158,10 @@ export function wireMmsAdminMobileBundle(page = "") {
   let html = String(page || "");
   if (!html || html.includes(MARKER)) return html;
   if (!html.includes("MMS · Internal Operations")) return html;
+
+  html = html.replace("<title>MMS · Internal Operations</title>", "<title>MMS Partner Operations</title>");
+  html = html.replace("MMS · INTERNAL OPERATIONS", "MMS · PARTNER OPERATIONS");
+  html = html.replace("<small>MMS · INTERNAL</small>", "<small>MMS · PARTNER OPS</small>");
 
   if (html.includes("<body>")) html = html.replace("<body>", '<body data-mms-admin-mb="v1">');
   else html = html.replace(/<body\b/, '<body data-mms-admin-mb="v1"');
