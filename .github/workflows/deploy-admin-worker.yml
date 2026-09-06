@@ -74,8 +74,11 @@ jobs:
           node --check src/mms-admin-runtime.js
           node --check src/kenji-model-access-rpc.js
           node --check src/kenji-control-endpoints.js
+          node --check src/kenji-model-admin-adapter.js
+          node --check src/kenji-model-workflow.js
           node --check src/payment-entitlement-approval.js
           node --check ../webflow/internal/admin/kenji/kenji-admin-v1.js
+          node --check ../webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
           node --test ../webflow/internal/admin/kenji/kenji-admin-v1.test.mjs
           node --test \
             admin-login-hero.test.mjs \
@@ -84,6 +87,8 @@ jobs:
             mms-admin-session-bounce.test.mjs \
             model-liff-cross-origin-session.test.mjs \
             kenji-model-access-rpc.test.mjs \
+            kenji-model-admin-adapter.test.mjs \
+            kenji-model-workflow.test.mjs \
             payment-entitlement-approval.test.mjs \
             line-slip-intake-review-queue.contract.test.mjs \
             payment-inbox-admin-session.test.mjs
@@ -268,6 +273,7 @@ jobs:
             "/v1/admin/payments/review",
             "/v1/admin/kenji/models",
             "/v1/admin/kenji/models/draft",
+            "/v1/admin/kenji/models*",
             "/v1/admin/kenji/knowledge/meta",
             "/v1/admin/kenji/knowledge/list",
             "/v1/admin/kenji/knowledge/draft",
@@ -355,15 +361,32 @@ jobs:
           grep -q '"error":"unauthorized"' "$body_file"
 
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            shell_headers="$(mktemp)"
             shell_file="$(mktemp)"
-            http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$shell_file" -w "%{http_code}" \
+            http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -D "$shell_headers" -o "$shell_file" -w "%{http_code}" \
               "$origin/internal/admin/kenji")"
-            test "$http_code" = "200"
-            grep -Fq "kenji-admin-v1.css?v=${GITHUB_SHA}" "$shell_file"
-            grep -Fq "kenji-admin-v1.js?v=${GITHUB_SHA}" "$shell_file"
-          done
+            test "$http_code" = "303"
+            grep -qi '^location: /internal/admin/login?next=%2Finternal%2Fadmin%2Fkenji' "$shell_headers"
 
-          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            body_file="$(mktemp)"
+            http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body_file" -w "%{http_code}" \
+              "$origin/v1/admin/kenji/models/review-queue?limit=1")"
+            cat "$body_file"
+            test "$http_code" = "401"
+            grep -q '"error":"unauthorized"' "$body_file"
+
+            body_file="$(mktemp)"
+            http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body_file" -w "%{http_code}" \
+              -X POST \
+              -H "Origin: $origin" \
+              -H "Content-Type: application/json" \
+              -H "Idempotency-Key: smoke-kenji-model-review-no-auth" \
+              --data '{"expected_version":1}' \
+              "$origin/v1/admin/kenji/models/reviews/smoke-review-request/review")"
+            cat "$body_file"
+            test "$http_code" = "401"
+            grep -q '"error":"unauthorized"' "$body_file"
+
             body_file="$(mktemp)"
             http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body_file" -w "%{http_code}" \
               "$origin/v1/admin/payments/review-queue?limit=1")"
@@ -519,7 +542,7 @@ jobs:
         run: |
           set -euo pipefail
           deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ admin-worker LIVE + ROUTES VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- deployment_ref: \`${ADMIN_WORKER_VERSION_ID}\`\n- endpoint: \`${ADMIN_DASHBOARD_PRODUCTION_URL}\`\n- production auth guards: \`dashboard + Model Console + Kenji CEO Control + Payment Entitlement + Payment Review guards passed\`\n- route mutation: \`required exact admin-worker routes verified via Zone Workers Routes API\`\n\nMMS authenticated production smoke is temporarily excluded from this deploy gate."
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ admin-worker LIVE + ROUTES VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- deployment_ref: \`${ADMIN_WORKER_VERSION_ID}\`\n- endpoint: \`${ADMIN_DASHBOARD_PRODUCTION_URL}\`\n- production auth guards: \`dashboard + protected Kenji shell + Model Review/QA/Publish/Audit ingress + Payment Entitlement + Payment Review guards passed\`\n- route mutation: \`required exact/wildcard admin-worker routes verified via Zone Workers Routes API\`\n\nMMS authenticated production smoke is temporarily excluded from this deploy gate."
 
       - name: Require verified live deployment
         if: always()
