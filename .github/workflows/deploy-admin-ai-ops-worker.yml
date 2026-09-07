@@ -119,16 +119,32 @@ jobs:
           set -euo pipefail
           body="$(mktemp)"
           headers="$(mktemp)"
-          code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -D "$headers" -o "$body" -w "%{http_code}" "$BASE_URL/v1/admin/ai-ops/client.js?v=3")"
+          # The client is intentionally short-cacheable. Use the deployed SHA as a cache buster
+          # so post-deploy smoke never reads the previous worker generation from edge cache.
+          code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -D "$headers" -o "$body" -w "%{http_code}" "$BASE_URL/v1/admin/ai-ops/client.js?v=${GITHUB_SHA}")"
           test "$code" = "200"
-          grep -q 'PER · AI OPS' "$body"
-          grep -q 'PER · OWNER MODE' "$body"
-          grep -q 'WATCHING · AUTOPILOT' "$body"
-          grep -q 'SMART MATCH' "$body"
-          grep -q 'per-single-owner-v1' "$body"
-          grep -Eiq '^x-mmd-ai-ops-client:[[:space:]]*v3-single-owner' "$headers"
-          grep -Eiq '^x-mmd-follow-up-autopilot:[[:space:]]*p1' "$headers"
-          grep -Eiq '^x-mmd-smart-matching:[[:space:]]*p1' "$headers"
+          require_body_marker() {
+            local marker="$1"
+            if ! grep -q "$marker" "$body"; then
+              echo "Missing shared-client marker: $marker" >&2
+              exit 1
+            fi
+          }
+          require_header_marker() {
+            local marker="$1"
+            if ! grep -Eiq "$marker" "$headers"; then
+              echo "Missing shared-client response header: $marker" >&2
+              exit 1
+            fi
+          }
+          require_body_marker 'PER · AI OPS'
+          require_body_marker 'PER · OWNER MODE'
+          require_body_marker 'WATCHING · AUTOPILOT'
+          require_body_marker 'SMART MATCH'
+          require_body_marker 'per-single-owner-v1'
+          require_header_marker '^x-mmd-ai-ops-client:[[:space:]]*v3-single-owner'
+          require_header_marker '^x-mmd-follow-up-autopilot:[[:space:]]*p1'
+          require_header_marker '^x-mmd-smart-matching:[[:space:]]*p1'
 
       - name: Smoke admin AI Ops fail-closed without admin session
         shell: bash
