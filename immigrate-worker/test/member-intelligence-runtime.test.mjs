@@ -40,15 +40,16 @@ test("Member Intelligence hands canonical clients to the correct operator surfac
   assert.doesNotMatch(source, /\/internal\/admin\/jobs\/create-session\?client_id=/);
 });
 
-test("Member Intelligence browser code is served through an extensionless Worker-owned route", () => {
-  assert.match(canonicalCore, /MEMBER_INTELLIGENCE_RUNTIME_PATH\s*=\s*"\/internal\/admin\/member-intelligence\/runtime"/);
+test("Member Intelligence browser code is served inside the existing Worker-owned Control Room route family", () => {
+  assert.match(canonicalCore, /MEMBER_INTELLIGENCE_RUNTIME_PATH\s*=\s*"\/internal\/admin\/control-room\/member-intelligence-runtime"/);
   assert.match(canonicalCore, /BUNDLED_MEMBER_INTELLIGENCE_RUNTIME_PATH\s*=\s*"\/a\/member-intelligence\.js"/);
   assert.match(canonicalCore, /assetUrl\.pathname\s*=\s*BUNDLED_MEMBER_INTELLIGENCE_RUNTIME_PATH/);
   assert.match(canonicalCore, /assetUrl\.search\s*=\s*""/);
-  assert.match(canonicalCore, /x-mmd-member-intelligence-runtime/);
+  assert.match(canonicalCore, /control-room-lane-v1/);
   assert.match(canonicalCore, /x-mmd-member-intelligence-authority/);
-  assert.match(wrangler, /run_worker_first\s*=\s*\[[^\]]*\/internal\/admin\/member-intelligence\/runtime/);
-  assert.match(wrangler, /pattern = "mmdbkk\.com\/internal\/admin\/member-intelligence\/runtime"/);
-  assert.match(wrangler, /pattern = "www\.mmdbkk\.com\/internal\/admin\/member-intelligence\/runtime"/);
+  assert.match(wrangler, /run_worker_first\s*=\s*\[[^\]]*\/internal\/admin\/control-room\/member-intelligence-runtime/);
+  assert.match(wrangler, /pattern = "mmdbkk\.com\/internal\/admin\/control-room\*"/);
+  assert.match(wrangler, /pattern = "www\.mmdbkk\.com\/internal\/admin\/control-room\*"/);
+  assert.doesNotMatch(wrangler, /pattern = "(?:www\.)?mmdbkk\.com\/internal\/admin\/member-intelligence\/runtime"/);
   assert.doesNotMatch(wrangler, /pattern = "(?:www\.)?mmdbkk\.com\/a\/member-intelligence\.js"/);
 });
