@@ -133,17 +133,17 @@ jobs:
           npm run check:member-pages-wrangler
 
       - name: Validate Cloudflare deployment
-        run: npx --yes wrangler@4 deploy --dry-run --keep-vars --config member-pages-worker/wrangler.toml
+        run: npx --yes wrangler@4 deploy --env="" --dry-run --keep-vars --config member-pages-worker/wrangler.toml
 
       - name: Provision Airtable API secret
         shell: bash
         run: |
           set -euo pipefail
           set +x
-          printf '%s' "$AIRTABLE_API_KEY" | npx --yes wrangler@4 secret put AIRTABLE_API_KEY --config member-pages-worker/wrangler.toml
+          printf '%s' "$AIRTABLE_API_KEY" | npx --yes wrangler@4 secret put AIRTABLE_API_KEY --env="" --config member-pages-worker/wrangler.toml
 
       - name: Deploy member-pages-worker
-        run: npx --yes wrangler@4 deploy --keep-vars --config member-pages-worker/wrangler.toml
+        run: npx --yes wrangler@4 deploy --env="" --keep-vars --config member-pages-worker/wrangler.toml
 
       - name: Smoke production public Wish endpoint
         shell: bash
