@@ -1,6 +1,9 @@
 const ACCOUNT_KEY = "account";
-const PASSWORD_ITERATIONS = 210000;
-const RECOVERY_ITERATIONS = 210000;
+// Cloudflare Workers/workerd rejects PBKDF2 iteration counts above 100,000.
+// Keep the actual iteration count on each stored record so this can be migrated later.
+export const MMS_PARTNER_PBKDF2_ITERATIONS = 100000;
+const PASSWORD_ITERATIONS = MMS_PARTNER_PBKDF2_ITERATIONS;
+const RECOVERY_ITERATIONS = MMS_PARTNER_PBKDF2_ITERATIONS;
 const MAX_FAILURES = 5;
 const LOCK_MS = 15 * 60 * 1000;
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
@@ -183,7 +186,12 @@ async function callPartnerStore(env, path, body) {
     let payload = {};
     try { payload = await response.json(); } catch {}
     return { ...payload, status: response.status };
-  } catch {
+  } catch (error) {
+    console.error("MMS_PARTNER_AUTH call failed", {
+      path,
+      error_name: String(error?.name || "Error"),
+      error_message: String(error?.message || "unknown"),
+    });
     return { ok: false, error: "partner_auth_unavailable", status: 503 };
   }
 }
