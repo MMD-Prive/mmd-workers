@@ -7,6 +7,13 @@ const REVIEWABLE_STATES = new Set(["pending", "review", "review_required", "need
 const HISTORICAL_SCHEMA = "mmd_historical_slip_backfill_v1";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const CANONICAL_PAYMENTS_TABLE_ID = "tblWGGJJOx5eBvBZJ";
+const CANONICAL_MEMBERS_TABLE_ID = "tblgWc5VRon5o8Mhk";
+const CANONICAL_CLIENTS_TABLE_ID = "tblVv58TCbwh5j1fS";
+const CANONICAL_ENTITLEMENTS_TABLE_ID = "tblNImdF9PKAxhXGi";
+const CANONICAL_LIFF_RENEWAL_TABLE_ID = "tblXjQFwo0A2cHseh";
+const RECOVERY_APPROVER_ROLES = new Set(["owner", "admin"]);
+const RECOVERY_CHANNELS = new Set(["line_ofc", "line_oa", "line"]);
+const RECOVERY_BLOCKED_STATES = new Set(["rejected", "cancelled", "canceled", "blocked", "revoked", "failed"]);
 
 export const PAYMENT_REVIEW_ROUTES = Object.freeze({
   queue: QUEUE_PATH,
@@ -33,8 +40,8 @@ export async function handlePaymentReviewRequest(request, env = {}, actor = null
 
   try {
     requireAirtable(env);
-    if (path === QUEUE_PATH) return listReviewQueue(request, env);
-    return commitReview(request, env, { id: actorId, role: actorRole });
+    if (path === QUEUE_PATH) return await listReviewQueue(request, env);
+    return await commitReview(request, env, { id: actorId, role: actorRole });
   } catch (error) {
     return json({
       ok: false,
@@ -71,6 +78,8 @@ async function listReviewQueue(request, env) {
       browser_can_mutate_membership: false,
       browser_can_mutate_entitlement: false,
       historical_backfill_separate: true,
+      manual_recovery_requires_owner_admin: true,
+      manual_recovery_requires_canonical_member: true,
     },
   });
 }
@@ -118,7 +127,7 @@ async function commitReview(request, env, actor) {
     });
   }
 
-  const approval = await buildApprovalContext(env, proof, item);
+  const approval = await buildApprovalContext(env, proof, item, actor);
   const paymentsResponse = await sendReviewedProofToPayments(env, {
     ...approval,
     proof_id: proofId,
@@ -143,6 +152,8 @@ async function commitReview(request, env, actor) {
     payment_ref: approval.payment_ref,
     amount_thb: approval.amount_thb,
     payment_stage: approval.payment_stage,
+    context_source: approval.context_source,
+    renewal_session_id: approval.renewal_session_id,
   }).then((value) => ({ ...value, ok: true })).catch((error) => ({
     ok: false,
     event_id: "",
@@ -159,12 +170,14 @@ async function commitReview(request, env, actor) {
     authority: "payments-worker",
     payment_ref: safeText(payload.payment_ref || approval.payment_ref, 180),
     payment_stage: safeCode(payload.payment_stage || payload.stage || approval.payment_stage),
+    context_source: approval.context_source || "canonical_payment",
+    recovery_context: approval.context_source === "liff_renewal_recovery",
     duplicate: payload.duplicate === true,
     money_truth_changed: true,
   });
 }
 
-async function buildApprovalContext(env, proof, item) {
+async function buildApprovalContext(env, proof, item, actor) {
   const fields = proof.fields || {};
   const paymentRef = safeText(fields.payment_ref || fields.transaction_ref, 180);
   const amountThb = positiveAmount(fields.amount_thb ?? fields.amount ?? fields.total_thb);
@@ -175,9 +188,18 @@ async function buildApprovalContext(env, proof, item) {
   let paymentRecord = null;
   if (linkedPayment) paymentRecord = await airtableGet(env, paymentsTable(env), linkedPayment).catch(() => null);
   if (!paymentRecord) paymentRecord = await findPaymentByRef(env, paymentRef);
-  if (!paymentRecord) throw httpError(409, "canonical_payment_context_missing");
 
-  const paymentFields = paymentRecord.fields || {};
+  let paymentFields = paymentRecord?.fields || null;
+  let contextSource = "canonical_payment";
+  let renewalSessionId = "";
+  if (!paymentFields) {
+    const recovery = await buildLinkedRenewalRecoveryContext(env, proof, item, actor, { paymentRef, amountThb });
+    if (!recovery) throw httpError(409, "canonical_payment_context_missing");
+    paymentFields = recovery.payment_fields;
+    contextSource = recovery.context_source;
+    renewalSessionId = recovery.renewal_session_id;
+  }
+
   const expectedRef = safeText(paymentFields.payment_ref || paymentFields["Payment Reference"], 180);
   const expectedAmount = positiveAmount(paymentFields.amount_thb ?? paymentFields.amount ?? paymentFields["Amount"]);
   if (expectedRef && expectedRef !== paymentRef) throw httpError(409, "canonical_payment_reference_mismatch");
@@ -188,11 +210,12 @@ async function buildApprovalContext(env, proof, item) {
   );
   const sessionId = safeText(paymentFields.session_id || fields.session_id || item.session_id, 180);
   const memberEmail = normalizeEmail(paymentFields.member_email || fields.member_email || item.member_email);
-  const packageCode = safeText(paymentFields.package_code || fields.package_code, 120);
+  const packageCode = canonicalPackageCode(paymentFields.package_code || fields.package_code);
   if (["deposit", "final", "tips", "full"].includes(paymentStage) && !sessionId) {
     throw httpError(409, "canonical_session_context_missing");
   }
   if (paymentStage === "membership" && !memberEmail) throw httpError(409, "canonical_member_context_missing");
+  if (paymentStage === "membership" && !packageCode) throw httpError(409, "canonical_package_context_missing");
 
   return {
     source: "payment_review_console",
@@ -203,8 +226,191 @@ async function buildApprovalContext(env, proof, item) {
     session_id: sessionId || null,
     member_email: memberEmail || null,
     package_code: packageCode || null,
-    payment_method: safeText(paymentFields["Payment Method"] || fields.payment_method || "promptpay", 80) || "promptpay",
+    payment_method: safeText(paymentFields["Payment Method"] || paymentFields.payment_method || fields.payment_method || "promptpay", 80) || "promptpay",
+    context_source: contextSource,
+    renewal_session_id: renewalSessionId || null,
   };
+}
+
+async function buildLinkedRenewalRecoveryContext(env, proof, item, actor, { paymentRef, amountThb }) {
+  const fields = proof?.fields || {};
+  const renewalIds = uniqueStrings(linkedRecordIds(
+    fields["MMD — LIFF Renewal Sessions"] ||
+    fields["LIFF Renewal Session"] ||
+    fields["MMD — LIFF Renewal Session"] ||
+    fields.liff_renewal_session
+  ));
+  if (!renewalIds.length) return null;
+  if (renewalIds.length !== 1) throw httpError(409, "liff_renewal_context_ambiguous");
+  if (!RECOVERY_APPROVER_ROLES.has(safeCode(actor?.role))) throw httpError(403, "manual_recovery_requires_owner_admin");
+
+  const channel = safeCode(fields.channel || fields.source || item?.channel || "");
+  if (!RECOVERY_CHANNELS.has(channel)) throw httpError(409, "manual_recovery_channel_not_allowed");
+
+  const renewal = await airtableGet(env, liffRenewalTable(env), renewalIds[0]);
+  const renewalFields = renewal?.fields || {};
+  const renewalState = safeCode(renewalFields.renewal_flow_status || renewalFields.status || "");
+  if (RECOVERY_BLOCKED_STATES.has(renewalState)) throw httpError(409, "liff_renewal_context_not_approvable");
+
+  const renewalAmount = positiveAmount(renewalFields.renewal_amount_thb ?? renewalFields.amount_thb);
+  if (renewalAmount != null && Math.abs(renewalAmount - amountThb) > 0.009) {
+    throw httpError(409, "liff_renewal_amount_mismatch");
+  }
+
+  const identity = await resolveRecoveryMemberIdentity(env, fields, renewalFields);
+  if (!identity?.member?.id || !identity.email) throw httpError(409, "canonical_member_context_missing");
+
+  const packageCode = canonicalPackageCode(
+    renewalFields.requested_package ||
+    renewalFields.package_code ||
+    identity.package_code ||
+    identity.member.fields?.["Membership Tier"] ||
+    identity.member.fields?.membership_tier
+  );
+  if (!packageCode) throw httpError(409, "canonical_package_context_missing");
+
+  const renewalSessionId = safeText(renewalFields.renewal_session_id || renewalFields.payment_intent_session_id, 180);
+  return {
+    context_source: "liff_renewal_recovery",
+    renewal_session_id: renewalSessionId,
+    payment_fields: {
+      payment_ref: paymentRef,
+      amount_thb: amountThb,
+      payment_stage: "membership",
+      payment_type: "membership",
+      member_email: identity.email,
+      package_code: packageCode,
+      payment_method: "promptpay",
+    },
+  };
+}
+
+async function resolveRecoveryMemberIdentity(env, proofFields, renewalFields) {
+  const directMemberIds = uniqueStrings([
+    ...linkedRecordIds(proofFields.member || proofFields.Member),
+    ...linkedRecordIds(renewalFields.member || renewalFields.Member),
+  ]);
+  if (directMemberIds.length > 1) throw httpError(409, "canonical_member_context_ambiguous");
+  if (directMemberIds.length === 1) {
+    const member = await airtableGet(env, membersTable(env), directMemberIds[0]);
+    const email = memberEmail(member?.fields);
+    if (email) return { member, email, package_code: memberPackage(member?.fields) };
+  }
+
+  const entitlementIds = uniqueStrings([
+    ...linkedRecordIds(renewalFields["Member Entitlement"] || renewalFields["MMD — Member Entitlements"]),
+    ...linkedRecordIds(proofFields["Member Entitlement"] || proofFields["MMD — Member Entitlements"]),
+  ]);
+  if (entitlementIds.length > 1) throw httpError(409, "canonical_member_context_ambiguous");
+  if (entitlementIds.length === 1) {
+    const entitlement = await airtableGet(env, entitlementsTable(env), entitlementIds[0]);
+    const resolved = await resolveMemberFromEntitlementRows(env, [entitlement]);
+    if (resolved) return resolved;
+  }
+
+  const memberId = safeText(renewalFields.member_id_canonical, 120);
+  if (memberId) {
+    const member = await findMemberByMemberId(env, memberId);
+    if (member) {
+      const email = memberEmail(member.fields);
+      if (email) return { member, email, package_code: memberPackage(member.fields) };
+    }
+  }
+
+  const clientIds = uniqueStrings([
+    ...linkedRecordIds(renewalFields.Client || renewalFields.client),
+    ...linkedRecordIds(proofFields.Client || proofFields.client),
+  ]);
+  if (clientIds.length > 1) throw httpError(409, "canonical_client_context_ambiguous");
+  if (clientIds.length === 1) {
+    const client = await airtableGet(env, clientsTable(env), clientIds[0]);
+    const email = clientEmail(client?.fields);
+    if (email) {
+      const member = await findMemberByEmail(env, email);
+      if (member) return { member, email: memberEmail(member.fields) || email, package_code: memberPackage(member.fields) };
+    }
+  }
+
+  const lineUserId = canonicalLineUserId(renewalFields.line_user_id) || manualRecoveryLineUserId(proofFields.note);
+  if (!lineUserId) return null;
+
+  const entitlementRows = await airtableList(env, entitlementsTable(env), {
+    filterByFormula: `{line_user_id}='${formulaValue(lineUserId)}'`,
+    maxRecords: 20,
+  }).catch((error) => {
+    if (Number(error?.status) === 422) return [];
+    throw error;
+  });
+  const entitlementIdentity = await resolveMemberFromEntitlementRows(env, entitlementRows);
+  if (entitlementIdentity) return entitlementIdentity;
+
+  const clientRows = await airtableList(env, clientsTable(env), {
+    filterByFormula: `{line_user_id}='${formulaValue(lineUserId)}'`,
+    maxRecords: 3,
+  });
+  if (clientRows.length > 1) throw httpError(409, "canonical_client_context_ambiguous");
+  if (clientRows.length === 1) {
+    const email = clientEmail(clientRows[0].fields);
+    if (email) {
+      const member = await findMemberByEmail(env, email);
+      if (member) return { member, email: memberEmail(member.fields) || email, package_code: memberPackage(member.fields) };
+    }
+  }
+
+  return null;
+}
+
+async function resolveMemberFromEntitlementRows(env, rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const emails = uniqueStrings(rows.map((row) => normalizeEmail(row?.fields?.member_email)).filter(Boolean));
+  const memberIds = uniqueStrings(rows.flatMap((row) => linkedRecordIds(row?.fields?.member)));
+  const packages = uniqueStrings(rows.map((row) => canonicalPackageCode(row?.fields?.package_code)).filter(Boolean));
+  if (emails.length > 1 || memberIds.length > 1) throw httpError(409, "canonical_member_context_ambiguous");
+
+  let member = null;
+  if (memberIds.length === 1) member = await airtableGet(env, membersTable(env), memberIds[0]);
+  if (!member && emails.length === 1) member = await findMemberByEmail(env, emails[0]);
+  if (!member) return null;
+
+  const canonicalEmail = memberEmail(member.fields) || emails[0] || "";
+  if (!canonicalEmail) return null;
+  if (emails.length === 1 && normalizeEmail(emails[0]) !== normalizeEmail(canonicalEmail)) {
+    throw httpError(409, "canonical_member_email_mismatch");
+  }
+
+  return {
+    member,
+    email: canonicalEmail,
+    package_code: packages.length === 1 ? packages[0] : memberPackage(member.fields),
+  };
+}
+
+async function findMemberByMemberId(env, memberId) {
+  const records = await airtableList(env, membersTable(env), {
+    filterByFormula: `{member_id}='${formulaValue(memberId)}'`,
+    maxRecords: 2,
+  });
+  if (records.length > 1) throw httpError(409, "canonical_member_context_ambiguous");
+  return records[0] || null;
+}
+
+async function findMemberByEmail(env, email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+  for (const field of ["Contact Email", "email"]) {
+    try {
+      const records = await airtableList(env, membersTable(env), {
+        filterByFormula: `LOWER({${field}})='${formulaValue(normalized)}'`,
+        maxRecords: 2,
+      });
+      if (records.length > 1) throw httpError(409, "canonical_member_context_ambiguous");
+      if (records[0]) return records[0];
+    } catch (error) {
+      if (Number(error?.status) === 409) throw error;
+      if (Number(error?.status) !== 422) throw error;
+    }
+  }
+  return null;
 }
 
 async function sendReviewedProofToPayments(env, body) {
@@ -229,6 +435,12 @@ function safeQueueItem(record) {
   const reviewable = !historical && (REVIEWABLE_STATES.has(status) || (!status && !historical));
   const paymentRef = safeText(fields.payment_ref || fields.transaction_ref, 180);
   const amountThb = positiveAmount(fields.amount_thb ?? fields.amount ?? fields.total_thb);
+  const renewalIds = linkedRecordIds(
+    fields["MMD — LIFF Renewal Sessions"] ||
+    fields["LIFF Renewal Session"] ||
+    fields["MMD — LIFF Renewal Session"] ||
+    fields.liff_renewal_session
+  );
   return {
     proof_id: proofId,
     proof_record_id: safeText(record.id, 120),
@@ -250,6 +462,7 @@ function safeQueueItem(record) {
       amount_present: amountThb != null,
       linked_payment_present: Boolean(linkedRecordId(fields.payment || fields.Payment || fields["Payment"])),
       linked_session_present: Boolean(linkedRecordId(fields.session || fields.Session || fields["Session"])),
+      linked_renewal_present: renewalIds.length === 1,
     },
   };
 }
@@ -280,6 +493,7 @@ async function findReviewAudit(env, idempotencyKey) {
   if (records.length > 1) throw httpError(409, "payment_review_idempotency_ambiguous");
   if (!records[0]) return null;
   const fields = records[0].fields || {};
+  const after = parseJson(fields["After JSON"]);
   return {
     ok: safeCode(fields.Result) === "success",
     duplicate: true,
@@ -287,8 +501,10 @@ async function findReviewAudit(env, idempotencyKey) {
     decision: safeCode(fields.Reason),
     proof_id: safeText(parseJson(fields["Before JSON"]).proof_id, 120),
     audit_event_id: safeText(fields["Event ID"], 180),
-    authority: safeCode(parseJson(fields["After JSON"]).authority || "payments-worker"),
-    money_truth_changed: parseJson(fields["After JSON"]).money_truth_changed === true,
+    authority: safeCode(after.authority || "payments-worker"),
+    context_source: safeCode(after.context_source || ""),
+    recovery_context: safeCode(after.context_source) === "liff_renewal_recovery",
+    money_truth_changed: after.money_truth_changed === true,
   };
 }
 
@@ -309,9 +525,11 @@ async function writeAudit(env, input) {
       payment_ref: input.payment_ref || null,
       amount_thb: input.amount_thb ?? null,
       payment_stage: input.payment_stage || null,
+      renewal_session_id: input.renewal_session_id || null,
     }),
     "After JSON": boundedJson({
       authority: input.authority || "payments-worker",
+      context_source: input.context_source || "",
       money_truth_changed: input.decision === "approve" && input.authority === "payments-worker",
     }),
     Actor: input.actor.id,
@@ -380,6 +598,22 @@ function paymentsTable(env) {
   );
 }
 
+function membersTable(env) {
+  return clean(env.AIRTABLE_TABLE_MEMBERS_ID || env.AIRTABLE_TABLE_MEMBERS || CANONICAL_MEMBERS_TABLE_ID);
+}
+
+function clientsTable(env) {
+  return clean(env.AIRTABLE_TABLE_CLIENTS_ID || env.AIRTABLE_TABLE_CLIENTS || CANONICAL_CLIENTS_TABLE_ID);
+}
+
+function entitlementsTable(env) {
+  return clean(env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID || env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || CANONICAL_ENTITLEMENTS_TABLE_ID);
+}
+
+function liffRenewalTable(env) {
+  return clean(env.AIRTABLE_TABLE_LIFF_RENEWAL_SESSIONS_ID || env.AIRTABLE_TABLE_LIFF_RENEWAL_SESSIONS || CANONICAL_LIFF_RENEWAL_TABLE_ID);
+}
+
 function accessLogTable(env) {
   return clean(env.AIRTABLE_TABLE_ACCESS_LOG || ACCESS_LOG_TABLE);
 }
@@ -394,9 +628,51 @@ function requireAirtable(env) {
   if (!clean(env.AIRTABLE_API_KEY) || !clean(env.AIRTABLE_BASE_ID)) throw httpError(503, "airtable_not_ready");
 }
 
+function linkedRecordIds(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) => safeText(entry, 120)).filter(Boolean);
+}
+
 function linkedRecordId(value) {
-  if (Array.isArray(value) && value.length) return safeText(value[0], 120);
+  return linkedRecordIds(value)[0] || "";
+}
+
+function memberEmail(fields = {}) {
+  return normalizeEmail(fields["Contact Email"] || fields.email || fields.member_email);
+}
+
+function clientEmail(fields = {}) {
+  return normalizeEmail(fields["Contact Email"] || fields.email);
+}
+
+function memberPackage(fields = {}) {
+  return canonicalPackageCode(fields["Membership Tier"] || fields.membership_tier || fields.package_code);
+}
+
+function manualRecoveryLineUserId(noteValue) {
+  const note = clean(noteValue);
+  if (!/^MANUAL_RECOVERY\|/i.test(note)) return "";
+  const match = /\bline_user_id(?:\s*[:=]|\s+)([A-Za-z0-9_-]{20,80})/i.exec(note);
+  return canonicalLineUserId(match?.[1]);
+}
+
+function canonicalLineUserId(value) {
+  const candidate = safeText(value, 100);
+  return /^U[A-Za-z0-9_-]{20,80}$/.test(candidate) ? candidate : "";
+}
+
+function canonicalPackageCode(value) {
+  const raw = safeCode(value).replace(/-/g, "_");
+  if (!raw) return "";
+  if (raw === "guest7" || raw === "guest_7" || raw.includes("guest7")) return "guest7";
+  if (raw === "blackcard" || raw === "black_card" || raw.includes("black_card") || raw.includes("blackcard")) return "blackcard";
+  if (raw.includes("premium")) return "premium";
+  if (raw.includes("standard") || raw.includes("lite")) return "standard";
   return "";
+}
+
+function uniqueStrings(values) {
+  return [...new Set((Array.isArray(values) ? values : []).map((value) => safeText(value, 240)).filter(Boolean))];
 }
 
 function evidenceUrl(fields = {}) {
