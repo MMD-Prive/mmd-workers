@@ -100,4 +100,6 @@ jobs:
           fi
           grep -Eiq '^x-mmd-ceo-route-owner:[[:space:]]*immigrate-worker' "$headers"
           grep -Eiq '^x-mmd-ceo-auth:[[:space:]]*required' "$headers"
+          grep -Eiq '^x-mmd-ceo-human-operator:[[:space:]]*per' "$headers"
+          grep -Eiq '^x-mmd-ceo-mode:[[:space:]]*single-owner-v1' "$headers"
           grep -Eiq '^location:[[:space:]]*https://www\.mmdbkk\.com/internal/admin/login\?next=' "$headers"
