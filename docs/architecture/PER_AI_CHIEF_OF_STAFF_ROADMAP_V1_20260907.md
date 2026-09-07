@@ -12,11 +12,24 @@ This roadmap assumes **Per is the single human operator**. It extends `MMD_SINGL
 
 The goal is not to add more admin pages. The goal is to reduce how often Per must remember routes, inspect every queue, repeat follow-ups, or manually assemble context.
 
+## Implementation status
+
+- Command Center — LIVE P0
+- Exception Inbox — LIVE P0
+- Action Cards — LIVE P0
+- Follow-up Autopilot — LIVE P1 durable reminder state
+- Smart Matching — NEXT P1
+- System Health — foundation exists; full operational-impact layer remains P1/P2
+
+Follow-up Autopilot V1 is intentionally reminder-only. It can keep durable watch state, revalidate from verified admin dashboard evidence when Command Center opens, schedule due alarms, surface due items into Needs Per/Prepared, and let Per snooze or close a Watch. It does **not** message customers, mark money paid, confirm Jobs, change Membership, grant access, or mutate canonical business records.
+
+Dedicated Telegram push is optional and activates only when the AI Ops Worker has `PER_FOLLOWUP_TELEGRAM_BOT_TOKEN` and `PER_FOLLOWUP_TELEGRAM_CHAT_ID` configured. Without that dedicated private channel, reminders stay Command-Center-only rather than being sent to an ambiguous shared Telegram destination.
+
 ## Operating model
 
 `Per asks / opens Command Center → AI reads verified context → AI surfaces only what matters → AI prepares a safe next step → Per confirms meaningful decisions → canonical backend acts`
 
-AI may summarize, rank, prepare, and monitor. It does not become the authority for money, entitlement, protected access, private-model disclosure, or final owner decisions.
+AI may summarize, rank, prepare, monitor, and remind. It does not become the authority for money, entitlement, protected access, private-model disclosure, or final owner decisions.
 
 ## 1. Command Center — P0
 
@@ -60,6 +73,7 @@ Normalize verified exceptions from existing sources such as:
 - jobs waiting for confirmation or blocked state
 - members near expiry / pending state
 - source-unavailable or fail-closed AI Ops signals
+- Follow-up Autopilot watches that are due
 
 Each item must show:
 
@@ -95,27 +109,51 @@ Later supervised actions may be added only when the canonical backend already ex
 
 Purpose: remove repeated mental reminders from Per.
 
-Watch categories:
+Current V1 watch coverage:
 
-- payment waiting too long;
-- booking/job confirmation overdue;
-- member renewal window;
-- model readiness waiting on one missing item;
-- customer follow-up that has a verified due time.
+- payment waiting too long — active when stable payment ID + verified pending signal + explicit due or source timestamp exists;
+- booking/job confirmation overdue — active when stable Job/Session ID + verified waiting signal + explicit due or source timestamp exists;
+- member renewal window — active when stable Member/Client ID + verified expiry exists;
+- customer follow-up — active only when stable Client/Member ID + explicit due time exists;
+- model readiness waiting on one missing item — intentionally WAITING until a verified one-missing-item projection exists.
 
-Initial autopilot should **notify Per**, not message customers or mutate records automatically.
+Default threshold rules are conservative reminders, not business truth:
 
-Every watch requires:
+- Payment waiting: 2 hours after verified observed timestamp when no explicit due is supplied.
+- Job confirmation waiting: 4 hours after verified waiting/observed timestamp when no explicit due is supplied.
+- Membership renewal: 14 days before verified expiry.
+
+If the source does not provide a stable ID and a due/threshold basis, the watch is skipped rather than inferred.
+
+Every Watch stores:
 
 - stable object ID;
-- verified condition;
+- verified condition evidence;
 - due/threshold rule;
-- last checked time;
-- last notified time;
-- snooze/close state;
-- audit trail.
+- `last_checked_at`;
+- `last_notified_at` / notification status;
+- snooze / close / resolved state;
+- bounded audit trail.
 
-No free-form AI timer state in browser storage.
+Durable state lives in the `FollowUpAutopilot` Durable Object. Browser storage is not used.
+
+Revalidation rule:
+
+`Command Center opens → POST /v1/admin/ai-ops/follow-ups/sync → authenticated /v1/admin/dashboard read → derive verified candidates → durable upsert/resolve → UI refresh`
+
+Alarm rule:
+
+- Durable Object alarm marks watches due and can notify Per through the dedicated private Telegram channel if configured.
+- If dedicated Telegram is not configured, due watches remain visible in Command Center and no message is sent to another/shared channel.
+- Alarm notifications are reminders to re-check the canonical source; they do not claim the underlying condition is still true unless it was recently revalidated.
+
+Control actions:
+
+- Snooze: changes reminder timing only.
+- Close Watch: stops the reminder only.
+- Reopen: reactivates reminder state only.
+
+None of these actions changes Job, Payment, Membership, entitlement, customer, or Model truth.
 
 ## 5. Smart Matching — P1
 
@@ -171,7 +209,7 @@ The owner-facing experience should converge toward five concepts:
 1. **Ask Per AI** — plain-language command preview
 2. **Needs Per** — normalized exception inbox
 3. **Prepared** — action cards ready for confirmation/handoff
-4. **Watching** — follow-up autopilot state
+4. **Watching** — durable Follow-up Autopilot state
 5. **Done Today** — verified audit summary when a trustworthy source exists
 
 If `Done Today` has no canonical audit projection, show WAITING/UNAVAILABLE instead of inventing activity.
