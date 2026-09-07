@@ -3,6 +3,12 @@ main = "src/mms-line-front-gate.js"
 compatibility_date = "2026-07-02"
 workers_dev = false
 
+# MMD Privé Rich Menu runtime. Cloudflare cron is UTC; the handler evaluates
+# Asia/Bangkok and keeps the menu hidden 16:00-23:00, visible otherwise.
+# Hourly reconciliation also self-heals assignments after deploys/state drift.
+[triggers]
+crons = ["0 * * * *"]
+
 [[services]]
 binding = "MEMBER_PAGES_WORKER"
 service = "member-pages-worker"
@@ -220,6 +226,7 @@ MMS_LINE_AI_ENABLED = "true"
 KENJI_LINE_CONTINUITY_ENABLED = "true"
 AIRTABLE_TABLE_KENJI_CONVERSATION_MATRIX_ID = "tblS6iRgPjYLBqZJh"
 AIRTABLE_TABLE_CLIENTS_ID = "tblVv58TCbwh5j1fS"
+AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID = "tblNImdF9PKAxhXGi"
 # Read-only shadow bridge: every accepted MMD LINE webhook is also observed by
 # ai-worker through a private Cloudflare service binding. It does not affect
 # the LINE reply path or create any domain truth.
