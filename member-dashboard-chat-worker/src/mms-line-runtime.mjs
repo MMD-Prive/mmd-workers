@@ -1,10 +1,12 @@
 const MMS_WEBHOOK_PATHS = new Set(["/webhooks/line/mms", "/webhooks/line/mms/"]);
 const MMS_RICH_MENU_PUBLISH_PATH = "/v1/internal/line/mms/rich-menu/publish";
+const MMS_RICH_MENU_PUBLISHER_VERSION = "raw-or-url-v2";
 const LINE_API = "https://api.line.me/v2/bot";
 const LINE_DATA_API = "https://api-data.line.me/v2/bot";
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const DEFAULT_MODEL = "gpt-5.6";
 const MAX_EVENTS = 50;
+const MAX_RICH_MENU_IMAGE_BYTES = 1024 * 1024;
 
 const ROUTES = Object.freeze({
   home: "https://mmdbkk.com/male-massage/home",
@@ -265,11 +267,13 @@ function richMenuDraft() {
   };
 }
 
-function hasInternalAuth(request, env) {
-  const expected = clean(env.INTERNAL_TOKEN, 4096);
-  if (!expected) return false;
+function hasRichMenuPublishAuth(request, env) {
   const auth = clean(request.headers.get("authorization"), 4096);
-  return auth === `Bearer ${expected}` || clean(request.headers.get("x-internal-token"), 4096) === expected;
+  const internalHeader = clean(request.headers.get("x-internal-token"), 4096);
+  const candidates = [env.INTERNAL_TOKEN, env.MMS_RICH_MENU_PUBLISH_TOKEN]
+    .map((value) => clean(value, 4096))
+    .filter(Boolean);
+  return candidates.some((expected) => auth === `Bearer ${expected}` || internalHeader === expected);
 }
 
 async function lineApiJson(env, url, init = {}) {
@@ -290,10 +294,48 @@ async function lineApiJson(env, url, init = {}) {
     : { ok: false, error: "line_api_failed", status: response.status, detail: payload?.message || "" };
 }
 
-async function publishRichMenu(request, env) {
-  if (!hasInternalAuth(request, env)) return json({ ok: false, error: "internal_auth_required" }, 401);
+async function readRichMenuImage(request, env) {
+  const requestType = clean(request.headers.get("content-type"), 100).toLowerCase().split(";")[0];
+  if (["image/jpeg", "image/png"].includes(requestType)) {
+    const declaredLength = Number(request.headers.get("content-length") || 0);
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_RICH_MENU_IMAGE_BYTES) {
+      return { ok: false, status: 413, stage: "image_size", bytes: declaredLength };
+    }
+    const bytes = await request.arrayBuffer();
+    if (!bytes.byteLength) return { ok: false, status: 400, stage: "image_empty" };
+    if (bytes.byteLength > MAX_RICH_MENU_IMAGE_BYTES) {
+      return { ok: false, status: 413, stage: "image_size", bytes: bytes.byteLength };
+    }
+    return { ok: true, contentType: requestType, bytes };
+  }
+
   const imageUrl = clean(env.MMS_RICH_MENU_IMAGE_URL, 2000);
-  if (!imageUrl.startsWith("https://")) return json({ ok: false, error: "mms_rich_menu_image_missing" }, 503);
+  if (!imageUrl.startsWith("https://")) {
+    return { ok: false, status: 503, stage: "image_source", error: "mms_rich_menu_image_missing" };
+  }
+  const image = await fetch(imageUrl).catch(() => null);
+  if (!image?.ok) return { ok: false, status: 502, stage: "image_fetch" };
+  const contentType = clean(image.headers.get("content-type"), 100).toLowerCase().split(";")[0];
+  if (!["image/jpeg", "image/png"].includes(contentType)) {
+    return { ok: false, status: 502, stage: "image_type", content_type: contentType };
+  }
+  const bytes = await image.arrayBuffer();
+  if (!bytes.byteLength) return { ok: false, status: 502, stage: "image_empty" };
+  if (bytes.byteLength > MAX_RICH_MENU_IMAGE_BYTES) {
+    return { ok: false, status: 502, stage: "image_size", bytes: bytes.byteLength };
+  }
+  return { ok: true, contentType, bytes };
+}
+
+async function publishRichMenu(request, env) {
+  if (!hasRichMenuPublishAuth(request, env)) return json({ ok: false, error: "internal_auth_required" }, 401);
+
+  const image = await readRichMenuImage(request, env);
+  if (!image.ok) {
+    const { status = 502, ...safe } = image;
+    return json({ ok: false, ...safe }, status);
+  }
+
   const draft = richMenuDraft();
   const validated = await lineApiJson(env, `${LINE_API}/richmenu/validate`, { method: "POST", body: JSON.stringify(draft) });
   if (!validated.ok) return json({ ok: false, stage: "validate", ...validated }, 502);
@@ -301,21 +343,11 @@ async function publishRichMenu(request, env) {
   const richMenuId = clean(created?.data?.richMenuId, 300);
   if (!created.ok || !richMenuId) return json({ ok: false, stage: "create", ...created }, 502);
 
-  const image = await fetch(imageUrl).catch(() => null);
-  if (!image?.ok) return json({ ok: false, stage: "image_fetch", rich_menu_id: richMenuId }, 502);
-  const contentType = clean(image.headers.get("content-type"), 100).toLowerCase().split(";")[0];
-  if (!["image/jpeg", "image/png"].includes(contentType)) {
-    return json({ ok: false, stage: "image_type", content_type: contentType, rich_menu_id: richMenuId }, 502);
-  }
-  const bytes = await image.arrayBuffer();
-  if (bytes.byteLength > 1024 * 1024) {
-    return json({ ok: false, stage: "image_size", bytes: bytes.byteLength, rich_menu_id: richMenuId }, 502);
-  }
   const token = clean(env.MMS_LINE_CHANNEL_ACCESS_TOKEN, 4096);
   const uploaded = await fetch(`${LINE_DATA_API}/richmenu/${encodeURIComponent(richMenuId)}/content`, {
     method: "POST",
-    headers: { authorization: `Bearer ${token}`, "content-type": contentType },
-    body: bytes,
+    headers: { authorization: `Bearer ${token}`, "content-type": image.contentType },
+    body: image.bytes,
   }).catch(() => null);
   if (!uploaded?.ok) return json({ ok: false, stage: "image_upload", status: uploaded?.status || 0, rich_menu_id: richMenuId }, 502);
 
@@ -336,6 +368,7 @@ async function handleWebhook(request, env, ctx) {
       configured: Boolean(clean(env.MMS_LINE_CHANNEL_SECRET) && clean(env.MMS_LINE_CHANNEL_ACCESS_TOKEN)),
       ai_enabled: enabled(env.MMS_LINE_AI_ENABLED),
       rich_menu_mode: "24/7",
+      rich_menu_publisher: MMS_RICH_MENU_PUBLISHER_VERSION,
     });
   }
   if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);

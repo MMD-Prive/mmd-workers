@@ -75,5 +75,6 @@ test("MMS webhook health reports configuration without exposing secrets", async 
   assert.equal(body.configured, true);
   assert.equal(body.ai_enabled, true);
   assert.equal(body.rich_menu_mode, "24/7");
+  assert.equal(body.rich_menu_publisher, "raw-or-url-v2");
   assert.equal(JSON.stringify(body).includes("present"), false);
 });
