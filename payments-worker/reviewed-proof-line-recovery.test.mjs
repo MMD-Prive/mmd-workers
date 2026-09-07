@@ -24,7 +24,7 @@ function harness() {
     } }],
     "tblgWc5VRon5o8Mhk": [{ id: MEMBER_RECORD, fields: {
       member_id: "inn",
-      line_user_id: LINE_ID,
+      line_id: LINE_ID,
       "Membership Tier": null,
       "Membership Status": null,
     } }],

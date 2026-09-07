@@ -185,7 +185,9 @@ async function validateEmailLessRecovery(env, input) {
   const mf = member.fields || {};
   const cf = client.fields || {};
   const rf = renewal.fields || {};
-  if (lineId(mf.line_user_id) !== input.lineUserId) throw httpError(409, "recovery_member_line_mismatch");
+  // Canonical Members stores the LINE subject in `line_id`; Clients and LIFF
+  // intentionally use `line_user_id`.
+  if (lineId(mf.line_id) !== input.lineUserId) throw httpError(409, "recovery_member_line_mismatch");
   if (lineId(cf.line_user_id) !== input.lineUserId) throw httpError(409, "recovery_client_line_mismatch");
   if (lineId(rf.line_user_id) !== input.lineUserId) throw httpError(409, "recovery_renewal_line_mismatch");
   if (text(mf.member_id, 120) !== input.memberId) throw httpError(409, "recovery_member_id_mismatch");
