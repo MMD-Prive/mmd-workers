@@ -36,8 +36,12 @@ try {
   assert.equal(response.headers.get("x-mmd-control-room-typography"), "sf-first-local");
   assert.equal(response.headers.get("x-mmd-control-room-operator-object"), "job");
   assert.equal(response.headers.get("x-mmd-control-room-create-route"), "/internal/admin/jobs/create-job");
+  assert.equal(response.headers.get("x-mmd-control-room-canon"), "single-owner-v1");
+  assert.equal(response.headers.get("x-mmd-control-room-human-operator"), "per");
+  assert.equal(response.headers.get("x-mmd-control-room-review-model"), "ai-checks-per-confirms");
+  assert.equal(response.headers.get("x-mmd-ai-ops-layer"), "v3");
 
-  // Visible operator surface remains compact and queue-first.
+  // Visible owner surface remains compact and task-first.
   assert.match(body, /MMD PRIVÉ/);
   assert.match(body, /OPERATING SYSTEM/);
   assert.match(body, /วันนี้ต้องทำอะไรบ้าง/);
@@ -49,7 +53,17 @@ try {
   assert.match(body, /\/v1\/admin\/dashboard/);
   assert.match(body, /BACKEND WAITING/);
 
-  // Compatibility markers remain, but operator creation is Job-first.
+  // Runtime overlay makes the human model explicit without deleting audit compatibility markers.
+  assert.match(body, /data-mmd-control-room-canon-v3/);
+  assert.match(body, /PER · OWNER MODE/);
+  assert.match(body, /ไม่มี reviewer คนที่สอง/);
+  assert.match(body, /data-per-owner-strip/);
+  assert.match(body, /TODAY · PER/);
+  assert.match(body, /งานที่เปอร์ต้องทำต่อ/);
+  assert.match(body, /หน้าที่เปอร์ใช้จริง/);
+  assert.match(body, /\/v1\/admin\/ai-ops\/client\.js\?v=3/);
+
+  // Compatibility markers remain, but owner creation is Job-first.
   assert.match(body, /data-control-room-v3/);
   assert.match(body, /OWNER CONTROL · V4/);
   assert.match(body, /MMD PRIVÉ · OWNER CONTROL ROOM · 07 SEP 2026/);
@@ -69,7 +83,8 @@ try {
   assert.match(body, /\/internal\/admin\/membership-access/);
   assert.match(body, /\/internal\/admin\/mms/);
   assert.match(body, /\/internal\/admin\/studio/);
-  assert.match(body, /\/internal\/ceo\/dashboard/);
+  assert.match(body, /\/internal\/ceo/);
+  assert.doesNotMatch(body, /\/internal\/ceo\/dashboard/);
   assert.match(body, /\/sigil\/model\/console/);
   assert.match(body, /\/shop\/admin\/stock/);
   assert.match(body, /\/internal\/admin\/control-room\/protocol/);
