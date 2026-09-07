@@ -62,6 +62,7 @@ jobs:
               http_status: response.status,
               ok: payload?.ok === true,
               route: String(payload?.route || "").slice(0, 80),
+              schema: String(payload?.schema || "").slice(0, 80),
               status: String(payload?.status || "").slice(0, 80),
               configured: payload?.configured === true,
               signature_secret_present: payload?.signature_secret_present === true,
@@ -69,13 +70,17 @@ jobs:
               line_api_reachable: payload?.line_api_reachable === true,
               webhook_active: payload?.webhook_active === true,
               endpoint_match: payload?.endpoint_match === true,
+              signed_webhook_test_attempted: payload?.signed_webhook_test_attempted === true,
+              signed_webhook_test_success: payload?.signed_webhook_test_success === true,
+              signed_webhook_test_status_code: Number(payload?.signed_webhook_test_status_code || 0),
+              signed_webhook_test_reason: String(payload?.signed_webhook_test_reason || "").slice(0, 80),
             };
             last = safe;
             console.log(`KENJI_LINE_TRANSPORT_HEALTH ${JSON.stringify(safe)}`);
-            if (safe.route === "line_transport_health") break;
+            if (safe.route === "line_transport_health" && safe.schema === "mmd.kenji_line_transport_health.v2" && safe.signed_webhook_test_attempted) break;
             await new Promise((resolve) => setTimeout(resolve, 5000));
           }
-          if (last?.route !== "line_transport_health") {
-            throw new Error("Production transport-health route did not become active within retry window");
+          if (last?.schema !== "mmd.kenji_line_transport_health.v2" || last?.signed_webhook_test_attempted !== true) {
+            throw new Error("Production signed webhook transport-health probe did not become active within retry window");
           }
           NODE
