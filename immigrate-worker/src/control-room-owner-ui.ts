@@ -1,7 +1,7 @@
 import { renderOwnerControlRoomPage as renderLegacyOwnerControlRoomPage } from "./control-room-owner-ui-legacy";
 
 const encoder = new TextEncoder();
-const AI_OPS_SCRIPT = '<script src="/v1/admin/ai-ops/client.js?v=1" defer data-mmd-ai-ops="v1"></script>';
+const AI_OPS_SCRIPT = '<script src="/v1/admin/ai-ops/client.js?v=2" defer data-mmd-ai-ops-script="v2"></script>';
 const CONTROL_ROOM_CANON_SCRIPT = `<script data-mmd-control-room-canon-v2>(function(){var r=document.getElementById('mmd-os-v1');if(!r)return;var tabs=Array.from(r.querySelectorAll('[data-tab]'));tabs.forEach(function(b){var n=b.getAttribute('data-tab');if(n==='ai'){b.remove();return}if(n==='queues')b.textContent='Operations';if(n==='systems')b.textContent='Pages'});var ai=r.querySelector('[data-view="ai"]');if(ai)ai.remove();var ops=r.querySelector('[data-view="queues"]');if(ops){var k=ops.querySelector('.k'),h=ops.querySelector('h1'),p=ops.querySelector('.heading p:last-child');if(k)k.textContent='OPERATIONS';if(h)h.textContent='หน้าที่ต้องทำต่อ';if(p)p.textContent='รวมเฉพาะ operational pages ที่ยังเป็น canonical และมี owner ชัดเจน'}var pages=r.querySelector('[data-view="systems"]');if(pages){var k2=pages.querySelector('.k'),h2=pages.querySelector('h1'),p2=pages.querySelector('.heading p:last-child');if(k2)k2.textContent='CANONICAL PAGES';if(h2)h2.textContent='หน้าหลังบ้านที่เหลือ';if(p2)p2.textContent='ดูเฉพาะหน้าที่ใช้งานจริง; AI Ops เป็น shared layer ไม่แยกเป็น worker tab แล้ว'}r.querySelectorAll('a[href="/internal/ceo/dashboard"]').forEach(function(a){a.href='/internal/ceo'});})();</script>`;
 
 function canonicalizeOwnerControlRoom(html: string): string {
@@ -21,7 +21,7 @@ export function renderOwnerControlRoomPage(): Response {
   headers.set("x-mmd-control-room-operator-object", "job");
   headers.set("x-mmd-control-room-create-route", "/internal/admin/jobs/create-job");
   headers.set("x-mmd-control-room-canon", "remaining-pages-v2");
-  headers.set("x-mmd-ai-ops-layer", "v1");
+  headers.set("x-mmd-ai-ops-layer", "v2");
 
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
