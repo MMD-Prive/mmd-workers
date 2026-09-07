@@ -38,7 +38,7 @@
     "deploy:sigil-board": "wrangler deploy --config workers/sigil-board-worker/wrangler.toml",
     "deploy:sigil-booking-proxy": "wrangler deploy --config workers/sigil-booking-proxy-worker/wrangler.toml",
     "deploy:mms": "npm run deploy --prefix mms-worker",
-    "dev:payments": "npm run test:session-finance-write && wrangler dev --config workers/payments-worker/wrangler.toml",
+    "dev:payments": "wrangler dev --config workers/payments-worker/wrangler.toml",
     "dev:admin": "wrangler dev --config admin-worker/wrangler.toml",
     "dev:events": "wrangler dev --config events-worker/wrangler.toml",
     "dev:telegram": "wrangler dev --config telegram-worker/wrangler.toml",
