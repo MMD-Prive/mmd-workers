@@ -1,4 +1,4 @@
-import aiOpsWorker from "./index.js";
+import aiOpsWorker from "./ceo-bridge.js";
 
 const CONTEXT_PATH = "/v1/admin/ai-ops/context";
 
