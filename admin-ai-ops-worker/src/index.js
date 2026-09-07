@@ -1,3 +1,10 @@
+import {
+  COMMAND_CENTER_PATH,
+  COMMAND_PREVIEW_PATH,
+  buildCommandCenter,
+  previewCommand,
+} from "./command-center.js";
+
 const SCHEMA = "mmd_ai_ops_layer_v1";
 const CONTEXT_PATH = "/v1/admin/ai-ops/context";
 const CLIENT_PATH = "/v1/admin/ai-ops/client.js";
@@ -48,10 +55,37 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(request) });
-    if (request.method !== "GET") return response(request, { ok: false, error: "method_not_allowed" }, 405);
-    if (path === CLIENT_PATH) return jsResponse(CLIENT_JS);
+    const method = request.method.toUpperCase();
+
+    if (method === "OPTIONS") return new Response(null, { status: 204, headers: cors(request) });
+    if (method === "GET" && path === CLIENT_PATH) return jsResponse(CLIENT_JS);
+
+    if (path === COMMAND_PREVIEW_PATH) {
+      if (method !== "POST") return response(request, { ok: false, error: "method_not_allowed" }, 405);
+      const auth = await verifyAdmin(request);
+      if (!auth.ok) return response(request, { ok: false, error: "unauthorized" }, 401);
+      const body = await request.json().catch(() => null);
+      return response(request, previewCommand(body?.command || body?.text || ""));
+    }
+
+    if (path === COMMAND_CENTER_PATH) {
+      if (method !== "GET") return response(request, { ok: false, error: "method_not_allowed" }, 405);
+      const auth = await verifyAdmin(request);
+      if (!auth.ok) return response(request, { ok: false, error: "unauthorized" }, 401);
+      const dashboard = await readAdminJson(request, "/v1/admin/dashboard");
+      return response(request, {
+        ok: true,
+        schema_version: SCHEMA,
+        owner_mode: "single_owner",
+        human_operator: "Per",
+        command_center: buildCommandCenter(dashboard),
+        authority: AUTHORITY,
+        generated_at: new Date().toISOString(),
+      });
+    }
+
     if (path !== CONTEXT_PATH) return response(request, { ok: false, error: "not_found" }, 404);
+    if (method !== "GET") return response(request, { ok: false, error: "method_not_allowed" }, 405);
 
     const auth = await verifyAdmin(request);
     if (!auth.ok) return response(request, { ok: false, error: "unauthorized" }, 401);
@@ -60,6 +94,9 @@ export default {
     const context = readContext(url.searchParams);
     const intel = await collectIntel(request, page.surface);
     const advisory = buildAdvisory(page, context, intel);
+    const dashboardRead = (page.surface === "control_room" || page.surface === "dashboard")
+      ? intel.find((item) => item.route === "/v1/admin/dashboard") || null
+      : null;
 
     return response(request, {
       ok: true,
@@ -70,6 +107,7 @@ export default {
       brief: advisory.brief,
       anomalies: advisory.anomalies,
       next_actions: advisory.next_actions,
+      command_center: dashboardRead ? buildCommandCenter(dashboardRead) : null,
       sources: intel.map(({ route, ok, status }) => ({ route, ok, status })),
       authority: AUTHORITY,
       generated_at: new Date().toISOString(),
@@ -132,7 +170,7 @@ function buildAdvisory(page, ctx, intel) {
   }
 
   if (page.surface === "control_room" || page.surface === "dashboard") {
-    brief.push("สรุปภาพรวมงานก่อน แล้วพาไปทำเฉพาะสิ่งที่ต้องตัดสินใจ ไม่ต้องจำ route เอง");
+    brief.push("PER · COMMAND CENTER: Ask → Needs Per → Prepared → Watching; AI ช่วยคัดและเตรียมทางไปต่อโดยไม่ย้าย authority จาก backend");
     next.push(action(1, "create_job", "Create Job", "/internal/admin/jobs/create-job"));
     next.push(action(2, "review_payments", "Review Payments", "/internal/admin/payments"));
     next.push(action(3, "reconcile_access", "Reconcile Membership Access", "/internal/admin/membership-access"));
@@ -210,7 +248,7 @@ function cors(request) {
   const h = { "cache-control": "no-store", vary: "Origin" };
   if (allowed.includes(origin)) h["access-control-allow-origin"] = origin;
   h["access-control-allow-credentials"] = "true";
-  h["access-control-allow-methods"] = "GET,OPTIONS";
+  h["access-control-allow-methods"] = "GET,POST,OPTIONS";
   h["access-control-allow-headers"] = "Content-Type";
   return h;
 }
@@ -221,4 +259,4 @@ function jsResponse(source) {
   return new Response(source, { status: 200, headers: { "content-type": "application/javascript; charset=utf-8", "cache-control": "public, max-age=60" } });
 }
 
-const CLIENT_JS = String.raw`(()=>{'use strict';const p=location.pathname.replace(/\/+$/,'')||'/';if(!p.startsWith('/internal/admin/'))return;if(document.querySelector('[data-mmd-ai-ops]'))return;const q=(s,r=document)=>r.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const pick=(names)=>{for(const n of names){const e=q('[data-'+n+']');if(e){const v=(e.value||e.dataset?.value||e.textContent||'').trim();if(v&&v!=='-')return v}const u=new URL(location.href).searchParams.get(n.replace(/-/g,'_'));if(u)return u}return''};const params=()=>{const o={path:p,client_id:pick(['client-id','selected-client-id']),member_id:pick(['member-id']),model_id:pick(['model-id','selected-model-id']),job_id:pick(['job-id']),session_id:pick(['session-id']),payment_ref:pick(['payment-ref']),record_id:pick(['record-id'])},u=new URLSearchParams;for(const[k,v]of Object.entries(o))if(v)u.set(k,v);return u};const h=document.createElement('div');h.dataset.mmdAiOps='v1';h.innerHTML='<style>.mmd-aiops-btn{position:fixed;right:14px;bottom:16px;z-index:2147483000;border:1px solid rgba(216,185,111,.45);background:#11100f;color:#e7d09a;border-radius:999px;padding:11px 14px;font:800 11px/1 -apple-system,BlinkMacSystemFont,"Noto Sans Thai",sans-serif;box-shadow:0 12px 40px #0008}.mmd-aiops{position:fixed;right:14px;bottom:62px;z-index:2147482999;width:min(390px,calc(100vw - 28px));max-height:min(70vh,680px);overflow:auto;border:1px solid #3a3122;border-radius:18px;background:rgba(12,11,10,.97);color:#f3eee6;box-shadow:0 28px 80px #000b;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans Thai",sans-serif;backdrop-filter:blur(18px)}.mmd-aiops[hidden]{display:none}.mmd-aiops-h{position:sticky;top:0;display:flex;justify-content:space-between;gap:12px;padding:14px;border-bottom:1px solid #282117;background:#0d0c0b}.mmd-aiops-h b{font-size:13px}.mmd-aiops-h small{display:block;margin-top:3px;color:#8f8576;font-size:9px}.mmd-aiops-x{border:0;background:transparent;color:#aaa;font-size:18px}.mmd-aiops-b{padding:14px}.mmd-aiops-k{margin:12px 0 6px;color:#c3a45f;font-size:8px;font-weight:900;letter-spacing:.12em}.mmd-aiops-item{padding:10px;border:1px solid #2a241b;border-radius:11px;background:#11100e;margin:6px 0;font-size:10px;line-height:1.55}.mmd-aiops-warn{border-color:#5b4524;color:#f0cf8a}.mmd-aiops-a{display:block;padding:10px;border:1px solid #44371f;border-radius:10px;color:#dfc27d;text-decoration:none;margin:6px 0;font-size:10px;font-weight:800}.mmd-aiops-meta{margin-top:10px;color:#736c62;font-size:8px;line-height:1.5}</style><button class="mmd-aiops-btn" type="button">AI OPS</button><aside class="mmd-aiops" hidden><div class="mmd-aiops-h"><div><b>AI OPS · MMD</b><small>Brief · Missing · Next</small></div><button class="mmd-aiops-x" type="button">×</button></div><div class="mmd-aiops-b"><div class="mmd-aiops-item">กำลังอ่านบริบทหน้านี้…</div></div></aside>';document.body.appendChild(h);const panel=q('.mmd-aiops',h),body=q('.mmd-aiops-b',h),btn=q('.mmd-aiops-btn',h);function render(d){const sec=(k,x)=>'<div class="mmd-aiops-k">'+k+'</div>'+x,items=(a,w)=>a?.length?a.map(x=>'<div class="mmd-aiops-item'+(w?' mmd-aiops-warn':'')+'">'+esc(x.text||x)+'</div>').join(''):'<div class="mmd-aiops-item">—</div>',acts=(d.next_actions||[]).map(x=>'<a class="mmd-aiops-a" href="'+esc(x.href||'#')+'">'+esc((x.priority?x.priority+'. ':'')+(x.label||x.action||'Open'))+'</a>').join('')||'<div class="mmd-aiops-item">—</div>';body.innerHTML=sec('AI BRIEF',items(d.brief))+sec('MISSING / ANOMALY',items(d.anomalies,true))+sec('NEXT BEST ACTION',acts)+'<div class="mmd-aiops-meta">Money: '+esc(d.authority?.money||'-')+' · Entitlement: '+esc(d.authority?.entitlement||'-')+'<br>AI ช่วยสรุป/เตรียมงาน · final authority ยังอยู่ backend</div>'}async function load(){body.innerHTML='<div class="mmd-aiops-item">กำลังสรุป context ล่าสุด…</div>';try{const r=await fetch('/v1/admin/ai-ops/context?'+params(),{credentials:'include',cache:'no-store'}),t=await r.text();let d;try{d=JSON.parse(t)}catch{throw Error('endpoint returned non-JSON')}if(!r.ok||d.ok===false)throw Error(d.error||('HTTP '+r.status));render(d)}catch(e){body.innerHTML='<div class="mmd-aiops-item mmd-aiops-warn">AI Ops ยังอ่านบริบทไม่ได้ · '+esc(e.message||e)+'</div>'}}btn.onclick=()=>{panel.hidden=!panel.hidden;if(!panel.hidden)load()};q('.mmd-aiops-x',h).onclick=()=>panel.hidden=true;document.addEventListener('mmd:ai-ops:refresh',()=>{if(!panel.hidden)load()})})();`;
+const CLIENT_JS = String.raw`(()=>{'use strict';const p=location.pathname.replace(/\/+$/,'')||'/';if(!p.startsWith('/internal/admin/'))return;if(document.querySelector('[data-mmd-ai-ops]'))return;const q=(s,r=document)=>r.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const pick=(names)=>{for(const n of names){const e=q('[data-'+n+']');if(e){const v=(e.value||e.dataset?.value||e.textContent||'').trim();if(v&&v!=='-')return v}const u=new URL(location.href).searchParams.get(n.replace(/-/g,'_'));if(u)return u}return''};const params=()=>{const o={path:p,client_id:pick(['client-id','selected-client-id']),member_id:pick(['member-id']),model_id:pick(['model-id','selected-model-id']),job_id:pick(['job-id']),session_id:pick(['session-id']),payment_ref:pick(['payment-ref']),record_id:pick(['record-id'])},u=new URLSearchParams;for(const[k,v]of Object.entries(o))if(v)u.set(k,v);return u};const h=document.createElement('div');h.dataset.mmdAiOps='v1';h.innerHTML='<style>.mmd-aiops-btn{position:fixed;right:14px;bottom:16px;z-index:2147483000;border:1px solid rgba(216,185,111,.45);background:#11100f;color:#e7d09a;border-radius:999px;padding:11px 14px;font:800 11px/1 -apple-system,BlinkMacSystemFont,"Noto Sans Thai",sans-serif;box-shadow:0 12px 40px #0008}.mmd-aiops{position:fixed;right:14px;bottom:62px;z-index:2147482999;width:min(430px,calc(100vw - 28px));max-height:min(76vh,760px);overflow:auto;border:1px solid #3a3122;border-radius:18px;background:rgba(12,11,10,.97);color:#f3eee6;box-shadow:0 28px 80px #000b;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans Thai",sans-serif;backdrop-filter:blur(18px)}.mmd-aiops[hidden]{display:none}.mmd-aiops-h{position:sticky;top:0;display:flex;justify-content:space-between;gap:12px;padding:14px;border-bottom:1px solid #282117;background:#0d0c0b}.mmd-aiops-h b{font-size:13px}.mmd-aiops-h small{display:block;margin-top:3px;color:#8f8576;font-size:9px}.mmd-aiops-x{border:0;background:transparent;color:#aaa;font-size:18px}.mmd-aiops-b{padding:14px}.mmd-aiops-k{margin:13px 0 6px;color:#c3a45f;font-size:8px;font-weight:900;letter-spacing:.12em}.mmd-aiops-item{padding:10px;border:1px solid #2a241b;border-radius:11px;background:#11100e;margin:6px 0;font-size:10px;line-height:1.55}.mmd-aiops-warn{border-color:#5b4524;color:#f0cf8a}.mmd-aiops-a{display:block;padding:10px;border:1px solid #44371f;border-radius:10px;color:#dfc27d;text-decoration:none;margin:6px 0;font-size:10px;font-weight:800}.mmd-aiops-meta{margin-top:10px;color:#736c62;font-size:8px;line-height:1.5}.mmd-aiops-cmd{display:flex;gap:6px;margin-bottom:10px}.mmd-aiops-cmd input{min-width:0;flex:1;border:1px solid #30291f;border-radius:10px;background:#090806;color:#f3eee6;padding:10px;font:500 10px/1.35 inherit;outline:none}.mmd-aiops-cmd button{border:1px solid #5b4825;border-radius:10px;background:#1a150b;color:#dfc27d;padding:0 11px;font:800 9px/1 inherit}.mmd-aiops-sub{display:block;color:#8f8576;font-size:8px;margin-top:3px}.mmd-aiops-card strong{display:block;color:#f3eee6;font-size:10px}.mmd-aiops-card span{display:block;color:#8f8576;font-size:9px;margin-top:3px}</style><button class="mmd-aiops-btn" type="button">AI OPS</button><aside class="mmd-aiops" hidden><div class="mmd-aiops-h"><div><b>AI OPS · MMD</b><small>Brief · Missing · Next</small></div><button class="mmd-aiops-x" type="button">×</button></div><div class="mmd-aiops-b"><div class="mmd-aiops-item">กำลังอ่านบริบทหน้านี้…</div></div></aside>';document.body.appendChild(h);const panel=q('.mmd-aiops',h),body=q('.mmd-aiops-b',h),btn=q('.mmd-aiops-btn',h);const sec=(k,x)=>'<div class="mmd-aiops-k">'+k+'</div>'+x,items=(a,w)=>a?.length?a.map(x=>'<div class="mmd-aiops-item'+(w?' mmd-aiops-warn':'')+'">'+esc(x.text||x.summary||x.title||x)+'</div>').join(''):'<div class="mmd-aiops-item">—</div>',acts=a=>(a||[]).map(x=>'<a class="mmd-aiops-a" href="'+esc(x.href||'#')+'">'+esc((x.priority?x.priority+'. ':'')+(x.label||x.title||x.action||'Open'))+(x.summary?'<span class="mmd-aiops-sub">'+esc(x.summary)+'</span>':'')+'</a>').join('')||'<div class="mmd-aiops-item">—</div>';function cmdBox(){if(p!=='/internal/admin/control-room')return'';return '<div class="mmd-aiops-k">ASK PER AI</div><div class="mmd-aiops-cmd"><input type="text" maxlength="600" placeholder="เช่น เช็กสลิปคุณหนุ่ย / สร้าง Job / ดูระบบ"><button type="button">Preview</button></div><div data-mmd-aiops-command-result></div>'}function cc(d){const c=d.command_center;if(!c)return'';const need=(c.needs_per||[]).map(x=>'<a class="mmd-aiops-a mmd-aiops-card" href="'+esc(x.href||'#')+'"><strong>'+esc(x.title||'ต้องดู')+'</strong><span>'+esc(x.summary||'')+'</span></a>').join('')||'<div class="mmd-aiops-item">ตอนนี้ไม่มี verified exception เพิ่ม</div>',prep=acts(c.prepared||[]),watch=(c.watching?.items||[]).map(x=>'<div class="mmd-aiops-item mmd-aiops-card"><strong>'+esc(x.title||x.kind||'Watching')+'</strong><span>'+esc(x.summary||'')+'</span></div>').join('')||'<div class="mmd-aiops-item">—</div>';return sec('NEEDS PER',need)+sec('PREPARED',prep)+sec('WATCHING · FOUNDATION',watch)}function bindCommand(){const input=q('.mmd-aiops-cmd input',body),go=q('.mmd-aiops-cmd button',body),out=q('[data-mmd-aiops-command-result]',body);if(!input||!go||!out)return;const run=async()=>{const text=input.value.trim();if(!text)return;out.innerHTML='<div class="mmd-aiops-item">กำลังเตรียมทางไปต่อ…</div>';try{const r=await fetch('/v1/admin/ai-ops/command/preview',{method:'POST',credentials:'include',cache:'no-store',headers:{'content-type':'application/json'},body:JSON.stringify({command:text})}),t=await r.text();let d;try{d=JSON.parse(t)}catch{throw Error('endpoint returned non-JSON')}if(!r.ok||d.ok===false)throw Error(d.message||d.error||('HTTP '+r.status));if(!d.matched){out.innerHTML='<div class="mmd-aiops-item mmd-aiops-warn">'+esc(d.message||'ยังไม่รองรับคำสั่งนี้')+'</div>';return}const a=d.action_card||{};out.innerHTML='<a class="mmd-aiops-a mmd-aiops-card" href="'+esc(a.href||'#')+'"><strong>'+esc(a.title||d.intent||'ทำต่อ')+'</strong><span>'+esc(a.summary||'')+'</span></a><div class="mmd-aiops-meta">Preview only · '+esc(d.guard||'no mutation')+'</div>'}catch(e){out.innerHTML='<div class="mmd-aiops-item mmd-aiops-warn">Command preview ใช้งานไม่ได้ · '+esc(e.message||e)+'</div>'}};go.onclick=run;input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();run()}})}function render(d){const advisory=sec('AI BRIEF',items(d.brief))+sec('MISSING / ANOMALY',items(d.anomalies,true))+sec('NEXT BEST ACTION',acts(d.next_actions||[]));body.innerHTML=cmdBox()+cc(d)+advisory+'<div class="mmd-aiops-meta">Money: '+esc(d.authority?.money||'-')+' · Entitlement: '+esc(d.authority?.entitlement||'-')+'<br>AI ช่วยสรุป/เตรียมงาน · final authority ยังอยู่ backend</div>';bindCommand()}async function load(){body.innerHTML='<div class="mmd-aiops-item">กำลังสรุป context ล่าสุด…</div>';try{const r=await fetch('/v1/admin/ai-ops/context?'+params(),{credentials:'include',cache:'no-store'}),t=await r.text();let d;try{d=JSON.parse(t)}catch{throw Error('endpoint returned non-JSON')}if(!r.ok||d.ok===false)throw Error(d.error||('HTTP '+r.status));render(d)}catch(e){body.innerHTML='<div class="mmd-aiops-item mmd-aiops-warn">AI Ops ยังอ่านบริบทไม่ได้ · '+esc(e.message||e)+'</div>'}}btn.onclick=()=>{panel.hidden=!panel.hidden;if(!panel.hidden)load()};q('.mmd-aiops-x',h).onclick=()=>panel.hidden=true;document.addEventListener('mmd:ai-ops:refresh',()=>{if(!panel.hidden)load()})})();`;
