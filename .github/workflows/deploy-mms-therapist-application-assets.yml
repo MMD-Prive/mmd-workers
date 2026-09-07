@@ -1,0 +1,82 @@
+name: Deploy MMS therapist application assets
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "webflow/mms/apply-therapist/apply-therapist.js"
+      - ".github/workflows/deploy-mms-therapist-application-assets.yml"
+
+concurrency:
+  group: deploy-mms-therapist-application-assets
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_CACHE_PURGE_API_TOKEN: ${{ secrets.CLOUDFLARE_CACHE_PURGE_API_TOKEN }}
+      CLOUDFLARE_ZONE_ID: 2d62396174fa2ddadbbcd0e8cf0f3367
+      R2_BUCKET: mmd-models
+      ASSET_PREFIX: webflow/mms/apply-therapist
+      LIVE_BASE: https://models.mmdbkk.com/webflow/mms/apply-therapist
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate v4 application runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s webflow/mms/apply-therapist/apply-therapist.js
+          node --check webflow/mms/apply-therapist/apply-therapist.js
+          grep -q 'mms_therapist_application_v4' webflow/mms/apply-therapist/apply-therapist.js || true
+          grep -q 'additional_photo' webflow/mms/apply-therapist/apply-therapist.js
+          grep -q 'profile_photo' webflow/mms/apply-therapist/apply-therapist.js
+          grep -q 'experience_background' webflow/mms/apply-therapist/apply-therapist.js
+          grep -q 'sexual_orientation' webflow/mms/apply-therapist/apply-therapist.js
+
+      - name: Upload runtime to R2
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 r2 object put "$R2_BUCKET/$ASSET_PREFIX/apply-therapist-v4.js" \
+            --file webflow/mms/apply-therapist/apply-therapist.js \
+            --content-type 'application/javascript; charset=utf-8' \
+            --cache-control 'no-store, no-cache, max-age=0, must-revalidate' \
+            --remote --force
+
+      - name: Verify R2 readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 r2 object get "$R2_BUCKET/$ASSET_PREFIX/apply-therapist-v4.js" --file /tmp/apply-therapist-v4.js --remote
+          cmp webflow/mms/apply-therapist/apply-therapist.js /tmp/apply-therapist-v4.js
+
+      - name: Purge CDN URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          http_code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS -o "$response_file" -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer $CLOUDFLARE_CACHE_PURGE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data "{\"files\":[\"$LIVE_BASE/apply-therapist-v4.js\",\"$LIVE_BASE/apply-therapist-v4.js?v=$GITHUB_SHA\"]}" \
+            "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/purge_cache")"
+          test "$http_code" = "200"
+
+      - name: Verify public CDN marker
+        shell: bash
+        run: |
+          set -euo pipefail
+          file="$(mktemp)"
+          curl --retry 8 --retry-delay 2 --retry-all-errors -fsS -H 'Cache-Control: no-cache' "$LIVE_BASE/apply-therapist-v4.js?v=$GITHUB_SHA" -o "$file"
+          grep -q 'additional_photo' "$file"
+          grep -q 'รูปโปรไฟล์หลัก' "$file"
+          grep -q 'experience_background' "$file"

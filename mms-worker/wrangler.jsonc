@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "mms-worker",
-  "main": "src/runtime-index-with-therapist-invite.js",
+  "main": "src/runtime-index-with-application-v4.js",
   "compatibility_date": "2026-08-21",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
