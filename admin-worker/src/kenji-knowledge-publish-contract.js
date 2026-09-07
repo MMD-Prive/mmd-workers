@@ -13,7 +13,7 @@ export const KNOWLEDGE_ACTION = Object.freeze({
 });
 
 const LANGUAGES = new Set(["th", "en", "zh"]);
-const PUBLISH_ROLES = new Set(["owner", "publisher"]);
+const PUBLISH_ROLES = new Set(["owner", "publisher", "admin"]);
 const REQUIRED_FIELDS = Object.freeze([
   "knowledge_id",
   "title",
