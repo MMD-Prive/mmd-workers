@@ -42,7 +42,7 @@ test("admin login canonicalizes www browser traffic to the apex admin origin bef
 
   assert.equal(ADMIN_CANONICAL_ORIGIN, "https://mmdbkk.com");
   assert.equal(response.headers.get("x-mmd-admin-origin"), ADMIN_CANONICAL_ORIGIN);
-  assert.equal(response.headers.get("x-mmd-login-ui"), "browser-fetch-v6");
+  assert.equal(response.headers.get("x-mmd-login-ui"), "browser-fetch-v5");
   assert.match(html, /location\.hostname==='www\.mmdbkk\.com'/);
   assert.match(html, /canonical\.hostname='mmdbkk\.com'/);
   assert.match(html, /location\.replace\(canonical\.toString\(\)\)/);
@@ -73,7 +73,7 @@ test("admin login preserves secure server-side flow and exposes the Image A prod
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store, private, max-age=0");
-  assert.equal(response.headers.get("x-mmd-login-ui"), "browser-fetch-v6");
+  assert.equal(response.headers.get("x-mmd-login-ui"), "browser-fetch-v5");
   assert.equal(response.headers.get("x-mmd-admin-origin"), "https://mmdbkk.com");
   assert.match(response.headers.get("content-security-policy") || "", /connect-src 'self'/);
   assert.match(html, /name="next" value="\/internal\/admin\/control-room"/);
