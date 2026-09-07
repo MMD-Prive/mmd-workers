@@ -90,12 +90,17 @@ jobs:
             "$MMS_RICH_MENU_SOURCE_URL" \
             --output "$source_file"
           source_dimensions="$(identify -format '%wx%h' "$source_file")"
-          if [ "$source_dimensions" != "2500x1686" ]; then
-            echo "Unexpected source dimensions: $source_dimensions" >&2
-            exit 2
-          fi
+          case "$source_dimensions" in
+            2500x1686|1527x1030) ;;
+            *)
+              echo "Unexpected reviewed source dimensions: $source_dimensions" >&2
+              exit 2
+              ;;
+          esac
+          echo "Reviewed source dimensions: $source_dimensions; normalizing to 2500x1686"
           for quality in 88 84 80 76 72; do
             convert "$source_file" \
+              -resize '2500x1686!' \
               -background '#0b2a1a' -alpha remove -alpha off \
               -strip -sampling-factor 4:4:4 -quality "$quality" \
               "$final_file"
