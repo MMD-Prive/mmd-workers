@@ -7,7 +7,7 @@ const CANONICAL_ADMIN_LOGIN_PATH = "/internal/admin/login";
 const CANONICAL_CREATE_SESSION_PATH = "/internal/admin/jobs/create-session";
 const CANONICAL_CREATE_SESSION_CORE_ASSET_PATH = "/internal/admin/jobs/create-session/core";
 const BUNDLED_CREATE_SESSION_CORE_ASSET_PATH = "/a/create-session.js";
-const MEMBER_INTELLIGENCE_RUNTIME_PATH = "/internal/admin/member-intelligence/runtime";
+const MEMBER_INTELLIGENCE_RUNTIME_PATH = "/internal/admin/control-room/member-intelligence-runtime";
 const BUNDLED_MEMBER_INTELLIGENCE_RUNTIME_PATH = "/a/member-intelligence.js";
 const LEGACY_ADMIN_LOGIN_PATHS = new Set([
   "/sigil/admin/login",
@@ -105,7 +105,7 @@ function memberIntelligenceRuntimeMethodNotAllowed(): Response {
         allow: "GET, HEAD",
         "content-type": "application/json; charset=utf-8",
         "cache-control": "no-store",
-        "x-mmd-member-intelligence-runtime": "extensionless-v1",
+        "x-mmd-member-intelligence-runtime": "control-room-lane-v1",
       },
     },
   );
@@ -158,10 +158,9 @@ async function serveMemberIntelligenceRuntime(request: Request, env: Env): Promi
     });
   }
 
-  // Mirror the proven Create Session core pattern: the browser loads an
-  // extensionless internal route while the implementation stays bundled as a
-  // private Worker static asset. Clearing the search avoids origin/static .js
-  // handling differences on custom domains.
+  // Keep the Webflow page at /internal/admin/member-intelligence, but serve its
+  // browser runtime under the already Worker-owned Control Room route family.
+  // The implementation remains bundled as a private Worker static asset.
   const assetUrl = new URL(request.url);
   assetUrl.pathname = BUNDLED_MEMBER_INTELLIGENCE_RUNTIME_PATH;
   assetUrl.search = "";
@@ -171,7 +170,7 @@ async function serveMemberIntelligenceRuntime(request: Request, env: Env): Promi
   headers.set("content-type", "application/javascript; charset=utf-8");
   headers.set("cache-control", "no-store");
   headers.set("x-content-type-options", "nosniff");
-  headers.set("x-mmd-member-intelligence-runtime", "extensionless-v1");
+  headers.set("x-mmd-member-intelligence-runtime", "control-room-lane-v1");
   headers.set("x-mmd-member-intelligence-authority", "canonical-read-models-only");
 
   return new Response(request.method === "HEAD" ? null : asset.body, {
