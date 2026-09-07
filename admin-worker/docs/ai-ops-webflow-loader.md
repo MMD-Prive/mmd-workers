@@ -1,0 +1,1 @@
+Webflow uses one site-level loader guarded to `/internal/admin/*`. The loader fetches `/v1/admin/ai-ops/client.js`; no page-local AI widgets are added. Public pages remain unaffected by the path guard.
