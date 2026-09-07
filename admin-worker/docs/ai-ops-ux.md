@@ -1,1 +1,0 @@
-Canonical admin pages should expose one compact AI OPS panel using the shared client script. The panel shows Brief, Missing/Anomaly, and Next Best Action; page-local AI widgets should not be added.

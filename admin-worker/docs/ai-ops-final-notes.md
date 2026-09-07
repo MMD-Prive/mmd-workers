@@ -1,1 +1,0 @@
-Rollout target: one shared AI Ops panel on every canonical /internal/admin surface, backed by authenticated admin-worker context endpoint and existing intelligence contracts.

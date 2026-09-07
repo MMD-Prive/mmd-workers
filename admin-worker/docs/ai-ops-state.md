@@ -1,1 +1,0 @@
-AI Ops V1 is a shared cross-page advisory layer. Current branch contains contract, runtime, client panel, tests, and architecture docs. Remaining work is endpoint routing in admin-worker, production route ingress, and one Webflow site-level loader.

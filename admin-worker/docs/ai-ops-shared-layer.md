@@ -1,1 +1,0 @@
-Shared AI Ops is implemented once, loaded across canonical admin pages, and constrained to advisory/read-only intelligence unless a canonical backend receives an explicit supervised action.
