@@ -30,9 +30,24 @@ try {
   assert.equal(response.headers.get("x-mmd-control-room-mms-route"), "/internal/admin/mms");
   assert.equal(response.headers.get("x-mmd-control-room-mms-therapist-app"), "https://miniapp.line.me/2011425652-YqK1F6y8");
   assert.equal(response.headers.get("x-mmd-control-room-slip-backfill-route"), "/internal/admin/payments/historical-backfill");
+  assert.equal(response.headers.get("x-mmd-control-room-customer-data-route"), "/internal/admin/customer-data");
   assert.equal(response.headers.get("x-mmd-control-room-cta-audit"), "operator-triggered-head-check");
   assert.equal(response.headers.get("x-mmd-control-room-telegram-status"), "partial-worker-alerts-no-unified-router");
+  assert.equal(response.headers.get("x-mmd-control-room-typography"), "sf-first-local");
 
+  // New visible target surface.
+  assert.match(body, /MMD PRIVÉ/);
+  assert.match(body, /OPERATING SYSTEM/);
+  assert.match(body, /วันนี้ต้องทำอะไรบ้าง/);
+  assert.match(body, /Customer 360/);
+  assert.match(body, /Money Control/);
+  assert.match(body, /Model Supply/);
+  assert.match(body, /Access Intelligence/);
+  assert.match(body, /AI Workers/);
+  assert.match(body, /\/v1\/admin\/dashboard/);
+  assert.match(body, /BACKEND WAITING/);
+
+  // Compatibility markers remain for deploy smoke while visible V3 route-map UI is retired.
   assert.match(body, /data-control-room-v3/);
   assert.match(body, /OWNER CONTROL · V4/);
   assert.match(body, /MMD PRIVÉ · OWNER CONTROL ROOM · 05 SEP 2026/);
