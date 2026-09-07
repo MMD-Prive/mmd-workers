@@ -4,8 +4,10 @@ on:
   pull_request:
     paths:
       - "member-dashboard-chat-worker/src/kenji-line-transport-health.mjs"
+      - "member-dashboard-chat-worker/src/kenji-line-ingress-trace.mjs"
       - "member-dashboard-chat-worker/src/mms-line-front-gate.js"
       - "member-dashboard-chat-worker/test/kenji-line-transport-health.test.mjs"
+      - "member-dashboard-chat-worker/test/kenji-line-ingress-trace.test.mjs"
       - "member-dashboard-chat-worker/wrangler.toml"
       - ".github/workflows/kenji-line-transport-health-ci.yml"
   push:
@@ -13,8 +15,10 @@ on:
       - main
     paths:
       - "member-dashboard-chat-worker/src/kenji-line-transport-health.mjs"
+      - "member-dashboard-chat-worker/src/kenji-line-ingress-trace.mjs"
       - "member-dashboard-chat-worker/src/mms-line-front-gate.js"
       - "member-dashboard-chat-worker/test/kenji-line-transport-health.test.mjs"
+      - "member-dashboard-chat-worker/test/kenji-line-ingress-trace.test.mjs"
       - ".github/workflows/kenji-line-transport-health-ci.yml"
   workflow_dispatch:
 
@@ -33,11 +37,12 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Validate bounded LINE transport health
+      - name: Validate bounded LINE transport health and ingress trace
         run: |
           node --check member-dashboard-chat-worker/src/kenji-line-transport-health.mjs
+          node --check member-dashboard-chat-worker/src/kenji-line-ingress-trace.mjs
           node --check member-dashboard-chat-worker/src/mms-line-front-gate.js
-          node --test member-dashboard-chat-worker/test/kenji-line-transport-health.test.mjs
+          node --test member-dashboard-chat-worker/test/kenji-line-transport-health.test.mjs member-dashboard-chat-worker/test/kenji-line-ingress-trace.test.mjs
 
       - name: Validate member-dashboard Worker bundle
         run: npx --yes wrangler@4 deploy --dry-run --config member-dashboard-chat-worker/wrangler.toml
