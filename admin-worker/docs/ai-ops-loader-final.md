@@ -1,0 +1,1 @@
+Loader scope is the internal admin namespace only. Retired/draft pages may technically load the path-guarded script when previewed, but no new runtime dependencies are added to retired pages and canonical surface mapping remains explicit.
