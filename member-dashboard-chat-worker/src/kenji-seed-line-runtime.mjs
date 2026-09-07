@@ -406,8 +406,8 @@ export async function writeKenjiAiMessageEvent({ env = {}, event = {}, decision 
     const response = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`, {
       method: "POST",
       headers: {
-        authorization: `Bearer ${apiKey}` },
-      "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
       },
       body: JSON.stringify({ fields }),
     });
@@ -428,8 +428,8 @@ async function sendReply(env = {}, replyToken = "", replyText = "") {
     const response = await fetch(LINE_REPLY_URL, {
       method: "POST",
       headers: {
-        authorization: `Bearer ${token}` },
-      "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
       },
       body: JSON.stringify({ replyToken: reply, messages: [{ type: "text", text: answer }] }),
     });
