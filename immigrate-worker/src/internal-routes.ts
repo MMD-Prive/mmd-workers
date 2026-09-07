@@ -4,6 +4,7 @@ import {
   type InternalPageEnv,
 } from "./internal-pages";
 import { renderOwnerControlRoomPage } from "./control-room-owner-ui";
+import { renderCustomer360Page } from "./customer-360-ui-v1";
 
 export interface InternalRoutesEnv extends InternalPageEnv {
   ADMIN_WORKER?: Fetcher;
@@ -569,7 +570,7 @@ export async function handleInternalRoutes(request: Request, env: InternalRoutes
   if (pathname === "/internal/admin/customer-data") {
     const gate = await requireAdminGate(request, env);
     if (gate) return gate;
-    return renderCustomerDataPage();
+    return renderCustomer360Page();
   }
 
   if (pathname === "/internal/admin/jobs/create-session") {
