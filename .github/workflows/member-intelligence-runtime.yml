@@ -120,7 +120,7 @@ jobs:
             for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
               : > "$body"
               : > "$headers"
-              code="$(curl -sS -D "$headers" -o "$body" -w '%{http_code}' "${origin}/a/member-intelligence.js?v=${GITHUB_SHA}&attempt=${attempt}")"
+              code="$(curl -sSL -D "$headers" -o "$body" -w '%{http_code}' "${origin}/a/member-intelligence.js?v=${GITHUB_SHA}&attempt=${attempt}")"
               if [ "$code" = "200" ] \
                 && grep -Eiq '^content-type:[[:space:]]*(application|text)/(javascript|ecmascript)' "$headers" \
                 && grep -q '/v1/admin/clients/recent' "$body" \
