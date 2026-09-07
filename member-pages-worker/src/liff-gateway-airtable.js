@@ -113,7 +113,11 @@ class AirtableLiffGatewayStore {
       ...(recordId ? {} : {
         line_user_id: lineSubject(session.line_user_id),
         renewal_flow_status: selectValue(session.renewal_flow_status, RENEWAL_FLOW_STATUSES),
-        verified_at: verifiedTimestamp(session.verified_at),
+        // The member-facing LIFF gateway verifies LINE identity only. It must
+        // never write the renewal/payment authority field `verified_at`.
+        // Current in-flight LIFF KV sessions still call the identity timestamp
+        // `verified_at`; map that legacy shape to `identity_linked_at` only.
+        identity_linked_at: identityLinkedTimestamp(session),
       }),
       liff_intent: selectValue(session.liff_intent, LIFF_INTENTS),
       source_channel: selectValue(session.source_channel, SOURCE_CHANNELS),
@@ -144,13 +148,16 @@ class AirtableLiffGatewayStore {
     const records = await this.list(tableName(this.env, "LIFF_RENEWAL_SESSIONS"), {
       filterByFormula: `{line_user_id}=${formulaString(subject)}`,
       maxRecords: 2,
-      sort: [{ field: "verified_at", direction: "desc" }],
+      // Session recency is identity-link chronology. Payment/renewal
+      // `verified_at` is a separate authority and must never order identity
+      // sessions or make an identity-only row look officially verified.
+      sort: [{ field: "identity_linked_at", direction: "desc" }],
     });
     if (!records.length) return membershipReview(false, "none", "none");
     const latest = records[0]?.fields;
     if (!latest || typeof latest !== "object") throw new LiffGatewayStorageError("LIFF_MEMBERSHIP_REVIEW_MALFORMED");
-    const latestVerifiedAt = verifiedTimestamp(latest.verified_at);
-    if (!latestVerifiedAt || (records.length > 1 && latestVerifiedAt === verifiedTimestamp(records[1]?.fields?.verified_at))) {
+    const latestIdentityLinkedAt = verifiedTimestamp(latest.identity_linked_at);
+    if (!latestIdentityLinkedAt || (records.length > 1 && latestIdentityLinkedAt === verifiedTimestamp(records[1]?.fields?.identity_linked_at))) {
       throw new LiffGatewayStorageError("LIFF_MEMBERSHIP_REVIEW_AMBIGUOUS");
     }
     const sourceState = String(latest.renewal_flow_status || "").trim();
@@ -339,6 +346,17 @@ function verifiedTimestamp(value) {
   const timestamp = String(value || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(timestamp)) return "";
   return Number.isFinite(Date.parse(timestamp)) ? timestamp : "";
+}
+
+function identityLinkedTimestamp(session = {}) {
+  const explicit = verifiedTimestamp(session.identity_linked_at);
+  if (explicit) return explicit;
+  // Compatibility shim for the current LIFF KV session contract. That
+  // `verified_at` value is LINE identity verification time, not payment or
+  // renewal verification. Restrict the fallback to the identity-link state.
+  return String(session.renewal_flow_status || "").trim() === "identity_linked"
+    ? verifiedTimestamp(session.verified_at)
+    : "";
 }
 
 function membershipReview(exists, state, sourceState) {
