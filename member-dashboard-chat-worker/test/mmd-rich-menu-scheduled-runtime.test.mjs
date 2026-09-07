@@ -24,7 +24,7 @@ test("MMD 3-level Rich Menu actions match the canonical customer labels", () => 
     { type: "uri", label: "BOOKING", uri: "https://mmdbkk.com/booking?source=line&entry_route=rich_menu_guest_booking" },
     { type: "uri", label: "PUBLIC SERVICES", uri: "https://mmdbkk.com/services/companion?source=line&entry_route=rich_menu_guest_services" },
     { type: "uri", label: "ABOUT MMD", uri: "https://mmdbkk.com/tmib?source=line&entry_route=rich_menu_guest_about" },
-    { type: "message", label: "SUPPORT", text: "Hi Kenji" },
+    { type: "postback", label: "SUPPORT", data: "mmd_action=support&audience=guest&intent=ใช้บริการยังไง" },
   ]);
 
   assert.deepEqual(map.public, [
@@ -33,7 +33,7 @@ test("MMD 3-level Rich Menu actions match the canonical customer labels", () => 
     { type: "uri", label: "BOOKING", uri: "https://mmdbkk.com/booking?source=line&entry_route=rich_menu_public_booking" },
     { type: "uri", label: "MY MMD", uri: "https://liff.line.me/2010862595-yT4DCEMc?intent=status&view=profile" },
     { type: "uri", label: "PRIVE ACCESS", uri: "https://mmdbkk.com/membership?source=line&entry_route=rich_menu_prive_access" },
-    { type: "message", label: "SUPPORT", text: "Hi Kenji" },
+    { type: "postback", label: "SUPPORT", data: "mmd_action=support&audience=public&intent=ใช้บริการยังไง" },
   ]);
 
   assert.deepEqual(map.private, [
@@ -44,6 +44,16 @@ test("MMD 3-level Rich Menu actions match the canonical customer labels", () => 
     { type: "uri", label: "PRIVE UPDATE", uri: "https://mmdbkk.com/member/private?source=line&entry_route=rich_menu_prive_update#access" },
     { type: "message", label: "SUPPORT", text: "Hi Kenji" },
   ]);
+});
+
+test("Guest and Public support stay Kenji-invisible while Private keeps Kenji visible", () => {
+  const map = getMmdRichMenuActionMap();
+  assert.equal(map.guest[5].type, "postback");
+  assert.equal(map.public[5].type, "postback");
+  assert.equal(JSON.stringify(map.guest[5]).includes("Hi Kenji"), false);
+  assert.equal(JSON.stringify(map.public[5]).includes("Hi Kenji"), false);
+  assert.deepEqual(map.private[0], { type: "message", label: "KENJI AI", text: "Hi Kenji" });
+  assert.deepEqual(map.private[5], { type: "message", label: "SUPPORT", text: "Hi Kenji" });
 });
 
 test("verified customer stays Public without active private entitlement", () => {
