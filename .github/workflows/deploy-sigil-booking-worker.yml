@@ -57,10 +57,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node --check sigil-booking-worker/src/runtime-index.js
           node --check sigil-booking-worker/src/index.js
           node --check sigil-booking-worker/src/model-image-policy-worker.js
-          node --check sigil-booking-worker/src/my-mmd-entitlement-access.js
-          node --test sigil-booking-worker/my-mmd-entitlement-access.test.mjs
+          node --check sigil-booking-worker/src/entitlement-runtime-worker.js
+          node --check sigil-booking-worker/src/care-back-trusted-caller.js
+          node --test sigil-booking-worker/src/entitlement-runtime-worker.test.js
+          node --test sigil-booking-worker/test/care-back-trusted-caller.test.mjs
           npx --yes wrangler@4 deploy --dry-run --config sigil-booking-worker/wrangler.toml
 
       - name: Upload worker version
@@ -97,6 +100,7 @@ jobs:
             "sigil.mmdbkk.com/sigil/api/client/resolve*",
             "sigil.mmdbkk.com/sigil/api/models/search*",
             "sigil.mmdbkk.com/sigil/api/booking/intake*",
+            "sigil.mmdbkk.com/__internal/booking/confirm*",
           ];
           async function cf(path, options = {}) {
             const r = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
@@ -150,4 +154,4 @@ jobs:
           cat "$body"
           test "$code" = "200"
           grep -q '"blocked":true' "$body"
-          grep -q 'private_requires_active_member' "$body"
+          grep -q 'private_requires_entitlement_snapshot' "$body"
