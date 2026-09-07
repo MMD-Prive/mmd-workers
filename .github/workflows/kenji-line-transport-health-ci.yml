@@ -1,0 +1,35 @@
+name: Kenji LINE Transport Health CI
+
+on:
+  pull_request:
+    paths:
+      - "member-dashboard-chat-worker/src/kenji-line-transport-health.mjs"
+      - "member-dashboard-chat-worker/src/mms-line-front-gate.js"
+      - "member-dashboard-chat-worker/test/kenji-line-transport-health.test.mjs"
+      - "member-dashboard-chat-worker/wrangler.toml"
+      - ".github/workflows/kenji-line-transport-health-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate bounded LINE transport health
+        run: |
+          node --check member-dashboard-chat-worker/src/kenji-line-transport-health.mjs
+          node --check member-dashboard-chat-worker/src/mms-line-front-gate.js
+          node --test member-dashboard-chat-worker/test/kenji-line-transport-health.test.mjs
+
+      - name: Validate member-dashboard Worker bundle
+        run: npx --yes wrangler@4 deploy --dry-run --config member-dashboard-chat-worker/wrangler.toml
