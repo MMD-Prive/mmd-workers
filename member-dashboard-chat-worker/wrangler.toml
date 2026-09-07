@@ -1,5 +1,5 @@
 name = "member-dashboard-chat-worker"
-main = "src/my-mmd-bounded-status-front-gate.js"
+main = "src/mms-line-front-gate.js"
 compatibility_date = "2026-07-02"
 workers_dev = false
 
@@ -159,6 +159,7 @@ zone_name = "mmdbkk.com"
 [observability]
 enabled = true
 
+# MMD Privé LINE OA transport.
 [[routes]]
 pattern = "mmdbkk.com/webhooks/line"
 zone_name = "mmdbkk.com"
@@ -175,44 +176,51 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/webhooks/line/"
 zone_name = "mmdbkk.com"
 
+# MMS / Male Massage has a separate LINE OA and separate transport credentials.
+# Never reuse the MMD Privé LINE secret/token for these routes.
+[[routes]]
+pattern = "mmdbkk.com/webhooks/line/mms"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/webhooks/line/mms/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/webhooks/line/mms"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/webhooks/line/mms/"
+zone_name = "mmdbkk.com"
+
 # Cloudflare-only LINE runtime.
-# Bind LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, and INTERNAL_TOKEN as Cloudflare secrets only.
+# MMD secrets: LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, INTERNAL_TOKEN.
+# MMS secrets: MMS_LINE_CHANNEL_ACCESS_TOKEN, MMS_LINE_CHANNEL_SECRET.
 # LINE_WEBHOOK_UPSTREAM_URL is retired and must remain unset.
-#
-# Production intake must stay available during ad campaigns. Keep these
-# non-secret switches in version control so deploys cannot preserve an old
-# muted/disabled runtime value by accident. An intentional emergency mute can
-# still be made by changing this config and redeploying.
 [vars]
 LINE_AUTO_REPLY_ENABLED = "true"
 LINE_KENJI_AI_ENABLED = "true"
 LINE_KENJI_KNOWLEDGE_ENABLED = "true"
-# Read-only shadow bridge: every accepted LINE webhook is also observed by
-# ai-worker through a private Cloudflare service binding. It does not affect
-# the LINE reply path or create any domain truth.
 KENJI_AI_WORKER_BRIDGE_ENABLED = "true"
-# Personal/crew LINE source IDs are never guessed. Populate this only when the
-# bot/OA is actually present in a Crew group/room and the source ID is reviewed.
 KENJI_LINE_CREW_SOURCE_IDS = ""
-# Only the reviewed MMD Privé Team group is eligible for payment-image capture.
-# The real LINE group ID is never committed; comparison is against SHA-256 only.
 LINE_PAYMENT_PROOF_GROUP_HASHES = "7cb8cf05c7e2ec9489d6ec9560de60fade231412f9dd82b89a7e51b58eba996f"
 LINE_SLIP_MAX_IMAGE_BYTES = "10485760"
 AIRTABLE_TABLE_PAYMENT_PROOFS_ID = "tblfJfM4Sqag9zrLi"
-# Model generation is a separate, production-gated capability. Keep it off in
-# committed configuration until an explicitly approved deployment enables it.
 LINE_KENJI_MODEL_ENABLED = "false"
-# Deterministic membership-gated model code/name lookup. This rollout switch
-# is independent from LLM generation and must remain off until the V1 privacy
-# review, synthetic smoke, and explicit Production approval are complete.
 LINE_KENJI_MODEL_ACCESS_ENABLED = "false"
 OPENAI_MODEL = "gpt-5.6"
-# Safe defaults: model-on still reaches nobody until approved SHA-256 tester
-# hashes and approved grounding card IDs are supplied as production config.
 LINE_KENJI_MODEL_CANARY_HASHES = ""
 LINE_KENJI_MODEL_KNOWLEDGE_IDS = ""
 LINE_KENJI_MODEL_MAX_ATTEMPTS_PER_WINDOW = "3"
 LINE_KENJI_MODEL_QUOTA_WINDOW_SECONDS = "900"
+
+# MMS customer LINE OA: 24/7 customer front door. The menu remains visible;
+# operational confirmation is asynchronous and still owned by canonical MMS state.
+MMS_LINE_AI_ENABLED = "true"
+MMS_RICH_MENU_ENABLED = "true"
+MMS_RICH_MENU_VISIBILITY = "24/7"
+MMS_RICH_MENU_IMAGE_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9e734844dc373650988c84_MMS-Rich-Menu-Customer-24-7-final.jpg"
 
 [[durable_objects.bindings]]
 name = "KENJI_MODEL_DEDUPE"
