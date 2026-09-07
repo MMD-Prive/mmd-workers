@@ -22,7 +22,7 @@ jobs:
           node <<'NODE'
           const runId = String(process.env.GITHUB_RUN_ID || Date.now());
           const publicOrigin = "https://www.mmdbkk.com";
-          const internalOrigin = "https://mmdbkk.com";
+          const internalOrigin = "https://www.mmdbkk.com";
           const failures = [];
 
           function check(condition, message) {
