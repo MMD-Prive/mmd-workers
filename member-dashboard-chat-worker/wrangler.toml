@@ -206,6 +206,12 @@ LINE_AUTO_REPLY_ENABLED = "true"
 LINE_KENJI_AI_ENABLED = "true"
 LINE_KENJI_KNOWLEDGE_ENABLED = "true"
 MMS_LINE_AI_ENABLED = "true"
+# Customer continuity is resolved from the canonical Conversation Matrix before
+# a LINE reply is selected. Post-turn write-back updates only bounded state;
+# Memory remains context and protected current truth still comes from its owner.
+KENJI_LINE_CONTINUITY_ENABLED = "true"
+AIRTABLE_TABLE_KENJI_CONVERSATION_MATRIX_ID = "tblS6iRgPjYLBqZJh"
+AIRTABLE_TABLE_CLIENTS_ID = "tblVv58TCbwh5j1fS"
 # Read-only shadow bridge: every accepted MMD LINE webhook is also observed by
 # ai-worker through a private Cloudflare service binding. It does not affect
 # the LINE reply path or create any domain truth.
