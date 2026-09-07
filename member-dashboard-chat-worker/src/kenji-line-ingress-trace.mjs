@@ -108,7 +108,7 @@ async function createIngressTrace(env = {}, snapshot = {}) {
   const apiKey = text(env.AIRTABLE_API_KEY);
   const baseId = text(env.AIRTABLE_BASE_ID);
   const table = traceTable(env);
-  if (!apiKey || !baseId || !table) return { skipped: true, reason: "trace_config_missing" };
+  if (!apiKey || !baseId || !table) return { skipped: true, reason: "trace_config_missing", status: 0 };
 
   try {
     const response = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`, {
@@ -121,10 +121,83 @@ async function createIngressTrace(env = {}, snapshot = {}) {
     });
     if (!response.ok) return { skipped: true, reason: "trace_create_failed", status: response.status };
     const payload = await response.json().catch(() => ({}));
-    return { ok: true, record_id: text(payload?.id) };
+    return { ok: true, record_id: text(payload?.id), status: response.status };
   } catch (_) {
-    return { skipped: true, reason: "trace_create_failed" };
+    return { skipped: true, reason: "trace_create_failed", status: 0 };
   }
+}
+
+async function deleteIngressTrace(env = {}, recordId = "") {
+  const apiKey = text(env.AIRTABLE_API_KEY);
+  const baseId = text(env.AIRTABLE_BASE_ID);
+  const table = traceTable(env);
+  const id = text(recordId);
+  if (!apiKey || !baseId || !table || !id) return { ok: false, status: 0 };
+  try {
+    const response = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}/${id}`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${apiKey}` },
+    });
+    return { ok: response.ok, status: response.status };
+  } catch (_) {
+    return { ok: false, status: 0 };
+  }
+}
+
+export async function probeKenjiLineIngressTraceStorage(env = {}) {
+  const apiKey = text(env.AIRTABLE_API_KEY);
+  const baseId = text(env.AIRTABLE_BASE_ID);
+  const table = traceTable(env);
+  const enabledState = enabled(env.KENJI_LINE_INGRESS_TRACE_ENABLED);
+  const configured = Boolean(apiKey && baseId && table);
+  const base = {
+    enabled: enabledState,
+    configured,
+    storage_ok: false,
+    storage_status: enabledState ? "not_attempted" : "disabled",
+    storage_http_status: 0,
+    cleanup_ok: false,
+  };
+  if (!enabledState) return base;
+  if (!configured) return { ...base, storage_status: "trace_config_missing" };
+
+  const now = new Date().toISOString();
+  const snapshot = {
+    trace_id: `trace_health_${Date.now().toString(36)}_${crypto.randomUUID().replace(/-/g, "").slice(0, 8)}`,
+    received_at: now,
+    route: "/webhooks/line",
+    method: "POST",
+    content_length: 0,
+    signature_present: false,
+    event_count: 0,
+    destination_hash: "",
+    event_type: "health_probe",
+    event_mode: "synthetic",
+    webhook_event_id_hash: "",
+    redelivery: false,
+    source_type: "unknown",
+    message_type: "none",
+    trace_status: "health_probe",
+    safe_error: "",
+    retention_expires_at: addDaysIso(now, 1),
+  };
+  const created = await createIngressTrace(env, snapshot);
+  if (created?.ok !== true || !created?.record_id) {
+    return {
+      ...base,
+      storage_status: text(created?.reason) || "trace_create_failed",
+      storage_http_status: Number(created?.status) || 0,
+    };
+  }
+
+  const cleanup = await deleteIngressTrace(env, created.record_id);
+  return {
+    ...base,
+    storage_ok: true,
+    storage_status: cleanup.ok ? "write_delete_ok" : "write_ok_cleanup_failed",
+    storage_http_status: Number(created.status) || 200,
+    cleanup_ok: cleanup.ok === true,
+  };
 }
 
 async function completeIngressTrace(env = {}, createResult = {}, response = null) {
@@ -177,8 +250,6 @@ export async function handleKenjiLineWithIngressTrace({ request, env = {}, ctx =
     return handler(request, env, ctx);
   }
 
-  // Clone and inspect only the transport envelope. The original request remains
-  // byte-for-byte available to the canonical signature verifier and handler.
   const rawBody = await request.clone().text().catch(() => "");
   const snapshot = await buildKenjiLineIngressSnapshot(request, rawBody);
 
@@ -193,9 +264,6 @@ export async function handleKenjiLineWithIngressTrace({ request, env = {}, ctx =
     signature_present: snapshot.signature_present,
   }));
 
-  // Start persistence before entering signature / intent / Matrix logic, but do
-  // not await network I/O on the customer reply path. waitUntil keeps this
-  // diagnostic write alive without changing LINE handler behavior.
   const created = createIngressTrace(env, snapshot);
   schedule(ctx, created);
 
