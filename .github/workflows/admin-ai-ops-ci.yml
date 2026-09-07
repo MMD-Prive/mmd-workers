@@ -31,7 +31,8 @@ jobs:
         run: |
           set -euo pipefail
           node --check admin-ai-ops-worker/src/index.js
-          node --test admin-ai-ops-worker/test/ai-ops-worker.test.mjs
+          node --check admin-ai-ops-worker/src/gate.js
+          node --test admin-ai-ops-worker/test/*.test.mjs
           npx --yes wrangler@4 deploy --dry-run --config admin-ai-ops-worker/wrangler.toml
 
       - name: Validate Webflow loader boundary
