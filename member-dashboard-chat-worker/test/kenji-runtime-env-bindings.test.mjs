@@ -215,3 +215,63 @@ test("completed LINE redelivery remains deduped and never replies twice", async 
   assert.equal(lineCalls, 0);
   assert.equal(telemetryPosts, 0);
 });
+
+test("natural membership status LINE request is refined into protected membership_status intent", async () => {
+  const env = redeliveryEnv();
+  const lineEvent = {
+    ...redeliveryEvent("msg-membership-status-natural"),
+    deliveryContext: { isRedelivery: false },
+    message: {
+      id: "msg-membership-status-natural",
+      type: "text",
+      text: "ขอเช็กสถานะสมาชิกหน่อยครับ",
+    },
+  };
+  const raw = JSON.stringify({ events: [lineEvent] });
+  const signature = await createLineSignature(raw, env.LINE_CHANNEL_SECRET);
+  let lineCalls = 0;
+  let telemetryPayload = null;
+  let sentReply = "";
+
+  const response = await withFetch(async (url, init = {}) => {
+    const target = String(url);
+    if (target.includes("tbljCYfYqfm8gBTPq")) {
+      if (init.method === "POST") {
+        telemetryPayload = JSON.parse(init.body);
+        return new Response(JSON.stringify({ id: "rec-membership-status" }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (target.includes("tblsLd1uVOtG2kHoU")) {
+      return new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (target.includes("api.line.me/v2/bot/message/reply")) {
+      lineCalls += 1;
+      const body = JSON.parse(init.body);
+      sentReply = body?.messages?.[0]?.text || "";
+      return new Response("{}", { status: 200 });
+    }
+    throw new Error(`unexpected fetch ${target}`);
+  }, () => handleKenjiSeedLineRequestWithRedeliveryRecovery(
+    new Request("https://www.mmdbkk.com/webhooks/line", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-line-signature": signature },
+      body: raw,
+    }),
+    env,
+    null,
+    { fetch: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }) },
+  ));
+
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-mmd-kenji-intent-refined"), "membership_status");
+  assert.equal(body.saved[0].intent, "membership_status");
+  assert.equal(body.saved[0].handoff_required, true);
+  assert.notEqual(body.saved[0].reply_source, "seed_knowledge");
+  assert.equal(body.saved[0].replied, true);
+  assert.equal(lineCalls, 1);
+  assert.match(sentReply, /สถานะ|My MMD/i);
+  const telemetry = JSON.parse(telemetryPayload?.fields?.payload_json || "{}");
+  assert.equal(telemetry.exact_intent, "membership_status");
+});
