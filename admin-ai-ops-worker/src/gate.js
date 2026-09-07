@@ -1,11 +1,18 @@
 import aiOpsWorker from "./ceo-bridge.js";
 
 const CONTEXT_PATH = "/v1/admin/ai-ops/context";
+const CLIENT_PATH = "/v1/admin/ai-ops/client.js";
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (request.method === "GET" && normalizePath(url.pathname) === CONTEXT_PATH) {
+    const path = normalizePath(url.pathname);
+
+    if (request.method === "GET" && path === CLIENT_PATH) {
+      return withSessionReauthClient(await aiOpsWorker.fetch(request, env, ctx));
+    }
+
+    if (request.method === "GET" && path === CONTEXT_PATH) {
       const auth = await verifyAdminStrict(request);
       if (!auth.ok) {
         return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), {
@@ -20,6 +27,24 @@ export default {
     return aiOpsWorker.fetch(request, env, ctx);
   },
 };
+
+async function withSessionReauthClient(response) {
+  if (!response.ok || !(response.headers.get("content-type") || "").includes("application/javascript")) return response;
+  const source = await response.text();
+  const needle = "if(!r.ok||d.ok===false)throw Error(d.error||('HTTP '+r.status));render(d)";
+  if (!source.includes(needle)) return new Response(source, { status: response.status, statusText: response.statusText, headers: response.headers });
+
+  const replacement = "if(r.status===401){const back=(p==='/internal/ceo'||p.startsWith('/internal/ceo/'))?'/internal/admin/control-room':location.pathname+location.search+location.hash,login='/internal/admin/login?next='+encodeURIComponent(back);body.innerHTML='<div class=\"mmd-aiops-item mmd-aiops-warn\"><strong>Back Office session หมดอายุหรือยังไม่ได้ยืนยัน</strong><span class=\"mmd-aiops-sub\">เข้าสู่ระบบอีกครั้ง แล้ว PER · AI OPS จะอ่านบริบทต่อได้ครับ</span></div><a class=\"mmd-aiops-a\" data-mmd-aiops-reauth=\"v1\" href=\"'+esc(login)+'\">เข้าสู่ Back Office ↗</a>';return}if(!r.ok||d.ok===false)throw Error(d.error||('HTTP '+r.status));render(d)";
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  headers.set("cache-control", "public, max-age=30");
+  headers.set("x-mmd-ai-ops-session-ux", "reauth-v1");
+  return new Response(source.replace(needle, replacement), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
 
 async function verifyAdminStrict(request) {
   try {
