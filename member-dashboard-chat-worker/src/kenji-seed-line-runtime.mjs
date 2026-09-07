@@ -8,6 +8,7 @@ import {
   resolveKenjiLineContinuity,
   writeKenjiLineMatrixTurn,
 } from "./kenji-line-continuity-runtime.mjs";
+import { applyKenjiNextAction } from "./kenji-line-next-action.mjs";
 
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const KENJI_KNOWLEDGE_TABLE_FALLBACK = "tblsLd1uVOtG2kHoU";
@@ -390,6 +391,9 @@ export async function writeKenjiAiMessageEvent({ env = {}, event = {}, decision 
       guard_blocked: decision.guard_blocked === true,
       guard_reason: text(decision.guard_reason).slice(0, 160),
       knowledge_hits: Number(decision.knowledge_hits) || 0,
+      cta_type: text(decision.cta_type),
+      cta_route: text(decision.cta_route),
+      cta_appended: decision.cta_appended === true,
       line_delivery_attempted: attempted === true,
       line_delivery_succeeded: delivered === true,
       seed_pack: "v1",
@@ -402,8 +406,8 @@ export async function writeKenjiAiMessageEvent({ env = {}, event = {}, decision 
     const response = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`, {
       method: "POST",
       headers: {
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}` },
+      "content-type": "application/json",
       },
       body: JSON.stringify({ fields }),
     });
@@ -424,8 +428,8 @@ async function sendReply(env = {}, replyToken = "", replyText = "") {
     const response = await fetch(LINE_REPLY_URL, {
       method: "POST",
       headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
+        authorization: `Bearer ${token}` },
+      "content-type": "application/json",
       },
       body: JSON.stringify({ replyToken: reply, messages: [{ type: "text", text: answer }] }),
     });
@@ -526,7 +530,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
           available: false,
         };
 
-    const decision = autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken
+    const baseDecision = autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken
       ? await resolveKenjiSeedDecision(event, env, {
           modelAccessAllowed: controls.model_keyword_auto_reply !== true,
           currentIntent,
@@ -540,6 +544,10 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
         guard_reason: redelivered ? "line_redelivery" : runtimeLineKill ? "runtime_line_kill" : "reply_not_eligible",
       });
 
+    const decision = applyKenjiNextAction(baseDecision, {
+      intent: text(baseDecision.intent || continuity.effective_intent || currentIntent),
+      continuity,
+    });
     const shouldReply = Boolean(autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken && decision.text);
     const replyResult = shouldReply ? await sendReply(env, replyToken, decision.text) : null;
     const delivered = replyResult?.ok === true;
@@ -577,6 +585,8 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       reply_source: text(decision.reply_source),
       selected_knowledge_ids: decision.selected_knowledge_ids,
       handoff_required: decision.handoff_required === true,
+      cta_type: text(decision.cta_type),
+      cta_appended: decision.cta_appended === true,
       reply_attempted: shouldReply,
       reply_sent: delivered,
       runtime_control_ok: runtime.ok === true,
@@ -597,6 +607,9 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       reply_source: text(decision.reply_source),
       selected_knowledge_ids: decision.selected_knowledge_ids,
       handoff_required: decision.handoff_required === true,
+      cta_type: text(decision.cta_type),
+      cta_route: text(decision.cta_route),
+      cta_appended: decision.cta_appended === true,
       runtime_control_ok: runtime.ok === true,
       runtime_line_kill: runtimeLineKill,
       continuity_enabled: continuityEnabled,
