@@ -42,7 +42,7 @@ test("admin login canonicalizes www browser traffic to the apex admin origin bef
 
   assert.equal(ADMIN_CANONICAL_ORIGIN, "https://mmdbkk.com");
   assert.equal(response.headers.get("x-mmd-admin-origin"), ADMIN_CANONICAL_ORIGIN);
-  assert.equal(response.headers.get("x-mmd-login-ui"), "browser-fetch-v5");
+  assert.equal(response.headers.get("x-mmd-login-ui"), "browser-fetch-v6");
   assert.match(html, /location\.hostname==='www\.mmdbkk\.com'/);
   assert.match(html, /canonical\.hostname='mmdbkk\.com'/);
   assert.match(html, /location\.replace\(canonical\.toString\(\)\)/);
@@ -60,7 +60,6 @@ test("admin login posts the exact visible credential with an explicit same-origi
     html,
     /name="next" value="\/internal\/admin\/control-room"/,
   );
-  assert.match(html, /name="next" value="\/internal\/admin\/control-room"/);
   assert.match(html, /\bfetch\s*\(/);
   assert.match(html, /'Content-Type':'application\/x-www-form-urlencoded;charset=UTF-8'/);
   assert.match(html, /credentials:'same-origin'/);
@@ -68,15 +67,17 @@ test("admin login posts the exact visible credential with an explicit same-origi
   assert.match(html, /response\.ok&&response\.redirected/);
 });
 
-test("admin login preserves secure server-side flow and exposes the production UI marker", async () => {
+test("admin login preserves secure server-side flow and exposes the Image A production UI marker", async () => {
   const response = await render();
   const html = await response.text();
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store, private, max-age=0");
-  assert.equal(response.headers.get("x-mmd-login-ui"), "browser-fetch-v5");
+  assert.equal(response.headers.get("x-mmd-login-ui"), "browser-fetch-v6");
   assert.equal(response.headers.get("x-mmd-admin-origin"), "https://mmdbkk.com");
   assert.match(response.headers.get("content-security-policy") || "", /connect-src 'self'/);
   assert.match(html, /name="next" value="\/internal\/admin\/control-room"/);
-  assert.match(html, /INVITE ONLY · SECURE SESSION/);
+  assert.match(html, /BACK OFFICE ACCESS/);
+  assert.match(html, /MANAGED ACCOUNTS/);
+  assert.match(html, /SECURE · PRIVATE · INTERNAL/);
 });
