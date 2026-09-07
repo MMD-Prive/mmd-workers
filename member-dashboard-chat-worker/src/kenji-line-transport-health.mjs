@@ -2,14 +2,28 @@ import { probeKenjiLineIngressTraceStorage } from "./kenji-line-ingress-trace.mj
 
 const LINE_WEBHOOK_INFO_URL = "https://api.line.me/v2/bot/channel/webhook/endpoint";
 const LINE_WEBHOOK_TEST_URL = "https://api.line.me/v2/bot/channel/webhook/test";
+const MEMBER_TRUTH_HEALTH_URL = "https://member-pages-worker.internal/__internal/kenji/member-truth/health";
+const MEMBER_TRUTH_HEALTH_SCHEMA = "mmd.kenji_member_truth_health.v1";
 const HEALTH_QUERY = "transport_health";
 const HEALTH_HEADER = "x-mmd-line-transport-health";
 const TIMEOUT_MS = 1800;
+const MEMBER_TRUTH_TIMEOUT_MS = 3200;
 const CANONICAL_ENDPOINTS = new Set([
   "https://mmdbkk.com/webhooks/line",
   "https://www.mmdbkk.com/webhooks/line",
 ]);
 const SAFE_TEST_REASONS = new Set(["OK", "COULD_NOT_CONNECT", "REQUEST_TIMEOUT", "ERROR_STATUS_CODE", "UNCLASSIFIED"]);
+const SAFE_MEMBER_TRUTH_STATUSES = new Set([
+  "ready",
+  "resolver_config_missing",
+  "resolver_auth_rejected",
+  "resolver_unavailable",
+  "resolver_http_error",
+  "resolver_contract_error",
+  "member_truth_health_route_missing",
+  "member_truth_health_unavailable",
+  "member_pages_binding_missing",
+]);
 
 function text(value, max = 4096) { return String(value == null ? "" : value).trim().slice(0, max); }
 function normalizedEndpoint(value) {
@@ -84,12 +98,85 @@ function traceFields(trace = {}) {
     ingress_trace_cleanup_ok: trace.cleanup_ok === true,
   };
 }
+function safeMemberTruthStatus(value) {
+  const status = text(value, 80);
+  return SAFE_MEMBER_TRUTH_STATUSES.has(status) ? status : "member_truth_health_unavailable";
+}
+async function probeKenjiMemberTruthBridge(env = {}) {
+  const binding = env.MEMBER_PAGES_WORKER;
+  if (typeof binding?.fetch !== "function") {
+    return {
+      configured: false,
+      ok: false,
+      status: "member_pages_binding_missing",
+      http_status: 0,
+      resolver_binding_present: false,
+      resolver_secret_present: false,
+    };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("kenji_member_truth_bridge_timeout"), MEMBER_TRUTH_TIMEOUT_MS);
+  try {
+    const response = await binding.fetch(new Request(MEMBER_TRUTH_HEALTH_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-internal-call": "true",
+        "x-mmd-service-binding": "member-dashboard-chat-worker",
+      },
+      body: "{}",
+      signal: controller.signal,
+    }));
+    const payload = await response.json().catch(() => null);
+    const schemaMatches = payload?.schema === MEMBER_TRUTH_HEALTH_SCHEMA;
+    if (!schemaMatches) {
+      return {
+        configured: false,
+        ok: false,
+        status: response.status === 404 ? "member_truth_health_route_missing" : "member_truth_health_unavailable",
+        http_status: Number(response.status) || 0,
+        resolver_binding_present: false,
+        resolver_secret_present: false,
+      };
+    }
+    return {
+      configured: payload?.configured === true,
+      ok: response.ok && payload?.ok === true && payload?.status === "ready",
+      status: safeMemberTruthStatus(payload?.status),
+      http_status: Number(response.status) || 0,
+      resolver_binding_present: payload?.resolver_binding_present === true,
+      resolver_secret_present: payload?.resolver_secret_present === true,
+    };
+  } catch (_) {
+    return {
+      configured: false,
+      ok: false,
+      status: "member_truth_health_unavailable",
+      http_status: 0,
+      resolver_binding_present: false,
+      resolver_secret_present: false,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function memberTruthFields(probe = {}) {
+  return {
+    member_truth_bridge_configured: probe.configured === true,
+    member_truth_bridge_ok: probe.ok === true,
+    member_truth_bridge_status: safeMemberTruthStatus(probe.status),
+    member_truth_bridge_http_status: Number(probe.http_status) || 0,
+    member_truth_resolver_binding_present: probe.resolver_binding_present === true,
+    member_truth_resolver_secret_present: probe.resolver_secret_present === true,
+  };
+}
 export async function inspectKenjiLineTransport(env = {}) {
   const secretPresent = Boolean(text(env.LINE_CHANNEL_SECRET));
   const token = text(env.LINE_CHANNEL_ACCESS_TOKEN);
   const tokenPresent = Boolean(token);
   const base = {
-    schema: "mmd.kenji_line_transport_health.v3",
+    schema: "mmd.kenji_line_transport_health.v4",
     configured: secretPresent && tokenPresent,
     signature_secret_present: secretPresent,
     access_token_present: tokenPresent,
@@ -106,6 +193,12 @@ export async function inspectKenjiLineTransport(env = {}) {
     ingress_trace_storage_status: "not_attempted",
     ingress_trace_storage_http_status: 0,
     ingress_trace_cleanup_ok: false,
+    member_truth_bridge_configured: false,
+    member_truth_bridge_ok: false,
+    member_truth_bridge_status: "member_pages_binding_missing",
+    member_truth_bridge_http_status: 0,
+    member_truth_resolver_binding_present: false,
+    member_truth_resolver_secret_present: false,
     status: "unavailable",
   };
   if (!tokenPresent) return { ...base, status: "access_token_missing" };
@@ -118,9 +211,10 @@ export async function inspectKenjiLineTransport(env = {}) {
     const configurationStatus = !secretPresent ? "signature_secret_missing" : !webhookActive ? "webhook_inactive" : !endpointMatch ? "endpoint_mismatch" : "ready";
     if (configurationStatus !== "ready") return { ...base, line_api_reachable: true, webhook_active: webhookActive, endpoint_match: endpointMatch, status: configurationStatus };
 
-    const [signedTest, traceProbe] = await Promise.all([
+    const [signedTest, traceProbe, memberTruthProbe] = await Promise.all([
       testSignedWebhookRoundTrip(token),
       probeKenjiLineIngressTraceStorage(traceProbeEnv(env)),
+      probeKenjiMemberTruthBridge(env),
     ]);
     return {
       ...base,
@@ -132,6 +226,7 @@ export async function inspectKenjiLineTransport(env = {}) {
       signed_webhook_test_status_code: signedTest.status_code,
       signed_webhook_test_reason: signedTest.reason,
       ...traceFields(traceProbe),
+      ...memberTruthFields(memberTruthProbe),
       status: signedTest.status,
     };
   } catch { return { ...base, status: "line_api_unavailable" }; }
@@ -140,6 +235,8 @@ export async function handleKenjiLineTransportHealth(request, env = {}) {
   if (!isKenjiLineTransportHealthRequest(request)) return null;
   const health = await inspectKenjiLineTransport(env);
   const transportReady = health.status === "ready";
-  const diagnosticsReady = health.ingress_trace_configured !== true || health.ingress_trace_storage_ok === true;
-  return json({ ok: transportReady && diagnosticsReady, route: "line_transport_health", ...health }, transportReady ? 200 : 503);
+  const traceReady = health.ingress_trace_configured !== true || health.ingress_trace_storage_ok === true;
+  const memberTruthReady = health.member_truth_bridge_configured === true && health.member_truth_bridge_ok === true;
+  const ready = transportReady && traceReady && memberTruthReady;
+  return json({ ok: ready, route: "line_transport_health", ...health }, ready ? 200 : 503);
 }
