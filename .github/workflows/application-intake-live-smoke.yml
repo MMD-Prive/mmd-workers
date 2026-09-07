@@ -1,0 +1,136 @@
+name: Application Intake Live Smoke (MMS + MMD)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/application-intake-live-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Smoke public application pages and production intake
+        shell: bash
+        run: |
+          node <<'NODE'
+          const runId = String(process.env.GITHUB_RUN_ID || Date.now());
+          const origin = "https://www.mmdbkk.com";
+
+          function assert(condition, message) {
+            if (!condition) throw new Error(message);
+          }
+
+          async function readJson(response) {
+            const text = await response.text();
+            try { return { text, json: JSON.parse(text) }; }
+            catch { return { text, json: null }; }
+          }
+
+          async function checkPage(path, label) {
+            const response = await fetch(`${origin}${path}`, { redirect: "follow" });
+            console.log(`${label} page HTTP:`, response.status, response.url);
+            assert(response.ok, `${label} public page failed: HTTP ${response.status}`);
+          }
+
+          await checkPage("/apply/mms-therapist", "MMS");
+          await checkPage("/apply/public-model", "MMD");
+
+          const mmsPayload = {
+            idempotency_key: `github-live-smoke-mms-${runId}`,
+            applicant_name: `MMS SMOKE TEST ${runId}`,
+            nickname: "SMOKE",
+            phone: "0990000000",
+            gender_identity: "male",
+            customer_gender_scope: "both",
+            skills: ["aroma_therapy_oil"],
+            experience_years: 0,
+            experience_months: 0,
+            strengths: "PRODUCTION SMOKE TEST ONLY",
+            worked_at_spa_before: false,
+            worked_independently_before: false,
+            current_profession: "Internal production smoke test",
+            qualification_note: "PRODUCTION TEST ONLY - safe synthetic applicant",
+            work_base_area: "Bangkok - PRODUCTION SMOKE TEST",
+            mobility_scope: "local",
+            coverage_area_note: "",
+            general_consent: true,
+            language: "th"
+          };
+
+          const mmsResponse = await fetch("https://mms-worker.malemodel-bkk.workers.dev/mms/api/applications", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "origin": origin,
+              "x-request-id": `mms-live-smoke-${runId}`
+            },
+            body: JSON.stringify(mmsPayload)
+          });
+          const mmsBody = await readJson(mmsResponse);
+          console.log("MMS Apply HTTP:", mmsResponse.status);
+          console.log("MMS Apply response:", JSON.stringify(mmsBody.json));
+          assert(mmsResponse.ok && mmsBody.json?.ok === true, `MMS production apply failed: HTTP ${mmsResponse.status}`);
+          assert(/^mmsapp_[a-f0-9]{24}$/.test(String(mmsBody.json?.application_id || "")), "MMS application_id missing or malformed");
+          assert(mmsBody.json?.storage?.airtable === "synced", `MMS Airtable sync not green: ${mmsBody.json?.storage?.airtable}`);
+          assert(mmsBody.json?.storage?.telegram === "sent", `MMS HENNA Telegram notification not sent: ${mmsBody.json?.storage?.telegram}`);
+          const mmsId = mmsBody.json.application_id;
+          console.log(`MMS LIVE SMOKE application_id=${mmsId}`);
+
+          const mmsReview = `${origin}/internal/admin/mms?tab=applications&application_id=${encodeURIComponent(mmsId)}`;
+          const mmsReviewResponse = await fetch(mmsReview, { redirect: "manual" });
+          const mmsLocation = mmsReviewResponse.headers.get("location") || "";
+          console.log("MMS review HTTP:", mmsReviewResponse.status, "Location:", mmsLocation);
+          assert([302, 303, 307, 308].includes(mmsReviewResponse.status), `MMS review gate unexpected HTTP ${mmsReviewResponse.status}`);
+          const expectedMmsNext = encodeURIComponent(`/internal/admin/mms?tab=applications&application_id=${mmsId}`);
+          assert(mmsLocation.includes(`next=${expectedMmsNext}`), `MMS admin login lost exact application deep link: ${mmsLocation}`);
+
+          const mmdPayload = {
+            application_type: "public_model",
+            form_version: "public-model-apply-v8",
+            nickname: `MMD SMOKE TEST ${runId}`,
+            email: `public-model-smoke-${runId}@example.invalid`,
+            consent: true,
+            age: 30,
+            height: 180,
+            location: "Bangkok - PRODUCTION SMOKE TEST",
+            occupation_detail: "MMD internal production smoke test",
+            work_types: ["Public Events"],
+            intro: "PRODUCTION TEST ONLY - verify application and notification flow.",
+            submitted_at: new Date().toISOString(),
+            timezone: "Asia/Bangkok",
+            language: "th"
+          };
+
+          const mmdResponse = await fetch("https://sigil-worker.malemodel-bkk.workers.dev/v1/public-model/apply", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "origin": origin,
+              "x-mmd-client": "github-live-smoke",
+              "x-request-id": `pma-live-smoke-${runId}`
+            },
+            body: JSON.stringify(mmdPayload)
+          });
+          const mmdBody = await readJson(mmdResponse);
+          console.log("MMD Apply HTTP:", mmdResponse.status);
+          console.log("MMD Apply response:", JSON.stringify(mmdBody.json));
+          assert(mmdResponse.ok && mmdBody.json?.ok === true, `MMD Public Model production apply failed: HTTP ${mmdResponse.status}`);
+          assert(/^pma_[A-Za-z0-9_-]{8,120}$/.test(String(mmdBody.json?.application_id || "")), "MMD application_id missing or malformed");
+          const mmdId = mmdBody.json.application_id;
+          console.log(`MMD LIVE SMOKE application_id=${mmdId}`);
+
+          const mmdReview = `${origin}/internal/admin/model-applications?application_id=${encodeURIComponent(mmdId)}`;
+          const mmdReviewResponse = await fetch(mmdReview, { redirect: "manual" });
+          const mmdLocation = mmdReviewResponse.headers.get("location") || "";
+          console.log("MMD review HTTP:", mmdReviewResponse.status, "Location:", mmdLocation);
+          assert([200, 302, 303, 307, 308].includes(mmdReviewResponse.status), `MMD review route unexpected HTTP ${mmdReviewResponse.status}`);
+
+          console.log("APPLICATION LIVE SMOKE COMPLETE", JSON.stringify({ mms_application_id: mmsId, mmd_application_id: mmdId }));
+          NODE
