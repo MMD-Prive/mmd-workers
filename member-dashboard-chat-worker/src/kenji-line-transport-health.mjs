@@ -59,6 +59,21 @@ async function testSignedWebhookRoundTrip(token) {
     return { attempted: true, success: false, status_code: 0, reason: "UNCLASSIFIED", status: "webhook_test_api_unavailable" };
   }
 }
+function traceProbeEnv(env = {}) {
+  const source = env || {};
+  return new Proxy(source, {
+    get(target, property) {
+      if (property === "KENJI_LINE_INGRESS_TRACE_ENABLED") {
+        return text(Reflect.get(target, property, target)) || "true";
+      }
+      return Reflect.get(target, property, target);
+    },
+    has(target, property) {
+      if (property === "KENJI_LINE_INGRESS_TRACE_ENABLED") return true;
+      return Reflect.has(target, property);
+    },
+  });
+}
 function traceFields(trace = {}) {
   return {
     ingress_trace_enabled: trace.enabled === true,
@@ -73,7 +88,6 @@ export async function inspectKenjiLineTransport(env = {}) {
   const secretPresent = Boolean(text(env.LINE_CHANNEL_SECRET));
   const token = text(env.LINE_CHANNEL_ACCESS_TOKEN);
   const tokenPresent = Boolean(token);
-  const initialTrace = traceFields({ enabled: ["1", "true", "yes", "on"].includes(text(env.KENJI_LINE_INGRESS_TRACE_ENABLED).toLowerCase()), configured: Boolean(text(env.AIRTABLE_API_KEY) && text(env.AIRTABLE_BASE_ID) && text(env.AIRTABLE_TABLE_LINE_WEBHOOK_INGRESS_TRACE_ID)), storage_status: "not_attempted" });
   const base = {
     schema: "mmd.kenji_line_transport_health.v3",
     configured: secretPresent && tokenPresent,
@@ -86,7 +100,12 @@ export async function inspectKenjiLineTransport(env = {}) {
     signed_webhook_test_success: false,
     signed_webhook_test_status_code: 0,
     signed_webhook_test_reason: "",
-    ...initialTrace,
+    ingress_trace_enabled: true,
+    ingress_trace_configured: Boolean(text(env.AIRTABLE_API_KEY) && text(env.AIRTABLE_BASE_ID)),
+    ingress_trace_storage_ok: false,
+    ingress_trace_storage_status: "not_attempted",
+    ingress_trace_storage_http_status: 0,
+    ingress_trace_cleanup_ok: false,
     status: "unavailable",
   };
   if (!tokenPresent) return { ...base, status: "access_token_missing" };
@@ -101,7 +120,7 @@ export async function inspectKenjiLineTransport(env = {}) {
 
     const [signedTest, traceProbe] = await Promise.all([
       testSignedWebhookRoundTrip(token),
-      probeKenjiLineIngressTraceStorage(env),
+      probeKenjiLineIngressTraceStorage(traceProbeEnv(env)),
     ]);
     return {
       ...base,
@@ -121,6 +140,6 @@ export async function handleKenjiLineTransportHealth(request, env = {}) {
   if (!isKenjiLineTransportHealthRequest(request)) return null;
   const health = await inspectKenjiLineTransport(env);
   const transportReady = health.status === "ready";
-  const diagnosticsReady = health.ingress_trace_enabled !== true || health.ingress_trace_storage_ok === true;
+  const diagnosticsReady = health.ingress_trace_configured !== true || health.ingress_trace_storage_ok === true;
   return json({ ok: transportReady && diagnosticsReady, route: "line_transport_health", ...health }, transportReady ? 200 : 503);
 }
