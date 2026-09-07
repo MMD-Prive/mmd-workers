@@ -110,12 +110,20 @@ test("friendly layer turns Kenji admin into task-oriented teach / preview / revi
 
 test("friendly teach action writes only a Draft and never publishes directly", () => {
   assert.match(friendly, /API \+ "\/draft"/);
-  assert.match(friendly, /response_mode: "draft_only"/);
+  assert.match(friendly, /auto_reply_allowed/);
+  assert.match(friendly, /handoff_required/);
+  assert.match(friendly, /allowed_channels: \["LINE_OFC", "Webflow", "SIGIL Board", "Admin Console"\]/);
   assert.match(friendly, /source_ref: "friendly-teach-v3"/);
   assert.match(friendly, /Idempotency-Key/);
   assert.match(friendly, /Explicit Review → QA → Publish required/);
   assert.doesNotMatch(friendly, /API \+ "\/publish"/);
   assert.doesNotMatch(friendly, /api\.airtable\.com|AIRTABLE_API_KEY|Authorization:\s*["']Bearer/);
+});
+
+test("friendly guard teaching stays handoff-oriented and keeps a customer-safe fallback answer", () => {
+  assert.match(friendly, /เรื่องนี้ผมขอตรวจข้อมูลกับ MMD ก่อนนะครับ/);
+  assert.match(friendly, /ห้ามนำ Guard นี้ไปเป็น customer-facing answer ตรง ๆ/);
+  assert.match(friendly, /state\.teachMode === "guard" \|\| category === "payment" \? "handoff_required"/);
 });
 
 test("friendly preview is clearly discovery-only and does not pretend to run production inference", () => {
