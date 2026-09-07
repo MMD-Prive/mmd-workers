@@ -4,6 +4,10 @@ import {
   resolveKenjiLineReply,
   verifyLineSignature,
 } from "./index.js";
+import {
+  resolveKenjiLineContinuity,
+  writeKenjiLineMatrixTurn,
+} from "./kenji-line-continuity-runtime.mjs";
 
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const KENJI_KNOWLEDGE_TABLE_FALLBACK = "tblsLd1uVOtG2kHoU";
@@ -162,6 +166,10 @@ function withDecisionMetadata(base = {}, overrides = {}) {
     knowledge_source_path: text(base.knowledge_source_path),
     handoff_required: base.handoff_required === true,
     handoff_reason: text(base.handoff_reason),
+    inferred_intent: text(base.inferred_intent),
+    continuity_decision: text(base.continuity_decision),
+    continuity_topic: text(base.continuity_topic),
+    continuity_stage: text(base.continuity_stage),
     ...overrides,
   };
 }
@@ -186,13 +194,25 @@ function cardMetadata(card = {}) {
   };
 }
 
+function continuityMetadata(options = {}, inferredIntent = "") {
+  const continuity = options?.continuity || {};
+  return {
+    inferred_intent: text(inferredIntent),
+    continuity_decision: text(continuity.decision),
+    continuity_topic: text(continuity.topic),
+    continuity_stage: text(continuity.conversation_stage),
+  };
+}
+
 export async function resolveKenjiSeedDecision(event = {}, env = {}, options = {}) {
   const raw = event?.type === "message" && event?.message?.type === "text"
     ? text(event.message.text)
     : event?.type === "postback"
       ? text(event?.postback?.displayText || event?.postback?.data)
       : "";
-  const intent = inferLineIntent(raw, event);
+  const inferredIntent = text(options.currentIntent || inferLineIntent(raw, event));
+  const intent = text(options?.continuity?.effective_intent || inferredIntent);
+  const continuityMeta = continuityMetadata(options, inferredIntent);
   const autoKnowledgeId = SEED_AUTO_REPLY_BY_INTENT[intent];
   const handoffKnowledgeId = SEED_HANDOFF_BY_INTENT[intent];
 
@@ -209,6 +229,7 @@ export async function resolveKenjiSeedDecision(event = {}, env = {}, options = {
         reply_source: "seed_knowledge",
         knowledge_hits: 1,
         ...cardMetadata(card),
+        ...continuityMeta,
         handoff_required: false,
         handoff_reason: "",
         intent,
@@ -216,7 +237,11 @@ export async function resolveKenjiSeedDecision(event = {}, env = {}, options = {
     }
 
     const fallback = await deterministicFallback(event, env, options);
-    return withDecisionMetadata(fallback, { intent, reply_source: fallback.reply_source || "deterministic" });
+    return withDecisionMetadata(fallback, {
+      ...continuityMeta,
+      intent,
+      reply_source: fallback.reply_source || "deterministic",
+    });
   }
 
   if (handoffKnowledgeId && enabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)) {
@@ -226,6 +251,7 @@ export async function resolveKenjiSeedDecision(event = {}, env = {}, options = {
     if (card && ["handoff_required", "owner_approval_required"].includes(mode)) {
       return withDecisionMetadata(fallback, {
         ...cardMetadata(card),
+        ...continuityMeta,
         intent,
         reply_source: "seed_handoff",
         knowledge_hits: 1,
@@ -234,6 +260,7 @@ export async function resolveKenjiSeedDecision(event = {}, env = {}, options = {
       });
     }
     return withDecisionMetadata(fallback, {
+      ...continuityMeta,
       intent,
       handoff_required: true,
       handoff_reason: `${intent}:protected_truth`,
@@ -243,6 +270,7 @@ export async function resolveKenjiSeedDecision(event = {}, env = {}, options = {
   const decision = await resolveKenjiLineReply(event, {}, env, options);
   const protectedIntent = NEVER_AUTOREPLY_INTENTS.has(intent);
   return withDecisionMetadata(decision, {
+    ...continuityMeta,
     intent,
     handoff_required: protectedIntent || decision.handoff_required === true,
     handoff_reason: protectedIntent
@@ -257,6 +285,10 @@ function eventIdOf(event = {}) {
 
 function replyTokenOf(event = {}) {
   return text(event?.replyToken);
+}
+
+export function kenjiTelemetryEventId(event = {}) {
+  return `kai_line_${eventIdOf(event)}`.slice(0, 120);
 }
 
 function normalizeTelemetryIntent(intent = "") {
@@ -322,9 +354,9 @@ export async function writeKenjiAiMessageEvent({ env = {}, event = {}, decision 
   if (!apiKey || !baseId || !table) return { skipped: true, reason: "airtable_env_missing" };
 
   const sourceEventId = eventIdOf(event);
-  const telemetryEventId = `kai_line_${sourceEventId}`.slice(0, 120);
+  const telemetryEventId = kenjiTelemetryEventId(event);
   const existing = await findAiEvent(env, telemetryEventId);
-  if (existing?.id) return { id: existing.id, deduped: true };
+  if (existing?.id) return { id: existing.id, event_id: telemetryEventId, deduped: true };
 
   const intent = text(decision.intent) || inferLineIntent(
     event?.type === "message" ? text(event?.message?.text) : "",
@@ -351,6 +383,9 @@ export async function writeKenjiAiMessageEvent({ env = {}, event = {}, decision 
     payload_json: JSON.stringify({
       telemetry_version: "kenji_seed_runtime_v1",
       exact_intent: intent,
+      inferred_intent: text(decision.inferred_intent),
+      continuity_decision: text(decision.continuity_decision),
+      continuity_topic: text(decision.continuity_topic),
       reply_source: text(decision.reply_source),
       guard_blocked: decision.guard_blocked === true,
       guard_reason: text(decision.guard_reason).slice(0, 160),
@@ -374,7 +409,7 @@ export async function writeKenjiAiMessageEvent({ env = {}, event = {}, decision 
     });
     if (!response.ok) return { skipped: true, reason: "airtable_write_failed", status: response.status };
     const payload = await response.json().catch(() => ({}));
-    return { id: text(payload?.id), deduped: false };
+    return { id: text(payload?.id), event_id: telemetryEventId, deduped: false };
   } catch (_) {
     return { skipped: true, reason: "airtable_write_failed" };
   }
@@ -470,6 +505,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
   const runtimeAllKill = runtime.ok !== true || controls.all_kenji_mutations === true;
   const runtimeLineKill = runtimeAllKill || controls.line_oa_auto_reply === true;
   const autoReplyEnabled = enabled(env.LINE_AUTO_REPLY_ENABLED) && enabled(env.LINE_KENJI_AI_ENABLED) && !runtimeLineKill;
+  const continuityEnabled = enabled(env.KENJI_LINE_CONTINUITY_ENABLED);
   const events = Array.isArray(body.events) ? body.events : [];
   const saved = [];
 
@@ -477,10 +513,28 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const eventMode = text(event?.mode).toLowerCase() || "unknown";
     const redelivered = event?.deliveryContext?.isRedelivery === true;
     const replyToken = replyTokenOf(event);
+    const currentIntent = inferLineIntent(event?.message?.text || event?.postback?.displayText || event?.postback?.data || "", event);
+    const continuity = continuityEnabled
+      ? await resolveKenjiLineContinuity({ env, event, currentIntent })
+      : {
+          decision: "new_topic",
+          effective_intent: currentIntent,
+          current_intent: currentIntent,
+          topic: "",
+          conversation_stage: "new_topic",
+          storage_status: "disabled",
+          available: false,
+        };
+
     const decision = autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken
-      ? await resolveKenjiSeedDecision(event, env, { modelAccessAllowed: controls.model_keyword_auto_reply !== true })
+      ? await resolveKenjiSeedDecision(event, env, {
+          modelAccessAllowed: controls.model_keyword_auto_reply !== true,
+          currentIntent,
+          continuity,
+        })
       : withDecisionMetadata({}, {
-        intent: inferLineIntent(event?.message?.text || "", event),
+        ...continuityMetadata({ continuity }, currentIntent),
+        intent: text(continuity.effective_intent || currentIntent),
         reply_source: "silent",
         guard_blocked: true,
         guard_reason: redelivered ? "line_redelivery" : runtimeLineKill ? "runtime_line_kill" : "reply_not_eligible",
@@ -489,20 +543,37 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const shouldReply = Boolean(autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken && decision.text);
     const replyResult = shouldReply ? await sendReply(env, replyToken, decision.text) : null;
     const delivered = replyResult?.ok === true;
-    const telemetryWork = writeKenjiAiMessageEvent({
-      env,
-      event,
-      decision,
-      delivered,
-      attempted: shouldReply,
-    }).catch(() => ({ skipped: true, reason: "telemetry_runtime_error" }));
-    if (typeof ctx?.waitUntil === "function") ctx.waitUntil(telemetryWork);
-    else await telemetryWork;
+
+    const postTurnWork = (async () => {
+      const telemetry = await writeKenjiAiMessageEvent({
+        env,
+        event,
+        decision,
+        delivered,
+        attempted: shouldReply,
+      }).catch(() => ({ skipped: true, reason: "telemetry_runtime_error" }));
+      const matrix = continuityEnabled && eventMode !== "standby" && !redelivered
+        ? await writeKenjiLineMatrixTurn({
+            env,
+            continuity,
+            decision,
+            delivered,
+            attempted: shouldReply,
+            lastEventId: text(telemetry?.event_id),
+          }).catch(() => ({ skipped: true, reason: "matrix_runtime_error" }))
+        : { skipped: true, reason: continuityEnabled ? "event_not_eligible" : "continuity_disabled" };
+      return { telemetry, matrix };
+    })();
+    if (typeof ctx?.waitUntil === "function") ctx.waitUntil(postTurnWork);
+    else await postTurnWork;
 
     console.log(JSON.stringify({
       line_webhook: "kenji_seed_runtime",
       event_type: text(event?.type) || "unknown",
+      inferred_intent: currentIntent,
       intent: text(decision.intent),
+      continuity_decision: text(continuity.decision),
+      continuity_topic: text(continuity.topic),
       reply_source: text(decision.reply_source),
       selected_knowledge_ids: decision.selected_knowledge_ids,
       handoff_required: decision.handoff_required === true,
@@ -510,18 +581,26 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       reply_sent: delivered,
       runtime_control_ok: runtime.ok === true,
       runtime_line_kill: runtimeLineKill,
+      continuity_enabled: continuityEnabled,
+      continuity_storage_status: text(continuity.storage_status),
     }));
 
     saved.push({
       ok: true,
       type: text(event?.type),
+      inferred_intent: currentIntent,
       intent: text(decision.intent),
+      continuity_decision: text(continuity.decision),
+      continuity_topic: text(continuity.topic),
+      continuity_stage: text(continuity.conversation_stage),
       replied: delivered,
       reply_source: text(decision.reply_source),
       selected_knowledge_ids: decision.selected_knowledge_ids,
       handoff_required: decision.handoff_required === true,
       runtime_control_ok: runtime.ok === true,
       runtime_line_kill: runtimeLineKill,
+      continuity_enabled: continuityEnabled,
+      continuity_storage_status: text(continuity.storage_status),
       message_id: eventIdOf(event),
     });
   }
@@ -531,6 +610,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     worker: "member-dashboard-chat-worker",
     route: "line_webhook",
     runtime: "kenji_seed_pack_v1",
+    continuity_runtime: continuityEnabled ? "kenji_line_continuity_v1" : "disabled",
     events: events.length,
     saved,
   });
