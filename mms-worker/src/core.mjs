@@ -311,10 +311,14 @@ export function applicationAirtableFields(application, meta) {
 }
 
 export function applicationTelegramMessage(application, meta) {
+  const applicationId = String(meta?.application_id || "").trim();
+  const reviewUrl = `https://www.mmdbkk.com/internal/admin/mms?tab=applications&application_id=${encodeURIComponent(applicationId)}`;
   return [
     "🔔 MMS มีใบสมัคร Therapist ใหม่",
-    `Reference: ${meta.application_id}`,
-    "เปิด Airtable > MMS Therapist Applications เพื่อตรวจสอบข้อมูล",
+    `Application ID: ${applicationId}`,
+    "Status: New / Needs Review",
+    "",
+    `เปิดใบสมัคร: ${reviewUrl}`,
   ].join("\n");
 }
 

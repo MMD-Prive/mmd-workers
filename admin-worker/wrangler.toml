@@ -226,13 +226,15 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/model-applications*"
 zone_name = "mmdbkk.com"
 
-# MMS team operations console. Keep this namespace exact and narrow.
+# MMS team operations console. Query-safe wildcard is required because applicant
+# deep links carry tab + application_id query parameters. Runtime pathname matching
+# remains exact inside admin-worker.
 [[routes]]
-pattern = "mmdbkk.com/internal/admin/mms"
+pattern = "mmdbkk.com/internal/admin/mms*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
-pattern = "www.mmdbkk.com/internal/admin/mms"
+pattern = "www.mmdbkk.com/internal/admin/mms*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
