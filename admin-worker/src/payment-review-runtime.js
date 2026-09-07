@@ -40,8 +40,8 @@ export async function handlePaymentReviewRequest(request, env = {}, actor = null
 
   try {
     requireAirtable(env);
-    if (path === QUEUE_PATH) return listReviewQueue(request, env);
-    return commitReview(request, env, { id: actorId, role: actorRole });
+    if (path === QUEUE_PATH) return await listReviewQueue(request, env);
+    return await commitReview(request, env, { id: actorId, role: actorRole });
   } catch (error) {
     return json({
       ok: false,
