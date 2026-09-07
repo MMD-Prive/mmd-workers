@@ -29,6 +29,28 @@ The existing backend safety contract stays in force. Review validation, QA check
 4. Per confirms once and presses `Use Live`.
 5. Worker runs the required validation and QA gates, publishes only if they pass, and writes audit history.
 
+## Kenji AI 2.0 view
+
+Kenji AI 2.0 is the customer-facing concierge runtime, but its owner preview belongs inside the same canonical Kenji Admin shell rather than living as a separate admin room.
+
+Canonical operator preview:
+
+`/internal/admin/kenji?view=ai20`
+
+Customer runtime remains:
+
+`/member/kenji-ai-20`
+
+Rules:
+
+- `view=ai20` is an owner preview view only. It does not move member runtime ownership, customer identity, money truth, entitlement truth, Model eligibility or publish authority into the admin browser.
+- The view reuses `/member/kenji-ai-20?mode=admin-preview` so Per can see the real member-facing Kenji AI 2.0 surface from inside Kenji Admin.
+- The existing lightweight `Try a question` Knowledge search may remain available as a teaching aid, but it is not equivalent to Kenji AI 2.0 runtime preview.
+- Kenji AI 2.0 continues to read published Knowledge from the existing runtime source and may guide, explain, classify and route only.
+- Payment verification, membership/access grants, private-model eligibility, booking guarantees and final approvals stay with their canonical backend/human authorities.
+- The standalone member route remains required for customers and should not redirect into admin.
+- Deep links must preserve `view=ai20` through authorized admin login handoff.
+
 ## Kenji Knowledge view
 
 Kenji Knowledge is not a separate admin product. It is a first-class view inside the canonical Kenji Admin surface.
