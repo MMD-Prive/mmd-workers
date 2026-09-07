@@ -1,3 +1,5 @@
+import { ADMIN_LOGIN_DUO_DATA, ADMIN_LOGIN_MMS_LOGO_DATA } from "./admin-login-image-a-assets.js";
+
 export const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
 export const APPROVED_ADMIN_LOGIN_PAGE_ID = "admin-login-approved-hero";
 export const APPROVED_ADMIN_LOGIN_HERO =
@@ -14,6 +16,8 @@ export const APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON =
   "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e34c91250ec9f6ee29d319_MMD%20SIGIL%20Logo.png";
 export const ADMIN_CANONICAL_ORIGIN = "https://mmdbkk.com";
 
+const MMD_BRAND_LOGO =
+  "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a6c4486e7585ba74ab2eeb1_MMD_Prive%CC%81_logo_signature_transparent%20Final.webp";
 const LINE_SEED_THAI_REGULAR =
   "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd598baf067153fd1cc_LINESeedSansTH_W_Rg.woff2";
 const LINE_SEED_THAI_BOLD =
@@ -42,12 +46,13 @@ export function renderApprovedAdminLogin(
   if (String(request?.method || "GET").toUpperCase() === "HEAD") {
     return new Response(null, { status, headers });
   }
+
   const partnerFirst = next === MMS_PARTNER_PATH;
   const html = `<!doctype html>
 <html lang="th">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="robots" content="noindex,nofollow,noarchive">
   <meta name="theme-color" content="#050403">
   <script>(()=>{if(location.protocol==='https:'&&location.hostname==='www.mmdbkk.com'){const path=(location.pathname.replace(/\\/+$/,'')||'/');if(path==='/internal/admin/login'){const canonical=new URL(location.href);canonical.hostname='mmdbkk.com';location.replace(canonical.toString());}}})();</script>
@@ -59,88 +64,115 @@ export function renderApprovedAdminLogin(
     @font-face{font-family:"LINE Seed Sans TH";src:url("${LINE_SEED_THAI_REGULAR}") format("woff2");font-style:normal;font-weight:400;font-display:swap}
     @font-face{font-family:"LINE Seed Sans TH";src:url("${LINE_SEED_THAI_BOLD}") format("woff2");font-style:normal;font-weight:700;font-display:swap}
     @font-face{font-family:"LINE Seed Sans TH";src:url("${LINE_SEED_THAI_EXTRABOLD}") format("woff2");font-style:normal;font-weight:800;font-display:swap}
-    :root{color-scheme:dark;--bg:#050403;--panel:rgba(13,10,8,.78);--line:rgba(239,204,132,.22);--gold:#e8bf65;--gold2:#ffe7a7;--green:#003704;--green2:#002b03;--green3:#001e02;--green-soft:#bfdcc6;--text:#fff7ec;--muted:rgba(255,247,236,.72);--soft:rgba(255,247,236,.54);--danger:#ffb7bd;--ok:#b9ddc3;--ink:#151006}
-    *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg)}body{min-height:100svh;color:var(--text);font-family:"LINE Seed Sans TH","Noto Sans Thai","Noto Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-synthesis:none;-webkit-font-smoothing:antialiased}.mmd-login{min-height:100svh;position:relative;isolation:isolate;overflow:hidden;padding:18px;background:#050403}.mmd-login:before{content:"";position:fixed;inset:0;z-index:-3;background:linear-gradient(90deg,rgba(5,4,3,.97),rgba(5,4,3,.88) 38%,rgba(5,4,3,.47) 70%,rgba(5,4,3,.82)),url("${APPROVED_ADMIN_LOGIN_HERO}") center/cover no-repeat;filter:saturate(1.02) contrast(1.04) brightness(.77)}.mmd-login:after{content:"";position:fixed;inset:0;z-index:-2;background:radial-gradient(circle at 15% 8%,rgba(232,191,101,.18),transparent 27%),radial-gradient(circle at 82% 24%,rgba(0,55,4,.24),transparent 30%),linear-gradient(180deg,transparent,#050403 105%)}
-    .shell{width:min(1080px,100%);margin:auto;display:grid;gap:14px;min-height:calc(100svh - 36px);align-content:center}.top,.card,.visual{border:1px solid var(--line);background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.018)),rgba(10,8,6,.68);box-shadow:0 24px 70px rgba(0,0,0,.4);backdrop-filter:blur(18px)}.top{border-radius:24px;padding:11px 13px;display:flex;justify-content:space-between;align-items:center;gap:12px}.brand{display:flex;align-items:center;gap:11px;color:inherit;text-decoration:none}.brand img{width:34px;height:34px;object-fit:contain}.brand b{display:block;font-size:14px;font-weight:800}.brand small{display:block;color:var(--soft);font-size:12px}.pill{border:1px solid rgba(255,231,167,.16);border-radius:999px;padding:8px 11px;color:var(--gold2);font-size:10px;font-weight:800;letter-spacing:.12em}.grid{display:grid;gap:14px}.card{border-radius:30px;padding:clamp(22px,4vw,40px);min-height:560px;display:grid;align-content:center}.visual{border-radius:30px;position:relative;overflow:hidden;min-height:560px}.visual:before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,4,3,.18),rgba(5,4,3,.72)),url("${APPROVED_ADMIN_LOGIN_PRIVACY_BG}") center/cover no-repeat;opacity:.58}.visual:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent,rgba(0,0,0,.75)),url("${APPROVED_ADMIN_LOGIN_WALL_BG}") center/cover no-repeat;opacity:.55}.visual-logo{position:absolute;z-index:2;top:28px;right:28px;width:112px;height:112px;object-fit:contain;opacity:.88}.note{position:absolute;z-index:3;left:18px;right:18px;bottom:18px;border:1px solid rgba(255,231,167,.16);border-radius:22px;background:rgba(0,0,0,.58);backdrop-filter:blur(14px);padding:17px}.note b{display:block;font-size:21px;font-weight:800}.note p{margin:7px 0 0;color:var(--muted);font-size:14px;line-height:1.58}
-    .kicker{color:var(--gold);font-size:11px;font-weight:800;letter-spacing:.17em;margin:0 0 10px}.title{margin:0;padding:.08em 0 .06em;font-size:clamp(38px,5.7vw,58px);font-weight:800;line-height:1.16;letter-spacing:-.018em;overflow:visible}.lead{margin:14px 0 18px;color:var(--muted);font-size:15px;line-height:1.68;max-width:38em}.lanes{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 0 18px}.lane{min-height:54px;border:1px solid rgba(255,231,167,.17);border-radius:17px;background:rgba(0,0,0,.24);color:var(--muted);font:800 13px/1.4 inherit;cursor:pointer;padding:10px 12px;text-align:left}.lane b{display:block;color:var(--text);font-size:13px}.lane small{display:block;margin-top:3px;color:var(--soft);font-weight:700}.lane.is-active{border-color:rgba(232,191,101,.48);background:linear-gradient(135deg,rgba(232,191,101,.15),rgba(232,191,101,.045))}.lane[data-lane="partner"].is-active{border-color:rgba(84,148,96,.58);background:linear-gradient(135deg,rgba(0,55,4,.72),rgba(0,30,2,.34))}.panel[hidden]{display:none}.panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}.panel-head strong{font-size:20px;font-weight:800}.panel-head span{color:var(--soft);font-size:12px}.scope{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 14px}.scope span{border:1px solid rgba(255,255,255,.10);border-radius:999px;padding:6px 9px;color:var(--soft);font-size:10px;background:rgba(0,0,0,.18)}.scope.partner span{border-color:rgba(84,148,96,.30);color:var(--green-soft)}
-    form{display:grid;gap:11px}label{display:grid;gap:7px;color:var(--gold);font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.partner-panel label{color:var(--green-soft)}.field{display:grid;grid-template-columns:1fr auto;border:1px solid rgba(255,231,167,.22);border-radius:17px;overflow:hidden;background:rgba(0,0,0,.44)}.partner-panel .field{border-color:rgba(84,148,96,.38)}input{width:100%;min-height:54px;border:0;background:transparent;color:var(--text);padding:0 15px;outline:0;font:700 15px/1.4 inherit}input:focus{box-shadow:0 0 0 3px rgba(232,191,101,.14) inset}.partner-panel input:focus{box-shadow:0 0 0 3px rgba(0,55,4,.58) inset}.toggle{min-width:72px;border:0;border-left:1px solid rgba(255,255,255,.12);background:transparent;color:var(--gold2);font:800 10px/1.4 inherit;cursor:pointer}.go{min-height:54px;border:0;border-radius:17px;background:linear-gradient(135deg,#f0c96f,#c9973e);color:var(--ink);font:800 12px/1.4 inherit;letter-spacing:.09em;text-transform:uppercase;cursor:pointer;box-shadow:0 14px 30px rgba(0,0,0,.24)}.partner-panel .go{border:1px solid rgba(84,148,96,.32);background:linear-gradient(104deg,var(--green) 0%,var(--green2) 52%,var(--green3) 100%);color:#fff;-webkit-text-fill-color:#fff;box-shadow:0 14px 30px rgba(0,55,4,.22)}.go:disabled,.toggle:disabled{opacity:.55;cursor:wait}.message{min-height:20px;margin:0;color:var(--soft);font-size:12px;line-height:1.55}.message.is-error{color:var(--danger)}.message.is-ok{color:var(--ok)}.privacy{margin:0;color:var(--soft);font-size:10px;line-height:1.55}.links{display:flex;gap:12px;flex-wrap:wrap;margin-top:4px}.linkbtn{padding:0;border:0;background:transparent;color:var(--green-soft);font:800 12px/1.4 inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer}.subpanel{margin-top:13px;padding-top:13px;border-top:1px solid rgba(84,148,96,.24)}.recovery{display:none;margin-top:10px;border:1px solid rgba(84,148,96,.30);border-radius:16px;background:rgba(0,55,4,.22);padding:12px}.recovery.is-visible{display:block}.recovery b{font-size:12px;font-weight:800}.recovery code{display:block;margin-top:7px;padding:10px;border-radius:10px;background:rgba(0,0,0,.34);word-break:break-all;color:#effff2;font-size:12px}.recovery p{margin:7px 0 0;color:var(--muted);font-size:11px;line-height:1.5}
-    @media(min-width:860px){.grid{grid-template-columns:minmax(0,.92fr) minmax(390px,1fr)}}@media(max-width:760px){.mmd-login{padding:10px}.shell{min-height:calc(100svh - 20px);align-content:start}.top{align-items:flex-start;flex-direction:column}.card{min-height:auto;padding:21px}.title{font-size:36px;line-height:1.16;letter-spacing:-.018em}.visual{min-height:245px}.lanes{grid-template-columns:1fr}.visual-logo{width:86px;height:86px;top:18px;right:18px}}
+    :root{color-scheme:dark;--bg:#050403;--gold:#d2a861;--gold-hi:#f4d28e;--gold-deep:#8f5c24;--text:#fff9f0;--muted:rgba(255,249,240,.67);--soft:rgba(255,249,240,.43);--green:#003704;--green-hi:#24ce78;--danger:#ffb8bd;--ok:#bfe4c8}
+    *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#050403}body{min-height:100svh;color:var(--text);font-family:"LINE Seed Sans TH","Noto Sans Thai","Noto Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-synthesis:none;-webkit-font-smoothing:antialiased}button,input{font:inherit}
+    .mmd-login{position:relative;isolation:isolate;min-height:100svh;overflow:hidden;background:#050403}
+    .mmd-login:before{content:"";position:fixed;inset:0;z-index:-4;background:linear-gradient(90deg,rgba(3,2,2,.18),rgba(3,2,2,.3) 44%,rgba(3,2,2,.6) 100%),url("${APPROVED_ADMIN_LOGIN_WALL_BG}") center/cover no-repeat;filter:saturate(.74) brightness(.56) contrast(1.08)}
+    .mmd-login:after{content:"";position:fixed;inset:0;z-index:-3;background:radial-gradient(circle at 13% 22%,rgba(208,154,74,.13),transparent 31%),linear-gradient(90deg,rgba(1,1,1,.34) 0%,rgba(1,1,1,.08) 48%,rgba(1,1,1,.26) 100%),linear-gradient(180deg,rgba(0,0,0,.05),rgba(0,0,0,.37))}
+    .duo-wrap{position:fixed;z-index:-1;right:4.1vw;bottom:0;width:min(50vw,780px);height:min(94svh,930px);pointer-events:none;display:flex;align-items:flex-end;justify-content:center}
+    .duo{display:block;width:100%;height:100%;object-fit:contain;object-position:center bottom;filter:saturate(.82) contrast(1.05) brightness(.83);mask-image:linear-gradient(90deg,transparent 0%,#000 11%,#000 91%,transparent 100%)}
+    .duo-vignette{position:absolute;inset:0;background:linear-gradient(90deg,rgba(5,4,3,.88) 0%,transparent 26%,transparent 77%,rgba(5,4,3,.65) 100%),linear-gradient(180deg,rgba(5,4,3,.04) 0%,transparent 58%,rgba(5,4,3,.18) 100%)}
+    .stage{width:min(100%,1600px);min-height:100svh;margin:0 auto;display:flex;align-items:center;padding:clamp(28px,4.6vw,74px) clamp(22px,6.8vw,112px);position:relative}
+    .access-card{width:min(580px,43vw);min-width:500px;border:1px solid rgba(224,183,104,.56);border-radius:12px;background:linear-gradient(145deg,rgba(13,11,9,.86),rgba(5,5,4,.78));box-shadow:0 28px 88px rgba(0,0,0,.52),inset 0 1px 0 rgba(255,255,255,.035);backdrop-filter:blur(20px);padding:clamp(30px,3vw,48px);position:relative;overflow:hidden}
+    .access-card:before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(116deg,rgba(225,170,80,.055),transparent 33%,transparent 74%,rgba(255,255,255,.018))}.access-card>*{position:relative;z-index:1}
+    .kicker{margin:0 0 17px;color:var(--gold-hi);font-size:10px;font-weight:800;letter-spacing:.34em;text-transform:uppercase}.title{margin:0;color:#fff;font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-size:clamp(43px,4vw,59px);font-weight:400;line-height:.98;letter-spacing:-.035em}.lead{margin:14px 0 20px;color:rgba(255,255,255,.78);font-size:16px;line-height:1.55}.rule{height:1px;margin:0 0 18px;background:linear-gradient(90deg,rgba(237,205,144,.52),rgba(237,205,144,.08))}.managed-label{margin:0 0 10px;color:rgba(255,255,255,.8);font-size:9.5px;font-weight:800;letter-spacing:.3em;text-transform:uppercase}
+    .lanes{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 10px}.lane{position:relative;min-height:132px;border:1px solid rgba(234,195,121,.3);border-radius:7px;background:linear-gradient(145deg,rgba(25,19,14,.67),rgba(7,7,6,.84));color:#fff;cursor:pointer;padding:15px 17px;text-align:left;transition:border-color .18s ease,background .18s ease,transform .18s ease,box-shadow .18s ease}.lane:hover{transform:translateY(-1px);border-color:rgba(237,198,125,.54)}.lane:focus-visible{outline:2px solid var(--gold-hi);outline-offset:3px}.lane-status{position:absolute;top:14px;right:14px;width:18px;height:18px;border:2px solid rgba(255,255,255,.34);border-radius:50%}.lane.is-active .lane-status:after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--gold-hi)}
+    .lane[data-lane="partner"].is-active{border-color:rgba(40,199,108,.79);background:linear-gradient(145deg,rgba(0,55,4,.72),rgba(2,27,12,.79));box-shadow:inset 0 0 0 1px rgba(58,220,131,.08)}.lane[data-lane="partner"].is-active .lane-status{border-color:#2cec8f}.lane[data-lane="partner"].is-active .lane-status:after{background:#2cec8f}
+    .lane-brand{height:67px;display:flex;align-items:center}.lane-brand img{display:block;object-fit:contain;object-position:left center}.lane-brand .mmd-brand{width:139px;max-height:58px}.lane-brand .mms-brand{width:72px;height:64px;object-fit:contain}.lane b{display:block;margin-top:5px;color:#fff;font-size:16px;font-weight:700;letter-spacing:-.01em}.lane small{display:block;margin-top:2px;color:var(--soft);font-size:11px;font-weight:700}.lane[data-lane="partner"] small{color:rgba(218,242,224,.58)}
+    .account-note{margin:8px 0 18px;color:rgba(255,255,255,.57);font-size:10.5px;line-height:1.55}.panel[hidden]{display:none}.panel-head{margin:0 0 11px}.panel-head strong{font-size:12px;font-weight:800;letter-spacing:.01em}.panel-head span{display:inline-block;margin-top:2px;color:var(--soft);font-size:10px;line-height:1.45}.scope{display:none}
+    form{display:grid;gap:13px}label{display:grid;gap:7px;color:rgba(255,255,255,.76);font-size:9px;font-weight:800;letter-spacing:.29em;text-transform:uppercase}.field{display:grid;grid-template-columns:1fr auto;border:1px solid rgba(255,255,255,.25);border-radius:5px;overflow:hidden;background:rgba(5,5,5,.31);transition:border-color .18s ease,box-shadow .18s ease}.field:focus-within{border-color:rgba(232,191,101,.69);box-shadow:0 0 0 3px rgba(232,191,101,.07)}.partner-panel .field:focus-within{border-color:rgba(49,180,100,.72);box-shadow:0 0 0 3px rgba(0,55,4,.2)}input{width:100%;min-height:50px;border:0;background:transparent;color:#fff;padding:0 15px;outline:0;font:700 13px/1.4 "LINE Seed Sans TH",sans-serif}.toggle{min-width:67px;border:0;border-left:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.018);color:#fff;font:800 9px/1.4 "LINE Seed Sans TH",sans-serif;cursor:pointer}.go{min-height:58px;margin-top:2px;border:1px solid rgba(255,220,151,.62);border-radius:4px;background:linear-gradient(108deg,#9d6327 0%,#dfa854 22%,#f2c876 48%,#f7d792 63%,#ae6e2b 100%);color:#171006;-webkit-text-fill-color:#171006;font:800 12px/1.4 "LINE Seed Sans TH",sans-serif;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;box-shadow:0 16px 30px rgba(0,0,0,.28);transition:transform .18s ease,filter .18s ease}.go:after{content:"  →"}.go:hover{transform:translateY(-1px);filter:brightness(1.04)}.go:disabled,.toggle:disabled{opacity:.54;cursor:wait;transform:none}.message{min-height:16px;margin:-2px 0 0;color:var(--soft);font-size:10px;line-height:1.5}.message.is-error{color:var(--danger)}.message.is-ok{color:var(--ok)}.privacy{margin:0;color:rgba(255,255,255,.34);font-size:9px;line-height:1.5}.links{display:flex;gap:14px;flex-wrap:wrap;margin-top:1px}.linkbtn{padding:0;border:0;background:transparent;color:rgba(209,232,215,.68);font:700 10px/1.4 "LINE Seed Sans TH",sans-serif;text-decoration:underline;text-underline-offset:3px;cursor:pointer}.subpanel{margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.1)}.recovery{display:none;margin-top:10px;border:1px solid rgba(72,155,97,.34);border-radius:9px;background:rgba(0,55,4,.2);padding:11px}.recovery.is-visible{display:block}.recovery b{font-size:11px;font-weight:800}.recovery code{display:block;margin-top:7px;padding:9px;border-radius:7px;background:rgba(0,0,0,.35);word-break:break-all;color:#effff2;font-size:11px}.recovery p{margin:6px 0 0;color:var(--muted);font-size:10px;line-height:1.5}
+    .credit{margin-top:20px;padding-top:15px;border-top:1px solid rgba(255,255,255,.055);color:rgba(255,255,255,.33);font-size:9.5px;line-height:1.55}.credit b{color:rgba(255,225,169,.58);font-weight:800}.credit .thai-credit{display:inline;margin-left:4px;color:rgba(255,255,255,.31)}
+    .sigil-corner{position:fixed;z-index:2;top:28px;right:34px;width:34px;height:34px;object-fit:contain;opacity:.86;filter:sepia(.34) saturate(1.18)}.side-mantra{position:fixed;z-index:2;right:34px;bottom:132px;display:grid;gap:8px;color:rgba(222,180,104,.58);font-size:8px;font-weight:800;letter-spacing:.32em;text-transform:uppercase;text-align:right}.secure{position:fixed;z-index:2;right:34px;bottom:25px;color:rgba(224,185,112,.7);font-size:8px;font-weight:800;letter-spacing:.3em;text-transform:uppercase}
+    .visual{display:none}.visual:before{content:"";display:block;background:url("${APPROVED_ADMIN_LOGIN_PRIVACY_BG}") center/cover no-repeat;}.visual-logo{object-fit:contain;}.compat-marker{display:none!important}
+    @media(max-width:1180px){.stage{padding-left:34px;padding-right:34px}.access-card{width:min(550px,55vw);min-width:465px}.duo-wrap{right:-2vw;width:52vw}.side-mantra{display:none}.sigil-corner,.secure{right:22px}}
+    @media(max-width:820px){.mmd-login{overflow:auto}.mmd-login:before{background:linear-gradient(180deg,rgba(4,3,2,.28),rgba(4,3,2,.77) 40%,rgba(4,3,2,.98) 70%),url("${APPROVED_ADMIN_LOGIN_WALL_BG}") center top/cover no-repeat}.duo-wrap{position:absolute;top:0;right:-11%;bottom:auto;width:88%;height:44svh;opacity:.72;justify-content:flex-end}.duo{object-position:right bottom;mask-image:linear-gradient(180deg,#000 0%,#000 72%,transparent 100%)}.duo-vignette{background:linear-gradient(90deg,rgba(5,4,3,.78),transparent 36%),linear-gradient(180deg,rgba(5,4,3,.06),rgba(5,4,3,.88))}.stage{display:block;min-height:100svh;padding:31svh 11px 26px}.access-card{width:100%;min-width:0;max-width:620px;margin:0 auto;border-radius:11px;padding:23px 19px;background:linear-gradient(145deg,rgba(14,11,9,.94),rgba(5,5,4,.97))}.title{font-size:42px}.lead{font-size:14px}.lanes{gap:8px}.lane{min-height:116px;padding:13px}.lane-brand{height:54px}.lane-brand .mmd-brand{width:116px}.lane-brand .mms-brand{width:56px;height:52px}.lane b{font-size:14px}.sigil-corner{top:17px;right:17px;width:29px;height:29px}.secure{position:relative;right:auto;bottom:auto;margin:16px auto 0;text-align:center;font-size:7px}.credit{margin-top:18px}}
+    @media(max-width:460px){.stage{padding-left:8px;padding-right:8px}.access-card{padding:21px 15px}.title{font-size:37px}.kicker,.managed-label{letter-spacing:.24em}.lanes{grid-template-columns:1fr 1fr}.lane{min-height:108px;padding:11px}.lane-brand{height:49px}.lane-brand .mmd-brand{width:100px}.lane-brand .mms-brand{width:49px;height:46px}.lane b{font-size:13px}.lane small{font-size:9px}.account-note{font-size:10px}.go{min-height:54px;font-size:11px}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
   </style>
 </head>
 <body data-initial-lane="${partnerFirst ? "partner" : "owner"}">
-<section class="mmd-login" data-mmd-login data-mmd-page="${APPROVED_ADMIN_LOGIN_PAGE_ID}">
-  <main class="shell">
-    <header class="top">
-      <a class="brand" href="/internal/admin/login" aria-label="MMD Internal Access"><img src="${APPROVED_ADMIN_LOGIN_LOGO}" alt="SIGIL" width="34" height="34"><span><b>Internal Access</b><small>MMD Privé · MMS Partner Operations</small></span></a>
-      <div class="pill">INVITE ONLY · SECURE SESSION</div>
-    </header>
-    <section class="grid">
-      <article class="card">
-        <p class="kicker">BACK OFFICE ACCESS</p>
-        <h1 class="title">Enter your<br>Back Office</h1>
-        <p class="lead">กรุณาเลือกธุรกิจที่ท่านต้องการเข้าถึง</p>
-        <div class="lanes" role="tablist" aria-label="Business access">
-          <button class="lane" type="button" data-lane="owner" role="tab"><b>MMD Privé</b><small>SIGIL System</small></button>
-          <button class="lane" type="button" data-lane="partner" role="tab"><b>MMS</b><small>Male Massage</small></button>
-        </div>
+<section class="mmd-login" data-mmd-login data-mmd-page="${APPROVED_ADMIN_LOGIN_PAGE_ID}" data-layout="image-a-cinematic" data-approved-hero="${APPROVED_ADMIN_LOGIN_HERO}">
+  <aside class="visual" aria-hidden="true"><img class="visual-logo" src="${APPROVED_ADMIN_LOGIN_LOGO}" alt="MMD SIGIL Internal Admin"></aside>
+  <div class="duo-wrap" aria-hidden="true"><img class="duo" src="${ADMIN_LOGIN_DUO_DATA}" alt=""><span class="duo-vignette"></span></div>
+  <img class="sigil-corner" src="${APPROVED_ADMIN_LOGIN_FAVICON}" alt="" width="34" height="34" aria-hidden="true">
+  <div class="side-mantra" aria-hidden="true"><span>PEOPLE</span><span>SYSTEMS</span><span>A QUIETER</span><span>TOMORROW</span></div>
+  <main class="stage">
+    <article class="access-card">
+      <span class="compat-marker" aria-hidden="true">INVITE ONLY · SECURE SESSION</span>
+      <p class="kicker">BACK OFFICE ACCESS</p>
+      <h1 class="title">Enter your Back Office</h1>
+      <p class="lead">กรุณาเลือกบัญชีที่ท่านต้องการเข้าถึง</p>
+      <div class="rule" aria-hidden="true"></div>
+      <p class="managed-label">MANAGED ACCOUNTS</p>
+      <div class="lanes" role="tablist" aria-label="Business access">
+        <button class="lane" type="button" data-lane="owner" role="tab">
+          <span class="lane-status" aria-hidden="true"></span>
+          <span class="lane-brand"><img class="mmd-brand" src="${MMD_BRAND_LOGO}" alt="MMD Privé" width="139" height="58"></span>
+          <b>MMD Privé</b><small>SIGIL System</small>
+        </button>
+        <button class="lane" type="button" data-lane="partner" role="tab">
+          <span class="lane-status" aria-hidden="true"></span>
+          <span class="lane-brand"><img class="mms-brand" src="${ADMIN_LOGIN_MMS_LOGO_DATA}" alt="MMS Male Massage" width="72" height="64"></span>
+          <b>MMS</b><small>Male Massage</small>
+        </button>
+      </div>
+      <p class="account-note">คุณสามารถดูแลหลายบัญชีได้ พร้อมกันสูงสุด 2 accounts ที่อยู่ภายใต้การดูแลของระบบนี้</p>
 
-        <section class="panel" data-panel="owner">
-          <div class="panel-head"><div><strong>MMD Privé</strong><br><span>SIGIL System · Internal Administration</span></div></div>
-          <div class="scope"><span>Approved access</span><span>Secure session</span><span>Private route</span></div>
-          <form method="post" action="${ADMIN_LOGIN_SESSION_PATH}" id="ownerLoginForm" autocomplete="off">
-            <input id="adminNext" type="hidden" name="next" value="${escapeAttribute(next)}">
-            <label for="adminCredential">Access Code
-              <span class="field"><input id="adminCredential" type="text" required readonly autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" data-mask="true" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" data-form-type="other"><button class="toggle" type="button" data-toggle="adminCredential" aria-pressed="false">SHOW</button></span>
-            </label>
-            <p class="message${error ? " is-error" : ""}" id="ownerMessage" role="${error ? "alert" : "status"}">${error ? escapeHtml(error) : `Next: ${escapeHtml(next)}`}</p>
-            <button class="go" type="submit">Enter Admin</button>
-            <p class="privacy">Owner flow เดิมยังคงใช้ Access Code และออก Secure HttpOnly session เหมือนเดิม</p>
+      <section class="panel" data-panel="owner">
+        <div class="panel-head"><strong>MMD Privé · SIGIL System</strong><br><span>Owner / Internal Admin access</span></div>
+        <div class="scope"><span>Approved access</span><span>Secure session</span><span>Private route</span></div>
+        <form method="post" action="${ADMIN_LOGIN_SESSION_PATH}" id="ownerLoginForm" autocomplete="off">
+          <input id="adminNext" type="hidden" name="next" value="${escapeAttribute(next)}">
+          <label for="adminCredential">Access Code
+            <span class="field"><input id="adminCredential" type="text" required readonly autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" data-mask="true" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" data-form-type="other"><button class="toggle" type="button" data-toggle="adminCredential" aria-pressed="false">SHOW</button></span>
+          </label>
+          <p class="message${error ? " is-error" : ""}" id="ownerMessage" role="${error ? "alert" : "status"}">${error ? escapeHtml(error) : `Next: ${escapeHtml(next)}`}</p>
+          <button class="go" type="submit">Enter Back Office</button>
+          <p class="privacy">Secure HttpOnly session · SIGIL System internal route</p>
+        </form>
+      </section>
+
+      <section class="panel partner-panel" data-panel="partner">
+        <div class="panel-head"><strong>MMS Partner · Male Massage</strong><br><span>สำหรับ MMS Partner ใช้เข้าสู่ระบบควบคุมการทำงานหลังบ้านของ Male Massage เท่านั้น</span></div>
+        <div class="scope partner"><span>Applications</span><span>Therapists</span><span>Matching</span><span>MMS only</span></div>
+        <form id="partnerLoginForm" autocomplete="on">
+          <input type="hidden" name="action" value="partner_login">
+          <label for="partnerUsername">Username<span class="field"><input id="partnerUsername" name="username" required autocomplete="username" autocapitalize="none" spellcheck="false"></span></label>
+          <label for="partnerPassword">Password<span class="field"><input id="partnerPassword" name="password" type="password" required minlength="12" maxlength="128" autocomplete="current-password"><button class="toggle" type="button" data-toggle="partnerPassword" aria-pressed="false">SHOW</button></span></label>
+          <p class="message" id="partnerMessage" role="status">MMS Partner Operations · Male Massage Back Office</p>
+          <button class="go" type="submit">Enter Back Office</button>
+        </form>
+        <div class="links"><button class="linkbtn" type="button" data-open="signup">สร้างบัญชี Partner</button><button class="linkbtn" type="button" data-open="recover">ลืมรหัสผ่าน?</button></div>
+
+        <section class="subpanel" data-subpanel="signup" hidden>
+          <form id="partnerSignupForm" autocomplete="off">
+            <input type="hidden" name="action" value="partner_signup">
+            <label>Username<span class="field"><input name="username" required autocomplete="off" autocapitalize="none" spellcheck="false"></span></label>
+            <label>Password<span class="field"><input name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></span></label>
+            <label>Invite Code<span class="field"><input name="invite_code" type="password" required autocomplete="off"></span></label>
+            <p class="message" id="signupMessage" role="status">Invite-only activation · ใช้รหัสเชิญที่ได้รับอนุมัติ</p>
+            <button class="go" type="submit">Create Partner Account</button>
           </form>
         </section>
 
-        <section class="panel partner-panel" data-panel="partner">
-          <div class="panel-head"><div><strong>MMS Partner</strong><br><span>สำหรับ MMS Partner ใช้เข้าสู่ระบบควบคุมการทำงานหลังบ้านของ Male Massage เท่านั้น</span></div></div>
-          <div class="scope partner"><span>Applications</span><span>Therapists</span><span>Matching</span><span>MMS only</span></div>
-          <form id="partnerLoginForm" autocomplete="on">
-            <input type="hidden" name="action" value="partner_login">
-            <label for="partnerUsername">Username<span class="field"><input id="partnerUsername" name="username" required autocomplete="username" autocapitalize="none" spellcheck="false"></span></label>
-            <label for="partnerPassword">Password<span class="field"><input id="partnerPassword" name="password" type="password" required minlength="12" maxlength="128" autocomplete="current-password"><button class="toggle" type="button" data-toggle="partnerPassword" aria-pressed="false">SHOW</button></span></label>
-            <p class="message" id="partnerMessage" role="status">เข้าสู่ MMS Partner Operations สำหรับงานหลังบ้าน Male Massage เท่านั้น</p>
-            <button class="go" type="submit">Enter MMS Back Office</button>
+        <section class="subpanel" data-subpanel="recover" hidden>
+          <form id="partnerRecoverForm" autocomplete="off">
+            <input type="hidden" name="action" value="partner_recover">
+            <label>Username<span class="field"><input name="username" required autocomplete="username" autocapitalize="none" spellcheck="false"></span></label>
+            <label>Recovery Code<span class="field"><input name="recovery_code" type="password" required autocomplete="off"></span></label>
+            <label>New Password<span class="field"><input name="new_password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></span></label>
+            <p class="message" id="recoverMessage" role="status">Recovery จะเปลี่ยนรหัสผ่านและออก Recovery Code ชุดใหม่</p>
+            <button class="go" type="submit">Reset Password</button>
           </form>
-          <div class="links"><button class="linkbtn" type="button" data-open="signup">สร้างบัญชี Partner</button><button class="linkbtn" type="button" data-open="recover">ลืมรหัสผ่าน?</button></div>
-
-          <section class="subpanel" data-subpanel="signup" hidden>
-            <form id="partnerSignupForm" autocomplete="off">
-              <input type="hidden" name="action" value="partner_signup">
-              <label>Username<span class="field"><input name="username" required autocomplete="off" autocapitalize="none" spellcheck="false"></span></label>
-              <label>Password<span class="field"><input name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></span></label>
-              <label>Invite Code<span class="field"><input name="invite_code" type="password" required autocomplete="off"></span></label>
-              <p class="message" id="signupMessage" role="status">Invite-only activation · ใช้รหัสเชิญที่ได้รับอนุมัติ</p>
-              <button class="go" type="submit">Create Partner Account</button>
-            </form>
-          </section>
-
-          <section class="subpanel" data-subpanel="recover" hidden>
-            <form id="partnerRecoverForm" autocomplete="off">
-              <input type="hidden" name="action" value="partner_recover">
-              <label>Username<span class="field"><input name="username" required autocomplete="username" autocapitalize="none" spellcheck="false"></span></label>
-              <label>Recovery Code<span class="field"><input name="recovery_code" type="password" required autocomplete="off"></span></label>
-              <label>New Password<span class="field"><input name="new_password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></span></label>
-              <p class="message" id="recoverMessage" role="status">Recovery จะเปลี่ยนรหัสผ่านและออก Recovery Code ชุดใหม่</p>
-              <button class="go" type="submit">Reset Password</button>
-            </form>
-          </section>
-          <div class="recovery" id="recoveryBox"><b>Recovery Code ใหม่ — เก็บไว้ในที่ปลอดภัย</b><code id="recoveryCode"></code><p>รหัสนี้แสดงหลัง activation/reset เท่านั้น ระบบเก็บเฉพาะ hash</p></div>
-          <p class="privacy" style="margin-top:12px">Partner session ถูกจำกัดไว้ที่ /internal/admin/mms และ /v1/admin/mms* เท่านั้น</p>
         </section>
-      </article>
-      <aside class="visual" aria-label="MMD private administration environment">
-        <img class="visual-logo" src="${APPROVED_ADMIN_LOGIN_LOGO}" alt="MMD SIGIL Internal Admin" width="112" height="112" fetchpriority="high">
-        <div class="note"><b>Private access. Clear boundaries.</b><p>MMD Privé ใช้ SIGIL System ส่วน MMS Partner ใช้ Male Massage Back Office ตามขอบเขตสิทธิ์ของตัวเอง</p></div>
-      </aside>
-    </section>
+        <div class="recovery" id="recoveryBox"><b>Recovery Code ใหม่ — เก็บไว้ในที่ปลอดภัย</b><code id="recoveryCode"></code><p>รหัสนี้แสดงหลัง activation/reset เท่านั้น ระบบเก็บเฉพาะ hash</p></div>
+        <p class="privacy" style="margin-top:12px">Partner session จำกัดไว้ที่ /internal/admin/mms และ /v1/admin/mms* เท่านั้น</p>
+      </section>
+
+      <footer class="credit"><b>SIGIL Systems</b><br>Design and Architecture by Per 2025-2026 <span class="thai-credit">(อีดอก กูเองค่ะมึง)</span></footer>
+    </article>
   </main>
+  <div class="secure">SECURE · PRIVATE · INTERNAL</div>
 </section>
 <script>(()=>{
   const sessionPath='${ADMIN_LOGIN_SESSION_PATH}';
