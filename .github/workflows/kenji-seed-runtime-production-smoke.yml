@@ -22,8 +22,14 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Cloudflare route matching for the production LINE webhook is exact;
+          # keep the public URL query-free and carry synthetic smoke controls in
+          # internal test-only headers. The Worker converts them to the bounded
+          # synthetic selector only after the route has already matched.
           safe="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error \
-            'https://www.mmdbkk.com/webhooks/line?kenji_seed_smoke=1&intent=mms_wellness')"
+            -H 'X-MMD-Kenji-Seed-Smoke: 1' \
+            -H 'X-MMD-Kenji-Seed-Intent: mms_wellness' \
+            'https://www.mmdbkk.com/webhooks/line')"
           node -e '
             const body = JSON.parse(process.argv[1]);
             if (body.ok !== true || body.synthetic !== true || body.seed_pack !== "v1") throw new Error("Seed smoke did not enter synthetic V1 mode");
@@ -33,7 +39,9 @@ jobs:
           ' "$safe"
 
           protected="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error \
-            'https://www.mmdbkk.com/webhooks/line?kenji_seed_smoke=1&intent=payment_slip')"
+            -H 'X-MMD-Kenji-Seed-Smoke: 1' \
+            -H 'X-MMD-Kenji-Seed-Intent: payment_slip' \
+            'https://www.mmdbkk.com/webhooks/line')"
           node -e '
             const body = JSON.parse(process.argv[1]);
             if (body.ok !== true || body.knowledge_id !== "kenji_seed_v1_payment_01") throw new Error("Payment handoff card was not selected");
