@@ -13,7 +13,7 @@ const LINE_USER_ID = "U1234567890abcdef1234567890abcdef";
 const TEST_KEY = "x".repeat(40);
 const SYNTHETIC_LINE_USER_ID = `U${"0".repeat(32)}`;
 
-function request(headers = {}) {
+function request(headers = {}, body = { line_user_id: LINE_USER_ID }) {
   return new Request("https://member-pages-worker.internal/__internal/kenji/member-truth", {
     method: "POST",
     headers: {
@@ -22,7 +22,7 @@ function request(headers = {}) {
       "x-mmd-service-binding": "member-dashboard-chat-worker",
       ...headers,
     },
-    body: JSON.stringify({ line_user_id: LINE_USER_ID }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -136,6 +136,63 @@ test("returns a bounded verified SVIP truth projection without raw LINE identity
   assert.equal(serialized.includes("internal-row"), false);
   assert.equal(serialized.includes("internal-source"), false);
   assert.equal(serialized.includes(TEST_KEY), false);
+});
+
+test("membership_status uses lightweight canonical entitlement resolver without full Customer360 profile", async () => {
+  let airtableCalls = 0;
+  let fullProfileCalls = 0;
+  const env = {
+    AIRTABLE_API_KEY: "test-airtable-token",
+    AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg",
+    AIRTABLE_TABLE_MEMBER_ENTITLEMENTS: "MMD — Member Entitlements",
+    AIRTABLE_HTTP: {
+      async fetch(req) {
+        airtableCalls += 1;
+        const url = new URL(req.url);
+        assert.match(url.searchParams.get("filterByFormula") || "", /line_user_id/);
+        assert.match(url.searchParams.get("filterByFormula") || "", /U1234567890abcdef1234567890abcdef/);
+        return Response.json({
+          records: [{
+            id: "recCanonicalTruth",
+            fields: {
+              entitlement_id: "ent-canonical-svip",
+              capability: "svip",
+              access_status: "active",
+              member_lifecycle_status: "active",
+              source_ref: "trusted-source",
+            },
+          }],
+        });
+      },
+    },
+    MEMBER_STATUS_RESOLVER: {
+      async fetch() {
+        fullProfileCalls += 1;
+        throw new Error("full_profile_must_not_run");
+      },
+    },
+    MEMBER_STATUS_RESOLVER_SECRET: TEST_KEY,
+  };
+
+  const response = await handleKenjiLineMemberTruth(
+    request({}, { line_user_id: LINE_USER_ID, intent: "membership_status" }),
+    env,
+  );
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.ok, true);
+  assert.equal(payload.authority, "my_mmd_entitlement_resolver_v1");
+  assert.equal(payload.identity_status, "resolved");
+  assert.equal(payload.display_name, "");
+  assert.equal(payload.membership.level, "svip");
+  assert.equal(payload.membership.label, "SVIP");
+  assert.equal(payload.membership.lifecycle, "active");
+  assert.equal(payload.membership.public_service_access, true);
+  assert.equal(payload.membership.private_visibility_envelope, "svip");
+  assert.deepEqual(payload.points, { status: "unavailable", active_points: null });
+  assert.equal(airtableCalls, 1);
+  assert.equal(fullProfileCalls, 0);
+  assert.equal(JSON.stringify(payload).includes(LINE_USER_ID), false);
 });
 
 test("service endpoint is not reachable without the exact internal caller contract", async () => {
