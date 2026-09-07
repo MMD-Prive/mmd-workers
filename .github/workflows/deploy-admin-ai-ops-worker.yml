@@ -57,7 +57,8 @@ jobs:
         run: |
           set -euo pipefail
           node --check admin-ai-ops-worker/src/index.js
-          node --test admin-ai-ops-worker/test/ai-ops-worker.test.mjs
+          node --check admin-ai-ops-worker/src/gate.js
+          node --test admin-ai-ops-worker/test/*.test.mjs
           npx --yes wrangler@4 deploy --dry-run --config admin-ai-ops-worker/wrangler.toml
 
       - name: Deploy worker
@@ -122,6 +123,8 @@ jobs:
         run: |
           set -euo pipefail
           body="$(mktemp)"
-          code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" "$BASE_URL/v1/admin/ai-ops/context?path=%2Finternal%2Fadmin%2Fcontrol-room")"
+          code="$(curl -sS -o "$body" -w "%{http_code}" "$BASE_URL/v1/admin/ai-ops/context?path=%2Finternal%2Fadmin%2Fcontrol-room")"
+          echo "HTTP $code"
+          cat "$body"
           test "$code" = "401"
-          grep -q 'unauthorized' "$body"
+          grep -q '"error":"unauthorized"' "$body"
