@@ -136,11 +136,13 @@ async function resolveMember(env, proofFields, renewalFields, lineUserId) {
   const direct = unique([...linkedIds(proofFields.member || proofFields.Member), ...linkedIds(renewalFields.member || renewalFields.Member)]);
   if (direct.length > 1) throw httpError(409, "canonical_member_context_ambiguous");
   let member = direct.length === 1 ? await airtableGet(env, membersTable(env), direct[0]) : null;
+  // Canonical Members stores the LINE subject in `line_id`; Clients and LIFF
+  // intentionally use `line_user_id`. Keep that schema distinction explicit.
   if (!member) {
-    member = await findOneByFormula(env, membersTable(env), `{line_user_id}='${formulaValue(lineUserId)}'`, "canonical_member_context_ambiguous");
+    member = await findOneByFormula(env, membersTable(env), `{line_id}='${formulaValue(lineUserId)}'`, "canonical_member_context_ambiguous");
   }
   if (!member) throw httpError(409, "canonical_member_context_missing");
-  if (lineId(member.fields?.line_user_id) !== lineUserId) throw httpError(409, "canonical_member_line_identity_mismatch");
+  if (lineId(member.fields?.line_id) !== lineUserId) throw httpError(409, "canonical_member_line_identity_mismatch");
   return member;
 }
 
