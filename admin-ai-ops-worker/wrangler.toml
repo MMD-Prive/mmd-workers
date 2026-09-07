@@ -7,3 +7,11 @@ workers_dev = true
 # deploy-admin-ai-ops-worker.yml with the dedicated routes token.
 # Keeping routes out of Wrangler lets first deploy create the Worker safely
 # without coupling script upload permission to route-management permission.
+
+[[durable_objects.bindings]]
+name = "FOLLOW_UP_AUTOPILOT"
+class_name = "FollowUpAutopilot"
+
+[[migrations]]
+tag = "follow-up-autopilot-v1"
+new_sqlite_classes = ["FollowUpAutopilot"]
