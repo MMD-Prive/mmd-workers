@@ -4,6 +4,7 @@ import test from "node:test";
 
 const js = await readFile(new URL("./kenji-admin-v1.js", import.meta.url), "utf8");
 const css = await readFile(new URL("./kenji-admin-v1.css", import.meta.url), "utf8");
+const friendly = await readFile(new URL("./kenji-admin-friendly-v3.js", import.meta.url), "utf8");
 
 test("canonical admin shell exposes the seven sections", () => {
   for (const label of ["Overview", "Models", "Knowledge", "Access", "Routing", "QA & Preview", "Versions"]) assert.match(js, new RegExp(label.replace("&", "&")));
@@ -82,7 +83,6 @@ test("mobile admin layout stays compact with horizontal layers", () => {
   assert.match(css, /\.ka__modelGrid\s*\{\s*grid-template-columns\s*:\s*1fr\s*;?\s*\}/);
 });
 
-
 test("Models search delegates query to the Worker and ignores stale responses", () => {
   assert.match(js, /modelSearchTimer/);
   assert.match(js, /modelSearchSeq/);
@@ -97,4 +97,30 @@ test("Model draft retries reuse one idempotency key until edit or success", () =
   assert.match(js, /"Idempotency-Key":idempotencyKey/);
   assert.match(js, /state\.modelDraftKey=""/);
   assert.match(js, /state\.modelDraftFingerprint=""/);
+});
+
+test("friendly layer turns Kenji admin into task-oriented teach / preview / review UI", () => {
+  assert.match(friendly, /uxFriendlyV3/);
+  for (const copy of ["สอนเรื่องใหม่", "ลองถาม", "Knowledge ที่สอนแล้ว", "เก็บเป็น Draft", "ห้ามพูด \/ Guard", "แนะนำทางไปต่อ"]) {
+    assert.match(friendly, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  assert.match(friendly, /data-kfy-advanced/);
+  assert.match(friendly, /\.ka__nav\{display:none!important\}/);
+});
+
+test("friendly teach action writes only a Draft and never publishes directly", () => {
+  assert.match(friendly, /API \+ "\/draft"/);
+  assert.match(friendly, /response_mode: "draft_only"/);
+  assert.match(friendly, /source_ref: "friendly-teach-v3"/);
+  assert.match(friendly, /Idempotency-Key/);
+  assert.match(friendly, /Explicit Review → QA → Publish required/);
+  assert.doesNotMatch(friendly, /API \+ "\/publish"/);
+  assert.doesNotMatch(friendly, /api\.airtable\.com|AIRTABLE_API_KEY|Authorization:\s*["']Bearer/);
+});
+
+test("friendly preview is clearly discovery-only and does not pretend to run production inference", () => {
+  assert.match(friendly, /เป็น Preview ช่วยหา ไม่ใช่ Production inference/);
+  assert.match(friendly, /scoreCard/);
+  assert.match(friendly, /customer_answer/);
+  assert.doesNotMatch(friendly, /\/v1\/internal\/kenji\/reply|\/chat\/completion|openai/i);
 });
