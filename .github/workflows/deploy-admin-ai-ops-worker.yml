@@ -60,26 +60,14 @@ jobs:
           node --test admin-ai-ops-worker/test/ai-ops-worker.test.mjs
           npx --yes wrangler@4 deploy --dry-run --config admin-ai-ops-worker/wrangler.toml
 
-      - name: Upload worker version
+      - name: Deploy worker
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes wrangler@4 versions upload \
+          npx --yes wrangler@4 deploy \
             --config admin-ai-ops-worker/wrangler.toml \
             --keep-vars \
-            --tag "gha-${GITHUB_SHA:0:12}" \
-            --message "GitHub Actions ${GITHUB_SHA}" \
-            2>&1 | tee "$RUNNER_TEMP/admin-ai-ops-upload.log"
-          version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/admin-ai-ops-upload.log" | tail -n 1)"
-          test -n "$version_id"
-          echo "AI_OPS_VERSION_ID=$version_id" >> "$GITHUB_ENV"
-
-      - name: Deploy uploaded version
-        shell: bash
-        working-directory: admin-ai-ops-worker
-        run: |
-          set -euo pipefail
-          npx --yes wrangler@4 versions deploy "${AI_OPS_VERSION_ID}@100%" -y
+            --message "GitHub Actions ${GITHUB_SHA}"
 
       - name: Sync exact production routes
         shell: bash

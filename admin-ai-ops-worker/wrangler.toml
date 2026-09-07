@@ -3,10 +3,7 @@ main = "src/index.js"
 compatibility_date = "2026-01-01"
 workers_dev = true
 
-[[routes]]
-pattern = "mmdbkk.com/v1/admin/ai-ops/*"
-zone_name = "mmdbkk.com"
-
-[[routes]]
-pattern = "www.mmdbkk.com/v1/admin/ai-ops/*"
-zone_name = "mmdbkk.com"
+# Production custom-host routes are synchronized explicitly by
+# deploy-admin-ai-ops-worker.yml with the dedicated routes token.
+# Keeping routes out of Wrangler lets first deploy create the Worker safely
+# without coupling script upload permission to route-management permission.
