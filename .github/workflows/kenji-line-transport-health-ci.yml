@@ -8,6 +8,14 @@ on:
       - "member-dashboard-chat-worker/test/kenji-line-transport-health.test.mjs"
       - "member-dashboard-chat-worker/wrangler.toml"
       - ".github/workflows/kenji-line-transport-health-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "member-dashboard-chat-worker/src/kenji-line-transport-health.mjs"
+      - "member-dashboard-chat-worker/src/mms-line-front-gate.js"
+      - "member-dashboard-chat-worker/test/kenji-line-transport-health.test.mjs"
+      - ".github/workflows/kenji-line-transport-health-ci.yml"
   workflow_dispatch:
 
 permissions:
@@ -33,3 +41,41 @@ jobs:
 
       - name: Validate member-dashboard Worker bundle
         run: npx --yes wrangler@4 deploy --dry-run --config member-dashboard-chat-worker/wrangler.toml
+
+      - name: Probe production LINE transport health after deploy
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          node <<'NODE'
+          const endpoint = "https://www.mmdbkk.com/webhooks/line";
+          let last = null;
+          for (let attempt = 1; attempt <= 18; attempt += 1) {
+            const response = await fetch(endpoint, {
+              headers: {
+                accept: "application/json",
+                "x-mmd-line-transport-health": "1",
+              },
+            });
+            const payload = await response.json().catch(() => ({}));
+            const safe = {
+              attempt,
+              http_status: response.status,
+              ok: payload?.ok === true,
+              route: String(payload?.route || "").slice(0, 80),
+              status: String(payload?.status || "").slice(0, 80),
+              configured: payload?.configured === true,
+              signature_secret_present: payload?.signature_secret_present === true,
+              access_token_present: payload?.access_token_present === true,
+              line_api_reachable: payload?.line_api_reachable === true,
+              webhook_active: payload?.webhook_active === true,
+              endpoint_match: payload?.endpoint_match === true,
+            };
+            last = safe;
+            console.log(`KENJI_LINE_TRANSPORT_HEALTH ${JSON.stringify(safe)}`);
+            if (safe.route === "line_transport_health") break;
+            await new Promise((resolve) => setTimeout(resolve, 5000));
+          }
+          if (last?.route !== "line_transport_health") {
+            throw new Error("Production transport-health route did not become active within retry window");
+          }
+          NODE
