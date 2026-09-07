@@ -57,7 +57,7 @@ try {
 
   // Runtime overlay makes Per's Command Center and single-owner model explicit.
   assert.match(body, /data-mmd-control-room-canon-v3/);
-  assert.match(body, /data-mmd-command-center/);
+  assert.match(body, /dataset\.mmdCommandCenter='p0'/);
   assert.match(body, /PER · COMMAND CENTER/);
   assert.match(body, /Ask Per AI → Needs Per → Prepared → Watching/);
   assert.match(body, /PER · OWNER MODE/);
