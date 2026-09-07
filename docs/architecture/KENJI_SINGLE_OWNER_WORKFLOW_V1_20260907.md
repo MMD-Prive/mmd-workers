@@ -29,6 +29,41 @@ The existing backend safety contract stays in force. Review validation, QA check
 4. Per confirms once and presses `Use Live`.
 5. Worker runs the required validation and QA gates, publishes only if they pass, and writes audit history.
 
+## Kenji Knowledge view
+
+Kenji Knowledge is not a separate admin product. It is a first-class view inside the canonical Kenji Admin surface.
+
+Canonical operator view:
+
+`/internal/admin/kenji?view=knowledge`
+
+Rules:
+
+- Reuse the existing Worker-backed Knowledge tab and Knowledge workflow; do not create a second knowledge store or duplicate publish path.
+- The normal Knowledge workflow remains `Teach / Edit -> Pre-Publish Summary -> Use Live` with Worker validation, QA, expected-version checks and audit behind the single owner confirmation.
+- `/internal/admin/kenji-knowledge` is legacy/compatibility navigation only and should guide or redirect the authorized operator into `/internal/admin/kenji?view=knowledge` rather than becoming a second operational surface.
+- Knowledge may contain customer-safe answers, internal guards, category/audience/channel scope and route guidance, but it does not become money truth, entitlement truth, private-model eligibility truth or approval authority.
+- Sensitive Payment / Membership / Access / Model / Policy knowledge keeps the extra owner acknowledgement in the same pre-publish summary.
+- Deep links must retain the admin login handoff and return to the requested `view=knowledge` state after authentication.
+
+## SIGIL Board view
+
+SIGIL Board belongs inside the same single-owner Kenji administration surface.
+
+Canonical operator view:
+
+`/internal/admin/kenji?view=board`
+
+Rules:
+
+- `/internal/admin/kenji` remains the canonical Worker-owned route; `view=board` is a UI view, not a new authority namespace.
+- The Board view reads sanitized advisory data only from `GET /v1/sigil/board/status` and `GET /v1/sigil/board/queue`.
+- Board API ownership and sanitization remain with the SIGIL Worker. Moving the view into Kenji Admin does not move the underlying truth or write authority.
+- The canonical Kenji Board view must not fabricate fallback/demo customer cases. If the Worker cannot be read, show an unavailable/empty state instead of invented operational data.
+- `/sigil/board` is a legacy presentation/compatibility route and should guide or redirect an authorized operator to `/internal/admin/kenji?view=board`; it must not evolve into a second independent operational board.
+- Money truth, entitlement/access truth, private-model eligibility, and final human decisions remain with their existing backend/human authorities. The Board is not an approval engine.
+- Campaign, Private Review, Risk, Need Info and other sanitized Board lanes may be surfaced in this view without changing their backend owners.
+
 ## Sensitive content
 
 Payment, membership/entitlement, access, private model disclosure, or critical-risk knowledge requires an additional confirmation checkbox inside the same summary. This is not a second reviewer; it is an owner acknowledgement before production mutation.
