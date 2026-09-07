@@ -76,6 +76,17 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/a/create-session.js"
 zone_name = "mmdbkk.com"
 
+# Webflow Member Intelligence presentation loads this browser-only runtime.
+# The runtime performs authenticated same-origin reads only; admin-worker and
+# canonical data stores remain the authority for identity, membership and access.
+[[routes]]
+pattern = "mmdbkk.com/a/member-intelligence.js"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/a/member-intelligence.js"
+zone_name = "mmdbkk.com"
+
 [[routes]]
 pattern = "mmdbkk.com/a/create-session-focus-flow-v2.js"
 zone_name = "mmdbkk.com"
