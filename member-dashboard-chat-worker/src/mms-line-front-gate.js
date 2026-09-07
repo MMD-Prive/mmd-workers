@@ -4,6 +4,10 @@ import {
   handleKenjiSeedLineRequestWithRedeliveryRecovery,
   isKenjiSeedLineRequest,
 } from "./kenji-line-redelivery-recovery.mjs";
+import {
+  handleKenjiLineTransportHealth,
+  isKenjiLineTransportHealthRequest,
+} from "./kenji-line-transport-health.mjs";
 
 export { KenjiModelIdempotency } from "./my-mmd-bounded-status-front-gate.js";
 
@@ -142,6 +146,9 @@ function seedSmokeRequest(request) {
 
 export default {
   async fetch(request, env = {}, ctx) {
+    if (isKenjiLineTransportHealthRequest(request)) {
+      return handleKenjiLineTransportHealth(request, env);
+    }
     if (isMmsLineRequest(request)) return handleMmsLineRequest(request, env, ctx);
     if (isKenjiSeedLineRequest(request)) {
       return handleKenjiSeedLineRequestWithRedeliveryRecovery(
