@@ -1,0 +1,12 @@
+name = "admin-ai-ops-worker"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+workers_dev = true
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/ai-ops/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/ai-ops/*"
+zone_name = "mmdbkk.com"
