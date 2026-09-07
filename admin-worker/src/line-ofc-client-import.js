@@ -148,7 +148,6 @@ async function syncLineOfcIdentityProjection(env, context) {
     match_confidence: matched ? 100 : ambiguous ? 40 : 0,
     review_status: matched ? "committed" : ambiguous ? "review_required" : "new",
     decision: matched ? "link_existing_client" : "needs_human",
-    decision_source: "worker_exact",
     review_note: matched
       ? "Identity-only projection from verified LINE OA import. Raw notes remain in private staging. Current rights must be re-read from my_mmd_entitlement_resolver_v1."
       : "Identity candidate from verified LINE OA import; canonical client link unresolved. No rights inferred.",
