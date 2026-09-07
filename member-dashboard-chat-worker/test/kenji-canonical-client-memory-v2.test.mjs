@@ -107,8 +107,16 @@ try {
   assert.equal(context.voice_context.avoid_repeating_tier_and_status, true);
   assert.equal(context.voice_context.truth_input_mode, "structured_live_truth_only");
   assert.equal(context.voice_context.memory_may_render_truth, false);
+  assert.equal(context.next_action_policy.schema, "mmd.kenji_next_action_policy.v1");
+  assert.equal(context.next_action_policy.no_dead_end_when_actionable, true);
+  assert.equal(context.next_action_policy.relationship_mode, "known_customer_continuation");
   assert.equal(context.safe_context.customer_reply_contract.render_through_voice_context, true);
   assert.equal(context.safe_context.customer_reply_contract.never_render_memory_as_current_truth, true);
+  assert.equal(context.safe_context.customer_reply_contract.include_next_best_action_when_actionable, true);
+  assert.equal(context.safe_context.customer_reply_contract.max_primary_cta, 1);
+  assert.equal(context.safe_context.customer_reply_contract.cta_must_be_executable, true);
+  assert.equal(context.safe_context.customer_reply_contract.cta_must_not_repeat_known_inputs, true);
+  assert.equal(context.safe_context.customer_reply_contract.cta_must_not_bypass_authority, true);
 
   const memoryWrite = writes.find((item) => item.table === "memory");
   assert.ok(memoryWrite, "expected Customer Memory v2 upsert");
@@ -118,6 +126,8 @@ try {
   const important = JSON.parse(memoryFields.important_context_json);
   assert.equal(important.conversation.voice_context.voice_profile, "per_voice_concierge");
   assert.equal(important.conversation.voice_context.avoid_dashboard_labels, true);
+  assert.equal(important.conversation.next_action_policy.no_dead_end_when_actionable, true);
+  assert.equal(important.conversation.next_action_policy.max_primary_cta, 1);
   assert.equal(important.identity_resolution.match_type, "exact_clients_line_user_id");
   assert.equal(JSON.stringify(memoryFields).includes(LINE_USER_ID), false, "raw LINE user ID must not be persisted into Customer Memory v2");
 

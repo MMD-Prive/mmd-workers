@@ -49,12 +49,51 @@ const PRIVATE_RELATIONSHIPS = new Set([
   "blackcard_relationship",
 ]);
 
+export function buildKenjiNextActionPolicy(input = {}) {
+  const relationshipContext = text(input.relationship_context).toLowerCase() || "unknown";
+  const identityStatus = text(input.identity_status).toLowerCase() || "candidate";
+  const identityResolved = identityStatus === "resolved";
+  const established = identityResolved && ESTABLISHED_RELATIONSHIPS.has(relationshipContext);
+
+  return {
+    schema: "mmd.kenji_next_action_policy.v1",
+    mode: "contextual_not_forced",
+    goal: "answer_then_best_next_action",
+    max_primary_cta: 1,
+    allow_secondary_cta: false,
+    no_dead_end_when_actionable: true,
+    no_forced_cta_when_resolved: true,
+    prefer_continue_in_chat_when_kenji_can_act: true,
+    prefer_specific_input_over_generic_help: true,
+    allow_direct_route_when_customer_can_act_now: true,
+    handoff_when_authority_required: true,
+    preserve_conversation_continuity: true,
+    do_not_repeat_known_inputs: true,
+    avoid_reverification_when_identity_resolved: identityResolved,
+    cta_must_be_executable: true,
+    cta_must_not_repeat_answer: true,
+    cta_must_not_imply_approval: true,
+    cta_must_not_grant_rights: true,
+    relationship_mode: established ? "known_customer_continuation" : "neutral_action",
+    allowed_cta_types: [
+      "continue_in_chat",
+      "request_missing_input",
+      "open_action_route",
+      "handoff_per",
+    ],
+  };
+}
+
 export function buildKenjiVoiceContext(input = {}) {
   const relationshipContext = text(input.relationship_context).toLowerCase() || "unknown";
   const identityStatus = text(input.identity_status).toLowerCase() || "candidate";
   const identityResolved = identityStatus === "resolved";
   const established = identityResolved && ESTABLISHED_RELATIONSHIPS.has(relationshipContext);
   const privateRelationship = established && PRIVATE_RELATIONSHIPS.has(relationshipContext);
+  const nextActionPolicy = buildKenjiNextActionPolicy({
+    relationship_context: relationshipContext,
+    identity_status: identityStatus,
+  });
 
   return {
     schema: "mmd.kenji_voice_context.v1",
@@ -73,6 +112,7 @@ export function buildKenjiVoiceContext(input = {}) {
     truth_input_mode: "structured_live_truth_only",
     memory_may_render_truth: false,
     memory_may_grant_rights: false,
+    next_action_policy: nextActionPolicy,
   };
 }
 
@@ -93,9 +133,14 @@ export function buildCustomerMemorySnapshotV2(input = {}) {
     relationship_context: relationshipContext,
     identity_status: identityStatus,
   });
+  const nextActionPolicy = voiceContext.next_action_policy || buildKenjiNextActionPolicy({
+    relationship_context: relationshipContext,
+    identity_status: identityStatus,
+  });
   const conversation = {
     ...buildConversationContinuityContext(matrix),
     voice_context: voiceContext,
+    next_action_policy: nextActionPolicy,
   };
 
   return {
@@ -110,6 +155,7 @@ export function buildCustomerMemorySnapshotV2(input = {}) {
     verification_status: text(input.verification_status || "unknown"),
     relationship_context: relationshipContext,
     voice_context: voiceContext,
+    next_action_policy: nextActionPolicy,
     membership_package_observed: text(compatV1.membership_package),
     membership_status_observed: text(compatV1.membership_status),
     membership_expiry_observed: text(compatV1.membership_expiry),
@@ -134,6 +180,8 @@ export function buildCustomerMemorySnapshotV2(input = {}) {
       hide_raw_notes_from_customer: true,
       hide_risk_notes_from_customer: true,
       svip_is_per_only_manual_decision: true,
+      cta_cannot_bypass_authority: true,
+      memory_may_not_choose_or_confirm_protected_outcomes: true,
     },
     source_refs: {
       compat_v1_updated_at: text(compatV1.updated_at),
@@ -156,6 +204,7 @@ export function buildKenjiSafeContextV2(snapshotV2 = {}, compatV1 = {}) {
     relationship_context: text(snapshotV2.relationship_context),
     verification_status: text(snapshotV2.verification_status),
     voice_context: snapshotV2.voice_context || {},
+    next_action_policy: snapshotV2.next_action_policy || snapshotV2.voice_context?.next_action_policy || {},
     conversation: snapshotV2.conversation || {},
     live_truth_required: Boolean(snapshotV2.conversation?.live_truth_required),
     live_truth_domains: Array.isArray(snapshotV2.conversation?.live_truth_domains)
