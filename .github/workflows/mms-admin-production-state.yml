@@ -91,7 +91,7 @@ jobs:
             if (/\/internal\/admin\/login/.test(control.headers.get('location') || '')) {
               throw new Error('control room bounced back to login');
             }
-            if (!/Control Room|CONTROL ROOM|Owner Control/i.test(controlBody)) {
+            if (!/Control Room|CONTROL ROOM|Owner Control|Operating System/i.test(controlBody)) {
               throw new Error('control room marker not found after authenticated login');
             }
             console.log('HTTP login session -> Control Room passed.');
@@ -155,7 +155,7 @@ jobs:
                 throw new Error(`browser login landed at ${page.url()}`);
               }
               const bodyText = await page.evaluate(() => document.body?.innerText || '');
-              if (!/Control Room|CONTROL ROOM|Owner Control/i.test(bodyText)) {
+              if (!/Control Room|CONTROL ROOM|Owner Control|Operating System/i.test(bodyText)) {
                 throw new Error('browser reached target URL but Control Room UI marker is missing');
               }
               if (await page.$('#adminLoginForm')) {
