@@ -5,6 +5,7 @@ on:
     paths:
       - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/src/payment-review-runtime.js"
+      - "admin-worker/line-slip-intake-review-queue.contract.test.mjs"
       - "admin-worker/wrangler.toml"
       - "payments-worker/index.review-wrapper.js"
       - "payments-worker/reviewed-proof.js"
@@ -33,6 +34,11 @@ jobs:
           node --check payments-worker/index.review-wrapper.js
           node --check payments-worker/reviewed-proof.js
 
+      - name: Newest payment proof queue contract
+        run: |
+          set -euo pipefail
+          node --test admin-worker/line-slip-intake-review-queue.contract.test.mjs
+
       - name: Browser facade guardrails
         run: |
           set -euo pipefail
@@ -44,6 +50,8 @@ jobs:
           grep -F 'browser_can_mark_paid: false' admin-worker/src/payment-review-runtime.js
           grep -F 'browser_can_award_points: false' admin-worker/src/payment-review-runtime.js
           grep -F 'historical_backfill_separate: true' admin-worker/src/payment-review-runtime.js
+          grep -F 'ordering: "created_at_desc"' admin-worker/src/payment-review-runtime.js
+          grep -F 'sort: [{ field: "created_at", direction: "desc" }]' admin-worker/src/payment-review-runtime.js
 
       - name: Payment Review fail-closed hardening
         run: |
