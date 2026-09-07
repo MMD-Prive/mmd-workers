@@ -215,8 +215,11 @@
       state.idempotencyKey = randomUuid();
     }
 
-    var customerAnswer = state.teachMode === "guard" ? "" : text;
+    var customerAnswer = state.teachMode === "guard"
+      ? "เรื่องนี้ผมขอตรวจข้อมูลกับ MMD ก่อนนะครับ เพื่อไม่ยืนยันเกินข้อมูลจริงครับ"
+      : text;
     var instruction = buildInstruction(state.teachMode, question, text);
+    var responseMode = state.teachMode === "guard" || category === "payment" ? "handoff_required" : "auto_reply_allowed";
     var payload = {
       knowledge_id: state.draftId,
       title: autoTitle(text, state.teachMode),
@@ -224,8 +227,8 @@
       language: "th",
       customer_answer: customerAnswer,
       internal_instruction: instruction,
-      allowed_channels: ["Admin Console"],
-      response_mode: "draft_only",
+      allowed_channels: ["LINE_OFC", "Webflow", "SIGIL Board", "Admin Console"],
+      response_mode: responseMode,
       risk_level: category === "payment" || state.teachMode === "guard" ? "high" : "medium",
       source_path: "/internal/admin/kenji",
       source_ref: "friendly-teach-v3",
