@@ -1,3 +1,5 @@
+import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
+
 const PATH = "/__internal/kenji/member-truth";
 const SERVICE_HOST = "member-pages-worker.internal";
 const ALLOWED_CALLER = "member-dashboard-chat-worker";
@@ -6,6 +8,10 @@ const MEMBER_PROFILE_PURPOSE = "liff_member_profile_read";
 const MEMBER_RESOLVER_SECRET_HEADER = "x-mmd-member-resolver-secret";
 const RESOLVER_SCHEMA = "my_mmd_entitlement_resolver_v1";
 const TIMEOUT_MS = 2500;
+const ENTITLEMENT_TIMEOUT_MS = 900;
+const ENTITLEMENT_TABLE_FALLBACK = "MMD — Member Entitlements";
+const ENTITLEMENT_LINE_FIELD_FALLBACK = "line_user_id";
+const EXPLICIT_INTENTS = new Set(["membership_status", "points_status"]);
 
 const CAPABILITY_PRIORITY = Object.freeze([
   "black_card",
@@ -60,6 +66,10 @@ function safeDisplayName(value) {
 function safeTokens(value) {
   if (!Array.isArray(value)) return [];
   return value.map((item) => text(item).toLowerCase()).filter(Boolean).slice(0, 40);
+}
+
+function escapeFormulaValue(value) {
+  return text(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 function json(payload, status = 200) {
@@ -127,6 +137,51 @@ async function readCanonicalMemberProfile(env, lineUserId) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function readCanonicalEntitlementSnapshot(env, lineUserId) {
+  const apiKey = text(env.AIRTABLE_API_KEY);
+  const baseId = text(env.AIRTABLE_BASE_ID);
+  const table = text(env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || ENTITLEMENT_TABLE_FALLBACK);
+  const lineField = text(env.AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD || ENTITLEMENT_LINE_FIELD_FALLBACK);
+  if (!apiKey || !baseId || !table || !lineField) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("kenji_member_entitlement_timeout"), ENTITLEMENT_TIMEOUT_MS);
+  try {
+    const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
+    url.searchParams.set("pageSize", "100");
+    url.searchParams.set("maxRecords", "100");
+    url.searchParams.set("filterByFormula", `{${lineField}}=\"${escapeFormulaValue(lineUserId)}\"`);
+    const request = new Request(url.toString(), {
+      method: "GET",
+      headers: { authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
+    });
+    const response = env.AIRTABLE_HTTP?.fetch
+      ? await env.AIRTABLE_HTTP.fetch(request)
+      : await fetch(request);
+    if (!response.ok) return null;
+    const payload = await response.json().catch(() => null);
+    const records = Array.isArray(payload?.records) ? payload.records : [];
+    if (!records.length) return null;
+    return {
+      ...resolveMemberEntitlements(records),
+      source_status: "verified",
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function readTruthContext(env, lineUserId, intent) {
+  if (intent === "membership_status") {
+    const snapshot = await readCanonicalEntitlementSnapshot(env, lineUserId);
+    return snapshot ? { profile: {}, snapshot } : null;
+  }
+  return readCanonicalMemberProfile(env, lineUserId);
 }
 
 function highest(values = []) {
@@ -221,13 +276,14 @@ export function projectKenjiLineMemberTruth(resolved = {}) {
 export async function handleKenjiLineMemberTruth(request, env = {}) {
   if (!authorized(request)) return json({ ok: false, error: "not_found" }, 404);
   const body = await request.json().catch(() => null);
-  if (!isPlainObject(body) || Object.keys(body).some((key) => key !== "line_user_id")) {
+  if (!isPlainObject(body) || Object.keys(body).some((key) => !["line_user_id", "intent"].includes(key))) {
     return json({ ok: false, error: "invalid_request" }, 400);
   }
   const lineUserId = canonicalLineId(body.line_user_id);
-  if (!lineUserId) return json({ ok: false, error: "invalid_request" }, 400);
+  const intent = text(body.intent).toLowerCase();
+  if (!lineUserId || (intent && !EXPLICIT_INTENTS.has(intent))) return json({ ok: false, error: "invalid_request" }, 400);
 
-  const resolved = await readCanonicalMemberProfile(env, lineUserId);
+  const resolved = await readTruthContext(env, lineUserId, intent);
   const projection = projectKenjiLineMemberTruth(resolved || {});
   if (!projection) {
     return json({ ok: false, status: "unavailable", authority: RESOLVER_SCHEMA }, 503);
