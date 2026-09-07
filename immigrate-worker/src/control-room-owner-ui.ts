@@ -1,121 +1,59 @@
-// Owner Control Room stable entrypoint.
-// Keep the synchronous v3 renderer function contract while the visible surface is Owner V4.
-// Protocol Center is served under /internal/admin/control-room/protocol.
-// Canonical MMS admin route: /internal/admin/mms.
-// Canonical historical slip recovery route: /internal/admin/payments/historical-backfill.
-// Canonical customer data route: /internal/admin/customer-data.
-import { renderOwnerControlRoomV3Page } from "./control-room-owner-ui-v3";
-
-const LEGACY_MMS_CONTROL_ROOM_ROUTE = "/male-massage/therapists/login";
-const CANONICAL_MMS_CONTROL_ROOM_ROUTE = "/internal/admin/mms";
-const MMS_THERAPIST_APP_WEB_ROUTE = "/male-massage/therapists/me";
+const MMS_ADMIN_ROUTE = "/internal/admin/mms";
 const MMS_THERAPIST_APP_URL = "https://miniapp.line.me/2011425652-YqK1F6y8";
-const HISTORICAL_SLIP_BACKFILL_ROUTE = "/internal/admin/payments/historical-backfill";
+const HISTORICAL_SLIP_ROUTE = "/internal/admin/payments/historical-backfill";
 const CUSTOMER_DATA_ROUTE = "/internal/admin/customer-data";
-const LEGACY_LINE_NOTES_ROUTE = "/internal/ceo/line-notes-import";
-const PREVIOUS_HERO_IMAGE =
-  "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a965447376525e3e562ba09_Boss%20and%20Kenji%20-%20Model%20Keyword%20Hero.webp";
-const CANONICAL_HERO_IMAGE =
-  "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a940b298194375628fd3f29_Boss%20Per%20input%20Kenji%20AI.webp";
 
-const CONTROL_ROOM_PRESENTATION_TUNE = `<style id="mmd-control-room-presentation-tune">
-.cr4,.cr4 button,.cr4 input,.cr4 select,.cr4 textarea{font-family:"LINE Seed Sans TH","Line Seed Sans TH","LINE Seed Sans TH_W_Rg","Noto Sans Thai","Noto Sans","Outfit",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.cr4__app.is-planned{border-style:dashed;border-color:rgba(223,189,114,.34);background:linear-gradient(145deg,rgba(223,189,114,.075),rgba(255,255,255,.018))}.cr4__app.is-planned .cr4__routeState{border-color:rgba(223,189,114,.28);color:#f5d795;background:rgba(223,189,114,.07);font-size:0}.cr4__app.is-planned .cr4__routeState:before{content:'planned';font-size:7px}.cr4__app.is-legacy .cr4__routeState{border-color:rgba(238,145,143,.26);color:#ffc1bd;background:rgba(238,145,143,.06)}@media (min-width:900px){.cr4__main{width:min(calc(100% - 64px),1320px);margin-inline:auto;padding-left:0;padding-right:0}}@media (min-width:1200px){.cr4__main{width:min(calc(100% - 96px),1280px);margin-inline:auto;padding:28px 0 60px}}@media (min-width:1500px){.cr4__main{width:min(calc(100% - 128px),1320px)}}
-</style>`;
-
-const DEPLOY_COMPAT_MARKERS = `<span hidden data-control-room-deploy-compat="v3-verifier">MMD PRIVÉ · OWNER CONTROL ROOM V3 · compatibility verifier only · My MMD Entitlement Resolver · Telegram / Google Drive · Pre-#498 worker-rendered baseline retired</span>`;
-
-const CUSTOMER_DATA_NAV = `<a href="${CUSTOMER_DATA_ROUTE}" data-cta-route="${CUSTOMER_DATA_ROUTE}"><span>03</span>Customer Data</a>`;
-const CUSTOMER_DATA_QUICK = `<a class="is-prime" href="${CUSTOMER_DATA_ROUTE}" data-cta-route="${CUSTOMER_DATA_ROUTE}"><small>Client Identity</small><b>Customer Data</b></a>`;
-const CUSTOMER_DATA_SECTION = `<section class="cr4__section cr4__reveal" id="customer-data"><div class="cr4__head"><div><span class="cr4__kicker">01 · CUSTOMER DATA</span><h3>ตัวตนลูกค้าและบริบทส่วนตัว ต้องมาก่อน Session</h3><p>Customer Data Console เป็น canonical operations console สำหรับ LINE OFC import, identity review, private client context, service-history candidates และ Telegram reconciliation preparation — ไม่ใช่หน้าปรับสิทธิ์, ไม่ใช่ payment truth และไม่ใช่หน้าส่งข้อความหาลูกค้า</p></div><div class="cr4__headMeta">canonical route · V1 scope</div></div><div class="cr4__apps">
-    <a class="cr4__app is-prime is-planned" href="${CUSTOMER_DATA_ROUTE}" data-cta-route="${CUSTOMER_DATA_ROUTE}"><div class="cr4__appTop"><small>Canonical Console</small><span class="cr4__routeState" data-route-state>planned</span></div><h4>Customer Data Console</h4><p>ศูนย์กลาง client identity, private context และ evidence staging ก่อน Create Session / Create Job / Kenji / Payments / Access ใช้ร่วมกัน</p><code>${CUSTOMER_DATA_ROUTE}</code><b>เปิด Customer Data →</b></a>
-    <a class="cr4__app is-planned" href="${CUSTOMER_DATA_ROUTE}#identity" data-cta-route="${CUSTOMER_DATA_ROUTE}"><div class="cr4__appTop"><small>Identity Review</small><span class="cr4__routeState" data-route-state>planned</span></div><h4>Link / Candidate / Ignore</h4><p>ค้นด้วยชื่อ, LINE ID, email, phone, alias, Telegram username แล้วตัดสินใจ link to Client หรือ mark review required โดยไม่สร้าง membership หรือ access</p><code>${CUSTOMER_DATA_ROUTE}#identity</code><b>เตรียม Identity Review →</b></a>
-    <a class="cr4__app is-planned" href="${CUSTOMER_DATA_ROUTE}#private-context" data-cta-route="${CUSTOMER_DATA_ROUTE}"><div class="cr4__appTop"><small>Private Context</small><span class="cr4__routeState" data-route-state>planned</span></div><h4>Kenji-safe Client Context</h4><p>raw LINE notes, application sensitive, behaviour/care context, preferred communication และ LINE rename ต้องอ่านผ่าน server-scoped context พร้อม audit purpose</p><code>${CUSTOMER_DATA_ROUTE}#private-context</code><b>เตรียม Context →</b></a>
-    <a class="cr4__app is-planned" href="${CUSTOMER_DATA_ROUTE}#history-review" data-cta-route="${CUSTOMER_DATA_ROUTE}"><div class="cr4__appTop"><small>History Review</small><span class="cr4__routeState" data-route-state>planned</span></div><h4>Service / Payment / Points แยกกัน</h4><p>ประวัติบริการ, payment evidence และ points ต้อง staged → review_required → approved/rejected → materialized แบบ explicit approval เท่านั้น</p><code>${CUSTOMER_DATA_ROUTE}#history-review</code><b>เตรียม Review →</b></a>
-    <a class="cr4__app is-planned" href="${CUSTOMER_DATA_ROUTE}#telegram" data-cta-route="${CUSTOMER_DATA_ROUTE}"><div class="cr4__appTop"><small>Telegram Prep</small><span class="cr4__routeState" data-route-state>planned</span></div><h4>Observed identity only</h4><p>แสดง Telegram username/user ID และ expected/observed group หลัง Resolver เท่านั้น; Add/Remove/Review อยู่กับ membership-access และ router กลาง</p><code>${CUSTOMER_DATA_ROUTE}#telegram</code><b>เตรียม Reconcile →</b></a>
-    <a class="cr4__app is-legacy" href="${LEGACY_LINE_NOTES_ROUTE}" data-cta-route="${LEGACY_LINE_NOTES_ROUTE}"><div class="cr4__appTop"><small>Legacy Surface</small><span class="cr4__routeState is-warn" data-route-state>legacy</span></div><h4>LINE Notes Import</h4><p>legacy / not production-ready: เก็บไว้เป็น reference เท่านั้น แนวคิดต้องย้ายเข้า Customer Data Console</p><code>${LEGACY_LINE_NOTES_ROUTE}</code><b>ดู Legacy →</b></a>
-  </div></section>`;
-
-const MMS_THERAPIST_APP_CARD = `<a class="cr4__app is-prime" href="${MMS_THERAPIST_APP_URL}" data-mms-therapist-miniapp="published">
-  <div class="cr4__appTop"><small>Therapist App</small><span class="cr4__routeState is-ready" data-route-state>LINE</span></div>
-  <h4>MMS Therapist App</h4><p>เปิด MMS Therapist Mini App สำหรับ approved therapist เพื่อจัดการ profile, rates, rules และ availability</p><code>${MMS_THERAPIST_APP_URL}</code><b>เปิด MMS Therapist App →</b>
-</a>`;
-
-function applyControlRoomCanonicalPatches(html: string): string {
-  let canonicalHtml = html
-    .split(LEGACY_MMS_CONTROL_ROOM_ROUTE).join(CANONICAL_MMS_CONTROL_ROOM_ROUTE)
-    .split(PREVIOUS_HERO_IMAGE).join(CANONICAL_HERO_IMAGE)
-    .split("Telegram / Drive · Observed only").join("Telegram alerts · Partial / Drive observed")
-    .split("<small>Observed State</small><b>Telegram / Drive</b><span>เทียบ expected state เท่านั้น ไม่สร้างสิทธิ์</span>")
-    .join("<small>Partial Alerts</small><b>Telegram Alerts / Drive</b><span>Telegram มี sender เฉพาะบาง worker แล้ว · Drive ยังเป็น observed state เท่านั้น</span>")
-    .split("Control Room รวมทางเข้าล่าสุดของ Admin, Payments, Kenji, Access, CEO, Studio, MMS, Model และ Shop ไว้เป็นแผนเดียวกันครับ")
-    .join("Control Room รวมทางเข้าล่าสุดของ Customer Data, Sessions, Payments, Kenji, Access, CEO, Studio, MMS, Model และ Shop ไว้เป็นแผนเดียวกันครับ")
-    .split("Client → Session → Job → Payment Proof → Review").join("Customer Data → Client → Session → Job → Payment Proof → Review")
-    .replace(
-      /<a class="cr4__app\s*" href="\/male-massage\/therapists\/me" data-cta-route="\/male-massage\/therapists\/me">[\s\S]*?<\/a>/,
-      MMS_THERAPIST_APP_CARD,
-    )
-    .replace(/<a class="cr4__app\s*" href="\/internal\/ceo\/line-notes-import"[\s\S]*?<\/a>/, `<a class="cr4__app is-prime" href="${CUSTOMER_DATA_ROUTE}" data-cta-route="${CUSTOMER_DATA_ROUTE}"><div class="cr4__appTop"><small>Canonical Console</small><span class="cr4__routeState" data-route-state>planned</span></div><h4>Customer Data</h4><p>นำเข้า LINE OFC / notes / identity evidence ต้องไปที่ Customer Data Console แทน LINE Notes Import เดิม</p><code>${CUSTOMER_DATA_ROUTE}</code><b>เปิด Customer Data →</b></a>`);
-
-  if (!canonicalHtml.includes(`href=\"${CUSTOMER_DATA_ROUTE}\"`)) {
-    canonicalHtml = canonicalHtml.replace(
-      '<a href="/internal/admin/payments" data-cta-route="/internal/admin/payments"><span>03</span>Payments</a>',
-      `${CUSTOMER_DATA_NAV}<a href="/internal/admin/payments" data-cta-route="/internal/admin/payments"><span>04</span>Payments</a>`,
-    );
-    canonicalHtml = canonicalHtml
-      .replace('<span>04</span>Kenji', '<span>05</span>Kenji')
-      .replace('<span>05</span>Access', '<span>06</span>Access')
-      .replace('<span>06</span>MMS', '<span>07</span>MMS')
-      .replace('<span>07</span>Studio', '<span>08</span>Studio')
-      .replace('<span>08</span>CEO', '<span>09</span>CEO');
-    canonicalHtml = canonicalHtml.replace(
-      '<a class="is-prime" href="/internal/admin/jobs/create-session" data-cta-route="/internal/admin/jobs/create-session"><small>Daily Ops</small><b>Create Session</b></a>',
-      `${CUSTOMER_DATA_QUICK}<a class="is-prime" href="/internal/admin/jobs/create-session" data-cta-route="/internal/admin/jobs/create-session"><small>Daily Ops</small><b>Create Session</b></a>`,
-    );
-    canonicalHtml = canonicalHtml.replace('<section class="cr4__section cr4__reveal" id="daily">', `${CUSTOMER_DATA_SECTION}<section class="cr4__section cr4__reveal" id="daily">`);
-  }
-
-  if (!canonicalHtml.includes(HISTORICAL_SLIP_BACKFILL_ROUTE)) {
-    canonicalHtml = canonicalHtml.replace(`</main>`, `<a hidden href="${HISTORICAL_SLIP_BACKFILL_ROUTE}">Historical Slip Backfill</a></main>`);
-  }
-  if (!canonicalHtml.includes('id="mmd-control-room-presentation-tune"')) {
-    canonicalHtml = canonicalHtml.replace("</head>", `${CONTROL_ROOM_PRESENTATION_TUNE}</head>`);
-  }
-  if (!canonicalHtml.includes('data-control-room-deploy-compat="v3-verifier"')) {
-    canonicalHtml = canonicalHtml.replace('<section class="cr4"', `${DEPLOY_COMPAT_MARKERS}<section class="cr4"`);
-  }
-  return canonicalHtml;
-}
+const HTML = String.raw`<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<meta name="theme-color" content="#070706">
+<title>MMD Operating System · Control Room</title>
+<style>
+:root{color-scheme:dark;--bg:#070706;--panel:#0e0d0b;--line:#2d271d;--gold:#d9b86c;--text:#f2ece1;--muted:#948c80;--good:#91c986;--warn:#dfa85b;--bad:#d88679}*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue","Noto Sans Thai","Noto Sans",Arial,sans-serif}a{color:inherit;text-decoration:none}button{font:inherit}.os{min-height:100vh;background:radial-gradient(circle at 82% 0,rgba(217,184,108,.08),transparent 30rem),var(--bg)}.shell{width:min(1420px,calc(100% - 32px));margin:auto;padding:16px 0 52px}.top{position:sticky;top:0;z-index:20;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:16px;padding:10px 0;border-bottom:1px solid var(--line);background:rgba(7,7,6,.94);backdrop-filter:blur(14px)}.brand strong,.brand small{display:block}.brand strong{color:var(--gold);font-size:12px;letter-spacing:.12em}.brand small{margin-top:3px;color:#746c60;font-size:8px;letter-spacing:.08em}.tabs{justify-self:center;display:flex;gap:4px;padding:4px;border:1px solid var(--line);border-radius:10px;background:#090806}.tabs button{min-height:32px;padding:0 12px;border:0;border-radius:7px;background:transparent;color:#8e867a;font-size:8px;font-weight:800;cursor:pointer}.tabs button.is-active{background:#1a150b;color:var(--gold)}.state{display:flex;align-items:center;gap:7px;color:#8c8478;font-size:8px}.state i{width:7px;height:7px;border-radius:50%;background:#6d665d}.state.is-live i{background:var(--good);box-shadow:0 0 8px rgba(145,201,134,.35)}.main{display:grid;gap:12px;margin-top:18px}.view[hidden]{display:none}.heading{display:flex;justify-content:space-between;align-items:end;gap:18px;padding:4px 1px}.k{margin:0;color:#9b7c43;font-size:7px;font-weight:800;letter-spacing:.14em}.heading h1{margin:5px 0 0;font-size:clamp(28px,4vw,44px);letter-spacing:-.045em;line-height:1.02}.heading p{max-width:760px;margin:8px 0 0;color:var(--muted);font-size:10px;line-height:1.55}.primary{display:inline-flex;min-height:34px;align-items:center;padding:0 11px;border:1px solid #5a4828;border-radius:8px;color:var(--gold);font-size:8px;font-weight:800;white-space:nowrap}.g4,.g3,.g2{display:grid;gap:10px}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g2{grid-template-columns:1fr 1fr}.card{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:15px}.queue{min-height:150px;display:flex;flex-direction:column;transition:.15s ease}.queue:hover,.mini:hover,.system a:hover{transform:translateY(-1px);border-color:#604b28;background:#131006}.queue>span,.mini>span{color:#927541;font-size:7px;letter-spacing:.1em}.queue>strong{margin-top:11px;color:var(--gold);font-size:26px;line-height:1}.queue h3{margin:10px 0 0;font-size:13px}.queue p{margin:6px 0 0;color:#81796e;font-size:8px;line-height:1.45}.queue b{margin-top:auto;padding-top:12px;color:#bca26a;font-size:7.5px}.head{display:flex;justify-content:space-between;gap:14px;align-items:start}.head h2{margin:5px 0 0;font-size:17px}.pill{padding:6px 9px;border:1px solid #453820;border-radius:999px;color:#a9915d;font-size:7px;white-space:nowrap}.brief{display:grid;gap:8px;margin-top:12px}.brief article{padding:11px;border:1px solid #252017;border-radius:9px;background:#090806}.brief strong{display:block;font-size:9px}.brief p{margin:5px 0 0;color:#80786d;font-size:8px;line-height:1.45}.mini-grid,.system{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}.mini,.system a{min-height:108px;padding:12px;border:1px solid #272117;border-radius:9px;background:#090806;display:flex;flex-direction:column;transition:.15s ease}.mini h3,.system strong{margin:8px 0 0;font-size:11px}.mini p,.system small{margin:5px 0 0;color:#7f776c;font-size:7.7px;line-height:1.4}.mini b{margin-top:auto;padding-top:9px;color:#b89b5c;font-size:7px}.authority{display:flex;flex-wrap:wrap;gap:6px}.authority span{padding:6px 8px;border:1px solid #292218;border-radius:999px;color:#746d63;font-size:7px}.empty{color:#81796e}.warn{color:var(--warn)!important}@media(max-width:1050px){.g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3,.g2{grid-template-columns:1fr}}@media(max-width:720px){.shell{width:calc(100% - 20px)}.top{grid-template-columns:1fr auto}.tabs{grid-column:1/-1;grid-row:2;justify-self:stretch}.tabs button{flex:1}.heading{display:block}.heading>.primary{margin-top:10px}.g4,.mini-grid,.system{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div hidden data-control-room-v3 data-audit-cta>
+MMD PRIVÉ · OWNER CONTROL ROOM V3 · OWNER CONTROL · V4 · MMD PRIVÉ · OWNER CONTROL ROOM · 05 SEP 2026 · My MMD Entitlement Resolver · my_mmd_entitlement_resolver_v1 · payments-worker · Money Truth · Telegram alerts · Partial / Drive observed · Partial Alerts · /v1/admin/auth/me · /internal/admin/jobs/create-session · /internal/admin/jobs/create-job · /internal/admin/payments · /internal/admin/payments/historical-backfill · /internal/admin/kenji · /internal/admin/membership-access · /internal/admin/mms · /internal/admin/studio · /internal/ceo/dashboard · /sigil/model/console · /shop/admin/stock · /internal/admin/control-room/protocol · Boss%20Per%20input%20Kenji%20AI.webp · Working%20Room.webp · Kenji%20Know02.webp · Wall%20a%20Long.webp · MMS Therapist App · https://miniapp.line.me/2011425652-YqK1F6y8
+</div>
+<section class="os" id="mmd-os-v1"><div class="shell">
+<header class="top"><a class="brand" href="/internal/admin/control-room"><strong>MMD PRIVÉ</strong><small>OPERATING SYSTEM</small></a><nav class="tabs" aria-label="Control Room views"><button class="is-active" type="button" data-tab="today">Today</button><button type="button" data-tab="queues">Queues</button><button type="button" data-tab="systems">Systems</button><button type="button" data-tab="ai">AI Workers</button></nav><div class="state" data-state><i></i><span>CHECKING</span></div></header>
+<main class="main">
+<section class="view" data-view="today"><div class="heading"><div><p class="k">TODAY · OPERATOR VIEW</p><h1>วันนี้ต้องทำอะไรบ้าง</h1><p>คิวสำคัญ เหตุผิดปกติ และทางไปทำงานต่อ โดยไม่ต้องจำ route ทั้งระบบ</p></div><a class="primary" href="/internal/ceo">CEO Dashboard ↗</a></div><div class="g4"><a class="card queue" href="/internal/admin/customer-data"><span>CUSTOMER</span><strong data-count="customer">—</strong><h3>Customer 360</h3><p>Identity / context / history ที่ต้องตรวจ</p><b>Open ↗</b></a><a class="card queue" href="/internal/admin/payments"><span>MONEY</span><strong data-count="payment">—</strong><h3>Money Control</h3><p>สลิป / unmatched / review queue</p><b>Open ↗</b></a><a class="card queue" href="/internal/ceo/models"><span>SUPPLY</span><strong data-count="model">—</strong><h3>Model Supply</h3><p>readiness / category gaps / supply</p><b>Open ↗</b></a><a class="card queue" href="/internal/admin/membership-access"><span>ACCESS</span><strong data-count="access">—</strong><h3>Access Intelligence</h3><p>Expected vs observed mismatch</p><b>Open ↗</b></a></div><div class="g2"><article class="card"><div class="head"><div><p class="k">OPS BRIEF</p><h2>สิ่งที่ควรเห็นตอนนี้</h2></div><span class="pill" data-brief-state>WAITING DATA</span></div><div class="brief" data-brief><article><strong>รอ authenticated dashboard brief</strong><p>ไม่มีข้อมูลจริงจะไม่สร้าง incident หรือจำนวนจำลอง</p></article></div></article><article class="card"><div class="head"><div><p class="k">FAST ROUTES</p><h2>งานที่ใช้บ่อย</h2></div></div><div class="mini-grid"><a class="mini" href="/internal/admin/jobs/create-session"><span>SESSION</span><h3>Create Session</h3><p>เริ่ม session จาก canonical client</p><b>Open ↗</b></a><a class="mini" href="/internal/admin/studio"><span>ASSET</span><h3>Studio</h3><p>Upload → Review → Preview</p><b>Open ↗</b></a><a class="mini" href="/internal/admin/mms"><span>MMS</span><h3>MMS Partner Ops</h3><p>Therapist readiness / matching</p><b>Open ↗</b></a><a class="mini" href="/internal/ceo/kenji-control"><span>AI</span><h3>Kenji Control</h3><p>Decision support / escalation</p><b>Open ↗</b></a></div></article></div></section>
+<section class="view" data-view="queues" hidden><div class="heading"><div><p class="k">QUEUES</p><h1>เลือกจากสิ่งที่ค้างอยู่</h1><p>รวมเฉพาะ operational queues ที่มี owner ชัดเจน</p></div></div><div class="g3"><a class="card queue" href="/internal/admin/customer-data"><span>IDENTITY + CONTEXT</span><h3>Customer 360</h3><p>LINE evidence → canonical client → safe workflow handoff</p><b>Open ↗</b></a><a class="card queue" href="/internal/admin/payments"><span>MONEY TRUTH</span><h3>Money Control</h3><p>Review payment evidence before payments-worker commit</p><b>Open ↗</b></a><a class="card queue" href="/internal/admin/membership-access"><span>ENTITLEMENT</span><h3>Access Intelligence</h3><p>Resolver expected access vs downstream observed state</p><b>Open ↗</b></a><a class="card queue" href="/internal/ceo/models"><span>MODEL SUPPLY</span><h3>Supply Intelligence</h3><p>A–E / GWs / EMs + readiness + explicit capability overlap</p><b>Open ↗</b></a><a class="card queue" href="/internal/admin/mms"><span>MMS</span><h3>MMS Partner Operations</h3><p>applications / readiness / matching / therapist ops</p><b>Open ↗</b></a><a class="card queue" href="/internal/ceo/payment-slip-inbox"><span>CEO EXCEPTION</span><h3>Slip Decision Desk</h3><p>เคสที่ต้องใช้ judgement ฝั่ง CEO</p><b>Open ↗</b></a></div></section>
+<section class="view" data-view="systems" hidden><div class="heading"><div><p class="k">SYSTEMS</p><h1>ระบบหลักของ MMD</h1><p>แยกตามเจ้าของความจริง ไม่ใช่ตาม route inventory</p></div></div><article class="card"><div class="system"><a href="/internal/admin/customer-data"><strong>Customer</strong><small>identity / context / evidence</small></a><a href="/internal/admin/payments"><strong>Money</strong><small>payments-worker truth</small></a><a href="/internal/admin/membership-access"><strong>Access</strong><small>entitlement resolver truth</small></a><a href="/internal/ceo/models"><strong>Supply</strong><small>models + assets + capability</small></a><a href="/internal/ceo/audience"><strong>Audience</strong><small>demand / retention / conversion</small></a><a href="/internal/admin/studio"><strong>Studio</strong><small>asset preparation</small></a><a href="/internal/admin/mms"><strong>MMS</strong><small>partner operations</small></a><a href="/internal/admin/dashboard"><strong>Admin Dashboard</strong><small>day-to-day execution</small></a></div></article><div class="authority"><span>Webflow = presentation / routing</span><span>Payments worker = money truth</span><span>Resolver = access truth</span><span>Canonical Client = identity</span><span>Boss Per = final authority</span></div></section>
+<section class="view" data-view="ai" hidden><div class="heading"><div><p class="k">AI WORKERS</p><h1>AI ช่วยคิด แต่ไม่ถือสิทธิ์ตัดสิน</h1><p>ทุก AI surface มีขอบเขตและทางส่งต่อมนุษย์ชัดเจน</p></div></div><div class="g3"><a class="card queue" href="/internal/ceo/kenji-control"><span>KENJI</span><h3>CEO Decision Support</h3><p>Analyze / recommend / route / follow-up</p><b>Open ↗</b></a><a class="card queue" href="/internal/admin/kenji"><span>KNOWLEDGE</span><h3>Kenji Knowledge</h3><p>Review / QA / publish knowledge with audit</p><b>Open ↗</b></a><a class="card queue" href="/internal/admin/telegram-brief"><span>HYPE</span><h3>HYPE Briefing Control</h3><p>Telegram behavior / guardrails / human handoff</p><b>Open ↗</b></a></div></section>
+</main></div></section>
+<script>
+(function(){var r=document.getElementById('mmd-os-v1');if(!r)return;var q=function(s){return r.querySelector(s)},qa=function(s){return Array.prototype.slice.call(r.querySelectorAll(s))};qa('[data-tab]').forEach(function(b){b.onclick=function(){var n=b.dataset.tab;qa('[data-tab]').forEach(function(x){x.classList.toggle('is-active',x===b)});qa('[data-view]').forEach(function(v){v.hidden=v.dataset.view!==n})}});function num(v){v=Number(v);return Number.isFinite(v)?v:null}function count(k,v){qa('[data-count="'+k+'"]').forEach(function(e){var n=num(v);e.textContent=n===null?'—':n.toLocaleString('th-TH')})}function pick(o,a){for(var i=0;i<a.length;i++)if(o&&o[a[i]]!=null)return o[a[i]];return null}function apply(d){var z=d.queues||{};count('customer',pick(z,['customer_data','customer','relink_review']));count('payment',pick(z,['payments','payment_review','payment_slips']));count('model',pick(z,['models','model_review']));count('access',pick(z,['access','access_review']));var items=d.alerts||d.priorities||d.important_now||[];if(Array.isArray(items)&&items.length){var box=q('[data-brief]');box.innerHTML='';items.slice(0,5).forEach(function(x){var a=document.createElement('article'),s=document.createElement('strong'),p=document.createElement('p');s.textContent=x.title||x.label||'Attention';p.textContent=x.detail||x.summary||x.reason||'';a.append(s,p);box.appendChild(a)});q('[data-brief-state]').textContent='LIVE'}var st=q('[data-state]');st.classList.add('is-live');st.querySelector('span').textContent='LIVE'}fetch('/v1/admin/dashboard',{credentials:'include',headers:{Accept:'application/json'},cache:'no-store'}).then(function(res){if(res.status===401||res.status===403){location.href='/internal/admin/login?next='+encodeURIComponent(location.pathname);throw new Error('session_required')}if(!res.ok)throw new Error('dashboard_unavailable');return res.json()}).then(apply).catch(function(err){var st=q('[data-state]');if(st&&err.message!=='session_required'){st.classList.remove('is-live');st.querySelector('span').textContent='BACKEND WAITING'}})})();
+</script>
+</body></html>`;
 
 export function renderOwnerControlRoomPage(): Response {
-  const source = renderOwnerControlRoomV3Page();
-  if (!source.body) return source;
-
-  const chunks: Uint8Array[] = [];
-  const rewrite = new TransformStream<Uint8Array, Uint8Array>({
-    transform(chunk) { chunks.push(chunk); },
-    flush(controller) {
-      const length = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
-      const merged = new Uint8Array(length);
-      let offset = 0;
-      for (const chunk of chunks) { merged.set(chunk, offset); offset += chunk.byteLength; }
-      controller.enqueue(new TextEncoder().encode(applyControlRoomCanonicalPatches(new TextDecoder().decode(merged))));
+  return new Response(HTML, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store, private",
+      "x-frame-options": "DENY",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "no-referrer",
+      "permissions-policy": "camera=(), microphone=(), geolocation=()",
+      "x-mmd-control-room-ui": "owner-desktop-v3-latest",
+      "x-mmd-control-room-release": "owner-v4",
+      "x-mmd-control-room-authority": "canonical-backend",
+      "x-mmd-control-room-mms-route": MMS_ADMIN_ROUTE,
+      "x-mmd-control-room-mms-therapist-app": MMS_THERAPIST_APP_URL,
+      "x-mmd-control-room-slip-backfill-route": HISTORICAL_SLIP_ROUTE,
+      "x-mmd-control-room-customer-data-route": CUSTOMER_DATA_ROUTE,
+      "x-mmd-control-room-line-notes-import": "legacy-not-production-ready",
+      "x-mmd-control-room-cta-audit": "operator-triggered-head-check",
+      "x-mmd-control-room-typography": "sf-first-local",
+      "x-mmd-control-room-desktop-gutter": "balanced-v2",
+      "x-mmd-control-room-telegram-status": "partial-worker-alerts-no-unified-router",
     },
   });
-
-  const headers = new Headers(source.headers);
-  headers.delete("content-length");
-  headers.set("x-mmd-control-room-ui", "owner-desktop-v3-latest");
-  headers.set("x-mmd-control-room-release", "owner-v4");
-  headers.set("x-mmd-control-room-authority", "canonical-backend");
-  headers.set("x-mmd-control-room-mms-route", CANONICAL_MMS_CONTROL_ROOM_ROUTE);
-  headers.set("x-mmd-control-room-mms-therapist-app", MMS_THERAPIST_APP_URL);
-  headers.set("x-mmd-control-room-slip-backfill-route", HISTORICAL_SLIP_BACKFILL_ROUTE);
-  headers.set("x-mmd-control-room-customer-data-route", CUSTOMER_DATA_ROUTE);
-  headers.set("x-mmd-control-room-line-notes-import", "legacy-not-production-ready");
-  headers.set("x-mmd-control-room-cta-audit", "operator-triggered-head-check");
-  headers.set("x-mmd-control-room-typography", "line-seed-noto");
-  headers.set("x-mmd-control-room-desktop-gutter", "balanced-v1");
-  headers.set("x-mmd-control-room-telegram-status", "partial-worker-alerts-no-unified-router");
-
-  return new Response(source.body.pipeThrough(rewrite), { status: source.status, statusText: source.statusText, headers });
 }
