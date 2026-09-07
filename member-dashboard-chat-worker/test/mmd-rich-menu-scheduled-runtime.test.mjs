@@ -24,7 +24,7 @@ test("MMD 3-level Rich Menu actions match the canonical customer labels", () => 
     { type: "uri", label: "BOOKING", uri: "https://mmdbkk.com/booking?source=line&entry_route=rich_menu_guest_booking" },
     { type: "uri", label: "PUBLIC SERVICES", uri: "https://mmdbkk.com/services/companion?source=line&entry_route=rich_menu_guest_services" },
     { type: "uri", label: "ABOUT MMD", uri: "https://mmdbkk.com/tmib?source=line&entry_route=rich_menu_guest_about" },
-    { type: "message", label: "SUPPORT", text: "ขอคุยกับเจ้าหน้าที่" },
+    { type: "message", label: "SUPPORT", text: "Hi Kenji" },
   ]);
 
   assert.deepEqual(map.public, [
@@ -33,7 +33,7 @@ test("MMD 3-level Rich Menu actions match the canonical customer labels", () => 
     { type: "uri", label: "BOOKING", uri: "https://mmdbkk.com/booking?source=line&entry_route=rich_menu_public_booking" },
     { type: "uri", label: "MY MMD", uri: "https://liff.line.me/2010862595-yT4DCEMc?intent=status&view=profile" },
     { type: "uri", label: "PRIVE ACCESS", uri: "https://mmdbkk.com/membership?source=line&entry_route=rich_menu_prive_access" },
-    { type: "message", label: "SUPPORT", text: "ขอคุยกับเจ้าหน้าที่" },
+    { type: "message", label: "SUPPORT", text: "Hi Kenji" },
   ]);
 
   assert.deepEqual(map.private, [
@@ -42,7 +42,7 @@ test("MMD 3-level Rich Menu actions match the canonical customer labels", () => 
     { type: "uri", label: "BOOKING", uri: "https://mmdbkk.com/find?source=line&entry_route=rich_menu_private_booking" },
     { type: "uri", label: "MY MMD", uri: "https://liff.line.me/2010862595-yT4DCEMc?intent=status&view=profile" },
     { type: "uri", label: "PRIVE UPDATE", uri: "https://mmdbkk.com/member/private?source=line&entry_route=rich_menu_prive_update#access" },
-    { type: "message", label: "SUPPORT", text: "ขอคุยกับเจ้าหน้าที่" },
+    { type: "message", label: "SUPPORT", text: "Hi Kenji" },
   ]);
 });
 

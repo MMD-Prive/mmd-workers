@@ -13,7 +13,7 @@ This map applies only to MMD Privé. MMS / Male Massage is a separate LINE OA an
 | Top-right | BOOKING | `https://mmdbkk.com/booking?source=line&entry_route=rich_menu_guest_booking` |
 | Bottom-left | PUBLIC SERVICES | `https://mmdbkk.com/services/companion?source=line&entry_route=rich_menu_guest_services` |
 | Bottom-center | ABOUT MMD | `https://mmdbkk.com/tmib?source=line&entry_route=rich_menu_guest_about` |
-| Bottom-right | SUPPORT | LINE message: `ขอคุยกับเจ้าหน้าที่` |
+| Bottom-right | SUPPORT | LINE message: `Hi Kenji` |
 
 ## LV2 — Public Member
 
@@ -26,7 +26,7 @@ Verified identity; no active Privé entitlement required.
 | Top-right | BOOKING | `https://mmdbkk.com/booking?source=line&entry_route=rich_menu_public_booking` |
 | Bottom-left | MY MMD | LINE Mini App / LIFF status view |
 | Bottom-center | PRIVÉ ACCESS | `https://mmdbkk.com/membership?source=line&entry_route=rich_menu_prive_access` |
-| Bottom-right | SUPPORT | LINE message: `ขอคุยกับเจ้าหน้าที่` |
+| Bottom-right | SUPPORT | LINE message: `Hi Kenji` |
 
 ## LV3 — Privé Member
 
@@ -39,7 +39,7 @@ Active Privé entitlement. Standard, Premium, VIP, SVIP and Black Card share the
 | Top-right | BOOKING | `https://mmdbkk.com/find?source=line&entry_route=rich_menu_private_booking` |
 | Bottom-left | MY MMD | LINE Mini App / LIFF status view |
 | Bottom-center | PRIVÉ UPDATE | `https://mmdbkk.com/member/private?source=line&entry_route=rich_menu_prive_update#access` |
-| Bottom-right | SUPPORT | LINE message: `ขอคุยกับเจ้าหน้าที่` |
+| Bottom-right | SUPPORT | LINE message: `Hi Kenji` |
 
 ## State Rules
 
@@ -49,9 +49,17 @@ Active Privé entitlement. Standard, Premium, VIP, SVIP and Black Card share the
 - Expired or grace Privé entitlement falls back to Public Member, not Guest.
 - Rich Menu is hidden daily from 16:00 through 22:59 Asia/Bangkok and is visible from 23:00 through 15:59.
 
+## Support ownership
+
+- MMD does not present a generic staff or operator layer to customers.
+- Kenji is the default support and continuity layer across Guest, Public Member and Privé Member Rich Menus.
+- Public Members still have the direct `คุยกับ PER` entry. When Per is available, Per remains the owner/final authority for matters that require his decision.
+- When Per is not available, Support remains valid through Kenji. Kenji can guide, collect context, route the next step and hold continuity without pretending that a separate staff member is waiting.
+- A customer explicitly asking for a human/person is a separate escalation request; the Rich Menu SUPPORT button must not manufacture that request automatically.
+
 ## Safety / ownership
 
 - Rich Menu is navigation only; it never grants membership or private access.
 - `MY MMD` uses the authenticated LINE Mini App / LIFF status flow.
 - `MODEL CARDS` points to the current Private member surface; the backend remains the entitlement authority and the page must not behave as a public catalogue.
-- Support sends an explicit human-handoff phrase so the existing LINE intent router recognizes it as a request for an operator.
+- Kenji is a concierge/router and continuity layer, not the final authority for protected decisions.
