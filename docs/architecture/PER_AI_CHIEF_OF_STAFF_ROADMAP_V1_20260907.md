@@ -18,18 +18,20 @@ The goal is not to add more admin pages. The goal is to reduce how often Per mus
 - Exception Inbox — LIVE P0
 - Action Cards — LIVE P0
 - Follow-up Autopilot — LIVE P1 durable reminder state
-- Smart Matching — NEXT P1
-- System Health — foundation exists; full operational-impact layer remains P1/P2
+- Smart Matching — LIVE P1 preview/ranking
+- System Health — NEXT P1 operational-impact layer
 
 Follow-up Autopilot V1 is intentionally reminder-only. It can keep durable watch state, revalidate from verified admin dashboard evidence when Command Center opens, schedule due alarms, surface due items into Needs Per/Prepared, and let Per snooze or close a Watch. It does **not** message customers, mark money paid, confirm Jobs, change Membership, grant access, or mutate canonical business records.
 
 Dedicated Telegram push is optional and activates only when the AI Ops Worker has `PER_FOLLOWUP_TELEGRAM_BOT_TOKEN` and `PER_FOLLOWUP_TELEGRAM_CHAT_ID` configured. Without that dedicated private channel, reminders stay Command-Center-only rather than being sent to an ambiguous shared Telegram destination.
 
+Smart Matching V1 is also intentionally advisory. It asks the existing entitlement-enforced `/v1/admin/models/search` for the candidate set first, then ranks only those returned candidates. It never expands the candidate set, never turns a legacy Drive folder into truth, and never assigns a Model without Per.
+
 ## Operating model
 
 `Per asks / opens Command Center → AI reads verified context → AI surfaces only what matters → AI prepares a safe next step → Per confirms meaningful decisions → canonical backend acts`
 
-AI may summarize, rank, prepare, monitor, and remind. It does not become the authority for money, entitlement, protected access, private-model disclosure, or final owner decisions.
+AI may summarize, rank, prepare, monitor, and remind. It does not become the authority for money, entitlement, protected access, private-model disclosure, model assignment, or final owner decisions.
 
 ## 1. Command Center — P0
 
@@ -157,23 +159,51 @@ None of these actions changes Job, Payment, Membership, entitlement, customer, o
 
 ## 5. Smart Matching — P1
 
+Canonical endpoint:
+
+`POST /v1/admin/ai-ops/smart-match/preview`
+
 Smart Matching assists Create Job; it does not become assignment authority.
 
-Ranking inputs may include only verified/canonical data:
+V1 source of candidate truth:
+
+`selected Create Job context → authenticated AI Ops → /v1/admin/models/search → eligible/sanitized candidate set → Smart Match ranking → Per chooses final Model`
+
+The model-search backend already enforces protected/private membership access and sanitized model visibility. Smart Matching must rank **only** the models it returns. If canonical model search blocks the request, Smart Matching returns that block and produces no fallback names.
+
+V1 ranking signals:
 
 - selected Public / Private world;
-- tier / lane / work type;
-- orientation / customer lane;
-- explicit model capabilities;
-- current model eligibility;
-- consented Public/Private scope;
-- availability when a canonical source exists;
-- prior client preference/history when safely linked;
-- image/readiness state.
+- selected canonical folder: Travel / Extreme / Standard / Premium / VIP / Exclusive;
+- customer lane/orientation;
+- current model eligibility already enforced by canonical search;
+- consented Public/Private scope already enforced by canonical search;
+- explicit MK / Burn / Live capability filters when requested;
+- sanitized current availability signal;
+- Model Telegram linked/verified as a private-work tiebreaker.
 
-Legacy Drive folders are candidate hints only, never model truth.
+V1 deliberately does **not** infer:
 
-Output must include reasons and missing evidence. Per confirms the final model.
+- Kiss capability, because current canonical model search does not expose that flag;
+- chemistry/personality from free text;
+- model eligibility from legacy Drive folder names;
+- client preference/history until a verified matching projection exposes that evidence.
+
+When Kiss is selected, the UI must say that it is not part of the verified ranking yet rather than silently treating it as supported.
+
+Output includes:
+
+- ranked candidates;
+- score;
+- verified reasons;
+- missing evidence;
+- warnings;
+- source and authority;
+- `per_confirmation_required: true`.
+
+The Create Job AI Ops panel can prefill scope from visible selected controls when available and lets Per correct scope before running the preview. A result may populate the existing model-search input to narrow the list, but it does not auto-select or create the Job.
+
+Legacy Drive folders remain candidate hints only, never model truth.
 
 ## 6. System Health — P1/P2
 
@@ -212,6 +242,8 @@ The owner-facing experience should converge toward five concepts:
 4. **Watching** — durable Follow-up Autopilot state
 5. **Done Today** — verified audit summary when a trustworthy source exists
 
+Smart Matching is a contextual Create Job capability inside the shared AI Ops layer, not a sixth permanent admin home.
+
 If `Done Today` has no canonical audit projection, show WAITING/UNAVAILABLE instead of inventing activity.
 
 ## Authority lock
@@ -222,6 +254,6 @@ Remain unchanged:
 - Entitlement → `my_mmd_entitlement_resolver_v1`
 - Telegram / Drive → observed state only
 - Protected/private model access → backend eligibility authority
-- Final owner confirmation → Per
+- Final model assignment and owner confirmation → Per
 
 The AI layer is a Chief-of-Staff layer, not a new source of truth.
