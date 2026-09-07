@@ -75,8 +75,9 @@ export async function readKenjiRuntimeControlsFallback(env = {}) {
 }
 
 export function buildKenjiSeedRuntimeEnv(env = {}) {
-  const upstream = env.ADMIN_WORKER;
-  const originalInternalToken = text(env.INTERNAL_TOKEN);
+  const sourceEnv = env || {};
+  const upstream = Reflect.get(sourceEnv, "ADMIN_WORKER", sourceEnv);
+  const originalInternalToken = text(Reflect.get(sourceEnv, "INTERNAL_TOKEN", sourceEnv));
 
   const adminProxy = {
     async fetch(request) {
@@ -91,7 +92,7 @@ export function buildKenjiSeedRuntimeEnv(env = {}) {
         }
 
         try {
-          const controls = await readKenjiRuntimeControlsFallback(env);
+          const controls = await readKenjiRuntimeControlsFallback(sourceEnv);
           return runtimeJson({
             ok: true,
             controls,
@@ -109,14 +110,22 @@ export function buildKenjiSeedRuntimeEnv(env = {}) {
     },
   };
 
-  const runtimeEnv = Object.create(env || null);
-  runtimeEnv.ADMIN_WORKER = adminProxy;
-  // requestKenjiRuntimeStatus requires a non-empty caller token before it will
-  // invoke the service binding. When the production secret is absent, this
-  // sentinel stays inside this Worker: the proxy never forwards non-runtime
-  // admin calls unless the original secret exists.
-  runtimeEnv.INTERNAL_TOKEN = originalInternalToken || RUNTIME_STATUS_SENTINEL;
-  return runtimeEnv;
+  // Cloudflare's env object is a runtime binding container, not a plain data
+  // object. Do not move it onto another object's prototype or spread/copy it:
+  // either approach can make secret/service bindings disappear in production.
+  // This transparent proxy overrides only the two runtime-status dependencies
+  // and resolves every other binding against the original env receiver.
+  return new Proxy(sourceEnv, {
+    get(target, property) {
+      if (property === "ADMIN_WORKER") return adminProxy;
+      if (property === "INTERNAL_TOKEN") return originalInternalToken || RUNTIME_STATUS_SENTINEL;
+      return Reflect.get(target, property, target);
+    },
+    has(target, property) {
+      if (property === "ADMIN_WORKER" || property === "INTERNAL_TOKEN") return true;
+      return Reflect.has(target, property);
+    },
+  });
 }
 
 function seedSmokeRequest(request) {
