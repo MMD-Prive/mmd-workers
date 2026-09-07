@@ -187,7 +187,7 @@ jobs:
 
           cleanup() {
             set +e
-            yes | npx --yes wrangler@4 secret delete MMS_RICH_MENU_PUBLISH_TOKEN --config "$WORKER_CONFIG" >/tmp/mms-rich-menu-secret-delete.log 2>&1
+            printf 'y\n' | npx --yes wrangler@4 secret delete MMS_RICH_MENU_PUBLISH_TOKEN --config "$WORKER_CONFIG" >/tmp/mms-rich-menu-secret-delete.log 2>&1
             cleanup_status=$?
             cat /tmp/mms-rich-menu-secret-delete.log
             if [ "$cleanup_status" -ne 0 ]; then
