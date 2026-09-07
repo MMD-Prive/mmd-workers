@@ -1,5 +1,6 @@
 import currentWorker from "./my-mmd-bounded-status-front-gate.js";
 import { handleMmsLineRequest, isMmsLineRequest } from "./mms-line-runtime.mjs";
+import { MMS_LINE_EVIDENCE_INTERNALS, observeMmsLineEvidence } from "./mms-line-evidence-observer.mjs";
 import {
   handleKenjiSeedLineRequestWithRedeliveryRecovery,
   isKenjiSeedLineRequest,
@@ -142,7 +143,24 @@ function seedSmokeRequest(request) {
 
 export default {
   async fetch(request, env = {}, ctx) {
-    if (isMmsLineRequest(request)) return handleMmsLineRequest(request, env, ctx);
+    if (isMmsLineRequest(request)) {
+      const evidenceRequest = MMS_LINE_EVIDENCE_INTERNALS.isMmsWebhookPost(request) ? request.clone() : null;
+      const response = await handleMmsLineRequest(request, env, ctx);
+      if (evidenceRequest && response.ok) {
+        const work = observeMmsLineEvidence(evidenceRequest, env).then((result) => {
+          console.log(JSON.stringify({ mms_line_evidence: "observed", ...result }));
+          return result;
+        }).catch((error) => {
+          console.log(JSON.stringify({
+            mms_line_evidence: "observer_failed",
+            error: text(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 120),
+          }));
+        });
+        if (typeof ctx?.waitUntil === "function") ctx.waitUntil(work);
+        else await work;
+      }
+      return response;
+    }
     if (isKenjiSeedLineRequest(request)) {
       return handleKenjiSeedLineRequestWithRedeliveryRecovery(
         seedSmokeRequest(request),
