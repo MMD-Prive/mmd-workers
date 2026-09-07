@@ -37,6 +37,14 @@ pattern = "www.mmdbkk.com/internal/admin/control-room*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
+pattern = "mmdbkk.com/internal/ceo*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/ceo*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
 pattern = "mmdbkk.com/internal/admin/create-session*"
 zone_name = "mmdbkk.com"
 
