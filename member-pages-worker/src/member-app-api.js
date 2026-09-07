@@ -1,4 +1,5 @@
 import liffFoundation from "./liff-identity-foundation.js";
+import { readClientBackedHistory } from "./member-app-client-history.js";
 
 const API_PREFIX = "/api/member/app/";
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -498,9 +499,20 @@ async function adaptPoints(request, env, delegate) {
 }
 
 async function adaptHistory(request, env, delegate) {
+  const sessionSnapshot = await readMemberAppSession(request, env);
   const result = await readUpstream(request, env, delegate, "/api/member/dashboard");
   if (!result.ok) return result.response;
-  return responseFrom(result.upstream, historyFromDashboard(asObject(result.payload.data)));
+  const primary = historyFromDashboard(asObject(result.payload.data));
+  if (primary.length > 0 || !sessionSnapshot?.lineUserId) {
+    return responseFrom(result.upstream, primary);
+  }
+
+  // Historical service/payment evidence follows the canonical Client identity,
+  // not the current membership row. This fallback is read-only and can only
+  // surface reviewed history; it never changes membership, entitlement, points,
+  // or access. Exact verified LINE -> unique canonical Client is required.
+  const clientHistory = await readClientBackedHistory(env, sessionSnapshot.lineUserId);
+  return responseFrom(result.upstream, clientHistory.length > 0 ? clientHistory : primary);
 }
 
 async function adaptCoupons(request, env, delegate) {
