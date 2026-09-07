@@ -2,7 +2,6 @@ export const SMART_MATCH_PATH = "/v1/admin/ai-ops/smart-match/preview";
 
 const PUBLIC_FOLDERS = new Set(["travel", "extreme"]);
 const PRIVATE_FOLDERS = new Set(["standard", "premium", "vip", "exclusive"]);
-const LANES = new Set(["straight", "gay", "both"]);
 const SUPPORTED_CAPABILITY_FLAGS = ["mk", "burn", "live"];
 const MAX_RESULTS = 8;
 
@@ -76,6 +75,7 @@ export function rankSmartMatches(searchPayload, input) {
 
   const candidates = rawItems.map((item) => scoreCandidate(item, input));
   candidates.sort((a, b) => b.score - a.score || a.model_name.localeCompare(b.model_name, "en"));
+  candidates.forEach((candidate, index) => { candidate.rank = index + 1; });
 
   return {
     ok: true,
@@ -126,7 +126,7 @@ function scoreCandidate(item = {}, input) {
   const telegramStatus = token(item.telegram_status);
   const operational = item.operational && typeof item.operational === "object" ? item.operational : {};
 
-  let score = 50; // Entry means canonical model-search already admitted the candidate.
+  let score = 50;
   const reasons = [{ code: "canonical_eligible", weight: 50, text: "ผ่าน canonical model-search eligibility/filter แล้ว" }];
   const missing = [];
 
@@ -165,7 +165,6 @@ function scoreCandidate(item = {}, input) {
       score += 10;
       reasons.push({ code: `${flag}_verified`, weight: 10, text: `${flag.toUpperCase()} ผ่าน explicit capability filter` });
     } else {
-      // The backend may filter without echoing the flag; do not penalize or invent false.
       missing.push(`${flag}_capability_not_echoed`);
     }
   }
@@ -217,7 +216,7 @@ function firstArray(value, keys) {
 function normalizeLane(value) {
   const v = token(value);
   if (["straight", "gay", "both"].includes(v)) return v;
-  if (["all", "any", "mixed"] .includes(v)) return "both";
+  if (["all", "any", "mixed"].includes(v)) return "both";
   return "";
 }
 
