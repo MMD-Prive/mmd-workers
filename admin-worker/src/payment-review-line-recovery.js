@@ -187,14 +187,14 @@ async function airtableList(env, tableName, params = {}) {
 }
 
 async function airtableGet(env, tableName, recordId) {
-  const response = await airtableFetch(env, new Request(`${airtableUrl(env, tableName)}/${encodeURIComponent(recordId)}`, { headers: { Authorization: `Bearer ${clean(env.AIRTABLE_API_KEY)}` } }));
+  const response = await airtableFetch(env, new Request(`${airtableUrl(env, tableName).toString()}/${encodeURIComponent(recordId)}`, { headers: { Authorization: `Bearer ${clean(env.AIRTABLE_API_KEY)}` } }));
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !payload?.id) throw httpError(response.status || 502, `airtable_${response.status || "malformed"}`);
   return payload;
 }
 
 function airtableFetch(env, request) { return env.AIRTABLE_HTTP?.fetch ? env.AIRTABLE_HTTP.fetch(request) : fetch(request); }
-function airtableUrl(env, tableName) { return `${AIRTABLE_API}/${encodeURIComponent(clean(env.AIRTABLE_BASE_ID))}/${encodeURIComponent(tableName)}`; }
+function airtableUrl(env, tableName) { return new URL(`${AIRTABLE_API}/${encodeURIComponent(clean(env.AIRTABLE_BASE_ID))}/${encodeURIComponent(tableName)}`); }
 function paymentProofTable(env) { return clean(env.AIRTABLE_TABLE_PAYMENT_PROOFS || env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || PAYMENT_PROOFS); }
 function renewalTable(env) { return clean(env.AIRTABLE_TABLE_LIFF_RENEWAL_SESSIONS_ID || env.AIRTABLE_TABLE_LIFF_RENEWAL_SESSIONS || RENEWALS); }
 function membersTable(env) { return clean(env.AIRTABLE_TABLE_MEMBERS_ID || env.AIRTABLE_TABLE_MEMBERS || MEMBERS); }
