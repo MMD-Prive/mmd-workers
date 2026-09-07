@@ -1,0 +1,41 @@
+name: Kenji Matrix Continuity CI
+
+on:
+  pull_request:
+    paths:
+      - "shared/kenji-conversation-matrix.mjs"
+      - "shared/kenji-conversation-policy-core.mjs"
+      - "shared/kenji-conversation-matrix.test.mjs"
+      - "ai-worker/src/services/kenji-conversation-matrix.js"
+      - "ai-worker/src/routes/kenji-conversation-matrix.js"
+      - "ai-worker/test/kenji-conversation-matrix.test.mjs"
+      - "ai-worker/package.json"
+      - ".github/workflows/kenji-matrix-continuity-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x, 22.x]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Validate canonical shared Matrix and Continuity Resolver
+        run: |
+          node --check shared/kenji-conversation-matrix.mjs
+          node --check shared/kenji-conversation-policy-core.mjs
+          node --test shared/kenji-conversation-matrix.test.mjs
+
+      - name: Validate ai-worker adapter and compatibility tests
+        run: npm test --prefix ai-worker
