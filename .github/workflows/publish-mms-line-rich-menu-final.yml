@@ -192,7 +192,7 @@ jobs:
 
           cleanup() {
             set +e
-            printf 'y\n' | npx --yes wrangler@4 secret delete MMS_RICH_MENU_PUBLISH_TOKEN --config "$WORKER_CONFIG" >/tmp/mms-rich-menu-secret-delete.log 2>&1
+            printf 'y\n' | npx --yes wrangler@4 secret delete MMS_RICH_MENU_PUBLISH_TOKEN --config "$WORKER_CONFIG" --env="" >/tmp/mms-rich-menu-secret-delete.log 2>&1
             cleanup_status=$?
             cat /tmp/mms-rich-menu-secret-delete.log
             if [ "$cleanup_status" -ne 0 ]; then
@@ -202,7 +202,33 @@ jobs:
           }
           trap cleanup EXIT
 
-          printf '%s' "$publish_token" | npx --yes wrangler@4 secret put MMS_RICH_MENU_PUBLISH_TOKEN --config "$WORKER_CONFIG"
+          printf '%s' "$publish_token" | npx --yes wrangler@4 secret put MMS_RICH_MENU_PUBLISH_TOKEN --config "$WORKER_CONFIG" --env=""
+
+          auth_ready=0
+          probe_file="$RUNNER_TEMP/mms-rich-menu-publisher-probe.json"
+          for attempt in $(seq 1 30); do
+            probe_code="$(curl --silent --show-error \
+              --output "$probe_file" \
+              --write-out '%{http_code}' \
+              --request POST \
+              --header "Authorization: Bearer $publish_token" \
+              --header "Content-Type: image/jpeg" \
+              --data-binary '' \
+              "$PUBLISH_URL" || true)"
+            if [ "$probe_code" = "400" ] && node - "$probe_file" <<'NODE'
+          const fs = require("node:fs");
+          const body = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          process.exit(body?.stage === "image_empty" ? 0 : 1);
+          NODE
+            then
+              auth_ready=1
+              echo "Temporary MMS Rich Menu publisher credential is live"
+              break
+            fi
+            echo "Waiting for temporary publisher credential propagation ($attempt/30; HTTP $probe_code)"
+            sleep 2
+          done
+          test "$auth_ready" = "1"
 
           response_file="$RUNNER_TEMP/mms-rich-menu-publish-response.json"
           http_code="$(curl --silent --show-error \
