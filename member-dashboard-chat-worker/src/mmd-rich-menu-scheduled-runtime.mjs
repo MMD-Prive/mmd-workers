@@ -7,7 +7,7 @@ const ENTITLEMENTS_TABLE = "tblNImdF9PKAxhXGi";
 const LIFF_ID = "2010862595-yT4DCEMc";
 const MAX_IMAGE_BYTES = 1024 * 1024;
 const SYNC_PATH = "/v1/internal/line/rich-menu/sync";
-const VERSION = "mmd-rm3-20260908-v1";
+const VERSION = "mmd-rm3-20260908-v2";
 const ROOT = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90";
 
 function clean(v) { return String(v == null ? "" : v).trim(); }
@@ -27,12 +27,12 @@ const MENUS = Object.freeze({
       `${ROOT}/6a9ef89d2b35f4308fb3de8e_Rich%20Menu%20Guest-p-800.png`,
     ],
     actions: [
-      uri("START HERE", site("/public/access", "rich_menu_guest")),
+      uri("START HERE", site("/public/access", "rich_menu_guest_start")),
       uri("PUBLIC MODELS", site("/profiles", "rich_menu_guest_models")),
       uri("BOOKING", site("/booking", "rich_menu_guest_booking")),
       uri("PUBLIC SERVICES", site("/services/companion", "rich_menu_guest_services")),
       uri("ABOUT MMD", site("/tmib", "rich_menu_guest_about")),
-      msg("SUPPORT", "Hi Per"),
+      msg("SUPPORT", "ขอคุยกับเจ้าหน้าที่"),
     ],
   },
   public: {
@@ -47,8 +47,8 @@ const MENUS = Object.freeze({
       uri("PUBLIC MODELS", site("/profiles", "rich_menu_public_models")),
       uri("BOOKING", site("/booking", "rich_menu_public_booking")),
       uri("MY MMD", liff()),
-      uri("PRIVE ACCESS", site("/member/membership", "rich_menu_prive_access")),
-      msg("SUPPORT", "Support"),
+      uri("PRIVE ACCESS", site("/membership", "rich_menu_prive_access")),
+      msg("SUPPORT", "ขอคุยกับเจ้าหน้าที่"),
     ],
   },
   private: {
@@ -60,14 +60,21 @@ const MENUS = Object.freeze({
     ],
     actions: [
       msg("KENJI AI", "Hi Kenji"),
-      uri("MODEL CARDS", site("/member/private", "rich_menu_model_cards")),
-      uri("BOOKING", site("/booking", "rich_menu_private_booking")),
+      uri("MODEL CARDS", site("/member/private#detail-model", "rich_menu_model_cards")),
+      uri("BOOKING", site("/find", "rich_menu_private_booking")),
       uri("MY MMD", liff()),
-      uri("PRIVE UPDATE", site("/member/private", "rich_menu_prive_update")),
-      msg("SUPPORT", "Support"),
+      uri("PRIVE UPDATE", site("/member/private#access", "rich_menu_prive_update")),
+      msg("SUPPORT", "ขอคุยกับเจ้าหน้าที่"),
     ],
   },
 });
+
+export function getMmdRichMenuActionMap() {
+  return Object.fromEntries(Object.entries(MENUS).map(([key, spec]) => [
+    key,
+    spec.actions.map((action) => ({ ...action })),
+  ]));
+}
 
 export function bangkokHour(now = new Date()) { return new Date(now.getTime() + 7 * 3600_000).getUTCHours(); }
 export function isMmdRichMenuHidden(now = new Date()) { const h = bangkokHour(now); return h >= 16 && h < 23; }
