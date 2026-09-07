@@ -8,6 +8,7 @@ const MATRIX_TABLE_FALLBACK = "tblS6iRgPjYLBqZJh";
 const CLIENTS_TABLE_FALLBACK = "tblVv58TCbwh5j1fS";
 const LINE_CHANNEL = "line_ofc";
 const AIRTABLE_READ_TIMEOUT_MS = 700;
+const AIRTABLE_WRITE_RECOVERY_TIMEOUT_MS = 1600;
 const MATRIX_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const F = Object.freeze({
@@ -106,14 +107,14 @@ async function sha256Hex(value) {
   return [...new Uint8Array(digest)].map((item) => item.toString(16).padStart(2, "0")).join("");
 }
 
-async function airtableList(env = {}, table = "", params = {}) {
+async function airtableList(env = {}, table = "", params = {}, timeoutMs = AIRTABLE_READ_TIMEOUT_MS) {
   const apiKey = text(env.AIRTABLE_API_KEY);
   const baseId = text(env.AIRTABLE_BASE_ID);
   const tableId = text(table);
   if (!apiKey || !baseId || !tableId) return { ok: false, records: [], reason: "airtable_env_missing" };
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort("kenji_matrix_timeout"), AIRTABLE_READ_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort("kenji_matrix_timeout"), timeoutMs);
   try {
     const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableId)}`);
     Object.entries(params).forEach(([key, value]) => {
@@ -193,11 +194,11 @@ function mapMatrixRecord(row = null) {
   });
 }
 
-async function findMatrix(env, conversationHash) {
+async function findMatrix(env, conversationHash, timeoutMs = AIRTABLE_READ_TIMEOUT_MS) {
   const result = await airtableList(env, matrixTable(env), {
     pageSize: 1,
     filterByFormula: `{${F.MATRIX_CONVERSATION_HASH}}=\"${escapeFormulaValue(conversationHash)}\"`,
-  });
+  }, timeoutMs);
   return { ...result, record: result.records[0] || null };
 }
 
@@ -515,6 +516,27 @@ function matrixFields(matrix = {}, continuity = {}, decision = {}, delivered = f
   };
 }
 
+async function recoverContinuityStorageForWrite(env = {}, continuity = {}) {
+  if (text(continuity.storage_status) === "ready") return continuity;
+  const conversationHash = text(continuity.conversation_hash);
+  if (!conversationHash) return continuity;
+
+  const lookup = await findMatrix(env, conversationHash, AIRTABLE_WRITE_RECOVERY_TIMEOUT_MS);
+  if (!lookup.ok || !lookup.record) return continuity;
+  const matrix = mapMatrixRecord(lookup.record);
+  if (!matrix) return continuity;
+
+  return {
+    ...continuity,
+    matrix,
+    matrix_record_id: text(lookup.record.id),
+    client_record_id: text(matrix.client_record_id || continuity.client_record_id),
+    storage_status: "ready",
+    available: true,
+    write_recovered: true,
+  };
+}
+
 export async function writeKenjiLineMatrixTurn({
   env = {},
   continuity = {},
@@ -524,13 +546,18 @@ export async function writeKenjiLineMatrixTurn({
   lastEventId = "",
   now = "",
 } = {}) {
-  if (text(continuity.storage_status) !== "ready" || !text(continuity.conversation_hash)) {
-    return { skipped: true, reason: "continuity_storage_unavailable" };
+  const writeContinuity = await recoverContinuityStorageForWrite(env, continuity);
+  if (text(writeContinuity.storage_status) !== "ready" || !text(writeContinuity.conversation_hash)) {
+    return {
+      skipped: true,
+      reason: "continuity_storage_unavailable",
+      recovery_attempted: text(continuity.storage_status) !== "ready" && Boolean(text(continuity.conversation_hash)),
+    };
   }
 
-  const matrix = buildKenjiPostTurnMatrix({ continuity, decision, delivered, attempted, lastEventId, now });
-  const fields = matrixFields(matrix, continuity, decision, delivered, attempted);
-  const recordId = text(continuity.matrix_record_id);
+  const matrix = buildKenjiPostTurnMatrix({ continuity: writeContinuity, decision, delivered, attempted, lastEventId, now });
+  const fields = matrixFields(matrix, writeContinuity, decision, delivered, attempted);
+  const recordId = text(writeContinuity.matrix_record_id);
   const result = recordId
     ? await airtableWrite(env, matrixTable(env), "PATCH", { records: [{ id: recordId, fields }], typecast: true })
     : await airtableWrite(env, matrixTable(env), "POST", { records: [{ fields }], typecast: true });
@@ -540,6 +567,7 @@ export async function writeKenjiLineMatrixTurn({
   return {
     id: text(row?.id),
     created: !recordId,
+    recovered: writeContinuity.write_recovered === true,
     version: matrix.version,
     stage: matrix.conversation_stage,
     matrix,
