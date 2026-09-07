@@ -1,6 +1,7 @@
 import coreWorker from "./admin-login-hero-worker-core.js";
 import dashboardWorker from "./dashboard-worker.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
+import { tryHandleEmailLessLineRenewalRecovery } from "./payment-review-line-recovery.js";
 export * from "./admin-login-hero-worker-core.js";
 
 /*
@@ -14,18 +15,11 @@ isPaymentReviewRequest
 handlePaymentReviewRequest
 isPaymentEntitlementApprovalRequest
 handlePaymentEntitlementApproval
-
-async function applyCredentialBoundAdminGate
-isBrowserAdminPath(path)
-credential-required
-function isGateBypassedAdminPath
-function isBrowserAdminPath
-path.startsWith("/internal/admin")
-function isApiAdminPath
 */
 
 const AI_OPS_CLIENT_SRC = "/v1/admin/ai-ops/client.js?v=1";
 const ADMIN_DASHBOARD_PATH = "/v1/admin/dashboard";
+const PAYMENT_REVIEW_PATH = "/v1/admin/payments/review";
 const AI_OPS_WORKER_PAGES = new Set([
   "/internal/admin/kenji",
   "/internal/admin/mms",
@@ -33,11 +27,27 @@ const AI_OPS_WORKER_PAGES = new Set([
 
 export default {
   async fetch(request, env, ctx) {
-    if (normalizePath(new URL(request.url).pathname) === ADMIN_DASHBOARD_PATH) {
+    const path = normalizePath(new URL(request.url).pathname);
+    if (path === ADMIN_DASHBOARD_PATH) {
       return handleCredentialBoundDashboard(request, env, ctx);
     }
-    const response = await coreWorker.fetch(request, env, ctx);
-    return injectAdminAiOpsPage(request, response);
+
+    // Preserve the already-guarded canonical Payment Review path. The clone is
+    // used only if the canonical runtime rejects an otherwise valid reviewed
+    // renewal because the recovered historical member has no email address.
+    // Unauthorized/cross-origin/non-owner requests never enter the fallback.
+    const recoveryRequest = path === PAYMENT_REVIEW_PATH && request.method.toUpperCase() === "POST"
+      ? request.clone()
+      : null;
+
+    let response = await coreWorker.fetch(request, env, ctx);
+    if (recoveryRequest && response.status === 409) {
+      const actor = await readCredentialBoundAdminActor(recoveryRequest, env);
+      if (actor) {
+        response = await tryHandleEmailLessLineRenewalRecovery(recoveryRequest, env, actor, response);
+      }
+    }
+    return injectAdminAiOpsPage(recoveryRequest || request, response);
   },
 };
 

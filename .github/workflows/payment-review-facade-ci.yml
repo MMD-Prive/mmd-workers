@@ -5,11 +5,13 @@ on:
     paths:
       - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/src/payment-review-runtime.js"
+      - "admin-worker/src/payment-review-line-recovery.js"
       - "admin-worker/line-slip-intake-review-queue.contract.test.mjs"
       - "admin-worker/payment-review-manual-renewal-recovery.test.mjs"
       - "admin-worker/wrangler.toml"
       - "payments-worker/index.review-wrapper.js"
       - "payments-worker/reviewed-proof.js"
+      - "payments-worker/reviewed-proof-line-recovery.test.mjs"
       - "payments-worker/wrangler.merged.toml"
       - ".github/workflows/deploy-admin-worker.yml"
       - ".github/workflows/payment-review-facade-ci.yml"
@@ -32,6 +34,7 @@ jobs:
           set -euo pipefail
           node --check admin-worker/src/admin-login-hero-worker.js
           node --check admin-worker/src/payment-review-runtime.js
+          node --check admin-worker/src/payment-review-line-recovery.js
           node --check payments-worker/index.review-wrapper.js
           node --check payments-worker/reviewed-proof.js
 
@@ -44,6 +47,11 @@ jobs:
         run: |
           set -euo pipefail
           node --test admin-worker/payment-review-manual-renewal-recovery.test.mjs
+
+      - name: Email-less LINE renewal recovery contract
+        run: |
+          set -euo pipefail
+          node --test payments-worker/reviewed-proof-line-recovery.test.mjs
 
       - name: Browser facade guardrails
         run: |
@@ -60,6 +68,8 @@ jobs:
           grep -F 'manual_recovery_requires_canonical_member: true' admin-worker/src/payment-review-runtime.js
           grep -F 'ordering: "created_at_desc"' admin-worker/src/payment-review-runtime.js
           grep -F 'sort: [{ field: "created_at", direction: "desc" }]' admin-worker/src/payment-review-runtime.js
+          grep -F 'browser_can_mark_paid: false' admin-worker/src/payment-review-line-recovery.js
+          grep -F 'browser_can_mutate_entitlement: false' admin-worker/src/payment-review-line-recovery.js
 
       - name: Payment Review fail-closed hardening
         run: |
@@ -73,6 +83,8 @@ jobs:
           grep -F 'context_source: "liff_renewal_recovery"' admin-worker/src/payment-review-runtime.js
           grep -F 'manual_recovery_requires_owner_admin' admin-worker/src/payment-review-runtime.js
           grep -F 'canonical_member_context_ambiguous' admin-worker/src/payment-review-runtime.js
+          grep -F 'const RENEWAL_PRICE = Object.freeze({ standard: 1000, premium: 2500 });' admin-worker/src/payment-review-line-recovery.js
+          grep -F 'context_source: "liff_renewal_recovery"' admin-worker/src/payment-review-line-recovery.js
           if grep -F 'maxRecords: 2 }).catch(() => [])' admin-worker/src/payment-review-runtime.js; then
             echo 'audit idempotency lookup must fail closed; swallowed Airtable error found' >&2
             exit 1
@@ -83,9 +95,13 @@ jobs:
           set -euo pipefail
           grep -F 'AUTH_SERVICE_ADMIN_TO_PAYMENTS' admin-worker/src/payment-review-runtime.js
           grep -F '/v1/internal/payments/reviewed-proof' admin-worker/src/payment-review-runtime.js
+          grep -F 'AUTH_SERVICE_ADMIN_TO_PAYMENTS' admin-worker/src/payment-review-line-recovery.js
+          grep -F '/v1/internal/payments/reviewed-proof' admin-worker/src/payment-review-line-recovery.js
           grep -F 'AUTH_SERVICE_ADMIN_TO_PAYMENTS' payments-worker/reviewed-proof.js
           grep -F 'historical_proof_requires_historical_review_contract' payments-worker/reviewed-proof.js
           grep -F 'X-MMD-Payment-Authority' payments-worker/reviewed-proof.js
+          grep -F 'materializeRecoveredMembership' payments-worker/reviewed-proof.js
+          grep -F 'downstream_access_reconcile_required' payments-worker/reviewed-proof.js
           if grep -F 'AUTH_SERVICE_ADMIN_TO_PAYMENTS' webflow/internal/admin/payments 2>/dev/null; then
             echo 'service secret reference found in Webflow payment assets' >&2
             exit 1
