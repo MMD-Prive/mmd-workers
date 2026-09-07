@@ -7,6 +7,7 @@ import {
 import { redeliveryOutcomeFromAiEvent } from "./kenji-line-redelivery-policy.mjs";
 
 const AI_EVENTS_TABLE_FALLBACK = "tbljCYfYqfm8gBTPq";
+const MEMBERSHIP_STATUS_CANONICAL_TEXT = "สถานะสมาชิกของผม";
 
 function text(value) {
   return value == null ? "" : String(value).trim();
@@ -26,6 +27,31 @@ function json(payload, status = 200) {
       "x-mmd-kenji-redelivery": "recovery-v1",
     },
   });
+}
+
+function membershipStatusText(value = "") {
+  const normalized = text(value).normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+  if (!normalized) return false;
+  if (/(?:membership|member)\s*status|status\s*(?:membership|member)/i.test(normalized)) return true;
+  if (/(?:เช็ก|เช็ค|ตรวจ|ตรวจสอบ|ดู|ขอดู|ขอเช็ก|ขอเช็ค).{0,16}สถานะ(?:การ)?สมาชิก/i.test(normalized)) return true;
+  if (/สถานะ(?:การ)?สมาชิก.{0,20}(?:ของผม|ของฉัน|ของหนู|ของเรา|ตอนนี้|ปัจจุบัน|เป็นยังไง|เป็นอย่างไร|ยังอยู่|active|inactive|expired|หมดอายุ)/i.test(normalized)) return true;
+  return /(?:สมาชิก|membership).{0,16}(?:active|inactive|expired|หมดอายุ|ยังอยู่|ยังเป็นสมาชิก)/i.test(normalized);
+}
+
+function membershipStatusEvent(event = {}) {
+  if (event?.type !== "message" || event?.message?.type !== "text") return false;
+  return membershipStatusText(event?.message?.text);
+}
+
+function refineMembershipStatusEvent(event = {}) {
+  if (!membershipStatusEvent(event)) return event;
+  return {
+    ...event,
+    message: {
+      ...(event.message || {}),
+      text: MEMBERSHIP_STATUS_CANONICAL_TEXT,
+    },
+  };
 }
 
 async function findAiEvent(env = {}, event = {}) {
@@ -94,9 +120,9 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
   const redeliveryIndexes = events
     .map((event, index) => event?.deliveryContext?.isRedelivery === true ? index : -1)
     .filter((index) => index >= 0);
-  if (!redeliveryIndexes.length) {
-    return handleKenjiSeedLineRequest(request, env, ctx, legacyWorker);
-  }
+  const membershipStatusIndexes = events
+    .map((event, index) => membershipStatusEvent(event) ? index : -1)
+    .filter((index) => index >= 0);
 
   const outcomes = new Map();
   await Promise.all(redeliveryIndexes.map(async (index) => {
@@ -105,27 +131,33 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
   }));
 
   const hasRecoverable = redeliveryIndexes.some((index) => outcomes.get(index)?.retry_allowed === true);
-  if (!hasRecoverable) {
+  const hasMembershipStatusRefinement = membershipStatusIndexes.length > 0;
+  if (!hasRecoverable && !hasMembershipStatusRefinement) {
     return handleKenjiSeedLineRequest(request, env, ctx, legacyWorker);
   }
 
-  const recoveredEvents = events.map((event, index) => recoverableEvent(event, outcomes.get(index) || {}));
-  const recoveredBody = JSON.stringify({ ...body, events: recoveredEvents });
-  const recoveredSignature = await createLineSignature(recoveredBody, env.LINE_CHANNEL_SECRET);
+  const transformedEvents = events.map((event, index) => {
+    const recovered = recoverableEvent(event, outcomes.get(index) || {});
+    return membershipStatusIndexes.includes(index) ? refineMembershipStatusEvent(recovered) : recovered;
+  });
+  const transformedBody = JSON.stringify({ ...body, events: transformedEvents });
+  const transformedSignature = await createLineSignature(transformedBody, env.LINE_CHANNEL_SECRET);
   const headers = new Headers(request.headers);
-  headers.set("x-line-signature", recoveredSignature);
-  headers.set("x-mmd-line-redelivery-recovered", "1");
+  headers.set("x-line-signature", transformedSignature);
+  if (hasRecoverable) headers.set("x-mmd-line-redelivery-recovered", "1");
+  if (hasMembershipStatusRefinement) headers.set("x-mmd-line-intent-refined", "membership_status");
 
-  const recoveredRequest = new Request(request.url, {
+  const transformedRequest = new Request(request.url, {
     method: "POST",
     headers,
-    body: recoveredBody,
+    body: transformedBody,
   });
 
-  const response = await handleKenjiSeedLineRequest(recoveredRequest, env, ctx, legacyWorker);
+  const response = await handleKenjiSeedLineRequest(transformedRequest, env, ctx, legacyWorker);
   if (!response?.headers) return response;
   const responseHeaders = new Headers(response.headers);
-  responseHeaders.set("x-mmd-kenji-redelivery", "recovered");
+  if (hasRecoverable) responseHeaders.set("x-mmd-kenji-redelivery", "recovered");
+  if (hasMembershipStatusRefinement) responseHeaders.set("x-mmd-kenji-intent-refined", "membership_status");
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
