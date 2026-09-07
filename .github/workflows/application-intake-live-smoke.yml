@@ -20,7 +20,7 @@ jobs:
         shell: bash
         run: |
           node <<'NODE'
-          const runId = String(process.env.GITHUB_RUN_ID || Date.now());
+          const runId = `${process.env.GITHUB_RUN_ID || Date.now()}-${process.env.GITHUB_RUN_ATTEMPT || "1"}`;
           const publicOrigin = "https://www.mmdbkk.com";
           const internalOrigin = "https://www.mmdbkk.com";
           const failures = [];
