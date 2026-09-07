@@ -103,25 +103,28 @@ test("LINE ingress trace persists before handler without mutating signed request
       return new Response(JSON.stringify({ id: "rec-ingress-trace" }), { status: 200, headers: { "content-type": "application/json" } });
     }
     throw new Error(`unexpected fetch ${target}`);
-  }, () => handleKenjiLineWithIngressTrace({
-    request,
-    env,
-    ctx: { waitUntil: (promise) => waitUntil.push(promise) },
-    handler: async (originalRequest) => {
-      handlerSignature = originalRequest.headers.get("x-line-signature") || "";
-      handlerBody = await originalRequest.text();
-      return new Response("handler-ok", {
-        status: 202,
-        headers: {
-          "x-mmd-worker": "member-dashboard-chat-worker",
-          "x-mmd-kenji-runtime": "seed-pack-v1",
-          "x-mmd-kenji-intent-refined": "membership_status",
-        },
-      });
-    },
-  }));
+  }, async () => {
+    const tracedResponse = await handleKenjiLineWithIngressTrace({
+      request,
+      env,
+      ctx: { waitUntil: (promise) => waitUntil.push(promise) },
+      handler: async (originalRequest) => {
+        handlerSignature = originalRequest.headers.get("x-line-signature") || "";
+        handlerBody = await originalRequest.text();
+        return new Response("handler-ok", {
+          status: 202,
+          headers: {
+            "x-mmd-worker": "member-dashboard-chat-worker",
+            "x-mmd-kenji-runtime": "seed-pack-v1",
+            "x-mmd-kenji-intent-refined": "membership_status",
+          },
+        });
+      },
+    });
+    await Promise.allSettled(waitUntil);
+    return tracedResponse;
+  });
 
-  await Promise.allSettled(waitUntil);
   assert.equal(response.status, 202);
   assert.equal(await response.text(), "handler-ok");
   assert.equal(handlerBody, raw);
@@ -156,17 +159,20 @@ test("LINE ingress trace persistence failure never blocks canonical handler", as
 
   const response = await withFetch(async () => {
     throw new Error("airtable unavailable");
-  }, () => handleKenjiLineWithIngressTrace({
-    request,
-    env,
-    ctx: { waitUntil: (promise) => pending.push(promise) },
-    handler: async () => {
-      handlerCalls += 1;
-      return new Response("still-ok", { status: 200 });
-    },
-  }));
+  }, async () => {
+    const tracedResponse = await handleKenjiLineWithIngressTrace({
+      request,
+      env,
+      ctx: { waitUntil: (promise) => pending.push(promise) },
+      handler: async () => {
+        handlerCalls += 1;
+        return new Response("still-ok", { status: 200 });
+      },
+    });
+    await Promise.allSettled(pending);
+    return tracedResponse;
+  });
 
-  await Promise.allSettled(pending);
   assert.equal(handlerCalls, 1);
   assert.equal(response.status, 200);
   assert.equal(await response.text(), "still-ok");
