@@ -4,17 +4,21 @@ on:
   pull_request:
     paths:
       - "immigrate-worker/public/a/member-intelligence.js"
+      - "immigrate-worker/src/canonical-admin-login-core.ts"
       - "immigrate-worker/wrangler.toml"
       - "immigrate-worker/test/member-intelligence-runtime.test.mjs"
       - ".github/workflows/member-intelligence-runtime.yml"
+      - ".github/workflows/deploy-immigrate-worker.yml"
   push:
     branches:
       - main
     paths:
       - "immigrate-worker/public/a/member-intelligence.js"
+      - "immigrate-worker/src/canonical-admin-login-core.ts"
       - "immigrate-worker/wrangler.toml"
       - "immigrate-worker/test/member-intelligence-runtime.test.mjs"
       - ".github/workflows/member-intelligence-runtime.yml"
+      - ".github/workflows/deploy-immigrate-worker.yml"
   workflow_dispatch:
 
 permissions:
@@ -36,11 +40,13 @@ jobs:
       - name: Run Member Intelligence authority contract
         run: node immigrate-worker/test/member-intelligence-runtime.test.mjs
 
-      - name: Verify exact asset routes
+      - name: Verify exact extensionless routes
         run: |
           set -euo pipefail
-          grep -F 'pattern = "mmdbkk.com/a/member-intelligence.js"' immigrate-worker/wrangler.toml
-          grep -F 'pattern = "www.mmdbkk.com/a/member-intelligence.js"' immigrate-worker/wrangler.toml
+          grep -F 'pattern = "mmdbkk.com/internal/admin/member-intelligence/runtime"' immigrate-worker/wrangler.toml
+          grep -F 'pattern = "www.mmdbkk.com/internal/admin/member-intelligence/runtime"' immigrate-worker/wrangler.toml
+          ! grep -F 'pattern = "mmdbkk.com/a/member-intelligence.js"' immigrate-worker/wrangler.toml
+          ! grep -F 'pattern = "www.mmdbkk.com/a/member-intelligence.js"' immigrate-worker/wrangler.toml
 
       - name: Wrangler dry run
         working-directory: immigrate-worker
@@ -66,7 +72,7 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ROUTES_API_TOKEN=${token}\n`);
           NODE
 
-      - name: Sync exact Member Intelligence asset routes
+      - name: Sync exact Member Intelligence runtime routes
         shell: bash
         run: |
           set -euo pipefail
@@ -75,6 +81,10 @@ jobs:
           const zoneId = process.env.CLOUDFLARE_ZONE_ID;
           const worker = process.env.WORKER_NAME;
           const desired = [
+            "mmdbkk.com/internal/admin/member-intelligence/runtime",
+            "www.mmdbkk.com/internal/admin/member-intelligence/runtime",
+          ];
+          const obsolete = [
             "mmdbkk.com/a/member-intelligence.js",
             "www.mmdbkk.com/a/member-intelligence.js",
           ];
@@ -97,19 +107,27 @@ jobs:
             const conflict = existing.find((route) => route.pattern === pattern && route.script !== worker);
             if (conflict) throw new Error(`route conflict ${pattern} -> ${conflict.script || "none"}`);
           }
+          for (const pattern of obsolete) {
+            const route = existing.find((item) => item.pattern === pattern && item.script === worker);
+            if (!route) continue;
+            await cf(`${routePath}/${route.id}`, { method: "DELETE" });
+            console.log(`removed obsolete ${pattern} -> ${worker}`);
+          }
+          existing = await cf(routePath);
           for (const pattern of desired) {
             if (existing.some((route) => route.pattern === pattern && route.script === worker)) continue;
             await cf(routePath, { method: "POST", body: JSON.stringify({ pattern, script: worker }) });
             console.log(`created ${pattern} -> ${worker}`);
-            existing = await cf(routePath);
           }
           const verified = await cf(routePath);
           const missing = desired.filter((pattern) => !verified.some((route) => route.pattern === pattern && route.script === worker));
+          const stale = obsolete.filter((pattern) => verified.some((route) => route.pattern === pattern && route.script === worker));
           if (missing.length) throw new Error(`missing routes: ${missing.join(", ")}`);
-          console.log(`verified ${desired.length}/${desired.length} Member Intelligence asset routes`);
+          if (stale.length) throw new Error(`obsolete routes still present: ${stale.join(", ")}`);
+          console.log(`verified ${desired.length}/${desired.length} extensionless Member Intelligence routes`);
           NODE
 
-      - name: Verify Member Intelligence runtime asset in production
+      - name: Verify Member Intelligence runtime in production
         shell: bash
         run: |
           set -euo pipefail
@@ -117,12 +135,14 @@ jobs:
             ready=0
             body="$(mktemp)"
             headers="$(mktemp)"
-            for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            for attempt in 1 2 3 4 5 6 7 8; do
               : > "$body"
               : > "$headers"
-              code="$(curl -sSL -D "$headers" -o "$body" -w '%{http_code}' "${origin}/a/member-intelligence.js?v=${GITHUB_SHA}&attempt=${attempt}")"
+              code="$(curl -sS -D "$headers" -o "$body" -w '%{http_code}' "${origin}/internal/admin/member-intelligence/runtime?v=${GITHUB_SHA}&attempt=${attempt}")"
               if [ "$code" = "200" ] \
                 && grep -Eiq '^content-type:[[:space:]]*(application|text)/(javascript|ecmascript)' "$headers" \
+                && grep -Eiq '^x-mmd-member-intelligence-runtime:[[:space:]]*extensionless-v1' "$headers" \
+                && grep -Eiq '^x-mmd-member-intelligence-authority:[[:space:]]*canonical-read-models-only' "$headers" \
                 && grep -q '/v1/admin/clients/recent' "$body" \
                 && grep -q '/v1/admin/clients/lineage-lookup' "$body" \
                 && grep -q 'My MMD Resolver' "$body"; then
@@ -130,12 +150,16 @@ jobs:
                 ready=1
                 break
               fi
-              echo "Runtime not propagated for ${origin} (attempt ${attempt}, HTTP ${code}); retrying..."
-              sleep 5
+              echo "Runtime not ready for ${origin} (attempt ${attempt}, HTTP ${code}); retrying..."
+              grep -Ei '^(HTTP/|content-type:|location:|x-mmd-member-intelligence-|server:|cf-ray:)' "$headers" || true
+              sleep 3
             done
-            rm -f "$body" "$headers"
             if [ "$ready" != "1" ]; then
               echo "Member Intelligence runtime production verification failed for ${origin}" >&2
+              head -c 240 "$body" >&2 || true
+              echo >&2
+              rm -f "$body" "$headers"
               exit 1
             fi
+            rm -f "$body" "$headers"
           done
