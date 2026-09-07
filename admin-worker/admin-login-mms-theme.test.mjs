@@ -17,6 +17,7 @@ test("MMS partner login uses final Image A composition and canonical access scop
   assert.match(csp, /img-src https:\/\/cdn\.prod\.website-files\.com data:/);
   assert.match(html, /data-initial-lane="partner"/);
   assert.match(html, /data-layout="image-a-cinematic"/);
+  assert.match(html, /data-density="compact"/);
 
   assert.match(html, /LINESeedSansTH_W_Rg\.woff2/);
   assert.match(html, /LINESeedSansTH_W_Bd\.woff2/);
@@ -44,6 +45,10 @@ test("MMS partner login uses final Image A composition and canonical access scop
   assert.match(html, /--green:#003704/);
   assert.match(html, /lane\[data-lane="partner"\]\.is-active/);
   assert.match(html, /#2cec8f/);
+  assert.match(html, /max-height:calc\(100svh - 32px\)/);
+  assert.match(html, /@media\(min-width:901px\) and \(max-height:760px\)/);
+  assert.match(html, /@media\(max-width:900px\)/);
+  assert.match(html, /@media\(max-width:460px\)/);
   assert.doesNotMatch(html, /class="mms-mark"/);
   assert.doesNotMatch(html, /#71937a|#405f4c|#456b55|#6e9279/);
   assert.doesNotMatch(html, /เข้าพื้นที่ทำงานของคุณ/);
