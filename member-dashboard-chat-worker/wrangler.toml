@@ -19,6 +19,13 @@ service = "ai-worker"
 binding = "MMS_WORKER"
 service = "mms-worker"
 
+# Downstream-only notification path for pending LINE payment evidence. Telegram
+# never becomes payment or entitlement truth; it only alerts the operator after
+# a pending Payment Proof row has been persisted successfully.
+[[services]]
+binding = "TELEGRAM_WORKER"
+service = "telegram-worker"
+
 [[r2_buckets]]
 binding = "LINE_SLIP_EVIDENCE"
 bucket_name = "mmd-line-slip-evidence"
@@ -194,7 +201,8 @@ zone_name = "mmdbkk.com"
 
 # Cloudflare-only LINE runtime.
 # Bind LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, INTERNAL_TOKEN,
-# MMS_LINE_CHANNEL_ACCESS_TOKEN, and MMS_LINE_CHANNEL_SECRET as Cloudflare secrets only.
+# AUTH_SERVICE_LINE_TO_TELEGRAM, MMS_LINE_CHANNEL_ACCESS_TOKEN, and
+# MMS_LINE_CHANNEL_SECRET as Cloudflare secrets only.
 # LINE_WEBHOOK_UPSTREAM_URL is retired and must remain unset.
 #
 # Production intake must stay available during ad campaigns. Keep these
@@ -219,11 +227,19 @@ KENJI_AI_WORKER_BRIDGE_ENABLED = "true"
 # Personal/crew LINE source IDs are never guessed. Populate this only when the
 # bot/OA is actually present in a Crew group/room and the source ID is reviewed.
 KENJI_LINE_CREW_SOURCE_IDS = ""
-# Only the reviewed MMD Privé Team group is eligible for payment-image capture.
-# The real LINE group ID is never committed; comparison is against SHA-256 only.
+# The reviewed MMD Privé Team group remains eligible for payment-image capture.
+# Direct customer images are additionally accepted only when recent payment /
+# renewal context exists, or when a bounded image candidate is immediately
+# followed by payment/access language from the same LINE user.
 LINE_PAYMENT_PROOF_GROUP_HASHES = "7cb8cf05c7e2ec9489d6ec9560de60fade231412f9dd82b89a7e51b58eba996f"
 LINE_SLIP_MAX_IMAGE_BYTES = "10485760"
+LINE_DIRECT_PAYMENT_CANDIDATE_TTL_MINUTES = "30"
+LINE_DIRECT_PAYMENT_CONTEXT_LOOKBACK_HOURS = "48"
 AIRTABLE_TABLE_PAYMENT_PROOFS_ID = "tblfJfM4Sqag9zrLi"
+# Pending proof alert destination. This is notification-only and cannot activate
+# payment, membership, points, booking, or access.
+TELEGRAM_OPS_CHAT_ID = "-1003546439681"
+TELEGRAM_PAYMENT_THREAD_ID = "21"
 # Model generation is a separate, production-gated capability. Keep it off in
 # committed configuration until an explicitly approved deployment enables it.
 LINE_KENJI_MODEL_ENABLED = "false"
