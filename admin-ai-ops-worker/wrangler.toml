@@ -1,5 +1,5 @@
 name = "admin-ai-ops-worker"
-main = "src/gate.js"
+main = "src/smart-match-bridge.js"
 compatibility_date = "2026-01-01"
 workers_dev = true
 
