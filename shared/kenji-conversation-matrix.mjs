@@ -1,3 +1,6 @@
+export const CONVERSATION_MATRIX_SCHEMA = "mmd.kenji_conversation_matrix.v1";
+export const CONTINUITY_RESOLVER_SCHEMA = "mmd.kenji_continuity_resolver.v1";
+
 const STAGES = Object.freeze(new Set([
   "new_topic",
   "in_progress",
@@ -43,14 +46,49 @@ const PROTECTED_INTENT_DOMAINS = Object.freeze({
   membership: ["membership", "entitlement"],
   membership_status: ["membership", "entitlement"],
   renewal: ["membership", "entitlement", "payment"],
+  membership_renewal: ["membership", "entitlement", "payment"],
   points: ["points"],
   points_status: ["points"],
   vip: ["entitlement"],
   svip: ["entitlement"],
   black_card: ["entitlement"],
   availability_request: ["availability", "booking"],
+  model_availability: ["availability", "booking"],
+  create_session: ["booking"],
+  booking: ["booking"],
+  pricing: ["pricing"],
   pricing_review: ["pricing"],
+  ask_where_to_get_rate: ["pricing"],
   model_access_verification: ["model_visibility", "entitlement"],
+});
+
+const CONTINUATION_CUE_RE = /^(?:ได้ยัง(?:ครับ|คะ|ค่ะ)?|ถึงไหน(?:แล้ว)?|โอเคยัง|เรียบร้อยยัง|เป็นไง(?:บ้าง)?|ยัง(?:ครับ|คะ|ค่ะ)?|แล้ว(?:ครับ|คะ|ค่ะ)?|มีอัปเดตไหม|อัปเดตหน่อย|update|status|done yet|any update)\b/i;
+const NEW_TOPIC_CUE_RE = /(?:^|\s)(?:อีกเรื่อง|เปลี่ยนเรื่อง|เรื่องใหม่|ถามอีกอย่าง|ถามเรื่องอื่น|new topic|another question|different topic)(?:\s|$)/i;
+
+const INTENT_TOPIC = Object.freeze({
+  payment_slip: "payment",
+  payment_status: "payment",
+  payment_dispute: "payment",
+  membership: "membership",
+  membership_status: "membership",
+  renewal: "membership",
+  membership_renewal: "membership",
+  points: "points",
+  points_status: "points",
+  vip: "membership",
+  svip: "membership",
+  black_card: "membership",
+  create_session: "booking",
+  booking: "booking",
+  availability_request: "booking",
+  model_availability: "booking",
+  pricing: "pricing",
+  pricing_review: "pricing",
+  ask_where_to_get_rate: "pricing",
+  model_access_verification: "model_access",
+  private_talent: "model_access",
+  aftercare: "aftercare",
+  support: "support",
 });
 
 function text(value) {
@@ -77,7 +115,30 @@ function normalizeEnum(value, allowed, fallback) {
 }
 
 function boundedText(value, max = 1200) {
-  return text(value).slice(0, max);
+  return text(value).replace(/\s+/g, " ").slice(0, max);
+}
+
+function unique(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function parseTime(value) {
+  const parsed = Date.parse(text(value));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function inferTopicFromIntent(intent = "") {
+  return INTENT_TOPIC[text(intent).toLowerCase()] || "";
+}
+
+function matrixExpired(matrix, now) {
+  const expires = parseTime(matrix?.state_expires_at);
+  const nowMs = parseTime(now);
+  return expires !== null && nowMs !== null && nowMs > expires;
+}
+
+function isOpenStage(stage) {
+  return !["resolved", "stale_needs_refresh"].includes(text(stage));
 }
 
 export function inferLiveTruthDomains(intent = "", explicitDomains = []) {
@@ -94,7 +155,7 @@ export function buildConversationMatrixV1(input = {}) {
   const now = text(input.state_updated_at || input.updated_at) || new Date().toISOString();
 
   return {
-    schema: "mmd.kenji_conversation_matrix.v1",
+    schema: CONVERSATION_MATRIX_SCHEMA,
     matrix_id: text(input.matrix_id),
     client_record_id: text(input.client_record_id),
     conversation_id_hash: text(input.conversation_id_hash),
@@ -155,12 +216,108 @@ export function buildConversationContinuityContext(matrix = {}) {
   };
 }
 
-export function isContinuationCandidate(message = "", matrix = {}) {
-  const normalized = text(message).toLowerCase();
-  if (!normalized || !text(matrix.topic)) return false;
-  if (["resolved", "stale_needs_refresh"].includes(text(matrix.conversation_stage))) return false;
-  if (/^(ได้ยัง|ถึงไหน|โอเคยัง|เรียบร้อยยัง|เป็นไง|ยังครับ|ยังคะ|ยังค่ะ|update|status|done yet)/i.test(normalized)) return true;
-  return Boolean(text(matrix.pending_action) || jsonArray(matrix.important_open_loops).length);
+export function resolveConversationContinuityV1(input = {}) {
+  const now = text(input.now) || new Date().toISOString();
+  const matrix = buildConversationMatrixV1(input.matrix || {});
+  const message = boundedText(input.message, 600);
+  const currentIntent = text(input.current_intent || input.intent).toLowerCase();
+  const previousIntent = text(matrix.last_customer_intent).toLowerCase();
+  const priorTopic = text(matrix.topic) || inferTopicFromIntent(previousIntent);
+  const inferredCurrentTopic = inferTopicFromIntent(currentIntent);
+  const currentTopic = boundedText(input.current_topic || inferredCurrentTopic, 160);
+  const currentSubtopic = boundedText(input.current_subtopic, 160);
+  const openLoops = jsonArray(matrix.important_open_loops);
+  const doNotAskAgain = jsonArray(matrix.do_not_ask_again);
+  const openState = isOpenStage(matrix.conversation_stage) && Boolean(priorTopic || matrix.pending_action || openLoops.length);
+  const expired = matrixExpired(matrix, now) || matrix.matrix_status === "stale";
+  const explicitNewTopic = input.explicit_new_topic === true || NEW_TOPIC_CUE_RE.test(message);
+  const continuationCue = CONTINUATION_CUE_RE.test(message);
+  const sameTopic = Boolean(currentTopic && priorTopic && currentTopic === priorTopic);
+  const differentTopic = Boolean(currentTopic && priorTopic && currentTopic !== priorTopic);
+  const sameIntent = Boolean(currentIntent && previousIntent && currentIntent === previousIntent);
+
+  let decision = "new_topic";
+  let confidence = 0.9;
+  let reason = "no_open_thread";
+  let inheritPreviousContext = false;
+  let requiresStateRefresh = false;
+
+  if (expired) {
+    decision = "stale_refresh";
+    confidence = 0.99;
+    reason = "matrix_expired_or_stale";
+    requiresStateRefresh = true;
+  } else if (explicitNewTopic) {
+    decision = "new_topic";
+    confidence = 0.99;
+    reason = "explicit_new_topic_signal";
+  } else if (openState && continuationCue) {
+    decision = "continuation";
+    confidence = 0.99;
+    reason = "continuation_cue_with_open_thread";
+    inheritPreviousContext = true;
+  } else if (openState && (sameTopic || sameIntent)) {
+    decision = "continuation";
+    confidence = 0.94;
+    reason = sameTopic ? "same_topic_open_thread" : "same_intent_open_thread";
+    inheritPreviousContext = true;
+  } else if (openState && differentTopic) {
+    decision = "new_topic";
+    confidence = 0.96;
+    reason = "strong_topic_switch";
+  } else if (openState && !currentTopic && (matrix.pending_action || openLoops.length)) {
+    decision = "ambiguous";
+    confidence = 0.62;
+    reason = "open_thread_but_message_not_specific_enough";
+    inheritPreviousContext = false;
+  }
+
+  const resolvedTopic = decision === "continuation"
+    ? priorTopic
+    : currentTopic || (decision === "stale_refresh" ? priorTopic : "");
+  const resolvedSubtopic = decision === "continuation" ? text(matrix.subtopic) : currentSubtopic;
+  const truthDomains = unique([
+    ...jsonArray(matrix.live_truth_domains),
+    ...inferLiveTruthDomains(previousIntent),
+    ...inferLiveTruthDomains(currentIntent),
+  ]).filter((domain) => LIVE_TRUTH_DOMAINS.has(domain));
+
+  return {
+    schema: CONTINUITY_RESOLVER_SCHEMA,
+    evaluated_at: now,
+    decision,
+    confidence,
+    reason,
+    inherit_previous_context: inheritPreviousContext,
+    topic: resolvedTopic,
+    subtopic: resolvedSubtopic,
+    previous_intent: previousIntent,
+    current_intent: currentIntent,
+    conversation_stage: decision === "stale_refresh"
+      ? "stale_needs_refresh"
+      : decision === "continuation"
+        ? matrix.conversation_stage
+        : "new_topic",
+    awaiting_from: decision === "continuation" ? matrix.awaiting_from : "none",
+    pending_action: decision === "continuation" ? matrix.pending_action : "",
+    pending_reference: decision === "continuation" ? matrix.pending_reference : "",
+    do_not_ask_again: decision === "continuation" ? doNotAskAgain : [],
+    important_open_loops: decision === "continuation" || decision === "stale_refresh" ? openLoops : [],
+    live_truth_required: Boolean(truthDomains.length || matrix.live_truth_required),
+    live_truth_domains: truthDomains,
+    requires_state_refresh: requiresStateRefresh,
+    matrix_version: matrix.version,
+  };
 }
 
-export { STAGES, RELATIONSHIP_CONTEXTS, LIVE_TRUTH_DOMAINS, PROTECTED_INTENT_DOMAINS };
+export function isContinuationCandidate(message = "", matrix = {}) {
+  return resolveConversationContinuityV1({ message, matrix }).decision === "continuation";
+}
+
+export {
+  STAGES,
+  RELATIONSHIP_CONTEXTS,
+  LIVE_TRUTH_DOMAINS,
+  PROTECTED_INTENT_DOMAINS,
+  INTENT_TOPIC,
+};
