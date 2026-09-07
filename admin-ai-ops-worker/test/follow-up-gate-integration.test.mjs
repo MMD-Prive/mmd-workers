@@ -5,7 +5,14 @@ import gate from "../src/gate.js";
 function fakeNamespace(handler) {
   return {
     idFromName(name) { return `id:${name}`; },
-    get() { return { fetch: handler }; },
+    get() {
+      return {
+        fetch(input, init) {
+          const request = input instanceof Request ? input : new Request(input, init);
+          return handler(request);
+        },
+      };
+    },
   };
 }
 
