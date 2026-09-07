@@ -1,0 +1,1 @@
+AI Ops may summarize, detect missing evidence, prioritize, and prepare navigation. It may not create money truth, entitlement truth, Telegram/Drive grants, or private model eligibility. Those remain with canonical backend owners and supervised actions.
