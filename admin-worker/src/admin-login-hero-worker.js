@@ -1,4 +1,6 @@
 import coreWorker from "./admin-login-hero-worker-core.js";
+import dashboardWorker from "./dashboard-worker.js";
+import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 export * from "./admin-login-hero-worker-core.js";
 
 /*
@@ -23,6 +25,7 @@ function isApiAdminPath
 */
 
 const AI_OPS_CLIENT_SRC = "/v1/admin/ai-ops/client.js?v=1";
+const ADMIN_DASHBOARD_PATH = "/v1/admin/dashboard";
 const AI_OPS_WORKER_PAGES = new Set([
   "/internal/admin/kenji",
   "/internal/admin/mms",
@@ -30,10 +33,67 @@ const AI_OPS_WORKER_PAGES = new Set([
 
 export default {
   async fetch(request, env, ctx) {
+    if (normalizePath(new URL(request.url).pathname) === ADMIN_DASHBOARD_PATH) {
+      return handleCredentialBoundDashboard(request, env, ctx);
+    }
     const response = await coreWorker.fetch(request, env, ctx);
     return injectAdminAiOpsPage(request, response);
   },
 };
+
+async function handleCredentialBoundDashboard(request, env, ctx) {
+  const method = request.method.toUpperCase();
+  if (method === "OPTIONS") return dashboardWorker.fetch(request, env, ctx);
+  if (method !== "GET" && method !== "HEAD") {
+    return dashboardJson({ ok: false, error: "method_not_allowed" }, 405);
+  }
+
+  const url = new URL(request.url);
+  if (url.hostname !== "mmdbkk.com" && url.hostname !== "www.mmdbkk.com") {
+    return dashboardJson({ ok: false, error: "dashboard_host_not_allowed" }, 403);
+  }
+
+  const actor = await readCredentialBoundAdminActor(request, env);
+  if (!actor) return dashboardJson({ ok: false, error: "unauthorized" }, 401);
+  if (String(actor.role || "").toLowerCase() === "mms_partner") {
+    return dashboardJson({ ok: false, error: "mms_partner_scope_forbidden" }, 403);
+  }
+
+  // dashboard-worker still carries its legacy internal auth check. Translate the
+  // already-validated HttpOnly browser session into a server-side credential only
+  // for this in-memory delegate call. Browser-supplied service credentials are
+  // stripped first and are never returned to the client.
+  const headers = new Headers(request.headers);
+  headers.delete("Authorization");
+  headers.delete("X-Confirm-Key");
+  if (env.CONFIRM_KEY) headers.set("X-Confirm-Key", String(env.CONFIRM_KEY));
+  else if (env.ADMIN_BEARER) headers.set("Authorization", `Bearer ${String(env.ADMIN_BEARER)}`);
+  else return dashboardJson({ ok: false, error: "dashboard_internal_auth_missing" }, 503);
+
+  headers.set("X-MMD-Admin-Actor", String(actor.id || "per"));
+  headers.set("X-MMD-Admin-Role", String(actor.role || "admin"));
+  headers.set("X-MMD-Admin-Source", "credential-bound-session");
+
+  const delegated = new Request(request, {
+    method: method === "HEAD" ? "GET" : method,
+    headers,
+  });
+  const response = await dashboardWorker.fetch(delegated, env, ctx);
+  if (method !== "HEAD") return response;
+  const responseHeaders = new Headers(response.headers);
+  responseHeaders.delete("content-length");
+  return new Response(null, { status: response.status, headers: responseHeaders });
+}
+
+function dashboardJson(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store, private",
+    },
+  });
+}
 
 export async function injectAdminAiOpsPage(request, response) {
   if (!shouldInject(request, response)) return response;
