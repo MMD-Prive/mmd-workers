@@ -79,13 +79,30 @@ jobs:
               signed_webhook_test_success: payload?.signed_webhook_test_success === true,
               signed_webhook_test_status_code: Number(payload?.signed_webhook_test_status_code || 0),
               signed_webhook_test_reason: String(payload?.signed_webhook_test_reason || "").slice(0, 80),
+              ingress_trace_enabled: payload?.ingress_trace_enabled === true,
+              ingress_trace_configured: payload?.ingress_trace_configured === true,
+              ingress_trace_storage_ok: payload?.ingress_trace_storage_ok === true,
+              ingress_trace_storage_status: String(payload?.ingress_trace_storage_status || "").slice(0, 80),
+              ingress_trace_storage_http_status: Number(payload?.ingress_trace_storage_http_status || 0),
+              ingress_trace_cleanup_ok: payload?.ingress_trace_cleanup_ok === true,
             };
             last = safe;
             console.log(`KENJI_LINE_TRANSPORT_HEALTH ${JSON.stringify(safe)}`);
-            if (safe.route === "line_transport_health" && safe.schema === "mmd.kenji_line_transport_health.v2" && safe.signed_webhook_test_attempted) break;
+            if (
+              safe.route === "line_transport_health" &&
+              safe.schema === "mmd.kenji_line_transport_health.v3" &&
+              safe.signed_webhook_test_attempted &&
+              safe.ingress_trace_configured &&
+              safe.ingress_trace_storage_ok
+            ) break;
             await new Promise((resolve) => setTimeout(resolve, 5000));
           }
-          if (last?.schema !== "mmd.kenji_line_transport_health.v2" || last?.signed_webhook_test_attempted !== true) {
-            throw new Error("Production signed webhook transport-health probe did not become active within retry window");
+          if (
+            last?.schema !== "mmd.kenji_line_transport_health.v3" ||
+            last?.signed_webhook_test_attempted !== true ||
+            last?.ingress_trace_configured !== true ||
+            last?.ingress_trace_storage_ok !== true
+          ) {
+            throw new Error(`Production LINE transport or ingress trace storage health did not become ready: ${JSON.stringify(last)}`);
           }
           NODE
