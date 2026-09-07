@@ -13,7 +13,7 @@ This map applies only to MMD Privé. MMS / Male Massage is a separate LINE OA an
 | Top-right | BOOKING | `https://mmdbkk.com/booking?source=line&entry_route=rich_menu_guest_booking` |
 | Bottom-left | PUBLIC SERVICES | `https://mmdbkk.com/services/companion?source=line&entry_route=rich_menu_guest_services` |
 | Bottom-center | ABOUT MMD | `https://mmdbkk.com/tmib?source=line&entry_route=rich_menu_guest_about` |
-| Bottom-right | SUPPORT | LINE message: `Hi Kenji` |
+| Bottom-right | SUPPORT | Silent LINE postback → MMD support guidance; no Kenji name is shown to the customer |
 
 ## LV2 — Public Member
 
@@ -26,7 +26,7 @@ Verified identity; no active Privé entitlement required.
 | Top-right | BOOKING | `https://mmdbkk.com/booking?source=line&entry_route=rich_menu_public_booking` |
 | Bottom-left | MY MMD | LINE Mini App / LIFF status view |
 | Bottom-center | PRIVÉ ACCESS | `https://mmdbkk.com/membership?source=line&entry_route=rich_menu_prive_access` |
-| Bottom-right | SUPPORT | LINE message: `Hi Kenji` |
+| Bottom-right | SUPPORT | Silent LINE postback → MMD support guidance; no Kenji name is shown to the customer |
 
 ## LV3 — Privé Member
 
@@ -49,12 +49,14 @@ Active Privé entitlement. Standard, Premium, VIP, SVIP and Black Card share the
 - Expired or grace Privé entitlement falls back to Public Member, not Guest.
 - Rich Menu is hidden daily from 16:00 through 22:59 Asia/Bangkok and is visible from 23:00 through 15:59.
 
-## Support ownership
+## Support ownership and identity
 
 - MMD does not present a generic staff or operator layer to customers.
-- Kenji is the default support and continuity layer across Guest, Public Member and Privé Member Rich Menus.
-- Public Members still have the direct `คุยกับ PER` entry. When Per is available, Per remains the owner/final authority for matters that require his decision.
-- When Per is not available, Support remains valid through Kenji. Kenji can guide, collect context, route the next step and hold continuity without pretending that a separate staff member is waiting.
+- Guest and Public Member customers see support as **MMD**, not as a named Kenji persona.
+- Guest/Public `SUPPORT` uses a silent postback: tapping the button must not insert `Hi Kenji` or another synthetic customer message into the chat.
+- Kenji may power Guest/Public support behind the scenes as the continuity and routing layer, but customer-facing replies stay in MMD / Per Voice and do not introduce Kenji by name.
+- Public Members retain the direct `คุยกับ PER` entry. Per remains the owner/final authority for matters that require his decision.
+- Privé Members already know Kenji as the Member Concierge. `KENJI AI` remains a visible Privé entry and Privé `SUPPORT` may route directly to Kenji without creating identity surprise.
 - A customer explicitly asking for a human/person is a separate escalation request; the Rich Menu SUPPORT button must not manufacture that request automatically.
 
 ## Safety / ownership

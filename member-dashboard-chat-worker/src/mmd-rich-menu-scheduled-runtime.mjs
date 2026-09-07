@@ -7,7 +7,7 @@ const ENTITLEMENTS_TABLE = "tblNImdF9PKAxhXGi";
 const LIFF_ID = "2010862595-yT4DCEMc";
 const MAX_IMAGE_BYTES = 1024 * 1024;
 const SYNC_PATH = "/v1/internal/line/rich-menu/sync";
-const VERSION = "mmd-rm3-20260908-v3";
+const VERSION = "mmd-rm3-20260908-v4";
 const ROOT = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90";
 
 function clean(v) { return String(v == null ? "" : v).trim(); }
@@ -15,6 +15,7 @@ function token(v) { return clean(v).toLowerCase().replace(/[\s-]+/g, "_"); }
 function json(body, status = 200) { return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } }); }
 function uri(label, value) { return { type: "uri", label, uri: value }; }
 function msg(label, value) { return { type: "message", label, text: value }; }
+function postback(label, data) { return { type: "postback", label, data }; }
 function site(path, entry) { const u = new URL(path, "https://mmdbkk.com"); u.searchParams.set("source", "line"); u.searchParams.set("entry_route", entry); return u.toString(); }
 function liff() { return `https://liff.line.me/${LIFF_ID}?intent=status&view=profile`; }
 
@@ -32,7 +33,7 @@ const MENUS = Object.freeze({
       uri("BOOKING", site("/booking", "rich_menu_guest_booking")),
       uri("PUBLIC SERVICES", site("/services/companion", "rich_menu_guest_services")),
       uri("ABOUT MMD", site("/tmib", "rich_menu_guest_about")),
-      msg("SUPPORT", "Hi Kenji"),
+      postback("SUPPORT", "mmd_action=support&audience=guest&intent=ใช้บริการยังไง"),
     ],
   },
   public: {
@@ -48,7 +49,7 @@ const MENUS = Object.freeze({
       uri("BOOKING", site("/booking", "rich_menu_public_booking")),
       uri("MY MMD", liff()),
       uri("PRIVE ACCESS", site("/membership", "rich_menu_prive_access")),
-      msg("SUPPORT", "Hi Kenji"),
+      postback("SUPPORT", "mmd_action=support&audience=public&intent=ใช้บริการยังไง"),
     ],
   },
   private: {
