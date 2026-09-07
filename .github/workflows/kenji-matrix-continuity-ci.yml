@@ -13,6 +13,7 @@ on:
       - "member-dashboard-chat-worker/src/kenji-line-continuity-runtime.mjs"
       - "member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs"
       - "member-dashboard-chat-worker/test/kenji-line-continuity-runtime.test.mjs"
+      - "member-dashboard-chat-worker/test/kenji-live-truth-matrix.test.mjs"
       - "member-dashboard-chat-worker/test/kenji-seed-runtime-cutover.test.mjs"
       - "member-dashboard-chat-worker/wrangler.toml"
       - ".github/workflows/kenji-matrix-continuity-ci.yml"
@@ -49,7 +50,7 @@ jobs:
         run: |
           node --check member-dashboard-chat-worker/src/kenji-line-continuity-runtime.mjs
           node --check member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs
-          node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-line-continuity-runtime.test.mjs member-dashboard-chat-worker/test/kenji-seed-runtime-cutover.test.mjs
+          node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-line-continuity-runtime.test.mjs member-dashboard-chat-worker/test/kenji-live-truth-matrix.test.mjs member-dashboard-chat-worker/test/kenji-seed-runtime-cutover.test.mjs
 
       - name: Validate member-dashboard Worker bundle
         if: matrix.node-version == '22.x'
