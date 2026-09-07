@@ -62,7 +62,7 @@ const PROTECTED_INTENT_DOMAINS = Object.freeze({
   model_access_verification: ["model_visibility", "entitlement"],
 });
 
-const CONTINUATION_CUE_RE = /^(?:ได้ยัง(?:ครับ|คะ|ค่ะ)?|ถึงไหน(?:แล้ว)?|โอเคยัง|เรียบร้อยยัง|เป็นไง(?:บ้าง)?|ยัง(?:ครับ|คะ|ค่ะ)?|แล้ว(?:ครับ|คะ|ค่ะ)?|มีอัปเดตไหม|อัปเดตหน่อย|update|status|done yet|any update)\b/i;
+const CONTINUATION_CUE_RE = /^(?:ได้ยัง(?:ครับ|คะ|ค่ะ)?|ถึงไหน(?:แล้ว)?|โอเคยัง|เรียบร้อยยัง|เป็นไง(?:บ้าง)?|ยัง(?:ครับ|คะ|ค่ะ)?|แล้ว(?:ครับ|คะ|ค่ะ)?|มีอัปเดตไหม|อัปเดตหน่อย|update|status|done yet|any update)(?:\s|$)/i;
 const NEW_TOPIC_CUE_RE = /(?:^|\s)(?:อีกเรื่อง|เปลี่ยนเรื่อง|เรื่องใหม่|ถามอีกอย่าง|ถามเรื่องอื่น|new topic|another question|different topic)(?:\s|$)/i;
 
 const INTENT_TOPIC = Object.freeze({
