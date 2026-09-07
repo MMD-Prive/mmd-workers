@@ -75,6 +75,7 @@ const switchedTopic = resolveConversationContinuityV1({
 assert.equal(switchedTopic.decision, "new_topic");
 assert.equal(switchedTopic.topic, "pricing");
 assert.equal(switchedTopic.do_not_ask_again.length, 0);
+assert.deepEqual(switchedTopic.live_truth_domains, ["pricing"]);
 
 const explicitSwitch = resolveConversationContinuityV1({
   message: "อีกเรื่อง ขอถามราคาแพ็กเกจครับ",
@@ -84,6 +85,7 @@ const explicitSwitch = resolveConversationContinuityV1({
 });
 assert.equal(explicitSwitch.decision, "new_topic");
 assert.equal(explicitSwitch.reason, "explicit_new_topic_signal");
+assert.deepEqual(explicitSwitch.live_truth_domains, ["pricing"]);
 
 const ambiguous = resolveConversationContinuityV1({
   message: "ครับ",
@@ -103,6 +105,17 @@ assert.equal(stale.decision, "stale_refresh");
 assert.equal(stale.conversation_stage, "stale_needs_refresh");
 assert.equal(stale.requires_state_refresh, true);
 assert.ok(stale.live_truth_domains.includes("payment"));
+
+const staleSwitch = resolveConversationContinuityV1({
+  message: "ขอถามราคาแพ็กเกจอื่นครับ",
+  current_intent: "pricing_review",
+  matrix,
+  now: "2026-09-15T11:00:00.000Z",
+});
+assert.equal(staleSwitch.decision, "new_topic");
+assert.equal(staleSwitch.reason, "stale_previous_thread_but_new_topic");
+assert.equal(staleSwitch.requires_state_refresh, false);
+assert.deepEqual(staleSwitch.live_truth_domains, ["pricing"]);
 
 const resolved = buildConversationMatrixV1({
   topic: "membership",
