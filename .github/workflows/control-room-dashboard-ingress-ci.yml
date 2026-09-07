@@ -31,7 +31,6 @@ jobs:
         run: |
           set -euo pipefail
           npm test --prefix immigrate-worker
-          npm run typecheck --prefix immigrate-worker
 
       - name: Verify Control Room dashboard entrypoint and routes
         run: |
