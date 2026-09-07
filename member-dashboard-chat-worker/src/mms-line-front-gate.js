@@ -1,6 +1,11 @@
 import currentWorker from "./my-mmd-bounded-status-front-gate.js";
 import { handleMmsLineRequest, isMmsLineRequest } from "./mms-line-runtime.mjs";
 import {
+  handleMmdRichMenuScheduledRequest,
+  handleMmdRichMenuScheduled,
+  isMmdRichMenuScheduledRequest,
+} from "./mmd-rich-menu-scheduled-runtime.mjs";
+import {
   handleKenjiSeedLineRequestWithRedeliveryRecovery,
   isKenjiSeedLineRequest,
 } from "./kenji-line-redelivery-recovery.mjs";
@@ -118,11 +123,6 @@ export function buildKenjiSeedRuntimeEnv(env = {}) {
     },
   };
 
-  // Cloudflare's env object is a runtime binding container, not a plain data
-  // object. Do not move it onto another object's prototype or spread/copy it:
-  // either approach can make secret/service bindings disappear in production.
-  // This transparent proxy overrides only the two runtime-status dependencies
-  // and resolves every other binding against the original env receiver.
   return new Proxy(sourceEnv, {
     get(target, property) {
       if (property === "ADMIN_WORKER") return adminProxy;
@@ -151,6 +151,9 @@ export default {
       return handleKenjiLineTransportHealth(request, env);
     }
     if (isMmsLineRequest(request)) return handleMmsLineRequest(request, env, ctx);
+    if (isMmdRichMenuScheduledRequest(request)) {
+      return handleMmdRichMenuScheduledRequest(request, env, ctx);
+    }
     if (isKenjiSeedLineRequest(request)) {
       const runtimeEnv = buildKenjiSeedRuntimeEnv(env);
       const tracedRequest = seedSmokeRequest(request);
@@ -167,5 +170,8 @@ export default {
       });
     }
     return currentWorker.fetch(request, env, ctx);
+  },
+  async scheduled(event, env = {}, ctx) {
+    return handleMmdRichMenuScheduled(event, env, ctx);
   },
 };
