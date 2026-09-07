@@ -5,6 +5,10 @@ import {
   kenjiTelemetryEventId,
 } from "./kenji-seed-line-runtime.mjs";
 import { redeliveryOutcomeFromAiEvent } from "./kenji-line-redelivery-policy.mjs";
+import {
+  linkCanonicalKenjiLineClientAfterTurn,
+  resolveCanonicalKenjiLineClient,
+} from "./kenji-line-canonical-client-resolution.mjs";
 
 const AI_EVENTS_TABLE_FALLBACK = "tbljCYfYqfm8gBTPq";
 const MEMBERSHIP_STATUS_CANONICAL_TEXT = "สถานะสมาชิกของผม";
@@ -92,6 +96,40 @@ function recoverableEvent(event = {}, outcome = {}) {
   };
 }
 
+async function syncCanonicalCustomerMemory(env = {}, events = []) {
+  const results = [];
+  for (const event of events) {
+    if (event?.source?.type !== "user") continue;
+    const context = await resolveCanonicalKenjiLineClient({ env, event }).catch(() => ({
+      resolved: false,
+      status: "unavailable",
+      reason: "canonical_client_resolution_runtime_error",
+    }));
+    const matrixLink = context?.resolved === true
+      ? await linkCanonicalKenjiLineClientAfterTurn({ env, event, context }).catch(() => ({
+          ok: false,
+          skipped: true,
+          reason: "canonical_matrix_link_runtime_error",
+        }))
+      : { ok: false, skipped: true, reason: "canonical_client_unresolved" };
+    results.push({
+      resolved: context?.resolved === true,
+      status: text(context?.status),
+      reason: text(context?.reason),
+      relationship_context: text(context?.relationship_context),
+      voice_profile: text(context?.voice_context?.voice_profile),
+      matrix_linked: matrixLink?.ok === true,
+    });
+  }
+  return results;
+}
+
+function scheduleCanonicalCustomerMemory(ctx, env, events) {
+  const work = syncCanonicalCustomerMemory(env, events).catch(() => []);
+  if (typeof ctx?.waitUntil === "function") ctx.waitUntil(work);
+  return work;
+}
+
 export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
   request,
   env = {},
@@ -133,7 +171,10 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
   const hasRecoverable = redeliveryIndexes.some((index) => outcomes.get(index)?.retry_allowed === true);
   const hasMembershipStatusRefinement = membershipStatusIndexes.length > 0;
   if (!hasRecoverable && !hasMembershipStatusRefinement) {
-    return handleKenjiSeedLineRequest(request, env, ctx, legacyWorker);
+    const response = await handleKenjiSeedLineRequest(request, env, ctx, legacyWorker);
+    const work = scheduleCanonicalCustomerMemory(ctx, env, events);
+    if (typeof ctx?.waitUntil !== "function") await work;
+    return response;
   }
 
   const transformedEvents = events.map((event, index) => {
@@ -154,6 +195,8 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
   });
 
   const response = await handleKenjiSeedLineRequest(transformedRequest, env, ctx, legacyWorker);
+  const work = scheduleCanonicalCustomerMemory(ctx, env, transformedEvents);
+  if (typeof ctx?.waitUntil !== "function") await work;
   if (!response?.headers) return response;
   const responseHeaders = new Headers(response.headers);
   if (hasRecoverable) responseHeaders.set("x-mmd-kenji-redelivery", "recovered");

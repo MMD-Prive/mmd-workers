@@ -29,6 +29,53 @@ function normalizeRelationship(input = {}) {
   return "new_contact";
 }
 
+const ESTABLISHED_RELATIONSHIPS = new Set([
+  "verified_public_member",
+  "known_customer",
+  "repeat_customer",
+  "active_member",
+  "expired_member",
+  "private_access_verified",
+  "vip_relationship",
+  "svip_relationship",
+  "blackcard_relationship",
+]);
+
+const PRIVATE_RELATIONSHIPS = new Set([
+  "repeat_customer",
+  "private_access_verified",
+  "vip_relationship",
+  "svip_relationship",
+  "blackcard_relationship",
+]);
+
+export function buildKenjiVoiceContext(input = {}) {
+  const relationshipContext = text(input.relationship_context).toLowerCase() || "unknown";
+  const identityStatus = text(input.identity_status).toLowerCase() || "candidate";
+  const identityResolved = identityStatus === "resolved";
+  const established = identityResolved && ESTABLISHED_RELATIONSHIPS.has(relationshipContext);
+  const privateRelationship = established && PRIVATE_RELATIONSHIPS.has(relationshipContext);
+
+  return {
+    schema: "mmd.kenji_voice_context.v1",
+    voice_profile: "per_voice_concierge",
+    familiarity: privateRelationship ? "established_private" : established ? "known_customer" : "new_or_unresolved",
+    addressing_mode: established ? "continue_existing_relationship" : "neutral_first_contact",
+    reply_shape: "natural_conversation",
+    preferred_length: "short",
+    continuity_first: established,
+    allow_natural_relationship_reference: established,
+    avoid_dashboard_labels: true,
+    avoid_system_voice: true,
+    avoid_raw_truth_dump: true,
+    avoid_repeating_tier_and_status: true,
+    avoid_reverification_prompt_when_identity_resolved: identityResolved,
+    truth_input_mode: "structured_live_truth_only",
+    memory_may_render_truth: false,
+    memory_may_grant_rights: false,
+  };
+}
+
 export function buildCustomerMemorySnapshotV2(input = {}) {
   const compatV1 = input.compat_v1 || buildKenjiMemorySnapshot(input);
   const matrix = input.conversation_matrix || {};
@@ -41,6 +88,15 @@ export function buildCustomerMemorySnapshotV2(input = {}) {
     verification_status: input.verification_status,
     verified_public_member: input.verified_public_member,
   });
+  const identityStatus = text(input.identity_status || (compatV1.client_record_id ? "resolved" : "candidate"));
+  const voiceContext = buildKenjiVoiceContext({
+    relationship_context: relationshipContext,
+    identity_status: identityStatus,
+  });
+  const conversation = {
+    ...buildConversationContinuityContext(matrix),
+    voice_context: voiceContext,
+  };
 
   return {
     schema: "mmd.customer_memory_snapshot.v2",
@@ -50,9 +106,10 @@ export function buildCustomerMemorySnapshotV2(input = {}) {
     mmd_client_name: text(compatV1.mmd_client_name),
     client_id_display: text(compatV1.client_id_display),
     client_id_canonical: text(compatV1.client_id_canonical),
-    identity_status: text(input.identity_status || (compatV1.client_record_id ? "resolved" : "candidate")),
+    identity_status: identityStatus,
     verification_status: text(input.verification_status || "unknown"),
     relationship_context: relationshipContext,
+    voice_context: voiceContext,
     membership_package_observed: text(compatV1.membership_package),
     membership_status_observed: text(compatV1.membership_status),
     membership_expiry_observed: text(compatV1.membership_expiry),
@@ -60,7 +117,7 @@ export function buildCustomerMemorySnapshotV2(input = {}) {
     service_history_summary: text(compatV1.service_history_summary),
     preference_summary: text(compatV1.client_preference_summary || input.client_preference_summary),
     kenji_handling_note: text(compatV1.kenji_handling_note),
-    conversation: buildConversationContinuityContext(matrix),
+    conversation,
     authority_guard: {
       memory_is_not_current_truth: true,
       live_truth_wins_over_memory: true,
@@ -98,6 +155,7 @@ export function buildKenjiSafeContextV2(snapshotV2 = {}, compatV1 = {}) {
     memory_schema: text(snapshotV2.schema),
     relationship_context: text(snapshotV2.relationship_context),
     verification_status: text(snapshotV2.verification_status),
+    voice_context: snapshotV2.voice_context || {},
     conversation: snapshotV2.conversation || {},
     live_truth_required: Boolean(snapshotV2.conversation?.live_truth_required),
     live_truth_domains: Array.isArray(snapshotV2.conversation?.live_truth_domains)
