@@ -1,5 +1,5 @@
 name = "member-dashboard-chat-worker"
-main = "src/my-mmd-bounded-status-front-gate.js"
+main = "src/mms-line-front-gate.js"
 compatibility_date = "2026-07-02"
 workers_dev = false
 
@@ -175,8 +175,26 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/webhooks/line/"
 zone_name = "mmdbkk.com"
 
+# MMS LINE OA is isolated from MMD Privé LINE credentials and transport.
+[[routes]]
+pattern = "mmdbkk.com/webhooks/line/mms"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/webhooks/line/mms/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/webhooks/line/mms"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/webhooks/line/mms/"
+zone_name = "mmdbkk.com"
+
 # Cloudflare-only LINE runtime.
-# Bind LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, and INTERNAL_TOKEN as Cloudflare secrets only.
+# Bind LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, INTERNAL_TOKEN,
+# MMS_LINE_CHANNEL_ACCESS_TOKEN, and MMS_LINE_CHANNEL_SECRET as Cloudflare secrets only.
 # LINE_WEBHOOK_UPSTREAM_URL is retired and must remain unset.
 #
 # Production intake must stay available during ad campaigns. Keep these
@@ -187,7 +205,8 @@ zone_name = "mmdbkk.com"
 LINE_AUTO_REPLY_ENABLED = "true"
 LINE_KENJI_AI_ENABLED = "true"
 LINE_KENJI_KNOWLEDGE_ENABLED = "true"
-# Read-only shadow bridge: every accepted LINE webhook is also observed by
+MMS_LINE_AI_ENABLED = "true"
+# Read-only shadow bridge: every accepted MMD LINE webhook is also observed by
 # ai-worker through a private Cloudflare service binding. It does not affect
 # the LINE reply path or create any domain truth.
 KENJI_AI_WORKER_BRIDGE_ENABLED = "true"
