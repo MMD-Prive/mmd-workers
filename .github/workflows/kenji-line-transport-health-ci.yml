@@ -91,7 +91,10 @@ jobs:
             if (
               safe.route === "line_transport_health" &&
               safe.schema === "mmd.kenji_line_transport_health.v3" &&
+              safe.ok &&
               safe.signed_webhook_test_attempted &&
+              safe.signed_webhook_test_success &&
+              safe.signed_webhook_test_status_code === 200 &&
               safe.ingress_trace_configured &&
               safe.ingress_trace_storage_ok
             ) break;
@@ -99,7 +102,10 @@ jobs:
           }
           if (
             last?.schema !== "mmd.kenji_line_transport_health.v3" ||
+            last?.ok !== true ||
             last?.signed_webhook_test_attempted !== true ||
+            last?.signed_webhook_test_success !== true ||
+            last?.signed_webhook_test_status_code !== 200 ||
             last?.ingress_trace_configured !== true ||
             last?.ingress_trace_storage_ok !== true
           ) {
