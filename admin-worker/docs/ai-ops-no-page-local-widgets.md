@@ -1,0 +1,1 @@
+Do not add separate AI assistants to individual admin pages. Canonical admin pages use the same AI Ops layer so context, terminology, authority locks, and operator behavior stay consistent.
