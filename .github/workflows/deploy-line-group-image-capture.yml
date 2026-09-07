@@ -23,6 +23,7 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      AUTH_SERVICE_LINE_TO_TELEGRAM: ${{ secrets.AUTH_SERVICE_LINE_TO_TELEGRAM || secrets.TELEGRAM_INTERNAL_TOKEN || secrets.INTERNAL_API_TOKEN }}
       NO_COLOR: "1"
       R2_BUCKET: "mmd-line-slip-evidence"
 
@@ -44,6 +45,7 @@ jobs:
           node --check member-dashboard-chat-worker/src/line-group-ingress-front-gate.js
           node --check member-dashboard-chat-worker/src/front-gate-index.js
           node --check member-dashboard-chat-worker/src/index.js
+          node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/line-payment-proof-ingress.test.mjs
           npm run test:member-dashboard-line
 
       - name: Ensure private LINE slip evidence bucket
@@ -61,6 +63,17 @@ jobs:
             cat "$create_log" >&2
             exit 1
           fi
+
+      - name: Configure LINE to Telegram service secret
+        shell: bash
+        working-directory: member-dashboard-chat-worker
+        run: |
+          set -euo pipefail
+          if [ -z "${AUTH_SERVICE_LINE_TO_TELEGRAM:-}" ]; then
+            echo "AUTH_SERVICE_LINE_TO_TELEGRAM is required for production payment alerts" >&2
+            exit 1
+          fi
+          printf '%s' "$AUTH_SERVICE_LINE_TO_TELEGRAM" | npx --yes wrangler@4 secret put AUTH_SERVICE_LINE_TO_TELEGRAM
 
       - name: Deploy member-dashboard-chat-worker
         working-directory: member-dashboard-chat-worker
