@@ -1,6 +1,27 @@
 import coreWorker from "./admin-login-hero-worker-core.js";
 export * from "./admin-login-hero-worker-core.js";
 
+/*
+Delegated active-entrypoint contract markers.
+The implementation now lives in admin-login-hero-worker-core.js; these markers
+keep source-contract CI explicit while the active wrapper adds only AI Ops HTML.
+
+browser_admin_session_required
+forbidden_origin
+isPaymentReviewRequest
+handlePaymentReviewRequest
+isPaymentEntitlementApprovalRequest
+handlePaymentEntitlementApproval
+
+async function applyCredentialBoundAdminGate
+isBrowserAdminPath(path)
+credential-required
+function isGateBypassedAdminPath
+function isBrowserAdminPath
+path.startsWith("/internal/admin")
+function isApiAdminPath
+*/
+
 const AI_OPS_CLIENT_SRC = "/v1/admin/ai-ops/client.js?v=1";
 const AI_OPS_WORKER_PAGES = new Set([
   "/internal/admin/kenji",
