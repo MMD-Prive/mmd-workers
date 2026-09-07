@@ -7,7 +7,7 @@ const ENTITLEMENTS_TABLE = "tblNImdF9PKAxhXGi";
 const LIFF_ID = "2010862595-yT4DCEMc";
 const MAX_IMAGE_BYTES = 1024 * 1024;
 const SYNC_PATH = "/v1/internal/line/rich-menu/sync";
-const VERSION = "mmd-rm3-20260908-v2";
+const VERSION = "mmd-rm3-20260908-v3";
 const ROOT = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90";
 
 function clean(v) { return String(v == null ? "" : v).trim(); }
@@ -32,7 +32,7 @@ const MENUS = Object.freeze({
       uri("BOOKING", site("/booking", "rich_menu_guest_booking")),
       uri("PUBLIC SERVICES", site("/services/companion", "rich_menu_guest_services")),
       uri("ABOUT MMD", site("/tmib", "rich_menu_guest_about")),
-      msg("SUPPORT", "ขอคุยกับเจ้าหน้าที่"),
+      msg("SUPPORT", "Hi Kenji"),
     ],
   },
   public: {
@@ -48,7 +48,7 @@ const MENUS = Object.freeze({
       uri("BOOKING", site("/booking", "rich_menu_public_booking")),
       uri("MY MMD", liff()),
       uri("PRIVE ACCESS", site("/membership", "rich_menu_prive_access")),
-      msg("SUPPORT", "ขอคุยกับเจ้าหน้าที่"),
+      msg("SUPPORT", "Hi Kenji"),
     ],
   },
   private: {
@@ -64,7 +64,7 @@ const MENUS = Object.freeze({
       uri("BOOKING", site("/find", "rich_menu_private_booking")),
       uri("MY MMD", liff()),
       uri("PRIVE UPDATE", site("/member/private#access", "rich_menu_prive_update")),
-      msg("SUPPORT", "ขอคุยกับเจ้าหน้าที่"),
+      msg("SUPPORT", "Hi Kenji"),
     ],
   },
 });
