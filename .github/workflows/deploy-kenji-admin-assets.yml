@@ -43,8 +43,10 @@ jobs:
           test -s webflow/internal/admin/kenji/kenji-admin-v1.js
           test -s webflow/internal/admin/kenji/kenji-admin-v1.css
           test -s webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
+          test -s webflow/internal/admin/kenji/kenji-admin-friendly-v3.js
           node --check webflow/internal/admin/kenji/kenji-admin-v1.js
           node --check webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
+          node --check webflow/internal/admin/kenji/kenji-admin-friendly-v3.js
           node --test webflow/internal/admin/kenji/kenji-admin-v1.test.mjs
           grep -q 'kux-board-banner' webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
           grep -q 'panelVisuals' webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
@@ -52,8 +54,13 @@ jobs:
           grep -q 'review-queue?status=all' webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
           grep -q 'Kenji%20Glass%20board.webp' webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
           grep -q 'SigilWall.webp' webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
+          grep -q 'uxFriendlyV3' webflow/internal/admin/kenji/kenji-admin-friendly-v3.js
+          grep -q 'friendly-teach-v3' webflow/internal/admin/kenji/kenji-admin-friendly-v3.js
+          grep -q 'เก็บเป็น Draft' webflow/internal/admin/kenji/kenji-admin-friendly-v3.js
+          grep -q 'เป็น Preview ช่วยหา ไม่ใช่ Production inference' webflow/internal/admin/kenji/kenji-admin-friendly-v3.js
           cat webflow/internal/admin/kenji/kenji-admin-v1.js \
               webflow/internal/admin/kenji/kenji-admin-ux-overlay.js \
+              webflow/internal/admin/kenji/kenji-admin-friendly-v3.js \
               > /tmp/kenji-admin-v1.js
           node --check /tmp/kenji-admin-v1.js
 
@@ -154,6 +161,10 @@ jobs:
           grep -q 'encodeURIComponent(q)' "$js_file"
           grep -q 'Idempotency-Key' "$js_file"
           grep -q 'uxFriendly' "$js_file"
+          grep -q 'uxFriendlyV3' "$js_file"
+          grep -q 'friendly-teach-v3' "$js_file"
+          grep -q 'เก็บเป็น Draft' "$js_file"
+          grep -q 'เป็น Preview ช่วยหา ไม่ใช่ Production inference' "$js_file"
           grep -q 'Review Queue' "$js_file"
           grep -q 'kux-board-banner' "$js_file"
           grep -q 'panelVisuals' "$js_file"
@@ -176,6 +187,9 @@ jobs:
               && grep -q 'panelVisuals' "$stable_js_file" \
               && grep -q 'MODEL REVIEW QUEUE' "$stable_js_file" \
               && grep -q 'review-queue?status=all' "$stable_js_file" \
+              && grep -q 'uxFriendlyV3' "$stable_js_file" \
+              && grep -q 'friendly-teach-v3' "$stable_js_file" \
+              && grep -q 'เก็บเป็น Draft' "$stable_js_file" \
               && grep -q 'Kenji%20Glass%20board.webp' "$stable_js_file" \
               && grep -q 'SigilWall.webp' "$stable_js_file" \
               && grep -q 'Kenji%20AI%20Board%201.webp' "$stable_js_file" \
@@ -187,4 +201,4 @@ jobs:
             sleep 3
           done
           test "$found" = "1"
-          echo "Kenji admin stable CDN assets match the deployed R2 review workflow version after purge"
+          echo "Kenji admin stable CDN assets match the deployed friendly review workflow version after purge"
