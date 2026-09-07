@@ -127,7 +127,6 @@ function patchDashboardPayload(payload, context) {
   const messages = Array.isArray(data.messages)
     ? data.messages.filter((item) => !["member_checking", "member_new"].includes(String(item?.code || "")))
     : [];
-  const lifecycleValue = "active";
 
   return {
     ...payload,
@@ -140,7 +139,7 @@ function patchDashboardPayload(payload, context) {
         ...member,
         display_name: preferResolvedDisplayName(member.display_name, context.displayName),
         tier: verifiedField(context.label),
-        membership_status: verifiedField(lifecycleValue),
+        membership_status: verifiedField(context.lifecycle),
       },
       messages,
     },
@@ -150,7 +149,7 @@ function patchDashboardPayload(payload, context) {
 function patchMemberAppPayload(payload, context) {
   const membership = isPlainObject(payload.membership) ? payload.membership : {};
   const existingAction = isPlainObject(payload.nextAction) ? payload.nextAction : null;
-  const nextAction = protectedActiveNextAction(existingAction);
+  const nextAction = protectedMemberNextAction(existingAction);
   const identity = isPlainObject(payload.identity) ? payload.identity : {};
 
   return {
@@ -164,21 +163,21 @@ function patchMemberAppPayload(payload, context) {
       ...membership,
       level: context.capability,
       levelVerified: true,
-      status: "active",
-      lifecycle: "active",
+      status: context.lifecycle,
+      lifecycle: context.lifecycle,
       access: context.publicServiceAccess ? "granted" : (membership.access || "checking"),
       displayOnly: false,
       displaySource: context.source,
       legacyStatus: null,
       nextAction,
     },
-    lifecycle: "active",
+    lifecycle: context.lifecycle,
     nextAction,
     legacyDisplay: null,
   };
 }
 
-function protectedActiveNextAction(existing) {
+function protectedMemberNextAction(existing) {
   const kind = String(existing?.kind || "").trim();
   if (kind && !["signup", "renew", "checking"].includes(kind)) return existing;
   return { kind: "none", label: null, url: null };
