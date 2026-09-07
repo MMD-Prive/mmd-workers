@@ -1,0 +1,1 @@
+Implementation boundary: shared AI Ops is one cross-page advisory layer, not many page-local assistants. It reads current page context, returns a compact brief, anomalies and next actions, and routes to canonical surfaces. Final state changes remain with existing backend owners and supervised operator actions.
