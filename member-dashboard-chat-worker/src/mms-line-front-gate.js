@@ -8,6 +8,7 @@ import {
   handleKenjiLineTransportHealth,
   isKenjiLineTransportHealthRequest,
 } from "./kenji-line-transport-health.mjs";
+import { handleKenjiLineWithIngressTrace } from "./kenji-line-ingress-trace.mjs";
 
 export { KenjiModelIdempotency } from "./my-mmd-bounded-status-front-gate.js";
 
@@ -151,12 +152,19 @@ export default {
     }
     if (isMmsLineRequest(request)) return handleMmsLineRequest(request, env, ctx);
     if (isKenjiSeedLineRequest(request)) {
-      return handleKenjiSeedLineRequestWithRedeliveryRecovery(
-        seedSmokeRequest(request),
-        buildKenjiSeedRuntimeEnv(env),
+      const runtimeEnv = buildKenjiSeedRuntimeEnv(env);
+      const tracedRequest = seedSmokeRequest(request);
+      return handleKenjiLineWithIngressTrace({
+        request: tracedRequest,
+        env: runtimeEnv,
         ctx,
-        currentWorker,
-      );
+        handler: (lineRequest, lineEnv, lineCtx) => handleKenjiSeedLineRequestWithRedeliveryRecovery(
+          lineRequest,
+          lineEnv,
+          lineCtx,
+          currentWorker,
+        ),
+      });
     }
     return currentWorker.fetch(request, env, ctx);
   },
