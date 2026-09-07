@@ -123,7 +123,7 @@ test("single-owner Model flow saves draft then auto-runs review QA publish after
   assert.match(friendly, /modelCommand\(requestId, "qa"/);
   assert.match(friendly, /modelCommand\(requestId, "publish"/);
   assert.match(friendly, /customer_safe_preview_checked: true/);
-  assert.match(friendly, /source_checked: true/);
+  assert.match(friendly, /source_checked: sourceOk/);
   assert.match(friendly, /privacy_checked: true/);
   assert.match(friendly, /data-kso-model-sensitive/);
 });
