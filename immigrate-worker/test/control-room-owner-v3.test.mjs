@@ -39,6 +39,8 @@ try {
   assert.equal(response.headers.get("x-mmd-control-room-canon"), "single-owner-v1");
   assert.equal(response.headers.get("x-mmd-control-room-human-operator"), "per");
   assert.equal(response.headers.get("x-mmd-control-room-review-model"), "ai-checks-per-confirms");
+  assert.equal(response.headers.get("x-mmd-command-center"), "p0");
+  assert.equal(response.headers.get("x-mmd-command-center-flow"), "ask-needs-per-prepared-watching");
   assert.equal(response.headers.get("x-mmd-ai-ops-layer"), "v3");
 
   // Visible owner surface remains compact and task-first.
@@ -53,13 +55,16 @@ try {
   assert.match(body, /\/v1\/admin\/dashboard/);
   assert.match(body, /BACKEND WAITING/);
 
-  // Runtime overlay makes the human model explicit without deleting audit compatibility markers.
+  // Runtime overlay makes Per's Command Center and single-owner model explicit.
   assert.match(body, /data-mmd-control-room-canon-v3/);
+  assert.match(body, /data-mmd-command-center/);
+  assert.match(body, /PER · COMMAND CENTER/);
+  assert.match(body, /Ask Per AI → Needs Per → Prepared → Watching/);
   assert.match(body, /PER · OWNER MODE/);
   assert.match(body, /ไม่มี reviewer คนที่สอง/);
   assert.match(body, /data-per-owner-strip/);
-  assert.match(body, /TODAY · PER/);
   assert.match(body, /งานที่เปอร์ต้องทำต่อ/);
+  assert.match(body, /Action Card/);
   assert.match(body, /หน้าที่เปอร์ใช้จริง/);
   assert.match(body, /\/v1\/admin\/ai-ops\/client\.js\?v=3/);
 
