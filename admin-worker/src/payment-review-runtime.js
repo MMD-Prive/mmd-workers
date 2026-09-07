@@ -47,7 +47,11 @@ export async function handlePaymentReviewRequest(request, env = {}, actor = null
 async function listReviewQueue(request, env) {
   const url = new URL(request.url);
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 30, 1), 100);
-  const records = await airtableList(env, paymentProofTable(env), { maxRecords: Math.min(limit * 3, 100) });
+  const records = await airtableList(env, paymentProofTable(env), {
+    filterByFormula: reviewablePaymentProofFormula(),
+    maxRecords: Math.min(Math.max(limit * 4, limit), 100),
+    sort: [{ field: "created_at", direction: "desc" }],
+  });
   const items = records
     .map(safeQueueItem)
     .filter(Boolean)
@@ -59,6 +63,7 @@ async function listReviewQueue(request, env) {
     ok: true,
     authority: "payments-worker",
     source: "payment_proofs",
+    ordering: "created_at_desc",
     items,
     guardrails: {
       browser_can_mark_paid: false,
@@ -319,6 +324,15 @@ async function airtableList(env, tableName, params = {}) {
   const url = airtableUrl(env, tableName);
   if (params.filterByFormula) url.searchParams.set("filterByFormula", params.filterByFormula);
   if (params.maxRecords) url.searchParams.set("maxRecords", String(params.maxRecords));
+  if (Array.isArray(params.sort)) {
+    params.sort.slice(0, 3).forEach((entry, index) => {
+      const field = safeText(entry?.field, 120);
+      if (!field) return;
+      const direction = clean(entry?.direction).toLowerCase() === "asc" ? "asc" : "desc";
+      url.searchParams.set(`sort[${index}][field]`, field);
+      url.searchParams.set(`sort[${index}][direction]`, direction);
+    });
+  }
   const response = await airtableFetch(env, new Request(url.toString(), { headers: { Authorization: `Bearer ${clean(env.AIRTABLE_API_KEY)}` } }));
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !Array.isArray(payload.records)) throw httpError(response.status || 502, `airtable_${response.status || "malformed"}`);
@@ -368,6 +382,12 @@ function paymentsTable(env) {
 
 function accessLogTable(env) {
   return clean(env.AIRTABLE_TABLE_ACCESS_LOG || ACCESS_LOG_TABLE);
+}
+
+function reviewablePaymentProofFormula() {
+  const statuses = [...REVIEWABLE_STATES].map((status) => `{status}='${formulaValue(status)}'`);
+  statuses.push(`{status}=''`);
+  return `OR(${statuses.join(",")})`;
 }
 
 function requireAirtable(env) {
