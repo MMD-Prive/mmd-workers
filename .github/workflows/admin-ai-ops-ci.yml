@@ -1,0 +1,42 @@
+name: Admin AI Ops CI
+
+on:
+  pull_request:
+    paths:
+      - "admin-ai-ops-worker/**"
+      - "webflow/internal-admin-ai-ops-loader.html"
+      - "docs/architecture/AI_OPS_LAYER_V1_20260907.md"
+      - ".github/workflows/admin-ai-ops-ci.yml"
+      - ".github/workflows/deploy-admin-ai-ops-worker.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate shared AI Ops worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check admin-ai-ops-worker/src/index.js
+          node --test admin-ai-ops-worker/test/ai-ops-worker.test.mjs
+          npx --yes wrangler@4 deploy --dry-run --config admin-ai-ops-worker/wrangler.toml
+
+      - name: Validate Webflow loader boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "startsWith('/internal/admin/')" webflow/internal-admin-ai-ops-loader.html
+          grep -q "/v1/admin/ai-ops/client.js" webflow/internal-admin-ai-ops-loader.html
