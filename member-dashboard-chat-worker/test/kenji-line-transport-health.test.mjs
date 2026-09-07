@@ -8,7 +8,10 @@ import {
   isKenjiLineTransportHealthRequest,
 } from "../src/kenji-line-transport-health.mjs";
 
-test("recognizes only the bounded MMD LINE transport health query", () => {
+test("recognizes bounded MMD LINE transport health only on the canonical GET path", () => {
+  assert.equal(isKenjiLineTransportHealthRequest(new Request("https://www.mmdbkk.com/webhooks/line", {
+    headers: { "x-mmd-line-transport-health": "1" },
+  })), true);
   assert.equal(isKenjiLineTransportHealthRequest(new Request("https://www.mmdbkk.com/webhooks/line?transport_health=1")), true);
   assert.equal(isKenjiLineTransportHealthRequest(new Request("https://www.mmdbkk.com/webhooks/line")), false);
   assert.equal(isKenjiLineTransportHealthRequest(new Request("https://www.mmdbkk.com/webhooks/line/mms?transport_health=1")), false);
@@ -34,7 +37,9 @@ test("returns bounded ready transport health without exposing token or configure
   };
   try {
     const response = await handleKenjiLineTransportHealth(
-      new Request("https://www.mmdbkk.com/webhooks/line?transport_health=1"),
+      new Request("https://www.mmdbkk.com/webhooks/line", {
+        headers: { "x-mmd-line-transport-health": "1" },
+      }),
       { LINE_CHANNEL_SECRET: "secret-signature-value", LINE_CHANNEL_ACCESS_TOKEN: "secret-token-value" },
     );
     assert.equal(response.status, 200);
