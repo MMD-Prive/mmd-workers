@@ -242,15 +242,19 @@ export function resolveConversationContinuityV1(input = {}) {
   let inheritPreviousContext = false;
   let requiresStateRefresh = false;
 
-  if (expired) {
+  if (explicitNewTopic) {
+    decision = "new_topic";
+    confidence = 0.99;
+    reason = "explicit_new_topic_signal";
+  } else if (expired && differentTopic) {
+    decision = "new_topic";
+    confidence = 0.97;
+    reason = "stale_previous_thread_but_new_topic";
+  } else if (expired) {
     decision = "stale_refresh";
     confidence = 0.99;
     reason = "matrix_expired_or_stale";
     requiresStateRefresh = true;
-  } else if (explicitNewTopic) {
-    decision = "new_topic";
-    confidence = 0.99;
-    reason = "explicit_new_topic_signal";
   } else if (openState && continuationCue) {
     decision = "continuation";
     confidence = 0.99;
@@ -276,11 +280,15 @@ export function resolveConversationContinuityV1(input = {}) {
     ? priorTopic
     : currentTopic || (decision === "stale_refresh" ? priorTopic : "");
   const resolvedSubtopic = decision === "continuation" ? text(matrix.subtopic) : currentSubtopic;
-  const truthDomains = unique([
+  const priorTruthDomains = unique([
     ...jsonArray(matrix.live_truth_domains),
     ...inferLiveTruthDomains(previousIntent),
-    ...inferLiveTruthDomains(currentIntent),
   ]).filter((domain) => LIVE_TRUTH_DOMAINS.has(domain));
+  const currentTruthDomains = inferLiveTruthDomains(currentIntent);
+  const truthDomains = decision === "new_topic"
+    ? currentTruthDomains
+    : unique([...priorTruthDomains, ...currentTruthDomains]).filter((domain) => LIVE_TRUTH_DOMAINS.has(domain));
+  const inheritedTruthRequired = decision === "new_topic" ? false : matrix.live_truth_required;
 
   return {
     schema: CONTINUITY_RESOLVER_SCHEMA,
@@ -303,7 +311,7 @@ export function resolveConversationContinuityV1(input = {}) {
     pending_reference: decision === "continuation" ? matrix.pending_reference : "",
     do_not_ask_again: decision === "continuation" ? doNotAskAgain : [],
     important_open_loops: decision === "continuation" || decision === "stale_refresh" ? openLoops : [],
-    live_truth_required: Boolean(truthDomains.length || matrix.live_truth_required),
+    live_truth_required: Boolean(truthDomains.length || inheritedTruthRequired),
     live_truth_domains: truthDomains,
     requires_state_refresh: requiresStateRefresh,
     matrix_version: matrix.version,
