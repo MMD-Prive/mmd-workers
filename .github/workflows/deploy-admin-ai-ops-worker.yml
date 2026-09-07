@@ -58,6 +58,7 @@ jobs:
           set -euo pipefail
           node --check admin-ai-ops-worker/src/index.js
           node --check admin-ai-ops-worker/src/ceo-bridge.js
+          node --check admin-ai-ops-worker/src/follow-up-autopilot.js
           node --check admin-ai-ops-worker/src/gate.js
           node --test admin-ai-ops-worker/test/*.test.mjs
           npx --yes wrangler@4 deploy --dry-run --config admin-ai-ops-worker/wrangler.toml
@@ -120,16 +121,23 @@ jobs:
           test "$code" = "200"
           grep -q 'PER · AI OPS' "$body"
           grep -q 'PER · OWNER MODE' "$body"
+          grep -q 'WATCHING · AUTOPILOT' "$body"
           grep -q 'per-single-owner-v1' "$body"
           grep -Eiq '^x-mmd-ai-ops-client:[[:space:]]*v3-single-owner' "$headers"
+          grep -Eiq '^x-mmd-follow-up-autopilot:[[:space:]]*p1' "$headers"
 
-      - name: Smoke context fail-closed without admin session
+      - name: Smoke admin AI Ops fail-closed without admin session
         shell: bash
         run: |
           set -euo pipefail
-          body="$(mktemp)"
-          code="$(curl -sS -o "$body" -w "%{http_code}" "$BASE_URL/v1/admin/ai-ops/context?path=%2Finternal%2Fadmin%2Fcontrol-room")"
-          echo "HTTP $code"
-          cat "$body"
-          test "$code" = "401"
-          grep -q '"error":"unauthorized"' "$body"
+          for path in \
+            '/v1/admin/ai-ops/context?path=%2Finternal%2Fadmin%2Fcontrol-room' \
+            '/v1/admin/ai-ops/command-center' \
+            '/v1/admin/ai-ops/follow-ups'; do
+            body="$(mktemp)"
+            code="$(curl -sS -o "$body" -w "%{http_code}" "$BASE_URL$path")"
+            echo "$path -> HTTP $code"
+            cat "$body"
+            test "$code" = "401"
+            grep -q '"error":"unauthorized"' "$body"
+          done
