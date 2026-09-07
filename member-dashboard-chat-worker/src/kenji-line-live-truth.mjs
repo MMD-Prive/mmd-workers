@@ -81,7 +81,7 @@ export async function resolveKenjiLineLiveTruth({ env = {}, event = {}, intent =
         "x-mmd-internal-call": "true",
         "x-mmd-service-binding": "member-dashboard-chat-worker",
       },
-      body: JSON.stringify({ line_user_id: lineUserId }),
+      body: JSON.stringify({ line_user_id: lineUserId, intent: effectiveIntent }),
       signal: controller.signal,
     }));
     if (!response.ok) return { ok: false, status: "unavailable", authority: AUTHORITY };

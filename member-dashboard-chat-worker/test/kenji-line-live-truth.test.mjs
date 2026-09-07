@@ -51,6 +51,7 @@ test("reads bounded canonical truth through member-pages service binding", async
   assert.equal(captured.headers.get("x-mmd-service-binding"), "member-dashboard-chat-worker");
   const body = await captured.json();
   assert.equal(body.line_user_id, LINE_USER_ID);
+  assert.equal(body.intent, "membership_status");
   assert.equal(JSON.stringify(truth).includes(LINE_USER_ID), false);
 });
 
