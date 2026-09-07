@@ -86,8 +86,329 @@ export function renderApprovedAdminLogin(
     .visual{display:none}.visual:before{content:"";display:block;background:url("${APPROVED_ADMIN_LOGIN_PRIVACY_BG}") center/cover no-repeat;}.visual-logo{object-fit:contain;}.compat-marker{display:none!important}
     @media(max-width:1180px){.stage{padding-left:26px;padding-right:26px}.access-card{width:min(560px,55vw);min-width:470px}.title{font-size:44px;white-space:normal}.duo-wrap{right:-3vw;width:53vw}.side-mantra{display:none}.sigil-corner,.secure{right:20px}}
     @media(min-width:901px) and (max-height:760px){.stage{padding-top:10px;padding-bottom:10px}.access-card{max-height:calc(100svh - 20px);padding:18px 28px}.kicker{margin-bottom:6px}.title{font-size:40px}.lead{margin:6px 0 8px;font-size:12.5px}.rule{margin-bottom:8px}.managed-label{margin-bottom:5px}.lane{min-height:78px;padding:8px 11px}.lane-brand{height:33px}.lane-brand .mmd-brand{width:88px;max-height:34px}.lane-brand .mms-brand{width:38px;height:34px}.lane b{font-size:12.5px}.lane small{font-size:8.5px}.account-note{margin:4px 0 7px;font-size:8.5px}.panel-head{margin-bottom:5px}.panel-head span{font-size:8.4px}form{gap:6px}label{gap:4px;font-size:8px}input{min-height:38px}.go{min-height:43px}.message{min-height:11px}.links{margin-top:4px}.credit{margin-top:7px;padding-top:6px;font-size:7.8px}}
-    @media(max-width:900px){.mmd-login{height:auto;min-height:100svh;overflow:auto}.mmd-login:before{background:linear-gradient(180deg,rgba(4,3,2,.2),rgba(4,3,2,.7) 31%,rgba(4,3,2,.96) 58%,rgba(4,3,2,1) 100%),url("${APPROVED_ADMIN_LOGIN_WALL_BG}") center top/cover no-repeat}.duo-wrap{position:absolute;top:0;right:-12%;bottom:auto;width:92%;height:28svh;min-height:190px;opacity:.72;justify-content:flex-end}.duo{object-position:right bottom;mask-image:linear-gradient(180deg,#000 0%,#000 63%,transparent 100%)}.duo-vignette{background:linear-gradient(90deg,rgba(5,4,3,.72),transparent 35%),linear-gradient(180deg,rgba(5,4,3,.03),rgba(5,4,3,.84))}.stage{display:block;height:auto;min-height:100svh;padding:18svh 8px 14px}.access-card{width:100%;min-width:0;max-width:600px;max-height:none;overflow:visible;margin:0 auto;border-radius:10px;padding:16px 14px;background:linear-gradient(145deg,rgba(14,11,9,.95),rgba(5,5,4,.98))}.kicker{margin-bottom:6px;font-size:8px}.title{font-size:clamp(30px,9vw,38px);line-height:.96;white-space:normal}.lead{margin:6px 0 9px;font-size:12.5px}.rule{margin-bottom:8px}.managed-label{margin-bottom:6px;font-size:8px}.lanes{gap:6px;margin-bottom:6px}.lane{min-height:78px;padding:8px 9px}.lane-status{top:8px;right:8px;width:14px;height:14px}.lane-brand{height:34px}.lane-brand .mmd-brand{width:82px;max-height:33px}.lane-brand .mms-brand{width:38px;height:34px}.lane b{margin-top:2px;font-size:12.5px}.lane small{font-size:8.5px}.account-note{margin:5px 0 8px;font-size:9px}.panel-head{margin-bottom:6px}.panel-head strong{font-size:10.5px}.panel-head span{font-size:8.8px}form{gap:7px}label{gap:4px;font-size:8px}input{min-height:42px;padding:0 12px}.toggle{min-width:58px}.go{min-height:46px;font-size:10.5px}.message{min-height:12px;font-size:8.7px}.privacy{font-size:8.2px}.links{margin-top:5px}.credit{margin-top:10px;padding-top:8px;font-size:8px}.sigil-corner{top:14px;right:14px;width:27px;height:27px}.side-mantra{display:none}.secure{position:relative;right:auto;bottom:auto;margin:11px auto 0;text-align:center;font-size:7px}}
-    @media(max-width:460px){.stage{padding-top:16svh;padding-left:6px;padding-right:6px;padding-bottom:10px}.duo-wrap{right:-17%;width:103%;height:25svh;min-height:170px}.access-card{padding:14px 12px}.title{font-size:30px}.kicker,.managed-label{letter-spacing:.23em}.lane{min-height:73px;padding:7px 8px}.lane-brand{height:31px}.lane-brand .mmd-brand{width:74px;max-height:30px}.lane-brand .mms-brand{width:34px;height:30px}.lane b{font-size:12px}.lane small{font-size:8px}.account-note{display:none}.panel-head{margin-top:2px}.panel-head span{font-size:8.4px}.go{min-height:44px;font-size:10px}.credit{font-size:7.8px}}
+    @media(max-width:900px){
+      .mmd-login{
+        height:auto;
+        min-height:100svh;
+        overflow:auto;
+      }
+
+      .mmd-login:before{
+        background:
+          linear-gradient(
+            180deg,
+            rgba(4,3,2,.04) 0%,
+            rgba(4,3,2,.12) 34%,
+            rgba(4,3,2,.48) 58%,
+            rgba(4,3,2,.88) 82%,
+            rgba(4,3,2,.98) 100%
+          ),
+          url("${APPROVED_ADMIN_LOGIN_WALL_BG}") 58% top/cover no-repeat;
+        filter:saturate(.82) brightness(.72) contrast(1.03);
+      }
+
+      .mmd-login:after{
+        background:
+          linear-gradient(
+            180deg,
+            rgba(0,0,0,.01) 0%,
+            rgba(0,0,0,.03) 38%,
+            rgba(0,0,0,.18) 56%,
+            rgba(0,0,0,.58) 78%,
+            rgba(0,0,0,.82) 100%
+          );
+      }
+
+      .duo-wrap{
+        position:absolute;
+        top:0;
+        right:-8%;
+        bottom:auto;
+        width:106%;
+        height:52svh;
+        min-height:330px;
+        opacity:.91;
+        justify-content:flex-end;
+      }
+
+      .duo{
+        object-position:72% bottom;
+        filter:saturate(.88) contrast(1.04) brightness(.9);
+        mask-image:linear-gradient(
+          180deg,
+          #000 0%,
+          #000 68%,
+          rgba(0,0,0,.82) 82%,
+          transparent 100%
+        );
+      }
+
+      .duo-vignette{
+        background:
+          linear-gradient(
+            90deg,
+            rgba(5,4,3,.36) 0%,
+            transparent 30%,
+            transparent 84%,
+            rgba(5,4,3,.2) 100%
+          ),
+          linear-gradient(
+            180deg,
+            rgba(5,4,3,.01) 0%,
+            transparent 66%,
+            rgba(5,4,3,.56) 100%
+          );
+      }
+
+      .stage{
+        display:flex;
+        align-items:flex-end;
+        justify-content:flex-start;
+        height:auto;
+        min-height:100svh;
+        padding:44svh 14px 14px;
+      }
+
+      .access-card{
+        width:min(91vw,390px);
+        min-width:0;
+        max-width:390px;
+        max-height:none;
+        overflow:visible;
+        margin:0;
+        border-radius:12px;
+        padding:13px 13px 12px;
+        background:
+          linear-gradient(
+            145deg,
+            rgba(14,11,9,.84),
+            rgba(5,5,4,.93)
+          );
+        backdrop-filter:blur(15px);
+        box-shadow:
+          0 18px 48px rgba(0,0,0,.42),
+          inset 0 1px 0 rgba(255,255,255,.03);
+      }
+
+      .kicker{
+        margin-bottom:4px;
+        font-size:7px;
+        letter-spacing:.26em;
+      }
+
+      .title{
+        font-size:26px;
+        line-height:.95;
+        white-space:normal;
+      }
+
+      .lead{
+        margin:4px 0 6px;
+        font-size:10.5px;
+        line-height:1.35;
+      }
+
+      .rule{
+        margin-bottom:6px;
+      }
+
+      .managed-label{
+        margin-bottom:4px;
+        font-size:7.2px;
+        letter-spacing:.23em;
+      }
+
+      .lanes{
+        gap:5px;
+        margin-bottom:5px;
+      }
+
+      .lane{
+        min-height:61px;
+        padding:6px 8px;
+      }
+
+      .lane-status{
+        top:7px;
+        right:7px;
+        width:13px;
+        height:13px;
+      }
+
+      .lane-brand{
+        height:25px;
+      }
+
+      .lane-brand .mmd-brand{
+        width:68px;
+        max-height:25px;
+      }
+
+      .lane-brand .mms-brand{
+        width:30px;
+        height:25px;
+      }
+
+      .lane b{
+        margin-top:2px;
+        font-size:10.5px;
+      }
+
+      .lane small{
+        font-size:7.2px;
+      }
+
+      .account-note{
+        display:none;
+      }
+
+      .panel-head{
+        margin:4px 0 5px;
+      }
+
+      .panel-head strong{
+        font-size:9.5px;
+      }
+
+      .panel-head span{
+        margin-top:0;
+        font-size:7.8px;
+        line-height:1.28;
+      }
+
+      form{
+        gap:5px;
+      }
+
+      label{
+        gap:3px;
+        font-size:7.2px;
+        letter-spacing:.22em;
+      }
+
+      input{
+        min-height:39px;
+        padding:0 10px;
+        font-size:11px;
+      }
+
+      .toggle{
+        min-width:52px;
+        font-size:7.5px;
+      }
+
+      .go{
+        min-height:42px;
+        font-size:9px;
+        letter-spacing:.12em;
+      }
+
+      .message{
+        min-height:10px;
+        font-size:7.7px;
+      }
+
+      .privacy{
+        font-size:7.4px;
+        line-height:1.35;
+      }
+
+      .links{
+        gap:10px;
+        margin-top:4px;
+      }
+
+      .linkbtn{
+        font-size:8px;
+      }
+
+      .subpanel{
+        margin-top:7px;
+        padding-top:7px;
+      }
+
+      .credit{
+        display:none;
+      }
+
+      .sigil-corner{
+        top:14px;
+        right:14px;
+        width:27px;
+        height:27px;
+      }
+
+      .side-mantra{
+        display:none;
+      }
+
+      .secure{
+        display:none;
+      }
+    }
+
+    @media(max-width:460px){
+      .stage{
+        padding:46svh 10px 12px;
+      }
+
+      .duo-wrap{
+        right:-10%;
+        width:110%;
+        height:54svh;
+        min-height:350px;
+      }
+
+      .duo{
+        object-position:70% bottom;
+      }
+
+      .access-card{
+        width:min(90vw,360px);
+        max-width:360px;
+        padding:12px 11px 10px;
+      }
+
+      .title{
+        font-size:24px;
+      }
+
+      .lead{
+        font-size:10px;
+      }
+
+      .lane{
+        min-height:57px;
+        padding:5px 7px;
+      }
+
+      .lane-brand{
+        height:23px;
+      }
+
+      .lane-brand .mmd-brand{
+        width:62px;
+        max-height:23px;
+      }
+
+      .lane-brand .mms-brand{
+        width:27px;
+        height:23px;
+      }
+
+      .lane b{
+        font-size:10px;
+      }
+
+      input{
+        min-height:38px;
+      }
+
+      .go{
+        min-height:41px;
+      }
+    }
+
     @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
   </style>
 </head>
