@@ -1,5 +1,6 @@
 const LINE_WEBHOOK_INFO_URL = "https://api.line.me/v2/bot/channel/webhook/endpoint";
 const HEALTH_QUERY = "transport_health";
+const HEALTH_HEADER = "x-mmd-line-transport-health";
 const TIMEOUT_MS = 1800;
 const CANONICAL_ENDPOINTS = new Set([
   "https://mmdbkk.com/webhooks/line",
@@ -36,7 +37,8 @@ export function isKenjiLineTransportHealthRequest(request) {
   try {
     const url = new URL(request.url);
     const path = url.pathname.toLowerCase().replace(/\/{2,}/g, "/").replace(/\/+$/, "") || "/";
-    return path === "/webhooks/line" && url.searchParams.get(HEALTH_QUERY) === "1";
+    if (path !== "/webhooks/line") return false;
+    return text(request.headers.get(HEALTH_HEADER), 20) === "1" || url.searchParams.get(HEALTH_QUERY) === "1";
   } catch {
     return false;
   }
