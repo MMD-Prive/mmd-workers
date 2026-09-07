@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const source = await readFile(new URL("../public/a/member-intelligence.js", import.meta.url), "utf8");
+const canonicalCore = await readFile(new URL("../src/canonical-admin-login-core.ts", import.meta.url), "utf8");
+const wrangler = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");
 
 test("Member Intelligence reads only canonical same-origin admin projections", () => {
   assert.match(source, /\/v1\/admin\/clients\/recent/);
@@ -36,4 +38,17 @@ test("Member Intelligence hands canonical clients to the correct operator surfac
   assert.match(source, /\/internal\/admin\/jobs\/create-job\?client_id=/);
   assert.match(source, /\/internal\/admin\/customer-data/);
   assert.doesNotMatch(source, /\/internal\/admin\/jobs\/create-session\?client_id=/);
+});
+
+test("Member Intelligence browser code is served through an extensionless Worker-owned route", () => {
+  assert.match(canonicalCore, /MEMBER_INTELLIGENCE_RUNTIME_PATH\s*=\s*"\/internal\/admin\/member-intelligence\/runtime"/);
+  assert.match(canonicalCore, /BUNDLED_MEMBER_INTELLIGENCE_RUNTIME_PATH\s*=\s*"\/a\/member-intelligence\.js"/);
+  assert.match(canonicalCore, /assetUrl\.pathname\s*=\s*BUNDLED_MEMBER_INTELLIGENCE_RUNTIME_PATH/);
+  assert.match(canonicalCore, /assetUrl\.search\s*=\s*""/);
+  assert.match(canonicalCore, /x-mmd-member-intelligence-runtime/);
+  assert.match(canonicalCore, /x-mmd-member-intelligence-authority/);
+  assert.match(wrangler, /run_worker_first\s*=\s*\[[^\]]*\/internal\/admin\/member-intelligence\/runtime/);
+  assert.match(wrangler, /pattern = "mmdbkk\.com\/internal\/admin\/member-intelligence\/runtime"/);
+  assert.match(wrangler, /pattern = "www\.mmdbkk\.com\/internal\/admin\/member-intelligence\/runtime"/);
+  assert.doesNotMatch(wrangler, /pattern = "(?:www\.)?mmdbkk\.com\/a\/member-intelligence\.js"/);
 });
