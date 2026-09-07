@@ -34,8 +34,10 @@ try {
   assert.equal(response.headers.get("x-mmd-control-room-cta-audit"), "operator-triggered-head-check");
   assert.equal(response.headers.get("x-mmd-control-room-telegram-status"), "partial-worker-alerts-no-unified-router");
   assert.equal(response.headers.get("x-mmd-control-room-typography"), "sf-first-local");
+  assert.equal(response.headers.get("x-mmd-control-room-operator-object"), "job");
+  assert.equal(response.headers.get("x-mmd-control-room-create-route"), "/internal/admin/jobs/create-job");
 
-  // New visible target surface.
+  // Visible operator surface remains compact and queue-first.
   assert.match(body, /MMD PRIVÉ/);
   assert.match(body, /OPERATING SYSTEM/);
   assert.match(body, /วันนี้ต้องทำอะไรบ้าง/);
@@ -47,17 +49,20 @@ try {
   assert.match(body, /\/v1\/admin\/dashboard/);
   assert.match(body, /BACKEND WAITING/);
 
-  // Compatibility markers remain for deploy smoke while visible V3 route-map UI is retired.
+  // Compatibility markers remain, but operator creation is Job-first.
   assert.match(body, /data-control-room-v3/);
   assert.match(body, /OWNER CONTROL · V4/);
-  assert.match(body, /MMD PRIVÉ · OWNER CONTROL ROOM · 05 SEP 2026/);
+  assert.match(body, /MMD PRIVÉ · OWNER CONTROL ROOM · 07 SEP 2026/);
   assert.match(body, /Boss%20Per%20input%20Kenji%20AI\.webp/);
   assert.match(body, /Working%20Room\.webp/);
   assert.match(body, /Kenji%20Know02\.webp/);
   assert.match(body, /Wall%20a%20Long\.webp/);
 
-  assert.match(body, /\/internal\/admin\/jobs\/create-session/);
+  assert.doesNotMatch(body, /\/internal\/admin\/jobs\/create-session/);
+  assert.doesNotMatch(body, /Create Session/);
   assert.match(body, /\/internal\/admin\/jobs\/create-job/);
+  assert.match(body, /Create Job/);
+  assert.match(body, /<span>JOB<\/span>/);
   assert.match(body, /\/internal\/admin\/payments/);
   assert.match(body, /\/internal\/admin\/payments\/historical-backfill/);
   assert.match(body, /\/internal\/admin\/kenji/);
