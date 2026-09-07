@@ -45,12 +45,15 @@ jobs:
           test -s webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
           test -s webflow/internal/admin/kenji/kenji-admin-friendly-v3.js
           test -s webflow/internal/admin/kenji/kenji-admin-board-view-v1.js
+          test -s webflow/internal/admin/kenji/kenji-admin-knowledge-view-v1.js
           node --check webflow/internal/admin/kenji/kenji-admin-v1.js
           node --check webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
           node --check webflow/internal/admin/kenji/kenji-admin-friendly-v3.js
           node --check webflow/internal/admin/kenji/kenji-admin-board-view-v1.js
+          node --check webflow/internal/admin/kenji/kenji-admin-knowledge-view-v1.js
           node --test webflow/internal/admin/kenji/kenji-admin-v1.test.mjs
           node --test webflow/internal/admin/kenji/kenji-admin-board-view-v1.test.mjs
+          node --test webflow/internal/admin/kenji/kenji-admin-knowledge-view-v1.test.mjs
           grep -q 'kux-board-banner' webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
           grep -q 'MODEL REVIEW QUEUE' webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
           grep -q 'singleOwnerV4' webflow/internal/admin/kenji/kenji-admin-friendly-v3.js
@@ -61,10 +64,13 @@ jobs:
           grep -q 'sigilBoardViewV1' webflow/internal/admin/kenji/kenji-admin-board-view-v1.js
           grep -q '/v1/sigil/board/queue?limit=100' webflow/internal/admin/kenji/kenji-admin-board-view-v1.js
           grep -q 'data-kso-board-panel' webflow/internal/admin/kenji/kenji-admin-board-view-v1.js
-          # Single-owner layer mounts first; Board view extends that shell; old review overlay remains inert.
+          grep -q 'knowledgeViewV1' webflow/internal/admin/kenji/kenji-admin-knowledge-view-v1.js
+          grep -q 'updateView("knowledge"' webflow/internal/admin/kenji/kenji-admin-knowledge-view-v1.js
+          # Single-owner layer mounts first; Board and Knowledge query views extend that shell; old review overlay remains inert.
           cat webflow/internal/admin/kenji/kenji-admin-v1.js \
               webflow/internal/admin/kenji/kenji-admin-friendly-v3.js \
               webflow/internal/admin/kenji/kenji-admin-board-view-v1.js \
+              webflow/internal/admin/kenji/kenji-admin-knowledge-view-v1.js \
               webflow/internal/admin/kenji/kenji-admin-ux-overlay.js \
               > /tmp/kenji-admin-v1.js
           node --check /tmp/kenji-admin-v1.js
@@ -167,6 +173,8 @@ jobs:
           grep -q 'sigilBoardViewV1' "$js_file"
           grep -q '/v1/sigil/board/queue?limit=100' "$js_file"
           grep -q 'data-kso-board-panel' "$js_file"
+          grep -q 'knowledgeViewV1' "$js_file"
+          grep -q 'updateView("knowledge"' "$js_file"
           grep -q 'kux-board-banner' "$js_file"
           grep -q 'MODEL REVIEW QUEUE' "$js_file"
           grep -q 'Kenji%20Glass%20board.webp' "$js_file"
@@ -186,6 +194,8 @@ jobs:
               && grep -q 'sigilBoardViewV1' "$stable_js_file" \
               && grep -q '/v1/sigil/board/queue?limit=100' "$stable_js_file" \
               && grep -q 'data-kso-board-panel' "$stable_js_file" \
+              && grep -q 'knowledgeViewV1' "$stable_js_file" \
+              && grep -q 'updateView("knowledge"' "$stable_js_file" \
               && grep -q 'kux-board-banner' "$stable_js_file" \
               && grep -q 'MODEL REVIEW QUEUE' "$stable_js_file" \
               && grep -q -- '--font-ui' "$stable_css_file"; then
@@ -195,4 +205,4 @@ jobs:
             sleep 3
           done
           test "$found" = "1"
-          echo "Kenji admin stable CDN assets match the deployed single-owner + SIGIL Board workflow after purge"
+          echo "Kenji admin stable CDN assets match the deployed single-owner + SIGIL Board + Knowledge workflow after purge"
