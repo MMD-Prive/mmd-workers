@@ -76,7 +76,9 @@ function switchingResolver(state) {
   };
 }
 
-function canonicalEntitlementSnapshot(capability = "svip") {
+function canonicalEntitlementSnapshot(capability = "svip", lifecycle = "active") {
+  const active = lifecycle === "active" ? [capability] : [];
+  const grace = lifecycle === "grace" ? [capability] : [];
   return {
     schema_version: "my_mmd_entitlement_resolver_v1",
     source_status: "verified",
@@ -85,10 +87,10 @@ function canonicalEntitlementSnapshot(capability = "svip") {
     member_id: "jjeunejj",
     access: {
       public_service_access: true,
-      protected_capabilities_active: [capability],
-      protected_capabilities_grace: [],
-      private_capabilities_active: [capability],
-      private_capabilities_grace: [],
+      protected_capabilities_active: active,
+      protected_capabilities_grace: grace,
+      private_capabilities_active: active,
+      private_capabilities_grace: grace,
     },
   };
 }
@@ -252,7 +254,7 @@ describe("member dashboard Phase 1 API", () => {
     const cookie = await startSession(runtime);
 
     state.memberExists = true;
-    state.entitlementSnapshot = canonicalEntitlementSnapshot("svip");
+    state.entitlementSnapshot = canonicalEntitlementSnapshot("svip", "active");
 
     const { response, payload } = await dashboard(runtime, cookie);
 
@@ -273,7 +275,7 @@ describe("member dashboard Phase 1 API", () => {
     const cookie = await startSession(runtime);
 
     state.memberExists = true;
-    state.entitlementSnapshot = canonicalEntitlementSnapshot("svip");
+    state.entitlementSnapshot = canonicalEntitlementSnapshot("svip", "active");
 
     const { response, payload } = await memberAppMembership(runtime, cookie);
 
@@ -286,5 +288,29 @@ describe("member dashboard Phase 1 API", () => {
     assert.equal(payload.lifecycle, "active");
     assert.notEqual(payload.nextAction?.kind, "signup");
     assert.notEqual(payload.membership.nextAction?.kind, "signup");
+  });
+
+  it("preserves canonical SVIP grace instead of overstating it as active", async () => {
+    const state = {
+      memberExists: false,
+      profile: profileFixture({ display_name: "เจ", tier: "Member", membership_status: "checking", points: null, points_records_count: 0, history: [], payment_history: [] }),
+      entitlementSnapshot: null,
+    };
+    const runtime = env({ MEMBER_STATUS_RESOLVER: switchingResolver(state) });
+    const cookie = await startSession(runtime);
+
+    state.memberExists = true;
+    state.entitlementSnapshot = canonicalEntitlementSnapshot("svip", "grace");
+
+    const dashboardResult = await dashboard(runtime, cookie);
+    assert.deepEqual(dashboardResult.payload.data.member.tier, { value: "SVIP", status: "verified", source: "my_mmd_entitlement_resolver_v1" });
+    assert.deepEqual(dashboardResult.payload.data.member.membership_status, { value: "grace", status: "verified", source: "my_mmd_entitlement_resolver_v1" });
+
+    const membershipResult = await memberAppMembership(runtime, cookie);
+    assert.equal(membershipResult.payload.membership.level, "svip");
+    assert.equal(membershipResult.payload.membership.status, "grace");
+    assert.equal(membershipResult.payload.membership.lifecycle, "grace");
+    assert.equal(membershipResult.payload.lifecycle, "grace");
+    assert.notEqual(membershipResult.payload.nextAction?.kind, "signup");
   });
 });
