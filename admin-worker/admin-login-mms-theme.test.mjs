@@ -43,5 +43,5 @@ test("MMS partner login uses Image A back-office layout and canonical MMS stylin
   assert.match(html, /People<\/span><span>Systems<\/span><span>A Quieter<\/span><span>Tomorrow/);
   assert.match(html, /SECURE · PRIVATE · INTERNAL/);
   assert.match(html, /SIGIL Systems<\/b><br>Design and Architecture by Per 2025–2026 \(อีดอก กูเองค่ะมึง\)/);
-  assert.match(response.headers.get("x-mmd-login-ui") || "", /browser-fetch-v6/);
+  assert.match(response.headers.get("x-mmd-login-ui") || "", /browser-fetch-v5/);
 });
