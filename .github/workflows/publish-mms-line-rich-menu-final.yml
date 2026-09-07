@@ -1,0 +1,238 @@
+name: Publish MMS LINE Rich Menu Final
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "ops/mms-rich-menu-publish-request.json"
+
+concurrency:
+  group: publish-mms-line-rich-menu-final
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      CLOUDFLARE_ZONE_ID: "2d62396174fa2ddadbbcd0e8cf0f3367"
+      WORKER_NAME: "member-dashboard-chat-worker"
+      WORKER_CONFIG: "member-dashboard-chat-worker/wrangler.toml"
+      HEALTH_URL: "https://www.mmdbkk.com/webhooks/line/mms"
+      PUBLISH_URL: "https://www.mmdbkk.com/v1/internal/line/mms/rich-menu/publish"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Validate approved publication request
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = "ops/mms-rich-menu-publish-request.json";
+          const request = JSON.parse(fs.readFileSync(path, "utf8"));
+          if (request.approved !== true) throw new Error("MMS Rich Menu publication is not approved");
+          if (request.publish_mode !== "default_24_7") throw new Error("Unexpected publish mode");
+          if (request.expected_width !== 2500 || request.expected_height !== 1686) throw new Error("Unexpected Rich Menu dimensions");
+          const url = new URL(String(request.source_url || ""));
+          if (url.protocol !== "https:" || url.hostname !== "cdn.prod.website-files.com") throw new Error("Rich Menu source must be the reviewed Webflow CDN asset");
+          if (!/^mms-[a-z0-9-]+-20260907$/i.test(String(request.request_id || ""))) throw new Error("Unexpected publication request id");
+          fs.appendFileSync(process.env.GITHUB_ENV, `MMS_RICH_MENU_SOURCE_URL=${url.toString()}\n`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `MMS_RICH_MENU_REQUEST_ID=${request.request_id}\n`);
+          console.log(`Approved request ${request.request_id}`);
+          NODE
+
+      - name: Normalize Cloudflare credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const clean = (value) => (value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
+          const deploy = clean(process.env.CLOUDFLARE_API_TOKEN);
+          const routes = clean(process.env.CLOUDFLARE_ROUTES_API_TOKEN);
+          const account = clean(process.env.CLOUDFLARE_ACCOUNT_ID);
+          const zone = clean(process.env.CLOUDFLARE_ZONE_ID);
+          if (!deploy || !routes || !account || !zone) throw new Error("Cloudflare deployment/route credentials missing");
+          console.log(`::add-mask::${deploy}`);
+          console.log(`::add-mask::${routes}`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${deploy}\nCLOUDFLARE_ROUTES_API_TOKEN=${routes}\nCLOUDFLARE_ACCOUNT_ID=${account}\nCLOUDFLARE_ZONE_ID=${zone}\n`);
+          NODE
+
+      - name: Prepare exact LINE-safe JPEG
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v identify >/dev/null 2>&1 || ! command -v convert >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y imagemagick
+          fi
+          source_file="$RUNNER_TEMP/mms-rich-menu-source.png"
+          final_file="$RUNNER_TEMP/mms-rich-menu-final.jpg"
+          curl --fail --location --retry 6 --retry-delay 2 --retry-all-errors \
+            --silent --show-error \
+            "$MMS_RICH_MENU_SOURCE_URL" \
+            --output "$source_file"
+          source_dimensions="$(identify -format '%wx%h' "$source_file")"
+          if [ "$source_dimensions" != "2500x1686" ]; then
+            echo "Unexpected source dimensions: $source_dimensions" >&2
+            exit 2
+          fi
+          for quality in 88 84 80 76 72; do
+            convert "$source_file" \
+              -background '#0b2a1a' -alpha remove -alpha off \
+              -strip -sampling-factor 4:4:4 -quality "$quality" \
+              "$final_file"
+            bytes="$(stat -c%s "$final_file")"
+            echo "JPEG quality=$quality bytes=$bytes"
+            if [ "$bytes" -le 1048576 ]; then
+              break
+            fi
+          done
+          final_dimensions="$(identify -format '%wx%h' "$final_file")"
+          final_bytes="$(stat -c%s "$final_file")"
+          test "$final_dimensions" = "2500x1686"
+          test "$final_bytes" -gt 0
+          test "$final_bytes" -le 1048576
+          echo "MMS_RICH_MENU_FINAL_FILE=$final_file" >> "$GITHUB_ENV"
+          echo "MMS_RICH_MENU_FINAL_BYTES=$final_bytes" >> "$GITHUB_ENV"
+          echo "Prepared $final_dimensions JPEG under LINE 1 MB limit"
+
+      - name: Wait for raw publisher runtime to reach production
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=0
+          for attempt in $(seq 1 80); do
+            body="$(curl --silent --show-error --retry 2 --retry-delay 1 "$HEALTH_URL" || true)"
+            if node -e '
+              let body = {};
+              try { body = JSON.parse(process.argv[1]); } catch {}
+              process.exit(body.ok === true && body.worker === "member-dashboard-chat-worker" && body.rich_menu_publisher === "raw-or-url-v2" ? 0 : 1);
+            ' "$body"; then
+              ready=1
+              echo "MMS raw Rich Menu publisher is live"
+              break
+            fi
+            echo "Waiting for production publisher runtime ($attempt/80)"
+            sleep 5
+          done
+          test "$ready" = "1"
+
+      - name: Claim exact protected publisher route
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
+          const zoneId = process.env.CLOUDFLARE_ZONE_ID;
+          const worker = process.env.WORKER_NAME;
+          const desired = [
+            "mmdbkk.com/v1/internal/line/mms/rich-menu/publish",
+            "www.mmdbkk.com/v1/internal/line/mms/rich-menu/publish",
+          ];
+          async function cf(path, options = {}) {
+            const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+              ...options,
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+                ...(options.headers || {}),
+              },
+            });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok || body?.success !== true) throw new Error(JSON.stringify(body?.errors || body || { status: response.status }));
+            return body.result;
+          }
+          const routePath = `/zones/${zoneId}/workers/routes`;
+          let existing = await cf(routePath);
+          for (const pattern of desired) {
+            const conflict = existing.find((route) => route.pattern === pattern && route.script !== worker);
+            if (conflict) throw new Error(`route conflict ${pattern} -> ${conflict.script || "none"}`);
+          }
+          for (const pattern of desired) {
+            if (existing.some((route) => route.pattern === pattern && route.script === worker)) continue;
+            await cf(routePath, { method: "POST", body: JSON.stringify({ pattern, script: worker }) });
+            console.log(`created ${pattern} -> ${worker}`);
+          }
+          existing = await cf(routePath);
+          const missing = desired.filter((pattern) => !existing.some((route) => route.pattern === pattern && route.script === worker));
+          if (missing.length) throw new Error(`missing protected MMS publisher routes: ${missing.join(", ")}`);
+          console.log(`verified ${desired.length}/${desired.length} protected publisher routes`);
+          NODE
+
+      - name: Publish final Rich Menu and retire one-time credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          publish_token="$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))")"
+          test "${#publish_token}" -eq 64
+          echo "::add-mask::$publish_token"
+
+          cleanup() {
+            set +e
+            yes | npx --yes wrangler@4 secret delete MMS_RICH_MENU_PUBLISH_TOKEN --config "$WORKER_CONFIG" >/tmp/mms-rich-menu-secret-delete.log 2>&1
+            cleanup_status=$?
+            cat /tmp/mms-rich-menu-secret-delete.log
+            if [ "$cleanup_status" -ne 0 ]; then
+              echo "Failed to retire MMS_RICH_MENU_PUBLISH_TOKEN" >&2
+              return "$cleanup_status"
+            fi
+          }
+          trap cleanup EXIT
+
+          printf '%s' "$publish_token" | npx --yes wrangler@4 secret put MMS_RICH_MENU_PUBLISH_TOKEN --config "$WORKER_CONFIG"
+
+          response_file="$RUNNER_TEMP/mms-rich-menu-publish-response.json"
+          http_code="$(curl --silent --show-error \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer $publish_token" \
+            --header "Content-Type: image/jpeg" \
+            --header "X-MMS-Publish-Request-Id: $MMS_RICH_MENU_REQUEST_ID" \
+            --data-binary "@$MMS_RICH_MENU_FINAL_FILE" \
+            "$PUBLISH_URL")"
+          cat "$response_file"
+          node - "$http_code" "$response_file" <<'NODE'
+          const fs = require("node:fs");
+          const http = Number(process.argv[2]);
+          const file = process.argv[3];
+          const body = JSON.parse(fs.readFileSync(file, "utf8"));
+          if (http !== 200 || body.ok !== true || body.default_set !== true || body.visibility !== "24/7" || !body.rich_menu_id) {
+            throw new Error(`MMS Rich Menu publish failed: HTTP ${http} ${JSON.stringify(body)}`);
+          }
+          console.log(`Published MMS Rich Menu ${body.rich_menu_id} as 24/7 default`);
+          NODE
+
+          trap - EXIT
+          cleanup
+
+      - name: Final production smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(curl --fail --silent --show-error --retry 6 --retry-delay 2 --retry-all-errors "$HEALTH_URL")"
+          node -e '
+            const body = JSON.parse(process.argv[1]);
+            if (body.ok !== true || body.configured !== true || body.ai_enabled !== true || body.rich_menu_mode !== "24/7" || body.rich_menu_publisher !== "raw-or-url-v2") {
+              throw new Error(`Unexpected MMS LINE health after Rich Menu publish: ${process.argv[1]}`);
+            }
+          ' "$body"
+          echo "MMS LINE AI + webhook + 24/7 Rich Menu publication completed"
