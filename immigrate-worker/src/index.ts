@@ -117,6 +117,8 @@ const INTERNAL_ROUTES_BRIDGE_ADMIN_API_PATHS = new Set([
   "/v1/admin/clients/lineage-lookup",
   "/v1/admin/clients/recent",
   "/v1/admin/models/search",
+  "/v1/admin/models/activation-candidates",
+  "/v1/admin/model/activation/issue",
   "/v1/admin/job/draft",
   "/v1/admin/create-job",
   "/v1/admin/create-session",
