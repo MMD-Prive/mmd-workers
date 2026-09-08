@@ -121,6 +121,16 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/clients/recent*"
 zone_name = "mmdbkk.com"
 
+# Member Intelligence advisory facade. The public ingress stays on immigrate-worker
+# and forwards only this narrow read route through the ADMIN_WORKER service binding.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/clients/intelligence*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/clients/intelligence*"
+zone_name = "mmdbkk.com"
+
 [[routes]]
 pattern = "mmdbkk.com/v1/admin/models/search*"
 zone_name = "mmdbkk.com"

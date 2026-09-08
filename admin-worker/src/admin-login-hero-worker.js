@@ -2,6 +2,10 @@ import coreWorker from "./admin-login-hero-worker-core.js";
 import dashboardWorker from "./dashboard-worker.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { tryHandleEmailLessLineRenewalRecovery } from "./payment-review-line-recovery.js";
+import {
+  CLIENT_INTELLIGENCE_PATH,
+  handleClientIntelligenceRequest,
+} from "./client-intelligence-endpoint.js";
 export * from "./admin-login-hero-worker-core.js";
 
 /*
@@ -30,6 +34,9 @@ export default {
     const path = normalizePath(new URL(request.url).pathname);
     if (path === ADMIN_DASHBOARD_PATH) {
       return handleCredentialBoundDashboard(request, env, ctx);
+    }
+    if (path === CLIENT_INTELLIGENCE_PATH) {
+      return handleCredentialBoundClientIntelligence(request, env);
     }
 
     // Preserve the already-guarded canonical Payment Review path. The clone is
@@ -95,12 +102,61 @@ async function handleCredentialBoundDashboard(request, env, ctx) {
   return new Response(null, { status: response.status, headers: responseHeaders });
 }
 
+async function handleCredentialBoundClientIntelligence(request, env) {
+  const method = request.method.toUpperCase();
+  if (method !== "GET" && method !== "HEAD") {
+    return clientIntelligenceJson({ ok: false, error: "method_not_allowed" }, 405, { allow: "GET, HEAD" });
+  }
+
+  const url = new URL(request.url);
+  if (url.hostname !== "mmdbkk.com" && url.hostname !== "www.mmdbkk.com") {
+    return clientIntelligenceJson({ ok: false, error: "client_intelligence_host_not_allowed" }, 403);
+  }
+
+  const actor = await readCredentialBoundAdminActor(request, env);
+  if (!actor) return clientIntelligenceJson({ ok: false, error: "unauthorized" }, 401);
+  if (String(actor.role || "").toLowerCase() === "mms_partner") {
+    return clientIntelligenceJson({ ok: false, error: "mms_partner_scope_forbidden" }, 403);
+  }
+
+  // Client Intelligence is Per-only/read-only. Strip any browser-supplied
+  // service credentials before delegating into the advisory projection.
+  const headers = new Headers(request.headers);
+  headers.delete("Authorization");
+  headers.delete("X-Confirm-Key");
+  headers.set("X-MMD-Admin-Actor", String(actor.id || "per"));
+  headers.set("X-MMD-Admin-Role", String(actor.role || "owner"));
+  headers.set("X-MMD-Admin-Source", "credential-bound-session");
+
+  const delegated = new Request(request, {
+    method: "GET",
+    headers,
+  });
+  const response = await handleClientIntelligenceRequest(delegated, env);
+  if (method !== "HEAD") return response;
+  const responseHeaders = new Headers(response.headers);
+  responseHeaders.delete("content-length");
+  return new Response(null, { status: response.status, headers: responseHeaders });
+}
+
 function dashboardJson(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": "no-store, private",
+    },
+  });
+}
+
+function clientIntelligenceJson(data, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store, private",
+      "X-MMD-Client-Intelligence": "advisory-v1",
+      ...extraHeaders,
     },
   });
 }
