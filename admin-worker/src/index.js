@@ -4658,7 +4658,7 @@ async function searchCreateSessionModels(env, url) {
 async function listModelActivationCandidates(env, url) {
   const q = str(url.searchParams.get("q") || url.searchParams.get("search") || "");
   const folder = accessToken(url.searchParams.get("folder") || "");
-  const limit = clampInt(url.searchParams.get("limit"), 1, 100, 50);
+  const limit = clampInt(url.searchParams.get("limit") ?? 50, 1, 100, 50);
   const allowedFolders = new Set([...PUBLIC_MODEL_FOLDERS, ...CANONICAL_PRIVATE_FOLDERS]);
   if (folder && !allowedFolders.has(folder)) {
     throw new CreateSessionAccessError("model_folder_invalid", "Folder is not a canonical Model folder.");
@@ -4667,6 +4667,11 @@ async function listModelActivationCandidates(env, url) {
   const records = await airtableList(env, modelsTable, { q, limit: 100, matchFields: getModelSearchFields(env), fallbackMatchFields: MODEL_SAFE_SEARCH_FIELDS });
   const items = [];
   for (const record of records) {
+    // Activation selection requires affirmative canonical status. The legacy
+    // booking profile only excludes known blocked statuses and is not an
+    // approval check: blank, pending and unknown values must not pass here.
+    const status = record.fields?.status;
+    if (typeof status !== "string" || status.trim().toLowerCase() !== "active") continue;
     const profile = modelAccessProfile(record.fields || {});
     if (!profile.statusActive) continue;
     const item = sanitizeCreateSessionModel(record, profile);
