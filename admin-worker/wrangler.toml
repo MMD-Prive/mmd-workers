@@ -296,6 +296,15 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/model/activation/issue"
 zone_name = "mmdbkk.com"
 
+# Canonical Model-folder candidate list for Per's first-time LINE link console.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/models/activation-candidates*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/models/activation-candidates*"
+zone_name = "mmdbkk.com"
+
 # Legacy SIGIL internal admin redirect only. Keep these patterns narrow; do not
 # render SIGIL-prefixed admin pages or claim /internal/admin/* or either host catch-all.
 [[routes]]
