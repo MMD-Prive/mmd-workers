@@ -4688,6 +4688,7 @@ export {
   resolveCreateSessionModel,
   enforcePrivateCreateAccess,
   searchCreateSessionModels,
+  listModelActivationCandidates,
 };
 
 /* =========================
