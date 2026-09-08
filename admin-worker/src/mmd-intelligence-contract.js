@@ -8,6 +8,7 @@ export const MMD_INTELLIGENCE_ROUTES_V1 = Object.freeze({
   audienceBrief: "/v1/admin/audience/brief",
   clientRecent: "/v1/admin/clients/recent",
   clientLineage: "/v1/admin/clients/lineage-lookup",
+  clientIntelligence: "/v1/admin/clients/intelligence",
   kenjiMemory: "/v1/admin/kenji/control/memory",
 });
 
