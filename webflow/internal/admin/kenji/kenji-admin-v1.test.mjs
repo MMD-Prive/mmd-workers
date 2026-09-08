@@ -93,6 +93,12 @@ test("single-owner layer is task-oriented and hides multi-admin review UI by def
   assert.match(friendly, /\.ka__nav\{display:none!important\}/);
 });
 
+test("single-owner home makes Board, live AI preview, and Knowledge reachable without leaving Kenji Admin", () => {
+  for (const marker of ["Kenji Control Centre", "data-kso-board", "data-kso-ai20", "เลือกห้องที่ต้องใช้ตอนนี้"]) {
+    assert.match(friendly, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+});
+
 test("single-owner Knowledge flow is Teach -> Summary -> Use Live while Worker keeps review and QA gates", () => {
   assert.match(friendly, /API \+ "\/draft"/);
   assert.match(friendly, /source_ref: "single-owner-friendly-v4"/);
