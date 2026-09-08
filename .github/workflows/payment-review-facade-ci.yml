@@ -12,6 +12,8 @@ on:
       - "payments-worker/index.review-wrapper.js"
       - "payments-worker/reviewed-proof.js"
       - "payments-worker/reviewed-proof-line-recovery.test.mjs"
+      - "payments-worker/reviewed-proof-canonical-money-truth.js"
+      - "payments-worker/reviewed-proof-canonical-money-truth.test.mjs"
       - "payments-worker/wrangler.merged.toml"
       - ".github/workflows/deploy-admin-worker.yml"
       - ".github/workflows/payment-review-facade-ci.yml"
@@ -37,6 +39,7 @@ jobs:
           node --check admin-worker/src/payment-review-line-recovery.js
           node --check payments-worker/index.review-wrapper.js
           node --check payments-worker/reviewed-proof.js
+          node --check payments-worker/reviewed-proof-canonical-money-truth.js
 
       - name: Newest payment proof queue contract
         run: |
@@ -52,6 +55,11 @@ jobs:
         run: |
           set -euo pipefail
           node --test payments-worker/reviewed-proof-line-recovery.test.mjs
+
+      - name: Canonical recovery Money Truth contract
+        run: |
+          set -euo pipefail
+          node --test payments-worker/reviewed-proof-canonical-money-truth.test.mjs
 
       - name: Browser facade guardrails
         run: |
@@ -102,6 +110,8 @@ jobs:
           grep -F 'X-MMD-Payment-Authority' payments-worker/reviewed-proof.js
           grep -F 'materializeRecoveredMembership' payments-worker/reviewed-proof.js
           grep -F 'downstream_access_reconcile_required' payments-worker/reviewed-proof.js
+          grep -F 'isEmailLessLineRenewalMoneyTruth' payments-worker/index.review-wrapper.js
+          grep -F 'Payment Reference' payments-worker/reviewed-proof-canonical-money-truth.js
           if grep -F 'AUTH_SERVICE_ADMIN_TO_PAYMENTS' webflow/internal/admin/payments 2>/dev/null; then
             echo 'service secret reference found in Webflow payment assets' >&2
             exit 1
