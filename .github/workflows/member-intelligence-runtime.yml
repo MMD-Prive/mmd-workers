@@ -91,6 +91,7 @@ jobs:
             "mmdbkk.com/a/member-intelligence.js",
             "www.mmdbkk.com/a/member-intelligence.js",
           ];
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
           async function cf(path, options = {}) {
             const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
               ...options,
@@ -108,15 +109,23 @@ jobs:
           let existing = await cf(routePath);
           const missing = required.filter((pattern) => !existing.some((route) => route.pattern === pattern && route.script === worker));
           if (missing.length) throw new Error(`Control Room route ownership missing: ${missing.join(", ")}`);
+
           for (const pattern of obsolete) {
             const route = existing.find((item) => item.pattern === pattern && item.script === worker);
             if (!route) continue;
             await cf(`${routePath}/${route.id}`, { method: "DELETE" });
-            console.log(`removed obsolete ${pattern} -> ${worker}`);
-            existing = await cf(routePath);
+            console.log(`requested removal ${pattern} -> ${worker}`);
           }
-          const stale = obsolete.filter((pattern) => existing.some((route) => route.pattern === pattern && route.script === worker));
-          if (stale.length) throw new Error(`obsolete routes still present: ${stale.join(", ")}`);
+
+          let stale = [];
+          for (let attempt = 1; attempt <= 8; attempt += 1) {
+            existing = await cf(routePath);
+            stale = obsolete.filter((pattern) => existing.some((route) => route.pattern === pattern && route.script === worker));
+            if (!stale.length) break;
+            console.log(`route deletion still propagating (attempt ${attempt}): ${stale.join(", ")}`);
+            await sleep(1500);
+          }
+          if (stale.length) throw new Error(`obsolete routes still present after bounded retries: ${stale.join(", ")}`);
           console.log("Control Room runtime lane verified; stale Member Intelligence routes removed");
           NODE
 
