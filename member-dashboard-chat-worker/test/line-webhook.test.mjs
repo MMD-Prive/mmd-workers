@@ -10,6 +10,7 @@ import worker, {
   resolveKenjiLineReply,
 } from "../src/index.js";
 import { decideKenjiCapability } from "../src/kenji-capability-policy.js";
+import { resolveCanonicalRichMenuMembership } from "../src/rich-menu-membership-response-policy.js";
 
 const LINE_USER_ID = "U1234567890abcdef1234567890abcdef";
 const BASE_ENV = {
@@ -794,4 +795,31 @@ test("runtime control RPC failure fails LINE auto reply closed", async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("rich-menu support ignores client audience and selects only the canonical membership pack", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ records: [
+    { fields: { knowledge_id: "rich_menu_membership_level_response_pack_v1_lv1_guest", customer_answer: "MMD GUEST SUPPORT", status: "active", response_mode: "auto_reply_allowed", allowed_channels: ["LINE_OFC"], payload_json: JSON.stringify({ knowledge_type: "rich_menu_response", version: "v1", level: "guest" }) } },
+    { fields: { knowledge_id: "rich_menu_membership_level_response_pack_v1_lv3_private_member", customer_answer: "KENJI PRIVATE SUPPORT", status: "active", response_mode: "auto_reply_allowed", allowed_channels: ["LINE_OFC"], payload_json: JSON.stringify({ knowledge_type: "rich_menu_response", version: "v1", level: "private_member" }) } },
+  ] }), { status: 200, headers: { "content-type": "application/json" } });
+  try {
+    const event = { type: "postback", source: { type: "user", userId: LINE_USER_ID }, postback: { data: "mmd_action=support&audience=private&intent=%E0%B9%83%E0%B8%8A%E0%B9%89%E0%B8%9A%E0%B8%A3%E0%B8%B4%E0%B8%81%E0%B8%B2%E0%B8%A3%E0%B8%A2%E0%B8%B1%E0%B8%87%E0%B9%84%E0%B8%87" } };
+    const result = await resolveKenjiLineReply(event, {}, { ...BASE_ENV, AIRTABLE_API_KEY: "key", AIRTABLE_BASE_ID: "app" }, {
+      resolveRichMenuMembership: async () => ({ level: "guest", reason: "identity_not_verified" }),
+    });
+    assert.equal(result.text, "MMD GUEST SUPPORT");
+    assert.equal(result.reply_source, "knowledge");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("expired, blocked, and unverified members cannot receive private rich-menu content", () => {
+  const expired = resolveCanonicalRichMenuMembership({ fields: { "Verification Status": "Verified" } }, [{ fields: { capability: "private_premium", status: "expired", end_date: "2020-01-01" } }]);
+  const blocked = resolveCanonicalRichMenuMembership({ fields: { "Verification Status": "Verified", "Membership Status": "Blocked" } }, []);
+  const guest = resolveCanonicalRichMenuMembership({ fields: { "Verification Status": "Pending" } }, []);
+  assert.equal(expired.level, "public_member");
+  assert.equal(blocked.level, "guest");
+  assert.equal(guest.level, "guest");
 });
