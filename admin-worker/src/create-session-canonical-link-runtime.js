@@ -140,7 +140,10 @@ async function validateCanonicalSelection(env, body, { clientId, modelId }) {
   }
 
   if (model) {
-    const requestedModelName = normalizeName(body?.model_name || body?.model?.model_name);
+    // A linked Model may use a richer operator/customer display snapshot at
+    // body.model_name (for example "EMs01 · Jay Jatu"). Canonical validation
+    // must use the nested canonical working name when the caller supplies it.
+    const requestedModelName = normalizeName(body?.model?.model_name || body?.model_name);
     const canonicalModelName = normalizeName(
       model?.fields?.working_name || model?.fields?.display_name_compact || model?.fields?.nickname,
     );
