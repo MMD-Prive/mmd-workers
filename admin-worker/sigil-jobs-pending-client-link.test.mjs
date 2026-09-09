@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildPendingClientLinkBody,
-  hasAuthoritativeClientIdentity,
+  hasCanonicalClientLink,
   holdPendingClientLinkResponse,
   shouldCreatePendingClientLink,
 } from "./src/sigil-jobs-pending-client-link.js";
@@ -16,7 +16,7 @@ const pendingPrivate = {
 };
 
 test("name-only private work can be created as pending client link", () => {
-  assert.equal(hasAuthoritativeClientIdentity(pendingPrivate), false);
+  assert.equal(hasCanonicalClientLink(pendingPrivate), false);
   assert.equal(shouldCreatePendingClientLink(pendingPrivate), true);
   const forwarded = buildPendingClientLinkBody(pendingPrivate);
   assert.equal(forwarded.visibility, "pending_private");
@@ -25,9 +25,15 @@ test("name-only private work can be created as pending client link", () => {
   assert.equal(forwarded.job_details.confirmation_hold, true);
 });
 
-test("known client identity never bypasses authoritative private gate", () => {
+test("lookup hints do not block operational creation before canonical Client link", () => {
+  const hinted = { ...pendingPrivate, line_identity: { line_user_id: "UlookupHintOnly" }, member_email: "hint@example.test" };
+  assert.equal(hasCanonicalClientLink(hinted), false);
+  assert.equal(shouldCreatePendingClientLink(hinted), true);
+});
+
+test("canonical Client selection never bypasses authoritative private gate", () => {
   const linked = { ...pendingPrivate, client_record_id: "rec12345678901234" };
-  assert.equal(hasAuthoritativeClientIdentity(linked), true);
+  assert.equal(hasCanonicalClientLink(linked), true);
   assert.equal(shouldCreatePendingClientLink(linked), false);
 });
 
