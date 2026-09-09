@@ -190,20 +190,20 @@ test("customer payment display uses pricing authority instead of stale Payment.A
   assert.equal(data.payment.method, "promptpay");
   assert.equal(data.payment.amount_due_thb, 13500);
   assert.equal(data.payment.qr_url, "https://payments.example.com/qr/deposit.png");
-  assert.equal(data.payment.proof_upload_supported, true);
+  assert.equal(data.payment.proof_status_available, true);
   assert.equal(data.payment.verified, false);
   assert.equal(JSON.stringify(data.payment).includes("42750"), false);
 });
 
-test("customer payment display falls back safely when no trusted QR record is available", async () => {
-  const { env, customerToken } = await envAndTokens({ payment: null, paymentType: "deposit" });
+test("customer payment display prefers canonical Session customer amount due when no exact Payment record exists", async () => {
+  const { env, customerToken } = await envAndTokens({ payment: null, paymentType: "full" });
   const response = await handleConfirmationDetails(post(customerToken, "customer"), env);
   assert.equal(response.status, 200);
   const data = await response.json();
-  assert.equal(data.payment.stage, "deposit");
+  assert.equal(data.payment.stage, null);
   assert.equal(data.payment.amount_due_thb, 13500);
   assert.equal(data.payment.qr_url, null);
-  assert.equal(data.payment.proof_upload_supported, true);
+  assert.equal(data.payment.proof_status_available, true);
 });
 
 test("customer payment display rejects non-https QR values", async () => {
@@ -215,14 +215,29 @@ test("customer payment display rejects non-https QR values", async () => {
   assert.equal(data.payment.qr_url, null);
 });
 
+test("customer payment display recognizes evidence metadata without treating it as verified payment", async () => {
+  const pendingProof = paymentRecord({
+    [P.intentStatus]: "manual_slip_evidence_received",
+    [P.verificationStatus]: "pending",
+    [P.paymentStatus]: "pending",
+  });
+  const { env, customerToken } = await envAndTokens({ payment: pendingProof });
+  const response = await handleConfirmationDetails(post(customerToken, "customer"), env);
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.payment.proof_received, true);
+  assert.equal(data.payment.verified, false);
+});
+
 test("payment enrichment never exposes a payment record bound to another session", async () => {
   const wrongSessionPayment = paymentRecord({ [P.sessionId]: "sess_other" });
-  const { env, customerToken } = await envAndTokens({ payment: wrongSessionPayment, paymentType: "deposit" });
+  const { env, customerToken } = await envAndTokens({ payment: wrongSessionPayment, paymentType: "full" });
   const response = await handleConfirmationDetails(post(customerToken, "customer"), env);
   assert.equal(response.status, 200);
   const data = await response.json();
   assert.equal(data.payment.qr_url, null);
   assert.equal(data.payment.method, null);
+  assert.equal(data.payment.stage, null);
   assert.equal(data.payment.amount_due_thb, 13500);
 });
 
