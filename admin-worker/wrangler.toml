@@ -735,3 +735,21 @@ class_name = "MmsPartnerAuthStore"
 [[migrations]]
 tag = "v2026-09-06-mms-partner-auth"
 new_sqlite_classes = ["MmsPartnerAuthStore"]
+
+# Canonical client lookup: avoid Webflow HTML fallback for POST requests.
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/clients/lineage-lookup"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/clients/recent"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/clients/lineage-lookup"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/clients/recent"
+zone_name = "mmdbkk.com"
