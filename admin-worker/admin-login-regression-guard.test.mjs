@@ -5,6 +5,7 @@ import test from "node:test";
 import coreWorker from "./src/index.js";
 import {
   MEMBERSHIP_ACTION_NOTE_MARKER,
+  PREMIUM_RENEWAL_OCTOBER_2026_BONUS,
   canonicalizeSigilJobBody,
   prepareSigilJobCreateRequest,
 } from "./src/sigil-jobs-membership-action.js";
@@ -34,7 +35,6 @@ test("dashboard deploy smoke distinguishes allowed production ingress from a blo
   assert.match(smoke, /for origin in https:\/\/mmdbkk\.com https:\/\/www\.mmdbkk\.com; do/);
   assert.match(smoke, /"\$origin\/v1\/admin\/dashboard"\)"\s+test "\$http_code" = "401"\s+grep -q '\"error\":\"unauthorized\"'/);
   assert.match(smoke, /"https:\/\/admin-worker\.malemodel-bkk\.workers\.dev\/v1\/admin\/dashboard"\)"\s+test "\$http_code" = "403"\s+grep -q '\"error\":\"dashboard_host_not_allowed\"'/);
-  // A redirect, unexpected 200 or arbitrary 403 is not a passing auth check.
   assert.doesNotMatch(smoke, /continue-on-error|\|\| true|curl[^\n]*--location/);
 });
 
@@ -105,6 +105,47 @@ test("SIGIL Jobs canonical membership_action keeps renewal outside service spend
   assert.equal(out.pricing_breakdown.membership_fee_points_eligible, false);
   assert.equal(out.pricing_breakdown.membership_fee_referral_reward_eligible, false);
   assert.ok(out.body.note.includes(MEMBERSHIP_ACTION_NOTE_MARKER));
+});
+
+test("SIGIL Jobs Premium renewal knows the October 2026 existing-member +1 year bonus without auto-granting it", () => {
+  const out = canonicalizeSigilJobBody({
+    amount_thb: 8000,
+    membership_action: {
+      type: "renew",
+      include_in_payment: true,
+      renewal_amount_thb: 2500,
+      tier_hint: "premium",
+    },
+  });
+
+  assert.equal(out.promotion.code, "premium_existing_member_october_2026_bonus");
+  assert.equal(out.promotion.bonus_duration_days, 365);
+  assert.equal(out.promotion.timezone, "Asia/Bangkok");
+  assert.equal(out.promotion.eligibility_window_start, "2026-10-01T00:00:00+07:00");
+  assert.equal(out.promotion.eligibility_window_end, "2026-10-31T23:59:59.999+07:00");
+  assert.equal(out.promotion.requires_existing_member, true);
+  assert.equal(out.promotion.existing_member_source, "canonical_member_history");
+  assert.equal(out.promotion.effective_date_source, "official_verified_payment_at");
+  assert.equal(out.promotion.eligibility_status, "candidate_pending_official_verify");
+  assert.equal(out.promotion.applies_during_job_create, false);
+  assert.equal(out.promotion.entitlement_mutation_allowed, false);
+  assert.deepEqual(out.membership_action.promotion, out.promotion);
+  assert.equal(PREMIUM_RENEWAL_OCTOBER_2026_BONUS.bonus_duration_days, 365);
+  assert.match(out.body.note, /premium_existing_member_october_2026_bonus/);
+});
+
+test("SIGIL Jobs does not attach the October Premium bonus to Standard renewal", () => {
+  const out = canonicalizeSigilJobBody({
+    amount_thb: 8000,
+    membership_action: {
+      type: "renew",
+      include_in_payment: true,
+      renewal_amount_thb: 1000,
+      tier_hint: "standard",
+    },
+  });
+  assert.equal(out.promotion, null);
+  assert.equal(out.membership_action.promotion, null);
 });
 
 test("SIGIL Jobs legacy Webflow assisted-renewal note upgrades into membership_action_v1", () => {
@@ -180,6 +221,7 @@ test("SIGIL Jobs durable membership marker survives a near-limit operator note",
   assert.equal(parsed.service_amount_thb, 8000);
   assert.equal(parsed.customer_total_thb, 10500);
   assert.equal(parsed.entitlement_mutation_allowed, false);
+  assert.equal(parsed.promotion.bonus_duration_days, 365);
 });
 
 test("SIGIL Jobs empty top-level note falls back to structured operation note", () => {
@@ -217,6 +259,7 @@ test("pending-client-link private jobs preserve canonical assisted renewal befor
   assert.equal(out.forwarded_body.service_amount_thb, 8000);
   assert.equal(out.forwarded_body.membership_action.state, "pending_official_verify");
   assert.equal(out.forwarded_body.membership_action.entitlement_mutation_allowed, false);
+  assert.equal(out.forwarded_body.membership_action.promotion.bonus_duration_days, 365);
   assert.ok(out.forwarded_body.note.includes(MEMBERSHIP_ACTION_NOTE_MARKER));
   assert.match(out.forwarded_body.note, /PENDING CLIENT LINK/);
   assert.equal(out.pricing_breakdown.customer_total_thb, 10500);

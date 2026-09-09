@@ -1,6 +1,18 @@
 export const SIGIL_JOB_CREATE_PATH = "/v1/admin/job/create";
 export const MEMBERSHIP_ACTION_VERSION = "membership_action_v1";
 export const MEMBERSHIP_ACTION_NOTE_MARKER = "[MMD_MEMBERSHIP_ACTION_V1]";
+export const PREMIUM_RENEWAL_OCTOBER_2026_BONUS = Object.freeze({
+  code: "premium_existing_member_october_2026_bonus",
+  timezone: "Asia/Bangkok",
+  eligibility_window_start: "2026-10-01T00:00:00+07:00",
+  eligibility_window_end: "2026-10-31T23:59:59.999+07:00",
+  bonus_duration_days: 365,
+  requires_existing_member: true,
+  existing_member_source: "canonical_member_history",
+  effective_date_source: "official_verified_payment_at",
+  authority: "official_payment_verification_and_entitlement_resolver",
+  label_th: "สมาชิกเก่าต่อ Premium ภายใน 31 ต.ค. 2026 รับฟรีเพิ่ม 1 ปี",
+});
 
 const MAX_RENEWAL_AMOUNT_THB = 1_000_000;
 const MAX_PERSISTED_NOTE_LENGTH = 4000;
@@ -54,6 +66,7 @@ export function canonicalizeSigilJobBody(input = {}) {
       points_eligible: false,
       service_spend_eligible: false,
       referral_reward_eligible: false,
+      promotion: promotionForRenewal(tierHint),
     });
   } else {
     action = Object.freeze({
@@ -71,6 +84,7 @@ export function canonicalizeSigilJobBody(input = {}) {
       points_eligible: false,
       service_spend_eligible: false,
       referral_reward_eligible: false,
+      promotion: null,
     });
   }
 
@@ -96,6 +110,7 @@ export function canonicalizeSigilJobBody(input = {}) {
   return {
     body,
     membership_action: action,
+    promotion: action.promotion || null,
     pricing_breakdown: Object.freeze({
       service_amount_thb: serviceAmountThb,
       membership_renewal_amount_thb: action.type === "renew" ? action.renewal_amount_thb : 0,
@@ -130,6 +145,7 @@ export async function prepareSigilJobCreateRequest(request) {
     return {
       request: delegated,
       membership_action: canonical.membership_action,
+      promotion: canonical.promotion,
       pricing_breakdown: canonical.pricing_breakdown,
     };
   } catch (error) {
@@ -161,11 +177,22 @@ export async function augmentSigilJobCreateResponse(response, context = {}) {
   return new Response(JSON.stringify({
     ...payload,
     membership_action: context.membership_action || null,
+    promotion: context.promotion || context.membership_action?.promotion || null,
     pricing_breakdown: context.pricing_breakdown || null,
   }), {
     status: response.status,
     statusText: response.statusText,
     headers,
+  });
+}
+
+function promotionForRenewal(tierHint) {
+  if (tierHint !== "premium") return null;
+  return Object.freeze({
+    ...PREMIUM_RENEWAL_OCTOBER_2026_BONUS,
+    eligibility_status: "candidate_pending_official_verify",
+    applies_during_job_create: false,
+    entitlement_mutation_allowed: false,
   });
 }
 
