@@ -3,6 +3,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import coreWorker from "./src/index.js";
+import {
+  MEMBERSHIP_ACTION_NOTE_MARKER,
+  canonicalizeSigilJobBody,
+  prepareSigilJobCreateRequest,
+} from "./src/sigil-jobs-membership-action.js";
 
 const APPROVED_PAGE_ID = "admin-login-approved-hero";
 const LEGACY_MARKERS = [
@@ -70,4 +75,76 @@ test("legacy login shell markers cannot remain in either runtime entrypoint", as
       assert.equal(sources[index].includes(marker), false, `${paths[index]} contains ${marker}`);
     }
   }
+});
+
+test("SIGIL Jobs canonical membership_action keeps renewal outside service spend and rewards", () => {
+  const out = canonicalizeSigilJobBody({
+    client_name: "Test Member",
+    amount_thb: 8000,
+    membership_action: {
+      type: "renew",
+      include_in_payment: true,
+      renewal_amount_thb: 2500,
+      tier_hint: "premium",
+    },
+  });
+
+  assert.equal(out.body.service_amount_thb, 8000);
+  assert.equal(out.body.amount_thb, 10500);
+  assert.equal(out.membership_action.type, "renew");
+  assert.equal(out.membership_action.renewal_amount_thb, 2500);
+  assert.equal(out.membership_action.state, "pending_official_verify");
+  assert.equal(out.membership_action.materialization_policy, "official_verify_required");
+  assert.equal(out.membership_action.entitlement_mutation_allowed, false);
+  assert.equal(out.membership_action.points_eligible, false);
+  assert.equal(out.membership_action.service_spend_eligible, false);
+  assert.equal(out.membership_action.referral_reward_eligible, false);
+  assert.equal(out.pricing_breakdown.customer_total_thb, 10500);
+  assert.equal(out.pricing_breakdown.membership_fee_counts_as_service_spend, false);
+  assert.equal(out.pricing_breakdown.membership_fee_points_eligible, false);
+  assert.equal(out.pricing_breakdown.membership_fee_referral_reward_eligible, false);
+  assert.match(out.body.note, new RegExp(`\\${MEMBERSHIP_ACTION_NOTE_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+});
+
+test("SIGIL Jobs legacy Webflow assisted-renewal note upgrades into membership_action_v1", () => {
+  const out = canonicalizeSigilJobBody({
+    amount_thb: 8000,
+    note: "Existing operator note\n[ASSISTED_RENEWAL_V1] type=renew; source=sigil_jobs; include_in_payment=true; renewal_amount_thb=2500; tier=premium; materialize=after_official_verify",
+  });
+
+  assert.equal(out.membership_action.type, "renew");
+  assert.equal(out.membership_action.renewal_amount_thb, 2500);
+  assert.equal(out.membership_action.tier_hint, "premium");
+  assert.equal(out.body.amount_thb, 10500);
+  assert.doesNotMatch(out.body.note, /ASSISTED_RENEWAL_V1/);
+  assert.match(out.body.note, /MMD_MEMBERSHIP_ACTION_V1/);
+});
+
+test("SIGIL Jobs renewal cannot be created without an explicit positive renewal amount", async () => {
+  const request = new Request("https://mmdbkk.com/v1/admin/job/create", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      amount_thb: 8000,
+      membership_action: { type: "renew", include_in_payment: true },
+    }),
+  });
+  const prepared = await prepareSigilJobCreateRequest(request);
+  assert.ok(prepared.response);
+  assert.equal(prepared.response.status, 400);
+  assert.match((await prepared.response.json()).error, /renewal_amount_thb_invalid/);
+});
+
+test("SIGIL Jobs separate renewal payment never inflates service job amount", () => {
+  const out = canonicalizeSigilJobBody({
+    amount_thb: 8000,
+    membership_action: {
+      type: "renew",
+      include_in_payment: false,
+      renewal_amount_thb: 2500,
+    },
+  });
+  assert.equal(out.body.amount_thb, 8000);
+  assert.equal(out.membership_action.payment_component_status, "separate_payment_required");
+  assert.equal(out.pricing_breakdown.membership_renewal_amount_thb, 2500);
 });
