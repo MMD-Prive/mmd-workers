@@ -59,7 +59,7 @@ export async function handleConfirmationDetails(request, env = {}) {
       return withCors(request, env, json({ ok: false, error: "confirmation_session_mismatch" }, 409));
     }
 
-    const note = text(fields[SESSION_FIELDS.note] || fields[SESSION_FIELDS.notes], 8000);
+    const note = clean(fields[SESSION_FIELDS.note] || fields[SESSION_FIELDS.notes], 8000);
     const pricing = parseMarkedJson(note, "SIGIL Pricing v1");
     const vip = parseMarkedJson(note, "SIGIL VIP Detail v1");
     const common = {
