@@ -131,48 +131,57 @@ function customerPricing(raw, netFallback) {
 function parseMarkedJson(note, label) {
   const source = String(note || "");
   const marker = `[${String(label)}]`;
-  const markerIndex = source.indexOf(marker);
-  if (markerIndex < 0) return null;
+  let searchEnd = source.length;
 
-  let start = markerIndex + marker.length;
-  while (start < source.length && /\s/.test(source[start])) start += 1;
-  if (source[start] !== "{") return null;
+  while (searchEnd > 0) {
+    const markerIndex = source.lastIndexOf(marker, searchEnd - 1);
+    if (markerIndex < 0) return null;
 
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = start; i < source.length; i += 1) {
-    const char = source[i];
-    if (inString) {
-      if (escaped) {
-        escaped = false;
+    let start = markerIndex + marker.length;
+    while (start < source.length && /\s/.test(source[start])) start += 1;
+    if (source[start] !== "{") {
+      searchEnd = markerIndex;
+      continue;
+    }
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let parsed = null;
+    for (let i = start; i < source.length; i += 1) {
+      const char = source[i];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (char === "\\") {
+          escaped = true;
+          continue;
+        }
+        if (char === '"') inString = false;
         continue;
       }
-      if (char === "\\") {
-        escaped = true;
+      if (char === '"') {
+        inString = true;
         continue;
       }
-      if (char === '"') inString = false;
-      continue;
-    }
-    if (char === '"') {
-      inString = true;
-      continue;
-    }
-    if (char === "{") {
-      depth += 1;
-      continue;
-    }
-    if (char === "}") {
-      depth -= 1;
-      if (depth !== 0) continue;
-      try {
-        const parsed = JSON.parse(source.slice(start, i + 1));
-        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
-      } catch {
-        return null;
+      if (char === "{") {
+        depth += 1;
+        continue;
+      }
+      if (char === "}") {
+        depth -= 1;
+        if (depth !== 0) continue;
+        try {
+          const candidate = JSON.parse(source.slice(start, i + 1));
+          if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) parsed = candidate;
+        } catch {}
+        break;
       }
     }
+    if (parsed) return parsed;
+    searchEnd = markerIndex;
   }
   return null;
 }
