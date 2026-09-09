@@ -129,15 +129,52 @@ function customerPricing(raw, netFallback) {
 }
 
 function parseMarkedJson(note, label) {
-  const escaped = String(label).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = String(note || "").match(new RegExp(`(?:^|\\n)\\[${escaped}\\]\\s*({[^\\n]*})`));
-  if (!match) return null;
-  try {
-    const parsed = JSON.parse(match[1]);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
-  } catch {
-    return null;
+  const source = String(note || "");
+  const marker = `[${String(label)}]`;
+  const markerIndex = source.indexOf(marker);
+  if (markerIndex < 0) return null;
+
+  let start = markerIndex + marker.length;
+  while (start < source.length && /\s/.test(source[start])) start += 1;
+  if (source[start] !== "{") return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < source.length; i += 1) {
+    const char = source[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === "{") {
+      depth += 1;
+      continue;
+    }
+    if (char === "}") {
+      depth -= 1;
+      if (depth !== 0) continue;
+      try {
+        const parsed = JSON.parse(source.slice(start, i + 1));
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+      } catch {
+        return null;
+      }
+    }
   }
+  return null;
 }
 
 async function findSession(env, sessionId) {
