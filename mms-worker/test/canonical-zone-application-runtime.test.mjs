@@ -44,7 +44,8 @@ function installFetchMock() {
   const original = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (input, init = {}) => {
-    const url = new URL(typeof input === "string" ? input : input.url);
+    const source = input instanceof URL ? input.toString() : typeof input === "string" ? input : input.url;
+    const url = new URL(source);
     calls.push({ url: url.toString(), init });
 
     if (url.pathname.endsWith(`/${ZONES}`)) {
