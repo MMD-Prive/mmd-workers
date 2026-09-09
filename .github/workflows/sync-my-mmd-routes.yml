@@ -123,7 +123,7 @@ jobs:
             echo "${host} /my-mmd/ final -> ${code}"
             test "$code" = "200"
             grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$headers"
-            grep -qi '^x-mmd-ui-source: lovable-app-proxy' "$headers"
+            grep -qi '^x-mmd-ui-source: lovable-full-app-proxy' "$headers"
             grep -qi '^x-mmd-presentation-owner: lovable' "$headers"
             grep -qi '^x-mmd-behavior-owner: mmd-workers' "$headers"
             if grep -q 'MY MMD · PRIVATE MEMBER SPACE' "$body"; then
@@ -134,7 +134,27 @@ jobs:
               echo "legacy single-file shell still owns ${host}/my-mmd/" >&2
               exit 1
             fi
-            grep -q '/my-mmd-assets/' "$body"
+
+            asset_path="$(node - "$body" <<'NODE'
+          const fs = require("node:fs");
+          const html = fs.readFileSync(process.argv[2], "utf8");
+          const match = html.match(/\/my-mmd-assets\/[^"'`\s<>]+/);
+          if (!match) process.exit(2);
+          process.stdout.write(match[0]);
+          NODE
+            )"
+            echo "${host} live asset -> ${asset_path}"
+            asset_headers="$(mktemp)"
+            asset_body="$(mktemp)"
+            asset_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sSL -D "$asset_headers" -o "$asset_body" -w "%{http_code}" \
+              "https://${host}${asset_path}")"
+            echo "${host} ${asset_path} final -> ${asset_code}"
+            test "$asset_code" = "200"
+            test -s "$asset_body"
+            grep -qi '^content-type:' "$asset_headers"
+            grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$asset_headers"
+            grep -qi '^x-mmd-ui-source: lovable-full-app-proxy' "$asset_headers"
+            grep -qi '^x-mmd-presentation-owner: lovable' "$asset_headers"
 
             legacy_headers="$(mktemp)"
             legacy_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS -D "$legacy_headers" -o /dev/null -w "%{http_code}" \
@@ -147,12 +167,10 @@ jobs:
             api_body="$(mktemp)"
             api_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sSL -D "$api_headers" -o "$api_body" -w "%{http_code}" \
               -H 'accept: application/json' "https://${host}/api/member/app/dashboard")"
-            echo "${host} /api/member/app/dashboard final -> ${api_code}"
+            echo "${host} /api/member/app/dashboard no-session -> ${api_code}"
+            test "$api_code" = "401"
             grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$api_headers"
-            case "$api_code" in
-              200|401|403) ;;
-              *) cat "$api_body"; exit 1 ;;
-            esac
+            grep -qi '^x-mmd-upstream-service: member-pages-worker' "$api_headers"
           done
 
       - name: Record route-live receipt
@@ -161,4 +179,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ MY MMD LOVABLE APP ROUTES LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- checked_at: \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\`\n- canonical app: \`/my-mmd/\` with Lovable presentation through \`member-dashboard-chat-worker\`\n- behavior/data: \`/api/member/app/*\` remains Worker/BFF-owned\n- legacy \`/member/my-mmd\` returns bounded 308 to \`/my-mmd/\`\n- headers prove \`x-mmd-ui-source=lovable-app-proxy\`, \`x-mmd-presentation-owner=lovable\`, \`x-mmd-behavior-owner=mmd-workers\`\n- Webflow fallback and legacy single-file shell are absent from the canonical response\n- unauthenticated API ownership verified without creating or widening member authority"
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ MY MMD LOVABLE APP ROUTES LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- checked_at: \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\`\n- canonical app: \`/my-mmd/\` with Lovable presentation through \`member-dashboard-chat-worker\`\n- behavior/data: \`/api/member/app/*\` remains Worker/BFF-owned\n- legacy \`/member/my-mmd\` returns bounded 308 to \`/my-mmd/\`\n- headers prove \`x-mmd-ui-source=lovable-full-app-proxy\`, \`x-mmd-presentation-owner=lovable\`, \`x-mmd-behavior-owner=mmd-workers\`\n- live \`/my-mmd-assets/*\` GET returns 200 with Worker/Lovable ownership headers and non-empty body\n- unauthenticated \`/api/member/app/dashboard\` is strictly 401 and proves \`x-mmd-upstream-service=member-pages-worker\`\n- Webflow fallback and legacy single-file shell are absent from the canonical response\n- verification does not create or widen member authority"
