@@ -8,6 +8,7 @@ if (!globalThis.atob) globalThis.atob = (value) => Buffer.from(value, "base64").
 
 const {
   MmsPartnerAuthStore,
+  MMS_PARTNER_PBKDF2_ITERATIONS,
   normalizeMmsPartnerUsername,
   validateMmsPartnerPassword,
 } = await import("./src/mms-partner-auth-store.js");
@@ -39,6 +40,10 @@ test("normalizes MMS partner usernames", () => {
 test("requires a strong-enough password length", () => {
   assert.equal(validateMmsPartnerPassword("12345678901"), false);
   assert.equal(validateMmsPartnerPassword("correct horse battery staple"), true);
+});
+
+test("keeps PBKDF2 within the Cloudflare Workers runtime ceiling", () => {
+  assert.equal(MMS_PARTNER_PBKDF2_ITERATIONS, 100000);
 });
 
 test("signup stores hashes only, login works, recovery rotates the recovery code", async () => {
