@@ -1,6 +1,7 @@
 import runtime from "./runtime-index-with-application-v4.js";
 import { maybeHandleMyMmsDispatch } from "./my-mms-dispatch-runtime.mjs";
 import { maybeHandleMmsServiceZones } from "./service-zones-runtime.mjs";
+import { canonicalZoneErrorResponse, maybeHandleCanonicalZoneBooking } from "./canonical-zone-booking-runtime.mjs";
 export { MmsCoordinator } from "./runtime-index-with-application-v4.js";
 export { MmsDispatchCoordinator } from "./my-mms-dispatch-runtime.mjs";
 
@@ -30,9 +31,9 @@ async function autoDispatchPrebooking(request, response, env) {
   const prebookingId = String(payload?.prebooking?.prebooking_id || "").trim();
   if (!PREBOOKING_ID_RE.test(prebookingId)) return response;
 
-  // A newly created 202 response means the Airtable projection is not ready.
-  // Do not invent a job from coordinator-only state; a retry of the same
-  // idempotent prebooking will re-enter here once canonical storage is ready.
+  // Canonical Zone Code requests are handled before the legacy runtime and
+  // already create their own exact-zone dispatch. Only legacy prebookings reach
+  // this bridge.
   if (response.status === 202) {
     payload.dispatch = {
       state: "PENDING_COORDINATION",
@@ -73,8 +74,6 @@ async function autoDispatchPrebooking(request, response, env) {
       duplicate: data.duplicate === true,
     };
   } else {
-    // Prebooking remains valid even when no approved/available Therapist can be
-    // offered immediately. The failure is coordination state, not booking loss.
     payload.dispatch = {
       state: "PENDING_COORDINATION",
       code: String(dispatchPayload?.error?.code || `DISPATCH_${dispatchResponse.status}`).slice(0, 120),
@@ -88,6 +87,19 @@ export default {
   async fetch(request, env, ctx) {
     const serviceZoneResponse = await maybeHandleMmsServiceZones(request, env);
     if (serviceZoneResponse) return serviceZoneResponse;
+
+    try {
+      const canonicalZoneResponse = await maybeHandleCanonicalZoneBooking(request, env);
+      if (canonicalZoneResponse) return canonicalZoneResponse;
+    } catch (error) {
+      console.error(JSON.stringify({
+        event: "mms_canonical_zone_booking_error",
+        path: new URL(request.url).pathname,
+        method: request.method,
+        code: error?.code || error?.message || "CANONICAL_ZONE_UNAVAILABLE",
+      }));
+      return canonicalZoneErrorResponse(error);
+    }
 
     const response = await runtime.fetch(request, env, ctx);
     const url = new URL(request.url);

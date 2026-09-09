@@ -46,7 +46,7 @@ export async function maybeHandleMmsServiceZones(request, env = {}) {
         country_code: "TH",
         metro_label_th: "กรุงเทพฯ และปริมณฑล",
         provinces,
-        zones,
+        zones: zones.map(publicZoneProjection),
       },
     }, 200, request, env);
   } catch (error) {
@@ -113,7 +113,24 @@ function zoneProjection(record) {
     safe_label_th: clean(fields["Customer Safe Label TH"], 180) || null,
     admin_areas_th: clean(fields["Admin Areas TH"], 1000) || null,
     launch_phase: clean(selectName(fields["Launch Phase"]), 40) || null,
+    legacy_zone_label: clean(fields["Legacy Zone Label"], 120) || null,
     sort_order: Number.isFinite(Number(fields["Sort Order"])) ? Number(fields["Sort Order"]) : 9999,
+  };
+}
+
+function publicZoneProjection(zone) {
+  return {
+    code: zone.code,
+    province_code: zone.province_code,
+    province_label_th: zone.province_label_th,
+    province_label_en: zone.province_label_en,
+    metro_group: zone.metro_group,
+    label_th: zone.label_th,
+    label_en: zone.label_en,
+    safe_label_th: zone.safe_label_th,
+    admin_areas_th: zone.admin_areas_th,
+    launch_phase: zone.launch_phase,
+    sort_order: zone.sort_order,
   };
 }
 
