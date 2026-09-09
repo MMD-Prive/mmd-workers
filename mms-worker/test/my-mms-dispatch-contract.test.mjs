@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const runtimeUrl = new URL("../src/my-mms-dispatch-runtime.mjs", import.meta.url);
+const accessUrl = new URL("../src/my-mms-access-runtime.mjs", import.meta.url);
 const wrapperUrl = new URL("../src/runtime-index-with-therapist-invite.js", import.meta.url);
 const entryUrl = new URL("../src/runtime-index-with-dispatch.js", import.meta.url);
 const wranglerUrl = new URL("../wrangler.jsonc", import.meta.url);
@@ -14,19 +15,25 @@ async function source(url) {
 test("MY MMS dispatch owns the confirmed Therapist offer/job API surface", async () => {
   const src = await source(runtimeUrl);
   for (const route of [
-    '`${APP_API}/offers`',
-    '`${APP_API}/jobs`',
-    "/offers\\/(mmsjob_[a-f0-9]{24})",
-    "/offers\\/(mmsjob_[a-f0-9]{24})\\/accept",
-    "/offers\\/(mmsjob_[a-f0-9]{24})\\/decline",
-    "/jobs\\/(mmsjob_[a-f0-9]{24})",
-    "/jobs\\/(mmsjob_[a-f0-9]{24})\\/start",
-    "/jobs\\/(mmsjob_[a-f0-9]{24})\\/complete",
+    'offers: `${APP_API}/offers`',
+    'jobs: `${APP_API}/jobs`',
+    "api\\/app\\/offers\\/(mmsjob_[a-f0-9]{24})",
+    "api\\/app\\/offers\\/(mmsjob_[a-f0-9]{24})\\/accept",
+    "api\\/app\\/offers\\/(mmsjob_[a-f0-9]{24})\\/decline",
+    "api\\/app\\/jobs\\/(mmsjob_[a-f0-9]{24})",
+    "api\\/app\\/jobs\\/(mmsjob_[a-f0-9]{24})\\/start",
+    "api\\/app\\/jobs\\/(mmsjob_[a-f0-9]{24})\\/complete",
   ]) {
     assert.ok(src.includes(route), `missing dispatch route contract: ${route}`);
   }
   assert.match(src, /requireMyMmsApprovedTherapist\(request, env\)/);
-  assert.match(src, /access === "approved"|MY_MMS_ACCESS_REQUIRED/);
+});
+
+test("Therapist dispatch access is the existing fail-closed MY MMS approved gate", async () => {
+  const access = await source(accessUrl);
+  assert.match(access, /export async function requireMyMmsApprovedTherapist/);
+  assert.match(access, /normalizeAccess\(therapist\.fields\?\.\["MY MMS Access"\]\) !== "Approved"/);
+  assert.match(access, /MY_MMS_ACCESS_REQUIRED/);
 });
 
 test("dispatch matching uses the existing canonical matcher, Available Therapists, and approved MY MMS access", async () => {
