@@ -1,5 +1,6 @@
 import currentWorker from "./my-mmd-bounded-status-front-gate.js";
 import { handleMmsLineRequest, isMmsLineRequest } from "./mms-line-runtime.mjs";
+import { MMS_LINE_EVIDENCE_INTERNALS, observeMmsLineEvidence } from "./mms-line-evidence-observer.mjs";
 import {
   handleMmdRichMenuScheduledRequest,
   handleMmdRichMenuScheduled,
