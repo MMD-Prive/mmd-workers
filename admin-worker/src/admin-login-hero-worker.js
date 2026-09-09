@@ -2,6 +2,7 @@ import coreWorker from "./admin-login-hero-worker-core.js";
 import dashboardWorker from "./dashboard-worker.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { tryHandleEmailLessLineRenewalRecovery } from "./payment-review-line-recovery.js";
+import { tryHandleSigilPendingClientLink } from "./sigil-jobs-pending-client-link.js";
 import {
   CLIENT_INTELLIGENCE_PATH,
   handleClientIntelligenceRequest,
@@ -45,6 +46,12 @@ export default {
     if (path === CLIENT_INTELLIGENCE_PATH) {
       return handleCredentialBoundClientIntelligence(request, env);
     }
+
+    // SIGIL Jobs may create an operationally held private job before a canonical
+    // Client is linked. This never grants private entitlement: confirmation and
+    // dispatch are held until the canonical Client relationship is completed.
+    const pendingClientLink = await tryHandleSigilPendingClientLink(request, env, ctx, coreWorker);
+    if (pendingClientLink) return pendingClientLink;
 
     // Preserve the already-guarded canonical Payment Review path. The clone is
     // used only if the canonical runtime rejects an otherwise valid reviewed
