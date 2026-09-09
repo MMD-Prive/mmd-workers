@@ -44,6 +44,12 @@ test("pricing snapshot can be recovered from the internal note", () => {
   assert.equal(pricing.deposit_due_thb, 13500);
 });
 
+test("pricing rejects a discounted deposit basis", () => {
+  assert.equal(normalizeSigilPricing({
+    full_price_thb: 45000,
+    discount_thb: 4500,
+    net_price_thb: 40500,
+    deposit_basis_thb: 40500,
 test("full payment keeps full-price disclosure but has no deposit due", () => {
   const pricing = normalizeSigilPricing({
     full_price_thb: 45000,

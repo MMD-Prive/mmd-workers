@@ -15,6 +15,26 @@ function integer(value) {
 
 export function normalizeSigilPricing(value = {}) {
   const full = integer(value.full_price_thb);
+  const discount = Math.min(full, integer(value.discount_thb));
+  const net = integer(value.net_price_thb || Math.max(0, full - discount));
+  const discountMode = ["none", "percent", "amount"].includes(clean(value.discount_mode).toLowerCase())
+    ? clean(value.discount_mode).toLowerCase()
+    : discount > 0 ? "amount" : "none";
+  const discountPercent = discountMode === "percent"
+    ? Math.min(20, Math.max(3, integer(value.discount_percent)))
+    : 0;
+  const depositPercent = Math.min(100, integer(value.deposit_percent));
+  const depositBasis = integer(value.deposit_basis_thb || full);
+  const depositDue = integer(value.deposit_due_thb);
+  const depositReceived = integer(value.deposit_received_thb);
+  const balance = integer(value.balance_thb);
+  if (!full || net > full || depositBasis !== full) return null;
+  return {
+    full_price_thb: full,
+    discount_mode: discountMode,
+    discount_percent: discountPercent,
+    discount_thb: discount,
+    net_price_thb: net,
   const discountMode = clean(value.discount_mode).toLowerCase() || "none";
   const discountPercent = integer(value.discount_percent);
   const discount = integer(value.discount_thb);
