@@ -58,7 +58,7 @@ function sessionRecord() {
         "[Partner Attribution] internal only",
         "[SIGIL Pricing v1] {\"full_price_thb\":45000,\"discount_mode\":\"percent\",\"discount_percent\":10,\"discount_thb\":4500,\"net_price_thb\":40500,\"deposit_basis_thb\":45000,\"deposit_percent\":30,\"deposit_due_thb\":13500,\"deposit_received_thb\":13500,\"balance_thb\":27000}",
         "[SIGIL VIP Detail v1] {\"vip_detail\":\"vtop\"}",
-      ].join("\n"),
+      ].join(" "),
     },
   };
 }
@@ -110,7 +110,7 @@ function post(token, role, origin = "https://www.mmdbkk.com") {
   });
 }
 
-test("customer confirmation details expose customer pricing but not internal payout or notes", async () => {
+test("customer confirmation details expose inline customer pricing but not internal payout or notes", async () => {
   const { env, customerToken } = await envAndTokens();
   const response = await handleConfirmationDetails(post(customerToken, "customer"), env);
   assert.equal(response.status, 200);
