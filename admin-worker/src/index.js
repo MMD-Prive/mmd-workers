@@ -28,6 +28,10 @@ import { demoLinksCreate, demoLinksGet } from "./routes/demo-links.js";
 import { handleKenjiKnowledgeRequest as handleKenjiKnowledgeRuntimeRequest } from "./kenji-knowledge-runtime.js";
 import { renderApprovedAdminLogin } from "./admin-login-page.js";
 import {
+  handleCreateSessionClientLineageRequest,
+  isCreateSessionClientLineageRequest,
+} from "./create-session-client-lineage-runtime.js";
+import {
   getAllowedModelSessionActions,
   normalizeModelSessionAction,
   normalizeSessionState,
@@ -492,6 +496,15 @@ export default {
       // ====================================================
       if (!(await isAuthed(req, env))) {
         return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
+      }
+
+      // Canonical client lineage is read-only identity evidence. The outer
+      // admin gate above has already verified the signed internal-admin session.
+      if (isCreateSessionClientLineageRequest(path, method)) {
+        return withCors(
+          await handleCreateSessionClientLineageRequest(req, env, { alreadyAuthorized: true }),
+          cors,
+        );
       }
 
       if (isAdminRichMenuRoute(path, method)) {
