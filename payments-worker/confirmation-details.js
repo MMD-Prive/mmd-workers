@@ -159,8 +159,19 @@ function customerPricing(raw, netFallback) {
 function customerPaymentDisplay({ paymentRecord, pricing, customerAmountDue, claimedPaymentType, sessionPaymentStatus, paymentRef }) {
   const fields = paymentRecord?.fields || {};
   const storedStage = normalizePaymentStage(fields[PAYMENT_FIELDS.paymentStage] || fields[PAYMENT_FIELDS.paymentType]);
-  const stage = storedStage || normalizePaymentStage(claimedPaymentType);
-  const amountDue = paymentAmountDue(stage, pricing, customerAmountDue);
+  const claimedStage = normalizePaymentStage(claimedPaymentType);
+  let stage = storedStage;
+  let amountDue = null;
+
+  if (storedStage) {
+    amountDue = paymentAmountDue(storedStage, pricing, customerAmountDue);
+  } else if (customerAmountDue !== null) {
+    amountDue = customerAmountDue;
+  } else {
+    stage = claimedStage;
+    amountDue = paymentAmountDue(claimedStage, pricing, null);
+  }
+
   const method = text(fields[PAYMENT_FIELDS.paymentMethod], 80).toLowerCase() || (safeUrl(fields[PAYMENT_FIELDS.promptPayUrl]) ? "promptpay" : null);
   const promptPayUrl = safeUrl(fields[PAYMENT_FIELDS.promptPayUrl]) || null;
   const verified = isVerifiedPayment(
@@ -176,7 +187,7 @@ function customerPaymentDisplay({ paymentRecord, pricing, customerAmountDue, cla
     method: method || null,
     amount_due_thb: amountDue,
     qr_url: promptPayUrl,
-    proof_upload_supported: Boolean(text(paymentRef, 200)),
+    proof_status_available: Boolean(text(paymentRef, 200)),
     proof_received: proofReceived,
     verified,
   };
@@ -204,7 +215,15 @@ function isVerifiedPayment(...values) {
 }
 
 function isProofReceived(...values) {
-  const accepted = new Set(["evidence_received", "proof_received", "submitted", "pending_review", "reviewing"]);
+  const accepted = new Set([
+    "evidence_received",
+    "proof_received",
+    "submitted",
+    "pending_review",
+    "reviewing",
+    "manual_slip_evidence_received",
+    "pending_confirmation",
+  ]);
   return values.some((value) => accepted.has(text(value, 80).toLowerCase().replace(/[\s-]+/g, "_")));
 }
 
