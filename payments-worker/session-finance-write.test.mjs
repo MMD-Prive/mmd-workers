@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { parseSigilMembershipPaymentComponents } from "./sigil-membership-payment-components.js";
 
 const source = readFileSync(new URL("./index.js", import.meta.url), "utf8");
 const reviewWrapperSource = readFileSync(new URL("./index.review-wrapper.js", import.meta.url), "utf8");
+const componentSource = readFileSync(new URL("./sigil-membership-payment-components.js", import.meta.url), "utf8");
+const componentModule = await import(`data:text/javascript;base64,${Buffer.from(componentSource).toString("base64")}`);
+const { parseSigilMembershipPaymentComponents } = componentModule;
 
 function block(start, end) {
   const from = source.indexOf(start);
