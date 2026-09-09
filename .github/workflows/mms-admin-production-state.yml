@@ -154,13 +154,17 @@ jobs:
               if (url.origin !== origin || url.pathname !== next) {
                 throw new Error(`browser login landed at ${page.url()}`);
               }
-              const bodyText = await page.evaluate(() => document.body?.innerText || '');
-              if (!/Control Room|CONTROL ROOM|Owner Control|Operating System/i.test(bodyText)) {
-                throw new Error('browser reached target URL but Control Room UI marker is missing');
-              }
-              if (await page.$('#adminLoginForm')) {
-                throw new Error('login form still present after successful browser navigation');
-              }
+
+              // The Control Room shell may finish mounting after DOMContentLoaded.
+              // Wait for the authenticated UI instead of sampling body text immediately.
+              await page.waitForFunction(() => {
+                const bodyText = document.body?.innerText || '';
+                const hasControlRoom = Boolean(document.querySelector('[data-control-room]')) ||
+                  /Control Room|CONTROL ROOM|Owner Control|Operating System/i.test(bodyText);
+                const loginStillPresent = Boolean(document.querySelector('#adminLoginForm'));
+                return hasControlRoom && !loginStillPresent;
+              }, { timeout: 15000 });
+
               if (pageErrors.length) throw new Error(`page errors: ${pageErrors.join(' | ')}`);
               console.log(`Browser login passed: ${page.url()}`);
               await context.close();
