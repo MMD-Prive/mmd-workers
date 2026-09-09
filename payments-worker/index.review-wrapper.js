@@ -5,6 +5,10 @@ import {
   commitEmailLessLineRenewalMoneyTruth,
   isEmailLessLineRenewalMoneyTruth,
 } from "./reviewed-proof-canonical-money-truth.js";
+import {
+  handleCanonicalConfirmLink,
+  isCanonicalConfirmLinkRequest,
+} from "./canonical-confirm-link.js";
 
 export { PointsPhase1Coordinator };
 
@@ -15,6 +19,10 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+
+    if (isCanonicalConfirmLinkRequest(path, method)) {
+      return handleCanonicalConfirmLink(request, env, ctx);
+    }
 
     if (isReviewedProofRequest(path, method)) {
       return handleReviewedProof(request, env, ctx, async (body) => {
