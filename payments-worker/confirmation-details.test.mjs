@@ -56,6 +56,7 @@ function sessionRecord() {
       [F.note]: [
         "Handling: test only",
         "[Partner Attribution] internal only",
+        "[SIGIL Pricing v1] {\"full_price_thb\":45000,\"discount_mode\":\"percent\",\"discount_percent\":5,\"discount_thb\":2250,\"net_price_thb\":42750,\"deposit_basis_thb\":45000,\"deposit_percent\":20,\"deposit_due_thb\":9000,\"deposit_received_thb\":9000,\"balance_thb\":33750}",
         "[SIGIL Pricing v1] {\"full_price_thb\":45000,\"discount_mode\":\"percent\",\"discount_percent\":10,\"discount_thb\":4500,\"net_price_thb\":40500,\"deposit_basis_thb\":45000,\"deposit_percent\":30,\"deposit_due_thb\":13500,\"deposit_received_thb\":13500,\"balance_thb\":27000}",
         "[SIGIL VIP Detail v1] {\"vip_detail\":\"vtop\"}",
       ].join(" "),
@@ -110,7 +111,7 @@ function post(token, role, origin = "https://www.mmdbkk.com") {
   });
 }
 
-test("customer confirmation details expose inline customer pricing but not internal payout or notes", async () => {
+test("customer confirmation details expose the latest inline customer pricing but not internal payout or notes", async () => {
   const { env, customerToken } = await envAndTokens();
   const response = await handleConfirmationDetails(post(customerToken, "customer"), env);
   assert.equal(response.status, 200);
@@ -122,9 +123,11 @@ test("customer confirmation details expose inline customer pricing but not inter
   assert.equal(data.client_name, "พี่ SVIP");
   assert.equal(data.amount_thb, 40500);
   assert.equal(data.pricing.full_price_thb, 45000);
+  assert.equal(data.pricing.discount_percent, 10);
   assert.equal(data.pricing.discount_thb, 4500);
   assert.equal(data.pricing.deposit_basis_thb, 45000);
   assert.equal(data.pricing.deposit_due_thb, 13500);
+  assert.equal(data.pricing.balance_thb, 27000);
   assert.equal(data.vip_detail, "vtop");
   assert.equal("model_payout_thb" in data, false);
   assert.equal("note" in data, false);
