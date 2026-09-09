@@ -314,6 +314,7 @@ function stageForTurn({ continuity = {}, decision = {}, delivered = false, attem
     if (truthDomains.some((domain) => ["booking", "availability"].includes(domain))) return "awaiting_review";
     return "handoff";
   }
+  if (delivered && decision.live_truth_verified === true && ["membership_status", "points_status"].includes(intent)) return "resolved";
   if (delivered && ["membership_signup", "membership_renewal"].includes(intent)) return "awaiting_customer";
   if (delivered && TERMINAL_AUTO_REPLY_INTENTS.has(intent)) return "resolved";
   if (text(continuity.decision) === "continuation" && text(continuity.conversation_stage)) return text(continuity.conversation_stage);
@@ -434,11 +435,13 @@ export function buildKenjiPostTurnMatrix({
           : `no_reply:${text(decision.guard_reason) || "not_eligible"}`,
     last_confirmed_outcome: decision.handoff_required === true
       ? "handoff_pending; protected current truth not confirmed"
-      : delivered
-        ? "customer_reply_sent; no protected truth granted from memory"
-        : attempted
-          ? "reply_delivery_failed"
-          : "no_customer_reply",
+      : delivered && decision.live_truth_verified === true
+        ? `customer_reply_sent; current truth confirmed by ${text(decision.truth_authority) || "canonical authority"}`
+        : delivered
+          ? "customer_reply_sent; no protected truth granted from memory"
+          : attempted
+            ? "reply_delivery_failed"
+            : "no_customer_reply",
     conversation_stage: stage,
     awaiting_from: awaitingFrom,
     pending_action: pendingAction,
@@ -512,6 +515,9 @@ function matrixFields(matrix = {}, continuity = {}, decision = {}, delivered = f
       line_delivery_succeeded: delivered === true,
       live_truth_required: matrix.live_truth_required,
       live_truth_domains: matrix.live_truth_domains,
+      truth_authority: text(decision.truth_authority),
+      truth_status: text(decision.truth_status),
+      live_truth_used: decision.live_truth_used === true,
     }),
   };
 }

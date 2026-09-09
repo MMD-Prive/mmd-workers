@@ -1,4 +1,5 @@
 import studioWorker from "./studio-finance-worker.js";
+import { listModelActivationCandidates } from "./index.js";
 import {
   handleCreateSessionClientLineageRequest,
   isCreateSessionClientLineageRequest,
@@ -105,6 +106,19 @@ export default {
     }
     if (path === MODEL_ACTIVATION_ADMIN_PATH) {
       return issueModelActivation(request, env);
+    }
+    if (path === "/v1/admin/models/activation-candidates" && method === "GET") {
+      try {
+        return Response.json(await listModelActivationCandidates(env, url), {
+          headers: { "cache-control": "no-store, private" },
+        });
+      } catch (error) {
+        const status = Number(error?.status) || 500;
+        return Response.json({ ok: false, error: String(error?.code || error?.message || "model_activation_candidates_failed") }, {
+          status,
+          headers: { "cache-control": "no-store, private" },
+        });
+      }
     }
 
     // The credential-bound admin wrapper has already authenticated /v1/admin/*

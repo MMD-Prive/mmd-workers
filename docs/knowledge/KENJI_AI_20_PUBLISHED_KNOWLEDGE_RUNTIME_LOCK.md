@@ -2,13 +2,16 @@
 
 Status: active implementation lock
 Date: 2026-08-19
-Owner surface: `/member/kenji-ai-20`
+Customer/member surface: `/member/kenji-ai-20`
+Canonical owner admin preview: `/internal/admin/kenji?view=ai20`
 Runtime source endpoint: `/v1/internal/kenji/knowledge/published`
 Admin namespace: `/v1/admin/kenji/knowledge/*`
 
 ## Decision
 
 Kenji AI 2.0 must read published knowledge cards from the runtime endpoint first. If the endpoint or persisted store is unavailable, the page/chat must fallback to the static canonical route map only. The published runtime must not return an empty `cards: []` as the normal customer-facing state.
+
+The customer/member runtime remains `/member/kenji-ai-20`. For the single owner, the preview of that runtime is consolidated into `/internal/admin/kenji?view=ai20`; this is a preview surface only and does not create a second runtime, knowledge store, or authority layer.
 
 ## Active Knowledge Board cards
 
@@ -28,7 +31,11 @@ The following cards are treated as the current active card set for Kenji AI 2.0:
 
 ## Route map
 
-- `/member/kenji-ai-20` — Kenji AI 2.0 page/chat runtime.
+- `/member/kenji-ai-20` — Kenji AI 2.0 page/chat runtime for customers/members.
+- `/member/kenji-ai-20?mode=admin-preview` — standalone owner preview source used by the canonical Kenji Admin AI 2.0 view.
+- `/internal/admin/kenji?view=ai20` — canonical owner preview inside Kenji Admin.
+- `/internal/admin/kenji?view=knowledge` — canonical owner Knowledge view.
+- `/internal/admin/kenji?view=board` — canonical owner sanitized SIGIL Board view.
 - `/confirm/payment-proof` — only customer route for sending payment evidence to MMD for review.
 - `/member/membership` — Membership Intake / Reviewed Access entry, not instant access and not a payment-success page.
 - `/promotion/6-years-care-back` — CARE BACK 2026 canonical customer route; login/identity alone never issues coupon or Points.
@@ -72,21 +79,23 @@ Customer-facing actor before Companion assignment is `MMD`. After assignment, us
 - `admin-worker/src/admin-login-hero-worker.js`
 - `admin-worker/kenji-knowledge-runtime-storage.test.mjs`
 - `webflow/member/kenji-ai-20/kenji-safe-flow-knowledge-runtime-v21-5.js`
+- `webflow/internal/admin/kenji/kenji-admin-ai20-view-v1.js`
 
 ## Cloudflare deployment note
 
-The source is ready for `admin-worker` deployment through Wrangler/Cloudflare. Runtime persistence requires Cloudflare env/bindings to include Airtable access and the Knowledge Board table/field mapping used by `kenji-knowledge-runtime.js`.
+Runtime persistence requires Cloudflare env/bindings to include Airtable access and the Knowledge Board table/field mapping used by `kenji-knowledge-runtime.js`. The owner preview bundle must not receive these secrets; it only renders the existing member-facing preview route.
 
 Required operational check before deploy:
 
 1. Validate Worker config.
-2. Confirm secrets/env are present.
-3. Deploy with `wrangler deploy --keep-vars` from the `admin-worker` package.
+2. Confirm secrets/env are present server-side.
+3. Deploy Worker/runtime changes with the existing guarded deployment path when required.
 4. Smoke test:
    - `/v1/admin/kenji/knowledge/meta`
    - `/v1/admin/kenji/knowledge/list`
    - `/v1/internal/kenji/knowledge/published`
    - `/member/kenji-ai-20`
+   - `/internal/admin/kenji?view=ai20`
 
 ## Current publication reference
 

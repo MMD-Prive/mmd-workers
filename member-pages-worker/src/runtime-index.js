@@ -10,6 +10,14 @@ import {
   handleTrustedCareBackBookingApproval,
   isTrustedCareBackBookingApproval,
 } from "./care-back-trusted-booking-approval.js";
+import {
+  handleKenjiLineMemberTruth,
+  isKenjiLineMemberTruthRequest,
+} from "./kenji-line-member-truth.js";
+import {
+  handleKenjiLineMemberTruthHealth,
+  isKenjiLineMemberTruthHealthRequest,
+} from "./kenji-line-member-truth-health.js";
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-durable-object.js";
@@ -40,9 +48,6 @@ export function normalizeCareBackWebViewOrigin(request) {
   }
   if (!trustedSameSite) return request;
 
-  // Some Android/LINE WebViews omit Origin on a same-site POST. Production
-  // member-pages-worker is service-only, so restore only the verified MMD web
-  // origin for the two public CARE BACK endpoints; never relax cross-site calls.
   const headers = new Headers(request.headers);
   headers.set("origin", url.origin);
   headers.set("x-mmd-webview-origin-normalized", "care-back-v1");
@@ -52,6 +57,12 @@ export function normalizeCareBackWebViewOrigin(request) {
 export default {
   async fetch(request, env, ctx) {
     request = normalizeCareBackWebViewOrigin(request);
+    if (isKenjiLineMemberTruthHealthRequest(request)) {
+      return handleKenjiLineMemberTruthHealth(request, env);
+    }
+    if (isKenjiLineMemberTruthRequest(request)) {
+      return handleKenjiLineMemberTruth(request, env);
+    }
     if (isTrustedCareBackBookingApproval(request)) {
       return handleTrustedCareBackBookingApproval(request, env);
     }

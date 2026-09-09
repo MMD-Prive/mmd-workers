@@ -9,6 +9,10 @@ import {
   writeKenjiLineMatrixTurn,
 } from "./kenji-line-continuity-runtime.mjs";
 import { applyKenjiNextAction } from "./kenji-line-next-action.mjs";
+import {
+  buildKenjiLiveTruthDecision,
+  resolveKenjiLineLiveTruth,
+} from "./kenji-line-live-truth.mjs";
 
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const KENJI_KNOWLEDGE_TABLE_FALLBACK = "tblsLd1uVOtG2kHoU";
@@ -171,6 +175,10 @@ function withDecisionMetadata(base = {}, overrides = {}) {
     continuity_decision: text(base.continuity_decision),
     continuity_topic: text(base.continuity_topic),
     continuity_stage: text(base.continuity_stage),
+    truth_authority: text(base.truth_authority),
+    truth_status: text(base.truth_status),
+    live_truth_used: base.live_truth_used === true,
+    live_truth_verified: base.live_truth_verified === true,
     ...overrides,
   };
 }
@@ -216,6 +224,15 @@ export async function resolveKenjiSeedDecision(event = {}, env = {}, options = {
   const continuityMeta = continuityMetadata(options, inferredIntent);
   const autoKnowledgeId = SEED_AUTO_REPLY_BY_INTENT[intent];
   const handoffKnowledgeId = SEED_HANDOFF_BY_INTENT[intent];
+  const liveTruthDecision = buildKenjiLiveTruthDecision(intent, options.liveTruth || {}, options.continuity || {});
+
+  if (liveTruthDecision) {
+    return withDecisionMetadata({}, {
+      ...liveTruthDecision,
+      ...continuityMeta,
+      intent,
+    });
+  }
 
   if (autoKnowledgeId && !NEVER_AUTOREPLY_INTENTS.has(intent) && enabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)) {
     const card = await fetchSeedCard(env, autoKnowledgeId);
@@ -394,6 +411,9 @@ export async function writeKenjiAiMessageEvent({ env = {}, event = {}, decision 
       cta_type: text(decision.cta_type),
       cta_route: text(decision.cta_route),
       cta_appended: decision.cta_appended === true,
+      truth_authority: text(decision.truth_authority),
+      truth_status: text(decision.truth_status),
+      live_truth_used: decision.live_truth_used === true,
       line_delivery_attempted: attempted === true,
       line_delivery_succeeded: delivered === true,
       seed_pack: "v1",
@@ -529,23 +549,28 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
           storage_status: "disabled",
           available: false,
         };
+    const effectiveIntent = text(continuity.effective_intent || currentIntent);
+    const liveTruth = autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken
+      ? await resolveKenjiLineLiveTruth({ env, event, intent: effectiveIntent })
+      : { ok: false, status: "not_attempted", authority: "my_mmd_entitlement_resolver_v1" };
 
     const baseDecision = autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken
       ? await resolveKenjiSeedDecision(event, env, {
           modelAccessAllowed: controls.model_keyword_auto_reply !== true,
           currentIntent,
           continuity,
+          liveTruth,
         })
       : withDecisionMetadata({}, {
         ...continuityMetadata({ continuity }, currentIntent),
-        intent: text(continuity.effective_intent || currentIntent),
+        intent: effectiveIntent,
         reply_source: "silent",
         guard_blocked: true,
         guard_reason: redelivered ? "line_redelivery" : runtimeLineKill ? "runtime_line_kill" : "reply_not_eligible",
       });
 
     const decision = applyKenjiNextAction(baseDecision, {
-      intent: text(baseDecision.intent || continuity.effective_intent || currentIntent),
+      intent: text(baseDecision.intent || effectiveIntent),
       continuity,
     });
     const shouldReply = Boolean(autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken && decision.text);
@@ -587,6 +612,9 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       handoff_required: decision.handoff_required === true,
       cta_type: text(decision.cta_type),
       cta_appended: decision.cta_appended === true,
+      truth_authority: text(decision.truth_authority),
+      truth_status: text(decision.truth_status),
+      live_truth_used: decision.live_truth_used === true,
       reply_attempted: shouldReply,
       reply_sent: delivered,
       runtime_control_ok: runtime.ok === true,
@@ -610,6 +638,9 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       cta_type: text(decision.cta_type),
       cta_route: text(decision.cta_route),
       cta_appended: decision.cta_appended === true,
+      truth_authority: text(decision.truth_authority),
+      truth_status: text(decision.truth_status),
+      live_truth_used: decision.live_truth_used === true,
       runtime_control_ok: runtime.ok === true,
       runtime_line_kill: runtimeLineKill,
       continuity_enabled: continuityEnabled,

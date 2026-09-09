@@ -14,6 +14,7 @@ import { renderMmsAdminPage } from './src/mms-admin-page.js';
 
 const runtimeSource = readFileSync(new URL('./src/mms-admin-runtime.js', import.meta.url), 'utf8');
 const loginWrapperSource = readFileSync(new URL('./src/admin-login-hero-worker.js', import.meta.url), 'utf8');
+const loginCoreSource = readFileSync(new URL('./src/admin-login-hero-worker-core.js', import.meta.url), 'utf8');
 
 test('MMS admin exposes the real approve action for therapist applications', () => {
   const source = renderMmsAdminPage();
@@ -61,17 +62,19 @@ test('system check proves backend read paths without mutating bookings or therap
 });
 
 test('MMS browser page participates in the credential-bound admin session gate', () => {
-  const gateStart = loginWrapperSource.indexOf('async function applyCredentialBoundAdminGate');
-  const gateEnd = loginWrapperSource.indexOf('function isGateBypassedAdminPath', gateStart);
+  assert.match(loginWrapperSource, /coreWorker\.fetch\(request, env, ctx\)/);
+
+  const gateStart = loginCoreSource.indexOf('async function applyCredentialBoundAdminGate');
+  const gateEnd = loginCoreSource.indexOf('function isGateBypassedAdminPath', gateStart);
   assert.ok(gateStart >= 0 && gateEnd > gateStart);
-  const gateSource = loginWrapperSource.slice(gateStart, gateEnd);
+  const gateSource = loginCoreSource.slice(gateStart, gateEnd);
   assert.match(gateSource, /isBrowserAdminPath\(path\)/);
   assert.match(gateSource, /credential-required/);
 
-  const pathStart = loginWrapperSource.indexOf('function isBrowserAdminPath');
-  const pathEnd = loginWrapperSource.indexOf('function isApiAdminPath', pathStart);
+  const pathStart = loginCoreSource.indexOf('function isBrowserAdminPath');
+  const pathEnd = loginCoreSource.indexOf('function isApiAdminPath', pathStart);
   assert.ok(pathStart >= 0 && pathEnd > pathStart);
-  const pathSource = loginWrapperSource.slice(pathStart, pathEnd);
+  const pathSource = loginCoreSource.slice(pathStart, pathEnd);
   assert.match(pathSource, /path\.startsWith\("\/internal\/admin"\)/);
 });
 
