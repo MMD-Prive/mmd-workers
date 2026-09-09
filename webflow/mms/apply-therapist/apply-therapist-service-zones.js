@@ -21,6 +21,7 @@
   var zones=[];
   var provinces=[];
   var byCode=new Map();
+  var coverageSelected=new Set();
 
   var shell=document.createElement("div");
   shell.className="mta-zone-picker mta-span-2";
@@ -84,7 +85,7 @@
   function escapeHtml(value){return safe(value).replace(/[&<>"']/g,function(ch){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[ch];});}
   function zoneLabel(zone){return zone.safe_label_th||zone.label_th||zone.code;}
   function zonesForProvince(code){return zones.filter(function(zone){return zone.province_code===code;}).sort(function(a,b){return Number(a.sort_order||9999)-Number(b.sort_order||9999);});}
-  function selectedCoverage(){return [].slice.call(shell.querySelectorAll('[name="coverage_service_zone_codes_ui"]:checked')).map(function(input){return input.value;}).filter(function(code){return code&&code!==baseZone.value;});}
+  function selectedCoverage(){return Array.from(coverageSelected).filter(function(code){return code&&code!==baseZone.value;});}
 
   function provinceOptions(placeholder){
     return '<option value="">'+escapeHtml(placeholder)+'</option>'+provinces.map(function(province){return '<option value="'+escapeHtml(province.code)+'">'+escapeHtml(province.label_th)+' · '+escapeHtml(province.label_en||province.code)+'</option>';}).join("");
@@ -100,12 +101,11 @@
   function renderCoverageOptions(){
     var province=coverageProvince.value;
     if(!province){optionsEl.innerHTML="<p>เลือกจังหวัดเพื่อดู Zone เพิ่มเติม</p>";return;}
-    var chosen=new Set(selectedCoverage());
     var baseCode=baseZone.value;
     var list=zonesForProvince(province).filter(function(zone){return zone.code!==baseCode;});
     if(!list.length){optionsEl.innerHTML="<p>ไม่มี Zone เพิ่มเติมในจังหวัดนี้</p>";return;}
     optionsEl.innerHTML=list.map(function(zone){
-      var checked=chosen.has(zone.code)?" checked":"";
+      var checked=coverageSelected.has(zone.code)?" checked":"";
       return '<label class="mta-zone-option"><input type="checkbox" name="coverage_service_zone_codes_ui" value="'+escapeHtml(zone.code)+'"'+checked+'><span><span>'+escapeHtml(zoneLabel(zone))+'</span><small>'+escapeHtml(zone.admin_areas_th||zone.label_th||"")+'</small></span></label>';
     }).join("");
   }
@@ -122,12 +122,15 @@
   baseZone.addEventListener("change",function(){
     var zone=byCode.get(baseZone.value);
     legacyBase.value=zone?zoneLabel(zone):"";
-    var same=shell.querySelector('[name="coverage_service_zone_codes_ui"][value="'+CSS.escape(baseZone.value)+'"]');
-    if(same)same.checked=false;
+    if(baseZone.value)coverageSelected.delete(baseZone.value);
     renderCoverageOptions();renderSelected();
   });
   coverageProvince.addEventListener("change",renderCoverageOptions);
-  optionsEl.addEventListener("change",renderSelected);
+  optionsEl.addEventListener("change",function(event){
+    var input=event.target&&event.target.matches('[name="coverage_service_zone_codes_ui"]')?event.target:null;
+    if(input){if(input.checked)coverageSelected.add(input.value);else coverageSelected.delete(input.value);}
+    renderSelected();
+  });
 
   function loadCatalog(){
     return fetch(zoneEndpoint,{method:"GET",headers:{"Accept":"application/json"},credentials:"omit"})
