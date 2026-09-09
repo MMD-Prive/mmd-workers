@@ -136,6 +136,17 @@ test("SIGIL Jobs renewal cannot be created without an explicit positive renewal 
   assert.match((await prepared.response.json()).error, /renewal_amount_thb_invalid/);
 });
 
+test("SIGIL Jobs renewal rejects positive input that rounds to zero THB", () => {
+  assert.throws(() => canonicalizeSigilJobBody({
+    amount_thb: 8000,
+    membership_action: {
+      type: "renew",
+      include_in_payment: true,
+      renewal_amount_thb: 0.001,
+    },
+  }), /membership_action\.renewal_amount_thb_invalid/);
+});
+
 test("SIGIL Jobs separate renewal payment never inflates service job amount", () => {
   const out = canonicalizeSigilJobBody({
     amount_thb: 8000,
@@ -148,6 +159,42 @@ test("SIGIL Jobs separate renewal payment never inflates service job amount", ()
   assert.equal(out.body.amount_thb, 8000);
   assert.equal(out.membership_action.payment_component_status, "separate_payment_required");
   assert.equal(out.pricing_breakdown.membership_renewal_amount_thb, 2500);
+});
+
+test("SIGIL Jobs durable membership marker survives a near-limit operator note", () => {
+  const out = canonicalizeSigilJobBody({
+    amount_thb: 8000,
+    note: "x".repeat(3995),
+    membership_action: {
+      type: "renew",
+      include_in_payment: true,
+      renewal_amount_thb: 2500,
+      tier_hint: "premium",
+    },
+  });
+  assert.ok(out.body.note.startsWith(`${MEMBERSHIP_ACTION_NOTE_MARKER} `));
+  assert.ok(out.body.note.length <= 4000);
+  const markerLine = out.body.note.split("\n", 1)[0];
+  const parsed = JSON.parse(markerLine.slice(MEMBERSHIP_ACTION_NOTE_MARKER.length).trim());
+  assert.equal(parsed.renewal_amount_thb, 2500);
+  assert.equal(parsed.service_amount_thb, 8000);
+  assert.equal(parsed.customer_total_thb, 10500);
+  assert.equal(parsed.entitlement_mutation_allowed, false);
+});
+
+test("SIGIL Jobs empty top-level note falls back to structured operation note", () => {
+  const out = canonicalizeSigilJobBody({
+    amount_thb: 8000,
+    note: "",
+    notes: {
+      operation_note: "Keep this note\n[ASSISTED_RENEWAL_V1] type=renew; source=sigil_jobs; include_in_payment=true; renewal_amount_thb=2500; tier=premium; materialize=after_official_verify",
+    },
+  });
+  assert.equal(out.membership_action.type, "renew");
+  assert.equal(out.membership_action.renewal_amount_thb, 2500);
+  assert.equal(out.body.amount_thb, 10500);
+  assert.match(out.body.note, /Keep this note/);
+  assert.ok(out.body.note.startsWith(`${MEMBERSHIP_ACTION_NOTE_MARKER} `));
 });
 
 test("pending-client-link private jobs preserve canonical assisted renewal before core create", () => {
