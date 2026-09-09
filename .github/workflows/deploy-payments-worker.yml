@@ -36,8 +36,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node --check payments-worker/canonical-confirm-link.js
+          node --check payments-worker/index.review-wrapper.js
           node --check payments-worker/index.phase1.js
           node --check payments-worker/confirmation-ack.js
+          node --test payments-worker/canonical-confirm-link.test.mjs
+          node --test payments-worker/session-finance-write.test.mjs
           node payments-worker/payment-confirmation-token.test.mjs
           npx --yes wrangler@4 versions upload --dry-run --keep-vars --config payments-worker/wrangler.merged.toml
 
