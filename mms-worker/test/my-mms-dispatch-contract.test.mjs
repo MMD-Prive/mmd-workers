@@ -105,3 +105,16 @@ test("runtime chain routes dispatch before legacy invite/runtime and entrypoint 
   assert.match(entry, /export \{ MmsDispatchCoordinator \}/);
   assert.match(entry, /dispatch_coordinator: Boolean\(env\.MMS_DISPATCH_COORDINATOR\)/);
 });
+
+test("synced canonical prebookings automatically enter real dispatch without fabricating failed bookings", async () => {
+  const entry = await source(entryUrl);
+  assert.match(entry, /const PREBOOKING_PATH = "\/mms\/api\/prebookings"/);
+  assert.match(entry, /maybeHandleMyMmsDispatch\(dispatchRequest, env\)/);
+  assert.match(entry, /\/internal\/mms\/dispatch\/prebookings\/\$\{encodeURIComponent\(prebookingId\)\}\/match/);
+  assert.match(entry, /request_key: `auto:\$\{prebookingId\}`/);
+  assert.match(entry, /response\.status === 202/);
+  assert.match(entry, /PREBOOKING_STORAGE_PENDING/);
+  assert.match(entry, /PENDING_COORDINATION/);
+  assert.match(entry, /status: response\.status/);
+  assert.doesNotMatch(entry, /matched_therapist_ids.*payload\.dispatch/);
+});
