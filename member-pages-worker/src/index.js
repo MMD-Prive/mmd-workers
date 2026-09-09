@@ -4,6 +4,7 @@ import { handlePublicCareBackWishRoute, isPublicCareBackWishPath } from "./publi
 import { handleFindMemberApi, isFindMemberApiPath } from "./find-member-api.js";
 import { handleMemberEmailRecovery, isMemberEmailRecoveryPath } from "./member-email-recovery.js";
 import { handleMmsMemberPrebookingRead, isMmsMemberPrebookingReadPath } from "./mms-member-prebooking-read.js";
+import { handleMmsServiceZoneCatalog, isMmsServiceZoneCatalogPath } from "./mms-service-zone-catalog.js";
 import { handleMemberAppApi, isMemberAppApiPath } from "./member-app-api.js";
 import {
   applyMyMmdCanonicalEntitlementResponse,
@@ -24,6 +25,7 @@ export default {
     const canonicalContext = await prepareMyMmdCanonicalEntitlementContext(request, env);
     const finish = (response) => applyMyMmdCanonicalEntitlementResponse(request, response, canonicalContext);
 
+    if (isMmsServiceZoneCatalogPath(url)) return finish(await handleMmsServiceZoneCatalog(request, env));
     if (request.method === "GET" && isMmsMemberPrebookingReadPath(url)) return finish(await handleMmsMemberPrebookingRead(request, env));
     if (isMemberAppApiPath(url)) return finish(await handleMemberAppApi(request, env));
     if (isMemberEmailRecoveryPath(url)) return finish(await handleMemberEmailRecovery(request, env));
