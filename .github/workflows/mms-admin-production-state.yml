@@ -168,10 +168,12 @@ jobs:
               try {
                 await page.waitForFunction(() => {
                   const bodyText = document.body?.innerText || '';
-                  const hasControlRoom = Boolean(document.querySelector('[data-control-room]')) ||
-                    /Control Room|CONTROL ROOM|Owner Control|Operating System/i.test(bodyText);
+                  const legacyControlRoom = Boolean(document.querySelector('[data-control-room]')) ||
+                    /Control Room|CONTROL ROOM|Owner Control/i.test(bodyText);
+                  const ownerOperatingSystem = /MMD PRIVÉ\s+PER\s*[·•-]?\s*COMMAND CENTER/i.test(bodyText) &&
+                    /OWNER MODE/i.test(bodyText);
                   const loginStillPresent = Boolean(document.querySelector('#adminLoginForm, #ownerLoginForm'));
-                  return hasControlRoom && !loginStillPresent;
+                  return (legacyControlRoom || ownerOperatingSystem) && !loginStillPresent;
                 }, { timeout: 15000 });
               } catch (error) {
                 waitError = error;
