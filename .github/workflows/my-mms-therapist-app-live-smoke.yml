@@ -1,0 +1,159 @@
+name: MY MMS Therapist App Live Smoke
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Deploy member-dashboard-chat-worker
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: my-mms-therapist-app-live-smoke
+  cancel-in-progress: false
+
+jobs:
+  route-and-smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
+      CLOUDFLARE_ZONE_ID: "2d62396174fa2ddadbbcd0e8cf0f3367"
+      WORKER_NAME: "member-dashboard-chat-worker"
+      PRESENTATION_URL: "https://my-mms-therapist.lovable.app/my-mms-work-shell.html"
+      APP_URL: "https://www.mmdbkk.com/male-massage/therapists/app"
+      ACCESS_URL: "https://www.mmdbkk.com/male-massage/therapists/api/app/access"
+
+    steps:
+      - name: Verify Lovable production shell before claiming routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          ok=""
+          for attempt in $(seq 1 36); do
+            code="$(curl --silent --show-error --location --output "$RUNNER_TEMP/my-mms-shell.html" --write-out '%{http_code}' "$PRESENTATION_URL" || true)"
+            if [ "$code" = "200" ] && grep -Fq 'data-mms-shell="lovable-single-file-v1"' "$RUNNER_TEMP/my-mms-shell.html" && grep -Fq '/male-massage/therapists/api/app/access' "$RUNNER_TEMP/my-mms-shell.html"; then
+              ok=1
+              break
+            fi
+            sleep 5
+          done
+          test -n "$ok"
+          echo "Lovable production shell is live and contains the canonical MY MMS access gate."
+
+      - name: Sync bounded MY MMS Therapist routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const token = String(process.env.CLOUDFLARE_ROUTES_API_TOKEN || '').trim();
+          const zoneId = String(process.env.CLOUDFLARE_ZONE_ID || '').trim();
+          const worker = String(process.env.WORKER_NAME || '').trim();
+          if (!token || !zoneId || !worker) throw new Error('cloudflare_route_sync_config_missing');
+
+          const desired = [
+            'mmdbkk.com/male-massage/therapists/api/auth/*',
+            'www.mmdbkk.com/male-massage/therapists/api/auth/*',
+            'mmdbkk.com/male-massage/therapists/api/app/*',
+            'www.mmdbkk.com/male-massage/therapists/api/app/*',
+            'mmdbkk.com/male-massage/therapists/app*',
+            'www.mmdbkk.com/male-massage/therapists/app*',
+          ];
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+          async function cf(path, options = {}) {
+            let lastError;
+            for (let attempt = 1; attempt <= 5; attempt += 1) {
+              try {
+                const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+                  ...options,
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    ...(options.headers || {}),
+                  },
+                });
+                const text = await response.text();
+                let body = null;
+                try { body = JSON.parse(text); } catch {}
+                if (response.ok && body?.success === true) return body.result;
+                const retryable = response.status === 429 || response.status >= 500 || !body;
+                lastError = new Error(body ? JSON.stringify(body.errors || body) : `cloudflare_non_json_${response.status}:${text.slice(0, 160)}`);
+                if (!retryable) throw lastError;
+              } catch (error) {
+                lastError = error;
+              }
+              if (attempt < 5) await sleep(attempt * 1000);
+            }
+            throw lastError || new Error('cloudflare_route_api_failed');
+          }
+
+          const routePath = `/zones/${zoneId}/workers/routes`;
+          let existing = await cf(routePath);
+          for (const pattern of desired) {
+            const conflict = existing.find((route) => route.pattern === pattern && route.script !== worker);
+            if (conflict) throw new Error(`route conflict ${pattern} -> ${conflict.script || 'none'}`);
+          }
+          for (const pattern of desired) {
+            if (existing.some((route) => route.pattern === pattern && route.script === worker)) continue;
+            await cf(routePath, { method: 'POST', body: JSON.stringify({ pattern, script: worker }) });
+            console.log(`created ${pattern} -> ${worker}`);
+            existing = await cf(routePath);
+          }
+          const verified = await cf(routePath);
+          for (const pattern of desired) {
+            if (!verified.some((route) => route.pattern === pattern && route.script === worker)) {
+              throw new Error(`route verification failed: ${pattern}`);
+            }
+          }
+          console.log('MY MMS bounded Therapist routes verified.');
+          NODE
+
+      - name: Verify unauthenticated app API fails closed through mms-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=""
+          for attempt in $(seq 1 24); do
+            code="$(curl --silent --show-error --output "$RUNNER_TEMP/access.json" --dump-header "$RUNNER_TEMP/access.headers" --write-out '%{http_code}' "$ACCESS_URL" || true)"
+            if [ "$code" = "401" ]; then break; fi
+            sleep 5
+          done
+          test "$code" = "401"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const body = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/access.json', 'utf8'));
+          if (body?.ok !== false || body?.error?.code !== 'THERAPIST_SESSION_REQUIRED') {
+            throw new Error(`unexpected access gate response: ${JSON.stringify(body)}`);
+          }
+          NODE
+          grep -qi '^x-mmd-upstream-service: mms-worker' "$RUNNER_TEMP/access.headers"
+
+      - name: Verify unauthenticated app route returns to LINE login
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error --output /dev/null --dump-header "$RUNNER_TEMP/app.headers" --write-out '%{http_code}' "$APP_URL")"
+          test "$code" = "302"
+          grep -Eqi '^location: https://www\.mmdbkk\.com/male-massage/therapists/login' "$RUNNER_TEMP/app.headers"
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$RUNNER_TEMP/app.headers"
+          grep -qi '^x-robots-tag: noindex' "$RUNNER_TEMP/app.headers"
+
+      - name: Summarize MY MMS production route
+        shell: bash
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## MY MMS Therapist app production route
+
+          - Lovable presentation source: live
+          - `/male-massage/therapists/app`: Worker-owned and session/access gated
+          - `/male-massage/therapists/api/app/*`: same-origin delegation to `mms-worker`
+          - unauthenticated access: fail-closed to Therapist LINE login
+          - approved-session UI smoke: requires a real approved Therapist session and is intentionally not fabricated in CI
+          EOF

@@ -118,6 +118,26 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/male-massage/therapists/api/auth/*"
 zone_name = "mmdbkk.com"
 
+# MY MMS Therapist work app. Browser session cookies never leave mmdbkk.com:
+# app APIs are delegated to mms-worker, while the app page is server-gated by
+# the canonical MY MMS entitlement before anonymous Lovable presentation bytes
+# are republished on the same origin.
+[[routes]]
+pattern = "mmdbkk.com/male-massage/therapists/api/app/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/therapists/api/app/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/male-massage/therapists/app*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/therapists/app*"
+zone_name = "mmdbkk.com"
+
 # Canonical My MMD customer application. Lovable owns presentation; this Worker
 # owns the custom-domain route, strips member credentials before fetching the
 # Lovable app, republishes its assets same-origin, and keeps all behavior on the
