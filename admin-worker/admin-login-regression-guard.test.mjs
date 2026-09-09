@@ -8,6 +8,7 @@ import {
   canonicalizeSigilJobBody,
   prepareSigilJobCreateRequest,
 } from "./src/sigil-jobs-membership-action.js";
+import { canonicalizePendingClientLinkBody } from "./src/sigil-jobs-pending-client-link.js";
 
 const APPROVED_PAGE_ID = "admin-login-approved-hero";
 const LEGACY_MARKERS = [
@@ -103,7 +104,7 @@ test("SIGIL Jobs canonical membership_action keeps renewal outside service spend
   assert.equal(out.pricing_breakdown.membership_fee_counts_as_service_spend, false);
   assert.equal(out.pricing_breakdown.membership_fee_points_eligible, false);
   assert.equal(out.pricing_breakdown.membership_fee_referral_reward_eligible, false);
-  assert.match(out.body.note, new RegExp(`\\${MEMBERSHIP_ACTION_NOTE_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  assert.ok(out.body.note.includes(MEMBERSHIP_ACTION_NOTE_MARKER));
 });
 
 test("SIGIL Jobs legacy Webflow assisted-renewal note upgrades into membership_action_v1", () => {
@@ -147,4 +148,29 @@ test("SIGIL Jobs separate renewal payment never inflates service job amount", ()
   assert.equal(out.body.amount_thb, 8000);
   assert.equal(out.membership_action.payment_component_status, "separate_payment_required");
   assert.equal(out.pricing_breakdown.membership_renewal_amount_thb, 2500);
+});
+
+test("pending-client-link private jobs preserve canonical assisted renewal before core create", () => {
+  const out = canonicalizePendingClientLinkBody({
+    operational_create_mode: "pending_client_link",
+    visibility: "private",
+    amount_thb: 8000,
+    client_name: "Pending Member",
+    model_name: "Test Model",
+    membership_action: {
+      type: "renew",
+      include_in_payment: true,
+      renewal_amount_thb: 2500,
+      tier_hint: "premium",
+    },
+  });
+
+  assert.equal(out.forwarded_body.visibility, "pending_private");
+  assert.equal(out.forwarded_body.amount_thb, 10500);
+  assert.equal(out.forwarded_body.service_amount_thb, 8000);
+  assert.equal(out.forwarded_body.membership_action.state, "pending_official_verify");
+  assert.equal(out.forwarded_body.membership_action.entitlement_mutation_allowed, false);
+  assert.ok(out.forwarded_body.note.includes(MEMBERSHIP_ACTION_NOTE_MARKER));
+  assert.match(out.forwarded_body.note, /PENDING CLIENT LINK/);
+  assert.equal(out.pricing_breakdown.customer_total_thb, 10500);
 });
