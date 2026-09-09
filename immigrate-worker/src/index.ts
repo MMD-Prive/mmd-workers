@@ -117,6 +117,8 @@ const INTERNAL_ROUTES_BRIDGE_ADMIN_API_PATHS = new Set([
   "/v1/admin/clients/lineage-lookup",
   "/v1/admin/clients/recent",
   "/v1/admin/models/search",
+  "/v1/admin/models/activation-candidates",
+  "/v1/admin/model/activation/issue",
   "/v1/admin/job/draft",
   "/v1/admin/create-job",
   "/v1/admin/create-session",
@@ -2997,7 +2999,10 @@ function renderAdminLoginPage(request: Request): Response {
           void session;
         }
 
+        const lookupInput=document.getElementById("client_lookup_query"),lookupButton=document.getElementById("client_lookup_search"),lookupResults=document.getElementById("client_lookup_results"),selectedClientBox=document.getElementById("selected_client");let selectedClient=null;const escLookup=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));function clientLabel(c){const r=String(c.remembered_name||"").trim(),n=String(c.canonical_name||"").trim();return r&&n&&r.toLowerCase()!==n.toLowerCase()?r+" · "+n:r||n||c.client_name||"Unknown client"}function selectClient(c){selectedClient=c;document.getElementById("display_name").value=c.client_name||c.remembered_name||c.canonical_name||"";document.getElementById("nickname").value=c.username||c.line_display_name||"";document.getElementById("line_user_id").value=c.line_user_id||"";document.getElementById("line_id").value=c.line_display_name||"";document.getElementById("email").value=c.member_email||"";document.getElementById("phone").value=c.phone||"";document.getElementById("current_tier").value=c.tier||c.package_code||"";selectedClientBox.innerHTML="<strong>เลือกแล้ว: "+escLookup(clientLabel(c))+"</strong><small>"+escLookup([c.matched_on?"matched by "+c.matched_on:"",c.membership_status||"",c.package_code||""].filter(Boolean).join(" · ")||"Canonical client lineage selected")+"</small>";selectedClientBox.classList.add("is-visible")}function renderLookup(xs){if(!xs.length){lookupResults.innerHTML='<p class="lookup-empty">ไม่พบลูกค้าที่ตรงกัน — ให้ไปสร้าง/จับคู่ที่ Client Intake ก่อน ไม่ควรสร้าง Job ด้วยชื่อใหม่ลอย ๆ</p>';return}lookupResults.innerHTML=xs.map((c,i)=>{const m=[c.matched_on,c.membership_status,c.package_code,c.confidence?c.confidence+"% confidence":""].filter(Boolean).map(x=>"<span>"+escLookup(x)+"</span>").join(""),d=[c.member_email,c.phone,c.line_display_name,c.customer_telegram_username].filter(Boolean).join(" · ");return '<button type="button" class="lookup-card" data-client-index="'+i+'"><strong>'+escLookup(clientLabel(c))+'</strong><small>'+escLookup(d||"Canonical record")+'</small><div class="lookup-meta">'+m+"</div></button>"}).join("");lookupResults.querySelectorAll("[data-client-index]").forEach(b=>b.addEventListener("click",()=>selectClient(xs[Number(b.dataset.clientIndex)])))}async function lookupClient(){const q=lookupInput.value.trim();if(!q){lookupResults.innerHTML='<p class="lookup-empty">พิมพ์ข้อมูลที่มีของลูกค้าก่อนครับ</p>';return}lookupButton.disabled=true;lookupButton.textContent="Searching…";lookupResults.innerHTML='<p class="lookup-empty">กำลังค้นจาก canonical client lineage…</p>';try{const h=window.__MMD_ADMIN_GATE__?window.__MMD_ADMIN_GATE__.buildHeaders({"Content-Type":"application/json"}):new Headers({"Content-Type":"application/json"}),r=await fetch("/v1/admin/clients/lineage-lookup",{method:"POST",credentials:"same-origin",headers:h,body:JSON.stringify({query:q})}),d=await r.json().catch(()=>null);if(!r.ok||!d||d.ok===false)throw Error((d&&(d.error||d.message))||"ค้นหาลูกค้าไม่สำเร็จ");renderLookup(Array.isArray(d.records)?d.records:[])}catch(e){lookupResults.innerHTML='<p class="lookup-empty">ค้นหาไม่ได้ตอนนี้: '+escLookup(e&&e.message?e.message:e)+"</p>"}finally{lookupButton.disabled=false;lookupButton.textContent="Search"}}lookupButton.addEventListener("click",lookupClient);lookupInput.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();lookupClient()}});
+
         form.addEventListener("submit", async (event) => {
+          if(!selectedClient||!selectedClient.client_id){event.preventDefault();setStatus("เลือก canonical client จากผลค้นหาก่อนสร้าง Job","error");lookupInput.focus();return;}
           event.preventDefault();
           setError("");
           submit.disabled = true;
@@ -3747,6 +3752,7 @@ function renderCreateJobPage(request: Request, session: AdminGateSession): Respo
         gap: 12px;
         margin-bottom: 12px;
       }
+      .client-lookup { margin:0 0 8px;padding:18px;border:1px solid rgba(209,166,106,.34);border-radius:22px;background:linear-gradient(145deg,rgba(209,166,106,.10),rgba(7,6,10,.58)); }.client-lookup h2{margin:0;font-size:1.2rem}.client-lookup p{margin:8px 0 0;color:var(--muted);line-height:1.55}.lookup-row{display:flex;gap:10px;margin-top:14px}.lookup-row input{min-height:48px}.lookup-row button{flex:0 0 auto;min-height:48px}.lookup-results{display:grid;gap:9px;margin-top:12px}.lookup-card{width:100%;min-height:0;padding:13px 14px;border-radius:14px;border:1px solid var(--line);background:rgba(7,6,10,.7);text-align:left;text-transform:none;letter-spacing:normal}.lookup-card:hover,.lookup-card:focus{border-color:var(--gold);background:rgba(209,166,106,.12)}.lookup-card strong{display:block;font:600 1rem/1.2 inherit}.lookup-card small{display:block;color:var(--muted);margin-top:5px;font:.82rem/1.45 system-ui,sans-serif}.lookup-meta{display:flex;gap:7px;flex-wrap:wrap;margin-top:7px}.lookup-meta span{padding:3px 7px;border:1px solid rgba(247,240,232,.15);border-radius:999px;color:var(--gold);font:600 .68rem/1 system-ui,sans-serif}.selected-client{display:none;margin-top:12px;padding:12px 14px;border-left:3px solid var(--success);background:rgba(154,215,178,.08);border-radius:10px;color:var(--text)}.selected-client.is-visible{display:block}.selected-client small{display:block;margin-top:4px;color:var(--muted)}.lookup-empty{color:var(--muted);font-size:.9rem;margin:10px 0 0}@media(max-width:720px){.lookup-row{flex-direction:column}.lookup-row button{width:100%}}
       .check {
         display: flex;
         gap: 10px;
@@ -3782,31 +3788,32 @@ function renderCreateJobPage(request: Request, session: AdminGateSession): Respo
 
       <div class="layout">
         <section>
+          <section class="client-lookup" aria-labelledby="client-lookup-title"><p class="kicker">Step 01 · Client identity</p><h2 id="client-lookup-title">ค้นหาลูกค้าก่อนสร้าง Job</h2><p>ค้นได้จากชื่อที่เปอร์ rename, ชื่อเดิม, LINE, อีเมล, เบอร์โทร หรือ Telegram แล้วเลือกผลที่ตรงจริงก่อนกรอกบรีฟต่อ</p><div class="lookup-row"><input id="client_lookup_query" type="search" autocomplete="off" placeholder="ชื่อ / email / เบอร์ / LINE / Telegram" aria-label="ค้นหาลูกค้า" /><button id="client_lookup_search" type="button">Search</button></div><div id="client_lookup_results" class="lookup-results" aria-live="polite"></div><div id="selected_client" class="selected-client" role="status"></div></section>
           <form id="create-job-form">
             <div class="grid">
               <label>
                 Display Name
-                <input id="display_name" name="display_name" type="text" required />
+                <input id="display_name" name="display_name" type="text" required readonly placeholder="เลือกจาก Client search ด้านบน" />
               </label>
               <label>
                 Nickname
-                <input id="nickname" name="nickname" type="text" />
+                <input id="nickname" name="nickname" type="text" readonly />
               </label>
               <label>
                 LINE User ID
-                <input id="line_user_id" name="line_user_id" type="text" />
+                <input id="line_user_id" name="line_user_id" type="text" readonly />
               </label>
               <label>
                 LINE ID
-                <input id="line_id" name="line_id" type="text" />
+                <input id="line_id" name="line_id" type="text" readonly />
               </label>
               <label>
                 Email
-                <input id="email" name="email" type="email" />
+                <input id="email" name="email" type="email" readonly />
               </label>
               <label>
                 Phone
-                <input id="phone" name="phone" type="text" />
+                <input id="phone" name="phone" type="text" readonly />
               </label>
               <label>
                 Model Name
@@ -3990,6 +3997,7 @@ function renderCreateJobPage(request: Request, session: AdminGateSession): Respo
           const threadRaw = document.getElementById("telegram_message_thread_id").value.trim();
 
           const payload = {
+            client_id:selectedClient.client_id||"",member_id:selectedClient.member_id||"",memberstack_id:selectedClient.memberstack_id||"",client_lineage:{client_id:selectedClient.client_id||"",member_id:selectedClient.member_id||"",memberstack_id:selectedClient.memberstack_id||"",member_email:selectedClient.member_email||"",client_name:selectedClient.client_name||"",matched_on:selectedClient.matched_on||"",line_user_id:selectedClient.line_user_id||""},
             display_name: document.getElementById("display_name").value.trim(),
             nickname: document.getElementById("nickname").value.trim(),
             line_user_id: document.getElementById("line_user_id").value.trim(),

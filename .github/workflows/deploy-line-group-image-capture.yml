@@ -44,6 +44,7 @@ jobs:
           node --check member-dashboard-chat-worker/src/line-group-ingress-front-gate.js
           node --check member-dashboard-chat-worker/src/front-gate-index.js
           node --check member-dashboard-chat-worker/src/index.js
+          node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/line-payment-proof-ingress.test.mjs
           npm run test:member-dashboard-line
 
       - name: Ensure private LINE slip evidence bucket

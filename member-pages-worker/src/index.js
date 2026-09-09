@@ -4,7 +4,12 @@ import { handlePublicCareBackWishRoute, isPublicCareBackWishPath } from "./publi
 import { handleFindMemberApi, isFindMemberApiPath } from "./find-member-api.js";
 import { handleMemberEmailRecovery, isMemberEmailRecoveryPath } from "./member-email-recovery.js";
 import { handleMmsMemberPrebookingRead, isMmsMemberPrebookingReadPath } from "./mms-member-prebooking-read.js";
+import { handleMmsServiceZoneCatalog, isMmsServiceZoneCatalogPath } from "./mms-service-zone-catalog.js";
 import { handleMemberAppApi, isMemberAppApiPath } from "./member-app-api.js";
+import {
+  applyMyMmdCanonicalEntitlementResponse,
+  prepareMyMmdCanonicalEntitlementContext,
+} from "./my-mmd-canonical-entitlement-bridge.js";
 import {
   decorateLiffShellWithClientDiagnostic,
   handleLiffClientDiagnostic,
@@ -17,16 +22,20 @@ export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-coord
 export default {
   async fetch(request, env = {}, ctx) {
     const url = new URL(request.url);
-    if (request.method === "GET" && isMmsMemberPrebookingReadPath(url)) return handleMmsMemberPrebookingRead(request, env);
-    if (isMemberAppApiPath(url)) return handleMemberAppApi(request, env);
-    if (isMemberEmailRecoveryPath(url)) return handleMemberEmailRecovery(request, env);
-    if (isFindMemberApiPath(url)) return handleFindMemberApi(request, env);
-    if (isLiffClientDiagnosticPath(url)) return handleLiffClientDiagnostic(request, env);
-    if (isPublicCareBackWishPath(url)) return handlePublicCareBackWishRoute(request, env);
+    const canonicalContext = await prepareMyMmdCanonicalEntitlementContext(request, env);
+    const finish = (response) => applyMyMmdCanonicalEntitlementResponse(request, response, canonicalContext);
+
+    if (isMmsServiceZoneCatalogPath(url)) return finish(await handleMmsServiceZoneCatalog(request, env));
+    if (request.method === "GET" && isMmsMemberPrebookingReadPath(url)) return finish(await handleMmsMemberPrebookingRead(request, env));
+    if (isMemberAppApiPath(url)) return finish(await handleMemberAppApi(request, env));
+    if (isMemberEmailRecoveryPath(url)) return finish(await handleMemberEmailRecovery(request, env));
+    if (isFindMemberApiPath(url)) return finish(await handleFindMemberApi(request, env));
+    if (isLiffClientDiagnosticPath(url)) return finish(await handleLiffClientDiagnostic(request, env));
+    if (isPublicCareBackWishPath(url)) return finish(await handlePublicCareBackWishRoute(request, env));
     if (isLiffMemberShellPath(url)) {
       const response = handleLiffMemberShell(request, env);
-      return decorateLiffShellWithClientDiagnostic(response);
+      return finish(decorateLiffShellWithClientDiagnostic(response));
     }
-    return liffFoundation.fetch(request, env, ctx);
+    return finish(await liffFoundation.fetch(request, env, ctx));
   },
 };

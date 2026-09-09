@@ -1,0 +1,237 @@
+/* MMD Studio Upload final theme lock — 2026-09-08
+   Presentation only. No backend/auth/payment/entitlement authority. */
+
+#mmdStudioUploadR5 {
+  --studio-bg:#070604;
+  --studio-panel:#0d0b08;
+  --studio-panel-soft:#12100d;
+  --studio-input:rgba(255,255,255,.025);
+  --studio-text:#f2e8d9;
+  --studio-text-soft:#cfc4b3;
+  --studio-muted:#918879;
+  --studio-dim:#71695f;
+  --studio-gold:#e5b96e;
+  --studio-gold-soft:#b79050;
+  --studio-gold-border:#6b4927;
+  --studio-border:#2b251b;
+  --studio-border-soft:#36312b;
+  color:var(--studio-text);
+  background:var(--studio-bg);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue","Noto Sans Thai","Noto Sans",Arial,sans-serif !important;
+}
+
+#mmdStudioUploadR5,
+#mmdStudioUploadR5 p,
+#mmdStudioUploadR5 label,
+#mmdStudioUploadR5 span,
+#mmdStudioUploadR5 small { color:var(--studio-text-soft); }
+
+#mmdStudioUploadR5 h1,
+#mmdStudioUploadR5 h2,
+#mmdStudioUploadR5 h3,
+#mmdStudioUploadR5 strong { color:var(--studio-text) !important; }
+
+#mmdStudioUploadR5 .mu-shell {
+  width:min(1180px,calc(100% - 40px));
+  margin:0 auto;
+  padding:24px 0 48px;
+}
+
+#mmdStudioUploadR5 .mu-top {
+  border-bottom:1px solid var(--studio-border);
+  padding-bottom:18px;
+  margin-bottom:20px;
+}
+
+#mmdStudioUploadR5 .mu-brand { color:var(--studio-text); }
+#mmdStudioUploadR5 .mu-nav a { color:var(--studio-muted); }
+#mmdStudioUploadR5 .mu-nav a:hover,
+#mmdStudioUploadR5 .mu-nav .is-active { color:var(--studio-gold); }
+
+#mmdStudioUploadR5 .mu-note {
+  background:linear-gradient(145deg,rgba(107,73,39,.16),rgba(13,11,8,.96) 48%,#0d0b08);
+  border:1px solid var(--studio-gold-border);
+  border-radius:18px;
+  padding:22px 24px;
+  margin-bottom:16px;
+}
+
+#mmdStudioUploadR5 .mu-note h1,
+#mmdStudioUploadR5 .mu-note h2 {
+  color:var(--studio-text) !important;
+  font-size:clamp(28px,3.2vw,44px);
+  line-height:1.08;
+  letter-spacing:-.035em;
+  margin:6px 0 10px;
+}
+
+#mmdStudioUploadR5 .mu-eye,
+#mmdStudioUploadR5 .mu-mini {
+  color:var(--studio-gold) !important;
+  letter-spacing:.12em;
+}
+
+#mmdStudioUploadR5 .mu-note p {
+  color:var(--studio-text-soft) !important;
+  line-height:1.65;
+}
+
+#mmdStudioUploadR5 .mu-panel {
+  background:linear-gradient(145deg,rgba(255,255,255,.018),rgba(13,11,8,.98));
+  border:1px solid var(--studio-border-soft);
+  border-radius:18px;
+  padding:22px;
+}
+
+#mmdStudioUploadR5 .mu-head h2 {
+  color:var(--studio-text) !important;
+  font-size:25px;
+  line-height:1.15;
+  margin:4px 0;
+}
+
+#mmdStudioUploadR5 .mu-head span,
+#mmdStudioUploadR5 .mu-head small { color:var(--studio-gold-soft) !important; }
+
+#mmdStudioUploadR5 .mu-field {
+  color:var(--studio-text-soft) !important;
+  font-size:12px;
+  font-weight:600;
+  letter-spacing:.08em;
+}
+
+#mmdStudioUploadR5 input,
+#mmdStudioUploadR5 select,
+#mmdStudioUploadR5 textarea {
+  width:100%;
+  color:var(--studio-text) !important;
+  background:var(--studio-input) !important;
+  border:1px solid var(--studio-border-soft) !important;
+  border-radius:13px !important;
+  font:inherit !important;
+  outline:none;
+  transition:border-color .18s ease,box-shadow .18s ease,background-color .18s ease;
+}
+
+#mmdStudioUploadR5 input,
+#mmdStudioUploadR5 select {
+  min-height:50px;
+  padding:0 15px !important;
+}
+
+#mmdStudioUploadR5 textarea {
+  min-height:135px;
+  padding:15px !important;
+  resize:vertical;
+}
+
+#mmdStudioUploadR5 input::placeholder,
+#mmdStudioUploadR5 textarea::placeholder {
+  color:var(--studio-muted) !important;
+  opacity:1;
+}
+
+#mmdStudioUploadR5 input:focus,
+#mmdStudioUploadR5 select:focus,
+#mmdStudioUploadR5 textarea:focus {
+  border-color:var(--studio-gold-border) !important;
+  box-shadow:0 0 0 3px rgba(229,185,110,.07);
+  background:rgba(255,255,255,.035) !important;
+}
+
+#mmdStudioUploadR5 .mu-helper {
+  color:var(--studio-text-soft) !important;
+  background:rgba(229,185,110,.045);
+  border:1px solid rgba(229,185,110,.20);
+  border-radius:13px;
+  padding:13px 15px;
+}
+
+#mmdStudioUploadR5 .mu-btn {
+  display:inline-flex;
+  min-height:46px;
+  padding:0 18px;
+  align-items:center;
+  justify-content:center;
+  border:1px solid var(--studio-border-soft);
+  border-radius:999px;
+  background:#11100e;
+  color:var(--studio-text-soft) !important;
+  font-size:14px;
+  font-weight:600;
+  text-decoration:none;
+  transition:transform .18s ease,border-color .18s ease,background-color .18s ease;
+}
+
+#mmdStudioUploadR5 .mu-btn:hover {
+  transform:translateY(-1px);
+  border-color:#625849;
+}
+
+#mmdStudioUploadR5 .mu-btn.mu-gold {
+  color:#171007 !important;
+  border-color:var(--studio-gold);
+  background:linear-gradient(135deg,#f1d487,#d3a84f);
+  box-shadow:0 12px 32px rgba(157,111,34,.13);
+}
+
+#mmdStudioUploadR5 .mu-btn.mu-gold:hover {
+  border-color:#f2d88e;
+  background:linear-gradient(135deg,#f5db93,#ddb65e);
+}
+
+#mmdStudioUploadR5 .mu-upload {
+  display:block;
+  min-height:250px;
+  border:1px dashed #51483d;
+  border-radius:16px;
+  background:linear-gradient(145deg,rgba(229,185,110,.025),rgba(255,255,255,.008));
+  padding:18px;
+}
+
+#mmdStudioUploadR5 .mu-upload:hover { border-color:var(--studio-gold-border); }
+#mmdStudioUploadR5 .mu-upload-grid { color:var(--studio-text-soft); }
+
+#mmdStudioUploadR5 .mu-card {
+  position:relative;
+  overflow:hidden;
+  min-height:430px;
+  background:linear-gradient(145deg,#15100a,#0c0a08 58%,#080706);
+  border:1px solid var(--studio-gold-border);
+  border-radius:18px;
+}
+
+#mmdStudioUploadR5 .mu-card-photo { background-color:#0a0908; }
+#mmdStudioUploadR5 .mu-strip { color:var(--studio-gold); }
+#mmdStudioUploadR5 #muPreviewMode { color:var(--studio-gold-soft) !important; }
+
+#mmdStudioUploadR5 .mu-footer {
+  margin-top:16px;
+  padding-top:16px;
+  border-top:1px solid var(--studio-border);
+  color:var(--studio-muted);
+}
+
+#mmdStudioUploadR5 .mu-footer p,
+#mmdStudioUploadR5 .mu-footer small { color:var(--studio-muted) !important; }
+
+@media screen and (max-width:991px) {
+  #mmdStudioUploadR5 .mu-grid { grid-template-columns:1fr !important; }
+}
+
+@media screen and (max-width:479px) {
+  #mmdStudioUploadR5 .mu-shell {
+    width:calc(100% - 24px);
+    padding-top:14px;
+  }
+
+  #mmdStudioUploadR5 .mu-note,
+  #mmdStudioUploadR5 .mu-panel {
+    padding:17px;
+    border-radius:15px;
+  }
+
+  #mmdStudioUploadR5 .mu-note h1,
+  #mmdStudioUploadR5 .mu-note h2 { font-size:29px; }
+  #mmdStudioUploadR5 .mu-btn { min-height:44px; }
+}

@@ -4,6 +4,8 @@ import { readClientBackedHistory } from "./member-app-client-history.js";
 const API_PREFIX = "/api/member/app/";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const LEGACY_STAGING_TABLE = "tbl1u0foFBvgFpT9G";
+const LEGACY_PAGE_SIZE = 100;
+const LEGACY_MAX_PAGES = 10;
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const MEMBERSHIP_SIGNUP_URL = "/sigil/member/membership?source=line&intent=signup";
 const MEMBERSHIP_RENEW_URL = "/sigil/member/membership?source=line&intent=renew";
@@ -163,34 +165,130 @@ function formulaString(value) {
   return `'${String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 }
 
+function levelFromRenamedName(value) {
+  const text = asString(value, 240).replace(/\s+/g, " ");
+  if (!text) return "unknown";
+  const tokens = [
+    ["black_card", /(?:^|[^A-Za-z0-9])black\s*card(?:$|[^A-Za-z0-9])/i],
+    ["svip", /(?:^|[^A-Za-z0-9])svip(?:$|[^A-Za-z0-9])/i],
+    ["vip", /(?:^|[^A-Za-z0-9])vip(?:$|[^A-Za-z0-9])/i],
+    ["premium", /(?:^|[^A-Za-z0-9])premium(?:$|[^A-Za-z0-9])/i],
+    ["standard", /(?:^|[^A-Za-z0-9])(?:standard|lite)(?:$|[^A-Za-z0-9])/i],
+    ["trial_7d", /(?:^|[^A-Za-z0-9])(?:7\s*days?|7d|trial)(?:$|[^A-Za-z0-9])/i],
+  ];
+  for (const [level, pattern] of tokens) {
+    if (pattern.test(text)) return level;
+  }
+  return "unknown";
+}
+
+function statusFromRenamedName(value, level) {
+  if (level !== "unknown") return "member";
+  const text = asString(value, 240).replace(/\s+/g, " ");
+  return /(?:^|[^A-Za-z0-9])member(?:$|[^A-Za-z0-9])/i.test(text) ? "member" : "unknown";
+}
+
+function parsedJson(value) {
+  if (value && typeof value === "object") return value;
+  const text = asString(value, 20_000);
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function containsHistoricalService(value) {
+  if (Array.isArray(value)) return value.some(containsHistoricalService);
+  if (!value || typeof value !== "object") return false;
+  const record = asObject(value);
+  const type = asString(record.type, 80).toLowerCase();
+  if (type === "service" || type.startsWith("service_") || type === "booking") return true;
+  return Object.values(record).some((item) => item && typeof item === "object" && containsHistoricalService(item));
+}
+
+function hasHistoricalServiceEvidence(fields) {
+  return containsHistoricalService(parsedJson(fields.historical_events_json));
+}
+
+function legacySignal(record) {
+  const fields = asObject(record?.fields);
+  const rename = asString(fields.line_renamed_name, 240);
+  const renameLevel = levelFromRenamedName(rename);
+  const renameStatus = statusFromRenamedName(rename, renameLevel);
+  const parsedLevel = normalizeLevel(fields.parsed_client_level || fields.parsed_membership_tier);
+  const parsedStatus = normalizeLegacyStatus(fields.parsed_membership_status);
+  const renameSignal = renameLevel !== "unknown" || renameStatus !== "unknown";
+  const level = renameLevel !== "unknown" ? renameLevel : parsedLevel;
+  const membershipStatus = renameStatus !== "unknown" ? renameStatus : parsedStatus;
+  const createdAt = Number.isFinite(Date.parse(asString(record?.createdTime, 80)))
+    ? Date.parse(asString(record?.createdTime, 80))
+    : 0;
+  return {
+    level,
+    membershipStatus,
+    parseConfidence: asNumber(fields.parse_confidence),
+    renameSignal,
+    createdAt,
+  };
+}
+
+function selectLegacySignal(records) {
+  const candidates = (Array.isArray(records) ? records : [])
+    .map(legacySignal)
+    .filter((item) => item.renameSignal || item.level !== "unknown" || item.membershipStatus !== "unknown");
+  candidates.sort((a, b) => {
+    if (a.renameSignal !== b.renameSignal) return a.renameSignal ? -1 : 1;
+    if (a.createdAt !== b.createdAt) return b.createdAt - a.createdAt;
+    const aInfo = Number(a.level !== "unknown") + Number(a.membershipStatus !== "unknown");
+    const bInfo = Number(b.level !== "unknown") + Number(b.membershipStatus !== "unknown");
+    if (aInfo !== bInfo) return bInfo - aInfo;
+    return Number(b.parseConfidence || 0) - Number(a.parseConfidence || 0);
+  });
+  return candidates[0] || null;
+}
+
 async function readLegacyDisplay(env = {}, lineUserId = "") {
   const apiKey = String(env.AIRTABLE_API_KEY || "").trim();
   const baseId = String(env.AIRTABLE_BASE_ID || "").trim();
   const table = String(env.AIRTABLE_LINE_OFC_CLIENT_IMPORT_STAGING_TABLE_ID || LEGACY_STAGING_TABLE).trim();
   if (!apiKey || !baseId || !table || !/^U[a-f0-9]{32}$/i.test(lineUserId)) return null;
 
-  const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
-  url.searchParams.set("filterByFormula", `{line_user_id}=${formulaString(lineUserId)}`);
-  url.searchParams.set("maxRecords", "2");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
+  const records = [];
+  let offset = "";
   try {
-    const response = await fetch(url.toString(), {
-      method: "GET",
-      headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
-      signal: controller.signal,
-    });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || !payload || !Array.isArray(payload.records) || payload.records.length !== 1) return null;
-    const fields = asObject(payload.records[0]?.fields);
-    const level = normalizeLevel(fields.parsed_client_level || fields.parsed_membership_tier);
-    const membershipStatus = normalizeLegacyStatus(fields.parsed_membership_status);
-    const parseConfidence = asNumber(fields.parse_confidence);
-    if (level === "unknown" && membershipStatus === "unknown") return null;
+    for (let page = 0; page < LEGACY_MAX_PAGES; page += 1) {
+      const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
+      url.searchParams.set("filterByFormula", `{line_user_id}=${formulaString(lineUserId)}`);
+      url.searchParams.set("pageSize", String(LEGACY_PAGE_SIZE));
+      if (offset) url.searchParams.set("offset", offset);
+      const response = await fetch(url.toString(), {
+        method: "GET",
+        headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
+        signal: controller.signal,
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload || !Array.isArray(payload.records)) {
+        if (!records.length) return null;
+        break;
+      }
+      records.push(...payload.records);
+      offset = asString(payload.offset, 512);
+      if (!offset) break;
+    }
+
+    if (!records.length) return null;
+    const selected = selectLegacySignal(records);
+    const historicalServiceEvidence = records.some((record) => hasHistoricalServiceEvidence(asObject(record?.fields)));
+    if (!selected && !historicalServiceEvidence) return null;
     return {
-      level,
-      membershipStatus,
-      parseConfidence,
+      level: selected?.level || "unknown",
+      membershipStatus: selected?.membershipStatus || "unknown",
+      parseConfidence: selected?.parseConfidence ?? null,
+      historicalServiceEvidence,
       source: "line_ofc_legacy_display_only",
     };
   } catch {
@@ -449,24 +547,44 @@ async function sessionAndLegacy(request, env, baseMembership) {
   return { session, legacy };
 }
 
+async function legacyForRecoveryCheck(request, env) {
+  const session = await readMemberAppSession(request, env);
+  if (!session?.lineUserId) return null;
+  return readLegacyDisplay(env, session.lineUserId);
+}
+
 async function adaptDashboard(request, env, delegate) {
   const sessionSnapshot = await readMemberAppSession(request, env);
   const result = await readUpstream(request, env, delegate, "/api/member/dashboard");
   if (!result.ok) return result.response;
   const data = asObject(result.payload.data);
   const baseMembership = membershipFromDashboard(data);
-  const needsLegacy = Boolean(sessionSnapshot?.lineUserId)
+  const points = pointsSummaryFromDashboard(data);
+  const canonicalHistory = historyFromDashboard(data);
+  const membershipNeedsLegacy = Boolean(sessionSnapshot?.lineUserId)
     && (sessionSnapshot.memberExists === false || baseMembership.levelVerified !== true || baseMembership.status === "checking");
-  const legacy = needsLegacy ? await readLegacyDisplay(env, sessionSnapshot.lineUserId) : null;
-  const membership = enrichMembership(baseMembership, sessionSnapshot, legacy);
+  const pointsNeedsRecoveryCheck = Boolean(sessionSnapshot?.lineUserId)
+    && canonicalHistory.length === 0
+    && (points.confirmedBalance === null || points.confirmedBalance === 0);
+  const legacy = membershipNeedsLegacy || pointsNeedsRecoveryCheck
+    ? await readLegacyDisplay(env, sessionSnapshot.lineUserId)
+    : null;
+  const membership = enrichMembership(baseMembership, sessionSnapshot, membershipNeedsLegacy ? legacy : null);
+  const pointsRecoveryPending = Boolean(
+    pointsNeedsRecoveryCheck
+    && legacy?.historicalServiceEvidence,
+  );
   return responseFrom(result.upstream, {
     greetingName: asString(asObject(data.member).display_name, 120) || null,
     identity: identityFromDashboard(data),
     membership,
     lifecycle: membership.lifecycle,
     nextAction: membership.nextAction,
-    legacyDisplay: legacyDisplayPayload(legacy),
-    points: pointsSummaryFromDashboard(data),
+    legacyDisplay: membershipNeedsLegacy ? legacyDisplayPayload(legacy) : null,
+    points: pointsRecoveryPending
+      ? { ...points, confirmedBalance: null, currencyLabel: null }
+      : points,
+    pointsRecoveryPending,
     couponHighlight: null,
   });
 }
@@ -492,27 +610,37 @@ async function adaptPoints(request, env, delegate) {
   const result = await readUpstream(request, env, delegate, "/api/member/dashboard");
   if (!result.ok) return result.response;
   const data = asObject(result.payload.data);
-  return responseFrom(result.upstream, {
-    summary: pointsSummaryFromDashboard(data),
-    ledger: pointsLedgerFromDashboard(data),
-  });
+  const summary = pointsSummaryFromDashboard(data);
+  const ledger = pointsLedgerFromDashboard(data);
+  const canonicalHistory = historyFromDashboard(data);
+  const needsRecoveryCheck = ledger.length === 0
+    && canonicalHistory.length === 0
+    && (summary.confirmedBalance === null || summary.confirmedBalance === 0);
+  if (needsRecoveryCheck) {
+    const legacy = await legacyForRecoveryCheck(request, env);
+    if (legacy?.historicalServiceEvidence) {
+      return responseFrom(result.upstream, {
+        state: "checking",
+        summary: { ...summary, confirmedBalance: null, currencyLabel: null },
+        ledger: [],
+      });
+    }
+  }
+  return responseFrom(result.upstream, { summary, ledger });
 }
 
 async function adaptHistory(request, env, delegate) {
   const sessionSnapshot = await readMemberAppSession(request, env);
   const result = await readUpstream(request, env, delegate, "/api/member/dashboard");
   if (!result.ok) return result.response;
-  const primary = historyFromDashboard(asObject(result.payload.data));
-  if (primary.length > 0 || !sessionSnapshot?.lineUserId) {
-    return responseFrom(result.upstream, primary);
+  const items = historyFromDashboard(asObject(result.payload.data));
+  if (items.length === 0) {
+    const legacy = await legacyForRecoveryCheck(request, env);
+    if (legacy?.historicalServiceEvidence) {
+      return responseFrom(result.upstream, { state: "checking", items: [] });
+    }
   }
-
-  // Historical service/payment evidence follows the canonical Client identity,
-  // not the current membership row. This fallback is read-only and can only
-  // surface reviewed history; it never changes membership, entitlement, points,
-  // or access. Exact verified LINE -> unique canonical Client is required.
-  const clientHistory = await readClientBackedHistory(env, sessionSnapshot.lineUserId);
-  return responseFrom(result.upstream, clientHistory.length > 0 ? clientHistory : primary);
+  return responseFrom(result.upstream, items);
 }
 
 async function adaptCoupons(request, env, delegate) {

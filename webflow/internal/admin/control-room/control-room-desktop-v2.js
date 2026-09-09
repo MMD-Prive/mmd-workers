@@ -5,7 +5,7 @@
   const $=s=>root.querySelector(s);
   const login=root.dataset.loginRoute||'/internal/admin/login';
   const paths={auth:'/v1/admin/auth/me',stats:'/v1/admin/stats',metrics:'/v1/admin/metrics'};
-  const healthPaths={admin:'/v1/admin/auth/me',knowledge:'/internal/admin/kenji-knowledge',preview:'/member/kenji-ai-20?mode=admin-preview',studio:'/studio',payments:'/v1/payments/health'};
+  const healthPaths={admin:'/v1/admin/auth/me',knowledge:'/internal/admin/kenji?view=knowledge',preview:'/internal/admin/kenji?view=ai20',studio:'/internal/admin/studio',payments:'/v1/payments/health'};
   const set=(s,v)=>{const n=$(s);if(n)n.textContent=v==null?'—':String(v)};
   const pick=(o,keys)=>{for(const k of keys){if(o&&o[k]!=null)return o[k]}return 0};
   const next=()=>encodeURIComponent(location.pathname+location.search);
@@ -49,7 +49,7 @@
       set('[data-metric="members"]',pick(metrics,['members_pending','membership_pending'])||pick(stats,['members_pending']));
       set('[data-metric="alerts"]',pick(metrics,['alerts','urgent_count'])||pick(stats,['alerts']));
       set('[data-system-state]','พร้อมใช้งาน');
-      set('[data-system-copy]','ข้อมูลหลักพร้อมแล้วครับ เลือกห้องที่ต้องการทำงานต่อได้เลย');
+      set('[data-system-copy]','ข้อมูลหลักพร้อมแล้วครับ เลือกพื้นที่ที่ต้องการทำงานต่อได้เลย');
     }catch(error){
       if(error.message!=='auth'){
         set('[data-system-state]','ข้อมูลยังไม่ครบ');

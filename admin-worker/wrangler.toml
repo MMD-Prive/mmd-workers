@@ -226,13 +226,15 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/model-applications*"
 zone_name = "mmdbkk.com"
 
-# MMS team operations console. Keep this namespace exact and narrow.
+# MMS team operations console. Query-safe wildcard is required because applicant
+# deep links carry tab + application_id query parameters. Runtime pathname matching
+# remains exact inside admin-worker.
 [[routes]]
-pattern = "mmdbkk.com/internal/admin/mms"
+pattern = "mmdbkk.com/internal/admin/mms*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
-pattern = "www.mmdbkk.com/internal/admin/mms"
+pattern = "www.mmdbkk.com/internal/admin/mms*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
@@ -292,6 +294,15 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/model/activation/issue"
+zone_name = "mmdbkk.com"
+
+# Canonical Model-folder candidate list for Per's first-time LINE link console.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/models/activation-candidates*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/models/activation-candidates*"
 zone_name = "mmdbkk.com"
 
 # Legacy SIGIL internal admin redirect only. Keep these patterns narrow; do not

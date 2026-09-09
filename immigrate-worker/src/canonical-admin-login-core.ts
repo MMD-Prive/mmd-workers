@@ -7,6 +7,8 @@ const CANONICAL_ADMIN_LOGIN_PATH = "/internal/admin/login";
 const CANONICAL_CREATE_SESSION_PATH = "/internal/admin/jobs/create-session";
 const CANONICAL_CREATE_SESSION_CORE_ASSET_PATH = "/internal/admin/jobs/create-session/core";
 const BUNDLED_CREATE_SESSION_CORE_ASSET_PATH = "/a/create-session.js";
+const MEMBER_INTELLIGENCE_RUNTIME_PATH = "/internal/admin/control-room/member-intelligence-runtime";
+const BUNDLED_MEMBER_INTELLIGENCE_RUNTIME_PATH = "/a/member-intelligence.js";
 const LEGACY_ADMIN_LOGIN_PATHS = new Set([
   "/sigil/admin/login",
   "/sigil/internal/admin/login",
@@ -91,6 +93,24 @@ function createSessionCoreMethodNotAllowed(): Response {
   );
 }
 
+function memberIntelligenceRuntimeMethodNotAllowed(): Response {
+  return new Response(
+    JSON.stringify({
+      ok: false,
+      error: "member_intelligence_runtime_method_not_allowed",
+    }),
+    {
+      status: 405,
+      headers: {
+        allow: "GET, HEAD",
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+        "x-mmd-member-intelligence-runtime": "control-room-lane-v1",
+      },
+    },
+  );
+}
+
 async function serveCreateSessionCoreAsset(request: Request, env: Env): Promise<Response> {
   const ownerEnv = env as unknown as OwnerCreateSessionEnv;
   if (!ownerEnv.ASSETS) {
@@ -117,6 +137,41 @@ async function serveCreateSessionCoreAsset(request: Request, env: Env): Promise<
   headers.set("x-mmd-create-session-core", "worker-owned");
   headers.set("x-mmd-create-session-core-route", "extensionless-v1");
   headers.set("x-mmd-create-session-business", "mmd");
+
+  return new Response(request.method === "HEAD" ? null : asset.body, {
+    status: asset.status,
+    statusText: asset.statusText,
+    headers,
+  });
+}
+
+async function serveMemberIntelligenceRuntime(request: Request, env: Env): Promise<Response> {
+  const assetEnv = env as unknown as OwnerCreateSessionEnv;
+  if (!assetEnv.ASSETS) {
+    return new Response("Member Intelligence runtime unavailable", {
+      status: 503,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+        "x-mmd-member-intelligence-runtime": "worker-owned-unavailable",
+      },
+    });
+  }
+
+  // Keep the Webflow page at /internal/admin/member-intelligence, but serve its
+  // browser runtime under the already Worker-owned Control Room route family.
+  // The implementation remains bundled as a private Worker static asset.
+  const assetUrl = new URL(request.url);
+  assetUrl.pathname = BUNDLED_MEMBER_INTELLIGENCE_RUNTIME_PATH;
+  assetUrl.search = "";
+
+  const asset = await assetEnv.ASSETS.fetch(new Request(assetUrl.toString(), { method: "GET" }));
+  const headers = new Headers(asset.headers);
+  headers.set("content-type", "application/javascript; charset=utf-8");
+  headers.set("cache-control", "no-store");
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("x-mmd-member-intelligence-runtime", "control-room-lane-v1");
+  headers.set("x-mmd-member-intelligence-authority", "canonical-read-models-only");
 
   return new Response(request.method === "HEAD" ? null : asset.body, {
     status: asset.status,
@@ -204,6 +259,13 @@ async function maybeRestoreOwnerCreateSession(
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname === MEMBER_INTELLIGENCE_RUNTIME_PATH) {
+      if (request.method === "GET" || request.method === "HEAD") {
+        return serveMemberIntelligenceRuntime(request, env);
+      }
+      return memberIntelligenceRuntimeMethodNotAllowed();
+    }
 
     if (url.pathname === CANONICAL_CREATE_SESSION_CORE_ASSET_PATH) {
       if (request.method === "GET" || request.method === "HEAD") {

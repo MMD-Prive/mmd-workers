@@ -1,0 +1,134 @@
+name: Kenji LINE Transport Health CI
+
+on:
+  pull_request:
+    paths:
+      - "member-dashboard-chat-worker/src/kenji-line-transport-health.mjs"
+      - "member-dashboard-chat-worker/src/kenji-line-ingress-trace.mjs"
+      - "member-dashboard-chat-worker/src/mms-line-front-gate.js"
+      - "member-dashboard-chat-worker/test/kenji-line-transport-health.test.mjs"
+      - "member-dashboard-chat-worker/test/kenji-line-ingress-trace.test.mjs"
+      - "member-dashboard-chat-worker/wrangler.toml"
+      - "member-pages-worker/src/kenji-line-member-truth-health.js"
+      - "member-pages-worker/src/runtime-index.js"
+      - "member-pages-worker/test/kenji-line-member-truth.test.mjs"
+      - ".github/workflows/kenji-line-transport-health-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "member-dashboard-chat-worker/src/kenji-line-transport-health.mjs"
+      - "member-dashboard-chat-worker/src/kenji-line-ingress-trace.mjs"
+      - "member-dashboard-chat-worker/src/mms-line-front-gate.js"
+      - "member-dashboard-chat-worker/test/kenji-line-transport-health.test.mjs"
+      - "member-dashboard-chat-worker/test/kenji-line-ingress-trace.test.mjs"
+      - "member-pages-worker/src/kenji-line-member-truth-health.js"
+      - "member-pages-worker/src/runtime-index.js"
+      - "member-pages-worker/test/kenji-line-member-truth.test.mjs"
+      - ".github/workflows/kenji-line-transport-health-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate bounded LINE transport, ingress trace, and member truth health
+        run: |
+          node --check member-dashboard-chat-worker/src/kenji-line-transport-health.mjs
+          node --check member-dashboard-chat-worker/src/kenji-line-ingress-trace.mjs
+          node --check member-dashboard-chat-worker/src/mms-line-front-gate.js
+          node --check member-pages-worker/src/kenji-line-member-truth-health.js
+          node --check member-pages-worker/src/runtime-index.js
+          node --test member-dashboard-chat-worker/test/kenji-line-transport-health.test.mjs member-dashboard-chat-worker/test/kenji-line-ingress-trace.test.mjs member-pages-worker/test/kenji-line-member-truth.test.mjs
+
+      - name: Validate member-dashboard Worker bundle
+        run: npx --yes wrangler@4 deploy --dry-run --config member-dashboard-chat-worker/wrangler.toml
+
+      - name: Probe production LINE transport health after deploy
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          node <<'NODE'
+          const endpoint = "https://www.mmdbkk.com/webhooks/line";
+          let last = null;
+          for (let attempt = 1; attempt <= 24; attempt += 1) {
+            const response = await fetch(endpoint, {
+              headers: {
+                accept: "application/json",
+                "x-mmd-line-transport-health": "1",
+              },
+            });
+            const payload = await response.json().catch(() => ({}));
+            const safe = {
+              attempt,
+              http_status: response.status,
+              ok: payload?.ok === true,
+              route: String(payload?.route || "").slice(0, 80),
+              schema: String(payload?.schema || "").slice(0, 80),
+              status: String(payload?.status || "").slice(0, 80),
+              configured: payload?.configured === true,
+              signature_secret_present: payload?.signature_secret_present === true,
+              access_token_present: payload?.access_token_present === true,
+              line_api_reachable: payload?.line_api_reachable === true,
+              webhook_active: payload?.webhook_active === true,
+              endpoint_match: payload?.endpoint_match === true,
+              signed_webhook_test_attempted: payload?.signed_webhook_test_attempted === true,
+              signed_webhook_test_success: payload?.signed_webhook_test_success === true,
+              signed_webhook_test_status_code: Number(payload?.signed_webhook_test_status_code || 0),
+              signed_webhook_test_reason: String(payload?.signed_webhook_test_reason || "").slice(0, 80),
+              ingress_trace_enabled: payload?.ingress_trace_enabled === true,
+              ingress_trace_configured: payload?.ingress_trace_configured === true,
+              ingress_trace_storage_ok: payload?.ingress_trace_storage_ok === true,
+              ingress_trace_storage_status: String(payload?.ingress_trace_storage_status || "").slice(0, 80),
+              ingress_trace_storage_http_status: Number(payload?.ingress_trace_storage_http_status || 0),
+              ingress_trace_cleanup_ok: payload?.ingress_trace_cleanup_ok === true,
+              member_truth_bridge_configured: payload?.member_truth_bridge_configured === true,
+              member_truth_bridge_ok: payload?.member_truth_bridge_ok === true,
+              member_truth_bridge_status: String(payload?.member_truth_bridge_status || "").slice(0, 80),
+              member_truth_bridge_http_status: Number(payload?.member_truth_bridge_http_status || 0),
+              member_truth_resolver_binding_present: payload?.member_truth_resolver_binding_present === true,
+              member_truth_resolver_secret_present: payload?.member_truth_resolver_secret_present === true,
+            };
+            last = safe;
+            console.log(`KENJI_LINE_TRANSPORT_HEALTH ${JSON.stringify(safe)}`);
+            if (
+              safe.route === "line_transport_health" &&
+              safe.schema === "mmd.kenji_line_transport_health.v4" &&
+              safe.ok &&
+              safe.signed_webhook_test_attempted &&
+              safe.signed_webhook_test_success &&
+              safe.signed_webhook_test_status_code === 200 &&
+              safe.ingress_trace_configured &&
+              safe.ingress_trace_storage_ok &&
+              safe.member_truth_bridge_configured &&
+              safe.member_truth_bridge_ok &&
+              safe.member_truth_bridge_status === "ready"
+            ) break;
+            await new Promise((resolve) => setTimeout(resolve, 5000));
+          }
+          if (
+            last?.schema !== "mmd.kenji_line_transport_health.v4" ||
+            last?.ok !== true ||
+            last?.signed_webhook_test_attempted !== true ||
+            last?.signed_webhook_test_success !== true ||
+            last?.signed_webhook_test_status_code !== 200 ||
+            last?.ingress_trace_configured !== true ||
+            last?.ingress_trace_storage_ok !== true ||
+            last?.member_truth_bridge_configured !== true ||
+            last?.member_truth_bridge_ok !== true ||
+            last?.member_truth_bridge_status !== "ready"
+          ) {
+            throw new Error(`Production LINE transport, ingress trace, or member truth bridge health did not become ready: ${JSON.stringify(last)}`);
+          }
+          NODE

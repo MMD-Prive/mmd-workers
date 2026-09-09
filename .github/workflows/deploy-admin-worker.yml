@@ -30,14 +30,14 @@ jobs:
       CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
       CLOUDFLARE_ZONE_ID: 2d62396174fa2ddadbbcd0e8cf0f3367
-      ADMIN_DASHBOARD_PRODUCTION_URL: https://admin-worker.malemodel-bkk.workers.dev/v1/admin/dashboard
+      ADMIN_DASHBOARD_PRODUCTION_URL: https://mmdbkk.com/v1/admin/dashboard
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
 
@@ -360,7 +360,21 @@ jobs:
           test "$http_code" = "401"
           grep -q '"error":"unauthorized"' "$body_file"
 
+          # The direct workers.dev dashboard is intentionally host-blocked.
+          body_file="$(mktemp)"
+          http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body_file" -w "%{http_code}" \
+            "https://admin-worker.malemodel-bkk.workers.dev/v1/admin/dashboard")"
+          test "$http_code" = "403"
+          grep -q '"error":"dashboard_host_not_allowed"' "$body_file"
+
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            # Check the real browser ingress on both allowed production hosts.
+            body_file="$(mktemp)"
+            http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body_file" -w "%{http_code}" \
+              "$origin/v1/admin/dashboard")"
+            test "$http_code" = "401"
+            grep -q '"error":"unauthorized"' "$body_file"
+
             shell_headers="$(mktemp)"
             shell_file="$(mktemp)"
             http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -D "$shell_headers" -o "$shell_file" -w "%{http_code}" \
