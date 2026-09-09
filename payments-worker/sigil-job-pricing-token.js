@@ -35,6 +35,43 @@ export function normalizeSigilPricing(value = {}) {
     discount_percent: discountPercent,
     discount_thb: discount,
     net_price_thb: net,
+  const discountMode = clean(value.discount_mode).toLowerCase() || "none";
+  const discountPercent = integer(value.discount_percent);
+  const discount = integer(value.discount_thb);
+  const net = integer(value.net_price_thb);
+  const paymentType = clean(value.payment_type).toLowerCase() || "deposit";
+  const depositPercent = integer(value.deposit_percent);
+  const depositBasis = integer(value.deposit_basis_thb);
+  const depositDue = integer(value.deposit_due_thb);
+  const depositReceived = integer(value.deposit_received_thb);
+  const balance = integer(value.balance_thb);
+
+  if (!full || !net || net !== full - discount) return null;
+  if (!["none", "percent", "amount"].includes(discountMode)) return null;
+  if (!["deposit", "full"].includes(paymentType)) return null;
+  if (discountMode === "none" && (discount !== 0 || discountPercent !== 0)) return null;
+  if (discountMode === "percent") {
+    if (discountPercent < 3 || discountPercent > 20) return null;
+    if (discount !== Math.round(full * discountPercent / 100)) return null;
+  }
+  if (discountMode === "amount" && (discount <= 0 || discount >= full || discountPercent !== 0)) return null;
+  if (depositBasis !== full) return null;
+
+  if (paymentType === "full") {
+    if (depositDue !== 0 || depositReceived !== net || balance !== 0) return null;
+  } else {
+    if (depositPercent <= 0 || depositPercent > 100) return null;
+    if (depositDue !== Math.round(full * depositPercent / 100)) return null;
+    if (balance !== Math.max(0, net - depositReceived)) return null;
+  }
+
+  return {
+    full_price_thb: full,
+    discount_mode: discountMode,
+    discount_percent: discountMode === "percent" ? discountPercent : 0,
+    discount_thb: discount,
+    net_price_thb: net,
+    payment_type: paymentType,
     deposit_basis_thb: full,
     deposit_percent: depositPercent,
     deposit_due_thb: depositDue,
