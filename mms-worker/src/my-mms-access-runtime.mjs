@@ -2,6 +2,7 @@ const AIRTABLE_API = "https://api.airtable.com/v0";
 const INTERNAL_HOST = "mms.internal";
 const SELF_ACCESS_PATH = "/male-massage/therapists/api/app/access";
 const ADMIN_ACCESS_RE = /^\/internal\/mms\/admin\/therapists\/([A-Za-z0-9_-]{4,80})\/my-mms-access$/;
+const ADMIN_THERAPIST_RE = /^\/internal\/mms\/admin\/therapists\/([A-Za-z0-9_-]{4,80})$/;
 const APP_ROUTE = "/male-massage/therapists/app";
 const SESSION_COOKIE = "__Secure-mms_therapist_session";
 const SESSION_ROLE = "mms_therapist";
@@ -11,13 +12,12 @@ const MY_MMS_VALUES = new Set(["Locked", "Approved", "Revoked"]);
 
 export function isMyMmsAccessRequest(pathname = "") {
   const path = normalizePath(pathname);
-  return path === SELF_ACCESS_PATH || ADMIN_ACCESS_RE.test(path);
+  return path === SELF_ACCESS_PATH || ADMIN_ACCESS_RE.test(path) || ADMIN_THERAPIST_RE.test(path);
 }
 
 export async function maybeHandleMyMmsAccess(request, env = {}) {
   const url = new URL(request.url);
   const path = normalizePath(url.pathname);
-  if (!isMyMmsAccessRequest(path)) return null;
 
   try {
     if (path === SELF_ACCESS_PATH) {
@@ -25,16 +25,34 @@ export async function maybeHandleMyMmsAccess(request, env = {}) {
         requireTrustedOrigin(request, env);
         return new Response(null, { status: 204, headers: responseHeaders(request, env) });
       }
-      if (request.method !== "GET") return methodNotAllowed("GET", request, env);
+      if (request.method !== "GET") return methodNotAllowed(request, env);
       const therapist = await requireCurrentTherapist(request, env);
       return json({ ok: true, data: safeAccessProjection(therapist) }, 200, request, env);
     }
 
-    const adminMatch = path.match(ADMIN_ACCESS_RE);
-    if (adminMatch) {
+    const explicitAdmin = path.match(ADMIN_ACCESS_RE);
+    if (explicitAdmin) {
       await requireInternalRequest(request, env);
-      if (request.method !== "PATCH") return json({ ok: false, error: { code: "METHOD_NOT_ALLOWED" } }, 405);
-      return json(await patchAdminAccess(request, env, adminMatch[1]));
+      if (request.method === "GET") {
+        const record = await findUniqueTherapist(env, explicitAdmin[1]);
+        if (!record) throw accessError(404, "THERAPIST_NOT_FOUND");
+        return json({ ok: true, therapist: adminAccessProjection(record) }, 200, request, env);
+      }
+      if (request.method !== "PATCH") return methodNotAllowed(request, env);
+      return json(await patchAdminAccess(request, env, explicitAdmin[1]), 200, request, env);
+    }
+
+    // Alias through the existing internal Therapist PATCH route. This keeps the browser
+    // admin surface on its existing authenticated /v1/admin/mms/therapists/:id bridge.
+    const therapistAdmin = path.match(ADMIN_THERAPIST_RE);
+    if (therapistAdmin && request.method === "PATCH") {
+      const probe = await readJson(request.clone());
+      const hasMyMmsField = Object.prototype.hasOwnProperty.call(probe, "my_mms_access") ||
+        Object.prototype.hasOwnProperty.call(probe, "my_mms_review_note") ||
+        Object.prototype.hasOwnProperty.call(probe, "my_mms_approved_by");
+      if (!hasMyMmsField) return null;
+      await requireInternalRequest(request, env);
+      return json(await patchAdminAccessFromAlias(probe, env, therapistAdmin[1]), 200, request, env);
     }
 
     return null;
@@ -54,36 +72,65 @@ export async function requireMyMmsApprovedTherapist(request, env = {}) {
   return therapist;
 }
 
+export async function augmentAdminSnapshotWithMyMmsAccess(snapshot, env = {}) {
+  if (!snapshot || snapshot.ok !== true || !Array.isArray(snapshot.therapists)) return snapshot;
+  const accessMap = await listAccessMap(env);
+  return {
+    ...snapshot,
+    therapists: snapshot.therapists.map((therapist) => {
+      const therapistId = clean(therapist?.therapist_id, 80);
+      const access = accessMap.get(therapistId) || {
+        my_mms_access: "locked",
+        my_mms_can_open: false,
+        my_mms_approved_at: null,
+        my_mms_approved_by: null,
+        my_mms_review_note: "",
+      };
+      return { ...therapist, ...access };
+    }),
+  };
+}
+
 async function patchAdminAccess(request, env, therapistId) {
   const body = await readJson(request);
+  return patchAdminAccessBody(body, env, therapistId);
+}
+
+async function patchAdminAccessFromAlias(body, env, therapistId) {
+  return patchAdminAccessBody({
+    access: body.my_mms_access,
+    review_note: body.my_mms_review_note,
+    approved_by: body.my_mms_approved_by,
+  }, env, therapistId);
+}
+
+async function patchAdminAccessBody(body, env, therapistId) {
   const allowed = new Set(["access", "review_note", "approved_by"]);
   for (const key of Object.keys(body)) {
     if (!allowed.has(key)) throw accessError(400, "UNKNOWN_FIELD");
   }
 
-  const requested = clean(body.access, 20);
-  const normalized = requested ? `${requested[0].toUpperCase()}${requested.slice(1).toLowerCase()}` : "";
+  const normalized = canonicalAccess(body.access);
   if (!MY_MMS_VALUES.has(normalized)) throw accessError(400, "MY_MMS_ACCESS_INVALID");
 
   const record = await findUniqueTherapist(env, therapistId);
   if (!record) throw accessError(404, "THERAPIST_NOT_FOUND");
 
-  const now = new Date().toISOString();
-  const fields = {
-    "MY MMS Access": normalized,
-    "MY MMS Review Note": clean(body.review_note, 4000) || null,
-  };
+  const fields = { "MY MMS Access": normalized };
+  if (body.review_note !== undefined) fields["MY MMS Review Note"] = clean(body.review_note, 4000);
 
   if (normalized === "Approved") {
-    fields["MY MMS Approved At"] = now;
+    fields["MY MMS Approved At"] = new Date().toISOString();
+    fields["MY MMS Approved By"] = clean(body.approved_by, 160) || "internal/admin/mms";
+  } else if (normalized === "Locked") {
+    fields["MY MMS Approved At"] = null;
+    fields["MY MMS Approved By"] = null;
+  } else if (body.approved_by !== undefined) {
     fields["MY MMS Approved By"] = clean(body.approved_by, 160) || "internal/admin/mms";
   }
 
   const updated = await updateTherapist(env, record.id, fields);
-  return {
-    ok: true,
-    therapist: adminAccessProjection(updated),
-  };
+  return { ok: true, therapist: adminAccessProjection(updated) };
 }
 
 async function requireCurrentTherapist(request, env) {
@@ -132,27 +179,51 @@ function adminAccessProjection(record) {
   };
 }
 
+function canonicalAccess(value) {
+  const lower = clean(value, 20).toLowerCase();
+  if (lower === "approved") return "Approved";
+  if (lower === "revoked") return "Revoked";
+  if (lower === "locked") return "Locked";
+  return "";
+}
+
 function normalizeAccess(value) {
   const cleanValue = clean(value, 20);
   return MY_MMS_VALUES.has(cleanValue) ? cleanValue : "Locked";
 }
 
+async function listAccessMap(env) {
+  requireAirtableConfig(env);
+  const map = new Map();
+  let offset = "";
+  let pages = 0;
+  do {
+    const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(tableId(env))}`);
+    url.searchParams.set("pageSize", "100");
+    if (offset) url.searchParams.set("offset", offset);
+    for (const field of ["Therapist ID", "Display Name", "MY MMS Access", "MY MMS Approved At", "MY MMS Approved By", "MY MMS Review Note"]) {
+      url.searchParams.append("fields[]", field);
+    }
+    const data = await airtableFetch(url, { method: "GET" }, env);
+    for (const record of Array.isArray(data.records) ? data.records : []) {
+      const projection = adminAccessProjection(record);
+      if (projection.therapist_id) map.set(projection.therapist_id, projection);
+    }
+    offset = clean(data.offset, 200);
+    pages += 1;
+  } while (offset && pages < 10);
+  return map;
+}
+
 async function findUniqueTherapist(env, therapistId) {
+  requireAirtableConfig(env);
   const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(tableId(env))}`);
   url.searchParams.set("maxRecords", "2");
   url.searchParams.set("filterByFormula", `{Therapist ID}=${formulaString(therapistId)}`);
   for (const field of [
-    "Therapist ID",
-    "Display Name",
-    "Status",
-    "Therapist Auth Status",
-    "LINE Subject Hash",
-    "MY MMS Access",
-    "MY MMS Approved At",
-    "MY MMS Approved By",
-    "MY MMS Review Note",
+    "Therapist ID", "Display Name", "Status", "Therapist Auth Status", "LINE Subject Hash",
+    "MY MMS Access", "MY MMS Approved At", "MY MMS Approved By", "MY MMS Review Note",
   ]) url.searchParams.append("fields[]", field);
-
   const data = await airtableFetch(url, { method: "GET" }, env);
   const records = Array.isArray(data.records) ? data.records : [];
   if (records.length > 1) throw accessError(503, "THERAPIST_IDENTITY_CONFLICT");
@@ -190,10 +261,15 @@ function tableId(env) {
   return id;
 }
 
-function requireRuntimeConfig(env) {
-  if (!clean(env.AIRTABLE_BASE_ID, 80) || !String(env.AIRTABLE_API_TOKEN || "") || !tableId(env)) {
+function requireAirtableConfig(env) {
+  if (!clean(env.AIRTABLE_BASE_ID, 80) || !String(env.AIRTABLE_API_TOKEN || "")) {
     throw accessError(503, "MY_MMS_ACCESS_NOT_CONFIGURED");
   }
+  tableId(env);
+}
+
+function requireRuntimeConfig(env) {
+  requireAirtableConfig(env);
   sessionSecret(env);
 }
 
@@ -279,7 +355,7 @@ function json(payload, status = 200, request = null, env = {}) {
   return Response.json(payload, { status, headers: responseHeaders(request, env) });
 }
 
-function methodNotAllowed(allow, request, env) {
+function methodNotAllowed(request, env) {
   return json({ ok: false, error: { code: "METHOD_NOT_ALLOWED" } }, 405, request, env);
 }
 
@@ -333,6 +409,7 @@ function accessError(status, code) {
 export const myMmsAccessContract = Object.freeze({
   self_access_path: SELF_ACCESS_PATH,
   admin_access_pattern: "/internal/mms/admin/therapists/:therapist_id/my-mms-access",
+  admin_alias_pattern: "/internal/mms/admin/therapists/:therapist_id",
   app_route: APP_ROUTE,
   states: Object.freeze(["locked", "approved", "revoked"]),
   fail_closed_default: "locked",
