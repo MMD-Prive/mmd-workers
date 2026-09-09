@@ -119,7 +119,7 @@ export function isCreateSessionClientLineageRequest(path, method) {
   );
 }
 
-export async function handleCreateSessionClientLineageRequest(request, env = {}) {
+export async function handleCreateSessionClientLineageRequest(request, env = {}, options = {}) {
   const url = new URL(request.url);
   const path = normalizePath(url.pathname);
   const method = request.method.toUpperCase();
@@ -127,7 +127,10 @@ export async function handleCreateSessionClientLineageRequest(request, env = {})
   if (!isCreateSessionClientLineageRequest(path, method)) {
     return json({ ok: false, error: "not_found" }, 404);
   }
-  if (!(await isLineageAuthed(request, env))) {
+  // The public route is dispatched only after admin-worker verifies the
+  // credential-bound internal-admin session. Direct calls retain this module's
+  // own bearer/confirm-key check for test and service-call safety.
+  if (options?.alreadyAuthorized !== true && !(await isLineageAuthed(request, env))) {
     return json({ ok: false, error: "unauthorized" }, 401);
   }
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) {
