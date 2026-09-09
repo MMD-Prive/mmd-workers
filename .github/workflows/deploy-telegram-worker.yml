@@ -55,5 +55,5 @@ jobs:
           set -euo pipefail
           body="$(curl --retry 6 --retry-delay 2 --retry-all-errors -fsS https://telegram-worker.malemodel-bkk.workers.dev/health)"
           echo "$body"
-          printf '%s' "$body" | grep -q '"ok":true'
-          printf '%s' "$body" | grep -q '"worker":"telegram"'
+          printf '%s' "$body" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true'
+          printf '%s' "$body" | grep -Eq '"worker"[[:space:]]*:[[:space:]]*"telegram"'

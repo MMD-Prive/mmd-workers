@@ -1,0 +1,164 @@
+name: Historical Backfill PR Production Smoke
+
+on:
+  push:
+    branches:
+      - feat/payment-review-facade-v1
+    paths:
+      - ".github/workflows/historical-backfill-pr-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  claim-and-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
+      CLOUDFLARE_ZONE_ID: 2d62396174fa2ddadbbcd0e8cf0f3367
+    steps:
+      - name: Require active Cloudflare routes token
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_ROUTES_API_TOKEN"
+          response_file="$(mktemp)"
+          code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS \
+            -o "$response_file" -w "%{http_code}" \
+            -H "Authorization: Bearer $CLOUDFLARE_ROUTES_API_TOKEN" \
+            https://api.cloudflare.com/client/v4/user/tokens/verify)"
+          test "$code" = "200"
+          node - "$response_file" <<'NODE'
+          const fs = require("node:fs");
+          const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          if (payload.success !== true || payload.result?.status !== "active") {
+            throw new Error("Cloudflare routes token is not active");
+          }
+          console.log("Cloudflare routes token is active");
+          NODE
+
+      - name: Claim canonical Historical Backfill routes for admin-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const zoneId = process.env.CLOUDFLARE_ZONE_ID;
+          const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
+          const worker = "admin-worker";
+          const desired = [
+            "mmdbkk.com/v1/admin/payments/historical-backfill*",
+            "www.mmdbkk.com/v1/admin/payments/historical-backfill*",
+          ];
+
+          async function cloudflare(path, options = {}) {
+            const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+              ...options,
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+                ...(options.headers || {}),
+              },
+            });
+            const payload = await response.json();
+            if (!response.ok || payload.success !== true) {
+              const detail = (payload.errors || [])
+                .map((e) => `${e.code || "unknown"}: ${e.message || "unknown"}`)
+                .join("; ");
+              throw new Error(`Cloudflare route call failed (${response.status}): ${detail}`);
+            }
+            return payload.result;
+          }
+
+          const routePath = `/zones/${zoneId}/workers/routes`;
+          const existing = await cloudflare(routePath);
+          const conflicts = desired.flatMap((pattern) =>
+            existing.filter((route) => route.pattern === pattern && route.script !== worker)
+          );
+          if (conflicts.length) {
+            throw new Error(
+              `Refusing to replace existing route owner: ${conflicts
+                .map((route) => `${route.pattern} -> ${route.script || "none"}`)
+                .join(", ")}`
+            );
+          }
+
+          for (const pattern of desired) {
+            if (existing.some((route) => route.pattern === pattern && route.script === worker)) {
+              console.log(`Already owned: ${pattern} -> ${worker}`);
+              continue;
+            }
+            await cloudflare(routePath, {
+              method: "POST",
+              body: JSON.stringify({ pattern, script: worker }),
+            });
+            console.log(`Created ${pattern} -> ${worker}`);
+          }
+
+          const verified = await cloudflare(routePath);
+          const missing = desired.filter((pattern) =>
+            !verified.some((route) => route.pattern === pattern && route.script === worker)
+          );
+          if (missing.length) {
+            throw new Error(`Historical Backfill route verification failed: ${missing.join(", ")}`);
+          }
+          console.log("Historical Backfill canonical API routes verified for admin-worker");
+          NODE
+
+      - name: Probe canonical and compatibility routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          failed=0
+
+          probe_get() {
+            local url="$1"
+            local label="$2"
+            local body
+            body="$(mktemp)"
+            local code
+            code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" "$url")"
+            echo "[$label] GET $url -> HTTP $code"
+            cat "$body" || true
+            echo
+            if [ "$code" != "401" ] || ! grep -q '"error":"unauthorized"' "$body"; then
+              echo "[$label] expected HTTP 401 unauthorized fail-closed" >&2
+              failed=1
+            fi
+          }
+
+          probe_post() {
+            local url="$1"
+            local origin="$2"
+            local label="$3"
+            local body
+            body="$(mktemp)"
+            local code
+            code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
+              -X POST \
+              -H "Origin: $origin" \
+              -H "Content-Type: application/json" \
+              --data '{"proof_id":"__smoke_no_auth__","decision":"reject","review_reason":"production smoke only"}' \
+              "$url")"
+            echo "[$label] POST $url -> HTTP $code"
+            cat "$body" || true
+            echo
+            if [ "$code" != "401" ] || ! grep -q '"error":"unauthorized"' "$body"; then
+              echo "[$label] expected HTTP 401 unauthorized fail-closed" >&2
+              failed=1
+            fi
+          }
+
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            probe_get "$origin/v1/admin/payments/historical-backfill?limit=1" "canonical"
+            probe_post "$origin/v1/admin/payments/historical-backfill/review" "$origin" "canonical-review"
+            probe_get "$origin/studio/api/payments/historical-backfill?limit=1" "compatibility"
+          done
+
+          if [ "$failed" -ne 0 ]; then
+            echo "Historical Backfill production smoke FAILED" >&2
+            exit 1
+          fi
+
+          echo "Historical Backfill production smoke PASSED"

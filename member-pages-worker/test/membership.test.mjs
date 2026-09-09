@@ -94,5 +94,8 @@ describe("member-pages-worker membership page", () => {
     assert.equal(response.headers.get("x-mmd-worker"), "member-pages-worker");
     assert.equal(response.headers.get("x-mmd-page"), "member-dashboard");
     assert.match(response.headers.get("cache-control") || "", /no-store/);
+    const html = await response.text();
+    assert.match(html, /2010862595-yT4DCEMc/);
+    assert.doesNotMatch(html, /2010298002-mbx9kqQn/);
   });
 });

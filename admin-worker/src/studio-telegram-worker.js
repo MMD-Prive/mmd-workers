@@ -1,17 +1,161 @@
-import studioWorker from "./studio-real-worker.js";
+import studioWorker from "./studio-finance-worker.js";
+import { listModelActivationCandidates } from "./index.js";
+import {
+  handleCreateSessionClientLineageRequest,
+  isCreateSessionClientLineageRequest,
+} from "./create-session-client-lineage-runtime.js";
+import { enrichLineageWithPreSessionIndex } from "./pre-session-client-index.js";
+import {
+  handleCanonicalLinkedJobCreate,
+  isCanonicalLinkedJobCreate,
+} from "./create-session-canonical-link-runtime.js";
+import {
+  MODEL_ACTIVATION_ADMIN_PATH,
+  MODEL_ACTIVATION_LIFF_PATH,
+  activateModelLine,
+  issueModelActivation,
+} from "./model-first-time-activation.js";
+import {
+  handleModelGpsVisibilityRequest,
+  isModelGpsVisibilityRequest,
+} from "./model-gps-visibility.js";
+import {
+  handleModelLocationRequest,
+  isModelLocationRequest,
+} from "./model-location-runtime.js";
+import {
+  handleModelReconfirmRequest,
+  isModelReconfirmRequest,
+} from "./model-reconfirm-runtime.js";
+import {
+  handleHistoricalSlipBackfillRequest,
+  isHistoricalSlipBackfillRequest,
+} from "./historical-slip-backfill-runtime.js";
+import {
+  handleModelAssetReadinessRequest,
+  isModelAssetReadinessRequest,
+} from "./model-asset-readiness.js";
 
 const STUDIO_API_PREFIX = "/studio/api";
+const HISTORICAL_BACKFILL_CANONICAL_API = "/v1/admin/payments/historical-backfill";
+const HISTORICAL_BACKFILL_TRANSPORT_API = `${STUDIO_API_PREFIX}/payments/historical-backfill`;
 const COMMIT_PATHS = new Set([
   `${STUDIO_API_PREFIX}/intake/commit`,
   `${STUDIO_API_PREFIX}/review/commit`,
   `${STUDIO_API_PREFIX}/model-preview/commit`,
 ]);
+const CREATE_SESSION_MANUAL_FALLBACK_MARKER = "canonical-v1";
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = normalizePathname(url.pathname);
     const method = request.method.toUpperCase();
+
+    // CEO Model Asset Console lookup is read-only. The credential-bound admin
+    // wrapper has already authenticated /v1/admin/* before this request reaches
+    // the composed worker. This projection combines canonical Airtable identity,
+    // R2 evidence and public-safe path checks without exposing browser secrets or
+    // creating/publishing any source of truth from Webflow.
+    if (isModelAssetReadinessRequest(path, method)) {
+      return handleModelAssetReadinessRequest(request, env, ctx, studioWorker);
+    }
+
+    // /studio/api/* is already a credential-bound, explicitly routed admin
+    // transport. Map only this exact payments sub-tree to the canonical API
+    // contract until Cloudflare owns the narrow /v1/admin/payments route.
+    if (isHistoricalBackfillTransport(path)) {
+      const canonicalRequest = rewriteHistoricalBackfillTransport(request, path);
+      return handleHistoricalSlipBackfillRequest(canonicalRequest, env, ctx);
+    }
+
+    // Historical payment evidence is an admin review lane only. The runtime can
+    // create pending Payment Proof evidence and hand an explicitly reviewed item
+    // to payments-worker, but it cannot mark paid or mutate points/membership/
+    // entitlement/session state itself.
+    if (isHistoricalSlipBackfillRequest(path, method)) {
+      return handleHistoricalSlipBackfillRequest(request, env, ctx);
+    }
+
+    // Pre-job reconfirm stays additive to the canonical job/session runtime:
+    // Create Session remains the source of job truth; the wrapper only persists
+    // the D-1 schedule, enriches model reads, and handles acknowledgement without
+    // changing the canonical lifecycle state.
+    if (isModelReconfirmRequest(path, method)) {
+      return handleModelReconfirmRequest(request, env, ctx, studioWorker);
+    }
+
+    // GPS location collection is a separate, fail-closed channel. The capability
+    // endpoint never requests device location; ingest is disabled by default and
+    // can only write one short-lived point while permission + Active Job are true.
+    if (isModelLocationRequest(path)) {
+      return handleModelLocationRequest(request, env, ctx);
+    }
+
+    // Model Dashboard GPS Visibility is a permission preference only. It never
+    // accepts or stores coordinates and does not request device location access.
+    if (isModelGpsVisibilityRequest(path)) {
+      return handleModelGpsVisibilityRequest(request, env);
+    }
+
+    // Public first-time activation verifies its own signed invite + LINE ID token.
+    // The admin issuer reaches this composed worker only after admin-login-hero-worker
+    // has applied the canonical credential-bound /v1/admin/* gate.
+    if (path === MODEL_ACTIVATION_LIFF_PATH) {
+      return activateModelLine(request, env, studioWorker);
+    }
+    if (path === MODEL_ACTIVATION_ADMIN_PATH) {
+      return issueModelActivation(request, env);
+    }
+    if (path === "/v1/admin/models/activation-candidates" && method === "GET") {
+      try {
+        return Response.json(await listModelActivationCandidates(env, url), {
+          headers: { "cache-control": "no-store, private" },
+        });
+      } catch (error) {
+        const status = Number(error?.status) || 500;
+        return Response.json({ ok: false, error: String(error?.code || error?.message || "model_activation_candidates_failed") }, {
+          status,
+          headers: { "cache-control": "no-store, private" },
+        });
+      }
+    }
+
+    // The credential-bound admin wrapper has already authenticated /v1/admin/*
+    // and injected the internal authorization bridge before requests reach this
+    // composed worker. Handle Create Session lineage here so the historical
+    // ingress bridge terminates on a real canonical backend instead of falling
+    // through to a 404 in the legacy core router.
+    if (isCreateSessionClientLineageRequest(path, method)) {
+      // Keep one untouched request body for the optional candidate lookup. The
+      // canonical lineage runtime always runs first; Pre-Session Airtable is only
+      // consulted when that runtime would otherwise return the free-form manual
+      // public-only fallback.
+      const preSessionRequest = request.clone();
+      const response = await handleCreateSessionClientLineageRequest(request, env);
+      const enrichedResponse = await enrichLineageWithPreSessionIndex(
+        preSessionRequest,
+        response,
+        env,
+      );
+      const headers = new Headers(enrichedResponse.headers);
+      headers.set("X-MMD-Manual-Public-Fallback", CREATE_SESSION_MANUAL_FALLBACK_MARKER);
+      return new Response(enrichedResponse.body, {
+        status: enrichedResponse.status,
+        statusText: enrichedResponse.statusText,
+        headers,
+      });
+    }
+
+    // Create Job must resolve to canonical Airtable record identities before the
+    // legacy payment/session creation path runs. Raw LINE names or R2 objects are
+    // not sufficient authority. After creation, reconcile the canonical Client
+    // and Model links into both Sessions and Jobs without removing legacy text
+    // snapshots used by older surfaces.
+    if (isCanonicalLinkedJobCreate(path, method)) {
+      return handleCanonicalLinkedJobCreate(request, env, ctx, studioWorker);
+    }
+
     const bodyPromise = method === "POST" && COMMIT_PATHS.has(path)
       ? request.clone().json().catch(() => ({}))
       : Promise.resolve({});
@@ -31,6 +175,17 @@ export default {
     return response;
   },
 };
+
+function isHistoricalBackfillTransport(path) {
+  return path === HISTORICAL_BACKFILL_TRANSPORT_API || path.startsWith(`${HISTORICAL_BACKFILL_TRANSPORT_API}/`);
+}
+
+function rewriteHistoricalBackfillTransport(request, path) {
+  const url = new URL(request.url);
+  const suffix = path.slice(HISTORICAL_BACKFILL_TRANSPORT_API.length);
+  url.pathname = `${HISTORICAL_BACKFILL_CANONICAL_API}${suffix}`;
+  return new Request(url, request);
+}
 
 export async function notifyStudioTelegram(env, { path, body, result }) {
   if (token(env.TELEGRAM_STUDIO_NOTIFY_ENABLED || env.TELEGRAM_NOTIFY_ENABLED || "true") === "false") {

@@ -21,9 +21,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.MMS_CLOUDFLARE_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+      MMS_CLOUDFLARE_API_TOKEN: ${{ secrets.MMS_CLOUDFLARE_API_TOKEN }}
+      FALLBACK_CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
       AIRTABLE_API_TOKEN: ${{ secrets.SIGIL_AIRTABLE_API_TOKEN || secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.MMS_TELEGRAM_BOT_TOKEN || secrets.TELEGRAM_BOT_TOKEN }}
       NO_COLOR: "1"
       WRANGLER_SEND_METRICS: "false"
 
@@ -42,19 +44,42 @@ jobs:
           node <<'NODE'
           const fs = require("node:fs");
           const clean = (value) => String(value || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
-          const cloudflareToken = clean(process.env.CLOUDFLARE_API_TOKEN);
           const accountId = clean(process.env.CLOUDFLARE_ACCOUNT_ID);
           const airtableToken = clean(process.env.AIRTABLE_API_TOKEN);
-          if (!cloudflareToken || !accountId) throw new Error("Cloudflare deployment credentials are missing");
-          if (!airtableToken) throw new Error("SIGIL Airtable production credential is missing");
-          console.log(`::add-mask::${cloudflareToken}`);
-          console.log(`::add-mask::${airtableToken}`);
-          fs.appendFileSync(process.env.GITHUB_ENV, [
-            `CLOUDFLARE_API_TOKEN=${cloudflareToken}`,
-            `CLOUDFLARE_ACCOUNT_ID=${accountId}`,
-            `AIRTABLE_API_TOKEN=${airtableToken}`,
-            "",
-          ].join("\n"));
+          const candidates = [...new Set([
+            clean(process.env.MMS_CLOUDFLARE_API_TOKEN),
+            clean(process.env.FALLBACK_CLOUDFLARE_API_TOKEN),
+          ].filter(Boolean))];
+
+          (async () => {
+            if (!accountId || candidates.length === 0) throw new Error("Cloudflare deployment credentials are missing");
+            if (!airtableToken) throw new Error("SIGIL Airtable production credential is missing");
+            for (const token of candidates) console.log(`::add-mask::${token}`);
+            console.log(`::add-mask::${airtableToken}`);
+
+            let cloudflareToken = "";
+            for (const token of candidates) {
+              const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets?per_page=1`, {
+                headers: { authorization: `Bearer ${token}` },
+              });
+              const payload = await response.json().catch(() => null);
+              if (response.ok && payload?.success === true) {
+                cloudflareToken = token;
+                break;
+              }
+            }
+            if (!cloudflareToken) throw new Error("No configured Cloudflare deployment credential can list R2 buckets for the configured account");
+
+            fs.appendFileSync(process.env.GITHUB_ENV, [
+              `CLOUDFLARE_API_TOKEN=${cloudflareToken}`,
+              `CLOUDFLARE_ACCOUNT_ID=${accountId}`,
+              `AIRTABLE_API_TOKEN=${airtableToken}`,
+              "",
+            ].join("\n"));
+          })().catch((error) => {
+            console.error(error.message);
+            process.exitCode = 1;
+          });
           NODE
 
       - name: Install sigil-worker dependencies
@@ -71,20 +96,22 @@ jobs:
           const config = fs.readFileSync("sigil-worker/wrangler.toml", "utf8");
           const required = [
             'name = "sigil-worker"',
+            'main = "src/index-with-public-model-notify.js"',
             'workers_dev = true',
             'PUBLIC_MODEL_ENABLED = "true"',
             'PUBLIC_MODEL_UPLOAD_ENABLED = "true"',
             'PUBLIC_MODEL_UPLOAD_REQUIRED = "false"',
+            'TELEGRAM_CHAT_ID = "-1003546439681"',
+            'TG_THREAD_CONFIRM = "61"',
             'binding = "PUBLIC_MODEL_UPLOADS_R2"',
             'bucket_name = "mmd-private-public-model-uploads"',
             'binding = "SIGIL_BOARD_KV"',
+            'name = "PUBLIC_MODEL_COORDINATOR"',
+            'class_name = "PublicModelCoordinator"',
+            'new_sqlite_classes = ["PublicModelCoordinator"]',
           ];
-          for (const marker of required) {
-            if (!config.includes(marker)) throw new Error(`Missing required configuration: ${marker}`);
-          }
-          if (/^\s*routes\s*=/m.test(config) || /^\s*\[\[routes\]\]/m.test(config)) {
-            throw new Error("Custom routes remain forbidden for this production release");
-          }
+          for (const marker of required) if (!config.includes(marker)) throw new Error(`Missing required configuration: ${marker}`);
+          if (/^\s*routes\s*=/m.test(config) || /^\s*\[\[routes\]\]/m.test(config)) throw new Error("Custom routes remain forbidden for this production release");
           NODE
 
       - name: Validate Cloudflare bundle
@@ -100,17 +127,48 @@ jobs:
             npx wrangler r2 bucket create mmd-private-public-model-uploads
           fi
 
-      - name: Prepare production secrets
+      - name: Ensure stable Public Model upload signing secret exists
+        working-directory: sigil-worker
         shell: bash
         run: |
           set -euo pipefail
-          signing_secret="$(openssl rand -hex 48)"
-          echo "::add-mask::$signing_secret"
-          {
-            printf 'AIRTABLE_API_TOKEN=%s\n' "$AIRTABLE_API_TOKEN"
-            printf 'PUBLIC_MODEL_UPLOAD_SIGNING_SECRET=%s\n' "$signing_secret"
-          } > "$RUNNER_TEMP/sigil-worker.env"
-          chmod 600 "$RUNNER_TEMP/sigil-worker.env"
+          secrets_json="$(npx wrangler secret list --format json)"
+          secret_state="$(printf '%s' "$secrets_json" | node -e '
+            let input = "";
+            process.stdin.setEncoding("utf8");
+            process.stdin.on("data", (chunk) => { input += chunk; });
+            process.stdin.on("end", () => {
+              const secrets = JSON.parse(input);
+              process.stdout.write(secrets.some((secret) => secret.name === "PUBLIC_MODEL_UPLOAD_SIGNING_SECRET") ? "present" : "absent");
+            });
+          ')"
+          if [ "$secret_state" = "present" ]; then
+            echo "Stable Public Model signing secret already exists"
+          elif [ "$secret_state" = "absent" ]; then
+            openssl rand -hex 48 | npx wrangler secret put PUBLIC_MODEL_UPLOAD_SIGNING_SECRET
+          else
+            echo "Unable to determine Public Model signing secret state" >&2
+            exit 1
+          fi
+
+      - name: Prepare production secrets
+        id: runtime-secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const clean = (value) => String(value || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
+          const airtableToken = clean(process.env.AIRTABLE_API_TOKEN);
+          const telegramToken = clean(process.env.TELEGRAM_BOT_TOKEN);
+          const lines = [`AIRTABLE_API_TOKEN=${airtableToken}`];
+          if (telegramToken) {
+            console.log(`::add-mask::${telegramToken}`);
+            lines.push(`TELEGRAM_BOT_TOKEN=${telegramToken}`);
+          }
+          fs.writeFileSync(process.env.RUNNER_TEMP + "/sigil-worker.env", `${lines.join("\n")}\n`, { mode: 0o600 });
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `telegram_configured=${telegramToken ? "true" : "false"}\n`);
+          NODE
 
       - name: Deploy sigil-worker
         id: deploy
@@ -126,6 +184,7 @@ jobs:
       - name: Verify production readiness
         env:
           DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+          TELEGRAM_CONFIGURED: ${{ steps.runtime-secrets.outputs.telegram_configured }}
         shell: bash
         run: |
           set -euo pipefail
@@ -167,6 +226,7 @@ jobs:
             "- Private R2 upload: ready",
             "- CORS preflight: verified",
             "- Invalid apply/upload contracts: verified",
+            `- Telegram notification secret: ${process.env.TELEGRAM_CONFIGURED === "true" ? "configured" : "not configured (applications still succeed; Airtable audit records failure)"}`,
             "",
           ].join("\n"));
           NODE

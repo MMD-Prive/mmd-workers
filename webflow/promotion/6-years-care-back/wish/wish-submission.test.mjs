@@ -1,0 +1,164 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+import vm from "node:vm";
+
+const source = await readFile(new URL("./wish-submission.js", import.meta.url), "utf8");
+
+function loadHooks(overrides = {}) {
+  const listeners = new Map();
+  const dispatched = [];
+  const storage = new Map();
+  const context = {
+    __MMD_WISH_TEST_MODE__: true,
+    console,
+    Date,
+    Math,
+    URL,
+    crypto: { randomUUID: () => "12345678-1234-4234-8234-123456789abc" },
+    localStorage: {
+      getItem: (key) => storage.get(key) || null,
+      setItem: (key, value) => storage.set(key, String(value)),
+      removeItem: (key) => storage.delete(key),
+    },
+    document: {
+      readyState: "loading",
+      addEventListener: (name, listener) => listeners.set(name, listener),
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      dispatchEvent: (event) => dispatched.push(event),
+      documentElement: { lang: "th" },
+    },
+    window: {
+      location: { origin: "https://mmdbkk.com" },
+      matchMedia: () => ({ matches: false }),
+    },
+    CustomEvent: class CustomEvent { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
+    ...overrides,
+  };
+  context.globalThis = context;
+  vm.runInNewContext(source, context);
+  return { ...context.__MMD_WISH_TEST__, context, dispatched, storage };
+}
+
+test("Wish input validation blocks empty, hostile and oversized content", () => {
+  const { validateWish } = loadHooks();
+  assert.equal(validateWish("   ").reason, "empty");
+  assert.equal(validateWish("<script>").reason, "invalid");
+  assert.equal(validateWish("x".repeat(601)).reason, "tooLong");
+  assert.equal(validateWish(" สุขสันต์วันเกิด MMD ครับ ").value, "สุขสันต์วันเกิด MMD ครับ");
+});
+
+test("Existing Webflow textarea keeps its stricter visible character limit", () => {
+  const { effectiveLimit, validateWish } = loadHooks();
+  assert.equal(effectiveLimit({ maxLength: 280 }), 280);
+  assert.equal(effectiveLimit({ maxLength: 900 }), 600);
+  assert.equal(effectiveLimit({ maxLength: -1 }), 600);
+  assert.equal(validateWish("x".repeat(281), 280).reason, "tooLong");
+  assert.equal(validateWish("x".repeat(280), 280).ok, true);
+});
+
+test("Public Wish payload contains no browser identity or benefit authority", () => {
+  const { buildPayload, requestId } = loadHooks();
+  const payload = buildPayload("สุขสันต์วันเกิดครับ");
+  assert.deepEqual(Object.keys(payload), ["wish_text", "request_id", "language"]);
+  assert.equal(payload.wish_text, "สุขสันต์วันเกิดครับ");
+  assert.equal(payload.language, "th");
+  assert.match(payload.request_id, /^[A-Za-z0-9][A-Za-z0-9._~-]{15,127}$/);
+  assert.match(requestId(), /^wish-/);
+  assert.doesNotMatch(JSON.stringify(payload), /line_user_id|member_id|identity|payment|review|coupon|points|expiry|claim/i);
+});
+
+test("Wish completion accepts only explicit ok + completed state", () => {
+  const { isCompletedPayload } = loadHooks();
+  assert.equal(isCompletedPayload({ ok: true, state: "completed" }), true);
+  assert.equal(isCompletedPayload({ ok: true, state: "pending" }), false);
+  assert.equal(isCompletedPayload({ ok: false, state: "completed" }), false);
+  assert.equal(isCompletedPayload(null), false);
+});
+
+test("Wish completion trusts only a safe bounded server message", () => {
+  const { safeServerMessage } = loadHooks();
+  assert.equal(safeServerMessage({ final_display: { message: "MMD ได้รับคำอวยพรแล้วครับ" } }), "MMD ได้รับคำอวยพรแล้วครับ");
+  assert.equal(safeServerMessage({ final_display: { message: "<b>unsafe</b>" } }), "");
+  assert.equal(safeServerMessage({ final_display: { message: "x".repeat(301) } }), "");
+});
+
+test("Browser bridge posts Public Wish and keeps benefit linking separate", () => {
+  assert.match(source, /\/member\/api\/care-back\/public-wish/);
+  assert.match(source, /\/member\/api\/care-back\/link-wish/);
+  assert.doesNotMatch(source, /\/member\/api\/liff\/care-back\/wish/);
+  assert.match(source, /fetch\(ENDPOINT,/);
+  assert.match(source, /credentials:\s*"same-origin"/);
+  assert.match(source, /payload\?\.ok\s*===\s*true\s*&&\s*payload\?\.state\s*===\s*"completed"/);
+  assert.match(source, /mmd:care-back:wish-completed/);
+  assert.match(source, /benefitVerificationRequired:\s*true/);
+  assert.doesNotMatch(source, /window\.location\.assign|LIFF_URL|getProfile\(/);
+  assert.doesNotMatch(source, /innerHTML|insertAdjacentHTML|document\.write/);
+  assert.doesNotThrow(() => new Function(source));
+});
+
+test("Existing Webflow Wish form is reused instead of always generating a second form", () => {
+  assert.match(source, /findExistingForm\(root\)/);
+  assert.match(source, /root\.querySelector\("\[data-message\]"\)/);
+  assert.match(source, /root\.querySelector\("\[data-consent\]"\)/);
+  assert.match(source, /root\.querySelector\("\[data-submit\]"\)/);
+  assert.match(source, /if \(existing\) bindExistingForm\(root, starts, existing\)/);
+  assert.match(source, /#wish-flow/);
+  assert.match(source, /https:\/\/mmdbkk\.com\/member\/liff\?intent=status/);
+  assert.doesNotMatch(source, /miniapp\.line\.me\/2010862595-yT4DCEMc\?liff\.state/);
+});
+
+test("Customer copy says benefits are checked separately from the Wish", () => {
+  assert.match(source, /คูปอง วันสมาชิก และ Points จะตรวจแยกผ่าน LINE/);
+  assert.match(source, /Coupon, membership extension and Points are checked separately through LINE/);
+  assert.match(source, /优惠券、会员期限和积分将通过 LINE 另行核验/);
+});
+
+test("link token accepts only opaque public Wish tokens", () => {
+  const { validLinkToken } = loadHooks();
+  assert.equal(validLinkToken(`pw_${"A".repeat(43)}`), true);
+  assert.equal(validLinkToken("wish-plain-id"), false);
+  assert.equal(validLinkToken("pw_<unsafe>"), false);
+});
+
+test("CARE BACK main visual patch uses approved artwork and wider memory framing", async () => {
+  const visualScript = await readFile(new URL("../main/care-back-visual-patch.js", import.meta.url), "utf8");
+  const visualCss = await readFile(new URL("../main/care-back-visual-patch.css", import.meta.url), "utf8");
+
+  assert.match(visualScript, /6a945475d69ecb5bcd8a4c05_Boss%20Per%20beside\.webp/);
+  assert.match(visualScript, /6a929ff50646bb6234f57e1a_MMD%206%20Y%20Mob\.webp/);
+  assert.match(visualScript, /\.mx-letter__portrait img/);
+  assert.match(visualScript, /\.mx-wish__visual img/);
+  assert.doesNotMatch(visualScript, /\/member\/api\/|fetch\(/);
+  assert.doesNotThrow(() => new Function(visualScript));
+
+  assert.match(visualCss, /\.mx-memory-card:nth-child\(2\)/);
+  assert.match(visualCss, /\.mx-memory-card:nth-child\(3\)/);
+  assert.match(visualCss, /aspect-ratio:\s*4\s*\/\s*3/);
+  assert.match(visualCss, /object-position:\s*50%\s*46%/);
+});
+
+test("CARE BACK Per Voice mobile patch uses the real member shell and requested layout", async () => {
+  const patchScript = await readFile(new URL("../main/care-back-per-voice-v2.js", import.meta.url), "utf8");
+  const patchCss = await readFile(new URL("../main/care-back-per-voice-v2.css", import.meta.url), "utf8");
+  const benefitsScript = await readFile(new URL("./personalized-benefits.js", import.meta.url), "utf8");
+
+  assert.match(patchScript, /https:\/\/mmdbkk\.com\/member\/liff\?intent=status/);
+  assert.match(benefitsScript, /https:\/\/mmdbkk\.com\/member\/liff\?intent=status/);
+  assert.doesNotMatch(patchScript, /liff\.state=.*member%2Fliff/);
+  assert.doesNotMatch(benefitsScript, /liff\.state=.*member%2Fliff/);
+  assert.match(patchScript, /\.mx-hero \[data-wish-link\]/);
+  assert.match(patchScript, /\.mx-benefit-track/);
+  assert.match(patchScript, /\.mx-final__hype/);
+  assert.match(patchScript, /HYPE_Footer\.webp/);
+  assert.match(patchScript, /ยืนยันการเป็นสมาชิกเพื่อรับสิทธิพิเศษมากมาย/);
+  assert.doesNotMatch(patchScript, /fetch\(/);
+  assert.doesNotThrow(() => new Function(patchScript));
+
+  assert.match(patchCss, /grid-template-columns:\s*repeat\(2/);
+  assert.match(patchCss, /\.mx-hero \.mx-actions \[data-wish-link\]\s*\{\s*display:\s*none/);
+  assert.match(patchCss, /background:\s*#292826/);
+  assert.match(patchCss, /--pv-gold:\s*#f0cf72/);
+  assert.match(patchCss, /\.mx-final \.mx-actions\s*\{\s*display:\s*none/);
+});

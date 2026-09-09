@@ -79,6 +79,32 @@ jobs:
         working-directory: services/mmd-slip-extractor
         run: docker build --file cloudflare/Dockerfile --tag mmd-slip-extractor-staging:ci .
 
+      - name: Smoke Container image startup and health
+        working-directory: services/mmd-slip-extractor
+        shell: bash
+        run: |
+          container_name="mmd-slip-extractor-staging-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            docker rm --force "$container_name" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker run --detach --name "$container_name" --publish 127.0.0.1:18080:8080 mmd-slip-extractor-staging:ci
+          for attempt in $(seq 1 30); do
+            code="$(curl --silent --show-error --output "$RUNNER_TEMP/container-health.json" --write-out '%{http_code}' http://127.0.0.1:18080/health || true)"
+            if [ "$code" = "200" ]; then
+              node -e 'const fs=require("node:fs"); const body=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); if (!body.ok) process.exit(1)' "$RUNNER_TEMP/container-health.json"
+              exit 0
+            fi
+            if [ "$(docker inspect --format '{{.State.Running}}' "$container_name")" != "true" ]; then
+              docker logs "$container_name"
+              exit 1
+            fi
+            sleep 1
+          done
+          docker logs "$container_name"
+          echo "Container image did not become healthy in time" >&2
+          exit 1
+
       - name: Validate Wrangler staging bundle without deployment
         working-directory: services/mmd-slip-extractor/cloudflare
         run: npx --yes wrangler@4.124.0 deploy --dry-run --config wrangler.jsonc

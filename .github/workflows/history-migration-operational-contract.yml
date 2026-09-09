@@ -1,0 +1,36 @@
+name: History Migration Operational Contract
+
+on:
+  pull_request:
+    paths:
+      - "scripts/line-official-legacy/history-materializer.js"
+      - "scripts/line-official-legacy/history-materializer.test.js"
+      - "scripts/line-official-legacy/points-wallet-rebuild.js"
+      - "scripts/line-official-legacy/points-wallet-rebuild.test.js"
+      - "scripts/line-official-legacy/history-batch-migrate.js"
+      - "scripts/line-official-legacy/history-batch-migrate.test.js"
+      - "docs/ops/HISTORY_MIGRATION_OPERATIONS_V1.md"
+      - ".github/workflows/history-migration-operational-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [18.x, 20.x, 22.x]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: History materializer safety
+        run: node --test scripts/line-official-legacy/history-materializer.test.js
+      - name: Points wallet rebuild safety
+        run: node --test scripts/line-official-legacy/points-wallet-rebuild.test.js
+      - name: Bounded batch migration safety
+        run: node --test scripts/line-official-legacy/history-batch-migrate.test.js

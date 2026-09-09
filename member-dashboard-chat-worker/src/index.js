@@ -4,6 +4,7 @@ import {
 } from "./renderers/single-renewal-renderer.js";
 import { KenjiModelIdempotency } from "./kenji-model-idempotency.js";
 import { generateKenjiModelReply, KENJI_TOTAL_DEADLINE_MS } from "./kenji-model-policy.js";
+import { runKenjiFolderHistoryAssessment } from "./kenji-folder-history-adapter.mjs";
 import { buildProtectedCapabilityReply, decideKenjiCapability, KENJI_CAPABILITIES } from "./kenji-capability-policy.js";
 import { parseModelKnowledgeIdAllowlist, selectApprovedLineModelKnowledge } from "./kenji-knowledge-policy.js";
 import { resolveModelKeywordRequest } from "./kenji-model-keyword.js";
@@ -22,7 +23,7 @@ const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webho
 const MEMBER_LIFF_PREFIX = "/member/api/liff/";
 const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const MEMBER_DASHBOARD_API_PATHS = new Set(["/api/member/dashboard", "/api/member/dashboard/"]);
-const MEMBER_LIFF_ID = "2010298002-mbx9kqQn";
+const MEMBER_LIFF_ID = "2010862595-yT4DCEMc";
 const MEMBER_SIGNUP_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup";
 const MEMBER_RENEWAL_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew";
 const LINE_RICH_MENU_SYNC_PATH = "/v1/internal/line/rich-menu/sync";
@@ -37,6 +38,11 @@ const DEFAULT_SYNC_TABLE = "MMD — Console Inbox";
 const KENJI_MODEL_DEDUPE_TIMEOUT_MS = 300;
 const KENJI_MODEL_QUOTA_DEFAULT_LIMIT = 3;
 const KENJI_MODEL_QUOTA_DEFAULT_WINDOW_SECONDS = 15 * 60;
+const KENJI_MODEL_ACCESS_RPC_URL = "https://admin-worker.local/v1/internal/kenji/model-access";
+const KENJI_MODEL_ACCESS_TIMEOUT_MS = 900;
+const KENJI_RUNTIME_STATUS_RPC_URL = "https://admin-worker.local/v1/internal/kenji/control/runtime/status";
+const KENJI_RUNTIME_STATUS_TIMEOUT_MS = 700;
+const KENJI_MODEL_ACCESS_PENDING_TIMEOUT_MS = 500;
 
 const PUBLIC_MENU_TEXT = [
   "MMD Member Help",
@@ -241,6 +247,23 @@ function compactLookup(value) {
   return normalizeLookup(value).replace(/\s+/g, "");
 }
 
+export function extractKenjiModelLookupQuery(text = "") {
+  const raw = asString(text).normalize("NFKC").replace(/\s+/g, " ").trim();
+  if (!raw || raw.length > 100) return "";
+  const withoutPolite = raw.replace(/(?:ครับ|ค่ะ|คะ|นะครับ|หน่อยครับ|please)\s*$/i, "").trim();
+  const exactCode = withoutPolite.match(/^([A-Za-z]{2,8}(?:[-_]?\d{1,4}))$/);
+  if (exactCode) return exactCode[1];
+  const explicit = withoutPolite.match(/^(?:model|นายแบบ|รหัส(?:\s*model)?|model\s*code|code|ชื่อ(?:\s*model|\s*นายแบบ)?)\s*[:#-]?\s*(.{2,48})$/i);
+  if (!explicit) return "";
+  const query = asString(explicit[1]).replace(/^["'“”‘’]+|["'“”‘’?.!]+$/g, "").trim();
+  return query && query.length <= 48 ? query : "";
+}
+
+export function extractKenjiModelVerificationEmail(text = "") {
+  const value = asString(text).trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254 ? value : "";
+}
+
 export function isKenjiLineCandidate(text = "") {
   const compact = compactLookup(text);
   const spaced = normalizeLookup(text);
@@ -279,6 +302,8 @@ export function inferLineIntent(text = "", event = {}) {
     if (event?.type === "postback") return "postback";
     return "line_event";
   }
+
+  if (extractKenjiModelVerificationEmail(text)) return "model_access_verification";
 
   if (/(human handoff|human agent|คุยกับคน|เจ้าหน้าที่)/i.test(normalized)) return "human_handoff";
   if (/(ข้อมูล|ประวัติ|เบอร์|ไลน์|ชื่อ|โปรไฟล์|payment|สมาชิก).{0,24}(?:ลูกค้าคนอื่น|คนอื่น|สมาชิกคนอื่น)|(?:ลูกค้าคนอื่น|ข้อมูลส่วนตัว|private data|other customer)/i.test(normalized)) return "privacy_request";
@@ -338,6 +363,7 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(ราคา|price|rate|เรท|promotion|โปร|package|แพ็กเกจ|แพคเกจ|เท่าไร|เท่าไหร่)/i.test(normalized)) {
     return "pricing_review";
   }
+  if (extractKenjiModelLookupQuery(text)) return "model_lookup";
   if (/(ใช้บริการยังไง|ใช้บริการอย่างไร|เริ่มยังไง|เริ่มอย่างไร|ขั้นตอน|บริการมีอะไร|how\s+to\s+use|how\s+does\s+it\s+work)/i.test(normalized)) {
     return "service_guidance";
   }
@@ -350,8 +376,6 @@ const LINE_KNOWLEDGE_CHANNEL = "LINE_OFC";
 const LINE_KNOWLEDGE_TTL_MS = 60_000;
 const LINE_KNOWLEDGE_REPLY_TIMEOUT_MS = 900;
 const LINE_MODEL_DEDUPE_LOOKUP_TIMEOUT_MS = 500;
-const LINE_FAILURE_FALLBACK = "ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ";
-const LINE_FAILURE_FALLBACK_COOLDOWN_SECONDS = 10 * 60;
 const LINE_KNOWLEDGE_CARD_BY_INTENT = Object.freeze({
   talk_to_per_ai: "kenji_per_voice_line_entry_v1",
   payment_slip: "kenji_20_006_payment_proof",
@@ -485,6 +509,165 @@ async function getPublishedPerVoiceReply(env = {}, intent = "") {
   return isSafePerVoiceKnowledge(answer) ? answer : "";
 }
 
+async function modelAccessPending(env = {}, lineUserId = "", action = "get", query = "") {
+  if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get || !asString(lineUserId)) return { ok: false };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("kenji_model_access_pending_timeout"), KENJI_MODEL_ACCESS_PENDING_TIMEOUT_MS);
+  try {
+    const userHash = await sha256Hex(lineUserId);
+    const objectId = env.KENJI_MODEL_DEDUPE.idFromName(`kenji-line-model-access-v1:${userHash}`);
+    const response = await env.KENJI_MODEL_DEDUPE.get(objectId).fetch("https://kenji-model-dedupe.internal/model-access/pending", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action, ...(action === "put" ? { query: asString(query).slice(0, 80) } : {}) }),
+      signal: controller.signal,
+    });
+    if (!response.ok) return { ok: false };
+    const payload = await response.json().catch(() => ({}));
+    return payload?.ok === true ? payload : { ok: false };
+  } catch (_) {
+    return { ok: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function requestKenjiRuntimeStatus(env = {}) {
+  const closed = {
+    ok: false,
+    controls: { line_oa_auto_reply: false, model_keyword_auto_reply: false, all_kenji_mutations: false },
+  };
+  if (!env.ADMIN_WORKER?.fetch || !asString(env.INTERNAL_TOKEN)) return closed;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("kenji_runtime_status_timeout"), KENJI_RUNTIME_STATUS_TIMEOUT_MS);
+  try {
+    const request = new Request(KENJI_RUNTIME_STATUS_RPC_URL, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${asString(env.INTERNAL_TOKEN)}`,
+        "content-type": "application/json",
+        "x-mmd-internal-call": "true",
+        "x-mmd-service-binding": "member-dashboard-chat-worker",
+      },
+      body: "{}",
+      signal: controller.signal,
+    });
+    const response = await env.ADMIN_WORKER.fetch(request);
+    if (!response.ok) return closed;
+    const payload = await response.json().catch(() => null);
+    if (!payload || payload.ok !== true || !payload.controls || typeof payload.controls !== "object") return closed;
+    return {
+      ok: true,
+      controls: {
+        line_oa_auto_reply: payload.controls.line_oa_auto_reply === true,
+        model_keyword_auto_reply: payload.controls.model_keyword_auto_reply === true,
+        all_kenji_mutations: payload.controls.all_kenji_mutations === true,
+      },
+    };
+  } catch (_) {
+    return closed;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function requestKenjiModelAccess(env = {}, lineUserId = "", query = "", verificationEmail = "") {
+  if (!isEnabled(env.LINE_KENJI_MODEL_ACCESS_ENABLED)) return { status: "silent" };
+  if (!env.ADMIN_WORKER?.fetch || !asString(env.INTERNAL_TOKEN) || !asString(lineUserId) || !asString(query)) return { status: "silent" };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("kenji_model_access_timeout"), KENJI_MODEL_ACCESS_TIMEOUT_MS);
+  try {
+    const request = new Request(KENJI_MODEL_ACCESS_RPC_URL, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${asString(env.INTERNAL_TOKEN)}`,
+        "content-type": "application/json",
+        "x-mmd-internal-call": "true",
+        "x-mmd-service-binding": "member-dashboard-chat-worker",
+      },
+      body: JSON.stringify({
+        line_user_id: asString(lineUserId),
+        query: asString(query),
+        ...(verificationEmail ? { verification_email: asString(verificationEmail).toLowerCase() } : {}),
+      }),
+      signal: controller.signal,
+    });
+    const response = await env.ADMIN_WORKER.fetch(request);
+    if (!response.ok) return { status: "silent" };
+    const payload = await response.json().catch(() => ({}));
+    if (payload?.status === "clarification") return { status: "clarification" };
+    if (payload?.status === "verification_required") return { status: "verification_required" };
+    if (payload?.status === "renewal") return { status: "renewal" };
+    if (payload?.status !== "match" || !payload?.model || typeof payload.model !== "object") return { status: "silent" };
+    const modelCode = asString(payload.model.model_code).slice(0, 80);
+    const workingName = asString(payload.model.working_name).slice(0, 120);
+    const rawSummary = asString(payload.model.summary).slice(0, 500);
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$/.test(modelCode) || !isSafeKenjiModelCustomerText(workingName, 120)) return { status: "silent" };
+    const summary = isSafeKenjiModelCustomerText(rawSummary, 500) ? rawSummary : "";
+    return { status: "match", model: { model_code: modelCode, working_name: workingName, summary } };
+  } catch (_) {
+    return { status: "silent" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function isSafeKenjiModelCustomerText(value, max = 500) {
+  const text = asString(value);
+  if (!text || text.length > max) return false;
+  return !(
+    /(?:\b0\d{8,9}\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|https?:\/\/|line\s*(?:id|oa)|telegram|เบอร์(?:โทร)?|อีเมล|ไลน์ส่วนตัว)/i.test(text) ||
+    /(?:availability|available|schedule|ตาราง(?:งาน|คิว)|ว่าง(?:วันนี้|คืนนี้|พรุ่งนี้|ไหม)?|เช็กคิว)/i.test(text) ||
+    /(?:airtable|record[_\s-]?id|admin[_\s-]?note|internal|secret|token|authorization|bearer)/i.test(text)
+  );
+}
+
+function buildKenjiModelAccessReply(model = {}) {
+  const modelCode = asString(model.model_code);
+  const workingName = asString(model.working_name);
+  const summary = asString(model.summary);
+  if (!modelCode || !workingName) return "";
+  return `ชื่อที่ยืนยันได้คือ ${workingName} รหัส ${modelCode} ครับ${summary ? `\n\n${summary}` : ""}`;
+}
+
+function buildKenjiModelAccessDecision(access = {}, options = {}) {
+  const base = {
+    fallback: false,
+    model_attempted: false,
+    model_success: false,
+    model_latency_ms: 0,
+    knowledge_hits: 0,
+  };
+  if (access.status === "match") {
+    const answer = buildKenjiModelAccessReply(access.model);
+    if (answer) return { ...base, text: answer, reply_source: "model_access", guard_blocked: false, guard_reason: "" };
+  }
+  if (access.status === "clarification") {
+    return { ...base, text: "ขอชื่อที่ใช้ทำงานหรือรหัส Model ให้ครบอีกนิดครับ", reply_source: "model_access_clarification", guard_blocked: false, guard_reason: "" };
+  }
+  if (access.status === "verification_required" && options.pendingStored === true) {
+    return {
+      ...base,
+      text: "ขออีเมล Google ที่เคยแจ้งเปอร์ไว้สำหรับเข้าถึงแฟ้ม Premium Model หรือ Standard Models ครับ",
+      reply_source: "model_access_verification",
+      guard_blocked: false,
+      guard_reason: "",
+    };
+  }
+  if (access.status === "renewal") {
+    return {
+      ...base,
+      text: `สมาชิกของคุณหมดอายุหรือยังไม่ active ครับ จึงยังเปิดชื่อหรือรหัส Private Model ไม่ได้\n\nต่ออายุได้ที่นี่ครับ → ${MEMBER_RENEWAL_URL}`,
+      reply_source: "model_access_renewal",
+      guard_blocked: false,
+      guard_reason: "",
+    };
+  }
+  return { ...base, text: "", reply_source: "silent", guard_blocked: true, guard_reason: "model_access_silent" };
+}
+
 function getCachedPublishedPerVoiceReply(env = {}, intent = "") {
   const knowledgeId = LINE_KNOWLEDGE_CARD_BY_INTENT[intent];
   const key = `${asString(env.AIRTABLE_BASE_ID)}:${getKenjiKnowledgeTable(env)}`;
@@ -540,7 +723,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "human_handoff") {
-    return "ผมอยู่ครับ ส่งรายละเอียดสำคัญและสิ่งที่ต้องการให้ช่วยไว้ได้เลยครับ";
+    return "";
   }
 
   if (intent === "context_clarification") {
@@ -625,11 +808,11 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "points") {
-    return `รับเรื่องคะแนนสมาชิกแล้วครับ ${prefix}เดี๋ยวเปอร์ขอตรวจยอดและประวัติที่เกี่ยวข้องก่อน แล้วจะแจ้งสถานะที่ตรวจได้ครับ`;
+    return `${prefix}อยากดูวิธีสะสมและใช้ Points หรืออยากตรวจยอดคะแนนส่วนตัวครับ`;
   }
 
   if (intent === "vip" || intent === "svip" || intent === "black_card") {
-    return `รับเรื่องระดับสมาชิกพิเศษแล้วครับ ${prefix}เคสนี้เปอร์ขอดูเป็นรอบส่วนตัวก่อนนะครับ ข้อความในแชตยังไม่ถือว่าอนุมัติสิทธิ์ครับ`;
+    return `${prefix}อยากดูข้อมูลทั่วไปของระดับสมาชิก หรือให้ตรวจสถานะส่วนตัวครับ`;
   }
 
   if (intent === "mms_wellness") {
@@ -664,8 +847,6 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
     return `สวัสดีครับ ${prefix}ต้องการสอบถามเรื่องจองงาน ราคา เช็กนายแบบ หรือสมาชิก พิมพ์มาได้เลยนะครับ`;
   }
 
-  if (intent === "manual_review") return LINE_FAILURE_FALLBACK;
-
   return "";
 }
 
@@ -674,34 +855,6 @@ export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env
   if (!isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)) return fallback;
   const answer = await getPublishedPerVoiceReply(env, inferLineIntent(getLineEventText(event), event));
   return answer || fallback;
-}
-
-async function getFailureFallbackCooldownRequest(event = {}) {
-  const lineUserId = getLineUserId({ event });
-  if (!lineUserId) return null;
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(lineUserId));
-  const key = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-  return new Request(`https://line-fallback-cooldown.mmd.invalid/${key}`, { method: "GET" });
-}
-
-async function claimFailureFallbackWindow(event = {}) {
-  // Best-effort anti-spam only: Cache API entries are not persistent and may
-  // disappear after eviction or across colos. Never use this as authorization,
-  // dedupe correctness, or payment/session/member state; the fallback may
-  // occasionally reappear when the cache entry is unavailable.
-  try {
-    const cache = globalThis.caches?.default;
-    if (!cache) return true;
-    const request = await getFailureFallbackCooldownRequest(event);
-    if (!request) return true;
-    if (await cache.match(request)) return false;
-    await cache.put(request, new Response("1", {
-      headers: { "cache-control": `max-age=${LINE_FAILURE_FALLBACK_COOLDOWN_SECONDS}` },
-    }));
-    return true;
-  } catch (_) {
-    return true;
-  }
 }
 
 export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, options = {}) {
@@ -737,6 +890,29 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
         model_keyword_recent_query_count: Number(keywordResult.recent_query_count) || 0
       };
     }
+  const modelAccessAllowed = options.modelAccessAllowed !== false;
+
+  if (!modelAccessAllowed && (intent === "model_access_verification" || intent === "model_lookup")) {
+    return buildKenjiModelAccessDecision({ status: "silent" });
+  }
+
+  if (intent === "model_access_verification") {
+    const lineUserId = getLineUserId({ event });
+    const verificationEmail = extractKenjiModelVerificationEmail(eventText);
+    const pending = await modelAccessPending(env, lineUserId, "get");
+    if (!pending.ok || pending.found !== true || !asString(pending.query)) return buildKenjiModelAccessDecision({ status: "silent" });
+    const access = await requestKenjiModelAccess(env, lineUserId, pending.query, verificationEmail);
+    await modelAccessPending(env, lineUserId, "delete");
+    return buildKenjiModelAccessDecision(access);
+  }
+
+  if (intent === "model_lookup") {
+    const query = extractKenjiModelLookupQuery(eventText);
+    const lineUserId = getLineUserId({ event });
+    const access = await requestKenjiModelAccess(env, lineUserId, query);
+    if (access.status !== "verification_required") return buildKenjiModelAccessDecision(access);
+    const pending = await modelAccessPending(env, lineUserId, "put", query);
+    return buildKenjiModelAccessDecision(access, { pendingStored: pending.ok === true && pending.stored === true });
   }
 
   const deterministicReply = buildKenjiLineReply(event, profile, options);
@@ -745,7 +921,7 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     ? getCachedPublishedPerVoiceReply(env, intent)
     : "";
   const generated = deterministicFirst ? deterministicReply : (cachedKnowledge || deterministicReply);
-  if (generated && intent !== "manual_review") {
+  if (generated) {
     return {
       text: generated,
       fallback: false,
@@ -807,13 +983,13 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     }
   }
 
-  const needsFallback = intent === "manual_review" || Boolean(getLineEventText(event));
-  if (!needsFallback) return { text: "", fallback: false, reply_source: "system_truth", model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" };
-  const allowed = await claimFailureFallbackWindow(event);
+  // Silence is intentional. If there is no real answer, no necessary
+  // clarification, or the message requires Per/MMD review, acknowledge the
+  // webhook with HTTP 200 but never call LINE Reply or Push APIs.
   return {
-    text: allowed ? LINE_FAILURE_FALLBACK : "",
-    fallback: true,
-    reply_source: intent === "manual_review" ? "manual_review" : "fallback",
+    text: "",
+    fallback: false,
+    reply_source: "silent",
     model_attempted: Boolean(model.attempted),
     model_success: Boolean(model.success),
     model_latency_ms: Number(model.latency_ms) || 0,
@@ -1619,7 +1795,12 @@ async function handleLineWebhook(request, env, ctx = null) {
   }
 
   const events = Array.isArray(body.events) ? body.events : [];
-  const autoReplyEnabled = isEnabled(env.LINE_AUTO_REPLY_ENABLED);
+  const runtimeStatus = await requestKenjiRuntimeStatus(env);
+  const runtimeControls = runtimeStatus.controls || {};
+  const runtimeAllKill = !runtimeStatus.ok || runtimeControls.all_kenji_mutations === true;
+  const runtimeLineKill = runtimeAllKill || runtimeControls.line_oa_auto_reply === true;
+  const runtimeModelKill = runtimeAllKill || runtimeControls.model_keyword_auto_reply === true;
+  const autoReplyEnabled = isEnabled(env.LINE_AUTO_REPLY_ENABLED) && !runtimeLineKill;
   const kenjiEnabled = isEnabled(env.LINE_KENJI_AI_ENABLED);
   const saved = [];
 
@@ -1630,36 +1811,52 @@ async function handleLineWebhook(request, env, ctx = null) {
     const eventMode = asString(event?.mode).toLowerCase() || "unknown";
     const canGenerateReply = Boolean(autoReplyEnabled && kenjiEnabled && eventMode !== "standby" && getReplyToken(event));
     const capabilityDecision = decideKenjiCapability({ text, intent });
-    const needsModelPreflight = Boolean(canGenerateReply && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
+    const needsModelPreflight = Boolean(canGenerateReply && !runtimeModelKill && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
     const modelDeadlineAt = needsModelPreflight ? Date.now() + KENJI_TOTAL_DEADLINE_MS : 0;
     const modelPreflight = needsModelPreflight
       ? await claimKenjiModelEvent(env, event)
       : { eligible: true, deduped: false, reason: "", canary_eligible: false, rate_limited: false, quota_window: 0 };
     const replyDecision = canGenerateReply && !modelPreflight.deduped
-      ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled, modelEligible: modelPreflight.eligible, deadlineAt: modelDeadlineAt })
+      ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled, modelEligible: modelPreflight.eligible, modelAccessAllowed: !runtimeModelKill, deadlineAt: modelDeadlineAt })
       : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" };
     const replyText = replyDecision.text;
     const shouldReply = Boolean(autoReplyEnabled && eventMode !== "standby" && replyText && getReplyToken(event));
     const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
 
-    const operationalIntent = replyDecision.model_keyword_burst ? "model_keyword_burst" : intent;
-    const afterReply = syncLineEventAfterReply(env, event, operationalIntent, autoReplyEnabled, kenjiEnabled);
+    const afterReply = syncLineEventAfterReply(env, event, intent, autoReplyEnabled, kenjiEnabled);
+    const historyAssessmentPromise = runKenjiFolderHistoryAssessment({ env, event }).catch(() => ({
+      enabled: false,
+      eligible: false,
+      persisted: false,
+      reason: "assessment_runtime_error",
+    }));
     const canDefer = typeof ctx?.waitUntil === "function";
     let record = { pending: canDefer, deduped: false };
+    let historyAssessmentResult = {
+      enabled: false,
+      eligible: false,
+      persisted: false,
+      reason: canDefer ? "assessment_pending" : "assessment_not_run",
+    };
     if (canDefer) {
-      ctx.waitUntil(afterReply.catch(() => {
-        console.log(JSON.stringify({
-          line_webhook: "background_sync_failed",
-          event_type: asString(event?.type) || "unknown",
-          intent,
-        }));
-      }));
+      const backgroundWork = Promise.all([
+        afterReply.catch(() => {
+          console.log(JSON.stringify({
+            line_webhook: "background_sync_failed",
+            event_type: asString(event?.type) || "unknown",
+            intent,
+          }));
+        }),
+        historyAssessmentPromise,
+      ]);
+      ctx.waitUntil(backgroundWork);
     } else {
       try {
         record = await afterReply;
       } catch (_) {
         record = { skipped: true, reason: "airtable_sync_failed", deduped: false };
       }
+      historyAssessmentResult = await historyAssessmentPromise;
     }
 
     // Safe operational telemetry: never log message text, user IDs, reply tokens, or secrets.
@@ -1673,6 +1870,10 @@ async function handleLineWebhook(request, env, ctx = null) {
       operational_intent: operationalIntent,
       auto_reply_enabled: autoReplyEnabled,
       per_voice_enabled: kenjiEnabled,
+      runtime_control_ok: runtimeStatus.ok === true,
+      runtime_line_kill: runtimeLineKill,
+      runtime_model_kill: runtimeModelKill,
+      runtime_all_kill: runtimeAllKill,
       reply_token_present: Boolean(getReplyToken(event)),
       inbox_deduped: Boolean(record?.deduped),
       reply_candidate: Boolean(replyText),
@@ -1701,6 +1902,10 @@ async function handleLineWebhook(request, env, ctx = null) {
       model_canary_eligible: Boolean(modelPreflight.canary_eligible),
       model_rate_limited: Boolean(modelPreflight.rate_limited),
       model_quota_window: Number(modelPreflight.quota_window) || 0,
+      history_assessment_enabled: historyAssessmentResult.enabled === true,
+      history_assessment_eligible: historyAssessmentResult.eligible === true,
+      history_assessment_persisted: historyAssessmentResult.persisted === true,
+      history_assessment_reason: asString(historyAssessmentResult.reason).slice(0, 80) || null,
     }));
 
     saved.push({
@@ -1712,8 +1917,18 @@ async function handleLineWebhook(request, env, ctx = null) {
       record_pending: Boolean(record?.pending),
       record_skipped: Boolean(record?.skipped),
       replied: Boolean(replyResult?.ok),
+      runtime_control_ok: runtimeStatus.ok === true,
+      runtime_line_kill: runtimeLineKill,
+      runtime_model_kill: runtimeModelKill,
+      runtime_all_kill: runtimeAllKill,
       line_user: Boolean(lineUserId),
       message_id: getLineEventId(event),
+      history_assessment: {
+        enabled: historyAssessmentResult.enabled === true,
+        eligible: historyAssessmentResult.eligible === true,
+        persisted: historyAssessmentResult.persisted === true,
+        reason: asString(historyAssessmentResult.reason).slice(0, 80),
+      },
     });
   }
 

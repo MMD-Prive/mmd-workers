@@ -1,0 +1,8 @@
+name = "auth-staging-airtable-fixtures-worker"
+main = "src/index.mjs"
+compatibility_date = "2026-08-31"
+workers_dev = false
+
+[env.staging]
+name = "auth-staging-airtable-fixtures-worker-staging"
+workers_dev = false

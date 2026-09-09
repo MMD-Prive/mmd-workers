@@ -1,0 +1,174 @@
+name: Admin login production state
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/mms-admin-production-state.yml"
+      - "immigrate-worker/**"
+  workflow_run:
+    workflows:
+      - Deploy admin-worker
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  browser-state:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+      ORIGIN: https://mmdbkk.com
+      NEXT_PATH: /internal/admin/control-room
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Normalize smoke credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const clean = (value) => (value || '').replace(/[\u2028\u2029\r\n]/g, '').trim();
+          const credential = clean(process.env.ADMIN_SMOKE_CREDENTIAL);
+          if (!credential) throw new Error('ADMIN_LOGIN_CREDENTIAL or ADMIN_BEARER is required');
+          fs.appendFileSync(process.env.GITHUB_ENV, `ADMIN_SMOKE_CREDENTIAL=${credential}\n`);
+          NODE
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
+
+      - name: Verify production session contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          (async () => {
+            const origin = process.env.ORIGIN;
+            const next = process.env.NEXT_PATH;
+            const credential = String(process.env.ADMIN_SMOKE_CREDENTIAL || '').trim();
+            const body = new URLSearchParams({ credential, next });
+            const response = await fetch(`${origin}/internal/admin/login/session`, {
+              method: 'POST',
+              headers: {
+                Origin: origin,
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-MMD-Login-Fetch': '1',
+              },
+              body: body.toString(),
+              redirect: 'manual',
+            });
+            const payload = await response.clone().json().catch(() => null);
+            if (response.status !== 200) throw new Error(`login expected 200, got ${response.status}`);
+            if (!payload || payload.ok !== true || payload.next !== next) {
+              throw new Error(`unexpected login payload: ${JSON.stringify(payload)}`);
+            }
+            const setCookie = response.headers.get('set-cookie') || '';
+            if (!/^mmd_admin_gate_v1=/.test(setCookie)) throw new Error('login did not issue mmd_admin_gate_v1');
+            if (!/\bdomain=mmdbkk\.com\b/i.test(setCookie)) {
+              throw new Error('admin cookie must share Domain=mmdbkk.com across apex and www');
+            }
+            const cookiePair = setCookie.split(';', 1)[0];
+            const control = await fetch(`${origin}${next}`, {
+              headers: { Cookie: cookiePair },
+              redirect: 'manual',
+            });
+            const controlBody = await control.text();
+            if (control.status !== 200) throw new Error(`control room expected 200, got ${control.status}`);
+            if (/\/internal\/admin\/login/.test(control.headers.get('location') || '')) {
+              throw new Error('control room bounced back to login');
+            }
+            if (!/Control Room|CONTROL ROOM|Owner Control|Operating System/i.test(controlBody)) {
+              throw new Error('control room marker not found after authenticated login');
+            }
+            console.log('HTTP login session -> Control Room passed.');
+          })().catch((error) => {
+            console.error(error && error.stack ? error.stack : error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Install browser driver only
+        shell: bash
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund puppeteer-core@24.16.0
+
+      - name: Verify real browser login flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { execFileSync } = require('node:child_process');
+          const puppeteer = require('puppeteer-core');
+
+          (async () => {
+            function findChrome() {
+              for (const bin of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']) {
+                try { return execFileSync('which', [bin], { encoding: 'utf8' }).trim(); } catch {}
+              }
+              throw new Error('Chrome/Chromium executable not found on runner');
+            }
+
+            const origin = process.env.ORIGIN;
+            const next = process.env.NEXT_PATH;
+            const credential = String(process.env.ADMIN_SMOKE_CREDENTIAL || '').trim();
+            const browser = await puppeteer.launch({
+              executablePath: findChrome(),
+              headless: true,
+              args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
+            });
+
+            try {
+              const context = await browser.createBrowserContext();
+              const page = await context.newPage();
+              const pageErrors = [];
+              page.on('pageerror', (error) => pageErrors.push(error?.message || String(error)));
+
+              await page.goto(`${origin}/internal/admin/login?next=${encodeURIComponent(next)}`, {
+                waitUntil: 'domcontentloaded',
+                timeout: 30000,
+              });
+              await page.waitForFunction(() => {
+                const input = document.querySelector('#adminCredential');
+                return input && input.readOnly === false;
+              }, { timeout: 10000 });
+              await page.type('#adminCredential', credential, { delay: 5 });
+              await Promise.all([
+                page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }),
+                page.click('#ownerLoginForm .go'),
+              ]);
+
+              const url = new URL(page.url());
+              if (url.origin !== origin || url.pathname !== next) {
+                throw new Error(`browser login landed at ${page.url()}`);
+              }
+              const bodyText = await page.evaluate(() => document.body?.innerText || '');
+              if (!/Control Room|CONTROL ROOM|Owner Control|Operating System/i.test(bodyText)) {
+                throw new Error('browser reached target URL but Control Room UI marker is missing');
+              }
+              if (await page.$('#adminLoginForm')) {
+                throw new Error('login form still present after successful browser navigation');
+              }
+              if (pageErrors.length) throw new Error(`page errors: ${pageErrors.join(' | ')}`);
+              console.log(`Browser login passed: ${page.url()}`);
+              await context.close();
+            } finally {
+              await browser.close();
+            }
+          })().catch((error) => {
+            console.error(error && error.stack ? error.stack : error);
+            process.exit(1);
+          });
+          NODE

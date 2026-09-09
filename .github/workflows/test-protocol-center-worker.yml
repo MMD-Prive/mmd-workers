@@ -1,0 +1,31 @@
+name: Protocol Center CI
+
+on:
+  pull_request:
+    paths:
+      - "protocol-center-worker/**"
+      - ".github/workflows/test-protocol-center-worker.yml"
+      - ".github/workflows/deploy-protocol-center-worker.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: protocol-center-worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax and unit tests
+        run: |
+          npm run check
+          npm test
+      - name: Wrangler dry run
+        run: npx --yes wrangler@4 deploy --dry-run --config wrangler.toml

@@ -1,0 +1,31 @@
+name: AI Worker Contract
+
+on:
+  pull_request:
+    paths:
+      - "ai-worker/**"
+      - ".github/workflows/test-ai-worker.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "ai-worker/**"
+      - ".github/workflows/test-ai-worker.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Check and test ai-worker
+        run: npm test --prefix ai-worker

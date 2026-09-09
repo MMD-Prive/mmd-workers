@@ -1,0 +1,61 @@
+<main
+  id="mms-therapist-login"
+  class="mta-login-page"
+  data-auth-ready="false"
+  data-liff-id=""
+  data-auth-endpoint="/male-massage/therapists/api/auth/line"
+  data-auth-me-endpoint="/male-massage/therapists/api/auth/me"
+  data-post-login-route="/male-massage/therapists/me"
+  data-auth-provider="line"
+>
+  <section class="mta-hero" aria-labelledby="mta-title">
+    <div class="mta-nav">
+      <a class="mta-home" href="/therapists" aria-label="MMS Male Massage">
+        <img
+          class="mta-logo"
+          src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6a8605ce469f1080c3c57ebe_mms-logo-horizontal-light.svg"
+          alt="MMS Male Massage"
+        >
+      </a>
+      <span class="mta-chip">APPROVED THERAPIST ACCESS</span>
+    </div>
+
+    <div class="mta-stage">
+      <div class="mta-panel">
+        <h1 class="mta-sr" id="mta-title">เข้าสู่ระบบ MMS Therapist</h1>
+        <p class="mta-sr">
+          พื้นที่ส่วนตัวสำหรับ Therapist ที่ผ่านการอนุมัติจาก MMS เพื่อจัดการ Profile เรทราคา กติกาส่วนตัว และ Availability
+        </p>
+
+        <div class="mta-art-wrap">
+          <img
+            class="mta-art"
+            src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9a49e5183c68d9d386030a_MMS%20Login%20Button.webp"
+            alt=""
+            aria-hidden="true"
+          >
+          <button
+            class="mta-line-hit"
+            type="button"
+            aria-label="เข้าสู่ระบบ MMS Therapist ด้วย LINE"
+            aria-disabled="true"
+            data-mms-therapist-line-login
+          >
+            <span class="mta-sr">เข้าสู่ระบบด้วย LINE</span>
+          </button>
+        </div>
+
+        <p class="mta-state" data-auth-state-copy aria-live="polite">
+          MMS กำลังเชื่อม Therapist Access ให้ครับ · ยังไม่เปิดใช้งานบน Production
+        </p>
+      </div>
+    </div>
+
+    <div class="mta-foot">
+      <span>Training Academy · Private Therapist Access</span>
+      <a class="mta-back" href="/therapists">กลับหน้า MMS</a>
+    </div>
+  </section>
+</main>
+
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>

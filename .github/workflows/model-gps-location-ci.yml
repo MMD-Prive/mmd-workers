@@ -1,0 +1,57 @@
+name: Model GPS Location CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "admin-worker/src/model-gps-visibility.js"
+      - "admin-worker/src/model-location-runtime.js"
+      - "admin-worker/src/studio-telegram-worker.js"
+      - "admin-worker/src/admin-login-hero-worker.js"
+      - "admin-worker/model-location-policy.test.mjs"
+      - "admin-worker/wrangler.toml"
+      - "realtime-worker/src/index.js"
+      - "realtime-worker/location-policy.test.mjs"
+      - "realtime-worker/service-auth-contract.test.mjs"
+      - ".github/workflows/model-gps-location-ci.yml"
+      - ".github/workflows/sync-model-dashboard-routes.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  privacy-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax check location runtimes
+        run: |
+          node --check admin-worker/src/model-gps-visibility.js
+          node --check admin-worker/src/model-location-runtime.js
+          node --check admin-worker/src/studio-telegram-worker.js
+          node --check admin-worker/src/admin-login-hero-worker.js
+          node --check realtime-worker/src/index.js
+
+      - name: Test privacy contracts
+        run: |
+          node --experimental-global-webcrypto --test admin-worker/model-dashboard-policy.test.mjs admin-worker/model-location-policy.test.mjs
+          node --test realtime-worker/location-policy.test.mjs realtime-worker/service-auth-contract.test.mjs
+
+      - name: Dry-run admin Worker
+        run: npx wrangler deploy --dry-run --config admin-worker/wrangler.toml
+
+      - name: Dry-run realtime Worker
+        run: npx wrangler deploy --dry-run --config realtime-worker/wrangler.toml

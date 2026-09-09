@@ -1,0 +1,142 @@
+<!-- MMD GLOBAL TYPOGRAPHY VOICE CONTRAST:START -->
+<style id="mmd-global-typography-voice-contrast-20260827">
+:root{
+  --mmd-font-sans:"LINE Seed Sans TH","Line Seed Sans TH","Noto Sans Thai","Noto Sans","Outfit",system-ui,-apple-system,BlinkMacSystemFont,sans-serif;
+  --mmd-on-dark-heading:rgba(255,255,255,.96);
+  --mmd-on-dark-body:rgba(255,255,255,.82);
+  --mmd-on-dark-meta:rgba(255,255,255,.60);
+  --mmd-on-light-heading:#1b1714;
+  --mmd-on-light-body:#39322e;
+}
+html,body,button,input,textarea,select,option{
+  font-family:var(--mmd-font-sans)!important;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+}
+body :where(h1,h2,h3,h4,h5,h6,p,a,button,input,textarea,select,option,label,summary,li,small,strong,em,blockquote,figcaption,legend,td,th,span):not([class*="icon" i]):not([class^="fa"]):not([class*="material-symbol" i]):not([aria-hidden="true"]){
+  font-family:var(--mmd-font-sans)!important;
+}
+body :where(h1,h2,h3,h4,h5,h6){font-weight:700}
+body :where(p,li,label,input,textarea,select,option){font-weight:400}
+[data-mmd-contrast-fixed="dark-heading"]{color:var(--mmd-on-dark-heading)!important}
+[data-mmd-contrast-fixed="dark-body"]{color:var(--mmd-on-dark-body)!important}
+[data-mmd-contrast-fixed="dark-meta"]{color:var(--mmd-on-dark-meta)!important}
+[data-mmd-contrast-fixed="light-heading"]{color:var(--mmd-on-light-heading)!important}
+[data-mmd-contrast-fixed="light-body"]{color:var(--mmd-on-light-body)!important}
+</style>
+<script id="mmd-global-typography-voice-contrast-js-20260827">
+(function(){
+"use strict";
+var timer=0;
+var publicPage=!/^\/(?:internal|sigil|admin|workspace|api)(?:\/|$)/i.test(location.pathname);
+var swaps=[
+  [/ระบบกำลังตรวจสอบ/g,"MMD กำลังตรวจให้"],
+  [/ระบบกำลังดำเนินการ/g,"MMD กำลังจัดการให้"],
+  [/ระบบได้รับข้อมูลแล้ว/g,"MMD รับข้อมูลแล้ว"],
+  [/ระบบจะยืนยัน/g,"MMD จะยืนยันให้"],
+  [/ระบบจะอัปเดต/g,"MMD จะอัปเดตให้"],
+  [/ส่งข้อมูลเข้าสู่ระบบ/g,"ส่งข้อมูลให้ MMD"],
+  [/สถานะระบบ/g,"สถานะล่าสุด"],
+  [/โดยระบบ/g,"โดย MMD"],
+  [/\bMMD Assistant\b/gi,"MMD"],
+  [/\bMMS Assistant\b/gi,"MMD"],
+  [/\bOps Owner\b/gi,"MMD"],
+  [/\bSales Owner\b/gi,"MMD"],
+  [/\bInternal Reviewer\b/gi,"MMD"],
+  [/\b(?:Operator|Handler|Admin|Staff)\s*:/gi,"MMD:"]
+];
+function voice(root){
+  if(!publicPage)return;
+  var w=document.createTreeWalker(root||document.body,NodeFilter.SHOW_TEXT);
+  var n,p,s;
+  while((n=w.nextNode())){
+    p=n.parentElement;
+    if(!p||p.closest("script,style,noscript,template,code,pre,textarea,[data-mmd-voice-skip]"))continue;
+    s=n.nodeValue;
+    for(var i=0;i<swaps.length;i++)s=s.replace(swaps[i][0],swaps[i][1]);
+    if(s!==n.nodeValue)n.nodeValue=s;
+  }
+}
+function rgba(v){
+  if(!v||v==="transparent")return null;
+  var m=v.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)/i);
+  if(!m)return null;
+  return {r:+m[1],g:+m[2],b:+m[3],a:m[4]===undefined?1:+m[4]};
+}
+function luminance(c){
+  function f(x){x/=255;return x<=.03928?x/12.92:Math.pow((x+.055)/1.055,2.4)}
+  return .2126*f(c.r)+.7152*f(c.g)+.0722*f(c.b);
+}
+function ratio(a,b){
+  var x=luminance(a),y=luminance(b);
+  return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);
+}
+function over(fg,bg){
+  var a=fg.a===undefined?1:fg.a;
+  return {r:fg.r*a+bg.r*(1-a),g:fg.g*a+bg.g*(1-a),b:fg.b*a+bg.b*(1-a),a:1};
+}
+function bgFor(el){
+  var node=el, fallback={r:255,g:255,b:255,a:1};
+  while(node&&node.nodeType===1){
+    var cs=getComputedStyle(node), bg=rgba(cs.backgroundColor);
+    if(bg&&bg.a>=.72)return bg;
+    var im=cs.backgroundImage||"";
+    if(im&&im!=="none"){
+      var found=[],re=/rgba?\([^)]+\)/ig,m;
+      while((m=re.exec(im))){var c=rgba(m[0]);if(c&&c.a>.18)found.push(c)}
+      if(found.length){
+        var dark=0,light=0;
+        found.forEach(function(c){
+          if(luminance(over(c,{r:18,g:18,b:18,a:1}))<.28)dark++;
+          else light++;
+        });
+        if(dark>=light)return {r:18,g:16,b:17,a:1};
+      }
+    }
+    var hint=((node.id||"")+" "+(node.className||"")+" "+(node.getAttribute("data-theme")||"")).toLowerCase();
+    if(/\b(dark|black|ink|charcoal|night|wine|sigil)\b/.test(hint))return {r:18,g:16,b:17,a:1};
+    if(bg&&bg.a>.14)return over(bg,fallback);
+    node=node.parentElement;
+  }
+  var body=rgba(getComputedStyle(document.body).backgroundColor);
+  return body&&body.a>.5?body:fallback;
+}
+function visible(el){
+  var cs=getComputedStyle(el);
+  if(cs.display==="none"||cs.visibility==="hidden"||+cs.opacity===0)return false;
+  var r=el.getBoundingClientRect();
+  return r.width>0&&r.height>0;
+}
+function fix(el,forcedBg){
+  if(!el||el.hasAttribute("data-mmd-contrast-skip")||el.closest("[data-mmd-contrast-skip],svg,canvas"))return;
+  if(!visible(el)||!(el.textContent||"").trim())return;
+  var cs=getComputedStyle(el),fg=rgba(cs.color),bg=forcedBg||bgFor(el);
+  if(!fg||!bg)return;
+  var px=parseFloat(cs.fontSize)||16,wt=parseInt(cs.fontWeight,10)||400;
+  var threshold=(px>=24||(px>=19&&wt>=700))?3:4.5;
+  if(ratio(over(fg,bg),bg)>=threshold)return;
+  var dark=luminance(bg)<.36,heading=/^H[1-6]$/.test(el.tagName);
+  var meta=px<=12||el.matches("small,figcaption")||/\b(meta|eyebrow|kicker|caption|hint|fine|legal)\b/i.test(el.className||"");
+  el.setAttribute("data-mmd-contrast-fixed",dark?(heading?"dark-heading":meta?"dark-meta":"dark-body"):(heading?"light-heading":"light-body"));
+}
+function contrast(root){
+  var list=(root||document).querySelectorAll("h1,h2,h3,h4,h5,h6,p,li,a,button,label,summary,small,figcaption,legend,td,th");
+  for(var i=0;i<list.length;i++)fix(list[i]);
+  if(/^\/pay\/membership(?:\/|$)/i.test(location.pathname)){
+    var h=(root||document).querySelector("main h1,h1");
+    if(h){
+      var panel=h.closest("section,article,[class*='hero' i],[class*='panel' i],[class*='card' i]")||h.parentElement;
+      var dark={r:16,g:13,b:14,a:1};
+      var nodes=panel.querySelectorAll("h1,h2,h3,h4,h5,h6,p,li,label,small,figcaption");
+      for(var j=0;j<nodes.length;j++)fix(nodes[j],dark);
+    }
+  }
+}
+function run(){voice(document.body);contrast(document)}
+function queue(){clearTimeout(timer);timer=setTimeout(run,120)}
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",run);else run();
+window.addEventListener("load",run,{once:true});
+new MutationObserver(queue).observe(document.documentElement,{childList:true,subtree:true,characterData:true});
+})();
+</script>
+<!-- MMD GLOBAL TYPOGRAPHY VOICE CONTRAST:END -->

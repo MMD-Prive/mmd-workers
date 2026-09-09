@@ -64,13 +64,13 @@ test("published runtime returns Airtable cards instead of readiness-only empty s
   }
 });
 
-test("draft endpoint persists a Knowledge Board record when Airtable is configured", async () => {
+test("draft endpoint persists only Draft even when the browser requests active status", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init = {}) => {
     assert.equal(init.method, "POST");
     const payload = JSON.parse(init.body);
     assert.equal(payload.records[0].fields.knowledge_id, "kenji_runtime_test");
-    assert.equal(payload.records[0].fields.status, "active");
+    assert.equal(payload.records[0].fields.status, "draft");
     return Response.json({
       records: [
         {

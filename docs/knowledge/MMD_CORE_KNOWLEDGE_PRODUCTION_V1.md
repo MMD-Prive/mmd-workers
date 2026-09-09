@@ -141,12 +141,17 @@ CARE BACK เป็นสิทธิ์ดูแลกลับ ไม่ใช
 2. MMD ตรวจ Member Passport, สถานะสมาชิก, ประวัติที่เชื่อมได้ และ Points ที่ตรวจสอบได้
 3. สร้างหรือ resume CARE BACK claim เดียวแบบ idempotent
 4. ส่ง Birthday Wish และต้องบันทึกสำเร็จ
-5. หลัง Wish saved เท่านั้นจึงเปิดคูปองส่วนตัว 10% ใช้ได้ 1 ครั้ง ภายใน 30 วันหลัง activation
+5. หลัง Wish saved เท่านั้นจึงเปิดคูปองส่วนตัวส่วนลดสูงสุด 10% ใช้ได้ 1 ครั้ง โดยอัตราจริงขึ้นอยู่กับระดับนายแบบ × รูปแบบงาน ต้องใช้จองภายใน 2 เดือนหลัง activation และเลือกวันรับบริการได้ไม่เกิน 90 วันนับจากวันที่จอง
 6. Membership และ Points มีผลหลัง canonical owner ตรวจและ apply สำเร็จเท่านั้น
 
 ห้ามออกคูปองหรือเพิ่ม Points จากการเปิดหน้า, login หรือ identity verification อย่างเดียว ห้ามใช้ copy เดิมที่บอกว่าจะออกโค้ดทันทีหลัง login
 
 Benefit lock:
+
+- Coupon discount matrix: Public Models = PN 3–5% / VIP job format 3–5%; Standard Models = PN 5% / VIP job format 7%; Premium / EMs / GWs Models = PN 7% / VIP job format 10%
+- PN และ VIP ใน discount matrix เป็น **รูปแบบงาน** ไม่ใช่สถานะสมาชิก สีการ์ดใช้บอกสถานะสมาชิกเท่านั้นและไม่ใช้คำนวณส่วนลด
+- Card status colors: Blue = Standard, Silver = Premium, Red = Red Card, Black = Black Card + VIP customer status, Gold = SVIP
+- Coupon validity: ใช้จองภายใน 2 เดือนนับจาก activation; เมื่อยืนยันการจองภายในกำหนดแล้ว วันรับบริการอยู่ได้ภายใน 90 วันนับจากวันที่จองเดิม แม้วันรับบริการจะเลยวันหมดอายุคูปอง และการเลื่อนนัดต้องไม่ขยายกรอบ 90 วันนี้
 
 - Current member active/grace: เพิ่ม 180 วันจากวันหมดอายุจริง ไม่มี CARE BACK point bonus อัตโนมัติ
 - Former/expired: ต้องตรวจ renewal/payment และกลับเป็น active/grace ก่อน จึง eligible สำหรับ +90 วันและ +150 Points
@@ -160,7 +165,7 @@ Payment proof เป็น evidence เท่านั้น Browser/Chat ห้
 
 คำตอบมาตรฐาน:
 
-> CARE BACK เป็นสิทธิ์ดูแลกลับที่ MMD ตรวจจากสถานะและประวัติจริงครับ เริ่มจากยืนยันผ่าน LINE แล้วส่ง Birthday Wish ให้บันทึกสำเร็จก่อน คูปองส่วนตัว 10% จึงจะเปิดได้ 1 ครั้งและมีอายุ 30 วันหลัง activation ส่วน Membership และ Points จะมีผลหลัง MMD ตรวจข้อมูล การสมัคร หรือการชำระเงินที่เกี่ยวข้องเรียบร้อยแล้วเท่านั้นครับ
+> CARE BACK เป็นสิทธิ์ดูแลกลับที่ MMD ตรวจจากสถานะและประวัติจริงครับ เริ่มจากยืนยันผ่าน LINE แล้วส่ง Birthday Wish ให้บันทึกสำเร็จก่อน จึงจะเปิดคูปองส่วนตัวส่วนลดสูงสุด 10% ได้ 1 ครั้ง โดยอัตราจริงขึ้นอยู่กับระดับนายแบบและรูปแบบงาน ต้องใช้จองภายใน 2 เดือนหลัง activation และเลือกวันรับบริการล่วงหน้าได้ไม่เกิน 90 วันนับจากวันที่จอง ส่วน Membership และ Points จะมีผลหลัง MMD ตรวจข้อมูล การสมัคร หรือการชำระเงินที่เกี่ยวข้องเรียบร้อยแล้วเท่านั้นครับ
 
 รายละเอียด canonical ทั้งหมดอยู่ที่ `docs/knowledge/CARE_BACK_2026_FINAL_LOCK.md`
 

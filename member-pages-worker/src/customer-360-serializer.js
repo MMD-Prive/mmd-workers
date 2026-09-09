@@ -177,6 +177,7 @@ function safeJob(value) {
     location_customer_safe: safeText(value.location_customer_safe, 120),
     customer_safe_note: safeText(value.customer_safe_note, 240),
     payment_status: safeChoice(value.payment_status, SAFE_PAYMENT_STATES, "unavailable"),
+    amount_due_thb: safeMoney(value.amount_due_thb),
   });
 }
 

@@ -1,0 +1,46 @@
+name = "protocol-center-worker"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+workers_dev = true
+
+# Exact Protocol Center admin API ownership only. UI remains separately owned.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/protocols*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/protocols*"
+zone_name = "mmdbkk.com"
+
+# Canonical admin session authority. protocol-center-worker never owns or signs
+# admin sessions; it forwards the server-issued cookie to admin-worker /auth/me.
+[[services]]
+binding = "ADMIN_WORKER"
+service = "admin-worker"
+
+[vars]
+AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+AIRTABLE_PROTOCOL_REGISTRY_ID = "tbllGMkWNjdhuaTyh"
+AIRTABLE_PROTOCOL_QA_RUNS_ID = "tblnaZZ0SXTRTQRK4"
+AIRTABLE_ACTIVITY_LOGS_ID = "tblbUWRoFL6OI6QMJ"
+PROTOCOL_CACHE_PREFIX = "mmd:protocol:v1:published:"
+
+# Serialization only — never the protocol source of truth. All canonical
+# protocol fields remain in Airtable and are re-read for every mutation.
+[[durable_objects.bindings]]
+name = "PROTOCOL_COORDINATOR"
+class_name = "ProtocolPublishCoordinator"
+
+[[migrations]]
+tag = "v2026-09-05-protocol-publish-coordinator"
+new_sqlite_classes = ["ProtocolPublishCoordinator"]
+
+# Reuse the established MMD/SIGIL KV namespace strictly as a namespaced,
+# disposable read cache. Airtable remains authoritative.
+[[kv_namespaces]]
+binding = "PROTOCOLS_KV"
+id = "7922350083a644db8a48c16c7e48fca7"
+preview_id = "f673c4ab6e4f456baefeab032564db72"
+
+# ---- Secret (provisioned by GitHub Actions / wrangler secret) ----
+# AIRTABLE_API_KEY

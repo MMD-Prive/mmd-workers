@@ -25,7 +25,12 @@
 // ==========================================================
 
 import { demoLinksCreate, demoLinksGet } from "./routes/demo-links.js";
+import { handleKenjiKnowledgeRequest as handleKenjiKnowledgeRuntimeRequest } from "./kenji-knowledge-runtime.js";
 import { renderApprovedAdminLogin } from "./admin-login-page.js";
+import {
+  handleCreateSessionClientLineageRequest,
+  isCreateSessionClientLineageRequest,
+} from "./create-session-client-lineage-runtime.js";
 import {
   getAllowedModelSessionActions,
   normalizeModelSessionAction,
@@ -101,7 +106,8 @@ const ADMIN_RICH_MENU_BASE_PATH = "/v1/admin/line/rich-menu";
 const SIGIL_BOARD_PUBLISH_PATH = "/v1/admin/sigil/board/publish";
 const INTERNAL_ADMIN_PREFIX = "/internal/admin";
 const SIGIL_INTERNAL_ADMIN_PREFIX = "/sigil/internal/admin";
-const KENJI_KNOWLEDGE_CANONICAL_PATH = "/internal/admin/kenji-knowledge";
+const KENJI_KNOWLEDGE_CANONICAL_PATH = "/internal/admin/kenji";
+const KENJI_KNOWLEDGE_LEGACY_PATH = "/internal/admin/kenji-knowledge";
 const KENJI_KNOWLEDGE_LEGACY_SIGIL_PATH = "/sigil/internal/admin/kenji-knowledge";
 const KENJI_KNOWLEDGE_AUTH_ME_PATH = "/v1/admin/auth/me";
 const KENJI_KNOWLEDGE_META_PATH = "/v1/admin/kenji/knowledge/meta";
@@ -164,6 +170,10 @@ export default {
       return redirectLegacySigilInternalAdmin(req);
     }
 
+    if (path === KENJI_KNOWLEDGE_LEGACY_PATH) {
+      return redirectKenjiKnowledgeLegacy(req);
+    }
+
     if (isKenjiKnowledgeCapturedPath(path) && !isKenjiKnowledgeShellPath(path)) {
       return adminRouteNotFound();
     }
@@ -206,6 +216,9 @@ export default {
     }
 
     if (isKenjiKnowledgeReadinessRoute(path, method)) {
+      if (String(env.KENJI_KNOWLEDGE_RUNTIME_V2_ENABLED || "").toLowerCase() === "true") {
+        return handleKenjiKnowledgeRuntimeRequest(req, env, { isAuthed });
+      }
       return withCors(await handleKenjiKnowledgeReadinessRoute(req, env, path, method), cors);
     }
 
@@ -485,6 +498,15 @@ export default {
         return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
       }
 
+      // Canonical client lineage is read-only identity evidence. The outer
+      // admin gate above has already verified the signed internal-admin session.
+      if (isCreateSessionClientLineageRequest(path, method)) {
+        return withCors(
+          await handleCreateSessionClientLineageRequest(req, env, { alreadyAuthorized: true }),
+          cors,
+        );
+      }
+
       if (isAdminRichMenuRoute(path, method)) {
         return withCors(await handleAdminRichMenuRoute(req, env, path, method), cors);
       }
@@ -684,6 +706,19 @@ export default {
             return withCors(json({ ok: false, error: { code: e.code, message: e.message } }, e.status), cors);
           }
           return withCors(json({ ok: false, error: String(e?.message || e || "models_search_failed") }, 500), cors);
+        }
+      }
+
+      // Canonical Model-folder selection for Per's LINE activation console.
+      // This is a read-only candidate list; link issuance re-reads the exact Airtable record.
+      if (method === "GET" && path === "/v1/admin/models/activation-candidates") {
+        try {
+          return withCors(json(await listModelActivationCandidates(env, url)), cors);
+        } catch (e) {
+          if (e instanceof CreateSessionAccessError) {
+            return withCors(json({ ok: false, error: { code: e.code, message: e.message } }, e.status), cors);
+          }
+          return withCors(json({ ok: false, error: String(e?.message || e || "model_activation_candidates_failed") }, 500), cors);
         }
       }
 
@@ -1097,7 +1132,7 @@ function hasTraversalSegment(value) {
 }
 
 function adminLoginRequiredPage(req) {
-  const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>MMD Admin</title></head><body><main><h1>Admin access required</h1><p><a href="${ADMIN_LOGIN_PAGE_PATH}">Sign in to MMD Admin</a></p></main></body></html>`;
+  const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>MMD Admin</title><link rel="icon" type="image/webp" href="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo.webp"></head><body><main><h1>Admin access required</h1><p><a href="${ADMIN_LOGIN_PAGE_PATH}">Sign in to MMD Admin</a></p></main></body></html>`;
   return adminHtml(req, body, 401);
 }
 
@@ -1144,15 +1179,15 @@ function json(data, status = 200) {
 }
 
 function kenjiKnowledgeAdminShell(req, routeKind) {
-  const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#080604"><title>MMD Kenji Knowledge</title><link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23080604'/%3E%3Crect x='5' y='5' width='54' height='54' rx='13' fill='none' stroke='%23d9b66f' stroke-width='3'/%3E%3Ctext x='32' y='43' text-anchor='middle' font-size='32' font-family='Arial,sans-serif' font-weight='900' fill='%23f5d58b'%3EM%3C/text%3E%3C/svg%3E"><link rel="shortcut icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%23080604%27/%3E%3Ctext x=%2732%27 y=%2738%27 text-anchor=%27middle%27 font-family=%27Arial,sans-serif%27 font-size=%2715%27 font-weight=%27700%27 fill=%27%23edc674%27%3EMMD%3C/text%3E%3C/svg%3E"><style>html,body{margin:0!important;padding:0!important;min-height:100%;background:#080604;color:#fff0dc;overflow-x:hidden}body{background:linear-gradient(180deg,#080604 0%,#050403 100%)}#mmdKenjiKnowledgeV9{min-height:100svh}</style><link rel="stylesheet" href="https://models.mmdbkk.com/webflow/internal/admin/kenji-knowledge/kenji-knowledge-v9-board-bridge.css"></head><body><div id="mmdKenjiKnowledgeV9"></div><script defer src="https://models.mmdbkk.com/webflow/internal/admin/kenji-knowledge/kenji-knowledge-v9-1-webflow-loader-board196.js"></script></body></html>`;
+  const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#080604"><title>KENJI ADMIN · MMD</title><link rel="icon" type="image/webp" href="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo.webp"><style>html,body{margin:0;min-height:100%;background:#080604;color:#fff0dc}#mmdKenjiAdminV1{min-height:100svh}</style><link rel="stylesheet" href="https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.css"></head><body><div id="mmdKenjiAdminV1" aria-live="polite"></div><script defer src="https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.js"></script></body></html>`;
   return new Response(req.method.toUpperCase() === "HEAD" ? null : html, {
     status: 200,
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
       "x-mmd-route-owner": "admin-worker",
-      "x-mmd-page": "kenji-knowledge-admin",
-      "x-mmd-origin": "admin-worker:kenji-knowledge-shell",
+      "x-mmd-page": "kenji-admin",
+      "x-mmd-origin": "admin-worker:kenji-admin-shell",
       "x-mmd-worker": "admin-worker",
       "x-mmd-route-canonical": KENJI_KNOWLEDGE_CANONICAL_PATH,
       "x-mmd-route-kind": routeKind,
@@ -1165,7 +1200,17 @@ function isKenjiKnowledgeShellPath(path) {
 }
 
 function isKenjiKnowledgeCapturedPath(path) {
-  return path.startsWith(KENJI_KNOWLEDGE_CANONICAL_PATH);
+  return path === KENJI_KNOWLEDGE_LEGACY_PATH || path.startsWith(KENJI_KNOWLEDGE_CANONICAL_PATH);
+}
+
+function redirectKenjiKnowledgeLegacy(req) {
+  const url = new URL(req.url);
+  url.pathname = KENJI_KNOWLEDGE_CANONICAL_PATH;
+  return new Response(null, { status: 308, headers: {
+    "cache-control": "no-store",
+    location: `${url.origin}${url.pathname}${url.search}`,
+    "x-mmd-route-canonical": `${url.pathname}${url.search}`,
+  }});
 }
 
 function isLegacySigilInternalAdminPath(path) {
@@ -1174,7 +1219,9 @@ function isLegacySigilInternalAdminPath(path) {
 
 function redirectLegacySigilInternalAdmin(req) {
   const url = new URL(req.url);
-  url.pathname = `${INTERNAL_ADMIN_PREFIX}${url.pathname.slice(SIGIL_INTERNAL_ADMIN_PREFIX.length)}`;
+  url.pathname = url.pathname === KENJI_KNOWLEDGE_LEGACY_SIGIL_PATH || url.pathname.startsWith(`${KENJI_KNOWLEDGE_LEGACY_SIGIL_PATH}/`)
+    ? `${KENJI_KNOWLEDGE_CANONICAL_PATH}${url.pathname.slice(KENJI_KNOWLEDGE_LEGACY_SIGIL_PATH.length)}`
+    : `${INTERNAL_ADMIN_PREFIX}${url.pathname.slice(SIGIL_INTERNAL_ADMIN_PREFIX.length)}`;
   const location = `${url.origin}${url.pathname}${url.search}`;
   return new Response(null, {
     status: 308,
@@ -4620,6 +4667,34 @@ async function searchCreateSessionModels(env, url) {
   return out;
 }
 
+
+async function listModelActivationCandidates(env, url) {
+  const q = str(url.searchParams.get("q") || url.searchParams.get("search") || "");
+  const folder = accessToken(url.searchParams.get("folder") || "");
+  const limit = clampInt(url.searchParams.get("limit") ?? 50, 1, 100, 50);
+  const allowedFolders = new Set([...PUBLIC_MODEL_FOLDERS, ...CANONICAL_PRIVATE_FOLDERS]);
+  if (folder && !allowedFolders.has(folder)) {
+    throw new CreateSessionAccessError("model_folder_invalid", "Folder is not a canonical Model folder.");
+  }
+  const modelsTable = env.AIRTABLE_TABLE_MODELS || "models";
+  const records = await airtableList(env, modelsTable, { q, limit: 100, matchFields: getModelSearchFields(env), fallbackMatchFields: MODEL_SAFE_SEARCH_FIELDS });
+  const items = [];
+  for (const record of records) {
+    // Activation selection requires affirmative canonical status. The legacy
+    // booking profile only excludes known blocked statuses and is not an
+    // approval check: blank, pending and unknown values must not pass here.
+    const status = record.fields?.status;
+    if (typeof status !== "string" || status.trim().toLowerCase() !== "active") continue;
+    const profile = modelAccessProfile(record.fields || {});
+    if (!profile.statusActive) continue;
+    const item = sanitizeCreateSessionModel(record, profile);
+    if (!item.model_name || (folder && !item.folders.includes(folder))) continue;
+    items.push({ model_record_id: item.model_id, working_name: item.model_name, model_lookup_key: item.model_lookup_key, folders: item.folders, status: item.status });
+    if (items.length >= limit) break;
+  }
+  return { ok: true, layer: "core", folder, items };
+}
+
 export {
   CreateSessionAccessError,
   PRIVATE_ACCESS_FOLDERS,
@@ -4631,6 +4706,7 @@ export {
   resolveCreateSessionModel,
   enforcePrivateCreateAccess,
   searchCreateSessionModels,
+  listModelActivationCandidates,
 };
 
 /* =========================
@@ -4787,3 +4863,5 @@ async function notifyJobCreated(env, data) {
     disable_web_page_preview: true,
   });
 }
+
+export { MmsPartnerAuthStore } from "./mms-partner-auth-store.js";

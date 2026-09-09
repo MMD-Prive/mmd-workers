@@ -1,0 +1,41 @@
+name: CARE BACK Trusted Booking Caller CI
+
+on:
+  pull_request:
+    paths:
+      - "member-pages-worker/src/care-back-trusted-booking-approval.js"
+      - "member-pages-worker/src/runtime-index.js"
+      - "member-pages-worker/test/care-back-trusted-booking-approval.test.mjs"
+      - "sigil-booking-worker/src/care-back-trusted-caller.js"
+      - "sigil-booking-worker/src/runtime-index.js"
+      - "sigil-booking-worker/test/care-back-trusted-caller.test.mjs"
+      - "sigil-booking-worker/wrangler.toml"
+      - ".github/workflows/care-back-trusted-caller-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Syntax
+        run: |
+          node --check member-pages-worker/src/care-back-trusted-booking-approval.js
+          node --check member-pages-worker/src/runtime-index.js
+          node --check sigil-booking-worker/src/care-back-trusted-caller.js
+          node --check sigil-booking-worker/src/runtime-index.js
+      - name: Trusted caller tests
+        run: |
+          node --experimental-global-webcrypto --test member-pages-worker/test/care-back-trusted-booking-approval.test.mjs
+          node --experimental-global-webcrypto --test sigil-booking-worker/test/care-back-trusted-caller.test.mjs
+      - name: Existing Coupon V2.2 regression
+        run: node --experimental-global-webcrypto --test member-pages-worker/test/care-back-claim-store.test.mjs
+      - name: Wrangler dry-run
+        if: matrix.node == 22
+        run: npx --yes wrangler@latest deploy --dry-run --config sigil-booking-worker/wrangler.toml --outdir /tmp/care-back-trusted-caller

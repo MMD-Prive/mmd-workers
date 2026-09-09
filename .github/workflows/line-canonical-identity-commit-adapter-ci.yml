@@ -1,0 +1,28 @@
+name: LINE Canonical Identity Commit Adapter CI
+
+on:
+  pull_request:
+    paths:
+      - "scripts/line-official-legacy/canonical-identity-commit-adapter.js"
+      - "scripts/line-official-legacy/canonical-identity-commit-adapter.test.js"
+      - "docs/architecture/LINE_CANONICAL_IDENTITY_COMMIT_ADAPTER_V1.md"
+      - ".github/workflows/line-canonical-identity-commit-adapter-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Syntax check
+        run: node --check scripts/line-official-legacy/canonical-identity-commit-adapter.js
+      - name: Unit tests
+        run: node --test scripts/line-official-legacy/canonical-identity-commit-adapter.test.js

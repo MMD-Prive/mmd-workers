@@ -1,0 +1,25 @@
+name = "model-console-worker"
+main = "src/index.js"
+compatibility_date = "2026-09-05"
+workers_dev = true
+
+[vars]
+APP_ENV = "development"
+ALLOWED_ORIGINS = "https://www.mmdbkk.com,https://mmdbkk.com,https://mmdprive.webflow.io"
+ADMIN_WORKER_BASE_URL = "https://admin-worker.malemodel-bkk.workers.dev"
+CHAT_WORKER_BASE_URL = ""
+PAYMENTS_WORKER_BASE_URL = ""
+TELEGRAM_WORKER_BASE_URL = ""
+EVENTS_WORKER_BASE_URL = ""
+REALTIME_WORKER_BASE_URL = ""
+IMMIGRATE_WORKER_BASE_URL = ""
+
+# Bind after creating the namespace:
+# [[kv_namespaces]]
+# binding = "MMD_MODEL_CONSOLE_MEMORY"
+# id = "<KV_NAMESPACE_ID>"
+
+# Secrets expected via `wrangler secret put`:
+# ADMIN_BEARER
+# CONFIRM_KEY
+# INTERNAL_TOKEN

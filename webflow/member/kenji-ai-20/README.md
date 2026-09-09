@@ -5,8 +5,14 @@ Member-facing Webflow asset for `/member/kenji-ai-20`.
 Canonical route meaning:
 
 - `/member/dashboard` is Member Home / Status Hub.
-- `/member/kenji-ai-20` is Kenji AI / member-facing concierge.
-- `/sigil/board` remains the internal system, admin, rules, and control layer.
+- `/member/kenji-ai-20` is Kenji AI 2.0 / member-facing concierge runtime.
+- `/internal/admin/kenji` is the canonical single-owner Kenji administration surface.
+- `/internal/admin/kenji?view=ai20` is the owner preview of the real member-facing Kenji AI 2.0 runtime.
+- `/internal/admin/kenji?view=knowledge` is the Knowledge owner view.
+- `/internal/admin/kenji?view=board` is the sanitized SIGIL Board owner view.
+- `/sigil/board` is legacy compatibility only and is not a second admin/control product.
+
+The customer/member route remains standalone and must never redirect customers into the internal admin namespace.
 
 ## Usage
 

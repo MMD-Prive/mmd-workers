@@ -1,21 +1,33 @@
 name = "mmd-auth-worker"
-main = "src/index.js"
+main = "src/my-mmd-line-identity-bridge.js"
 compatibility_date = "2026-01-20"
 
+# Narrow production ownership for the server-to-server My MMD operator contract.
+# Keep LIFF/member front-gate routes on member-dashboard-chat-worker.
+[[routes]]
+pattern = "mmdbkk.com/member/api/operator/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/api/operator/*"
+zone_name = "mmdbkk.com"
+
+[triggers]
+crons = ["7 * * * *"]
+
 [vars]
-# Comma-separated origins that may call the auth API.
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://mmdprive.webflow.io,https://mmdprive.com"
 WEB_BASE_URL = "https://mmdbkk.com"
 COOKIE_DOMAIN = ".mmdbkk.com"
-
 AUTH_COOKIE_NAME = "mmd_auth"
 AUTH_SESSION_TTL_DAYS = "30"
 AUTH_CODE_TTL_MINUTES = "10"
 AUTH_CODE_LENGTH = "6"
 AUTH_MAX_CODE_ATTEMPTS = "5"
+LIFECYCLE_RECONCILIATION_ENABLED = "true"
+LIFECYCLE_RECONCILIATION_MAX_MEMBERS = "500"
+PAYMENT_HYPE_ALERT_REQUIRED = "true"
 
-# Airtable table names in the existing MMD Commerce Operating System base.
-# You can replace these with Airtable table IDs later.
 AIRTABLE_TABLE_MEMBERS = "Members"
 AIRTABLE_TABLE_MEMBER_PACKAGES = "member_packages"
 AIRTABLE_TABLE_PACKAGES = "packages"
@@ -28,8 +40,8 @@ AIRTABLE_TABLE_AUTH_IDENTITIES = "MMD — Auth Identities"
 AIRTABLE_TABLE_AUTH_LOGIN_CODES = "MMD — Auth Login Codes"
 AIRTABLE_TABLE_AUTH_SESSIONS = "MMD — Auth Sessions"
 
-# Read-only LINE subject resolver mapping. This is used only by the internal
-# MEMBER_STATUS_RESOLVER service-binding contract.
+# Members summary is compatibility/readback only. Entitlement decisions come from
+# MMD — Member Entitlements through my_mmd_entitlement_resolver_v1.
 AIRTABLE_MEMBERS_LINE_USER_ID_FIELD = "line_id"
 AIRTABLE_MEMBERS_DISPLAY_NAME_FIELD = "Full Name (Display)"
 AIRTABLE_MEMBERS_NAME_FIELD = "Full Name"
@@ -41,13 +53,14 @@ AIRTABLE_MEMBERS_EXPIRY_FIELD = "Membership Expiry"
 AIRTABLE_MEMBERS_END_DATE_FIELD = "Membership End Date"
 AIRTABLE_MEMBERS_EXPIRE_AT_FIELD = "Expire At"
 
-# Customer-safe LIFF history readback. The API enforces a one-calendar-year
-# window and never returns payment details, notes, risk, contact data, or raw IDs.
+AIRTABLE_CLIENTS_LINE_USER_ID_FIELD = "line_user_id"
+AIRTABLE_CLIENTS_EMAIL_FIELDS = "Contact Email,email"
 AIRTABLE_SESSIONS_LINE_USER_ID_FIELD = "line_user_id"
 AIRTABLE_SESSIONS_EMAIL_FIELD = "email"
 AIRTABLE_SESSIONS_HISTORY_DATE_FIELD = "job_date"
 AIRTABLE_SESSIONS_STATUS_FIELD = "Session Status"
 AIRTABLE_SESSIONS_SERVICE_TYPE_FIELD = "job_type"
+AIRTABLE_SESSIONS_AMOUNT_DUE_FIELD = "customer_amount_due_thb"
 AIRTABLE_MEMBER_PACKAGES_EMAIL_FIELD = "member_email"
 AIRTABLE_MEMBER_PACKAGES_CREATED_FIELD = "created_at"
 AIRTABLE_POINTS_EMAIL_FIELD = "member_email"
@@ -60,26 +73,19 @@ AIRTABLE_PAYMENTS_DATE_FIELD = "Payment Date"
 AIRTABLE_PAYMENTS_CREATED_FIELD = "Created At"
 AIRTABLE_PAYMENTS_UPDATED_FIELD = "Updated At"
 
-# MMD — Member Entitlements mapping.
-# The current table does not expose the old auth MVP member_id field.
-# Entitlement reads are fail-safe: if the identity/status fields are missing or unmapped,
-# /v1/auth/me returns an empty grants array instead of failing login/gate checks.
 AIRTABLE_ENTITLEMENT_MEMBERSTACK_ID_FIELD = "memberstack_id"
 AIRTABLE_ENTITLEMENT_MEMBER_EMAIL_FIELD = "member_email"
 AIRTABLE_ENTITLEMENT_TELEGRAM_USER_ID_FIELD = "telegram_user_id"
 AIRTABLE_ENTITLEMENT_TELEGRAM_USERNAME_FIELD = "telegram_username"
 AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD = "line_user_id"
 AIRTABLE_ENTITLEMENT_ACCESS_STATUS_FIELDS = "access_status"
-AIRTABLE_ENTITLEMENT_MEMBER_STATUS_FIELDS = "member_status"
+AIRTABLE_ENTITLEMENT_MEMBER_STATUS_FIELDS = "member_lifecycle_status,member_status"
 AIRTABLE_ENTITLEMENT_ACTIVE_VALUES = "active,grace"
-AIRTABLE_ENTITLEMENT_BLOCKED_MEMBER_STATUS_VALUES = "inactive,blocked"
-AIRTABLE_ENTITLEMENT_RESOURCE_FIELDS = "resource_key,access_key,package_code"
-AIRTABLE_ENTITLEMENT_TIER_FIELDS = "min_tier,tier,package_code"
+AIRTABLE_ENTITLEMENT_BLOCKED_MEMBER_STATUS_VALUES = "inactive,blocked,suspended,revoked"
+AIRTABLE_ENTITLEMENT_RESOURCE_FIELDS = "resource_key,access_key,capability,package_code"
+AIRTABLE_ENTITLEMENT_TIER_FIELDS = "capability,min_tier,tier,package_code"
 AIRTABLE_ENTITLEMENT_EXPIRES_AT_FIELDS = "expire_at"
 
-# System — Access Log mapping.
-# Result is normalized to success/fail. Other log fields are optional and should be
-# mapped here only after the corresponding Airtable fields exist.
 AIRTABLE_ACCESS_LOG_EVENT_ID_FIELD = "Event ID"
 AIRTABLE_ACCESS_LOG_ACTION_FIELD = "Action"
 AIRTABLE_ACCESS_LOG_RESULT_FIELD = "Result"
@@ -89,17 +95,72 @@ AIRTABLE_ACCESS_LOG_IP_HASH_FIELD = ""
 AIRTABLE_ACCESS_LOG_USER_AGENT_FIELD = ""
 AIRTABLE_ACCESS_LOG_CREATED_AT_FIELD = ""
 
-# Default paths used by Webflow pages.
 LOGIN_PATH = "/login"
 DENIED_PATH = "/membership/upgrade-required"
 EXPIRED_PATH = "/membership/renewal"
-
-# DEV ONLY. Set to "true" only while testing so the API returns the login code.
 MMD_AUTH_DEV_MODE = "false"
+MEMBER_STATUS_AIRTABLE_TIMEOUT_MS = "10000"
 
-# Required secrets to set with wrangler secret put:
+# Required secrets:
 # AIRTABLE_API_KEY
 # AIRTABLE_BASE_ID
 # AUTH_HMAC_SECRET
 # ADMIN_BEARER
 # MEMBER_STATUS_RESOLVER_SECRET
+# AUTH_RECONCILE_SECRET
+# AUTH_SERVICE_AUTH_TO_TELEGRAM
+# AUTH_SERVICE_AUTH_TO_MEMBER_PAGES
+# AUTH_SERVICE_LOVABLE_TO_AUTH
+
+[[services]]
+binding = "TELEGRAM_ACCESS_RECONCILER"
+service = "telegram-worker"
+
+[[services]]
+binding = "DRIVE_ACCESS_RECONCILER"
+service = "member-pages-worker"
+
+[env.staging]
+name = "mmd-auth-worker-staging"
+workers_dev = false
+
+[env.staging.vars]
+AIRTABLE_API_KEY = "synthetic-staging-only"
+AIRTABLE_BASE_ID = "app_auth_staging_fixture"
+AIRTABLE_TABLE_MEMBERS = "Members"
+AIRTABLE_TABLE_MEMBER_PACKAGES = "member_packages"
+AIRTABLE_TABLE_PAYMENTS = "Payments"
+AIRTABLE_TABLE_SESSIONS = "Sessions"
+AIRTABLE_TABLE_POINTS_LEDGER = "MMD — Points Ledger"
+AIRTABLE_TABLE_MEMBER_ENTITLEMENTS = "MMD — Member Entitlements"
+AIRTABLE_MEMBERS_LINE_USER_ID_FIELD = "line_id"
+AIRTABLE_MEMBERS_DISPLAY_NAME_FIELD = "Full Name (Display)"
+AIRTABLE_MEMBERS_EMAIL_FIELD = "Contact Email"
+AIRTABLE_CLIENTS_LINE_USER_ID_FIELD = "line_user_id"
+AIRTABLE_CLIENTS_EMAIL_FIELDS = "Contact Email,email"
+AIRTABLE_SESSIONS_LINE_USER_ID_FIELD = "line_user_id"
+AIRTABLE_SESSIONS_EMAIL_FIELD = "email"
+AIRTABLE_SESSIONS_HISTORY_DATE_FIELD = "job_date"
+AIRTABLE_SESSIONS_STATUS_FIELD = "Session Status"
+AIRTABLE_SESSIONS_SERVICE_TYPE_FIELD = "job_type"
+AIRTABLE_SESSIONS_AMOUNT_DUE_FIELD = "customer_amount_due_thb"
+AIRTABLE_MEMBER_PACKAGES_EMAIL_FIELD = "member_email"
+AIRTABLE_MEMBER_PACKAGES_CREATED_FIELD = "created_at"
+AIRTABLE_POINTS_EMAIL_FIELD = "member_email"
+AIRTABLE_POINTS_HISTORY_DATE_FIELD = "created_at"
+AIRTABLE_PAYMENTS_EMAIL_FIELD = "Member Email"
+AIRTABLE_PAYMENTS_STATUS_FIELD = "Payment Status"
+AIRTABLE_PAYMENTS_VERIFICATION_FIELD = "Verification Status"
+AIRTABLE_PAYMENTS_DATE_FIELD = "Payment Date"
+AIRTABLE_PAYMENTS_CREATED_FIELD = "Created At"
+AIRTABLE_PAYMENTS_UPDATED_FIELD = "Updated At"
+AIRTABLE_ENTITLEMENT_MEMBER_EMAIL_FIELD = "member_email"
+AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD = "line_user_id"
+AIRTABLE_ENTITLEMENT_MEMBER_STATUS_FIELDS = "member_lifecycle_status,member_status"
+MEMBER_STATUS_AIRTABLE_TIMEOUT_MS = "10000"
+LIFECYCLE_RECONCILIATION_ENABLED = "false"
+PAYMENT_HYPE_ALERT_REQUIRED = "false"
+
+[[env.staging.services]]
+binding = "AIRTABLE_HTTP"
+service = "auth-staging-airtable-fixtures-worker-staging"

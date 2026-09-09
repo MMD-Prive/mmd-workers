@@ -24,6 +24,8 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.MMS_CLOUDFLARE_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
       AIRTABLE_API_TOKEN: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.MMS_TELEGRAM_BOT_TOKEN || secrets.TELEGRAM_BOT_TOKEN }}
+      MMS_TELEGRAM_CHAT_ID: ${{ secrets.MMS_TELEGRAM_CHAT_ID || secrets.TELEGRAM_CHAT_ID }}
       NO_COLOR: "1"
       WRANGLER_SEND_METRICS: "false"
 
@@ -55,24 +57,60 @@ jobs:
       - name: Test MMS contracts and privacy boundary
         run: npm test --prefix mms-worker
 
-      - name: Validate route-free production boundary
+      - name: Validate route-free production and dispatch boundary
         shell: bash
         run: |
           node <<'NODE'
           const fs = require("node:fs");
           const config = JSON.parse(fs.readFileSync("mms-worker/wrangler.jsonc", "utf8"));
           if (config.name !== "mms-worker") throw new Error("mms-worker name is required");
+          if (config.main !== "src/runtime-index-with-dispatch.js") throw new Error("real MY MMS dispatch entrypoint is required");
           if (config.workers_dev !== true) throw new Error("workers.dev endpoint must remain enabled");
           if (config.preview_urls !== false) throw new Error("preview URLs must remain disabled");
-          if (Array.isArray(config.routes) && config.routes.length) throw new Error("custom routes are forbidden in v1");
+          if (Array.isArray(config.routes) && config.routes.length) throw new Error("custom routes are forbidden in mms-worker; public routing belongs to the front gate");
           if (config.vars?.MMS_INTERNAL_HOST !== "mms.internal") throw new Error("service-binding internal host is required");
+          if (config.vars?.MMS_THERAPIST_LINE_CHANNEL_ID !== "2011425652") throw new Error("published MMS Therapist LINE Channel ID is required");
+          if (config.vars?.MMS_THERAPIST_LIFF_ID !== "2011425652-YqK1F6y8") throw new Error("published MMS Therapist LIFF ID is required");
+          if (config.vars?.AIRTABLE_JOBS_TABLE_ID !== "tbl0p7UdOH9BjzmFX") throw new Error("dedicated MMS Jobs table is required");
+          if (config.vars?.AIRTABLE_OFFERS_TABLE_ID !== "tblrSS5OegYNnGiEU") throw new Error("dedicated MMS Job Offers table is required");
+          if (config.vars?.AIRTABLE_JOBS_TABLE_ID === "tbl0jxIjN8QYwGABX") throw new Error("generic MMD Jobs table must never back MY MMS dispatch");
           if (!config.r2_buckets?.some((binding) => binding.binding === "MMS_PRIVATE_UPLOADS")) throw new Error("private R2 binding is required");
-          if (!config.durable_objects?.bindings?.some((binding) => binding.name === "MMS_COORDINATOR")) throw new Error("coordinator Durable Object is required");
+          if (!config.durable_objects?.bindings?.some((binding) => binding.name === "MMS_COORDINATOR" && binding.class_name === "MmsCoordinator")) throw new Error("core coordinator Durable Object is required");
+          if (!config.durable_objects?.bindings?.some((binding) => binding.name === "MMS_DISPATCH_COORDINATOR" && binding.class_name === "MmsDispatchCoordinator")) throw new Error("MY MMS dispatch coordinator Durable Object is required");
+          if (!config.migrations?.some((migration) => migration.tag === "v2-my-mms-dispatch" && migration.new_sqlite_classes?.includes("MmsDispatchCoordinator"))) throw new Error("MY MMS dispatch Durable Object migration is required");
           NODE
 
       - name: Validate Cloudflare bundle
         working-directory: mms-worker
         run: npx wrangler deploy --dry-run
+
+      - name: Validate Airtable production access
+        shell: bash
+        run: |
+          node <<'NODE'
+          const token = String(process.env.AIRTABLE_API_TOKEN || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
+          if (!token) throw new Error("MMS Airtable runtime token is missing");
+          const base = "appsV1ILPRfIjkaYg";
+          const tables = [
+            ["Applications", "tblogwnxtIG19I2WB"],
+            ["Sensitive Profiles", "tblihsaMw06mkjaat"],
+            ["Therapists", "tblTC9ZHQa4hAUwLu"],
+            ["Prebookings", "tblnSw3MY79MwWONe"],
+            ["MMS Jobs", "tbl0p7UdOH9BjzmFX"],
+            ["MMS Job Offers", "tblrSS5OegYNnGiEU"],
+          ];
+          for (const [name, table] of tables) {
+            const response = await fetch(`https://api.airtable.com/v0/${base}/${table}?maxRecords=1`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!response.ok) {
+              const payload = await response.json().catch(() => ({}));
+              const type = String(payload?.error?.type || `HTTP_${response.status}`).slice(0, 120);
+              throw new Error(`MMS Airtable preflight failed for ${name} (${table}): ${type}`);
+            }
+          }
+          console.log("MMS Airtable read preflight passed for applications, therapists, prebookings, dispatch jobs, and dispatch offers");
+          NODE
 
       - name: Ensure private MMS R2 bucket exists
         working-directory: mms-worker
@@ -83,22 +121,46 @@ jobs:
             npx wrangler r2 bucket create mms-private-uploads
           fi
 
-      - name: Prepare optional Airtable secret
-        id: airtable
+      - name: Ensure persistent Therapist auth secrets
+        id: therapist-secrets
+        working-directory: mms-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_list="$(npx wrangler secret list)"
+          ensure_secret() {
+            name="$1"
+            if printf '%s\n' "$secret_list" | grep -Fq "$name"; then
+              echo "$name already configured"
+              return
+            fi
+            node -e 'process.stdout.write(require("node:crypto").randomBytes(48).toString("base64url"))' | npx wrangler secret put "$name"
+            echo "$name created"
+          }
+          ensure_secret MMS_THERAPIST_SESSION_SECRET
+          ensure_secret MMS_THERAPIST_IDENTITY_PEPPER
+          printf 'configured=true\n' >> "$GITHUB_OUTPUT"
+
+      - name: Prepare optional runtime secrets
+        id: runtime-secrets
         shell: bash
         run: |
           node <<'NODE'
           const fs = require("node:fs");
-          const token = String(process.env.AIRTABLE_API_TOKEN || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
+          const clean = (value) => String(value || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
+          const token = clean(process.env.AIRTABLE_API_TOKEN);
+          const telegramToken = clean(process.env.TELEGRAM_BOT_TOKEN);
+          const telegramChatId = clean(process.env.MMS_TELEGRAM_CHAT_ID);
           const path = process.env.RUNNER_TEMP + "/mms-worker.env";
-          if (token) {
-            console.log(`::add-mask::${token}`);
-            fs.writeFileSync(path, `AIRTABLE_API_TOKEN=${token}\n`, { mode: 0o600 });
-            fs.appendFileSync(process.env.GITHUB_OUTPUT, "configured=true\n");
-          } else {
-            fs.writeFileSync(path, "", { mode: 0o600 });
-            fs.appendFileSync(process.env.GITHUB_OUTPUT, "configured=false\n");
+          const lines = [];
+          if (token) { console.log(`::add-mask::${token}`); lines.push(`AIRTABLE_API_TOKEN=${token}`); }
+          if (telegramToken && telegramChatId) {
+            console.log(`::add-mask::${telegramToken}`);
+            console.log(`::add-mask::${telegramChatId}`);
+            lines.push(`TELEGRAM_BOT_TOKEN=${telegramToken}`, `MMS_TELEGRAM_CHAT_ID=${telegramChatId}`);
           }
+          fs.writeFileSync(path, lines.length ? `${lines.join("\n")}\n` : "", { mode: 0o600 });
+          fs.appendFileSync(process.env.GITHUB_STEP_OUTPUT || process.env.GITHUB_OUTPUT, `configured=${lines.length ? "true" : "false"}\n`);
           NODE
 
       - name: Deploy mms-worker
@@ -108,7 +170,7 @@ jobs:
         run: |
           set -euo pipefail
           args=(deploy --keep-vars)
-          if [ "${{ steps.airtable.outputs.configured }}" = "true" ]; then
+          if [ "${{ steps.runtime-secrets.outputs.configured }}" = "true" ]; then
             args+=(--secrets-file "$RUNNER_TEMP/mms-worker.env")
           fi
           npx wrangler "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/mms-worker-deploy.log"
@@ -116,7 +178,7 @@ jobs:
           if [ -z "$url" ]; then url="https://mms-worker.malemodel-bkk.workers.dev"; fi
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
-      - name: Verify production health and catalog
+      - name: Verify production health, catalog, and dispatch fail-closed boundary
         shell: bash
         run: |
           set -euo pipefail
@@ -128,20 +190,35 @@ jobs:
           done
           test "${code:-}" = "200"
           curl --fail --silent --show-error "$url/mms/api/catalog" > "$RUNNER_TEMP/mms-catalog.json"
+
+          dispatch_code="$(curl --silent --show-error --output "$RUNNER_TEMP/mms-dispatch-unauth.json" --write-out '%{http_code}' "$url/male-massage/therapists/api/app/offers" || true)"
+          test "$dispatch_code" = "401"
+
           node <<'NODE'
           const fs = require("node:fs");
           const health = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/mms-health.json", "utf8"));
           const catalog = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/mms-catalog.json", "utf8"));
+          const unauth = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/mms-dispatch-unauth.json", "utf8"));
           if (!health.ok || health.worker !== "mms-worker") throw new Error("mms-worker health identity failed");
-          if (!health.bindings?.coordinator || !health.bindings?.private_uploads) throw new Error("required production bindings are missing");
+          if (!health.bindings?.coordinator || !health.bindings?.dispatch_coordinator || !health.bindings?.private_uploads) throw new Error("required production Durable Object/R2 bindings are missing");
+          if (!health.bindings?.dispatch_jobs || !health.bindings?.dispatch_offers) throw new Error("dispatch table bindings are missing");
           if (!catalog.ok || catalog.data?.skills?.length !== 8) throw new Error("MMS skill catalog failed");
+          if (unauth?.ok !== false || unauth?.error?.code !== "THERAPIST_SESSION_REQUIRED") throw new Error(`dispatch fail-closed smoke failed: ${JSON.stringify(unauth)}`);
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
             "## mms-worker live",
             "",
             `- URL: ${{ steps.deploy.outputs.url }}`,
-            `- Durable Object: ${health.bindings.coordinator ? "ready" : "missing"}`,
+            `- Core Durable Object: ${health.bindings.coordinator ? "ready" : "missing"}`,
+            `- Dispatch Durable Object: ${health.bindings.dispatch_coordinator ? "ready" : "missing"}`,
+            `- MMS Jobs table: ${health.bindings.dispatch_jobs ? "ready" : "missing"}`,
+            `- MMS Job Offers table: ${health.bindings.dispatch_offers ? "ready" : "missing"}`,
             `- Private R2: ${health.bindings.private_uploads ? "ready" : "missing"}`,
             `- Airtable runtime secret: ${health.bindings.airtable ? "ready" : "pending"}`,
+            `- Telegram notification: ${health.bindings.telegram ? "ready" : "pending"}`,
+            `- Therapist LINE Channel ID: 2011425652`,
+            `- Therapist LIFF ID: 2011425652-YqK1F6y8`,
+            `- Therapist auth secrets: ${{ steps.therapist-secrets.outputs.configured }}`,
+            `- Dispatch unauthenticated boundary: 401 THERAPIST_SESSION_REQUIRED`,
             `- Skill catalog: ${catalog.data.skills.length}/8`,
             "",
           ].join("\n"));

@@ -1,0 +1,38 @@
+name: Model Reconfirm CI
+
+on:
+  pull_request:
+    paths:
+      - "admin-worker/src/model-reconfirm-runtime.js"
+      - "admin-worker/src/studio-telegram-worker.js"
+      - "admin-worker/model-reconfirm-runtime.test.mjs"
+      - "events-worker/src/model-eta-wrapper.js"
+      - "docs/architecture/MODEL_PREJOB_RECONFIRM_V1.md"
+      - ".github/workflows/model-reconfirm-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "admin-worker/src/model-reconfirm-runtime.js"
+      - "admin-worker/src/studio-telegram-worker.js"
+      - "events-worker/src/model-eta-wrapper.js"
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax check
+        run: |
+          node --check admin-worker/src/model-reconfirm-runtime.js
+          node --check admin-worker/src/studio-telegram-worker.js
+          node --check events-worker/src/model-eta-wrapper.js
+      - name: Reconfirm contract tests
+        run: node --test admin-worker/model-reconfirm-runtime.test.mjs
+      - name: Admin Worker dry run
+        run: npx wrangler deploy --dry-run --config admin-worker/wrangler.toml
+      - name: Events Worker dry run
+        run: npx wrangler deploy --dry-run --config events-worker/wrangler.toml

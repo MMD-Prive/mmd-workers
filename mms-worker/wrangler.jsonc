@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "mms-worker",
-  "main": "src/runtime-index.js",
+  "main": "src/runtime-index-with-dispatch.js",
   "compatibility_date": "2026-08-21",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
@@ -15,12 +15,22 @@
     "MMS_INTERNAL_HOST": "mms.internal",
     "MMS_PUBLIC_BASE_URL": "https://mms-worker.malemodel-bkk.workers.dev",
     "MMS_UPLOAD_MAX_BYTES": "10485760",
+    "MMS_THERAPIST_AUTH_ENABLED": "true",
+    "MMS_THERAPIST_LINE_CHANNEL_ID": "2011425652",
+    "MMS_THERAPIST_LIFF_ID": "2011425652-YqK1F6y8",
+    "MMS_THERAPIST_LOGIN_URL": "https://www.mmdbkk.com/male-massage/therapists/login",
+    "MMS_DISPATCH_DEFAULT_TTL_SECONDS": "300",
+    "MMS_DISPATCH_DEFAULT_MAX_OFFERS": "5",
     "ALLOWED_ORIGINS": "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io",
     "AIRTABLE_BASE_ID": "appsV1ILPRfIjkaYg",
     "AIRTABLE_APPLICATIONS_TABLE_ID": "tblogwnxtIG19I2WB",
     "AIRTABLE_THERAPISTS_TABLE_ID": "tblTC9ZHQa4hAUwLu",
+    "AIRTABLE_THERAPIST_ROUTES_TABLE_ID": "tblpk4LGxse2QNcHz",
     "AIRTABLE_PREBOOKINGS_TABLE_ID": "tblnSw3MY79MwWONe",
-    "AIRTABLE_SENSITIVE_PROFILES_TABLE_ID": "tblihsaMw06mkjaat"
+    "AIRTABLE_SENSITIVE_PROFILES_TABLE_ID": "tblihsaMw06mkjaat",
+    "AIRTABLE_JOBS_TABLE_ID": "tbl0p7UdOH9BjzmFX",
+    "AIRTABLE_OFFERS_TABLE_ID": "tblrSS5OegYNnGiEU",
+    "AIRTABLE_SERVICE_ZONES_TABLE_ID": "tbl6VODlZSC0vJgJD"
   },
   "r2_buckets": [
     {
@@ -33,6 +43,10 @@
       {
         "name": "MMS_COORDINATOR",
         "class_name": "MmsCoordinator"
+      },
+      {
+        "name": "MMS_DISPATCH_COORDINATOR",
+        "class_name": "MmsDispatchCoordinator"
       }
     ]
   },
@@ -40,6 +54,10 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["MmsCoordinator"]
+    },
+    {
+      "tag": "v2-my-mms-dispatch",
+      "new_sqlite_classes": ["MmsDispatchCoordinator"]
     }
   ]
 }

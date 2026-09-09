@@ -48,6 +48,7 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /credentials:\s*"same-origin"/);
     assert.match(html, /window\.liff\.getIDToken\(\)/);
     assert.match(html, /\/member\/api\/liff\/care-back\/state/);
+    assert.match(html, /\/member\/api\/liff\/care-back\/wallet/);
     assert.match(html, /\/member\/api\/liff\/care-back\/wish/);
     assert.doesNotMatch(html, /line_user_id|lineUserId|decodedIDToken|getProfile\(/);
     assert.doesNotMatch(html, /must-not-render-secret|must-not-render-airtable-key/);
@@ -120,15 +121,15 @@ describe("same-site /member/liff shell", () => {
     assert.doesNotMatch(html, /payment_ref|receipt_url|member_email|Verification Status/);
   });
 
-  it("renders the Customer 360 six-section mobile shell with TH, EN, and ZH fallbacks", async () => {
+  it("renders the Customer 360 shell plus Coupon Wallet with TH, EN, and ZH fallbacks", async () => {
     const response = await shell("/member/liff?intent=status&view=jobs&lang=th");
     const html = await response.text();
 
     assert.equal(response.status, 200);
-    for (const section of ["home", "points", "package", "jobs", "history-panel", "care"]) {
+    for (const section of ["home", "points", "package", "jobs", "history-panel", "care", "coupons"]) {
       assert.match(html, new RegExp(`id="${section}"`));
     }
-    for (const view of ["home", "points", "package", "jobs", "history", "care"]) {
+    for (const view of ["home", "points", "package", "jobs", "history", "care", "coupons"]) {
       assert.match(html, new RegExp(`data-view="${view}"`));
     }
     assert.match(html, /scroll-snap-type:x mandatory/);

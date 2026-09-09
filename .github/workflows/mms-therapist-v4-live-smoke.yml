@@ -1,0 +1,102 @@
+name: MMS Therapist Application v4 Live Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "mms-worker/**"
+      - "webflow/mms/apply-therapist/**"
+      - ".github/workflows/mms-therapist-v4-live-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Submit safe synthetic v4 applicant after deployment is ready
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const runId = `${process.env.GITHUB_RUN_ID || Date.now()}-${process.env.GITHUB_RUN_ATTEMPT || "1"}`;
+          const origin = "https://www.mmdbkk.com";
+          const payload = {
+            idempotency_key: `mms-v4-smoke-${runId}`,
+            applicant_name: `MMS V4 SMOKE ${runId}`,
+            nickname: "SMOKE",
+            phone: "0990000000",
+            age: 28,
+            height_cm: 180,
+            weight_kg: 75,
+            home_province: "Bangkok",
+            residence_province: "Bangkok",
+            residence_area: "Ratchada - synthetic smoke",
+            gender_identity: "male",
+            customer_gender_scope: "both",
+            skills: ["aroma_therapy_oil"],
+            experience_years: 0,
+            experience_months: 0,
+            strengths: "Synthetic production smoke only",
+            has_massage_experience: false,
+            professional_massage_experience: false,
+            experience_background: "no_experience",
+            worked_at_spa_before: false,
+            worked_independently_before: false,
+            partner_present_experience: false,
+            work_preference: "mms_mobile_online",
+            languages: ["th"],
+            availability_summary: ["weekend_evening"],
+            lead_time_preference: "one_day",
+            transport_modes: ["public_transit"],
+            preferred_contact: "phone",
+            preferred_contact_time: "18:00-21:00",
+            workshop_interest: "ready",
+            motivation: "Synthetic production smoke only",
+            current_profession: "Synthetic test applicant",
+            qualification_note: "",
+            work_base_area: "Bangkok",
+            mobility_scope: "local",
+            coverage_area_note: "",
+            general_consent: true,
+            language: "th"
+          };
+
+          let body = null;
+          let status = 0;
+          for (let attempt = 1; attempt <= 12; attempt += 1) {
+            const response = await fetch("https://mms-worker.malemodel-bkk.workers.dev/mms/api/applications", {
+              method: "POST",
+              headers: { "content-type": "application/json", origin },
+              body: JSON.stringify(payload)
+            });
+            status = response.status;
+            body = await response.json().catch(() => ({}));
+            console.log(`MMS v4 readiness attempt ${attempt}:`, status, body?.error?.code || body?.status || "unknown");
+            if (response.ok && body.ok === true) break;
+            if (attempt < 12) await new Promise((resolve) => setTimeout(resolve, 10000));
+          }
+
+          console.log("MMS v4 result:", JSON.stringify({
+            ok: body?.ok,
+            application_id: body?.application_id,
+            status: body?.status,
+            storage: body?.storage,
+            token_present: Boolean(body?.application_token)
+          }));
+          if (!body?.ok) process.exit(1);
+          if (!/^mmsapp_[a-f0-9]{24}$/.test(String(body.application_id || ""))) process.exit(2);
+          if (body.storage?.airtable !== "synced") process.exit(3);
+          if (body.storage?.telegram !== "sent") process.exit(4);
+
+          const review = `https://www.mmdbkk.com/internal/admin/mms?tab=applications&application_id=${encodeURIComponent(body.application_id)}`;
+          const gate = await fetch(review, { redirect: "manual" });
+          const location = gate.headers.get("location") || "";
+          console.log("Review gate:", gate.status, location);
+          if (![302, 303, 307, 308].includes(gate.status)) process.exit(5);
+          if (!location.includes(encodeURIComponent(`/internal/admin/mms?tab=applications&application_id=${body.application_id}`))) process.exit(6);
+          NODE
