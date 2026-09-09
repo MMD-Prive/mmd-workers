@@ -2,6 +2,7 @@ import runtime from "./runtime-index-with-application-v4.js";
 import { maybeHandleMyMmsDispatch } from "./my-mms-dispatch-runtime.mjs";
 import { maybeHandleMmsServiceZones } from "./service-zones-runtime.mjs";
 import { canonicalZoneErrorResponse, maybeHandleCanonicalZoneBooking } from "./canonical-zone-booking-runtime.mjs";
+import { canonicalZoneApplicationErrorResponse, maybeHandleCanonicalZoneApplication } from "./canonical-zone-application-runtime.mjs";
 export { MmsCoordinator } from "./runtime-index-with-application-v4.js";
 export { MmsDispatchCoordinator } from "./my-mms-dispatch-runtime.mjs";
 
@@ -87,6 +88,19 @@ export default {
   async fetch(request, env, ctx) {
     const serviceZoneResponse = await maybeHandleMmsServiceZones(request, env);
     if (serviceZoneResponse) return serviceZoneResponse;
+
+    try {
+      const canonicalApplicationResponse = await maybeHandleCanonicalZoneApplication(request, env, ctx, runtime);
+      if (canonicalApplicationResponse) return canonicalApplicationResponse;
+    } catch (error) {
+      console.error(JSON.stringify({
+        event: "mms_canonical_zone_application_error",
+        path: new URL(request.url).pathname,
+        method: request.method,
+        code: error?.code || error?.message || "APPLICATION_SERVICE_ZONE_UNAVAILABLE",
+      }));
+      return canonicalZoneApplicationErrorResponse(error);
+    }
 
     try {
       const canonicalZoneResponse = await maybeHandleCanonicalZoneBooking(request, env);
