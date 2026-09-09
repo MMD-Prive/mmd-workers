@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - "webflow/mms/apply-therapist/apply-therapist.js"
+      - "webflow/mms/apply-therapist/apply-therapist-service-zones.js"
       - ".github/workflows/deploy-mms-therapist-application-assets.yml"
 
 concurrency:
@@ -28,26 +29,35 @@ jobs:
       ASSET_PREFIX: webflow/mms/apply-therapist
       LIVE_BASE: https://models.mmdbkk.com/webflow/mms/apply-therapist
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Validate v4 application runtime
+      - name: Validate application runtimes
         shell: bash
         run: |
           set -euo pipefail
           test -s webflow/mms/apply-therapist/apply-therapist.js
+          test -s webflow/mms/apply-therapist/apply-therapist-service-zones.js
           node --check webflow/mms/apply-therapist/apply-therapist.js
-          grep -q 'mms_therapist_application_v4' webflow/mms/apply-therapist/apply-therapist.js || true
+          node --check webflow/mms/apply-therapist/apply-therapist-service-zones.js
           grep -q 'additional_photo' webflow/mms/apply-therapist/apply-therapist.js
           grep -q 'profile_photo' webflow/mms/apply-therapist/apply-therapist.js
           grep -q 'experience_background' webflow/mms/apply-therapist/apply-therapist.js
           grep -q 'sexual_orientation' webflow/mms/apply-therapist/apply-therapist.js
+          grep -q 'base_service_zone_code' webflow/mms/apply-therapist/apply-therapist-service-zones.js
+          grep -q 'coverage_service_zone_codes' webflow/mms/apply-therapist/apply-therapist-service-zones.js
+          grep -q '/mms/api/service-zones' webflow/mms/apply-therapist/apply-therapist-service-zones.js
 
-      - name: Upload runtime to R2
+      - name: Upload runtimes to R2
         shell: bash
         run: |
           set -euo pipefail
           npx --yes wrangler@4 r2 object put "$R2_BUCKET/$ASSET_PREFIX/apply-therapist-v4.js" \
             --file webflow/mms/apply-therapist/apply-therapist.js \
+            --content-type 'application/javascript; charset=utf-8' \
+            --cache-control 'no-store, no-cache, max-age=0, must-revalidate' \
+            --remote --force
+          npx --yes wrangler@4 r2 object put "$R2_BUCKET/$ASSET_PREFIX/apply-therapist-service-zones.js" \
+            --file webflow/mms/apply-therapist/apply-therapist-service-zones.js \
             --content-type 'application/javascript; charset=utf-8' \
             --cache-control 'no-store, no-cache, max-age=0, must-revalidate' \
             --remote --force
@@ -57,9 +67,11 @@ jobs:
         run: |
           set -euo pipefail
           npx --yes wrangler@4 r2 object get "$R2_BUCKET/$ASSET_PREFIX/apply-therapist-v4.js" --file /tmp/apply-therapist-v4.js --remote
+          npx --yes wrangler@4 r2 object get "$R2_BUCKET/$ASSET_PREFIX/apply-therapist-service-zones.js" --file /tmp/apply-therapist-service-zones.js --remote
           cmp webflow/mms/apply-therapist/apply-therapist.js /tmp/apply-therapist-v4.js
+          cmp webflow/mms/apply-therapist/apply-therapist-service-zones.js /tmp/apply-therapist-service-zones.js
 
-      - name: Purge CDN URL
+      - name: Purge CDN URLs
         shell: bash
         run: |
           set -euo pipefail
@@ -67,16 +79,21 @@ jobs:
           http_code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS -o "$response_file" -w "%{http_code}" -X POST \
             -H "Authorization: Bearer $CLOUDFLARE_CACHE_PURGE_API_TOKEN" \
             -H 'Content-Type: application/json' \
-            --data "{\"files\":[\"$LIVE_BASE/apply-therapist-v4.js\",\"$LIVE_BASE/apply-therapist-v4.js?v=$GITHUB_SHA\"]}" \
+            --data "{\"files\":[\"$LIVE_BASE/apply-therapist-v4.js\",\"$LIVE_BASE/apply-therapist-v4.js?v=$GITHUB_SHA\",\"$LIVE_BASE/apply-therapist-service-zones.js\",\"$LIVE_BASE/apply-therapist-service-zones.js?v=$GITHUB_SHA\"]}" \
             "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/purge_cache")"
           test "$http_code" = "200"
 
-      - name: Verify public CDN marker
+      - name: Verify public CDN markers
         shell: bash
         run: |
           set -euo pipefail
-          file="$(mktemp)"
-          curl --retry 8 --retry-delay 2 --retry-all-errors -fsS -H 'Cache-Control: no-cache' "$LIVE_BASE/apply-therapist-v4.js?v=$GITHUB_SHA" -o "$file"
-          grep -q 'additional_photo' "$file"
-          grep -q 'รูปโปรไฟล์หลัก' "$file"
-          grep -q 'experience_background' "$file"
+          runtime_file="$(mktemp)"
+          zone_file="$(mktemp)"
+          curl --retry 8 --retry-delay 2 --retry-all-errors -fsS -H 'Cache-Control: no-cache' "$LIVE_BASE/apply-therapist-v4.js?v=$GITHUB_SHA" -o "$runtime_file"
+          curl --retry 8 --retry-delay 2 --retry-all-errors -fsS -H 'Cache-Control: no-cache' "$LIVE_BASE/apply-therapist-service-zones.js?v=$GITHUB_SHA" -o "$zone_file"
+          grep -q 'additional_photo' "$runtime_file"
+          grep -q 'รูปโปรไฟล์หลัก' "$runtime_file"
+          grep -q 'experience_background' "$runtime_file"
+          grep -q 'base_service_zone_code' "$zone_file"
+          grep -q 'coverage_service_zone_codes' "$zone_file"
+          grep -q 'จังหวัดหลักที่สะดวกรับงาน' "$zone_file"
