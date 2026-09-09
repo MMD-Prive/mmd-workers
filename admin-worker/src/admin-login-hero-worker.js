@@ -4,6 +4,11 @@ import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.
 import { tryHandleEmailLessLineRenewalRecovery } from "./payment-review-line-recovery.js";
 import { tryHandleSigilPendingClientLink } from "./sigil-jobs-pending-client-link.js";
 import {
+  augmentSigilJobCreateResponse,
+  isSigilJobMembershipActionRequest,
+  prepareSigilJobCreateRequest,
+} from "./sigil-jobs-membership-action.js";
+import {
   CLIENT_INTELLIGENCE_PATH,
   handleClientIntelligenceRequest,
 } from "./client-intelligence-endpoint.js";
@@ -47,11 +52,27 @@ export default {
       return handleCredentialBoundClientIntelligence(request, env);
     }
 
+    // Canonicalize the optional SIGIL Jobs membership_action before the request
+    // reaches core job creation. This wrapper may calculate the combined customer
+    // payment total, but it never mutates membership entitlement. Official payment
+    // verification remains the materialization boundary.
+    let membershipActionContext = null;
+    if (isSigilJobMembershipActionRequest(path, request.method)) {
+      const prepared = await prepareSigilJobCreateRequest(request);
+      if (prepared.response) return prepared.response;
+      request = prepared.request;
+      membershipActionContext = prepared;
+    }
+
     // SIGIL Jobs may create an operationally held private job before a canonical
     // Client is linked. This never grants private entitlement: confirmation and
     // dispatch are held until the canonical Client relationship is completed.
     const pendingClientLink = await tryHandleSigilPendingClientLink(request, env, ctx, coreWorker);
-    if (pendingClientLink) return pendingClientLink;
+    if (pendingClientLink) {
+      return membershipActionContext
+        ? augmentSigilJobCreateResponse(pendingClientLink, membershipActionContext)
+        : pendingClientLink;
+    }
 
     // Preserve the already-guarded canonical Payment Review path. The clone is
     // used only if the canonical runtime rejects an otherwise valid reviewed
@@ -62,6 +83,9 @@ export default {
       : null;
 
     let response = await coreWorker.fetch(request, env, ctx);
+    if (membershipActionContext) {
+      response = await augmentSigilJobCreateResponse(response, membershipActionContext);
+    }
     if (recoveryRequest && response.status === 409) {
       const actor = await readCredentialBoundAdminActor(recoveryRequest, env);
       if (actor) {
