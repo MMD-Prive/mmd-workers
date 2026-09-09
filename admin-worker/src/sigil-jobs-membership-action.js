@@ -3,6 +3,7 @@ export const MEMBERSHIP_ACTION_VERSION = "membership_action_v1";
 export const MEMBERSHIP_ACTION_NOTE_MARKER = "[MMD_MEMBERSHIP_ACTION_V1]";
 
 const MAX_RENEWAL_AMOUNT_THB = 1_000_000;
+const MAX_PERSISTED_NOTE_LENGTH = 4000;
 const ALLOWED_TIER_HINTS = new Set(["", "standard", "premium", "vip", "svip", "black_card"]);
 const TRUE_TOKENS = new Set(["1", "true", "yes", "on"]);
 const FALSE_TOKENS = new Set(["0", "false", "no", "off"]);
@@ -186,7 +187,7 @@ function canonicalizeNote(note, action, pricing) {
     .replace(/\n?\[ASSISTED_RENEWAL_V1\][^\n]*/gi, "")
     .replace(/\n?\[MMD_MEMBERSHIP_ACTION_V1\][^\n]*/gi, "")
     .trim();
-  if (action.type !== "renew") return cleaned;
+  if (action.type !== "renew") return cleaned.slice(0, MAX_PERSISTED_NOTE_LENGTH);
 
   const durable = {
     ...action,
@@ -194,7 +195,15 @@ function canonicalizeNote(note, action, pricing) {
     customer_total_thb: pricing.customer_total_thb,
   };
   const marker = `${MEMBERSHIP_ACTION_NOTE_MARKER} ${JSON.stringify(durable)}`;
-  return cleaned ? `${cleaned}\n${marker}` : marker;
+  if (marker.length > MAX_PERSISTED_NOTE_LENGTH) throw new Error("membership_action_marker_too_large");
+
+  // The downstream canonical confirm-link stores at most 4,000 characters.
+  // Put the machine-readable marker first and reserve its full space so it can
+  // never be truncated by a long operator note.
+  const separator = cleaned ? "\n" : "";
+  const humanBudget = Math.max(0, MAX_PERSISTED_NOTE_LENGTH - marker.length - separator.length);
+  const human = cleaned.slice(0, humanBudget);
+  return human ? `${marker}\n${human}` : marker;
 }
 
 function parseLegacyAssistedRenewalNote(note) {
@@ -212,10 +221,10 @@ function parseLegacyAssistedRenewalNote(note) {
 }
 
 function readNote(body) {
-  if (typeof body.note === "string") return body.note;
-  if (typeof body.notes === "string") return body.notes;
+  if (typeof body.note === "string" && body.note.trim()) return body.note;
+  if (typeof body.notes === "string" && body.notes.trim()) return body.notes;
   if (body.notes && typeof body.notes === "object") {
-    return text(body.notes.operation_note || body.notes.handling_note || "", 4000);
+    return text(body.notes.operation_note || body.notes.handling_note || "", MAX_PERSISTED_NOTE_LENGTH);
   }
   return "";
 }
@@ -246,10 +255,12 @@ function positiveNumber(value, field, max = Number.MAX_SAFE_INTEGER) {
   const parsed = typeof value === "number" ? value : Number(String(value ?? "").replace(/,/g, "").trim());
   if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${field}_invalid`);
   if (parsed > max) throw new Error(`${field}_too_large`);
-  return Math.round(parsed * 100) / 100;
+  const rounded = Math.round((parsed + Number.EPSILON) * 100) / 100;
+  if (!Number.isFinite(rounded) || rounded <= 0) throw new Error(`${field}_invalid`);
+  return rounded;
 }
 
-function text(value, max = 4000) {
+function text(value, max = MAX_PERSISTED_NOTE_LENGTH) {
   return String(value == null ? "" : value).trim().slice(0, max);
 }
 
