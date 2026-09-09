@@ -1,4 +1,5 @@
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
+import { canonicalizeSigilJobBody } from "./sigil-jobs-membership-action.js";
 
 export const SIGIL_JOB_CREATE_PATH = "/v1/admin/job/create";
 export const PENDING_CLIENT_LINK_MODE = "pending_client_link";
@@ -69,6 +70,18 @@ export function buildPendingClientLinkBody(body = {}) {
   };
 }
 
+// The pending-client-link lane is an alternate create path, so it must pass
+// through the exact same membership/payment canonicalizer before it reaches
+// coreWorker. This preserves combined-payment arithmetic while keeping all
+// confirmation, dispatch and entitlement release holds intact.
+export function canonicalizePendingClientLinkBody(body = {}) {
+  const canonical = canonicalizeSigilJobBody(body);
+  return {
+    ...canonical,
+    forwarded_body: buildPendingClientLinkBody(canonical.body),
+  };
+}
+
 function safeRaw(raw = {}) {
   if (!raw || typeof raw !== "object") return undefined;
   return {
@@ -132,9 +145,20 @@ export async function tryHandleSigilPendingClientLink(request, env, ctx, downstr
     return json({ ok: false, error: "unauthorized" }, 401);
   }
 
-  const forwardedBody = buildPendingClientLinkBody(body);
+  let canonical;
+  try {
+    canonical = canonicalizePendingClientLinkBody(body);
+  } catch (error) {
+    return json({
+      ok: false,
+      error: clean(error?.message || error || "invalid_membership_action"),
+    }, 400);
+  }
+
+  const forwardedBody = canonical.forwarded_body;
   const headers = new Headers(request.headers);
   headers.set("content-type", "application/json");
+  headers.delete("content-length");
   headers.set("x-mmd-sigil-operational-mode", PENDING_CLIENT_LINK_MODE);
   const forwarded = new Request(request.url, {
     method: "POST",
@@ -146,11 +170,16 @@ export async function tryHandleSigilPendingClientLink(request, env, ctx, downstr
 
   const data = await response.clone().json().catch(() => null);
   if (!data || typeof data !== "object") return response;
+  const held = holdPendingClientLinkResponse(data);
+  held.membership_action = canonical.membership_action;
+  held.pricing_breakdown = canonical.pricing_breakdown;
+
   const responseHeaders = new Headers(response.headers);
   responseHeaders.delete("content-length");
   responseHeaders.set("cache-control", "no-store, private");
   responseHeaders.set("x-mmd-sigil-operational-status", PENDING_CLIENT_LINK_MODE);
-  return new Response(JSON.stringify(holdPendingClientLinkResponse(data)), {
+  responseHeaders.set("x-mmd-membership-action", canonical.membership_action.version);
+  return new Response(JSON.stringify(held), {
     status: response.status,
     statusText: response.statusText,
     headers: responseHeaders,
