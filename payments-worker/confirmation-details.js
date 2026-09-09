@@ -8,6 +8,7 @@ const SESSION_FIELDS = Object.freeze({
   sessionStatus: "fldmwuvOaiCFdzzRa",
   createdAt: "flduULqxy2FIuJuaf",
   amountThb: "fldhwC79ndbnEXSZz",
+  customerAmountDueThb: "fldvJowquu8RrsOMc",
   paymentRef: "fldojgjSQLaO0uQLX",
   paymentStatus: "fldTY5lE6m0kQf72n",
   clientName: "fldMvnQ0BzDfHUYjT",
@@ -21,6 +22,19 @@ const SESSION_FIELDS = Object.freeze({
   note: "fldEcDkF7CH9VixWM",
   notes: "fldwl9Gs5tYlXG5ls",
   payModelThb: "fldlTO5aNfqUmlNWm",
+});
+
+const PAYMENT_FIELDS = Object.freeze({
+  paymentRef: "fldOO6SY49iDw8VBZ",
+  amountThb: "fldvCSwrUW8OMAooS",
+  paymentStatus: "fldEJ1hmm7KwWuI6q",
+  paymentMethod: "fldsblzIn0wzan3c9",
+  paymentType: "fld1YPQ8j1CLxYeZ7",
+  intentStatus: "fld04fr3bRJTohO6y",
+  verificationStatus: "fldJ7a0Ube9F0bmRy",
+  promptPayUrl: "fld8DEjbUmrzMWcNg",
+  sessionId: "fld2wdhBvc8xrV6y5",
+  paymentStage: "fldrr9g8ZZjqAbdKQ",
 });
 
 export function isConfirmationDetailsRequest(path, method) {
@@ -86,10 +100,24 @@ export async function handleConfirmationDetails(request, env = {}) {
 
     if (expectedRole === "customer") {
       const net = numberOrNull(fields[field(env.AT_SESSIONS__AMOUNT_THB, SESSION_FIELDS.amountThb)]);
+      const safePricing = customerPricing(pricing, net);
+      let paymentRecord = null;
+      try {
+        paymentRecord = await findPayment(env, claims.payment_ref, claims.session_id);
+      } catch {}
+      const customerAmountDue = numberOrNull(fields[SESSION_FIELDS.customerAmountDueThb]);
       return withCors(request, env, json({
         ...common,
         amount_thb: net,
-        pricing: customerPricing(pricing, net),
+        pricing: safePricing,
+        payment: customerPaymentDisplay({
+          paymentRecord,
+          pricing: safePricing,
+          customerAmountDue,
+          claimedPaymentType: claims.payment_type,
+          sessionPaymentStatus: common.payment_status,
+          paymentRef: claims.payment_ref,
+        }),
       }));
     }
 
@@ -126,6 +154,77 @@ function customerPricing(raw, netFallback) {
     deposit_received_thb: numberOrNull(source.deposit_received_thb),
     balance_thb: numberOrNull(source.balance_thb),
   };
+}
+
+function customerPaymentDisplay({ paymentRecord, pricing, customerAmountDue, claimedPaymentType, sessionPaymentStatus, paymentRef }) {
+  const fields = paymentRecord?.fields || {};
+  const storedStage = normalizePaymentStage(fields[PAYMENT_FIELDS.paymentStage] || fields[PAYMENT_FIELDS.paymentType]);
+  const claimedStage = normalizePaymentStage(claimedPaymentType);
+  let stage = storedStage;
+  let amountDue = null;
+
+  if (storedStage) {
+    amountDue = paymentAmountDue(storedStage, pricing, customerAmountDue);
+  } else if (customerAmountDue !== null) {
+    amountDue = customerAmountDue;
+  } else {
+    stage = claimedStage;
+    amountDue = paymentAmountDue(claimedStage, pricing, null);
+  }
+
+  const method = text(fields[PAYMENT_FIELDS.paymentMethod], 80).toLowerCase() || (safeUrl(fields[PAYMENT_FIELDS.promptPayUrl]) ? "promptpay" : null);
+  const promptPayUrl = safeUrl(fields[PAYMENT_FIELDS.promptPayUrl]) || null;
+  const verified = isVerifiedPayment(
+    fields[PAYMENT_FIELDS.verificationStatus],
+    fields[PAYMENT_FIELDS.paymentStatus],
+    sessionPaymentStatus,
+  );
+  const proofReceived = isProofReceived(fields[PAYMENT_FIELDS.intentStatus], fields[PAYMENT_FIELDS.verificationStatus]);
+
+  return {
+    schema: "customer_payment_display_v1",
+    stage: stage || null,
+    method: method || null,
+    amount_due_thb: amountDue,
+    qr_url: promptPayUrl,
+    proof_status_available: Boolean(text(paymentRef, 200)),
+    proof_received: proofReceived,
+    verified,
+  };
+}
+
+function paymentAmountDue(stage, pricing, customerAmountDue) {
+  if (stage === "deposit") return numberOrNull(pricing?.deposit_due_thb) ?? customerAmountDue;
+  if (stage === "balance" || stage === "final") return numberOrNull(pricing?.balance_thb) ?? customerAmountDue;
+  if (stage === "full") return numberOrNull(pricing?.net_price_thb) ?? customerAmountDue;
+  return customerAmountDue;
+}
+
+function normalizePaymentStage(value) {
+  const raw = text(value, 80).toLowerCase().replace(/[\s_-]+/g, "");
+  if (["deposit", "มัดจำ"].includes(raw)) return "deposit";
+  if (["balance", "remaining", "remainder", "คงเหลือ"].includes(raw)) return "balance";
+  if (["final", "finalpayment"].includes(raw)) return "final";
+  if (["full", "fullpayment", "payinfull"].includes(raw)) return "full";
+  return "";
+}
+
+function isVerifiedPayment(...values) {
+  const accepted = new Set(["verified", "approved", "paid", "completed", "complete"]);
+  return values.some((value) => accepted.has(text(value, 80).toLowerCase()));
+}
+
+function isProofReceived(...values) {
+  const accepted = new Set([
+    "evidence_received",
+    "proof_received",
+    "submitted",
+    "pending_review",
+    "reviewing",
+    "manual_slip_evidence_received",
+    "pending_confirmation",
+  ]);
+  return values.some((value) => accepted.has(text(value, 80).toLowerCase().replace(/[\s-]+/g, "_")));
 }
 
 function parseMarkedJson(note, label) {
@@ -208,6 +307,39 @@ async function findSession(env, sessionId) {
   const records = Array.isArray(data?.records) ? data.records : [];
   if (records.length > 1) throw httpError(409, "session_id_ambiguous");
   return records[0] || null;
+}
+
+async function findPayment(env, paymentRef, sessionId) {
+  const ref = text(paymentRef, 200);
+  const sid = text(sessionId, 200);
+  if (!ref || !sid) return null;
+
+  const baseId = clean(env.AIRTABLE_BASE_ID, 100);
+  const tableId = clean(env.AIRTABLE_TABLE_PAYMENTS || "tblWGGJJOx5eBvBZJ", 100);
+  const apiKey = clean(env.AIRTABLE_API_KEY, 5000);
+  if (!baseId || !tableId || !apiKey) return null;
+
+  const formula = `AND({Payment Reference}='${formulaValue(ref)}',{session_id}='${formulaValue(sid)}')`;
+  const query = new URLSearchParams({
+    maxRecords: "2",
+    filterByFormula: formula,
+    returnFieldsByFieldId: "true",
+  });
+  const req = new Request(`${AIRTABLE_API}/${baseId}/${encodeURIComponent(tableId)}?${query.toString()}`, {
+    method: "GET",
+    headers: { authorization: `Bearer ${apiKey}` },
+  });
+  const response = env.AIRTABLE_HTTP?.fetch ? await env.AIRTABLE_HTTP.fetch(req) : await fetch(req);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw httpError(response.status >= 500 ? 503 : 500, "airtable_payment_request_failed");
+  const records = Array.isArray(data?.records) ? data.records : [];
+  if (records.length > 1) return null;
+  const record = records[0] || null;
+  if (!record?.fields) return null;
+  const recordRef = text(record.fields[PAYMENT_FIELDS.paymentRef], 200);
+  const recordSessionId = text(record.fields[PAYMENT_FIELDS.sessionId], 200);
+  if (recordRef !== ref || recordSessionId !== sid) return null;
+  return record;
 }
 
 function allowedOrigins(env = {}) {
