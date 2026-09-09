@@ -28,7 +28,7 @@ export async function createCredentialBoundAdminSession(request, actor, env = {}
     version: SESSION_VERSION,
     id: clean(actor?.id) || "per",
     role: clean(actor?.role) || "admin",
-    auth_method: "credential",
+    auth_method: clean(actor?.auth_method) || "credential",
     scope: SESSION_SCOPE,
     host,
     iat: now,
@@ -41,7 +41,15 @@ export async function createCredentialBoundAdminSession(request, actor, env = {}
 }
 
 export async function readCredentialBoundAdminActor(request, env = {}) {
-  const token = parseCookie(request.headers.get("Cookie") || "")[COOKIE_NAME];
+  const tokens = readCookieValues(request.headers.get("Cookie") || "", COOKIE_NAME);
+  for (const token of tokens) {
+    const actor = await verifyCredentialBoundAdminToken(token, request, env);
+    if (actor) return actor;
+  }
+  return null;
+}
+
+async function verifyCredentialBoundAdminToken(token, request, env = {}) {
   const [payloadPart, signature] = clean(token).split(".");
   if (!payloadPart || !signature) return null;
 
@@ -98,7 +106,6 @@ function base64UrlEncode(bytes) {
 }
 
 function base64UrlDecode(value) {
-  const padded = `${value}${"=".repeat((4 - (value.length % 4)) % 4)}`;
   const binary = atob(value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (value.length % 4)) % 4));
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
@@ -112,14 +119,17 @@ function timingSafeEqual(left, right) {
   return mismatch === 0;
 }
 
-function parseCookie(header) {
-  const out = {};
+function readCookieValues(header, name) {
+  const values = [];
   for (const part of String(header || "").split(";")) {
     const index = part.indexOf("=");
     if (index === -1) continue;
-    out[part.slice(0, index).trim()] = part.slice(index + 1).trim();
+    const cookieName = part.slice(0, index).trim();
+    if (cookieName !== name) continue;
+    const value = part.slice(index + 1).trim();
+    if (value) values.push(value);
   }
-  return out;
+  return values;
 }
 
 function clean(value) {

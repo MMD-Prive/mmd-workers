@@ -1,12 +1,12 @@
 name = "immigrate-worker"
-main = "src/canonical-admin-login-wrapper.ts"
+main = "src/control-room-dashboard-ingress-wrapper.ts"
 compatibility_date = "2026-03-25"
 workers_dev = true
 
 [assets]
 directory = "./public"
 binding = "ASSETS"
-run_worker_first = ["/internal/admin/jobs/create-session/core"]
+run_worker_first = ["/internal/admin/jobs/create-session/core", "/internal/admin/control-room/member-intelligence-runtime"]
 
 [vars]
 # Secret: LINK_SIGNING_SECRET
@@ -37,6 +37,14 @@ pattern = "www.mmdbkk.com/internal/admin/control-room*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
+pattern = "mmdbkk.com/internal/ceo*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/ceo*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
 pattern = "mmdbkk.com/internal/admin/create-session*"
 zone_name = "mmdbkk.com"
 
@@ -51,6 +59,9 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/internal/admin/jobs/create-session*"
 zone_name = "mmdbkk.com"
+
+# Webflow keeps ownership of /internal/admin/member-intelligence. Its browser
+# runtime is served under the existing Worker-owned Control Room route family.
 
 [[routes]]
 pattern = "mmdbkk.com/internal/jobs/create-job*"
@@ -84,12 +95,40 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/ping*"
 zone_name = "mmdbkk.com"
 
+# Control Room authenticated read model. immigrate-worker remains the narrow
+# public ingress bridge while admin-worker owns dashboard truth/serialization.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/dashboard*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/dashboard*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/clients/lineage-lookup*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/clients/lineage-lookup*"
+zone_name = "mmdbkk.com"
+
 [[routes]]
 pattern = "mmdbkk.com/v1/admin/clients/recent*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/clients/recent*"
+zone_name = "mmdbkk.com"
+
+# Member Intelligence advisory facade. The public ingress stays on immigrate-worker
+# and forwards only this narrow read route through the ADMIN_WORKER service binding.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/clients/intelligence*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/clients/intelligence*"
 zone_name = "mmdbkk.com"
 
 [[routes]]

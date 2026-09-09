@@ -171,8 +171,8 @@ jobs:
               if [ "$http_code" = "200" ] \
                 && grep -Eiq '^x-mmd-route-owner:[[:space:]]*admin-worker' "$headers_file" \
                 && grep -Eiq '^x-mmd-page:[[:space:]]*admin-login-approved-hero' "$headers_file" \
-                && grep -q 'Enter the' "$body_file" \
-                && grep -q 'control room' "$body_file"; then
+                && grep -q 'id="ownerLoginForm"' "$body_file" \
+                && grep -q 'id="partnerLoginForm"' "$body_file"; then
                 login_ok=1
                 echo "Admin login GET smoke passed: origin=$origin attempt=$attempt"
                 break

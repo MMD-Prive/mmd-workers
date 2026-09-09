@@ -26,8 +26,12 @@ test("admin login renders the approved Webflow visual assets and responsive imag
     assert.match(html, new RegExp(asset.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   assert.match(html, /alt="MMD SIGIL Internal Admin"/);
-  assert.match(html, /\.mmd-login21__visual img\{[^}]*object-fit:cover;[^}]*object-position:center;/);
-  assert.match(html, /class="mmd-login21" data-mmd-login21/);
+  assert.match(html, /\.visual:before\{[^}]*center\/cover no-repeat;[^}]*\}/);
+  assert.match(html, /\.visual-logo\{[^}]*object-fit:contain;[^}]*\}/);
+  assert.match(
+    html,
+    /class="mmd-login" data-mmd-login data-mmd-page="admin-login-approved-hero"/,
+  );
   assert.doesNotMatch(html, /placeholder|default[-_ ]hero/i);
 });
 

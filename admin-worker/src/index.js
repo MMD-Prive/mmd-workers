@@ -28,6 +28,10 @@ import { demoLinksCreate, demoLinksGet } from "./routes/demo-links.js";
 import { handleKenjiKnowledgeRequest as handleKenjiKnowledgeRuntimeRequest } from "./kenji-knowledge-runtime.js";
 import { renderApprovedAdminLogin } from "./admin-login-page.js";
 import {
+  handleCreateSessionClientLineageRequest,
+  isCreateSessionClientLineageRequest,
+} from "./create-session-client-lineage-runtime.js";
+import {
   getAllowedModelSessionActions,
   normalizeModelSessionAction,
   normalizeSessionState,
@@ -494,6 +498,15 @@ export default {
         return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
       }
 
+      // Canonical client lineage is read-only identity evidence. The outer
+      // admin gate above has already verified the signed internal-admin session.
+      if (isCreateSessionClientLineageRequest(path, method)) {
+        return withCors(
+          await handleCreateSessionClientLineageRequest(req, env, { alreadyAuthorized: true }),
+          cors,
+        );
+      }
+
       if (isAdminRichMenuRoute(path, method)) {
         return withCors(await handleAdminRichMenuRoute(req, env, path, method), cors);
       }
@@ -693,6 +706,19 @@ export default {
             return withCors(json({ ok: false, error: { code: e.code, message: e.message } }, e.status), cors);
           }
           return withCors(json({ ok: false, error: String(e?.message || e || "models_search_failed") }, 500), cors);
+        }
+      }
+
+      // Canonical Model-folder selection for Per's LINE activation console.
+      // This is a read-only candidate list; link issuance re-reads the exact Airtable record.
+      if (method === "GET" && path === "/v1/admin/models/activation-candidates") {
+        try {
+          return withCors(json(await listModelActivationCandidates(env, url)), cors);
+        } catch (e) {
+          if (e instanceof CreateSessionAccessError) {
+            return withCors(json({ ok: false, error: { code: e.code, message: e.message } }, e.status), cors);
+          }
+          return withCors(json({ ok: false, error: String(e?.message || e || "model_activation_candidates_failed") }, 500), cors);
         }
       }
 
@@ -4641,6 +4667,34 @@ async function searchCreateSessionModels(env, url) {
   return out;
 }
 
+
+async function listModelActivationCandidates(env, url) {
+  const q = str(url.searchParams.get("q") || url.searchParams.get("search") || "");
+  const folder = accessToken(url.searchParams.get("folder") || "");
+  const limit = clampInt(url.searchParams.get("limit") ?? 50, 1, 100, 50);
+  const allowedFolders = new Set([...PUBLIC_MODEL_FOLDERS, ...CANONICAL_PRIVATE_FOLDERS]);
+  if (folder && !allowedFolders.has(folder)) {
+    throw new CreateSessionAccessError("model_folder_invalid", "Folder is not a canonical Model folder.");
+  }
+  const modelsTable = env.AIRTABLE_TABLE_MODELS || "models";
+  const records = await airtableList(env, modelsTable, { q, limit: 100, matchFields: getModelSearchFields(env), fallbackMatchFields: MODEL_SAFE_SEARCH_FIELDS });
+  const items = [];
+  for (const record of records) {
+    // Activation selection requires affirmative canonical status. The legacy
+    // booking profile only excludes known blocked statuses and is not an
+    // approval check: blank, pending and unknown values must not pass here.
+    const status = record.fields?.status;
+    if (typeof status !== "string" || status.trim().toLowerCase() !== "active") continue;
+    const profile = modelAccessProfile(record.fields || {});
+    if (!profile.statusActive) continue;
+    const item = sanitizeCreateSessionModel(record, profile);
+    if (!item.model_name || (folder && !item.folders.includes(folder))) continue;
+    items.push({ model_record_id: item.model_id, working_name: item.model_name, model_lookup_key: item.model_lookup_key, folders: item.folders, status: item.status });
+    if (items.length >= limit) break;
+  }
+  return { ok: true, layer: "core", folder, items };
+}
+
 export {
   CreateSessionAccessError,
   PRIVATE_ACCESS_FOLDERS,
@@ -4652,6 +4706,7 @@ export {
   resolveCreateSessionModel,
   enforcePrivateCreateAccess,
   searchCreateSessionModels,
+  listModelActivationCandidates,
 };
 
 /* =========================
@@ -4808,3 +4863,5 @@ async function notifyJobCreated(env, data) {
     disable_web_page_preview: true,
   });
 }
+
+export { MmsPartnerAuthStore } from "./mms-partner-auth-store.js";

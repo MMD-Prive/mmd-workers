@@ -33,6 +33,17 @@ function baseBody(overrides = {}) {
     client_name: "LINE Client",
     model_name: "Mira",
     job_type: "private",
+    job_date: "2026-09-20",
+    start_time: "19:00",
+    end_time: "21:00",
+    location_name: "Sukhumvit",
+    amount_thb: 15000,
+    ...overrides,
+  };
+}
+
+function linkedBody(overrides = {}) {
+  return baseBody({
     client_lineage: {
       client_id: CLIENT_ID,
       client_name: "LINE Client",
@@ -53,7 +64,7 @@ function baseBody(overrides = {}) {
     },
     payment: { amount_thb: 15000 },
     ...overrides,
-  };
+  });
 }
 
 function json(data, status = 200) {
@@ -61,6 +72,12 @@ function json(data, status = 200) {
     status,
     headers: { "content-type": "application/json" },
   });
+}
+
+function urlString(input) {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.toString();
+  return input.url;
 }
 
 function tableFrom(url) {
@@ -76,7 +93,7 @@ function recordFrom(url) {
 function makeFetch({ lineUserId = "U-line-001", existingJob = false } = {}) {
   const calls = [];
   const fetch = async (input, init = {}) => {
-    const url = typeof input === "string" ? input : input.url;
+    const url = urlString(input);
     const method = String(init.method || "GET").toUpperCase();
     const table = tableFrom(url);
     const recordId = recordFrom(url);
@@ -130,29 +147,108 @@ test("recognizes only POST /v1/admin/job/create", () => {
   assert.equal(isCanonicalLinkedJobCreate("/v1/admin/job/draft", "POST"), false);
 });
 
-test("fails closed when canonical Client record id is missing", async () => {
+test("allows typed Client and Model names without canonical IDs", async () => {
+  const originalFetch = globalThis.fetch;
+  const mock = makeFetch();
+  globalThis.fetch = mock.fetch;
+  try {
+    let downstreamCalls = 0;
+    const response = await handleCanonicalLinkedJobCreate(
+      request(baseBody()),
+      ENV,
+      {},
+      { fetch: async () => { downstreamCalls += 1; return json({ ok: true, session_id: "sess_001" }); } },
+    );
+    assert.equal(response.status, 200);
+    assert.equal(downstreamCalls, 1);
+    const data = await response.json();
+    assert.equal(data.linkage.status, "pending");
+    assert.equal(data.linkage.client_link_status, "pending");
+    assert.equal(data.linkage.model_link_status, "pending");
+    assert.equal(data.linkage.client_record_id, null);
+    assert.equal(data.linkage.model_record_id, null);
+
+    assert.equal(mock.calls.some((c) => c.method === "GET" && tableFrom(c.url) === ENV.AIRTABLE_TABLE_CLIENTS_ID), false);
+    assert.equal(mock.calls.some((c) => c.method === "GET" && tableFrom(c.url) === ENV.AIRTABLE_TABLE_MODELS), false);
+
+    const sessionPatches = mock.calls.filter((c) => c.method === "PATCH" && tableFrom(c.url) === ENV.AIRTABLE_TABLE_SESSIONS);
+    assert.equal(sessionPatches.length, 0);
+    const jobCreate = mock.calls.find((c) => c.method === "POST" && tableFrom(c.url) === ENV.AIRTABLE_TABLE_JOBS);
+    assert.equal(jobCreate.body.fields["Model (โมเดล)"], "Mira");
+    assert.equal("Client (ลูกค้า)" in jobCreate.body.fields, false);
+    assert.equal("Canonical Model" in jobCreate.body.fields, false);
+    assert.match(jobCreate.body.fields["Internal Notes"], /Client snapshot: LINE Client/);
+    assert.match(jobCreate.body.fields["Internal Notes"], /progressive identity flow/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("links only Client when Model is still pending", async () => {
+  const originalFetch = globalThis.fetch;
+  const mock = makeFetch();
+  globalThis.fetch = mock.fetch;
+  try {
+    const body = baseBody({
+      client_lineage: {
+        client_id: CLIENT_ID,
+        client_name: "LINE Client",
+        line_user_id: "U-line-001",
+        lineage_source: "line_ofc",
+      },
+    });
+    const response = await handleCanonicalLinkedJobCreate(
+      request(body), ENV, {}, { fetch: async () => json({ ok: true, session_id: "sess_001" }) },
+    );
+    const data = await response.json();
+    assert.equal(data.linkage.status, "partial");
+    assert.equal(data.linkage.client_link_status, "linked");
+    assert.equal(data.linkage.model_link_status, "pending");
+
+    const sessionPatch = mock.calls.find((c) => c.method === "PATCH" && tableFrom(c.url) === ENV.AIRTABLE_TABLE_SESSIONS);
+    assert.deepEqual(sessionPatch.body.fields.Client, [CLIENT_ID]);
+    assert.equal("Canonical Model" in sessionPatch.body.fields, false);
+
+    const jobCreate = mock.calls.find((c) => c.method === "POST" && tableFrom(c.url) === ENV.AIRTABLE_TABLE_JOBS);
+    assert.deepEqual(jobCreate.body.fields["Client (ลูกค้า)"], [CLIENT_ID]);
+    assert.equal("Canonical Model" in jobCreate.body.fields, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("links only Model when Client is still pending", async () => {
+  const originalFetch = globalThis.fetch;
+  const mock = makeFetch();
+  globalThis.fetch = mock.fetch;
+  try {
+    const body = baseBody({ model: { model_id: MODEL_ID, model_name: "Mira", source: "r2_migrated" } });
+    const response = await handleCanonicalLinkedJobCreate(
+      request(body), ENV, {}, { fetch: async () => json({ ok: true, session_id: "sess_001" }) },
+    );
+    const data = await response.json();
+    assert.equal(data.linkage.status, "partial");
+    assert.equal(data.linkage.client_link_status, "pending");
+    assert.equal(data.linkage.model_link_status, "linked");
+
+    const sessionPatch = mock.calls.find((c) => c.method === "PATCH" && tableFrom(c.url) === ENV.AIRTABLE_TABLE_SESSIONS);
+    assert.equal("Client" in sessionPatch.body.fields, false);
+    assert.deepEqual(sessionPatch.body.fields["Canonical Model"], [MODEL_ID]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("rejects malformed supplied canonical IDs without blocking omitted IDs", async () => {
   let downstreamCalls = 0;
   const response = await handleCanonicalLinkedJobCreate(
-    request(baseBody({ client_lineage: { client_name: "LINE Client" } })),
+    request(baseBody({ client_record_id: "not-a-record" })),
     ENV,
     {},
     { fetch: async () => { downstreamCalls += 1; return json({ ok: true }); } },
   );
   assert.equal(response.status, 400);
-  assert.equal((await response.json()).error, "canonical_client_record_required");
-  assert.equal(downstreamCalls, 0);
-});
-
-test("fails closed when model is still raw R2 and has no canonical Models record id", async () => {
-  let downstreamCalls = 0;
-  const body = baseBody();
-  body.model = { model_name: "Mira", source: "r2", r2_prefix: "private/Premium/Mira" };
-  const response = await handleCanonicalLinkedJobCreate(
-    request(body), ENV, {},
-    { fetch: async () => { downstreamCalls += 1; return json({ ok: true }); } },
-  );
-  assert.equal(response.status, 400);
-  assert.equal((await response.json()).error, "canonical_model_record_required");
+  assert.equal((await response.json()).error, "canonical_client_record_invalid");
   assert.equal(downstreamCalls, 0);
 });
 
@@ -163,7 +259,7 @@ test("rejects LINE identity mismatch before creating downstream session", async 
   try {
     let downstreamCalls = 0;
     const response = await handleCanonicalLinkedJobCreate(
-      request(baseBody()), ENV, {},
+      request(linkedBody()), ENV, {},
       { fetch: async () => { downstreamCalls += 1; return json({ ok: true }); } },
     );
     assert.equal(response.status, 409);
@@ -174,20 +270,15 @@ test("rejects LINE identity mismatch before creating downstream session", async 
   }
 });
 
-test("links LINE OFC Client and R2-migrated canonical Model into Session and Job", async () => {
+test("links LINE OFC Client and canonical Model into Session and Job", async () => {
   const originalFetch = globalThis.fetch;
   const mock = makeFetch();
   globalThis.fetch = mock.fetch;
   try {
     let downstreamCalls = 0;
     const response = await handleCanonicalLinkedJobCreate(
-      request(baseBody()), ENV, {},
-      {
-        fetch: async () => {
-          downstreamCalls += 1;
-          return json({ ok: true, session_id: "sess_001", payment_ref: "PAY-001" });
-        },
-      },
+      request(linkedBody()), ENV, {},
+      { fetch: async () => { downstreamCalls += 1; return json({ ok: true, session_id: "sess_001", payment_ref: "PAY-001" }); } },
     );
     assert.equal(response.status, 200);
     assert.equal(downstreamCalls, 1);
@@ -195,22 +286,17 @@ test("links LINE OFC Client and R2-migrated canonical Model into Session and Job
     assert.equal(data.linkage.status, "linked");
     assert.equal(data.linkage.client_record_id, CLIENT_ID);
     assert.equal(data.linkage.model_record_id, MODEL_ID);
-    assert.equal(data.linkage.session_record_id, SESSION_RECORD_ID);
-    assert.equal(data.linkage.job_record_id, JOB_RECORD_ID);
     assert.equal(data.linkage.client_source, "line_ofc_to_clients");
     assert.equal(data.linkage.model_provenance, "r2_to_models_to_canonical");
 
     const sessionPatch = mock.calls.find((c) => c.method === "PATCH" && tableFrom(c.url) === ENV.AIRTABLE_TABLE_SESSIONS);
     assert.deepEqual(sessionPatch.body.fields.Client, [CLIENT_ID]);
     assert.deepEqual(sessionPatch.body.fields["Canonical Model"], [MODEL_ID]);
-    assert.equal(sessionPatch.body.fields["Client Identity Source"], "line_ofc_to_clients");
-    assert.equal(sessionPatch.body.fields["Model Provenance"], "r2_to_models_to_canonical");
 
     const jobCreate = mock.calls.find((c) => c.method === "POST" && tableFrom(c.url) === ENV.AIRTABLE_TABLE_JOBS);
     assert.deepEqual(jobCreate.body.fields["Client (ลูกค้า)"], [CLIENT_ID]);
     assert.deepEqual(jobCreate.body.fields["Canonical Model"], [MODEL_ID]);
     assert.equal(jobCreate.body.fields.session_id, "sess_001");
-    assert.equal(jobCreate.body.fields["Model Provenance"], "r2_to_models_to_canonical");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -222,8 +308,7 @@ test("updates existing Job by session_id instead of creating a duplicate", async
   globalThis.fetch = mock.fetch;
   try {
     const response = await handleCanonicalLinkedJobCreate(
-      request(baseBody()), ENV, {},
-      { fetch: async () => json({ ok: true, session_id: "sess_001" }) },
+      request(linkedBody()), ENV, {}, { fetch: async () => json({ ok: true, session_id: "sess_001" }) },
     );
     assert.equal(response.status, 200);
     const data = await response.json();
