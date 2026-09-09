@@ -6,6 +6,10 @@ import {
   CLIENT_INTELLIGENCE_PATH,
   handleClientIntelligenceRequest,
 } from "./client-intelligence-endpoint.js";
+import {
+  handleModelJobDayGuideRequest,
+  isModelJobDayGuideRequest,
+} from "./model-job-day-guide.js";
 export * from "./admin-login-hero-worker-core.js";
 
 /*
@@ -32,6 +36,9 @@ const AI_OPS_WORKER_PAGES = new Set([
 export default {
   async fetch(request, env, ctx) {
     const path = normalizePath(new URL(request.url).pathname);
+    if (isModelJobDayGuideRequest(path)) {
+      return handleModelJobDayGuideRequest(request, env);
+    }
     if (path === ADMIN_DASHBOARD_PATH) {
       return handleCredentialBoundDashboard(request, env, ctx);
     }
