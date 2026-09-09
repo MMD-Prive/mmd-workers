@@ -28,36 +28,18 @@ function isPrivateIntent(body = {}) {
   ].some((value) => token(value) === "private");
 }
 
-export function hasAuthoritativeClientIdentity(body = {}) {
+// SIGIL Jobs only needs a canonical Client selection to leave the operational
+// hold lane. LINE/email/member hints remain useful lookup evidence, but they do
+// not need to block Job creation and never grant private entitlement themselves.
+export function hasCanonicalClientLink(body = {}) {
   const lineage = body.client_lineage || {};
-  const line = body.line_identity || {};
-  const telegram = body.telegram_gate || {};
-  return [
-    body.client_record_id,
-    body.client_id,
-    body.member_id,
-    body.memberstack_id,
-    body.line_record_id,
-    body.line_user_id,
-    body.member_email,
-    lineage.client_id,
-    lineage.member_id,
-    lineage.memberstack_id,
-    lineage.line_record_id,
-    lineage.line_user_id,
-    lineage.member_email,
-    lineage.email,
-    line.line_record_id,
-    line.line_user_id,
-    telegram.customer_telegram_username,
-    lineage.customer_telegram_username,
-  ].some((value) => clean(value));
+  return [body.client_record_id, body.client_id, lineage.client_id].some((value) => clean(value));
 }
 
 export function shouldCreatePendingClientLink(body = {}) {
   return token(body.operational_create_mode) === PENDING_CLIENT_LINK_MODE &&
     isPrivateIntent(body) &&
-    !hasAuthoritativeClientIdentity(body);
+    !hasCanonicalClientLink(body);
 }
 
 export function buildPendingClientLinkBody(body = {}) {
