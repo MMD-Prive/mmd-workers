@@ -1,4 +1,5 @@
 import liffFoundation from "./liff-identity-foundation.js";
+import { readClientBackedHistory } from "./member-app-client-history.js";
 
 const API_PREFIX = "/api/member/app/";
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -629,6 +630,7 @@ async function adaptPoints(request, env, delegate) {
 }
 
 async function adaptHistory(request, env, delegate) {
+  const sessionSnapshot = await readMemberAppSession(request, env);
   const result = await readUpstream(request, env, delegate, "/api/member/dashboard");
   if (!result.ok) return result.response;
   const items = historyFromDashboard(asObject(result.payload.data));
