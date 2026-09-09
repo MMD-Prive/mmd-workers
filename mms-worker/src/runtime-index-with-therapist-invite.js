@@ -1,7 +1,9 @@
 import runtime from "./runtime-index.js";
 export { MmsCoordinator } from "./runtime-index.js";
+export { MmsDispatchCoordinator } from "./my-mms-dispatch-runtime.mjs";
 import { maybeHandleTherapistAccessInvite } from "./therapist-invite-runtime.mjs";
 import { augmentAdminSnapshotWithMyMmsAccess, maybeHandleMyMmsAccess } from "./my-mms-access-runtime.mjs";
+import { maybeHandleMyMmsDispatch } from "./my-mms-dispatch-runtime.mjs";
 
 const ADMIN_SNAPSHOT_PATH = "/internal/mms/admin/snapshot";
 
@@ -9,6 +11,9 @@ export default {
   async fetch(request, env, ctx) {
     const accessResponse = await maybeHandleMyMmsAccess(request, env);
     if (accessResponse) return accessResponse;
+
+    const dispatchResponse = await maybeHandleMyMmsDispatch(request, env);
+    if (dispatchResponse) return dispatchResponse;
 
     const inviteResponse = await maybeHandleTherapistAccessInvite(request, env);
     if (inviteResponse) return inviteResponse;
