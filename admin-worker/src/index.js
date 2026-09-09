@@ -1,3 +1,4 @@
+import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 // src/index.js
 // =========================================================
 // admin-worker — Admin API / Core Orchestrator
@@ -862,6 +863,8 @@ function withCors(res, cors) {
    Auth
 ========================= */
 export async function isAuthed(req, env) {
+  const actor = await readCredentialBoundAdminActor(req, env);
+  if (actor) return actor.role === "admin" || actor.role === "owner";
   const auth = req.headers.get("Authorization") || "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
   if (env.ADMIN_BEARER && bearer && bearer === env.ADMIN_BEARER) return true;
@@ -4720,7 +4723,10 @@ async function createAdminJob(env, body) {
   const notes = body?.notes || {};
   const privateAccess = body?.private_access || {};
   const telegramGate = body?.telegram_gate || {};
-  const jobVisibility = str(work.job_visibility || body.job_visibility || body.booking_visibility || "");
+  // SIGIL Jobs uses visibility/job_details.world. Any private declaration must
+  // pass the existing authoritative access gate, including conflicting aliases.
+  const jobVisibility = [work.job_visibility, body.job_visibility, body.booking_visibility,
+    body.visibility, jobDetails.world].some(value => str(value).toLowerCase() === "private") ? "private" : "public";
 
   if (jobVisibility === "private") {
     // Authoritative gate: resolves the member from the backend ledger and the

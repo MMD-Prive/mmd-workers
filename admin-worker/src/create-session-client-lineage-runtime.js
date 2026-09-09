@@ -1,3 +1,4 @@
+import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
 export const CREATE_SESSION_CLIENT_LINEAGE_LOOKUP_PATH = "/v1/admin/clients/lineage-lookup";
@@ -170,6 +171,8 @@ export async function handleCreateSessionClientLineageRequest(request, env = {},
       lookup_chain: CUSTOMER_LOOKUP_CHAIN,
       lookup_priority: CUSTOMER_LOOKUP_PRIORITY,
       records,
+      // Compatibility for SIGIL Jobs V10/V11 consumers. Same records, no extra authority.
+      items: records,
       count: records.length,
       lineage_warnings: lineageWarnings,
       manual_fallback: useManualFallback,
@@ -870,6 +873,8 @@ function tableNames(env) {
 }
 
 async function isLineageAuthed(request, env) {
+  const actor = await readCredentialBoundAdminActor(request, env);
+  if (actor) return actor.role === "admin" || actor.role === "owner";
   const authorization = clean(request.headers.get("Authorization"));
   const bearer = authorization.replace(/^Bearer\s+/i, "").trim();
   const confirm = clean(request.headers.get("X-Confirm-Key"));

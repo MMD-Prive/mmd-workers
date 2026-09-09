@@ -198,6 +198,9 @@ async function reconcileCanonicalLinks(env, body, canonical, ids) {
     }));
   } else {
     const jobPatch = {};
+    const existingNote = clean(job.fields?.[JOB_FIELDS.note]);
+    const snapshotNote = preservePartnerSnapshot(existingNote, body);
+    if (snapshotNote !== existingNote) jobPatch[JOB_FIELDS.note] = snapshotNote;
     if (ids.clientId) {
       jobPatch[JOB_FIELDS.client] = [ids.clientId];
       jobPatch[JOB_FIELDS.clientSource] = clientSource;
@@ -259,7 +262,7 @@ function buildJobFields(body, canonical, ids) {
     [JOB_FIELDS.jobId]: ids.jobId,
     [JOB_FIELDS.location]: location,
     [JOB_FIELDS.dateTimeLocation]: [date, start && end ? `${start}-${end}` : start, location].filter(Boolean).join(" · "),
-    [JOB_FIELDS.note]: noteParts.join("\n"),
+    [JOB_FIELDS.note]: preservePartnerSnapshot(noteParts.join("\n"), body),
   };
   if (ids.clientId) fields[JOB_FIELDS.client] = [ids.clientId];
   if (ids.modelId) fields[JOB_FIELDS.model] = [ids.modelId];
@@ -424,4 +427,23 @@ async function mergeJsonResponse(response, additions) {
     statusText: response.statusText,
     headers,
   });
+}
+
+const PARTNER_SNAPSHOT_MARKER = "[SIGIL Partner Snapshot v1]";
+export function preservePartnerSnapshot(existingNote, body = {}) {
+  const note = clean(existingNote);
+  // Only the initial job snapshot is attached. Later roster/rate edits never
+  // replace historical evidence. This is internal operator evidence, not a grant.
+  if (note.includes(PARTNER_SNAPSHOT_MARKER)) return note;
+  const relationship = body.job_details?.partner_relationship;
+  const attribution = body.partner_attribution;
+  if (!relationship && !attribution) return note;
+  const snapshot = {
+    source: "sigil_jobs_operator_snapshot",
+    recorded_at: new Date().toISOString(),
+    partner_relationship: relationship || null,
+    partner_attribution: attribution || null,
+    model_payout_thb: body.pay_model_thb ?? null,
+  };
+  return [note, PARTNER_SNAPSHOT_MARKER, JSON.stringify(snapshot)].filter(Boolean).join("\n");
 }
