@@ -7,6 +7,13 @@ on:
       - "admin-worker/src/payment-issuer-diagnostic.js"
       - "admin-worker/src/admin-login-hero-worker-core.js"
       - "admin-worker/src/index.js"
+      - "admin-worker/src/job-create-contract.js"
+      - "admin-worker/src/sigil-jobs-*.js"
+      - "admin-worker/src/create-session-canonical-link-runtime.js"
+      - "admin-worker/src/model-reconfirm-runtime.js"
+      - "admin-worker/job-create-flow.test.mjs"
+      - "immigrate-worker/public/a/create-session.js"
+      - "immigrate-worker/test/create-job-canonical-client.test.mjs"
       - "admin-worker/wrangler.toml"
       - "admin-worker/payment-issuer-diagnostic.test.mjs"
       - "admin-worker/service-auth-contract.test.mjs"
@@ -31,3 +38,4 @@ jobs:
           node --check admin-worker/src/payments-issuer-transport.js
           node --check admin-worker/src/payment-issuer-diagnostic.js
           node --test admin-worker/payment-issuer-diagnostic.test.mjs admin-worker/service-auth-contract.test.mjs payments-worker/canonical-confirm-link.test.mjs payments-worker/session-finance-write.test.mjs
+          node --test admin-worker/job-create-flow.test.mjs admin-worker/sigil-jobs-pending-client-link.test.mjs admin-worker/create-session-canonical-link.test.mjs admin-worker/model-reconfirm-runtime.test.mjs immigrate-worker/test/create-job-canonical-client.test.mjs

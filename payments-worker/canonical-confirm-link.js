@@ -3,6 +3,7 @@ import {
   getConfirmTokenTtlSeconds,
   signConfirmToken,
 } from "./index.js";
+import { parseSigilMembershipPaymentComponents } from "./sigil-membership-payment-components.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const CONFIRM_LINK_PATH = "/v1/confirm/link";
@@ -60,16 +61,21 @@ export async function handleCanonicalConfirmLink(request, env) {
     return json(request, env, { ok: false, error: "service_auth_required" }, 401);
   }
 
-  const body = await request.clone().json().catch(() => null);
+  let body = await request.clone().json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return json(request, env, { ok: false, error: "invalid_confirm_link_request" }, 400);
   }
+  if (body.operational_status === "pending_client_link" && body.held_job && typeof body.held_job === "object" && !Array.isArray(body.held_job)) {
+    body = { ...body.held_job, operational_status: "pending_client_link" };
+  }
 
+  let attemptedWrite = null;
   try {
     requireAirtable(env);
 
     const sessionId = text(body.session_id || makeId("sess"), 180);
-    const paymentRef = text(body.payment_ref || makeId("pay"), 180);
+    const held = body.operational_status === "pending_client_link";
+    const paymentRef = held ? null : text(body.payment_ref || makeId("pay"), 180);
     const clientName = requiredText(body.client_name, "client_name", 240);
     const modelName = requiredText(body.model_name, "model_name", 240);
     const jobType = requiredText(body.job_type, "job_type", 180);
@@ -85,7 +91,16 @@ export async function handleCanonicalConfirmLink(request, env) {
     );
     const paymentStage = normalizeStage(body.payment_type || body.payment_stage || "full");
     const paymentMethod = canonicalPaymentMethod(body.payment_method || "promptpay");
-    const note = text(body.note || body.notes, 4000);
+    // Keep machine-readable membership markers on their own lines.
+    const note = clean(body.note || body.notes).replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, " ").slice(0, 4000);
+    const components = parseSigilMembershipPaymentComponents(note, amountThb);
+    const serviceAmountThb = components?.service_amount_thb ?? amountThb;
+    if (body.service_amount_thb != null && positiveNumber(body.service_amount_thb, "service_amount_thb") !== serviceAmountThb) {
+      throw httpError(400, "service_amount_component_mismatch");
+    }
+    const storedNote = held
+      ? (`[MMD_JOB_HOLD_V1] ${JSON.stringify({ status: "pending_client_link", confirmation_hold: true, dispatch_hold: true, entitlement_release_hold: true })}\n${note}`).slice(0, 4000)
+      : note;
     const createdAt = new Date().toISOString();
 
     const { startAt, endAt } = canonicalJobWindow(jobDate, startRaw, endRaw);
@@ -93,7 +108,7 @@ export async function handleCanonicalConfirmLink(request, env) {
     const issuedAt = Math.floor(Date.now() / 1000);
     const expiresAt = issuedAt + getConfirmTokenTtlSeconds(env);
     const signingSecret = clean(env.PAYMENT_CONFIRMATION_SIGNING_SECRET || env.CONFIRM_KEY);
-    if (!signingSecret) throw httpError(503, "missing_payment_confirmation_signing_secret");
+    if (!held && !signingSecret) throw httpError(503, "missing_payment_confirmation_signing_secret");
 
     const customerClaims = {
       kind: "customer_confirm",
@@ -114,20 +129,20 @@ export async function handleCanonicalConfirmLink(request, env) {
       exp: expiresAt,
     };
 
-    const customerToken = await signConfirmToken(customerClaims, signingSecret);
-    const modelToken = await signConfirmToken(modelClaims, signingSecret);
+    const customerToken = held ? null : await signConfirmToken(customerClaims, signingSecret);
+    const modelToken = held ? null : await signConfirmToken(modelClaims, signingSecret);
     const webBase = clean(env.WEB_BASE_URL || "https://mmdbkk.com").replace(/\/+$/, "");
     const customerPage = absoluteUrl(body.confirm_page || "/confirm/job-confirmation", webBase);
     const modelPage = absoluteUrl(body.model_confirm_page || "/confirm/job-model", webBase);
-    const customerConfirmationUrl = `${customerPage}?t=${encodeURIComponent(customerToken)}`;
-    const modelConfirmationUrl = `${modelPage}?t=${encodeURIComponent(modelToken)}`;
+    const customerConfirmationUrl = held ? undefined : `${customerPage}?t=${encodeURIComponent(customerToken)}`;
+    const modelConfirmationUrl = held ? undefined : `${modelPage}?t=${encodeURIComponent(modelToken)}`;
 
     const sessionFields = compact({
       [field(env.AT_SESSIONS__SESSION_ID, SESSION_FIELDS.sessionId)]: sessionId,
       [SESSION_FIELDS.sessionStatus]: "Pending",
       [field(env.AT_SESSIONS__PAYMENT_STATUS, SESSION_FIELDS.paymentStatus)]: "pending",
-      [field(env.AT_SESSIONS__PAYMENT_REF, SESSION_FIELDS.paymentRef)]: paymentRef,
-      [field(env.AT_SESSIONS__AMOUNT_THB, SESSION_FIELDS.amountThb)]: amountThb,
+      [field(env.AT_SESSIONS__PAYMENT_REF, SESSION_FIELDS.paymentRef)]: paymentRef || undefined,
+      [field(env.AT_SESSIONS__AMOUNT_THB, SESSION_FIELDS.amountThb)]: serviceAmountThb,
       [SESSION_FIELDS.payModelThb]: payModelThb,
       [SESSION_FIELDS.clientName]: clientName,
       [SESSION_FIELDS.modelName]: modelName,
@@ -137,8 +152,8 @@ export async function handleCanonicalConfirmLink(request, env) {
       [SESSION_FIELDS.endTime]: endAt,
       [SESSION_FIELDS.locationName]: locationName,
       [SESSION_FIELDS.googleMapUrl]: googleMapUrl || undefined,
-      [SESSION_FIELDS.note]: note || undefined,
-      [SESSION_FIELDS.notes]: note || undefined,
+      [SESSION_FIELDS.note]: storedNote || undefined,
+      [SESSION_FIELDS.notes]: storedNote || undefined,
       [SESSION_FIELDS.createdAt]: createdAt,
       [SESSION_FIELDS.customerConfirmationUrl]: customerConfirmationUrl,
       [SESSION_FIELDS.modelConfirmationUrl]: modelConfirmationUrl,
@@ -147,12 +162,23 @@ export async function handleCanonicalConfirmLink(request, env) {
     // Session payment truth is `payment_status`. Do not write the legacy
     // nonexistent `Payment Status`, generic `status=pending`, or payment_type
     // fields into Sessions.
+    attemptedWrite = { session_id: sessionId, payment_ref: paymentRef };
     const sessionWrite = await upsertRecord(env, {
       table: sessionsTable(env),
       lookupFieldName: "session_id",
       lookupValue: sessionId,
       fields: sessionFields,
     });
+
+    if (held) {
+      return json(request, env, {
+        ok: true, authority: "payments-worker", schema: "canonical_confirm_link_v1",
+        session_id: sessionId, payment_ref: null, session_write: sessionWrite,
+        operational_status: "pending_client_link", confirmations_held: true,
+        dispatch_held: true, entitlement_release_held: true,
+        pricing_breakdown: components,
+      });
+    }
 
     const paymentFields = compact({
       [field(env.AT_PAYMENTS__PAYMENT_REF, PAYMENT_FIELDS.paymentRef)]: paymentRef,
@@ -207,6 +233,7 @@ export async function handleCanonicalConfirmLink(request, env) {
       model_confirmation_url: modelConfirmationUrl,
       payment_write: paymentWrite,
       session_write: sessionWrite,
+      pricing_breakdown: components,
     });
   } catch (error) {
     const status = Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599
@@ -216,6 +243,7 @@ export async function handleCanonicalConfirmLink(request, env) {
       ok: false,
       authority: "payments-worker",
       error: clean(error?.message || error || "canonical_confirm_link_failed"),
+      ...(attemptedWrite ? { creation_outcome: "unknown", ...attemptedWrite } : { creation_outcome: "not_created" }),
     }, status);
   }
 }

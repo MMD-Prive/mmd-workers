@@ -802,7 +802,10 @@ export default {
             return withCors(json({ ok: false, error: { code: e.code, message: e.message } }, e.status), cors);
           }
           const error = String(e?.message || e || "job_create_failed");
-          return withCors(json({ ok: false, error }, error.startsWith("private_") ? 403 : 500), cors);
+          return withCors(json({ ok: false, error,
+            creation_outcome: e.creation_outcome || "unknown",
+            ...(e.session_id ? { session_id: e.session_id, payment_ref: e.payment_ref || null } : {}),
+          }, Number.isInteger(e.status) ? e.status : error.startsWith("private_") ? 403 : 500), cors);
         }
       }
 
@@ -4763,6 +4766,9 @@ async function createAdminJob(env, body) {
     location_name,
     google_map_url,
     amount_thb,
+    pay_model_thb: body.pay_model_thb,
+    service_amount_thb: body.service_amount_thb,
+    operational_status: jobDetails.operational_status === "pending_client_link" ? "pending_client_link" : undefined,
     payment_type,
     payment_method,
     note,
@@ -4770,7 +4776,20 @@ async function createAdminJob(env, body) {
     model_confirm_page,
   };
 
-  const minted = await callPaymentsCreateLink(env, payload);
+  // Older issuers reject this envelope at required-field validation, before
+  // writing anything. Rolling deployments must never mint a held job's links.
+  const issuerPayload = jobDetails.operational_status === "pending_client_link"
+    ? { operational_status: "pending_client_link", held_job: payload }
+    : payload;
+  const minted = await callPaymentsCreateLink(env, issuerPayload);
+
+  if (jobDetails.operational_status === "pending_client_link") {
+    // A held create must never accept a legacy issuer that already minted links.
+    if (minted.operational_status !== "pending_client_link" || minted.payment_ref || minted.customer_t || minted.model_t || minted.customer_confirmation_url || minted.model_confirmation_url) {
+      throw new Error("pending_client_link_issuer_contract_failed");
+    }
+    return { session_id: minted.session_id, payment_ref: null, operational_status: "pending_client_link", raw: minted };
+  }
 
   const session_id = minted.session_id || minted.sessionId || "";
   const payment_ref = minted.payment_ref || minted.paymentRef || "";
@@ -4789,7 +4808,9 @@ async function createAdminJob(env, body) {
   if (!customer_confirmation_url) throw new Error("missing_customer_confirmation_url");
   if (!model_confirmation_url) throw new Error("missing_model_confirmation_url");
 
-  await notifyJobCreated(env, {
+  let notificationStatus = "not_configured";
+  try {
+    const notification = await notifyJobCreated(env, {
     session_id,
     payment_ref,
     client_name,
@@ -4802,7 +4823,12 @@ async function createAdminJob(env, body) {
     amount_thb,
     customer_confirmation_url,
     model_confirmation_url,
-  });
+    });
+    if (notification) notificationStatus = notification.ok && notification.data?.ok !== false ? "sent" : "failed";
+  } catch (_) {
+    // The job/payment exists. A notification failure is not a failed create.
+    notificationStatus = "failed";
+  }
 
   return {
     session_id,
@@ -4810,6 +4836,7 @@ async function createAdminJob(env, body) {
     customer_confirmation_url,
     model_confirmation_url,
     raw: minted,
+    notification_status: notificationStatus,
   };
 }
 
@@ -4824,7 +4851,12 @@ export async function callPaymentsCreateLink(env, payload) {
   }
 
   if (!res.ok) {
-    throw new Error(data?.error || data?.message || `payments_worker_http_${res.status}`);
+    const error = new Error(data?.error || data?.message || `payments_worker_http_${res.status}`);
+    error.status = res.status;
+    error.creation_outcome = data?.creation_outcome || "unknown";
+    error.session_id = data?.session_id;
+    error.payment_ref = data?.payment_ref;
+    throw error;
   }
 
   return data || {};
@@ -4849,7 +4881,7 @@ async function notifyJobCreated(env, data) {
     `Model URL: ${escHtml(data.model_confirmation_url)}`,
   ];
 
-  await telegramInternalSend(env, {
+  return await telegramInternalSend(env, {
     chat_id: env.TELEGRAM_CHAT_ID || "-1003546439681",
     message_thread_id: env.TG_THREAD_CONFIRM || 61,
     text: lines.join("\n"),
