@@ -69,6 +69,9 @@ jobs:
           node --check src/admin-payment-review-entry.js
           node --check src/payment-review-runtime.js
           node --check src/admin-login-hero-worker.js
+          node --check src/payments-issuer-transport.js
+          node --check src/payment-issuer-diagnostic.js
+          node --test payment-issuer-diagnostic.test.mjs service-auth-contract.test.mjs
           node --check src/admin-login-page.js
           node --check src/dashboard-worker.js
           node --check src/mms-admin-runtime.js
