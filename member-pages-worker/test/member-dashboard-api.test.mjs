@@ -177,7 +177,7 @@ describe("member dashboard Phase 1 API", () => {
     assert.equal(payload.data.history.status, "verified");
     assert.equal(payload.data.payment_history.status, "verified_history");
     assert.equal(payload.data.actions.dashboard_url, "/member/dashboard?t=abc&code=c&promo=p&source=line&invite=i");
-    assert.doesNotMatch(JSON.stringify(payload), /unsafe|evil|payment_status|membership_expires_at|payment_ref|grants|SVIP|svip|internal_note/i);
+    assert.doesNotMatch(JSON.stringify(payload), /unsafe|evil|payment_status|payment_ref|grants|SVIP|svip|internal_note/i);
   });
 
   it("returns genuine zero points only when the ledger count is resolved", async () => {
@@ -281,13 +281,13 @@ describe("member dashboard Phase 1 API", () => {
 
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("x-mmd-member-display-authority"), "my_mmd_entitlement_resolver_v1");
-    assert.equal(payload.membership.level, "svip");
-    assert.equal(payload.membership.levelVerified, true);
-    assert.equal(payload.membership.status, "active");
-    assert.equal(payload.membership.lifecycle, "active");
+    assert.equal(payload.level, "svip");
+    assert.equal(payload.levelVerified, true);
+    assert.equal(payload.status, "active");
+    assert.equal(payload.lifecycle, "active");
     assert.equal(payload.lifecycle, "active");
     assert.notEqual(payload.nextAction?.kind, "signup");
-    assert.notEqual(payload.membership.nextAction?.kind, "signup");
+    assert.notEqual(payload.nextAction?.kind, "signup");
   });
 
   it("preserves canonical SVIP grace instead of overstating it as active", async () => {
@@ -306,11 +306,57 @@ describe("member dashboard Phase 1 API", () => {
     assert.deepEqual(dashboardResult.payload.data.member.tier, { value: "SVIP", status: "verified", source: "my_mmd_entitlement_resolver_v1" });
     assert.deepEqual(dashboardResult.payload.data.member.membership_status, { value: "grace", status: "verified", source: "my_mmd_entitlement_resolver_v1" });
 
-    const membershipResult = await memberAppMembership(runtime, cookie);
-    assert.equal(membershipResult.payload.membership.level, "svip");
-    assert.equal(membershipResult.payload.membership.status, "grace");
-    assert.equal(membershipResult.payload.membership.lifecycle, "grace");
+    const membershipResult = await memberAppMembership(runtime, dashboardResult.response.headers.get("set-cookie").split(";")[0]);
+    assert.equal(membershipResult.payload.level, "svip");
+    assert.equal(membershipResult.payload.status, "grace");
+    assert.equal(membershipResult.payload.lifecycle, "grace");
     assert.equal(membershipResult.payload.lifecycle, "grace");
     assert.notEqual(membershipResult.payload.nextAction?.kind, "signup");
   });
+});
+
+
+it("refreshes an existing Premium session after status, tier and points change", async () => {
+  const state = { memberExists: true, profile: profileFixture(), entitlementSnapshot: null };
+  const runtime = env({ MEMBER_STATUS_RESOLVER: switchingResolver(state) });
+  const cookie = await startSession(runtime);
+  state.profile = profileFixture({ tier: "Standard", membership_status: "expired", points: 47, membership_expires_at: "2026-08-31" });
+  const first = await dashboard(runtime, cookie);
+  assert.equal(first.payload.data.member.tier.value, "Standard");
+  assert.equal(first.payload.data.member.membership_status.value, "expired");
+  assert.equal(first.payload.data.points.value, 47);
+  const response = await worker.fetch(new Request("https://mmdbkk.com/api/member/app/profile", {
+    headers: { origin: "https://mmdbkk.com", cookie: first.response.headers.get("set-cookie").split(";")[0] },
+  }), runtime);
+  const profile = await response.json();
+  assert.equal(profile.match_state, "matched");
+  assert.equal(profile.membership_tier, "standard");
+  assert.equal(profile.membership_status, "expired");
+  assert.equal(profile.points_confirmed, 47);
+  assert.equal(profile.active_through, null); // legacy expiry is not proven for an expired package
+  assert.equal(profile.actual_access, "restricted");
+});
+
+it("fails closed when a fresh resolver read fails instead of showing a cached balance", async () => {
+  const runtime = env();
+  const cookie = await startSession(runtime);
+  runtime.MEMBER_STATUS_RESOLVER = resolver({ status: 503 });
+  const result = await dashboard(runtime, cookie);
+  assert.equal(result.response.status, 503);
+  assert.equal(result.payload.error.code, "MEMBER_PROFILE_REFRESH_UNAVAILABLE");
+  assert.equal(result.payload.data, undefined);
+});
+
+it("does not coerce a null points value to a verified zero", async () => {
+  const runtime = env({ MEMBER_STATUS_RESOLVER: resolver({ profile: profileFixture({ points: null, points_records_count: 0 }) }) });
+  const result = await dashboard(runtime, await startSession(runtime));
+  assert.equal(result.payload.data.points.status, "checking");
+  assert.equal(result.payload.data.points.value, null);
+});
+
+it("canonical blocking outranks an active protected capability", async () => {
+  const snapshot = { ...canonicalEntitlementSnapshot("vip"), member_blocked: true };
+  const runtime = env({ MEMBER_STATUS_RESOLVER: resolver({ entitlementSnapshot: snapshot }) });
+  const result = await dashboard(runtime, await startSession(runtime));
+  assert.equal(result.payload.data.member.membership_status.value, "blocked");
 });

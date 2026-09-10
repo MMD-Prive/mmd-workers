@@ -23,6 +23,7 @@ export default {
   async fetch(request, env = {}, ctx) {
     const url = new URL(request.url);
     const canonicalContext = await prepareMyMmdCanonicalEntitlementContext(request, env);
+    if (canonicalContext?.unavailable) return Response.json({ ok: false, state: "checking", error: { code: "MEMBER_PROFILE_REFRESH_UNAVAILABLE" } }, { status: 503, headers: { "cache-control": "no-store" } });
     const finish = (response) => applyMyMmdCanonicalEntitlementResponse(request, response, canonicalContext);
 
     if (isMmsServiceZoneCatalogPath(url)) return finish(await handleMmsServiceZoneCatalog(request, env));

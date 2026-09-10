@@ -1,3 +1,4 @@
+import { serializeCustomer360Profile } from "./customer-360-serializer.js";
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const SESSION_TTL_SECONDS = 15 * 60;
 const MEMBER_PROFILE_PATH = "/__internal/member-profile/read";
@@ -7,6 +8,10 @@ const RESOLVER_SCHEMA = "my_mmd_entitlement_resolver_v1";
 const RESOLVER_SOURCE = "my_mmd_entitlement_resolver_v1";
 
 const ELIGIBLE_PATHS = new Set([
+  "/api/member/app/points", "/api/member/app/points/",
+  "/api/member/app/history", "/api/member/app/history/",
+  "/api/member/app/profile", "/api/member/app/profile/",
+  "/member/api/liff/profile", "/member/api/liff/profile/",
   "/api/member/dashboard",
   "/api/member/dashboard/",
   "/api/member/app/dashboard",
@@ -34,18 +39,24 @@ export async function prepareMyMmdCanonicalEntitlementContext(request, env = {})
 
   const sessionRef = await readSessionRef(request, env);
   if (!sessionRef) return null;
-  if (!needsCanonicalRefresh(sessionRef.session)) return null;
 
   const resolved = await readCanonicalMemberProfile(env, sessionRef.lineUserId);
-  if (!resolved) return null;
-  const projection = projectProtectedEntitlement(resolved.entitlementSnapshot);
-  if (!projection) return null;
+  if (!resolved) return { unavailable: true };
+  if (resolved.entitlementSnapshot?.member_blocked === true && resolved.profile) {
+    resolved.profile = { ...resolved.profile, membership_status: "blocked",
+      ...(resolved.profile.customer_360 ? { customer_360: { ...resolved.profile.customer_360,
+        member: { ...resolved.profile.customer_360.member, membership_status: "blocked" } } } : {}) };
+  }
+  const denied = ["blocked", "suspended", "revoked", "pending_review", "under_review"].includes(resolved.profile?.membership_status);
+  const projection = denied ? null : projectProtectedEntitlement(resolved.entitlementSnapshot);
 
   const displayName = safeDisplayName(resolved.profile?.display_name);
-  const memberProfile = overlayProtectedDisplay(resolved.profile, projection, displayName);
+  const memberProfile = resolved.memberId ? (projection
+    ? overlayProtectedDisplay(serializeCustomer360Profile(resolved.profile), projection, displayName)
+    : serializeCustomer360Profile(resolved.profile)) : null;
   const refreshedSession = {
     ...sessionRef.session,
-    member_exists: true,
+    member_exists: Boolean(resolved.memberId),
     member_id: resolved.memberId,
     member_profile: memberProfile,
   };
@@ -54,9 +65,10 @@ export async function prepareMyMmdCanonicalEntitlementContext(request, env = {})
     const ttl = remainingSessionTtl(refreshedSession);
     await env.LIFF_IDENTITY_KV.put(sessionRef.key, JSON.stringify(refreshedSession), { expirationTtl: ttl });
   } catch {
-    return null;
+    return { unavailable: true };
   }
 
+  if (!projection) return { profileRefreshed: true };
   return {
     memberId: resolved.memberId,
     displayName,
@@ -80,12 +92,16 @@ export async function applyMyMmdCanonicalEntitlementResponse(request, response, 
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return response;
 
   let patched = payload;
-  if (path === "/api/member/dashboard" || path === "/api/member/dashboard/") {
+  if (!context.capability) {
+    patched = payload;
+  } else if (path === "/api/member/dashboard" || path === "/api/member/dashboard/") {
     patched = patchDashboardPayload(payload, context);
+  } else if (/^\/api\/member\/app\/profile\/?$/.test(path)) {
+    patched = { ...payload, match_state: "matched", membership_tier: context.capability, membership_status: context.lifecycle, actual_access: context.publicServiceAccess ? "granted" : "restricted" };
   } else if (path === "/api/member/app/dashboard" || path === "/api/member/app/dashboard/" || path === "/api/member/app/membership" || path === "/api/member/app/membership/") {
-    patched = patchMemberAppPayload(payload, context);
+    patched = patchMemberAppPayload(payload, context, /\/membership\/?$/.test(path));
   }
-  if (patched === payload) return response;
+  if (!context.capability) return response;
 
   const headers = new Headers(response.headers);
   headers.delete("content-length");
@@ -146,13 +162,13 @@ function patchDashboardPayload(payload, context) {
   };
 }
 
-function patchMemberAppPayload(payload, context) {
-  const membership = isPlainObject(payload.membership) ? payload.membership : {};
+function patchMemberAppPayload(payload, context, standalone = false) {
+  const membership = standalone ? payload : (isPlainObject(payload.membership) ? payload.membership : {});
   const existingAction = isPlainObject(payload.nextAction) ? payload.nextAction : null;
   const nextAction = protectedMemberNextAction(existingAction);
   const identity = isPlainObject(payload.identity) ? payload.identity : {};
 
-  return {
+  const patched = {
     ...payload,
     greetingName: preferResolvedDisplayName(payload.greetingName, context.displayName),
     identity: {
@@ -175,6 +191,7 @@ function patchMemberAppPayload(payload, context) {
     nextAction,
     legacyDisplay: null,
   };
+  return standalone ? { ...patched.membership, lifecycle: patched.lifecycle } : patched;
 }
 
 function protectedMemberNextAction(existing) {
@@ -240,14 +257,14 @@ async function readCanonicalMemberProfile(env, lineUserId) {
     if (!response.ok) return null;
     const payload = await response.json().catch(() => null);
     const data = isPlainObject(payload?.data) ? payload.data : null;
-    if (payload?.ok !== true || data?.member_exists !== true) return null;
+    if (payload?.ok !== true || typeof data?.member_exists !== "boolean") return null;
+    if (!data.member_exists) return { memberId: null, profile: null, entitlementSnapshot: null };
     const memberId = safeIdentifier(data.member_id);
     const profile = isPlainObject(data.profile) ? data.profile : null;
     if (!memberId || !profile) return null;
     const entitlementSnapshot = isPlainObject(data.entitlement_snapshot)
       ? data.entitlement_snapshot
       : (isPlainObject(profile.entitlement_snapshot) ? profile.entitlement_snapshot : null);
-    if (!entitlementSnapshot) return null;
     return { memberId, profile, entitlementSnapshot };
   } catch {
     return null;
@@ -272,14 +289,6 @@ async function readSessionRef(request, env) {
   } catch {
     return null;
   }
-}
-
-function needsCanonicalRefresh(session = {}) {
-  if (session.member_exists !== true || !safeIdentifier(session.member_id) || !isPlainObject(session.member_profile)) return true;
-  const profile = session.member_profile;
-  const status = String(profile.membership_status || "").trim().toLowerCase();
-  const tier = String(profile.tier || "").trim();
-  return !["active", "grace", "expired"].includes(status) || !tier || tier === "Member";
 }
 
 function remainingSessionTtl(session = {}) {
