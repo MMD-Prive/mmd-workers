@@ -17,6 +17,15 @@ import {
   handleModelJobDayGuideRequest,
   isModelJobDayGuideRequest,
 } from "./model-job-day-guide.js";
+import {
+  ADMIN_SAFETY_LOCATION_PATH,
+  MODEL_LOCATION_CAPABILITY_PATH,
+  augmentModelLocationCapability,
+  handleAdminSafetyLocationRequest,
+  handleModelSafetyLocationCurrent,
+  isAdminSafetyLocationRequest,
+  isModelSafetyLocationCurrentRequest,
+} from "./model-safety-location.js";
 export * from "./admin-login-hero-worker-core.js";
 
 /*
@@ -43,6 +52,21 @@ const AI_OPS_WORKER_PAGES = new Set([
 export default {
   async fetch(request, env, ctx) {
     const path = normalizePath(new URL(request.url).pathname);
+
+    // Safety Location is additive to the existing Model location channel.
+    // `?mode=safety` stores into a separate Durable Object namespace so customer
+    // location readers can never see a safety-check point. Browser/OS permission
+    // remains mandatory; this route cannot bypass device privacy controls.
+    if (isModelSafetyLocationCurrentRequest(request)) {
+      return handleModelSafetyLocationCurrent(request, env, ctx);
+    }
+    if (path === MODEL_LOCATION_CAPABILITY_PATH && request.method.toUpperCase() === "GET") {
+      return augmentModelLocationCapability(request, env, ctx, coreWorker);
+    }
+    if (isAdminSafetyLocationRequest(path) || path === ADMIN_SAFETY_LOCATION_PATH) {
+      return handleCredentialBoundSafetyLocation(request, env);
+    }
+
     if (isModelJobDayGuideRequest(path)) {
       return handleModelJobDayGuideRequest(request, env);
     }
@@ -96,6 +120,31 @@ export default {
     return injectAdminAiOpsPage(recoveryRequest || request, response);
   },
 };
+
+async function handleCredentialBoundSafetyLocation(request, env) {
+  const method = request.method.toUpperCase();
+  if (method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Cache-Control": "no-store, private",
+        "Allow": "GET, POST, DELETE, OPTIONS",
+      },
+    });
+  }
+  if (!["GET", "POST", "DELETE"].includes(method)) {
+    return dashboardJson({ ok: false, error: "method_not_allowed" }, 405);
+  }
+
+  const url = new URL(request.url);
+  if (url.hostname !== "mmdbkk.com" && url.hostname !== "www.mmdbkk.com") {
+    return dashboardJson({ ok: false, error: "safety_location_host_not_allowed" }, 403);
+  }
+
+  const actor = await readCredentialBoundAdminActor(request, env);
+  if (!actor) return dashboardJson({ ok: false, error: "unauthorized" }, 401);
+  return handleAdminSafetyLocationRequest(request, env, actor);
+}
 
 async function handleCredentialBoundDashboard(request, env, ctx) {
   const method = request.method.toUpperCase();
