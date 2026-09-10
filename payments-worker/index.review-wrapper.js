@@ -11,6 +11,7 @@ import {
   handleCanonicalConfirmLink,
   isCanonicalConfirmLinkRequest,
 } from "./canonical-confirm-link.js";
+import { canonicalizeConfirmLinkRequest } from "./confirm-route-canonicalizer.js";
 import {
   enforceSigilSessionServiceAmount,
   reconcileSigilConfirmLinkMoneyTruth,
@@ -28,8 +29,9 @@ export default {
     const method = request.method.toUpperCase();
 
     if (isCanonicalConfirmLinkRequest(path, method)) {
-      const response = await handleCanonicalConfirmLink(request, env, ctx);
-      return reconcileSigilConfirmLinkMoneyTruth(request, response, env);
+      const canonicalRequest = await canonicalizeConfirmLinkRequest(request);
+      const response = await handleCanonicalConfirmLink(canonicalRequest, env, ctx);
+      return reconcileSigilConfirmLinkMoneyTruth(canonicalRequest, response, env);
     }
 
     if (isReviewedProofRequest(path, method)) {
