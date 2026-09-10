@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import "./model-safety-location.test.mjs";
 import {
   chooseIdentityCandidate,
   modelMediaPolicy,
