@@ -55,7 +55,7 @@ async function buildAdminDashboard(env) {
 
   const [proofsResult, sessionsResult, membersResult, reconfirmSessionsResult] = await Promise.allSettled([
     airtableList(env, env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || "tblfJfM4Sqag9zrLi", 30),
-    airtableList(env, sessionsTable, 30),
+    airtableList(env, sessionsTable, 100),
     airtableList(env, env.AIRTABLE_TABLE_MEMBERS_ID || DEFAULT_MEMBERS_TABLE_ID, 30),
     airtableListSessionsForDate(env, sessionsTable, tomorrow),
   ]);
@@ -225,26 +225,38 @@ function buildMoneyList(records) {
     });
 }
 
-function buildJobList(records, now) {
-  return records
-    .slice(0, 6)
-    .map((record, index) => {
-      const fields = record.fields || {};
-      const sessionId = firstText(fields.session_id, fields.sid, fields.job_id, record.id);
-      const model = firstText(fields.model_name, fields["Assigned Model"], fields["Model Name"], fields.model, fields.assigned_model, "ยังไม่ระบุ model");
-      const customer = firstText(fields.client_name, fields.member_name, fields.customer_name, fields.name, "ลูกค้า");
-      const status = firstText(fields.session_state, fields.status, fields["Session Status"], fields.job_status, "กำลังดำเนินการ");
-      const time = timeLabel(fields.start_time || fields["Start Time"] || fields.start_at || fields.scheduled_at || fields.date_time, now, index);
-      return {
-        id: sessionId,
-        title: `${model} · ${customer}`,
-        text: compactJoin([status, firstText(fields.service_type, fields.package_code, fields["Session Type"], fields.work_type, "")], " · "),
-        time,
-        status: thaiStatus(status),
-        progress: progressFromStatus(status),
-        href: `/internal/admin/jobs/${encodeURIComponent(sessionId)}`,
-      };
-    });
+export function buildJobList(records, now = new Date()) {
+  const items = (Array.isArray(records) ? records : []).map((record) => {
+    const fields = record.fields || {};
+    const sessionId = firstText(fields.session_id, fields.sid, fields.job_id, record.id);
+    const model = firstText(fields.model_name, fields["Assigned Model"], fields["Model Name"], fields.model, fields.assigned_model, "ยังไม่ระบุ model");
+    const customer = firstText(fields.client_name, fields.member_name, fields.customer_name, fields.name, "ลูกค้า");
+    const status = firstText(fields.session_state, fields.status, fields["Session Status"], fields.job_status, "กำลังดำเนินการ");
+    const jobDateSource = firstText(fields.job_date, fields.service_date, fields.date, fields["Job Date"]);
+    const scheduleSource = firstText(fields.start_at, fields.scheduled_at, fields.date_time);
+    const startTimeSource = firstText(fields.start_time, fields["Start Time"], scheduleSource);
+    const jobDate = normalizeDateOnly(jobDateSource) || normalizeDateOnly(scheduleSource);
+    const dateLabel = jobDateLabel(jobDate || jobDateSource || scheduleSource);
+    const timeOnly = timeLabel(startTimeSource);
+    const when = compactJoin([dateLabel, timeOnly], " · ") || "ยังไม่มีวันเวลา";
+
+    return {
+      id: sessionId,
+      title: `${model} · ${customer}`,
+      text: compactJoin([status, firstText(fields.service_type, fields.package_code, fields["Session Type"], fields.work_type, "")], " · "),
+      job_date: jobDate,
+      date_label: dateLabel,
+      start_time: firstText(fields.start_time, fields["Start Time"]),
+      time_only: timeOnly,
+      time: when,
+      when,
+      status: thaiStatus(status),
+      progress: progressFromStatus(status),
+      href: `/internal/admin/jobs/${encodeURIComponent(sessionId)}`,
+    };
+  });
+
+  return sortDashboardJobs(items, now).slice(0, 6);
 }
 
 export function buildReconfirmOverview(records, now = new Date(), jobDate = bangkokDateOffset(now, 1)) {
@@ -574,13 +586,62 @@ function bangkokDateOffset(value, days) {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
-function timeLabel(value, now, index) {
-  const date = parseDate(value);
-  if (date) {
-    return new Intl.DateTimeFormat("th-TH", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Bangkok" }).format(date);
+function jobDateLabel(value) {
+  const raw = str(Array.isArray(value) ? value[0] : value);
+  if (!raw) return "";
+  const normalized = normalizeDateOnly(raw);
+  const date = normalized ? new Date(`${normalized}T12:00:00+07:00`) : parseDate(raw);
+  if (!date) return "";
+  return new Intl.DateTimeFormat("th-TH", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Bangkok",
+  }).format(date);
+}
+
+function timeLabel(value) {
+  const raw = str(Array.isArray(value) ? value[0] : value);
+  if (!raw) return "";
+
+  const timeOnly = raw.match(/^(\d{1,2})[:.](\d{2})(?::\d{2})?$/);
+  if (timeOnly) {
+    const hour = Number(timeOnly[1]);
+    const minute = Number(timeOnly[2]);
+    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
+      return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+    }
   }
-  const fallback = new Date(now.getTime() + (index + 1) * 60 * 60 * 1000);
-  return new Intl.DateTimeFormat("th-TH", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Bangkok" }).format(fallback);
+
+  const date = parseDate(raw);
+  if (!date) return "";
+  return new Intl.DateTimeFormat("th-TH", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Bangkok",
+  }).format(date);
+}
+
+function sortDashboardJobs(items, now) {
+  const today = bangkokDateOffset(now, 0);
+  const bucket = (job) => {
+    if (!job.job_date) return 3;
+    if (job.job_date === today) return 0;
+    if (job.job_date > today) return 1;
+    return 2;
+  };
+
+  return [...items].sort((a, b) => {
+    const aBucket = bucket(a);
+    const bBucket = bucket(b);
+    if (aBucket !== bBucket) return aBucket - bBucket;
+    if (a.job_date !== b.job_date) {
+      if (aBucket === 2) return String(b.job_date).localeCompare(String(a.job_date));
+      return String(a.job_date).localeCompare(String(b.job_date));
+    }
+    return String(a.time_only || "99:99").localeCompare(String(b.time_only || "99:99"));
+  });
 }
 
 function thaiStatus(value) {
