@@ -1,69 +1,105 @@
 # MMD Privé — CARE BACK 2026
 
 **Promotion, Points & Operational Rules — Final working summary**  
-**Status:** Final rules for implementation  
-**Last updated:** 31 August 2026 (Asia/Bangkok)  
-**Coupon Validity Canon:** V2.2
+**Status:** Active canonical operations policy  
+**Last updated:** 10 September 2026 (Asia/Bangkok)  
+**Coupon Validity Canon:** V2.2  
+**Membership / CARE BACK Canon:** V3.0
 
 ## 1. Purpose
 
-CARE BACK is a **สิทธิ์ดูแลกลับ** for people MMD has previously cared for, and for verified new members entering through the campaign. It is not a mass discount, a membership package, or an automatic approval.
+CARE BACK is a **สิทธิ์ดูแลกลับ** for people MMD has previously cared for and for verified new members entering through the campaign. It is not a mass discount, a membership package, or an automatic approval.
 
-Every benefit is determined from the member status and records MMD can verify or safely reconstruct from MMD-owned legacy evidence. Opening the campaign page or submitting an identity form alone does not create a coupon, points, payment approval, or a new membership term.
+Public pages explain policy only. Actual payment, membership term, Points, coupon percentage and `active_through` come from their canonical owners after verification.
 
-Coupon Canon V2.2 supersedes earlier rules that treated 10% as a fixed guaranteed discount or used a 30-day coupon lifetime.
+## 2. Private Membership term lock
 
-## 2. Campaign calendar
+| Private Membership | Base duration | Expanded CARE BACK for qualifying signup / renewal from 1 Aug 2026 |
+| --- | ---: | ---: |
+| Standard | **1 year** | **+180 days** |
+| Premium | **2 years** | **+1 full year** |
+
+Operational consequences:
+
+- Premium must never be described as `1 YEAR` or `THB / YEAR` on current customer-facing Private Membership surfaces.
+- `current +180 days` is not the universal rule for membership activity dated on/after 1 Aug 2026.
+- A qualifying Standard signup/renewal receives +180 days after canonical verification.
+- A qualifying Premium signup/renewal receives +1 full year after canonical verification.
+- The browser never calculates the final date.
+- The canonical membership owner returns the real account result and My MMD presents it.
+
+### No double stacking
+
+A single qualifying membership transaction receives one CARE BACK duration extension only.
+
+- Premium renewal from 1 Aug 2026 onward → Premium rule `+1 year`, not generic `+180 days` plus another year.
+- Standard renewal from 1 Aug 2026 onward → Standard rule `+180 days`, not legacy former-member `+90 days` plus another 180 days.
+- Retry/resume must be idempotent.
+
+### Legacy compatibility
+
+Historical claims created under pre-expansion policy remain auditable and are not silently rewritten. Existing records may therefore still contain legacy status-based adjustments such as current-member +180 days or former/expired +90 days.
+
+Those values are compatibility history only. They must not be reused as the public rule for a new qualifying membership transaction dated on/after 1 Aug 2026.
+
+## 3. Campaign calendar
 
 | Phase | Customer-facing name | Period | Rule |
 | --- | --- | --- | --- |
-| 01 | MMD Birthday CARE BACK | Today–31 August 2026 | Birthday window |
-| 02 | CARE BACK CONTINUES | 1–30 September 2026 | Continuation for customers who saw the campaign or registration window late |
+| 01 | MMD Birthday CARE BACK | through 31 August 2026 | Birthday window |
+| 02 | CARE BACK CONTINUES | 1–30 September 2026 | Same campaign, continuation window |
 
-Both phases use **one identical benefit policy**. September is not a second promotion and does not create a second coupon, second point bonus, or duplicate membership extension.
+September is not a second promotion. It must not create a second coupon, duplicate point bonus, or duplicate membership extension.
 
-After 30 September 2026, the system must not create a new CARE BACK claim. A verified claim that already exists may resume its approved workflow and status checks.
+## 4. Customer flow
 
-## 3. Required customer flow
+### Public Wish
 
-1. Customer starts from CARE BACK and signs in through LINE/LIFF.
-2. MMD verifies the Member Passport, membership status, linked LINE Official history, and recoverable Points history.
-3. System creates or resumes one CARE BACK claim only.
-4. Customer sends a Birthday Wish to MMD through the canonical Wish flow.
-5. Only a successfully saved Wish can unlock a personal coupon.
-6. Membership, payment, Points, and approved coupon benefits are applied only after the relevant MMD verification or approved historical reconstruction is complete.
+1. Anyone may open `/promotion/6-years-care-back/wish` and submit a Birthday Wish without LINE login or membership verification.
+2. A successful Wish is complete by itself.
+3. LINE verification after Wish is optional and exists for linking/receiving the personal coupon.
+4. Membership duration, Points and payment are separate verified flows.
+5. Wish alone never grants membership extension or Points.
 
-## 4. Universal rules
+### Membership activity
 
-### Identity, legacy history and Points
+1. Customer signs up for or renews Private Membership through the canonical membership/payment path.
+2. MMD verifies identity, membership transaction and payment as required.
+3. Canonical membership logic resolves Standard or Premium.
+4. If the transaction is CARE BACK eligible and effective on/after 1 Aug 2026, apply the package-specific extension once.
+5. My MMD shows the verified final status and `active_through`.
 
-- Identity verification starts CARE BACK review; it does **not** automatically issue a coupon or add Points.
-- For old customers, LINE Official identity/profile linkage, Per-renamed customer names/nicknames, legacy tags, and Per's original customer notes are valid MMD-owned migration evidence.
-- Historical customers must **not** be required to reproduce old slips that may no longer exist.
-- Historical Points are reconstructed primarily from **Per's original LINE Official customer notes** and preserved migration trace.
-- LINE tags and nickname markers help identify relationship, period, package, and membership history; they do not by themselves invent a Points balance.
-- Historical-note parsing may extract service amounts, dates, packages, tips, membership/renewal entries, promotion/referral signals, and ambiguity warnings.
-- Historical Points rate remains **100 THB = 1 Point** for service amounts supported by Per Notes / preserved legacy evidence.
-- Tips do not generate Points; direct-hand tips never count.
+## 5. Identity, legacy history and Points
+
+- Historical customers must not be forced to reproduce old slips that may no longer exist.
+- LINE Official identity/profile linkage, Per-renamed customer names, legacy tags and Per's original customer notes are valid MMD-owned reconstruction evidence.
+- Historical Points are reconstructed primarily from Per Notes / preserved LINE Official evidence.
+- Historical Points baseline remains **100 THB = 1 Point** for supported service amounts.
+- Tips do not generate historical Points; direct-hand tips never count.
 - Membership/renewal fees are not auto-counted into historical Points unless an explicit rule says otherwise.
-- Ambiguous amounts and promo/referral bonuses require review.
-- A transfer slip or receipt is optional supporting evidence for historical reconstruction; it is not a mandatory prerequisite.
-- Every Points or membership action must be idempotent: retrying a request must not add the same benefit twice.
+- Ambiguous amounts and promo/referral bonuses remain review-required.
+- `immigrate-worker` normalizes/infer legacy evidence but never grants canonical entitlement by itself.
 
-### Current/new transaction truth
+### Campaign Points retained
 
-- Current and new payment confirmation belongs to the official payment-verification owner.
-- A current transaction slip is evidence only and never confirms payment by itself.
-- Membership extensions are applied by the canonical membership owner, not by the browser.
-- Points are applied by the canonical Points Ledger owner, not by the browser.
+| Case | Points rule |
+| --- | --- |
+| Current member verification-only | Historical Points reconciliation; no automatic CARE BACK point bonus unless separately approved |
+| Former/expired renewal | +150 Points where the approved renewal rule applies; historical Points may be reconstructed separately |
+| New Standard | +150 Welcome Points after verified membership/payment |
+| New Premium | +250 Welcome Points after verified membership/payment |
+| Approved special campaign selection | Up to +350 Points after verified membership/payment; Black Card review consideration only |
 
-### Personal coupon — Canon V2.2
+Trial / Guest Pass receives no automatic CARE BACK Welcome Points unless MMD publishes a separate rule.
 
-- A personal coupon is available only after the customer’s Birthday Wish is successfully saved.
-- Customer-facing benefit before verification: **UP TO 10% OFF** / **ส่วนลดสูงสุด 10%** only.
-- **10% is the campaign maximum, not a guaranteed discount for every job.**
-- Public work should normally begin around **5%** where the applicable model/job combination permits it, while Public Models remain inside the approved 3–5% band.
-- The base discount matrix is determined by **Model level × job format**:
+## 6. Personal coupon — Canon V2.2
+
+- Coupon requires a successfully saved Birthday Wish.
+- Public/unverified wording is **UP TO 10% OFF / ส่วนลดสูงสุด 10%** only.
+- 10% is the campaign ceiling, not a guaranteed discount for every booking.
+- Approved rate is resolved from **Model level × PN/VIP job format × customer eligibility** and returned by trusted backend as `approved_discount_percent`.
+- Browser/public code never calculates or invents the authoritative percentage.
+- Card color represents membership status only and never determines discount.
 
 | Model level | PN job format | VIP job format |
 | --- | ---: | ---: |
@@ -71,150 +107,63 @@ After 30 September 2026, the system must not create a new CARE BACK claim. A ver
 | Standard Models | 5% | 7% |
 | Premium / EMs / GWs Models | 5% | 10% |
 
-- `PN` and `VIP` in this matrix are **job formats**, not customer membership status or tier.
-- Customer eligibility is an additional gate. The authoritative verified result must be returned as `approved_discount_percent` after the Model level × job format result has been checked against customer eligibility.
-- Browser/public code must never calculate or invent the approved percentage.
-- Before verified entitlement, Public surfaces may display only **“สูงสุด 10%” / “UP TO 10% OFF”**.
-- Coupon color identifies membership status only:
+`PN` and `VIP` are job formats, not customer membership tiers.
 
-| Card color | Membership status |
-| --- | --- |
-| Blue | Standard |
-| Silver | Premium |
-| Red | Red Card holder |
-| Black | Black Card holder + VIP customer status |
-| Gold | SVIP customer status |
+### Coupon validity
 
-- Card color must never determine the discount.
-- Coupon Cards in all five colors may use status-specific visual design, but must not print a fixed rate by color. `UP TO 10% OFF` may be used as generic pre-verification campaign copy.
-- Backend must return `approved_discount_percent` as the authoritative actual discount after verification.
-- The coupon is single-use and limited to one coupon per booking for an eligible participating service.
-- Validity: **2 months from activation**. Redemption and booking confirmation must occur before expiry.
-- After a valid booking is confirmed within coupon validity, the service date may be scheduled up to **90 days from the original booking date**, including a date after coupon expiry.
-- Rescheduling must remain within 90 days from the original booking date.
-- Example: activation on **1 September** → booking may be confirmed through **31 October** → if booked on **20 October**, service may be scheduled within 90 days from 20 October.
-- A personal code must not be displayed before the Wish is saved.
-- The code is personal, single-use, and cannot be issued repeatedly for the same CARE BACK claim.
-- The coupon is not cash and cannot be used for membership fees, renewal fees, tips, payment verification, Black Card approval, or SVIP access.
-- Viewing or copying a code never consumes it. A used, expired, revoked, or invalid code cannot be reactivated by the customer.
+- **2 calendar months from activation**.
+- Single use, one coupon per booking.
+- Booking confirmation must occur before verified expiry.
+- After valid booking, service date may be scheduled within 90 days from the original booking date, including after coupon expiry.
+- Rescheduling must remain within the same original 90-day window.
+- Coupon is not cash and cannot be used for membership fees, renewal fees, tips, payment verification, Black Card approval, or SVIP access.
 
-### Approval boundaries
+## 7. Authority boundaries
 
-- `immigrate-worker` normalizes and infers legacy LINE evidence; it preserves traceability and safe-match behavior.
-- Historical reconstruction is promoted/applied only after canonical/admin approval, not directly by browser or migration inference.
-- Black Card remains a private review decision; points never auto-approve Black Card.
-- SVIP is never point-based, purchasable, or automatic. It is privately considered by Per only.
+- Payment truth → official payment-verification owner.
+- Membership base term + CARE BACK extension → canonical membership owner.
+- Final `active_through` → canonical membership state / My MMD.
+- Historical migration evidence → reviewed MMD-owned evidence.
+- Points → canonical Points Ledger.
+- Coupon actual rate → backend `approved_discount_percent`.
+- AI / Kenji → advisory and routing only.
+- Policy / exception → Per.
 
-## 5. Benefits by customer status
+No browser, query string, card color, visual tier, Wish submission, Telegram observation or Drive observation may override those authorities.
 
-| Customer status | What MMD verifies | CARE BACK benefit | Points rule | Coupon state |
-| --- | --- | --- | --- | --- |
-| Current member (active/grace) | Passport, existing expiry, LINE Official legacy history, Per Notes | Extend membership **180 days from the actual existing expiry date** | Reconstruct/reconcile historical Points from Per Notes at 100 THB = 1 Point; no automatic CARE BACK point bonus | Opens after Birthday Wish is saved |
-| Former/expired member | Previous member record, LINE Official history, renewal status | No automatic renewal. After official renewal payment and active/grace restoration: extend **90 days** | **+150 Points** after the related renewal is verified and applied; historical Points may be reconstructed separately from Per Notes | Remains unavailable until Wish, renewal, payment, and restored member status are verified |
-| New member — Standard | New membership and payment | No historic membership extension | **+150 Welcome Points** after payment verification | Opens after Birthday Wish and relevant verification |
-| New member — Premium | New membership and payment | No historic membership extension | **+250 Welcome Points** after payment verification | Opens after Birthday Wish and relevant verification |
-| New member — special campaign selection | Eligibility and payment | No historic membership extension | Up to **+350 Points** only where the campaign selection is approved | Opens after Birthday Wish and relevant verification |
+## 8. Required public wording
 
-### Important package notes
+Use one policy consistently across customer-facing surfaces:
 
-- Customer-facing packages are **Trial / Guest Pass**, **Standard**, and **Premium** only.
-- Trial / Guest Pass does not receive an automatic CARE BACK Welcome Points amount unless MMD explicitly publishes one.
-- A 350-Point campaign selection can support **Black Card review consideration only**. It does not purchase, grant, or promise Black Card.
-- VIP is not a customer-facing membership package. SVIP is private to Per’s review and must not be explained as a points threshold.
+> Private Standard อายุพื้นฐาน 1 ปี · Private Premium อายุพื้นฐาน 2 ปี สำหรับการสมัครหรือต่ออายุ Private Membership ที่เข้าเงื่อนไข CARE BACK ตั้งแต่เดือนสิงหาคม 2026 Standard +180 วัน · Premium +1 ปี วันหมดอายุจริงยึด My MMD หลัง MMD ยืนยัน
 
-## 6. Exact operational rules
+Wish-specific wording:
 
-### Current member
+> Wish ส่งได้ทุกคนครับ Wish อย่างเดียวไม่เพิ่มวันสมาชิกหรือ Points หากต้องการคูปองค่อยยืนยัน LINE หลังส่งได้ ส่วน CARE BACK Membership คิดตามแพ็กเกจและสิทธิ์ที่ตรวจสอบได้ — Standard +180 วัน · Premium +1 ปี
 
-- The 180-day extension begins from the member’s real recorded expiry date — never from the date they click Verify.
-- Historic Points are reconstructed from Per Notes / LINE Official legacy evidence first.
-- The historical-note parser produces staged `proposed_points`, confidence, and warnings; ambiguous history goes to review instead of being guessed.
-- There is no automatic +50 or other automatic CARE BACK point bonus.
+Required sweep routes:
 
-### Former/expired member
+- `/`
+- `/member/membership`
+- `/sigil/member/membership/benefits`
+- `/promotion/6-years-care-back`
+- `/promotion/6-years-care-back/wish`
 
-- The system must search and verify the old member record first.
-- CARE BACK must not renew an expired membership by itself.
-- The customer completes official renewal; MMD verifies the current renewal payment; the profile must be active or grace before the 90-day extension and 150-point benefit become eligible for application.
-- Historical status and Points may still be reconstructed from MMD-owned LINE Official notes even when the customer no longer has old slips.
+## 9. Runtime compatibility rule
 
-### New member
+The 2026-09-10 policy/wording sweep does **not** require destructive rewriting of historical CARE BACK claim records or pre-expansion compatibility constants. Runtime may continue to recognize existing legacy claim state, but customer-facing and knowledge surfaces must not present legacy lifecycle constants as the current universal membership policy.
 
-- Welcome Points are pending until membership registration and payment verification are complete.
-- Standard, Premium, and approved special campaign selections follow the point table above.
-- New members have no old membership expiry to extend.
+Any future mutation path that creates a new qualifying Private Membership signup/renewal on/after 1 Aug 2026 must resolve the package-specific extension through the canonical membership owner.
 
-## 7. Customer-facing safety copy
+## 10. Go-live checks
 
-> สิทธิ์ทั้งหมดจะมีผลหลัง MMD ตรวจสอบข้อมูล การสมัคร การชำระเงิน หรือประวัติเดิมที่ MMD เชื่อมโยงได้เรียบร้อยแล้วเท่านั้น
-
-> สำหรับประวัติเก่า MMD จะตรวจจากข้อมูลที่เคยบันทึกไว้ เช่น LINE Official และ Note เดิมของ MMD โดยไม่จำเป็นต้องให้ลูกค้าหาสลิปเก่าครบทุกครั้ง
-
-> คูปองส่วนตัวจะแสดงเพียง “ส่วนลดสูงสุด 10%” ก่อนยืนยันสิทธิ์ ส่วนลดจริงขึ้นอยู่กับระดับนายแบบ × รูปแบบงาน และสิทธิ์ที่ตรวจสอบได้ของลูกค้า ใช้ได้ 1 ครั้ง ต้องใช้ยืนยันการจองภายใน 2 เดือนหลังเปิดใช้ และเมื่อจองทันอายุคูปองแล้วสามารถเลือกวันรับบริการได้ไม่เกิน 90 วันนับจากวันที่จองครั้งแรก
-
-## 8. Worker and data rules
-
-- LINE/LIFF session verification is the customer identity boundary.
-- `immigrate-worker` owns legacy normalization/inference and preserved migration trace, not final entitlement mutation.
-- Per Notes are the primary historical Points reconstruction source.
-- The canonical Birthday Wish service is the only authority that can mark a Wish as saved.
-- Backend coupon verification must return `approved_discount_percent`; card color and browser-visible tier styling are not discount authority.
-- Browser code must not write campaign claims, activate a coupon, calculate an authoritative discount, apply Points, extend membership, approve payment, approve Black Card, or infer SVIP.
-- Promotion states must distinguish at least: `wish_required`, `renewal_required`, `ready`, `used`, `expired`, `revoked`, and `invalid`.
-- Historical review states should distinguish at least: `legacy_found`, `legacy_review_required`, `historical_points_proposed`, `historical_points_approved`, and `historical_points_applied`.
-
-## 9. Go-live checklist
-
-- [ ] `/public/access` remains a short bilingual Identity Gate only.
-- [ ] Wish authentication no longer loops into repeated LINE Login / QR.
-- [ ] LINE Official legacy lookup can match a customer safely before CARE BACK historical reconstruction.
-- [ ] Per Notes parser can produce proposed historical Points with warnings/review state.
-- [ ] Historical customers are not blocked because old slips are missing.
-- [ ] Current/new payment verification remains separate from legacy reconstruction.
-- [ ] Existing claims remain idempotent and do not create duplicate codes, extensions, or Points.
-- [ ] Coupon verification returns `approved_discount_percent` and no client surface derives a fixed rate from card color.
-- [ ] Coupon redemption is connected to the official booking/service transaction owner before any live “use coupon” claim is made.
-- [ ] Production deployment and Webflow publication are separately approved and recorded.
-
-## 10. Launch cut
-
-**P0 before Pro launch**
-
-1. Fix Wish login/resume loop.
-2. Confirm legacy LINE OA safe-match path is callable for CARE BACK review.
-3. Confirm Per Notes historical parser output can be reviewed/applied without requiring old slips.
-4. Confirm `approved_discount_percent` is generated by the trusted backend path from verified booking context.
-5. Keep all browser surfaces read-only for entitlement truth.
-
-**Not a launch blocker**
-
-- perfect historical automation for every edge case
-- redesigning unrelated pages
-- adding more personas to access/auth
-- migrating every legacy record before launch
-- fully automatic Black Card or SVIP logic
-
-## 11. Final lock — Coupon Canon V2.2
-
-```text
-Current member = verified identity + linked legacy history → +180 days from real existing expiry
-Expired member = verified current renewal/payment/active status → +90 days +150 Points
-New Standard = verified membership/payment → +150 Welcome Points
-New Premium = verified membership/payment → +250 Welcome Points
-Approved special campaign selection = verified membership/payment → up to +350 Points for Black Card review consideration only
-Personal coupon public copy = UP TO 10% OFF only
-Actual coupon rate = verified Model level × job format, constrained by customer eligibility → approved_discount_percent
-Public Models = PN 3–5%, VIP 3–5%
-Standard Models = PN 5%, VIP 7%
-Premium / EMs / GWs Models = PN 5%, VIP 10%
-PN / VIP = job formats, not customer tiers
-Coupon color = membership status only, never discount authority
-Coupon validity = 2 months from activation; one use; one coupon per booking
-Booking = must be confirmed before coupon expiry
-Service date = within 90 days from original booking date, even if after coupon expiry
-Reschedule = must remain within the same 90-day window from original booking date
-Historical Points = Per Notes / LINE Official legacy evidence first, 100 THB = 1 Point for supported service amounts
-Old slips = optional supporting evidence, not required for historical reconstruction
-```
-
-This document intentionally contains no Airtable IDs, LIFF IDs, secrets, or internal access details. Keep those only in restricted implementation documentation.
+- [ ] Standard is shown as base 1 year where Private Membership duration is stated.
+- [ ] Premium is shown as base 2 years everywhere current Private Membership duration is stated.
+- [ ] CARE BACK Standard = +180 days for qualifying signup/renewal from Aug 2026.
+- [ ] CARE BACK Premium = +1 full year for qualifying signup/renewal from Aug 2026.
+- [ ] No public page calls `+180 days` the universal expanded CARE BACK membership duration.
+- [ ] Wish remains public before LINE verification.
+- [ ] Wish alone does not promise membership time or Points.
+- [ ] Coupon public copy remains UP TO 10% and validity remains 2 calendar months from activation.
+- [ ] My MMD remains the verified customer-facing source for actual status and expiry.
+- [ ] All membership/CARE BACK writes remain idempotent and non-stacking.
