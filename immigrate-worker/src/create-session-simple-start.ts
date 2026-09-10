@@ -395,6 +395,9 @@ const SIMPLE_START_SCRIPT = `
     }
 
     function hasCanonicalClient() {
+      if (location.pathname === "/internal/admin/jobs/create-job" || location.pathname === "/internal/admin/jobs/create-job/") {
+        return root.dataset.canonicalClientSelected === "true";
+      }
       return hasSelectedClient(selectedName && selectedName.textContent);
     }
 
