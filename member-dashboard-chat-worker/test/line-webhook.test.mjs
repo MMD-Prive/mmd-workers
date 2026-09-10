@@ -5,6 +5,7 @@ import worker, {
   buildKenjiLineReply,
   buildKenjiKnowledgeLineReply,
   createLineSignature,
+  extractHimaiSupplierRegistrationName,
   inferLineIntent,
   isKenjiLineCandidate,
   resolveKenjiLineReply,
@@ -97,6 +98,61 @@ test("Cloudflare owner ignores retired upstream configuration", async () => {
   );
   assert.equal(response.status, 200);
   assert.equal((await response.json()).worker, "member-dashboard-chat-worker");
+});
+
+test("Himai supplier registration command is recognized", () => {
+  assert.equal(extractHimaiSupplierRegistrationName("Register himai ping"), "ping");
+  assert.equal(inferLineIntent("Register himai ping", lineTextEvent("Register himai ping")), "himai_supplier_registration");
+});
+
+test("Himai supplier registration links a canonical Supplier record", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const href = String(url);
+    calls.push({ url: href, init });
+    if (href.includes("/profile/")) return new Response(JSON.stringify({ displayName: "Ping" }), { status: 200 });
+    if (href.includes("api.airtable.com") && init.method === "GET") {
+      return new Response(JSON.stringify({
+        records: [{
+          id: "rec-ping",
+          fields: {
+            "Supplier Name": "Ping",
+            "Brand Scope": "Himai Shop",
+            "Supplier Status": "active",
+            "LINE User ID": "",
+          },
+        }],
+      }), { status: 200 });
+    }
+    if (href.includes("api.airtable.com") && init.method === "PATCH") return new Response(JSON.stringify({ id: "rec-ping" }), { status: 200 });
+    if (href.includes("/message/reply")) return new Response("{}", { status: 200 });
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    const text = "Register himai ping";
+    const event = lineTextEvent(text, { mode: "active" });
+    const response = await worker.fetch(await signedLineRequest({ events: [event] }), {
+      ...BASE_ENV,
+      LINE_KENJI_AI_ENABLED: "false",
+      AIRTABLE_API_KEY: "airtable-token",
+      AIRTABLE_BASE_ID: "app-test",
+      HIMAI_SUPPLIERS_TABLE_ID: "tbl-suppliers",
+    });
+    assert.equal(response.status, 200);
+    assert.equal(inferLineIntent(text, event), "himai_supplier_registration");
+    assert.equal(calls.filter((call) => call.url.includes("/message/reply")).length, 1);
+    const patch = calls.find((call) => call.init.method === "PATCH");
+    assert.ok(patch);
+    const patchBody = JSON.parse(patch.init.body);
+    assert.equal(patchBody.fields["LINE User ID"], LINE_USER_ID);
+    assert.equal(patchBody.fields["LINE Name"], "Ping");
+    assert.equal(patchBody.fields["LINE Status"], "Connected");
+    const reply = calls.find((call) => call.url.includes("/message/reply"));
+    assert.match(JSON.parse(reply.init.body).messages[0].text, /เชื่อม Supplier สำเร็จแล้ว/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("Kenji 2.0 separates MMD, MMS, venue, and talent lanes", () => {
