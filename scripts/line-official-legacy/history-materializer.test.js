@@ -71,6 +71,21 @@ function member() {
   return { id: MEMBER_RECORD_ID, fields: { member_id: "member-canonical-001", "Contact Email": "customer@example.com" } };
 }
 
+test("reviewed MMS source materializes as MMS using the same MMD review gates", () => {
+  const input = { fields: stagedFields({ raw_row_json: JSON.stringify({ source: "line_ofc", source_ref: "mms:line_ofc:a:note-1" }) }),
+    historyReviewFields: approvedHistoryReview({ points_review_status: "not_applicable", approved_points_eligible_amount_thb: 0 }),
+    historyReviewId: defaultHistoryReviewId(IMPORT_ID), stagingId: STAGING_ID, importId: IMPORT_ID, client: client() };
+  const plan = buildMaterializationPlan(input);
+  assert.equal(plan.service_brand, "mms");
+  assert.equal(plan.writes.session.job_type, "MMS");
+  assert.deepEqual(plan.writes.session.Client, [CLIENT_ID]);
+  assert.equal(plan.writes.points, null);
+  assert.match(plan.writes.payment.Notes, /service_brand:mms/);
+  assert.throws(() => buildMaterializationPlan({ ...input, historyReviewFields: approvedHistoryReview({ review_status: "pending" }) }), /HISTORY_EXPLICIT_REVIEW_NOT_APPROVED/);
+  const mmd = buildMaterializationPlan({ ...input, fields: stagedFields({ line_renamed_name: "MMS Customer" }) });
+  assert.equal(mmd.writes.session.job_type, "historical_service");
+});
+
 test("identity commit and history approval are separate gates", () => {
   assert.throws(() => assertIdentityCommitGate(stagedFields({ review_status: "ready_to_review" })), /HISTORY_IDENTITY_REVIEW_NOT_COMMITTED/);
   assert.equal(assertIdentityCommitGate(stagedFields()).clientId, CLIENT_ID);
