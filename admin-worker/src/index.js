@@ -1,4 +1,5 @@
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
+import { requestPaymentsConfirmLink } from "./payments-issuer-transport.js";
 // src/index.js
 // =========================================================
 // admin-worker — Admin API / Core Orchestrator
@@ -4813,20 +4814,7 @@ async function createAdminJob(env, body) {
 }
 
 export async function callPaymentsCreateLink(env, payload) {
-  const base = str(env.PAYMENTS_WORKER_BASE_URL || env.PAYMENTS_BASE_URL || "").replace(/\/+$/, "");
-  if (!base) throw new Error("missing_PAYMENTS_WORKER_BASE_URL");
-  const serviceToken = str(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
-  if (!serviceToken) throw new Error("missing_AUTH_SERVICE_ADMIN_TO_PAYMENTS");
-
-  const res = await fetch(`${base}/v1/confirm/link`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      "X-Internal-Token": serviceToken,
-    },
-    body: JSON.stringify(payload),
-  });
+  const res = await requestPaymentsConfirmLink(env, payload);
 
   let data = null;
   try {

@@ -46,6 +46,7 @@ import {
 } from "./public-model-application-review.js";
 import { createCredentialBoundAdminSession, getCredentialBoundAdminLoginCredential, readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { activateMmsPartner, authenticateMmsPartner, recoverMmsPartner } from "./mms-partner-auth-store.js";
+import { PAYMENT_ISSUER_DIAGNOSTIC_PATH, handlePaymentIssuerDiagnostic } from "./payment-issuer-diagnostic.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
@@ -151,6 +152,10 @@ export default {
     const strictGate = await applyCredentialBoundAdminGate(request, env, path, method);
     if (strictGate.response) return strictGate.response;
     request = strictGate.request || request;
+
+    if (path === PAYMENT_ISSUER_DIAGNOSTIC_PATH) {
+      return handlePaymentIssuerDiagnostic(request, env);
+    }
 
     if (isPublicModelApplicationReviewRequest(path)) {
       return handlePublicModelApplicationReviewRequest(request, env, strictGate.actor);

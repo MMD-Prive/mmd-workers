@@ -586,6 +586,11 @@ service = "mms-worker"
 binding = "EVENTS_WORKER"
 service = "events-worker"
 
+# Payment link issuer stays on the dedicated admin-to-payments service credential.
+[[services]]
+binding = "PAYMENTS_WORKER"
+service = "payments-worker"
+
 # ใช้สำหรับ CORS (browser calls)
 [vars]
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdmodel.lovable.app"
@@ -603,7 +608,7 @@ MODEL_LIFF_PUBLISHED_ID = "2010864854-N34SgCqq"
 MODEL_LIFF_SESSION_TTL_SECONDS = "3600"
 
 # Base URLs (LOCK)
-PAYMENTS_BASE_URL = "https://payments-worker.malemodel-bkk.workers.dev"
+PAYMENTS_BASE_URL = "https://sigil.mmdbkk.com"
 TELEGRAM_INTERNAL_SEND_URL = "https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send"
 
 # Studio Telegram alerts. Reuse the canonical Telegram forum values from telegram-worker/admin smoke config.
@@ -752,4 +757,13 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/clients/recent"
+zone_name = "mmdbkk.com"
+
+# Exact, credential-bound diagnostic only. Do not capture other payment routes.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/payment-issuer-diagnostic"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/payment-issuer-diagnostic"
 zone_name = "mmdbkk.com"
