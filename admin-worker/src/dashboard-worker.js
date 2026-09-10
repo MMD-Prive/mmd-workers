@@ -6,6 +6,7 @@
 // - Add GET /v1/admin/dashboard without touching the large core router.
 // - Delegate every other request to the existing admin-worker implementation.
 // - Keep the dashboard endpoint read-only and safe for Webflow.
+// - Project backend-owned pre-job reconfirm state for SIGIL Jobs / Per Ops.
 // =========================================================
 
 import coreWorker, { isAuthed as isCoreAuthed } from "./index.js";
@@ -13,6 +14,8 @@ import coreWorker, { isAuthed as isCoreAuthed } from "./index.js";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DASHBOARD_PATH = "/v1/admin/dashboard";
 const DEFAULT_MEMBERS_TABLE_ID = "tblgWc5VRon5o8Mhk";
+const DEFAULT_SESSIONS_TABLE_ID = "tblC98mKWbzmPuNzX";
+const RECONFIRM_LIFECYCLE_STATES = new Set(["confirmed", "accepted"]);
 
 export default {
   async fetch(req, env, ctx) {
@@ -47,11 +50,14 @@ export default {
 
 async function buildAdminDashboard(env) {
   const now = new Date();
+  const tomorrow = bangkokDateOffset(now, 1);
+  const sessionsTable = env.AIRTABLE_TABLE_SESSIONS || DEFAULT_SESSIONS_TABLE_ID;
 
-  const [proofsResult, sessionsResult, membersResult] = await Promise.allSettled([
+  const [proofsResult, sessionsResult, membersResult, reconfirmSessionsResult] = await Promise.allSettled([
     airtableList(env, env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || "tblfJfM4Sqag9zrLi", 30),
-    airtableList(env, env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX", 30),
+    airtableList(env, sessionsTable, 30),
     airtableList(env, env.AIRTABLE_TABLE_MEMBERS_ID || DEFAULT_MEMBERS_TABLE_ID, 30),
+    airtableListSessionsForDate(env, sessionsTable, tomorrow),
   ]);
 
   const proofRecords = settledRecords(proofsResult);
@@ -61,6 +67,9 @@ async function buildAdminDashboard(env) {
   const money = buildMoneyList(proofRecords);
   const jobs = buildJobList(sessionRecords, now);
   const members = buildMemberList(memberRecords, now);
+  const reconfirm = reconfirmSessionsResult.status === "fulfilled"
+    ? buildReconfirmOverview(reconfirmSessionsResult.value, now, tomorrow)
+    : unavailableReconfirmOverview(tomorrow, resultReason(reconfirmSessionsResult));
   const boss = buildBossList({ money, jobs, members, proofRecords, sessionRecords, memberRecords });
   const todos = buildTodos({ money, jobs, members, boss });
 
@@ -69,6 +78,8 @@ async function buildAdminDashboard(env) {
     payments: money.length,
     jobs: jobs.length,
     members: members.length,
+    reconfirm_pending: reconfirm.pending,
+    reconfirm_overdue: reconfirm.overdue,
   };
 
   const focus = buildFocus({ money, jobs, members, boss });
@@ -85,19 +96,23 @@ async function buildAdminDashboard(env) {
     money,
     members,
     boss,
+    reconfirm,
     status: {
       admin: "พร้อม",
       payments: proofRecords.length ? "พร้อม" : statusFromResult(proofsResult),
       telegram: "พร้อม",
       data: dataMode([proofsResult, sessionsResult, membersResult]),
+      reconfirm: reconfirm.available ? "พร้อม" : "ยังยืนยันไม่ได้",
     },
     debug: {
       payments_loaded: proofRecords.length,
       sessions_loaded: sessionRecords.length,
       members_loaded: memberRecords.length,
+      reconfirm_sessions_loaded: reconfirm.items.length,
       payment_source: resultReason(proofsResult),
       session_source: resultReason(sessionsResult),
       member_source: resultReason(membersResult),
+      reconfirm_source: reconfirmSessionsResult.status === "fulfilled" ? "ok" : resultReason(reconfirmSessionsResult),
     },
   };
 }
@@ -232,6 +247,86 @@ function buildJobList(records, now) {
     });
 }
 
+export function buildReconfirmOverview(records, now = new Date(), jobDate = bangkokDateOffset(now, 1)) {
+  const nowMs = now instanceof Date ? now.getTime() : new Date(now).getTime();
+  const items = (Array.isArray(records) ? records : [])
+    .map((record) => projectReconfirmItem(record, nowMs, jobDate))
+    .filter(Boolean)
+    .sort((a, b) => String(a.start_time || "99:99").localeCompare(String(b.start_time || "99:99")));
+
+  const counts = { scheduled: 0, pending: 0, acknowledged: 0, overdue: 0, checking: 0 };
+  for (const item of items) counts[item.status] += 1;
+
+  return {
+    available: true,
+    scope: "tomorrow",
+    job_date: jobDate,
+    total: items.length,
+    ...counts,
+    items,
+  };
+}
+
+function unavailableReconfirmOverview(jobDate, reason) {
+  return {
+    available: false,
+    scope: "tomorrow",
+    job_date: jobDate,
+    total: 0,
+    scheduled: 0,
+    pending: 0,
+    acknowledged: 0,
+    overdue: 0,
+    checking: 0,
+    items: [],
+    reason: str(reason) || "reconfirm_source_unavailable",
+  };
+}
+
+function projectReconfirmItem(record, nowMs, expectedJobDate) {
+  const fields = record?.fields || {};
+  const lifecycle = normalizeWord(firstText(fields.session_state, fields.status, fields["Session Status"], fields.job_status));
+  if (!RECONFIRM_LIFECYCLE_STATES.has(lifecycle)) return null;
+
+  const jobDate = firstText(fields.job_date, fields.service_date, fields.date, fields["Job Date"]);
+  if (expectedJobDate && normalizeDateOnly(jobDate) && normalizeDateOnly(jobDate) !== expectedJobDate) return null;
+
+  const requiredAt = firstText(fields.reconfirm_required_at);
+  const reminderAt = firstText(fields.reconfirm_reminder_at);
+  const overdueAt = firstText(fields.reconfirm_overdue_at);
+  const acknowledgedAt = firstText(fields.reconfirm_acknowledged_at);
+  const explicitStatus = normalizeWord(fields.reconfirm_status);
+  const status = deriveDashboardReconfirmStatus({ explicitStatus, requiredAt, overdueAt, acknowledgedAt }, nowMs);
+
+  return {
+    session_id: firstText(fields.session_id, fields.sid, record.id),
+    job_id: firstText(fields.job_id),
+    job_date: normalizeDateOnly(jobDate) || expectedJobDate || "",
+    start_time: firstText(fields.start_time, fields["Start Time"]),
+    model_name: firstText(fields.model_name, fields["Model Name"], fields.assigned_model, "Model"),
+    client_name: firstText(fields.client_name, fields.member_name, fields.customer_name, fields.name, "ลูกค้า"),
+    status,
+    required_at: requiredAt || null,
+    reminder_at: reminderAt || null,
+    overdue_at: overdueAt || null,
+    acknowledged_at: acknowledgedAt || null,
+    followup_status: firstText(fields.followup_status) || null,
+    risk_level: firstText(fields.risk_level) || null,
+  };
+}
+
+export function deriveDashboardReconfirmStatus({ explicitStatus, requiredAt, overdueAt, acknowledgedAt }, nowMs = Date.now()) {
+  if (acknowledgedAt) return "acknowledged";
+  const overdueMs = Date.parse(overdueAt || "");
+  const requiredMs = Date.parse(requiredAt || "");
+  if (Number.isFinite(overdueMs) && nowMs >= overdueMs) return "overdue";
+  if (Number.isFinite(requiredMs) && nowMs >= requiredMs) return "pending";
+  if (explicitStatus === "acknowledged") return "acknowledged";
+  if (["scheduled", "pending", "overdue"].includes(explicitStatus)) return explicitStatus;
+  if (requiredAt || overdueAt) return "scheduled";
+  return "checking";
+}
+
 function buildMemberList(records, now) {
   return records
     .filter((record) => {
@@ -315,6 +410,30 @@ async function airtableList(env, tableName, maxRecords = 20) {
     throw new Error(`airtable_${tableName}_${res.status}`);
   }
 
+  const data = await res.json();
+  return Array.isArray(data.records) ? data.records : [];
+}
+
+async function airtableListSessionsForDate(env, tableName, jobDate) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID || !tableName) {
+    throw new Error("missing_airtable_env");
+  }
+  const field = str(env.AT_SESSIONS__JOB_DATE || "job_date").replace(/[{}]/g, "");
+  if (!field) throw new Error("reconfirm_job_date_field_missing");
+  const qs = new URLSearchParams({
+    maxRecords: "100",
+    filterByFormula: `IS_SAME({${field}}, DATETIME_PARSE('${jobDate}'), 'day')`,
+  });
+  const res = await fetch(`${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}?${qs.toString()}`, {
+    headers: {
+      Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`airtable_reconfirm_${res.status}${detail ? `:${detail.slice(0, 120)}` : ""}`);
+  }
   const data = await res.json();
   return Array.isArray(data.records) ? data.records : [];
 }
@@ -403,6 +522,10 @@ function lower(value) {
   return str(value).toLowerCase();
 }
 
+function normalizeWord(value) {
+  return lower(value).replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
 function firstText(...values) {
   for (const value of values) {
     const text = str(Array.isArray(value) ? value[0] : value);
@@ -430,6 +553,25 @@ function parseDate(value) {
   if (!raw) return null;
   const date = new Date(raw);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function normalizeDateOnly(value) {
+  const raw = str(Array.isArray(value) ? value[0] : value);
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : "";
+}
+
+function bangkokDateOffset(value, days) {
+  const base = value instanceof Date ? value : new Date(value);
+  const shifted = new Date(base.getTime() + Number(days || 0) * 86400000);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(shifted);
+  const get = (type) => parts.find((part) => part.type === type)?.value || "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
 function timeLabel(value, now, index) {
