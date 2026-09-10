@@ -1,5 +1,6 @@
 import coreWorker from "./admin-login-hero-worker-core.js";
 import dashboardWorker from "./dashboard-worker.js";
+import { handleAdminDashboardJobsRequest, isAdminDashboardJobsView } from "./admin-dashboard-jobs.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { tryHandleEmailLessLineRenewalRecovery } from "./payment-review-line-recovery.js";
 import { tryHandleSigilPendingClientLink } from "./sigil-jobs-pending-client-link.js";
@@ -112,6 +113,15 @@ async function handleCredentialBoundDashboard(request, env, ctx) {
   if (!actor) return dashboardJson({ ok: false, error: "unauthorized" }, 401);
   if (String(actor.role || "").toLowerCase() === "mms_partner") {
     return dashboardJson({ ok: false, error: "mms_partner_scope_forbidden" }, 403);
+  }
+
+  if (isAdminDashboardJobsView(url)) {
+    const delegated = new Request(request, { method: "GET" });
+    const response = await handleAdminDashboardJobsRequest(delegated, env, actor);
+    if (method !== "HEAD") return response;
+    const responseHeaders = new Headers(response.headers);
+    responseHeaders.delete("content-length");
+    return new Response(null, { status: response.status, headers: responseHeaders });
   }
 
   // dashboard-worker still carries its legacy internal auth check. Translate the
