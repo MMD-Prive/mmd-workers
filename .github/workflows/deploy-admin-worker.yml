@@ -271,6 +271,7 @@ jobs:
             "/internal/admin/mms",
             "/v1/admin/mms/*",
             "/v1/admin/auth/me",
+            "/v1/admin/payment-issuer-diagnostic",
             "/v1/admin/membership/payment-entitlement/approve",
             "/v1/admin/payments/review-queue*",
             "/v1/admin/payments/review",
@@ -371,6 +372,14 @@ jobs:
           grep -q '"error":"dashboard_host_not_allowed"' "$body_file"
 
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            # An empty unauthenticated probe must reach the admin gate, never Webflow.
+            diagnostic_body="$(mktemp)"
+            diagnostic_code="$(curl -sS --max-time 20 -o "$diagnostic_body" -w "%{http_code}" \
+              -X POST -H "Origin: $origin" -H "Content-Type: application/json" --data '{}' \
+              "$origin/v1/admin/payment-issuer-diagnostic")"
+            test "$diagnostic_code" = "401"
+            grep -q '"error":"unauthorized"' "$diagnostic_body"
+
             # Check the real browser ingress on both allowed production hosts.
             body_file="$(mktemp)"
             http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body_file" -w "%{http_code}" \

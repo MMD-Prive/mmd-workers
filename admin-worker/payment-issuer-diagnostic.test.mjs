@@ -72,11 +72,34 @@ test('bare bearer and spoofed actor headers cannot bypass the browser admin gate
 
 test('partner role, cross-origin and wrong method fail before payments', async () => {
   const h = setup();
-  for (const [options, status] of [[{ role: 'mms_partner' }, 403], [{ origin: 'https://attacker.example' }, 403], [{ method: 'GET' }, 405]]) {
+  for (const [options, status] of [[{ role: 'mms_partner' }, 403], [{ origin: 'https://attacker.example' }, 403], [{ method: 'PUT' }, 405]]) {
     const response = await worker.fetch(await request(h.env, options), h.env, {});
     assert.equal(response.status, status);
   }
   assert.equal(h.calls.length, 0);
+});
+
+test('diagnostic page requires admin auth and never probes on GET', async () => {
+  const h = setup();
+  const unauthenticated = await worker.fetch(new Request('https://mmdbkk.com' + PATH), h.env, {});
+  assert.equal(unauthenticated.status, 401);
+  const forbidden = await worker.fetch(await request(h.env, { method: 'GET', role: 'mms_partner' }), h.env, {});
+  assert.equal(forbidden.status, 403);
+  const response = await worker.fetch(await request(h.env, { method: 'GET' }), h.env, {});
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /text\/html/);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+  assert.deepEqual(h.calls, []);
+  assert.deepEqual(h.writes, []);
+});
+
+test('deploy workflow synchronizes the diagnostic route and checks its admin gate', async () => {
+  const workflow = await readFile(new URL('../.github/workflows/deploy-admin-worker.yml', import.meta.url), 'utf8');
+  const paths = workflow.split('const paths = [')[1].split('];')[0];
+  assert.ok(paths.includes(JSON.stringify(PATH)));
+  assert.match(workflow, /test "\$diagnostic_code" = "401"/);
+  assert.ok(workflow.includes('$origin' + PATH));
 });
 
 test('diagnostic refuses all caller payloads except an empty object', async () => {
