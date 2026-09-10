@@ -1,5 +1,5 @@
 name = "immigrate-worker"
-main = "src/control-room-dashboard-ingress-wrapper.ts"
+main = "src/customer-360-live-ingress-wrapper.ts"
 compatibility_date = "2026-03-25"
 workers_dev = true
 
