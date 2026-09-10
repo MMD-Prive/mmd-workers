@@ -18,6 +18,7 @@ const LINE_RICH_MENU_API_URL = "https://api.line.me/v2/bot/richmenu";
 const LINE_RICH_MENU_DATA_URL = "https://api-data.line.me/v2/bot/richmenu";
 const LINE_DEFAULT_RICH_MENU_URL = "https://api.line.me/v2/bot/user/all/richmenu";
 const WORKER_NAME = "member-dashboard-chat-worker";
+const DEFAULT_HIMAI_SUPPLIERS_TABLE = "tbl81bnFyASeXCj9x";
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webhook/line", "/webhook/line/"]);
 const MEMBER_LIFF_PREFIX = "/member/api/liff/";
 const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
@@ -228,6 +229,18 @@ function getLineEventText(event = {}) {
   return "";
 }
 
+function matchHimaiSupplierRegistration(text = "") {
+  const raw = asString(text).normalize("NFKC").replace(/\s+/g, " ").trim();
+  const match = raw.match(/^REGISTER\s+HIMAI(?:\s+(.+?))?$/i);
+  if (!match) return null;
+  const supplierName = asString(match[1]).replace(/^[ "'“”‘’]+|["'“”‘’?.!]+$/g, "").trim();
+  return supplierName.length <= 80 ? supplierName : "";
+}
+
+export function extractHimaiSupplierRegistrationName(text = "") {
+  return matchHimaiSupplierRegistration(text) || "";
+}
+
 function getLineEventId(event = {}) {
   return asString(event?.message?.id || event?.webhookEventId || event?.replyToken || `evt_${Date.now()}`);
 }
@@ -302,6 +315,7 @@ export function inferLineIntent(text = "", event = {}) {
     return "line_event";
   }
 
+  if (matchHimaiSupplierRegistration(text) !== null) return "himai_supplier_registration";
   if (extractKenjiModelVerificationEmail(text)) return "model_access_verification";
 
   if (/(human handoff|human agent|คุยกับคน|เจ้าหน้าที่)/i.test(normalized)) return "human_handoff";
