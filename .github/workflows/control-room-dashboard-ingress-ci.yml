@@ -38,7 +38,8 @@ jobs:
       - name: Verify Control Room dashboard entrypoint and routes
         run: |
           set -euo pipefail
-          grep -F 'main = "src/control-room-dashboard-ingress-wrapper.ts"' immigrate-worker/wrangler.toml
+          grep -F 'main = "src/customer-360-live-ingress-wrapper.ts"' immigrate-worker/wrangler.toml
+          grep -F 'import canonicalWorker from "./control-room-dashboard-ingress-wrapper"' immigrate-worker/src/customer-360-live-ingress-wrapper.ts
           grep -F 'pattern = "mmdbkk.com/v1/admin/dashboard*"' immigrate-worker/wrangler.toml
           grep -F 'pattern = "www.mmdbkk.com/v1/admin/dashboard*"' immigrate-worker/wrangler.toml
           grep -F 'env.ADMIN_WORKER.fetch(forwarded)' immigrate-worker/src/control-room-dashboard-ingress-wrapper.ts

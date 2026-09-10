@@ -1,5 +1,5 @@
 name = "admin-ai-ops-worker"
-main = "src/smart-match-bridge.js"
+main = "src/customer-360-live-entry.js"
 compatibility_date = "2026-01-01"
 workers_dev = true
 
