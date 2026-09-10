@@ -17,6 +17,10 @@ import {
   reconcileSigilConfirmLinkMoneyTruth,
   resolveSigilCombinedPaymentComponents,
 } from "./sigil-membership-payment-components.js";
+import {
+  handleCustomerSessionDetails,
+  isCustomerSessionDetailsRequest,
+} from "./customer-session-v2.js";
 
 export { PointsPhase1Coordinator };
 
@@ -27,6 +31,10 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+
+    if (isCustomerSessionDetailsRequest(path, method)) {
+      return handleCustomerSessionDetails(request, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx));
+    }
 
     if (isCanonicalConfirmLinkRequest(path, method)) {
       const canonicalRequest = await canonicalizeConfirmLinkRequest(request);
