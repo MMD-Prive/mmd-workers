@@ -107,6 +107,12 @@ async function getSupplierPortal(request, env) {
       role: supplierAccess.role || "Distributor",
       token_label: supplierAccess.token_label || supplierAccess.label || "distributor-token"
     },
+    // Keep the legacy alias for existing internal consumers during the role rename.
+    supplier: {
+      name: supplierAccess.supplier_name || supplierAccess.name || "Distributor",
+      role: supplierAccess.role || "Distributor",
+      token_label: supplierAccess.token_label || supplierAccess.label || "distributor-token"
+    },
     privacy: {
       customer_data: false,
       internal_margin: false,
@@ -130,8 +136,9 @@ function readToken(request) {
 }
 
 function resolveSupplierAccess(env, token) {
-  const config = parseSupplierTokenConfig(env.HIMAI_DISTRIBUTOR_PORTAL_TOKENS || env.HIMAI_SUPPLIER_PORTAL_TOKENS);
-  const item = config.get(token);
+  const distributorConfig = parseSupplierTokenConfig(env.HIMAI_DISTRIBUTOR_PORTAL_TOKENS);
+  const legacyConfig = parseSupplierTokenConfig(env.HIMAI_SUPPLIER_PORTAL_TOKENS);
+  const item = distributorConfig.get(token) || legacyConfig.get(token);
   if (!item || item.active === false) return null;
   return normalizeAccessItem(token, item);
 }
