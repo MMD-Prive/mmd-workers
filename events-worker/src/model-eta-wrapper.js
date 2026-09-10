@@ -1,5 +1,9 @@
 import baseWorker from "./index.js";
 import { runModelReconfirmSweep } from "../../admin-worker/src/model-reconfirm-runtime.js";
+import {
+  handleCustomerAftercare,
+  isCustomerAftercareRequest,
+} from "./customer-aftercare-v2.js";
 
 const ETA_PATH = "/__internal/model/session/eta";
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -9,6 +13,10 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+
+    if (isCustomerAftercareRequest(path, method)) {
+      return handleCustomerAftercare(request, env);
+    }
 
     if (path !== ETA_PATH) return baseWorker.fetch(request, env, ctx);
     if (method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
