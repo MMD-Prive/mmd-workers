@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "immigrate-worker/**"
+      - "admin-worker/src/create-session-client-lineage-runtime.js"
+      - "admin-worker/create-session-client-lineage-runtime.test.mjs"
+      - "admin-worker/create-session-remembered-name-priority.test.mjs"
       - "admin-worker/src/admin-login-hero-worker.js"
       - ".github/workflows/control-room-dashboard-ingress-ci.yml"
       - ".github/workflows/sync-control-room-dashboard-ingress.yml"

@@ -471,10 +471,12 @@ async function proxyAdminApi(request: Request, env: InternalRoutesEnv): Promise<
   }
 
   let manualLookupQuery = "";
+  let canonicalOnlyLookup = false;
   if (isClientLineageLookup) {
     try {
       const lookupBody = (await request.clone().json()) as Record<string, unknown>;
       manualLookupQuery = str(lookupBody.query).slice(0, 160);
+      canonicalOnlyLookup = lookupBody.canonical_only === true || lookupBody.allow_manual_fallback === false;
     } catch {
       manualLookupQuery = "";
     }
@@ -498,10 +500,27 @@ async function proxyAdminApi(request: Request, env: InternalRoutesEnv): Promise<
   const outHeaders = new Headers(res.headers);
   outHeaders.set("cache-control", "no-store");
 
-  if (isClientLineageLookup && manualLookupQuery && res.ok) {
+  if (isClientLineageLookup && (manualLookupQuery || canonicalOnlyLookup) && res.ok) {
     try {
       const data = (await res.clone().json()) as Record<string, unknown>;
       const records = Array.isArray(data.records) ? data.records : [];
+      // Also filter legacy upstream fallback during staggered worker deployment.
+      if (canonicalOnlyLookup && data.ok !== false) {
+        data.records = records.filter((item) => {
+          const record = item as Record<string, unknown>;
+          return /^rec[\w]+$/.test(str(record?.client_id)) && !record.manual_public_only
+            && record.identity_status !== "pending_reconcile"
+            && record.identity_status !== "pending_client_link";
+        });
+        data.items = data.records;
+        data.count = (data.records as unknown[]).length;
+        data.manual_fallback = false;
+        data.canonical_only = true;
+        data.lineage_warnings = (Array.isArray(data.lineage_warnings) ? data.lineage_warnings : [])
+          .filter((warning) => warning !== "manual_public_only_pending_reconcile");
+        outHeaders.set("content-type", "application/json; charset=utf-8");
+        return new Response(JSON.stringify(data), { status: res.status, headers: outHeaders });
+      }
       if (data.ok !== false && records.length === 0) {
         const warnings = Array.isArray(data.lineage_warnings) ? data.lineage_warnings : [];
         data.records = [{

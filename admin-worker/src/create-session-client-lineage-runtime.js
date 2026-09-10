@@ -139,9 +139,11 @@ export async function handleCreateSessionClientLineageRequest(request, env = {},
   }
 
   let query = "";
+  let canonicalOnly = false;
   if (path === CREATE_SESSION_CLIENT_LINEAGE_LOOKUP_PATH) {
     const body = await request.json().catch(() => ({}));
     query = clean(body?.query).slice(0, 160);
+    canonicalOnly = body?.canonical_only === true || body?.allow_manual_fallback === false;
   }
 
   try {
@@ -153,6 +155,7 @@ export async function handleCreateSessionClientLineageRequest(request, env = {},
 
     const useManualFallback = Boolean(
       path === CREATE_SESSION_CLIENT_LINEAGE_LOOKUP_PATH &&
+      !canonicalOnly &&
       query &&
       snapshot.records.length === 0,
     );
@@ -176,6 +179,7 @@ export async function handleCreateSessionClientLineageRequest(request, env = {},
       count: records.length,
       lineage_warnings: lineageWarnings,
       manual_fallback: useManualFallback,
+      ...(canonicalOnly ? { canonical_only: true, line_candidates: snapshot.lineCandidates } : {}),
     });
   } catch (error) {
     return json({
@@ -301,7 +305,24 @@ async function buildClientLineageRecords(env, { query = "", limit = 40, recent =
     .slice(0, Math.max(1, Math.min(Number(limit) || 40, 60)))
     .map((item) => item.record);
 
-  return { records: rows, warnings };
+  // Unreconciled LINE names are suggestions only. Do not attach them to Clients
+  // or expose parsed membership/private notes as authority.
+  const lineCandidates = query ? staging.filter((record) => {
+    const fields = record.fields || {};
+    if (linkIds(fields.matched_client).length || clean(fields.matched_client_id)) return false;
+    if (/^(ignored|rejected|blocked|revoked)$/.test(normalizeSearch(fields.review_status))) return false;
+    return [fields.line_renamed_name, fields.line_display_name, fields.normalized_name, fields.line_user_id]
+      .some((value) => normalizeSearch(value).includes(needle));
+  }).slice(0, 8).map((record) => ({
+    line_record_id: record.id,
+    remembered_name: clean(record.fields?.line_renamed_name),
+    line_display_name: clean(record.fields?.line_display_name),
+    line_user_id: clean(record.fields?.line_user_id),
+    identity_status: "pending_client_link",
+    selectable: false,
+  })) : [];
+
+  return { records: rows, warnings, lineCandidates };
 }
 
 async function optionalAirtableList(env, tableName, fields, maxRecords, warnings, label, options = {}) {

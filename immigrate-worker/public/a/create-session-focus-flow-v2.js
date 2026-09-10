@@ -199,7 +199,8 @@
   const clientUx = installClientFirstUx();
 
   function readiness() {
-    const client = meaningful(stat("client"));
+    const strict = location.pathname.replace(/\/+$/, "") === "/internal/admin/jobs/create-job";
+    const client = strict ? root.dataset.canonicalClientSelected === "true" : meaningful(stat("client"));
     const work = meaningful(stat("work"));
     const folder = meaningful(stat("folder"));
     const model = meaningful(stat("model"));
@@ -329,6 +330,7 @@
   root.addEventListener("input", () => setTimeout(sync, 0));
 
   const observer = new MutationObserver(() => sync());
+  observer.observe(root, { attributes: true, attributeFilter: ["data-canonical-client-selected"] });
   Object.values(stats).forEach((node) => node && observer.observe(node, { childList: true, subtree: true, characterData: true }));
   if (createButton) observer.observe(createButton, { attributes: true, attributeFilter: ["disabled"] });
   if (output) observer.observe(output, { attributes: true, attributeFilter: ["hidden"] });

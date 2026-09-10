@@ -7,6 +7,11 @@
   const ADMIN_GATE_SESSION_KEY = "mmd_admin_gate_v1";
   const qs = new URLSearchParams(window.location.search);
   const userConfig = window.MMD_CREATE_SESSION_CONFIG || {};
+  // Shared asset: strict selection applies only to the canonical Create Job page.
+  const canonicalOnly = window.location.pathname.replace(/\/+$/, "") === "/internal/admin/jobs/create-job";
+  const reconcileUrl = "/internal/ceo/relink-review";
+  const noClientMessage = "ยังไม่พบ Client — ไป Link / Reconcile ก่อน";
+  let clientRequestId = 0;
   const config = {
     adminBase:
       root.dataset.adminBase ||
@@ -339,7 +344,9 @@
 
   function normalizeClient(record) {
     return {
-      client_id: String(record.client_id || record.id || ""),
+      client_id: String(record.client_id || (!canonicalOnly && record.id) || ""),
+      manual_public_only: record.manual_public_only === true,
+      identity_status: String(record.identity_status || ""),
       member_id: String(record.member_id || ""),
       member_email: String(record.member_email || record.email || ""),
       remembered_name: String(record.remembered_name || ""),
@@ -382,10 +389,12 @@
   }
 
   function renderClients(records) {
-    state.clients = records.map(normalizeClient);
+    state.clients = records.map(normalizeClient).filter((client) => !canonicalOnly || isCanonicalClient(client));
     if (!el.clientResults) return;
     if (!state.clients.length) {
-      el.clientResults.innerHTML = '<div class="mmdop__empty">No client lineage matched this search.</div>';
+      el.clientResults.innerHTML = canonicalOnly
+        ? `<div class="mmdop__empty">${noClientMessage}<a class="mmdop__btn" href="${reconcileUrl}">เปิด Link / Reconcile ↗</a></div>`
+        : '<div class="mmdop__empty">No client lineage matched this search.</div>';
       return;
     }
     el.clientResults.innerHTML = state.clients
@@ -419,6 +428,24 @@
     });
   }
 
+  function isCanonicalClient(client) {
+    return Boolean(client && /^rec[\w]+$/.test(client.client_id) && !client.manual_public_only
+      && !["pending_reconcile", "pending_client_link"].includes(client.identity_status));
+  }
+
+  function clientReady() {
+    return canonicalOnly ? isCanonicalClient(state.selectedClient) : Boolean(state.selectedClient);
+  }
+
+  function renderLineCandidates(records) {
+    if (!canonicalOnly || !el.clientResults || !Array.isArray(records) || !records.length) return;
+    const section = document.createElement("section");
+    section.setAttribute("data-op-line-candidates", "");
+    section.innerHTML = `<h3>ชื่อจาก LINE · ต้อง Link ก่อน</h3><p>ยังเลือกสร้างงานไม่ได้ ตรวจสอบว่าเป็นคนเดียวกันแล้วจึง Link และกลับมาค้นหาอีกครั้ง</p>`
+      + records.slice(0, 8).map((item) => `<div class="mmdop__empty"><strong>${esc(item.remembered_name || item.line_display_name || "LINE candidate")}</strong><span>${esc([item.line_display_name, item.line_user_id].filter(Boolean).join(" · "))}</span><a class="mmdop__btn" href="${reconcileUrl}">ไป Link / Reconcile ↗</a></div>`).join("");
+    el.clientResults.appendChild(section);
+  }
+
   function renderSelectedClient() {
     const client = state.selectedClient;
     const name = client ? client.client_name || "Selected client" : "No client selected";
@@ -447,6 +474,8 @@
   }
 
   async function loadRecentClients() {
+    if (canonicalOnly) clearClient();
+    const requestId = ++clientRequestId;
     setStatus("Loading recent canonical clients…", "warn");
     setHook("lineage", "warn");
     if (config.mock) {
@@ -458,11 +487,13 @@
     try {
       const response = await apiFetch(config.endpoints.recentClients);
       const data = await response.json().catch(() => ({}));
+      if (requestId !== clientRequestId) return;
       if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
       renderClients(Array.isArray(data.records) ? data.records : []);
       setStatus(`Loaded ${state.clients.length} recent canonical clients.`, "ok");
       setHook("lineage", "ok");
     } catch (error) {
+      if (requestId !== clientRequestId) return;
       renderClients([]);
       setStatus(`Recent clients unavailable: ${error.message}`, "bad");
       setHook("lineage", "bad");
@@ -475,6 +506,8 @@
       await loadRecentClients();
       return;
     }
+    if (canonicalOnly) clearClient();
+    const requestId = ++clientRequestId;
     setStatus("Searching canonical client lineage…", "warn");
     setHook("lineage", "warn");
     if (config.mock) {
@@ -490,14 +523,17 @@
     try {
       const response = await apiFetch(config.endpoints.clientLookup, {
         method: "POST",
-        body: JSON.stringify({ query })
+        body: JSON.stringify({ query, ...(canonicalOnly ? { canonical_only: true, allow_manual_fallback: false } : {}) })
       });
       const data = await response.json().catch(() => ({}));
+      if (requestId !== clientRequestId) return;
       if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
       renderClients(Array.isArray(data.records) ? data.records : []);
-      setStatus(`Found ${state.clients.length} canonical client match${state.clients.length === 1 ? "" : "es"}.`, "ok");
+      renderLineCandidates(data.line_candidates);
+      setStatus(canonicalOnly && !state.clients.length ? noClientMessage : `Found ${state.clients.length} canonical client match${state.clients.length === 1 ? "" : "es"}.`, state.clients.length ? "ok" : "warn");
       setHook("lineage", "ok");
     } catch (error) {
+      if (requestId !== clientRequestId) return;
       renderClients([]);
       setStatus(`Client lookup unavailable: ${error.message}`, "bad");
       setHook("lineage", "bad");
@@ -506,6 +542,8 @@
 
   function selectClient(client) {
     if (!client) return;
+    if (canonicalOnly && !isCanonicalClient(normalizeClient(client))) return;
+    ++clientRequestId;
     state.selectedClient = normalizeClient(client);
     state.workType = "";
     state.privateOrientation = "";
@@ -522,6 +560,7 @@
   }
 
   function clearClient() {
+    ++clientRequestId;
     state.selectedClient = null;
     state.workType = "";
     state.privateOrientation = "";
@@ -536,7 +575,7 @@
   }
 
   function selectWorkType(type) {
-    if (!state.selectedClient) {
+    if (!clientReady()) {
       setStatus("Select a client before choosing a work type.", "warn");
       return;
     }
@@ -581,6 +620,7 @@
   }
 
   async function selectFolder(folder) {
+    if (canonicalOnly && !clientReady()) return;
     state.modelFolder = folder;
     state.selectedModel = null;
     state.models = [];
@@ -626,7 +666,7 @@
   }
 
   async function loadModels() {
-    if (!state.selectedClient || !state.modelFolder) return;
+    if (!clientReady() || !state.modelFolder) return;
     setStatus("Loading entitlement-aware model pool…", "warn");
     setHook("models", "warn");
     if (config.mock) {
@@ -710,7 +750,7 @@
   function requiredReady() {
     const gate = deriveGate();
     return Boolean(
-      state.selectedClient &&
+      clientReady() &&
       state.workType &&
       state.modelFolder &&
       state.selectedModel &&
@@ -834,6 +874,11 @@
   }
 
   function updateNextAction() {
+    if (canonicalOnly && !clientReady()) {
+      text(el.nextAction, "เลือก Canonical Client");
+      text(el.nextCopy, noClientMessage);
+      return;
+    }
     const gate = deriveGate();
     let next = "Find client";
     let copy = "Search a canonical client lineage record before doing anything else.";
@@ -877,6 +922,12 @@
   }
 
   function updateAll() {
+    if (canonicalOnly) {
+      root.dataset.canonicalClientSelected = clientReady() ? "true" : "false";
+      $$('[data-op-work-type]').forEach((button) => { button.disabled = !clientReady(); });
+      if (el.refreshModels) el.refreshModels.disabled = !clientReady();
+      if (el.saveDraft) el.saveDraft.disabled = !clientReady();
+    }
     computeEndTime();
     updateStats();
     updateNextAction();
@@ -919,6 +970,10 @@
   }
 
   async function saveDraft() {
+    if (canonicalOnly && !clientReady()) {
+      setStatus(noClientMessage, "warn");
+      return;
+    }
     const payload = buildPayload();
     setStatus("Saving draft…", "warn");
     if (config.mock) {

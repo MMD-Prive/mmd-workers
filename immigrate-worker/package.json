@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "node test/canonical-admin-login-wrapper.test.mjs && node test/control-room-owner-v3.test.mjs && node test/control-room-dashboard-ingress.test.mjs && node test/create-session-owner-ui.test.mjs && node test/create-session-simple-start.test.mjs && node test/sigil-admin-login.test.mjs && node test/invite-signing.test.mjs",
+    "test": "node test/canonical-admin-login-wrapper.test.mjs && node test/control-room-owner-v3.test.mjs && node test/control-room-dashboard-ingress.test.mjs && node test/create-session-owner-ui.test.mjs && node test/create-session-simple-start.test.mjs && node test/sigil-admin-login.test.mjs && node test/invite-signing.test.mjs && node --test test/create-job-canonical-client.test.mjs test/create-session-manual-client-fallback.test.mjs ../admin-worker/create-session-client-lineage-runtime.test.mjs ../admin-worker/create-session-remembered-name-priority.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
