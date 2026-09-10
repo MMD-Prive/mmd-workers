@@ -9,7 +9,7 @@ export function renderDistributorPortalPage() {
   });
 }
 
-const HTML = String.raw\`<!doctype html>
+const HTML = String.raw`<!doctype html>
 <html lang="th">
 <head>
 <meta charset="utf-8">
@@ -36,7 +36,7 @@ const HTML = String.raw\`<!doctype html>
   var login=document.getElementById("login"),app=document.getElementById("app"),form=document.getElementById("login-form"),input=document.getElementById("token"),status=document.getElementById("login-status");
   var token=sessionStorage.getItem(key)||new URLSearchParams(location.search).get("token")||"";
   if(token){sessionStorage.setItem(key,token);history.replaceState({},document.title,location.pathname);}
-  function esc(value){return String(value==null?"":value).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","'":"&#39;"}[c];});}
+  function esc(value){return String(value==null?"":value).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
   function money(value){return value==null?"สอบถามราคา":Number(value).toLocaleString("th-TH")+" บาท";}
   function render(data){
     login.classList.add("hidden");app.classList.remove("hidden");
@@ -64,5 +64,5 @@ const HTML = String.raw\`<!doctype html>
 })();
 </script>
 </body>
-</html>\`;
+</html>`;
 
