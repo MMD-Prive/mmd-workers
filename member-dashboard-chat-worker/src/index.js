@@ -1894,16 +1894,24 @@ async function handleLineWebhook(request, env, ctx = null) {
     const lineUserId = getLineUserId({ event });
     const intent = inferLineIntent(text, event);
     const eventMode = asString(event?.mode).toLowerCase() || "unknown";
+    const supplierRegistrationName = matchHimaiSupplierRegistration(text);
+    const isSupplierRegistration = supplierRegistrationName !== null;
     const canGenerateReply = Boolean(autoReplyEnabled && kenjiEnabled && eventMode !== "standby" && getReplyToken(event));
+    const canRegisterSupplier = Boolean(autoReplyEnabled && eventMode !== "standby" && getReplyToken(event));
     const capabilityDecision = decideKenjiCapability({ text, intent });
-    const needsModelPreflight = Boolean(canGenerateReply && !runtimeModelKill && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
+    const needsModelPreflight = Boolean(!isSupplierRegistration && canGenerateReply && !runtimeModelKill && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
     const modelDeadlineAt = needsModelPreflight ? Date.now() + KENJI_TOTAL_DEADLINE_MS : 0;
     const modelPreflight = needsModelPreflight
       ? await claimKenjiModelEvent(env, event)
       : { eligible: true, deduped: false, reason: "", canary_eligible: false, rate_limited: false, quota_window: 0 };
-    const replyDecision = canGenerateReply && !modelPreflight.deduped
-      ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled, modelEligible: modelPreflight.eligible, modelAccessAllowed: !runtimeModelKill, deadlineAt: modelDeadlineAt })
-      : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" };
+    const supplierRegistration = isSupplierRegistration && canRegisterSupplier
+      ? await registerHimaiSupplier(event, env, supplierRegistrationName)
+      : null;
+    const replyDecision = isSupplierRegistration
+      ? (supplierRegistration || { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" })
+      : (canGenerateReply && !modelPreflight.deduped
+        ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled, modelEligible: modelPreflight.eligible, modelAccessAllowed: !runtimeModelKill, deadlineAt: modelDeadlineAt })
+        : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" });
     const replyText = replyDecision.text;
     const shouldReply = Boolean(autoReplyEnabled && eventMode !== "standby" && replyText && getReplyToken(event));
     const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
