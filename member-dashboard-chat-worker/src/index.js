@@ -1073,6 +1073,107 @@ function encodeFormulaValue(value) {
   return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+function getHimaiSuppliersTable(env = {}) {
+  return asString(env.HIMAI_SUPPLIERS_TABLE_ID || env.SHARED_SUPPLIERS_TABLE_ID || DEFAULT_HIMAI_SUPPLIERS_TABLE);
+}
+
+function supplierRegistrationDecision(text = "", guardReason = "", guardBlocked = false) {
+  return {
+    text,
+    fallback: false,
+    reply_source: "supplier_registration",
+    model_attempted: false,
+    model_success: false,
+    model_latency_ms: 0,
+    knowledge_hits: 0,
+    guard_blocked: guardBlocked,
+    guard_reason: guardReason,
+  };
+}
+
+function airtableValues(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => (item && typeof item === "object" ? asString(item.name || item.value) : asString(item))).filter(Boolean);
+  }
+  return value === undefined || value === null ? [] : [asString(value)].filter(Boolean);
+}
+
+function hasHimaiShopScope(value) {
+  const values = airtableValues(value).map((item) => item.toLowerCase());
+  return !values.length || values.includes("himai shop");
+}
+
+async function registerHimaiSupplier(event = {}, env = {}, supplierName = "") {
+  const lineUserId = getLineUserId({ event });
+  if (!supplierName) {
+    return supplierRegistrationDecision("กรุณาพิมพ์ชื่อ Supplier ต่อท้ายคำสั่ง เช่น Register himai ping ครับ", "supplier_name_missing");
+  }
+  if (!lineUserId) {
+    return supplierRegistrationDecision("ไม่สามารถระบุบัญชี LINE นี้ได้ครับ กรุณาส่งข้อความใหม่จากแชตนี้อีกครั้ง", "line_user_missing", true);
+  }
+
+  const apiKey = asString(env.AIRTABLE_API_KEY);
+  const baseId = asString(env.AIRTABLE_BASE_ID);
+  const table = getHimaiSuppliersTable(env);
+  if (!apiKey || !baseId || !table) return supplierRegistrationDecision("", "supplier_registry_unconfigured", true);
+
+  try {
+    const url = new URL("https://api.airtable.com/v0/" + baseId + "/" + encodeURIComponent(table));
+    url.searchParams.set("pageSize", "10");
+    url.searchParams.set("filterByFormula", 'LOWER({Supplier Name})=LOWER("' + encodeFormulaValue(supplierName) + '")');
+    ["Supplier Name", "LINE User ID", "LINE Name", "LINE Status", "Last LINE Linked At", "Brand Scope", "Supplier Status"].forEach((field) => {
+      url.searchParams.append("fields[]", field);
+    });
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: { authorization: "Bearer " + apiKey },
+    });
+    if (!response.ok) return supplierRegistrationDecision("ระบบ Supplier ยังไม่พร้อมเชื่อมต่อครับ กรุณาลองใหม่อีกครั้งหรือติดต่อ MMD", "supplier_registry_lookup_failed", true);
+
+    const payload = await response.json().catch(() => ({}));
+    const records = Array.isArray(payload?.records) ? payload.records : [];
+    if (records.length === 0) return supplierRegistrationDecision("ไม่พบ Supplier ชื่อนี้ในระบบ Himai Shop ครับ กรุณาติดต่อ MMD ให้เพิ่ม Supplier ก่อน", "supplier_not_found", true);
+    if (records.length !== 1) return supplierRegistrationDecision("พบชื่อ Supplier ซ้ำในระบบครับ กรุณาติดต่อ MMD ให้ตรวจสอบก่อนเชื่อมบัญชี", "supplier_name_ambiguous", true);
+
+    const record = records[0];
+    const fields = record?.fields || {};
+    const supplierStatus = asString(fields["Supplier Status"]).toLowerCase();
+    if (supplierStatus && supplierStatus !== "active") return supplierRegistrationDecision("Supplier นี้ยังไม่อยู่ในสถานะใช้งานของ Himai Shop ครับ กรุณาติดต่อ MMD", "supplier_not_active", true);
+    if (!hasHimaiShopScope(fields["Brand Scope"])) return supplierRegistrationDecision("Supplier นี้ไม่ได้อยู่ในขอบเขตของ Himai Shop ครับ กรุณาติดต่อ MMD", "supplier_scope_mismatch", true);
+
+    const existingLineUserId = asString(fields["LINE User ID"]);
+    if (existingLineUserId && existingLineUserId !== lineUserId) {
+      return supplierRegistrationDecision("ไม่สามารถเชื่อม Supplier นี้กับ LINE บัญชีนี้ได้ครับ เพราะมี LINE บัญชีอื่นเชื่อมอยู่แล้ว กรุณาติดต่อ MMD", "supplier_already_linked", true);
+    }
+
+    const profile = await fetchLineProfile(env, lineUserId);
+    const patchResponse = await fetch(
+      "https://api.airtable.com/v0/" + baseId + "/" + encodeURIComponent(table) + "/" + encodeURIComponent(asString(record.id)),
+      {
+        method: "PATCH",
+        headers: {
+          authorization: "Bearer " + apiKey,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          fields: {
+            "LINE User ID": lineUserId,
+            "LINE Name": asString(profile?.displayName),
+            "LINE Status": "Connected",
+            "Last LINE Linked At": new Date().toISOString(),
+          },
+        }),
+      },
+    );
+    if (!patchResponse.ok) return supplierRegistrationDecision("พบ Supplier แล้ว แต่บันทึกการเชื่อมต่อไม่สำเร็จครับ กรุณาลองใหม่อีกครั้ง", "supplier_registry_update_failed", true);
+
+    return supplierRegistrationDecision("เชื่อม Supplier สำเร็จแล้วครับ\nจากนี้ " + (asString(fields["Supplier Name"]) || supplierName) + " จะได้รับรายงานการกระจายสินค้าของ Himai Shop ผ่าน LINE นี้ครับ");
+  } catch (_) {
+    return supplierRegistrationDecision("ระบบ Supplier ยังไม่พร้อมเชื่อมต่อครับ กรุณาลองใหม่อีกครั้งหรือติดต่อ MMD", "supplier_registry_runtime_error", true);
+  }
+}
+
+
 async function findExistingLineEvent(env = {}, eventId = "", inboxId = "", options = {}) {
   const apiKey = asString(env.AIRTABLE_API_KEY);
   const baseId = asString(env.AIRTABLE_BASE_ID);
