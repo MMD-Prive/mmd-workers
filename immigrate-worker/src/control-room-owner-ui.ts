@@ -2,6 +2,8 @@ import { renderOwnerControlRoomPage as renderLegacyOwnerControlRoomPage } from "
 
 const encoder = new TextEncoder();
 const AI_OPS_SCRIPT = '<script src="/v1/admin/ai-ops/client.js?v=3" defer data-mmd-ai-ops-script="v3"></script>';
+const SAFETY_LOCATION_UI_COMMIT = "7e00a7696c9c8bd6bbd28408c9cb8617961fd78d";
+const SAFETY_LOCATION_UI_SCRIPT = `<script src="https://cdn.jsdelivr.net/gh/MMD-Prive/mmd-workers@${SAFETY_LOCATION_UI_COMMIT}/webflow/internal/admin/control-room/safety-location-control-v1.js" defer data-mmd-control-room-safety-location="v1"></script>`;
 const CONTROL_ROOM_CANON_SCRIPT = `<script data-mmd-control-room-canon-v3>(function(){var r=document.getElementById('mmd-os-v1');if(!r)return;document.documentElement.dataset.mmdSingleOwner='per-v1';document.documentElement.dataset.mmdCommandCenter='p0';r.dataset.mmdCommandCenter='p0';var brandSmall=r.querySelector('.brand small');if(brandSmall)brandSmall.textContent='PER · COMMAND CENTER';var tabs=Array.from(r.querySelectorAll('[data-tab]'));tabs.forEach(function(b){var n=b.getAttribute('data-tab');if(n==='ai'){b.remove();return}if(n==='queues')b.textContent='Do';if(n==='systems')b.textContent='Pages'});var ai=r.querySelector('[data-view="ai"]');if(ai)ai.remove();var ops=r.querySelector('[data-view="queues"]');if(ops){var k=ops.querySelector('.k'),h=ops.querySelector('h1'),p=ops.querySelector('.heading p:last-child');if(k)k.textContent='DO NEXT';if(h)h.textContent='งานที่เปอร์ต้องทำต่อ';if(p)p.textContent='AI ช่วยคัดสิ่งที่ค้างและเตรียม Action Card เปอร์กดยืนยันเฉพาะจุดสำคัญ'}var pages=r.querySelector('[data-view="systems"]');if(pages){var k2=pages.querySelector('.k'),h2=pages.querySelector('h1'),p2=pages.querySelector('.heading p:last-child');if(k2)k2.textContent='PAGES';if(h2)h2.textContent='หน้าที่เปอร์ใช้จริง';if(p2)p2.textContent='รวม canonical pages ที่ยังใช้งานจริง; หน้าประวัติหรือ technical อยู่ Advanced เมื่อจำเป็น'}var today=r.querySelector('[data-view="today"]');if(today){var k3=today.querySelector('.k'),h3=today.querySelector('h1'),p3=today.querySelector('.heading p');if(k3)k3.textContent='PER · COMMAND CENTER';if(h3)h3.textContent='วันนี้เปอร์ต้องทำอะไรบ้าง';if(p3)p3.textContent='Ask Per AI → Needs Per → Prepared → Watching แล้วพาไปทำต่อโดยไม่ต้องจำ route เอง'}var top=r.querySelector('.top');if(top&&!r.querySelector('[data-per-owner-strip]')){var strip=document.createElement('div');strip.setAttribute('data-per-owner-strip','v1');strip.innerHTML='<b>PER · OWNER MODE</b><span>AI อ่าน / สรุป / เช็ก / เตรียมให้ · เปอร์ยืนยันเอง · ไม่มี reviewer คนที่สอง</span>';top.insertAdjacentElement('afterend',strip);var s=document.createElement('style');s.textContent='[data-per-owner-strip]{margin:10px 0 0;padding:9px 11px;border:1px solid rgba(217,184,108,.2);border-radius:10px;background:rgba(217,184,108,.045);display:flex;gap:10px;align-items:center;flex-wrap:wrap;color:#9b9387;font-size:8px;line-height:1.45}[data-per-owner-strip] b{color:#d9b86c;font-size:8px;letter-spacing:.08em}[data-per-owner-strip] span{color:#938b80}';document.head.appendChild(s)}var ceo=Array.from(r.querySelectorAll('a')).find(function(a){return a.getAttribute('href')==='/internal/ceo'&&/CEO/.test(a.textContent||'')});if(ceo)ceo.textContent='CEO ↗';Array.from(r.querySelectorAll('strong,h3')).forEach(function(n){if(n.textContent.trim()==='Admin Dashboard')n.textContent='Dashboard'});})();</script>`;
 
 function canonicalizeOwnerControlRoom(html: string): string {
@@ -12,7 +14,7 @@ function canonicalizeOwnerControlRoom(html: string): string {
     .replaceAll("เริ่ม session จาก canonical client", "เริ่ม Job จาก canonical client")
     .replaceAll("/internal/ceo/dashboard", "/internal/ceo")
     .replaceAll("MMD PRIVÉ · OWNER CONTROL ROOM · 05 SEP 2026", "MMD PRIVÉ · OWNER CONTROL ROOM · 07 SEP 2026")
-    .replace("</body>", `${CONTROL_ROOM_CANON_SCRIPT}${AI_OPS_SCRIPT}</body>`);
+    .replace("</body>", `${CONTROL_ROOM_CANON_SCRIPT}${AI_OPS_SCRIPT}${SAFETY_LOCATION_UI_SCRIPT}</body>`);
 }
 
 export function renderOwnerControlRoomPage(): Response {
@@ -27,6 +29,7 @@ export function renderOwnerControlRoomPage(): Response {
   headers.set("x-mmd-command-center", "p0");
   headers.set("x-mmd-command-center-flow", "ask-needs-per-prepared-watching");
   headers.set("x-mmd-ai-ops-layer", "v3");
+  headers.set("x-mmd-control-room-safety-location", "v1");
 
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
