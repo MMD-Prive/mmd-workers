@@ -1,5 +1,5 @@
 import liffFoundation from "./liff-identity-foundation.js";
-import { readClientBackedHistory } from "./member-app-client-history.js";
+import { readClientBackedHistoryResult } from "./member-app-client-history.js";
 
 const API_PREFIX = "/api/member/app/";
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -664,8 +664,9 @@ async function adaptHistory(request, env, delegate) {
   const data = asObject(result.payload.data);
   const items = historyFromDashboard(data);
   if (items.length === 0 && sessionSnapshot?.lineUserId) {
-    const linkedHistory = await readClientBackedHistory(env, sessionSnapshot.lineUserId);
-    if (linkedHistory.length) return responseFrom(result.upstream, linkedHistory);
+    const linkedHistory = await readClientBackedHistoryResult(env, sessionSnapshot.lineUserId);
+    if (linkedHistory.items.length) return responseFrom(result.upstream, linkedHistory.items);
+    if (linkedHistory.state !== "resolved") return responseFrom(result.upstream, { state: "checking", items: [] });
   }
   if (items.length === 0) {
     const legacy = await legacyForRecoveryCheck(request, env);

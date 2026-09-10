@@ -47,7 +47,7 @@ export async function prepareMyMmdCanonicalEntitlementContext(request, env = {})
       ...(resolved.profile.customer_360 ? { customer_360: { ...resolved.profile.customer_360,
         member: { ...resolved.profile.customer_360.member, membership_status: "blocked" } } } : {}) };
   }
-  const denied = ["blocked", "suspended", "revoked", "pending_review", "under_review"].includes(resolved.profile?.membership_status);
+  const denied = ["blocked", "suspended", "revoked", "expired", "pending_review", "under_review"].includes(resolved.profile?.membership_status);
   const projection = denied ? null : projectProtectedEntitlement(resolved.entitlementSnapshot);
 
   const displayName = safeDisplayName(resolved.profile?.display_name);

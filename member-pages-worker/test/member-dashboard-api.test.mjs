@@ -360,3 +360,13 @@ it("canonical blocking outranks an active protected capability", async () => {
   const result = await dashboard(runtime, await startSession(runtime));
   assert.equal(result.payload.data.member.membership_status.value, "blocked");
 });
+
+it("canonical expiry outranks an active trusted protected capability", async () => {
+  const runtime = env({ MEMBER_STATUS_RESOLVER: resolver({
+    profile: profileFixture({ membership_status: "expired", display_name: "VIP Member" }),
+    entitlementSnapshot: canonicalEntitlementSnapshot("vip"),
+  }) });
+  const result = await dashboard(runtime, await startSession(runtime));
+  assert.equal(result.payload.data.member.membership_status.value, "expired");
+  assert.notEqual(result.payload.data.member.tier.value, "VIP");
+});

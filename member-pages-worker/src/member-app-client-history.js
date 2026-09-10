@@ -11,14 +11,18 @@ const COMMITTED_LINE_DECISION = "link_existing_client";
 const COMMITTED_LINE_REVIEW_STATUS = "committed";
 
 export async function readClientBackedHistory(env = {}, lineUserId = "", now = new Date()) {
+  return (await readClientBackedHistoryResult(env, lineUserId, now)).items;
+}
+
+export async function readClientBackedHistoryResult(env = {}, lineUserId = "", now = new Date()) {
   const lineId = canonicalLineId(lineUserId);
-  if (!lineId || !env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return [];
+  if (!lineId || !env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return { state: "checking", items: [] };
 
   try {
     const client = await resolveCanonicalClientForLine(env, lineId);
-    if (!client) return [];
+    if (!client) return { state: "resolved", items: [] };
     const email = normalizeEmail(client?.fields?.["Contact Email"] || client?.fields?.email);
-    if (!email) return [];
+    if (!email) return { state: "checking", items: [] };
 
     const [sessions, payments] = await Promise.all([
       airtableList(env, String(env.AIRTABLE_TABLE_SESSIONS || SESSIONS_TABLE), {
@@ -31,10 +35,10 @@ export async function readClientBackedHistory(env = {}, lineUserId = "", now = n
       }),
     ]);
 
-    return buildHistoryItems({ sessions, payments, now });
+    return { state: "resolved", items: buildHistoryItems({ sessions, payments, now }) };
   } catch (error) {
     console.warn({ event: "my_mmd_client_history_lookup_failed", failure_class: safeFailure(error) });
-    return [];
+    return { state: "checking", items: [] };
   }
 }
 
