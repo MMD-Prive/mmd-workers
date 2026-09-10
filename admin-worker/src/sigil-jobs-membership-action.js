@@ -1,3 +1,4 @@
+import { normalizeJobCreateBody } from "./job-create-contract.js";
 export const SIGIL_JOB_CREATE_PATH = "/v1/admin/job/create";
 export const MEMBERSHIP_ACTION_VERSION = "membership_action_v1";
 export const MEMBERSHIP_ACTION_NOTE_MARKER = "[MMD_MEMBERSHIP_ACTION_V1]";
@@ -26,7 +27,7 @@ export function isSigilJobMembershipActionRequest(path, method) {
 
 export function canonicalizeSigilJobBody(input = {}) {
   const body = input && typeof input === "object" && !Array.isArray(input)
-    ? structuredClone(input)
+    ? normalizeJobCreateBody(input)
     : {};
   const legacy = parseLegacyAssistedRenewalNote(readNote(body));
   const raw = rawMembershipAction(body, legacy);

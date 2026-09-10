@@ -246,7 +246,7 @@ function buildJobFields(body, canonical, ids) {
   const start = clean(body?.start_time || details?.start_time);
   const end = clean(body?.end_time || details?.end_time);
   const location = clean(body?.location_name || details?.location_name);
-  const amount = Number(body?.amount_thb || payment?.amount_thb || 0);
+  const amount = Number(body?.service_amount_thb ?? payment?.service_amount_thb ?? body?.amount_thb ?? payment?.amount_thb ?? 0);
 
   const noteParts = [
     clientName ? `Client snapshot: ${clientName}` : "",
