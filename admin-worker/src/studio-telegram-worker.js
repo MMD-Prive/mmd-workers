@@ -77,11 +77,20 @@ export default {
       return handleHistoricalSlipBackfillRequest(request, env, ctx);
     }
 
-    // Pre-job reconfirm stays additive to the canonical job/session runtime:
-    // Create Session remains the source of job truth; the wrapper only persists
-    // the D-1 schedule, enriches model reads, and handles acknowledgement without
-    // changing the canonical lifecycle state.
+    // Pre-job reconfirm is the outer additive wrapper. On canonical Create Job,
+    // keep canonical Client/Model validation + reconciliation inside that wrapper
+    // so the final response contains both canonical linkage and reconfirm schedule.
+    // This prevents /v1/admin/job/create from bypassing canonical linkage simply
+    // because it is also a reconfirm-owned route.
     if (isModelReconfirmRequest(path, method)) {
+      if (isCanonicalLinkedJobCreate(path, method)) {
+        const canonicalDownstream = {
+          fetch(innerRequest, innerEnv, innerCtx) {
+            return handleCanonicalLinkedJobCreate(innerRequest, innerEnv, innerCtx, studioWorker);
+          },
+        };
+        return handleModelReconfirmRequest(request, env, ctx, canonicalDownstream);
+      }
       return handleModelReconfirmRequest(request, env, ctx, studioWorker);
     }
 
@@ -147,11 +156,7 @@ export default {
       });
     }
 
-    // Create Job must resolve to canonical Airtable record identities before the
-    // legacy payment/session creation path runs. Raw LINE names or R2 objects are
-    // not sufficient authority. After creation, reconcile the canonical Client
-    // and Model links into both Sessions and Jobs without removing legacy text
-    // snapshots used by older surfaces.
+    // Defensive canonical route for callers not claimed by another wrapper.
     if (isCanonicalLinkedJobCreate(path, method)) {
       return handleCanonicalLinkedJobCreate(request, env, ctx, studioWorker);
     }
