@@ -59,7 +59,7 @@ function getConfig(env) {
     lineOAHandle: env.LINE_OA_HANDLE || "@himaishop",
     lineOAUrl: env.LINE_OA_URL || "https://line.me/R/ti/p/@himaishop",
     registerPrefix: env.REGISTER_PREFIX || "REGISTER HIMAI",
-    suppliersTable: env.AIRTABLE_SUPPLIERS_TABLE || "Suppliers",
+    suppliersTable: env.SHARED_SUPPLIERS_TABLE_ID || env.AIRTABLE_SUPPLIERS_TABLE || "tbl81bnFyASeXCj9x",
     himaiCustomersTableId: env.HIMAI_CUSTOMERS_TABLE_ID || "tblmNV3LP9kvXOzcU",
     consoleInboxTableId: env.CONSOLE_INBOX_TABLE_ID || "tblFHmfpB2TTrzO2e"
   };
