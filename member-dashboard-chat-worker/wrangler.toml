@@ -238,6 +238,8 @@ zone_name = "mmdbkk.com"
 [vars]
 LINE_AUTO_REPLY_ENABLED = "true"
 LINE_KENJI_AI_ENABLED = "true"
+# Canonical Airtable Supplier registry used by the production LINE webhook.
+HIMAI_SUPPLIERS_TABLE_ID = "tbl81bnFyASeXCj9x"
 LINE_KENJI_KNOWLEDGE_ENABLED = "true"
 MMS_LINE_AI_ENABLED = "true"
 # Customer continuity is resolved from the canonical Conversation Matrix before
