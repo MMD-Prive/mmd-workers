@@ -212,7 +212,7 @@ test("materialized canonical history stops the recovery-pending guard", async ()
 
   const pointsResponse = await handleMemberAppApi(request("/api/member/app/points"), env, upstream);
   const points = await pointsResponse.json();
-  assert.equal(points.state, undefined);
+  assert.equal(points.state, "resolved");
   assert.equal(points.summary.confirmedBalance, 0);
 
   const historyResponse = await handleMemberAppApi(request("/api/member/app/history"), env, upstream);

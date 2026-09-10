@@ -111,3 +111,27 @@ test("/api/member/app/history can read verified Client-linked history without wi
   assert.equal(session.member_exists, false);
   assert.equal(session.member_id, null);
 });
+
+test("verified-empty canonical history stays checking when Client history lookup fails", async () => {
+  const hash = await digest(SECRET, `session:${TOKEN}`);
+  const session = { line_user_id: LINE_ID, member_exists: true, member_id: "test-member", expires_at: Date.now() + 60_000 };
+  for (const failedTable of ["Clients", "Sessions", "Payments"]) {
+    const working = airtableBinding();
+    const env = {
+      LIFF_SESSION_SECRET: SECRET,
+      LIFF_IDENTITY_KV: new MemoryKv([[`liff:session:${hash}`, JSON.stringify(session)]]),
+      AIRTABLE_API_KEY: "pat-test", AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg",
+      AIRTABLE_HTTP: { async fetch(request) {
+        if (new URL(request.url).pathname.endsWith(`/${failedTable}`)) return Response.json({ error: "unavailable" }, { status: 503 });
+        return working.fetch(request);
+      } },
+    };
+    const delegate = { async fetch() { return Response.json({ ok: true, data: {
+      history: { status: "empty", events: [] }, payment_history: { status: "empty", records: [] },
+    } }); } };
+    const response = await handleMemberAppApi(new Request("https://mmdbkk.com/api/member/app/history", {
+      headers: { cookie: `__Host-mmd_liff_session=${TOKEN}` },
+    }), env, delegate);
+    assert.deepEqual(await response.json(), { state: "checking", items: [] }, failedTable);
+  }
+});
