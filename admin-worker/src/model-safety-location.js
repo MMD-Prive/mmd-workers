@@ -63,7 +63,8 @@ export async function augmentModelLocationCapability(request, env = {}, ctx, nex
   const context = await resolveModelContext(request, env, ctx);
   if (!context.ok) return base;
   const control = await readSafetyControl(env, context.model_record_id);
-  const active = validControl(control, context.session_id);
+  const active = context.active_job && validControl(control, context.session_id);
+  if (!active && control) await clearSafetyPoint(env, context.model_record_id);
 
   return replaceJson(base, {
     ...payload,
@@ -88,10 +89,10 @@ export async function handleModelSafetyLocationCurrent(request, env = {}, ctx) {
   }
 
   const control = await readSafetyControl(env, context.model_record_id);
-  const active = validControl(control, context.session_id);
+  const active = context.active_job && validControl(control, context.session_id);
   if (!active) {
     await clearSafetyPoint(env, context.model_record_id);
-    if (method === "POST") return json({ ok: false, error: "safety_location_check_not_active" }, 409);
+    if (method === "POST") return json({ ok: false, error: context.active_job ? "safety_location_check_not_active" : "active_job_required" }, 409);
     return json({ ok: true, data: safeModelPointMetadata(null, null, context) });
   }
 
@@ -146,8 +147,28 @@ export async function handleAdminSafetyLocationRequest(request, env = {}, actor 
   if (method === "GET") {
     const control = await readSafetyControl(env, session.model_record_id);
     const active = session.active && validControl(control, sessionId);
-    const point = active ? await readSafetyPoint(env, session.model_record_id) : null;
-    return json({ ok: true, data: adminSnapshot(session, active ? control : null, active && validSafetyPoint(point, control, sessionId) ? point : null) });
+    if (!active && control) await clearSafetyPoint(env, session.model_record_id);
+    const candidate = active ? await readSafetyPoint(env, session.model_record_id) : null;
+    const point = active && validSafetyPoint(candidate, control, sessionId) ? candidate : null;
+    if (candidate && !point) await clearSafetyPoint(env, session.model_record_id);
+    if (point) {
+      try {
+        await writeAudit(env, {
+          action: "model_safety_location_read",
+          actor: actorId,
+          session_id: sessionId,
+          model_record_id: session.model_record_id,
+          reason_code: control.reason_code,
+          check_id: control.check_id,
+          session_state: session.state,
+          started_at: control.started_at,
+          expires_at: control.expires_at,
+        });
+      } catch {
+        return json({ ok: false, error: "safety_location_read_audit_required" }, 503);
+      }
+    }
+    return json({ ok: true, data: adminSnapshot(session, active ? control : null, point) });
   }
 
   if (method === "DELETE" || normalizeCode(body?.action) === "stop") {
@@ -234,7 +255,7 @@ function safeSafetyCapability(control, context) {
   return {
     supported: true,
     active: Boolean(control),
-    capture_required: Boolean(control && context.session_id && control.session_id === context.session_id),
+    capture_required: Boolean(control && context.active_job && context.session_id && control.session_id === context.session_id),
     check_id: control?.check_id || null,
     expires_at: control?.expires_at || null,
     visibility: "internal_safety_only",
@@ -248,7 +269,7 @@ function safeSafetyCapability(control, context) {
 function safeModelPointMetadata(point, control, context) {
   return {
     sharing: Boolean(point),
-    safety_check_active: Boolean(control),
+    safety_check_active: Boolean(control && context.active_job),
     session_id: context.session_id || null,
     check_id: control?.check_id || null,
     last_update_at: point?.received_at || null,
@@ -301,13 +322,15 @@ async function resolveModelContext(request, env, ctx) {
   if (!response.ok) return { ok: false, status: response.status || 503, error: clean(payload?.error, 200) || "session_lookup_failed" };
   const session = payload?.session && typeof payload.session === "object" ? payload.session : null;
   const sessionId = clean(session?.session_id, 200);
+  const sessionState = clean(session?.state || session?.status, 120).toLowerCase();
+  const activeJob = Boolean(sessionId) && (!sessionState || ACTIVE_SESSION_STATES.has(sessionState));
   return {
     ok: true,
     status: 200,
     model_record_id: clean(auth.payload.model_record_id, 100),
     session_id: sessionId,
-    session_state: clean(session?.state || session?.status, 120),
-    active_job: Boolean(sessionId),
+    session_state: sessionState,
+    active_job: activeJob,
   };
 }
 
