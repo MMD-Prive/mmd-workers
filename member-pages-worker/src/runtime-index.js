@@ -5,6 +5,7 @@ import { isDriveReconcileRequest, handleDriveReconcile } from "./drive-access-re
 import { withDriveBootstrapDiagnostic } from "./drive-bootstrap-debug.js";
 import { withStatusFirstMemberResolver } from "./liff-status-first-member-resolver.js";
 import { applyMyMmdFastTrustResponse } from "./my-mmd-fast-trust-response.js";
+import { recoverVerifiedLiffStartAsPendingIdentity } from "./liff-start-pending-identity-fallback.js";
 import { attachTraceId, createLiffResolutionTrace, createLiffShellBoundaryTrace } from "./liff-resolution-trace.js";
 import {
   handleTrustedCareBackBookingApproval,
@@ -75,13 +76,30 @@ export default {
     const bootstrapRequest = request.clone();
     let firstResponse = await worker.fetch(firstRequest, runtimeEnv, ctx);
     firstResponse = await applyMyMmdFastTrustResponse(request, firstResponse, env);
+    let firstPayload = await jsonPayload(firstResponse);
+
+    const recoveredResponse = await recoverVerifiedLiffStartAsPendingIdentity({
+      request,
+      response: firstResponse,
+      payload: firstPayload,
+      worker,
+      env: runtimeEnv,
+      ctx,
+    });
+    if (recoveredResponse !== firstResponse) {
+      firstResponse = recoveredResponse;
+      firstPayload = await jsonPayload(firstResponse);
+      trace?.event("member_resolution", "pending_identity", "resolver_unavailable_session_preserved", {
+        http_status: firstResponse.status,
+        member_resolved: false,
+        pending_identity: true,
+      });
+    }
 
     if (shellBoundary) {
       shellBoundary.finish(firstResponse);
       firstResponse = shellBoundary.attach(firstResponse);
     }
-
-    const firstPayload = await jsonPayload(firstResponse);
 
     if (trace) {
       trace.event("member_status", firstResponse.ok ? "complete" : "failed", firstPayload?.error?.code || "", {
