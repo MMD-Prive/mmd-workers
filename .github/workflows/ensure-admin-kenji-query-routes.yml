@@ -31,60 +31,85 @@ jobs:
           const zoneId = String(process.env.CLOUDFLARE_ZONE_ID || '').trim();
           const token = String(process.env.CLOUDFLARE_ROUTES_API_TOKEN || '').replace(/[\u2028\u2029\r\n]/g, '').trim();
           if (!zoneId || !token) throw new Error('Cloudflare route credentials are unavailable');
-
           const worker = 'admin-worker';
           const desired = [
             'mmdbkk.com/internal/admin/kenji*',
             'www.mmdbkk.com/internal/admin/kenji*',
           ];
-
           async function cloudflare(path, options = {}) {
             const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
               ...options,
-              headers: {
-                Authorization: `Bearer ${token}`,
-                'Content-Type': 'application/json',
-                ...(options.headers || {}),
-              },
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(options.headers || {}) },
             });
             const payload = await response.json();
             if (!response.ok || payload.success !== true) {
-              const errors = (payload.errors || [])
-                .map((error) => `${error.code || 'unknown'}: ${error.message || 'unknown error'}`)
-                .join('; ');
+              const errors = (payload.errors || []).map((e) => `${e.code || 'unknown'}: ${e.message || 'unknown error'}`).join('; ');
               throw new Error(`Cloudflare ${options.method || 'GET'} ${path} failed (${response.status}): ${errors}`);
             }
             return payload.result;
           }
-
           const routePath = `/zones/${zoneId}/workers/routes`;
           const existing = await cloudflare(routePath);
-          const conflicts = desired.flatMap((pattern) =>
-            existing.filter((route) => route.pattern === pattern && route.script !== worker)
-          );
-          if (conflicts.length) {
-            throw new Error(`Refusing to replace existing routes: ${conflicts.map((route) => `${route.pattern} -> ${route.script || 'no script'}`).join(', ')}`);
-          }
-
+          const conflicts = desired.flatMap((pattern) => existing.filter((route) => route.pattern === pattern && route.script !== worker));
+          if (conflicts.length) throw new Error(`Refusing to replace existing routes: ${conflicts.map((r) => `${r.pattern} -> ${r.script || 'no script'}`).join(', ')}`);
           for (const pattern of desired) {
             if (existing.some((route) => route.pattern === pattern && route.script === worker)) {
               console.log(`Already present ${pattern} -> ${worker}`);
               continue;
             }
-            await cloudflare(routePath, {
-              method: 'POST',
-              body: JSON.stringify({ pattern, script: worker }),
-            });
+            await cloudflare(routePath, { method: 'POST', body: JSON.stringify({ pattern, script: worker }) });
             console.log(`Created ${pattern} -> ${worker}`);
           }
-
           const verified = await cloudflare(routePath);
-          const unresolved = desired.filter(
-            (pattern) => !verified.some((route) => route.pattern === pattern && route.script === worker)
-          );
+          const unresolved = desired.filter((pattern) => !verified.some((route) => route.pattern === pattern && route.script === worker));
           if (unresolved.length) throw new Error(`Route verification failed: ${unresolved.join(', ')}`);
           console.log(`Verified ${desired.length}/${desired.length} query-safe Kenji Admin routes`);
           NODE
+
+      - name: Inspect overlapping Worker routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const zoneId = String(process.env.CLOUDFLARE_ZONE_ID || '').trim();
+          const token = String(process.env.CLOUDFLARE_ROUTES_API_TOKEN || '').replace(/[\u2028\u2029\r\n]/g, '').trim();
+          const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/workers/routes`, {
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          });
+          const payload = await response.json();
+          if (!response.ok || payload.success !== true) throw new Error(`Unable to inspect routes (${response.status})`);
+          const routes = (payload.result || []).filter((r) => {
+            const p = String(r.pattern || '').toLowerCase();
+            return p.includes('/internal/admin/kenji') || p.includes('/internal/admin/*') || p.includes('/internal/*') || p.endsWith('mmdbkk.com/*');
+          }).sort((a,b) => String(a.pattern).localeCompare(String(b.pattern)));
+          console.log('Relevant Cloudflare Worker routes:');
+          for (const r of routes) console.log(`${r.pattern} -> ${r.script || 'NO_SCRIPT'}`);
+          NODE
+
+      - name: Inspect live ingress headers
+        shell: bash
+        run: |
+          set -euo pipefail
+          urls=(
+            "https://mmdbkk.com/internal/admin/kenji"
+            "https://www.mmdbkk.com/internal/admin/kenji"
+            "https://mmdbkk.com/internal/admin/kenji?view=model-link"
+            "https://www.mmdbkk.com/internal/admin/kenji?view=model-link"
+            "https://mmdbkk.com/v1/admin/auth/me"
+            "https://www.mmdbkk.com/v1/admin/auth/me"
+          )
+          for url in "${urls[@]}"; do
+            headers="$(mktemp)"
+            body="$(mktemp)"
+            code="$(curl -sS --max-time 20 -D "$headers" -o "$body" -w '%{http_code}' "$url")"
+            echo "--- $url"
+            echo "HTTP $code"
+            grep -Ei '^(location|server|cf-ray|content-type|x-mmd-route-owner|x-mmd-admin-build):' "$headers" || true
+            if grep -qi '<title>.*404\|page not found\|not found' "$body"; then echo 'BODY_CLASS=web_or_html_404';
+            elif grep -q '"error":"unauthorized"' "$body"; then echo 'BODY_CLASS=admin_unauthorized';
+            elif grep -q 'MMD MODEL · LINE Link Review' "$body"; then echo 'BODY_CLASS=model_link_review';
+            else echo "BODY_CLASS=other bytes=$(wc -c < "$body")"; fi
+          done
 
       - name: Smoke query-string route
         shell: bash
@@ -95,11 +120,10 @@ jobs:
             "https://www.mmdbkk.com/internal/admin/kenji?view=model-link"
           do
             body="$(mktemp)"
-            code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS -o "$body" -w '%{http_code}' "$url")"
+            code="$(curl --retry 2 --retry-delay 1 --retry-all-errors -sS -o "$body" -w '%{http_code}' "$url")"
             echo "$url -> HTTP $code"
             if [ "$code" = "404" ] || [ "$code" = "000" ]; then
               echo "Kenji query route still misses admin-worker: $url" >&2
-              cat "$body" >&2 || true
               exit 1
             fi
           done
