@@ -1,9 +1,11 @@
 # Kenji Knowledge Seed Pack V1
 
-Status: **NORMALIZED · QA READY · NOT PUBLISHED**  
+Status: **NORMALIZED · QA READY · NOT PUBLISHED · PAYMENT ROUTES SUPERSEDED 2026-09-11**  
 Owner / final authority: **Per**  
 Count: **30 cards**  
 Machine-readable source: `docs/knowledge/KENJI_KNOWLEDGE_SEED_PACK_V1.normalized.json`
+
+> Payment-routing override (2026-09-11): `docs/knowledge/UNIFIED_PAYMENT_PROOF_FLOW_LOCK.md` is authoritative. Generic Kenji replies must use `/member/payments` as the payment list/status/navigation handoff. A canonical signed `/sigil/pay?t=...` URL may be used only when the current payment intent supplies it. `/confirm/payment-proof` is legacy/manual evidence compatibility only and must not be emitted as the default new-payment CTA. Payment-related cards in the normalized JSON must be regenerated against this lock before publication.
 
 ## Purpose
 
@@ -30,7 +32,9 @@ Per approved proceeding with normalization and final QA on 2026-09-07. The 30 ca
 
 | Intent | Route used by this pack |
 | --- | --- |
-| Payment proof | `/confirm/payment-proof` |
+| Payment status / generic payment handoff | `/member/payments` |
+| Canonical payment + proof | signed `/sigil/pay?t=...` from the current payment intent only |
+| Legacy/manual evidence compatibility | `/confirm/payment-proof` only when explicitly handling a legacy/manual no-ref case |
 | My MMD home | `/my-mmd/` |
 | Membership | `/my-mmd/membership` |
 | Points | `/my-mmd/points` |
@@ -44,7 +48,7 @@ Per approved proceeding with normalization and final QA on 2026-09-07. The 30 ca
 | MMS pre-booking | `/male-massage/member/mms-booking` |
 | MMS Partner Venue / Relax Spa | `/male-massage/therapists/relax-spa` |
 
-`/profiles`, `/public/access`, `/member/dashboard`, generic `/my-mmd`, legacy `/member/mms-booking`, and `/recovery` are not emitted as new CTAs by this seed pack.
+`/profiles`, `/public/access`, `/member/dashboard`, generic `/my-mmd`, legacy `/member/mms-booking`, and `/recovery` are not emitted as new CTAs by this seed pack. `/confirm/payment-proof` is also not emitted as a generic new-payment CTA.
 
 ## Pack composition
 
@@ -58,7 +62,7 @@ Per approved proceeding with normalization and final QA on 2026-09-07. The 30 ca
 
 ## Customer-copy rules
 
-Every card in the normalized manifest follows these rules:
+Every card in the normalized manifest follows these rules, subject to the 2026-09-11 payment-routing override above:
 
 1. Short answer first; one next step when possible.
 2. Use `MMD` or `เปอร์/MMD` for human/authority handoff; do not expose internal operators.
@@ -70,6 +74,8 @@ Every card in the normalized manifest follows these rules:
 8. Model private contacts and other-customer data are never disclosed.
 9. If truth conflicts or is missing, stop confirming and hand off.
 10. Do not publish from this PR automatically.
+11. Never mint or imply a replacement payment reference from Kenji. Reuse the canonical payment context; if no signed pay URL is available, route to `/member/payments`.
+12. Never ask a customer to resubmit proof when the current payment/ref is already pending verification.
 
 ## Final QA contract
 
@@ -87,18 +93,20 @@ For every card, QA must prove:
 - privacy check is true for critical cards;
 - audit contains `submit_review` and `record_qa`;
 - final stage is `qa_passed`;
-- **no `publish` event exists**.
+- **no `publish` event exists**;
+- payment cards do not default to `/confirm/payment-proof` and do not create duplicate payment/proof flows.
 
-Publication remains a separate explicit Per action after the Review/QA queue is inspected.
+Publication remains a separate explicit Per action after the Review/QA queue is inspected. The current normalized JSON must not be published until its payment-related cards are regenerated against the 2026-09-11 unified payment lock.
 
 ## Source precedence
 
 1. Current Worker-backed truth and current route ownership.
-2. Current My MMD endpoint canon (`docs/ops/MMD-MY-MMD-ENDPOINT-MEMORY-2026-09-06.md`).
-3. Current MMS navigation canon (`docs/knowledge/MMS_WEBSITE_NAVIGATION_KNOWLEDGE_V1.md`).
-4. Current Kenji runtime / knowledge contract.
-5. MMD Core Knowledge — Production V1.
-6. Historical Drive prompts only after safety rewrite; never verbatim authority.
+2. `docs/knowledge/UNIFIED_PAYMENT_PROOF_FLOW_LOCK.md` for payment/ref/proof routing.
+3. Current My MMD endpoint canon (`docs/ops/MMD-MY-MMD-ENDPOINT-MEMORY-2026-09-06.md`).
+4. Current MMS navigation canon (`docs/knowledge/MMS_WEBSITE_NAVIGATION_KNOWLEDGE_V1.md`).
+5. Current Kenji runtime / knowledge contract.
+6. MMD Core Knowledge — Production V1.
+7. Historical Drive prompts only after safety rewrite; never verbatim authority.
 
 ## Next gate
 

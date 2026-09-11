@@ -16,7 +16,13 @@ function isRecordId(value) {
 function addUtcYears(value, years) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
+  const month = date.getUTCMonth();
+  const day = date.getUTCDate();
+  date.setUTCDate(1);
   date.setUTCFullYear(date.getUTCFullYear() + years);
+  date.setUTCMonth(month);
+  const lastDay = new Date(Date.UTC(date.getUTCFullYear(), month + 1, 0)).getUTCDate();
+  date.setUTCDate(Math.min(day, lastDay));
   return date;
 }
 
@@ -54,6 +60,14 @@ export async function reconcilePremiumReviewedMembershipTerm(request, response, 
 
   const data = await response.clone().json().catch(() => null);
   if (!data?.ok || data.entitlement_materialized !== true || !isRecordId(data.entitlement_record_id)) return response;
+
+  // New reviewed-proof materialization is already canonical: Premium is two
+  // calendar years from verified payment. Keep this wrapper only as a
+  // backward-compatibility guard for legacy one-year responses so a canonical
+  // response can never be extended to three years.
+  if (data.membership_term === "2_years" || data.membership_expiry_rule === "2_years_from_verified_payment") {
+    return response;
+  }
 
   const oneYearExpiry = clean(data.membership_expire_at, 120);
   const twoYearExpiry = addUtcYears(oneYearExpiry, 1);

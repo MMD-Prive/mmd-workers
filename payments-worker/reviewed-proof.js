@@ -8,7 +8,7 @@ const CANONICAL_RENEWALS = "tblXjQFwo0A2cHseh";
 const CANONICAL_MEMBERS = "tblgWc5VRon5o8Mhk";
 const CANONICAL_CLIENTS = "tblVv58TCbwh5j1fS";
 const RECOVERY_PRICE = Object.freeze({ standard: 1000, premium: 2500 });
-const MEMBERSHIP_DAYS = 365;
+const MEMBERSHIP_YEARS = Object.freeze({ standard: 1, premium: 2 });
 
 export const REVIEWED_PROOF_PATH = "/v1/internal/payments/reviewed-proof";
 
@@ -159,6 +159,8 @@ export async function handleReviewedProof(request, env = {}, ctx = null, notifyT
       entitlement_materialized: Boolean(materialization?.entitlement_record_id),
       entitlement_record_id: materialization?.entitlement_record_id || undefined,
       membership_expire_at: materialization?.expire_at || undefined,
+      membership_term: materialization?.membership_term || undefined,
+      membership_expiry_rule: materialization?.membership_expiry_rule || undefined,
       downstream_access_reconcile_required: Boolean(materialization),
     }), { status: response.status, headers });
   } catch (error) {
@@ -211,6 +213,34 @@ async function validateEmailLessRecovery(env, input) {
   };
 }
 
+export function membershipTermForPackage(packageCode, startAtValue) {
+  const normalizedPackage = canonicalPackage(packageCode);
+  const years = MEMBERSHIP_YEARS[normalizedPackage];
+  const startAt = startAtValue instanceof Date ? new Date(startAtValue.getTime()) : validDate(startAtValue);
+  if (!years || !startAt || Number.isNaN(startAt.getTime())) return null;
+
+  const expireAt = addUtcCalendarYears(startAt, years);
+  if (!expireAt) return null;
+  return {
+    expire_at: expireAt,
+    membership_term: years === 2 ? "2_years" : "1_year",
+    membership_expiry_rule: years === 2 ? "2_years_from_verified_payment" : "1_year_from_verified_payment",
+  };
+}
+
+function addUtcCalendarYears(value, years) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime()) || !Number.isInteger(years) || years < 1) return null;
+  const month = date.getUTCMonth();
+  const day = date.getUTCDate();
+  date.setUTCDate(1);
+  date.setUTCFullYear(date.getUTCFullYear() + years);
+  date.setUTCMonth(month);
+  const lastDay = new Date(Date.UTC(date.getUTCFullYear(), month + 1, 0)).getUTCDate();
+  date.setUTCDate(Math.min(day, lastDay));
+  return date;
+}
+
 async function materializeRecoveredMembership(env, input) {
   const existing = await airtableList(env, entitlementsTable(env), {
     filterByFormula: `{payment_ref}='${formulaValue(input.payment_ref)}'`,
@@ -221,7 +251,9 @@ async function materializeRecoveredMembership(env, input) {
   const paidAtRaw = text(input.proof.fields?.paid_at || input.proof.fields?.["Payment Date"], 80);
   const paidAt = validDate(paidAtRaw) || new Date();
   const startAt = new Date(paidAt);
-  const expireAt = new Date(startAt.getTime() + MEMBERSHIP_DAYS * 86400000);
+  const membershipTerm = membershipTermForPackage(input.package_code, startAt);
+  if (!membershipTerm) throw httpError(409, "recovery_membership_term_invalid");
+  const expireAt = membershipTerm.expire_at;
   const packageLabel = input.package_code === "premium" ? "Premium" : "Standard";
   const entitlementLevel = input.package_code === "premium" ? "premium" : "standard_basic";
 
@@ -239,7 +271,7 @@ async function materializeRecoveredMembership(env, input) {
       start_at: startAt.toISOString(),
       expire_at: expireAt.toISOString(),
       renewal_status: "renewed",
-      membership_expiry_rule: "365_days_from_verified_payment",
+      membership_expiry_rule: membershipTerm.membership_expiry_rule,
       telegram_access_status: "pending_invite",
       source: "renewal",
       source_ref: `payment:${input.payment_ref}`,
@@ -268,7 +300,13 @@ async function materializeRecoveredMembership(env, input) {
     }),
   ]);
 
-  return { entitlement_record_id: entitlement.id, start_at: startAt.toISOString(), expire_at: expireAt.toISOString() };
+  return {
+    entitlement_record_id: entitlement.id,
+    start_at: startAt.toISOString(),
+    expire_at: expireAt.toISOString(),
+    membership_term: membershipTerm.membership_term,
+    membership_expiry_rule: membershipTerm.membership_expiry_rule,
+  };
 }
 
 async function loadProof(env, proofId) {

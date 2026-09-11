@@ -3,7 +3,7 @@ import { buildKenjiNextActionPolicy } from "../../shared/kenji-customer-memory-v
 const ROUTES = Object.freeze({
   membership: "https://mmdbkk.com/my-mmd/membership",
   points: "https://mmdbkk.com/my-mmd/points",
-  payment_proof: "https://mmdbkk.com/confirm/payment-proof",
+  payments: "https://mmdbkk.com/member/payments",
 });
 
 function text(value) {
@@ -79,10 +79,10 @@ function paymentStatusAction(continuity = {}) {
   return {
     schema: "mmd.kenji_next_action.v1",
     type: "open_action_route",
-    label: "ส่งหลักฐานการชำระ",
-    route: ROUTES.payment_proof,
-    customer_text: `ถ้ายังไม่ได้ส่งหลักฐาน ส่งไว้ตรงนี้ได้เลยครับ → ${ROUTES.payment_proof}`,
-    reason: "payment_status_needs_payment_proof",
+    label: "ดูรายการชำระเงิน",
+    route: ROUTES.payments,
+    customer_text: `เปิดรายการชำระเงินตรงนี้ได้เลยครับ → ${ROUTES.payments} ระบบจะพาไปขั้นตอนที่ถูกต้องของรายการเดิม ถ้ามี payment ref หรือส่งหลักฐานไว้แล้ว ไม่ต้องสร้างหรือส่งซ้ำครับ`,
+    reason: "payment_status_uses_canonical_member_payments_route",
   };
 }
 

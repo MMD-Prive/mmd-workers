@@ -49,14 +49,16 @@ assert.match(paymentKnown.customer_text, /ไม่ต้องส่งซ้�
 assert.match(paymentKnown.customer_text, /มีอัปเดตไหม/);
 assert.doesNotMatch(paymentKnown.customer_text, /confirm\/payment-proof/);
 
-const paymentNeedsProof = resolveKenjiNextAction({
+const paymentNeedsAction = resolveKenjiNextAction({
   intent: "payment_status",
   decision: { text: "ได้ครับ แต่ผมจะไม่ยืนยันการชำระจากข้อความหรือสลิปอย่างเดียว" },
   continuity: { matrix: { conversation_stage: "in_progress", do_not_ask_again: [] } },
 });
-assert.equal(paymentNeedsProof.type, "open_action_route");
-assert.equal(paymentNeedsProof.route, "https://mmdbkk.com/confirm/payment-proof");
-assert.match(paymentNeedsProof.customer_text, /ส่งหลักฐาน/);
+assert.equal(paymentNeedsAction.type, "open_action_route");
+assert.equal(paymentNeedsAction.route, "https://mmdbkk.com/member/payments");
+assert.match(paymentNeedsAction.customer_text, /รายการชำระเงิน/);
+assert.match(paymentNeedsAction.customer_text, /ไม่ต้องสร้างหรือส่งซ้ำ/);
+assert.doesNotMatch(paymentNeedsAction.customer_text, /confirm\/payment-proof/);
 
 const existingCta = applyKenjiNextAction({
   text: "ดูสถานะล่าสุดได้ที่ https://mmdbkk.com/my-mmd/membership ครับ",
