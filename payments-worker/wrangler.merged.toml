@@ -8,6 +8,8 @@ compatibility_date = "2026-01-20"
 # - index.with-slip-evidence.js remains the evidence-only compatibility writer.
 # - unified-payment-proof.js locks one payment_ref per session/stage, writes web proof records,
 #   blocks repeat proof submission, and exposes current proof/payment state to /sigil/pay.
+# - /v1/confirm/payment-instructions returns customer-safe payment destinations only after
+#   signed confirmation/session/payment validation; destinations remain server-side in Airtable.
 # - /v1/internal/payments/historical-slip/reviewed validates reviewed historical
 #   Payment Proof evidence before entering the canonical trusted notify path.
 # - /v1/internal/payments/reviewed-proof re-reads Payment Proof evidence inside
@@ -61,6 +63,7 @@ AIRTABLE_TABLE_MEMBERS                 = "tblgWc5VRon5o8Mhk"
 AIRTABLE_TABLE_BOOKINGS                = "tbl8no0NkZ3LDgCXK"
 AIRTABLE_TABLE_PAYMENTS                = "tblWGGJJOx5eBvBZJ"
 AIRTABLE_TABLE_PAYMENT_PROOFS          = "tblfJfM4Sqag9zrLi"
+AIRTABLE_TABLE_PAYMENT_INSTRUCTIONS    = "tblTPC2yV1P3CwbgU"
 AIRTABLE_TABLE_MEMBER_PACKAGES         = "member_packages"
 AIRTABLE_TABLE_SESSIONS                = "tblC98mKWbzmPuNzX"
 AIRTABLE_TABLE_POINTS_LEDGER           = "points_ledger"
