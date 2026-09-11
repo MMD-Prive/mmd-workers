@@ -130,13 +130,7 @@ jobs:
               cat "$body_file" >&2
               exit 1
             fi
-            node - "$body_file" <<'NODE'
-            const fs = require("node:fs");
-            const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-            if (payload?.ok !== false || payload?.error !== "unauthorized") {
-              throw new Error(`Expected unauthorized JSON, got ${JSON.stringify(payload)}`);
-            }
-            NODE
+            node -e 'const fs=require("node:fs"); const payload=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (payload?.ok !== false || payload?.error !== "unauthorized") { throw new Error("Expected unauthorized JSON, got " + JSON.stringify(payload)); }' "$body_file"
           done
 
       - name: Smoke unauthenticated model link bind endpoint
@@ -160,11 +154,5 @@ jobs:
               cat "$body_file" >&2
               exit 1
             fi
-            node - "$body_file" <<'NODE'
-            const fs = require("node:fs");
-            const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-            if (payload?.ok !== false || payload?.error !== "unauthorized") {
-              throw new Error(`Expected unauthorized JSON, got ${JSON.stringify(payload)}`);
-            }
-            NODE
+            node -e 'const fs=require("node:fs"); const payload=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (payload?.ok !== false || payload?.error !== "unauthorized") { throw new Error("Expected unauthorized JSON, got " + JSON.stringify(payload)); }' "$body_file"
           done
