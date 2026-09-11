@@ -1,6 +1,7 @@
 import { buildKenjiNextActionPolicy } from "../../shared/kenji-customer-memory-v2.mjs";
 
 const ROUTES = Object.freeze({
+  dashboard: "https://mmdbkk.com/member/dashboard",
   membership: "https://mmdbkk.com/sigil/member/membership",
   points: "https://mmdbkk.com/my-mmd/points",
   payments: "https://mmdbkk.com/member/payments",
@@ -101,9 +102,9 @@ export function resolveKenjiNextAction({ intent = "", decision = {}, continuity 
       schema: "mmd.kenji_next_action.v1",
       type: "open_action_route",
       label: "ดูสถานะและสิทธิ์สมาชิก",
-      route: ROUTES.membership,
-      customer_text: `ถ้าจะดูต่อว่าตอนนี้ใช้สิทธิ์อะไรได้บ้าง เปิด Membership ตรงนี้ได้เลยครับ → ${ROUTES.membership}`,
-      reason: "membership_status_uses_canonical_membership_intake_route",
+      route: ROUTES.dashboard,
+      customer_text: `ถ้าจะดูสถานะ ระดับสมาชิก วันหมดอายุ และสิทธิ์ล่าสุด เปิด MY MMD Home ตรงนี้ได้เลยครับ → ${ROUTES.dashboard}`,
+      reason: "membership_status_uses_canonical_member_dashboard",
     };
   } else if (value === "points_status") {
     action = {
