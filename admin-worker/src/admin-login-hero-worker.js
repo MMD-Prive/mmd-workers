@@ -13,6 +13,7 @@ isPaymentReviewRequest
 handlePaymentReviewRequest
 isPaymentEntitlementApprovalRequest
 handlePaymentEntitlementApproval
+coreWorker.fetch(request, env, ctx)
 */
 
 export default worker;
