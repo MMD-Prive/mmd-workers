@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "admin-worker/src/model-line-link-review.js"
+      - "admin-worker/src/model-line-avatar-review.js"
       - "admin-worker/src/admin-model-line-link-worker.js"
       - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/src/admin-login-hero-worker-pre-model-line-link.js"
@@ -30,6 +31,7 @@ jobs:
       - name: Syntax
         run: |
           node --check admin-worker/src/model-line-link-review.js
+          node --check admin-worker/src/model-line-avatar-review.js
           node --check admin-worker/src/admin-model-line-link-worker.js
           node --check admin-worker/src/model-liff-manual-review-worker.js
       - name: Contract tests
