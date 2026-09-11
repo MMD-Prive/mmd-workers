@@ -6,6 +6,7 @@ on:
     branches:
       - main
     paths:
+      - "admin-worker/**"
       - ".github/workflows/ensure-admin-kenji-query-routes.yml"
 
 concurrency:

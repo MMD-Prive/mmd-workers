@@ -22,7 +22,10 @@ export default {
 
     if (isModelLineLinkPage(request)) {
       const auth = await requireOwner(request, env);
-      if (auth.response) return auth.response;
+      if (auth.response) {
+        if (auth.response.status === 401) return redirectToAdminLogin(request);
+        return auth.response;
+      }
       const response = renderModelLineLinkPageWithAvatar();
       if (request.method.toUpperCase() !== "HEAD") return response;
       return new Response(null, { status: response.status, headers: response.headers });
@@ -66,6 +69,22 @@ async function requireOwner(request, env) {
     return { actor: null, response: json({ ok: false, error: "mms_partner_scope_forbidden" }, 403) };
   }
   return { actor, response: null };
+}
+
+export function modelLineLinkLoginLocation(request) {
+  const url = new URL(request.url);
+  const next = `${normalizePath(url.pathname)}${url.search}`;
+  return `${url.origin}/internal/admin/login?next=${encodeURIComponent(next)}`;
+}
+
+function redirectToAdminLogin(request) {
+  return new Response(null, {
+    status: 303,
+    headers: {
+      location: modelLineLinkLoginLocation(request),
+      "cache-control": "no-store, private",
+    },
+  });
 }
 
 function normalizePath(pathname) {
