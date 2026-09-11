@@ -17,10 +17,10 @@ const membership = applyKenjiNextAction({
   },
 });
 assert.equal(membership.cta_type, "open_action_route");
-assert.equal(membership.cta_route, "https://mmdbkk.com/my-mmd/membership");
+assert.equal(membership.cta_route, "https://mmdbkk.com/member/dashboard");
 assert.equal(membership.cta_appended, true);
-assert.match(membership.text, /My MMD > Membership/);
-assert.match(membership.text, /https:\/\/mmdbkk\.com\/my-mmd\/membership/);
+assert.match(membership.text, /MY MMD Home/);
+assert.match(membership.text, /https:\/\/mmdbkk\.com\/member\/dashboard/);
 assert.equal(membership.next_action_policy.max_primary_cta, 1);
 assert.equal(membership.next_action_policy.relationship_mode, "known_customer_continuation");
 assert.doesNotMatch(membership.text, /อนุมัติสิทธิ์|ได้รับสิทธิ์แล้ว|เปิดสิทธิ์แล้ว/i);
@@ -61,12 +61,12 @@ assert.match(paymentNeedsAction.customer_text, /ไม่ต้องสร้�
 assert.doesNotMatch(paymentNeedsAction.customer_text, /confirm\/payment-proof/);
 
 const existingCta = applyKenjiNextAction({
-  text: "ดูสถานะล่าสุดได้ที่ https://mmdbkk.com/my-mmd/membership ครับ",
+  text: "ดูสถานะล่าสุดได้ที่ https://mmdbkk.com/member/dashboard ครับ",
   intent: "membership_status",
 }, { continuity: {} });
 assert.equal(existingCta.cta_type, "open_action_route");
 assert.equal(existingCta.cta_appended, false);
-assert.equal((existingCta.text.match(/https:\/\/mmdbkk\.com\/my-mmd\/membership/g) || []).length, 1);
+assert.equal((existingCta.text.match(/https:\/\/mmdbkk\.com\/member\/dashboard/g) || []).length, 1);
 
 const availability = applyKenjiNextAction({
   text: "ส่งวัน เวลา โซน และชื่อคนที่อยากเช็กมาได้เลยครับ",

@@ -1,7 +1,8 @@
 import { buildKenjiNextActionPolicy } from "../../shared/kenji-customer-memory-v2.mjs";
 
 const ROUTES = Object.freeze({
-  membership: "https://mmdbkk.com/my-mmd/membership",
+  dashboard: "https://mmdbkk.com/member/dashboard",
+  membership: "https://mmdbkk.com/sigil/member/membership",
   points: "https://mmdbkk.com/my-mmd/points",
   payments: "https://mmdbkk.com/member/payments",
 });
@@ -81,7 +82,7 @@ function paymentStatusAction(continuity = {}) {
     type: "open_action_route",
     label: "ดูรายการชำระเงิน",
     route: ROUTES.payments,
-    customer_text: `เปิดรายการชำระเงินตรงนี้ได้เลยครับ → ${ROUTES.payments} ระบบจะพาไปขั้นตอนที่ถูกต้องของรายการเดิม ถ้ามี payment ref หรือส่งหลักฐานไว้แล้ว ไม่ต้องสร้างหรือส่งซ้ำครับ`,
+    customer_text: `เปิดรายการชำระเงินตรงนี้ได้เลยครับ → ${ROUTES.payments} หน้านี้จะพาไปขั้นตอนของรายการเดิม ถ้ามี payment ref หรือส่งหลักฐานไว้แล้ว ไม่ต้องสร้างหรือส่งซ้ำครับ`,
     reason: "payment_status_uses_canonical_member_payments_route",
   };
 }
@@ -101,9 +102,9 @@ export function resolveKenjiNextAction({ intent = "", decision = {}, continuity 
       schema: "mmd.kenji_next_action.v1",
       type: "open_action_route",
       label: "ดูสถานะและสิทธิ์สมาชิก",
-      route: ROUTES.membership,
-      customer_text: `ถ้าจะดูต่อว่าตอนนี้ใช้สิทธิ์อะไรได้บ้าง เปิด My MMD > Membership ตรงนี้ได้เลยครับ → ${ROUTES.membership}`,
-      reason: "membership_status_has_safe_self_service_next_step",
+      route: ROUTES.dashboard,
+      customer_text: `ถ้าจะดูสถานะ ระดับสมาชิก วันหมดอายุ และสิทธิ์ล่าสุด เปิด MY MMD Home ตรงนี้ได้เลยครับ → ${ROUTES.dashboard}`,
+      reason: "membership_status_uses_canonical_member_dashboard",
     };
   } else if (value === "points_status") {
     action = {
