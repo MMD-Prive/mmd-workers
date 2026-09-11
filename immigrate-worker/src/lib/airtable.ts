@@ -9,6 +9,11 @@ import type {
   MigrationTraceSummary,
 } from "../types";
 
+// Canonical membership authority. Keep this resolver as the only source that may
+// interpret entitlement lifecycle; profile/session rows are expiry readback only.
+// @ts-ignore -- canonical resolver is JavaScript and intentionally shared across workers.
+import { resolveMemberEntitlements } from "../../../auth-worker/src/member-entitlement-resolver.js";
+
 type AirtableValue =
   | string
   | number
@@ -72,6 +77,91 @@ function syncTargetUrl(env: Env): string {
 function clientsUrl(env: Env): string {
   const table = encodeURIComponent(env.AIRTABLE_TABLE_CLIENTS || "Clients");
   return `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${table}`;
+}
+
+function membersUrl(env: Env): string {
+  const table = encodeURIComponent(env.AIRTABLE_TABLE_MEMBERS || "Members");
+  return `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${table}`;
+}
+
+function memberEntitlementsUrl(env: Env): string {
+  const table = encodeURIComponent(env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || "MMD — Member Entitlements");
+  return `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${table}`;
+}
+
+function envFieldList(...values: Array<string | undefined>): string[] {
+  return Array.from(new Set(values.flatMap((value) => String(value || "").split(",").map((item) => item.trim())).filter(Boolean)));
+}
+
+function exactStableIdentityMatch(
+  fields: AirtableFields | undefined,
+  input: { line_user_id?: string; memberstack_id?: string },
+  lineKeys: string[],
+  memberstackKeys: string[],
+): boolean {
+  const wantedLine = toStr(input.line_user_id);
+  const wantedMemberstack = toStr(input.memberstack_id);
+  const rowLine = pickString(fields, lineKeys);
+  const rowMemberstack = pickString(fields, memberstackKeys);
+  return Boolean(
+    (wantedLine && rowLine && rowLine === wantedLine) ||
+    (wantedMemberstack && rowMemberstack && rowMemberstack === wantedMemberstack)
+  );
+}
+
+function uniqueExpiry(values: unknown[]): string {
+  const unique = Array.from(new Set(values.map((value) => toStr(value)).filter(Boolean)));
+  return unique.length === 1 ? unique[0] : "";
+}
+
+async function readResolverExpiry(
+  env: Env,
+  input: { line_user_id?: string; memberstack_id?: string },
+): Promise<string> {
+  if (!toStr(input.line_user_id) && !toStr(input.memberstack_id)) return "";
+  const rows = await listGenericRecords(env, memberEntitlementsUrl(env), { maxRecords: 100 });
+  const lineKeys = envFieldList(env.AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD, "line_user_id");
+  const memberstackKeys = envFieldList(env.AIRTABLE_ENTITLEMENT_MEMBERSTACK_ID_FIELD, "memberstack_id", "Memberstack ID");
+  const matched = rows.filter((row) => exactStableIdentityMatch(row.fields, input, lineKeys, memberstackKeys));
+  if (!matched.length) return "";
+
+  const snapshot = resolveMemberEntitlements(matched);
+  if (!snapshot || snapshot.schema_version !== "my_mmd_entitlement_resolver_v1" || snapshot.fail_closed !== true || snapshot.member_blocked === true) {
+    return "";
+  }
+
+  const entitlements = Array.isArray(snapshot.entitlements) ? snapshot.entitlements : [];
+  for (const lifecycle of ["active", "expiring_soon", "grace", "expired"]) {
+    const expiry = uniqueExpiry(
+      entitlements
+        .filter((item: Record<string, unknown>) => toStr(item?.lifecycle).toLowerCase() === lifecycle)
+        .map((item: Record<string, unknown>) => item?.expire_at),
+    );
+    if (expiry) return expiry;
+  }
+  return "";
+}
+
+async function readVerifiedCanonicalMemberExpiry(
+  env: Env,
+  input: { line_user_id?: string; memberstack_id?: string },
+): Promise<string> {
+  if (!toStr(input.line_user_id) && !toStr(input.memberstack_id)) return "";
+  const rows = await listGenericRecords(env, membersUrl(env), { maxRecords: 100 });
+  const lineKeys = envFieldList(env.AIRTABLE_MEMBERS_LINE_USER_ID_FIELD, "line_id", "line_user_id");
+  const memberstackKeys = envFieldList(env.AIRTABLE_MEMBERS_MEMBERSTACK_ID_FIELD, "memberstack_id", "Memberstack ID");
+  const expiryKeys = envFieldList(
+    env.AIRTABLE_MEMBERS_EXPIRE_AT_FIELD,
+    env.AIRTABLE_MEMBERS_EXPIRY_FIELD,
+    env.AIRTABLE_MEMBERS_END_DATE_FIELD,
+    "Expire At",
+    "Membership Expiry",
+    "Membership End Date",
+    "expire_at",
+    "end_date",
+  );
+  const matched = rows.filter((row) => exactStableIdentityMatch(row.fields, input, lineKeys, memberstackKeys));
+  return uniqueExpiry(matched.map((row) => pickString(row.fields, expiryKeys)));
 }
 
 function headers(env: Env): HeadersInit {
@@ -881,6 +971,7 @@ export async function buildImmigrationLinkContext(
     current_tier?: string;
     target_tier?: string;
     membership_status?: string;
+    expire_at?: string;
   },
 ): Promise<ImmigrationLinkContext> {
   const lineUserId = toStr(input.line_user_id);
@@ -915,7 +1006,7 @@ export async function buildImmigrationLinkContext(
         status: toStr(input.membership_status) || "pending",
         current_tier: toStr(input.current_tier),
         target_tier: toStr(input.target_tier),
-        expire_at: "",
+        expire_at: toStr(input.expire_at),
         auto_signup_ready: !memberstackId,
       },
     };
@@ -978,6 +1069,37 @@ export async function buildImmigrationLinkContext(
     return bTime - aTime;
   })[0];
 
+  const resolvedMemberstackId = memberstackId || latestSession?.memberstack_id || "";
+  const stableIdentity = { line_user_id: lineUserId, memberstack_id: resolvedMemberstackId };
+  let resolverExpireAt = "";
+  let canonicalMemberExpireAt = "";
+
+  // V5 expiry precedence:
+  // verified explicit context -> canonical entitlement resolver -> verified Member readback
+  // -> latest matched Session -> blank. Profile readback never changes tier/status/access.
+  if (!toStr(input.expire_at)) {
+    try {
+      resolverExpireAt = await readResolverExpiry(env, stableIdentity);
+    } catch {
+      resolverExpireAt = "";
+    }
+  }
+
+  if (!toStr(input.expire_at) && !resolverExpireAt) {
+    try {
+      canonicalMemberExpireAt = await readVerifiedCanonicalMemberExpiry(env, stableIdentity);
+    } catch {
+      canonicalMemberExpireAt = "";
+    }
+  }
+
+  const resolvedExpireAt =
+    toStr(input.expire_at) ||
+    resolverExpireAt ||
+    canonicalMemberExpireAt ||
+    toStr(latestSession?.expire_at) ||
+    "";
+
   return {
     source: "airtable",
     line_history: lineHistory,
@@ -1007,12 +1129,12 @@ export async function buildImmigrationLinkContext(
       entries: pointEntries,
     },
     membership: {
-      memberstack_id: memberstackId || latestSession?.memberstack_id || "",
-      status: toStr(input.membership_status) || (memberstackId ? "active" : "pending_signup"),
+      memberstack_id: resolvedMemberstackId,
+      status: toStr(input.membership_status) || (resolvedMemberstackId ? "active" : "pending_signup"),
       current_tier: toStr(input.current_tier),
       target_tier: toStr(input.target_tier),
-      expire_at: latestSession?.expire_at || "",
-      auto_signup_ready: !memberstackId,
+      expire_at: resolvedExpireAt,
+      auto_signup_ready: !resolvedMemberstackId,
     },
   };
 }
