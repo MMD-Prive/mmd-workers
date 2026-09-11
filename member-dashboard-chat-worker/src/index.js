@@ -795,9 +795,9 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "payment_slip") {
-    return `${prefix}ส่งหลักฐานเข้ามาได้ครับ: https://mmdbkk.com/confirm/payment-proof
+    return `${prefix}ไปต่อจากรายการชำระของคุณได้ที่นี่ครับ: https://mmdbkk.com/member/payments
 
-เดี๋ยว MMD ตรวจยอดและจับคู่รายการให้ก่อนนะครับ หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request ครับ`;
+ถ้ามีรายการเดิมหรือส่งหลักฐานไว้แล้ว ให้ใช้รายการเดิมและไม่ต้องส่งซ้ำครับ MMD จะตรวจยอด จับคู่รายการ และอัปเดตสถานะอย่างเป็นทางการก่อน`;
   }
 
   if (intent === "payment_status") {
