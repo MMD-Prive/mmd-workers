@@ -6,6 +6,7 @@ on:
       - feat/renewal-expiry-resolver-v5-20260911
     paths:
       - scripts/apply-renewal-expiry-resolver-v5.mjs
+      - scripts/fix-renewal-expiry-v5-test.mjs
       - .github/workflows/apply-renewal-expiry-v5.yml
 
 permissions:
@@ -20,6 +21,8 @@ jobs:
           ref: feat/renewal-expiry-resolver-v5-20260911
       - name: Apply V5 codemod
         run: node scripts/apply-renewal-expiry-resolver-v5.mjs
+      - name: Harden V5 contract assertions
+        run: node scripts/fix-renewal-expiry-v5-test.mjs
       - name: Install immigrate-worker dependencies
         run: npm ci --prefix immigrate-worker
       - name: Focused typecheck for V5 files
@@ -30,6 +33,7 @@ jobs:
       - name: Remove one-shot codemod files
         run: |
           rm -f scripts/apply-renewal-expiry-resolver-v5.mjs
+          rm -f scripts/fix-renewal-expiry-v5-test.mjs
           rm -f .github/workflows/apply-renewal-expiry-v5.yml
       - name: Commit verified V5 implementation
         run: |
