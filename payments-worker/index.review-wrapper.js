@@ -21,6 +21,15 @@ import {
   handleCustomerSessionDetails,
   isCustomerSessionDetailsRequest,
 } from "./customer-session-v2.js";
+import {
+  enrichUnifiedConfirmVerify,
+  handleUnifiedPaymentIntent,
+  handleUnifiedSlipEvidence,
+  isUnifiedConfirmVerifyRequest,
+  isUnifiedPaymentIntentRequest,
+  isUnifiedSlipEvidenceRequest,
+} from "./unified-payment-proof.js";
+import { reconcilePremiumReviewedMembershipTerm } from "./premium-membership-term.js";
 
 export { PointsPhase1Coordinator };
 
@@ -42,24 +51,28 @@ export default {
       return reconcileSigilConfirmLinkMoneyTruth(canonicalRequest, response, env);
     }
 
+    if (isUnifiedPaymentIntentRequest(path, method)) {
+      return handleUnifiedPaymentIntent(request, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx));
+    }
+
+    if (isUnifiedSlipEvidenceRequest(path, method)) {
+      return handleUnifiedSlipEvidence(request, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx));
+    }
+
+    if (isUnifiedConfirmVerifyRequest(path, method)) {
+      return enrichUnifiedConfirmVerify(request, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx));
+    }
+
     if (isReviewedProofRequest(path, method)) {
-      return handleReviewedProof(request, env, ctx, async (body) => {
+      const reviewResponse = await handleReviewedProof(request, env, ctx, async (body) => {
         if (!String(env.INTERNAL_TOKEN || "").trim()) {
           return json({ ok: false, error: "payments_internal_token_not_ready", authority: "payments-worker" }, 503);
         }
 
-        // Canonical recovered LINE renewals have already passed the reviewed-proof
-        // identity/proof/package gates. The legacy notify path still writes literal
-        // `payment_ref`, which is a read-only compatibility formula in Payments.
-        // Route only this narrow recovery case through the canonical field writer.
         if (isEmailLessLineRenewalMoneyTruth(body)) {
           return commitEmailLessLineRenewalMoneyTruth(env, body);
         }
 
-        // A SIGIL Jobs assisted renewal can have one bank transfer covering both
-        // service + membership. Payments.Amount remains the full amount actually
-        // paid, while Session service money and Base Points must use only the
-        // service component stored in the canonical structured marker.
         let components = null;
         try {
           components = await resolveSigilCombinedPaymentComponents(
@@ -85,6 +98,7 @@ export default {
           body: JSON.stringify(body),
         }), env, ctx);
       });
+      return reconcilePremiumReviewedMembershipTerm(request, reviewResponse, env);
     }
 
     return phase1Worker.fetch(request, env, ctx);
@@ -98,8 +112,6 @@ async function runSigilCombinedReviewedNotify(request, env, ctx, body, component
     body: JSON.stringify(body),
   });
 
-  // Suppress the legacy points writer exactly as index.phase1 does. The canonical
-  // points call below uses only the service component, never the renewal fee.
   const baseEnv = { ...env, POINTS_RATE: "9007199254740991" };
   const response = await workerWithSlipEvidence.fetch(notifyRequest, baseEnv, ctx);
   if (!response.ok) return response;

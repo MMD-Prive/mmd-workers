@@ -3,9 +3,11 @@ main = "index.review-wrapper.js"
 compatibility_date = "2026-01-20"
 
 # Production entrypoint:
-# - index.review-wrapper.js adds the service-authenticated reviewed-proof handoff.
+# - index.review-wrapper.js adds unified payment + proof intake and reviewed-proof handoff.
 # - index.phase1.js owns verified Base Points Phase 1 awards.
-# - index.with-slip-evidence.js still handles /v1/pay/slip/evidence.
+# - index.with-slip-evidence.js remains the evidence-only compatibility writer.
+# - unified-payment-proof.js locks one payment_ref per session/stage, writes web proof records,
+#   blocks repeat proof submission, and exposes current proof/payment state to /sigil/pay.
 # - /v1/internal/payments/historical-slip/reviewed validates reviewed historical
 #   Payment Proof evidence before entering the canonical trusted notify path.
 # - /v1/internal/payments/reviewed-proof re-reads Payment Proof evidence inside
@@ -22,6 +24,10 @@ routes = [
 kv_namespaces = [
   { binding = "PAY_SESSIONS_KV", id = "e0c6b8a0785e462dad6d01f61a893e87" }
 ]
+
+[[r2_buckets]]
+binding = "PAYMENT_SLIP_EVIDENCE"
+bucket_name = "mmd-line-slip-evidence"
 
 [[durable_objects.bindings]]
 name = "POINTS_PHASE1_COORDINATOR"
