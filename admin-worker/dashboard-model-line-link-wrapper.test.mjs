@@ -6,12 +6,14 @@ import {
   projectModelLineLinkSummary,
 } from "./src/admin-dashboard-model-link-wrapper.js";
 
+const MODEL_LINK_HREF = "/internal/admin/model-link";
+
 test("dashboard Model LINE summary stays unavailable instead of inventing zero", () => {
   assert.deepEqual(projectModelLineLinkSummary({ ok: false, error: "unavailable" }), {
     available: false,
     waiting: null,
     conflicts: null,
-    href: "/internal/admin/kenji?view=model-link",
+    href: MODEL_LINK_HREF,
   });
 });
 
@@ -29,7 +31,7 @@ test("dashboard Model LINE summary exposes counts only, not claim identity detai
     available: true,
     waiting: 2,
     conflicts: 1,
-    href: "/internal/admin/kenji?view=model-link",
+    href: MODEL_LINK_HREF,
   });
   assert.equal(JSON.stringify(summary).includes("Example A"), false);
   assert.equal(JSON.stringify(summary).includes("claim_id"), false);
@@ -44,17 +46,17 @@ test("dashboard augmentation adds a bounded owner-review task without displacing
     focus: { title: "ยังไม่มีเรื่องด่วน", text: "none" },
     todos: [{ title: "ตรวจเงิน", href: "/internal/admin/payments" }],
   };
-  const summary = { available: true, waiting: 3, conflicts: 1, href: "/internal/admin/kenji?view=model-link" };
+  const summary = { available: true, waiting: 3, conflicts: 1, href: MODEL_LINK_HREF };
   const result = augmentDashboardWithModelLineLinks(payload, summary);
 
   assert.equal(result.counts.model_line_links_pending, 3);
   assert.equal(result.counts.model_line_links_conflict, 1);
   assert.equal(result.status.model_line_links, "พร้อม");
-  assert.equal(result.model_line_link.href, "/internal/admin/kenji?view=model-link");
+  assert.equal(result.model_line_link.href, MODEL_LINK_HREF);
   assert.equal(result.todos.length, 2);
   assert.equal(result.todos[0].href, "/internal/admin/payments");
-  assert.equal(result.todos[1].href, "/internal/admin/kenji?view=model-link");
-  assert.equal(result.focus.href, "/internal/admin/kenji?view=model-link");
+  assert.equal(result.todos[1].href, MODEL_LINK_HREF);
+  assert.equal(result.focus.href, MODEL_LINK_HREF);
 });
 
 test("dashboard augmentation never exceeds four existing todos", () => {
@@ -68,8 +70,8 @@ test("dashboard augmentation never exceeds four existing todos", () => {
     available: true,
     waiting: 5,
     conflicts: 0,
-    href: "/internal/admin/kenji?view=model-link",
+    href: MODEL_LINK_HREF,
   });
   assert.equal(result.todos.length, 4);
-  assert.equal(result.todos.some((item) => item.href === "/internal/admin/kenji?view=model-link"), false);
+  assert.equal(result.todos.some((item) => item.href === MODEL_LINK_HREF), false);
 });
