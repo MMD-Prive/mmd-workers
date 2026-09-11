@@ -84,6 +84,9 @@ export async function applyMyMmdFastTrustResponse(request, response, env = {}) {
   const isMemberApp = path.startsWith(APP_PREFIX);
   if (!isDashboard && !isMemberApp) return response;
 
+  // Fresh resolver decisions and explicit restrictions outrank recovery markers.
+  if (response.headers.get("x-mmd-member-display-authority") === "my_mmd_entitlement_resolver_v1") return response;
+
   // Dashboard reads rotate the LIFF cookie. Try the request token first, then
   // the replacement token emitted by the response so Fast Trust survives the
   // normal secure session-rotation boundary.
@@ -96,6 +99,9 @@ export async function applyMyMmdFastTrustResponse(request, response, env = {}) {
   if (!contentType.includes("application/json")) return response;
   const payload = await response.clone().json().catch(() => null);
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return response;
+
+  const currentStatus = isDashboard ? payload.data?.member?.membership_status?.value : (payload.membership?.status || payload.membership_status || payload.status);
+  if (["blocked", "suspended", "revoked", "expired", "pending_review", "under_review"].includes(currentStatus)) return response;
 
   const patched = isDashboard
     ? patchDashboardPayload(payload, fastTrust)
@@ -151,6 +157,9 @@ function patchDashboardPayload(payload, fastTrust) {
 }
 
 function patchMemberAppPayload(path, payload, fastTrust) {
+  if (path === `${APP_PREFIX}profile`) {
+    return { ...payload, match_state: "matched", membership_tier: fastTrust.tier, membership_status: "active", actual_access: "granted", fastTrust: fastTrustMeta(fastTrust) };
+  }
   if (path === `${APP_PREFIX}dashboard`) {
     const membership = patchMembership(asObject(payload.membership), fastTrust);
     return {

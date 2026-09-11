@@ -5,11 +5,20 @@ import { isDriveReconcileRequest, handleDriveReconcile } from "./drive-access-re
 import { withDriveBootstrapDiagnostic } from "./drive-bootstrap-debug.js";
 import { withStatusFirstMemberResolver } from "./liff-status-first-member-resolver.js";
 import { applyMyMmdFastTrustResponse } from "./my-mmd-fast-trust-response.js";
+import { recoverVerifiedLiffStartAsPendingIdentity } from "./liff-start-pending-identity-fallback.js";
 import { attachTraceId, createLiffResolutionTrace, createLiffShellBoundaryTrace } from "./liff-resolution-trace.js";
 import {
   handleTrustedCareBackBookingApproval,
   isTrustedCareBackBookingApproval,
 } from "./care-back-trusted-booking-approval.js";
+import {
+  handleKenjiLineMemberTruth,
+  isKenjiLineMemberTruthRequest,
+} from "./kenji-line-member-truth.js";
+import {
+  handleKenjiLineMemberTruthHealth,
+  isKenjiLineMemberTruthHealthRequest,
+} from "./kenji-line-member-truth-health.js";
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-durable-object.js";
@@ -40,9 +49,6 @@ export function normalizeCareBackWebViewOrigin(request) {
   }
   if (!trustedSameSite) return request;
 
-  // Some Android/LINE WebViews omit Origin on a same-site POST. Production
-  // member-pages-worker is service-only, so restore only the verified MMD web
-  // origin for the two public CARE BACK endpoints; never relax cross-site calls.
   const headers = new Headers(request.headers);
   headers.set("origin", url.origin);
   headers.set("x-mmd-webview-origin-normalized", "care-back-v1");
@@ -52,6 +58,12 @@ export function normalizeCareBackWebViewOrigin(request) {
 export default {
   async fetch(request, env, ctx) {
     request = normalizeCareBackWebViewOrigin(request);
+    if (isKenjiLineMemberTruthHealthRequest(request)) {
+      return handleKenjiLineMemberTruthHealth(request, env);
+    }
+    if (isKenjiLineMemberTruthRequest(request)) {
+      return handleKenjiLineMemberTruth(request, env);
+    }
     if (isTrustedCareBackBookingApproval(request)) {
       return handleTrustedCareBackBookingApproval(request, env);
     }
@@ -64,13 +76,30 @@ export default {
     const bootstrapRequest = request.clone();
     let firstResponse = await worker.fetch(firstRequest, runtimeEnv, ctx);
     firstResponse = await applyMyMmdFastTrustResponse(request, firstResponse, env);
+    let firstPayload = await jsonPayload(firstResponse);
+
+    const recoveredResponse = await recoverVerifiedLiffStartAsPendingIdentity({
+      request,
+      response: firstResponse,
+      payload: firstPayload,
+      worker,
+      env: runtimeEnv,
+      ctx,
+    });
+    if (recoveredResponse !== firstResponse) {
+      firstResponse = recoveredResponse;
+      firstPayload = await jsonPayload(firstResponse);
+      trace?.event("member_resolution", "pending_identity", "resolver_unavailable_session_preserved", {
+        http_status: firstResponse.status,
+        member_resolved: false,
+        pending_identity: true,
+      });
+    }
 
     if (shellBoundary) {
       shellBoundary.finish(firstResponse);
       firstResponse = shellBoundary.attach(firstResponse);
     }
-
-    const firstPayload = await jsonPayload(firstResponse);
 
     if (trace) {
       trace.event("member_status", firstResponse.ok ? "complete" : "failed", firstPayload?.error?.code || "", {

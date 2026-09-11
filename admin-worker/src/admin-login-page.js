@@ -1,3 +1,5 @@
+import { ADMIN_LOGIN_DUO_DATA, ADMIN_LOGIN_MMS_LOGO_DATA } from "./admin-login-image-a-assets.js";
+
 export const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
 export const APPROVED_ADMIN_LOGIN_PAGE_ID = "admin-login-approved-hero";
 export const APPROVED_ADMIN_LOGIN_HERO =
@@ -14,13 +16,8 @@ export const APPROVED_ADMIN_LOGIN_APPLE_TOUCH_ICON =
   "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e34c91250ec9f6ee29d319_MMD%20SIGIL%20Logo.png";
 export const ADMIN_CANONICAL_ORIGIN = "https://mmdbkk.com";
 
-const MMD_PRIVE_LOGO =
+const MMD_BRAND_LOGO =
   "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a6c4486e7585ba74ab2eeb1_MMD_Prive%CC%81_logo_signature_transparent%20Final.webp";
-const MMS_LOGO =
-  "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9a49e5183c68d9d386030a_MMS%20Login%20Button.webp";
-const ASSISTANT_LOGIN_IMAGE =
-  "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69faf05c4e40765c0f922f55_Assistant%20login.webp";
-
 const LINE_SEED_THAI_REGULAR =
   "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd598baf067153fd1cc_LINESeedSansTH_W_Rg.woff2";
 const LINE_SEED_THAI_BOLD =
@@ -49,6 +46,7 @@ export function renderApprovedAdminLogin(
   if (String(request?.method || "GET").toUpperCase() === "HEAD") {
     return new Response(null, { status, headers });
   }
+
   const partnerFirst = next === MMS_PARTNER_PATH;
   const html = `<!doctype html>
 <html lang="th">
@@ -66,64 +64,404 @@ export function renderApprovedAdminLogin(
     @font-face{font-family:"LINE Seed Sans TH";src:url("${LINE_SEED_THAI_REGULAR}") format("woff2");font-style:normal;font-weight:400;font-display:swap}
     @font-face{font-family:"LINE Seed Sans TH";src:url("${LINE_SEED_THAI_BOLD}") format("woff2");font-style:normal;font-weight:700;font-display:swap}
     @font-face{font-family:"LINE Seed Sans TH";src:url("${LINE_SEED_THAI_EXTRABOLD}") format("woff2");font-style:normal;font-weight:800;font-display:swap}
-    :root{color-scheme:dark;--bg:#050403;--panel:rgba(10,8,6,.84);--panel2:rgba(19,15,11,.76);--line:rgba(239,204,132,.30);--line-strong:rgba(239,204,132,.68);--gold:#dda94a;--gold2:#f5d18b;--green:#003704;--green2:#002b03;--green3:#001e02;--green-bright:#26d07c;--green-soft:#bfdcc6;--text:#fff9f1;--muted:rgba(255,249,241,.72);--soft:rgba(255,249,241,.48);--danger:#ffb7bd;--ok:#b9ddc3;--ink:#120c05}
-    *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg)}body{min-height:100svh;color:var(--text);font-family:"LINE Seed Sans TH","Noto Sans Thai","Noto Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-synthesis:none;-webkit-font-smoothing:antialiased}
-    button,input{font:inherit}.mmd-login{min-height:100svh;position:relative;isolation:isolate;overflow:hidden;background:#050403}.mmd-login:before{content:"";position:fixed;inset:0;z-index:-5;background:linear-gradient(90deg,rgba(5,4,3,.96) 0%,rgba(5,4,3,.88) 31%,rgba(5,4,3,.22) 58%,rgba(5,4,3,.28) 100%),url("${APPROVED_ADMIN_LOGIN_HERO}") 67% 45%/cover no-repeat;filter:saturate(.92) contrast(1.06) brightness(.84)}.mmd-login:after{content:"";position:fixed;inset:0;z-index:-4;background:linear-gradient(180deg,rgba(0,0,0,.08),rgba(0,0,0,.38)),url("${APPROVED_ADMIN_LOGIN_WALL_BG}") center/cover no-repeat;opacity:.32;mix-blend-mode:screen}
-    .assistant-layer{position:fixed;z-index:-3;right:-3vw;bottom:-8vh;width:min(31vw,480px);height:82vh;object-fit:cover;object-position:center top;opacity:.52;filter:sepia(.18) saturate(.76) contrast(1.06) brightness(.70);mix-blend-mode:screen;mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.38) 24%,#000 48%,#000 100%);-webkit-mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.38) 24%,#000 48%,#000 100%);pointer-events:none}
-    .visual{display:none}.visual:before{content:"";background:url("${APPROVED_ADMIN_LOGIN_HERO}") center/cover no-repeat;}.visual-logo{display:block;object-fit:contain;}
-    .shell{min-height:100svh;display:grid;grid-template-columns:minmax(430px,620px) minmax(0,1fr);gap:clamp(28px,5vw,72px);align-items:center;padding:clamp(26px,5vw,64px) clamp(24px,6vw,104px)}
-    .card{position:relative;width:100%;max-width:590px;min-height:min(820px,calc(100svh - 72px));display:flex;flex-direction:column;justify-content:center;border:1px solid var(--line-strong);border-radius:19px;padding:clamp(28px,3.7vw,48px);background:linear-gradient(180deg,rgba(18,14,10,.86),rgba(7,6,5,.90));box-shadow:0 28px 90px rgba(0,0,0,.48),inset 0 1px 0 rgba(255,255,255,.025);backdrop-filter:blur(18px)}
-    .kicker{margin:0 0 18px;color:var(--gold2);font-size:11px;font-weight:800;letter-spacing:.34em;text-transform:uppercase}.title{margin:0;color:#fffdfa;font-family:Georgia,"Times New Roman",serif;font-size:clamp(43px,4.2vw,66px);font-weight:400;line-height:1.02;letter-spacing:-.035em}.lead{margin:12px 0 22px;color:var(--muted);font-size:16px;line-height:1.55}.divider{height:1px;background:linear-gradient(90deg,var(--line-strong),rgba(239,204,132,.08));margin:0 0 18px}.section-label{margin:0 0 11px;color:rgba(255,255,255,.78);font-size:10px;font-weight:800;letter-spacing:.36em;text-transform:uppercase}
-    .lanes{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:11px}.lane{position:relative;min-height:146px;border:1px solid rgba(239,204,132,.34);border-radius:9px;background:linear-gradient(145deg,rgba(255,255,255,.045),rgba(0,0,0,.12));color:var(--text);cursor:pointer;padding:17px 16px 14px;text-align:left;transition:border-color .2s ease,background .2s ease,transform .2s ease}.lane:hover{transform:translateY(-1px);border-color:rgba(239,204,132,.62)}.lane:before{content:"";position:absolute;right:14px;top:14px;width:18px;height:18px;border:1px solid rgba(255,255,255,.42);border-radius:50%;box-shadow:inset 0 0 0 4px rgba(0,0,0,.55)}.lane.is-active:before{border-color:var(--gold2);background:var(--gold2);box-shadow:inset 0 0 0 5px #111}.lane[data-lane="partner"].is-active{border-color:rgba(38,208,124,.82);background:linear-gradient(145deg,rgba(0,55,4,.78),rgba(0,30,2,.52))}.lane[data-lane="partner"].is-active:before{border-color:#21f2a1;background:#21f2a1;box-shadow:inset 0 0 0 5px #06301d}.lane-logo{display:flex;align-items:center;min-height:72px;margin-bottom:8px}.lane-logo img{display:block;max-width:155px;max-height:74px;object-fit:contain;object-position:left center}.lane[data-lane="partner"] .lane-logo img{max-width:92px;max-height:74px;filter:saturate(.94) contrast(1.03)}.lane b{display:block;font-size:17px;font-weight:700}.lane small{display:block;margin-top:2px;color:var(--soft);font-size:11px;font-weight:700}.accounts-help{margin:0 0 20px;color:rgba(255,255,255,.70);font-size:11px;line-height:1.55}
-    .panel[hidden]{display:none}.panel{animation:fade-panel .18s ease-out}@keyframes fade-panel{from{opacity:.4;transform:translateY(3px)}to{opacity:1;transform:none}}.panel-head{display:none}.scope{display:none}form{display:grid;gap:13px}label{display:grid;gap:7px;color:rgba(255,255,255,.82);font-size:10px;font-weight:800;letter-spacing:.28em;text-transform:uppercase}.field{display:grid;grid-template-columns:42px minmax(0,1fr) auto;align-items:center;min-height:54px;border:1px solid rgba(255,255,255,.26);border-radius:8px;overflow:hidden;background:rgba(255,255,255,.035);transition:border-color .18s ease,box-shadow .18s ease}.field:focus-within{border-color:rgba(239,204,132,.58);box-shadow:0 0 0 2px rgba(221,169,74,.10)}.partner-panel .field:focus-within{border-color:rgba(38,208,124,.58);box-shadow:0 0 0 2px rgba(38,208,124,.09)}.field-icon{display:grid;place-items:center;color:rgba(255,255,255,.78)}.field-icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}input{width:100%;min-height:52px;border:0;background:transparent;color:var(--text);padding:0 8px;outline:0;font:700 14px/1.4 inherit}.toggle{min-width:70px;align-self:stretch;border:0;border-left:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.02);color:rgba(255,255,255,.86);font:800 10px/1.4 inherit;cursor:pointer}.go{position:relative;min-height:58px;margin-top:4px;border:1px solid rgba(255,225,166,.78);border-radius:8px;background:linear-gradient(110deg,#b67a32 0%,#f0c579 48%,#bd7f35 100%);color:#100a04;font:800 13px/1.4 inherit;letter-spacing:.18em;text-transform:uppercase;cursor:pointer;box-shadow:0 14px 34px rgba(0,0,0,.28)}.go:after{content:"→";position:absolute;right:24px;font-size:24px;font-weight:400;top:50%;transform:translateY(-54%)}.go:disabled,.toggle:disabled{opacity:.55;cursor:wait}.message{min-height:18px;margin:-2px 0 0;color:var(--soft);font-size:11px;line-height:1.5}.message.is-error{color:var(--danger)}.message.is-ok{color:var(--ok)}.privacy{margin:0;color:var(--soft);font-size:9px;line-height:1.55}.links{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px}.linkbtn{padding:0;border:0;background:transparent;color:rgba(255,255,255,.66);font:800 11px/1.4 inherit;text-decoration:underline;text-underline-offset:4px;cursor:pointer}.subpanel{margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,.12)}.recovery{display:none;margin-top:12px;border:1px solid rgba(38,208,124,.26);border-radius:12px;background:rgba(0,55,4,.23);padding:12px}.recovery.is-visible{display:block}.recovery b{font-size:11px;font-weight:800}.recovery code{display:block;margin-top:7px;padding:10px;border-radius:8px;background:rgba(0,0,0,.34);word-break:break-all;color:#effff2;font-size:12px}.recovery p{margin:7px 0 0;color:var(--muted);font-size:10px;line-height:1.5}
-    .credit{margin-top:24px;padding-top:2px;color:rgba(255,255,255,.40);font-size:10px;line-height:1.6}.credit b{color:rgba(255,255,255,.58);font-weight:700}
-    .hero-side{position:relative;min-height:min(860px,calc(100svh - 54px));pointer-events:none}.hero-mark{position:absolute;right:0;top:0;width:58px;height:58px;object-fit:contain;opacity:.86}.hero-mantra{position:absolute;right:0;bottom:15%;display:grid;gap:7px;color:rgba(221,169,74,.65);font-family:Georgia,"Times New Roman",serif;font-size:10px;letter-spacing:.36em;line-height:1.7;text-transform:uppercase}.hero-mantra:after{content:"";width:38px;height:1px;margin-top:10px;background:var(--gold)}.hero-secure{position:absolute;right:0;bottom:0;color:rgba(221,169,74,.88);font-size:9px;font-weight:800;letter-spacing:.30em;text-transform:uppercase}.hero-caption{position:absolute;left:4%;bottom:2%;max-width:350px;color:rgba(255,255,255,.34);font-size:9px;letter-spacing:.10em}
-    @media(max-width:980px){.shell{grid-template-columns:minmax(0,580px) minmax(180px,1fr);padding:24px}.assistant-layer{width:36vw}.card{min-height:auto}.hero-mantra{display:none}}
-    @media(max-width:760px){.mmd-login:before{background:linear-gradient(180deg,rgba(5,4,3,.36),rgba(5,4,3,.92) 35%,#050403 72%),url("${APPROVED_ADMIN_LOGIN_HERO}") 62% top/auto 48vh no-repeat}.mmd-login:after{opacity:.20}.assistant-layer{display:none}.shell{display:flex;flex-direction:column-reverse;gap:0;padding:0;min-height:100svh}.hero-side{width:100%;min-height:225px}.hero-mark{top:18px;right:18px;width:46px;height:46px}.hero-secure{right:18px;bottom:18px;font-size:8px}.hero-caption{display:none}.card{width:calc(100% - 20px);margin:-28px 10px 10px;z-index:2;border-radius:18px;padding:25px 20px 22px;min-height:auto;backdrop-filter:blur(22px)}.kicker{font-size:9px;margin-bottom:13px}.title{font-size:43px;line-height:1.02}.lead{font-size:14px;margin:10px 0 18px}.lanes{gap:9px}.lane{min-height:126px;padding:14px 12px}.lane-logo{min-height:62px}.lane-logo img{max-width:124px;max-height:61px}.lane[data-lane="partner"] .lane-logo img{max-width:78px}.lane b{font-size:15px}.accounts-help{font-size:10px;margin-bottom:17px}.credit{font-size:9px;margin-top:20px}}
-    @media(max-width:390px){.title{font-size:38px}.lane{min-height:118px}.lane-logo img{max-width:108px}.field{grid-template-columns:36px minmax(0,1fr) auto}.go{letter-spacing:.12em}}
+    :root{color-scheme:dark;--bg:#050403;--gold:#d2a861;--gold-hi:#f4d28e;--gold-deep:#8f5c24;--text:#fff9f0;--muted:rgba(255,249,240,.67);--soft:rgba(255,249,240,.43);--green:#003704;--green-hi:#24ce78;--danger:#ffb8bd;--ok:#bfe4c8}
+    *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#050403}body{min-height:100svh;color:var(--text);font-family:"LINE Seed Sans TH","Noto Sans Thai","Noto Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-synthesis:none;-webkit-font-smoothing:antialiased}button,input{font:inherit}
+    .mmd-login{position:relative;isolation:isolate;height:100svh;min-height:100svh;overflow:hidden;background:#050403}
+    .mmd-login:before{content:"";position:fixed;inset:0;z-index:-4;background:linear-gradient(90deg,rgba(3,2,2,.18),rgba(3,2,2,.3) 44%,rgba(3,2,2,.6) 100%),url("${APPROVED_ADMIN_LOGIN_WALL_BG}") center/cover no-repeat;filter:saturate(.74) brightness(.56) contrast(1.08)}
+    .mmd-login:after{content:"";position:fixed;inset:0;z-index:-3;background:radial-gradient(circle at 13% 22%,rgba(208,154,74,.13),transparent 31%),linear-gradient(90deg,rgba(1,1,1,.34) 0%,rgba(1,1,1,.08) 48%,rgba(1,1,1,.26) 100%),linear-gradient(180deg,rgba(0,0,0,.05),rgba(0,0,0,.37))}
+    .duo-wrap{position:fixed;z-index:-1;right:3.4vw;bottom:0;width:min(49vw,760px);height:min(91svh,880px);pointer-events:none;display:flex;align-items:flex-end;justify-content:center}
+    .duo{display:block;width:100%;height:100%;object-fit:contain;object-position:center bottom;filter:saturate(.82) contrast(1.05) brightness(.83);mask-image:linear-gradient(90deg,transparent 0%,#000 9%,#000 92%,transparent 100%)}
+    .duo-vignette{position:absolute;inset:0;background:linear-gradient(90deg,rgba(5,4,3,.88) 0%,transparent 25%,transparent 78%,rgba(5,4,3,.65) 100%),linear-gradient(180deg,rgba(5,4,3,.04) 0%,transparent 58%,rgba(5,4,3,.18) 100%)}
+    .stage{width:min(100%,1600px);height:100svh;margin:0 auto;display:flex;align-items:center;padding:16px clamp(22px,6.2vw,100px);position:relative}
+    .access-card{width:min(610px,44vw);min-width:520px;max-height:calc(100svh - 32px);overflow:auto;overscroll-behavior:contain;scrollbar-width:none;border:1px solid rgba(224,183,104,.56);border-radius:12px;background:linear-gradient(145deg,rgba(13,11,9,.88),rgba(5,5,4,.82));box-shadow:0 24px 72px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.035);backdrop-filter:blur(20px);padding:clamp(22px,2.1vw,32px) clamp(24px,2.35vw,36px);position:relative}
+    .access-card::-webkit-scrollbar{width:0;height:0}.access-card:before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(116deg,rgba(225,170,80,.055),transparent 33%,transparent 74%,rgba(255,255,255,.018))}.access-card>*{position:relative;z-index:1}
+    .kicker{margin:0 0 9px;color:var(--gold-hi);font-size:9px;font-weight:800;letter-spacing:.32em;text-transform:uppercase}.title{margin:0;color:#fff;font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-size:clamp(39px,3.1vw,52px);font-weight:400;line-height:.94;letter-spacing:-.04em;white-space:nowrap}.lead{margin:8px 0 11px;color:rgba(255,255,255,.78);font-size:14px;line-height:1.45}.rule{height:1px;margin:0 0 11px;background:linear-gradient(90deg,rgba(237,205,144,.52),rgba(237,205,144,.08))}.managed-label{margin:0 0 7px;color:rgba(255,255,255,.8);font-size:8.5px;font-weight:800;letter-spacing:.29em;text-transform:uppercase}
+    .lanes{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 7px}.lane{position:relative;min-height:94px;border:1px solid rgba(234,195,121,.3);border-radius:7px;background:linear-gradient(145deg,rgba(25,19,14,.67),rgba(7,7,6,.84));color:#fff;cursor:pointer;padding:10px 13px;text-align:left;transition:border-color .18s ease,background .18s ease,transform .18s ease,box-shadow .18s ease}.lane:hover{transform:translateY(-1px);border-color:rgba(237,198,125,.54)}.lane:focus-visible{outline:2px solid var(--gold-hi);outline-offset:3px}.lane-status{position:absolute;top:10px;right:10px;width:16px;height:16px;border:2px solid rgba(255,255,255,.34);border-radius:50%}.lane.is-active .lane-status:after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--gold-hi)}
+    .lane[data-lane="partner"].is-active{border-color:rgba(40,199,108,.79);background:linear-gradient(145deg,rgba(0,55,4,.72),rgba(2,27,12,.79));box-shadow:inset 0 0 0 1px rgba(58,220,131,.08)}.lane[data-lane="partner"].is-active .lane-status{border-color:#2cec8f}.lane[data-lane="partner"].is-active .lane-status:after{background:#2cec8f}
+    .lane-brand{height:43px;display:flex;align-items:center}.lane-brand img{display:block;object-fit:contain;object-position:left center}.lane-brand .mmd-brand{width:106px;max-height:43px}.lane-brand .mms-brand{width:48px;height:43px;object-fit:contain}.lane b{display:block;margin-top:3px;color:#fff;font-size:14px;font-weight:700;letter-spacing:-.01em}.lane small{display:block;margin-top:0;color:var(--soft);font-size:9.5px;font-weight:700}.lane[data-lane="partner"] small{color:rgba(218,242,224,.58)}
+    .account-note{margin:5px 0 9px;color:rgba(255,255,255,.55);font-size:9.5px;line-height:1.45}.panel[hidden]{display:none}.panel-head{margin:0 0 7px}.panel-head strong{font-size:11px;font-weight:800;letter-spacing:.01em}.panel-head span{display:inline-block;margin-top:1px;color:var(--soft);font-size:9.2px;line-height:1.35}.scope{display:none}
+    form{display:grid;gap:8px}label{display:grid;gap:5px;color:rgba(255,255,255,.76);font-size:8.5px;font-weight:800;letter-spacing:.27em;text-transform:uppercase}.field{display:grid;grid-template-columns:1fr auto;border:1px solid rgba(255,255,255,.25);border-radius:5px;overflow:hidden;background:rgba(5,5,5,.31);transition:border-color .18s ease,box-shadow .18s ease}.field:focus-within{border-color:rgba(232,191,101,.69);box-shadow:0 0 0 3px rgba(232,191,101,.07)}.partner-panel .field:focus-within{border-color:rgba(49,180,100,.72);box-shadow:0 0 0 3px rgba(0,55,4,.2)}input{width:100%;min-height:43px;border:0;background:transparent;color:#fff;padding:0 13px;outline:0;font:700 12px/1.35 "LINE Seed Sans TH",sans-serif}.toggle{min-width:61px;border:0;border-left:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.018);color:#fff;font:800 8.5px/1.4 "LINE Seed Sans TH",sans-serif;cursor:pointer}.go{min-height:49px;margin-top:0;border:1px solid rgba(255,220,151,.62);border-radius:4px;background:linear-gradient(108deg,#9d6327 0%,#dfa854 22%,#f2c876 48%,#f7d792 63%,#ae6e2b 100%);color:#171006;-webkit-text-fill-color:#171006;font:800 11px/1.4 "LINE Seed Sans TH",sans-serif;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;box-shadow:0 13px 24px rgba(0,0,0,.24);transition:transform .18s ease,filter .18s ease}.go:after{content:"  →"}.go:hover{transform:translateY(-1px);filter:brightness(1.04)}.go:disabled,.toggle:disabled{opacity:.54;cursor:wait;transform:none}.message{min-height:14px;margin:-1px 0 0;color:var(--soft);font-size:9px;line-height:1.4}.message.is-error{color:var(--danger)}.message.is-ok{color:var(--ok)}.privacy{margin:0;color:rgba(255,255,255,.32);font-size:8.5px;line-height:1.4}.links{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px}.linkbtn{padding:0;border:0;background:transparent;color:rgba(209,232,215,.68);font:700 9px/1.4 "LINE Seed Sans TH",sans-serif;text-decoration:underline;text-underline-offset:3px;cursor:pointer}.subpanel{margin-top:9px;padding-top:9px;border-top:1px solid rgba(255,255,255,.1)}.recovery{display:none;margin-top:8px;border:1px solid rgba(72,155,97,.34);border-radius:8px;background:rgba(0,55,4,.2);padding:9px}.recovery.is-visible{display:block}.recovery b{font-size:10px;font-weight:800}.recovery code{display:block;margin-top:6px;padding:8px;border-radius:6px;background:rgba(0,0,0,.35);word-break:break-all;color:#effff2;font-size:10px}.recovery p{margin:5px 0 0;color:var(--muted);font-size:9px;line-height:1.45}
+    .credit{margin-top:11px;padding-top:9px;border-top:1px solid rgba(255,255,255,.055);color:rgba(255,255,255,.31);font-size:8.5px;line-height:1.45}.credit b{color:rgba(255,225,169,.58);font-weight:800}.credit .thai-credit{display:inline;margin-left:4px;color:rgba(255,255,255,.29)}
+    .sigil-corner{position:fixed;z-index:2;top:24px;right:30px;width:32px;height:32px;object-fit:contain;opacity:.86;filter:sepia(.34) saturate(1.18)}.side-mantra{position:fixed;z-index:2;right:30px;bottom:118px;display:grid;gap:7px;color:rgba(222,180,104,.58);font-size:7.5px;font-weight:800;letter-spacing:.31em;text-transform:uppercase;text-align:right}.secure{position:fixed;z-index:2;right:30px;bottom:22px;color:rgba(224,185,112,.7);font-size:7.5px;font-weight:800;letter-spacing:.29em;text-transform:uppercase}
+    .visual{display:none}.visual:before{content:"";display:block;background:url("${APPROVED_ADMIN_LOGIN_PRIVACY_BG}") center/cover no-repeat;}.visual-logo{object-fit:contain;}.compat-marker{display:none!important}
+    @media(max-width:1180px){.stage{padding-left:26px;padding-right:26px}.access-card{width:min(560px,55vw);min-width:470px}.title{font-size:44px;white-space:normal}.duo-wrap{right:-3vw;width:53vw}.side-mantra{display:none}.sigil-corner,.secure{right:20px}}
+    @media(min-width:901px) and (max-height:760px){.stage{padding-top:10px;padding-bottom:10px}.access-card{max-height:calc(100svh - 20px);padding:18px 28px}.kicker{margin-bottom:6px}.title{font-size:40px}.lead{margin:6px 0 8px;font-size:12.5px}.rule{margin-bottom:8px}.managed-label{margin-bottom:5px}.lane{min-height:78px;padding:8px 11px}.lane-brand{height:33px}.lane-brand .mmd-brand{width:88px;max-height:34px}.lane-brand .mms-brand{width:38px;height:34px}.lane b{font-size:12.5px}.lane small{font-size:8.5px}.account-note{margin:4px 0 7px;font-size:8.5px}.panel-head{margin-bottom:5px}.panel-head span{font-size:8.4px}form{gap:6px}label{gap:4px;font-size:8px}input{min-height:38px}.go{min-height:43px}.message{min-height:11px}.links{margin-top:4px}.credit{margin-top:7px;padding-top:6px;font-size:7.8px}}
+    @media(max-width:900px){
+      .mmd-login{
+        height:auto;
+        min-height:100svh;
+        overflow:auto;
+      }
+
+      .mmd-login:before{
+        background:
+          linear-gradient(
+            180deg,
+            rgba(4,3,2,.04) 0%,
+            rgba(4,3,2,.12) 34%,
+            rgba(4,3,2,.48) 58%,
+            rgba(4,3,2,.88) 82%,
+            rgba(4,3,2,.98) 100%
+          ),
+          url("${APPROVED_ADMIN_LOGIN_WALL_BG}") 58% top/cover no-repeat;
+        filter:saturate(.82) brightness(.72) contrast(1.03);
+      }
+
+      .mmd-login:after{
+        background:
+          linear-gradient(
+            180deg,
+            rgba(0,0,0,.01) 0%,
+            rgba(0,0,0,.03) 38%,
+            rgba(0,0,0,.18) 56%,
+            rgba(0,0,0,.58) 78%,
+            rgba(0,0,0,.82) 100%
+          );
+      }
+
+      .duo-wrap{
+        position:absolute;
+        top:0;
+        right:-8%;
+        bottom:auto;
+        width:106%;
+        height:52svh;
+        min-height:330px;
+        opacity:.91;
+        justify-content:flex-end;
+      }
+
+      .duo{
+        object-position:72% bottom;
+        filter:saturate(.88) contrast(1.04) brightness(.9);
+        mask-image:linear-gradient(
+          180deg,
+          #000 0%,
+          #000 68%,
+          rgba(0,0,0,.82) 82%,
+          transparent 100%
+        );
+      }
+
+      .duo-vignette{
+        background:
+          linear-gradient(
+            90deg,
+            rgba(5,4,3,.36) 0%,
+            transparent 30%,
+            transparent 84%,
+            rgba(5,4,3,.2) 100%
+          ),
+          linear-gradient(
+            180deg,
+            rgba(5,4,3,.01) 0%,
+            transparent 66%,
+            rgba(5,4,3,.56) 100%
+          );
+      }
+
+      .stage{
+        display:flex;
+        align-items:flex-end;
+        justify-content:flex-start;
+        height:auto;
+        min-height:100svh;
+        padding:44svh 14px 14px;
+      }
+
+      .access-card{
+        width:min(91vw,390px);
+        min-width:0;
+        max-width:390px;
+        max-height:none;
+        overflow:visible;
+        margin:0;
+        border-radius:12px;
+        padding:13px 13px 12px;
+        background:
+          linear-gradient(
+            145deg,
+            rgba(14,11,9,.84),
+            rgba(5,5,4,.93)
+          );
+        backdrop-filter:blur(15px);
+        box-shadow:
+          0 18px 48px rgba(0,0,0,.42),
+          inset 0 1px 0 rgba(255,255,255,.03);
+      }
+
+      .kicker{
+        margin-bottom:4px;
+        font-size:7px;
+        letter-spacing:.26em;
+      }
+
+      .title{
+        font-size:26px;
+        line-height:.95;
+        white-space:normal;
+      }
+
+      .lead{
+        margin:4px 0 6px;
+        font-size:10.5px;
+        line-height:1.35;
+      }
+
+      .rule{
+        margin-bottom:6px;
+      }
+
+      .managed-label{
+        margin-bottom:4px;
+        font-size:7.2px;
+        letter-spacing:.23em;
+      }
+
+      .lanes{
+        gap:5px;
+        margin-bottom:5px;
+      }
+
+      .lane{
+        min-height:61px;
+        padding:6px 8px;
+      }
+
+      .lane-status{
+        top:7px;
+        right:7px;
+        width:13px;
+        height:13px;
+      }
+
+      .lane-brand{
+        height:25px;
+      }
+
+      .lane-brand .mmd-brand{
+        width:68px;
+        max-height:25px;
+      }
+
+      .lane-brand .mms-brand{
+        width:30px;
+        height:25px;
+      }
+
+      .lane b{
+        margin-top:2px;
+        font-size:10.5px;
+      }
+
+      .lane small{
+        font-size:7.2px;
+      }
+
+      .account-note{
+        display:none;
+      }
+
+      .panel-head{
+        margin:4px 0 5px;
+      }
+
+      .panel-head strong{
+        font-size:9.5px;
+      }
+
+      .panel-head span{
+        margin-top:0;
+        font-size:7.8px;
+        line-height:1.28;
+      }
+
+      form{
+        gap:5px;
+      }
+
+      label{
+        gap:3px;
+        font-size:7.2px;
+        letter-spacing:.22em;
+      }
+
+      input{
+        min-height:39px;
+        padding:0 10px;
+        font-size:11px;
+      }
+
+      .toggle{
+        min-width:52px;
+        font-size:7.5px;
+      }
+
+      .go{
+        min-height:42px;
+        font-size:9px;
+        letter-spacing:.12em;
+      }
+
+      .message{
+        min-height:10px;
+        font-size:7.7px;
+      }
+
+      .privacy{
+        font-size:7.4px;
+        line-height:1.35;
+      }
+
+      .links{
+        gap:10px;
+        margin-top:4px;
+      }
+
+      .linkbtn{
+        font-size:8px;
+      }
+
+      .subpanel{
+        margin-top:7px;
+        padding-top:7px;
+      }
+
+      .credit{
+        display:none;
+      }
+
+      .sigil-corner{
+        top:14px;
+        right:14px;
+        width:27px;
+        height:27px;
+      }
+
+      .side-mantra{
+        display:none;
+      }
+
+      .secure{
+        display:none;
+      }
+    }
+
+    @media(max-width:460px){
+      .stage{
+        padding:46svh 10px 12px;
+      }
+
+      .duo-wrap{
+        right:-10%;
+        width:110%;
+        height:54svh;
+        min-height:350px;
+      }
+
+      .duo{
+        object-position:70% bottom;
+      }
+
+      .access-card{
+        width:min(90vw,360px);
+        max-width:360px;
+        padding:12px 11px 10px;
+      }
+
+      .title{
+        font-size:24px;
+      }
+
+      .lead{
+        font-size:10px;
+      }
+
+      .lane{
+        min-height:57px;
+        padding:5px 7px;
+      }
+
+      .lane-brand{
+        height:23px;
+      }
+
+      .lane-brand .mmd-brand{
+        width:62px;
+        max-height:23px;
+      }
+
+      .lane-brand .mms-brand{
+        width:27px;
+        height:23px;
+      }
+
+      .lane b{
+        font-size:10px;
+      }
+
+      input{
+        min-height:38px;
+      }
+
+      .go{
+        min-height:41px;
+      }
+    }
+
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
   </style>
 </head>
-<body data-initial-lane="${partnerFirst ? "partner" : "owner"}" data-active-lane="${partnerFirst ? "partner" : "owner"}">
-<section class="mmd-login" data-mmd-login data-mmd-page="${APPROVED_ADMIN_LOGIN_PAGE_ID}">
-  <div class="visual" aria-hidden="true"><img class="visual-logo" src="${APPROVED_ADMIN_LOGIN_LOGO}" alt="MMD SIGIL Internal Admin"></div>
-  <img class="assistant-layer" src="${ASSISTANT_LOGIN_IMAGE}" alt="" aria-hidden="true" decoding="async">
-  <main class="shell">
-    <article class="card">
+<body data-initial-lane="${partnerFirst ? "partner" : "owner"}">
+<section class="mmd-login" data-mmd-login data-mmd-page="${APPROVED_ADMIN_LOGIN_PAGE_ID}" data-layout="image-a-cinematic" data-density="compact" data-approved-hero="${APPROVED_ADMIN_LOGIN_HERO}">
+  <aside class="visual" aria-hidden="true"><img class="visual-logo" src="${APPROVED_ADMIN_LOGIN_LOGO}" alt="MMD SIGIL Internal Admin"></aside>
+  <div class="duo-wrap" aria-hidden="true"><img class="duo" src="${ADMIN_LOGIN_DUO_DATA}" alt=""><span class="duo-vignette"></span></div>
+  <img class="sigil-corner" src="${APPROVED_ADMIN_LOGIN_FAVICON}" alt="" width="34" height="34" aria-hidden="true">
+  <div class="side-mantra" aria-hidden="true"><span>PEOPLE</span><span>SYSTEMS</span><span>A QUIETER</span><span>TOMORROW</span></div>
+  <main class="stage">
+    <article class="access-card">
+      <span class="compat-marker" aria-hidden="true">INVITE ONLY · SECURE SESSION</span>
       <p class="kicker">BACK OFFICE ACCESS</p>
       <h1 class="title">Enter your Back Office</h1>
       <p class="lead">กรุณาเลือกบัญชีที่ท่านต้องการเข้าถึง</p>
-      <div class="divider" aria-hidden="true"></div>
-      <p class="section-label">MANAGED ACCOUNTS</p>
+      <div class="rule" aria-hidden="true"></div>
+      <p class="managed-label">MANAGED ACCOUNTS</p>
       <div class="lanes" role="tablist" aria-label="Business access">
         <button class="lane" type="button" data-lane="owner" role="tab">
-          <span class="lane-logo"><img src="${MMD_PRIVE_LOGO}" alt="MMD Privé" width="155" height="74"></span>
-          <b>MMD Privé</b><small>SIGIL Systems</small>
+          <span class="lane-status" aria-hidden="true"></span>
+          <span class="lane-brand"><img class="mmd-brand" src="${MMD_BRAND_LOGO}" alt="MMD Privé" width="139" height="58"></span>
+          <b>MMD Privé</b><small>SIGIL System</small>
         </button>
         <button class="lane" type="button" data-lane="partner" role="tab">
-          <span class="lane-logo"><img src="${MMS_LOGO}" alt="MMS Male Massage" width="92" height="74"></span>
+          <span class="lane-status" aria-hidden="true"></span>
+          <span class="lane-brand"><img class="mms-brand" src="${ADMIN_LOGIN_MMS_LOGO_DATA}" alt="MMS Male Massage" width="72" height="64"></span>
           <b>MMS</b><small>Male Massage</small>
         </button>
       </div>
-      <p class="accounts-help">คุณสามารถดูแลหลายบัญชีได้ พร้อมกันสูงสุด 2 accounts ที่อยู่ภายใต้การดูแลของระบบนี้</p>
+      <p class="account-note">คุณสามารถดูแลหลายบัญชีได้ พร้อมกันสูงสุด 2 accounts ที่อยู่ภายใต้การดูแลของระบบนี้</p>
 
       <section class="panel" data-panel="owner">
+        <div class="panel-head"><strong>MMD Privé · SIGIL System</strong><br><span>Owner / Internal Admin access</span></div>
+        <div class="scope"><span>Approved access</span><span>Secure session</span><span>Private route</span></div>
         <form method="post" action="${ADMIN_LOGIN_SESSION_PATH}" id="ownerLoginForm" autocomplete="off">
           <input id="adminNext" type="hidden" name="next" value="${escapeAttribute(next)}">
           <label for="adminCredential">Access Code
-            <span class="field"><span class="field-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg></span><input id="adminCredential" type="text" required readonly autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" data-mask="true" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" data-form-type="other"><button class="toggle" type="button" data-toggle="adminCredential" aria-pressed="false">SHOW</button></span>
+            <span class="field"><input id="adminCredential" type="text" required readonly autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" data-mask="true" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" data-form-type="other"><button class="toggle" type="button" data-toggle="adminCredential" aria-pressed="false">SHOW</button></span>
           </label>
           <p class="message${error ? " is-error" : ""}" id="ownerMessage" role="${error ? "alert" : "status"}">${error ? escapeHtml(error) : `Next: ${escapeHtml(next)}`}</p>
           <button class="go" type="submit">Enter Back Office</button>
-          <p class="privacy">MMD Privé ใช้ SIGIL Systems · Secure HttpOnly session · Owner / Internal Admin only</p>
+          <p class="privacy">Secure HttpOnly session · SIGIL System internal route</p>
         </form>
       </section>
 
       <section class="panel partner-panel" data-panel="partner">
+        <div class="panel-head"><strong>MMS Partner · Male Massage</strong><br><span>สำหรับ MMS Partner ใช้เข้าสู่ระบบควบคุมการทำงานหลังบ้านของ Male Massage เท่านั้น</span></div>
+        <div class="scope partner"><span>Applications</span><span>Therapists</span><span>Matching</span><span>MMS only</span></div>
         <form id="partnerLoginForm" autocomplete="on">
           <input type="hidden" name="action" value="partner_login">
-          <label for="partnerUsername">Username<span class="field"><span class="field-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M4.5 20a7.5 7.5 0 0 1 15 0"></path></svg></span><input id="partnerUsername" name="username" required autocomplete="username" autocapitalize="none" spellcheck="false"></span></label>
-          <label for="partnerPassword">Password<span class="field"><span class="field-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg></span><input id="partnerPassword" name="password" type="password" required minlength="12" maxlength="128" autocomplete="current-password"><button class="toggle" type="button" data-toggle="partnerPassword" aria-pressed="false">SHOW</button></span></label>
-          <p class="message" id="partnerMessage" role="status">สำหรับ MMS Partner ใช้เข้าสู่ระบบควบคุมการทำงานหลังบ้านของ Male Massage เท่านั้น</p>
+          <label for="partnerUsername">Username<span class="field"><input id="partnerUsername" name="username" required autocomplete="username" autocapitalize="none" spellcheck="false"></span></label>
+          <label for="partnerPassword">Password<span class="field"><input id="partnerPassword" name="password" type="password" required minlength="12" maxlength="128" autocomplete="current-password"><button class="toggle" type="button" data-toggle="partnerPassword" aria-pressed="false">SHOW</button></span></label>
+          <p class="message" id="partnerMessage" role="status">MMS Partner Operations · Male Massage Back Office</p>
           <button class="go" type="submit">Enter Back Office</button>
         </form>
         <div class="links"><button class="linkbtn" type="button" data-open="signup">สร้างบัญชี Partner</button><button class="linkbtn" type="button" data-open="recover">ลืมรหัสผ่าน?</button></div>
@@ -131,9 +469,9 @@ export function renderApprovedAdminLogin(
         <section class="subpanel" data-subpanel="signup" hidden>
           <form id="partnerSignupForm" autocomplete="off">
             <input type="hidden" name="action" value="partner_signup">
-            <label>Username<span class="field"><span class="field-icon" aria-hidden="true">@</span><input name="username" required autocomplete="off" autocapitalize="none" spellcheck="false"></span></label>
-            <label>Password<span class="field"><span class="field-icon" aria-hidden="true">•</span><input name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></span></label>
-            <label>Invite Code<span class="field"><span class="field-icon" aria-hidden="true">+</span><input name="invite_code" type="password" required autocomplete="off"></span></label>
+            <label>Username<span class="field"><input name="username" required autocomplete="off" autocapitalize="none" spellcheck="false"></span></label>
+            <label>Password<span class="field"><input name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></span></label>
+            <label>Invite Code<span class="field"><input name="invite_code" type="password" required autocomplete="off"></span></label>
             <p class="message" id="signupMessage" role="status">Invite-only activation · ใช้รหัสเชิญที่ได้รับอนุมัติ</p>
             <button class="go" type="submit">Create Partner Account</button>
           </form>
@@ -142,27 +480,21 @@ export function renderApprovedAdminLogin(
         <section class="subpanel" data-subpanel="recover" hidden>
           <form id="partnerRecoverForm" autocomplete="off">
             <input type="hidden" name="action" value="partner_recover">
-            <label>Username<span class="field"><span class="field-icon" aria-hidden="true">@</span><input name="username" required autocomplete="username" autocapitalize="none" spellcheck="false"></span></label>
-            <label>Recovery Code<span class="field"><span class="field-icon" aria-hidden="true">#</span><input name="recovery_code" type="password" required autocomplete="off"></span></label>
-            <label>New Password<span class="field"><span class="field-icon" aria-hidden="true">•</span><input name="new_password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></span></label>
+            <label>Username<span class="field"><input name="username" required autocomplete="username" autocapitalize="none" spellcheck="false"></span></label>
+            <label>Recovery Code<span class="field"><input name="recovery_code" type="password" required autocomplete="off"></span></label>
+            <label>New Password<span class="field"><input name="new_password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></span></label>
             <p class="message" id="recoverMessage" role="status">Recovery จะเปลี่ยนรหัสผ่านและออก Recovery Code ชุดใหม่</p>
             <button class="go" type="submit">Reset Password</button>
           </form>
         </section>
         <div class="recovery" id="recoveryBox"><b>Recovery Code ใหม่ — เก็บไว้ในที่ปลอดภัย</b><code id="recoveryCode"></code><p>รหัสนี้แสดงหลัง activation/reset เท่านั้น ระบบเก็บเฉพาะ hash</p></div>
-        <p class="privacy" style="margin-top:10px">Partner session ถูกจำกัดไว้ที่ /internal/admin/mms และ /v1/admin/mms* เท่านั้น</p>
+        <p class="privacy" style="margin-top:8px">Partner session จำกัดไว้ที่ /internal/admin/mms และ /v1/admin/mms* เท่านั้น</p>
       </section>
 
-      <footer class="credit"><b>SIGIL Systems</b><br>Design and Architecture by Per 2025–2026 (อีดอก กูเองค่ะมึง)</footer>
+      <footer class="credit"><b>SIGIL Systems</b><br>Design and Architecture by Per 2025-2026 <span class="thai-credit">(อีดอก กูเองค่ะมึง)</span></footer>
     </article>
-
-    <aside class="hero-side" aria-label="SIGIL private administration environment">
-      <img class="hero-mark" src="${APPROVED_ADMIN_LOGIN_FAVICON}" alt="SIGIL" width="58" height="58" fetchpriority="high">
-      <div class="hero-mantra"><span>People</span><span>Systems</span><span>A Quieter</span><span>Tomorrow</span></div>
-      <div class="hero-secure">SECURE · PRIVATE · INTERNAL</div>
-      <div class="hero-caption">MMD Privé · SIGIL Systems · MMS Male Massage</div>
-    </aside>
   </main>
+  <div class="secure">SECURE · PRIVATE · INTERNAL</div>
 </section>
 <script>(()=>{
   const sessionPath='${ADMIN_LOGIN_SESSION_PATH}';

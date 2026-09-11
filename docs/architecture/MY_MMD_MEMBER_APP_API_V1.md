@@ -154,3 +154,33 @@ real LINE
 ```
 
 A specific member-data claim is production-proven only when that member/session path is observed successfully end-to-end.
+
+
+## Member truth repair — 2026-09-10
+
+The Lovable profile screen now reads `/api/member/app/profile`, the same BFF
+namespace as membership, Points and history. The profile endpoint preserves its
+identity fields and adds customer-safe `match_state`, `membership_tier`,
+`membership_status`, `points_confirmed`, `active_through`, and history fields.
+Unproven totals remain null; `canonical_client_id` and internal resolver objects
+are not exposed.
+
+Every authenticated dashboard, membership, profile, Points and history read
+refreshes the profile from the canonical resolver before projecting the result.
+A failed refresh returns a bounded 503 rather than a cached member balance.
+Protected membership responses remain flat on `/membership` and nested only on
+`/dashboard`. Canonical grace and explicit restrictions cannot be overwritten by
+Fast Trust recovery presentation. Existing trusted-marker recovery remains in
+place for unresolved VIP/SVIP/Black Card identities.
+
+Points use the dedicated verified Points history, not the truncated mixed
+activity feed. Missing balance is checking; verified zero is resolved. Verified
+Client-linked history is used when the member activity feed is absent, and
+unresolved empty history is distinct from a verified empty history.
+
+Rollout: deploy the auth-worker and member-pages-worker changes, merge the paired
+Lovable source PR, then publish the Lovable app. GitHub source sync alone does not
+prove the published Lovable build changed. Production acceptance still requires
+a real verified LINE session and comparing the displayed balance, signed ledger,
+status and tier with the authenticated BFF replies. No member records or Points
+entries are rewritten by this repair.

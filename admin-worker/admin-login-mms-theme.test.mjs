@@ -5,7 +5,7 @@ import { renderApprovedAdminLogin } from "./src/admin-login-page.js";
 
 const MMS_LOGIN = "https://mmdbkk.com/internal/admin/login?next=/internal/admin/mms";
 
-test("MMS partner login uses Image A back-office layout and canonical MMS styling", async () => {
+test("MMS partner login uses final Image A composition and canonical access scope", async () => {
   const response = renderApprovedAdminLogin(new Request(MMS_LOGIN), {
     next: "/internal/admin/mms",
   });
@@ -14,34 +14,42 @@ test("MMS partner login uses Image A back-office layout and canonical MMS stylin
 
   assert.equal(response.status, 200);
   assert.match(csp, /font-src https:\/\/cdn\.prod\.website-files\.com/);
+  assert.match(csp, /img-src https:\/\/cdn\.prod\.website-files\.com data:/);
   assert.match(html, /data-initial-lane="partner"/);
-  assert.match(html, /data-active-lane="partner"/);
+  assert.match(html, /data-layout="image-a-cinematic"/);
+  assert.match(html, /data-density="compact"/);
 
   assert.match(html, /LINESeedSansTH_W_Rg\.woff2/);
   assert.match(html, /LINESeedSansTH_W_Bd\.woff2/);
   assert.match(html, /LINESeedSansTH_W_XBd\.woff2/);
   assert.match(html, /font-synthesis:none/);
-  assert.match(html, /\.title\{[^}]*font-family:Georgia[^}]*font-weight:400;line-height:1\.02/);
-
-  assert.match(html, /--green:#003704;--green2:#002b03;--green3:#001e02/);
-  assert.match(html, /data-lane="partner"[^>]*role="tab"/);
-  assert.match(html, /data-lane="partner"\]\.is-active\{[^}]*rgba\(0,55,4/);
-  assert.doesNotMatch(html, /#71937a|#405f4c|#456b55|#6e9279/);
 
   assert.match(html, /BACK OFFICE ACCESS/);
   assert.match(html, /<h1 class="title">Enter your Back Office<\/h1>/);
   assert.match(html, /กรุณาเลือกบัญชีที่ท่านต้องการเข้าถึง/);
   assert.match(html, /MANAGED ACCOUNTS/);
-  assert.match(html, /MMD_Prive%CC%81_logo_signature_transparent%20Final\.webp/);
-  assert.match(html, /MMS%20Login%20Button\.webp/);
-  assert.match(html, /<b>MMD Privé<\/b><small>SIGIL Systems<\/small>/);
-  assert.match(html, /<b>MMS<\/b><small>Male Massage<\/small>/);
+  assert.match(html, /data-lane="owner"[\s\S]*?<b>MMD Privé<\/b><small>SIGIL System<\/small>/);
+  assert.match(html, /data-lane="partner"[\s\S]*?<b>MMS<\/b><small>Male Massage<\/small>/);
+  assert.match(html, /class="mms-brand" src="data:image\/webp;base64,/);
+  assert.match(html, /class="duo" src="data:image\/webp;base64,/);
   assert.match(html, /สำหรับ MMS Partner ใช้เข้าสู่ระบบควบคุมการทำงานหลังบ้านของ Male Massage เท่านั้น/);
+  assert.match(html, /MMS Partner Operations · Male Massage Back Office/);
   assert.match(html, /Enter Back Office/);
 
-  assert.match(html, /class="hero-mantra"/);
-  assert.match(html, /People<\/span><span>Systems<\/span><span>A Quieter<\/span><span>Tomorrow/);
+  assert.match(html, /SIGIL Systems/);
+  assert.match(html, /Design and Architecture by Per 2025-2026/);
+  assert.match(html, /\(อีดอก กูเองค่ะมึง\)/);
   assert.match(html, /SECURE · PRIVATE · INTERNAL/);
-  assert.match(html, /SIGIL Systems<\/b><br>Design and Architecture by Per 2025–2026 \(อีดอก กูเองค่ะมึง\)/);
-  assert.match(response.headers.get("x-mmd-login-ui") || "", /browser-fetch-v5/);
+  assert.match(html, /PEOPLE<\/span><span>SYSTEMS<\/span><span>A QUIETER<\/span><span>TOMORROW/);
+
+  assert.match(html, /--green:#003704/);
+  assert.match(html, /lane\[data-lane="partner"\]\.is-active/);
+  assert.match(html, /#2cec8f/);
+  assert.match(html, /max-height:calc\(100svh - 32px\)/);
+  assert.match(html, /@media\(min-width:901px\) and \(max-height:760px\)/);
+  assert.match(html, /@media\(max-width:900px\)/);
+  assert.match(html, /@media\(max-width:460px\)/);
+  assert.doesNotMatch(html, /class="mms-mark"/);
+  assert.doesNotMatch(html, /#71937a|#405f4c|#456b55|#6e9279/);
+  assert.doesNotMatch(html, /เข้าพื้นที่ทำงานของคุณ/);
 });

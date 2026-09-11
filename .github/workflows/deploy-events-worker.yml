@@ -54,13 +54,14 @@ jobs:
         shell: bash
         run: npx --yes wrangler@4 whoami
 
-      - name: Validate ETA owner runtime
+      - name: Validate events owner runtime
         shell: bash
         run: |
           set -euo pipefail
           node --check src/index.js
           node --check src/model-eta-wrapper.js
-          node --test model-eta-policy.test.mjs
+          node --check src/customer-aftercare-v2.js
+          node --test model-eta-policy.test.mjs aftercare-v2.test.mjs
 
       - name: Validate direct deploy
         shell: bash
@@ -82,7 +83,7 @@ jobs:
           fi
           echo "EVENTS_WORKER_VERSION_ID=${version_id}" >> "$GITHUB_ENV"
 
-      - name: Verify production health and ETA route ownership
+      - name: Verify production health and route ownership
         shell: bash
         run: |
           set -euo pipefail
@@ -102,6 +103,17 @@ jobs:
           cat "$body"
           test "$code" = "401"
           grep -q '"error":"unauthorized"' "$body"
+
+          body="$(mktemp)"
+          code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
+            -X POST \
+            -H 'Origin: https://mmdbkk.com' \
+            -H 'Content-Type: application/json' \
+            --data '{"rating":5,"idempotency_key":"smoke-aftercare-0001"}' \
+            "$EVENTS_WORKER_PRODUCTION_URL/v1/customer/session/aftercare")"
+          cat "$body"
+          test "$code" = "400"
+          grep -q '"error":"confirmation_token_required"' "$body"
 
       - name: Deployment receipt
         shell: bash

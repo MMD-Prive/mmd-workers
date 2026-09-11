@@ -28,31 +28,81 @@ try {
   assert.equal(response.headers.get("x-mmd-control-room-release"), "owner-v4");
   assert.equal(response.headers.get("x-mmd-control-room-authority"), "canonical-backend");
   assert.equal(response.headers.get("x-mmd-control-room-mms-route"), "/internal/admin/mms");
+  assert.equal(response.headers.get("x-mmd-control-room-mms-therapist-app"), "https://miniapp.line.me/2011425652-YqK1F6y8");
   assert.equal(response.headers.get("x-mmd-control-room-slip-backfill-route"), "/internal/admin/payments/historical-backfill");
+  assert.equal(response.headers.get("x-mmd-control-room-customer-data-route"), "/internal/admin/customer-data");
   assert.equal(response.headers.get("x-mmd-control-room-cta-audit"), "operator-triggered-head-check");
   assert.equal(response.headers.get("x-mmd-control-room-telegram-status"), "partial-worker-alerts-no-unified-router");
+  assert.equal(response.headers.get("x-mmd-control-room-typography"), "sf-first-local");
+  assert.equal(response.headers.get("x-mmd-control-room-operator-object"), "job");
+  assert.equal(response.headers.get("x-mmd-control-room-create-route"), "/internal/admin/jobs/create-job");
+  assert.equal(response.headers.get("x-mmd-control-room-canon"), "single-owner-v1");
+  assert.equal(response.headers.get("x-mmd-control-room-human-operator"), "per");
+  assert.equal(response.headers.get("x-mmd-control-room-review-model"), "ai-checks-per-confirms");
+  assert.equal(response.headers.get("x-mmd-command-center"), "p0");
+  assert.equal(response.headers.get("x-mmd-command-center-flow"), "ask-needs-per-prepared-watching");
+  assert.equal(response.headers.get("x-mmd-ai-ops-layer"), "v3");
+  assert.equal(response.headers.get("x-mmd-control-room-safety-location"), "v1");
 
+  // Visible owner surface remains compact and task-first.
+  assert.match(body, /MMD PRIVÉ/);
+  assert.match(body, /OPERATING SYSTEM/);
+  assert.match(body, /วันนี้ต้องทำอะไรบ้าง/);
+  assert.match(body, /Customer 360/);
+  assert.match(body, /Money Control/);
+  assert.match(body, /Model Supply/);
+  assert.match(body, /Access Intelligence/);
+  assert.match(body, /AI Workers/);
+  assert.match(body, /\/v1\/admin\/dashboard/);
+  assert.match(body, /BACKEND WAITING/);
+
+  // Runtime overlay makes Per's Command Center and single-owner model explicit.
+  assert.match(body, /data-mmd-control-room-canon-v3/);
+  assert.match(body, /dataset\.mmdCommandCenter='p0'/);
+  assert.match(body, /PER · COMMAND CENTER/);
+  assert.match(body, /Ask Per AI → Needs Per → Prepared → Watching/);
+  assert.match(body, /PER · OWNER MODE/);
+  assert.match(body, /ไม่มี reviewer คนที่สอง/);
+  assert.match(body, /data-per-owner-strip/);
+  assert.match(body, /งานที่เปอร์ต้องทำต่อ/);
+  assert.match(body, /Action Card/);
+  assert.match(body, /หน้าที่เปอร์ใช้จริง/);
+  assert.match(body, /\/v1\/admin\/ai-ops\/client\.js\?v=3/);
+
+  // Safety Location is a pinned additive owner control; backend remains authority.
+  assert.match(body, /data-mmd-control-room-safety-location="v1"/);
+  assert.match(body, /7e00a7696c9c8bd6bbd28408c9cb8617961fd78d/);
+  assert.match(body, /webflow\/internal\/admin\/control-room\/safety-location-control-v1\.js/);
+
+  // Compatibility markers remain, but owner creation is Job-first.
   assert.match(body, /data-control-room-v3/);
   assert.match(body, /OWNER CONTROL · V4/);
-  assert.match(body, /MMD PRIVÉ · OWNER CONTROL ROOM · 05 SEP 2026/);
+  assert.match(body, /MMD PRIVÉ · OWNER CONTROL ROOM · 07 SEP 2026/);
   assert.match(body, /Boss%20Per%20input%20Kenji%20AI\.webp/);
   assert.match(body, /Working%20Room\.webp/);
   assert.match(body, /Kenji%20Know02\.webp/);
   assert.match(body, /Wall%20a%20Long\.webp/);
 
-  assert.match(body, /\/internal\/admin\/jobs\/create-session/);
+  assert.doesNotMatch(body, /\/internal\/admin\/jobs\/create-session/);
+  assert.doesNotMatch(body, /Create Session/);
   assert.match(body, /\/internal\/admin\/jobs\/create-job/);
+  assert.match(body, /Create Job/);
+  assert.match(body, /<span>JOB<\/span>/);
   assert.match(body, /\/internal\/admin\/payments/);
   assert.match(body, /\/internal\/admin\/payments\/historical-backfill/);
   assert.match(body, /\/internal\/admin\/kenji/);
   assert.match(body, /\/internal\/admin\/membership-access/);
   assert.match(body, /\/internal\/admin\/mms/);
   assert.match(body, /\/internal\/admin\/studio/);
-  assert.match(body, /\/internal\/ceo\/dashboard/);
+  assert.match(body, /\/internal\/ceo/);
+  assert.doesNotMatch(body, /\/internal\/ceo\/dashboard/);
   assert.match(body, /\/sigil\/model\/console/);
   assert.match(body, /\/shop\/admin\/stock/);
   assert.match(body, /\/internal\/admin\/control-room\/protocol/);
 
+  assert.match(body, /MMS Therapist App/);
+  assert.match(body, /https:\/\/miniapp\.line\.me\/2011425652-YqK1F6y8/);
+  assert.doesNotMatch(body, /href="\/male-massage\/therapists\/me"/);
   assert.match(body, /payments-worker · Money Truth/);
   assert.match(body, /my_mmd_entitlement_resolver_v1/);
   assert.match(body, /Telegram alerts · Partial \/ Drive observed/);

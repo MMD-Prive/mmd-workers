@@ -7,6 +7,7 @@ import { handlePaymentReviewRequest } from "./src/payment-review-runtime.js";
 test("LINE slip intake creates a pending Payment Proof visible in the admin review queue", async () => {
   const proofs = [];
   const r2Writes = [];
+  let paymentProofQueueQuery = null;
   const member = {
     id: "rec-member-1",
     fields: { "Member ID": "MEM-001", Name: "Ploy Test", Status: "Active" },
@@ -33,7 +34,10 @@ test("LINE slip intake creates a pending Payment Proof visible in the admin revi
       return Response.json({ records: [payment] });
     }
     if (table === "MMD — Payment Proofs") {
-      if (request.method === "GET") return Response.json({ records: proofs });
+      if (request.method === "GET") {
+        if (url.searchParams.get("sort[0][field]")) paymentProofQueueQuery = url;
+        return Response.json({ records: proofs });
+      }
       if (request.method === "POST") {
         const body = await request.json();
         const fields = body.fields || body.records?.[0]?.fields || {};
@@ -122,10 +126,15 @@ test("LINE slip intake creates a pending Payment Proof visible in the admin revi
   assert.equal(queueResponse.status, 200);
   assert.equal(queue.ok, true);
   assert.equal(queue.authority, "payments-worker");
+  assert.equal(queue.ordering, "created_at_desc");
   assert.equal(queue.guardrails.browser_can_mark_paid, false);
   assert.equal(queue.items.length, 1);
   assert.equal(queue.items[0].proof_id, intake.proofId);
   assert.equal(queue.items[0].payment_ref, "PAY-001");
   assert.equal(queue.items[0].evidence_amount_thb, 1500);
   assert.equal(queue.items[0].reviewable, true);
+  assert.ok(paymentProofQueueQuery);
+  assert.equal(paymentProofQueueQuery.searchParams.get("sort[0][field]"), "created_at");
+  assert.equal(paymentProofQueueQuery.searchParams.get("sort[0][direction]"), "desc");
+  assert.match(paymentProofQueueQuery.searchParams.get("filterByFormula") || "", /pending/);
 });

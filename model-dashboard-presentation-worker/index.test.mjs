@@ -22,32 +22,32 @@ test("matches only Model Dashboard presentation namespace plus explicit runtime 
   assert.equal(isPresentationRootRuntimePath("/favicon.ico"), false);
 });
 
-test("maps canonical dashboard route to Lovable root and preserves LINE callback query", () => {
+test("maps canonical dashboard route to current Model Hub root and preserves LINE callback query", () => {
   const request = new Request("https://mmdbkk.com/sigil/model/dashboard?code=abc&state=xyz&liff_env=review");
   const upstream = presentationUrlForPage(request);
-  assert.equal(upstream.origin, "https://mmd-model-dashboard.lovable.app");
+  assert.equal(upstream.origin, "https://mmdmodel.lovable.app");
   assert.equal(upstream.pathname, "/");
   assert.equal(upstream.searchParams.get("code"), "abc");
   assert.equal(upstream.searchParams.get("state"), "xyz");
   assert.equal(upstream.searchParams.get("liff_env"), "review");
 });
 
-test("maps nested dashboard pages and runtime assets to Lovable", () => {
+test("maps nested dashboard pages and runtime assets to current Model Hub", () => {
   assert.equal(
     presentationUrlForPage(new Request("https://www.mmdbkk.com/sigil/model/dashboard/photos?liff_env=developing")).toString(),
-    "https://mmd-model-dashboard.lovable.app/photos?liff_env=developing",
+    "https://mmdmodel.lovable.app/photos?liff_env=developing",
   );
   assert.equal(
     presentationUrlForAsset(new Request("https://mmdbkk.com/sigil/model/dashboard-assets/_build/app.js?v=1")).toString(),
-    "https://mmd-model-dashboard.lovable.app/_build/app.js?v=1",
+    "https://mmdmodel.lovable.app/_build/app.js?v=1",
   );
   assert.equal(
     presentationUrlForAsset(new Request("https://mmdbkk.com/assets/routes-123.js?v=2")).toString(),
-    "https://mmd-model-dashboard.lovable.app/assets/routes-123.js?v=2",
+    "https://mmdmodel.lovable.app/assets/routes-123.js?v=2",
   );
   assert.equal(
     presentationUrlForAsset(new Request("https://www.mmdbkk.com/_build/app.js?v=3")).toString(),
-    "https://mmd-model-dashboard.lovable.app/_build/app.js?v=3",
+    "https://mmdmodel.lovable.app/_build/app.js?v=3",
   );
 });
 

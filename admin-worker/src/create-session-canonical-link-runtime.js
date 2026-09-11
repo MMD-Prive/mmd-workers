@@ -41,22 +41,24 @@ export async function handleCanonicalLinkedJobCreate(request, env, ctx, downstre
   const clientId = clean(body?.client_lineage?.client_id || body?.client_record_id);
   const modelId = clean(body?.model?.model_id || body?.model_record_id);
 
-  if (!isRecordId(clientId)) {
-    return jsonLike(request, { ok: false, error: "canonical_client_record_required" }, 400);
+  if (clientId && !isRecordId(clientId)) {
+    return jsonLike(request, { ok: false, error: "canonical_client_record_invalid" }, 400);
   }
-  if (!isRecordId(modelId)) {
-    return jsonLike(request, { ok: false, error: "canonical_model_record_required" }, 400);
+  if (modelId && !isRecordId(modelId)) {
+    return jsonLike(request, { ok: false, error: "canonical_model_record_invalid" }, 400);
   }
 
-  let canonical;
-  try {
-    canonical = await validateCanonicalSelection(env, body, { clientId, modelId });
-  } catch (error) {
-    return jsonLike(
-      request,
-      { ok: false, error: clean(error?.code || error?.message || "canonical_selection_invalid") },
-      Number.isInteger(error?.status) ? error.status : 409,
-    );
+  let canonical = { client: null, model: null };
+  if (clientId || modelId) {
+    try {
+      canonical = await validateCanonicalSelection(env, body, { clientId, modelId });
+    } catch (error) {
+      return jsonLike(
+        request,
+        { ok: false, error: clean(error?.code || error?.message || "canonical_selection_invalid") },
+        Number.isInteger(error?.status) ? error.status : 409,
+      );
+    }
   }
 
   const response = await downstream.fetch(request, env, ctx);
@@ -78,12 +80,14 @@ export async function handleCanonicalLinkedJobCreate(request, env, ctx, downstre
     result?.raw?.data?.job_id,
   );
 
+  const targetStatus = linkageStatus(Boolean(clientId), Boolean(modelId));
   if (!sessionId) {
     return mergeJsonResponse(response, {
       linkage: {
         status: "review_required",
-        client_record_id: clientId,
-        model_record_id: modelId,
+        intended_status: targetStatus,
+        client_record_id: clientId || null,
+        model_record_id: modelId || null,
         session_linked: false,
         job_linked: false,
         warning: "session_id_missing_from_create_response",
@@ -103,8 +107,9 @@ export async function handleCanonicalLinkedJobCreate(request, env, ctx, downstre
     return mergeJsonResponse(response, {
       linkage: {
         status: "review_required",
-        client_record_id: clientId,
-        model_record_id: modelId,
+        intended_status: targetStatus,
+        client_record_id: clientId || null,
+        model_record_id: modelId || null,
         session_id: sessionId,
         job_id: jobId || null,
         session_linked: false,
@@ -119,52 +124,65 @@ async function validateCanonicalSelection(env, body, { clientId, modelId }) {
   requireAirtable(env);
   const tables = tablesFor(env);
   const [client, model] = await Promise.all([
-    airtableGetRecord(env, tables.clients, clientId),
-    airtableGetRecord(env, tables.models, modelId),
+    clientId ? airtableGetRecord(env, tables.clients, clientId) : Promise.resolve(null),
+    modelId ? airtableGetRecord(env, tables.models, modelId) : Promise.resolve(null),
   ]);
 
-  if (!client?.id) throw typedError(409, "canonical_client_not_found");
-  if (!model?.id) throw typedError(409, "canonical_model_not_found");
+  if (clientId && !client?.id) throw typedError(409, "canonical_client_not_found");
+  if (modelId && !model?.id) throw typedError(409, "canonical_model_not_found");
 
-  const requestedLineUserId = clean(body?.line_identity?.line_user_id || body?.client_lineage?.line_user_id);
-  const canonicalLineUserId = clean(client?.fields?.line_user_id);
-  if (requestedLineUserId && canonicalLineUserId && requestedLineUserId !== canonicalLineUserId) {
-    throw typedError(409, "client_line_identity_mismatch");
+  if (client) {
+    const requestedLineUserId = clean(body?.line_identity?.line_user_id || body?.client_lineage?.line_user_id);
+    const canonicalLineUserId = clean(client?.fields?.line_user_id);
+    if (requestedLineUserId && canonicalLineUserId && requestedLineUserId !== canonicalLineUserId) {
+      throw typedError(409, "client_line_identity_mismatch");
+    }
   }
 
-  const requestedModelName = normalizeName(body?.model_name || body?.model?.model_name);
-  const canonicalModelName = normalizeName(
-    model?.fields?.working_name || model?.fields?.display_name_compact || model?.fields?.nickname,
-  );
-  if (requestedModelName && canonicalModelName && requestedModelName !== canonicalModelName) {
-    throw typedError(409, "canonical_model_name_mismatch");
-  }
+  if (model) {
+    // A linked Model may use a richer operator/customer display snapshot at
+    // body.model_name (for example "EMs01 · Jay Jatu"). Canonical validation
+    // must use the nested canonical working name when the caller supplies it.
+    const requestedModelName = normalizeName(body?.model?.model_name || body?.model_name);
+    const canonicalModelName = normalizeName(
+      model?.fields?.working_name || model?.fields?.display_name_compact || model?.fields?.nickname,
+    );
+    if (requestedModelName && canonicalModelName && requestedModelName !== canonicalModelName) {
+      throw typedError(409, "canonical_model_name_mismatch");
+    }
 
-  const registryType = clean(model?.fields?.registry_record_type).toLowerCase();
-  const intakeGate = clean(model?.fields?.intake_gate_status).toLowerCase();
-  if (registryType.includes("synthetic") || registryType.includes("fixture") || registryType.includes("ghost")) {
-    throw typedError(409, "canonical_model_fixture_blocked");
+    const registryType = clean(model?.fields?.registry_record_type).toLowerCase();
+    const intakeGate = clean(model?.fields?.intake_gate_status).toLowerCase();
+    if (registryType.includes("synthetic") || registryType.includes("fixture") || registryType.includes("ghost")) {
+      throw typedError(409, "canonical_model_fixture_blocked");
+    }
+    if (intakeGate === "quarantined") throw typedError(409, "canonical_model_quarantined");
   }
-  if (intakeGate === "quarantined") throw typedError(409, "canonical_model_quarantined");
 
   return { client, model };
 }
 
 async function reconcileCanonicalLinks(env, body, canonical, ids) {
+  requireAirtable(env);
   const tables = tablesFor(env);
-  const clientSource = resolveClientSource(body, canonical.client);
-  const modelProvenance = resolveModelProvenance(body, canonical.model);
+  const clientSource = ids.clientId ? resolveClientSource(body, canonical.client) : "";
+  const modelProvenance = ids.modelId ? resolveModelProvenance(body, canonical.model) : "";
 
   const session = await airtableFindOne(env, tables.sessions, SESSION_FIELDS.sessionId, ids.sessionId);
   if (!session?.id) throw typedError(502, "created_session_record_not_found");
 
-  const sessionPatch = {
-    [SESSION_FIELDS.client]: [ids.clientId],
-    [SESSION_FIELDS.model]: [ids.modelId],
-    [SESSION_FIELDS.clientSource]: clientSource,
-    [SESSION_FIELDS.modelProvenance]: modelProvenance,
-  };
-  await airtablePatchRecord(env, tables.sessions, session.id, sessionPatch);
+  const sessionPatch = {};
+  if (ids.clientId) {
+    sessionPatch[SESSION_FIELDS.client] = [ids.clientId];
+    sessionPatch[SESSION_FIELDS.clientSource] = clientSource;
+  }
+  if (ids.modelId) {
+    sessionPatch[SESSION_FIELDS.model] = [ids.modelId];
+    sessionPatch[SESSION_FIELDS.modelProvenance] = modelProvenance;
+  }
+  if (Object.keys(sessionPatch).length) {
+    await airtablePatchRecord(env, tables.sessions, session.id, sessionPatch);
+  }
 
   const resolvedJobId = ids.jobId || clean(session?.fields?.[SESSION_FIELDS.jobId]);
   let job = null;
@@ -179,32 +197,45 @@ async function reconcileCanonicalLinks(env, body, canonical, ids) {
       modelProvenance,
     }));
   } else {
-    await airtablePatchRecord(env, tables.jobs, job.id, {
-      [JOB_FIELDS.client]: [ids.clientId],
-      [JOB_FIELDS.model]: [ids.modelId],
-      [JOB_FIELDS.clientSource]: clientSource,
-      [JOB_FIELDS.modelProvenance]: modelProvenance,
-    });
+    const jobPatch = {};
+    const existingNote = clean(job.fields?.[JOB_FIELDS.note]);
+    const snapshotNote = preservePartnerSnapshot(existingNote, body);
+    if (snapshotNote !== existingNote) jobPatch[JOB_FIELDS.note] = snapshotNote;
+    if (ids.clientId) {
+      jobPatch[JOB_FIELDS.client] = [ids.clientId];
+      jobPatch[JOB_FIELDS.clientSource] = clientSource;
+    }
+    if (ids.modelId) {
+      jobPatch[JOB_FIELDS.model] = [ids.modelId];
+      jobPatch[JOB_FIELDS.modelProvenance] = modelProvenance;
+    }
+    const modelName = clean(body?.model_name || body?.model?.model_name);
+    if (modelName) jobPatch[JOB_FIELDS.modelName] = modelName;
+    if (Object.keys(jobPatch).length) await airtablePatchRecord(env, tables.jobs, job.id, jobPatch);
   }
 
+  const status = linkageStatus(Boolean(ids.clientId), Boolean(ids.modelId));
   return {
-    status: "linked",
-    client_record_id: ids.clientId,
-    model_record_id: ids.modelId,
+    status,
+    client_record_id: ids.clientId || null,
+    model_record_id: ids.modelId || null,
+    client_link_status: ids.clientId ? "linked" : "pending",
+    model_link_status: ids.modelId ? "linked" : "pending",
     session_record_id: session.id,
     job_record_id: job?.id || null,
     session_id: ids.sessionId,
     job_id: clean(job?.fields?.[JOB_FIELDS.jobId] || resolvedJobId) || null,
     session_linked: true,
     job_linked: Boolean(job?.id),
-    client_source: clientSource,
-    model_provenance: modelProvenance,
+    client_source: clientSource || null,
+    model_provenance: modelProvenance || null,
   };
 }
 
 function buildJobFields(body, canonical, ids) {
   const details = body?.job_details || {};
   const payment = body?.payment || {};
+  const clientName = clean(body?.client_name || body?.client_lineage?.client_name);
   const modelName = clean(
     body?.model_name ||
     body?.model?.model_name ||
@@ -215,22 +246,36 @@ function buildJobFields(body, canonical, ids) {
   const start = clean(body?.start_time || details?.start_time);
   const end = clean(body?.end_time || details?.end_time);
   const location = clean(body?.location_name || details?.location_name);
-  const amount = Number(body?.amount_thb || payment?.amount_thb || 0);
+  const amount = Number(body?.service_amount_thb ?? payment?.service_amount_thb ?? body?.amount_thb ?? payment?.amount_thb ?? 0);
+
+  const noteParts = [
+    clientName ? `Client snapshot: ${clientName}` : "",
+    clean(body?.note || details?.note),
+    ids.clientId && ids.modelId
+      ? "Created by canonical Create Job reconciliation. Client and Model linked by Airtable record ID."
+      : "Created by SIGIL Jobs progressive identity flow. Pending identity links may be completed later.",
+  ].filter(Boolean);
 
   const fields = {
-    [JOB_FIELDS.client]: [ids.clientId],
-    [JOB_FIELDS.model]: [ids.modelId],
     [JOB_FIELDS.modelName]: modelName,
-    [JOB_FIELDS.clientSource]: ids.clientSource,
-    [JOB_FIELDS.modelProvenance]: ids.modelProvenance,
     [JOB_FIELDS.sessionId]: ids.sessionId,
     [JOB_FIELDS.jobId]: ids.jobId,
     [JOB_FIELDS.location]: location,
     [JOB_FIELDS.dateTimeLocation]: [date, start && end ? `${start}-${end}` : start, location].filter(Boolean).join(" · "),
-    [JOB_FIELDS.note]: "Created by canonical Create Session reconciliation. Client and Model linked by Airtable record ID.",
+    [JOB_FIELDS.note]: preservePartnerSnapshot(noteParts.join("\n"), body),
   };
+  if (ids.clientId) fields[JOB_FIELDS.client] = [ids.clientId];
+  if (ids.modelId) fields[JOB_FIELDS.model] = [ids.modelId];
+  if (ids.clientSource) fields[JOB_FIELDS.clientSource] = ids.clientSource;
+  if (ids.modelProvenance) fields[JOB_FIELDS.modelProvenance] = ids.modelProvenance;
   if (Number.isFinite(amount) && amount > 0) fields[JOB_FIELDS.budget] = amount;
   return compact(fields);
+}
+
+function linkageStatus(hasClient, hasModel) {
+  if (hasClient && hasModel) return "linked";
+  if (hasClient || hasModel) return "partial";
+  return "pending";
 }
 
 function resolveClientSource(body, client) {
@@ -382,4 +427,23 @@ async function mergeJsonResponse(response, additions) {
     statusText: response.statusText,
     headers,
   });
+}
+
+const PARTNER_SNAPSHOT_MARKER = "[SIGIL Partner Snapshot v1]";
+export function preservePartnerSnapshot(existingNote, body = {}) {
+  const note = clean(existingNote);
+  // Only the initial job snapshot is attached. Later roster/rate edits never
+  // replace historical evidence. This is internal operator evidence, not a grant.
+  if (note.includes(PARTNER_SNAPSHOT_MARKER)) return note;
+  const relationship = body.job_details?.partner_relationship;
+  const attribution = body.partner_attribution;
+  if (!relationship && !attribution) return note;
+  const snapshot = {
+    source: "sigil_jobs_operator_snapshot",
+    recorded_at: new Date().toISOString(),
+    partner_relationship: relationship || null,
+    partner_attribution: attribution || null,
+    model_payout_thb: body.pay_model_thb ?? null,
+  };
+  return [note, PARTNER_SNAPSHOT_MARKER, JSON.stringify(snapshot)].filter(Boolean).join("\n");
 }

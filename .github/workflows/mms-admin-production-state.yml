@@ -91,7 +91,7 @@ jobs:
             if (/\/internal\/admin\/login/.test(control.headers.get('location') || '')) {
               throw new Error('control room bounced back to login');
             }
-            if (!/Control Room|CONTROL ROOM|Owner Control/i.test(controlBody)) {
+            if (!/Control Room|CONTROL ROOM|Owner Control|Operating System/i.test(controlBody)) {
               throw new Error('control room marker not found after authenticated login');
             }
             console.log('HTTP login session -> Control Room passed.');
@@ -134,7 +134,16 @@ jobs:
               const context = await browser.createBrowserContext();
               const page = await context.newPage();
               const pageErrors = [];
+              const authResponses = [];
               page.on('pageerror', (error) => pageErrors.push(error?.message || String(error)));
+              page.on('response', (response) => {
+                try {
+                  const url = new URL(response.url());
+                  if (url.origin === origin && url.pathname === '/v1/admin/auth/me') {
+                    authResponses.push({ status: response.status(), url: response.url() });
+                  }
+                } catch {}
+              });
 
               await page.goto(`${origin}/internal/admin/login?next=${encodeURIComponent(next)}`, {
                 waitUntil: 'domcontentloaded',
@@ -150,17 +159,53 @@ jobs:
                 page.click('#ownerLoginForm .go'),
               ]);
 
-              const url = new URL(page.url());
-              if (url.origin !== origin || url.pathname !== next) {
+              const landed = new URL(page.url());
+              if (landed.origin !== origin || landed.pathname !== next) {
                 throw new Error(`browser login landed at ${page.url()}`);
               }
-              const bodyText = await page.evaluate(() => document.body?.innerText || '');
-              if (!/Control Room|CONTROL ROOM|Owner Control/i.test(bodyText)) {
-                throw new Error('browser reached target URL but Control Room UI marker is missing');
+
+              let waitError = null;
+              try {
+                await page.waitForFunction(() => {
+                  const bodyText = document.body?.innerText || '';
+                  const legacyControlRoom = Boolean(document.querySelector('[data-control-room]')) ||
+                    /Control Room|CONTROL ROOM|Owner Control/i.test(bodyText);
+                  const ownerOperatingSystem = /MMD PRIVÉ\s+PER\s*[·•-]?\s*COMMAND CENTER/i.test(bodyText) &&
+                    /OWNER MODE/i.test(bodyText);
+                  const loginStillPresent = Boolean(document.querySelector('#adminLoginForm, #ownerLoginForm'));
+                  return (legacyControlRoom || ownerOperatingSystem) && !loginStillPresent;
+                }, { timeout: 15000 });
+              } catch (error) {
+                waitError = error;
               }
-              if (await page.$('#adminLoginForm')) {
-                throw new Error('login form still present after successful browser navigation');
+
+              if (waitError) {
+                const cookies = await page.cookies();
+                const safeCookies = cookies.map(({ name, domain, path, secure, httpOnly, sameSite, expires }) => ({
+                  name, domain, path, secure, httpOnly, sameSite, expires,
+                }));
+                const state = await page.evaluate(() => ({
+                  href: location.href,
+                  title: document.title,
+                  hasControlRoom: Boolean(document.querySelector('[data-control-room]')),
+                  hasAdminLoginForm: Boolean(document.querySelector('#adminLoginForm')),
+                  hasOwnerLoginForm: Boolean(document.querySelector('#ownerLoginForm')),
+                  bodyText: (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 500),
+                }));
+                let authProbe = null;
+                try {
+                  authProbe = await page.evaluate(async () => {
+                    const response = await fetch('/v1/admin/auth/me', { credentials: 'include', cache: 'no-store' });
+                    const text = await response.text();
+                    return { status: response.status, body: text.slice(0, 240) };
+                  });
+                } catch (error) {
+                  authProbe = { error: error?.message || String(error) };
+                }
+                console.error('BROWSER_DIAGNOSTIC_STATE', JSON.stringify({ state, authResponses, authProbe, cookies: safeCookies, pageErrors }));
+                throw waitError;
               }
+
               if (pageErrors.length) throw new Error(`page errors: ${pageErrors.join(' | ')}`);
               console.log(`Browser login passed: ${page.url()}`);
               await context.close();

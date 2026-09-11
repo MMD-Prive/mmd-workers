@@ -3,10 +3,24 @@
   const root=document.querySelector('[data-control-room]');
   if(!root)return;
   const $=s=>root.querySelector(s);
+  const $$=s=>Array.from(root.querySelectorAll(s));
   const login=root.dataset.loginRoute||'/internal/admin/login';
-  const paths={auth:'/v1/admin/auth/me',stats:'/v1/admin/stats',metrics:'/v1/admin/metrics'};
-  const healthPaths={admin:'/v1/admin/auth/me',knowledge:'/internal/admin/kenji-knowledge',preview:'/member/kenji-ai-20?mode=admin-preview',studio:'/studio',payments:'/v1/payments/health'};
+  const paths={
+    auth:'/v1/admin/auth/me',
+    stats:'/v1/admin/stats',
+    metrics:'/v1/admin/metrics',
+    modelLinks:'/v1/admin/models/activation-candidates?mode=line-link-claims'
+  };
+  const healthPaths={
+    admin:'/v1/admin/auth/me',
+    'model-link':'/internal/admin/model-link',
+    knowledge:'/internal/admin/kenji?view=knowledge',
+    preview:'/internal/admin/kenji?view=ai20',
+    studio:'/internal/admin/studio',
+    payments:'/v1/payments/health'
+  };
   const set=(s,v)=>{const n=$(s);if(n)n.textContent=v==null?'—':String(v)};
+  const setAll=(s,v)=>{$$(s).forEach(n=>{n.textContent=v==null?'—':String(v)});};
   const pick=(o,keys)=>{for(const k of keys){if(o&&o[k]!=null)return o[k]}return 0};
   const next=()=>encodeURIComponent(location.pathname+location.search);
   const goLogin=()=>location.replace(login+'?next='+next());
@@ -29,7 +43,7 @@
       if(!node)continue;
       try{
         const response=await fetch(path,{method:'HEAD',credentials:'include',redirect:'manual'});
-        const ready=response.ok||response.status===405||response.status===302||response.type==='opaqueredirect';
+        const ready=response.ok||response.status===405||response.status===302||response.status===303||response.type==='opaqueredirect';
         node.textContent=ready?'Ready':'Check';
         node.style.color=ready?'var(--ok)':'var(--warn)';
       }catch(_e){node.textContent='Offline';node.style.color='var(--bad)';}
@@ -41,15 +55,24 @@
     try{
       const auth=await request(paths.auth);
       renderIdentity(auth);
-      const results=await Promise.allSettled([request(paths.stats),request(paths.metrics)]);
+      const results=await Promise.allSettled([
+        request(paths.stats),
+        request(paths.metrics),
+        request(paths.modelLinks)
+      ]);
       const stats=results[0].status==='fulfilled'?results[0].value:{};
       const metrics=results[1].status==='fulfilled'?results[1].value:{};
+      const modelLinks=results[2].status==='fulfilled'?results[2].value:null;
       set('[data-metric="sessions"]',pick(metrics,['sessions_today','today_sessions','sessions'])||pick(stats,['sessions_today','sessions']));
       set('[data-metric="payments"]',pick(metrics,['pending_payments','payments_pending'])||pick(stats,['pending_payments']));
-      set('[data-metric="members"]',pick(metrics,['members_pending','membership_pending'])||pick(stats,['members_pending']));
       set('[data-metric="alerts"]',pick(metrics,['alerts','urgent_count'])||pick(stats,['alerts']));
+      if(modelLinks&&modelLinks.ok===true&&Number.isFinite(Number(modelLinks.count))){
+        setAll('[data-model-link-count]',Number(modelLinks.count));
+      }else{
+        setAll('[data-model-link-count]','—');
+      }
       set('[data-system-state]','พร้อมใช้งาน');
-      set('[data-system-copy]','ข้อมูลหลักพร้อมแล้วครับ เลือกห้องที่ต้องการทำงานต่อได้เลย');
+      set('[data-system-copy]','ข้อมูลหลักพร้อมแล้วครับ รวมถึงคิว MMD MODEL ที่รอ Owner Review');
     }catch(error){
       if(error.message!=='auth'){
         set('[data-system-state]','ข้อมูลยังไม่ครบ');

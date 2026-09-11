@@ -49,6 +49,7 @@ async function handleCreateSessionWithReconfirm(request, env, ctx, downstream) {
 
   const payload = await response.clone().json().catch(() => null);
   if (!payload || payload.ok === false) return response;
+  if (payload.operational_status === "pending_client_link") return response;
 
   const sessionId = clean(payload.session_id || payload.session_ref || payload?.raw?.session_id);
   const jobDate = clean(body.job_date || body?.job_details?.job_date);

@@ -1,0 +1,50 @@
+name: Kenji Seed Runtime Production Smoke
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Deploy member-dashboard-chat-worker
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-smoke:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Prove published Seed Pack selection without LINE delivery
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Cloudflare route matching for the production LINE webhook is exact;
+          # keep the public URL query-free and carry synthetic smoke controls in
+          # internal test-only headers. The Worker converts them to the bounded
+          # synthetic selector only after the route has already matched.
+          safe="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error \
+            -H 'X-MMD-Kenji-Seed-Smoke: 1' \
+            -H 'X-MMD-Kenji-Seed-Intent: mms_wellness' \
+            'https://www.mmdbkk.com/webhooks/line')"
+          node -e '
+            const body = JSON.parse(process.argv[1]);
+            if (body.ok !== true || body.synthetic !== true || body.seed_pack !== "v1") throw new Error("Seed smoke did not enter synthetic V1 mode");
+            if (body.knowledge_id !== "kenji_seed_v1_route_02") throw new Error(`Unexpected MMS Seed card: ${body.knowledge_id}`);
+            if (body.response_mode !== "auto_reply_allowed" || body.auto_reply_eligible !== true) throw new Error("MMS route card is not auto-reply eligible as reviewed");
+            if (body.line_delivery_attempted !== false || body.telemetry_write_attempted !== false) throw new Error("Synthetic smoke attempted a customer-side effect");
+          ' "$safe"
+
+          protected="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error \
+            -H 'X-MMD-Kenji-Seed-Smoke: 1' \
+            -H 'X-MMD-Kenji-Seed-Intent: payment_slip' \
+            'https://www.mmdbkk.com/webhooks/line')"
+          node -e '
+            const body = JSON.parse(process.argv[1]);
+            if (body.ok !== true || body.knowledge_id !== "kenji_seed_v1_payment_01") throw new Error("Payment handoff card was not selected");
+            if (body.response_mode !== "handoff_required" || body.auto_reply_eligible !== false) throw new Error("Payment protection was weakened");
+            if (body.line_delivery_attempted !== false || body.telemetry_write_attempted !== false) throw new Error("Protected synthetic smoke attempted a customer-side effect");
+          ' "$protected"

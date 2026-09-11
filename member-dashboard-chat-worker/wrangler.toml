@@ -1,7 +1,13 @@
 name = "member-dashboard-chat-worker"
-main = "src/my-mmd-bounded-status-front-gate.js"
+main = "src/mms-line-front-gate.js"
 compatibility_date = "2026-07-02"
 workers_dev = false
+
+# MMD Privé Rich Menu runtime. Cloudflare cron is UTC; the handler evaluates
+# Asia/Bangkok and keeps the menu hidden 16:00-23:00, visible otherwise.
+# Hourly reconciliation also self-heals assignments after deploys/state drift.
+[triggers]
+crons = ["0 * * * *"]
 
 [[services]]
 binding = "MEMBER_PAGES_WORKER"
@@ -18,6 +24,13 @@ service = "ai-worker"
 [[services]]
 binding = "MMS_WORKER"
 service = "mms-worker"
+
+# Downstream-only notification path for pending LINE payment evidence. Telegram
+# never becomes payment or entitlement truth; it only alerts the operator after
+# a pending Payment Proof row has been persisted successfully.
+[[services]]
+binding = "TELEGRAM_WORKER"
+service = "telegram-worker"
 
 [[r2_buckets]]
 binding = "LINE_SLIP_EVIDENCE"
@@ -105,6 +118,26 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/male-massage/therapists/api/auth/*"
 zone_name = "mmdbkk.com"
 
+# MY MMS Therapist work app. Browser session cookies never leave mmdbkk.com:
+# app APIs are delegated to mms-worker, while the app page is server-gated by
+# the canonical MY MMS entitlement before anonymous Lovable presentation bytes
+# are republished on the same origin.
+[[routes]]
+pattern = "mmdbkk.com/male-massage/therapists/api/app/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/therapists/api/app/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/male-massage/therapists/app*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/therapists/app*"
+zone_name = "mmdbkk.com"
+
 # Canonical My MMD customer application. Lovable owns presentation; this Worker
 # owns the custom-domain route, strips member credentials before fetching the
 # Lovable app, republishes its assets same-origin, and keeps all behavior on the
@@ -175,8 +208,27 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/webhooks/line/"
 zone_name = "mmdbkk.com"
 
+# MMS LINE OA is isolated from MMD Privé LINE credentials and transport.
+[[routes]]
+pattern = "mmdbkk.com/webhooks/line/mms"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/webhooks/line/mms/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/webhooks/line/mms"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/webhooks/line/mms/"
+zone_name = "mmdbkk.com"
+
 # Cloudflare-only LINE runtime.
-# Bind LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, and INTERNAL_TOKEN as Cloudflare secrets only.
+# Bind LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, INTERNAL_TOKEN,
+# AUTH_SERVICE_LINE_TO_TELEGRAM, MMS_LINE_CHANNEL_ACCESS_TOKEN, and
+# MMS_LINE_CHANNEL_SECRET as Cloudflare secrets only.
 # LINE_WEBHOOK_UPSTREAM_URL is retired and must remain unset.
 #
 # Production intake must stay available during ad campaigns. Keep these
@@ -186,19 +238,37 @@ zone_name = "mmdbkk.com"
 [vars]
 LINE_AUTO_REPLY_ENABLED = "true"
 LINE_KENJI_AI_ENABLED = "true"
+# Canonical Airtable Supplier registry used by the production LINE webhook.
+HIMAI_SUPPLIERS_TABLE_ID = "tbl81bnFyASeXCj9x"
 LINE_KENJI_KNOWLEDGE_ENABLED = "true"
-# Read-only shadow bridge: every accepted LINE webhook is also observed by
+MMS_LINE_AI_ENABLED = "true"
+# Customer continuity is resolved from the canonical Conversation Matrix before
+# a LINE reply is selected. Post-turn write-back updates only bounded state;
+# Memory remains context and protected current truth still comes from its owner.
+KENJI_LINE_CONTINUITY_ENABLED = "true"
+AIRTABLE_TABLE_KENJI_CONVERSATION_MATRIX_ID = "tblS6iRgPjYLBqZJh"
+AIRTABLE_TABLE_CLIENTS_ID = "tblVv58TCbwh5j1fS"
+AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID = "tblNImdF9PKAxhXGi"
+# Read-only shadow bridge: every accepted MMD LINE webhook is also observed by
 # ai-worker through a private Cloudflare service binding. It does not affect
 # the LINE reply path or create any domain truth.
 KENJI_AI_WORKER_BRIDGE_ENABLED = "true"
 # Personal/crew LINE source IDs are never guessed. Populate this only when the
 # bot/OA is actually present in a Crew group/room and the source ID is reviewed.
 KENJI_LINE_CREW_SOURCE_IDS = ""
-# Only the reviewed MMD Privé Team group is eligible for payment-image capture.
-# The real LINE group ID is never committed; comparison is against SHA-256 only.
+# The reviewed MMD Privé Team group remains eligible for payment-image capture.
+# Direct customer images are additionally accepted only when recent payment /
+# renewal context exists, or when a bounded image candidate is immediately
+# followed by payment/access language from the same LINE user.
 LINE_PAYMENT_PROOF_GROUP_HASHES = "7cb8cf05c7e2ec9489d6ec9560de60fade231412f9dd82b89a7e51b58eba996f"
 LINE_SLIP_MAX_IMAGE_BYTES = "10485760"
+LINE_DIRECT_PAYMENT_CANDIDATE_TTL_MINUTES = "30"
+LINE_DIRECT_PAYMENT_CONTEXT_LOOKBACK_HOURS = "48"
 AIRTABLE_TABLE_PAYMENT_PROOFS_ID = "tblfJfM4Sqag9zrLi"
+# Pending proof alert destination. This is notification-only and cannot activate
+# payment, membership, points, booking, or access.
+TELEGRAM_OPS_CHAT_ID = "-1003546439681"
+TELEGRAM_PAYMENT_THREAD_ID = "21"
 # Model generation is a separate, production-gated capability. Keep it off in
 # committed configuration until an explicitly approved deployment enables it.
 LINE_KENJI_MODEL_ENABLED = "false"

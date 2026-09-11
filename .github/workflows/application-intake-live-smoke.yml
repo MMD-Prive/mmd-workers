@@ -1,0 +1,178 @@
+name: Application Intake Live Smoke (MMS + MMD)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/application-intake-live-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Smoke public application pages and production intake
+        shell: bash
+        run: |
+          node <<'NODE'
+          const runId = `${process.env.GITHUB_RUN_ID || Date.now()}-${process.env.GITHUB_RUN_ATTEMPT || "1"}`;
+          const publicOrigin = "https://www.mmdbkk.com";
+          const internalOrigin = "https://www.mmdbkk.com";
+          const failures = [];
+
+          function check(condition, message) {
+            if (!condition) failures.push(message);
+            return Boolean(condition);
+          }
+
+          async function readJson(response) {
+            const text = await response.text();
+            try { return { text, json: JSON.parse(text) }; }
+            catch { return { text, json: null }; }
+          }
+
+          async function checkPage(path, label) {
+            try {
+              const response = await fetch(`${publicOrigin}${path}`, { redirect: "follow" });
+              console.log(`${label} page HTTP:`, response.status, response.url);
+              check(response.ok, `${label} public page failed: HTTP ${response.status}`);
+            } catch (error) {
+              failures.push(`${label} public page request failed: ${error.message}`);
+            }
+          }
+
+          await checkPage("/apply/mms-therapist", "MMS");
+          await checkPage("/apply/public-model", "MMD");
+
+          let mmsId = "";
+          try {
+            const mmsPayload = {
+              idempotency_key: `github-live-smoke-mms-${runId}`,
+              applicant_name: `MMS SMOKE TEST ${runId}`,
+              nickname: "SMOKE",
+              phone: "0990000000",
+              gender_identity: "male",
+              customer_gender_scope: "both",
+              skills: ["aroma_therapy_oil"],
+              experience_years: 0,
+              experience_months: 0,
+              strengths: "PRODUCTION SMOKE TEST ONLY",
+              worked_at_spa_before: false,
+              worked_independently_before: false,
+              current_profession: "Internal production smoke test",
+              qualification_note: "PRODUCTION TEST ONLY - safe synthetic applicant",
+              work_base_area: "Bangkok - PRODUCTION SMOKE TEST",
+              mobility_scope: "local",
+              coverage_area_note: "",
+              general_consent: true,
+              language: "th"
+            };
+
+            const response = await fetch("https://mms-worker.malemodel-bkk.workers.dev/mms/api/applications", {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                "origin": publicOrigin,
+                "x-request-id": `mms-live-smoke-${runId}`
+              },
+              body: JSON.stringify(mmsPayload)
+            });
+            const body = await readJson(response);
+            const redacted = body.json ? { ...body.json, application_token: body.json.application_token ? "[redacted]" : undefined } : null;
+            console.log("MMS Apply HTTP:", response.status);
+            console.log("MMS Apply response:", JSON.stringify(redacted));
+            if (check(response.ok && body.json?.ok === true, `MMS production apply failed: HTTP ${response.status}`)) {
+              check(/^mmsapp_[a-f0-9]{24}$/.test(String(body.json?.application_id || "")), "MMS application_id missing or malformed");
+              check(body.json?.storage?.airtable === "synced", `MMS Airtable sync not green: ${body.json?.storage?.airtable}`);
+              check(body.json?.storage?.telegram === "sent", `MMS HENNA Telegram notification not sent: ${body.json?.storage?.telegram}`);
+              mmsId = String(body.json?.application_id || "");
+              console.log(`MMS LIVE SMOKE application_id=${mmsId}`);
+            }
+          } catch (error) {
+            failures.push(`MMS production apply request failed: ${error.message}`);
+          }
+
+          if (mmsId) {
+            try {
+              const review = `${internalOrigin}/internal/admin/mms?tab=applications&application_id=${encodeURIComponent(mmsId)}`;
+              const response = await fetch(review, { redirect: "manual" });
+              const location = response.headers.get("location") || "";
+              console.log("MMS review HTTP:", response.status, "Location:", location);
+              check([302, 303, 307, 308].includes(response.status), `MMS review gate unexpected HTTP ${response.status}`);
+              const expectedNext = encodeURIComponent(`/internal/admin/mms?tab=applications&application_id=${mmsId}`);
+              check(location.includes(`next=${expectedNext}`), `MMS admin login lost exact application deep link: ${location || "[no location]"}`);
+            } catch (error) {
+              failures.push(`MMS review deep-link request failed: ${error.message}`);
+            }
+          }
+
+          let mmdId = "";
+          try {
+            const mmdPayload = {
+              application_type: "public_model",
+              form_version: "public-model-apply-v8",
+              nickname: `MMD SMOKE TEST ${runId}`,
+              email: `public-model-smoke-${runId}@example.invalid`,
+              consent: true,
+              age: 30,
+              height: 180,
+              location: "Bangkok - PRODUCTION SMOKE TEST",
+              occupation_detail: "MMD internal production smoke test",
+              work_types: ["Public Events"],
+              intro: "PRODUCTION TEST ONLY - verify application and notification flow.",
+              submitted_at: new Date().toISOString(),
+              timezone: "Asia/Bangkok",
+              language: "th"
+            };
+
+            const response = await fetch("https://sigil-worker.malemodel-bkk.workers.dev/v1/public-model/apply", {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                "origin": publicOrigin,
+                "x-mmd-client": "github-live-smoke",
+                "x-request-id": `pma-live-smoke-${runId}`
+              },
+              body: JSON.stringify(mmdPayload)
+            });
+            const body = await readJson(response);
+            console.log("MMD Apply HTTP:", response.status);
+            console.log("MMD Apply response:", JSON.stringify(body.json));
+            if (check(response.ok && body.json?.ok === true, `MMD Public Model production apply failed: HTTP ${response.status}`)) {
+              check(/^pma_[A-Za-z0-9_-]{8,120}$/.test(String(body.json?.application_id || "")), "MMD application_id missing or malformed");
+              mmdId = String(body.json?.application_id || "");
+              console.log(`MMD LIVE SMOKE application_id=${mmdId}`);
+            }
+          } catch (error) {
+            failures.push(`MMD Public Model production apply request failed: ${error.message}`);
+          }
+
+          if (mmdId) {
+            try {
+              const review = `${internalOrigin}/internal/admin/model-applications?application_id=${encodeURIComponent(mmdId)}`;
+              const response = await fetch(review, { redirect: "manual" });
+              const location = response.headers.get("location") || "";
+              console.log("MMD review HTTP:", response.status, "Location:", location);
+              check([200, 302, 303, 307, 308].includes(response.status), `MMD review route unexpected HTTP ${response.status}`);
+            } catch (error) {
+              failures.push(`MMD review deep-link request failed: ${error.message}`);
+            }
+          }
+
+          console.log("APPLICATION LIVE SMOKE RESULT", JSON.stringify({
+            mms_application_id: mmsId || null,
+            mmd_application_id: mmdId || null,
+            failures
+          }));
+
+          if (failures.length) {
+            console.error("Smoke failures:");
+            for (const failure of failures) console.error(`- ${failure}`);
+            process.exit(1);
+          }
+          NODE

@@ -1,0 +1,173 @@
+import { buildKenjiNextActionPolicy } from "../../shared/kenji-customer-memory-v2.mjs";
+
+const ROUTES = Object.freeze({
+  dashboard: "https://mmdbkk.com/member/dashboard",
+  membership: "https://mmdbkk.com/sigil/member/membership",
+  points: "https://mmdbkk.com/my-mmd/points",
+  payments: "https://mmdbkk.com/member/payments",
+});
+
+function text(value) {
+  return value == null ? "" : String(value).trim();
+}
+
+function list(value) {
+  if (Array.isArray(value)) return value.map(text).filter(Boolean);
+  if (!value) return [];
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.map(text).filter(Boolean);
+    } catch (_) {
+      return value.split(",").map(text).filter(Boolean);
+    }
+  }
+  return [];
+}
+
+function relationshipOf(continuity = {}) {
+  return text(
+    continuity?.matrix?.relationship_context ||
+    continuity?.relationship_context ||
+    "unknown",
+  ).toLowerCase() || "unknown";
+}
+
+function identityStatusOf(continuity = {}) {
+  return text(continuity?.client_record_id || continuity?.matrix?.client_record_id)
+    ? "resolved"
+    : "candidate";
+}
+
+function existingActionCue(answer = "") {
+  const value = text(answer);
+  if (!value) return false;
+  if (/https?:\/\//i.test(value)) return true;
+  return /(?:ส่ง(?:วัน|เวลา|โซน|หลักฐาน|รายละเอียด|ข้อมูล)|แจ้ง(?:วัน|เวลา|โซน|รายละเอียด)|บอกผม|พิมพ์\s*[“\"']?|เปิด(?:ตรงนี้|หน้า|my mmd)|กด(?:ตรงนี้|ลิงก์)|เลือก(?:ได้|สิ่ง)|เข้า(?:หน้า|my mmd)|มาได้เลย|ส่งมาได้เลย)/i.test(value);
+}
+
+function noAction(reason = "not_actionable") {
+  return {
+    schema: "mmd.kenji_next_action.v1",
+    type: "none",
+    label: "",
+    route: "",
+    customer_text: "",
+    reason,
+  };
+}
+
+function paymentStatusAction(continuity = {}) {
+  const matrix = continuity?.matrix || {};
+  const stage = text(matrix.conversation_stage || continuity.conversation_stage);
+  const doNotAskAgain = new Set([
+    ...list(matrix.do_not_ask_again),
+    ...list(continuity.do_not_ask_again),
+  ]);
+  const proofAlreadyKnown = stage === "awaiting_payment_verification" || doNotAskAgain.has("payment_proof");
+
+  if (proofAlreadyKnown) {
+    return {
+      schema: "mmd.kenji_next_action.v1",
+      type: "continue_in_chat",
+      label: "ตามรายการเดิม",
+      route: "",
+      customer_text: "ถ้าส่งหลักฐานไว้แล้ว ไม่ต้องส่งซ้ำครับ ถ้าจะให้ผมตามต่อจากรายการเดิม พิมพ์ “มีอัปเดตไหม” ได้เลยครับ",
+      reason: "payment_proof_already_known_continue_existing_thread",
+    };
+  }
+
+  return {
+    schema: "mmd.kenji_next_action.v1",
+    type: "open_action_route",
+    label: "ดูรายการชำระเงิน",
+    route: ROUTES.payments,
+    customer_text: `เปิดรายการชำระเงินตรงนี้ได้เลยครับ → ${ROUTES.payments} หน้านี้จะพาไปขั้นตอนของรายการเดิม ถ้ามี payment ref หรือส่งหลักฐานไว้แล้ว ไม่ต้องสร้างหรือส่งซ้ำครับ`,
+    reason: "payment_status_uses_canonical_member_payments_route",
+  };
+}
+
+export function resolveKenjiNextAction({ intent = "", decision = {}, continuity = {} } = {}) {
+  const value = text(intent || decision.intent).toLowerCase();
+  const policy = buildKenjiNextActionPolicy({
+    relationship_context: relationshipOf(continuity),
+    identity_status: identityStatusOf(continuity),
+  });
+
+  if (!text(decision.text)) return { ...noAction("no_customer_reply"), policy };
+
+  let action = noAction();
+  if (value === "membership_status") {
+    action = {
+      schema: "mmd.kenji_next_action.v1",
+      type: "open_action_route",
+      label: "ดูสถานะและสิทธิ์สมาชิก",
+      route: ROUTES.dashboard,
+      customer_text: `ถ้าจะดูสถานะ ระดับสมาชิก วันหมดอายุ และสิทธิ์ล่าสุด เปิด MY MMD Home ตรงนี้ได้เลยครับ → ${ROUTES.dashboard}`,
+      reason: "membership_status_uses_canonical_member_dashboard",
+    };
+  } else if (value === "points_status") {
+    action = {
+      schema: "mmd.kenji_next_action.v1",
+      type: "open_action_route",
+      label: "ดู Points ล่าสุด",
+      route: ROUTES.points,
+      customer_text: `ถ้าจะดูยอดล่าสุด เปิด My MMD > Points ตรงนี้ได้เลยครับ → ${ROUTES.points}`,
+      reason: "points_status_has_safe_self_service_next_step",
+    };
+  } else if (value === "payment_status") {
+    action = paymentStatusAction(continuity);
+  } else if (value === "payment_dispute") {
+    action = {
+      schema: "mmd.kenji_next_action.v1",
+      type: "handoff_per",
+      label: "ส่งเคสให้ Per ตรวจ",
+      route: "",
+      customer_text: "ส่งวันที่ ยอด และหลักฐานที่เกี่ยวข้องมาได้เลยครับ เดี๋ยวผมส่งให้ Per ตรวจเคสนี้ต่อ",
+      reason: "payment_dispute_requires_owner_review",
+    };
+  } else if (value === "internal_access") {
+    action = {
+      schema: "mmd.kenji_next_action.v1",
+      type: "request_missing_input",
+      label: "ระบุจุดที่เข้าไม่ได้",
+      route: "",
+      customer_text: "บอกชื่อหน้าหรือส่วนที่เข้าไม่ได้มาได้ครับ เดี๋ยวผมพาไปตรวจสิทธิ์ให้ตรงจุด",
+      reason: "internal_access_needs_specific_target",
+    };
+  }
+
+  return { ...action, policy };
+}
+
+export function applyKenjiNextAction(decision = {}, options = {}) {
+  const action = resolveKenjiNextAction({
+    intent: options.intent || decision.intent,
+    decision,
+    continuity: options.continuity || {},
+  });
+  const baseText = text(decision.text);
+  const mayAppend = action.type !== "none" && text(action.customer_text) && !existingActionCue(baseText);
+  const shapedText = mayAppend
+    ? `${baseText}\n\n${text(action.customer_text)}`.slice(0, 1600)
+    : baseText;
+
+  return {
+    ...decision,
+    text: shapedText,
+    next_action: {
+      schema: action.schema,
+      type: action.type,
+      label: action.label,
+      route: action.route,
+      reason: action.reason,
+    },
+    next_action_policy: action.policy,
+    cta_type: action.type,
+    cta_label: action.label,
+    cta_route: action.route,
+    cta_appended: mayAppend,
+  };
+}
+
+export { ROUTES as KENJI_NEXT_ACTION_ROUTES };

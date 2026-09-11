@@ -8,7 +8,8 @@
   const config = {
     apiBase: root.dataset.apiBase || "https://sigil-complaint-worker.malemodel-bkk.workers.dev",
     endpoint: root.dataset.recoveryEndpoint || "/member/api/recovery/complaint-evidence",
-    aftercareUrl: root.dataset.aftercareUrl || "/sigil/aftercare",
+    confirmationDetailsUrl: root.dataset.confirmationDetailsUrl || "https://sigil.mmdbkk.com/v1/confirm/details",
+    aftercareUrl: root.dataset.aftercareUrl || "/aftercare",
     dashboardUrl: root.dataset.dashboardUrl || "/sigil/member/dashboard",
     bookingUrl: root.dataset.bookingUrl || "/sigil/booking"
   };
@@ -44,9 +45,9 @@
     return "";
   }
 
-  function setValue(id, value) {
+  function setValue(id, value, force) {
     const el = $(id);
-    if (el && value) el.value = value;
+    if (el && value && (force || !el.value)) el.value = value;
   }
 
   function buildUrl(base) {
@@ -58,7 +59,15 @@
     return url.pathname + url.search + url.hash;
   }
 
-  function hydrate() {
+  function hydrateLinks() {
+    root.querySelectorAll("[data-srr2-link]").forEach((link) => {
+      const type = link.dataset.srr2Link;
+      const target = type === "aftercare" ? config.aftercareUrl : type === "dashboard" ? config.dashboardUrl : config.bookingUrl;
+      link.href = buildUrl(target);
+    });
+  }
+
+  function hydrateQueryFallback() {
     setValue("#srr2Token", getParam(aliases.token));
     setValue("#srr2SessionId", getParam(aliases.session_id));
     setValue("#srr2Sid", getParam(aliases.sid));
@@ -67,12 +76,35 @@
     setValue("#srr2ModelId", getParam(aliases.model_id));
     setValue("#srr2ClientName", getParam(aliases.client_name));
     setValue("#srr2ModelName", getParam(aliases.model_name));
+    hydrateLinks();
+  }
 
-    root.querySelectorAll("[data-srr2-link]").forEach((link) => {
-      const type = link.dataset.srr2Link;
-      const target = type === "aftercare" ? config.aftercareUrl : type === "dashboard" ? config.dashboardUrl : config.bookingUrl;
-      link.href = buildUrl(target);
-    });
+  async function hydrateSignedContext() {
+    const token = getParam(aliases.token);
+    if (!token) return;
+    try {
+      const response = await fetch(config.confirmationDetailsUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ t: token, expected_role: "customer" }),
+        credentials: "omit"
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok || data.role !== "customer") return;
+
+      setValue("#srr2Token", token, true);
+      setValue("#srr2SessionId", data.session_id, true);
+      setValue("#srr2PaymentRef", data.payment_ref, true);
+      setValue("#srr2ClientName", data.client_name, true);
+      setValue("#srr2ModelName", data.model_name, true);
+      setValue("#srr2CaseDate", data.job_date, true);
+      setValue("#srr2Location", data.location_name, true);
+      const jobId = data.customer_session && data.customer_session.context && data.customer_session.context.job_id;
+      setValue("#srr2JobId", jobId, true);
+      root.dataset.signedSessionContext = "verified";
+    } catch (_) {
+      root.dataset.signedSessionContext = "unavailable";
+    }
   }
 
   function fileExt(file) {
@@ -125,6 +157,7 @@
     fd.set("workflow_status", "new_recovery_report");
     fd.set("next_step", "internal_review");
     fd.set("final_approver", "MMD");
+    fd.set("session_context_source", root.dataset.signedSessionContext === "verified" ? "signed_confirmation_token" : "query_fallback");
     return fd;
   }
 
@@ -165,7 +198,8 @@
       form.reset();
       renderFileList(clientInput, clientFiles);
       renderFileList(modelInput, modelFiles);
-      hydrate();
+      hydrateQueryFallback();
+      await hydrateSignedContext();
     } catch (error) {
       setStatus(error.message || "ส่งไม่สำเร็จ กรุณาตรวจข้อมูลอีกครั้ง", "error");
     } finally {
@@ -185,6 +219,7 @@
   });
 
   form && form.addEventListener("submit", submitRecovery);
-  hydrate();
+  hydrateQueryFallback();
+  hydrateSignedContext();
 })();
 </script>

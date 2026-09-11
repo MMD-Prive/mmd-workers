@@ -8,6 +8,13 @@ on:
       - "payments-worker/reviewed-proof.js"
       - "payments-worker/points-phase1.js"
       - "payments-worker/points-phase1.test.mjs"
+      - "payments-worker/canonical-confirm-link.js"
+      - "payments-worker/canonical-confirm-link.test.mjs"
+      - "payments-worker/confirm-route-canonicalizer.js"
+      - "payments-worker/confirm-route-canonicalizer.test.mjs"
+      - "payments-worker/confirmation-details.js"
+      - "payments-worker/confirmation-details.test.mjs"
+      - "payments-worker/session-finance-write.test.mjs"
       - "payments-worker/wrangler.merged.toml"
       - ".github/workflows/points-phase1-ci.yml"
   workflow_dispatch:
@@ -29,8 +36,17 @@ jobs:
           node --check payments-worker/index.phase1.js
           node --check payments-worker/reviewed-proof.js
           node --check payments-worker/points-phase1.js
+          node --check payments-worker/canonical-confirm-link.js
+          node --check payments-worker/confirm-route-canonicalizer.js
+          node --check payments-worker/confirmation-details.js
       - name: Phase 1 math
         run: node --test payments-worker/points-phase1.test.mjs
+      - name: Canonical confirmation contract
+        run: |
+          node --test payments-worker/canonical-confirm-link.test.mjs
+          node --test payments-worker/confirm-route-canonicalizer.test.mjs
+          node --test payments-worker/confirmation-details.test.mjs
+          node --test payments-worker/session-finance-write.test.mjs
       - name: Production entrypoint contract
         run: grep -F 'main = "index.review-wrapper.js"' payments-worker/wrangler.merged.toml
       - name: Reviewed proof contract

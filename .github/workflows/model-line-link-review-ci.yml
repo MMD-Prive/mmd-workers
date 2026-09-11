@@ -1,0 +1,40 @@
+name: Model LINE Link Review
+
+on:
+  pull_request:
+    paths:
+      - "admin-worker/src/model-line-link-review.js"
+      - "admin-worker/src/model-line-avatar-review.js"
+      - "admin-worker/src/admin-model-line-link-worker.js"
+      - "admin-worker/src/admin-login-hero-worker.js"
+      - "admin-worker/src/admin-login-hero-worker-pre-model-line-link.js"
+      - "admin-worker/src/model-liff-worker.js"
+      - "admin-worker/src/model-liff-manual-review-worker.js"
+      - "admin-worker/src/model-liff-worker-pre-manual-review.js"
+      - "admin-worker/model-line-link-review.test.mjs"
+      - ".github/workflows/model-line-link-review-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Syntax
+        run: |
+          node --check admin-worker/src/model-line-link-review.js
+          node --check admin-worker/src/model-line-avatar-review.js
+          node --check admin-worker/src/admin-model-line-link-worker.js
+          node --check admin-worker/src/model-liff-manual-review-worker.js
+      - name: Contract tests
+        run: node --test admin-worker/model-line-link-review.test.mjs admin-worker/model-dashboard-policy.test.mjs
+      - name: Admin Worker dry run
+        run: npx wrangler deploy --dry-run --config admin-worker/wrangler.toml
