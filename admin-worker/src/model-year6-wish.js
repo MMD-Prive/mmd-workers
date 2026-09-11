@@ -1,4 +1,5 @@
-const PATH = "/v1/model/session/wish";
+const CURRENT_PATH = "/v1/model/session/current";
+const MODE = "year6_wish";
 const COOKIE_NAME = "mmd_model_session_v1";
 const CAMPAIGN_ID = "mmd_year_6_model_wish";
 const TABLE_DEFAULT = "tblvMJjYXy29mgDLb";
@@ -6,12 +7,12 @@ const MAX_WISH = 280;
 const ELIGIBLE_STATES = new Set(["separated", "under_review", "payout_pending", "closed"]);
 const BODY_KEYS = new Set(["wish_text", "language"]);
 
-export const MODEL_YEAR6_WISH_PATH = PATH;
+export const MODEL_YEAR6_WISH_PATH = `${CURRENT_PATH}?mode=${MODE}`;
 export const MODEL_YEAR6_WISH_CAMPAIGN_ID = CAMPAIGN_ID;
 export const MODEL_YEAR6_WISH_MAX_LENGTH = MAX_WISH;
 
-export function isModelYear6WishRequest(path = "") {
-  return normalizePath(path) === PATH;
+export function isModelYear6WishRequest(path = "", mode = "") {
+  return normalizePath(path) === CURRENT_PATH && clean(mode).toLowerCase() === MODE;
 }
 
 export function isModelYear6WishEligibleState(state = "") {
@@ -20,8 +21,9 @@ export function isModelYear6WishEligibleState(state = "") {
 
 export async function handleModelYear6WishRequest(request, env = {}, coreWorker) {
   const method = request.method.toUpperCase();
-  const path = normalizePath(new URL(request.url).pathname);
-  if (path !== PATH) return null;
+  const url = new URL(request.url);
+  const path = normalizePath(url.pathname);
+  if (!isModelYear6WishRequest(path, url.searchParams.get("mode"))) return null;
 
   if (method === "OPTIONS") {
     if (!isAllowedOrigin(request, env)) return json({ ok: false, error: "origin_not_allowed" }, 403, request, env);
@@ -146,7 +148,7 @@ export async function handleModelYear6WishRequest(request, env = {}, coreWorker)
 
 async function readCanonicalSession(request, env, coreWorker) {
   const url = new URL(request.url);
-  url.pathname = "/v1/model/session/current";
+  url.pathname = CURRENT_PATH;
   url.search = "";
   const headers = new Headers(request.headers);
   headers.delete("content-length");
@@ -201,7 +203,7 @@ async function createWish(env, fields) {
 function safeWish(record) {
   const fields = record?.fields || {};
   return {
-    text: clean(fields.wish_text).slice(0, MAX_WISH),
+    wish_text: clean(fields.wish_text).slice(0, MAX_WISH),
     submitted_at: clean(fields.submitted_at) || null,
   };
 }
@@ -236,7 +238,12 @@ async function verifySessionToken(token, env) {
 
 function storageReady(env) { return Boolean(clean(env.AIRTABLE_API_KEY) && clean(env.AIRTABLE_BASE_ID)); }
 function wishTable(env) { return clean(env.AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES || TABLE_DEFAULT); }
-function normalizeLanguage(value) { const v = clean(value).toLowerCase(); return v === "en" || v === "zh" ? v : "th"; }
+function normalizeLanguage(value) {
+  const v = clean(value).toLowerCase();
+  if (v === "en" || v === "english") return "en";
+  if (v === "zh" || v === "chinese") return "zh";
+  return "th";
+}
 function compact(value) { return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined && v !== null && v !== "")); }
 function formulaString(value) { return `'${clean(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`; }
 function normalizePath(pathname) { const path = String(pathname || "/").replace(/\/{2,}/g, "/"); return path.length > 1 ? path.replace(/\/+$/g, "") : path; }
