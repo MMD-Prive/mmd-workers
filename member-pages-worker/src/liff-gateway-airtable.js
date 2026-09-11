@@ -17,6 +17,7 @@ const TABLE_DEFAULTS = Object.freeze({
   HYPE_LANE_DECISIONS: "tblvUnooDYwVsHY91",
   MODEL_SERVICE_AUDIENCE: "tbluxhFpAAu6yY9mp",
   NON_GAY_PACKAGE_RULES: "tble4VuGT9gPsJ2Sh",
+  PACKAGES: "tblg2z8dENx75yHka",
 });
 
 const LIFF_INTENTS = new Set(["signup", "renew", "status", "promo", "hall", "continue_payment", "unknown"]);
@@ -67,6 +68,11 @@ const HYPE_PACKAGE_CONTEXTS = new Set([
   "special_review",
   "unknown",
 ]);
+
+const CORE_MEMBER_PACKAGE_LANES = Object.freeze({
+  standard: "standard_1199",
+  premium: "premium_2999",
+});
 
 const HYPE_ROUTE_TARGETS = new Set([
   "/hall",
@@ -214,6 +220,16 @@ class AirtableLiffGatewayStore {
   async resolvePackage(packageCode) {
     const normalized = normalizePackageCode(packageCode);
     if (!normalized) return null;
+
+    if (Object.prototype.hasOwnProperty.call(CORE_MEMBER_PACKAGE_LANES, normalized)) {
+      const records = await this.list(tableName(this.env, "PACKAGES"), {
+        filterByFormula: `{code}=${formulaString(normalized)}`,
+        maxRecords: 2,
+      });
+      if (records.length !== 1) return null;
+      return sanitizeCoreMemberPackage(records[0]?.fields, normalized);
+    }
+
     const records = await this.list(tableName(this.env, "NON_GAY_PACKAGE_RULES"), {
       filterByFormula: `{package_rule_code}=${formulaString(normalized)}`,
       maxRecords: 2,
@@ -388,6 +404,26 @@ function sanitizeScreenRecord(fields, screenKey) {
   // customer-authoritative output here. The gateway falls back to server-owned
   // screen copy/actions instead.
   return null;
+}
+
+function sanitizeCoreMemberPackage(fields, requestedCode) {
+  if (!fields || typeof fields !== "object") return null;
+  if (normalizePackageCode(fields.code) !== requestedCode) return null;
+  if (!Object.prototype.hasOwnProperty.call(CORE_MEMBER_PACKAGE_LANES, requestedCode)) return null;
+  const tier = String(fields.tier || "").trim().toLowerCase();
+  if (tier !== requestedCode || fields.is_active !== true) return null;
+  if (Object.prototype.hasOwnProperty.call(fields, "require_approval") && typeof fields.require_approval !== "boolean") return null;
+  const amountThb = numberField(fields.price);
+  const durationDays = numberField(fields.duration_days);
+  if (!Number.isInteger(amountThb) || amountThb < 0 || amountThb > 250000 || !Number.isInteger(durationDays) || durationDays < 1 || durationDays > 3660) return null;
+  return {
+    package_code: requestedCode,
+    pricing_lane: CORE_MEMBER_PACKAGE_LANES[requestedCode],
+    amount_thb: amountThb,
+    duration_days: durationDays,
+    points_after_verification: 0,
+    requires_manual_review: fields.require_approval === true,
+  };
 }
 
 function sanitizePackageRecord(fields, requestedCode) {
