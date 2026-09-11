@@ -5,7 +5,8 @@ compatibility_date = "2026-04-11"
 [vars]
 APP_NAME = "Himai Shop"
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
-AIRTABLE_SUPPLIERS_TABLE = "Suppliers"
+AIRTABLE_SUPPLIERS_TABLE = "Shared — Suppliers"
+SHARED_SUPPLIERS_TABLE_ID = "tbl81bnFyASeXCj9x"
 DEFAULT_TIMEZONE = "Asia/Bangkok"
 LINE_OA_HANDLE = "@himaishop"
 LINE_OA_URL = "https://line.me/R/ti/p/@himaishop"
@@ -25,3 +26,4 @@ HIMAI_STOCK_MOVEMENTS_TABLE_ID = "tbl2GMPrDr6sBW997"
 # TELEGRAM_BOT_TOKEN                  - HYPE Telegram bot token used for shop alerts
 # TELEGRAM_MMD_SHOP_ALERTS_CHAT_ID     - Target chat ID for MMD Shop Alerts
 # TELEGRAM_HIMAI_SHOP_ALERTS_CHAT_ID   - Target chat ID for Himai Shop Alerts
+# HIMAI_DISTRIBUTOR_PORTAL_TOKENS         - Distributor portal access map (JSON)

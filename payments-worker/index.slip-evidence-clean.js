@@ -1,7 +1,13 @@
 import baseWorker from "./index.js";
+import {
+  attachSigilPricingToCustomerToken,
+  exposeVerifiedSigilPricing,
+} from "./sigil-job-pricing-token.js";
 
 const API = "https://api.airtable.com/v0";
 const PATH = "/v1/pay/slip/evidence";
+const CONFIRM_LINK_PATH = "/v1/confirm/link";
+const CONFIRM_VERIFY_PATH = "/v1/confirm/verify";
 
 const SELECTS = {
   paymentStatus: "Pending",
@@ -261,6 +267,16 @@ export default {
       if (method === "OPTIONS") return new Response(null, { status: 204, headers: cors(req, env) });
       if (method !== "POST") return methodNotAllowed(req, env);
       return handle(req, env);
+    }
+    if (path === CONFIRM_LINK_PATH && method === "POST") {
+      const requestBody = await req.clone().json().catch(() => ({}));
+      const response = await baseWorker.fetch(req, env, ctx);
+      return attachSigilPricingToCustomerToken(requestBody, response, env);
+    }
+    if (path === CONFIRM_VERIFY_PATH && method === "POST") {
+      const requestBody = await req.clone().json().catch(() => ({}));
+      const response = await baseWorker.fetch(req, env, ctx);
+      return exposeVerifiedSigilPricing(requestBody, response);
     }
     return baseWorker.fetch(req, env, ctx);
   },

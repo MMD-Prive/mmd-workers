@@ -33,9 +33,9 @@ test('MMS admin production assembly emits syntax-valid inline scripts', () => {
   assert.doesNotMatch(html, /pathname\.match\(\/\/mms\/api\/uploads/);
 });
 
-test('MMS admin favicon is self-contained and does not require a cross-host image request', () => {
+test('MMS admin favicon uses canonical internal SIGIL logo', () => {
   const html = productionAssembly();
-  assert.match(html, /<link data-mms-admin-favicon rel="icon" type="image\/svg\+xml" href="data:image\/svg\+xml,/);
+  assert.match(html, /<link data-mms-admin-favicon rel="icon" type="image\/webp" href="https:\/\/cdn\.prod\.website-files\.com\/68f879d546d2f4e2ab186e90\/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo\.webp">/);
   assert.equal((html.match(/data-mms-admin-favicon/g) || []).length, 1);
-  assert.doesNotMatch(html, /https:\/\/www\.mmdbkk\.com\/favicon\.ico/);
+  assert.doesNotMatch(html, /data:image\/svg\+xml/);
 });

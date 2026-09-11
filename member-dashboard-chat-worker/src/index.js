@@ -18,6 +18,7 @@ const LINE_RICH_MENU_API_URL = "https://api.line.me/v2/bot/richmenu";
 const LINE_RICH_MENU_DATA_URL = "https://api-data.line.me/v2/bot/richmenu";
 const LINE_DEFAULT_RICH_MENU_URL = "https://api.line.me/v2/bot/user/all/richmenu";
 const WORKER_NAME = "member-dashboard-chat-worker";
+const DEFAULT_HIMAI_SUPPLIERS_TABLE = "tbl81bnFyASeXCj9x";
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webhook/line", "/webhook/line/"]);
 const MEMBER_LIFF_PREFIX = "/member/api/liff/";
 const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
@@ -228,6 +229,18 @@ function getLineEventText(event = {}) {
   return "";
 }
 
+function matchHimaiSupplierRegistration(text = "") {
+  const raw = asString(text).normalize("NFKC").replace(/\s+/g, " ").trim();
+  const match = raw.match(/^REGISTER\s+HIMAI(?:\s+(.+?))?$/i);
+  if (!match) return null;
+  const supplierName = asString(match[1]).replace(/^[ "'“”‘’]+|["'“”‘’?.!]+$/g, "").trim();
+  return supplierName.length <= 80 ? supplierName : "";
+}
+
+export function extractHimaiSupplierRegistrationName(text = "") {
+  return matchHimaiSupplierRegistration(text) || "";
+}
+
 function getLineEventId(event = {}) {
   return asString(event?.message?.id || event?.webhookEventId || event?.replyToken || `evt_${Date.now()}`);
 }
@@ -302,6 +315,7 @@ export function inferLineIntent(text = "", event = {}) {
     return "line_event";
   }
 
+  if (matchHimaiSupplierRegistration(text) !== null) return "himai_supplier_registration";
   if (extractKenjiModelVerificationEmail(text)) return "model_access_verification";
 
   if (/(human handoff|human agent|คุยกับคน|เจ้าหน้าที่)/i.test(normalized)) return "human_handoff";
@@ -781,9 +795,9 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "payment_slip") {
-    return `${prefix}ส่งหลักฐานเข้ามาได้ครับ: https://mmdbkk.com/confirm/payment-proof
+    return `${prefix}ไปต่อจากรายการชำระของคุณได้ที่นี่ครับ: https://mmdbkk.com/member/payments
 
-เดี๋ยว MMD ตรวจยอดและจับคู่รายการให้ก่อนนะครับ หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request ครับ`;
+ถ้ามีรายการเดิมหรือส่งหลักฐานไว้แล้ว ให้ใช้รายการเดิมและไม่ต้องส่งซ้ำครับ MMD จะตรวจยอด จับคู่รายการ และอัปเดตสถานะอย่างเป็นทางการก่อนครับ หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request ครับ`;
   }
 
   if (intent === "payment_status") {
@@ -1058,6 +1072,107 @@ function getAirtableTable(env = {}) {
 function encodeFormulaValue(value) {
   return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
+
+function getHimaiSuppliersTable(env = {}) {
+  return asString(env.HIMAI_SUPPLIERS_TABLE_ID || env.SHARED_SUPPLIERS_TABLE_ID || DEFAULT_HIMAI_SUPPLIERS_TABLE);
+}
+
+function supplierRegistrationDecision(text = "", guardReason = "", guardBlocked = false) {
+  return {
+    text,
+    fallback: false,
+    reply_source: "supplier_registration",
+    model_attempted: false,
+    model_success: false,
+    model_latency_ms: 0,
+    knowledge_hits: 0,
+    guard_blocked: guardBlocked,
+    guard_reason: guardReason,
+  };
+}
+
+function airtableValues(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => (item && typeof item === "object" ? asString(item.name || item.value) : asString(item))).filter(Boolean);
+  }
+  return value === undefined || value === null ? [] : [asString(value)].filter(Boolean);
+}
+
+function hasHimaiShopScope(value) {
+  const values = airtableValues(value).map((item) => item.toLowerCase());
+  return !values.length || values.includes("himai shop");
+}
+
+async function registerHimaiSupplier(event = {}, env = {}, supplierName = "") {
+  const lineUserId = getLineUserId({ event });
+  if (!supplierName) {
+    return supplierRegistrationDecision("กรุณาพิมพ์ชื่อ Supplier ต่อท้ายคำสั่ง เช่น Register himai ping ครับ", "supplier_name_missing");
+  }
+  if (!lineUserId) {
+    return supplierRegistrationDecision("ไม่สามารถระบุบัญชี LINE นี้ได้ครับ กรุณาส่งข้อความใหม่จากแชตนี้อีกครั้ง", "line_user_missing", true);
+  }
+
+  const apiKey = asString(env.AIRTABLE_API_KEY);
+  const baseId = asString(env.AIRTABLE_BASE_ID);
+  const table = getHimaiSuppliersTable(env);
+  if (!apiKey || !baseId || !table) return supplierRegistrationDecision("", "supplier_registry_unconfigured", true);
+
+  try {
+    const url = new URL("https://api.airtable.com/v0/" + baseId + "/" + encodeURIComponent(table));
+    url.searchParams.set("pageSize", "10");
+    url.searchParams.set("filterByFormula", 'LOWER({Supplier Name})=LOWER("' + encodeFormulaValue(supplierName) + '")');
+    ["Supplier Name", "LINE User ID", "LINE Name", "LINE Status", "Last LINE Linked At", "Brand Scope", "Supplier Status"].forEach((field) => {
+      url.searchParams.append("fields[]", field);
+    });
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: { authorization: "Bearer " + apiKey },
+    });
+    if (!response.ok) return supplierRegistrationDecision("ระบบ Supplier ยังไม่พร้อมเชื่อมต่อครับ กรุณาลองใหม่อีกครั้งหรือติดต่อ MMD", "supplier_registry_lookup_failed", true);
+
+    const payload = await response.json().catch(() => ({}));
+    const records = Array.isArray(payload?.records) ? payload.records : [];
+    if (records.length === 0) return supplierRegistrationDecision("ไม่พบ Supplier ชื่อนี้ในระบบ Himai Shop ครับ กรุณาติดต่อ MMD ให้เพิ่ม Supplier ก่อน", "supplier_not_found", true);
+    if (records.length !== 1) return supplierRegistrationDecision("พบชื่อ Supplier ซ้ำในระบบครับ กรุณาติดต่อ MMD ให้ตรวจสอบก่อนเชื่อมบัญชี", "supplier_name_ambiguous", true);
+
+    const record = records[0];
+    const fields = record?.fields || {};
+    const supplierStatus = asString(fields["Supplier Status"]).toLowerCase();
+    if (supplierStatus && supplierStatus !== "active") return supplierRegistrationDecision("Supplier นี้ยังไม่อยู่ในสถานะใช้งานของ Himai Shop ครับ กรุณาติดต่อ MMD", "supplier_not_active", true);
+    if (!hasHimaiShopScope(fields["Brand Scope"])) return supplierRegistrationDecision("Supplier นี้ไม่ได้อยู่ในขอบเขตของ Himai Shop ครับ กรุณาติดต่อ MMD", "supplier_scope_mismatch", true);
+
+    const existingLineUserId = asString(fields["LINE User ID"]);
+    if (existingLineUserId && existingLineUserId !== lineUserId) {
+      return supplierRegistrationDecision("ไม่สามารถเชื่อม Supplier นี้กับ LINE บัญชีนี้ได้ครับ เพราะมี LINE บัญชีอื่นเชื่อมอยู่แล้ว กรุณาติดต่อ MMD", "supplier_already_linked", true);
+    }
+
+    const profile = await fetchLineProfile(env, lineUserId);
+    const patchResponse = await fetch(
+      "https://api.airtable.com/v0/" + baseId + "/" + encodeURIComponent(table) + "/" + encodeURIComponent(asString(record.id)),
+      {
+        method: "PATCH",
+        headers: {
+          authorization: "Bearer " + apiKey,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          fields: {
+            "LINE User ID": lineUserId,
+            "LINE Name": asString(profile?.displayName),
+            "LINE Status": "Connected",
+            "Last LINE Linked At": new Date().toISOString(),
+          },
+        }),
+      },
+    );
+    if (!patchResponse.ok) return supplierRegistrationDecision("พบ Supplier แล้ว แต่บันทึกการเชื่อมต่อไม่สำเร็จครับ กรุณาลองใหม่อีกครั้ง", "supplier_registry_update_failed", true);
+
+    return supplierRegistrationDecision("เชื่อม Supplier สำเร็จแล้วครับ\nจากนี้ " + (asString(fields["Supplier Name"]) || supplierName) + " จะได้รับรายงานการกระจายสินค้าของ Himai Shop ผ่าน LINE นี้ครับ");
+  } catch (_) {
+    return supplierRegistrationDecision("ระบบ Supplier ยังไม่พร้อมเชื่อมต่อครับ กรุณาลองใหม่อีกครั้งหรือติดต่อ MMD", "supplier_registry_runtime_error", true);
+  }
+}
+
 
 async function findExistingLineEvent(env = {}, eventId = "", inboxId = "", options = {}) {
   const apiKey = asString(env.AIRTABLE_API_KEY);
@@ -1779,16 +1894,24 @@ async function handleLineWebhook(request, env, ctx = null) {
     const lineUserId = getLineUserId({ event });
     const intent = inferLineIntent(text, event);
     const eventMode = asString(event?.mode).toLowerCase() || "unknown";
+    const supplierRegistrationName = matchHimaiSupplierRegistration(text);
+    const isSupplierRegistration = supplierRegistrationName !== null;
     const canGenerateReply = Boolean(autoReplyEnabled && kenjiEnabled && eventMode !== "standby" && getReplyToken(event));
+    const canRegisterSupplier = Boolean(autoReplyEnabled && eventMode !== "standby" && getReplyToken(event));
     const capabilityDecision = decideKenjiCapability({ text, intent });
-    const needsModelPreflight = Boolean(canGenerateReply && !runtimeModelKill && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
+    const needsModelPreflight = Boolean(!isSupplierRegistration && canGenerateReply && !runtimeModelKill && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
     const modelDeadlineAt = needsModelPreflight ? Date.now() + KENJI_TOTAL_DEADLINE_MS : 0;
     const modelPreflight = needsModelPreflight
       ? await claimKenjiModelEvent(env, event)
       : { eligible: true, deduped: false, reason: "", canary_eligible: false, rate_limited: false, quota_window: 0 };
-    const replyDecision = canGenerateReply && !modelPreflight.deduped
-      ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled, modelEligible: modelPreflight.eligible, modelAccessAllowed: !runtimeModelKill, deadlineAt: modelDeadlineAt })
-      : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" };
+    const supplierRegistration = isSupplierRegistration && canRegisterSupplier
+      ? await registerHimaiSupplier(event, env, supplierRegistrationName)
+      : null;
+    const replyDecision = isSupplierRegistration
+      ? (supplierRegistration || { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" })
+      : (canGenerateReply && !modelPreflight.deduped
+        ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled, modelEligible: modelPreflight.eligible, modelAccessAllowed: !runtimeModelKill, deadlineAt: modelDeadlineAt })
+        : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" });
     const replyText = replyDecision.text;
     const shouldReply = Boolean(autoReplyEnabled && eventMode !== "standby" && replyText && getReplyToken(event));
     const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;

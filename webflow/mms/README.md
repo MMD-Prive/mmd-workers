@@ -5,7 +5,7 @@ Repository-backed source for the MMS customer and therapist journeys embedded in
 ## Routes
 
 - `/therapists` — public service directory and entry point.
-- `/member/mms-booking` — authenticated member pre-booking workflow.
+- `/male-massage/member/mms-booking` — authenticated member pre-booking workflow.
 - `/apply/mms-therapist` — public therapist application and private file uploads.
 - `/male-massage/therapists/login` — private Therapist access entry; remains fail-closed until the dedicated MMS Therapist LIFF channel and backend gate are enabled.
 - `/male-massage/therapists/me` — private Therapist profile/settings destination after verified access.

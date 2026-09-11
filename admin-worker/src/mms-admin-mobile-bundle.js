@@ -1,4 +1,5 @@
 const MARKER = "<!-- mms-admin-mobile-bundle:v1 -->";
+const INTERNAL_SIGIL_FAVICON = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo.webp";
 
 const MB_STYLE = `<style id="mmsAdminMbV1Style">
 .mms-mb-topbar,.mms-mb-rail,.mms-mb-swipe-hint{display:none}
@@ -116,7 +117,7 @@ body[data-mms-admin-mb="v1"] .mms-admin .mms-ops-go{font-size:11.5px}
 </style>`;
 
 const MB_UI = `<div class="mms-mb-topbar" id="mmsMbTopbar" aria-label="MMS mobile operations">
-  <div class="mms-mb-title"><small>MMS · MOBILE BUNDLE V1</small><strong id="mmsMbCurrent">ภาพรวม</strong></div>
+  <div class="mms-mb-title"><small>MMS · PARTNER OPERATIONS</small><strong id="mmsMbCurrent">ภาพรวม</strong></div>
   <div class="mms-mb-actions">
     <button class="mms-mb-icon" id="mmsMbRefresh" type="button" aria-label="รีเฟรชข้อมูล">↻</button>
     <button class="mms-mb-icon health" id="mmsMbHealth" type="button" aria-label="ตรวจระบบ MMS">✓</button>
@@ -158,10 +159,16 @@ export function wireMmsAdminMobileBundle(page = "") {
   if (!html || html.includes(MARKER)) return html;
   if (!html.includes("MMS · Internal Operations")) return html;
 
+  html = html.replace("<title>MMS · Internal Operations</title>", "<title>MMS Partner Operations</title>");
+  html = html.replace("MMS · INTERNAL OPERATIONS", "MMS · PARTNER OPERATIONS");
+  html = html.replace("<small>MMS · INTERNAL</small>", "<small>MMS · PARTNER OPS</small>");
+
   if (html.includes("<body>")) html = html.replace("<body>", '<body data-mms-admin-mb="v1">');
   else html = html.replace(/<body\b/, '<body data-mms-admin-mb="v1"');
 
-  const headAddon = '<meta name="theme-color" content="#f3f3ec">' + MB_STYLE;
+  html = html.replace(/<link\b[^>]*\bdata-mms-admin-favicon\b[^>]*>/gi, "");
+  html = html.replace(/<link\b[^>]*\brel=["'](?:shortcut\s+)?icon["'][^>]*>/gi, "");
+  const headAddon = '<link data-mms-admin-favicon rel="icon" type="image/webp" href="' + INTERNAL_SIGIL_FAVICON + '">' + '<meta name="theme-color" content="#f3f3ec">' + MB_STYLE;
   if (html.includes("</head>")) html = html.replace("</head>", headAddon + "</head>");
   else html = headAddon + html;
 

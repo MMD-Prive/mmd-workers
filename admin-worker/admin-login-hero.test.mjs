@@ -26,8 +26,12 @@ test("admin login renders the approved Webflow visual assets and responsive imag
     assert.match(html, new RegExp(asset.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   assert.match(html, /alt="MMD SIGIL Internal Admin"/);
-  assert.match(html, /\.mmd-login21__visual img\{[^}]*object-fit:cover;[^}]*object-position:center;/);
-  assert.match(html, /class="mmd-login21" data-mmd-login21/);
+  assert.match(html, /\.visual:before\{[^}]*center\/cover no-repeat;[^}]*\}/);
+  assert.match(html, /\.visual-logo\{[^}]*object-fit:contain;[^}]*\}/);
+  assert.match(
+    html,
+    /class="mmd-login" data-mmd-login data-mmd-page="admin-login-approved-hero"/,
+  );
   assert.doesNotMatch(html, /placeholder|default[-_ ]hero/i);
 });
 
@@ -130,7 +134,7 @@ test("Kenji CEO control rejects arbitrary service-shaped headers", async () => {
   assert.equal((await response.json()).error, "unauthorized");
 });
 
-test("Kenji CEO control accepts ADMIN_BEARER even when INTERNAL_TOKEN is also configured", async () => {
+test("Kenji CEO control rejects ADMIN_BEARER without a credential-bound admin session", async () => {
   const response = await adminWorker.fetch(
     new Request("https://mmdbkk.com/v1/admin/kenji/control/memory?client_id=rec12345678901234", {
       headers: { Authorization: "Bearer admin-real" },
@@ -138,8 +142,8 @@ test("Kenji CEO control accepts ADMIN_BEARER even when INTERNAL_TOKEN is also co
     { INTERNAL_TOKEN: "internal-real", ADMIN_BEARER: "admin-real" },
     {}
   );
-  assert.equal(response.status, 503);
-  assert.equal((await response.json()).error, "airtable_config_missing");
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).error, "unauthorized");
 });
 
 test("wrangler claims only exact Kenji CEO control routes on apex and www", () => {

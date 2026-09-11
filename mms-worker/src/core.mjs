@@ -30,16 +30,35 @@ const APPLICATION_KEYS = new Set([
   "nickname",
   "phone",
   "line_id",
+  "age",
+  "height_cm",
+  "weight_kg",
+  "home_province",
+  "residence_province",
+  "residence_area",
   "gender_identity",
   "customer_gender_scope",
   "skills",
   "experience_years",
   "experience_months",
   "strengths",
+  "has_massage_experience",
+  "professional_massage_experience",
+  "experience_background",
   "worked_at_spa_before",
   "spa_name",
   "worked_independently_before",
   "independent_social",
+  "partner_present_experience",
+  "work_preference",
+  "languages",
+  "availability_summary",
+  "lead_time_preference",
+  "transport_modes",
+  "preferred_contact",
+  "preferred_contact_time",
+  "workshop_interest",
+  "motivation",
   "current_profession",
   "qualification_note",
   "work_base_area",
@@ -68,6 +87,30 @@ const PREBOOKING_KEYS = new Set([
   "language",
 ]);
 
+const LANGUAGE_CHOICES = Object.freeze({
+  th: "Thai",
+  thai: "Thai",
+  en: "English",
+  english: "English",
+  zh: "Chinese",
+  chinese: "Chinese",
+  other: "Other",
+});
+const AVAILABILITY_CHOICES = Object.freeze({
+  weekday_daytime: "Weekday daytime",
+  weekday_evening: "Weekday evening",
+  weekend_daytime: "Weekend daytime",
+  weekend_evening: "Weekend evening",
+  late_night: "Late night / by arrangement",
+});
+const TRANSPORT_CHOICES = Object.freeze({
+  car: "Car",
+  motorcycle: "Motorcycle",
+  public_transit: "Public transit",
+  ride_hailing: "Taxi / ride-hailing",
+  other: "Other",
+});
+
 export function applicationPayload(input) {
   const body = plainObject(input);
   rejectUnknownKeys(body, APPLICATION_KEYS);
@@ -77,6 +120,12 @@ export function applicationPayload(input) {
   const nickname = text(body.nickname, 80);
   const phone = text(body.phone, 40);
   const lineId = text(body.line_id, 100);
+  const age = integer(body.age, 20, 80, "age");
+  const heightCm = integer(body.height_cm, 120, 230, "height_cm");
+  const weightKg = integer(body.weight_kg, 35, 250, "weight_kg");
+  const homeProvince = text(body.home_province, 120);
+  const residenceProvince = text(body.residence_province, 120);
+  const residenceArea = text(body.residence_area, 180);
   const genderIdentity = normalizeChoice(body.gender_identity, {
     male: "ชาย",
     "ชาย": "ชาย",
@@ -84,11 +133,14 @@ export function applicationPayload(input) {
     "ไม่ประสงค์ระบุ": "ไม่ประสงค์ระบุ",
   });
   const customerGenderScope = normalizeChoice(body.customer_gender_scope, {
-    male: "ผู้ชาย",
-    "ผู้ชาย": "ผู้ชาย",
+    male: "ผู้ชายหรือเพศหลากหลาย",
+    male_or_gender_diverse: "ผู้ชายหรือเพศหลากหลาย",
+    "ผู้ชาย": "ผู้ชายหรือเพศหลากหลาย",
+    "ผู้ชายหรือเพศหลากหลาย": "ผู้ชายหรือเพศหลากหลาย",
     female: "ผู้หญิง",
     "ผู้หญิง": "ผู้หญิง",
     both: "ได้ทั้งคู่",
+    all: "ได้ทั้งคู่",
     "ได้ทั้งคู่": "ได้ทั้งคู่",
   });
   const skills = normalizeCatalogValues(body.skills, SKILL_LOOKUP, 1, 8, "skills");
@@ -110,22 +162,66 @@ export function applicationPayload(input) {
   const coverageAreaNote = text(body.coverage_area_note, 1200);
   const experienceYears = integer(body.experience_years, 0, 60, "experience_years");
   const experienceMonths = integer(body.experience_months, 0, 11, "experience_months");
+  const hasMassageExperience = boolean(body.has_massage_experience);
+  const professionalMassageExperience = boolean(body.professional_massage_experience);
+  const experienceBackground = normalizeChoice(body.experience_background, {
+    no_experience: "No experience",
+    informal_self_taught: "Informal / self-taught",
+    independent_client_work: "Independent client work",
+    spa_closed_venue: "Spa / closed venue",
+  });
   const workedAtSpaBefore = boolean(body.worked_at_spa_before);
   const workedIndependentlyBefore = boolean(body.worked_independently_before);
+  const partnerPresentExperience = boolean(body.partner_present_experience);
+  const workPreference = normalizeChoice(body.work_preference, {
+    mms_mobile_online: "MMS mobile / online",
+    relax_spa_only: "Relax Spa only",
+    both: "Both",
+  });
+  const languages = normalizeArrayChoices(body.languages, LANGUAGE_CHOICES, 1, 4, "languages");
+  const availabilitySummary = normalizeArrayChoices(body.availability_summary, AVAILABILITY_CHOICES, 1, 5, "availability_summary");
+  const transportModes = normalizeArrayChoices(body.transport_modes, TRANSPORT_CHOICES, 1, 5, "transport_modes");
+  const leadTimePreference = normalizeChoice(body.lead_time_preference, {
+    two_hours: "2 hours",
+    four_hours: "4 hours",
+    same_day: "Same day",
+    one_day: "1 day",
+    two_plus_days: "2+ days",
+  });
+  const preferredContact = normalizeChoice(body.preferred_contact, {
+    line: "LINE",
+    phone: "Phone",
+    either: "Either",
+  });
+  const workshopInterest = normalizeChoice(body.workshop_interest, {
+    ready: "Ready for workshop",
+    discuss_first: "Discuss first",
+    assess_first: "Experienced - assess first",
+  });
   const generalConsent = boolean(body.general_consent);
   const sensitiveConsent = boolean(body.sensitive_consent);
   const sexualOrientation = normalizeOrientation(body.sexual_orientation);
+  const recommendedRoute = recommendedApplicantRoute({ experienceBackground, workPreference });
 
   const errors = [];
   if (!idempotencyKey) errors.push("idempotency_key is required");
   if (!applicantName) errors.push("applicant_name is required");
   if (!phone && !lineId) errors.push("phone or line_id is required");
+  if (!residenceProvince) errors.push("residence_province is required");
+  if (!residenceArea) errors.push("residence_area is required");
   if (!genderIdentity) errors.push("gender_identity is required");
   if (!customerGenderScope) errors.push("customer_gender_scope is required");
   if (!currentProfession) errors.push("current_profession is required");
   if (!workBaseArea) errors.push("work_base_area is required");
   if (!mobilityScope) errors.push("mobility_scope is required");
+  if (!experienceBackground) errors.push("experience_background is required");
+  if (!workPreference) errors.push("work_preference is required");
+  if (!leadTimePreference) errors.push("lead_time_preference is required");
+  if (!preferredContact) errors.push("preferred_contact is required");
+  if (!workshopInterest) errors.push("workshop_interest is required");
   if (!generalConsent) errors.push("general_consent is required");
+  if (!hasMassageExperience && experienceBackground !== "No experience") errors.push("experience_background conflicts with has_massage_experience");
+  if (professionalMassageExperience && !hasMassageExperience) errors.push("professional_massage_experience requires has_massage_experience");
   if (workedAtSpaBefore && !text(body.spa_name, 160)) errors.push("spa_name is required when worked_at_spa_before is true");
   if (workedIndependentlyBefore && !text(body.independent_social, 240)) errors.push("independent_social is required when worked_independently_before is true");
   if (sexualOrientation && !sensitiveConsent) errors.push("sensitive_consent is required when sexual_orientation is provided");
@@ -138,16 +234,36 @@ export function applicationPayload(input) {
     nickname,
     phone,
     line_id: lineId,
+    age,
+    height_cm: heightCm,
+    weight_kg: weightKg,
+    home_province: homeProvince,
+    residence_province: residenceProvince,
+    residence_area: residenceArea,
     gender_identity: genderIdentity,
     customer_gender_scope: customerGenderScope,
     skills,
     experience_years: experienceYears,
     experience_months: experienceMonths,
     strengths: text(body.strengths, 3000),
+    has_massage_experience: hasMassageExperience,
+    professional_massage_experience: professionalMassageExperience,
+    experience_background: experienceBackground,
     worked_at_spa_before: workedAtSpaBefore,
     spa_name: workedAtSpaBefore ? text(body.spa_name, 160) : "",
     worked_independently_before: workedIndependentlyBefore,
     independent_social: workedIndependentlyBefore ? text(body.independent_social, 240) : "",
+    partner_present_experience: partnerPresentExperience,
+    work_preference: workPreference,
+    languages,
+    availability_summary: availabilitySummary,
+    lead_time_preference: leadTimePreference,
+    transport_modes: transportModes,
+    preferred_contact: preferredContact,
+    preferred_contact_time: text(body.preferred_contact_time, 160),
+    workshop_interest: workshopInterest,
+    motivation: text(body.motivation, 1200),
+    recommended_route: recommendedRoute,
     current_profession: currentProfession,
     qualification_note: qualificationNote,
     work_base_area: workBaseArea,
@@ -220,7 +336,7 @@ export function normalizeTherapistRecord(record) {
     therapist_id: token(fields["Therapist ID"], 80),
     display_name: text(fields["Display Name"], 120),
     gender_identity: text(fields["Gender Identity"], 40),
-    customer_gender_scope: text(fields["Customer Gender Scope"], 40),
+    customer_gender_scope: text(fields["Customer Gender Scope"], 80),
     verified_skills: normalizeCatalogValuesLoose(fields["Verified Skills"], SKILL_LOOKUP),
     base_zone: normalizeCatalogValueLoose(fields["Base Zone"], ZONE_LOOKUP),
     coverage_zones: normalizeCatalogValuesLoose(fields["Coverage Zones"], ZONE_LOOKUP),
@@ -266,11 +382,29 @@ export function matchTherapists(records, criteria) {
 export function applicationAirtableFields(application, meta) {
   const redacted = {
     application_id: meta.application_id,
+    age: application.age,
+    height_cm: application.height_cm,
+    weight_kg: application.weight_kg,
+    home_province: application.home_province,
+    residence_province: application.residence_province,
+    residence_area: application.residence_area,
     gender_identity: application.gender_identity,
     customer_gender_scope: application.customer_gender_scope,
     skills: application.skills,
     experience_years: application.experience_years,
     experience_months: application.experience_months,
+    has_massage_experience: application.has_massage_experience,
+    professional_massage_experience: application.professional_massage_experience,
+    experience_background: application.experience_background,
+    partner_present_experience: application.partner_present_experience,
+    work_preference: application.work_preference,
+    languages: application.languages,
+    availability_summary: application.availability_summary,
+    lead_time_preference: application.lead_time_preference,
+    transport_modes: application.transport_modes,
+    preferred_contact: application.preferred_contact,
+    workshop_interest: application.workshop_interest,
+    recommended_route: application.recommended_route,
     current_profession: application.current_profession,
     work_base_area: application.work_base_area,
     mobility_scope: application.mobility_scope,
@@ -285,16 +419,36 @@ export function applicationAirtableFields(application, meta) {
     Nickname: application.nickname,
     Phone: application.phone,
     "LINE ID": application.line_id,
+    Age: application.age,
+    "Height Cm": application.height_cm,
+    "Weight Kg": application.weight_kg,
+    "Home Province": application.home_province,
+    "Residence Province": application.residence_province,
+    "Residence Area": application.residence_area,
     "Gender Identity": application.gender_identity,
     "Customer Gender Scope": application.customer_gender_scope,
     "Skills Claimed": application.skills.map(catalogLabel),
     "Experience Years": application.experience_years,
     "Experience Months": application.experience_months,
     Strengths: application.strengths,
+    "Has Massage Experience": application.has_massage_experience,
+    "Professional Massage Experience": application.professional_massage_experience,
+    "Experience Background": application.experience_background,
     "Worked at Spa Before": application.worked_at_spa_before,
     "Spa Name": application.spa_name,
     "Worked Independently Before": application.worked_independently_before,
     "Independent Social": application.independent_social,
+    "Partner Present Experience": application.partner_present_experience,
+    "Work Preference": application.work_preference,
+    Languages: application.languages,
+    "Availability Summary": application.availability_summary,
+    "Lead Time Preference": application.lead_time_preference,
+    "Transport Mode": application.transport_modes,
+    "Preferred Contact": application.preferred_contact,
+    "Preferred Contact Time": application.preferred_contact_time,
+    "Workshop Interest": application.workshop_interest,
+    Motivation: application.motivation,
+    "Recommended Applicant Route": application.recommended_route,
     "Current Profession": application.current_profession,
     "Qualification Note": application.qualification_note,
     "Work Base Area": application.work_base_area,
@@ -311,10 +465,18 @@ export function applicationAirtableFields(application, meta) {
 }
 
 export function applicationTelegramMessage(application, meta) {
+  const applicationId = String(meta?.application_id || "").trim();
+  const reviewUrl = `https://www.mmdbkk.com/internal/admin/mms?tab=applications&application_id=${encodeURIComponent(applicationId)}`;
   return [
     "🔔 MMS มีใบสมัคร Therapist ใหม่",
-    `Reference: ${meta.application_id}`,
-    "เปิด Airtable > MMS Therapist Applications เพื่อตรวจสอบข้อมูล",
+    `Application ID: ${applicationId}`,
+    `${application.nickname || application.applicant_name} · ${application.age} / ${application.height_cm} / ${application.weight_kg}`,
+    `Experience: ${application.experience_background} · Customer: ${application.customer_gender_scope}`,
+    `Area: ${application.residence_province} · ${application.residence_area}`,
+    `Recommended Route: ${application.recommended_route}`,
+    "Status: New / Needs Review",
+    "",
+    `เปิดใบสมัคร: ${reviewUrl}`,
   ].join("\n");
 }
 
@@ -327,7 +489,7 @@ export function sensitiveAirtableFields(application, meta) {
     "Sensitive Data Consent": "Granted",
     "Consent At": meta.submitted_at,
     "Consent Notice Version": application.consent_notice_version || "mms-sensitive-v1",
-    "Collection Purpose": "Internal applicant support only",
+    "Collection Purpose": "Restricted internal applicant review context only; never public and never automated approval/ranking",
     "Customer Visible": false,
     "Booking API Allowed": false,
     "Retention Status": "Active",
@@ -371,7 +533,11 @@ export function uploadRequest(input, limits = {}) {
   const body = plainObject(input);
   const allowed = new Set(["application_ref", "application_token", "kind", "filename", "content_type", "size"]);
   rejectUnknownKeys(body, allowed);
-  const kind = normalizeChoice(body.kind, { profile_photo: "profile_photo", certificate: "certificate" });
+  const kind = normalizeChoice(body.kind, {
+    profile_photo: "profile_photo",
+    additional_photo: "additional_photo",
+    certificate: "certificate",
+  });
   const filename = safeFilename(body.filename);
   const contentType = text(body.content_type, 100).toLowerCase();
   const size = integer(body.size, 1, Number(limits.maxBytes || 10 * 1024 * 1024), "size");
@@ -382,7 +548,7 @@ export function uploadRequest(input, limits = {}) {
   if (!kind) errors.push("kind is invalid");
   if (!filename) errors.push("filename is invalid");
   if (!allowedTypes.has(contentType)) errors.push("content_type is not allowed");
-  if (kind === "profile_photo" && contentType === "application/pdf") errors.push("profile_photo must be an image");
+  if (["profile_photo", "additional_photo"].includes(kind) && contentType === "application/pdf") errors.push(`${kind} must be an image`);
   if (errors.length) throw validationError(errors);
   return {
     application_ref: body.application_ref,
@@ -395,12 +561,13 @@ export function uploadRequest(input, limits = {}) {
 }
 
 export function catalog() {
-  return { skills: MMS_SKILLS, zones: MMS_ZONES, max_selected_skills: 6 };
+  return { skills: MMS_SKILLS, zones: MMS_ZONES, max_selected_skills: 8 };
 }
 
 function acceptsGender(scope, recipient) {
   if (scope === "ได้ทั้งคู่") return true;
-  return (scope === "ผู้ชาย" && recipient === "ผู้ชาย") || (scope === "ผู้หญิง" && recipient === "ผู้หญิง");
+  const maleScope = scope === "ผู้ชาย" || scope === "ผู้ชายหรือเพศหลากหลาย";
+  return (maleScope && recipient === "ผู้ชาย") || (scope === "ผู้หญิง" && recipient === "ผู้หญิง");
 }
 
 function customerSafeTherapist(therapist) {
@@ -436,6 +603,22 @@ function normalizeOrientation(value) {
     prefer_not_to_say: "ไม่ประสงค์ระบุ",
     "ไม่ประสงค์ระบุ": "ไม่ประสงค์ระบุ",
   });
+}
+
+function recommendedApplicantRoute({ experienceBackground, workPreference }) {
+  if (workPreference === "Relax Spa only") return "RELAX_SPA";
+  if (["No experience", "Informal / self-taught"].includes(experienceBackground)) return "WORKSHOP";
+  if (["Independent client work", "Spa / closed venue"].includes(experienceBackground)) return "CALL_AND_MEET";
+  return "REVIEW";
+}
+
+function normalizeArrayChoices(value, choices, min, max, field) {
+  if (!Array.isArray(value)) throw validationError([`${field} must be an array`]);
+  const result = [...new Set(value.map((item) => choices[normalized(item)]).filter(Boolean))];
+  if (result.length < min || result.length > max || result.length !== value.length) {
+    throw validationError([`${field} must contain ${min}-${max} supported unique values`]);
+  }
+  return result;
 }
 
 function normalizeCatalogValues(value, lookup, min, max, field) {

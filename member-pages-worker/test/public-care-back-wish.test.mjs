@@ -4,6 +4,7 @@ import { handleLinkWish, handlePublicWish } from "../src/public-care-back-wish.j
 
 const SECRET = "test-secret-for-care-back-public-wish-0123456789";
 const ORIGIN = "https://mmdbkk.com";
+const IDENTITY = "a".repeat(64);
 
 function request(path, body, cookie = "") {
   return new Request(`${ORIGIN}${path}`, {
@@ -38,17 +39,35 @@ function publicStore() {
       byTokenHash.set(input.linkTokenHash, wish);
       return wish;
     },
-    async linkToClaim(input) {
+    async linkVerified(input) {
       const wish = byTokenHash.get(input.linkTokenHash);
       if (!wish) throw new Error("not found");
-      wish.claim_record_id = input.claimRecordId;
+      wish.claim_record_id = input.claimRecordId || "";
       wish.link_token_hash = input.verifiedCustomerRefHash;
       return wish;
     },
   };
 }
 
-test("public Wish succeeds without LINE session or LIFF secret and grants no benefits", async () => {
+function verifiedCouponStore(expectedIdentity = IDENTITY) {
+  return {
+    async issueOrResume(input) {
+      assert.equal(input.identityHash, expectedIdentity);
+      return {
+        state: "ready",
+        status: "active",
+        code: "ABC234",
+        max_discount_percent: 10,
+        approved_discount_percent: null,
+        activated_at: "2026-09-06T00:00:00.000Z",
+        expires_at: "2026-11-06T00:00:00.000Z",
+        single_use: true,
+      };
+    },
+  };
+}
+
+test("public Wish succeeds without LINE session or LIFF secret and only offers optional coupon verification", async () => {
   const env = { PUBLIC_CARE_BACK_WISH_STORE: publicStore() };
   const response = await handlePublicWish(request("/member/api/care-back/public-wish", {
     wish_text: "สุขสันต์วันเกิด MMD ครับ",
@@ -60,10 +79,13 @@ test("public Wish succeeds without LINE session or LIFF secret and grants no ben
   assert.equal(payload.ok, true);
   assert.equal(payload.state, "completed");
   assert.match(payload.wish_link_token, /^pw_[A-Za-z0-9_-]+$/);
-  assert.equal(payload.benefits.verification_required, true);
+  assert.equal(payload.benefits.verification_required, false);
   assert.equal(payload.benefits.coupon, false);
+  assert.equal(payload.benefits.coupon_after_verification, true);
   assert.equal(payload.benefits.membership_extension, false);
   assert.equal(payload.benefits.points, false);
+  assert.equal(payload.final_display.next_action, "optional_coupon_verification");
+  assert.match(response.headers.get("set-cookie") || "", /mmd_care_back_wish_link=pw_/);
   assert.equal(payload.grants.membership, false);
   assert.equal(payload.grants.points, false);
 });
@@ -131,11 +153,12 @@ test("Airtable public Wish uses the existing member_page source choice with stri
   }
 });
 
-test("verified LIFF session can link an existing public Wish and start benefit evaluation", async () => {
+test("verified LIFF member links an existing public Wish, receives coupon, and keeps member benefits separate", async () => {
   const store = publicStore();
   const env = {
     LIFF_SESSION_SECRET: SECRET,
     PUBLIC_CARE_BACK_WISH_STORE: store,
+    VERIFIED_WISH_COUPON_STORE: verifiedCouponStore(),
     CARE_BACK_STORE: {
       async openOrResume(input) {
         assert.equal(input.wishSubmitted, true);
@@ -165,7 +188,7 @@ test("verified LIFF session can link an existing public Wish and start benefit e
     expires_at: Date.now() + 60_000,
     member_exists: true,
     member_id: "mem_001",
-    identity_key: "identity_hash_001",
+    identity_key: IDENTITY,
     member_profile: { membership_status: "active" },
     campaign_claim_id: "careback001",
     campaign_claim_record_id: "recABCDEFGHIJKLMN",
@@ -185,9 +208,57 @@ test("verified LIFF session can link an existing public Wish and start benefit e
   assert.equal(payload.ok, true);
   assert.equal(payload.linked, true);
   assert.equal(payload.benefits.verification_required, false);
-  assert.equal(payload.benefits.evaluation_started, true);
+  assert.equal(payload.benefits.coupon, true);
+  assert.equal(payload.benefits.membership_evaluation_started, true);
+  assert.equal(payload.coupon.state, "ready");
+  assert.equal(payload.coupon.code, "ABC234");
+  assert.equal(payload.coupon.max_discount_percent, 10);
+  assert.equal(payload.coupon.approved_discount_percent, null);
   assert.equal(payload.claim.wish_submitted, true);
+  assert.match(response.headers.get("set-cookie") || "", /mmd_care_back_wish_link=; Max-Age=0/);
   assert.equal(payload.grants.points, false);
+});
+
+test("verified LIFF non-member also receives the Wish coupon without a member claim", async () => {
+  const store = publicStore();
+  const env = {
+    LIFF_SESSION_SECRET: SECRET,
+    PUBLIC_CARE_BACK_WISH_STORE: store,
+    VERIFIED_WISH_COUPON_STORE: verifiedCouponStore(),
+  };
+  const publicResponse = await handlePublicWish(request("/member/api/care-back/public-wish", {
+    wish_text: "สุขสันต์วันเกิดครับ",
+    request_id: "wish-public-new-line-0001",
+  }), env);
+  const publicPayload = await publicResponse.json();
+
+  const token = "session-token-new-0123456789abcdef";
+  const hash = await keyedDigest(`session:${token}`);
+  env.LIFF_IDENTITY_KV = {
+    async get(key, mode) {
+      assert.equal(mode, "json");
+      if (key !== `liff:session:${hash}`) return null;
+      return {
+        expires_at: Date.now() + 60_000,
+        member_exists: false,
+        member_id: null,
+        identity_key: IDENTITY,
+        pending_identity_id: "pending_001",
+      };
+    },
+  };
+
+  const response = await handleLinkWish(request("/member/api/care-back/link-wish", {
+    wish_link_token: publicPayload.wish_link_token,
+  }, `__Host-mmd_liff_session=${token}`), env);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.ok, true);
+  assert.equal(payload.linked, true);
+  assert.equal(payload.benefits.coupon, true);
+  assert.equal(payload.benefits.membership_evaluation_started, false);
+  assert.equal(payload.coupon.state, "ready");
+  assert.equal(payload.claim, null);
 });
 
 async function keyedDigest(value) {

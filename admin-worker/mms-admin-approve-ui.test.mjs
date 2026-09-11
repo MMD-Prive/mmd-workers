@@ -14,6 +14,7 @@ import { renderMmsAdminPage } from './src/mms-admin-page.js';
 
 const runtimeSource = readFileSync(new URL('./src/mms-admin-runtime.js', import.meta.url), 'utf8');
 const loginWrapperSource = readFileSync(new URL('./src/admin-login-hero-worker.js', import.meta.url), 'utf8');
+const loginCoreSource = readFileSync(new URL('./src/admin-login-hero-worker-core.js', import.meta.url), 'utf8');
 
 test('MMS admin exposes the real approve action for therapist applications', () => {
   const source = renderMmsAdminPage();
@@ -61,17 +62,20 @@ test('system check proves backend read paths without mutating bookings or therap
 });
 
 test('MMS browser page participates in the credential-bound admin session gate', () => {
-  const gateStart = loginWrapperSource.indexOf('function isCredentialBoundAdminPath(path)');
-  const gateEnd = loginWrapperSource.indexOf('async function hasValidServiceAuth', gateStart);
-  assert.ok(gateStart >= 0 && gateEnd > gateStart);
-  const gateSource = loginWrapperSource.slice(gateStart, gateEnd);
-  assert.match(gateSource, /path === "\/internal\/admin\/mms"/);
+  assert.match(loginWrapperSource, /coreWorker\.fetch\(request, env, ctx\)/);
 
-  const redirectStart = loginWrapperSource.indexOf('const session = await readCredentialBoundAdminSession');
-  const redirectEnd = loginWrapperSource.indexOf('const bypass = clean', redirectStart);
-  assert.ok(redirectStart >= 0 && redirectEnd > redirectStart);
-  const redirectSource = loginWrapperSource.slice(redirectStart, redirectEnd);
-  assert.match(redirectSource, /path === "\/internal\/admin\/mms"/);
+  const gateStart = loginCoreSource.indexOf('async function applyCredentialBoundAdminGate');
+  const gateEnd = loginCoreSource.indexOf('function isGateBypassedAdminPath', gateStart);
+  assert.ok(gateStart >= 0 && gateEnd > gateStart);
+  const gateSource = loginCoreSource.slice(gateStart, gateEnd);
+  assert.match(gateSource, /isBrowserAdminPath\(path\)/);
+  assert.match(gateSource, /credential-required/);
+
+  const pathStart = loginCoreSource.indexOf('function isBrowserAdminPath');
+  const pathEnd = loginCoreSource.indexOf('function isApiAdminPath', pathStart);
+  assert.ok(pathStart >= 0 && pathEnd > pathStart);
+  const pathSource = loginCoreSource.slice(pathStart, pathEnd);
+  assert.match(pathSource, /path\.startsWith\("\/internal\/admin"\)/);
 });
 
 test('approve wiring is idempotent and preserves ordinary application save behavior', () => {

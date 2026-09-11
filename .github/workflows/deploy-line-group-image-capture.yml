@@ -1,0 +1,80 @@
+name: Deploy LINE group image capture
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "member-dashboard-chat-worker/**"
+      - ".github/workflows/deploy-line-group-image-capture.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-member-dashboard-chat-worker-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ensure-storage-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      NO_COLOR: "1"
+      R2_BUCKET: "mmd-line-slip-evidence"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate LINE image capture code
+        run: |
+          node --check member-dashboard-chat-worker/src/line-group-ingress-front-gate.js
+          node --check member-dashboard-chat-worker/src/front-gate-index.js
+          node --check member-dashboard-chat-worker/src/index.js
+          node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/line-payment-proof-ingress.test.mjs
+          npm run test:member-dashboard-line
+
+      - name: Ensure private LINE slip evidence bucket
+        shell: bash
+        run: |
+          set -euo pipefail
+          create_log="$RUNNER_TEMP/r2-bucket-create.log"
+          if npx --yes wrangler@4 r2 bucket create "${R2_BUCKET}" >"$create_log" 2>&1; then
+            cat "$create_log"
+            echo "Created R2 bucket: ${R2_BUCKET}"
+          elif grep -Eqi 'already exists|already been taken|already owned|10004' "$create_log"; then
+            cat "$create_log"
+            echo "R2 bucket already exists: ${R2_BUCKET}"
+          else
+            cat "$create_log" >&2
+            exit 1
+          fi
+
+      - name: Deploy member-dashboard-chat-worker
+        working-directory: member-dashboard-chat-worker
+        run: npx --yes wrangler@4 deploy --keep-vars
+
+      - name: Smoke production LINE owner
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error https://www.mmdbkk.com/webhooks/line)"
+          node -e '
+            const body=JSON.parse(process.argv[1]);
+            if(body.ok!==true || body.worker!=="member-dashboard-chat-worker" || body.route!=="line_webhook") {
+              throw new Error(`Unexpected production response: ${process.argv[1]}`);
+            }
+          ' "$response"

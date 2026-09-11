@@ -32,6 +32,13 @@ id = "12f4c4e7357d4019b5e0951be0b984f5"
 binding = "MEMBER_STATUS_RESOLVER"
 service = "mmd-auth-worker"
 
+# Non-granting payment-intent bridge. member-pages-worker may create/reuse a
+# canonical pending payment_ref and receive the signed /sigil/pay handoff only;
+# Official Verify/payments-worker remains the authority for paid/verified state.
+[[services]]
+binding = "PAYMENTS_WORKER"
+service = "payments-worker"
+
 [[services]]
 binding = "MMS_WORKER"
 service = "mms-worker"
@@ -56,6 +63,7 @@ new_sqlite_classes = ["CareBackBirthdayWishCoordinator"]
 # - secret LIFF_SESSION_SECRET
 # - secret MEMBER_STATUS_RESOLVER_SECRET (same value in mmd-auth-worker)
 # - service binding MEMBER_STATUS_RESOLVER -> mmd-auth-worker
+# - service binding PAYMENTS_WORKER -> payments-worker (pending intent + signed /sigil/pay only; no grant authority)
 # - service binding SIGIL_BOOKING_WORKER -> sigil-booking-worker
 # - secret AIRTABLE_API_KEY
 # - var AIRTABLE_BASE_ID = appsV1ILPRfIjkaYg

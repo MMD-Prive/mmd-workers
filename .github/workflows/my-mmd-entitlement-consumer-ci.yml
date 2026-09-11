@@ -3,6 +3,7 @@ name: My MMD Entitlement Consumer CI
 on:
   pull_request:
     paths:
+      - "auth-worker/src/my-mmd-line-identity-bridge.js"
       - "auth-worker/src/my-mmd-runtime-index.js"
       - "auth-worker/src/member-entitlement-resolver.js"
       - "auth-worker/src/member-downstream-access-reconciler.js"
@@ -33,9 +34,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - name: Syntax
         run: |
+          node --check auth-worker/src/my-mmd-line-identity-bridge.js
           node --check auth-worker/src/my-mmd-runtime-index.js
           node --check auth-worker/src/member-entitlement-resolver.js
           node --check auth-worker/src/member-downstream-access-reconciler.js
@@ -53,7 +55,8 @@ jobs:
           node --test auth-worker/test/member-lifecycle-reconciliation.test.mjs
       - name: Wrangler entrypoint contract
         run: |
-          grep -F 'main = "src/my-mmd-runtime-index.js"' auth-worker/wrangler.toml
+          grep -F 'main = "src/my-mmd-line-identity-bridge.js"' auth-worker/wrangler.toml
+          grep -F 'import currentWorker from "./my-mmd-runtime-index.js"' auth-worker/src/my-mmd-line-identity-bridge.js
           grep -F 'crons = ["7 * * * *"]' auth-worker/wrangler.toml
           grep -F 'LIFECYCLE_RECONCILIATION_ENABLED = "true"' auth-worker/wrangler.toml
           grep -F 'main = "src/access-runtime.js"' telegram-worker/wrangler.toml

@@ -1,7 +1,15 @@
 import { PUBLIC_JSON_BODY_MAX_BYTES, readBoundedJsonObject } from "./bounded-json.js";
-import { getCareBackStore } from "./care-back-claim-store.js";
+import { addCalendarMonths, deriveClaimAndCode, getCareBackStore } from "./care-back-claim-store.js";
 
 const CAMPAIGN_ID = "care_back";
+const CARE_BACK_CAMPAIGN_ID = "6-years-care-back";
+const CARE_BACK_CAMPAIGN_NAME = "6 YEARS CARE BACK";
+const CARE_BACK_LANDING_PATH = "/promotion/6-years-care-back";
+const VERIFIED_COUPON_TABLE_DEFAULT = "MMD — Promo Codes";
+const VERIFIED_COUPON_MAX_DISCOUNT_PERCENT = 10;
+const VERIFIED_COUPON_VALIDITY_MONTHS = 2;
+const PENDING_WISH_COOKIE = "mmd_care_back_wish_link";
+const PENDING_WISH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const MAX_WISH = 600;
 const PUBLIC_WISH_PATHS = new Set([
@@ -76,15 +84,21 @@ export async function handlePublicWish(request, env = {}) {
       state: "completed",
       wish: { text: wish.wish_text, option: wish.wish_option, submitted_at: wish.submitted_at },
       wish_link_token: linkToken,
-      benefits: { verification_required: true, coupon: false, membership_extension: false, points: false },
+      benefits: {
+        verification_required: false,
+        coupon: false,
+        coupon_after_verification: true,
+        membership_extension: false,
+        points: false,
+      },
       final_display: {
         message: input.language === "en"
-          ? "MMD has received your wish. LINE verification is only needed for CARE BACK benefits."
-          : "MMD ได้รับคำอวยพรของคุณแล้วครับ การยืนยัน LINE ใช้เฉพาะสำหรับคูปอง วันสมาชิก และ Points",
-        next_action: "optional_benefit_verification",
+          ? "MMD has received your wish. You can stop here, or verify LINE to receive your personal discount coupon."
+          : "MMD ได้รับคำอวยพรของคุณแล้วครับ จบตรงนี้ได้เลย หรือยืนยัน LINE ต่อเพื่อรับคูปองส่วนลดส่วนตัวครับ",
+        next_action: "optional_coupon_verification",
       },
       grants: noGrants(),
-    }, 200);
+    }, 200, { "set-cookie": pendingWishCookie(linkToken) });
   } catch (error) {
     return publicWishStorageError(error);
   }
@@ -105,43 +119,67 @@ export async function handleLinkWish(request, env = {}) {
   const session = await authenticateSession(request, env);
   if (!session.ok) return session.response;
   const data = session.session;
-  if (!data.member_exists || !data.member_id || !data.identity_key) {
-    return json({ ok: false, error: { code: "CARE_BACK_MEMBER_REQUIRED", message: "Verified member identity is required for CARE BACK benefits." } }, 409);
-  }
-  const claimRecordId = validAirtableRecordId(data.campaign_claim_record_id);
-  const claimId = exactToken(data.campaign_claim_id, 80);
-  if (!claimId || !claimRecordId) {
-    return json({ ok: false, error: { code: "CARE_BACK_CLAIM_REQUIRED", message: "CARE BACK claim verification must finish before benefits can be linked." } }, 409);
+  if (!data.identity_key) {
+    return json({ ok: false, error: { code: "CARE_BACK_IDENTITY_REQUIRED", message: "Verified LINE identity is required for the personal coupon." } }, 409);
   }
 
   const store = getPublicWishStore(env);
-  const careBackStore = getCareBackStore(env);
-  if (!store || !careBackStore) return unavailable("CARE_BACK_STORAGE_NOT_CONFIGURED");
+  const couponStore = getVerifiedWishCouponStore(env);
+  if (!store || !couponStore) return unavailable("CARE_BACK_STORAGE_NOT_CONFIGURED");
+
+  const claimRecordId = validAirtableRecordId(data.campaign_claim_record_id);
+  const claimId = exactToken(data.campaign_claim_id, 80);
+  const hasCanonicalClaim = Boolean(data.member_exists && data.member_id && claimId && claimRecordId);
   const linkTokenHash = await publicDigest(`public-wish-link:${linkToken}`);
   const verifiedCustomerRefHash = await keyedDigest(env, `wish-customer:${data.identity_key}`);
+
   try {
-    const wish = await store.linkToClaim({
+    const wish = await store.linkVerified({
       linkTokenHash,
-      claimId,
-      claimRecordId,
+      claimId: hasCanonicalClaim ? claimId : "",
+      claimRecordId: hasCanonicalClaim ? claimRecordId : "",
       verifiedCustomerRefHash,
       now: new Date().toISOString(),
     });
-    const claim = await careBackStore.openOrResume({
+
+    let claim = null;
+    const careBackStore = hasCanonicalClaim ? getCareBackStore(env) : null;
+    if (careBackStore) {
+      try {
+        claim = await careBackStore.openOrResume({
+          identityHash: data.identity_key,
+          memberId: data.member_id,
+          memberProfile: data.member_profile,
+          wishSubmitted: true,
+        });
+      } catch {
+        // Membership days / Points remain a separate evaluation and must never
+        // block the verified-Wish coupon path.
+        claim = null;
+      }
+    }
+
+    const coupon = await couponStore.issueOrResume({
       identityHash: data.identity_key,
-      memberId: data.member_id,
-      memberProfile: data.member_profile,
-      wishSubmitted: true,
+      now: new Date(),
     });
+
     return json({
       ok: true,
       linked: true,
       state: "completed",
       wish: { text: wish.wish_text, submitted_at: wish.submitted_at },
-      benefits: { verification_required: false, evaluation_started: true },
-      claim: safeClaimSummary(claim),
+      benefits: {
+        verification_required: false,
+        coupon: coupon.state === "ready",
+        coupon_state: coupon.state,
+        membership_evaluation_started: Boolean(claim),
+        points_evaluation_started: Boolean(claim),
+      },
+      coupon,
+      claim: claim ? safeClaimSummary(claim) : null,
       grants: noGrants(),
-    }, 200);
+    }, 200, { "set-cookie": clearPendingWishCookie() });
   } catch (error) {
     return publicWishStorageError(error);
   }
@@ -150,9 +188,17 @@ export async function handleLinkWish(request, env = {}) {
 function getPublicWishStore(env) {
   if (env.PUBLIC_CARE_BACK_WISH_STORE
     && typeof env.PUBLIC_CARE_BACK_WISH_STORE.createOrLoad === "function"
-    && typeof env.PUBLIC_CARE_BACK_WISH_STORE.linkToClaim === "function") return env.PUBLIC_CARE_BACK_WISH_STORE;
+    && typeof env.PUBLIC_CARE_BACK_WISH_STORE.linkVerified === "function") return env.PUBLIC_CARE_BACK_WISH_STORE;
   if (!String(env.AIRTABLE_API_KEY || "").trim() || !String(env.AIRTABLE_BASE_ID || "").trim()) return null;
   return new AirtablePublicWishStore(env);
+}
+
+function getVerifiedWishCouponStore(env) {
+  if (env.VERIFIED_WISH_COUPON_STORE && typeof env.VERIFIED_WISH_COUPON_STORE.issueOrResume === "function") {
+    return env.VERIFIED_WISH_COUPON_STORE;
+  }
+  if (!String(env.AIRTABLE_API_KEY || "").trim() || !String(env.AIRTABLE_BASE_ID || "").trim()) return null;
+  return new AirtableVerifiedWishCouponStore(env);
 }
 
 class AirtablePublicWishStore {
@@ -176,27 +222,36 @@ class AirtablePublicWishStore {
       source: "member_page",
       source_path: "/promotion/6-years-care-back/wish",
       language: input.language,
-      display_version: "care_back_public_v1",
-      payload_json: JSON.stringify({ schema_version: 2, campaign_id: CAMPAIGN_ID, wish_kind: "public_unlinked" }),
+      display_version: "care_back_public_v2",
+      payload_json: JSON.stringify({ schema_version: 3, campaign_id: CAMPAIGN_ID, wish_kind: "public_unlinked" }),
       created_at: input.now,
       updated_at: input.now,
     };
     return sanitizePublicWish(await this.write("POST", { body: { fields: compactFields(fields), typecast: false } }));
   }
 
-  async linkToClaim(input) {
+  async linkVerified(input) {
     const wish = await this.findByLinkTokenHash(input.linkTokenHash);
     if (!wish) throw new PublicWishError("PUBLIC_WISH_NOT_FOUND");
-    if (wish.claim_record_id && wish.claim_record_id !== input.claimRecordId) throw new PublicWishError("PUBLIC_WISH_ALREADY_LINKED_CONFLICT");
+    if (wish.claim_record_id && input.claimRecordId && wish.claim_record_id !== input.claimRecordId) {
+      throw new PublicWishError("PUBLIC_WISH_ALREADY_LINKED_CONFLICT");
+    }
+    const linkedClaim = input.claimRecordId ? { "Campaign Claim": [input.claimRecordId] } : {};
     const record = await this.write("PATCH", {
       recordId: wish.record_id,
       body: { fields: {
-        "Campaign Claim": [input.claimRecordId],
+        ...linkedClaim,
         verified_customer_ref_hash: input.verifiedCustomerRefHash,
         source: "line_liff",
         source_path: "/member/liff",
-        display_version: "care_back_v1",
-        payload_json: JSON.stringify({ schema_version: 2, campaign_id: CAMPAIGN_ID, claim_id: input.claimId, wish_kind: "verified_linked" }),
+        display_version: "care_back_verified_wish_v2",
+        payload_json: JSON.stringify({
+          schema_version: 3,
+          campaign_id: CAMPAIGN_ID,
+          claim_id: input.claimId || undefined,
+          wish_kind: "verified_identity_linked",
+          coupon_policy: "verified_identity",
+        }),
         updated_at: input.now,
       }, typecast: false },
     });
@@ -233,6 +288,108 @@ class AirtablePublicWishStore {
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || typeof payload !== "object") throw new PublicWishError("PUBLIC_WISH_STORAGE_UNAVAILABLE");
     return payload;
+  }
+}
+
+class AirtableVerifiedWishCouponStore {
+  constructor(env) { this.env = env; }
+
+  async issueOrResume({ identityHash, now = new Date() }) {
+    const secret = String(this.env.CARE_BACK_CODE_SECRET || this.env.LIFF_SESSION_SECRET || "");
+    if (secret.length < 32) throw new PublicWishError("CARE_BACK_CODE_SECRET_MISSING");
+    const clock = validClock(now);
+    const derived = await deriveClaimAndCode(identityHash, secret);
+    const records = await this.list(`{code}=${formulaString(derived.code)}`, 2);
+    if (records.length > 1) throw new PublicWishError("CARE_BACK_CODE_CONFLICT");
+
+    let record = records[0] || null;
+    if (record) this.assertOwnership(record, derived.claimId);
+    const fields = record?.fields || {};
+    const status = safeCouponStatus(fields.status);
+    const existingExpiry = safeTimestamp(fields.expires_at);
+    const terminal = ["used", "revoked", "invalid"].includes(status)
+      ? status
+      : status === "expired" || (existingExpiry && Date.parse(existingExpiry) <= clock.getTime())
+        ? "expired"
+        : "";
+
+    if (terminal) return verifiedCoupon(record, terminal, derived.code);
+
+    const activatedAt = safeTimestamp(fields.activated_at) || clock.toISOString();
+    const expiresAt = safeTimestamp(fields.expires_at) || addCalendarMonths(activatedAt, VERIFIED_COUPON_VALIDITY_MONTHS);
+    const payload = {
+      ...safeObjectJson(fields.payload_json),
+      schema_version: 4,
+      claim_id: derived.claimId,
+      policy_state: "ready",
+      wish_submitted: true,
+      coupon_policy: {
+        source: "verified_public_wish",
+        max_discount_percent: VERIFIED_COUPON_MAX_DISCOUNT_PERCENT,
+        validity_calendar_months: VERIFIED_COUPON_VALIDITY_MONTHS,
+        exact_discount: "booking_context",
+      },
+    };
+    const desired = compactFields({
+      code: derived.code,
+      campaign_code: CARE_BACK_CAMPAIGN_ID,
+      campaign_name: CARE_BACK_CAMPAIGN_NAME,
+      issued_channel: "line",
+      landing_path: CARE_BACK_LANDING_PATH,
+      status: "active",
+      activated_at: activatedAt,
+      expires_at: expiresAt,
+      max_uses: 1,
+      used_count: Number.isInteger(Number(fields.used_count)) ? Number(fields.used_count) : 0,
+      package_scope: Array.isArray(fields.package_scope) && fields.package_scope.length ? fields.package_scope : ["all"],
+      benefit_type: "discount_percent",
+      created_by: fields.created_by || "member-pages-worker",
+      created_at: safeTimestamp(fields.created_at) || clock.toISOString(),
+      payload_json: JSON.stringify(payload),
+    });
+
+    record = record
+      ? await this.write("PATCH", record.id, desired)
+      : await this.write("POST", "", desired);
+    return verifiedCoupon(record, "ready", derived.code);
+  }
+
+  assertOwnership(record, claimId) {
+    const fields = record?.fields || {};
+    const payload = safeObjectJson(fields.payload_json);
+    if (String(fields.campaign_code || "") !== CARE_BACK_CAMPAIGN_ID || String(payload.claim_id || "") !== claimId) {
+      throw new PublicWishError("CARE_BACK_CODE_CONFLICT");
+    }
+  }
+
+  async list(filterByFormula, maxRecords) {
+    const table = String(this.env.AIRTABLE_TABLE_CARE_BACK_PROMO_CODES || VERIFIED_COUPON_TABLE_DEFAULT).trim();
+    const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(String(this.env.AIRTABLE_BASE_ID))}/${encodeURIComponent(table)}`);
+    url.searchParams.set("filterByFormula", filterByFormula);
+    url.searchParams.set("maxRecords", String(maxRecords));
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${this.env.AIRTABLE_API_KEY}` } });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload || !Array.isArray(payload.records)) throw new PublicWishError("CARE_BACK_COUPON_STORAGE_UNAVAILABLE");
+    return payload.records;
+  }
+
+  async write(method, recordId, fields) {
+    const table = String(this.env.AIRTABLE_TABLE_CARE_BACK_PROMO_CODES || VERIFIED_COUPON_TABLE_DEFAULT).trim();
+    const suffix = recordId ? `/${encodeURIComponent(String(recordId))}` : "";
+    const url = `https://api.airtable.com/v0/${encodeURIComponent(String(this.env.AIRTABLE_BASE_ID))}/${encodeURIComponent(table)}${suffix}`;
+    const body = method === "POST"
+      ? { records: [{ fields }], typecast: false }
+      : { fields, typecast: false };
+    const response = await fetch(url, {
+      method,
+      headers: { Authorization: `Bearer ${this.env.AIRTABLE_API_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload || typeof payload !== "object") throw new PublicWishError("CARE_BACK_COUPON_STORAGE_UNAVAILABLE");
+    const record = method === "POST" ? payload.records?.[0] : payload;
+    if (!record?.id || !record?.fields) throw new PublicWishError("CARE_BACK_COUPON_STORAGE_MALFORMED");
+    return record;
   }
 }
 
@@ -324,6 +481,55 @@ function safeClaimSummary(claim = {}) {
     points_policy: claim.points_policy || null,
     wish_submitted: Boolean(claim.wish_submitted),
   };
+}
+
+function verifiedCoupon(record, state, fallbackCode) {
+  const fields = record?.fields || {};
+  const code = /^[A-HJ-NP-Z2-9]{6}$/.test(String(fields.code || "")) ? String(fields.code) : String(fallbackCode || "");
+  const approved = Number(fields.approved_discount_percent);
+  return {
+    state,
+    status: safeCouponStatus(fields.status),
+    code,
+    max_discount_percent: VERIFIED_COUPON_MAX_DISCOUNT_PERCENT,
+    approved_discount_percent: Number.isFinite(approved) && approved > 0 && approved <= VERIFIED_COUPON_MAX_DISCOUNT_PERCENT ? approved : null,
+    activated_at: safeTimestamp(fields.activated_at) || null,
+    expires_at: safeTimestamp(fields.expires_at) || null,
+    single_use: true,
+  };
+}
+
+function safeCouponStatus(value) {
+  const status = String(value || "").trim().toLowerCase();
+  return ["draft", "active", "used", "expired", "revoked", "invalid"].includes(status) ? status : "draft";
+}
+
+function safeTimestamp(value) {
+  const date = new Date(String(value || ""));
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
+function safeObjectJson(value) {
+  try {
+    const parsed = JSON.parse(String(value || ""));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function validClock(value) {
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  if (Number.isNaN(date.getTime())) throw new PublicWishError("CARE_BACK_CLOCK_INVALID");
+  return date;
+}
+
+function pendingWishCookie(linkToken) {
+  return `${PENDING_WISH_COOKIE}=${linkToken}; Max-Age=${PENDING_WISH_COOKIE_MAX_AGE}; Path=/; Secure; SameSite=Lax`;
+}
+
+function clearPendingWishCookie() {
+  return `${PENDING_WISH_COOKIE}=; Max-Age=0; Path=/; Secure; SameSite=Lax`;
 }
 
 function requireSameOrigin(request, env) {

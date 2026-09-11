@@ -1,6 +1,6 @@
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const SAFE_TIERS = new Set(["Member", "Standard", "Premium", "VIP", "Black Card"]);
-const SAFE_MEMBERSHIP_STATES = new Set(["active", "grace", "expired", "checking", "under_review"]);
+const SAFE_MEMBERSHIP_STATES = new Set(["active", "grace", "expired", "checking", "under_review", "pending_review", "blocked", "suspended", "revoked"]);
 const SAFE_SOURCE_STATES = new Set(["verified", "checking", "not_available"]);
 const SAFE_PAYMENT_STATES = new Set(["verified", "pending_review", "unavailable"]);
 const SAFE_JOB_STATES = new Set(["upcoming", "active", "completed", "cancelled"]);
@@ -177,6 +177,7 @@ function safeJob(value) {
     location_customer_safe: safeText(value.location_customer_safe, 120),
     customer_safe_note: safeText(value.customer_safe_note, 240),
     payment_status: safeChoice(value.payment_status, SAFE_PAYMENT_STATES, "unavailable"),
+    amount_due_thb: safeMoney(value.amount_due_thb),
   });
 }
 
