@@ -1,0 +1,128 @@
+{
+  "schema": "mmd.kenji_seed_payment_override.v1",
+  "version": "2026-09-11",
+  "status": "qa_ready_not_published",
+  "scope": "payment_lane_only",
+  "owner": "Per",
+  "do_not_publish_directly": true,
+  "supersedes_payment_cards_in": "docs/knowledge/KENJI_KNOWLEDGE_SEED_PACK_V1.normalized.json",
+  "authority": [
+    "docs/knowledge/MMD_CANONICAL_PAYMENT_MEMORY_20260911.md",
+    "docs/knowledge/UNIFIED_PAYMENT_PROOF_FLOW_LOCK.md"
+  ],
+  "rules": {
+    "generic_payment_route": "/member/payments",
+    "canonical_pay_route": "signed /sigil/pay?t=... from the current backend payment intent only",
+    "legacy_manual_route": "/confirm/payment-proof only for explicit legacy/manual no-ref compatibility",
+    "proof_is_evidence_only": true,
+    "reuse_payment_ref": true,
+    "duplicate_proof_forbidden_when_pending": true,
+    "money_truth_authority": "Official Verify/backend"
+  },
+  "cards": [
+    {
+      "knowledge_id": "kenji_seed_v1_payment_01",
+      "title": "ไปต่อจากรายการชำระเงินเดิม",
+      "lane": "payment",
+      "category": "payment",
+      "customer_question_examples": ["ส่งสลิปตรงไหน", "โอนแล้วต้องทำยังไงต่อ"],
+      "customer_answer": "เปิดรายการชำระเงินที่ https://mmdbkk.com/member/payments ได้เลยครับ ถ้ารายการปัจจุบันมีลิงก์ชำระของ MMD อยู่แล้ว ให้ใช้ลิงก์ของรายการนั้นต่อได้เลย ถ้ามี payment ref หรือส่งหลักฐานไว้แล้ว ไม่ต้องสร้างรายการหรือส่งซ้ำครับ",
+      "internal_instruction": "If the current backend context supplies an exact signed /sigil/pay?t=... URL, use that exact URL. Otherwise use /member/payments. Never default to /confirm/payment-proof, never mint a replacement payment_ref, and never request duplicate proof when evidence is already pending.",
+      "response_mode": "handoff_required",
+      "risk_level": "critical",
+      "source_path": "/member/payments",
+      "related_routes": ["/member/payments", "/sigil/pay"]
+    },
+    {
+      "knowledge_id": "kenji_seed_v1_payment_02",
+      "title": "เช็กสถานะการชำระจากข้อมูลจริง",
+      "lane": "payment",
+      "category": "payment",
+      "customer_question_examples": ["เงินเข้าแล้วไหม", "จ่ายสำเร็จหรือยัง"],
+      "customer_answer": "เช็กสถานะให้ได้ครับ แต่ต้องอ้างอิงจากรายการที่ MMD ตรวจแล้ว ถ้ายังไม่มีสถานะยืนยัน ผมจะบอกตรง ๆ ว่ายังรอตรวจครับ เปิดรายการปัจจุบันได้ที่ https://mmdbkk.com/member/payments",
+      "internal_instruction": "Read canonical payment state only after verified identity. Never infer paid/verified/approved from slip, OCR, chat, screenshot, or page visit.",
+      "response_mode": "handoff_required",
+      "risk_level": "critical",
+      "source_path": "/member/payments",
+      "related_routes": ["/member/payments"]
+    },
+    {
+      "knowledge_id": "kenji_seed_v1_payment_03",
+      "title": "หลักฐานส่งแล้วแต่ยังรอตรวจ",
+      "lane": "payment",
+      "category": "payment",
+      "customer_question_examples": ["ส่งสลิปแล้วทำไมยังไม่ขึ้น", "รอตรวจนานไหม"],
+      "customer_answer": "ถ้าส่งหลักฐานไว้แล้วแต่สถานะยังรอตรวจ ไม่ต้องส่งซ้ำครับ เปิดรายการเดิมที่ https://mmdbkk.com/member/payments เพื่อตามสถานะต่อได้ ถ้านานผิดปกติผมจะส่งให้ MMD ตรวจจากรายการเดิมครับ",
+      "internal_instruction": "Separate evidence received from verified payment. Do not invent an SLA. Preserve the existing payment_ref and proof; never ask for a second upload merely because verification is pending.",
+      "response_mode": "handoff_required",
+      "risk_level": "high",
+      "source_path": "/member/payments",
+      "related_routes": ["/member/payments"]
+    },
+    {
+      "knowledge_id": "kenji_seed_v1_payment_04",
+      "title": "ยอดไม่ตรง โอนซ้ำ หรือรายการมีปัญหา",
+      "lane": "payment",
+      "category": "payment",
+      "customer_question_examples": ["โอนผิดยอดทำยังไง", "เหมือนโอนซ้ำ"],
+      "customer_answer": "ถ้ายอดไม่ตรง โอนซ้ำ หรือรายการมีปัญหา บอกวันที่ ยอด และรายละเอียดที่เกี่ยวข้องมาได้ครับ MMD จะตรวจจากรายการเดิมเป็นเคสให้ก่อน ไม่ต้องสร้าง payment ref ใหม่หรือส่งหลักฐานเดิมซ้ำครับ",
+      "internal_instruction": "Mismatch, duplicate, dispute, refund, or compensating transfer requires MMD review. Reuse the existing canonical payment context and ask only for missing evidence/details.",
+      "response_mode": "handoff_required",
+      "risk_level": "high",
+      "source_path": "/member/payments",
+      "related_routes": ["/member/payments", "/sigil/recovery"]
+    },
+    {
+      "knowledge_id": "kenji_seed_v1_payment_05",
+      "title": "วิธีชำระให้ยึดจากรายการปัจจุบัน",
+      "lane": "payment",
+      "category": "payment",
+      "customer_question_examples": ["จ่ายยังไง", "มีช่องทางชำระอะไรบ้าง"],
+      "customer_answer": "ผมพาไปหน้าชำระที่ตรงกับรายการของคุณได้ครับ ถ้าระบบสร้างลิงก์ชำระสำหรับรายการนั้นแล้ว ให้ใช้ลิงก์นั้นโดยตรง ข้อมูลบัญชี QR และยอดให้ยึดจากหน้าทางการของรายการปัจจุบันเท่านั้นครับ",
+      "internal_instruction": "Use the exact signed /sigil/pay?t=... only when supplied by the current backend intent. Never hard-code account numbers, QR destinations, old instructions, or synthesize a payment token in knowledge.",
+      "response_mode": "auto_reply_allowed",
+      "risk_level": "medium",
+      "source_path": "/member/payments",
+      "related_routes": ["/member/payments", "/sigil/pay"]
+    },
+    {
+      "knowledge_id": "kenji_seed_v1_payment_06",
+      "title": "มัดจำไม่เท่ากับคิวคอนเฟิร์ม",
+      "lane": "payment",
+      "category": "payment",
+      "customer_question_examples": ["โอนมัดจำแล้วคิวคอนเฟิร์มเลยไหม", "จ่ายมัดจำแล้วเรียบร้อยหรือยัง"],
+      "customer_answer": "มัดจำเป็นส่วนหนึ่งของขั้นตอนครับ แต่ยังไม่เท่ากับคิวคอนเฟิร์ม ต้องรอ MMD ตรวจยอดและสถานะการจองจริงก่อน ถ้าส่งหลักฐานของรายการนี้แล้วไม่ต้องส่งซ้ำครับ",
+      "internal_instruction": "Keep payment evidence and booking truth separate. Never map deposit evidence directly to confirmed booking. Preserve the existing payment_ref/proof.",
+      "response_mode": "handoff_required",
+      "risk_level": "high",
+      "source_path": "/sigil/booking",
+      "related_routes": ["/sigil/booking", "/member/payments"]
+    },
+    {
+      "knowledge_id": "kenji_seed_v1_payment_07",
+      "title": "ยกเลิก เปลี่ยนวัน หรือคืนเงินต้องดูเคสจริง",
+      "lane": "payment",
+      "category": "payment",
+      "customer_question_examples": ["ยกเลิกแล้วคืนเงินไหม", "เปลี่ยนวันได้ไหม"],
+      "customer_answer": "เรื่องยกเลิก เปลี่ยนวัน หรือคืนเงินต้องดูเงื่อนไขและรายการจริงก่อนครับ ส่งเฉพาะรายละเอียดที่ยังขาดมาได้ เดี๋ยว MMD ตรวจตามกติกาปัจจุบันจากเคสเดิมให้ครับ",
+      "internal_instruction": "Use current policy and actual booking/payment record. Do not create another payment reference or request already-known evidence. Disputes/refunds remain MMD review.",
+      "response_mode": "handoff_required",
+      "risk_level": "high",
+      "source_path": "/rules/customer",
+      "related_routes": ["/rules/customer", "/sigil/recovery", "/member/payments"]
+    },
+    {
+      "knowledge_id": "kenji_seed_v1_payment_08",
+      "title": "แต้มอ้างอิงยอดที่ตรวจแล้ว",
+      "lane": "payment",
+      "category": "payment",
+      "customer_question_examples": ["จ่ายแล้วแต้มเข้าเลยไหม", "แต้มยังไม่ขึ้น"],
+      "customer_answer": "แต้มต้องอ้างอิงจากยอดที่ MMD ตรวจเรียบร้อยแล้วครับ ถ้ายังไม่ขึ้น เปิด My MMD > Points ที่ https://mmdbkk.com/my-mmd/points ได้ก่อน ถ้าข้อมูลไม่ตรงผมจะส่งให้ MMD ตรวจจากรายการที่ยืนยันแล้วครับ",
+      "internal_instruction": "Use verified spend and canonical points state only. Never calculate or grant points from slip/OCR/customer claim. Proof does not create points.",
+      "response_mode": "handoff_required",
+      "risk_level": "medium",
+      "source_path": "/my-mmd/points",
+      "related_routes": ["/my-mmd/points", "/member/payments"]
+    }
+  ]
+}

@@ -3,9 +3,10 @@
 Status: **NORMALIZED · QA READY · NOT PUBLISHED · PAYMENT ROUTES SUPERSEDED 2026-09-11**  
 Owner / final authority: **Per**  
 Count: **30 cards**  
-Machine-readable source: `docs/knowledge/KENJI_KNOWLEDGE_SEED_PACK_V1.normalized.json`
+Machine-readable source: `docs/knowledge/KENJI_KNOWLEDGE_SEED_PACK_V1.normalized.json`  
+Canonical payment-lane replacement: `docs/knowledge/KENJI_KNOWLEDGE_SEED_PACK_V1_PAYMENT_OVERRIDE_20260911.json`
 
-> Payment-routing override (2026-09-11): `docs/knowledge/UNIFIED_PAYMENT_PROOF_FLOW_LOCK.md` is authoritative. Generic Kenji replies must use `/member/payments` as the payment list/status/navigation handoff. A canonical signed `/sigil/pay?t=...` URL may be used only when the current payment intent supplies it. `/confirm/payment-proof` is legacy/manual evidence compatibility only and must not be emitted as the default new-payment CTA. Payment-related cards in the normalized JSON must be regenerated against this lock before publication.
+> Payment-routing override (2026-09-11): `docs/knowledge/MMD_CANONICAL_PAYMENT_MEMORY_20260911.md` and `docs/knowledge/UNIFIED_PAYMENT_PROOF_FLOW_LOCK.md` are authoritative. Generic Kenji replies must use `/member/payments` as the payment list/status/navigation handoff. A canonical signed `/sigil/pay?t=...` URL may be used only when the current payment intent supplies it. `/confirm/payment-proof` is legacy/manual evidence compatibility only and must not be emitted as the default new-payment CTA. The eight payment cards in the old normalized JSON are superseded by `KENJI_KNOWLEDGE_SEED_PACK_V1_PAYMENT_OVERRIDE_20260911.json` and must be replaced/merged from that file before any publication.
 
 ## Purpose
 
@@ -77,6 +78,19 @@ Every card in the normalized manifest follows these rules, subject to the 2026-0
 11. Never mint or imply a replacement payment reference from Kenji. Reuse the canonical payment context; if no signed pay URL is available, route to `/member/payments`.
 12. Never ask a customer to resubmit proof when the current payment/ref is already pending verification.
 
+## Payment-lane merge rule
+
+Before this Seed Pack can be submitted for publication, replace the eight `lane=payment` cards from `KENJI_KNOWLEDGE_SEED_PACK_V1.normalized.json` with the eight cards from `KENJI_KNOWLEDGE_SEED_PACK_V1_PAYMENT_OVERRIDE_20260911.json`. The override is not itself a publish artifact; it is the canonical source for regenerating the complete 30-card manifest.
+
+The regenerated manifest must preserve all 22 non-payment cards unchanged unless they are separately reviewed, and its payment cards must satisfy these checks:
+
+- no default customer route to `/confirm/payment-proof`;
+- `/member/payments` for generic payment continuation/status;
+- signed `/sigil/pay?t=...` only from current backend intent context;
+- no new/replacement `payment_ref` from chat/knowledge;
+- no proof resubmission when evidence is already pending;
+- no paid/verified/approved language before Official Verify/backend truth.
+
 ## Final QA contract
 
 The normalized manifest is intended to be processed only through the signed Worker contract:
@@ -96,18 +110,19 @@ For every card, QA must prove:
 - **no `publish` event exists**;
 - payment cards do not default to `/confirm/payment-proof` and do not create duplicate payment/proof flows.
 
-Publication remains a separate explicit Per action after the Review/QA queue is inspected. The current normalized JSON must not be published until its payment-related cards are regenerated against the 2026-09-11 unified payment lock.
+Publication remains a separate explicit Per action after the Review/QA queue is inspected. The old normalized JSON must not be published until its payment-related cards are replaced from the canonical payment override and the regenerated 30-card manifest passes QA again.
 
 ## Source precedence
 
 1. Current Worker-backed truth and current route ownership.
-2. `docs/knowledge/UNIFIED_PAYMENT_PROOF_FLOW_LOCK.md` for payment/ref/proof routing.
-3. Current My MMD endpoint canon (`docs/ops/MMD-MY-MMD-ENDPOINT-MEMORY-2026-09-06.md`).
-4. Current MMS navigation canon (`docs/knowledge/MMS_WEBSITE_NAVIGATION_KNOWLEDGE_V1.md`).
-5. Current Kenji runtime / knowledge contract.
-6. MMD Core Knowledge — Production V1.
-7. Historical Drive prompts only after safety rewrite; never verbatim authority.
+2. `docs/knowledge/MMD_CANONICAL_PAYMENT_MEMORY_20260911.md` and `docs/knowledge/UNIFIED_PAYMENT_PROOF_FLOW_LOCK.md` for payment/ref/proof routing.
+3. `docs/knowledge/KENJI_KNOWLEDGE_SEED_PACK_V1_PAYMENT_OVERRIDE_20260911.json` for the eight payment seed cards pending full-manifest regeneration.
+4. Current My MMD endpoint canon (`docs/ops/MMD-MY-MMD-ENDPOINT-MEMORY-2026-09-06.md`).
+5. Current MMS navigation canon (`docs/knowledge/MMS_WEBSITE_NAVIGATION_KNOWLEDGE_V1.md`).
+6. Current Kenji runtime / knowledge contract.
+7. MMD Core Knowledge — Production V1.
+8. Historical Drive prompts only after safety rewrite; never verbatim authority.
 
 ## Next gate
 
-After all 30 cards are verified at `qa_passed`, keep them unpublished and continue to **Customer Memory / Conversation Matrix**. Deterministic Model Access and LLM canary stay off until their later gates are explicitly approved.
+After the full regenerated 30-card manifest is verified at `qa_passed`, keep it unpublished and continue to **Customer Memory / Conversation Matrix**. Deterministic Model Access and LLM canary stay off until their later gates are explicitly approved.

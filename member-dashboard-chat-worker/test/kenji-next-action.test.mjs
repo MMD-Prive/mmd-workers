@@ -7,6 +7,7 @@ import {
   buildProtectedCapabilityReply,
   decideKenjiCapability,
 } from "../src/kenji-capability-policy.js";
+import { resolveKenjiLineReply } from "../src/index.js";
 
 const membership = applyKenjiNextAction({
   text: "ผมยังยืนยันสถานะ ระดับสมาชิก หรือวันหมดอายุจากข้อความนี้ไม่ได้ครับ",
@@ -48,6 +49,21 @@ assert.match(protectedPaymentReply, /https:\/\/mmdbkk\.com\/member\/payments/);
 assert.match(protectedPaymentReply, /ไม่ต้องสร้างรายการหรือส่งหลักฐานซ้ำ/);
 assert.doesNotMatch(protectedPaymentReply, /confirm\/payment-proof/);
 assert.doesNotMatch(protectedPaymentReply, /ชำระ(?:เงิน)?สำเร็จ(?:แล้ว)?|อนุมัติแล้ว|(?:ได้รับการ)?ยืนยัน(?:การ)?ชำระ(?:เงิน)?แล้ว/i);
+
+const livePaymentSlip = await resolveKenjiLineReply({
+  type: "message",
+  source: { type: "user", userId: "U1234567890abcdef1234567890abcdef" },
+  message: { id: "msg-payment-slip-canonical", type: "text", text: "ส่งสลิปแล้ว" },
+}, {}, {
+  LINE_KENJI_MODEL_ENABLED: "false",
+  LINE_KENJI_KNOWLEDGE_ENABLED: "false",
+});
+assert.equal(livePaymentSlip.reply_source, "system_truth");
+assert.equal(livePaymentSlip.model_attempted, false);
+assert.match(livePaymentSlip.text, /https:\/\/mmdbkk\.com\/member\/payments/);
+assert.match(livePaymentSlip.text, /ไม่ต้องสร้างรายการหรือส่งหลักฐานซ้ำ/);
+assert.doesNotMatch(livePaymentSlip.text, /confirm\/payment-proof/);
+assert.doesNotMatch(livePaymentSlip.text, /ชำระ(?:เงิน)?สำเร็จ(?:แล้ว)?|อนุมัติแล้ว|(?:ได้รับการ)?ยืนยัน(?:การ)?ชำระ(?:เงิน)?แล้ว/i);
 
 const paymentKnown = resolveKenjiNextAction({
   intent: "payment_status",
