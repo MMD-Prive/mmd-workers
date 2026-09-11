@@ -76,9 +76,17 @@ This means users do not simply interact with a generic assistant. They enter the
 - `session_id` is the primary reference for session and idempotency logic
 - token parameter must be `t`
 - Airtable is the operational source of truth for back-office flows
-- Memberstack is used as the public auth and membership layer
+- MMD-owned `member_id` is the canonical internal member key
+- verified `line_user_id` is the LINE identity key for LINE/LIFF flows
+- Native MMD Auth sessions are the browser identity/session gate
+- `MMD — Member Entitlements` resolved through `my_mmd_entitlement_resolver_v1` is the membership/access decision authority
+- `Members` is identity/profile mapping and bounded readback, not an entitlement authority
+- Telegram and Drive are downstream observations/grants only
+- Memberstack is retired and has no active compatibility role
 - `telegram-worker` remains internal only
 - migration concerns must not be mixed into core production contracts
+
+See `docs/architecture/MEMBER_IDENTITY_AUTHORITY_V1.md` for the canonical member identity and entitlement contract.
 
 ## High-level map
 
