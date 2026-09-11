@@ -171,8 +171,10 @@ test("Kenji 2.0 separates MMD, MMS, venue, and talent lanes", () => {
 
 test("payment proof routes safely without confirming funds", () => {
   const reply = buildKenjiLineReply(lineTextEvent("ส่งสลิป"));
-  assert.match(reply, /\/confirm\/payment-proof/);
-  assert.match(reply, /ยังไม่ถือว่ายืนยันยอด/);
+  assert.match(reply, /\/member\/payments/);
+  assert.doesNotMatch(reply, /\/confirm\/payment-proof/);
+  assert.match(reply, /ไม่ต้องส่งซ้ำ/);
+  assert.match(reply, /อัปเดตสถานะอย่างเป็นทางการ/);
   assert.doesNotMatch(reply, /ชำระเงินสำเร็จ|approved/i);
 });
 
