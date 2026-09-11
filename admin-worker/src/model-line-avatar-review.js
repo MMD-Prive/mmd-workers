@@ -1,6 +1,11 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const CLAIMS_TABLE_DEFAULT = "tbluoZ5JiRcoUP6WT";
 
+export const MODEL_LINK_AIRTABLE_TIMEOUT_MS = 9000;
+export const MODEL_LINK_QUEUE_API_TIMEOUT_MS = 12000;
+export const MODEL_LINK_SEARCH_API_TIMEOUT_MS = 12000;
+export const MODEL_LINK_BIND_API_TIMEOUT_MS = 15000;
+
 export function safePictureUrl(value) {
   const raw = clean(value);
   if (!raw || raw.length > 2048) return "";
@@ -28,18 +33,123 @@ export function safeClaimSummaryWithAvatar(record) {
 }
 
 export async function listPendingModelLineClaimsWithAvatar(env) {
-  const result = await airtableList(env, claimsTable(env), 'OR({claim_status}="verified_unlinked",{claim_status}="conflict")', 100);
-  if (!result.ok) return { ok: false, error: "identity_claim_queue_unavailable", status: result.status || 503 };
-  const items = result.records.map(safeClaimSummaryWithAvatar).filter((item) => item.claim_id).sort((a, b) => String(b.verified_at || "").localeCompare(String(a.verified_at || "")));
+  const result = await airtableList(
+    env,
+    claimsTable(env),
+    'OR({claim_status}="verified_unlinked",{claim_status}="conflict")',
+    100,
+    MODEL_LINK_AIRTABLE_TIMEOUT_MS,
+  );
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: "identity_claim_queue_unavailable",
+      status: result.status || 503,
+    };
+  }
+
+  const items = result.records
+    .map(safeClaimSummaryWithAvatar)
+    .filter((item) => item.claim_id)
+    .sort((a, b) => String(b.verified_at || "").localeCompare(String(a.verified_at || "")));
+
   return { ok: true, count: items.length, items };
 }
 
 export function renderModelLineLinkPageWithAvatar() {
   const body = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>MMD MODEL · LINE Link Review</title><style>
-:root{color-scheme:dark;--bg:#090908;--line:#393329;--gold:#d8bd83;--text:#f5f0e4;--muted:#aaa296;--ok:#72c68f;--danger:#e07f75}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 15% 0,#2c2315 0,transparent 34%),var(--bg);color:var(--text);font:15px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue","Noto Sans Thai",sans-serif}.wrap{width:min(1120px,100%);margin:auto;padding:24px}.top,.row,.identity{display:flex}.top{gap:16px;align-items:flex-start;justify-content:space-between;margin-bottom:24px}.eyebrow{font-size:11px;letter-spacing:.18em;color:var(--gold);font-weight:700}.top h1{font-size:clamp(25px,4vw,42px);line-height:1.08;margin:7px 0}.top p{color:var(--muted);max-width:720px;margin:0}.back{color:var(--text);text-decoration:none;border:1px solid var(--line);padding:10px 13px;border-radius:12px;white-space:nowrap}.stats{display:flex;gap:10px;margin:16px 0 22px}.pill{border:1px solid var(--line);background:#14120f;border-radius:999px;padding:8px 12px;color:var(--muted)}.pill b{color:var(--text)}.queue{display:grid;gap:14px}.card{border:1px solid var(--line);background:linear-gradient(180deg,#15130f,#0f0e0c);border-radius:18px;padding:18px}.row{gap:12px;justify-content:space-between;align-items:flex-start}.identity{gap:12px;align-items:flex-start;min-width:0}.identity-copy{min-width:0}.avatar{width:60px;height:60px;border-radius:50%;overflow:hidden;position:relative;flex:0 0 auto;border:1px solid rgba(216,189,131,.38);background:#251f17;display:grid;place-items:center;color:var(--gold);font-weight:800;font-size:20px}.avatar img{width:100%;height:100%;object-fit:cover;display:block;position:relative;z-index:2}.avatar .initial{position:absolute;inset:0;display:grid;place-items:center;z-index:1}.name{font-size:20px;font-weight:700;overflow-wrap:anywhere}.verified{font-size:10px;letter-spacing:.1em;color:var(--ok);font-weight:800;margin-top:2px}.meta{font-size:12px;color:var(--muted);margin-top:4px}.status{font-size:11px;letter-spacing:.08em;border:1px solid var(--line);border-radius:999px;padding:6px 9px;color:var(--gold);white-space:nowrap}.search{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:16px}input,button{font:inherit}input{min-width:0;background:#0b0a09;border:1px solid var(--line);border-radius:12px;color:var(--text);padding:12px 13px}button{border:0;border-radius:12px;background:var(--gold);color:#1b160e;font-weight:800;padding:12px 16px;cursor:pointer}button.secondary{background:#242019;color:var(--text);border:1px solid var(--line)}button:disabled{opacity:.45;cursor:not-allowed}.results{display:grid;gap:9px;margin-top:10px}.candidate{border:1px solid var(--line);border-radius:14px;padding:13px;background:#0b0a09;display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}.candidate strong{display:block}.folder{font-size:12px;color:var(--muted);word-break:break-all;margin-top:4px}.empty,.notice{border:1px dashed var(--line);border-radius:18px;padding:28px;color:var(--muted);text-align:center}.notice{margin-bottom:14px}.notice.ok{border-style:solid;color:var(--ok)}.notice.err{border-style:solid;color:var(--danger)}@media(max-width:700px){.wrap{padding:18px 14px}.top{display:block}.back{display:inline-block;margin-top:16px}.avatar{width:52px;height:52px;font-size:18px}.row{gap:8px}.status{font-size:9px;padding:5px 7px}.search,.candidate{grid-template-columns:1fr}.candidate button{width:100%}}
-</style></head><body><main class="wrap"><div class="top"><div><div class="eyebrow">MMD MODEL · OWNER REVIEW</div><h1>LINE Link Queue</h1><p>เมื่อ Model ยืนยัน LINE ครั้งแรก ระบบจะเก็บ identity evidence ไว้ที่ Airtable โดยยังไม่เปิดสิทธิ์ รูป LINE ใช้ช่วยจำเท่านั้น เปอร์ยังเป็นคนเลือก Model record ที่ถูกต้องและตรวจ Drive folder ก่อนกด LINK.</p></div><a class="back" href="/internal/admin/kenji">← Kenji Admin</a></div><div id="notice"></div><div class="stats"><div class="pill">Waiting <b id="count">—</b></div><div class="pill">Fail closed · ไม่เดาจากชื่อหรือรูป LINE</div></div><section id="queue" class="queue"><div class="empty">กำลังโหลด Pending Model Link…</div></section></main><script>
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const api=async(url,opt={})=>{const r=await fetch(url,{credentials:'include',headers:{accept:'application/json','content-type':'application/json',...(opt.headers||{})},...opt});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d};const initial=s=>(Array.from(String(s||'LINE identity').trim())[0]||'?').toUpperCase();function avatar(x){const n=x.line_display_name||'LINE identity',u=x.line_picture_url||'';return '<div class="avatar"><span class="initial">'+esc(initial(n))+'</span>'+(u?'<img src="'+esc(u)+'" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">':'')+'</div>'}function notice(msg,type=''){document.getElementById('notice').innerHTML=msg?'<div class="notice '+type+'">'+esc(msg)+'</div>':''}async function load(){try{const d=await api('/v1/admin/models/activation-candidates?mode=line-link-claims');document.getElementById('count').textContent=d.count||0;render(d.items||[])}catch(e){notice('โหลดคิวไม่ได้: '+e.message,'err')}}function render(items){const root=document.getElementById('queue');if(!items.length){root.innerHTML='<div class="empty">ยังไม่มี Model ที่รอเชื่อม LINE</div>';return}root.innerHTML=items.map(x=>'<article class="card" data-claim="'+esc(x.claim_id)+'"><div class="row"><div class="identity">'+avatar(x)+'<div class="identity-copy"><div class="name">'+esc(x.line_display_name||'LINE identity')+'</div><div class="verified">LINE VERIFIED</div><div class="meta">Verified '+esc(x.verified_at||'—')+' · '+esc(x.environment||'published')+' · Ref '+esc(x.line_ref||'—')+'</div></div></div><span class="status">'+esc(x.claim_status)+'</span></div><div class="search"><input value="'+esc(x.line_display_name||'')+'" placeholder="ค้นชื่อ / code ของ Model"><button class="secondary" onclick="searchModel(this)">ค้น Model</button></div><div class="results"></div></article>').join('')}async function searchModel(btn){const card=btn.closest('.card'),input=card.querySelector('input'),out=card.querySelector('.results'),q=input.value.trim();if(!q)return;btn.disabled=true;out.innerHTML='<div class="meta">กำลังค้น…</div>';try{const d=await api('/v1/admin/models/activation-candidates?mode=line-link-candidates&q='+encodeURIComponent(q));if(!d.items?.length){out.innerHTML='<div class="meta">ไม่พบ Active Model ที่ตรงการค้นหา</div>';return}out.innerHTML=d.items.map(m=>'<div class="candidate"><div><strong>'+esc(m.working_name)+'</strong><div class="meta">'+esc(m.model_lookup_key||'—')+' · '+esc(m.status||'active')+'</div><div class="folder">Drive: '+esc(m.folder_name||m.drive_folder_id||m.drive_folder_url||'ยังไม่มี Drive folder')+'</div></div><button '+(!(m.drive_folder_id||m.drive_folder_url)?'disabled':'')+' onclick="bindModel(this,\''+esc(m.model_record_id)+'\')">LINK</button></div>').join('')}catch(e){out.innerHTML='<div class="meta">ค้นไม่ได้: '+esc(e.message)+'</div>'}finally{btn.disabled=false}}async function bindModel(btn,modelId){const card=btn.closest('.card'),claimId=card.dataset.claim;if(!confirm('ยืนยันผูก LINE นี้กับ Model record และ Drive folder ที่เลือก?'))return;btn.disabled=true;try{const d=await api('/v1/admin/model/activation/issue',{method:'POST',body:JSON.stringify({mode:'bind_verified_claim',claim_id:claimId,model_record_id:modelId,confirm:true})});notice('เชื่อม '+(d.model?.working_name||'Model')+' สำเร็จแล้ว — ให้ Model เข้า MMD MODEL ด้วย LINE เดิมได้เลย','ok');await load()}catch(e){notice('เชื่อมไม่สำเร็จ: '+e.message,'err');btn.disabled=false}}load();
-</script></body></html>`;return new Response(body,{status:200,headers:{"content-type":"text/html; charset=utf-8","cache-control":"no-store, private","x-robots-tag":"noindex, nofollow"}})}
+:root{color-scheme:dark;--bg:#090908;--line:#393329;--gold:#d8bd83;--text:#f5f0e4;--muted:#aaa296;--ok:#72c68f;--danger:#e07f75}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 15% 0,#2c2315 0,transparent 34%),var(--bg);color:var(--text);font:15px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue","Noto Sans Thai",sans-serif}.wrap{width:min(1120px,100%);margin:auto;padding:24px}.top,.row,.identity{display:flex}.top{gap:16px;align-items:flex-start;justify-content:space-between;margin-bottom:24px}.eyebrow{font-size:11px;letter-spacing:.18em;color:var(--gold);font-weight:700}.top h1{font-size:clamp(25px,4vw,42px);line-height:1.08;margin:7px 0}.top p{color:var(--muted);max-width:720px;margin:0}.back{color:var(--text);text-decoration:none;border:1px solid var(--line);padding:10px 13px;border-radius:12px;white-space:nowrap}.stats{display:flex;gap:10px;margin:16px 0 22px}.pill{border:1px solid var(--line);background:#14120f;border-radius:999px;padding:8px 12px;color:var(--muted)}.pill b{color:var(--text)}.queue{display:grid;gap:14px}.card{border:1px solid var(--line);background:linear-gradient(180deg,#15130f,#0f0e0c);border-radius:18px;padding:18px}.row{gap:12px;justify-content:space-between;align-items:flex-start}.identity{gap:12px;align-items:flex-start;min-width:0}.identity-copy{min-width:0}.avatar{width:60px;height:60px;border-radius:50%;overflow:hidden;position:relative;flex:0 0 auto;border:1px solid rgba(216,189,131,.38);background:#251f17;display:grid;place-items:center;color:var(--gold);font-weight:800;font-size:20px}.avatar img{width:100%;height:100%;object-fit:cover;display:block;position:relative;z-index:2}.avatar .initial{position:absolute;inset:0;display:grid;place-items:center;z-index:1}.name{font-size:20px;font-weight:700;overflow-wrap:anywhere}.verified{font-size:10px;letter-spacing:.1em;color:var(--ok);font-weight:800;margin-top:2px}.meta{font-size:12px;color:var(--muted);margin-top:4px}.status{font-size:11px;letter-spacing:.08em;border:1px solid var(--line);border-radius:999px;padding:6px 9px;color:var(--gold);white-space:nowrap}.search{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:16px}input,button{font:inherit}input{min-width:0;background:#0b0a09;border:1px solid var(--line);border-radius:12px;color:var(--text);padding:12px 13px}button{border:0;border-radius:12px;background:var(--gold);color:#1b160e;font-weight:800;padding:12px 16px;cursor:pointer}button.secondary{background:#242019;color:var(--text);border:1px solid var(--line)}button:disabled{opacity:.45;cursor:not-allowed}.results{display:grid;gap:9px;margin-top:10px}.candidate{border:1px solid var(--line);border-radius:14px;padding:13px;background:#0b0a09;display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}.candidate strong{display:block}.folder{font-size:12px;color:var(--muted);word-break:break-all;margin-top:4px}.empty,.notice{border:1px dashed var(--line);border-radius:18px;padding:28px;color:var(--muted);text-align:center}.empty b{display:block;color:var(--text);font-size:16px;margin-bottom:6px}.empty p{margin:0 auto 14px;max-width:620px}.empty button{margin-top:2px}.notice{margin-bottom:14px}.notice.ok{border-style:solid;color:var(--ok)}.notice.err{border-style:solid;color:var(--danger)}@media(max-width:700px){.wrap{padding:18px 14px}.top{display:block}.back{display:inline-block;margin-top:16px}.avatar{width:52px;height:52px;font-size:18px}.row{gap:8px}.status{font-size:9px;padding:5px 7px}.search,.candidate{grid-template-columns:1fr}.candidate button{width:100%}}
+</style></head><body><main class="wrap"><div class="top"><div><div class="eyebrow">MMD MODEL · OWNER REVIEW</div><h1>Private Model Link Queue</h1><p>คิวนี้ใช้สำหรับ Private Model จาก Create Job / MMD MODEL Verify เท่านั้น เมื่อ Model ยืนยัน LINE ครั้งแรก ระบบจะเก็บ identity evidence ไว้ที่ Airtable โดยยังไม่เปิดสิทธิ์ รูป LINE ใช้ช่วยจำเท่านั้น เปอร์ยังเป็นคนเลือก Model record ที่ถูกต้องและตรวจ Drive folder ก่อนกด LINK.</p></div><a class="back" href="/internal/admin/kenji">← Kenji Admin</a></div><div id="notice"></div><div class="stats"><div class="pill">Waiting <b id="count">—</b></div><div class="pill">Fail closed · ไม่เดาจากชื่อหรือรูป LINE</div></div><section id="queue" class="queue"><div class="empty"><b>กำลังโหลด Pending Model Link…</b><p>กำลังอ่านคิวจาก backend</p></div></section></main><script>
+(function(){'use strict';
+const QUEUE_TIMEOUT_MS=${MODEL_LINK_QUEUE_API_TIMEOUT_MS};
+const SEARCH_TIMEOUT_MS=${MODEL_LINK_SEARCH_API_TIMEOUT_MS};
+const BIND_TIMEOUT_MS=${MODEL_LINK_BIND_API_TIMEOUT_MS};
+const root=document.querySelector('main.wrap');
+const queue=document.getElementById('queue');
+const count=document.getElementById('count');
+const noticeBox=document.getElementById('notice');
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const initial=s=>(Array.from(String(s||'LINE identity').trim())[0]||'?').toUpperCase();
+function notice(msg,type=''){noticeBox.innerHTML=msg?'<div class="notice '+type+'">'+esc(msg)+'</div>':''}
+function queueLoading(){count.textContent='…';queue.innerHTML='<div class="empty"><b>กำลังโหลด Pending Model Link…</b><p>กำลังอ่านคิวจาก backend</p></div>'}
+function queueError(msg){count.textContent='!';queue.innerHTML='<div class="empty"><b>โหลดคิวไม่ได้</b><p>'+esc(msg||'Queue API ไม่ตอบกลับ กรุณาลองใหม่')+'</p><button class="secondary" type="button" data-action="reload-claims">ลองโหลดอีกครั้ง</button></div>'}
+async function api(url,opt={}){const timeout=opt.timeout||QUEUE_TIMEOUT_MS;const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),timeout);try{const r=await fetch(url,{credentials:'include',method:opt.method||'GET',body:opt.body,signal:ctrl.signal,headers:{accept:'application/json','content-type':'application/json',...(opt.headers||{})}});const raw=await r.text();let d={};try{d=raw?JSON.parse(raw):{}}catch(e){throw new Error(/^\s*</.test(raw||'')?'Endpoint returned HTML · HTTP '+r.status:'Invalid JSON · HTTP '+r.status)}if(!r.ok||d.ok===false)throw new Error(d.error||d.message||('HTTP '+r.status));return d}catch(e){if(e&&e.name==='AbortError')throw new Error('Request timeout — queue API ไม่ตอบกลับ');throw e}finally{clearTimeout(t)}}
+function avatar(x){const n=x.line_display_name||'LINE identity',u=x.line_picture_url||'';return '<div class="avatar"><span class="initial">'+esc(initial(n))+'</span>'+(u?'<img src="'+esc(u)+'" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">':'')+'</div>'}
+async function load(){try{notice('');queueLoading();const d=await api('/v1/admin/models/activation-candidates?mode=line-link-claims',{timeout:QUEUE_TIMEOUT_MS});const items=d.items||[];count.textContent=d.count??items.length;render(items)}catch(e){notice('โหลดคิวไม่ได้: '+(e.message||e),'err');queueError(e.message||String(e))}}
+function render(items){if(!items.length){queue.innerHTML='<div class="empty"><b>ยังไม่มี Model ที่รอเชื่อม LINE</b><p>ถ้าเพิ่งส่ง Create Job Verify ให้ Model ให้โมเดลกด Verify ด้วย LINE ตัวเองก่อน แล้วกดโหลดใหม่</p><button class="secondary" type="button" data-action="reload-claims">โหลดใหม่</button></div>';return}queue.innerHTML=items.map(x=>'<article class="card" data-claim="'+esc(x.claim_id)+'"><div class="row"><div class="identity">'+avatar(x)+'<div class="identity-copy"><div class="name">'+esc(x.line_display_name||'LINE identity')+'</div><div class="verified">LINE VERIFIED · PRIVATE MODEL CLAIM</div><div class="meta">Verified '+esc(x.verified_at||'—')+' · '+esc(x.environment||'published')+' · Ref '+esc(x.line_ref||'—')+'</div></div></div><span class="status">'+esc(x.claim_status)+'</span></div><div class="search"><input value="'+esc(x.line_display_name||'')+'" placeholder="ค้นชื่อ / code ของ Model เช่น Babe B / EMs01 / Kendo"><button class="secondary" type="button" data-action="search-model">ค้น Model</button></div><div class="results"></div></article>').join('')}
+async function searchModel(btn){const card=btn.closest('.card'),input=card.querySelector('input'),out=card.querySelector('.results'),q=input.value.trim();if(!q){out.innerHTML='<div class="meta">กรอกชื่อหรือ code ของ Model ก่อนค้นหา</div>';return}btn.disabled=true;out.innerHTML='<div class="meta">กำลังค้น…</div>';try{const d=await api('/v1/admin/models/activation-candidates?mode=line-link-candidates&q='+encodeURIComponent(q),{timeout:SEARCH_TIMEOUT_MS});const items=d.items||[];if(!items.length){out.innerHTML='<div class="meta">ไม่พบ Active Model ที่ตรงการค้นหา</div>';return}out.innerHTML=items.map(m=>{const hasFolder=!!(m.drive_folder_id||m.drive_folder_url);const canLink=hasFolder&&m.model_record_id;return '<div class="candidate"><div><strong>'+esc(m.working_name||m.model_name||'Model')+'</strong><div class="meta">'+esc(m.model_lookup_key||'—')+' · '+esc(m.status||'active')+'</div><div class="folder">Drive: '+esc(m.folder_name||m.drive_folder_id||m.drive_folder_url||'ยังไม่มี Drive folder')+'</div></div><button type="button" data-action="bind-model" data-model-id="'+esc(m.model_record_id||'')+'" '+(!canLink?'disabled':'')+'>LINK</button></div>'}).join('')}catch(e){out.innerHTML='<div class="meta">ค้นไม่ได้: '+esc(e.message||e)+'</div>'}finally{btn.disabled=false}}
+async function bindModel(btn){const card=btn.closest('.card'),claimId=card.dataset.claim,modelId=btn.dataset.modelId;if(!claimId||!modelId)return;if(!confirm('ยืนยันผูก LINE นี้กับ Model record และ Drive folder ที่เลือก?'))return;btn.disabled=true;try{const d=await api('/v1/admin/model/activation/issue',{method:'POST',body:JSON.stringify({mode:'bind_verified_claim',claim_id:claimId,model_record_id:modelId,confirm:true}),timeout:BIND_TIMEOUT_MS});notice('เชื่อม '+((d.model&&d.model.working_name)||'Model')+' สำเร็จแล้ว — ให้ Model เข้า MMD MODEL ด้วย LINE เดิมได้เลย','ok');await load()}catch(e){notice('เชื่อมไม่สำเร็จ: '+(e.message||e),'err');btn.disabled=false}}
+root.addEventListener('click',event=>{const btn=event.target.closest('[data-action]');if(!btn||!root.contains(btn))return;const action=btn.dataset.action;if(action==='reload-claims')load();if(action==='search-model')searchModel(btn);if(action==='bind-model')bindModel(btn)});
+load();
+})();
+</script></body></html>`;
 
-async function airtableList(env,table,formula,pageSize=20){const apiKey=clean(env.AIRTABLE_API_KEY),baseId=clean(env.AIRTABLE_BASE_ID);if(!apiKey||!baseId||!table)return{ok:false,status:503,records:[]};const params=new URLSearchParams({pageSize:String(pageSize)});if(formula)params.set("filterByFormula",formula);const response=await fetch(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}?${params}`,{headers:{authorization:`Bearer ${apiKey}`}});const data=await response.json().catch(()=>({}));if(!response.ok)return{ok:false,status:response.status,records:[]};return{ok:true,status:200,records:Array.isArray(data.records)?data.records:[]}}
-function claimsTable(env){return clean(env.AIRTABLE_TABLE_MODEL_LINE_IDENTITY_CLAIMS||CLAIMS_TABLE_DEFAULT)}function clean(value){return String(value??"").trim()}
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store, private",
+      "x-robots-tag": "noindex, nofollow",
+    },
+  });
+}
+
+async function airtableList(env, table, formula, pageSize = 20, timeoutMs = MODEL_LINK_AIRTABLE_TIMEOUT_MS) {
+  const apiKey = clean(env.AIRTABLE_API_KEY);
+  const baseId = clean(env.AIRTABLE_BASE_ID);
+  if (!apiKey || !baseId || !table) return { ok: false, status: 503, records: [] };
+
+  const params = new URLSearchParams({ pageSize: String(pageSize) });
+  if (formula) params.set("filterByFormula", formula);
+
+  const url = `${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}?${params}`;
+  const result = await fetchJsonWithTimeout(
+    url,
+    { headers: { authorization: `Bearer ${apiKey}` } },
+    timeoutMs,
+  );
+
+  if (!result.ok) return { ok: false, status: result.status, error: result.error, records: [] };
+  return {
+    ok: true,
+    status: 200,
+    records: Array.isArray(result.data.records) ? result.data.records : [],
+  };
+}
+
+async function fetchJsonWithTimeout(url, init, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        data,
+        error: clean(data.error?.message || data.error || data.message) || `HTTP ${response.status}`,
+      };
+    }
+    return { ok: true, status: response.status, data };
+  } catch (error) {
+    const aborted = error?.name === "AbortError";
+    return {
+      ok: false,
+      status: aborted ? 504 : 503,
+      data: {},
+      error: aborted ? "airtable_timeout" : clean(error?.message) || "airtable_fetch_failed",
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function claimsTable(env) {
+  return clean(env.AIRTABLE_TABLE_MODEL_LINE_IDENTITY_CLAIMS || CLAIMS_TABLE_DEFAULT);
+}
+
+function clean(value) {
+  return String(value ?? "").trim();
+}
