@@ -1,0 +1,648 @@
+name: Bootstrap renewal expiry fallback v5
+
+on:
+  push:
+    branches:
+      - feat/renewal-expiry-fallback-v5
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: immigrate-worker/package-lock.json
+
+      - name: Apply resolver-aware expiry fallback v5
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"anchor not found in {path}: {old[:120]!r}")
+              if text.count(old) != 1:
+                  raise SystemExit(f"anchor is not unique in {path}: {old[:120]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # Types: only add fields needed for authoritative expiry readback.
+          replace_once(
+              "immigrate-worker/src/types.ts",
+              '  AIRTABLE_TABLE_POINTS_LEDGER?: string;\n',
+              '  AIRTABLE_TABLE_POINTS_LEDGER?: string;\n'
+              '  AIRTABLE_TABLE_MEMBERS?: string;\n'
+              '  AIRTABLE_TABLE_MEMBER_ENTITLEMENTS?: string;\n',
+          )
+          replace_once(
+              "immigrate-worker/src/types.ts",
+              '  AIRTABLE_SESSION_FIELD_EXPIRE_AT?: string;\n',
+              '  AIRTABLE_SESSION_FIELD_EXPIRE_AT?: string;\n'
+              '  AIRTABLE_MEMBERS_LINE_USER_ID_FIELD?: string;\n'
+              '  AIRTABLE_MEMBERS_EMAIL_FIELD?: string;\n'
+              '  AIRTABLE_MEMBERS_MEMBERSTACK_ID_FIELD?: string;\n'
+              '  AIRTABLE_MEMBERS_EXPIRY_FIELD?: string;\n'
+              '  AIRTABLE_MEMBERS_END_DATE_FIELD?: string;\n'
+              '  AIRTABLE_MEMBERS_EXPIRE_AT_FIELD?: string;\n'
+              '  AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD?: string;\n'
+              '  AIRTABLE_ENTITLEMENT_MEMBERSTACK_ID_FIELD?: string;\n'
+              '  AIRTABLE_ENTITLEMENT_MEMBER_EMAIL_FIELD?: string;\n'
+              '  AIRTABLE_ENTITLEMENT_EXPIRES_AT_FIELDS?: string;\n',
+          )
+          replace_once(
+              "immigrate-worker/src/types.ts",
+              '    expire_at: string;\n    auto_signup_ready: boolean;\n',
+              '    expire_at: string;\n'
+              '    expire_at_source?: "explicit_verified_context" | "my_mmd_entitlement_resolver_v1" | "verified_canonical_member_readback" | "latest_verified_session" | "none";\n'
+              '    expire_at_reason?: string;\n'
+              '    auto_signup_ready: boolean;\n',
+          )
+
+          helper = r'''import type { Env } from "../types";
+
+type AirtableValue = string | number | boolean | string[] | null | undefined;
+type AirtableFields = Record<string, AirtableValue>;
+type AirtableRecord = { id: string; fields?: AirtableFields };
+type AirtableListResponse = { records?: AirtableRecord[] };
+
+export type MembershipExpirySource =
+  | "explicit_verified_context"
+  | "my_mmd_entitlement_resolver_v1"
+  | "verified_canonical_member_readback"
+  | "latest_verified_session"
+  | "none";
+
+export interface MembershipExpiryResolution {
+  expire_at: string;
+  source: MembershipExpirySource;
+  reason: string;
+}
+
+type IdentityInput = {
+  line_user_id?: string;
+  memberstack_id?: string;
+  email?: string;
+  current_tier?: string;
+  verified_expire_at?: string;
+};
+
+type LookupState =
+  | { state: "found"; expire_at: string }
+  | { state: "missing" }
+  | { state: "ambiguous"; reason: string }
+  | { state: "blocked"; reason: string }
+  | { state: "error"; reason: string };
+
+const PRIVATE_MEMBERSHIP_CAPABILITIES = new Set([
+  "red_card",
+  "private_standard",
+  "private_premium",
+  "vip",
+  "svip",
+  "black_card",
+]);
+
+const RECOGNIZED_MEMBERSHIP_CAPABILITIES = new Set([
+  "public_member",
+  ...PRIVATE_MEMBERSHIP_CAPABILITIES,
+]);
+
+const HARD_BLOCK_STATUSES = new Set(["blocked", "suspended"]);
+const REVOKED_STATUSES = new Set(["revoked"]);
+const ACTIVE_LIKE_STATUSES = new Set(["active", "expiring_soon", "expiringsoon", "grace", "grace_period"]);
+const INACTIVE_LIKE_STATUSES = new Set(["expired", "inactive"]);
+
+function text(value: unknown): string {
+  if (value == null) return "";
+  if (Array.isArray(value)) return value.map(text).filter(Boolean).join(",");
+  return String(value).trim();
+}
+
+function lower(value: unknown): string {
+  return text(value).toLowerCase();
+}
+
+function token(value: unknown): string {
+  return lower(value)
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function normalizeIso(value: unknown): string {
+  const raw = text(value);
+  if (!raw) return "";
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : "";
+}
+
+function formulaString(value: string): string {
+  return `"${String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+function tableUrl(env: Env, table: string): string {
+  return `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(table)}`;
+}
+
+function headers(env: Env): HeadersInit {
+  return {
+    Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
+    "Content-Type": "application/json",
+  };
+}
+
+async function listByFormula(env: Env, table: string, formula: string, maxRecords = 100): Promise<AirtableRecord[]> {
+  const url = new URL(tableUrl(env, table));
+  url.searchParams.set("pageSize", String(Math.max(1, Math.min(maxRecords, 100))));
+  url.searchParams.set("filterByFormula", formula);
+  const response = await fetch(url.toString(), { method: "GET", headers: headers(env) });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`airtable_${response.status}:${body.slice(0, 180)}`);
+  }
+  const payload = (await response.json()) as AirtableListResponse;
+  return Array.isArray(payload.records) ? payload.records : [];
+}
+
+function configuredFields(value: unknown, fallbacks: string[]): string[] {
+  const configured = text(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return Array.from(new Set([...configured, ...fallbacks].filter(Boolean)));
+}
+
+function firstField(fields: AirtableFields | undefined, names: string[]): string {
+  for (const name of names) {
+    const value = text(fields?.[name]);
+    if (value) return value;
+  }
+  return "";
+}
+
+function capabilityFromFields(fields: AirtableFields | undefined): string {
+  const candidates = [
+    fields?.capability,
+    fields?.entitlement_level,
+    fields?.package_code,
+    fields?.relationship_tier,
+    fields?.tier,
+    fields?.["Membership Tier"],
+  ].map(token).filter(Boolean);
+
+  for (const value of candidates) {
+    if (value === "black_card" || value.includes("blackcard")) return "black_card";
+    if (value.includes("svip")) return "svip";
+    if (value.includes("vip")) return "vip";
+    if (value.includes("red_card") || value.includes("redcard")) return "red_card";
+    if (value.includes("private_premium") || value.includes("premium_private") || value === "premium") return "private_premium";
+    if (value.includes("private_standard") || value.includes("standard_private") || value === "standard" || value.includes("lite")) return "private_standard";
+    if (value.includes("public_member") || value.includes("public_membership") || value.includes("member_690")) return "public_member";
+  }
+  return "unknown";
+}
+
+function capabilityFromTier(value: unknown): string {
+  return capabilityFromFields({ tier: text(value) });
+}
+
+function entitlementStatus(fields: AirtableFields | undefined): { member: string; access: string } {
+  return {
+    member: token(fields?.member_lifecycle_status || fields?.member_status || fields?.["Membership Status"]),
+    access: token(fields?.access_status || fields?.status),
+  };
+}
+
+function isGloballyBlocked(rows: AirtableRecord[]): boolean {
+  return rows.some((row) => HARD_BLOCK_STATUSES.has(entitlementStatus(row.fields).member));
+}
+
+function isRowRejected(fields: AirtableFields | undefined): boolean {
+  const status = entitlementStatus(fields);
+  return HARD_BLOCK_STATUSES.has(status.member)
+    || HARD_BLOCK_STATUSES.has(status.access)
+    || REVOKED_STATUSES.has(status.member)
+    || REVOKED_STATUSES.has(status.access);
+}
+
+function isActiveLike(fields: AirtableFields | undefined, expireAt: string): boolean {
+  const status = entitlementStatus(fields);
+  if (INACTIVE_LIKE_STATUSES.has(status.member) || INACTIVE_LIKE_STATUSES.has(status.access)) return false;
+  if (ACTIVE_LIKE_STATUSES.has(status.member) || ACTIVE_LIKE_STATUSES.has(status.access)) return true;
+  const expiryMs = Date.parse(expireAt);
+  return Number.isFinite(expiryMs) && expiryMs >= Date.now();
+}
+
+function validateEntitlementIdentity(env: Env, rows: AirtableRecord[], input: IdentityInput): LookupState | null {
+  const lineField = text(env.AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD) || "line_user_id";
+  const memberstackField = text(env.AIRTABLE_ENTITLEMENT_MEMBERSTACK_ID_FIELD) || "memberstack_id";
+  const emailField = text(env.AIRTABLE_ENTITLEMENT_MEMBER_EMAIL_FIELD) || "member_email";
+
+  const lines = new Set(rows.map((row) => text(row.fields?.[lineField])).filter(Boolean));
+  const memberstacks = new Set(rows.map((row) => text(row.fields?.[memberstackField])).filter(Boolean));
+  const emails = new Set(rows.map((row) => lower(row.fields?.[emailField])).filter(Boolean));
+  if (lines.size > 1 || memberstacks.size > 1 || emails.size > 1) {
+    return { state: "ambiguous", reason: "entitlement_identity_conflict" };
+  }
+
+  const wantedLine = text(input.line_user_id);
+  const wantedMemberstack = text(input.memberstack_id);
+  const wantedEmail = lower(input.email);
+  const line = [...lines][0] || "";
+  const memberstack = [...memberstacks][0] || "";
+  const email = [...emails][0] || "";
+  if ((wantedLine && line && wantedLine !== line)
+    || (wantedMemberstack && memberstack && wantedMemberstack !== memberstack)
+    || (wantedEmail && email && wantedEmail !== email)) {
+    return { state: "ambiguous", reason: "entitlement_identity_mismatch" };
+  }
+  return null;
+}
+
+async function readEntitlementExpiry(env: Env, input: IdentityInput): Promise<LookupState> {
+  const table = text(env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS) || "MMD — Member Entitlements";
+  const lookups = [
+    { field: text(env.AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD) || "line_user_id", value: text(input.line_user_id), lower: false },
+    { field: text(env.AIRTABLE_ENTITLEMENT_MEMBER_EMAIL_FIELD) || "member_email", value: lower(input.email), lower: true },
+    { field: text(env.AIRTABLE_ENTITLEMENT_MEMBERSTACK_ID_FIELD) || "memberstack_id", value: text(input.memberstack_id), lower: false },
+  ].filter((item) => item.value);
+  if (!lookups.length) return { state: "missing" };
+
+  let rows: AirtableRecord[] = [];
+  try {
+    for (const lookup of lookups) {
+      const left = lookup.lower ? `LOWER({${lookup.field}})` : `{${lookup.field}}`;
+      const found = await listByFormula(env, table, `${left}=${formulaString(lookup.value)}`, 100);
+      if (found.length) {
+        rows = found;
+        break;
+      }
+    }
+  } catch (error) {
+    return { state: "error", reason: `entitlement_read_error:${text((error as Error)?.message).slice(0, 120)}` };
+  }
+
+  if (!rows.length) return { state: "missing" };
+  const identityProblem = validateEntitlementIdentity(env, rows, input);
+  if (identityProblem) return identityProblem;
+  if (isGloballyBlocked(rows)) return { state: "blocked", reason: "resolver_member_blocked" };
+
+  const expiryFields = configuredFields(env.AIRTABLE_ENTITLEMENT_EXPIRES_AT_FIELDS, ["expire_at"]);
+  const candidates = rows
+    .filter((row) => !isRowRejected(row.fields))
+    .map((row) => {
+      const capability = capabilityFromFields(row.fields);
+      const expireAt = normalizeIso(firstField(row.fields, expiryFields));
+      return { row, capability, expire_at: expireAt, active_like: expireAt ? isActiveLike(row.fields, expireAt) : false };
+    })
+    .filter((item) => RECOGNIZED_MEMBERSHIP_CAPABILITIES.has(item.capability));
+
+  if (!candidates.length) return { state: "missing" };
+
+  const currentCapability = capabilityFromTier(input.current_tier);
+  let scoped = currentCapability !== "unknown"
+    ? candidates.filter((item) => item.capability === currentCapability)
+    : candidates;
+  if (!scoped.length) scoped = candidates;
+
+  const privateRows = scoped.filter((item) => PRIVATE_MEMBERSHIP_CAPABILITIES.has(item.capability));
+  if (privateRows.length) scoped = privateRows;
+
+  const activeRows = scoped.filter((item) => item.active_like);
+  if (activeRows.length) scoped = activeRows;
+
+  const withExpiry = scoped.filter((item) => item.expire_at);
+  if (!withExpiry.length) return { state: "missing" };
+  withExpiry.sort((a, b) => Date.parse(b.expire_at) - Date.parse(a.expire_at));
+  return { state: "found", expire_at: withExpiry[0].expire_at };
+}
+
+async function readCanonicalMemberExpiry(env: Env, input: IdentityInput): Promise<LookupState> {
+  const table = text(env.AIRTABLE_TABLE_MEMBERS) || "Members";
+  const lineField = text(env.AIRTABLE_MEMBERS_LINE_USER_ID_FIELD) || "line_id";
+  const emailField = text(env.AIRTABLE_MEMBERS_EMAIL_FIELD) || "Contact Email";
+  const memberstackField = text(env.AIRTABLE_MEMBERS_MEMBERSTACK_ID_FIELD) || "memberstack_id";
+  const lookups = [
+    { field: lineField, value: text(input.line_user_id), lower: false },
+    { field: emailField, value: lower(input.email), lower: true },
+    { field: memberstackField, value: text(input.memberstack_id), lower: false },
+  ].filter((item) => item.value);
+  if (!lookups.length) return { state: "missing" };
+
+  const matches: AirtableRecord[] = [];
+  try {
+    for (const lookup of lookups) {
+      const left = lookup.lower ? `LOWER({${lookup.field}})` : `{${lookup.field}}`;
+      const rows = await listByFormula(env, table, `${left}=${formulaString(lookup.value)}`, 2);
+      if (rows.length > 1) return { state: "ambiguous", reason: `canonical_member_duplicate:${lookup.field}` };
+      if (rows[0]) matches.push(rows[0]);
+    }
+  } catch (error) {
+    return { state: "error", reason: `canonical_member_read_error:${text((error as Error)?.message).slice(0, 120)}` };
+  }
+
+  if (!matches.length) return { state: "missing" };
+  const ids = new Set(matches.map((row) => row.id).filter(Boolean));
+  if (ids.size > 1) return { state: "ambiguous", reason: "canonical_member_identity_conflict" };
+
+  const fields = matches[0].fields;
+  const expiryFields = configuredFields(env.AIRTABLE_MEMBERS_EXPIRE_AT_FIELD, [
+    text(env.AIRTABLE_MEMBERS_EXPIRY_FIELD),
+    text(env.AIRTABLE_MEMBERS_END_DATE_FIELD),
+    "Expire At",
+    "Membership Expiry",
+    "Membership End Date",
+  ]);
+  const expireAt = normalizeIso(firstField(fields, expiryFields));
+  return expireAt ? { state: "found", expire_at: expireAt } : { state: "missing" };
+}
+
+export async function resolveMembershipExpiryV5(
+  env: Env,
+  input: IdentityInput,
+  latestVerifiedSessionExpireAt = "",
+): Promise<MembershipExpiryResolution> {
+  const explicit = normalizeIso(input.verified_expire_at);
+  if (explicit) return { expire_at: explicit, source: "explicit_verified_context", reason: "verified_context" };
+
+  if (env.AIRTABLE_API_KEY && env.AIRTABLE_BASE_ID) {
+    const entitlement = await readEntitlementExpiry(env, input);
+    if (entitlement.state === "found") {
+      return { expire_at: entitlement.expire_at, source: "my_mmd_entitlement_resolver_v1", reason: "member_entitlements" };
+    }
+    if (entitlement.state === "ambiguous" || entitlement.state === "blocked" || entitlement.state === "error") {
+      return { expire_at: "", source: "none", reason: entitlement.reason };
+    }
+
+    const canonicalMember = await readCanonicalMemberExpiry(env, input);
+    if (canonicalMember.state === "found") {
+      return { expire_at: canonicalMember.expire_at, source: "verified_canonical_member_readback", reason: "canonical_member" };
+    }
+    if (canonicalMember.state === "ambiguous" || canonicalMember.state === "error") {
+      return { expire_at: "", source: "none", reason: canonicalMember.reason };
+    }
+  }
+
+  const sessionExpiry = normalizeIso(latestVerifiedSessionExpireAt);
+  if (sessionExpiry) {
+    return { expire_at: sessionExpiry, source: "latest_verified_session", reason: "strict_identity_session_match" };
+  }
+
+  return { expire_at: "", source: "none", reason: "not_found" };
+}
+'''
+          Path("immigrate-worker/src/lib/membership-expiry-v5.ts").write_text(helper)
+
+          # Airtable context: preserve legacy service-history matching, but expiry uses strict identity only.
+          replace_once(
+              "immigrate-worker/src/lib/airtable.ts",
+              '} from "../types";\n',
+              '} from "../types";\nimport { resolveMembershipExpiryV5 } from "./membership-expiry-v5";\n',
+          )
+          replace_once(
+              "immigrate-worker/src/lib/airtable.ts",
+              '  client_name: string;\n};\n\nfunction sessionExpireField',
+              '  client_name: string;\n  line_user_id: string;\n};\n\nfunction sessionExpireField',
+          )
+          replace_once(
+              "immigrate-worker/src/lib/airtable.ts",
+              '    client_name: pickString(fields, ["client_name", "mmd_client_name", "Client Name", "Member Name"]),\n  };\n}',
+              '    client_name: pickString(fields, ["client_name", "mmd_client_name", "Client Name", "Member Name"]),\n'
+              '    line_user_id: pickString(fields, ["line_user_id", "Line User ID"]),\n'
+              '  };\n}',
+          )
+          replace_once(
+              "immigrate-worker/src/lib/airtable.ts",
+              '    membership_status?: string;\n  },\n): Promise<ImmigrationLinkContext> {',
+              '    membership_status?: string;\n'
+              '    verified_expire_at?: string;\n'
+              '  },\n): Promise<ImmigrationLinkContext> {',
+          )
+          replace_once(
+              "immigrate-worker/src/lib/airtable.ts",
+              '        expire_at: "",\n        auto_signup_ready: !memberstackId,\n',
+              '        expire_at: toStr(input.verified_expire_at),\n'
+              '        expire_at_source: toStr(input.verified_expire_at) ? "explicit_verified_context" : "none",\n'
+              '        expire_at_reason: toStr(input.verified_expire_at) ? "verified_context" : "airtable_unavailable",\n'
+              '        auto_signup_ready: !memberstackId,\n',
+          )
+          replace_once(
+              "immigrate-worker/src/lib/airtable.ts",
+              '  const latestSession = [...serviceHistory].sort((a, b) => {\n    const aTime = new Date(a.service_date || 0).getTime();\n    const bTime = new Date(b.service_date || 0).getTime();\n    return bTime - aTime;\n  })[0];\n\n  return {',
+              '  const latestSession = [...serviceHistory].sort((a, b) => {\n'
+              '    const aTime = new Date(a.service_date || 0).getTime();\n'
+              '    const bTime = new Date(b.service_date || 0).getTime();\n'
+              '    return bTime - aTime;\n'
+              '  })[0];\n\n'
+              '  const latestVerifiedSession = serviceHistory\n'
+              '    .filter((record) => {\n'
+              '      const matchesMemberstack = memberstackId && record.memberstack_id === memberstackId;\n'
+              '      const matchesEmail = email && record.member_email.toLowerCase() === email;\n'
+              '      const matchesLine = lineUserId && record.line_user_id === lineUserId;\n'
+              '      return Boolean(matchesMemberstack || matchesEmail || matchesLine);\n'
+              '    })\n'
+              '    .sort((a, b) => {\n'
+              '      const aTime = new Date(a.service_date || 0).getTime();\n'
+              '      const bTime = new Date(b.service_date || 0).getTime();\n'
+              '      return bTime - aTime;\n'
+              '    })[0];\n\n'
+              '  const expiryResolution = await resolveMembershipExpiryV5(\n'
+              '    env,\n'
+              '    {\n'
+              '      line_user_id: lineUserId,\n'
+              '      memberstack_id: memberstackId,\n'
+              '      email,\n'
+              '      current_tier: toStr(input.current_tier),\n'
+              '      verified_expire_at: toStr(input.verified_expire_at),\n'
+              '    },\n'
+              '    latestVerifiedSession?.expire_at || "",\n'
+              '  );\n\n'
+              '  return {',
+          )
+          replace_once(
+              "immigrate-worker/src/lib/airtable.ts",
+              '      expire_at: latestSession?.expire_at || "",\n      auto_signup_ready: !memberstackId,\n',
+              '      expire_at: expiryResolution.expire_at,\n'
+              '      expire_at_source: expiryResolution.source,\n'
+              '      expire_at_reason: expiryResolution.reason,\n'
+              '      auto_signup_ready: !memberstackId,\n',
+          )
+
+          # Renewal status: public payload cannot inject expiry; only internal verified context can.
+          replace_once(
+              "immigrate-worker/src/index.ts",
+              '    membership_status?: string;\n    expire_at?: string;\n    intent_hint?: string;\n',
+              '    membership_status?: string;\n'
+              '    verified_expire_at?: string;\n'
+              '    intent_hint?: string;\n',
+          )
+          replace_once(
+              "immigrate-worker/src/index.ts",
+              '    membership_status: input.membership_status,\n  });\n\n  const totalSpendTHB',
+              '    membership_status: input.membership_status,\n'
+              '    verified_expire_at: input.verified_expire_at,\n'
+              '  });\n\n  const totalSpendTHB',
+          )
+          replace_once(
+              "immigrate-worker/src/index.ts",
+              '  const membershipExpireAt = toStr(context.membership?.expire_at || input.expire_at);\n',
+              '  const membershipExpireAt = toStr(context.membership?.expire_at);\n',
+          )
+          replace_once(
+              "immigrate-worker/src/index.ts",
+              '    membership_status: toStr(context.membership?.status || input.membership_status),\n',
+              '    membership_status: toStr(input.membership_status),\n',
+          )
+
+          # Runtime vars mirror the canonical auth-worker field names. No Clients profile authority is introduced.
+          replace_once(
+              "immigrate-worker/wrangler.toml",
+              'AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"\n',
+              'AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"\n'
+              'AIRTABLE_TABLE_MEMBERS = "Members"\n'
+              'AIRTABLE_TABLE_MEMBER_ENTITLEMENTS = "MMD — Member Entitlements"\n'
+              'AIRTABLE_MEMBERS_LINE_USER_ID_FIELD = "line_id"\n'
+              'AIRTABLE_MEMBERS_EMAIL_FIELD = "Contact Email"\n'
+              'AIRTABLE_MEMBERS_MEMBERSTACK_ID_FIELD = "memberstack_id"\n'
+              'AIRTABLE_MEMBERS_EXPIRY_FIELD = "Membership Expiry"\n'
+              'AIRTABLE_MEMBERS_END_DATE_FIELD = "Membership End Date"\n'
+              'AIRTABLE_MEMBERS_EXPIRE_AT_FIELD = "Expire At"\n'
+              'AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD = "line_user_id"\n'
+              'AIRTABLE_ENTITLEMENT_MEMBERSTACK_ID_FIELD = "memberstack_id"\n'
+              'AIRTABLE_ENTITLEMENT_MEMBER_EMAIL_FIELD = "member_email"\n'
+              'AIRTABLE_ENTITLEMENT_EXPIRES_AT_FIELDS = "expire_at"\n',
+          )
+
+          test = r'''import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const helper = fs.readFileSync(path.join(root, "src/lib/membership-expiry-v5.ts"), "utf8");
+const airtable = fs.readFileSync(path.join(root, "src/lib/airtable.ts"), "utf8");
+const index = fs.readFileSync(path.join(root, "src/index.ts"), "utf8");
+const wrangler = fs.readFileSync(path.join(root, "wrangler.toml"), "utf8");
+
+assert.equal(helper.includes("display_name"), false, "V5 expiry resolver must never identity-match by display name");
+assert.match(helper, /explicit_verified_context/);
+assert.match(helper, /my_mmd_entitlement_resolver_v1/);
+assert.match(helper, /verified_canonical_member_readback/);
+assert.match(helper, /latest_verified_session/);
+assert.match(helper, /resolver_member_blocked/);
+assert.match(helper, /canonical_member_identity_conflict/);
+
+const resolverStart = helper.indexOf("export async function resolveMembershipExpiryV5");
+const resolverBody = helper.slice(resolverStart);
+assert.ok(resolverBody.indexOf("input.verified_expire_at") < resolverBody.indexOf("readEntitlementExpiry"));
+assert.ok(resolverBody.indexOf("readEntitlementExpiry") < resolverBody.indexOf("readCanonicalMemberExpiry"));
+assert.ok(resolverBody.indexOf("readCanonicalMemberExpiry") < resolverBody.indexOf("latestVerifiedSessionExpireAt"));
+
+assert.match(airtable, /matchesLine = lineUserId && record\.line_user_id === lineUserId/);
+assert.match(airtable, /expire_at: expiryResolution\.expire_at/);
+assert.match(airtable, /expire_at_source: expiryResolution\.source/);
+
+const publicStatusType = index.match(/type PublicRenewalStatusRequest = \{([\s\S]*?)\n\};/)?.[1] || "";
+assert.equal(/expire_at\??:/.test(publicStatusType), false, "public renewal payload must not be able to inject expire_at");
+assert.match(index, /membership_status: toStr\(input\.membership_status\)/);
+assert.doesNotMatch(index, /context\.membership\?\.expire_at \|\| input\.expire_at/);
+
+assert.match(wrangler, /AIRTABLE_TABLE_MEMBER_ENTITLEMENTS = "MMD — Member Entitlements"/);
+assert.match(wrangler, /AIRTABLE_TABLE_MEMBERS = "Members"/);
+console.log("membership expiry fallback v5 contract: ok");
+'''
+          Path("immigrate-worker/test/membership-expiry-fallback-v5.test.mjs").write_text(test)
+
+          package_path = Path("immigrate-worker/package.json")
+          package_text = package_path.read_text()
+          old = '"test": "node test/canonical-admin-login-wrapper.test.mjs'
+          new = '"test": "node test/membership-expiry-fallback-v5.test.mjs && node test/canonical-admin-login-wrapper.test.mjs'
+          if old not in package_text:
+              raise SystemExit("package test anchor not found")
+          package_path.write_text(package_text.replace(old, new, 1))
+
+          docs = r'''# Renewal Membership Expiry Fallback V5
+
+Status: canonical compatibility readback for `immigrate-worker` renewal status.
+
+## Purpose
+
+Resolve `membership.expire_at` without allowing legacy profile data to become membership, tier, status, or access authority.
+
+## Resolution order
+
+1. explicit **verified internal** expiry context, when one is supplied by a trusted server-side caller;
+2. `MMD — Member Entitlements`, interpreted with the same capability/status vocabulary as `my_mmd_entitlement_resolver_v1`;
+3. a uniquely matched canonical `Members` record, using exact LINE user ID, email, or memberstack ID only;
+4. the latest Session that matches one of those strict identifiers;
+5. blank (`""`) when no trustworthy expiry is available.
+
+An ambiguous, conflicting, blocked, or failed authoritative read stops the fallback chain and returns blank. This is intentionally fail-closed.
+
+## Boundary locks
+
+- `MMD — Member Entitlements` / `my_mmd_entitlement_resolver_v1` remains current-rights authority.
+- `Members` is compatibility/readback only.
+- `Clients` is **not** an expiry fallback authority in V5.
+- No name/display-name matching is allowed for expiry resolution.
+- Canonical Member readback cannot set `current_tier`, `membership_status`, or access.
+- Session fallback cannot set `current_tier`, `membership_status`, or access.
+- Public `/member/api/renewal/status` callers cannot submit an authoritative `expire_at` value.
+- Existing service-history compatibility matching may still use a display name, but the expiry fallback uses only strict LINE user ID / memberstack ID / email matches.
+
+## Observability
+
+`context.membership.expire_at_source` reports one of:
+
+- `explicit_verified_context`
+- `my_mmd_entitlement_resolver_v1`
+- `verified_canonical_member_readback`
+- `latest_verified_session`
+- `none`
+
+`expire_at_reason` provides a bounded diagnostic such as `member_entitlements`, `canonical_member`, `strict_identity_session_match`, `resolver_member_blocked`, identity conflict, or `not_found`.
+'''
+          Path("docs/ops/RENEWAL_MEMBERSHIP_EXPIRY_FALLBACK_V5.md").write_text(docs)
+          PY
+
+      - name: Install immigrate-worker dependencies
+        working-directory: immigrate-worker
+        run: npm ci
+
+      - name: Typecheck immigrate-worker
+        working-directory: immigrate-worker
+        run: npm run typecheck
+
+      - name: Test immigrate-worker
+        working-directory: immigrate-worker
+        run: npm test
+
+      - name: Commit tested V5 patch and remove bootstrap workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "MMD Privé Automation"
+          git config user.email "malemodel.bkk@gmail.com"
+          git rm .github/workflows/tmp-renewal-expiry-fallback-v5.yml
+          git add immigrate-worker/src/types.ts \
+            immigrate-worker/src/lib/airtable.ts \
+            immigrate-worker/src/lib/membership-expiry-v5.ts \
+            immigrate-worker/src/index.ts \
+            immigrate-worker/wrangler.toml \
+            immigrate-worker/package.json \
+            immigrate-worker/test/membership-expiry-fallback-v5.test.mjs \
+            docs/ops/RENEWAL_MEMBERSHIP_EXPIRY_FALLBACK_V5.md
+          git commit -m "feat(renewal): add resolver-aware expiry fallback v5"
+          git push origin HEAD:feat/renewal-expiry-fallback-v5
