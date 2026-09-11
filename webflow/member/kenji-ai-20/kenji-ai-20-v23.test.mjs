@@ -28,14 +28,25 @@ test("v23 markup contains the canonical build marker and all supplied Kenji visu
 
 test("v23 uses canonical My MMD BFF and current customer routes", () => {
   assert.match(html, /data-dashboard-endpoint="\/api\/member\/app\/dashboard"/);
-  for (const route of ["/my-mmd/profile", "/my-mmd/membership", "/my-mmd/history", "/confirm/payment-proof", "/sigil/recovery"]) {
+  for (const route of ["/my-mmd/profile", "/my-mmd/membership", "/my-mmd/history", "/member/payments", "/sigil/recovery"]) {
     assert.ok(html.includes(route), route);
   }
   for (const route of ["'/booking'", "'/sigil/booking'", "'/my-mmd/points'", "'/male-massage/home'", "'/rules/customer'"]) {
     assert.ok(js.includes(route), route);
   }
+  assert.match(js, /proof:'\/member\/payments'/);
+  assert.ok(!html.includes("/confirm/payment-proof"));
+  assert.ok(!js.includes("/confirm/payment-proof"));
   assert.ok(!js.includes("'/member/membership'"));
   assert.ok(!js.includes("'/member/dashboard'"));
+});
+
+test("v23 payment continuation never creates a second proof path", () => {
+  assert.match(js, /ไม่ต้องสร้างรายการหรือส่งซ้ำ/);
+  assert.match(js, /do not create or submit another one/);
+  assert.match(js, /不要再次建立或重复提交/);
+  assert.match(html, /payment ref เดิม/);
+  assert.doesNotMatch(html + js, /confirm\/payment-proof/);
 });
 
 test("v23 member reads fail closed and do not propagate legacy query tokens", () => {
