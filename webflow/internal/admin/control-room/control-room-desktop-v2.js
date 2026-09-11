@@ -13,7 +13,7 @@
   };
   const healthPaths={
     admin:'/v1/admin/auth/me',
-    'model-link':'/internal/admin/kenji?view=model-link',
+    'model-link':'/internal/admin/model-link',
     knowledge:'/internal/admin/kenji?view=knowledge',
     preview:'/internal/admin/kenji?view=ai20',
     studio:'/internal/admin/studio',
