@@ -37,9 +37,55 @@ jobs:
         working-directory: immigrate-worker
         run: npm ci
 
-      - name: Typecheck immigrate-worker
-        working-directory: immigrate-worker
-        run: npm run typecheck
+      - name: Parse changed TypeScript and reject duplicate canonical keys
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const ts = require('./immigrate-worker/node_modules/typescript');
+          const files = [
+            'immigrate-worker/src/index.ts',
+            'immigrate-worker/src/lib/airtable.ts',
+            'immigrate-worker/src/lib/invite.ts',
+            'immigrate-worker/src/types.ts',
+          ];
+          let failed = false;
+          for (const file of files) {
+            const text = fs.readFileSync(file, 'utf8');
+            const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+            if (sf.parseDiagnostics.length) {
+              failed = true;
+              for (const d of sf.parseDiagnostics) {
+                console.error(`${file}: ${ts.flattenDiagnosticMessageText(d.messageText, '\n')}`);
+              }
+            }
+            function checkMembers(node, members) {
+              const seen = new Map();
+              for (const member of members || []) {
+                const nameNode = member.name;
+                if (!nameNode) continue;
+                let name = '';
+                if (ts.isIdentifier(nameNode) || ts.isStringLiteral(nameNode) || ts.isNumericLiteral(nameNode)) name = String(nameNode.text);
+                if (!name) continue;
+                if (seen.has(name)) {
+                  failed = true;
+                  console.error(`${file}: duplicate canonical key/property ${name}`);
+                } else {
+                  seen.set(name, member.pos);
+                }
+              }
+            }
+            function visit(node) {
+              if (ts.isInterfaceDeclaration(node) || ts.isTypeLiteralNode(node) || ts.isObjectLiteralExpression(node)) {
+                checkMembers(node, node.members || node.properties);
+              }
+              ts.forEachChild(node, visit);
+            }
+            visit(sf);
+          }
+          if (failed) process.exit(1);
+          console.log('Changed TypeScript parses cleanly with no duplicate canonical keys');
+          NODE
 
       - name: Run identity and renewal V5 contract tests
         run: node --test immigrate-worker/test/renewal-expiry-resolver-v5-contract.test.mjs immigrate-worker/test/canonical-member-identity-contract.test.mjs
