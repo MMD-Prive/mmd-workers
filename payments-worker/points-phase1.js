@@ -141,7 +141,7 @@ async function resolveCanonicalMemberId(env, emailRaw) {
     try {
       const row = await findFirst(env, table, formula);
       const fields = row?.fields || {};
-      const id = clean(fields.member_id || fields["Member ID"] || fields.memberstack_id);
+      const id = clean(fields.member_id || fields["Member ID"]);
       if (id) return id;
     } catch {}
   }
