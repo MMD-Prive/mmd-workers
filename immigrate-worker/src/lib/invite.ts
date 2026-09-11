@@ -65,7 +65,7 @@ export interface InviteIdentityInput {
   folder_name?: string;
   line_user_id?: string;
   telegram_username?: string;
-  memberstack_id?: string;
+  member_id?: string;
   email?: string;
   gmail?: string;
 }
@@ -93,7 +93,7 @@ export interface InviteTokenPayload {
   email?: string;
   line_user_id?: string;
   telegram_username?: string;
-  memberstack_id?: string;
+  member_id?: string;
   model_name?: string;
   model_record_id?: string;
   rules_url?: string;
@@ -195,7 +195,7 @@ export function generateUsername(input: InviteIdentityInput): string {
   const seed = [
     toStr(input.line_user_id),
     toStr(input.telegram_username),
-    toStr(input.memberstack_id),
+    toStr(input.member_id),
     toStr(input.email || input.gmail).toLowerCase(),
     toStr(input.folder_name),
     toStr(input.client_name),
@@ -218,7 +218,7 @@ export function parseInviteIdentity(input: InviteIdentityInput): InviteIdentity 
     [
       toStr(input.line_user_id),
       toStr(input.telegram_username),
-      toStr(input.memberstack_id),
+      toStr(input.member_id),
       toStr(input.email || input.gmail).toLowerCase(),
       toStr(input.folder_name),
       toStr(input.client_name),
@@ -297,7 +297,7 @@ export async function generateInviteLink(
     email?: string;
     line_user_id?: string;
     telegram_username?: string;
-    memberstack_id?: string;
+    member_id?: string;
     invite_page?: string;
     expires_in_hours?: number;
     role?: InviteRole;
@@ -333,7 +333,7 @@ export async function generateInviteLink(
     email: toStr(input.email).toLowerCase(),
     line_user_id: toStr(input.line_user_id),
     telegram_username: toStr(input.telegram_username),
-    memberstack_id: toStr(input.memberstack_id),
+    member_id: toStr(input.member_id),
     model_name: toStr(input.model_name),
     model_record_id: toStr(input.model_record_id),
     rules_url: toStr(input.rules_url),

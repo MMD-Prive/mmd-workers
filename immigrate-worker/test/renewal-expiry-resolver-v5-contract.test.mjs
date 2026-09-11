@@ -20,7 +20,8 @@ test("v5 profile readback is stable-identity only and expiry-only", () => {
   const block = source.slice(source.indexOf("async function readVerifiedCanonicalMemberExpiry"), source.indexOf("function headers"));
   assert.doesNotMatch(block, /display_name|email/i);
   assert.match(block, /line_user_id/);
-  assert.match(block, /memberstack_id/);
+  assert.match(block, /member_id/);
+  assert.doesNotMatch(block, /memberstack/i);
   assert.doesNotMatch(block, /current_tier|membership_status|access_status|points/i);
 });
 
