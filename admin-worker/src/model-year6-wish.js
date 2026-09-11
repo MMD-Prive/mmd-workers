@@ -109,7 +109,8 @@ export async function handleModelYear6WishRequest(request, env = {}, coreWorker)
   if (!parsed.ok) return json({ ok: false, error: parsed.error }, parsed.status, request, env);
   const now = new Date().toISOString();
   const wishText = clean(parsed.body.wish_text);
-  const language = normalizeLanguage(parsed.body.language);
+  const requestedLanguage = normalizeRequestedLanguage(parsed.body.language);
+  const storedLanguage = requestedLanguage === "th" || requestedLanguage === "en" ? requestedLanguage : "";
   if (!wishText || wishText.length > MAX_WISH || /[<>]/.test(wishText)) {
     return json({ ok: false, error: "model_wish_invalid" }, 400, request, env);
   }
@@ -124,9 +125,11 @@ export async function handleModelYear6WishRequest(request, env = {}, coreWorker)
     submitted_at: now,
     completed_at: now,
     public_display_text: "MMD received a Model Wish.",
-    source: "my_mmd_model_wrap_up",
+    // Airtable source is a controlled single-select. Keep the exact app origin in
+    // source_path/payload_json while preserving typecast:false writes.
+    source: "member_page",
     source_path: "mmdmodel.lovable.app",
-    language,
+    language: storedLanguage,
     display_version: "model_year6_wish_v1",
     payload_json: JSON.stringify({
       schema_version: 1,
@@ -135,6 +138,8 @@ export async function handleModelYear6WishRequest(request, env = {}, coreWorker)
       model_record_id: auth.payload.model_record_id,
       session_id: sessionId,
       session_state: state,
+      requested_language: requestedLanguage,
+      source: "my_mmd_model_wrap_up",
       payout_gate: false,
       required: false,
     }),
@@ -249,7 +254,7 @@ async function verifySessionToken(token, env) {
 
 function storageReady(env) { return Boolean(clean(env.AIRTABLE_API_KEY) && clean(env.AIRTABLE_BASE_ID)); }
 function wishTable(env) { return clean(env.AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES || TABLE_DEFAULT); }
-function normalizeLanguage(value) {
+function normalizeRequestedLanguage(value) {
   const v = clean(value).toLowerCase();
   if (v === "en" || v === "english") return "en";
   if (v === "zh" || v === "chinese") return "zh";
