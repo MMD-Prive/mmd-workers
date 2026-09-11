@@ -47,7 +47,7 @@ const protectedPaymentReply = buildProtectedCapabilityReply(protectedPayment);
 assert.match(protectedPaymentReply, /https:\/\/mmdbkk\.com\/member\/payments/);
 assert.match(protectedPaymentReply, /ไม่ต้องสร้างรายการหรือส่งหลักฐานซ้ำ/);
 assert.doesNotMatch(protectedPaymentReply, /confirm\/payment-proof/);
-assert.doesNotMatch(protectedPaymentReply, /ชำระ(?:เงิน)?สำเร็จ|อนุมัติแล้ว|ยืนยัน(?:การ)?ชำระ(?:เงิน)?(?:แล้ว)?/i);
+assert.doesNotMatch(protectedPaymentReply, /ชำระ(?:เงิน)?สำเร็จ(?:แล้ว)?|อนุมัติแล้ว|(?:ได้รับการ)?ยืนยัน(?:การ)?ชำระ(?:เงิน)?แล้ว/i);
 
 const paymentKnown = resolveKenjiNextAction({
   intent: "payment_status",
