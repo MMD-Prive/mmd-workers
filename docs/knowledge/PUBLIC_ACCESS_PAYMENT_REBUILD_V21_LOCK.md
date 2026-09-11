@@ -1,20 +1,34 @@
 # MMD MEMORY · PUBLIC ACCESS PAYMENT REBUILD V21 LOCK
 
-Updated: 2026-08-04
-Route: `/confirm/public-access-payment`
-Webflow page ID: `6a59faf26b1b95d6eb8c072b`
-Webflow HtmlEmbed ID: `bb307a43-7ae1-ab53-9d1b-7943c8805054`
+Updated: 2026-08-04  
+Superseded for new traffic: 2026-09-11  
+Route: `/confirm/public-access-payment`  
+Webflow page ID: `6a59faf26b1b95d6eb8c072b`  
+Webflow HtmlEmbed ID: `bb307a43-7ae1-ab53-9d1b-7943c8805054`  
 Version marker: `mmdPublicAccessPaymentV21`
 
 ## Status
 
-Active customer-facing legacy payment evidence upload route for Public Access.
-This route must match the same visual and copy level as `/confirm/payment-proof` and `/confirm/public-access-received`.
+**HISTORICAL · LEGACY COMPATIBILITY ONLY · DO NOT ROUTE NEW TRAFFIC**
 
-## Purpose
+This document records the former Public Access 690 evidence-upload implementation. It is retained for audit/compatibility only and no longer defines the current customer payment route.
 
-`/confirm/public-access-payment` is the Public Access-specific proof upload page.
-It receives customer evidence for MMD review only.
+For all new payment continuation, `docs/knowledge/MMD_CANONICAL_PAYMENT_MEMORY_20260911.md` and `docs/knowledge/UNIFIED_PAYMENT_PROOF_FLOW_LOCK.md` are authoritative:
+
+- use the exact signed `/sigil/pay?t=...` URL only when the current backend payment intent supplies it;
+- otherwise use `/member/payments` for payment list/status/navigation;
+- reuse the canonical `payment_ref`;
+- never ask for duplicate proof when evidence is already pending;
+- proof remains evidence only until Official Verify/backend money truth confirms it.
+
+`Public Access 690` is not a current main access/payment product and this route must not be surfaced by Kenji or new customer flows as a pay-to-view or instant-unlock path.
+
+The implementation notes below describe the legacy page only. They do not override the current canonical payment flow.
+
+## Historical purpose
+
+`/confirm/public-access-payment` was the Public Access-specific proof upload page.
+It receives customer evidence for MMD review only when an explicit legacy compatibility case still lands on this route.
 It must not imply payment approval, access opening, booking confirmation, or final verification.
 
 ## Theme
@@ -38,7 +52,7 @@ mmd-prive mmd-page-light mmd-prive-theme-v2026
 
 ## Hero
 
-Current hero image:
+Current legacy hero image:
 
 ```text
 https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a71b7b7affa15a777efe17f_Profiles%20Hito%20YU.webp
@@ -127,7 +141,7 @@ Approved
 เปิดสิทธิ์แล้ว
 ```
 
-## Form fields
+## Legacy form fields
 
 Visible fields:
 
@@ -141,7 +155,7 @@ Visible fields:
 - แนบหลักฐาน image or PDF
 - consent checkbox
 
-## Endpoint
+## Legacy endpoint
 
 Upload endpoint:
 
@@ -162,9 +176,9 @@ Max size:
 15MB
 ```
 
-## Required FormData lock
+## Historical FormData contract
 
-The frontend must append:
+The former frontend appended:
 
 ```text
 payment_ref=mmd_public_YYYYMMDD_model_client_tail
@@ -190,9 +204,11 @@ source_route=/confirm/public-access-payment
 contact_channel=customer_provided
 ```
 
+This historical client-generated reference pattern is **not** the canonical contract for new flows. New flows must reuse the backend-issued canonical `payment_ref` and signed payment handoff.
+
 ## Storage compatibility
 
-After upload, store compatible sessionStorage keys:
+Legacy sessionStorage keys:
 
 ```text
 mmd_public_access_payment_v21
@@ -201,9 +217,9 @@ mmd_public_access_payment_v19
 mmd_payment_proof_v1
 ```
 
-## Redirect
+## Legacy redirect
 
-After evidence is received, redirect to:
+After evidence was received, the page redirected to:
 
 ```text
 /confirm/public-access-received
@@ -220,8 +236,8 @@ package=Public Access 690
 
 ## Webflow implementation note
 
-The full rebuilt page currently lives inside the Webflow HtmlEmbed on `/confirm/public-access-payment`.
-Page footer freeform code is intentionally cleared to:
+The historical full rebuilt page lives inside the Webflow HtmlEmbed on `/confirm/public-access-payment`.
+Page footer freeform code was intentionally cleared to:
 
 ```html
 <!-- MMD Public Access Payment v21: full rebuilt page lives in HtmlEmbed. No footer override. -->
@@ -231,6 +247,6 @@ The page is excluded from sitemap.
 
 ## Final rule
 
-`/confirm/public-access-payment` is a Public Access evidence upload page only.
-It receives proof for MMD review.
-It does not confirm payment, access, booking, membership, or final status.
+`/confirm/public-access-payment` is retained only for explicit legacy compatibility. It must not be a new payment-entry route, must not mint a replacement `payment_ref`, and must not be promoted as current Public Access 690.
+
+Current new payment flow is governed by the canonical payment memory and unified payment/proof lock. Proof never confirms payment, access, booking, membership, or final status by itself.
