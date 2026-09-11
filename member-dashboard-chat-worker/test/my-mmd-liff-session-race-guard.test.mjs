@@ -45,7 +45,7 @@ test("status recovery allows resolver/fallback headroom beyond the 12 second res
   const env = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
-        '<!doctype html><html><body><div id="message"></div><div id="actions"></div><script nonce="abc123"></script></body></html>',
+        '<!doctype html><html><body><div id="message"></div><div id="actions"></div><script nonce="abc123">const HARD_TIMEOUT_MS = 12000;</script></body></html>',
         { status: 200, headers: { "content-type": "text/html; charset=utf-8" } },
       ),
     },
@@ -57,4 +57,5 @@ test("status recovery allows resolver/fallback headroom beyond the 12 second res
   assert.equal(response.headers.get("x-mmd-liff-hard-timeout-ms"), "18000");
   assert.equal(response.headers.get("x-mmd-liff-session-race-hotfix"), "v1");
   assert.match(html, /const HARD_TIMEOUT_MS = 18000;/);
+  assert.doesNotMatch(html, /const HARD_TIMEOUT_MS = 12000;/);
 });
