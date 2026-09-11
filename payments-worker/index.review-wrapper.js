@@ -22,6 +22,10 @@ import {
   isCustomerSessionDetailsRequest,
 } from "./customer-session-v2.js";
 import {
+  handlePaymentInstructions,
+  isPaymentInstructionsRequest,
+} from "./payment-instructions-v1.js";
+import {
   enrichUnifiedConfirmVerify,
   handleUnifiedPaymentIntent,
   handleUnifiedSlipEvidence,
@@ -40,6 +44,12 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+
+    if (isPaymentInstructionsRequest(path, method)) {
+      return handlePaymentInstructions(request, env, (detailsRequest) =>
+        handleCustomerSessionDetails(detailsRequest, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx))
+      );
+    }
 
     if (isCustomerSessionDetailsRequest(path, method)) {
       return handleCustomerSessionDetails(request, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx));
