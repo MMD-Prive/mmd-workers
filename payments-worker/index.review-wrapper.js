@@ -29,6 +29,7 @@ import {
   isUnifiedPaymentIntentRequest,
   isUnifiedSlipEvidenceRequest,
 } from "./unified-payment-proof.js";
+import { reconcilePremiumReviewedMembershipTerm } from "./premium-membership-term.js";
 
 export { PointsPhase1Coordinator };
 
@@ -63,7 +64,7 @@ export default {
     }
 
     if (isReviewedProofRequest(path, method)) {
-      return handleReviewedProof(request, env, ctx, async (body) => {
+      const reviewResponse = await handleReviewedProof(request, env, ctx, async (body) => {
         if (!String(env.INTERNAL_TOKEN || "").trim()) {
           return json({ ok: false, error: "payments_internal_token_not_ready", authority: "payments-worker" }, 503);
         }
@@ -97,6 +98,7 @@ export default {
           body: JSON.stringify(body),
         }), env, ctx);
       });
+      return reconcilePremiumReviewedMembershipTerm(request, reviewResponse, env);
     }
 
     return phase1Worker.fetch(request, env, ctx);
