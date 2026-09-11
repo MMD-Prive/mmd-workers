@@ -8,7 +8,7 @@ Membership entitlement decisions remain owned by `my_mmd_entitlement_resolver_v1
 
 1. explicit `expire_at` already supplied by verified server context
 2. `MMD — Member Entitlements` evaluated through `my_mmd_entitlement_resolver_v1`
-3. verified canonical `Members` row matched only by exact `line_user_id` or `memberstack_id`
+3. verified canonical `Members` row matched only by exact `line_user_id` or canonical MMD `member_id`
 4. latest already-matched Session `expire_at`
 5. blank / fail-closed
 

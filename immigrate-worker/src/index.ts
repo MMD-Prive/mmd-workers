@@ -7,7 +7,7 @@ import {
   intakeLineClientUpsert,
   listRecordsFromAirtable,
   listSessionsFromAirtable,
-  patchClientMemberstackId,
+  patchClientMemberId,
   previewLineClientUpsert,
   syncRecordsToAirtable,
   writeLinkAuditRecord,
@@ -354,7 +354,7 @@ type InvitePayload = {
   line_user_id?: string;
   telegram_username?: string;
   customer_telegram_username?: string;
-  memberstack_id?: string;
+  member_id?: string;
   email?: string;
   gmail?: string;
   invite_page?: string;
@@ -396,7 +396,7 @@ function toInviteIdentityPayload(payload: InvitePayload) {
     folder_name: payload.folder_name || payload.model_name,
     line_user_id: payload.line_user_id,
     telegram_username: payload.telegram_username || payload.customer_telegram_username,
-    memberstack_id: payload.memberstack_id,
+    member_id: payload.member_id,
     email: payload.email,
     gmail: payload.gmail,
   };
@@ -550,7 +550,7 @@ type PublicRenewalStatusRequest = {
   display_name?: string;
   line_user_id?: string;
   line_display_name?: string;
-  memberstack_id?: string;
+  member_id?: string;
   include_context?: boolean;
   source_page?: string;
   search_priority?: string;
@@ -562,7 +562,6 @@ type PublicRenewalStatusResponse = {
     found: boolean;
     email: string;
     member_id: string;
-    memberstack_id: string;
     display_name: string;
     membership_status: string;
     current_tier: string;
@@ -656,7 +655,7 @@ async function buildRenewalStatusProjection(
     email?: string;
     display_name?: string;
     line_user_id?: string;
-    memberstack_id?: string;
+    member_id?: string;
     current_tier?: string;
     target_tier?: string;
     membership_status?: string;
@@ -666,7 +665,7 @@ async function buildRenewalStatusProjection(
 ): Promise<{ projection: RenewalStatusProjection; context: ImmigrationLinkContext }> {
   const context = await buildImmigrationLinkContext(env, {
     line_user_id: input.line_user_id,
-    memberstack_id: input.memberstack_id,
+    member_id: input.member_id,
     email: input.email,
     display_name: input.display_name,
     current_tier: input.current_tier,
@@ -678,8 +677,8 @@ async function buildRenewalStatusProjection(
   const totalSpendTHB = sumTotalSpendFromContext(context);
   const totalSessions = Array.isArray(context.service_history) ? context.service_history.length : 0;
   const lineContextFound = Array.isArray(context.line_history) && context.line_history.length > 0;
-  const memberstackId = toStr(context.membership?.memberstack_id || input.memberstack_id);
-  const found = Boolean(memberstackId || totalSessions > 0 || lineContextFound);
+  const memberId = toStr(context.membership?.member_id || input.member_id);
+  const found = Boolean(memberId || totalSessions > 0 || lineContextFound);
   const membershipExpireAt = toStr(context.membership?.expire_at || input.expire_at);
   const membershipStatus = deriveMembershipStatus({
     current_status_latest_session_status: context.current_status?.latest_session_status || "",
@@ -702,8 +701,7 @@ async function buildRenewalStatusProjection(
     projection: {
       found,
       email: toStr(input.email).toLowerCase(),
-      member_id: memberstackId,
-      memberstack_id: memberstackId,
+      member_id: memberId,
       display_name: toStr(input.display_name),
       membership_status: found ? membershipStatus : "not_found",
       current_tier: currentTier,
@@ -764,7 +762,7 @@ async function handlePublicRenewalStatus(request: Request, env: Env): Promise<Re
     email,
     display_name: displayName,
     line_user_id: toStr(body.line_user_id),
-    memberstack_id: toStr(body.memberstack_id),
+    member_id: toStr(body.member_id),
     intent_hint: toStr(body.search_priority) === "upgrade" ? "upgrade" : "renewal",
   });
 
@@ -790,7 +788,6 @@ type PublicRenewalBody = {
   telegram_username?: string;
   member_ref?: string;
   member_id?: string;
-  memberstack_id?: string;
   current_tier_hint?: string;
   target_tier?: string;
   package?: string;
@@ -840,7 +837,7 @@ function buildPublicRenewalPayload(body: PublicRenewalBody): ImmigrationIntakeRe
     source_channel: sourceChannel,
     intent,
     identity: {
-      member_id: toStr(body.member_id || body.memberstack_id || body.member_ref) || undefined,
+      member_id: toStr(body.member_id || body.member_ref) || undefined,
       line_id: lineId || undefined,
       line_user_id: lineUserId || undefined,
       full_name: displayName || undefined,
@@ -888,7 +885,7 @@ function buildRenewalLineIntakePayload(
 
   return {
     immigration_id: immigrationId,
-    memberstack_id: toStr(body.memberstack_id || body.member_id || body.member_ref),
+    member_id: toStr(body.member_id || body.member_ref),
     source_channel: payload.source_channel,
     intake_source: payload.source_channel === "renewal" ? "renewal_web" : "line",
     display_name: toStr(payload.identity.full_name),
@@ -1240,7 +1237,7 @@ async function promoteLineClientAfterIntake(
     source_channel: "line",
     intent: "contact_import",
     identity: {
-      member_id: toStr(payload.memberstack_id),
+      member_id: toStr(payload.member_id),
       line_id: toStr(payload.line_id || payload.identity?.line_id),
       line_user_id: toStr(payload.line_user_id || payload.identity?.line_user_id),
       full_name: toStr(payload.display_name || payload.identity?.display_name || payload.nickname),
@@ -1323,7 +1320,7 @@ async function promoteLineClientAfterIntake(
 
   const promotedMemberId = toStr(responseJson?.data?.member_id);
   if (promotedMemberId && intakeResult.client.airtable_record_id) {
-    const patchedClient = await patchClientMemberstackId(
+    const patchedClient = await patchClientMemberId(
       env,
       intakeResult.client.airtable_record_id,
       promotedMemberId,
@@ -1363,7 +1360,7 @@ async function createLineLinksAfterPromotion(
     display_name: toStr(payload.display_name || payload.identity?.display_name || payload.nickname),
     email: toStr(payload.member_email || payload.email || payload.identity?.member_email || payload.identity?.email).toLowerCase(),
     line_user_id: toStr(payload.line_user_id || payload.identity?.line_user_id),
-    memberstack_id: toStr(promotion.member_id),
+    member_id: toStr(promotion.member_id),
     model_name: toStr(payload.model_name),
     model_record_id: toStr(payload.model_record_id),
     expires_in_hours: Number(payload.expires_in_hours || 24 * 7),
@@ -1789,7 +1786,7 @@ async function buildLinksBundle(
     display_name?: string;
     email?: string;
     line_user_id?: string;
-    memberstack_id?: string;
+    member_id?: string;
     model_name?: string;
     model_record_id?: string;
     rules_url?: string;
@@ -1819,7 +1816,7 @@ async function buildLinksBundle(
     nickname: displayName,
     email: toStr(payload.email).toLowerCase(),
     line_user_id: toStr(payload.line_user_id),
-    memberstack_id: toStr(payload.memberstack_id),
+    member_id: toStr(payload.member_id),
   });
 
   const modelIdentity = parseInviteIdentity({
@@ -1849,7 +1846,7 @@ async function buildLinksBundle(
     mmd_client_name: customerIdentity.mmd_client_name,
     email: toStr(payload.email).toLowerCase(),
     line_user_id: toStr(payload.line_user_id),
-    memberstack_id: toStr(payload.memberstack_id),
+    member_id: toStr(payload.member_id),
     invite_page: toStr(payload.customer_onboarding_path) || "/sigil/onboarding",
     expires_in_hours: expiresInHours,
     role: "customer",
@@ -1896,7 +1893,7 @@ async function buildLinksBundle(
   const context = await buildImmigrationLinkContext(env, {
     immigration_id: immigrationId,
     line_user_id: toStr(payload.line_user_id),
-    memberstack_id: toStr(payload.memberstack_id),
+    member_id: toStr(payload.member_id),
     email: toStr(payload.email).toLowerCase(),
     display_name: displayName,
     membership_status: toStr(payload.membership_status),
@@ -1940,7 +1937,7 @@ async function handleCreateImmigrationLinks(request: Request, env: Env): Promise
     immigration_id: data.immigration_id,
     display_name: payload.display_name,
     line_user_id: payload.line_user_id,
-    memberstack_id: payload.memberstack_id,
+    member_id: payload.member_id,
     customer_url: data.customer_url,
     model_url: data.model_url,
     customer_rules_url: data.customer_rules_url,
@@ -2058,7 +2055,7 @@ async function handleCreateLinks(request: Request, env: Env): Promise<Response> 
     display_name: toStr(invitePayload.client_name || invitePayload.mmd_client_name),
     email: toStr(invitePayload.email || invitePayload.gmail).toLowerCase(),
     line_user_id: toStr(invitePayload.line_user_id),
-    memberstack_id: toStr(invitePayload.memberstack_id),
+    member_id: toStr(invitePayload.member_id),
     model_name: toStr(invitePayload.model_name),
     model_record_id: toStr(invitePayload.model_record_id),
     rules_url: toStr(invitePayload.rules_url),
@@ -2114,7 +2111,7 @@ async function handleCreateLinks(request: Request, env: Env): Promise<Response> 
           immigration_id: linkBundle.immigration_id,
           display_name: toStr(invitePayload.client_name || invitePayload.mmd_client_name),
           line_user_id: toStr(invitePayload.line_user_id),
-          memberstack_id: toStr(invitePayload.memberstack_id),
+          member_id: toStr(invitePayload.member_id),
           customer_url: linkBundle.customer_url,
           model_url: linkBundle.model_url,
           customer_rules_url: linkBundle.customer_rules_url,
@@ -2252,7 +2249,7 @@ async function handleCreateInvite(request: Request, env: Env): Promise<Response>
     email: toStr(payload.email || payload.gmail).toLowerCase(),
     line_user_id: toStr(payload.line_user_id),
     telegram_username: toStr(payload.telegram_username || payload.customer_telegram_username),
-    memberstack_id: toStr(payload.memberstack_id),
+    member_id: toStr(payload.member_id),
     invite_page: toStr(payload.invite_page),
     expires_in_hours: Number(payload.expires_in_hours || 24 * 7),
     role,
@@ -2294,7 +2291,7 @@ async function handleResolveInvite(request: Request, env: Env): Promise<Response
       email: invite.email || "",
       line_user_id: invite.line_user_id || "",
       telegram_username: invite.telegram_username || "",
-      memberstack_id: invite.memberstack_id || "",
+      member_id: invite.member_id || "",
       model_name: invite.model_name || "",
       model_record_id: invite.model_record_id || "",
     };
@@ -3412,8 +3409,8 @@ function renderCreateSessionPage(request: Request, session: AdminGateSession): R
       <form id="create-session-form">
         <div class="grid">
           <label>
-            Memberstack ID
-            <input id="memberstack_id" name="memberstack_id" type="text" required />
+            Member ID
+            <input id="member_id" name="member_id" type="text" required />
           </label>
           <label>
             Model ID
@@ -3453,7 +3450,7 @@ function renderCreateSessionPage(request: Request, session: AdminGateSession): R
           </label>
         </div>
 
-        <p class="hint">Required fields are <code>memberstack_id</code>, <code>model_id</code>, and <code>amount_thb</code>. Metadata is optional but must be valid JSON if provided.</p>
+        <p class="hint">Required fields are <code>member_id</code>, <code>model_id</code>, and <code>amount_thb</code>. Metadata is optional but must be valid JSON if provided.</p>
 
         <div class="actions">
           <button id="submit" type="submit">Create Session</button>
@@ -3516,7 +3513,7 @@ function renderCreateSessionPage(request: Request, session: AdminGateSession): R
           }
 
           const payload = {
-            memberstack_id: document.getElementById("memberstack_id").value.trim(),
+            member_id: document.getElementById("member_id").value.trim(),
             model_id: document.getElementById("model_id").value.trim(),
             amount_thb: Number(document.getElementById("amount_thb").value),
             currency: document.getElementById("currency").value.trim() || "THB",
@@ -3998,7 +3995,7 @@ function renderCreateJobPage(request: Request, session: AdminGateSession): Respo
           const threadRaw = document.getElementById("telegram_message_thread_id").value.trim();
 
           const payload = {
-            client_id:selectedClient.client_id||"",member_id:selectedClient.member_id||"",memberstack_id:selectedClient.memberstack_id||"",client_lineage:{client_id:selectedClient.client_id||"",member_id:selectedClient.member_id||"",memberstack_id:selectedClient.memberstack_id||"",member_email:selectedClient.member_email||"",client_name:selectedClient.client_name||"",matched_on:selectedClient.matched_on||"",line_user_id:selectedClient.line_user_id||""},
+            client_id:selectedClient.client_id||"",member_id:selectedClient.member_id||"",client_lineage:{client_id:selectedClient.client_id||"",member_id:selectedClient.member_id||"",member_email:selectedClient.member_email||"",client_name:selectedClient.client_name||"",matched_on:selectedClient.matched_on||"",line_user_id:selectedClient.line_user_id||""},
             display_name: document.getElementById("display_name").value.trim(),
             nickname: document.getElementById("nickname").value.trim(),
             line_user_id: document.getElementById("line_user_id").value.trim(),

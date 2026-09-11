@@ -48,9 +48,9 @@ export interface Env {
   AIRTABLE_SESSION_FIELD_CUSTOMER_CONFIRMED_AT?: string;
   AIRTABLE_SESSION_FIELD_EXPIRE_AT?: string;
   AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD?: string;
-  AIRTABLE_ENTITLEMENT_MEMBERSTACK_ID_FIELD?: string;
+  AIRTABLE_ENTITLEMENT_MEMBER_ID_FIELD?: string;
   AIRTABLE_MEMBERS_LINE_USER_ID_FIELD?: string;
-  AIRTABLE_MEMBERS_MEMBERSTACK_ID_FIELD?: string;
+  AIRTABLE_MEMBERS_MEMBER_ID_FIELD?: string;
   AIRTABLE_MEMBERS_EXPIRY_FIELD?: string;
   AIRTABLE_MEMBERS_END_DATE_FIELD?: string;
   AIRTABLE_MEMBERS_EXPIRE_AT_FIELD?: string;
@@ -195,7 +195,7 @@ export interface ImmigrationIntakeResponse {
 
 export interface LineClientIntakeRequest {
   immigration_id?: string;
-  memberstack_id?: string;
+  member_id?: string;
   source_channel?: string;
   intake_source?: string;
   display_name?: string;
@@ -419,7 +419,7 @@ export interface ImmigrationLinksRequest {
   display_name?: string;
   email?: string;
   line_user_id?: string;
-  memberstack_id?: string;
+  member_id?: string;
   model_name?: string;
   model_record_id?: string;
   rules_url?: string;
@@ -475,7 +475,7 @@ export interface ImmigrationLinkContext {
     entries: ImmigrationContextPointEntry[];
   };
   membership: {
-    memberstack_id: string;
+    member_id: string;
     status: string;
     current_tier: string;
     target_tier: string;
@@ -612,7 +612,7 @@ export interface InvitePrefill {
   email: string;
   line_user_id: string;
   telegram_username: string;
-  memberstack_id: string;
+  member_id: string;
   model_name?: string;
   model_record_id?: string;
 }

@@ -95,17 +95,17 @@ function envFieldList(...values: Array<string | undefined>): string[] {
 
 function exactStableIdentityMatch(
   fields: AirtableFields | undefined,
-  input: { line_user_id?: string; memberstack_id?: string },
+  input: { line_user_id?: string; member_id?: string },
   lineKeys: string[],
-  memberstackKeys: string[],
+  memberIdKeys: string[],
 ): boolean {
   const wantedLine = toStr(input.line_user_id);
-  const wantedMemberstack = toStr(input.memberstack_id);
+  const wantedMemberId = toStr(input.member_id);
   const rowLine = pickString(fields, lineKeys);
-  const rowMemberstack = pickString(fields, memberstackKeys);
+  const rowMemberId = pickString(fields, memberIdKeys);
   return Boolean(
     (wantedLine && rowLine && rowLine === wantedLine) ||
-    (wantedMemberstack && rowMemberstack && rowMemberstack === wantedMemberstack)
+    (wantedMemberId && rowMemberId && rowMemberId === wantedMemberId)
   );
 }
 
@@ -116,13 +116,13 @@ function uniqueExpiry(values: unknown[]): string {
 
 async function readResolverExpiry(
   env: Env,
-  input: { line_user_id?: string; memberstack_id?: string },
+  input: { line_user_id?: string; member_id?: string },
 ): Promise<string> {
-  if (!toStr(input.line_user_id) && !toStr(input.memberstack_id)) return "";
+  if (!toStr(input.line_user_id) && !toStr(input.member_id)) return "";
   const rows = await listGenericRecords(env, memberEntitlementsUrl(env), { maxRecords: 100 });
   const lineKeys = envFieldList(env.AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD, "line_user_id");
-  const memberstackKeys = envFieldList(env.AIRTABLE_ENTITLEMENT_MEMBERSTACK_ID_FIELD, "memberstack_id", "Memberstack ID");
-  const matched = rows.filter((row) => exactStableIdentityMatch(row.fields, input, lineKeys, memberstackKeys));
+  const memberIdKeys = envFieldList(env.AIRTABLE_ENTITLEMENT_MEMBER_ID_FIELD, "member_id", "Member ID");
+  const matched = rows.filter((row) => exactStableIdentityMatch(row.fields, input, lineKeys, memberIdKeys));
   if (!matched.length) return "";
 
   const snapshot = resolveMemberEntitlements(matched);
@@ -144,12 +144,12 @@ async function readResolverExpiry(
 
 async function readVerifiedCanonicalMemberExpiry(
   env: Env,
-  input: { line_user_id?: string; memberstack_id?: string },
+  input: { line_user_id?: string; member_id?: string },
 ): Promise<string> {
-  if (!toStr(input.line_user_id) && !toStr(input.memberstack_id)) return "";
+  if (!toStr(input.line_user_id) && !toStr(input.member_id)) return "";
   const rows = await listGenericRecords(env, membersUrl(env), { maxRecords: 100 });
   const lineKeys = envFieldList(env.AIRTABLE_MEMBERS_LINE_USER_ID_FIELD, "line_id", "line_user_id");
-  const memberstackKeys = envFieldList(env.AIRTABLE_MEMBERS_MEMBERSTACK_ID_FIELD, "memberstack_id", "Memberstack ID");
+  const memberIdKeys = envFieldList(env.AIRTABLE_MEMBERS_MEMBER_ID_FIELD, "member_id", "Member ID");
   const expiryKeys = envFieldList(
     env.AIRTABLE_MEMBERS_EXPIRE_AT_FIELD,
     env.AIRTABLE_MEMBERS_EXPIRY_FIELD,
@@ -160,7 +160,7 @@ async function readVerifiedCanonicalMemberExpiry(
     "expire_at",
     "end_date",
   );
-  const matched = rows.filter((row) => exactStableIdentityMatch(row.fields, input, lineKeys, memberstackKeys));
+  const matched = rows.filter((row) => exactStableIdentityMatch(row.fields, input, lineKeys, memberIdKeys));
   return uniqueExpiry(matched.map((row) => pickString(row.fields, expiryKeys)));
 }
 
@@ -405,7 +405,7 @@ type ContextSession = {
   payment_status: string;
   session_status: string;
   payment_ref: string;
-  memberstack_id: string;
+  member_id: string;
   member_email: string;
   customer_key: string;
   client_name: string;
@@ -452,7 +452,7 @@ function mapContextSession(fields: AirtableFields | undefined, env: Env): Contex
     payment_status: pickString(fields, ["payment_status", "Payment Status", "fldTY5lE6m0kQf72n"]).toLowerCase(),
     session_status: pickString(fields, ["status", "Session Status", "fldHAlxnRfpKucnNV"]).toLowerCase(),
     payment_ref: pickString(fields, ["payment_ref", "Payment Ref", "fldojgjSQLaO0uQLX"]),
-    memberstack_id: pickString(fields, ["memberstack_id", "Memberstack ID"]),
+    member_id: pickString(fields, ["member_id", "Member ID"]),
     member_email: pickString(fields, ["member_email", "Member Email", "email", "Email"]),
     customer_key: pickString(fields, ["customer_key", "Customer Key"]),
     client_name: pickString(fields, ["client_name", "mmd_client_name", "Client Name", "Member Name"]),
@@ -796,21 +796,21 @@ async function writeClientRecord(
   };
 }
 
-export async function patchClientMemberstackId(
+export async function patchClientMemberId(
   env: Env,
   recordId: string,
-  memberstackId: string,
+  memberId: string,
 ): Promise<{ id?: string; fields?: Record<string, unknown> }> {
   if (!canWriteClients(env)) {
     return {
       id: recordId,
       fields: {
-        memberstack_id: memberstackId,
+        member_id: memberId,
       },
     };
   }
 
-  const candidateFields = ["memberstack_id", "Memberstack ID"];
+  const candidateFields = ["member_id", "Member ID"];
   let lastError: Error | null = null;
 
   for (const fieldName of candidateFields) {
@@ -819,7 +819,7 @@ export async function patchClientMemberstackId(
       headers: headers(env),
       body: JSON.stringify({
         fields: {
-          [fieldName]: memberstackId,
+          [fieldName]: memberId,
         },
       }),
     });
@@ -829,10 +829,10 @@ export async function patchClientMemberstackId(
     }
 
     const text = await response.text();
-    lastError = new Error(`Airtable client memberstack patch failed: ${response.status} ${text}`);
+    lastError = new Error(`Airtable client member id patch failed: ${response.status} ${text}`);
   }
 
-  throw lastError || new Error("Airtable client memberstack patch failed");
+  throw lastError || new Error("Airtable client member id patch failed");
 }
 
 async function writeConsoleInboxRecord(
@@ -965,7 +965,7 @@ export async function buildImmigrationLinkContext(
   input: {
     immigration_id?: string;
     line_user_id?: string;
-    memberstack_id?: string;
+    member_id?: string;
     email?: string;
     display_name?: string;
     current_tier?: string;
@@ -975,7 +975,7 @@ export async function buildImmigrationLinkContext(
   },
 ): Promise<ImmigrationLinkContext> {
   const lineUserId = toStr(input.line_user_id);
-  const memberstackId = toStr(input.memberstack_id);
+  const memberId = toStr(input.member_id);
   const email = toStr(input.email).toLowerCase();
   const displayName = toStr(input.display_name).toLowerCase();
   const immigrationId = toStr(input.immigration_id);
@@ -1002,12 +1002,12 @@ export async function buildImmigrationLinkContext(
         entries: [],
       },
       membership: {
-        memberstack_id: memberstackId,
+        member_id: memberId,
         status: toStr(input.membership_status) || "pending",
         current_tier: toStr(input.current_tier),
         target_tier: toStr(input.target_tier),
         expire_at: toStr(input.expire_at),
-        auto_signup_ready: !memberstackId,
+        auto_signup_ready: !memberId,
       },
     };
   }
@@ -1030,10 +1030,10 @@ export async function buildImmigrationLinkContext(
       .map((record) => mapContextSession(record.fields, env))
       .filter((record): record is ContextSession => Boolean(record))
       .filter((record) => {
-        const matchesMemberstack = memberstackId && record.memberstack_id === memberstackId;
+        const matchesMemberId = memberId && record.member_id === memberId;
         const matchesEmail = email && record.member_email.toLowerCase() === email;
         const matchesName = displayName && record.client_name.toLowerCase() === displayName;
-        return Boolean(matchesMemberstack || matchesEmail || matchesName);
+        return Boolean(matchesMemberId || matchesEmail || matchesName);
       });
   } catch {
     serviceHistory = [];
@@ -1069,8 +1069,8 @@ export async function buildImmigrationLinkContext(
     return bTime - aTime;
   })[0];
 
-  const resolvedMemberstackId = memberstackId || latestSession?.memberstack_id || "";
-  const stableIdentity = { line_user_id: lineUserId, memberstack_id: resolvedMemberstackId };
+  const resolvedMemberId = memberId || latestSession?.member_id || "";
+  const stableIdentity = { line_user_id: lineUserId, member_id: resolvedMemberId };
   let resolverExpireAt = "";
   let canonicalMemberExpireAt = "";
 
@@ -1129,12 +1129,12 @@ export async function buildImmigrationLinkContext(
       entries: pointEntries,
     },
     membership: {
-      memberstack_id: resolvedMemberstackId,
-      status: toStr(input.membership_status) || (resolvedMemberstackId ? "active" : "pending_signup"),
+      member_id: resolvedMemberId,
+      status: toStr(input.membership_status) || (resolvedMemberId ? "active" : "pending_signup"),
       current_tier: toStr(input.current_tier),
       target_tier: toStr(input.target_tier),
       expire_at: resolvedExpireAt,
-      auto_signup_ready: !resolvedMemberstackId,
+      auto_signup_ready: !resolvedMemberId,
     },
   };
 }
@@ -1145,7 +1145,7 @@ export async function writeLinkAuditRecord(
     immigration_id: string;
     display_name?: string;
     line_user_id?: string;
-    memberstack_id?: string;
+    member_id?: string;
     customer_url: string;
     model_url: string;
     customer_rules_url: string;
@@ -1171,7 +1171,7 @@ export async function writeLinkAuditRecord(
         admin_note: `Generated customer/model links for ${input.immigration_id}`,
         payload_json: JSON.stringify({
           immigration_id: input.immigration_id,
-          memberstack_id: input.memberstack_id || "",
+          member_id: input.member_id || "",
           customer_url: input.customer_url,
           model_url: input.model_url,
           customer_rules_url: input.customer_rules_url,
