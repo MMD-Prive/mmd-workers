@@ -11,8 +11,11 @@ export const MODEL_YEAR6_WISH_PATH = `${CURRENT_PATH}?mode=${MODE}`;
 export const MODEL_YEAR6_WISH_CAMPAIGN_ID = CAMPAIGN_ID;
 export const MODEL_YEAR6_WISH_MAX_LENGTH = MAX_WISH;
 
-export function isModelYear6WishRequest(path = "", mode = "") {
-  return normalizePath(path) === CURRENT_PATH && clean(mode).toLowerCase() === MODE;
+// The active wrapper already owns /v1/model/session/current*. Intercept that
+// pathname once, then delegate normal current-session requests straight back to
+// core unless mode=year6_wish is present. This avoids claiming a new route.
+export function isModelYear6WishRequest(path = "") {
+  return normalizePath(path) === CURRENT_PATH;
 }
 
 export function isModelYear6WishEligibleState(state = "") {
@@ -23,7 +26,15 @@ export async function handleModelYear6WishRequest(request, env = {}, coreWorker)
   const method = request.method.toUpperCase();
   const url = new URL(request.url);
   const path = normalizePath(url.pathname);
-  if (!isModelYear6WishRequest(path, url.searchParams.get("mode"))) return null;
+  if (path !== CURRENT_PATH) return null;
+
+  // Preserve the canonical current-session contract for every non-Wish request.
+  if (clean(url.searchParams.get("mode")).toLowerCase() !== MODE) {
+    if (!coreWorker || typeof coreWorker.fetch !== "function") {
+      return json({ ok: false, error: "session_authority_unavailable" }, 503, request, env);
+    }
+    return coreWorker.fetch(request, env);
+  }
 
   if (method === "OPTIONS") {
     if (!isAllowedOrigin(request, env)) return json({ ok: false, error: "origin_not_allowed" }, 403, request, env);
