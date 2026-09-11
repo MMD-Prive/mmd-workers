@@ -3,6 +3,10 @@ import {
   applyKenjiNextAction,
   resolveKenjiNextAction,
 } from "../src/kenji-line-next-action.mjs";
+import {
+  buildProtectedCapabilityReply,
+  decideKenjiCapability,
+} from "../src/kenji-capability-policy.js";
 
 const membership = applyKenjiNextAction({
   text: "ผมยังยืนยันสถานะ ระดับสมาชิก หรือวันหมดอายุจากข้อความนี้ไม่ได้ครับ",
@@ -32,6 +36,18 @@ const points = applyKenjiNextAction({
 assert.equal(points.cta_type, "open_action_route");
 assert.equal(points.cta_route, "https://mmdbkk.com/my-mmd/points");
 assert.match(points.text, /My MMD > Points/);
+
+const protectedPayment = decideKenjiCapability({
+  intent: "payment_slip",
+  text: "ส่งสลิปแล้ว",
+});
+assert.equal(protectedPayment.capability, "protected_authority");
+assert.equal(protectedPayment.requested_domain, "payment");
+const protectedPaymentReply = buildProtectedCapabilityReply(protectedPayment);
+assert.match(protectedPaymentReply, /https:\/\/mmdbkk\.com\/member\/payments/);
+assert.match(protectedPaymentReply, /ไม่ต้องสร้างรายการหรือส่งหลักฐานซ้ำ/);
+assert.doesNotMatch(protectedPaymentReply, /confirm\/payment-proof/);
+assert.doesNotMatch(protectedPaymentReply, /ชำระ(?:เงิน)?สำเร็จ(?:แล้ว)?|อนุมัติแล้ว|(?:ได้รับการ)?ยืนยัน(?:การ)?ชำระ(?:เงิน)?แล้ว/i);
 
 const paymentKnown = resolveKenjiNextAction({
   intent: "payment_status",
