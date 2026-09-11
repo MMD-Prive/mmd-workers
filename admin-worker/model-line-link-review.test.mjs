@@ -12,6 +12,8 @@ import {
   isModelLineLinkPage,
 } from "./src/model-line-link-review.js";
 import {
+  MODEL_LINK_AIRTABLE_TIMEOUT_MS,
+  MODEL_LINK_QUEUE_API_TIMEOUT_MS,
   renderModelLineLinkPageWithAvatar,
   safeClaimSummaryWithAvatar,
   safePictureUrl,
@@ -111,6 +113,21 @@ test("admin picture sanitizer drops invalid or overlong URLs", () => {
   assert.equal(safePictureUrl("https://example.com/a.jpg"), "https://example.com/a.jpg");
   assert.equal(safePictureUrl("http://example.com/a.jpg"), "");
   assert.equal(safePictureUrl(`https://example.com/${"a".repeat(2050)}`), "");
+});
+
+test("owner review queue uses bounded frontend and backend timeouts", () => {
+  assert.equal(MODEL_LINK_QUEUE_API_TIMEOUT_MS, 12000);
+  assert.equal(MODEL_LINK_AIRTABLE_TIMEOUT_MS, 9000);
+});
+
+test("owner review HTML fails visibly with retry instead of staying on loading", async () => {
+  const response = renderModelLineLinkPageWithAvatar();
+  const html = await response.text();
+  assert.match(html, /Request timeout/);
+  assert.match(html, /โหลดคิวไม่ได้/);
+  assert.match(html, /data-action="reload-claims"/);
+  assert.match(html, /Private Model Link Queue/);
+  assert.match(html, /Create Job/);
 });
 
 test("owner review HTML provides lazy avatar and initials fallback without changing explicit LINK", async () => {
