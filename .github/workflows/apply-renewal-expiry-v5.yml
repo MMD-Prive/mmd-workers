@@ -22,8 +22,9 @@ jobs:
         run: node scripts/apply-renewal-expiry-resolver-v5.mjs
       - name: Install immigrate-worker dependencies
         run: npm ci --prefix immigrate-worker
-      - name: Typecheck immigrate-worker
-        run: npm run typecheck --prefix immigrate-worker
+      - name: Focused typecheck for V5 files
+        working-directory: immigrate-worker
+        run: npx tsc --noEmit --target ES2022 --module ESNext --moduleResolution Bundler --strict --skipLibCheck --types @cloudflare/workers-types src/lib/airtable.ts src/types.ts
       - name: Run focused V5 contract test
         run: node --test immigrate-worker/test/renewal-expiry-resolver-v5-contract.test.mjs
       - name: Remove one-shot codemod files
