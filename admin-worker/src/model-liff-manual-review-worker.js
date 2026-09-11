@@ -67,6 +67,7 @@ async function handleOwnerReviewedExchange(request, env, ctx) {
   const nowIso = new Date().toISOString();
   const lineHash = await sha256Hex(lineUserId);
   const lineDisplayName = clean(lineIdentity.profile?.name).slice(0, 160);
+  const linePictureUrl = normalizeLinePictureUrl(lineIdentity.profile?.picture);
   const status = existing.records.length > 1 ? "conflict" : "verified_unlinked";
   const safeNote = existing.records.length > 1
     ? "Verified LINE identity is attached to multiple Model records; owner review required."
@@ -76,6 +77,7 @@ async function handleOwnerReviewedExchange(request, env, ctx) {
     lineUserId,
     lineHash,
     lineDisplayName,
+    linePictureUrl,
     environment,
     status,
     nowIso,
@@ -117,6 +119,7 @@ async function upsertIdentityClaim(env, input) {
     line_user_id: input.lineUserId,
     line_user_id_hash: input.lineHash,
     line_display_name: input.lineDisplayName || "",
+    line_picture_url: input.linePictureUrl || "",
     line_environment: input.environment,
     claim_status: input.status,
     verified_at: input.nowIso,
@@ -131,6 +134,17 @@ async function upsertIdentityClaim(env, input) {
   }
   const created = await airtableCreateRecord(env, table, fields, true);
   return created.ok ? { ok: true, record: created.record } : { ok: false, status: created.status || 503 };
+}
+
+export function normalizeLinePictureUrl(value) {
+  const raw = clean(value);
+  if (!raw || raw.length > 2048) return "";
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" ? url.href.slice(0, 2048) : "";
+  } catch {
+    return "";
+  }
 }
 
 async function verifyLineIdToken(idToken, channelId) {
