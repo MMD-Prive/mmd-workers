@@ -58,8 +58,6 @@ async function handleOwnerReviewedExchange(request, env, ctx) {
   const lineUserId = clean(lineIdentity.profile?.sub);
   if (!isCanonicalLineUserId(lineUserId)) return json({ ok: false, error: "line_identity_invalid" }, 401, request, env);
 
-  // Existing canonical binding is safe to delegate. The legacy worker will
-  // issue the normal Model session and retain all existing profile/session rules.
   const existing = await findModelsByLineUserId(env, lineUserId);
   if (!existing.ok) return json({ ok: false, error: "model_lookup_unavailable" }, existing.status || 503, request, env);
   if (existing.records.length === 1) return legacyWorker.fetch(delegated, env, ctx);
@@ -67,6 +65,7 @@ async function handleOwnerReviewedExchange(request, env, ctx) {
   const nowIso = new Date().toISOString();
   const lineHash = await sha256Hex(lineUserId);
   const lineDisplayName = clean(lineIdentity.profile?.name).slice(0, 160);
+  const linePictureUrl = normalizeLinePictureUrl(lineIdentity.profile?.picture);
   const status = existing.records.length > 1 ? "conflict" : "verified_unlinked";
   const safeNote = existing.records.length > 1
     ? "Verified LINE identity is attached to multiple Model records; owner review required."
@@ -76,6 +75,7 @@ async function handleOwnerReviewedExchange(request, env, ctx) {
     lineUserId,
     lineHash,
     lineDisplayName,
+    linePictureUrl,
     environment,
     status,
     nowIso,
@@ -117,6 +117,7 @@ async function upsertIdentityClaim(env, input) {
     line_user_id: input.lineUserId,
     line_user_id_hash: input.lineHash,
     line_display_name: input.lineDisplayName || "",
+    line_picture_url: input.linePictureUrl || "",
     line_environment: input.environment,
     claim_status: input.status,
     verified_at: input.nowIso,
@@ -131,6 +132,17 @@ async function upsertIdentityClaim(env, input) {
   }
   const created = await airtableCreateRecord(env, table, fields, true);
   return created.ok ? { ok: true, record: created.record } : { ok: false, status: created.status || 503 };
+}
+
+export function normalizeLinePictureUrl(value) {
+  const raw = clean(value);
+  if (!raw || raw.length > 2048) return "";
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" ? url.href.slice(0, 2048) : "";
+  } catch {
+    return "";
+  }
 }
 
 async function verifyLineIdToken(idToken, channelId) {
@@ -160,9 +172,7 @@ async function airtableList(env, table, formula, pageSize = 10) {
   if (!apiKey || !baseId || !table) return { ok: false, status: 503, records: [] };
   const params = new URLSearchParams({ pageSize: String(pageSize) });
   if (formula) params.set("filterByFormula", formula);
-  const response = await fetch(`https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}?${params}`, {
-    headers: { authorization: `Bearer ${apiKey}` },
-  });
+  const response = await fetch(`https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}?${params}`, { headers: { authorization: `Bearer ${apiKey}` } });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = JSON.stringify(data || {});
@@ -175,11 +185,7 @@ async function airtableCreateRecord(env, table, fields, typecast = false) {
   const apiKey = clean(env.AIRTABLE_API_KEY);
   const baseId = clean(env.AIRTABLE_BASE_ID);
   if (!apiKey || !baseId || !table) return { ok: false, status: 503 };
-  const response = await fetch(`https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify({ records: [{ fields }], typecast }),
-  });
+  const response = await fetch(`https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`, { method: "POST", headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" }, body: JSON.stringify({ records: [{ fields }], typecast }) });
   const data = await response.json().catch(() => ({}));
   return response.ok ? { ok: true, status: 201, record: data.records?.[0] || null } : { ok: false, status: response.status };
 }
@@ -188,11 +194,7 @@ async function airtableUpdateRecord(env, table, recordId, fields, typecast = fal
   const apiKey = clean(env.AIRTABLE_API_KEY);
   const baseId = clean(env.AIRTABLE_BASE_ID);
   if (!apiKey || !baseId || !table || !recordId) return { ok: false, status: 503 };
-  const response = await fetch(`https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`, {
-    method: "PATCH",
-    headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify({ records: [{ id: recordId, fields }], typecast }),
-  });
+  const response = await fetch(`https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`, { method: "PATCH", headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" }, body: JSON.stringify({ records: [{ id: recordId, fields }], typecast }) });
   const data = await response.json().catch(() => ({}));
   return response.ok ? { ok: true, status: 200, record: data.records?.[0] || null } : { ok: false, status: response.status };
 }
@@ -208,30 +210,7 @@ function modelsTable(env) { return clean(env.AIRTABLE_TABLE_MODELS || MODELS_TAB
 function claimsTable(env) { return clean(env.AIRTABLE_TABLE_MODEL_LINE_IDENTITY_CLAIMS || CLAIMS_TABLE_DEFAULT); }
 function clean(value) { return String(value ?? "").trim(); }
 function escapeFormula(value) { return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"'); }
-function normalizePath(pathname) {
-  const path = String(pathname || "/").replace(/\/{2,}/g, "/");
-  return path.length > 1 ? path.replace(/\/+$/g, "") : path;
-}
-function isAllowedOrigin(request, env) {
-  const origin = clean(request.headers.get("origin"));
-  if (!origin) return true;
-  const allowed = new Set(String(env.ALLOWED_ORIGINS || "").split(",").map(clean).filter(Boolean));
-  return allowed.has(origin);
-}
-function corsHeaders(request, env) {
-  const origin = clean(request.headers.get("origin"));
-  const headers = new Headers({
-    "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
-    "access-control-allow-headers": "Content-Type",
-    "access-control-allow-credentials": "true",
-    vary: "Origin",
-  });
-  if (origin && isAllowedOrigin(request, env)) headers.set("access-control-allow-origin", origin);
-  return headers;
-}
-function json(payload, status, request, env) {
-  const headers = corsHeaders(request, env);
-  headers.set("content-type", "application/json; charset=utf-8");
-  headers.set("cache-control", "no-store");
-  return new Response(JSON.stringify(payload), { status, headers });
-}
+function normalizePath(pathname) { const path = String(pathname || "/").replace(/\/{2,}/g, "/"); return path.length > 1 ? path.replace(/\/+$/g, "") : path; }
+function isAllowedOrigin(request, env) { const origin = clean(request.headers.get("origin")); if (!origin) return true; const allowed = new Set(String(env.ALLOWED_ORIGINS || "").split(",").map(clean).filter(Boolean)); return allowed.has(origin); }
+function corsHeaders(request, env) { const origin = clean(request.headers.get("origin")); const headers = new Headers({ "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS", "access-control-allow-headers": "Content-Type", "access-control-allow-credentials": "true", vary: "Origin" }); if (origin && isAllowedOrigin(request, env)) headers.set("access-control-allow-origin", origin); return headers; }
+function json(payload, status, request, env) { const headers = corsHeaders(request, env); headers.set("content-type", "application/json; charset=utf-8"); headers.set("cache-control", "no-store"); return new Response(JSON.stringify(payload), { status, headers }); }
