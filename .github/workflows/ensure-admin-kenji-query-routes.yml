@@ -8,6 +8,11 @@ on:
     paths:
       - "admin-worker/**"
       - ".github/workflows/ensure-admin-kenji-query-routes.yml"
+  workflow_run:
+    workflows:
+      - "Deploy admin-worker"
+    types:
+      - completed
 
 concurrency:
   group: ensure-admin-kenji-query-routes-production
@@ -18,6 +23,7 @@ permissions:
 
 jobs:
   ensure-routes:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
