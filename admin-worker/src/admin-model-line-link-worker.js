@@ -7,9 +7,11 @@ import {
   isModelLineLinkClaimsRequest,
   isModelLineLinkPage,
   listModelLineCandidates,
-  listPendingModelLineClaims,
-  renderModelLineLinkPage,
 } from "./model-line-link-review.js";
+import {
+  listPendingModelLineClaimsWithAvatar,
+  renderModelLineLinkPageWithAvatar,
+} from "./model-line-avatar-review.js";
 
 export * from "./admin-login-hero-worker-pre-model-line-link.js";
 
@@ -21,7 +23,7 @@ export default {
     if (isModelLineLinkPage(request)) {
       const auth = await requireOwner(request, env);
       if (auth.response) return auth.response;
-      const response = renderModelLineLinkPage();
+      const response = renderModelLineLinkPageWithAvatar();
       if (request.method.toUpperCase() !== "HEAD") return response;
       return new Response(null, { status: response.status, headers: response.headers });
     }
@@ -29,7 +31,7 @@ export default {
     if (isModelLineLinkClaimsRequest(request)) {
       const auth = await requireOwner(request, env);
       if (auth.response) return auth.response;
-      const result = await listPendingModelLineClaims(env);
+      const result = await listPendingModelLineClaimsWithAvatar(env);
       return result.ok ? json(result, 200) : json({ ok: false, error: result.error }, result.status || 503);
     }
 
