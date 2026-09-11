@@ -26,8 +26,12 @@ try {
   const html = await page.text();
   assert.equal(page.headers.get("x-mmd-customer-360"), "live-v1");
   assert.equal(page.headers.get("x-mmd-customer-intelligence"), "read-only-v1");
+  assert.equal(page.headers.get("x-mmd-customer-identity-alignment"), "read-only-v1");
   assert.equal(page.headers.get("x-mmd-customer-data-ui"), "readable-v2");
   assert.match(html, /data-mmd-customer-360-live-client="v1"/);
+  assert.match(html, /data-mmd-customer-identity-alignment-client="v1"/);
+  assert.match(html, /MY MMD \/ LIFF/);
+  assert.match(html, /VERIFIED MATCH/);
   assert.match(html, /\/v1\/admin\/customer-data\/backfill\/continue/);
   assert.match(html, /\/v1\/admin\/clients\/intelligence/);
   assert.match(html, /Pause/);
