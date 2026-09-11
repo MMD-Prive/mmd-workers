@@ -1,1 +1,0 @@
-MMDCanonicalCTAV4.1 is intended to be loaded as a version-pinned hosted Webflow site script from webflow/global/mmd-canonical-cta-v4.js after this branch is merged. The hosted deployment replaces the old inline V4 slot; it does not add a sixteenth applied site script.
