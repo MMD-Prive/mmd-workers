@@ -71,10 +71,13 @@ Used to move data and workflows into the core production system without pollutin
 - `session_id` is the primary session and idempotency reference
 - token parameter must be `t`
 - Airtable is the back-office source of truth
-- Native MMD auth-worker is the frontend auth gate; protected frontend pages must call `/v1/auth/me`
+- Native MMD auth-worker and verified LINE/LIFF sessions are the identity gates for their respective surfaces
 - Webflow protected pages must set `window.MMD_AUTH_WORKER_BASE_URL = "https://mmdbkk.com"` before loading `webflow/mmd-gate.js`, so `mmdprive.webflow.io` checks auth through the canonical `mmdbkk.com` route
-- Airtable entitlements and `member_packages` are the access truth
-- `memberstack_id` remains legacy compatibility only
+- MMD-owned `member_id` is the canonical internal member key; verified `line_user_id` is the LINE identity key
+- Membership and access decisions come from `MMD — Member Entitlements` through `my_mmd_entitlement_resolver_v1`
+- `Members` is canonical identity/profile mapping and bounded readback; it is not an entitlement authority
+- Telegram and Drive are downstream observed grants, never entitlement authorities
+- Memberstack is retired. There is no active identity, membership, entitlement, Points, payment, or access compatibility path through Memberstack
 - worker boundaries are production contracts
 - migration must remain separate from the core
 
@@ -91,6 +94,7 @@ Architecture docs live in:
 - `docs/architecture/LAYERS.md`
 - `docs/architecture/PRINCIPLES.md`
 - `docs/architecture/INTERNAL_DOCTRINE.md`
+- `docs/architecture/MEMBER_IDENTITY_AUTHORITY_V1.md`
 
 ## Final definition
 
