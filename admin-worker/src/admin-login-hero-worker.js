@@ -18,6 +18,10 @@ import {
   isModelJobDayGuideRequest,
 } from "./model-job-day-guide.js";
 import {
+  handleModelYear6WishRequest,
+  isModelYear6WishRequest,
+} from "./model-year6-wish.js";
+import {
   ADMIN_SAFETY_LOCATION_PATH,
   MODEL_LOCATION_CAPABILITY_PATH,
   augmentModelLocationCapability,
@@ -52,6 +56,13 @@ const AI_OPS_WORKER_PAGES = new Set([
 export default {
   async fetch(request, env, ctx) {
     const path = normalizePath(new URL(request.url).pathname);
+
+    // Optional Year 6 Model Wish is a post-separation sidecar only. It never
+    // transitions session state and never gates payout. The canonical session
+    // remains authoritative for eligibility.
+    if (isModelYear6WishRequest(path)) {
+      return handleModelYear6WishRequest(request, env, coreWorker);
+    }
 
     // Safety Location is additive to the existing Model location channel.
     // `?mode=safety` stores into a separate Durable Object namespace so customer
