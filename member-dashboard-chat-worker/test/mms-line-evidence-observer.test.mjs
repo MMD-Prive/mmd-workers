@@ -112,7 +112,7 @@ test("MMS group image uses the same pending Payment Proof evidence core and dedu
     assert.equal(proofPost.fields.status, "pending");
     assert.equal(proofPost.fields.channel, "line_ofc");
     const note = JSON.parse(proofPost.fields.note);
-    assert.equal(note.schema, "line_group_payment_evidence_v1");
+    assert.equal(note.schema, "line_payment_evidence_v2");
     assert.equal(note.payment_truth, "unverified");
     assert.equal(note.may_mark_paid, false);
     assert.equal(note.may_award_points, false);
