@@ -1,4 +1,4 @@
-import liffFoundation from "./liff-identity-foundation.js";
+import liffFoundation from "./liff-payment-binding.js";
 import { handleLiffMemberShell, isLiffMemberShellPath } from "./liff-member-shell.js";
 import { handlePublicCareBackWishRoute, isPublicCareBackWishPath } from "./public-care-back-wish.js";
 import { handleFindMemberApi, isFindMemberApiPath } from "./find-member-api.js";
