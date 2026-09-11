@@ -40,6 +40,8 @@ jobs:
           if (!zoneId || !token) throw new Error('Cloudflare route credentials are unavailable');
           const worker = 'admin-worker';
           const desired = [
+            'mmdbkk.com/internal/admin/model-link*',
+            'www.mmdbkk.com/internal/admin/model-link*',
             'mmdbkk.com/internal/admin/kenji*',
             'www.mmdbkk.com/internal/admin/kenji*',
           ];
@@ -70,7 +72,7 @@ jobs:
           const verified = await cloudflare(routePath);
           const unresolved = desired.filter((pattern) => !verified.some((route) => route.pattern === pattern && route.script === worker));
           if (unresolved.length) throw new Error(`Route verification failed: ${unresolved.join(', ')}`);
-          console.log(`Verified ${desired.length}/${desired.length} query-safe Kenji Admin routes`);
+          console.log(`Verified ${desired.length}/${desired.length} MMD MODEL/Kenji Admin routes`);
           NODE
 
       - name: Inspect overlapping Worker routes
@@ -87,7 +89,7 @@ jobs:
           if (!response.ok || payload.success !== true) throw new Error(`Unable to inspect routes (${response.status})`);
           const routes = (payload.result || []).filter((r) => {
             const p = String(r.pattern || '').toLowerCase();
-            return p.includes('/internal/admin/kenji') || p.includes('/internal/admin/*') || p.includes('/internal/*') || p.endsWith('mmdbkk.com/*');
+            return p.includes('/internal/admin/model-link') || p.includes('/internal/admin/kenji') || p.includes('/internal/admin/*') || p.includes('/internal/*') || p.endsWith('mmdbkk.com/*');
           }).sort((a,b) => String(a.pattern).localeCompare(String(b.pattern)));
           console.log('Relevant Cloudflare Worker routes:');
           for (const r of routes) console.log(`${r.pattern} -> ${r.script || 'NO_SCRIPT'}`);
@@ -98,6 +100,8 @@ jobs:
         run: |
           set -euo pipefail
           urls=(
+            "https://mmdbkk.com/internal/admin/model-link"
+            "https://www.mmdbkk.com/internal/admin/model-link"
             "https://mmdbkk.com/internal/admin/kenji"
             "https://www.mmdbkk.com/internal/admin/kenji"
             "https://mmdbkk.com/internal/admin/kenji?view=model-link"
@@ -118,19 +122,23 @@ jobs:
             else echo "BODY_CLASS=other bytes=$(wc -c < "$body")"; fi
           done
 
-      - name: Smoke query-string route
+      - name: Smoke canonical and legacy model-link routes
         shell: bash
         run: |
           set -euo pipefail
           for url in \
+            "https://mmdbkk.com/internal/admin/model-link" \
+            "https://www.mmdbkk.com/internal/admin/model-link" \
             "https://mmdbkk.com/internal/admin/kenji?view=model-link" \
             "https://www.mmdbkk.com/internal/admin/kenji?view=model-link"
           do
+            headers="$(mktemp)"
             body="$(mktemp)"
-            code="$(curl --retry 2 --retry-delay 1 --retry-all-errors -sS -o "$body" -w '%{http_code}' "$url")"
+            code="$(curl --retry 2 --retry-delay 1 --retry-all-errors -sS -D "$headers" -o "$body" -w '%{http_code}' "$url")"
             echo "$url -> HTTP $code"
+            grep -Ei '^location:' "$headers" || true
             if [ "$code" = "404" ] || [ "$code" = "000" ]; then
-              echo "Kenji query route still misses admin-worker: $url" >&2
+              echo "MMD MODEL link route missed admin-worker: $url" >&2
               exit 1
             fi
           done

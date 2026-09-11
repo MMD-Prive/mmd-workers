@@ -1,11 +1,17 @@
 (function () {
   "use strict";
 
+  var TARGET = "/internal/admin/model-link";
+  var currentPath = String(window.location.pathname || "").replace(/\/+$/, "") || "/";
+  if (currentPath === "/internal/admin/kenji" && window.location.hash === "#model-link") {
+    window.location.replace(TARGET);
+    return;
+  }
+
   var root = document.getElementById("mmdKenjiAdminV1");
   if (!root || root.dataset.modelLineLinkEntryV1 === "1") return;
   root.dataset.modelLineLinkEntryV1 = "1";
 
-  var TARGET = "/internal/admin/kenji?view=model-link";
   var QUEUE_API = "/v1/admin/models/activation-candidates?mode=line-link-claims";
 
   var style = document.createElement("style");

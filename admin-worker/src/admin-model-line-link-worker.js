@@ -15,17 +15,28 @@ import {
 
 export * from "./admin-login-hero-worker-pre-model-line-link.js";
 
+export const CANONICAL_MODEL_LINE_LINK_PATH = "/internal/admin/model-link";
+const MODEL_LINE_LINK_LOGIN_BRIDGE = "/internal/admin/kenji#model-link";
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
+    const canonicalPage = isCanonicalModelLineLinkPage(request);
+    const legacyPage = isModelLineLinkPage(request);
 
-    if (isModelLineLinkPage(request)) {
+    if (canonicalPage || legacyPage) {
       const auth = await requireOwner(request, env);
       if (auth.response) {
         if (auth.response.status === 401) return redirectToAdminLogin(request);
         return auth.response;
       }
+
+      // The query-string Kenji view remains compatibility-only. Once an
+      // authenticated request reaches it, move to the exact queryless route so
+      // browser navigation can never fall through to Webflow's 404 surface.
+      if (legacyPage) return redirectToCanonicalModelLineLink(request);
+
       const response = renderModelLineLinkPageWithAvatar();
       if (request.method.toUpperCase() !== "HEAD") return response;
       return new Response(null, { status: response.status, headers: response.headers });
@@ -58,6 +69,13 @@ export default {
   },
 };
 
+export function isCanonicalModelLineLinkPage(request) {
+  const url = new URL(request.url);
+  const method = request.method.toUpperCase();
+  return (method === "GET" || method === "HEAD")
+    && normalizePath(url.pathname) === CANONICAL_MODEL_LINE_LINK_PATH;
+}
+
 async function requireOwner(request, env) {
   const url = new URL(request.url);
   if (url.hostname !== "mmdbkk.com" && url.hostname !== "www.mmdbkk.com") {
@@ -73,8 +91,16 @@ async function requireOwner(request, env) {
 
 export function modelLineLinkLoginLocation(request) {
   const url = new URL(request.url);
-  const next = `${normalizePath(url.pathname)}${url.search}`;
-  return `${url.origin}/internal/admin/login?next=${encodeURIComponent(next)}`;
+  // The existing Admin Login allowlist already owns /internal/admin/kenji and
+  // preserves hashes. After login, the Kenji shell turns #model-link into the
+  // exact canonical path. This avoids depending on query-string routing during
+  // the authentication handoff.
+  return `${url.origin}/internal/admin/login?next=${encodeURIComponent(MODEL_LINE_LINK_LOGIN_BRIDGE)}`;
+}
+
+export function modelLineLinkCanonicalLocation(request) {
+  const url = new URL(request.url);
+  return `${url.origin}${CANONICAL_MODEL_LINE_LINK_PATH}`;
 }
 
 function redirectToAdminLogin(request) {
@@ -82,6 +108,16 @@ function redirectToAdminLogin(request) {
     status: 303,
     headers: {
       location: modelLineLinkLoginLocation(request),
+      "cache-control": "no-store, private",
+    },
+  });
+}
+
+function redirectToCanonicalModelLineLink(request) {
+  return new Response(null, {
+    status: 303,
+    headers: {
+      location: modelLineLinkCanonicalLocation(request),
       "cache-control": "no-store, private",
     },
   });

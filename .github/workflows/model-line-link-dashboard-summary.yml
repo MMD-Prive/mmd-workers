@@ -34,6 +34,6 @@ jobs:
           node --check admin-worker/src/admin-dashboard-model-link-wrapper.js
           node --check admin-worker/src/admin-login-hero-worker.js
           node --test admin-worker/dashboard-model-line-link-wrapper.test.mjs
-          grep -Fq '/internal/admin/kenji?view=model-link' admin-worker/src/admin-dashboard-model-link-wrapper.js
+          grep -Fq '/internal/admin/model-link' admin-worker/src/admin-dashboard-model-link-wrapper.js
           grep -Fq 'model_line_links_pending' admin-worker/src/admin-dashboard-model-link-wrapper.js
           grep -Fq 'model_line_links_conflict' admin-worker/src/admin-dashboard-model-link-wrapper.js

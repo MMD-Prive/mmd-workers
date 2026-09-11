@@ -16,27 +16,50 @@ import {
   safeClaimSummaryWithAvatar,
   safePictureUrl,
 } from "./src/model-line-avatar-review.js";
-import { modelLineLinkLoginLocation } from "./src/admin-model-line-link-worker.js";
+import {
+  CANONICAL_MODEL_LINE_LINK_PATH,
+  isCanonicalModelLineLinkPage,
+  modelLineLinkCanonicalLocation,
+  modelLineLinkLoginLocation,
+} from "./src/admin-model-line-link-worker.js";
 
 test("first-time MMD MODEL identity requires owner review", () => {
   assert.equal(MODEL_IDENTITY_FIRST_POLICY, "owner_review_required");
 });
 
-test("owner link page is scoped to Kenji Admin query view", () => {
+test("canonical owner link page is an exact queryless admin route", () => {
+  assert.equal(CANONICAL_MODEL_LINE_LINK_PATH, "/internal/admin/model-link");
+  assert.equal(isCanonicalModelLineLinkPage(new Request("https://mmdbkk.com/internal/admin/model-link")), true);
+  assert.equal(isCanonicalModelLineLinkPage(new Request("https://www.mmdbkk.com/internal/admin/model-link")), true);
+  assert.equal(isCanonicalModelLineLinkPage(new Request("https://mmdbkk.com/internal/admin/model-link/")), true);
+  assert.equal(isCanonicalModelLineLinkPage(new Request("https://mmdbkk.com/internal/admin/model-link", { method: "POST" })), false);
+  assert.equal(isCanonicalModelLineLinkPage(new Request("https://mmdbkk.com/internal/admin/model-link-other")), false);
+});
+
+test("legacy Kenji query view remains compatibility-only", () => {
   assert.equal(isModelLineLinkPage(new Request("https://mmdbkk.com/internal/admin/kenji?view=model-link")), true);
   assert.equal(isModelLineLinkPage(new Request("https://mmdbkk.com/internal/admin/kenji")), false);
   assert.equal(isModelLineLinkPage(new Request("https://mmdbkk.com/internal/admin/studio?view=model-link")), false);
   assert.equal(isModelLineLinkPage(new Request("https://mmdbkk.com/internal/admin/kenji?view=model-link", { method: "POST" })), false);
 });
 
-test("unauthenticated owner page login keeps the model-link query on both production hosts", () => {
+test("unauthenticated owner login uses queryless Kenji hash bridge on both production hosts", () => {
+  const expectedApex = "https://mmdbkk.com/internal/admin/login?next=%2Finternal%2Fadmin%2Fkenji%23model-link";
+  const expectedWww = "https://www.mmdbkk.com/internal/admin/login?next=%2Finternal%2Fadmin%2Fkenji%23model-link";
+  assert.equal(modelLineLinkLoginLocation(new Request("https://mmdbkk.com/internal/admin/model-link")), expectedApex);
+  assert.equal(modelLineLinkLoginLocation(new Request("https://www.mmdbkk.com/internal/admin/model-link")), expectedWww);
+  assert.equal(modelLineLinkLoginLocation(new Request("https://mmdbkk.com/internal/admin/kenji?view=model-link")), expectedApex);
+  assert.equal(modelLineLinkLoginLocation(new Request("https://www.mmdbkk.com/internal/admin/kenji?view=model-link")), expectedWww);
+});
+
+test("legacy owner view canonicalizes to the exact model-link path", () => {
   assert.equal(
-    modelLineLinkLoginLocation(new Request("https://mmdbkk.com/internal/admin/kenji?view=model-link")),
-    "https://mmdbkk.com/internal/admin/login?next=%2Finternal%2Fadmin%2Fkenji%3Fview%3Dmodel-link",
+    modelLineLinkCanonicalLocation(new Request("https://mmdbkk.com/internal/admin/kenji?view=model-link")),
+    "https://mmdbkk.com/internal/admin/model-link",
   );
   assert.equal(
-    modelLineLinkLoginLocation(new Request("https://www.mmdbkk.com/internal/admin/kenji?view=model-link")),
-    "https://www.mmdbkk.com/internal/admin/login?next=%2Finternal%2Fadmin%2Fkenji%3Fview%3Dmodel-link",
+    modelLineLinkCanonicalLocation(new Request("https://www.mmdbkk.com/internal/admin/kenji?view=model-link")),
+    "https://www.mmdbkk.com/internal/admin/model-link",
   );
 });
 

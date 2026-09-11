@@ -2,7 +2,7 @@ import worker from "./admin-model-line-link-worker.js";
 import { listPendingModelLineClaims } from "./model-line-link-review.js";
 
 const DASHBOARD_PATH = "/v1/admin/dashboard";
-const MODEL_LINK_HREF = "/internal/admin/kenji?view=model-link";
+const MODEL_LINK_HREF = "/internal/admin/model-link";
 
 export function projectModelLineLinkSummary(result) {
   if (!result || result.ok !== true) {
