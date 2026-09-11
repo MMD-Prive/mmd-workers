@@ -672,6 +672,7 @@ async function buildRenewalStatusProjection(
     current_tier: input.current_tier,
     target_tier: input.target_tier,
     membership_status: input.membership_status,
+    expire_at: input.expire_at,
   });
 
   const totalSpendTHB = sumTotalSpendFromContext(context);
