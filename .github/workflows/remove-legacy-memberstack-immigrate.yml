@@ -1,0 +1,67 @@
+name: Remove legacy member identity from immigrate-worker
+
+on:
+  push:
+    branches:
+      - fix/remove-memberstack-canonical-20260911
+    paths:
+      - "scripts/remove-legacy-memberstack-immigrate.mjs"
+      - ".github/workflows/remove-legacy-memberstack-immigrate.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/remove-memberstack-canonical-20260911
+          fetch-depth: 0
+
+      - name: Apply canonical identity cleanup
+        run: node scripts/remove-legacy-memberstack-immigrate.mjs
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: immigrate-worker/package-lock.json
+
+      - name: Install immigrate-worker dependencies
+        working-directory: immigrate-worker
+        run: npm ci
+
+      - name: Typecheck immigrate-worker
+        working-directory: immigrate-worker
+        run: npm run typecheck
+
+      - name: Run identity and renewal V5 contract tests
+        run: node --test immigrate-worker/test/renewal-expiry-resolver-v5-contract.test.mjs immigrate-worker/test/canonical-member-identity-contract.test.mjs
+
+      - name: Verify retired identity is absent from runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -ni -E 'memberstack|Memberstack|MEMBERSTACK' -- immigrate-worker/src immigrate-worker/public immigrate-worker/wrangler.toml; then
+            echo "Retired Memberstack identity still exists in immigrate-worker runtime" >&2
+            exit 1
+          fi
+
+      - name: Remove one-shot migration files
+        run: rm -f scripts/remove-legacy-memberstack-immigrate.mjs .github/workflows/remove-legacy-memberstack-immigrate.yml
+
+      - name: Commit verified cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(identity): remove retired Memberstack from immigrate runtime"
+          git push origin HEAD:fix/remove-memberstack-canonical-20260911
