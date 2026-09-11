@@ -60,7 +60,6 @@ test("admin login posts the exact visible credential with an explicit same-origi
     html,
     /name="next" value="\/internal\/admin\/control-room"/,
   );
-  assert.match(html, /name="next" value="\/internal\/admin\/control-room"/);
   assert.match(html, /\bfetch\s*\(/);
   assert.match(html, /'Content-Type':'application\/x-www-form-urlencoded;charset=UTF-8'/);
   assert.match(html, /credentials:'same-origin'/);
@@ -68,7 +67,7 @@ test("admin login posts the exact visible credential with an explicit same-origi
   assert.match(html, /response\.ok&&response\.redirected/);
 });
 
-test("admin login preserves secure server-side flow and exposes the production UI marker", async () => {
+test("admin login preserves secure server-side flow and exposes the Image A production UI marker", async () => {
   const response = await render();
   const html = await response.text();
 
@@ -78,5 +77,7 @@ test("admin login preserves secure server-side flow and exposes the production U
   assert.equal(response.headers.get("x-mmd-admin-origin"), "https://mmdbkk.com");
   assert.match(response.headers.get("content-security-policy") || "", /connect-src 'self'/);
   assert.match(html, /name="next" value="\/internal\/admin\/control-room"/);
-  assert.match(html, /INVITE ONLY · SECURE SESSION/);
+  assert.match(html, /BACK OFFICE ACCESS/);
+  assert.match(html, /MANAGED ACCOUNTS/);
+  assert.match(html, /SECURE · PRIVATE · INTERNAL/);
 });
