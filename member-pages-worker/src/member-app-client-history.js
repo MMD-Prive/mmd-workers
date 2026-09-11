@@ -59,7 +59,6 @@ export async function resolveCanonicalClientForLine(env = {}, lineUserId = "") {
 
   const committed = await airtableList(env, stagingTable, {
     filterByFormula: `AND({line_user_id}=${formulaString(lineId)},{match_type}=${formulaString(COMMITTED_LINE_MATCH_TYPE)},{decision}=${formulaString(COMMITTED_LINE_DECISION)},{review_status}=${formulaString(COMMITTED_LINE_REVIEW_STATUS)})`,
-    maxRecords: 3,
   });
   const ids = new Set();
   for (const row of committed) {
@@ -154,12 +153,23 @@ async function airtableList(env, tableName, params = {}) {
   if (params.filterByFormula) url.searchParams.set("filterByFormula", params.filterByFormula);
   if (params.maxRecords) url.searchParams.set("maxRecords", String(params.maxRecords));
   const init = { headers: { authorization: `Bearer ${env.AIRTABLE_API_KEY}`, accept: "application/json" } };
-  const response = env.AIRTABLE_HTTP?.fetch
-    ? await env.AIRTABLE_HTTP.fetch(new Request(url.toString(), init))
-    : await fetch(url.toString(), init);
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || !Array.isArray(payload.records)) throw new Error(`airtable_${response.status || "malformed"}`);
-  return payload.records;
+  const records = [];
+  const seenOffsets = new Set();
+  for (let page = 0; page < 50; page += 1) {
+    const response = env.AIRTABLE_HTTP?.fetch
+      ? await env.AIRTABLE_HTTP.fetch(new Request(url.toString(), init))
+      : await fetch(url.toString(), init);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !Array.isArray(payload.records)) throw new Error(`airtable_${response.status || "malformed"}`);
+    records.push(...payload.records);
+    if (!payload.offset) return records;
+    if (seenOffsets.has(payload.offset)) break;
+    seenOffsets.add(payload.offset);
+    url.searchParams.set("offset", payload.offset);
+  }
+  // Never authorize from a partial identity set: a later page can contain a
+  // contradictory reviewed Client link for the same LINE account.
+  throw new Error("airtable_read_incomplete");
 }
 
 function canonicalLineId(value) {

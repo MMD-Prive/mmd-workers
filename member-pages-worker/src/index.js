@@ -1,4 +1,6 @@
 import liffFoundation from "./liff-identity-foundation.js";
+import { isMmsCustomerHistoryPage } from "../../shared/mms-customer-history-route.mjs";
+import { handleMmsCustomerHistoryPage } from "./mms-customer-history-page.js";
 import { handleLiffMemberShell, isLiffMemberShellPath } from "./liff-member-shell.js";
 import { handlePublicCareBackWishRoute, isPublicCareBackWishPath } from "./public-care-back-wish.js";
 import { handleFindMemberApi, isFindMemberApiPath } from "./find-member-api.js";
@@ -22,6 +24,7 @@ export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-coord
 export default {
   async fetch(request, env = {}, ctx) {
     const url = new URL(request.url);
+    if (isMmsCustomerHistoryPage(request)) return handleMmsCustomerHistoryPage(request, env);
     const canonicalContext = await prepareMyMmdCanonicalEntitlementContext(request, env);
     if (canonicalContext?.unavailable) return Response.json({ ok: false, state: "checking", error: { code: "MEMBER_PROFILE_REFRESH_UNAVAILABLE" } }, { status: 503, headers: { "cache-control": "no-store" } });
     const finish = (response) => applyMyMmdCanonicalEntitlementResponse(request, response, canonicalContext);

@@ -106,3 +106,44 @@ test("dry-run keeps all canonical truth boundaries closed", async () => {
   assert.equal(result.boundaries.current_entitlement_changed, false);
   assert.equal(airtable.writes.length, 0);
 });
+
+test("OA customer notes use the renamed name and a stable OA source, not the crew room", async () => {
+  const rows = [{ source: "line_ofc", note_id: "customer-a:note-1", current_line_rename: "คุณเอ MMS",
+    display_name: "LINE display", line_user_id: `U${"a".repeat(32)}`,
+    evidence_kind: "service_history", raw_line_notes: "บริการนวด 1,500 บาท 2026-07-01", date: "2026-07-01" }];
+  const row = normalizeMmsHistoryRow(rows[0]);
+  assert.equal(row.source, "line_ofc");
+  assert.equal(row.line_renamed_name, "คุณเอ MMS");
+  assert.equal(row.source_ref, "mms:line_ofc:customer-a:note-1");
+  assert.match(row.raw_note, /บริการนวด/);
+  assert.doesNotMatch(row.raw_note, /group=Male Massage/);
+  const airtable = new FakeAirtable();
+  const result = await runMmsHistoryEvidenceIntake({ rows, airtable, applyEvidence: true });
+  assert.equal(result.source_account, "@malemassage");
+  assert.equal(result.source_group_name, null);
+  assert.equal(result.plans[0].proof_id, "");
+  assert.equal(airtable.writes.length, 1);
+  assert.equal(result.plans[0].matched_client_id, "");
+});
+
+test("OA import rejects missing stable reference and missing customer identity", async () => {
+  assert.throws(() => normalizeMmsHistoryRow({ source: "line_ofc", raw_note: "test" }), /MMS_OFC_SOURCE_REF_REQUIRED/);
+  await assert.rejects(runMmsHistoryEvidenceIntake({ source: "line_ofc", rows: [{ note_id: "note-1", raw_note: "test" }], airtable: new FakeAirtable() }), /HISTORY_IDENTITY_EVIDENCE_REQUIRED/);
+});
+
+test("OA replay survives batch and row-order changes, while different notes remain distinct", async () => {
+  const a = { note_id: "a:1", current_line_rename: "A", raw_line_notes: "นวดไทย" };
+  const b = { note_id: "b:1", current_line_rename: "B", raw_line_notes: "นวดไทย" };
+  const airtable = new FakeAirtable();
+  const first = await runMmsHistoryEvidenceIntake({ source: "line_ofc", rows: [a, b], batchId: "first", airtable });
+  const second = await runMmsHistoryEvidenceIntake({ source: "line_ofc", rows: [b, a], batchId: "second", airtable });
+  assert.equal(first.plans[0].import_id, second.plans[1].import_id);
+  assert.notEqual(first.plans[0].import_id, first.plans[1].import_id);
+});
+
+test("payout date alone never creates a customer payment proof", async () => {
+  const airtable = new FakeAirtable();
+  const result = await runMmsHistoryEvidenceIntake({ rows: [{ message_id: "payout-dated", display_name: "Therapist", kind: "payout", raw_note: "ค่าแรง", date: "2026-07-01" }], airtable, applyEvidence: true });
+  assert.equal(result.plans[0].proof_id, "");
+  assert.equal(airtable.writes.length, 1);
+});

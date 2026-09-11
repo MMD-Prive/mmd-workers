@@ -8,6 +8,21 @@ const APP = "https://www.mmdbkk.com/male-massage/therapists/app";
 const APP_ACCESS = "https://www.mmdbkk.com/male-massage/therapists/api/app/access";
 const PRESENTATION = "https://my-mms-therapist.lovable.app/my-mms-work-shell.html";
 
+test("MMS customer history stays with member-pages and never enters the My MMD status redirect", async () => {
+  for (const suffix of ["?view=mms-history", "?liff.state=%3Fview%3Dmms-history%26intent%3Dstatus"]) {
+    const url = `https://www.mmdbkk.com/member/liff${suffix}`;
+    const response = await worker.fetch(new Request(url, { headers: { cookie: "test-session=present" } }), {
+      MEMBER_PAGES_WORKER: { async fetch(request) {
+        assert.equal(request.url, url);
+        assert.equal(request.headers.get("cookie"), "test-session=present");
+        return new Response("MMS customer history", { headers: { "content-type": "text/html", "cache-control": "private, no-store" } });
+      } },
+    });
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), "MMS customer history");
+  }
+});
+
 test("MMS Therapist auth routes are delegated only to mms-worker and preserve cookies", async () => {
   const calls = [];
   const env = {

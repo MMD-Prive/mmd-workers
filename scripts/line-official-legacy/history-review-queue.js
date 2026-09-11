@@ -5,6 +5,7 @@ const {
   HISTORY_REVIEWS_TABLE,
   assertIdentityCommitGate,
   defaultHistoryReviewId,
+  historyServiceBrand,
   parseHistoricalDate,
 } = require("./history-materializer.js");
 
@@ -85,6 +86,7 @@ function buildReviewCandidate(staging) {
       ...(candidatePointsAmount > 0 ? { candidate_points_eligible_amount_thb: Math.round(candidatePointsAmount * 100) / 100 } : {}),
       evidence_summary: [
         `import_id=${clean(fields.import_id)}`,
+        `service_brand=${historyServiceBrand(fields)}`,
         `rename_present=${Boolean(clean(fields.line_renamed_name))}`,
         `service_events=${events.length}`,
         `dates=${detectedDates.length}`,
