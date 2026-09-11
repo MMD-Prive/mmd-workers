@@ -68,7 +68,7 @@ jobs:
           grep -q 'publishPendingModel' webflow/internal/admin/kenji/kenji-admin-friendly-v3.js
           grep -q 'modelLineLinkEntryV1' webflow/internal/admin/kenji/kenji-admin-model-line-link-entry-v1.js
           grep -q '/v1/admin/models/activation-candidates?mode=line-link-claims' webflow/internal/admin/kenji/kenji-admin-model-line-link-entry-v1.js
-          grep -q '/internal/admin/kenji?view=model-link' webflow/internal/admin/kenji/kenji-admin-model-line-link-entry-v1.js
+          grep -q '/internal/admin/model-link' webflow/internal/admin/kenji/kenji-admin-model-line-link-entry-v1.js
           grep -q 'sigilBoardViewV1' webflow/internal/admin/kenji/kenji-admin-board-view-v1.js
           grep -q '/v1/sigil/board/queue?limit=100' webflow/internal/admin/kenji/kenji-admin-board-view-v1.js
           grep -q 'data-kso-board-panel' webflow/internal/admin/kenji/kenji-admin-board-view-v1.js
@@ -184,7 +184,7 @@ jobs:
           grep -q 'advanceKnowledge' "$js_file"
           grep -q 'publishPendingModel' "$js_file"
           grep -q 'modelLineLinkEntryV1' "$js_file"
-          grep -q '/internal/admin/kenji?view=model-link' "$js_file"
+          grep -q '/internal/admin/model-link' "$js_file"
           grep -q '/v1/admin/models/activation-candidates?mode=line-link-claims' "$js_file"
           grep -q 'sigilBoardViewV1' "$js_file"
           grep -q '/v1/sigil/board/queue?limit=100' "$js_file"
@@ -211,7 +211,7 @@ jobs:
               && grep -q 'advanceKnowledge' "$stable_js_file" \
               && grep -q 'publishPendingModel' "$stable_js_file" \
               && grep -q 'modelLineLinkEntryV1' "$stable_js_file" \
-              && grep -q '/internal/admin/kenji?view=model-link' "$stable_js_file" \
+              && grep -q '/internal/admin/model-link' "$stable_js_file" \
               && grep -q '/v1/admin/models/activation-candidates?mode=line-link-claims' "$stable_js_file" \
               && grep -q 'sigilBoardViewV1' "$stable_js_file" \
               && grep -q '/v1/sigil/board/queue?limit=100' "$stable_js_file" \
