@@ -7,6 +7,7 @@ import { generateKenjiModelReply, KENJI_TOTAL_DEADLINE_MS } from "./kenji-model-
 import { runKenjiFolderHistoryAssessment } from "./kenji-folder-history-adapter.mjs";
 import { buildProtectedCapabilityReply, decideKenjiCapability, KENJI_CAPABILITIES } from "./kenji-capability-policy.js";
 import { parseModelKnowledgeIdAllowlist, selectApprovedLineModelKnowledge } from "./kenji-knowledge-policy.js";
+import { generateSafeReply, canonicalRichMenuIntent } from "../../shared/verified-member-concierge.mjs";
 
 export { KenjiModelIdempotency };
 
@@ -899,7 +900,9 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     return buildKenjiModelAccessDecision(access, { pendingStored: pending.ok === true && pending.stored === true });
   }
 
-  const deterministicReply = buildKenjiLineReply(event, profile, options);
+  const conciergeInput = options.verifiedMemberContext ? { ...options.verifiedMemberContext, intent: canonicalRichMenuIntent({ intent, data: event?.postback?.data }) } : null;
+  const conciergeReply = conciergeInput ? generateSafeReply(conciergeInput) : null;
+  const deterministicReply = conciergeReply?.text || buildKenjiLineReply(event, profile, options);
   const deterministicFirst = capabilityDecision.capability !== KENJI_CAPABILITIES.APPROVED_PUBLIC_KNOWLEDGE && capabilityDecision.capability !== KENJI_CAPABILITIES.SAFE_CONVERSATION;
   const cachedKnowledge = isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)
     ? getCachedPublishedPerVoiceReply(env, intent)
