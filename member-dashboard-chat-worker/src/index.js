@@ -145,6 +145,12 @@ function hasBearerInternalAuth(request = null, env = {}) {
   return Boolean(expectedInternalToken && bearer && bearer === expectedInternalToken);
 }
 
+function hasAiServiceSmokeAuth(request = null, env = {}) {
+  const bearer = getBearerToken(request);
+  const expectedSmokeToken = asString(env.AI_SERVICE_SMOKE_TOKEN);
+  return Boolean(expectedSmokeToken && bearer && timingSafeStringEqual(bearer, expectedSmokeToken));
+}
+
 function hasServiceBindingAuth(request = null, allowedCallers = []) {
   const service = asString(request?.headers?.get("x-mmd-service-binding"));
   const internal = asString(request?.headers?.get("x-mmd-internal-call")).toLowerCase();
@@ -2080,7 +2086,7 @@ export default {
     }
 
     if (request.method === "POST" && url.pathname === INTERNAL_AI_SERVICE_BINDING_SMOKE.path) {
-      if (!hasInternalAuth(request, env)) return json({ ok: false, error: "internal_auth_required" }, 401);
+      if (!hasAiServiceSmokeAuth(request, env)) return json({ ok: false, error: "ai_service_smoke_auth_required" }, 401);
       const result = await runInternalAiServiceBindingSmoke(env);
       return json(result.payload, result.status);
     }
