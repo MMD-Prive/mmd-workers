@@ -42,3 +42,19 @@ test("partner-managed jobs discard every model payout alias", () => {
   assert.equal(body.job_details.partner_relationship.model_payout_thb, null);
   assert.equal(body.job_details.partner_relationship.partner_quoted_rate_thb, 8000);
 });
+
+
+test("legacy included modeling rates also fail closed", () => {
+  const body = normalizeJobCreateBody({
+    model_payout_thb: 5500,
+    job_details: {
+      partner_relationship: {
+        settlement_method: "included_in_rate",
+        partner_source_rate_thb: 8000,
+      },
+    },
+    partner_attribution: { partner_name: "Kendo" },
+  });
+  assert.equal(body.pay_model_thb, undefined);
+  assert.equal(Object.hasOwn(body, "model_payout_thb"), false);
+});
