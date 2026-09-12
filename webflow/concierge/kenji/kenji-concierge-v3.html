@@ -9,7 +9,7 @@
   data-member-mode="loading"
   aria-labelledby="kj3-title"
 >
-  <section class="kj3-hero" aria-labelledby="kj3-title">
+  <section id="kj3-overview" class="kj3-hero" aria-labelledby="kj3-title" data-kj3-chapter="ภาพรวม">
     <picture class="kj3-hero__media">
       <source media="(min-width: 768px)" srcset="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa4b6b0d36b309d889ec6d5_Kenji%20CC%2012.webp">
       <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa4b6b02b82617e25beaa4c_Kenji%20CC%2002.webp" alt="Kenji ผู้ช่วยส่วนตัว MMD Privé" width="1086" height="1448" fetchpriority="high">
@@ -48,7 +48,7 @@
     </div>
   </section>
 
-  <section id="kj3-actions" class="kj3-section kj3-section--actions" aria-labelledby="kj3-actions-title">
+  <section id="kj3-actions" class="kj3-section kj3-section--actions" aria-labelledby="kj3-actions-title" data-kj3-chapter="เริ่มเรื่อง">
     <div class="kj3-shell">
       <header class="kj3-head kj3-reveal">
         <p class="kj3-eyebrow"><span></span>CHOOSE THE INTENT</p>
@@ -85,7 +85,7 @@
     </div>
   </section>
 
-  <section class="kj3-intel" aria-labelledby="kj3-intel-title">
+  <section id="kj3-intelligence" class="kj3-intel" aria-labelledby="kj3-intel-title" data-kj3-chapter="วิธีคิด">
     <article class="kj3-intel__visual kj3-reveal">
       <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa4b6b01bf3d46fb13a7070_Kenji%20CC%2005.webp" alt="Kenji คัดสรรข้อมูลอย่างเป็นส่วนตัว" width="1122" height="1402" loading="lazy">
       <div class="kj3-intel__shade" aria-hidden="true"></div>
@@ -110,7 +110,7 @@
     </div>
   </section>
 
-  <section class="kj3-standard" aria-labelledby="kj3-standard-title">
+  <section id="kj3-standard" class="kj3-standard" aria-labelledby="kj3-standard-title" data-kj3-chapter="มาตรฐาน">
     <div class="kj3-standard__media kj3-reveal">
       <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa4b6b19e52cc038267449e_Kenji%20CC%2010.webp" alt="Kenji ประสานงานในพื้นที่ส่วนตัวของ MMD" width="1918" height="820" loading="lazy">
     </div>
@@ -127,7 +127,7 @@
     </div>
   </section>
 
-  <section class="kj3-faq" aria-labelledby="kj3-faq-title">
+  <section id="kj3-faq" class="kj3-faq" aria-labelledby="kj3-faq-title" data-kj3-chapter="ก่อนเริ่ม">
     <div class="kj3-shell kj3-faq__grid">
       <header class="kj3-reveal">
         <p class="kj3-eyebrow"><span></span>CLEAR BEFORE YOU CONTINUE</p>
@@ -150,7 +150,7 @@
     </div>
   </section>
 
-  <section class="kj3-care" aria-labelledby="kj3-care-title">
+  <section id="kj3-care" class="kj3-care" aria-labelledby="kj3-care-title" data-kj3-chapter="Private Care">
     <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa4b6b0125e7d701f62a5e6_Kenji%20CC%2008.webp" alt="Kenji พร้อมรับเรื่อง Private Care" width="1918" height="820" loading="lazy">
     <div class="kj3-care__grade" aria-hidden="true"></div>
     <div class="kj3-shell kj3-care__inner kj3-reveal">
@@ -168,8 +168,37 @@
     </div>
   </footer>
 
-  <div class="kj3-dock" data-kj3-dock aria-hidden="true">
-    <div><span data-kj3-dock-label>KENJI · CHECKING ACCESS</span><small data-kj3-dock-copy>กำลังอ่านสถานะ</small></div>
-    <a data-kj3-dock-link href="/member/my-mmd" tabindex="-1">ไปต่อ <span aria-hidden="true">↗</span></a>
+  <nav class="kj3-branchbar" data-kj3-branchbar aria-label="ทางลัดในหน้านี้">
+    <button type="button" data-kj3-menu-open aria-haspopup="dialog" aria-controls="kj3-page-map"><span aria-hidden="true">☰</span> เมนู</button>
+    <button type="button" data-kj3-prev aria-label="ส่วนก่อนหน้า"><span aria-hidden="true">‹</span></button>
+    <div><span data-kj3-current>ภาพรวม</span><small data-kj3-progress>01 / 06</small></div>
+    <button type="button" data-kj3-next>ถัดไป <span aria-hidden="true">›</span></button>
+  </nav>
+
+  <div id="kj3-page-map" class="kj3-sheet" data-kj3-sheet role="dialog" aria-modal="true" aria-labelledby="kj3-sheet-title" aria-hidden="true">
+    <button class="kj3-sheet__backdrop" type="button" data-kj3-menu-close tabindex="-1" aria-label="ปิดสารบัญ"></button>
+    <div class="kj3-sheet__panel" data-kj3-sheet-panel>
+      <div class="kj3-sheet__handle" aria-hidden="true"></div>
+      <header>
+        <button class="kj3-sheet__back" type="button" data-kj3-branch-back hidden>‹ กลับ</button>
+        <div><p>MMD AI · PAGE MAP</p><h2 id="kj3-sheet-title">ไปส่วนที่ต้องการ</h2></div>
+        <button class="kj3-sheet__close" type="button" data-kj3-menu-close aria-label="ปิดสารบัญ">×</button>
+      </header>
+      <div class="kj3-sheet__view is-active" data-kj3-sheet-view="main">
+        <button type="button" data-kj3-goto="kj3-overview"><b>01</b><span>ภาพรวม</span><i>↗</i></button>
+        <button type="button" data-kj3-branch="actions"><b>02</b><span>เริ่มเรื่องกับ Kenji</span><i>›</i></button>
+        <button type="button" data-kj3-goto="kj3-intelligence"><b>03</b><span>Kenji คิดอย่างไร</span><i>↗</i></button>
+        <button type="button" data-kj3-goto="kj3-standard"><b>04</b><span>มาตรฐานการดูแล</span><i>↗</i></button>
+        <button type="button" data-kj3-goto="kj3-faq"><b>05</b><span>ก่อนเริ่ม</span><i>↗</i></button>
+        <button type="button" data-kj3-goto="kj3-care"><b>06</b><span>Private Care</span><i>↗</i></button>
+      </div>
+      <div class="kj3-sheet__view" data-kj3-sheet-view="actions" aria-hidden="true">
+        <a data-kj3-membership href="/member/my-mmd"><b>01</b><span>ตรวจสิทธิ์ใน MY MMD</span><i>↗</i></a>
+        <a data-kj3-booking href="/booking"><b>02</b><span>เริ่ม Booking</span><i>↗</i></a>
+        <a data-kj3-private href="/member/kenji-ai-20"><b>03</b><span>คุยกับ Kenji</span><i>↗</i></a>
+        <a data-kj3-recovery href="/recovery"><b>04</b><span>เปิด Private Care</span><i>↗</i></a>
+      </div>
+      <p class="kj3-sheet__status" data-kj3-sheet-status>กำลังตรวจสอบสถานะสมาชิก</p>
+    </div>
   </div>
 </main>

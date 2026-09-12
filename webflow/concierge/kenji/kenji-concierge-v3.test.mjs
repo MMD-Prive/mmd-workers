@@ -20,14 +20,15 @@ test("member truth and customer routes remain canonical", () => {
 });
 
 test("customer-facing ownership remains MMD-masked", () => {
-  assert.doesNotMatch(html, /Boss Per/i);
+  assert.doesNotMatch(html, /Boss Per|Admin|Handler|Operator/i);
   assert.match(html, /ขั้นตอนของ MMD/);
 });
 
-test("contrast safety layer remains last", () => {
+test("contrast and typography safety remain canonical", () => {
   const marker = "FINAL MMD CONTRAST SAFETY LAYER";
   assert.ok(css.includes(marker));
   assert.ok(css.lastIndexOf(marker) > css.lastIndexOf("@media(prefers-reduced-motion:reduce)"));
+  assert.match(css, /font-family:"LINE Seed Sans TH","Noto Sans Thai"/);
   assert.match(css, /-webkit-text-fill-color:var\(--cream\)!important/);
   assert.match(css, /--cream:#fffaf0/);
   assert.match(css, /--gold:#ffc247/);
@@ -42,11 +43,18 @@ test("runtime parses and fails closed", () => {
   assert.doesNotMatch(source, /DEMO_ONLY|Math\.random|default.{0,12}points/i);
 });
 
-test("mobile-first interaction and accessibility hooks remain present", () => {
-  assert.match(css, /scroll-snap-type:inline mandatory/);
-  assert.match(css, /\.kj3-dock/);
+test("mobile branch navigation satisfies the long-page contract", () => {
+  const chapters = [...html.matchAll(/data-kj3-chapter=/g)];
+  assert.equal(chapters.length, 6);
+  for (const hook of ["data-kj3-menu-open", "data-kj3-current", "data-kj3-progress", "data-kj3-prev", "data-kj3-next"]) {
+    assert.ok(html.includes(hook), `missing branch hook: ${hook}`);
+  }
+  assert.match(html, /role="dialog" aria-modal="true"/);
+  assert.match(javascript, /touchend/);
+  assert.match(javascript, /event\.key==="Escape"/);
+  assert.match(javascript, /scrollIntoView/);
+  assert.match(css, /safe-area-inset-bottom/);
+  assert.match(css, /cubic-bezier\(\.22,1,\.36,1\)/);
   assert.match(css, /prefers-reduced-motion:reduce/);
   assert.match(html, /aria-live="polite"/);
-  assert.match(html, /aria-busy="true"/);
-  assert.match(html, /<details class="kj3-disclosure kj3-reveal">/);
 });

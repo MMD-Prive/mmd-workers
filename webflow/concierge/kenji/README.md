@@ -35,14 +35,13 @@ The UI fails closed. Missing, pending, blocked, invalid, or timed-out member dat
 
 ## V3 direction
 
-V3 raises the page by two visual and product levels:
-
-- stronger Kenji Voice and higher-contrast amber signal system;
+- stronger Kenji Voice and high-contrast amber signal system;
 - live member signal panel with verified-state routing;
 - concise mobile-first intent cards and horizontal swipe;
 - Kenji Decision Engine sequence: READ → FILTER → MOVE → CARE;
-- persistent mobile action dock driven by resolved member state;
-- scoped Webflow styles, final contrast safety layer, progressive disclosure, and reduced-motion support.
+- persistent mobile Branch Navigation with current chapter, progress, previous/next, Apple-style sheet, nested intent branch, hash deep links, focus management and swipe-down dismissal;
+- LINE Seed Sans TH first with Noto Sans Thai fallback;
+- scoped Webflow styles, final contrast safety layer, progressive disclosure and reduced-motion support.
 
 ## Verification
 
