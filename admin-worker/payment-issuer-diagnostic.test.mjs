@@ -183,6 +183,24 @@ test('owner existing-session issuance builds deposit pricing server-side and nev
   assert.match(payload.note, /"balance_thb":19250/);
 });
 
+test('existing-session deposit uses the job total when an outstanding balance is recorded', async () => {
+  const h = setup({ binding: () => Response.json({
+    ok: true, session_id: 'sess_fixture', payment_ref: 'pay_fixture',
+    customer_confirmation_url: 'https://mmdbkk.com/sigil/confirm/job-confirmation?t=customer-secret',
+    model_confirmation_url: 'https://mmdbkk.com/sigil/confirm/job-model?t=model-secret',
+  }) });
+  installAdminAirtable(h.env, validSessionFields({ fldhwC79ndbnEXSZz: 25500, fldvJowquu8RrsOMc: 17850 }));
+  const response = await worker.fetch(await request(h.env, { body: {
+    mode: ISSUE_EXISTING_SESSION_MODE, session_id: 'sess_fixture', payment_type: 'deposit', deposit_percent: 30,
+  } }), h.env, {});
+  assert.equal(response.status, 200);
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.calls[0].body.amount_thb, 25500);
+  assert.match(h.calls[0].body.note, /"deposit_due_thb":7650/);
+  assert.match(h.calls[0].body.note, /"balance_thb":17850/);
+  assert.match(h.calls[0].body.note, /"deposit_received_thb":0/);
+});
+
 test('existing complete confirmation state is idempotent and never mints again', async () => {
   const h = setup({ binding: () => { throw new Error('must_not_mint'); } });
   installAdminAirtable(h.env, validSessionFields({

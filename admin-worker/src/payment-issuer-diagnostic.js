@@ -140,7 +140,8 @@ async function handleIssueExistingSession(env, body) {
     startTime = requiredText(fields[SESSION_FIELDS.startTime], "start_time");
     endTime = requiredText(fields[SESSION_FIELDS.endTime], "end_time");
     locationName = requiredText(fields[SESSION_FIELDS.locationName], "location_name");
-    amountThb = positiveNumber(fields[SESSION_FIELDS.customerAmountDueThb] ?? fields[SESSION_FIELDS.amountThb], "amount_thb");
+    // An outstanding balance is not the job total used to calculate a deposit.
+    amountThb = positiveNumber(fields[SESSION_FIELDS.amountThb] ?? fields[SESSION_FIELDS.customerAmountDueThb], "amount_thb");
   } catch (error) {
     return json({ ok: false, stage: "preflight", error: safeError(error, "session_data_incomplete") }, error?.status || 409);
   }
@@ -320,6 +321,19 @@ function diagnosticPage() {
 <p>ตรวจด้วยข้อมูลว่าง {} โดยไม่สร้างรายการชำระเงินหรือรัน Job</p>
 <button id="probe" type="button">ตรวจการเชื่อมต่อ</button>
 <pre id="result" role="status" aria-live="polite">พร้อมตรวจ · ยังไม่ได้ส่งคำขอ</pre>
+<section aria-labelledby="issue-heading" style="margin:40px 0;padding-top:24px;border-top:1px solid #514737">
+<h2 id="issue-heading">ออกลิงก์ยืนยันของงานเดิม</h2>
+<p>ใช้รายละเอียดล่าสุดจากงานที่บันทึกไว้ ระบบจะเก็บลิงก์ลูกค้าและโมเดลไว้ในรายการเดิม พร้อมสร้างรายการชำระเงินที่รอตรวจ หากมีลิงก์ครบแล้วจะใช้รายการเดิม</p>
+<form id="issue-form">
+<label for="issue-session">รหัส Session ของงาน</label>
+<input id="issue-session" name="session_id" type="text" maxlength="200" required autocomplete="off" style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0 20px;background:#191713;color:#f5f1e8;border:1px solid #70624c;border-radius:8px;font:inherit">
+<label for="issue-payment-type">รูปแบบชำระเงิน</label>
+<select id="issue-payment-type" name="payment_type" required style="display:block;width:100%;padding:12px;margin:8px 0 20px;background:#191713;color:#f5f1e8;border:1px solid #70624c;border-radius:8px;font:inherit"><option value="" selected>เลือกรูปแบบชำระเงิน</option value="deposit">มัดจำ</option><option value="full">เต็มจำนวน</option></select>
+<div id="issue-deposit-fields" hidden><label for="issue-deposit">มัดจำ (%)</label><input id="issue-deposit" name="deposit_percent" type="number" min="0.01" max="99.99" step="0.01" disabled style="display:block;padding:12px;margin:8px 0 20px;background:#191713;color:#f5f1e8;border:1px solid #70624c;border-radius:8px;font:inherit"></div>
+<button id="issue" type="submit">ออกลิงก์ของงานเดิม</button>
+</form>
+<pre id="issue-result" role="status" aria-live="polite">ยังไม่ได้ออกลิงก์</pre>
+</section>
 <a href="/internal/admin/control-room">กลับ Control Room</a></main>
 <script nonce="${nonce}">
 document.getElementById('probe').addEventListener('click', async function () {
@@ -335,6 +349,41 @@ document.getElementById('probe').addEventListener('click', async function () {
     result.textContent = JSON.stringify({ http_status: response.status, ...data }, null, 2);
   } catch {
     result.textContent = 'ตรวจไม่สำเร็จ · ไม่ได้ส่งคำขอซ้ำ';
+  }
+});
+const issueForm = document.getElementById('issue-form');
+const paymentType = document.getElementById('issue-payment-type');
+const depositInput = document.getElementById('issue-deposit');
+paymentType.addEventListener('change', function () {
+  const deposit = this.value === 'deposit';
+  document.getElementById('issue-deposit-fields').hidden = !deposit;
+  depositInput.disabled = !deposit;
+  depositInput.required = deposit;
+});
+issueForm.addEventListener('submit', async function (event) {
+  event.preventDefault();
+  const button = document.getElementById('issue');
+  if (button.disabled || !issueForm.reportValidity()) return;
+  const sessionId = document.getElementById('issue-session').value.trim();
+  const result = document.getElementById('issue-result');
+  if (!sessionId) { result.textContent = 'กรอกรหัส Session ก่อนออกลิงก์'; return; }
+  const body = { mode: '${ISSUE_EXISTING_SESSION_MODE}', session_id: sessionId, payment_type: paymentType.value };
+  if (paymentType.value === 'deposit') body.deposit_percent = Number(depositInput.value);
+  button.disabled = true;
+  result.textContent = 'กำลังตรวจรายการเดิมและออกลิงก์…';
+  try {
+    const response = await fetch('${PAYMENT_ISSUER_DIAGNOSTIC_PATH}', {
+      method: 'POST', credentials: 'same-origin', redirect: 'error',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    const data = await response.json();
+    const ready = response.ok && data.ok && data.customer_confirmation_url_present && data.model_confirmation_url_present;
+    result.textContent = (ready ? 'ลิงก์ทั้งสองฝั่งพร้อมแล้ว · บันทึกอยู่ใน Session เดิม' : 'ยังออกลิงก์ไม่สำเร็จ · ตรวจรายการเดิมก่อนลองใหม่') + '\\n' + JSON.stringify({ http_status: response.status, ...data }, null, 2);
+    if (ready) {
+      for (const input of issueForm.querySelectorAll('input, select')) input.disabled = true;
+    }
+  } catch {
+    result.textContent = 'ยังยืนยันผลไม่ได้ · ตรวจลิงก์ใน Session เดิมก่อนส่งคำขออีกครั้ง';
   }
 });
 </script></html>`, { headers: {
