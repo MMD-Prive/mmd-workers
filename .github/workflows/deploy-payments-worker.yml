@@ -122,10 +122,10 @@ jobs:
         id: deploy_version
         if: steps.resolve_version.outcome == 'success'
         shell: bash
+        working-directory: payments-worker
         run: |
           set -euo pipefail
-          trap 'rm -f payments-worker/.wrangler-no-routes.toml' EXIT
-          npx --yes wrangler@4 deploy --keep-vars --config payments-worker/.wrangler-no-routes.toml
+          npx --yes wrangler@4 versions deploy "${PAYMENTS_WORKER_VERSION_ID}@100%" -y --config wrangler.merged.toml
 
       - name: Smoke signed confirmation routes
         if: steps.deploy_version.outcome == 'success' || steps.migration_deploy.outcome == 'success'
