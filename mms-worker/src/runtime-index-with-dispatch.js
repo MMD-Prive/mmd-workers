@@ -3,6 +3,7 @@ import { maybeHandleMyMmsDispatch } from "./my-mms-dispatch-runtime.mjs";
 import { maybeHandleMmsServiceZones } from "./service-zones-runtime.mjs";
 import { canonicalZoneErrorResponse, maybeHandleCanonicalZoneBooking } from "./canonical-zone-booking-runtime.mjs";
 import { canonicalZoneApplicationErrorResponse, maybeHandleCanonicalZoneApplication } from "./canonical-zone-application-runtime.mjs";
+import { mmsTelegramTopic, notifyMmsOpsResponse } from "./telegram-ops-alerts.mjs";
 export { MmsCoordinator } from "./runtime-index-with-application-v4.js";
 export { MmsDispatchCoordinator } from "./my-mms-dispatch-runtime.mjs";
 
@@ -14,6 +15,26 @@ function jsonHeaders(response) {
   headers.set("Content-Type", "application/json; charset=utf-8");
   headers.set("Cache-Control", "no-store");
   return headers;
+}
+
+function queueOpsAlert(request, response, env, ctx) {
+  const task = notifyMmsOpsResponse(request, response, env).then((result) => {
+    if (result?.ok || result?.skipped) return;
+    console.error(JSON.stringify({
+      event: "mms_telegram_ops_alert_failed",
+      path: new URL(request.url).pathname,
+      reason: result?.reason || "unknown",
+      alert_event: result?.event?.event || null,
+    }));
+  }).catch((error) => {
+    console.error(JSON.stringify({
+      event: "mms_telegram_ops_alert_failed",
+      path: new URL(request.url).pathname,
+      reason: String(error?.message || error || "unknown").slice(0, 160),
+    }));
+  });
+  if (ctx?.waitUntil) ctx.waitUntil(task);
+  return response;
 }
 
 async function autoDispatchPrebooking(request, response, env) {
@@ -104,7 +125,7 @@ export default {
 
     try {
       const canonicalZoneResponse = await maybeHandleCanonicalZoneBooking(request, env);
-      if (canonicalZoneResponse) return canonicalZoneResponse;
+      if (canonicalZoneResponse) return queueOpsAlert(request, canonicalZoneResponse, env, ctx);
     } catch (error) {
       console.error(JSON.stringify({
         event: "mms_canonical_zone_booking_error",
@@ -120,7 +141,8 @@ export default {
     const path = url.pathname.replace(/\/$/, "") || "/";
 
     if (request.method === "POST" && path === PREBOOKING_PATH) {
-      return autoDispatchPrebooking(request, response, env);
+      const bridged = await autoDispatchPrebooking(request, response, env);
+      return queueOpsAlert(request, bridged, env, ctx);
     }
 
     if (request.method === "GET" && (path === "/health" || path === "/ping") && response.ok) {
@@ -133,11 +155,17 @@ export default {
           dispatch_offers: Boolean(env.AIRTABLE_OFFERS_TABLE_ID),
           service_zones: Boolean(env.AIRTABLE_SERVICE_ZONES_TABLE_ID),
         };
+        payload.telegram_topics = {
+          applications: mmsTelegramTopic(env, "applications") || null,
+          booking: mmsTelegramTopic(env, "booking") || null,
+          dispatch: mmsTelegramTopic(env, "dispatch") || null,
+          alerts: mmsTelegramTopic(env, "alerts") || null,
+        };
         return new Response(JSON.stringify(payload), { status: response.status, headers: jsonHeaders(response) });
       } catch {
         return response;
       }
     }
-    return response;
+    return queueOpsAlert(request, response, env, ctx);
   },
 };
