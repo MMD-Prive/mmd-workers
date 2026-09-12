@@ -328,7 +328,11 @@ function diagnosticPage() {
 <label for="issue-session">รหัส Session ของงาน</label>
 <input id="issue-session" name="session_id" type="text" maxlength="200" required autocomplete="off" style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0 20px;background:#191713;color:#f5f1e8;border:1px solid #70624c;border-radius:8px;font:inherit">
 <label for="issue-payment-type">รูปแบบชำระเงิน</label>
-<select id="issue-payment-type" name="payment_type" required style="display:block;width:100%;padding:12px;margin:8px 0 20px;background:#191713;color:#f5f1e8;border:1px solid #70624c;border-radius:8px;font:inherit"><option value="" selected>เลือกรูปแบบชำระเงิน</option value="deposit">มัดจำ</option><option value="full">เต็มจำนวน</option></select>
+<select id="issue-payment-type" name="payment_type" required style="display:block;width:100%;padding:12px;margin:8px 0 20px;background:#191713;color:#f5f1e8;border:1px solid #70624c;border-radius:8px;font:inherit">
+<option value="" selected>เลือกรูปแบบชำระเงิน</option>
+<option value="deposit">มัดจำ</option>
+<option value="full">เต็มจำนวน</option>
+</select>
 <div id="issue-deposit-fields" hidden><label for="issue-deposit">มัดจำ (%)</label><input id="issue-deposit" name="deposit_percent" type="number" min="0.01" max="99.99" step="0.01" disabled style="display:block;padding:12px;margin:8px 0 20px;background:#191713;color:#f5f1e8;border:1px solid #70624c;border-radius:8px;font:inherit"></div>
 <button id="issue" type="submit">ออกลิงก์ของงานเดิม</button>
 </form>
