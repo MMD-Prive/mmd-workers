@@ -9,6 +9,7 @@ import { buildProtectedCapabilityReply, decideKenjiCapability, KENJI_CAPABILITIE
 import { parseModelKnowledgeIdAllowlist, selectApprovedLineModelKnowledge } from "./kenji-knowledge-policy.js";
 import { generateSafeReply, canonicalRichMenuIntent } from "../../shared/verified-member-concierge.mjs";
 import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
+import { INTERNAL_AI_SERVICE_BINDING_SMOKE, runInternalAiServiceBindingSmoke } from "./internal-ai-service-binding-smoke.mjs";
 
 export { KenjiModelIdempotency };
 
@@ -2076,6 +2077,12 @@ export default {
 
     if (request.method === "GET" && url.pathname === LINE_RICH_MENU_LIST_PATH) {
       return handleRichMenuList(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === INTERNAL_AI_SERVICE_BINDING_SMOKE.path) {
+      if (!hasInternalAuth(request, env)) return json({ ok: false, error: "internal_auth_required" }, 401);
+      const result = await runInternalAiServiceBindingSmoke(env);
+      return json(result.payload, result.status);
     }
 
     if (request.method === "POST" && url.pathname === "/v1/internal/line/public-menu-fallback") {
