@@ -90,9 +90,14 @@
 
   function normalize(payload){
     var profile=payload&&typeof payload==="object"?(payload.profile||payload.data||payload):{};
-    var status=clean(profile.membership_status||profile.status||profile.member_status).toLowerCase();
-    var tier=clean(profile.membership_tier||profile.tier||profile.level);
-    var expiry=clean(profile.active_through||profile.activeThrough||profile.expires_at||profile.expiry_date);
+    var membership=profile.membership&&typeof profile.membership==="object"?profile.membership:{};
+    var accessObject=membership.access&&typeof membership.access==="object"?membership.access:{};
+    var access=clean(accessObject.value||accessObject.status||membership.access).toLowerCase();
+    var status=clean(membership.status||profile.membership_status||profile.status||profile.member_status).toLowerCase();
+    var tier=clean(membership.level||profile.membership_tier||profile.tier||profile.level);
+    var expiry=clean(membership.activeThrough||membership.active_through||membership.expiresAt||profile.active_through||profile.activeThrough||profile.expires_at||profile.expiry_date);
+    if(["blocked","denied","suspended","revoked","none","inactive"].includes(access))return{mode:"blocked"};
+    if(["pending","pending_review","review","checking","unknown"].includes(access))return{mode:"pending"};
     if(["blocked","suspended","revoked","forbidden"].includes(status))return{mode:"blocked"};
     if(["pending","pending_review","review","waiting"].includes(status))return{mode:"pending"};
     if(["active","verified","current","approved"].includes(status))return{mode:"active",tier:tier,expiry:expiry};
