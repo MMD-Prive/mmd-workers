@@ -9,6 +9,22 @@ export function normalizeJobCreateBody(input = {}) {
   const details = body.job_details || {};
   const schedule = body.schedule || {};
   const notes = body.notes || {};
+  const partnerRelationship = details.partner_relationship || body.partner_relationship || {};
+  const settlementOwner = String(partnerRelationship.settlement_owner || '').trim().toLowerCase();
+  const settlementMethod = String(partnerRelationship.settlement_method || '').trim().toLowerCase();
+  const partnerManaged = settlementOwner === 'modeling_partner' || settlementMethod === 'partner_managed';
+  if (partnerManaged) {
+    for (const key of ['pay_model_thb', 'pay_model', 'model_pay_thb', 'model_pay', 'model_payout_thb', 'model_payout', 'expected_payout_thb']) {
+      delete body[key];
+    }
+    if (body.payment && typeof body.payment === 'object' && !Array.isArray(body.payment)) {
+      body.payment = { ...body.payment };
+      for (const key of ['pay_model_thb', 'pay_model', 'model_pay_thb', 'model_pay', 'model_payout_thb', 'model_payout', 'expected_payout_thb']) {
+        delete body.payment[key];
+      }
+    }
+    partnerRelationship.model_payout_thb = null;
+  }
   const clientId = body.client_record_id || body.client_id || lineage.client_id || client.client_id || '';
   if ((body.canonical_only === true || body.create_context === 'internal_create_job') &&
       (!/^rec[A-Za-z0-9]{14}$/.test(clientId) || lineage.manual_public_only === true || client.manual_public_only === true)) {
@@ -37,7 +53,7 @@ export function normalizeJobCreateBody(input = {}) {
     end_time: body.end_time || details.end_time || schedule.end,
     location_name: body.location_name || details.location_name || body.location?.text,
     google_map_url: body.google_map_url || details.google_map_url || body.location?.map_url,
-    pay_model_thb: body.pay_model_thb ?? body.pay_model ?? body.model_pay_thb ?? body.model_pay ?? body.payment?.pay_model_thb,
+    pay_model_thb: partnerManaged ? undefined : (body.pay_model_thb ?? body.model_payout_thb ?? body.pay_model ?? body.model_pay_thb ?? body.model_pay ?? body.payment?.pay_model_thb ?? body.payment?.model_payout_thb),
     private_access: {
       ...(body.private_access || {}),
       selected_private_folder: body.private_access?.selected_private_folder || work.model_folder || body.model_folder,
