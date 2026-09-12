@@ -191,6 +191,9 @@
 #kenji-concierge-v3 :where(h1 em,h2 em,.kj3-intel__statement em){color:var(--gold-2)!important;-webkit-text-fill-color:var(--gold-2)!important}
 #kenji-concierge-v3 :where(.kj3-lead,.kj3-head>p:last-child,.kj3-action-card p,.kj3-flow span,.kj3-standard__card li span,.kj3-disclosure p,.kj3-care__inner>p:not(.kj3-eyebrow)){color:var(--muted)!important;-webkit-text-fill-color:var(--muted)!important}
 #kenji-concierge-v3 :where(.kj3-eyebrow,.kj3-micro,.kj3-action-card__code,.kj3-action-card__go,.kj3-line-link,.kj3-retry,.kj3-footer a){color:var(--gold)!important;-webkit-text-fill-color:var(--gold)!important}
+#kenji-concierge-v3 :where(.kj3-branchbar button:not(:last-child),.kj3-branchbar div span,.kj3-sheet header h2,.kj3-sheet__view button,.kj3-sheet__view a){color:var(--cream)!important;-webkit-text-fill-color:var(--cream)!important}
+#kenji-concierge-v3 :where(.kj3-branchbar small,.kj3-sheet header p,.kj3-sheet__view b,.kj3-sheet__view i){color:var(--gold)!important;-webkit-text-fill-color:var(--gold)!important}
+#kenji-concierge-v3 :where(.kj3-command__copy>p:last-child,.kj3-sheet__status){color:var(--muted)!important;-webkit-text-fill-color:var(--muted)!important}
 #kenji-concierge-v3 .kj3-btn--signal,#kenji-concierge-v3 .kj3-branchbar button:last-child{color:#191000!important;-webkit-text-fill-color:#191000!important}
 #kenji-concierge-v3 .kj3-btn--glass{color:var(--cream)!important;-webkit-text-fill-color:var(--cream)!important}
 </style>
