@@ -5,7 +5,7 @@ import worker from './src/admin-login-hero-worker.js';
 import paymentsWorker from '../payments-worker/index.review-wrapper.js';
 import { createCredentialBoundAdminSession } from './src/credential-bound-admin-session.js';
 import { callPaymentsCreateLink } from './src/index.js';
-import { PAYMENT_ISSUER_DIAGNOSTIC_PATH as PATH } from './src/payment-issuer-diagnostic.js';
+import { PAYMENT_ISSUER_DIAGNOSTIC_PATH as PATH, ISSUE_EXISTING_SESSION_MODE } from './src/payment-issuer-diagnostic.js';
 
 function setup({ upstreamSecret = 'service-test', binding } = {}) {
   const calls = [];
@@ -34,6 +34,38 @@ async function request(env, { method = 'POST', body = {}, role = 'admin', origin
     headers: { Cookie: 'mmd_admin_gate_v1=' + token, Origin: origin, 'Content-Type': 'application/json', ...headers },
     ...(method === 'GET' || method === 'HEAD' ? {} : { body: typeof body === 'string' ? body : JSON.stringify(body) }),
   });
+}
+
+function validSessionFields(overrides = {}) {
+  return {
+    fldLTq2kZbyRv22IA: 'sess_fixture',
+    fldMvnQ0BzDfHUYjT: 'Client',
+    flddVz6eoWRHrzIQr: 'Model',
+    fldjK3U9bghnj7xUe: 'PN + MK',
+    fldpnqoIsUMfN7y3c: '2026-09-17',
+    fldBeG0FkWwa8kgnp: '2026-09-17T09:30:00.000Z',
+    fldiDSz0wW9Ct9I3P: '2026-09-17T11:00:00.000Z',
+    fldIiRpaxoafjTkFt: 'The Line Vipe',
+    fldoUDQ8sH93idPx0: 'https://maps.example/fixture',
+    fldvJowquu8RrsOMc: 27500,
+    fldlTO5aNfqUmlNWm: 20000,
+    fld6P6if0vDZCeV0C: ['recClientFixture'],
+    fldEcDkF7CH9VixWM: 'Owner-approved existing session',
+    ...overrides,
+  };
+}
+
+function installAdminAirtable(env, sessionFields, { paymentRecords = [] } = {}) {
+  env.AIRTABLE_BASE_ID = 'test-base';
+  env.AIRTABLE_API_KEY = 'test-airtable';
+  env.AIRTABLE_TABLE_SESSIONS = 'tblC98mKWbzmPuNzX';
+  env.AIRTABLE_TABLE_PAYMENTS = 'tblWGGJJOx5eBvBZJ';
+  env.AIRTABLE_HTTP = { fetch: async req => {
+    const url = String(req.url);
+    if (url.includes('tblC98mKWbzmPuNzX')) return Response.json({ records: [{ id: 'recSessionFixture', fields: sessionFields }] });
+    if (url.includes('tblWGGJJOx5eBvBZJ')) return Response.json({ records: paymentRecords });
+    throw new Error('unexpected_admin_airtable_table');
+  } };
 }
 
 test('active admin wrapper reaches real payments validation without writes or notification', async () => {
@@ -102,7 +134,7 @@ test('deploy workflow synchronizes the diagnostic route and checks its admin gat
   assert.ok(workflow.includes('$origin' + PATH));
 });
 
-test('diagnostic refuses all caller payloads except an empty object', async () => {
+test('diagnostic refuses arbitrary caller payloads', async () => {
   const h = setup();
   for (const body of [{ client_name: 'Do not create' }, { url: 'https://attacker.example' }, [], null, 'bad-json']) {
     const response = await worker.fetch(await request(h.env, { body }), h.env, {});
@@ -110,6 +142,82 @@ test('diagnostic refuses all caller payloads except an empty object', async () =
     assert.equal((await response.json()).error, 'diagnostic_empty_object_required');
   }
   assert.equal(h.calls.length, 0);
+});
+
+test('owner existing-session issuance builds deposit pricing server-side and never returns signed URLs', async () => {
+  const minted = {
+    ok: true,
+    session_id: 'sess_fixture',
+    payment_ref: 'pay_fixture',
+    customer_confirmation_url: 'https://mmdbkk.com/sigil/confirm/job-confirmation?t=customer-secret',
+    model_confirmation_url: 'https://mmdbkk.com/sigil/confirm/job-model?t=model-secret',
+  };
+  const h = setup({ binding: () => Response.json(minted) });
+  installAdminAirtable(h.env, validSessionFields());
+  const response = await worker.fetch(await request(h.env, { body: {
+    mode: ISSUE_EXISTING_SESSION_MODE,
+    session_id: 'sess_fixture',
+    payment_type: 'deposit',
+    deposit_percent: 30,
+  } }), h.env, {});
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.stage, 'issued');
+  assert.equal(body.payment_ref, 'pay_fixture');
+  assert.equal(body.customer_confirmation_url_present, true);
+  assert.equal(body.model_confirmation_url_present, true);
+  assert.equal(body.customer_confirmation_url, undefined);
+  assert.equal(body.model_confirmation_url, undefined);
+  assert.equal(h.calls.length, 1);
+  const payload = h.calls[0].body;
+  assert.equal(payload.session_id, 'sess_fixture');
+  assert.equal(payload.amount_thb, 27500);
+  assert.equal(payload.pay_model_thb, 20000);
+  assert.equal(payload.payment_type, 'deposit');
+  assert.equal(payload.payment_stage, 'deposit');
+  assert.equal(payload.confirm_page, 'https://mmdbkk.com/sigil/confirm/job-confirmation');
+  assert.equal(payload.model_confirm_page, 'https://mmdbkk.com/sigil/confirm/job-model');
+  assert.match(payload.note, /\[SIGIL Pricing v1\]/);
+  assert.match(payload.note, /"deposit_due_thb":8250/);
+  assert.match(payload.note, /"balance_thb":19250/);
+});
+
+test('existing complete confirmation state is idempotent and never mints again', async () => {
+  const h = setup({ binding: () => { throw new Error('must_not_mint'); } });
+  installAdminAirtable(h.env, validSessionFields({
+    fldojgjSQLaO0uQLX: 'pay_existing',
+    fldi9ZdoiUXzSv1rI: 'https://mmdbkk.com/sigil/confirm/job-confirmation?t=existing-customer',
+    fld0mFma9J9yfEaKb: 'https://mmdbkk.com/sigil/confirm/job-model?t=existing-model',
+  }));
+  const response = await worker.fetch(await request(h.env, { body: {
+    mode: ISSUE_EXISTING_SESSION_MODE, session_id: 'sess_fixture', payment_type: 'deposit', deposit_percent: 30,
+  } }), h.env, {});
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.stage, 'existing_links');
+  assert.equal(body.issued, false);
+  assert.equal(h.calls.length, 0);
+});
+
+test('existing-session issuance fails closed without canonical Client or with a payment collision', async () => {
+  const missingClient = setup({ binding: () => { throw new Error('must_not_mint'); } });
+  installAdminAirtable(missingClient.env, validSessionFields({ fld6P6if0vDZCeV0C: [] }));
+  let response = await worker.fetch(await request(missingClient.env, { body: {
+    mode: ISSUE_EXISTING_SESSION_MODE, session_id: 'sess_fixture', payment_type: 'deposit', deposit_percent: 30,
+  } }), missingClient.env, {});
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error, 'canonical_client_link_required');
+  assert.equal(missingClient.calls.length, 0);
+
+  const collision = setup({ binding: () => { throw new Error('must_not_mint'); } });
+  installAdminAirtable(collision.env, validSessionFields(), { paymentRecords: [{ id: 'recPaymentExisting', fields: {} }] });
+  response = await worker.fetch(await request(collision.env, { body: {
+    mode: ISSUE_EXISTING_SESSION_MODE, session_id: 'sess_fixture', payment_type: 'deposit', deposit_percent: 30,
+  } }), collision.env, {});
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error, 'existing_payment_without_session_links');
+  assert.equal(collision.calls.length, 0);
 });
 
 test('a service credential mismatch is diagnosed independently from admin auth', async () => {
