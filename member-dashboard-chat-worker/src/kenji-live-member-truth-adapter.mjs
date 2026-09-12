@@ -13,6 +13,21 @@ export async function resolveKenjiLiveMemberContext(env={},lineUserId="",intent=
   const body=await response.json().catch(()=>null);
   if(!body?.ok || body.authority!=="my_mmd_entitlement_resolver_v1") return null;
   const membership=body.membership||{};
-  const level=membership.level==="public_member"?"public":membership.level==="private_standard"||membership.level==="private_premium"||["vip","svip","black_card","red_card"].includes(membership.level)?"private":"guest";
-  return {identity_state:body.identity_status==="resolved"?"matched":"unresolved",membership_state:membership.member_blocked===true?"blocked":membership.lifecycle||"unresolved",renewal_state:membership.lifecycle||"unknown",payment_state:"unknown",membership_level:level,level,display_name:body.display_name||"",canonical_client_id:body.canonical_client_id||"",live_truth:true};
+  const canonicalLevel=text(membership.level).toLowerCase();
+  const level=canonicalLevel==="public_member"?"public":canonicalLevel==="private_standard"||canonicalLevel==="private_premium"||["vip","svip","black_card","red_card"].includes(canonicalLevel)?"private":"guest";
+  const lifecycle=text(membership.lifecycle).toLowerCase()||"unresolved";
+  return {
+    identity_state:body.identity_status==="resolved"?"matched":"unresolved",
+    membership_state:membership.member_blocked===true?"blocked":lifecycle,
+    renewal_state:lifecycle,
+    payment_state:"unknown",
+    membership_level:level,
+    level,
+    canonical_membership_level:canonicalLevel||"none",
+    private_visibility_envelope:text(membership.private_visibility_envelope).toLowerCase()||"none",
+    expire_at:text(membership.expire_at),
+    display_name:body.display_name||"",
+    canonical_client_id:body.canonical_client_id||"",
+    live_truth:true
+  };
 }
