@@ -1,8 +1,8 @@
 (() => {
   "use strict";
 
-  const MEMBER_STATUS_URL = "https://mmdbkk.com/member/liff?intent=status";
-  const MEMBER_STATUS_CTA = "ตรวจสิทธิ์ของฉันผ่าน LINE";
+  const MEMBER_STATUS_URL = "/member/my-mmd";
+  const MEMBER_STATUS_CTA = "เปิด My MMD";
   const host = document.querySelector("[data-mmd-care-back-personalized]") || createHost();
   if (!host) return;
 
@@ -82,7 +82,7 @@
 
   function renderSignIn() {
     const panel = document.getElementById("mmd-care-personal-wallet"); panel.replaceChildren();
-    panel.append(empty("ถ้าอยากดูสิทธิ์เฉพาะของคุณ เปิดผ่าน LINE แล้วเดี๋ยวเปอร์พาเช็กให้ครับ"));
+    panel.append(empty("ถ้าอยากดูสิทธิ์เฉพาะของคุณ เปิด My MMD ได้เลยครับ เดี๋ยวพาไปดูข้อมูลที่ยืนยันได้จริงให้"));
     const link = document.createElement("a"); link.href = MEMBER_STATUS_URL; link.textContent = MEMBER_STATUS_CTA; link.rel = "noopener";
     panel.append(link);
   }
