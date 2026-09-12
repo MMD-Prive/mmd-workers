@@ -8,6 +8,7 @@ const {
   hasPaymentFollowupContext,
   captureDirectUserImageEvidence,
   promoteDirectUserCandidate,
+  resolveDirectPayerContext,
 } = LINE_GROUP_INGRESS_INTERNALS;
 
 function memoryR2() {
@@ -80,4 +81,30 @@ test("non-payment follow-up does not promote a direct image candidate", async ()
   });
   assert.equal(result.skipped, true);
   assert.equal(result.reason, "followup_not_payment_related");
+});
+
+test("direct payment evidence resolves the canonical client name without storing a raw LINE id in the proof", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(input instanceof Request ? input.url : input);
+    assert.match(decodeURIComponent(url.pathname), /tblVv58TCbwh5j1fS$/);
+    assert.match(url.searchParams.get("filterByFormula") || "", /line_user_id/);
+    return Response.json({
+      records: [{ id: "rec-client", fields: { "Client Name": "คุณเอ็ม" } }],
+    });
+  };
+  try {
+    const result = await resolveDirectPayerContext({
+      AIRTABLE_BASE_ID: "appTestBase000001",
+      AIRTABLE_API_KEY: "token",
+      AIRTABLE_TABLE_CLIENTS_ID: "tblVv58TCbwh5j1fS",
+    }, "U1234567890abcdef");
+    assert.deepEqual(result, {
+      payerName: "คุณเอ็ม",
+      identityMatch: "exact_clients_line_user_id",
+    });
+    assert.equal(JSON.stringify(result).includes("U1234567890abcdef"), false);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
 });

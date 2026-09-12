@@ -158,6 +158,10 @@ function consoleInboxTable(env = {}) {
   return asString(env.AIRTABLE_TABLE_CONSOLE_INBOX_ID || env.AIRTABLE_SYNC_TABLE || DEFAULT_CONSOLE_INBOX_TABLE);
 }
 
+function clientsTable(env = {}) {
+  return asString(env.AIRTABLE_TABLE_CLIENTS_ID || env.AIRTABLE_TABLE_CLIENTS || "Clients");
+}
+
 async function airtableRequest(env = {}, path = "", init = {}) {
   const baseId = asString(env.AIRTABLE_BASE_ID);
   const token = asString(env.AIRTABLE_API_KEY || env.AIRTABLE_TOKEN);
@@ -187,6 +191,38 @@ async function findExistingProof(env = {}, proofId = "") {
   return Array.isArray(payload.records) ? payload.records[0] || null : null;
 }
 
+async function resolveDirectPayerContext(env = {}, lineUserId = "") {
+  const id = asString(lineUserId);
+  if (!id) return { payerName: "", identityMatch: "unavailable" };
+  try {
+    const params = new URLSearchParams({
+      maxRecords: "2",
+      filterByFormula: `{line_user_id}='${formulaValue(id)}'`,
+    });
+    const payload = await airtableRequest(env, `${encodeURIComponent(clientsTable(env))}?${params.toString()}`);
+    const matches = Array.isArray(payload.records) ? payload.records : [];
+    if (matches.length === 1) {
+      const fields = matches[0].fields || {};
+      const payerName = asString(fields["Client Name"] || fields.line_display_name || fields.display_name || fields.name || fields.nickname);
+      if (payerName) return { payerName, identityMatch: "exact_clients_line_user_id" };
+    }
+  } catch (_) {}
+
+  const token = asString(env.LINE_CHANNEL_ACCESS_TOKEN);
+  if (token) {
+    try {
+      const response = await fetch(`https://api.line.me/v2/bot/profile/${encodeURIComponent(id)}`, {
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(4000),
+      });
+      const profile = await response.json().catch(() => ({}));
+      const payerName = response.ok ? asString(profile.displayName) : "";
+      if (payerName) return { payerName, identityMatch: "line_profile_display_name" };
+    } catch (_) {}
+  }
+  return { payerName: "", identityMatch: "unresolved" };
+}
+
 async function createPendingProof(env = {}, evidence = {}) {
   const existing = await findExistingProof(env, evidence.proofId);
   if (existing?.id) return { id: existing.id, deduped: true };
@@ -196,6 +232,8 @@ async function createPendingProof(env = {}, evidence = {}) {
     evidence_only: true,
     source_type: evidence.sourceType,
     source_context: evidence.sourceContext || null,
+    identity_match: evidence.identityMatch || "unresolved",
+    sender_display_name: evidence.payerName || null,
     source_group_hash: evidence.groupHash || null,
     source_user_hash: evidence.userHash || null,
     line_message_id_hash: evidence.messageIdHash,
@@ -218,6 +256,7 @@ async function createPendingProof(env = {}, evidence = {}) {
     note,
     status: "pending",
   };
+
   const payload = await airtableRequest(env, encodeURIComponent(paymentProofsTable(env)), {
     method: "POST",
     body: JSON.stringify({ fields }),
@@ -313,6 +352,11 @@ async function persistCapturedImage(env = {}, event = {}, options = {}) {
     mimeType: image.mimeType,
     byteSize: image.byteSize,
   };
+  if (source === "user") {
+    const payer = await resolveDirectPayerContext(env, userId);
+    evidence.payerName = payer.payerName;
+    evidence.identityMatch = payer.identityMatch;
+  }
   const proof = await createPendingProof(env, evidence);
   try {
     await notifyPaymentProofOps(env, evidence, proof);
@@ -558,6 +602,7 @@ export const LINE_GROUP_INGRESS_INTERNALS = Object.freeze({
   captureGroupImageEvidence,
   directCandidateKey,
   downloadLineImage,
+  resolveDirectPayerContext,
   hasPaymentContext,
   hasPaymentFollowupContext,
   hasRecentDirectPaymentContext,
