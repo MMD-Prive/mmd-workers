@@ -53,8 +53,6 @@ async function handleEmptyDiagnostic(env) {
   const transport = paymentIssuerTransport(env);
   let response;
   try {
-    // Never forward caller fields, URLs, cookies or bearer credentials.
-    // Canonical payments validation rejects this before any durable write.
     response = await requestPaymentsConfirmLink(env, {});
   } catch (error) {
     const configurationError = ["missing_AUTH_SERVICE_ADMIN_TO_PAYMENTS", "invalid_PAYMENTS_BASE_URL"].includes(error?.message);
@@ -67,8 +65,6 @@ async function handleEmptyDiagnostic(env) {
     return json({ ok: true, transport, stage: "validation_reached", service_authenticated: true,
       upstream_status: status, upstream_error: "client_name_required", probe: "empty_confirm_link_request" });
   }
-
-  // Project only known codes; never echo tokens, links, IDs or raw upstream data.
   const knownErrors = new Set(["service_auth_required", "airtable_not_ready", "invalid_confirm_link_request"]);
   const upstreamError = knownErrors.has(data?.error) ? data.error : "unexpected_response";
   const stage = status === 401 || status === 403 ? "service_auth"
@@ -135,14 +131,20 @@ async function handleIssueExistingSession(env, body) {
     return json({ ok: false, stage: "payment_preflight", error: "existing_payment_without_session_links" }, 409);
   }
 
-  const clientName = requiredText(fields[SESSION_FIELDS.clientName], "client_name");
-  const modelName = requiredText(fields[SESSION_FIELDS.modelName], "model_name");
-  const jobType = requiredText(fields[SESSION_FIELDS.jobType], "job_type");
-  const jobDate = requiredText(fields[SESSION_FIELDS.jobDate], "job_date");
-  const startTime = requiredText(fields[SESSION_FIELDS.startTime], "start_time");
-  const endTime = requiredText(fields[SESSION_FIELDS.endTime], "end_time");
-  const locationName = requiredText(fields[SESSION_FIELDS.locationName], "location_name");
-  const amountThb = positiveNumber(fields[SESSION_FIELDS.customerAmountDueThb] ?? fields[SESSION_FIELDS.amountThb], "amount_thb");
+  let clientName, modelName, jobType, jobDate, startTime, endTime, locationName, amountThb;
+  try {
+    clientName = requiredText(fields[SESSION_FIELDS.clientName], "client_name");
+    modelName = requiredText(fields[SESSION_FIELDS.modelName], "model_name");
+    jobType = requiredText(fields[SESSION_FIELDS.jobType], "job_type");
+    jobDate = requiredText(fields[SESSION_FIELDS.jobDate], "job_date");
+    startTime = requiredText(fields[SESSION_FIELDS.startTime], "start_time");
+    endTime = requiredText(fields[SESSION_FIELDS.endTime], "end_time");
+    locationName = requiredText(fields[SESSION_FIELDS.locationName], "location_name");
+    amountThb = positiveNumber(fields[SESSION_FIELDS.customerAmountDueThb] ?? fields[SESSION_FIELDS.amountThb], "amount_thb");
+  } catch (error) {
+    return json({ ok: false, stage: "preflight", error: safeError(error, "session_data_incomplete") }, error?.status || 409);
+  }
+
   const payModelThb = optionalNumber(fields[SESSION_FIELDS.payModelThb]);
   const googleMapUrl = clean(fields[SESSION_FIELDS.googleMapUrl], 2000);
   const baseNote = clean(fields[SESSION_FIELDS.note] || fields[SESSION_FIELDS.notes], 10000);
@@ -205,7 +207,7 @@ async function handleIssueExistingSession(env, body) {
 }
 
 function appendPricingMarker(note, amountThb, depositPercent) {
-  const depositDue = Math.round((amountThb * depositPercent) * 100) / 10000;
+  const depositDue = Math.round(amountThb * depositPercent) / 100;
   const balance = Math.round((amountThb - depositDue) * 100) / 100;
   const pricing = {
     full_price_thb: amountThb,
