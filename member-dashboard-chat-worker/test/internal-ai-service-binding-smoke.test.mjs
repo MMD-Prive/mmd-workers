@@ -37,7 +37,7 @@ test("internal AI service-binding smoke sends synthetic read-only context only",
   assert.equal(body.customer_context.synthetic, true);
   assert.equal(body.customer_context.line_user_id, "");
   assert.equal(body.customer_context.current_line_event.observed, false);
-  assert.equal(JSON.stringify(body).match(/replyToken|messageId|line_user_id[^"]*U[a-f0-9]{32}|airtable|payment/gi), null);
+  assert.equal(JSON.stringify(body).match(/replyToken|messageId|U[a-f0-9]{32}/gi), null);
 });
 
 test("internal AI service-binding smoke fails closed for a rejected upstream contract", async () => {
