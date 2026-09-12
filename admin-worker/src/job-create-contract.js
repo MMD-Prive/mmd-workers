@@ -12,7 +12,7 @@ export function normalizeJobCreateBody(input = {}) {
   const partnerRelationship = details.partner_relationship || body.partner_relationship || {};
   const settlementOwner = String(partnerRelationship.settlement_owner || '').trim().toLowerCase();
   const settlementMethod = String(partnerRelationship.settlement_method || '').trim().toLowerCase();
-  const partnerManaged = settlementOwner === 'modeling_partner' || settlementMethod === 'partner_managed';
+  const partnerManaged = settlementOwner === 'modeling_partner' || settlementMethod === 'partner_managed' || settlementMethod === 'included_in_rate';
   if (partnerManaged) {
     for (const key of ['pay_model_thb', 'pay_model', 'model_pay_thb', 'model_pay', 'model_payout_thb', 'model_payout', 'expected_payout_thb']) {
       delete body[key];
