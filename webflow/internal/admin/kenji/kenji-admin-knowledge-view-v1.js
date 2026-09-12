@@ -10,7 +10,7 @@
 
   function bindKnowledgeRoute() {
     root.addEventListener("click", function (event) {
-      var knowledge = event.target.closest('.kso-nav [data-tab="knowledge"]');
+      var knowledge = event.target.closest('[data-kso-knowledge],.kso-nav [data-tab="knowledge"]');
       if (knowledge) {
         setTimeout(function () {
           setHeader("KENJI · KNOWLEDGE", "Knowledge");

@@ -18,6 +18,10 @@ test("Knowledge deep link reuses the existing Worker-backed Knowledge tab", () =
   assert.doesNotMatch(source, /api\.airtable\.com|AIRTABLE_API_KEY|Authorization:\s*["']Bearer/);
 });
 
+test("Control Centre Knowledge shortcut uses the same canonical query-view handler", () => {
+  assert.match(source, /data-kso-knowledge/);
+});
+
 test("leaving Knowledge removes only the view query state", () => {
   assert.match(source, /url\.searchParams\.delete\("view"\)/);
   assert.match(source, /pushState/);

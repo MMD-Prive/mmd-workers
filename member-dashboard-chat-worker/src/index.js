@@ -7,6 +7,7 @@ import { generateKenjiModelReply, KENJI_TOTAL_DEADLINE_MS } from "./kenji-model-
 import { runKenjiFolderHistoryAssessment } from "./kenji-folder-history-adapter.mjs";
 import { buildProtectedCapabilityReply, decideKenjiCapability, KENJI_CAPABILITIES } from "./kenji-capability-policy.js";
 import { parseModelKnowledgeIdAllowlist, selectApprovedLineModelKnowledge } from "./kenji-knowledge-policy.js";
+import { parseMmdRichMenuPostback, resolveCanonicalRichMenuMembership, selectRichMenuResponsePack } from "./rich-menu-membership-response-policy.js";
 
 export { KenjiModelIdempotency };
 
@@ -388,6 +389,9 @@ const KENJI_KNOWLEDGE_TABLE_FALLBACK = "tblsLd1uVOtG2kHoU";
 const LINE_KNOWLEDGE_CHANNEL = "LINE_OFC";
 const LINE_KNOWLEDGE_TTL_MS = 60_000;
 const LINE_KNOWLEDGE_REPLY_TIMEOUT_MS = 900;
+const RICH_MENU_MEMBERSHIP_TIMEOUT_MS = 700;
+const CLIENTS_TABLE_FALLBACK = "tblVv58TCbwh5j1fS";
+const ENTITLEMENTS_TABLE_FALLBACK = "tblNImdF9PKAxhXGi";
 const LINE_MODEL_DEDUPE_LOOKUP_TIMEOUT_MS = 500;
 const LINE_KNOWLEDGE_CARD_BY_INTENT = Object.freeze({
   talk_to_per_ai: "kenji_per_voice_line_entry_v1",
@@ -520,6 +524,56 @@ async function getPublishedPerVoiceReply(env = {}, intent = "") {
   const card = cards.find((item) => asString(item.knowledge_id) === knowledgeId);
   const answer = asString(card?.customer_answer);
   return isSafePerVoiceKnowledge(answer) ? answer : "";
+}
+
+async function fetchAirtableRowsForLine(env = {}, table = "", lineUserId = "", fields = [], signal) {
+  const apiKey = asString(env.AIRTABLE_API_KEY);
+  const baseId = asString(env.AIRTABLE_BASE_ID);
+  if (!apiKey || !baseId || !table || !lineUserId) throw new Error("canonical_membership_unconfigured");
+  const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
+  url.searchParams.set("pageSize", "100");
+  url.searchParams.set("filterByFormula", `OR({line_user_id}="${encodeFormulaValue(lineUserId)}",{LINE User ID}="${encodeFormulaValue(lineUserId)}")`);
+  fields.forEach((field) => url.searchParams.append("fields[]", field));
+  const response = await fetch(url.toString(), { headers: { authorization: `Bearer ${apiKey}` }, signal });
+  if (!response.ok) throw new Error("canonical_membership_lookup_failed");
+  const payload = await response.json().catch(() => ({}));
+  return Array.isArray(payload.records) ? payload.records : [];
+}
+
+async function resolveRichMenuMembership(env = {}, event = {}, options = {}) {
+  if (typeof options.resolveRichMenuMembership === "function") return options.resolveRichMenuMembership(event, env);
+  const lineUserId = getLineUserId({ event });
+  if (!lineUserId) return { level: "guest", reason: "unresolved" };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("rich_menu_membership_timeout"), RICH_MENU_MEMBERSHIP_TIMEOUT_MS);
+  try {
+    const [clients, entitlements] = await Promise.all([
+      fetchAirtableRowsForLine(env, asString(env.AIRTABLE_TABLE_CLIENTS_ID) || CLIENTS_TABLE_FALLBACK, lineUserId, ["line_user_id", "Verification Status", "Membership Status"], controller.signal),
+      fetchAirtableRowsForLine(env, asString(env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID) || ENTITLEMENTS_TABLE_FALLBACK, lineUserId, [], controller.signal),
+    ]);
+    return resolveCanonicalRichMenuMembership(clients[0], entitlements);
+  } catch (_) {
+    return { level: "guest", reason: "unresolved" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function resolveRichMenuSupportReply(event = {}, env = {}, options = {}) {
+  if (!parseMmdRichMenuPostback(event)) return null;
+  const membership = await resolveRichMenuMembership(env, event, options);
+  const cards = await fetchPublishedLineKnowledge(env);
+  const card = selectRichMenuResponsePack(cards, membership?.level);
+  const answer = asString(card?.customer_answer);
+  if (answer && answer.length <= 1600) {
+    return { text: answer, level: membership.level, source: "knowledge" };
+  }
+  // A missing card or authority read must never fall through to private copy.
+  return {
+    text: "MMD พร้อมช่วยครับ หากต้องการเริ่มใช้บริการ ดูสมาชิก หรือติดตามเรื่องเดิม ส่งรายละเอียดที่สะดวกมาได้เลยครับ",
+    level: "guest",
+    source: "fail_closed",
+  };
 }
 
 async function modelAccessPending(env = {}, lineUserId = "", action = "get", query = "") {
@@ -873,6 +927,20 @@ export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env
 export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, options = {}) {
   const eventText = getLineEventText(event);
   const intent = inferLineIntent(eventText, event);
+  const richMenuReply = await resolveRichMenuSupportReply(event, env, options);
+  if (richMenuReply) {
+    return {
+      text: richMenuReply.text,
+      fallback: false,
+      reply_source: richMenuReply.source,
+      model_attempted: false,
+      model_success: false,
+      model_latency_ms: 0,
+      knowledge_hits: richMenuReply.source === "knowledge" ? 1 : 0,
+      guard_blocked: richMenuReply.source === "fail_closed",
+      guard_reason: richMenuReply.source === "fail_closed" ? "rich_menu_membership_unresolved_or_pack_missing" : "",
+    };
+  }
   const capabilityDecision = decideKenjiCapability({ text: eventText, intent });
   const modelAccessAllowed = options.modelAccessAllowed !== false;
 
