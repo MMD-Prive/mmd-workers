@@ -169,6 +169,28 @@ test("Kenji 2.0 separates MMD, MMS, venue, and talent lanes", () => {
   }
 });
 
+test("Kenji 2.0 recognizes booking status and Aftercare without inventing protected truth", () => {
+  const cases = [
+    ["จองถึงไหนแล้ว", "booking_status", /My MMD > History/],
+    ["booking confirmed หรือยัง", "booking_status", /ยังยืนยันสถานะหรือคอนเฟิร์มการจอง/],
+    ["ขอทำ Aftercare", "aftercare", /ปุ่ม Aftercare ของรายการนั้น/],
+    ["อยากให้คะแนนบริการ", "aftercare", /ลิงก์เฉพาะ Session ต้องมาจากข้อมูลทางการ/],
+  ];
+  for (const [text, intent, replyPattern] of cases) {
+    const event = lineTextEvent(text);
+    assert.equal(inferLineIntent(text, event), intent, text);
+    const reply = buildKenjiLineReply(event);
+    assert.match(reply, replyPattern, text);
+    assert.doesNotMatch(reply, /\/aftercare\?t=|คอนเฟิร์มแล้ว|ยืนยันการจองแล้ว/i, text);
+    const capability = decideKenjiCapability({ text, intent });
+    assert.equal(
+      capability.capability,
+      intent === "booking_status" ? "protected_authority" : "deterministic_truth",
+      text,
+    );
+  }
+});
+
 test("payment proof routes safely without confirming funds", () => {
   const reply = buildKenjiLineReply(lineTextEvent("ส่งสลิป"));
   assert.match(reply, /\/member\/payments/);

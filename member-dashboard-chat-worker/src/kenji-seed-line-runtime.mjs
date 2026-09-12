@@ -318,6 +318,7 @@ function normalizeTelemetryIntent(intent = "") {
   if (["vip", "svip", "black_card"].includes(value)) return "vip_blackcard";
   if (["model_lookup", "model_access_verification", "private_talent"].includes(value)) return "model_request";
   if (["mmd_companion", "mms_wellness", "partner_venue", "availability_request", "pricing_review"].includes(value)) return "booking_intake";
+  if (["booking_status", "aftercare"].includes(value)) return value;
   return "unknown";
 }
 
