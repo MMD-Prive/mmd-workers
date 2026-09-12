@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - "member-dashboard-chat-worker/**"
+      - "shared/verified-member-concierge.mjs"
       - ".github/workflows/deploy-member-dashboard-chat-worker.yml"
 
 concurrency:
