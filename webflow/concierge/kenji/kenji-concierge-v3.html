@@ -1,0 +1,175 @@
+<main
+  id="kenji-concierge-v3"
+  class="kj3"
+  data-profile-endpoint="/member/api/my-mmd/profile"
+  data-chat-url="/member/kenji-ai-20"
+  data-verify-url="/member/my-mmd"
+  data-booking-url="/booking"
+  data-recovery-url="/recovery"
+  data-member-mode="loading"
+  aria-labelledby="kj3-title"
+>
+  <section class="kj3-hero" aria-labelledby="kj3-title">
+    <picture class="kj3-hero__media">
+      <source media="(min-width: 768px)" srcset="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa4b6b0d36b309d889ec6d5_Kenji%20CC%2012.webp">
+      <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa4b6b02b82617e25beaa4c_Kenji%20CC%2002.webp" alt="Kenji ผู้ช่วยส่วนตัว MMD Privé" width="1086" height="1448" fetchpriority="high">
+    </picture>
+    <div class="kj3-hero__grade" aria-hidden="true"></div>
+    <div class="kj3-orbit" aria-hidden="true"><i></i><i></i><i></i></div>
+
+    <div class="kj3-shell kj3-hero__inner">
+      <div class="kj3-hero__copy">
+        <p class="kj3-eyebrow"><span></span>MMD AI · PRIVATE CONCIERGE</p>
+        <h1 id="kj3-title">บอกผมว่า<br><em>คุณต้องการอะไร</em></h1>
+        <p class="kj3-lead">ผมจะอ่านสิทธิ์ ตัดสิ่งที่ไม่เกี่ยวออก แล้วพาคุณไปถึงขั้นตอนที่ควรทำตอนนี้</p>
+        <div class="kj3-actions">
+          <a class="kj3-btn kj3-btn--signal" data-kj3-primary href="/member/my-mmd"><span>ให้ผมตรวจสอบสิทธิ์</span><b aria-hidden="true">↗</b></a>
+          <a class="kj3-btn kj3-btn--glass" href="#kj3-actions">ดูว่าผมช่วยอะไรได้</a>
+        </div>
+        <div class="kj3-proof" aria-label="หลักการทำงานของ Kenji">
+          <span>01 อ่านสถานะจริง</span><span>02 คัดให้ตรงสิทธิ์</span><span>03 ดูแลต่อเนื่อง</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="kj3-command" aria-labelledby="kj3-command-title">
+    <div class="kj3-shell">
+      <div class="kj3-command__panel" data-kj3-status-card data-state="loading" aria-live="polite" aria-busy="true">
+        <div class="kj3-command__signal" aria-hidden="true"><span></span></div>
+        <div class="kj3-command__copy">
+          <p class="kj3-micro">LIVE MEMBER SIGNAL</p>
+          <h2 id="kj3-command-title" data-kj3-status-title>กำลังอ่านสถานะของคุณ</h2>
+          <p data-kj3-status-copy>ผมตอบจากข้อมูลที่ยืนยันแล้วเท่านั้น</p>
+        </div>
+        <div class="kj3-command__meta" aria-hidden="true"><span>IDENTITY</span><i></i><span>ACCESS</span><i></i><span>ACTION</span></div>
+        <button class="kj3-retry" type="button" data-kj3-retry hidden>ตรวจอีกครั้ง</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="kj3-actions" class="kj3-section kj3-section--actions" aria-labelledby="kj3-actions-title">
+    <div class="kj3-shell">
+      <header class="kj3-head kj3-reveal">
+        <p class="kj3-eyebrow"><span></span>CHOOSE THE INTENT</p>
+        <h2 id="kj3-actions-title">ตอนนี้ อยากให้ผม<br><em>จัดการเรื่องไหน</em></h2>
+        <p>เลือกแค่เรื่องเดียว ผมจะพาไปต่อจากสถานะจริงของคุณ</p>
+      </header>
+
+      <div class="kj3-action-grid" role="list" aria-label="สิ่งที่ Kenji ช่วยจัดการ">
+        <a class="kj3-action-card kj3-reveal" role="listitem" data-kj3-membership href="/member/my-mmd">
+          <span class="kj3-action-card__code">01 / ACCESS</span>
+          <h3>เช็กสิทธิ์<br>ที่ใช้ได้ตอนนี้</h3>
+          <p>สถานะ ระดับสมาชิก และสิทธิ์ที่พร้อมใช้งาน</p>
+          <span class="kj3-action-card__go" aria-hidden="true">เปิด MY MMD ↗</span>
+        </a>
+        <a class="kj3-action-card kj3-reveal" role="listitem" data-kj3-booking href="/booking">
+          <span class="kj3-action-card__code">02 / BOOKING</span>
+          <h3>เริ่มคำขอ<br>ให้ชัดในครั้งเดียว</h3>
+          <p>เวลา พื้นที่ preference และข้อควรรู้ก่อนยืนยัน</p>
+          <span class="kj3-action-card__go" aria-hidden="true">เริ่ม Booking ↗</span>
+        </a>
+        <a class="kj3-action-card kj3-reveal" role="listitem" data-kj3-private href="/member/kenji-ai-20">
+          <span class="kj3-action-card__code">03 / PRIVATE MATCH</span>
+          <h3>ให้ผมคัด<br>ตัวเลือกที่เข้าถึงได้</h3>
+          <p>ไม่เปิดทั้งหมด ไม่เดา และไม่พาไปผิดสิทธิ์</p>
+          <span class="kj3-action-card__go" aria-hidden="true">คุยกับ Kenji ↗</span>
+        </a>
+        <a class="kj3-action-card kj3-reveal" role="listitem" data-kj3-recovery href="/recovery">
+          <span class="kj3-action-card__code">04 / PRIVATE CARE</span>
+          <h3>ให้ผมรับเรื่อง<br>และตามจนจบ</h3>
+          <p>เรื่องละเอียดอ่อน feedback หรือสิ่งที่ต้องดูแลต่อ</p>
+          <span class="kj3-action-card__go" aria-hidden="true">เปิด Private Care ↗</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="kj3-intel" aria-labelledby="kj3-intel-title">
+    <article class="kj3-intel__visual kj3-reveal">
+      <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa4b6b01bf3d46fb13a7070_Kenji%20CC%2005.webp" alt="Kenji คัดสรรข้อมูลอย่างเป็นส่วนตัว" width="1122" height="1402" loading="lazy">
+      <div class="kj3-intel__shade" aria-hidden="true"></div>
+      <p class="kj3-intel__caption">CURATED BY ACCESS · NOT BY ASSUMPTION</p>
+    </article>
+
+    <div class="kj3-intel__content">
+      <div class="kj3-intel__copy kj3-reveal">
+        <p class="kj3-eyebrow"><span></span>KENJI DECISION ENGINE</p>
+        <h2 id="kj3-intel-title">ผมไม่ได้ให้<br>คำตอบที่เยอะที่สุด</h2>
+        <p class="kj3-intel__statement">ผมให้คำตอบที่ <em>ไปต่อได้จริง</em></p>
+      </div>
+
+      <ol class="kj3-flow" aria-label="ขั้นตอนการทำงานของ Kenji">
+        <li class="kj3-reveal"><b>READ</b><span>อ่านสถานะและบริบทที่ยืนยันแล้ว</span></li>
+        <li class="kj3-reveal"><b>FILTER</b><span>ตัดสิ่งที่ไม่ตรงสิทธิ์และความต้องการ</span></li>
+        <li class="kj3-reveal"><b>MOVE</b><span>พาไปยังขั้นตอนถัดไปที่ทำได้ทันที</span></li>
+        <li class="kj3-reveal"><b>CARE</b><span>ติดตามหลังบริการเมื่อเรื่องยังไม่จบ</span></li>
+      </ol>
+
+      <a class="kj3-line-link kj3-reveal" data-kj3-private href="/member/kenji-ai-20">เริ่มคุยกับ Kenji <span aria-hidden="true">↗</span></a>
+    </div>
+  </section>
+
+  <section class="kj3-standard" aria-labelledby="kj3-standard-title">
+    <div class="kj3-standard__media kj3-reveal">
+      <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa4b6b19e52cc038267449e_Kenji%20CC%2010.webp" alt="Kenji ประสานงานในพื้นที่ส่วนตัวของ MMD" width="1918" height="820" loading="lazy">
+    </div>
+    <div class="kj3-shell kj3-standard__inner">
+      <div class="kj3-standard__card kj3-reveal">
+        <p class="kj3-eyebrow"><span></span>THE PRIVATE STANDARD</p>
+        <h2 id="kj3-standard-title">เร็วได้<br>โดยไม่ต้องรีบคุณ</h2>
+        <ul>
+          <li><strong>Private by default</strong><span>ไม่เปิดข้อมูลเกินกว่าที่จำเป็น</span></li>
+          <li><strong>Human when it matters</strong><span>เรื่องที่ต้องใช้อำนาจตัดสินใจจะเข้าสู่ MMD</span></li>
+          <li><strong>One continuous context</strong><span>ไม่ให้คุณเริ่มอธิบายใหม่ทุกครั้ง</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="kj3-faq" aria-labelledby="kj3-faq-title">
+    <div class="kj3-shell kj3-faq__grid">
+      <header class="kj3-reveal">
+        <p class="kj3-eyebrow"><span></span>CLEAR BEFORE YOU CONTINUE</p>
+        <h2 id="kj3-faq-title">ก่อนเริ่ม<br>ควรรู้อะไร</h2>
+      </header>
+      <div class="kj3-disclosures">
+        <details class="kj3-disclosure kj3-reveal">
+          <summary>Kenji เห็นข้อมูลอะไรของผม <i aria-hidden="true"></i></summary>
+          <div><p>เฉพาะข้อมูลสมาชิกที่ระบบอนุญาตและจำเป็นต่อการแนะนำสิทธิ์หรือขั้นตอนถัดไปครับ</p></div>
+        </details>
+        <details class="kj3-disclosure kj3-reveal">
+          <summary>ถ้าสถานะยังไม่พร้อมจะเกิดอะไรขึ้น <i aria-hidden="true"></i></summary>
+          <div><p>ผมจะยังไม่เปิดเส้นทางส่วนตัว และพาคุณไปยืนยันสถานะใน MY MMD ก่อนโดยไม่เดาข้อมูล</p></div>
+        </details>
+        <details class="kj3-disclosure kj3-reveal">
+          <summary>เรื่องไหนส่งเข้าสู่การยืนยันของ MMD <i aria-hidden="true"></i></summary>
+          <div><p>เรื่องที่ต้องใช้อำนาจอนุมัติหรือการดูแลเฉพาะ ผมจะสรุปและส่งเข้าสู่ขั้นตอนของ MMD อย่างเป็นส่วนตัว</p></div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="kj3-care" aria-labelledby="kj3-care-title">
+    <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa4b6b0125e7d701f62a5e6_Kenji%20CC%2008.webp" alt="Kenji พร้อมรับเรื่อง Private Care" width="1918" height="820" loading="lazy">
+    <div class="kj3-care__grade" aria-hidden="true"></div>
+    <div class="kj3-shell kj3-care__inner kj3-reveal">
+      <p class="kj3-eyebrow"><span></span>PRIVATE CARE · NO DEAD END</p>
+      <h2 id="kj3-care-title">ถ้าเรื่องนี้สำคัญ<br><em>ส่งให้ผมครับ</em></h2>
+      <p>ผมจะรับเรื่อง รักษาบริบท และพาไปถึงทีมที่ควรดูแลต่อ</p>
+      <a class="kj3-btn kj3-btn--signal" data-kj3-recovery href="/recovery"><span>ส่งเรื่องถึง Private Care</span><b aria-hidden="true">↗</b></a>
+    </div>
+  </section>
+
+  <footer class="kj3-footer">
+    <div class="kj3-shell">
+      <p>KENJI / MMD AI / PRIVÉ</p>
+      <a data-kj3-footer href="/member/my-mmd">ให้ผมพาไปต่อ <span aria-hidden="true">↗</span></a>
+    </div>
+  </footer>
+
+  <div class="kj3-dock" data-kj3-dock aria-hidden="true">
+    <div><span data-kj3-dock-label>KENJI · CHECKING ACCESS</span><small data-kj3-dock-copy>กำลังอ่านสถานะ</small></div>
+    <a data-kj3-dock-link href="/member/my-mmd" tabindex="-1">ไปต่อ <span aria-hidden="true">↗</span></a>
+  </div>
+</main>
