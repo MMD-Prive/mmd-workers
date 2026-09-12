@@ -7,7 +7,7 @@ import { generateKenjiModelReply, KENJI_TOTAL_DEADLINE_MS } from "./kenji-model-
 import { runKenjiFolderHistoryAssessment } from "./kenji-folder-history-adapter.mjs";
 import { buildProtectedCapabilityReply, decideKenjiCapability, KENJI_CAPABILITIES } from "./kenji-capability-policy.js";
 import { parseModelKnowledgeIdAllowlist, selectApprovedLineModelKnowledge } from "./kenji-knowledge-policy.js";
-import { generateSafeReply, canonicalRichMenuIntent } from "../../shared/verified-member-concierge.mjs";
+// Canonical member-status voice policy (Per/HITO) is resolved before any generic LINE fallback.\nimport { generateSafeReply, canonicalRichMenuIntent } from "../../shared/verified-member-concierge.mjs";
 import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
 import { INTERNAL_AI_SERVICE_BINDING_SMOKE, runInternalAiServiceBindingSmoke } from "./internal-ai-service-binding-smoke.mjs";
 
