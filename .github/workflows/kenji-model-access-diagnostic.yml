@@ -32,7 +32,29 @@ jobs:
         run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-model-access.test.mjs
       - name: LINE live truth and webhook core
         run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/src/kenji-live-member-truth-adapter.test.mjs shared/verified-member-concierge.test.mjs member-dashboard-chat-worker/test/kenji-line-live-truth.test.mjs member-dashboard-chat-worker/test/line-webhook.test.mjs
-      - name: Remaining member dashboard LINE regression
-        run: node --experimental-global-webcrypto --test webflow/member/kenji-ai-20/kenji-member-concierge.test.mjs shared/kenji-customer-memory-v2.test.mjs member-dashboard-chat-worker/test/kenji-canonical-client-memory-v2.test.mjs member-dashboard-chat-worker/test/kenji-next-action.test.mjs member-dashboard-chat-worker/test/kenji-seed-live-truth-cutover.test.mjs member-dashboard-chat-worker/test/kenji-model-layer.test.mjs member-dashboard-chat-worker/test/kenji-model-access-smoke.test.mjs member-dashboard-chat-worker/test/kenji-folder-history-assessment.test.mjs member-dashboard-chat-worker/test/kenji-folder-history-adapter.test.mjs member-dashboard-chat-worker/test/kenji-ai-worker-line-bridge.test.mjs member-dashboard-chat-worker/test/kenji-seed-runtime-cutover.test.mjs member-dashboard-chat-worker/test/kenji-runtime-env-bindings.test.mjs
+      - name: Webflow concierge
+        run: node --experimental-global-webcrypto --test webflow/member/kenji-ai-20/kenji-member-concierge.test.mjs
+      - name: Customer memory
+        run: node --experimental-global-webcrypto --test shared/kenji-customer-memory-v2.test.mjs
+      - name: Canonical client memory
+        run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-canonical-client-memory-v2.test.mjs
+      - name: Next action
+        run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-next-action.test.mjs
+      - name: Seed live truth cutover
+        run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-seed-live-truth-cutover.test.mjs
+      - name: Model layer
+        run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-model-layer.test.mjs
+      - name: Model access smoke
+        run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-model-access-smoke.test.mjs
+      - name: Folder history assessment
+        run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-folder-history-assessment.test.mjs
+      - name: Folder history adapter
+        run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-folder-history-adapter.test.mjs
+      - name: AI worker LINE bridge
+        run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-ai-worker-line-bridge.test.mjs
+      - name: Seed runtime cutover
+        run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-seed-runtime-cutover.test.mjs
+      - name: Runtime env bindings
+        run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-runtime-env-bindings.test.mjs
       - name: Canonical model access regression
         run: npm run test:kenji-model-access
