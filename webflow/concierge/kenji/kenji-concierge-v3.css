@@ -1,5 +1,5 @@
 <style>
-#kenji-concierge-v3{--ink:#050505;--ink-2:#0b0a09;--panel:#12100d;--cream:#fffaf0;--muted:#d8cfc0;--gold:#ffc247;--gold-2:#ffe0a0;--orange:#ff8a2a;--line:rgba(255,194,71,.28);--ok:#72e3a0;--danger:#ff8d78;position:relative;color:var(--cream);background:radial-gradient(circle at 78% 12%,rgba(255,138,42,.1),transparent 23%),var(--ink);font-family:Inter,"Noto Sans Thai",system-ui,-apple-system,"Segoe UI",sans-serif;overflow:clip;color-scheme:dark}
+#kenji-concierge-v3{--ink:#050505;--ink-2:#0b0a09;--panel:#12100d;--cream:#fffaf0;--muted:#d8cfc0;--gold:#ffc247;--gold-2:#ffe0a0;--orange:#ff8a2a;--line:rgba(255,194,71,.28);--ok:#72e3a0;--danger:#ff8d78;position:relative;color:var(--cream);background:radial-gradient(circle at 78% 12%,rgba(255,138,42,.1),transparent 23%),var(--ink);font-family:"LINE Seed Sans TH","Noto Sans Thai",system-ui,-apple-system,"Segoe UI",sans-serif;overflow:clip;color-scheme:dark}
 #kenji-concierge-v3,#kenji-concierge-v3 *{box-sizing:border-box}
 #kenji-concierge-v3 a{color:inherit}
 #kenji-concierge-v3 img{display:block;width:100%}
@@ -24,7 +24,7 @@
 @keyframes kj3-orbit{to{transform:rotate(360deg)}}
 #kenji-concierge-v3 .kj3-hero__inner{display:flex;min-height:inherit;align-items:flex-end;padding-top:116px;padding-bottom:88px}
 #kenji-concierge-v3 .kj3-hero__copy{position:relative;z-index:2;width:100%;max-width:650px}
-#kenji-concierge-v3 .kj3-hero h1{margin:14px 0 18px;font-family:"Noto Sans Thai",Inter,sans-serif;font-size:clamp(48px,13.2vw,72px);font-weight:780;letter-spacing:-.065em;line-height:.98;text-shadow:0 8px 38px rgba(0,0,0,.48)}
+#kenji-concierge-v3 .kj3-hero h1{margin:14px 0 18px;font-family:"LINE Seed Sans TH","Noto Sans Thai",sans-serif;font-size:clamp(48px,13.2vw,72px);font-weight:780;letter-spacing:-.065em;line-height:.98;text-shadow:0 8px 38px rgba(0,0,0,.48)}
 #kenji-concierge-v3 .kj3-lead{max-width:515px;margin-bottom:0;color:var(--muted);font-size:16px;font-weight:540;line-height:1.72}
 #kenji-concierge-v3 .kj3-actions{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:9px;margin-top:27px}
 #kenji-concierge-v3 .kj3-btn{display:inline-flex;min-height:55px;align-items:center;justify-content:center;gap:18px;padding:14px 18px;border:1px solid transparent;border-radius:3px;font-size:13px;font-weight:820;line-height:1.25;text-align:center;text-decoration:none;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}
@@ -51,7 +51,7 @@
 
 #kenji-concierge-v3 .kj3-section{padding-block:94px}
 #kenji-concierge-v3 .kj3-head{max-width:650px}
-#kenji-concierge-v3 .kj3-head h2,#kenji-concierge-v3 .kj3-intel h2,#kenji-concierge-v3 .kj3-standard h2,#kenji-concierge-v3 .kj3-faq h2,#kenji-concierge-v3 .kj3-care h2{margin:11px 0 14px;font-family:"Noto Sans Thai",Inter,sans-serif;font-size:clamp(36px,10vw,62px);font-weight:760;letter-spacing:-.055em;line-height:1.04}
+#kenji-concierge-v3 .kj3-head h2,#kenji-concierge-v3 .kj3-intel h2,#kenji-concierge-v3 .kj3-standard h2,#kenji-concierge-v3 .kj3-faq h2,#kenji-concierge-v3 .kj3-care h2{margin:11px 0 14px;font-family:"LINE Seed Sans TH","Noto Sans Thai",sans-serif;font-size:clamp(36px,10vw,62px);font-weight:760;letter-spacing:-.055em;line-height:1.04}
 #kenji-concierge-v3 .kj3-head>p:last-child{max-width:450px;margin-bottom:0;color:var(--muted);font-size:14px;line-height:1.7}
 #kenji-concierge-v3 .kj3-action-grid{display:grid;grid-auto-columns:minmax(252px,80vw);grid-auto-flow:column;gap:12px;margin:31px -20px 0;padding:2px 20px 18px;overflow-x:auto;scroll-snap-type:inline mandatory;scrollbar-width:none}
 #kenji-concierge-v3 .kj3-action-grid::-webkit-scrollbar{display:none}
@@ -115,12 +115,33 @@
 #kenji-concierge-v3 .kj3-footer p{margin-bottom:0;color:var(--muted);font-size:9px;font-weight:780;letter-spacing:.14em}
 #kenji-concierge-v3 .kj3-footer a{color:var(--gold-2);font-size:12px;font-weight:800;text-decoration:none}
 
-#kenji-concierge-v3 .kj3-dock{position:fixed;z-index:100;right:10px;bottom:10px;left:10px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 12px 12px 16px;border:1px solid rgba(255,194,71,.42);background:rgba(10,9,7,.94);box-shadow:0 18px 55px rgba(0,0,0,.56);backdrop-filter:blur(20px);opacity:0;transform:translateY(18px);pointer-events:none;transition:opacity .24s ease,transform .24s ease}
-#kenji-concierge-v3.is-dock-visible .kj3-dock{opacity:1;transform:none;pointer-events:auto}
-#kenji-concierge-v3 .kj3-dock div{min-width:0}
-#kenji-concierge-v3 .kj3-dock span{display:block;overflow:hidden;color:var(--gold);font-size:8px;font-weight:850;letter-spacing:.12em;text-overflow:ellipsis;white-space:nowrap}
-#kenji-concierge-v3 .kj3-dock small{display:block;margin-top:3px;overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
-#kenji-concierge-v3 .kj3-dock a{flex:0 0 auto;padding:11px 14px;color:#191000;background:linear-gradient(105deg,var(--gold-2),var(--gold));font-size:12px;font-weight:850;text-decoration:none}
+#kenji-concierge-v3 [data-kj3-chapter]{scroll-margin-top:86px}
+#kenji-concierge-v3 .kj3-branchbar{position:fixed;z-index:100;right:10px;bottom:max(10px,env(safe-area-inset-bottom));left:10px;display:grid;grid-template-columns:auto 44px minmax(0,1fr) auto;align-items:center;gap:5px;min-height:58px;padding:7px;border:1px solid rgba(255,194,71,.42);background:rgba(10,9,7,.95);box-shadow:0 18px 55px rgba(0,0,0,.56);backdrop-filter:blur(22px);opacity:0;transform:translateY(18px);pointer-events:none;transition:opacity .28s ease,transform .38s cubic-bezier(.22,1,.36,1)}
+#kenji-concierge-v3.is-branchbar-visible .kj3-branchbar{opacity:1;transform:none;pointer-events:auto}
+#kenji-concierge-v3 .kj3-branchbar button{min-width:58px;min-height:44px;padding:8px 10px;border:0;color:var(--cream);background:transparent;font:inherit;font-size:11px;font-weight:800;cursor:pointer}
+#kenji-concierge-v3 .kj3-branchbar button:last-child{color:#191000;background:linear-gradient(105deg,var(--gold-2),var(--gold))}
+#kenji-concierge-v3 .kj3-branchbar div{min-width:0;border-left:1px solid var(--line);padding-left:9px}
+#kenji-concierge-v3 .kj3-branchbar div span{display:block;overflow:hidden;color:var(--cream);font-size:11px;font-weight:800;text-overflow:ellipsis;white-space:nowrap}
+#kenji-concierge-v3 .kj3-branchbar small{display:block;margin-top:2px;color:var(--gold);font-size:8px;font-weight:850;letter-spacing:.13em}
+#kenji-concierge-v3 .kj3-sheet{position:fixed;z-index:120;inset:0;display:grid;align-items:end;visibility:hidden;opacity:0;transition:visibility 0s linear .34s,opacity .34s ease}
+#kenji-concierge-v3 .kj3-sheet.is-open{visibility:visible;opacity:1;transition-delay:0s}
+#kenji-concierge-v3 .kj3-sheet__backdrop{position:absolute;inset:0;width:100%;height:100%;border:0;background:rgba(0,0,0,.68);backdrop-filter:blur(10px);cursor:pointer}
+#kenji-concierge-v3 .kj3-sheet__panel{position:relative;max-height:min(88svh,760px);padding:12px 20px calc(22px + env(safe-area-inset-bottom));border:1px solid var(--line);border-bottom:0;border-radius:22px 22px 0 0;background:linear-gradient(150deg,#17130e,#080807 72%);box-shadow:0 -22px 80px rgba(0,0,0,.56);overflow:auto;transform:translateY(104%);transition:transform .44s cubic-bezier(.22,1,.36,1)}
+#kenji-concierge-v3 .kj3-sheet.is-open .kj3-sheet__panel{transform:none}
+#kenji-concierge-v3 .kj3-sheet__handle{width:42px;height:4px;margin:0 auto 17px;border-radius:99px;background:rgba(255,250,240,.32)}
+#kenji-concierge-v3 .kj3-sheet header{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;align-items:start;gap:8px;padding-bottom:17px;border-bottom:1px solid var(--line)}
+#kenji-concierge-v3 .kj3-sheet header p{margin-bottom:3px;color:var(--gold);font-size:8px;font-weight:850;letter-spacing:.15em}
+#kenji-concierge-v3 .kj3-sheet header h2{margin-bottom:0;color:var(--cream);font-size:24px;line-height:1.2}
+#kenji-concierge-v3 .kj3-sheet__back,#kenji-concierge-v3 .kj3-sheet__close{display:grid;width:44px;height:44px;padding:0;border:0;color:var(--cream);background:rgba(255,255,255,.05);font:inherit;font-size:12px;font-weight:800;place-items:center;cursor:pointer}
+#kenji-concierge-v3 .kj3-sheet__close{font-size:25px;font-weight:400}
+#kenji-concierge-v3 .kj3-sheet__view{display:none;padding-top:6px;animation:kj3-view-in .3s cubic-bezier(.22,1,.36,1)}
+#kenji-concierge-v3 .kj3-sheet__view.is-active{display:block}
+@keyframes kj3-view-in{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+#kenji-concierge-v3 .kj3-sheet__view :where(button,a){display:grid;width:100%;min-height:58px;grid-template-columns:34px minmax(0,1fr) 22px;align-items:center;gap:10px;padding:11px 2px;border:0;border-bottom:1px solid var(--line);color:var(--cream);background:transparent;font:inherit;text-align:left;text-decoration:none;cursor:pointer}
+#kenji-concierge-v3 .kj3-sheet__view b{color:var(--gold);font-size:9px;letter-spacing:.12em}
+#kenji-concierge-v3 .kj3-sheet__view span{font-size:14px;font-weight:760}
+#kenji-concierge-v3 .kj3-sheet__view i{color:var(--gold);font-style:normal;text-align:right}
+#kenji-concierge-v3 .kj3-sheet__status{margin:18px 0 0;color:var(--muted);font-size:11px;line-height:1.5}
 
 #kenji-concierge-v3 a:focus-visible,#kenji-concierge-v3 button:focus-visible,#kenji-concierge-v3 summary:focus-visible{outline:2px solid var(--gold-2);outline-offset:4px}
 #kenji-concierge-v3 [aria-disabled="true"]{pointer-events:none;opacity:.5}
@@ -155,7 +176,9 @@
   #kenji-concierge-v3 .kj3-disclosures{margin-top:0}
   #kenji-concierge-v3 .kj3-care{min-height:680px}
   #kenji-concierge-v3 .kj3-footer{padding-bottom:36px}
-  #kenji-concierge-v3 .kj3-dock{right:22px;bottom:22px;left:auto;width:365px}
+  #kenji-concierge-v3 .kj3-branchbar{right:22px;bottom:22px;left:auto;width:390px}
+  #kenji-concierge-v3 .kj3-sheet{align-items:center;justify-items:center}
+  #kenji-concierge-v3 .kj3-sheet__panel{width:min(520px,calc(100% - 40px));border-bottom:1px solid var(--line);border-radius:18px}
 }
 
 @media(prefers-reduced-motion:reduce){
@@ -168,6 +191,6 @@
 #kenji-concierge-v3 :where(h1 em,h2 em,.kj3-intel__statement em){color:var(--gold-2)!important;-webkit-text-fill-color:var(--gold-2)!important}
 #kenji-concierge-v3 :where(.kj3-lead,.kj3-head>p:last-child,.kj3-action-card p,.kj3-flow span,.kj3-standard__card li span,.kj3-disclosure p,.kj3-care__inner>p:not(.kj3-eyebrow)){color:var(--muted)!important;-webkit-text-fill-color:var(--muted)!important}
 #kenji-concierge-v3 :where(.kj3-eyebrow,.kj3-micro,.kj3-action-card__code,.kj3-action-card__go,.kj3-line-link,.kj3-retry,.kj3-footer a){color:var(--gold)!important;-webkit-text-fill-color:var(--gold)!important}
-#kenji-concierge-v3 .kj3-btn--signal,#kenji-concierge-v3 .kj3-dock a{color:#191000!important;-webkit-text-fill-color:#191000!important}
+#kenji-concierge-v3 .kj3-btn--signal,#kenji-concierge-v3 .kj3-branchbar button:last-child{color:#191000!important;-webkit-text-fill-color:#191000!important}
 #kenji-concierge-v3 .kj3-btn--glass{color:var(--cream)!important;-webkit-text-fill-color:var(--cream)!important}
 </style>
