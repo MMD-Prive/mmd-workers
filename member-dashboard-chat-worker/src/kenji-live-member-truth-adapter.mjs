@@ -3,7 +3,11 @@ const text=(v)=>String(v??"").trim();
 export async function resolveKenjiLiveMemberContext(env={},lineUserId="",intent=""){
   const id=text(lineUserId);
   if(!env.MEMBER_PAGES_WORKER?.fetch || !/^U[0-9a-f]{32}$/i.test(id)) return null;
-  const request=new Request("https://member-pages-worker.internal"+PATH,{method:"POST",headers:{"content-type":"application/json","x-mmd-internal-call":"true","x-mmd-service-binding":"member-dashboard-chat-worker"},body:JSON.stringify({line_user_id:id,intent:text(intent)})});
+  const requestedIntent=text(intent).toLowerCase();
+  // The member-truth endpoint accepts explicit intent only for status/points.
+  // Every other LINE interaction resolves through the canonical profile path.
+  const resolverIntent=["membership_status","points_status"].includes(requestedIntent)?requestedIntent:"";
+  const request=new Request("https://member-pages-worker.internal"+PATH,{method:"POST",headers:{"content-type":"application/json","x-mmd-internal-call":"true","x-mmd-service-binding":"member-dashboard-chat-worker"},body:JSON.stringify({line_user_id:id,intent:resolverIntent})});
   const response=await env.MEMBER_PAGES_WORKER.fetch(request);
   if(!response.ok) return null;
   const body=await response.json().catch(()=>null);
