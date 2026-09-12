@@ -1,0 +1,34 @@
+name: Kenji model access diagnostic
+
+on:
+  pull_request:
+    paths:
+      - "admin-worker/src/kenji-model-access-rpc.js"
+      - "admin-worker/kenji-model-access-rpc.test.mjs"
+      - "member-dashboard-chat-worker/src/index.js"
+      - "member-dashboard-chat-worker/test/kenji-model-access.test.mjs"
+      - ".github/workflows/kenji-model-access-diagnostic.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Syntax and config checks
+        run: npm run check
+      - name: Admin login regression
+        run: npm run test:admin-login
+      - name: Member dashboard LINE regression
+        run: npm run test:member-dashboard-line
+      - name: Canonical model access regression
+        run: npm run test:kenji-model-access
