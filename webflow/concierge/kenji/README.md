@@ -19,10 +19,10 @@ The v2 files remain available as a rollback snapshot.
 The page reads the same-origin credentialed endpoint:
 
 ```text
-GET /member/api/my-mmd/profile
+GET /api/member/app/dashboard
 ```
 
-The UI fails closed. Missing, pending, blocked, invalid, or timed-out member data never produces invented access. Kenji guides and routes; MMD remains the authority for approval and access.
+The endpoint is owned by `member-dashboard-chat-worker` and returns the canonical nested `membership` payload. The UI fails closed. Missing, pending, blocked, invalid, or timed-out member data never produces invented access. Kenji guides and routes; MMD remains the authority for approval and access.
 
 ## Customer routes
 
