@@ -203,6 +203,46 @@ test("queue keeps a missing amount as null and routes incomplete evidence to sys
   ]);
 });
 
+test("queue classifies 1,999 THB as Premium renewal and stages identity instead of a dead end", async () => {
+  const record = {
+    id: "rec-proof-premium-renewal",
+    createdTime: "2026-09-12T12:23:00.000Z",
+    fields: {
+      proof_id: "line_premium_1999",
+      channel: "line_ofc",
+      status: "pending",
+      amount_thb: 1999,
+      payment_ref: "016255192331DOR00930",
+      payer_name: "พงศกร จ",
+      note: JSON.stringify({
+        schema: "line_ofc_payment_proof_v1",
+        r2_key: "line-ofc/payment-proofs/2026/09/line_premium_1999/original.png",
+        mime_type: "image/png",
+        source_context: "direct_user_payment_followup",
+      }),
+    },
+  };
+  const env = {
+    AIRTABLE_BASE_ID: "app-test",
+    AIRTABLE_API_KEY: "pat-test",
+    AIRTABLE_TABLE_PAYMENT_PROOFS: "MMD — Payment Proofs",
+    AIRTABLE_HTTP: { fetch: async () => Response.json({ records: [record] }) },
+  };
+  const response = await handlePaymentReviewRequest(
+    new Request("https://mmdbkk.com/v1/admin/payments/review-queue?limit=10"), env, { id: "per", role: "owner" }
+  );
+  const payload = await response.json();
+  const item = payload.items[0];
+  assert.equal(item.evidence_amount_thb, 1999);
+  assert.equal(item.payment_stage, "membership");
+  assert.equal(item.inferred_intent, "renewal");
+  assert.equal(item.inferred_package_code, "premium");
+  assert.equal(item.inferred_label, "ต่ออายุ Private Premium");
+  assert.equal(item.pending_member_profile, true);
+  assert.equal(item.identity_state, "pending_identity_match");
+  assert.equal(item.can_approve, false);
+});
+
 test("evidence reads reject unauthenticated requests, arbitrary keys, and active content", async () => {
   let storageReads = 0;
   const record = { id: 'rec-evidence', fields: { proof_id: 'proof1', note: '{}' } };

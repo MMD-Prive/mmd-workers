@@ -7,7 +7,7 @@ const CANONICAL_ENTITLEMENTS = "tblNImdF9PKAxhXGi";
 const CANONICAL_RENEWALS = "tblXjQFwo0A2cHseh";
 const CANONICAL_MEMBERS = "tblgWc5VRon5o8Mhk";
 const CANONICAL_CLIENTS = "tblVv58TCbwh5j1fS";
-const RECOVERY_PRICE = Object.freeze({ standard: 1000, premium: 2500 });
+const RECOVERY_PRICE = Object.freeze({ standard: new Set([499, 799, 1000]), premium: new Set([999, 1999, 2500]) });
 const MEMBERSHIP_YEARS = Object.freeze({ standard: 1, premium: 2 });
 
 export const REVIEWED_PROOF_PATH = "/v1/internal/payments/reviewed-proof";
@@ -173,8 +173,8 @@ export async function handleReviewedProof(request, env = {}, ctx = null, notifyT
 }
 
 async function validateEmailLessRecovery(env, input) {
-  const expectedPrice = RECOVERY_PRICE[input.packageCode];
-  if (!expectedPrice || Math.abs(expectedPrice - input.amountThb) > 0.009) throw httpError(409, "recovery_package_amount_mismatch");
+  const expectedPrices = RECOVERY_PRICE[input.packageCode];
+  if (!expectedPrices || !expectedPrices.has(input.amountThb)) throw httpError(409, "recovery_package_amount_mismatch");
   if (!input.memberId || !input.memberRecordId || !input.clientRecordId || !input.renewalRecordId || !input.lineUserId) {
     throw httpError(409, "recovery_identity_context_incomplete");
   }

@@ -7,7 +7,7 @@ const CLIENTS = "tblVv58TCbwh5j1fS";
 const ALLOWED_ROLES = new Set(["owner", "admin"]);
 const ALLOWED_CHANNELS = new Set(["line", "line_oa", "line_ofc"]);
 const BLOCKED_RENEWAL_STATES = new Set(["blocked", "cancelled", "canceled", "rejected", "revoked", "failed"]);
-const RENEWAL_PRICE = Object.freeze({ standard: 1000, premium: 2500 });
+const RENEWAL_PRICES = Object.freeze({ standard: new Set([499, 799, 1000]), premium: new Set([999, 1999, 2500]) });
 
 /**
  * Narrow fallback used only after the canonical Payment Review runtime has
@@ -60,11 +60,11 @@ export async function tryHandleEmailLessLineRenewalRecovery(request, env, actor,
     const lineUserId = lineId(rf.line_user_id);
     if (!lineUserId) throw httpError(409, "canonical_line_identity_missing");
     const packageCode = canonicalPackage(rf.requested_package || rf.package_code);
-    const expectedAmount = RENEWAL_PRICE[packageCode];
+    const expectedAmounts = RENEWAL_PRICES[packageCode];
     const renewalAmount = amount(rf.renewal_amount_thb ?? rf.amount_thb);
     const proofAmount = amount(pf.amount_thb ?? pf.amount ?? pf.total_thb);
-    if (!expectedAmount || renewalAmount == null || proofAmount == null) throw httpError(409, "canonical_renewal_price_context_missing");
-    if (renewalAmount !== expectedAmount || proofAmount !== expectedAmount) throw httpError(409, "liff_renewal_amount_mismatch");
+    if (!expectedAmounts || renewalAmount == null || proofAmount == null) throw httpError(409, "canonical_renewal_price_context_missing");
+    if (!expectedAmounts.has(renewalAmount) || renewalAmount !== proofAmount) throw httpError(409, "liff_renewal_amount_mismatch");
 
     const member = await resolveMember(env, pf, rf, lineUserId);
     const client = await resolveClient(env, rf, member, lineUserId);
