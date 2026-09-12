@@ -7,6 +7,7 @@ import { generateKenjiModelReply, KENJI_TOTAL_DEADLINE_MS } from "./kenji-model-
 import { runKenjiFolderHistoryAssessment } from "./kenji-folder-history-adapter.mjs";
 import { buildProtectedCapabilityReply, decideKenjiCapability, KENJI_CAPABILITIES } from "./kenji-capability-policy.js";
 import { parseModelKnowledgeIdAllowlist, selectApprovedLineModelKnowledge } from "./kenji-knowledge-policy.js";
+import { resolveModelKeywordRequest } from "./kenji-model-keyword.js";
 
 export { KenjiModelIdempotency };
 
@@ -874,6 +875,35 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
   const eventText = getLineEventText(event);
   const intent = inferLineIntent(eventText, event);
   const capabilityDecision = decideKenjiCapability({ text: eventText, intent });
+
+  // Model Keyword is a private, deterministic lookup. It is deliberately checked
+  // before generic knowledge/model generation, but never for protected authority requests.
+  if (capabilityDecision.capability !== KENJI_CAPABILITIES.PROTECTED_AUTHORITY && eventText && isEnabled(env.LINE_KENJI_MODEL_KEYWORD_ENABLED)) {
+    const keywordResult = await resolveModelKeywordRequest({
+      env,
+      text: eventText,
+      lineUserId: getLineUserId({ event }),
+      deadlineAt: Number(options.deadlineAt) || (Date.now() + KENJI_TOTAL_DEADLINE_MS)
+    });
+    if (keywordResult.matched && keywordResult.reply?.text) {
+      return {
+        text: keywordResult.reply.text,
+        fallback: false,
+        reply_source: "model_keyword",
+        model_attempted: false,
+        model_success: false,
+        model_latency_ms: 0,
+        knowledge_hits: 0,
+        guard_blocked: false,
+        guard_reason: keywordResult.reply.reason || "",
+        model_keyword: true,
+        model_keyword_burst: Boolean(keywordResult.reply.burst),
+        model_keyword_handoff: Boolean(keywordResult.reply.handoff_required),
+        model_keyword_key: asString(keywordResult.profile?.model_key || keywordResult.profile?.folder_name),
+        model_keyword_access: keywordResult.access?.status || "unknown",
+        model_keyword_recent_query_count: Number(keywordResult.recent_query_count) || 0
+      };
+    }
   const modelAccessAllowed = options.modelAccessAllowed !== false;
 
   if (!modelAccessAllowed && (intent === "model_access_verification" || intent === "model_lookup")) {
@@ -1960,6 +1990,7 @@ async function handleLineWebhook(request, env, ctx = null) {
       event_mode: eventMode,
       redelivered: Boolean(event?.deliveryContext?.isRedelivery),
       intent,
+      operational_intent: operationalIntent,
       auto_reply_enabled: autoReplyEnabled,
       per_voice_enabled: kenjiEnabled,
       runtime_control_ok: runtimeStatus.ok === true,
@@ -1984,6 +2015,11 @@ async function handleLineWebhook(request, env, ctx = null) {
       requested_domain: capabilityDecision.requested_domain,
       protected_context: capabilityDecision.capability === KENJI_CAPABILITIES.PROTECTED_AUTHORITY || capabilityDecision.capability === KENJI_CAPABILITIES.HUMAN_HANDOFF,
       model_output_guard_reason: replyDecision.model_attempted ? (asString(replyDecision.guard_reason) || null) : null,
+      model_keyword: Boolean(replyDecision.model_keyword),
+      model_keyword_burst: Boolean(replyDecision.model_keyword_burst),
+      model_keyword_handoff: Boolean(replyDecision.model_keyword_handoff),
+      model_keyword_access: asString(replyDecision.model_keyword_access) || null,
+      model_keyword_recent_query_count: Number(replyDecision.model_keyword_recent_query_count) || 0,
       model_deduped: Boolean(modelPreflight.deduped),
       model_dedupe_reason: asString(modelPreflight.reason) || null,
       model_canary_eligible: Boolean(modelPreflight.canary_eligible),
