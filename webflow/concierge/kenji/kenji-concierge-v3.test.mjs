@@ -40,6 +40,10 @@ test("runtime parses and fails closed", () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /credentials:"include"/);
   assert.match(source, /data\.unauthenticated\?\{mode:"guest"\}/);
+  assert.match(source, /profile\.membership/);
+  assert.match(source, /membership\.status/);
+  assert.match(source, /membership\.level/);
+  assert.match(source, /membership\.access/);
   assert.match(source, /mode==="pending"\|\|mode==="blocked"/);
   assert.doesNotMatch(source, /DEMO_ONLY|Math\.random|default.{0,12}points/i);
 });
