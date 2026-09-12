@@ -119,6 +119,7 @@ jobs:
           npm run test:member-dashboard-line
           node --test member-dashboard-chat-worker/test/line-membership-fallback.test.mjs
           node --test member-dashboard-chat-worker/test/mms-therapist-auth-front-gate.test.mjs
+          node --test member-dashboard-chat-worker/test/internal-ai-service-binding-smoke.test.mjs
 
       - name: Validate Cloudflare version upload
         id: wrangler_dry_run
@@ -255,6 +256,24 @@ jobs:
           grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$auth_headers"
           grep -qi '^x-mmd-upstream-service: mms-worker' "$auth_headers"
           grep -qi '^cache-control: .*no-store' "$auth_headers"
+
+      - name: Smoke internal AI service binding
+        id: ai_binding_smoke
+        if: steps.route_sync.outcome == 'success' && secrets.INTERNAL_SMOKE_TOKEN != ''
+        shell: bash
+        env:
+          INTERNAL_SMOKE_TOKEN: ${{ secrets.INTERNAL_SMOKE_TOKEN }}
+        run: |
+          response="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error \\
+            -X POST \\
+            -H "Authorization: Bearer ${INTERNAL_SMOKE_TOKEN}" \\
+            https://www.mmdbkk.com/v1/internal/ai/service-binding-smoke)"
+          node -e '
+            const body = JSON.parse(process.argv[1]);
+            if (body.ok !== true || body.read_only !== true || body.service !== "ai-worker" || body.contract !== "kenji_customer_reasoning_v1") {
+              throw new Error(`Unexpected AI service-binding smoke response: ${process.argv[1]}`);
+            }
+          ' "$response"
 
       - name: Report deploy stage diagnosis
         if: always()
