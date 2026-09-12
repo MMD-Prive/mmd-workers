@@ -28,7 +28,11 @@ jobs:
         run: npm run check
       - name: Admin login regression
         run: npm run test:admin-login
-      - name: Member dashboard LINE regression
-        run: npm run test:member-dashboard-line
+      - name: Model access LINE adapter regression
+        run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-model-access.test.mjs
+      - name: LINE live truth and webhook core
+        run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/src/kenji-live-member-truth-adapter.test.mjs shared/verified-member-concierge.test.mjs member-dashboard-chat-worker/test/kenji-line-live-truth.test.mjs member-dashboard-chat-worker/test/line-webhook.test.mjs
+      - name: Remaining member dashboard LINE regression
+        run: node --experimental-global-webcrypto --test webflow/member/kenji-ai-20/kenji-member-concierge.test.mjs shared/kenji-customer-memory-v2.test.mjs member-dashboard-chat-worker/test/kenji-canonical-client-memory-v2.test.mjs member-dashboard-chat-worker/test/kenji-next-action.test.mjs member-dashboard-chat-worker/test/kenji-seed-live-truth-cutover.test.mjs member-dashboard-chat-worker/test/kenji-model-layer.test.mjs member-dashboard-chat-worker/test/kenji-model-access-smoke.test.mjs member-dashboard-chat-worker/test/kenji-folder-history-assessment.test.mjs member-dashboard-chat-worker/test/kenji-folder-history-adapter.test.mjs member-dashboard-chat-worker/test/kenji-ai-worker-line-bridge.test.mjs member-dashboard-chat-worker/test/kenji-seed-runtime-cutover.test.mjs member-dashboard-chat-worker/test/kenji-runtime-env-bindings.test.mjs
       - name: Canonical model access regression
         run: npm run test:kenji-model-access
