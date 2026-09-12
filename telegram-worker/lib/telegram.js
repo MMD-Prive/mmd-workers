@@ -5,13 +5,47 @@ function int(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
-export const TG_THREADS = (env) => ({
-  membership: int(env.TG_THREAD_MEMBERSHIP) || 20,
-  confirm: int(env.TG_THREAD_CONFIRM) || 21,
-  payment_proof: int(env.TG_THREAD_PAYMENT) || int(env.TG_THREAD_CONFIRM) || 21,
-  payment_verified: int(env.TG_THREAD_PAYMENT) || int(env.TG_THREAD_CONFIRM) || 21,
-  points_threshold: int(env.TG_THREAD_POINTS) || 17,
-});
+const TOPIC_SPECS = Object.freeze([
+  { key: "membership", label: "MMD • Payments (Membership)", env: "TG_THREAD_MEMBERSHIP", fallback: 20 },
+  { key: "payment", label: "MMD • Payments (Confirm)", env: "TG_THREAD_PAYMENT", fallback: 21 },
+  { key: "alerts", label: "MMD • Alerts", env: "TG_THREAD_ALERTS", fallback: 9 },
+  { key: "points", label: "MMD • Points", env: "TG_THREAD_POINTS", fallback: 17 },
+  { key: "system_log", label: "MMD • System Log", env: "TG_THREAD_SYSTEM_LOG", fallback: 22 },
+  { key: "public_model", label: "MMD – Public Model", env: "TG_THREAD_PUBLIC_MODEL", fallback: 155 },
+  { key: "booking", label: "MMD • Booking", env: "TG_THREAD_BOOKING", fallback: 1399 },
+]);
+
+export function telegramTopics(env = {}) {
+  return TOPIC_SPECS.map((topic) => ({
+    ...topic,
+    thread_id: int(env[topic.env]) || topic.fallback,
+  }));
+}
+
+export const TG_THREADS = (env) => {
+  const topics = Object.fromEntries(telegramTopics(env).map((topic) => [topic.key, topic.thread_id]));
+  const confirm = int(env.TG_THREAD_CONFIRM) || topics.payment;
+  return {
+    membership: topics.membership,
+    confirm,
+    payment: topics.payment,
+    payment_proof: topics.payment,
+    payment_verified: topics.payment,
+    alerts: topics.alerts,
+    alert: topics.alerts,
+    exception: topics.alerts,
+    recovery: topics.alerts,
+    studio_alert: topics.alerts,
+    points: topics.points,
+    points_threshold: topics.points,
+    system: topics.system_log,
+    system_log: topics.system_log,
+    public_model: topics.public_model,
+    public_model_application: topics.public_model,
+    booking: topics.booking,
+    booking_draft: topics.booking,
+  };
+};
 
 export async function sendTelegramMessage(payload, env) {
   const botToken = String(env.TELEGRAM_BOT_TOKEN || "").trim();
@@ -28,8 +62,10 @@ export async function sendTelegramMessage(payload, env) {
     chat_id: chatId,
     text: String(payload.text || ""),
     parse_mode: payload.parse_mode || "HTML",
-    disable_web_page_preview: payload.disable_web_page_preview !== false,
+      disable_web_page_preview: payload.disable_web_page_preview !== false,
   };
+
+  if (payload.disable_notification === true) body.disable_notification = true;
 
   const threadId = int(payload.message_thread_id || payload.thread_id);
   if (threadId) body.message_thread_id = threadId;
@@ -57,7 +93,8 @@ export async function telegramNotify(payload, env) {
       message_thread_id: payload.message_thread_id || payload.thread_id,
       text: directText,
       parse_mode: payload.parse_mode || "HTML",
-      disable_web_page_preview: payload.disable_web_page_preview !== false,
+    disable_web_page_preview: payload.disable_web_page_preview !== false,
+      disable_notification: payload.disable_notification === true,
       reply_markup: payload.reply_markup,
     }, env);
 
@@ -80,7 +117,7 @@ export async function telegramNotify(payload, env) {
     return { ok: false, error: "thread_lock_missing", detail: `missing thread for flow=${flow}` };
   }
 
-  const text = formatTelegramMessage(payload);
+  const text = String(payload.text || "").trim() || formatTelegramMessage(payload);
   return sendTelegramMessage({
     chat_id: env.TELEGRAM_CHAT_ID,
     message_thread_id: threadId,
@@ -113,6 +150,20 @@ export function formatTelegramMessage(p) {
     return lines.join("\n");
   }
 
+  const operationalTitles = {
+    alerts: "🚨 MMD • ALERT",
+    alert: "🚨 MMD • ALERT",
+    exception: "🚨 MMD • EXCEPTION",
+    recovery: "🚨 MMD • RECOVERY",
+    studio_alert: "🚨 MMD • STUDIO ALERT",
+    system: "💻 MMD • SYSTEM LOG",
+    system_log: "💻 MMD • SYSTEM LOG",
+    public_model: "🆕 MMD • PUBLIC MODEL",
+    public_model_application: "🆕 MMD • PUBLIC MODEL",
+    booking: "🕯️ MMD • BOOKING",
+    booking_draft: "🕯️ MMD • BOOKING DRAFT",
+  };
+
   const title = isMembership
     ? "🧾 MMD • MEMBERSHIP SUBMIT"
     : isConfirm
@@ -121,7 +172,7 @@ export function formatTelegramMessage(p) {
     ? "🧾 MMD • PAYMENT PROOF RECEIVED"
     : isPaymentVerified
     ? "✅ MMD • PAYMENT VERIFIED"
-    : "🔔 MMD • PAYMENT NOTIFY";
+    : operationalTitles[flow] || "🔔 MMD • PAYMENT NOTIFY";
 
   const lines = [];
   lines.push(`<b>${title}</b>`);
