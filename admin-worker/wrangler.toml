@@ -268,6 +268,14 @@ pattern = "www.mmdbkk.com/v1/admin/payments/review-queue*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
+pattern = "mmdbkk.com/v1/admin/payments/evidence*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/payments/evidence*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
 pattern = "mmdbkk.com/v1/admin/payments/review"
 zone_name = "mmdbkk.com"
 
@@ -718,6 +726,10 @@ bucket_name = "mmd-models"
 [[r2_buckets]]
 binding = "PUBLIC_MODEL_UPLOADS_R2"
 bucket_name = "mmd-private-public-model-uploads"
+
+[[r2_buckets]]
+binding = "LINE_SLIP_EVIDENCE"
+bucket_name = "mmd-line-slip-evidence"
 
 # ---- Secrets (set via wrangler secret) ----
 # ADMIN_LOGIN_CREDENTIAL

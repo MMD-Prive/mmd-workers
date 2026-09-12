@@ -1,5 +1,6 @@
 const QUEUE_PATH = "/v1/admin/payments/review-queue";
 const REVIEW_PATH = "/v1/admin/payments/review";
+const EVIDENCE_PATH = "/v1/admin/payments/evidence";
 const ACCESS_LOG_TABLE = "System — Access Log";
 const PAYMENT_REVIEW_ACTION = "payment_review_decision";
 const PAYMENT_STAGES = new Set(["deposit", "final", "tips", "full", "membership"]);
@@ -18,12 +19,14 @@ const RECOVERY_BLOCKED_STATES = new Set(["rejected", "cancelled", "canceled", "b
 export const PAYMENT_REVIEW_ROUTES = Object.freeze({
   queue: QUEUE_PATH,
   review: REVIEW_PATH,
+  evidence: EVIDENCE_PATH,
 });
 
 export function isPaymentReviewRequest(path, method = "GET") {
   const normalized = normalizePath(path);
   const verb = String(method || "GET").toUpperCase();
   if (normalized === QUEUE_PATH) return verb === "GET" || verb === "OPTIONS";
+  if (normalized === EVIDENCE_PATH) return verb === "GET" || verb === "HEAD" || verb === "OPTIONS";
   if (normalized === REVIEW_PATH) return verb === "POST" || verb === "OPTIONS";
   return false;
 }
@@ -41,6 +44,7 @@ export async function handlePaymentReviewRequest(request, env = {}, actor = null
   try {
     requireAirtable(env);
     if (path === QUEUE_PATH) return await listReviewQueue(request, env);
+    if (path === EVIDENCE_PATH) return await getPaymentEvidence(request, env);
     return await commitReview(request, env, { id: actorId, role: actorRole });
   } catch (error) {
     return json({
@@ -49,6 +53,31 @@ export async function handlePaymentReviewRequest(request, env = {}, actor = null
       authority: "payments-worker",
     }, Number(error?.status || 500));
   }
+}
+
+async function getPaymentEvidence(request, env) {
+  const proofId = safeText(new URL(request.url).searchParams.get("proof_id"), 120);
+  if (!proofId) throw httpError(400, "proof_id_required");
+  const proof = await loadProof(env, proofId);
+  if (!proof) throw httpError(404, "payment_proof_not_found");
+  const note = parseNote(proof.fields?.note);
+  const key = safeEvidenceKey(note.r2_key);
+  if (!key) throw httpError(404, "payment_evidence_not_available");
+  if (!env.LINE_SLIP_EVIDENCE || typeof env.LINE_SLIP_EVIDENCE.get !== "function") {
+    throw httpError(503, "payment_evidence_storage_unavailable");
+  }
+  const object = await env.LINE_SLIP_EVIDENCE.get(key);
+  if (!object) throw httpError(404, "payment_evidence_not_found");
+  const contentType = safeImageContentType(object.httpMetadata?.contentType || note.mime_type);
+  if (!contentType) throw httpError(415, "payment_evidence_mime_unsupported");
+  const headers = new Headers({
+    "Content-Type": contentType,
+    "Cache-Control": "no-store, private",
+    "Content-Disposition": "inline",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+  });
+  return new Response(request.method === "HEAD" ? null : object.body, { status: 200, headers });
 }
 
 async function listReviewQueue(request, env) {
@@ -441,9 +470,22 @@ function safeQueueItem(record) {
     fields["MMD — LIFF Renewal Session"] ||
     fields.liff_renewal_session
   );
+  const previewUrl = internalEvidenceUrl(proofId, note) || evidenceUrl(fields);
+  const sourceContext = safeCode(note.source_context || note.source_type || note.schema || "");
+  const extractionMethod = safeCode(note.extraction_method || "");
+  const extractionError = safeCode(note.extraction_error || "");
+  const contextIssues = [];
+  if (!previewUrl) contextIssues.push("evidence_preview_missing");
+  if (amountThb == null) contextIssues.push("amount_not_extracted");
+  if (!paymentRef) contextIssues.push("payment_reference_missing");
+  const linkedPaymentPresent = Boolean(linkedRecordId(fields.payment || fields.Payment || fields["Payment"]));
+  const linkedSessionPresent = Boolean(linkedRecordId(fields.session || fields.Session || fields["Session"]));
+  const linkedRenewalPresent = renewalIds.length === 1;
+  if (!(linkedPaymentPresent || linkedRenewalPresent)) contextIssues.push("customer_or_job_not_linked");
   return {
     proof_id: proofId,
     proof_record_id: safeText(record.id, 120),
+    customer_name: safeText(note.sender_display_name || fields.client_name || fields.member_name, 180),
     payer_name: safeText(fields.payer_name || fields.member_name || fields.client_name || fields.name, 180),
     payment_ref: paymentRef,
     evidence_amount_thb: amountThb,
@@ -454,15 +496,23 @@ function safeQueueItem(record) {
     session_id: safeText(fields.session_id, 180),
     member_email: normalizeEmail(fields.member_email || fields.email),
     payment_stage: safeCode(fields.payment_stage || fields.payment_type || ""),
-    evidence_preview_url: evidenceUrl(fields),
+    evidence_preview_url: previewUrl,
+    source_context: sourceContext,
+    extraction_method: extractionMethod || "not_run",
+    extraction_confidence: confidenceOrNull(note.extraction_confidence),
+    extraction_error: extractionError,
+    context_issues: contextIssues,
+    review_lane: contextIssues.length ? "needs_enrichment" : "owner_review",
+    can_approve: contextIssues.length === 0,
     reviewable,
     historical_backfill: historical,
     match_flags: {
+      evidence_preview_present: Boolean(previewUrl),
       payment_ref_present: Boolean(paymentRef),
       amount_present: amountThb != null,
-      linked_payment_present: Boolean(linkedRecordId(fields.payment || fields.Payment || fields["Payment"])),
-      linked_session_present: Boolean(linkedRecordId(fields.session || fields.Session || fields["Session"])),
-      linked_renewal_present: renewalIds.length === 1,
+      linked_payment_present: linkedPaymentPresent,
+      linked_session_present: linkedSessionPresent,
+      linked_renewal_present: linkedRenewalPresent,
     },
   };
 }
@@ -681,6 +731,29 @@ function evidenceUrl(fields = {}) {
     if (Array.isArray(value) && value[0] && typeof value[0].url === "string" && /^https:\/\//i.test(value[0].url)) return value[0].url.slice(0, 1200);
   }
   return "";
+}
+
+function internalEvidenceUrl(proofId, note = {}) {
+  return safeEvidenceKey(note.r2_key)
+    ? `${EVIDENCE_PATH}?proof_id=${encodeURIComponent(proofId)}`
+    : "";
+}
+
+function safeEvidenceKey(value) {
+  const key = safeText(value, 800);
+  if (!/^line-ofc\/payment-proofs\/\d{4}\/\d{2}\/[A-Za-z0-9_-]+\/original\.(?:jpe?g|png|webp)$/i.test(key)) return "";
+  return key;
+}
+
+function safeImageContentType(value) {
+  const type = clean(value).toLowerCase();
+  return new Set(["image/jpeg", "image/png", "image/webp"]).has(type) ? type : "";
+}
+
+function confidenceOrNull(value) {
+  if (value == null || clean(value) === "") return null;
+  const score = Number(value);
+  return Number.isFinite(score) && score >= 0 && score <= 1 ? score : null;
 }
 
 function normalizeStage(value) {
