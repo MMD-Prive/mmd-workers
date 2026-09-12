@@ -13,7 +13,8 @@ test("HTML keeps one v3 scoped root and unique IDs", () => {
 });
 
 test("member truth and customer routes remain canonical", () => {
-  assert.match(html, /data-profile-endpoint="\/member\/api\/my-mmd\/profile"/);
+  assert.match(html, /data-profile-endpoint="\/member\/api\/liff\/profile"/);
+  assert.doesNotMatch(html, /\/member\/api\/my-mmd\/profile/);
   for (const route of ["/member/kenji-ai-20", "/member/my-mmd", "/booking", "/recovery"]) {
     assert.ok(html.includes(route), `missing route: ${route}`);
   }

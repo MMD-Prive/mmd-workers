@@ -19,7 +19,7 @@ The v2 files remain available as a rollback snapshot.
 The page reads the same-origin credentialed endpoint:
 
 ```text
-GET /member/api/my-mmd/profile
+GET /member/api/liff/profile
 ```
 
 The UI fails closed. Missing, pending, blocked, invalid, or timed-out member data never produces invented access. Kenji guides and routes; MMD remains the authority for approval and access.
