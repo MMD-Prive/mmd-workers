@@ -167,7 +167,7 @@ jobs:
           npx --yes wrangler@4 versions deploy "${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}@100%" -y \
             2>&1 | tee "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log"
 
-      - name: Sync MMS Therapist auth routes
+      - name: Sync MMS Therapist auth and AI smoke routes
         id: route_sync
         if: steps.deploy.outcome == 'success'
         shell: bash
@@ -180,6 +180,8 @@ jobs:
           const desired = [
             "mmdbkk.com/male-massage/therapists/api/auth/*",
             "www.mmdbkk.com/male-massage/therapists/api/auth/*",
+            "mmdbkk.com/v1/internal/ai/service-binding-smoke",
+            "www.mmdbkk.com/v1/internal/ai/service-binding-smoke",
           ];
           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
           async function cf(path, options = {}) {
@@ -222,7 +224,7 @@ jobs:
           const verified = await cf(routePath);
           const missing = desired.filter((pattern) => !verified.some((route) => route.pattern === pattern && route.script === worker));
           if (missing.length) throw new Error(`missing routes: ${missing.join(", ")}`);
-          console.log(`verified ${desired.length}/${desired.length} MMS Therapist auth routes`);
+          console.log(`verified ${desired.length}/${desired.length} required worker routes`);
           NODE
 
       - name: Smoke production LINE and MMS route ownership
