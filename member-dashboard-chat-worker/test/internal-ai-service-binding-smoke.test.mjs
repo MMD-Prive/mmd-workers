@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import worker from "../src/index.js";
 import { runInternalAiServiceBindingSmoke } from "../src/internal-ai-service-binding-smoke.mjs";
 
 test("internal AI service-binding smoke sends synthetic read-only context only", async () => {
@@ -61,4 +62,39 @@ test("internal AI service-binding smoke fails closed when the binding is absent"
   const result = await runInternalAiServiceBindingSmoke({});
   assert.equal(result.status, 503);
   assert.equal(result.payload.error.code, "AI_WORKER_BINDING_MISSING");
+});
+
+test("diagnostic route requires INTERNAL_TOKEN before invoking AI_WORKER", async () => {
+  let calls = 0;
+  const env = {
+    INTERNAL_TOKEN: "test-internal-token",
+    AI_WORKER: {
+      async fetch() {
+        calls += 1;
+        return new Response(JSON.stringify({
+          ok: true,
+          data: { read_only: true, evidence_discovery: { unavailable_is_not_not_found: true } },
+        }), { headers: { "content-type": "application/json" } });
+      },
+    },
+  };
+
+  const unauthorized = await worker.fetch(new Request("https://www.mmdbkk.com/v1/internal/ai/service-binding-smoke", {
+    method: "POST",
+  }), env);
+  assert.equal(unauthorized.status, 401);
+  assert.equal(calls, 0);
+
+  const authorized = await worker.fetch(new Request("https://www.mmdbkk.com/v1/internal/ai/service-binding-smoke", {
+    method: "POST",
+    headers: { authorization: "Bearer test-internal-token" },
+  }), env);
+  assert.equal(authorized.status, 200);
+  assert.equal(calls, 1);
+  assert.deepEqual(await authorized.json(), {
+    ok: true,
+    read_only: true,
+    service: "ai-worker",
+    contract: "kenji_customer_reasoning_v1",
+  });
 });
