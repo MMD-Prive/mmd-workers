@@ -192,6 +192,17 @@ zone_name = "mmdbkk.com"
 [observability]
 enabled = true
 
+# The internal service-binding diagnostic is publicly routed only so GitHub
+# Actions can reach the Worker; the handler accepts POST and requires its own
+# dedicated smoke token before it invokes the read-only AI contract.
+[[routes]]
+pattern = "mmdbkk.com/v1/internal/ai/service-binding-smoke"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/internal/ai/service-binding-smoke"
+zone_name = "mmdbkk.com"
+
 [[routes]]
 pattern = "mmdbkk.com/webhooks/line"
 zone_name = "mmdbkk.com"
