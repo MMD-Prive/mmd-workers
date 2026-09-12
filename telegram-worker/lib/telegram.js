@@ -13,13 +13,18 @@ const TOPIC_SPECS = Object.freeze([
   { key: "system_log", label: "MMD • System Log", env: "TG_THREAD_SYSTEM_LOG", fallback: 22 },
   { key: "public_model", label: "MMD – Public Model", env: "TG_THREAD_PUBLIC_MODEL", fallback: 155 },
   { key: "booking", label: "MMD • Booking", env: "TG_THREAD_BOOKING", fallback: 1399 },
+  { key: "crew", label: "MMD Privé Crew", env: "TG_THREAD_CREW", fallback: 0, optional: true },
+  { key: "rules_customer", label: "MMD • Rules (Customer)", env: "TG_THREAD_RULES_CUSTOMER", fallback: 0, optional: true },
+  { key: "rules_model", label: "MMD • Rules (Model)", env: "TG_THREAD_RULES_MODEL", fallback: 0, optional: true },
 ]);
 
 export function telegramTopics(env = {}) {
-  return TOPIC_SPECS.map((topic) => ({
-    ...topic,
-    thread_id: int(env[topic.env]) || topic.fallback,
-  }));
+  return TOPIC_SPECS
+    .map((topic) => ({
+      ...topic,
+      thread_id: int(env[topic.env]) || topic.fallback || 0,
+    }))
+    .filter((topic) => !topic.optional || topic.thread_id > 0);
 }
 
 export const TG_THREADS = (env) => {
@@ -44,8 +49,44 @@ export const TG_THREADS = (env) => {
     public_model_application: topics.public_model,
     booking: topics.booking,
     booking_draft: topics.booking,
+    dispatch: topics.booking,
+    booking_dispatch: topics.booking,
+    crew: topics.crew,
+    human_handoff: topics.crew,
+    rules_customer: topics.rules_customer,
+    customer_rules: topics.rules_customer,
+    customer_rules_ack: topics.rules_customer,
+    rules_model: topics.rules_model,
+    model_rules: topics.rules_model,
+    model_rules_ack: topics.rules_model,
   };
 };
+
+function pageHint(page) {
+  if (!page) return "";
+  if (typeof page === "string") return page;
+  if (typeof page === "object") return String(page.path || page.href || page.url || "");
+  return String(page);
+}
+
+export function resolveTelegramFlow(payload = {}) {
+  const flow = String(payload.flow || "").toLowerCase().trim();
+
+  if (flow === "dispatch" || flow === "booking_dispatch") return "booking";
+  if (flow === "customer_rules" || flow === "customer_rules_ack") return "rules_customer";
+  if (flow === "model_rules" || flow === "model_rules_ack") return "rules_model";
+  if (flow === "human_handoff") return "crew";
+
+  if ((flow === "confirm" || flow === "rules_ack") && payload.rules) {
+    const role = String(payload.role || payload.rules?.role || "").toLowerCase().trim();
+    const type = String(payload.type || "").toLowerCase().trim();
+    const page = pageHint(payload.page).toLowerCase();
+    const isModel = role === "model" || type === "model_rules_ack" || page.includes("/rules/model");
+    return isModel ? "rules_model" : "rules_customer";
+  }
+
+  return flow;
+}
 
 export async function sendTelegramMessage(payload, env) {
   const botToken = String(env.TELEGRAM_BOT_TOKEN || "").trim();
@@ -62,7 +103,7 @@ export async function sendTelegramMessage(payload, env) {
     chat_id: chatId,
     text: String(payload.text || ""),
     parse_mode: payload.parse_mode || "HTML",
-      disable_web_page_preview: payload.disable_web_page_preview !== false,
+    disable_web_page_preview: payload.disable_web_page_preview !== false,
   };
 
   if (payload.disable_notification === true) body.disable_notification = true;
@@ -93,7 +134,7 @@ export async function telegramNotify(payload, env) {
       message_thread_id: payload.message_thread_id || payload.thread_id,
       text: directText,
       parse_mode: payload.parse_mode || "HTML",
-    disable_web_page_preview: payload.disable_web_page_preview !== false,
+      disable_web_page_preview: payload.disable_web_page_preview !== false,
       disable_notification: payload.disable_notification === true,
       reply_markup: payload.reply_markup,
     }, env);
@@ -111,13 +152,14 @@ export async function telegramNotify(payload, env) {
   }
 
   const threads = TG_THREADS(env);
-  const flow = String(payload.flow || "").toLowerCase().trim();
+  const flow = resolveTelegramFlow(payload);
   const threadId = threads[flow] || 0;
   if (!threadId) {
     return { ok: false, error: "thread_lock_missing", detail: `missing thread for flow=${flow}` };
   }
 
-  const text = String(payload.text || "").trim() || formatTelegramMessage(payload);
+  const normalizedPayload = { ...payload, flow };
+  const text = String(payload.text || "").trim() || formatTelegramMessage(normalizedPayload);
   return sendTelegramMessage({
     chat_id: env.TELEGRAM_CHAT_ID,
     message_thread_id: threadId,
@@ -135,6 +177,8 @@ export function formatTelegramMessage(p) {
   const isPaymentProof = flow === "payment_proof";
   const isPaymentVerified = flow === "payment_verified";
   const isPoints = flow === "points_threshold";
+  const isRulesCustomer = flow === "rules_customer";
+  const isRulesModel = flow === "rules_model";
 
   if (isPoints) {
     const lines = [];
@@ -144,7 +188,23 @@ export function formatTelegramMessage(p) {
     lines.push(`<b>Total:</b> ${escapeHtml(String(p.points_total ?? "-"))}`);
     lines.push(`<b>Threshold:</b> ${escapeHtml(String(p.points_threshold ?? "-"))}`);
     if (p.source) lines.push(`<b>Source:</b> ${escapeHtml(p.source)}`);
-    if (p.page) lines.push(`<b>Page:</b> ${escapeHtml(p.page)}`);
+    if (p.page) lines.push(`<b>Page:</b> ${escapeHtml(pageHint(p.page))}`);
+    lines.push(``);
+    lines.push(`<b>TS:</b> ${escapeHtml(p.ts || new Date().toISOString())}`);
+    return lines.join("\n");
+  }
+
+  if (isRulesCustomer || isRulesModel) {
+    const lines = [];
+    lines.push(`<b>${isRulesModel ? "🎭 MMD • RULES (MODEL)" : "💗 MMD • RULES (CUSTOMER)"}</b>`);
+    lines.push(`<b>Event:</b> rules acknowledged`);
+    if (p.rules?.version) lines.push(`<b>Version:</b> ${escapeHtml(p.rules.version)}`);
+    if (p.rules?.url) lines.push(`<b>Rules:</b> ${escapeHtml(p.rules.url)}`);
+    const member = p.member || {};
+    if (member.member_id) lines.push(`<b>MemberId:</b> ${escapeHtml(member.member_id)}`);
+    if (member.name) lines.push(`<b>Name:</b> ${escapeHtml(member.name)}`);
+    const page = pageHint(p.page);
+    if (page) lines.push(`<b>Page:</b> ${escapeHtml(page)}`);
     lines.push(``);
     lines.push(`<b>TS:</b> ${escapeHtml(p.ts || new Date().toISOString())}`);
     return lines.join("\n");
@@ -162,6 +222,8 @@ export function formatTelegramMessage(p) {
     public_model_application: "🆕 MMD • PUBLIC MODEL",
     booking: "🕯️ MMD • BOOKING",
     booking_draft: "🕯️ MMD • BOOKING DRAFT",
+    crew: "👥 MMD PRIVÉ CREW",
+    human_handoff: "👥 MMD PRIVÉ CREW",
   };
 
   const title = isMembership
@@ -184,7 +246,7 @@ export function formatTelegramMessage(p) {
   if (p.proof_id) lines.push(`<b>Proof:</b> ${escapeHtml(p.proof_id)}`);
   if (p.ref) lines.push(`<b>Ref:</b> ${escapeHtml(p.ref)}`);
   if (p.status) lines.push(`<b>Status:</b> ${escapeHtml(p.status)}`);
-  if (p.page) lines.push(`<b>Page:</b> ${escapeHtml(p.page)}`);
+  if (p.page) lines.push(`<b>Page:</b> ${escapeHtml(pageHint(p.page))}`);
 
   if (isMembership) {
     if (p.promptpay_url) lines.push(`<b>PromptPay:</b> ${escapeHtml(p.promptpay_url)}`);
