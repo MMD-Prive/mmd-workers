@@ -23,6 +23,9 @@ export default {
     if (path === CONFIRM_ACK_PATH && (method === "POST" || method === "OPTIONS")) {
       return handleConfirmationAck(request, env);
     }
+    if (path === CONFIRM_CONTEXT_PATH && (method === "POST" || method === "OPTIONS")) {
+      return handleConfirmationContext(request, env);
+    }
 
     if (path === HISTORICAL_REVIEW_PATH) {
       if (method === "OPTIONS") return new Response(null, { status: 204, headers: jsonHeaders() });
