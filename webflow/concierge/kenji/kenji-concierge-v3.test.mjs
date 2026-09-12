@@ -13,7 +13,8 @@ test("HTML keeps one v3 scoped root and unique IDs", () => {
 });
 
 test("member truth and customer routes remain canonical", () => {
-  assert.match(html, /data-profile-endpoint="\/member\/api\/my-mmd\/profile"/);
+  assert.match(html, /data-profile-endpoint="\/api\/member\/app\/dashboard"/);
+  assert.doesNotMatch(html, /data-profile-endpoint="\/member\/api\/my-mmd\/profile"/);
   for (const route of ["/member/kenji-ai-20", "/member/my-mmd", "/booking", "/recovery"]) {
     assert.ok(html.includes(route), `missing route: ${route}`);
   }
@@ -39,6 +40,10 @@ test("runtime parses and fails closed", () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /credentials:"include"/);
   assert.match(source, /data\.unauthenticated\?\{mode:"guest"\}/);
+  assert.match(source, /profile\.membership/);
+  assert.match(source, /membership\.status/);
+  assert.match(source, /membership\.level/);
+  assert.match(source, /membership\.access/);
   assert.match(source, /mode==="pending"\|\|mode==="blocked"/);
   assert.doesNotMatch(source, /DEMO_ONLY|Math\.random|default.{0,12}points/i);
 });
