@@ -8,6 +8,7 @@ import { runKenjiFolderHistoryAssessment } from "./kenji-folder-history-adapter.
 import { buildProtectedCapabilityReply, decideKenjiCapability, KENJI_CAPABILITIES } from "./kenji-capability-policy.js";
 import { parseModelKnowledgeIdAllowlist, selectApprovedLineModelKnowledge } from "./kenji-knowledge-policy.js";
 import { generateSafeReply, canonicalRichMenuIntent } from "../../shared/verified-member-concierge.mjs";
+import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
 
 export { KenjiModelIdempotency };
 
@@ -874,6 +875,9 @@ export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env
 export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, options = {}) {
   const eventText = getLineEventText(event);
   const intent = inferLineIntent(eventText, event);
+  const lineUserId = getLineUserId({ event });
+  const liveMemberContext = await resolveKenjiLiveMemberContext(env, lineUserId, intent);
+  const replyOptions = liveMemberContext ? { ...options, verifiedMemberContext: liveMemberContext } : options;
   const capabilityDecision = decideKenjiCapability({ text: eventText, intent });
   const modelAccessAllowed = options.modelAccessAllowed !== false;
 
@@ -900,7 +904,7 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     return buildKenjiModelAccessDecision(access, { pendingStored: pending.ok === true && pending.stored === true });
   }
 
-  const conciergeInput = options.verifiedMemberContext ? { ...options.verifiedMemberContext, intent: canonicalRichMenuIntent({ intent, data: event?.postback?.data }) } : null;
+  const conciergeInput = replyOptions.verifiedMemberContext ? { ...replyOptions.verifiedMemberContext, intent: canonicalRichMenuIntent({ intent, data: event?.postback?.data }) } : null;
   const conciergeReply = conciergeInput ? generateSafeReply(conciergeInput) : null;
   const deterministicReply = conciergeReply?.text || buildKenjiLineReply(event, profile, options);
   const deterministicFirst = capabilityDecision.capability !== KENJI_CAPABILITIES.APPROVED_PUBLIC_KNOWLEDGE && capabilityDecision.capability !== KENJI_CAPABILITIES.SAFE_CONVERSATION;
