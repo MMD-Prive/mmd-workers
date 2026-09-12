@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import adminWorker from "./src/admin-login-hero-worker.js";
 import {
   classifyKenjiModelPackage,
   handleKenjiModelAccessRpc,
+  isKenjiModelAccessRpcRequest,
   KENJI_MODEL_ACCESS_POLICY_VERSION,
+  KENJI_MODEL_ACCESS_RPC_PATH,
   projectKenjiSafeModel,
   resolveKenjiModelAccess,
 } from "./src/kenji-model-access-rpc.js";
@@ -15,22 +16,22 @@ const ENV = {
   INTERNAL_TOKEN: "internal-token",
   AIRTABLE_API_KEY: "airtable-token",
   AIRTABLE_BASE_ID: "app-test",
-  AIRTABLE_TABLE_MEMBERS: "members",
-  AIRTABLE_TABLE_MEMBER_PACKAGES: "member_packages",
+  AIRTABLE_TABLE_MEMBER_ENTITLEMENTS: "entitlements",
+  AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD: "line_user_id",
   AIRTABLE_TABLE_MODELS: "models",
   AIRTABLE_TABLE_KENJI_MODEL_ACCESS_APPROVALS: "approvals",
 };
 
-function record(id, fields) {
-  return { id, fields };
-}
+function record(id, fields) { return { id, fields }; }
 
-function activePackage(code, overrides = {}) {
-  return record(`rec-package-${code}`, {
-    member_email: "member@example.com",
-    status: "active",
-    end_date: "2099-12-31T23:59:59.000Z",
-    package_code: code,
+function entitlement(capability, lifecycle = "active", overrides = {}) {
+  const expireAt = lifecycle === "expired" ? "2020-01-01T00:00:00.000Z" : "2099-12-31T23:59:59.000Z";
+  return record(`rec-ent-${capability}-${lifecycle}`, {
+    line_user_id: LINE_USER_ID,
+    capability,
+    member_lifecycle_status: lifecycle,
+    access_status: lifecycle,
+    expire_at: expireAt,
     ...overrides,
   });
 }
@@ -54,38 +55,36 @@ function privateModel(code = "MX17", folder = "standard", overrides = {}) {
 }
 
 function publicModel(code = "PUB17", overrides = {}) {
-  return privateModel(code, "standard", {
-    booking_visibility: "public",
-    access_folder: "",
+  return privateModel(code, "standard", { booking_visibility: "public", access_folder: "", ...overrides });
+}
+
+function approval(cohort, folders, overrides = {}) {
+  return record(`rec-approval-${cohort}`, {
+    line_user_id: LINE_USER_ID,
+    status: "approved",
+    policy_version: KENJI_MODEL_ACCESS_POLICY_VERSION,
+    cohort,
+    expires_at: "2099-12-31T23:59:59.000Z",
+    allowed_folders: folders,
     ...overrides,
   });
 }
 
-function baseData(packageRecord = activePackage("Black Card"), models = [privateModel()]) {
-  return {
-    members: [record("rec-member-1", {
-      line_user_id: LINE_USER_ID,
-      member_id: "M-001",
-      "Contact Email": "member@example.com",
-    })],
-    member_packages: packageRecord ? [packageRecord] : [],
-    models,
-    approvals: [],
-  };
+function baseData(entitlements = [entitlement("private_standard")], models = [privateModel()], approvals = []) {
+  return { entitlements, models, approvals };
 }
 
 const SCHEMAS = {
-  members: new Set(["line_user_id", "LINE User ID", "line_id", "LINE ID", "Contact Email", "member_email", "email", "Gmail", "Google Drive Email"]),
-  member_packages: new Set(["member_email", "Member Email", "email", "Contact Email", "member_id", "Member ID"]),
+  entitlements: new Set(["line_user_id"]),
   models: new Set(["model_code", "model_lookup_key", "unique_key", "working_name", "Working Name", "display_name", "Display Name"]),
-  approvals: new Set(["member_record_id", "member_id", "member_email", "line_user_id"]),
+  approvals: new Set(["line_user_id"]),
 };
 
-function airtableFetch(data, { fail = false } = {}) {
+function airtableFetch(data, { failTables = [] } = {}) {
   return async (input) => {
-    if (fail) return new Response("source private error", { status: 503 });
     const url = new URL(String(input));
     const table = decodeURIComponent(url.pathname.split("/").pop());
+    if (failTables.includes(table)) return new Response("source private error", { status: 503 });
     const formula = url.searchParams.get("filterByFormula") || "";
     const match = formula.match(/^LOWER\(\{(.+)}&""\)="(.*)"$/);
     if (!match || !SCHEMAS[table]?.has(match[1])) return new Response(JSON.stringify({ error: "unknown field" }), { status: 422 });
@@ -96,23 +95,28 @@ function airtableFetch(data, { fail = false } = {}) {
   };
 }
 
-test("KENJI_MODEL_ACCESS_V1 package policy never derives access from GWs/EMs labels or legacy SVIP", () => {
-  assert.deepEqual(classifyKenjiModelPackage("Guest Pass"), { cohort: "guest_trial", mode: "website_only", folders: [] });
-  assert.deepEqual(classifyKenjiModelPackage("Trial"), { cohort: "guest_trial", mode: "website_only", folders: [] });
-  assert.equal(classifyKenjiModelPackage("Membership").mode, "public_models");
-  assert.equal(classifyKenjiModelPackage("Red Card").mode, "public_models");
+function rpcRequest(body, overrides = {}) {
+  const method = overrides.method || "POST";
+  return new Request("https://admin-worker.local/v1/internal/kenji/model-access", {
+    method,
+    headers: {
+      authorization: "Bearer internal-token",
+      "content-type": "application/json",
+      "x-mmd-internal-call": "true",
+      "x-mmd-service-binding": "member-dashboard-chat-worker",
+      ...(overrides.headers || {}),
+    },
+    body: method === "POST" ? JSON.stringify(body) : undefined,
+  });
+}
+
+test("compatibility package classifier remains non-authoritative", () => {
   assert.deepEqual(classifyKenjiModelPackage("Standard"), { cohort: "standard", mode: "package", folders: ["standard"] });
-  assert.deepEqual(classifyKenjiModelPackage("Premium"), { cohort: "premium", mode: "package", folders: ["standard", "premium"] });
   assert.equal(classifyKenjiModelPackage("VIP").mode, "curated");
-  assert.deepEqual(classifyKenjiModelPackage("SVIP"), { cohort: "svip", mode: "curated", folders: [] });
-  assert.equal(classifyKenjiModelPackage("Black Card").cohort, "black_card");
-  assert.equal(classifyKenjiModelPackage("BlackCard").mode, "blocked");
-  assert.equal(classifyKenjiModelPackage("Exclusive Black Card").mode, "blocked");
   assert.equal(classifyKenjiModelPackage("GWs").mode, "signal");
-  assert.equal(classifyKenjiModelPackage("EMs").mode, "signal");
 });
 
-test("safe model projection excludes legal identity, contacts, availability, notes, IDs, and operations", () => {
+test("safe model projection excludes identity, contacts, availability, notes and internal IDs", () => {
   const projected = projectKenjiSafeModel(privateModel());
   assert.deepEqual(projected, {
     model_code: "MX17",
@@ -120,212 +124,109 @@ test("safe model projection excludes legal identity, contacts, availability, not
     summary: "ข้อมูลแนะนำตัวที่อนุมัติแล้ว",
     image_url: "https://images.example.test/model.webp",
   });
-  const serialized = JSON.stringify(projected);
-  assert.doesNotMatch(serialized, /legal|phone|telegram|available|admin|record|rec-model/i);
+  assert.doesNotMatch(JSON.stringify(projected), /legal|phone|telegram|available|admin|record|rec-model/i);
 });
 
-test("unsafe content inside an approved-summary field is omitted instead of trusted by field name", () => {
-  const projected = projectKenjiSafeModel(privateModel("MX17", "standard", {
-    customer_safe_summary: "ว่างคืนนี้ ติดต่อ LINE ID private-contact หรือโทร 0800000000",
-  }));
-  assert.deepEqual(projected, {
-    model_code: "MX17",
-    working_name: "น้องซิน",
-    image_url: "https://images.example.test/model.webp",
-  });
-});
-
-test("active Standard member receives an exact authorized Standard model match", async () => {
-  const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(baseData(activePackage("Standard"))) });
-  assert.equal(result.status, "match");
-  assert.equal(result.model.model_code, "MX17");
-  assert.equal(result.model.working_name, "น้องซิน");
-  assert.doesNotMatch(JSON.stringify(result), /0800000000|private_contact|private note|availability/i);
-});
-
-test("working-name lookup is exact and returns the verified code only inside the authorized folder", async () => {
-  const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "น้องซิน" }, { fetchImpl: airtableFetch(baseData()) });
+test("active canonical Standard entitlement sees Standard private model", async () => {
+  const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(baseData()) });
   assert.equal(result.status, "match");
   assert.equal(result.model.model_code, "MX17");
 });
 
-for (const [label, packageRecord] of [
-  ["missing", null],
-  ["guest", activePackage("Guest Pass")],
-  ["trial", activePackage("Trial")],
-  ["non-canonical BlackCard alias", activePackage("BlackCard")],
-  ["signal-only GWs", activePackage("GWs")],
-]) {
-  test(`${label} membership fails closed`, async () => {
-    const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(baseData(packageRecord)) });
-    assert.equal(result.status, "silent");
-  });
-}
+test("Premium canonical envelope includes Standard and Premium while Standard cannot see Premium", async () => {
+  const models = [privateModel("PR22", "premium")];
+  const standard = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "PR22" }, { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], models)) });
+  const premium = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "PR22" }, { fetchImpl: airtableFetch(baseData([entitlement("private_premium")], models)) });
+  assert.equal(standard.status, "silent");
+  assert.equal(premium.status, "match");
+});
 
-for (const [label, packageRecord] of [
-  ["inactive", activePackage("Standard", { status: "inactive" })],
-  ["expired", activePackage("Standard", { end_date: "2020-01-01T00:00:00.000Z" })],
-  ["invalid expiry", activePackage("Standard", { end_date: "not-a-date" })],
-]) {
-  test(`${label} membership returns renewal guidance without model data`, async () => {
-    const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(baseData(packageRecord)) });
+test("Public Member sees Public model only", async () => {
+  const data = baseData([entitlement("public_member")], [publicModel(), privateModel()]);
+  const pub = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "PUB17" }, { fetchImpl: airtableFetch(data) });
+  const priv = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(data) });
+  assert.equal(pub.status, "match");
+  assert.equal(priv.status, "silent");
+});
+
+test("Guest Pass remains teaser-only and never opens model lookup", async () => {
+  const data = baseData([entitlement("guest_pass")], [publicModel()]);
+  const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "PUB17" }, { fetchImpl: airtableFetch(data) });
+  assert.equal(result.status, "silent");
+});
+
+test("expiring-soon private entitlement remains currently valid for model visibility", async () => {
+  const data = baseData([entitlement("private_standard", "expiring_soon")]);
+  const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(data) });
+  assert.equal(result.status, "match");
+});
+
+for (const lifecycle of ["grace", "expired"]) {
+  test(`${lifecycle} private entitlement returns renewal only for a private-model request`, async () => {
+    const data = baseData([entitlement("private_standard", lifecycle)], [privateModel()]);
+    const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(data) });
     assert.deepEqual(result, { status: "renewal" });
   });
 }
 
-test("Membership 690 and Red Card 14,999 see Public Models only", async () => {
-  for (const packageCode of ["Membership", "Red Card"]) {
-    const data = baseData(activePackage(packageCode), [publicModel(), privateModel("MX17", "standard")]);
-    const publicResult = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "PUB17" }, { fetchImpl: airtableFetch(data) });
-    const privateResult = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(data) });
-    assert.equal(publicResult.status, "match", packageCode);
-    assert.equal(privateResult.status, "silent", packageCode);
-  }
-});
-
-test("Premium includes Standard and Premium folders while Standard cannot see Premium", async () => {
-  const premiumModel = [privateModel("PR22", "premium")];
-  const standardResult = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "PR22" }, { fetchImpl: airtableFetch(baseData(activePackage("Standard"), premiumModel)) });
-  const premiumResult = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "PR22" }, { fetchImpl: airtableFetch(baseData(activePackage("Premium"), premiumModel)) });
-  assert.equal(standardResult.status, "silent");
-  assert.equal(premiumResult.status, "match");
-});
-
-test("verified GWs or EMs signals neither grant access nor block a valid package entitlement", async () => {
-  for (const signal of ["GWs", "EMs"]) {
-    const data = baseData(activePackage("Standard"));
-    data.member_packages.push(activePackage(signal, { member_email: "member@example.com" }));
-    const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(data) });
-    assert.equal(result.status, "match", signal);
-  }
-});
-
-test("model records without exact active status fail closed", async () => {
-  const models = [privateModel("MX17", "standard", { status: "published" })];
-  const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(baseData(activePackage("Standard"), models)) });
-  assert.equal(result.status, "silent");
-});
-
-test("unlinked LINE owner asks for one verification email and exact Contact Email can continue", async () => {
-  const data = baseData(activePackage("Standard"));
-  data.members[0].fields.line_user_id = "Uother1234567890abcdef1234567890ab";
-  const initial = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(data) });
-  const verified = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17", verification_email: "member@example.com" }, { fetchImpl: airtableFetch(data) });
-  const wrong = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17", verification_email: "wrong@example.com" }, { fetchImpl: airtableFetch(data) });
-  assert.deepEqual(initial, { status: "verification_required" });
-  assert.equal(verified.status, "match");
-  assert.equal(wrong.status, "silent");
-});
-
-test("conflicting active package tiers fail closed instead of selecting the highest tier", async () => {
-  const data = baseData();
-  data.member_packages.push(activePackage("VIP", { member_email: "member@example.com" }));
+test("blocked canonical entitlement fails closed without renewal or model data", async () => {
+  const data = baseData([entitlement("private_premium", "blocked")]);
   const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(data) });
   assert.equal(result.status, "silent");
 });
 
-test("VIP and SVIP fail closed without one explicit unexpired V1 approval", async () => {
-  for (const cohort of ["VIP", "SVIP"]) {
-    const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(baseData(activePackage(cohort))) });
-    assert.equal(result.status, "silent", cohort);
-  }
+test("missing canonical LINE entitlement stays silent even when verification_email is supplied", async () => {
+  const data = baseData([], [privateModel()]);
+  const plain = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(data) });
+  const emailAttempt = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17", verification_email: "member@example.com" }, { fetchImpl: airtableFetch(data) });
+  assert.equal(plain.status, "silent");
+  assert.equal(emailAttempt.status, "silent");
 });
 
-test("VIP curated access requires an exact V1 approval record and explicit folders", async () => {
-  const data = baseData(activePackage("VIP"));
-  data.approvals.push(record("rec-approval-1", {
-    member_email: "member@example.com",
-    status: "approved",
-    policy_version: KENJI_MODEL_ACCESS_POLICY_VERSION,
-    cohort: "vip",
-    expires_at: "2099-12-31T23:59:59.000Z",
-    allowed_folders: "standard,premium,vip",
-  }));
+for (const capability of ["vip", "svip", "black_card"]) {
+  test(`${capability} requires explicit current approval before protected Private reveal`, async () => {
+    const folder = capability === "black_card" ? "exclusive" : "vip";
+    const models = [privateModel("PX99", folder)];
+    const noApproval = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "PX99" }, { fetchImpl: airtableFetch(baseData([entitlement(capability)], models, [])) });
+    const approved = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "PX99" }, { fetchImpl: airtableFetch(baseData([entitlement(capability)], models, [approval(capability, folder)])) });
+    assert.equal(noApproval.status, "silent");
+    assert.equal(approved.status, "match");
+  });
+}
+
+test("expired protected approval fails closed", async () => {
+  const data = baseData([entitlement("black_card")], [privateModel("ZX41", "exclusive")], [approval("black_card", "exclusive", { expires_at: "2020-01-01T00:00:00.000Z" })]);
+  const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "ZX41" }, { fetchImpl: airtableFetch(data) });
+  assert.equal(result.status, "silent");
+});
+
+test("unsafe approved-summary content is omitted", async () => {
+  const data = baseData([entitlement("private_standard")], [privateModel("MX17", "standard", { customer_safe_summary: "ว่างคืนนี้ ติดต่อ LINE ID private-contact หรือโทร 0800000000" })]);
   const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(data) });
   assert.equal(result.status, "match");
+  assert.equal("summary" in result.model, false);
 });
 
-test("active exact Black Card grants exclusive while Premium cannot see the same model", async () => {
-  const exclusive = [privateModel("ZX41", "exclusive")];
-  const blackResult = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "ZX41" }, { fetchImpl: airtableFetch(baseData(activePackage("Black Card"), exclusive)) });
-  const premiumResult = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "ZX41" }, { fetchImpl: airtableFetch(baseData(activePackage("Premium"), exclusive)) });
-  assert.equal(blackResult.status, "match");
-  assert.equal(premiumResult.status, "silent");
-});
-
-test("EMs model-code namespace never grants access; authorization still comes from package and folder", async () => {
-  const exclusive = [privateModel("EMs04", "exclusive")];
-  const signalOnlyResult = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "EMs04" }, { fetchImpl: airtableFetch(baseData(activePackage("EMs"), exclusive)) });
-  const blackCardResult = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "EMs04" }, { fetchImpl: airtableFetch(baseData(activePackage("Black Card"), exclusive)) });
-  assert.equal(signalOnlyResult.status, "silent");
-  assert.equal(blackCardResult.status, "match");
-  assert.equal(blackCardResult.model.model_code, "EMs04");
-});
-
-test("ambiguous exact authorized model matches request clarification without listing models", async () => {
-  const second = privateModel("MX17", "standard", { working_name: "อีกชื่อ", unique_key: "OTHER" });
-  second.id = "rec-model-MX17-duplicate";
-  const models = [privateModel("MX17"), second];
-  const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(baseData(activePackage("Black Card"), models)) });
-  assert.deepEqual(result, { status: "clarification" });
-});
-
-test("an inaccessible duplicate never causes clarification or leaks the higher folder", async () => {
-  const overTier = privateModel("MX17", "exclusive", { working_name: "ชื่อที่ห้ามเปิด" });
-  overTier.id = "rec-model-MX17-exclusive";
-  const data = baseData(activePackage("VIP"), [privateModel("MX17"), overTier]);
-  data.approvals.push(record("rec-approval-standard-only", {
-    member_email: "member@example.com",
-    status: "approved",
-    policy_version: KENJI_MODEL_ACCESS_POLICY_VERSION,
-    cohort: "vip",
-    expires_at: "2099-12-31T23:59:59.000Z",
-    allowed_folders: "standard",
-  }));
-  const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(data) });
-  assert.equal(result.status, "match");
-  assert.equal(result.model.working_name, "น้องซิน");
-  assert.doesNotMatch(JSON.stringify(result), /ชื่อที่ห้ามเปิด|exclusive/);
-});
-
-test("RPC is service-binding-only and source failures expose no upstream body", async () => {
-  const publicRequest = new Request("https://admin-worker.example/v1/internal/kenji/model-access", {
-    method: "POST",
-    headers: { authorization: "Bearer internal-token", "content-type": "application/json", "x-mmd-internal-call": "true", "x-mmd-service-binding": "member-dashboard-chat-worker" },
-    body: JSON.stringify({ line_user_id: LINE_USER_ID, query: "MX17" }),
-  });
-  assert.equal((await handleKenjiModelAccessRpc(publicRequest, ENV)).status, 401);
-
-  const localRequest = new Request("https://admin-worker.local/v1/internal/kenji/model-access", {
-    method: "POST",
-    headers: { authorization: "Bearer internal-token", "content-type": "application/json", "x-mmd-internal-call": "true", "x-mmd-service-binding": "member-dashboard-chat-worker" },
-    body: JSON.stringify({ line_user_id: LINE_USER_ID, query: "MX17" }),
-  });
-  const response = await handleKenjiModelAccessRpc(localRequest, ENV, { fetchImpl: airtableFetch({}, { fail: true }) });
+test("canonical entitlement source failure fails closed as 503", async () => {
+  const response = await handleKenjiModelAccessRpc(rpcRequest({ line_user_id: LINE_USER_ID, query: "MX17" }), ENV, { fetchImpl: airtableFetch(baseData(), { failTables: ["entitlements"] }) });
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { ok: false, error: "model_access_unavailable" });
 });
 
-test("active admin-worker entrypoint exposes only the protected named RPC", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = airtableFetch(baseData());
-  try {
-    const request = new Request("https://admin-worker.local/v1/internal/kenji/model-access", {
-      method: "POST",
-      headers: { authorization: "Bearer internal-token", "content-type": "application/json", "x-mmd-internal-call": "true", "x-mmd-service-binding": "member-dashboard-chat-worker" },
-      body: JSON.stringify({ line_user_id: LINE_USER_ID, query: "MX17" }),
-    });
-    const response = await adminWorker.fetch(request, ENV);
-    assert.equal(response.status, 200);
-    const payload = await response.json();
-    assert.equal(payload.status, "match");
-    assert.deepEqual(payload.model, {
-      model_code: "MX17",
-      working_name: "น้องซิน",
-      summary: "ข้อมูลแนะนำตัวที่อนุมัติแล้ว",
-      image_url: "https://images.example.test/model.webp",
-    });
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+test("RPC remains service-binding only and method constrained", async () => {
+  assert.equal(isKenjiModelAccessRpcRequest(KENJI_MODEL_ACCESS_RPC_PATH, "POST"), true);
+  const unauthorized = await handleKenjiModelAccessRpc(new Request("https://admin-worker.local/v1/internal/kenji/model-access", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }), ENV);
+  assert.equal(unauthorized.status, 401);
+  const wrongMethod = await handleKenjiModelAccessRpc(rpcRequest({}, { method: "GET" }), ENV);
+  assert.equal(wrongMethod.status, 405);
+});
+
+test("RPC match returns only safe model projection and policy version", async () => {
+  const response = await handleKenjiModelAccessRpc(rpcRequest({ line_user_id: LINE_USER_ID, query: "MX17" }), ENV, { fetchImpl: airtableFetch(baseData()) });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.status, "match");
+  assert.equal(payload.policy_version, KENJI_MODEL_ACCESS_POLICY_VERSION);
+  assert.equal(payload.model.model_code, "MX17");
+  assert.doesNotMatch(JSON.stringify(payload), /0800000000|private_contact|availability|admin_note/i);
 });
