@@ -80,9 +80,9 @@ jobs:
           if (!config.migrations?.some((migration) => migration.tag === "v2-my-mms-dispatch" && migration.new_sqlite_classes?.includes("MmsDispatchCoordinator"))) throw new Error("MY MMS dispatch Durable Object migration is required");
           NODE
 
-      - name: Validate Cloudflare bundle
+      - name: Validate Cloudflare version upload
         working-directory: mms-worker
-        run: npx wrangler deploy --dry-run
+        run: npx wrangler versions upload --dry-run --keep-vars --env=""
 
       - name: Validate Airtable production access
         shell: bash
@@ -163,20 +163,44 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_STEP_OUTPUT || process.env.GITHUB_OUTPUT, `configured=${lines.length ? "true" : "false"}\n`);
           NODE
 
-      - name: Deploy mms-worker
+      - name: Upload mms-worker version
+        id: upload
+        working-directory: mms-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="gha-${GITHUB_SHA:0:12}"
+          echo "MMS_WORKER_VERSION_TAG=${tag}" >> "$GITHUB_ENV"
+          args=(versions upload --keep-vars --env="" --tag "$tag" --message "GitHub Actions ${GITHUB_SHA}")
+          if [ "${{ steps.runtime-secrets.outputs.configured }}" = "true" ]; then
+            args+=(--secrets-file "$RUNNER_TEMP/mms-worker.env")
+          fi
+          npx wrangler "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/mms-worker-upload.log"
+          echo "url=https://mms-worker.malemodel-bkk.workers.dev" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve uploaded version ID
+        id: resolve_version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/mms-worker-upload.log" | tail -n 1)"
+          if [ -z "$version_id" ]; then
+            echo "Unable to parse Worker Version ID from upload output" >&2
+            cat "$RUNNER_TEMP/mms-worker-upload.log" >&2
+            exit 2
+          fi
+          echo "MMS_WORKER_VERSION_ID=${version_id}" >> "$GITHUB_ENV"
+          echo "Resolved version ${version_id}"
+
+      - name: Deploy uploaded mms-worker version
         id: deploy
         working-directory: mms-worker
         shell: bash
         run: |
           set -euo pipefail
-          args=(deploy --keep-vars)
-          if [ "${{ steps.runtime-secrets.outputs.configured }}" = "true" ]; then
-            args+=(--secrets-file "$RUNNER_TEMP/mms-worker.env")
-          fi
-          npx wrangler "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/mms-worker-deploy.log"
-          url="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' "$RUNNER_TEMP/mms-worker-deploy.log" | tail -n 1)"
-          if [ -z "$url" ]; then url="https://mms-worker.malemodel-bkk.workers.dev"; fi
-          echo "url=$url" >> "$GITHUB_OUTPUT"
+          npx wrangler versions deploy "${MMS_WORKER_VERSION_ID}@100%" -y --env="" \
+            2>&1 | tee "$RUNNER_TEMP/mms-worker-deploy.log"
+          echo "url=https://mms-worker.malemodel-bkk.workers.dev" >> "$GITHUB_OUTPUT"
 
       - name: Verify production health, catalog, and dispatch fail-closed boundary
         shell: bash
@@ -208,6 +232,10 @@ jobs:
             "## mms-worker live",
             "",
             `- URL: ${{ steps.deploy.outputs.url }}`,
+            `- Version ID: ${process.env.MMS_WORKER_VERSION_ID}`,
+            `- Version tag: ${process.env.MMS_WORKER_VERSION_TAG}`,
+            `- Source SHA: ${process.env.GITHUB_SHA}`,
+            `- Traffic: 100%`,
             `- Core Durable Object: ${health.bindings.coordinator ? "ready" : "missing"}`,
             `- Dispatch Durable Object: ${health.bindings.dispatch_coordinator ? "ready" : "missing"}`,
             `- MMS Jobs table: ${health.bindings.dispatch_jobs ? "ready" : "missing"}`,
@@ -223,3 +251,35 @@ jobs:
             "",
           ].join("\n"));
           NODE
+
+      - name: Record deployment receipt
+        shell: bash
+        run: |
+          mkdir -p deployments
+          cat > deployments/mms-worker-last.json <<EOF
+          {
+            "worker": "mms-worker",
+            "status": "deployed",
+            "deployment_method": "github_actions_versioned",
+            "source_sha": "${GITHUB_SHA}",
+            "version_id": "${MMS_WORKER_VERSION_ID}",
+            "version_tag": "${MMS_WORKER_VERSION_TAG}",
+            "traffic_percent": 100,
+            "workflow_run_id": "${GITHUB_RUN_ID}",
+            "deployed_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          {
+            echo "### mms-worker deployment receipt"
+            echo '```json'
+            cat deployments/mms-worker-last.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload deployment receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: mms-worker-deploy-${{ github.run_id }}
+          path: deployments/mms-worker-last.json
+          if-no-files-found: error
+          retention-days: 30
