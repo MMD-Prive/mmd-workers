@@ -1,5 +1,5 @@
 /* MMD SIGIL confirmation handoff
- * Customer: /sigil/confirm/job-confirmation -> My MMD LINE Mini App
+ * Customer: /sigil/confirm/job-confirmation -> My MMD LINE Mini App > Jobs
  * Model: /sigil/confirm/job-model -> MMD MODEL LINE Mini App
  * This layer only fixes onward navigation after the signed confirmation flow.
  */
@@ -10,7 +10,7 @@
   const MODEL_CONFIRM_PATH = "/sigil/confirm/job-model";
   const CUSTOMER_CONFIRM_PATH = "/sigil/confirm/job-confirmation";
   const MODEL_LIFF_URL = "https://miniapp.line.me/2010864854-N34SgCqq";
-  const MEMBER_LIFF_URL = "https://miniapp.line.me/2010862595-yT4DCEMc";
+  const MEMBER_LIFF_URL = "https://miniapp.line.me/2010862595-yT4DCEMc/?view=jobs";
 
   function wireModel() {
     if (path !== MODEL_CONFIRM_PATH) return;
@@ -31,9 +31,9 @@
     const link = document.createElement("a");
     const seed = root.querySelector("[data-c-confirm]");
     link.href = MEMBER_LIFF_URL;
-    link.textContent = "ไปที่ My MMD ใน LINE";
+    link.textContent = "ดู Upcoming Job ใน My MMD";
     link.setAttribute("data-mmd-my-mmd", "1");
-    link.setAttribute("data-mmd-canonical-target", "member-line-miniapp");
+    link.setAttribute("data-mmd-canonical-target", "member-line-miniapp-jobs");
     if (seed?.className) link.className = seed.className;
     success.appendChild(link);
   }

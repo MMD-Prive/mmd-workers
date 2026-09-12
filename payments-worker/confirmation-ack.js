@@ -167,6 +167,10 @@ function sessionFields(env = {}) {
     paymentRef: clean(env.AT_SESSIONS__PAYMENT_REF || "fldojgjSQLaO0uQLX", 100),
     customerAck: clean(env.AT_SESSIONS__CUSTOMER_ACK_AT || "fldJSS5GNN7quJwa8", 100),
     modelAck: clean(env.AT_SESSIONS__MODEL_ACK_AT || "fldFgkHXivIAThfDz", 100),
+    sessionStatus: clean(
+      env.AT_SESSIONS__SESSION_STATUS || env.AIRTABLE_SESSIONS_STATUS_FIELD || "fldmwuvOaiCFdzzRa",
+      100,
+    ),
     clientName: clean(env.AT_SESSIONS__CLIENT_NAME || "fldMvnQ0BzDfHUYjT", 100),
     modelName: clean(env.AT_SESSIONS__MODEL_NAME || "flddVz6eoWRHrzIQr", 100),
     jobType: clean(env.AT_SESSIONS__JOB_TYPE || "fldjK3U9bghnj7xUe", 100),
@@ -240,19 +244,37 @@ function safeConfirmationContext(env, session, role) {
   };
 }
 
+function shouldPromoteCustomerStatus(value) {
+  const normalized = clean(value, 80).toLowerCase();
+  return !normalized || normalized === "pending";
+}
+
 async function patchAcknowledgement(env, session, role) {
   const { tableId } = airtableConfig(env);
   const fields = sessionFields(env);
   const fieldId = role === "customer" ? fields.customerAck : fields.modelAck;
   const existing = clean(session?.fields?.[fieldId], 200);
-  if (existing) return { acknowledged_at: existing, idempotent: true };
+  const promoteCustomerStatus =
+    role === "customer" && shouldPromoteCustomerStatus(session?.fields?.[fields.sessionStatus]);
 
-  const acknowledgedAt = new Date().toISOString();
+  if (existing && !promoteCustomerStatus) {
+    return { acknowledged_at: existing, idempotent: true, session_status_promoted: false };
+  }
+
+  const acknowledgedAt = existing || new Date().toISOString();
+  const patchFields = {};
+  if (!existing) patchFields[fieldId] = acknowledgedAt;
+  if (promoteCustomerStatus) patchFields[fields.sessionStatus] = "Confirmed";
+
   await airtableRequest(env, `${encodeURIComponent(tableId)}/${encodeURIComponent(session.id)}?returnFieldsByFieldId=true`, {
     method: "PATCH",
-    body: JSON.stringify({ fields: { [fieldId]: acknowledgedAt } }),
+    body: JSON.stringify({ fields: patchFields }),
   });
-  return { acknowledged_at: acknowledgedAt, idempotent: false };
+  return {
+    acknowledged_at: acknowledgedAt,
+    idempotent: Boolean(existing),
+    session_status_promoted: promoteCustomerStatus,
+  };
 }
 
 function errorStatus(error) {
@@ -315,6 +337,7 @@ export async function handleConfirmationAck(request, env = {}) {
       session_id: authorized.claims.session_id,
       acknowledged_at: ack.acknowledged_at,
       idempotent: ack.idempotent,
+      session_status_promoted: ack.session_status_promoted,
     }));
   } catch (error) {
     return withCors(request, env, json({ ok: false, error: clean(error?.message || "confirmation_ack_failed", 200) }, errorStatus(error)));
