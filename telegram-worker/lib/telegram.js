@@ -30,6 +30,9 @@ export function telegramTopics(env = {}) {
 export const TG_THREADS = (env) => {
   const topics = Object.fromEntries(telegramTopics(env).map((topic) => [topic.key, topic.thread_id]));
   const confirm = int(env.TG_THREAD_CONFIRM) || topics.payment;
+  const crew = topics.crew || topics.alerts;
+  const rulesCustomer = topics.rules_customer || topics.system_log;
+  const rulesModel = topics.rules_model || topics.system_log;
   return {
     membership: topics.membership,
     confirm,
@@ -51,14 +54,14 @@ export const TG_THREADS = (env) => {
     booking_draft: topics.booking,
     dispatch: topics.booking,
     booking_dispatch: topics.booking,
-    crew: topics.crew,
-    human_handoff: topics.crew,
-    rules_customer: topics.rules_customer,
-    customer_rules: topics.rules_customer,
-    customer_rules_ack: topics.rules_customer,
-    rules_model: topics.rules_model,
-    model_rules: topics.rules_model,
-    model_rules_ack: topics.rules_model,
+    crew,
+    human_handoff: crew,
+    rules_customer: rulesCustomer,
+    customer_rules: rulesCustomer,
+    customer_rules_ack: rulesCustomer,
+    rules_model: rulesModel,
+    model_rules: rulesModel,
+    model_rules_ack: rulesModel,
   };
 };
 

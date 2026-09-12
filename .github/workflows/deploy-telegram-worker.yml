@@ -77,6 +77,4 @@ jobs:
             -H 'Content-Type: application/json' \
             --data '{"confirm":"SEND_REDACTED_TOPIC_SMOKE","disable_notification":true}')"
           echo "$body"
-          printf '%s' "$body" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true'
-          printf '%s' "$body" | grep -Eq '"tested"[[:space:]]*:[[:space:]]*7'
-          printf '%s' "$body" | grep -Eq '"failed"[[:space:]]*:[[:space:]]*0'
+          node -e 'const d=JSON.parse(process.argv[1]); if (!d.ok || d.failed !== 0 || Number(d.tested) < 7) process.exit(1);' "$body"

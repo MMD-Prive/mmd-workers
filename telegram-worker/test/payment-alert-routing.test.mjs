@@ -32,6 +32,27 @@ test("optional operations topics join registry only when configured", () => {
   );
 });
 
+test("rules and crew fall back to canonical existing rooms when dedicated topics are absent", () => {
+  const threads = TG_THREADS({});
+  assert.equal(threads.crew, 9);
+  assert.equal(threads.human_handoff, 9);
+  assert.equal(threads.rules_customer, 22);
+  assert.equal(threads.customer_rules_ack, 22);
+  assert.equal(threads.rules_model, 22);
+  assert.equal(threads.model_rules_ack, 22);
+});
+
+test("dedicated rules and crew topics override safe fallbacks when configured", () => {
+  const threads = TG_THREADS({
+    TG_THREAD_CREW: "88",
+    TG_THREAD_RULES_CUSTOMER: "101",
+    TG_THREAD_RULES_MODEL: "102",
+  });
+  assert.equal(threads.human_handoff, 88);
+  assert.equal(threads.customer_rules_ack, 101);
+  assert.equal(threads.model_rules_ack, 102);
+});
+
 test("operational flow aliases route through the central registry", () => {
   const threads = TG_THREADS({
     TG_THREAD_CREW: "88",
