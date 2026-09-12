@@ -43,6 +43,7 @@ jobs:
           node --check payments-worker/confirmation-details.js
           node --check payments-worker/payment-instructions-v1.js
           node --test payments-worker/canonical-confirm-link.test.mjs
+          node --test payments-worker/confirmation-ack.test.mjs
           node --test payments-worker/confirmation-details.test.mjs
           node --test payments-worker/payment-instructions-v1.test.mjs
           node --test payments-worker/session-finance-write.test.mjs
