@@ -476,7 +476,16 @@ function unifiedStatus(payment, proof) {
 }
 
 export async function enrichUnifiedConfirmVerify(request, env, downstream) {
-  const response = await downstream(request);
+  let response;
+  try {
+    response = await downstream(request);
+  } catch (error) {
+    const reason = code(error?.message || error);
+    if (["invalid_confirmation_token", "invalid_confirmation_token_signature", "confirmation_token_not_active"].includes(reason)) {
+      return json({ ok: false, error: reason }, 401);
+    }
+    throw error;
+  }
   if (!response.ok) return response;
   const data = await response.clone().json().catch(() => null);
   const claims = data?.claims;
