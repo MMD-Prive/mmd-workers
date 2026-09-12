@@ -373,10 +373,12 @@ export function inferLineIntent(text = "", event = {}) {
   if (/^(?:สถานะ(?:สมาชิก)?(?:ของ)?ผม|สถานะ(?:สมาชิก)?(?:ของ)?ฉัน|สถานะ(?:สมาชิก)?(?:ของ)?หนู)(?:เป็นยังไง|เป็นอย่างไร|ตอนนี้)?(?:ครับ|ค่ะ)?$/i.test(normalized)) return "membership_status";
   if (/^(?:แต้ม|คะแนน|points?)(?:ของ)?(?:ผม|ฉัน|หนู)?\s*(?:เข้า|เพิ่ม|มา)(?:แล้ว)?(?:หรือยัง|ไหม|หรือเปล่า)?(?:ครับ|ค่ะ)?$/i.test(normalized)) return "points_status";
   if (/(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
+  if (/(?:after\s*care|aftercare|ดูแลหลัง(?:การ)?บริการ|หลัง(?:ใช้|รับ)บริการ|ให้คะแนน(?:บริการ|session|เซสชัน)|(?:feedback|ฟีดแบ็ก).{0,16}(?:บริการ|session|เซสชัน))/i.test(normalized)) return "aftercare";
   if (/(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
   if (/(svip|s vip|super\s*vip)/i.test(normalized)) return "svip";
   if (/(black\s*card|แบล็คการ์ด|บัตรดำ)/i.test(normalized)) return "black_card";
   if (/(vip|วีไอพี)/i.test(normalized)) return "vip";
+  if (/(?:จอง|booking|request|คิว).{0,20}(?:ถึงไหน|สถานะ|คอนเฟิร์ม|confirm(?:ed)?|เรียบร้อย|หรือยัง)|(?:สถานะ).{0,12}(?:จอง|booking|request)/i.test(normalized)) return "booking_status";
   if (/(massage|male massage|นวด|คลายกล้าม|recovery|wellness|therapist|เทอราปิส)/i.test(normalized)) return "mms_wellness";
   if (/(relax spa|partner venue|ไม่มีสถานที่|ไม่มีที่|สถานที่พร้อมอุปกรณ์|ใช้ร้าน)/i.test(normalized)) return "partner_venue";
   if (/(private talent|specialist|freelancer|special skill|ทักษะพิเศษ|ล่าม|ภาษา|performance|creative|business presence)/i.test(normalized)) return "private_talent";
@@ -839,6 +841,14 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
 
   if (intent === "mms_wellness") {
     return `${prefix}ถ้าต้องการ male massage หรือ recovery service เดี๋ยวเปอร์ช่วยแยกเป็น MMS Wellness ให้ครับ เลือกได้ทั้ง hotel / home visit หรือ Partner Venue โดย MMD ต้องตรวจรายละเอียดและความเหมาะสมก่อนครับ`;
+  }
+
+  if (intent === "booking_status") {
+    return `${prefix}ผมยังยืนยันสถานะหรือคอนเฟิร์มการจองจากข้อความอย่างเดียวไม่ได้ครับ เปิดรายการจริงใน My MMD > History เพื่อดูสถานะล่าสุดได้ และถ้ายังรอตรวจ ผมจะไม่สรุปว่าเรียบร้อยแล้วครับ`;
+  }
+
+  if (intent === "aftercare") {
+    return `${prefix}Aftercare จะเปิดจาก Session ที่พร้อมใน My MMD > History ครับ ให้ใช้ปุ่ม Aftercare ของรายการนั้นเพื่อให้คะแนน ส่ง feedback หรือเข้า Private Care โดยลิงก์เฉพาะ Session ต้องมาจากข้อมูลทางการเท่านั้นครับ`;
   }
 
   if (intent === "partner_venue") {
