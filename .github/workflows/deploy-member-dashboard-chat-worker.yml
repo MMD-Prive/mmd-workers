@@ -119,6 +119,7 @@ jobs:
           node --check member-dashboard-chat-worker/src/front-gate-index.js
           npm run test:member-dashboard-liff
           npm run test:member-dashboard-line
+          node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-live-concierge-runtime.test.mjs shared/verified-member-concierge.test.mjs
           node --test member-dashboard-chat-worker/test/line-membership-fallback.test.mjs
           node --test member-dashboard-chat-worker/test/mms-therapist-auth-front-gate.test.mjs
           node --test member-dashboard-chat-worker/test/internal-ai-service-binding-smoke.test.mjs
