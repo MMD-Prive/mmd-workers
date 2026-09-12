@@ -22,14 +22,30 @@
     retry:root.querySelector("[data-kj3-retry]"),
     primary:root.querySelectorAll("[data-kj3-primary],[data-kj3-footer]"),
     privateLinks:root.querySelectorAll("[data-kj3-private]"),
-    dock:root.querySelector("[data-kj3-dock]"),
-    dockLabel:root.querySelector("[data-kj3-dock-label]"),
-    dockCopy:root.querySelector("[data-kj3-dock-copy]"),
-    dockLink:root.querySelector("[data-kj3-dock-link]")
+    branchbar:root.querySelector("[data-kj3-branchbar]"),
+    current:root.querySelector("[data-kj3-current]"),
+    progress:root.querySelector("[data-kj3-progress]"),
+    previous:root.querySelector("[data-kj3-prev]"),
+    next:root.querySelector("[data-kj3-next]"),
+    sheet:root.querySelector("[data-kj3-sheet]"),
+    sheetPanel:root.querySelector("[data-kj3-sheet-panel]"),
+    branchBack:root.querySelector("[data-kj3-branch-back]"),
+    sheetStatus:root.querySelector("[data-kj3-sheet-status]")
   };
 
   var controller=null;
   var statusMode="loading";
+  var activeChapter=0;
+  var lastFocused=null;
+  var touchStartY=0;
+  var chapters=[
+    {id:"kj3-overview",label:"ภาพรวม"},
+    {id:"kj3-actions",label:"เริ่มเรื่อง"},
+    {id:"kj3-intelligence",label:"วิธีคิด"},
+    {id:"kj3-standard",label:"มาตรฐาน"},
+    {id:"kj3-faq",label:"ก่อนเริ่ม"},
+    {id:"kj3-care",label:"Private Care"}
+  ];
 
   function setLinks(selector,url){
     root.querySelectorAll(selector).forEach(function(link){link.href=url});
@@ -67,12 +83,7 @@
     var hero=root.querySelector("[data-kj3-primary] span");
     if(hero)hero.textContent=active?"พร้อมครับ ให้ผมพาไปต่อ":mode==="pending"?"กำลังยืนยันสถานะ":"ให้ผมตรวจสอบสิทธิ์";
 
-    ui.dockLabel.textContent=active?"KENJI · ACCESS VERIFIED":mode==="pending"?"KENJI · REVIEW IN PROGRESS":"KENJI · PRIVATE ACCESS";
-    ui.dockCopy.textContent=active?"สิทธิ์พร้อม เริ่มได้เลย":mode==="pending"?"รอการยืนยันจาก MMD":"เชื่อม MY MMD เพื่อเริ่ม";
-    ui.dockLink.href=destination;
-    ui.dockLink.textContent=active?"คุยกับผม ↗":"ตรวจสิทธิ์ ↗";
-    ui.dock.setAttribute("aria-hidden","false");
-    ui.dockLink.tabIndex=0;
+    ui.sheetStatus.textContent=active?"ACCESS VERIFIED · พร้อมเริ่มกับ Kenji":mode==="pending"?"MMD กำลังตรวจสอบสถานะ":"เชื่อม MY MMD เพื่อเปิดเส้นทางที่ตรงกับสิทธิ์";
   }
 
   function clean(value){return typeof value==="string"?value.trim():""}
@@ -169,13 +180,99 @@
     reveals.forEach(function(item){item.classList.add("is-visible")});
   }
 
-  function updateDock(){
-    var visible=window.scrollY>Math.min(window.innerHeight*.72,620)&&statusMode!=="loading";
-    root.classList.toggle("is-dock-visible",visible);
+  function updateBranchbar(){
+    var visible=window.scrollY>Math.min(window.innerHeight*.58,520);
+    root.classList.toggle("is-branchbar-visible",visible);
   }
 
-  window.addEventListener("scroll",updateDock,{passive:true});
-  updateDock();
+  function setChapter(index){
+    activeChapter=Math.max(0,Math.min(index,chapters.length-1));
+    ui.current.textContent=chapters[activeChapter].label;
+    ui.progress.textContent=String(activeChapter+1).padStart(2,"0")+" / "+String(chapters.length).padStart(2,"0");
+    ui.previous.disabled=activeChapter===0;
+    ui.next.disabled=activeChapter===chapters.length-1;
+  }
+
+  function goToChapter(index,pushHash){
+    setChapter(index);
+    var target=document.getElementById(chapters[activeChapter].id);
+    if(!target)return;
+    if(pushHash&&history.pushState)history.pushState(null,"","#"+chapters[activeChapter].id);
+    target.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"start"});
+    closeSheet(false);
+  }
+
+  function showSheetView(name){
+    root.querySelectorAll("[data-kj3-sheet-view]").forEach(function(view){
+      var selected=view.dataset.kj3SheetView===name;
+      view.classList.toggle("is-active",selected);
+      view.setAttribute("aria-hidden",selected?"false":"true");
+    });
+    ui.branchBack.hidden=name==="main";
+  }
+
+  function sheetFocusables(){
+    return Array.from(ui.sheetPanel.querySelectorAll("button:not([hidden]):not([disabled]),a[href]:not([aria-disabled='true'])"));
+  }
+
+  function openSheet(){
+    lastFocused=document.activeElement;
+    showSheetView("main");
+    ui.sheet.classList.add("is-open");
+    ui.sheet.setAttribute("aria-hidden","false");
+    document.body.style.overflow="hidden";
+    var first=sheetFocusables()[0];
+    if(first)setTimeout(function(){first.focus()},30);
+  }
+
+  function closeSheet(returnFocus){
+    ui.sheet.classList.remove("is-open");
+    ui.sheet.setAttribute("aria-hidden","true");
+    document.body.style.removeProperty("overflow");
+    if(returnFocus!==false&&lastFocused&&typeof lastFocused.focus==="function")lastFocused.focus();
+  }
+
+  root.querySelector("[data-kj3-menu-open]").addEventListener("click",openSheet);
+  root.querySelectorAll("[data-kj3-menu-close]").forEach(function(button){button.addEventListener("click",function(){closeSheet(true)})});
+  ui.branchBack.addEventListener("click",function(){showSheetView("main")});
+  root.querySelectorAll("[data-kj3-branch]").forEach(function(button){button.addEventListener("click",function(){showSheetView(button.dataset.kj3Branch)})});
+  root.querySelectorAll("[data-kj3-goto]").forEach(function(button){
+    button.addEventListener("click",function(){
+      var index=chapters.findIndex(function(chapter){return chapter.id===button.dataset.kj3Goto});
+      if(index>=0)goToChapter(index,true);
+    });
+  });
+  ui.previous.addEventListener("click",function(){goToChapter(activeChapter-1,true)});
+  ui.next.addEventListener("click",function(){goToChapter(activeChapter+1,true)});
+
+  ui.sheet.addEventListener("keydown",function(event){
+    if(event.key==="Escape"){closeSheet(true);return}
+    if(event.key!=="Tab")return;
+    var focusables=sheetFocusables();
+    if(!focusables.length)return;
+    var first=focusables[0],last=focusables[focusables.length-1];
+    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}
+    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}
+  });
+  ui.sheetPanel.addEventListener("touchstart",function(event){touchStartY=event.changedTouches[0].clientY},{passive:true});
+  ui.sheetPanel.addEventListener("touchend",function(event){if(event.changedTouches[0].clientY-touchStartY>90)closeSheet(true)},{passive:true});
+
+  if("IntersectionObserver" in window){
+    var chapterObserver=new IntersectionObserver(function(entries){
+      entries.forEach(function(entry){
+        if(entry.isIntersecting){
+          var index=chapters.findIndex(function(chapter){return chapter.id===entry.target.id});
+          if(index>=0)setChapter(index);
+        }
+      });
+    },{rootMargin:"-22% 0px -62% 0px",threshold:0});
+    chapters.forEach(function(chapter){var section=document.getElementById(chapter.id);if(section)chapterObserver.observe(section)});
+  }
+
+  var hashIndex=chapters.findIndex(function(chapter){return "#"+chapter.id===window.location.hash});
+  setChapter(hashIndex>=0?hashIndex:0);
+  window.addEventListener("scroll",updateBranchbar,{passive:true});
+  updateBranchbar();
   loadProfile();
 })();
 </script>
