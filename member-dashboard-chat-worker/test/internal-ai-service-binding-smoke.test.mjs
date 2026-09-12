@@ -64,10 +64,11 @@ test("internal AI service-binding smoke fails closed when the binding is absent"
   assert.equal(result.payload.error.code, "AI_WORKER_BINDING_MISSING");
 });
 
-test("diagnostic route requires INTERNAL_TOKEN before invoking AI_WORKER", async () => {
+test("diagnostic route requires dedicated AI_SERVICE_SMOKE_TOKEN before invoking AI_WORKER", async () => {
   let calls = 0;
   const env = {
-    INTERNAL_TOKEN: "test-internal-token",
+    INTERNAL_TOKEN: "must-not-authorize-smoke",
+    AI_SERVICE_SMOKE_TOKEN: "test-ai-service-smoke-token",
     AI_WORKER: {
       async fetch() {
         calls += 1;
@@ -81,13 +82,14 @@ test("diagnostic route requires INTERNAL_TOKEN before invoking AI_WORKER", async
 
   const unauthorized = await worker.fetch(new Request("https://www.mmdbkk.com/v1/internal/ai/service-binding-smoke", {
     method: "POST",
+    headers: { authorization: "Bearer must-not-authorize-smoke" },
   }), env);
   assert.equal(unauthorized.status, 401);
   assert.equal(calls, 0);
 
   const authorized = await worker.fetch(new Request("https://www.mmdbkk.com/v1/internal/ai/service-binding-smoke", {
     method: "POST",
-    headers: { authorization: "Bearer test-internal-token" },
+    headers: { authorization: "Bearer test-ai-service-smoke-token" },
   }), env);
   assert.equal(authorized.status, 200);
   assert.equal(calls, 1);
