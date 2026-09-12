@@ -1,3 +1,5 @@
+import { inferMembershipPayment, membershipInferenceLabel } from "../../shared/payment-intelligence.mjs";
+
 const QUEUE_PATH = "/v1/admin/payments/review-queue";
 const REVIEW_PATH = "/v1/admin/payments/review";
 const EVIDENCE_PATH = "/v1/admin/payments/evidence";
@@ -481,7 +483,13 @@ function safeQueueItem(record) {
   const linkedPaymentPresent = Boolean(linkedRecordId(fields.payment || fields.Payment || fields["Payment"]));
   const linkedSessionPresent = Boolean(linkedRecordId(fields.session || fields.Session || fields["Session"]));
   const linkedRenewalPresent = renewalIds.length === 1;
-  if (!(linkedPaymentPresent || linkedRenewalPresent)) contextIssues.push("customer_or_job_not_linked");
+  const linkedMemberPresent = Boolean(linkedRecordId(fields.member || fields.Member));
+  const storedIntelligence = note.payment_intelligence && typeof note.payment_intelligence === "object" ? note.payment_intelligence : null;
+  const paymentIntelligence = storedIntelligence || inferMembershipPayment({
+    amount_thb: amountThb, linked_member: linkedMemberPresent, linked_renewal: linkedRenewalPresent,
+    package_code: fields.package_code, source_context: sourceContext,
+  });
+  if (!(linkedPaymentPresent || linkedRenewalPresent || linkedMemberPresent)) contextIssues.push("customer_or_job_not_linked");
   return {
     proof_id: proofId,
     proof_record_id: safeText(record.id, 120),
@@ -495,7 +503,14 @@ function safeQueueItem(record) {
     created_at: isoOrText(fields.created_at || fields["Created At"] || fields.createdTime || record.createdTime),
     session_id: safeText(fields.session_id, 180),
     member_email: normalizeEmail(fields.member_email || fields.email),
-    payment_stage: safeCode(fields.payment_stage || fields.payment_type || ""),
+    payment_stage: safeCode(fields.payment_stage || fields.payment_type || paymentIntelligence?.inferred_stage || ""),
+    payment_intelligence: paymentIntelligence,
+    inferred_label: membershipInferenceLabel(paymentIntelligence),
+    inferred_intent: safeCode(paymentIntelligence?.inferred_intent || ""),
+    inferred_package_code: safeCode(paymentIntelligence?.inferred_package_code || ""),
+    match_confidence: confidenceOrNull(paymentIntelligence?.confidence),
+    identity_state: safeCode(paymentIntelligence?.identity_state || (linkedMemberPresent ? "canonical_member_linked" : "")),
+    pending_member_profile: paymentIntelligence?.pending_member_profile === true,
     evidence_preview_url: previewUrl,
     source_context: sourceContext,
     extraction_method: extractionMethod || "not_run",
@@ -513,6 +528,7 @@ function safeQueueItem(record) {
       linked_payment_present: linkedPaymentPresent,
       linked_session_present: linkedSessionPresent,
       linked_renewal_present: linkedRenewalPresent,
+      linked_member_present: linkedMemberPresent,
     },
   };
 }
