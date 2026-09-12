@@ -28,6 +28,7 @@ jobs:
       CLOUDFLARE_ZONE_ID: "2d62396174fa2ddadbbcd0e8cf0f3367"
       WORKER_NAME: "member-dashboard-chat-worker"
       NO_COLOR: "1"
+      AI_SERVICE_SMOKE_TOKEN: ${{ secrets.AI_SERVICE_SMOKE_TOKEN }}
 
     steps:
       - name: Check out repository
@@ -259,10 +260,8 @@ jobs:
 
       - name: Smoke internal AI service binding
         id: ai_binding_smoke
-        if: steps.route_sync.outcome == 'success' && secrets.AI_SERVICE_SMOKE_TOKEN != ''
+        if: steps.route_sync.outcome == 'success' && env.AI_SERVICE_SMOKE_TOKEN != ''
         shell: bash
-        env:
-          AI_SERVICE_SMOKE_TOKEN: ${{ secrets.AI_SERVICE_SMOKE_TOKEN }}
         run: |
           response="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error \\
             -X POST \\
