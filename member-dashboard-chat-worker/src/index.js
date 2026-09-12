@@ -716,7 +716,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "talk_to_per_ai") {
-    return `สวัสดีครับ ${prefix}ผม HITO ครับ\n\nขออนุญาตตรวจสอบสถานะบัญชีผ่าน My MMD ก่อนนะครับ แล้วเปอร์จะช่วยต่อให้ตรงกับสิทธิ์ของบัญชีครับ`;
+    return `สวัสดีครับ ${prefix}ยินดีต้อนรับสู่ MMD Privé\nผม HITO ครับ\n\nขออนุญาตตรวจสอบสถานะบัญชีผ่าน My MMD ก่อนนะครับ แล้วเปอร์จะช่วยต่อให้ตรงกับสิทธิ์ของบัญชีครับ`;
   }
 
   if (intent === "privacy_request") {
