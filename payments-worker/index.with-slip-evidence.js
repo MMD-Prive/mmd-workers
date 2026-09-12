@@ -229,7 +229,7 @@ async function writeEvidencePendingReview(env, payload) {
 async function telegramSend(env, text, threadId = null) {
   const token = toStr(env.TELEGRAM_BOT_TOKEN);
   const chatId = toStr(env.TELEGRAM_CHAT_ID || "-1003546439681");
-  const thread = toStr(threadId || env.TG_THREAD_CONFIRM || "61");
+  const thread = toStr(threadId || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "21");
 
   if (!token) {
     return { ok: false, skipped: true, reason: "missing_telegram_bot_token" };
@@ -329,7 +329,7 @@ async function notifySlipEvidence(env, payload, airtableWrite) {
     airtableWrite?.record_id ? `Airtable: <code>${esc(airtableWrite.record_id)}</code>` : "",
   ].filter(Boolean).join("\n");
 
-  return telegramSend(env, text, env.TG_THREAD_CONFIRM || "61");
+  return telegramSend(env, text, env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "21");
 }
 
 function methodNotAllowed(req, env) {

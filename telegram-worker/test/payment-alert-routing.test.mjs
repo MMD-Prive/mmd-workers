@@ -1,6 +1,30 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { TG_THREADS, formatTelegramMessage } from "../lib/telegram.js";
+import { TG_THREADS, formatTelegramMessage, telegramTopics } from "../lib/telegram.js";
+
+test("topic registry keeps every MMD operations topic explicit", () => {
+  assert.deepEqual(
+    telegramTopics({}).map(({ key, thread_id }) => [key, thread_id]),
+    [
+      ["membership", 20],
+      ["payment", 21],
+      ["alerts", 9],
+      ["points", 17],
+      ["system_log", 22],
+      ["public_model", 155],
+      ["booking", 1399],
+    ],
+  );
+});
+
+test("operational flow aliases route through the central registry", () => {
+  const threads = TG_THREADS({});
+  assert.equal(threads.alert, 9);
+  assert.equal(threads.recovery, 9);
+  assert.equal(threads.system_log, 22);
+  assert.equal(threads.public_model_application, 155);
+  assert.equal(threads.booking_draft, 1399);
+});
 
 test("payment proof and verified alerts use the canonical HYPE payment topic", () => {
   const threads = TG_THREADS({ TG_THREAD_PAYMENT: "21", TG_THREAD_CONFIRM: "99" });

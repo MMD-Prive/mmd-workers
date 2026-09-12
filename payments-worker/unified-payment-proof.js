@@ -327,7 +327,7 @@ async function storeEvidence(env, file, proofId, paymentRef) {
 async function notifyTelegramFile(env, file, { proofId, paymentRef, amountThb, stage }) {
   const token = clean(env.TELEGRAM_BOT_TOKEN, 5000);
   const chatId = clean(env.TELEGRAM_CHAT_ID || "-1003546439681", 120);
-  const thread = clean(env.TG_THREAD_CONFIRM || "61", 40);
+  const thread = clean(env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "21", 40);
   if (!token || !file) return { ok: false, skipped: true };
   const form = new FormData();
   form.append("chat_id", chatId);

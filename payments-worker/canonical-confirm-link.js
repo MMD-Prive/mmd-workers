@@ -453,7 +453,7 @@ async function telegramSend(env, message) {
   const token = clean(env.TELEGRAM_BOT_TOKEN);
   if (!token) return;
   const chatId = clean(env.TELEGRAM_CHAT_ID || "-1003546439681");
-  const thread = clean(env.TG_THREAD_CONFIRM || "61");
+  const thread = clean(env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "21");
   const payload = {
     chat_id: chatId,
     text: message,
