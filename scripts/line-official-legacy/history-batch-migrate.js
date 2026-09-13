@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 const { AirtableClient } = require("./dry-run-import.js");
-const { materializeHistoricalRecord } = require("./history-materializer.js");
+const { materializeHistoricalRecordV2 } = require("./history-materializer-v2.js");
 
 const HISTORY_REVIEWS_TABLE = process.env.AIRTABLE_HISTORY_REVIEWS_TABLE_ID || "tblnpDFQMpo8AmNQv";
 const STAGING_TABLE = process.env.AIRTABLE_LINE_OFC_CLIENT_IMPORT_STAGING_TABLE_ID || "tbl1u0foFBvgFpT9G";
-const BATCH_SCHEMA = "history_batch_migration_v1";
+const BATCH_SCHEMA = "history_batch_migration_v2_service_detail";
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
 
@@ -39,8 +39,7 @@ function parseArgs(argv) {
 }
 
 function isApprovedReview(fields = {}) {
-  return selectName(fields.review_status).toLowerCase() === "approved" &&
-    selectName(fields.decision).toLowerCase() === "approve_service_history";
+  return selectName(fields.review_status).toLowerCase() === "approved" && selectName(fields.decision).toLowerCase() === "approve_service_history";
 }
 
 function classifyError(error) {
@@ -77,7 +76,7 @@ async function runHistoryBatchMigration({
   limit = DEFAULT_LIMIT,
   afterHistoryReviewId = "",
   airtable = new AirtableClient(),
-  materialize = materializeHistoricalRecord,
+  materialize = materializeHistoricalRecordV2,
 } = {}) {
   const boundedLimit = Math.min(MAX_LIMIT, Math.max(1, Math.floor(Number(limit) || DEFAULT_LIMIT)));
   const approved = await loadApprovedReviews(airtable);
@@ -123,6 +122,8 @@ async function runHistoryBatchMigration({
       auto_approval: false,
       approved_reviews_only: true,
       bounded_limit: boundedLimit,
+      service_detail_source: "approved_fields_only",
+      duplicate_sessions_for_multi_model: false,
       entitlement_write: false,
     },
   };
