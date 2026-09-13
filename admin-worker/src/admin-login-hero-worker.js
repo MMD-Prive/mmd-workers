@@ -1,4 +1,4 @@
-import worker from "./client-credit-admin-wrapper.js";
+import worker from "./client-credit-ref-wrapper.js";
 export * from "./admin-login-hero-worker-pre-model-line-link.js";
 
 /*
