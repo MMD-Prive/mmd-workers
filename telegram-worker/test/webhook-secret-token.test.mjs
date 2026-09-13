@@ -82,7 +82,7 @@ function expectedCareBackKeyboard(baseUrl = "https://www.mmdbkk.com", previewCha
       url: `${baseUrl}/profiles`,
     }, {
       text: "Apply / Renew Membership",
-      url: `${baseUrl}/pay/membership`,
+      url: `${baseUrl}/sigil/member/membership`,
     }],
     [{
       text: "Help / How It Works",
@@ -482,7 +482,9 @@ test("/telegram/preview/post remains protected by INTERNAL_API_TOKEN", async () 
   assert.equal(allowedBody.ok, true);
   assert.equal(allowedBody.dry_run, true);
   assert.deepEqual(allowedBody.reply_markup.inline_keyboard, expectedCareBackKeyboard());
-  assert.deepEqual(flattenKeyboardUrls(allowedBody.reply_markup).filter((url) => url.includes("/sigil/")), []);
+  const urls = flattenKeyboardUrls(allowedBody.reply_markup);
+  assert.deepEqual(urls.filter((url) => url.includes("/sigil/")), ["https://www.mmdbkk.com/sigil/member/membership"]);
+  assert.equal(urls.some((url) => url.includes("/pay/membership")), false);
 });
 
 test("/telegram/preview/post uses configured public and preview channel URLs", async () => {
@@ -501,7 +503,9 @@ test("/telegram/preview/post uses configured public and preview channel URLs", a
 
   assert.equal(response.status, 200);
   assert.deepEqual(body.reply_markup.inline_keyboard, expectedCareBackKeyboard("https://mmd.example", "https://t.me/examplePreview"));
-  assert.deepEqual(flattenKeyboardUrls(body.reply_markup).filter((url) => url.includes("/sigil/")), []);
+  const urls = flattenKeyboardUrls(body.reply_markup);
+  assert.deepEqual(urls.filter((url) => url.includes("/sigil/")), ["https://mmd.example/sigil/member/membership"]);
+  assert.equal(urls.some((url) => url.includes("/pay/membership")), false);
 });
 
 

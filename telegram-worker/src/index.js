@@ -226,9 +226,6 @@ function configuredJoinCleanupChats(env) {
     if (chatId) chats.set(chatId, surface);
   };
 
-  // Keep the legacy Standard Group binding while naming the two current
-  // surfaces explicitly. A duplicate ID is harmless and resolves to the
-  // more specific surface label below.
   add(env.TELEGRAM_STANDARD_GROUP_ID, "standard_group");
   add(env.TELEGRAM_MMD_CHAT_GROUP_ID, "mmd_chat");
   add(env.TELEGRAM_PREVIEW_GROUP_ID || env.TELEGRAM_PREVIEW_CHANNEL_ID, "telegram_preview");
@@ -250,11 +247,7 @@ async function deleteTelegramMessage(payload, env) {
 
   const data = await res.json().catch(() => null);
   if (!res.ok || data?.ok === false) {
-    return {
-      ok: false,
-      status: res.status,
-      error: data || null,
-    };
+    return { ok: false, status: res.status, error: data || null };
   }
 
   return { ok: true, result: data?.result ?? true };
@@ -370,7 +363,7 @@ function previewButtonMarkup(env) {
         url: publicUrl(env, "/profiles"),
       }, {
         text: "Apply / Renew Membership",
-        url: publicUrl(env, "/pay/membership"),
+        url: publicUrl(env, "/sigil/member/membership"),
       }],
       [{
         text: "Help / How It Works",

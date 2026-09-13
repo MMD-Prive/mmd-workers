@@ -7,24 +7,83 @@ import type { Env } from "./types";
 const CUSTOMER_PAGE = "/internal/admin/customer-data";
 const CUSTOMER_QUEUE = "/v1/admin/customer-data/queue";
 const CLIENT_INTELLIGENCE = "/v1/admin/clients/intelligence";
+const CANONICAL_PUBLIC_ORIGIN = "https://mmdbkk.com";
+const WORKERS_DEV_SUFFIX = ".workers.dev";
+const SAFE_MEMBERSHIP_CONTEXT_KEYS = ["plan", "package", "tier", "code", "promo", "src", "campaign", "from"];
 
 function normalizePath(value: string): string {
   const path = String(value || "/").replace(/\/{2,}/g, "/");
   return path.length > 1 ? path.replace(/\/+$/g, "") : path;
 }
 
+function workersDevCanonicalHandoff(url: URL, path: string): Response | null {
+  if (!url.hostname.endsWith(WORKERS_DEV_SUFFIX)) return null;
+
+  const directPublicPaths = new Set([
+    "/member/dashboard",
+    "/sigil/member/membership",
+    "/member/payments",
+  ]);
+  if (directPublicPaths.has(path)) {
+    const target = new URL(path, CANONICAL_PUBLIC_ORIGIN);
+    target.search = url.search;
+    target.hash = url.hash;
+    return Response.redirect(target.toString(), 308);
+  }
+
+  if (path === "/sigil/pay/renew") {
+    const target = new URL("/sigil/pay/renewal", CANONICAL_PUBLIC_ORIGIN);
+    target.search = url.search;
+    target.hash = url.hash;
+    return Response.redirect(target.toString(), 308);
+  }
+
+  const token = String(url.searchParams.get("t") || "").trim();
+  if (path === "/sigil/pay/membership" || path === "/pay/membership") {
+    if (token) {
+      const target = new URL("/sigil/pay", CANONICAL_PUBLIC_ORIGIN);
+      target.searchParams.set("t", token);
+      return Response.redirect(target.toString(), 308);
+    }
+    const target = new URL("/sigil/member/membership", CANONICAL_PUBLIC_ORIGIN);
+    for (const key of SAFE_MEMBERSHIP_CONTEXT_KEYS) {
+      const value = url.searchParams.get(key);
+      if (value) target.searchParams.set(key, value);
+    }
+    target.hash = url.hash;
+    return Response.redirect(target.toString(), 308);
+  }
+
+  if (path === "/sigil/pay/payment") {
+    if (token) {
+      const target = new URL("/sigil/pay", CANONICAL_PUBLIC_ORIGIN);
+      target.searchParams.set("t", token);
+      return Response.redirect(target.toString(), 308);
+    }
+    return Response.redirect(`${CANONICAL_PUBLIC_ORIGIN}/member/payments`, 308);
+  }
+
+  return null;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
+    const method = request.method.toUpperCase();
+    const publicHandoff = method === "GET" || method === "HEAD"
+      ? workersDevCanonicalHandoff(url, path)
+      : null;
+    if (publicHandoff) return publicHandoff;
+
     const response = await canonicalWorker.fetch(request, env);
-    if (request.method.toUpperCase() === "GET" && path === CUSTOMER_PAGE) {
+    if (method === "GET" && path === CUSTOMER_PAGE) {
       return decorateCustomer360Page(response);
     }
-    if (request.method.toUpperCase() === "GET" && path === CUSTOMER_QUEUE) {
+    if (method === "GET" && path === CUSTOMER_QUEUE) {
       return redactCustomerQueueResponse(response);
     }
-    if (request.method.toUpperCase() === "GET" && path === CLIENT_INTELLIGENCE) {
+    if (method === "GET" && path === CLIENT_INTELLIGENCE) {
       return augmentClientIntelligenceWithIdentityAlignment(
         response,
         env,
