@@ -19,6 +19,7 @@
     "MMS_THERAPIST_LINE_CHANNEL_ID": "2011425652",
     "MMS_THERAPIST_LIFF_ID": "2011425652-YqK1F6y8",
     "MMS_THERAPIST_LOGIN_URL": "https://www.mmdbkk.com/male-massage/therapists/login",
+    "MMS_TELEGRAM_APPLICATIONS_THREAD_ID": "155",
     "MMS_DISPATCH_DEFAULT_TTL_SECONDS": "300",
     "MMS_DISPATCH_DEFAULT_MAX_OFFERS": "5",
     "ALLOWED_ORIGINS": "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io",
