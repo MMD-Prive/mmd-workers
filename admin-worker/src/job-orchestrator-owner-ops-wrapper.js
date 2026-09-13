@@ -11,12 +11,21 @@ import {
 const DASHBOARD_PATH = "/v1/admin/dashboard";
 const AUTH_ME_PATH = "/v1/admin/auth/me";
 const OWNER_ROLES = new Set(["owner", "admin", "super_admin", "superadmin"]);
+const MODEL_SESSION_RUNTIME_PATHS = new Set(["/v1/model/session/current", "/v1/model/session/action"]);
 
 function clean(value, max = 500) {
   return String(value ?? "").trim().slice(0, max);
 }
 function json(payload, status = 200) {
   return Response.json(payload, { status, headers: { "cache-control": "no-store, private", "content-type": "application/json; charset=utf-8" } });
+}
+function lifecycleEnv(env = {}, path = "") {
+  if (!MODEL_SESSION_RUNTIME_PATHS.has(path)) return env;
+  return {
+    ...env,
+    AT_SESSIONS__STATE: clean(env.AT_SESSIONS__CANONICAL_STATE, 120) || "model_session_state",
+    AT_SESSIONS__STATE_UPDATED_AT: clean(env.AT_SESSIONS__STATE_UPDATED_AT, 120) || "model_session_state_updated_at",
+  };
 }
 async function readOwnerActor(request, env, ctx) {
   const cookie = clean(request.headers.get("cookie"), 12000);
@@ -75,10 +84,10 @@ export default {
       }
     }
 
-    const response = await delegatedWorker.fetch(request, env, ctx);
+    const response = await delegatedWorker.fetch(request, lifecycleEnv(env, url.pathname), ctx);
     if (url.pathname === DASHBOARD_PATH && method === "GET") return augmentDashboard(response, env);
     return response;
   },
 };
 
-export { OWNER_JOB_ACTIONS_PATH };
+export { OWNER_JOB_ACTIONS_PATH, lifecycleEnv };
