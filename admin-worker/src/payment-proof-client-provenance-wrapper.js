@@ -114,6 +114,7 @@ export function applyCanonicalClientToReviewItem(item, context = {}) {
     ...item,
     client_record_id: context.clientRecordId,
     client_name: context.clientName || item.client_name || null,
+    customer_name: context.clientName || item.customer_name || item.payer_name || null,
     identity_state: item.identity_state || "canonical_client_linked",
     context_issues: issues,
     review_lane: issues.length ? "needs_enrichment" : "owner_review",
