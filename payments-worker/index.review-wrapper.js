@@ -34,6 +34,7 @@ import {
   isUnifiedSlipEvidenceRequest,
 } from "./unified-payment-proof.js";
 import { reconcilePremiumReviewedMembershipTerm } from "./premium-membership-term.js";
+import { reconcileReviewedMembershipEntitlement } from "./reviewed-membership-write-through.js";
 
 export { PointsPhase1Coordinator };
 
@@ -74,6 +75,9 @@ export default {
     }
 
     if (isReviewedProofRequest(path, method)) {
+      // Keep one untouched clone for post-verification membership reconciliation.
+      // handleReviewedProof consumes the original body.
+      const reconcileRequest = request.clone();
       const reviewResponse = await handleReviewedProof(request, env, ctx, async (body) => {
         if (!String(env.INTERNAL_TOKEN || "").trim()) {
           return json({ ok: false, error: "payments_internal_token_not_ready", authority: "payments-worker" }, 503);
@@ -108,7 +112,8 @@ export default {
           body: JSON.stringify(body),
         }), env, ctx);
       });
-      return reconcilePremiumReviewedMembershipTerm(request, reviewResponse, env);
+      const termResponse = await reconcilePremiumReviewedMembershipTerm(reconcileRequest.clone(), reviewResponse, env);
+      return reconcileReviewedMembershipEntitlement(reconcileRequest, termResponse, env);
     }
 
     return phase1Worker.fetch(request, env, ctx);

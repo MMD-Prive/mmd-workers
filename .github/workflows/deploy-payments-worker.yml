@@ -42,11 +42,13 @@ jobs:
           node --check payments-worker/confirmation-ack.js
           node --check payments-worker/confirmation-details.js
           node --check payments-worker/payment-instructions-v1.js
+          node --experimental-default-type=module --check payments-worker/reviewed-membership-write-through.js
           node --test payments-worker/canonical-confirm-link.test.mjs
           node --test payments-worker/confirmation-ack.test.mjs
           node --test payments-worker/confirmation-details.test.mjs
           node --test payments-worker/payment-instructions-v1.test.mjs
           node --test payments-worker/session-finance-write.test.mjs
+          node --experimental-global-webcrypto --experimental-default-type=module --test payments-worker/reviewed-membership-write-through.test.mjs
           node payments-worker/payment-confirmation-token.test.mjs
           npx --yes wrangler@4 deploy --dry-run --keep-vars --config payments-worker/wrangler.merged.toml
 

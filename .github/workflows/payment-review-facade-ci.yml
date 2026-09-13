@@ -14,7 +14,10 @@ on:
       - "payments-worker/reviewed-proof-line-recovery.test.mjs"
       - "payments-worker/reviewed-proof-canonical-money-truth.js"
       - "payments-worker/reviewed-proof-canonical-money-truth.test.mjs"
+      - "payments-worker/reviewed-membership-write-through.js"
+      - "payments-worker/reviewed-membership-write-through.test.mjs"
       - "payments-worker/wrangler.merged.toml"
+      - "webflow/internal/admin/payments/**"
       - ".github/workflows/deploy-admin-worker.yml"
       - ".github/workflows/payment-review-facade-ci.yml"
   workflow_dispatch:
@@ -40,6 +43,7 @@ jobs:
           node --check payments-worker/index.review-wrapper.js
           node --check payments-worker/reviewed-proof.js
           node --check payments-worker/reviewed-proof-canonical-money-truth.js
+          node --experimental-default-type=module --check payments-worker/reviewed-membership-write-through.js
 
       - name: Newest payment proof queue contract
         run: |
@@ -61,6 +65,11 @@ jobs:
           set -euo pipefail
           node --test payments-worker/reviewed-proof-canonical-money-truth.test.mjs
 
+      - name: Canonical membership write-through contract
+        run: |
+          set -euo pipefail
+          node --experimental-global-webcrypto --experimental-default-type=module --test payments-worker/reviewed-membership-write-through.test.mjs
+
       - name: Browser facade guardrails
         run: |
           set -euo pipefail
@@ -79,6 +88,18 @@ jobs:
           grep -F 'browser_can_mark_paid: false' admin-worker/src/payment-review-line-recovery.js
           grep -F 'browser_can_mutate_entitlement: false' admin-worker/src/payment-review-line-recovery.js
 
+      - name: Membership receipt contract
+        run: |
+          set -euo pipefail
+          grep -F 'function safeMembershipWriteThrough(value)' admin-worker/src/payment-review-runtime.js
+          grep -F 'membership_write_through: safeMembershipWriteThrough(payload.membership_write_through)' admin-worker/src/payment-review-runtime.js
+          grep -F 'membership_write_through: safeMembershipWriteThrough(after.membership_write_through)' admin-worker/src/payment-review-runtime.js
+          grep -F 'manual_membership_review_required: payload.manual_membership_review_required === true' admin-worker/src/payment-review-runtime.js
+          grep -F 'payment_stage: input.payment_stage || null' admin-worker/src/payment-review-runtime.js
+          grep -F 'money-control-v4-entitlement-receipt-20260913' webflow/internal/admin/payments/money-control-v3.html
+          grep -F 'Membership Review' webflow/internal/admin/payments/money-control-v3.html
+          grep -F "notice='ยืนยันเงินแล้ว · '+actionLabel" webflow/internal/admin/payments/money-control-v3.html
+
       - name: Payment Review fail-closed hardening
         run: |
           set -euo pipefail
@@ -91,7 +112,10 @@ jobs:
           grep -F 'context_source: "liff_renewal_recovery"' admin-worker/src/payment-review-runtime.js
           grep -F 'manual_recovery_requires_owner_admin' admin-worker/src/payment-review-runtime.js
           grep -F 'canonical_member_context_ambiguous' admin-worker/src/payment-review-runtime.js
-          grep -F 'const RENEWAL_PRICE = Object.freeze({ standard: 1000, premium: 2500 });' admin-worker/src/payment-review-line-recovery.js
+          grep -F 'raw === "mmd_member" || raw === "member_690" || raw === "membership" || raw === "public_member"' admin-worker/src/payment-review-runtime.js
+          grep -F 'raw === "elite" || raw === "elite_membership"' admin-worker/src/payment-review-runtime.js
+          grep -F 'raw === "red_card" || raw === "redcard"' admin-worker/src/payment-review-runtime.js
+          grep -F 'const RENEWAL_PRICES = Object.freeze({ standard: new Set([499, 799, 1000]), premium: new Set([999, 1999, 2500]) });' admin-worker/src/payment-review-line-recovery.js
           grep -F 'context_source: "liff_renewal_recovery"' admin-worker/src/payment-review-line-recovery.js
           if grep -F 'maxRecords: 2 }).catch(() => [])' admin-worker/src/payment-review-runtime.js; then
             echo 'audit idempotency lookup must fail closed; swallowed Airtable error found' >&2
@@ -111,6 +135,8 @@ jobs:
           grep -F 'materializeRecoveredMembership' payments-worker/reviewed-proof.js
           grep -F 'downstream_access_reconcile_required' payments-worker/reviewed-proof.js
           grep -F 'isEmailLessLineRenewalMoneyTruth' payments-worker/index.review-wrapper.js
+          grep -F 'reconcileReviewedMembershipEntitlement' payments-worker/index.review-wrapper.js
+          grep -F 'my_mmd_entitlement_resolver_v1' payments-worker/reviewed-membership-write-through.js
           grep -F 'Payment Reference' payments-worker/reviewed-proof-canonical-money-truth.js
           if grep -F 'AUTH_SERVICE_ADMIN_TO_PAYMENTS' webflow/internal/admin/payments 2>/dev/null; then
             echo 'service secret reference found in Webflow payment assets' >&2
