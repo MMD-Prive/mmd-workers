@@ -141,4 +141,8 @@ jobs:
               echo "MMD MODEL link route missed admin-worker: $url" >&2
               exit 1
             fi
+            if [ "$code" = "303" ] && ! grep -Fq 'next=%2Finternal%2Fadmin%2Fmodel-link' "$headers"; then
+              echo "MMD MODEL link login redirect must restore to canonical /internal/admin/model-link: $url" >&2
+              exit 1
+            fi
           done

@@ -1,6 +1,11 @@
 import workerWithSlipEvidence from "./index.with-slip-evidence.js";
 import { awardBasePointsPhase1 } from "./points-phase1.js";
-import { CONFIRM_ACK_PATH, handleConfirmationAck } from "./confirmation-ack.js";
+import {
+  CONFIRM_ACK_PATH,
+  CONFIRM_CONTEXT_PATH,
+  handleConfirmationAck,
+  handleConfirmationContext,
+} from "./confirmation-ack.js";
 import { CONFIRM_DETAILS_PATH, handleConfirmationDetails } from "./confirmation-details.js";
 export { PointsPhase1Coordinator } from "./points-phase1.js";
 
@@ -22,6 +27,9 @@ export default {
 
     if (path === CONFIRM_ACK_PATH && (method === "POST" || method === "OPTIONS")) {
       return handleConfirmationAck(request, env);
+    }
+    if (path === CONFIRM_CONTEXT_PATH && (method === "POST" || method === "OPTIONS")) {
+      return handleConfirmationContext(request, env);
     }
 
     if (path === HISTORICAL_REVIEW_PATH) {

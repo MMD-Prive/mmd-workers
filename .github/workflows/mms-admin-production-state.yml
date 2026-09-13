@@ -217,3 +217,73 @@ jobs:
             process.exit(1);
           });
           NODE
+
+      - name: Issue Whisp signed confirmation links once
+        if: >-
+          github.event_name == 'workflow_run' &&
+          contains(github.event.workflow_run.head_commit.message, '[issue-whisp-confirm-links]')
+        shell: bash
+        env:
+          TARGET_SESSION_ID: sess_20260917_ems22_whisp_1630
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          (async () => {
+            const origin = process.env.ORIGIN;
+            const credential = String(process.env.ADMIN_SMOKE_CREDENTIAL || '').trim();
+            const sessionId = process.env.TARGET_SESSION_ID;
+            const loginBody = new URLSearchParams({
+              action: 'owner_login',
+              credential,
+              next: '/internal/admin/control-room',
+            });
+            const login = await fetch(`${origin}/internal/admin/login/session`, {
+              method: 'POST',
+              headers: {
+                Origin: origin,
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-MMD-Login-Fetch': '1',
+              },
+              body: loginBody.toString(),
+              redirect: 'manual',
+            });
+            if (login.status !== 200) throw new Error(`owner login failed: ${login.status}`);
+            const setCookie = login.headers.get('set-cookie') || '';
+            const cookiePair = setCookie.split(';', 1)[0];
+            if (!/^mmd_admin_gate_v1=/.test(cookiePair)) throw new Error('owner session cookie missing');
+
+            const response = await fetch(`${origin}/v1/admin/payment-issuer-diagnostic`, {
+              method: 'POST',
+              headers: {
+                Origin: origin,
+                Cookie: cookiePair,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                mode: 'issue_existing_session',
+                session_id: sessionId,
+                payment_type: 'deposit',
+                deposit_percent: 30,
+              }),
+              redirect: 'manual',
+            });
+            const payload = await response.json().catch(() => null);
+            if (response.status !== 200 || payload?.ok !== true || !['issued', 'existing_links'].includes(payload?.stage)) {
+              throw new Error(`issuer failed: ${JSON.stringify({ status: response.status, stage: payload?.stage || null, error: payload?.error || null })}`);
+            }
+            if (!payload.customer_confirmation_url_present || !payload.model_confirmation_url_present) {
+              throw new Error('issuer did not confirm both URL writes');
+            }
+            console.log(JSON.stringify({
+              ok: true,
+              stage: payload.stage,
+              session_id: payload.session_id,
+              payment_ref: payload.payment_ref || null,
+              customer_confirmation_url_present: true,
+              model_confirmation_url_present: true,
+            }));
+          })().catch((error) => {
+            console.error(error && error.stack ? error.stack : error);
+            process.exit(1);
+          });
+          NODE

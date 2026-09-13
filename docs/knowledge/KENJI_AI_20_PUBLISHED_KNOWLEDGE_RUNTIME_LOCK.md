@@ -43,6 +43,9 @@ The following cards are treated as the current active card set for Kenji AI 2.0:
 - `/member/payments` — generic payment list/status/navigation handoff when no signed canonical pay URL is available.
 - `/confirm/payment-proof` — legacy/manual no-ref evidence compatibility only; not the default new-payment CTA and must not create a replacement `payment_ref`.
 - `/sigil/member/membership` — canonical Membership Intake / Reviewed Access entry for package selection/start/renew/upgrade.
+- `/my-mmd/history` — verified member history and the only generic handoff to a backend-issued Booking/Aftercare action; Kenji must not mint a signed Session URL.
+- `/male-massage/home` — canonical public MMS Wellness overview.
+- `/male-massage/therapists/relax-spa` — canonical public Partner Venue information; navigation does not confirm venue availability.
 - `/sigil/membership` — Renewal / Access Conditions only; not checkout.
 - `/promotion/6-years-care-back` — CARE BACK 2026 canonical customer route; login/identity alone never issues coupon or Points.
 - `/v1/internal/kenji/knowledge/published` — published cards runtime source.

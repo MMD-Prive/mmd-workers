@@ -7,6 +7,7 @@ const WEBHOOK_URL = "https://telegram-worker.mmd.test/telegram/webhook";
 const INTERNAL_SEND_URL = "https://telegram-worker.mmd.test/telegram/internal/send";
 const COMPLAINT_URL = "https://telegram-worker.mmd.test/telegram/internal/complaint";
 const PREVIEW_POST_URL = "https://telegram-worker.mmd.test/telegram/preview/post";
+const TOPIC_SMOKE_URL = "https://telegram-worker.mmd.test/telegram/internal/topics/smoke";
 
 function env(overrides = {}) {
   return {
@@ -176,6 +177,83 @@ test("/telegram/internal/send fails closed when no internal credentials are conf
   assert.equal((await response.json()).error, "internal_token_required");
 });
 
+test("health publishes the canonical MMD topic registry", async () => {
+  const response = await worker.fetch(new Request("https://telegram-worker.mmd.test/health"), env());
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.telegram_topics.map(({ key, thread_id }) => [key, thread_id]), [
+    ["booking", 1399],
+    ["membership", 20],
+    ["points", 17],
+    ["payment", 22],
+    ["alerts", 9],
+    ["public_model", 155],
+    ["himai_orders", 157],
+    ["himai_payments", 158],
+    ["himai_alerts", 159],
+    ["mmd_shop_orders", 160],
+    ["mmd_shop_payments", 161],
+    ["mmd_shop_alerts", 162],
+    ["legacy_archive", 134],
+    ["rules_model", 39],
+    ["rules_customer", 29],
+  ]);
+});
+
+test("topic smoke is owner-internal only and requires explicit confirmation", async () => {
+  const missingAuth = await worker.fetch(new Request(TOPIC_SMOKE_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ confirm: "SEND_REDACTED_TOPIC_SMOKE" }),
+  }), env());
+  assert.equal(missingAuth.status, 403);
+
+  const missingConfirmation = await worker.fetch(new Request(TOPIC_SMOKE_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Internal-Token": "internal-secret" },
+    body: "{}",
+  }), env());
+  assert.equal(missingConfirmation.status, 400);
+  assert.equal((await missingConfirmation.json()).error, "topic_smoke_confirmation_required");
+});
+
+test("topic smoke sends one silent redacted check to every canonical topic", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const telegramBodies = [];
+  globalThis.fetch = async (_url, init = {}) => {
+    const requestBody = JSON.parse(String(init.body || "{}"));
+    telegramBodies.push(requestBody);
+    return Response.json({
+      ok: true,
+      result: { message_id: 100 + telegramBodies.length, message_thread_id: requestBody.message_thread_id },
+    });
+  };
+
+  try {
+    const response = await worker.fetch(new Request(TOPIC_SMOKE_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-Internal-Token": "internal-secret" },
+      body: JSON.stringify({ confirm: "SEND_REDACTED_TOPIC_SMOKE", disable_notification: true }),
+    }), env({ TELEGRAM_CHAT_ID: "-1003546439681" }));
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.tested, 15);
+    assert.equal(body.passed, 15);
+    assert.equal(body.failed, 0);
+    assert.deepEqual(
+      telegramBodies.map((item) => item.message_thread_id),
+      [1399, 20, 17, 22, 9, 155, 157, 158, 159, 160, 161, 162, 134, 39, 29],
+    );
+    assert.equal(telegramBodies.every((item) => item.disable_notification === true), true);
+    assert.equal(telegramBodies.every((item) => item.text.includes("no customer data")), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("/telegram/internal/send rejects an invalid internal token", async () => {
   const response = await worker.fetch(internalSendRequest(bookingPayload(), {
     authorization: "Bearer wrong-secret",
@@ -279,6 +357,31 @@ test("dedicated Booking auth does not unlock complaint route", async () => {
 
   assert.equal(response.status, 403);
   assert.equal(body.error, "internal_token_required");
+});
+
+test("complaint alert is connected to the canonical Alerts topic", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let telegramBody = null;
+  globalThis.fetch = async (_url, init = {}) => {
+    telegramBody = JSON.parse(String(init.body || "{}"));
+    return Response.json({ ok: true, result: { message_id: 91, message_thread_id: 9 } });
+  };
+
+  try {
+    const response = await worker.fetch(new Request(COMPLAINT_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-Internal-Token": "internal-secret" },
+      body: JSON.stringify({ complaint_id: "recovery_test", statement: "Synthetic only" }),
+    }), env({ TELEGRAM_CHAT_ID: "-1003546439681" }));
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(telegramBody.message_thread_id, 9);
+    assert.match(telegramBody.text, /SIGIL Recovery Report/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("dedicated Booking auth does not unlock preview route", async () => {

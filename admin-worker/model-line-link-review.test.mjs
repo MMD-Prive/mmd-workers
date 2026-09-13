@@ -12,6 +12,8 @@ import {
   isModelLineLinkPage,
 } from "./src/model-line-link-review.js";
 import {
+  MODEL_LINK_AIRTABLE_TIMEOUT_MS,
+  MODEL_LINK_QUEUE_API_TIMEOUT_MS,
   renderModelLineLinkPageWithAvatar,
   safeClaimSummaryWithAvatar,
   safePictureUrl,
@@ -43,9 +45,9 @@ test("legacy Kenji query view remains compatibility-only", () => {
   assert.equal(isModelLineLinkPage(new Request("https://mmdbkk.com/internal/admin/kenji?view=model-link", { method: "POST" })), false);
 });
 
-test("unauthenticated owner login uses queryless Kenji hash bridge on both production hosts", () => {
-  const expectedApex = "https://mmdbkk.com/internal/admin/login?next=%2Finternal%2Fadmin%2Fkenji%23model-link";
-  const expectedWww = "https://www.mmdbkk.com/internal/admin/login?next=%2Finternal%2Fadmin%2Fkenji%23model-link";
+test("unauthenticated owner login restores to the canonical model-link route on both production hosts", () => {
+  const expectedApex = "https://mmdbkk.com/internal/admin/login?next=%2Finternal%2Fadmin%2Fmodel-link";
+  const expectedWww = "https://www.mmdbkk.com/internal/admin/login?next=%2Finternal%2Fadmin%2Fmodel-link";
   assert.equal(modelLineLinkLoginLocation(new Request("https://mmdbkk.com/internal/admin/model-link")), expectedApex);
   assert.equal(modelLineLinkLoginLocation(new Request("https://www.mmdbkk.com/internal/admin/model-link")), expectedWww);
   assert.equal(modelLineLinkLoginLocation(new Request("https://mmdbkk.com/internal/admin/kenji?view=model-link")), expectedApex);
@@ -111,6 +113,21 @@ test("admin picture sanitizer drops invalid or overlong URLs", () => {
   assert.equal(safePictureUrl("https://example.com/a.jpg"), "https://example.com/a.jpg");
   assert.equal(safePictureUrl("http://example.com/a.jpg"), "");
   assert.equal(safePictureUrl(`https://example.com/${"a".repeat(2050)}`), "");
+});
+
+test("owner review queue uses bounded frontend and backend timeouts", () => {
+  assert.equal(MODEL_LINK_QUEUE_API_TIMEOUT_MS, 12000);
+  assert.equal(MODEL_LINK_AIRTABLE_TIMEOUT_MS, 9000);
+});
+
+test("owner review HTML fails visibly with retry instead of staying on loading", async () => {
+  const response = renderModelLineLinkPageWithAvatar();
+  const html = await response.text();
+  assert.match(html, /Request timeout/);
+  assert.match(html, /โหลดคิวไม่ได้/);
+  assert.match(html, /data-action="reload-claims"/);
+  assert.match(html, /Private Model Link Queue/);
+  assert.match(html, /Create Job/);
 });
 
 test("owner review HTML provides lazy avatar and initials fallback without changing explicit LINK", async () => {

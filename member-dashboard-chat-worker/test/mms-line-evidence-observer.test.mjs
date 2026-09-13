@@ -10,22 +10,12 @@ const {
 } = await import("../src/mms-line-evidence-observer.mjs");
 
 async function sign(body, secret) {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return Buffer.from(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body))).toString("base64");
 }
 
 function webhookRequest(body, signature) {
-  return new Request("https://mmdbkk.com/webhooks/line/mms", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-line-signature": signature },
-    body,
-  });
+  return new Request("https://mmdbkk.com/webhooks/line/mms", { method: "POST", headers: { "content-type": "application/json", "x-line-signature": signature }, body });
 }
 
 function imageEvent(overrides = {}) {
@@ -52,6 +42,21 @@ function fileEvent(overrides = {}) {
   };
 }
 
+function slipExtractorMock() {
+  return {
+    async fetch(request) {
+      const path = new URL(request.url).pathname;
+      if (path === "/v1/extract/qr") {
+        return Response.json({ result: { payment_ref: "", amount_thb: null, paid_at: "", payer_name: "", sender_bank: "", receiver_bank: "", provider: "", confidence_score: 0 } });
+      }
+      if (path === "/v1/extract/ocr") {
+        return Response.json({ result: { payment_ref: "MMS-TXN-001", amount_thb: 1000, paid_at: "2026-09-13T12:00:00+07:00", payer_name: "MMS Customer", sender_bank: "kbank", receiver_bank: "bay", provider: "bank_transfer", confidence_score: 0.96 } });
+      }
+      return Response.json({ error: "not_found" }, { status: 404 });
+    },
+  };
+}
+
 function baseEnv(r2) {
   return {
     MMS_LINE_CHANNEL_SECRET: "mms-secret",
@@ -63,6 +68,7 @@ function baseEnv(r2) {
     AIRTABLE_TABLE_PAYMENT_PROOFS_ID: "tblPaymentProofs",
     AIRTABLE_TABLE_MODEL_HISTORY_IMPORTS_ID: "tblModelHistory",
     LINE_SLIP_EVIDENCE: r2,
+    SLIP_EXTRACTOR: slipExtractorMock(),
   };
 }
 
@@ -70,9 +76,10 @@ test("MMS observer maps the approved group into the canonical MMD group-slip env
   const mapped = await MMS_LINE_EVIDENCE_INTERNALS.buildMmsEvidenceEnv(baseEnv({}));
   assert.equal(mapped.LINE_CHANNEL_ACCESS_TOKEN, "mms-access-token");
   assert.match(mapped.LINE_PAYMENT_PROOF_GROUP_HASHES, /^[a-f0-9]{64}$/);
+  assert.equal(typeof mapped.SLIP_EXTRACTOR.fetch, "function");
 });
 
-test("MMS group image uses the same pending Payment Proof evidence core and dedupes redelivery", async () => {
+test("MMS group image uses the shared visual payment gate and dedupes redelivery", async () => {
   const originalFetch = globalThis.fetch;
   let proofCreated = false;
   let proofPost = null;
@@ -84,12 +91,9 @@ test("MMS group image uses the same pending Payment Proof evidence core and dedu
 
   globalThis.fetch = async (input, init = {}) => {
     const url = String(input);
-    const method = String(init?.method || "GET").toUpperCase();
+    const method = String(init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
     if (url.includes("api-data.line.me/v2/bot/message/mms-image-001/content")) {
-      return new Response(new Uint8Array([1, 2, 3, 4]), {
-        status: 200,
-        headers: { "content-type": "image/png", "content-length": "4" },
-      });
+      return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200, headers: { "content-type": "image/png", "content-length": "4" } });
     }
     if (url.includes("api.airtable.com") && url.includes("tblPaymentProofs") && method === "GET") {
       return Response.json({ records: proofCreated ? [{ id: "recProofExisting", fields: {} }] : [] });
@@ -99,6 +103,7 @@ test("MMS group image uses the same pending Payment Proof evidence core and dedu
       proofCreated = true;
       return Response.json({ id: "recProofCreated", fields: proofPost.fields || {} });
     }
+    if (url.includes("api.airtable.com") && method === "GET") return Response.json({ records: [] });
     throw new Error(`unexpected_fetch:${method}:${url}`);
   };
 
@@ -111,17 +116,19 @@ test("MMS group image uses the same pending Payment Proof evidence core and dedu
     assert.equal(r2Puts, 1);
     assert.equal(proofPost.fields.status, "pending");
     assert.equal(proofPost.fields.channel, "line_ofc");
+    assert.equal(proofPost.fields.payment_ref, "MMS-TXN-001");
+    assert.equal(proofPost.fields.amount_thb, 1000);
     const note = JSON.parse(proofPost.fields.note);
-    assert.equal(note.schema, "line_group_payment_evidence_v1");
+    assert.equal(note.schema, "line_payment_evidence_v3");
+    assert.equal(note.image_classification.image_class, "bank_transfer_slip");
     assert.equal(note.payment_truth, "unverified");
+    assert.equal(note.official_verification_required, true);
     assert.equal(note.may_mark_paid, false);
     assert.equal(note.may_award_points, false);
     assert.equal(note.may_extend_membership, false);
     assert.equal(note.may_confirm_session, false);
 
-    const redeliveredBody = JSON.stringify({
-      events: [imageEvent({ deliveryContext: { isRedelivery: true } })],
-    });
+    const redeliveredBody = JSON.stringify({ events: [imageEvent({ deliveryContext: { isRedelivery: true } })] });
     const redeliveredSignature = await sign(redeliveredBody, "mms-secret");
     const second = await observeMmsLineEvidence(webhookRequest(redeliveredBody, redeliveredSignature), baseEnv(r2));
     assert.equal(second.images_captured, 1);
@@ -136,23 +143,15 @@ test("MMS LINE file evidence is private R2 plus Model History metadata only", as
   const originalFetch = globalThis.fetch;
   let historyPost = null;
   let r2Put = null;
-  const r2 = {
-    async head() { return null; },
-    async put(key, body, options) { r2Put = { key, body, options }; },
-  };
+  const r2 = { async head() { return null; }, async put(key, body, options) { r2Put = { key, body, options }; } };
 
   globalThis.fetch = async (input, init = {}) => {
     const url = String(input);
     const method = String(init?.method || "GET").toUpperCase();
     if (url.includes("api-data.line.me/v2/bot/message/mms-file-001/content")) {
-      return new Response(new Uint8Array([37, 80, 68, 70]), {
-        status: 200,
-        headers: { "content-type": "application/pdf", "content-length": "4" },
-      });
+      return new Response(new Uint8Array([37, 80, 68, 70]), { status: 200, headers: { "content-type": "application/pdf", "content-length": "4" } });
     }
-    if (url.includes("api.airtable.com") && url.includes("tblModelHistory") && method === "GET") {
-      return Response.json({ records: [] });
-    }
+    if (url.includes("api.airtable.com") && url.includes("tblModelHistory") && method === "GET") return Response.json({ records: [] });
     if (url.includes("api.airtable.com") && url.includes("tblModelHistory") && method === "POST") {
       historyPost = JSON.parse(String(init.body || "{}"));
       return Response.json({ id: "recHistory", fields: historyPost.fields || {} });

@@ -8,6 +8,10 @@ on:
       - "admin-worker/create-session-client-lineage-runtime.test.mjs"
       - "admin-worker/create-session-remembered-name-priority.test.mjs"
       - "admin-worker/src/admin-login-hero-worker.js"
+      - "admin-worker/src/dashboard-worker.js"
+      - "admin-worker/src/payment-review-runtime.js"
+      - "admin-worker/src/historical-slip-backfill-runtime.js"
+      - "admin-worker/dashboard-canonical-payment-counts.test.mjs"
       - ".github/workflows/control-room-dashboard-ingress-ci.yml"
       - ".github/workflows/sync-control-room-dashboard-ingress.yml"
   workflow_dispatch:
@@ -34,6 +38,17 @@ jobs:
         run: |
           set -euo pipefail
           npm test --prefix immigrate-worker
+
+      - name: Verify canonical dashboard payment counts
+        run: |
+          set -euo pipefail
+          node --check admin-worker/src/dashboard-worker.js
+          node --experimental-global-webcrypto --test admin-worker/dashboard-canonical-payment-counts.test.mjs
+          grep -F 'loadCanonicalPaymentReviewQueue(env)' admin-worker/src/dashboard-worker.js
+          grep -F 'loadCanonicalHistoricalQueue(env)' admin-worker/src/dashboard-worker.js
+          grep -F 'payment_review: paymentQueue.length' admin-worker/src/dashboard-worker.js
+          grep -F 'historical_recovery: historicalPending.length' admin-worker/src/dashboard-worker.js
+          grep -F 'href: "/internal/admin/payments/historical-backfill"' admin-worker/src/dashboard-worker.js
 
       - name: Verify Control Room dashboard entrypoint and routes
         run: |

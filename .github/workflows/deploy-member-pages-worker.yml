@@ -132,8 +132,9 @@ jobs:
           npm run test:member-pages-liff
           npm run check:member-pages-wrangler
 
-      - name: Validate Cloudflare deployment
-        run: npx --yes wrangler@4 deploy --env="" --dry-run --keep-vars --config member-pages-worker/wrangler.toml
+      - name: Validate Cloudflare version upload
+        working-directory: member-pages-worker
+        run: npx --yes wrangler@4 versions upload --dry-run --keep-vars
 
       - name: Provision Airtable API secret
         shell: bash
@@ -142,8 +143,43 @@ jobs:
           set +x
           printf '%s' "$AIRTABLE_API_KEY" | npx --yes wrangler@4 secret put AIRTABLE_API_KEY --env="" --config member-pages-worker/wrangler.toml
 
-      - name: Deploy member-pages-worker
-        run: npx --yes wrangler@4 deploy --env="" --keep-vars --config member-pages-worker/wrangler.toml
+      - name: Upload member-pages-worker version
+        id: upload
+        shell: bash
+        working-directory: member-pages-worker
+        run: |
+          set -euo pipefail
+          tag="gha-${GITHUB_SHA:0:12}"
+          echo "MEMBER_PAGES_WORKER_VERSION_TAG=${tag}" >> "$GITHUB_ENV"
+          npx --yes wrangler@4 versions upload \
+            --keep-vars \
+            --tag "$tag" \
+            --message "GitHub Actions ${GITHUB_SHA}" \
+            2>&1 | tee "$RUNNER_TEMP/member-pages-worker-upload.log"
+
+      - name: Resolve uploaded version ID
+        id: resolve_version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/member-pages-worker-upload.log" | tail -n 1)"
+          if [ -z "$version_id" ]; then
+            echo "Unable to parse Worker Version ID from upload output" >&2
+            cat "$RUNNER_TEMP/member-pages-worker-upload.log" >&2
+            exit 2
+          fi
+          echo "MEMBER_PAGES_WORKER_VERSION_ID=${version_id}" >> "$GITHUB_ENV"
+          echo "Resolved version ${version_id}"
+
+      - name: Deploy uploaded member-pages-worker version
+        id: deploy
+        shell: bash
+        working-directory: member-pages-worker
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          npx --yes wrangler@4 versions deploy "${MEMBER_PAGES_WORKER_VERSION_ID}@100%" -y \
+            2>&1 | tee "$RUNNER_TEMP/member-pages-worker-deploy.log"
 
       - name: Smoke production public Wish endpoint
         shell: bash
@@ -204,7 +240,11 @@ jobs:
           {
             "worker": "member-pages-worker",
             "status": "deployed",
+            "deployment_method": "github_actions_versioned",
             "source_sha": "${GITHUB_SHA}",
+            "version_id": "${MEMBER_PAGES_WORKER_VERSION_ID}",
+            "version_tag": "${MEMBER_PAGES_WORKER_VERSION_TAG}",
+            "traffic_percent": 100,
             "workflow_run_id": "${GITHUB_RUN_ID}",
             "deployed_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }

@@ -19,11 +19,29 @@ function healthyRuntimeResponse() {
   }), { status: 200, headers: { "content-type": "application/json" } });
 }
 
-function syntheticData({ packageCode = "Black Card", expiresAt = "2099-12-31T23:59:59.000Z", model = true, linked = true } = {}) {
+function syntheticData({ capability = "private_standard", lifecycle = "active", model = true, linked = true } = {}) {
   return {
-    members: [{ id: "rec-synthetic-member", fields: { line_user_id: linked ? LINE_USER_ID : "Uother1234567890abcdef1234567890ab", member_id: "SYN-001", "Contact Email": "synthetic@example.test" } }],
-    member_packages: [{ id: "rec-synthetic-package", fields: { member_email: "synthetic@example.test", status: "active", end_date: expiresAt, package_code: packageCode } }],
-    models: model ? [{ id: "rec-synthetic-model", fields: { model_code: "MX17", working_name: "น้องซิน", booking_visibility: "private", access_folder: "standard", status: "active", customer_safe_summary: "โปรไฟล์ที่อนุมัติสำหรับลูกค้า" } }] : [],
+    entitlements: [{
+      id: "rec-synthetic-entitlement",
+      fields: {
+        line_user_id: linked ? LINE_USER_ID : "Uother1234567890abcdef1234567890ab",
+        capability,
+        member_lifecycle_status: lifecycle,
+        access_status: lifecycle,
+        expire_at: lifecycle === "expired" ? "2020-01-01T00:00:00.000Z" : "2099-12-31T23:59:59.000Z",
+      },
+    }],
+    models: model ? [{
+      id: "rec-synthetic-model",
+      fields: {
+        model_code: "MX17",
+        working_name: "น้องซิน",
+        booking_visibility: "private",
+        access_folder: "standard",
+        status: "active",
+        customer_safe_summary: "โปรไฟล์ที่อนุมัติสำหรับลูกค้า",
+      },
+    }] : [],
   };
 }
 
@@ -59,8 +77,7 @@ function durableBinding() {
 }
 
 const SCHEMAS = {
-  members: new Set(["line_user_id", "LINE User ID", "line_id", "LINE ID", "Contact Email", "member_email", "email", "Gmail", "Google Drive Email"]),
-  member_packages: new Set(["member_email", "Member Email", "email", "Contact Email", "member_id", "Member ID"]),
+  entitlements: new Set(["line_user_id"]),
   models: new Set(["model_code", "model_lookup_key", "unique_key", "working_name", "Working Name", "display_name", "Display Name"]),
 };
 
@@ -91,8 +108,8 @@ function environments(data, rpcCalls) {
     INTERNAL_TOKEN,
     AIRTABLE_API_KEY: "synthetic-airtable-token",
     AIRTABLE_BASE_ID: "app-synthetic",
-    AIRTABLE_TABLE_MEMBERS: "members",
-    AIRTABLE_TABLE_MEMBER_PACKAGES: "member_packages",
+    AIRTABLE_TABLE_MEMBER_ENTITLEMENTS: "entitlements",
+    AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD: "line_user_id",
     AIRTABLE_TABLE_MODELS: "models",
   };
   const lineEnv = {
@@ -126,7 +143,11 @@ async function webhookRequest(text, lineEnv, messageId) {
   };
   const raw = JSON.stringify({ events: [event] });
   const signature = await createLineSignature(raw, lineEnv.LINE_CHANNEL_SECRET);
-  return new Request("https://mmdbkk.com/webhooks/line", { method: "POST", headers: { "content-type": "application/json", "x-line-signature": signature }, body: raw });
+  return new Request("https://mmdbkk.com/webhooks/line", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-line-signature": signature },
+    body: raw,
+  });
 }
 
 async function runSmoke({ text = "MX17", data = syntheticData(), sourceFailure = false, messageId = "msg-smoke" } = {}) {
@@ -141,7 +162,7 @@ async function runSmoke({ text = "MX17", data = syntheticData(), sourceFailure =
   }
 }
 
-test("synthetic full-chain authorized exact code sends one safe LINE Reply", async () => {
+test("synthetic full-chain canonical Standard entitlement sends one safe LINE Reply", async () => {
   const result = await runSmoke({ messageId: "msg-smoke-authorized" });
   assert.equal(result.response.status, 200);
   assert.equal(result.rpcCalls.length, 1);
@@ -153,33 +174,27 @@ test("synthetic full-chain authorized exact code sends one safe LINE Reply", asy
   assert.doesNotMatch(body.messages[0].text, /airtable|record|availability|contact|ทีม|ระบบ/i);
 });
 
-test("synthetic full-chain unlinked LINE verifies the pending lookup with the member Google email", async () => {
-  const data = syntheticData({ packageCode: "Standard", linked: false });
+test("synthetic full-chain unlinked LINE fails closed and typed email cannot widen model access", async () => {
+  const data = syntheticData({ linked: false });
   const network = installSyntheticNetwork(data);
   const rpcCalls = [];
   const { lineEnv } = environments(data, rpcCalls);
   try {
-    const questionResponse = await lineWorker.fetch(await webhookRequest("MX17", lineEnv, "msg-smoke-email-question"), lineEnv);
-    const answerResponse = await lineWorker.fetch(await webhookRequest("synthetic@example.test", lineEnv, "msg-smoke-email-answer"), lineEnv);
-    assert.equal(questionResponse.status, 200);
-    assert.equal(answerResponse.status, 200);
-    assert.equal(rpcCalls.length, 2);
+    const lookupResponse = await lineWorker.fetch(await webhookRequest("MX17", lineEnv, "msg-smoke-unlinked-lookup"), lineEnv);
+    const emailResponse = await lineWorker.fetch(await webhookRequest("synthetic@example.test", lineEnv, "msg-smoke-unlinked-email"), lineEnv);
+    assert.equal(lookupResponse.status, 200);
+    assert.equal(emailResponse.status, 200);
+    assert.equal(rpcCalls.length, 1);
     const replies = network.calls.filter((call) => call.url.includes("/v2/bot/message/reply"));
-    assert.equal(replies.length, 2);
-    const question = JSON.parse(replies[0].init.body).messages[0].text;
-    const answer = JSON.parse(replies[1].init.body).messages[0].text;
-    assert.match(question, /อีเมล Google/);
-    assert.doesNotMatch(question, /malemodel\.bkk|synthetic@example/i);
-    assert.match(answer, /น้องซิน.*MX17/s);
-    assert.doesNotMatch(answer, /synthetic@example|Contact Email|Google Drive/i);
+    assert.equal(replies.length, 0);
     assert.equal(network.calls.filter((call) => call.url.includes("/v2/bot/message/push")).length, 0);
   } finally {
     network.restore();
   }
 });
 
-test("synthetic full-chain expired membership sends only renewal guidance and never Push", async () => {
-  const result = await runSmoke({ data: syntheticData({ expiresAt: "2020-01-01T00:00:00.000Z" }), messageId: "msg-smoke-expired-membership" });
+test("synthetic full-chain expired canonical entitlement sends only renewal guidance and never Push", async () => {
+  const result = await runSmoke({ data: syntheticData({ lifecycle: "expired" }), messageId: "msg-smoke-expired-membership" });
   assert.equal(result.response.status, 200);
   assert.equal(result.rpcCalls.length, 1);
   const replies = result.networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply"));

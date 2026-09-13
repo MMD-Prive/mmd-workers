@@ -16,7 +16,6 @@ import {
 export * from "./admin-login-hero-worker-pre-model-line-link.js";
 
 export const CANONICAL_MODEL_LINE_LINK_PATH = "/internal/admin/model-link";
-const MODEL_LINE_LINK_LOGIN_BRIDGE = "/internal/admin/kenji#model-link";
 
 export default {
   async fetch(request, env, ctx) {
@@ -91,11 +90,10 @@ async function requireOwner(request, env) {
 
 export function modelLineLinkLoginLocation(request) {
   const url = new URL(request.url);
-  // The existing Admin Login allowlist already owns /internal/admin/kenji and
-  // preserves hashes. After login, the Kenji shell turns #model-link into the
-  // exact canonical path. This avoids depending on query-string routing during
-  // the authentication handoff.
-  return `${url.origin}/internal/admin/login?next=${encodeURIComponent(MODEL_LINE_LINK_LOGIN_BRIDGE)}`;
+  // Use the canonical queryless owner surface as the post-login destination.
+  // This avoids the previous Kenji hash bridge and keeps browser history,
+  // login restore, and route smoke tests aligned on one URL.
+  return `${url.origin}/internal/admin/login?next=${encodeURIComponent(CANONICAL_MODEL_LINE_LINK_PATH)}`;
 }
 
 export function modelLineLinkCanonicalLocation(request) {

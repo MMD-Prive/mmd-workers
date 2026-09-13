@@ -7,15 +7,19 @@
 // - Delegate every other request to the existing admin-worker implementation.
 // - Keep the dashboard endpoint read-only and safe for Webflow.
 // - Project backend-owned pre-job reconfirm state for SIGIL Jobs / Per Ops.
+// - Reuse canonical Payment Review + Historical Recovery queues for money counts.
 // =========================================================
 
 import coreWorker, { isAuthed as isCoreAuthed } from "./index.js";
+import { handlePaymentReviewRequest } from "./payment-review-runtime.js";
+import { handleHistoricalSlipBackfillRequest } from "./historical-slip-backfill-runtime.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DASHBOARD_PATH = "/v1/admin/dashboard";
 const DEFAULT_MEMBERS_TABLE_ID = "tblgWc5VRon5o8Mhk";
 const DEFAULT_SESSIONS_TABLE_ID = "tblC98mKWbzmPuNzX";
 const RECONFIRM_LIFECYCLE_STATES = new Set(["confirmed", "accepted"]);
+const HISTORICAL_PENDING_STATES = new Set(["pending", "review", "review_required", "needs_review", "unmatched", "new", "submitted"]);
 
 export default {
   async fetch(req, env, ctx) {
@@ -48,41 +52,71 @@ export default {
   },
 };
 
-async function buildAdminDashboard(env) {
+export async function buildAdminDashboard(env) {
   const now = new Date();
   const tomorrow = bangkokDateOffset(now, 1);
   const sessionsTable = env.AIRTABLE_TABLE_SESSIONS || DEFAULT_SESSIONS_TABLE_ID;
 
-  const [proofsResult, sessionsResult, membersResult, reconfirmSessionsResult] = await Promise.allSettled([
-    airtableList(env, env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || "tblfJfM4Sqag9zrLi", 30),
+  const [paymentQueueResult, historicalQueueResult, sessionsResult, membersResult, reconfirmSessionsResult] = await Promise.allSettled([
+    loadCanonicalPaymentReviewQueue(env),
+    loadCanonicalHistoricalQueue(env),
     airtableList(env, sessionsTable, 100),
     airtableList(env, env.AIRTABLE_TABLE_MEMBERS_ID || DEFAULT_MEMBERS_TABLE_ID, 30),
     airtableListSessionsForDate(env, sessionsTable, tomorrow),
   ]);
 
-  const proofRecords = settledRecords(proofsResult);
+  const paymentQueue = settledRecords(paymentQueueResult);
+  const historicalQueue = settledRecords(historicalQueueResult);
+  const historicalPending = historicalQueue.filter(isHistoricalPending);
   const sessionRecords = settledRecords(sessionsResult);
   const memberRecords = settledRecords(membersResult);
 
-  const money = buildMoneyList(proofRecords);
+  const money = buildMoneyList(paymentQueue);
   const jobs = buildJobList(sessionRecords, now);
   const members = buildMemberList(memberRecords, now);
   const reconfirm = reconfirmSessionsResult.status === "fulfilled"
     ? buildReconfirmOverview(reconfirmSessionsResult.value, now, tomorrow)
     : unavailableReconfirmOverview(tomorrow, resultReason(reconfirmSessionsResult));
-  const boss = buildBossList({ money, jobs, members, proofRecords, sessionRecords, memberRecords });
-  const todos = buildTodos({ money, jobs, members, boss });
+  const boss = buildBossList({ money, jobs, members, paymentQueue, sessionRecords, memberRecords });
+  const todos = buildTodos({ money, historicalPending, jobs, members, boss });
 
   const counts = {
     urgent: todos.length + boss.length,
-    payments: money.length,
+    payments: paymentQueue.length,
+    payment_review: paymentQueue.length,
+    historical_recovery: historicalPending.length,
     jobs: jobs.length,
+    jobs_need_confirm: Number(reconfirm.pending || 0) + Number(reconfirm.overdue || 0),
     members: members.length,
+    membership_review: members.length,
     reconfirm_pending: reconfirm.pending,
     reconfirm_overdue: reconfirm.overdue,
   };
 
-  const focus = buildFocus({ money, jobs, members, boss });
+  const queues = {
+    payment_review: {
+      count: paymentQueue.length,
+      href: "/internal/admin/payments",
+      authority: "payment-review-runtime",
+    },
+    historical_recovery: {
+      count: historicalPending.length,
+      href: "/internal/admin/payments/historical-backfill",
+      authority: "historical-slip-backfill-runtime",
+    },
+    jobs_need_confirm: {
+      count: counts.jobs_need_confirm,
+      href: "/internal/admin/jobs",
+      authority: "session-reconfirm-runtime",
+    },
+    membership_review: {
+      count: members.length,
+      href: "/internal/admin/member-intelligence",
+      authority: "canonical-members",
+    },
+  };
+
+  const focus = buildFocus({ money, historicalPending, jobs, members, boss });
 
   return {
     ok: true,
@@ -91,25 +125,31 @@ async function buildAdminDashboard(env) {
     generated_at: now.toISOString(),
     focus,
     counts,
+    queues,
     todos,
     jobs,
     money,
+    historical_recovery: historicalPending.slice(0, 6),
     members,
     boss,
     reconfirm,
     status: {
       admin: "พร้อม",
-      payments: proofRecords.length ? "พร้อม" : statusFromResult(proofsResult),
+      payments: statusFromResult(paymentQueueResult),
+      historical_recovery: statusFromResult(historicalQueueResult),
       telegram: "พร้อม",
-      data: dataMode([proofsResult, sessionsResult, membersResult]),
+      data: dataMode([paymentQueueResult, historicalQueueResult, sessionsResult, membersResult]),
       reconfirm: reconfirm.available ? "พร้อม" : "ยังยืนยันไม่ได้",
     },
     debug: {
-      payments_loaded: proofRecords.length,
+      payment_review_loaded: paymentQueue.length,
+      historical_loaded: historicalQueue.length,
+      historical_pending: historicalPending.length,
       sessions_loaded: sessionRecords.length,
       members_loaded: memberRecords.length,
       reconfirm_sessions_loaded: reconfirm.items.length,
-      payment_source: resultReason(proofsResult),
+      payment_source: resultReason(paymentQueueResult),
+      historical_source: resultReason(historicalQueueResult),
       session_source: resultReason(sessionsResult),
       member_source: resultReason(membersResult),
       reconfirm_source: reconfirmSessionsResult.status === "fulfilled" ? "ok" : resultReason(reconfirmSessionsResult),
@@ -117,11 +157,48 @@ async function buildAdminDashboard(env) {
   };
 }
 
-function buildFocus({ money, jobs, members, boss }) {
+async function loadCanonicalPaymentReviewQueue(env) {
+  const response = await handlePaymentReviewRequest(
+    new Request("https://admin.internal/v1/admin/payments/review-queue?limit=100"),
+    env,
+    { id: "dashboard", role: "admin" },
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.ok !== true || !Array.isArray(payload.items)) {
+    throw new Error(`payment_review_queue_${response.status}_${payload?.error || "invalid"}`);
+  }
+  return payload.items;
+}
+
+async function loadCanonicalHistoricalQueue(env) {
+  const response = await handleHistoricalSlipBackfillRequest(
+    new Request("https://admin.internal/v1/admin/payments/historical-backfill?limit=100"),
+    env,
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.ok !== true || !Array.isArray(payload.items)) {
+    throw new Error(`historical_recovery_queue_${response.status}_${payload?.error || "invalid"}`);
+  }
+  return payload.items;
+}
+
+function isHistoricalPending(item) {
+  const state = normalizeWord(item?.review_state || item?.status || "pending");
+  return HISTORICAL_PENDING_STATES.has(state || "pending");
+}
+
+function buildFocus({ money, historicalPending, jobs, members, boss }) {
   if (money.length) {
     return {
       title: "ตรวจเงินก่อน",
-      text: `มีรายการรอตรวจ ${money.length} รายการ อย่าเพิ่งเปิดสิทธิ์หรือเริ่มงานที่ผูกกับยอดนี้จนกว่าจะตรวจเสร็จ`,
+      text: `มี Payment Review รอตรวจ ${money.length} รายการ อย่าเพิ่งเปิดสิทธิ์หรือเริ่มงานที่ผูกกับยอดนี้จนกว่าจะตรวจเสร็จ`,
+    };
+  }
+
+  if (historicalPending.length) {
+    return {
+      title: "ตรวจ Historical Recovery",
+      text: `มีสลิปย้อนหลังรอตรวจ ${historicalPending.length} รายการ เปิด Historical Backfill เพื่อจับคู่และยืนยันหลักฐาน`,
     };
   }
 
@@ -152,7 +229,7 @@ function buildFocus({ money, jobs, members, boss }) {
   };
 }
 
-function buildTodos({ money, jobs, members, boss }) {
+function buildTodos({ money, historicalPending, jobs, members, boss }) {
   const todos = [];
 
   if (money[0]) {
@@ -161,8 +238,23 @@ function buildTodos({ money, jobs, members, boss }) {
       text: money[0].text,
       href: "/internal/admin/payments",
       icon: "฿",
-      tag: "ตรวจเงิน",
+      tag: "Payment Review",
       color: "red",
+    });
+  }
+
+  if (historicalPending[0]) {
+    const proof = historicalPending[0];
+    todos.push({
+      title: `Historical Recovery · ${proof.proof_id || proof.source_ref || "สลิปย้อนหลัง"}`,
+      text: compactJoin([
+        proof.amount_thb ? `${amountText(proof.amount_thb)} บาท` : "ยังอ่านยอดไม่ครบ",
+        proof.payment_ref_masked ? `ref ${proof.payment_ref_masked}` : "",
+      ], " · "),
+      href: "/internal/admin/payments/historical-backfill",
+      icon: "↺",
+      tag: "Historical",
+      color: "yellow",
     });
   }
 
@@ -189,7 +281,7 @@ function buildTodos({ money, jobs, members, boss }) {
     });
   }
 
-  if (boss[0]) {
+  if (boss[0] && todos.length < 4) {
     todos.push({
       title: boss[0].title,
       text: boss[0].text,
@@ -203,23 +295,24 @@ function buildTodos({ money, jobs, members, boss }) {
   return todos.slice(0, 4);
 }
 
-function buildMoneyList(records) {
-  return records
-    .filter((record) => {
-      const fields = record.fields || {};
-      const status = lower(fields.status || fields.verification_status || fields.payment_status);
-      return !status || /pending|รอ|review|unmatched|new/.test(status);
-    })
+function buildMoneyList(items) {
+  return (Array.isArray(items) ? items : [])
     .slice(0, 6)
-    .map((record) => {
-      const fields = record.fields || {};
-      const name = firstText(fields.payer_name, fields.member_name, fields.client_name, fields.name, "ลูกค้า");
-      const amount = amountText(fields.amount_thb, fields.amount, fields.total_thb);
-      const ref = firstText(fields.payment_ref, fields.proof_id, fields.session_id, record.id);
+    .map((item) => {
+      const name = firstText(item.customer_name, item.payer_name, "ลูกค้า");
+      const amount = amountText(item.evidence_amount_thb);
+      const ref = firstText(item.payment_ref, item.proof_id);
+      const issues = Array.isArray(item.context_issues) ? item.context_issues.length : 0;
       return {
         title: name,
-        text: compactJoin([firstText(fields.note, fields.channel, "รอตรวจสลิป"), ref ? `ref ${ref}` : ""], " · "),
+        text: compactJoin([
+          firstText(item.inferred_label, item.payment_stage, "รอตรวจสลิป"),
+          ref ? `ref ${maskPaymentRef(ref)}` : "",
+          issues ? `ต้องเติม ${issues} จุด` : "พร้อมตรวจ",
+        ], " · "),
         amount,
+        proof_id: firstText(item.proof_id),
+        can_approve: item.can_approve === true,
         href: "/internal/admin/payments",
       };
     });
@@ -363,7 +456,7 @@ function buildMemberList(records, now) {
     });
 }
 
-function buildBossList({ money, jobs, members, proofRecords, sessionRecords, memberRecords }) {
+function buildBossList({ money, jobs, members, paymentQueue, sessionRecords, memberRecords }) {
   const out = [];
 
   const blackCardMember = memberRecords.find((record) => /black|vip|svip/i.test(JSON.stringify(record.fields || {})));
@@ -376,11 +469,13 @@ function buildBossList({ money, jobs, members, proofRecords, sessionRecords, mem
     });
   }
 
-  const unmatchedPayment = proofRecords.find((record) => /unmatched|จับคู่ไม่ได้|missing/i.test(JSON.stringify(record.fields || {})));
+  const unmatchedPayment = (Array.isArray(paymentQueue) ? paymentQueue : []).find((item) =>
+    Array.isArray(item?.context_issues) && item.context_issues.includes("customer_or_job_not_linked")
+  );
   if (unmatchedPayment) {
     out.push({
       title: "ยอดโอนจับคู่ไม่ได้",
-      text: "มีรายการจ่ายเงินที่ยังจับคู่กับ session หรือสมาชิกไม่ได้",
+      text: "มีรายการจ่ายเงินที่ยังจับคู่กับ Session หรือสมาชิกไม่ได้",
       href: "/internal/admin/payments",
     });
   }
@@ -411,12 +506,13 @@ async function airtableList(env, tableName, maxRecords = 20) {
   }
 
   const qs = new URLSearchParams({ maxRecords: String(maxRecords) });
-  const res = await fetch(`${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}?${qs.toString()}`, {
+  const request = new Request(`${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}?${qs.toString()}`, {
     headers: {
       Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
       "Content-Type": "application/json",
     },
   });
+  const res = await airtableFetch(env, request);
 
   if (!res.ok) {
     throw new Error(`airtable_${tableName}_${res.status}`);
@@ -436,18 +532,23 @@ async function airtableListSessionsForDate(env, tableName, jobDate) {
     maxRecords: "100",
     filterByFormula: `IS_SAME({${field}}, DATETIME_PARSE('${jobDate}'), 'day')`,
   });
-  const res = await fetch(`${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}?${qs.toString()}`, {
+  const request = new Request(`${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}?${qs.toString()}`, {
     headers: {
       Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
       "Content-Type": "application/json",
     },
   });
+  const res = await airtableFetch(env, request);
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
     throw new Error(`airtable_reconfirm_${res.status}${detail ? `:${detail.slice(0, 120)}` : ""}`);
   }
   const data = await res.json();
   return Array.isArray(data.records) ? data.records : [];
+}
+
+async function airtableFetch(env, request) {
+  return env.AIRTABLE_HTTP?.fetch ? env.AIRTABLE_HTTP.fetch(request) : fetch(request);
 }
 
 function settledRecords(result) {
@@ -558,6 +659,13 @@ function amountText(...values) {
     }
   }
   return "-";
+}
+
+function maskPaymentRef(value) {
+  const ref = str(value);
+  if (!ref) return "";
+  if (ref.length <= 8) return `${ref.slice(0, 2)}…${ref.slice(-2)}`;
+  return `${ref.slice(0, 4)}…${ref.slice(-4)}`;
 }
 
 function parseDate(value) {

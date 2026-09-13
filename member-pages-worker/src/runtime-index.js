@@ -8,6 +8,10 @@ import { applyMyMmdFastTrustResponse } from "./my-mmd-fast-trust-response.js";
 import { recoverVerifiedLiffStartAsPendingIdentity } from "./liff-start-pending-identity-fallback.js";
 import { attachTraceId, createLiffResolutionTrace, createLiffShellBoundaryTrace } from "./liff-resolution-trace.js";
 import {
+  handleMemberClientCredits,
+  isMemberClientCreditsRequest,
+} from "./member-app-client-credits.js";
+import {
   handleTrustedCareBackBookingApproval,
   isTrustedCareBackBookingApproval,
 } from "./care-back-trusted-booking-approval.js";
@@ -58,6 +62,9 @@ export function normalizeCareBackWebViewOrigin(request) {
 export default {
   async fetch(request, env, ctx) {
     request = normalizeCareBackWebViewOrigin(request);
+    if (isMemberClientCreditsRequest(request)) {
+      return handleMemberClientCredits(request, env);
+    }
     if (isKenjiLineMemberTruthHealthRequest(request)) {
       return handleKenjiLineMemberTruthHealth(request, env);
     }
