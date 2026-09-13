@@ -46,6 +46,15 @@ export function inferMembershipPayment({ amount_thb, linked_member = false, link
 
 export function membershipInferenceLabel(inference) {
   if (!inference) return "";
+  if (clean(inference.inferred_label)) return clean(inference.inferred_label);
+  const stageLabels = {
+    deposit: "ค่าจอง / มัดจำ",
+    final: "ค่าจบงาน / ยอดคงเหลือ",
+    full: "จ่ายเต็ม",
+    tips: "Tip / ทิป",
+    unknown: "ต้องตรวจประเภทเงิน",
+  };
+  if (stageLabels[clean(inference.inferred_stage).toLowerCase()]) return stageLabels[clean(inference.inferred_stage).toLowerCase()];
   const packages = { standard: "Private Standard", premium: "Private Premium", mmd_member: "MMD Member", elite: "Elite Membership", red_card: "Red Card" };
   const actions = { renewal: "ต่ออายุ", signup: "สมัครสมาชิก", membership: "สมาชิก" };
   return `${actions[inference.inferred_intent] || "สมาชิก"} ${packages[inference.inferred_package_code] || inference.inferred_package_code}`.trim();
