@@ -10,6 +10,7 @@ on:
       - "admin-worker/src/admin-model-line-link-worker.js"
       - "admin-worker/src/model-line-avatar-review.js"
       - "admin-worker/model-line-link-review.test.mjs"
+      - "admin-worker/wrangler.toml"
       - ".github/workflows/model-drive-directory-ci.yml"
   workflow_dispatch:
 
