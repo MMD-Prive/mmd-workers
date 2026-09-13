@@ -70,17 +70,20 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
-    const publicHandoff = workersDevCanonicalHandoff(url, path);
+    const method = request.method.toUpperCase();
+    const publicHandoff = method === "GET" || method === "HEAD"
+      ? workersDevCanonicalHandoff(url, path)
+      : null;
     if (publicHandoff) return publicHandoff;
 
     const response = await canonicalWorker.fetch(request, env);
-    if (request.method.toUpperCase() === "GET" && path === CUSTOMER_PAGE) {
+    if (method === "GET" && path === CUSTOMER_PAGE) {
       return decorateCustomer360Page(response);
     }
-    if (request.method.toUpperCase() === "GET" && path === CUSTOMER_QUEUE) {
+    if (method === "GET" && path === CUSTOMER_QUEUE) {
       return redactCustomerQueueResponse(response);
     }
-    if (request.method.toUpperCase() === "GET" && path === CLIENT_INTELLIGENCE) {
+    if (method === "GET" && path === CLIENT_INTELLIGENCE) {
       return augmentClientIntelligenceWithIdentityAlignment(
         response,
         env,
