@@ -59,3 +59,62 @@ test("customer-safe output never leaks verification or internal reason metadata"
   assert.equal(serialized.includes("client_cancel_gt_48h"), false);
   assert.equal(result.items[0]?.verificationState, "verified");
 });
+
+const DEADLINE = Date.parse("2026-12-12T16:59:59.999Z");
+const cancellation = (extra = {}) => record({
+  "Credit Type": "carried_forward_deposit",
+  Reason: "client_cancel_no_penalty",
+  "Expires At": new Date(DEADLINE).toISOString(),
+  "Customer Display Note": "งานยกเลิกแล้ว เครดิตคงเหลือใช้ได้ภายใน 90 วัน",
+  ...extra,
+});
+
+test("cancellation credit projects the exact live adapter trust and deadline contract", () => {
+  const result = verifiedCreditsFromRecords([cancellation()], DEADLINE - 1);
+  const item = result.items[0];
+  assert.equal(result.availableBalanceThb, 8250);
+  assert.equal(item.verificationStatus, "verified");
+  assert.equal(item.verifiedAmountThb, 8250);
+  assert.equal(item.creditType, "carried_forward_deposit");
+  assert.equal(item.expiresAt, "2026-12-12T16:59:59.999Z");
+  assert.equal(item.noticeType, "cancelled_deposit_credit");
+  assert.equal(item.customerDisplayNote, item.note);
+});
+
+test("credit is valid through the inclusive Bangkok deadline, unavailable afterwards", () => {
+  assert.equal(verifiedCreditsFromRecords([cancellation()], DEADLINE).availableBalanceThb, 8250);
+  const expired = verifiedCreditsFromRecords([cancellation()], DEADLINE + 1);
+  assert.equal(expired.availableBalanceThb, 0);
+  assert.equal(expired.items[0].status, "expired");
+  assert.equal(expired.items[0].availableAmountThb, 0);
+  assert.equal(expired.items[0].originalAmountThb, 8250);
+});
+
+test("invalid explicit expiry fails closed without deleting the audit amount", () => {
+  const result = verifiedCreditsFromRecords([cancellation({"Expires At": "bad-date"})]);
+  assert.equal(result.availableBalanceThb, 0);
+  assert.equal(result.items[0].status, "unknown");
+  assert.equal(result.items[0].expiryState, "checking");
+  assert.equal(result.items[0].originalAmountThb, 8250);
+});
+
+test("legacy undated credit remains compatible and has no cancellation notice inference", () => {
+  const result = verifiedCreditsFromRecords([record()], DEADLINE + 1);
+  assert.equal(result.availableBalanceThb, 8250);
+  assert.equal(result.items[0].expiresAt, null);
+  assert.equal(result.items[0].noticeType, null);
+});
+
+test("repeated reads never mutate balances, source sessions, payments, or points", () => {
+  const input = [cancellation()];
+  const original = JSON.stringify(input);
+  assert.deepEqual(verifiedCreditsFromRecords(input, DEADLINE - 1), verifiedCreditsFromRecords(input, DEADLINE - 1));
+  assert.equal(JSON.stringify(input), original);
+  assert.equal(JSON.stringify(verifiedCreditsFromRecords(input, DEADLINE - 1)).includes("points"), false);
+});
+
+test("unverified cancellation cannot emit usable money or a notice", () => {
+  const result = verifiedCreditsFromRecords([cancellation({"Verification Status": "pending_review"})]);
+  assert.deepEqual(result.items, []);
+  assert.equal(result.availableBalanceThb, 0);
+});
