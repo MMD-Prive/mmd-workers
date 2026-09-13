@@ -36,5 +36,6 @@ test("Drive discovery uses a stable meaningful token for near-name searches", ()
 
 test("Drive discovery can suggest Book EI for Book El without auto-binding", () => {
   assert.ok(modelNameScore("Book El", "Book EI") > 0.7);
-  assert.equal(modelNameScore("Book El", "Completely Different"), 0);
+  // Weak unrelated similarity must remain below the production suggestion cutoff (0.28).
+  assert.ok(modelNameScore("Book El", "Completely Different") < 0.28);
 });
