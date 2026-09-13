@@ -101,22 +101,71 @@ function firstMatch(text, expressions) {
   return "";
 }
 
+const THAI_MONTH = Object.freeze({
+  "ม.ค.": 1, "มค": 1, "ม.ค": 1,
+  "ก.พ.": 2, "กพ": 2, "ก.พ": 2,
+  "มี.ค.": 3, "มีค": 3, "มี.ค": 3,
+  "เม.ย.": 4, "เมย": 4, "เม.ย": 4,
+  "พ.ค.": 5, "พค": 5, "พ.ค": 5,
+  "มิ.ย.": 6, "มิย": 6, "มิ.ย": 6,
+  "ก.ค.": 7, "กค": 7, "ก.ค": 7,
+  "ส.ค.": 8, "สค": 8, "ส.ค": 8,
+  "ก.ย.": 9, "กย": 9, "ก.ย": 9,
+  "ต.ค.": 10, "ตค": 10, "ต.ค": 10,
+  "พ.ย.": 11, "พย": 11, "พ.ย": 11,
+  "ธ.ค.": 12, "ธค": 12, "ธ.ค": 12,
+});
+
+function normalizeThaiPaidAt(raw) {
+  const match = clean(raw).match(/(\d{1,2})\s*(ม\.?ค\.?|ก\.?พ\.?|มี\.?ค\.?|เม\.?ย\.?|พ\.?ค\.?|มิ\.?ย\.?|ก\.?ค\.?|ส\.?ค\.?|ก\.?ย\.?|ต\.?ค\.?|พ\.?ย\.?|ธ\.?ค\.?)\s*(\d{2,4})\s*(\d{1,2})[:.]([0-5]\d)/i);
+  if (!match) return "";
+  const monthKey = match[2].replace(/\s/g, "");
+  const month = THAI_MONTH[monthKey] || THAI_MONTH[monthKey.replace(/\./g, "")];
+  if (!month) return "";
+  let year = Number(match[3]);
+  if (year < 100) year += 2500;
+  if (year >= 2400) year -= 543;
+  if (year < 2000 || year > 2200) return "";
+  const day = Number(match[1]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  if (day < 1 || day > 31 || hour > 23) return "";
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00+07:00`;
+}
+
+function bankLines(raw) {
+  const lines = clean(raw).split(/\n+/).map((line) => clean(line)).filter(Boolean);
+  return lines.filter((line) => /(ธ\.?\s*(?:กสิกรไทย|กรุงศรีอยุธยา|กรุงเทพ|ไทยพาณิชย์|กรุงไทย|ทหารไทยธนชาต|ออมสิน)|กสิกร|กรุงศรี|กรุงเทพ|ไทยพาณิชย์|กรุงไทย|ttb|scb|kbank|krungsri)/i.test(line));
+}
+
 export function normalizeOcrText(text, confidence = 0) {
   const raw = clean(text).replace(/\r/g, "");
   const result = emptyResult();
   result.amount_thb = (() => {
-    const value = firstMatch(raw, [/(?:จำนวนเงิน|ยอดเงิน|amount)\s*[:：]?\s*(?:THB|฿)?\s*([\d,]+(?:\.\d{1,2})?)/i, /(?:THB|฿)\s*([\d,]+(?:\.\d{1,2})?)/i]);
+    const value = firstMatch(raw, [
+      /(?:จำนวน(?:เงิน)?|ยอด(?:เงิน)?|amount)\s*[:：]?\s*(?:THB|฿)?\s*([\d,]+(?:\.\d{1,2})?)/i,
+      /(?:THB|฿)\s*([\d,]+(?:\.\d{1,2})?)/i,
+      /([\d,]+(?:\.\d{2}))\s*(?:บาท|THB)\b/i,
+    ]);
     const amount = Number(value.replace(/,/g, ""));
     return Number.isFinite(amount) && amount > 0 ? amount : null;
   })();
-  result.payment_ref = firstMatch(raw, [/(?:เลขที่รายการ|รหัสรายการ|transaction\s*(?:id|ref(?:erence)?)|reference)\s*[:：#]?\s*([A-Z0-9-]{6,64})/i]);
-  result.payer_name = firstMatch(raw, [/(?:จาก|ผู้โอน|ชื่อผู้โอน|sender|from)\s*[:：]?\s*([^\n]{2,80})/i]);
-  result.sender_bank = firstMatch(raw, [/(?:ธนาคารผู้โอน|sender\s*bank|from\s*bank)\s*[:：]?\s*([^\n]{2,60})/i]);
-  result.receiver_bank = firstMatch(raw, [/(?:ธนาคารผู้รับ|receiver\s*bank|to\s*bank)\s*[:：]?\s*([^\n]{2,60})/i]);
-  result.paid_at = firstMatch(raw, [/(20\d{2}[-/]\d{1,2}[-/]\d{1,2}[ T]\d{1,2}:\d{2}(?::\d{2})?)/]);
-  result.provider = /พร้อมเพย์|promptpay/i.test(raw) ? "promptpay" : "bank_transfer";
-  const useful = [result.payment_ref, result.amount_thb, result.paid_at, result.payer_name].filter(Boolean).length;
-  result.confidence_score = useful ? clamp((Number(confidence) / 100) * Math.min(1, 0.55 + useful * 0.12)) : 0;
+  result.payment_ref = firstMatch(raw, [/(?:เลขที่รายการ|รหัสรายการ|เลขอ้างอิง|transaction\s*(?:id|ref(?:erence)?)|reference)\s*[:：#]?\s*([A-Z0-9-]{6,64})/i]);
+  result.payer_name = firstMatch(raw, [
+    /(?:จาก|ผู้โอน|ชื่อผู้โอน|sender|from)\s*[:：]?\s*([^\n]{2,80})/i,
+    /(^|\n)\s*((?:นาย|นางสาว|นาง)\s+[^\n]{2,70})/m,
+  ]);
+  if (result.payer_name && /^(?:\n|^)/.test(result.payer_name)) result.payer_name = clean(result.payer_name);
+
+  const banks = bankLines(raw);
+  result.sender_bank = firstMatch(raw, [/(?:ธนาคารผู้โอน|sender\s*bank|from\s*bank)\s*[:：]?\s*([^\n]{2,60})/i]) || banks[0] || "";
+  result.receiver_bank = firstMatch(raw, [/(?:ธนาคารผู้รับ|receiver\s*bank|to\s*bank)\s*[:：]?\s*([^\n]{2,60})/i]) || banks[1] || "";
+  result.paid_at = firstMatch(raw, [/(20\d{2}[-/]\d{1,2}[-/]\d{1,2}[ T]\d{1,2}:\d{2}(?::\d{2})?)/]) || normalizeThaiPaidAt(raw);
+  result.provider = /พร้อมเพย์|promptpay/i.test(raw) ? "promptpay" : /โอนเงินสำเร็จ|เลขที่รายการ|รหัสรายการ|จำนวน(?:เงิน)?\s*[:：]/i.test(raw) ? "bank_transfer" : "";
+  const useful = [result.payment_ref, result.amount_thb, result.paid_at, result.payer_name, result.sender_bank, result.receiver_bank].filter(Boolean).length;
+  const transferSignals = [/โอนเงินสำเร็จ/i, /เลขที่รายการ|รหัสรายการ|เลขอ้างอิง/i, /จำนวน(?:เงิน)?\s*[:：]/i, /บาท/i].filter((re) => re.test(raw)).length;
+  const confidenceFactor = Math.min(1, 0.5 + useful * 0.09 + transferSignals * 0.05);
+  result.confidence_score = useful ? clamp((Number(confidence) / 100) * confidenceFactor) : 0;
   return result;
 }
 
