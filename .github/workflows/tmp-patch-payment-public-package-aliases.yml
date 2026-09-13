@@ -1,0 +1,71 @@
+name: Temporary patch payment public package aliases
+
+on:
+  push:
+    branches:
+      - feat/payment-resolver-entitlement-write-through-20260913
+    paths:
+      - ".github/workflows/tmp-patch-payment-public-package-aliases.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/payment-resolver-entitlement-write-through-20260913
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Patch exact canonical package aliases
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const file = 'admin-worker/src/payment-review-runtime.js';
+          const source = fs.readFileSync(file, 'utf8');
+          const before = `function canonicalPackageCode(value) {
+            const raw = safeCode(value).replace(/-/g, "_");
+            if (!raw) return "";
+            if (raw === "guest7" || raw === "guest_7" || raw.includes("guest7")) return "guest7";
+            if (raw === "blackcard" || raw === "black_card" || raw.includes("black_card") || raw.includes("blackcard")) return "blackcard";
+            if (raw.includes("premium")) return "premium";
+            if (raw.includes("standard") || raw.includes("lite")) return "standard";
+            return "";
+          }`;
+          const normalizedBefore = before.replace(/^ {10}/gm, '');
+          const after = `function canonicalPackageCode(value) {
+            const raw = safeCode(value).replace(/-/g, "_");
+            if (!raw) return "";
+            if (raw === "guest7" || raw === "guest_7" || raw.includes("guest7")) return "guest7";
+            if (raw === "mmd_member" || raw === "member_690" || raw === "membership" || raw === "public_member") return "mmd_member";
+            if (raw === "elite" || raw === "elite_membership") return "elite";
+            if (raw === "red_card" || raw === "redcard") return "red_card";
+            if (raw === "blackcard" || raw === "black_card" || raw.includes("black_card") || raw.includes("blackcard")) return "blackcard";
+            if (raw.includes("premium")) return "premium";
+            if (raw.includes("standard") || raw.includes("lite")) return "standard";
+            return "";
+          }`;
+          const normalizedAfter = after.replace(/^ {10}/gm, '');
+          if (!source.includes(normalizedBefore)) throw new Error('canonicalPackageCode source marker not found');
+          const next = source.replace(normalizedBefore, normalizedAfter);
+          fs.writeFileSync(file, next);
+          NODE
+          node --check admin-worker/src/payment-review-runtime.js
+          grep -F 'raw === "mmd_member"' admin-worker/src/payment-review-runtime.js
+          grep -F 'raw === "elite"' admin-worker/src/payment-review-runtime.js
+          grep -F 'raw === "red_card"' admin-worker/src/payment-review-runtime.js
+      - name: Remove temporary patch workflow and commit
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/tmp-patch-payment-public-package-aliases.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add admin-worker/src/payment-review-runtime.js .github/workflows/tmp-patch-payment-public-package-aliases.yml
+          git commit -m "fix(payments): preserve public membership package codes"
+          git push origin HEAD:feat/payment-resolver-entitlement-write-through-20260913
