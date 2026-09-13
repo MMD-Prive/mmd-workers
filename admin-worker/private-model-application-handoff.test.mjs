@@ -47,3 +47,15 @@ test("active wrapper clones guarded Private Model requests before delegated work
   assert.match(source, /if \(isPrivateModelAdminRequest\(request\)\) privateModelRequest = request\.clone\(\)/);
   assert.match(source, /maybeHandlePrivateModelAdminRequest\(privateModelRequest, env, response\)/);
 });
+
+
+test("canonical creation is serialized by the existing Durable Object namespace", async () => {
+  const handoff = await readFile(new URL("./src/private-model-application-handoff.js", import.meta.url), "utf8");
+  const activation = await readFile(new URL("./src/model-first-time-activation.js", import.meta.url), "utf8");
+  assert.match(handoff, /resolvePrivateCanonicalModel\(env,\s*\{/);
+  assert.doesNotMatch(handoff, /findModelsByModelKey\(env, modelKey\)/);
+  assert.match(activation, /idFromName\(`private-model-create:\$\{modelKey\}`\)/);
+  assert.match(activation, /url\.pathname === "\/resolve-private-model"/);
+  assert.match(activation, /findModelsByPrivateModelKey\(this\.env, modelKey\)/);
+  assert.match(activation, /createPrivateCanonicalModel\(this\.env, modelKey, workingName\)/);
+});
