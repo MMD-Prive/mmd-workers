@@ -731,6 +731,9 @@ function canonicalPackageCode(value) {
   const raw = safeCode(value).replace(/-/g, "_");
   if (!raw) return "";
   if (raw === "guest7" || raw === "guest_7" || raw.includes("guest7")) return "guest7";
+  if (raw === "mmd_member" || raw === "member_690" || raw === "membership" || raw === "public_member") return "mmd_member";
+  if (raw === "elite" || raw === "elite_membership") return "elite";
+  if (raw === "red_card" || raw === "redcard") return "red_card";
   if (raw === "blackcard" || raw === "black_card" || raw.includes("black_card") || raw.includes("blackcard")) return "blackcard";
   if (raw.includes("premium")) return "premium";
   if (raw.includes("standard") || raw.includes("lite")) return "standard";
