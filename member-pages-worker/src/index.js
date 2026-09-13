@@ -7,6 +7,12 @@ import { handleMmsMemberPrebookingRead, isMmsMemberPrebookingReadPath } from "./
 import { handleMmsServiceZoneCatalog, isMmsServiceZoneCatalogPath } from "./mms-service-zone-catalog.js";
 import { handleMemberAppApi, isMemberAppApiPath } from "./member-app-api.js";
 import {
+  handleMemberHistoryRecoveryRequest,
+  isLiffHistoryRecoveryStartPath,
+  isMemberHistoryRecoveryPath,
+  scheduleMemberHistoryRecoveryFromLiffResponse,
+} from "./member-history-recovery.js";
+import {
   applyMyMmdCanonicalEntitlementResponse,
   prepareMyMmdCanonicalEntitlementContext,
 } from "./my-mmd-canonical-entitlement-bridge.js";
@@ -28,6 +34,7 @@ export default {
 
     if (isMmsServiceZoneCatalogPath(url)) return finish(await handleMmsServiceZoneCatalog(request, env));
     if (request.method === "GET" && isMmsMemberPrebookingReadPath(url)) return finish(await handleMmsMemberPrebookingRead(request, env));
+    if (isMemberHistoryRecoveryPath(url)) return finish(await handleMemberHistoryRecoveryRequest(request, env, ctx));
     if (isMemberAppApiPath(url)) return finish(await handleMemberAppApi(request, env));
     if (isMemberEmailRecoveryPath(url)) return finish(await handleMemberEmailRecovery(request, env));
     if (isFindMemberApiPath(url)) return finish(await handleFindMemberApi(request, env));
@@ -36,6 +43,11 @@ export default {
     if (isLiffMemberShellPath(url)) {
       const response = handleLiffMemberShell(request, env);
       return finish(decorateLiffShellWithClientDiagnostic(response));
+    }
+    if (isLiffHistoryRecoveryStartPath(url)) {
+      const response = await liffFoundation.fetch(request, env, ctx);
+      scheduleMemberHistoryRecoveryFromLiffResponse(response, env, ctx);
+      return finish(response);
     }
     return finish(await liffFoundation.fetch(request, env, ctx));
   },
