@@ -183,13 +183,21 @@ test("health publishes the canonical MMD topic registry", async () => {
 
   assert.equal(response.status, 200);
   assert.deepEqual(body.telegram_topics.map(({ key, thread_id }) => [key, thread_id]), [
-    ["membership", 20],
-    ["payment", 21],
-    ["alerts", 9],
-    ["points", 17],
-    ["system_log", 22],
-    ["public_model", 155],
     ["booking", 1399],
+    ["membership", 20],
+    ["points", 17],
+    ["payment", 22],
+    ["alerts", 9],
+    ["public_model", 155],
+    ["himai_orders", 157],
+    ["himai_payments", 158],
+    ["himai_alerts", 159],
+    ["mmd_shop_orders", 160],
+    ["mmd_shop_payments", 161],
+    ["mmd_shop_alerts", 162],
+    ["legacy_archive", 134],
+    ["rules_model", 39],
+    ["rules_customer", 29],
   ]);
 });
 
@@ -232,10 +240,13 @@ test("topic smoke sends one silent redacted check to every canonical topic", { c
 
     assert.equal(response.status, 200);
     assert.equal(body.ok, true);
-    assert.equal(body.tested, 7);
-    assert.equal(body.passed, 7);
+    assert.equal(body.tested, 15);
+    assert.equal(body.passed, 15);
     assert.equal(body.failed, 0);
-    assert.deepEqual(telegramBodies.map((item) => item.message_thread_id), [20, 21, 9, 17, 22, 155, 1399]);
+    assert.deepEqual(
+      telegramBodies.map((item) => item.message_thread_id),
+      [1399, 20, 17, 22, 9, 155, 157, 158, 159, 160, 161, 162, 134, 39, 29],
+    );
     assert.equal(telegramBodies.every((item) => item.disable_notification === true), true);
     assert.equal(telegramBodies.every((item) => item.text.includes("no customer data")), true);
   } finally {

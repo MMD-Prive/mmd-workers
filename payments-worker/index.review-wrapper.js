@@ -40,8 +40,22 @@ export { PointsPhase1Coordinator };
 
 const NOTIFY_PATH = "/v1/payments/notify";
 
+function canonicalTelegramEnv(env = {}) {
+  const membership = String(env.TG_THREAD_PAYMENTS_MEMBERSHIP || env.TG_THREAD_MEMBERSHIP || "20").trim() || "20";
+  const confirm = String(env.TG_THREAD_PAYMENTS_CONFIRM || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "22").trim() || "22";
+  return {
+    ...env,
+    TG_THREAD_PAYMENTS_MEMBERSHIP: membership,
+    TG_THREAD_MEMBERSHIP: membership,
+    TG_THREAD_PAYMENTS_CONFIRM: confirm,
+    TG_THREAD_PAYMENT: confirm,
+    TG_THREAD_CONFIRM: confirm,
+  };
+}
+
 export default {
   async fetch(request, env, ctx) {
+    env = canonicalTelegramEnv(env);
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
