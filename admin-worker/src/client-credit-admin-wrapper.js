@@ -6,6 +6,8 @@ const DEFAULT_BASE_ID = "appsV1ILPRfIjkaYg";
 const CLIENT_CREDITS_TABLE = "tblKvhl2zZm9yYBmT";
 const PAYMENTS_TABLE = "tblWGGJJOx5eBvBZJ";
 const SESSIONS_TABLE = "tblC98mKWbzmPuNzX";
+const VERIFIED_CREDIT_SOURCE = "payment_authority";
+const MONEY_TOLERANCE = 0.001;
 
 const CREDIT = {
   id: "fldemjkV42O2DcJgr",
@@ -28,6 +30,13 @@ const CREDIT = {
   paymentRef: "fldsjcpz8nM8NgHHt",
   sessionId: "fldwsZHbxqu5Bk7E8",
   memberId: "fldg5DGXEkKk8I4Vu",
+  verificationStatus: "fldQW1Mzqyd8oilDc",
+  verifiedAmount: "fld2Fr7uC8Urstmvd",
+  verifiedAt: "fldmmdSKcfT0dxIiu",
+  verifiedBy: "fldsqtVC8y215ZfT6",
+  verificationRef: "fldTYIAc9xrNdA5Oe",
+  verificationSource: "fldlwTOl5TeBl7P0I",
+  verificationSnapshot: "fldPBgoB8GGoSbc2x",
 };
 
 const PAYMENT = {
@@ -174,7 +183,24 @@ function officialPaymentState(payment) {
     verification,
     depositStatus,
     receivedThb: received === null ? 0 : Math.max(0, received),
+    officialAt,
+    officialRef,
+    officialBy,
   };
+}
+export function isVerifiedAdminCreditRecord(record) {
+  const verificationStatus = normalized(field(record, CREDIT.verificationStatus));
+  const verificationSource = normalized(field(record, CREDIT.verificationSource));
+  const verifiedAmountThb = Math.max(0, numberValue(field(record, CREDIT.verifiedAmount)) || 0);
+  const originalAmountThb = Math.max(0, numberValue(field(record, CREDIT.originalAmount)) || 0);
+  const availableAmountThb = Math.max(0, numberValue(field(record, CREDIT.availableAmount)) || 0);
+  const appliedAmountThb = Math.max(0, numberValue(field(record, CREDIT.appliedAmount)) || 0);
+  return verificationStatus === "verified"
+    && verificationSource === VERIFIED_CREDIT_SOURCE
+    && originalAmountThb > 0
+    && verifiedAmountThb + MONEY_TOLERANCE >= originalAmountThb
+    && availableAmountThb <= originalAmountThb + MONEY_TOLERANCE
+    && appliedAmountThb <= originalAmountThb + MONEY_TOLERANCE;
 }
 function safeCredit(record) {
   return {
@@ -192,7 +218,19 @@ function safeCredit(record) {
     customerDisplayNote: clean(field(record, CREDIT.customerNote), 500) || null,
     createdBy: clean(field(record, CREDIT.createdBy), 160) || null,
     createdAt: clean(field(record, CREDIT.createdAt), 80) || null,
+    verified: isVerifiedAdminCreditRecord(record),
+    verificationState: normalized(field(record, CREDIT.verificationStatus)) || "unverified",
+    verificationSource: normalized(field(record, CREDIT.verificationSource)) || null,
+    verifiedAmountThb: numberValue(field(record, CREDIT.verifiedAmount)) || 0,
+    verifiedAt: clean(field(record, CREDIT.verifiedAt), 120) || null,
   };
+}
+function existingCreditResponse(record) {
+  const credit = safeCredit(record);
+  if (!credit.verified) {
+    return json({ ok: false, error: { code: "CLIENT_CREDIT_VERIFICATION_REVIEW_REQUIRED", message: "An existing credit allocation is not payment-authority verified and requires review." }, credit }, 409);
+  }
+  return json({ ok: true, idempotentReplay: true, credit });
 }
 async function requireActor(request, env) {
   const actor = await readCredentialBoundAdminActor(request, env);
@@ -209,9 +247,10 @@ async function handleList(request, env) {
       .map(safeCredit)
       .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
     const availableBalanceThb = items
-      .filter((item) => ["available", "partially_used"].includes(item.status))
+      .filter((item) => item.verified === true && ["available", "partially_used"].includes(item.status))
       .reduce((sum, item) => sum + Math.max(0, item.availableAmountThb), 0);
-    return json({ ok: true, clientId, availableBalanceThb, items });
+    const pendingVerificationCount = items.filter((item) => item.verified !== true && ["available", "partially_used", "pending_review"].includes(item.status)).length;
+    return json({ ok: true, clientId, verificationState: "verified_only_balance", availableBalanceThb, pendingVerificationCount, items });
   } catch (error) {
     return json({ ok: false, error: { code: clean(error?.message, 80) || "CLIENT_CREDIT_READ_FAILED", message: "Client credit data is temporarily unavailable." } }, 503);
   }
@@ -242,7 +281,7 @@ async function handleCarryForward(request, env) {
 
   try {
     const replay = await listCredits(env, { idempotencyKey });
-    if (replay.length) return json({ ok: true, idempotentReplay: true, credit: safeCredit(replay[0]) });
+    if (replay.length) return existingCreditResponse(replay[0]);
 
     const [payment, session] = await Promise.all([
       readRecord(env, PAYMENTS_TABLE, paymentRecordId),
@@ -271,17 +310,30 @@ async function handleCarryForward(request, env) {
       return json({ ok: false, error: { code: "SOURCE_PAYMENT_NOT_VERIFIED", message: "Carry-forward credit requires officially verified received funds.", paymentVerification: money.verification || "unknown", depositStatus: money.depositStatus || "unknown", receivedThb: money.receivedThb } }, 409);
     }
 
-    // Carry-forward is intentionally one immutable allocation per source Payment.
-    // It must carry the full verified received amount. Atomic Airtable upsert on the
-    // deterministic credit_id prevents parallel requests from minting two balances.
-    if (Math.abs(requestedAmountThb - money.receivedThb) > 0.001) {
+    if (Math.abs(requestedAmountThb - money.receivedThb) > MONEY_TOLERANCE) {
       return json({ ok: false, error: { code: "CARRY_FORWARD_MUST_MATCH_RECEIVED", message: "Carry-forward amount must equal verified received funds.", verifiedReceivedThb: money.receivedThb } }, 409);
     }
     const creditId = `CRD-${paymentRecordId}`;
     const existing = await listCredits(env, { creditId });
-    if (existing.length) return json({ ok: true, idempotentReplay: true, credit: safeCredit(existing[0]) });
+    if (existing.length) return existingCreditResponse(existing[0]);
 
     const now = new Date().toISOString();
+    const verificationAt = money.officialAt || now;
+    const verificationRef = money.officialRef || paymentRef;
+    const verificationBy = money.officialBy || "payment_authority";
+    const verificationSnapshot = JSON.stringify({
+      version: "verified_client_credit_v1",
+      source: VERIFIED_CREDIT_SOURCE,
+      paymentRecordId,
+      paymentRef,
+      paymentVerification: money.verification || null,
+      depositStatus: money.depositStatus || null,
+      receivedThb: money.receivedThb,
+      officialVerifiedAt: money.officialAt || null,
+      officialVerificationRef: money.officialRef || null,
+      officialVerifiedBy: money.officialBy || null,
+    }).slice(0, 4000);
+
     const fields = {
       [CREDIT.id]: creditId,
       [CREDIT.client]: [clientId],
@@ -301,6 +353,13 @@ async function handleCarryForward(request, env) {
       [CREDIT.clientRecordId]: clientId,
       [CREDIT.paymentRef]: paymentRef,
       [CREDIT.sessionId]: sessionId,
+      [CREDIT.verificationStatus]: "verified",
+      [CREDIT.verifiedAmount]: money.receivedThb,
+      [CREDIT.verifiedAt]: verificationAt,
+      [CREDIT.verifiedBy]: verificationBy,
+      [CREDIT.verificationRef]: verificationRef,
+      [CREDIT.verificationSource]: VERIFIED_CREDIT_SOURCE,
+      [CREDIT.verificationSnapshot]: verificationSnapshot,
     };
     if (memberRecordId) fields[CREDIT.member] = [memberRecordId];
     if (memberId) fields[CREDIT.memberId] = memberId;
@@ -316,7 +375,9 @@ async function handleCarryForward(request, env) {
     });
     const record = Array.isArray(upserted?.records) ? upserted.records[0] : null;
     if (!record) throw new Error("CLIENT_CREDIT_UPSERT_FAILED");
-    return json({ ok: true, idempotentReplay: false, credit: safeCredit(record), source: { paymentRef, sessionId, verifiedReceivedThb: money.receivedThb } }, 201);
+    const credit = safeCredit(record);
+    if (!credit.verified) throw new Error("CLIENT_CREDIT_VERIFICATION_WRITE_FAILED");
+    return json({ ok: true, idempotentReplay: false, credit, source: { paymentRef, sessionId, verifiedReceivedThb: money.receivedThb } }, 201);
   } catch (error) {
     return json({ ok: false, error: { code: clean(error?.message, 80) || "CLIENT_CREDIT_CREATE_FAILED", message: "Client credit could not be created." } }, 503);
   }
