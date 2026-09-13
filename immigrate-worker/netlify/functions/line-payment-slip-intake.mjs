@@ -245,6 +245,9 @@ async function uniqueRecord({ env, table, formula, fetchImpl }) {
 export async function resolveDeterministicLinks({ env, identity, extraction, fetchImpl = fetch }) {
   const queries = [];
   if (identity.lineUserId) {
+    if (/^U[A-Za-z0-9_-]{20,80}$/.test(identity.lineUserId)) {
+      queries.push(["client", env.AIRTABLE_TABLE_CLIENTS || "Clients", `{line_user_id}='${formulaValue(identity.lineUserId)}'`]);
+    }
     queries.push(["member", env.AIRTABLE_TABLE_MEMBERS || "Members", `{line_id}='${formulaValue(identity.lineUserId)}'`]);
   }
   if (extraction.session_id) {
@@ -258,7 +261,7 @@ export async function resolveDeterministicLinks({ env, identity, extraction, fet
   }
   const resolved = Object.fromEntries(await Promise.all(queries.map(async ([name, table, formula]) => [name, await uniqueRecord({ env, table, formula, fetchImpl })])));
   const ambiguous = Object.values(resolved).some((item) => item.ambiguous);
-  return { member: ambiguous ? "" : resolved.member?.id || "", session: ambiguous ? "" : resolved.session?.id || "", payment: ambiguous ? "" : resolved.payment?.id || "", renewal: ambiguous ? "" : resolved.renewal?.id || "", ambiguous };
+  return { client: ambiguous ? "" : resolved.client?.id || "", member: ambiguous ? "" : resolved.member?.id || "", session: ambiguous ? "" : resolved.session?.id || "", payment: ambiguous ? "" : resolved.payment?.id || "", renewal: ambiguous ? "" : resolved.renewal?.id || "", ambiguous };
 }
 
 export function buildStagedHandoff({ proofId, extraction, reviewRequired }) {
@@ -294,7 +297,7 @@ function proofFields({ identity, stored, extraction, duplicateSha, duplicateRef,
     extraction_error: extraction.extraction_error || null, raw_payload_json_redacted: { message_id: identity.messageId, webhook_event_id: identity.webhookEventId },
     links,
     payment_intelligence: paymentIntelligence,
-    pending_identity: paymentIntelligence?.pending_member_profile ? {
+    pending_identity: paymentIntelligence?.pending_member_profile && !links.client ? {
       state: "pending_identity_match", line_user_id: identity.lineUserId || null, line_user_id_hash: identity.lineUserIdHash,
       payer_name: extraction.payer_name || null, payment_ref: extraction.payment_ref || null, amount_thb: extraction.amount_thb,
       created_from: "verified_line_payment_evidence", merge_target: "canonical_client_and_member",
@@ -311,6 +314,7 @@ function proofFields({ identity, stored, extraction, duplicateSha, duplicateRef,
     fields.paid_at = localDate || new Date(extraction.paid_at).toISOString().slice(0, 10);
   }
   if (extraction.payment_ref) fields.payment_ref = extraction.payment_ref;
+  if (links.client) fields.Client = [links.client];
   if (links.member) fields.member = [links.member];
   if (links.session) fields.session = [links.session];
   if (links.payment) fields.payment = [links.payment];
@@ -386,11 +390,11 @@ export async function processPaymentSlipImage({ env, event, fetchImpl = fetch, n
       findDuplicate({ env, formula: duplicateShaFormula, fetchImpl }),
       findDuplicate({ env, formula: duplicateRefFormula, fetchImpl }),
     ]);
-    let links = { member: "", session: "", payment: "", renewal: "", ambiguous: false };
+    let links = { client: "", member: "", session: "", payment: "", renewal: "", ambiguous: false };
     try { links = await resolveDeterministicLinks({ env, identity, extraction, fetchImpl }); } catch { links.ambiguous = true; }
     const threshold = Math.max(0.5, Math.min(1, numberOrNull(env.LINE_SLIP_CONFIDENCE_THRESHOLD) || 0.85));
     const reconciliationComplete = Boolean(extraction.payment_ref && extraction.amount_thb != null);
-    const deterministicallyLinked = Boolean(links.member || links.session || links.payment || links.renewal);
+    const deterministicallyLinked = Boolean(links.client || links.member || links.session || links.payment || links.renewal);
     const reviewRequired = Boolean(duplicateSha || duplicateRef || links.ambiguous || extraction.confidence_score < threshold || !reconciliationComplete || !deterministicallyLinked);
     const fields = proofFields({ identity, stored, extraction, duplicateSha, duplicateRef, links, reviewRequired });
     const proof = await createProof({ env, fields, fetchImpl });
