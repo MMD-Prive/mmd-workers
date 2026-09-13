@@ -2,258 +2,161 @@ name: Payment Review Facade CI
 
 on:
   pull_request:
-    branches:
-      - main
+    paths:
+      - "admin-worker/src/admin-login-hero-worker.js"
+      - "admin-worker/src/payment-review-runtime.js"
+      - "admin-worker/src/payment-review-line-recovery.js"
+      - "admin-worker/line-slip-intake-review-queue.contract.test.mjs"
+      - "admin-worker/payment-review-manual-renewal-recovery.test.mjs"
+      - "admin-worker/wrangler.toml"
+      - "payments-worker/index.review-wrapper.js"
+      - "payments-worker/reviewed-proof.js"
+      - "payments-worker/reviewed-proof-line-recovery.test.mjs"
+      - "payments-worker/reviewed-proof-canonical-money-truth.js"
+      - "payments-worker/reviewed-proof-canonical-money-truth.test.mjs"
+      - "payments-worker/reviewed-membership-write-through.js"
+      - "payments-worker/reviewed-membership-write-through.test.mjs"
+      - "payments-worker/wrangler.merged.toml"
+      - "webflow/internal/admin/payments/**"
+      - ".github/workflows/deploy-admin-worker.yml"
+      - ".github/workflows/payment-review-facade-ci.yml"
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply-payment-transport-repair:
-    if: github.head_ref == 'fix/payment-internal-binding-headline-20260913'
+  contract:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 0
-
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
 
-      - name: Apply binding-first transport and headline contrast
-        shell: bash
+      - name: Syntax
         run: |
           set -euo pipefail
-          python3 <<'PY'
-          from pathlib import Path
-
-          def read(path):
-              return Path(path).read_text()
-
-          def write(path, text):
-              Path(path).write_text(text)
-
-          def replace_once(path, old, new):
-              text = read(path)
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"{path}: expected exactly one match, found {count}")
-              write(path, text.replace(old, new, 1))
-
-          # 1) Normal Payment Review: PAYMENTS_WORKER service binding first, HTTPS only as fallback.
-          replace_once(
-              "admin-worker/src/payment-review-runtime.js",
-              '''async function sendReviewedProofToPayments(env, body) {
-  const base = clean(env.PAYMENTS_BASE_URL).replace(/\\/+$/, "");
-  const token = clean(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
-  if (!base) throw httpError(503, "payments_worker_base_url_missing");
-  if (!token) throw httpError(503, "payments_worker_service_auth_missing");
-  return fetch(`${base}/v1/internal/payments/reviewed-proof`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-''',
-              '''async function sendReviewedProofToPayments(env, body) {
-  const token = clean(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
-  if (!token) throw httpError(503, "payments_worker_service_auth_missing");
-  const init = {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  };
-  if (typeof env.PAYMENTS_WORKER?.fetch === "function") {
-    return env.PAYMENTS_WORKER.fetch(new Request("https://sigil.mmdbkk.com/v1/internal/payments/reviewed-proof", init));
-  }
-  const base = clean(env.PAYMENTS_BASE_URL).replace(/\\/+$/, "");
-  if (!base) throw httpError(503, "payments_worker_base_url_missing");
-  return fetch(`${base}/v1/internal/payments/reviewed-proof`, init);
-}
-''',
-          )
-
-          # 2) Email-less LINE renewal recovery: same binding-first transport, preserving legacy errors.
-          replace_once(
-              "admin-worker/src/payment-review-line-recovery.js",
-              '''async function sendToPayments(env, body) {
-  const base = clean(env.PAYMENTS_BASE_URL).replace(/\\/+$/, "");
-  const tokenValue = clean(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
-  if (!base || !tokenValue) throw httpError(503, "payments_worker_service_not_ready");
-  return fetch(`${base}/v1/internal/payments/reviewed-proof`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${tokenValue}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-''',
-              '''async function sendToPayments(env, body) {
-  const tokenValue = clean(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
-  if (!tokenValue) throw httpError(503, "payments_worker_service_not_ready");
-  const init = {
-    method: "POST",
-    headers: { Authorization: `Bearer ${tokenValue}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  };
-  if (typeof env.PAYMENTS_WORKER?.fetch === "function") {
-    return env.PAYMENTS_WORKER.fetch(new Request("https://sigil.mmdbkk.com/v1/internal/payments/reviewed-proof", init));
-  }
-  const base = clean(env.PAYMENTS_BASE_URL).replace(/\\/+$/, "");
-  if (!base) throw httpError(503, "payments_worker_service_not_ready");
-  return fetch(`${base}/v1/internal/payments/reviewed-proof`, init);
-}
-''',
-          )
-
-          # 3) Historical backfill: both real review handoff and safe validate_handoff probe use binding first.
-          replace_once(
-              "admin-worker/src/historical-slip-backfill-runtime.js",
-              '''  const base = clean(env.PAYMENTS_BASE_URL).replace(/\\/+$/, "");
-  const serviceToken = clean(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
-  if (!base) throw httpError(503, "payments_worker_base_url_missing");
-  if (!serviceToken) throw httpError(503, "payments_worker_service_auth_missing");
-
-  const handoff = {
-''',
-              '''  const serviceToken = clean(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
-  if (!serviceToken) throw httpError(503, "payments_worker_service_auth_missing");
-
-  const handoff = {
-''',
-          )
-          replace_once(
-              "admin-worker/src/historical-slip-backfill-runtime.js",
-              '''  const response = await fetch(`${base}/v1/internal/payments/historical-slip/reviewed`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${serviceToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify(handoff),
-  });
-''',
-              '''  const handoffInit = {
-    method: "POST",
-    headers: { Authorization: `Bearer ${serviceToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify(handoff),
-  };
-  const response = typeof env.PAYMENTS_WORKER?.fetch === "function"
-    ? await env.PAYMENTS_WORKER.fetch(new Request("https://sigil.mmdbkk.com/v1/internal/payments/historical-slip/reviewed", handoffInit))
-    : await (() => {
-        const base = clean(env.PAYMENTS_BASE_URL).replace(/\\/+$/, "");
-        if (!base) throw httpError(503, "payments_worker_base_url_missing");
-        return fetch(`${base}/v1/internal/payments/historical-slip/reviewed`, handoffInit);
-      })();
-''',
-          )
-          replace_once(
-              "admin-worker/src/historical-slip-backfill-runtime.js",
-              '''async function validateHistoricalHandoff(proof, note, body, env, reviewReason) {
-  const base = clean(env.PAYMENTS_BASE_URL).replace(/\\/+$/, "");
-  const serviceToken = clean(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
-  if (!base) throw httpError(503, "payments_worker_base_url_missing");
-  if (!serviceToken) throw httpError(503, "payments_worker_service_auth_missing");
-
-''',
-              '''async function validateHistoricalHandoff(proof, note, body, env, reviewReason) {
-  const serviceToken = clean(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
-  if (!serviceToken) throw httpError(503, "payments_worker_service_auth_missing");
-
-''',
-          )
-          replace_once(
-              "admin-worker/src/historical-slip-backfill-runtime.js",
-              '''  const response = await fetch(base + "/v1/internal/payments/historical-slip/reviewed", {
-    method: "POST",
-    headers: { Authorization: "Bearer " + serviceToken, "Content-Type": "application/json" },
-    body: JSON.stringify(handoffProbe),
-  });
-''',
-              '''  const handoffProbeInit = {
-    method: "POST",
-    headers: { Authorization: "Bearer " + serviceToken, "Content-Type": "application/json" },
-    body: JSON.stringify(handoffProbe),
-  };
-  const response = typeof env.PAYMENTS_WORKER?.fetch === "function"
-    ? await env.PAYMENTS_WORKER.fetch(new Request("https://sigil.mmdbkk.com/v1/internal/payments/historical-slip/reviewed", handoffProbeInit))
-    : await (() => {
-        const base = clean(env.PAYMENTS_BASE_URL).replace(/\\/+$/, "");
-        if (!base) throw httpError(503, "payments_worker_base_url_missing");
-        return fetch(base + "/v1/internal/payments/historical-slip/reviewed", handoffProbeInit);
-      })();
-''',
-          )
-
-          # Payment Control Plane headline readability lock for all three canonical pages.
-          style_block = '''\n    if (!document.getElementById('mmd-payment-headline-contrast-v1')) {
-      const style = document.createElement('style');
-      style.id = 'mmd-payment-headline-contrast-v1';
-      style.textContent = `
-        #money-control-v3 h1, #mmd-slip-inbox h1, #mmd-history-backfill h1 {
-          background: none !important;
-          color: #f4efe6 !important;
-          -webkit-text-fill-color: #f4efe6 !important;
-          opacity: 1 !important;
-          filter: none !important;
-          text-shadow: 0 1px 0 rgba(255,255,255,.05), 0 14px 38px rgba(0,0,0,.38) !important;
-        }
-        #money-control-v3 h2, #mmd-slip-inbox h2, #mmd-history-backfill h2 {
-          background: none !important;
-          color: #ece5da !important;
-          -webkit-text-fill-color: #ece5da !important;
-          opacity: 1 !important;
-          filter: none !important;
-        }
-      `;
-      document.head.appendChild(style);
-    }
-'''
-          replace_once(
-              "webflow/internal/admin/payments/payment-control-plane-v6.js",
-              "    if (!root) return;\n",
-              "    if (!root) return;\n" + style_block,
-          )
-
-          style_block_2 = style_block.replace("\n    if", "\n  if", 1).replace("\n      const style", "\n    const style").replace("\n      style.id", "\n    style.id").replace("\n      style.textContent", "\n    style.textContent").replace("\n      document.head", "\n    document.head").replace("\n    }\n", "\n  }\n", 1)
-          replace_once(
-              "webflow/internal/ceo/payment-slip-inbox-v5.js",
-              "  if (!root || root.__psi5) return;\n",
-              "  if (!root || root.__psi5) return;\n" + style_block_2,
-          )
-          replace_once(
-              "webflow/internal/admin/payments/historical-backfill-control-plane-v2.js",
-              "  if (!root) return;\n",
-              "  if (!root) return;\n" + style_block_2,
-          )
-          PY
-
-      - name: Validate targeted contracts
-        shell: bash
-        run: |
-          set -euo pipefail
+          node --check admin-worker/src/admin-login-hero-worker.js
           node --check admin-worker/src/payment-review-runtime.js
           node --check admin-worker/src/payment-review-line-recovery.js
-          node --check admin-worker/src/historical-slip-backfill-runtime.js
-          node --experimental-global-webcrypto --test admin-worker/historical-slip-backfill-handoff-probe.test.mjs
-          node --test admin-worker/payment-review-manual-renewal-recovery.test.mjs
-          node --check webflow/internal/admin/payments/payment-control-plane-v6.js
-          node --check webflow/internal/ceo/payment-slip-inbox-v5.js
-          node --check webflow/internal/admin/payments/historical-backfill-control-plane-v2.js
-          grep -F 'PAYMENTS_WORKER?.fetch' admin-worker/src/payment-review-runtime.js
-          grep -F 'PAYMENTS_WORKER?.fetch' admin-worker/src/payment-review-line-recovery.js
-          test "$(grep -F -c 'PAYMENTS_WORKER?.fetch' admin-worker/src/historical-slip-backfill-runtime.js)" -ge 2
-          grep -F 'mmd-payment-headline-contrast-v1' webflow/internal/admin/payments/payment-control-plane-v6.js
-          grep -F 'mmd-payment-headline-contrast-v1' webflow/internal/ceo/payment-slip-inbox-v5.js
-          grep -F 'mmd-payment-headline-contrast-v1' webflow/internal/admin/payments/historical-backfill-control-plane-v2.js
+          node --check payments-worker/index.review-wrapper.js
+          node --check payments-worker/reviewed-proof.js
+          node --check payments-worker/reviewed-proof-canonical-money-truth.js
+          node --experimental-default-type=module --check payments-worker/reviewed-membership-write-through.js
 
-      - name: Commit repair to PR branch and restore canonical CI
-        shell: bash
+      - name: Newest payment proof queue contract
         run: |
           set -euo pipefail
-          git fetch origin main
-          git checkout origin/main -- .github/workflows/payment-review-facade-ci.yml
-          git add -A
-          git diff --cached --check
-          git config user.name "mmd-payment-bot"
-          git config user.email "mmd-payment-bot@users.noreply.github.com"
-          git commit -m "Fix payment internal binding and headline contrast"
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          node --test admin-worker/line-slip-intake-review-queue.contract.test.mjs
+
+      - name: Manual renewal recovery contract
+        run: |
+          set -euo pipefail
+          node --test admin-worker/payment-review-manual-renewal-recovery.test.mjs
+
+      - name: Email-less LINE renewal recovery contract
+        run: |
+          set -euo pipefail
+          node --test payments-worker/reviewed-proof-line-recovery.test.mjs
+
+      - name: Canonical recovery Money Truth contract
+        run: |
+          set -euo pipefail
+          node --test payments-worker/reviewed-proof-canonical-money-truth.test.mjs
+
+      - name: Canonical membership write-through contract
+        run: |
+          set -euo pipefail
+          node --experimental-global-webcrypto --experimental-default-type=module --test payments-worker/reviewed-membership-write-through.test.mjs
+
+      - name: Browser facade guardrails
+        run: |
+          set -euo pipefail
+          grep -F 'browser_admin_session_required' admin-worker/src/admin-login-hero-worker.js
+          grep -F 'forbidden_origin' admin-worker/src/admin-login-hero-worker.js
+          grep -F 'isPaymentReviewRequest' admin-worker/src/admin-login-hero-worker.js
+          grep -F 'handlePaymentReviewRequest' admin-worker/src/admin-login-hero-worker.js
+          grep -F 'Idempotency-Key' admin-worker/src/payment-review-runtime.js
+          grep -F 'browser_can_mark_paid: false' admin-worker/src/payment-review-runtime.js
+          grep -F 'browser_can_award_points: false' admin-worker/src/payment-review-runtime.js
+          grep -F 'historical_backfill_separate: true' admin-worker/src/payment-review-runtime.js
+          grep -F 'manual_recovery_requires_owner_admin: true' admin-worker/src/payment-review-runtime.js
+          grep -F 'manual_recovery_requires_canonical_member: true' admin-worker/src/payment-review-runtime.js
+          grep -F 'ordering: "created_at_desc"' admin-worker/src/payment-review-runtime.js
+          grep -F 'sort: [{ field: "created_at", direction: "desc" }]' admin-worker/src/payment-review-runtime.js
+          grep -F 'browser_can_mark_paid: false' admin-worker/src/payment-review-line-recovery.js
+          grep -F 'browser_can_mutate_entitlement: false' admin-worker/src/payment-review-line-recovery.js
+
+      - name: Membership receipt contract
+        run: |
+          set -euo pipefail
+          grep -F 'function safeMembershipWriteThrough(value)' admin-worker/src/payment-review-runtime.js
+          grep -F 'membership_write_through: safeMembershipWriteThrough(payload.membership_write_through)' admin-worker/src/payment-review-runtime.js
+          grep -F 'membership_write_through: safeMembershipWriteThrough(after.membership_write_through)' admin-worker/src/payment-review-runtime.js
+          grep -F 'manual_membership_review_required: payload.manual_membership_review_required === true' admin-worker/src/payment-review-runtime.js
+          grep -F 'payment_stage: input.payment_stage || null' admin-worker/src/payment-review-runtime.js
+          grep -F 'money-control-v4-entitlement-receipt-20260913' webflow/internal/admin/payments/money-control-v3.html
+          grep -F 'Membership Review' webflow/internal/admin/payments/money-control-v3.html
+          grep -F "notice='ยืนยันเงินแล้ว · '+actionLabel" webflow/internal/admin/payments/money-control-v3.html
+
+      - name: Payment Review fail-closed hardening
+        run: |
+          set -euo pipefail
+          grep -F 'const CANONICAL_PAYMENTS_TABLE_ID = "tblWGGJJOx5eBvBZJ";' admin-worker/src/payment-review-runtime.js
+          grep -F 'env.AIRTABLE_TABLE_PAYMENTS_ID ||' admin-worker/src/payment-review-runtime.js
+          grep -F 'if (!proofId) return null;' admin-worker/src/payment-review-runtime.js
+          grep -F 'authority: "admin-worker"' admin-worker/src/payment-review-runtime.js
+          grep -F 'manual_audit_required: audit.ok === false' admin-worker/src/payment-review-runtime.js
+          grep -F 'audit_write_failed: audit.ok === false' admin-worker/src/payment-review-runtime.js
+          grep -F 'context_source: "liff_renewal_recovery"' admin-worker/src/payment-review-runtime.js
+          grep -F 'manual_recovery_requires_owner_admin' admin-worker/src/payment-review-runtime.js
+          grep -F 'canonical_member_context_ambiguous' admin-worker/src/payment-review-runtime.js
+          grep -F 'raw === "mmd_member" || raw === "member_690" || raw === "membership" || raw === "public_member"' admin-worker/src/payment-review-runtime.js
+          grep -F 'raw === "elite" || raw === "elite_membership"' admin-worker/src/payment-review-runtime.js
+          grep -F 'raw === "red_card" || raw === "redcard"' admin-worker/src/payment-review-runtime.js
+          grep -F 'const RENEWAL_PRICES = Object.freeze({ standard: new Set([499, 799, 1000]), premium: new Set([999, 1999, 2500]) });' admin-worker/src/payment-review-line-recovery.js
+          grep -F 'context_source: "liff_renewal_recovery"' admin-worker/src/payment-review-line-recovery.js
+          if grep -F 'maxRecords: 2 }).catch(() => [])' admin-worker/src/payment-review-runtime.js; then
+            echo 'audit idempotency lookup must fail closed; swallowed Airtable error found' >&2
+            exit 1
+          fi
+
+      - name: Money Truth separation
+        run: |
+          set -euo pipefail
+          grep -F 'AUTH_SERVICE_ADMIN_TO_PAYMENTS' admin-worker/src/payment-review-runtime.js
+          grep -F '/v1/internal/payments/reviewed-proof' admin-worker/src/payment-review-runtime.js
+          grep -F 'AUTH_SERVICE_ADMIN_TO_PAYMENTS' admin-worker/src/payment-review-line-recovery.js
+          grep -F '/v1/internal/payments/reviewed-proof' admin-worker/src/payment-review-line-recovery.js
+          grep -F 'AUTH_SERVICE_ADMIN_TO_PAYMENTS' payments-worker/reviewed-proof.js
+          grep -F 'historical_proof_requires_historical_review_contract' payments-worker/reviewed-proof.js
+          grep -F 'X-MMD-Payment-Authority' payments-worker/reviewed-proof.js
+          grep -F 'materializeRecoveredMembership' payments-worker/reviewed-proof.js
+          grep -F 'downstream_access_reconcile_required' payments-worker/reviewed-proof.js
+          grep -F 'isEmailLessLineRenewalMoneyTruth' payments-worker/index.review-wrapper.js
+          grep -F 'reconcileReviewedMembershipEntitlement' payments-worker/index.review-wrapper.js
+          grep -F 'my_mmd_entitlement_resolver_v1' payments-worker/reviewed-membership-write-through.js
+          grep -F 'Payment Reference' payments-worker/reviewed-proof-canonical-money-truth.js
+          if grep -F 'AUTH_SERVICE_ADMIN_TO_PAYMENTS' webflow/internal/admin/payments 2>/dev/null; then
+            echo 'service secret reference found in Webflow payment assets' >&2
+            exit 1
+          fi
+
+      - name: Exact route ownership
+        run: |
+          set -euo pipefail
+          grep -F 'mmdbkk.com/v1/admin/payments/review-queue*' admin-worker/wrangler.toml
+          grep -F 'www.mmdbkk.com/v1/admin/payments/review-queue*' admin-worker/wrangler.toml
+          grep -F 'mmdbkk.com/v1/admin/payments/review"' admin-worker/wrangler.toml
+          grep -F 'www.mmdbkk.com/v1/admin/payments/review"' admin-worker/wrangler.toml
+          grep -F '"/v1/admin/payments/review-queue*"' .github/workflows/deploy-admin-worker.yml
+          grep -F '"/v1/admin/payments/review"' .github/workflows/deploy-admin-worker.yml
+
+      - name: Production entrypoint contracts
+        run: |
+          set -euo pipefail
+          grep -F 'main = "src/admin-login-hero-worker.js"' admin-worker/wrangler.toml
+          grep -F 'main = "index.review-wrapper.js"' payments-worker/wrangler.merged.toml
+          npx --yes wrangler@4 versions upload --dry-run --keep-vars --config admin-worker/wrangler.toml
+          npx --yes wrangler@4 versions upload --dry-run --keep-vars --config payments-worker/wrangler.merged.toml
