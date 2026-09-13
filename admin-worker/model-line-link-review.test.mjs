@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import {
   MODEL_IDENTITY_FIRST_POLICY,
@@ -11,6 +12,10 @@ import {
   isModelLineLinkClaimsRequest,
   isModelLineLinkPage,
 } from "./src/model-line-link-review.js";
+import {
+  MODEL_LINE_LINK_MATERIALIZE_MODE,
+  inferModelLanes,
+} from "./src/unified-model-drive-link.js";
 import {
   MODEL_LINK_AIRTABLE_TIMEOUT_MS,
   MODEL_LINK_QUEUE_API_TIMEOUT_MS,
@@ -72,7 +77,7 @@ test("pending claims use only the explicit activation-candidates queue mode", ()
 });
 
 test("candidate search uses only the explicit line-link candidate mode", () => {
-  assert.equal(isModelLineLinkCandidatesRequest(new Request("https://mmdbkk.com/v1/admin/models/activation-candidates?mode=line-link-candidates&q=Mek")), true);
+  assert.equal(isModelLineLinkCandidatesRequest(new Request("https://mmdbkk.com/v1/admin/models/activation-candidates?mode=line-link-candidates&q=Mek&lane=all")), true);
   assert.equal(isModelLineLinkCandidatesRequest(new Request("https://mmdbkk.com/v1/admin/models/activation-candidates?q=Mek")), false);
 });
 
@@ -80,6 +85,23 @@ test("owner bind mutation requires the explicit bind mode", () => {
   assert.equal(isModelLineLinkBindPayload({ mode: MODEL_LINE_LINK_BIND_MODE }), true);
   assert.equal(isModelLineLinkBindPayload({ mode: "issue" }), false);
   assert.equal(isModelLineLinkBindPayload(null), null);
+  assert.equal(MODEL_LINE_LINK_MATERIALIZE_MODE, "materialize_drive_verified_claim");
+});
+
+test("canonical Model lanes can represent Public, Private, or both", () => {
+  assert.deepEqual(inferModelLanes({ can_work_public: true }), ["public"]);
+  assert.deepEqual(inferModelLanes({ can_work_private: true }), ["private"]);
+  assert.deepEqual(inferModelLanes({ can_work_public: true, can_work_private: true }), ["public", "private"]);
+  assert.deepEqual(inferModelLanes({ folder_scope_key: "private:drive:abc" }), ["private"]);
+  assert.deepEqual(inferModelLanes({ sales_layer: "both" }), ["public", "private"]);
+});
+
+test("admin Model Link uses the private member-pages Drive directory binding", async () => {
+  const wrangler = await readFile(new URL("./wrangler.toml", import.meta.url), "utf8");
+  assert.match(
+    wrangler,
+    /\[\[services\]\]\s*binding = "MODEL_DRIVE_DIRECTORY"\s*service = "member-pages-worker"/,
+  );
 });
 
 test("LINE picture snapshot accepts HTTPS only", () => {
@@ -126,11 +148,11 @@ test("owner review HTML fails visibly with retry instead of staying on loading",
   assert.match(html, /Request timeout/);
   assert.match(html, /โหลดคิวไม่ได้/);
   assert.match(html, /data-action="reload-claims"/);
-  assert.match(html, /Private Model Link Queue/);
-  assert.match(html, /Create Job/);
+  assert.match(html, /Model Link Queue/);
+  assert.match(html, /Public และ Private Model/);
 });
 
-test("owner review HTML provides lazy avatar and initials fallback without changing explicit LINK", async () => {
+test("owner review HTML provides unified lane filters and explicit Drive materialization", async () => {
   const response = renderModelLineLinkPageWithAvatar();
   const html = await response.text();
   assert.match(html, /loading="lazy"/);
@@ -138,6 +160,11 @@ test("owner review HTML provides lazy avatar and initials fallback without chang
   assert.match(html, /referrerpolicy="no-referrer"/);
   assert.match(html, /class="initial"/);
   assert.match(html, /onerror="this\.remove\(\)"/);
+  assert.match(html, /data-lane="all"/);
+  assert.match(html, />Public</);
+  assert.match(html, />Private</);
+  assert.match(html, /materialize_drive_verified_claim/);
+  assert.match(html, /สร้าง Model \+ เชื่อม LINE/);
+  assert.match(html, /ไม่เดาหรือเชื่อม LINE ให้อัตโนมัติ/);
   assert.match(html, /confirm:true/);
-  assert.match(html, /ไม่เดาจากชื่อหรือรูป LINE/);
 });

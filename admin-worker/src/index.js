@@ -2689,8 +2689,9 @@ async function handleModelPrivateFlashAuthorize(env, body, context) {
   const grantId = `flash_grant_${crypto.randomUUID()}`;
   const expiresAt = str(body.expires_at) || addMinutesIso(clampInt(body.expires_in_minutes, 1, 240, 30));
   const fields = tables.flashGrants.fields;
-  const viewLimit = clampInt(body.view_limit, 1, 20, 3);
-  const durationSec = clampInt(body.duration_sec || body.expires_in_minutes * 60, 30, 14400, 1800);
+  const previewPolicy = resolvePrivatePreviewPolicy(body);
+  const viewLimit = previewPolicy.view_limit;
+  const durationSec = previewPolicy.duration_sec;
   const rec = await modelSchemaPatchCreate(env, tables.flashGrants, {
     [fields.grantId]: grantId,
     [fields.client]: modelSchemaLinkedRecord(clientId),
@@ -2716,6 +2717,8 @@ async function handleModelPrivateFlashAuthorize(env, body, context) {
       authorization_basis: basis,
       payment_ref: str(body.payment_ref),
       token_storage: "sha256_hash_only",
+      preview_kind: previewPolicy.preview_kind,
+      consume_on: previewPolicy.consume_on,
     }),
   });
   return {
@@ -2727,6 +2730,9 @@ async function handleModelPrivateFlashAuthorize(env, body, context) {
     client_id: clientId,
     expires_at: expiresAt,
     view_limit: viewLimit,
+    duration_sec: durationSec,
+    preview_kind: previewPolicy.preview_kind,
+    consume_on: previewPolicy.consume_on,
     authorization_basis: basis,
     t: rawT,
     token_storage: "sha256_hash_only",
@@ -2759,6 +2765,17 @@ export function isVerifiedDepositRecord(record, tables) {
   if (officialVerifiedAt) return true;
   return verificationStatus === "official_verified" &&
     Boolean(officialVerificationRef && (officialVerifiedBy || officialMatchReason));
+}
+
+export function resolvePrivatePreviewPolicy(body = {}) {
+  const kind = normalizeSchemaPatchWord(body.preview_kind || body.media_kind || body.kind);
+  if (kind === "private_pic" || kind === "private_picture" || kind === "image") {
+    return { preview_kind: "private_pic", duration_sec: 3, view_limit: 1, consume_on: "open" };
+  }
+  if (kind === "private_clip" || kind === "clip" || kind === "video") {
+    return { preview_kind: "private_clip", duration_sec: 0, view_limit: 1, consume_on: "play_start" };
+  }
+  throw schemaPatchError("preview_kind_required", 400, "preview_kind must be private_pic or private_clip.");
 }
 
 function isPublicCandidateMedia(mediaType) {

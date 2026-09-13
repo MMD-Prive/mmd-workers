@@ -49,6 +49,7 @@ service = "mms-worker"
 binding = "SIGIL_BOOKING_WORKER"
 service = "sigil-booking-worker"
 
+
 [[durable_objects.bindings]]
 name = "CARE_BACK_WISH_COORDINATOR"
 class_name = "CareBackBirthdayWishCoordinator"
@@ -56,6 +57,18 @@ class_name = "CareBackBirthdayWishCoordinator"
 [[migrations]]
 tag = "v1-care-back-birthday-wish"
 new_sqlite_classes = ["CareBackBirthdayWishCoordinator"]
+
+[[r2_buckets]]
+binding = "MMD_MODEL_ASSETS"
+bucket_name = "mmd-models"
+
+[[durable_objects.bindings]]
+name = "PRIVATE_PREVIEW_GATE"
+class_name = "PrivatePreviewGate"
+
+[[migrations]]
+tag = "v2-private-preview-gate"
+new_sqlite_classes = ["PrivatePreviewGate"]
 
 # Required before deployment:
 # - secret LINE_LOGIN_CHANNEL_ID (existing CARE BACK channel audience)
@@ -136,6 +149,18 @@ service = "mmd-auth-worker-staging"
 [[env.staging.services]]
 binding = "LINE_ID_TOKEN_VERIFIER"
 service = "care-back-staging-fixtures-worker-staging"
+
+[[env.staging.r2_buckets]]
+binding = "MMD_MODEL_ASSETS"
+bucket_name = "mmd-models"
+
+[[env.staging.durable_objects.bindings]]
+name = "PRIVATE_PREVIEW_GATE"
+class_name = "PrivatePreviewGate"
+
+[[env.staging.migrations]]
+tag = "v2-private-preview-gate-staging"
+new_sqlite_classes = ["PrivatePreviewGate"]
 
 [[env.staging.durable_objects.bindings]]
 name = "CARE_BACK_WISH_COORDINATOR"

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   isVerifiedClientCreditRecord,
   verifiedCreditsFromRecords,
+  handleMemberClientCredits,
 } from "./src/member-app-client-credits.js";
 
 function record(overrides = {}) {
@@ -63,57 +64,71 @@ test("customer-safe output never leaks verification or internal reason metadata"
   assert.equal(result.items[0]?.verificationState, "verified");
 });
 
-test("Double Moment bonus requires campaign authority and exact v1 policy", () => {
-  const bonus = record({
-    credit_id: "credit_double_moment_bonus_1",
-    "Credit Type": "bonus_credit",
-    "Credit Authority": "campaign_worker",
-    "Campaign ID": "promo_double_moment_sep2026",
-    "Campaign Claim ID": "claim_double_moment_001",
-    "Policy Version": "v1",
-    "Original Amount THB": 3500,
-    "Available Amount THB": 3500,
-    "Applied Amount THB": 0,
-    "Reserved Amount THB": 0,
-    "Verified Amount THB": 0,
-    "Backing Payment Amount THB": 20000,
-    "Bonus Sequence": 1,
-    "Minimum Service Amount THB": 20000,
-  });
-  assert.equal(isVerifiedClientCreditRecord(bonus), true);
-  assert.equal(isVerifiedClientCreditRecord(record({ ...bonus.fields, "Campaign Claim ID": "" })), false);
-  assert.equal(isVerifiedClientCreditRecord(record({ ...bonus.fields, "Bonus Sequence": 3 })), false);
-  assert.equal(isVerifiedClientCreditRecord(record({ ...bonus.fields, "Backing Payment Amount THB": 19999 })), false);
+const DEADLINE = Date.parse("2026-12-12T16:59:59.999Z");
+const cancellation = (extra = {}) => record({
+  "Credit Type": "carried_forward_deposit",
+  Reason: "client_cancel_no_penalty",
+  "Expires At": new Date(DEADLINE).toISOString(),
+  "Customer Display Note": "งานยกเลิกแล้ว เครดิตคงเหลือใช้ได้ภายใน 90 วัน",
+  ...extra,
 });
 
-test("credit response separates paid, bonus, and carried-forward balances", () => {
-  const paid = record({
-    credit_id: "credit_double_moment_paid",
-    "Credit Type": "paid_credit",
-    "Credit Authority": "payment_authority",
-    "Original Amount THB": 20000,
-    "Available Amount THB": 20000,
-    "Verified Amount THB": 20000,
-  });
-  const bonus = record({
-    credit_id: "credit_double_moment_bonus_1",
-    "Credit Type": "bonus_credit",
-    "Credit Authority": "campaign_worker",
-    "Campaign ID": "promo_double_moment_sep2026",
-    "Campaign Claim ID": "claim_double_moment_001",
-    "Policy Version": "v1",
-    "Original Amount THB": 3500,
-    "Available Amount THB": 3500,
-    "Verified Amount THB": 0,
-    "Backing Payment Amount THB": 20000,
-    "Bonus Sequence": 1,
-    "Minimum Service Amount THB": 20000,
-  });
-  const result = verifiedCreditsFromRecords([paid, bonus, record()]);
-  assert.deepEqual(result.buckets, {
-    paidAvailableThb: 20000,
-    bonusAvailableThb: 3500,
-    carriedForwardAvailableThb: 8250,
-  });
-  assert.equal(result.availableBalanceThb, 31750);
+test("cancellation credit projects the exact live adapter trust and deadline contract", () => {
+  const result = verifiedCreditsFromRecords([cancellation()], DEADLINE - 1);
+  const item = result.items[0];
+  assert.equal(result.availableBalanceThb, 8250);
+  assert.equal(item.verificationStatus, "verified");
+  assert.equal(item.verifiedAmountThb, 8250);
+  assert.equal(item.creditType, "carried_forward_deposit");
+  assert.equal(item.expiresAt, "2026-12-12T16:59:59.999Z");
+  assert.equal(item.noticeType, "cancelled_deposit_credit");
+  assert.equal(item.customerDisplayNote, item.note);
+});
+
+test("credit is valid through the inclusive Bangkok deadline, unavailable afterwards", () => {
+  assert.equal(verifiedCreditsFromRecords([cancellation()], DEADLINE).availableBalanceThb, 8250);
+  const expired = verifiedCreditsFromRecords([cancellation()], DEADLINE + 1);
+  assert.equal(expired.availableBalanceThb, 0);
+  assert.equal(expired.items[0].status, "expired");
+  assert.equal(expired.items[0].availableAmountThb, 0);
+  assert.equal(expired.items[0].originalAmountThb, 8250);
+});
+
+test("invalid explicit expiry fails closed without deleting the audit amount", () => {
+  const result = verifiedCreditsFromRecords([cancellation({"Expires At": "bad-date"})]);
+  assert.equal(result.availableBalanceThb, 0);
+  assert.equal(result.items[0].status, "unknown");
+  assert.equal(result.items[0].expiryState, "checking");
+  assert.equal(result.items[0].originalAmountThb, 8250);
+});
+
+test("legacy undated credit remains compatible and has no cancellation notice inference", () => {
+  const result = verifiedCreditsFromRecords([record()], DEADLINE + 1);
+  assert.equal(result.availableBalanceThb, 8250);
+  assert.equal(result.items[0].expiresAt, null);
+  assert.equal(result.items[0].noticeType, null);
+});
+
+test("repeated reads never mutate balances, source sessions, payments, or points", () => {
+  const input = [cancellation()];
+  const original = JSON.stringify(input);
+  assert.deepEqual(verifiedCreditsFromRecords(input, DEADLINE - 1), verifiedCreditsFromRecords(input, DEADLINE - 1));
+  assert.equal(JSON.stringify(input), original);
+  assert.equal(JSON.stringify(verifiedCreditsFromRecords(input, DEADLINE - 1)).includes("points"), false);
+});
+
+test("unverified cancellation cannot emit usable money or a notice", () => {
+  const result = verifiedCreditsFromRecords([cancellation({"Verification Status": "pending_review"})]);
+  assert.deepEqual(result.items, []);
+  assert.equal(result.availableBalanceThb, 0);
+});
+
+test("logged-out request receives no customer notice or money", async () => {
+  const response = await handleMemberClientCredits(new Request("https://example.test/api/member/app/credits"));
+  assert.equal(response.status, 401);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  const body = await response.json();
+  assert.equal(body.error.code, "MEMBER_SESSION_REQUIRED");
+  assert.equal(body.items, undefined);
+  assert.equal(body.balance, undefined);
 });
