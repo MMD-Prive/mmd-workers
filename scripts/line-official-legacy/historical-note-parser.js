@@ -2,30 +2,10 @@ const { clean } = require("./canonical-parser.js");
 
 const POINT_RATE_THB = 100;
 const THAI_MONTH_PATTERN = [
-  "ม.ค.",
-  "มกราคม",
-  "ก.พ.",
-  "กุมภาพันธ์",
-  "มี.ค.",
-  "มีนาคม",
-  "เม.ย.",
-  "เมษายน",
-  "พ.ค.",
-  "พฤษภาคม",
-  "มิ.ย.",
-  "มิถุนายน",
-  "ก.ค.",
-  "กรกฎาคม",
-  "ส.ค.",
-  "สิงหาคม",
-  "ก.ย.",
-  "กันยายน",
-  "ต.ค.",
-  "ตุลาคม",
-  "พ.ย.",
-  "พฤศจิกายน",
-  "ธ.ค.",
-  "ธันวาคม",
+  "ม.ค.", "มกราคม", "ก.พ.", "กุมภาพันธ์", "มี.ค.", "มีนาคม",
+  "เม.ย.", "เมษายน", "พ.ค.", "พฤษภาคม", "มิ.ย.", "มิถุนายน",
+  "ก.ค.", "กรกฎาคม", "ส.ค.", "สิงหาคม", "ก.ย.", "กันยายน",
+  "ต.ค.", "ตุลาคม", "พ.ย.", "พฤศจิกายน", "ธ.ค.", "ธันวาคม",
 ].map((month) => month.replace(/\./g, "\\.")).join("|");
 
 function unique(values) {
@@ -36,6 +16,12 @@ function numberFromAmount(value) {
   const raw = clean(value).replace(/,/g, "");
   const match = raw.match(/\d+(?:\.\d+)?/);
   return match ? Number(match[0]) : 0;
+}
+
+function contextWindow(text, index, length) {
+  const start = Math.max(0, index - 48);
+  const end = Math.min(text.length, index + length + 48);
+  return text.slice(start, end);
 }
 
 function detectAmounts(note) {
@@ -74,6 +60,28 @@ function detectAmounts(note) {
   });
 }
 
+function isClearlyNonMoneyBareNumber(raw, match) {
+  const token = String(match?.[0] || "").replace(/,/g, "");
+  const amount = Number(token);
+  if (!Number.isFinite(amount)) return true;
+
+  const before = raw.slice(Math.max(0, match.index - 30), match.index).toLowerCase();
+  const after = raw.slice(match.index + match[0].length, Math.min(raw.length, match.index + match[0].length + 30)).toLowerCase();
+  const local = `${before} ${match[0]} ${after}`;
+
+  // A bare Gregorian/Buddhist calendar year is evidence, never money without a currency marker.
+  if ((amount >= 1900 && amount <= 2100) || (amount >= 2500 && amount <= 2700)) return true;
+
+  // Profile measurements and apparel sizes are operational/client-intelligence data, not payment amounts.
+  if (/(?:อายุ|age|สูง|height|น้ำหนัก|weight|นน\.?|size|ไซ[ซส์]|ขนาด|เสื้อ|shirt|อก|เอว|waist)\s*[:=\-]?\s*$/i.test(before)) return true;
+  if (/^\s*(?:cm|cms|ซม\.?|kg|kgs|กก\.?|ปี|years?|y\/o|นิ้ว|inch|inches|xl|xxl|[sml])\b/i.test(after)) return true;
+
+  // Common profile triples such as “อายุ 35 สูง 170 นน 70-75” may leave a 4-digit timestamp/year nearby.
+  if (/(?:profile|ข้อมูลลูกค้า|customer|client).{0,24}(?:age|อายุ|height|สูง|weight|น้ำหนัก|size|ขนาด)/i.test(local)) return true;
+
+  return false;
+}
+
 function detectBareAmbiguousAmounts(note, knownAmounts) {
   const raw = clean(note);
   const ambiguous = [];
@@ -81,7 +89,7 @@ function detectBareAmbiguousAmounts(note, knownAmounts) {
   let match = pattern.exec(raw);
   while (match) {
     const overlapsKnown = knownAmounts.some((item) => match.index >= item.index && match.index < item.end);
-    if (!overlapsKnown) {
+    if (!overlapsKnown && !isClearlyNonMoneyBareNumber(raw, match)) {
       const amount = numberFromAmount(match[0]);
       if (amount > 0) {
         ambiguous.push({
@@ -95,12 +103,6 @@ function detectBareAmbiguousAmounts(note, knownAmounts) {
     match = pattern.exec(raw);
   }
   return ambiguous;
-}
-
-function contextWindow(text, index, length) {
-  const start = Math.max(0, index - 48);
-  const end = Math.min(text.length, index + length + 48);
-  return text.slice(start, end);
 }
 
 function detectDates(note) {
@@ -129,25 +131,12 @@ function classifyAmount(amountItem) {
   const post = String(amountItem.post || "").toLowerCase();
   const local = `${pre} ${post}`;
   const context = amountItem.context.toLowerCase();
-  if (hasAny(pre, [/direct\s+hand/, /\bhand\s+tip\b/, /\bcash\s+tip\b/, /tip\s+direct/, /ให้มือ/, /ทิปมือ/])) {
-    return "tip_direct";
-  }
-  if (hasAny(pre, [/\btip\b/, /\btips\b/, /ทิป/])) {
-    return "tip_mmd";
-  }
-  if (hasAny(pre, [/renew/, /renewal/, /ต่ออายุ/])) {
-    return "renewal_fee";
-  }
-  if (hasAny(pre, [/membership\s+fee/, /member\s+fee/, /สมัครสมาชิก/, /ค่าสมาชิก/])) {
-    return "membership_fee";
-  }
-  if (hasAny(pre, [/service/, /booking/, /\bjob\b/, /session/, /model/, /mmd confirmation/, /purchase/, /ใช้บริการ/, /งาน/])
-    || hasAny(context, [/mmd confirmation/])) {
-    return "service";
-  }
-  if (hasAny(local, [/direct\s+hand/, /\bhand\s+tip\b/, /\bcash\s+tip\b/, /tip\s+direct/, /ให้มือ/, /ทิปมือ/])) {
-    return "tip_direct";
-  }
+  if (hasAny(pre, [/direct\s+hand/, /\bhand\s+tip\b/, /\bcash\s+tip\b/, /tip\s+direct/, /ให้มือ/, /ทิปมือ/])) return "tip_direct";
+  if (hasAny(pre, [/\btip\b/, /\btips\b/, /ทิป/])) return "tip_mmd";
+  if (hasAny(pre, [/renew/, /renewal/, /ต่ออายุ/])) return "renewal_fee";
+  if (hasAny(pre, [/membership\s+fee/, /member\s+fee/, /สมัครสมาชิก/, /ค่าสมาชิก/])) return "membership_fee";
+  if (hasAny(pre, [/service/, /booking/, /\bjob\b/, /session/, /model/, /mmd confirmation/, /purchase/, /ใช้บริการ/, /งาน/]) || hasAny(context, [/mmd confirmation/])) return "service";
+  if (hasAny(local, [/direct\s+hand/, /\bhand\s+tip\b/, /\bcash\s+tip\b/, /tip\s+direct/, /ให้มือ/, /ทิปมือ/])) return "tip_direct";
   if (hasAny(local, [/\btip\b/, /\btips\b/, /ทิป/])) return "tip_mmd";
   if (hasAny(local, [/renew/, /renewal/, /ต่ออายุ/])) return "renewal_fee";
   if (hasAny(local, [/membership\s+fee/, /member\s+fee/, /สมัครสมาชิก/, /ค่าสมาชิก/])) return "membership_fee";
@@ -156,9 +145,7 @@ function classifyAmount(amountItem) {
 }
 
 function sumBy(events, type) {
-  return events
-    .filter((event) => event.type === type)
-    .reduce((sum, event) => sum + event.amount, 0);
+  return events.filter((event) => event.type === type).reduce((sum, event) => sum + event.amount, 0);
 }
 
 function parseHistoricalNote(note) {
@@ -169,19 +156,11 @@ function parseHistoricalNote(note) {
   const amounts = detectAmounts(parseNote);
   const bareAmbiguous = detectBareAmbiguousAmounts(parseNote, amounts);
   const amountEvents = amounts.map((item) => ({
-    type: classifyAmount(item),
-    amount: item.amount,
-    token: item.token,
-    context: item.context,
+    type: classifyAmount(item), amount: item.amount, token: item.token, context: item.context,
   }));
 
   for (const item of bareAmbiguous) {
-    amountEvents.push({
-      type: "unknown",
-      amount: item.amount,
-      token: item.token,
-      context: item.context,
-    });
+    amountEvents.push({ type: "unknown", amount: item.amount, token: item.token, context: item.context });
   }
 
   const dates = detectDates(parseNote);
@@ -241,12 +220,7 @@ function parseHistoricalNote(note) {
 
   return {
     raw_note: rawNote,
-    note_detected_amounts: amountEvents.map((event) => ({
-      amount: event.amount,
-      type: event.type,
-      token: event.token,
-      context: event.context,
-    })),
+    note_detected_amounts: amountEvents.map((event) => ({ amount: event.amount, type: event.type, token: event.token, context: event.context })),
     note_detected_dates: dates,
     note_detected_package: detectedPackage,
     note_detected_membership_action: membershipAction,
@@ -280,7 +254,4 @@ function parseHistoricalNote(note) {
   };
 }
 
-module.exports = {
-  POINT_RATE_THB,
-  parseHistoricalNote,
-};
+module.exports = { POINT_RATE_THB, parseHistoricalNote };
