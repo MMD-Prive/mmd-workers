@@ -110,27 +110,44 @@ export function isVerifiedClientCreditRecord(record) {
     && availableAmount <= originalAmount + MONEY_TOLERANCE
     && appliedAmount <= originalAmount + MONEY_TOLERANCE;
 }
-function safeCredit(record) {
+function safeCredit(record, now) {
   const fields = creditFields(record);
-  const status = normalized(fields.Status) || "unknown";
+  let status = normalized(fields.Status) || "unknown";
+  const expiryValue = clean(fields["Expires At"], 80);
+  const expiryMs = expiryValue ? Date.parse(expiryValue) : null;
+  const hasInvalidExpiry = !!expiryValue && !Number.isFinite(expiryMs);
+  if (ACTIVE_STATUSES.has(status)) {
+    if (hasInvalidExpiry) status = "unknown";
+    else if (expiryMs !== null && now > expiryMs) status = "expired";
+  }
+  const creditType = normalized(fields["Credit Type"]) || null;
+  const isCancellationCarry = creditType === "carried_forward_deposit"
+    && ["client_cancel_no_penalty", "client_cancel_gt_48h"].includes(normalized(fields.Reason));
   return {
     creditId: clean(fields.credit_id, 120) || null,
     status,
     verified: true,
     verificationState: VERIFIED_CREDIT_STATUS,
+    verificationStatus: VERIFIED_CREDIT_STATUS,
+    verifiedAmountThb: Math.max(0, asNumber(fields["Verified Amount THB"]) || 0),
+    creditType,
+    expiresAt: Number.isFinite(expiryMs) ? new Date(expiryMs).toISOString() : null,
+    expiryState: hasInvalidExpiry ? "checking" : expiryMs === null ? "not_set" : "confirmed",
+    noticeType: isCancellationCarry ? "cancelled_deposit_credit" : null,
     originalAmountThb: Math.max(0, asNumber(fields["Original Amount THB"]) || 0),
-    availableAmountThb: Math.max(0, asNumber(fields["Available Amount THB"]) || 0),
+    availableAmountThb: ACTIVE_STATUSES.has(status) ? Math.max(0, asNumber(fields["Available Amount THB"]) || 0) : 0,
     appliedAmountThb: Math.max(0, asNumber(fields["Applied Amount THB"]) || 0),
     refundable: fields.Refundable === true,
     note: clean(fields["Customer Display Note"], 500) || null,
+    customerDisplayNote: clean(fields["Customer Display Note"], 500) || null,
     createdAt: clean(fields["Created At"], 80) || null,
   };
 }
-export function verifiedCreditsFromRecords(records = []) {
+export function verifiedCreditsFromRecords(records = [], now = Date.now()) {
   const items = records
     .filter(isVerifiedClientCreditRecord)
-    .map(safeCredit)
-    .filter((item) => ["available", "partially_used", "used", "refunded"].includes(item.status))
+    .map((record) => safeCredit(record, now))
+    .filter((item) => ["available", "partially_used", "used", "refunded", "expired", "unknown"].includes(item.status))
     .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
   const availableBalanceThb = items
     .filter((item) => item.verified === true && ACTIVE_STATUSES.has(item.status))
