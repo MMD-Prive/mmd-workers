@@ -28,61 +28,67 @@ jobs:
           set -euo pipefail
           node <<'NODE'
           const crypto = require('node:crypto');
-          const base = String(process.env.MODEL_DRIVE_DIRECTORY_URL || '').replace(/\/+$/, '');
-          const secret = String(process.env.MODEL_DRIVE_DIRECTORY_SECRET || '').trim();
-          if (!base) throw new Error('MODEL_DRIVE_DIRECTORY_URL missing');
-          if (!secret) throw new Error('MODEL_DRIVE_DIRECTORY_SECRET missing');
 
-          const search = new URL('/__internal/model-drive/search', base);
-          search.searchParams.set('q', 'Book El');
-          search.searchParams.set('lane', 'private');
+          (async () => {
+            const base = String(process.env.MODEL_DRIVE_DIRECTORY_URL || '').replace(/\/+$/, '');
+            const secret = String(process.env.MODEL_DRIVE_DIRECTORY_SECRET || '').trim();
+            if (!base) throw new Error('MODEL_DRIVE_DIRECTORY_URL missing');
+            if (!secret) throw new Error('MODEL_DRIVE_DIRECTORY_SECRET missing');
 
-          const unauth = await fetch(search, { redirect: 'manual' });
-          if (unauth.status !== 403) {
-            throw new Error(`Unsigned model Drive directory request must fail 403; got ${unauth.status}`);
-          }
+            const search = new URL('/__internal/model-drive/search', base);
+            search.searchParams.set('q', 'Book El');
+            search.searchParams.set('lane', 'private');
 
-          async function signedFetch(url, { method = 'GET', body = '' } = {}) {
-            const timestamp = String(Math.floor(Date.now() / 1000));
-            const bodyHash = crypto.createHash('sha256').update(body).digest('hex');
-            const canonical = `${timestamp}\n${method}\n${url.pathname}\n${url.search}\n${bodyHash}`;
-            const signature = crypto.createHmac('sha256', secret).update(canonical).digest('hex');
-            return fetch(url, {
-              method,
-              body: method === 'GET' ? undefined : body,
-              headers: {
-                accept: 'application/json',
-                'content-type': 'application/json',
-                'x-mmd-model-drive-ts': timestamp,
-                'x-mmd-model-drive-signature': signature,
-              },
-              redirect: 'manual',
-            });
-          }
+            const unauth = await fetch(search, { redirect: 'manual' });
+            if (unauth.status !== 403) {
+              throw new Error(`Unsigned model Drive directory request must fail 403; got ${unauth.status}`);
+            }
 
-          const response = await signedFetch(search);
-          const data = await response.json().catch(() => ({}));
-          if (!response.ok || data.ok !== true || !Array.isArray(data.items)) {
-            throw new Error(`Signed Drive search failed: HTTP ${response.status} ${JSON.stringify(data).slice(0, 300)}`);
-          }
+            async function signedFetch(url, { method = 'GET', body = '' } = {}) {
+              const timestamp = String(Math.floor(Date.now() / 1000));
+              const bodyHash = crypto.createHash('sha256').update(body).digest('hex');
+              const canonical = `${timestamp}\n${method}\n${url.pathname}\n${url.search}\n${bodyHash}`;
+              const signature = crypto.createHmac('sha256', secret).update(canonical).digest('hex');
+              return fetch(url, {
+                method,
+                body: method === 'GET' ? undefined : body,
+                headers: {
+                  accept: 'application/json',
+                  'content-type': 'application/json',
+                  'x-mmd-model-drive-ts': timestamp,
+                  'x-mmd-model-drive-signature': signature,
+                },
+                redirect: 'manual',
+              });
+            }
 
-          const book = data.items.find((item) => item?.drive_folder_id === '1vOpCc14Dhet1gwjr9ib81NFD2_j66yh_');
-          if (!book) {
-            throw new Error(`Book EI approved Drive folder was not resolved; count=${data.items.length}`);
-          }
-          if (book.folder_name !== 'Book EI') throw new Error(`Unexpected Book EI folder name: ${book.folder_name}`);
-          if (book.lane !== 'private') throw new Error(`Book EI must resolve as private; got ${book.lane}`);
-          if (book.source !== 'drive') throw new Error(`Book EI must resolve from Drive; got ${book.source}`);
-          if (!String(book.folder_path || '').includes('Book EI')) throw new Error('Book EI folder path missing');
+            const response = await signedFetch(search);
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data.ok !== true || !Array.isArray(data.items)) {
+              throw new Error(`Signed Drive search failed: HTTP ${response.status} ${JSON.stringify(data).slice(0, 300)}`);
+            }
 
-          const resolve = new URL('/__internal/model-drive/resolve', base);
-          const body = JSON.stringify({ drive_folder_id: book.drive_folder_id });
-          const resolvedResponse = await signedFetch(resolve, { method: 'POST', body });
-          const resolved = await resolvedResponse.json().catch(() => ({}));
-          if (!resolvedResponse.ok || resolved.ok !== true || resolved?.item?.drive_folder_id !== book.drive_folder_id) {
-            throw new Error(`Exact Drive re-resolution failed: HTTP ${resolvedResponse.status} ${JSON.stringify(resolved).slice(0, 300)}`);
-          }
-          if (resolved?.item?.lane !== 'private') throw new Error('Exact Drive re-resolution lost private lane');
+            const book = data.items.find((item) => item?.drive_folder_id === '1vOpCc14Dhet1gwjr9ib81NFD2_j66yh_');
+            if (!book) {
+              throw new Error(`Book EI approved Drive folder was not resolved; count=${data.items.length}`);
+            }
+            if (book.folder_name !== 'Book EI') throw new Error(`Unexpected Book EI folder name: ${book.folder_name}`);
+            if (book.lane !== 'private') throw new Error(`Book EI must resolve as private; got ${book.lane}`);
+            if (book.source !== 'drive') throw new Error(`Book EI must resolve from Drive; got ${book.source}`);
+            if (!String(book.folder_path || '').includes('Book EI')) throw new Error('Book EI folder path missing');
 
-          console.log('Model Drive Directory production smoke passed: unsigned fail-closed + signed search + exact Book EI re-resolution.');
+            const resolve = new URL('/__internal/model-drive/resolve', base);
+            const body = JSON.stringify({ drive_folder_id: book.drive_folder_id });
+            const resolvedResponse = await signedFetch(resolve, { method: 'POST', body });
+            const resolved = await resolvedResponse.json().catch(() => ({}));
+            if (!resolvedResponse.ok || resolved.ok !== true || resolved?.item?.drive_folder_id !== book.drive_folder_id) {
+              throw new Error(`Exact Drive re-resolution failed: HTTP ${resolvedResponse.status} ${JSON.stringify(resolved).slice(0, 300)}`);
+            }
+            if (resolved?.item?.lane !== 'private') throw new Error('Exact Drive re-resolution lost private lane');
+
+            console.log('Model Drive Directory production smoke passed: unsigned fail-closed + signed search + exact Book EI re-resolution.');
+          })().catch((error) => {
+            console.error(error?.stack || error);
+            process.exit(1);
+          });
           NODE
