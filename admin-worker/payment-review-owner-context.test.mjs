@@ -5,6 +5,7 @@ import {
   mergeOperatorPaymentContext,
   resolveOperatorPaymentContext,
 } from "./src/payment-review-owner-context.js";
+import { inferPaymentContextFromConversation } from "./src/payment-review-auto-context.js";
 
 function envFor(recordsByField) {
   return {
@@ -89,4 +90,34 @@ test("operator context cannot contradict canonical payment context", () => {
     payment_stage: "deposit",
     session_id: "JOB-2",
   }), /operator_context_session_mismatch/);
+});
+
+test("LINE conversation infers Premium renewal before manual override", () => {
+  const result = inferPaymentContextFromConversation({
+    texts: ["โอนแล้วครับ", "ขอต่อ Premium ครับ"],
+    matrix: { last_customer_intent: "membership_renewal" },
+    amount_thb: 1999,
+  });
+  assert.equal(result.payment_stage, "membership");
+  assert.equal(result.package_code, "premium");
+  assert.equal(result.renewal_like, true);
+});
+
+test("LINE conversation infers deposit and final stages from latest customer context", () => {
+  assert.equal(inferPaymentContextFromConversation({
+    texts: ["โอนมัดจำแล้วครับ", "จอง EMs22 วันที่ 17"],
+    matrix: { last_customer_intent: "payment_slip" },
+    amount_thb: 8250,
+  }).payment_stage, "deposit");
+  assert.equal(inferPaymentContextFromConversation({
+    texts: ["โอนส่วนที่เหลือแล้ว", "ก่อนหน้านี้จองงานไว้ครับ"],
+    matrix: { last_customer_intent: "payment_slip" },
+    amount_thb: 19250,
+  }).payment_stage, "final");
+});
+
+test("amount alone never creates membership intent", () => {
+  const result = inferPaymentContextFromConversation({ texts: [], matrix: {}, amount_thb: 1999 });
+  assert.equal(result.payment_stage, "");
+  assert.equal(result.package_code, "");
 });
