@@ -7,6 +7,11 @@ const ROUTE = "/api/member/app/credits";
 const ACTIVE_STATUSES = new Set(["available", "partially_used"]);
 const VERIFIED_CREDIT_STATUS = "verified";
 const VERIFIED_CREDIT_SOURCE = "payment_authority";
+const CAMPAIGN_CREDIT_SOURCE = "campaign_worker";
+const DOUBLE_MOMENT_CAMPAIGN = "promo_double_moment_sep2026";
+const DOUBLE_MOMENT_PAID_AMOUNT = 20000;
+const DOUBLE_MOMENT_BONUS_AMOUNT = 3500;
+const DOUBLE_MOMENT_MINIMUM_SERVICE = 20000;
 const MONEY_TOLERANCE = 0.001;
 
 function clean(value, max = 500) {
@@ -99,16 +104,42 @@ export function isVerifiedClientCreditRecord(record) {
   const fields = creditFields(record);
   const verificationStatus = normalized(fields["Verification Status"]);
   const verificationSource = normalized(fields["Verification Source"]);
+  const creditAuthority = normalized(fields["Credit Authority"]) || verificationSource;
+  const creditType = normalized(fields["Credit Type"]) || "carried_forward_deposit";
+  const campaignId = clean(fields["Campaign ID"], 120);
+  const campaignClaimId = clean(fields["Campaign Claim ID"], 160);
+  const policyVersion = clean(fields["Policy Version"], 80);
   const verifiedAmount = Math.max(0, asNumber(fields["Verified Amount THB"]) || 0);
+  const backingPaymentAmount = Math.max(0, asNumber(fields["Backing Payment Amount THB"]) || 0);
   const originalAmount = Math.max(0, asNumber(fields["Original Amount THB"]) || 0);
   const availableAmount = Math.max(0, asNumber(fields["Available Amount THB"]) || 0);
   const appliedAmount = Math.max(0, asNumber(fields["Applied Amount THB"]) || 0);
-  return verificationStatus === VERIFIED_CREDIT_STATUS
-    && verificationSource === VERIFIED_CREDIT_SOURCE
-    && originalAmount > 0
-    && verifiedAmount + MONEY_TOLERANCE >= originalAmount
+  const reservedAmount = Math.max(0, asNumber(fields["Reserved Amount THB"]) || 0);
+  const bonusSequence = asNumber(fields["Bonus Sequence"]);
+  const minimumServiceAmount = Math.max(0, asNumber(fields["Minimum Service Amount THB"]) || 0);
+  const amountsValid = originalAmount > 0
     && availableAmount <= originalAmount + MONEY_TOLERANCE
-    && appliedAmount <= originalAmount + MONEY_TOLERANCE;
+    && appliedAmount <= originalAmount + MONEY_TOLERANCE
+    && reservedAmount <= originalAmount + MONEY_TOLERANCE
+    && availableAmount + appliedAmount + reservedAmount <= originalAmount + MONEY_TOLERANCE;
+
+  if (verificationStatus !== VERIFIED_CREDIT_STATUS || !amountsValid) return false;
+
+  if (creditType === "bonus_credit") {
+    return creditAuthority === CAMPAIGN_CREDIT_SOURCE
+      && verificationSource === VERIFIED_CREDIT_SOURCE
+      && campaignId === DOUBLE_MOMENT_CAMPAIGN
+      && campaignClaimId.length > 0
+      && policyVersion === "v1"
+      && originalAmount === DOUBLE_MOMENT_BONUS_AMOUNT
+      && backingPaymentAmount + MONEY_TOLERANCE >= DOUBLE_MOMENT_PAID_AMOUNT
+      && [1, 2].includes(bonusSequence)
+      && minimumServiceAmount === DOUBLE_MOMENT_MINIMUM_SERVICE;
+  }
+
+  return creditAuthority === VERIFIED_CREDIT_SOURCE
+    && verificationSource === VERIFIED_CREDIT_SOURCE
+    && verifiedAmount + MONEY_TOLERANCE >= originalAmount;
 }
 function safeCredit(record) {
   const fields = creditFields(record);
@@ -121,6 +152,13 @@ function safeCredit(record) {
     originalAmountThb: Math.max(0, asNumber(fields["Original Amount THB"]) || 0),
     availableAmountThb: Math.max(0, asNumber(fields["Available Amount THB"]) || 0),
     appliedAmountThb: Math.max(0, asNumber(fields["Applied Amount THB"]) || 0),
+    reservedAmountThb: Math.max(0, asNumber(fields["Reserved Amount THB"]) || 0),
+    creditType: normalized(fields["Credit Type"]) || "carried_forward_deposit",
+    campaignId: clean(fields["Campaign ID"], 120) || null,
+    bonusSequence: asNumber(fields["Bonus Sequence"]),
+    minimumServiceAmountThb: Math.max(0, asNumber(fields["Minimum Service Amount THB"]) || 0),
+    issuedAt: clean(fields["Issued At"], 80) || clean(fields["Created At"], 80) || null,
+    expiresAt: clean(fields["Expires At"], 80) || null,
     refundable: fields.Refundable === true,
     note: clean(fields["Customer Display Note"], 500) || null,
     createdAt: clean(fields["Created At"], 80) || null,
@@ -135,7 +173,15 @@ export function verifiedCreditsFromRecords(records = []) {
   const availableBalanceThb = items
     .filter((item) => item.verified === true && ACTIVE_STATUSES.has(item.status))
     .reduce((sum, item) => sum + item.availableAmountThb, 0);
-  return { items, availableBalanceThb };
+  const buckets = items
+    .filter((item) => item.verified === true && ACTIVE_STATUSES.has(item.status))
+    .reduce((summary, item) => {
+      if (item.creditType === "paid_credit") summary.paidAvailableThb += item.availableAmountThb;
+      else if (item.creditType === "bonus_credit") summary.bonusAvailableThb += item.availableAmountThb;
+      else summary.carriedForwardAvailableThb += item.availableAmountThb;
+      return summary;
+    }, { paidAvailableThb: 0, bonusAvailableThb: 0, carriedForwardAvailableThb: 0 });
+  return { items, availableBalanceThb, buckets };
 }
 async function readCredits(env, clientId) {
   const records = await listAirtable(env, CLIENT_CREDITS_TABLE, { pageSize: 100, filterByFormula: `{client_record_id}=${formulaString(clientId)}` });
@@ -159,7 +205,12 @@ export async function handleMemberClientCredits(request, env = {}) {
       return response({ state: "checking", balance: null, items: [], error: { code: client.state === "ambiguous" ? "CLIENT_IDENTITY_AMBIGUOUS" : "CLIENT_IDENTITY_UNRESOLVED" } }, 503);
     }
     const credits = await readCredits(env, client.clientId);
-    return response({ state: "resolved", verificationState: "verified_only", balance: { currency: "THB", available: credits.availableBalanceThb }, items: credits.items });
+    return response({
+      state: "resolved",
+      verificationState: "verified_only",
+      balance: { currency: "THB", available: credits.availableBalanceThb, ...credits.buckets },
+      items: credits.items,
+    });
   } catch {
     return response({ state: "checking", balance: null, items: [], error: { code: "CLIENT_CREDIT_READ_UNAVAILABLE" } }, 503);
   }
