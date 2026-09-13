@@ -32,4 +32,4 @@ Model 360 aggregates downstream responses and labels unavailable sections; it do
 
 ## Required configuration
 
-Configure `SESSION_VALIDATOR_BASE_URL`, `ADMIN_EVENT_LOG_BASE_URL`, verified downstream worker base URLs, and the `MMD_MODEL_CONSOLE_MEMORY` KV binding. Keep downstream credentials as Worker secrets.
+Canonical production values are `SESSION_VALIDATOR_BASE_URL=https://mmdbkk.com`, `SESSION_VALIDATOR_PATH=/v1/admin/auth/me`, and `ADMIN_EVENT_LOG_PATH=/v1/admin/model-console/audit`. `ADMIN_EVENT_LOG_BASE_URL` may be the verified admin-worker hostname or an `ADMIN_WORKER` service binding. Configure the remaining verified downstream worker base URLs and the `MMD_MODEL_CONSOLE_MEMORY` KV binding. Keep downstream credentials as Worker secrets.
