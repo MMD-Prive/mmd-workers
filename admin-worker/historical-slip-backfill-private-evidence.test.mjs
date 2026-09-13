@@ -124,22 +124,20 @@ test("historical intake uses the private production extractor and stores the ori
 
 test("historical intake fails closed when the private extractor binding is missing", async () => {
   const state = makeEnv({ withExtractor: false, withStorage: true });
-  const response = await handleHistoricalSlipBackfillRequest(intakeRequest(), state.env);
-  const payload = await response.json();
-
-  assert.equal(response.status, 503);
-  assert.equal(payload.error, "private_extractor_binding_missing");
+  await assert.rejects(
+    () => handleHistoricalSlipBackfillRequest(intakeRequest(), state.env),
+    /private_extractor_binding_missing/,
+  );
   assert.equal(state.createdProofs.length, 0);
   assert.equal(state.r2Writes.length, 0);
 });
 
 test("historical intake fails closed when private R2 evidence storage is missing", async () => {
   const state = makeEnv({ withExtractor: true, withStorage: false });
-  const response = await handleHistoricalSlipBackfillRequest(intakeRequest(), state.env);
-  const payload = await response.json();
-
-  assert.equal(response.status, 503);
-  assert.equal(payload.error, "historical_evidence_storage_unavailable");
+  await assert.rejects(
+    () => handleHistoricalSlipBackfillRequest(intakeRequest(), state.env),
+    /historical_evidence_storage_unavailable/,
+  );
   assert.equal(state.createdProofs.length, 0);
   assert.equal(state.extractorCalls.length, 0);
 });
