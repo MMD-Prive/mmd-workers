@@ -1,4 +1,11 @@
 import { inferMembershipPayment, membershipInferenceLabel } from "../../shared/payment-intelligence.mjs";
+import {
+  hasOperatorPaymentContext,
+  mergeOperatorPaymentContext,
+  operatorPaymentContextForAudit,
+  parseOperatorPaymentContext,
+  resolveOperatorPaymentContext,
+} from "./payment-review-owner-context.js";
 
 const QUEUE_PATH = "/v1/admin/payments/review-queue";
 const REVIEW_PATH = "/v1/admin/payments/review";
@@ -111,6 +118,8 @@ async function listReviewQueue(request, env) {
       historical_backfill_separate: true,
       manual_recovery_requires_owner_admin: true,
       manual_recovery_requires_canonical_member: true,
+      owner_context_match_requires_exact_session_or_member: true,
+      owner_context_names_are_audit_only: true,
     },
   });
 }
@@ -123,6 +132,7 @@ async function commitReview(request, env, actor) {
   const proofId = safeText(body.proof_id, 120);
   const reason = safeText(body.admin_reason || body.review_reason || body.reason, 600);
   const idempotencyKey = safeText(request.headers.get("Idempotency-Key") || body.idempotency_key, 180);
+  const operatorContext = parseOperatorPaymentContext(body);
   if (!new Set(["approve", "issue", "reject"]).has(decision)) throw httpError(400, "invalid_review_decision");
   if (!proofId) throw httpError(400, "proof_id_required");
   if (reason.length < 5) throw httpError(400, "admin_reason_required");
@@ -147,6 +157,7 @@ async function commitReview(request, env, actor) {
       reason,
       result: "success",
       authority: "admin-worker",
+      operator_context: hasOperatorPaymentContext(operatorContext) ? operatorPaymentContextForAudit(operatorContext) : null,
     });
     return json({
       ok: true,
@@ -158,7 +169,7 @@ async function commitReview(request, env, actor) {
     });
   }
 
-  const approval = await buildApprovalContext(env, proof, item, actor);
+  const approval = await buildApprovalContext(env, proof, item, actor, operatorContext);
   const paymentsResponse = await sendReviewedProofToPayments(env, {
     ...approval,
     proof_id: proofId,
@@ -185,6 +196,7 @@ async function commitReview(request, env, actor) {
     payment_stage: approval.payment_stage,
     context_source: approval.context_source,
     renewal_session_id: approval.renewal_session_id,
+    operator_context: approval.operator_context || null,
     membership_write_through: safeMembershipWriteThrough(payload.membership_write_through),
     manual_membership_review_required: payload.manual_membership_review_required === true,
   }).then((value) => ({ ...value, ok: true })).catch((error) => ({
@@ -204,6 +216,7 @@ async function commitReview(request, env, actor) {
     payment_ref: safeText(payload.payment_ref || approval.payment_ref, 180),
     payment_stage: safeCode(payload.payment_stage || payload.stage || approval.payment_stage),
     context_source: approval.context_source || "canonical_payment",
+    operator_context_applied: approval.context_source === "owner_context_match" || approval.context_source === "canonical_payment_owner_enriched",
     recovery_context: approval.context_source === "liff_renewal_recovery",
     duplicate: payload.duplicate === true,
     entitlement_materialized: payload.entitlement_materialized === true,
@@ -214,7 +227,7 @@ async function commitReview(request, env, actor) {
   });
 }
 
-async function buildApprovalContext(env, proof, item, actor) {
+async function buildApprovalContext(env, proof, item, actor, operatorContext = {}) {
   const fields = proof.fields || {};
   const paymentRef = safeText(fields.payment_ref || fields.transaction_ref, 180);
   const amountThb = positiveAmount(fields.amount_thb ?? fields.amount ?? fields.total_thb);
@@ -229,12 +242,31 @@ async function buildApprovalContext(env, proof, item, actor) {
   let paymentFields = paymentRecord?.fields || null;
   let contextSource = "canonical_payment";
   let renewalSessionId = "";
+  let operatorContextAudit = hasOperatorPaymentContext(operatorContext) ? operatorPaymentContextForAudit(operatorContext) : null;
+
+  if (paymentFields && hasOperatorPaymentContext(operatorContext)) {
+    paymentFields = mergeOperatorPaymentContext(paymentFields, operatorContext);
+    contextSource = "canonical_payment_owner_enriched";
+  }
+
   if (!paymentFields) {
     const recovery = await buildLinkedRenewalRecoveryContext(env, proof, item, actor, { paymentRef, amountThb });
-    if (!recovery) throw httpError(409, "canonical_payment_context_missing");
-    paymentFields = recovery.payment_fields;
-    contextSource = recovery.context_source;
-    renewalSessionId = recovery.renewal_session_id;
+    if (recovery) {
+      paymentFields = hasOperatorPaymentContext(operatorContext)
+        ? mergeOperatorPaymentContext(recovery.payment_fields, operatorContext)
+        : recovery.payment_fields;
+      contextSource = recovery.context_source;
+      renewalSessionId = recovery.renewal_session_id;
+    } else {
+      const ownerContext = await resolveOperatorPaymentContext(env, operatorContext, {
+        payment_ref: paymentRef,
+        amount_thb: amountThb,
+      });
+      if (!ownerContext) throw httpError(409, "canonical_payment_context_missing");
+      paymentFields = ownerContext.payment_fields;
+      contextSource = ownerContext.context_source;
+      operatorContextAudit = ownerContext.operator_context;
+    }
   }
 
   const expectedRef = safeText(paymentFields.payment_ref || paymentFields["Payment Reference"], 180);
@@ -266,6 +298,7 @@ async function buildApprovalContext(env, proof, item, actor) {
     payment_method: safeText(paymentFields["Payment Method"] || paymentFields.payment_method || fields.payment_method || "promptpay", 80) || "promptpay",
     context_source: contextSource,
     renewal_session_id: renewalSessionId || null,
+    operator_context: operatorContextAudit,
   };
 }
 
@@ -531,6 +564,7 @@ function safeQueueItem(record) {
     can_approve: contextIssues.length === 0,
     reviewable,
     historical_backfill: historical,
+    operator_context_supported: true,
     match_flags: {
       evidence_preview_present: Boolean(previewUrl),
       payment_ref_present: Boolean(paymentRef),
@@ -605,6 +639,7 @@ async function writeAudit(env, input) {
       amount_thb: input.amount_thb ?? null,
       payment_stage: input.payment_stage || null,
       renewal_session_id: input.renewal_session_id || null,
+      operator_context: input.operator_context || null,
     }),
     "After JSON": boundedJson({
       authority: input.authority || "payments-worker",
