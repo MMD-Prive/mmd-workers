@@ -172,7 +172,7 @@
         throw error;
       }
       items = Array.isArray(payload.items) ? payload.items : [];
-      if (badge) textContent = 'LIVE · PAYMENT CONTROL PLANE';
+      if (badge) badge.textContent = 'LIVE · PAYMENT CONTROL PLANE';
       if (footer) footer.textContent = `Historical Recovery → payments-worker · ${items.filter((item) => item.review_state === 'pending').length} pending`;
       render();
     } catch (error) {
