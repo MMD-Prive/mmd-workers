@@ -7,7 +7,7 @@ const CLIENTS = "tblVv58TCbwh5j1fS";
 const ALLOWED_ROLES = new Set(["owner", "admin"]);
 const ALLOWED_CHANNELS = new Set(["line", "line_oa", "line_ofc"]);
 const BLOCKED_RENEWAL_STATES = new Set(["blocked", "cancelled", "canceled", "rejected", "revoked", "failed"]);
-const RENEWAL_PRICE = Object.freeze({ standard: 1000, premium: 2500 });
+const RENEWAL_PRICES = Object.freeze({ standard: new Set([499, 799, 1000]), premium: new Set([999, 1999, 2500]) });
 
 /**
  * Narrow fallback used only after the canonical Payment Review runtime has
@@ -60,11 +60,11 @@ export async function tryHandleEmailLessLineRenewalRecovery(request, env, actor,
     const lineUserId = lineId(rf.line_user_id);
     if (!lineUserId) throw httpError(409, "canonical_line_identity_missing");
     const packageCode = canonicalPackage(rf.requested_package || rf.package_code);
-    const expectedAmount = RENEWAL_PRICE[packageCode];
+    const expectedAmounts = RENEWAL_PRICES[packageCode];
     const renewalAmount = amount(rf.renewal_amount_thb ?? rf.amount_thb);
     const proofAmount = amount(pf.amount_thb ?? pf.amount ?? pf.total_thb);
-    if (!expectedAmount || renewalAmount == null || proofAmount == null) throw httpError(409, "canonical_renewal_price_context_missing");
-    if (renewalAmount !== expectedAmount || proofAmount !== expectedAmount) throw httpError(409, "liff_renewal_amount_mismatch");
+    if (!expectedAmounts || renewalAmount == null || proofAmount == null) throw httpError(409, "canonical_renewal_price_context_missing");
+    if (!expectedAmounts.has(renewalAmount) || renewalAmount !== proofAmount) throw httpError(409, "liff_renewal_amount_mismatch");
 
     const member = await resolveMember(env, pf, rf, lineUserId);
     const client = await resolveClient(env, rf, member, lineUserId);
@@ -162,14 +162,19 @@ async function resolveClient(env, renewalFields, member, lineUserId) {
 }
 
 async function sendToPayments(env, body) {
-  const base = clean(env.PAYMENTS_BASE_URL).replace(/\/+$/, "");
   const tokenValue = clean(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
-  if (!base || !tokenValue) throw httpError(503, "payments_worker_service_not_ready");
-  return fetch(`${base}/v1/internal/payments/reviewed-proof`, {
+  if (!tokenValue) throw httpError(503, "payments_worker_service_not_ready");
+  const init = {
     method: "POST",
     headers: { Authorization: `Bearer ${tokenValue}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  });
+  };
+  if (typeof env.PAYMENTS_WORKER?.fetch === "function") {
+    return env.PAYMENTS_WORKER.fetch(new Request("https://sigil.mmdbkk.com/v1/internal/payments/reviewed-proof", init));
+  }
+  const base = clean(env.PAYMENTS_BASE_URL).replace(/\/+$/, "");
+  if (!base) throw httpError(503, "payments_worker_service_not_ready");
+  return fetch(`${base}/v1/internal/payments/reviewed-proof`, init);
 }
 
 async function findOneByFormula(env, tableName, filterByFormula, ambiguousError) {

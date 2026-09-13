@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { inferMembershipPayment } from "../../../shared/payment-intelligence.mjs";
 
 export const SAFE_SLIP_ACK = "MMD รับหลักฐานการชำระเงินไว้แล้วครับ กำลังตรวจรายละเอียดให้ กรุณารอสักครู่ก่อนนะครับ";
 export const MANUAL_SLIP_ACK = "MMD รับหลักฐานการชำระเงินไว้แล้วครับ แต่รายละเอียดต้องตรวจด้วยตนเองก่อน กรุณารอสักครู่ก่อนนะครับ";
@@ -278,6 +279,12 @@ export function buildStagedHandoff({ proofId, extraction, reviewRequired }) {
 }
 
 function proofFields({ identity, stored, extraction, duplicateSha, duplicateRef, links, reviewRequired }) {
+  const paymentIntelligence = inferMembershipPayment({
+    amount_thb: extraction.amount_thb,
+    linked_member: Boolean(links.member),
+    linked_renewal: Boolean(links.renewal),
+    source_context: "line_ofc_payment_proof",
+  });
   const note = JSON.stringify({
     schema: "line_ofc_payment_proof_v1", line_user_id_hash: identity.lineUserIdHash, line_message_id: identity.messageId,
     webhook_event_id: identity.webhookEventId, r2_key: stored.key, evidence_sha256: stored.sha256, mime_type: stored.mimeType,
@@ -285,7 +292,14 @@ function proofFields({ identity, stored, extraction, duplicateSha, duplicateRef,
     provider: extraction.provider || null, sender_bank: extraction.sender_bank || null, receiver_bank: extraction.receiver_bank || null,
     duplicate_status: duplicateRef ? "duplicate_payment_ref" : duplicateSha ? "duplicate_sha" : "not_detected",
     extraction_error: extraction.extraction_error || null, raw_payload_json_redacted: { message_id: identity.messageId, webhook_event_id: identity.webhookEventId },
-    links, payments_worker_handoff: buildStagedHandoff({ proofId: identity.proofId, extraction, reviewRequired }),
+    links,
+    payment_intelligence: paymentIntelligence,
+    pending_identity: paymentIntelligence?.pending_member_profile ? {
+      state: "pending_identity_match", line_user_id: identity.lineUserId || null, line_user_id_hash: identity.lineUserIdHash,
+      payer_name: extraction.payer_name || null, payment_ref: extraction.payment_ref || null, amount_thb: extraction.amount_thb,
+      created_from: "verified_line_payment_evidence", merge_target: "canonical_client_and_member",
+    } : null,
+    payments_worker_handoff: buildStagedHandoff({ proofId: identity.proofId, extraction, reviewRequired }),
   });
   // INTERNAL ONLY: note contains private R2 and payment-evidence metadata.
   // Never return this field from customer-facing or frontend APIs.

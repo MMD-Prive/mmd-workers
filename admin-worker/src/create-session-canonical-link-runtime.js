@@ -443,7 +443,7 @@ export function preservePartnerSnapshot(existingNote, body = {}) {
     recorded_at: new Date().toISOString(),
     partner_relationship: relationship || null,
     partner_attribution: attribution || null,
-    model_payout_thb: body.pay_model_thb ?? null,
+    model_payout_thb: body.model_payout_thb ?? body.pay_model_thb ?? relationship?.model_payout_thb ?? null,
   };
   return [note, PARTNER_SNAPSHOT_MARKER, JSON.stringify(snapshot)].filter(Boolean).join("\n");
 }

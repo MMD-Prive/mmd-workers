@@ -1,6 +1,6 @@
 # `/internal/admin/payments` — Money Control V3
 
-Build: `money-control-v3-search-first-20260910`
+Build: `money-control-v3-evidence-context-20260912`
 
 ## Goal
 
@@ -13,6 +13,7 @@ The browser is a review UI only. It must never mark paid, award Points, change m
 Existing contracts remain unchanged:
 
 - `GET /v1/admin/payments/review-queue?limit=100`
+- `GET /v1/admin/payments/evidence?proof_id=...` (credential-bound private R2 proxy)
 - `POST /v1/admin/payments/review`
 - `credentials: include`
 - unique `Idempotency-Key` per submitted decision
@@ -24,7 +25,7 @@ Existing contracts remain unchanged:
 ## UX
 
 1. Search comes first and searches payer/name, payment reference, member email, session, proof id, channel, status, and stage.
-2. Filters cover all, context issue, context ready, membership, session, missing preview, stage, and channel.
+2. The default lane contains only evidence ready for owner review. Incomplete rows are separated into `รอระบบเติมข้อมูล`.
 3. Counts are explicitly scoped to the loaded review queue. The current review API caps this surface at 100 records, so the UI never pretends the loaded count is a global total.
 4. Results paginate locally with a visible `showing X–Y of Z · loaded N` summary and selectable page size.
 5. Evidence opens in a focused review drawer with a large preview and a full-image lightbox.
@@ -33,6 +34,9 @@ Existing contracts remain unchanged:
 8. Missing backend state must render `BACKEND WAITING` rather than fake counts.
 9. Evidence amount is always labelled `NOT REVENUE`.
 10. Historical Backfill and CEO Slip Decision Desk remain separate linked surfaces.
+11. Missing amounts render as `ยังอ่านยอดไม่ได้`, never as `0 ฿`.
+12. Private LINE slip objects render through the authenticated admin evidence endpoint; R2 keys never reach the browser.
+13. Approve stays disabled until preview, extracted amount, payment reference, and a canonical payment/session/renewal link are present.
 
 ## Webflow
 

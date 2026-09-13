@@ -1,3 +1,5 @@
+import { classifyPaymentOpsRoute, membershipInferenceLabel } from "../shared/payment-intelligence.mjs";
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const PAY_INTENT_PATH = "/v1/pay/verify";
 const SLIP_EVIDENCE_PATH = "/v1/pay/slip/evidence";
@@ -267,12 +269,14 @@ function firstValue(fields, keys) {
 
 function paymentSnapshot(record, form = null) {
   const fields = paymentFields(record);
+  const rawStage = firstValue(fields, ["payment_stage", "payment_type", "stage"]) || form?.get("payment_stage") || form?.get("payment_type") || "";
   return {
     amount_thb: positive(firstValue(fields, ["amount_thb", "amount", "Amount", "Amount THB"])) || positive(form?.get("amount_thb")),
     session_id: clean(firstValue(fields, ["session_id", "Session ID"]) || form?.get("session_id"), 220),
     member_email: clean(firstValue(fields, ["member_email", "email", "Contact Email"]) || form?.get("member_email"), 320).toLowerCase(),
     package_code: code(firstValue(fields, ["package_code", "package", "Package Code"]) || form?.get("package_code")),
-    payment_stage: code(firstValue(fields, ["payment_stage", "payment_type", "stage"]) || form?.get("payment_stage") || form?.get("payment_type")) || "deposit",
+    payment_stage: code(rawStage) || "deposit",
+    payment_stage_explicit: Boolean(clean(rawStage)),
     payment_status: code(firstValue(fields, ["Payment Status", "payment_status", "status"])),
     verification_status: code(firstValue(fields, ["Verification Status", "verification_status"])),
     payer_name: clean(form?.get("payer_name") || form?.get("client_name"), 180),
@@ -324,26 +328,78 @@ async function storeEvidence(env, file, proofId, paymentRef) {
   return { stored: true, provider: "cloudflare_r2", key, sha256 };
 }
 
-async function notifyTelegramFile(env, file, { proofId, paymentRef, amountThb, stage }) {
+function threadId(value, fallback) {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric > 0 ? numeric : fallback;
+}
+
+export function paymentProofTelegramRoute(env = {}, snapshot = {}, sourcePage = "") {
+  const route = classifyPaymentOpsRoute({
+    payment_stage: snapshot.payment_stage_explicit === false ? "" : snapshot.payment_stage,
+    amount_thb: snapshot.amount_thb,
+    package_code: snapshot.package_code,
+    source_page: sourcePage,
+  });
+  return {
+    ...route,
+    thread_id: route.topic === "membership"
+      ? threadId(env.TG_THREAD_MEMBERSHIP, 20)
+      : threadId(env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM, 21),
+    alerts_thread_id: threadId(env.TG_THREAD_ALERTS, 9),
+  };
+}
+
+async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, sourcePage }) {
   const token = clean(env.TELEGRAM_BOT_TOKEN, 5000);
   const chatId = clean(env.TELEGRAM_CHAT_ID || "-1003546439681", 120);
-  const thread = clean(env.TG_THREAD_CONFIRM || "61", 40);
   if (!token || !file) return { ok: false, skipped: true };
+  const route = paymentProofTelegramRoute(env, snapshot, sourcePage);
+  const inferenceLabel = membershipInferenceLabel(route.inference);
   const form = new FormData();
   form.append("chat_id", chatId);
-  if (thread) form.append("message_thread_id", thread);
+  form.append("message_thread_id", String(route.thread_id));
   form.append("parse_mode", "HTML");
   form.append("caption", [
-    "<b>PAYMENT PROOF · PENDING REVIEW</b>",
+    route.topic === "membership"
+      ? "<b>MEMBERSHIP PAYMENT PROOF · PENDING REVIEW</b>"
+      : "<b>PAYMENT PROOF · PENDING REVIEW</b>",
     `Proof: <code>${proofId}</code>`,
     `Ref: <code>${paymentRef}</code>`,
-    amountThb ? `Amount: <b>${amountThb} THB</b>` : "",
-    stage ? `Stage: <b>${stage}</b>` : "",
+    snapshot.amount_thb ? `Amount: <b>${snapshot.amount_thb} THB</b>` : "",
+    snapshot.payment_stage ? `Stage: <b>${snapshot.payment_stage}</b>` : "",
+    inferenceLabel ? `Classified: <b>${inferenceLabel}</b>` : route.topic === "membership" ? "Classified: <b>Membership / Renewal</b>" : "",
+    `Routing: <code>${route.reason}</code>`,
     "Evidence only · Official Verify required",
   ].filter(Boolean).join("\n"));
   form.append("document", file, clean(file.name, 180) || "payment-proof");
   const response = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, { method: "POST", body: form });
-  return { ok: response.ok, status: response.status };
+
+  let alertSent = false;
+  if (route.should_alert === true) {
+    const alert = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_thread_id: route.alerts_thread_id,
+        text: [
+          "🚨 MMD Payment Classification Conflict",
+          `Proof: ${proofId}`,
+          `Ref: ${paymentRef}`,
+          `Reason: ${route.reason}`,
+          "Action: keep proof in Payment review; do not activate membership automatically.",
+        ].join("\n"),
+      }),
+    }).catch(() => null);
+    alertSent = alert?.ok === true;
+  }
+  return {
+    ok: response.ok,
+    status: response.status,
+    topic: route.topic,
+    thread_id: route.thread_id,
+    alert_sent: alertSent,
+  };
 }
 
 async function buildProofFields(env, form, payment, paymentRef, file) {
@@ -436,8 +492,8 @@ export async function handleUnifiedSlipEvidence(request, env, downstream) {
     const telegram = await notifyTelegramFile(env, file, {
       proofId: proofBundle.proofId,
       paymentRef,
-      amountThb: proofBundle.snapshot.amount_thb,
-      stage: proofBundle.snapshot.payment_stage,
+      snapshot: proofBundle.snapshot,
+      sourcePage: source,
     }).catch(() => ({ ok: false }));
 
     return rebuildJson(downstreamResponse, {
@@ -451,6 +507,9 @@ export async function handleUnifiedSlipEvidence(request, env, downstream) {
       payment_status: "pending",
       storage: proofBundle.storage.stored ? proofBundle.storage.provider : downstreamData.storage,
       telegram_file_received: telegram.ok === true,
+      telegram_topic: telegram.topic || null,
+      telegram_thread_id: telegram.thread_id || null,
+      telegram_alert_sent: telegram.alert_sent === true,
       unified_payment_flow: "v1",
       message: "Payment proof received. MMD is reviewing it; no need to submit again.",
     });
@@ -476,7 +535,16 @@ function unifiedStatus(payment, proof) {
 }
 
 export async function enrichUnifiedConfirmVerify(request, env, downstream) {
-  const response = await downstream(request);
+  let response;
+  try {
+    response = await downstream(request);
+  } catch (error) {
+    const reason = code(error?.message || error);
+    if (["invalid_confirmation_token", "invalid_confirmation_token_signature", "confirmation_token_not_active"].includes(reason)) {
+      return json({ ok: false, error: reason }, 401);
+    }
+    throw error;
+  }
   if (!response.ok) return response;
   const data = await response.clone().json().catch(() => null);
   const claims = data?.claims;

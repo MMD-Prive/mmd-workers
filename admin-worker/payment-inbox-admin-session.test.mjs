@@ -57,3 +57,11 @@ test("credential login issues an admin actor usable by the payment review guard"
   );
   assert.equal(nonProductionActor, null);
 });
+
+test("private payment preview uses the browser gate and rejects service credentials", async () => {
+  for (const headers of [{}, { Authorization: 'Bearer service-test' }, { 'X-Confirm-Key': 'test' }]) {
+    const response = await adminWorker.fetch(new Request('https://mmdbkk.com/v1/admin/payments/evidence?proof_id=test', { headers }), env, {});
+    assert.equal(response.status, Object.keys(headers).length ? 403 : 401);
+    assert.match(response.headers.get('content-type'), /application\/json/);
+  }
+});

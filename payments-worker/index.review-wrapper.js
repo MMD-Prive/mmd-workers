@@ -34,13 +34,28 @@ import {
   isUnifiedSlipEvidenceRequest,
 } from "./unified-payment-proof.js";
 import { reconcilePremiumReviewedMembershipTerm } from "./premium-membership-term.js";
+import { reconcileReviewedMembershipEntitlement } from "./reviewed-membership-write-through.js";
 
 export { PointsPhase1Coordinator };
 
 const NOTIFY_PATH = "/v1/payments/notify";
 
+function canonicalTelegramEnv(env = {}) {
+  const membership = String(env.TG_THREAD_PAYMENTS_MEMBERSHIP || env.TG_THREAD_MEMBERSHIP || "20").trim() || "20";
+  const confirm = String(env.TG_THREAD_PAYMENTS_CONFIRM || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "22").trim() || "22";
+  return {
+    ...env,
+    TG_THREAD_PAYMENTS_MEMBERSHIP: membership,
+    TG_THREAD_MEMBERSHIP: membership,
+    TG_THREAD_PAYMENTS_CONFIRM: confirm,
+    TG_THREAD_PAYMENT: confirm,
+    TG_THREAD_CONFIRM: confirm,
+  };
+}
+
 export default {
   async fetch(request, env, ctx) {
+    env = canonicalTelegramEnv(env);
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
@@ -74,6 +89,9 @@ export default {
     }
 
     if (isReviewedProofRequest(path, method)) {
+      // Keep one untouched clone for post-verification membership reconciliation.
+      // handleReviewedProof consumes the original body.
+      const reconcileRequest = request.clone();
       const reviewResponse = await handleReviewedProof(request, env, ctx, async (body) => {
         if (!String(env.INTERNAL_TOKEN || "").trim()) {
           return json({ ok: false, error: "payments_internal_token_not_ready", authority: "payments-worker" }, 503);
@@ -108,7 +126,8 @@ export default {
           body: JSON.stringify(body),
         }), env, ctx);
       });
-      return reconcilePremiumReviewedMembershipTerm(request, reviewResponse, env);
+      const termResponse = await reconcilePremiumReviewedMembershipTerm(reconcileRequest.clone(), reviewResponse, env);
+      return reconcileReviewedMembershipEntitlement(reconcileRequest, termResponse, env);
     }
 
     return phase1Worker.fetch(request, env, ctx);

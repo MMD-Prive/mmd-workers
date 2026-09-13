@@ -7,6 +7,10 @@ import { generateKenjiModelReply, KENJI_TOTAL_DEADLINE_MS } from "./kenji-model-
 import { runKenjiFolderHistoryAssessment } from "./kenji-folder-history-adapter.mjs";
 import { buildProtectedCapabilityReply, decideKenjiCapability, KENJI_CAPABILITIES } from "./kenji-capability-policy.js";
 import { parseModelKnowledgeIdAllowlist, selectApprovedLineModelKnowledge } from "./kenji-knowledge-policy.js";
+// Canonical member-status voice policy (Per/HITO) is resolved before any generic LINE fallback.
+import { generateSafeReply, canonicalRichMenuIntent } from "../../shared/verified-member-concierge.mjs";
+import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
+import { INTERNAL_AI_SERVICE_BINDING_SMOKE, runInternalAiServiceBindingSmoke } from "./internal-ai-service-binding-smoke.mjs";
 
 export { KenjiModelIdempotency };
 
@@ -140,6 +144,12 @@ function hasBearerInternalAuth(request = null, env = {}) {
   const bearer = getBearerToken(request);
   const expectedInternalToken = asString(env.INTERNAL_TOKEN);
   return Boolean(expectedInternalToken && bearer && bearer === expectedInternalToken);
+}
+
+function hasAiServiceSmokeAuth(request = null, env = {}) {
+  const bearer = getBearerToken(request);
+  const expectedSmokeToken = asString(env.AI_SERVICE_SMOKE_TOKEN);
+  return Boolean(expectedSmokeToken && bearer && timingSafeStringEqual(bearer, expectedSmokeToken));
 }
 
 function hasServiceBindingAuth(request = null, allowedCallers = []) {
@@ -364,10 +374,12 @@ export function inferLineIntent(text = "", event = {}) {
   if (/^(?:สถานะ(?:สมาชิก)?(?:ของ)?ผม|สถานะ(?:สมาชิก)?(?:ของ)?ฉัน|สถานะ(?:สมาชิก)?(?:ของ)?หนู)(?:เป็นยังไง|เป็นอย่างไร|ตอนนี้)?(?:ครับ|ค่ะ)?$/i.test(normalized)) return "membership_status";
   if (/^(?:แต้ม|คะแนน|points?)(?:ของ)?(?:ผม|ฉัน|หนู)?\s*(?:เข้า|เพิ่ม|มา)(?:แล้ว)?(?:หรือยัง|ไหม|หรือเปล่า)?(?:ครับ|ค่ะ)?$/i.test(normalized)) return "points_status";
   if (/(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
+  if (/(?:after\s*care|aftercare|ดูแลหลัง(?:การ)?บริการ|หลัง(?:ใช้|รับ)บริการ|ให้คะแนน(?:บริการ|session|เซสชัน)|(?:feedback|ฟีดแบ็ก).{0,16}(?:บริการ|session|เซสชัน))/i.test(normalized)) return "aftercare";
   if (/(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
   if (/(svip|s vip|super\s*vip)/i.test(normalized)) return "svip";
   if (/(black\s*card|แบล็คการ์ด|บัตรดำ)/i.test(normalized)) return "black_card";
   if (/(vip|วีไอพี)/i.test(normalized)) return "vip";
+  if (/(?:จอง|booking|request|คิว).{0,20}(?:ถึงไหน|สถานะ|คอนเฟิร์ม|confirm(?:ed)?|เรียบร้อย|หรือยัง)|(?:สถานะ).{0,12}(?:จอง|booking|request)/i.test(normalized)) return "booking_status";
   if (/(massage|male massage|นวด|คลายกล้าม|recovery|wellness|therapist|เทอราปิส)/i.test(normalized)) return "mms_wellness";
   if (/(relax spa|partner venue|ไม่มีสถานที่|ไม่มีที่|สถานที่พร้อมอุปกรณ์|ใช้ร้าน)/i.test(normalized)) return "partner_venue";
   if (/(private talent|specialist|freelancer|special skill|ทักษะพิเศษ|ล่าม|ภาษา|performance|creative|business presence)/i.test(normalized)) return "private_talent";
@@ -705,18 +717,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "talk_to_per_ai") {
-    return `สวัสดีครับ ${prefix}ยินดีต้อนรับสู่ MMD Privé นะครับ
-
-อยากสมัครสมาชิก / ต่ออายุ เช็กสถานะ สอบถามบริการ หรือมีเคสส่วนตัวให้เปอร์ช่วยดู พิมพ์มาได้เลยครับ
-
-ตอนนี้อยากให้ช่วยเรื่องไหนก่อนครับ
-1) สมัครสมาชิก / ต่ออายุ
-2) เช็กแพ็กเกจหรือสถานะสมาชิก
-3) สอบถามบริการหรือ Companion
-4) ส่งรูปหรือโปรไฟล์ที่อยากให้ MMD พิจารณา
-5) ให้เปอร์ดูเป็นเคสส่วนตัว
-
-เล่าได้เลยครับ เดี๋ยวเปอร์ช่วยแยกขั้นตอนที่เหมาะให้ครับ`;
+    return `สวัสดีครับ ${prefix}ยินดีต้อนรับสู่ MMD Privé\nผม HITO ครับ\n\nขออนุญาตตรวจสอบสถานะบัญชีผ่าน My MMD ก่อนนะครับ แล้วเปอร์จะช่วยต่อให้ตรงกับสิทธิ์ของบัญชีครับ`;
   }
 
   if (intent === "privacy_request") {
@@ -832,6 +833,14 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
     return `${prefix}ถ้าต้องการ male massage หรือ recovery service เดี๋ยวเปอร์ช่วยแยกเป็น MMS Wellness ให้ครับ เลือกได้ทั้ง hotel / home visit หรือ Partner Venue โดย MMD ต้องตรวจรายละเอียดและความเหมาะสมก่อนครับ`;
   }
 
+  if (intent === "booking_status") {
+    return `${prefix}ผมยังยืนยันสถานะหรือคอนเฟิร์มการจองจากข้อความอย่างเดียวไม่ได้ครับ เปิดรายการจริงใน My MMD > History เพื่อดูสถานะล่าสุดได้ และถ้ายังรอตรวจ ผมจะไม่สรุปว่าเรียบร้อยแล้วครับ`;
+  }
+
+  if (intent === "aftercare") {
+    return `${prefix}Aftercare จะเปิดจาก Session ที่พร้อมใน My MMD > History ครับ ให้ใช้ปุ่ม Aftercare ของรายการนั้นเพื่อให้คะแนน ส่ง feedback หรือเข้า Private Care โดยลิงก์เฉพาะ Session ต้องมาจากข้อมูลทางการเท่านั้นครับ`;
+  }
+
   if (intent === "partner_venue") {
     return `${prefix}ถ้ายังไม่มีสถานที่ที่เหมาะสม เดี๋ยวเปอร์ช่วยดู Partner Venue อย่าง Relax Spa by 9 ให้ได้ครับ ขั้นตอนนี้เป็น request เพื่อรอตรวจ ยังไม่ใช่การยืนยันคิวครับ`;
   }
@@ -873,6 +882,9 @@ export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env
 export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, options = {}) {
   const eventText = getLineEventText(event);
   const intent = inferLineIntent(eventText, event);
+  const lineUserId = getLineUserId({ event });
+  const liveMemberContext = await resolveKenjiLiveMemberContext(env, lineUserId, intent);
+  const replyOptions = liveMemberContext ? { ...options, verifiedMemberContext: liveMemberContext } : options;
   const capabilityDecision = decideKenjiCapability({ text: eventText, intent });
   const modelAccessAllowed = options.modelAccessAllowed !== false;
 
@@ -899,7 +911,9 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     return buildKenjiModelAccessDecision(access, { pendingStored: pending.ok === true && pending.stored === true });
   }
 
-  const deterministicReply = buildKenjiLineReply(event, profile, options);
+  const conciergeInput = replyOptions.verifiedMemberContext ? { ...replyOptions.verifiedMemberContext, intent: canonicalRichMenuIntent({ intent, data: event?.postback?.data }) } : null;
+  const conciergeReply = conciergeInput ? generateSafeReply(conciergeInput) : null;
+  const deterministicReply = conciergeReply?.text || buildKenjiLineReply(event, profile, options);
   const deterministicFirst = capabilityDecision.capability !== KENJI_CAPABILITIES.APPROVED_PUBLIC_KNOWLEDGE && capabilityDecision.capability !== KENJI_CAPABILITIES.SAFE_CONVERSATION;
   const cachedKnowledge = isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)
     ? getCachedPublishedPerVoiceReply(env, intent)
@@ -2069,6 +2083,12 @@ export default {
 
     if (request.method === "GET" && url.pathname === LINE_RICH_MENU_LIST_PATH) {
       return handleRichMenuList(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === INTERNAL_AI_SERVICE_BINDING_SMOKE.path) {
+      if (!hasAiServiceSmokeAuth(request, env)) return json({ ok: false, error: "ai_service_smoke_auth_required" }, 401);
+      const result = await runInternalAiServiceBindingSmoke(env);
+      return json(result.payload, result.status);
     }
 
     if (request.method === "POST" && url.pathname === "/v1/internal/line/public-menu-fallback") {

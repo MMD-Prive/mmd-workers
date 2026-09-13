@@ -24,9 +24,24 @@ Example:
 
 This is the single canonical review destination for both Per and the authorized MMS Partner. Authorization remains server-side and role-scoped.
 
+## Canonical Telegram Applications Inbox
+
+MMD and MMS recruitment share one Telegram application-review inbox.
+
+- Canonical topic: `MMD • Applications`
+- Existing Telegram forum thread: `155`
+- MMD event: `MMD · Public Model Application`
+- MMS event: `MMS · Therapist Application`
+- Do not create a separate MMS Therapist application topic while thread `155` is the canonical shared inbox.
+- MMD and MMS continue to use separate canonical backend/admin records; only the notification inbox is shared.
+
+Normal application lifecycle events belong in this inbox: `New`, `Needs Review`, `Missing Info`, `Approved`, `Rejected`, and `Onboarding Ready`.
+
+Exceptions such as notification failure, sync failure, duplicate/data conflict, or materially overdue manual review may additionally alert `MMD • Alerts`; the normal application itself is not an alert exception.
+
 ## HENNA Telegram behavior
 
-For every new application, HENNA should send a concise internal alert containing:
+For every new application, HENNA should send a concise internal alert to the canonical Applications inbox containing:
 
 - event: new MMS Therapist application
 - Application ID
@@ -61,6 +76,7 @@ HENNA must NOT tell Per or Partner to:
 - open a generic MMD application review page
 - use `/partner/review` or other legacy generic Partner routes
 - use a Telegram link that loses the `application_id`
+- create or route normal MMS applications into `MMD • Alerts`
 
 Airtable may remain a canonical storage layer, but it is not the operator navigation destination.
 
@@ -109,7 +125,7 @@ Applicant submits
       ↓
 mms-worker stores canonical application
       ↓
-HENNA sends exact deep link
+HENNA sends exact deep link to MMD • Applications (thread 155)
       ↓
 Per / MMS Partner opens exact application
       ↓

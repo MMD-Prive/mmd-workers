@@ -274,6 +274,7 @@ jobs:
             "/v1/admin/payment-issuer-diagnostic",
             "/v1/admin/membership/payment-entitlement/approve",
             "/v1/admin/payments/review-queue*",
+            "/v1/admin/payments/evidence*",
             "/v1/admin/payments/review",
             "/v1/admin/kenji/models",
             "/v1/admin/kenji/models/draft",
@@ -417,6 +418,12 @@ jobs:
             http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body_file" -w "%{http_code}" \
               "$origin/v1/admin/payments/review-queue?limit=1")"
             cat "$body_file"
+            test "$http_code" = "401"
+            grep -q '"error":"unauthorized"' "$body_file"
+
+            body_file="$(mktemp)"
+            http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body_file" -w "%{http_code}" \
+              "$origin/v1/admin/payments/evidence?proof_id=smoke")"
             test "$http_code" = "401"
             grep -q '"error":"unauthorized"' "$body_file"
 
