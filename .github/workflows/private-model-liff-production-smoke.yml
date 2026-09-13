@@ -1,0 +1,77 @@
+name: Private Model LIFF production smoke
+
+on:
+  workflow_run:
+    workflows: ["Deploy admin-worker"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out deployed SHA
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Verify published LIFF contract
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { activationLiffUrl } from './admin-worker/src/model-first-time-activation.js';
+          const url = new URL(activationLiffUrl('smoke-token', 'published', {}));
+          if (url.hostname !== 'miniapp.line.me') throw new Error(`unexpected LIFF host: ${url.hostname}`);
+          if (url.pathname !== '/2010864854-N34SgCqq') throw new Error(`unexpected published LIFF id/path: ${url.pathname}`);
+          if (url.searchParams.get('activation') !== 'smoke-token') throw new Error('activation deep-link token missing');
+          console.log('Published LIFF contract OK:', url.origin + url.pathname);
+          NODE
+
+      - name: Smoke production activate route on apex and www
+        run: |
+          set -euo pipefail
+          for host in mmdbkk.com www.mmdbkk.com; do
+            headers="$(mktemp)"
+            body="$(mktemp)"
+            code="$(curl -sS -D "$headers" -o "$body" -w '%{http_code}' \
+              -X POST "https://${host}/v1/model/liff/activate" \
+              -H 'Origin: https://mmdbkk.com' \
+              -H 'Content-Type: application/json' \
+              --data '{"environment":"published"}')"
+            test "$code" = "400"
+            node - "$body" <<'NODE'
+          const fs = require('node:fs');
+          const body = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (body?.error !== 'activation_token_required') {
+            throw new Error(`unexpected activate negative-smoke body: ${JSON.stringify(body)}`);
+          }
+          NODE
+            if grep -qi '^set-cookie:.*mmd_model_session_v1' "$headers"; then
+              echo "Fail: negative smoke must not issue a model session cookie" >&2
+              exit 1
+            fi
+            echo "${host}: activate route published-environment negative smoke OK"
+          done
+
+      - name: Smoke production LIFF exchange fail-closed route
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          code="$(curl -sS -o "$body" -w '%{http_code}' \
+            -X POST 'https://mmdbkk.com/v1/model/liff/exchange' \
+            -H 'Origin: https://mmdbkk.com' \
+            -H 'Content-Type: application/json' \
+            --data '{"environment":"published"}')"
+          test "$code" = "400"
+          node - "$body" <<'NODE'
+          const fs = require('node:fs');
+          const body = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (body?.error !== 'id_token_required') {
+            throw new Error(`unexpected exchange negative-smoke body: ${JSON.stringify(body)}`);
+          }
+          NODE
+          echo "Published LIFF exchange fail-closed smoke OK"
