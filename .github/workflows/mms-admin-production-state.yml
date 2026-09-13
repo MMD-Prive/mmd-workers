@@ -25,7 +25,7 @@ jobs:
     env:
       ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
       ORIGIN: https://mmdbkk.com
-      NEXT_PATH: /internal/admin/control-room
+      NEXT_PATH: /internal/admin/dashboard
 
     steps:
       - name: Check out repository
@@ -87,14 +87,14 @@ jobs:
               redirect: 'manual',
             });
             const controlBody = await control.text();
-            if (control.status !== 200) throw new Error(`control room expected 200, got ${control.status}`);
+            if (control.status !== 200) throw new Error(`owner dashboard expected 200, got ${control.status}`);
             if (/\/internal\/admin\/login/.test(control.headers.get('location') || '')) {
-              throw new Error('control room bounced back to login');
+              throw new Error('owner dashboard bounced back to login');
             }
-            if (!/Control Room|CONTROL ROOM|Owner Control|Operating System/i.test(controlBody)) {
-              throw new Error('control room marker not found after authenticated login');
+            if (!/Control Room|CONTROL ROOM|Owner Control|Operating System|COMMAND CENTER|OWNER MODE/i.test(controlBody)) {
+              throw new Error('owner dashboard marker not found after authenticated login');
             }
-            console.log('HTTP login session -> Control Room passed.');
+            console.log('HTTP login session -> Owner Dashboard passed.');
           })().catch((error) => {
             console.error(error && error.stack ? error.stack : error);
             process.exit(1);
