@@ -14,6 +14,9 @@ function record(overrides = {}) {
       "Original Amount THB": 8250,
       "Available Amount THB": 8250,
       "Applied Amount THB": 0,
+      "Reserved Amount THB": 0,
+      "Credit Type": "carried_forward_deposit",
+      "Credit Authority": "payment_authority",
       "Verification Status": "verified",
       "Verification Source": "payment_authority",
       "Verified Amount THB": 8250,
@@ -58,4 +61,59 @@ test("customer-safe output never leaks verification or internal reason metadata"
   assert.equal(serialized.includes("Verification Snapshot"), false);
   assert.equal(serialized.includes("client_cancel_gt_48h"), false);
   assert.equal(result.items[0]?.verificationState, "verified");
+});
+
+test("Double Moment bonus requires campaign authority and exact v1 policy", () => {
+  const bonus = record({
+    credit_id: "credit_double_moment_bonus_1",
+    "Credit Type": "bonus_credit",
+    "Credit Authority": "campaign_worker",
+    "Campaign ID": "promo_double_moment_sep2026",
+    "Campaign Claim ID": "claim_double_moment_001",
+    "Policy Version": "v1",
+    "Original Amount THB": 3500,
+    "Available Amount THB": 3500,
+    "Applied Amount THB": 0,
+    "Reserved Amount THB": 0,
+    "Verified Amount THB": 0,
+    "Backing Payment Amount THB": 20000,
+    "Bonus Sequence": 1,
+    "Minimum Service Amount THB": 20000,
+  });
+  assert.equal(isVerifiedClientCreditRecord(bonus), true);
+  assert.equal(isVerifiedClientCreditRecord(record({ ...bonus.fields, "Campaign Claim ID": "" })), false);
+  assert.equal(isVerifiedClientCreditRecord(record({ ...bonus.fields, "Bonus Sequence": 3 })), false);
+  assert.equal(isVerifiedClientCreditRecord(record({ ...bonus.fields, "Backing Payment Amount THB": 19999 })), false);
+});
+
+test("credit response separates paid, bonus, and carried-forward balances", () => {
+  const paid = record({
+    credit_id: "credit_double_moment_paid",
+    "Credit Type": "paid_credit",
+    "Credit Authority": "payment_authority",
+    "Original Amount THB": 20000,
+    "Available Amount THB": 20000,
+    "Verified Amount THB": 20000,
+  });
+  const bonus = record({
+    credit_id: "credit_double_moment_bonus_1",
+    "Credit Type": "bonus_credit",
+    "Credit Authority": "campaign_worker",
+    "Campaign ID": "promo_double_moment_sep2026",
+    "Campaign Claim ID": "claim_double_moment_001",
+    "Policy Version": "v1",
+    "Original Amount THB": 3500,
+    "Available Amount THB": 3500,
+    "Verified Amount THB": 0,
+    "Backing Payment Amount THB": 20000,
+    "Bonus Sequence": 1,
+    "Minimum Service Amount THB": 20000,
+  });
+  const result = verifiedCreditsFromRecords([paid, bonus, record()]);
+  assert.deepEqual(result.buckets, {
+    paidAvailableThb: 20000,
+    bonusAvailableThb: 3500,
+    carriedForwardAvailableThb: 8250,
+  });
+  assert.equal(result.availableBalanceThb, 31750);
 });
