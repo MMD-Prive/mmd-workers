@@ -185,6 +185,8 @@ async function commitReview(request, env, actor) {
     payment_stage: approval.payment_stage,
     context_source: approval.context_source,
     renewal_session_id: approval.renewal_session_id,
+    membership_write_through: safeMembershipWriteThrough(payload.membership_write_through),
+    manual_membership_review_required: payload.manual_membership_review_required === true,
   }).then((value) => ({ ...value, ok: true })).catch((error) => ({
     ok: false,
     event_id: "",
@@ -204,6 +206,10 @@ async function commitReview(request, env, actor) {
     context_source: approval.context_source || "canonical_payment",
     recovery_context: approval.context_source === "liff_renewal_recovery",
     duplicate: payload.duplicate === true,
+    entitlement_materialized: payload.entitlement_materialized === true,
+    manual_membership_review_required: payload.manual_membership_review_required === true,
+    membership_expire_at: isoOrText(payload.membership_expire_at) || null,
+    membership_write_through: safeMembershipWriteThrough(payload.membership_write_through),
     money_truth_changed: true,
   });
 }
@@ -570,6 +576,9 @@ async function findReviewAudit(env, idempotencyKey) {
     authority: safeCode(after.authority || "payments-worker"),
     context_source: safeCode(after.context_source || ""),
     recovery_context: safeCode(after.context_source) === "liff_renewal_recovery",
+    payment_stage: safeCode(after.payment_stage || ""),
+    membership_write_through: safeMembershipWriteThrough(after.membership_write_through),
+    manual_membership_review_required: after.manual_membership_review_required === true,
     money_truth_changed: after.money_truth_changed === true,
   };
 }
@@ -596,6 +605,9 @@ async function writeAudit(env, input) {
     "After JSON": boundedJson({
       authority: input.authority || "payments-worker",
       context_source: input.context_source || "",
+      payment_stage: input.payment_stage || null,
+      membership_write_through: input.membership_write_through || null,
+      manual_membership_review_required: input.manual_membership_review_required === true,
       money_truth_changed: input.decision === "approve" && input.authority === "payments-worker",
     }),
     Actor: input.actor.id,
@@ -767,6 +779,25 @@ function safeEvidenceKey(value) {
 function safeImageContentType(value) {
   const type = clean(value).toLowerCase();
   return new Set(["image/jpeg", "image/png", "image/webp"]).has(type) ? type : "";
+}
+
+function safeMembershipWriteThrough(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return {
+    status: safeCode(value.status),
+    reason: safeCode(value.reason),
+    action: safeCode(value.action),
+    package_code: canonicalPackageCode(value.package_code) || safeCode(value.package_code),
+    capability: safeCode(value.capability),
+    current_expire_at: isoOrText(value.current_expire_at) || null,
+    start_at: isoOrText(value.start_at) || null,
+    expire_at: isoOrText(value.expire_at) || null,
+    membership_term: safeCode(value.membership_term),
+    membership_expiry_rule: safeCode(value.membership_expiry_rule),
+    confidence: confidenceOrNull(value.confidence),
+    duplicate: value.duplicate === true,
+    manual_reconciliation_required: value.manual_reconciliation_required === true,
+  };
 }
 
 function confidenceOrNull(value) {
