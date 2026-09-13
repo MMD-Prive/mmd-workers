@@ -1,64 +1,40 @@
-# `/sigil/pay/membership` — Payment Instructions v1 migration
+# `/sigil/pay/membership` — canonical bridge
 
-This Webflow route remains UI-owned, but it must not be a payment authority.
+As of 2026-09-13 this Webflow route is no longer a payment UI or payment authority. It is a compatibility bridge into the canonical membership/payment flow.
 
-## Canonical owner
+## Routing
 
-- Payment amount / destination / QR authority: `payments-worker`
-- Endpoint: `POST https://sigil.mmdbkk.com/v1/confirm/payment-instructions`
-- Required response markers:
-  - `ok: true`
-  - `authority: "payments-worker"`
-  - `schema: "mmd_payment_instructions_v1"`
+- Signed request (`?t=<signed token>`) -> `/sigil/pay?t=<signed token>`.
+- Unsigned request -> `/sigil/member/membership`.
+- Only non-authoritative membership-entry context may be forwarded on the unsigned path: `plan`, `package`, `tier`, `code`, `promo`, `src`, `campaign`, `from`.
+- Browser-supplied `amount`, `payment_ref`, `session_id`, payment destination fields, bank fields, and other money-authority parameters are not forwarded into the signed payment page.
 
-## Browser adapter
+The shared Webflow source is `webflow/payment/legacy-payment-route-bridge-v1.js`.
 
-Use `payment-instructions-v1.js` on the Webflow membership payment page.
+## Canonical payment owner
 
-The adapter:
+`payments-worker` remains the sole owner of amount due, payment destinations, dynamic PromptPay QR, payment references, verification, and Payment Instructions v1.
 
-- extracts only signed `t` from the current route (including LIFF state fallback);
-- ignores package-price tables for canonical amount truth;
-- renders `amount_due_thb` from payments-worker;
-- renders only server-returned PromptPay / bank / card destinations;
-- never constructs PromptPay QR URLs in the browser;
-- disables proof/payment controls when the contract cannot be validated;
-- stores canonical `payment_ref` and `session_id` on the page root for downstream proof submission.
-
-## DOM hooks
-
-Preferred page root:
-
-```html
-<div data-mmd-membership-payment></div>
-```
-
-Supported display hooks:
+Canonical signed payment route:
 
 ```text
-[data-payment-instructions-status]
-[data-payment-instructions-amount]
-[data-payment-instructions-bank]
-[data-payment-instructions-account]
-[data-payment-instructions-account-name]
-[data-payment-instructions-qr]
-[data-payment-instructions-copy]
-[data-payment-instructions-card]
-[data-payment-proof-submit]
+/sigil/pay?t=<signed token>
 ```
 
-The adapter also falls back to the existing `.mmd6` root during migration.
-
-## Forbidden legacy behavior
-
-Do not restore browser-side constants such as membership amount tables, PromptPay IDs, account numbers, or locally generated payment references as payment truth. Package cards may remain as pre-payment UI context, but a customer must enter the canonical signed payment flow before any destination is shown.
-
-## Proof intake
-
-New proof integrations should use the canonical payments-worker proof route:
+Canonical payment-instructions endpoint:
 
 ```text
-POST /v1/pay/slip/evidence
+POST https://sigil.mmdbkk.com/v1/confirm/payment-instructions
 ```
 
-with the canonical `payment_ref` generated for the signed session. Do not trust amount fields supplied by browser forms.
+## Retired behavior
+
+Do not restore a Webflow membership checkout on this route that:
+
+- contains package-price tables as amount truth;
+- creates payment sessions or payment references in the browser;
+- sends browser-calculated amounts to `/v1/pay/verify`;
+- hard-codes PromptPay IDs, bank account details, card destinations, or QR URLs;
+- marks payment or membership state from browser state.
+
+`payment-instructions-v1.js` remains in the repository as migration history/reference but is not the active page runtime after the bridge cutover.
