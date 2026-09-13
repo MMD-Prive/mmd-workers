@@ -1,5 +1,5 @@
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
-import { issueModelActivation } from "./model-first-time-activation.js";
+import { issueModelActivation, resolvePrivateCanonicalModel } from "./model-first-time-activation.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_BASE_ID = "appsV1ILPRfIjkaYg";
@@ -357,55 +357,16 @@ async function resolveOrCreateCanonicalModel(env, application) {
   const modelKey = deterministicPrivateModelKey(applicationId);
   if (!modelKey) return { ok: false, status: 409, error: "application_id_invalid" };
 
-  const existingByKey = await findModelsByModelKey(env, modelKey);
-  if (existingByKey.length > 1) return { ok: false, status: 409, error: "canonical_model_key_collision" };
-  if (existingByKey.length === 1) {
-    const model = existingByKey[0];
-    return {
-      ok: true,
-      created: false,
-      model,
-      model_record_id: model.id,
-      line_user_id: clean(model.fields?.[PRIVATE_MODEL_CANONICAL_MODEL_FIELDS.lineUserId], 100),
-    };
-  }
-
   const workingName = clean(fields[PRIVATE_MODEL_HANDOFF_FIELDS.nickname], 120);
   if (!workingName) return { ok: false, status: 409, error: "application_nickname_required" };
 
-  const created = await createCanonicalModel(env, {
-    [PRIVATE_MODEL_CANONICAL_MODEL_FIELDS.workingName]: workingName,
-    [PRIVATE_MODEL_CANONICAL_MODEL_FIELDS.modelRecordId]: modelKey,
+  // The Durable Object is keyed by the deterministic application-owned model key.
+  // It serializes lookup + create, so concurrent owner approvals cannot create
+  // two Airtable Models or issue activation links for different records.
+  return resolvePrivateCanonicalModel(env, {
+    model_key: modelKey,
+    working_name: workingName,
   });
-  if (!created || !RECORD_ID_RE.test(created.id)) return { ok: false, status: 502, error: "canonical_model_create_failed" };
-  return {
-    ok: true,
-    created: true,
-    model: created,
-    model_record_id: created.id,
-    line_user_id: "",
-  };
-}
-
-async function findModelsByModelKey(env, modelKey) {
-  const url = airtableUrl(env, modelsTable(env));
-  url.searchParams.set("maxRecords", "2");
-  url.searchParams.set("pageSize", "2");
-  url.searchParams.set("returnFieldsByFieldId", "true");
-  url.searchParams.set("filterByFormula", `{model_record_id}='${escapeFormula(modelKey)}'`);
-  const data = await airtableRequest(env, url.toString(), { method: "GET" });
-  return Array.isArray(data.records) ? data.records : [];
-}
-
-async function createCanonicalModel(env, fields) {
-  const url = airtableUrl(env, modelsTable(env));
-  url.searchParams.set("returnFieldsByFieldId", "true");
-  const data = await airtableRequest(env, url.toString(), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ records: [{ fields }], typecast: false }),
-  });
-  return Array.isArray(data.records) ? data.records[0] || null : null;
 }
 
 async function readAllowedActor(request, env) {
