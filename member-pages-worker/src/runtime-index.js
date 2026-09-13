@@ -23,6 +23,10 @@ import {
   handleKenjiLineMemberTruthHealth,
   isKenjiLineMemberTruthHealthRequest,
 } from "./kenji-line-member-truth-health.js";
+import {
+  handleModelDriveDirectoryRequest,
+  isModelDriveDirectoryRequest,
+} from "./model-drive-directory.js";
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-durable-object.js";
@@ -62,6 +66,11 @@ export function normalizeCareBackWebViewOrigin(request) {
 export default {
   async fetch(request, env, ctx) {
     request = normalizeCareBackWebViewOrigin(request);
+    // Service-binding-only model inventory discovery. The synthetic hostname is
+    // never routed publicly, so Drive credentials and inventory remain backend-only.
+    if (isModelDriveDirectoryRequest(request)) {
+      return handleModelDriveDirectoryRequest(request, env);
+    }
     if (isMemberClientCreditsRequest(request)) {
       return handleMemberClientCredits(request, env);
     }
