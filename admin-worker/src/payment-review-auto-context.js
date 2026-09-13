@@ -21,7 +21,6 @@ export async function resolveAutomaticPaymentContext(env={},evidence={}){
     const c=await sessionCandidates(env,{amount,stage:hint.payment_stage,texts,proofAt:proof.createdTime||proof.fields?.created_at});
     if(c[0]&&c[0].score>=7){if(c[1]&&c[1].score===c[0].score)throw err(409,"operator_context_auto_match_ambiguous");return serviceResult(ref,amount,hint.payment_stage,c[0],hint.summary);}
   }
-  if(!hint.payment_stage&&email&&amountPkg&&amountPkg===memberPkg)return membershipResult(ref,amount,email,amountPkg,member.id,hint.summary);
   throw err(409,"operator_context_auto_match_not_resolved");
 }
 
