@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   isVerifiedClientCreditRecord,
   verifiedCreditsFromRecords,
+  handleMemberClientCredits,
 } from "./src/member-app-client-credits.js";
 
 function record(overrides = {}) {
@@ -117,4 +118,14 @@ test("unverified cancellation cannot emit usable money or a notice", () => {
   const result = verifiedCreditsFromRecords([cancellation({"Verification Status": "pending_review"})]);
   assert.deepEqual(result.items, []);
   assert.equal(result.availableBalanceThb, 0);
+});
+
+test("logged-out request receives no customer notice or money", async () => {
+  const response = await handleMemberClientCredits(new Request("https://example.test/api/member/app/credits"));
+  assert.equal(response.status, 401);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  const body = await response.json();
+  assert.equal(body.error.code, "MEMBER_SESSION_REQUIRED");
+  assert.equal(body.items, undefined);
+  assert.equal(body.balance, undefined);
 });
