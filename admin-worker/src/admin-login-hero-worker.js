@@ -1,7 +1,7 @@
 import worker from "./job-orchestrator-owner-ops-wrapper.js";
 import {
-  isPrivateModelDecisionRequest,
-  maybeHandlePrivateModelDecision,
+  isPrivateModelAdminRequest,
+  maybeHandlePrivateModelAdminRequest,
   syncPrivateModelHandoffAfterActivation,
 } from "./private-model-application-handoff.js";
 export * from "./admin-login-hero-worker-pre-model-line-link.js";
@@ -81,11 +81,11 @@ coreWorker.fetch(request, env, ctx)
 
 export default {
   async fetch(request, env, ctx) {
-    let handoffRequest = null;
+    let privateModelRequest = null;
     let activationRequest = null;
     try {
       const path = new URL(request.url).pathname.replace(/\/+$/g, "") || "/";
-      if (isPrivateModelDecisionRequest(request)) handoffRequest = request.clone();
+      if (isPrivateModelAdminRequest(request)) privateModelRequest = request.clone();
       if (path === MODEL_ACTIVATE_PATH && String(request.method || "GET").toUpperCase() === "POST") {
         activationRequest = request.clone();
       }
@@ -94,7 +94,7 @@ export default {
     }
 
     let response = await worker.fetch(request, env, ctx);
-    if (handoffRequest) response = await maybeHandlePrivateModelDecision(handoffRequest, env, response);
+    if (privateModelRequest) response = await maybeHandlePrivateModelAdminRequest(privateModelRequest, env, response);
     if (activationRequest) response = await syncPrivateModelHandoffAfterActivation(activationRequest, response, env);
     return enforceOwnerDashboardFirst(request, response);
   },
