@@ -6,6 +6,7 @@ const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const DEFAULT_MAX_AMOUNT_THB = 10_000_000;
 const PAYMENT_STAGES = new Set(["deposit", "final", "tips", "full", "membership"]);
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const EVIDENCE_PREFIX = "line-ofc/payment-proofs";
 
 export function isHistoricalSlipBackfillRequest(path, method = "GET") {
   const normalized = normalizePath(path);
@@ -50,7 +51,7 @@ async function listBackfillProofs(request, env) {
   return json({
     ok: true,
     schema: SCHEMA,
-    canonical_flow: "LINE Album / archive -> SHA-256 dedupe -> QR/OCR -> match context -> Payment Proof pending -> review -> payments-worker",
+    canonical_flow: "LINE Album / archive -> SHA-256 dedupe -> private QR/OCR -> private R2 evidence -> match context -> Payment Proof pending -> review -> payments-worker",
     authority: "payments-worker",
     items,
   });
@@ -58,6 +59,7 @@ async function listBackfillProofs(request, env) {
 
 async function ingestHistoricalProof(request, env, ctx) {
   requireAirtable(env);
+  requirePrivateEvidenceRuntime(env);
   const contentType = clean(request.headers.get("Content-Type")).toLowerCase();
   if (!contentType.includes("multipart/form-data")) throw httpError(415, "multipart_form_data_required");
 
@@ -81,7 +83,8 @@ async function ingestHistoricalProof(request, env, ctx) {
   const proofId = `hist_${evidenceSha256.slice(0, 24)}`;
   const duplicate = await findHistoricalDuplicate(env, { proofId, evidenceSha256 });
   if (duplicate) {
-    return json({ ok: true, duplicate: true, proof: safeProofSummary(duplicate), state: "pending" }, 200);
+    const repaired = await ensureDuplicateEvidence(env, duplicate, { proofId, bytes, mimeType, evidenceSha256 }).catch(() => duplicate);
+    return json({ ok: true, duplicate: true, proof: safeProofSummary(repaired), state: "pending" }, 200);
   }
 
   const explicit = {
@@ -117,12 +120,22 @@ async function ingestHistoricalProof(request, env, ctx) {
     !deterministicMatch
   );
 
+  const r2Key = historicalEvidenceKey(proofId, mimeType);
+  await storeHistoricalEvidence(env, r2Key, bytes, {
+    mimeType,
+    proofId,
+    evidenceSha256,
+    sourceType,
+    sourceRef,
+  });
+
   const note = {
     schema: SCHEMA,
     source_type: sourceType,
     source_ref: sourceRef,
     source_file_name: safeText(file.name, 240),
     evidence_sha256: evidenceSha256,
+    r2_key: r2Key,
     byte_size: bytes.byteLength,
     mime_type: mimeType,
     extraction: safeExtractionForNote(extraction),
@@ -155,7 +168,14 @@ async function ingestHistoricalProof(request, env, ctx) {
   if (links.session) fields.session = [links.session];
   if (links.payment) fields.payment = [links.payment];
 
-  const created = await airtableCreate(env, paymentProofTable(env), fields);
+  let created;
+  try {
+    created = await airtableCreate(env, paymentProofTable(env), fields);
+  } catch (error) {
+    await env.LINE_SLIP_EVIDENCE.delete?.(r2Key).catch?.(() => null);
+    throw error;
+  }
+
   const result = {
     ok: true,
     duplicate: false,
@@ -164,6 +184,7 @@ async function ingestHistoricalProof(request, env, ctx) {
     state: "pending",
     review_required: reviewRequired,
     extraction_method: extraction.extraction_method,
+    evidence_preview_url: evidencePreviewUrl(proofId),
     match: safeMatch(links),
     guardrails: guardrails(),
   };
@@ -389,15 +410,13 @@ async function validateHistoricalHandoff(proof, note, body, env, reviewReason) {
 }
 
 async function extractSlip(env, image) {
-  const token = clean(env.HISTORICAL_SLIP_EXTRACTOR_TOKEN || env.LINE_SLIP_EXTRACTOR_TOKEN);
   const maxAmount = Number(env.HISTORICAL_SLIP_MAX_AMOUNT_THB || env.LINE_SLIP_MAX_AMOUNT_THB) || DEFAULT_MAX_AMOUNT_THB;
-  const qrUrl = clean(env.HISTORICAL_SLIP_QR_EXTRACTOR_URL || env.LINE_SLIP_QR_EXTRACTOR_URL);
-  const ocrUrl = clean(env.HISTORICAL_SLIP_OCR_EXTRACTOR_URL || env.LINE_SLIP_OCR_EXTRACTOR_URL);
-
-  const qr = await callExtractor({ url: qrUrl, token, image, method: "qr", maxAmount });
+  const qr = await callPrivateExtractor(env, image, "/v1/extract/qr", "qr", maxAmount);
   if (clean(qr.result?.payment_ref)) return { ...qr.result, extraction_error: "" };
-  const ocr = await callExtractor({ url: ocrUrl, token, image, method: "ocr", maxAmount });
+
+  const ocr = await callPrivateExtractor(env, image, "/v1/extract/ocr", "ocr", maxAmount);
   if (extractionUseful(ocr.result)) return { ...ocr.result, extraction_error: qr.error || "" };
+  if (qr.result?.amount_thb != null) return { ...qr.result, extraction_error: ocr.error || "" };
 
   return {
     payment_ref: "",
@@ -415,19 +434,28 @@ async function extractSlip(env, image) {
   };
 }
 
-async function callExtractor({ url, token, image, method, maxAmount }) {
-  if (!url) return { available: false, error: `${method}_adapter_unavailable`, result: null };
+async function callPrivateExtractor(env, image, route, method, maxAmount) {
+  if (!env.SLIP_EXTRACTOR || typeof env.SLIP_EXTRACTOR.fetch !== "function") {
+    return { available: false, error: "private_extractor_binding_missing", result: null };
+  }
   try {
-    const response = await fetch(url, {
+    const response = await env.SLIP_EXTRACTOR.fetch(new Request(`https://mmd-slip-extractor${route}`, {
       method: "POST",
-      headers: { "content-type": image.mimeType, ...(token ? { Authorization: `Bearer ${token}` } : {}), "x-mmd-extraction-method": method },
+      headers: {
+        "content-type": image.mimeType,
+        "content-length": String(image.bytes?.byteLength || 0),
+        "x-mmd-internal-call": "true",
+        "x-mmd-service-binding": "admin-worker",
+        "x-mmd-extraction-method": method,
+        "x-request-id": `historical-${crypto.randomUUID()}`,
+      },
       body: image.bytes,
-    });
+    }));
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) return { available: true, error: `${method}_adapter_failed_${response.status}`, result: null };
+    if (!response.ok) return { available: true, error: `${method}_private_extractor_failed_${response.status}`, result: null };
     return { available: true, error: "", result: normalizeExtraction(payload, method, maxAmount) };
   } catch {
-    return { available: true, error: `${method}_adapter_failed`, result: null };
+    return { available: true, error: `${method}_private_extractor_failed`, result: null };
   }
 }
 
@@ -451,6 +479,64 @@ function normalizeExtraction(payload, method, maxAmount) {
     extraction_method: method,
     confidence_score: amountThb == null && !paymentRef && !paidAt && !payerName ? 0 : confidence,
   };
+}
+
+async function storeHistoricalEvidence(env, key, bytes, { mimeType, proofId, evidenceSha256, sourceType, sourceRef }) {
+  if (!env.LINE_SLIP_EVIDENCE || typeof env.LINE_SLIP_EVIDENCE.put !== "function") {
+    throw httpError(503, "historical_evidence_storage_unavailable");
+  }
+  await env.LINE_SLIP_EVIDENCE.put(key, bytes, {
+    httpMetadata: { contentType: mimeType },
+    customMetadata: {
+      proof_id: safeText(proofId, 120),
+      evidence_sha256: safeText(evidenceSha256, 64),
+      source_type: safeCode(sourceType),
+      source_ref: safeText(sourceRef, 240),
+      provenance: "historical_slip_backfill",
+    },
+  });
+}
+
+async function ensureDuplicateEvidence(env, record, { proofId, bytes, mimeType, evidenceSha256 }) {
+  const note = parseNote(record?.fields?.note);
+  if (safeEvidenceKey(note.r2_key)) return record;
+  const key = historicalEvidenceKey(safeText(record?.fields?.proof_id || proofId, 120), mimeType);
+  await storeHistoricalEvidence(env, key, bytes, {
+    mimeType,
+    proofId: safeText(record?.fields?.proof_id || proofId, 120),
+    evidenceSha256,
+    sourceType: note.source_type || "line_archive",
+    sourceRef: note.source_ref || "duplicate-repair",
+  });
+  const nextNote = { ...note, r2_key: key, mime_type: note.mime_type || mimeType, evidence_sha256: note.evidence_sha256 || evidenceSha256 };
+  const updated = await airtableUpdate(env, paymentProofTable(env), record.id, { note: JSON.stringify(nextNote) });
+  return updated?.id ? updated : { ...record, fields: { ...(record.fields || {}), note: JSON.stringify(nextNote) } };
+}
+
+function historicalEvidenceKey(proofId, mimeType, now = new Date()) {
+  const year = String(now.getUTCFullYear()).padStart(4, "0");
+  const month = String(now.getUTCMonth() + 1).padStart(2, "0");
+  return `${EVIDENCE_PREFIX}/${year}/${month}/${safeText(proofId, 120)}/original.${mimeExtension(mimeType)}`;
+}
+
+function mimeExtension(mimeType) {
+  if (mimeType === "image/png") return "png";
+  if (mimeType === "image/webp") return "webp";
+  return "jpg";
+}
+
+function evidencePreviewUrl(proofId) {
+  return `/v1/admin/payments/evidence?proof_id=${encodeURIComponent(proofId)}`;
+}
+
+function safeEvidenceKey(value) {
+  const key = safeText(value, 800);
+  return /^line-ofc\/payment-proofs\/\d{4}\/\d{2}\/[A-Za-z0-9_-]+\/original\.(?:jpe?g|png|webp)$/i.test(key) ? key : "";
+}
+
+function requirePrivateEvidenceRuntime(env) {
+  if (!env.SLIP_EXTRACTOR || typeof env.SLIP_EXTRACTOR.fetch !== "function") throw httpError(503, "private_extractor_binding_missing");
+  if (!env.LINE_SLIP_EVIDENCE || typeof env.LINE_SLIP_EVIDENCE.put !== "function") throw httpError(503, "historical_evidence_storage_unavailable");
 }
 
 async function resolveDeterministicLinks(env, candidate) {
@@ -546,14 +632,18 @@ function safeProofSummary(record) {
   const note = parseNote(fields.note);
   if (note.schema !== SCHEMA) return null;
   const ref = safeText(fields.payment_ref || note.extraction?.payment_ref, 180);
+  const proofId = safeText(fields.proof_id, 120);
+  const r2Key = safeEvidenceKey(note.r2_key);
   return {
     id: record.id,
-    proof_id: safeText(fields.proof_id, 120),
+    proof_id: proofId,
     status: safeCode(fields.status || "pending"),
     review_state: safeCode(note.review_state || "pending"),
     source_type: safeCode(note.source_type),
     source_ref: safeText(note.source_ref, 240),
     evidence_sha256: safeText(note.evidence_sha256, 64),
+    evidence_preview_url: r2Key && proofId ? evidencePreviewUrl(proofId) : "",
+    evidence_stored: Boolean(r2Key),
     extraction_method: safeCode(note.extraction?.extraction_method),
     extraction_confidence: Number(note.extraction?.confidence_score || 0),
     payment_ref_masked: maskRef(ref),
@@ -633,10 +723,11 @@ async function airtable(env, table, recordId = "", init = {}, query = {}) {
   requireAirtable(env);
   const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(clean(env.AIRTABLE_BASE_ID))}/${encodeURIComponent(table)}${recordId ? `/${encodeURIComponent(recordId)}` : ""}`);
   for (const [key, value] of Object.entries(query)) if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
-  const response = await fetch(url, {
+  const request = new Request(url.toString(), {
     ...init,
     headers: { Authorization: `Bearer ${clean(env.AIRTABLE_API_KEY)}`, "Content-Type": "application/json", ...(init.headers || {}) },
   });
+  const response = env.AIRTABLE_HTTP?.fetch ? await env.AIRTABLE_HTTP.fetch(request) : await fetch(request);
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw httpError(response.status, `airtable_${response.status}`);
   return payload;
