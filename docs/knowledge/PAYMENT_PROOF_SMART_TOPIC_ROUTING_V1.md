@@ -5,9 +5,9 @@ Payment proof notifications are operational routing only. They never create mone
 ## Canonical routing
 
 - Explicit Membership / Renewal proof -> `MMD • Payments (Membership)` thread `20`.
-- Explicit service payment (`deposit`, `final`, `balance`, `tips`, `full`, booking/service fee) -> `MMD • Payments (Confirm)` thread `21`.
-- Amount-only membership-price matches without membership context remain in thread `21` until context is confirmed.
-- Conflicting service + membership context, or a membership amount/package mismatch, remains in thread `21` and additionally alerts `MMD • Alerts` thread `9`.
+- Explicit service payment (`deposit`, `final`, `balance`, `tips`, `full`, booking/service fee) -> `MMD • Payments (Confirm)` thread `22`.
+- Amount-only membership-price matches without membership context remain in thread `22` until context is confirmed.
+- Conflicting service + membership context, or a membership amount/package mismatch, remains in thread `22` and additionally alerts `MMD • Alerts` thread `9`.
 - Official Verify remains mandatory before any entitlement mutation.
 
 ## Channel coverage
