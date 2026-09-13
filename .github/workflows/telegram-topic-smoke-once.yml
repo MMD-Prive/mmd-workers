@@ -48,7 +48,7 @@ Synthetic / no customer data"
               -H 'Content-Type: application/json' \
               --data-binary "$payload" || true)"
 
-            node - <<'NODE' "$file" "$thread" "$code"
+            if node - <<'NODE' "$file" "$thread" "$code"
 const fs = require('node:fs');
 const [file, thread, code] = process.argv.slice(2);
 let body = {};
@@ -61,7 +61,11 @@ const description = String(body.description || body.error || 'delivery_failed').
 console.log(`FAIL thread=${thread} http=${code} error_code=${body.error_code || 'n/a'} description=${description}`);
 process.exit(1);
 NODE
-            if [ "$?" -ne 0 ]; then failures=$((failures+1)); fi
+            then
+              :
+            else
+              failures=$((failures+1))
+            fi
           done
 
           echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
