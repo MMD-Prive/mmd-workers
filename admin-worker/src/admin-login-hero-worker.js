@@ -1,4 +1,5 @@
 import worker from "./job-orchestrator-owner-ops-wrapper.js";
+import { handleModelConsoleAudit, isModelConsoleAuditRequest } from "./model-console-audit.js";
 import {
   isPrivateModelAdminRequest,
   maybeHandlePrivateModelAdminRequest,
@@ -81,6 +82,7 @@ coreWorker.fetch(request, env, ctx)
 
 export default {
   async fetch(request, env, ctx) {
+    if (isModelConsoleAuditRequest(request)) return handleModelConsoleAudit(request, env);
     let privateModelRequest = null;
     let activationRequest = null;
     try {
