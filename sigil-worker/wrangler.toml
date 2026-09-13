@@ -10,6 +10,13 @@ workers_dev = true
 # Temporary public Complaint Evidence intake URL:
 # https://sigil-worker.malemodel-bkk.workers.dev/member/api/recovery/complaint-evidence
 #
+# Private Model uses the same sigil-worker runtime and canonical paths:
+# - GET  /sigil/apply
+# - POST /sigil/api/private-model/apply
+# - POST /sigil/api/private-model/upload-url
+# - PUT  /sigil/api/private-model/upload-file
+# Webflow remains presentation only; Worker owns validation, upload authorization and persistence.
+#
 # When the Cloudflare route conflict is cleared manually, add the custom route back:
 # routes = [
 #   { pattern = "sigil.mmdbkk.com/member/api/recovery/*", zone_name = "mmdbkk.com" }
@@ -26,6 +33,10 @@ PUBLIC_MODEL_ENABLED = "true"
 PUBLIC_MODEL_UPLOAD_ENABLED = "true"
 PUBLIC_MODEL_UPLOAD_REQUIRED = "false"
 PUBLIC_MODEL_REVIEW_BASE_URL = "https://mmdbkk.com/internal/admin/model-applications"
+PRIVATE_MODEL_ENABLED = "true"
+PRIVATE_MODEL_UPLOAD_ENABLED = "true"
+PRIVATE_MODEL_UPLOAD_REQUIRED = "false"
+PRIVATE_MODEL_PUBLIC_API_BASE = "https://sigil-worker.malemodel-bkk.workers.dev"
 TELEGRAM_CHAT_ID = "-1003546439681"
 TELEGRAM_PUBLIC_MODEL_THREAD_ID = "155"
 TG_THREAD_PUBLIC_MODEL = "155"
@@ -34,6 +45,9 @@ TG_THREAD_CONFIRM = "22"
 
 # Do not put secrets here.
 # TELEGRAM_BOT_TOKEN remains a Cloudflare Worker secret.
+# PRIVATE_MODEL_UPLOAD_SIGNING_SECRET is optional; when absent the private-model flow
+# intentionally reuses PUBLIC_MODEL_UPLOAD_SIGNING_SECRET so no new production secret
+# is required for the first private-model release.
 # Public Model notifications use the existing Telegram group TELEGRAM_CHAT_ID and MUST
 # target TELEGRAM_PUBLIC_MODEL_THREAD_ID / TG_THREAD_PUBLIC_MODEL = 155.
 # There is intentionally no fallback from TELEGRAM_PUBLIC_MODEL_THREAD_ID to
