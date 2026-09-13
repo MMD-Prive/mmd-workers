@@ -24,8 +24,9 @@ test("verified LIFF payment binding hands off only to signed canonical /sigil/pa
   assert.match(paymentBinding, /\/v1\/pay\/verify/);
   assert.match(paymentBinding, /url\.pathname\s*!==\s*["']\/sigil\/pay["']/);
   assert.match(paymentBinding, /url\.searchParams\.get\(["']t["']\)/);
-  assert.match(paymentBinding, /keys\.some\(\(key\)\s*=>\s*key\s*!==\s*["']t["']\)/);
-  assert.match(paymentBinding, /amount_mismatch/);
+  assert.match(paymentBinding, /url\.searchParams\.keys\(\)\]\s*\.some|searchParams\.keys\(\)\]\.some/);
+  assert.match(paymentBinding, /selected\.amount_thb/);
+  assert.doesNotMatch(paymentBinding, /browserBody\?\.amount|browserBody\.amount/);
 });
 
 test("LIFF payment binding contains no browser-owned payment destination", () => {
