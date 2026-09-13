@@ -1,5 +1,14 @@
 const ALLOWED_SHOPS = new Set(["himai-shop", "mmd-shop"]);
-const ALLOWED_ACTIONS = new Set(["shop_owner", "line_order", "product_interest"]);
+const ALLOWED_ACTIONS = new Set([
+  "shop_owner",
+  "product_interest",
+  "line_order",
+  "order",
+  "order_created",
+  "payment",
+  "payment_received",
+  "payment_confirmed",
+]);
 
 export async function handleShopAlert(request, env) {
   const url = new URL(request.url);
@@ -43,7 +52,7 @@ export async function handleShopAlert(request, env) {
     occurredAt
   });
 
-  const telegram = await sendShopAlertToTelegram(env, shop, text);
+  const telegram = await sendShopAlertToTelegram(env, shop, action, text);
 
   return json({
     ok: telegram.ok === true,
@@ -58,16 +67,24 @@ function isAlertPath(path) {
   return path === "/shop/api/alerts/interest" || path === "/mmd-shop/api/alerts/interest";
 }
 
+function eventLane(action) {
+  if (["line_order", "order", "order_created"].includes(action)) return "orders";
+  if (["payment", "payment_received", "payment_confirmed"].includes(action)) return "payments";
+  return "alerts";
+}
+
 function buildTelegramText(input) {
   const shopLabel = input.shop === "mmd-shop" ? "🛍️ MMD SHOP" : "💊 HIMAI SHOP";
-  const actionLabel = input.action === "line_order"
-    ? "ลูกค้ากดสั่งผ่าน LINE"
-    : input.action === "product_interest"
-      ? "ลูกค้าสนใจสินค้า"
-      : "ลูกค้ากดคุยกับ Shop Owner";
+  const actionLabel = ["line_order", "order", "order_created"].includes(input.action)
+    ? "ลูกค้าสร้างคำสั่งซื้อ"
+    : ["payment", "payment_received", "payment_confirmed"].includes(input.action)
+      ? "มีเหตุการณ์ชำระเงิน"
+      : input.action === "product_interest"
+        ? "ลูกค้าสนใจสินค้า"
+        : "ลูกค้ากดคุยกับ Shop Owner";
 
   const lines = [
-    `${shopLabel} · NEW WEB INTEREST`,
+    `${shopLabel} · ${eventLane(input.action).toUpperCase()}`,
     actionLabel,
     "",
     `สินค้า: ${input.productName || "General Shop Inquiry"}`,
@@ -76,28 +93,47 @@ function buildTelegramText(input) {
     `หน้า: ${input.route}`,
     `เวลา: ${input.occurredAt}`,
     `Event: ${input.eventId}`,
-    "",
-    "Action: ตรวจสอบ stock และรอลูกค้าทักเข้าช่องทางร้าน"
   ];
 
   return lines.join("\n");
 }
 
-async function sendShopAlertToTelegram(env, shop, text) {
+function threadId(env, shop, lane) {
+  const key = shop === "mmd-shop"
+    ? {
+        orders: "TG_THREAD_MMD_SHOP_ORDERS",
+        payments: "TG_THREAD_MMD_SHOP_PAYMENTS",
+        alerts: "TG_THREAD_MMD_SHOP_ALERTS",
+      }[lane]
+    : {
+        orders: "TG_THREAD_HIMAI_ORDERS",
+        payments: "TG_THREAD_HIMAI_PAYMENTS",
+        alerts: "TG_THREAD_HIMAI_ALERTS",
+      }[lane];
+
+  const fallback = shop === "mmd-shop"
+    ? { orders: 160, payments: 161, alerts: 162 }[lane]
+    : { orders: 157, payments: 158, alerts: 159 }[lane];
+
+  const configured = Number(env?.[key]);
+  return Number.isInteger(configured) && configured > 0 ? configured : fallback;
+}
+
+async function sendShopAlertToTelegram(env, shop, action, text) {
   const botToken = clean(env.TELEGRAM_BOT_TOKEN);
   if (!botToken) return { ok: false, skipped: true, reason: "missing_telegram_bot_token" };
 
-  const chatId = shop === "mmd-shop"
-    ? clean(env.TELEGRAM_MMD_SHOP_ALERTS_CHAT_ID)
-    : clean(env.TELEGRAM_HIMAI_SHOP_ALERTS_CHAT_ID);
-
+  const chatId = clean(env.TELEGRAM_CHAT_ID || "-1003546439681");
   if (!chatId) return { ok: false, skipped: true, reason: "missing_shop_alert_chat_id" };
 
+  const lane = eventLane(action);
+  const messageThreadId = threadId(env, shop, lane);
   const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
+      message_thread_id: messageThreadId,
       text,
       disable_web_page_preview: true
     })
@@ -105,10 +141,10 @@ async function sendShopAlertToTelegram(env, shop, text) {
 
   const data = await response.json().catch(() => null);
   if (!response.ok || data?.ok === false) {
-    return { ok: false, status: response.status, error: data || null };
+    return { ok: false, status: response.status, thread_id: messageThreadId, error: data || null };
   }
 
-  return { ok: true, result: data?.result || null };
+  return { ok: true, thread_id: messageThreadId, result: data?.result || null };
 }
 
 function numberOrNull(value) {
