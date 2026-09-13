@@ -97,6 +97,33 @@ test("explicit currency wins even when number resembles profile size", () => {
   assert.equal(parsed.proposed_points, 52);
 });
 
+test("extracts model time location area and service candidates without materializing them", () => {
+  const parsed = parseHistoricalNote([
+    "วันที่ 17 Sep 2026",
+    "เวลา 16:30-18:00",
+    "model: EMs22 Whisp",
+    "service: Companion",
+    "location: The Line Vibe",
+    "area: Sukhumvit",
+    "งาน service 27,500 THB",
+  ].join("\n"));
+  assert.equal(parsed.note_detected_model_text, "EMs22 Whisp");
+  assert.equal(parsed.note_detected_start_time, "16:30");
+  assert.equal(parsed.note_detected_end_time, "18:00");
+  assert.equal(parsed.note_detected_duration_minutes, 90);
+  assert.equal(parsed.note_detected_location_text, "The Line Vibe");
+  assert.equal(parsed.note_detected_area_text, "Sukhumvit");
+  assert.equal(parsed.note_detected_service_type, "Companion");
+  assert.equal(parsed.service_amount, 27500);
+});
+
+test("multiple model labels stay unresolved and require human review evidence", () => {
+  const parsed = parseHistoricalNote("model: EMs01 A\nmodel: EMs02 B\nservice 10,000 THB");
+  assert.equal(parsed.note_detected_model_text, "");
+  assert.ok(parsed.points_parse_warnings.includes("multiple_models_require_review"));
+  assert.equal(parsed.service_detail_candidates.model_candidates.length, 2);
+});
+
 test("raw note is preserved exactly", () => {
   const parsed = parseHistoricalNote("  Booking service 1,000 THB\n");
   assert.equal(parsed.raw_note, "  Booking service 1,000 THB\n");
