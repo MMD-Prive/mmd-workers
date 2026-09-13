@@ -451,15 +451,19 @@ async function findMemberByEmail(env, email) {
 }
 
 async function sendReviewedProofToPayments(env, body) {
-  const base = clean(env.PAYMENTS_BASE_URL).replace(/\/+$/, "");
   const token = clean(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
-  if (!base) throw httpError(503, "payments_worker_base_url_missing");
   if (!token) throw httpError(503, "payments_worker_service_auth_missing");
-  return fetch(`${base}/v1/internal/payments/reviewed-proof`, {
+  const init = {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  });
+  };
+  if (typeof env.PAYMENTS_WORKER?.fetch === "function") {
+    return env.PAYMENTS_WORKER.fetch(new Request("https://sigil.mmdbkk.com/v1/internal/payments/reviewed-proof", init));
+  }
+  const base = clean(env.PAYMENTS_BASE_URL).replace(/\/+$/, "");
+  if (!base) throw httpError(503, "payments_worker_base_url_missing");
+  return fetch(`${base}/v1/internal/payments/reviewed-proof`, init);
 }
 
 function safeQueueItem(record) {
@@ -745,7 +749,7 @@ function canonicalPackageCode(value) {
   if (raw === "guest7" || raw === "guest_7" || raw.includes("guest7")) return "guest7";
   if (raw === "mmd_member" || raw === "member_690" || raw === "membership" || raw === "public_member") return "mmd_member";
   if (raw === "elite" || raw === "elite_membership") return "elite";
-  if (raw === "red_card" || raw === "redcard") return "red_card";
+  if (raw === "red_card" || raw === "redcard" || raw.includes("red_card") || raw.includes("redcard")) return "red_card";
   if (raw === "blackcard" || raw === "black_card" || raw.includes("black_card") || raw.includes("blackcard")) return "blackcard";
   if (raw.includes("premium")) return "premium";
   if (raw.includes("standard") || raw.includes("lite")) return "standard";
