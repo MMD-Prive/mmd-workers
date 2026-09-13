@@ -107,7 +107,7 @@ async function model360(req, env, id, ctx) {
 async function requireOperatorSession(req, env) {
   const cookie = req.headers.get("Cookie") || "";
   if (!cookie) return { ok: false, status: 401, error: "admin_session_required" };
-  const base = env.SESSION_VALIDATOR_BASE_URL || env.ADMIN_WORKER_BASE_URL;
+  const base = env.SESSION_VALIDATOR_BASE_URL || "https://mmdbkk.com";
   if (!base) return { ok: false, status: 503, error: "session_validator_not_configured" };
   try {
     const response = await fetch(`${trim(base)}${env.SESSION_VALIDATOR_PATH || "/v1/admin/auth/me"}`, {
@@ -186,7 +186,7 @@ async function handleWorkingMemory(req, env, url, method, ctx) {
 
 async function permanentAudit(env, ctx, action, target, response) {
   if (!env.ADMIN_EVENT_LOG_BASE_URL) throw new Error("ADMIN_EVENT_LOG_BASE_URL missing");
-  const audit = await callWorker(env.ADMIN_EVENT_LOG_BASE_URL, env.ADMIN_EVENT_LOG_PATH || "/v1/admin/events", env, { method: "POST", body: { schema: "mmd.admin.audit.v1", action, target, actor: ctx.actor, request_id: ctx.request_id, downstream_status: response.status, ok: response.ok, at: new Date().toISOString() } }, ctx);
+  const audit = await callWorker(env.ADMIN_EVENT_LOG_BASE_URL || env.ADMIN_WORKER_BASE_URL, env.ADMIN_EVENT_LOG_PATH || "/v1/admin/model-console/audit", env, { method: "POST", body: { schema: "mmd.admin.audit.v1", action, target, actor: ctx.actor, request_id: ctx.request_id, downstream_status: response.status, ok: response.ok, at: new Date().toISOString() } }, ctx);
   if (!audit.ok) throw new Error("permanent_audit_write_failed");
 }
 
