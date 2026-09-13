@@ -1,0 +1,109 @@
+name: Temporary patch payment membership receipt
+
+on:
+  push:
+    branches:
+      - feat/payment-resolver-entitlement-write-through-20260913
+    paths:
+      - ".github/workflows/tmp-patch-payment-membership-receipt.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/payment-resolver-entitlement-write-through-20260913
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Patch admin membership receipt and UI
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          const runtimeFile = 'admin-worker/src/payment-review-runtime.js';
+          let runtime = fs.readFileSync(runtimeFile, 'utf8');
+
+          const auditBefore = `    context_source: approval.context_source,
+              renewal_session_id: approval.renewal_session_id,
+            }).then((value) => ({ ...value, ok: true })).catch((error) => ({`;
+          const auditOld = auditBefore.replace(/^ {12}/gm, '');
+          const auditAfter = `    context_source: approval.context_source,
+              renewal_session_id: approval.renewal_session_id,
+              membership_write_through: payload.membership_write_through && typeof payload.membership_write_through === "object" ? payload.membership_write_through : null,
+              manual_membership_review_required: payload.manual_membership_review_required === true,
+            }).then((value) => ({ ...value, ok: true })).catch((error) => ({`.replace(/^ {12}/gm, '');
+          if (!runtime.includes(auditOld)) throw new Error('approve audit marker not found');
+          runtime = runtime.replace(auditOld, auditAfter);
+
+          const returnOld = `    recovery_context: approval.context_source === "liff_renewal_recovery",
+              duplicate: payload.duplicate === true,
+              money_truth_changed: true,
+            });`.replace(/^ {12}/gm, '');
+          const returnAfter = `    recovery_context: approval.context_source === "liff_renewal_recovery",
+              duplicate: payload.duplicate === true,
+              entitlement_materialized: payload.entitlement_materialized === true,
+              manual_membership_review_required: payload.manual_membership_review_required === true,
+              membership_expire_at: isoOrText(payload.membership_expire_at) || null,
+              membership_write_through: payload.membership_write_through && typeof payload.membership_write_through === "object" ? {
+                status: safeCode(payload.membership_write_through.status),
+                reason: safeCode(payload.membership_write_through.reason),
+                action: safeCode(payload.membership_write_through.action),
+                package_code: canonicalPackageCode(payload.membership_write_through.package_code) || safeCode(payload.membership_write_through.package_code),
+                capability: safeCode(payload.membership_write_through.capability),
+                current_expire_at: isoOrText(payload.membership_write_through.current_expire_at) || null,
+                start_at: isoOrText(payload.membership_write_through.start_at) || null,
+                expire_at: isoOrText(payload.membership_write_through.expire_at) || null,
+                membership_term: safeCode(payload.membership_write_through.membership_term),
+                membership_expiry_rule: safeCode(payload.membership_write_through.membership_expiry_rule),
+                confidence: confidenceOrNull(payload.membership_write_through.confidence),
+                duplicate: payload.membership_write_through.duplicate === true,
+                manual_reconciliation_required: payload.membership_write_through.manual_reconciliation_required === true,
+              } : null,
+              money_truth_changed: true,
+            });`.replace(/^ {12}/gm, '');
+          if (!runtime.includes(returnOld)) throw new Error('approve response marker not found');
+          runtime = runtime.replace(returnOld, returnAfter);
+
+          const afterJsonOld = `      context_source: input.context_source || "",
+              money_truth_changed: input.decision === "approve" && input.authority === "payments-worker",
+            }),`.replace(/^ {12}/gm, '');
+          const afterJsonNew = `      context_source: input.context_source || "",
+              money_truth_changed: input.decision === "approve" && input.authority === "payments-worker",
+              membership_write_through: input.membership_write_through || null,
+              manual_membership_review_required: input.manual_membership_review_required === true,
+            }),`.replace(/^ {12}/gm, '');
+          if (!runtime.includes(afterJsonOld)) throw new Error('audit after-json marker not found');
+          runtime = runtime.replace(afterJsonOld, afterJsonNew);
+          fs.writeFileSync(runtimeFile, runtime);
+
+          const uiFile = 'webflow/internal/admin/payments/money-control-v3.html';
+          let ui = fs.readFileSync(uiFile, 'utf8');
+          ui = ui.replaceAll('money-control-v3-evidence-context-20260912', 'money-control-v4-entitlement-receipt-20260913');
+          const toastOld = `toast(kind.toUpperCase()+' สำเร็จ'+(d.duplicate?' · idempotent replay':''));`;
+          const toastNew = `var notice=kind.toUpperCase()+' สำเร็จ'+(d.duplicate?' · idempotent replay':'');var wt=d.membership_write_through;if(kind==='approve'&&d.payment_stage==='membership'&&wt){if(wt.status==='materialized'){var actionLabel=wt.action==='renewal'?'ต่ออายุ':'เปิดสมาชิก';notice='ยืนยันเงินแล้ว · '+actionLabel+(wt.package_code?' '+String(wt.package_code).toUpperCase():'')+(wt.expire_at?' · ถึง '+date(wt.expire_at):'');if(wt.duplicate)notice+=' · ตรวจซ้ำแล้ว';}else if(wt.status==='review_required'||wt.status==='failed'){notice='ยืนยันเงินแล้ว · Membership Review'+(wt.reason?' · '+wt.reason:' · ต้องตรวจสิทธิ์ต่อ');}}toast(notice);`;
+          if (!ui.includes(toastOld)) throw new Error('payment UI toast marker not found');
+          ui = ui.replace(toastOld, toastNew);
+          fs.writeFileSync(uiFile, ui);
+          NODE
+          node --check admin-worker/src/payment-review-runtime.js
+          grep -F 'membership_write_through:' admin-worker/src/payment-review-runtime.js
+          grep -F 'manual_membership_review_required:' admin-worker/src/payment-review-runtime.js
+          grep -F 'money-control-v4-entitlement-receipt-20260913' webflow/internal/admin/payments/money-control-v3.html
+          grep -F 'Membership Review' webflow/internal/admin/payments/money-control-v3.html
+      - name: Remove temporary patch workflow and commit
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/tmp-patch-payment-membership-receipt.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add admin-worker/src/payment-review-runtime.js webflow/internal/admin/payments/money-control-v3.html .github/workflows/tmp-patch-payment-membership-receipt.yml
+          git commit -m "feat(payments): surface entitlement receipt in admin review"
+          git push origin HEAD:feat/payment-resolver-entitlement-write-through-20260913
