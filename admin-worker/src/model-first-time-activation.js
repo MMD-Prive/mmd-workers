@@ -3,6 +3,8 @@ const LINE_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify";
 const ACTIVATION_KIND = "model_activation_v1";
 const DEFAULT_TTL_SECONDS = 24 * 60 * 60;
 const MAX_TTL_SECONDS = 72 * 60 * 60;
+const PRIVATE_MODEL_WORKING_NAME_FIELD = "fldShiT60bmCxFxRu";
+const PRIVATE_MODEL_KEY_FIELD = "fldVWbT0gsSe0hn7Q";
 
 export const MODEL_ACTIVATION_ADMIN_PATH = "/v1/admin/model/activation/issue";
 export const MODEL_ACTIVATION_LIFF_PATH = "/v1/model/liff/activate";
@@ -181,6 +183,27 @@ async function bindLineUserId(env, input) {
   return { ...data, status: response.status };
 }
 
+export async function resolvePrivateCanonicalModel(env, input = {}) {
+  const namespace = env.MODEL_ACTIVATION_COORDINATOR;
+  const modelKey = clean(input.model_key, 110);
+  const workingName = clean(input.working_name, 120);
+  if (!/^mdl_pri_app_[a-z0-9_-]{8,96}$/.test(modelKey) || !workingName) {
+    return { ok: false, status: 400, error: "private_model_resolve_invalid" };
+  }
+  if (!namespace || typeof namespace.idFromName !== "function") {
+    return { ok: false, status: 503, error: "activation_coordinator_not_ready" };
+  }
+  const id = namespace.idFromName(`private-model-create:${modelKey}`);
+  const stub = namespace.get(id);
+  const response = await stub.fetch("https://model-activation.internal/resolve-private-model", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ model_key: modelKey, working_name: workingName }),
+  });
+  const data = await response.json().catch(() => ({}));
+  return { ...data, status: response.status };
+}
+
 export class ModelActivationCoordinator {
   constructor(state, env) {
     this.state = state;
@@ -189,6 +212,39 @@ export class ModelActivationCoordinator {
 
   async fetch(request) {
     const url = new URL(request.url);
+    if (url.pathname === "/resolve-private-model" && request.method.toUpperCase() === "POST") {
+      const input = await request.json().catch(() => null);
+      const modelKey = clean(input?.model_key, 110);
+      const workingName = clean(input?.working_name, 120);
+      if (!/^mdl_pri_app_[a-z0-9_-]{8,96}$/.test(modelKey) || !workingName) {
+        return internalJson({ ok: false, error: "private_model_resolve_invalid" }, 400);
+      }
+
+      const matches = await findModelsByPrivateModelKey(this.env, modelKey);
+      if (!matches.ok) return internalJson({ ok: false, error: matches.error }, matches.status);
+      if (matches.records.length > 1) return internalJson({ ok: false, error: "canonical_model_key_collision" }, 409);
+      if (matches.records.length === 1) {
+        const model = matches.records[0];
+        return internalJson({
+          ok: true,
+          created: false,
+          model,
+          model_record_id: model.id,
+          line_user_id: clean(model.fields?.[lineUserIdField(this.env)], 100),
+        });
+      }
+
+      const created = await createPrivateCanonicalModel(this.env, modelKey, workingName);
+      if (!created.ok) return internalJson({ ok: false, error: created.error }, created.status);
+      return internalJson({
+        ok: true,
+        created: true,
+        model: created.record,
+        model_record_id: created.record.id,
+        line_user_id: "",
+      }, 201);
+    }
+
     if (url.pathname !== "/bind" || request.method.toUpperCase() !== "POST") {
       return internalJson({ ok: false, error: "not_found" }, 404);
     }
@@ -381,6 +437,51 @@ async function airtableUpdateModel(env, recordId, fields) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) return { ok: false, status: response.status, error: "airtable_request_failed" };
   return { ok: true, status: 200, record: data };
+}
+
+async function findModelsByPrivateModelKey(env, modelKey) {
+  const config = airtableConfig(env);
+  if (!config.apiKey || !config.baseId) return { ok: false, status: 503, error: "missing_airtable_env" };
+  const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(config.baseId)}/${encodeURIComponent(config.table)}`);
+  url.searchParams.set("maxRecords", "2");
+  url.searchParams.set("pageSize", "2");
+  url.searchParams.set("returnFieldsByFieldId", "true");
+  url.searchParams.set("filterByFormula", `{model_record_id}='${escapeFormula(modelKey)}'`);
+  let response;
+  try {
+    response = await fetch(url.toString(), { headers: { authorization: `Bearer ${config.apiKey}`, accept: "application/json" } });
+  } catch (_) {
+    return { ok: false, status: 503, error: "airtable_unreachable" };
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) return { ok: false, status: 503, error: "canonical_model_lookup_unavailable" };
+  return { ok: true, status: 200, records: Array.isArray(data.records) ? data.records : [] };
+}
+
+async function createPrivateCanonicalModel(env, modelKey, workingName) {
+  const config = airtableConfig(env);
+  if (!config.apiKey || !config.baseId) return { ok: false, status: 503, error: "missing_airtable_env" };
+  const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(config.baseId)}/${encodeURIComponent(config.table)}`);
+  url.searchParams.set("returnFieldsByFieldId", "true");
+  let response;
+  try {
+    response = await fetch(url.toString(), {
+      method: "POST",
+      headers: { authorization: `Bearer ${config.apiKey}`, accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify({ records: [{ fields: {
+        [PRIVATE_MODEL_WORKING_NAME_FIELD]: workingName,
+        [PRIVATE_MODEL_KEY_FIELD]: modelKey,
+      } }], typecast: false }),
+    });
+  } catch (_) {
+    return { ok: false, status: 503, error: "airtable_unreachable" };
+  }
+  const data = await response.json().catch(() => ({}));
+  const record = Array.isArray(data.records) ? data.records[0] || null : null;
+  if (!response.ok || !record || !/^rec[A-Za-z0-9]{14,24}$/.test(clean(record.id, 40))) {
+    return { ok: false, status: response.ok ? 502 : response.status, error: "canonical_model_create_failed" };
+  }
+  return { ok: true, status: 201, record };
 }
 
 async function findModelWithLineUserId(env, lineUserId) {
