@@ -32,6 +32,12 @@ service = "mms-worker"
 binding = "TELEGRAM_WORKER"
 service = "telegram-worker"
 
+# Cloudflare-only QR/OCR evidence extraction. The service has no public route in
+# production and cannot mark money paid, grant access, points, or membership.
+[[services]]
+binding = "SLIP_EXTRACTOR"
+service = "mmd-slip-extractor"
+
 [[r2_buckets]]
 binding = "LINE_SLIP_EVIDENCE"
 bucket_name = "mmd-line-slip-evidence"
