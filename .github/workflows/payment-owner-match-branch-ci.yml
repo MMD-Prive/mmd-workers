@@ -1,0 +1,35 @@
+name: Payment Owner Match Branch CI
+
+on:
+  push:
+    branches:
+      - "fix/payment-owner-match-form-20260913"
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax
+        run: |
+          set -euo pipefail
+          node --check admin-worker/src/payment-review-owner-context.js
+          node --check admin-worker/src/payment-review-runtime.js
+          node --check webflow/internal/admin/payments/payment-owner-match-v1.js
+          node --check webflow/internal/admin/payments/historical-payment-context-v3.js
+      - name: Owner payment context tests
+        run: node --test admin-worker/payment-review-owner-context.test.mjs
+      - name: Guardrails
+        run: |
+          set -euo pipefail
+          grep -F 'owner_context_match_requires_exact_session_or_member: true' admin-worker/src/payment-review-runtime.js
+          grep -F 'owner_context_names_are_audit_only: true' admin-worker/src/payment-review-runtime.js
+          grep -F 'customer_model_labels_authoritative: false' admin-worker/src/payment-review-owner-context.js
+          grep -F 'operator_context_requires_verified_money_evidence' admin-worker/src/payment-review-owner-context.js
+          grep -F 'if (typeof env.PAYMENTS_WORKER?.fetch === "function")' admin-worker/src/payment-review-runtime.js
