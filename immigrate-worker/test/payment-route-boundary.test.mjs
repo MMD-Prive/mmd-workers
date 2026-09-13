@@ -4,6 +4,7 @@ import test from "node:test";
 
 const wrangler = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
 const source = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
+const ingress = readFileSync(new URL("../src/customer-360-live-ingress-wrapper.ts", import.meta.url), "utf8");
 
 test("immigrate-worker has no public membership/payment route ownership", () => {
   for (const forbidden of [
@@ -18,6 +19,25 @@ test("immigrate-worker has no public membership/payment route ownership", () => 
   ]) {
     assert.equal(wrangler.includes(forbidden), false, forbidden);
   }
+});
+
+test("workers.dev ingress hands legacy public payment/member paths back to mmdbkk.com", () => {
+  assert.match(ingress, /const CANONICAL_PUBLIC_ORIGIN = ["']https:\/\/mmdbkk\.com["']/);
+  assert.match(ingress, /const WORKERS_DEV_SUFFIX = ["']\.workers\.dev["']/);
+  for (const path of [
+    "/member/dashboard",
+    "/sigil/member/membership",
+    "/member/payments",
+    "/sigil/pay/renew",
+    "/sigil/pay/membership",
+    "/pay/membership",
+    "/sigil/pay/payment",
+  ]) {
+    assert.equal(ingress.includes(`"${path}"`), true, path);
+  }
+  assert.equal(ingress.includes('target.searchParams.set("t", token)'), true);
+  assert.equal(ingress.includes('new URL("/sigil/pay", CANONICAL_PUBLIC_ORIGIN)'), true);
+  assert.equal(ingress.includes('new URL("/sigil/member/membership", CANONICAL_PUBLIC_ORIGIN)'), true);
 });
 
 test("immigrate-worker fallback member renderers are not payment authority", () => {
