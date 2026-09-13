@@ -517,8 +517,10 @@ function safeQueueItem(record) {
   );
   const previewUrl = internalEvidenceUrl(proofId, note) || evidenceUrl(fields);
   const sourceContext = safeCode(note.source_context || note.source_type || note.schema || "");
-  const extractionMethod = safeCode(note.extraction_method || "");
-  const extractionError = safeCode(note.extraction_error || "");
+  const extraction = note.extraction && typeof note.extraction === "object" && !Array.isArray(note.extraction) ? note.extraction : {};
+  const extractionMethod = safeCode(extraction.method || extraction.extraction_method || note.extraction_method || "");
+  const extractionError = safeCode(extraction.error || extraction.extraction_error || note.extraction_error || "");
+  const extractionConfidence = confidenceOrNull(extraction.confidence ?? extraction.confidence_score ?? note.extraction_confidence);
   const contextIssues = [];
   if (!previewUrl) contextIssues.push("evidence_preview_missing");
   if (amountThb == null) contextIssues.push("amount_not_extracted");
@@ -532,7 +534,7 @@ function safeQueueItem(record) {
     amount_thb: amountThb, linked_member: linkedMemberPresent, linked_renewal: linkedRenewalPresent,
     package_code: fields.package_code, source_context: sourceContext,
   });
-  if (!(linkedPaymentPresent || linkedRenewalPresent || linkedMemberPresent)) contextIssues.push("customer_or_job_not_linked");
+  if (!(linkedPaymentPresent || linkedSessionPresent || linkedRenewalPresent || linkedMemberPresent)) contextIssues.push("customer_or_job_not_linked");
   return {
     proof_id: proofId,
     proof_record_id: safeText(record.id, 120),
@@ -548,7 +550,7 @@ function safeQueueItem(record) {
     member_email: normalizeEmail(fields.member_email || fields.email),
     payment_stage: safeCode(fields.payment_stage || fields.payment_type || paymentIntelligence?.inferred_stage || ""),
     payment_intelligence: paymentIntelligence,
-    inferred_label: membershipInferenceLabel(paymentIntelligence),
+    inferred_label: paymentInferenceLabel(paymentIntelligence),
     inferred_intent: safeCode(paymentIntelligence?.inferred_intent || ""),
     inferred_package_code: safeCode(paymentIntelligence?.inferred_package_code || ""),
     match_confidence: confidenceOrNull(paymentIntelligence?.confidence),
@@ -557,7 +559,7 @@ function safeQueueItem(record) {
     evidence_preview_url: previewUrl,
     source_context: sourceContext,
     extraction_method: extractionMethod || "not_run",
-    extraction_confidence: confidenceOrNull(note.extraction_confidence),
+    extraction_confidence: extractionConfidence,
     extraction_error: extractionError,
     context_issues: contextIssues,
     review_lane: contextIssues.length ? "needs_enrichment" : "owner_review",
@@ -837,6 +839,21 @@ function safeMembershipWriteThrough(value) {
     duplicate: value.duplicate === true,
     manual_reconciliation_required: value.manual_reconciliation_required === true,
   };
+}
+
+function paymentInferenceLabel(inference) {
+  if (!inference || typeof inference !== "object" || Array.isArray(inference)) return "";
+  const explicit = safeText(inference.inferred_label, 180);
+  if (explicit) return explicit;
+  const stage = safeCode(inference.inferred_stage || inference.payment_stage || "");
+  const serviceLabels = {
+    deposit: "ค่าจอง / มัดจำ",
+    final: "ค่าจบงาน / ยอดคงเหลือ",
+    full: "จ่ายเต็ม",
+    tips: "Tip / ทิป",
+  };
+  if (serviceLabels[stage]) return serviceLabels[stage];
+  return membershipInferenceLabel(inference);
 }
 
 function confidenceOrNull(value) {
