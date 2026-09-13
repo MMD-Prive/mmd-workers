@@ -1,4 +1,4 @@
-import worker from "./payment-proof-client-provenance-wrapper.js";
+import worker from "./job-orchestrator-owner-ops-wrapper.js";
 export * from "./admin-login-hero-worker-pre-model-line-link.js";
 
 export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/dashboard";
@@ -61,8 +61,8 @@ export async function enforceOwnerDashboardFirst(request, response) {
 Delegated active-entrypoint contract markers.
 The implementation remains in the pre-model-line-link wrapper/core chain; these
 markers keep existing source-contract CI explicit while the outer wrappers add
-owner-reviewed MMD MODEL LINE-link behavior, read-only dashboard summary, and
-verified Client Credit carry-forward authority.
+owner-reviewed MMD MODEL LINE-link behavior, read-only dashboard summary, verified
+Client Credit carry-forward authority, and the canonical owner Job Orchestrator.
 
 browser_admin_session_required
 forbidden_origin
