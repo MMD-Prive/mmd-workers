@@ -1,9 +1,15 @@
 import worker from "./job-orchestrator-owner-ops-wrapper.js";
+import {
+  isPrivateModelDecisionRequest,
+  maybeHandlePrivateModelDecision,
+  syncPrivateModelHandoffAfterActivation,
+} from "./private-model-application-handoff.js";
 export * from "./admin-login-hero-worker-pre-model-line-link.js";
 
 export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/dashboard";
 const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
 const MMS_PARTNER_PATH = "/internal/admin/mms";
+const MODEL_ACTIVATE_PATH = "/v1/model/liff/activate";
 
 export async function enforceOwnerDashboardFirst(request, response) {
   if (!(response instanceof Response)) return response;
@@ -75,7 +81,21 @@ coreWorker.fetch(request, env, ctx)
 
 export default {
   async fetch(request, env, ctx) {
-    const response = await worker.fetch(request, env, ctx);
+    let handoffRequest = null;
+    let activationRequest = null;
+    try {
+      const path = new URL(request.url).pathname.replace(/\/+$/g, "") || "/";
+      if (isPrivateModelDecisionRequest(request)) handoffRequest = request.clone();
+      if (path === MODEL_ACTIVATE_PATH && String(request.method || "GET").toUpperCase() === "POST") {
+        activationRequest = request.clone();
+      }
+    } catch {
+      // Core worker remains authoritative if URL parsing fails.
+    }
+
+    let response = await worker.fetch(request, env, ctx);
+    if (handoffRequest) response = await maybeHandlePrivateModelDecision(handoffRequest, env, response);
+    if (activationRequest) response = await syncPrivateModelHandoffAfterActivation(activationRequest, response, env);
     return enforceOwnerDashboardFirst(request, response);
   },
 };
