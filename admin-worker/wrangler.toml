@@ -599,6 +599,11 @@ service = "events-worker"
 binding = "PAYMENTS_WORKER"
 service = "payments-worker"
 
+# Historical Recovery uses the same private production extractor as live LINE intake.
+[[services]]
+binding = "SLIP_EXTRACTOR"
+service = "mmd-slip-extractor"
+
 # ใช้สำหรับ CORS (browser calls)
 [vars]
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdmodel.lovable.app"
