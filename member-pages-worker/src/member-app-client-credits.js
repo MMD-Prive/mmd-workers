@@ -5,6 +5,9 @@ const CLIENT_CREDITS_TABLE = "tblKvhl2zZm9yYBmT";
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const ROUTE = "/api/member/app/credits";
 const ACTIVE_STATUSES = new Set(["available", "partially_used"]);
+const VERIFIED_CREDIT_STATUS = "verified";
+const VERIFIED_CREDIT_SOURCE = "payment_authority";
+const MONEY_TOLERANCE = 0.001;
 
 function clean(value, max = 500) {
   return String(value ?? "").trim().slice(0, max);
@@ -89,13 +92,32 @@ async function resolveCanonicalClient(env, lineUserId) {
   const clientId = clean(records[0]?.id, 40);
   return /^rec[A-Za-z0-9]{14}$/.test(clientId) ? { state: "resolved", clientId } : { state: "unresolved", clientId: null };
 }
+function creditFields(record) {
+  return record?.fields && typeof record.fields === "object" ? record.fields : {};
+}
+export function isVerifiedClientCreditRecord(record) {
+  const fields = creditFields(record);
+  const verificationStatus = normalized(fields["Verification Status"]);
+  const verificationSource = normalized(fields["Verification Source"]);
+  const verifiedAmount = Math.max(0, asNumber(fields["Verified Amount THB"]) || 0);
+  const originalAmount = Math.max(0, asNumber(fields["Original Amount THB"]) || 0);
+  const availableAmount = Math.max(0, asNumber(fields["Available Amount THB"]) || 0);
+  const appliedAmount = Math.max(0, asNumber(fields["Applied Amount THB"]) || 0);
+  return verificationStatus === VERIFIED_CREDIT_STATUS
+    && verificationSource === VERIFIED_CREDIT_SOURCE
+    && originalAmount > 0
+    && verifiedAmount + MONEY_TOLERANCE >= originalAmount
+    && availableAmount <= originalAmount + MONEY_TOLERANCE
+    && appliedAmount <= originalAmount + MONEY_TOLERANCE;
+}
 function safeCredit(record) {
-  const fields = record?.fields && typeof record.fields === "object" ? record.fields : {};
+  const fields = creditFields(record);
   const status = normalized(fields.Status) || "unknown";
   return {
     creditId: clean(fields.credit_id, 120) || null,
     status,
-    reason: normalized(fields.Reason) || "other",
+    verified: true,
+    verificationState: VERIFIED_CREDIT_STATUS,
     originalAmountThb: Math.max(0, asNumber(fields["Original Amount THB"]) || 0),
     availableAmountThb: Math.max(0, asNumber(fields["Available Amount THB"]) || 0),
     appliedAmountThb: Math.max(0, asNumber(fields["Applied Amount THB"]) || 0),
@@ -104,13 +126,20 @@ function safeCredit(record) {
     createdAt: clean(fields["Created At"], 80) || null,
   };
 }
-async function readCredits(env, clientId) {
-  const records = await listAirtable(env, CLIENT_CREDITS_TABLE, { pageSize: 100, filterByFormula: `{client_record_id}=${formulaString(clientId)}` });
-  const items = records.map(safeCredit)
+export function verifiedCreditsFromRecords(records = []) {
+  const items = records
+    .filter(isVerifiedClientCreditRecord)
+    .map(safeCredit)
     .filter((item) => ["available", "partially_used", "used", "refunded"].includes(item.status))
     .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
-  const availableBalanceThb = items.filter((item) => ACTIVE_STATUSES.has(item.status)).reduce((sum, item) => sum + item.availableAmountThb, 0);
+  const availableBalanceThb = items
+    .filter((item) => item.verified === true && ACTIVE_STATUSES.has(item.status))
+    .reduce((sum, item) => sum + item.availableAmountThb, 0);
   return { items, availableBalanceThb };
+}
+async function readCredits(env, clientId) {
+  const records = await listAirtable(env, CLIENT_CREDITS_TABLE, { pageSize: 100, filterByFormula: `{client_record_id}=${formulaString(clientId)}` });
+  return verifiedCreditsFromRecords(records);
 }
 export function isMemberClientCreditsRequest(request) {
   try {
@@ -130,7 +159,7 @@ export async function handleMemberClientCredits(request, env = {}) {
       return response({ state: "checking", balance: null, items: [], error: { code: client.state === "ambiguous" ? "CLIENT_IDENTITY_AMBIGUOUS" : "CLIENT_IDENTITY_UNRESOLVED" } }, 503);
     }
     const credits = await readCredits(env, client.clientId);
-    return response({ state: "resolved", balance: { currency: "THB", available: credits.availableBalanceThb }, items: credits.items });
+    return response({ state: "resolved", verificationState: "verified_only", balance: { currency: "THB", available: credits.availableBalanceThb }, items: credits.items });
   } catch {
     return response({ state: "checking", balance: null, items: [], error: { code: "CLIENT_CREDIT_READ_UNAVAILABLE" } }, 503);
   }
