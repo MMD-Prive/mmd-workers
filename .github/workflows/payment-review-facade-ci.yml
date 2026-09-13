@@ -14,6 +14,8 @@ on:
       - "payments-worker/reviewed-proof-line-recovery.test.mjs"
       - "payments-worker/reviewed-proof-canonical-money-truth.js"
       - "payments-worker/reviewed-proof-canonical-money-truth.test.mjs"
+      - "payments-worker/reviewed-membership-write-through.js"
+      - "payments-worker/reviewed-membership-write-through.test.mjs"
       - "payments-worker/wrangler.merged.toml"
       - ".github/workflows/deploy-admin-worker.yml"
       - ".github/workflows/payment-review-facade-ci.yml"
@@ -40,6 +42,7 @@ jobs:
           node --check payments-worker/index.review-wrapper.js
           node --check payments-worker/reviewed-proof.js
           node --check payments-worker/reviewed-proof-canonical-money-truth.js
+          node --experimental-default-type=module --check payments-worker/reviewed-membership-write-through.js
 
       - name: Newest payment proof queue contract
         run: |
@@ -60,6 +63,11 @@ jobs:
         run: |
           set -euo pipefail
           node --test payments-worker/reviewed-proof-canonical-money-truth.test.mjs
+
+      - name: Canonical membership write-through contract
+        run: |
+          set -euo pipefail
+          node --experimental-global-webcrypto --experimental-default-type=module --test payments-worker/reviewed-membership-write-through.test.mjs
 
       - name: Browser facade guardrails
         run: |
@@ -91,7 +99,7 @@ jobs:
           grep -F 'context_source: "liff_renewal_recovery"' admin-worker/src/payment-review-runtime.js
           grep -F 'manual_recovery_requires_owner_admin' admin-worker/src/payment-review-runtime.js
           grep -F 'canonical_member_context_ambiguous' admin-worker/src/payment-review-runtime.js
-          grep -F 'const RENEWAL_PRICE = Object.freeze({ standard: 1000, premium: 2500 });' admin-worker/src/payment-review-line-recovery.js
+          grep -F 'const RENEWAL_PRICES = Object.freeze({ standard: new Set([499, 799, 1000]), premium: new Set([999, 1999, 2500]) });' admin-worker/src/payment-review-line-recovery.js
           grep -F 'context_source: "liff_renewal_recovery"' admin-worker/src/payment-review-line-recovery.js
           if grep -F 'maxRecords: 2 }).catch(() => [])' admin-worker/src/payment-review-runtime.js; then
             echo 'audit idempotency lookup must fail closed; swallowed Airtable error found' >&2
@@ -111,6 +119,8 @@ jobs:
           grep -F 'materializeRecoveredMembership' payments-worker/reviewed-proof.js
           grep -F 'downstream_access_reconcile_required' payments-worker/reviewed-proof.js
           grep -F 'isEmailLessLineRenewalMoneyTruth' payments-worker/index.review-wrapper.js
+          grep -F 'reconcileReviewedMembershipEntitlement' payments-worker/index.review-wrapper.js
+          grep -F 'my_mmd_entitlement_resolver_v1' payments-worker/reviewed-membership-write-through.js
           grep -F 'Payment Reference' payments-worker/reviewed-proof-canonical-money-truth.js
           if grep -F 'AUTH_SERVICE_ADMIN_TO_PAYMENTS' webflow/internal/admin/payments 2>/dev/null; then
             echo 'service secret reference found in Webflow payment assets' >&2
