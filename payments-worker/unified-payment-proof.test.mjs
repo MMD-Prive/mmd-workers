@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { enrichUnifiedConfirmVerify, handleUnifiedPaymentIntent, stablePaymentRef } from "./unified-payment-proof.js";
+import { enrichUnifiedConfirmVerify, handleUnifiedPaymentIntent, paymentProofTelegramRoute, stablePaymentRef } from "./unified-payment-proof.js";
 import { membershipTermForPackage } from "./reviewed-proof.js";
 import { reconcilePremiumReviewedMembershipTerm } from "./premium-membership-term.js";
 
@@ -11,6 +11,56 @@ test("payment ref is stable for the same session and stage", async () => {
   assert.equal(a, b);
   assert.notEqual(a, c);
   assert.match(a, /^pay_[a-f0-9]{24}$/);
+});
+
+test("web membership proof routes to Membership topic 20", () => {
+  const route = paymentProofTelegramRoute({}, {
+    amount_thb: 2500,
+    package_code: "premium",
+    payment_stage: "membership",
+    payment_stage_explicit: true,
+  }, "pay_membership");
+  assert.equal(route.topic, "membership");
+  assert.equal(route.thread_id, 20);
+  assert.equal(route.alerts_thread_id, 9);
+  assert.equal(route.should_alert, false);
+});
+
+test("membership source can classify a proof even when legacy stage default was not explicit", () => {
+  const route = paymentProofTelegramRoute({}, {
+    amount_thb: 690,
+    package_code: "mmd_member",
+    payment_stage: "deposit",
+    payment_stage_explicit: false,
+  }, "member_payments");
+  assert.equal(route.topic, "membership");
+  assert.equal(route.thread_id, 20);
+});
+
+test("service deposit stays in Payments Confirm even when amount equals a membership renewal price", () => {
+  const route = paymentProofTelegramRoute({}, {
+    amount_thb: 2500,
+    package_code: "",
+    payment_stage: "deposit",
+    payment_stage_explicit: true,
+  }, "sigil_pay");
+  assert.equal(route.topic, "payment");
+  assert.equal(route.thread_id, 21);
+  assert.equal(route.classification, "service_payment");
+});
+
+test("web membership amount/package conflict stays in Confirm and flags Alerts", () => {
+  const route = paymentProofTelegramRoute({}, {
+    amount_thb: 2999,
+    package_code: "standard",
+    payment_stage: "membership",
+    payment_stage_explicit: true,
+  }, "pay_membership");
+  assert.equal(route.topic, "payment");
+  assert.equal(route.thread_id, 21);
+  assert.equal(route.alerts_thread_id, 9);
+  assert.equal(route.should_alert, true);
+  assert.equal(route.reason, "membership_amount_package_mismatch");
 });
 
 test("confirmation verification converts known invalid-token throws into a bounded 401", async () => {
