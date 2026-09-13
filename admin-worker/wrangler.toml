@@ -604,6 +604,12 @@ service = "payments-worker"
 binding = "SLIP_EXTRACTOR"
 service = "mmd-slip-extractor"
 
+# Model Link searches approved Drive folders through member-pages-worker only.
+# Keeping this private service binding avoids secret drift between Workers.
+[[services]]
+binding = "MODEL_DRIVE_DIRECTORY"
+service = "member-pages-worker"
+
 # ใช้สำหรับ CORS (browser calls)
 [vars]
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdmodel.lovable.app"

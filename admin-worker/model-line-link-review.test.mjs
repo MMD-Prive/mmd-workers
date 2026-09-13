@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import {
   MODEL_IDENTITY_FIRST_POLICY,
@@ -93,6 +94,14 @@ test("canonical Model lanes can represent Public, Private, or both", () => {
   assert.deepEqual(inferModelLanes({ can_work_public: true, can_work_private: true }), ["public", "private"]);
   assert.deepEqual(inferModelLanes({ folder_scope_key: "private:drive:abc" }), ["private"]);
   assert.deepEqual(inferModelLanes({ sales_layer: "both" }), ["public", "private"]);
+});
+
+test("admin Model Link uses the private member-pages Drive directory binding", async () => {
+  const wrangler = await readFile(new URL("./wrangler.toml", import.meta.url), "utf8");
+  assert.match(
+    wrangler,
+    /\[\[services\]\]\s*binding = "MODEL_DRIVE_DIRECTORY"\s*service = "member-pages-worker"/,
+  );
 });
 
 test("LINE picture snapshot accepts HTTPS only", () => {
