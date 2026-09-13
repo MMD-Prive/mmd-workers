@@ -17,6 +17,7 @@ on:
       - "payments-worker/reviewed-membership-write-through.js"
       - "payments-worker/reviewed-membership-write-through.test.mjs"
       - "payments-worker/wrangler.merged.toml"
+      - "webflow/internal/admin/payments/**"
       - ".github/workflows/deploy-admin-worker.yml"
       - ".github/workflows/payment-review-facade-ci.yml"
   workflow_dispatch:
@@ -86,6 +87,18 @@ jobs:
           grep -F 'sort: [{ field: "created_at", direction: "desc" }]' admin-worker/src/payment-review-runtime.js
           grep -F 'browser_can_mark_paid: false' admin-worker/src/payment-review-line-recovery.js
           grep -F 'browser_can_mutate_entitlement: false' admin-worker/src/payment-review-line-recovery.js
+
+      - name: Membership receipt contract
+        run: |
+          set -euo pipefail
+          grep -F 'function safeMembershipWriteThrough(value)' admin-worker/src/payment-review-runtime.js
+          grep -F 'membership_write_through: safeMembershipWriteThrough(payload.membership_write_through)' admin-worker/src/payment-review-runtime.js
+          grep -F 'membership_write_through: safeMembershipWriteThrough(after.membership_write_through)' admin-worker/src/payment-review-runtime.js
+          grep -F 'manual_membership_review_required: payload.manual_membership_review_required === true' admin-worker/src/payment-review-runtime.js
+          grep -F 'payment_stage: input.payment_stage || null' admin-worker/src/payment-review-runtime.js
+          grep -F 'money-control-v4-entitlement-receipt-20260913' webflow/internal/admin/payments/money-control-v3.html
+          grep -F 'Membership Review' webflow/internal/admin/payments/money-control-v3.html
+          grep -F "notice='ยืนยันเงินแล้ว · '+actionLabel" webflow/internal/admin/payments/money-control-v3.html
 
       - name: Payment Review fail-closed hardening
         run: |
