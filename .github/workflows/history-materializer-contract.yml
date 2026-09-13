@@ -9,6 +9,8 @@ on:
       - "scripts/line-official-legacy/history-materializer.test.js"
       - "scripts/line-official-legacy/history-materializer-v2.js"
       - "scripts/line-official-legacy/history-materializer-v2.test.js"
+      - "scripts/line-official-legacy/model-identity-resolver.js"
+      - "scripts/line-official-legacy/model-identity-resolver.test.js"
       - "scripts/line-official-legacy/history-review-queue.js"
       - "scripts/line-official-legacy/history-review-queue.test.js"
       - "scripts/line-official-legacy/history-batch-migrate.js"
@@ -44,7 +46,8 @@ jobs:
       - run: node --check scripts/line-official-legacy/history-review-queue.js
       - run: node --check scripts/line-official-legacy/history-materializer.js
       - run: node --check scripts/line-official-legacy/history-materializer-v2.js
+      - run: node --check scripts/line-official-legacy/model-identity-resolver.js
       - run: node --check scripts/line-official-legacy/history-batch-migrate.js
       - run: node --check scripts/line-official-legacy/client-lifecycle-reconciliation.js
       - run: node --check scripts/line-official-legacy/client-lifecycle-reconciliation-v2.js
-      - run: node --test scripts/line-official-legacy/historical-note-parser.test.js scripts/line-official-legacy/history-review-queue.test.js scripts/line-official-legacy/history-materializer.test.js scripts/line-official-legacy/history-materializer-v2.test.js scripts/line-official-legacy/client-lifecycle-reconciliation.test.js scripts/line-official-legacy/client-lifecycle-reconciliation-v2.test.js
+      - run: node --test scripts/line-official-legacy/historical-note-parser.test.js scripts/line-official-legacy/history-review-queue.test.js scripts/line-official-legacy/history-materializer.test.js scripts/line-official-legacy/history-materializer-v2.test.js scripts/line-official-legacy/model-identity-resolver.test.js scripts/line-official-legacy/client-lifecycle-reconciliation.test.js scripts/line-official-legacy/client-lifecycle-reconciliation-v2.test.js
