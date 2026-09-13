@@ -1,5 +1,6 @@
 import currentWorker from "./front-gate-index.js";
 export { KenjiModelIdempotency } from "./front-gate-index.js";
+import { classifyPaymentOpsRoute, membershipInferenceLabel } from "../../shared/payment-intelligence.mjs";
 
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/"]);
 const IMAGE_TYPES = new Map([
@@ -227,6 +228,10 @@ async function createPendingProof(env = {}, evidence = {}) {
   const existing = await findExistingProof(env, evidence.proofId);
   if (existing?.id) return { id: existing.id, deduped: true };
 
+  const opsRoute = evidence.paymentOpsRoute || classifyPaymentOpsRoute({
+    source_context: evidence.sourceContext,
+    context_text: evidence.paymentContextText,
+  });
   const note = JSON.stringify({
     schema: "line_payment_evidence_v2",
     evidence_only: true,
@@ -242,6 +247,13 @@ async function createPendingProof(env = {}, evidence = {}) {
     evidence_sha256: evidence.sha256,
     mime_type: evidence.mimeType,
     byte_size: evidence.byteSize,
+    payment_ops_route: {
+      topic: opsRoute.topic,
+      classification: opsRoute.classification,
+      confidence: opsRoute.confidence,
+      reason: opsRoute.reason,
+      should_alert: opsRoute.should_alert === true,
+    },
     payment_truth: "unverified",
     official_verification_required: true,
     may_mark_paid: false,
@@ -273,24 +285,19 @@ function paymentOpsThreadId(env = {}) {
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : 21;
 }
 
-async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
-  if (result?.deduped === true) return { skipped: true, reason: "deduped" };
-  if (!env.TELEGRAM_WORKER || typeof env.TELEGRAM_WORKER.fetch !== "function") {
-    return { skipped: true, reason: "telegram_binding_missing" };
-  }
+function membershipOpsThreadId(env = {}) {
+  const value = Number(env.TELEGRAM_MEMBERSHIP_THREAD_ID || env.TG_THREAD_MEMBERSHIP);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 20;
+}
+
+function alertsOpsThreadId(env = {}) {
+  const value = Number(env.TELEGRAM_ALERTS_THREAD_ID || env.TG_THREAD_ALERTS);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 9;
+}
+
+async function sendOpsMessage(env, { chatId, threadId, flow, text }) {
   const token = asString(env.AUTH_SERVICE_LINE_TO_TELEGRAM || env.INTERNAL_TOKEN);
-  const chatId = paymentOpsChatId(env);
   if (!token || !chatId) return { skipped: true, reason: "telegram_config_missing" };
-
-  const sourceLabel = evidence.sourceType === "user" ? "LINE OA direct" : "LINE payment group";
-  const text = [
-    "💳 MMD Payment Proof",
-    "Status: pending review",
-    `Source: ${sourceLabel}`,
-    `Proof: ${evidence.proofId}`,
-    "Action: verify in Payment Slip Inbox before any membership/access change.",
-  ].join("\n");
-
   const response = await env.TELEGRAM_WORKER.fetch(new Request("https://telegram-worker/telegram/internal/send", {
     method: "POST",
     headers: {
@@ -298,14 +305,69 @@ async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      flow: "payment_proof",
+      flow,
       chat_id: chatId,
-      message_thread_id: paymentOpsThreadId(env),
+      message_thread_id: threadId,
       text,
     }),
   }));
-  if (!response.ok) throw new Error(`telegram_payment_alert_${response.status}`);
-  return { sent: true };
+  return { ok: response.ok, status: response.status };
+}
+
+async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
+  if (result?.deduped === true) return { skipped: true, reason: "deduped" };
+  if (!env.TELEGRAM_WORKER || typeof env.TELEGRAM_WORKER.fetch !== "function") {
+    return { skipped: true, reason: "telegram_binding_missing" };
+  }
+  const chatId = paymentOpsChatId(env);
+  if (!asString(env.AUTH_SERVICE_LINE_TO_TELEGRAM || env.INTERNAL_TOKEN) || !chatId) {
+    return { skipped: true, reason: "telegram_config_missing" };
+  }
+
+  const route = evidence.paymentOpsRoute || classifyPaymentOpsRoute({
+    source_context: evidence.sourceContext,
+    context_text: evidence.paymentContextText,
+  });
+  const isMembership = route.topic === "membership";
+  const threadId = isMembership ? membershipOpsThreadId(env) : paymentOpsThreadId(env);
+  const sourceLabel = evidence.sourceType === "user" ? "LINE OA direct" : "LINE payment group";
+  const inferenceLabel = membershipInferenceLabel(route.inference);
+  const text = [
+    isMembership ? "🧾 MMD Membership Payment Proof" : "💳 MMD Payment Proof",
+    "Status: pending review",
+    `Source: ${sourceLabel}`,
+    `Proof: ${evidence.proofId}`,
+    inferenceLabel ? `Classified: ${inferenceLabel}` : isMembership ? "Classified: Membership / Renewal" : "Classified: Payment / Service",
+    `Routing: ${route.reason}`,
+    "Action: verify in Payment Slip Inbox before any membership/access change.",
+  ].join("\n");
+
+  const main = await sendOpsMessage(env, {
+    chatId,
+    threadId,
+    flow: isMembership ? "membership" : "payment_proof",
+    text,
+  });
+  if (!main.ok) throw new Error(`telegram_payment_alert_${main.status || "failed"}`);
+
+  let alertSent = false;
+  if (route.should_alert === true) {
+    const alertText = [
+      "🚨 MMD Payment Classification Conflict",
+      `Proof: ${evidence.proofId}`,
+      `Source: ${sourceLabel}`,
+      `Reason: ${route.reason}`,
+      "Action: keep proof in Payment review; do not activate membership automatically.",
+    ].join("\n");
+    const alert = await sendOpsMessage(env, {
+      chatId,
+      threadId: alertsOpsThreadId(env),
+      flow: "alert",
+      text: alertText,
+    });
+    alertSent = alert.ok === true;
+  }
+  return { sent: true, topic: route.topic, thread_id: threadId, alert_sent: alertSent };
 }
 
 async function persistCapturedImage(env = {}, event = {}, options = {}) {
@@ -343,6 +405,7 @@ async function persistCapturedImage(env = {}, event = {}, options = {}) {
     proofId,
     sourceType: source,
     sourceContext: asString(options.sourceContext),
+    paymentContextText: asString(options.paymentContextText),
     groupHash: groupId ? await sha256Hex(groupId) : "",
     userHash: userId ? await sha256Hex(userId) : asString(options.userHash),
     messageIdHash,
@@ -352,6 +415,10 @@ async function persistCapturedImage(env = {}, event = {}, options = {}) {
     mimeType: image.mimeType,
     byteSize: image.byteSize,
   };
+  evidence.paymentOpsRoute = classifyPaymentOpsRoute({
+    source_context: evidence.sourceContext,
+    context_text: evidence.paymentContextText,
+  });
   if (source === "user") {
     const payer = await resolveDirectPayerContext(env, userId);
     evidence.payerName = payer.payerName;
@@ -446,9 +513,9 @@ function recordContextText(record = {}) {
   ].map(asString).filter(Boolean).join("\n");
 }
 
-async function hasRecentDirectPaymentContext(env = {}, event = {}) {
+async function recentDirectPaymentContext(env = {}, event = {}) {
   const userId = asString(event?.source?.userId);
-  if (!userId || sourceType(event) !== "user") return false;
+  if (!userId || sourceType(event) !== "user") return { found: false, text: "" };
   const hours = paymentContextLookbackHours(env);
   const params = new URLSearchParams();
   params.set("maxRecords", "12");
@@ -460,7 +527,15 @@ async function hasRecentDirectPaymentContext(env = {}, event = {}) {
     `${encodeURIComponent(consoleInboxTable(env))}?${params.toString()}`,
   );
   const records = Array.isArray(payload.records) ? payload.records : [];
-  return records.some((record) => hasPaymentContext(recordContextText(record)));
+  for (const record of records) {
+    const text = recordContextText(record);
+    if (hasPaymentContext(text)) return { found: true, text };
+  }
+  return { found: false, text: "" };
+}
+
+async function hasRecentDirectPaymentContext(env = {}, event = {}) {
+  return (await recentDirectPaymentContext(env, event)).found;
 }
 
 async function captureDirectUserImageEvidence(env = {}, event = {}, options = {}) {
@@ -468,15 +543,22 @@ async function captureDirectUserImageEvidence(env = {}, event = {}, options = {}
     return { skipped: true, reason: "not_direct_user_image" };
   }
   let recentContext = options.recentPaymentContext;
+  let recentContextText = asString(options.paymentContextText);
   if (typeof recentContext !== "boolean") {
     try {
-      recentContext = await hasRecentDirectPaymentContext(env, event);
+      const recent = await recentDirectPaymentContext(env, event);
+      recentContext = recent.found;
+      recentContextText = recent.text;
     } catch (_) {
       recentContext = false;
+      recentContextText = "";
     }
   }
   if (recentContext) {
-    return persistCapturedImage(env, event, { sourceContext: "recent_direct_payment_context" });
+    return persistCapturedImage(env, event, {
+      sourceContext: "recent_direct_payment_context",
+      paymentContextText: recentContextText,
+    });
   }
   const candidate = await storeDirectUserImageCandidate(env, event);
   return { captured: false, candidate: true, proofId: candidate.proofId, reason: "awaiting_payment_followup" };
@@ -502,6 +584,7 @@ async function promoteDirectUserCandidate(env = {}, event = {}) {
     webhookEventId: candidate.webhook_event_id,
     userHash: candidate.user_hash,
     sourceContext: "direct_user_payment_followup",
+    paymentContextText: text,
   });
   if (result?.captured && typeof env.LINE_SLIP_EVIDENCE?.delete === "function") {
     await env.LINE_SLIP_EVIDENCE.delete(candidate.key);
@@ -598,6 +681,7 @@ export default {
 };
 
 export const LINE_GROUP_INGRESS_INTERNALS = Object.freeze({
+  alertsOpsThreadId,
   captureDirectUserImageEvidence,
   captureGroupImageEvidence,
   directCandidateKey,
@@ -608,10 +692,13 @@ export const LINE_GROUP_INGRESS_INTERNALS = Object.freeze({
   hasRecentDirectPaymentContext,
   isPaymentProofGroup,
   loadDirectUserImageCandidate,
+  membershipOpsThreadId,
   messageText,
   messageType,
   notifyPaymentProofOps,
+  paymentOpsThreadId,
   promoteDirectUserCandidate,
+  recentDirectPaymentContext,
   sourceType,
   storeDirectUserImageCandidate,
 });
