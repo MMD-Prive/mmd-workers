@@ -3,376 +3,93 @@ import { sendCanonicalTelegramAlert, telegramAlertDiagnostic } from "./telegram-
 export const OWNER_JOB_ACTIONS_PATH = "/v1/admin/dashboard/owner-actions";
 export const JOB_ORCHESTRATOR_AUTHORITY = "model_session_contract_v1";
 
-const AIRTABLE_API = "https://api.airtable.com/v0";
-const DEFAULT_BASE_ID = "appsV1ILPRfIjkaYg";
-const SESSIONS_TABLE = "tblC98mKWbzmPuNzX";
-const PAYMENTS_TABLE = "tblWGGJJOx5eBvBZJ";
-const PAYOUT_EVIDENCE_TABLE = "tblMvsl7qYozD05e5";
-const PRIVATE_CARE_TABLE = "tbltWzMBhWev4JR13";
+const API = "https://api.airtable.com/v0";
+const BASE = "appsV1ILPRfIjkaYg";
+const SESSIONS = "tblC98mKWbzmPuNzX";
+const PAYMENTS = "tblWGGJJOx5eBvBZJ";
+const PAYOUTS = "tblMvsl7qYozD05e5";
+const CARE = "tbltWzMBhWev4JR13";
 
-const SESSION = Object.freeze({
-  sessionId: "fldLTq2kZbyRv22IA",
-  jobId: "fldHw5HdDDdkHXMhG",
-  modelName: "flddVz6eoWRHrzIQr",
-  clientName: "fldMvnQ0BzDfHUYjT",
-  paymentRef: "fldojgjSQLaO0uQLX",
-  paymentStatus: "fldTY5lE6m0kQf72n",
-  modelPayout: "fldlTO5aNfqUmlNWm",
-  customerAmount: "fldvJowquu8RrsOMc",
-  customerAckAt: "fldJSS5GNN7quJwa8",
-  modelAckAt: "fldFgkHXivIAThfDz",
-  canonicalState: "fld57fhdWqIcOy4Jp",
-  canonicalStateUpdatedAt: "fldFJI1Leni6wvzR4",
-  completionStatus: "fldsX182wBo1TdD5f",
-  completionReviewedAt: "fldwFJHdx52esyQcq",
-  payoutHoldReason: "fldLjo7Af3ISu9yf5",
-});
-const PAYMENT = Object.freeze({
-  paymentRef: "fldOO6SY49iDw8VBZ",
-  sessionId: "fld2wdhBvc8xrV6y5",
-  verification: "fldJ7a0Ube9F0bmRy",
-  paymentStatus: "fldEJ1hmm7KwWuI6q",
-  amount: "fldvCSwrUW8OMAooS",
-  stage: "fldrr9g8ZZjqAbdKQ",
-});
-const PAYOUT = Object.freeze({
-  payoutRef: "fldrHeDeuv0ZP08L1",
-  sessionId: "fldwmqaIq9QubX9Uy",
-  modelName: "fldxsDAxjO9sDt3Ab",
-  payoutType: "fldgITP2xFiS2YHCG",
-  amount: "fldTNf4UOoqc0KobP",
-  payoutDatetime: "fldUxokneJ2FBI6jo",
-  payoutStatus: "fldy2TgwO7Ayp6uhh",
-  linkedPaymentRef: "fldzN9hbCbWIbQOj1",
-  slipUrl: "fldBKLWNpl72HIhIt",
-  verificationStatus: "fldbnm3clTmwhGiNu",
-  verifiedBy: "fldJ3QDCmFuKbLzlv",
-  verifiedAt: "fldQNNVtrLyQ3guoW",
-  notes: "fldtWxHf3duswd2Uk",
-});
-const CARE = Object.freeze({
-  complaintId: "fldxO9ZbQvw2kfXmT",
-  sessionId: "fldsCZsKIU7k9ZJm3",
-  status: "fldlW4GB2IoyjY5ee",
+export const OWNER_OPS_FIELDS = Object.freeze({
+  session: Object.freeze({
+    sessionId: "fldLTq2kZbyRv22IA", jobId: "fldHw5HdDDdkHXMhG", modelName: "flddVz6eoWRHrzIQr",
+    clientName: "fldMvnQ0BzDfHUYjT", paymentRef: "fldojgjSQLaO0uQLX", modelPayout: "fldlTO5aNfqUmlNWm",
+    customerAckAt: "fldJSS5GNN7quJwa8", modelAckAt: "fldFgkHXivIAThfDz", state: "fld57fhdWqIcOy4Jp",
+    stateUpdatedAt: "fldFJI1Leni6wvzR4", completion: "fldsX182wBo1TdD5f", reviewedAt: "fldwFJHdx52esyQcq",
+    holdReason: "fldLjo7Af3ISu9yf5",
+  }),
+  payment: Object.freeze({
+    paymentRef: "fldOO6SY49iDw8VBZ", sessionId: "fld2wdhBvc8xrV6y5", verification: "fldJ7a0Ube9F0bmRy",
+    statusFormula: "fld0aatroI5poWOSo", amount: "fldvCSwrUW8OMAooS", purpose: "fldrr9g8ZZjqAbdKQ", stage: "fldydUWHhqVLMkNSC",
+  }),
+  payout: Object.freeze({
+    payoutRef: "fldrHeDeuv0ZP08L1", sessionId: "fldwmqaIq9QubX9Uy", modelName: "fldxsDAxjO9sDt3Ab",
+    type: "fldgITP2xFiS2YHCG", amount: "fldTNf4UOoqc0KobP", paidAt: "fldUxokneJ2FBI6jo",
+    status: "fldy2TgwO7Ayp6uhh", linkedTipRef: "fldE6ytRRoob0NYd8", linkedPaymentRef: "flduYN0QZI3HECj4w",
+    slipAttachment: "fldzONvJF4NWV7Izc", slipUrl: "fldx8ekePcfFmUjND", verification: "fldbnm3clTmwhGiNu",
+    verifiedBy: "fldz2xFFuQEiTIiQw", verifiedAt: "fldxCfwIzjM2wfsWl", notes: "fldDySELyceFl9aaf", privacy: "fldzN9hbCbWIbQOj1",
+  }),
+  care: Object.freeze({ complaintId: "fldxO9ZbQvw2kfXmT", sessionId: "fldsCZsKIU7k9ZJm3", status: "fldlW4GB2IoyjY5ee" }),
 });
 
-const POST_WORK_STATES = new Set(["work_finished", "separated", "under_review", "payout_pending"]);
+const F = OWNER_OPS_FIELDS;
+const POST_WORK = new Set(["work_finished", "separated", "under_review", "payout_pending"]);
 const OWNER_ROLES = new Set(["owner", "admin", "super_admin", "superadmin"]);
+const str = (v, n = 500) => String(v ?? "").trim().slice(0, n);
+const valueName = (v) => str(v && typeof v === "object" && !Array.isArray(v) ? v.name : v, 120).toLowerCase();
+const cash = (v) => Number.isFinite(Number(v)) ? Math.round(Number(v) * 100) / 100 : null;
+function cfg(env) { return { base: str(env.AIRTABLE_BASE_ID, 40) || BASE, token: str(env.AIRTABLE_API_KEY || env.AIRTABLE_TOKEN, 1200) }; }
+async function at(env, table, suffix = "", { method = "GET", body, query = {} } = {}) {
+  const c = cfg(env); if (!c.base || !c.token) throw new Error("airtable_not_configured");
+  const u = new URL(`${API}/${encodeURIComponent(c.base)}/${encodeURIComponent(table)}${suffix}`);
+  u.searchParams.set("returnFieldsByFieldId", "true");
+  Object.entries(query).forEach(([k,v]) => { if (v !== undefined && v !== null && v !== "") u.searchParams.set(k, String(v)); });
+  const r = await fetch(u, { method, headers: { authorization: `Bearer ${c.token}`, accept: "application/json", ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const p = await r.json().catch(() => null); if (!r.ok) throw new Error(`airtable_${r.status}`); return p;
+}
+async function all(env, table, max = 300) { const out=[]; let offset=""; do { const p=await at(env,table,"",{query:{pageSize:100,...(offset?{offset}:{})}}); out.push(...(p?.records||[])); offset=str(p?.offset,500); } while(offset&&out.length<max); return out.slice(0,max); }
+const patch = (env, table, id, fields) => at(env, table, `/${encodeURIComponent(id)}`, { method:"PATCH", body:{fields} });
+const create = (env, table, fields) => at(env, table, "", { method:"POST", body:{fields} });
 
-function clean(value, max = 500) {
-  return String(value ?? "").trim().slice(0, max);
+export function verifiedPaymentForSession(rows = [], sessionId = "", paymentRef = "") {
+  const candidates = rows.filter(r => str(r?.fields?.[F.payment.sessionId],120)===sessionId || (paymentRef && str(r?.fields?.[F.payment.paymentRef],180)===paymentRef));
+  return candidates.filter(r => valueName(r?.fields?.[F.payment.verification]) === "verified").sort((a,b) => {
+    const rank = r => ["final","full"].includes(valueName(r?.fields?.[F.payment.stage])) ? 2 : 1; return rank(b)-rank(a);
+  })[0] || null;
 }
-function lower(value) {
-  return clean(typeof value === "object" && value ? value.name : value, 120).toLowerCase();
-}
-function money(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
-}
-function json(payload, status = 200) {
-  return Response.json(payload, { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store, private" } });
-}
-function config(env = {}) {
-  return {
-    baseId: clean(env.AIRTABLE_BASE_ID, 40) || DEFAULT_BASE_ID,
-    token: clean(env.AIRTABLE_API_KEY || env.AIRTABLE_TOKEN, 1200),
-  };
-}
-async function airtable(env, tableId, path = "", init = {}) {
-  const { baseId, token } = config(env);
-  if (!baseId || !token) throw new Error("airtable_not_configured");
-  const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(tableId)}${path}`);
-  url.searchParams.set("returnFieldsByFieldId", "true");
-  for (const [key, value] of Object.entries(init.query || {})) if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
-  const response = await fetch(url.toString(), {
-    method: init.method || "GET",
-    headers: { authorization: `Bearer ${token}`, accept: "application/json", ...(init.body ? { "content-type": "application/json" } : {}) },
-    body: init.body ? JSON.stringify(init.body) : undefined,
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(`airtable_${response.status}`);
-  return payload;
-}
-async function listAll(env, tableId, max = 300) {
-  const out = [];
-  let offset = "";
-  do {
-    const payload = await airtable(env, tableId, "", { query: { pageSize: 100, ...(offset ? { offset } : {}) } });
-    out.push(...(Array.isArray(payload?.records) ? payload.records : []));
-    offset = clean(payload?.offset, 500);
-  } while (offset && out.length < max);
-  return out.slice(0, max);
-}
-async function patchRecord(env, tableId, recordId, fields) {
-  return airtable(env, tableId, `/${encodeURIComponent(recordId)}`, { method: "PATCH", body: { fields } });
-}
-async function createRecord(env, tableId, fields) {
-  return airtable(env, tableId, "", { method: "POST", body: { fields } });
-}
-function findSession(rows, sessionId) {
-  return rows.find((row) => clean(row?.fields?.[SESSION.sessionId], 120) === sessionId) || null;
-}
-function careForSession(rows, sessionId) {
-  return rows.filter((row) => clean(row?.fields?.[CARE.sessionId], 120) === sessionId);
-}
-function openCareCases(rows, sessionId) {
-  return careForSession(rows, sessionId).filter((row) => lower(row?.fields?.[CARE.status]) !== "closed");
-}
-function verifiedPayment(rows, sessionId, paymentRef = "") {
-  const candidates = rows.filter((row) => {
-    const f = row?.fields || {};
-    return clean(f[PAYMENT.sessionId], 120) === sessionId || (paymentRef && clean(f[PAYMENT.paymentRef], 180) === paymentRef);
-  });
-  const verified = candidates.filter((row) => lower(row?.fields?.[PAYMENT.verification]) === "verified");
-  if (!verified.length) return null;
-  return verified.sort((a, b) => {
-    const rank = (row) => ["final", "full"].includes(lower(row?.fields?.[PAYMENT.stage])) ? 2 : 1;
-    return rank(b) - rank(a);
-  })[0];
-}
-function payoutForSession(rows, sessionId) {
-  return rows.find((row) => clean(row?.fields?.[PAYOUT.sessionId], 120) === sessionId && lower(row?.fields?.[PAYOUT.payoutType]) === "session_payout") || null;
-}
-function canonicalState(session) {
-  return lower(session?.fields?.[SESSION.canonicalState]);
-}
-function completionStatus(session) {
-  return lower(session?.fields?.[SESSION.completionStatus]);
-}
-function confirmationComplete(session) {
-  return Boolean(clean(session?.fields?.[SESSION.customerAckAt], 80) && clean(session?.fields?.[SESSION.modelAckAt], 80));
-}
-function ownerActionProjection(session, context) {
-  const fields = session?.fields || {};
-  const sessionId = clean(fields[SESSION.sessionId], 120);
-  const state = canonicalState(session);
-  const completion = completionStatus(session);
-  const payoutAmount = money(fields[SESSION.modelPayout]);
-  const careOpen = context.openCare.length > 0;
-  const paymentVerified = Boolean(context.payment);
-  const payoutStatus = lower(context.payout?.fields?.[PAYOUT.payoutStatus]);
-  const holdReasons = [];
-  if (careOpen) holdReasons.push("open_private_care_case");
-  if (!paymentVerified) holdReasons.push("payment_not_verified");
-  if (!(payoutAmount > 0)) holdReasons.push("payout_amount_missing");
-  if (!["clear", "resolved"].includes(completion)) holdReasons.push("completion_not_reviewed");
-
-  return {
-    session_id: sessionId,
-    job_id: clean(fields[SESSION.jobId], 120) || null,
-    client_name: clean(fields[SESSION.clientName], 160) || null,
-    model_name: clean(fields[SESSION.modelName], 160) || null,
-    state: state || null,
-    confirmation_complete: confirmationComplete(session),
-    completion_review_status: completion || null,
-    payout_amount_thb: payoutAmount,
-    payout_status: payoutStatus || null,
-    payment_verified: paymentVerified,
-    open_care_case_count: context.openCare.length,
-    payout_hold_reason: clean(fields[SESSION.payoutHoldReason], 240) || (holdReasons.length ? holdReasons.join(",") : null),
-    actions: {
-      can_clear_completion: ["separated", "under_review"].includes(state) && !careOpen && paymentVerified && payoutAmount > 0,
-      can_hold_completion: POST_WORK_STATES.has(state) && state !== "closed",
-      can_mark_payout_ready: state === "under_review" && ["clear", "resolved"].includes(completion) && !careOpen && paymentVerified && payoutAmount > 0 && !["payout_pending", "payout_paid"].includes(payoutStatus),
-      can_mark_payout_paid: state === "payout_pending" && payoutStatus === "payout_pending",
-    },
-  };
+export function openCareForSession(rows = [], sessionId = "") { return rows.filter(r => str(r?.fields?.[F.care.sessionId],120)===sessionId && valueName(r?.fields?.[F.care.status])!=="closed"); }
+export function payoutForSession(rows = [], sessionId = "") { return rows.find(r => str(r?.fields?.[F.payout.sessionId],120)===sessionId && valueName(r?.fields?.[F.payout.type])==="session_payout") || null; }
+export function projectOwnerAction(session, { payment=null, payout=null, openCare=[] } = {}) {
+  const x=session?.fields||{}, state=valueName(x[F.session.state]), completion=valueName(x[F.session.completion]), amount=cash(x[F.session.modelPayout]), payoutStatus=valueName(payout?.fields?.[F.payout.status]);
+  const holds=[]; if(openCare.length)holds.push("open_private_care_case"); if(!payment)holds.push("payment_not_verified"); if(!(amount>0))holds.push("payout_amount_missing"); if(!["clear","resolved"].includes(completion))holds.push("completion_not_reviewed");
+  return { session_id:str(x[F.session.sessionId],120), job_id:str(x[F.session.jobId],120)||null, client_name:str(x[F.session.clientName],160)||null, model_name:str(x[F.session.modelName],160)||null,
+    state:state||null, confirmation_complete:Boolean(str(x[F.session.customerAckAt],80)&&str(x[F.session.modelAckAt],80)), completion_review_status:completion||null, payout_amount_thb:amount,
+    payout_status:payoutStatus||null, payment_verified:Boolean(payment), open_care_case_count:openCare.length, payout_hold_reason:str(x[F.session.holdReason],240)||(holds.join(",")||null),
+    actions:{ can_clear_completion:["separated","under_review"].includes(state)&&!openCare.length&&Boolean(payment)&&amount>0, can_hold_completion:POST_WORK.has(state)&&state!=="closed",
+      can_mark_payout_ready:state==="under_review"&&["clear","resolved"].includes(completion)&&!openCare.length&&Boolean(payment)&&amount>0&&!["payout_pending","payout_paid"].includes(payoutStatus),
+      can_mark_payout_paid:state==="payout_pending"&&payoutStatus==="payout_pending" } };
 }
 
-export async function listOwnerJobActions(env = {}) {
-  const [sessions, payments, payouts, care] = await Promise.all([
-    listAll(env, SESSIONS_TABLE),
-    listAll(env, PAYMENTS_TABLE),
-    listAll(env, PAYOUT_EVIDENCE_TABLE),
-    listAll(env, PRIVATE_CARE_TABLE),
-  ]);
-  const items = sessions
-    .filter((session) => {
-      const state = canonicalState(session);
-      return POST_WORK_STATES.has(state) || state === "closed";
-    })
-    .map((session) => {
-      const sessionId = clean(session?.fields?.[SESSION.sessionId], 120);
-      return ownerActionProjection(session, {
-        payment: verifiedPayment(payments, sessionId, clean(session?.fields?.[SESSION.paymentRef], 180)),
-        payout: payoutForSession(payouts, sessionId),
-        openCare: openCareCases(care, sessionId),
-      });
-    })
-    .filter((item) => item.session_id)
-    .sort((a, b) => Number(b.state === "payout_pending") - Number(a.state === "payout_pending"));
-
-  const completionReview = items.filter((item) => ["separated", "under_review"].includes(item.state) && !["clear", "resolved"].includes(item.completion_review_status));
-  const payoutReady = items.filter((item) => item.actions.can_mark_payout_ready || item.state === "payout_pending");
-  return {
-    ok: true,
-    authority: JOB_ORCHESTRATOR_AUTHORITY,
-    counts: {
-      completion_review: completionReview.length,
-      payout_ready: payoutReady.length,
-      confirmation_incomplete: sessions.filter((s) => ["offered", "confirmed"].includes(canonicalState(s)) && !confirmationComplete(s)).length,
-    },
-    items,
-    telegram: telegramAlertDiagnostic(env),
-  };
+export async function listOwnerJobActions(env={}) {
+  const [sessions,payments,payouts,care]=await Promise.all([all(env,SESSIONS),all(env,PAYMENTS),all(env,PAYOUTS),all(env,CARE)]);
+  const items=sessions.filter(s=>{const q=valueName(s?.fields?.[F.session.state]);return POST_WORK.has(q)||q==="closed";}).map(s=>{const id=str(s?.fields?.[F.session.sessionId],120);return projectOwnerAction(s,{payment:verifiedPaymentForSession(payments,id,str(s?.fields?.[F.session.paymentRef],180)),payout:payoutForSession(payouts,id),openCare:openCareForSession(care,id)});}).filter(x=>x.session_id);
+  const completion=items.filter(x=>["separated","under_review"].includes(x.state)&&!["clear","resolved"].includes(x.completion_review_status));
+  const ready=items.filter(x=>x.actions.can_mark_payout_ready||x.state==="payout_pending");
+  return {ok:true,authority:JOB_ORCHESTRATOR_AUTHORITY,counts:{completion_review:completion.length,payout_ready:ready.length,confirmation_incomplete:sessions.filter(s=>["offered","confirmed"].includes(valueName(s?.fields?.[F.session.state]))&&!(str(s?.fields?.[F.session.customerAckAt],80)&&str(s?.fields?.[F.session.modelAckAt],80))).length},items,telegram:telegramAlertDiagnostic(env)};
 }
-
-function noteWithTransfer(existing, body, actor) {
-  const chunks = [clean(existing, 1800), `owner_transfer_ref=${clean(body.transfer_ref, 240)}`, `marked_by=${clean(actor?.id, 120)}`, `marked_at=${new Date().toISOString()}`].filter(Boolean);
-  return chunks.join("; ").slice(0, 1900);
+function result(ok,status,extra={}) { return {ok,status,authority:JOB_ORCHESTRATOR_AUTHORITY,...extra}; }
+export async function applyOwnerJobAction(env={}, body={}, actor={}) {
+  if(!OWNER_ROLES.has(valueName(actor?.role))) return result(false,403,{error:"owner_or_admin_required"});
+  const sessionId=str(body.session_id,120), action=valueName(body.action), reason=str(body.reason,500); if(!sessionId||!action)return result(false,400,{error:"session_id_and_action_required"});
+  const [sessions,payments,payouts,care]=await Promise.all([all(env,SESSIONS),all(env,PAYMENTS),all(env,PAYOUTS),all(env,CARE)]);
+  const session=sessions.find(r=>str(r?.fields?.[F.session.sessionId],120)===sessionId); if(!session?.id)return result(false,404,{error:"session_not_found"});
+  const state=valueName(session.fields?.[F.session.state]), paymentRef=str(session.fields?.[F.session.paymentRef],180), payment=verifiedPaymentForSession(payments,sessionId,paymentRef), openCare=openCareForSession(care,sessionId), payout=payoutForSession(payouts,sessionId), amount=cash(session.fields?.[F.session.modelPayout]), now=new Date().toISOString();
+  if(action==="hold_completion_review") { if(!POST_WORK.has(state))return result(false,409,{error:"completion_hold_not_allowed_from_state",state}); if(reason.length<5)return result(false,400,{error:"hold_reason_required"}); await patch(env,SESSIONS,session.id,{[F.session.completion]:"hold",[F.session.holdReason]:reason,[F.session.reviewedAt]:now}); if(payout?.id&&valueName(payout.fields?.[F.payout.status])==="payout_pending")await patch(env,PAYOUTS,payout.id,{[F.payout.status]:"payout_under_review",[F.payout.notes]:`Hold: ${reason}`}); await sendCanonicalTelegramAlert(env,{event:"complaint_dispute_opened",session_id:sessionId,reference_id:sessionId,text:`MMD · Completion/Payout HOLD\nSession: ${sessionId}\nReason: ${reason}`,idempotency_key:`completion_hold:${sessionId}:${str(body.event_id||reason,120)}`}); return result(true,200,{action,session_id:sessionId,state,completion_review_status:"hold",money_truth_changed:false}); }
+  if(action==="clear_completion_review") { if(!["separated","under_review"].includes(state))return result(false,409,{error:"completion_review_not_allowed_from_state",state}); if(openCare.length)return result(false,409,{error:"open_private_care_case",count:openCare.length}); if(!payment)return result(false,409,{error:"payment_not_verified"}); if(!(amount>0))return result(false,409,{error:"payout_amount_missing"}); const fields={[F.session.completion]:"clear",[F.session.reviewedAt]:now,[F.session.holdReason]:""}; if(state==="separated"){fields[F.session.state]="under_review";fields[F.session.stateUpdatedAt]=now;} await patch(env,SESSIONS,session.id,fields); return result(true,200,{action,session_id:sessionId,state:state==="separated"?"under_review":state,completion_review_status:"clear",money_truth_changed:false}); }
+  if(action==="mark_payout_ready") { const completion=valueName(session.fields?.[F.session.completion]); if(state!=="under_review")return result(false,409,{error:"payout_ready_requires_under_review",state}); if(!["clear","resolved"].includes(completion))return result(false,409,{error:"completion_review_not_clear"}); if(openCare.length)return result(false,409,{error:"open_private_care_case",count:openCare.length}); if(!payment)return result(false,409,{error:"payment_not_verified"}); if(!(amount>0))return result(false,409,{error:"payout_amount_missing"}); const ref=`payout:${sessionId}:session_payout`; if(payout?.id){if(valueName(payout.fields?.[F.payout.status])==="payout_paid")return result(true,200,{action,session_id:sessionId,idempotent:true,payout_status:"payout_paid"}); await patch(env,PAYOUTS,payout.id,{[F.payout.status]:"payout_pending",[F.payout.verification]:"pending",[F.payout.amount]:amount,[F.payout.linkedPaymentRef]:paymentRef||str(payment.fields?.[F.payment.paymentRef],180)});} else await create(env,PAYOUTS,{[F.payout.payoutRef]:ref,[F.payout.sessionId]:sessionId,[F.payout.modelName]:str(session.fields?.[F.session.modelName],160),[F.payout.type]:"session_payout",[F.payout.amount]:amount,[F.payout.status]:"payout_pending",[F.payout.verification]:"pending",[F.payout.linkedPaymentRef]:paymentRef||str(payment.fields?.[F.payment.paymentRef],180),[F.payout.privacy]:"admin_only",[F.payout.notes]:`Ready to Pay by ${str(actor.id,120)||"owner"}`}); await patch(env,SESSIONS,session.id,{[F.session.state]:"payout_pending",[F.session.stateUpdatedAt]:now,[F.session.holdReason]:""}); await sendCanonicalTelegramAlert(env,{event:"payout_ready",session_id:sessionId,reference_id:ref,text:`MMD · READY TO PAY\nSession: ${sessionId}\nModel: ${str(session.fields?.[F.session.modelName],160)||"—"}\nAmount: ${amount.toLocaleString("en-US")} THB`,idempotency_key:ref}); return result(true,200,{action,session_id:sessionId,state:"payout_pending",payout_ref:ref,payout_status:"payout_pending",money_truth_changed:false}); }
+  if(action==="mark_payout_paid") { if(state!=="payout_pending")return result(false,409,{error:"payout_paid_requires_payout_pending",state}); if(!payout?.id||valueName(payout.fields?.[F.payout.status])!=="payout_pending")return result(false,409,{error:"payout_evidence_not_pending"}); const transfer=str(body.transfer_ref,240); if(transfer.length<4)return result(false,400,{error:"transfer_ref_required"}); if(openCare.length)return result(false,409,{error:"open_private_care_case",count:openCare.length}); const old=str(payout.fields?.[F.payout.notes],1600), note=[old,`owner_transfer_ref=${transfer}`,`marked_by=${str(actor.id,120)}`,`marked_at=${now}`].filter(Boolean).join("; ").slice(0,1900); const fields={[F.payout.status]:"payout_paid",[F.payout.verification]:"verified",[F.payout.paidAt]:now,[F.payout.verifiedBy]:str(actor.id,120)||"owner",[F.payout.verifiedAt]:now,[F.payout.notes]:note}; if(str(body.payout_slip_url,1000))fields[F.payout.slipUrl]=str(body.payout_slip_url,1000); await patch(env,PAYOUTS,payout.id,fields); await patch(env,SESSIONS,session.id,{[F.session.state]:"closed",[F.session.stateUpdatedAt]:now,[F.session.completion]:"resolved",[F.session.reviewedAt]:now,[F.session.holdReason]:""}); return result(true,200,{action,session_id:sessionId,state:"closed",payout_status:"payout_paid",money_truth_changed:false}); }
+  return result(false,400,{error:"unsupported_owner_job_action"});
 }
-
-export async function applyOwnerJobAction(env = {}, body = {}, actor = {}) {
-  const role = lower(actor?.role);
-  if (!OWNER_ROLES.has(role)) return { ok: false, status: 403, error: "owner_or_admin_required" };
-  const sessionId = clean(body?.session_id, 120);
-  const action = lower(body?.action);
-  const reason = clean(body?.reason, 500);
-  if (!sessionId || !action) return { ok: false, status: 400, error: "session_id_and_action_required" };
-
-  const [sessions, payments, payouts, care] = await Promise.all([
-    listAll(env, SESSIONS_TABLE), listAll(env, PAYMENTS_TABLE), listAll(env, PAYOUT_EVIDENCE_TABLE), listAll(env, PRIVATE_CARE_TABLE),
-  ]);
-  const session = findSession(sessions, sessionId);
-  if (!session?.id) return { ok: false, status: 404, error: "session_not_found" };
-  const state = canonicalState(session);
-  const paymentRef = clean(session?.fields?.[SESSION.paymentRef], 180);
-  const payment = verifiedPayment(payments, sessionId, paymentRef);
-  const openCare = openCareCases(care, sessionId);
-  const payout = payoutForSession(payouts, sessionId);
-  const payoutAmount = money(session?.fields?.[SESSION.modelPayout]);
-  const now = new Date().toISOString();
-
-  if (action === "hold_completion_review") {
-    if (!POST_WORK_STATES.has(state)) return { ok: false, status: 409, error: "completion_hold_not_allowed_from_state", state };
-    if (reason.length < 5) return { ok: false, status: 400, error: "hold_reason_required" };
-    await patchRecord(env, SESSIONS_TABLE, session.id, {
-      [SESSION.completionStatus]: "hold",
-      [SESSION.payoutHoldReason]: reason,
-      [SESSION.completionReviewedAt]: now,
-    });
-    if (payout?.id && lower(payout.fields?.[PAYOUT.payoutStatus]) === "payout_pending") {
-      await patchRecord(env, PAYOUT_EVIDENCE_TABLE, payout.id, { [PAYOUT.payoutStatus]: "payout_under_review", [PAYOUT.notes]: `Hold: ${reason}` });
-    }
-    await sendCanonicalTelegramAlert(env, { event: "complaint_dispute_opened", session_id: sessionId, reference_id: sessionId, text: `MMD · Completion/Payout HOLD\nSession: ${sessionId}\nReason: ${reason}`, idempotency_key: `completion_hold:${sessionId}:${clean(body.event_id || reason, 120)}` });
-    return { ok: true, status: 200, action, session_id: sessionId, state, completion_review_status: "hold", money_truth_changed: false };
-  }
-
-  if (action === "clear_completion_review") {
-    if (!["separated", "under_review"].includes(state)) return { ok: false, status: 409, error: "completion_review_not_allowed_from_state", state };
-    if (openCare.length) return { ok: false, status: 409, error: "open_private_care_case", count: openCare.length };
-    if (!payment) return { ok: false, status: 409, error: "payment_not_verified" };
-    if (!(payoutAmount > 0)) return { ok: false, status: 409, error: "payout_amount_missing" };
-    const fields = {
-      [SESSION.completionStatus]: "clear",
-      [SESSION.completionReviewedAt]: now,
-      [SESSION.payoutHoldReason]: "",
-    };
-    if (state === "separated") {
-      fields[SESSION.canonicalState] = "under_review";
-      fields[SESSION.canonicalStateUpdatedAt] = now;
-    }
-    await patchRecord(env, SESSIONS_TABLE, session.id, fields);
-    return { ok: true, status: 200, action, session_id: sessionId, state: state === "separated" ? "under_review" : state, completion_review_status: "clear", money_truth_changed: false };
-  }
-
-  if (action === "mark_payout_ready") {
-    if (state !== "under_review") return { ok: false, status: 409, error: "payout_ready_requires_under_review", state };
-    const completion = completionStatus(session);
-    if (!["clear", "resolved"].includes(completion)) return { ok: false, status: 409, error: "completion_review_not_clear" };
-    if (openCare.length) return { ok: false, status: 409, error: "open_private_care_case", count: openCare.length };
-    if (!payment) return { ok: false, status: 409, error: "payment_not_verified" };
-    if (!(payoutAmount > 0)) return { ok: false, status: 409, error: "payout_amount_missing" };
-    const payoutRef = `payout:${sessionId}:session_payout`;
-    if (payout?.id) {
-      const status = lower(payout.fields?.[PAYOUT.payoutStatus]);
-      if (status === "payout_paid") return { ok: true, status: 200, action, session_id: sessionId, idempotent: true, payout_status: status };
-      await patchRecord(env, PAYOUT_EVIDENCE_TABLE, payout.id, {
-        [PAYOUT.payoutStatus]: "payout_pending",
-        [PAYOUT.verificationStatus]: "pending",
-        [PAYOUT.amount]: payoutAmount,
-        [PAYOUT.linkedPaymentRef]: paymentRef || clean(payment.fields?.[PAYMENT.paymentRef], 180),
-      });
-    } else {
-      await createRecord(env, PAYOUT_EVIDENCE_TABLE, {
-        [PAYOUT.payoutRef]: payoutRef,
-        [PAYOUT.sessionId]: sessionId,
-        [PAYOUT.modelName]: clean(session.fields?.[SESSION.modelName], 160),
-        [PAYOUT.payoutType]: "session_payout",
-        [PAYOUT.amount]: payoutAmount,
-        [PAYOUT.payoutStatus]: "payout_pending",
-        [PAYOUT.verificationStatus]: "pending",
-        [PAYOUT.linkedPaymentRef]: paymentRef || clean(payment.fields?.[PAYMENT.paymentRef], 180),
-        [PAYOUT.notes]: `Ready to Pay by ${clean(actor?.id, 120) || "owner"}`,
-      });
-    }
-    await patchRecord(env, SESSIONS_TABLE, session.id, {
-      [SESSION.canonicalState]: "payout_pending",
-      [SESSION.canonicalStateUpdatedAt]: now,
-      [SESSION.payoutHoldReason]: "",
-    });
-    await sendCanonicalTelegramAlert(env, { event: "payout_ready", session_id: sessionId, reference_id: payoutRef, text: `MMD · READY TO PAY\nSession: ${sessionId}\nModel: ${clean(session.fields?.[SESSION.modelName], 160) || "—"}\nAmount: ${payoutAmount.toLocaleString("en-US")} THB`, idempotency_key: payoutRef });
-    return { ok: true, status: 200, action, session_id: sessionId, state: "payout_pending", payout_ref: payoutRef, payout_status: "payout_pending", money_truth_changed: false };
-  }
-
-  if (action === "mark_payout_paid") {
-    if (state !== "payout_pending") return { ok: false, status: 409, error: "payout_paid_requires_payout_pending", state };
-    if (!payout?.id || lower(payout.fields?.[PAYOUT.payoutStatus]) !== "payout_pending") return { ok: false, status: 409, error: "payout_evidence_not_pending" };
-    const transferRef = clean(body?.transfer_ref, 240);
-    if (transferRef.length < 4) return { ok: false, status: 400, error: "transfer_ref_required" };
-    if (openCare.length) return { ok: false, status: 409, error: "open_private_care_case", count: openCare.length };
-    const payoutPatch = {
-      [PAYOUT.payoutStatus]: "payout_paid",
-      [PAYOUT.verificationStatus]: "verified",
-      [PAYOUT.payoutDatetime]: now,
-      [PAYOUT.verifiedBy]: clean(actor?.id, 120) || "owner",
-      [PAYOUT.verifiedAt]: now,
-      [PAYOUT.notes]: noteWithTransfer(payout.fields?.[PAYOUT.notes], body, actor),
-    };
-    if (clean(body?.payout_slip_url, 1000)) payoutPatch[PAYOUT.slipUrl] = clean(body.payout_slip_url, 1000);
-    await patchRecord(env, PAYOUT_EVIDENCE_TABLE, payout.id, payoutPatch);
-    await patchRecord(env, SESSIONS_TABLE, session.id, {
-      [SESSION.canonicalState]: "closed",
-      [SESSION.canonicalStateUpdatedAt]: now,
-      [SESSION.completionStatus]: "resolved",
-      [SESSION.completionReviewedAt]: now,
-      [SESSION.payoutHoldReason]: "",
-    });
-    return { ok: true, status: 200, action, session_id: sessionId, state: "closed", payout_status: "payout_paid", money_truth_changed: false };
-  }
-
-  return { ok: false, status: 400, error: "unsupported_owner_job_action" };
-}
-
-export function augmentDashboardPayload(payload, ownerOps) {
-  if (!payload || typeof payload !== "object" || !ownerOps?.ok) return payload;
-  return {
-    ...payload,
-    counts: {
-      ...(payload.counts || {}),
-      completion_review: ownerOps.counts.completion_review,
-      payout_ready: ownerOps.counts.payout_ready,
-      confirmation_incomplete: ownerOps.counts.confirmation_incomplete,
-    },
-    queues: {
-      ...(payload.queues || {}),
-      completion_review: { count: ownerOps.counts.completion_review, href: "/internal/admin/jobs/all?ops=completion-review" },
-      payout_ready: { count: ownerOps.counts.payout_ready, href: "/internal/admin/jobs/all?ops=payout" },
-    },
-    owner_actions: {
-      authority: JOB_ORCHESTRATOR_AUTHORITY,
-      href: "/internal/admin/jobs/all?ops=owner",
-      items: ownerOps.items.slice(0, 20),
-    },
-    telegram_alerts: ownerOps.telegram,
-  };
-}
-
-export function isOwnerJobActionsRequest(url, method = "GET") {
-  const path = typeof url === "string" ? new URL(url, "https://mmdbkk.com").pathname : url?.pathname;
-  return path === OWNER_JOB_ACTIONS_PATH && ["GET", "POST"].includes(String(method || "GET").toUpperCase());
-}
-
-export function ownerActionHttpResponse(result) {
-  return json(result, Number(result?.status) || (result?.ok ? 200 : 500));
-}
+export function augmentDashboardPayload(payload, ops) { if(!payload||typeof payload!=="object"||!ops?.ok)return payload; return {...payload,counts:{...(payload.counts||{}),completion_review:ops.counts.completion_review,payout_ready:ops.counts.payout_ready,confirmation_incomplete:ops.counts.confirmation_incomplete},queues:{...(payload.queues||{}),completion_review:{count:ops.counts.completion_review,href:"/internal/admin/jobs/all?ops=completion-review"},payout_ready:{count:ops.counts.payout_ready,href:"/internal/admin/jobs/all?ops=payout"}},owner_actions:{authority:JOB_ORCHESTRATOR_AUTHORITY,href:"/internal/admin/jobs/all?ops=owner",items:ops.items.slice(0,20)},telegram_alerts:ops.telegram}; }
+export function isOwnerJobActionsRequest(url,method="GET"){const path=typeof url==="string"?new URL(url,"https://mmdbkk.com").pathname:url?.pathname;return path===OWNER_JOB_ACTIONS_PATH&&["GET","POST"].includes(String(method).toUpperCase());}
+export function ownerActionHttpResponse(x){return Response.json(x,{status:Number(x?.status)||(x?.ok?200:500),headers:{"cache-control":"no-store, private","content-type":"application/json; charset=utf-8"}});}
