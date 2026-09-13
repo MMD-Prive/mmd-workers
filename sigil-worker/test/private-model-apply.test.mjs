@@ -13,7 +13,7 @@ import {
 
 const ORIGIN = "https://www.mmdbkk.com";
 
-function coordinator() {
+function coordinator(commits) {
   return {
     idFromName(name) { return name; },
     get() {
@@ -23,7 +23,13 @@ function coordinator() {
           const body = JSON.parse(init.body || "{}");
           if (path === "/rate-limit") return Response.json({ ok: true, limited: false });
           if (path === "/idempotency/prepare") return Response.json({ ok: true, application_id: body.application_id, complete: false });
-          if (path === "/idempotency/commit") return Response.json({ ok: true, application_id: body.application_id, duplicate: false });
+          if (path === "/idempotency/commit") {
+            commits.push({
+              application_id: body.application_id,
+              fields: body.fields || {},
+            });
+            return Response.json({ ok: true, application_id: body.application_id, duplicate: false });
+          }
           if (path === "/health") return Response.json({ ok: true });
           return Response.json({ ok: false, error: "unexpected_coordinator_path", path }, { status: 500 });
         },
@@ -34,6 +40,7 @@ function coordinator() {
 
 function makeEnv(overrides = {}) {
   const writes = [];
+  const commits = [];
   const env = {
     PRIVATE_MODEL_ENABLED: "true",
     PRIVATE_MODEL_UPLOAD_ENABLED: "true",
@@ -48,7 +55,7 @@ function makeEnv(overrides = {}) {
       async get() { return null; },
       async put() {},
     },
-    PUBLIC_MODEL_COORDINATOR: coordinator(),
+    PUBLIC_MODEL_COORDINATOR: coordinator(commits),
     PUBLIC_MODEL_UPLOADS_R2: {
       async list() { return { objects: [] }; },
       async head() { return null; },
@@ -67,17 +74,17 @@ function makeEnv(overrides = {}) {
     },
     ...overrides,
   };
-  return { env, writes };
+  return { env, writes, commits };
 }
 
 async function call(path, init = {}, envOverrides = {}) {
-  const { env, writes } = makeEnv(envOverrides);
+  const { env, writes, commits } = makeEnv(envOverrides);
   const request = new Request(`https://sigil-worker.malemodel-bkk.workers.dev${path}`, {
     ...init,
     headers: { origin: ORIGIN, ...(init.headers || {}) },
   });
   const response = await worker.fetch(request, env, { waitUntil() {} });
-  return { response, writes };
+  return { response, writes, commits };
 }
 
 test("GET /sigil/apply renders a dedicated Private Model form", async () => {
@@ -103,7 +110,7 @@ test("Private Model application validation fails closed for wrong application_ty
 });
 
 test("Private Model application persists canonical review fields for TarT", async () => {
-  const { response, writes } = await call(PRIVATE_MODEL_APPLY_PATH, {
+  const { response, commits } = await call(PRIVATE_MODEL_APPLY_PATH, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -128,9 +135,10 @@ test("Private Model application persists canonical review fields for TarT", asyn
   assert.match(body.application_id, /^pma_/);
   assert.match(body.received_url, new RegExp(PRIVATE_MODEL_RECEIVED_PATH.replaceAll("/", "\\/")));
   assert.match(body.status_url, new RegExp(PRIVATE_MODEL_STATUS_PATH.replaceAll("/", "\\/")));
-  assert.equal(writes.length, 1);
+  assert.equal(commits.length, 1);
+  assert.equal(commits[0].application_id, body.application_id);
 
-  const fields = writes[0].fields;
+  const fields = commits[0].fields;
   const F = privateModelTestInternals.APPLICATION_FIELDS;
   assert.equal(fields[F.applicationType], "private_model");
   assert.equal(fields[F.handler], "TarT");
