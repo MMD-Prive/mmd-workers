@@ -24,7 +24,7 @@ test("verified LIFF payment binding hands off only to signed canonical /sigil/pa
   assert.match(paymentBinding, /\/v1\/pay\/verify/);
   assert.match(paymentBinding, /url\.pathname\s*!==\s*["']\/sigil\/pay["']/);
   assert.match(paymentBinding, /url\.searchParams\.get\(["']t["']\)/);
-  assert.match(paymentBinding, /url\.searchParams\.keys\(\)\]\s*\.some|searchParams\.keys\(\)\]\.some/);
+  assert.equal(paymentBinding.includes('[...url.searchParams.keys()].some((key) => key !== "t")'), true);
   assert.match(paymentBinding, /selected\.amount_thb/);
   assert.doesNotMatch(paymentBinding, /browserBody\?\.amount|browserBody\.amount/);
 });
