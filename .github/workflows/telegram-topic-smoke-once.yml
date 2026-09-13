@@ -17,87 +17,64 @@ jobs:
     timeout-minutes: 5
     environment: mmd-slip-extractor-staging
     env:
-      AUTH_SERVICE_LINE_TO_TELEGRAM: ${{ secrets.AUTH_SERVICE_LINE_TO_TELEGRAM || secrets.TELEGRAM_INTERNAL_TOKEN || secrets.INTERNAL_API_TOKEN }}
-      AUTH_SERVICE_AUTH_TO_TELEGRAM: ${{ secrets.AUTH_SERVICE_AUTH_TO_TELEGRAM }}
-      TELEGRAM_BOT_TOKEN_GENERIC: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_BOT_TOKEN_MMS: ${{ secrets.MMS_TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: "-1003546439681"
     steps:
-      - name: Fire production payment-routing smoke
+      - name: Diagnose Confirm and Alerts topic delivery
         id: smoke
         shell: bash
         run: |
           set -euo pipefail
-
+          token="$(printf '%s' "${TELEGRAM_BOT_TOKEN_MMS:-}" | tr -d '\r\n' | xargs)"
+          test -n "$token"
+          echo "::add-mask::${token}"
           run_id="tg-pay-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          line_token="$(printf '%s' "${AUTH_SERVICE_LINE_TO_TELEGRAM:-}" | tr -d '\r\n' | xargs)"
-          auth_token="$(printf '%s' "${AUTH_SERVICE_AUTH_TO_TELEGRAM:-}" | tr -d '\r\n' | xargs)"
-          generic_bot="$(printf '%s' "${TELEGRAM_BOT_TOKEN_GENERIC:-}" | tr -d '\r\n' | xargs)"
-          mms_bot="$(printf '%s' "${TELEGRAM_BOT_TOKEN_MMS:-}" | tr -d '\r\n' | xargs)"
-          for secret in "$line_token" "$auth_token" "$generic_bot" "$mms_bot"; do
-            if [ -n "$secret" ]; then echo "::add-mask::${secret}"; fi
+          failures=0
+
+          for thread in 21 9; do
+            case "$thread" in
+              21) expected='Service / Deposit / Balance'; route='confirm → thread 21' ;;
+              9) expected='Conflict / Mismatch exception'; route='alerts → thread 9' ;;
+            esac
+            text="🧪 MMD PAYMENT ROUTING SMOKE
+Expected: ${expected}
+Route: ${route}
+Run: ${run_id}
+Synthetic / no customer data"
+            payload="$(node -e 'process.stdout.write(JSON.stringify({chat_id:process.env.TELEGRAM_CHAT_ID,message_thread_id:Number(process.argv[1]),text:process.argv[2],disable_notification:true}))' "$thread" "$text")"
+            file="$RUNNER_TEMP/thread-${thread}.json"
+            code="$(curl -sS -o "$file" -w '%{http_code}' \
+              -X POST "https://api.telegram.org/bot${token}/sendMessage" \
+              -H 'Content-Type: application/json' \
+              --data-binary "$payload" || true)"
+
+            if node - <<'NODE' "$file" "$thread" "$code"
+const fs = require('node:fs');
+const [file, thread, code] = process.argv.slice(2);
+let body = {};
+try { body = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+if (code === '200' && body.ok === true) {
+  console.log(`PASS thread=${thread} message_id=${body.result?.message_id || 'n/a'}`);
+  process.exit(0);
+}
+const description = String(body.description || body.error || 'delivery_failed').replace(/[^A-Za-z0-9 _.:/-]/g, '_').slice(0, 180);
+console.log(`FAIL thread=${thread} http=${code} error_code=${body.error_code || 'n/a'} description=${description}`);
+process.exit(1);
+NODE
+            then
+              :
+            else
+              failures=$((failures+1))
+            fi
           done
 
-          text_for() {
-            case "$1" in
-              20) printf '🧪 MMD PAYMENT ROUTING SMOKE\nExpected: Membership / Renewal\nRoute: membership → thread 20\nRun: %s\nSynthetic / no customer data' "$run_id" ;;
-              21) printf '🧪 MMD PAYMENT ROUTING SMOKE\nExpected: Service / Deposit / Balance\nRoute: confirm → thread 21\nRun: %s\nSynthetic / no customer data' "$run_id" ;;
-              9) printf '🧪 MMD PAYMENT ROUTING SMOKE\nExpected: Conflict / Mismatch exception\nRoute: alerts → thread 9\nRun: %s\nSynthetic / no customer data' "$run_id" ;;
-            esac
-          }
+          echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
+          echo "### Payment routing smoke diagnostics" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Membership thread 20 already delivered in previous run" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Confirm thread 21 tested in this run" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Alerts thread 9 tested in this run" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Synthetic / silent / no customer data" >> "$GITHUB_STEP_SUMMARY"
 
-          send_service_all() {
-            label="$1"
-            token="$2"
-            [ -n "$token" ] || return 1
-            for thread in 20 21 9; do
-              text="$(text_for "$thread")"
-              payload="$(node -e 'process.stdout.write(JSON.stringify({flow:"payment_proof",chat_id:process.env.TELEGRAM_CHAT_ID,message_thread_id:Number(process.argv[1]),text:process.argv[2],disable_notification:true}))' "$thread" "$text")"
-              file="$RUNNER_TEMP/${label}-${thread}.json"
-              code="$(curl -sS -o "$file" -w '%{http_code}' \
-                -X POST 'https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send' \
-                -H "Authorization: Bearer ${token}" \
-                -H 'Content-Type: application/json' \
-                --data-binary "$payload" || true)"
-              if [ "$code" != 200 ]; then return 1; fi
-              node -e 'const fs=require("node:fs");const b=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(!(b.ok===true&&b.telegram?.ok===true))process.exit(1);console.log(`thread=${process.argv[2]} message_id=${b.telegram?.result?.message_id||"n/a"}`)' "$file" "$thread" || return 1
-            done
-            echo "mode=${label}" >> "$GITHUB_OUTPUT"
-            return 0
-          }
-
-          send_bot_all() {
-            label="$1"
-            token="$2"
-            [ -n "$token" ] || return 1
-            for thread in 20 21 9; do
-              text="$(text_for "$thread")"
-              payload="$(node -e 'process.stdout.write(JSON.stringify({chat_id:process.env.TELEGRAM_CHAT_ID,message_thread_id:Number(process.argv[1]),text:process.argv[2],disable_notification:true}))' "$thread" "$text")"
-              file="$RUNNER_TEMP/${label}-${thread}.json"
-              code="$(curl -sS -o "$file" -w '%{http_code}' \
-                -X POST "https://api.telegram.org/bot${token}/sendMessage" \
-                -H 'Content-Type: application/json' \
-                --data-binary "$payload" || true)"
-              if [ "$code" != 200 ]; then return 1; fi
-              node -e 'const fs=require("node:fs");const b=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(b.ok!==true)process.exit(1);console.log(`thread=${process.argv[2]} message_id=${b.result?.message_id||"n/a"}`)' "$file" "$thread" || return 1
-            done
-            echo "mode=${label}" >> "$GITHUB_OUTPUT"
-            return 0
-          }
-
-          if send_service_all service-line "$line_token"; then :
-          elif send_service_all service-auth "$auth_token"; then :
-          elif send_bot_all bot-generic "$generic_bot"; then :
-          elif send_bot_all bot-mms "$mms_bot"; then :
-          else
-            echo "No bounded Telegram credential path could deliver all smoke messages" >&2
+          if [ "$failures" -ne 0 ]; then
             exit 1
           fi
-
-          echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
-          echo "### Payment routing smoke" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Run: \`${run_id}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Membership → thread 20" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Confirm → thread 21" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Alerts → thread 9" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Synthetic / silent / no customer data" >> "$GITHUB_STEP_SUMMARY"
