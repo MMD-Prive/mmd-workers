@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { handleMemberAppApi } from "../src/member-app-api.js";
+import {
+  applyMyMmdCanonicalEntitlementResponse,
+  projectCanonicalContactProfile,
+} from "../src/my-mmd-canonical-entitlement-bridge.js";
 
 const SECRET = "test-only-liff-session-secret-1234567890";
 const TOKEN = "client-history-session-token";
@@ -134,4 +138,44 @@ test("verified-empty canonical history stays checking when Client history lookup
     }), env, delegate);
     assert.deepEqual(await response.json(), { state: "checking", items: [] }, failedTable);
   }
+});
+
+test("canonical Client contact profile exposes approved contact fields without leaking line_user_id", () => {
+  const rawLineUserId = `U${"c".repeat(32)}`;
+  assert.deepEqual(projectCanonicalContactProfile({
+    "Contact Email": "BHUTORN@GMAIL.COM",
+    "Phone Number": "086-997-2737",
+    username: "Bhutorn",
+    line_user_id: rawLineUserId,
+    telegram_username: "@garry23892",
+  }), {
+    email: "bhutorn@gmail.com",
+    phone: "0869972737",
+    lineHandle: "Bhutorn",
+    telegramUsername: "garry23892",
+    telegramName: null,
+    source: "canonical_client",
+    reviewState: "verified",
+  });
+
+  assert.equal(projectCanonicalContactProfile({ username: rawLineUserId, telegram_username: "@username" }), null);
+});
+
+test("profile response carries canonical contactProfile without changing entitlement state", async () => {
+  const contactProfile = projectCanonicalContactProfile({
+    email: "bhutorn@gmail.com",
+    "Phone Number": "0869972737",
+    username: "Bhutorn",
+    telegram_username: "garry23892",
+  });
+  const request = new Request("https://mmdbkk.com/api/member/app/profile");
+  const response = await applyMyMmdCanonicalEntitlementResponse(
+    request,
+    Response.json({ display_name: "คุณ เอ็ม", membership_status: "active" }),
+    { contactProfile },
+  );
+  const body = await response.json();
+  assert.deepEqual(body.contactProfile, contactProfile);
+  assert.equal(body.membership_status, "active");
+  assert.equal(JSON.stringify(body).includes(`U${"c".repeat(32)}`), false);
 });
