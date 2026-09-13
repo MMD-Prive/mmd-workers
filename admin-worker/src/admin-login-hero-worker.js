@@ -1,4 +1,4 @@
-import worker from "./client-credit-ref-wrapper.js";
+import worker from "./payment-proof-client-provenance-wrapper.js";
 export * from "./admin-login-hero-worker-pre-model-line-link.js";
 
 export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/dashboard";
