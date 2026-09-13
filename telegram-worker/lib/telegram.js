@@ -5,49 +5,68 @@ function int(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function topicEnv(env, names = []) {
+  for (const name of names) {
+    const value = int(env?.[name]);
+    if (value > 0) return value;
+  }
+  return 0;
+}
+
 const TOPIC_SPECS = Object.freeze([
-  { key: "membership", label: "MMD • Payments (Membership)", env: "TG_THREAD_MEMBERSHIP", fallback: 20 },
-  { key: "payment", label: "MMD • Payments (Confirm)", env: "TG_THREAD_PAYMENT", fallback: 21 },
-  { key: "alerts", label: "MMD • Alerts", env: "TG_THREAD_ALERTS", fallback: 9 },
-  { key: "points", label: "MMD • Points", env: "TG_THREAD_POINTS", fallback: 17 },
-  { key: "system_log", label: "MMD • System Log", env: "TG_THREAD_SYSTEM_LOG", fallback: 22 },
-  { key: "public_model", label: "MMD • Applications", env: "TG_THREAD_PUBLIC_MODEL", fallback: 155 },
-  { key: "booking", label: "MMD • Booking", env: "TG_THREAD_BOOKING", fallback: 1399 },
-  { key: "crew", label: "MMD Privé Crew", env: "TG_THREAD_CREW", fallback: 0, optional: true },
-  { key: "rules_customer", label: "MMD • Rules (Customer)", env: "TG_THREAD_RULES_CUSTOMER", fallback: 0, optional: true },
-  { key: "rules_model", label: "MMD • Rules (Model)", env: "TG_THREAD_RULES_MODEL", fallback: 0, optional: true },
+  { key: "booking", label: "MMD • Booking", envs: ["TG_THREAD_BOOKING_DRAFT", "TG_THREAD_BOOKING"], fallback: 1399 },
+  { key: "membership", label: "MMD • Payments (Membership)", envs: ["TG_THREAD_PAYMENTS_MEMBERSHIP", "TG_THREAD_MEMBERSHIP"], fallback: 20 },
+  { key: "points", label: "MMD • Points", envs: ["TG_THREAD_POINTS"], fallback: 17 },
+  { key: "payment", label: "MMD • Payments (Confirm)", envs: ["TG_THREAD_PAYMENTS_CONFIRM", "TG_THREAD_PAYMENT", "TG_THREAD_CONFIRM"], fallback: 22 },
+  { key: "alerts", label: "MMD • Alerts", envs: ["TG_THREAD_ALERTS"], fallback: 9 },
+  { key: "public_model", label: "MMD • Applications", envs: ["TG_THREAD_PUBLIC_MODEL"], fallback: 155 },
+  { key: "himai_orders", label: "HIMAI • Orders", envs: ["TG_THREAD_HIMAI_ORDERS"], fallback: 157 },
+  { key: "himai_payments", label: "HIMAI • Payments", envs: ["TG_THREAD_HIMAI_PAYMENTS"], fallback: 158 },
+  { key: "himai_alerts", label: "HIMAI • Alerts", envs: ["TG_THREAD_HIMAI_ALERTS"], fallback: 159 },
+  { key: "mmd_shop_orders", label: "MMD Shop • Orders", envs: ["TG_THREAD_MMD_SHOP_ORDERS"], fallback: 160 },
+  { key: "mmd_shop_payments", label: "MMD Shop • Payments", envs: ["TG_THREAD_MMD_SHOP_PAYMENTS"], fallback: 161 },
+  { key: "mmd_shop_alerts", label: "MMD Shop • Alerts", envs: ["TG_THREAD_MMD_SHOP_ALERTS"], fallback: 162 },
+  { key: "legacy_archive", label: "MMD • Legacy Archive", envs: ["TG_THREAD_LEGACY_ARCHIVE", "TG_THREAD_SYSTEM_LOG"], fallback: 134 },
+  { key: "rules_model", label: "MMD • Rules (Model)", envs: ["TG_THREAD_RULES_MODEL"], fallback: 39 },
+  { key: "rules_customer", label: "MMD • Rules (Customer)", envs: ["TG_THREAD_RULES_CUSTOMER"], fallback: 29 },
+  { key: "crew", label: "MMD Privé Crew", envs: ["TG_THREAD_CREW"], fallback: 0, optional: true },
 ]);
 
 export function telegramTopics(env = {}) {
   return TOPIC_SPECS
     .map((topic) => ({
       ...topic,
-      thread_id: int(env[topic.env]) || topic.fallback || 0,
+      thread_id: topicEnv(env, topic.envs) || topic.fallback || 0,
     }))
     .filter((topic) => !topic.optional || topic.thread_id > 0);
 }
 
-export const TG_THREADS = (env) => {
+export const TG_THREADS = (env = {}) => {
   const topics = Object.fromEntries(telegramTopics(env).map((topic) => [topic.key, topic.thread_id]));
-  const confirm = int(env.TG_THREAD_CONFIRM) || topics.payment;
   const crew = topics.crew || topics.alerts;
-  const rulesCustomer = topics.rules_customer || topics.system_log;
-  const rulesModel = topics.rules_model || topics.system_log;
   return {
+    booking: topics.booking,
+    booking_draft: topics.booking,
+    dispatch: topics.booking,
+    booking_dispatch: topics.booking,
+
     membership: topics.membership,
-    confirm,
+    payments_membership: topics.membership,
+    confirm: topics.payment,
     payment: topics.payment,
+    payments_confirm: topics.payment,
     payment_proof: topics.payment,
     payment_verified: topics.payment,
+
+    points: topics.points,
+    points_threshold: topics.points,
+
     alerts: topics.alerts,
     alert: topics.alerts,
     exception: topics.alerts,
     recovery: topics.alerts,
     studio_alert: topics.alerts,
-    points: topics.points,
-    points_threshold: topics.points,
-    system: topics.system_log,
-    system_log: topics.system_log,
+
     applications: topics.public_model,
     application: topics.public_model,
     mmd_application: topics.public_model,
@@ -55,18 +74,34 @@ export const TG_THREADS = (env) => {
     public_model_application: topics.public_model,
     mms_application: topics.public_model,
     mms_therapist_application: topics.public_model,
-    booking: topics.booking,
-    booking_draft: topics.booking,
-    dispatch: topics.booking,
-    booking_dispatch: topics.booking,
+
+    himai_orders: topics.himai_orders,
+    himai_order: topics.himai_orders,
+    himai_payments: topics.himai_payments,
+    himai_payment: topics.himai_payments,
+    himai_alerts: topics.himai_alerts,
+    himai_alert: topics.himai_alerts,
+
+    mmd_shop_orders: topics.mmd_shop_orders,
+    mmd_shop_order: topics.mmd_shop_orders,
+    mmd_shop_payments: topics.mmd_shop_payments,
+    mmd_shop_payment: topics.mmd_shop_payments,
+    mmd_shop_alerts: topics.mmd_shop_alerts,
+    mmd_shop_alert: topics.mmd_shop_alerts,
+
+    legacy_archive: topics.legacy_archive,
+    system: topics.legacy_archive,
+    system_log: topics.legacy_archive,
+
+    rules_customer: topics.rules_customer,
+    customer_rules: topics.rules_customer,
+    customer_rules_ack: topics.rules_customer,
+    rules_model: topics.rules_model,
+    model_rules: topics.rules_model,
+    model_rules_ack: topics.rules_model,
+
     crew,
     human_handoff: crew,
-    rules_customer: rulesCustomer,
-    customer_rules: rulesCustomer,
-    customer_rules_ack: rulesCustomer,
-    rules_model: rulesModel,
-    model_rules: rulesModel,
-    model_rules_ack: rulesModel,
   };
 };
 
@@ -84,6 +119,7 @@ export function resolveTelegramFlow(payload = {}) {
   if (flow === "customer_rules" || flow === "customer_rules_ack") return "rules_customer";
   if (flow === "model_rules" || flow === "model_rules_ack") return "rules_model";
   if (flow === "human_handoff") return "crew";
+  if (flow === "system" || flow === "system_log") return "legacy_archive";
 
   if ((flow === "confirm" || flow === "rules_ack") && payload.rules) {
     const role = String(payload.role || payload.rules?.role || "").toLowerCase().trim();
@@ -180,8 +216,8 @@ export async function telegramNotify(payload, env) {
 export function formatTelegramMessage(p) {
   const flow = String(p.flow || "").toLowerCase();
 
-  const isMembership = flow === "membership";
-  const isConfirm = flow === "confirm";
+  const isMembership = flow === "membership" || flow === "payments_membership";
+  const isConfirm = flow === "confirm" || flow === "payment" || flow === "payments_confirm";
   const isPaymentProof = flow === "payment_proof";
   const isPaymentVerified = flow === "payment_verified";
   const isPoints = flow === "points_threshold";
@@ -224,8 +260,9 @@ export function formatTelegramMessage(p) {
     exception: "🚨 MMD • EXCEPTION",
     recovery: "🚨 MMD • RECOVERY",
     studio_alert: "🚨 MMD • STUDIO ALERT",
-    system: "💻 MMD • SYSTEM LOG",
-    system_log: "💻 MMD • SYSTEM LOG",
+    legacy_archive: "🗄️ MMD • LEGACY ARCHIVE",
+    system: "🗄️ MMD • LEGACY ARCHIVE",
+    system_log: "🗄️ MMD • LEGACY ARCHIVE",
     applications: "🆕 MMD • APPLICATIONS",
     application: "🆕 MMD • APPLICATIONS",
     mmd_application: "🆕 MMD • APPLICATIONS",
@@ -235,6 +272,18 @@ export function formatTelegramMessage(p) {
     mms_therapist_application: "🆕 MMS • THERAPIST APPLICATION",
     booking: "🕯️ MMD • BOOKING",
     booking_draft: "🕯️ MMD • BOOKING DRAFT",
+    himai_orders: "📦 HIMAI • ORDERS",
+    himai_order: "📦 HIMAI • ORDERS",
+    himai_payments: "💳 HIMAI • PAYMENTS",
+    himai_payment: "💳 HIMAI • PAYMENTS",
+    himai_alerts: "🚨 HIMAI • ALERTS",
+    himai_alert: "🚨 HIMAI • ALERTS",
+    mmd_shop_orders: "📦 MMD SHOP • ORDERS",
+    mmd_shop_order: "📦 MMD SHOP • ORDERS",
+    mmd_shop_payments: "💳 MMD SHOP • PAYMENTS",
+    mmd_shop_payment: "💳 MMD SHOP • PAYMENTS",
+    mmd_shop_alerts: "🚨 MMD SHOP • ALERTS",
+    mmd_shop_alert: "🚨 MMD SHOP • ALERTS",
     crew: "👥 MMD PRIVÉ CREW",
     human_handoff: "👥 MMD PRIVÉ CREW",
   };
