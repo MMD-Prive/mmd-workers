@@ -39,7 +39,7 @@ test("approve orchestration does not read a raw canonical Airtable id from brows
   assert.doesNotMatch(source, /body\?\.(canonical_model_record_id|model_record_id|canonical_model)/);
   assert.match(source, /resolveOrCreateCanonicalModel\(env, application\)/);
   assert.match(source, /environment:\s*"published"/);
-  assert.match(source, /handoffStatus\]: resolved\.line_user_id \? "linked" : "ready"/);
+  assert.ok(source.includes('patch[PRIVATE_MODEL_HANDOFF_FIELDS.handoffStatus] = resolved.line_user_id ? "linked" : "ready";'));
 });
 
 test("active wrapper clones guarded Private Model requests before delegated worker consumes them", async () => {
