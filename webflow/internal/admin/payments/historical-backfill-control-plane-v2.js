@@ -6,6 +6,29 @@
   const root = document.getElementById('mmd-history-backfill');
   if (!root) return;
 
+  if (!document.getElementById('mmd-payment-headline-contrast-v1')) {
+    const style = document.createElement('style');
+    style.id = 'mmd-payment-headline-contrast-v1';
+    style.textContent = `
+      #money-control-v3 h1, #mmd-slip-inbox h1, #mmd-history-backfill h1 {
+        background: none !important;
+        color: #f4efe6 !important;
+        -webkit-text-fill-color: #f4efe6 !important;
+        opacity: 1 !important;
+        filter: none !important;
+        text-shadow: 0 1px 0 rgba(255,255,255,.05), 0 14px 38px rgba(0,0,0,.38) !important;
+      }
+      #money-control-v3 h2, #mmd-slip-inbox h2, #mmd-history-backfill h2 {
+        background: none !important;
+        color: #ece5da !important;
+        -webkit-text-fill-color: #ece5da !important;
+        opacity: 1 !important;
+        filter: none !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
   const API = '/v1/admin/payments/historical-backfill';
   const STAGE_LABELS = {
     deposit: 'ค่าจอง / มัดจำ',
