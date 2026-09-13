@@ -245,7 +245,9 @@ async function uniqueRecord({ env, table, formula, fetchImpl }) {
 export async function resolveDeterministicLinks({ env, identity, extraction, fetchImpl = fetch }) {
   const queries = [];
   if (identity.lineUserId) {
-    queries.push(["client", env.AIRTABLE_TABLE_CLIENTS || "Clients", `{line_user_id}='${formulaValue(identity.lineUserId)}'`]);
+    if (/^U[A-Za-z0-9_-]{20,80}$/.test(identity.lineUserId)) {
+      queries.push(["client", env.AIRTABLE_TABLE_CLIENTS || "Clients", `{line_user_id}='${formulaValue(identity.lineUserId)}'`]);
+    }
     queries.push(["member", env.AIRTABLE_TABLE_MEMBERS || "Members", `{line_id}='${formulaValue(identity.lineUserId)}'`]);
   }
   if (extraction.session_id) {
