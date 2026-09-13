@@ -49,6 +49,19 @@ service = "mms-worker"
 binding = "SIGIL_BOOKING_WORKER"
 service = "sigil-booking-worker"
 
+
+[[r2_buckets]]
+binding = "MMD_MODEL_ASSETS"
+bucket_name = "mmd-models"
+
+[[durable_objects.bindings]]
+name = "PRIVATE_PREVIEW_GATE"
+class_name = "PrivatePreviewGate"
+
+[[migrations]]
+tag = "v2-private-preview-gate"
+new_sqlite_classes = ["PrivatePreviewGate"]
+
 [[durable_objects.bindings]]
 name = "CARE_BACK_WISH_COORDINATOR"
 class_name = "CareBackBirthdayWishCoordinator"
