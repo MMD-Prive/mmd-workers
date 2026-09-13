@@ -78,6 +78,25 @@ test("Thai/common date formats are detected for review evidence", () => {
   assert.equal(parsed.proposed_points, 100);
 });
 
+test("bare calendar year is not treated as money", () => {
+  const parsed = parseHistoricalNote("MMD Confirmation 17 Sep 2026 เวลา 16:30 งานเสร็จแล้ว");
+  assert.equal(parsed.unknown_amount, 0);
+  assert.ok(!parsed.points_parse_warnings.includes("ambiguous_amount_requires_review"));
+});
+
+test("client measurements and shirt size are not treated as money", () => {
+  const parsed = parseHistoricalNote("ลูกค้าอายุ 35 สูง 170 นน 70-75 ขนาด 52 shirt size 56 XL");
+  assert.equal(parsed.unknown_amount, 0);
+  assert.equal(parsed.proposed_points, 0);
+});
+
+test("explicit currency wins even when number resembles profile size", () => {
+  const parsed = parseHistoricalNote("service 5,200 THB size 52");
+  assert.equal(parsed.service_amount, 5200);
+  assert.equal(parsed.unknown_amount, 0);
+  assert.equal(parsed.proposed_points, 52);
+});
+
 test("raw note is preserved exactly", () => {
   const parsed = parseHistoricalNote("  Booking service 1,000 THB\n");
   assert.equal(parsed.raw_note, "  Booking service 1,000 THB\n");
