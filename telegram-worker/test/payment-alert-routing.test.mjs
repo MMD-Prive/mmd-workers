@@ -15,6 +15,7 @@ test("topic registry keeps core MMD operations topics explicit", () => {
       ["booking", 1399],
     ],
   );
+  assert.equal(telegramTopics({}).find((topic) => topic.key === "public_model")?.label, "MMD • Applications");
 });
 
 test("optional operations topics join registry only when configured", () => {
@@ -62,7 +63,12 @@ test("operational flow aliases route through the central registry", () => {
   assert.equal(threads.alert, 9);
   assert.equal(threads.recovery, 9);
   assert.equal(threads.system_log, 22);
+  assert.equal(threads.applications, 155);
+  assert.equal(threads.application, 155);
+  assert.equal(threads.mmd_application, 155);
   assert.equal(threads.public_model_application, 155);
+  assert.equal(threads.mms_application, 155);
+  assert.equal(threads.mms_therapist_application, 155);
   assert.equal(threads.booking_draft, 1399);
   assert.equal(threads.dispatch, 1399);
   assert.equal(threads.human_handoff, 88);
@@ -124,6 +130,13 @@ test("payment alert formatter keeps proof and verified states distinct", () => {
   assert.match(proof, /Status:<\/b> pending/);
   assert.match(verified, /PAYMENT VERIFIED/);
   assert.match(verified, /Status:<\/b> verified/);
+});
+
+test("Applications formatter distinguishes MMD Public Model and MMS Therapist events", () => {
+  const mmd = formatTelegramMessage({ flow: "public_model_application", ts: "2026-09-13T00:00:00.000Z" });
+  const mms = formatTelegramMessage({ flow: "mms_therapist_application", ts: "2026-09-13T00:00:00.000Z" });
+  assert.match(mmd, /PUBLIC MODEL APPLICATION/);
+  assert.match(mms, /MMS • THERAPIST APPLICATION/);
 });
 
 test("rules formatter keeps customer and model acknowledgements distinct", () => {
