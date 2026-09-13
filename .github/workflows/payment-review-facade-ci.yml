@@ -9,6 +9,7 @@ on:
       - "admin-worker/src/payment-review-owner-context.js"
       - "admin-worker/src/payment-review-auto-context.js"
       - "admin-worker/line-slip-intake-review-queue.contract.test.mjs"
+      - "admin-worker/payment-review-queue-v3-normalization.test.mjs"
       - "admin-worker/payment-review-manual-renewal-recovery.test.mjs"
       - "admin-worker/payment-review-owner-context.test.mjs"
       - "admin-worker/payment-review-auto-context.test.mjs"
@@ -58,6 +59,7 @@ jobs:
         run: |
           set -euo pipefail
           node --test admin-worker/line-slip-intake-review-queue.contract.test.mjs
+          node --test admin-worker/payment-review-queue-v3-normalization.test.mjs
 
       - name: Manual renewal recovery contract
         run: |
@@ -107,6 +109,16 @@ jobs:
           grep -F 'sort: [{ field: "created_at", direction: "desc" }]' admin-worker/src/payment-review-runtime.js
           grep -F 'browser_can_mark_paid: false' admin-worker/src/payment-review-line-recovery.js
           grep -F 'browser_can_mutate_entitlement: false' admin-worker/src/payment-review-line-recovery.js
+
+      - name: Payment evidence v3 normalization
+        run: |
+          set -euo pipefail
+          grep -F 'extraction.method || extraction.extraction_method || note.extraction_method' admin-worker/src/payment-review-runtime.js
+          grep -F 'extraction.confidence ?? extraction.confidence_score ?? note.extraction_confidence' admin-worker/src/payment-review-runtime.js
+          grep -F 'linkedPaymentPresent || linkedSessionPresent || linkedRenewalPresent || linkedMemberPresent' admin-worker/src/payment-review-runtime.js
+          grep -F 'inferred_label: paymentInferenceLabel(paymentIntelligence)' admin-worker/src/payment-review-runtime.js
+          grep -F 'deposit: "ค่าจอง / มัดจำ"' admin-worker/src/payment-review-runtime.js
+          grep -F 'final: "ค่าจบงาน / ยอดคงเหลือ"' admin-worker/src/payment-review-runtime.js
 
       - name: Membership receipt contract
         run: |
