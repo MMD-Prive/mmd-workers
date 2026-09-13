@@ -67,9 +67,12 @@ function asNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function normalizeLevel(value) {
+export function normalizeLevel(value) {
   const key = asString(value, 64).toLowerCase().replace(/[\s_-]+/g, " ");
-  if (["guest", "visitor", "public"].includes(key)) return "guest";
+  if (["guest", "visitor"].includes(key)) return "guest";
+  if (["public", "public member", "mmd member", "mmd_member", "public_member"].includes(key)) return "public_member";
+  if (["elite", "elite member", "elite_membership"].includes(key)) return "elite";
+  if (["red", "red card", "red_card"].includes(key)) return "red_card";
   if (["7 days", "7 day", "7d", "trial", "trial 7d"].includes(key)) return "trial_7d";
   if (["standard", "lite"].includes(key)) return "standard";
   if (key === "premium") return "premium";
