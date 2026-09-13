@@ -1,5 +1,5 @@
 import { serializeCustomer360Profile } from "./customer-360-serializer.js";
-import { readClientBackedHistoryResult } from "./member-app-client-history.js";
+import { readClientBackedHistoryResult, resolveCanonicalClientForLine } from "./member-app-client-history.js";
 
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const SESSION_TTL_SECONDS = 15 * 60;
@@ -9,6 +9,7 @@ const MEMBER_RESOLVER_SECRET_HEADER = "x-mmd-member-resolver-secret";
 const RESOLVER_SCHEMA = "my_mmd_entitlement_resolver_v1";
 const RESOLVER_SOURCE = "my_mmd_entitlement_resolver_v1";
 const PROFILE_SOURCE = "member_profile_resolver";
+const CONTACT_PROFILE_SOURCE = "canonical_client";
 
 const ELIGIBLE_PATHS = new Set([
   "/api/member/app/points", "/api/member/app/points/",
@@ -50,7 +51,11 @@ export async function prepareMyMmdCanonicalEntitlementContext(request, env = {})
   const serializedProfile = resolved.memberId ? serializeCustomer360Profile(resolved.profile) : null;
   const presentation = canonicalPresentationContext(serializedProfile, resolved.profile, projection);
   const needsClientHistory = /^\/api\/member\/app\/(?:history|profile|dashboard)\/?$/.test(url.pathname);
-  const clientHistory = needsClientHistory ? await readClientBackedHistoryResult(env, sessionRef.lineUserId) : null;
+  const needsContactProfile = /^\/api\/member\/app\/profile\/?$/.test(url.pathname);
+  const [clientHistory, contactProfile] = await Promise.all([
+    needsClientHistory ? readClientBackedHistoryResult(env, sessionRef.lineUserId) : null,
+    needsContactProfile ? readCanonicalContactProfile(env, sessionRef.lineUserId) : null,
+  ]);
   const memberProfile = resolved.memberId ? (projection ? overlayProtectedDisplay(serializedProfile, projection, displayName) : serializedProfile) : null;
   const refreshedSession = { ...sessionRef.session, member_exists: Boolean(resolved.memberId), member_id: resolved.memberId, member_profile: memberProfile };
   try {
@@ -60,7 +65,7 @@ export async function prepareMyMmdCanonicalEntitlementContext(request, env = {})
   return {
     profileRefreshed: true, memberId: resolved.memberId, displayName, lineConnected: true,
     membershipStart: presentation.membershipStart, membershipExpiresAt: presentation.membershipExpiresAt,
-    packageLabel: presentation.packageLabel, historyRecoveryState: presentation.historyRecoveryState, clientHistory,
+    packageLabel: presentation.packageLabel, historyRecoveryState: presentation.historyRecoveryState, clientHistory, contactProfile,
     ...(projection ? { capability: projection.capability, label: projection.label, lifecycle: projection.lifecycle,
       publicServiceAccess: projection.publicServiceAccess, source: RESOLVER_SOURCE } : { capability: null, source: PROFILE_SOURCE }),
   };
@@ -107,6 +112,34 @@ export function projectProtectedEntitlement(snapshot = {}) {
     startAt: safeCalendarDate(entitlement?.start_at), expiresAt: safeCalendarDate(entitlement?.expire_at), packageLabel: safeProtectedPackageLabel(entitlement?.package_code) };
 }
 
+export function projectCanonicalContactProfile(fields = {}) {
+  if (!isPlainObject(fields)) return null;
+  const email = safeEmail(fields["Contact Email"] || fields.email);
+  const phone = safePhone(fields["Phone Number"] || fields.phone);
+  const lineHandle = safeHumanLineHandle(fields.username || fields["LINE ID"] || fields.line_handle);
+  const telegramUsername = safeTelegramUsername(fields.telegram_username || fields.telegram);
+  if (!email && !phone && !lineHandle && !telegramUsername) return null;
+  return {
+    email: email || null,
+    phone: phone || null,
+    lineHandle: lineHandle || null,
+    telegramUsername: telegramUsername || null,
+    telegramName: null,
+    source: CONTACT_PROFILE_SOURCE,
+    reviewState: "verified",
+  };
+}
+
+async function readCanonicalContactProfile(env, lineUserId) {
+  try {
+    const client = await resolveCanonicalClientForLine(env, lineUserId);
+    return projectCanonicalContactProfile(client?.fields || {});
+  } catch (error) {
+    console.warn({ event: "my_mmd_contact_profile_lookup_failed", failure_class: safeFailureClass(error) });
+    return null;
+  }
+}
+
 function patchProfilePayload(payload, context) {
   const history = resolvedClientHistory(context);
   const serviceItems = history ? history.items.filter((item) => item?.kind === "booking").map(profileServiceItem) : null;
@@ -117,6 +150,7 @@ function patchProfilePayload(payload, context) {
     ...(context.membershipExpiresAt && !safeCalendarDate(payload.active_through) ? { active_through: context.membershipExpiresAt } : {}),
     ...(context.packageLabel && !safeDisplayName(payload.package_label) ? { package_label: context.packageLabel } : {}),
     ...(context.historyRecoveryState ? { history_recovery_state: context.historyRecoveryState } : {}),
+    ...(context.contactProfile ? { contactProfile: context.contactProfile } : {}),
     ...(history ? { verified_service_count: history.summary.verifiedServiceCount,
       service_history_summary: { items: serviceItems, verified_service_count: history.summary.verifiedServiceCount,
         verified_service_spend_thb: history.summary.verifiedServiceSpendThb, last_service_date: history.summary.lastServiceDate } } : {}),
@@ -246,6 +280,11 @@ function safeClock(value) { const match = /^(\d{2}):(\d{2})$/.exec(String(value 
 function safePositiveInteger(value) { const number = Number(value); return Number.isInteger(number) && number > 0 ? number : null; }
 function safeMoney(value) { if (value === null || value === undefined || value === "") return null; const number = Number(value); return Number.isFinite(number) && number >= 0 ? Math.round(number * 100) / 100 : null; }
 function safeUrl(value) { const text = String(value || "").trim(); if (!text) return null; try { const url = new URL(text); return ["https:", "http:"].includes(url.protocol) ? url.toString().slice(0, 500) : null; } catch { return null; } }
+function safeEmail(value) { const email = String(value || "").trim().toLowerCase(); return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email.slice(0, 254) : null; }
+function safePhone(value) { const text = String(value || "").trim(); if (!text) return null; const hasPlus = text.startsWith("+"); const digits = text.replace(/\D/g, ""); if (digits.length < 8 || digits.length > 15) return null; return `${hasPlus ? "+" : ""}${digits}`; }
+function safeHumanLineHandle(value) { const text = safeDisplayName(value).replace(/^@/, ""); if (!text || /^U[0-9a-f]{32}$/i.test(text)) return null; if (/^(?:username|line|line id)$/i.test(text)) return null; return text.slice(0, 120); }
+function safeTelegramUsername(value) { const text = safeDisplayName(value).replace(/^@/, ""); if (!/^[A-Za-z0-9_]{3,64}$/.test(text) || /^(?:username|telegram)$/i.test(text)) return null; return text; }
+function safeFailureClass(error) { const text = String(error?.message || error || "unknown").toLowerCase(); if (/timeout|abort/.test(text)) return "timeout"; if (/airtable_4\d\d/.test(text)) return "upstream_4xx"; if (/airtable_5\d\d/.test(text)) return "upstream_5xx"; return "lookup_failed"; }
 
 function protectedMemberNextAction(existing) { const kind = String(existing?.kind || "").trim(); if (kind && !["signup", "renew", "checking"].includes(kind)) return existing; return { kind: "none", label: null, url: null }; }
 function verifiedField(value) { return { value, status: "verified", source: RESOLVER_SOURCE }; }
