@@ -76,6 +76,7 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/admin/control-room",
   "/internal/admin/customer-data",
   "/internal/admin/dashboard",
+  "/internal/admin/applications",
   "/internal/admin/model-applications",
   MMS_PARTNER_PAGE_PATH,
   "/internal/admin/payments",
