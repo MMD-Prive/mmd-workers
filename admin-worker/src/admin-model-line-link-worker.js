@@ -6,8 +6,12 @@ import {
   isModelLineLinkCandidatesRequest,
   isModelLineLinkClaimsRequest,
   isModelLineLinkPage,
-  listModelLineCandidates,
 } from "./model-line-link-review.js";
+import {
+  MODEL_LINE_LINK_MATERIALIZE_MODE,
+  listUnifiedModelLineCandidates,
+  materializeDriveAndBindVerifiedModelLineClaim,
+} from "./unified-model-drive-link.js";
 import {
   listPendingModelLineClaimsWithAvatar,
   renderModelLineLinkPageWithAvatar,
@@ -51,15 +55,18 @@ export default {
     if (isModelLineLinkCandidatesRequest(request)) {
       const auth = await requireOwner(request, env);
       if (auth.response) return auth.response;
-      const result = await listModelLineCandidates(env, url);
+      const result = await listUnifiedModelLineCandidates(env, url);
       return result.ok ? json(result, 200) : json({ ok: false, error: result.error }, result.status || 503);
     }
 
     if (path === "/v1/admin/model/activation/issue" && request.method.toUpperCase() === "POST") {
       const body = await request.clone().json().catch(() => null);
-      if (body?.mode === MODEL_LINE_LINK_BIND_MODE) {
+      if (body?.mode === MODEL_LINE_LINK_BIND_MODE || body?.mode === MODEL_LINE_LINK_MATERIALIZE_MODE) {
         const auth = await requireOwner(request, env);
         if (auth.response) return auth.response;
+        if (body.mode === MODEL_LINE_LINK_MATERIALIZE_MODE) {
+          return materializeDriveAndBindVerifiedModelLineClaim(request, env, auth.actor);
+        }
         return bindVerifiedModelLineClaim(request, env, auth.actor);
       }
     }
