@@ -12,10 +12,10 @@ const dirtyPatchPath = process.env.MMD_ROUTE_LOCK_DIRTY_PATCH
 const testFiles = [
   "member-pages-worker/test/liff-identity.test.mjs",
   "member-pages-worker/test/membership.test.mjs",
-  "mmd-redirect-worker/test/redirect.test.mjs",
+  "mmd-redirect-worker/test/hard-disabled.test.mjs",
   "member-dashboard-chat-worker/test/renewal-route.test.mjs",
   "webflow/payment/legacy-payment-route-bridge-v1.test.mjs",
-  "immigrate-worker/test/sigil-admin-login.test.mjs",
+  "telegram-worker/test/webhook-secret-token.test.mjs",
 ];
 
 const routeChecks = [
