@@ -1,404 +1,406 @@
-import crypto from "node:crypto";
-import { inferMembershipPayment } from "../../../shared/payment-intelligence.mjs";
+export * from "./line-payment-slip-intake-core.mjs";
 
-export const SAFE_SLIP_ACK = "MMD รับหลักฐานการชำระเงินไว้แล้วครับ กำลังตรวจรายละเอียดให้ กรุณารอสักครู่ก่อนนะครับ";
-export const MANUAL_SLIP_ACK = "MMD รับหลักฐานการชำระเงินไว้แล้วครับ แต่รายละเอียดต้องตรวจด้วยตนเองก่อน กรุณารอสักครู่ก่อนนะครับ";
-export const RETRY_SLIP_ACK = "ตอนนี้ MMD ยังบันทึกหลักฐานการชำระเงินไม่สำเร็จครับ กรุณาเก็บสลิปไว้ก่อน แล้ว MMD จะตรวจสอบและแจ้งให้ทราบอีกครั้งครับ";
-
-const SLIP_CONTEXT_RE = /(สลิป|หลักฐาน.{0,12}(ชำระ|โอน|จ่าย)|โอน(?:เงิน)?(?:แล้ว|เรียบร้อย)?|จ่าย(?:เงิน)?(?:แล้ว|เรียบร้อย)?|ชำระ(?:เงิน)?(?:แล้ว|เรียบร้อย)?|ยอด.{0,18}(?:บาท|thb)|(?:บาท|thb).{0,18}ยอด|payment\s*(slip|proof)|transfer\s*(slip|proof|done|complete|completed)|bank\s*transfer|prompt\s*pay|promptpay|พร้อมเพย์|\bpaid\b)/i;
-const NON_PAYMENT_IMAGE_CONTEXT_RE = /(ส่ง|ขอ|ดู|มี).{0,10}(รูป|รูปภาพ|profile|โปรไฟล์|หน้าสด)|(?:รูป|รูปภาพ|profile|โปรไฟล์|หน้าสด).{0,10}(model|นายแบบ|ems\d+|gws\d+)/i;
-const IMAGE_TYPES = new Map([["image/jpeg", "jpg"], ["image/png", "png"], ["image/webp", "webp"]]);
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-export const DEFAULT_MAX_AMOUNT_THB = 10_000_000;
+import * as core from "./line-payment-slip-intake-core.mjs";
+import { inferMembershipPayment, membershipInferenceLabel } from "../../../shared/payment-intelligence.mjs";
 
 const clean = (value) => (value == null ? "" : String(value).trim());
-const numberOrNull = (value) => {
+const numeric = (value) => {
   if (value == null || clean(value) === "") return null;
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : null;
+  const n = Number(String(value).replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
 };
-export const normalizeAmountThb = (value, maxAmount = DEFAULT_MAX_AMOUNT_THB) => {
-  if (typeof value !== "number" && typeof value !== "string") return null;
-  if (typeof value === "string" && !/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(clean(value))) return null;
-  const numeric = numberOrNull(value);
-  const configuredMax = numberOrNull(maxAmount);
-  const limit = configuredMax != null && configuredMax > 0 ? configuredMax : DEFAULT_MAX_AMOUNT_THB;
-  if (numeric == null || numeric <= 0 || numeric > limit) return null;
-  const normalized = Math.round((numeric + Number.EPSILON) * 100) / 100;
-  return normalized > 0 && normalized <= limit ? normalized : null;
+const near = (a, b, tolerance = 0.01) => {
+  const x = numeric(a);
+  const y = numeric(b);
+  return x != null && y != null && Math.abs(x - y) <= tolerance;
 };
+const uniq = (values) => [...new Set(values.filter(Boolean))];
+const linkedIds = (value) => Array.isArray(value) ? value.map(clean).filter(Boolean) : [];
 const formulaValue = (value) => String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-const sha256 = (value) => crypto.createHash("sha256").update(value).digest("hex");
-const hmac = (key, value, encoding) => crypto.createHmac("sha256", key).update(value).digest(encoding);
 
-export function isImageMessage(event) {
-  return event?.type === "message" && event?.message?.type === "image" && Boolean(clean(event?.message?.id));
+const NON_PAYMENT_CLASSES = new Set(["model_profile_photo", "person_photo", "chat_screenshot", "receipt_invoice", "other_image", "non_payment_image"]);
+const PAYMENT_CLASSES = new Set(["bank_transfer_slip", "payment_slip", "bank_receipt"]);
+
+function normalizeImageClass(value) {
+  return clean(value).toLowerCase().replace(/[\s-]+/g, "_");
 }
 
-export function looksLikePaymentSlipContext(event, recentContext = []) {
-  if (!isImageMessage(event)) return false;
-  const direct = [event?.message?.fileName, event?.context?.text].map(clean).filter(Boolean);
-  if (direct.some((value) => SLIP_CONTEXT_RE.test(value))) return true;
-  if (direct.some((value) => NON_PAYMENT_IMAGE_CONTEXT_RE.test(value))) return false;
-
-  const recent = (Array.isArray(recentContext) ? recentContext : [recentContext]).map(clean).filter(Boolean);
-  // Recent context is newest-first. The latest clear image/payment intent wins,
-  // so an older payment chat cannot swallow a later model/profile image.
-  for (const value of recent) {
-    if (SLIP_CONTEXT_RE.test(value)) return true;
-    if (NON_PAYMENT_IMAGE_CONTEXT_RE.test(value)) return false;
-  }
-  return false;
-}
-
-export function buildProofIdentity(event) {
-  const messageId = clean(event?.message?.id);
-  if (!messageId) throw new Error("line_message_id_missing");
-  const lineUserId = clean(event?.source?.userId || event?.source?.groupId || event?.source?.roomId);
-  return {
-    proofId: `line_${sha256(messageId).slice(0, 24)}`,
-    messageId,
-    webhookEventId: clean(event?.webhookEventId),
-    lineUserId,
-    lineUserIdHash: sha256(lineUserId || "unknown_line_user"),
-  };
-}
-
-export async function downloadLineImage({ accessToken, messageId, maxBytes = MAX_IMAGE_BYTES, fetchImpl = fetch }) {
-  if (!clean(accessToken)) throw new Error("line_access_token_missing");
-  const response = await fetchImpl(`https://api-data.line.me/v2/bot/message/${encodeURIComponent(messageId)}/content`, {
-    method: "GET",
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!response.ok) throw new Error(`line_image_download_failed_${response.status}`);
-  const mimeType = clean(response.headers.get("content-type")).split(";")[0].toLowerCase();
-  if (!IMAGE_TYPES.has(mimeType)) throw new Error("line_image_mime_unsupported");
-  const limit = Math.min(Math.max(Number(maxBytes) || MAX_IMAGE_BYTES, 1), 20 * 1024 * 1024);
-  const declared = numberOrNull(response.headers.get("content-length"));
-  if (declared != null && declared > limit) throw new Error("line_image_too_large");
-  const body = Buffer.from(await response.arrayBuffer());
-  if (!body.length) throw new Error("line_image_empty");
-  if (body.length > limit) throw new Error("line_image_too_large");
-  return { body, mimeType, byteSize: body.length, extension: IMAGE_TYPES.get(mimeType), sha256: sha256(body) };
-}
-
-export function buildPrivateR2Key(now, proofId, extension) {
-  const date = now instanceof Date ? now : new Date(now);
-  return `line-ofc/payment-proofs/${date.getUTCFullYear()}/${String(date.getUTCMonth() + 1).padStart(2, "0")}/${proofId}/original.${extension}`;
-}
-
-export async function putPrivateR2Object({ env, key, image, fetchImpl = fetch, now = new Date() }) {
-  const accountId = clean(env.CLOUDFLARE_ACCOUNT_ID);
-  const accessKeyId = clean(env.LINE_SLIP_R2_ACCESS_KEY_ID);
-  const secretAccessKey = clean(env.LINE_SLIP_R2_SECRET_ACCESS_KEY);
-  const bucket = clean(env.LINE_SLIP_R2_BUCKET);
-  if (!accountId || !accessKeyId || !secretAccessKey || !bucket) throw new Error("line_slip_r2_config_missing");
-  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
-  const dateStamp = amzDate.slice(0, 8);
-  const host = `${accountId}.r2.cloudflarestorage.com`;
-  const uri = `/${encodeURIComponent(bucket)}/${key.split("/").map(encodeURIComponent).join("/")}`;
-  const signed = {
-    "content-type": image.mimeType,
-    host,
-    "x-amz-content-sha256": image.sha256,
-    "x-amz-date": amzDate,
-    "x-amz-meta-evidence-sha256": image.sha256,
-  };
-  const names = Object.keys(signed).sort();
-  const canonicalHeaders = names.map((name) => `${name}:${signed[name]}\n`).join("");
-  const canonicalRequest = ["PUT", uri, "", canonicalHeaders, names.join(";"), image.sha256].join("\n");
-  const scope = `${dateStamp}/auto/s3/aws4_request`;
-  const stringToSign = ["AWS4-HMAC-SHA256", amzDate, scope, sha256(canonicalRequest)].join("\n");
-  const signingKey = hmac(hmac(hmac(hmac(`AWS4${secretAccessKey}`, dateStamp), "auto"), "s3"), "aws4_request");
-  const signature = hmac(signingKey, stringToSign, "hex");
-  const authorization = `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${scope}, SignedHeaders=${names.join(";")}, Signature=${signature}`;
-  const response = await fetchImpl(`https://${host}${uri}`, { method: "PUT", headers: { ...signed, Authorization: authorization }, body: image.body });
-  if (!response.ok) throw new Error(`line_slip_r2_put_failed_${response.status}`);
-  return { key, sha256: image.sha256, mimeType: image.mimeType, byteSize: image.byteSize };
-}
-
-function normalizeExtraction(payload, method, maxAmount) {
-  const data = payload?.result && typeof payload.result === "object" ? payload.result : payload || {};
-  const rawAmount = data.amount_thb ?? data.amount;
-  const amountThb = normalizeAmountThb(rawAmount, maxAmount);
-  const paymentRef = clean(data.payment_ref || data.provider_txn_id || data.transaction_ref);
-  const paidAt = clean(data.paid_at || data.transfer_at);
-  const payerName = clean(data.payer_name || data.sender_name);
-  const confidence = Math.max(0, Math.min(1, numberOrNull(data.confidence_score ?? data.confidence) || 0));
-  return {
-    payment_ref: paymentRef,
-    amount_thb: amountThb,
-    paid_at: paidAt,
-    payer_name: payerName,
-    sender_bank: clean(data.sender_bank),
-    receiver_bank: clean(data.receiver_bank),
-    provider: clean(data.provider || data.bank),
-    session_id: clean(data.session_id || data.payment_intent_session_id),
-    campaign_claim_id: clean(data.campaign_claim_id),
-    extraction_method: method,
-    confidence_score: amountThb == null && !paymentRef && !paidAt && !payerName ? 0 : confidence,
-  };
-}
-
-const extractionUseful = (result) => Boolean(result && (result.payment_ref || result.amount_thb != null || result.paid_at || result.payer_name));
-
-async function callExtractor({ url, token, image, method, maxAmount, fetchImpl }) {
-  if (!clean(url)) return { available: false, error: `${method}_adapter_unavailable`, result: null };
+async function callVisualClassifier({ env, image, fetchImpl }) {
+  const url = clean(env.LINE_SLIP_IMAGE_CLASSIFIER_URL);
+  if (!url) return null;
   try {
+    const token = clean(env.LINE_SLIP_IMAGE_CLASSIFIER_TOKEN || env.LINE_SLIP_EXTRACTOR_TOKEN);
     const response = await fetchImpl(url, {
       method: "POST",
-      headers: { "content-type": image.mimeType, ...(token ? { Authorization: `Bearer ${token}` } : {}), "x-mmd-extraction-method": method },
+      headers: {
+        "content-type": image.mimeType,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "x-mmd-classifier-purpose": "payment-evidence-gate",
+      },
       body: image.body,
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) return { available: true, error: `${method}_adapter_failed_${response.status}`, result: null };
-    return { available: true, error: "", result: normalizeExtraction(payload, method, maxAmount) };
+    if (!response.ok) return null;
+    const source = payload?.result && typeof payload.result === "object" ? payload.result : payload;
+    const imageClass = normalizeImageClass(source.image_class || source.class || source.label || source.category);
+    const confidence = Math.max(0, Math.min(1, numeric(source.confidence_score ?? source.confidence) || 0));
+    if (!imageClass) return null;
+    return { image_class: imageClass, confidence, source: "visual_classifier" };
   } catch {
-    return { available: true, error: `${method}_adapter_failed`, result: null };
+    return null;
   }
 }
 
-export async function extractPaymentSlip({ env, image, fetchImpl = fetch }) {
-  const token = clean(env.LINE_SLIP_EXTRACTOR_TOKEN);
-  const maxAmount = env.LINE_SLIP_MAX_AMOUNT_THB;
-  const qr = await callExtractor({ url: env.LINE_SLIP_QR_EXTRACTOR_URL, token, image, method: "qr", maxAmount, fetchImpl });
-  // A payment-request QR can contain an amount and recipient proxy without
-  // proving that a transfer occurred. Only accept QR-first when it has a
-  // transaction reference; otherwise continue to OCR the slip evidence.
-  if (clean(qr.result?.payment_ref)) return { ...qr.result, extraction_error: "" };
-  const ocr = await callExtractor({ url: env.LINE_SLIP_OCR_EXTRACTOR_URL, token, image, method: "ocr", maxAmount, fetchImpl });
-  if (extractionUseful(ocr.result)) return { ...ocr.result, extraction_error: qr.error || "" };
-  return {
-    payment_ref: "", amount_thb: null, paid_at: "", payer_name: "", sender_bank: "", receiver_bank: "", provider: "",
-    session_id: "", campaign_claim_id: "", extraction_method: ocr.available ? "ocr" : qr.available ? "qr" : "none",
-    confidence_score: 0, extraction_error: [qr.error, ocr.error].filter(Boolean).join(","),
-  };
+export async function classifyPaymentImageEvidence({ env = {}, image, extraction = {}, fetchImpl = fetch }) {
+  const external = image ? await callVisualClassifier({ env, image, fetchImpl }) : null;
+  const hasRef = Boolean(clean(extraction.payment_ref));
+  const hasAmount = numeric(extraction.amount_thb) != null;
+  const hasTransferTime = Boolean(clean(extraction.paid_at));
+  const hasBankSignal = Boolean(clean(extraction.sender_bank || extraction.receiver_bank || extraction.provider));
+  const hasPayer = Boolean(clean(extraction.payer_name));
+  const strongTransaction = hasRef && hasAmount;
+  const strongSlipShape = hasAmount && hasTransferTime && (hasBankSignal || hasPayer);
+
+  if (external && external.confidence >= 0.8) {
+    if (NON_PAYMENT_CLASSES.has(external.image_class)) {
+      return { ...external, is_payment_evidence: false, gate: "reject", reason: "visual_non_payment" };
+    }
+    if (external.image_class === "payment_qr_request") {
+      return { ...external, is_payment_evidence: false, gate: "reject", reason: "payment_request_not_transfer" };
+    }
+    if (PAYMENT_CLASSES.has(external.image_class)) {
+      if (strongTransaction || strongSlipShape) return { ...external, is_payment_evidence: true, gate: "accept", reason: "visual_and_transaction_evidence" };
+      return { ...external, is_payment_evidence: false, gate: "hold", reason: "visual_slip_without_transaction_evidence" };
+    }
+  }
+
+  if (strongTransaction) {
+    return { image_class: "bank_transfer_slip", confidence: Math.max(0.96, numeric(extraction.confidence_score) || 0), source: "transaction_extraction", is_payment_evidence: true, gate: "accept", reason: "payment_ref_and_amount" };
+  }
+  if (hasRef && (hasTransferTime || hasBankSignal || hasPayer)) {
+    return { image_class: "bank_transfer_slip", confidence: 0.93, source: "transaction_extraction", is_payment_evidence: true, gate: "accept", reason: "payment_ref_plus_transfer_signal" };
+  }
+  if (strongSlipShape) {
+    return { image_class: "bank_transfer_slip", confidence: 0.88, source: "transaction_extraction", is_payment_evidence: true, gate: "accept", reason: "amount_time_bank_signal" };
+  }
+  if (clean(extraction.extraction_method) === "qr" && !hasRef) {
+    return { image_class: "payment_qr_request", confidence: 0.9, source: "transaction_extraction", is_payment_evidence: false, gate: "reject", reason: "qr_without_transaction_ref" };
+  }
+  return { image_class: external?.image_class || "uncertain", confidence: external?.confidence || 0, source: external?.source || "transaction_extraction", is_payment_evidence: false, gate: "hold", reason: "insufficient_transaction_evidence" };
 }
 
-async function airtable({ env, table, query = {}, init = {}, fetchImpl = fetch }) {
+async function airtableRequest({ env, table, recordId = "", query = {}, init = {}, fetchImpl = fetch }) {
   const baseId = clean(env.AIRTABLE_BASE_ID);
   const token = clean(env.AIRTABLE_API_KEY || env.AIRTABLE_TOKEN);
-  if (!baseId || !token) throw new Error("airtable_config_missing");
-  const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
-  for (const [key, value] of Object.entries(query)) url.searchParams.set(key, String(value));
-  const response = await fetchImpl(url, { ...init, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(init.headers || {}) } });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`airtable_${response.status}`);
-  return payload;
+  if (!baseId || !token || !table) return null;
+  const suffix = recordId ? `/${encodeURIComponent(recordId)}` : "";
+  const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}${suffix}`);
+  for (const [key, value] of Object.entries(query || {})) if (value != null && value !== "") url.searchParams.set(key, String(value));
+  const response = await fetchImpl(url, {
+    ...init,
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(init.headers || {}) },
+  });
+  if (!response.ok) return null;
+  return response.json().catch(() => null);
 }
 
-async function records({ env, table, formula, maxRecords = 2, sort, fetchImpl }) {
-  const query = { maxRecords, filterByFormula: formula };
-  if (sort) {
-    query["sort[0][field]"] = sort.field;
-    query["sort[0][direction]"] = sort.direction;
+async function queryRecords({ env, table, formula, maxRecords = 20, fetchImpl = fetch }) {
+  const payload = await airtableRequest({ env, table, query: { maxRecords, ...(formula ? { filterByFormula: formula } : {}) }, fetchImpl });
+  return Array.isArray(payload?.records) ? payload.records : [];
+}
+
+async function getRecord({ env, table, id, fetchImpl = fetch }) {
+  if (!id) return null;
+  return airtableRequest({ env, table, recordId: id, fetchImpl });
+}
+
+async function uniqueByFormula({ env, table, formula, fetchImpl = fetch }) {
+  const found = await queryRecords({ env, table, formula, maxRecords: 2, fetchImpl });
+  return { record: found.length === 1 ? found[0] : null, ambiguous: found.length > 1 };
+}
+
+function clientLabel(record) {
+  const f = record?.fields || {};
+  return clean(f.client_name || f.display_name || f["Client Name"] || f.Name || f.name || f.Nickname || f.nickname);
+}
+
+function sessionAmounts(record) {
+  const f = record?.fields || {};
+  const total = numeric(f["Total Amount"] ?? f.final_price_thb ?? f.amount_thb ?? f.total_amount_thb);
+  const balance = numeric(f.balance_due_calc ?? f.customer_amount_due_thb ?? f["Remain to Pay"] ?? f.balance_due);
+  const received = numeric(f.paid_received_sum ?? f.paid_total ?? f["Paid Total"]) || 0;
+  return { total, balance, received };
+}
+
+function scoreSession(record, amountThb, explicitTip = false) {
+  const amount = numeric(amountThb);
+  if (amount == null || !record) return null;
+  const f = record.fields || {};
+  const { total, balance, received } = sessionAmounts(record);
+  const sessionId = clean(f.session_id);
+  const jobId = clean(f.job_id);
+  const state = clean(f.session_state || f["Session Status"] || f.status).toLowerCase();
+  const activeBoost = /(pending|confirm|book|active|upcoming|scheduled|ready|deposit|await)/i.test(state) ? 0.015 : 0;
+
+  if (explicitTip && sessionId) {
+    return { stage: "tips", label: "Tip / ทิป", confidence: 0.92 + activeBoost, basis: "explicit_tip_context", session_id: sessionId, job_id: jobId };
   }
-  const data = await airtable({ env, table, query, fetchImpl });
-  return Array.isArray(data.records) ? data.records : [];
-}
-
-export async function loadRecentPaymentContext({ env, lineUserId, fetchImpl = fetch, now = new Date() }) {
-  if (!clean(lineUserId)) return [];
-  try {
-    const cutoff = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
-    const cutoffMs = Date.parse(cutoff);
-    const formula = `AND({line_user_id}='${formulaValue(lineUserId)}',IS_AFTER(CREATED_TIME(),DATETIME_PARSE('${cutoff}')))`;
-    const found = await records({ env, table: env.AIRTABLE_SYNC_TABLE || "MMD — Console Inbox", formula, maxRecords: 20, fetchImpl });
-    return found
-      .map((record) => {
-        let payload = {};
-        try { payload = JSON.parse(record?.fields?.payload_json || "{}"); } catch {}
-        const receivedAt = clean(payload.received_at || record?.fields?.received_at || record?.createdTime);
-        const timestamp = Date.parse(receivedAt);
-        return {
-          timestamp,
-          values: [clean(payload.raw_text), clean(record?.fields?.admin_note)].filter(Boolean),
-        };
-      })
-      .filter((item) => Number.isFinite(item.timestamp) && item.timestamp >= cutoffMs && item.timestamp <= now.getTime() + 60 * 1000)
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .flatMap((item) => item.values);
-  } catch {
-    return [];
+  if (balance != null && balance > 0 && near(amount, balance)) {
+    return { stage: "final", label: "ค่าจบงาน / ยอดคงเหลือ", confidence: Math.min(0.995, 0.98 + activeBoost), basis: "amount_matches_balance_due", session_id: sessionId, job_id: jobId };
   }
-}
-
-export async function findExistingProof({ env, identity, fetchImpl = fetch }) {
-  const eventClause = identity.webhookEventId
-    ? `FIND('\\"webhook_event_id\\":\\"${formulaValue(identity.webhookEventId)}\\"',{note})>0`
-    : "FALSE()";
-  const formula = `OR({proof_id}='${formulaValue(identity.proofId)}',${eventClause})`;
-  const found = await records({ env, table: env.AIRTABLE_TABLE_PAYMENT_PROOFS || "MMD — Payment Proofs", formula, maxRecords: 1, fetchImpl });
-  return found[0] || null;
-}
-
-async function findDuplicate({ env, formula, fetchImpl }) {
-  const found = await records({ env, table: env.AIRTABLE_TABLE_PAYMENT_PROOFS || "MMD — Payment Proofs", formula, maxRecords: 1, fetchImpl });
-  return found[0] || null;
-}
-
-async function uniqueRecord({ env, table, formula, fetchImpl }) {
-  const found = await records({ env, table, formula, maxRecords: 2, fetchImpl });
-  return { id: found.length === 1 ? found[0].id : "", ambiguous: found.length > 1 };
-}
-
-export async function resolveDeterministicLinks({ env, identity, extraction, fetchImpl = fetch }) {
-  const queries = [];
-  if (identity.lineUserId) {
-    queries.push(["member", env.AIRTABLE_TABLE_MEMBERS || "Members", `{line_id}='${formulaValue(identity.lineUserId)}'`]);
+  if (total != null && total > 0 && near(amount, total) && received <= 0.01) {
+    return { stage: "full", label: "จ่ายเต็ม", confidence: Math.min(0.985, 0.955 + activeBoost), basis: "amount_matches_session_total", session_id: sessionId, job_id: jobId };
   }
-  if (extraction.session_id) {
-    const amountClause = extraction.amount_thb == null ? "" : `,{amount_thb}=${extraction.amount_thb}`;
-    queries.push(["session", env.AIRTABLE_TABLE_SESSIONS || "Sessions", `AND({session_id}='${formulaValue(extraction.session_id)}'${amountClause})`]);
-    queries.push(["renewal", env.AIRTABLE_TABLE_LIFF_RENEWAL_SESSIONS || "MMD — LIFF Renewal Sessions", `{session_id}='${formulaValue(extraction.session_id)}'`]);
+  if (total != null && total > 0 && received <= 0.01) {
+    const ratio = amount / total;
+    const commonDeposit = [0.2, 0.25, 0.3, 0.5].some((target) => Math.abs(ratio - target) <= 0.015);
+    if (commonDeposit) {
+      return { stage: "deposit", label: "ค่าจอง / มัดจำ", confidence: Math.min(0.94, 0.89 + activeBoost), basis: `deposit_ratio_${Math.round(ratio * 100)}`, session_id: sessionId, job_id: jobId };
+    }
   }
-  if (extraction.payment_ref) {
-    const amountClause = extraction.amount_thb == null ? "" : `,{Amount}=${extraction.amount_thb}`;
-    queries.push(["payment", env.AIRTABLE_TABLE_PAYMENTS || "Payments", `AND({Payment Reference}='${formulaValue(extraction.payment_ref)}'${amountClause})`]);
-  }
-  const resolved = Object.fromEntries(await Promise.all(queries.map(async ([name, table, formula]) => [name, await uniqueRecord({ env, table, formula, fetchImpl })])));
-  const ambiguous = Object.values(resolved).some((item) => item.ambiguous);
-  return { member: ambiguous ? "" : resolved.member?.id || "", session: ambiguous ? "" : resolved.session?.id || "", payment: ambiguous ? "" : resolved.payment?.id || "", renewal: ambiguous ? "" : resolved.renewal?.id || "", ambiguous };
+  return null;
 }
 
-export function buildStagedHandoff({ proofId, extraction, reviewRequired }) {
+export function inferServicePaymentPurpose({ amount_thb, sessions = [], context = [] } = {}) {
+  const text = (Array.isArray(context) ? context : [context]).join(" ");
+  const explicitTip = /(\btip\b|\btips\b|ทิป|ค่าทิป)/i.test(text);
+  const ranked = sessions.map((record) => ({ record, score: scoreSession(record, amount_thb, explicitTip) })).filter((item) => item.score).sort((a, b) => b.score.confidence - a.score.confidence);
+  if (!ranked.length) return null;
+  const top = ranked[0];
+  const second = ranked[1];
+  if (second && second.score.confidence >= top.score.confidence - 0.02 && second.record.id !== top.record.id) {
+    return {
+      schema: "mmd_payment_intelligence_v2",
+      inferred_stage: "unknown",
+      inferred_label: "ต้องตรวจประเภทเงิน",
+      confidence: Math.min(top.score.confidence, 0.6),
+      ambiguous: true,
+      match_basis: "multiple_session_candidates",
+      session_record_id: null,
+      official_verification_required: true,
+    };
+  }
   return {
-    action: "stage_payment_evidence",
-    proof_id: proofId,
-    payment_ref: extraction.payment_ref || null,
-    session_id: extraction.session_id || null,
-    amount_thb: extraction.amount_thb,
-    state: "pending",
-    review_required: Boolean(reviewRequired),
+    schema: "mmd_payment_intelligence_v2",
+    inferred_stage: top.score.stage,
+    inferred_label: top.score.label,
+    confidence: top.score.confidence,
+    ambiguous: false,
+    match_basis: top.score.basis,
+    session_record_id: top.record.id,
+    session_id: top.score.session_id || null,
+    job_id: top.score.job_id || null,
     official_verification_required: true,
     may_mark_paid: false,
-    may_award_points: false,
-    may_extend_membership: false,
-    may_confirm_session: false,
   };
 }
 
-function proofFields({ identity, stored, extraction, duplicateSha, duplicateRef, links, reviewRequired }) {
-  const paymentIntelligence = inferMembershipPayment({
+function choosePaymentIntelligence({ membership, service }) {
+  if (service?.ambiguous) {
+    if (membership && membership.confidence >= 0.94) return { ...membership, inferred_label: membershipInferenceLabel(membership), selection_basis: "membership_stronger_than_ambiguous_service" };
+    return service;
+  }
+  if (service && membership) {
+    if (service.confidence >= 0.95) return service;
+    if (membership.confidence >= service.confidence + 0.04) return { ...membership, inferred_label: membershipInferenceLabel(membership), selection_basis: "membership_confidence" };
+    return {
+      schema: "mmd_payment_intelligence_v2",
+      inferred_stage: "unknown",
+      inferred_label: "ต้องตรวจประเภทเงิน",
+      confidence: Math.max(service.confidence, membership.confidence) - 0.2,
+      ambiguous: true,
+      match_basis: "membership_service_collision",
+      candidates: [membershipInferenceLabel(membership), service.inferred_label],
+      official_verification_required: true,
+    };
+  }
+  if (service) return service;
+  if (membership) return { ...membership, inferred_label: membershipInferenceLabel(membership), selection_basis: "membership_amount_and_identity" };
+  return {
+    schema: "mmd_payment_intelligence_v2",
+    inferred_stage: "unknown",
+    inferred_label: "ยังระบุประเภทเงินไม่ได้",
+    confidence: 0,
+    ambiguous: false,
+    match_basis: "no_supported_payment_purpose",
+    official_verification_required: true,
+  };
+}
+
+function recommendedReason({ intelligence, member, client, extraction }) {
+  const parts = [];
+  if (intelligence?.inferred_label) parts.push(intelligence.inferred_label);
+  if (client) parts.push(`ลูกค้า ${clientLabel(client) || "matched"}`);
+  else if (member) parts.push("สมาชิกตรงกับ LINE");
+  if (numeric(extraction?.amount_thb) != null) parts.push(`${Number(extraction.amount_thb).toLocaleString("th-TH")} บาท`);
+  if (clean(extraction?.payment_ref)) parts.push("มีเลขอ้างอิง");
+  return parts.length ? `ระบบตรวจแล้ว · ${parts.join(" · ")}` : "ระบบยังจับคู่ข้อมูลการชำระเงินไม่ครบ";
+}
+
+async function enrichCreatedProof({ env, identity, extraction, classification, result, fetchImpl = fetch, now = new Date() }) {
+  if (!result?.proofId) return result;
+  const proofTable = env.AIRTABLE_TABLE_PAYMENT_PROOFS || "MMD — Payment Proofs";
+  const memberTable = env.AIRTABLE_TABLE_MEMBERS || "Members";
+  const clientTable = env.AIRTABLE_TABLE_CLIENTS || "Clients";
+  const sessionTable = env.AIRTABLE_TABLE_SESSIONS || "Sessions";
+  const renewalTable = env.AIRTABLE_TABLE_LIFF_RENEWAL_SESSIONS || "MMD — LIFF Renewal Sessions";
+
+  const proofLookup = await uniqueByFormula({ env, table: proofTable, formula: `{proof_id}='${formulaValue(result.proofId)}'`, fetchImpl });
+  const proof = proofLookup.record;
+  if (!proof?.id) return result;
+
+  let note = {};
+  try { note = JSON.parse(clean(proof.fields?.note) || "{}"); } catch { note = {}; }
+  const existingLinks = note?.links && typeof note.links === "object" ? note.links : {};
+
+  let memberLookup = { record: null, ambiguous: false };
+  let clientLookup = { record: null, ambiguous: false };
+  if (identity.lineUserId) {
+    [memberLookup, clientLookup] = await Promise.all([
+      uniqueByFormula({ env, table: memberTable, formula: `{line_id}='${formulaValue(identity.lineUserId)}'`, fetchImpl }),
+      uniqueByFormula({ env, table: clientTable, formula: `{line_user_id}='${formulaValue(identity.lineUserId)}'`, fetchImpl }),
+    ]);
+  }
+
+  let member = memberLookup.record;
+  const client = clientLookup.record;
+  if (!member && client) {
+    const cf = client.fields || {};
+    const directMemberId = uniq([
+      ...linkedIds(cf.Member), ...linkedIds(cf.Members), ...linkedIds(cf["MMD Members"]), ...linkedIds(cf.member),
+    ])[0];
+    if (directMemberId) member = await getRecord({ env, table: memberTable, id: directMemberId, fetchImpl });
+    if (!member && clean(cf["MMD Member ID"])) {
+      const byMemberId = await uniqueByFormula({ env, table: memberTable, formula: `{member_id}='${formulaValue(cf["MMD Member ID"])}'`, fetchImpl });
+      member = byMemberId.record;
+    }
+  }
+
+  let renewalLookup = { record: null, ambiguous: false };
+  if (identity.lineUserId) {
+    const amountClause = numeric(extraction.amount_thb) == null ? "" : `,{renewal_amount_thb}=${Number(extraction.amount_thb)}`;
+    renewalLookup = await uniqueByFormula({ env, table: renewalTable, formula: `AND({line_user_id}='${formulaValue(identity.lineUserId)}'${amountClause})`, fetchImpl });
+  }
+  const renewal = renewalLookup.record;
+
+  const candidateById = new Map();
+  const existingSessionId = clean(existingLinks.session || linkedIds(proof.fields?.session)[0]);
+  if (existingSessionId) {
+    const record = await getRecord({ env, table: sessionTable, id: existingSessionId, fetchImpl });
+    if (record?.id) candidateById.set(record.id, record);
+  }
+  if (identity.lineUserId) {
+    const directSessions = await queryRecords({ env, table: sessionTable, formula: `{line_user_id}='${formulaValue(identity.lineUserId)}'`, maxRecords: 20, fetchImpl });
+    for (const record of directSessions) candidateById.set(record.id, record);
+  }
+  if (client) {
+    const cf = client.fields || {};
+    const sessionIds = uniq([...linkedIds(cf.Sessions), ...linkedIds(cf.Sessions_v2), ...linkedIds(cf["Sessions V2"])]).slice(0, 20);
+    for (const id of sessionIds) {
+      if (candidateById.has(id)) continue;
+      const record = await getRecord({ env, table: sessionTable, id, fetchImpl });
+      if (record?.id) candidateById.set(record.id, record);
+    }
+  }
+
+  const context = identity.lineUserId ? await core.loadRecentPaymentContext({ env, lineUserId: identity.lineUserId, fetchImpl, now }).catch(() => []) : [];
+  const service = inferServicePaymentPurpose({ amount_thb: extraction.amount_thb, sessions: [...candidateById.values()], context });
+  const membership = inferMembershipPayment({
     amount_thb: extraction.amount_thb,
-    linked_member: Boolean(links.member),
-    linked_renewal: Boolean(links.renewal),
-    source_context: "line_ofc_payment_proof",
+    linked_member: Boolean(member?.id),
+    linked_renewal: Boolean(renewal?.id || existingLinks.renewal),
+    source_context: "line_ofc_payment_proof_v2",
   });
-  const note = JSON.stringify({
-    schema: "line_ofc_payment_proof_v1", line_user_id_hash: identity.lineUserIdHash, line_message_id: identity.messageId,
-    webhook_event_id: identity.webhookEventId, r2_key: stored.key, evidence_sha256: stored.sha256, mime_type: stored.mimeType,
-    byte_size: stored.byteSize, extraction_method: extraction.extraction_method, extraction_confidence: extraction.confidence_score,
-    provider: extraction.provider || null, sender_bank: extraction.sender_bank || null, receiver_bank: extraction.receiver_bank || null,
-    duplicate_status: duplicateRef ? "duplicate_payment_ref" : duplicateSha ? "duplicate_sha" : "not_detected",
-    extraction_error: extraction.extraction_error || null, raw_payload_json_redacted: { message_id: identity.messageId, webhook_event_id: identity.webhookEventId },
-    links,
-    payment_intelligence: paymentIntelligence,
-    pending_identity: paymentIntelligence?.pending_member_profile ? {
-      state: "pending_identity_match", line_user_id: identity.lineUserId || null, line_user_id_hash: identity.lineUserIdHash,
-      payer_name: extraction.payer_name || null, payment_ref: extraction.payment_ref || null, amount_thb: extraction.amount_thb,
-      created_from: "verified_line_payment_evidence", merge_target: "canonical_client_and_member",
-    } : null,
-    payments_worker_handoff: buildStagedHandoff({ proofId: identity.proofId, extraction, reviewRequired }),
-  });
-  // INTERNAL ONLY: note contains private R2 and payment-evidence metadata.
-  // Never return this field from customer-facing or frontend APIs.
-  const fields = { proof_id: identity.proofId, channel: "line_ofc", note, status: "pending" };
-  if (extraction.payer_name) fields.payer_name = extraction.payer_name;
-  if (extraction.amount_thb != null) fields.amount_thb = extraction.amount_thb;
-  if (extraction.paid_at && !Number.isNaN(Date.parse(extraction.paid_at))) {
-    const localDate = clean(extraction.paid_at).match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
-    fields.paid_at = localDate || new Date(extraction.paid_at).toISOString().slice(0, 10);
-  }
-  if (extraction.payment_ref) fields.payment_ref = extraction.payment_ref;
-  if (links.member) fields.member = [links.member];
-  if (links.session) fields.session = [links.session];
-  if (links.payment) fields.payment = [links.payment];
-  if (links.renewal) fields["MMD — LIFF Renewal Sessions"] = [links.renewal];
-  if (extraction.campaign_claim_id) fields.campaign_claim_id = extraction.campaign_claim_id;
-  return fields;
-}
+  const intelligence = choosePaymentIntelligence({ membership, service });
 
-async function createProof({ env, fields, fetchImpl }) {
-  return airtable({ env, table: env.AIRTABLE_TABLE_PAYMENT_PROOFS || "MMD — Payment Proofs", init: { method: "POST", body: JSON.stringify({ fields }) }, fetchImpl });
-}
+  const selectedSessionId = intelligence.inferred_stage !== "membership" && !intelligence.ambiguous ? clean(intelligence.session_record_id) : "";
+  const mergedLinks = {
+    ...existingLinks,
+    member: clean(existingLinks.member || member?.id),
+    session: clean(existingLinks.session || selectedSessionId),
+    renewal: clean(existingLinks.renewal || renewal?.id),
+  };
 
-export async function notifyOps({ env, kind, proofId, extraction = {}, status = "pending", fetchImpl = fetch }) {
-  const chatId = clean(env.TELEGRAM_OPS_CHAT_ID || env.TELEGRAM_CHAT_ID);
-  if (!chatId) return { ok: false, skipped: true, reason: "telegram_chat_missing" };
+  const missing = [];
+  if (!member?.id && !client?.id) missing.push("canonical_customer");
+  if (!clean(extraction.payment_ref)) missing.push("payment_ref");
+  if (numeric(extraction.amount_thb) == null) missing.push("amount");
+  if (intelligence.inferred_stage === "unknown") missing.push("payment_purpose");
+  if (["deposit", "final", "full", "tips"].includes(intelligence.inferred_stage) && !mergedLinks.session) missing.push("session");
 
-  const title = kind === "duplicate" ? "⚠️ LINE SLIP DUPLICATE" : kind === "extraction_failed" ? "⚠️ LINE SLIP REVIEW REQUIRED" : "🧾 LINE SLIP RECEIVED";
-  const maskedRef = extraction.payment_ref ? `${extraction.payment_ref.slice(0, 4)}…${extraction.payment_ref.slice(-4)}` : "";
-  const message = [title, `Proof: ${proofId}`, extraction.amount_thb != null ? `Amount: ${extraction.amount_thb} THB` : "", maskedRef ? `Ref: ${maskedRef}` : "", `Status: ${status}`].filter(Boolean).join("\n");
-  const threadId = Number(env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || 21) || 21;
+  const reviewSummary = {
+    image_class: classification.image_class,
+    customer_match: member?.id ? "member" : client?.id ? "client" : "unmatched",
+    client_name: clientLabel(client) || null,
+    payment_stage: intelligence.inferred_stage,
+    payment_label: intelligence.inferred_label,
+    confidence: intelligence.confidence,
+    missing,
+    recommended_admin_reason: recommendedReason({ intelligence, member, client, extraction }),
+  };
 
-  const gatewayUrl = clean(env.TELEGRAM_INTERNAL_SEND_URL);
-  const gatewayToken = clean(env.AUTH_SERVICE_LINE_TO_TELEGRAM || env.TELEGRAM_INTERNAL_TOKEN);
-  if (gatewayUrl && gatewayToken) {
-    try {
-      const gatewayResponse = await fetchImpl(gatewayUrl, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${gatewayToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          flow: "payment_proof",
-          chat_id: chatId,
-          message_thread_id: threadId,
-          text: message,
-        }),
-      });
-      const gatewayBody = await gatewayResponse.json().catch(() => ({}));
-      if (gatewayResponse.ok && gatewayBody?.telegram?.ok === true) {
-        return { ok: true, status: gatewayResponse.status, route: "telegram_worker", message_thread_id: threadId };
-      }
-    } catch {}
-  }
+  const nextNote = {
+    ...note,
+    schema: "line_ofc_payment_proof_v2",
+    image_classification: classification,
+    client_match: {
+      status: clientLookup.ambiguous || memberLookup.ambiguous ? "ambiguous" : member?.id || client?.id ? "matched" : "unmatched",
+      client_record_id: client?.id || null,
+      member_record_id: member?.id || null,
+      source: member?.id ? "members.line_id" : client?.id ? "clients.line_user_id" : null,
+    },
+    links: mergedLinks,
+    payment_intelligence: intelligence,
+    review_summary: reviewSummary,
+  };
 
-  // Transitional fallback while the LINE/Netlify service credential is rolled out.
-  // It still targets the canonical HYPE payment topic and never mutates payment truth.
-  const token = clean(env.TELEGRAM_BOT_TOKEN);
-  if (!token) return { ok: false, skipped: true, reason: "telegram_gateway_and_bot_missing", message_thread_id: threadId };
-  const response = await fetchImpl(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, message_thread_id: threadId, text: message }),
-  });
-  return { ok: response.ok, status: response.status, route: "direct_hype_thread_fallback", message_thread_id: threadId };
+  const fields = { note: JSON.stringify(nextNote) };
+  if (member?.id) fields.member = [member.id];
+  if (mergedLinks.session) fields.session = [mergedLinks.session];
+  if (mergedLinks.renewal) fields["MMD — LIFF Renewal Sessions"] = [mergedLinks.renewal];
+
+  await airtableRequest({ env, table: proofTable, recordId: proof.id, init: { method: "PATCH", body: JSON.stringify({ fields }) }, fetchImpl });
+  return {
+    ...result,
+    imageClassification: classification,
+    paymentIntelligence: intelligence,
+    matchedMember: Boolean(member?.id),
+    matchedClient: Boolean(client?.id),
+    matchedSession: Boolean(mergedLinks.session),
+  };
 }
 
 export async function processPaymentSlipImage({ env, event, fetchImpl = fetch, now = new Date() }) {
-  const identity = buildProofIdentity(event);
-  const existing = await findExistingProof({ env, identity, fetchImpl });
-  if (existing?.id) return { ok: true, deduped: true, proofId: identity.proofId, state: "pending", replyText: SAFE_SLIP_ACK };
+  const identity = core.buildProofIdentity(event);
   let image;
-  let stored;
+  let extraction;
   try {
-    image = await downloadLineImage({ accessToken: env.LINE_CHANNEL_ACCESS_TOKEN, messageId: identity.messageId, maxBytes: env.LINE_SLIP_MAX_IMAGE_BYTES, fetchImpl });
-    stored = await putPrivateR2Object({ env, key: buildPrivateR2Key(now, identity.proofId, image.extension), image, fetchImpl, now });
-  } catch (error) {
-    await notifyOps({ env, kind: "extraction_failed", proofId: identity.proofId, status: "retry_required", fetchImpl }).catch(() => null);
-    return { ok: false, deduped: false, proofId: identity.proofId, state: "retry_required", error: clean(error?.message || error), replyText: RETRY_SLIP_ACK };
+    image = await core.downloadLineImage({ accessToken: env.LINE_CHANNEL_ACCESS_TOKEN, messageId: identity.messageId, maxBytes: env.LINE_SLIP_MAX_IMAGE_BYTES, fetchImpl });
+    extraction = await core.extractPaymentSlip({ env, image, fetchImpl });
+  } catch {
+    return core.processPaymentSlipImage({ env, event, fetchImpl, now });
   }
+
+  const classification = await classifyPaymentImageEvidence({ env, image, extraction, fetchImpl });
+  if (!classification.is_payment_evidence) {
+    return {
+      ok: true,
+      deduped: false,
+      ignored: true,
+      proofId: identity.proofId,
+      state: classification.gate === "reject" ? "ignored_non_payment_image" : "held_uncertain_image",
+      reviewRequired: false,
+      imageClassification: classification,
+      extractionMethod: extraction.extraction_method,
+      replyText: "",
+    };
+  }
+
+  const result = await core.processPaymentSlipImage({ env, event, fetchImpl, now });
+  if (!result?.ok || result?.deduped || !result?.proofId) return { ...result, imageClassification: classification };
   try {
-    const extraction = await extractPaymentSlip({ env, image, fetchImpl });
-    const duplicateShaFormula = `AND(FIND('${formulaValue(stored.sha256)}',{note})>0,{proof_id}!='${formulaValue(identity.proofId)}')`;
-    const duplicateRefFormula = extraction.payment_ref ? `AND({payment_ref}='${formulaValue(extraction.payment_ref)}',{proof_id}!='${formulaValue(identity.proofId)}')` : "FALSE()";
-    const [duplicateSha, duplicateRef] = await Promise.all([
-      findDuplicate({ env, formula: duplicateShaFormula, fetchImpl }),
-      findDuplicate({ env, formula: duplicateRefFormula, fetchImpl }),
-    ]);
-    let links = { member: "", session: "", payment: "", renewal: "", ambiguous: false };
-    try { links = await resolveDeterministicLinks({ env, identity, extraction, fetchImpl }); } catch { links.ambiguous = true; }
-    const threshold = Math.max(0.5, Math.min(1, numberOrNull(env.LINE_SLIP_CONFIDENCE_THRESHOLD) || 0.85));
-    const reconciliationComplete = Boolean(extraction.payment_ref && extraction.amount_thb != null);
-    const deterministicallyLinked = Boolean(links.member || links.session || links.payment || links.renewal);
-    const reviewRequired = Boolean(duplicateSha || duplicateRef || links.ambiguous || extraction.confidence_score < threshold || !reconciliationComplete || !deterministicallyLinked);
-    const fields = proofFields({ identity, stored, extraction, duplicateSha, duplicateRef, links, reviewRequired });
-    const proof = await createProof({ env, fields, fetchImpl });
-    if (!proof?.id) throw new Error("payment_proof_create_failed");
-    const telegram = await notifyOps({ env, kind: duplicateSha || duplicateRef ? "duplicate" : extractionUseful(extraction) ? "received" : "extraction_failed", proofId: identity.proofId, extraction, status: reviewRequired ? "review_required" : "pending", fetchImpl }).catch(() => ({ ok: false }));
-    return { ok: true, deduped: false, proofId: identity.proofId, proofRecordId: proof.id, state: "pending", reviewRequired, duplicatePaymentRef: Boolean(duplicateRef), extractionMethod: extraction.extraction_method, telegram, replyText: reviewRequired ? MANUAL_SLIP_ACK : SAFE_SLIP_ACK };
-  } catch (error) {
-    await notifyOps({ env, kind: "extraction_failed", proofId: identity.proofId, status: "post_storage_failure", fetchImpl }).catch(() => null);
-    return { ok: false, deduped: false, proofId: identity.proofId, state: "retry_required", error: clean(error?.message || error), replyText: RETRY_SLIP_ACK };
+    return await enrichCreatedProof({ env, identity, extraction, classification, result, fetchImpl, now });
+  } catch {
+    return { ...result, imageClassification: classification, enrichment_state: "review_required" };
   }
 }
