@@ -1,13 +1,16 @@
+import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
+
 export const KENJI_MODEL_ACCESS_POLICY_VERSION = "KENJI_MODEL_ACCESS_V1";
 export const KENJI_MODEL_ACCESS_RPC_PATH = "/v1/internal/kenji/model-access";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
+const ENTITLEMENT_TABLE_FALLBACK = "MMD — Member Entitlements";
+const ENTITLEMENT_LINE_FIELD_FALLBACK = "line_user_id";
 const CANONICAL_PRIVATE_FOLDERS = new Set(["standard", "premium", "vip", "exclusive"]);
+const PRIVATE_CAPABILITIES = new Set(["private_standard", "private_premium", "vip", "svip", "black_card"]);
+const PROTECTED_ENVELOPES = new Set(["vip", "svip", "black_card"]);
+const RENEWAL_DUE_LIFECYCLES = new Set(["grace", "expired"]);
 const BLOCKED_MODEL_STATUS = new Set(["inactive", "blocked", "suspended", "archived", "disabled", "banned", "off", "retired"]);
-const MEMBER_LINE_FIELDS = ["line_user_id", "LINE User ID", "line_id", "LINE ID"];
-const MEMBER_EMAIL_FIELDS = ["Contact Email", "member_email", "email", "Gmail", "Google Drive Email"];
-const PACKAGE_MEMBER_EMAIL_FIELDS = ["member_email", "Member Email", "email", "Contact Email"];
-const PACKAGE_MEMBER_ID_FIELDS = ["member_id", "Member ID"];
 const MODEL_CODE_FIELDS = ["model_code", "model_lookup_key", "unique_key"];
 const MODEL_WORKING_NAME_FIELDS = ["working_name", "Working Name", "display_name", "Display Name"];
 const APPROVAL_MEMBER_FIELDS = ["member_record_id", "member_id", "member_email", "line_user_id"];
@@ -73,32 +76,17 @@ function isCustomerSafeText(value, max = 500) {
   );
 }
 
+// Compatibility classifier only. Authorization below never uses package/tier labels.
 export function classifyKenjiModelPackage(value) {
   const valueToken = token(value);
-  if (["guest", "guest_pass", "trial", "trial_7d", "7_days_guest_pass"].includes(valueToken)) {
-    return { cohort: "guest_trial", mode: "website_only", folders: [] };
-  }
-  if (["membership", "red_card"].includes(valueToken)) {
-    return { cohort: valueToken, mode: "public_models", folders: [] };
-  }
-  if (["standard", "standard_package"].includes(valueToken)) {
-    return { cohort: "standard", mode: "package", folders: ["standard"] };
-  }
-  if (["premium", "premium_package"].includes(valueToken)) {
-    return { cohort: "premium", mode: "package", folders: ["standard", "premium"] };
-  }
-  if (["gws", "ems"].includes(valueToken)) {
-    return { cohort: valueToken, mode: "signal", folders: [] };
-  }
-  if (valueToken === "vip") {
-    return { cohort: "vip", mode: "curated", folders: [] };
-  }
-  if (["svip", "s_vip", "super_vip"].includes(valueToken)) {
-    return { cohort: "svip", mode: "curated", folders: [] };
-  }
-  if (valueToken === "black_card") {
-    return { cohort: "black_card", mode: "package", folders: ["standard", "premium", "vip", "exclusive"] };
-  }
+  if (["guest", "guest_pass", "trial", "trial_7d", "7_days_guest_pass"].includes(valueToken)) return { cohort: "guest_trial", mode: "website_only", folders: [] };
+  if (["membership", "red_card"].includes(valueToken)) return { cohort: valueToken, mode: "public_models", folders: [] };
+  if (["standard", "standard_package"].includes(valueToken)) return { cohort: "standard", mode: "package", folders: ["standard"] };
+  if (["premium", "premium_package"].includes(valueToken)) return { cohort: "premium", mode: "package", folders: ["standard", "premium"] };
+  if (["gws", "ems"].includes(valueToken)) return { cohort: valueToken, mode: "signal", folders: [] };
+  if (valueToken === "vip") return { cohort: "vip", mode: "curated", folders: [] };
+  if (["svip", "s_vip", "super_vip"].includes(valueToken)) return { cohort: "svip", mode: "curated", folders: [] };
+  if (valueToken === "black_card") return { cohort: "black_card", mode: "package", folders: ["standard", "premium", "vip", "exclusive"] };
   return { cohort: "unknown", mode: "blocked", folders: [] };
 }
 
@@ -107,11 +95,7 @@ export function projectKenjiSafeModel(record = {}) {
   const modelCode = fieldValue(fields, MODEL_CODE_FIELDS);
   const workingName = fieldValue(fields, MODEL_WORKING_NAME_FIELDS);
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$/.test(modelCode) || !isCustomerSafeText(workingName, 120)) return null;
-
-  const projected = {
-    model_code: modelCode,
-    working_name: workingName,
-  };
+  const projected = { model_code: modelCode, working_name: workingName };
   const summary = fieldValue(fields, ["customer_safe_summary", "approved_profile_summary", "public_safe_summary"]);
   const imageUrl = safeHttpsUrl(fieldValue(fields, ["customer_safe_image_url", "approved_image_url"]));
   if (isCustomerSafeText(summary, 500)) projected.summary = summary;
@@ -120,8 +104,7 @@ export function projectKenjiSafeModel(record = {}) {
 }
 
 function modelFolder(record = {}) {
-  const fields = record.fields || {};
-  const folder = token(fieldValue(fields, ["access_folder", "model_access_folder", "model_folder"]));
+  const folder = token(fieldValue(record.fields || {}, ["access_folder", "model_access_folder", "model_folder"]));
   return CANONICAL_PRIVATE_FOLDERS.has(folder) ? folder : "";
 }
 
@@ -136,40 +119,29 @@ function modelAccessClass(record = {}) {
   return { active: false, visibility: "", folder: "" };
 }
 
-function parseActivePackageRecords(records = [], now = Date.now()) {
-  return records.flatMap((record) => {
-    const fields = record.fields || {};
-    if (token(fieldValue(fields, ["status", "membership_status"])) !== "active") return [];
-    const expiresAt = Date.parse(fieldValue(fields, ["end_date", "end_at", "expire_at", "expires_at", "Expiry"]));
-    if (!Number.isFinite(expiresAt) || expiresAt < now) return [];
-    const packageCode = fieldValue(fields, ["package_code", "Package Code", "tier", "package"]);
-    const policy = classifyKenjiModelPackage(packageCode);
-    return [{ record, expiresAt, packageCode, policy }];
-  });
+function canonicalEntitlementTable(env = {}) {
+  return clean(env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID || ENTITLEMENT_TABLE_FALLBACK);
+}
+
+function canonicalEntitlementLineField(env = {}) {
+  return clean(env.AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD || ENTITLEMENT_LINE_FIELD_FALLBACK);
 }
 
 async function airtableQueryExact(env, tableName, field, value, fetchImpl = fetch, limit = 5) {
   const apiKey = clean(env.AIRTABLE_API_KEY, 1000);
   const baseId = clean(env.AIRTABLE_BASE_ID, 200);
-  if (!apiKey || !baseId || !tableName || !value) throw new KenjiModelAccessSourceError();
-
+  if (!apiKey || !baseId || !tableName || !field || !value) throw new KenjiModelAccessSourceError();
   const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(tableName)}`);
-  url.searchParams.set("pageSize", String(Math.max(1, Math.min(10, limit))));
+  url.searchParams.set("pageSize", String(Math.max(1, Math.min(100, limit))));
+  url.searchParams.set("maxRecords", String(Math.max(1, Math.min(100, limit))));
   url.searchParams.set("filterByFormula", `LOWER({${field}}&"")=${formulaString(clean(value).toLowerCase())}`);
-
   let response;
   try {
-    response = await fetchImpl(url.toString(), {
-      method: "GET",
-      headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
-    });
+    response = await fetchImpl(url.toString(), { method: "GET", headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" } });
   } catch (_) {
     throw new KenjiModelAccessSourceError();
   }
-
-  // Airtable returns 422 when a legacy deployment does not have one of the
-  // known compatibility fields. Continue to the next fixed field name only.
-  if (response.status === 422) return [];
+  if (response.status === 422 && tableName !== canonicalEntitlementTable(env)) return [];
   if (!response.ok) throw new KenjiModelAccessSourceError();
   const payload = await response.json().catch(() => ({}));
   return Array.isArray(payload?.records) ? payload.records : [];
@@ -177,81 +149,90 @@ async function airtableQueryExact(env, tableName, field, value, fetchImpl = fetc
 
 async function queryAcrossFields(env, tableName, fields, value, fetchImpl, limit = 5) {
   const records = [];
-  for (const field of fields) {
-    records.push(...await airtableQueryExact(env, tableName, field, value, fetchImpl, limit));
-  }
+  for (const field of fields) records.push(...await airtableQueryExact(env, tableName, field, value, fetchImpl, limit));
   return uniqueRecords(records);
 }
 
-async function resolveLineMember(env, lineUserId, verificationEmail, fetchImpl) {
-  const table = clean(env.AIRTABLE_TABLE_MEMBERS || env.AIRTABLE_TABLE_MEMBERS_ID || "members");
-  const matches = await queryAcrossFields(env, table, MEMBER_LINE_FIELDS, lineUserId, fetchImpl, 3);
-  if (matches.length === 1) return { status: "resolved", record: matches[0] };
-  if (matches.length > 1) return { status: "ambiguous" };
-  if (!verificationEmail) return { status: "verification_required" };
-  const emailMatches = await queryAcrossFields(env, table, MEMBER_EMAIL_FIELDS, verificationEmail.toLowerCase(), fetchImpl, 3);
-  if (emailMatches.length !== 1) return { status: emailMatches.length ? "ambiguous" : "unresolved" };
-  return { status: "resolved", record: emailMatches[0] };
+function currentlyValidCapabilities(snapshot = {}) {
+  return new Set(Array.isArray(snapshot?.capability_state?.active) ? snapshot.capability_state.active.map(token) : []);
 }
 
-async function resolveMemberPackages(env, memberRecord, lineUserId, fetchImpl) {
-  const table = clean(env.AIRTABLE_TABLE_MEMBER_PACKAGES || "member_packages");
-  const memberFields = memberRecord.fields || {};
-  const memberEmail = fieldValue(memberFields, ["Contact Email", "member_email", "email"]).toLowerCase();
-  const memberId = fieldValue(memberFields, ["member_id", "Member ID"]);
-  const records = [];
-  if (memberEmail) records.push(...await queryAcrossFields(env, table, PACKAGE_MEMBER_EMAIL_FIELDS, memberEmail, fetchImpl, 10));
-  if (memberId) records.push(...await queryAcrossFields(env, table, PACKAGE_MEMBER_ID_FIELDS, memberId, fetchImpl, 10));
-  const active = parseActivePackageRecords(uniqueRecords(records));
-  if (!active.length) return { status: records.length ? "renewal" : "blocked", allowPublic: false, folders: [] };
-
-  const entitlements = active.filter((item) => item.policy.mode !== "signal");
-  if (!entitlements.length) return { status: "blocked", allowPublic: false, folders: [] };
-
-  const cohorts = [...new Set(entitlements.map((item) => item.policy.cohort))];
-  if (cohorts.length !== 1 || cohorts[0] === "unknown") return { status: "conflict", folders: [] };
-  const selected = entitlements.sort((left, right) => right.expiresAt - left.expiresAt)[0];
-  if (selected.policy.mode === "package") {
-    return { status: "allowed", cohort: selected.policy.cohort, allowPublic: true, folders: selected.policy.folders.slice() };
-  }
-  if (selected.policy.mode === "public_models") {
-    return { status: "allowed", cohort: selected.policy.cohort, allowPublic: true, folders: [] };
-  }
-  if (selected.policy.mode !== "curated") return { status: "blocked", cohort: selected.policy.cohort, folders: [] };
-
-  const approval = await resolveCuratedApproval(env, {
-    memberRecord,
-    memberEmail,
-    memberId,
-    lineUserId,
-    cohort: selected.policy.cohort,
-  }, fetchImpl);
-  return approval.status === "allowed" ? { ...approval, allowPublic: true } : { status: "blocked", cohort: selected.policy.cohort, allowPublic: false, folders: [] };
+function privateRenewalDue(snapshot = {}) {
+  if (snapshot?.member_blocked === true) return false;
+  const rows = Array.isArray(snapshot?.entitlements) ? snapshot.entitlements : [];
+  return rows.some((item) => PRIVATE_CAPABILITIES.has(token(item?.capability)) && RENEWAL_DUE_LIFECYCLES.has(token(item?.lifecycle)));
 }
 
-async function resolveCuratedApproval(env, identity, fetchImpl) {
+function canonicalPrivateFolders(envelope) {
+  const value = token(envelope);
+  if (value === "standard") return ["standard"];
+  if (value === "premium") return ["standard", "premium"];
+  return [];
+}
+
+function uniqueCanonicalField(records, names, transform = (value) => value) {
+  const values = [...new Set(records.map((record) => transform(fieldValue(record?.fields || {}, names))).filter(Boolean))];
+  return values.length === 1 ? values[0] : "";
+}
+
+function canonicalApprovalIdentity(records, lineUserId) {
+  return {
+    member_record_id: uniqueCanonicalField(records, ["member_record_id", "Member Record ID"]),
+    member_id: uniqueCanonicalField(records, ["member_id", "Member ID"]),
+    member_email: uniqueCanonicalField(records, ["member_email", "Member Email", "email", "Contact Email"], (value) => clean(value).toLowerCase()),
+    line_user_id: lineUserId,
+  };
+}
+
+async function resolveCuratedApproval(env, identity, cohort, fetchImpl) {
   const table = clean(env.AIRTABLE_TABLE_KENJI_MODEL_ACCESS_APPROVALS);
   if (!table) return { status: "blocked", folders: [] };
-  const values = {
-    member_record_id: clean(identity.memberRecord?.id),
-    member_id: clean(identity.memberId),
-    member_email: clean(identity.memberEmail).toLowerCase(),
-    line_user_id: clean(identity.lineUserId),
-  };
   const records = [];
   for (const field of APPROVAL_MEMBER_FIELDS) {
-    if (values[field]) records.push(...await airtableQueryExact(env, table, field, values[field], fetchImpl, 5));
+    const value = clean(identity?.[field]);
+    if (value) records.push(...await airtableQueryExact(env, table, field, value, fetchImpl, 10));
   }
   const valid = uniqueRecords(records).filter((record) => {
     const fields = record.fields || {};
     if (token(fields.status) !== "approved") return false;
     if (clean(fields.policy_version) !== KENJI_MODEL_ACCESS_POLICY_VERSION) return false;
-    if (token(fields.cohort) !== identity.cohort) return false;
+    if (token(fields.cohort) !== token(cohort)) return false;
     const expiresAt = Date.parse(fieldValue(fields, ["expires_at", "end_at", "end_date"]));
     return Number.isFinite(expiresAt) && expiresAt >= Date.now() && parseFolderList(fields.allowed_folders).length > 0;
   });
   if (valid.length !== 1) return { status: "blocked", folders: [] };
-  return { status: "allowed", cohort: identity.cohort, folders: parseFolderList(valid[0].fields?.allowed_folders) };
+  return { status: "allowed", cohort: token(cohort), folders: parseFolderList(valid[0].fields?.allowed_folders) };
+}
+
+async function resolveCanonicalMemberAccess(env, lineUserId, fetchImpl) {
+  const records = await airtableQueryExact(env, canonicalEntitlementTable(env), canonicalEntitlementLineField(env), lineUserId, fetchImpl, 100);
+  const snapshot = resolveMemberEntitlements(records);
+  if (snapshot?.schema_version !== "my_mmd_entitlement_resolver_v1" || snapshot?.fail_closed !== true) throw new KenjiModelAccessSourceError();
+  if (snapshot.member_blocked === true) return { status: "silent", allowPublic: false, folders: [], renewalDue: false, snapshot };
+
+  const valid = currentlyValidCapabilities(snapshot);
+  const hasNonGuestPublicAuthority = [...valid].some((capability) => capability === "public_member" || PRIVATE_CAPABILITIES.has(capability));
+  const allowPublic = snapshot.access?.public_service_access === true && hasNonGuestPublicAuthority;
+  const envelope = token(snapshot.access?.private_visibility_envelope || "none");
+  const renewalDue = privateRenewalDue(snapshot);
+
+  if (envelope === "none" || snapshot.access?.new_model_reveals_allowed !== true) {
+    return { status: allowPublic ? "allowed" : "silent", allowPublic, folders: [], renewalDue, snapshot };
+  }
+
+  if (PROTECTED_ENVELOPES.has(envelope)) {
+    const approval = await resolveCuratedApproval(env, canonicalApprovalIdentity(records, lineUserId), envelope, fetchImpl);
+    return {
+      status: allowPublic || approval.status === "allowed" ? "allowed" : "silent",
+      allowPublic,
+      folders: approval.status === "allowed" ? approval.folders : [],
+      renewalDue,
+      snapshot,
+    };
+  }
+
+  const folders = canonicalPrivateFolders(envelope);
+  return { status: allowPublic || folders.length ? "allowed" : "silent", allowPublic, folders, renewalDue, snapshot };
 }
 
 async function resolveExactModel(env, query, fetchImpl) {
@@ -265,29 +246,32 @@ async function resolveExactModel(env, query, fetchImpl) {
 export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}) {
   const lineUserId = clean(input.line_user_id, 80);
   const query = clean(input.query, 80);
-  const verificationEmail = clean(input.verification_email, 254).toLowerCase();
   const fetchImpl = options.fetchImpl || fetch;
-  if (!/^U[A-Za-z0-9_-]{16,64}$/.test(lineUserId) || !query || (verificationEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(verificationEmail))) return { status: "silent" };
+  if (!/^U[A-Za-z0-9_-]{16,64}$/.test(lineUserId) || !query) return { status: "silent" };
 
-  const member = await resolveLineMember(env, lineUserId, verificationEmail, fetchImpl);
-  if (member.status === "verification_required") return { status: "verification_required" };
-  if (member.status !== "resolved") return { status: "silent" };
-  const access = await resolveMemberPackages(env, member.record, lineUserId, fetchImpl);
-  if (access.status === "renewal") return { status: "renewal" };
-  if (access.status !== "allowed" || (!access.allowPublic && !access.folders.length)) return { status: "silent" };
-
+  // My MMD Entitlement Resolver is the only membership/access authority here.
+  // verification_email is intentionally ignored: an email must never widen model access.
+  const access = await resolveCanonicalMemberAccess(env, lineUserId, fetchImpl);
   const model = await resolveExactModel(env, query, fetchImpl);
   if (model.status !== "resolved") return { status: "silent" };
+
   const authorized = model.records.flatMap((record) => {
-    const modelAccess = modelAccessClass(record);
-    if (!modelAccess.active) return [];
-    if (modelAccess.visibility === "public" && !access.allowPublic) return [];
-    if (modelAccess.visibility === "private" && !access.folders.includes(modelAccess.folder)) return [];
+    const cls = modelAccessClass(record);
+    if (!cls.active) return [];
+    if (cls.visibility === "public" && !access.allowPublic) return [];
+    if (cls.visibility === "private" && !access.folders.includes(cls.folder)) return [];
     const safeModel = projectKenjiSafeModel(record);
-    return safeModel ? [{ record, safeModel }] : [];
+    return safeModel ? [{ cls, safeModel }] : [];
   });
   if (authorized.length > 1) return { status: "clarification" };
-  return authorized.length === 1 ? { status: "match", model: authorized[0].safeModel } : { status: "silent" };
+  if (authorized.length === 1) return { status: "match", model: authorized[0].safeModel };
+
+  const requestedPrivate = model.records.some((record) => {
+    const cls = modelAccessClass(record);
+    return cls.active && cls.visibility === "private";
+  });
+  if (requestedPrivate && access.renewalDue) return { status: "renewal" };
+  return { status: "silent" };
 }
 
 function bearerToken(request) {
@@ -308,10 +292,7 @@ function isAuthorizedServiceRequest(request, env) {
 }
 
 function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store, private" },
-  });
+  return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store, private" } });
 }
 
 export function isKenjiModelAccessRpcRequest(path, method = "") {
@@ -330,7 +311,6 @@ export async function handleKenjiModelAccessRpc(request, env = {}, options = {})
     const result = await resolveKenjiModelAccess(env, body, options);
     if (result.status === "match") return json({ ok: true, status: "match", policy_version: KENJI_MODEL_ACCESS_POLICY_VERSION, model: result.model });
     if (result.status === "clarification") return json({ ok: true, status: "clarification", policy_version: KENJI_MODEL_ACCESS_POLICY_VERSION });
-    if (result.status === "verification_required") return json({ ok: true, status: "verification_required", policy_version: KENJI_MODEL_ACCESS_POLICY_VERSION });
     if (result.status === "renewal") return json({ ok: true, status: "renewal", policy_version: KENJI_MODEL_ACCESS_POLICY_VERSION });
     return json({ ok: true, status: "silent", policy_version: KENJI_MODEL_ACCESS_POLICY_VERSION });
   } catch (error) {

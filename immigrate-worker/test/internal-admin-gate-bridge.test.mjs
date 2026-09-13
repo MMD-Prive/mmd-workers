@@ -368,6 +368,8 @@ test("wrangler routes only expose exact immigrate bridge surfaces", async () => 
     "www.mmdbkk.com/a/create-session.js",
     "mmdbkk.com/v1/admin/ping*",
     "www.mmdbkk.com/v1/admin/ping*",
+    "mmdbkk.com/v1/admin/clients/lineage-lookup*",
+    "www.mmdbkk.com/v1/admin/clients/lineage-lookup*",
     "mmdbkk.com/v1/admin/clients/recent*",
     "www.mmdbkk.com/v1/admin/clients/recent*",
     "mmdbkk.com/v1/admin/models/search*",
@@ -390,8 +392,6 @@ test("wrangler routes only expose exact immigrate bridge surfaces", async () => 
 
   assert.doesNotMatch(wrangler, /pattern = "mmdbkk\.com\/internal\/admin\/\*"/);
   assert.doesNotMatch(wrangler, /pattern = "www\.mmdbkk\.com\/internal\/admin\/\*"/);
-  assert.doesNotMatch(wrangler, /pattern = "mmdbkk\.com\/v1\/admin\/clients\/lineage-lookup\*"/);
-  assert.doesNotMatch(wrangler, /pattern = "www\.mmdbkk\.com\/v1\/admin\/clients\/lineage-lookup\*"/);
   assert.match(wrangler, /binding = "ADMIN_WORKER"/);
 });
 

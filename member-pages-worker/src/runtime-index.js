@@ -4,11 +4,25 @@ import { isDriveBootstrapCandidate, tryDriveMemberBootstrap } from "./drive-memb
 import { isDriveReconcileRequest, handleDriveReconcile } from "./drive-access-reconcile.js";
 import { withDriveBootstrapDiagnostic } from "./drive-bootstrap-debug.js";
 import { withStatusFirstMemberResolver } from "./liff-status-first-member-resolver.js";
+import { applyMyMmdFastTrustResponse } from "./my-mmd-fast-trust-response.js";
+import { recoverVerifiedLiffStartAsPendingIdentity } from "./liff-start-pending-identity-fallback.js";
 import { attachTraceId, createLiffResolutionTrace, createLiffShellBoundaryTrace } from "./liff-resolution-trace.js";
+import {
+  handleMemberClientCredits,
+  isMemberClientCreditsRequest,
+} from "./member-app-client-credits.js";
 import {
   handleTrustedCareBackBookingApproval,
   isTrustedCareBackBookingApproval,
 } from "./care-back-trusted-booking-approval.js";
+import {
+  handleKenjiLineMemberTruth,
+  isKenjiLineMemberTruthRequest,
+} from "./kenji-line-member-truth.js";
+import {
+  handleKenjiLineMemberTruthHealth,
+  isKenjiLineMemberTruthHealthRequest,
+} from "./kenji-line-member-truth-health.js";
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-durable-object.js";
@@ -39,9 +53,6 @@ export function normalizeCareBackWebViewOrigin(request) {
   }
   if (!trustedSameSite) return request;
 
-  // Some Android/LINE WebViews omit Origin on a same-site POST. Production
-  // member-pages-worker is service-only, so restore only the verified MMD web
-  // origin for the two public CARE BACK endpoints; never relax cross-site calls.
   const headers = new Headers(request.headers);
   headers.set("origin", url.origin);
   headers.set("x-mmd-webview-origin-normalized", "care-back-v1");
@@ -51,6 +62,15 @@ export function normalizeCareBackWebViewOrigin(request) {
 export default {
   async fetch(request, env, ctx) {
     request = normalizeCareBackWebViewOrigin(request);
+    if (isMemberClientCreditsRequest(request)) {
+      return handleMemberClientCredits(request, env);
+    }
+    if (isKenjiLineMemberTruthHealthRequest(request)) {
+      return handleKenjiLineMemberTruthHealth(request, env);
+    }
+    if (isKenjiLineMemberTruthRequest(request)) {
+      return handleKenjiLineMemberTruth(request, env);
+    }
     if (isTrustedCareBackBookingApproval(request)) {
       return handleTrustedCareBackBookingApproval(request, env);
     }
@@ -62,13 +82,31 @@ export default {
     const firstRequest = request.clone();
     const bootstrapRequest = request.clone();
     let firstResponse = await worker.fetch(firstRequest, runtimeEnv, ctx);
+    firstResponse = await applyMyMmdFastTrustResponse(request, firstResponse, env);
+    let firstPayload = await jsonPayload(firstResponse);
+
+    const recoveredResponse = await recoverVerifiedLiffStartAsPendingIdentity({
+      request,
+      response: firstResponse,
+      payload: firstPayload,
+      worker,
+      env: runtimeEnv,
+      ctx,
+    });
+    if (recoveredResponse !== firstResponse) {
+      firstResponse = recoveredResponse;
+      firstPayload = await jsonPayload(firstResponse);
+      trace?.event("member_resolution", "pending_identity", "resolver_unavailable_session_preserved", {
+        http_status: firstResponse.status,
+        member_resolved: false,
+        pending_identity: true,
+      });
+    }
 
     if (shellBoundary) {
       shellBoundary.finish(firstResponse);
       firstResponse = shellBoundary.attach(firstResponse);
     }
-
-    const firstPayload = await jsonPayload(firstResponse);
 
     if (trace) {
       trace.event("member_status", firstResponse.ok ? "complete" : "failed", firstPayload?.error?.code || "", {
@@ -86,7 +124,8 @@ export default {
         package_code: bootstrap.package_code || "",
       });
       if (bootstrap.mapped) {
-        const retriedResponse = await worker.fetch(request, runtimeEnv, ctx);
+        let retriedResponse = await worker.fetch(request, runtimeEnv, ctx);
+        retriedResponse = await applyMyMmdFastTrustResponse(request, retriedResponse, env);
         trace?.event("member_retry", retriedResponse.ok ? "complete" : "failed", "", { http_status: retriedResponse.status });
         trace?.finish(retriedResponse.ok ? "resolved" : "failed", retriedResponse.ok ? "drive_bootstrap_mapped" : "member_retry_failed");
         const rewritten = await rewritePendingStatusStartResponse(request, retriedResponse, trace?.traceId || "");

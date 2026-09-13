@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - "member-dashboard-chat-worker/**"
+      - "shared/verified-member-concierge.mjs"
       - ".github/workflows/deploy-member-dashboard-chat-worker.yml"
 
 concurrency:
@@ -28,6 +29,7 @@ jobs:
       CLOUDFLARE_ZONE_ID: "2d62396174fa2ddadbbcd0e8cf0f3367"
       WORKER_NAME: "member-dashboard-chat-worker"
       NO_COLOR: "1"
+      AI_SERVICE_SMOKE_TOKEN: ${{ secrets.AI_SERVICE_SMOKE_TOKEN }}
 
     steps:
       - name: Check out repository
@@ -119,8 +121,10 @@ jobs:
           node --check member-dashboard-chat-worker/src/mms-ai-line-front-gate.js
           npm run test:member-dashboard-liff
           npm run test:member-dashboard-line
+          node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-live-concierge-runtime.test.mjs shared/verified-member-concierge.test.mjs
           node --test member-dashboard-chat-worker/test/line-membership-fallback.test.mjs
           node --test member-dashboard-chat-worker/test/mms-therapist-auth-front-gate.test.mjs
+          node --test member-dashboard-chat-worker/test/internal-ai-service-binding-smoke.test.mjs
 
       - name: Validate Cloudflare version upload
         id: wrangler_dry_run
@@ -167,7 +171,7 @@ jobs:
           npx --yes wrangler@4 versions deploy "${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}@100%" -y \
             2>&1 | tee "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log"
 
-      - name: Sync MMS Therapist auth and MMS LINE routes
+      - name: Sync MMS Therapist auth and AI smoke routes
         id: route_sync
         if: steps.deploy.outcome == 'success'
         shell: bash
@@ -180,10 +184,8 @@ jobs:
           const desired = [
             "mmdbkk.com/male-massage/therapists/api/auth/*",
             "www.mmdbkk.com/male-massage/therapists/api/auth/*",
-            "mmdbkk.com/webhooks/line/mms",
-            "mmdbkk.com/webhooks/line/mms/",
-            "www.mmdbkk.com/webhooks/line/mms",
-            "www.mmdbkk.com/webhooks/line/mms/",
+            "mmdbkk.com/v1/internal/ai/service-binding-smoke",
+            "www.mmdbkk.com/v1/internal/ai/service-binding-smoke",
           ];
           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
           async function cf(path, options = {}) {
@@ -226,7 +228,7 @@ jobs:
           const verified = await cf(routePath);
           const missing = desired.filter((pattern) => !verified.some((route) => route.pattern === pattern && route.script === worker));
           if (missing.length) throw new Error(`missing routes: ${missing.join(", ")}`);
-          console.log(`verified ${desired.length}/${desired.length} MMS routes`);
+          console.log(`verified ${desired.length}/${desired.length} required worker routes`);
           NODE
 
       - name: Smoke production LINE and MMS route ownership
@@ -272,6 +274,19 @@ jobs:
           grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$auth_headers"
           grep -qi '^x-mmd-upstream-service: mms-worker' "$auth_headers"
           grep -qi '^cache-control: .*no-store' "$auth_headers"
+
+      - name: Smoke internal AI service binding
+        id: ai_binding_smoke
+        if: steps.route_sync.outcome == 'success' && env.AI_SERVICE_SMOKE_TOKEN != ''
+        shell: bash
+        run: |
+          response="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error -X POST -H "Authorization: Bearer ${AI_SERVICE_SMOKE_TOKEN}" https://www.mmdbkk.com/v1/internal/ai/service-binding-smoke)"
+          node -e '
+            const body = JSON.parse(process.argv[1]);
+            if (body.ok !== true || body.read_only !== true || body.service !== "ai-worker" || body.contract !== "kenji_customer_reasoning_v1") {
+              throw new Error(`Unexpected AI service-binding smoke response: ${process.argv[1]}`);
+            }
+          ' "$response"
 
       - name: Report deploy stage diagnosis
         if: always()

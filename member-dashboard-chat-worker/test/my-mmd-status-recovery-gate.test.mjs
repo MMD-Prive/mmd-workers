@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import worker from "../src/my-mmd-bounded-status-front-gate.js";
 
-test("customer status recovery verifies the LINE session, hard-stops after 12 seconds, and does not require an existing Member row", async () => {
+test("customer status recovery verifies the LINE session, hard-stops after 12 seconds, and renders one non-overlapping status surface", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
@@ -19,7 +19,7 @@ test("customer status recovery verifies the LINE session, hard-stops after 12 se
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
   assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
-  assert.equal(response.headers.get("x-mmd-liff-recovery-gate"), "hard-timeout-v2-one-retry");
+  assert.equal(response.headers.get("x-mmd-liff-recovery-gate"), "hard-timeout-v3-single-surface-one-retry");
   assert.equal(response.headers.get("x-mmd-liff-hard-timeout-ms"), "12000");
   assert.equal(response.headers.get("x-mmd-liff-manual-retry-window-ms"), "120000");
   assert.equal(response.headers.get("x-mmd-liff-session-check"), "status-v1");
@@ -29,13 +29,19 @@ test("customer status recovery verifies the LINE session, hard-stops after 12 se
   assert.doesNotMatch(html, /const profileEndpoint =/);
   assert.doesNotMatch(html, /\/member\/api\/liff\/profile/);
 
-  assert.match(html, /body\.mmd-status-recovery #message\{display:block!important/);
-  assert.match(html, /body\.mmd-status-recovery #mmd-status-bridge-veil \.t\{display:none!important/);
+  // The older embedded bridge still contains its own recovery CSS, but this
+  // later v3 override is the final cascade: the raw #message never becomes a
+  // second visible text layer. Its text is mirrored into the HYPE veil .t.
+  assert.match(html, /id="mmd-status-single-surface-fix"/);
+  assert.match(html, /body\.mmd-status-recovery #message\{display:none!important\}/);
+  assert.match(html, /body\.mmd-status-recovery #mmd-status-bridge-veil \.t\{display:block!important/);
+  assert.match(html, /body #actions\{top:auto!important;bottom:max\(/);
   assert.doesNotMatch(html, /:has\(/);
 
-  assert.match(html, /id="mmd-status-bridge-recovery-observer"/);
-  assert.match(html, /new MutationObserver\(syncRecoveryState\)/);
-  assert.match(html, /classList\.toggle\("mmd-status-recovery"/);
+  assert.match(html, /id="mmd-status-single-surface-sync"/);
+  assert.match(html, /statusText\.textContent = text \|\| "ยังยืนยัน LINE Session ไม่สำเร็จครับ"/);
+  assert.match(html, /new MutationObserver\(sync\)\.observe\(actions/);
+  assert.match(html, /new MutationObserver\(sync\)\.observe\(message/);
 
   assert.match(html, /id="mmd-status-hard-timeout-gate"/);
   assert.match(html, /const HARD_TIMEOUT_MS = 12000/);

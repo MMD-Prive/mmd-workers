@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { Script } from "node:vm";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -24,6 +25,9 @@ const page = `<!doctype html><html><head></head><body>${ownerHtml}<script src="/
 
 try {
   const body = applyCreateSessionSimpleStart(page);
+  const inlineScript = body.match(/<script data-simple-start-script="[^"]+">([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(inlineScript);
+  assert.doesNotThrow(() => new Script(inlineScript));
 
   assert.equal(CREATE_SESSION_SIMPLE_START_MODE, "kenji-airtable-v4");
   assert.match(body, /data-simple-start-style="kenji-airtable-v4"/);

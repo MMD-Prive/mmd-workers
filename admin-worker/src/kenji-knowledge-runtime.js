@@ -87,9 +87,9 @@ const STATIC_CANONICAL_CARDS = Object.freeze([
     risk_level: "medium",
     source_path: "/sigil/member/membership",
     customer_answer:
-      "ถ้าต้องการจัดการ MY MMD ผมพาไปหน้าที่ตรงกับเรื่องได้ครับ: MY MMD Home /member/dashboard สำหรับดูสถานะและทางเข้าหลัก, Membership /sigil/member/membership สำหรับเลือกแพ็กเกจ สมัคร ต่ออายุ อัปเกรด หรือไปต่อเรื่องการชำระเงิน, Renewal / Access Conditions /sigil/membership สำหรับอ่านเงื่อนไขการต่ออายุและสิทธิ์, Renewal payment /sigil/pay/renewal สำหรับขั้นตอนชำระต่ออายุ, Booking Request /sigil/booking สำหรับส่งคำขอจอง และ Payment Proof /confirm/payment-proof สำหรับส่งหลักฐานการชำระเงินครับ การชำระเงิน สิทธิ์สมาชิก การจอง และ access จะยืนยันได้หลัง MMD ตรวจสอบจากข้อมูลทางการแล้วเท่านั้นครับ",
+      "ถ้าต้องการจัดการ MY MMD ผมพาไปหน้าที่ตรงกับเรื่องได้ครับ: MY MMD Home /member/dashboard สำหรับดูสถานะและทางเข้าหลัก, Membership /sigil/member/membership สำหรับเลือกแพ็กเกจ สมัคร ต่ออายุ อัปเกรด หรือไปต่อเรื่องการชำระเงิน, Renewal / Access Conditions /sigil/membership สำหรับอ่านเงื่อนไข, Payment status /member/payments สำหรับดูและไปต่อจากรายการชำระเงินเดิม, Booking Request /sigil/booking สำหรับส่งคำขอจองครับ ถ้าระบบมี URL /sigil/pay ที่ลงนามสำหรับรายการปัจจุบัน ให้ใช้ URL นั้นโดยตรง การส่งหลักฐานอย่างเดียวไม่ถือว่ายืนยันการชำระ สิทธิ์สมาชิก การจอง หรือ access และถ้าส่งหลักฐานไว้แล้วไม่ต้องส่งซ้ำครับ",
     internal_instruction:
-      "Canonical MY MMD route map: /member/dashboard = MY MMD Home / member status hub; /sigil/member/membership = canonical member package selection and member-facing membership actions; /sigil/membership = renewal/access conditions page, not checkout; /sigil/pay/renewal = renewal payment flow; /sigil/booking = booking request gate; /confirm/payment-proof = payment evidence submission; /sigil/onboarding = onboarding entry when a flow explicitly requires onboarding. /member/membership is legacy compatibility and must not be recommended in new replies. Preserve query params t, code, promo, session_id, package when present. Never confirm payment, membership, booking, availability, Black Card, VIP, SVIP, or access from chat alone.",
+      "Canonical MY MMD route map: /member/dashboard = MY MMD Home; /sigil/member/membership = package selection/start/renew/upgrade; /sigil/membership = renewal/access conditions, not checkout; /member/payments = generic payment list/status/navigation; exact signed /sigil/pay?t=... = canonical combined payment+proof surface only when current backend intent supplies it; /confirm/payment-proof = legacy/manual no-ref compatibility only; /sigil/booking = booking request gate; /sigil/onboarding = explicit onboarding only. /member/membership is legacy compatibility. Preserve applicable t, code, promo, session_id, package, payment_ref context. Never create a replacement payment_ref, request duplicate proof, or confirm payment, membership, booking, availability, Black Card, VIP, SVIP, or access from chat alone.",
   },
   {
     id: "kenji_20_007_drop_690_guard",
@@ -101,23 +101,23 @@ const STATIC_CANONICAL_CARDS = Object.freeze([
     risk_level: "critical",
     source_path: "webflow/customer-facing-routing",
     customer_answer:
-      "ผมจะไม่พาไปเส้น Public Access 690 แบบ pay-to-view หรือ instant unlock แล้วครับ ถ้าเป็น request ใหม่ ผมจะพาไป Reviewed Access / Membership Intake หรือ Payment Proof ตามบริบท และให้ MMD ตรวจความเหมาะสมก่อนเสมอ",
+      "ผมจะไม่พาไปเส้น Public Access 690 แบบ pay-to-view หรือ instant unlock แล้วครับ ถ้าเป็น request ใหม่ ผมจะพาไป Reviewed Access / Membership Intake ตามบริบท และถ้าต้องไปต่อเรื่องการชำระเงินจะใช้รายการเดิมผ่าน /member/payments หรือ URL /sigil/pay ที่ระบบสร้างให้สำหรับรายการนั้นเท่านั้น หลักฐานที่ส่งแล้วไม่ต้องส่งซ้ำ และ MMD จะตรวจความเหมาะสมก่อนเสมอ",
     internal_instruction:
-      "Drop Public Access 690 as main route. Legacy received/proof pages may remain as evidence/status compatibility only. Block pay-to-view, instant unlock, and old upstream wording.",
+      "Drop Public Access 690 as main route. Block pay-to-view, instant unlock, and old upstream wording. For payment continuation use the exact signed /sigil/pay?t=... only when supplied by the current backend intent; otherwise /member/payments. /confirm/payment-proof is legacy/manual no-ref compatibility only. Never create a replacement payment_ref or ask for proof resubmission when one is pending.",
   },
   {
     id: "kenji_20_006_payment_proof",
-    title: "Kenji AI 2.0 — Payment Proof Handoff",
+    title: "Kenji AI 2.0 — Canonical Payment Handoff",
     category: "payment",
     language: "th",
     status: "active",
     response_mode: "handoff_required",
     risk_level: "critical",
-    source_path: "/confirm/payment-proof",
+    source_path: "/member/payments",
     customer_answer:
-      "ถ้าต้องส่งหลักฐาน ผมจะพาไปหน้า Payment Proof ครับ: https://mmdbkk.com/confirm/payment-proof\n\nMMD จะรับหลักฐานไว้ตรวจยอดจริงก่อนอัปเดตขั้นตอนถัดไป หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request ครับ",
+      "ถ้าต้องไปต่อเรื่องการชำระเงิน เปิดรายการชำระเงินที่ https://mmdbkk.com/member/payments ได้เลยครับ ระบบจะพาไปขั้นตอนของรายการเดิม ถ้ามี payment ref หรือส่งหลักฐานไว้แล้ว ไม่ต้องสร้างรายการหรือส่งซ้ำครับ หลักฐานยังเป็นเพียง evidence จนกว่า MMD จะตรวจและอัปเดตสถานะทางการ",
     internal_instruction:
-      "Proof is evidence only. Never say paid, verified, approved, activated, successful, or confirmed before Money Truth confirms.",
+      "Use the exact signed /sigil/pay?t=... URL only when the current backend payment intent supplies it; otherwise use /member/payments for payment list/status/navigation. /confirm/payment-proof is legacy/manual no-ref compatibility only and must never be the default new-payment CTA or mint a replacement payment_ref. Proof is evidence only. Never say paid, verified, approved, activated, successful, or confirmed before Money Truth confirms. If proof/ref is already pending verification, do not ask for resubmission.",
   },
   {
     id: "kenji_20_009_web_forbidden_terms",

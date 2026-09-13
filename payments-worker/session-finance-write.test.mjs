@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const source = readFileSync(new URL("./index.js", import.meta.url), "utf8");
+const reviewWrapperSource = readFileSync(new URL("./index.review-wrapper.js", import.meta.url), "utf8");
+const componentSource = readFileSync(new URL("./sigil-membership-payment-components.js", import.meta.url), "utf8");
+const componentModule = await import(`data:text/javascript;base64,${Buffer.from(componentSource).toString("base64")}`);
+const { parseSigilMembershipPaymentComponents } = componentModule;
 
 function block(start, end) {
   const from = source.indexOf(start);
@@ -36,4 +40,62 @@ test("confirm-link keeps payout as internal input but does not forward it to pay
   const paymentCallEnd = confirmLink.indexOf("});", paymentCallStart);
   const paymentCall = confirmLink.slice(paymentCallStart, paymentCallEnd + 3);
   assert.doesNotMatch(paymentCall, /pay_model_thb/);
+});
+
+test("SIGIL combined renewal parses one customer payment into service and membership components", () => {
+  const action = {
+    version: "membership_action_v1",
+    type: "renew",
+    source: "sigil_jobs",
+    include_in_payment: true,
+    renewal_amount_thb: 2500,
+    state: "pending_official_verify",
+    materialization_policy: "official_verify_required",
+    entitlement_mutation_allowed: false,
+    points_eligible: false,
+    service_spend_eligible: false,
+    referral_reward_eligible: false,
+    service_amount_thb: 8000,
+    customer_total_thb: 10500,
+  };
+  const components = parseSigilMembershipPaymentComponents(
+    `[MMD_MEMBERSHIP_ACTION_V1] ${JSON.stringify(action)}`,
+    10500,
+  );
+  assert.equal(components.customer_total_thb, 10500);
+  assert.equal(components.service_amount_thb, 8000);
+  assert.equal(components.membership_renewal_amount_thb, 2500);
+  assert.equal(components.points_eligible_amount_thb, 8000);
+  assert.equal(components.membership_fee_points_eligible, false);
+  assert.equal(components.membership_fee_service_spend_eligible, false);
+  assert.equal(components.membership_fee_referral_reward_eligible, false);
+});
+
+test("SIGIL combined renewal fails closed when payment total does not match the component ledger", () => {
+  const action = {
+    version: "membership_action_v1",
+    type: "renew",
+    source: "sigil_jobs",
+    include_in_payment: true,
+    renewal_amount_thb: 2500,
+    state: "pending_official_verify",
+    materialization_policy: "official_verify_required",
+    entitlement_mutation_allowed: false,
+    points_eligible: false,
+    service_spend_eligible: false,
+    referral_reward_eligible: false,
+    service_amount_thb: 8000,
+    customer_total_thb: 10500,
+  };
+  assert.throws(
+    () => parseSigilMembershipPaymentComponents(`[MMD_MEMBERSHIP_ACTION_V1] ${JSON.stringify(action)}`, 10000),
+    /sigil_membership_action_payment_amount_mismatch/,
+  );
+});
+
+test("reviewed combined renewal keeps bank amount but awards Base Points from service amount only", () => {
+  assert.match(reviewWrapperSource, /workerWithSlipEvidence\.fetch\(notifyRequest, baseEnv, ctx\)/);
+  assert.match(reviewWrapperSource, /amount_thb:\s*components\.points_eligible_amount_thb/);
+  assert.match(reviewWrapperSource, /enforceSigilSessionServiceAmount\(env, body\.session_id, components\)/);
+  assert.doesNotMatch(reviewWrapperSource, /amount_thb:\s*components\.customer_total_thb[\s\S]*awardBasePointsPhase1/);
 });

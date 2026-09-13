@@ -226,13 +226,15 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/model-applications*"
 zone_name = "mmdbkk.com"
 
-# MMS team operations console. Keep this namespace exact and narrow.
+# MMS team operations console. Query-safe wildcard is required because applicant
+# deep links carry tab + application_id query parameters. Runtime pathname matching
+# remains exact inside admin-worker.
 [[routes]]
-pattern = "mmdbkk.com/internal/admin/mms"
+pattern = "mmdbkk.com/internal/admin/mms*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
-pattern = "www.mmdbkk.com/internal/admin/mms"
+pattern = "www.mmdbkk.com/internal/admin/mms*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
@@ -266,6 +268,14 @@ pattern = "www.mmdbkk.com/v1/admin/payments/review-queue*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
+pattern = "mmdbkk.com/v1/admin/payments/evidence*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/payments/evidence*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
 pattern = "mmdbkk.com/v1/admin/payments/review"
 zone_name = "mmdbkk.com"
 
@@ -292,6 +302,15 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/model/activation/issue"
+zone_name = "mmdbkk.com"
+
+# Canonical Model-folder candidate list for Per's first-time LINE link console.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/models/activation-candidates*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/models/activation-candidates*"
 zone_name = "mmdbkk.com"
 
 # Legacy SIGIL internal admin redirect only. Keep these patterns narrow; do not
@@ -575,6 +594,16 @@ service = "mms-worker"
 binding = "EVENTS_WORKER"
 service = "events-worker"
 
+# Payment link issuer stays on the dedicated admin-to-payments service credential.
+[[services]]
+binding = "PAYMENTS_WORKER"
+service = "payments-worker"
+
+# Historical Recovery uses the same private production extractor as live LINE intake.
+[[services]]
+binding = "SLIP_EXTRACTOR"
+service = "mmd-slip-extractor"
+
 # ใช้สำหรับ CORS (browser calls)
 [vars]
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdmodel.lovable.app"
@@ -592,7 +621,7 @@ MODEL_LIFF_PUBLISHED_ID = "2010864854-N34SgCqq"
 MODEL_LIFF_SESSION_TTL_SECONDS = "3600"
 
 # Base URLs (LOCK)
-PAYMENTS_BASE_URL = "https://payments-worker.malemodel-bkk.workers.dev"
+PAYMENTS_BASE_URL = "https://sigil.mmdbkk.com"
 TELEGRAM_INTERNAL_SEND_URL = "https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send"
 
 # Studio Telegram alerts. Reuse the canonical Telegram forum values from telegram-worker/admin smoke config.
@@ -703,6 +732,10 @@ bucket_name = "mmd-models"
 binding = "PUBLIC_MODEL_UPLOADS_R2"
 bucket_name = "mmd-private-public-model-uploads"
 
+[[r2_buckets]]
+binding = "LINE_SLIP_EVIDENCE"
+bucket_name = "mmd-line-slip-evidence"
+
 # ---- Secrets (set via wrangler secret) ----
 # ADMIN_LOGIN_CREDENTIAL
 # ADMIN_SESSION_SECRET
@@ -714,3 +747,40 @@ bucket_name = "mmd-private-public-model-uploads"
 # AIRTABLE_API_KEY
 # INTERNAL_TOKEN
 # AUTH_SERVICE_ADMIN_TO_EVENTS
+
+# MMS Partner account credentials and recovery state.
+# Raw password/recovery values are never stored; only salted PBKDF2 hashes live in this DO.
+[[durable_objects.bindings]]
+name = "MMS_PARTNER_AUTH"
+class_name = "MmsPartnerAuthStore"
+
+[[migrations]]
+tag = "v2026-09-06-mms-partner-auth"
+new_sqlite_classes = ["MmsPartnerAuthStore"]
+
+# Canonical client lookup: avoid Webflow HTML fallback for POST requests.
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/clients/lineage-lookup"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/clients/recent"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/clients/lineage-lookup"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/clients/recent"
+zone_name = "mmdbkk.com"
+
+# Exact, credential-bound diagnostic only. Do not capture other payment routes.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/payment-issuer-diagnostic"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/payment-issuer-diagnostic"
+zone_name = "mmdbkk.com"

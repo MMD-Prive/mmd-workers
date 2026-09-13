@@ -13,6 +13,71 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 
+for (const mode of [{ canonical_only: true }, { allow_manual_fallback: false }, { canonical_only: true, allow_manual_fallback: true }]) {
+  test(`strict lookup returns no synthetic client: ${JSON.stringify(mode)}`, async () => {
+    const restore = installAirtableMock();
+    try {
+      const response = await handleCreateSessionClientLineageRequest(authedRequest(CREATE_SESSION_CLIENT_LINEAGE_LOOKUP_PATH, {
+        method: "POST", body: JSON.stringify({ query: "unmatched person", ...mode }),
+      }), env);
+      const body = await response.json();
+      assert.equal(response.status, 200);
+      assert.deepEqual(body.records, []);
+      assert.deepEqual(body.items, []);
+      assert.equal(body.count, 0);
+      assert.equal(body.manual_fallback, false);
+      assert.equal(body.canonical_only, true);
+      assert.ok(!body.lineage_warnings.includes("manual_public_only_pending_reconcile"));
+    } finally { restore(); }
+  });
+}
+
+test("default SIGIL lookup still offers a pending public-only name", async () => {
+  const restore = installAirtableMock();
+  try {
+    const response = await handleCreateSessionClientLineageRequest(authedRequest(CREATE_SESSION_CLIENT_LINEAGE_LOOKUP_PATH, {
+      method: "POST", body: JSON.stringify({ query: "unmatched person" }),
+    }), env);
+    const body = await response.json();
+    assert.equal(body.manual_fallback, true);
+    assert.equal(body.records[0].client_id, "");
+    assert.equal(body.records[0].manual_public_only, true);
+    assert.equal(body.line_candidates, undefined);
+  } finally { restore(); }
+});
+
+test("short LINE names remain separate suggestions until explicitly linked", async () => {
+  const restore = installAirtableMock();
+  const original = fixtures.staging;
+  fixtures.staging = [1, 2].map((n) => ({ id: `recVee${n}`, fields: {
+    line_renamed_name: "วี", line_display_name: `Vee ${n}`, line_user_id: `Uvee${n}`,
+    review_status: "pending", line_tags_raw: "private note", parsed_membership_tier: "VIP",
+  } }));
+  try {
+    const lookup = async (query) => (await handleCreateSessionClientLineageRequest(authedRequest(CREATE_SESSION_CLIENT_LINEAGE_LOOKUP_PATH, {
+      method: "POST", body: JSON.stringify({ query, canonical_only: true }),
+    }), env)).json();
+    const pending = await lookup("วี");
+    assert.deepEqual(pending.records, []);
+    assert.equal(pending.line_candidates.length, 2);
+    for (const candidate of pending.line_candidates) {
+      assert.equal(candidate.selectable, false);
+      assert.equal(candidate.identity_status, "pending_client_link");
+      assert.equal(candidate.client_id, undefined);
+      assert.equal(candidate.line_tags_raw, undefined);
+      assert.equal(candidate.parsed_membership_tier, undefined);
+    }
+    // Simulate an operator-approved link; lookup itself performs no mutation.
+    fixtures.staging[0].fields.matched_client_id = "recClient1";
+    const linked = await lookup("วี");
+    assert.equal(linked.records[0].client_id, "recClient1");
+    assert.equal(linked.records[0].remembered_name, "วี");
+    assert.equal(linked.line_candidates.length, 1);
+    const calls = restore();
+    assert.ok(calls.every((url) => url.hostname === "api.airtable.com"));
+  } finally { fixtures.staging = original; restore(); }
+});
+
 const env = {
   AIRTABLE_API_KEY: "airtable-test",
   AIRTABLE_BASE_ID: "base-test",

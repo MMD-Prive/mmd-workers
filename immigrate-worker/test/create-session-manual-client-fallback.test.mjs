@@ -94,3 +94,30 @@ test("existing canonical lookup results are never replaced by manual fallback", 
   assert.equal(body.manual_fallback, undefined);
   assert.deepEqual(body.records, [{ client_id: "recCanonical", client_name: "Per Client" }]);
 });
+
+for (const mode of [{ canonical_only: true }, { allow_manual_fallback: false }]) {
+  for (const legacy of [false, true]) {
+    test(`strict bridge preserves empty results and strips legacy fallback: ${JSON.stringify(mode)} / legacy=${legacy}`, async () => {
+      const upstreamRecords = legacy ? [{ client_id: '', manual_public_only: true, client_name: 'วี' }] : [];
+      let forwarded;
+      const response = await handleInternalRoutes(new Request('https://mmdbkk.com/v1/admin/clients/lineage-lookup', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ query: 'วี', ...mode }),
+      }), {
+        ADMIN_WORKER: { fetch: async (request) => {
+          forwarded = await request.json();
+          return Response.json({ ok: true, records: upstreamRecords, items: upstreamRecords,
+            manual_fallback: legacy, count: upstreamRecords.length,
+            line_candidates: [{ line_record_id: 'recVee', selectable: false }] });
+        } },
+      });
+      const body = await response.json();
+      assert.deepEqual(forwarded, { query: 'วี', ...mode });
+      assert.deepEqual(body.records, []);
+      assert.deepEqual(body.items, []);
+      assert.equal(body.count, 0);
+      assert.equal(body.manual_fallback, false);
+      assert.equal(body.line_candidates[0].selectable, false);
+    });
+  }
+}

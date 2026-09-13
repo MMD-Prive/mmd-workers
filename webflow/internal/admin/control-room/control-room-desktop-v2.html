@@ -8,10 +8,11 @@
     <nav class="crx__nav" aria-label="Internal admin navigation">
       <a class="is-active" href="/internal/admin/control-room"><span>01</span>Control Room</a>
       <a href="/internal/admin/jobs/create-session"><span>02</span>Create Session</a>
-      <a href="/internal/admin/kenji-knowledge"><span>03</span>Kenji Knowledge</a>
-      <a href="/member/kenji-ai-20?mode=admin-preview"><span>04</span>Kenji AI 20</a>
-      <a href="/studio"><span>05</span>Studio</a>
-      <a href="/internal/admin/membership-access"><span>06</span>Membership</a>
+      <a href="/internal/admin/model-link"><span>03</span>MMD MODEL Link</a>
+      <a href="/internal/admin/kenji?view=knowledge"><span>04</span>Kenji Knowledge</a>
+      <a href="/internal/admin/kenji?view=ai20"><span>05</span>Kenji AI 2.0</a>
+      <a href="/internal/admin/studio"><span>06</span>Studio</a>
+      <a href="/internal/admin/membership-access"><span>07</span>Membership</a>
     </nav>
 
     <div class="crx__identity">
@@ -27,7 +28,7 @@
       <div>
         <p class="crx__eyebrow">MMD PRIVÉ · OPERATOR HOME</p>
         <h1>Control Room</h1>
-        <p class="crx__lead">ผมรวมของที่ต้องใช้ไว้หน้าเดียวแล้วครับ ดูงานก่อน แล้วค่อยไปแก้ความรู้ ทดลองคำตอบ หรือเปิด Studio ต่อได้เลย</p>
+        <p class="crx__lead">ผมรวมของที่ต้องใช้ไว้หน้าเดียวแล้วครับ งาน Model ที่ยืนยัน LINE แล้วแต่ยังไม่ผูก record จะขึ้นเป็นคิวให้เปอร์เปิดตรวจจากตรงนี้ได้เลย</p>
       </div>
       <div class="crx__topActions">
         <button type="button" data-refresh>เช็กข้อมูลอีกครั้ง</button>
@@ -48,7 +49,7 @@
     <section class="crx__metrics" aria-label="Control room metrics">
       <article><span>งานวันนี้</span><b data-metric="sessions">—</b><small>Session ที่กำลังเดิน</small></article>
       <article><span>รอตรวจยอด</span><b data-metric="payments">—</b><small>Payment ที่ต้องเปิดดู</small></article>
-      <article><span>สมาชิกที่รอดู</span><b data-metric="members">—</b><small>Access หรือ renewal</small></article>
+      <article><span>MMD MODEL รอผูก</span><b data-model-link-count>—</b><small>LINE verified · Owner review</small></article>
       <article><span>เรื่องที่ควรระวัง</span><b data-metric="alerts">—</b><small>รายการที่ควรจัดการก่อน</small></article>
     </section>
 
@@ -60,17 +61,27 @@
         </div>
 
         <div class="crx__apps">
-          <a class="crx__app crx__app--gold" href="/internal/admin/kenji-knowledge">
-            <small>KNOWLEDGE SOURCE</small><h4>Kenji Knowledge</h4>
-            <p>เปิดความจำที่ Kenji ใช้อ้างอิง แก้ route, flow, copy และ decision สำคัญ</p>
+          <a class="crx__app crx__app--gold" href="/internal/admin/model-link" data-model-link-app>
+            <small>MMD MODEL · OWNER REVIEW</small><h4>LINE Link</h4>
+            <p>Model ที่ยืนยัน LINE แล้วแต่ยังไม่ผูก canonical Model record และ Drive folder จะมารอให้เปอร์ตรวจตรงนี้</p>
+            <b>รอตรวจ <span data-model-link-count>—</span> · เปิด Queue →</b>
+          </a>
+          <a class="crx__app" href="/internal/admin/kenji?view=knowledge">
+            <small>KENJI ADMIN</small><h4>Knowledge</h4>
+            <p>เปิดความรู้ที่ Kenji ใช้อ้างอิง แก้ route, flow, copy และ decision สำคัญใน admin surface เดียว</p>
             <b>เปิด Knowledge →</b>
           </a>
-          <a class="crx__app" href="/member/kenji-ai-20?mode=admin-preview">
-            <small>ADMIN PREVIEW</small><h4>Kenji AI 20</h4>
-            <p>ทดลองมุมมองฝั่งสมาชิก เช็กคำตอบ และดูว่าควรพา user ไปหน้าไหน</p>
-            <b>เปิด Preview →</b>
+          <a class="crx__app" href="/internal/admin/kenji?view=ai20">
+            <small>KENJI ADMIN</small><h4>Kenji AI 2.0</h4>
+            <p>ดู member-facing runtime จริงจากใน Kenji Admin เพื่อเช็กคำตอบและเส้นทางที่ลูกค้าจะเจอ</p>
+            <b>เปิด AI 2.0 →</b>
           </a>
-          <a class="crx__app" href="/studio">
+          <a class="crx__app" href="/internal/admin/kenji?view=board">
+            <small>KENJI ADMIN</small><h4>SIGIL Board</h4>
+            <p>ดู sanitized queue, risk, Need Info และเรื่องที่พร้อมให้ Per ตัดสินใจโดยไม่ย้าย authority</p>
+            <b>เปิด Board →</b>
+          </a>
+          <a class="crx__app" href="/internal/admin/studio">
             <small>CREATE & REVIEW</small><h4>Studio</h4>
             <p>ค้น source, เลือก template, เตรียมงาน และส่งต่อเข้า review โดยไม่แตะ backend truth</p>
             <b>เปิด Studio →</b>
@@ -82,27 +93,28 @@
         <div class="crx__panelHead"><div><p class="crx__eyebrow">SYSTEM CHECK</p><h3>ระบบพร้อมไหม</h3></div></div>
         <div class="crx__health">
           <div data-health="admin"><span>Admin session</span><b>Checking</b></div>
+          <div data-health="model-link"><span>MMD MODEL LINE Link</span><b>Checking</b></div>
           <div data-health="knowledge"><span>Kenji Knowledge</span><b>Checking</b></div>
-          <div data-health="preview"><span>Kenji AI preview</span><b>Checking</b></div>
+          <div data-health="preview"><span>Kenji AI 2.0</span><b>Checking</b></div>
           <div data-health="studio"><span>Studio</span><b>Checking</b></div>
           <div data-health="payments"><span>Payments</span><b>Checking</b></div>
         </div>
-        <p class="crx__note">หน้านี้เอาไว้ดูและพาไปต่อครับ การอนุมัติเงินจริง สิทธิ์สมาชิก และ session truth ยังอยู่ที่ Worker เหมือนเดิม</p>
+        <p class="crx__note">LINE Link เป็น Owner Review เท่านั้น รูป LINE ใช้ช่วยจำคน แต่ระบบจะไม่เดา Model หรือ Folder และจะไม่เปิดสิทธิ์จนกว่าเปอร์จะเลือก canonical record แล้วกด LINK เอง</p>
       </aside>
     </section>
 
     <section class="crx__flow">
-      <div class="crx__panelHead"><div><p class="crx__eyebrow">SIMPLE FLOW</p><h3>ใช้สามห้องนี้ยังไง</h3></div></div>
+      <div class="crx__panelHead"><div><p class="crx__eyebrow">SIMPLE FLOW</p><h3>คิว MMD MODEL ใช้ยังไง</h3></div></div>
       <div class="crx__steps">
-        <article><b>01</b><h4>แก้ข้อมูล</h4><p>เข้า Kenji Knowledge เมื่อความจำ route, copy หรือกติกาต้องอัปเดต</p></article>
-        <article><b>02</b><h4>ทดลองคำตอบ</h4><p>เปิด Kenji AI 20 ใน admin preview เพื่อดูว่าลูกค้าจะเห็นและเข้าใจอย่างไร</p></article>
-        <article><b>03</b><h4>เตรียมงาน</h4><p>ใช้ Studio สำหรับ source, template และ review handoff ก่อนนำไปใช้จริง</p></article>
-        <article><b>04</b><h4>กลับมาดูผล</h4><p>กลับ Control Room เพื่อเช็กสถานะรวม ไม่ต้องเปิดหลายหน้าค้างไว้</p></article>
+        <article><b>01</b><h4>LINE Verify</h4><p>Model ยืนยัน LINE แล้วระบบสร้าง verified_unlinked claim โดยยังไม่เปิด MMD MODEL</p></article>
+        <article><b>02</b><h4>เปอร์ตรวจคน</h4><p>เปิด LINE Link Queue ดูรูป/ชื่อ LINE แล้วค้น canonical Model record ที่ถูกต้อง</p></article>
+        <article><b>03</b><h4>ตรวจ Folder</h4><p>ระบบ re-read Drive folder และ collision ก่อนอนุญาตให้ LINK แบบ fail-closed</p></article>
+        <article><b>04</b><h4>เข้า MMD MODEL</h4><p>เมื่อ LINK สำเร็จ Model ใช้ LINE เดิมเปิด MMD MODEL และ resolve กลับ record เดิมได้</p></article>
       </div>
     </section>
 
     <footer class="crx__footer">
-      <span>MMD Privé Internal · Desktop-first operator surface</span>
+      <span>MMD Privé Internal · Owner-reviewed identity linking</span>
       <span data-session-note>Secure session required</span>
     </footer>
   </main>

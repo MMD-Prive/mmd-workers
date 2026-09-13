@@ -6,6 +6,7 @@ const DEFAULT_TABLES = Object.freeze({
   aiMessageEvents: "tbljCYfYqfm8gBTPq",
   consoleInbox: "tblFHmfpB2TTrzO2e",
   modelReviewRequests: "tblJ52hVu0f4uhEmS",
+  conversationMatrix: "tblS6iRgPjYLBqZJh",
 });
 
 const CLIENT_FIELDS = [
@@ -55,6 +56,38 @@ const CONVERSATION_FIELDS = [
   "final_status",
   "linked_session_id",
 ];
+const MATRIX_FIELDS = [
+  "matrix_id",
+  "Client",
+  "schema_version",
+  "channel",
+  "conversation_scope",
+  "topic",
+  "subtopic",
+  "relationship_context",
+  "last_customer_intent",
+  "last_customer_action",
+  "last_kenji_action",
+  "last_confirmed_outcome",
+  "conversation_stage",
+  "awaiting_from",
+  "pending_action",
+  "pending_reference",
+  "continuity_summary",
+  "do_not_ask_again_json",
+  "important_open_loops_json",
+  "handoff_required",
+  "handoff_owner",
+  "handoff_reason",
+  "live_truth_required",
+  "live_truth_domains",
+  "last_event_id",
+  "last_interaction_at",
+  "state_updated_at",
+  "state_expires_at",
+  "matrix_status",
+  "version",
+];
 const CONSOLE_FIELDS = ["inbox_id", "created_at", "created_by", "source", "intent", "status"];
 const MODEL_REVIEW_FIELDS = [
   "request_id",
@@ -88,6 +121,9 @@ export async function handleKenjiControlRequest(request, env) {
       return json(await readMemory(url.searchParams, env));
     }
     if (path === KENJI_CONTROL_ENDPOINTS.conversations) {
+      if (clean(url.searchParams.get("view")).toLowerCase() === "matrix") {
+        return json(await readMatrix(url.searchParams, env));
+      }
       return json(await readConversations(url.searchParams, env, limit));
     }
     return json(await readApprovals(url.searchParams, env, limit));
@@ -157,6 +193,77 @@ async function readConversations(params, env, limit) {
     data_status: records.length ? "live" : "empty",
     count: records.length,
     conversations: records.map(projectConversation),
+    privacy: "internal_admin_projection",
+  };
+}
+
+async function readMatrix(params, env) {
+  requireIdentity(params);
+  const client = await resolveClient(params, env);
+  if (!client) return emptyMatrixProjection();
+
+  const clientFields = client.fields || {};
+  const lineUserId = firstNonEmpty(params.get("line_user_id"), clientFields.line_user_id);
+  let matrixRecord = null;
+
+  if (lineUserId) {
+    const conversationHash = await sha256Hex(`line_ofc:${lineUserId}`);
+    const records = await listRecords(
+      env,
+      tableName(env, "conversationMatrix"),
+      [{ field: "conversation_id_hash", value: conversationHash }],
+      1,
+      MATRIX_FIELDS,
+      "state_updated_at"
+    );
+    matrixRecord = records[0] || null;
+  } else {
+    const recent = await listRecords(
+      env,
+      tableName(env, "conversationMatrix"),
+      [],
+      25,
+      MATRIX_FIELDS,
+      "state_updated_at"
+    );
+    matrixRecord = recent.find((record) => linkedRecordIncludes(record?.fields?.Client, client.id)) || null;
+  }
+
+  if (!matrixRecord) return emptyMatrixProjection();
+
+  const matrix = projectMatrix(matrixRecord);
+  let lastEvent = null;
+  if (matrix.last_event_id) {
+    const events = await listRecords(
+      env,
+      tableName(env, "aiMessageEvents"),
+      [{ field: "event_id", value: matrix.last_event_id }],
+      1,
+      CONVERSATION_FIELDS,
+      "created_at"
+    );
+    if (events[0]) lastEvent = projectMatrixEvent(events[0]);
+  }
+
+  return {
+    ok: true,
+    data_status: "live",
+    matrix,
+    last_event: lastEvent,
+    context_only: true,
+    live_truth_wins: true,
+    privacy: "internal_admin_projection",
+  };
+}
+
+function emptyMatrixProjection() {
+  return {
+    ok: true,
+    data_status: "empty",
+    matrix: null,
+    last_event: null,
+    context_only: true,
+    live_truth_wins: true,
     privacy: "internal_admin_projection",
   };
 }
@@ -278,6 +385,57 @@ function projectConversation(record) {
   };
 }
 
+function projectMatrix(record) {
+  const fields = record.fields || {};
+  return {
+    record_id: record.id,
+    matrix_id: safeValue(fields, ["matrix_id"]),
+    schema_version: safeValue(fields, ["schema_version"]),
+    channel: safeValue(fields, ["channel"]),
+    conversation_scope: safeValue(fields, ["conversation_scope"]),
+    topic: safeValue(fields, ["topic"]),
+    subtopic: safeValue(fields, ["subtopic"]),
+    relationship_context: safeValue(fields, ["relationship_context"]),
+    last_customer_intent: safeValue(fields, ["last_customer_intent"]),
+    last_customer_action: safeValue(fields, ["last_customer_action"]),
+    last_kenji_action: safeValue(fields, ["last_kenji_action"]),
+    last_confirmed_outcome: safeValue(fields, ["last_confirmed_outcome"]),
+    conversation_stage: safeValue(fields, ["conversation_stage"]),
+    awaiting_from: safeValue(fields, ["awaiting_from"]),
+    pending_action: safeValue(fields, ["pending_action"]),
+    pending_reference: safeValue(fields, ["pending_reference"]),
+    continuity_summary: safeValue(fields, ["continuity_summary"]),
+    do_not_ask_again: safeJsonArray(fields.do_not_ask_again_json),
+    important_open_loops: safeJsonArray(fields.important_open_loops_json),
+    handoff_required: safeValue(fields, ["handoff_required"]),
+    handoff_owner: safeValue(fields, ["handoff_owner"]),
+    handoff_reason: safeValue(fields, ["handoff_reason"]),
+    live_truth_required: safeValue(fields, ["live_truth_required"]),
+    live_truth_domains: safeArrayValue(fields.live_truth_domains),
+    last_event_id: safeValue(fields, ["last_event_id"]),
+    last_interaction_at: safeValue(fields, ["last_interaction_at"]),
+    state_updated_at: safeValue(fields, ["state_updated_at"]),
+    state_expires_at: safeValue(fields, ["state_expires_at"]),
+    matrix_status: safeValue(fields, ["matrix_status"]),
+    version: safeValue(fields, ["version"]),
+  };
+}
+
+function projectMatrixEvent(record) {
+  const fields = record.fields || {};
+  return {
+    event_id: safeValue(fields, ["event_id"]),
+    created_at: safeValue(fields, ["created_at"]),
+    channel: safeValue(fields, ["channel"]),
+    intent: safeValue(fields, ["detected_intent"]),
+    risk_level: safeValue(fields, ["risk_level"]),
+    response_mode: safeValue(fields, ["response_mode"]),
+    handoff_required: safeValue(fields, ["handoff_required"]),
+    handoff_reason: safeValue(fields, ["handoff_reason"]),
+    status: safeValue(fields, ["final_status"]),
+  };
+}
+
 function projectConsoleApproval(record) {
   const fields = record.fields || {};
   const intent = safeValue(fields, ["intent"]);
@@ -357,6 +515,7 @@ function tableName(env, key) {
     aiMessageEvents: env.AIRTABLE_TABLE_AI_MESSAGE_EVENTS_ID || env.AIRTABLE_TABLE_AI_MESSAGE_EVENTS || DEFAULT_TABLES.aiMessageEvents,
     consoleInbox: env.AIRTABLE_TABLE_CONSOLE_INBOX_ID || env.AIRTABLE_TABLE_CONSOLE_INBOX || DEFAULT_TABLES.consoleInbox,
     modelReviewRequests: env.AIRTABLE_TABLE_MODEL_REVIEW_REQUESTS_ID || env.AIRTABLE_TABLE_MODEL_REVIEW_REQUESTS || DEFAULT_TABLES.modelReviewRequests,
+    conversationMatrix: env.AIRTABLE_TABLE_KENJI_CONVERSATION_MATRIX_ID || DEFAULT_TABLES.conversationMatrix,
   };
   return clean(map[key]);
 }
@@ -386,6 +545,11 @@ function firstLinkedRecordId(value) {
   return clean(first?.id);
 }
 
+function linkedRecordIncludes(value, recordId) {
+  if (!Array.isArray(value)) return false;
+  return value.some((item) => (typeof item === "string" ? item : item?.id) === recordId);
+}
+
 function safeValue(fields, names) {
   for (const name of names) {
     const value = fields[name];
@@ -396,6 +560,29 @@ function safeValue(fields, names) {
     }
   }
   return null;
+}
+
+function safeArrayValue(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 12).map((item) => clean(typeof item === "object" ? item?.name || item?.id : item)).filter(Boolean);
+}
+
+function safeJsonArray(value) {
+  if (Array.isArray(value)) return safeArrayValue(value);
+  const raw = clean(value);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? safeArrayValue(parsed) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+async function sha256Hex(value) {
+  const bytes = new TextEncoder().encode(clean(value));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((item) => item.toString(16).padStart(2, "0")).join("");
 }
 
 function matchesStatus(value, expected) {

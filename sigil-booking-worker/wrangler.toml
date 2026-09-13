@@ -34,7 +34,7 @@ AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 WEB_BASE_URL = "https://mmdbkk.com"
 PAY_URL = "/sigil/pay"
 INME_URL = "/trust/inme"
-INTERNAL_ADMIN_BOOKING_URL = "https://sigil.mmdbkk.com/internal/admin/console"
+INTERNAL_ADMIN_BOOKING_URL = "https://sigil.mmdbkk.com/internal/admin/control-room"
 MODEL_PUBLIC_ASSET_BASE_URL = ""
 
 # Telegram notification for new booking drafts

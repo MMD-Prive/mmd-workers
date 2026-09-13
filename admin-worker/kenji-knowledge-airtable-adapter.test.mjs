@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { KenjiKnowledgeCoordinator } from "./src/kenji-knowledge-airtable-adapter.js";
+import {
+  isKenjiKnowledgeWorkflowRequest,
+  KenjiKnowledgeCoordinator,
+} from "./src/kenji-knowledge-airtable-adapter.js";
 
 const ENV = {
   AIRTABLE_API_KEY: "test",
@@ -26,6 +29,50 @@ function initialRecord() {
       payload_json: "{}",
       workflow_stage: "draft",
       workflow_version: 1,
+    },
+  };
+}
+
+function publishedRecord() {
+  return {
+    id: "recKenjiPublished01",
+    fields: {
+      knowledge_id: "kenji_seed_v1_payment_03",
+      title: "Payment pending review",
+      category: "payment",
+      language: "th",
+      customer_answer: "OLD LIVE ANSWER",
+      internal_instruction: "Old internal policy",
+      allowed_channels: ["LINE_OFC"],
+      allowed_audience: ["Customer"],
+      response_mode: "auto_reply_allowed",
+      risk_level: "critical",
+      status: "active",
+      effective_from: "2026-09-07",
+      source_path: "/confirm/payment-proof",
+      source_ref: "seed-pack-v1",
+      owner: "Boss Per",
+      reviewed_by: "per",
+      review_note: "Published old route",
+      payload_json: JSON.stringify({
+        seed_pack: {
+          version: "1.1",
+          lane: "payment",
+          related_routes: ["/confirm/payment-proof"],
+        },
+        workflow: {
+          stage: "published",
+          version: 2,
+          qa_snapshot: { pass: true, version: 1 },
+          audit_log: [{ action: "publish", version: 1 }],
+          published_at: "2026-09-07T09:54:40.469Z",
+          published_by: "per",
+        },
+      }),
+      workflow_stage: "published",
+      workflow_version: 2,
+      last_command_id: "cmd-old-publish",
+      workflow_updated_at: "2026-09-07T09:54:40.469Z",
     },
   };
 }
@@ -124,6 +171,169 @@ test("Airtable adapter serializes Review, QA, Publish and Audit in one record", 
     );
     assert.equal(audit.count, 3);
     assert.equal(patchCount, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("published revision preserves live fields through Review and QA then promotes atomically", async () => {
+  const originalFetch = globalThis.fetch;
+  let record = publishedRecord();
+  let patchCount = 0;
+
+  globalThis.fetch = async (_url, init = {}) => {
+    if (!init.method || init.method === "GET") return Response.json({ records: [structuredClone(record)] });
+    assert.equal(init.method, "PATCH");
+    patchCount += 1;
+    const payload = JSON.parse(init.body);
+    assert.equal(payload.records.length, 1);
+    assert.equal(payload.records[0].id, "recKenjiPublished01");
+    record = { ...record, fields: { ...record.fields, ...payload.records[0].fields } };
+    return Response.json({ records: [structuredClone(record)] });
+  };
+
+  try {
+    const coordinator = new KenjiKnowledgeCoordinator({}, ENV);
+    const path = "/v1/admin/kenji/knowledge/kenji_seed_v1_payment_03";
+    const revisedCard = {
+      knowledge_id: "kenji_seed_v1_payment_03",
+      title: "Payment pending review",
+      category: "payment",
+      language: "th",
+      customer_answer: "NEW REVIEWED ANSWER",
+      internal_instruction: "Use member payments; proof remains evidence.",
+      allowed_channels: ["LINE_OFC"],
+      allowed_audience: ["Customer"],
+      response_mode: "auto_reply_allowed",
+      risk_level: "critical",
+      source_path: "/member/payments",
+      source_ref: "seed-pack-v1.2",
+      owner: "Boss Per",
+      payload_json: {
+        seed_pack: {
+          version: "1.2",
+          lane: "payment",
+          related_routes: ["/member/payments"],
+        },
+      },
+    };
+
+    const reviseResponse = await coordinator.fetch(command(
+      path + "/revise",
+      { expected_version: 2, card: revisedCard },
+      "cmd-revise-0001",
+      "owner",
+    ));
+    assert.equal(reviseResponse.status, 200);
+    const revised = await reviseResponse.json();
+    assert.equal(revised.stage, "draft");
+    assert.equal(revised.version, 2);
+    assert.equal(revised.published_version, 2);
+    assert.equal(revised.live_preserved, true);
+    assert.equal(record.fields.customer_answer, "OLD LIVE ANSWER");
+    assert.equal(record.fields.source_path, "/confirm/payment-proof");
+    assert.equal(record.fields.status, "active");
+    assert.equal(record.fields.workflow_stage, "published");
+    assert.equal(record.fields.workflow_version, 2);
+    let workflow = JSON.parse(record.fields.payload_json).workflow;
+    assert.equal(workflow.pending_revision.card.customer_answer, "NEW REVIEWED ANSWER");
+    assert.deepEqual(workflow.pending_revision.card.payload_json.seed_pack.related_routes, ["/member/payments"]);
+
+    const reviewResponse = await coordinator.fetch(command(
+      path + "/review",
+      { expected_version: 2 },
+      "cmd-revise-review-0001",
+    ));
+    assert.equal(reviewResponse.status, 200);
+    assert.equal((await reviewResponse.json()).stage, "review");
+    assert.equal(record.fields.customer_answer, "OLD LIVE ANSWER");
+    assert.equal(record.fields.status, "active");
+    workflow = JSON.parse(record.fields.payload_json).workflow;
+    assert.equal(workflow.pending_revision.stage, "review");
+
+    const qaResponse = await coordinator.fetch(command(
+      path + "/qa",
+      { expected_version: 2, qa: passingQa() },
+      "cmd-revise-qa-0001",
+    ));
+    assert.equal(qaResponse.status, 200);
+    assert.equal((await qaResponse.json()).stage, "qa_passed");
+    assert.equal(record.fields.customer_answer, "OLD LIVE ANSWER");
+    assert.equal(record.fields.status, "active");
+    workflow = JSON.parse(record.fields.payload_json).workflow;
+    assert.equal(workflow.pending_revision.stage, "qa_passed");
+
+    const publishResponse = await coordinator.fetch(command(
+      path + "/publish",
+      { expected_version: 2 },
+      "cmd-revise-publish-0001",
+      "owner",
+    ));
+    assert.equal(publishResponse.status, 200);
+    const published = await publishResponse.json();
+    assert.equal(published.stage, "published");
+    assert.equal(published.version, 3);
+    assert.equal(published.revision_pending, false);
+    assert.equal(record.fields.customer_answer, "NEW REVIEWED ANSWER");
+    assert.equal(record.fields.source_path, "/member/payments");
+    assert.equal(record.fields.status, "active");
+    assert.equal(record.fields.workflow_stage, "published");
+    assert.equal(record.fields.workflow_version, 3);
+    const finalPayload = JSON.parse(record.fields.payload_json);
+    assert.equal(finalPayload.seed_pack.version, "1.2");
+    assert.deepEqual(finalPayload.seed_pack.related_routes, ["/member/payments"]);
+    assert.equal("pending_revision" in finalPayload.workflow, false);
+    assert.deepEqual(
+      finalPayload.workflow.audit_log.map((event) => event.action),
+      ["publish", "revise", "submit_review", "record_qa", "publish"],
+    );
+    assert.equal(patchCount, 4);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("revision route is POST-only, versioned, owner-gated, and rejects a second pending revision", async () => {
+  assert.equal(isKenjiKnowledgeWorkflowRequest("/v1/admin/kenji/knowledge/kenji_seed_v1_payment_03/revise", "POST"), true);
+  assert.equal(isKenjiKnowledgeWorkflowRequest("/v1/admin/kenji/knowledge/kenji_seed_v1_payment_03/revise", "GET"), false);
+
+  const originalFetch = globalThis.fetch;
+  let record = publishedRecord();
+  globalThis.fetch = async (_url, init = {}) => {
+    if (!init.method || init.method === "GET") return Response.json({ records: [structuredClone(record)] });
+    const payload = JSON.parse(init.body);
+    record = { ...record, fields: { ...record.fields, ...payload.records[0].fields } };
+    return Response.json({ records: [structuredClone(record)] });
+  };
+
+  try {
+    const coordinator = new KenjiKnowledgeCoordinator({}, ENV);
+    const path = "/v1/admin/kenji/knowledge/kenji_seed_v1_payment_03/revise";
+    const stale = await coordinator.fetch(command(path, { expected_version: 9 }, "cmd-revise-stale", "owner"));
+    assert.equal(stale.status, 409);
+    assert.equal((await stale.json()).error, "version_conflict");
+
+    const reviewer = await coordinator.fetch(command(path, { expected_version: 2 }, "cmd-revise-role-1", "reviewer"));
+    assert.equal(reviewer.status, 403);
+    assert.equal((await reviewer.json()).error, "revision_role_required");
+
+    const accepted = await coordinator.fetch(command(
+      path,
+      { expected_version: 2, card: { knowledge_id: "kenji_seed_v1_payment_03", customer_answer: "candidate" } },
+      "cmd-revise-accept",
+      "admin",
+    ));
+    assert.equal(accepted.status, 200);
+
+    const second = await coordinator.fetch(command(
+      path,
+      { expected_version: 2, card: { knowledge_id: "kenji_seed_v1_payment_03", customer_answer: "other" } },
+      "cmd-revise-other1",
+      "admin",
+    ));
+    assert.equal(second.status, 409);
+    assert.equal((await second.json()).error, "revision_in_progress");
+    assert.equal(record.fields.customer_answer, "OLD LIVE ANSWER");
   } finally {
     globalThis.fetch = originalFetch;
   }

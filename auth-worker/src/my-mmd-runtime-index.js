@@ -1,5 +1,6 @@
 import runtime from "./runtime-index.js";
 import { resolveMemberEntitlements } from "./member-entitlement-resolver.js";
+import { buildFastTrustEntitlement } from "./my-mmd-fast-trust-entitlement.js";
 import { planDownstreamAccess } from "./member-downstream-access-reconciler.js";
 import { runLifecycleReconciliation } from "./member-lifecycle-reconciliation.js";
 import { writeReconciliationAudit } from "./member-reconciliation-audit.js";
@@ -10,6 +11,7 @@ const MEMBER_PROFILE_PATH = "/__internal/member-profile/read";
 const ACCESS_RECONCILE_PATH = "/__internal/member-access/reconcile";
 const LEGACY_DRIVE_BOOTSTRAP_PATH = "/__internal/member-drive/bootstrap";
 const ENTITLEMENT_TABLE = "MMD — Member Entitlements";
+const FAST_TRUST_SOURCE = "line_oa_renamed_name_fast_trust";
 
 export default {
   async fetch(request, env, ctx) {
@@ -187,7 +189,7 @@ async function resolveIdentity(path, request, payload) {
   return { email: "", line_user_id: canonicalLineId(body?.line_user_id) };
 }
 
-async function readEntitlementSnapshot(env, identity = {}) {
+export async function readEntitlementSnapshot(env, identity = {}) {
   const empty = () => ({ ...resolveMemberEntitlements([]), source_status: "unavailable" });
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return empty();
   const clauses = [];
@@ -197,9 +199,44 @@ async function readEntitlementSnapshot(env, identity = {}) {
   if (lineUserId) clauses.push(`{${env.AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD || "line_user_id"}}=${formulaString(lineUserId)}`);
   if (!clauses.length) return empty();
   try {
-    const records = await airtableList(env, env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || ENTITLEMENT_TABLE, { filterByFormula: clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`, maxRecords: 100 });
-    const adapted = records.map((record) => ({ ...record, fields: { ...(record?.fields || {}), member_status: record?.fields?.member_lifecycle_status || record?.fields?.member_status || "" } }));
-    return { ...resolveMemberEntitlements(adapted), source_status: "verified" };
+    const records = await airtableList(env, env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || ENTITLEMENT_TABLE, {
+      filterByFormula: clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`,
+      maxRecords: 100,
+    });
+    const adapted = records.map((record) => ({
+      ...record,
+      fields: {
+        ...(record?.fields || {}),
+        member_status: record?.fields?.member_lifecycle_status || record?.fields?.member_status || "",
+      },
+    }));
+
+    let fastTrust = null;
+    if (lineUserId) {
+      try {
+        fastTrust = await buildFastTrustEntitlement(
+          env,
+          lineUserId,
+          (tableName, params) => airtableList(env, tableName, params),
+          records,
+        );
+        if (fastTrust) adapted.push(fastTrust);
+      } catch (error) {
+        console.warn({ event: "my_mmd_fast_trust_entitlement_unavailable", failure_class: safeFailure(error) });
+      }
+    }
+
+    const snapshot = resolveMemberEntitlements(adapted);
+    return {
+      ...snapshot,
+      source_status: "verified",
+      fast_trust: fastTrust ? {
+        active: true,
+        tier: fastTrust.fields.capability,
+        tier_source: FAST_TRUST_SOURCE,
+        history_state: "recovery_pending",
+      } : null,
+    };
   } catch (error) {
     console.warn({ event: "my_mmd_entitlement_snapshot_unavailable", failure_class: safeFailure(error) });
     return empty();

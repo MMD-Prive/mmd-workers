@@ -2,7 +2,7 @@
 
 Status: READY FOR DEPLOY CHECK  
 Owner: MMD / SIGIL  
-Updated: 2026-08-09 Bangkok
+Updated: 2026-09-07 Bangkok
 
 ## Scope
 
@@ -12,7 +12,7 @@ This handoff locks the production values and smoke-test order for SIGIL Booking 
 - Cloudflare Worker `sigil-booking-worker`
 - Airtable `SIGIL Booking Requests`
 - Telegram internal booking draft notification
-- Internal admin booking console link
+- Internal admin Control Room link
 
 ## Airtable truth
 
@@ -68,7 +68,7 @@ TELEGRAM_NOTIFY_ENABLED = "true"
 TELEGRAM_INTERNAL_SEND_URL = "https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send"
 TELEGRAM_BOOKING_CHAT_ID = "-1003546439681"
 TG_THREAD_BOOKING_DRAFT = "1399"
-INTERNAL_ADMIN_BOOKING_URL = "https://sigil.mmdbkk.com/internal/admin/console"
+INTERNAL_ADMIN_BOOKING_URL = "https://sigil.mmdbkk.com/internal/admin/control-room"
 ```
 
 ## Secrets
@@ -140,7 +140,7 @@ Expected content:
 - Booking draft only.
 - No promise of final job confirmation.
 - No payment approval claim.
-- Admin link points to `https://sigil.mmdbkk.com/internal/admin/console`.
+- Admin link points to `https://sigil.mmdbkk.com/internal/admin/control-room`.
 
 ### 5. Webflow `/sigil/booking`
 

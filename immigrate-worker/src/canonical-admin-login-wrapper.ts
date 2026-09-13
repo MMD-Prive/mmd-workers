@@ -1,4 +1,10 @@
 import coreWorker from "./canonical-admin-login-core";
+import {
+  ceoRouteMethodNotAllowed,
+  isCeoRoutePath,
+  markCeoGateResponse,
+  serveCeoRoute,
+} from "./ceo-route-worker";
 import { renderProtocolCenterPage } from "./protocol-center-owner-ui";
 import type { Env } from "./types";
 
@@ -30,9 +36,10 @@ function protocolMethodNotAllowed(): Response {
   );
 }
 
-async function requireProtocolAdminGate(request: Request, env: Env): Promise<Response | null> {
+async function requireInternalAdminGate(request: Request, env: Env): Promise<Response | null> {
   const probeUrl = new URL(request.url);
   probeUrl.pathname = CONTROL_ROOM_PATH;
+  probeUrl.search = "";
   const probe = await coreWorker.fetch(
     new Request(probeUrl.toString(), {
       method: "GET",
@@ -47,7 +54,8 @@ async function requireProtocolAdminGate(request: Request, env: Env): Promise<Res
   }
 
   const login = new URL(ADMIN_LOGIN_PATH, request.url);
-  login.searchParams.set("next", new URL(request.url).pathname + new URL(request.url).search);
+  const original = new URL(request.url);
+  login.searchParams.set("next", original.pathname + original.search);
   return new Response(null, {
     status: 302,
     headers: {
@@ -135,11 +143,21 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
 
+    if (isCeoRoutePath(path)) {
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return ceoRouteMethodNotAllowed();
+      }
+      const gate = await requireInternalAdminGate(request, env);
+      if (gate) return markCeoGateResponse(gate);
+      const response = await serveCeoRoute(request);
+      return request.method === "GET" ? decorateInternalHtmlResponse(path, response) : response;
+    }
+
     if (PROTOCOL_PATHS.has(path)) {
       if (request.method !== "GET" && request.method !== "HEAD") {
         return protocolMethodNotAllowed();
       }
-      const gate = await requireProtocolAdminGate(request, env);
+      const gate = await requireInternalAdminGate(request, env);
       if (gate) return gate;
       const response = renderProtocolCenterPage({ headOnly: request.method === "HEAD" });
       return request.method === "GET" ? decorateInternalHtmlResponse(path, response) : response;
