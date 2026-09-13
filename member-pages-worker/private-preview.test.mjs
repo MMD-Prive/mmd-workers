@@ -32,7 +32,7 @@ test("private preview gate consumes exactly once", async () => {
     method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ expiresAt }),
   }));
   assert.equal(second.status, 410);
-  assert.equal((await gate.fetch("https://private-preview.internal/status")).status, 410);
+  assert.equal((await gate.fetch(new Request("https://private-preview.internal/status"))).status, 410);
 });
 
 test("expired preview cannot be consumed", async () => {
