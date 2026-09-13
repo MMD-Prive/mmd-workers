@@ -220,6 +220,7 @@ function privateFlashRequest(body) {
     body: JSON.stringify({
       model_id: "recModel",
       client_id: "recClient",
+      preview_kind: "private_pic",
       ...body,
     }),
   });
