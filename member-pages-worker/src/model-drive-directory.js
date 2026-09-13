@@ -3,6 +3,7 @@ const INTERNAL_HOST = "model-drive-directory.internal";
 const SEARCH_PATH = "/__internal/model-drive/search";
 const RESOLVE_PATH = "/__internal/model-drive/resolve";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
+const SIGNATURE_TTL_SECONDS = 90;
 
 const DEFAULT_CATALOG_ROOT = "1RNN0aYwmvkKqACMAjRLYOJTFFFrlYycQ";
 const DEFAULT_PUBLIC_ROOT = "1prgahujlFVILA1VrMKrJ327yZyOv44r6";
@@ -16,15 +17,19 @@ export function isModelDriveDirectoryRequest(request) {
   if (!(request instanceof Request)) return false;
   let url;
   try { url = new URL(request.url); } catch { return false; }
-  if (url.hostname !== INTERNAL_HOST) return false;
-  if (request.method === "GET" && url.pathname === SEARCH_PATH) return true;
-  if (request.method === "POST" && url.pathname === RESOLVE_PATH) return true;
-  return false;
+  const routeMatches = (request.method === "GET" && url.pathname === SEARCH_PATH)
+    || (request.method === "POST" && url.pathname === RESOLVE_PATH);
+  if (!routeMatches) return false;
+  return url.hostname === INTERNAL_HOST || url.hostname.endsWith(".workers.dev");
 }
 
 export async function handleModelDriveDirectoryRequest(request, env = {}) {
   if (!isModelDriveDirectoryRequest(request)) {
     return json({ ok: false, error: "not_found" }, 404);
+  }
+  const url = new URL(request.url);
+  if (url.hostname !== INTERNAL_HOST && !(await verifySignedCaller(request, env))) {
+    return json({ ok: false, error: "model_drive_directory_forbidden" }, 403);
   }
   if (!driveConfigured(env)) {
     return json({ ok: false, error: "model_drive_directory_not_configured" }, 503);
@@ -33,7 +38,6 @@ export async function handleModelDriveDirectoryRequest(request, env = {}) {
   try {
     const accessToken = await googleDriveAccessToken(env);
     if (request.method === "GET") {
-      const url = new URL(request.url);
       const q = clean(url.searchParams.get("q"), 120);
       const lane = normalizeLane(url.searchParams.get("lane"));
       if (!q) return json({ ok: true, count: 0, items: [] });
@@ -202,6 +206,50 @@ async function googleDriveAccessToken(env) {
   const token = clean(payload?.access_token, 6000);
   if (!response.ok || !token) throw new Error("google_oauth_failed");
   return token;
+}
+
+async function verifySignedCaller(request, env) {
+  const secret = clean(env.MODEL_DRIVE_DIRECTORY_SECRET || env.AIRTABLE_API_KEY, 6000);
+  const timestamp = clean(request.headers.get("x-mmd-model-drive-ts"), 20);
+  const supplied = clean(request.headers.get("x-mmd-model-drive-signature"), 200).toLowerCase();
+  if (!secret || !/^\d{10,13}$/.test(timestamp) || !/^[a-f0-9]{64}$/.test(supplied)) return false;
+  const seconds = timestamp.length === 13 ? Math.floor(Number(timestamp) / 1000) : Number(timestamp);
+  if (!Number.isFinite(seconds) || Math.abs(Math.floor(Date.now() / 1000) - seconds) > SIGNATURE_TTL_SECONDS) return false;
+
+  const url = new URL(request.url);
+  const body = request.method === "POST" ? await request.clone().text() : "";
+  const bodyHash = await sha256Hex(body);
+  const canonical = `${timestamp}\n${request.method}\n${url.pathname}\n${url.search}\n${bodyHash}`;
+  const expected = await hmacHex(secret, canonical);
+  return timingSafeEqual(expected, supplied);
+}
+
+async function hmacHex(secret, data) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(data));
+  return bytesToHex(new Uint8Array(signature));
+}
+
+async function sha256Hex(data) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
+  return bytesToHex(new Uint8Array(digest));
+}
+
+function bytesToHex(bytes) {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function timingSafeEqual(left, right) {
+  if (left.length !== right.length) return false;
+  let diff = 0;
+  for (let index = 0; index < left.length; index += 1) diff |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  return diff === 0;
 }
 
 export function driveSearchToken(query) {
