@@ -8,6 +8,7 @@ on:
       - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/historical-slip-backfill-route.test.mjs"
       - "admin-worker/historical-slip-backfill-handoff-probe.test.mjs"
+      - "admin-worker/historical-slip-backfill-private-evidence.test.mjs"
       - "admin-worker/wrangler.toml"
       - ".github/workflows/historical-backfill-route-gate.yml"
   workflow_run:
@@ -37,13 +38,20 @@ jobs:
           node --check admin-worker/src/studio-telegram-worker.js
           node --experimental-global-webcrypto --test \
             admin-worker/historical-slip-backfill-route.test.mjs \
-            admin-worker/historical-slip-backfill-handoff-probe.test.mjs
-      - name: Preserve canonical route and Money Truth separation
+            admin-worker/historical-slip-backfill-handoff-probe.test.mjs \
+            admin-worker/historical-slip-backfill-private-evidence.test.mjs
+      - name: Preserve canonical route, private evidence, and Money Truth separation
         run: |
           set -euo pipefail
           grep -F 'main = "src/admin-login-hero-worker.js"' admin-worker/wrangler.toml
           grep -F 'mmdbkk.com/v1/admin/payments/historical-backfill*' admin-worker/wrangler.toml
           grep -F 'www.mmdbkk.com/v1/admin/payments/historical-backfill*' admin-worker/wrangler.toml
+          grep -F 'binding = "SLIP_EXTRACTOR"' admin-worker/wrangler.toml
+          grep -F 'service = "mmd-slip-extractor"' admin-worker/wrangler.toml
+          grep -F 'x-mmd-internal-call' admin-worker/src/historical-slip-backfill-runtime.js
+          grep -F 'x-mmd-service-binding' admin-worker/src/historical-slip-backfill-runtime.js
+          grep -F 'LINE_SLIP_EVIDENCE.put' admin-worker/src/historical-slip-backfill-runtime.js
+          grep -F 'r2_key: r2Key' admin-worker/src/historical-slip-backfill-runtime.js
           grep -F 'AUTH_SERVICE_ADMIN_TO_PAYMENTS' admin-worker/src/historical-slip-backfill-runtime.js
           grep -F '/v1/internal/payments/historical-slip/reviewed' admin-worker/src/historical-slip-backfill-runtime.js
           grep -F 'decision === "validate_handoff"' admin-worker/src/historical-slip-backfill-runtime.js
@@ -52,6 +60,10 @@ jobs:
           grep -F 'review_state: "pending"' admin-worker/src/historical-slip-backfill-runtime.js
           grep -F 'status: "pending"' admin-worker/src/historical-slip-backfill-runtime.js
           grep -F 'authority: "payments-worker"' admin-worker/src/historical-slip-backfill-runtime.js
+          if grep -E 'HISTORICAL_SLIP_(QR|OCR)_EXTRACTOR_URL|LINE_SLIP_(QR|OCR)_EXTRACTOR_URL' admin-worker/src/historical-slip-backfill-runtime.js; then
+            echo 'Historical runtime must not call URL-based slip extractors' >&2
+            exit 1
+          fi
 
   sync-route-and-smoke:
     if: >-
