@@ -33,7 +33,7 @@ The canonical signed customer payment route is `/sigil/pay?t=<signed token>`. Pa
 - `member-pages-worker/src/liff-payment-binding.js`: verified LIFF session binding; validates package/amount server-side and accepts only a canonical customer URL shaped as `https://mmdbkk.com/sigil/pay?t=...` with no additional payment-authority query keys.
 - `member-dashboard-chat-worker/src/renderers/single-renewal-renderer.js`: explicit `/sigil/pay/renewal*` and `/pay/renewal*` legacy renewal renderer only.
 - `mmd-redirect-worker`: hard-disabled transparent pass-through. It is not a payment-route owner and must not be reactivated implicitly by an architecture document or old test.
-- `immigrate-worker`: current Wrangler ownership is internal/admin only; legacy member/payment render helpers inside historical source are not public route authority.
+- `immigrate-worker`: current Wrangler ownership is internal/admin only. Its live workers.dev ingress explicitly hands GET/HEAD requests for legacy member/payment aliases back to `https://mmdbkk.com`, strips non-`t` payment authority from signed membership/generic-payment handoffs, and prevents historical fallback renderers from becoming a parallel customer payment surface.
 - Webflow legacy aliases: compatibility bridge presentation only until an explicit safe edge owner is approved.
 
 ## Webflow implementation
@@ -52,7 +52,9 @@ Canonical regression coverage is split by owner:
 
 - `webflow/payment/legacy-payment-route-bridge-v1.test.mjs` — alias behavior and no browser payment authority.
 - `member-dashboard-chat-worker/test/renewal-route.test.mjs` — canonical legacy renewal renderer.
-- `member-pages-worker/test/liff-identity.test.mjs` and LIFF payment tests — verified member identity/payment handoff.
+- `member-pages-worker/test/liff-identity.test.mjs` — legacy browser-supplied LIFF identity stays disabled.
+- `member-pages-worker/test/payment-route-boundary.test.mjs` — member-pages stays service-only and verified LIFF payment setup hands off only to signed `/sigil/pay?t=...`.
+- `immigrate-worker/test/payment-route-boundary.test.mjs` — immigrate-worker cannot acquire public payment/member route ownership and its workers.dev ingress hands legacy paths back to canonical public routes.
 - `mmd-redirect-worker/test/hard-disabled.test.mjs` — transparent pass-through only.
 - `telegram-worker/test/webhook-secret-token.test.mjs` — customer CTA points to `/sigil/member/membership`, never `/pay/membership`.
 - `tools/mmd-route-governance-connector.mjs` — read-only production smoke and current route assertions.
