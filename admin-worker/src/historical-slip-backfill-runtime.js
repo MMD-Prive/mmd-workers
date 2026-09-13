@@ -247,9 +247,7 @@ async function reviewHistoricalProof(request, env, ctx) {
   );
   if (conflict && overrideReason.length < 5) throw httpError(409, "override_reason_required_for_extraction_conflict");
 
-  const base = clean(env.PAYMENTS_BASE_URL).replace(/\/+$/, "");
   const serviceToken = clean(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
-  if (!base) throw httpError(503, "payments_worker_base_url_missing");
   if (!serviceToken) throw httpError(503, "payments_worker_service_auth_missing");
 
   const handoff = {
@@ -270,11 +268,19 @@ async function reviewHistoricalProof(request, env, ctx) {
     review_actor: "internal_admin_owner",
   };
 
-  const response = await fetch(`${base}/v1/internal/payments/historical-slip/reviewed`, {
+  const handoffInit = {
     method: "POST",
     headers: { Authorization: `Bearer ${serviceToken}`, "Content-Type": "application/json" },
     body: JSON.stringify(handoff),
-  });
+  };
+  let response;
+  if (typeof env.PAYMENTS_WORKER?.fetch === "function") {
+    response = await env.PAYMENTS_WORKER.fetch(new Request("https://sigil.mmdbkk.com/v1/internal/payments/historical-slip/reviewed", handoffInit));
+  } else {
+    const base = clean(env.PAYMENTS_BASE_URL).replace(/\/+$/, "");
+    if (!base) throw httpError(503, "payments_worker_base_url_missing");
+    response = await fetch(`${base}/v1/internal/payments/historical-slip/reviewed`, handoffInit);
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.ok !== true) {
     throw httpError(response.status >= 400 ? response.status : 502, safeCode(payload?.error || "payments_worker_handoff_failed"));
@@ -322,9 +328,7 @@ async function reviewHistoricalProof(request, env, ctx) {
 }
 
 async function validateHistoricalHandoff(proof, note, body, env, reviewReason) {
-  const base = clean(env.PAYMENTS_BASE_URL).replace(/\/+$/, "");
   const serviceToken = clean(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
-  if (!base) throw httpError(503, "payments_worker_base_url_missing");
   if (!serviceToken) throw httpError(503, "payments_worker_service_auth_missing");
 
   const proofId = safeText(proof.fields?.proof_id || body.proof_id, 120);
@@ -353,11 +357,19 @@ async function validateHistoricalHandoff(proof, note, body, env, reviewReason) {
     review_actor: "internal_admin_owner",
   };
 
-  const response = await fetch(base + "/v1/internal/payments/historical-slip/reviewed", {
+  const handoffProbeInit = {
     method: "POST",
     headers: { Authorization: "Bearer " + serviceToken, "Content-Type": "application/json" },
     body: JSON.stringify(handoffProbe),
-  });
+  };
+  let response;
+  if (typeof env.PAYMENTS_WORKER?.fetch === "function") {
+    response = await env.PAYMENTS_WORKER.fetch(new Request("https://sigil.mmdbkk.com/v1/internal/payments/historical-slip/reviewed", handoffProbeInit));
+  } else {
+    const base = clean(env.PAYMENTS_BASE_URL).replace(/\/+$/, "");
+    if (!base) throw httpError(503, "payments_worker_base_url_missing");
+    response = await fetch(base + "/v1/internal/payments/historical-slip/reviewed", handoffProbeInit);
+  }
   const payload = await response.json().catch(() => ({}));
   const expectedRejection = response.status === 409 && safeCode(payload?.error) === "historical_proof_sha_mismatch";
   if (!expectedRejection) {

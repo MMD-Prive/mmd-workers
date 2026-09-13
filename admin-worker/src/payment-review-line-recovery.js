@@ -162,14 +162,19 @@ async function resolveClient(env, renewalFields, member, lineUserId) {
 }
 
 async function sendToPayments(env, body) {
-  const base = clean(env.PAYMENTS_BASE_URL).replace(/\/+$/, "");
   const tokenValue = clean(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
-  if (!base || !tokenValue) throw httpError(503, "payments_worker_service_not_ready");
-  return fetch(`${base}/v1/internal/payments/reviewed-proof`, {
+  if (!tokenValue) throw httpError(503, "payments_worker_service_not_ready");
+  const init = {
     method: "POST",
     headers: { Authorization: `Bearer ${tokenValue}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  });
+  };
+  if (typeof env.PAYMENTS_WORKER?.fetch === "function") {
+    return env.PAYMENTS_WORKER.fetch(new Request("https://sigil.mmdbkk.com/v1/internal/payments/reviewed-proof", init));
+  }
+  const base = clean(env.PAYMENTS_BASE_URL).replace(/\/+$/, "");
+  if (!base) throw httpError(503, "payments_worker_service_not_ready");
+  return fetch(`${base}/v1/internal/payments/reviewed-proof`, init);
 }
 
 async function findOneByFormula(env, tableName, filterByFormula, ambiguousError) {
