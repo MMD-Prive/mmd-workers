@@ -4,9 +4,13 @@ import test from "node:test";
 import { LINE_GROUP_INGRESS_INTERNALS } from "../src/line-group-ingress-front-gate.js";
 
 const {
+  alertsOpsThreadId,
   hasPaymentContext,
   hasPaymentFollowupContext,
   captureDirectUserImageEvidence,
+  membershipOpsThreadId,
+  notifyPaymentProofOps,
+  paymentOpsThreadId,
   promoteDirectUserCandidate,
   resolveDirectPayerContext,
 } = LINE_GROUP_INGRESS_INTERNALS;
@@ -36,6 +40,24 @@ function memoryR2() {
   };
 }
 
+function telegramHarness(extra = {}) {
+  const messages = [];
+  return {
+    messages,
+    env: {
+      AUTH_SERVICE_LINE_TO_TELEGRAM: "test-token",
+      TELEGRAM_OPS_CHAT_ID: "-1003546439681",
+      TELEGRAM_WORKER: {
+        async fetch(request) {
+          messages.push(await request.json());
+          return Response.json({ ok: true });
+        },
+      },
+      ...extra,
+    },
+  };
+}
+
 test("payment context recognizes renewal and transfer language", () => {
   for (const text of ["ต่ออายุสมาชิก", "โอนแล้ว", "ส่งสลิป", "payment proof", "renewal", "bank transfer"]) {
     assert.equal(hasPaymentContext(text), true, text);
@@ -48,6 +70,64 @@ test("payment follow-up recognizes access and Drive after payment image", () => 
     assert.equal(hasPaymentFollowupContext(text), true, text);
   }
   assert.equal(hasPaymentFollowupContext("วันนี้ว่างไหม"), false);
+});
+
+test("Telegram payment topic helpers keep Membership, Confirm and Alerts separate", () => {
+  assert.equal(membershipOpsThreadId({}), 20);
+  assert.equal(paymentOpsThreadId({}), 21);
+  assert.equal(alertsOpsThreadId({}), 9);
+  assert.equal(membershipOpsThreadId({ TELEGRAM_MEMBERSHIP_THREAD_ID: "120" }), 120);
+  assert.equal(paymentOpsThreadId({ TELEGRAM_PAYMENT_THREAD_ID: "121" }), 121);
+  assert.equal(alertsOpsThreadId({ TELEGRAM_ALERTS_THREAD_ID: "109" }), 109);
+});
+
+test("LINE membership or renewal proof routes to Membership topic 20", async () => {
+  const h = telegramHarness();
+  const result = await notifyPaymentProofOps(h.env, {
+    proofId: "line_membership_1",
+    sourceType: "user",
+    sourceContext: "direct_user_payment_followup",
+    paymentContextText: "ต่ออายุสมาชิก Premium ครับ โอนแล้ว",
+  }, { deduped: false });
+  assert.equal(result.sent, true);
+  assert.equal(result.topic, "membership");
+  assert.equal(result.thread_id, 20);
+  assert.equal(h.messages.length, 1);
+  assert.equal(h.messages[0].flow, "membership");
+  assert.equal(h.messages[0].message_thread_id, 20);
+  assert.match(h.messages[0].text, /Membership Payment Proof/);
+});
+
+test("LINE generic transfer proof stays in Payments Confirm topic 21", async () => {
+  const h = telegramHarness();
+  const result = await notifyPaymentProofOps(h.env, {
+    proofId: "line_payment_1",
+    sourceType: "user",
+    sourceContext: "direct_user_payment_followup",
+    paymentContextText: "โอนแล้วครับ ส่งสลิปให้",
+  }, { deduped: false });
+  assert.equal(result.topic, "payment");
+  assert.equal(result.thread_id, 21);
+  assert.equal(h.messages.length, 1);
+  assert.equal(h.messages[0].flow, "payment_proof");
+  assert.equal(h.messages[0].message_thread_id, 21);
+});
+
+test("LINE conflicting membership/service wording stays in Confirm and also raises Alerts", async () => {
+  const h = telegramHarness();
+  const result = await notifyPaymentProofOps(h.env, {
+    proofId: "line_conflict_1",
+    sourceType: "user",
+    sourceContext: "direct_user_payment_followup",
+    paymentContextText: "ค่าสมาชิก Premium แต่ยอดนี้เป็นมัดจำงาน",
+  }, { deduped: false });
+  assert.equal(result.topic, "payment");
+  assert.equal(result.thread_id, 21);
+  assert.equal(result.alert_sent, true);
+  assert.equal(h.messages.length, 2);
+  assert.equal(h.messages[0].message_thread_id, 21);
+  assert.equal(h.messages[1].flow, "alert");
+  assert.equal(h.messages[1].message_thread_id, 9);
 });
 
 test("direct image becomes bounded candidate when recent payment context is absent", async () => {
