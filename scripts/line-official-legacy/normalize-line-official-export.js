@@ -128,6 +128,7 @@ function noteField(note, label) {
 function normalizeProfileLabel(value) {
   return clean(value)
     .toLowerCase()
+    .replace(/^[^a-z0-9ก-๙]+/i, "")
     .replace(/[._]/g, " ")
     .replace(/\s*[-–—]\s*/g, " - ")
     .replace(/\s+/g, " ")
