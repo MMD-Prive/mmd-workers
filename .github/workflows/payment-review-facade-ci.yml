@@ -7,9 +7,11 @@ on:
       - "admin-worker/src/payment-review-runtime.js"
       - "admin-worker/src/payment-review-line-recovery.js"
       - "admin-worker/src/payment-review-owner-context.js"
+      - "admin-worker/src/payment-review-auto-context.js"
       - "admin-worker/line-slip-intake-review-queue.contract.test.mjs"
       - "admin-worker/payment-review-manual-renewal-recovery.test.mjs"
       - "admin-worker/payment-review-owner-context.test.mjs"
+      - "admin-worker/payment-review-auto-context.test.mjs"
       - "admin-worker/wrangler.toml"
       - "payments-worker/index.review-wrapper.js"
       - "payments-worker/reviewed-proof.js"
@@ -43,7 +45,9 @@ jobs:
           node --check admin-worker/src/payment-review-runtime.js
           node --check admin-worker/src/payment-review-line-recovery.js
           node --check admin-worker/src/payment-review-owner-context.js
+          node --check admin-worker/src/payment-review-auto-context.js
           node --check webflow/internal/admin/payments/payment-owner-match-v1.js
+          node --check webflow/internal/admin/payments/payment-owner-match-v2.js
           node --check webflow/internal/admin/payments/historical-payment-context-v3.js
           node --check payments-worker/index.review-wrapper.js
           node --check payments-worker/reviewed-proof.js
@@ -64,6 +68,7 @@ jobs:
         run: |
           set -euo pipefail
           node --test admin-worker/payment-review-owner-context.test.mjs
+          node --test admin-worker/payment-review-auto-context.test.mjs
 
       - name: Email-less LINE renewal recovery contract
         run: |
@@ -96,6 +101,8 @@ jobs:
           grep -F 'owner_context_match_requires_exact_session_or_member: true' admin-worker/src/payment-review-runtime.js
           grep -F 'owner_context_names_are_audit_only: true' admin-worker/src/payment-review-runtime.js
           grep -F 'customer_model_labels_authoritative: false' admin-worker/src/payment-review-owner-context.js
+          grep -F 'line_context_auto_match' admin-worker/src/payment-review-auto-context.js
+          grep -F 'amount alone never creates membership intent' admin-worker/payment-review-owner-context.test.mjs
           grep -F 'ordering: "created_at_desc"' admin-worker/src/payment-review-runtime.js
           grep -F 'sort: [{ field: "created_at", direction: "desc" }]' admin-worker/src/payment-review-runtime.js
           grep -F 'browser_can_mark_paid: false' admin-worker/src/payment-review-line-recovery.js

@@ -1,3 +1,5 @@
+import { resolveAutomaticPaymentContext } from "./payment-review-auto-context.js";
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_MEMBERS_TABLE = "tblgWc5VRon5o8Mhk";
 const DEFAULT_SESSIONS_TABLE = "Sessions";
@@ -58,7 +60,7 @@ export function mergeOperatorPaymentContext(canonicalFields = {}, context = {}) 
 }
 
 export async function resolveOperatorPaymentContext(env = {}, context = {}, evidence = {}) {
-  if (!hasOperatorPaymentContext(context)) return null;
+  if (!hasOperatorPaymentContext(context)) return resolveAutomaticPaymentContext(env, evidence);
   const paymentStage = optionalStage(context.payment_stage);
   if (!paymentStage) throw httpError(409, "operator_context_payment_stage_required");
   const paymentRef = safeText(evidence.payment_ref, 180);
