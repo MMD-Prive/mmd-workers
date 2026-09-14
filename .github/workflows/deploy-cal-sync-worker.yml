@@ -27,6 +27,9 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
       CAL_SYNC_WORKER_FALLBACK_URL: https://cal-sync-worker.malemodel-bkk.workers.dev
+      CAL_LEDGER_AIRTABLE_TOKEN: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY || secrets.AIRTABLE_TOKEN }}
+      CAL_WEBHOOK_SECRET_VALUE: ${{ secrets.CAL_WEBHOOK_SECRET }}
+      CAL_API_KEY_VALUE: ${{ secrets.CAL_API_KEY }}
 
     steps:
       - name: Check out repository
@@ -78,6 +81,24 @@ jobs:
           echo "CAL_SYNC_WORKER_PRODUCTION_URL=${worker_url}" >> "$GITHUB_ENV"
           echo "Resolved worker URL: ${worker_url}"
 
+      - name: Provision existing MMD secrets into Cal shadow bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          put_secret() {
+            local name="$1"
+            local value="$2"
+            if [ -z "$value" ]; then
+              echo "$name is not available in repository secrets; preserving any existing Worker secret"
+              return 0
+            fi
+            printf '%s' "$value" | npx --yes wrangler@4 secret put "$name" --name cal-sync-worker --config wrangler.toml >/dev/null
+            echo "$name provisioned"
+          }
+          put_secret AIRTABLE_API_KEY "$CAL_LEDGER_AIRTABLE_TOKEN"
+          put_secret CAL_WEBHOOK_SECRET "$CAL_WEBHOOK_SECRET_VALUE"
+          put_secret CAL_API_KEY "$CAL_API_KEY_VALUE"
+
       - name: Verify production shadow health
         shell: bash
         run: |
@@ -90,9 +111,21 @@ jobs:
           grep -q '"service":"cal-sync-worker"' "$body"
           grep -q '"mode":"shadow"' "$body"
           grep -q '"timezone":"Asia/Bangkok"' "$body"
+          if [ -n "$CAL_LEDGER_AIRTABLE_TOKEN" ]; then
+            grep -q '"mapping_ledger_configured":true' "$body"
+          fi
+          if [ -n "$CAL_WEBHOOK_SECRET_VALUE" ]; then
+            grep -q '"webhook_secret_configured":true' "$body"
+          fi
+          if [ -n "$CAL_API_KEY_VALUE" ]; then
+            grep -q '"api_key_configured":true' "$body"
+          fi
 
       - name: Deployment receipt
         shell: bash
         run: |
           echo "cal-sync-worker live in shadow mode: ${GITHUB_SHA}"
           echo "health: ${CAL_SYNC_WORKER_PRODUCTION_URL}/health"
+          echo "ledger secret supplied: $([ -n "$CAL_LEDGER_AIRTABLE_TOKEN" ] && echo yes || echo no)"
+          echo "webhook secret supplied: $([ -n "$CAL_WEBHOOK_SECRET_VALUE" ] && echo yes || echo no)"
+          echo "Cal API secret supplied: $([ -n "$CAL_API_KEY_VALUE" ] && echo yes || echo no)"
