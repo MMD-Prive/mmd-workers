@@ -611,6 +611,12 @@ binding = "MODEL_DRIVE_DIRECTORY"
 service = "member-pages-worker"
 
 # ใช้สำหรับ CORS (browser calls)
+# Private scheduling bridge for Admin Calendar diagnostics.
+# No public credential is exposed; the downstream Worker remains independently deployable.
+[[services]]
+binding = "CAL_SYNC_WORKER"
+service = "cal-sync-worker"
+
 [vars]
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdmodel.lovable.app"
 # Exact cross-site origin used by the current Lovable Model Hub preview. Its model
