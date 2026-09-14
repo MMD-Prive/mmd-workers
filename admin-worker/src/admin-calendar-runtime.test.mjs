@@ -28,7 +28,7 @@ function fixture({ verified=false, duration=3, crossMidnight=false }={}) {
 function installFetch(data){
   const original=globalThis.fetch;
   globalThis.fetch=async input=>{
-    const url=new URL(typeof input==='string'?input:input.url);
+    const url=new URL(input instanceof Request ? input.url : String(input));
     const table=decodeURIComponent(url.pathname.split('/').pop());
     return Response.json({records:data[table]||[]});
   };
