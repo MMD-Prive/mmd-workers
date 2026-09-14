@@ -40,12 +40,14 @@ export function refineKenjiSalesIntent(raw = "", prior = "") {
   if (double) return "double_moment";
   if (care) {
     if (/คูปอง|coupon|wish|อวยพร/i.test(text)) return "care_back_coupon_wish";
-    if (/(?:ของผม|ของฉัน|ของหนู|my\s+(?:status|benefit)|(?:ผม|ฉัน|หนู).{0,24}(?:ได้ไหม|ได้อะไร|สิทธิ์|กี่วัน|กี่แต้ม|เข้าเกณฑ์))/.test(text)) return "care_back_personal_status";
+    if (/(?:ของผม|ของฉัน|ของหนู|my\s+(?:status|benefit)|(?:ผม|ฉัน|หนู).{0,24}(?:ได้ไหม|ได้อะไร|สิทธิ์|กี่วัน|กี่แต้ม|เข้าเกณฑ์))/i.test(text)) return "care_back_personal_status";
     if (/black\s*card|บัตรดำ|svip|\bvip\b/i.test(text)) return "care_back_black_card";
     if (/แต้ม|คะแนน|points?/i.test(text)) return "care_back_historical_points";
     if (/ราคา|กี่บาท|เท่าไหร่|เท่าไร|price|cost/i.test(text)) return "care_back_membership_price";
+    // A negative expiry phrase is not evidence of expiry. This is intent only.
+    if (/ยังไม่หมด|ยังใช้งาน|not\s*expired/i.test(text) && !/ต่ออายุ|renew/i.test(text)) return "care_back_current_member";
     if (/ต่ออายุ|หมดอายุ|ขาดอายุ|expired|renew/i.test(text)) return "care_back_expired_member";
-    if (/สมาชิกปัจจุบัน|สมาชิกเดิม|ยังไม่หมด|active|grace/i.test(text)) return "care_back_current_member";
+    if (/สมาชิกปัจจุบัน|สมาชิกเดิม|active|grace/i.test(text)) return "care_back_current_member";
     if (/สมัคร|สมาชิกใหม่|standard|premium|พรีเมียม|สแตนดาร์ด|new\s*member/i.test(text)) return "care_back_new_member";
     return "care_back_overview";
   }
@@ -85,6 +87,12 @@ export function publishedSalesCard(card, expectedId, now = Date.now()) {
   try { payload = typeof card.payload_json === "string" ? JSON.parse(card.payload_json) : card.payload_json; } catch { return false; }
   if (!payload || payload.internal_only || payload.superseded || payload.superseded_by || payload.seed_pack?.version !== SALES_REPLY_VERSION) return false;
   const from = Date.parse(`${clean(card.effective_from).slice(0, 10)}T00:00:00+07:00`);
-  const until = Date.parse(payload.effective_to || "");
+  // Even undated navigation cards belong to this versioned September snapshot.
+  // A supplied invalid date fails closed; the review cutoff is not benefit expiry.
+  const until = payload.effective_to !== undefined
+    ? Date.parse(payload.effective_to)
+    : payload.campaign_content_review_after !== undefined
+      ? Date.parse(payload.campaign_content_review_after) - 1
+      : SALES_REPLY_REVIEW_AT - 1;
   return Number.isFinite(from) && Number.isFinite(until) && from <= now && now <= until;
 }
