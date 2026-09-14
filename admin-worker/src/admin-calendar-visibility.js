@@ -26,22 +26,20 @@ export function calendarDate(value) {
 }
 
 async function readJson(url, headers, fetcher) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 2500);
   try {
-    const response = await fetcher(url, { method:'GET', headers, redirect:'error', signal:controller.signal });
+    // Keep outbound reads standards-minimal. Production proved that forwarding a
+    // synthetic AbortSignal/redirect:error into this Worker runtime can fail with
+    // TypeError before an HTTP response exists. Diagnostics are read-only and are
+    // never used as authorization or payment truth.
+    const response = await fetcher(url, { method:'GET', headers });
     return { status:response.status, ok:response.ok, data:await response.json().catch(() => null), error_name:null };
   } catch (error) {
     return { status:0, ok:false, data:null, error_name:clean(error?.name, 80) || 'Error' };
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
 function serviceBindingFetcher(binding) {
   if (!binding || typeof binding.fetch !== 'function') return null;
-  // Service bindings are already internal transport. Keep the synthetic request
-  // minimal instead of forwarding redirect/AbortSignal state from an outer fetch.
   return (url, init = {}) => binding.fetch(new Request(url, {
     method:init.method || 'GET',
     headers:init.headers || {},
@@ -110,6 +108,6 @@ export async function calendarPageResponse(env = {}, selectedDate = '') {
   html = html.replace('</section><nav class="tabs">', `</section><form class="cal-date-form" action="/internal/admin/calendar" method="get"><label for="calendar-date">เลือกวันงาน</label><input id="calendar-date" name="date" type="date" value="${date}" required><button type="submit">แสดงงาน</button></form><nav class="tabs">`);
   html = html.replace('</head>', `<style>.app .cal-connection{margin-top:12px}.app .cal-connection summary{cursor:pointer;font-weight:700;font-size:14px;line-height:1.6}.app .cal-connection p{font-size:12px;line-height:1.7;margin:8px 0}.app .cal-connection small{font-size:11px;color:var(--m)}.app .cal-date-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}.app .cal-date-form input,.app .cal-date-form button{font:inherit;min-height:44px;background:var(--p);color:var(--t);border:1px solid var(--l);border-radius:10px;padding:8px 12px}.app .cal-date-form label{font-size:12px}.app .chip,.app .metric span,.app .metric small,.app .tag,.app .muted,.app .empty,.app .time span{font-size:12px;line-height:1.6}.app .tab,.app .action a,.app .action button,.app .date button{min-height:44px;font-size:12px}.app .event h3{font-size:14px}.app .event{overflow-wrap:anywhere}.app .mobile{font-size:12px}.app .main{min-width:0}.app .grid>*{min-width:0}</style></head>`);
   const headers = new Headers(base.headers);
-  headers.set('x-mmd-calendar-surface','admin-worker-v1.3');
+  headers.set('x-mmd-calendar-surface','admin-worker-v1.4');
   return new Response(html,{status:200,headers});
 }
