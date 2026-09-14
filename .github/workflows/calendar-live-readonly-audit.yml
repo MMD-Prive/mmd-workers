@@ -41,6 +41,7 @@ jobs:
             const encoded=html.match(/id="calendar-connection-state">([\s\S]*?)<\/script>/)?.[1];
             assert.ok(encoded,'connection state missing');
             const connection=JSON.parse(encoded);
+            console.log(JSON.stringify({origin,surface,outbound:connection.outbound,inbound:connection.inbound,mutations_attempted:connection.mutations_attempted}));
             assert.equal(connection.mutations_attempted,false);
             assert.equal(connection.outbound.configured,true);
             assert.equal(connection.outbound.api_verified,true);
