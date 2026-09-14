@@ -14,6 +14,8 @@ import {
   buildKenjiLiveTruthDecision,
   resolveKenjiLineLiveTruth,
 } from "./kenji-line-live-truth.mjs";
+import { refineKenjiSalesIntent, salesCardKey } from "./kenji-sales-reply-v2-policy.mjs";
+import { resolveKenjiSalesReply, inspectKenjiSalesPublication } from "./kenji-sales-reply-v2-runtime.mjs";
 
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const KENJI_KNOWLEDGE_TABLE_FALLBACK = "tblsLd1uVOtG2kHoU";
@@ -76,6 +78,7 @@ function json(payload, status = 200) {
       "cache-control": "no-store",
       "x-mmd-worker": "member-dashboard-chat-worker",
       "x-mmd-kenji-runtime": "seed-pack-v1",
+      "x-mmd-kenji-reply-pack": "2026-09-14.2",
     },
   });
 }
@@ -220,9 +223,13 @@ export async function resolveKenjiSeedDecision(event = {}, env = {}, options = {
     : event?.type === "postback"
       ? text(event?.postback?.displayText || event?.postback?.data)
       : "";
-  const inferredIntent = text(options.currentIntent || inferLineIntent(raw, event));
-  const intent = text(options?.continuity?.effective_intent || inferredIntent);
+  const inferredIntent = refineKenjiSalesIntent(raw, text(options.currentIntent || inferLineIntent(raw, event)));
+  const intent = salesCardKey(inferredIntent) ? inferredIntent : text(options?.continuity?.effective_intent || inferredIntent);
   const continuityMeta = continuityMetadata(options, inferredIntent);
+  // Campaign copy must never reach the retired deterministic CARE BACK answers.
+  // Noncampaign topics retain the existing seed, live-truth and handoff paths.
+  const salesReply = await resolveKenjiSalesReply(event, env, { ...options, intent });
+  if (salesReply) return withDecisionMetadata({}, { ...salesReply, ...continuityMeta, intent });
   const autoKnowledgeId = SEED_AUTO_REPLY_BY_INTENT[intent];
   const handoffKnowledgeId = SEED_HANDOFF_BY_INTENT[intent];
   const liveTruthDecision = buildKenjiLiveTruthDecision(intent, options.liveTruth || {}, options.continuity || {});
@@ -402,6 +409,7 @@ export async function writeKenjiAiMessageEvent({ env = {}, event = {}, decision 
     linked_console_inbox_id: `line_${sourceEventId}`.slice(0, 160),
     payload_json: JSON.stringify({
       telemetry_version: "kenji_seed_runtime_v1",
+      reply_pack_version: text(decision.reply_pack_version),
       exact_intent: intent,
       inferred_intent: text(decision.inferred_intent),
       continuity_decision: text(decision.continuity_decision),
@@ -508,6 +516,10 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
   if (!isKenjiSeedLineRequest(request)) return legacyWorker?.fetch ? legacyWorker.fetch(request, env, ctx) : json({ ok: false, error: "not_found" }, 404);
 
   const url = new URL(request.url);
+  if (request.method === "GET" && url.searchParams.get("kenji_sales_v2_smoke") === "1") {
+    const inspection = await inspectKenjiSalesPublication(env);
+    return json({ ...inspection, synthetic: true }, inspection.ok ? 200 : 503);
+  }
   if (request.method === "GET" && url.searchParams.get(SMOKE_QUERY) === "1") {
     return handleSyntheticSmoke(request, env);
   }
@@ -544,7 +556,8 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const redelivered = event?.deliveryContext?.isRedelivery === true;
     const replyToken = replyTokenOf(event);
     const support = isRichMenuSupport(event);
-    const currentIntent = support ? "support" : inferLineIntent(event?.message?.text || event?.postback?.displayText || event?.postback?.data || "", event);
+    const rawText = event?.message?.text || event?.postback?.displayText || event?.postback?.data || "";
+    const currentIntent = support ? "support" : refineKenjiSalesIntent(rawText, inferLineIntent(rawText, event));
     const continuity = continuityEnabled && !support
       ? await resolveKenjiLineContinuity({ env, event, currentIntent })
       : {
@@ -576,7 +589,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
         guard_reason: redelivered ? "line_redelivery" : runtimeLineKill ? "runtime_line_kill" : "reply_not_eligible",
       });
 
-    const decision = support ? baseDecision : applyKenjiNextAction(baseDecision, {
+    const decision = support || baseDecision.reply_pack_version ? baseDecision : applyKenjiNextAction(baseDecision, {
       intent: text(baseDecision.intent || effectiveIntent),
       continuity,
     });
@@ -616,6 +629,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       continuity_decision: text(continuity.decision),
       continuity_topic: text(continuity.topic),
       reply_source: text(decision.reply_source),
+      reply_pack_version: text(decision.reply_pack_version),
       selected_knowledge_ids: decision.selected_knowledge_ids,
       handoff_required: decision.handoff_required === true,
       cta_type: text(decision.cta_type),
@@ -644,6 +658,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       continuity_stage: text(continuity.conversation_stage),
       replied: delivered,
       reply_source: text(decision.reply_source),
+      reply_pack_version: text(decision.reply_pack_version),
       selected_knowledge_ids: decision.selected_knowledge_ids,
       handoff_required: decision.handoff_required === true,
       cta_type: text(decision.cta_type),
