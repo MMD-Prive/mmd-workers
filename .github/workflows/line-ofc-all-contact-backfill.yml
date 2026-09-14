@@ -1,0 +1,51 @@
+name: LINE OFC all customer contact backfill
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/line-ofc-all-contact-backfill.js
+      - .github/workflows/line-ofc-all-contact-backfill.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: line-ofc-all-contact-backfill-production
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate migration
+        run: |
+          node --check scripts/line-ofc-all-contact-backfill.js
+          node scripts/line-ofc-all-contact-backfill.js --self-test
+      - name: Dry-run all LINE OFC identities
+        run: node scripts/line-ofc-all-contact-backfill.js --dry-run --report /tmp/line-ofc-contact-dry-run.json
+      - name: Apply all LINE OFC identities
+        run: node scripts/line-ofc-all-contact-backfill.js --apply --report /tmp/line-ofc-contact-apply.json
+      - name: Verify idempotency
+        run: node scripts/line-ofc-all-contact-backfill.js --dry-run --assert-idempotent --report /tmp/line-ofc-contact-idempotency.json
+      - name: Upload redacted reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: line-ofc-all-contact-backfill-report
+          path: |
+            /tmp/line-ofc-contact-dry-run.json
+            /tmp/line-ofc-contact-apply.json
+            /tmp/line-ofc-contact-idempotency.json
+          if-no-files-found: warn
+          retention-days: 30
