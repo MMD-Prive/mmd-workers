@@ -85,17 +85,25 @@ jobs:
           console.log(`verified ${desired.length}/${desired.length} Customer Data routes`);
           NODE
 
-      - name: Verify Customer Data API no longer falls through to Webflow 404
+      - name: Verify Customer Data API is Worker-owned and auth-gated
         shell: bash
         run: |
           set -euo pipefail
           for host in mmdbkk.com www.mmdbkk.com; do
-            code="$(curl -sS -o /tmp/customer-data-api-body -w '%{http_code}' "https://${host}/v1/admin/customer-data/queue?status=review_required")"
+            headers="$(mktemp)"
+            body="$(mktemp)"
+            code="$(curl -sS -D "$headers" -o "$body" -w '%{http_code}' "https://${host}/v1/admin/customer-data/queue?status=review_required")"
             echo "${host} queue route returned HTTP ${code}"
-            if [ "$code" = "404" ]; then
-              echo "Customer Data API still falls through to a 404 on ${host}" >&2
-              head -c 320 /tmp/customer-data-api-body >&2 || true
-              echo >&2
-              exit 1
-            fi
+            case "$code" in
+              302|401|403) ;;
+              *)
+                echo "Customer Data API is not returning the expected Worker auth gate on ${host}" >&2
+                grep -Ei '^(HTTP/|content-type:|location:|server:|cf-ray:)' "$headers" >&2 || true
+                head -c 320 "$body" >&2 || true
+                echo >&2
+                rm -f "$headers" "$body"
+                exit 1
+                ;;
+            esac
+            rm -f "$headers" "$body"
           done
