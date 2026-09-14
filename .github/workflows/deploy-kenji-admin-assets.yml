@@ -145,7 +145,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          js_file="$(mktemp)"
+          js_file="$(mktemp --suffix=.js)"
           css_file="$(mktemp)"
           found=0
           for attempt in 1 2 3 4 5 6 7 8 9 10; do
