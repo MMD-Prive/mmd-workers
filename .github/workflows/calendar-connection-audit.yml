@@ -1,0 +1,51 @@
+name: Calendar Connection Audit
+on:
+  push:
+    branches: [fix/calendar-cal-visibility-20260914]
+    paths: ['.github/workflows/calendar-connection-audit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Inspect owner calendar and bridge with no customer writes
+        env:
+          ADMIN_LOGIN_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const origin = 'https://www.mmdbkk.com';
+          const credential = String(process.env.ADMIN_LOGIN_CREDENTIAL || '').trim();
+          assert.ok(credential, 'owner login credential missing');
+          const login = await fetch(origin + '/internal/admin/login/session', {
+            method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
+            headers: { Origin: origin, 'content-type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ credential, next: '/internal/admin/calendar' }),
+          });
+          const target = new URL(login.headers.get('location') || '/', origin);
+          assert.equal(login.status, 303, 'login failed');
+          assert.equal(target.origin, origin, 'external login redirect');
+          assert.ok(target.pathname.startsWith('/internal/admin/'), 'invalid admin redirect');
+          const cookies = login.headers.getSetCookie().map(x => x.split(';',1)[0]).join('; ');
+          assert.ok(/mmd_admin_gate_v1=.+/.test(cookies), 'session cookie missing');
+          const headers = { Cookie: cookies, Origin: origin, Accept: 'application/json' };
+          const auth = await fetch(origin + '/v1/admin/auth/me', { headers, redirect:'manual', signal:AbortSignal.timeout(15000) });
+          const me = await auth.json();
+          assert.ok(auth.ok && me.authenticated !== false && me.ok !== false, 'owner auth rejected');
+          assert.ok(['owner','admin','super_admin','superadmin'].includes(me.actor_role || me.actor?.role), 'owner role required');
+          for (const path of ['/internal/admin/calendar','/internal/admin/calendar/','/internal/admin/dashboard','/internal/admin/control-room','/v1/admin/calendar?date=2026-09-14','/v1/admin/calendar?date=2026-09-17']) {
+            const r = await fetch(origin+path, {headers,redirect:'manual',signal:AbortSignal.timeout(25000)});
+            const text = await r.text();
+            let body = null; try {body=JSON.parse(text);} catch {}
+            console.log(JSON.stringify({path,status:r.status,surface:r.headers.get('x-mmd-calendar-surface'),content_type:r.headers.get('content-type'),webflow_shell:text.includes('Waiting for canonical calendar feed'),has_calendar_link:text.includes('href="/internal/admin/calendar"'),has_calendar_fetch:text.includes('/v1/admin/calendar'),schema:body?.schema,ok:body?.ok,error:typeof body?.error==='string'?body.error:null,items:body?.items?.length,metrics:body?.metrics,cal_connection:body?.cal_connection,top_keys:body?Object.keys(body):undefined}));
+          }
+          const health = await fetch('https://cal-sync-worker.malemodel-bkk.workers.dev/health',{signal:AbortSignal.timeout(15000)});
+          const h=await health.json();
+          console.log(JSON.stringify({bridge_status:health.status,service:h.service,mode:h.mode,webhook_secret_configured:h.webhook_secret_configured,api_key_configured:h.api_key_configured,mapping_ledger_configured:h.mapping_ledger_configured}));
+          NODE
