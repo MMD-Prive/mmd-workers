@@ -41,7 +41,7 @@ async function page(origin){
   for(let attempt=0;attempt<12;attempt++){
     const r=await get(origin+'/internal/admin/calendar?date=2026-09-17',sessions.get(origin));
     const html=await r.text();
-    if(r.ok&&r.headers.get('x-mmd-calendar-surface')==='admin-worker-v1.3'){
+    if(r.ok&&r.headers.get('x-mmd-calendar-surface')==='admin-worker-v1.4'){
       assert.ok(html.includes('id="calendar-date"')&&html.includes('/v1/admin/calendar'),'calendar functionality absent');
       const encoded=html.match(/id="calendar-connection-state">([\s\S]*?)<\/script>/)?.[1];assert.ok(encoded,'connection diagnostics absent');
       return {html,connection:JSON.parse(encoded)};
@@ -91,7 +91,7 @@ for(const origin of origins){
   }
   const publicApi=await get(origin+'/v1/admin/calendar?date=2026-09-17');assert.equal(publicApi.status,401,'unauthenticated data exposed');await publicApi.body?.cancel();
   const publicPage=await get(origin+'/internal/admin/calendar');assert.ok([302,303].includes(publicPage.status),'page gate missing');await publicPage.body?.cancel();
-  results.push({origin,surface:'admin-worker-v1.3',days,connection:view.connection});
+  results.push({origin,surface:'admin-worker-v1.4',days,connection:view.connection});
 }
 const ready=results.every(x=>x.connection.outbound.api_verified&&x.connection.inbound.webhook_secret_configured&&x.connection.inbound.mapping_ledger_configured);
 const receipt={checked_at:new Date().toISOString(),status:ready?'calendar_live_cal_read_connection_verified':'calendar_live_cal_configuration_incomplete',provisioning,results,booking_created:false,financial_mutations:false};
