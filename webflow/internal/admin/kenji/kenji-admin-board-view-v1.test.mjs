@@ -9,7 +9,7 @@ test("SIGIL Board is a query-driven view inside canonical Kenji admin", () => {
   assert.match(board, /view === "board"/);
   assert.match(board, /searchParams\.set\("view", view\)/);
   assert.match(board, /data-kso-board-panel/);
-  assert.match(board, /SIGIL Board/);
+  assert.match(board, /งานที่ต้องดู/);
 });
 
 test("SIGIL Board reads only sanitized Worker board endpoints", () => {
@@ -35,4 +35,19 @@ test("Board preserves authority boundaries and admin authentication handoff", ()
   assert.match(board, /Private Model/);
   assert.match(board, /\/internal\/admin\/login\?next=/);
   assert.match(board, /location\.pathname \+ location\.search/);
+});
+
+test("Board hides renewal work from the owner queue", () => {
+  assert.match(board, /function isRenewalCard/);
+  assert.match(board, /renewal\|ต่ออายุ/);
+  assert.match(board, /hiddenRenewals/);
+  assert.match(board, /ตัดรายการต่ออายุออกแล้ว/);
+});
+
+test("Board owner UI uses plain Thai task language and a real payment handoff", () => {
+  for (const copy of ["เรื่องที่ต้องดูวันนี้", "ต้องตัดสินใจ", "รอตรวจเงิน", "ข้อมูลไม่ครบ", "เกิดอะไรขึ้น", "ต้องระวังอะไร", "ทำอะไรต่อ", "ไปหน้าตรวจเงิน"]) {
+    assert.match(board, new RegExp(copy));
+  }
+  assert.match(board, /\/internal\/admin\/payments/);
+  assert.match(board, /รายละเอียดระบบ/);
 });
