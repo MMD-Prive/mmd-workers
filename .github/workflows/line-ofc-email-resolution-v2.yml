@@ -1,0 +1,42 @@
+name: LINE OFC email resolution v2
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/line-ofc-email-resolution-v2.js
+      - .github/workflows/line-ofc-email-resolution-v2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: line-ofc-email-resolution-v2
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate resolver
+        run: |
+          node --check scripts/line-ofc-email-resolution-v2.js
+          node scripts/line-ofc-email-resolution-v2.js --self-test
+      - name: Audit full Airtable evidence without mutation
+        run: node scripts/line-ofc-email-resolution-v2.js --report /tmp/line-ofc-email-resolution-v2.json
+      - name: Upload aggregate-only report
+        uses: actions/upload-artifact@v4
+        with:
+          name: line-ofc-email-resolution-v2-audit
+          path: /tmp/line-ofc-email-resolution-v2.json
+          retention-days: 14
