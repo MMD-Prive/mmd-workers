@@ -1,0 +1,68 @@
+name: Calendar Live Readonly Audit
+on:
+  push:
+    branches: [audit/calendar-live-readonly-20260914]
+    paths: ['.github/workflows/calendar-live-readonly-audit.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify protected Calendar and live Cal diagnostics
+        env:
+          ADMIN_LOGIN_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const credential=String(process.env.ADMIN_LOGIN_CREDENTIAL||'').replace(/[\r\n\u2028\u2029]/g,'').trim();
+          assert.ok(credential,'admin credential missing');
+          const origins=['https://mmdbkk.com','https://www.mmdbkk.com'];
+          const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+          const results=[];
+          for(const origin of origins){
+            const login=await fetch(origin+'/internal/admin/login/session',{method:'POST',redirect:'manual',signal:AbortSignal.timeout(20000),headers:{Origin:origin,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({credential,next:'/internal/admin/calendar'})});
+            assert.equal(login.status,303,'login failed for '+origin);
+            const cookie=login.headers.getSetCookie().map(x=>x.split(';',1)[0]).join('; ');
+            assert.match(cookie,/mmd_admin_gate_v1=.+/,'session cookie missing');
+            const headers={Cookie:cookie,Origin:origin,Accept:'application/json'};
+            const page=await fetch(origin+'/internal/admin/calendar?date=2026-09-17',{headers,redirect:'manual',signal:AbortSignal.timeout(25000)});
+            const html=await page.text();
+            const surface=page.headers.get('x-mmd-calendar-surface')||'';
+            assert.equal(page.status,200,'calendar page unavailable');
+            assert.equal(surface,'admin-worker-v1.2','unexpected calendar surface');
+            const encoded=html.match(/id="calendar-connection-state">([\s\S]*?)<\/script>/)?.[1];
+            assert.ok(encoded,'connection state missing');
+            const connection=JSON.parse(encoded);
+            assert.equal(connection.mutations_attempted,false);
+            assert.equal(connection.outbound.configured,true);
+            assert.equal(connection.outbound.api_verified,true);
+            assert.equal(connection.outbound.api_version,'2026-02-25');
+            assert.equal(connection.outbound.event_type_id,7057823);
+            assert.equal(connection.inbound.reachable,true);
+            assert.equal(connection.inbound.transport,'service_binding');
+            assert.equal(connection.inbound.mode,'shadow');
+            assert.equal(connection.inbound.webhook_secret_configured,true);
+            assert.equal(connection.inbound.api_key_configured,true);
+            assert.equal(connection.inbound.mapping_ledger_configured,true);
+            const days=[];
+            for(const date of new Set([today,'2026-09-17'])){
+              const r=await fetch(origin+'/v1/admin/calendar?date='+date,{headers,redirect:'manual',signal:AbortSignal.timeout(25000)});
+              const body=await r.json();
+              assert.ok(r.ok&&body.ok===true&&body.schema==='mmd.admin.calendar.v1'&&Array.isArray(body.items),'calendar API failed');
+              days.push({date,items:body.items.length,cal_linked:body.items.filter(x=>x.cal?.booking_uid).length});
+            }
+            const unauth=await fetch(origin+'/v1/admin/calendar?date=2026-09-17',{redirect:'manual',signal:AbortSignal.timeout(15000)});
+            assert.equal(unauth.status,401,'calendar API is not protected');
+            results.push({origin,surface,connection:{outbound:connection.outbound,inbound:connection.inbound,mutations_attempted:connection.mutations_attempted},days});
+          }
+          const receipt={checked_at:new Date().toISOString(),status:'calendar_live_cal_read_connection_verified',results,booking_created:false,financial_mutations:false};
+          console.log(JSON.stringify(receipt));
+          NODE
