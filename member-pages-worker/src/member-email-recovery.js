@@ -41,6 +41,7 @@ const TABLES = {
   mergeRequests: "MMD — Identity Merge Requests",
 };
 const RIGHTS_SOURCE = "my_mmd_entitlement_resolver_v1";
+const ACCESS_EVIDENCE_APPROVED_STATUS = "approved_evidence";
 
 export function isMemberEmailRecoveryPath(url) {
   return RECOVERY_PATHS.has(normalizePath(url?.pathname || url || "/"));
@@ -143,6 +144,9 @@ export async function inspectRecoveryEvidence(env = {}, { lineUserId, email = ""
   const memberEmailField = String(env.AIRTABLE_MEMBERS_EMAIL_FIELD || "Contact Email").trim();
   const memberIdField = String(env.AIRTABLE_MEMBERS_MEMBER_ID_FIELD || "member_id").trim();
   const clientEmailFields = csvFields(env.AIRTABLE_CLIENTS_EMAIL_FIELDS || "Contact Email,email");
+  const accessEvidenceEmailField = String(env.AIRTABLE_CLIENT_ACCESS_EVIDENCE_EMAIL_FIELD || "identity_email").trim();
+  const accessEvidenceClientField = String(env.AIRTABLE_CLIENT_ACCESS_EVIDENCE_CLIENT_FIELD || "client").trim();
+  const accessEvidenceReviewStatusField = String(env.AIRTABLE_CLIENT_ACCESS_EVIDENCE_REVIEW_STATUS_FIELD || "review_status").trim();
 
   const queries = [];
   queries.push(normalizedEmail
@@ -155,13 +159,18 @@ export async function inspectRecoveryEvidence(env = {}, { lineUserId, email = ""
     ? airtableList(env, preSessionTable, { filterByFormula: `LOWER({identity_email})=${formulaString(normalizedEmail)}`, maxRecords: 6 })
     : Promise.resolve([]));
   queries.push(normalizedEmail
-    ? airtableList(env, accessEvidenceTable, { filterByFormula: `LOWER({identity_email})=${formulaString(normalizedEmail)}`, maxRecords: 6 })
+    ? airtableList(env, accessEvidenceTable, { filterByFormula: `LOWER({${accessEvidenceEmailField}})=${formulaString(normalizedEmail)}`, maxRecords: 12 })
     : Promise.resolve([]));
   queries.push(normalizedEmail
     ? airtableList(env, lineOfcTable, { filterByFormula: `LOWER({email_candidate})=${formulaString(normalizedEmail)}`, maxRecords: 6 })
     : Promise.resolve([]));
 
-  const [members, clients, preSession, accessEvidence, lineOfc] = await Promise.all(queries);
+  const [members, clients, preSession, rawAccessEvidence, lineOfc] = await Promise.all(queries);
+  const accessEvidence = approvedLinkedAccessEvidence(rawAccessEvidence, normalizedEmail, {
+    emailField: accessEvidenceEmailField,
+    clientField: accessEvidenceClientField,
+    reviewStatusField: accessEvidenceReviewStatusField,
+  });
 
   let memberHintMatches = [];
   if (normalizedEmail && memberHint) {
@@ -172,7 +181,9 @@ export async function inspectRecoveryEvidence(env = {}, { lineUserId, email = ""
   }
 
   const memberIds = recordIds(members);
-  const clientIds = recordIds(clients);
+  const directClientIds = recordIds(clients);
+  const accessClientIds = accessEvidenceClientIds(accessEvidence, accessEvidenceClientField);
+  const clientIds = uniqueRecordIds([...directClientIds, ...accessClientIds]);
   const memberHintIds = recordIds(memberHintMatches);
   const canonicalAmbiguous = memberIds.length > 1 || clientIds.length > 1 || memberHintIds.length > 1;
   const hintConflict = memberIds.length === 1 && memberHintIds.length === 1 && memberIds[0] !== memberHintIds[0];
@@ -284,6 +295,24 @@ function evidenceSources({ members, clients, preSession, accessEvidence, lineOfc
   return sources;
 }
 
+function approvedLinkedAccessEvidence(records, normalizedEmail, { emailField, clientField, reviewStatusField }) {
+  return (Array.isArray(records) ? records : []).filter((record) => {
+    const fields = record?.fields || {};
+    if (normalizeEmail(fields[emailField]) !== normalizedEmail) return false;
+    if (String(fields[reviewStatusField] || "").trim() !== ACCESS_EVIDENCE_APPROVED_STATUS) return false;
+    return linkedRecordIds(fields[clientField]).length === 1;
+  });
+}
+
+function accessEvidenceClientIds(records, clientField) {
+  return uniqueRecordIds((Array.isArray(records) ? records : []).flatMap((record) => linkedRecordIds(record?.fields?.[clientField])));
+}
+
+function linkedRecordIds(value) {
+  if (!Array.isArray(value)) return [];
+  return uniqueRecordIds(value.map((item) => safeRecordId(typeof item === "object" ? item?.id : item)));
+}
+
 function noGrants() {
   return { membership: false, tier: false, points: false, entitlement: false, private_access: false };
 }
@@ -293,7 +322,7 @@ function emailFormula(fields, email) {
   return checks.length > 1 ? `OR(${checks.join(",")})` : checks[0] || "FALSE()";
 }
 function recordIds(records) { return uniqueRecordIds((Array.isArray(records) ? records : []).map((record) => safeRecordId(record?.id))); }
-function uniqueRecordIds(ids) { return [...new Set(ids.map(safeRecordId).filter(Boolean))]; }
+function uniqueRecordIds(ids) { return [...new Set((Array.isArray(ids) ? ids : []).map(safeRecordId).filter(Boolean))]; }
 function safeRecordId(value) { const id = String(value || "").trim(); return /^rec[A-Za-z0-9]{6,32}$/.test(id) ? id : ""; }
 function tableName(value, fallback) { return String(value || fallback).trim() || fallback; }
 function csvFields(value) { return String(value || "").split(",").map((item) => item.trim()).filter(Boolean); }

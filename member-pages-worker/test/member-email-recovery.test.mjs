@@ -73,6 +73,77 @@ test("ambiguous canonical Member email fails closed to manual review", async () 
   assert.equal(result.confidence, 0);
 });
 
+test("unlinked Client Access Evidence never establishes identity", async () => {
+  const env = envWith({
+    "Client Access Evidence": [
+      { id: "recEvidenceAAA123", fields: { identity_email: "raw@example.com", review_status: "approved_evidence" } },
+    ],
+  });
+
+  const result = await inspectRecoveryEvidence(env, {
+    lineUserId: LINE_ID,
+    email: "raw@example.com",
+  });
+
+  assert.equal(result.state, "review_required");
+  assert.equal(result.match_type, "not_found");
+  assert.deepEqual(result.candidateClientIds, []);
+});
+
+test("review-required Client Access Evidence never establishes identity even when linked", async () => {
+  const env = envWith({
+    "Client Access Evidence": [
+      { id: "recEvidenceBBB123", fields: { identity_email: "pending@example.com", review_status: "review_required", client: ["recClientABC12345"] } },
+    ],
+  });
+
+  const result = await inspectRecoveryEvidence(env, {
+    lineUserId: LINE_ID,
+    email: "pending@example.com",
+  });
+
+  assert.equal(result.state, "review_required");
+  assert.equal(result.match_type, "not_found");
+  assert.deepEqual(result.candidateClientIds, []);
+});
+
+test("approved Client Access Evidence with exactly one Canonical Client is known identity", async () => {
+  const env = envWith({
+    "Client Access Evidence": [
+      { id: "recEvidenceCCC123", fields: { identity_email: "approved@example.com", review_status: "approved_evidence", client: ["recClientABC12345"] } },
+    ],
+  });
+
+  const result = await inspectRecoveryEvidence(env, {
+    lineUserId: LINE_ID,
+    email: "approved@example.com",
+  });
+
+  assert.equal(result.state, "known_identity");
+  assert.equal(result.match_type, "client_access_evidence");
+  assert.equal(result.confidence, 90);
+  assert.deepEqual(result.candidateClientIds, ["recClientABC12345"]);
+  assert.deepEqual(result.evidenceSources, ["client_access_evidence"]);
+});
+
+test("approved Client Access Evidence pointing to multiple Canonical Clients fails closed", async () => {
+  const env = envWith({
+    "Client Access Evidence": [
+      { id: "recEvidenceDDD123", fields: { identity_email: "conflict@example.com", review_status: "approved_evidence", client: ["recClientABC12345"] } },
+      { id: "recEvidenceEEE123", fields: { identity_email: "conflict@example.com", review_status: "approved_evidence", client: ["recClientXYZ12345"] } },
+    ],
+  });
+
+  const result = await inspectRecoveryEvidence(env, {
+    lineUserId: LINE_ID,
+    email: "conflict@example.com",
+  });
+
+  assert.equal(result.state, "review_required");
+  assert.equal(result.match_type, "ambiguous");
+  assert.deepEqual(result.candidateClientIds, ["recClientABC12345", "recClientXYZ12345"]);
+});
+
 test("a claimed old account with no exact evidence is review_required, never auto-created as a new Member", async () => {
   const result = await inspectRecoveryEvidence(envWith(), {
     lineUserId: LINE_ID,
