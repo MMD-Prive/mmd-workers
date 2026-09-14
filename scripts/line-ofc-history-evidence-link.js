@@ -43,17 +43,6 @@ function handle(v) {
   if (!x || x === "-" || x === "no" || /^\d{9,15}$/.test(x) || /\s/.test(x)) return "";
   return /^[a-z0-9._-]{3,64}$/i.test(x) ? x : "";
 }
-const MONTHS = "มค|กพ|มีค|เมย|พค|มิย|กค|สค|กย|ตค|พย|ธค|ม\.ค|ก\.พ|มี\.ค|เม\.ย|พ\.ค|มิ\.ย|ก\.ค|ส\.ค|ก\.ย|ต\.ค|พ\.ย|ธ\.ค";
-function nameKey(v) {
-  let x = clean(v, 180).normalize("NFKC").toLowerCase();
-  if (!x || /^unknown$/i.test(x)) return "";
-  x = x.replace(/\b(?:vip|svip|lite|premium|standard|7\s*days?|7day|gp)\b/gi, " ");
-  x = x.replace(new RegExp(`\\b\\d{1,2}\\s*(?:${MONTHS})\\s*\\d{2,4}\\b`, "gi"), " ");
-  x = x.replace(/[-–—_()\[\]{}|/\\:;,.]+/g, " ").replace(/\s+/g, " ").trim();
-  x = x.replace(/^\d{1,2}\s+/, "").trim();
-  if (!x || /^\d+$/.test(x) || x.length < 2) return "";
-  return x;
-}
 function exactField(fields, names) {
   const m = new Map(Object.keys(fields || {}).map((k) => [k.toLowerCase(), k]));
   for (const n of names) {
@@ -115,14 +104,13 @@ class Airtable {
 
 function buildIndexes(realClients, consoleRows) {
   const byId = new Map(realClients.map((r) => [r.id, r]));
-  const I = { email: new Map(), phone: new Map(), telegram: new Map(), handle: new Map(), name: new Map() };
+  const I = { email: new Map(), phone: new Map(), telegram: new Map(), handle: new Map() };
   for (const r of realClients) {
     const f = r.fields || {};
     addIndex(I.email, email(f["Contact Email"] || f.email), r.id);
     addIndex(I.phone, phone(f["Phone Number"] || f.phone), r.id);
     addIndex(I.telegram, telegram(f.telegram_username || f.username), r.id);
     addIndex(I.handle, handle(f.username), r.id);
-    for (const v of [f["Client Name"], f.mmd_client_name, f.nickname, f.line_display_name]) addIndex(I.name, nameKey(v), r.id);
   }
   let consoleExactRows = 0;
   for (const r of consoleRows) {
@@ -135,7 +123,6 @@ function buildIndexes(realClients, consoleRows) {
     addIndex(I.phone, phone(f.member_phone), id);
     addIndex(I.telegram, telegram(f.telegram_username), id);
     addIndex(I.handle, handle(f.line_id), id);
-    addIndex(I.name, nameKey(f.member_name), id);
   }
   return { I, byId, consoleExactRows };
 }
@@ -146,8 +133,6 @@ function resolveHistory(row, I) {
   const p = phone(exactField(f, ["Primary Phone Candidate"]));
   const t = telegram(exactField(f, ["Telegram Candidates"]));
   const h = handle(exactField(f, ["LINE ID Candidates"]));
-  const label = nameKey(exactField(f, ["Customer Label"]));
-  const nick = nameKey(exactField(f, ["Nickname Candidates"]));
   const strong = [
     ["email", e, getSet(I.email, e)],
     ["phone", p, getSet(I.phone, p)],
@@ -161,20 +146,7 @@ function resolveHistory(row, I) {
     return { state: "matched", id, score: signals.length >= 2 ? 100 : 97, reason: `exact_${signals.join("+")}` };
   }
   if (strongUnion.size > 1) return { state: "conflict", reason: "conflicting_exact_contact_signals" };
-
-  // Per-renamed/customer-label match is allowed only when unique across all canonical Clients.
-  // Common names naturally remain ambiguous because their index contains multiple Clients.
-  const nameSignals = [];
-  if (label) nameSignals.push(["customer_label", getSet(I.name, label)]);
-  if (nick) nameSignals.push(["nickname", getSet(I.name, nick)]);
-  const nameUnion = union(nameSignals.map((x) => x[1]));
-  if (nameUnion.size === 1) {
-    const id = unique(nameUnion);
-    const signals = nameSignals.filter((x) => x[1].has(id)).map((x) => x[0]);
-    return { state: "matched", id, score: signals.length >= 2 ? 92 : 88, reason: `unique_exact_${signals.join("+")}` };
-  }
-  if (nameUnion.size > 1) return { state: "ambiguous", reason: "ambiguous_name" };
-  return { state: "unmatched", reason: "no_exact_identity_signal" };
+  return { state: "unmatched", reason: "no_exact_contact_signal" };
 }
 
 async function run({ apply = false, reportPath = "", assertIdempotent = false } = {}) {
@@ -182,7 +154,7 @@ async function run({ apply = false, reportPath = "", assertIdempotent = false } 
   const [clients, consoleRows, historyRows] = await Promise.all([at.list(TABLES.clients), at.list(TABLES.console), at.list(TABLES.history)]);
   const realClients = clients.filter((r) => REAL_LINE.test(clean(r.fields?.line_user_id)));
   const { I, byId, consoleExactRows } = buildIndexes(realClients, consoleRows);
-  const report = { mode: apply ? "apply" : "dry_run", line_clients: realClients.length, console_exact_rows: consoleExactRows, history_rows: historyRows.length, already_linked: 0, matched_exact_contact: 0, matched_unique_name: 0, ambiguous: 0, unmatched: 0, planned_history_updates: 0, reason_counts: {} };
+  const report = { mode: apply ? "apply" : "dry_run", line_clients: realClients.length, console_exact_rows: consoleExactRows, history_rows: historyRows.length, already_linked: 0, matched_exact_contact: 0, ambiguous: 0, unmatched: 0, planned_history_updates: 0, reason_counts: {} };
   const updates = [];
   for (const r of historyRows) {
     const existing = links(exactField(r.fields || {}, ["Canonical Client"])).filter((id) => byId.has(id));
@@ -190,9 +162,9 @@ async function run({ apply = false, reportPath = "", assertIdempotent = false } 
     const z = resolveHistory(r, I);
     report.reason_counts[z.reason] = (report.reason_counts[z.reason] || 0) + 1;
     if (z.state === "matched") {
-      if (z.reason.startsWith("exact_")) report.matched_exact_contact++; else report.matched_unique_name++;
+      report.matched_exact_contact++;
       updates.push({ id: r.id, fields: { "Canonical Client": [z.id], "Match Status": "matched", "Match Score": z.score, "Match Reason": z.reason } });
-    } else if (z.state === "ambiguous" || z.state === "conflict") report.ambiguous++;
+    } else if (z.state === "conflict") report.ambiguous++;
     else report.unmatched++;
   }
   report.planned_history_updates = updates.length;
@@ -209,12 +181,12 @@ function selfTest() {
   assert.equal(phone("098-550-1084"), "+66985501084");
   assert.equal(telegram("TG @User_Name"), "@user_name");
   assert.equal(handle("Bhutorn"), "bhutorn");
-  assert.equal(nameKey("แมค VIP"), "แมค");
-  assert.equal(nameKey("โอม 27 กค 68"), "โอม");
-  const I = { email: new Map(), phone: new Map(), telegram: new Map(), handle: new Map(), name: new Map() };
+  const I = { email: new Map(), phone: new Map(), telegram: new Map(), handle: new Map() };
   addIndex(I.phone, "+66985501084", "rec12345678901234");
-  const z = resolveHistory({ fields: { "Primary Phone Candidate": "+66985501084" } }, I);
-  assert.equal(z.id, "rec12345678901234");
+  const exact = resolveHistory({ fields: { "Primary Phone Candidate": "+66985501084" } }, I);
+  assert.equal(exact.id, "rec12345678901234");
+  const namesOnly = resolveHistory({ fields: { "Customer Label": "แมค VIP", "Nickname Candidates": "แมค" } }, I);
+  assert.equal(namesOnly.state, "unmatched");
   process.stdout.write("self-test passed\n");
 }
 
