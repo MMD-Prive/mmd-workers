@@ -133,6 +133,14 @@ function scheduleCanonicalCustomerMemory(ctx, env, events) {
   return work;
 }
 
+/** Normalize only the existing public, read-only GET diagnostic after edge routing. */
+export function kenjiSalesV2SmokeRequest(request) {
+  if (!isKenjiSeedLineRequest(request) || request.method !== "GET" || request.headers.get("x-mmd-kenji-sales-v2-smoke") !== "1") return request;
+  const url = new URL(request.url);
+  url.searchParams.set("kenji_sales_v2_smoke", "1");
+  return new Request(url.toString(), request);
+}
+
 export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
   request,
   env = {},
@@ -140,7 +148,7 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
   legacyWorker = null,
 ) {
   if (!isKenjiSeedLineRequest(request) || String(request?.method || "GET").toUpperCase() !== "POST") {
-    return handleKenjiSeedLineRequest(request, env, ctx, legacyWorker);
+    return handleKenjiSeedLineRequest(kenjiSalesV2SmokeRequest(request), env, ctx, legacyWorker);
   }
 
   const original = request.clone();
