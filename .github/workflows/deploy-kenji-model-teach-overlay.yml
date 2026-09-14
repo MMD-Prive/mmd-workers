@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_API_TOKEN }}
       CLOUDFLARE_CACHE_PURGE_API_TOKEN: ${{ secrets.CLOUDFLARE_CACHE_PURGE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
       CLOUDFLARE_ZONE_ID: 2d62396174fa2ddadbbcd0e8cf0f3367
@@ -29,6 +29,7 @@ jobs:
       LIVE_JS: https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.js
       R2_KEY: webflow/internal/admin/kenji/kenji-admin-v1.js
       OVERLAY: webflow/internal/admin/kenji/kenji-admin-model-teach-flow-v2.js
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,7 +63,7 @@ jobs:
           node --check /tmp/kenji-admin-v1.js
           grep -q 'kenjiModelTeachFlowV2' /tmp/kenji-admin-v1.js
 
-      - name: Upload patched Kenji bundle
+      - name: Upload patched Kenji bundle with dedicated R2 token
         shell: bash
         run: |
           set -euo pipefail
