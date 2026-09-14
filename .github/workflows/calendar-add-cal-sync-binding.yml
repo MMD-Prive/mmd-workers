@@ -1,0 +1,52 @@
+name: Calendar Add Cal Sync Binding
+on:
+  push:
+    branches: [fix/calendar-live-cal-diagnostics-20260914]
+    paths:
+      - 'admin-worker/src/admin-calendar-visibility.js'
+      - 'admin-worker/src/admin-calendar-service-binding.test.mjs'
+      - '.github/workflows/calendar-add-cal-sync-binding.yml'
+permissions:
+  contents: write
+jobs:
+  patch-config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/calendar-live-cal-diagnostics-20260914
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Add canonical private Cal service binding if missing
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const file = 'admin-worker/wrangler.toml';
+          let source = fs.readFileSync(file, 'utf8');
+          if (/binding\s*=\s*"CAL_SYNC_WORKER"/.test(source)) {
+            console.log('CAL_SYNC_WORKER already present');
+            process.exit(0);
+          }
+          const block = '\n# Private scheduling bridge for Admin Calendar diagnostics.\n# No public credential is exposed; the downstream Worker remains independently deployable.\n[[services]]\nbinding = "CAL_SYNC_WORKER"\nservice = "cal-sync-worker"\n';
+          const marker = '\n[vars]\n';
+          if (!source.includes(marker)) throw new Error('wrangler vars marker not found');
+          source = source.replace(marker, block + marker);
+          fs.writeFileSync(file, source);
+          NODE
+          grep -A2 -B2 'binding = "CAL_SYNC_WORKER"' admin-worker/wrangler.toml
+          node --test admin-worker/src/admin-calendar-service-binding.test.mjs
+      - name: Commit generated binding to branch
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- admin-worker/wrangler.toml; then
+            echo 'No Wrangler config change required'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add admin-worker/wrangler.toml
+          git commit -m 'fix(calendar): bind admin worker privately to cal-sync-worker'
+          git push origin HEAD:fix/calendar-live-cal-diagnostics-20260914
