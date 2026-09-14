@@ -17,6 +17,10 @@ import {
   prepareMyMmdCanonicalEntitlementContext,
 } from "./my-mmd-canonical-entitlement-bridge.js";
 import {
+  applyMyMmdLifetimePointsResponse,
+  prepareMyMmdLifetimePointsContext,
+} from "./my-mmd-lifetime-points.js";
+import {
   decorateLiffShellWithClientDiagnostic,
   handleLiffClientDiagnostic,
   isLiffClientDiagnosticPath,
@@ -29,8 +33,18 @@ export default {
   async fetch(request, env = {}, ctx) {
     const url = new URL(request.url);
     const canonicalContext = await prepareMyMmdCanonicalEntitlementContext(request, env);
-    if (canonicalContext?.unavailable) return Response.json({ ok: false, state: "checking", error: { code: "MEMBER_PROFILE_REFRESH_UNAVAILABLE" } }, { status: 503, headers: { "cache-control": "no-store" } });
-    const finish = (response) => applyMyMmdCanonicalEntitlementResponse(request, response, canonicalContext);
+    if (canonicalContext?.unavailable) {
+      return Response.json({
+        ok: false,
+        state: "checking",
+        error: { code: "MEMBER_PROFILE_REFRESH_UNAVAILABLE" },
+      }, { status: 503, headers: { "cache-control": "no-store" } });
+    }
+    const lifetimePointsContext = await prepareMyMmdLifetimePointsContext(request, env);
+    const finish = async (response) => {
+      const canonical = await applyMyMmdCanonicalEntitlementResponse(request, response, canonicalContext);
+      return applyMyMmdLifetimePointsResponse(request, canonical, lifetimePointsContext);
+    };
 
     if (isMmsServiceZoneCatalogPath(url)) return finish(await handleMmsServiceZoneCatalog(request, env));
     if (request.method === "GET" && isMmsMemberPrebookingReadPath(url)) return finish(await handleMmsMemberPrebookingRead(request, env));
