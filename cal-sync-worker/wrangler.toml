@@ -1,0 +1,15 @@
+name = "cal-sync-worker"
+main = "src/index.js"
+compatibility_date = "2026-09-14"
+
+[vars]
+MMD_TIMEZONE = "Asia/Bangkok"
+CAL_SHADOW_MODE = "true"
+
+# Secrets (configure outside source control):
+# CAL_WEBHOOK_SECRET
+# CAL_API_KEY
+#
+# V1 is intentionally shadow-only. Do not set CAL_SHADOW_MODE="false"
+# until booking-to-canonical Session mapping and lifecycle mutation rules
+# are explicitly approved and covered by production smoke tests.
