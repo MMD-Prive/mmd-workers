@@ -29,22 +29,28 @@ jobs:
       LIVE_JS: https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.js
       R2_KEY: webflow/internal/admin/kenji/kenji-admin-v1.js
       OVERLAY: webflow/internal/admin/kenji/kenji-admin-model-teach-flow-v2.js
+      PLAIN: webflow/internal/admin/kenji/kenji-admin-plain-language-v1.js
 
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
 
-      - name: Validate teach overlay
+      - name: Validate Kenji owner overlays
         shell: bash
         run: |
           set -euo pipefail
           test -s "$OVERLAY"
+          test -s "$PLAIN"
           node --check "$OVERLAY"
+          node --check "$PLAIN"
           grep -q 'KENJI_MODEL_TEACH_FLOW_V2_START' "$OVERLAY"
           grep -q 'kenjiModelTeachFlowV2' "$OVERLAY"
           grep -q 'สอน Kenji ให้รู้จัก Model' "$OVERLAY"
           grep -q 'ลองให้ Kenji แนะนำ' "$OVERLAY"
+          grep -q 'KENJI_PLAIN_LANGUAGE_V1_START' "$PLAIN"
+          grep -q 'kenjiPlainLanguageV1' "$PLAIN"
+          grep -q 'รายละเอียดระบบ' "$PLAIN"
 
       - name: Build patched stable bundle
         shell: bash
@@ -59,9 +65,10 @@ jobs:
           grep -q 'ai20ViewV1' /tmp/kenji-admin-current.js
           awk '/\/\* KENJI_MODEL_TEACH_FLOW_V2_START \*\//{exit} {print}' \
             /tmp/kenji-admin-current.js > /tmp/kenji-admin-base.js
-          cat /tmp/kenji-admin-base.js "$OVERLAY" > /tmp/kenji-admin-v1.js
+          cat /tmp/kenji-admin-base.js "$OVERLAY" "$PLAIN" > /tmp/kenji-admin-v1.js
           node --check /tmp/kenji-admin-v1.js
           grep -q 'kenjiModelTeachFlowV2' /tmp/kenji-admin-v1.js
+          grep -q 'kenjiPlainLanguageV1' /tmp/kenji-admin-v1.js
 
       - name: Upload patched Kenji bundle with dedicated R2 token
         shell: bash
@@ -95,7 +102,7 @@ jobs:
           if (payload.success !== true) process.exit(1);
           NODE
 
-      - name: Smoke live teach flow
+      - name: Smoke live Kenji owner flow
         shell: bash
         run: |
           set -euo pipefail
@@ -103,9 +110,10 @@ jobs:
           found=0
           for attempt in 1 2 3 4 5 6 7 8 9 10; do
             curl -fsS -H 'Cache-Control: no-cache' \
-              "$LIVE_JS?teach_v2=${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}" -o "$live"
+              "$LIVE_JS?owner_ux=${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}" -o "$live"
             if grep -q 'kenjiModelTeachFlowV2' "$live" \
-              && grep -q 'สอน Kenji ให้รู้จัก Model' "$live" \
+              && grep -q 'kenjiPlainLanguageV1' "$live" \
+              && grep -q 'รายละเอียดระบบ' "$live" \
               && grep -q 'singleOwnerV4' "$live" \
               && grep -q 'modelLineLinkEntryV1' "$live"; then
               found=1
@@ -115,4 +123,4 @@ jobs:
           done
           test "$found" = "1"
           node --check "$live"
-          echo 'Kenji Model Teach Flow V2 is live on the stable admin bundle'
+          echo 'Kenji owner flow and plain-language overlay are live on the stable admin bundle'
