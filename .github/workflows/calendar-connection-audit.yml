@@ -37,8 +37,8 @@ jobs:
           const headers = { Cookie: cookies, Origin: origin, Accept: 'application/json' };
           const auth = await fetch(origin + '/v1/admin/auth/me', { headers, redirect:'manual', signal:AbortSignal.timeout(15000) });
           const me = await auth.json();
-          assert.ok(auth.ok && me.authenticated !== false && me.ok !== false, 'owner auth rejected');
-          assert.ok(['owner','admin','super_admin','superadmin'].includes(me.actor_role || me.actor?.role), 'owner role required');
+          assert.ok(auth.ok && me.authenticated === true && me.ok === true && me.scope === 'internal_admin', 'admin auth rejected');
+          console.log(JSON.stringify({auth_status:auth.status,authenticated:me.authenticated,scope:me.scope,actor_role_projected:Boolean(me.actor_role||me.actor?.role)}));
           for (const path of ['/internal/admin/calendar','/internal/admin/calendar/','/internal/admin/dashboard','/internal/admin/control-room','/v1/admin/calendar?date=2026-09-14','/v1/admin/calendar?date=2026-09-17']) {
             const r = await fetch(origin+path, {headers,redirect:'manual',signal:AbortSignal.timeout(25000)});
             const text = await r.text();
