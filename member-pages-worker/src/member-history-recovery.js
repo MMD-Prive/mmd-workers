@@ -1,18 +1,23 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const SESSION_COOKIE = "__Host-mmd_liff_session";
-const POLICY = "member_history_recovery_v1";
+const POLICY = "member_history_recovery_v2_note_first";
 const STATUS_TTL_SECONDS = 30 * 24 * 60 * 60;
 const LOCK_TTL_SECONDS = 180;
 const AIRTABLE_TIMEOUT_MS = 10000;
+const HISTORY_WINDOW_YEARS = 5;
+const POINT_RATE_THB = 100;
+const POINTS_BUCKET = "base_phase1";
+const POINTS_SOURCE = "line_ofc_history";
 
 const TABLES = Object.freeze({
   CLIENTS: "tblVv58TCbwh5j1fS",
+  MEMBERS: "tblgWc5VRon5o8Mhk",
   LEGACY_STAGING: "tbl1u0foFBvgFpT9G",
   PRIVATE_STAGING: "tblOs8yyLK09SKrCt",
   REVIEWS: "tblnpDFQMpo8AmNQv",
   PAYMENT_PROOFS: "tblfJfM4Sqag9zrLi",
   SESSIONS: "tblC98mKWbzmPuNzX",
-  PAYMENTS: "tblWGGJJOx5eBvBZJ",
+  POINTS_LEDGER: "tbl5dfnwjUFMLbnWL",
 });
 
 const APPROVED_ORIGINS = new Set([
@@ -86,7 +91,12 @@ export async function handleMemberHistoryRecoveryRequest(request, env = {}, ctx)
   }
 
   const queued = await markQueued(env, session.line_user_id, "manual_refresh");
-  schedule(ctx, runMemberHistoryRecovery({ env, lineUserId: session.line_user_id, trigger: "manual_refresh" }));
+  schedule(ctx, runMemberHistoryRecovery({
+    env,
+    lineUserId: session.line_user_id,
+    memberId: clean(session.member_id),
+    trigger: "manual_refresh",
+  }));
   return withCors(request, env, json({ ok: true, history_recovery: publicStatus(queued), accepted: true }, 202));
 }
 
@@ -97,18 +107,30 @@ export async function scheduleMemberHistoryRecoveryForSessionToken(token, env = 
   const existing = await readRecoveryStatus(env, session.line_user_id);
   if (existing.state === "in_progress" && !refreshExpired(existing)) return true;
   await markQueued(env, session.line_user_id, trigger);
-  schedule(ctx, runMemberHistoryRecovery({ env, lineUserId: session.line_user_id, trigger }));
+  schedule(ctx, runMemberHistoryRecovery({
+    env,
+    lineUserId: session.line_user_id,
+    memberId: clean(session.member_id),
+    trigger,
+  }));
   return true;
 }
 
-export async function runMemberHistoryRecovery({ env = {}, lineUserId, trigger = "login", store } = {}) {
+export async function runMemberHistoryRecovery({
+  env = {},
+  lineUserId,
+  memberId = "",
+  trigger = "login",
+  store,
+  now = new Date(),
+} = {}) {
   if (!hasBindings(env) && !store) return statusPayload("blocked", { reason: "not_configured", trigger });
   if (!safeLineUserId(lineUserId)) return statusPayload("blocked", { reason: "identity_invalid", trigger });
 
   const db = store || new AirtableHistoryStore(env);
   const lockKey = await recoveryKey("lock", lineUserId);
   const statusKey = await recoveryKey("status", lineUserId);
-  const now = new Date().toISOString();
+  const startedAt = now.toISOString();
 
   try {
     const held = await env.LIFF_IDENTITY_KV?.get(lockKey, "json").catch(() => null);
@@ -116,69 +138,118 @@ export async function runMemberHistoryRecovery({ env = {}, lineUserId, trigger =
       return await readRecoveryStatus(env, lineUserId);
     }
     if (env.LIFF_IDENTITY_KV?.put) {
-      await env.LIFF_IDENTITY_KV.put(lockKey, JSON.stringify({ started_at: now, trigger }), { expirationTtl: LOCK_TTL_SECONDS });
+      await env.LIFF_IDENTITY_KV.put(lockKey, JSON.stringify({ started_at: startedAt, trigger }), { expirationTtl: LOCK_TTL_SECONDS });
     }
 
-    await writeStatusKey(env, statusKey, statusPayload("in_progress", { trigger, started_at: now, updated_at: now }));
+    await writeStatusKey(env, statusKey, statusPayload("in_progress", {
+      trigger,
+      started_at: startedAt,
+      updated_at: startedAt,
+    }));
 
-    const clients = await db.list(TABLES.CLIENTS, { formula: `{line_user_id}=${formulaString(lineUserId)}`, maxRecords: 3 });
+    const clients = await db.list(TABLES.CLIENTS, {
+      formula: `{line_user_id}=${formulaString(lineUserId)}`,
+      maxRecords: 3,
+    });
     if (clients.length !== 1) {
       const blocked = statusPayload("blocked", {
         trigger,
         reason: clients.length ? "identity_ambiguous" : "identity_not_linked",
-        started_at: now,
+        started_at: startedAt,
         updated_at: new Date().toISOString(),
       });
       await writeStatusKey(env, statusKey, blocked);
       return blocked;
     }
 
-    const clientId = clients[0].id;
+    const client = clients[0];
+    const clientId = clean(client.id);
+    const wallet = await resolveMemberWallet(db, { memberId, client });
     const [legacyRows, privateRows, verifiedProofs] = await Promise.all([
       db.list(TABLES.LEGACY_STAGING, { formula: `{line_user_id}=${formulaString(lineUserId)}` }),
       db.list(TABLES.PRIVATE_STAGING, { formula: `{LINE User ID}=${formulaString(lineUserId)}` }),
       db.list(TABLES.PAYMENT_PROOFS, { formula: `{status}=${formulaString("verified")}` }),
     ]);
 
-    const clientProofs = verifiedProofs.filter((record) => linkIds(record.fields?.Client).includes(clientId));
-    const candidates = [
-      ...legacyRows.map((record) => legacyCandidate(record, clientId)),
-      ...privateRows.map((record) => privateCandidate(record, clientId)),
+    const rawCandidates = [
+      ...legacyRows.map((record) => legacyCandidate(record, clientId, lineUserId)),
+      ...privateRows.map((record) => privateCandidate(record, clientId, lineUserId)),
     ].filter(Boolean);
-    await normalizeCandidateIds(candidates);
+    const candidates = await normalizeAndDedupeCandidates(rawCandidates);
+    const cutoff = historyCutoff(now, HISTORY_WINDOW_YEARS);
+    const inWindow = candidates.filter((candidate) => !candidate.service_date || candidate.service_date >= cutoff);
+    const clientProofs = verifiedProofs.filter((record) => linkIds(record.fields?.Client).includes(clientId));
 
     const counters = {
-      source_note_count: legacyRows.length + privateRows.length,
-      candidate_count: candidates.length,
+      source_note_count: rawCandidates.filter((candidate) => candidate.note_present).length,
+      candidate_count: inWindow.length,
       pending_review_count: 0,
       materialized_count: 0,
-      duplicate_count: 0,
+      duplicate_count: Math.max(0, rawCandidates.length - candidates.length),
       rejected_count: 0,
+      undated_note_count: 0,
+      note_without_amount_count: 0,
+      unmatched_payment_count: 0,
     };
-    let verifiedSpend = 0;
 
-    for (const candidate of candidates) {
-      const outcome = await reviewAndMaybeMaterialize({ db, candidate, clientProofs, trigger });
-      if (outcome === "materialized") {
-        counters.materialized_count += 1;
-        verifiedSpend += candidate.amount_thb || 0;
-      } else if (outcome === "duplicate") {
-        counters.duplicate_count += 1;
-      } else if (outcome === "rejected") {
+    let eligibleSpend = 0;
+    const acceptedCandidates = [];
+    for (const candidate of inWindow) {
+      const outcome = await processNoteCandidate({ db, candidate, trigger, now });
+      if (outcome.kind === "cancelled") {
         counters.rejected_count += 1;
-      } else {
-        counters.pending_review_count += 1;
+        continue;
       }
+      if (outcome.kind === "missing_note") {
+        counters.pending_review_count += 1;
+        continue;
+      }
+      acceptedCandidates.push(candidate);
+      eligibleSpend += candidate.points_eligible_amount_thb;
+      if (!candidate.service_date) counters.undated_note_count += 1;
+      if (!(candidate.points_eligible_amount_thb > 0)) counters.note_without_amount_count += 1;
+      if (outcome.kind === "materialized") counters.materialized_count += 1;
+      if (outcome.kind === "duplicate") counters.duplicate_count += 1;
     }
 
+    const orphanProofs = findOrphanPaymentProofs(clientProofs, acceptedCandidates);
+    counters.unmatched_payment_count = orphanProofs.length;
+
+    const sourcePending = rawCandidates.length === 0;
+    const pointsTarget = notePointSummary(acceptedCandidates);
+    const pointsResult = wallet
+      ? sourcePending
+        ? await readCurrentPointsTotal(db, wallet)
+        : await reconcileHistoricalPointsTotal({ db, wallet, clientId, pointsTarget, now })
+      : {
+          ok: false,
+          reason: "canonical_member_wallet_missing",
+          desired_points: pointsTarget.points,
+          desired_eligible_amount_thb: pointsTarget.eligible_amount_thb,
+          current_points_total: null,
+          historical_points_added: 0,
+        };
+
+    const detailPendingCount = acceptedCandidates.filter((candidate) => !candidate.service_date || !(candidate.points_eligible_amount_thb > 0)).length;
+    counters.pending_review_count += detailPendingCount + counters.unmatched_payment_count + Number(!wallet) + Number(sourcePending);
     const state = counters.pending_review_count > 0 ? "review_required" : "reconciled";
     const done = statusPayload(state, {
       ...counters,
-      verified_service_spend_thb: roundMoney(verifiedSpend),
+      verified_service_spend_thb: roundMoney(eligibleSpend),
+      historical_points_recovered: pointsTarget.points,
+      historical_points_added: pointsResult.historical_points_added,
+      current_points_total: pointsResult.current_points_total,
+      points_expire: false,
+      history_window_years: HISTORY_WINDOW_YEARS,
+      source_pending: sourcePending,
       trigger,
-      started_at: now,
+      started_at: startedAt,
       updated_at: new Date().toISOString(),
-      reason: state === "review_required" ? "evidence_incomplete_or_sensitive" : "complete",
+      reason: sourcePending
+        ? "source_notes_pending"
+        : state === "review_required"
+          ? "points_ready_history_details_pending"
+          : "note_first_recovery_complete",
     });
     await writeStatusKey(env, statusKey, done);
     return done;
@@ -186,7 +257,7 @@ export async function runMemberHistoryRecovery({ env = {}, lineUserId, trigger =
     const failed = statusPayload("blocked", {
       trigger,
       reason: safeErrorCode(error),
-      started_at: now,
+      started_at: startedAt,
       updated_at: new Date().toISOString(),
     });
     await writeStatusKey(env, statusKey, failed).catch(() => {});
@@ -197,299 +268,346 @@ export async function runMemberHistoryRecovery({ env = {}, lineUserId, trigger =
   }
 }
 
-async function reviewAndMaybeMaterialize({ db, candidate, clientProofs, trigger }) {
+async function processNoteCandidate({ db, candidate, trigger, now }) {
   const existing = await db.findOne(TABLES.REVIEWS, `{history_review_id}=${formulaString(candidate.history_review_id)}`);
   const existingStatus = clean(existing?.fields?.review_status).toLowerCase();
   const existingReviewer = clean(existing?.fields?.reviewed_by);
-  const humanReviewed = Boolean(existingReviewer && !existingReviewer.startsWith("system:"));
-  if (existingStatus === "materialized") return "duplicate";
-  if (existingStatus === "rejected") return "rejected";
-  if (humanReviewed && existingStatus !== "approved") return "review_required";
+  const explicitlyRejected = existingStatus === "rejected" && existingReviewer && !existingReviewer.startsWith("system:");
+  if (explicitlyRejected) return { kind: "cancelled" };
 
   if (candidate.cancelled) {
-    await upsertReview(db, existing, candidate, {
+    await upsertReview(db, existing, candidate, compact({
       review_status: "rejected",
       decision: "reject_service_history",
       reviewed_by: `system:${POLICY}`,
-      reviewed_at: new Date().toISOString(),
-      review_note: reviewNote(trigger, "cancelled_service"),
-    });
-    return "rejected";
+      reviewed_at: now.toISOString(),
+      review_note: reviewNote(trigger, "explicit_cancel_marker"),
+    }));
+    return { kind: "cancelled" };
   }
 
-  const proofMatch = matchVerifiedPaymentProof(candidate, clientProofs);
-  const complete = candidateComplete(candidate) && proofMatch.kind === "one" && !candidate.requires_human_review;
-  if (!complete) {
-    const reason = candidate.requires_human_review
-      ? "sensitive_evidence_requires_review"
-      : proofMatch.kind === "many"
-        ? "payment_evidence_ambiguous"
-        : proofMatch.kind === "none"
-          ? "verified_payment_evidence_missing"
-          : "service_evidence_incomplete";
-    await upsertReview(db, existing, candidate, {
+  if (!candidate.note_present) {
+    await upsertReview(db, existing, candidate, compact({
       review_status: "needs_more_evidence",
       decision: "hold_for_review",
-      payment_review_status: "pending",
-      payment_coverage_status: proofMatch.kind === "many" ? "unknown" : "partial",
-      points_review_status: "pending",
       reviewed_by: `system:${POLICY}`,
-      reviewed_at: new Date().toISOString(),
-      review_note: reviewNote(trigger, reason),
-    });
-    return "review_required";
+      reviewed_at: now.toISOString(),
+      review_note: reviewNote(trigger, "note_evidence_missing"),
+    }));
+    return { kind: "missing_note" };
   }
 
-  const proof = proofMatch.proof;
-  const paymentRef = clean(proof.fields?.payment_ref);
-  const paymentAmount = money(proof.fields?.amount_thb);
-  const paidAt = isoDate(proof.fields?.paid_at);
-  const approvedFields = {
+  const reviewFields = compact({
     review_status: "approved",
     decision: "approve_service_history",
-    approved_service_date: candidate.service_date,
-    approved_service_amount_thb: candidate.amount_thb,
-    approved_payment_ref: paymentRef,
-    approved_payment_amount_thb: paymentAmount,
-    approved_payment_events_json: JSON.stringify([{
-      proof_id: clean(proof.fields?.proof_id),
-      payment_ref: paymentRef,
-      amount_thb: paymentAmount,
-      paid_at: paidAt,
-      verified_at: isoDate(proof.fields?.verified_at),
-    }]),
-    payment_review_status: "approved",
-    payment_coverage_status: "complete",
-    points_review_status: "pending",
-    reviewed_by: `system:${POLICY}`,
-    reviewed_at: new Date().toISOString(),
-    review_note: reviewNote(trigger, "system_review_complete;points_untouched"),
-  };
-  const review = await upsertReview(db, existing, candidate, approvedFields);
-  const materialized = await materializeCanonicalHistory({ db, candidate, proof, review });
-  if (materialized === "conflict") {
-    await db.update(TABLES.REVIEWS, review.id, compact({
-      review_status: "needs_more_evidence",
-      decision: "hold_for_review",
-      review_note: humanReviewed ? undefined : reviewNote(trigger, "canonical_duplicate_conflict"),
-    }));
-    return "review_required";
-  }
-  await db.update(TABLES.REVIEWS, review.id, compact({
-    review_status: "materialized",
-    review_note: humanReviewed ? undefined : reviewNote(trigger, materialized === "duplicate" ? "canonical_duplicate_safe" : "canonical_materialized"),
-  }));
-  return materialized;
-}
-
-async function upsertReview(db, existing, candidate, fields) {
-  const base = compact({
-    history_review_id: candidate.history_review_id,
-    ...(candidate.source_kind === "legacy" && candidate.source_record_id ? { "LINE OFC Import Row": [candidate.source_record_id] } : {}),
-    Client: [candidate.client_id],
-    candidate_service_date: candidate.service_date || undefined,
-    candidate_service_amount_thb: candidate.amount_thb || undefined,
-    candidate_payment_ref: candidate.payment_ref || undefined,
-    candidate_model_text: candidate.model_text || undefined,
-    candidate_start_time: candidate.start_time || undefined,
-    candidate_end_time: candidate.end_time || undefined,
-    candidate_location_text: candidate.location_text || undefined,
-    candidate_area_text: candidate.area_text || undefined,
-    candidate_service_type: candidate.service_type || undefined,
-    candidate_duration_minutes: candidate.duration_minutes || undefined,
-    evidence_summary: candidate.evidence_summary,
-    ...fields,
+    approved_service_date: candidate.service_date || undefined,
+    approved_service_amount_thb: candidate.service_amount_thb || undefined,
+    points_review_status: candidate.points_eligible_amount_thb > 0 ? "approved" : "not_applicable",
+    approved_points_eligible_amount_thb: candidate.points_eligible_amount_thb || undefined,
+    reviewed_by: existingReviewer && !existingReviewer.startsWith("system:") ? existingReviewer : `system:${POLICY}`,
+    reviewed_at: clean(existing?.fields?.reviewed_at) || now.toISOString(),
+    materialization_idempotency_key: candidate.session_id,
+    materialized_at: candidate.service_date ? now.toISOString() : undefined,
+    review_note: existingReviewer && !existingReviewer.startsWith("system:")
+      ? undefined
+      : reviewNote(trigger, candidate.service_date ? "note_proves_occurrence" : "note_proves_occurrence_date_pending"),
   });
-  if (existing?.id) {
-    const human = clean(existing.fields?.reviewed_by);
-    if (human && !human.startsWith("system:")) return existing;
-    return db.update(TABLES.REVIEWS, existing.id, base);
+  const review = await upsertReview(db, existing, candidate, reviewFields);
+
+  if (!candidate.service_date) return { kind: "approved_points_only" };
+  const existingSessions = await db.list(TABLES.SESSIONS, {
+    formula: `OR({session_id}=${formulaString(candidate.session_id)},{imported_source_ref}=${formulaString(candidate.history_review_id)})`,
+    maxRecords: 3,
+  });
+  if (existingSessions.length > 1) return { kind: "duplicate" };
+  if (existingSessions.length === 1) {
+    if (review?.id) await db.update(TABLES.REVIEWS, review.id, { review_status: "materialized", materialized_at: now.toISOString() });
+    return { kind: "duplicate" };
   }
-  return db.create(TABLES.REVIEWS, base);
+
+  await db.create(TABLES.SESSIONS, compact({
+    "Session Name": `Historical - ${candidate.service_date}`,
+    Client: [candidate.client_id],
+    "Session Status": "Completed",
+    session_id: candidate.session_id,
+    created_at: `${candidate.service_date}T12:00:00.000Z`,
+    amount_thb: candidate.service_amount_thb || undefined,
+    client_name: candidate.client_display_name || undefined,
+    model_name: candidate.model_text || undefined,
+    job_type: candidate.service_type || "historical_service",
+    job_date: candidate.service_date,
+    location_name: candidate.location_text || undefined,
+    import_review_status: "approved",
+    imported_source_ref: candidate.history_review_id,
+    imported_confidence_score: candidate.points_eligible_amount_thb > 0 ? 90 : 75,
+    client_note_short: "Recovered from an MMD-owned historical LINE note.",
+  }));
+  if (review?.id) await db.update(TABLES.REVIEWS, review.id, { review_status: "materialized", materialized_at: now.toISOString() });
+  return { kind: "materialized" };
 }
 
-async function materializeCanonicalHistory({ db, candidate, proof, review }) {
-  const paymentRef = clean(proof.fields?.payment_ref);
-  if (!paymentRef) return "conflict";
-  const seed = [review.fields?.history_review_id || candidate.history_review_id, candidate.client_id, candidate.service_date, candidate.amount_thb, paymentRef].join("|");
-  const sessionId = `hist_sess_${await sha24(seed)}`;
-
-  const [existingSessions, existingPayments] = await Promise.all([
-    db.list(TABLES.SESSIONS, { formula: `{session_id}=${formulaString(sessionId)}`, maxRecords: 2 }),
-    db.list(TABLES.PAYMENTS, { formula: `{Payment Reference}=${formulaString(paymentRef)}`, maxRecords: 2 }),
-  ]);
-
-  if (existingSessions.length > 1 || existingPayments.length > 1) return "conflict";
-  if (existingPayments.length === 1 && !canonicalPaymentMatches(existingPayments[0], candidate, paymentRef)) return "conflict";
-  if (existingPayments.length === 1) {
-    const linkedSessionId = clean(existingPayments[0]?.fields?.session_id);
-    if (linkedSessionId && linkedSessionId !== sessionId) return "duplicate";
-  }
-  let wrote = false;
-
-  if (!existingSessions.length) {
-    await db.create(TABLES.SESSIONS, compact({
-      "Session Name": `Historical - ${candidate.service_date}`,
-      Client: [candidate.client_id],
-      "Session Status": "Completed",
-      session_id: sessionId,
-      created_at: isoDate(proof.fields?.paid_at) || new Date().toISOString(),
-      amount_thb: candidate.amount_thb,
-      payment_ref: paymentRef,
-      payment_status: "paid",
-      job_type: "historical_service",
-      job_date: candidate.service_date,
-      import_review_status: "approved",
-      imported_source_ref: candidate.history_review_id,
-      imported_confidence_score: 100,
-    }));
-    wrote = true;
-  }
-
-  if (!existingPayments.length) {
-    await db.create(TABLES.PAYMENTS, compact({
-      "Payment Reference": paymentRef,
-      "Payment Date": candidate.service_date,
-      Amount: candidate.amount_thb,
-      "Payment Status": "Paid",
-      "Payment Method": "Other",
-      Client: [candidate.client_id],
-      "Created At": isoDate(proof.fields?.verified_at) || new Date().toISOString(),
-      session_id: sessionId,
-      payment_stage: "full",
-      payment_type: "full",
-      source: "manual",
-      payment_evidence_source: "imported_history",
-      import_review_status: "approved",
-    }));
-    wrote = true;
-  }
-
-  return wrote ? "materialized" : "duplicate";
+async function readCurrentPointsTotal(db, wallet) {
+  const rows = await db.list(TABLES.POINTS_LEDGER, { formula: walletFormula(wallet), maxRecords: 2000 });
+  return {
+    ok: true,
+    desired_points: 0,
+    desired_eligible_amount_thb: 0,
+    historical_points_added: 0,
+    current_points_total: Math.max(0, rows.reduce((sum, row) => sum + postedPoints(row?.fields), 0)),
+  };
 }
 
-function canonicalPaymentMatches(record, candidate, paymentRef) {
-  const fields = record?.fields || {};
-  const ref = clean(fields["Payment Reference"]);
-  const amount = money(fields.Amount);
-  const clients = linkIds(fields.Client);
-  return ref === paymentRef && amount === candidate.amount_thb && clients.includes(candidate.client_id);
+async function reconcileHistoricalPointsTotal({ db, wallet, clientId, pointsTarget, now }) {
+  const aggregateKey = `historical_note_total_v2:${clientId}`;
+  const rows = await db.list(TABLES.POINTS_LEDGER, {
+    formula: walletFormula(wallet),
+    maxRecords: 2000,
+  });
+  const otherHistorical = rows.filter((row) => {
+    const fields = row?.fields || {};
+    const key = clean(fields.idempotency_key);
+    if (key === aggregateKey) return false;
+    return selectName(fields.source).toLowerCase() === POINTS_SOURCE
+      || key.startsWith("historical_base:")
+      || key.startsWith("historical_note:");
+  });
+  const otherHistoricalPoints = otherHistorical.reduce((sum, row) => sum + postedPoints(row?.fields), 0);
+  const otherHistoricalSpend = otherHistorical.reduce((sum, row) => sum + historicalEligibleSpend(row?.fields), 0);
+  const aggregatePoints = Math.max(0, pointsTarget.points - Math.max(0, otherHistoricalPoints));
+  const aggregateSpend = Math.max(0, roundMoney(pointsTarget.eligible_amount_thb - Math.max(0, otherHistoricalSpend)));
+  const existing = rows.find((row) => clean(row?.fields?.idempotency_key) === aggregateKey) || null;
+  const previousPoints = existing ? Number(existing.fields?.points || 0) : 0;
+  const fields = compact({
+    "Points Entry": `hist_points_total_${await sha24(clientId)}`,
+    member_id: wallet.member_id,
+    member_email: wallet.member_email || undefined,
+    amount_thb: aggregateSpend,
+    eligible_amount_thb: aggregateSpend,
+    points: aggregatePoints,
+    rate_policy: "historical_lifetime_total_100_thb_1_point_v2",
+    source: POINTS_SOURCE,
+    note: `policy=${POLICY};window_years=${HISTORY_WINDOW_YEARS};expiry=none_phase1;notes_primary=true;slips_optional=true`,
+    idempotency_key: aggregateKey,
+    posted_at: now.toISOString(),
+    transaction_status: "posted",
+    created_by: POLICY,
+    points_bucket: POINTS_BUCKET,
+  });
+
+  if (existing?.id) await db.update(TABLES.POINTS_LEDGER, existing.id, fields);
+  else await db.create(TABLES.POINTS_LEDGER, fields);
+
+  const afterRows = [
+    ...rows.filter((row) => clean(row?.fields?.idempotency_key) !== aggregateKey),
+    { id: existing?.id || "new-history-total", fields },
+  ];
+  const currentPointsTotal = Math.max(0, afterRows.reduce((sum, row) => sum + postedPoints(row?.fields), 0));
+  return {
+    ok: true,
+    desired_points: pointsTarget.points,
+    desired_eligible_amount_thb: pointsTarget.eligible_amount_thb,
+    historical_points_added: aggregatePoints - previousPoints,
+    current_points_total: currentPointsTotal,
+  };
 }
 
-export function legacyCandidate(record, clientId) {
+function postedPoints(fields = {}) {
+  const status = selectName(fields.transaction_status || fields.status).toLowerCase();
+  if (!["posted", "completed", "verified"].includes(status)) return 0;
+  if (clean(fields.reversed_at) || status === "reversed") return 0;
+  const value = Number(fields.points);
+  if (Number.isFinite(value)) return Math.trunc(value);
+  const amount = Number(fields.eligible_amount_thb ?? fields.amount_thb);
+  return Number.isFinite(amount) ? Math.floor(amount / POINT_RATE_THB) : 0;
+}
+
+function historicalEligibleSpend(fields = {}) {
+  const amount = Number(fields.eligible_amount_thb ?? fields.amount_thb);
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
+}
+
+function walletFormula(wallet) {
+  const clauses = [];
+  if (wallet.member_id) clauses.push(`{member_id}=${formulaString(wallet.member_id)}`);
+  if (wallet.member_email) clauses.push(`LOWER({member_email}&"")=${formulaString(wallet.member_email.toLowerCase())}`);
+  return clauses.length > 1 ? `OR(${clauses.join(",")})` : clauses[0] || "FALSE()";
+}
+
+async function resolveMemberWallet(db, { memberId = "", client } = {}) {
+  const normalizedMemberId = clean(memberId);
+  const clientEmail = normalizeEmail(client?.fields?.["Contact Email"] || client?.fields?.email);
+  const clauses = [];
+  if (normalizedMemberId) clauses.push(`{member_id}=${formulaString(normalizedMemberId)}`);
+  if (clientEmail) clauses.push(`LOWER({Contact Email}&"")=${formulaString(clientEmail)}`, `LOWER({email}&"")=${formulaString(clientEmail)}`);
+  if (!clauses.length) return null;
+  const formula = clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`;
+  const rows = await db.list(TABLES.MEMBERS, { formula, maxRecords: 3 });
+  const unique = dedupeById(rows);
+  if (unique.length !== 1) return null;
+  const fields = unique[0].fields || {};
+  const canonicalId = clean(fields.member_id) || normalizedMemberId;
+  if (!canonicalId) return null;
+  return {
+    record_id: clean(unique[0].id),
+    member_id: canonicalId,
+    member_email: normalizeEmail(fields["Contact Email"] || fields.email || clientEmail),
+  };
+}
+
+export function legacyCandidate(record, clientId, lineUserId = "") {
   const fields = record?.fields || {};
   const importId = clean(fields.import_id);
-  if (!importId) return null;
+  const rawNote = clean(fields.raw_note);
+  if (!importId && !rawNote) return null;
   const history = parseObject(fields.historical_events_json);
+  const details = asObject(history.service_details);
   const serviceEvents = Array.isArray(history.amounts)
     ? history.amounts.filter((item) => clean(item?.type).toLowerCase() === "service" && money(item?.amount) > 0)
     : [];
   const dates = uniqueStrings(history.dates);
   const refs = uniqueStrings(history.payment_refs);
-  const details = asObject(history.service_details);
   const reconciled = money(fields.reconciled_service_amount);
-  const fallback = money(fields.service_amount);
-  const amount = reconciled > 0 ? reconciled : serviceEvents.length === 1 ? money(serviceEvents[0].amount) : fallback;
+  const pointsEligible = money(fields.points_eligible_amount);
+  const stagedService = money(fields.service_amount);
+  const singleService = serviceEvents.length === 1 ? money(serviceEvents[0].amount) : 0;
+  const amount = reconciled || pointsEligible || stagedService || singleService;
   const serviceDate = dates.length === 1 ? yyyyMmDd(dates[0]) : "";
-  const paymentRef = refs.length === 1 ? refs[0] : "";
-  const status = clean(fields.historical_service_status).toLowerCase();
-  const ambiguous = serviceEvents.length > 1 || dates.length > 1 || refs.length > 1 || money(fields.unknown_amount) > 0;
+  const status = clean(fields.historical_service_status);
+  const cancellationText = `${status}\n${clean(fields.cancellation_evidence)}\n${rawNote}`;
+  const notePresent = Boolean(rawNote || Object.keys(history).length || stagedService || reconciled);
   return {
     source_kind: "legacy",
     source_record_id: clean(record.id),
-    source_ref: importId,
-    history_review_id: `hist_review_${syncShaPlaceholder(importId)}`,
+    source_ref: importId || clean(record.id),
+    source_fingerprint_seed: rawNote || stableJson({ importId, history, amount }),
     client_id: clientId,
+    line_user_id: lineUserId,
+    client_display_name: bounded(fields.line_renamed_name || fields.normalized_name, 120),
+    note_present: notePresent,
     service_date: serviceDate,
-    amount_thb: amount,
-    payment_ref: paymentRef,
+    service_amount_thb: amount,
+    points_eligible_amount_thb: amount,
+    payment_ref: refs.length === 1 ? refs[0] : "",
     model_text: bounded(details.model_text, 100),
-    start_time: bounded(details.start_time, 10),
-    end_time: bounded(details.end_time, 10),
     location_text: bounded(details.location_text, 120),
-    area_text: bounded(details.area_text, 80),
     service_type: bounded(details.service_type, 80),
-    duration_minutes: positiveInt(details.duration_minutes),
-    cancelled: ["cancelled", "canceled", "refunded"].includes(status),
-    requires_human_review: ambiguous,
-    evidence_summary: `source=legacy;import_id=${bounded(importId, 80)};service_events=${serviceEvents.length};dates=${dates.length};payment_refs=${refs.length};ambiguous=${ambiguous}`,
+    cancelled: detectExplicitCancellation(cancellationText),
+    detail_review_needed: dates.length > 1 || serviceEvents.length > 1 || refs.length > 1,
+    evidence_summary: `source=legacy;note_present=${notePresent};date_count=${dates.length};service_events=${serviceEvents.length};payment_refs=${refs.length};policy=note_first`,
   };
 }
 
-export function privateCandidate(record, clientId) {
+export function privateCandidate(record, clientId, lineUserId = "") {
   const fields = record?.fields || {};
   const sourceHash = clean(fields["Source Hash"]);
   const importId = clean(fields["Import ID"]);
-  const sourceRef = sourceHash || importId || clean(record.id);
+  const rawNote = clean(fields["Raw LINE Notes"]);
   const data = parseObject(fields["Service History Candidate JSON"]);
-  if (!sourceRef || !Object.keys(data).length) return null;
-  const amount = money(data.service_amount_thb);
-  const serviceDate = yyyyMmDd(data.service_date);
-  const warnings = Array.isArray(data.evidence_warnings) ? data.evidence_warnings.map(clean).filter(Boolean) : [];
-  const sensitive = data.private_critical_evidence === true || data.needs_human_review === true;
+  const sourceRef = sourceHash || importId || clean(record.id);
+  if (!sourceRef && !rawNote && !Object.keys(data).length) return null;
+  const amount = money(data.service_amount_thb ?? data.points_eligible_amount_thb ?? data.amount_thb);
+  const serviceDate = yyyyMmDd(data.service_date || data.date);
+  const notePresent = Boolean(rawNote || Object.keys(data).length);
   return {
     source_kind: "private",
     source_record_id: clean(record.id),
     source_ref: sourceRef,
-    history_review_id: `hist_review_${syncShaPlaceholder(`private|${sourceRef}`)}`,
+    source_fingerprint_seed: sourceHash || rawNote || stableJson(data),
     client_id: clientId,
+    line_user_id: lineUserId,
+    client_display_name: bounded(fields["Current LINE Rename"] || fields["Display Name"], 120),
+    note_present: notePresent,
     service_date: serviceDate,
-    amount_thb: amount,
+    service_amount_thb: amount,
+    points_eligible_amount_thb: amount,
     payment_ref: clean(data.payment_ref),
     model_text: bounded(Array.isArray(data.model_names) ? data.model_names.join(", ") : data.model_name, 100),
-    start_time: bounded(data.start_time, 10),
-    end_time: bounded(data.end_time, 10),
     location_text: bounded(data.location, 120),
-    area_text: bounded(data.area, 80),
-    service_type: bounded(data.service_type || "private_model", 80),
-    duration_minutes: positiveInt(data.duration_minutes),
-    cancelled: data.cancelled === true,
-    requires_human_review: sensitive || warnings.some((item) => /requires_human_review|private_critical/i.test(item)),
-    evidence_summary: `source=private;source_ref=${bounded(sourceRef, 80)};service_count=${Number(data.service_count || 0)};sensitive=${sensitive};warnings=${warnings.length}`,
+    service_type: bounded(data.service_type || "historical_service", 80),
+    cancelled: data.cancelled === true || detectExplicitCancellation(`${data.status || ""}\n${rawNote}`),
+    detail_review_needed: !serviceDate || amount <= 0,
+    evidence_summary: `source=private;note_present=${notePresent};date_present=${Boolean(serviceDate)};amount_present=${amount > 0};policy=note_first`,
   };
 }
 
-function syncShaPlaceholder(value) {
-  let hash = 2166136261;
-  const text = String(value || "");
-  for (let i = 0; i < text.length; i += 1) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  const hex = (hash >>> 0).toString(16).padStart(8, "0");
-  return `${hex}${hex}${hex}`.slice(0, 24);
+export function detectExplicitCancellation(value) {
+  const text = clean(value).toLowerCase().replace(/\s+/g, " ");
+  if (!text) return false;
+  return /(?:ยกเลิก(?:งาน|คิว|นัด|บริการ)?|งานยกเลิก|คิวยกเลิก|cancel(?:led|ed)?(?:\s+(?:job|booking|session))?|job\s+cancel(?:led|ed)?|booking\s+cancel(?:led|ed)?)/i.test(text);
 }
 
-function candidateComplete(candidate) {
-  return Boolean(candidate
-    && /^\d{4}-\d{2}-\d{2}$/.test(candidate.service_date)
-    && Number.isFinite(candidate.amount_thb)
-    && candidate.amount_thb > 0);
+export function notePointSummary(candidates = []) {
+  const eligibleAmount = roundMoney((Array.isArray(candidates) ? candidates : [])
+    .filter((candidate) => candidate?.note_present && !candidate?.cancelled)
+    .reduce((sum, candidate) => sum + Math.max(0, Number(candidate?.points_eligible_amount_thb || 0)), 0));
+  return {
+    eligible_amount_thb: eligibleAmount,
+    points: Math.floor(eligibleAmount / POINT_RATE_THB),
+    rate_thb_per_point: POINT_RATE_THB,
+    expires: false,
+  };
 }
 
-export function matchVerifiedPaymentProof(candidate, proofs = []) {
-  if (!candidateComplete(candidate)) return { kind: "none" };
-  const matches = proofs.filter((record) => {
-    const fields = record?.fields || {};
-    const status = selectName(fields.status).toLowerCase();
-    if (status !== "verified" || !isoDate(fields.verified_at) || !clean(fields.verified_by)) return false;
-    const ref = clean(fields.payment_ref);
+export function findOrphanPaymentProofs(proofs = [], candidates = []) {
+  const safeCandidates = Array.isArray(candidates) ? candidates : [];
+  return (Array.isArray(proofs) ? proofs : []).filter((proof) => {
+    const fields = proof?.fields || {};
+    if (linkIds(fields.session).length || linkIds(fields.payment).length) return false;
     const amount = money(fields.amount_thb);
-    const paidDate = yyyyMmDd(fields.paid_at);
-    if (!ref || amount !== candidate.amount_thb) return false;
-    if (candidate.payment_ref && ref !== candidate.payment_ref) return false;
-    return candidate.payment_ref ? true : paidDate === candidate.service_date;
+    const date = yyyyMmDd(fields.paid_at);
+    const ref = clean(fields.payment_ref);
+    return !safeCandidates.some((candidate) => {
+      if (candidate.cancelled) return false;
+      if (ref && candidate.payment_ref && ref === candidate.payment_ref) return true;
+      if (amount > 0 && candidate.service_amount_thb === amount && date && candidate.service_date === date) return true;
+      return false;
+    });
   });
-  if (matches.length === 1) return { kind: "one", proof: matches[0] };
-  if (matches.length > 1) return { kind: "many", proofs: matches };
-  return { kind: "none" };
 }
 
-async function normalizeCandidateIds(candidates) {
-  for (const item of candidates) {
-    item.history_review_id = `hist_review_${await sha24(item.source_kind === "legacy" ? item.source_ref : `private|${item.source_ref}`)}`;
+async function normalizeAndDedupeCandidates(candidates) {
+  const out = [];
+  const seen = new Set();
+  for (const candidate of candidates) {
+    const sourceHash = await sha24(`${candidate.client_id}|${normalizeFingerprintSeed(candidate.source_fingerprint_seed || candidate.source_ref)}`);
+    candidate.source_fingerprint = sourceHash;
+    candidate.history_review_id = `hist_review_${sourceHash}`;
+    candidate.session_id = `hist_note_${sourceHash}`;
+    if (seen.has(sourceHash)) continue;
+    seen.add(sourceHash);
+    out.push(candidate);
   }
-  return candidates;
+  return out;
+}
+
+function normalizeFingerprintSeed(value) {
+  return clean(value).toLowerCase().replace(/\s+/g, " ").slice(0, 20000);
+}
+
+async function upsertReview(db, existing, candidate, fields) {
+  const base = compact({
+    history_review_id: candidate.history_review_id,
+    ...(candidate.source_kind === "legacy" && candidate.source_record_id
+      ? { "LINE OFC Import Row": [candidate.source_record_id] }
+      : {}),
+    Client: [candidate.client_id],
+    candidate_service_date: candidate.service_date || undefined,
+    candidate_service_amount_thb: candidate.service_amount_thb || undefined,
+    candidate_payment_ref: candidate.payment_ref || undefined,
+    candidate_model_text: candidate.model_text || undefined,
+    candidate_location_text: candidate.location_text || undefined,
+    candidate_service_type: candidate.service_type || undefined,
+    evidence_summary: candidate.evidence_summary,
+    ...fields,
+  });
+  if (existing?.id) return db.update(TABLES.REVIEWS, existing.id, base);
+  return db.create(TABLES.REVIEWS, base);
+}
+
+function historyCutoff(now, years) {
+  const date = now instanceof Date && Number.isFinite(now.getTime()) ? new Date(now) : new Date();
+  date.setUTCFullYear(date.getUTCFullYear() - years);
+  return date.toISOString().slice(0, 10);
 }
 
 async function readVerifiedMemberSession(request, env) {
@@ -515,11 +633,19 @@ async function readRecoveryStatus(env, lineUserId) {
   if (!env.LIFF_IDENTITY_KV?.get) return statusPayload("checking", { reason: "status_unavailable" });
   const key = await recoveryKey("status", lineUserId);
   const stored = await env.LIFF_IDENTITY_KV.get(key, "json").catch(() => null);
-  return stored && typeof stored === "object" ? statusPayload(stored.state, stored) : statusPayload("checking", { reason: "not_started" });
+  return stored && typeof stored === "object"
+    ? statusPayload(stored.state, stored)
+    : statusPayload("checking", { reason: "not_started" });
 }
 
 async function markQueued(env, lineUserId, trigger) {
-  const status = statusPayload("checking", { trigger, reason: "queued", updated_at: new Date().toISOString() });
+  const status = statusPayload("checking", {
+    trigger,
+    reason: "queued",
+    updated_at: new Date().toISOString(),
+    points_expire: false,
+    history_window_years: HISTORY_WINDOW_YEARS,
+  });
   await writeStatusKey(env, await recoveryKey("status", lineUserId), status);
   return status;
 }
@@ -539,7 +665,16 @@ function statusPayload(state, extra = {}) {
     materialized_count: nonNegativeInt(extra.materialized_count),
     duplicate_count: nonNegativeInt(extra.duplicate_count),
     rejected_count: nonNegativeInt(extra.rejected_count),
+    undated_note_count: nonNegativeInt(extra.undated_note_count),
+    note_without_amount_count: nonNegativeInt(extra.note_without_amount_count),
+    unmatched_payment_count: nonNegativeInt(extra.unmatched_payment_count),
     verified_service_spend_thb: roundMoney(extra.verified_service_spend_thb),
+    historical_points_recovered: nonNegativeInt(extra.historical_points_recovered),
+    historical_points_added: signedInt(extra.historical_points_added),
+    current_points_total: nullableNonNegativeInt(extra.current_points_total),
+    points_expire: false,
+    history_window_years: HISTORY_WINDOW_YEARS,
+    source_pending: extra.source_pending === true,
     trigger: bounded(extra.trigger, 32) || null,
     reason: bounded(extra.reason, 80) || null,
     started_at: isoDate(extra.started_at),
@@ -558,13 +693,14 @@ function refreshExpired(status) {
 }
 
 function reviewNote(trigger, reason) {
-  return `policy=${POLICY};trigger=${bounded(trigger, 32) || "unknown"};reason=${bounded(reason, 120) || "unknown"};identity=verified_liff_exact_client;entitlements=untouched`;
+  return `policy=${POLICY};trigger=${bounded(trigger, 32) || "unknown"};reason=${bounded(reason, 120) || "unknown"};identity=verified_liff_exact_client;note_occurrence=true;old_slip_required=false;points_expiry=none_phase1;entitlements=untouched`;
 }
 
 class AirtableHistoryStore {
   constructor(env) {
     this.baseId = clean(env.AIRTABLE_BASE_ID);
     this.token = clean(env.AIRTABLE_API_KEY);
+    this.http = env.AIRTABLE_HTTP;
   }
 
   async list(table, { formula = "", maxRecords = 0 } = {}) {
@@ -574,12 +710,13 @@ class AirtableHistoryStore {
       const url = this.url(table);
       if (formula) url.searchParams.set("filterByFormula", formula);
       if (maxRecords) url.searchParams.set("maxRecords", String(maxRecords));
+      url.searchParams.set("pageSize", String(Math.min(100, maxRecords ? Math.max(1, maxRecords - out.length) : 100)));
       if (offset) url.searchParams.set("offset", offset);
       const payload = await this.request(url, { method: "GET" });
       out.push(...(Array.isArray(payload.records) ? payload.records : []));
       offset = clean(payload.offset);
       if (maxRecords && out.length >= maxRecords) break;
-    } while (offset && out.length < 1000);
+    } while (offset && out.length < 5000);
     return maxRecords ? out.slice(0, maxRecords) : out;
   }
 
@@ -604,7 +741,7 @@ class AirtableHistoryStore {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), AIRTABLE_TIMEOUT_MS);
     try {
-      const response = await fetch(url.toString(), {
+      const request = new Request(url.toString(), {
         ...init,
         headers: {
           Authorization: `Bearer ${this.token}`,
@@ -613,6 +750,7 @@ class AirtableHistoryStore {
         },
         signal: controller.signal,
       });
+      const response = this.http?.fetch ? await this.http.fetch(request) : await fetch(request);
       const payload = await response.json().catch(() => null);
       if (!response.ok || !payload || typeof payload !== "object") {
         const error = new Error(response.status === 401 || response.status === 403 ? "AIRTABLE_FORBIDDEN" : "AIRTABLE_UNAVAILABLE");
@@ -644,7 +782,10 @@ function approvedOrigin(request, env) {
 
 function corsResponse(request, env) {
   if (!approvedOrigin(request, env)) return json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED" } }, 403);
-  return withCors(request, env, new Response(null, { status: 204, headers: { allow: "GET,POST,OPTIONS" } }));
+  return withCors(request, env, new Response(null, {
+    status: 204,
+    headers: { allow: "GET,POST,OPTIONS" },
+  }));
 }
 
 function withCors(request, env, response) {
@@ -704,11 +845,17 @@ function safeLineUserId(value) {
 }
 
 async function recoveryKey(kind, lineUserId) {
-  return `history-recovery:v1:${kind}:${await sha24(lineUserId)}`;
+  return `history-recovery:v2:${kind}:${await sha24(lineUserId)}`;
 }
 
 async function hmacHex(secret, value) {
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(String(secret || "")), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(String(secret || "")),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
   const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(String(value || "")));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -736,17 +883,44 @@ function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
 function selectName(value) {
   return clean(value && typeof value === "object" ? value.name : value);
 }
 
 function linkIds(value) {
   if (!Array.isArray(value)) return [];
-  return value.map((item) => clean(item && typeof item === "object" ? item.id : item)).filter((item) => /^rec[A-Za-z0-9]{14}$/.test(item));
+  return value
+    .map((item) => clean(item && typeof item === "object" ? item.id : item))
+    .filter((item) => /^rec[A-Za-z0-9]{6,32}$/.test(item));
+}
+
+function dedupeById(records = []) {
+  const out = [];
+  const seen = new Set();
+  for (const record of records) {
+    const id = clean(record?.id);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(record);
+  }
+  return out;
 }
 
 function uniqueStrings(value) {
   return [...new Set((Array.isArray(value) ? value : []).map(clean).filter(Boolean))];
+}
+
+function normalizeEmail(value) {
+  const email = clean(value).toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
 }
 
 function money(value) {
@@ -759,14 +933,20 @@ function roundMoney(value) {
   return Number.isFinite(number) && number >= 0 ? Math.round(number * 100) / 100 : 0;
 }
 
-function positiveInt(value) {
-  const number = Number(value);
-  return Number.isFinite(number) && number > 0 ? Math.round(number) : undefined;
-}
-
 function nonNegativeInt(value) {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? Math.floor(number) : 0;
+}
+
+function signedInt(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.trunc(number) : 0;
+}
+
+function nullableNonNegativeInt(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? Math.floor(number) : null;
 }
 
 function yyyyMmDd(value) {
@@ -796,14 +976,16 @@ function compact(object) {
 }
 
 function safeErrorCode(error) {
-  return bounded(error?.code || error?.message || "history_recovery_failed", 80).replace(/[^A-Za-z0-9_:-]/g, "_") || "history_recovery_failed";
+  return bounded(error?.code || error?.message || "history_recovery_failed", 80)
+    .replace(/[^A-Za-z0-9_:-]/g, "_") || "history_recovery_failed";
 }
 
 export const __test = Object.freeze({
-  candidateComplete,
   publicStatus,
   statusPayload,
-  canonicalPaymentMatches,
-  normalizeCandidateIds,
-  materializeCanonicalHistory,
+  normalizeAndDedupeCandidates,
+  postedPoints,
+  reconcileHistoricalPointsTotal,
+  processNoteCandidate,
+  historyCutoff,
 });
