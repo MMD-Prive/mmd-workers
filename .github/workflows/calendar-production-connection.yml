@@ -4,6 +4,7 @@ on:
     branches: [fix/calendar-cal-visibility-20260914]
     paths:
       - 'admin-worker/src/admin-calendar-visibility*'
+      - 'admin-worker/src/admin-calendar-runtime*'
       - 'admin-worker/src/job-orchestrator-owner-ops-wrapper.js'
       - 'admin-worker/calendar-routes.json'
       - 'tools/calendar-production-connection.mjs'
@@ -12,6 +13,7 @@ on:
     branches: [main]
     paths:
       - 'admin-worker/src/admin-calendar-visibility*'
+      - 'admin-worker/src/admin-calendar-runtime*'
       - 'admin-worker/src/job-orchestrator-owner-ops-wrapper.js'
       - 'admin-worker/calendar-routes.json'
       - 'tools/calendar-production-connection.mjs'
@@ -53,7 +55,6 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: production
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
