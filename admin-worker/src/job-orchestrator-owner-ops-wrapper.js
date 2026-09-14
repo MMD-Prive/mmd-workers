@@ -7,7 +7,7 @@ import {
   listOwnerJobActions,
   ownerActionHttpResponse,
 } from "./job-orchestrator-owner-ops-runtime.js";
-import { calendarApiResponse, calendarJsonResponse, calendarPageResponse } from "./admin-calendar-runtime-v2.js";
+import { calendarApiResponse, calendarJsonResponse, calendarPageResponse, readCalendarOwnerActor, calendarDate } from "./admin-calendar-visibility.js";
 
 const DASHBOARD_PATH = "/v1/admin/dashboard";
 const AUTH_ME_PATH = "/v1/admin/auth/me";
@@ -73,14 +73,16 @@ function calendarLoginRedirect(request) {
   return Response.redirect(login.toString(), 302);
 }
 async function handleCalendar(request, env, ctx, url, method) {
-  const actor = await readOwnerActor(request, env, ctx);
+  const actor = await readCalendarOwnerActor(request, env);
   if (!actor) {
     if (url.pathname === CALENDAR_PAGE_PATH) return calendarLoginRedirect(request);
     return calendarJsonResponse({ ok: false, error: "owner_admin_session_required" }, 401);
   }
+  const date = url.searchParams.get("date");
+  if (date !== null && !calendarDate(date)) return calendarJsonResponse({ ok: false, error: "invalid_calendar_date" }, 400);
   if (url.pathname === CALENDAR_PAGE_PATH) {
     if (method !== "GET" && method !== "HEAD") return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, HEAD" } });
-    const page = calendarPageResponse();
+    const page = await calendarPageResponse(env, date || "");
     return method === "HEAD" ? new Response(null, { status: page.status, headers: page.headers }) : page;
   }
   if (method !== "GET") return calendarJsonResponse({ ok: false, error: "method_not_allowed" }, 405);
@@ -97,8 +99,9 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const method = String(request.method || "GET").toUpperCase();
-
-    if (url.pathname === CALENDAR_PAGE_PATH || url.pathname === CALENDAR_API_PATH) {
+    const calendarPath = url.pathname.replace(/\/$/, "");
+    if (calendarPath === CALENDAR_PAGE_PATH || calendarPath === CALENDAR_API_PATH) {
+      url.pathname = calendarPath;
       return handleCalendar(request, env, ctx, url, method);
     }
 
