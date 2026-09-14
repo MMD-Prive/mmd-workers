@@ -1,5 +1,6 @@
 import worker from "./job-orchestrator-owner-ops-wrapper.js";
 import { handleModelConsoleAudit, isModelConsoleAuditRequest } from "./model-console-audit.js";
+import { kickLineOfcConsoleContactBackfill } from "./line-ofc-console-backfill.js";
 import {
   isPrivateModelAdminRequest,
   maybeHandlePrivateModelAdminRequest,
@@ -11,6 +12,16 @@ export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/dashboard";
 const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
 const MMS_PARTNER_PATH = "/internal/admin/mms";
 const MODEL_ACTIVATE_PATH = "/v1/model/liff/activate";
+let lineOfcContactBackfillKickStarted = false;
+
+function scheduleLineOfcContactBackfill(env, ctx) {
+  if (lineOfcContactBackfillKickStarted || !env?.LINE_OFC_BACKFILL_COORDINATOR) return;
+  lineOfcContactBackfillKickStarted = true;
+  const task = kickLineOfcConsoleContactBackfill(env).catch(() => {
+    lineOfcContactBackfillKickStarted = false;
+  });
+  if (ctx?.waitUntil) ctx.waitUntil(task);
+}
 
 export async function enforceOwnerDashboardFirst(request, response) {
   if (!(response instanceof Response)) return response;
@@ -82,6 +93,7 @@ coreWorker.fetch(request, env, ctx)
 
 export default {
   async fetch(request, env, ctx) {
+    scheduleLineOfcContactBackfill(env, ctx);
     if (isModelConsoleAuditRequest(request)) return handleModelConsoleAudit(request, env);
     let privateModelRequest = null;
     let activationRequest = null;
