@@ -2,6 +2,7 @@ const LINE_API = "https://api.line.me/v2/bot";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const BASE_ID_DEFAULT = "appsV1ILPRfIjkaYg";
 const CLIENTS_TABLE_DEFAULT = "tblVv58TCbwh5j1fS";
+const SYNC_RUNS_TABLE_DEFAULT = "tbl2yGlf8XyswZ0Yw";
 const SOURCE = "line_ofc_follower_sync_v1";
 const REAL_LINE_USER_ID = /^U[0-9a-f]{32}$/i;
 const MAX_FOLLOWERS = 100000;
@@ -19,6 +20,26 @@ const FIELDS = Object.freeze({
   notes: "fldi31lnaFk9A9Xrp",
 });
 
+const RECEIPT_FIELDS = Object.freeze({
+  runId: "fldPslfmr5YLuHeS0",
+  status: "fldhRfMpXtzO9Bl69",
+  startedAt: "fldTNx3KBlcRVf6Ja",
+  completedAt: "fld4KQJOZTbIUJZCJ",
+  supported: "fld42q3azGtqeE5fM",
+  followersReturned: "fldxFTybctmJyJpln",
+  pages: "fldSn6VbE4pGukL4p",
+  clientsScanned: "fld9ZXM2dAqv7peCf",
+  alreadyCanonical: "fldBPSFHSHvtPQ89Y",
+  missingClients: "flddYCQqVq905f4zw",
+  clientsCreated: "fldtUEyfkdmhT63VM",
+  clientsUpdated: "fldrVfxd6E1Tpt6Ji",
+  duplicateReview: "fld3EZzIntqLdBC8M",
+  profilesRequested: "fldSBVnzU5TlSToHt",
+  profileErrors: "fldrRKnpfEeE0S39E",
+  reason: "fldbrfDSXL84FCj2W",
+  source: "fldmTEC9kMdH8x5Jy",
+});
+
 function clean(value, max = 4000) {
   return String(value ?? "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim().slice(0, max);
 }
@@ -33,6 +54,10 @@ function airtableConfig(env = {}) {
   const tableId = clean(env.AIRTABLE_TABLE_CLIENTS_ID || CLIENTS_TABLE_DEFAULT, 80);
   if (!token || !baseId || !tableId) throw new Error("airtable_config_missing");
   return { token, baseId, tableId };
+}
+
+function syncRunsTable(env = {}) {
+  return clean(env.AIRTABLE_TABLE_LINE_OFC_SYNC_RUNS_ID || SYNC_RUNS_TABLE_DEFAULT, 80);
 }
 
 function placeholderName(lineUserId) {
@@ -56,6 +81,78 @@ function chunks(items, size = 10) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function numeric(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? Math.trunc(number) : 0;
+}
+
+function receiptStatus(result = {}) {
+  if (result.ok === false) return "failed";
+  if (result.skipped) return "skipped";
+  return "success";
+}
+
+function buildReceiptFields(runId, startedAt, result = {}) {
+  const completedAt = clean(result.completed_at || new Date().toISOString(), 80);
+  const reason = clean(result.reason || result.error, 180);
+  const fields = {
+    [RECEIPT_FIELDS.runId]: clean(runId, 120),
+    [RECEIPT_FIELDS.status]: receiptStatus(result),
+    [RECEIPT_FIELDS.startedAt]: clean(startedAt, 80),
+    [RECEIPT_FIELDS.completedAt]: completedAt,
+    [RECEIPT_FIELDS.supported]: result.supported === true,
+    [RECEIPT_FIELDS.followersReturned]: numeric(result.followers_returned),
+    [RECEIPT_FIELDS.pages]: numeric(result.pages),
+    [RECEIPT_FIELDS.clientsScanned]: numeric(result.clients_scanned),
+    [RECEIPT_FIELDS.alreadyCanonical]: numeric(result.already_canonical),
+    [RECEIPT_FIELDS.missingClients]: numeric(result.missing_clients),
+    [RECEIPT_FIELDS.clientsCreated]: numeric(result.clients_created),
+    [RECEIPT_FIELDS.clientsUpdated]: numeric(result.clients_updated),
+    [RECEIPT_FIELDS.duplicateReview]: numeric(result.duplicate_line_identity_review),
+    [RECEIPT_FIELDS.profilesRequested]: numeric(result.profiles_requested),
+    [RECEIPT_FIELDS.profileErrors]: numeric(result.profile_errors),
+    [RECEIPT_FIELDS.source]: SOURCE,
+  };
+  if (reason) fields[RECEIPT_FIELDS.reason] = reason;
+  return fields;
+}
+
+async function writeReceipt(env, fields) {
+  const config = airtableConfig(env);
+  const table = syncRunsTable(env);
+  if (!table) throw new Error("line_ofc_sync_runs_table_missing");
+  const response = await fetchWithRetry(`${AIRTABLE_API}/${config.baseId}/${table}?returnFieldsByFieldId=true`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${config.token}`,
+      "content-type": "application/json",
+      accept: "application/json",
+    },
+    body: JSON.stringify({ records: [{ fields }], typecast: false }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`airtable_sync_receipt_${response.status}:${clean(body?.error?.message || body?.error?.type || body, 180)}`);
+  return body?.records?.[0]?.id || "";
+}
+
+async function finalizeResult(env, runId, startedAt, result = {}) {
+  const completed = {
+    ...result,
+    started_at: clean(result.started_at || startedAt, 80),
+    completed_at: clean(result.completed_at || new Date().toISOString(), 80),
+  };
+  try {
+    const receiptId = await writeReceipt(env, buildReceiptFields(runId, startedAt, completed));
+    return { ...completed, receipt_written: true, receipt_id_present: Boolean(receiptId) };
+  } catch (error) {
+    return {
+      ...completed,
+      receipt_written: false,
+      receipt_error: clean(error?.message || error, 240),
+    };
+  }
 }
 
 async function fetchWithRetry(url, init = {}, { attempts = 4, allowed = [] } = {}) {
@@ -230,103 +327,129 @@ function existingClientPatch(record, lineUserId, displayName) {
 
 export async function syncLineOfcFollowers(env = {}, options = {}) {
   const startedAt = new Date().toISOString();
-  if (!lineToken(env)) return { ok: false, skipped: true, reason: "line_channel_access_token_missing", started_at: startedAt };
+  const runId = clean(options.run_id || `${SOURCE}_${startedAt}`, 120);
+  if (!lineToken(env)) {
+    return finalizeResult(env, runId, startedAt, {
+      ok: false,
+      skipped: true,
+      supported: false,
+      reason: "line_channel_access_token_missing",
+    });
+  }
+
   let followerSnapshot;
   try {
     followerSnapshot = await listLineFollowerIds(env);
   } catch (error) {
-    return { ok: false, error: clean(error?.message || error, 240), started_at: startedAt };
+    return finalizeResult(env, runId, startedAt, {
+      ok: false,
+      supported: false,
+      error: clean(error?.message || error, 240),
+    });
   }
+
   if (!followerSnapshot.supported) {
-    return {
+    return finalizeResult(env, runId, startedAt, {
       ok: true,
       skipped: true,
       supported: false,
       reason: followerSnapshot.reason,
       pages: followerSnapshot.pages,
-      started_at: startedAt,
-    };
+    });
   }
 
-  const clients = await airtableListClients(env);
-  const byLine = indexClientsByLine(clients);
-  const duplicates = [];
-  const missing = [];
-  const existing = [];
-  for (const lineUserId of followerSnapshot.follower_ids) {
-    const matches = byLine.get(lineUserId) || [];
-    if (matches.length > 1) duplicates.push(lineUserId);
-    else if (matches.length === 1) existing.push({ lineUserId, record: matches[0] });
-    else missing.push(lineUserId);
-  }
+  try {
+    const clients = await airtableListClients(env);
+    const byLine = indexClientsByLine(clients);
+    const duplicates = [];
+    const missing = [];
+    const existing = [];
+    for (const lineUserId of followerSnapshot.follower_ids) {
+      const matches = byLine.get(lineUserId) || [];
+      if (matches.length > 1) duplicates.push(lineUserId);
+      else if (matches.length === 1) existing.push({ lineUserId, record: matches[0] });
+      else missing.push(lineUserId);
+    }
 
-  const profileTargets = [...missing, ...existing.filter(({ record }) => {
-    const fields = record?.fields || {};
-    return [FIELDS.clientName, FIELDS.mmdClientName, FIELDS.nickname, FIELDS.displayName].some((fieldId) => isBlank(fields[fieldId]));
-  }).map(({ lineUserId }) => lineUserId)];
-  const profileResults = await mapConcurrent([...new Set(profileTargets)], Number(options.profile_concurrency || PROFILE_CONCURRENCY), async (lineUserId) => ({
-    lineUserId,
-    profile: await lineProfile(env, lineUserId),
-  }));
-  const profiles = new Map();
-  let profileErrors = 0;
-  for (const item of profileResults) {
-    if (!item || item.error) { profileErrors += 1; continue; }
-    profiles.set(item.lineUserId, item.profile);
-  }
+    const profileTargets = [...missing, ...existing.filter(({ record }) => {
+      const fields = record?.fields || {};
+      return [FIELDS.clientName, FIELDS.mmdClientName, FIELDS.nickname, FIELDS.displayName].some((fieldId) => isBlank(fields[fieldId]));
+    }).map(({ lineUserId }) => lineUserId)];
+    const profileResults = await mapConcurrent([...new Set(profileTargets)], Number(options.profile_concurrency || PROFILE_CONCURRENCY), async (lineUserId) => ({
+      lineUserId,
+      profile: await lineProfile(env, lineUserId),
+    }));
+    const profiles = new Map();
+    let profileErrors = 0;
+    for (const item of profileResults) {
+      if (!item || item.error) { profileErrors += 1; continue; }
+      profiles.set(item.lineUserId, item.profile);
+    }
 
-  const creates = [];
-  for (const lineUserId of missing) {
-    const profile = profiles.get(lineUserId);
-    const status = profile?.ok ? "ok" : profile?.status ? `http_${profile.status}` : "unavailable";
-    creates.push({ fields: newClientFields(lineUserId, profile?.display_name || "", status) });
-  }
+    const creates = [];
+    for (const lineUserId of missing) {
+      const profile = profiles.get(lineUserId);
+      const status = profile?.ok ? "ok" : profile?.status ? `http_${profile.status}` : "unavailable";
+      creates.push({ fields: newClientFields(lineUserId, profile?.display_name || "", status) });
+    }
 
-  const updates = [];
-  for (const { lineUserId, record } of existing) {
-    const profile = profiles.get(lineUserId);
-    const patch = existingClientPatch(record, lineUserId, profile?.display_name || "");
-    if (Object.keys(patch).length) updates.push({ id: record.id, fields: patch });
-  }
+    const updates = [];
+    for (const { lineUserId, record } of existing) {
+      const profile = profiles.get(lineUserId);
+      const patch = existingClientPatch(record, lineUserId, profile?.display_name || "");
+      if (Object.keys(patch).length) updates.push({ id: record.id, fields: patch });
+    }
 
-  const dryRun = options.dry_run === true;
-  if (!dryRun) {
-    await airtableBatch(env, "POST", creates);
-    await airtableBatch(env, "PATCH", updates);
-  }
+    const dryRun = options.dry_run === true;
+    if (!dryRun) {
+      await airtableBatch(env, "POST", creates);
+      await airtableBatch(env, "PATCH", updates);
+    }
 
-  return {
-    ok: true,
-    supported: true,
-    dry_run: dryRun,
-    followers_returned: followerSnapshot.follower_ids.length,
-    pages: followerSnapshot.pages,
-    clients_scanned: clients.length,
-    already_canonical: existing.length,
-    duplicate_line_identity_review: duplicates.length,
-    missing_clients: missing.length,
-    clients_created: dryRun ? 0 : creates.length,
-    clients_create_planned: creates.length,
-    clients_updated: dryRun ? 0 : updates.length,
-    clients_update_planned: updates.length,
-    profiles_requested: profileTargets.length,
-    profile_errors: profileErrors,
-    membership_mutation: false,
-    entitlement_mutation: false,
-    points_mutation: false,
-    payment_mutation: false,
-    job_mutation: false,
-    session_mutation: false,
-    completed_at: new Date().toISOString(),
-  };
+    return finalizeResult(env, runId, startedAt, {
+      ok: true,
+      supported: true,
+      dry_run: dryRun,
+      followers_returned: followerSnapshot.follower_ids.length,
+      pages: followerSnapshot.pages,
+      clients_scanned: clients.length,
+      already_canonical: existing.length,
+      duplicate_line_identity_review: duplicates.length,
+      missing_clients: missing.length,
+      clients_created: dryRun ? 0 : creates.length,
+      clients_create_planned: creates.length,
+      clients_updated: dryRun ? 0 : updates.length,
+      clients_update_planned: updates.length,
+      profiles_requested: profileTargets.length,
+      profile_errors: profileErrors,
+      membership_mutation: false,
+      entitlement_mutation: false,
+      points_mutation: false,
+      payment_mutation: false,
+      job_mutation: false,
+      session_mutation: false,
+    });
+  } catch (error) {
+    return finalizeResult(env, runId, startedAt, {
+      ok: false,
+      supported: true,
+      followers_returned: followerSnapshot.follower_ids.length,
+      pages: followerSnapshot.pages,
+      error: clean(error?.message || error, 240),
+    });
+  }
 }
 
 export const LINE_OFC_FOLLOWER_SYNC_INTERNALS = Object.freeze({
   FIELDS,
+  RECEIPT_FIELDS,
   SOURCE,
+  SYNC_RUNS_TABLE_DEFAULT,
   placeholderName,
   normalizeDisplayName,
   indexClientsByLine,
   newClientFields,
   existingClientPatch,
+  buildReceiptFields,
+  receiptStatus,
 });
