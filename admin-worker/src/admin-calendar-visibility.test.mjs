@@ -14,7 +14,7 @@ async function request(path,role='owner',method='GET') {
 }
 const dataResponse=body=>Response.json(body);
 function upstream(input,init={}) {
-  const url=new URL(typeof input==='string'?input:input.url);
+  const url=new URL(input instanceof Request ? input.url : String(input));
   assert.equal(init.method||'GET','GET','diagnostic and calendar read must never mutate');
   if(url.hostname==='api.cal.com') return dataResponse({status:'success',data:{id:7057823,description:'private upstream content must not be projected',owner:{email:'private@example.test'}}});
   if(url.hostname==='cal-sync-worker.malemodel-bkk.workers.dev') return dataResponse({ok:true,service:'cal-sync-worker',mode:'shadow',webhook_secret_configured:true,mapping_ledger_configured:true});
