@@ -5,11 +5,17 @@ compatibility_date = "2026-09-14"
 [vars]
 MMD_TIMEZONE = "Asia/Bangkok"
 CAL_SHADOW_MODE = "true"
+AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+CAL_BOOKING_LINKS_TABLE_ID = "tbl6saWYEQrEdnMIK"
 
 # Secrets (configure outside source control):
 # CAL_WEBHOOK_SECRET
-# CAL_API_KEY
+# AIRTABLE_API_KEY (or AIRTABLE_TOKEN) — required only for the non-authoritative
+# Cal booking identity ledger. Never commit the token here.
+# CAL_API_KEY (optional; MCP OAuth is used for ChatGPT control)
 #
-# V1 is intentionally shadow-only. Do not set CAL_SHADOW_MODE="false"
-# until booking-to-canonical Session mapping and lifecycle mutation rules
-# are explicitly approved and covered by production smoke tests.
+# Shadow mode may persist Cal booking identity (UID -> Session/Job metadata)
+# but must not mutate MMD Session, Payment, Membership, Client, pricing,
+# cancellation, or entitlement truth.
+# Do not set CAL_SHADOW_MODE="false" until lifecycle mutation rules are
+# explicitly approved and covered by production smoke tests.
