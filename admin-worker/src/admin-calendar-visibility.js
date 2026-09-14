@@ -3,7 +3,9 @@ import { calendarPageResponse as basePageResponse, calendarApiResponse, calendar
 
 export { calendarApiResponse, calendarJsonResponse };
 const ROLES = new Set(['owner', 'admin', 'super_admin', 'superadmin']);
-const CAL_API_VERSION = '2026-02-25';
+// Cal versions are endpoint-specific. GET /v2/event-types/{id} requires 2024-06-14.
+// This read-only probe must not reuse the booking-creation API version.
+const CAL_EVENT_TYPE_API_VERSION = '2024-06-14';
 const CAL_SYNC_HEALTH_URL = 'https://cal-sync.internal/health';
 const CAL_SYNC_PUBLIC_FALLBACK = 'https://cal-sync-worker.malemodel-bkk.workers.dev/health';
 const clean = value => String(value ?? '').trim();
@@ -28,14 +30,22 @@ async function readJson(url, headers, fetcher) {
   const timeout = setTimeout(() => controller.abort(), 2500);
   try {
     const response = await fetcher(url, { method:'GET', headers, redirect:'error', signal:controller.signal });
-    return { status:response.status, ok:response.ok, data:await response.json().catch(() => null) };
-  } catch { return { status:0, ok:false, data:null }; }
-  finally { clearTimeout(timeout); }
+    return { status:response.status, ok:response.ok, data:await response.json().catch(() => null), error_name:null };
+  } catch (error) {
+    return { status:0, ok:false, data:null, error_name:clean(error?.name, 80) || 'Error' };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function serviceBindingFetcher(binding) {
   if (!binding || typeof binding.fetch !== 'function') return null;
-  return (url, init = {}) => binding.fetch(new Request(url, init));
+  // Service bindings are already internal transport. Keep the synthetic request
+  // minimal instead of forwarding redirect/AbortSignal state from an outer fetch.
+  return (url, init = {}) => binding.fetch(new Request(url, {
+    method:init.method || 'GET',
+    headers:init.headers || {},
+  }));
 }
 
 async function readBridgeHealth(env, fetcher) {
@@ -51,7 +61,7 @@ export async function inspectCalendarConnection(env = {}, fetcher = fetch) {
   const eventTypeId = /^\d{1,12}$/.test(suppliedId) ? Number(suppliedId) : 0;
   const [api, bridge] = await Promise.all([
     key && eventTypeId ? readJson('https://api.cal.com/v2/event-types/' + eventTypeId, {
-      authorization:'Bearer ' + key, 'cal-api-version':CAL_API_VERSION, accept:'application/json',
+      authorization:'Bearer ' + key, 'cal-api-version':CAL_EVENT_TYPE_API_VERSION, accept:'application/json',
     }, fetcher) : null,
     readBridgeHealth(env, fetcher),
   ]);
@@ -60,10 +70,12 @@ export async function inspectCalendarConnection(env = {}, fetcher = fetch) {
   const bridgeMode = bridgeReady && ['shadow','active'].includes(bridge.data?.mode) ? bridge.data.mode : 'unknown';
   return {
     checked_at:new Date().toISOString(),
-    outbound:{ configured:Boolean(key), api_verified:apiReady, api_version:CAL_API_VERSION, event_type_id:eventTypeId || null,
+    outbound:{ configured:Boolean(key), api_verified:apiReady, api_version:CAL_EVENT_TYPE_API_VERSION, event_type_id:eventTypeId || null,
       status:!key?'missing_cal_api_key':!eventTypeId?'invalid_event_type':apiReady?'read_verified':[401,403].includes(api?.status)?'credential_rejected':'read_unavailable',
+      http_status:api?.status || 0, error_name:api?.error_name || null,
       booking_creation_verified:false },
     inbound:{ reachable:bridgeReady, transport:serviceFetchTransport(env), mode:bridgeMode,
+      http_status:bridge?.status || 0, error_name:bridge?.error_name || null,
       webhook_secret_configured:bridgeReady && bridge.data?.webhook_secret_configured === true,
       api_key_configured:bridgeReady && bridge.data?.api_key_configured === true,
       mapping_ledger_configured:bridgeReady && bridge.data?.mapping_ledger_configured === true },
@@ -98,6 +110,6 @@ export async function calendarPageResponse(env = {}, selectedDate = '') {
   html = html.replace('</section><nav class="tabs">', `</section><form class="cal-date-form" action="/internal/admin/calendar" method="get"><label for="calendar-date">เลือกวันงาน</label><input id="calendar-date" name="date" type="date" value="${date}" required><button type="submit">แสดงงาน</button></form><nav class="tabs">`);
   html = html.replace('</head>', `<style>.app .cal-connection{margin-top:12px}.app .cal-connection summary{cursor:pointer;font-weight:700;font-size:14px;line-height:1.6}.app .cal-connection p{font-size:12px;line-height:1.7;margin:8px 0}.app .cal-connection small{font-size:11px;color:var(--m)}.app .cal-date-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}.app .cal-date-form input,.app .cal-date-form button{font:inherit;min-height:44px;background:var(--p);color:var(--t);border:1px solid var(--l);border-radius:10px;padding:8px 12px}.app .cal-date-form label{font-size:12px}.app .chip,.app .metric span,.app .metric small,.app .tag,.app .muted,.app .empty,.app .time span{font-size:12px;line-height:1.6}.app .tab,.app .action a,.app .action button,.app .date button{min-height:44px;font-size:12px}.app .event h3{font-size:14px}.app .event{overflow-wrap:anywhere}.app .mobile{font-size:12px}.app .main{min-width:0}.app .grid>*{min-width:0}</style></head>`);
   const headers = new Headers(base.headers);
-  headers.set('x-mmd-calendar-surface','admin-worker-v1.2');
+  headers.set('x-mmd-calendar-surface','admin-worker-v1.3');
   return new Response(html,{status:200,headers});
 }

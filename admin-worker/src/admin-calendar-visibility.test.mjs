@@ -75,7 +75,7 @@ test('real production entrypoint renders signed owner Calendar on both slash for
   await withFetch(upstream,async()=>{
     for(const path of ['/internal/admin/calendar?date=2026-09-17','/internal/admin/calendar/?date=2026-09-17']){
       const r=await entry.fetch(await request(path),env,{});const html=await r.text();
-      assert.equal(r.status,200);assert.equal(r.headers.get('x-mmd-calendar-surface'),'admin-worker-v1.2');
+      assert.equal(r.status,200);assert.equal(r.headers.get('x-mmd-calendar-surface'),'admin-worker-v1.3');
       assert.match(html,/calendar-connection-state/);assert.match(html,/id="calendar-date"/);assert.match(html,/new Date\('2026-09-17T12:00:00\+07:00'\)/);
       assert.doesNotMatch(html,/test-only-owner-credential|test-only-signing-key|test-only-airtable/);
     }

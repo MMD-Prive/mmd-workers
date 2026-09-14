@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { inspectCalendarConnection } from './admin-calendar-visibility.js';
 
-test('calendar diagnostics use current Cal API and private cal-sync service binding', async () => {
+test('calendar diagnostics use event-type Cal API version and private cal-sync service binding', async () => {
   const calls = [];
   const directFetch = async (input, init = {}) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     calls.push({ kind:'direct', url:url.toString(), version:init.headers?.['cal-api-version'] || new Headers(init.headers).get('cal-api-version') });
     if (url.hostname === 'api.cal.com') {
-      assert.equal(init.headers['cal-api-version'], '2026-02-25');
+      assert.equal(init.headers['cal-api-version'], '2024-06-14');
       return Response.json({ status:'success', data:{ id:7057823 } });
     }
     throw new Error('public cal-sync fallback must not be used when the binding exists');
@@ -18,7 +18,7 @@ test('calendar diagnostics use current Cal API and private cal-sync service bind
     CAL_SYNC_WORKER:{
       async fetch(request) {
         const url = new URL(request.url);
-        calls.push({ kind:'binding', url:url.toString() });
+        calls.push({ kind:'binding', url:url.toString(), redirect:request.redirect });
         assert.equal(url.hostname, 'cal-sync.internal');
         assert.equal(url.pathname, '/health');
         return Response.json({
@@ -34,9 +34,13 @@ test('calendar diagnostics use current Cal API and private cal-sync service bind
   };
   const result = await inspectCalendarConnection(env, directFetch);
   assert.equal(result.outbound.api_verified, true);
-  assert.equal(result.outbound.api_version, '2026-02-25');
+  assert.equal(result.outbound.api_version, '2024-06-14');
+  assert.equal(result.outbound.http_status, 200);
+  assert.equal(result.outbound.error_name, null);
   assert.equal(result.inbound.reachable, true);
   assert.equal(result.inbound.transport, 'service_binding');
+  assert.equal(result.inbound.http_status, 200);
+  assert.equal(result.inbound.error_name, null);
   assert.equal(result.inbound.webhook_secret_configured, true);
   assert.equal(result.inbound.api_key_configured, true);
   assert.equal(result.inbound.mapping_ledger_configured, true);
@@ -45,7 +49,7 @@ test('calendar diagnostics use current Cal API and private cal-sync service bind
   assert.equal(calls.filter(x => x.kind === 'binding').length, 1);
 });
 
-test('calendar diagnostics fail closed if the private bridge is unavailable', async () => {
+test('calendar diagnostics fail closed and expose only safe HTTP status if bridge is unavailable', async () => {
   const directFetch = async (input, init = {}) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     if (url.hostname === 'api.cal.com') return Response.json({ status:'success', data:{ id:7057823 } });
@@ -55,6 +59,19 @@ test('calendar diagnostics fail closed if the private bridge is unavailable', as
   assert.equal(result.outbound.api_verified, true);
   assert.equal(result.inbound.reachable, false);
   assert.equal(result.inbound.transport, 'public_fallback');
+  assert.equal(result.inbound.http_status, 503);
+  assert.equal(result.inbound.error_name, null);
   assert.equal(result.inbound.webhook_secret_configured, false);
   assert.equal(result.inbound.mapping_ledger_configured, false);
+});
+
+test('calendar diagnostics expose safe error name without leaking fetch error message', async () => {
+  const failing = async () => { throw Object.assign(new TypeError('secret-bearing transport detail'), { code:'X' }); };
+  const result = await inspectCalendarConnection({ CAL_API_KEY:'test-cal-key' }, failing);
+  assert.equal(result.outbound.api_verified, false);
+  assert.equal(result.outbound.http_status, 0);
+  assert.equal(result.outbound.error_name, 'TypeError');
+  assert.equal(result.inbound.reachable, false);
+  assert.equal(result.inbound.error_name, 'TypeError');
+  assert.doesNotMatch(JSON.stringify(result), /secret-bearing transport detail|test-cal-key/);
 });
