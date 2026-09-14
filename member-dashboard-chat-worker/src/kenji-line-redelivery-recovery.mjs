@@ -36,6 +36,9 @@ function json(payload, status = 200) {
 function membershipStatusText(value = "") {
   const normalized = text(value).normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
   if (!normalized) return false;
+  // Preserve the original campaign question for V2 classification. Signature,
+  // redelivery, privacy and account-truth guards still run on their normal paths.
+  if (/care[\s_-]*back|แคร์\s*แบ[็๊]?ก|แคร์\s*แบค|double[\s_-]*moment|ดับเบิล\s*โมเมนต์/i.test(normalized)) return false;
   if (/(?:membership|member)\s*status|status\s*(?:membership|member)/i.test(normalized)) return true;
   if (/(?:เช็ก|เช็ค|ตรวจ|ตรวจสอบ|ดู|ขอดู|ขอเช็ก|ขอเช็ค).{0,16}สถานะ(?:การ)?สมาชิก/i.test(normalized)) return true;
   if (/สถานะ(?:การ)?สมาชิก.{0,20}(?:ของผม|ของฉัน|ของหนู|ของเรา|ตอนนี้|ปัจจุบัน|เป็นยังไง|เป็นอย่างไร|ยังอยู่|active|inactive|expired|หมดอายุ)/i.test(normalized)) return true;
