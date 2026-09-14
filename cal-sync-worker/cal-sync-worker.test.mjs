@@ -11,7 +11,8 @@ async function sign(body, secret) {
     ['sign'],
   );
   const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body));
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `sha256=${hex}`;
 }
 
 test('normalizes standard booking payload', () => {
@@ -32,10 +33,22 @@ test('normalizes standard booking payload', () => {
   assert.equal(event.booking_id, 42);
 });
 
-test('accepts a valid Cal webhook signature', async () => {
+test('accepts a valid Cal webhook signature with sha256 prefix', async () => {
   const body = JSON.stringify({ triggerEvent: 'BOOKING_CREATED', payload: { uid: 'abc' } });
   const secret = 'test-secret';
   const signature = await sign(body, secret);
+  const response = await handleRequest(new Request('https://example.test/webhooks/cal', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-cal-signature-256': signature },
+    body,
+  }), { CAL_WEBHOOK_SECRET: secret, CAL_SHADOW_MODE: 'true' });
+  assert.equal(response.status, 204);
+});
+
+test('continues to accept raw hex signatures for compatibility', async () => {
+  const body = JSON.stringify({ triggerEvent: 'BOOKING_CREATED', payload: { uid: 'abc' } });
+  const secret = 'test-secret';
+  const signature = (await sign(body, secret)).replace(/^sha256=/, '');
   const response = await handleRequest(new Request('https://example.test/webhooks/cal', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-cal-signature-256': signature },
@@ -48,7 +61,7 @@ test('rejects an invalid Cal webhook signature', async () => {
   const body = JSON.stringify({ triggerEvent: 'BOOKING_CREATED', payload: { uid: 'abc' } });
   const response = await handleRequest(new Request('https://example.test/webhooks/cal', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-cal-signature-256': 'deadbeef' },
+    headers: { 'content-type': 'application/json', 'x-cal-signature-256': 'sha256=deadbeef' },
     body,
   }), { CAL_WEBHOOK_SECRET: 'test-secret' });
   assert.equal(response.status, 401);
