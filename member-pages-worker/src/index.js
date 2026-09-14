@@ -7,6 +7,10 @@ import { handleMmsMemberPrebookingRead, isMmsMemberPrebookingReadPath } from "./
 import { handleMmsServiceZoneCatalog, isMmsServiceZoneCatalogPath } from "./mms-service-zone-catalog.js";
 import { handleMemberAppApi, isMemberAppApiPath } from "./member-app-api.js";
 import {
+  ensureMemberHistoryRecoveryOnAccess,
+  isMemberHistoryOnAccessPath,
+} from "./member-history-on-access.js";
+import {
   handleMemberHistoryRecoveryRequest,
   isLiffHistoryRecoveryStartPath,
   isMemberHistoryRecoveryPath,
@@ -49,7 +53,10 @@ export default {
     if (isMmsServiceZoneCatalogPath(url)) return finish(await handleMmsServiceZoneCatalog(request, env));
     if (request.method === "GET" && isMmsMemberPrebookingReadPath(url)) return finish(await handleMmsMemberPrebookingRead(request, env));
     if (isMemberHistoryRecoveryPath(url)) return finish(await handleMemberHistoryRecoveryRequest(request, env, ctx));
-    if (isMemberAppApiPath(url)) return finish(await handleMemberAppApi(request, env));
+    if (isMemberAppApiPath(url)) {
+      await ensureMemberHistoryRecoveryOnAccess(request, env, ctx);
+      return finish(await handleMemberAppApi(request, env));
+    }
     if (isMemberEmailRecoveryPath(url)) return finish(await handleMemberEmailRecovery(request, env));
     if (isFindMemberApiPath(url)) return finish(await handleFindMemberApi(request, env));
     if (isLiffClientDiagnosticPath(url)) return finish(await handleLiffClientDiagnostic(request, env));
@@ -62,6 +69,9 @@ export default {
       const response = await liffFoundation.fetch(request, env, ctx);
       scheduleMemberHistoryRecoveryFromLiffResponse(response, env, ctx);
       return finish(response);
+    }
+    if (isMemberHistoryOnAccessPath(url)) {
+      await ensureMemberHistoryRecoveryOnAccess(request, env, ctx);
     }
     return finish(await liffFoundation.fetch(request, env, ctx));
   },
