@@ -36,6 +36,8 @@ jobs:
         run: node scripts/line-ofc-all-contact-backfill.js --dry-run --report /tmp/line-ofc-contact-dry-run.json
       - name: Apply all LINE OFC identities
         run: node scripts/line-ofc-all-contact-backfill.js --apply --report /tmp/line-ofc-contact-apply.json
+      - name: Converge lineage and staging decisions
+        run: node scripts/line-ofc-all-contact-backfill.js --apply --report /tmp/line-ofc-contact-converge.json
       - name: Verify idempotency
         run: node scripts/line-ofc-all-contact-backfill.js --dry-run --assert-idempotent --report /tmp/line-ofc-contact-idempotency.json
       - name: Upload redacted reports
@@ -46,6 +48,7 @@ jobs:
           path: |
             /tmp/line-ofc-contact-dry-run.json
             /tmp/line-ofc-contact-apply.json
+            /tmp/line-ofc-contact-converge.json
             /tmp/line-ofc-contact-idempotency.json
           if-no-files-found: warn
           retention-days: 30
