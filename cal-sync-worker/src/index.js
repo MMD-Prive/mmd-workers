@@ -15,6 +15,11 @@ function clean(value) {
   return String(value ?? '').trim();
 }
 
+function normalizeSignature(value) {
+  const supplied = clean(value).toLowerCase();
+  return supplied.startsWith('sha256=') ? supplied.slice('sha256='.length) : supplied;
+}
+
 function timingSafeEqualHex(a, b) {
   const left = clean(a).toLowerCase();
   const right = clean(b).toLowerCase();
@@ -30,7 +35,7 @@ function timingSafeEqualHex(a, b) {
 
 export async function verifyWebhookSignature(rawBody, secret, signature) {
   const keyText = clean(secret);
-  const supplied = clean(signature);
+  const supplied = normalizeSignature(signature);
   if (!keyText || !supplied) return false;
 
   const key = await crypto.subtle.importKey(
