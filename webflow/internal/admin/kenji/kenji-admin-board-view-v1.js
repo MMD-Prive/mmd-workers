@@ -4,34 +4,37 @@
   var root = document.getElementById("mmdKenjiAdminV1");
   if (!root || root.dataset.sigilBoardViewV1 === "1") return;
   root.dataset.sigilBoardViewV1 = "1";
+  root.dataset.sigilBoardSimpleV2 = "1";
 
   var STATUS_API = "/v1/sigil/board/status";
   var QUEUE_API = "/v1/sigil/board/queue?limit=100";
   var boardState = {
     cards: [],
-    counts: null,
     filter: "all",
     selectedId: "",
     loading: false,
     loaded: false,
     lastChecked: "",
     source: "",
+    hiddenRenewals: 0,
   };
 
   var style = document.createElement("style");
   style.textContent = [
     ".ksb-panel{padding:0 22px 28px}",
-    ".ksb-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin:18px 0 14px}.ksb-head h2{margin:3px 0 6px;color:#fff0dc;font-size:28px;line-height:1.15}.ksb-head p{margin:0;max-width:760px;color:#ad9f90;font-size:12px;line-height:1.6}.ksb-kicker{display:block;color:#d9b568;font-size:10px;font-weight:900;letter-spacing:.14em;text-transform:uppercase}",
-    ".ksb-head-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.ksb-button{min-height:38px;padding:8px 12px;border-radius:11px;border:1px solid rgba(229,189,112,.22);background:rgba(255,255,255,.025);color:#e7d9c6;font:inherit;font-size:11px;cursor:pointer}.ksb-button.is-primary{background:linear-gradient(135deg,#f0ce82,#c99b40);color:#160f08;border-color:transparent;font-weight:850}.ksb-button:disabled{opacity:.5;cursor:progress}",
-    ".ksb-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:0 0 12px}.ksb-metric{padding:13px;border:1px solid rgba(229,189,112,.15);border-radius:14px;background:rgba(17,13,10,.9)}.ksb-metric span{display:block;color:#9b8e80;font-size:10px}.ksb-metric strong{display:block;margin-top:4px;color:#fff0dc;font-size:24px;line-height:1}.ksb-metric small{display:block;margin-top:5px;color:#756b61;font-size:9px;line-height:1.4}",
-    ".ksb-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:0 0 10px}.ksb-filters{display:flex;gap:7px;flex-wrap:wrap}.ksb-filter{padding:7px 10px;border-radius:999px;border:1px solid rgba(229,189,112,.16);background:rgba(255,255,255,.02);color:#ab9d8e;font:inherit;font-size:10px;cursor:pointer}.ksb-filter.is-on{border-color:#d9b568;background:rgba(229,189,112,.11);color:#f0d494}",
-    ".ksb-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(300px,.72fr);gap:12px;align-items:start}.ksb-card{border:1px solid rgba(229,189,112,.18);border-radius:16px;background:linear-gradient(155deg,rgba(20,15,11,.96),rgba(8,6,5,.97));padding:14px}.ksb-card h3{margin:0 0 4px;color:#f4e5d0;font-size:16px}.ksb-card>p{margin:0 0 11px;color:#928579;font-size:11px;line-height:1.5}",
-    ".ksb-queue{display:grid;gap:8px}.ksb-row{width:100%;text-align:left;padding:11px;border:1px solid rgba(229,189,112,.12);border-radius:12px;background:rgba(0,0,0,.17);color:#d9cbb9;font:inherit;cursor:pointer}.ksb-row:hover,.ksb-row.is-on{border-color:rgba(229,189,112,.52);background:rgba(229,189,112,.06)}.ksb-row-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.ksb-row b{display:block;color:#f4e5d0;font-size:12px;line-height:1.4}.ksb-badge{display:inline-flex;flex:0 0 auto;padding:4px 7px;border:1px solid rgba(229,189,112,.22);border-radius:999px;color:#d7b86e;font-size:9px}.ksb-meta{display:flex;gap:7px;flex-wrap:wrap;margin-top:6px;color:#84786d;font-size:9px}.ksb-row p{margin:7px 0 0;color:#ae9f8e;font-size:10px;line-height:1.45}",
-    ".ksb-detail{position:sticky;top:76px}.ksb-detail-grid{display:grid;gap:8px;margin-top:10px}.ksb-detail-item{padding:9px 10px;border:1px solid rgba(229,189,112,.11);border-radius:10px;background:rgba(0,0,0,.16)}.ksb-detail-item span{display:block;color:#887b70;font-size:9px;text-transform:uppercase;letter-spacing:.08em}.ksb-detail-item p{margin:4px 0 0;color:#d8c9b7;font-size:11px;line-height:1.5;white-space:pre-wrap}.ksb-decision{margin-top:10px;padding:9px 10px;border-radius:10px;border:1px solid rgba(229,189,112,.18);background:rgba(229,189,112,.05);color:#cbbca9;font-size:10px;line-height:1.5}",
+    ".ksb-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin:18px 0 14px}.ksb-head h2{margin:3px 0 6px;color:#fff0dc;font-size:28px;line-height:1.15}.ksb-head p{margin:0;max-width:700px;color:#ad9f90;font-size:12px;line-height:1.6}.ksb-kicker{display:block;color:#d9b568;font-size:10px;font-weight:900;letter-spacing:.14em;text-transform:uppercase}",
+    ".ksb-head-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.ksb-button{min-height:40px;padding:9px 13px;border-radius:12px;border:1px solid rgba(229,189,112,.22);background:rgba(255,255,255,.025);color:#e7d9c6;font:inherit;font-size:11px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}.ksb-button.is-primary{background:linear-gradient(135deg,#f0ce82,#c99b40);color:#160f08;border-color:transparent;font-weight:850}.ksb-button:disabled{opacity:.5;cursor:progress}",
+    ".ksb-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:0 0 12px}.ksb-metric{padding:13px;border:1px solid rgba(229,189,112,.15);border-radius:14px;background:rgba(17,13,10,.9)}.ksb-metric span{display:block;color:#b6a795;font-size:11px}.ksb-metric strong{display:block;margin-top:4px;color:#fff0dc;font-size:26px;line-height:1}.ksb-metric small{display:block;margin-top:5px;color:#756b61;font-size:9px;line-height:1.4}",
+    ".ksb-guide{display:flex;gap:8px;align-items:flex-start;margin:0 0 12px;padding:10px 12px;border:1px solid rgba(229,189,112,.12);border-radius:12px;background:rgba(229,189,112,.04);color:#bdae9c;font-size:10px;line-height:1.55}.ksb-guide b{color:#f0d494;white-space:nowrap}",
+    ".ksb-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:0 0 10px}.ksb-filters{display:flex;gap:7px;flex-wrap:wrap}.ksb-filter{padding:8px 11px;border-radius:999px;border:1px solid rgba(229,189,112,.16);background:rgba(255,255,255,.02);color:#ab9d8e;font:inherit;font-size:10px;cursor:pointer}.ksb-filter.is-on{border-color:#d9b568;background:rgba(229,189,112,.11);color:#f0d494}",
+    ".ksb-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.75fr);gap:12px;align-items:start}.ksb-card{border:1px solid rgba(229,189,112,.18);border-radius:16px;background:linear-gradient(155deg,rgba(20,15,11,.96),rgba(8,6,5,.97));padding:14px}.ksb-card h3{margin:0 0 4px;color:#f4e5d0;font-size:16px}.ksb-card>p{margin:0 0 11px;color:#928579;font-size:11px;line-height:1.5}",
+    ".ksb-queue{display:grid;gap:8px}.ksb-row{width:100%;text-align:left;padding:12px;border:1px solid rgba(229,189,112,.12);border-radius:12px;background:rgba(0,0,0,.17);color:#d9cbb9;font:inherit;cursor:pointer}.ksb-row:hover,.ksb-row.is-on{border-color:rgba(229,189,112,.52);background:rgba(229,189,112,.06)}.ksb-row-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.ksb-row b{display:block;color:#f4e5d0;font-size:12px;line-height:1.45}.ksb-badge{display:inline-flex;flex:0 0 auto;padding:4px 7px;border:1px solid rgba(229,189,112,.22);border-radius:999px;color:#d7b86e;font-size:9px}.ksb-meta{display:flex;gap:7px;flex-wrap:wrap;margin-top:6px;color:#84786d;font-size:9px}.ksb-row p{margin:7px 0 0;color:#c1b09d;font-size:10px;line-height:1.5}",
+    ".ksb-detail{position:sticky;top:76px}.ksb-detail-grid{display:grid;gap:8px;margin-top:10px}.ksb-detail-item{padding:10px 11px;border:1px solid rgba(229,189,112,.11);border-radius:10px;background:rgba(0,0,0,.16)}.ksb-detail-item span{display:block;color:#887b70;font-size:9px;letter-spacing:.04em}.ksb-detail-item p{margin:4px 0 0;color:#d8c9b7;font-size:11px;line-height:1.55;white-space:pre-wrap}.ksb-decision{margin-top:10px;padding:10px 11px;border-radius:10px;border:1px solid rgba(229,189,112,.18);background:rgba(229,189,112,.05);color:#cbbca9;font-size:10px;line-height:1.55}.ksb-decision strong{color:#f0d494}.ksb-action{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}",
+    ".ksb-system{margin-top:12px;border-top:1px solid rgba(229,189,112,.1);padding-top:10px}.ksb-system summary{cursor:pointer;color:#7f7469;font-size:9px}.ksb-system p{margin:7px 0 0;color:#6f655c;font-size:9px;line-height:1.5}",
     ".ksb-empty{padding:16px;border:1px dashed rgba(229,189,112,.16);border-radius:12px;color:#938678;font-size:11px;line-height:1.55}.ksb-status{min-height:16px;color:#d8b76c;font-size:10px}.ksb-status.is-bad{color:#ef9a86}",
     ".kso-nav [data-kso-board].is-on{border-color:#d9b568;background:rgba(229,189,112,.13);color:#f3d99e}",
-    "@media(max-width:900px){.ksb-metrics{grid-template-columns:1fr 1fr}.ksb-grid{grid-template-columns:1fr}.ksb-detail{position:static}.ksb-toolbar{align-items:flex-start;flex-direction:column}}",
-    "@media(max-width:620px){.ksb-panel{padding:0 12px 22px}.ksb-head{flex-direction:column}.ksb-metrics{grid-template-columns:1fr 1fr}.ksb-metric{padding:11px}.ksb-head h2{font-size:24px}.ksb-filters{width:100%}.ksb-filter{flex:1 1 auto}.ksb-head-actions{width:100%}.ksb-button{width:100%}}"
+    "@media(max-width:900px){.ksb-metrics{grid-template-columns:repeat(3,1fr)}.ksb-grid{grid-template-columns:1fr}.ksb-detail{position:static}.ksb-toolbar{align-items:flex-start;flex-direction:column}}",
+    "@media(max-width:620px){.ksb-panel{padding:0 12px 22px}.ksb-head{flex-direction:column}.ksb-metrics{grid-template-columns:1fr 1fr 1fr}.ksb-metric{padding:10px}.ksb-metric span{font-size:9px}.ksb-metric strong{font-size:22px}.ksb-head h2{font-size:24px}.ksb-filters{width:100%}.ksb-filter{flex:1 1 auto}.ksb-head-actions{width:100%}.ksb-button{min-height:46px}.ksb-head-actions .ksb-button{width:100%}.ksb-guide{flex-direction:column}}"
   ].join("");
   document.head.appendChild(style);
 
@@ -47,7 +50,7 @@
     var button = document.createElement("button");
     button.type = "button";
     button.setAttribute("data-kso-board", "");
-    button.textContent = "SIGIL Board";
+    button.textContent = "งานที่ต้องดู";
     if (advanced) nav.insertBefore(button, advanced); else nav.appendChild(button);
   }
 
@@ -59,10 +62,11 @@
     panel.hidden = true;
     panel.setAttribute("data-kso-board-panel", "");
     panel.innerHTML =
-      '<div class="ksb-head"><div><span class="ksb-kicker">KENJI · SIGIL BOARD</span><h2>Board ที่ต้องดูวันนี้</h2><p>รวมคิว sanitized จาก SIGIL ไว้ใน Kenji Admin แล้วครับ หน้านี้อ่านอย่างเดียว — Money Truth, Membership/Access และการอนุมัติยังอยู่กับ Worker/Resolver/Per ตามเดิม</p></div><div class="ksb-head-actions"><button type="button" class="ksb-button is-primary" data-ksb-refresh>Refresh Board</button><span class="ksb-status" data-ksb-status></span></div></div>'
-      + '<div class="ksb-metrics"><article class="ksb-metric"><span>Critical</span><strong data-ksb-count="critical">—</strong><small>เรื่องเสี่ยงสูง</small></article><article class="ksb-metric"><span>Ready for Per</span><strong data-ksb-count="ready_for_per">—</strong><small>พร้อมให้เปอร์ดู</small></article><article class="ksb-metric"><span>Payment Pending</span><strong data-ksb-count="payment_pending">—</strong><small>หลักฐานรอตรวจยอดจริง</small></article><article class="ksb-metric"><span>Need Info</span><strong data-ksb-count="need_info">—</strong><small>ต้องขอข้อมูลเพิ่ม</small></article></div>'
-      + '<div class="ksb-toolbar"><div class="ksb-filters" role="toolbar" aria-label="SIGIL Board filters"><button type="button" class="ksb-filter is-on" data-ksb-filter="all">All</button><button type="button" class="ksb-filter" data-ksb-filter="per">Per</button><button type="button" class="ksb-filter" data-ksb-filter="payment">Payment</button><button type="button" class="ksb-filter" data-ksb-filter="need_info">Need Info</button><button type="button" class="ksb-filter" data-ksb-filter="critical">Critical</button><button type="button" class="ksb-filter" data-ksb-filter="high">High</button></div><span class="ksb-status" data-ksb-meta>ยังไม่ได้อ่าน Worker</span></div>'
-      + '<div class="ksb-grid"><article class="ksb-card"><h3>Queue</h3><p data-ksb-summary>เปิด Board เพื่ออ่านคิวล่าสุด</p><div class="ksb-queue" data-ksb-queue><div class="ksb-empty">กำลังรอข้อมูลจริงจาก Worker</div></div></article><aside class="ksb-card ksb-detail" data-ksb-detail><h3>Case Summary</h3><p>เลือกหนึ่งรายการเพื่อดู Summary / Risk / Next Action</p><div class="ksb-empty">ยังไม่ได้เลือกเคส</div></aside></div>';
+      '<div class="ksb-head"><div><span class="ksb-kicker">KENJI · งานที่ต้องดู</span><h2>เรื่องที่ต้องดูวันนี้</h2><p>Kenji คัดเฉพาะเรื่องที่ยังต้องดูมาให้ครับ เลือกหนึ่งรายการ แล้วดูแค่ 3 อย่าง: เกิดอะไรขึ้น · ต้องระวังอะไร · ทำอะไรต่อ</p></div><div class="ksb-head-actions"><button type="button" class="ksb-button is-primary" data-ksb-refresh>อัปเดตรายการ</button><span class="ksb-status" data-ksb-status></span></div></div>'
+      + '<div class="ksb-guide"><b>วิธีใช้</b><span>เริ่มจาก “ต้องตัดสินใจ” ก่อน → เลือกเคส → ทำตาม “ทำอะไรต่อ” ทางขวา หากเป็นเรื่องเงินให้เปิดหน้าตรวจเงินจากปุ่มในเคสนั้น</span></div>'
+      + '<div class="ksb-metrics"><article class="ksb-metric"><span>ต้องตัดสินใจ</span><strong data-ksb-count="decision">—</strong><small>ให้เปอร์ดู</small></article><article class="ksb-metric"><span>รอตรวจเงิน</span><strong data-ksb-count="payment">—</strong><small>ไปหน้า Payments</small></article><article class="ksb-metric"><span>ข้อมูลไม่ครบ</span><strong data-ksb-count="need_info">—</strong><small>ต้องขอเพิ่ม</small></article></div>'
+      + '<div class="ksb-toolbar"><div class="ksb-filters" role="toolbar" aria-label="ตัวกรองงานที่ต้องดู"><button type="button" class="ksb-filter is-on" data-ksb-filter="all">ทั้งหมด</button><button type="button" class="ksb-filter" data-ksb-filter="decision">ต้องตัดสินใจ</button><button type="button" class="ksb-filter" data-ksb-filter="payment">รอตรวจเงิน</button><button type="button" class="ksb-filter" data-ksb-filter="need_info">ข้อมูลไม่ครบ</button><button type="button" class="ksb-filter" data-ksb-filter="critical">เสี่ยงสูง</button></div><span class="ksb-status" data-ksb-meta>กำลังอ่านรายการล่าสุด</span></div>'
+      + '<div class="ksb-grid"><article class="ksb-card"><h3>รายการที่ยังต้องดู</h3><p data-ksb-summary>กำลังโหลดข้อมูลจริง</p><div class="ksb-queue" data-ksb-queue><div class="ksb-empty">กำลังรอข้อมูลจริงจาก Worker</div></div></article><aside class="ksb-card ksb-detail" data-ksb-detail><h3>เลือกหนึ่งรายการ</h3><p>แล้ว Kenji จะสรุปให้ว่าต้องทำอะไรต่อ</p><div class="ksb-empty">ยังไม่ได้เลือกเคส</div></aside></div>';
     main.appendChild(panel);
   }
 
@@ -84,7 +88,9 @@
       if (filter) {
         event.preventDefault();
         boardState.filter = filter.dataset.ksbFilter || "all";
-        root.querySelectorAll("[data-ksb-filter]").forEach(function (node) { node.classList.toggle("is-on", node.dataset.ksbFilter === boardState.filter); });
+        root.querySelectorAll("[data-ksb-filter]").forEach(function (node) {
+          node.classList.toggle("is-on", node.dataset.ksbFilter === boardState.filter);
+        });
         renderQueue();
         return;
       }
@@ -117,10 +123,15 @@
     if (!panel) return;
     root.querySelectorAll("main > section[data-panel]").forEach(function (node) { node.hidden = true; });
     panel.hidden = false;
-    root.querySelectorAll(".kso-nav button").forEach(function (node) { node.classList.toggle("is-primary", node.hasAttribute("data-kso-board")); });
+    root.querySelectorAll(".kso-nav button").forEach(function (node) {
+      node.classList.toggle("is-primary", node.hasAttribute("data-kso-board"));
+    });
     var boardButton = root.querySelector("[data-kso-board]");
-    if (boardButton) boardButton.classList.add("is-on");
-    setHeader("KENJI · SIGIL BOARD", "SIGIL Board");
+    if (boardButton) {
+      boardButton.classList.add("is-on");
+      boardButton.textContent = "งานที่ต้องดู";
+    }
+    setHeader("KENJI · งานที่ต้องดู", "เรื่องที่ต้องดู");
     updateUrl("board", replace);
     if (!boardState.loaded && !boardState.loading) loadBoard(false);
   }
@@ -161,22 +172,22 @@
     if (boardState.loading) return;
     boardState.loading = true;
     setLoading(true);
-    setStatus(manual ? "กำลังดึงข้อมูลล่าสุด…" : "กำลังอ่าน SIGIL Board…");
+    setStatus(manual ? "กำลังอัปเดต…" : "กำลังโหลด…");
     Promise.all([boardRequest(STATUS_API), boardRequest(QUEUE_API)])
       .then(function (results) {
         applyStatus(results[0]);
         applyQueue(results[1]);
         boardState.loaded = true;
-        setStatus("Updated");
+        setStatus("อัปเดตแล้ว");
       })
       .catch(function (error) {
         boardState.loaded = false;
         boardState.cards = [];
-        boardState.counts = null;
         renderCounts();
         renderQueue();
         renderDetail();
-        setStatus("อ่าน Board ไม่สำเร็จ · " + safeText(error && error.message, "board_read_failed"), true);
+        setStatus("โหลดรายการไม่สำเร็จ", true);
+        console.warn("MMD Kenji board read failed", error);
       })
       .finally(function () {
         boardState.loading = false;
@@ -201,21 +212,24 @@
 
   function applyStatus(data) {
     if (data.mode !== "read_only" || !data.counts || typeof data.counts !== "object") throw new Error("invalid_board_status");
-    boardState.counts = data.counts;
     boardState.lastChecked = safeText(data.last_checked, "");
     boardState.source = safeText(data.source, "worker");
-    renderCounts();
     var meta = root.querySelector("[data-ksb-meta]");
-    if (meta) meta.textContent = "Source: " + boardState.source + " · read_only · " + (boardState.lastChecked || "just now");
+    if (meta) meta.textContent = boardState.lastChecked ? "ข้อมูลล่าสุดจากระบบ" : "ข้อมูลจริงจากระบบ";
   }
 
   function applyQueue(data) {
     if (data.mode !== "read_only" || !Array.isArray(data.cards)) throw new Error("invalid_board_queue");
-    boardState.cards = data.cards.map(sanitizeCard).filter(Boolean);
+    var sanitized = data.cards.map(sanitizeCard).filter(Boolean);
+    boardState.hiddenRenewals = sanitized.filter(isRenewalCard).length;
+    boardState.cards = sanitized.filter(function (card) { return !isRenewalCard(card); });
     var visibleSelected = boardState.cards.some(function (card) { return card.id === boardState.selectedId; });
-    if (!visibleSelected) boardState.selectedId = boardState.cards.length ? boardState.cards[0].id : "";
+    if (!visibleSelected) boardState.selectedId = firstUsefulCardId();
+    renderCounts();
     var summary = root.querySelector("[data-ksb-summary]");
-    if (summary) summary.textContent = "Showing " + Number(data.returned_cards || boardState.cards.length) + " of " + Number(data.total_cards || boardState.cards.length) + " sanitized cards";
+    if (summary) {
+      summary.textContent = boardState.cards.length + " รายการที่ยังต้องดู" + (boardState.hiddenRenewals ? " · ตัดรายการต่ออายุออกแล้ว " + boardState.hiddenRenewals + " รายการ" : "");
+    }
     renderQueue();
     renderDetail();
   }
@@ -224,39 +238,53 @@
     if (!card || typeof card !== "object") return null;
     return {
       id: safeText(card.id, "board_card_" + index),
-      title: safeText(card.title, "Untitled board item"),
+      title: safeText(card.title, "รายการที่ต้องดู"),
       lane: safeText(card.lane, "Board"),
       status: safeText(card.status, "Read Only"),
       priority: safeText(card.priority, "Normal"),
       risk: safeText(card.risk, "Read-only advisory"),
-      next_action: safeText(card.next_action, "Review sanitized status"),
+      next_action: safeText(card.next_action, "ตรวจรายละเอียดรายการนี้"),
       owner: safeText(card.owner, "MMD"),
       needs_per_decision: card.needs_per_decision === true,
-      summary: safeText(card.summary, "Sanitized advisory only"),
+      summary: safeText(card.summary, "ข้อมูลสรุปจากระบบ"),
     };
   }
 
+  function isRenewalCard(card) {
+    var text = [card.title, card.lane, card.status, card.risk, card.next_action, card.summary].join(" ").toLowerCase();
+    return /renewal|ต่ออายุ/.test(text);
+  }
+
+  function firstUsefulCardId() {
+    var decision = boardState.cards.find(function (card) { return isDecision(card); });
+    if (decision) return decision.id;
+    return boardState.cards.length ? boardState.cards[0].id : "";
+  }
+
   function renderCounts() {
-    ["critical", "ready_for_per", "payment_pending", "need_info"].forEach(function (key) {
+    var counts = {
+      decision: boardState.cards.filter(isDecision).length,
+      payment: boardState.cards.filter(isPayment).length,
+      need_info: boardState.cards.filter(isNeedInfo).length,
+    };
+    Object.keys(counts).forEach(function (key) {
       var node = root.querySelector('[data-ksb-count="' + key + '"]');
-      if (!node) return;
-      var number = boardState.counts && Number(boardState.counts[key]);
-      node.textContent = Number.isFinite(number) && number >= 0 ? String(Math.floor(number)) : "—";
+      if (node) node.textContent = String(counts[key]);
     });
   }
 
   function renderQueue() {
     var queue = root.querySelector("[data-ksb-queue]");
     if (!queue) return;
-    var cards = boardState.cards.filter(matchesFilter);
+    var cards = boardState.cards.filter(matchesFilter).sort(sortCards);
     if (!cards.length) {
-      queue.innerHTML = '<div class="ksb-empty">' + (boardState.loaded ? "ไม่มีรายการในตัวกรองนี้" : "ไม่มีข้อมูลจริงจาก Worker ในตอนนี้") + '</div>';
+      queue.innerHTML = '<div class="ksb-empty">' + (boardState.loaded ? "ไม่มีรายการในกลุ่มนี้" : "ไม่มีข้อมูลจริงจาก Worker ในตอนนี้") + '</div>';
       return;
     }
     queue.innerHTML = cards.map(function (card) {
       var active = card.id === boardState.selectedId ? " is-on" : "";
-      var per = card.needs_per_decision ? '<span class="ksb-badge">Per</span>' : '<span class="ksb-badge">' + esc(card.priority) + '</span>';
-      return '<button type="button" class="ksb-row' + active + '" data-ksb-card="' + attr(card.id) + '"><span class="ksb-row-top"><b>' + esc(card.title) + '</b>' + per + '</span><span class="ksb-meta"><span>' + esc(card.lane) + '</span><span>' + esc(card.status) + '</span><span>Owner ' + esc(card.owner) + '</span></span><p>' + esc(card.next_action) + '</p></button>';
+      var badge = card.needs_per_decision ? "ต้องตัดสินใจ" : priorityLabel(card.priority);
+      return '<button type="button" class="ksb-row' + active + '" data-ksb-card="' + attr(card.id) + '"><span class="ksb-row-top"><b>' + esc(card.title) + '</b><span class="ksb-badge">' + esc(badge) + '</span></span><span class="ksb-meta"><span>' + esc(laneLabel(card.lane)) + '</span><span>' + esc(statusLabel(card.status)) + '</span></span><p><strong>ต่อไป:</strong> ' + esc(card.next_action) + '</p></button>';
     }).join("");
   }
 
@@ -265,23 +293,102 @@
     if (!node) return;
     var card = boardState.cards.find(function (item) { return item.id === boardState.selectedId; });
     if (!card) {
-      node.innerHTML = '<h3>Case Summary</h3><p>เลือกหนึ่งรายการเพื่อดู Summary / Risk / Next Action</p><div class="ksb-empty">ยังไม่มีเคสที่เลือก</div>';
+      node.innerHTML = '<h3>เลือกหนึ่งรายการ</h3><p>แล้ว Kenji จะสรุปให้ว่าต้องทำอะไรต่อ</p><div class="ksb-empty">ยังไม่มีเคสที่เลือก</div>';
       return;
     }
-    node.innerHTML = '<h3>' + esc(card.title) + '</h3><p>' + esc(card.lane) + ' · ' + esc(card.status) + ' · ' + esc(card.priority) + '</p><div class="ksb-detail-grid">' + detail("Summary", card.summary) + detail("Risk", card.risk) + detail("Next Action", card.next_action) + detail("Owner", card.owner) + '</div><div class="ksb-decision"><b>Needs Per Decision:</b> ' + (card.needs_per_decision ? "ใช่ · ให้เปอร์เป็นผู้ตัดสินใจ" : "ยังไม่ใช่ในตอนนี้") + '<br>Board นี้ไม่อนุมัติเงิน สิทธิ์ Membership/Access หรือ Private Model แทนระบบ</div>';
+    var action = actionForCard(card);
+    node.innerHTML = '<h3>' + esc(card.title) + '</h3><p>' + esc(laneLabel(card.lane)) + ' · ' + esc(statusLabel(card.status)) + '</p>'
+      + '<div class="ksb-detail-grid">'
+      + detail("เกิดอะไรขึ้น", card.summary)
+      + detail("ต้องระวังอะไร", card.risk)
+      + detail("ทำอะไรต่อ", card.next_action)
+      + detail("คนดูเรื่องนี้", ownerLabel(card.owner))
+      + '</div>'
+      + '<div class="ksb-decision">' + (card.needs_per_decision ? '<strong>ต้องให้เปอร์ตัดสินใจ</strong><br>ดูข้อมูลด้านบนแล้วดำเนินการที่หน้าของงานนั้น' : '<strong>ยังไม่ต้องตัดสินใจตอนนี้</strong><br>ทำตาม “ทำอะไรต่อ” ได้เลย') + '</div>'
+      + (action ? '<div class="ksb-action"><a class="ksb-button is-primary" href="' + attr(action.href) + '">' + esc(action.label) + '</a></div>' : '')
+      + '<details class="ksb-system"><summary>รายละเอียดระบบ</summary><p>หน้านี้อ่านอย่างเดียวจาก Worker และไม่เปลี่ยน Money Truth, Membership/Access หรือ Private Model เอง</p></details>';
+  }
+
+  function actionForCard(card) {
+    if (isPayment(card)) return { href: "/internal/admin/payments", label: "ไปหน้าตรวจเงิน" };
+    return null;
+  }
+
+  function isDecision(card) {
+    return card.needs_per_decision === true || String(card.owner).toLowerCase() === "per" || String(card.priority).toLowerCase() === "critical";
+  }
+
+  function isPayment(card) {
+    var text = (card.lane + " " + card.status + " " + card.next_action).toLowerCase();
+    return /payment|slip|deposit|เงิน|สลิป|มัดจำ/.test(text);
+  }
+
+  function isNeedInfo(card) {
+    var text = (card.lane + " " + card.status + " " + card.next_action).toLowerCase();
+    return /need info|awaiting info|missing info|ข้อมูลเพิ่ม|ข้อมูลไม่ครบ|ขอข้อมูล/.test(text);
+  }
+
+  function isCritical(card) {
+    return String(card.priority).toLowerCase() === "critical" || String(card.lane).toLowerCase() === "risk";
   }
 
   function matchesFilter(card) {
     var filter = boardState.filter;
-    var lane = card.lane.toLowerCase();
-    var status = card.status.toLowerCase();
-    var priority = card.priority.toLowerCase();
-    if (filter === "per") return card.needs_per_decision === true || card.owner === "Per";
-    if (filter === "payment") return lane === "payment";
-    if (filter === "need_info") return lane === "need info" || status.indexOf("need info") >= 0 || status.indexOf("awaiting info") >= 0;
-    if (filter === "critical") return priority === "critical" || lane === "risk";
-    if (filter === "high") return priority === "high";
+    if (filter === "decision") return isDecision(card);
+    if (filter === "payment") return isPayment(card);
+    if (filter === "need_info") return isNeedInfo(card);
+    if (filter === "critical") return isCritical(card);
     return true;
+  }
+
+  function sortCards(a, b) {
+    var scoreA = cardScore(a);
+    var scoreB = cardScore(b);
+    if (scoreA !== scoreB) return scoreB - scoreA;
+    return a.title.localeCompare(b.title, "th");
+  }
+
+  function cardScore(card) {
+    var score = 0;
+    if (card.needs_per_decision) score += 100;
+    if (isCritical(card)) score += 80;
+    if (isPayment(card)) score += 40;
+    if (isNeedInfo(card)) score += 20;
+    return score;
+  }
+
+  function laneLabel(value) {
+    var text = String(value || "").toLowerCase();
+    if (text === "payment") return "เรื่องเงิน";
+    if (text === "need info") return "ข้อมูลไม่ครบ";
+    if (text === "private review") return "ตรวจ Private";
+    if (text === "risk") return "เรื่องเสี่ยง";
+    if (text === "campaign") return "แคมเปญ";
+    return value || "งาน";
+  }
+
+  function statusLabel(value) {
+    var text = String(value || "").toLowerCase();
+    if (text.indexOf("need info") >= 0 || text.indexOf("awaiting info") >= 0) return "ข้อมูลไม่ครบ";
+    if (text.indexOf("payment") >= 0 || text.indexOf("pending") >= 0) return "กำลังรอตรวจ";
+    if (text.indexOf("critical") >= 0) return "เร่งด่วน";
+    if (text.indexOf("ready") >= 0) return "พร้อมให้ดู";
+    return value || "รอดู";
+  }
+
+  function priorityLabel(value) {
+    var text = String(value || "").toLowerCase();
+    if (text === "critical") return "เร่งด่วน";
+    if (text === "high") return "สำคัญ";
+    if (text === "low") return "รอได้";
+    return "ทั่วไป";
+  }
+
+  function ownerLabel(value) {
+    var text = String(value || "");
+    if (text.toLowerCase() === "per") return "เปอร์";
+    if (text.toLowerCase() === "kenji") return "Kenji";
+    return text || "MMD";
   }
 
   function detail(label, textValue) {
@@ -290,7 +397,10 @@
 
   function setLoading(on) {
     var button = root.querySelector("[data-ksb-refresh]");
-    if (button) { button.disabled = Boolean(on); button.textContent = on ? "Refreshing…" : "Refresh Board"; }
+    if (button) {
+      button.disabled = Boolean(on);
+      button.textContent = on ? "กำลังอัปเดต…" : "อัปเดตรายการ";
+    }
   }
 
   function setStatus(message, bad) {
