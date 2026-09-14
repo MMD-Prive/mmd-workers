@@ -1,0 +1,108 @@
+name: Kenji V2 Production Readiness
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/kenji-sales-v2-production-smoke.yml']
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/kenji-sales-v2-production-smoke.yml']
+  workflow_run:
+    workflows: ['Kenji Reply Pack V2 rollout', 'Deploy member-dashboard-chat-worker']
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kenji-v2-production-readiness-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read-only V2 production publication check
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import assert from 'node:assert/strict';
+          const version = '2026-09-14.2';
+          const prefix = 'kenji_sep2026_membership_sales_';
+          const expected = new Map(Object.entries({
+            promotion_overview: prefix + '01_overview',
+            double_moment: prefix + '02_double_moment',
+            care_back: prefix + '03_care_back',
+            signup: prefix + '04_new_customer',
+            current: prefix + '05_current_customer',
+            renewal: prefix + '06_expired_customer',
+            payment: prefix + '07_payment_pending',
+            coupon: prefix + '08_wish_coupon',
+          }));
+          const reviewAt = Date.parse('2026-10-01T00:00:00+07:00');
+          const origins = ['https://mmdbkk.com', 'https://www.mmdbkk.com'];
+          const results = [];
+          for (const origin of origins) {
+            let verified = null;
+            let lastError = '';
+            for (let attempt = 1; attempt <= 6; attempt++) {
+              try {
+                // No Authorization header, customer ID, reply token or POST request.
+                const response = await fetch(origin + '/webhooks/line?kenji_sales_v2_smoke=1', {
+                  method: 'GET', redirect: 'manual',
+                  headers: { accept: 'application/json', 'cache-control': 'no-cache' },
+                  signal: AbortSignal.timeout(15000),
+                });
+                assert.equal(response.headers.get('x-mmd-worker'), 'member-dashboard-chat-worker', 'route owner');
+                assert.match(response.headers.get('content-type') || '', /application\/json/i, 'JSON response');
+                const body = await response.json();
+                assert.equal(body.version, version, 'V2 runtime version');
+                assert.equal(body.synthetic, true, 'read-only synthetic diagnostic');
+                assert.equal(body.line_delivery_attempted, false, 'no customer LINE send');
+                assert.equal(body.telemetry_write_attempted, false, 'no telemetry mutation');
+                assert.ok(Array.isArray(body.cards) && body.cards.length === expected.size, 'exact eight-card count');
+                assert.equal(new Set(body.cards.map(card => card.key)).size, expected.size, 'unique keys');
+                for (const card of body.cards) {
+                  assert.equal(card.knowledge_id, expected.get(card.key), 'exact knowledge mapping');
+                }
+                const reviewDue = Date.now() >= reviewAt;
+                assert.equal(response.status, reviewDue ? 503 : 200, 'HTTP readiness status');
+                assert.equal(body.ok, !reviewDue, 'publication readiness');
+                assert.ok(body.cards.every(card => card.ready === !reviewDue), 'all eight publication gates');
+                verified = {
+                  origin, version, status: response.status,
+                  checked_at: new Date().toISOString(),
+                  mode: reviewDue ? 'review_due_fail_closed_verified' : 'published_v2_ready',
+                  cards: body.cards.map(({ key, knowledge_id, ready }) => ({ key, knowledge_id, ready })),
+                  line_delivery_attempted: false, telemetry_write_attempted: false,
+                  real_customer_delivery_verified: false,
+                };
+                break;
+              } catch (error) {
+                lastError = String(error.message || error).slice(0, 200);
+                console.log(JSON.stringify({ origin, attempt, check: 'not_ready', error: lastError }));
+                if (attempt < 6) await new Promise(resolve => setTimeout(resolve, 2000));
+              }
+            }
+            if (!verified) throw new Error('V2 readiness failed for ' + origin + ': ' + lastError);
+            results.push(verified);
+            console.log(JSON.stringify(verified));
+          }
+          fs.writeFileSync(process.env.RUNNER_TEMP + '/kenji-v2-production-readiness.json', JSON.stringify({ version, results }, null, 2));
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, '\n### Kenji V2 production verification\nBoth production hosts returned the exact V2 eight-card diagnostic. Before the September review cutoff all cards must be ready; after the cutoff all must fail closed. No LINE message or customer data mutation was attempted. This is not a real-customer delivery receipt.\n');
+          NODE
+      - name: Save non-sensitive readiness evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: kenji-v2-production-readiness
+          path: ${{ runner.temp }}/kenji-v2-production-readiness.json
+          if-no-files-found: error
+          retention-days: 14
