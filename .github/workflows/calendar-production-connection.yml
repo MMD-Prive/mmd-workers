@@ -1,11 +1,13 @@
 name: Calendar Production Connection
 on:
   push:
-    branches: [fix/calendar-cal-visibility-20260914, fix/cal-sync-ledger-binding-20260914]
+    branches: [fix/calendar-cal-visibility-20260914, fix/cal-sync-ledger-binding-20260914, fix/calendar-live-cal-diagnostics-20260914]
     paths:
       - 'admin-worker/src/admin-calendar-visibility*'
+      - 'admin-worker/src/admin-calendar-service-binding.test.mjs'
       - 'admin-worker/src/admin-calendar-runtime*'
       - 'admin-worker/src/job-orchestrator-owner-ops-wrapper.js'
+      - 'admin-worker/wrangler.toml'
       - 'admin-worker/calendar-routes.json'
       - 'tools/calendar-production-connection.mjs'
       - '.github/workflows/calendar-production-connection.yml'
@@ -15,8 +17,10 @@ on:
     branches: [main]
     paths:
       - 'admin-worker/src/admin-calendar-visibility*'
+      - 'admin-worker/src/admin-calendar-service-binding.test.mjs'
       - 'admin-worker/src/admin-calendar-runtime*'
       - 'admin-worker/src/job-orchestrator-owner-ops-wrapper.js'
+      - 'admin-worker/wrangler.toml'
       - 'admin-worker/calendar-routes.json'
       - 'tools/calendar-production-connection.mjs'
       - '.github/workflows/calendar-production-connection.yml'
@@ -47,7 +51,10 @@ jobs:
         run: |
           node --check admin-worker/src/admin-calendar-visibility.js
           node --check tools/calendar-production-connection.mjs
-          node --test admin-worker/src/admin-calendar-visibility.test.mjs admin-worker/src/admin-calendar-runtime.test.mjs
+          node --test \
+            admin-worker/src/admin-calendar-service-binding.test.mjs \
+            admin-worker/src/admin-calendar-visibility.test.mjs \
+            admin-worker/src/admin-calendar-runtime.test.mjs
           node tools/calendar-production-connection.mjs --validate
       - uses: actions/upload-artifact@v4
         with:
