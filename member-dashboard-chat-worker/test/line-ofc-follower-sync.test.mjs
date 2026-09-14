@@ -52,3 +52,43 @@ test("duplicate exact LINE IDs remain detectable for human review", () => {
   ]);
   assert.equal(indexed.get(uid).length, 2);
 });
+
+test("sync receipt is count-only and contains no LINE user IDs", () => {
+  const fields = I.buildReceiptFields(
+    "line_ofc_follower_sync_v1_2026-09-14T08:00:00.000Z",
+    "2026-09-14T08:00:00.000Z",
+    {
+      ok: true,
+      supported: true,
+      followers_returned: 420,
+      pages: 1,
+      clients_scanned: 347,
+      already_canonical: 340,
+      missing_clients: 7,
+      clients_created: 7,
+      clients_updated: 2,
+      duplicate_line_identity_review: 0,
+      profiles_requested: 9,
+      profile_errors: 0,
+      completed_at: "2026-09-14T08:00:03.000Z",
+    },
+  );
+  assert.equal(fields[I.RECEIPT_FIELDS.status], "success");
+  assert.equal(fields[I.RECEIPT_FIELDS.followersReturned], 420);
+  assert.equal(fields[I.RECEIPT_FIELDS.clientsCreated], 7);
+  assert.equal(fields[I.RECEIPT_FIELDS.source], "line_ofc_follower_sync_v1");
+  assert.doesNotMatch(JSON.stringify(fields), /U[0-9a-f]{32}/i);
+});
+
+test("unsupported follower API persists a skipped count-only receipt", () => {
+  const fields = I.buildReceiptFields("run-1", "2026-09-14T08:00:00.000Z", {
+    ok: true,
+    skipped: true,
+    supported: false,
+    reason: "followers_endpoint_requires_verified_or_premium_oa",
+  });
+  assert.equal(fields[I.RECEIPT_FIELDS.status], "skipped");
+  assert.equal(fields[I.RECEIPT_FIELDS.supported], false);
+  assert.equal(fields[I.RECEIPT_FIELDS.followersReturned], 0);
+  assert.equal(fields[I.RECEIPT_FIELDS.reason], "followers_endpoint_requires_verified_or_premium_oa");
+});
