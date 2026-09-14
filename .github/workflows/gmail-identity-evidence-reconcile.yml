@@ -1,0 +1,129 @@
+name: Gmail identity evidence reconcile
+
+on:
+  pull_request:
+    paths:
+      - scripts/gmail-identity-evidence-reconcile.js
+      - .github/workflows/gmail-identity-evidence-reconcile.yml
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/gmail-identity-evidence-reconcile.js
+      - .github/workflows/gmail-identity-evidence-reconcile.yml
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gmail-identity-evidence-reconcile-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate reconciler
+        run: |
+          node --check scripts/gmail-identity-evidence-reconcile.js
+          node scripts/gmail-identity-evidence-reconcile.js --self-test
+
+  reconcile:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+      GOOGLE_GMAIL_CLIENT_ID: ${{ secrets.GOOGLE_GMAIL_CLIENT_ID || secrets.GOOGLE_DRIVE_CLIENT_ID }}
+      GOOGLE_GMAIL_CLIENT_SECRET: ${{ secrets.GOOGLE_GMAIL_CLIENT_SECRET || secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
+      GOOGLE_GMAIL_MALEMODEL_REFRESH_TOKEN: ${{ secrets.GOOGLE_GMAIL_MALEMODEL_REFRESH_TOKEN }}
+      GOOGLE_GMAIL_MMDPRIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_GMAIL_MMDPRIVE_REFRESH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate production configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${AIRTABLE_API_KEY:-}" ]]; then
+            echo "Airtable production credential is missing" >&2
+            exit 1
+          fi
+          if [[ -z "${GOOGLE_GMAIL_CLIENT_ID:-}" || -z "${GOOGLE_GMAIL_CLIENT_SECRET:-}" ]]; then
+            echo "::warning::Gmail OAuth client is not configured; mailbox ingestion will be reported as skipped."
+          fi
+          if [[ -z "${GOOGLE_GMAIL_MALEMODEL_REFRESH_TOKEN:-}" ]]; then
+            echo "::warning::GOOGLE_GMAIL_MALEMODEL_REFRESH_TOKEN is missing; malemodel mailbox will be skipped."
+          fi
+          if [[ -z "${GOOGLE_GMAIL_MMDPRIVE_REFRESH_TOKEN:-}" ]]; then
+            echo "::warning::GOOGLE_GMAIL_MMDPRIVE_REFRESH_TOKEN is missing; mmdprive mailbox will be skipped."
+          fi
+
+      - name: Dry run exact lineage reconciliation
+        run: node scripts/gmail-identity-evidence-reconcile.js --dry-run --allow-unconfigured --report /tmp/gmail-identity-dry-run.json
+
+      - name: Apply exact one-to-one identity evidence
+        run: node scripts/gmail-identity-evidence-reconcile.js --apply --allow-unconfigured --report /tmp/gmail-identity-apply.json
+
+      - name: Verify idempotency
+        run: node scripts/gmail-identity-evidence-reconcile.js --dry-run --allow-unconfigured --assert-idempotent --report /tmp/gmail-identity-idempotency.json
+
+      - name: Publish redacted count summary
+        if: always()
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const files = [
+            ['Dry run', '/tmp/gmail-identity-dry-run.json'],
+            ['Apply', '/tmp/gmail-identity-apply.json'],
+            ['Idempotency', '/tmp/gmail-identity-idempotency.json'],
+          ];
+          for (const [label, path] of files) {
+            if (!fs.existsSync(path)) continue;
+            const data = JSON.parse(fs.readFileSync(path, 'utf8'));
+            const safe = {
+              mode: data.mode,
+              scanned_messages: data.scanned_messages,
+              parsed_single_requester: data.parsed_single_requester,
+              requester_email_ambiguous: data.requester_email_ambiguous,
+              requester_email_missing: data.requester_email_missing,
+              exact_one_to_one: data.exact_one_to_one,
+              lineage_conflicts: data.lineage_conflicts,
+              lineage_unmatched: data.lineage_unmatched,
+              staging_creates: data.staging_creates,
+              staging_updates: data.staging_updates,
+              access_creates: data.access_creates,
+              access_updates: data.access_updates,
+              client_contact_email_updates: data.client_contact_email_updates,
+              skipped_mailboxes: data.skipped_mailboxes,
+              pending_mutations: data.pending_mutations,
+            };
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### ${label}\n\n\`\`\`json\n${JSON.stringify(safe, null, 2)}\n\`\`\`\n\n`);
+          }
+          NODE
+
+      - name: Upload redacted count reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gmail-identity-evidence-reconcile-${{ github.run_id }}
+          path: |
+            /tmp/gmail-identity-dry-run.json
+            /tmp/gmail-identity-apply.json
+            /tmp/gmail-identity-idempotency.json
+          if-no-files-found: warn
+          retention-days: 30
