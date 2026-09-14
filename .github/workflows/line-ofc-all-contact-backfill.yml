@@ -7,6 +7,8 @@ on:
       - main
     paths:
       - scripts/line-ofc-all-contact-backfill.js
+      - scripts/line-ofc-all-contact-backfill-runner.js
+      - scripts/line-ofc-telegram-contact-cleanup.js
       - .github/workflows/line-ofc-all-contact-backfill.yml
 
 permissions:
@@ -31,15 +33,22 @@ jobs:
       - name: Validate migration
         run: |
           node --check scripts/line-ofc-all-contact-backfill.js
-          node scripts/line-ofc-all-contact-backfill.js --self-test
+          node --check scripts/line-ofc-all-contact-backfill-runner.js
+          node --check scripts/line-ofc-telegram-contact-cleanup.js
+          node scripts/line-ofc-all-contact-backfill-runner.js --self-test
+          node scripts/line-ofc-telegram-contact-cleanup.js --self-test
       - name: Dry-run all LINE OFC identities
-        run: node scripts/line-ofc-all-contact-backfill.js --dry-run --report /tmp/line-ofc-contact-dry-run.json
+        run: node scripts/line-ofc-all-contact-backfill-runner.js --dry-run --report /tmp/line-ofc-contact-dry-run.json
       - name: Apply all LINE OFC identities
-        run: node scripts/line-ofc-all-contact-backfill.js --apply --report /tmp/line-ofc-contact-apply.json
+        run: node scripts/line-ofc-all-contact-backfill-runner.js --apply --report /tmp/line-ofc-contact-apply.json
       - name: Converge lineage and staging decisions
-        run: node scripts/line-ofc-all-contact-backfill.js --apply --report /tmp/line-ofc-contact-converge.json
-      - name: Verify idempotency
-        run: node scripts/line-ofc-all-contact-backfill.js --dry-run --assert-idempotent --report /tmp/line-ofc-contact-idempotency.json
+        run: node scripts/line-ofc-all-contact-backfill-runner.js --apply --report /tmp/line-ofc-contact-converge.json
+      - name: Remove unverified Telegram candidates
+        run: node scripts/line-ofc-telegram-contact-cleanup.js --apply --report /tmp/line-ofc-telegram-cleanup.json
+      - name: Verify contact idempotency
+        run: node scripts/line-ofc-all-contact-backfill-runner.js --dry-run --assert-idempotent --report /tmp/line-ofc-contact-idempotency.json
+      - name: Verify Telegram cleanup
+        run: node scripts/line-ofc-telegram-contact-cleanup.js --dry-run --assert-clean --report /tmp/line-ofc-telegram-cleanup-idempotency.json
       - name: Upload redacted reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -49,6 +58,8 @@ jobs:
             /tmp/line-ofc-contact-dry-run.json
             /tmp/line-ofc-contact-apply.json
             /tmp/line-ofc-contact-converge.json
+            /tmp/line-ofc-telegram-cleanup.json
             /tmp/line-ofc-contact-idempotency.json
+            /tmp/line-ofc-telegram-cleanup-idempotency.json
           if-no-files-found: warn
           retention-days: 30
