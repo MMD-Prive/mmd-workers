@@ -7,9 +7,12 @@ import {
   listOwnerJobActions,
   ownerActionHttpResponse,
 } from "./job-orchestrator-owner-ops-runtime.js";
+import { calendarApiResponse, calendarJsonResponse, calendarPageResponse } from "./admin-calendar-runtime-v2.js";
 
 const DASHBOARD_PATH = "/v1/admin/dashboard";
 const AUTH_ME_PATH = "/v1/admin/auth/me";
+const CALENDAR_API_PATH = "/v1/admin/calendar";
+const CALENDAR_PAGE_PATH = "/internal/admin/calendar";
 const OWNER_ROLES = new Set(["owner", "admin", "super_admin", "superadmin"]);
 const MODEL_SESSION_RUNTIME_PATHS = new Set(["/v1/model/session/current", "/v1/model/session/action"]);
 
@@ -64,12 +67,40 @@ async function augmentDashboard(response, env) {
   headers.set("x-mmd-job-orchestrator", ownerOps?.ok ? "owner-ops-v1" : "owner-ops-degraded");
   return new Response(JSON.stringify(projected), { status: response.status, statusText: response.statusText, headers });
 }
+function calendarLoginRedirect(request) {
+  const login = new URL("/internal/admin/login", request.url);
+  login.searchParams.set("next", CALENDAR_PAGE_PATH);
+  return Response.redirect(login.toString(), 302);
+}
+async function handleCalendar(request, env, ctx, url, method) {
+  const actor = await readOwnerActor(request, env, ctx);
+  if (!actor) {
+    if (url.pathname === CALENDAR_PAGE_PATH) return calendarLoginRedirect(request);
+    return calendarJsonResponse({ ok: false, error: "owner_admin_session_required" }, 401);
+  }
+  if (url.pathname === CALENDAR_PAGE_PATH) {
+    if (method !== "GET" && method !== "HEAD") return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, HEAD" } });
+    const page = calendarPageResponse();
+    return method === "HEAD" ? new Response(null, { status: page.status, headers: page.headers }) : page;
+  }
+  if (method !== "GET") return calendarJsonResponse({ ok: false, error: "method_not_allowed" }, 405);
+  try {
+    return await calendarApiResponse(env, url);
+  } catch (error) {
+    console.warn("[admin-calendar] read unavailable", { actor_id: actor.id, error: clean(error?.message, 120) });
+    return calendarJsonResponse({ ok: false, error: "calendar_unavailable", schema: "mmd.admin.calendar.v1" }, 503);
+  }
+}
 
 export default {
   ...delegatedWorker,
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const method = String(request.method || "GET").toUpperCase();
+
+    if (url.pathname === CALENDAR_PAGE_PATH || url.pathname === CALENDAR_API_PATH) {
+      return handleCalendar(request, env, ctx, url, method);
+    }
 
     if (isOwnerJobActionsRequest(url, method)) {
       const actor = await readOwnerActor(request, env, ctx);
@@ -90,4 +121,4 @@ export default {
   },
 };
 
-export { OWNER_JOB_ACTIONS_PATH, lifecycleEnv };
+export { OWNER_JOB_ACTIONS_PATH, lifecycleEnv, CALENDAR_API_PATH, CALENDAR_PAGE_PATH };
