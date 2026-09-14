@@ -5,6 +5,10 @@ import {
   maybeHandlePrivateModelAdminRequest,
   syncPrivateModelHandoffAfterActivation,
 } from "./private-model-application-handoff.js";
+import {
+  isModelConfirmActionRequest,
+  maybeCreateInternalHoldAfterModelConfirm,
+} from "./model-confirm-cal-hold.js";
 export * from "./admin-login-hero-worker-pre-model-line-link.js";
 
 export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/dashboard";
@@ -85,9 +89,11 @@ export default {
     if (isModelConsoleAuditRequest(request)) return handleModelConsoleAudit(request, env);
     let privateModelRequest = null;
     let activationRequest = null;
+    let modelConfirmRequest = null;
     try {
       const path = new URL(request.url).pathname.replace(/\/+$/g, "") || "/";
       if (isPrivateModelAdminRequest(request)) privateModelRequest = request.clone();
+      if (isModelConfirmActionRequest(request)) modelConfirmRequest = request.clone();
       if (path === MODEL_ACTIVATE_PATH && String(request.method || "GET").toUpperCase() === "POST") {
         activationRequest = request.clone();
       }
@@ -98,6 +104,7 @@ export default {
     let response = await worker.fetch(request, env, ctx);
     if (privateModelRequest) response = await maybeHandlePrivateModelAdminRequest(privateModelRequest, env, response);
     if (activationRequest) response = await syncPrivateModelHandoffAfterActivation(activationRequest, response, env);
+    if (modelConfirmRequest) response = await maybeCreateInternalHoldAfterModelConfirm(modelConfirmRequest, response, env);
     return enforceOwnerDashboardFirst(request, response);
   },
 };
