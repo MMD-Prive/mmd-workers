@@ -7,11 +7,25 @@ import { APPROVED_ANSWERS } from "../member-dashboard-chat-worker/test/fixtures/
 
 const ORIGIN = "https://www.mmdbkk.com";
 const digest = (value) => createHash("sha256").update(value).digest("hex");
+function safeAdminHandoff(location) {
+  if (!location) return false;
+  try {
+    const target = new URL(location, ORIGIN);
+    return target.origin === ORIGIN && !target.username && !target.password && /^\/internal\/admin(?:\/|$)/.test(target.pathname);
+  } catch { return false; }
+}
+assert.equal(safeAdminHandoff("/internal/admin/kenji"), true);
+assert.equal(safeAdminHandoff(`${ORIGIN}/internal/admin/kenji`), true);
+assert.equal(safeAdminHandoff("/internal/admin"), true);
+assert.equal(safeAdminHandoff("https://example.com/internal/admin/kenji"), false);
+assert.equal(safeAdminHandoff("//example.com/internal/admin"), false);
+assert.equal(safeAdminHandoff("/internal/admin-evil"), false);
+assert.equal(safeAdminHandoff(""), false);
 const entries = Object.entries(SALES_CARD_IDS);
 assert.equal(entries.length, 8);
 for (const [key] of entries) assert.equal(digest(APPROVED_ANSWERS[key]), SALES_REPLY_HASHES[key], `reviewed_digest:${key}`);
 if (process.argv.includes("--validate")) {
-  console.log(JSON.stringify({ ok: true, mode: "validate_only", version: SALES_REPLY_VERSION, count: entries.length, writes: 0 }));
+  console.log(JSON.stringify({ ok: true, mode: "validate_only", version: SALES_REPLY_VERSION, count: entries.length, writes: 0, handoff_validation: "passed" }));
   process.exit(0);
 }
 assert.ok(process.argv.includes("--publish"), "Explicit --publish required");
@@ -25,10 +39,16 @@ const login = await fetch(`${ORIGIN}/internal/admin/login/session`, {
   headers: { Origin: ORIGIN, "Content-Type": "application/x-www-form-urlencoded" },
   body: new URLSearchParams({ credential, next: "/internal/admin/kenji" }),
 });
-assert.equal(login.status, 303, "Canonical owner login failed");
-assert.ok((login.headers.get("location") || "").startsWith("/internal/admin/kenji"), "Unexpected login handoff");
+const location = login.headers.get("location") || "";
 const cookies = login.headers.getSetCookie().map((value) => value.split(";", 1)[0]).join("; ");
-assert.ok(cookies.includes("mmd_admin_gate_v1="), "Canonical session cookie missing");
+const hasSession = /(?:^|;\s*)mmd_admin_gate_v1=[^;\s]+/.test(cookies);
+// Log only the non-sensitive path and booleans, never query strings or cookie values.
+let handoffPath = "unparseable";
+try { handoffPath = new URL(location, ORIGIN).pathname; } catch {}
+console.log(JSON.stringify({ step: "canonical_admin_login", status: login.status, handoff_path: handoffPath, same_origin_admin_handoff: safeAdminHandoff(location), session_cookie_present: hasSession }));
+assert.equal(login.status, 303, "Canonical owner login failed");
+assert.ok(safeAdminHandoff(location), "Unsafe or missing same-origin admin handoff");
+assert.ok(hasSession, "Canonical session cookie missing");
 
 async function api(path, payload, key = "") {
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -49,13 +69,14 @@ async function api(path, payload, key = "") {
     }
     const body = await response.json().catch(() => ({}));
     if (!response.ok || body.ok !== true) {
-      // Do not dump server bodies, headers, credentials or user details to CI logs.
       throw new Error(`canonical_request_failed:${path}:${response.status}:${String(body.error?.code || body.error || "unknown").slice(0, 100)}`);
     }
     return body;
   }
   throw new Error("unreachable_retry_state");
 }
+// A redirect is never accepted as authentication. Require the canonical session
+// validator before any knowledge read/write; the knowledge endpoints enforce role.
 await api("/v1/admin/auth/me");
 const summary = [];
 for (const [key, id] of entries) {
@@ -67,7 +88,6 @@ for (const [key, id] of entries) {
   assert.equal(current.response_mode, "auto_reply_allowed", `response_mode_not_prepared:${key}`);
   assert.ok(current.allowed_channels?.includes("LINE_OFC"), `channel_not_prepared:${key}`);
   assert.ok(current.allowed_audience?.includes("Guest"), `audience_not_prepared:${key}`);
-  // Local validation of candidate content is not a write or a publication claim.
   assert.ok(publishedSalesCard({ ...current, status: "active", workflow_stage: "published" }, id), `candidate_validation_failed:${key}`);
   let audit = await api(`${path}/audit`);
   assert.equal(audit.revision_pending, false, `unexpected_pending_revision:${key}`);
@@ -77,7 +97,6 @@ for (const [key, id] of entries) {
   }
   assert.ok(audit.events.some((item) => item.action === "submit_review"), `signed_review_missing:${key}`);
   if (audit.stage === "review") {
-    // The rollout job has already run V2 content, privacy, authority, and transport tests.
     await api(`${path}/qa`, {
       expected_version: audit.version,
       qa: {
