@@ -84,4 +84,5 @@ jobs:
 
       - name: Deployment receipt
         shell: bash
-        run: echo "cal-sync-worker live in shadow mode: ${GITHUB_SHA}"
+        run: |
+          echo "cal-sync-worker live in shadow mode: ${GITHUB_SHA}"
