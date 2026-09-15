@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { OWNER_OPS_FIELDS, augmentDashboardPayload, projectOwnerAction, verifiedPaymentForSession } from './src/job-orchestrator-owner-ops-runtime.js';
-import { lifecycleEnv } from './src/job-orchestrator-owner-ops-wrapper.js';
+import { canonicalizeDashboardJobLinks, lifecycleEnv } from './src/job-orchestrator-owner-ops-wrapper.js';
 
 const F = OWNER_OPS_FIELDS;
 
@@ -44,4 +44,29 @@ test('dashboard augmentation preserves existing queues and adds owner queues', (
   assert.equal(out.counts.payment_review, 2);
   assert.equal(out.counts.completion_review, 3);
   assert.equal(out.queues.payout_ready.href, '/internal/admin/jobs/all?ops=payout');
+});
+
+test('dashboard job links never point at nonexistent dynamic admin job routes', () => {
+  const out = canonicalizeDashboardJobLinks({
+    ok: true,
+    jobs: [
+      { id: 'sess_A', job_date: '2026-09-16', href: '/internal/admin/jobs/sess_A' },
+      { id: 'sess_B', job_date: '', href: '/internal/admin/jobs/sess_B' },
+      { id: 'safe', href: '/internal/admin/jobs/create-job' },
+    ],
+    todos: [
+      { title: 'เช็กงาน sess_A', href: '/internal/admin/jobs/sess_A' },
+    ],
+    queues: {
+      jobs_need_confirm: { count: 2, href: '/internal/admin/jobs' },
+      payment_review: { count: 1, href: '/internal/admin/payments' },
+    },
+  });
+
+  assert.equal(out.jobs[0].href, '/internal/admin/jobs/all?date=2026-09-16');
+  assert.equal(out.jobs[1].href, '/internal/admin/jobs/all');
+  assert.equal(out.jobs[2].href, '/internal/admin/jobs/create-job');
+  assert.equal(out.todos[0].href, '/internal/admin/jobs/all?date=2026-09-16');
+  assert.equal(out.queues.jobs_need_confirm.href, '/internal/admin/jobs/all?ops=confirm');
+  assert.equal(out.queues.payment_review.href, '/internal/admin/payments');
 });
