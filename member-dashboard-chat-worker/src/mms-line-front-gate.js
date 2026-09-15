@@ -37,6 +37,37 @@ function isCanonicalLiffRequest(request) {
   }
 }
 
+function liffStateSearchParams(url) {
+  const raw = String(url.searchParams.get("liff.state") || url.searchParams.get("liff_state") || "").trim();
+  if (!raw) return new URLSearchParams();
+  let state = raw;
+  try { state = decodeURIComponent(raw); } catch {}
+  const queryIndex = state.indexOf("?");
+  if (queryIndex >= 0) return new URLSearchParams(state.slice(queryIndex + 1));
+  if (state.startsWith("intent=") || state.startsWith("liff_intent=")) return new URLSearchParams(state);
+  return new URLSearchParams();
+}
+
+export function isStatusLiffShellRequest(request) {
+  let url;
+  try { url = new URL(request.url); } catch { return false; }
+  if (!LIFF_SHELL_PATHS.has(url.pathname.toLowerCase())) return false;
+
+  const stateParams = liffStateSearchParams(url);
+  const intent = String(
+    url.searchParams.get("intent")
+      || url.searchParams.get("liff_intent")
+      || stateParams.get("intent")
+      || stateParams.get("liff_intent")
+      || "",
+  ).trim().toLowerCase();
+  const campaign = String(url.searchParams.get("campaign") || stateParams.get("campaign") || "").trim().toLowerCase();
+
+  if (campaign) return false;
+  if (!intent || intent === "unknown") return true;
+  return intent === "status";
+}
+
 export function guardAnonymousSessionClear(request, response) {
   if (!(request instanceof Request) || !(response instanceof Response) || response.status !== 401) return response;
   let url;
@@ -57,9 +88,7 @@ function safeNonce(html) {
 }
 
 export function stabilizeStatusShell(html, request) {
-  let url;
-  try { url = new URL(request.url); } catch { return String(html || ""); }
-  if (!LIFF_SHELL_PATHS.has(url.pathname.toLowerCase()) || String(url.searchParams.get("intent") || "").toLowerCase() !== "status") return String(html || "");
+  if (!isStatusLiffShellRequest(request)) return String(html || "");
   let output = String(html || "");
   output = output.replace(
     /(^|\n)[ \t]*const existingProfile = await readProfile\(\);[ \t]*\n[ \t]*if \(existingProfile\) return;/m,
@@ -125,6 +154,7 @@ export const MMD_LIFF_STABILITY_INTERNALS = Object.freeze({
   injectCareBackWishBridge,
   guardAnonymousSessionClear,
   isCanonicalLiffRequest,
+  isStatusLiffShellRequest,
 });
 
 export default {
