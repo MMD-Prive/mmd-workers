@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 "use strict";
 
+const fs = require("node:fs");
+const path = require("node:path");
+
 // Airtable returns field-name keyed payloads by default. The Per-Rename v1
 // migration intentionally uses stable field IDs throughout, so force Airtable
 // GET responses to be keyed by field ID without changing the migration's
@@ -23,5 +26,29 @@ globalThis.fetch = function mmdPerRenameFieldIdFetch(input, init = {}) {
   }
   return realFetch(input, init);
 };
+
+// A source file can legitimately omit Captured At. The migration previously
+// used wall-clock time for those rows and for the pre-session sync timestamp,
+// which meant re-running the exact same file always planned writes. Freeze the
+// no-argument Date clock to the source file mtime for input runs. Explicit dates
+// still behave normally. The same immutable source file now produces the same
+// timestamps and therefore a true zero-write idempotency check on the next run.
+const inputIndex = process.argv.indexOf("--input");
+const inputPath = inputIndex >= 0 ? String(process.argv[inputIndex + 1] || "") : "";
+if (inputPath) {
+  const absoluteInput = path.resolve(inputPath);
+  const stat = fs.statSync(absoluteInput);
+  const frozenMs = Number(stat.mtimeMs) || Date.now();
+  const RealDate = Date;
+  class StableInputDate extends RealDate {
+    constructor(...args) {
+      super(...(args.length ? args : [frozenMs]));
+    }
+    static now() {
+      return frozenMs;
+    }
+  }
+  globalThis.Date = StableInputDate;
+}
 
 require("./line-ofc-per-rename-backfill-v1.js");
