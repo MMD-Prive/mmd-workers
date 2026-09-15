@@ -6,16 +6,16 @@ import worker, {
   withSharedPendingWishCookie,
 } from "../src/my-mmd-bounded-status-front-gate.js";
 
-test("www My MMD canonicalizes to apex and migrates an existing host-only pending Wish", () => {
+test("apex My MMD canonicalizes to www and migrates an existing host-only pending Wish", () => {
   const token = `pw_${"A".repeat(43)}`;
-  const response = canonicalMyMmdHostRedirect(new Request("https://www.mmdbkk.com/member/my-mmd?from=care-back", {
+  const response = canonicalMyMmdHostRedirect(new Request("https://mmdbkk.com/member/my-mmd?from=care-back", {
     headers: { cookie: `mmd_care_back_wish_link=${token}` },
   }));
 
   assert.ok(response);
   assert.equal(response.status, 308);
-  assert.equal(response.headers.get("location"), "https://mmdbkk.com/member/my-mmd?from=care-back");
-  assert.equal(response.headers.get("x-mmd-my-mmd-canonical-host"), "mmdbkk.com");
+  assert.equal(response.headers.get("location"), "https://www.mmdbkk.com/member/my-mmd?from=care-back");
+  assert.equal(response.headers.get("x-mmd-my-mmd-canonical-host"), "www.mmdbkk.com");
   assert.equal(response.headers.get("x-mmd-care-back-wish-cookie-migrated"), "true");
   const setCookie = response.headers.get("set-cookie") || "";
   assert.match(setCookie, new RegExp(`mmd_care_back_wish_link=${token}`));
@@ -120,7 +120,7 @@ test("canonical My MMD HTML receives the pending Wish bridge without moving coup
   };
 
   try {
-    const response = await worker.fetch(new Request("https://mmdbkk.com/my-mmd/"), {});
+    const response = await worker.fetch(new Request("https://www.mmdbkk.com/my-mmd/"), {});
     const html = await response.text();
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("x-mmd-care-back-wish-bridge"), "verified-coupon-v1");
