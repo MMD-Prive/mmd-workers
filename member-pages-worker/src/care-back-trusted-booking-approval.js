@@ -39,7 +39,11 @@ export async function handleTrustedCareBackBookingApproval(request, env = {}) {
   try {
     recovery = await readCareBackPhase1Recovery(env, lineUserId);
   } catch (error) {
-    return json({ ok: false, status: "unavailable", error: clean(error?.code || "CARE_BACK_RECOVERY_UNAVAILABLE") }, 503);
+    const code = clean(error?.code || "");
+    if (code && !["CARE_BACK_RECOVERY_STORAGE_UNAVAILABLE"].includes(code)) {
+      return json({ ok: false, status: "unavailable", error: code }, 503);
+    }
+    console.warn({ event: "care_back_phase1_recovery_lookup_unavailable", failure_class: code || "request_failure" });
   }
 
   const model = await resolveCanonicalModel(env, modelLookup);
