@@ -70,6 +70,30 @@ test("missing both identities uses pending_identity_link and records snapshots f
   assert.match(forwarded.note, /Client \+ Model canonical link pending/);
 });
 
+test("current SIGIL Jobs V10 source auto-enters hold even before frontend sends operational mode", () => {
+  const body = {
+    source: "sigil_jobs_v10",
+    page: "/sigil/jobs",
+    visibility: "public",
+    client_name: "Client Snapshot",
+    model_name: "Model Snapshot",
+  };
+  assert.equal(pendingIdentityStatus(body), "pending_identity_link");
+  assert.equal(shouldCreatePendingIdentityHold(body), true);
+});
+
+test("unrelated create flows do not auto-enter progressive identity hold", () => {
+  const body = {
+    source: "internal_admin_create_job_v2",
+    page: "/internal/admin/jobs/create-job",
+    visibility: "public",
+    client_name: "Client Snapshot",
+    model_name: "Model Snapshot",
+  };
+  assert.equal(pendingIdentityStatus(body), "pending_identity_link");
+  assert.equal(shouldCreatePendingIdentityHold(body), false);
+});
+
 test("lookup hints do not count as canonical Client IDs", () => {
   const hinted = { ...pendingPrivate, line_identity: { line_user_id: "UlookupHintOnly" }, member_email: "hint@example.test" };
   assert.equal(hasCanonicalClientLink(hinted), false);
