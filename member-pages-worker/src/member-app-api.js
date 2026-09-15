@@ -1,5 +1,6 @@
 import * as runtime from "./member-app-api-runtime.js";
 export * from "./member-app-api-runtime.js";
+import stableLiffFoundation from "./liff-stable-session-binding.js";
 import {
   memberAppRecoveryCare,
   memberAppRecoveryCoupons,
@@ -115,7 +116,7 @@ async function tryRecoveryMemberAppResponse(request, env) {
   }
 }
 
-export async function handleMemberAppApi(request, env = {}, delegate) {
+export async function handleMemberAppApi(request, env = {}, delegate = stableLiffFoundation) {
   const recoveryResponseOverride = await tryRecoveryMemberAppResponse(request, env);
   if (recoveryResponseOverride) return recoveryResponseOverride;
 
