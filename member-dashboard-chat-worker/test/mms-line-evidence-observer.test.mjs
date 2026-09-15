@@ -119,7 +119,7 @@ test("MMS group image uses the shared visual payment gate and dedupes redelivery
     assert.equal(proofPost.fields.payment_ref, "MMS-TXN-001");
     assert.equal(proofPost.fields.amount_thb, 1000);
     const note = JSON.parse(proofPost.fields.note);
-    assert.equal(note.schema, "line_payment_evidence_v3");
+    assert.equal(note.schema, "line_payment_evidence_v4");
     assert.equal(note.image_classification.image_class, "bank_transfer_slip");
     assert.equal(note.payment_truth, "unverified");
     assert.equal(note.official_verification_required, true);
