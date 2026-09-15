@@ -5,15 +5,32 @@ import { MMD_LIFF_STABILITY_INTERNALS } from "../src/mms-line-front-gate.js";
 
 const I = MMD_LIFF_STABILITY_INTERNALS;
 
-test("status LIFF shell becomes auth-only and returns directly to My MMD after verified start", () => {
-  const html = `const existingProfile = await readProfile();\n      if (existingProfile) return;\n      if (started && started.member_resolved) await readProfile();`;
-  const request = new Request("https://www.mmdbkk.com/member/liff?intent=status");
-  const output = I.stabilizeStatusShell(html, request);
+const STATUS_SHELL = `const existingProfile = await readProfile();\n      if (existingProfile) return;\n      if (started && started.member_resolved) await readProfile();`;
+
+function assertDirectReturn(output) {
   assert.doesNotMatch(output, /await readProfile\(\)/);
   assert.match(output, /auth-only bridge/);
   assert.match(output, /ยืนยัน LINE สำเร็จแล้วครับ/);
   assert.match(output, /window\.location\.replace\("\/my-mmd\/"\)/);
   assert.match(output, /if \(started\)/);
+}
+
+test("status LIFF shell becomes auth-only and returns directly to My MMD after verified start", () => {
+  const request = new Request("https://www.mmdbkk.com/member/liff?intent=status");
+  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, request));
+});
+
+test("LINE liff.state status launch gets the same direct My MMD return", () => {
+  const state = encodeURIComponent("/member/liff?intent=status");
+  const request = new Request(`https://www.mmdbkk.com/member/liff?liff.state=${state}`);
+  assert.equal(I.isStatusLiffShellRequest(request), true);
+  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, request));
+});
+
+test("status shell defaults to status when LINE omits intent, but never steals campaign LIFF", () => {
+  assert.equal(I.isStatusLiffShellRequest(new Request("https://www.mmdbkk.com/member/liff")), true);
+  assert.equal(I.isStatusLiffShellRequest(new Request("https://www.mmdbkk.com/member/liff?liff_intent=unknown")), true);
+  assert.equal(I.isStatusLiffShellRequest(new Request("https://www.mmdbkk.com/member/liff?intent=promo&campaign=care_back")), false);
 });
 
 test("anonymous late 401 cannot clear a newly established LIFF session", async () => {
