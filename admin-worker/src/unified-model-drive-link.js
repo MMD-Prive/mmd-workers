@@ -129,7 +129,7 @@ function safeCanonicalModel(record) {
     model_lookup_key: firstText(fields, ["model_lookup_key", "model_code", "Model Code", "unique_key"]),
     status,
     active: /^active$/i.test(status),
-    lane: lanes.length === 1 ? lanes[0] : (lanes.length > 1 ? "both" : ""),
+    lane: primaryModelLane(fields, lanes),
     lanes,
     folder_name: firstText(fields, ["folder_name"]),
     drive_folder_id: firstText(fields, ["drive_folder_id"]),
@@ -145,13 +145,27 @@ export function inferModelLanes(fields = {}) {
   if (fields.can_work_private === true) lanes.push("private");
   const salesLayer = firstText(fields, ["sales_layer"]).toLowerCase();
   const scope = firstText(fields, ["folder_scope_key"]).toLowerCase();
+  const privateTier = firstText(fields, ["private_tier"]).toLowerCase();
+  const exclusiveGroup = firstText(fields, ["exclusive_group"]).toLowerCase();
   if ((salesLayer.includes("public") || scope.startsWith("public:")) && !lanes.includes("public")) lanes.push("public");
   if ((salesLayer.includes("private") || salesLayer.includes("sigil") || scope.startsWith("private:")) && !lanes.includes("private")) lanes.push("private");
+  if ((salesLayer.includes("exclusive") || scope.startsWith("exclusive:") || privateTier.includes("exclusive") || exclusiveGroup) && !lanes.includes("exclusive")) lanes.push("exclusive");
+  if (scope.startsWith("exclusive:") && !lanes.includes("private")) lanes.push("private");
   if (salesLayer.includes("both")) {
     if (!lanes.includes("public")) lanes.push("public");
     if (!lanes.includes("private")) lanes.push("private");
   }
   return lanes;
+}
+
+function primaryModelLane(fields = {}, lanes = []) {
+  const scope = firstText(fields, ["folder_scope_key"]).toLowerCase();
+  if (scope.startsWith("exclusive:")) return "exclusive";
+  if (scope.startsWith("public:")) return "public";
+  if (scope.startsWith("private:")) return "private";
+  if (lanes.includes("exclusive") && !lanes.includes("public")) return "exclusive";
+  if (lanes.length === 1) return lanes[0];
+  return lanes.length > 1 ? "both" : "";
 }
 
 async function searchDriveDirectory(env, q, lane) {
@@ -192,7 +206,7 @@ function safeDriveCandidate(item) {
     status: "Drive only",
     active: false,
     lane,
-    lanes: [lane],
+    lanes: lane === "exclusive" ? ["exclusive", "private"] : [lane],
     folder_name: clean(item.folder_name, 240),
     drive_folder_id: clean(item.drive_folder_id, 180),
     drive_folder_url: safeHttpsUrl(item.drive_folder_url),
@@ -259,7 +273,7 @@ async function createCanonicalModelFromDrive(env, folder, actor) {
     raw_import_tag: "drive_lazy_materialized_v1",
     folder_scope_key: clean(folder.folder_scope_key, 300) || `${lane}:drive:${clean(folder.drive_folder_id, 180)}`,
     can_work_public: lane === "public",
-    can_work_private: lane === "private",
+    can_work_private: lane === "private" || lane === "exclusive",
   };
 
   const result = await airtableCreate(env, modelsTable(env), fields, true);
@@ -317,7 +331,7 @@ function laneAllows(lanes, lane) {
 
 function normalizeLane(value) {
   const lane = clean(value, 20).toLowerCase();
-  return lane === "public" || lane === "private" ? lane : "all";
+  return lane === "public" || lane === "private" || lane === "exclusive" ? lane : "all";
 }
 
 function firstText(fields, names) {

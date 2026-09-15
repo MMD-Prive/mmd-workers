@@ -8,10 +8,12 @@ const SIGNATURE_TTL_SECONDS = 90;
 const DEFAULT_CATALOG_ROOT = "1RNN0aYwmvkKqACMAjRLYOJTFFFrlYycQ";
 const DEFAULT_PUBLIC_ROOT = "1pr8X4sk7A_5vPZxG5syp5fmgEs9fZF77";
 const DEFAULT_PRIVATE_ROOT = "1IfEdWQ3hR-k1klfVJEtBgzWYRJCloRyr";
+const DEFAULT_EXCLUSIVE_ROOT = "1j1NRB44PboVQR91M8-17Vb8kcCTCLS97";
 
 export const MODEL_DRIVE_DIRECTORY_HOST = INTERNAL_HOST;
 export const MODEL_DRIVE_SEARCH_PATH = SEARCH_PATH;
 export const MODEL_DRIVE_RESOLVE_PATH = RESOLVE_PATH;
+export const MODEL_DRIVE_EXCLUSIVE_ROOT_FOLDER_ID = DEFAULT_EXCLUSIVE_ROOT;
 
 export function isModelDriveDirectoryRequest(request) {
   if (!(request instanceof Request)) return false;
@@ -125,6 +127,13 @@ export async function resolveApprovedModelFolder(accessToken, folderId, env = {}
       if (root) chain.push(root);
       break;
     }
+    if (parentId === roots.exclusive) {
+      matchedLane = "exclusive";
+      matchedRootId = parentId;
+      const root = await driveGetFolder(accessToken, parentId);
+      if (root) chain.push(root);
+      break;
+    }
     if (parentId === roots.catalog) break;
 
     const parent = await driveGetFolder(accessToken, parentId);
@@ -155,6 +164,7 @@ function approvedRoots(env) {
     catalog: clean(env.DRIVE_MODEL_CATALOG_ROOT_FOLDER_ID || DEFAULT_CATALOG_ROOT, 160),
     public: clean(env.DRIVE_MODEL_PUBLIC_ROOT_FOLDER_ID || DEFAULT_PUBLIC_ROOT, 160),
     private: clean(env.DRIVE_MODEL_PRIVATE_ROOT_FOLDER_ID || DEFAULT_PRIVATE_ROOT, 160),
+    exclusive: clean(env.DRIVE_MODEL_EXCLUSIVE_ROOT_FOLDER_ID || DEFAULT_EXCLUSIVE_ROOT, 160),
   };
 }
 
@@ -188,6 +198,7 @@ function driveConfigured(env) {
     && clean(env.GOOGLE_DRIVE_REFRESH_TOKEN, 5000)
     && roots.public
     && roots.private
+    && roots.exclusive
   );
 }
 
@@ -310,7 +321,7 @@ function levenshtein(a, b) {
 
 function normalizeLane(value) {
   const lane = clean(value, 20).toLowerCase();
-  return lane === "public" || lane === "private" ? lane : "all";
+  return lane === "public" || lane === "private" || lane === "exclusive" ? lane : "all";
 }
 
 function isDriveId(value) {
