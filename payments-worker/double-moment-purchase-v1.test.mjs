@@ -3,14 +3,14 @@ import test from "node:test";
 import { handleDoubleMomentRequest, isDoubleMomentRequest } from "./double-moment-purchase-v1.js";
 
 test("Double Moment routes are bounded", () => {
-  assert.equal(isDoubleMomentRequest("/v1/promo/double-moment/health", "GET"), true);
-  assert.equal(isDoubleMomentRequest("/v1/promo/double-moment/start", "POST"), true);
-  assert.equal(isDoubleMomentRequest("/v1/promo/double-moment/start", "GET"), false);
+  assert.equal(isDoubleMomentRequest("/v1/pay/double-moment/health", "GET"), true);
+  assert.equal(isDoubleMomentRequest("/v1/pay/double-moment/start", "POST"), true);
+  assert.equal(isDoubleMomentRequest("/v1/pay/double-moment/start", "GET"), false);
   assert.equal(isDoubleMomentRequest("/v1/pay/verify", "POST"), false);
 });
 
 test("health receipt exposes locked v1 policy", async () => {
-  const request = new Request("https://sigil.mmdbkk.com/v1/promo/double-moment/health");
+  const request = new Request("https://sigil.mmdbkk.com/v1/pay/double-moment/health");
   const response = await handleDoubleMomentRequest(request, {}, async () => {
     throw new Error("downstream_must_not_run");
   });
@@ -29,7 +29,7 @@ test("health receipt exposes locked v1 policy", async () => {
 });
 
 test("start route fails closed without trusted service auth", async () => {
-  const request = new Request("https://sigil.mmdbkk.com/v1/promo/double-moment/start", {
+  const request = new Request("https://sigil.mmdbkk.com/v1/pay/double-moment/start", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ client_record_id: "rec00000000000" }),
