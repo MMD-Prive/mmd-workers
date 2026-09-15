@@ -5,13 +5,15 @@ import { MMD_LIFF_STABILITY_INTERNALS } from "../src/mms-line-front-gate.js";
 
 const I = MMD_LIFF_STABILITY_INTERNALS;
 
-test("status LIFF shell becomes auth-only and does not re-read profile after start", () => {
+test("status LIFF shell becomes auth-only and returns directly to My MMD after verified start", () => {
   const html = `const existingProfile = await readProfile();\n      if (existingProfile) return;\n      if (started && started.member_resolved) await readProfile();`;
   const request = new Request("https://www.mmdbkk.com/member/liff?intent=status");
   const output = I.stabilizeStatusShell(html, request);
   assert.doesNotMatch(output, /await readProfile\(\)/);
   assert.match(output, /auth-only bridge/);
   assert.match(output, /ยืนยัน LINE สำเร็จแล้วครับ/);
+  assert.match(output, /window\.location\.replace\("\/my-mmd\/"\)/);
+  assert.match(output, /if \(started\)/);
 });
 
 test("anonymous late 401 cannot clear a newly established LIFF session", async () => {
