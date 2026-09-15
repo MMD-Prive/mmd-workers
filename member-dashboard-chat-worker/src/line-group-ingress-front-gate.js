@@ -10,8 +10,9 @@ const DEFAULT_PAYMENT_PROOFS_TABLE = "tblfJfM4Sqag9zrLi";
 const DEFAULT_CONSOLE_INBOX_TABLE = "tblFHmfpB2TTrzO2e";
 const DEFAULT_DIRECT_CANDIDATE_TTL_MS = 30 * 60 * 1000;
 const DEFAULT_PAYMENT_CONTEXT_LOOKBACK_HOURS = 48;
-const PAYMENT_CONTEXT_RE = /(?:สลิป|หลักฐาน(?:การ)?(?:โอน|ชำระ)|โอน|จ่าย|ชำระ|ต่ออายุ|ค่าสมาชิก|เมมเบอร์|สมาชิก|payment(?:\s+proof)?|transfer(?:\s+(?:slip|proof|done))?|bank\s*transfer|renew(?:al)?|membership|promptpay|พร้อมเพย์)/i;
-const PAYMENT_FOLLOWUP_RE = /(?:ขอ\s*เข้า\s*กลุ่ม|เข้า\s*กลุ่ม|access|drive|เข้าแล้ว|โอน|จ่าย|ชำระ|สลิป|หลักฐาน|ต่ออายุ|renew(?:al)?|payment|transfer|สมาชิก|member)/i;
+const PAYMENT_CONTEXT_RE = /(?:สลิป|หลักฐาน(?:การ)?(?:โอน|ชำระ)|โอน|จ่าย|ชำระ|สมัคร(?:สมาชิก)?|ต่อ(?:อายุ(?:สมาชิก)?|ให้|สมาชิก|เมม(?:เบอร์)?)|ค่าสมาชิก|เมมเบอร์|สมาชิก|payment(?:\s+proof)?|transfer(?:\s+(?:slip|proof|done))?|bank\s*transfer|renew(?:al)?|membership|promptpay|พร้อมเพย์)/i;
+const PAYMENT_FOLLOWUP_RE = /(?:ขอ\s*เข้า\s*กลุ่ม|เข้า\s*กลุ่ม|access|drive|เข้าแล้ว|โอน|จ่าย|ชำระ|สลิป|หลักฐาน|สมัคร(?:สมาชิก)?|ต่อ(?:อายุ(?:สมาชิก)?|ให้|สมาชิก|เมม(?:เบอร์)?)|renew(?:al)?|payment|transfer|สมาชิก|member)/i;
+const MEMBERSHIP_PAYMENT_CONTEXT_RE = /(?:สมัคร(?:สมาชิก)?|ต่อ(?:อายุ(?:สมาชิก)?|ให้|สมาชิก|เมม(?:เบอร์)?)|ค่าสมาชิก|เมมเบอร์|สมาชิก|membership|member\s*(?:fee|renewal)?|renew(?:al)?)/i;
 
 function asString(value) { return String(value || "").trim(); }
 function bytesToBase64(buffer) { const bytes = new Uint8Array(buffer); let binary = ""; for (const byte of bytes) binary += String.fromCharCode(byte); return btoa(binary); }
@@ -22,7 +23,14 @@ function sourceType(event = {}) { const type = asString(event?.source?.type).toL
 function messageType(event = {}) { return event?.type === "message" ? asString(event?.message?.type).toLowerCase() || "unknown" : "none"; }
 function messageText(event = {}) { return event?.type === "message" && messageType(event) === "text" ? asString(event?.message?.text) : ""; }
 function hasPaymentContext(value = "") { return PAYMENT_CONTEXT_RE.test(asString(value)); }
-function hasPaymentFollowupContext(value = "") { return PAYMENT_FOLLOWUP_RE.test(asString(value)); }
+function hasPaymentFollowupContext(value = "") { const text = asString(value); return PAYMENT_FOLLOWUP_RE.test(text) || /\d/.test(text); }
+function hasMembershipPaymentContext(value = "") { return MEMBERSHIP_PAYMENT_CONTEXT_RE.test(asString(value)); }
+function positiveNumericAmount(value) { const amount = Number(value); return Number.isFinite(amount) && amount > 0 ? amount : null; }
+function membershipPaymentAcceptedByOwnerPolicy({ route = {}, extraction = {}, contextText = "" } = {}) {
+  const amount = positiveNumericAmount(extraction?.amount_thb);
+  if (amount == null || route?.should_alert === true) return false;
+  return route?.topic === "membership" || hasMembershipPaymentContext(contextText);
+}
 
 async function sha256Hex(value) {
   const input = value instanceof ArrayBuffer ? value : new TextEncoder().encode(String(value || ""));
@@ -104,14 +112,18 @@ function safePaidDate(value) {
 
 async function createPendingProof(env = {}, evidence = {}) {
   const existing = await findExistingProof(env, evidence.proofId);
-  if (existing?.id) return { id: existing.id, deduped: true };
+  if (existing?.id) return { id: existing.id, deduped: true, verified: existing?.fields?.status === "verified" };
   const analysis = evidence.analysis || {};
   const extraction = analysis.extraction || {};
   const links = analysis.links || {};
   const opsRoute = analysis.ops_route || evidence.paymentOpsRoute || classifyPaymentOpsRoute({ source_context: evidence.sourceContext, context_text: evidence.paymentContextText });
+  const ownerPolicyVerified = membershipPaymentAcceptedByOwnerPolicy({ route: opsRoute, extraction, contextText: evidence.paymentContextText });
+  const identityReady = Boolean(asString(links.member) || asString(links.client) || asString(links.renewal));
+  const packageReady = Boolean(asString(analysis.payment_intelligence?.inferred_package_code));
+  const mayExtendMembership = ownerPolicyVerified && identityReady && packageReady;
   const note = JSON.stringify({
-    schema: "line_payment_evidence_v3",
-    evidence_only: true,
+    schema: "line_payment_evidence_v4",
+    evidence_only: !ownerPolicyVerified,
     source_type: evidence.sourceType,
     source_context: evidence.sourceContext || null,
     identity_match: evidence.identityMatch || analysis.customer?.source || "unresolved",
@@ -137,14 +149,21 @@ async function createPendingProof(env = {}, evidence = {}) {
     payment_intelligence: analysis.payment_intelligence || null,
     review_summary: analysis.review_summary || null,
     payment_ops_route: { topic: opsRoute.topic, classification: opsRoute.classification, confidence: opsRoute.confidence, reason: opsRoute.reason, should_alert: opsRoute.should_alert === true },
-    payment_truth: "unverified",
-    official_verification_required: true,
-    may_mark_paid: false,
+    payment_truth: ownerPolicyVerified ? "verified_by_owner_membership_policy" : "unverified",
+    official_verification_required: !ownerPolicyVerified,
+    may_mark_paid: ownerPolicyVerified,
     may_award_points: false,
-    may_extend_membership: false,
+    may_extend_membership: mayExtendMembership,
     may_confirm_session: false,
+    owner_policy: ownerPolicyVerified ? {
+      code: "membership_slip_simple_accept_v1",
+      receiving_account_required: false,
+      positive_numeric_amount_required: true,
+      membership_intent_required: true,
+      identity_and_package_remain_separate: true,
+    } : null,
   });
-  const fields = { proof_id: evidence.proofId, channel: "line_ofc", note, status: "pending" };
+  const fields = { proof_id: evidence.proofId, channel: "line_ofc", note, status: ownerPolicyVerified ? "verified" : "pending" };
   const payerName = asString(extraction.payer_name || analysis.customer?.display_name || evidence.payerName);
   if (payerName) fields.payer_name = payerName;
   if (extraction.amount_thb != null) fields.amount_thb = extraction.amount_thb;
@@ -155,7 +174,7 @@ async function createPendingProof(env = {}, evidence = {}) {
   if (asString(links.payment)) fields.payment = [asString(links.payment)];
   if (asString(links.renewal)) fields["MMD — LIFF Renewal Sessions"] = [asString(links.renewal)];
   const payload = await airtableRequest(env, encodeURIComponent(paymentProofsTable(env)), { method: "POST", body: JSON.stringify({ fields }) });
-  return { id: asString(payload?.id), deduped: false };
+  return { id: asString(payload?.id), deduped: false, verified: ownerPolicyVerified, mayExtendMembership };
 }
 
 function paymentOpsChatId(env = {}) { return asString(env.TELEGRAM_OPS_CHAT_ID || env.TELEGRAM_CHAT_ID); }
@@ -177,21 +196,22 @@ async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
   if (!asString(env.AUTH_SERVICE_LINE_TO_TELEGRAM || env.INTERNAL_TOKEN) || !chatId) return { skipped: true, reason: "telegram_config_missing" };
   const analysis = evidence.analysis || {};
   const route = analysis.ops_route || evidence.paymentOpsRoute || classifyPaymentOpsRoute({ source_context: evidence.sourceContext, context_text: evidence.paymentContextText });
-  const isMembership = route.topic === "membership";
+  const extraction = analysis.extraction || {};
+  const policyVerified = membershipPaymentAcceptedByOwnerPolicy({ route, extraction, contextText: evidence.paymentContextText });
+  const isMembership = route.topic === "membership" || (policyVerified && hasMembershipPaymentContext(evidence.paymentContextText));
   const threadId = isMembership ? membershipOpsThreadId(env) : paymentOpsThreadId(env);
   const purpose = asString(analysis.payment_intelligence?.inferred_label) || membershipInferenceLabel(route.inference) || (isMembership ? "Membership / Renewal" : "Payment / Service");
-  const extraction = analysis.extraction || {};
   const customer = asString(analysis.customer?.display_name || evidence.payerName);
   const text = [
     isMembership ? "🧾 MMD Membership Payment Proof" : "💳 MMD Payment Proof",
-    "Status: pending review",
+    policyVerified ? "Status: verified · simple membership slip policy" : "Status: pending review",
     `Source: ${evidence.sourceType === "user" ? "LINE OA direct" : "LINE payment group"}`,
     `Proof: ${evidence.proofId}`,
     `Classified: ${purpose}`,
     customer ? `Customer: ${customer}` : "Customer: pending match",
     extraction.amount_thb != null ? `Amount: ${Number(extraction.amount_thb).toLocaleString("en-US")} THB` : "Amount: pending extraction",
     `Routing: ${route.reason}`,
-    "Action: Official Verify in Payment Inbox before any money/access change.",
+    policyVerified ? "Action: payment accepted; resolve exact LINE identity/package only. Receiving-bank recheck is not required." : "Action: Official Verify in Payment Inbox before any money/access change.",
   ].filter(Boolean).join("\n");
   const main = await sendOpsMessage(env, { chatId, threadId, flow: isMembership ? "membership" : "payment_proof", text });
   if (!main.ok) throw new Error(`telegram_payment_alert_${main.status || "failed"}`);
@@ -200,7 +220,7 @@ async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
     const alert = await sendOpsMessage(env, { chatId, threadId: alertsOpsThreadId(env), flow: "alert", text: `🚨 MMD Payment Classification Conflict\nProof: ${evidence.proofId}\nReason: ${route.reason}\nAction: keep pending; do not activate automatically.` });
     alertSent = alert.ok === true;
   }
-  return { sent: true, topic: route.topic, thread_id: threadId, alert_sent: alertSent };
+  return { sent: true, topic: isMembership ? "membership" : route.topic, thread_id: threadId, alert_sent: alertSent, verified: policyVerified };
 }
 
 async function persistCapturedImage(env = {}, event = {}, options = {}) {
@@ -211,7 +231,7 @@ async function persistCapturedImage(env = {}, event = {}, options = {}) {
   const messageIdHash = await sha256Hex(messageId);
   const proofId = asString(options.proofId) || `line_${messageIdHash.slice(0, 24)}`;
   const existing = await findExistingProof(env, proofId);
-  if (existing?.id) return { captured: true, deduped: true, proofId, recordId: existing.id };
+  if (existing?.id) return { captured: true, deduped: true, proofId, recordId: existing.id, verified: existing?.fields?.status === "verified" };
 
   const image = await downloadLineImage(env, messageId);
   const userId = asString(event?.source?.userId);
@@ -257,7 +277,7 @@ async function persistCapturedImage(env = {}, event = {}, options = {}) {
   }
   const proof = await createPendingProof(env, evidence);
   try { await notifyPaymentProofOps(env, evidence, proof); } catch (error) { console.log(JSON.stringify({ line_payment_alert: "failed", proof_id: proofId, error: asString(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100) })); }
-  return { captured: true, deduped: proof.deduped, proofId, recordId: proof.id, imageClass: analysis.classification?.image_class, paymentStage: analysis.payment_intelligence?.inferred_stage, customerMatch: analysis.customer?.status };
+  return { captured: true, deduped: proof.deduped, verified: proof.verified === true, proofId, recordId: proof.id, imageClass: analysis.classification?.image_class, paymentStage: analysis.payment_intelligence?.inferred_stage, customerMatch: analysis.customer?.status };
 }
 
 async function captureGroupImageEvidence(env = {}, event = {}) {
@@ -333,7 +353,7 @@ async function observeSignedLineEvents(request, env = {}) {
       if (source === "group" && type === "image") result = await captureGroupImageEvidence(env, event);
       else if (source === "user" && type === "image") result = await captureDirectUserImageEvidence(env, event);
       else if (source === "user" && type === "text") result = await promoteDirectUserCandidate(env, event);
-      if (result && (type === "image" || result.captured || result.ignored || result.held)) console.log(JSON.stringify({ line_payment_ingress: result.captured ? "captured" : result.ignored ? "ignored_non_payment" : result.held ? "held_uncertain" : result.candidate ? "candidate" : "skipped", source_type: source, message_type: type, deduped: result.deduped === true, reason: asString(result.reason) || null, image_class: asString(result.imageClass) || null, payment_stage: asString(result.paymentStage) || null }));
+      if (result && (type === "image" || result.captured || result.ignored || result.held)) console.log(JSON.stringify({ line_payment_ingress: result.captured ? "captured" : result.ignored ? "ignored_non_payment" : result.held ? "held_uncertain" : result.candidate ? "candidate" : "skipped", source_type: source, message_type: type, deduped: result.deduped === true, verified: result.verified === true, reason: asString(result.reason) || null, image_class: asString(result.imageClass) || null, payment_stage: asString(result.paymentStage) || null }));
     } catch (error) { console.log(JSON.stringify({ line_payment_ingress: "capture_failed", source_type: source, message_type: type, error: asString(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100) })); }
   }
 }
@@ -354,11 +374,13 @@ export const LINE_GROUP_INGRESS_INTERNALS = Object.freeze({
   directCandidateKey,
   downloadLineImage,
   resolveDirectPayerContext,
+  hasMembershipPaymentContext,
   hasPaymentContext,
   hasPaymentFollowupContext,
   hasRecentDirectPaymentContext,
   isPaymentProofGroup,
   loadDirectUserImageCandidate,
+  membershipPaymentAcceptedByOwnerPolicy,
   membershipOpsThreadId,
   messageText,
   messageType,
