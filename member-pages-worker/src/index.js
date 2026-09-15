@@ -2,6 +2,12 @@ import liffFoundation from "./liff-payment-binding.js";
 import { handleLiffMemberShell, isLiffMemberShellPath } from "./liff-member-shell.js";
 import { decorateMemberLiffJobClaim } from "./job-identity-member-claim.js";
 import { handlePublicCareBackWishRoute, isPublicCareBackWishPath } from "./public-care-back-wish.js";
+import {
+  handleCanonicalCareBackLinkWish,
+  handleCareBackLiffOrchestrator,
+  isCanonicalCareBackLinkWishRequest,
+  isCareBackLiffOrchestratorRequest,
+} from "./care-back-liff-orchestrator.js";
 import { handleFindMemberApi, isFindMemberApiPath } from "./find-member-api.js";
 import { handleMemberEmailRecovery, isMemberEmailRecoveryPath } from "./member-email-recovery.js";
 import { handleMmsMemberPrebookingRead, isMmsMemberPrebookingReadPath } from "./mms-member-prebooking-read.js";
@@ -61,6 +67,12 @@ export default {
     if (isMemberEmailRecoveryPath(url)) return finish(await handleMemberEmailRecovery(request, env));
     if (isFindMemberApiPath(url)) return finish(await handleFindMemberApi(request, env));
     if (isLiffClientDiagnosticPath(url)) return finish(await handleLiffClientDiagnostic(request, env));
+    if (isCareBackLiffOrchestratorRequest(request)) {
+      return finish(await handleCareBackLiffOrchestrator(request, env, ctx));
+    }
+    if (isCanonicalCareBackLinkWishRequest(request)) {
+      return finish(await handleCanonicalCareBackLinkWish(request, env, ctx));
+    }
     if (isPublicCareBackWishPath(url)) return finish(await handlePublicCareBackWishRoute(request, env));
     if (isLiffMemberShellPath(url)) {
       const response = handleLiffMemberShell(request, env);
