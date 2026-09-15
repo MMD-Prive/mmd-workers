@@ -5,12 +5,14 @@ on:
   pull_request:
     paths:
       - scripts/line-ofc-per-rename-backfill-v1.js
+      - scripts/line-ofc-per-rename-backfill-v1-runner.js
       - .github/workflows/line-ofc-per-rename-backfill-v1.yml
   push:
     branches:
       - main
     paths:
       - scripts/line-ofc-per-rename-backfill-v1.js
+      - scripts/line-ofc-per-rename-backfill-v1-runner.js
       - .github/workflows/line-ofc-per-rename-backfill-v1.yml
 
 permissions:
@@ -31,7 +33,8 @@ jobs:
       - name: Validate script
         run: |
           node --check scripts/line-ofc-per-rename-backfill-v1.js
-          node scripts/line-ofc-per-rename-backfill-v1.js --self-test
+          node --check scripts/line-ofc-per-rename-backfill-v1-runner.js
+          node scripts/line-ofc-per-rename-backfill-v1-runner.js --self-test
 
   production-audit:
     if: github.event_name != 'pull_request'
@@ -47,7 +50,7 @@ jobs:
         with:
           node-version: 22
       - name: Audit verified LINE OFC rename coverage
-        run: node scripts/line-ofc-per-rename-backfill-v1.js --audit-existing --dry-run --report /tmp/per-rename-audit.json
+        run: node scripts/line-ofc-per-rename-backfill-v1-runner.js --audit-existing --dry-run --report /tmp/per-rename-audit.json
       - name: Upload count-only audit
         uses: actions/upload-artifact@v4
         with:
