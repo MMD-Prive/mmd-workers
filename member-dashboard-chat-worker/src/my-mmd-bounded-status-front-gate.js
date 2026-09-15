@@ -6,6 +6,7 @@ const STATUS_UI_MODE = "auth-bridge-only";
 const HARD_TIMEOUT_MS = 12_000;
 const MANUAL_RETRY_WINDOW_MS = 120_000;
 const SESSION_STATUS_ENDPOINT = "/member/api/liff/status";
+const SESSION_COOKIE = "__Host-mmd_liff_session";
 const CANONICAL_MY_MMD_HOST = "www.mmdbkk.com";
 const LEGACY_MY_MMD_HOST = "mmdbkk.com";
 const CARE_BACK_COOKIE_DOMAIN = "mmdbkk.com";
@@ -64,6 +65,13 @@ export function canonicalMyMmdHostRedirect(request) {
   const path = url.pathname.toLowerCase().replace(/\/{2,}/g, "/");
   if (url.hostname.toLowerCase() !== LEGACY_MY_MMD_HOST || !isMyMmdUiPath(path)) return null;
 
+  // A LIFF session uses the __Host- cookie contract, so it is intentionally
+  // host-only. If LINE established the verified session on the apex host,
+  // redirecting My MMD to www would discard that browser session. Preserve the
+  // host that already owns a session; downstream APIs still validate the token
+  // cryptographically, so this does not widen identity authority.
+  if (cookieValue(request, SESSION_COOKIE)) return null;
+
   const target = new URL(request.url);
   target.hostname = CANONICAL_MY_MMD_HOST;
   const headers = new Headers({
@@ -76,7 +84,7 @@ export function canonicalMyMmdHostRedirect(request) {
   const pendingWish = cookieValue(request, PENDING_WISH_COOKIE);
   if (validPendingWishToken(pendingWish)) {
     // Migrate an existing apex-only pending-Wish cookie to the parent domain
-    // before returning to the canonical www host used by the LINE LIFF session.
+    // before returning an unauthenticated visit to the canonical www host.
     headers.append("set-cookie", sharedPendingWishCookie(pendingWish));
     headers.append("set-cookie", clearLegacyHostPendingWishCookie());
     headers.set("x-mmd-care-back-wish-cookie-migrated", "true");
