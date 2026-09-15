@@ -1,5 +1,5 @@
 name = "member-dashboard-chat-worker"
-main = "src/mms-line-front-gate.js"
+main = "src/my-mmd-liff-session-race-guard.js"
 compatibility_date = "2026-07-02"
 workers_dev = false
 
