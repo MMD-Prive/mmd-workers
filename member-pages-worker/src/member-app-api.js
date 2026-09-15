@@ -1,6 +1,7 @@
 import * as runtime from "./member-app-api-runtime.js";
 export * from "./member-app-api-runtime.js";
 import stableLiffFoundation from "./liff-stable-session-binding.js";
+import { getCareBackStore } from "./care-back-claim-store.js";
 import {
   memberAppRecoveryCare,
   memberAppRecoveryCoupons,
@@ -38,7 +39,10 @@ async function readWishIdentitySnapshot(request, env = {}) {
     const identityKey = String(session.identity_key || "").trim().toLowerCase();
     const memberId = String(session.member_id || "").trim();
     if (session.member_exists !== true || !memberId || !/^[a-f0-9]{64}$/.test(identityKey)) return null;
-    return { identityKey, memberId };
+    const memberProfile = session.member_profile && typeof session.member_profile === "object" && !Array.isArray(session.member_profile)
+      ? session.member_profile
+      : {};
+    return { identityKey, memberId, memberProfile };
   } catch { return null; }
 }
 
@@ -116,10 +120,40 @@ async function tryRecoveryMemberAppResponse(request, env) {
   }
 }
 
+async function reconcileCompletedWishCoupon(request, env) {
+  if (!isCouponRead(request)) return false;
+  const snapshot = await readWishIdentitySnapshot(request, env);
+  if (!snapshot) return false;
+  const wish = await readLatestLinkedWish(env, snapshot.identityKey);
+  if (!wish) return false;
+  const store = getCareBackStore(env);
+  if (!store || typeof store.openOrResume !== "function") return false;
+  try {
+    // Read-repair only server-owned derived CARE BACK state. Browser input never
+    // supplies membership, Wish completion, coupon rate, model level or job format.
+    // This repairs claims that were created as manual_review during an earlier
+    // resolver failure but whose freshly verified LIFF member profile is now active.
+    await store.openOrResume({
+      identityHash: snapshot.identityKey,
+      memberId: snapshot.memberId,
+      memberProfile: snapshot.memberProfile,
+      wishSubmitted: true,
+    });
+    return true;
+  } catch (error) {
+    console.warn({
+      event: "care_back_coupon_read_repair_failed",
+      failure_class: String(error?.code || error?.message || "unknown").slice(0, 80),
+    });
+    return false;
+  }
+}
+
 export async function handleMemberAppApi(request, env = {}, delegate = stableLiffFoundation) {
   const recoveryResponseOverride = await tryRecoveryMemberAppResponse(request, env);
   if (recoveryResponseOverride) return recoveryResponseOverride;
 
+  if (isCouponRead(request)) await reconcileCompletedWishCoupon(request, env);
   if (!isCareRead(request)) return runtime.handleMemberAppApi(request, env, delegate);
   const snapshot = await readWishIdentitySnapshot(request, env);
   const response = await runtime.handleMemberAppApi(request, env, delegate);
@@ -146,4 +180,5 @@ export const MEMBER_APP_WISH_READBACK_INTERNALS = Object.freeze({
   isCareRead,
   isCouponRead,
   tryRecoveryMemberAppResponse,
+  reconcileCompletedWishCoupon,
 });
