@@ -166,6 +166,7 @@ jobs:
           unauth_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
             -o "$unauth_body" -w "%{http_code}" \
             -X POST \
+            -H 'Origin: https://mmdbkk.com' \
             -H 'Content-Type: application/json' \
             --data '{"client_record_id":"rec00000000000"}' \
             'https://sigil.mmdbkk.com/v1/confirm/double-moment/start')"
