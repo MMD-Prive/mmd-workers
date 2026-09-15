@@ -248,10 +248,10 @@ jobs:
           node -e '
             const body = JSON.parse(process.argv[1]);
             if (body.ok !== true || body.worker !== "member-dashboard-chat-worker" || body.route !== "mms_line_webhook") {
-              throw new Error(`Unexpected MMS AI smoke response: ${process.argv[1]}`);
+              throw new Error(`Unexpected MMS LINE smoke response: ${process.argv[1]}`);
             }
-            if (!String(body.knowledge_version || "").startsWith("mms-ai-knowledge-v4") || body.mutation_allowed !== false) {
-              throw new Error(`Unexpected MMS AI knowledge contract: ${process.argv[1]}`);
+            if (body.configured !== true || body.ai_enabled !== true || body.rich_menu_mode !== "24/7" || body.rich_menu_publisher !== "raw-or-url-v2") {
+              throw new Error(`Unexpected canonical MMS LINE runtime contract: ${process.argv[1]}`);
             }
           ' "$mms_ai"
 
@@ -377,4 +377,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ member-dashboard-chat-worker LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- version_id: \`${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}\`\n- MMD LINE endpoint: \`https://www.mmdbkk.com/webhooks/line\`\n- MMS LINE endpoint: \`https://www.mmdbkk.com/webhooks/line/mms\`\n- MMS Therapist auth route: \`https://www.mmdbkk.com/male-massage/therapists/api/auth/*\`\n- production smoke: MMD LINE + MMS AI V4 + MMS service binding verified\n- route mutation: \`6 narrow MMS routes synced\`"
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ member-dashboard-chat-worker LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- version_id: \`${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}\`\n- MMD LINE endpoint: \`https://www.mmdbkk.com/webhooks/line\`\n- MMS LINE endpoint: \`https://www.mmdbkk.com/webhooks/line/mms\`\n- MMS Therapist auth route: \`https://www.mmdbkk.com/male-massage/therapists/api/auth/*\`\n- production smoke: MMD LINE + canonical MMS LINE runtime + MMS service binding verified\n- route mutation: \`6 narrow MMS routes synced\`"
