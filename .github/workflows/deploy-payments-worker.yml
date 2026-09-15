@@ -153,7 +153,7 @@ jobs:
           health_body="$(mktemp)"
           health_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
             -o "$health_body" -w "%{http_code}" \
-            'https://sigil.mmdbkk.com/v1/pay/double-moment/health')"
+            'https://sigil.mmdbkk.com/v1/confirm/double-moment/health')"
           cat "$health_body"
           test "$health_code" = "200"
           grep -F '"campaign_id":"promo_double_moment_sep2026"' "$health_body"
@@ -168,7 +168,7 @@ jobs:
             -X POST \
             -H 'Content-Type: application/json' \
             --data '{"client_record_id":"rec00000000000"}' \
-            'https://sigil.mmdbkk.com/v1/pay/double-moment/start')"
+            'https://sigil.mmdbkk.com/v1/confirm/double-moment/start')"
           cat "$unauth_body"
           test "$unauth_code" = "401"
           grep -F '"error":"service_auth_required"' "$unauth_body"

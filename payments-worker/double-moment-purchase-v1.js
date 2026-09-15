@@ -6,8 +6,8 @@ const PAID_AMOUNT = 20000;
 const BONUS_AMOUNT = 3500;
 const MINIMUM_SERVICE_AMOUNT = 20000;
 const VALID_DAYS = 180;
-const START_PATH = "/v1/pay/double-moment/start";
-const HEALTH_PATH = "/v1/pay/double-moment/health";
+const START_PATH = "/v1/confirm/double-moment/start";
+const HEALTH_PATH = "/v1/confirm/double-moment/health";
 const PAID_STATES = new Set(["paid", "verified", "success", "completed"]);
 const VERIFIED_STATES = new Set(["verified", "approved", "success", "completed"]);
 
