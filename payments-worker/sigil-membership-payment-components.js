@@ -90,6 +90,10 @@ export async function reconcileSigilConfirmLinkMoneyTruth(request, response, env
   if (!components) return response;
 
   const payload = await response.clone().json().catch(() => null);
+  // The canonical writer validates components before its first write and stores
+  // service money directly. Do not turn successful creation into a failed retry
+  // because a redundant post-create patch failed.
+  if (payload?.schema === "canonical_confirm_link_v1" && payload?.pricing_breakdown?.version === VERSION) return response;
   const sessionId = clean(payload?.session_id || payload?.sessionId);
   if (!sessionId) {
     return json({ ok: false, authority: "payments-worker", error: "sigil_membership_action_session_id_missing" }, 502);

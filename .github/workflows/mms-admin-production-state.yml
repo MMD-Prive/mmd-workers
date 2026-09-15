@@ -25,7 +25,7 @@ jobs:
     env:
       ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
       ORIGIN: https://mmdbkk.com
-      NEXT_PATH: /internal/admin/control-room
+      NEXT_PATH: /internal/admin/dashboard
 
     steps:
       - name: Check out repository
@@ -59,6 +59,7 @@ jobs:
           (async () => {
             const origin = process.env.ORIGIN;
             const next = process.env.NEXT_PATH;
+            const allowedHosts = new Set(['mmdbkk.com', 'www.mmdbkk.com']);
             const credential = String(process.env.ADMIN_SMOKE_CREDENTIAL || '').trim();
             const body = new URLSearchParams({ credential, next });
             const response = await fetch(`${origin}/internal/admin/login/session`, {
@@ -82,19 +83,33 @@ jobs:
               throw new Error('admin cookie must share Domain=mmdbkk.com across apex and www');
             }
             const cookiePair = setCookie.split(';', 1)[0];
-            const control = await fetch(`${origin}${next}`, {
+            let dashboardUrl = new URL(next, origin);
+            let dashboard = await fetch(dashboardUrl, {
               headers: { Cookie: cookiePair },
               redirect: 'manual',
             });
-            const controlBody = await control.text();
-            if (control.status !== 200) throw new Error(`control room expected 200, got ${control.status}`);
-            if (/\/internal\/admin\/login/.test(control.headers.get('location') || '')) {
-              throw new Error('control room bounced back to login');
+            if ([301, 302, 307, 308].includes(dashboard.status)) {
+              const location = dashboard.headers.get('location') || '';
+              if (!location) throw new Error(`owner dashboard redirect ${dashboard.status} missing location`);
+              const redirected = new URL(location, dashboardUrl);
+              if (!allowedHosts.has(redirected.hostname) || redirected.pathname !== next) {
+                throw new Error(`unexpected owner dashboard redirect: ${redirected.href}`);
+              }
+              dashboardUrl = redirected;
+              dashboard = await fetch(dashboardUrl, {
+                headers: { Cookie: cookiePair },
+                redirect: 'manual',
+              });
             }
-            if (!/Control Room|CONTROL ROOM|Owner Control|Operating System/i.test(controlBody)) {
-              throw new Error('control room marker not found after authenticated login');
+            const dashboardBody = await dashboard.text();
+            if (dashboard.status !== 200) throw new Error(`owner dashboard expected 200, got ${dashboard.status}`);
+            if (/\/internal\/admin\/login/.test(dashboard.headers.get('location') || '')) {
+              throw new Error('owner dashboard bounced back to login');
             }
-            console.log('HTTP login session -> Control Room passed.');
+            if (!/Control Room|CONTROL ROOM|Owner Control|Operating System|COMMAND CENTER|OWNER MODE/i.test(dashboardBody)) {
+              throw new Error('owner dashboard marker not found after authenticated login');
+            }
+            console.log(`HTTP login session -> Owner Dashboard passed at ${dashboardUrl.hostname}.`);
           })().catch((error) => {
             console.error(error && error.stack ? error.stack : error);
             process.exit(1);
@@ -123,6 +138,7 @@ jobs:
 
             const origin = process.env.ORIGIN;
             const next = process.env.NEXT_PATH;
+            const allowedHosts = new Set(['mmdbkk.com', 'www.mmdbkk.com']);
             const credential = String(process.env.ADMIN_SMOKE_CREDENTIAL || '').trim();
             const browser = await puppeteer.launch({
               executablePath: findChrome(),
@@ -139,7 +155,7 @@ jobs:
               page.on('response', (response) => {
                 try {
                   const url = new URL(response.url());
-                  if (url.origin === origin && url.pathname === '/v1/admin/auth/me') {
+                  if (allowedHosts.has(url.hostname) && url.pathname === '/v1/admin/auth/me') {
                     authResponses.push({ status: response.status(), url: response.url() });
                   }
                 } catch {}
@@ -160,7 +176,7 @@ jobs:
               ]);
 
               const landed = new URL(page.url());
-              if (landed.origin !== origin || landed.pathname !== next) {
+              if (!allowedHosts.has(landed.hostname) || landed.pathname !== next) {
                 throw new Error(`browser login landed at ${page.url()}`);
               }
 
@@ -212,6 +228,76 @@ jobs:
             } finally {
               await browser.close();
             }
+          })().catch((error) => {
+            console.error(error && error.stack ? error.stack : error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Issue Whisp signed confirmation links once
+        if: >-
+          github.event_name == 'workflow_run' &&
+          contains(github.event.workflow_run.head_commit.message, '[issue-whisp-confirm-links]')
+        shell: bash
+        env:
+          TARGET_SESSION_ID: sess_20260917_ems22_whisp_1630
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          (async () => {
+            const origin = process.env.ORIGIN;
+            const credential = String(process.env.ADMIN_SMOKE_CREDENTIAL || '').trim();
+            const sessionId = process.env.TARGET_SESSION_ID;
+            const loginBody = new URLSearchParams({
+              action: 'owner_login',
+              credential,
+              next: '/internal/admin/control-room',
+            });
+            const login = await fetch(`${origin}/internal/admin/login/session`, {
+              method: 'POST',
+              headers: {
+                Origin: origin,
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-MMD-Login-Fetch': '1',
+              },
+              body: loginBody.toString(),
+              redirect: 'manual',
+            });
+            if (login.status !== 200) throw new Error(`owner login failed: ${login.status}`);
+            const setCookie = login.headers.get('set-cookie') || '';
+            const cookiePair = setCookie.split(';', 1)[0];
+            if (!/^mmd_admin_gate_v1=/.test(cookiePair)) throw new Error('owner session cookie missing');
+
+            const response = await fetch(`${origin}/v1/admin/payment-issuer-diagnostic`, {
+              method: 'POST',
+              headers: {
+                Origin: origin,
+                Cookie: cookiePair,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                mode: 'issue_existing_session',
+                session_id: sessionId,
+                payment_type: 'deposit',
+                deposit_percent: 30,
+              }),
+              redirect: 'manual',
+            });
+            const payload = await response.json().catch(() => null);
+            if (response.status !== 200 || payload?.ok !== true || !['issued', 'existing_links'].includes(payload?.stage)) {
+              throw new Error(`issuer failed: ${JSON.stringify({ status: response.status, stage: payload?.stage || null, error: payload?.error || null })}`);
+            }
+            if (!payload.customer_confirmation_url_present || !payload.model_confirmation_url_present) {
+              throw new Error('issuer did not confirm both URL writes');
+            }
+            console.log(JSON.stringify({
+              ok: true,
+              stage: payload.stage,
+              session_id: payload.session_id,
+              payment_ref: payload.payment_ref || null,
+              customer_confirmation_url_present: true,
+              model_confirmation_url_present: true,
+            }));
           })().catch((error) => {
             console.error(error && error.stack ? error.stack : error);
             process.exit(1);

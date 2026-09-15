@@ -31,6 +31,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node --check admin-ai-ops-worker/src/customer-360-live-entry.js
           node --check admin-ai-ops-worker/src/index.js
           node --check admin-ai-ops-worker/src/ceo-bridge.js
           node --check admin-ai-ops-worker/src/gate.js

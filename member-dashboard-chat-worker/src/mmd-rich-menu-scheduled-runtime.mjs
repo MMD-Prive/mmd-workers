@@ -1,4 +1,5 @@
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
+import { syncLineOfcFollowers } from "./line-ofc-follower-sync.mjs";
 
 const LINE_API = "https://api.line.me/v2/bot";
 const LINE_DATA_API = "https://api-data.line.me/v2/bot";
@@ -197,6 +198,14 @@ export async function handleMmdRichMenuScheduledRequest(request, env) {
 
 export async function handleMmdRichMenuScheduled(event, env, ctx) {
   const now = new Date(event?.scheduledTime || Date.now());
-  const p = reconcileMmdRichMenus(env, now).catch(e => console.error("mmd_rich_menu_schedule_failed", clean(e?.message || e)));
+  const followerSync = syncLineOfcFollowers(env).then((result) => {
+    console.log("line_ofc_follower_sync", JSON.stringify(result));
+    return result;
+  }).catch((error) => {
+    console.error("line_ofc_follower_sync_failed", clean(error?.message || error));
+    return { ok: false, error: clean(error?.message || error) };
+  });
+  const richMenuSync = reconcileMmdRichMenus(env, now).catch(e => console.error("mmd_rich_menu_schedule_failed", clean(e?.message || e)));
+  const p = Promise.all([followerSync, richMenuSync]);
   if (ctx?.waitUntil) ctx.waitUntil(p); else await p;
 }

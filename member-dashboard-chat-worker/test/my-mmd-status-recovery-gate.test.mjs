@@ -1,7 +1,40 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import worker from "../src/my-mmd-bounded-status-front-gate.js";
+import worker, {
+  canonicalMyMmdHostRedirect,
+  withSharedPendingWishCookie,
+} from "../src/my-mmd-bounded-status-front-gate.js";
+
+test("apex My MMD canonicalizes to www and migrates an existing host-only pending Wish", () => {
+  const token = `pw_${"A".repeat(43)}`;
+  const response = canonicalMyMmdHostRedirect(new Request("https://mmdbkk.com/member/my-mmd?from=care-back", {
+    headers: { cookie: `mmd_care_back_wish_link=${token}` },
+  }));
+
+  assert.ok(response);
+  assert.equal(response.status, 308);
+  assert.equal(response.headers.get("location"), "https://www.mmdbkk.com/member/my-mmd?from=care-back");
+  assert.equal(response.headers.get("x-mmd-my-mmd-canonical-host"), "www.mmdbkk.com");
+  assert.equal(response.headers.get("x-mmd-care-back-wish-cookie-migrated"), "true");
+  const setCookie = response.headers.get("set-cookie") || "";
+  assert.match(setCookie, new RegExp(`mmd_care_back_wish_link=${token}`));
+  assert.match(setCookie, /Domain=mmdbkk\.com/i);
+  assert.match(setCookie, /mmd_care_back_wish_link=; Max-Age=0; Path=\//i);
+});
+
+test("CARE BACK pending-Wish response cookies are shared across apex and www", () => {
+  const response = withSharedPendingWishCookie(new Response("{}", {
+    status: 200,
+    headers: {
+      "content-type": "application/json",
+      "set-cookie": "mmd_care_back_wish_link=pw_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdef; Max-Age=2592000; Path=/; Secure; SameSite=Lax",
+    },
+  }));
+
+  assert.equal(response.headers.get("x-mmd-care-back-wish-cookie-scope"), "parent-domain-v1");
+  assert.match(response.headers.get("set-cookie") || "", /Domain=mmdbkk\.com/i);
+});
 
 test("customer status recovery verifies the LINE session, hard-stops after 12 seconds, and renders one non-overlapping status surface", async () => {
   const runtime = {
@@ -69,6 +102,7 @@ test("My MMD serves the pending public-Wish coupon bridge as same-origin behavio
   assert.match(js, /\/member\/api\/care-back\/link-wish/);
   assert.match(js, /if \(response\.status === 401\) return/);
   assert.match(js, /mmd:care-back:coupon-linked/);
+  assert.match(js, /Domain=mmdbkk\.com/);
   assert.match(js, /window\.location\.reload\(\)/);
 });
 

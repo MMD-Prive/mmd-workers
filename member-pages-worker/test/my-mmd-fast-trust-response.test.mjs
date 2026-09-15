@@ -119,3 +119,14 @@ test("non trusted rename leaves response unchanged", async () => {
   assert.deepEqual(await patched.json(), original);
   assert.equal(patched.headers.get("x-mmd-fast-trust"), null);
 });
+
+
+test("Fast Trust cannot override fresh canonical grace or a blocked member", async () => {
+  const env = await makeEnv("โจ SVIP");
+  for (const status of ["blocked", "suspended", "revoked", "expired", "pending_review", "grace"]) {
+    const original = { level: "vip", status, access: "restricted" };
+    const response = Response.json(original, { headers: status === "grace" ? { "x-mmd-member-display-authority": "my_mmd_entitlement_resolver_v1" } : {} });
+    const patched = await applyMyMmdFastTrustResponse(request("/api/member/app/membership"), response, env);
+    assert.deepEqual(await patched.json(), original);
+  }
+});

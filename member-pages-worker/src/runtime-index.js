@@ -3,9 +3,15 @@ import { rewritePendingStatusStartResponse } from "./liff-status-resolution-guar
 import { isDriveBootstrapCandidate, tryDriveMemberBootstrap } from "./drive-member-bootstrap-runtime.js";
 import { isDriveReconcileRequest, handleDriveReconcile } from "./drive-access-reconcile.js";
 import { withDriveBootstrapDiagnostic } from "./drive-bootstrap-debug.js";
+import { withDashboardLiffChannelCompatibility } from "./liff-dashboard-channel-compat.js";
 import { withStatusFirstMemberResolver } from "./liff-status-first-member-resolver.js";
 import { applyMyMmdFastTrustResponse } from "./my-mmd-fast-trust-response.js";
+import { recoverVerifiedLiffStartAsPendingIdentity } from "./liff-start-pending-identity-fallback.js";
 import { attachTraceId, createLiffResolutionTrace, createLiffShellBoundaryTrace } from "./liff-resolution-trace.js";
+import {
+  handleMemberClientCredits,
+  isMemberClientCreditsRequest,
+} from "./member-app-client-credits.js";
 import {
   handleTrustedCareBackBookingApproval,
   isTrustedCareBackBookingApproval,
@@ -18,9 +24,19 @@ import {
   handleKenjiLineMemberTruthHealth,
   isKenjiLineMemberTruthHealthRequest,
 } from "./kenji-line-member-truth-health.js";
+import {
+  handleModelDriveDirectoryRequest,
+  isModelDriveDirectoryRequest,
+} from "./model-drive-directory.js";
+import {
+  handlePrivatePreview,
+  isPrivatePreviewRequest,
+  PrivatePreviewGate,
+} from "./private-preview.js";
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-durable-object.js";
+export { PrivatePreviewGate };
 
 const CARE_BACK_WEBVIEW_PATHS = new Set([
   "/member/api/care-back/public-wish",
@@ -57,6 +73,17 @@ export function normalizeCareBackWebViewOrigin(request) {
 export default {
   async fetch(request, env, ctx) {
     request = normalizeCareBackWebViewOrigin(request);
+    // Service-binding-only model inventory discovery. The synthetic hostname is
+    // never routed publicly, so Drive credentials and inventory remain backend-only.
+    if (isModelDriveDirectoryRequest(request)) {
+      return handleModelDriveDirectoryRequest(request, env);
+    }
+    if (isMemberClientCreditsRequest(request)) {
+      return handleMemberClientCredits(request, env);
+    }
+    if (isPrivatePreviewRequest(request)) {
+      return handlePrivatePreview(request, env);
+    }
     if (isKenjiLineMemberTruthHealthRequest(request)) {
       return handleKenjiLineMemberTruthHealth(request, env);
     }
@@ -70,18 +97,36 @@ export default {
 
     const shellBoundary = createLiffShellBoundaryTrace(request, env, ctx);
     const trace = createLiffResolutionTrace(request, env, ctx);
-    const runtimeEnv = withStatusFirstMemberResolver(request, env);
+    const channelCompatibleEnv = withDashboardLiffChannelCompatibility(request, env);
+    const runtimeEnv = withStatusFirstMemberResolver(request, channelCompatibleEnv);
     const firstRequest = request.clone();
     const bootstrapRequest = request.clone();
     let firstResponse = await worker.fetch(firstRequest, runtimeEnv, ctx);
     firstResponse = await applyMyMmdFastTrustResponse(request, firstResponse, env);
+    let firstPayload = await jsonPayload(firstResponse);
+
+    const recoveredResponse = await recoverVerifiedLiffStartAsPendingIdentity({
+      request,
+      response: firstResponse,
+      payload: firstPayload,
+      worker,
+      env: runtimeEnv,
+      ctx,
+    });
+    if (recoveredResponse !== firstResponse) {
+      firstResponse = recoveredResponse;
+      firstPayload = await jsonPayload(firstResponse);
+      trace?.event("member_resolution", "pending_identity", "resolver_unavailable_session_preserved", {
+        http_status: firstResponse.status,
+        member_resolved: false,
+        pending_identity: true,
+      });
+    }
 
     if (shellBoundary) {
       shellBoundary.finish(firstResponse);
       firstResponse = shellBoundary.attach(firstResponse);
     }
-
-    const firstPayload = await jsonPayload(firstResponse);
 
     if (trace) {
       trace.event("member_status", firstResponse.ok ? "complete" : "failed", firstPayload?.error?.code || "", {

@@ -8,6 +8,7 @@ import {
   classifyModelSchemaPatchV1AirtableError,
   default as worker,
   isVerifiedDepositRecord,
+  resolvePrivatePreviewPolicy,
   modelSchemaPatchV1Tables,
   validateModelSchemaPatchV1Payload,
 } from "./src/index.js";
@@ -219,6 +220,7 @@ function privateFlashRequest(body) {
     body: JSON.stringify({
       model_id: "recModel",
       client_id: "recClient",
+      preview_kind: "private_pic",
       ...body,
     }),
   });
@@ -245,3 +247,27 @@ function jsonResponse(data, status = 200) {
     headers: { "content-type": "application/json" },
   });
 }
+
+
+test("private picture preview is fixed to three seconds and one view", () => {
+  assert.deepEqual(resolvePrivatePreviewPolicy({ preview_kind: "private_pic", duration_sec: 999, view_limit: 9 }), {
+    preview_kind: "private_pic",
+    duration_sec: 3,
+    view_limit: 1,
+    consume_on: "open",
+  });
+});
+
+test("private clip preview is one play and consumes at playback start", () => {
+  assert.deepEqual(resolvePrivatePreviewPolicy({ preview_kind: "private_clip", view_limit: 9 }), {
+    preview_kind: "private_clip",
+    duration_sec: 0,
+    view_limit: 1,
+    consume_on: "play_start",
+  });
+});
+
+test("private preview fails closed when kind is missing or unknown", () => {
+  assert.throws(() => resolvePrivatePreviewPolicy({}), /preview_kind must be private_pic or private_clip/);
+  assert.throws(() => resolvePrivatePreviewPolicy({ preview_kind: "other" }), /preview_kind must be private_pic or private_clip/);
+});

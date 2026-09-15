@@ -154,6 +154,28 @@ test("HENNA summary exposes operational intake context but never orientation/con
   assert.equal(message.includes(payload.sexual_orientation), false);
 });
 
+test("nationwide intake does not require legacy Bangkok matching zones", () => {
+  const payload = applicationPayload({
+    ...applicationInput,
+    base_zone: undefined,
+    coverage_zones: undefined,
+  });
+  assert.equal(payload.base_zone, "");
+  assert.deepEqual(payload.coverage_zones, []);
+  assert.equal(payload.mobility_scope, "ทั่วประเทศตามตกลง");
+});
+
+test("Telegram notification contains only a non-sensitive application reference", () => {
+  const payload = applicationPayload(applicationInput);
+  const message = applicationTelegramMessage(payload, { application_id: "mmsapp_1234567890abcdef12345678" });
+  assert.match(message, /mmsapp_1234567890abcdef12345678/);
+  assert.equal(message.includes(payload.applicant_name), false);
+  assert.equal(message.includes(payload.work_base_area), false);
+  assert.equal(message.includes(payload.phone), false);
+  assert.equal(message.includes(payload.line_id), false);
+  assert.equal(message.includes(payload.sexual_orientation), false);
+});
+
 test("application rejects orientation without separate consent", () => {
   assert.throws(() => applicationPayload({ ...applicationInput, sensitive_consent: false }), /sensitive_consent is required/);
 });

@@ -139,5 +139,7 @@ test("rejects unsafe or unsupported intake source", () => {
   }, 0), /HISTORY_SOURCE_REF_LOOKS_SECRET/);
 });
 
-// Keep the MMS mirror tests inside the canonical history-intake CI command.
+// Keep the MMS mirror tests and LINE OFC profile-note regression tests inside
+// the canonical history-intake CI command.
 require("./mms-history-evidence-intake.test.js");
+require("./normalize-line-official-export.test.js");

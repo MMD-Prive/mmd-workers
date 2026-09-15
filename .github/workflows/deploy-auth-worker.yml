@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate-and-deploy:
@@ -177,9 +177,17 @@ jobs:
             "deployed_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
           EOF
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add deployments/auth-worker-last.json
-          git commit -m "chore(deploy): record mmd-auth-worker production deploy" || exit 0
-          git pull --rebase origin main
-          git push origin HEAD:main
+          {
+            echo "### mmd-auth-worker deployment receipt"
+            echo '```json'
+            cat deployments/auth-worker-last.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload deployment receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: mmd-auth-worker-deploy-${{ github.run_id }}
+          path: deployments/auth-worker-last.json
+          if-no-files-found: error
+          retention-days: 30

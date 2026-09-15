@@ -8,6 +8,7 @@ if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
 const SESSION = "/internal/admin/login/session";
 const NEXT = "/internal/admin/control-room";
+const DASHBOARD = "/internal/admin/dashboard";
 
 function runtimeEnv(env = {}) {
   return {
@@ -55,7 +56,9 @@ test("active entrypoint accepts established ADMIN_BEARER when dedicated browser 
     ADMIN_BEARER: "owner_admin_bearer",
   });
   assert.equal(response.status, 303);
-  assert.equal(response.headers.get("location"), NEXT);
+  assert.equal(response.headers.get("location"), `https://mmdbkk.com${DASHBOARD}`);
+  assert.equal(response.headers.get("x-mmd-admin-next"), DASHBOARD);
+  assert.equal(response.headers.get("x-mmd-admin-post-login"), "dashboard-first");
   assert.match(response.headers.get("set-cookie") || "", /^mmd_admin_gate_v1=/);
 });
 
@@ -68,6 +71,7 @@ test("dedicated browser credential stays authoritative when configured", async (
   const dedicated = await login("dedicated_browser_code", env);
   const bearer = await login("owner_admin_bearer", env);
   assert.equal(dedicated.status, 303);
+  assert.equal(dedicated.headers.get("location"), `https://mmdbkk.com${DASHBOARD}`);
   assert.equal(bearer.status, 401);
   assert.equal(bearer.headers.get("set-cookie"), null);
 });
@@ -109,6 +113,7 @@ test("active entrypoint recovers a valid owner session when a duplicate stale co
   };
   const loginResponse = await login("dedicated_browser_code", env);
   assert.equal(loginResponse.status, 303);
+  assert.equal(loginResponse.headers.get("location"), `https://mmdbkk.com${DASHBOARD}`);
   const validCookie = cookiePair(loginResponse);
   assert.match(validCookie, /^mmd_admin_gate_v1=/);
 

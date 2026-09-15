@@ -246,7 +246,7 @@ function buildJobFields(body, canonical, ids) {
   const start = clean(body?.start_time || details?.start_time);
   const end = clean(body?.end_time || details?.end_time);
   const location = clean(body?.location_name || details?.location_name);
-  const amount = Number(body?.amount_thb || payment?.amount_thb || 0);
+  const amount = Number(body?.service_amount_thb ?? payment?.service_amount_thb ?? body?.amount_thb ?? payment?.amount_thb ?? 0);
 
   const noteParts = [
     clientName ? `Client snapshot: ${clientName}` : "",
@@ -443,7 +443,7 @@ export function preservePartnerSnapshot(existingNote, body = {}) {
     recorded_at: new Date().toISOString(),
     partner_relationship: relationship || null,
     partner_attribution: attribution || null,
-    model_payout_thb: body.pay_model_thb ?? null,
+    model_payout_thb: body.model_payout_thb ?? body.pay_model_thb ?? relationship?.model_payout_thb ?? null,
   };
   return [note, PARTNER_SNAPSHOT_MARKER, JSON.stringify(snapshot)].filter(Boolean).join("\n");
 }

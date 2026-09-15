@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { handleMemberAppApi } from "../src/member-app-api.js";
+import {
+  applyMyMmdCanonicalEntitlementResponse,
+  projectCanonicalContactProfile,
+} from "../src/my-mmd-canonical-entitlement-bridge.js";
 
 const SECRET = "test-only-liff-session-secret-1234567890";
 const TOKEN = "client-history-session-token";
@@ -110,4 +114,68 @@ test("/api/member/app/history can read verified Client-linked history without wi
   assert.deepEqual(body.map((item) => item.kind), ["booking", "payment"]);
   assert.equal(session.member_exists, false);
   assert.equal(session.member_id, null);
+});
+
+test("verified-empty canonical history stays checking when Client history lookup fails", async () => {
+  const hash = await digest(SECRET, `session:${TOKEN}`);
+  const session = { line_user_id: LINE_ID, member_exists: true, member_id: "test-member", expires_at: Date.now() + 60_000 };
+  for (const failedTable of ["Clients", "Sessions", "Payments"]) {
+    const working = airtableBinding();
+    const env = {
+      LIFF_SESSION_SECRET: SECRET,
+      LIFF_IDENTITY_KV: new MemoryKv([[`liff:session:${hash}`, JSON.stringify(session)]]),
+      AIRTABLE_API_KEY: "pat-test", AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg",
+      AIRTABLE_HTTP: { async fetch(request) {
+        if (new URL(request.url).pathname.endsWith(`/${failedTable}`)) return Response.json({ error: "unavailable" }, { status: 503 });
+        return working.fetch(request);
+      } },
+    };
+    const delegate = { async fetch() { return Response.json({ ok: true, data: {
+      history: { status: "empty", events: [] }, payment_history: { status: "empty", records: [] },
+    } }); } };
+    const response = await handleMemberAppApi(new Request("https://mmdbkk.com/api/member/app/history", {
+      headers: { cookie: `__Host-mmd_liff_session=${TOKEN}` },
+    }), env, delegate);
+    assert.deepEqual(await response.json(), { state: "checking", items: [] }, failedTable);
+  }
+});
+
+test("canonical Client contact profile exposes approved contact fields without leaking line_user_id", () => {
+  const rawLineUserId = `U${"c".repeat(32)}`;
+  assert.deepEqual(projectCanonicalContactProfile({
+    "Contact Email": "BHUTORN@GMAIL.COM",
+    "Phone Number": "086-997-2737",
+    username: "Bhutorn",
+    line_user_id: rawLineUserId,
+    telegram_username: "@garry23892",
+  }), {
+    email: "bhutorn@gmail.com",
+    phone: "0869972737",
+    lineHandle: "Bhutorn",
+    telegramUsername: "garry23892",
+    telegramName: null,
+    source: "canonical_client",
+    reviewState: "verified",
+  });
+
+  assert.equal(projectCanonicalContactProfile({ username: rawLineUserId, telegram_username: "@username" }), null);
+});
+
+test("profile response carries canonical contactProfile without changing entitlement state", async () => {
+  const contactProfile = projectCanonicalContactProfile({
+    email: "bhutorn@gmail.com",
+    "Phone Number": "0869972737",
+    username: "Bhutorn",
+    telegram_username: "garry23892",
+  });
+  const request = new Request("https://mmdbkk.com/api/member/app/profile");
+  const response = await applyMyMmdCanonicalEntitlementResponse(
+    request,
+    Response.json({ display_name: "คุณ เอ็ม", membership_status: "active" }),
+    { contactProfile },
+  );
+  const body = await response.json();
+  assert.deepEqual(body.contactProfile, contactProfile);
+  assert.equal(body.membership_status, "active");
+  assert.equal(JSON.stringify(body).includes(`U${"c".repeat(32)}`), false);
 });

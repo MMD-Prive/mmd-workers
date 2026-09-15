@@ -1,23 +1,19 @@
 name: Deploy LINE group image capture
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "member-dashboard-chat-worker/**"
-      - ".github/workflows/deploy-line-group-image-capture.yml"
+  workflow_run:
+    workflows:
+      - "Deploy member-dashboard-chat-worker"
+    types:
+      - completed
   workflow_dispatch:
-
-concurrency:
-  group: deploy-member-dashboard-chat-worker-production
-  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  ensure-storage-and-deploy:
+  validate-storage-and-smoke:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -29,6 +25,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -62,10 +60,6 @@ jobs:
             cat "$create_log" >&2
             exit 1
           fi
-
-      - name: Deploy member-dashboard-chat-worker
-        working-directory: member-dashboard-chat-worker
-        run: npx --yes wrangler@4 deploy --keep-vars
 
       - name: Smoke production LINE owner
         shell: bash

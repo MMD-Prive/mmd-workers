@@ -268,6 +268,14 @@ pattern = "www.mmdbkk.com/v1/admin/payments/review-queue*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
+pattern = "mmdbkk.com/v1/admin/payments/evidence*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/payments/evidence*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
 pattern = "mmdbkk.com/v1/admin/payments/review"
 zone_name = "mmdbkk.com"
 
@@ -591,7 +599,24 @@ service = "events-worker"
 binding = "PAYMENTS_WORKER"
 service = "payments-worker"
 
+# Historical Recovery uses the same private production extractor as live LINE intake.
+[[services]]
+binding = "SLIP_EXTRACTOR"
+service = "mmd-slip-extractor"
+
+# Model Link searches approved Drive folders through member-pages-worker only.
+# Keeping this private service binding avoids secret drift between Workers.
+[[services]]
+binding = "MODEL_DRIVE_DIRECTORY"
+service = "member-pages-worker"
+
 # ใช้สำหรับ CORS (browser calls)
+# Private scheduling bridge for Admin Calendar diagnostics.
+# No public credential is exposed; the downstream Worker remains independently deployable.
+[[services]]
+binding = "CAL_SYNC_WORKER"
+service = "cal-sync-worker"
+
 [vars]
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdmodel.lovable.app"
 # Exact cross-site origin used by the current Lovable Model Hub preview. Its model
@@ -718,6 +743,10 @@ bucket_name = "mmd-models"
 [[r2_buckets]]
 binding = "PUBLIC_MODEL_UPLOADS_R2"
 bucket_name = "mmd-private-public-model-uploads"
+
+[[r2_buckets]]
+binding = "LINE_SLIP_EVIDENCE"
+bucket_name = "mmd-line-slip-evidence"
 
 # ---- Secrets (set via wrangler secret) ----
 # ADMIN_LOGIN_CREDENTIAL

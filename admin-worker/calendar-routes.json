@@ -1,0 +1,10 @@
+{
+  "worker": "admin-worker",
+  "description": "Calendar routes installed by Calendar Production Connection after a successful admin-worker deployment. Runtime paths remain exact after one optional trailing slash. The suffix wildcard admits date query strings; no broad admin ownership is claimed.",
+  "patterns": [
+    "mmdbkk.com/internal/admin/calendar*",
+    "www.mmdbkk.com/internal/admin/calendar*",
+    "mmdbkk.com/v1/admin/calendar*",
+    "www.mmdbkk.com/v1/admin/calendar*"
+  ]
+}

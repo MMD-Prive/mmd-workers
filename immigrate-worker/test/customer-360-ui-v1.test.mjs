@@ -26,12 +26,16 @@ try {
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-mmd-customer-ui"), "customer-360-v1");
   assert.equal(response.headers.get("x-mmd-customer-authority"), "canonical-client-reviewed-match");
-  assert.equal(response.headers.get("x-mmd-customer-data-ui"), "readable-v2");
+  assert.equal(response.headers.get("x-mmd-customer-data-ui"), "readable-v3");
   assert.equal(response.headers.get("x-mmd-customer-data-authority"), "identity-context-staging-only");
+  assert.equal(response.headers.get("x-mmd-customer-ux"), "owner-readable-v7");
   assert.equal(response.headers.get("cache-control"), "no-store, private");
 
   assert.match(body, /Customer 360/);
-  assert.match(body, /WHO → EVIDENCE → CONTEXT → REVIEW → NEXT ACTION/);
+  assert.match(body, /ลูกค้า → ตัวตน → ตรวจ → ทำต่อ/);
+  assert.match(body, /ค้นลูกค้า ตรวจว่าตัวตนตรงกัน/);
+  assert.match(body, /ต้องตรวจ/);
+  assert.match(body, /ตัดสินใจเรื่องตัวตน/);
   assert.match(body, /\/v1\/admin\/customer-data\/queue/);
   assert.match(body, /\/v1\/admin\/customer-data\/backfill\/start/);
   assert.match(body, /\/v1\/admin\/clients\/lineage-lookup/);
@@ -40,10 +44,10 @@ try {
   assert.match(body, /create_candidate_only/);
   assert.match(body, /mark_review_required/);
   assert.match(body, /data-action="ignore"/);
-  assert.match(body, /Create Session/);
-  assert.match(body, /Kenji Context/);
-  assert.match(body, /Money Control/);
-  assert.match(body, /Access Intelligence/);
+  assert.match(body, /\/internal\/admin\/jobs\/create-job/);
+  assert.match(body, /สร้างงาน/);
+  assert.match(body, /การชำระเงิน/);
+  assert.match(body, /สิทธิ์สมาชิก/);
   assert.match(body, /Canonical Client = identity truth/);
   assert.match(body, /Payments worker = money truth/);
   assert.match(body, /Resolver = access truth/);

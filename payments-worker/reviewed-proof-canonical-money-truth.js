@@ -1,7 +1,7 @@
 import { awardBasePointsPhase1 } from "./points-phase1.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
-const RECOVERY_PRICES = Object.freeze({ standard: 1000, premium: 2500 });
+const RECOVERY_PRICES = Object.freeze({ standard: new Set([499, 799, 1000]), premium: new Set([999, 1999, 2500]) });
 
 export function isEmailLessLineRenewalMoneyTruth(body = {}) {
   const stage = clean(body.payment_stage || body.stage || body.payment_type).toLowerCase();
@@ -27,8 +27,8 @@ export async function commitEmailLessLineRenewalMoneyTruth(env = {}, body = {}) 
     if (!packageCode) throw httpError(400, "package_code_required_for_membership_payment");
     if (!memberId) throw httpError(409, "recovered_member_id_required");
 
-    const expectedPrice = RECOVERY_PRICES[packageCode];
-    if (!expectedPrice || Math.abs(expectedPrice - amountThb) > 0.009) {
+    const expectedPrices = RECOVERY_PRICES[packageCode];
+    if (!expectedPrices || !expectedPrices.has(amountThb)) {
       throw httpError(409, "recovery_package_amount_mismatch");
     }
 

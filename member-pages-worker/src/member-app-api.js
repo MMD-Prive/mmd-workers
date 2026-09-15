@@ -1,5 +1,6 @@
 import liffFoundation from "./liff-identity-foundation.js";
-import { readClientBackedHistory } from "./member-app-client-history.js";
+import { readClientBackedHistoryResult } from "./member-app-client-history.js";
+import { handleMemberAppSessionApi, isMemberAppSessionPath } from "./member-app-session.js";
 
 const API_PREFIX = "/api/member/app/";
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -29,7 +30,7 @@ function normalizePath(value) {
 
 export function isMemberAppApiPath(input) {
   const url = input instanceof URL ? input : new URL(String(input));
-  return ROUTES.has(normalizePath(url.pathname));
+  return ROUTES.has(normalizePath(url.pathname)) || isMemberAppSessionPath(url);
 }
 
 function methodNotAllowed() {
@@ -66,9 +67,12 @@ function asNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function normalizeLevel(value) {
+export function normalizeLevel(value) {
   const key = asString(value, 64).toLowerCase().replace(/[\s_-]+/g, " ");
-  if (["guest", "visitor", "public"].includes(key)) return "guest";
+  if (["guest", "visitor"].includes(key)) return "guest";
+  if (["public", "public member", "mmd member", "mmd_member", "public_member"].includes(key)) return "public_member";
+  if (["elite", "elite member", "elite_membership"].includes(key)) return "elite";
+  if (["red", "red card", "red_card"].includes(key)) return "red_card";
   if (["7 days", "7 day", "7d", "trial", "trial 7d"].includes(key)) return "trial_7d";
   if (["standard", "lite"].includes(key)) return "standard";
   if (key === "premium") return "premium";
@@ -81,7 +85,7 @@ function normalizeLevel(value) {
 function normalizeStatus(value) {
   const key = asString(value, 64).toLowerCase().replace(/[\s-]+/g, "_");
   if (["active", "grace", "expired", "pending_review", "suspended", "blocked", "revoked"].includes(key)) return key;
-  if (key === "pending") return "pending_review";
+  if (["pending", "under_review"].includes(key)) return "pending_review";
   return "checking";
 }
 
@@ -139,7 +143,7 @@ async function hmacHex(secret, value) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function readMemberAppSession(request, env = {}) {
+export async function readMemberAppSession(request, env = {}) {
   const store = env.LIFF_IDENTITY_KV;
   const secret = String(env.LIFF_SESSION_SECRET || "");
   const token = cookieValue(request, SESSION_COOKIE);
@@ -347,9 +351,9 @@ function membershipFromDashboard(data) {
     levelVerified: tier.status === "verified" && level !== "unknown",
     status: status.status === "verified" ? normalizeStatus(status.value) : "checking",
     packageLabel: null,
-    renewalDueAt: null,
+    renewalDueAt: asString(member.membership_expires_at, 40) || null,
     renewalState: "unknown",
-    access: "checking",
+    access: ["blocked", "suspended", "revoked", "expired"].includes(status.value) && status.status === "verified" ? "restricted" : "checking",
   };
 }
 
@@ -382,7 +386,7 @@ function nextActionFor(lifecycle) {
 function enrichMembership(baseMembership, session, legacy) {
   const membership = { ...baseMembership };
   const canonicalLevel = membership.levelVerified === true && membership.level !== "unknown";
-  const expiry = asString(session?.memberProfile?.membership_expires_at, 40) || null;
+  const expiry = baseMembership.renewalDueAt || asString(session?.memberProfile?.membership_expires_at, 40) || null;
   let displayOnly = false;
 
   if (!canonicalLevel && legacy && legacy.level !== "unknown") {
@@ -437,8 +441,11 @@ function pointsSummaryFromDashboard(data) {
 
 function pointsLedgerFromDashboard(data) {
   const history = asObject(data.history);
-  if (!Array.isArray(history.events)) return [];
-  return history.events.flatMap((event, index) => {
+  const points = asObject(data.points);
+  const dedicated = Array.isArray(points.history);
+  const events = dedicated ? points.history.map((item) => ({ ...item, type: "points" })) : history.events;
+  if (!Array.isArray(events) || (dedicated ? points.status !== "verified" : history.status !== "verified")) return [];
+  return events.flatMap((event, index) => {
     const item = asObject(event);
     if (asString(item.type, 40).toLowerCase() !== "points") return [];
     const delta = asNumber(item.points_delta);
@@ -449,7 +456,7 @@ function pointsLedgerFromDashboard(data) {
       label: asString(item.title, 160) || "MMD Points",
       delta,
       balanceAfter: null,
-      state: "confirmed",
+      state: ["posted", "verified", "confirmed"].includes(asString(item.status, 40)) ? "confirmed" : "pending",
     }];
   });
 }
@@ -590,9 +597,31 @@ async function adaptDashboard(request, env, delegate) {
 }
 
 async function adaptProfile(request, env, delegate) {
+  const sessionSnapshot = await readMemberAppSession(request, env);
   const result = await readUpstream(request, env, delegate, "/member/api/liff/profile");
   if (!result.ok) return result.response;
-  return responseFrom(result.upstream, identityFromProfile(asObject(result.payload.data)));
+  const profile = asObject(result.payload.data);
+  const status = normalizeStatus(profile.membership_status);
+  const matched = (sessionSnapshot?.memberExists === true || Boolean(profile.member_id)) && !["checking", "pending_review"].includes(status);
+  const count = asNumber(profile.points_records_count);
+  const points = count !== null && Number.isInteger(count) && count >= 0 ? asNumber(profile.points) : null;
+  return responseFrom(result.upstream, {
+    ...identityFromProfile(profile),
+    match_state: matched ? "matched" : "pending_review",
+    member_display_name: asString(profile.display_name, 120) || null,
+    line_display_name: asString(profile.line_display_name, 120) || null,
+    line_connected: true,
+    membership_tier: matched ? normalizeLevel(profile.tier) : null,
+    membership_status: matched ? status : null,
+    points_confirmed: matched ? points : null,
+    active_through: matched ? asString(profile.membership_expires_at, 40) || null : null,
+    member_since: asString(profile.membership_start, 40) || null,
+    verified_service_count: null,
+    service_history_summary: { items: matched ? (Array.isArray(profile.history) ? profile.history : [])
+      .filter((item) => item.type === "service" && ["completed", "verified"].includes(item.status))
+      .map((item, index) => ({ id: `service-${index + 1}`, occurred_at: item.date, title: item.title, status_label: item.status })) : [] },
+    actual_access: ["blocked", "suspended", "revoked", "expired"].includes(status) ? "restricted" : "checking",
+  });
 }
 
 async function adaptMembership(request, env, delegate) {
@@ -626,21 +655,33 @@ async function adaptPoints(request, env, delegate) {
       });
     }
   }
-  return responseFrom(result.upstream, { summary, ledger });
+  return responseFrom(result.upstream, {
+    state: summary.confirmedBalance === null ? "checking" : "resolved",
+    summary, ledger,
+  });
 }
 
 async function adaptHistory(request, env, delegate) {
   const sessionSnapshot = await readMemberAppSession(request, env);
   const result = await readUpstream(request, env, delegate, "/api/member/dashboard");
   if (!result.ok) return result.response;
-  const items = historyFromDashboard(asObject(result.payload.data));
+  const data = asObject(result.payload.data);
+  const items = historyFromDashboard(data);
+  if (items.length === 0 && sessionSnapshot?.lineUserId) {
+    const linkedHistory = await readClientBackedHistoryResult(env, sessionSnapshot.lineUserId);
+    if (linkedHistory.items.length) return responseFrom(result.upstream, linkedHistory.items);
+    if (linkedHistory.state !== "resolved") return responseFrom(result.upstream, { state: "checking", items: [] });
+  }
   if (items.length === 0) {
     const legacy = await legacyForRecoveryCheck(request, env);
     if (legacy?.historicalServiceEvidence) {
       return responseFrom(result.upstream, { state: "checking", items: [] });
     }
   }
-  return responseFrom(result.upstream, items);
+  if (items.length) return responseFrom(result.upstream, items);
+  const complete = ["verified", "empty"].includes(data.history?.status)
+    && ["verified_history", "empty"].includes(data.payment_history?.status);
+  return responseFrom(result.upstream, { state: complete ? "resolved" : "checking", items: [] });
 }
 
 async function adaptCoupons(request, env, delegate) {
@@ -656,6 +697,7 @@ async function adaptCare(request, env, delegate) {
 }
 
 export async function handleMemberAppApi(request, env = {}, delegate = liffFoundation) {
+  if (isMemberAppSessionPath(request.url)) return handleMemberAppSessionApi(request, env, readMemberAppSession);
   if (request.method !== "GET") return methodNotAllowed();
   const path = normalizePath(new URL(request.url).pathname);
   if (!ROUTES.has(path)) return routeNotFound();

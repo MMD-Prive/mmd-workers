@@ -28,6 +28,11 @@ export default {
       return firstResponse;
     }
 
+    const currentProfile = firstPayload.data.profile;
+    const snapshot = firstPayload.data.entitlement_snapshot || currentProfile?.entitlement_snapshot;
+    const currentStatus = currentProfile?.customer_360?.member?.membership_status || currentProfile?.membership_status;
+    if (snapshot?.member_blocked === true || ["blocked", "suspended", "revoked", "expired", "under_review", "pending_review"].includes(currentStatus)) return firstResponse;
+
     const body = await inspectRequest.json().catch(() => null);
     const lineUserId = canonicalLineId(body?.line_user_id);
     if (!lineUserId) return withRecoveryHeader(firstResponse, "invalid_line_identity");
@@ -163,6 +168,7 @@ export function overlayFastTrustProfile(existingProfile, { label, displayName, m
   const existing = existingProfile && typeof existingProfile === "object" && !Array.isArray(existingProfile)
     ? existingProfile
     : {};
+  if (["blocked", "suspended", "revoked", "expired", "under_review", "pending_review"].includes(existing.customer_360?.member?.membership_status || existing.membership_status)) return existing;
   const existing360 = existing.customer_360 && typeof existing.customer_360 === "object" && !Array.isArray(existing.customer_360)
     ? existing.customer_360
     : {};
@@ -189,8 +195,8 @@ export function overlayFastTrustProfile(existingProfile, { label, displayName, m
     membership_status: "active",
     membership_start: existing.membership_start || null,
     membership_expires_at: existing.membership_expires_at || null,
-    points: Number.isFinite(Number(existing.points)) ? Number(existing.points) : null,
-    points_records_count: Number.isInteger(Number(existing.points_records_count)) ? Number(existing.points_records_count) : null,
+    points: existing.points != null && String(existing.points).trim() !== "" && Number.isFinite(Number(existing.points)) ? Number(existing.points) : null,
+    points_records_count: existing.points_records_count != null && String(existing.points_records_count).trim() !== "" && Number.isInteger(Number(existing.points_records_count)) ? Number(existing.points_records_count) : null,
     payment_status: existing.payment_status || "unavailable",
     payment_history: Array.isArray(existing.payment_history) ? existing.payment_history : [],
     history: Array.isArray(existing.history) ? existing.history : [],

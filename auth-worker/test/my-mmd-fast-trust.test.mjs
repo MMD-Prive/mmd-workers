@@ -69,3 +69,14 @@ test("Fast Trust overlay activates tier but does not fabricate history or points
   assert.equal(profile.points_records_count, null);
   assert.deepEqual(profile.history, []);
 });
+
+
+test("Fast Trust preserves explicit restrictions and unresolved null Points", () => {
+  for (const membership_status of ["blocked", "suspended", "revoked", "expired", "pending_review"]) {
+    const profile = { membership_status, tier: "Premium", points: 14, points_records_count: 1 };
+    assert.deepEqual(overlayFastTrustProfile(profile, { label: "SVIP" }), profile);
+  }
+  const unknown = overlayFastTrustProfile({ points: null, points_records_count: null }, { label: "VIP" });
+  assert.equal(unknown.points, null);
+  assert.equal(unknown.points_records_count, null);
+});

@@ -42,6 +42,7 @@ try {
   assert.equal(response.headers.get("x-mmd-command-center"), "p0");
   assert.equal(response.headers.get("x-mmd-command-center-flow"), "ask-needs-per-prepared-watching");
   assert.equal(response.headers.get("x-mmd-ai-ops-layer"), "v3");
+  assert.equal(response.headers.get("x-mmd-control-room-safety-location"), "v1");
 
   // Visible owner surface remains compact and task-first.
   assert.match(body, /MMD PRIVÉ/);
@@ -67,6 +68,11 @@ try {
   assert.match(body, /Action Card/);
   assert.match(body, /หน้าที่เปอร์ใช้จริง/);
   assert.match(body, /\/v1\/admin\/ai-ops\/client\.js\?v=3/);
+
+  // Safety Location is a pinned additive owner control; backend remains authority.
+  assert.match(body, /data-mmd-control-room-safety-location="v1"/);
+  assert.match(body, /7e00a7696c9c8bd6bbd28408c9cb8617961fd78d/);
+  assert.match(body, /webflow\/internal\/admin\/control-room\/safety-location-control-v1\.js/);
 
   // Compatibility markers remain, but owner creation is Job-first.
   assert.match(body, /data-control-room-v3/);

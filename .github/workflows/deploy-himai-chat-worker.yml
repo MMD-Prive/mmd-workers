@@ -58,4 +58,4 @@ jobs:
           set -euo pipefail
           body="$(curl --retry 6 --retry-delay 2 --retry-all-errors -fsS https://himai-chat-worker.malemodel-bkk.workers.dev/health)"
           echo "$body"
-          printf '%s' "$body" | grep -q '"ok":true'
+          node -e 'const b=JSON.parse(process.argv[1]); if (b.ok !== true || b.app !== "Himai Shop") process.exit(1)' "$body"

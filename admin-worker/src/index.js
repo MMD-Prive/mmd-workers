@@ -802,7 +802,10 @@ export default {
             return withCors(json({ ok: false, error: { code: e.code, message: e.message } }, e.status), cors);
           }
           const error = String(e?.message || e || "job_create_failed");
-          return withCors(json({ ok: false, error }, error.startsWith("private_") ? 403 : 500), cors);
+          return withCors(json({ ok: false, error,
+            creation_outcome: e.creation_outcome || "unknown",
+            ...(e.session_id ? { session_id: e.session_id, payment_ref: e.payment_ref || null } : {}),
+          }, Number.isInteger(e.status) ? e.status : error.startsWith("private_") ? 403 : 500), cors);
         }
       }
 
@@ -2686,8 +2689,9 @@ async function handleModelPrivateFlashAuthorize(env, body, context) {
   const grantId = `flash_grant_${crypto.randomUUID()}`;
   const expiresAt = str(body.expires_at) || addMinutesIso(clampInt(body.expires_in_minutes, 1, 240, 30));
   const fields = tables.flashGrants.fields;
-  const viewLimit = clampInt(body.view_limit, 1, 20, 3);
-  const durationSec = clampInt(body.duration_sec || body.expires_in_minutes * 60, 30, 14400, 1800);
+  const previewPolicy = resolvePrivatePreviewPolicy(body);
+  const viewLimit = previewPolicy.view_limit;
+  const durationSec = previewPolicy.duration_sec;
   const rec = await modelSchemaPatchCreate(env, tables.flashGrants, {
     [fields.grantId]: grantId,
     [fields.client]: modelSchemaLinkedRecord(clientId),
@@ -2713,6 +2717,8 @@ async function handleModelPrivateFlashAuthorize(env, body, context) {
       authorization_basis: basis,
       payment_ref: str(body.payment_ref),
       token_storage: "sha256_hash_only",
+      preview_kind: previewPolicy.preview_kind,
+      consume_on: previewPolicy.consume_on,
     }),
   });
   return {
@@ -2724,6 +2730,9 @@ async function handleModelPrivateFlashAuthorize(env, body, context) {
     client_id: clientId,
     expires_at: expiresAt,
     view_limit: viewLimit,
+    duration_sec: durationSec,
+    preview_kind: previewPolicy.preview_kind,
+    consume_on: previewPolicy.consume_on,
     authorization_basis: basis,
     t: rawT,
     token_storage: "sha256_hash_only",
@@ -2756,6 +2765,17 @@ export function isVerifiedDepositRecord(record, tables) {
   if (officialVerifiedAt) return true;
   return verificationStatus === "official_verified" &&
     Boolean(officialVerificationRef && (officialVerifiedBy || officialMatchReason));
+}
+
+export function resolvePrivatePreviewPolicy(body = {}) {
+  const kind = normalizeSchemaPatchWord(body.preview_kind || body.media_kind || body.kind);
+  if (kind === "private_pic" || kind === "private_picture" || kind === "image") {
+    return { preview_kind: "private_pic", duration_sec: 3, view_limit: 1, consume_on: "open" };
+  }
+  if (kind === "private_clip" || kind === "clip" || kind === "video") {
+    return { preview_kind: "private_clip", duration_sec: 0, view_limit: 1, consume_on: "play_start" };
+  }
+  throw schemaPatchError("preview_kind_required", 400, "preview_kind must be private_pic or private_clip.");
 }
 
 function isPublicCandidateMedia(mediaType) {
@@ -4763,6 +4783,9 @@ async function createAdminJob(env, body) {
     location_name,
     google_map_url,
     amount_thb,
+    pay_model_thb: body.pay_model_thb,
+    service_amount_thb: body.service_amount_thb,
+    operational_status: jobDetails.operational_status === "pending_client_link" ? "pending_client_link" : undefined,
     payment_type,
     payment_method,
     note,
@@ -4770,7 +4793,20 @@ async function createAdminJob(env, body) {
     model_confirm_page,
   };
 
-  const minted = await callPaymentsCreateLink(env, payload);
+  // Older issuers reject this envelope at required-field validation, before
+  // writing anything. Rolling deployments must never mint a held job's links.
+  const issuerPayload = jobDetails.operational_status === "pending_client_link"
+    ? { operational_status: "pending_client_link", held_job: payload }
+    : payload;
+  const minted = await callPaymentsCreateLink(env, issuerPayload);
+
+  if (jobDetails.operational_status === "pending_client_link") {
+    // A held create must never accept a legacy issuer that already minted links.
+    if (minted.operational_status !== "pending_client_link" || minted.payment_ref || minted.customer_t || minted.model_t || minted.customer_confirmation_url || minted.model_confirmation_url) {
+      throw new Error("pending_client_link_issuer_contract_failed");
+    }
+    return { session_id: minted.session_id, payment_ref: null, operational_status: "pending_client_link", raw: minted };
+  }
 
   const session_id = minted.session_id || minted.sessionId || "";
   const payment_ref = minted.payment_ref || minted.paymentRef || "";
@@ -4789,7 +4825,9 @@ async function createAdminJob(env, body) {
   if (!customer_confirmation_url) throw new Error("missing_customer_confirmation_url");
   if (!model_confirmation_url) throw new Error("missing_model_confirmation_url");
 
-  await notifyJobCreated(env, {
+  let notificationStatus = "not_configured";
+  try {
+    const notification = await notifyJobCreated(env, {
     session_id,
     payment_ref,
     client_name,
@@ -4802,7 +4840,12 @@ async function createAdminJob(env, body) {
     amount_thb,
     customer_confirmation_url,
     model_confirmation_url,
-  });
+    });
+    if (notification) notificationStatus = notification.ok && notification.data?.ok !== false ? "sent" : "failed";
+  } catch (_) {
+    // The job/payment exists. A notification failure is not a failed create.
+    notificationStatus = "failed";
+  }
 
   return {
     session_id,
@@ -4810,6 +4853,7 @@ async function createAdminJob(env, body) {
     customer_confirmation_url,
     model_confirmation_url,
     raw: minted,
+    notification_status: notificationStatus,
   };
 }
 
@@ -4824,7 +4868,12 @@ export async function callPaymentsCreateLink(env, payload) {
   }
 
   if (!res.ok) {
-    throw new Error(data?.error || data?.message || `payments_worker_http_${res.status}`);
+    const error = new Error(data?.error || data?.message || `payments_worker_http_${res.status}`);
+    error.status = res.status;
+    error.creation_outcome = data?.creation_outcome || "unknown";
+    error.session_id = data?.session_id;
+    error.payment_ref = data?.payment_ref;
+    throw error;
   }
 
   return data || {};
@@ -4849,7 +4898,7 @@ async function notifyJobCreated(env, data) {
     `Model URL: ${escHtml(data.model_confirmation_url)}`,
   ];
 
-  await telegramInternalSend(env, {
+  return await telegramInternalSend(env, {
     chat_id: env.TELEGRAM_CHAT_ID || "-1003546439681",
     message_thread_id: env.TG_THREAD_CONFIRM || 61,
     text: lines.join("\n"),

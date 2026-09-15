@@ -11,45 +11,111 @@ import {
   handleCanonicalConfirmLink,
   isCanonicalConfirmLinkRequest,
 } from "./canonical-confirm-link.js";
+import { canonicalizeConfirmLinkRequest } from "./confirm-route-canonicalizer.js";
 import {
   enforceSigilSessionServiceAmount,
   reconcileSigilConfirmLinkMoneyTruth,
   resolveSigilCombinedPaymentComponents,
 } from "./sigil-membership-payment-components.js";
+import {
+  handleCustomerSessionDetails,
+  isCustomerSessionDetailsRequest,
+} from "./customer-session-v2.js";
+import {
+  handlePaymentInstructions,
+  isPaymentInstructionsRequest,
+} from "./payment-instructions-v1.js";
+import {
+  enrichUnifiedConfirmVerify,
+  handleUnifiedPaymentIntent,
+  handleUnifiedSlipEvidence,
+  isUnifiedConfirmVerifyRequest,
+  isUnifiedPaymentIntentRequest,
+  isUnifiedSlipEvidenceRequest,
+} from "./unified-payment-proof.js";
+import { reconcileCanonicalWebRenewalProof } from "./canonical-web-renewal-settlement.js";
+import { preserveCanonicalWebRenewalPaymentSuccess } from "./canonical-web-renewal-response.js";
+import { reconcilePremiumReviewedMembershipTerm } from "./premium-membership-term.js";
+import { reconcileReviewedMembershipEntitlement } from "./reviewed-membership-write-through.js";
+import {
+  handleDoubleMomentRequest,
+  isDoubleMomentRequest,
+  reconcileDoubleMomentReviewedProof,
+} from "./double-moment-purchase-v1.js";
 
 export { PointsPhase1Coordinator };
 
 const NOTIFY_PATH = "/v1/payments/notify";
 
+function canonicalTelegramEnv(env = {}) {
+  const membership = String(env.TG_THREAD_PAYMENTS_MEMBERSHIP || env.TG_THREAD_MEMBERSHIP || "20").trim() || "20";
+  const confirm = String(env.TG_THREAD_PAYMENTS_CONFIRM || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "22").trim() || "22";
+  return {
+    ...env,
+    TG_THREAD_PAYMENTS_MEMBERSHIP: membership,
+    TG_THREAD_MEMBERSHIP: membership,
+    TG_THREAD_PAYMENTS_CONFIRM: confirm,
+    TG_THREAD_PAYMENT: confirm,
+    TG_THREAD_CONFIRM: confirm,
+  };
+}
+
 export default {
   async fetch(request, env, ctx) {
+    env = canonicalTelegramEnv(env);
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
 
+    if (isDoubleMomentRequest(path, method)) {
+      return handleDoubleMomentRequest(request, env, (nextRequest) =>
+        handleUnifiedPaymentIntent(nextRequest, env, (paymentRequest) => phase1Worker.fetch(paymentRequest, env, ctx))
+      );
+    }
+
+    if (isPaymentInstructionsRequest(path, method)) {
+      return handlePaymentInstructions(request, env, (detailsRequest) =>
+        handleCustomerSessionDetails(detailsRequest, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx))
+      );
+    }
+
+    if (isCustomerSessionDetailsRequest(path, method)) {
+      return handleCustomerSessionDetails(request, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx));
+    }
+
     if (isCanonicalConfirmLinkRequest(path, method)) {
-      const response = await handleCanonicalConfirmLink(request, env, ctx);
-      return reconcileSigilConfirmLinkMoneyTruth(request, response, env);
+      const canonicalRequest = await canonicalizeConfirmLinkRequest(request);
+      const response = await handleCanonicalConfirmLink(canonicalRequest, env, ctx);
+      return reconcileSigilConfirmLinkMoneyTruth(canonicalRequest, response, env);
+    }
+
+    if (isUnifiedPaymentIntentRequest(path, method)) {
+      return handleUnifiedPaymentIntent(request, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx));
+    }
+
+    if (isUnifiedSlipEvidenceRequest(path, method)) {
+      const settlementRequest = request.clone();
+      const slipResponse = await handleUnifiedSlipEvidence(request, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx));
+      const settlementResponse = await reconcileCanonicalWebRenewalProof(settlementRequest, slipResponse, env);
+      return preserveCanonicalWebRenewalPaymentSuccess(settlementResponse);
+    }
+
+    if (isUnifiedConfirmVerifyRequest(path, method)) {
+      return enrichUnifiedConfirmVerify(request, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx));
     }
 
     if (isReviewedProofRequest(path, method)) {
-      return handleReviewedProof(request, env, ctx, async (body) => {
+      const reconcileRequest = request.clone();
+      const doubleMomentRequest = request.clone();
+      const reviewResponse = await handleReviewedProof(request, env, ctx, async (body) => {
         if (!String(env.INTERNAL_TOKEN || "").trim()) {
           return json({ ok: false, error: "payments_internal_token_not_ready", authority: "payments-worker" }, 503);
         }
 
-        // Canonical recovered LINE renewals have already passed the reviewed-proof
-        // identity/proof/package gates. The legacy notify path still writes literal
-        // `payment_ref`, which is a read-only compatibility formula in Payments.
-        // Route only this narrow recovery case through the canonical field writer.
         if (isEmailLessLineRenewalMoneyTruth(body)) {
           return commitEmailLessLineRenewalMoneyTruth(env, body);
         }
 
-        // A SIGIL Jobs assisted renewal can have one bank transfer covering both
-        // service + membership. Payments.Amount remains the full amount actually
-        // paid, while Session service money and Base Points must use only the
-        // service component stored in the canonical structured marker.
         let components = null;
         try {
           components = await resolveSigilCombinedPaymentComponents(
@@ -75,6 +141,9 @@ export default {
           body: JSON.stringify(body),
         }), env, ctx);
       });
+      const termResponse = await reconcilePremiumReviewedMembershipTerm(reconcileRequest.clone(), reviewResponse, env);
+      const entitlementResponse = await reconcileReviewedMembershipEntitlement(reconcileRequest, termResponse, env);
+      return reconcileDoubleMomentReviewedProof(doubleMomentRequest, entitlementResponse, env);
     }
 
     return phase1Worker.fetch(request, env, ctx);
@@ -88,8 +157,6 @@ async function runSigilCombinedReviewedNotify(request, env, ctx, body, component
     body: JSON.stringify(body),
   });
 
-  // Suppress the legacy points writer exactly as index.phase1 does. The canonical
-  // points call below uses only the service component, never the renewal fee.
   const baseEnv = { ...env, POINTS_RATE: "9007199254740991" };
   const response = await workerWithSlipEvidence.fetch(notifyRequest, baseEnv, ctx);
   if (!response.ok) return response;

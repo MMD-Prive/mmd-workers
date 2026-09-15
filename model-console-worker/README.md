@@ -1,92 +1,35 @@
-# MMD Model Console V1
+# MMD Model Console V1.1
 
-Operator-facing console gateway for MMD. This package follows `docs/architecture/ADMIN_CONSOLE_V1.md`: the console surfaces capabilities but does not become production authority.
+Operator surface only. Canonical operational state remains owned by downstream workers and Airtable; R2 owns files; KV is restricted to temporary working memory.
 
-## A. Worker skeleton
+## Security contract
 
-`src/index.js` provides:
+- Browser sends only the server-issued, HttpOnly admin session cookie (`credentials: include`).
+- Model Console validates that session through `SESSION_VALIDATOR_BASE_URL` and `/v1/admin/auth/me` before every protected request.
+- `ADMIN_BEARER`, `CONFIRM_KEY`, and `INTERNAL_TOKEN` exist only inside Workers and are never accepted from the production UI.
+- Generic `/v1/console/proxy` returns `410 generic_proxy_disabled`.
+- CORS allows credentials only for exact `ALLOWED_ORIGINS`; auth headers are not allowed from browsers.
 
-- `GET /ping`
-- `GET /v1/console/workers`
-- `GET /v1/console/workers/health`
+## Typed console contracts
+
 - `GET /v1/console/models`
+- `GET /v1/console/models/:id` — Model 360 aggregate
+- `GET /v1/console/models/:id/availability`
+- `GET /v1/console/models/:id/jobs`
+- `GET /v1/console/models/:id/payments`
+- `GET /v1/console/models/:id/access`
+- `GET /v1/console/models/:id/alerts`
 - `POST /v1/console/models/upsert`
-- `GET|POST|DELETE /v1/console/memory`
-- `POST /v1/console/telegram/dm`
-- `POST /v1/console/proxy` for explicitly allowlisted worker names
+- `GET /v1/console/workers/health` — contract-aware health
 
-## B. UI
+Model 360 aggregates downstream responses and labels unavailable sections; it does not synthesize or persist canonical identity/status.
 
-`public/index.html` is a dependency-free mobile-first operator UI for:
+## Memory and audit
 
-- worker health
-- model lookup
-- controlled model upsert
-- operator memory
-- adapter diagnostics
+- KV accepts only `draft:model:`, `view:model:`, `match:`, and `lock:model:` keys, with a maximum TTL of seven days.
+- Mutations write a permanent audit event through `ADMIN_EVENT_LOG_BASE_URL` before reporting success. KV audit keys are removed.
+- R2 assets stay in R2 and are referenced by canonical object key/URL only.
 
-It is intentionally operational rather than decorative.
+## Required configuration
 
-## C. Adapters
-
-The console currently has a concrete admin-worker adapter for the existing model routes and Telegram DM route. Other workers are registered as named adapters and can be called only through `/v1/console/proxy` after their base URL is configured.
-
-Never put business rules in this UI or this gateway. Add typed adapter routes as worker contracts become canonical.
-
-## D. MMD console memory
-
-KV binding: `MMD_MODEL_CONSOLE_MEMORY`
-
-Recommended key families:
-
-- `draft:model:<model_id>` — operator edit draft; TTL 24h–7d
-- `view:model:<operator>:<model_id>` — optional UI state; TTL <=24h
-- `match:<conversation_id>` — transient shortlist/cache; TTL <=24h
-- `lock:model:<model_id>` — advisory console lock only; prefer Durable Object if strict serialization is required
-- `audit:<timestamp>:<uuid>` — console action trace; current implementation TTL 90d
-
-Memory is never canonical membership/model/payment truth. Airtable-backed and worker-produced state wins.
-
-## Setup
-
-```bash
-cd model-console-worker
-npm install
-npx wrangler kv namespace create MMD_MODEL_CONSOLE_MEMORY
-```
-
-Add the returned namespace id to `wrangler.toml`:
-
-```toml
-[[kv_namespaces]]
-binding = "MMD_MODEL_CONSOLE_MEMORY"
-id = "..."
-```
-
-Set secrets:
-
-```bash
-npx wrangler secret put ADMIN_BEARER
-npx wrangler secret put CONFIRM_KEY
-npx wrangler secret put INTERNAL_TOKEN
-```
-
-Set each worker base URL in Cloudflare vars or `wrangler.toml`. Do not guess URLs. `ADMIN_WORKER_BASE_URL` is prefilled with the admin-worker hostname already documented in this repository; all other worker URLs remain blank until verified.
-
-Then:
-
-```bash
-npm run check
-npm run deploy
-```
-
-## Security notes
-
-- Browser calls authenticate to model-console-worker; raw backend secrets should not be embedded into a production Webflow page.
-- Production UI should obtain a server-issued admin session and call the console through a same-origin protected route.
-- `/v1/console/proxy` is intended for diagnostics while typed adapters are completed. Before broad production use, constrain allowed paths/methods per worker.
-- Every mutating console operation should be auditable and must continue to respect each downstream worker's authorization and state-machine rules.
-
-## R2
-
-Model images remain in Cloudflare R2. This console does not move image binary data into KV. Store only canonical R2 object keys/URLs in the model record and use a dedicated signed-upload endpoint for browser uploads.
+Canonical production values are `SESSION_VALIDATOR_BASE_URL=https://mmdbkk.com`, `SESSION_VALIDATOR_PATH=/v1/admin/auth/me`, and `ADMIN_EVENT_LOG_PATH=/v1/admin/model-console/audit`. `ADMIN_EVENT_LOG_BASE_URL` may be the verified admin-worker hostname or an `ADMIN_WORKER` service binding. Configure the remaining verified downstream worker base URLs and the `MMD_MODEL_CONSOLE_MEMORY` KV binding. Keep downstream credentials as Worker secrets.

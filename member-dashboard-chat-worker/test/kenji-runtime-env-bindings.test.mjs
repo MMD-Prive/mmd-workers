@@ -117,7 +117,7 @@ test("unseen LINE redelivery is recovered and can reply once", async () => {
   const lineEvent = redeliveryEvent("msg-redelivery-unseen");
   const raw = JSON.stringify({ events: [lineEvent] });
   const signature = await createLineSignature(raw, env.LINE_CHANNEL_SECRET);
-  const calls = { line: 0, telemetryPost: 0, aiReads: 0, knowledgeReads: 0 };
+  const calls = { line: 0, telemetryPost: 0, aiReads: 0, knowledgeReads: 0, v2Probes: 0 };
   const legacyWorker = { fetch: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }) };
 
   const response = await withFetch(async (url, init = {}) => {
@@ -131,7 +131,16 @@ test("unseen LINE redelivery is recovered and can reply once", async () => {
       return new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "content-type": "application/json" } });
     }
     if (target.includes("tblsLd1uVOtG2kHoU")) {
+      const formula = new URL(target).searchParams.get("filterByFormula") || "";
+      if (formula.includes("kenji_sep2026_membership_sales_")) {
+        // V2 publication is absent in this legacy fallback fixture. Its read
+        // must not be confused with a second LINE delivery or telemetry write.
+        calls.v2Probes += 1;
+        assert.ok(formula.includes("kenji_sep2026_membership_sales_04_new_customer"));
+        return new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "content-type": "application/json" } });
+      }
       calls.knowledgeReads += 1;
+      assert.ok(formula.includes("kenji_seed_v1_membership_01"));
       return new Response(JSON.stringify({ records: [{ id: "rec-card", fields: {
         knowledge_id: "kenji_seed_v1_membership_01",
         customer_answer: "เริ่มจาก My MMD > Membership ได้ครับ",
@@ -164,10 +173,12 @@ test("unseen LINE redelivery is recovered and can reply once", async () => {
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-mmd-kenji-redelivery"), "recovered");
   assert.equal(body.saved[0].replied, true);
+  assert.equal(body.saved[0].reply_source, "seed_knowledge");
   assert.equal(calls.line, 1);
   assert.equal(calls.telemetryPost, 1);
   assert.ok(calls.aiReads >= 2, "recovery and telemetry dedupe should both inspect AI Message Events");
-  assert.equal(calls.knowledgeReads, 1);
+  assert.equal(calls.v2Probes, 1, "exactly one V2 publication probe before legacy fallback");
+  assert.equal(calls.knowledgeReads, 1, "exactly one published V1 fallback read");
 });
 
 test("completed LINE redelivery remains deduped and never replies twice", async () => {

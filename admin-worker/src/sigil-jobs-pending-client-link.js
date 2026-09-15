@@ -39,24 +39,25 @@ export function hasCanonicalClientLink(body = {}) {
 
 export function shouldCreatePendingClientLink(body = {}) {
   return token(body.operational_create_mode) === PENDING_CLIENT_LINK_MODE &&
-    isPrivateIntent(body) &&
     !hasCanonicalClientLink(body);
 }
 
 export function buildPendingClientLinkBody(body = {}) {
-  const marker = "[PENDING CLIENT LINK] Private intent captured. Confirmation, dispatch and entitlement release are held until canonical Client link.";
+  const requestedWorld = isPrivateIntent(body) ? "private" : "public";
+  const heldWorld = requestedWorld === "private" ? "pending_private" : "public";
+  const marker = "[PENDING CLIENT LINK] Confirmation, dispatch and entitlement release are held until canonical Client link.";
   const note = clean(body.note || body.notes);
   const details = body.job_details || {};
   return {
     ...body,
-    visibility: "pending_private",
-    job_visibility: "pending_private",
-    booking_visibility: "pending_private",
-    work: { ...(body.work || {}), job_visibility: "pending_private" },
+    visibility: heldWorld,
+    job_visibility: heldWorld,
+    booking_visibility: heldWorld,
+    work: { ...(body.work || {}), job_visibility: heldWorld },
     job_details: {
       ...details,
-      world: "pending_private",
-      requested_world: "private",
+      world: heldWorld,
+      requested_world: requestedWorld,
       operational_status: PENDING_CLIENT_LINK_MODE,
       confirmation_hold: true,
       dispatch_hold: true,
@@ -171,6 +172,7 @@ export async function tryHandleSigilPendingClientLink(request, env, ctx, downstr
   const data = await response.clone().json().catch(() => null);
   if (!data || typeof data !== "object") return response;
   const held = holdPendingClientLinkResponse(data);
+  held.private_intent = forwardedBody.job_details.requested_world === "private" ? "private" : null;
   held.membership_action = canonical.membership_action;
   held.pricing_breakdown = canonical.pricing_breakdown;
 

@@ -35,7 +35,19 @@ assert.equal(matrix.schema, "mmd.kenji_conversation_matrix.v1");
 assert.equal(matrix.conversation_stage, "awaiting_payment_verification");
 assert.equal(matrix.live_truth_required, true);
 assert.deepEqual(matrix.live_truth_domains, ["membership", "entitlement", "payment"]);
-assert.equal(isContinuationCandidate("ได้ยังครับ", matrix), true);
+// This convenience helper intentionally uses the wall clock, unlike the
+// resolver tests below that inject a fixed `now`. Keep only its fixture fresh.
+const helperNow = Date.now();
+const freshHelperMatrix = {
+  ...matrix,
+  state_updated_at: new Date(helperNow - 1000).toISOString(),
+  state_expires_at: new Date(helperNow + 86400000).toISOString(),
+};
+assert.equal(isContinuationCandidate("ได้ยังครับ", freshHelperMatrix), true);
+assert.equal(isContinuationCandidate("ได้ยังครับ", {
+  ...freshHelperMatrix,
+  state_expires_at: new Date(helperNow - 1000).toISOString(),
+}), false, "expired continuity must remain unavailable");
 
 const context = buildConversationContinuityContext(matrix);
 assert.equal(context.conversation_topic, "membership");

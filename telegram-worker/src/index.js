@@ -1,6 +1,6 @@
 import { json, safeJson, HttpError } from "../lib/http.js";
 import { requireInternalToken } from "../lib/guard.js";
-import { sendTelegramMessage, telegramNotify } from "../lib/telegram.js";
+import { sendTelegramMessage, telegramNotify, telegramTopics } from "../lib/telegram.js";
 import { escapeHtml } from "../lib/util.js";
 
 const LOCK = "telegram-preview-hype-v20260621a-v1-alias";
@@ -8,6 +8,7 @@ const PREVIEW_START = "preview";
 const DEFAULT_BOT_USERNAME = "mmdprivebot";
 const DEFAULT_PUBLIC_BASE_URL = "https://www.mmdbkk.com";
 const DEFAULT_PREVIEW_CHANNEL_URL = "https://t.me/MMDPriveTH";
+const TOPIC_SMOKE_CONFIRMATION = "SEND_REDACTED_TOPIC_SMOKE";
 
 export default {
   async fetch(req, env) {
@@ -27,7 +28,9 @@ export default {
             internal_send: ["/telegram/internal/send", "/v1/internal/send", "/v1/send"],
             complaint_notify: ["/telegram/internal/complaint", "/v1/internal/complaint"],
             preview_post: ["/telegram/preview/post", "/v1/preview/post"],
+            topic_smoke: ["/telegram/internal/topics/smoke", "/v1/internal/topics/smoke"],
           },
+          telegram_topics: telegramTopics(env).map(({ key, label, thread_id }) => ({ key, label, thread_id })),
         }, 200);
       }
 
@@ -57,6 +60,20 @@ export default {
         return json({ ok: true, telegram: tg }, 200);
       }
 
+      if (isTopicSmokePath(path) && req.method === "POST") {
+        requireInternalToken(req, env);
+        const body = (await safeJson(req)) || {};
+        if (body.confirm !== TOPIC_SMOKE_CONFIRMATION) {
+          return json({
+            ok: false,
+            error: "topic_smoke_confirmation_required",
+            required_confirmation: TOPIC_SMOKE_CONFIRMATION,
+          }, 400);
+        }
+        const result = await smokeTelegramTopics(body, env);
+        return json(result, result.ok ? 200 : 502);
+      }
+
       if (isComplaintInternalPath(path) && req.method === "POST") {
         requireInternalToken(req, env);
         const body = await safeJson(req);
@@ -81,6 +98,55 @@ export default {
     }
   },
 };
+
+async function smokeTelegramTopics(body, env) {
+  const chatId = clean(body.chat_id || env.TELEGRAM_CHAT_ID);
+  if (!chatId) return { ok: false, error: "missing_telegram_chat_id", results: [] };
+
+  const configured = telegramTopics(env);
+  const requested = Array.isArray(body.topics)
+    ? new Set(body.topics.map((value) => clean(value).toLowerCase()).filter(Boolean))
+    : null;
+  const selected = requested ? configured.filter((topic) => requested.has(topic.key)) : configured;
+  if (!selected.length) return { ok: false, error: "no_matching_topics", results: [] };
+
+  const runId = `tg-smoke-${Date.now().toString(36)}`;
+  const results = [];
+  for (const topic of selected) {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      message_thread_id: topic.thread_id,
+      text: [
+        "🧪 <b>MMD TELEGRAM TOPIC CHECK</b>",
+        `<b>Topic:</b> ${escapeHtml(topic.label)}`,
+        `<b>Route:</b> <code>${escapeHtml(topic.key)}</code> → <code>${topic.thread_id}</code>`,
+        `<b>Run:</b> <code>${runId}</code>`,
+        "Synthetic / no customer data",
+      ].join("\n"),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      disable_notification: body.disable_notification !== false,
+    }, env);
+    results.push({
+      key: topic.key,
+      label: topic.label,
+      thread_id: topic.thread_id,
+      ok: telegram?.ok === true,
+      status: telegram?.status || null,
+      error: telegram?.error?.description || telegram?.reason || null,
+      message_id: telegram?.result?.message_id || null,
+    });
+  }
+
+  return {
+    ok: results.every((item) => item.ok),
+    run_id: runId,
+    tested: results.length,
+    passed: results.filter((item) => item.ok).length,
+    failed: results.filter((item) => !item.ok).length,
+    results,
+  };
+}
 
 async function handleTelegramWebhook(update, env) {
   const message = update.message || update.edited_message || null;
@@ -160,9 +226,6 @@ function configuredJoinCleanupChats(env) {
     if (chatId) chats.set(chatId, surface);
   };
 
-  // Keep the legacy Standard Group binding while naming the two current
-  // surfaces explicitly. A duplicate ID is harmless and resolves to the
-  // more specific surface label below.
   add(env.TELEGRAM_STANDARD_GROUP_ID, "standard_group");
   add(env.TELEGRAM_MMD_CHAT_GROUP_ID, "mmd_chat");
   add(env.TELEGRAM_PREVIEW_GROUP_ID || env.TELEGRAM_PREVIEW_CHANNEL_ID, "telegram_preview");
@@ -184,11 +247,7 @@ async function deleteTelegramMessage(payload, env) {
 
   const data = await res.json().catch(() => null);
   if (!res.ok || data?.ok === false) {
-    return {
-      ok: false,
-      status: res.status,
-      error: data || null,
-    };
+    return { ok: false, status: res.status, error: data || null };
   }
 
   return { ok: true, result: data?.result ?? true };
@@ -217,6 +276,7 @@ async function postComplaintNotification(body, env) {
   ].join("\n");
 
   const telegram = await telegramNotify({
+    flow: "recovery",
     text,
     parse_mode: "HTML",
     disable_web_page_preview: true,
@@ -303,7 +363,7 @@ function previewButtonMarkup(env) {
         url: publicUrl(env, "/profiles"),
       }, {
         text: "Apply / Renew Membership",
-        url: publicUrl(env, "/pay/membership"),
+        url: publicUrl(env, "/sigil/member/membership"),
       }],
       [{
         text: "Help / How It Works",
@@ -358,6 +418,10 @@ function isTelegramWebhookPath(path) {
 
 function isInternalSendPath(path) {
   return path === "/telegram/internal/send" || path === "/v1/internal/send" || path === "/v1/send";
+}
+
+function isTopicSmokePath(path) {
+  return path === "/telegram/internal/topics/smoke" || path === "/v1/internal/topics/smoke";
 }
 
 function isComplaintInternalPath(path) {

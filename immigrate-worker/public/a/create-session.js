@@ -45,6 +45,8 @@
     selectedModel: null,
     draftId: "",
     created: null,
+    creating: false,
+    creationUncertain: false,
     lastPayload: null
   };
 
@@ -784,6 +786,9 @@
     computeEndTime();
     const gate = deriveGate();
     const payload = {
+      canonical_only: canonicalOnly,
+      create_context: canonicalOnly ? "internal_create_job" : "create_session",
+      operational_create_mode: !canonicalOnly && !state.selectedClient?.client_id ? "pending_client_link" : undefined,
       client: {
         client_id: state.selectedClient?.client_id || "",
         member_id: state.selectedClient?.member_id || "",
@@ -918,7 +923,7 @@
     text(el.readyCopy, ready
       ? "Frontend requirements are complete. Backend remains authoritative on create."
       : "Complete the next action shown above. Private work also requires the Telegram gate.");
-    if (el.create) el.create.disabled = !ready;
+    if (el.create) el.create.disabled = !ready || state.creating || Boolean(state.created) || state.creationUncertain;
   }
 
   function updateAll() {
@@ -996,12 +1001,15 @@
   }
 
   async function createSession() {
+    if (state.creating || state.created || state.creationUncertain) return;
     updateAll();
     if (!requiredReady()) {
       setStatus("Create blocked. Complete the next action first.", "warn");
       return;
     }
     const payload = buildPayload();
+    state.creating = true;
+    updateReadiness();
     setStatus("Creating session…", "warn");
     setHook("create", "warn");
     if (config.mock) {
@@ -1019,6 +1027,8 @@
       });
       setStatus("Mock session created.", "ok");
       setHook("create", "ok");
+      state.creating = false;
+      updateReadiness();
       return;
     }
     try {
@@ -1027,13 +1037,26 @@
         body: JSON.stringify(payload)
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+      if (!response.ok || data.ok === false) {
+        const error = new Error(typeof data.error === "object" ? data.error.message || data.error.code : data.error || `HTTP ${response.status}`);
+        error.safeToRetry = data.creation_outcome === "not_created" || (!data.creation_outcome && response.status >= 400 && response.status < 500);
+        error.sessionId = data.session_id;
+        error.paymentRef = data.payment_ref;
+        throw error;
+      }
       renderCreated(data);
-      setStatus("Session created.", "ok");
+      const review = data.linkage?.status === "review_required" || data.notification_status === "failed";
+      const held = data.operational_status === "pending_client_link";
+      setStatus(held ? "บันทึกงานแล้ว · รอ Link Client ก่อนออกลิงก์ยืนยันและชำระเงิน" : review ? "บันทึกแล้ว · ต้องตรวจการผูกข้อมูลหรือการแจ้งเตือน กรุณาอย่าสร้างซ้ำ" : "Session created.", held || review ? "warn" : "ok");
       setHook("create", "ok");
     } catch (error) {
-      setStatus(`Create failed: ${error.message}`, "bad");
+      state.creationUncertain = !error.safeToRetry;
+      const references = [error.sessionId, error.paymentRef].filter(Boolean).join(" · ");
+      setStatus(`Create failed: ${error.message}${references ? ` · ${references}` : ""}${state.creationUncertain ? " · ยังยืนยันผลไม่ได้ ตรวจรายการงานก่อนสร้างใหม่" : ""}`, "bad");
       setHook("create", "bad");
+    } finally {
+      state.creating = false;
+      updateReadiness();
     }
   }
 
@@ -1061,6 +1084,7 @@
   }
 
   async function pushCustomerLine() {
+    if (state.created?.confirmations_held) return;
     if (!el.customerSnapshotReviewed?.checked) {
       setStatus("Review customer snapshot before sending LINE.", "warn");
       return;
@@ -1094,6 +1118,7 @@
   }
 
   function resetAll() {
+    if (state.creating) return;
     state.selectedClient = null;
     state.workType = "";
     state.privateOrientation = "";
@@ -1102,6 +1127,7 @@
     state.selectedModel = null;
     state.draftId = "";
     state.created = null;
+    state.creationUncertain = false;
     state.lastPayload = null;
     if (el.customerSnapshotReviewed) el.customerSnapshotReviewed.checked = false;
     if (el.pushLine) { el.pushLine.disabled = true; el.pushLine.setAttribute("aria-disabled", "true"); }

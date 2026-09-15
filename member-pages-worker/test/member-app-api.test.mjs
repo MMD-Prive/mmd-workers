@@ -222,3 +222,29 @@ test("app API is read-only", async () => {
   assert.equal(response.status, 405);
   assert.equal(response.headers.get("allow"), "GET");
 });
+
+
+test("dedicated points ledger survives a mixed activity feed containing no points", async () => {
+  const upstream = delegate({ "/api/member/dashboard": { ok: true, data: {
+    points: { status: "verified", value: 12, records_count: 2, history: [
+      { date: "2026-09-10", title: "Points added", points_delta: 15, status: "posted" },
+      { date: "2026-09-09", title: "Points adjusted", points_delta: -3, status: "pending_review" },
+    ] }, history: { status: "verified", events: [] }, payment_history: { status: "empty", records: [] },
+  } } });
+  const body = await (await handleMemberAppApi(request("/api/member/app/points"), {}, upstream)).json();
+  assert.equal(body.state, "resolved");
+  assert.equal(body.summary.confirmedBalance, 12);
+  assert.deepEqual(body.ledger.map(x => [x.delta, x.state]), [[15, "confirmed"], [-3, "pending"]]);
+});
+
+test("unknown history stays checking while explicitly empty verified history is resolved", async () => {
+  for (const verified of [false, true]) {
+    const upstream = delegate({ "/api/member/dashboard": { ok: true, data: {
+      history: { status: verified ? "empty" : "checking", events: [] },
+      payment_history: { status: verified ? "empty" : "checking", records: [] },
+    } } });
+    const body = await (await handleMemberAppApi(request("/api/member/app/history"), {}, upstream)).json();
+    assert.equal(body.state, verified ? "resolved" : "checking");
+    assert.deepEqual(body.items, []);
+  }
+});
