@@ -1,9 +1,11 @@
+import canonicalMemberWorker from "./my-mmd-bounded-status-front-gate.js";
 import runtimeWorker from "./mms-line-front-gate-runtime.js";
 export * from "./mms-line-front-gate-runtime.js";
 
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const STATUS_PATHS = new Set(["/member/api/liff/status", "/member/api/liff/status/", "/member/api/liff/profile", "/member/api/liff/profile/"]);
 const LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
+const LIFF_API_PREFIX = "/member/api/liff/";
 const CARE_BACK_LINK_ENDPOINT = "/member/api/care-back/link-wish";
 
 function cookieValue(request, name) {
@@ -24,6 +26,15 @@ function responseCookies(response) {
 function isSessionClear(cookie) {
   const value = String(cookie || "");
   return value.startsWith(`${SESSION_COOKIE}=`) && /(?:max-age=0|expires=thu,\s*01 jan 1970)/i.test(value);
+}
+
+function isCanonicalLiffRequest(request) {
+  try {
+    const path = new URL(request.url).pathname.toLowerCase();
+    return LIFF_SHELL_PATHS.has(path) || STATUS_PATHS.has(path) || path.startsWith(LIFF_API_PREFIX);
+  } catch {
+    return false;
+  }
 }
 
 export function guardAnonymousSessionClear(request, response) {
@@ -51,12 +62,12 @@ export function stabilizeStatusShell(html, request) {
   if (!LIFF_SHELL_PATHS.has(url.pathname.toLowerCase()) || String(url.searchParams.get("intent") || "").toLowerCase() !== "status") return String(html || "");
   let output = String(html || "");
   output = output.replace(
-    "      const existingProfile = await readProfile();\n      if (existingProfile) return;",
-    "      // Status is an auth-only bridge. Do not rotate the new session with profile/wallet reads here.\n      const existingProfile = null;",
+    /(^|\n)[ \t]*const existingProfile = await readProfile\(\);[ \t]*\n[ \t]*if \(existingProfile\) return;/m,
+    "$1      // Status is an auth-only bridge. Do not rotate the new session with profile/wallet reads here.\n      const existingProfile = null;",
   );
-  output = output.replaceAll(
-    "      if (started && started.member_resolved) await readProfile();",
-    "      if (started) show(\"ยืนยัน LINE สำเร็จแล้วครับ กำลังเปิด My MMD\");",
+  output = output.replace(
+    /(^|\n)[ \t]*if \(started && started\.member_resolved\) await readProfile\(\);/gm,
+    '$1      if (started) show("ยืนยัน LINE สำเร็จแล้วครับ กำลังเปิด My MMD");',
   );
   return output;
 }
@@ -113,12 +124,14 @@ export const MMD_LIFF_STABILITY_INTERNALS = Object.freeze({
   stabilizeStatusShell,
   injectCareBackWishBridge,
   guardAnonymousSessionClear,
+  isCanonicalLiffRequest,
 });
 
 export default {
   ...runtimeWorker,
   async fetch(request, env = {}, ctx) {
-    let response = await runtimeWorker.fetch(request, env, ctx);
+    const owner = isCanonicalLiffRequest(request) ? canonicalMemberWorker : runtimeWorker;
+    let response = await owner.fetch(request, env, ctx);
     response = guardAnonymousSessionClear(request, response);
     return rewriteLiffHtml(request, response);
   },
