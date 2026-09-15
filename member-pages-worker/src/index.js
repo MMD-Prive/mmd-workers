@@ -1,4 +1,4 @@
-import liffFoundation from "./liff-payment-binding.js";
+import liffFoundation from "./liff-stable-session-binding.js";
 import { handleLiffMemberShell, isLiffMemberShellPath } from "./liff-member-shell.js";
 import { decorateMemberLiffJobClaim } from "./job-identity-member-claim.js";
 import { handlePublicCareBackWishRoute, isPublicCareBackWishPath } from "./public-care-back-wish.js";
