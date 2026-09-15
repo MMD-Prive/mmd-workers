@@ -67,7 +67,7 @@ export function stabilizeStatusShell(html, request) {
   );
   output = output.replace(
     /(^|\n)[ \t]*if \(started && started\.member_resolved\) await readProfile\(\);/gm,
-    '$1      if (started) show("ยืนยัน LINE สำเร็จแล้วครับ กำลังเปิด My MMD");',
+    '$1      if (started) { show("ยืนยัน LINE สำเร็จแล้วครับ กำลังเปิด My MMD"); window.location.replace("/my-mmd/"); return; }',
   );
   return output;
 }
