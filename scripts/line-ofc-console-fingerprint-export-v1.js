@@ -20,6 +20,7 @@ const F = {
     uid: "fldizotASR8QgtSVK",
     text: "fld9NbPo1Q3E6MfB8",
     raw: "fldn7MS0D9cdyQLtF",
+    received: "fldvkKwCgOtDq0UNn",
   },
 };
 
@@ -27,6 +28,9 @@ const REAL_UID = /^U[0-9a-f]{32}$/i;
 const MIN_NORMALIZED_LENGTH = 8;
 const MAX_HASHES_PER_IDENTITY = 120;
 const MAX_TIMED_HASHES_PER_IDENTITY = 300;
+const MAX_WINDOW_HASHES_PER_IDENTITY = 1600;
+const RECEIVE_WINDOW_BEFORE_SECONDS = 15;
+const RECEIVE_WINDOW_AFTER_SECONDS = 2;
 
 function normalizeText(value) {
   return String(value || "")
@@ -51,6 +55,11 @@ function eventSecondFromRaw(value) {
   const timestamp = Number(data?.line_event?.timestamp ?? data?.lineEvent?.timestamp);
   if (!Number.isFinite(timestamp) || timestamp <= 0) return null;
   return Math.floor(timestamp > 1e11 ? timestamp / 1000 : timestamp);
+}
+
+function receivedSecond(value) {
+  const ms = Date.parse(String(value || ""));
+  return Number.isFinite(ms) && ms > 0 ? Math.floor(ms / 1000) : null;
 }
 
 async function airtableList(tableId, fieldIds) {
@@ -84,6 +93,22 @@ function rankStagingKey(key) {
   return 2;
 }
 
+function addOwnedHash(mapByUid, ownersByHash, uid, hash, length) {
+  if (!mapByUid.has(uid)) mapByUid.set(uid, new Map());
+  const currentLength = mapByUid.get(uid).get(hash) || 0;
+  if (length > currentLength) mapByUid.get(uid).set(hash, length);
+  if (!ownersByHash.has(hash)) ownersByHash.set(hash, new Set());
+  ownersByHash.get(hash).add(uid);
+}
+
+function uniqueCandidates(mapByUid, ownersByHash, uid, limit) {
+  return [...(mapByUid.get(uid) || new Map()).entries()]
+    .filter(([hash]) => (ownersByHash.get(hash)?.size || 0) === 1)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([hash]) => hash);
+}
+
 async function main() {
   const salt = crypto.randomBytes(24).toString("hex");
   const staging = await airtableList(STAGING_TABLE, [F.staging.key, F.staging.uid]);
@@ -101,14 +126,17 @@ async function main() {
     }
   }
 
-  const inbox = await airtableList(INBOX_TABLE, [F.inbox.uid, F.inbox.text, F.inbox.raw]);
+  const inbox = await airtableList(INBOX_TABLE, [F.inbox.uid, F.inbox.text, F.inbox.raw, F.inbox.received]);
   const hashesByUid = new Map();
   const ownersByHash = new Map();
   const timedHashesByUid = new Map();
   const ownersByTimedHash = new Map();
+  const windowHashesByUid = new Map();
+  const ownersByWindowHash = new Map();
   let inboxRowsForKnownUid = 0;
   let eligibleTextRows = 0;
   let timedFingerprintRows = 0;
+  let receivedWindowRows = 0;
 
   for (const record of inbox) {
     const fields = record.fields || {};
@@ -120,59 +148,68 @@ async function main() {
       const eventSecond = eventSecondFromRaw(fields[F.inbox.raw]);
       if (eventSecond !== null) {
         timedFingerprintRows++;
-        const timedHash = saltedHash(salt, `ts:${eventSecond}\0${text}`);
-        if (!timedHashesByUid.has(uid)) timedHashesByUid.set(uid, new Map());
-        const currentLength = timedHashesByUid.get(uid).get(timedHash) || 0;
-        if (text.length > currentLength) timedHashesByUid.get(uid).set(timedHash, text.length);
-        if (!ownersByTimedHash.has(timedHash)) ownersByTimedHash.set(timedHash, new Set());
-        ownersByTimedHash.get(timedHash).add(uid);
+        addOwnedHash(
+          timedHashesByUid,
+          ownersByTimedHash,
+          uid,
+          saltedHash(salt, `ts:${eventSecond}\0${text}`),
+          text.length
+        );
+      }
+      const received = receivedSecond(fields[F.inbox.received]);
+      if (received !== null) {
+        receivedWindowRows++;
+        for (let delta = -RECEIVE_WINDOW_BEFORE_SECONDS; delta <= RECEIVE_WINDOW_AFTER_SECONDS; delta++) {
+          addOwnedHash(
+            windowHashesByUid,
+            ownersByWindowHash,
+            uid,
+            saltedHash(salt, `ts:${received + delta}\0${text}`),
+            text.length
+          );
+        }
       }
     }
     if (text.length < MIN_NORMALIZED_LENGTH) continue;
     eligibleTextRows++;
-    const hash = saltedHash(salt, text);
-    if (!hashesByUid.has(uid)) hashesByUid.set(uid, new Map());
-    const currentLength = hashesByUid.get(uid).get(hash) || 0;
-    if (text.length > currentLength) hashesByUid.get(uid).set(hash, text.length);
-    if (!ownersByHash.has(hash)) ownersByHash.set(hash, new Set());
-    ownersByHash.get(hash).add(uid);
+    addOwnedHash(hashesByUid, ownersByHash, uid, saltedHash(salt, text), text.length);
   }
 
   const identities = [];
   let identitiesWithUniqueFingerprints = 0;
   let identitiesWithUniqueTimedFingerprints = 0;
+  let identitiesWithUniqueReceivedWindowFingerprints = 0;
   let uniqueFingerprintCount = 0;
   let uniqueTimedFingerprintCount = 0;
+  let uniqueReceivedWindowFingerprintCount = 0;
   for (const [uid, representative] of representativeByUid) {
-    const candidates = [...(hashesByUid.get(uid) || new Map()).entries()]
-      .filter(([hash]) => (ownersByHash.get(hash)?.size || 0) === 1)
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .slice(0, MAX_HASHES_PER_IDENTITY)
-      .map(([hash]) => hash);
-    const timedCandidates = [...(timedHashesByUid.get(uid) || new Map()).entries()]
-      .filter(([hash]) => (ownersByTimedHash.get(hash)?.size || 0) === 1)
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .slice(0, MAX_TIMED_HASHES_PER_IDENTITY)
-      .map(([hash]) => hash);
+    const candidates = uniqueCandidates(hashesByUid, ownersByHash, uid, MAX_HASHES_PER_IDENTITY);
+    const timedCandidates = uniqueCandidates(timedHashesByUid, ownersByTimedHash, uid, MAX_TIMED_HASHES_PER_IDENTITY);
+    const windowCandidates = uniqueCandidates(windowHashesByUid, ownersByWindowHash, uid, MAX_WINDOW_HASHES_PER_IDENTITY);
     if (candidates.length) identitiesWithUniqueFingerprints++;
     if (timedCandidates.length) identitiesWithUniqueTimedFingerprints++;
+    if (windowCandidates.length) identitiesWithUniqueReceivedWindowFingerprints++;
     uniqueFingerprintCount += candidates.length;
     uniqueTimedFingerprintCount += timedCandidates.length;
+    uniqueReceivedWindowFingerprintCount += windowCandidates.length;
     identities.push({
       handle: representative.recordId,
       fingerprint_count: candidates.length,
       timed_fingerprint_count: timedCandidates.length,
+      window_fingerprint_count: windowCandidates.length,
       hashes: candidates,
       timed_hashes: timedCandidates,
+      window_hashes: windowCandidates,
     });
   }
 
   identities.sort((a, b) => a.handle.localeCompare(b.handle));
   const payload = {
-    version: "line-ofc-console-fingerprint-index-v1.1",
+    version: "line-ofc-console-fingerprint-index-v1.2",
     generated_at: new Date().toISOString(),
     normalization: "NFKC + collapse whitespace + trim",
     timed_fingerprint: "LINE event epoch-second + normalized text",
+    received_window_fingerprint: `received_at candidate seconds -${RECEIVE_WINDOW_BEFORE_SECONDS}..+${RECEIVE_WINDOW_AFTER_SECONDS} + normalized text`,
     salt,
     counts: {
       staging_rows: staging.length,
@@ -181,12 +218,16 @@ async function main() {
       console_rows_for_known_line_user_ids: inboxRowsForKnownUid,
       eligible_text_rows: eligibleTextRows,
       timed_fingerprint_rows: timedFingerprintRows,
+      received_window_rows: receivedWindowRows,
       identities_with_unique_fingerprints: identitiesWithUniqueFingerprints,
       identities_without_unique_fingerprints: representativeByUid.size - identitiesWithUniqueFingerprints,
       identities_with_unique_timed_fingerprints: identitiesWithUniqueTimedFingerprints,
       identities_without_unique_timed_fingerprints: representativeByUid.size - identitiesWithUniqueTimedFingerprints,
+      identities_with_unique_received_window_fingerprints: identitiesWithUniqueReceivedWindowFingerprints,
+      identities_without_unique_received_window_fingerprints: representativeByUid.size - identitiesWithUniqueReceivedWindowFingerprints,
       unique_fingerprints_exported: uniqueFingerprintCount,
       unique_timed_fingerprints_exported: uniqueTimedFingerprintCount,
+      unique_received_window_fingerprints_exported: uniqueReceivedWindowFingerprintCount,
     },
     identities,
   };
@@ -199,6 +240,7 @@ async function main() {
     raw_text_exported: false,
     line_user_id_exported: false,
     event_timestamp_exported: false,
+    received_at_exported: false,
   }) + "\n");
 }
 
