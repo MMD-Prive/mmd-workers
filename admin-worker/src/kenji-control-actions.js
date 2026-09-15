@@ -1,3 +1,6 @@
+import { KENJI_CLIENT_INTAKE_PATH, handleKenjiClientIntake } from "./kenji-client-intake.js";
+import { LINE_OFC_CLIENT_IMPORT_PATH, handleLineOfcClientImport } from "./line-ofc-client-import.js";
+
 const BASE_ID_DEFAULT = "appsV1ILPRfIjkaYg";
 const TABLES = Object.freeze({
   actions: "tblUzZ8ImRZOkks4c",
@@ -13,6 +16,8 @@ export const KENJI_CONTROL_ACTION_PATHS = Object.freeze({
   draft: "/v1/admin/kenji/control/messages/draft",
   send: "/v1/admin/kenji/control/messages/",
   killSwitch: "/v1/admin/kenji/control/runtime/kill-switch",
+  clientIntake: KENJI_CLIENT_INTAKE_PATH,
+  lineOfcImport: LINE_OFC_CLIENT_IMPORT_PATH,
 });
 
 export const KENJI_RUNTIME_STATUS_RPC_PATH = "/v1/internal/kenji/control/runtime/status";
@@ -31,7 +36,9 @@ export function isKenjiControlActionRequest(path, method = "POST") {
     (path.startsWith(KENJI_CONTROL_ACTION_PATHS.takeover) && path.endsWith("/takeover")) ||
     path === KENJI_CONTROL_ACTION_PATHS.draft ||
     (path.startsWith(KENJI_CONTROL_ACTION_PATHS.send) && path.endsWith("/send")) ||
-    path === KENJI_CONTROL_ACTION_PATHS.killSwitch
+    path === KENJI_CONTROL_ACTION_PATHS.killSwitch ||
+    path === KENJI_CONTROL_ACTION_PATHS.clientIntake ||
+    path === KENJI_CONTROL_ACTION_PATHS.lineOfcImport
   );
 }
 
@@ -77,6 +84,23 @@ export async function handleKenjiControlAction(request, env, actor = {}) {
     if (duplicate) {
       const duplicateHash = clean(duplicate.fields?.payload_hash);
       if (!duplicateHash || duplicateHash !== payloadHash) return json({ ok: false, error: "idempotency_conflict" }, 409);
+      if (operation === "client_intake") {
+        const targetId = clean(duplicate.fields?.target_id);
+        if (!/^rec[\w]+$/.test(targetId)) return json({ ok: false, error: "idempotency_incomplete" }, 409);
+        const summary = clean(duplicate.fields?.redacted_summary).toLowerCase();
+        return json({
+          ok: true,
+          duplicate: true,
+          operation: "client_intake",
+          action: summary === "client_created" ? "created" : "matched",
+          client_id: targetId,
+          client: { record_id: targetId },
+          membership_mutation: false,
+          entitlement_mutation: false,
+          private_access_mutation: false,
+          audit_id: duplicate.fields?.action_id || duplicate.id,
+        });
+      }
       return json({ ok: true, duplicate: true, action: projectAction(duplicate) });
     }
 
@@ -88,11 +112,13 @@ export async function handleKenjiControlAction(request, env, actor = {}) {
     if (operation === "conversation_takeover") return await conversationTakeover(request, env, actor, idempotencyKey, payloadHash, path);
     if (operation === "message_draft") return await createMessageDraft(request, env, actor, idempotencyKey, payloadHash);
     if (operation === "message_send") return json({ ok: false, error: "mutation_not_ready", detail: "delivery_adapter_not_connected" }, 503);
+    if (operation === "client_intake") return await handleKenjiClientIntake(request, env, actor, { idempotencyKey, payloadHash });
+    if (operation === "line_ofc_client_import") return await handleLineOfcClientImport(request, env, actor, { idempotencyKey, payloadHash });
     return await updateKillSwitch(request, env, actor, idempotencyKey, payloadHash);
   } catch (error) {
     const code = clean(error && error.message);
     if (code === "invalid_request") return json({ ok: false, error: code }, 400);
-    if (code === "version_conflict" || code === "idempotency_conflict") return json({ ok: false, error: code }, 409);
+    if (code === "version_conflict" || code === "idempotency_conflict" || code === "client_match_ambiguous" || code === "client_identity_conflict" || code === "idempotency_incomplete") return json({ ok: false, error: code }, 409);
     if (code === "not_found") return json({ ok: false, error: code }, 404);
     if (code === "transition_not_allowed" || code === "unsafe_customer_copy") return json({ ok: false, error: code }, 422);
     if (code === "kill_switch_active") return json({ ok: false, error: code }, 423);
@@ -352,6 +378,8 @@ function operationForPath(path) {
   if (path === KENJI_CONTROL_ACTION_PATHS.draft) return "message_draft";
   if (path.startsWith(KENJI_CONTROL_ACTION_PATHS.send) && path.endsWith("/send")) return "message_send";
   if (path === KENJI_CONTROL_ACTION_PATHS.killSwitch) return "kill_switch";
+  if (path === KENJI_CONTROL_ACTION_PATHS.clientIntake) return "client_intake";
+  if (path === KENJI_CONTROL_ACTION_PATHS.lineOfcImport) return "line_ofc_client_import";
   return "";
 }
 
@@ -375,7 +403,7 @@ function can(actor, operation) {
   if (actor.role === "owner") return true;
   if (actor.role === "delegate") return operation !== "kill_switch";
   if (actor.role === "reviewer") return ["approval_decision", "message_draft"].includes(operation);
-  if (actor.role === "service") return ["approval_decision", "message_draft"].includes(operation);
+  if (actor.role === "service") return ["approval_decision", "message_draft", "line_ofc_client_import"].includes(operation);
   return false;
 }
 

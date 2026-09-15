@@ -10,7 +10,7 @@ import {
   sensitiveAirtableFields,
   uploadRequest,
 } from "./core.mjs";
-import { handleMmsLineWebhook, lineBotStatus } from "./line-bot.mjs";
+import { mmsApplicationThreadId } from "./application-telegram-routing.mjs";
 
 const WORKER_NAME = "mms-worker";
 const JSON_LIMIT_BYTES = 64 * 1024;
@@ -575,6 +575,7 @@ async function syncApplicationTelegram(env, applicationRecord, payload, applicat
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: String(env.MMS_TELEGRAM_CHAT_ID).trim(),
+        message_thread_id: mmsApplicationThreadId(env),
         text: applicationTelegramMessage(payload, { application_id: applicationId }),
         disable_web_page_preview: true,
       }),

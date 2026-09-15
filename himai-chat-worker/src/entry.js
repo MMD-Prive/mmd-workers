@@ -3,9 +3,13 @@ import { handleShopCatalog } from "./shop-catalog.js";
 import { handleShopMovements } from "./shop-movements.js";
 import { handleShopAlert } from "./shop-alerts.js";
 import { handleSupplierPortal } from "./supplier-portal.js";
+import { renderDistributorPortalPage } from "./distributor-portal-page.js";
 
 export default {
   async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    if (request.method.toUpperCase() === "GET" && url.pathname === "/shop/distributor") return renderDistributorPortalPage();
+
     try {
       const alertResponse = await handleShopAlert(request, env);
       if (alertResponse) return alertResponse;

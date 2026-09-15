@@ -268,7 +268,11 @@
     var profileState=model.profile_status||"missing_profile";
     var photoPolicy=model.photo_visibility_policy||"Per review";
     var depositGate=model.deposit_preview_gate||"Per approval";
+    var adminMedia=model.has_admin_preview&&model.admin_preview_url
+      ? '<div class="ka__modelPreview"><span>ADMIN MEDIA PREVIEW</span><img src="'+attr(model.admin_preview_url)+'" alt="'+attr((model.working_name||model.model_key||"Model")+" primary media")+'" loading="lazy" decoding="async" style="display:block;width:100%;max-height:440px;object-fit:cover;border-radius:16px;margin-top:10px"><small>Admin only · Worker-resolved primary media · customer exposure remains controlled by review/access policy</small></div>'
+      : '<div class="ka__notice"><b>Admin media preview</b><br>ยังไม่มี primary image ที่ Worker อนุญาตให้ preview.</div>';
     node.innerHTML='<div class="ka__recordHead"><span>MODEL KEYWORD PROFILE</span><h3>'+esc(model.working_name||"New Model Draft")+'</h3><p>'+(model.keyword_profile_id?'Profile '+esc(model.keyword_profile_id)+' · ':'')+(model.model_id?'Model '+esc(model.model_id)+' · ':'')+esc(profileState)+' · v'+esc(model.profile_version||1)+' · ทุกการแก้ไขจะเข้า Review ก่อน</p></div>'
+      +adminMedia
       +'<div class="ka__modelGrid"><label>Model Key<input id="kaModelKey" value="'+attr(model.model_key)+'" placeholder="ems04-sin-m" autocomplete="off"></label><label>Working Name<input id="kaModelName" value="'+attr(model.working_name)+'" placeholder="ชื่อที่ใช้ภายใน"></label></div>'
       +'<label>Folder Name<input id="kaModelFolder" value="'+attr(model.folder_name||model.access_folder)+'" placeholder="EMs04 - Sin M / folder reference"></label>'
       +'<label>Search Aliases<textarea id="kaModelAliases" placeholder="ชื่อเรียกอื่น, keyword, alias — 1 บรรทัดหรือคั่นด้วย comma">'+esc((model.search_aliases||[]).join("\n"))+'</textarea></label>'

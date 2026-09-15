@@ -1,0 +1,332 @@
+name: Accept MMD LINE Slip Intake Staging
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/accept-mmd-line-slip-staging.yml"
+
+concurrency:
+  group: accept-mmd-line-slip-intake-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  synthetic-queue-airtable-replay:
+    name: synthetic -> Queue -> extractor -> Airtable pending + replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg"
+      AIRTABLE_STAGING_TABLE_ID: "tbl9Y6IMM4EWYjIBJ"
+      EXTRACTOR_URL: "https://mmd-slip-extractor-staging.malemodel-bkk.workers.dev"
+      INTAKE_URL: "https://mmd-line-slip-intake-staging.malemodel-bkk.workers.dev"
+      NO_COLOR: "1"
+      WRANGLER_SEND_METRICS: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            services/mmd-slip-extractor/package-lock.json
+            services/mmd-slip-extractor/cloudflare/package-lock.json
+
+      - name: Lock staging-only boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const extractor = JSON.parse(fs.readFileSync("services/mmd-slip-extractor/cloudflare/wrangler.jsonc", "utf8"));
+          const intake = JSON.parse(fs.readFileSync("services/mmd-line-slip-intake/cloudflare/wrangler.jsonc", "utf8"));
+          const assert = (condition, message) => { if (!condition) throw new Error(message); };
+          assert(extractor.name === "mmd-slip-extractor-staging", "extractor worker must remain staging");
+          assert(extractor.workers_dev === true && extractor.preview_urls === false, "extractor must remain workers.dev-only");
+          assert(Array.isArray(extractor.routes) && extractor.routes.length === 0, "extractor custom routes forbidden");
+          assert(extractor.vars?.MMD_RUNTIME_SCOPE === "staging", "extractor staging scope required");
+          assert(intake.name === "mmd-line-slip-intake-staging", "intake worker must remain staging");
+          assert(intake.workers_dev === true && intake.preview_urls === false, "intake must remain workers.dev-only");
+          assert(!intake.routes || intake.routes.length === 0, "intake custom routes forbidden");
+          assert(intake.vars?.MMD_RUNTIME_SCOPE === "staging", "intake staging scope required");
+          assert(intake.queues?.producers?.[0]?.queue === "mmd-line-slip-intake-staging", "staging Queue lock failed");
+          assert(intake.queues?.consumers?.[0]?.dead_letter_queue === "mmd-line-slip-intake-staging-dlq", "staging DLQ lock failed");
+          assert(intake.r2_buckets?.[0]?.bucket_name === "mmd-line-slip-evidence-staging", "staging R2 lock failed");
+          const source = fs.readFileSync("services/mmd-line-slip-intake/cloudflare/worker.mjs", "utf8");
+          assert(!source.includes("LINE_WEBHOOK_UPSTREAM_URL"), "retired LINE upstream must remain absent");
+          assert(source.includes('source === "synthetic_isolated"'), "synthetic-only consumer gate missing");
+          NODE
+
+      - name: Generate ephemeral staging bearer tokens
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const crypto = require("node:crypto");
+          const clean = (value) => String(value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
+          const cf = clean(process.env.CLOUDFLARE_API_TOKEN);
+          const airtable = clean(process.env.AIRTABLE_API_KEY);
+          if (!cf) throw new Error("Cloudflare staging deploy credential missing");
+          if (!airtable) throw new Error("Airtable staging credential missing");
+          const extractorToken = crypto.randomBytes(32).toString("base64url");
+          const intakeToken = crypto.randomBytes(32).toString("base64url");
+          for (const value of [cf, airtable, extractorToken, intakeToken]) console.log(`::add-mask::${value}`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `MMD_SLIP_EXTRACTOR_TOKEN=${extractorToken}\nMMD_SLIP_INTAKE_STAGING_TOKEN=${intakeToken}\n`);
+          fs.writeFileSync(process.env.RUNNER_TEMP + "/extractor.env", `MMD_SLIP_EXTRACTOR_TOKEN=${extractorToken}\n`, { mode: 0o600 });
+          fs.writeFileSync(process.env.RUNNER_TEMP + "/intake.env", [
+            `MMD_SLIP_INTAKE_STAGING_TOKEN=${intakeToken}`,
+            `MMD_SLIP_EXTRACTOR_TOKEN=${extractorToken}`,
+            `AIRTABLE_API_KEY=${airtable}`,
+            "",
+          ].join("\n"), { mode: 0o600 });
+          NODE
+
+      - name: Validate source
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix services/mmd-slip-extractor
+          npm ci --prefix services/mmd-slip-extractor/cloudflare
+          node --test services/mmd-slip-extractor/test/*.test.mjs
+          node --test services/mmd-slip-extractor/cloudflare/test/*.test.mjs
+          node --experimental-global-webcrypto --test services/mmd-line-slip-intake/cloudflare/test/*.test.mjs
+
+      - name: Re-deploy isolated staging extractor with matching ephemeral token
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.128.0 deploy \
+            --config services/mmd-slip-extractor/cloudflare/wrangler.jsonc \
+            --keep-vars \
+            --secrets-file "$RUNNER_TEMP/extractor.env"
+
+      - name: Wait for extractor health
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 36); do
+            code="$(curl --silent --show-error --output "$RUNNER_TEMP/extractor-health.json" --write-out '%{http_code}' "$EXTRACTOR_URL/health" || true)"
+            if [ "$code" = "200" ] && node -e 'const fs=require("node:fs"); const b=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); if (b.ok!==true) process.exit(1)' "$RUNNER_TEMP/extractor-health.json"; then
+              echo "Extractor staging healthy"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Extractor staging health timeout" >&2
+          exit 1
+
+      - name: Re-deploy Queue-backed staging intake with matching ephemeral tokens
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.128.0 deploy \
+            --config services/mmd-line-slip-intake/cloudflare/wrangler.jsonc \
+            --keep-vars \
+            --secrets-file "$RUNNER_TEMP/intake.env"
+
+      - name: Wait for intake health
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 18); do
+            body="$(curl --silent --show-error "$INTAKE_URL/health" || true)"
+            if node -e 'const b=JSON.parse(process.argv[1]); if (b.ok!==true || b.worker!=="mmd-line-slip-intake-staging" || b.runtime_scope!=="staging") process.exit(1)' "$body" 2>/dev/null; then
+              echo "Intake staging healthy"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Intake staging health timeout" >&2
+          exit 1
+
+      - name: Create unique synthetic redacted fixture
+        shell: bash
+        working-directory: services/mmd-slip-extractor
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import sharp from "sharp";
+          const run = process.env.GITHUB_RUN_ID + "-" + process.env.GITHUB_RUN_ATTEMPT;
+          const svg = `<svg width="1100" height="420" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><text x="60" y="120" font-family="Arial" font-size="54" fill="black">MMD SYNTHETIC SLIP</text><text x="60" y="220" font-family="Arial" font-size="48" fill="black">Amount: THB 690.00</text><text x="60" y="315" font-family="Arial" font-size="36" fill="black">Transaction ID: SYN-${run}</text></svg>`;
+          await sharp(Buffer.from(svg)).png().toFile(process.env.RUNNER_TEMP + "/synthetic-slip.png");
+          NODE
+
+      - name: Prove unauthorized boundary and authorized queue acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          unauth_code="$(curl --silent --show-error --output "$RUNNER_TEMP/unauth.json" --write-out '%{http_code}' \
+            -X POST -H 'Content-Type: image/png' --data-binary "@$RUNNER_TEMP/synthetic-slip.png" "$INTAKE_URL/v1/staging/intake" || true)"
+          test "$unauth_code" = "401"
+
+          run_id="gha-accept-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          auth_code="$(curl --silent --show-error --output "$RUNNER_TEMP/intake.json" --write-out '%{http_code}' \
+            -X POST \
+            -H "Authorization: Bearer ${MMD_SLIP_INTAKE_STAGING_TOKEN}" \
+            -H 'Content-Type: image/png' \
+            -H "x-mmd-run-id: ${run_id}" \
+            --data-binary "@$RUNNER_TEMP/synthetic-slip.png" \
+            "$INTAKE_URL/v1/staging/intake" || true)"
+          echo "Authorized intake HTTP ${auth_code}"
+          cat "$RUNNER_TEMP/intake.json"
+          echo
+          test "$auth_code" = "202"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const body = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/intake.json", "utf8"));
+          if (body.ok !== true || body.accepted !== true || body.state !== "queued") throw new Error("authorized intake did not queue");
+          if (!/^syn_[a-f0-9]{24}$/.test(body.proof_id || "")) throw new Error("synthetic proof id missing");
+          if ("r2_key" in body || "paid" in body || "verified" in body) throw new Error("forbidden authority field exposed");
+          fs.writeFileSync(process.env.RUNNER_TEMP + "/proof-id.txt", body.proof_id);
+          console.log(`Synthetic proof queued: ${body.proof_id}`);
+          NODE
+
+      - name: Verify Airtable pending proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const proofId = fs.readFileSync(process.env.RUNNER_TEMP + "/proof-id.txt", "utf8").trim();
+          const token = process.env.AIRTABLE_API_KEY;
+          const base = process.env.AIRTABLE_BASE_ID;
+          const table = process.env.AIRTABLE_STAGING_TABLE_ID;
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          const formula = `{proof_id}='${proofId.replace(/'/g, "\\'")}'`;
+          const url = `https://api.airtable.com/v0/${base}/${table}?maxRecords=10&filterByFormula=${encodeURIComponent(formula)}`;
+          let records = [];
+          for (let attempt = 1; attempt <= 40; attempt += 1) {
+            const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+            if (!response.ok) throw new Error(`Airtable proof read HTTP ${response.status}`);
+            const payload = await response.json();
+            records = Array.isArray(payload.records) ? payload.records : [];
+            if (records.length) break;
+            await sleep(3000);
+          }
+          if (records.length !== 1) throw new Error(`expected one pending proof, got ${records.length}`);
+          const fields = records[0].fields || {};
+          if (fields.status !== "pending") throw new Error(`expected pending status, got ${fields.status}`);
+          if (fields.source !== "synthetic_isolated") throw new Error(`expected synthetic_isolated source, got ${fields.source}`);
+          if (fields.paid === true || fields.verified === true) throw new Error("forbidden payment truth mutation detected");
+          fs.writeFileSync(process.env.RUNNER_TEMP + "/proof-record.json", JSON.stringify({ proofId, recordId: records[0].id }));
+          console.log(`Airtable pending proof PASS: ${proofId}`);
+          NODE
+
+      - name: Prove replay idempotency
+        shell: bash
+        run: |
+          set -euo pipefail
+          replay_code="$(curl --silent --show-error --output "$RUNNER_TEMP/replay.json" --write-out '%{http_code}' \
+            -X POST \
+            -H "Authorization: Bearer ${MMD_SLIP_INTAKE_STAGING_TOKEN}" \
+            -H 'Content-Type: image/png' \
+            -H "x-mmd-run-id: replay-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --data-binary "@$RUNNER_TEMP/synthetic-slip.png" \
+            "$INTAKE_URL/v1/staging/intake" || true)"
+          test "$replay_code" = "202"
+          sleep 10
+          node <<'NODE'
+          const fs = require("node:fs");
+          const { proofId } = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/proof-record.json", "utf8"));
+          const token = process.env.AIRTABLE_API_KEY;
+          const base = process.env.AIRTABLE_BASE_ID;
+          const table = process.env.AIRTABLE_STAGING_TABLE_ID;
+          const formula = `{proof_id}='${proofId.replace(/'/g, "\\'")}'`;
+          const url = `https://api.airtable.com/v0/${base}/${table}?maxRecords=10&filterByFormula=${encodeURIComponent(formula)}`;
+          const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+          if (!response.ok) throw new Error(`Airtable replay read HTTP ${response.status}`);
+          const payload = await response.json();
+          const records = Array.isArray(payload.records) ? payload.records : [];
+          if (records.length !== 1) throw new Error(`replay created duplicate proof rows: ${records.length}`);
+          const fields = records[0].fields || {};
+          if (fields.status !== "pending" || fields.source !== "synthetic_isolated") throw new Error("replay changed authority boundary");
+          console.log(`Replay idempotency PASS: ${proofId}`);
+          NODE
+
+      - name: Record synthetic acceptance in issue 317
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          proof=""
+          if [ -f "$RUNNER_TEMP/proof-id.txt" ]; then proof="$(cat "$RUNNER_TEMP/proof-id.txt")"; fi
+          if [ "${{ job.status }}" = "success" ]; then
+            gh issue comment 317 --repo "$GITHUB_REPOSITORY" --body "✅ Staging acceptance A PASS — authorized synthetic → Queue → extractor → Airtable \`pending\` + replay idempotency.\n\n- source_sha: \`${GITHUB_SHA}\`\n- workflow_run_id: \`${GITHUB_RUN_ID}\`\n- proof_id: \`${proof}\`\n- source: \`synthetic_isolated\`\n- payment truth mutation: NONE\n- production LINE route mutation: NONE\n- real-LINE production: NOT TOUCHED\n\nThis synthetic PASS must not be counted as real-LINE production PASS."
+          else
+            gh issue comment 317 --repo "$GITHUB_REPOSITORY" --body "❌ Staging acceptance A FAILED — authorized synthetic → Queue → extractor → Airtable pending + replay proof did not complete.\n\n- source_sha: \`${GITHUB_SHA}\`\n- workflow_run_id: \`${GITHUB_RUN_ID}\`\n- production LINE route mutation: NONE\n- real-LINE production: NOT TOUCHED"
+          fi
+
+  hype-redacted-alert:
+    name: HYPE redacted alert credential + delivery
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AUTH_SERVICE_LINE_TO_TELEGRAM: ${{ secrets.AUTH_SERVICE_LINE_TO_TELEGRAM || secrets.TELEGRAM_INTERNAL_TOKEN || secrets.INTERNAL_API_TOKEN }}
+      TELEGRAM_URL: "https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send"
+
+    steps:
+      - name: Check accepted Telegram service credential exists
+        id: credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="$(printf '%s' "${AUTH_SERVICE_LINE_TO_TELEGRAM:-}" | tr -d '\r\n' | xargs)"
+          if [ -z "$token" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "AUTH_SERVICE_LINE_TO_TELEGRAM / fallback service credential is not exposed to GitHub Actions" >&2
+            exit 0
+          fi
+          echo "::add-mask::${token}"
+          echo "available=true" >> "$GITHUB_OUTPUT"
+
+      - name: Send redacted HYPE staging acceptance alert
+        if: steps.credential.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl --fail-with-body --silent --show-error \
+            -X POST "$TELEGRAM_URL" \
+            -H "Authorization: Bearer ${AUTH_SERVICE_LINE_TO_TELEGRAM}" \
+            -H 'Content-Type: application/json' \
+            --data "{\"flow\":\"payment_proof\",\"chat_id\":\"-1003546439681\",\"message_thread_id\":21,\"text\":\"🧪 LINE SLIP STAGING ACCEPTANCE\\nProof: synthetic/redacted only\\nStatus: pending\\nNo customer data / no production LINE\"}")"
+          printf '%s' "$response" > "$RUNNER_TEMP/hype.json"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const body = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/hype.json", "utf8"));
+          if (body.ok !== true || body.telegram?.ok !== true) throw new Error("HYPE redacted alert delivery failed");
+          console.log("HYPE redacted alert PASS");
+          NODE
+
+      - name: Record HYPE result in issue 317
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.credential.outputs.available }}" != "true" ]; then
+            gh issue comment 317 --repo "$GITHUB_REPOSITORY" --body "⛔ Staging acceptance B BLOCKED — HYPE redacted alert cannot be proven because GitHub Actions still has no accepted Telegram internal/service credential.\n\nRequired repository/environment secret: \`AUTH_SERVICE_LINE_TO_TELEGRAM\` (preferred), or an already-accepted fallback explicitly wired to telegram-worker.\n\nNo production LINE route or real-LINE traffic was touched. Do not weaken telegram-worker auth to bypass this gate."
+            exit 1
+          fi
+          if [ "${{ job.status }}" = "success" ]; then
+            gh issue comment 317 --repo "$GITHUB_REPOSITORY" --body "✅ Staging acceptance B PASS — redacted HYPE alert delivered through authenticated Telegram internal route. Synthetic/redacted payload only; no customer data and no production LINE traffic."
+          else
+            gh issue comment 317 --repo "$GITHUB_REPOSITORY" --body "❌ Staging acceptance B FAILED — Telegram service credential existed but redacted HYPE alert delivery did not pass. No production LINE route or real-LINE traffic was touched."
+            exit 1
+          fi

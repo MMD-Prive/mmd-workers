@@ -701,6 +701,7 @@ function buildMemberDashboardData(profile = {}, request) {
       display_name: dashboardDisplayName(profile.display_name),
       tier,
       membership_status: membershipStatus,
+      membership_expires_at: profile.membership_expires_at || null,
     },
     points,
     history,
@@ -731,14 +732,14 @@ function dashboardTier(profile = {}) {
 
 function dashboardMembershipStatus(profile = {}) {
   const status = String(profile.membership_status || "").trim().toLowerCase();
-  if (status === "active" || status === "grace") return verifiedField("active", "member_profile_resolver");
+  if (["active", "grace", "blocked", "suspended", "revoked", "pending_review"].includes(status)) return verifiedField(status, "member_profile_resolver");
   if (status === "expired") return verifiedField("expired", "member_profile_resolver");
   if (status === "under_review") return verifiedField("pending", "member_profile_resolver");
   return checkingField("member_profile_resolver");
 }
 
 function dashboardPoints(profile = {}) {
-  const value = Number(profile.points);
+  const value = profile.points === null || profile.points === undefined || String(profile.points).trim() === "" ? NaN : Number(profile.points);
   const recordsCount = profile.points_records_count === null || profile.points_records_count === undefined
     ? NaN
     : Number(profile.points_records_count);
@@ -751,6 +752,7 @@ function dashboardPoints(profile = {}) {
     status: "verified",
     source: "points_ledger",
     records_count: recordsCount,
+    ...(profile.customer_360?.points?.status === "verified" ? { history: profile.customer_360.points.history } : {}),
   };
 }
 
@@ -758,7 +760,8 @@ function dashboardHistory(profile = {}) {
   const events = Array.isArray(profile.history)
     ? profile.history.map(dashboardHistoryEvent).filter(Boolean).slice(0, 50)
     : [];
-  const status = events.length ? "verified" : "empty";
+  const sourceStatus = profile.customer_360?.history?.status;
+  const status = sourceStatus && sourceStatus !== "verified" ? "checking" : (Array.isArray(profile.history) ? (events.length ? "verified" : "empty") : "checking");
   const paymentHistoryStatus = dashboardPaymentHistory(profile).status;
   return {
     status,
@@ -778,6 +781,7 @@ function dashboardHistoryEvent(item = {}) {
     occurred_at: `${date}T00:00:00.000Z`,
     title,
     summary: "รายการนี้ยืนยันแล้ว",
+    status: String(item.status || "checking"),
   };
   if (type === "points" && Number.isFinite(Number(item.points_delta))) {
     event.points_delta = Math.trunc(Number(item.points_delta));

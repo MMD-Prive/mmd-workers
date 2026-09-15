@@ -1,28 +1,132 @@
 import worker from "./index.js";
 import { rewritePendingStatusStartResponse } from "./liff-status-resolution-guard.js";
-import { isDriveBootstrapCandidate, tryDriveMemberBootstrap } from "./drive-member-bootstrap.js";
+import { isDriveBootstrapCandidate, tryDriveMemberBootstrap } from "./drive-member-bootstrap-runtime.js";
+import { isDriveReconcileRequest, handleDriveReconcile } from "./drive-access-reconcile.js";
 import { withDriveBootstrapDiagnostic } from "./drive-bootstrap-debug.js";
+import { withDashboardLiffChannelCompatibility } from "./liff-dashboard-channel-compat.js";
 import { withStatusFirstMemberResolver } from "./liff-status-first-member-resolver.js";
+import { applyMyMmdFastTrustResponse } from "./my-mmd-fast-trust-response.js";
+import { recoverVerifiedLiffStartAsPendingIdentity } from "./liff-start-pending-identity-fallback.js";
 import { attachTraceId, createLiffResolutionTrace, createLiffShellBoundaryTrace } from "./liff-resolution-trace.js";
+import {
+  handleMemberClientCredits,
+  isMemberClientCreditsRequest,
+} from "./member-app-client-credits.js";
+import {
+  handleTrustedCareBackBookingApproval,
+  isTrustedCareBackBookingApproval,
+} from "./care-back-trusted-booking-approval.js";
+import {
+  handleKenjiLineMemberTruth,
+  isKenjiLineMemberTruthRequest,
+} from "./kenji-line-member-truth.js";
+import {
+  handleKenjiLineMemberTruthHealth,
+  isKenjiLineMemberTruthHealthRequest,
+} from "./kenji-line-member-truth-health.js";
+import {
+  handleModelDriveDirectoryRequest,
+  isModelDriveDirectoryRequest,
+} from "./model-drive-directory.js";
+import {
+  handlePrivatePreview,
+  isPrivatePreviewRequest,
+  PrivatePreviewGate,
+} from "./private-preview.js";
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-durable-object.js";
+export { PrivatePreviewGate };
+
+const CARE_BACK_WEBVIEW_PATHS = new Set([
+  "/member/api/care-back/public-wish",
+  "/member/api/care-back/public-wish/",
+  "/member/api/care-back/link-wish",
+  "/member/api/care-back/link-wish/",
+]);
+const CARE_BACK_WEB_ORIGINS = new Set([
+  "https://mmdbkk.com",
+  "https://www.mmdbkk.com",
+]);
+
+export function normalizeCareBackWebViewOrigin(request) {
+  if (!(request instanceof Request) || request.method !== "POST") return request;
+  let url;
+  try { url = new URL(request.url); } catch { return request; }
+  if (!CARE_BACK_WEBVIEW_PATHS.has(url.pathname) || !CARE_BACK_WEB_ORIGINS.has(url.origin)) return request;
+  if (String(request.headers.get("origin") || "").trim()) return request;
+
+  const fetchSite = String(request.headers.get("sec-fetch-site") || "").trim().toLowerCase();
+  const referer = String(request.headers.get("referer") || "").trim();
+  let trustedSameSite = fetchSite === "same-origin" || fetchSite === "same-site";
+  if (!trustedSameSite && referer) {
+    try { trustedSameSite = new URL(referer).origin === url.origin; } catch { trustedSameSite = false; }
+  }
+  if (!trustedSameSite) return request;
+
+  const headers = new Headers(request.headers);
+  headers.set("origin", url.origin);
+  headers.set("x-mmd-webview-origin-normalized", "care-back-v1");
+  return new Request(request, { headers });
+}
 
 export default {
   async fetch(request, env, ctx) {
+    request = normalizeCareBackWebViewOrigin(request);
+    // Service-binding-only model inventory discovery. The synthetic hostname is
+    // never routed publicly, so Drive credentials and inventory remain backend-only.
+    if (isModelDriveDirectoryRequest(request)) {
+      return handleModelDriveDirectoryRequest(request, env);
+    }
+    if (isMemberClientCreditsRequest(request)) {
+      return handleMemberClientCredits(request, env);
+    }
+    if (isPrivatePreviewRequest(request)) {
+      return handlePrivatePreview(request, env);
+    }
+    if (isKenjiLineMemberTruthHealthRequest(request)) {
+      return handleKenjiLineMemberTruthHealth(request, env);
+    }
+    if (isKenjiLineMemberTruthRequest(request)) {
+      return handleKenjiLineMemberTruth(request, env);
+    }
+    if (isTrustedCareBackBookingApproval(request)) {
+      return handleTrustedCareBackBookingApproval(request, env);
+    }
+    if (isDriveReconcileRequest(request)) return handleDriveReconcile(request, env);
+
     const shellBoundary = createLiffShellBoundaryTrace(request, env, ctx);
     const trace = createLiffResolutionTrace(request, env, ctx);
-    const runtimeEnv = withStatusFirstMemberResolver(request, env);
+    const channelCompatibleEnv = withDashboardLiffChannelCompatibility(request, env);
+    const runtimeEnv = withStatusFirstMemberResolver(request, channelCompatibleEnv);
     const firstRequest = request.clone();
     const bootstrapRequest = request.clone();
     let firstResponse = await worker.fetch(firstRequest, runtimeEnv, ctx);
+    firstResponse = await applyMyMmdFastTrustResponse(request, firstResponse, env);
+    let firstPayload = await jsonPayload(firstResponse);
+
+    const recoveredResponse = await recoverVerifiedLiffStartAsPendingIdentity({
+      request,
+      response: firstResponse,
+      payload: firstPayload,
+      worker,
+      env: runtimeEnv,
+      ctx,
+    });
+    if (recoveredResponse !== firstResponse) {
+      firstResponse = recoveredResponse;
+      firstPayload = await jsonPayload(firstResponse);
+      trace?.event("member_resolution", "pending_identity", "resolver_unavailable_session_preserved", {
+        http_status: firstResponse.status,
+        member_resolved: false,
+        pending_identity: true,
+      });
+    }
 
     if (shellBoundary) {
       shellBoundary.finish(firstResponse);
       firstResponse = shellBoundary.attach(firstResponse);
     }
-
-    const firstPayload = await jsonPayload(firstResponse);
 
     if (trace) {
       trace.event("member_status", firstResponse.ok ? "complete" : "failed", firstPayload?.error?.code || "", {
@@ -40,10 +144,9 @@ export default {
         package_code: bootstrap.package_code || "",
       });
       if (bootstrap.mapped) {
-        const retriedResponse = await worker.fetch(request, runtimeEnv, ctx);
-        trace?.event("member_retry", retriedResponse.ok ? "complete" : "failed", "", {
-          http_status: retriedResponse.status,
-        });
+        let retriedResponse = await worker.fetch(request, runtimeEnv, ctx);
+        retriedResponse = await applyMyMmdFastTrustResponse(request, retriedResponse, env);
+        trace?.event("member_retry", retriedResponse.ok ? "complete" : "failed", "", { http_status: retriedResponse.status });
         trace?.finish(retriedResponse.ok ? "resolved" : "failed", retriedResponse.ok ? "drive_bootstrap_mapped" : "member_retry_failed");
         const rewritten = await rewritePendingStatusStartResponse(request, retriedResponse, trace?.traceId || "");
         return attachTraceId(rewritten, trace?.traceId || "");

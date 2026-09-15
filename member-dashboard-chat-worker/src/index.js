@@ -4,8 +4,13 @@ import {
 } from "./renderers/single-renewal-renderer.js";
 import { KenjiModelIdempotency } from "./kenji-model-idempotency.js";
 import { generateKenjiModelReply, KENJI_TOTAL_DEADLINE_MS } from "./kenji-model-policy.js";
+import { runKenjiFolderHistoryAssessment } from "./kenji-folder-history-adapter.mjs";
 import { buildProtectedCapabilityReply, decideKenjiCapability, KENJI_CAPABILITIES } from "./kenji-capability-policy.js";
 import { parseModelKnowledgeIdAllowlist, selectApprovedLineModelKnowledge } from "./kenji-knowledge-policy.js";
+// Canonical member-status voice policy (Per/HITO) is resolved before any generic LINE fallback.
+import { generateSafeReply, canonicalRichMenuIntent } from "../../shared/verified-member-concierge.mjs";
+import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
+import { INTERNAL_AI_SERVICE_BINDING_SMOKE, runInternalAiServiceBindingSmoke } from "./internal-ai-service-binding-smoke.mjs";
 
 export { KenjiModelIdempotency };
 
@@ -17,6 +22,7 @@ const LINE_RICH_MENU_API_URL = "https://api.line.me/v2/bot/richmenu";
 const LINE_RICH_MENU_DATA_URL = "https://api-data.line.me/v2/bot/richmenu";
 const LINE_DEFAULT_RICH_MENU_URL = "https://api.line.me/v2/bot/user/all/richmenu";
 const WORKER_NAME = "member-dashboard-chat-worker";
+const DEFAULT_HIMAI_SUPPLIERS_TABLE = "tbl81bnFyASeXCj9x";
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webhook/line", "/webhook/line/"]);
 const MEMBER_LIFF_PREFIX = "/member/api/liff/";
 const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
@@ -140,6 +146,12 @@ function hasBearerInternalAuth(request = null, env = {}) {
   return Boolean(expectedInternalToken && bearer && bearer === expectedInternalToken);
 }
 
+function hasAiServiceSmokeAuth(request = null, env = {}) {
+  const bearer = getBearerToken(request);
+  const expectedSmokeToken = asString(env.AI_SERVICE_SMOKE_TOKEN);
+  return Boolean(expectedSmokeToken && bearer && timingSafeStringEqual(bearer, expectedSmokeToken));
+}
+
 function hasServiceBindingAuth(request = null, allowedCallers = []) {
   const service = asString(request?.headers?.get("x-mmd-service-binding"));
   const internal = asString(request?.headers?.get("x-mmd-internal-call")).toLowerCase();
@@ -227,6 +239,18 @@ function getLineEventText(event = {}) {
   return "";
 }
 
+function matchHimaiSupplierRegistration(text = "") {
+  const raw = asString(text).normalize("NFKC").replace(/\s+/g, " ").trim();
+  const match = raw.match(/^REGISTER\s+HIMAI(?:\s+(.+?))?$/i);
+  if (!match) return null;
+  const supplierName = asString(match[1]).replace(/^[ "'“”‘’]+|["'“”‘’?.!]+$/g, "").trim();
+  return supplierName.length <= 80 ? supplierName : "";
+}
+
+export function extractHimaiSupplierRegistrationName(text = "") {
+  return matchHimaiSupplierRegistration(text) || "";
+}
+
 function getLineEventId(event = {}) {
   return asString(event?.message?.id || event?.webhookEventId || event?.replyToken || `evt_${Date.now()}`);
 }
@@ -301,6 +325,7 @@ export function inferLineIntent(text = "", event = {}) {
     return "line_event";
   }
 
+  if (matchHimaiSupplierRegistration(text) !== null) return "himai_supplier_registration";
   if (extractKenjiModelVerificationEmail(text)) return "model_access_verification";
 
   if (/(human handoff|human agent|คุยกับคน|เจ้าหน้าที่)/i.test(normalized)) return "human_handoff";
@@ -349,10 +374,12 @@ export function inferLineIntent(text = "", event = {}) {
   if (/^(?:สถานะ(?:สมาชิก)?(?:ของ)?ผม|สถานะ(?:สมาชิก)?(?:ของ)?ฉัน|สถานะ(?:สมาชิก)?(?:ของ)?หนู)(?:เป็นยังไง|เป็นอย่างไร|ตอนนี้)?(?:ครับ|ค่ะ)?$/i.test(normalized)) return "membership_status";
   if (/^(?:แต้ม|คะแนน|points?)(?:ของ)?(?:ผม|ฉัน|หนู)?\s*(?:เข้า|เพิ่ม|มา)(?:แล้ว)?(?:หรือยัง|ไหม|หรือเปล่า)?(?:ครับ|ค่ะ)?$/i.test(normalized)) return "points_status";
   if (/(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
+  if (/(?:after\s*care|aftercare|ดูแลหลัง(?:การ)?บริการ|หลัง(?:ใช้|รับ)บริการ|ให้คะแนน(?:บริการ|session|เซสชัน)|(?:feedback|ฟีดแบ็ก).{0,16}(?:บริการ|session|เซสชัน))/i.test(normalized)) return "aftercare";
   if (/(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
   if (/(svip|s vip|super\s*vip)/i.test(normalized)) return "svip";
   if (/(black\s*card|แบล็คการ์ด|บัตรดำ)/i.test(normalized)) return "black_card";
   if (/(vip|วีไอพี)/i.test(normalized)) return "vip";
+  if (/(?:จอง|booking|request|คิว).{0,20}(?:ถึงไหน|สถานะ|คอนเฟิร์ม|confirm(?:ed)?|เรียบร้อย|หรือยัง)|(?:สถานะ).{0,12}(?:จอง|booking|request)/i.test(normalized)) return "booking_status";
   if (/(massage|male massage|นวด|คลายกล้าม|recovery|wellness|therapist|เทอราปิส)/i.test(normalized)) return "mms_wellness";
   if (/(relax spa|partner venue|ไม่มีสถานที่|ไม่มีที่|สถานที่พร้อมอุปกรณ์|ใช้ร้าน)/i.test(normalized)) return "partner_venue";
   if (/(private talent|specialist|freelancer|special skill|ทักษะพิเศษ|ล่าม|ภาษา|performance|creative|business presence)/i.test(normalized)) return "private_talent";
@@ -690,18 +717,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "talk_to_per_ai") {
-    return `สวัสดีครับ ${prefix}ยินดีต้อนรับสู่ MMD Privé นะครับ
-
-อยากสมัครสมาชิก / ต่ออายุ เช็กสถานะ สอบถามบริการ หรือมีเคสส่วนตัวให้เปอร์ช่วยดู พิมพ์มาได้เลยครับ
-
-ตอนนี้อยากให้ช่วยเรื่องไหนก่อนครับ
-1) สมัครสมาชิก / ต่ออายุ
-2) เช็กแพ็กเกจหรือสถานะสมาชิก
-3) สอบถามบริการหรือ Companion
-4) ส่งรูปหรือโปรไฟล์ที่อยากให้ MMD พิจารณา
-5) ให้เปอร์ดูเป็นเคสส่วนตัว
-
-เล่าได้เลยครับ เดี๋ยวเปอร์ช่วยแยกขั้นตอนที่เหมาะให้ครับ`;
+    return `สวัสดีครับ ${prefix}ยินดีต้อนรับสู่ MMD Privé\nผม HITO ครับ\n\nขออนุญาตตรวจสอบสถานะบัญชีผ่าน My MMD ก่อนนะครับ แล้วเปอร์จะช่วยต่อให้ตรงกับสิทธิ์ของบัญชีครับ`;
   }
 
   if (intent === "privacy_request") {
@@ -780,9 +796,9 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "payment_slip") {
-    return `${prefix}ส่งหลักฐานเข้ามาได้ครับ: https://mmdbkk.com/confirm/payment-proof
+    return `${prefix}ไปต่อจากรายการชำระของคุณได้ที่นี่ครับ: https://mmdbkk.com/member/payments
 
-เดี๋ยว MMD ตรวจยอดและจับคู่รายการให้ก่อนนะครับ หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request ครับ`;
+ถ้ามีรายการเดิมหรือส่งหลักฐานไว้แล้ว ให้ใช้รายการเดิมและไม่ต้องส่งซ้ำครับ MMD จะตรวจยอด จับคู่รายการ และอัปเดตสถานะอย่างเป็นทางการก่อนครับ หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request ครับ`;
   }
 
   if (intent === "payment_status") {
@@ -815,6 +831,14 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
 
   if (intent === "mms_wellness") {
     return `${prefix}ถ้าต้องการ male massage หรือ recovery service เดี๋ยวเปอร์ช่วยแยกเป็น MMS Wellness ให้ครับ เลือกได้ทั้ง hotel / home visit หรือ Partner Venue โดย MMD ต้องตรวจรายละเอียดและความเหมาะสมก่อนครับ`;
+  }
+
+  if (intent === "booking_status") {
+    return `${prefix}ผมยังยืนยันสถานะหรือคอนเฟิร์มการจองจากข้อความอย่างเดียวไม่ได้ครับ เปิดรายการจริงใน My MMD > History เพื่อดูสถานะล่าสุดได้ และถ้ายังรอตรวจ ผมจะไม่สรุปว่าเรียบร้อยแล้วครับ`;
+  }
+
+  if (intent === "aftercare") {
+    return `${prefix}Aftercare จะเปิดจาก Session ที่พร้อมใน My MMD > History ครับ ให้ใช้ปุ่ม Aftercare ของรายการนั้นเพื่อให้คะแนน ส่ง feedback หรือเข้า Private Care โดยลิงก์เฉพาะ Session ต้องมาจากข้อมูลทางการเท่านั้นครับ`;
   }
 
   if (intent === "partner_venue") {
@@ -858,6 +882,9 @@ export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env
 export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, options = {}) {
   const eventText = getLineEventText(event);
   const intent = inferLineIntent(eventText, event);
+  const lineUserId = getLineUserId({ event });
+  const liveMemberContext = await resolveKenjiLiveMemberContext(env, lineUserId, intent);
+  const replyOptions = liveMemberContext ? { ...options, verifiedMemberContext: liveMemberContext } : options;
   const capabilityDecision = decideKenjiCapability({ text: eventText, intent });
   const modelAccessAllowed = options.modelAccessAllowed !== false;
 
@@ -884,7 +911,9 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     return buildKenjiModelAccessDecision(access, { pendingStored: pending.ok === true && pending.stored === true });
   }
 
-  const deterministicReply = buildKenjiLineReply(event, profile, options);
+  const conciergeInput = replyOptions.verifiedMemberContext ? { ...replyOptions.verifiedMemberContext, intent: canonicalRichMenuIntent({ intent, data: event?.postback?.data }) } : null;
+  const conciergeReply = conciergeInput ? generateSafeReply(conciergeInput) : null;
+  const deterministicReply = conciergeReply?.text || buildKenjiLineReply(event, profile, options);
   const deterministicFirst = capabilityDecision.capability !== KENJI_CAPABILITIES.APPROVED_PUBLIC_KNOWLEDGE && capabilityDecision.capability !== KENJI_CAPABILITIES.SAFE_CONVERSATION;
   const cachedKnowledge = isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)
     ? getCachedPublishedPerVoiceReply(env, intent)
@@ -1057,6 +1086,107 @@ function getAirtableTable(env = {}) {
 function encodeFormulaValue(value) {
   return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
+
+function getHimaiSuppliersTable(env = {}) {
+  return asString(env.HIMAI_SUPPLIERS_TABLE_ID || env.SHARED_SUPPLIERS_TABLE_ID || DEFAULT_HIMAI_SUPPLIERS_TABLE);
+}
+
+function supplierRegistrationDecision(text = "", guardReason = "", guardBlocked = false) {
+  return {
+    text,
+    fallback: false,
+    reply_source: "supplier_registration",
+    model_attempted: false,
+    model_success: false,
+    model_latency_ms: 0,
+    knowledge_hits: 0,
+    guard_blocked: guardBlocked,
+    guard_reason: guardReason,
+  };
+}
+
+function airtableValues(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => (item && typeof item === "object" ? asString(item.name || item.value) : asString(item))).filter(Boolean);
+  }
+  return value === undefined || value === null ? [] : [asString(value)].filter(Boolean);
+}
+
+function hasHimaiShopScope(value) {
+  const values = airtableValues(value).map((item) => item.toLowerCase());
+  return !values.length || values.includes("himai shop");
+}
+
+async function registerHimaiSupplier(event = {}, env = {}, supplierName = "") {
+  const lineUserId = getLineUserId({ event });
+  if (!supplierName) {
+    return supplierRegistrationDecision("กรุณาพิมพ์ชื่อ Supplier ต่อท้ายคำสั่ง เช่น Register himai ping ครับ", "supplier_name_missing");
+  }
+  if (!lineUserId) {
+    return supplierRegistrationDecision("ไม่สามารถระบุบัญชี LINE นี้ได้ครับ กรุณาส่งข้อความใหม่จากแชตนี้อีกครั้ง", "line_user_missing", true);
+  }
+
+  const apiKey = asString(env.AIRTABLE_API_KEY);
+  const baseId = asString(env.AIRTABLE_BASE_ID);
+  const table = getHimaiSuppliersTable(env);
+  if (!apiKey || !baseId || !table) return supplierRegistrationDecision("", "supplier_registry_unconfigured", true);
+
+  try {
+    const url = new URL("https://api.airtable.com/v0/" + baseId + "/" + encodeURIComponent(table));
+    url.searchParams.set("pageSize", "10");
+    url.searchParams.set("filterByFormula", 'LOWER({Supplier Name})=LOWER("' + encodeFormulaValue(supplierName) + '")');
+    ["Supplier Name", "LINE User ID", "LINE Name", "LINE Status", "Last LINE Linked At", "Brand Scope", "Supplier Status"].forEach((field) => {
+      url.searchParams.append("fields[]", field);
+    });
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: { authorization: "Bearer " + apiKey },
+    });
+    if (!response.ok) return supplierRegistrationDecision("ระบบ Supplier ยังไม่พร้อมเชื่อมต่อครับ กรุณาลองใหม่อีกครั้งหรือติดต่อ MMD", "supplier_registry_lookup_failed", true);
+
+    const payload = await response.json().catch(() => ({}));
+    const records = Array.isArray(payload?.records) ? payload.records : [];
+    if (records.length === 0) return supplierRegistrationDecision("ไม่พบ Supplier ชื่อนี้ในระบบ Himai Shop ครับ กรุณาติดต่อ MMD ให้เพิ่ม Supplier ก่อน", "supplier_not_found", true);
+    if (records.length !== 1) return supplierRegistrationDecision("พบชื่อ Supplier ซ้ำในระบบครับ กรุณาติดต่อ MMD ให้ตรวจสอบก่อนเชื่อมบัญชี", "supplier_name_ambiguous", true);
+
+    const record = records[0];
+    const fields = record?.fields || {};
+    const supplierStatus = asString(fields["Supplier Status"]).toLowerCase();
+    if (supplierStatus && supplierStatus !== "active") return supplierRegistrationDecision("Supplier นี้ยังไม่อยู่ในสถานะใช้งานของ Himai Shop ครับ กรุณาติดต่อ MMD", "supplier_not_active", true);
+    if (!hasHimaiShopScope(fields["Brand Scope"])) return supplierRegistrationDecision("Supplier นี้ไม่ได้อยู่ในขอบเขตของ Himai Shop ครับ กรุณาติดต่อ MMD", "supplier_scope_mismatch", true);
+
+    const existingLineUserId = asString(fields["LINE User ID"]);
+    if (existingLineUserId && existingLineUserId !== lineUserId) {
+      return supplierRegistrationDecision("ไม่สามารถเชื่อม Supplier นี้กับ LINE บัญชีนี้ได้ครับ เพราะมี LINE บัญชีอื่นเชื่อมอยู่แล้ว กรุณาติดต่อ MMD", "supplier_already_linked", true);
+    }
+
+    const profile = await fetchLineProfile(env, lineUserId);
+    const patchResponse = await fetch(
+      "https://api.airtable.com/v0/" + baseId + "/" + encodeURIComponent(table) + "/" + encodeURIComponent(asString(record.id)),
+      {
+        method: "PATCH",
+        headers: {
+          authorization: "Bearer " + apiKey,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          fields: {
+            "LINE User ID": lineUserId,
+            "LINE Name": asString(profile?.displayName),
+            "LINE Status": "Connected",
+            "Last LINE Linked At": new Date().toISOString(),
+          },
+        }),
+      },
+    );
+    if (!patchResponse.ok) return supplierRegistrationDecision("พบ Supplier แล้ว แต่บันทึกการเชื่อมต่อไม่สำเร็จครับ กรุณาลองใหม่อีกครั้ง", "supplier_registry_update_failed", true);
+
+    return supplierRegistrationDecision("เชื่อม Supplier สำเร็จแล้วครับ\nจากนี้ " + (asString(fields["Supplier Name"]) || supplierName) + " จะได้รับรายงานการกระจายสินค้าของ Himai Shop ผ่าน LINE นี้ครับ");
+  } catch (_) {
+    return supplierRegistrationDecision("ระบบ Supplier ยังไม่พร้อมเชื่อมต่อครับ กรุณาลองใหม่อีกครั้งหรือติดต่อ MMD", "supplier_registry_runtime_error", true);
+  }
+}
+
 
 async function findExistingLineEvent(env = {}, eventId = "", inboxId = "", options = {}) {
   const apiKey = asString(env.AIRTABLE_API_KEY);
@@ -1778,37 +1908,62 @@ async function handleLineWebhook(request, env, ctx = null) {
     const lineUserId = getLineUserId({ event });
     const intent = inferLineIntent(text, event);
     const eventMode = asString(event?.mode).toLowerCase() || "unknown";
+    const supplierRegistrationName = matchHimaiSupplierRegistration(text);
+    const isSupplierRegistration = supplierRegistrationName !== null;
     const canGenerateReply = Boolean(autoReplyEnabled && kenjiEnabled && eventMode !== "standby" && getReplyToken(event));
+    const canRegisterSupplier = Boolean(autoReplyEnabled && eventMode !== "standby" && getReplyToken(event));
     const capabilityDecision = decideKenjiCapability({ text, intent });
-    const needsModelPreflight = Boolean(canGenerateReply && !runtimeModelKill && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
+    const needsModelPreflight = Boolean(!isSupplierRegistration && canGenerateReply && !runtimeModelKill && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
     const modelDeadlineAt = needsModelPreflight ? Date.now() + KENJI_TOTAL_DEADLINE_MS : 0;
     const modelPreflight = needsModelPreflight
       ? await claimKenjiModelEvent(env, event)
       : { eligible: true, deduped: false, reason: "", canary_eligible: false, rate_limited: false, quota_window: 0 };
-    const replyDecision = canGenerateReply && !modelPreflight.deduped
-      ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled, modelEligible: modelPreflight.eligible, modelAccessAllowed: !runtimeModelKill, deadlineAt: modelDeadlineAt })
-      : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" };
+    const supplierRegistration = isSupplierRegistration && canRegisterSupplier
+      ? await registerHimaiSupplier(event, env, supplierRegistrationName)
+      : null;
+    const replyDecision = isSupplierRegistration
+      ? (supplierRegistration || { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" })
+      : (canGenerateReply && !modelPreflight.deduped
+        ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled, modelEligible: modelPreflight.eligible, modelAccessAllowed: !runtimeModelKill, deadlineAt: modelDeadlineAt })
+        : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" });
     const replyText = replyDecision.text;
     const shouldReply = Boolean(autoReplyEnabled && eventMode !== "standby" && replyText && getReplyToken(event));
     const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
 
     const afterReply = syncLineEventAfterReply(env, event, intent, autoReplyEnabled, kenjiEnabled);
+    const historyAssessmentPromise = runKenjiFolderHistoryAssessment({ env, event }).catch(() => ({
+      enabled: false,
+      eligible: false,
+      persisted: false,
+      reason: "assessment_runtime_error",
+    }));
     const canDefer = typeof ctx?.waitUntil === "function";
     let record = { pending: canDefer, deduped: false };
+    let historyAssessmentResult = {
+      enabled: false,
+      eligible: false,
+      persisted: false,
+      reason: canDefer ? "assessment_pending" : "assessment_not_run",
+    };
     if (canDefer) {
-      ctx.waitUntil(afterReply.catch(() => {
-        console.log(JSON.stringify({
-          line_webhook: "background_sync_failed",
-          event_type: asString(event?.type) || "unknown",
-          intent,
-        }));
-      }));
+      const backgroundWork = Promise.all([
+        afterReply.catch(() => {
+          console.log(JSON.stringify({
+            line_webhook: "background_sync_failed",
+            event_type: asString(event?.type) || "unknown",
+            intent,
+          }));
+        }),
+        historyAssessmentPromise,
+      ]);
+      ctx.waitUntil(backgroundWork);
     } else {
       try {
         record = await afterReply;
       } catch (_) {
         record = { skipped: true, reason: "airtable_sync_failed", deduped: false };
       }
+      historyAssessmentResult = await historyAssessmentPromise;
     }
 
     // Safe operational telemetry: never log message text, user IDs, reply tokens, or secrets.
@@ -1848,6 +2003,10 @@ async function handleLineWebhook(request, env, ctx = null) {
       model_canary_eligible: Boolean(modelPreflight.canary_eligible),
       model_rate_limited: Boolean(modelPreflight.rate_limited),
       model_quota_window: Number(modelPreflight.quota_window) || 0,
+      history_assessment_enabled: historyAssessmentResult.enabled === true,
+      history_assessment_eligible: historyAssessmentResult.eligible === true,
+      history_assessment_persisted: historyAssessmentResult.persisted === true,
+      history_assessment_reason: asString(historyAssessmentResult.reason).slice(0, 80) || null,
     }));
 
     saved.push({
@@ -1865,6 +2024,12 @@ async function handleLineWebhook(request, env, ctx = null) {
       runtime_all_kill: runtimeAllKill,
       line_user: Boolean(lineUserId),
       message_id: getLineEventId(event),
+      history_assessment: {
+        enabled: historyAssessmentResult.enabled === true,
+        eligible: historyAssessmentResult.eligible === true,
+        persisted: historyAssessmentResult.persisted === true,
+        reason: asString(historyAssessmentResult.reason).slice(0, 80),
+      },
     });
   }
 
@@ -1918,6 +2083,12 @@ export default {
 
     if (request.method === "GET" && url.pathname === LINE_RICH_MENU_LIST_PATH) {
       return handleRichMenuList(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === INTERNAL_AI_SERVICE_BINDING_SMOKE.path) {
+      if (!hasAiServiceSmokeAuth(request, env)) return json({ ok: false, error: "ai_service_smoke_auth_required" }, 401);
+      const result = await runInternalAiServiceBindingSmoke(env);
+      return json(result.payload, result.status);
     }
 
     if (request.method === "POST" && url.pathname === "/v1/internal/line/public-menu-fallback") {

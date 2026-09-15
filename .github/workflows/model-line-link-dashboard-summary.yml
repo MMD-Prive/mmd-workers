@@ -1,0 +1,39 @@
+name: Model LINE Link dashboard summary
+
+on:
+  pull_request:
+    paths:
+      - "admin-worker/src/admin-dashboard-model-link-wrapper.js"
+      - "admin-worker/src/admin-login-hero-worker.js"
+      - "admin-worker/dashboard-model-line-link-wrapper.test.mjs"
+      - ".github/workflows/model-line-link-dashboard-summary.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "admin-worker/src/admin-dashboard-model-link-wrapper.js"
+      - "admin-worker/src/admin-login-hero-worker.js"
+      - "admin-worker/dashboard-model-line-link-wrapper.test.mjs"
+      - ".github/workflows/model-line-link-dashboard-summary.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Validate dashboard summary wrapper
+        run: |
+          set -euo pipefail
+          node --check admin-worker/src/admin-dashboard-model-link-wrapper.js
+          node --check admin-worker/src/admin-login-hero-worker.js
+          node --test admin-worker/dashboard-model-line-link-wrapper.test.mjs
+          grep -Fq '/internal/admin/model-link' admin-worker/src/admin-dashboard-model-link-wrapper.js
+          grep -Fq 'model_line_links_pending' admin-worker/src/admin-dashboard-model-link-wrapper.js
+          grep -Fq 'model_line_links_conflict' admin-worker/src/admin-dashboard-model-link-wrapper.js

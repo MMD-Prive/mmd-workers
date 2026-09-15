@@ -1,0 +1,48 @@
+name: Admin AI Ops CI
+
+on:
+  pull_request:
+    paths:
+      - "admin-ai-ops-worker/**"
+      - "webflow/internal-admin-ai-ops-loader.html"
+      - "docs/architecture/AI_OPS_LAYER_V1_20260907.md"
+      - "docs/architecture/MMD_SINGLE_OWNER_ADMIN_CEO_V1_20260907.md"
+      - ".github/workflows/admin-ai-ops-ci.yml"
+      - ".github/workflows/deploy-admin-ai-ops-worker.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate shared AI Ops worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check admin-ai-ops-worker/src/customer-360-live-entry.js
+          node --check admin-ai-ops-worker/src/index.js
+          node --check admin-ai-ops-worker/src/ceo-bridge.js
+          node --check admin-ai-ops-worker/src/gate.js
+          node --test admin-ai-ops-worker/test/*.test.mjs
+          npx --yes wrangler@4 deploy --dry-run --config admin-ai-ops-worker/wrangler.toml
+
+      - name: Validate single-owner loader boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "startsWith('/internal/admin/')" webflow/internal-admin-ai-ops-loader.html
+          grep -q "/v1/admin/ai-ops/client.js?v=3" webflow/internal-admin-ai-ops-loader.html
+          grep -q "per-single-owner-v1" webflow/internal-admin-ai-ops-loader.html
+          grep -q "Per is the single human operator" docs/architecture/MMD_SINGLE_OWNER_ADMIN_CEO_V1_20260907.md
