@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   MODEL_DRIVE_DIRECTORY_HOST,
+  MODEL_DRIVE_EXCLUSIVE_ROOT_FOLDER_ID,
   MODEL_DRIVE_RESOLVE_PATH,
   MODEL_DRIVE_SEARCH_PATH,
   driveSearchToken,
   isModelDriveDirectoryRequest,
   modelNameScore,
+  resolveApprovedModelFolder,
 } from "../src/model-drive-directory.js";
 
 test("model Drive directory only recognizes internal model-directory paths", () => {
@@ -38,4 +40,60 @@ test("Drive discovery can suggest Book EI for Book El without auto-binding", () 
   assert.ok(modelNameScore("Book El", "Book EI") > 0.7);
   // Weak unrelated similarity must remain below the production suggestion cutoff (0.28).
   assert.ok(modelNameScore("Book El", "Completely Different") < 0.28);
+});
+
+test("Exclusive inventory root is pinned to the reviewed MMD Exclusive Models folder", () => {
+  assert.equal(MODEL_DRIVE_EXCLUSIVE_ROOT_FOLDER_ID, "1j1NRB44PboVQR91M8-17Vb8kcCTCLS97");
+});
+
+test("EMs15 resolves through Exclusive VIP/Both into an Exclusive folder_scope_key", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const folders = new Map([
+    ["1BothFolderForEMs15", {
+      id: "1BothFolderForEMs15",
+      name: "Both",
+      parents: ["1ExclusiveVipFolder"],
+      mimeType: "application/vnd.google-apps.folder",
+      trashed: false,
+    }],
+    ["1ExclusiveVipFolder", {
+      id: "1ExclusiveVipFolder",
+      name: "Exclusive VIP",
+      parents: [MODEL_DRIVE_EXCLUSIVE_ROOT_FOLDER_ID],
+      mimeType: "application/vnd.google-apps.folder",
+      trashed: false,
+    }],
+    [MODEL_DRIVE_EXCLUSIVE_ROOT_FOLDER_ID, {
+      id: MODEL_DRIVE_EXCLUSIVE_ROOT_FOLDER_ID,
+      name: "MMD Exclusive Models",
+      parents: ["1CatalogParentPlaceholder"],
+      mimeType: "application/vnd.google-apps.folder",
+      trashed: false,
+    }],
+  ]);
+
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    const id = decodeURIComponent(url.pathname.split("/").pop());
+    const folder = folders.get(id);
+    return folder
+      ? new Response(JSON.stringify(folder), { status: 200, headers: { "content-type": "application/json" } })
+      : new Response(JSON.stringify({ error: "not_found" }), { status: 404, headers: { "content-type": "application/json" } });
+  };
+
+  const ems15Id = "1CCf755JC6-e4VPM5ApqadNozXVFpofmh";
+  const resolved = await resolveApprovedModelFolder("test-token", ems15Id, {}, {
+    id: ems15Id,
+    name: "EMs15",
+    parents: ["1BothFolderForEMs15"],
+    mimeType: "application/vnd.google-apps.folder",
+    trashed: false,
+  });
+
+  assert.equal(resolved?.lane, "exclusive");
+  assert.equal(resolved?.approved_root_id, MODEL_DRIVE_EXCLUSIVE_ROOT_FOLDER_ID);
+  assert.equal(resolved?.folder_scope_key, `exclusive:drive:${ems15Id}`);
+  assert.equal(resolved?.folder_path, "MMD Exclusive Models / Exclusive VIP / Both / EMs15");
 });
