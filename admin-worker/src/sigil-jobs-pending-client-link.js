@@ -83,6 +83,14 @@ export function buildPendingIdentityBody(body = {}, exposedStatus = pendingIdent
     payment_method: clean(details.payment_method || body.payment_method) || null,
   };
   const marker = `[MMD_PENDING_IDENTITY_V1] ${JSON.stringify(meta)}`;
+  // Keep legacy text markers because existing operational audits/tests use them
+  // to recognize held Jobs. They do not grant identity or access.
+  const legacyClientMarker = missingClient
+    ? "[PENDING CLIENT LINK] Confirmation, dispatch and entitlement release are held until canonical Client link."
+    : "";
+  const legacyModelMarker = missingModel
+    ? "[PENDING MODEL LINK] Confirmation, dispatch and entitlement release are held until canonical Model link."
+    : "";
   const human = `[PENDING IDENTITY] ${missingClient ? "Client" : ""}${missingClient && missingModel ? " + " : ""}${missingModel ? "Model" : ""} canonical link pending. Confirmation, dispatch and entitlement release are held.`;
   const note = clean(body.note || body.notes);
 
@@ -109,7 +117,7 @@ export function buildPendingIdentityBody(body = {}, exposedStatus = pendingIdent
     model: missingModel
       ? { ...(body.model || {}), identity_status: "pending_reconcile" }
       : { ...(body.model || {}) },
-    note: [note, marker, human].filter(Boolean).join("\n"),
+    note: [note, marker, legacyClientMarker, legacyModelMarker, human].filter(Boolean).join("\n"),
   };
 }
 
