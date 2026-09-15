@@ -8,6 +8,10 @@ import {
   isCanonicalCareBackLinkWishRequest,
   isCareBackLiffOrchestratorRequest,
 } from "./care-back-liff-orchestrator.js";
+import {
+  handleCareBackPhase1RecoveryLiff,
+  isCareBackPhase1RecoveryLiffCandidate,
+} from "./care-back-phase1-recovery.js";
 import { handleFindMemberApi, isFindMemberApiPath } from "./find-member-api.js";
 import { handleMemberEmailRecovery, isMemberEmailRecoveryPath } from "./member-email-recovery.js";
 import { handleMmsMemberPrebookingRead, isMmsMemberPrebookingReadPath } from "./mms-member-prebooking-read.js";
@@ -43,6 +47,23 @@ export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-coord
 export default {
   async fetch(request, env = {}, ctx) {
     const url = new URL(request.url);
+
+    // Boss Per-approved Phase 1 compensation is intentionally coupon-only and
+    // bound to the server-verified LINE session. It must remain available even
+    // when historical membership reconstruction is not yet complete, and it
+    // never widens membership, Points, or private access.
+    if (isCareBackPhase1RecoveryLiffCandidate(url)) {
+      try {
+        const recovered = await handleCareBackPhase1RecoveryLiff(request, env);
+        if (recovered) return recovered;
+      } catch (error) {
+        console.warn({
+          event: "care_back_phase1_recovery_liff_failed",
+          failure_class: String(error?.code || error?.message || "unknown").slice(0, 80),
+        });
+      }
+    }
+
     const canonicalContext = await prepareMyMmdCanonicalEntitlementContext(request, env);
     if (canonicalContext?.unavailable) {
       return Response.json({

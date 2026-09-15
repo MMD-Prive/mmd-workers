@@ -1,8 +1,14 @@
 import * as runtime from "./member-app-api-runtime.js";
 export * from "./member-app-api-runtime.js";
+import {
+  memberAppRecoveryCare,
+  memberAppRecoveryCoupons,
+  readCareBackPhase1RecoveryForRequest,
+} from "./care-back-phase1-recovery.js";
 
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const CARE_PATHS = new Set(["/api/member/app/care", "/api/member/app/care/"]);
+const COUPON_PATHS = new Set(["/api/member/app/coupons", "/api/member/app/coupons/"]);
 const WISH_TABLE_DEFAULT = "tblvMJjYXy29mgDLb";
 
 function cookieValue(request, name) {
@@ -76,7 +82,43 @@ function isCareRead(request) {
   try { return CARE_PATHS.has(new URL(request.url).pathname.toLowerCase()); } catch { return false; }
 }
 
+function isCouponRead(request) {
+  if (!(request instanceof Request) || request.method !== "GET") return false;
+  try { return COUPON_PATHS.has(new URL(request.url).pathname.toLowerCase()); } catch { return false; }
+}
+
+function recoveryResponse(payload) {
+  return new Response(JSON.stringify(payload), {
+    status: 200,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "x-mmd-member-app-api": "v1",
+      "x-mmd-care-back-recovery": "phase1-v1",
+    },
+  });
+}
+
+async function tryRecoveryMemberAppResponse(request, env) {
+  if (!isCareRead(request) && !isCouponRead(request)) return null;
+  try {
+    const recovery = await readCareBackPhase1RecoveryForRequest(request, env);
+    if (!recovery) return null;
+    if (isCouponRead(request)) return recoveryResponse(memberAppRecoveryCoupons(recovery));
+    return recoveryResponse(memberAppRecoveryCare(recovery));
+  } catch (error) {
+    console.warn({
+      event: "care_back_phase1_recovery_member_app_failed",
+      failure_class: String(error?.code || error?.message || "unknown").slice(0, 80),
+    });
+    return null;
+  }
+}
+
 export async function handleMemberAppApi(request, env = {}, delegate) {
+  const recoveryResponseOverride = await tryRecoveryMemberAppResponse(request, env);
+  if (recoveryResponseOverride) return recoveryResponseOverride;
+
   if (!isCareRead(request)) return runtime.handleMemberAppApi(request, env, delegate);
   const snapshot = await readWishIdentitySnapshot(request, env);
   const response = await runtime.handleMemberAppApi(request, env, delegate);
@@ -101,4 +143,6 @@ export const MEMBER_APP_WISH_READBACK_INTERNALS = Object.freeze({
   readWishIdentitySnapshot,
   readLatestLinkedWish,
   isCareRead,
+  isCouponRead,
+  tryRecoveryMemberAppResponse,
 });
