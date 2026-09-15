@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   enrichLineageWithPreSessionIndex,
   PRE_SESSION_CLIENT_INDEX_VERSION,
+  resolveHistoricalSessionAlias,
   toCandidateRecord,
 } from "./src/pre-session-client-index.js";
 
@@ -84,6 +85,85 @@ const seedCandidate = {
   },
 };
 
+test("linked historical session alias resolves to its canonical Client", async () => {
+  const original = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (input) => {
+    const url = new URL(typeof input === "string" ? input : input.url);
+    calls.push(url);
+    if (decodeURIComponent(url.pathname).endsWith("/tblC98mKWbzmPuNzX")) {
+      return new Response(JSON.stringify({ records: [{
+        id: "recSession1",
+        fields: {
+          fldMvnQ0BzDfHUYjT: "หนุ่ม 22 พค 69",
+          fld6P6if0vDZCeV0C: ["recBfl0cQacqLpUz6"],
+        },
+      }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (decodeURIComponent(url.pathname).endsWith("/tblVv58TCbwh5j1fS/recBfl0cQacqLpUz6")) {
+      return new Response(JSON.stringify({
+        id: "recBfl0cQacqLpUz6",
+        fields: {
+          "Client Name": "Wathiwut",
+          nickname: "หนุ่ม",
+          line_user_id: "U72db171bb69abd511645c83d0c5ea9d6",
+        },
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error(`unexpected Airtable call ${url}`);
+  };
+  try {
+    const response = await enrichLineageWithPreSessionIndex(
+      lookupRequest("หนุ่ม"),
+      manualFallbackResponse("หนุ่ม"),
+      env,
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-mmd-client-history-alias"), "resolved");
+    const body = await response.json();
+    assert.equal(body.manual_fallback, false);
+    assert.equal(body.historical_session_alias, true);
+    assert.equal(body.records.length, 1);
+    assert.equal(body.records[0].client_id, "recBfl0cQacqLpUz6");
+    assert.equal(body.records[0].canonical_name, "Wathiwut");
+    assert.equal(body.records[0].matched_on, "historical_session_alias");
+    assert.equal(body.records[0].manual_public_only, false);
+    assert.equal(body.records[0].identity_status, "canonical_client_linked");
+    assert.equal(calls.length, 2);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("historical alias mapped to multiple canonical Clients stays unresolved", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(typeof input === "string" ? input : input.url);
+    if (decodeURIComponent(url.pathname).endsWith("/tblC98mKWbzmPuNzX")) {
+      return new Response(JSON.stringify({ records: [
+        { id: "recSession1", fields: { fldMvnQ0BzDfHUYjT: "ก้อง SVIP", fld6P6if0vDZCeV0C: ["recClientA"] } },
+        { id: "recSession2", fields: { fldMvnQ0BzDfHUYjT: "ก้อง", fld6P6if0vDZCeV0C: ["recClientB"] } },
+      ] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (decodeURIComponent(url.pathname).endsWith("/pre_session")) {
+      return new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error(`unexpected call ${url}`);
+  };
+  try {
+    const response = await enrichLineageWithPreSessionIndex(
+      lookupRequest("ก้อง"),
+      manualFallbackResponse("ก้อง"),
+      env,
+    );
+    const body = await response.json();
+    assert.equal(body.manual_fallback, true);
+    assert.match(body.lineage_warnings.join(" "), /historical_session_alias_ambiguous/);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("pre-session index replaces free-form fallback with a known identity candidate", async () => {
   const restore = installAirtableMock([seedCandidate]);
   try {
@@ -118,9 +198,9 @@ test("pre-session index replaces free-form fallback with a known identity candid
     assert.doesNotMatch(body.lineage_warnings.join(" "), /manual_public_only_pending_reconcile/);
 
     const calls = restore();
-    assert.equal(calls.length, 1);
-    assert.equal(decodeURIComponent(calls[0].pathname).endsWith("/pre_session"), true);
-    const formula = calls[0].searchParams.get("filterByFormula") || "";
+    assert.equal(calls.length, 2);
+    assert.equal(decodeURIComponent(calls[1].pathname).endsWith("/pre_session"), true);
+    const formula = calls[1].searchParams.get("filterByFormula") || "";
     assert.match(formula, /identity_email/);
     assert.match(formula, /preferred_name/);
     assert.doesNotMatch(formula, /membership|entitlement|points|payment/i);
@@ -153,10 +233,7 @@ test("blocked, review-required, non-candidate, and already-linked rows cannot by
   ];
 
   for (const patch of cases) {
-    const record = {
-      ...seedCandidate,
-      fields: { ...seedCandidate.fields, ...patch },
-    };
+    const record = { ...seedCandidate, fields: { ...seedCandidate.fields, ...patch } };
     assert.equal(toCandidateRecord(record, "known@example.com"), null);
   }
 });
@@ -176,11 +253,7 @@ test("canonical lineage result always wins and skips pre-session Airtable lookup
       manual_fallback: false,
       lineage_warnings: [],
     }), { status: 200, headers: { "Content-Type": "application/json" } });
-    const response = await enrichLineageWithPreSessionIndex(
-      lookupRequest("Known Canonical"),
-      canonical,
-      env,
-    );
+    const response = await enrichLineageWithPreSessionIndex(lookupRequest("Known Canonical"), canonical, env);
     const body = await response.json();
     assert.equal(body.records[0].client_id, "recCanonical");
     assert.equal(called, false);
@@ -201,8 +274,22 @@ test("pre-session source failure preserves existing public-only manual fallback"
     assert.equal(body.manual_fallback, true);
     assert.equal(body.records[0].manual_public_only, true);
     assert.equal(response.headers.get("x-mmd-pre-session-index"), "source-unavailable");
-    assert.match(body.lineage_warnings.join(" "), /pre_session_index:airtable_pre_session_503/);
+    assert.match(body.lineage_warnings.join(" "), /pre_session_index:airtable_tblC98mKWbzmPuNzX_503/);
   } finally {
     restore();
+  }
+});
+
+test("resolveHistoricalSessionAlias returns none for unlinked historical sessions", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ records: [{
+    id: "recSessionUnlinked",
+    fields: { fldMvnQ0BzDfHUYjT: "Guest Name", fld6P6if0vDZCeV0C: [] },
+  }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  try {
+    const result = await resolveHistoricalSessionAlias(env, "Guest Name");
+    assert.equal(result.state, "none");
+  } finally {
+    globalThis.fetch = original;
   }
 });
