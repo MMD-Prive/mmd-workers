@@ -35,6 +35,11 @@ import {
 } from "./unified-payment-proof.js";
 import { reconcilePremiumReviewedMembershipTerm } from "./premium-membership-term.js";
 import { reconcileReviewedMembershipEntitlement } from "./reviewed-membership-write-through.js";
+import {
+  handleDoubleMomentRequest,
+  isDoubleMomentRequest,
+  reconcileDoubleMomentReviewedProof,
+} from "./double-moment-purchase-v1.js";
 
 export { PointsPhase1Coordinator };
 
@@ -59,6 +64,12 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+
+    if (isDoubleMomentRequest(path, method)) {
+      return handleDoubleMomentRequest(request, env, (nextRequest) =>
+        handleUnifiedPaymentIntent(nextRequest, env, (paymentRequest) => phase1Worker.fetch(paymentRequest, env, ctx))
+      );
+    }
 
     if (isPaymentInstructionsRequest(path, method)) {
       return handlePaymentInstructions(request, env, (detailsRequest) =>
@@ -89,9 +100,8 @@ export default {
     }
 
     if (isReviewedProofRequest(path, method)) {
-      // Keep one untouched clone for post-verification membership reconciliation.
-      // handleReviewedProof consumes the original body.
       const reconcileRequest = request.clone();
+      const doubleMomentRequest = request.clone();
       const reviewResponse = await handleReviewedProof(request, env, ctx, async (body) => {
         if (!String(env.INTERNAL_TOKEN || "").trim()) {
           return json({ ok: false, error: "payments_internal_token_not_ready", authority: "payments-worker" }, 503);
@@ -127,7 +137,8 @@ export default {
         }), env, ctx);
       });
       const termResponse = await reconcilePremiumReviewedMembershipTerm(reconcileRequest.clone(), reviewResponse, env);
-      return reconcileReviewedMembershipEntitlement(reconcileRequest, termResponse, env);
+      const entitlementResponse = await reconcileReviewedMembershipEntitlement(reconcileRequest, termResponse, env);
+      return reconcileDoubleMomentReviewedProof(doubleMomentRequest, entitlementResponse, env);
     }
 
     return phase1Worker.fetch(request, env, ctx);
