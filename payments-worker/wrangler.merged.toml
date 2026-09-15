@@ -20,8 +20,7 @@ compatibility_date = "2026-01-20"
 routes = [
   { pattern = "sigil.mmdbkk.com/v1/pay/*", zone_name = "mmdbkk.com" },
   { pattern = "sigil.mmdbkk.com/v1/payments/*", zone_name = "mmdbkk.com" },
-  { pattern = "sigil.mmdbkk.com/v1/confirm/*", zone_name = "mmdbkk.com" },
-  { pattern = "sigil.mmdbkk.com/v1/promo/double-moment/*", zone_name = "mmdbkk.com" }
+  { pattern = "sigil.mmdbkk.com/v1/confirm/*", zone_name = "mmdbkk.com" }
 ]
 
 kv_namespaces = [
