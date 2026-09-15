@@ -1,5 +1,6 @@
 import liffFoundation from "./liff-identity-foundation.js";
 import { getLiffGatewayStore } from "./liff-gateway-airtable.js";
+import { resolveCanonicalRenewalOffer } from "./renewal-offer.js";
 
 const PAYMENT_INTENT_PATHS = new Set([
   "/member/api/liff/payment-intent",
@@ -58,7 +59,7 @@ export async function completeValidatedLiffPaymentIntent(request, guardedRespons
   if (!validRotatedSession(session)) return failClosed(guardedResponse, "LIFF_PAYMENT_SESSION_UNAVAILABLE", "Payment setup is temporarily unavailable.", 503);
 
   const selected = session.selected_package;
-  const amountThb = Number(selected?.amount_thb);
+  let amountThb = Number(selected?.amount_thb);
   if (!selected
     || normalizePackageCode(selected.package_code) !== requestedPackage
     || selected.requires_manual_review === true
@@ -68,6 +69,25 @@ export async function completeValidatedLiffPaymentIntent(request, guardedRespons
     return failClosed(guardedResponse, "LIFF_PAYMENT_SELECTION_INVALID", "Select an eligible package first.", 409);
   }
 
+  let renewalOffer = null;
+  if (String(session.liff_intent || "").trim().toLowerCase() === "renew") {
+    try {
+      renewalOffer = await resolveCanonicalRenewalOffer(env, session);
+    } catch {
+      renewalOffer = { status: "review_required", reason: "renewal_offer_resolution_failed" };
+    }
+    if (renewalOffer?.status !== "ready") {
+      return failClosed(guardedResponse, "LIFF_RENEWAL_OFFER_UNAVAILABLE", "Renewal pricing could not be verified safely.", 503);
+    }
+    if (normalizePackageCode(renewalOffer.package_code) !== requestedPackage) {
+      return failClosed(guardedResponse, "LIFF_RENEWAL_PACKAGE_CHANGE_REQUIRES_MEMBERSHIP_FLOW", "Package changes must use the membership flow.", 409);
+    }
+    amountThb = Number(renewalOffer.amount_thb);
+    if (!Number.isFinite(amountThb) || amountThb <= 0) {
+      return failClosed(guardedResponse, "LIFF_RENEWAL_OFFER_INVALID", "Renewal pricing could not be verified safely.", 503);
+    }
+  }
+
   const canonicalStage = "membership";
   const upstream = await callPaymentsWorker(env, {
     session_id: String(session.session_id).trim(),
@@ -75,7 +95,7 @@ export async function completeValidatedLiffPaymentIntent(request, guardedRespons
     amount: amountThb,
     package_code: requestedPackage,
     payment_method: "promptpay",
-    notes: paymentIntentNote(session, requestedStage),
+    notes: paymentIntentNote(session, requestedStage, renewalOffer),
   });
   if (!upstream.ok) {
     return failClosed(guardedResponse, upstream.code, "Payment setup is temporarily unavailable.", upstream.status);
@@ -98,6 +118,8 @@ export async function completeValidatedLiffPaymentIntent(request, guardedRespons
     await gatewayStore.upsertSession({
       session_id: session.session_id,
       payment_intent_session_id: payment.session_id,
+      requested_package: requestedPackage,
+      renewal_amount_thb: amountThb,
     }, session.gateway_record_id);
 
     session.payment_intent_session_id = payment.session_id;
@@ -106,6 +128,14 @@ export async function completeValidatedLiffPaymentIntent(request, guardedRespons
     session.payment_stage = canonicalStage;
     session.route_after_liff = CANONICAL_STATUS_ROUTE;
     session.next_screen_key = "payment_start";
+    if (renewalOffer?.status === "ready") {
+      session.renewal_offer = {
+        package_code: renewalOffer.package_code,
+        amount_thb: amountThb,
+        price_rule: safeCode(renewalOffer.price_rule),
+        history_status: String(renewalOffer.history_status || "").slice(0, 40),
+      };
+    }
 
     const remainingSeconds = Math.ceil((Number(session.expires_at || 0) - Date.now()) / 1000);
     const ttl = Math.min(LIFF_SESSION_TTL_SECONDS, Math.max(60, remainingSeconds));
@@ -127,6 +157,8 @@ export async function completeValidatedLiffPaymentIntent(request, guardedRespons
     verification_status: "pending",
     customer_payment_url: payment.customer_payment_url,
     redirect_to: payment.customer_payment_url,
+    renewal_price_rule: renewalOffer?.status === "ready" ? safeCode(renewalOffer.price_rule) : "",
+    renewal_history_status: renewalOffer?.status === "ready" ? String(renewalOffer.history_status || "").slice(0, 40) : "",
     unified_payment_flow: "v1",
   });
 }
@@ -202,9 +234,16 @@ function canonicalSigilPayUrl(value) {
   }
 }
 
-function paymentIntentNote(session, requestedStage) {
+function paymentIntentNote(session, requestedStage, renewalOffer = null) {
   const intent = String(session?.liff_intent || "unknown").trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_").slice(0, 40) || "unknown";
-  return `source=line_liff;intent=${intent};requested_stage=${requestedStage}`;
+  const parts = [`source=line_liff`, `intent=${intent}`, `requested_stage=${requestedStage}`];
+  if (renewalOffer?.status === "ready") {
+    const priceRule = safeCode(renewalOffer.price_rule);
+    const spend = Number(renewalOffer.service_spend_365_thb);
+    if (priceRule) parts.push(`renewal_price_rule=${priceRule}`);
+    if (Number.isFinite(spend) && spend >= 0) parts.push(`service_spend_365_thb=${Math.round((spend + Number.EPSILON) * 100) / 100}`);
+  }
+  return parts.join(";");
 }
 
 function normalizeRequestedStage(value) {
@@ -215,6 +254,10 @@ function normalizeRequestedStage(value) {
 function normalizePackageCode(value) {
   const code = String(value || "").trim().toLowerCase();
   return /^[a-z0-9][a-z0-9_-]{1,62}$/.test(code) ? code : "";
+}
+
+function safeCode(value) {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 120);
 }
 
 function validRotatedSession(session) {
@@ -284,6 +327,8 @@ function successFromGuard(guardedResponse, guardedPayload, payment) {
       payment_stage: payment.payment_stage,
       payment_status: payment.payment_status,
       verification_status: payment.verification_status,
+      ...(payment.renewal_price_rule ? { renewal_price_rule: payment.renewal_price_rule } : {}),
+      ...(payment.renewal_history_status ? { renewal_history_status: payment.renewal_history_status } : {}),
     },
     unified_payment_flow: payment.unified_payment_flow,
     grants,
