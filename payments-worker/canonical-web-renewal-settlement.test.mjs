@@ -85,8 +85,8 @@ function harness() {
       async fetch(request) {
         const url = new URL(request.url);
         const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
-        const tableName = parts[1];
-        const recordId = parts[2] || "";
+        const tableName = parts[2];
+        const recordId = parts[3] || "";
         const rows = tables[tableName];
         if (!rows) return json({ error: "table_not_found" }, 404);
 
