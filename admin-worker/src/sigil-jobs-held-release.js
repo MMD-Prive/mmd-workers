@@ -63,6 +63,10 @@ function firstText(...values) {
   return "";
 }
 
+function firstLinkedRecord(value) {
+  return Array.isArray(value) && value.length ? clean(value[0]) : "";
+}
+
 function dateOnly(value) {
   const raw = clean(value);
   const m = raw.match(/^(\d{4}-\d{2}-\d{2})/);
@@ -117,6 +121,17 @@ function existingRelease(record) {
     : null;
 }
 
+export function resolveHeldIdentityIds(session = {}, body = {}) {
+  const requestedClientId = clean(body.client_record_id || body.client_id || body?.client_lineage?.client_id);
+  const requestedModelId = clean(body.model_record_id || body.model_id || body?.model?.model_id);
+  return {
+    requested_client_id: requestedClientId,
+    requested_model_id: requestedModelId,
+    client_record_id: requestedClientId || clean(session?.canonical_links?.client_record_id),
+    model_record_id: requestedModelId || clean(session?.canonical_links?.model_record_id),
+  };
+}
+
 async function findSession(env, sessionId) {
   const apiKey = clean(env.AIRTABLE_API_KEY);
   const baseId = clean(env.AIRTABLE_BASE_ID);
@@ -127,12 +142,23 @@ async function findSession(env, sessionId) {
     filterByFormula: `{session_id}=${formulaText(sessionId)}`,
     returnFieldsByFieldId: "true",
   });
-  const response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}?${params.toString()}`, {
-    headers: { Authorization: `Bearer ${apiKey}` },
-  });
+  const headers = { Authorization: `Bearer ${apiKey}` };
+  const response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}?${params.toString()}`, { headers });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`airtable_session_lookup_failed:${response.status}`);
-  return data?.records?.[0] || null;
+  const record = data?.records?.[0] || null;
+  if (!record?.id) return null;
+
+  // Read the same Session once by record ID without returnFieldsByFieldId so
+  // existing linked identities survive partial reconciliation across requests.
+  const detailResponse = await fetch(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}/${encodeURIComponent(record.id)}`, { headers });
+  const detail = await detailResponse.json().catch(() => ({}));
+  if (!detailResponse.ok) throw new Error(`airtable_session_detail_failed:${detailResponse.status}`);
+  record.canonical_links = {
+    client_record_id: firstLinkedRecord(detail?.fields?.Client),
+    model_record_id: firstLinkedRecord(detail?.fields?.["Canonical Model"]),
+  };
+  return record;
 }
 
 function canonicalRequestBody(body, session, clientId, modelId) {
@@ -256,10 +282,10 @@ export async function reconcileHeldSigilJob(request, env, ctx, downstream) {
   const sessionId = clean(body.session_id);
   if (!sessionId) return json({ ok: false, error: "session_id_required" }, 400);
 
-  const clientId = clean(body.client_record_id || body.client_id || body?.client_lineage?.client_id);
-  const modelId = clean(body.model_record_id || body.model_id || body?.model?.model_id);
-  if (clientId && !isRecordId(clientId)) return json({ ok: false, error: "canonical_client_record_invalid" }, 400);
-  if (modelId && !isRecordId(modelId)) return json({ ok: false, error: "canonical_model_record_invalid" }, 400);
+  const requestedClientId = clean(body.client_record_id || body.client_id || body?.client_lineage?.client_id);
+  const requestedModelId = clean(body.model_record_id || body.model_id || body?.model?.model_id);
+  if (requestedClientId && !isRecordId(requestedClientId)) return json({ ok: false, error: "canonical_client_record_invalid" }, 400);
+  if (requestedModelId && !isRecordId(requestedModelId)) return json({ ok: false, error: "canonical_model_record_invalid" }, 400);
 
   let session;
   try {
@@ -275,6 +301,9 @@ export async function reconcileHeldSigilJob(request, env, ctx, downstream) {
   }
   if (!isHeld(session)) return json({ ok: false, error: "session_is_not_held" }, 409);
 
+  const ids = resolveHeldIdentityIds(session, body);
+  const clientId = ids.client_record_id;
+  const modelId = ids.model_record_id;
   const status = pendingStatus(Boolean(clientId), Boolean(modelId));
   const linked = await linkCanonicalIdentities(request, env, ctx, body, session, clientId, modelId);
   if (!linked.response.ok) return linked.response;
