@@ -66,9 +66,12 @@ async function fixture({ upstreamUrl = "https://mmdbkk.com/sigil/pay?t=signed_to
     expires_at: Date.now() + 10 * 60 * 1000,
     gateway_record_id: "rec_liff_1",
     liff_intent: "renew",
+    member_exists: true,
+    line_user_id: "U1234567890abcdef1234567890abcdef",
+    member_profile: { tier: "Premium" },
     selected_package: {
       package_code: "premium",
-      amount_thb: 2999,
+      amount_thb: 2500,
       requires_manual_review: false,
     },
     payment_binding_status: "contract_unavailable",
@@ -81,6 +84,20 @@ async function fixture({ upstreamUrl = "https://mmdbkk.com/sigil/pay?t=signed_to
     LIFF_IDENTITY_KV: kv,
     LIFF_GATEWAY_STORE: gateway,
     PAYMENTS_WORKER: payment,
+    RENEWAL_OFFER_RESOLVER: {
+      async resolve() {
+        return {
+          status: "ready",
+          package_code: "premium",
+          amount_thb: 1999,
+          service_spend_365_thb: 25000,
+          price_rule: "private_premium_spend_20000",
+          membership_years: 2,
+          history_status: "verified",
+          discount_verified: true,
+        };
+      },
+    },
   };
   const request = new Request("https://mmdbkk.com/member/api/liff/payment-intent", {
     method: "POST",
@@ -107,7 +124,7 @@ async function fixture({ upstreamUrl = "https://mmdbkk.com/sigil/pay?t=signed_to
 }
 
 describe("LIFF payments-worker binding", () => {
-  it("creates one canonical pending membership intent and returns the signed /sigil/pay handoff", async () => {
+  it("derives the renewal amount server-side and returns one signed /sigil/pay handoff", async () => {
     const fx = await fixture();
     const response = await completeValidatedLiffPaymentIntent(fx.request, fx.guardedResponse, fx.env);
     const payload = await response.json();
@@ -119,7 +136,8 @@ describe("LIFF payments-worker binding", () => {
     assert.equal(payload.data.redirect_to, "https://mmdbkk.com/sigil/pay?t=signed_token_123");
     assert.equal(payload.data.route_after_liff, "/member/payments");
     assert.equal(payload.data.payment_summary.payment_stage, "membership");
-    assert.equal(payload.data.payment_summary.amount_thb, 2999);
+    assert.equal(payload.data.payment_summary.amount_thb, 1999);
+    assert.equal(payload.data.payment_summary.renewal_price_rule, "private_premium_spend_20000");
     assert.equal(payload.data.payment_summary.verification_status, "pending");
     assert.deepEqual(payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
 
@@ -129,15 +147,20 @@ describe("LIFF payments-worker binding", () => {
     assert.deepEqual(fx.payment.calls[0].body, {
       session_id: "liff-session-123",
       payment_stage: "membership",
-      amount: 2999,
+      amount: 1999,
       package_code: "premium",
       payment_method: "promptpay",
-      notes: "source=line_liff;intent=renew;requested_stage=renewal",
+      notes: "source=line_liff;intent=renew;requested_stage=renewal;renewal_price_rule=private_premium_spend_20000;service_spend_365_thb=25000",
     });
 
     assert.equal(fx.gateway.upserts.length, 1);
     assert.deepEqual(fx.gateway.upserts[0], {
-      session: { session_id: "liff-session-123", payment_intent_session_id: "liff-session-123" },
+      session: {
+        session_id: "liff-session-123",
+        payment_intent_session_id: "liff-session-123",
+        requested_package: "premium",
+        renewal_amount_thb: 1999,
+      },
       recordId: "rec_liff_1",
     });
 
@@ -147,6 +170,7 @@ describe("LIFF payments-worker binding", () => {
     assert.equal(stored.payment_ref, "pay_1234567890abcdef");
     assert.equal(stored.payment_stage, "membership");
     assert.equal(stored.route_after_liff, "/member/payments");
+    assert.equal(stored.renewal_offer.amount_thb, 1999);
   });
 
   it("fails closed when payments-worker does not return the canonical mmdbkk.com /sigil/pay URL", async () => {

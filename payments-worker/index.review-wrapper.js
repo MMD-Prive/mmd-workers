@@ -33,6 +33,8 @@ import {
   isUnifiedPaymentIntentRequest,
   isUnifiedSlipEvidenceRequest,
 } from "./unified-payment-proof.js";
+import { reconcileCanonicalWebRenewalProof } from "./canonical-web-renewal-settlement.js";
+import { preserveCanonicalWebRenewalPaymentSuccess } from "./canonical-web-renewal-response.js";
 import { reconcilePremiumReviewedMembershipTerm } from "./premium-membership-term.js";
 import { reconcileReviewedMembershipEntitlement } from "./reviewed-membership-write-through.js";
 import {
@@ -92,7 +94,10 @@ export default {
     }
 
     if (isUnifiedSlipEvidenceRequest(path, method)) {
-      return handleUnifiedSlipEvidence(request, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx));
+      const settlementRequest = request.clone();
+      const slipResponse = await handleUnifiedSlipEvidence(request, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx));
+      const settlementResponse = await reconcileCanonicalWebRenewalProof(settlementRequest, slipResponse, env);
+      return preserveCanonicalWebRenewalPaymentSuccess(settlementResponse);
     }
 
     if (isUnifiedConfirmVerifyRequest(path, method)) {

@@ -47,11 +47,22 @@ test("patches membership benefits to final durations with query-safe dashboard m
   assert.match(source, /CARE BACK · ส\.ค\. 2026 \+1 ปี หลังยืนยัน/);
 });
 
-test("patches renewal to canonical dashboard and payment-list wording", () => {
+test("patches renewal to canonical signed one-click payment flow", () => {
   assert.match(source, /path === "\/member\/renewal"/);
-  assert.match(source, /href\^=\"\/member\/my-mmd\"/);
+  assert.match(source, /setupRenewalFlow\(root\)/);
+  assert.match(source, /\/member\/api\/liff\/profile/);
+  assert.match(source, /\/member\/api\/liff\/intent/);
+  assert.match(source, /\/member\/api\/liff\/package/);
+  assert.match(source, /\/member\/api\/liff\/payment-intent/);
+  assert.match(source, /payment_stage: "renewal"/);
+  assert.match(source, /canonicalPaymentUrl/);
+  assert.match(source, /url\.pathname !== "\/sigil\/pay"/);
+  assert.match(source, /legacyPay\.hidden = true/);
+  assert.match(source, /legacyPaymentLink\.removeAttribute\("href"\)/);
+  assert.match(source, /คำนวณเรทและต่ออายุ/);
   assert.match(source, /สมัครใหม่ 2,999 บาท \/ 2 ปี/);
-  assert.match(source, /ไปต่อที่รายการชำระ/);
+  assert.doesNotMatch(source, /ไปต่อที่รายการชำระ/);
+  assert.doesNotMatch(source, /\/member\/payments\?source=renewal/);
   assert.doesNotMatch(source, /confirm\/payment-proof/);
 });
 

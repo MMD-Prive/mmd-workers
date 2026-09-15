@@ -34,10 +34,15 @@ Production source for the Webflow canonical membership/navigation runtime. Versi
 
 ### `/member/renewal`
 
-- Generic status/back links normalize from `/member/my-mmd` to `/member/dashboard`.
+- Renewal is current-package-only. The page reads the verified member profile and does not ask the customer to choose Standard/Premium again.
 - Premium new signup copy is `2,999 บาท / 2 ปี`.
-- Generic payment continuation label is `ไปต่อที่รายการชำระ` and remains on `/member/payments`.
+- Renewal pricing is resolved server-side from verified 365-day service history; the browser never supplies the renewal amount.
+- The legacy bank/manual-transfer section is hidden on the renewal path.
+- The old renewal handoff to `/member/payments?source=renewal...` is retired.
+- The customer CTA calls the LIFF renewal intent/package/payment-intent endpoints and accepts only a canonical signed `/sigil/pay?t=...` handoff from the backend.
+- `/member/payments` remains a generic payment list/status route only and is not the renewal proof-intake destination.
 - `/confirm/payment-proof` is not a default route.
+- If the verified member session is unavailable or the current Private tier cannot be resolved safely, the customer is sent back to MY MMD instead of being allowed to guess a package or amount.
 
 ## Dynamic content safety
 
@@ -49,6 +54,7 @@ Focused:
 
 ```bash
 node --test webflow/global/mmd-canonical-cta-v4.test.mjs
+node --test webflow/member/renewal/renewal-canonical-payment-flow.test.mjs
 ```
 
-The CARE BACK frontend CI lane imports the same regression guard, so root CI exercises it through `npm run test:care-back-wish-frontend`.
+The CARE BACK frontend CI lane imports the shared regression guard, so root CI also exercises this runtime through existing frontend checks.
