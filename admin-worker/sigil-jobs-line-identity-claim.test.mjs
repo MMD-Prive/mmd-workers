@@ -38,7 +38,7 @@ test("held job issues role-bound customer and model LINE Mini App links without 
   assert.doesNotMatch(links.model_identity_url, /rec[A-Za-z0-9]{14,}/);
 });
 
-test("only the missing identity receives a claim URL", async () => {
+test("only the missing identity receives a claim URL by default", async () => {
   const links = await issueHeldIdentityClaimLinks(
     { ADMIN_SESSION_SECRET: "test-only-session-secret" },
     { sessionId: "sess_test_456", pendingClient: false, pendingModel: true },
@@ -46,4 +46,24 @@ test("only the missing identity receives a claim URL", async () => {
   assert.equal(links.ok, true);
   assert.equal(links.customer_identity_url, null);
   assert.ok(links.model_identity_url);
+});
+
+test("owner collection mode can issue both role links even when canonical records already exist", async () => {
+  const links = await issueHeldIdentityClaimLinks(
+    { ADMIN_SESSION_SECRET: "test-only-session-secret" },
+    {
+      sessionId: "sess_test_identity_first",
+      pendingClient: false,
+      pendingModel: false,
+      collectCustomer: true,
+      collectModel: true,
+    },
+  );
+  assert.equal(links.ok, true);
+  assert.ok(links.customer_identity_url);
+  assert.ok(links.model_identity_url);
+  assert.notEqual(
+    new URL(links.customer_identity_url).searchParams.get("job_claim"),
+    new URL(links.model_identity_url).searchParams.get("job_claim"),
+  );
 });

@@ -1,8 +1,9 @@
-import modelLiffWorker from "./model-liff-worker-pre-manual-review.js";
+import modelLiffWorker, { resolveLineChannelId } from "./model-liff-worker-pre-manual-review.js";
 import { reconcileHeldSigilJob } from "./sigil-jobs-held-release.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const CLIENTS_TABLE_DEFAULT = "tblVv58TCbwh5j1fS";
+const SESSIONS_TABLE_DEFAULT = "tblC98mKWbzmPuNzX";
 const CUSTOMER_LIFF_ID = "2010862595-yT4DCEMc";
 const CUSTOMER_LINE_CHANNEL_ID = "2010862595";
 const MODEL_LIFF_ID = "2010864854-N34SgCqq";
@@ -11,6 +12,11 @@ const CLAIM_MODE = "identity_claim";
 const DEFAULT_TTL_SECONDS = 72 * 60 * 60;
 const LINE_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify";
 const LINE_USER_ID_RE = /^U[0-9a-f]{32}$/i;
+const IDENTITY_CAPTURE_MARKER = "[MMD_LINE_IDENTITY_CAPTURE_V1]";
+const SESSION_FIELDS = Object.freeze({
+  sessionId: "fldLTq2kZbyRv22IA",
+  notes: "fldwl9Gs5tYlXG5ls",
+});
 
 function clean(value, max = 4096) {
   return String(value ?? "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim().slice(0, max);
@@ -126,18 +132,26 @@ export function isJobIdentityClaimRequest(body = {}) {
   return token(body.operational_create_mode || body.mode) === CLAIM_MODE;
 }
 
-export async function issueHeldIdentityClaimLinks(env, { sessionId, pendingClient, pendingModel } = {}) {
+export async function issueHeldIdentityClaimLinks(env, {
+  sessionId,
+  pendingClient,
+  pendingModel,
+  collectCustomer = false,
+  collectModel = false,
+} = {}) {
   const canonicalSessionId = clean(sessionId, 240);
   if (!canonicalSessionId) return { ok: false, error: "session_id_required" };
+  const issueCustomer = Boolean(pendingClient || collectCustomer);
+  const issueModel = Boolean(pendingModel || collectModel);
   const exp = Math.floor(Date.now() / 1000) + ttlSeconds(env);
   const base = { kind: CLAIM_KIND, session_id: canonicalSessionId, exp };
-  const customerToken = pendingClient
+  const customerToken = issueCustomer
     ? await signClaim(env, { ...base, role: "customer", jti: crypto.randomUUID() })
     : "";
-  const modelToken = pendingModel
+  const modelToken = issueModel
     ? await signClaim(env, { ...base, role: "model", jti: crypto.randomUUID() })
     : "";
-  if ((pendingClient && !customerToken) || (pendingModel && !modelToken)) {
+  if ((issueCustomer && !customerToken) || (issueModel && !modelToken)) {
     return { ok: false, error: "identity_claim_signing_not_ready" };
   }
   return {
@@ -195,6 +209,60 @@ async function airtableList(env, table, formula, maxRecords = 3) {
   return { ok: true, status: 200, records: Array.isArray(data?.records) ? data.records : [] };
 }
 
+async function captureVerifiedLineIdentity(env, { sessionId, role, lineUserId, state }) {
+  const apiKey = clean(env.AIRTABLE_API_KEY, 8192);
+  const baseId = clean(env.AIRTABLE_BASE_ID, 160);
+  const table = clean(env.AIRTABLE_TABLE_SESSIONS_ID || env.AIRTABLE_TABLE_SESSIONS || SESSIONS_TABLE_DEFAULT, 160);
+  if (!apiKey || !baseId || !table || !LINE_USER_ID_RE.test(clean(lineUserId, 80))) {
+    return { ok: false, error: "identity_capture_storage_not_ready" };
+  }
+  const params = new URLSearchParams({
+    maxRecords: "1",
+    filterByFormula: `{session_id}="${escapeFormula(sessionId)}"`,
+    returnFieldsByFieldId: "true",
+  });
+  params.append("fields[]", SESSION_FIELDS.notes);
+  let lookup;
+  try {
+    lookup = await fetch(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}?${params}`, {
+      headers: { authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch {
+    return { ok: false, error: "identity_capture_lookup_unavailable" };
+  }
+  const data = await lookup.json().catch(() => ({}));
+  if (!lookup.ok) return { ok: false, error: `identity_capture_lookup_http_${lookup.status}` };
+  const record = data?.records?.[0];
+  if (!record?.id) return { ok: false, error: "identity_capture_session_not_found" };
+
+  const current = clean(record?.fields?.[SESSION_FIELDS.notes], 12000);
+  const roleToken = token(role);
+  if (current.includes(IDENTITY_CAPTURE_MARKER) && current.includes(`"role":"${roleToken}"`) && current.includes(clean(lineUserId, 80))) {
+    return { ok: true, record_id: record.id, idempotent: true };
+  }
+  const marker = `${IDENTITY_CAPTURE_MARKER} ${JSON.stringify({
+    role: roleToken,
+    line_user_id: clean(lineUserId, 80),
+    state: clean(state, 120) || "verified",
+    captured_at: new Date().toISOString(),
+  })}`;
+  const nextNotes = [marker, current].filter(Boolean).join("\n").slice(0, 4000);
+  let write;
+  try {
+    write = await fetch(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}/${encodeURIComponent(record.id)}`, {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify({ fields: { [SESSION_FIELDS.notes]: nextNotes }, typecast: false }),
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch {
+    return { ok: false, error: "identity_capture_write_unavailable" };
+  }
+  if (!write.ok) return { ok: false, error: `identity_capture_write_http_${write.status}` };
+  return { ok: true, record_id: record.id, idempotent: false };
+}
+
 async function findClientByLineUserId(env, lineUserId) {
   const table = clean(env.AIRTABLE_TABLE_CLIENTS_ID || env.AIRTABLE_TABLE_CLIENTS || CLIENTS_TABLE_DEFAULT, 160);
   const fields = [...new Set([
@@ -217,17 +285,22 @@ async function resolveCustomer(request, env, idToken) {
   const verified = await verifyLineIdToken(idToken, channelId);
   if (!verified.ok) return verified;
   const found = await findClientByLineUserId(env, verified.lineUserId);
-  if (!found.ok) return found;
+  if (!found.ok) return { ...found, lineUserId: verified.lineUserId };
   if (found.records.length > 1) {
-    return { ok: false, status: 409, error: "client_line_binding_conflict", review: true };
+    return { ok: false, status: 409, error: "client_line_binding_conflict", review: true, lineUserId: verified.lineUserId };
   }
   if (found.records.length !== 1) {
-    return { ok: false, status: 202, error: "identity_review_required", review: true };
+    return { ok: false, status: 202, error: "identity_review_required", review: true, lineUserId: verified.lineUserId };
   }
-  return { ok: true, recordId: found.records[0].id };
+  return { ok: true, recordId: found.records[0].id, lineUserId: verified.lineUserId };
 }
 
 async function resolveModel(request, env, idToken) {
+  const environment = "published";
+  const channelId = clean(resolveLineChannelId(env, environment), 120);
+  const verified = await verifyLineIdToken(idToken, channelId);
+  if (!verified.ok) return verified;
+
   const url = new URL(request.url);
   url.pathname = "/v1/model/liff/exchange";
   url.search = "";
@@ -237,20 +310,20 @@ async function resolveModel(request, env, idToken) {
       "content-type": "application/json",
       origin: url.origin,
     },
-    body: JSON.stringify({ id_token: idToken, environment: "published" }),
+    body: JSON.stringify({ id_token: idToken, environment }),
   }), env);
   const data = await response.clone().json().catch(() => ({}));
   if (response.status === 202 || data?.state === "identity_review_required") {
-    return { ok: false, status: 202, error: "identity_review_required", review: true };
+    return { ok: false, status: 202, error: "identity_review_required", review: true, lineUserId: verified.lineUserId };
   }
   if (!response.ok || data?.ok === false) {
-    return { ok: false, status: response.status || 503, error: clean(data?.error || "model_identity_unavailable", 160) };
+    return { ok: false, status: response.status || 503, error: clean(data?.error || "model_identity_unavailable", 160), lineUserId: verified.lineUserId };
   }
   const recordId = clean(data?.model?.id, 160);
   if (!/^rec[A-Za-z0-9]{14,}$/.test(recordId)) {
-    return { ok: false, status: 202, error: "identity_review_required", review: true };
+    return { ok: false, status: 202, error: "identity_review_required", review: true, lineUserId: verified.lineUserId };
   }
-  return { ok: true, recordId };
+  return { ok: true, recordId, lineUserId: verified.lineUserId };
 }
 
 function safeClaimResponse(data, role) {
@@ -280,16 +353,29 @@ export async function handleJobIdentityClaim(request, env, ctx, downstream, body
     ? await resolveCustomer(request, env, idToken)
     : await resolveModel(request, env, idToken);
 
+  const capture = identity.lineUserId
+    ? await captureVerifiedLineIdentity(env, {
+      sessionId,
+      role,
+      lineUserId: identity.lineUserId,
+      state: identity.ok ? "canonical_match" : identity.review ? "review_required" : "verified",
+    }).catch(() => ({ ok: false, error: "identity_capture_unavailable" }))
+    : { ok: false, error: "line_identity_unavailable" };
+
   if (!identity.ok) {
     if (identity.review) {
+      if (!capture.ok) {
+        return json({ ok: false, error: capture.error || "identity_capture_unavailable", role }, 503);
+      }
       return json({
         ok: false,
         state: "identity_review_required",
         error: identity.error,
         role,
+        identity_captured: true,
         message: role === "customer"
-          ? "ยืนยัน LINE สำเร็จแล้ว แต่ยังไม่พบ Client record ที่ตรงกัน ระบบส่งไว้ให้ MMD ตรวจเชื่อมครับ"
-          : "ยืนยัน LINE สำเร็จแล้ว แต่ยังไม่สามารถยืนยัน Model record แบบอัตโนมัติ ระบบส่งไว้ให้ MMD ตรวจเชื่อมครับ",
+          ? "ยืนยัน LINE สำเร็จแล้ว ระบบเก็บ LINE ไว้กับงานนี้ให้ MMD ตรวจเชื่อมครับ"
+          : "ยืนยัน LINE สำเร็จแล้ว ระบบเก็บ LINE ไว้กับงานนี้ให้ MMD ตรวจเชื่อมครับ",
       }, identity.status || 202);
     }
     return json({ ok: false, error: identity.error || "identity_resolution_unavailable" }, identity.status || 503);
@@ -317,5 +403,5 @@ export async function handleJobIdentityClaim(request, env, ctx, downstream, body
   if (!response.ok || data?.ok === false) {
     return json({ ok: false, error: clean(data?.error || `held_reconcile_http_${response.status}`, 180) }, response.status || 503);
   }
-  return json(safeClaimResponse(data, role));
+  return json({ ...safeClaimResponse(data, role), identity_captured: capture.ok === true });
 }
