@@ -42,12 +42,14 @@ jobs:
           node --check payments-worker/confirmation-ack.js
           node --check payments-worker/confirmation-details.js
           node --check payments-worker/payment-instructions-v1.js
+          node --check payments-worker/double-moment-purchase-v1.js
           node --experimental-default-type=module --check payments-worker/reviewed-membership-write-through.js
           node --test payments-worker/canonical-confirm-link.test.mjs
           node --test payments-worker/confirmation-ack.test.mjs
           node --test payments-worker/confirmation-details.test.mjs
           node --test payments-worker/payment-instructions-v1.test.mjs
           node --test payments-worker/session-finance-write.test.mjs
+          node --test payments-worker/double-moment-purchase-v1.test.mjs
           node --experimental-global-webcrypto --experimental-default-type=module --test payments-worker/reviewed-membership-write-through.test.mjs
           node payments-worker/payment-confirmation-token.test.mjs
           npx --yes wrangler@4 deploy --dry-run --keep-vars --config payments-worker/wrangler.merged.toml
@@ -147,3 +149,26 @@ jobs:
             test "$code" = "401"
             grep -Eq 'invalid_confirmation_token|invalid_confirmation_token_signature|confirmation_token_not_active' "$body_file"
           done
+
+          health_body="$(mktemp)"
+          health_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+            -o "$health_body" -w "%{http_code}" \
+            'https://sigil.mmdbkk.com/v1/promo/double-moment/health')"
+          cat "$health_body"
+          test "$health_code" = "200"
+          grep -F '"campaign_id":"promo_double_moment_sep2026"' "$health_body"
+          grep -F '"purchase_amount_thb":20000' "$health_body"
+          grep -F '"total_credit_thb":27000' "$health_body"
+          grep -F '"minimum_service_thb":20000' "$health_body"
+          grep -F '"validity_days":180' "$health_body"
+
+          unauth_body="$(mktemp)"
+          unauth_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+            -o "$unauth_body" -w "%{http_code}" \
+            -X POST \
+            -H 'Content-Type: application/json' \
+            --data '{"client_record_id":"rec00000000000"}' \
+            'https://sigil.mmdbkk.com/v1/promo/double-moment/start')"
+          cat "$unauth_body"
+          test "$unauth_code" = "401"
+          grep -F '"error":"service_auth_required"' "$unauth_body"
