@@ -8,6 +8,7 @@ on:
     paths:
       - ".github/workflows/audience-production-ingress.yml"
       - "admin-worker/src/admin-login-hero-worker.js"
+      - "admin-worker/src/audience-brief-live.js"
   workflow_run:
     workflows:
       - "Deploy admin-worker"
@@ -147,15 +148,26 @@ jobs:
           const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
           if (!p || p.ok !== true || p.connected !== true) process.exit(1);
           if (p.authority !== 'backend' || p.source !== 'admin-worker') process.exit(1);
-          if (p.schema !== 'mmd.admin.audience.brief.v1') process.exit(1);
+          if (p.schema !== 'mmd.admin.audience.brief.v2') process.exit(1);
           if (!p.source_status || !p.signals || !p.guardrails) process.exit(1);
           if (p.guardrails.no_fabricated_metrics !== true) process.exit(1);
           if (p.guardrails.historical_snapshot_is_current_kpi !== false) process.exit(1);
+          if (p.guardrails.historical_backfill_is_current_revenue !== false) process.exit(1);
           if (p.guardrails.may_broadcast !== false) process.exit(1);
-          const contacts = p.signals?.audience?.contacts;
-          if (contacts != null && (!Number.isFinite(Number(contacts)) || Number(contacts) < 0)) process.exit(1);
-          if (p.signals?.booking && Object.keys(p.signals.booking).length && p.source_status?.booking?.metric_available !== true) process.exit(1);
-          if (p.signals?.revenue && Object.keys(p.signals.revenue).length && p.source_status?.payments?.metric_available !== true) process.exit(1);
+
+          for (const key of ['customer_data', 'engagement', 'booking', 'payments']) {
+            if (p.source_status?.[key]?.metric_available !== true) process.exit(1);
+          }
+
+          const contacts = Number(p.signals?.audience?.contacts);
+          const events = Number(p.signals?.engagement?.events_30d);
+          const requests = Number(p.signals?.booking?.requests_30d);
+          const confirmed = Number(p.signals?.booking?.confirmed_30d);
+          const revenue = Number(p.signals?.revenue?.official_verified_thb_30d);
+          if (![contacts, events, requests, confirmed, revenue].every(Number.isFinite)) process.exit(1);
+          if ([contacts, events, requests, confirmed, revenue].some((value) => value < 0)) process.exit(1);
+          if (confirmed > requests) process.exit(1);
+          if (p.signals?.revenue?.basis !== 'payment_date_30d_and_official_verified') process.exit(1);
           NODE
               then
                 ready=1
@@ -163,20 +175,21 @@ jobs:
               fi
               if [ "$attempt" -eq 60 ]; then
                 cat "$body"
-                echo "Audience backend did not become ready after deploy wait" >&2
+                echo "Audience backend v2 did not become ready after deploy wait" >&2
                 exit 1
               fi
               sleep 5
             done
             test "$ready" = "1"
-            grep -qi '^x-mmd-audience-brief: backend-v1' "$headers"
+            grep -qi '^x-mmd-audience-brief: backend-v2' "$headers"
             node - "$body" <<'NODE'
           const fs = require('fs');
           const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-          const contacts = p.signals?.audience?.contacts;
-          console.log(`PASS audience backend: ${p.summary}`);
-          console.log(`LINE verified metric: ${contacts == null ? 'WAITING (truthful)' : contacts}`);
-          console.log(`Recent canonical sample: ${p.recent_client_sample?.count ?? 'n/a'}`);
+          console.log(`PASS audience backend v2: ${p.summary}`);
+          console.log(`Known LINE contacts: ${p.signals?.audience?.contacts ?? 'n/a'}`);
+          console.log(`Activity 30d: ${p.signals?.engagement?.events_30d ?? 'n/a'} events`);
+          console.log(`Booking 30d: ${p.signals?.booking?.confirmed_30d ?? 'n/a'}/${p.signals?.booking?.requests_30d ?? 'n/a'}`);
+          console.log(`Verified revenue 30d: ${p.signals?.revenue?.official_verified_thb_30d ?? 'n/a'} THB`);
           NODE
-            echo "PASS: $origin authenticated /internal/ceo/audience -> backend-owned /v1/admin/audience/brief"
+            echo "PASS: $origin authenticated /internal/ceo/audience -> backend-owned /v1/admin/audience/brief v2"
           done
