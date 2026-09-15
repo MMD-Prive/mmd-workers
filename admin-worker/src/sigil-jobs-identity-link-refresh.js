@@ -150,25 +150,31 @@ export async function maybeHandleHeldIdentityLinkRefresh(request, env) {
   const modelId = firstLinked(detailFields["Canonical Model"]);
   const pendingClient = !clientId;
   const pendingModel = !modelId;
-  if (!pendingClient && !pendingModel) {
-    return json({
-      ok: true,
-      session_id: sessionId,
-      operational_status: "linked_pending_release",
-      pending_client: false,
-      pending_model: false,
-      customer_identity_url: null,
-      model_identity_url: null,
-      message: "canonical_identities_linked_release_pending",
-    });
-  }
 
-  const claims = await issueHeldIdentityClaimLinks(env, { sessionId, pendingClient, pendingModel });
+  // Identity collection is intentionally independent from canonical linkage.
+  // Owner/Admin can send both role-bound LINE links first, then reconcile the
+  // verified LINE subjects to canonical Client/Model records afterwards.
+  const claims = await issueHeldIdentityClaimLinks(env, {
+    sessionId,
+    pendingClient,
+    pendingModel,
+    collectCustomer: true,
+    collectModel: true,
+  });
   if (!claims.ok) return json({ ok: false, error: claims.error || "identity_claim_signing_not_ready" }, 503);
+
+  const operationalStatus = pendingClient && pendingModel
+    ? "pending_identity_link"
+    : pendingClient
+      ? "pending_client_link"
+      : pendingModel
+        ? "pending_model_link"
+        : "linked_pending_release";
+
   return json({
     ok: true,
     session_id: sessionId,
-    operational_status: pendingClient && pendingModel ? "pending_identity_link" : pendingClient ? "pending_client_link" : "pending_model_link",
+    operational_status: operationalStatus,
     pending_client: pendingClient,
     pending_model: pendingModel,
     identity_claim_state: "ready",
