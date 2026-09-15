@@ -7,19 +7,25 @@ on:
       - main
     paths:
       - ".github/workflows/customer-data-production-smoke.yml"
+  workflow_run:
+    workflows:
+      - Deploy immigrate-worker
+    types:
+      - completed
 
 permissions:
   contents: read
 
 jobs:
   smoke:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
       ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
 
     steps:
-      - name: Authenticated Customer Data page and queue smoke
+      - name: Authenticated Customer 360 V7 page and queue smoke
         shell: bash
         run: |
           set -euo pipefail
@@ -47,7 +53,15 @@ jobs:
               "$origin/internal/admin/customer-data")"
             test "$page_code" = "200"
             grep -qi '^content-type:.*text/html' "$headers"
-            grep -q 'Customer' "$body"
+            grep -Eqi '^x-mmd-customer-data-ui:[[:space:]]*readable-v3' "$headers"
+            grep -Eqi '^x-mmd-customer-ux:[[:space:]]*owner-readable-v7' "$headers"
+            grep -q 'Customer 360' "$body"
+            grep -q 'ลูกค้า → ตัวตน → ตรวจ → ทำต่อ' "$body"
+            grep -q 'ค้นลูกค้า ตรวจว่าตัวตนตรงกัน' "$body"
+            grep -q 'คิวที่ต้องดู' "$body"
+            grep -q 'ตัดสินใจเรื่องตัวตน' "$body"
+            grep -q 'href="/internal/admin/jobs/create-job"' "$body"
+            grep -q '>สร้างงาน ↗</a>' "$body"
 
             queue_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
               -D "$headers" -o "$body" -b "$cookie" -w "%{http_code}" \
@@ -76,6 +90,6 @@ jobs:
           console.log(`Customer Data queue connected: ${count} review_required`);
           NODE
 
-            echo "PASS: $origin authenticated Customer Data page + live queue"
+            echo "PASS: $origin authenticated Customer 360 V7 + live queue"
             rm -f "$cookie" "$headers" "$body"
           done
