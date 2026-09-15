@@ -6,9 +6,18 @@ const STATUS_UI_MODE = "auth-bridge-only";
 const HARD_TIMEOUT_MS = 12_000;
 const MANUAL_RETRY_WINDOW_MS = 120_000;
 const SESSION_STATUS_ENDPOINT = "/member/api/liff/status";
+const CANONICAL_MY_MMD_HOST = "mmdbkk.com";
+const LEGACY_MY_MMD_HOST = "www.mmdbkk.com";
 const PENDING_WISH_COOKIE = "mmd_care_back_wish_link";
+const PENDING_WISH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 const PENDING_WISH_BRIDGE_PATH = "/my-mmd-assets/care-back-wish-link.js";
 const PENDING_WISH_LINK_ENDPOINT = "/member/api/care-back/link-wish";
+const CARE_BACK_WISH_API_PATHS = new Set([
+  "/member/api/care-back/public-wish",
+  "/member/api/care-back/public-wish/",
+  "/member/api/care-back/link-wish",
+  "/member/api/care-back/link-wish/",
+]);
 
 function normalizedPath(request) {
   return new URL(request.url).pathname.toLowerCase().replace(/\/{2,}/g, "/");
@@ -17,6 +26,93 @@ function normalizedPath(request) {
 function isMyMmdPageRequest(request) {
   const path = normalizedPath(request);
   return path === "/my-mmd" || path === "/my-mmd/" || path.startsWith("/my-mmd/");
+}
+
+function isMyMmdUiPath(path) {
+  return path === "/my-mmd"
+    || path === "/my-mmd/"
+    || path.startsWith("/my-mmd/")
+    || path === "/member/my-mmd"
+    || path === "/member/my-mmd/"
+    || path.startsWith("/member/my-mmd/");
+}
+
+function cookieValue(request, name) {
+  for (const part of String(request.headers.get("cookie") || "").split(";")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key === name) return rest.join("=").trim();
+  }
+  return "";
+}
+
+function validPendingWishToken(value) {
+  return /^pw_[A-Za-z0-9_-]{20,200}$/.test(String(value || ""));
+}
+
+function sharedPendingWishCookie(token, maxAge = PENDING_WISH_COOKIE_MAX_AGE) {
+  return `${PENDING_WISH_COOKIE}=${token}; Max-Age=${maxAge}; Domain=${CANONICAL_MY_MMD_HOST}; Path=/; Secure; SameSite=Lax`;
+}
+
+function clearLegacyHostPendingWishCookie() {
+  return `${PENDING_WISH_COOKIE}=; Max-Age=0; Path=/; Secure; SameSite=Lax`;
+}
+
+export function canonicalMyMmdHostRedirect(request) {
+  if (!(request instanceof Request) || !new Set(["GET", "HEAD"]).has(request.method)) return null;
+  const url = new URL(request.url);
+  const path = url.pathname.toLowerCase().replace(/\/{2,}/g, "/");
+  if (url.hostname.toLowerCase() !== LEGACY_MY_MMD_HOST || !isMyMmdUiPath(path)) return null;
+
+  const target = new URL(request.url);
+  target.hostname = CANONICAL_MY_MMD_HOST;
+  const headers = new Headers({
+    location: target.toString(),
+    "cache-control": "no-store, private, max-age=0",
+    "x-mmd-route-owner": "member-dashboard-chat-worker",
+    "x-mmd-my-mmd-canonical-host": CANONICAL_MY_MMD_HOST,
+  });
+
+  const pendingWish = cookieValue(request, PENDING_WISH_COOKIE);
+  if (validPendingWishToken(pendingWish)) {
+    // Migrate existing affected users from the old www-only pending-Wish cookie
+    // before the secure __Host- member session is established on canonical apex.
+    headers.append("set-cookie", sharedPendingWishCookie(pendingWish));
+    headers.append("set-cookie", clearLegacyHostPendingWishCookie());
+    headers.set("x-mmd-care-back-wish-cookie-migrated", "true");
+  }
+
+  return new Response(null, { status: 308, headers });
+}
+
+function isCareBackWishApiRequest(request) {
+  return CARE_BACK_WISH_API_PATHS.has(normalizedPath(request));
+}
+
+function scopePendingWishCookie(cookie) {
+  const value = String(cookie || "").trim();
+  if (!value.toLowerCase().startsWith(`${PENDING_WISH_COOKIE.toLowerCase()}=`)) return value;
+  if (/;\s*domain=/i.test(value)) return value;
+  return `${value}; Domain=${CANONICAL_MY_MMD_HOST}`;
+}
+
+export function withSharedPendingWishCookie(response) {
+  if (!(response instanceof Response)) return response;
+  const raw = response.headers.get("set-cookie");
+  if (!raw || !raw.toLowerCase().includes(`${PENDING_WISH_COOKIE.toLowerCase()}=`)) return response;
+
+  const headers = new Headers(response.headers);
+  const cookies = typeof response.headers.getSetCookie === "function"
+    ? response.headers.getSetCookie()
+    : [raw];
+  headers.delete("set-cookie");
+  for (const cookie of cookies) headers.append("set-cookie", scopePendingWishCookie(cookie));
+  headers.set("x-mmd-care-back-wish-cookie-scope", "parent-domain-v1");
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 function pendingWishBridgeJavascript() {
@@ -38,6 +134,7 @@ function pendingWishBridgeJavascript() {
 
   function clearCookie() {
     document.cookie = COOKIE + "=; Max-Age=0; Path=/; Secure; SameSite=Lax";
+    document.cookie = COOKIE + "=; Max-Age=0; Domain=${CANONICAL_MY_MMD_HOST}; Path=/; Secure; SameSite=Lax";
   }
 
   async function linkPendingWish() {
@@ -284,8 +381,11 @@ async function applyBoundedStatusRecovery(request, response) {
 
 export default {
   async fetch(request, env = {}, ctx) {
+    const canonicalRedirect = canonicalMyMmdHostRedirect(request);
+    if (canonicalRedirect) return canonicalRedirect;
     if (normalizedPath(request) === PENDING_WISH_BRIDGE_PATH) return pendingWishBridgeResponse(request);
     let response = await currentWorker.fetch(request, env, ctx);
+    if (isCareBackWishApiRequest(request)) response = withSharedPendingWishCookie(response);
     response = await applyPendingWishBridge(request, response);
     return applyBoundedStatusRecovery(request, response);
   },
