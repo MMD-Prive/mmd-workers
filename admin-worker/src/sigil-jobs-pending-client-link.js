@@ -1,6 +1,11 @@
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { canonicalizeSigilJobBody } from "./sigil-jobs-membership-action.js";
 import { reconcileHeldSigilJob, SIGIL_JOB_RECONCILE_PATH } from "./sigil-jobs-held-release.js";
+import {
+  handleJobIdentityClaim,
+  isJobIdentityClaimRequest,
+  issueHeldIdentityClaimLinks,
+} from "./sigil-jobs-line-identity-claim.js";
 
 export const SIGIL_JOB_CREATE_PATH = "/v1/admin/job/create";
 export const PENDING_CLIENT_LINK_MODE = "pending_client_link";
@@ -209,10 +214,19 @@ export async function tryHandleSigilPendingClientLink(request, env, ctx, downstr
 
   const body = await request.clone().json().catch(() => ({}));
   const reconcile = kind === "reconcile" || (kind === "create" && isHeldReconcileRequest(body));
-  if (kind === "create" && !reconcile && !shouldCreatePendingIdentityHold(body)) return null;
+  const identityClaim = kind === "create" && isJobIdentityClaimRequest(body);
+  if (kind === "create" && !reconcile && !identityClaim && !shouldCreatePendingIdentityHold(body)) return null;
 
   const routeError = hostAndOriginAllowed(request);
   if (routeError) return json({ ok: false, error: `sigil_jobs_${routeError}` }, 403);
+
+  // A self-service identity claim is authorized by a short-lived, role-bound,
+  // session-bound HMAC claim plus a LINE id_token verified by the backend. It
+  // intentionally does not require the customer's/model's browser to possess
+  // an internal admin session.
+  if (identityClaim) {
+    return handleJobIdentityClaim(request, env, ctx, downstream, body);
+  }
 
   const actor = await readCredentialBoundAdminActor(request, env);
   const role = token(actor?.role);
@@ -220,9 +234,9 @@ export async function tryHandleSigilPendingClientLink(request, env, ctx, downstr
     return json({ ok: false, error: "unauthorized" }, 401);
   }
 
-  // Use the already-routed /v1/admin/job/create endpoint for later reconciliation
-  // so Cloudflare route ownership stays exact and /sigil/jobs does not need a new
-  // broad admin route. The dedicated reconcile path remains supported internally.
+  // Use the already-routed /v1/admin/job/create endpoint for later admin
+  // reconciliation so Cloudflare route ownership stays exact. The dedicated
+  // reconcile path remains supported internally.
   if (reconcile) {
     return reconcileHeldSigilJob(request, env, ctx, downstream);
   }
@@ -253,11 +267,32 @@ export async function tryHandleSigilPendingClientLink(request, env, ctx, downstr
   held.membership_action = canonical.membership_action;
   held.pricing_breakdown = canonical.pricing_breakdown;
 
+  const sessionId = clean(held.session_id || held.raw?.session_id || data.session_id || data.sessionId);
+  if (sessionId) {
+    const claims = await issueHeldIdentityClaimLinks(env, {
+      sessionId,
+      pendingClient: held.pending_client,
+      pendingModel: held.pending_model,
+    });
+    if (claims.ok) {
+      held.identity_claim_state = "ready";
+      held.identity_claim_expires_at = claims.expires_at;
+      held.customer_identity_url = claims.customer_identity_url;
+      held.model_identity_url = claims.model_identity_url;
+    } else {
+      held.identity_claim_state = "unavailable";
+      held.identity_claim_error = claims.error || "identity_claim_signing_not_ready";
+      held.customer_identity_url = null;
+      held.model_identity_url = null;
+    }
+  }
+
   const responseHeaders = new Headers(response.headers);
   responseHeaders.delete("content-length");
   responseHeaders.set("cache-control", "no-store, private");
   responseHeaders.set("x-mmd-sigil-operational-status", exposedStatus);
   responseHeaders.set("x-mmd-membership-action", canonical.membership_action.version);
+  if (held.identity_claim_state) responseHeaders.set("x-mmd-sigil-identity-claim", held.identity_claim_state);
   return new Response(JSON.stringify(held), {
     status: response.status,
     statusText: response.statusText,
