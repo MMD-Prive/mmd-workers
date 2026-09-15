@@ -19,8 +19,16 @@ const MMS_PARTNER_PATH = "/internal/admin/mms";
 const MODEL_ACTIVATE_PATH = "/v1/model/liff/activate";
 const AUDIENCE_BRIEF_PATH = "/v1/admin/audience/brief";
 const LINE_OFC_SYNC_RUNS_TABLE_DEFAULT = "tbl2yGlf8XyswZ0Yw";
+const CLIENTS_TABLE_DEFAULT = "tblVv58TCbwh5j1fS";
+const AI_MESSAGE_EVENTS_TABLE_DEFAULT = "tbljCYfYqfm8gBTPq";
+const BOOKING_REQUESTS_TABLE_DEFAULT = "tblQa2OK4U69eOCRF";
+const PAYMENTS_TABLE_DEFAULT = "tblWGGJJOx5eBvBZJ";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const AUDIENCE_OWNER_ROLES = new Set(["owner", "admin", "super_admin", "superadmin"]);
+const AUDIENCE_WINDOW_DAYS = 30;
+const AUDIENCE_WINDOW_MS = AUDIENCE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+const AIRTABLE_METRIC_MAX_PAGES = 100;
+const LINE_USER_ID_RE = /^U[0-9a-f]{32}$/i;
 const LINE_SYNC_FIELDS = Object.freeze({
   status: "fldhRfMpXtzO9Bl69",
   startedAt: "fldTNx3KBlcRVf6Ja",
@@ -33,6 +41,22 @@ const LINE_SYNC_FIELDS = Object.freeze({
   reason: "fldbrfDSXL84FCj2W",
   source: "fldmTEC9kMdH8x5Jy",
 });
+const CLIENT_FIELDS = Object.freeze({
+  lineUserId: "fld5HfSGChKFbd4uh",
+});
+const AI_MESSAGE_FIELDS = Object.freeze({
+  createdAt: "fldwQ7bkMtguRxqz7",
+  lineUserId: "fldll0EoyTHt0jHHP",
+});
+const BOOKING_FIELDS = Object.freeze({
+  requestStatus: "fldIQOhTAmJMVJeu6",
+  createdAt: "fldlOnbvpkf8G41ol",
+  confirmedAt: "flddLv3J5PctaDBPz",
+});
+const PAYMENT_FIELDS = Object.freeze({
+  amount: "fldvCSwrUW8OMAooS",
+  officialVerifiedAt: "fldPNK6qgxCSdaJRM",
+});
 let lineOfcContactBackfillKickStarted = false;
 
 function clean(value, max = 4000) {
@@ -42,6 +66,15 @@ function clean(value, max = 4000) {
 function numeric(value) {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function parsedTime(value) {
+  const time = Date.parse(clean(value, 120));
+  return Number.isFinite(time) ? time : 0;
+}
+
+function validLineUserId(value) {
+  return LINE_USER_ID_RE.test(clean(value, 80));
 }
 
 function audienceJson(payload, status = 200, extraHeaders = {}) {
@@ -91,6 +124,66 @@ async function readAudienceOwner(request, env) {
   const id = clean(actor.id, 120);
   if (!id || !AUDIENCE_OWNER_ROLES.has(role)) return null;
   return { id, role };
+}
+
+function airtableCredentials(env = {}) {
+  return {
+    token: clean(env.AIRTABLE_API_KEY || env.AIRTABLE_TOKEN, 4096),
+    baseId: clean(env.AIRTABLE_BASE_ID, 120),
+  };
+}
+
+async function readAirtableMetricRecords(env = {}, tableId, fieldIds = []) {
+  const { token, baseId } = airtableCredentials(env);
+  const canonicalTableId = clean(tableId, 120);
+  if (!token || !baseId || !canonicalTableId) {
+    return { ok: false, records: [], reason: "airtable_metric_storage_not_ready" };
+  }
+
+  const records = [];
+  let offset = "";
+  for (let page = 0; page < AIRTABLE_METRIC_MAX_PAGES; page += 1) {
+    const url = new URL(`${AIRTABLE_API}/${baseId}/${canonicalTableId}`);
+    url.searchParams.set("pageSize", "100");
+    url.searchParams.set("returnFieldsByFieldId", "true");
+    for (const fieldId of fieldIds) url.searchParams.append("fields[]", fieldId);
+    if (offset) url.searchParams.set("offset", offset);
+
+    let response;
+    let readError = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        response = await fetch(url.toString(), {
+          method: "GET",
+          headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (response.status !== 429) break;
+      } catch (error) {
+        readError = error;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+    }
+
+    if (!response) {
+      return { ok: false, records: [], reason: clean(readError?.message || "airtable_metric_read_failed", 160) };
+    }
+    if (response.status === 429) {
+      return { ok: false, records: [], reason: "airtable_metric_http_429" };
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return { ok: false, records: [], reason: `airtable_metric_http_${response.status}` };
+    }
+
+    if (Array.isArray(payload?.records)) records.push(...payload.records);
+    offset = clean(payload?.offset, 300);
+    if (!offset) return { ok: true, records, reason: "" };
+  }
+
+  return { ok: false, records: [], reason: "airtable_metric_page_limit_exceeded" };
 }
 
 async function readLatestLineAudienceSnapshot(env = {}) {
@@ -158,10 +251,114 @@ async function readLatestLineAudienceSnapshot(env = {}) {
   };
 }
 
-function contextStatus(read, details = {}) {
-  return read?.ok
-    ? { state: "connected_context_only", metric_available: false, ...details }
-    : { state: "waiting", metric_available: false, reason: `backend_http_${read?.status || 0}` };
+async function readKnownLineContacts(env = {}) {
+  const tableId = clean(env.AIRTABLE_TABLE_CLIENTS_ID || env.AIRTABLE_TABLE_CLIENTS || CLIENTS_TABLE_DEFAULT, 120);
+  const read = await readAirtableMetricRecords(env, tableId, Object.values(CLIENT_FIELDS));
+  if (!read.ok) return { available: false, state: "waiting", reason: read.reason };
+
+  const contacts = read.records.reduce((count, record) => {
+    const value = record?.fields?.[CLIENT_FIELDS.lineUserId];
+    return count + (validLineUserId(value) ? 1 : 0);
+  }, 0);
+
+  return {
+    available: true,
+    state: "connected_metric",
+    contacts,
+    source: "airtable_clients",
+    basis: "canonical_clients_with_valid_line_user_id",
+  };
+}
+
+async function readCustomerActivity30d(env = {}, nowMs = Date.now()) {
+  const tableId = clean(env.AIRTABLE_TABLE_AI_MESSAGE_EVENTS_ID || env.AIRTABLE_TABLE_AI_MESSAGE_EVENTS || AI_MESSAGE_EVENTS_TABLE_DEFAULT, 120);
+  const read = await readAirtableMetricRecords(env, tableId, Object.values(AI_MESSAGE_FIELDS));
+  if (!read.ok) return { available: false, state: "waiting", reason: read.reason };
+
+  const cutoff = nowMs - AUDIENCE_WINDOW_MS;
+  let events = 0;
+  const contacts = new Set();
+  for (const record of read.records) {
+    const fields = record?.fields || {};
+    const eventTime = parsedTime(fields[AI_MESSAGE_FIELDS.createdAt] || record?.createdTime);
+    if (!eventTime || eventTime < cutoff || eventTime > nowMs + 5 * 60 * 1000) continue;
+    events += 1;
+    const lineUserId = clean(fields[AI_MESSAGE_FIELDS.lineUserId], 80);
+    if (validLineUserId(lineUserId)) contacts.add(lineUserId.toLowerCase());
+  }
+
+  return {
+    available: true,
+    state: "connected_metric",
+    events_30d: events,
+    unique_contacts_30d: contacts.size,
+    window_days: AUDIENCE_WINDOW_DAYS,
+    source: "airtable_ai_message_events",
+  };
+}
+
+async function readBookingConversion30d(env = {}, nowMs = Date.now()) {
+  const tableId = clean(env.AIRTABLE_TABLE_BOOKING_REQUESTS_ID || BOOKING_REQUESTS_TABLE_DEFAULT, 120);
+  const read = await readAirtableMetricRecords(env, tableId, Object.values(BOOKING_FIELDS));
+  if (!read.ok) return { available: false, state: "waiting", reason: read.reason };
+
+  const cutoff = nowMs - AUDIENCE_WINDOW_MS;
+  let requests = 0;
+  let confirmed = 0;
+  for (const record of read.records) {
+    const fields = record?.fields || {};
+    const createdAt = parsedTime(fields[BOOKING_FIELDS.createdAt] || record?.createdTime);
+    if (!createdAt || createdAt < cutoff || createdAt > nowMs + 5 * 60 * 1000) continue;
+    requests += 1;
+    const status = clean(fields[BOOKING_FIELDS.requestStatus], 80).toLowerCase();
+    const confirmedAt = parsedTime(fields[BOOKING_FIELDS.confirmedAt]);
+    if (status === "confirmed" || confirmedAt > 0) confirmed += 1;
+  }
+
+  return {
+    available: true,
+    state: "connected_metric",
+    requests_30d: requests,
+    confirmed_30d: confirmed,
+    conversion_rate: requests > 0 ? Number(((confirmed / requests) * 100).toFixed(1)) : null,
+    window_days: AUDIENCE_WINDOW_DAYS,
+    source: "airtable_sigil_booking_requests",
+  };
+}
+
+async function readOfficialVerifiedRevenue30d(env = {}, nowMs = Date.now()) {
+  const tableId = clean(env.AIRTABLE_TABLE_PAYMENTS_ID || env.AIRTABLE_TABLE_PAYMENTS || PAYMENTS_TABLE_DEFAULT, 120);
+  const read = await readAirtableMetricRecords(env, tableId, Object.values(PAYMENT_FIELDS));
+  if (!read.ok) return { available: false, state: "waiting", reason: read.reason };
+
+  const cutoff = nowMs - AUDIENCE_WINDOW_MS;
+  let total = 0;
+  let payments = 0;
+  for (const record of read.records) {
+    const fields = record?.fields || {};
+    const verifiedAt = parsedTime(fields[PAYMENT_FIELDS.officialVerifiedAt]);
+    if (!verifiedAt || verifiedAt < cutoff || verifiedAt > nowMs + 5 * 60 * 1000) continue;
+    const amount = numeric(fields[PAYMENT_FIELDS.amount]);
+    if (amount === null) continue;
+    total += amount;
+    payments += 1;
+  }
+
+  return {
+    available: true,
+    state: "connected_metric",
+    official_verified_thb_30d: Number(total.toFixed(2)),
+    payments_30d: payments,
+    currency: "THB",
+    window_days: AUDIENCE_WINDOW_DAYS,
+    source: "airtable_payments_official_verified_at",
+  };
+}
+
+function metricSourceStatus(metric, details = {}) {
+  return metric?.available
+    ? { state: metric.state || "connected_metric", metric_available: true, source: metric.source || null, ...details }
+    : { state: "waiting", metric_available: false, reason: metric?.reason || "metric_source_unavailable", ...details };
 }
 
 async function buildAudienceBrief(request, env, ctx) {
@@ -170,8 +367,13 @@ async function buildAudienceBrief(request, env, ctx) {
     return audienceJson({ ok: false, error: "unauthorized" }, 401);
   }
 
-  const [lineResult, dashboardResult, recentResult] = await Promise.allSettled([
+  const nowMs = Date.now();
+  const [lineResult, contactsResult, activityResult, bookingResult, revenueResult, dashboardResult, recentResult] = await Promise.allSettled([
     readLatestLineAudienceSnapshot(env),
+    readKnownLineContacts(env),
+    readCustomerActivity30d(env, nowMs),
+    readBookingConversion30d(env, nowMs),
+    readOfficialVerifiedRevenue30d(env, nowMs),
     delegatedJson(request, env, ctx, "/v1/admin/dashboard"),
     delegatedJson(request, env, ctx, "/v1/admin/clients/recent"),
   ]);
@@ -179,6 +381,18 @@ async function buildAudienceBrief(request, env, ctx) {
   const line = lineResult.status === "fulfilled"
     ? lineResult.value
     : { available: false, state: "waiting", reason: "line_ofc_snapshot_read_failed" };
+  const contacts = contactsResult.status === "fulfilled"
+    ? contactsResult.value
+    : { available: false, state: "waiting", reason: "canonical_line_contacts_read_failed" };
+  const activity = activityResult.status === "fulfilled"
+    ? activityResult.value
+    : { available: false, state: "waiting", reason: "customer_activity_read_failed" };
+  const booking = bookingResult.status === "fulfilled"
+    ? bookingResult.value
+    : { available: false, state: "waiting", reason: "booking_conversion_read_failed" };
+  const revenue = revenueResult.status === "fulfilled"
+    ? revenueResult.value
+    : { available: false, state: "waiting", reason: "official_verified_revenue_read_failed" };
   const dashboard = dashboardResult.status === "fulfilled"
     ? dashboardResult.value
     : { ok: false, status: 0, data: null };
@@ -202,41 +416,74 @@ async function buildAudienceBrief(request, env, ctx) {
       snapshot_at: line.snapshot_at || null,
       source: line.source || "line_ofc_follower_sync_v1",
       reason: line.reason || null,
+      note: "LINE OA follower metric is separate from Known LINE Contacts",
     },
-    customer_data: recent?.ok
-      ? { state: "connected_sample", metric_available: false, recent_canonical_sample: recentRecords.length }
-      : { state: "waiting", metric_available: false, reason: `backend_http_${recent?.status || 0}` },
-    booking: contextStatus(dashboard, {
-      active_job_context: numeric(dashboardCounts.jobs),
-      note: "operational context only; not a booking-conversion denominator",
+    customer_data: metricSourceStatus(contacts, {
+      known_line_contacts: contacts.available ? contacts.contacts : null,
+      basis: contacts.basis || "canonical_clients_with_valid_line_user_id",
     }),
-    payments: contextStatus(dashboard, {
-      review_queue_context: numeric(dashboardCounts.payment_review ?? dashboardCounts.payments),
-      note: "review context only; never treated as revenue",
+    engagement: metricSourceStatus(activity, {
+      window_days: AUDIENCE_WINDOW_DAYS,
+    }),
+    booking: metricSourceStatus(booking, {
+      window_days: AUDIENCE_WINDOW_DAYS,
+    }),
+    payments: metricSourceStatus(revenue, {
+      window_days: AUDIENCE_WINDOW_DAYS,
+      basis: "official_verified_at_only",
     }),
     calendar: { state: "not_read_by_brief", metric_available: false },
   };
 
   const signals = {
-    audience: line.available
+    audience: contacts.available
       ? {
-          contacts: line.followers,
-          snapshot_at: line.snapshot_at,
-          source: line.source,
-          basis: "verified_line_ofc_follower_sync_receipt",
+          contacts: contacts.contacts,
+          source: contacts.source,
+          basis: contacts.basis,
+          line_oa_followers: line.available ? line.followers : null,
+          line_oa_followers_supported: line.supported === true,
+          line_oa_snapshot_at: line.snapshot_at || null,
         }
       : {},
-    engagement: {},
-    booking: {},
-    revenue: {},
+    engagement: activity.available
+      ? {
+          events_30d: activity.events_30d,
+          unique_contacts_30d: activity.unique_contacts_30d,
+          window_days: activity.window_days,
+          source: activity.source,
+        }
+      : {},
+    booking: booking.available
+      ? {
+          requests_30d: booking.requests_30d,
+          confirmed_30d: booking.confirmed_30d,
+          conversion_rate: booking.conversion_rate,
+          window_days: booking.window_days,
+          source: booking.source,
+        }
+      : {},
+    revenue: revenue.available
+      ? {
+          official_verified_thb_30d: revenue.official_verified_thb_30d,
+          payments_30d: revenue.payments_30d,
+          currency: revenue.currency,
+          window_days: revenue.window_days,
+          source: revenue.source,
+        }
+      : {},
   };
 
-  const summary = line.available
-    ? `LINE OFC เชื่อมแล้ว · audience snapshot ล่าสุด ${Intl.NumberFormat("en-US").format(line.followers)} คน`
-    : "Audience backend เชื่อมแล้ว · รอ LINE OFC metric ที่ยืนยันได้";
-  const recommendation = line.available
-    ? "ใช้ snapshot นี้เป็นฐาน audience ล่าสุดได้ แต่ Engagement, Booking Conversion และ Revenue Mix ยังไม่สรุปจนกว่าจะมี source ที่ยืนยันตรง ห้ามใช้ Historical 2026-06-01 แทน live KPI"
-    : "Backend พร้อมแล้ว แต่ยังไม่สร้างตัวเลขแทน source ที่ขาด ให้ใช้ Customer Data / Booking / Payments เป็น context และรอ LINE OFC verified snapshot ก่อนสรุป audience ปัจจุบัน";
+  const readyMetrics = [contacts, activity, booking, revenue].filter((metric) => metric.available).length;
+  const number = new Intl.NumberFormat("en-US");
+  const contactsText = contacts.available ? number.format(contacts.contacts) : "WAITING";
+  const activityText = activity.available ? number.format(activity.events_30d) : "WAITING";
+  const bookingText = booking.available ? `${number.format(booking.confirmed_30d)}/${number.format(booking.requests_30d)}` : "WAITING";
+  const revenueText = revenue.available ? `฿${number.format(Math.round(revenue.official_verified_thb_30d))}` : "WAITING";
+  const summary = `Live sources ${readyMetrics}/4 · LINE ${contactsText} · Activity 30d ${activityText} · Booking ${bookingText} · Verified Revenue ${revenueText}`;
+  const recommendation = readyMetrics === 4
+    ? `ใช้ Known LINE Contacts + Customer Activity ${AUDIENCE_WINDOW_DAYS} วัน + Booking Conversion + Official Verified Revenue เป็นฐาน CEO brief ได้แล้ว โดย LINE OA follower metric แยกสถานะและไม่บล็อก KPI หลัก`
+    : `แสดงเฉพาะ source ที่อ่านได้จริง ${readyMetrics}/4 รายการ ส่วนที่ยังอ่านไม่ได้คง WAITING โดยไม่ใช้ historical snapshot หรือค่าคาดเดาแทน`;
 
   return audienceJson({
     ok: true,
@@ -244,7 +491,7 @@ async function buildAudienceBrief(request, env, ctx) {
     authority: "backend",
     source: "admin-worker",
     schema: "mmd.admin.audience.brief.v1",
-    generated_at: new Date().toISOString(),
+    generated_at: new Date(nowMs).toISOString(),
     summary,
     recommendation,
     signals,
@@ -268,6 +515,7 @@ async function buildAudienceBrief(request, env, ctx) {
       missing_clients: line.missing_clients ?? null,
       supported: line.supported === true,
       status: line.status || "waiting",
+      reason: line.reason || null,
     },
     guardrails: {
       webflow_presentation_only: true,
