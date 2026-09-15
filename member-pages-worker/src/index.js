@@ -1,5 +1,6 @@
 import liffFoundation from "./liff-payment-binding.js";
 import { handleLiffMemberShell, isLiffMemberShellPath } from "./liff-member-shell.js";
+import { decorateMemberLiffJobClaim } from "./job-identity-member-claim.js";
 import { handlePublicCareBackWishRoute, isPublicCareBackWishPath } from "./public-care-back-wish.js";
 import { handleFindMemberApi, isFindMemberApiPath } from "./find-member-api.js";
 import { handleMemberEmailRecovery, isMemberEmailRecoveryPath } from "./member-email-recovery.js";
@@ -63,7 +64,8 @@ export default {
     if (isPublicCareBackWishPath(url)) return finish(await handlePublicCareBackWishRoute(request, env));
     if (isLiffMemberShellPath(url)) {
       const response = handleLiffMemberShell(request, env);
-      return finish(decorateLiffShellWithClientDiagnostic(response));
+      const diagnostic = decorateLiffShellWithClientDiagnostic(response);
+      return finish(await decorateMemberLiffJobClaim(diagnostic, request));
     }
     if (isLiffHistoryRecoveryStartPath(url)) {
       const response = await liffFoundation.fetch(request, env, ctx);
