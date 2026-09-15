@@ -1,5 +1,6 @@
 import { handleCanonicalLinkedJobCreate } from "./create-session-canonical-link-runtime.js";
 import { requestPaymentsConfirmLink } from "./payments-issuer-transport.js";
+import { enforcePrivateCreateAccess } from "./index.js";
 
 export const SIGIL_JOB_RECONCILE_PATH = "/v1/admin/job/reconcile-held";
 
@@ -164,24 +165,20 @@ async function linkCanonicalIdentities(request, env, ctx, body, session, clientI
   };
   const response = await handleCanonicalLinkedJobCreate(linkRequest, env, ctx, downstream);
   const data = await response.clone().json().catch(() => ({}));
-  return { response, data, linkBody };
+  return { response, data };
 }
 
-async function verifyPrivateGate(request, env, ctx, downstream, body, meta, clientId, modelId) {
-  const url = new URL(request.url);
-  url.pathname = "/v1/admin/job/create";
+async function verifyPrivateGate(env, body, meta, clientId, modelId) {
   const selectedFolder = clean(body?.private_access?.selected_private_folder || meta.folder || body?.job_details?.folder);
   const selectedOrientation = clean(body?.private_access?.selected_orientation || meta.lane || body?.job_details?.lane);
-  const probe = {
+  const gateBody = {
+    ...body,
     visibility: "private",
     job_visibility: "private",
     booking_visibility: "private",
     client_id: clientId,
     client_record_id: clientId,
-    client_lineage: {
-      ...(body.client_lineage || {}),
-      client_id: clientId,
-    },
+    client_lineage: { ...(body.client_lineage || {}), client_id: clientId },
     model_id: modelId,
     model_record_id: modelId,
     model: { ...(body.model || {}), model_id: modelId },
@@ -191,20 +188,9 @@ async function verifyPrivateGate(request, env, ctx, downstream, body, meta, clie
       selected_private_folder: selectedFolder,
       selected_orientation: selectedOrientation,
     },
-    telegram_gate: { ...(body.telegram_gate || {}) },
     selected_orientation: selectedOrientation,
-    // Intentionally omit required job fields. createAdminJob evaluates the
-    // authoritative private-access gate before required-field validation.
-    source: "sigil_jobs_held_release_gate_probe",
   };
-  const headers = new Headers(request.headers);
-  headers.set("content-type", "application/json");
-  headers.delete("content-length");
-  const response = await downstream.fetch(new Request(url.toString(), { method: "POST", headers, body: JSON.stringify(probe) }), env, ctx);
-  const data = await response.clone().json().catch(() => ({}));
-  const code = clean(data?.error?.code || data?.error || data?.message);
-  if (response.status === 400 && code === "missing_job_fields") return { ok: true };
-  return { ok: false, response, data, code: code || `private_gate_probe_${response.status}` };
+  return enforcePrivateCreateAccess(env, gateBody);
 }
 
 function paymentPayload(body, session, meta) {
@@ -233,26 +219,32 @@ function paymentPayload(body, session, meta) {
 }
 
 async function notifyReleased(env, data, payload) {
-  const botToken = clean(env.TELEGRAM_BOT_TOKEN);
-  const chatId = clean(env.TELEGRAM_INTERNAL_CHAT_ID || env.TELEGRAM_CHAT_ID);
-  if (!botToken || !chatId) return { ok: false, skipped: true };
-  const threadId = clean(env.TELEGRAM_INTERNAL_THREAD_ID || env.TELEGRAM_THREAD_ID);
-  const lines = [
-    "🔗 <b>HELD JOB RELEASED</b>",
-    `Session: <code>${escapeHtml(payload.session_id)}</code>`,
-    `Client: <b>${escapeHtml(payload.client_name)}</b>`,
-    `Model: <b>${escapeHtml(payload.model_name)}</b>`,
-    `Customer: ${escapeHtml(data.customer_confirmation_url || "-")}`,
-    `Model: ${escapeHtml(data.model_confirmation_url || "-")}`,
-  ];
-  const body = { chat_id: chatId, text: lines.join("\n"), parse_mode: "HTML", disable_web_page_preview: true };
-  if (threadId) body.message_thread_id = Number(threadId) || threadId;
-  const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+  const endpoint = clean(env.TELEGRAM_INTERNAL_SEND_URL);
+  const internalToken = clean(env.INTERNAL_TOKEN);
+  if (!endpoint || !internalToken) return { ok: false, skipped: true, reason: "missing_telegram_internal_env" };
+  const body = {
+    chat_id: clean(env.TELEGRAM_CHAT_ID) || "-1003546439681",
+    message_thread_id: Number(env.TG_THREAD_CONFIRM || 61),
+    text: [
+      "🔗 <b>JOB LINKS CREATED · HELD RELEASE</b>",
+      `Client: <b>${escapeHtml(payload.client_name)}</b>`,
+      `Model: <b>${escapeHtml(payload.model_name)}</b>`,
+      `Session: <code>${escapeHtml(payload.session_id)}</code>`,
+      `Payment Ref: <code>${escapeHtml(data.payment_ref || payload.payment_ref || "-")}</code>`,
+      "",
+      `Customer URL: ${escapeHtml(data.customer_confirmation_url || "-")}`,
+      `Model URL: ${escapeHtml(data.model_confirmation_url || "-")}`,
+    ].join("\n"),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  };
+  const response = await fetch(endpoint, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "X-Internal-Token": internalToken },
     body: JSON.stringify(body),
   });
-  return { ok: response.ok, status: response.status };
+  const responseBody = await response.json().catch(() => ({}));
+  return { ok: response.ok, status: response.status, error: response.ok ? undefined : clean(responseBody?.error || responseBody?.message) || undefined };
 }
 
 function escapeHtml(value) {
@@ -304,8 +296,17 @@ export async function reconcileHeldSigilJob(request, env, ctx, downstream) {
   const meta = identityMeta(note);
   const requestedWorld = token(body.requested_world || meta.requested_world || body?.job_details?.world || "public");
   if (requestedWorld === "private") {
-    const gate = await verifyPrivateGate(request, env, ctx, downstream, body, meta, clientId, modelId);
-    if (!gate.ok) return gate.response || json({ ok: false, error: gate.code || "private_release_gate_failed" }, 403);
+    try {
+      await verifyPrivateGate(env, body, meta, clientId, modelId);
+    } catch (error) {
+      return json({
+        ok: false,
+        error: clean(error?.code || error?.message || "private_release_gate_failed"),
+        operational_status: "identity_linked_release_blocked",
+        confirmations_held: true,
+        dispatch_held: true,
+      }, Number.isInteger(error?.status) ? error.status : 403);
+    }
   }
 
   const payload = paymentPayload(body, session, meta);
