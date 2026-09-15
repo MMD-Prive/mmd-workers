@@ -7,6 +7,7 @@ import {
   hasCanonicalModelLink,
   holdPendingClientLinkResponse,
   holdPendingIdentityResponse,
+  isHeldReconcileRequest,
   pendingIdentityStatus,
   shouldCreatePendingClientLink,
   shouldCreatePendingIdentityHold,
@@ -80,6 +81,12 @@ test("current SIGIL Jobs V10 source auto-enters hold even before frontend sends 
   };
   assert.equal(pendingIdentityStatus(body), "pending_identity_link");
   assert.equal(shouldCreatePendingIdentityHold(body), true);
+});
+
+test("held reconciliation can use the existing routed create endpoint", () => {
+  assert.equal(isHeldReconcileRequest({ operational_create_mode: "reconcile_held", session_id: "S1" }), true);
+  assert.equal(isHeldReconcileRequest({ reconcile_held: true, session_id: "S1" }), true);
+  assert.equal(isHeldReconcileRequest({ operational_create_mode: "pending_client_link" }), false);
 });
 
 test("unrelated create flows do not auto-enter progressive identity hold", () => {

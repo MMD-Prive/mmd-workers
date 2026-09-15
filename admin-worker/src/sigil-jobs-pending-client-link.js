@@ -6,6 +6,7 @@ export const SIGIL_JOB_CREATE_PATH = "/v1/admin/job/create";
 export const PENDING_CLIENT_LINK_MODE = "pending_client_link";
 export const PENDING_MODEL_LINK_MODE = "pending_model_link";
 export const PENDING_IDENTITY_LINK_MODE = "pending_identity_link";
+export const RECONCILE_HELD_MODE = "reconcile_held";
 const HOLD_WIRE_MODE = PENDING_CLIENT_LINK_MODE;
 const PENDING_MODES = new Set([PENDING_CLIENT_LINK_MODE, PENDING_MODEL_LINK_MODE, PENDING_IDENTITY_LINK_MODE]);
 
@@ -53,6 +54,10 @@ export function pendingIdentityStatus(body = {}) {
 function isSigilJobsProgressiveSource(body = {}) {
   const source = token(body.source);
   return normalizePath(body.page) === "/sigil/jobs" || source === "sigil_jobs" || source.startsWith("sigil_jobs_");
+}
+
+export function isHeldReconcileRequest(body = {}) {
+  return token(body.operational_create_mode) === RECONCILE_HELD_MODE || body.reconcile_held === true;
 }
 
 // Backward-compatible helper retained for existing tests/callers.
@@ -203,7 +208,8 @@ export async function tryHandleSigilPendingClientLink(request, env, ctx, downstr
   if (!kind) return null;
 
   const body = await request.clone().json().catch(() => ({}));
-  if (kind === "create" && !shouldCreatePendingIdentityHold(body)) return null;
+  const reconcile = kind === "reconcile" || (kind === "create" && isHeldReconcileRequest(body));
+  if (kind === "create" && !reconcile && !shouldCreatePendingIdentityHold(body)) return null;
 
   const routeError = hostAndOriginAllowed(request);
   if (routeError) return json({ ok: false, error: `sigil_jobs_${routeError}` }, 403);
@@ -214,7 +220,10 @@ export async function tryHandleSigilPendingClientLink(request, env, ctx, downstr
     return json({ ok: false, error: "unauthorized" }, 401);
   }
 
-  if (kind === "reconcile") {
+  // Use the already-routed /v1/admin/job/create endpoint for later reconciliation
+  // so Cloudflare route ownership stays exact and /sigil/jobs does not need a new
+  // broad admin route. The dedicated reconcile path remains supported internally.
+  if (reconcile) {
     return reconcileHeldSigilJob(request, env, ctx, downstream);
   }
 
