@@ -50,13 +50,19 @@ export function pendingIdentityStatus(body = {}) {
   return "linked";
 }
 
+function isSigilJobsProgressiveSource(body = {}) {
+  const source = token(body.source);
+  return normalizePath(body.page) === "/sigil/jobs" || source === "sigil_jobs" || source.startsWith("sigil_jobs_");
+}
+
 // Backward-compatible helper retained for existing tests/callers.
 export function shouldCreatePendingClientLink(body = {}) {
   return token(body.operational_create_mode) === PENDING_CLIENT_LINK_MODE && !hasCanonicalClientLink(body);
 }
 
 export function shouldCreatePendingIdentityHold(body = {}) {
-  return PENDING_MODES.has(token(body.operational_create_mode)) && pendingIdentityStatus(body) !== "linked";
+  if (pendingIdentityStatus(body) === "linked") return false;
+  return PENDING_MODES.has(token(body.operational_create_mode)) || isSigilJobsProgressiveSource(body);
 }
 
 export function buildPendingIdentityBody(body = {}, exposedStatus = pendingIdentityStatus(body)) {
