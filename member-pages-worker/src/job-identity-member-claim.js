@@ -5,12 +5,22 @@ function clean(value, max = 20000) {
   return String(value ?? "").trim().slice(0, max);
 }
 
-function hasJobClaim(request) {
+function claimFromUrl(value) {
   try {
-    return Boolean(clean(new URL(request.url).searchParams.get(CLAIM_PARAM)));
+    const url = new URL(value);
+    const direct = clean(url.searchParams.get(CLAIM_PARAM));
+    if (direct) return direct;
+    const state = clean(url.searchParams.get("liff.state"));
+    if (!state) return "";
+    const stateUrl = new URL(state, "https://mmd.invalid");
+    return clean(stateUrl.searchParams.get(CLAIM_PARAM));
   } catch {
-    return false;
+    return "";
   }
+}
+
+function hasJobClaim(request) {
+  return Boolean(claimFromUrl(request.url));
 }
 
 function escapeForScript(value) {
@@ -32,8 +42,8 @@ export async function decorateMemberLiffJobClaim(response, request) {
   const script = `<script nonce="${nonce}">
 (async()=>{
   'use strict';
-  const claim=new URL(location.href).searchParams.get(${escapeForScript(CLAIM_PARAM)});
-  if(!claim)return;
+  const getClaim=()=>{const u=new URL(location.href),d=u.searchParams.get(${escapeForScript(CLAIM_PARAM)});if(d)return d;const s=u.searchParams.get('liff.state');if(!s)return'';try{return new URL(s,'https://mmd.invalid').searchParams.get(${escapeForScript(CLAIM_PARAM)})||''}catch{return''}};
+  const claim=getClaim();if(!claim)return;
   const msg=document.getElementById('message');
   const actions=document.getElementById('actions');
   const set=(t)=>{if(msg)msg.textContent=t};
