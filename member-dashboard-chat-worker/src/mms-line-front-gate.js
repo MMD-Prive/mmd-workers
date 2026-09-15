@@ -343,6 +343,101 @@ function seedSmokeRequest(request) {
   return new Request(url.toString(), request);
 }
 
+function bytesToBase64(buffer) {
+  let binary = "";
+  for (const byte of new Uint8Array(buffer)) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function timingSafeStringEqual(leftValue, rightValue) {
+  const left = text(leftValue);
+  const right = text(rightValue);
+  if (!left || !right || left.length !== right.length) return false;
+  let diff = 0;
+  for (let index = 0; index < left.length; index += 1) diff |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  return diff === 0;
+}
+
+async function verifyAckFirstLineSignature(rawBody, signature, secret) {
+  const keyText = text(secret);
+  if (!keyText) return false;
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(keyText),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const expected = bytesToBase64(await crypto.subtle.sign("HMAC", key, encoder.encode(String(rawBody || ""))));
+  return timingSafeStringEqual(expected, signature);
+}
+
+function lineAckResponse(eventCount = 0) {
+  return new Response(JSON.stringify({
+    ok: true,
+    accepted: true,
+    route: "line_webhook",
+    processing: "async",
+    events: Number(eventCount) || 0,
+  }), {
+    status: 200,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "x-mmd-worker": "member-dashboard-chat-worker",
+      "x-mmd-line-ack": "ack-first-v1",
+    },
+  });
+}
+
+async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, handler) {
+  if (String(request?.method || "GET").toUpperCase() !== "POST") return null;
+  if (typeof ctx?.waitUntil !== "function" || typeof handler !== "function") return null;
+
+  const rawBody = await request.clone().text().catch(() => "");
+  const signature = text(request.headers.get("x-line-signature"));
+  const signatureOk = await verifyAckFirstLineSignature(rawBody, signature, env.LINE_CHANNEL_SECRET).catch(() => false);
+  if (!signatureOk) return null;
+
+  let body;
+  try {
+    body = JSON.parse(rawBody || "{}");
+  } catch (_) {
+    return null;
+  }
+
+  const eventCount = Array.isArray(body?.events) ? body.events.length : 0;
+  const backgroundRequest = new Request(request.url, {
+    method: "POST",
+    headers: new Headers(request.headers),
+    body: rawBody,
+  });
+  const work = Promise.resolve()
+    .then(() => handler(backgroundRequest))
+    .then((response) => {
+      console.log(JSON.stringify({
+        line_webhook_async: "completed",
+        route: "/webhooks/line",
+        status: Number(response?.status) || 0,
+        events: eventCount,
+      }));
+      return response;
+    })
+    .catch((error) => {
+      console.log(JSON.stringify({
+        line_webhook_async: "failed",
+        route: "/webhooks/line",
+        events: eventCount,
+        error: text(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100),
+      }));
+      return null;
+    });
+
+  ctx.waitUntil(work);
+  return lineAckResponse(eventCount);
+}
+
 export default {
   async fetch(request, env = {}, ctx) {
     if (isMyMmsTherapistAppApiRequest(request)) return forwardMyMmsTherapistAppApi(request, env);
@@ -357,17 +452,20 @@ export default {
     if (isKenjiSeedLineRequest(request)) {
       const runtimeEnv = buildKenjiSeedRuntimeEnv(env);
       const tracedRequest = seedSmokeRequest(request);
-      return handleKenjiLineWithIngressTrace({
-        request: tracedRequest,
+      const processLine = (lineRequest) => handleKenjiLineWithIngressTrace({
+        request: lineRequest,
         env: runtimeEnv,
         ctx,
-        handler: (lineRequest, lineEnv, lineCtx) => handleKenjiSeedLineRequestWithRedeliveryRecovery(
-          lineRequest,
+        handler: (innerRequest, lineEnv, lineCtx) => handleKenjiSeedLineRequestWithRedeliveryRecovery(
+          innerRequest,
           lineEnv,
           lineCtx,
           currentWorker,
         ),
       });
+      const ack = await maybeScheduleKenjiLineAfterAck(tracedRequest, runtimeEnv, ctx, processLine);
+      if (ack) return ack;
+      return processLine(tracedRequest);
     }
     return currentWorker.fetch(request, env, ctx);
   },
