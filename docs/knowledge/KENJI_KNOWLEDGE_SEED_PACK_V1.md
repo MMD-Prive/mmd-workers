@@ -3,7 +3,8 @@
 Status: **NORMALIZED · QA READY · NOT PUBLISHED · ROUTES SUPERSEDED 2026-09-11**  
 Owner / final authority: **Per**  
 Count: **30 cards**  
-Machine-readable source: `docs/knowledge/KENJI_KNOWLEDGE_SEED_PACK_V1.normalized.json`
+Machine-readable source: `docs/knowledge/KENJI_KNOWLEDGE_SEED_PACK_V1.normalized.json`  
+Canonical payment-lane replacement: `docs/knowledge/KENJI_KNOWLEDGE_SEED_PACK_V1_PAYMENT_OVERRIDE_20260911.json`
 
 > Route/payment override (2026-09-11): customer status and next-action guidance uses `/member/dashboard`; membership selection, signup, renewal and upgrade use `/sigil/member/membership`; generic payment list/status/navigation uses `/member/payments`; a canonical signed `/sigil/pay?t=...` URL may be used only when the current payment intent supplies it. `/confirm/payment-proof` is legacy/manual no-ref evidence compatibility only and must not be emitted as the default new-payment CTA. Payment- and membership-related cards in the normalized JSON must be regenerated against this lock before publication.
 
@@ -79,6 +80,19 @@ Every card in the normalized manifest follows these rules, subject to the 2026-0
 11. Never mint or imply a replacement payment reference from Kenji. Reuse the canonical payment context; if no signed pay URL is available, route to `/member/payments`.
 12. Never ask a customer to resubmit proof when the current payment/ref is already pending verification.
 13. Membership status goes to `/member/dashboard`; membership actions go to `/sigil/member/membership`.
+
+## Payment-lane merge rule
+
+Before this Seed Pack can be submitted for publication, replace the eight `lane=payment` cards from `KENJI_KNOWLEDGE_SEED_PACK_V1.normalized.json` with the eight cards from `KENJI_KNOWLEDGE_SEED_PACK_V1_PAYMENT_OVERRIDE_20260911.json`. The override is not itself a publish artifact; it is the canonical source for regenerating the complete 30-card manifest.
+
+The regenerated manifest must preserve all 22 non-payment cards unchanged unless they are separately reviewed, and its payment cards must satisfy these checks:
+
+- no default customer route to `/confirm/payment-proof`;
+- `/member/payments` for generic payment continuation/status;
+- signed `/sigil/pay?t=...` only from current backend intent context;
+- no new/replacement `payment_ref` from chat/knowledge;
+- no proof resubmission when evidence is already pending;
+- no paid/verified/approved language before Official Verify/backend truth.
 
 ## Final QA contract
 
