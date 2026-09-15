@@ -10,6 +10,10 @@ const TOKEN = process.env.AIRTABLE_API_KEY || "";
 const STAGING_TABLE = "tblOs8yyLK09SKrCt";
 const INBOX_TABLE = "tblFHmfpB2TTrzO2e";
 const OUTPUT = process.argv[2] || "/tmp/line-ofc-fingerprint-index-v1.json";
+const BACKUP_CUTOFF_ISO = process.env.LINE_OFC_BACKUP_CUTOFF || "2026-09-06T05:44:00+09:00";
+const BACKUP_CUTOFF_MS = Date.parse(BACKUP_CUTOFF_ISO);
+if (!Number.isFinite(BACKUP_CUTOFF_MS)) throw new Error("invalid_backup_cutoff");
+const BACKUP_CUTOFF_SECOND = Math.floor(BACKUP_CUTOFF_MS / 1000);
 
 const F = {
   staging: {
@@ -137,15 +141,26 @@ async function main() {
   let eligibleTextRows = 0;
   let timedFingerprintRows = 0;
   let receivedWindowRows = 0;
+  let postSnapshotRowsSkipped = 0;
+  let preSnapshotRows = 0;
+  const preSnapshotUids = new Set();
 
   for (const record of inbox) {
     const fields = record.fields || {};
     const uid = normalizeText(fields[F.inbox.uid]);
     if (!representativeByUid.has(uid)) continue;
     inboxRowsForKnownUid++;
+    const received = receivedSecond(fields[F.inbox.received]);
+    const eventSecond = eventSecondFromRaw(fields[F.inbox.raw]);
+    const evidenceSecond = received !== null ? received : eventSecond;
+    if (evidenceSecond !== null && evidenceSecond > BACKUP_CUTOFF_SECOND) {
+      postSnapshotRowsSkipped++;
+      continue;
+    }
+    preSnapshotRows++;
+    preSnapshotUids.add(uid);
     const text = normalizeText(fields[F.inbox.text]);
     if (text) {
-      const eventSecond = eventSecondFromRaw(fields[F.inbox.raw]);
       if (eventSecond !== null) {
         timedFingerprintRows++;
         addOwnedHash(
@@ -156,7 +171,6 @@ async function main() {
           text.length
         );
       }
-      const received = receivedSecond(fields[F.inbox.received]);
       if (received !== null) {
         receivedWindowRows++;
         for (let delta = -RECEIVE_WINDOW_BEFORE_SECONDS; delta <= RECEIVE_WINDOW_AFTER_SECONDS; delta++) {
@@ -205,10 +219,11 @@ async function main() {
 
   identities.sort((a, b) => a.handle.localeCompare(b.handle));
   const payload = {
-    version: "line-ofc-console-fingerprint-index-v1.2",
+    version: "line-ofc-console-fingerprint-index-v1.3",
     generated_at: new Date().toISOString(),
     normalization: "NFKC + collapse whitespace + trim",
     timed_fingerprint: "LINE event epoch-second + normalized text",
+    backup_snapshot_cutoff: BACKUP_CUTOFF_ISO,
     received_window_fingerprint: `received_at candidate seconds -${RECEIVE_WINDOW_BEFORE_SECONDS}..+${RECEIVE_WINDOW_AFTER_SECONDS} + normalized text`,
     salt,
     counts: {
@@ -216,6 +231,10 @@ async function main() {
       unique_staging_line_user_ids: representativeByUid.size,
       console_inbox_rows: inbox.length,
       console_rows_for_known_line_user_ids: inboxRowsForKnownUid,
+      pre_snapshot_rows: preSnapshotRows,
+      post_snapshot_rows_skipped: postSnapshotRowsSkipped,
+      identities_with_pre_snapshot_rows: preSnapshotUids.size,
+      identities_without_pre_snapshot_rows: representativeByUid.size - preSnapshotUids.size,
       eligible_text_rows: eligibleTextRows,
       timed_fingerprint_rows: timedFingerprintRows,
       received_window_rows: receivedWindowRows,
