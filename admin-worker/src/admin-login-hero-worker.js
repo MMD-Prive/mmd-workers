@@ -1,6 +1,7 @@
 import worker from "./job-orchestrator-owner-ops-wrapper.js";
 import { handleModelConsoleAudit, isModelConsoleAuditRequest } from "./model-console-audit.js";
 import { kickLineOfcConsoleContactBackfill } from "./line-ofc-console-backfill.js";
+import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import {
   isPrivateModelAdminRequest,
   maybeHandlePrivateModelAdminRequest,
@@ -17,7 +18,6 @@ const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
 const MMS_PARTNER_PATH = "/internal/admin/mms";
 const MODEL_ACTIVATE_PATH = "/v1/model/liff/activate";
 const AUDIENCE_BRIEF_PATH = "/v1/admin/audience/brief";
-const ADMIN_AUTH_ME_PATH = "/v1/admin/auth/me";
 const LINE_OFC_SYNC_RUNS_TABLE_DEFAULT = "tbl2yGlf8XyswZ0Yw";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const AUDIENCE_OWNER_ROLES = new Set(["owner", "admin", "super_admin", "superadmin"]);
@@ -84,11 +84,11 @@ async function delegatedJson(request, env, ctx, path) {
   return { ok: response.ok && data?.ok !== false, status: response.status, data };
 }
 
-async function readAudienceOwner(request, env, ctx) {
-  const auth = await delegatedJson(request, env, ctx, ADMIN_AUTH_ME_PATH);
-  if (!auth.ok || !auth.data || auth.data.authenticated === false) return null;
-  const role = clean(auth.data.actor_role || auth.data.actor?.role, 80).toLowerCase();
-  const id = clean(auth.data.actor_id || auth.data.actor?.id, 120);
+async function readAudienceOwner(request, env) {
+  const actor = await readCredentialBoundAdminActor(request, env);
+  if (!actor) return null;
+  const role = clean(actor.role, 80).toLowerCase();
+  const id = clean(actor.id, 120);
   if (!id || !AUDIENCE_OWNER_ROLES.has(role)) return null;
   return { id, role };
 }
@@ -165,7 +165,7 @@ function contextStatus(read, details = {}) {
 }
 
 async function buildAudienceBrief(request, env, ctx) {
-  const owner = await readAudienceOwner(request, env, ctx);
+  const owner = await readAudienceOwner(request, env);
   if (!owner) {
     return audienceJson({ ok: false, error: "unauthorized" }, 401);
   }
