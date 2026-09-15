@@ -270,7 +270,7 @@
     if (path === "/member/renewal") {
       root = document.getElementById("mr4");
       if (root) {
-        setLinks('a[href^="/member/my-mmd"]', DASHBOARD, root);
+        setLinks('a[href^="/member/my-mmd"]', MY_MMD, root);
         setupRenewalFlow(root);
       }
     }
