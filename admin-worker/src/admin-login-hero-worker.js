@@ -2,6 +2,7 @@ import worker from "./job-orchestrator-owner-ops-wrapper.js";
 import { handleModelConsoleAudit, isModelConsoleAuditRequest } from "./model-console-audit.js";
 import { kickLineOfcConsoleContactBackfill } from "./line-ofc-console-backfill.js";
 import { buildAudienceBriefLive } from "./audience-brief-live.js";
+import { maybeHandleHeldIdentityLinkRefresh } from "./sigil-jobs-identity-link-refresh.js";
 import {
   isPrivateModelAdminRequest,
   maybeHandlePrivateModelAdminRequest,
@@ -134,6 +135,11 @@ export default {
       }
     } catch {
       // Core worker remains authoritative if URL parsing fails.
+    }
+
+    if (normalizedPath === "/v1/admin/job/create" && method === "POST") {
+      const refreshed = await maybeHandleHeldIdentityLinkRefresh(request, env);
+      if (refreshed) return refreshed;
     }
 
     let response = await worker.fetch(request, env, ctx);
