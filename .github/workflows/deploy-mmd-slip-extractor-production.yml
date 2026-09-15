@@ -1,0 +1,78 @@
+name: Deploy MMD Slip Extractor Production
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "services/mmd-slip-extractor/**"
+      - ".github/workflows/deploy-mmd-slip-extractor-production.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-mmd-slip-extractor-production
+  cancel-in-progress: false
+
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      WRANGLER_SEND_METRICS: "false"
+      NO_COLOR: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            services/mmd-slip-extractor/package-lock.json
+            services/mmd-slip-extractor/cloudflare/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci --prefix services/mmd-slip-extractor
+          npm ci --prefix services/mmd-slip-extractor/cloudflare
+
+      - name: Test extraction library and Cloudflare adapter
+        run: |
+          node --test services/mmd-slip-extractor/test/*.test.mjs
+          node --test services/mmd-slip-extractor/cloudflare/test/*.test.mjs
+          node --check services/mmd-slip-extractor/cloudflare/worker-core.mjs
+          node --check services/mmd-slip-extractor/cloudflare/worker.mjs
+          node --check services/mmd-slip-extractor/cloudflare/container-server.mjs
+
+      - name: Lock private production boundary
+        working-directory: services/mmd-slip-extractor/cloudflare
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const config = JSON.parse(fs.readFileSync("wrangler.production.jsonc", "utf8"));
+          if (config.name !== "mmd-slip-extractor") throw new Error("production worker name required");
+          if (config.workers_dev !== false) throw new Error("workers_dev must remain false");
+          if (config.preview_urls !== false) throw new Error("preview URLs must remain disabled");
+          if (!Array.isArray(config.routes) || config.routes.length !== 0) throw new Error("public/custom routes are forbidden");
+          if (config.vars?.MMD_RUNTIME_SCOPE !== "production") throw new Error("production runtime scope required");
+          NODE
+
+      - name: Validate production bundle
+        working-directory: services/mmd-slip-extractor/cloudflare
+        run: npx --yes wrangler@4.124.0 deploy --dry-run --config wrangler.production.jsonc
+
+      - name: Deploy private production extractor
+        working-directory: services/mmd-slip-extractor/cloudflare
+        run: npx --yes wrangler@4.124.0 deploy --config wrangler.production.jsonc --keep-vars
+
+      - name: Record deployment boundary
+        run: |
+          echo "mmd-slip-extractor deployed as Cloudflare-only production service." >> "$GITHUB_STEP_SUMMARY"
+          echo "workers.dev: disabled; custom routes: none; consumers: private service bindings only." >> "$GITHUB_STEP_SUMMARY"

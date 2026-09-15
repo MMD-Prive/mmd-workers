@@ -1,0 +1,182 @@
+name: Connect CEO audience production ingress
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/audience-production-ingress.yml"
+      - "admin-worker/src/admin-login-hero-worker.js"
+  workflow_run:
+    workflows:
+      - "Deploy admin-worker"
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  connect-audience-route:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
+      CLOUDFLARE_ZONE_ID: 2d62396174fa2ddadbbcd0e8cf0f3367
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+    steps:
+      - name: Point Audience brief endpoint to admin-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const zoneId = process.env.CLOUDFLARE_ZONE_ID;
+          const token = (process.env.CLOUDFLARE_ROUTES_API_TOKEN || "").trim();
+          const worker = "admin-worker";
+          if (!token) throw new Error("CLOUDFLARE_ROUTES_API_TOKEN is missing");
+
+          const desired = [
+            "mmdbkk.com/v1/admin/audience/brief",
+            "www.mmdbkk.com/v1/admin/audience/brief",
+            "mmdbkk.com/v1/admin/audience/brief*",
+            "www.mmdbkk.com/v1/admin/audience/brief*",
+          ];
+
+          async function cloudflare(path, options = {}) {
+            const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+              ...options,
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+                ...(options.headers || {}),
+              },
+            });
+            const payload = await response.json();
+            if (!response.ok || payload.success !== true) {
+              const errors = (payload.errors || [])
+                .map((error) => `${error.code || "unknown"}: ${error.message || "unknown error"}`)
+                .join("; ");
+              throw new Error(`Cloudflare ${options.method || "GET"} ${path} failed (${response.status}): ${errors}`);
+            }
+            return payload.result;
+          }
+
+          const routePath = `/zones/${zoneId}/workers/routes`;
+          const existing = await cloudflare(routePath);
+          const conflicts = desired.flatMap((pattern) =>
+            existing.filter((route) => route.pattern === pattern && route.script !== worker)
+          );
+          if (conflicts.length) {
+            throw new Error(`Refusing to replace existing routes: ${conflicts.map((route) => `${route.pattern} -> ${route.script || "no script"}`).join(", ")}`);
+          }
+
+          const missing = desired.filter(
+            (pattern) => !existing.some((route) => route.pattern === pattern && route.script === worker)
+          );
+          for (const pattern of missing) {
+            await cloudflare(routePath, {
+              method: "POST",
+              body: JSON.stringify({ pattern, script: worker }),
+            });
+            console.log(`Created ${pattern} -> ${worker}`);
+          }
+
+          const verified = await cloudflare(routePath);
+          const unresolved = desired.filter(
+            (pattern) => !verified.some((route) => route.pattern === pattern && route.script === worker)
+          );
+          if (unresolved.length) throw new Error(`Route verification failed: ${unresolved.join(", ")}`);
+          console.log(`Verified ${desired.length}/${desired.length} CEO audience routes`);
+          NODE
+
+      - name: Smoke unauthenticated ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            body="$(mktemp)"
+            code="$(curl -L --max-redirs 3 --retry 6 --retry-delay 2 --retry-all-errors -sS \
+              -o "$body" -w "%{http_code}" "$origin/v1/admin/audience/brief")"
+            cat "$body"
+            test "$code" = "401"
+            grep -q '"error":"unauthorized"' "$body"
+          done
+
+      - name: Smoke authenticated Audience page and backend brief
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ADMIN_SMOKE_CREDENTIAL:-}"
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
+
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            cookie="$(mktemp)"
+            headers="$(mktemp)"
+            body="$(mktemp)"
+
+            login_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+              -D "$headers" -o "$body" -c "$cookie" -w "%{http_code}" \
+              -X POST \
+              -H "Origin: $origin" \
+              -H "Content-Type: application/x-www-form-urlencoded" \
+              --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL" \
+              --data-urlencode "next=/internal/ceo/audience" \
+              "$origin/internal/admin/login/session")"
+            test "$login_code" = "303"
+            grep -qi '^set-cookie: mmd_admin_gate_v1=' "$headers"
+
+            page_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+              -o "$body" -b "$cookie" -w "%{http_code}" \
+              "$origin/internal/ceo/audience")"
+            test "$page_code" = "200"
+            grep -q 'aud27' "$body"
+            grep -q '/v1/admin/audience/brief' "$body"
+
+            ready=0
+            for attempt in $(seq 1 60); do
+              brief_code="$(curl --retry 2 --retry-delay 1 --retry-all-errors -sS \
+                -D "$headers" -o "$body" -b "$cookie" -w "%{http_code}" \
+                "$origin/v1/admin/audience/brief")"
+              if [ "$brief_code" = "200" ] && node - "$body" <<'NODE'
+          const fs = require('fs');
+          const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (!p || p.ok !== true || p.connected !== true) process.exit(1);
+          if (p.authority !== 'backend' || p.source !== 'admin-worker') process.exit(1);
+          if (p.schema !== 'mmd.admin.audience.brief.v1') process.exit(1);
+          if (!p.source_status || !p.signals || !p.guardrails) process.exit(1);
+          if (p.guardrails.no_fabricated_metrics !== true) process.exit(1);
+          if (p.guardrails.historical_snapshot_is_current_kpi !== false) process.exit(1);
+          if (p.guardrails.may_broadcast !== false) process.exit(1);
+          const contacts = p.signals?.audience?.contacts;
+          if (contacts != null && (!Number.isFinite(Number(contacts)) || Number(contacts) < 0)) process.exit(1);
+          if (p.signals?.booking && Object.keys(p.signals.booking).length && p.source_status?.booking?.metric_available !== true) process.exit(1);
+          if (p.signals?.revenue && Object.keys(p.signals.revenue).length && p.source_status?.payments?.metric_available !== true) process.exit(1);
+          NODE
+              then
+                ready=1
+                break
+              fi
+              if [ "$attempt" -eq 60 ]; then
+                cat "$body"
+                echo "Audience backend did not become ready after deploy wait" >&2
+                exit 1
+              fi
+              sleep 5
+            done
+            test "$ready" = "1"
+            grep -qi '^x-mmd-audience-brief: backend-v1' "$headers"
+            node - "$body" <<'NODE'
+          const fs = require('fs');
+          const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const contacts = p.signals?.audience?.contacts;
+          console.log(`PASS audience backend: ${p.summary}`);
+          console.log(`LINE verified metric: ${contacts == null ? 'WAITING (truthful)' : contacts}`);
+          console.log(`Recent canonical sample: ${p.recent_client_sample?.count ?? 'n/a'}`);
+          NODE
+            echo "PASS: $origin authenticated /internal/ceo/audience -> backend-owned /v1/admin/audience/brief"
+          done

@@ -1,0 +1,126 @@
+name: Deploy Kenji model teach overlay
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Deploy Kenji admin assets
+    types:
+      - completed
+
+concurrency:
+  group: deploy-kenji-model-teach-overlay
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_API_TOKEN }}
+      CLOUDFLARE_CACHE_PURGE_API_TOKEN: ${{ secrets.CLOUDFLARE_CACHE_PURGE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+      CLOUDFLARE_ZONE_ID: 2d62396174fa2ddadbbcd0e8cf0f3367
+      R2_BUCKET: mmd-models
+      LIVE_JS: https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.js
+      R2_KEY: webflow/internal/admin/kenji/kenji-admin-v1.js
+      OVERLAY: webflow/internal/admin/kenji/kenji-admin-model-teach-flow-v2.js
+      PLAIN: webflow/internal/admin/kenji/kenji-admin-plain-language-v1.js
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Validate Kenji owner overlays
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$OVERLAY"
+          test -s "$PLAIN"
+          node --check "$OVERLAY"
+          node --check "$PLAIN"
+          grep -q 'KENJI_MODEL_TEACH_FLOW_V2_START' "$OVERLAY"
+          grep -q 'kenjiModelTeachFlowV2' "$OVERLAY"
+          grep -q 'สอน Kenji ให้รู้จัก Model' "$OVERLAY"
+          grep -q 'ลองให้ Kenji แนะนำ' "$OVERLAY"
+          grep -q 'KENJI_PLAIN_LANGUAGE_V1_START' "$PLAIN"
+          grep -q 'kenjiPlainLanguageV1' "$PLAIN"
+          grep -q 'รายละเอียดระบบ' "$PLAIN"
+
+      - name: Build patched stable bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --retry 8 --retry-delay 2 --retry-all-errors -fsS \
+            -H 'Cache-Control: no-cache' \
+            "$LIVE_JS?overlay_source=${GITHUB_SHA}" \
+            -o /tmp/kenji-admin-current.js
+          grep -q 'singleOwnerV4' /tmp/kenji-admin-current.js
+          grep -q 'modelLineLinkEntryV1' /tmp/kenji-admin-current.js
+          grep -q 'ai20ViewV1' /tmp/kenji-admin-current.js
+          awk '/\/\* KENJI_MODEL_TEACH_FLOW_V2_START \*\//{exit} {print}' \
+            /tmp/kenji-admin-current.js > /tmp/kenji-admin-base.js
+          cat /tmp/kenji-admin-base.js "$OVERLAY" "$PLAIN" > /tmp/kenji-admin-v1.js
+          node --check /tmp/kenji-admin-v1.js
+          grep -q 'kenjiModelTeachFlowV2' /tmp/kenji-admin-v1.js
+          grep -q 'kenjiPlainLanguageV1' /tmp/kenji-admin-v1.js
+
+      - name: Upload patched Kenji bundle with dedicated R2 token
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          npx --yes wrangler@4 r2 object put "$R2_BUCKET/$R2_KEY" \
+            --file /tmp/kenji-admin-v1.js \
+            --content-type 'application/javascript; charset=utf-8' \
+            --cache-control 'no-store, no-cache, max-age=0, must-revalidate' \
+            --remote --force
+
+      - name: Purge Kenji JS cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_CACHE_PURGE_API_TOKEN:-}"
+          body="$(mktemp)"
+          printf '{"files":["%s"]}\n' "$LIVE_JS" > "$body"
+          result="$(mktemp)"
+          code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS \
+            -o "$result" -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $CLOUDFLARE_CACHE_PURGE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data-binary "@$body" \
+            "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/purge_cache")"
+          test "$code" = "200"
+          node - "$result" <<'NODE'
+          const fs = require('node:fs');
+          const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (payload.success !== true) process.exit(1);
+          NODE
+
+      - name: Smoke live Kenji owner flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          live="$(mktemp --suffix=.js)"
+          found=0
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            curl -fsS -H 'Cache-Control: no-cache' \
+              "$LIVE_JS?owner_ux=${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}" -o "$live"
+            if grep -q 'kenjiModelTeachFlowV2' "$live" \
+              && grep -q 'kenjiPlainLanguageV1' "$live" \
+              && grep -q 'รายละเอียดระบบ' "$live" \
+              && grep -q 'singleOwnerV4' "$live" \
+              && grep -q 'modelLineLinkEntryV1' "$live"; then
+              found=1
+              break
+            fi
+            sleep 3
+          done
+          test "$found" = "1"
+          node --check "$live"
+          echo 'Kenji owner flow and plain-language overlay are live on the stable admin bundle'

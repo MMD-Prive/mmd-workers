@@ -10,6 +10,7 @@ import {
   sensitiveAirtableFields,
   uploadRequest,
 } from "./core.mjs";
+import { mmsApplicationThreadId } from "./application-telegram-routing.mjs";
 
 const WORKER_NAME = "mms-worker";
 const JSON_LIMIT_BYTES = 64 * 1024;
@@ -63,7 +64,20 @@ export class MmsCoordinator extends DurableObject {
       "SELECT * FROM applications WHERE application_id = ?",
       applicationId,
     ).toArray()[0];
-    if (existing) return { created: false, record: applicationRow(existing) };
+    if (existing) {
+      if (existing.payload_json !== JSON.stringify(payload)) {
+        return { created: false, conflict: true, record: applicationRow(existing) };
+      }
+      this.ctx.storage.sql.exec(
+        `UPDATE applications
+         SET application_token_hash = ?, updated_at = ?
+         WHERE application_id = ?`,
+        applicationTokenHash,
+        now,
+        applicationId,
+      );
+      return { created: false, conflict: false, record: this.getApplication(applicationId) };
+    }
 
     this.ctx.storage.sql.exec(
       `INSERT INTO applications
@@ -302,13 +316,31 @@ async function handleApplication(request, env, cors, requestId) {
   const saved = await stub.saveApplication(applicationId, payload, applicationTokenHash, now);
 
   if (!saved.created) {
+    if (saved.conflict) {
+      throw httpError(409, "IDEMPOTENCY_CONFLICT", "Idempotency key was already used with different application data");
+    }
+    let retrySync = {
+      sync_status: saved.record.sync_status,
+      telegram_notify_status: saved.record.telegram_notify_status || "pending",
+    };
+    if (saved.record.sync_status !== "synced") {
+      retrySync = await syncApplication(env, applicationId, saved.record.payload, saved.record.created_at);
+      await stub.setApplicationSync(applicationId, retrySync, new Date().toISOString());
+    }
     return json({
       ok: true,
       duplicate: true,
+      application_ref: applicationId,
       application_id: applicationId,
-      status: "already_received",
-      storage: saved.record.sync_status,
-      message: "Application already received. Use the upload token from the original response.",
+      application_token: applicationToken,
+      status: retrySync.sync_status === "synced" ? "already_received" : "pending_airtable_retry",
+      storage: {
+        coordinator: "persisted",
+        airtable: retrySync.sync_status,
+        telegram: retrySync.telegram_notify_status || "pending",
+      },
+      upload: { next: "/mms/api/uploads/presign", token_rotated: true },
+      message: "Application already received. A replacement upload token was issued for this retry.",
     }, 200, cors, requestId);
   }
 
@@ -317,9 +349,10 @@ async function handleApplication(request, env, cors, requestId) {
   const status = sync.sync_status === "synced" ? 201 : 202;
   return json({
     ok: true,
+    application_ref: applicationId,
     application_id: applicationId,
     application_token: applicationToken,
-    status: sync.sync_status === "synced" ? "submitted" : "received_pending_sync",
+    status: sync.sync_status === "synced" ? "accepted" : "pending_airtable_retry",
     storage: { coordinator: "persisted", airtable: sync.sync_status, telegram: sync.telegram_notify_status },
     upload: { next: "/mms/api/uploads/presign", token_returned_once: true },
   }, status, cors, requestId);
@@ -372,14 +405,19 @@ async function handleUpload(request, env, cors, requestId, applicationId, upload
 
   try {
     const grant = claim.grant;
-    const contentLength = strictContentLength(request);
+    if (!request.body) throw httpError(400, "UPLOAD_BODY_REQUIRED", "Upload body is required");
+    var uploadBody = request.body;
+    var contentLength = optionalContentLength(request);
+    if (contentLength === null) {
+      uploadBody = await request.arrayBuffer();
+      contentLength = uploadBody.byteLength;
+    }
     const contentType = String(request.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
     if (contentLength !== grant.expected_bytes) throw httpError(400, "UPLOAD_SIZE_MISMATCH", "Upload size does not match the grant");
     if (contentLength > uploadMaxBytes(env)) throw httpError(413, "UPLOAD_TOO_LARGE", "Upload is too large");
     if (contentType !== grant.content_type) throw httpError(400, "UPLOAD_TYPE_MISMATCH", "Upload content type does not match the grant");
-    if (!request.body) throw httpError(400, "UPLOAD_BODY_REQUIRED", "Upload body is required");
 
-    await env.MMS_PRIVATE_UPLOADS.put(grant.r2_key, request.body, {
+    await env.MMS_PRIVATE_UPLOADS.put(grant.r2_key, uploadBody, {
       httpMetadata: { contentType: grant.content_type },
       customMetadata: {
         application_id: applicationId,
@@ -391,9 +429,9 @@ async function handleUpload(request, env, cors, requestId, applicationId, upload
     const airtable = await attachUploadToApplication(env, applicationId, grant).catch(() => ({ status: "pending" }));
     return json({
       ok: true,
+      application_ref: applicationId,
       application_id: applicationId,
       kind: grant.kind,
-      object_key: grant.r2_key,
       storage: { r2: "stored", airtable: airtable.status },
     }, 201, cors, requestId);
   } catch (error) {
@@ -532,6 +570,7 @@ async function syncApplicationTelegram(env, applicationRecord, payload, applicat
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: String(env.MMS_TELEGRAM_CHAT_ID).trim(),
+        message_thread_id: mmsApplicationThreadId(env),
         text: applicationTelegramMessage(payload, { application_id: applicationId }),
         disable_web_page_preview: true,
       }),
@@ -705,9 +744,10 @@ async function readJsonLimited(request) {
   }
 }
 
-function strictContentLength(request) {
+function optionalContentLength(request) {
   const value = String(request.headers.get("content-length") || "");
-  if (!/^\d+$/.test(value)) throw httpError(411, "CONTENT_LENGTH_REQUIRED", "Content-Length is required");
+  if (!value) return null;
+  if (!/^\d+$/.test(value)) throw httpError(400, "INVALID_CONTENT_LENGTH", "Content-Length is invalid");
   return Number(value);
 }
 

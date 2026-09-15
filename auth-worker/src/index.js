@@ -33,7 +33,7 @@ const LIFF_IDENTITY_RESOLUTION_PURPOSE = "liff_identity_resolution";
 const LIFF_MEMBER_PROFILE_PURPOSE = "liff_member_profile_read";
 const MEMBER_STATUS_RESOLVER_SECRET_HEADER = "x-mmd-member-resolver-secret";
 const MEMBER_HISTORY_MAX_ITEMS = 50;
-const MEMBER_STATUS_AIRTABLE_TIMEOUT_MS = 4000;
+const MEMBER_STATUS_AIRTABLE_TIMEOUT_MS = 10000;
 const MEMBER_STATUS_AIRTABLE_TIMEOUT_MIN_MS = 50;
 const POINTS_THB_PER_POINT = 100;
 const PARTNER_PRESENT_MASSAGE_SESSION = "partner_present_massage_session";
@@ -267,16 +267,24 @@ async function handleInternalMemberStatusResolve(request, env) {
     return json(request, env, 400, { ok: false, error: { code: "INVALID_RESOLVER_REQUEST", message: "A valid resolver request is required." } });
   }
 
+  const startedAt = Date.now();
   try {
     const matches = await withMemberStatusAirtableDeadline(request, env, (signal) => findMemberRecordsByLineUserId(env, lineUserId, {
       signal,
       requireRecordsArray: true,
+      classifyResolverFailures: true,
     }));
     if (matches.length > 1) {
       return json(request, env, 409, { ok: false, error: { code: "MEMBER_MATCH_AMBIGUOUS", message: "Member identity could not be resolved safely." } });
     }
     return json(request, env, 200, { ok: true, data: { member_exists: matches.length === 1 } });
-  } catch {
+  } catch (error) {
+    console.warn({
+      event: "member_status_resolver_failure",
+      stage: "airtable_members_lookup",
+      failure_class: memberStatusResolverFailureClass(error),
+      duration_ms: Math.max(0, Date.now() - startedAt),
+    });
     return json(request, env, 503, { ok: false, error: { code: "MEMBER_STATUS_RESOLVER_UNAVAILABLE", message: "Member identity could not be resolved safely." } });
   }
 }
@@ -301,30 +309,38 @@ async function handleInternalMemberProfileRead(request, env) {
     return json(request, env, 400, { ok: false, error: { code: "INVALID_PROFILE_REQUEST", message: "A valid profile request is required." } });
   }
 
+  const startedAt = Date.now();
   try {
-    const matches = await findMemberRecordsByLineUserId(env, lineUserId);
-    if (matches.length > 1) {
+    const data = await withMemberStatusAirtableDeadline(request, env, async (signal) => {
+      const matches = await findMemberRecordsByLineUserId(env, lineUserId, { signal });
+      if (matches.length > 1) return { member_exists: false, ambiguous: true };
+      if (!matches.length) return { member_exists: false };
+
+      const memberRecord = { ...matches[0], fields: normalizeMemberRecord(matches[0]) };
+      return buildLiffMemberProfile(env, memberRecord, lineUserId, signal);
+    });
+    if (data.ambiguous) {
       return json(request, env, 409, { ok: false, error: { code: "MEMBER_MATCH_AMBIGUOUS", message: "Member identity could not be resolved safely." } });
     }
-    if (!matches.length) {
-      return json(request, env, 200, { ok: true, data: { member_exists: false } });
-    }
-
-    const memberRecord = { ...matches[0], fields: normalizeMemberRecord(matches[0]) };
-    const data = await buildLiffMemberProfile(env, memberRecord, lineUserId);
     return json(request, env, 200, { ok: true, data });
-  } catch {
+  } catch (error) {
+    console.warn({
+      event: "member_profile_resolver_failure",
+      stage: "customer_360_read",
+      failure_class: memberStatusResolverFailureClass(error),
+      duration_ms: Math.max(0, Date.now() - startedAt),
+    });
     return json(request, env, 503, { ok: false, error: { code: "MEMBER_PROFILE_RESOLVER_UNAVAILABLE", message: "Member profile is temporarily unavailable." } });
   }
 }
 
-async function buildLiffMemberProfile(env, memberRecord, lineUserId) {
+async function buildLiffMemberProfile(env, memberRecord, lineUserId, signal) {
   const fields = memberRecord.fields || {};
   const profile = await buildCustomer360MemberProfile({
     env,
     memberFields: fields,
     lineUserId,
-    listRecords: (key, params) => airtableList(env, table(env, key), params),
+    listRecords: (key, params = {}) => airtableList(env, table(env, key), { ...params, signal }),
   });
   return {
     member_exists: true,
@@ -950,6 +966,7 @@ async function findMemberRecordsByLineUserId(env, lineUserId, options = {}) {
     maxRecords: 2,
     signal: options.signal,
     requireRecordsArray: options.requireRecordsArray === true,
+    classifyResolverFailures: options.classifyResolverFailures === true,
   });
 }
 
@@ -961,6 +978,11 @@ async function withMemberStatusAirtableDeadline(request, env, operation) {
   const timeout = setTimeout(() => controller.abort(), memberStatusAirtableTimeoutMs(env));
   try {
     return await operation(controller.signal);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw memberStatusResolverFailure(request.signal?.aborted ? "caller_abort" : "timeout");
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
     request.signal?.removeEventListener("abort", abortFromCaller);
@@ -1093,6 +1115,9 @@ function normalizeTelegram(value) {
 }
 
 async function airtableList(env, tableName, params = {}) {
+  if (params.classifyResolverFailures && (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID)) {
+    throw memberStatusResolverFailure("missing_config");
+  }
   requireAirtable(env);
   const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(tableName)}`);
 
@@ -1107,11 +1132,65 @@ async function airtableList(env, tableName, params = {}) {
 
   const fetchOptions = { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } };
   if (params.signal) fetchOptions.signal = params.signal;
-  const response = await fetch(url.toString(), fetchOptions);
+  let response;
+  try {
+    response = await airtableReadFetch(env, url.toString(), fetchOptions);
+  } catch (error) {
+    if (params.classifyResolverFailures) {
+      if (fetchOptions.signal?.aborted) throw error;
+      throw memberStatusResolverFailure("network_failure");
+    }
+    throw error;
+  }
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Airtable list failed: ${response.status} ${JSON.stringify(data)}`);
-  if (params.requireRecordsArray && !Array.isArray(data.records)) throw new Error("Airtable list response is malformed");
+  if (!response.ok) {
+    if (params.classifyResolverFailures) throw memberStatusResolverFailure(providerFailureClass(response.status));
+    throw new Error(`Airtable list failed: ${response.status} ${JSON.stringify(data)}`);
+  }
+  if (params.requireRecordsArray && !Array.isArray(data.records)) {
+    if (params.classifyResolverFailures) throw memberStatusResolverFailure("malformed_response");
+    throw new Error("Airtable list response is malformed");
+  }
   return data.records || [];
+}
+
+const MEMBER_STATUS_RESOLVER_FAILURE_CLASSES = new Set([
+  "missing_config",
+  "timeout",
+  "provider_401",
+  "provider_403",
+  "provider_404",
+  "provider_422",
+  "provider_429",
+  "provider_5xx",
+  "malformed_response",
+  "network_failure",
+  "caller_abort",
+  "unknown_provider_failure",
+]);
+
+function memberStatusResolverFailure(failureClass) {
+  const error = new Error("Member status resolver dependency failed");
+  error.memberStatusResolverFailureClass = MEMBER_STATUS_RESOLVER_FAILURE_CLASSES.has(failureClass)
+    ? failureClass
+    : "unknown_provider_failure";
+  return error;
+}
+
+function memberStatusResolverFailureClass(error) {
+  const failureClass = error?.memberStatusResolverFailureClass;
+  return MEMBER_STATUS_RESOLVER_FAILURE_CLASSES.has(failureClass) ? failureClass : "unknown_provider_failure";
+}
+
+function providerFailureClass(status) {
+  if ([401, 403, 404, 422, 429].includes(status)) return `provider_${status}`;
+  if (status >= 500) return "provider_5xx";
+  return "unknown_provider_failure";
+}
+
+async function airtableReadFetch(env, url, init) {
+  if (env.AIRTABLE_HTTP?.fetch) return env.AIRTABLE_HTTP.fetch(new Request(url, init));
+  return fetch(url, init);
 }
 
 async function airtableFirst(env, tableName, formula) {
