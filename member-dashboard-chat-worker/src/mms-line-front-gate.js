@@ -1,4 +1,5 @@
 import currentWorker from "./my-mmd-bounded-status-front-gate.js";
+import { isMmsCustomerHistoryPage } from "../../shared/mms-customer-history-route.mjs";
 import { handleMmsLineRequest, isMmsLineRequest } from "./mms-line-runtime.mjs";
 import { MMS_LINE_EVIDENCE_INTERNALS, observeMmsLineEvidence } from "./mms-line-evidence-observer.mjs";
 import {
@@ -345,6 +346,12 @@ function seedSmokeRequest(request) {
 
 export default {
   async fetch(request, env = {}, ctx) {
+    // Keep the customer's MMS history on its own screen; the generic status
+    // bridge below otherwise redirects every status login to My MMD.
+    if (isMmsCustomerHistoryPage(request)) {
+      if (!env.MEMBER_PAGES_WORKER?.fetch) return new Response("MMS history is temporarily unavailable", { status: 503, headers: { "cache-control": "no-store" } });
+      return env.MEMBER_PAGES_WORKER.fetch(new Request(request.url, request));
+    }
     if (isMyMmsTherapistAppApiRequest(request)) return forwardMyMmsTherapistAppApi(request, env);
     if (isMyMmsTherapistAppUiRequest(request)) return handleMyMmsTherapistAppUi(request, env);
     if (isKenjiLineTransportHealthRequest(request)) {

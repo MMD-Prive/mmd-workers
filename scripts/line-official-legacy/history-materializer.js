@@ -213,6 +213,13 @@ function compact(obj) {
   return Object.fromEntries(Object.entries(obj).filter(([, value]) => value !== undefined && value !== "" && value !== null));
 }
 
+function historyServiceBrand(fields = {}) {
+  const raw = parseJson(fields.raw_row_json, {});
+  // Only the MMS importer supplies these source namespaces. Never classify a
+  // customer by free text, a LINE rename, membership tier, or a parser guess.
+  return /^mms:(?:line_ofc|male_massage):/.test(clean(raw.source_ref)) ? "mms" : "mmd";
+}
+
 function buildMaterializationIdentity({ importId, historyReviewId, clientId, paidAt, amountThb, sourcePaymentRef }) {
   const seed = [importId, historyReviewId, clientId, paidAt, amountThb, sourcePaymentRef].join("|");
   return {
@@ -234,6 +241,7 @@ function buildMaterializationPlan({
   priorRemainderThb = 0,
 }) {
   const identityReview = assertIdentityCommitGate(fields);
+  const serviceBrand = historyServiceBrand(fields);
   const approved = assertHistoryApprovalGate(historyReviewFields, { stagingId, clientId: identityReview.clientId });
   const memberEmail = normalizeEmail(client?.fields?.["Contact Email"] || client?.fields?.email || fields.email_candidate);
   if (!memberEmail) throw coded("HISTORY_CANONICAL_MEMBER_EMAIL_REQUIRED");
@@ -253,11 +261,12 @@ function buildMaterializationPlan({
   const points = approved.pointsStatus === "approved" ? Math.floor(pool / POINT_RATE_THB) : 0;
   const remainderAfter = approved.pointsStatus === "approved" ? pool % POINT_RATE_THB : priorRemainder;
   const displayName = clean(fields.line_renamed_name || fields.normalized_name || client?.fields?.["Client Name"] || client?.fields?.nickname);
-  const sourceNote = `history_review:${historyReviewId}; import:${importId}; reviewer:${approved.reviewedBy}; source_payment_ref:${approved.sourcePaymentRef || "none"}`;
+  const sourceNote = `history_review:${historyReviewId}; import:${importId}; reviewer:${approved.reviewedBy}; source_payment_ref:${approved.sourcePaymentRef || "none"}${serviceBrand === "mms" ? "; service_brand:mms" : ""}`;
   const jobDate = approved.paidAt.slice(0, 10);
 
   return {
     schema: MATERIALIZER,
+    service_brand: serviceBrand,
     authority: AUTHORITY,
     history_review_id: historyReviewId,
     materialization_idempotency_key: ids.materializationKey,
@@ -288,7 +297,7 @@ function buildMaterializationPlan({
         payment_ref: ids.paymentRef,
         payment_status: "paid",
         client_name: displayName,
-        job_type: "historical_service",
+        job_type: serviceBrand === "mms" ? "MMS" : "historical_service",
         job_date: jobDate,
         notes: sourceNote,
         import_review_status: "approved",
@@ -577,6 +586,7 @@ module.exports = {
   buildMaterializationPlan,
   defaultHistoryReviewId,
   deterministicToken,
+  historyServiceBrand,
   materializeHistoricalRecord,
   parseArgs,
   parseHistoricalDate,

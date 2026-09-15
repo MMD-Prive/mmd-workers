@@ -36,6 +36,7 @@ export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-coord
 export default {
   async fetch(request, env = {}, ctx) {
     const url = new URL(request.url);
+    if (isMmsCustomerHistoryPage(request)) return handleMmsCustomerHistoryPage(request, env);
     const canonicalContext = await prepareMyMmdCanonicalEntitlementContext(request, env);
     if (canonicalContext?.unavailable) {
       return Response.json({
