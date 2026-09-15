@@ -1,7 +1,12 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
 export const DEFAULT_PRE_SESSION_CLIENT_INDEX_TABLE = "tblwn6I9VWie5d7Ui";
-export const PRE_SESSION_CLIENT_INDEX_VERSION = "candidate-v1";
+export const PRE_SESSION_CLIENT_INDEX_VERSION = "candidate-v2-history-alias";
+
+const DEFAULT_SESSIONS_TABLE = "tblC98mKWbzmPuNzX";
+const DEFAULT_CLIENTS_TABLE = "tblVv58TCbwh5j1fS";
+const SESSION_CLIENT_NAME_FIELD = "fldMvnQ0BzDfHUYjT";
+const SESSION_CANONICAL_CLIENT_FIELD = "fld6P6if0vDZCeV0C";
 
 const PRE_SESSION_FIELDS = [
   "identity_key",
@@ -29,16 +34,30 @@ const SEARCHABLE_FIELDS = [
   "source_record_id",
 ];
 
+const CLIENT_ALIAS_FIELDS = [
+  "Client Name",
+  "Client Name (Display)",
+  "mmd_client_name",
+  "nickname",
+  "username",
+  "line_user_id",
+  "line_display_name",
+  "telegram_username",
+  "email",
+  "Contact Email",
+  "Phone Number",
+];
+
 /**
- * Replace the free-form manual fallback with a known Airtable identity candidate
- * when Create Session cannot find a canonical Client.
+ * Enrich Create Job lookup after the canonical Clients resolver returns no match.
  *
- * Safety lock:
- * - canonical Client / verified LINE Rename always wins upstream;
- * - candidate rows remain public-only and pending reconciliation;
- * - no membership, payment, points, package, tier, entitlement, booking or access
- *   truth is inferred from this table;
- * - current rights continue to require my_mmd_entitlement_resolver_v1.
+ * Resolution order inside this adapter:
+ * 1. Historical Sessions that are already linked to exactly one canonical Client.
+ * 2. Candidate-only pre-session identity rows (public-only, pending reconcile).
+ *
+ * A historical alias is accepted only when all matching linked Sessions collapse to
+ * one canonical Client record. Unlinked Sessions never create authority and an alias
+ * that points at multiple Clients stays manual-review only.
  */
 export async function enrichLineageWithPreSessionIndex(request, response, env = {}) {
   if (!isLookupPost(request) || response.status !== 200) return response;
@@ -51,6 +70,31 @@ export async function enrichLineageWithPreSessionIndex(request, response, env = 
   if (!query) return response;
 
   try {
+    const historical = await resolveHistoricalSessionAlias(env, query);
+    if (historical?.state === "resolved" && historical.record) {
+      const headers = new Headers(response.headers);
+      headers.set("Content-Type", "application/json; charset=utf-8");
+      headers.set("Cache-Control", "no-store, private, max-age=0");
+      headers.set("X-MMD-Pre-Session-Index", PRE_SESSION_CLIENT_INDEX_VERSION);
+      headers.set("X-MMD-Client-History-Alias", "resolved");
+      return new Response(JSON.stringify({
+        ...body,
+        records: [historical.record],
+        items: [historical.record],
+        count: 1,
+        manual_fallback: false,
+        historical_session_alias: true,
+        lineage_warnings: unique([
+          ...(Array.isArray(body.lineage_warnings) ? body.lineage_warnings.filter((value) => value !== "manual_public_only_pending_reconcile") : []),
+          "historical_session_alias_resolved_to_canonical_client",
+        ]),
+      }), {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+    }
+
     const records = await searchPreSessionCandidates(env, query);
     const candidates = records
       .map((record) => toCandidateRecord(record, query))
@@ -59,7 +103,20 @@ export async function enrichLineageWithPreSessionIndex(request, response, env = 
       .slice(0, 12)
       .map(stripScore);
 
-    if (!candidates.length) return response;
+    if (!candidates.length) {
+      if (historical?.state !== "ambiguous") return response;
+      const headers = new Headers(response.headers);
+      headers.set("Content-Type", "application/json; charset=utf-8");
+      headers.set("Cache-Control", "no-store, private, max-age=0");
+      headers.set("X-MMD-Client-History-Alias", "ambiguous");
+      return new Response(JSON.stringify({
+        ...body,
+        lineage_warnings: unique([
+          ...(Array.isArray(body.lineage_warnings) ? body.lineage_warnings : []),
+          "historical_session_alias_ambiguous_manual_review_required",
+        ]),
+      }), { status: response.status, statusText: response.statusText, headers });
+    }
 
     const headers = new Headers(response.headers);
     headers.set("Content-Type", "application/json; charset=utf-8");
@@ -69,12 +126,14 @@ export async function enrichLineageWithPreSessionIndex(request, response, env = 
     return new Response(JSON.stringify({
       ...body,
       records: candidates,
+      items: candidates,
       count: candidates.length,
       manual_fallback: false,
       pre_session_candidates: true,
       pre_session_policy: "identity_candidate_only_current_rights_resolver_recheck",
       lineage_warnings: unique([
         ...(Array.isArray(body.lineage_warnings) ? body.lineage_warnings.filter((value) => value !== "manual_public_only_pending_reconcile") : []),
+        ...(historical?.state === "ambiguous" ? ["historical_session_alias_ambiguous_manual_review_required"] : []),
         "pre_session_candidate_identity_pending_reconcile",
       ]),
     }), {
@@ -83,8 +142,6 @@ export async function enrichLineageWithPreSessionIndex(request, response, env = 
       headers,
     });
   } catch (error) {
-    // Pre-session discovery is optional enrichment. If it is unavailable, preserve
-    // the existing manual public-only fallback and report the degraded source.
     const headers = new Headers(response.headers);
     headers.set("Content-Type", "application/json; charset=utf-8");
     headers.set("Cache-Control", "no-store, private, max-age=0");
@@ -104,21 +161,129 @@ export async function enrichLineageWithPreSessionIndex(request, response, env = 
   }
 }
 
+export async function resolveHistoricalSessionAlias(env, query) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) {
+    throw new Error("historical_session_storage_not_ready");
+  }
+  const needle = normalize(query);
+  if (!needle) return { state: "none" };
+
+  const sessionsTable = clean(env.AIRTABLE_TABLE_SESSIONS_ID || env.AIRTABLE_TABLE_SESSIONS) || DEFAULT_SESSIONS_TABLE;
+  const params = new URLSearchParams();
+  params.set("pageSize", "40");
+  params.set("maxRecords", "40");
+  params.set("returnFieldsByFieldId", "true");
+  params.set("filterByFormula", `IFERROR(SEARCH(\"${formulaString(needle)}\",LOWER({client_name}&\"\")),0)>0`);
+  params.append("fields[]", SESSION_CLIENT_NAME_FIELD);
+  params.append("fields[]", SESSION_CANONICAL_CLIENT_FIELD);
+
+  const result = await fetch(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(sessionsTable)}?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}`, Accept: "application/json" },
+  });
+  if (!result.ok) throw new Error(`airtable_${sessionsTable}_${result.status}`);
+  const data = await result.json().catch(() => ({}));
+  const sessions = Array.isArray(data.records) ? data.records : [];
+
+  const matching = sessions.filter((record) => historicalNameMatches(query, record?.fields?.[SESSION_CLIENT_NAME_FIELD]));
+  const linkedIds = new Set();
+  for (const record of matching) {
+    for (const id of linkIds(record?.fields?.[SESSION_CANONICAL_CLIENT_FIELD])) linkedIds.add(id);
+  }
+  if (!linkedIds.size) return { state: "none" };
+  if (linkedIds.size !== 1) return { state: "ambiguous", client_ids: [...linkedIds] };
+
+  const clientId = [...linkedIds][0];
+  const client = await fetchCanonicalClient(env, clientId);
+  if (!client?.id) return { state: "none" };
+  const historicalNames = matching
+    .filter((record) => linkIds(record?.fields?.[SESSION_CANONICAL_CLIENT_FIELD]).includes(clientId))
+    .map((record) => clean(record?.fields?.[SESSION_CLIENT_NAME_FIELD]))
+    .filter(Boolean);
+  return { state: "resolved", record: toHistoricalCanonicalRecord(client, query, historicalNames) };
+}
+
+async function fetchCanonicalClient(env, clientId) {
+  const table = clean(env.AIRTABLE_TABLE_CLIENTS_ID || env.AIRTABLE_TABLE_CLIENTS) || DEFAULT_CLIENTS_TABLE;
+  const params = new URLSearchParams();
+  for (const field of CLIENT_ALIAS_FIELDS) params.append("fields[]", field);
+  const response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}/${encodeURIComponent(clientId)}?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}`, Accept: "application/json" },
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`airtable_${table}_${response.status}`);
+  return response.json();
+}
+
+function toHistoricalCanonicalRecord(record, query, historicalNames) {
+  const fields = record?.fields || {};
+  const canonicalName = firstText(fields["Client Name (Display)"], fields["Client Name"], fields.mmd_client_name, fields.nickname);
+  const aliases = unique([
+    ...historicalNames,
+    fields.nickname,
+    fields.mmd_client_name,
+    fields["Client Name (Display)"],
+    fields["Client Name"],
+    fields.line_display_name,
+    fields.username,
+  ]);
+  return {
+    client_id: record.id,
+    member_id: "",
+    member_email: firstText(fields["Contact Email"], fields.email),
+    remembered_name: firstText(historicalNames[0], fields.nickname),
+    canonical_name: canonicalName,
+    client_name: canonicalName || firstText(historicalNames[0], query),
+    aliases,
+    matched_on: "historical_session_alias",
+    matched_value: firstText(historicalNames.find((name) => historicalNameMatches(query, name)), historicalNames[0], query),
+    lookup_chain: ["canonical_client", "linked_session_history"],
+    username: firstText(fields.username),
+    phone: firstText(fields["Phone Number"]),
+    package_code: "",
+    tier: "",
+    membership_status: "",
+    purchased_history: "Canonical Client resolved from linked MMD session history",
+    line_record_id: "",
+    line_user_id: firstText(fields.line_user_id),
+    line_display_name: firstText(fields.line_display_name),
+    legacy_tags: ["historical_session_alias", "canonical_client_linked"],
+    customer_telegram_username: firstText(fields.telegram_username),
+    customer_telegram_status: "missing",
+    confidence: 96,
+    lineage_source: "canonical_client_linked_session_history",
+    entitlement_snapshot_source: "none",
+    identity_status: "canonical_client_linked",
+    manual_public_only: false,
+  };
+}
+
+function historicalNameMatches(query, value) {
+  const q = normalizeAlias(query);
+  const candidate = normalizeAlias(value);
+  if (!q || !candidate) return false;
+  if (q === candidate) return true;
+  if (candidate.startsWith(`${q} `) || q.startsWith(`${candidate} `)) return true;
+  return candidate.includes(q) && q.length >= 3;
+}
+
+function normalizeAlias(value) {
+  return normalize(value)
+    .replace(/\b(?:19|20)\d{2}\b/g, " ")
+    .replace(/\b\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export async function searchPreSessionCandidates(env, query) {
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) {
     throw new Error("pre_session_storage_not_ready");
   }
 
-  const table = clean(
-    env.AIRTABLE_TABLE_PRE_SESSION_CLIENT_INDEX_ID ||
-    env.AIRTABLE_TABLE_PRE_SESSION_CLIENT_INDEX,
-  ) || DEFAULT_PRE_SESSION_CLIENT_INDEX_TABLE;
+  const table = clean(env.AIRTABLE_TABLE_PRE_SESSION_CLIENT_INDEX_ID || env.AIRTABLE_TABLE_PRE_SESSION_CLIENT_INDEX) || DEFAULT_PRE_SESSION_CLIENT_INDEX_TABLE;
   const needle = formulaString(normalize(query));
   if (!needle) return [];
 
-  const checks = SEARCHABLE_FIELDS.map(
-    (field) => `IFERROR(SEARCH(\"${needle}\",LOWER({${field}}&\"\")),0)>0`,
-  );
+  const checks = SEARCHABLE_FIELDS.map((field) => `IFERROR(SEARCH(\"${needle}\",LOWER({${field}}&\"\")),0)>0`);
   const params = new URLSearchParams();
   params.set("pageSize", "40");
   params.set("maxRecords", "40");
@@ -127,10 +292,7 @@ export async function searchPreSessionCandidates(env, query) {
 
   const url = `${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}?${params.toString()}`;
   const result = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
-      Accept: "application/json",
-    },
+    headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}`, Accept: "application/json" },
   });
   if (!result.ok) throw new Error(`airtable_${table}_${result.status}`);
 
@@ -143,9 +305,6 @@ export function toCandidateRecord(record, query) {
   const resolution = normalize(fields.resolution_status);
   const lookupStatus = normalize(fields.session_lookup_status);
   const linkedClients = linkIds(fields.linked_client);
-
-  // This adapter intentionally handles candidate-only rows. Linked/canonical rows
-  // must be served by the canonical Clients lineage path, not reconstructed here.
   if (!truthy(fields.candidate_only)) return null;
   if (linkedClients.length) return null;
   if (resolution === "blocked" || resolution === "review_required") return null;
@@ -161,10 +320,7 @@ export function toCandidateRecord(record, query) {
   const clientName = firstText(preferredName, lineDisplayName, email, query);
   const sourceType = firstText(fields.source_type, "identity_seed");
   const identityKey = firstText(fields.identity_key, record?.id);
-  const currentRightsSource = firstText(
-    fields.current_rights_source,
-    "my_mmd_entitlement_resolver_v1",
-  );
+  const currentRightsSource = firstText(fields.current_rights_source, "my_mmd_entitlement_resolver_v1");
 
   return {
     __score: match.score,
@@ -240,12 +396,7 @@ function bestCandidateMatch(query, fields) {
 
 function confidenceScore(value, matchScore) {
   const token = normalize(value);
-  const base = {
-    verified: 92,
-    high: 82,
-    medium: 66,
-    low: 42,
-  }[token] || 35;
+  const base = { verified: 92, high: 82, medium: 66, low: 42 }[token] || 35;
   const matchQuality = Number(matchScore) % 1000;
   return Math.max(1, Math.min(95, Math.round((base + matchQuality) / 2)));
 }
