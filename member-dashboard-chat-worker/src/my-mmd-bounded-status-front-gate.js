@@ -6,8 +6,9 @@ const STATUS_UI_MODE = "auth-bridge-only";
 const HARD_TIMEOUT_MS = 12_000;
 const MANUAL_RETRY_WINDOW_MS = 120_000;
 const SESSION_STATUS_ENDPOINT = "/member/api/liff/status";
-const CANONICAL_MY_MMD_HOST = "mmdbkk.com";
-const LEGACY_MY_MMD_HOST = "www.mmdbkk.com";
+const CANONICAL_MY_MMD_HOST = "www.mmdbkk.com";
+const LEGACY_MY_MMD_HOST = "mmdbkk.com";
+const CARE_BACK_COOKIE_DOMAIN = "mmdbkk.com";
 const PENDING_WISH_COOKIE = "mmd_care_back_wish_link";
 const PENDING_WISH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 const PENDING_WISH_BRIDGE_PATH = "/my-mmd-assets/care-back-wish-link.js";
@@ -50,7 +51,7 @@ function validPendingWishToken(value) {
 }
 
 function sharedPendingWishCookie(token, maxAge = PENDING_WISH_COOKIE_MAX_AGE) {
-  return `${PENDING_WISH_COOKIE}=${token}; Max-Age=${maxAge}; Domain=${CANONICAL_MY_MMD_HOST}; Path=/; Secure; SameSite=Lax`;
+  return `${PENDING_WISH_COOKIE}=${token}; Max-Age=${maxAge}; Domain=${CARE_BACK_COOKIE_DOMAIN}; Path=/; Secure; SameSite=Lax`;
 }
 
 function clearLegacyHostPendingWishCookie() {
@@ -74,8 +75,8 @@ export function canonicalMyMmdHostRedirect(request) {
 
   const pendingWish = cookieValue(request, PENDING_WISH_COOKIE);
   if (validPendingWishToken(pendingWish)) {
-    // Migrate existing affected users from the old www-only pending-Wish cookie
-    // before the secure __Host- member session is established on canonical apex.
+    // Migrate an existing apex-only pending-Wish cookie to the parent domain
+    // before returning to the canonical www host used by the LINE LIFF session.
     headers.append("set-cookie", sharedPendingWishCookie(pendingWish));
     headers.append("set-cookie", clearLegacyHostPendingWishCookie());
     headers.set("x-mmd-care-back-wish-cookie-migrated", "true");
@@ -92,7 +93,7 @@ function scopePendingWishCookie(cookie) {
   const value = String(cookie || "").trim();
   if (!value.toLowerCase().startsWith(`${PENDING_WISH_COOKIE.toLowerCase()}=`)) return value;
   if (/;\s*domain=/i.test(value)) return value;
-  return `${value}; Domain=${CANONICAL_MY_MMD_HOST}`;
+  return `${value}; Domain=${CARE_BACK_COOKIE_DOMAIN}`;
 }
 
 export function withSharedPendingWishCookie(response) {
@@ -134,7 +135,7 @@ function pendingWishBridgeJavascript() {
 
   function clearCookie() {
     document.cookie = COOKIE + "=; Max-Age=0; Path=/; Secure; SameSite=Lax";
-    document.cookie = COOKIE + "=; Max-Age=0; Domain=${CANONICAL_MY_MMD_HOST}; Path=/; Secure; SameSite=Lax";
+    document.cookie = COOKIE + "=; Max-Age=0; Domain=${CARE_BACK_COOKIE_DOMAIN}; Path=/; Secure; SameSite=Lax";
   }
 
   async function linkPendingWish() {
