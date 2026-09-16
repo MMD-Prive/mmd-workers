@@ -15,6 +15,7 @@ function isRotatingSessionPath(request) {
   if (!(request instanceof Request)) return false;
   let path;
   try { path = normalizePath(new URL(request.url).pathname).toLowerCase(); } catch { return false; }
+  if (path === "/member/api/liff/mms/history") return false;
   return path === "/api/member/dashboard" || path.startsWith("/member/api/liff/");
 }
 
