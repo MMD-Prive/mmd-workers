@@ -341,6 +341,12 @@ function identityFromDashboard(data) {
   };
 }
 
+function couponCardVariant(value) {
+  const key = String(value || "").trim().toLowerCase().replace(/[ -]+/g, "_");
+  const variants = { public: "public", public_member: "public", standard: "standard", vip: "vip", svip: "svip", blackcard: "black_card", black_card: "black_card", elite: "elite", red: "red_card", red_card: "red_card" };
+  return Object.hasOwn(variants, key) ? variants[key] : null;
+}
+
 function membershipFromDashboard(data) {
   const member = asObject(data.member);
   const tier = asObject(member.tier);
@@ -348,6 +354,8 @@ function membershipFromDashboard(data) {
   const level = tier.status === "verified" ? normalizeLevel(tier.value) : "unknown";
   return {
     level,
+    couponCardVariant: tier.status === "verified" ? couponCardVariant(tier.value) : null,
+    couponCardVerified: tier.status === "verified" && Boolean(couponCardVariant(tier.value)),
     levelVerified: tier.status === "verified" && level !== "unknown",
     status: status.status === "verified" ? normalizeStatus(status.value) : "checking",
     packageLabel: null,
@@ -518,6 +526,7 @@ function couponsFromWallet(payload) {
   if (!hasSignal) return [];
   return [{
     id: `care-back-${state}`,
+    wishRequired: String(wallet.status || wallet.state || wallet.code_status) === "wish_required",
     title: "CARE BACK",
     description: state === "issued" ? "ระบบจะตรวจสอบคูปองอีกครั้งเมื่อจอง" : null,
     state,

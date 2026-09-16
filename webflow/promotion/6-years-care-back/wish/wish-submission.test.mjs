@@ -108,7 +108,7 @@ test("Existing Webflow Wish form reuses the canonical My MMD handoff", () => {
   assert.match(source, /root\.querySelector\("\[data-submit\]"\)/);
   assert.match(source, /if \(existing\) bindExistingForm\(root, starts, existing\)/);
   assert.match(source, /#wish-flow/);
-  assert.match(source, /const MEMBER_URL = "\/member\/my-mmd"/);
+  assert.match(source, /const MEMBER_URL = "\/my-mmd\/coupons"/);
   assert.doesNotMatch(source, /\/member\/liff\?intent=status/);
   assert.doesNotMatch(source, /miniapp\.line\.me\/2010862595-yT4DCEMc\?liff\.state/);
 });
@@ -117,7 +117,7 @@ test("Customer copy keeps Wish separate and continues verified benefits in My MM
   assert.match(source, /คูปอง วันสมาชิก และ Points ที่ตรวจได้จริง ดูต่อใน My MMD/);
   assert.match(source, /Verified coupon, membership days and Points continue in My MMD/);
   assert.match(source, /已核实的优惠券、会员天数和 Points 请在 My MMD 继续查看/);
-  assert.match(source, /benefitCta: "เปิด My MMD"/);
+  assert.match(source, /benefitCta: "ดูคูปองของฉัน"/);
 });
 
 test("link token accepts only opaque public Wish tokens", () => {

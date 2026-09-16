@@ -8,7 +8,7 @@ const LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const LIFF_API_PREFIX = "/member/api/liff/";
 const CARE_BACK_LINK_ENDPOINT = "/member/api/care-back/link-wish";
 const DEFAULT_STATUS_RETURN_TARGET = "/my-mmd/";
-const COUPON_STATUS_RETURN_TARGET = "/coupon";
+const COUPON_STATUS_RETURN_TARGET = "/my-mmd/coupons";
 const RETURN_TARGET_BASE = "https://www.mmdbkk.com";
 const TMIB_ACT_PATH = /^\/tmib\/act-\d{3}$/;
 const TMIB_EPISODE = /^act-\d{3}$/;
@@ -170,7 +170,7 @@ export function injectCareBackWishBridge(html, request) {
   const nonce = safeNonce(output);
   if (!nonce || !output.includes("</head>")) return output;
   const tokenJson = JSON.stringify(token).replace(/</g, "\\u003c");
-  const script = `<script nonce="${nonce}" id="mmd-care-back-wish-liff-bridge">(() => {\n  \"use strict\";\n  const token = ${tokenJson};\n  let running = false;\n  async function linkWish() {\n    if (running) return; running = true;\n    try {\n      const response = await fetch(\"${CARE_BACK_LINK_ENDPOINT}\", { method:\"POST\", credentials:\"same-origin\", headers:{\"accept\":\"application/json\",\"content-type\":\"application/json\"}, body:JSON.stringify({wish_link_token:token}) });\n      const payload = await response.json().catch(() => null);\n      if (response.ok && payload && payload.ok === true && payload.linked === true) { window.location.replace(\"/coupon?care_back=linked\"); return; }\n      if (response.status === 401) running = false;\n      else document.dispatchEvent(new CustomEvent(\"mmd:care-back:link-failed\", { detail:{ code:String(payload && payload.error && payload.error.code || \"CARE_BACK_LINK_FAILED\") } }));\n    } catch { running = false; }\n  }\n  document.addEventListener(\"mmd:liff:member-ready\", linkWish);\n})();</script>`;
+  const script = `<script nonce="${nonce}" id="mmd-care-back-wish-liff-bridge">(() => {\n  \"use strict\";\n  const token = ${tokenJson};\n  let running = false;\n  async function linkWish() {\n    if (running) return; running = true;\n    try {\n      const response = await fetch(\"${CARE_BACK_LINK_ENDPOINT}\", { method:\"POST\", credentials:\"same-origin\", headers:{\"accept\":\"application/json\",\"content-type\":\"application/json\"}, body:JSON.stringify({wish_link_token:token}) });\n      const payload = await response.json().catch(() => null);\n      if (response.ok && payload && payload.ok === true && payload.linked === true) { window.location.replace(\"/my-mmd/coupons?care_back=linked\"); return; }\n      if (response.status === 401) running = false;\n      else document.dispatchEvent(new CustomEvent(\"mmd:care-back:link-failed\", { detail:{ code:String(payload && payload.error && payload.error.code || \"CARE_BACK_LINK_FAILED\") } }));\n    } catch { running = false; }\n  }\n  document.addEventListener(\"mmd:liff:member-ready\", linkWish);\n})();</script>`;
   output = output.replace("</head>", `${script}</head>`);
   return output;
 }

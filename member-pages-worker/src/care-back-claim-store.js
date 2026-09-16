@@ -43,7 +43,7 @@ class AirtableCareBackStore {
     const derived = await deriveClaimAndCode(identity, secret);
     const claims = await this.list(tableName(this.env, "CLAIMS"), `AND({campaign_id}=${formulaString(CAMPAIGN_ID)},{line_user_id_hash}=${formulaString(identity)})`, 2);
     if (claims.length > 1) throw new CareBackStoreError("CARE_BACK_CLAIM_CONFLICT");
-    if (!claims.length) return couponWallet({}, customerCoupon("draft", "", "", "verification_required", "ยังไม่มีคูปองที่ออกให้กับบัญชีนี้"));
+    if (!claims.length) return couponWallet({}, customerCoupon("draft", "", "", "wish_required", "ส่งคำอวยพรถึง MMD ก่อนตรวจสิทธิ์คูปอง"));
     const claimFields = claims[0].fields || {};
     if (String(claimFields.matched_member_id || "") !== member) throw new CareBackStoreError("CARE_BACK_MEMBER_CONFLICT");
     const codes = await this.list(tableName(this.env, "PROMO_CODES"), `{code}=${formulaString(derived.code)}`, 2);
@@ -64,7 +64,7 @@ class AirtableCareBackStore {
           ? "expired"
           : status === "active"
             ? "ready"
-            : "verification_required";
+            : !promoWishSubmitted(promoFields.payload_json) ? "wish_required" : "verification_required";
     const coupon = customerCoupon(status, activatedAt, expiresAt, walletState, "");
     return couponWallet(promoFields, coupon);
   }
