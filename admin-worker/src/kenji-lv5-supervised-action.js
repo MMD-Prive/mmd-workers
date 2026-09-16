@@ -65,7 +65,7 @@ async function verifyCanonicalLineIdentity(env, canonicalClientId, requestedLine
 }
 
 async function resolveAuthorizedModelMetadata(env, model = {}) {
-  const table = clean(env.AIRTABLE_TABLE_MODELS_ID || env.AIRTABLE_TABLE_MODELS, 120) || "Models";
+  const table = clean(env.AIRTABLE_TABLE_MODELS_ID || env.AIRTABLE_TABLE_MODELS, 120) || "models";
   const baseId = clean(env.AIRTABLE_BASE_ID, 120);
   const apiKey = clean(env.AIRTABLE_API_KEY, 1000);
   if (!baseId || !apiKey) return null;
@@ -89,7 +89,7 @@ async function resolveAuthorizedModelMetadata(env, model = {}) {
       const status = token(fields.status || fields.model_status);
       const folder = token(fields.access_folder || fields.model_access_folder || fields.model_folder);
       if (status && status !== "active") return null;
-      if (!['public', 'private'].includes(visibility)) return null;
+      if (!["public", "private"].includes(visibility)) return null;
       return { record_id: recId(records[0].id), visibility, folder };
     } catch {}
   }
@@ -115,12 +115,14 @@ export function evaluateKenjiLv5BookingAction(context = {}, modelAccess = {}, in
 }
 
 function entitlementAccessScope(context = {}) {
-  return token(context?.entitlement_live?.private_visibility_envelope) !== "none" ? "public_private" : "public_only";
+  const envelope = token(context?.entitlement_live?.private_visibility_envelope || "none");
+  return envelope && envelope !== "none" ? "public_private" : "public_only";
 }
 
 function memberStatus(context = {}) {
   const lifecycle = token(context?.entitlement_live?.lifecycle || context?.entitlement_live?.status);
-  return ["active", "current"].includes(lifecycle) ? "active" : lifecycle === "grace" ? "pending" : "active";
+  if (["active", "current"].includes(lifecycle)) return "active";
+  return "pending";
 }
 
 export function buildKenjiLv5BookingDraftPayload({ context = {}, modelAccess = {}, intent = {}, actionId = "", refs = {} } = {}) {
@@ -129,6 +131,7 @@ export function buildKenjiLv5BookingDraftPayload({ context = {}, modelAccess = {
   const visibility = token(modelAccess?.model_access?.visibility) === "private" ? "private" : "public";
   const canonicalClientId = recId(client.canonical_client_id);
   const lineUserId = lineId(intent.line_user_id);
+  const accessScope = entitlementAccessScope(context);
   return compact({
     booking_ref: clean(refs.booking_ref, 80),
     session_id: clean(refs.session_id, 80),
@@ -138,8 +141,8 @@ export function buildKenjiLv5BookingDraftPayload({ context = {}, modelAccess = {
     client_nickname: clean(client.display_name, 120),
     line_or_member_id: lineUserId,
     member_status: memberStatus(context),
-    access_scope: entitlementAccessScope(context),
-    private_allowed: entitlementAccessScope(context) === "public_private",
+    access_scope: accessScope,
+    private_allowed: accessScope === "public_private",
     lane: visibility,
     job_class: visibility === "private" ? "private_review" : "travel",
     model_scope: visibility,
