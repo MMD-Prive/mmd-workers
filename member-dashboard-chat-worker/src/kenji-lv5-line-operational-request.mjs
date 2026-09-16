@@ -11,6 +11,11 @@ import {
   renderKenjiLv5ModelGateReply,
   resolveKenjiLv5LineModelGate,
 } from "./kenji-lv5-line-model-gate.mjs";
+import { resolveCanonicalKenjiLineClient } from "./kenji-line-canonical-client-resolution.mjs";
+import {
+  applyKenjiLv5BookingActionToDecision,
+  executeKenjiLv5LineBookingAction,
+} from "./kenji-lv5-line-action-execution.mjs";
 
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 
@@ -108,6 +113,31 @@ function needsCanonicalCalendarMapping(gate = {}) {
   return Boolean(requested && canonical && requested !== canonical);
 }
 
+function isPreparedBookingDecision(decision = {}, modelGate = {}) {
+  return decision?.live_truth_verified === true
+    && text(decision?.operational?.primary_action, 80) === "prepare_booking_intent"
+    && modelGate?.required === true
+    && modelGate?.status === "match"
+    && text(modelGate?.parsed?.type, 40) === "booking";
+}
+
+async function applyP4Action(env, event, modelGate, decision) {
+  if (!isPreparedBookingDecision(decision, modelGate)) return { decision, result: { attempted: false, executed: false, status: "not_eligible" } };
+  const canonical = await resolveCanonicalKenjiLineClient({ env, event }).catch(() => null);
+  if (canonical?.resolved !== true || !/^rec[A-Za-z0-9]+$/.test(text(canonical?.client_record_id, 80))) {
+    const result = { attempted: true, executed: false, status: "canonical_client_recheck_failed" };
+    return { decision: applyKenjiLv5BookingActionToDecision(decision, result), result };
+  }
+  const result = await executeKenjiLv5LineBookingAction({
+    env,
+    event,
+    modelGate,
+    decision,
+    canonicalClientId: text(canonical.client_record_id, 80),
+  });
+  return { decision: applyKenjiLv5BookingActionToDecision(decision, result), result };
+}
+
 export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {}, ctx = null) {
   if (!(request instanceof Request) || String(request.method || "GET").toUpperCase() !== "POST") return null;
   const rawBody = await request.clone().text().catch(() => "");
@@ -139,11 +169,7 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
   } else if (needsCanonicalCalendarMapping(modelGate)) {
     decision = aliasCalendarDecision(currentIntent, modelGate);
   } else {
-    decision = await resolveKenjiLv5LineOperationalDecision({
-      env,
-      event,
-      currentIntent,
-    }).catch(() => null);
+    decision = await resolveKenjiLv5LineOperationalDecision({ env, event, currentIntent }).catch(() => null);
   }
   if (!decision?.text) return null;
 
@@ -158,13 +184,17 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
     },
   };
 
+  const p4 = await applyP4Action(env, event, modelGate, decision);
+  decision = p4.decision;
   const delivery = await sendReply(env, replyToken(event), decision.text);
+  const p4Attempted = p4?.result?.attempted === true;
   return {
     handled: true,
     response: new Response(JSON.stringify({
       ok: true,
       route: "line_webhook",
-      operational: "lv5_p3",
+      operational: p4Attempted ? "lv5_p4" : "lv5_p3",
+      action_executed: p4?.result?.executed === true,
       delivered: delivery.ok === true,
     }), {
       status: 200,
@@ -172,7 +202,7 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
         "content-type": "application/json; charset=utf-8",
         "cache-control": "no-store",
         "x-mmd-worker": "member-dashboard-chat-worker",
-        "x-mmd-kenji-operational": "lv5-p3",
+        "x-mmd-kenji-operational": p4Attempted ? "lv5-p4" : "lv5-p3",
       },
     }),
     event,
@@ -183,4 +213,4 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
   };
 }
 
-export const KENJI_LV5_LINE_REQUEST_INTERNALS = Object.freeze({ needsCanonicalCalendarMapping });
+export const KENJI_LV5_LINE_REQUEST_INTERNALS = Object.freeze({ needsCanonicalCalendarMapping, isPreparedBookingDecision });
