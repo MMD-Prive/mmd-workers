@@ -517,6 +517,16 @@ export default {
         return withCors(await handleAdminRichMenuRoute(req, env, path, method), cors);
       }
 
+      // Model HBD review gate. Submission is stored as manual_review by the
+      // model-session sidecar; only this credential-bound admin route may
+      // promote it to the public completed projection.
+      if (method === "GET" && path === "/v1/admin/model-wishes/review-queue") {
+        return withCors(await handleModelWishReviewQueue(env), cors);
+      }
+      if (method === "POST" && path === "/v1/admin/model-wishes/review") {
+        return withCors(await handleModelWishReview(req, env), cors);
+      }
+
       if (method === "POST" && path === MODEL_SESSION_LINK_PATH) {
         return withCors(await handleModelSessionLinkIssuer(req, env), cors);
       }
@@ -1506,6 +1516,65 @@ async function safeJson(req) {
   } catch (_) {
     return {};
   }
+}
+
+const MODEL_WISH_TABLE_DEFAULT = "tblvMJjYXy29mgDLb";
+
+async function handleModelWishReviewQueue(env) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return json({ ok: false, error: "missing_airtable_env" }, 503);
+  const table = str(env.AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES || MODEL_WISH_TABLE_DEFAULT);
+  const params = new URLSearchParams({
+    maxRecords: "100",
+    filterByFormula: "AND({campaign_id}='mmd_year_6_model_wish',{wish_status}='manual_review')",
+  });
+  const result = await airtableFetch(env, `/${encodeURIComponent(table)}?${params}`);
+  if (!result.ok) return json({ ok: false, error: "model_wish_review_queue_unavailable" }, 503);
+  const records = Array.isArray(result.data?.records) ? result.data.records : [];
+  return json({ ok: true, wishes: records.map((record) => {
+    const fields = record.fields || {};
+    return {
+      record_id: record.id,
+      wish_id: str(fields.wish_id),
+      wish_text: str(fields.wish_text).slice(0, 280),
+      submitted_at: str(fields.submitted_at),
+      source: str(fields.source),
+      payload_json: str(fields.payload_json),
+    };
+  }) });
+}
+
+async function handleModelWishReview(req, env) {
+  const body = await safeJson(req);
+  const recordId = str(body.record_id);
+  const decision = str(body.decision).toLowerCase();
+  if (!/^rec[a-zA-Z0-9]{14}$/.test(recordId) || !["approve", "reject"].includes(decision)) {
+    return json({ ok: false, error: "invalid_model_wish_review" }, 400);
+  }
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return json({ ok: false, error: "missing_airtable_env" }, 503);
+  const table = str(env.AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES || MODEL_WISH_TABLE_DEFAULT);
+  const read = await airtableFetch(env, `/${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`);
+  const current = read.ok ? read.data : null;
+  const fields = current?.fields || {};
+  if (!read.ok || str(fields.campaign_id) !== "mmd_year_6_model_wish" || str(fields.wish_status) !== "manual_review") {
+    return json({ ok: false, error: "model_wish_review_state_conflict" }, 409);
+  }
+  const now = new Date().toISOString();
+  let audit = {};
+  try { audit = JSON.parse(str(fields.payload_json) || "{}"); } catch { audit = {}; }
+  audit.review = { decision, reviewed_at: now, reviewed_by: str(req.headers.get("X-MMD-Operator") || "admin") };
+  const patch = {
+    wish_status: decision === "approve" ? "completed" : "revoked",
+    public_display_text: decision === "approve" ? str(fields.wish_text).slice(0, 280) : "",
+    payload_json: JSON.stringify(audit),
+    updated_at: now,
+  };
+  const updated = await airtableFetch(env, `/${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: patch, typecast: false }),
+  });
+  if (!updated.ok) return json({ ok: false, error: "model_wish_review_write_failed" }, 503);
+  return json({ ok: true, decision, record_id: recordId, public: decision === "approve" });
 }
 
 async function parseJsonObject(req) {

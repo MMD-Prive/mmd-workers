@@ -120,11 +120,13 @@ export async function handleModelYear6WishRequest(request, env = {}, coreWorker)
     campaign_id: CAMPAIGN_ID,
     wish_text: wishText,
     wish_option: "post_job_model",
-    wish_status: "completed",
+    // Model wishes are never public on submission. Admin must explicitly
+    // approve the record before the public Wish projection may read it.
+    wish_status: "manual_review",
     idempotency_key: key,
     submitted_at: now,
     completed_at: now,
-    public_display_text: "MMD received a Model Wish.",
+    public_display_text: "",
     // Airtable source is a controlled single-select. Keep the exact app origin in
     // source_path/payload_json while preserving typecast:false writes.
     source: "member_page",
