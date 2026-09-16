@@ -29,9 +29,12 @@ jobs:
       - run: npm ci
       - run: npm run check:care-back-staging
       - run: npm run test:care-back-staging-fixtures
+      - run: node --test auth-staging-airtable-fixtures-worker/test/*.test.mjs
       - run: npm run test:member-pages-liff
       - run: npm run test:member-dashboard-liff
       - run: npx --yes wrangler@4 deploy --dry-run --env staging --config care-back-staging-fixtures-worker/wrangler.toml
+      - run: npx --yes wrangler@4 deploy --dry-run --env staging --config auth-staging-airtable-fixtures-worker/wrangler.toml
+      - run: npx --yes wrangler@4 deploy --dry-run --env staging --config auth-worker/wrangler.toml
       - run: npx --yes wrangler@4 deploy --dry-run --env staging --config member-pages-worker/wrangler.toml
       - run: npx --yes wrangler@4 deploy --dry-run --env staging --config member-dashboard-chat-worker/wrangler.toml
 
@@ -84,6 +87,7 @@ jobs:
           const config = "member-pages-worker/wrangler.toml";
           fs.writeFileSync(config, fs.readFileSync(config, "utf8").replace("00000000000000000000000000000000", values.CARE_BACK_STAGING_KV_NAMESPACE_ID));
           fs.writeFileSync(`${process.env.RUNNER_TEMP}/fixture.env`, `MEMBER_STATUS_RESOLVER_SECRET=${values.CARE_BACK_STAGING_RESOLVER_SECRET}\n`, { mode: 0o600 });
+          fs.writeFileSync(`${process.env.RUNNER_TEMP}/auth.env`, `MEMBER_STATUS_RESOLVER_SECRET=${values.CARE_BACK_STAGING_RESOLVER_SECRET}\n`, { mode: 0o600 });
           fs.writeFileSync(`${process.env.RUNNER_TEMP}/member.env`, [
             `AIRTABLE_API_KEY=${values.CARE_BACK_STAGING_AIRTABLE_API_KEY}`,
             `LIFF_SESSION_SECRET=${values.CARE_BACK_STAGING_LIFF_SESSION_SECRET}`,
@@ -91,8 +95,12 @@ jobs:
             `MEMBER_STATUS_RESOLVER_SECRET=${values.CARE_BACK_STAGING_RESOLVER_SECRET}`,
           ].join("\n") + "\n", { mode: 0o600 });
           NODE
-      - name: Deploy service-only synthetic fixtures
+      - name: Deploy service-only synthetic LINE fixtures
         run: npx --yes wrangler@4 deploy --env staging --config care-back-staging-fixtures-worker/wrangler.toml --keep-vars --secrets-file "$RUNNER_TEMP/fixture.env"
+      - name: Deploy synthetic Airtable service for auth staging
+        run: npx --yes wrangler@4 deploy --env staging --config auth-staging-airtable-fixtures-worker/wrangler.toml --keep-vars
+      - name: Deploy service-bound auth staging
+        run: npx --yes wrangler@4 deploy --env staging --config auth-worker/wrangler.toml --keep-vars --secrets-file "$RUNNER_TEMP/auth.env"
       - name: Deploy service-bound CARE BACK implementation
         run: npx --yes wrangler@4 deploy --env staging --config member-pages-worker/wrangler.toml --keep-vars --secrets-file "$RUNNER_TEMP/member.env"
       - name: Deploy workers.dev front gate

@@ -6,8 +6,8 @@ function int(v) {
 }
 
 export const TG_THREADS = (env) => ({
-  membership: int(env.TG_THREAD_MEMBERSHIP) || 20,
-  confirm: int(env.TG_THREAD_CONFIRM) || 21,
+  membership: int(env.TG_THREAD_PAYMENTS_MEMBERSHIP || env.TG_THREAD_MEMBERSHIP) || 20,
+  confirm: int(env.TG_THREAD_PAYMENTS_CONFIRM || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM) || 22,
   points_threshold: int(env.TG_THREAD_POINTS) || 17,
 });
 

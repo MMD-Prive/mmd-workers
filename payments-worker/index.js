@@ -354,7 +354,6 @@ async function createSessionIfMissing(env, payload) {
       payment_type: payload.payment_type,
       amount_thb: payload.amount_thb,
       pay_model_thb: payload.pay_model_thb,
-      "Pay Model": payload.pay_model_thb,
       client_name: payload.client_name,
       model_name: payload.model_name,
       job_type: payload.job_type,
@@ -379,7 +378,6 @@ async function createSessionIfMissing(env, payload) {
     payment_type: payload.payment_type,
     amount_thb: payload.amount_thb,
     pay_model_thb: payload.pay_model_thb,
-    "Pay Model": payload.pay_model_thb,
     client_name: payload.client_name,
     model_name: payload.model_name,
     job_type: payload.job_type,
@@ -401,7 +399,7 @@ async function createSessionIfMissing(env, payload) {
 async function telegramSend(env, text, threadId = null) {
   const token = toStr(env.TELEGRAM_BOT_TOKEN);
   const chatId = toStr(env.TELEGRAM_CHAT_ID || "-1003546439681");
-  const thread = toStr(threadId || env.TG_THREAD_CONFIRM || "61");
+  const thread = toStr(threadId || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "21");
 
   if (!token) {
     return { ok: false, skipped: true, reason: "missing_telegram_bot_token" };
@@ -544,8 +542,6 @@ async function createOrUpdatePaymentIntent(env, payload) {
     payment_type: payload.payment_stage,
     amount_thb: payload.amount,
     amount: payload.amount,
-    pay_model_thb: payload.pay_model_thb,
-    "Pay Model": payload.pay_model_thb,
     member_email: payload.member_email || "",
     package_code: payload.package_code || "",
     notes: payload.notes || "",
@@ -655,7 +651,7 @@ async function handlePing(req, env) {
         sessions_table: getSessionsTable(env),
         points_ledger_table: getPointsLedgerTable(env),
         telegram_chat_id: toStr(env.TELEGRAM_CHAT_ID || "-1003546439681"),
-        tg_thread_confirm: toStr(env.TG_THREAD_CONFIRM || "61"),
+        tg_thread_confirm: toStr(env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "21"),
         tg_thread_points: toStr(env.TG_THREAD_POINTS || "17"),
       },
     })
@@ -741,7 +737,7 @@ async function handleVerify(req, env) {
           package_code ? `Package: <b>${esc(package_code)}</b>` : "",
           member_email ? `Member: ${esc(member_email)}` : "",
         ].filter(Boolean).join("\n"),
-        env.TG_THREAD_CONFIRM || "61"
+        env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "21"
       );
     } catch (_) {}
 
@@ -838,7 +834,7 @@ async function handleNotify(req, env) {
           member_email ? `Member: ${esc(member_email)}` : "",
           session_updated?.ok ? "Session updated: <b>yes</b>" : "Session updated: <b>no</b>",
         ].filter(Boolean).join("\n"),
-        env.TG_THREAD_CONFIRM || "61"
+        env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "21"
       );
     } catch (_) {}
 
@@ -977,7 +973,6 @@ async function handleConfirmLink(req, env) {
       payment_ref,
       payment_stage: payment_type,
       amount: amount_thb,
-      pay_model_thb,
       payment_method,
       notes: note,
       created_at,
@@ -1002,7 +997,7 @@ async function handleConfirmLink(req, env) {
           `Amount: <b>${Number(amount_thb)} THB</b>`,
           pay_model_thb != null ? `Pay Model: <b>${Number(pay_model_thb)} THB</b>` : "",
         ].join("\n"),
-        env.TG_THREAD_CONFIRM || "61"
+        env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "21"
       );
     } catch (_) {}
 

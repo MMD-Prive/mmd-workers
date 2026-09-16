@@ -5,6 +5,7 @@ import worker, {
   buildKenjiLineReply,
   buildKenjiKnowledgeLineReply,
   createLineSignature,
+  extractHimaiSupplierRegistrationName,
   inferLineIntent,
   isKenjiLineCandidate,
   resolveKenjiLineReply,
@@ -17,6 +18,13 @@ const BASE_ENV = {
   LINE_CHANNEL_ACCESS_TOKEN: "line-token",
   LINE_AUTO_REPLY_ENABLED: "true",
   LINE_KENJI_AI_ENABLED: "true",
+  INTERNAL_TOKEN: "runtime-token",
+  ADMIN_WORKER: {
+    fetch: async () => new Response(JSON.stringify({
+      ok: true,
+      controls: { line_oa_auto_reply: false, model_keyword_auto_reply: false, all_kenji_mutations: false },
+    }), { status: 200, headers: { "content-type": "application/json" } }),
+  },
 };
 
 async function signedLineRequest(body, env = BASE_ENV) {
@@ -39,25 +47,6 @@ function lineTextEvent(text, overrides = {}) {
     source: { type: "user", userId: LINE_USER_ID },
     message: { id: "msg-1", type: "text", text },
     ...overrides,
-  };
-}
-
-function installMemoryCache() {
-  const originalCaches = globalThis.caches;
-  const entries = new Map();
-  globalThis.caches = {
-    default: {
-      async match(request) {
-        return entries.has(request.url) ? new Response(entries.get(request.url)) : undefined;
-      },
-      async put(request, response) {
-        entries.set(request.url, await response.text());
-      },
-    },
-  };
-  return () => {
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
   };
 }
 
@@ -111,6 +100,61 @@ test("Cloudflare owner ignores retired upstream configuration", async () => {
   assert.equal((await response.json()).worker, "member-dashboard-chat-worker");
 });
 
+test("Himai supplier registration command is recognized", () => {
+  assert.equal(extractHimaiSupplierRegistrationName("Register himai ping"), "ping");
+  assert.equal(inferLineIntent("Register himai ping", lineTextEvent("Register himai ping")), "himai_supplier_registration");
+});
+
+test("Himai supplier registration links a canonical Supplier record", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const href = String(url);
+    calls.push({ url: href, init });
+    if (href.includes("/profile/")) return new Response(JSON.stringify({ displayName: "Ping" }), { status: 200 });
+    if (href.includes("api.airtable.com") && init.method === "GET") {
+      return new Response(JSON.stringify({
+        records: [{
+          id: "rec-ping",
+          fields: {
+            "Supplier Name": "Ping",
+            "Brand Scope": "Himai Shop",
+            "Supplier Status": "active",
+            "LINE User ID": "",
+          },
+        }],
+      }), { status: 200 });
+    }
+    if (href.includes("api.airtable.com") && init.method === "PATCH") return new Response(JSON.stringify({ id: "rec-ping" }), { status: 200 });
+    if (href.includes("/message/reply")) return new Response("{}", { status: 200 });
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    const text = "Register himai ping";
+    const event = lineTextEvent(text, { mode: "active" });
+    const response = await worker.fetch(await signedLineRequest({ events: [event] }), {
+      ...BASE_ENV,
+      LINE_KENJI_AI_ENABLED: "false",
+      AIRTABLE_API_KEY: "airtable-token",
+      AIRTABLE_BASE_ID: "app-test",
+      HIMAI_SUPPLIERS_TABLE_ID: "tbl-suppliers",
+    });
+    assert.equal(response.status, 200);
+    assert.equal(inferLineIntent(text, event), "himai_supplier_registration");
+    assert.equal(calls.filter((call) => call.url.includes("/message/reply")).length, 1);
+    const patch = calls.find((call) => call.init.method === "PATCH");
+    assert.ok(patch);
+    const patchBody = JSON.parse(patch.init.body);
+    assert.equal(patchBody.fields["LINE User ID"], LINE_USER_ID);
+    assert.equal(patchBody.fields["LINE Name"], "Ping");
+    assert.equal(patchBody.fields["LINE Status"], "Connected");
+    const reply = calls.find((call) => call.url.includes("/message/reply"));
+    assert.match(JSON.parse(reply.init.body).messages[0].text, /เชื่อม Supplier สำเร็จแล้ว/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("Kenji 2.0 separates MMD, MMS, venue, and talent lanes", () => {
   const cases = [
     ["ไป dinner", "mmd_companion", /MMD Companion/],
@@ -125,10 +169,34 @@ test("Kenji 2.0 separates MMD, MMS, venue, and talent lanes", () => {
   }
 });
 
+test("Kenji 2.0 recognizes booking status and Aftercare without inventing protected truth", () => {
+  const cases = [
+    ["จองถึงไหนแล้ว", "booking_status", /My MMD > History/],
+    ["booking confirmed หรือยัง", "booking_status", /ยังยืนยันสถานะหรือคอนเฟิร์มการจอง/],
+    ["ขอทำ Aftercare", "aftercare", /ปุ่ม Aftercare ของรายการนั้น/],
+    ["อยากให้คะแนนบริการ", "aftercare", /ลิงก์เฉพาะ Session ต้องมาจากข้อมูลทางการ/],
+  ];
+  for (const [text, intent, replyPattern] of cases) {
+    const event = lineTextEvent(text);
+    assert.equal(inferLineIntent(text, event), intent, text);
+    const reply = buildKenjiLineReply(event);
+    assert.match(reply, replyPattern, text);
+    assert.doesNotMatch(reply, /\/aftercare\?t=|คอนเฟิร์มแล้ว|ยืนยันการจองแล้ว/i, text);
+    const capability = decideKenjiCapability({ text, intent });
+    assert.equal(
+      capability.capability,
+      intent === "booking_status" ? "protected_authority" : "deterministic_truth",
+      text,
+    );
+  }
+});
+
 test("payment proof routes safely without confirming funds", () => {
   const reply = buildKenjiLineReply(lineTextEvent("ส่งสลิป"));
-  assert.match(reply, /\/confirm\/payment-proof/);
-  assert.match(reply, /ยังไม่ถือว่ายืนยันยอด/);
+  assert.match(reply, /\/member\/payments/);
+  assert.doesNotMatch(reply, /\/confirm\/payment-proof/);
+  assert.match(reply, /ไม่ต้องส่งซ้ำ/);
+  assert.match(reply, /อัปเดตสถานะอย่างเป็นทางการ/);
   assert.doesNotMatch(reply, /ชำระเงินสำเร็จ|approved/i);
 });
 
@@ -677,9 +745,8 @@ test("successful knowledge-assisted response sends exactly one LINE reply", asyn
   }
 });
 
-test("no safe local or knowledge response may use the short fallback", async () => {
+test("unresolved messages stay silent when local and knowledge answers are unavailable", async () => {
   const originalFetch = globalThis.fetch;
-  const restoreCache = installMemoryCache();
   globalThis.fetch = async (url) => {
     if (String(url).includes("api.airtable.com")) throw new Error("temporary knowledge failure");
     return new Response("{}", { status: 200 });
@@ -692,22 +759,17 @@ test("no safe local or knowledge response may use the short fallback", async () 
       AIRTABLE_API_KEY: "airtable-key",
       AIRTABLE_BASE_ID: "base-id",
     });
-    assert.equal(decision.text, "ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ");
-    assert.equal(decision.fallback, true);
+    assert.equal(decision.text, "");
+    assert.equal(decision.fallback, false);
+    assert.equal(decision.reply_source, "silent");
   } finally {
-    restoreCache();
     globalThis.fetch = originalFetch;
   }
 });
 
-test("repeated unresolved messages do not spam the failure fallback", async () => {
-  // The Cache API mock proves best-effort UX suppression only. Production cache
-  // is not persistent state, authorization, dedupe correctness, or
-  // payment/session/member state, and eviction or another colo may allow the
-  // fallback to appear again.
+test("repeated unresolved messages return 200 without calling LINE Reply API", async () => {
   const calls = [];
   const originalFetch = globalThis.fetch;
-  const restoreCache = installMemoryCache();
   globalThis.fetch = async (url) => {
     const href = String(url);
     calls.push(href);
@@ -722,22 +784,94 @@ test("repeated unresolved messages do not spam the failure fallback", async () =
     const secondResponse = await worker.fetch(await signedLineRequest({ events: [second] }), BASE_ENV);
     assert.equal(firstResponse.status, 200);
     assert.equal(secondResponse.status, 200);
-    assert.equal(calls.filter((url) => url.includes("/message/reply")).length, 1);
+    assert.equal(calls.filter((url) => url.includes("/message/reply")).length, 0);
+    assert.equal((await firstResponse.json()).saved[0].replied, false);
+    assert.equal((await secondResponse.json()).saved[0].replied, false);
   } finally {
-    restoreCache();
     globalThis.fetch = originalFetch;
   }
 });
 
-test("manual-review intent may use the short fallback", async () => {
-  const restoreCache = installMemoryCache();
+test("manual-review and human-handoff intents stay silent for Per or MMD", async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    calls.push(String(url));
+    return new Response("{}", { status: 200 });
+  };
   try {
-    const event = lineTextEvent("ขอให้เปอร์ตรวจเอง");
-    assert.equal(inferLineIntent(event.message.text, event), "manual_review");
-    const decision = await resolveKenjiLineReply(event, {}, BASE_ENV);
-    assert.equal(decision.text, "ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ");
-    assert.equal(decision.fallback, true);
+    for (const [text, intent] of [["ขอให้เปอร์ตรวจเอง", "manual_review"], ["ขอคุยกับเจ้าหน้าที่", "human_handoff"]]) {
+      const event = lineTextEvent(text, { message: { id: `msg-${intent}`, type: "text", text } });
+      assert.equal(inferLineIntent(event.message.text, event), intent);
+      const decision = await resolveKenjiLineReply(event, {}, BASE_ENV);
+      assert.equal(decision.text, "");
+      assert.equal(decision.fallback, false);
+      assert.equal(decision.reply_source, "silent");
+      const response = await worker.fetch(await signedLineRequest({ events: [event] }), BASE_ENV);
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).saved[0].replied, false);
+    }
+    assert.equal(calls.filter((url) => url.includes("/message/reply")).length, 0);
   } finally {
-    restoreCache();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("runtime kill switch suppresses LINE replies", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), init });
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    const event = lineTextEvent("สวัสดี", { mode: "active" });
+    const response = await worker.fetch(await signedLineRequest({ events: [event] }), {
+      ...BASE_ENV,
+      LINE_KENJI_MODEL_ENABLED: "false",
+      LINE_KENJI_KNOWLEDGE_ENABLED: "false",
+      ADMIN_WORKER: {
+        fetch: async () => new Response(JSON.stringify({
+          ok: true,
+          controls: { line_oa_auto_reply: true, model_keyword_auto_reply: false, all_kenji_mutations: false },
+        }), { status: 200, headers: { "content-type": "application/json" } }),
+      },
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.saved[0].runtime_control_ok, true);
+    assert.equal(payload.saved[0].runtime_line_kill, true);
+    assert.equal(payload.saved[0].replied, false);
+    assert.equal(calls.filter((call) => call.url.includes("/message/reply")).length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("runtime control RPC failure fails LINE auto reply closed", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), init });
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    const event = lineTextEvent("สวัสดี", { mode: "active" });
+    const response = await worker.fetch(await signedLineRequest({ events: [event] }), {
+      ...BASE_ENV,
+      LINE_KENJI_MODEL_ENABLED: "false",
+      LINE_KENJI_KNOWLEDGE_ENABLED: "false",
+      ADMIN_WORKER: { fetch: async () => { throw new Error("admin unavailable"); } },
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.saved[0].runtime_control_ok, false);
+    assert.equal(payload.saved[0].runtime_line_kill, true);
+    assert.equal(payload.saved[0].runtime_all_kill, true);
+    assert.equal(payload.saved[0].replied, false);
+    assert.equal(calls.filter((call) => call.url.includes("/message/reply")).length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });

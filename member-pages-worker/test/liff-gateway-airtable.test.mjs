@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 
-import { getLiffGatewayStore, LIFF_GATEWAY_ROUTES, LiffGatewayStorageError } from "../src/liff-gateway-airtable.js";
+import { getLiffGatewayStore, LIFF_GATEWAY_ROUTES, LiffGatewayStorageError, liffGatewayAirtableTimeoutMs } from "../src/liff-gateway-airtable.js";
 
 const realFetch = globalThis.fetch;
 
@@ -34,7 +34,14 @@ function mockAirtable(handler) {
 }
 
 describe("LIFF gateway Airtable adapter", () => {
-  it("maps the internal session id to the production renewal_session_id field", async () => {
+  it("uses a bounded ten-second gateway timeout by default and clamps explicit overrides", () => {
+    assert.equal(liffGatewayAirtableTimeoutMs(env()), 10000);
+    assert.equal(liffGatewayAirtableTimeoutMs(env({ AIRTABLE_REQUEST_TIMEOUT_MS: 8500 })), 8500);
+    assert.equal(liffGatewayAirtableTimeoutMs(env({ AIRTABLE_REQUEST_TIMEOUT_MS: 100 })), 500);
+    assert.equal(liffGatewayAirtableTimeoutMs(env({ AIRTABLE_REQUEST_TIMEOUT_MS: 20000 })), 10000);
+  });
+
+  it("maps LIFF identity verification to identity_linked_at and never payment verified_at", async () => {
     const calls = mockAirtable(async () => new Response(JSON.stringify({ id: "recLiff1" }), {
       status: 200,
       headers: { "content-type": "application/json" },
@@ -44,6 +51,8 @@ describe("LIFF gateway Airtable adapter", () => {
       session_id: "0a0b0c0d-0e0f-4a0b-8c0d-0e0f0a0b0c0d",
       line_user_id: "U1234567890abcdef",
       renewal_flow_status: "identity_linked",
+      // Compatibility shape from the current LIFF KV session. The adapter must
+      // reinterpret this as identity_linked_at, not payment/renewal truth.
       verified_at: "2026-08-27T05:00:00.000Z",
       liff_intent: "signup",
       source_channel: "line_liff",
@@ -71,7 +80,7 @@ describe("LIFF gateway Airtable adapter", () => {
       renewal_session_id: "0a0b0c0d-0e0f-4a0b-8c0d-0e0f0a0b0c0d",
       line_user_id: "U1234567890abcdef",
       renewal_flow_status: "identity_linked",
-      verified_at: "2026-08-27T05:00:00.000Z",
+      identity_linked_at: "2026-08-27T05:00:00.000Z",
       liff_intent: "signup",
       source_channel: "line_liff",
       hype_decision_status: "asking_audience",
@@ -86,17 +95,42 @@ describe("LIFF gateway Airtable adapter", () => {
       promo_code: "ABC234",
       promo_status: "draft",
     });
+    assert.equal("verified_at" in calls[0].body.fields, false);
     assert.equal("session_id" in calls[0].body.fields, false);
     assert.doesNotMatch(JSON.stringify(calls[0].body), /must-not-leave-worker|Uprivate|never-store-me/);
     assert.equal(LIFF_GATEWAY_ROUTES.has("/sigil/member/membership"), true);
     assert.equal(LIFF_GATEWAY_ROUTES.has("/member/membership"), false);
   });
 
-  it("resolves the latest server-linked renewal session into the bounded membership-review contract", async () => {
+  it("never lets the member-facing gateway write official verified_at", async () => {
+    const calls = mockAirtable(async () => new Response(JSON.stringify({ id: "recLiffOfficialGuard" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    await getLiffGatewayStore(env()).upsertSession({
+      session_id: "9a9b9c9d-9e9f-4a9b-8c9d-9e9f9a9b9c9d",
+      line_user_id: "U1234567890abcdef",
+      renewal_flow_status: "renewal_verified",
+      verified_at: "2026-08-27T06:00:00.000Z",
+      liff_intent: "renew",
+      source_channel: "line_liff",
+      hype_decision_status: "decided",
+      hall_audience_context: "unknown",
+      model_visibility_mode: "hold_until_selected",
+      pricing_lane: "standard_1199",
+    });
+
+    assert.equal(calls.length, 1);
+    assert.equal("verified_at" in calls[0].body.fields, false);
+    assert.equal("identity_linked_at" in calls[0].body.fields, false);
+  });
+
+  it("resolves the latest server-linked renewal session using identity-link chronology", async () => {
     const calls = mockAirtable(async () => new Response(JSON.stringify({ records: [{ fields: {
       line_user_id: "U1234567890abcdef",
       renewal_flow_status: "renewal_pending_review",
-      verified_at: "2026-08-27T05:00:00.000Z",
+      identity_linked_at: "2026-08-27T05:00:00.000Z",
+      verified_at: "2099-01-01T00:00:00.000Z",
       member_id_canonical: "must-not-leak",
       payment_reference: "must-not-leak",
     } }] }), { status: 200, headers: { "content-type": "application/json" } }));
@@ -109,9 +143,10 @@ describe("LIFF gateway Airtable adapter", () => {
     const query = new URL(calls[0].url).searchParams;
     assert.equal(query.get("filterByFormula"), "{line_user_id}='U1234567890abcdef'");
     assert.equal(query.get("maxRecords"), "2");
-    assert.equal(query.get("sort[0][field]"), "verified_at");
+    assert.equal(query.get("sort[0][field]"), "identity_linked_at");
     assert.equal(query.get("sort[0][direction]"), "desc");
-    assert.doesNotMatch(JSON.stringify(result), /must-not-leak/);
+    assert.equal(query.get("sort[1][field]"), null);
+    assert.doesNotMatch(JSON.stringify(result), /must-not-leak|2099-01-01/);
   });
 
   it("normalizes review states without treating identity start as pending review", async () => {
@@ -133,7 +168,7 @@ describe("LIFF gateway Airtable adapter", () => {
     for (const [sourceState, expected] of cases) {
       mockAirtable(async () => Response.json({ records: [{ fields: {
         renewal_flow_status: sourceState,
-        verified_at: "2026-08-27T05:00:00.000Z",
+        identity_linked_at: "2026-08-27T05:00:00.000Z",
       } }] }));
       const result = await getLiffGatewayStore(env()).resolveMembershipReview("U1234567890abcdef");
       assert.equal(result.membership_review.state, expected, sourceState);
@@ -148,8 +183,8 @@ describe("LIFF gateway Airtable adapter", () => {
     await assert.rejects(store.resolveMembershipReview("U1234567890abcdef"), /LIFF_MEMBERSHIP_REVIEW_AMBIGUOUS/);
 
     mockAirtable(async () => Response.json({ records: [
-      { fields: { renewal_flow_status: "renewal_pending_review", verified_at: "2026-08-27T05:00:00.000Z" } },
-      { fields: { renewal_flow_status: "identity_linked", verified_at: "2026-08-27T05:00:00.000Z" } },
+      { fields: { renewal_flow_status: "renewal_pending_review", identity_linked_at: "2026-08-27T05:00:00.000Z" } },
+      { fields: { renewal_flow_status: "identity_linked", identity_linked_at: "2026-08-27T05:00:00.000Z" } },
     ] }));
     await assert.rejects(store.resolveMembershipReview("U1234567890abcdef"), /LIFF_MEMBERSHIP_REVIEW_AMBIGUOUS/);
   });
@@ -234,6 +269,7 @@ describe("LIFF gateway Airtable adapter", () => {
     assert.equal("model_visibility_mode" in calls[0].body.fields, false);
     assert.equal("line_user_id" in calls[0].body.fields, false);
     assert.equal("renewal_flow_status" in calls[0].body.fields, false);
+    assert.equal("identity_linked_at" in calls[0].body.fields, false);
     assert.equal("verified_at" in calls[0].body.fields, false);
   });
 

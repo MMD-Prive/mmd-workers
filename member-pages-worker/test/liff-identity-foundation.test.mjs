@@ -377,6 +377,36 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.deepEqual(result.payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
   });
 
+  it("resolves LIFF start with one member-profile resolver call and no duplicate status lookup", async () => {
+    const memberResolver = resolver({
+      member_exists: true,
+      mmd_member_id: "MMD-SINGLE-LOOKUP",
+      profile: {
+        display_name: "Single Lookup Member",
+        tier: "Standard",
+        membership_status: "active",
+        points: 120,
+        history_window: { from: "2025-08-10", to: "2026-08-10", timezone: "Asia/Bangkok" },
+        history: [],
+      },
+    });
+    const runtime = env({ MEMBER_STATUS_RESOLVER: memberResolver });
+    const started = await start(runtime);
+    assert.equal(started.response.status, 200);
+    assert.equal(memberResolver.calls.length, 1);
+    assert.equal(memberResolver.calls[0]._path, "/__internal/member-profile/read");
+    assert.equal(memberResolver.calls[0].purpose, "liff_member_profile_read");
+  });
+
+  it("uses the same single profile contract for an unknown LINE identity", async () => {
+    const memberResolver = resolver({ member_exists: false });
+    const runtime = env({ MEMBER_STATUS_RESOLVER: memberResolver });
+    const started = await start(runtime);
+    assert.equal(started.response.status, 200);
+    assert.equal(started.payload.data.identity_state, "pending_identity");
+    assert.equal(memberResolver.calls.length, 1);
+    assert.equal(memberResolver.calls[0]._path, "/__internal/member-profile/read");
+  });
   it("valid LINE token succeeds, sets secure session cookie, and returns no raw token", async () => {
     const { response, payload, runtime } = await start();
     const cookie = findCookie(response, "__Host-mmd_liff_session");
@@ -976,7 +1006,9 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     const { response, payload } = await request("/member/api/liff/start?t=private-signed-t", { body: { id_token: "private-id-token" } }, runtime);
     assert.equal(response.status, 200);
     assert.equal(memberResolver.calls[0].line_user_id, "Uprivate-line-sub");
-    assert.equal(memberResolver.calls[0].purpose, "liff_identity_resolution");
+    assert.equal(memberResolver.calls.length, 1);
+    assert.equal(memberResolver.calls[0]._path, "/__internal/member-profile/read");
+    assert.equal(memberResolver.calls[0].purpose, "liff_member_profile_read");
     assert.equal(memberResolver.calls[0]._resolver_secret, runtime.MEMBER_STATUS_RESOLVER_SECRET);
     assert.equal(payload.data.identity_state, "existing_member");
     assert.equal(payload.data.member_resolved, true);
