@@ -22,6 +22,10 @@ function enabled(value) {
   return ["1", "true", "yes", "on"].includes(text(value, 20).toLowerCase());
 }
 
+function normalizedModelRef(value = "") {
+  return text(value, 120).toLowerCase().normalize("NFKC").replace(/[\s._-]+/g, "");
+}
+
 function eventText(event = {}) {
   if (event?.type === "message" && event?.message?.type === "text") return text(event.message.text, 1000);
   if (event?.type === "postback") return text(event?.postback?.displayText || event?.postback?.data, 1000);
@@ -74,6 +78,36 @@ function gateDecision(currentIntent, gate) {
   };
 }
 
+function aliasCalendarDecision(currentIntent, gate) {
+  const requested = text(gate?.parsed?.model_name, 120);
+  const canonical = text(gate?.model?.working_name, 120);
+  return {
+    text: `สิทธิ์ของนายแบบที่ขอยืนยันได้แล้วครับ แต่ชื่อที่ใช้เช็ก Calendar ต้องผูกกับชื่อ Canonical ก่อน ผมจึงยังไม่บอกว่าว่างหรือไม่ว่างจากรหัส/ชื่อย่อนี้ครับ รายละเอียดวัน เวลา และสถานที่ที่ส่งมายังคงใช้ต่อได้ ไม่ต้องเริ่มใหม่ครับ`,
+    intent: currentIntent,
+    inferred_intent: currentIntent,
+    reply_source: "lv5_model_alias_calendar_guard",
+    handoff_required: true,
+    handoff_reason: "model_alias_calendar_mapping_required",
+    truth_authority: "KENJI_MODEL_ACCESS_V1",
+    truth_status: "verified_model_access_calendar_mapping_pending",
+    live_truth_used: true,
+    live_truth_verified: false,
+    operational: {
+      phase: "P3_model_alias_calendar_guard",
+      model_access_status: "match",
+      requested_model_ref: requested,
+      canonical_model_ref: canonical,
+    },
+  };
+}
+
+function needsCanonicalCalendarMapping(gate = {}) {
+  if (gate.required !== true || gate.status !== "match") return false;
+  const requested = normalizedModelRef(gate?.parsed?.model_name);
+  const canonical = normalizedModelRef(gate?.model?.working_name);
+  return Boolean(requested && canonical && requested !== canonical);
+}
+
 export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {}, ctx = null) {
   if (!(request instanceof Request) || String(request.method || "GET").toUpperCase() !== "POST") return null;
   const rawBody = await request.clone().text().catch(() => "");
@@ -99,13 +133,18 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
   if (runtime?.ok !== true || controls.all_kenji_mutations === true || controls.line_oa_auto_reply === true) return null;
 
   const modelGate = await resolveKenjiLv5LineModelGate({ env, event, currentIntent }).catch(() => ({ required: true, status: "unavailable" }));
-  let decision = modelGate.required === true && modelGate.status !== "match"
-    ? gateDecision(currentIntent, modelGate)
-    : await resolveKenjiLv5LineOperationalDecision({
-        env,
-        event,
-        currentIntent,
-      }).catch(() => null);
+  let decision;
+  if (modelGate.required === true && modelGate.status !== "match") {
+    decision = gateDecision(currentIntent, modelGate);
+  } else if (needsCanonicalCalendarMapping(modelGate)) {
+    decision = aliasCalendarDecision(currentIntent, modelGate);
+  } else {
+    decision = await resolveKenjiLv5LineOperationalDecision({
+      env,
+      event,
+      currentIntent,
+    }).catch(() => null);
+  }
   if (!decision?.text) return null;
 
   decision = {
@@ -143,3 +182,5 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
     delivery_status: Number.isInteger(delivery.status) ? delivery.status : null,
   };
 }
+
+export const KENJI_LV5_LINE_REQUEST_INTERNALS = Object.freeze({ needsCanonicalCalendarMapping });
