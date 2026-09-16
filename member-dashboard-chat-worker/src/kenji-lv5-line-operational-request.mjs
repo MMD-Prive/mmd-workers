@@ -7,6 +7,10 @@ import {
   isKenjiLv5LineOperationalCandidate,
   resolveKenjiLv5LineOperationalDecision,
 } from "./kenji-lv5-line-operational.mjs";
+import {
+  renderKenjiLv5ModelGateReply,
+  resolveKenjiLv5LineModelGate,
+} from "./kenji-lv5-line-model-gate.mjs";
 
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 
@@ -49,6 +53,27 @@ async function sendReply(env = {}, token = "", reply = "") {
   }
 }
 
+function gateDecision(currentIntent, gate) {
+  const answer = renderKenjiLv5ModelGateReply(gate);
+  if (!answer) return null;
+  return {
+    text: answer,
+    intent: currentIntent,
+    inferred_intent: currentIntent,
+    reply_source: "lv5_model_access_gate",
+    handoff_required: true,
+    handoff_reason: `model_access:${text(gate.status, 80)}`,
+    truth_authority: "KENJI_MODEL_ACCESS_V1",
+    truth_status: gate.status === "unavailable" ? "unavailable" : "verified_gate",
+    live_truth_used: true,
+    live_truth_verified: gate.status !== "unavailable",
+    operational: {
+      phase: "P3_model_visibility_gate",
+      model_access_status: text(gate.status, 80),
+    },
+  };
+}
+
 export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {}, ctx = null) {
   if (!(request instanceof Request) || String(request.method || "GET").toUpperCase() !== "POST") return null;
   const rawBody = await request.clone().text().catch(() => "");
@@ -73,12 +98,26 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
   const controls = runtime?.controls || {};
   if (runtime?.ok !== true || controls.all_kenji_mutations === true || controls.line_oa_auto_reply === true) return null;
 
-  const decision = await resolveKenjiLv5LineOperationalDecision({
-    env,
-    event,
-    currentIntent,
-  }).catch(() => null);
+  const modelGate = await resolveKenjiLv5LineModelGate({ env, event, currentIntent }).catch(() => ({ required: true, status: "unavailable" }));
+  let decision = modelGate.required === true && modelGate.status !== "match"
+    ? gateDecision(currentIntent, modelGate)
+    : await resolveKenjiLv5LineOperationalDecision({
+        env,
+        event,
+        currentIntent,
+      }).catch(() => null);
   if (!decision?.text) return null;
+
+  decision = {
+    ...decision,
+    intent: currentIntent,
+    inferred_intent: currentIntent,
+    operational: {
+      ...(decision.operational || {}),
+      operational_intent: text(modelGate?.parsed?.type || decision?.operational?.operational_intent, 80),
+      model_access_status: modelGate.required === true ? text(modelGate.status, 80) : "not_required",
+    },
+  };
 
   const delivery = await sendReply(env, replyToken(event), decision.text);
   return {
