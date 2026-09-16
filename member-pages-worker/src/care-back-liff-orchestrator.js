@@ -114,6 +114,17 @@ export async function handleCanonicalCareBackLinkWish(request, env = {}, ctx, de
   const session = await readVerifiedMemberSession(request, env);
   if (!session.ok) return session.response;
 
+  // A verified customer without a Member row can link a saved Wish for the
+  // customer wall. Coupon approval still requires the canonical member flow.
+  if (!session.memberId) {
+    return (deps.linkWishHandler || handleLinkWish)(request, {
+      ...env,
+      VERIFIED_WISH_COUPON_STORE: {
+        issueOrResume: async () => ({ state: "verification_required", code: "", approved_discount_percent: null }),
+      },
+    });
+  }
+
   const careBackStore = getCareBackStore(env);
   if (!careBackStore || typeof careBackStore.readCouponWallet !== "function") {
     return jsonError("CARE_BACK_STORAGE_NOT_CONFIGURED", "CARE BACK is temporarily unavailable.", 503);
@@ -185,12 +196,12 @@ async function readVerifiedMemberSession(request, env) {
   if (!data || Number(data.expires_at || 0) <= Date.now()) {
     return { ok: false, response: jsonError("LIFF_SESSION_INVALID", "LIFF session is invalid or expired.", 401) };
   }
-  if (!data.identity_key || data.member_exists !== true || !String(data.member_id || "").trim()) {
+  if (!data.identity_key) {
     return { ok: false, response: jsonError("CARE_BACK_MEMBER_REQUIRED", "An eligible verified MMD member is required before a CARE BACK coupon can be issued.", 409) };
   }
   return {
     ok: true,
-    memberId: String(data.member_id).trim().slice(0, 160),
+    memberId: data.member_exists === true ? String(data.member_id || "").trim().slice(0, 160) : "",
     identityHash: String(data.identity_key).trim().toLowerCase(),
   };
 }

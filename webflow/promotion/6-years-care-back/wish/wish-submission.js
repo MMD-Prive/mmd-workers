@@ -3,7 +3,7 @@
 
   const ENDPOINT = "/member/api/care-back/public-wish";
   const LINK_ENDPOINT = "/member/api/care-back/link-wish";
-  const MEMBER_URL = "/member/my-mmd";
+  const MEMBER_URL = "/my-mmd/coupons";
   const MAX_WISH = 600;
   const LINK_TOKEN_KEY = "mmd-care-back-wish-link-token";
   const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._~-]{15,127}$/;
@@ -20,7 +20,7 @@
       success: "MMD ได้รับคำอวยพรของคุณแล้วครับ",
       benefit: "คูปอง วันสมาชิก และ Points ที่ตรวจได้จริง ดูต่อใน My MMD ได้เลยครับ",
       counter: "ตัวอักษร",
-      benefitCta: "เปิด My MMD",
+      benefitCta: "ดูคูปองของฉัน",
     },
     en: {
       label: "Your wish to MMD",
@@ -34,7 +34,7 @@
       success: "MMD has received your wish.",
       benefit: "Verified coupon, membership days and Points continue in My MMD.",
       counter: "characters",
-      benefitCta: "Open My MMD",
+      benefitCta: "View my coupons",
     },
     zh: {
       label: "写给 MMD 的祝福",
@@ -48,7 +48,7 @@
       success: "MMD 已收到您的祝福。",
       benefit: "已核实的优惠券、会员天数和 Points 请在 My MMD 继续查看。",
       counter: "字符",
-      benefitCta: "打开 My MMD",
+      benefitCta: "查看我的优惠券",
     },
   });
 
@@ -184,6 +184,7 @@
         if (label) label.textContent = copy.benefitCta;
       }
 
+      root.dataset.wishSaved = "true";
       form.sent = true;
       form.textarea.disabled = true;
       form.consent.disabled = true;

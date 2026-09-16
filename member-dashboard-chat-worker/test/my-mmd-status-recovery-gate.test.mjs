@@ -23,8 +23,8 @@ test("status LIFF shell becomes auth-only and returns directly to My MMD after v
 
 test("coupon status LIFF returns to the single /coupon entry after verified start", () => {
   const request = new Request("https://www.mmdbkk.com/member/liff?intent=status&return_to=coupon");
-  assert.equal(I.statusReturnTarget(request), "/coupon");
-  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, request), "/coupon");
+  assert.equal(I.statusReturnTarget(request), "/my-mmd/coupons");
+  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, request), "/my-mmd/coupons");
 });
 
 test("TMIB status LIFF returns to the originating story or checkout after verified start", () => {
@@ -66,8 +66,8 @@ test("LINE liff.state carries the coupon return target without allowing arbitrar
   const couponState = encodeURIComponent("/member/liff?intent=status&return_to=coupon");
   const couponRequest = new Request(`https://www.mmdbkk.com/member/liff?liff.state=${couponState}`);
   assert.equal(I.isStatusLiffShellRequest(couponRequest), true);
-  assert.equal(I.statusReturnTarget(couponRequest), "/coupon");
-  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, couponRequest), "/coupon");
+  assert.equal(I.statusReturnTarget(couponRequest), "/my-mmd/coupons");
+  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, couponRequest), "/my-mmd/coupons");
 
   const hostileState = encodeURIComponent("/member/liff?intent=status&return_to=https://evil.example/");
   const hostileRequest = new Request(`https://www.mmdbkk.com/member/liff?liff.state=${hostileState}`);
@@ -105,7 +105,7 @@ test("CARE BACK LIFF bridge carries only a bounded opaque Wish token and returns
   assert.match(output, /mmd-care-back-wish-liff-bridge/);
   assert.match(output, /mmd:liff:member-ready/);
   assert.match(output, /care-back\/link-wish/);
-  assert.match(output, /\/coupon\?care_back=linked/);
+  assert.match(output, /\/my-mmd\/coupons\?care_back=linked/);
   assert.doesNotMatch(output, /\/my-mmd\/\?view=care/);
   assert.doesNotMatch(output, /member_id|approved_discount_percent|line_user_id/);
 });

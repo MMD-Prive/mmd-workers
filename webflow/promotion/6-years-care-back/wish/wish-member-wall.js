@@ -10,6 +10,7 @@
     consent.className = 'wish-public-consent';
     var check = document.createElement('input');
     check.type = 'checkbox';
+    check.required = true;
     check.setAttribute('data-public-consent', '');
     var label = document.createElement('span');
     consent.append(check, label);
@@ -33,11 +34,12 @@
     var coupon = document.createElement('a');
     coupon.className = 'wish-coupon-link';
     coupon.href = '/my-mmd/coupons';
-    if (success) success.append(coupon);
+    // Reuse the existing success CTA; do not duplicate the destination.
+    if (success && !root.querySelector('[data-dashboard]')) success.append(coupon);
     var copy = {
-      th: { consent: 'อนุญาตให้เผยแพร่คำอวยพรนี้ด้านล่างแบบไม่แสดงชื่อ หลัง MMD ยืนยันว่าเป็นสมาชิกแล้ว (เลือกได้)', title: 'คำอวยพรจากสมาชิก', note: 'ขอบคุณทุกข้อความจากสมาชิกที่อนุญาตให้แบ่งปันไว้ตรงนี้ครับ', loading: 'กำลังอ่านคำอวยพร…', empty: 'คำอวยพรที่สมาชิกอนุญาตให้เผยแพร่จะแสดงตรงนี้ครับ', error: 'ตอนนี้ยังโหลดคำอวยพรไม่ได้ครับ', retry: 'ลองอีกครั้ง', back: 'กลับไปที่ MY MMD', coupon: 'ดูคูปองของฉัน' },
-      en: { consent: 'Allow this wish to appear below anonymously after MMD verifies my membership (optional)', title: 'Wishes from our members', note: 'Thank you to the members who chose to share their words here.', loading: 'Loading wishes…', empty: 'Wishes shared with permission by verified members will appear here.', error: 'Wishes could not be loaded right now.', retry: 'Try again', back: 'Back to MY MMD', coupon: 'View my coupons' },
-      zh: { consent: 'MMD 核实会员身份后，允许在下方匿名公开这条祝福（可选）', title: '来自会员的祝福', note: '感谢每位愿意在这里分享祝福的会员。', loading: '正在加载祝福…', empty: '经会员授权公开的祝福将显示在这里。', error: '暂时无法加载祝福。', retry: '重试', back: '返回 MY MMD', coupon: '查看我的优惠券' }
+      th: { consent: 'ยืนยันส่งคำอวยพร และให้แสดงด้านล่างแบบไม่ระบุชื่อเมื่อ MMD ยืนยันว่าเคยใช้บริการแล้ว หากยังไม่เคยใช้บริการ MMD จะเก็บข้อความไว้ก่อน', title: 'คำอวยพรจากลูกค้าของเรา', note: 'ขอบคุณทุกคำอวยพรจากลูกค้าที่เคยใช้บริการกับ MMD ครับ', loading: 'กำลังอ่านคำอวยพร…', empty: 'คำอวยพรจากลูกค้าที่ตรวจสอบประวัติบริการแล้วจะแสดงตรงนี้ครับ', error: 'ตอนนี้ยังโหลดคำอวยพรไม่ได้ครับ', retry: 'ลองอีกครั้ง', back: 'กลับไปที่ MY MMD', coupon: 'ดูคูปองของฉัน' },
+      en: { consent: 'Send my wish and display it below anonymously once MMD verifies my previous service. Otherwise, keep my wish in the system for now.', title: 'Wishes from our customers', note: 'Thank you to the customers who have spent time with MMD.', loading: 'Loading wishes…', empty: 'Wishes from customers with verified service history will appear here.', error: 'Wishes could not be loaded right now.', retry: 'Try again', back: 'Back to MY MMD', coupon: 'View my coupons' },
+      zh: { consent: '确认发送祝福；MMD 核实我曾使用服务后可在下方匿名展示，否则先在系统内保存。', title: '来自客户的祝福', note: '感谢曾使用 MMD 服务的每位客户送上的祝福。', loading: '正在加载祝福…', empty: '服务记录核实后的客户祝福将显示在这里。', error: '暂时无法加载祝福。', retry: '重试', back: '返回 MY MMD', coupon: '查看我的优惠券' }
     };
     var state = 'loading', loading = false, refreshPending = false;
     function translate() {
@@ -52,9 +54,9 @@
       status.textContent = c[state] || '';
       status.hidden = state === 'ready';
       coupon.textContent = c.coupon;
-      root.dataset.dashboardUrl = '/my-mmd/';
+      root.dataset.dashboardUrl = '/my-mmd/coupons';
       var dash = root.querySelector('[data-dashboard]');
-      if (dash) { dash.href = '/my-mmd/'; dash.textContent = c.back; dash.setAttribute('aria-label', c.back); }
+      if (dash) { dash.href = root.dataset.wishSaved === 'true' ? '/my-mmd/coupons' : '#wish-flow'; dash.textContent = c.coupon; dash.setAttribute('aria-label', c.coupon); }
     }
     async function refresh() {
       if (loading) { refreshPending = true; return; }

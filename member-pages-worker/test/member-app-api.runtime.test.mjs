@@ -41,6 +41,28 @@ test("recognizes only the bounded My MMD app routes", () => {
   assert.equal(isMemberAppApiPath("https://mmdbkk.com/api/member/dashboard"), false);
 });
 
+test("coupon artwork variants require verified backend tiers and do not grant membership access", async () => {
+  for (const [value, variant] of [["Public Member", "public"], ["VIP", "vip"], ["SVIP", "svip"], ["Black Card", "black_card"], ["Elite", "elite"], ["Red Card", "red_card"], ["Standard", "standard"], ["Premium", null]]) {
+    for (const status of ["verified", "unresolved"]) {
+      const upstream = delegate({ "/api/member/dashboard": { ok: true, data: { member: { tier: { value, status } } } } });
+      const response = await handleMemberAppApi(request("/api/member/app/dashboard"), {}, upstream);
+      const payload = await response.json();
+      assert.equal(payload.membership.couponCardVariant, status === "verified" ? variant : null);
+      assert.equal(payload.membership.couponCardVerified, status === "verified" && Boolean(variant));
+      assert.equal(payload.membership.access, "checking");
+    }
+  }
+});
+
+test("Coupons exposes a backend Wish requirement without an approved discount", async () => {
+  const upstream = delegate({ "/member/api/liff/care-back/wallet": { ok: true, wallet: { status: "wish_required" } } });
+  const response = await handleMemberAppApi(request("/api/member/app/coupons"), {}, upstream);
+  const [coupon] = await response.json();
+  assert.equal(coupon.wishRequired, true);
+  assert.equal(coupon.approvedDiscountPercent, null);
+  assert.equal(coupon.state, "checking");
+});
+
 test("dashboard adapter preserves verified display facts but never infers actual access", async () => {
   const upstream = delegate({
     "/api/member/dashboard": {

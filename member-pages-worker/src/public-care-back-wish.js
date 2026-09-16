@@ -1,3 +1,4 @@
+import { readClientBackedHistoryResult } from "./member-app-client-history.js";
 import { PUBLIC_JSON_BODY_MAX_BYTES, readBoundedJsonObject } from "./bounded-json.js";
 import { addCalendarMonths, deriveClaimAndCode, getCareBackStore } from "./care-back-claim-store.js";
 
@@ -63,16 +64,14 @@ export async function handlePublicWishFeed(request, env = {}) {
     const wishes = records.flatMap((record) => {
       const fields = record?.fields || {};
       const payload = safeObjectJson(fields.payload_json);
-      const links = fields["Campaign Claim"];
       const text = normalizeText(fields.wish_text, MAX_WISH);
       if (fields.campaign_id !== CAMPAIGN_ID || fields.wish_status !== "completed"
         || payload.public_display_consent !== true
         || payload.public_display_consent_version !== "wish-wall-v1"
         || !safeTimestamp(payload.public_display_consented_at)
-        || payload.public_display_member_verified !== true
-        || !safeTimestamp(payload.public_display_member_verified_at)
+        || payload.public_display_customer_verified !== true
+        || !safeTimestamp(payload.public_display_customer_verified_at)
         || payload.wish_kind !== "verified_identity_linked"
-        || !Array.isArray(links) || links.length !== 1 || !validAirtableRecordId(links[0])
         || !text || !safeTimestamp(fields.submitted_at)) return [];
       return [{ text, submitted_at: safeTimestamp(fields.submitted_at) }];
     }).slice(0, 24);
@@ -164,6 +163,11 @@ export async function handleLinkWish(request, env = {}) {
   const hasCanonicalClaim = Boolean(data.member_exists && data.member_id && claimId && claimRecordId);
   const linkTokenHash = await publicDigest(`public-wish-link:${linkToken}`);
   const verifiedCustomerRefHash = await keyedDigest(env, `wish-customer:${data.identity_key}`);
+  // Publication is based on completed service history, never membership/tier.
+  const history = await readClientBackedHistoryResult(env, data.line_user_id, new Date(), { requireLinkedClient: true });
+  const customerVerified = history.state === "resolved"
+    && history.summary.verifiedServiceCount > 0
+    && !["blocked", "suspended", "revoked"].includes(String(data.member_profile?.membership_status || "").toLowerCase());
 
   try {
     const wish = await store.linkVerified({
@@ -171,6 +175,7 @@ export async function handleLinkWish(request, env = {}) {
       claimId: hasCanonicalClaim ? claimId : "",
       claimRecordId: hasCanonicalClaim ? claimRecordId : "",
       verifiedCustomerRefHash,
+      customerVerified,
       memberVerified: hasCanonicalClaim && data.member_exists === true
         && ["active", "grace", "expired"].includes(String(data.member_profile?.membership_status || "").trim().toLowerCase()),
       now: new Date().toISOString(),
@@ -270,6 +275,9 @@ class AirtablePublicWishStore {
     if (wish.claim_record_id && input.claimRecordId && wish.claim_record_id !== input.claimRecordId) {
       throw new PublicWishError("PUBLIC_WISH_ALREADY_LINKED_CONFLICT");
     }
+    if (wish.payload.linked_customer_ref_hash && wish.payload.linked_customer_ref_hash !== input.verifiedCustomerRefHash) {
+      throw new PublicWishError("PUBLIC_WISH_ALREADY_LINKED_CONFLICT");
+    }
     const linkedClaim = input.claimRecordId ? { "Campaign Claim": [input.claimRecordId] } : {};
     const record = await this.write("PATCH", {
       recordId: wish.record_id,
@@ -282,6 +290,10 @@ class AirtablePublicWishStore {
         payload_json: JSON.stringify({
           ...wish.payload,
           schema_version: 4,
+          wish_link_token_hash: input.linkTokenHash,
+          linked_customer_ref_hash: input.verifiedCustomerRefHash,
+          public_display_customer_verified: input.customerVerified === true,
+          public_display_customer_verified_at: input.customerVerified === true ? input.now : null,
           public_display_member_verified: input.memberVerified === true,
           public_display_member_verified_at: input.memberVerified === true ? input.now : null,
           campaign_id: CAMPAIGN_ID,
@@ -296,7 +308,7 @@ class AirtablePublicWishStore {
   }
 
   async listPublicCandidates() {
-    return this.list(`AND({campaign_id}=${formulaString(CAMPAIGN_ID)},{wish_status}='completed',{Campaign Claim}!='')`, 100, true);
+    return this.list(`AND({campaign_id}=${formulaString(CAMPAIGN_ID)},{wish_status}='completed',FIND('"public_display_customer_verified":true',{payload_json}&''))`, 100, true);
   }
 
   async findByRequestId(requestId) {
@@ -306,7 +318,7 @@ class AirtablePublicWishStore {
   }
 
   async findByLinkTokenHash(hash) {
-    const records = await this.list(`AND({campaign_id}=${formulaString(CAMPAIGN_ID)},{verified_customer_ref_hash}=${formulaString(hash)})`, 2);
+    const records = await this.list(`AND({campaign_id}=${formulaString(CAMPAIGN_ID)},OR({verified_customer_ref_hash}=${formulaString(hash)},FIND(${formulaString('"wish_link_token_hash":"' + hash + '"')},{payload_json}&'')))`, 2);
     if (records.length > 1) throw new PublicWishError("PUBLIC_WISH_CONFLICT");
     return records.length ? sanitizePublicWish(records[0]) : null;
   }
@@ -452,7 +464,7 @@ function sanitizePublicWish(record) {
     wish_option: String(fields.wish_option || "").slice(0, 120),
     wish_status: String(fields.wish_status || ""),
     idempotency_key: String(fields.idempotency_key || ""),
-    link_token_hash: String(fields.verified_customer_ref_hash || "").toLowerCase(),
+    link_token_hash: String(safeObjectJson(fields.payload_json).wish_link_token_hash || fields.verified_customer_ref_hash || "").toLowerCase(),
     submitted_at: String(fields.submitted_at || ""),
   };
   if (!wish.record_id || !/^wish_[a-f0-9]{32}$/i.test(wish.wish_id) || wish.wish_status !== "completed"
