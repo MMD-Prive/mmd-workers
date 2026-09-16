@@ -800,3 +800,21 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/payment-issuer-diagnostic"
 zone_name = "mmdbkk.com"
+
+# Private media review: Worker-owned, credential-bound admin only.
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/mmd-review*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/private-media*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/mmd-review*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/private-media*"
+zone_name = "mmdbkk.com"

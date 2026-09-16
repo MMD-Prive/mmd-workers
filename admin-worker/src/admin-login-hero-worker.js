@@ -1,3 +1,4 @@
+import { isPrivateMediaReviewRequest, handlePrivateMediaReview } from './private-media-review.js';
 import worker from "./job-orchestrator-owner-ops-wrapper.js";
 import { handleModelConsoleAudit, isModelConsoleAuditRequest } from "./model-console-audit.js";
 import { kickLineOfcConsoleContactBackfill } from "./line-ofc-console-backfill.js";
@@ -134,6 +135,7 @@ coreWorker.fetch(request, env, ctx)
 
 export default {
   async fetch(request, env, ctx) {
+    if (isPrivateMediaReviewRequest(request)) return handlePrivateMediaReview(request, env, ctx);
     scheduleLineOfcContactBackfill(env, ctx);
     if (isModelConsoleAuditRequest(request)) return handleModelConsoleAudit(request, env);
     let privateModelRequest = null;
