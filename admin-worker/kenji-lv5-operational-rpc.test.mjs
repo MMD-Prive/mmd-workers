@@ -4,12 +4,13 @@ import {
   handleKenjiLv5OperationalRpc,
   isKenjiLv5OperationalRpcRequest,
   KENJI_LV5_OPERATIONAL_RPC_PATH,
+  KENJI_LV5_LIVE_RPC_PATH,
 } from "./src/kenji-lv5-operational-rpc.js";
 
 const ENV = { INTERNAL_TOKEN: "secret" };
 
 function request(body = {}, overrides = {}) {
-  return new Request(`https://admin-worker.local${KENJI_LV5_OPERATIONAL_RPC_PATH}`, {
+  return new Request(`https://admin-worker.local${overrides.path || KENJI_LV5_OPERATIONAL_RPC_PATH}`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${overrides.token || "secret"}`,
@@ -21,9 +22,11 @@ function request(body = {}, overrides = {}) {
   });
 }
 
-test("route is POST only", () => {
+test("P1 and P2 routes are POST only", () => {
   assert.equal(isKenjiLv5OperationalRpcRequest(KENJI_LV5_OPERATIONAL_RPC_PATH, "POST"), true);
+  assert.equal(isKenjiLv5OperationalRpcRequest(KENJI_LV5_LIVE_RPC_PATH, "POST"), true);
   assert.equal(isKenjiLv5OperationalRpcRequest(KENJI_LV5_OPERATIONAL_RPC_PATH, "GET"), false);
+  assert.equal(isKenjiLv5OperationalRpcRequest(KENJI_LV5_LIVE_RPC_PATH, "GET"), false);
 });
 
 test("RPC rejects missing service auth without disclosing route", async () => {
@@ -39,6 +42,16 @@ test("RPC rejects missing service auth without disclosing route", async () => {
 test("RPC rejects wrong caller", async () => {
   const response = await handleKenjiLv5OperationalRpc(request({}, { caller: "browser" }), ENV);
   assert.equal(response.status, 404);
+});
+
+test("P2 live RPC keeps the same service-only auth boundary", async () => {
+  const response = await handleKenjiLv5OperationalRpc(new Request(`https://admin-worker.local${KENJI_LV5_LIVE_RPC_PATH}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  }), ENV);
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), { ok: false, error: "not_found" });
 });
 
 test("RPC returns LV5 orchestration context for trusted service caller", async () => {

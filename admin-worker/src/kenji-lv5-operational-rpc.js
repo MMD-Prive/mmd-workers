@@ -3,8 +3,13 @@ import {
   buildKenjiLv5CustomerReplyStrategy,
   KENJI_LV5_SCHEMA,
 } from "../../shared/kenji-lv5-operational-concierge.mjs";
+import {
+  KENJI_LV5_LIVE_CONTEXT_SCHEMA,
+  resolveKenjiLv5LiveContext,
+} from "./kenji-lv5-live-context.js";
 
 export const KENJI_LV5_OPERATIONAL_RPC_PATH = "/v1/internal/kenji/operational-context";
+export const KENJI_LV5_LIVE_RPC_PATH = "/v1/internal/kenji/operational-context/live";
 
 const ALLOWED_CALLERS = new Set([
   "member-dashboard-chat-worker",
@@ -13,7 +18,9 @@ const ALLOWED_CALLERS = new Set([
 ]);
 
 export function isKenjiLv5OperationalRpcRequest(path, method = "") {
-  return normalizePath(path) === KENJI_LV5_OPERATIONAL_RPC_PATH && String(method || "").toUpperCase() === "POST";
+  const normalized = normalizePath(path);
+  return [KENJI_LV5_OPERATIONAL_RPC_PATH, KENJI_LV5_LIVE_RPC_PATH].includes(normalized)
+    && String(method || "").toUpperCase() === "POST";
 }
 
 export async function handleKenjiLv5OperationalRpc(request, env = {}) {
@@ -22,6 +29,19 @@ export async function handleKenjiLv5OperationalRpc(request, env = {}) {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return json({ ok: false, error: "invalid_json" }, 400);
+  }
+
+  const path = normalizePath(new URL(request.url).pathname);
+  if (path === KENJI_LV5_LIVE_RPC_PATH) {
+    const context = await resolveKenjiLv5LiveContext(env, body);
+    return json({
+      ...context,
+      transport: {
+        mode: "service_binding_only_live_fanin",
+        caller: clean(request.headers.get("x-mmd-service-binding"), 120),
+      },
+      schema: KENJI_LV5_LIVE_CONTEXT_SCHEMA,
+    });
   }
 
   const context = buildKenjiLv5OperationalContext({
