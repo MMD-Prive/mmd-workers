@@ -1,6 +1,6 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
-export const PER_RENAME_CLIENT_SEARCH_VERSION = "per-rename-client-search-v1";
+export const PER_RENAME_CLIENT_SEARCH_VERSION = "per-rename-client-search-v2-multi-candidate";
 export const DEFAULT_PRE_SESSION_CLIENT_INDEX_TABLE = "tblwn6I9VWie5d7Ui";
 const DEFAULT_CLIENTS_TABLE = "tblVv58TCbwh5j1fS";
 
@@ -45,6 +45,26 @@ export async function enrichLineageWithPerRename(request, response, env = {}) {
   try {
     const resolved = await resolvePerRenameAlias(env, query);
     if (resolved.state === "none") return withSearchHeader(response, "none");
+
+    if (resolved.state === "multiple") {
+      const headers = lineageHeaders(response.headers, "multiple");
+      return new Response(JSON.stringify({
+        ...body,
+        records: resolved.records,
+        items: resolved.records,
+        count: resolved.records.length,
+        manual_fallback: false,
+        per_rename_alias: true,
+        per_rename_alias_multiple: true,
+        per_rename_search_version: PER_RENAME_CLIENT_SEARCH_VERSION,
+        lineage_warnings: unique([
+          ...(Array.isArray(body.lineage_warnings)
+            ? body.lineage_warnings.filter((value) => value !== "manual_public_only_pending_reconcile")
+            : []),
+          "per_rename_multiple_canonical_clients_operator_selection_required",
+        ]),
+      }), { status: response.status, statusText: response.statusText, headers });
+    }
 
     if (resolved.state === "ambiguous") {
       const headers = lineageHeaders(response.headers, "ambiguous");
@@ -106,9 +126,46 @@ export async function resolvePerRenameAlias(env, query) {
   const linkedIds = unique(best.flatMap((match) => match.client_ids));
 
   if (!linkedIds.length) return { state: "none" };
+
   if (linkedIds.length !== 1) {
+    // If the same exact Per Rename resolves to more than one canonical Client,
+    // fail closed. A broad search, however, should return every canonical choice
+    // so the operator can select the intended client instead of seeing a fake
+    // name-only REVIEW result.
+    if (bestQuality >= 300) {
+      return {
+        state: "ambiguous",
+        client_ids: linkedIds,
+        matched_names: unique(best.map((match) => match.per_name)),
+        reason: "exact_per_rename_collision",
+      };
+    }
+
+    const records = [];
+    for (const clientId of linkedIds) {
+      const sameClient = best.filter((match) => match.client_ids.includes(clientId));
+      const chosen = sameClient.sort(compareMatches)[0];
+      const client = await fetchCanonicalClient(env, clientId);
+      if (!client?.id || !chosen) {
+        return {
+          state: "ambiguous",
+          client_ids: linkedIds,
+          matched_names: unique(best.map((match) => match.per_name)),
+          reason: "canonical_fetch_incomplete",
+        };
+      }
+      records.push(toCanonicalPerRenameRecord(client, chosen, query));
+    }
+
+    records.sort((a, b) => {
+      const byName = String(a.client_name || "").localeCompare(String(b.client_name || ""), "th");
+      if (byName) return byName;
+      return String(a.client_id || "").localeCompare(String(b.client_id || ""));
+    });
+
     return {
-      state: "ambiguous",
+      state: "multiple",
+      records,
       client_ids: linkedIds,
       matched_names: unique(best.map((match) => match.per_name)),
     };
