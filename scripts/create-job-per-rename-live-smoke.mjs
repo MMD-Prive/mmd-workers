@@ -68,20 +68,22 @@ const rows = (await readRows()).filter((record) => {
 const groups = new Map();
 for (const record of rows) {
   const f = record.fields || {};
-  const firstToken = norm(f.preferred_name).split(" ")[0];
+  const preferred = norm(f.preferred_name);
+  const firstToken = preferred.split(" ")[0];
   if (!firstToken || firstToken.length < 2) continue;
   const clientId = linkedIds(f.linked_client)[0];
-  const entry = groups.get(firstToken) || { rows: 0, clients: new Set() };
+  const entry = groups.get(firstToken) || { rows: 0, clients: new Set(), hasExactPerName: false };
   entry.rows += 1;
   entry.clients.add(clientId);
+  entry.hasExactPerName ||= preferred === firstToken;
   groups.set(firstToken, entry);
 }
 
 const candidate = [...groups.entries()]
-  .filter(([, value]) => value.clients.size >= 2)
+  .filter(([, value]) => value.clients.size >= 2 && !value.hasExactPerName)
   .sort((a, b) => a[1].clients.size - b[1].clients.size || a[1].rows - b[1].rows)[0];
 
-if (!candidate) throw new Error("no_multi_client_per_rename_canary_available");
+if (!candidate) throw new Error("no_broad_multi_client_per_rename_canary_available");
 
 const [query, metadata] = candidate;
 fs.writeFileSync(outPath, query, { mode: 0o600 });
@@ -96,9 +98,14 @@ try {
   }, query);
   const resolvedCount = Array.isArray(resolved?.records) ? resolved.records.length : resolved?.record ? 1 : 0;
   console.log(`Direct Per Rename resolver state=${clean(resolved?.state) || "missing"} count=${resolvedCount}`);
+  if (resolved?.state !== "multiple" || resolvedCount < 2) {
+    throw new Error("broad_per_rename_canary_not_multiple");
+  }
 } catch (error) {
   const raw = clean(error?.message || error);
-  const safe = /^airtable_[A-Za-z0-9]+_\d{3}$/.test(raw) || raw === "per_rename_storage_not_ready"
+  const safe = /^airtable_[A-Za-z0-9]+_\d{3}$/.test(raw)
+    || raw === "per_rename_storage_not_ready"
+    || raw === "broad_per_rename_canary_not_multiple"
     ? raw
     : "per_rename_resolver_error";
   console.error(`Direct Per Rename resolver failed: ${safe}`);
