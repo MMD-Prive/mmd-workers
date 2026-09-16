@@ -45,6 +45,8 @@ jobs:
           const fs = require('node:fs');
           fs.writeFileSync(process.argv[2], JSON.stringify({
             session_id: 'sess_mu2hpin5_82725a70191248b2',
+            operational_create_mode: 'reconcile_held',
+            reconcile_held: true,
             client_record_id: 'recAcTMLy1teHWMp1',
             model_record_id: 'rec25Xt7QODd763vI',
             client_name: 'ก้อง - SVIP -',
@@ -72,7 +74,7 @@ jobs:
             -H "Origin: $origin" \
             -H "Content-Type: application/json" \
             --data-binary @"$payload" \
-            "$origin/v1/admin/job/reconcile-held")"
+            "$origin/v1/admin/job/create")"
 
           echo "reconcile HTTP $code"
           node - "$body" "$code" <<'NODE'
