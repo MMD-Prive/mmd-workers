@@ -78,6 +78,7 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/admin/dashboard",
   "/internal/admin/applications",
   "/internal/admin/model-applications",
+  "/internal/admin/mmd-review",
   MMS_PARTNER_PAGE_PATH,
   "/internal/admin/payments",
   "/internal/admin/jobs/create-session",
