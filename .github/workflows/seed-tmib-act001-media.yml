@@ -1,4 +1,4 @@
-name: Seed TMIB ACT 001 protected media
+name: Validate TMIB ACT 001 private media seed
 
 on:
   workflow_dispatch:
@@ -6,67 +6,40 @@ on:
     branches:
       - main
     paths:
-      - "member-pages-worker/src/tmib-story-access.js"
+      - "member-pages-worker/src/tmib-media-lazy-seed.js"
+      - "member-pages-worker/src/index.js"
       - ".github/workflows/seed-tmib-act001-media.yml"
 
 concurrency:
-  group: seed-tmib-act001-media-production
+  group: validate-tmib-act001-private-media
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  seed-and-verify:
+  validate-lazy-seed:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
-      NO_COLOR: "1"
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Seed protected frames 04-20 into private R2
+      - name: Validate protected media source map and runtime syntax
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/tmib-act001"
-          declare -A urls=(
-            [04]='https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaa0ee360f89a9ca5e0c0b7_Act001-04.webp'
-            [05]='https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaa0ee48e9802504a630aac_Act001-05.webp'
-            [06]='https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaa0ee55311c16ac0fd3717_Act001-06.webp'
-            [07]='https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaa0ee55311c16ac0fd3711_Act001-07.webp'
-            [08]='https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaa0ee4c9788e452705189e_Act001-08.webp'
-            [09]='https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaa0ee398c8be971e720527_Act001-09.webp'
-            [10]='https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaa0ee522ca8de561dee2f9_Act001-10.webp'
-            [11]='https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaa0ee301ac3c9c1ef9bd45_Act001-11.webp'
-            [12]='https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaa0ee45ce4a1e5863d6fae_Act001-12.webp'
-            [13]='https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaa0ee4988226d9712991b1_Act001-13.webp'
-            [14]='https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaa0ee38f0ad73f5be6a05b_Act001-14.webp'
-            [15]='https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaa0ee3011df9823caa37b1_Act001-15.webp'
-            [16]='https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaa0ee49a50844e72f343f9_Act001-16.webp'
-            [17]='https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaa0ee31d1339ae7916463a_Act001-17.webp'
-            [18]='https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaa0ee3937ce85921f52645_Act001-018.webp'
-            [19]='https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaa0ee30e7b5bff345ae730_Act001-019.webp'
-            [20]='https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaa0ee3924b5654536c39d9_Act001-020.webp'
-          )
+          node --check member-pages-worker/src/tmib-media-lazy-seed.js
+          node --check member-pages-worker/src/index.js
+          test "$(grep -c 'cdn.prod.website-files.com' member-pages-worker/src/tmib-media-lazy-seed.js)" -eq 17
           for frame in $(seq -w 4 20); do
-            file="$RUNNER_TEMP/tmib-act001/${frame}.webp"
-            curl --fail --silent --show-error --location --retry 3 --output "$file" "${urls[$frame]}"
-            test -s "$file"
-            npx --yes wrangler@4 r2 object put "mmd-models/tmib/act-001/${frame}.webp" --file "$file" --content-type image/webp --remote
+            grep -q "\"$frame\"" member-pages-worker/src/tmib-media-lazy-seed.js
           done
+          grep -q 'handleTmibStoryAccess(request, env)' member-pages-worker/src/tmib-media-lazy-seed.js
+          grep -q 'TMIB_MEDIA_NOT_SEEDED' member-pages-worker/src/tmib-media-lazy-seed.js
+          grep -q 'MMD_MODEL_ASSETS' member-pages-worker/src/tmib-media-lazy-seed.js
+          grep -q 'bucket.put' member-pages-worker/src/tmib-media-lazy-seed.js
 
-      - name: Verify all protected R2 objects
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/tmib-act001-verify"
-          for frame in $(seq -w 4 20); do
-            out="$RUNNER_TEMP/tmib-act001-verify/${frame}.webp"
-            npx --yes wrangler@4 r2 object get "mmd-models/tmib/act-001/${frame}.webp" --file "$out" --remote
-            test -s "$out"
-          done
-          echo "TMIB ACT 001 protected frames 04-20 seeded and verified in private R2"
+      - name: Dry-run member-pages Worker
+        working-directory: member-pages-worker
+        run: npx --yes wrangler@4 deploy --dry-run --keep-vars
