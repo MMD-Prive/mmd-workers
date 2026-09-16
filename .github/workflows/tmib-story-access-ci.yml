@@ -4,10 +4,12 @@ on:
   pull_request:
     paths:
       - "member-pages-worker/src/tmib-story-access.js"
+      - "member-pages-worker/src/tmib-act001-content.js"
       - "member-pages-worker/src/index.js"
       - "member-pages-worker/test/tmib-story-access.test.mjs"
       - "member-pages-worker/test/tmib-story-access-route-contract.test.mjs"
       - "member-pages-worker/test/tmib-story-membership-matrix.test.mjs"
+      - "member-pages-worker/test/tmib-act001-content.test.mjs"
       - "member-pages-worker/wrangler.toml"
       - ".github/workflows/tmib-story-access-ci.yml"
   push:
@@ -15,10 +17,12 @@ on:
       - main
     paths:
       - "member-pages-worker/src/tmib-story-access.js"
+      - "member-pages-worker/src/tmib-act001-content.js"
       - "member-pages-worker/src/index.js"
       - "member-pages-worker/test/tmib-story-access.test.mjs"
       - "member-pages-worker/test/tmib-story-access-route-contract.test.mjs"
       - "member-pages-worker/test/tmib-story-membership-matrix.test.mjs"
+      - "member-pages-worker/test/tmib-act001-content.test.mjs"
       - "member-pages-worker/wrangler.toml"
       - ".github/workflows/tmib-story-access-ci.yml"
 
@@ -39,9 +43,10 @@ jobs:
       - name: Syntax check TMIB gate
         run: |
           node --check member-pages-worker/src/tmib-story-access.js
+          node --check member-pages-worker/src/tmib-act001-content.js
           node --check member-pages-worker/src/index.js
       - name: Test TMIB story access
-        run: node --experimental-global-webcrypto --test member-pages-worker/test/tmib-story-access.test.mjs member-pages-worker/test/tmib-story-access-route-contract.test.mjs member-pages-worker/test/tmib-story-membership-matrix.test.mjs
+        run: node --experimental-global-webcrypto --test member-pages-worker/test/tmib-story-access.test.mjs member-pages-worker/test/tmib-story-access-route-contract.test.mjs member-pages-worker/test/tmib-story-membership-matrix.test.mjs member-pages-worker/test/tmib-act001-content.test.mjs
       - name: Dry-run member pages worker
         working-directory: member-pages-worker
         run: npx --yes wrangler@4 deploy --dry-run --keep-vars
