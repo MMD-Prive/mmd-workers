@@ -1,6 +1,6 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
-export const PER_RENAME_CLIENT_SEARCH_VERSION = "per-rename-client-search-v3-local-scan";
+export const PER_RENAME_CLIENT_SEARCH_VERSION = "per-rename-client-search-v4-client-record-fetch";
 export const DEFAULT_PRE_SESSION_CLIENT_INDEX_TABLE = "tblwn6I9VWie5d7Ui";
 const DEFAULT_CLIENTS_TABLE = "tblVv58TCbwh5j1fS";
 const PER_RENAME_INDEX_SCAN_LIMIT = 2000;
@@ -18,20 +18,6 @@ const INDEX_FIELDS = [
   "session_lookup_status",
   "confidence",
   "current_rights_source",
-];
-
-const CLIENT_FIELDS = [
-  "Client Name",
-  "Client Name (Display)",
-  "mmd_client_name",
-  "nickname",
-  "username",
-  "line_user_id",
-  "line_display_name",
-  "telegram_username",
-  "email",
-  "Contact Email",
-  "Phone Number",
 ];
 
 export async function enrichLineageWithPerRename(request, response, env = {}) {
@@ -279,9 +265,7 @@ function authoritativeMatch(record, query) {
 
 async function fetchCanonicalClient(env, clientId) {
   const table = clean(env.AIRTABLE_TABLE_CLIENTS_ID || env.AIRTABLE_TABLE_CLIENTS) || DEFAULT_CLIENTS_TABLE;
-  const params = new URLSearchParams();
-  for (const field of CLIENT_FIELDS) params.append("fields[]", field);
-  const response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}/${encodeURIComponent(clientId)}?${params.toString()}`, {
+  const response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}/${encodeURIComponent(clientId)}`, {
     headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}`, Accept: "application/json" },
   });
   if (response.status === 404) return null;
