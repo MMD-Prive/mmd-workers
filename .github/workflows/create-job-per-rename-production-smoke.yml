@@ -1,0 +1,123 @@
+name: Create Job Per Rename Production Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "admin-worker/src/per-rename-client-search.js"
+      - "admin-worker/src/admin-login-hero-worker.js"
+      - "scripts/create-job-per-rename-live-smoke.mjs"
+      - ".github/workflows/create-job-per-rename-production-smoke.yml"
+  workflow_run:
+    workflows:
+      - Deploy admin-worker
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate smoke helper
+        run: node --check scripts/create-job-per-rename-live-smoke.mjs
+
+  production-smoke:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+      AIRTABLE_TABLE_PRE_SESSION_CLIENT_INDEX_ID: tblwn6I9VWie5d7Ui
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Prepare privacy-safe multi-client Per Rename canary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${AIRTABLE_API_KEY:-}"
+          node scripts/create-job-per-rename-live-smoke.mjs /tmp/mmd-per-rename-canary.txt
+          test -s /tmp/mmd-per-rename-canary.txt
+
+      - name: Verify authenticated Create Job canonical lookup
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ADMIN_SMOKE_CREDENTIAL:-}"
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
+
+          request_body="$(mktemp)"
+          node - /tmp/mmd-per-rename-canary.txt "$request_body" <<'NODE'
+          const fs = require('node:fs');
+          const query = fs.readFileSync(process.argv[2], 'utf8').trim();
+          if (!query) throw new Error('empty canary query');
+          fs.writeFileSync(process.argv[3], JSON.stringify({
+            query,
+            canonical_only: true,
+            allow_manual_fallback: false,
+          }));
+          NODE
+
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            cookie="$(mktemp)"
+            headers="$(mktemp)"
+            body="$(mktemp)"
+
+            login_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+              -D "$headers" -o "$body" -c "$cookie" -w "%{http_code}" \
+              -X POST \
+              -H "Origin: $origin" \
+              -H "Content-Type: application/x-www-form-urlencoded" \
+              --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL" \
+              --data-urlencode "next=/internal/admin/jobs/create-job" \
+              "$origin/internal/admin/login/session")"
+            test "$login_code" = "303"
+            grep -qi '^set-cookie: mmd_admin_gate_v1=' "$headers"
+
+            lookup_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
+              -D "$headers" -o "$body" -b "$cookie" -w "%{http_code}" \
+              -X POST \
+              -H "Origin: $origin" \
+              -H "Content-Type: application/json" \
+              --data-binary @"$request_body" \
+              "$origin/v1/admin/clients/lineage-lookup")"
+            test "$lookup_code" = "200"
+            grep -qi '^content-type:.*application/json' "$headers"
+            grep -Eqi '^x-mmd-per-rename-search:[[:space:]]*multiple' "$headers"
+
+            node - "$body" <<'NODE'
+          const fs = require('node:fs');
+          const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (!p || p.ok !== true) throw new Error('lookup_not_ok');
+          if (p.per_rename_alias_multiple !== true) throw new Error('multi_candidate_marker_missing');
+          const rows = Array.isArray(p.records) ? p.records : [];
+          if (rows.length < 2) throw new Error('expected_multiple_canonical_clients');
+          for (const row of rows) {
+            if (!/^rec[\w]+$/.test(String(row?.client_id || ''))) throw new Error('canonical_client_id_missing');
+            if (row?.manual_public_only) throw new Error('manual_fallback_leaked');
+          }
+          const warnings = Array.isArray(p.lineage_warnings) ? p.lineage_warnings : [];
+          if (warnings.includes('manual_public_only_pending_reconcile')) throw new Error('manual_fallback_warning_leaked');
+          console.log(`Create Job Per Rename lookup connected: ${rows.length} canonical choices`);
+          NODE
+
+            echo "PASS: $origin Create Job canonical Per Rename lookup"
+            rm -f "$cookie" "$headers" "$body"
+          done
+          rm -f "$request_body" /tmp/mmd-per-rename-canary.txt
