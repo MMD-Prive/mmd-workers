@@ -13,6 +13,11 @@ import {
   maybeCreateInternalHoldAfterModelConfirm,
 } from "./model-confirm-cal-hold.js";
 import { enrichLineageWithPerRename } from "./per-rename-client-search.js";
+import {
+  enforcePrivateModelSearchPolicy,
+  guardPrivateJobCreateWork,
+  isPrivateModelSearchRequest,
+} from "./private-model-work-policy.js";
 export * from "./admin-login-hero-worker-pre-model-line-link.js";
 
 export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/dashboard";
@@ -22,6 +27,7 @@ const MODEL_ACTIVATE_PATH = "/v1/model/liff/activate";
 const AUDIENCE_BRIEF_PATH = "/v1/admin/audience/brief";
 const LINEAGE_LOOKUP_PATH = "/v1/admin/clients/lineage-lookup";
 const LINEAGE_RECENT_PATH = "/v1/admin/clients/recent";
+const JOB_CREATE_PATH = "/v1/admin/job/create";
 const MANUAL_PUBLIC_FALLBACK_MARKER = "canonical-v1";
 let lineOfcContactBackfillKickStarted = false;
 
@@ -110,7 +116,8 @@ Delegated active-entrypoint contract markers.
 The implementation remains in the pre-model-line-link wrapper/core chain; these
 markers keep existing source-contract CI explicit while the outer wrappers add
 owner-reviewed MMD MODEL LINE-link behavior, read-only dashboard summary, verified
-Client Credit carry-forward authority, and the canonical owner Job Orchestrator.
+Client Credit carry-forward authority, the canonical owner Job Orchestrator, and
+canonical Private work capability enforcement.
 
 browser_admin_session_required
 forbidden_origin
@@ -126,6 +133,7 @@ export default {
     scheduleLineOfcContactBackfill(env, ctx);
     if (isModelConsoleAuditRequest(request)) return handleModelConsoleAudit(request, env);
     let privateModelRequest = null;
+    let privateModelSearchRequest = null;
     let activationRequest = null;
     let modelConfirmRequest = null;
     let perRenameRequest = null;
@@ -134,6 +142,7 @@ export default {
     try {
       normalizedPath = new URL(request.url).pathname.replace(/\/+$/g, "") || "/";
       if (isPrivateModelAdminRequest(request)) privateModelRequest = request.clone();
+      if (isPrivateModelSearchRequest(request)) privateModelSearchRequest = request.clone();
       if (isModelConfirmActionRequest(request)) modelConfirmRequest = request.clone();
       if (normalizedPath === LINEAGE_LOOKUP_PATH && method === "POST") perRenameRequest = request.clone();
       if (normalizedPath === MODEL_ACTIVATE_PATH && method === "POST") {
@@ -143,7 +152,9 @@ export default {
       // Core worker remains authoritative if URL parsing fails.
     }
 
-    if (normalizedPath === "/v1/admin/job/create" && method === "POST") {
+    if (normalizedPath === JOB_CREATE_PATH && method === "POST") {
+      const privateWorkBlocked = await guardPrivateJobCreateWork(request.clone(), env);
+      if (privateWorkBlocked) return privateWorkBlocked;
       const refreshed = await maybeHandleHeldIdentityLinkRefresh(request, env);
       if (refreshed) return refreshed;
     }
@@ -157,6 +168,7 @@ export default {
         (path) => delegatedJson(request, env, ctx, path),
       );
     }
+    if (privateModelSearchRequest) response = await enforcePrivateModelSearchPolicy(privateModelSearchRequest, response, env);
     if (privateModelRequest) response = await maybeHandlePrivateModelAdminRequest(privateModelRequest, env, response);
     if (activationRequest) response = await syncPrivateModelHandoffAfterActivation(activationRequest, response, env);
     if (modelConfirmRequest) response = await maybeCreateInternalHoldAfterModelConfirm(modelConfirmRequest, response, env);
